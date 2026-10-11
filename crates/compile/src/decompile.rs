@@ -2777,7 +2777,7 @@ fn below_indc_to_lean(
     ctors: ctor_names,
     num_nested: Nat::from(0u64),
     is_rec: true,
-    // Reflexivity is inherited from the parent (see `build_below_indc`).
+    // Reflexivity is inherited from the parent (see `build_prop_below_family`).
     // The `ConstantInfo::InductInfo` hash includes `is_reflexive`, so the
     // regenerated `.below` must carry the same flag as Lean's original.
     is_reflexive: indc.is_reflexive,
@@ -5691,6 +5691,83 @@ pub fn decompile_env(
   Ok(dstt)
 }
 
+/// Select the original-source view used by Lean import. D14 reserves every
+/// `_ix*` name component for compiler support; those records remain in Ixon
+/// but are not source declarations to replay in Lean. Check the reference
+/// closure even for a full import, so filtering support cannot hide a broken
+/// source reconstruction.
+pub fn materialized_source_names(
+  env: &DashMap<Name, LeanConstantInfo>,
+  requested: &[Name],
+) -> Result<Vec<Name>, String> {
+  use crate::compile::pass3::names::has_reserved;
+  use crate::graph::{NameSet, get_constant_info_references};
+
+  let roots: Vec<Name> = if requested.is_empty() {
+    env
+      .iter()
+      .filter(|entry| !has_reserved(entry.key()))
+      .map(|entry| entry.key().clone())
+      .collect()
+  } else {
+    requested.to_vec()
+  };
+  let mut seen = NameSet::default();
+  let mut worklist = Vec::new();
+  for root in roots {
+    if has_reserved(&root) {
+      return Err(format!(
+        "requested name '{}' is reserved for generated compiler support, not original source declarations",
+        root.pretty()
+      ));
+    }
+    if !env.contains_key(&root) {
+      return Err(format!(
+        "requested source constant '{}' not found",
+        root.pretty()
+      ));
+    }
+    if seen.insert(root.clone()) {
+      worklist.push(root);
+    }
+  }
+  while let Some(name) = worklist.pop() {
+    let references = {
+      let declaration = env.get(&name).ok_or_else(|| {
+        format!(
+          "source constant '{}' disappeared during selection",
+          name.pretty()
+        )
+      })?;
+      get_constant_info_references(declaration.value())
+    };
+    for reference in references {
+      if has_reserved(&reference) {
+        return Err(format!(
+          "source constant '{}' references generated compiler support '{}' after decompilation",
+          name.pretty(),
+          reference.pretty()
+        ));
+      }
+      if seen.contains(&reference) {
+        continue;
+      }
+      if !env.contains_key(&reference) {
+        return Err(format!(
+          "source constant '{}' references missing source constant '{}' — broken closure",
+          name.pretty(),
+          reference.pretty()
+        ));
+      }
+      seen.insert(reference.clone());
+      worklist.push(reference);
+    }
+  }
+  let mut selected: Vec<Name> = seen.into_iter().collect();
+  selected.sort_unstable();
+  Ok(selected)
+}
+
 /// Result of checking a decompiled environment against the original.
 #[derive(Debug)]
 pub struct CheckResult {
@@ -5851,6 +5928,97 @@ mod tests {
   use super::*;
   use crate::compile::compile_name;
   use ix_common::env::Level;
+
+  fn import_view_axiom(name: Name, typ: LeanExpr) -> LeanConstantInfo {
+    LeanConstantInfo::AxiomInfo(AxiomVal {
+      cnst: ConstantVal { name, level_params: vec![], typ },
+      is_unsafe: false,
+    })
+  }
+
+  #[test]
+  fn source_import_keeps_public_names_and_scoped_dependencies() {
+    let env = DashMap::new();
+    let root = Name::str(Name::anon(), "ImportView".into());
+    let source = Name::str(root.clone(), "source".into());
+    let dependency = Name::str(root.clone(), "dependency".into());
+    let unrelated = Name::str(root.clone(), "unrelated_ix_name".into());
+    let source_private =
+      Name::str(Name::str(Name::anon(), "_private".into()), "original".into());
+    let support = Name::str(Name::str(root, "_ix".into()), "helper".into());
+    for name in [&dependency, &unrelated, &source_private, &support] {
+      env.insert(
+        name.clone(),
+        import_view_axiom(name.clone(), LeanExpr::sort(Level::zero())),
+      );
+    }
+    env.insert(
+      source.clone(),
+      import_view_axiom(
+        source.clone(),
+        LeanExpr::cnst(dependency.clone(), vec![]),
+      ),
+    );
+    let mut all =
+      vec![source.clone(), dependency.clone(), unrelated, source_private];
+    all.sort_unstable();
+    assert_eq!(materialized_source_names(&env, &[]).unwrap(), all);
+    let mut scoped = vec![source.clone(), dependency];
+    scoped.sort_unstable();
+    assert_eq!(materialized_source_names(&env, &[source]).unwrap(), scoped);
+    assert!(env.contains_key(&support), "selection does not remove support");
+  }
+
+  #[test]
+  fn source_import_rejects_private_roots_and_source_support_leaks() {
+    let env = DashMap::new();
+    let source = Name::str(Name::anon(), "Source".into());
+    let support =
+      Name::str(Name::str(source.clone(), "_ix_retyped".into()), "h".into());
+    env.insert(
+      support.clone(),
+      import_view_axiom(support.clone(), LeanExpr::sort(Level::zero())),
+    );
+    assert!(
+      materialized_source_names(&env, std::slice::from_ref(&support))
+        .unwrap_err()
+        .contains("generated compiler support")
+    );
+    env.insert(
+      source.clone(),
+      import_view_axiom(source.clone(), LeanExpr::cnst(support, vec![])),
+    );
+    for roots in [vec![], vec![source]] {
+      assert!(
+        materialized_source_names(&env, &roots)
+          .unwrap_err()
+          .contains("references generated compiler support")
+      );
+    }
+  }
+
+  #[test]
+  fn source_import_rejects_missing_roots_and_dependencies() {
+    let env = DashMap::new();
+    let source = Name::str(Name::anon(), "Source".into());
+    let missing = Name::str(Name::anon(), "Missing".into());
+    assert!(
+      materialized_source_names(&env, std::slice::from_ref(&missing))
+        .unwrap_err()
+        .contains("not found")
+    );
+    env.insert(
+      source.clone(),
+      import_view_axiom(source.clone(), LeanExpr::cnst(missing, vec![])),
+    );
+    for roots in [vec![], vec![source]] {
+      assert!(
+        materialized_source_names(&env, &roots)
+          .unwrap_err()
+          .contains("broken closure")
+      );
+    }
+  }
 
   #[test]
   fn decompile_kenv_clear_limit_parsing() {

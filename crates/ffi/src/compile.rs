@@ -1769,11 +1769,11 @@ pub extern "C" fn rs_decompile_env(
 /// `Lean.ConstantInfo` objects — the production import path behind
 /// `import_ixe` (`Ix/ImportIxe.lean`).
 ///
-/// `names` selects roots: empty ⇒ every named constant; nonempty ⇒ the
-/// requested constants plus their full name-level reference closure over
-/// the decompiled env. An absent requested name — or a reference that
-/// resolves to nothing, which would fail kernel replay much later with a
-/// worse message — is an immediate error (fail closed).
+/// `names` selects source roots: empty ⇒ every original-source constant;
+/// nonempty ⇒ the requested source constants plus their full reference
+/// closure. D14-reserved compiler support stays in Ixon. Missing references,
+/// requested support names and source references to support after
+/// decompilation are immediate errors, before Lean replay.
 ///
 /// Pairs return sorted by name; mutual-block grouping and topological
 /// replay order are the Lean side's concern (`Ix.Catalog` machinery).
@@ -1792,8 +1792,6 @@ pub extern "C" fn rs_decompile_env_consts(
   path: LeanString<LeanBorrowed<'_>>,
   names: LeanArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  use ix_compile::graph::get_constant_info_references;
-
   use crate::lean_build::{LeanEncodeCache, encode_constant_info, encode_name};
 
   let path = path.as_str().to_string();
@@ -1864,51 +1862,15 @@ pub extern "C" fn rs_decompile_env_consts(
     },
   };
 
-  // Select the output set: everything, or the requested reference closure.
-  let selected: Vec<Name> = if requested.is_empty() {
-    let mut all: Vec<Name> = dstt.env.iter().map(|e| e.key().clone()).collect();
-    all.sort_unstable();
-    all
-  } else {
-    let mut seen: ix_compile::graph::NameSet =
-      ix_compile::graph::NameSet::default();
-    let mut worklist: Vec<Name> = Vec::new();
-    for root in &requested {
-      if !dstt.env.contains_key(root) {
-        return LeanIOResult::error_string(&format!(
-          "rs_decompile_env_consts: requested constant '{}' not found \
-           in {path}",
-          root.pretty()
-        ));
-      }
-      if seen.insert(root.clone()) {
-        worklist.push(root.clone());
-      }
-    }
-    while let Some(name) = worklist.pop() {
-      let refs = {
-        let ci = dstt.env.get(&name).expect("worklist name present");
-        get_constant_info_references(ci.value())
-      };
-      for r in refs {
-        if seen.contains(&r) {
-          continue;
-        }
-        if !dstt.env.contains_key(&r) {
-          return LeanIOResult::error_string(&format!(
-            "rs_decompile_env_consts: '{}' references '{}', which is \
-             missing from {path} — broken closure",
-            name.pretty(),
-            r.pretty()
-          ));
-        }
-        seen.insert(r.clone());
-        worklist.push(r);
-      }
-    }
-    let mut v: Vec<Name> = seen.into_iter().collect();
-    v.sort_unstable();
-    v
+  let selected = match ix_compile::decompile::materialized_source_names(
+    &dstt.env, &requested,
+  ) {
+    Ok(selected) => selected,
+    Err(error) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: {path}: {error}"
+      ));
+    },
   };
 
   // Marshal on the calling thread with one shared encode cache so

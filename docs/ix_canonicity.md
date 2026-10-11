@@ -111,11 +111,14 @@ minors must not determine the canonical payload.
 
 The canonical reading, recompiled under its intended input/name convention,
 must reproduce the same canonical content. Source-faithful materialization has
-a separate source-projection roundtrip: an artifact may also expose reserved
-canonical declarations that were never source inputs. Passing all materialized
-names back as fresh source can correctly trigger the `_ix` input refusal.
-[ImportIxe](../Tests/Ix/ImportIxe.lean) exercises this distinction, source-root
-stability and certified canonical recursors.
+a separate roundtrip: `materializeIxe` and `import_ixe` restore the original
+source declarations, and recompiling their complete output must preserve the
+source root. Compiler-reserved `_ix*` support stays in the artifact for
+execution and checking. Requesting such a name for source import is an error;
+a recovered source declaration referring to private support is also an error.
+[ImportIxe](../Tests/Ix/ImportIxe.lean) checks exact source coverage, complete
+source replay/root stability, and separate certified coverage of private
+recursors and helpers.
 
 ### 4.3 Lean-visible `_N` numbering stability
 
@@ -326,7 +329,8 @@ occurrences through `metaSharing`. See
 
 Reconstruction needs the source `all` lists, original forms, canonical block
 membership and persisted nested layout. It must preserve the declared names and
-source kinds while handling additional reserved canonical declarations. A
+source kinds while retaining additional reserved canonical declarations in
+the artifact, outside Lean source replay. A
 successful check of one reconstructed constant is not the full block roundtrip.
 The [materialization tests](../Tests/Ix/ImportIxe.lean) cover collapsed and
 non-collapsed neighbours; broader generator and decompiler correspondence remains

@@ -14,6 +14,10 @@
   and replays them with `Lean.addDecl`.
 
   Semantics:
+  - Import restores the original Lean source declarations. Generated
+    private `_ix*` support stays in the Ixon artifact for execution and
+    checking; it is not replayed as additional Lean source. A source
+    reference to that support after decompilation is an error.
   - Names already present in the environment are skipped, trusting the
     shared toolchain base (the `.ixe` carries its complete base; the
     consumer already has one). Genuine content drift surfaces as
@@ -53,10 +57,12 @@ namespace Ix.ImportIxe
 /-- Decompile a `.ixe` and materialize constants as real
     `Lean.ConstantInfo`s, in Rust
     (`crates/ffi/src/compile.rs::rs_decompile_env_consts`, construction
-    in `crates/ffi/src/lean_build.rs`). Empty `only` ⇒ every named
-    constant; nonempty ⇒ the requested constants plus their reference
-    closure. Fails on thin bundles, broken closures, and absent
-    requested names. Pairs return sorted by name. -/
+    in `crates/ffi/src/lean_build.rs`). Empty `only` ⇒ every original-source
+    constant; nonempty ⇒ the requested source constants plus their reference
+    closure. Compiler-reserved names are excluded by the same D14 rule used
+    at source admission. Fails on thin bundles, broken source closures,
+    requested support names, or source references to support after
+    decompilation. Pairs return sorted by name. -/
 @[extern "rs_decompile_env_consts"]
 opaque rsDecompileEnvConstsFFI : @& String → @& Array Lean.Name →
     IO (Array (Lean.Name × Lean.ConstantInfo))
@@ -108,8 +114,8 @@ meta def runImportIxe (path : String) (only : Array Lean.Name := #[]) :
 materialized, {replayed} declarations replayed, {skipped} already \
 present"
 
-/-- `import_ixe "catalog.ixe"` materializes every constant of the
-    artifact into the current environment;
+/-- `import_ixe "catalog.ixe"` restores every original-source constant of
+    the artifact into the current environment;
     `import_ixe "catalog.ixe" only [A.foo, B.bar]` materializes just
     the named constants plus their reference closure. -/
 syntax (name := importIxe) "import_ixe " str
