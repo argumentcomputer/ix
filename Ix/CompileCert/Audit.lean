@@ -21,6 +21,8 @@ import Ix.CompileCert.HeadPublication
 import Ix.CompileCert.HeadOutcome
 import Ix.CompileCert.ExpressionFrame
 import Ix.CompileCert.ExpressionCache
+import Ix.CompileCert.ExpressionCacheRun
+import Ix.CompileCert.ExpressionRead
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2327,6 +2329,30 @@ def exactExpressionCacheRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.exactExpressionCacheRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Cache-run induction and interpretation by the actual certified reader.
+The constructor-step and production table-growth obligations remain explicit. -/
+def expressionMeaningRoots : Array Lean.Name :=
+  #[``Ix.CompileCert.ExpressionCacheRun.valid_empty,
+    ``Ix.CompileCert.ExpressionCacheRun.cached_run_correct,
+    ``Ix.CompileCert.ExpressionCacheRun.partial_run_correct,
+    ``Ix.CompileCert.ExpressionCacheRun.partial_run_correct_of_step,
+    ``Ix.CompileCert.ExpressionCacheRun.total_run_correct_of_step,
+    ``Ix.CompileCert.ExpressionRead.Preserves.refl,
+    ``Ix.CompileCert.ExpressionRead.Preserves.bind,
+    ``Ix.CompileCert.ExpressionRead.Extends.levels,
+    ``Ix.CompileCert.ExpressionRead.convExpr_preserves,
+    ``Ix.CompileCert.ExpressionRead.Extends.of_tables,
+    ``Ix.CompileCert.ExpressionRead.blockReader_cache_blind,
+    ``Ix.CompileCert.ExpressionRead.reading_cache_blind,
+    ``Ix.CompileCert.ExpressionRead.Reading.of_growth,
+    ``Ix.CompileCert.ExpressionRead.cache_sound_of_growth]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionMeaningRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
