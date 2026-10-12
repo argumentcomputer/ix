@@ -935,9 +935,14 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   `finishConstantInfoWithSharing_run_codecWF` for the singleton-driver tail) are stated over it;
   the tail concludes `SharingRunOK`: it returns an exactly decodable block, or fails with an
   error that the sharing builder returns on some payload (the payload is existentially
-  quantified). The theorems about the stored bytes are not audit roots, because
-  `BlockResult.mk'` hashes with Blake3, whose package carries a `native_decide` axiom; the
-  per-declaration compiler endpoints are retired with the compiler-correctness proofs.
+  quantified). The stored-byte theorems are audit roots: `Address.ofHasher` passes
+  a checked length bound, avoiding the Blake3 package's `native_decide` default.
+  They assert no hash-injectivity or FFI law. The compiler audit separately covers
+  `Ix/CompileCert/SharingRead.lean` and `DefinitionBlock.lean`: sharing preserves
+  the actual reader's anonymous root interpretations, and successful
+  `compileDefinitionDataBlock` results retain source-related type/value readings
+  and exact stored bytes under the stated primary-table bounds. Preseeding,
+  publication, whole-declaration admission and totality remain separate.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
   build unless every csimp theorem on the compiler's import path is an audit root and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`

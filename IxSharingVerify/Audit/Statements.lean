@@ -66,12 +66,17 @@ def sharingRoots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Verify.ExprCache.Sound.mono, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
-  -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
-  -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
-  -- `BlockResult.constantInfo_codec_roundtrip`,
-  -- `finishConstantInfoWithSharing_run_codecWF`) are not roots: `mk'` hashes
-  -- the block, and the Blake3 package's `HasherOps.hash` carries a
-  -- `native_decide` axiom, which this manifest does not admit.
+  -- The compiler's sharing builder and stored-byte wrapper. Address.ofHasher
+  -- supplies a checked length bound, avoiding the package's native default.
+  -- These statements do not assert a hash-injectivity or FFI correctness law.
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codecWF,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.constantInfo_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.finishConstantInfoWithSharing_run_codecWF,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.constantInfoRootExprs_toList,

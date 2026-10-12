@@ -240,11 +240,23 @@ fixes each root's axioms exactly; `Audit/SorryFrontier.lean` checks that no decl
   `SharingSucceeds` only the first case remains. The singleton-driver tail concludes
   `SharingRunOK compileEnv.sharingLimits (run ..)` (`finishConstantInfoWithSharing_run_codecWF`).
   The theorems about the stored bytes (`BlockResult.mk'_codec_roundtrip`,
-  `BlockResult.constantInfo_codec_roundtrip`, `finishConstantInfoWithSharing_run_codecWF`) are not
-  audit roots: `BlockResult.mk'` hashes the block with Blake3, whose package carries a
-  `native_decide` axiom that the manifest does not admit. No theorem covers the per-declaration
-  drivers before that tail. `FormatOK`'s backwardness conjuncts are the decoders' rule that a
+  `BlockResult.constantInfo_codec_roundtrip`, `finishConstantInfoWithSharing_run_codecWF`) are
+  audit roots. `Address.ofHasher` supplies a checked length bound, avoiding the
+  Blake3 package's `native_decide` default. These theorems assert no hash-injectivity
+  or FFI law. `FormatOK`'s backwardness conjuncts are the decoders' rule that a
   `Share` refers only to an earlier entry.
+- **Anonymous reader composition** (`Ix/CompileCert/SharingRead.lean`, audited by
+  `Ix.CompileCert.Audit`): the actual reader's table construction interprets
+  `SharingMeaning` as equality of root readings, including errors. Actual
+  definition-like payload compilation composes with `buildConstantWithSharing`
+  and root write-back to preserve source-related type/value readings and the
+  declaration header. With wire-valid primary tables, the existing codec theorem
+  gives exact anonymous serialization; expression wire validity comes from the
+  successful sharing construction. `Ix/CompileCert/DefinitionBlock.lean` connects
+  this to actual `compileDefinitionDataBlock` outputs, including the wrapper's
+  exact bytes and computed address. Finalization leaves state unchanged on
+  success and failure. Preseeding, publication, whole-declaration admission and
+  compiler totality remain separate obligations.
 
 **Specification, fast twin, csimp theorem, audit root.** The theorems describe the
 specification modules of `Ix/Sharing/Exact/` (`Basic`, `Dag`, `Dictionary`, `Search`,

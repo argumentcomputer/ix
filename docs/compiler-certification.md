@@ -325,14 +325,43 @@ preservation through canonical numbering and the production re-expansion check.
 Its `SharingMeaning` relation specifies entry equations, backward references,
 root bounds and exact unfolded roots, independently of compiler success. The
 theorem requires no output-certificate or pointer/hash-injectivity premise.
-This structural sharing result still needs composition with the payload builder,
-certified reader and published bytes.
 
-These results cover expression and definition-like payload emission and
-structural fidelity of the sharing construction.
+[`SharingRead.lean`](../Ix/CompileCert/SharingRead.lean) connects that structural
+result to the actual certified `MemberReader.mk'` table construction and
+`convExpr` interpretation. Shared roots have exactly the same readings as the
+ordered unshared inputs, including equality of errors. The definition-like
+builder preserves kind, safety and universe count through root write-back.
+`compileDefinitionData_shared_correct` composes actual payload compilation and
+the actual sharing builder: the completed anonymous constant's type and value
+read as source-related kernel expressions, with the accumulated literal blobs
+visible to the reader. This includes definition, theorem and opaque payload
+kinds and adds no presentation-metadata fidelity obligation.
+
+`compileDefinitionData_serialized_correct` additionally composes the existing
+codec theorem, giving exact decoding of the anonymous serialized constant.
+It assumes wire-valid primary reference and universe tables; expression wire
+validity follows from the successful sharing construction.
+
+[`DefinitionBlock.lean`](../Ix/CompileCert/DefinitionBlock.lean) connects those
+results through the actual `compileDefinitionDataBlock` entry and its
+`BlockResult.mk'` wrapper. Every successful result preserves the source-related
+anonymous readings and stores exactly the serialized block and its computed
+address. With wire-valid primary tables, the actual returned bytes decode to
+that block. Finalization leaves the payload compiler's state unchanged on both
+success and failure. The named-definition block entry is definitionally the
+same route. Preseeding and publication remain separate steps.
+
+These roots are in the compiler axiom audit. The stored-byte theorems in
+`IxSharingVerify/Builder.lean` are also sharing-audit roots: `Address.ofHasher`
+already supplies a checked length bound, so the wrapper avoids the Blake3
+package's `native_decide` default. This is no proof of hash injectivity or of
+the foreign hashing implementation.
+
+These results cover expression and definition-like payload emission, canonical
+sharing, anonymous root reading and serialization under the stated table bounds.
 Production callers must establish the prefix and preseed conditions; other
 declaration families, header bounds, source canonicalization/rewriting, auxiliary
-generation, sharing-to-reader composition, serialization, declaration reading and DAG composition
+generation, publication, whole-declaration reading and DAG composition
 still need their own connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder
 contracts.

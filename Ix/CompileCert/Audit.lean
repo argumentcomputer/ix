@@ -36,6 +36,8 @@ import Ix.CompileCert.ExpressionIndices
 import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.ProductionExpression
 import Ix.CompileCert.DefinitionEmission
+import Ix.CompileCert.SharingRead
+import Ix.CompileCert.DefinitionBlock
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2653,6 +2655,55 @@ def definitionEmissionRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.definitionEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Sharing-table interpretation by the actual kernel reader, ordered root
+write-back and composition with definition-like payload compilation and the
+anonymous codec. Hashing/publication and whole-run totality remain separate. -/
+def sharingReadRoots : Array Lean.Name :=
+  #[`convExpr_subst, `table_empty, `table_push, `buildTable_meaning,
+    `memberReader_eq, `memberReader_table, `memberReader_subst, `meaning_read,
+    `convExpr_same_tables, `memberReader_empty, `meaning_read_before,
+    `array_two, `definition_writeback, `buildDefinition_read, `unshared_read,
+    `buildDefinition_payload, `buildDefinition_wireWF, `buildDefinition_codec,
+    `compileDefinitionData_shared_correct, `compileDefinitionData_serialized_correct].map
+      (`Ix.CompileCert.SharingRead ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingReadRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual singleton block compilation, unchanged finalizer state on all
+outcomes, source-related anonymous roots and exact returned bytes. -/
+def definitionBlockRoots : Array Lean.Name :=
+  #[`rawRun_timedC, `finish_run, `wrapped_mk, `compileDefinitionDataBlock_eq_ok,
+    `compileDefinitionDataBlock_state, `compileDefinitionBlock_eq,
+    `compileDefinitionDataBlock_correct, `compileDefinitionDataBlock_codec].map
+      (`Ix.CompileCert.DefinitionBlock ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.definitionBlockRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.constantInfoRootExprs, ``Ix.CompileM.withRootExprs,
+      ``Ix.CompileM.buildConstantWithSharing, ``Ix.Kernel.Reader.MemberReader.mk',
+      ``Ix.CompileM.finishConstantWithSharing, ``Ix.CompileM.finishConstantInfoWithSharing,
+      ``Ix.CompileM.BlockResult.mk', ``Ix.CompileM.compileDefinitionDataBlock,
+      ``Ix.CompileM.compileDefinitionBlock, ``Ix.CompileM.timedC] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"sharing/reader entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"sharing/reader entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"sharing/reader entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] sharing/reader composition: actual root write-back, builder and reader table"
 
 run_cmd do
   let env ← getEnv

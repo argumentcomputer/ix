@@ -857,11 +857,14 @@ step that builds that DAG is outside them (see "Expansion" below).
   `SharingRunOK`). The theorems about the stored bytes
   (`BlockResult.mk'_codec_roundtrip`,
   `BlockResult.constantInfo_codec_roundtrip`,
-  `finishConstantInfoWithSharing_run_codecWF`) are proved but are not audit
-  roots: `BlockResult.mk'` hashes the block, and the Blake3 package's
-  `HasherOps.hash` carries a `native_decide` axiom, which the manifest does
-  not admit. No theorem covers the compiler's per-declaration drivers
-  before that tail.
+  `finishConstantInfoWithSharing_run_codecWF`) are audit roots:
+  `Address.ofHasher` passes a checked length bound and avoids the Blake3
+  package's `native_decide` default. No hash-injectivity or FFI law is asserted.
+  `Ix/CompileCert/SharingRead.lean` and `DefinitionBlock.lean`, in the compiler
+  audit, connect actual definition-like payload compilation, sharing and
+  finalization to source-related anonymous type/value readings and exact
+  returned bytes under the stated primary-table bounds. Preseeding,
+  publication, whole-declaration admission and totality remain separate.
 - **Structural IDs** (`SharingExactCanon.lean`: `canonicalize_det`): two
   interner outputs that pass the interner's checks, are hash-consed and
   whose roots denote the same terms canonicalize to the same DAG and root
