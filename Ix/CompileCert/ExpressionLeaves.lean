@@ -103,9 +103,11 @@ theorem bvar_step_total_read (compile : Ix.Expr → CompileM (Ixon.Expr × UInt6
       (ExpressionRead.blockReader reader base param self after).read value.1 = .ok (.bvar index) ∧
       withoutExprMetadata after = withoutExprMetadata before := by
   refine ⟨(.var index.toUInt64, before.arena.nodes.size.toUInt64),
-    { before with arena := { nodes := before.arena.nodes.push .leaf } }, rfl, ?_, rfl⟩
-  change (.ok (Kernel.Expr.mkBvar index.toUInt64.toNat) : Kernel.Reader.ReadM Kernel.Expr) = _
-  rw [UInt64.toNat_ofNat_of_lt' bounded, Kernel.Expr.mkBvar_eq]
+    { before with arena := { nodes := before.arena.nodes.push .leaf } }, ?_, ?_, rfl⟩
+  · simp only [compileExprTotalStep, checkedTableIndex, bounded, ↓reduceIte, rawRun_bind, rawRun_pure]
+    rfl
+  · change (.ok (Kernel.Expr.mkBvar index.toUInt64.toNat) : Kernel.Reader.ReadM Kernel.Expr) = _
+    rw [UInt64.toNat_ofNat_of_lt' bounded, Kernel.Expr.mkBvar_eq]
 
 /-- The actual universe operation changes only these memos and tables. -/
 def withoutUniverseWrites (state : BlockState) : BlockState :=

@@ -32,6 +32,7 @@ import Ix.CompileCert.CanonUnivEmit
 import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionLeaves
+import Ix.CompileCert.ExpressionIndices
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2552,6 +2553,32 @@ def expressionLeafRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionLeafRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The executed expression guards supply exact source-index bounds and
+refuse overflowing cache misses before any expression allocation. -/
+def expressionIndexRoots : Array Lean.Name :=
+  #[`bvar_step_refuses, `projection_step_refuses, `bvar_step_bound,
+    `projection_step_bound, `bvar_step_read, `bind_success, `mutual_slot_bound,
+    `constant_step_eq, `mutual_step_bound, `partial_step_error,
+    `bvar_miss_refuses, `projection_miss_refuses].map (`Ix.CompileCert.ExpressionIndices ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionIndexRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let name := ``Ix.CompileM.compileConstExprRaw
+  unless ((Lean.Compiler.CSimp.ext.getState env).map.find? name).isNone &&
+      (Lean.Compiler.getImplementedBy? env name).isNone do
+    throwError m!"raw constant compiler has an unreviewed runtime substitution: {name}"
+  let some (.defnInfo definition) := env.find? name
+    | throwError m!"raw constant compiler is not a definition: {name}"
+  unless definition.safety == .safe do
+    throwError m!"raw constant compiler is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] raw constant compiler: checked mutual slot conversion"
 
 namespace Ix.CompileCert.Audit
 

@@ -4058,6 +4058,70 @@ mod tests {
   }
 
   #[test]
+  fn expression_wire_bound_variable_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let too_large = Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let source = LeanExpr::bvar(too_large);
+    let error =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt)
+        .expect_err("an oversized variable must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    let source = LeanExpr::bvar(Nat::from(u64::MAX));
+    let result =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Var(u64::MAX)));
+  }
+
+  #[test]
+  fn expression_wire_projection_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let name = Name::str(Name::anon(), "IndexBoundary".to_owned());
+    let too_large = Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let source =
+      LeanExpr::proj(name.clone(), too_large, LeanExpr::bvar(Nat::from(0u64)));
+    let error =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt)
+        .expect_err("an oversized field must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    assert!(cache.refs.is_empty());
+    assert!(stt.env.names.is_empty());
+    stt.name_to_addr.insert(name.clone(), Address::hash(b"structure"));
+    let source = LeanExpr::proj(
+      name,
+      Nat::from(u64::MAX),
+      LeanExpr::bvar(Nat::from(0u64)),
+    );
+    let result =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Prj(_, u64::MAX, _)));
+  }
+
+  #[test]
+  fn expression_wire_mutual_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let name = Name::str(Name::anon(), "IndexBoundary".to_owned());
+    let mut mutual = MutCtx::default();
+    mutual
+      .insert(name.clone(), Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]));
+    let source = LeanExpr::cnst(name.clone(), vec![]);
+    let error = compile_expr(&source, &[], &mutual, &mut cache, &stt)
+      .expect_err("an oversized mutual slot must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    mutual.insert(name, Nat::from(u64::MAX));
+    let result = compile_expr(&source, &[], &mutual, &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Rec(u64::MAX, _)));
+  }
+
+  #[test]
   fn test_compile_expr_sort() {
     let stt = CompileState::default();
     let mut cache = BlockCache::default();

@@ -241,6 +241,7 @@ theorem Frame.compileExprPartial (expr : Expr) : Frame (compileExprPartial expr)
       all_goals with_reducible repeat' first
           | exact Frame.pure _
           | exact Frame.throw _
+          | exact Frame.checkedTableIndex _ _
           | exact Frame.allocArenaNode _
           | exact Frame.pushUnivPatch _ _
           | exact Frame.compileAndInternUnivCanon _
@@ -290,6 +291,7 @@ theorem Frame.compileExprTotalStep (compile : Expr → CompileM (Ixon.Expr × UI
     | exact Frame.pure _
     | exact Frame.throw _
     | exact Frame.readBlock
+    | exact Frame.checkedTableIndex _ _
     | exact Frame.allocArenaNode _
     | exact Frame.pushUnivPatch _ _
     | exact Frame.compileAndInternUnivCanon _

@@ -23,6 +23,7 @@ import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.LocalBlob
+import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.UniverseCache
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.TableWorklist
@@ -153,6 +154,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("image-head-lookup", Tests.Ix.Compile.HeadLookup.suite),
   ("expression-frame", Tests.Ix.Compile.ExpressionFrame.suite),
   ("local-blob", Tests.Ix.Compile.LocalBlob.suite),
+  ("expression-index", Tests.Ix.Compile.ExpressionIndex.suite),
   ("exact-expression-key", Tests.Ix.Compile.ExactKey.suite),
   ("aux-dump-inputs", Tests.Compile.AuxGenDiff.suite),
   ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
