@@ -26,6 +26,7 @@ import Ix.CompileCert.ExpressionRead
 import Ix.CompileCert.Interning
 import Ix.CompileCert.UniverseMeaning
 import Ix.CompileCert.CanonUnivMeaning
+import Ix.CompileCert.CanonUnivSubsumption
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2376,6 +2377,22 @@ def canonUniverseMeaningRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.canonUniverseMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Exact subsumption semantics and its composition with cached normalization.
+The input invariant is derived by the producer; complete emission is separate. -/
+def universeSubsumptionRoots : Array Lean.Name :=
+  #[`varsEval_le, `subsumeVars_le, `node_zero_le, `node_subsume_le,
+    `norm_insert_le, `subsumption_le, `isSubset_sublist, `isSubset_active,
+    `insert_findD_property, `subsumeVars_go_keepsResult, `subsumeVars_go_keepsBig,
+    `subsumeVars_keepsBig, `subsumption_keeps_var, `offsetFold_le, `nodeOffset_le,
+    `keepConst_true, `subsumption_keeps_const, `subsumption_ge,
+    `subsumption_eval, `normalize_eval].map (`Ix.CompileCert.CanonUnivSubsumption ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeSubsumptionRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
