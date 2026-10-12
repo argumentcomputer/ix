@@ -35,6 +35,7 @@ import Ix.CompileCert.ExpressionLeaves
 import Ix.CompileCert.ExpressionIndices
 import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.ProductionExpression
+import Ix.CompileCert.DefinitionEmission
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2632,6 +2633,43 @@ def productionExpressionRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.productionExpressionRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual definition-like initialization, type/value compilation and payload
+finalization. Header conversion is recorded exactly; natural arity requires
+the explicit capacity bound, and sharing/record admission remain separate. -/
+def definitionEmissionRoots : Array Lean.Name :=
+  #[`Clean.ready, `drained_clean, `Clean.good, `drained_reader,
+    `Preserves.pure, `Preserves.bind, `names_clean, `Preserves.names,
+    `Preserves.compileName, `Preserves.compileNames, `Preserves.recordDefHints,
+    `finishDefinitionDataCompilation_run, `finishNames_preserves,
+    `finishDefinition_correct, `PayloadRelated.levels, `body_correct,
+    `prepared_clean, `prepared_reader, `rawRun_withBlockEnv,
+    `compileDefinitionData_run, `compileDefinition_eq, `compileTheorem_eq,
+    `compileOpaque_eq, `compileDefinitionData_correct, `compileDefinition_correct,
+    `compileTheorem_correct, `compileOpaque_correct].map (`Ix.CompileCert.DefinitionEmission ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.definitionEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[`withBlockEnv, `withCurrent, `withUnivCtx, `resetArena,
+      `takeArena, `takeMetaSharing, `takeMetaRefs, `takeUnivPatches, `clearExprCache,
+      `getMutCtxAddrs, `recordDefHints, `finishDefinitionDataCompilation,
+      `finishDefinitionCompilation, `finishTheoremCompilation, `finishOpaqueCompilation,
+      `compileDefinitionData, `compileDefinition, `compileTheorem, `compileOpaque].map (`Ix.CompileM ++ ·) do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"declaration compiler has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"declaration compiler is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"declaration compiler is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] definition-like compilation: actual initialization, payload finalization and entry points"
 
 run_cmd do
   let env ← getEnv

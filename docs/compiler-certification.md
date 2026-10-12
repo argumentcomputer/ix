@@ -305,10 +305,24 @@ successful output has the same source/reader relation and returns to ordinary mo
 This result concerns the expression supplied to the wrapper after any earlier
 compiler rewrites; it does not assume those rewrites preserve the original source.
 
-These results concern unshared expression emission. Production callers
-must establish the prefix and initialization conditions; declaration construction,
-canonicalization/rewriting, auxiliary generation, sharing, serialization and DAG
-composition still need their own connections. It does not prove that every valid
+[`DefinitionEmission.lean`](../Ix/CompileCert/DefinitionEmission.lean) connects the
+expression result to actual `compileDefinitionData`, `compileDefinition`,
+`compileTheorem` and `compileOpaque` runs. The emitted payload's type and value
+retain their source relations after both compilations and finalization. All
+outcomes preserve earlier readings and cache/table validity; successful outputs
+preserve declaration kind and safety, clear the expression cache and leave the
+retained state ready for another declaration. Entry assumptions concern the
+prefix, primary tables, canonical-universe memo and empty expression cache;
+the actual initializer discards old raw-universe and metadata tables. The
+universe count is proved equal to the current `Nat.toUInt64` conversion; equality
+to the full natural count additionally needs an explicit wire-capacity bound.
+This theorem establishes no presentation-metadata fidelity.
+
+These results concern unshared expression and definition-like payload emission.
+Production callers must establish the prefix and preseed conditions; other
+declaration families, header bounds, canonicalization/rewriting, auxiliary
+generation, sharing, serialization, declaration reading and DAG composition
+still need their own connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder
 contracts.
 
