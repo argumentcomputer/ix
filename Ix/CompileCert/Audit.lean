@@ -27,6 +27,7 @@ import Ix.CompileCert.Interning
 import Ix.CompileCert.UniverseMeaning
 import Ix.CompileCert.CanonUnivMeaning
 import Ix.CompileCert.CanonUnivSubsumption
+import Ix.CompileCert.CanonUnivGateOrder
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2393,6 +2394,29 @@ def universeSubsumptionRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeSubsumptionRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Producer-derived gate availability, path shape and actual gate-order
+prefix laws used by marker consumption. Complete group emission is separate. -/
+def universeGateRoots : Array Lean.Name :=
+  (#[`entriesEval_gt, `varsEval_gt, `constant_le_oneBound, `variable_le_oneBound,
+    `spike_pos, `spike_other_le, `absorbable_of_spike, `absorbable_mono,
+    `Ready.nil, `Ready.mono, `Ready.insert, `Ready.subsumption,
+    `AllReady.insert, `AllReady.addConst, `AllReady.addVar, `subsumption_paths,
+    `AllReady.subsumption, `Remaining.pick, `gateLoop_accepts, `Ready.gatesLeakFree,
+    `normalizeAux_ready, `normalizeImaxDispatch_ready, `normalize_ready, `normalize_gatesLeakFree,
+    `normalize_paths, `orderedInsert_strict, `normalize_strictPaths,
+    `StrictPath.sorted, `StrictPath.nodup].map (`Ix.CompileCert.CanonUnivPaths ++ ·)) ++
+  (#[`chooseGate_mem, `find_filter_kept, `chooseGate_filter, `gateLoop_order,
+    `gateOrder_eq, `orderAux_mem, `orderAux_nodup, `orderAux_length_le,
+    `gateOrder_nodup, `gateOrder_length_le, `orderAux_restrict, `gateOrder_restrict,
+    `sorted_take_filter, `gateOrder_sorted_prefix, `normalize_prefix,
+    `normalize_filtered_prefix, `consumption_context_shorter].map (`Ix.CompileCert.CanonUnivGateOrder ++ ·))
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeGateRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
