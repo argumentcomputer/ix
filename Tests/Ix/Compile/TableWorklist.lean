@@ -93,7 +93,7 @@ def controls : List (String × Bool) := Id.run do
       | .error _ => false),
     ("wide root arrays use the compiled folds", wideResult.isOk && wideState.univs == #[.zero] && wideState.univsFinal),
     ("seen keys retain universe parameter positions", positions.isOk && positionalState.univs == #[.var 0, .var 1] &&
-      positionalState.univCache.get? level == some (.var 1)),
+      positionalState.univCache.get? ⟨level, [v, u]⟩ == some (.var 1)),
     ("preorder error preserves completed blob writes", (match failure with
       | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
       failed.blockBlobs.get? literalAddress == some literalBytes && failed.blockBlobs.get? textAddress == some textBytes),
@@ -104,7 +104,7 @@ def controls : List (String × Bool) := Id.run do
       | .error _ => false),
     ("universe failure precedes missing reference lookup", (match levelFailure with
       | .error (.unsupportedExpr "level metavariable") => true | _ => false) &&
-      levelState.univCache.get? Level.mkZero == some .zero),
+      levelState.univCache.get? ⟨Level.mkZero, []⟩ == some .zero),
     ("metadata-mode intern tables stay separate", metadata.isOk && metadataAfter.refs == #[primary] &&
       metadataAfter.p3MetaRefs == #[literalAddress] && metadataAfter.univsFinal),
     ("checked indices accept zero and the last wire slot",

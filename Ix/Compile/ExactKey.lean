@@ -207,6 +207,81 @@ termination_by structural a
 def levelDec (a b : Ix.Level) : Decidable (a = b) :=
   Squash.lift (enter {} a b fun memo => levelGo memo a b) (fun result => result.decision)
 
+def levelEqImpl (a b : Ix.Level) : Bool :=
+  withPtrEq a b (fun _ =>
+    if a.getHash = b.getHash then @decide (a = b) (levelDec a b) else false)
+    (fun same => by subst b; simp)
+
+theorem levelEqImpl_eq (a b : Ix.Level) : levelEqImpl a b = decide (a = b) := by
+  show (if a.getHash = b.getHash then @decide (a = b) (levelDec a b) else false) = _
+  rw [Subsingleton.elim (levelDec a b) (inferInstance : Decidable (a = b))]
+  by_cases same : a = b
+  · subst b; simp
+  · simp [same]
+
+@[expose] def levelEq (a b : Ix.Level) : Bool := decide (a = b)
+
+@[csimp] theorem levelEq_eq_impl : @levelEq = @levelEqImpl := by
+  funext a b
+  exact (levelEqImpl_eq a b).symm
+
+theorem levelEq_iff (a b : Ix.Level) : levelEq a b = true ↔ a = b := by
+  simp [levelEq]
+
+def nameEqImpl (a b : Ix.Name) : Bool :=
+  withPtrEq a b (fun _ =>
+    if a.getHash = b.getHash then @decide (a = b) (ptrDec a b) else false)
+    (fun same => by subst b; simp)
+
+theorem nameEqImpl_eq (a b : Ix.Name) : nameEqImpl a b = decide (a = b) := by
+  show (if a.getHash = b.getHash then @decide (a = b) (ptrDec a b) else false) = _
+  rw [Subsingleton.elim (ptrDec a b) (inferInstance : Decidable (a = b))]
+  by_cases same : a = b
+  · subst b; simp
+  · simp [same]
+
+@[expose] def nameEq (a b : Ix.Name) : Bool := decide (a = b)
+
+@[csimp] theorem nameEq_eq_impl : @nameEq = @nameEqImpl := by
+  funext a b
+  exact (nameEqImpl_eq a b).symm
+
+theorem nameEq_iff (a b : Ix.Name) : nameEq a b = true ↔ a = b := by
+  simp [nameEq]
+
+/-- Parameter identity before conversion to positional universes. Stored
+digests cannot make a different parameter capture the first matching slot. -/
+def nameIndex (name : Ix.Name) (params : List Ix.Name) : Option Nat :=
+  params.findIdx? (fun param => nameEq param name)
+
+theorem paramsEq_iff (a b : List Ix.Name) : a.isEqv b nameEq = true ↔ a = b := by
+  induction a generalizing b with
+  | nil => cases b <;> simp
+  | cons a as ih =>
+    cases b <;> simp [List.isEqv_cons_cons, nameEq_iff, ih]
+
+/-- A positional universe depends on the exact source level and its complete
+parameter context. Hashes select buckets but never establish identity. -/
+structure UnivKey where
+  level : Ix.Level
+  params : List Ix.Name
+  deriving DecidableEq
+
+instance univKeyBEq : BEq UnivKey :=
+  ⟨fun a b => levelEq a.level b.level && a.params.isEqv b.params nameEq⟩
+instance univKeyHashable : Hashable UnivKey := ⟨fun key => hash (key.level, key.params)⟩
+instance univKeyLawful : LawfulBEq UnivKey where
+  eq_of_beq {a b} equal := by
+    cases a with
+    | mk a as =>
+      cases b with
+      | mk b bs =>
+        change (levelEq a b && as.isEqv bs nameEq) = true at equal
+        simpa only [Bool.and_eq_true, levelEq_iff, paramsEq_iff, UnivKey.mk.injEq] using equal
+  rfl {a} := by
+    change (levelEq a.level a.level && a.params.isEqv a.params nameEq) = true
+    simp only [Bool.and_eq_true, levelEq_iff, paramsEq_iff, and_self]
+
 def exprGo (memo : Memo Ix.Expr) (a b : @& Ix.Expr) : Out a b :=
   match a, b with
   | .sort x ha, .sort y hb =>

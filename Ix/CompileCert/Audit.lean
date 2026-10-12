@@ -24,6 +24,7 @@ import Ix.CompileCert.ExpressionCache
 import Ix.CompileCert.ExpressionCacheRun
 import Ix.CompileCert.ExpressionRead
 import Ix.CompileCert.Interning
+import Ix.CompileCert.UniverseMeaning
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2333,6 +2334,28 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.exactExpressio
 
 namespace Ix.CompileCert.Audit
 
+/-- Actual universe compilation, its source meaning and success on a
+source-defined domain; no cache-hit or compiler-success premise in the
+empty-cache total-evaluation endpoint. -/
+def universeMeaningRoots : Array Lean.Name :=
+  (#[`levelEqImpl_eq, `levelEq_eq_impl, `levelEq_iff,
+    `nameEqImpl_eq, `nameEq_eq_impl, `nameEq_iff, `paramsEq_iff,
+    `univKeyLawful].map (`Ix.Compile.ExactKey ++ ·)) ++
+  (#[`nameIndex_correct, `cache_empty, `cache_lookup_insert, `cache_insert,
+    `Safe.pure, `Safe.throw, `Safe.bind, `Safe.get, `Safe.readBlock,
+    `Safe.cache, `Safe.checkedIndex, `Safe.finish, `Safe.throwBind,
+    `compileUniv_correct, `Represents.eval, `compileUniv_eval,
+    `compileUniv_empty_eval, `compileUniv_source_eval,
+    `Returns.pure, `Returns.bind, `Returns.get, `Returns.readBlock, `Returns.finish,
+    `nameIndex_exists, `rawRun_readBlock, `compileUniv_returns,
+    `compileUniv_total_correct, `compileUniv_total_eval].map (`Ix.CompileCert.UniverseMeaning ++ ·))
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
 /-- Cache-run induction and interpretation by the actual certified reader.
 The constructor-step and production table-growth obligations remain explicit. -/
 def expressionMeaningRoots : Array Lean.Name :=
@@ -2403,21 +2426,34 @@ run_cmd do
   unless replacement.toDeclName == ``Ix.Compile.ExactKey.exprEqImpl &&
       replacement.thmName == ``Ix.Compile.ExactKey.exprEq_eq_impl do
     throwError "wrong production exact-key substitute"
+  for (source, target, equation) in #[
+      (``Ix.Compile.ExactKey.levelEq, ``Ix.Compile.ExactKey.levelEqImpl,
+        ``Ix.Compile.ExactKey.levelEq_eq_impl),
+      (``Ix.Compile.ExactKey.nameEq, ``Ix.Compile.ExactKey.nameEqImpl,
+        ``Ix.Compile.ExactKey.nameEq_eq_impl)] do
+    let some checked := substitutions.find? source
+      | throwError m!"missing universe-key csimp equation: {source}"
+    unless checked.toDeclName == target && checked.thmName == equation do
+      throwError m!"wrong universe-key substitute: {source}"
   let runtime := #[`rawLevelDec, `rawExprDec, `ptrDec, `withAddr, `pairKey,
     `probe, `out, `enter, `listGo, `syntaxDec, `syntaxGo, `syntaxSharedDec,
     `dataDec, `metadataDec, `levelGo, `levelDec, `exprGo, `exprDec, `exprEqImpl,
-    `instBEqExprKey, `instHashableExprKey, `instCoeExprExprKey].map (`Ix.Compile.ExactKey ++ ·)
+    `instBEqExprKey, `instHashableExprKey, `instCoeExprExprKey,
+    `levelEqImpl, `nameEqImpl, `nameIndex, `univKeyBEq,
+    `univKeyHashable].map (`Ix.Compile.ExactKey ++ ·) |>.append
+      #[``Ix.CompileM.compileUniv, ``Ix.CompileM.BlockState.cacheUniv, ``Ix.CompileM.withUnivCtx]
   for name in runtime do
     unless (substitutions.find? name).isNone do
       throwError m!"exact-key helper has an unreviewed secondary substitution: {name}"
-  for name in runtime.push ``Ix.Compile.ExactKey.exprEq do
+  for name in runtime ++ #[``Ix.Compile.ExactKey.exprEq,
+      ``Ix.Compile.ExactKey.levelEq, ``Ix.Compile.ExactKey.nameEq] do
     unless (Lean.Compiler.getImplementedBy? env name).isNone do
       throwError m!"exact-key entry has an unchecked implemented_by substitution: {name}"
     let some (.defnInfo definition) := env.find? name
       | throwError m!"exact-key runtime entry is not a definition: {name}"
     unless definition.safety == .safe do
       throwError m!"exact-key runtime entry is not kernel-visible and total: {name}"
-  logInfo "[cert-audit] expression cache: exact keys, total comparison and checked production substitution"
+  logInfo "[cert-audit] expression/universe caches: exact keys, total comparison and checked production substitutions"
 
 namespace Ix.CompileCert.Audit
 

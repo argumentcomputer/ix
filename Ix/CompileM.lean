@@ -257,8 +257,9 @@ structure BlockState where
   /-- Expression cache indexed by stored hash and confirmed by exact source
       equality. Value is (compiled expression, arena root index). -/
   exprCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) := {}
-  /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
-  univCache : Std.HashMap Level Ixon.Univ := {}
+  /-- Compiled universes, indexed by digest and confirmed by exact source
+      level and complete parameter-context equality. -/
+  univCache : Std.HashMap Ix.Compile.ExactKey.UnivKey Ixon.Univ := {}
   /-- Reference table (ordered unique addresses) -/
   refs : Array Address := #[]
   refsIndex : Std.HashMap Address UInt64 := {}
@@ -390,9 +391,9 @@ def BlockState.internUniv (cache : BlockState) (u : Ixon.Univ) : BlockState × U
     }, idx)
 
 /-- Memoize the compiled positional form of a named universe level. -/
-def BlockState.cacheUniv (cache : BlockState) (level : Level)
+def BlockState.cacheUniv (cache : BlockState) (key : Ix.Compile.ExactKey.UnivKey)
     (u : Ixon.Univ) : BlockState :=
-  { cache with univCache := cache.univCache.insert level u }
+  { cache with univCache := cache.univCache.insert key u }
 
 /-- Per-block compilation environment. -/
 structure BlockEnv where
@@ -509,18 +510,10 @@ def modifyGetBlockState (f : BlockState → α × BlockState) : CompileM α := d
 def withBlockEnv (f : BlockEnv → BlockEnv) (m : CompileM α) : CompileM α :=
   withReader (fun (env, blockEnv) => (env, f blockEnv)) m
 
-/-- Set the universe-parameter context, dropping the universe cache.
-
-    `compileUniv` keys `univCache` by the `Level` alone, but a
-    `Level.param` compiles to `Univ.var i` where `i` is the parameter's
-    POSITION in `univCtx` — so the result depends on this context. The
-    cache lives for a whole block while each member compiles under its
-    own `levelParams`, so without this a member whose context orders the
-    same parameter name differently would inherit the earlier member's
-    index: a silently wrong constant under a correct-looking name, with
-    no error. The expression cache is cleared per constant for the same
-    reason (`clearExprCache`); the Rust mirror instead widens the key to
-    `(level, univ_params_key)`. -/
+/-- Set the universe-parameter context, dropping cached universes on entry to
+bound their lifetime. Exact context keys also keep nested calls sound when
+the reader restores an outer context but retains the inner call's state.
+The expression cache is cleared separately per constant (`clearExprCache`). -/
 def withUnivCtx (univCtx : List Name) : CompileM α → CompileM α := fun act => do
   modifyBlockState fun c => { c with univCache := {} }
   withBlockEnv (fun env => { env with univCtx }) act
@@ -583,9 +576,11 @@ def takeMetaRefs : CompileM (Array Address) :=
 
 /-- Compile an Ix.Level to Ixon.Univ type. -/
 def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
-  -- Check cache first (O(1) lookup via embedded hash)
+  -- Stored hashes index candidates; exact source equality confirms a hit.
   let state ← getBlockState
-  if let some u := state.univCache.get? lvl then
+  let ctx := (← getBlockEnv).univCtx
+  let key : Ix.Compile.ExactKey.UnivKey := ⟨lvl, ctx⟩
+  if let some u := state.univCache.get? key then
     return u
 
   let u ← match lvl with
@@ -594,14 +589,13 @@ def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
   | .max l r _ => pure (.max (← compileUniv l) (← compileUniv r))
   | .imax l r _ => pure (.imax (← compileUniv l) (← compileUniv r))
   | .param name _ => do
-    let ctx := (← getBlockEnv).univCtx
-    match ctx.idxOf? name with
-    | some i => pure (.var i.toUInt64)
+    match Ix.Compile.ExactKey.nameIndex name ctx with
+    | some i => pure (.var (← checkedTableIndex "universe parameter" i))
     | none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{name}")
   | .mvar _ _ => throw (.unsupportedExpr "level metavariable")
 
   -- Cache result
-  modifyBlockState fun c => c.cacheUniv lvl u
+  modifyBlockState fun c => c.cacheUniv key u
   pure u
 termination_by lvl
 

@@ -22,6 +22,7 @@ import Tests.Ix.Compile.SourceIdentity
 import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.Compile.HeadLookup
 import Tests.Ix.Compile.ExpressionFrame
+import Tests.Ix.Compile.UniverseCache
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.AuxPublication
@@ -153,6 +154,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("exact-expression-key", Tests.Ix.Compile.ExactKey.suite),
   ("aux-dump-inputs", Tests.Compile.AuxGenDiff.suite),
   ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
+  ("universe-cache", Tests.Ix.Compile.UniverseCache.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),

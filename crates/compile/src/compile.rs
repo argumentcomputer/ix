@@ -49,7 +49,7 @@ use crate::{
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
-pub use expr_key::ExprKey;
+pub use expr_key::{ExprKey, UnivKey};
 
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
@@ -204,8 +204,8 @@ pub struct CachedExpr {
 pub struct BlockCache {
   /// Cache indexed by stored digest and confirmed by complete source equality.
   pub exprs: FxHashMap<ExprKey, CachedExpr>,
-  /// Cache for compiled universes (Level -> Univ conversion)
-  /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
+  /// Cache for compiled universes, with exact source levels and parameter
+  /// contexts. Digests index candidates; complete equality confirms hits. A
   /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
   /// parameter's POSITION in `univ_params`, so the result depends on the
   /// context. This cache lives for a whole block (unlike the expression
@@ -213,8 +213,8 @@ pub struct BlockCache {
   /// compiles each member under its own `level_params`, so a shared key
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
-  /// `collect_expr_tables` keys its `seen_exprs` the same way.
-  pub univ_cache: FxHashMap<(Level, Address), Arc<Univ>>,
+  /// The table collector's separate seen cache still uses context digests.
+  pub univ_cache: FxHashMap<UnivKey, Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -599,9 +599,8 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  let ctx_key = univ_params_key(univ_params);
-  if let Some(cached) = cache.univ_cache.get(&(level.clone(), ctx_key.clone()))
-  {
+  let key = UnivKey::new(level, univ_params);
+  if let Some(cached) = cache.univ_cache.get(&key) {
     return Ok(cached.clone());
   }
 
@@ -638,7 +637,7 @@ pub fn compile_univ(
     },
   };
 
-  cache.univ_cache.insert((level.clone(), ctx_key), univ.clone());
+  cache.univ_cache.insert(key, univ.clone());
   Ok(univ)
 }
 

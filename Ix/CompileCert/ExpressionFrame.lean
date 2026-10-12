@@ -42,6 +42,7 @@ theorem Frame.compileUniv (level : Level) : Frame (compileUniv level) := by
       | exact Frame.pure _
       | exact Frame.throw _
       | exact Frame.readBlock
+      | exact Frame.checkedTableIndex _ _
       | refine Frame.bind ?_ (fun value => ?_)
       | apply Frame.modify; intro _; simp only [BlockState.cacheUniv]
       | dsimp only
@@ -216,6 +217,7 @@ theorem Frame.compileConstExprRaw (name : Name) (levels : Array Level) :
   with_reducible repeat' first
     | exact Frame.pure _
     | exact Frame.readBlock
+    | exact Frame.checkedTableIndex _ _
     | exact Frame.compileName _
     | exact Frame.compileAndInternUnivCanon _
     | exact Frame.allocArenaNode _
