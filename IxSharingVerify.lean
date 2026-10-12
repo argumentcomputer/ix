@@ -5,6 +5,7 @@ import IxSharingVerify.ExprCache
 import IxSharingVerify.Ingestion
 import IxSharingVerify.IngestionTable
 import IxSharingVerify.IngestionUnique
+import IxSharingVerify.CanonicalMeaning
 import IxSharingVerify.UniformModel
 import IxSharingVerify.UniformOptimizer
 import IxSharingVerify.UniformLength

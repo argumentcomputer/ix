@@ -891,13 +891,20 @@ sharing + integers together.
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
 and are roots of the audit manifest
-[`IxSharingVerify/Audit/Statements.lean`](../IxSharingVerify/Audit/Statements.lean)
-(113 roots at the Lean 4.34.1 source revision, including the two host-code roots
-`Ixon.putTagN_eq_I` and `instBEqByteArray_ix_beq_eq_core`). Each root's axioms
+[`IxSharingVerify/Audit/Statements.lean`](../IxSharingVerify/Audit/Statements.lean),
+including the compiler's host-code substitutions. Each root's axioms
 are fixed exactly; the sorry-frontier check covers `Ix.Sharing` declarations.
 These checks run in `lake build --wfail IxSharingVerify`. The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
 
+- **Source preservation** (`CanonicalMeaning.lean`): `canonicalize_correct`
+  preserves interpreted roots through actual canonical numbering; `expand_unshared`
+  and `expand_root_terms` derive the canonical DAG's ordered source meaning from
+  actual production ingestion. `canonicalSharingTiered_meaning` connects that
+  result to the construction and its re-expansion check: every successful output
+  has `SharingMeaning`, whose entry equations and backward-reference bounds unfold
+  its roots to exactly the ordered input expressions. No output certificate,
+  pointer injectivity or hash injectivity is a premise.
 - **Phase 1** (`UniformOptimality.lean`): `optimizeUniform_minimum` (a successful
   `optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
   model `ulen` over the restricted class, with `modelBytes` equal to it) and
@@ -943,36 +950,21 @@ through the same interner, to the stored terms and the input's root IDs; and eve
 expression is in the wire domain. Rust serializes the returned candidate and compares its
 length (every candidate in its checked mode, §12.18).
 
-Not machine-checked: phase-2 optimality for tables of more than 1,032 entries; any global
-minimum; and the step from the input expressions to the canonical DAG (`expand`).
-The ingestion cache now retains each candidate's source expression and checks equality
-before reusing its ID. `IxSharingVerify/ExprCache.lean` proves cache preservation and
-sound lookup for arbitrary pointer hints, including collisions; repeated physical objects
-use Lean's checked pointer-equality shortcut. This closes the cache identity obligation,
-and `IxSharingVerify/Ingestion.lean` connects the actual recursive expression walk
-to its node interpretation. `ingestExpr_checked` covers every expression constructor,
-including sharing references, under a sound interner/cache and bounded resolved IDs.
-`ingestExpr_initial` discharges the state premises for an empty, unshared-input run:
-its successful result denotes exactly the input expression. Neither theorem assumes
-pointer injectivity or an output certificate.
-`IxSharingVerify/IngestionTable.lean` composes that result through the actual indexed
-entry/root loops. Successful runs preserve the ordered correspondence to every input
-entry and root, establish backward Share validity, and discharge the initial-state
-premises for the compiler's unshared route. `reexpand_correct` also covers re-expansion
-against an existing DAG, preserving its old node interpretations. These results
-describe the raw ingested DAG; canonical numbering and certified-reader composition
-remain open. `IxSharingVerify/IngestionUnique.lean` discharges the hash-consing
-premise used by `canonicalize_det`: actual ingestion preserves complete exact
-interner indices, and backward edges plus node arities make distinct IDs denote
-distinct terms. `ingestTable_run` supplies the full `Run` contract from production
-ingestion. `canonicalize_ingested` consequently proves that successful ingestion
-of the same ordered unshared roots under different resource limits has the same
-canonical result. This does not prove preservation through renumbering or totality.
-No theorem yet states that this canonical
-DAG denotes all the input roots, so the round trip to the input is proved only relative to
-the DAG; independence from pointer layout is tested, and idempotence is proved only under the
-hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).
-The reference enumeration path (`uniformSubsetSearch = true`) is excluded from the theorems.
+The source-preservation proof uses exact pointer-selected cache hits (`ExprCache.lean`),
+the actual recursive walk and ordered table/root loops (`Ingestion.lean`,
+`IngestionTable.lean`), and complete interner indices (`IngestionUnique.lean`). These
+establish source meaning and discharge canonicalization's `Run` contract from actual
+initially empty ingestion. The earlier generic ingestion theorem also supports sound
+seeded states. No presentation-metadata fidelity is required.
+
+Still open: phase-2 optimality for tables of more than 1,032 entries; any global minimum;
+general all-input success; and composition of structural sharing preservation with the
+compiler's payload builder, certified reader and published records. Normalizer idempotence
+remains conditional on the output expanding to the input's canonical DAG
+(`canonicalSharingTieredTable_idem`); removing that condition for arbitrary existing shared
+encodings is separate. The phase-1 optimality results exclude the reference enumeration
+path (`uniformSubsetSearch = true`); structural preservation covers any successful
+`canonicalSharingTiered` run.
 Failure semantics: an error at any width fails the whole call, with the lowest failing width's
 error (no fallback to other widths). Rust matches on every limit and length check; its default
 mode runs the checks of built expressions only for the returned candidate (§12.18).

@@ -318,10 +318,21 @@ universe count is proved equal to the current `Nat.toUInt64` conversion; equalit
 to the full natural count additionally needs an explicit wire-capacity bound.
 This theorem establishes no presentation-metadata fidelity.
 
-These results concern unshared expression and definition-like payload emission.
+[`CanonicalMeaning.lean`](../IxSharingVerify/CanonicalMeaning.lean) proves that
+the actual canonical-sharing entry returns an encoding whose table unfolds to
+exactly its ordered input expressions. It connects actual ingestion, meaning
+preservation through canonical numbering and the production re-expansion check.
+Its `SharingMeaning` relation specifies entry equations, backward references,
+root bounds and exact unfolded roots, independently of compiler success. The
+theorem requires no output-certificate or pointer/hash-injectivity premise.
+This structural sharing result still needs composition with the payload builder,
+certified reader and published bytes.
+
+These results cover expression and definition-like payload emission and
+structural fidelity of the sharing construction.
 Production callers must establish the prefix and preseed conditions; other
-declaration families, header bounds, canonicalization/rewriting, auxiliary
-generation, sharing, serialization, declaration reading and DAG composition
+declaration families, header bounds, source canonicalization/rewriting, auxiliary
+generation, sharing-to-reader composition, serialization, declaration reading and DAG composition
 still need their own connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder
 contracts.
