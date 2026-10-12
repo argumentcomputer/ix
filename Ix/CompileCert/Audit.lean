@@ -34,6 +34,7 @@ import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionLeaves
 import Ix.CompileCert.ExpressionIndices
 import Ix.CompileCert.ExpressionCorrectness
+import Ix.CompileCert.ProductionExpression
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2604,6 +2605,46 @@ def expressionCompilerRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionCompilerRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Metadata-mode primary-table stability, reader restriction, cache restoration
+and correctness of the actual production expression wrapper. -/
+def productionExpressionRoots : Array Lean.Name :=
+  #[`Fixed.refl, `Fixed.of_view, `Fixed.trans, `Frame.pure, `Frame.throw,
+    `Frame.get, `Frame.read, `Frame.readBlock, `Frame.bind, `Frame.modify,
+    `Frame.modifyGet, `Frame.map, `Frame.checkedIndex, `Frame.compileUniv,
+    `Frame.canonUnivCached, `Frame.internMetaUniv, `Frame.finishSpelling,
+    `internPrimary_fixed, `Frame.internCanonical, `Frame.compileAndInternUnivCanon,
+    `Frame.internRef, `Frame.lookupConstAddr, `Frame.storeBlob, `Frame.compileName,
+    `Frame.allocArenaNode, `Frame.pushUnivPatch, `Frame.mapM_list, `Frame.mapM_array,
+    `Frame.forIn'_list, `Frame.forIn'_array, `Frame.storeString,
+    `Frame.serializeIxSubstring, `Frame.serializeIxSourceInfo,
+    `Frame.serializeIxSyntaxPreresolved, `Frame.serializeIxSyntax,
+    `Frame.compileDataValue, `Frame.compileKVMap, `Frame.compileConstExprRaw,
+    `Frame.compileExprPartial, `inMode_eq, `stateSound_mode, `prefix_retains,
+    `enter_growth, `enter_good, `blob_modes, `primary_growth, `restore_reader,
+    `restore_good, `recordStep_correct, `RecordSafe.pure, `RecordSafe.read,
+    `RecordSafe.bind, `RecordSafe.forIn_list, `RecordSafe.forIn_array,
+    `pass3CompileRecords_eq, `pass3CompileRecords_correct, `ordinary_correct,
+    `compileExpr_checked].map (`Ix.CompileCert.MetadataMode ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.productionExpressionRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.pass3Placeholders, ``Ix.CompileM.pass3CompileRecords, ``Ix.CompileM.compileExpr] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"production expression wrapper has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"production expression wrapper is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"production expression wrapper is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] production expression wrapper: actual metadata scan and record loop"
 
 run_cmd do
   let env ← getEnv

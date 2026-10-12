@@ -296,7 +296,16 @@ certificate or assumed constructor-correctness step is required. The
 `compileExprPartial_initial` corollary establishes table/cache premises from empty
 initialization.
 
-This result concerns ordinary, unshared expression emission. Production callers
+[`ProductionExpression.lean`](../Ix/CompileCert/ProductionExpression.lean) connects
+that result to the actual `compileExpr` entry point and its Pass 3 metadata-record
+prepass. Starting in ordinary mode, metadata compilation preserves the primary
+reference and universe tables. Successful record compilation restores the saved
+ordinary cache; failed runs retain a valid current reader view. The wrapper's
+successful output has the same source/reader relation and returns to ordinary mode.
+This result concerns the expression supplied to the wrapper after any earlier
+compiler rewrites; it does not assume those rewrites preserve the original source.
+
+These results concern unshared expression emission. Production callers
 must establish the prefix and initialization conditions; declaration construction,
 canonicalization/rewriting, auxiliary generation, sharing, serialization and DAG
 composition still need their own connections. It does not prove that every valid
