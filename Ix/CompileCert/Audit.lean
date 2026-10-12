@@ -28,6 +28,7 @@ import Ix.CompileCert.UniverseMeaning
 import Ix.CompileCert.CanonUnivMeaning
 import Ix.CompileCert.CanonUnivSubsumption
 import Ix.CompileCert.CanonUnivGateOrder
+import Ix.CompileCert.CanonUnivEmit
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2418,6 +2419,27 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeGateRoots Ix.CompileCert.Audit.allowedAxioms
 
+namespace Ix.CompileCert.Audit
+
+/-- Exact grouping, actual marker witnesses and complete universe emission.
+The final root quantifies over every input universe and every valuation. -/
+def universeEmissionRoots : Array Lean.Name :=
+  #[`MapValue.insert_merge, `atoms_insert_eval, `groups_insert_const_eval,
+    `groups_insert_atom_eval, `listLoop_covers, `arrayLoop_covers,
+    `atomHome_ge, `groupAtoms_covers, `home_atom_le, `groupAtoms_le,
+    `buildGroups_le, `buildGroups_covers, `buildGroups_eval, `buildGroups_goodPaths,
+    `buildGroups_rootZero, `consumeMarkers_valid, `ConsumedBy.longer, `ConsumedBy.prefix,
+    `collectVars_eq, `emitRow_eq, `rootLoop_eq, `emitGroups_split, `emitGroups_terms,
+    `rootPass_flag, `finishEmission_ge, `finishEmission_root, `emitGroups_root_le,
+    `retainedTerms_eval_le, `fullTerms_eval, `fullTerms_nonempty, `potentialTerm_eval,
+    `emitGated_mono, `gated_marker_le, `gated_chain_le, `potential_bound_step,
+    `potential_output_le, `emitGroups_ge, `emitGroups_le, `linearize_phases,
+    `linearize_normalize_eval, `canonUniv_eval].map (`Ix.CompileCert.CanonUnivEmit ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+
 run_cmd do
   let env ← getEnv
   let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
@@ -2425,8 +2447,8 @@ run_cmd do
     `normalizeImaxDispatch, `CNode.addVar, `CNorm.addConst, `CNorm.addVar,
     `NState.addConst, `NState.addVar, `orderedInsert, `subsumeVars,
     `subsumeVars.go, `subsumption, `normalize, `covered, `gateOrderChecked,
-    `gateOrder, `gatesLeakFree, `maxChain].map (`Ixon.CanonUniv ++ ·)) ++
-      #[``Ixon.Univ.addSuccs]
+    `gateOrder, `gatesLeakFree, `maxChain, `linearize].map (`Ixon.CanonUniv ++ ·)) ++
+      #[``Ixon.Univ.addSuccs, ``Ixon.canonUniv]
   for name in runtime do
     unless (substitutions.find? name).isNone &&
         (Lean.Compiler.getImplementedBy? env name).isNone do
