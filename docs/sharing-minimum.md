@@ -954,8 +954,14 @@ to its node interpretation. `ingestExpr_checked` covers every expression constru
 including sharing references, under a sound interner/cache and bounded resolved IDs.
 `ingestExpr_initial` discharges the state premises for an empty, unshared-input run:
 its successful result denotes exactly the input expression. Neither theorem assumes
-pointer injectivity or an output certificate. The table/root loop and canonical-DAG
-composition remain open. No theorem yet states that this canonical
+pointer injectivity or an output certificate.
+`IxSharingVerify/IngestionTable.lean` composes that result through the actual indexed
+entry/root loops. Successful runs preserve the ordered correspondence to every input
+entry and root, establish backward Share validity, and discharge the initial-state
+premises for the compiler's unshared route. `reexpand_correct` also covers re-expansion
+against an existing DAG, preserving its old node interpretations. These results
+describe the raw ingested DAG; canonical numbering and certified-reader composition
+remain open. No theorem yet states that this canonical
 DAG denotes all the input roots, so the round trip to the input is proved only relative to
 the DAG; independence from pointer layout is tested, and idempotence is proved only under the
 hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).

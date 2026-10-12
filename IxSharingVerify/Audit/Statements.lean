@@ -42,6 +42,10 @@ private def quotOnly : Array Lean.Name := #[``Quot.sound]
 /-- Sharing and codec theorem roots, including the sharing core's compiled
 replacements, with their exact axiom sets. -/
 def sharingRoots : Array RootAllowance := #[
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_initial, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_unshared, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.reexpand_correct, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Ingestion.termOf_retains, standardAxioms := noChoice },
   { root := ``Ix.Sharing.Verify.Ingestion.internNode_good, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Ingestion.ingestExpr_checked, standardAxioms := standard },
