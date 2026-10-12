@@ -1,6 +1,7 @@
 import IxSharingVerify.SharingExact
 import IxSharingVerify.SharingExactPasses
 import IxSharingVerify.SharingExactCanon
+import IxSharingVerify.ExprCache
 import IxSharingVerify.UniformModel
 import IxSharingVerify.UniformOptimizer
 import IxSharingVerify.UniformLength

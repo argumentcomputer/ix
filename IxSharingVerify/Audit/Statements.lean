@@ -42,6 +42,15 @@ private def quotOnly : Array Lean.Name := #[``Quot.sound]
 /-- Sharing and codec theorem roots, including the sharing core's compiled
 replacements, with their exact axiom sets. -/
 def sharingRoots : Array RootAllowance := #[
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_empty, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_entry, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_sound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.collision_miss, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.Sound.mono, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
   -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
   -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
   -- `BlockResult.constantInfo_codec_roundtrip`,
@@ -298,6 +307,15 @@ def sharingRoots : Array RootAllowance := #[
 /-- Compiled host-code replacements outside the sharing core. These keep
 their exact axiom audit and the compiler-import-path coverage check. -/
 def hostCodeRoots : Array RootAllowance := #[
+  -- Production expression/table traversals and their exact cache comparisons.
+  -- These also have compiler-certification roots; this manifest independently
+  -- covers every replacement on the sharing compiler's import path.
+  { root := ``Ix.CompileM.collectExprTables_eq_worklist, standardAxioms := standard },
+  { root := ``Ix.CompileM.compileExprTotal_eq_partial, standardAxioms := standard },
+  { root := ``Ix.CompileM.preseedExprTables_eq_worklist, standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.exprEq_eq_impl, standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.levelEq_eq_impl, standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.nameEq_eq_impl, standardAxioms := noChoice },
   -- `Ix.Ixon` and its importers write TagN integers with the inlined copy
   -- `putTagNI` (`@[csimp]`, by `rfl`).
   { root := ``Ixon.putTagN_eq_I,

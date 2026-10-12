@@ -933,7 +933,7 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   per-declaration compiler endpoints are retired with the compiler-correctness proofs.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
-  build unless every csimp theorem on the compiler's import path is an audit root (19) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
+  build unless every csimp theorem on the compiler's import path is an audit root and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
   declaration besides the pointer-cache key `exprPtr`.
 
 Run-time checks that remain in Lean's phase 3 (`rematerialize`), each failing closed with an
@@ -944,8 +944,12 @@ expression is in the wire domain. Rust serializes the returned candidate and com
 length (every candidate in its checked mode, §12.18).
 
 Not machine-checked: phase-2 optimality for tables of more than 1,032 entries; any global
-minimum; and the step from the input expressions to the canonical DAG (`expand`, whose
-interner keys a cache by the `unsafe` pointer address `exprPtr`). No theorem states that this
+minimum; and the step from the input expressions to the canonical DAG (`expand`).
+The ingestion cache now retains each candidate's source expression and checks equality
+before reusing its ID. `IxSharingVerify/ExprCache.lean` proves cache preservation and
+sound lookup for arbitrary pointer hints, including collisions; repeated physical objects
+use Lean's checked pointer-equality shortcut. This closes the cache identity obligation,
+but the full ingestion/interner correspondence remains open. No theorem yet states that this
 DAG denotes the input expressions, so the round trip to the input is proved only relative to
 the DAG; independence from pointer layout is tested, and idempotence is proved only under the
 hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).
