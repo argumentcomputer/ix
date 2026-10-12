@@ -776,55 +776,84 @@ def serializeIxInt (i : Ix.Int) : ByteArray :=
     let natBytes := ByteArray.mk (Nat.toBytesLE n)
     ByteArray.mk #[1] ++ natBytes
 
+/-- A local blob write must agree with both the accumulated block and the
+published prefix. Checking only at publication loses conflicts overwritten
+inside the accumulator. Identical payloads may share an address. -/
+def contentMatches (store : Std.HashMap Address ByteArray)
+    (key : Address) (bytes : ByteArray) : Bool :=
+  match store[key]? with
+  | none => true
+  | some old => decide (old = bytes)
+
+def BlockState.storeBlob (state : BlockState) (ambient : Std.HashMap Address ByteArray)
+    (address : Address) (bytes : ByteArray) : Except CompileError BlockState :=
+  if contentMatches state.blockBlobs address bytes && contentMatches ambient address bytes then
+    .ok { state with blockBlobs := state.blockBlobs.insert address bytes }
+  else .error (.invalidMutualBlock "anonymous publication: conflicting blob payload")
+
+/-- Apply a checked, pure state update. A rejected update leaves the original
+state intact, including name-cache entries that could otherwise mask a retry. -/
+def applyBlockState (result : Except CompileError BlockState) : CompileM Unit := do
+  match result with
+  | .error error => throw error
+  | .ok state => modifyBlockState fun _ => state
+
+def storeBlob (bytes : ByteArray) : CompileM Address := do
+  let address := Address.blake3 bytes
+  let state ← getBlockState
+  let env ← getCompileEnv
+  applyBlockState (state.storeBlob env.blobs address bytes)
+  pure address
+
 /-- Store a string as a blob and return its 32-byte address. -/
-def storeString (s : String) : CompileM Address := do
-  let bytes := s.toUTF8
-  let addr := Address.blake3 bytes
-  modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
-  pure addr
+def storeString (s : String) : CompileM Address := storeBlob s.toUTF8
 
 /-- Record a definition's reducibility hints (see `BlockState.defHints`). -/
 def recordDefHints (name : Name) (hints : Lean.ReducibilityHints) : CompileM Unit :=
   modifyBlockState fun c => { c with defHints := c.defHints.insert name hints }
 
 /-- Pure state transition underlying `compileName`. -/
-def BlockState.compileName : BlockState → Ix.Name → BlockState
+def BlockState.compileName (ambient : Std.HashMap Address ByteArray) :
+    BlockState → Ix.Name → Except CompileError BlockState
   | state, name =>
     let addr := name.getHash
     if state.blockNames.contains addr then
-      state
+      .ok state
     else
       match name with
       | .anonymous _ =>
-        { state with blockNames := state.blockNames.insert addr name }
-      | .str parent s _ =>
+        .ok { state with blockNames := state.blockNames.insert addr name }
+      | .str parent s _ => do
         let state :=
           { state with blockNames := state.blockNames.insert addr name }
         let bytes := s.toUTF8
         let stringAddr := Address.blake3 bytes
-        let state :=
-          { state with blockBlobs := state.blockBlobs.insert stringAddr bytes }
-        state.compileName parent
+        let state ← state.storeBlob ambient stringAddr bytes
+        state.compileName ambient parent
       | .num parent _ _ =>
         let state :=
           { state with blockNames := state.blockNames.insert addr name }
-        state.compileName parent
+        state.compileName ambient parent
 termination_by _ name => name
 
 /-- Compile a name: store all string components as blobs and track
     name components in blockNames for deduplication.
     This matches Rust's compile_name behavior. -/
-def compileName (name : Ix.Name) : CompileM Unit :=
-  modifyBlockState fun state => state.compileName name
+def compileName (name : Ix.Name) : CompileM Unit := do
+  let state ← getBlockState
+  let env ← getCompileEnv
+  applyBlockState (state.compileName env.blobs name)
 
 /-- Record an array of names through the same left-to-right pure transition
 used by repeated `compileName` calls. -/
-def BlockState.compileNames (state : BlockState)
-    (names : Array Ix.Name) : BlockState :=
-  names.foldl (fun current name => current.compileName name) state
+def BlockState.compileNames (state : BlockState) (ambient : Std.HashMap Address ByteArray)
+    (names : Array Ix.Name) : Except CompileError BlockState :=
+  names.foldlM (fun current name => current.compileName ambient name) state
 
-def compileNames (names : Array Ix.Name) : CompileM Unit :=
-  modifyBlockState fun state => state.compileNames names
+def compileNames (names : Array Ix.Name) : CompileM Unit := do
+  let state ← getBlockState
+  let env ← getCompileEnv
+  applyBlockState (state.compileNames env.blobs names)
 
 /-- A Nat as a TagN (`f = 0`) integer (`Ixon.putTagN 0 0`). -/
 def tagN0Bytes (n : Nat) : ByteArray :=
@@ -903,8 +932,7 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
   match dv with
   | .ofString s =>
     let bytes := s.toUTF8
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     pure (.ofString addr)
   | .ofBool b => pure (.ofBool b)
   | .ofName n =>
@@ -912,18 +940,15 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
     pure (.ofName n.getHash)
   | .ofNat n =>
     let bytes := ByteArray.mk (Nat.toBytesLE n)
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     pure (.ofNat addr)
   | .ofInt i =>
     let bytes := serializeIxInt i
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     pure (.ofInt addr)
   | .ofSyntax syn =>
     let bytes ← serializeIxSyntax syn
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     pure (.ofSyntax addr)
 
 /-- Compile a KVMap (array of name-value pairs).
@@ -1046,18 +1071,14 @@ def compileExprTotalStep
 
     | .lit (.natVal n) _ => do
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr := Address.blake3 bytes
-      modifyBlockState fun c =>
-        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let addr ← storeBlob bytes
       let idx ← internRef addr
       let root ← allocArenaNode .leaf
       pure (.nat idx, root)
 
     | .lit (.strVal s) _ => do
       let bytes := s.toUTF8
-      let addr := Address.blake3 bytes
-      modifyBlockState fun c =>
-        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let addr ← storeBlob bytes
       let idx ← internRef addr
       let root ← allocArenaNode .leaf
       pure (.str idx, root)
@@ -1220,16 +1241,14 @@ def compileExprPartial (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
 
   | .lit (.natVal n) _ => do
     let bytes := ByteArray.mk (Nat.toBytesLE n)
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     let idx ← internRef addr
     let root ← allocArenaNode .leaf
     pure (.nat idx, root)
 
   | .lit (.strVal s) _ => do
     let bytes := s.toUTF8
-    let addr := Address.blake3 bytes
-    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let addr ← storeBlob bytes
     let idx ← internRef addr
     let root ← allocArenaNode .leaf
     pure (.str idx, root)
@@ -1620,15 +1639,11 @@ def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
       collectExprTablesStructural ctxKey mutCtx body acc
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr := Address.blake3 bytes
-      modifyBlockState fun c =>
-        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let addr ← storeBlob bytes
       pure (refs.push addr, univs, seen)
     | .lit (.strVal s) _ =>
       let bytes := s.toUTF8
-      let addr := Address.blake3 bytes
-      modifyBlockState fun c =>
-        { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      let addr ← storeBlob bytes
       pure (refs.push addr, univs, seen)
     | .proj typeName _ struct _ =>
       let refs := refs.push (← lookupConstAddr typeName)
@@ -1683,13 +1698,11 @@ def collect (context : Address) (mutualContext : MutCtx)
       collect context mutualContext (type :: value :: body :: rest) (refs, univs, seen)
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let address := Address.blake3 bytes
-      modifyBlockState fun state => { state with blockBlobs := state.blockBlobs.insert address bytes }
+      let address ← storeBlob bytes
       collect context mutualContext rest (refs.push address, univs, seen)
     | .lit (.strVal text) _ =>
       let bytes := text.toUTF8
-      let address := Address.blake3 bytes
-      modifyBlockState fun state => { state with blockBlobs := state.blockBlobs.insert address bytes }
+      let address ← storeBlob bytes
       collect context mutualContext rest (refs.push address, univs, seen)
     | .proj name _ struct _ =>
       let address ← lookupConstAddr name

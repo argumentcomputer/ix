@@ -130,27 +130,62 @@ theorem frame_forIn_array (items : Array α) (initial : β)
   rw [← Array.forIn_toList]
   exact frame_forIn_list items.toList initial body keeps
 
-theorem compileName_heads (state : BlockState) (name : Name) :
-    (state.compileName name).p3Heads = state.p3Heads := by
+theorem storeBlob_heads (state : BlockState) (ambient : Std.HashMap Address ByteArray)
+    (address : Address) (bytes : ByteArray) {after : BlockState}
+    (success : state.storeBlob ambient address bytes = .ok after) : after.p3Heads = state.p3Heads := by
+  unfold BlockState.storeBlob at success
+  split at success
+  · cases Except.ok.inj success; rfl
+  · cases success
+
+theorem compileName_heads (state : BlockState) (ambient : Std.HashMap Address ByteArray) (name : Name) :
+    ∀ after, state.compileName ambient name = .ok after → after.p3Heads = state.p3Heads := by
   induction name generalizing state with
   | anonymous hash =>
     rw [BlockState.compileName]
-    split <;> rfl
+    split <;> (intro after success; cases Except.ok.inj success; rfl)
   | str parent text hash ih =>
     rw [BlockState.compileName]
     dsimp only
     split
-    · rfl
-    · exact ih _
+    · intro after success; cases Except.ok.inj success; rfl
+    · intro after success
+      cases wrote : (BlockState.storeBlob
+          { state with blockNames := state.blockNames.insert (Name.str parent text hash).getHash (.str parent text hash) }
+          ambient (Address.blake3 text.toUTF8) text.toUTF8) with
+      | error error => simp only [wrote, bind, Except.bind] at success; cases success
+      | ok middle =>
+        simp only [wrote, bind, Except.bind] at success
+        have kept := storeBlob_heads
+          { state with blockNames := state.blockNames.insert (Name.str parent text hash).getHash (.str parent text hash) }
+          ambient _ _ wrote
+        exact (ih middle after success).trans kept
   | num parent index hash ih =>
     rw [BlockState.compileName]
     dsimp only
     split
-    · rfl
+    · intro after success; cases Except.ok.inj success; rfl
     · exact ih _
 
-theorem Frame.compileName (name : Name) : Frame (compileName name) :=
-  Frame.modify _ (fun state => compileName_heads state name)
+theorem rawRun_applyBlockState (result : Except CompileError BlockState)
+    (context : CompileEnv × BlockEnv) (before : BlockState) :
+    rawRun (applyBlockState result) context before = match result with
+      | .error error => (.error error, before)
+      | .ok after => (.ok (), after) := by cases result <;> rfl
+
+theorem Frame.compileName (name : Name) : Frame (compileName name) := by
+  intro context state
+  simp only [Ix.CompileM.compileName, rawRun_bind, rawRun_get, rawRun_read, rawRun_applyBlockState]
+  cases ran : state.compileName context.1.blobs name with
+  | error error => rfl
+  | ok after => exact compileName_heads state context.1.blobs name after ran
+
+theorem Frame.storeBlob (bytes : ByteArray) : Frame (storeBlob bytes) := by
+  intro context state
+  simp only [Ix.CompileM.storeBlob, rawRun_bind, rawRun_get, rawRun_read, rawRun_applyBlockState]
+  cases ran : state.storeBlob context.1.blobs (Address.blake3 bytes) bytes with
+  | error error => rfl
+  | ok after => exact storeBlob_heads state context.1.blobs _ bytes ran
 
 theorem Frame.moveToDisplay (all : Array Name) (representative : Name)
     (perm : Array (Option Nat)) (select : Name → Bool) :

@@ -32,6 +32,7 @@ import Ix.CompileCert.CanonUnivEmit
 import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionLeaves
+import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2551,6 +2552,37 @@ def expressionLeafRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionLeafRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Local accumulation preserves every earlier payload and certified reading,
+including errors. Metadata uses the same exact compatibility guard as literals. -/
+def localBlobRoots : Array Lean.Name :=
+  (#[`Extends.refl, `Extends.trans, `contentMatches_agree, `storeBlob_success,
+    `compileName_success, `storeBlob_run, `storeBlob_preserves, `compileName_preserves,
+    `compileNames_success, `compileNames_preserves, `reader_extends,
+    `storeBlob_reading, `compileName_reading, `cache_preserved,
+    `storeBlob_refuses_local].map (`Ix.CompileCert.BlobWrites ++ ·)) ++
+  (#[`storeBlob_heads, `rawRun_applyBlockState, `Frame.storeBlob].map (`Ix.CompileCert.HeadWriterFrame ++ ·))
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.localBlobRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[`contentMatches, `BlockState.storeBlob, `applyBlockState,
+      `storeBlob, `storeString, `BlockState.compileName, `compileName,
+      `BlockState.compileNames, `compileNames].map (`Ix.CompileM ++ ·) do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"local blob writer has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"local blob writer is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"local blob writer is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] local blob writers: exact compatibility and checked name accumulation"
 
 run_cmd do
   let env ← getEnv

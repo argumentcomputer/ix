@@ -43,18 +43,27 @@ theorem Frame.recordDefHints (name : Name) (hints : Lean.ReducibilityHints) :
 theorem Frame.getMutCtxAddrs : Frame getMutCtxAddrs :=
   Frame.bind Frame.readBlock (fun _ => Frame.pure _)
 
-theorem compileNames_heads (state : BlockState) (names : Array Name) :
-    (state.compileNames names).p3Heads = state.p3Heads := by
+theorem compileNames_heads (state : BlockState) (ambient : Std.HashMap Address ByteArray) (names : Array Name) :
+    ∀ after, state.compileNames ambient names = .ok after → after.p3Heads = state.p3Heads := by
   unfold BlockState.compileNames
-  rw [← Array.foldl_toList]
+  rw [← Array.foldlM_toList]
   induction names.toList generalizing state with
-  | nil => rfl
+  | nil => intro after success; cases Except.ok.inj success; rfl
   | cons name names ih =>
-    rw [List.foldl_cons]
-    exact (ih _).trans (compileName_heads state name)
+    rw [List.foldlM_cons]
+    intro after success
+    cases ran : state.compileName ambient name with
+    | error error => simp only [ran, bind, Except.bind] at success; cases success
+    | ok middle =>
+      simp only [ran, bind, Except.bind] at success
+      exact (ih middle after success).trans (compileName_heads state ambient name middle ran)
 
-theorem Frame.compileNames (names : Array Name) : Frame (compileNames names) :=
-  Frame.modify _ (fun state => compileNames_heads state names)
+theorem Frame.compileNames (names : Array Name) : Frame (compileNames names) := by
+  intro context state
+  simp only [Ix.CompileM.compileNames, rawRun_bind, rawRun_get, rawRun_read, rawRun_applyBlockState]
+  cases ran : state.compileNames context.1.blobs names with
+  | error error => rfl
+  | ok after => exact compileNames_heads state context.1.blobs names after ran
 
 local macro "frame_metadata" : tactic => `(tactic|
   with_reducible repeat' first

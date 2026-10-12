@@ -138,7 +138,7 @@ theorem Frame.lookupConstAddr (name : Name) : Frame (lookupConstAddr name) := by
   repeat' first | exact Frame.pure _ | exact Frame.throw _ | split
 
 theorem Frame.storeString (text : String) : Frame (storeString text) :=
-  Frame.bind (Frame.modify _ (fun _ => rfl)) (fun _ => Frame.pure _)
+  Frame.storeBlob _
 
 theorem Frame.serializeIxSubstring (text : Ix.Substring) : Frame (serializeIxSubstring text) :=
   Frame.bind (Frame.storeString _) (fun _ => Frame.pure _)
@@ -188,8 +188,8 @@ theorem Frame.compileDataValue (value : Ix.DataValue) : Frame (compileDataValue 
     | exact Frame.pure _
     | exact Frame.compileName _
     | exact Frame.serializeIxSyntax _
+    | exact Frame.storeBlob _
     | refine Frame.bind ?_ (fun value => ?_)
-    | apply Frame.modify; intro _; rfl
 
 theorem Frame.compileKVMap (values : Array (Name × Ix.DataValue)) : Frame (compileKVMap values) := by
   rcases values with ⟨_ | ⟨⟨name, value⟩, _ | ⟨next, rest⟩⟩⟩ <;> try cases value
@@ -246,6 +246,7 @@ theorem Frame.compileExprPartial (expr : Expr) : Frame (compileExprPartial expr)
           | exact Frame.compileAndInternUnivCanon _
           | exact Frame.compileConstExprRaw _ _
           | exact Frame.compileName _
+          | exact Frame.storeBlob _
           | exact Frame.internRef _
           | exact Frame.lookupConstAddr _
           | exact Frame.compileKVMap _
@@ -293,13 +294,13 @@ theorem Frame.compileExprTotalStep (compile : Expr → CompileM (Ixon.Expr × UI
     | exact Frame.pushUnivPatch _ _
     | exact Frame.compileAndInternUnivCanon _
     | exact Frame.compileName _
+    | exact Frame.storeBlob _
     | exact Frame.internRef _
     | exact Frame.lookupConstAddr _
     | exact Frame.compileKVMap _
     | exact Frame.compileAppTotal _ keeps _
     | refine Frame.bind ?_ (fun value => ?_)
     | refine frame_mapM_array _ _ (fun value mem => ?_)
-    | apply Frame.modify; intro _; rfl
     | dsimp only
     | split
 

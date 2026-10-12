@@ -34,9 +34,9 @@ theorem Frame.collectExprTablesStructural (context : Address) (mutualContext : M
         | exact Frame.throw _
         | exact Frame.compileUniv _
         | exact Frame.lookupConstAddr _
+        | exact Frame.storeBlob _
         | exact Frame.collectExprTableUnivs _ _
         | refine Frame.bind ?_ (fun value => ?_)
-        | apply Frame.modify; intro _; rfl
         | dsimp only
         | split
         | apply_assumption

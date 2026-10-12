@@ -12,14 +12,6 @@ def blockRecordWrites (result : BlockResult) (cache : BlockState) :
       (Address.blake3 (Ixon.ser projection), Ixon.ser projection)) ++
     (cache.auxConsts.toList.map fun (address, constant) => (address, Ixon.ser constant))
 
-/-- A reused address must contain exactly the same bytes. Digest injectivity
-is not assumed, and identical aliases are allowed. -/
-def contentMatches (store : Std.HashMap Address ByteArray)
-    (key : Address) (bytes : ByteArray) : Bool :=
-  match store[key]? with
-  | none => true
-  | some old => decide (old = bytes)
-
 /-- Check successive writes against a small store of already-seen payloads. -/
 def checkContentWrites (seen : Std.HashMap Address ByteArray) :
     List (Address × ByteArray) → Bool
