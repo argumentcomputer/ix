@@ -283,6 +283,26 @@ The per-output W/W+/S decisions above remain useful independently of a general c
 The remaining layers concern all inputs in the compiler theorem's original domain, not only
 the libraries or fixtures which pass a gate:
 
+The ordinary expression-emission component is proved in
+[`ExpressionCorrectness.lean`](../Ix/CompileCert/ExpressionCorrectness.lean).
+`compileExprPartial_checked` covers every `Ix.Expr` constructor in the production
+compiler; `compileExprTotal_checked` transfers the result to its reference entry.
+Under explicit dependency-prefix and mutual-self correspondence, aligned universe
+parameters/blob lookup, and sound tables and caches, every successful result reads
+as a related kernel expression. The relation preserves source structure and universe
+evaluation while ignoring source hashes and presentation metadata. Both successful
+and failed runs preserve the invariants and earlier expression readings. No output
+certificate or assumed constructor-correctness step is required. The
+`compileExprPartial_initial` corollary establishes table/cache premises from empty
+initialization.
+
+This result concerns ordinary, unshared expression emission. Production callers
+must establish the prefix and initialization conditions; declaration construction,
+canonicalization/rewriting, auxiliary generation, sharing, serialization and DAG
+composition still need their own connections. It does not prove that every valid
+Lean declaration compiles successfully or establish resource/VM semantics of binder
+contracts.
+
 | Layer | Obligation still needed for the complete compiler theorem |
 | --- | --- |
 | L2: canonical blocks and images | Prove totality of image construction on `Dom`, the original compiler theorem's domain. Connect production expansion and source/reference/name invariants to the canonical specification; prove the generated inductive, constructor and recursor/image declarations have the required syntax, typing and value behavior, including nested and mutual cases. |

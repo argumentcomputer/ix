@@ -33,6 +33,7 @@ import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionLeaves
 import Ix.CompileCert.ExpressionIndices
+import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2567,6 +2568,60 @@ def expressionIndexRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionIndexRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Whole ordinary expression compilation, including every constructor, exact
+reader interpretation, cache/table invariants and preservation on error. The
+final roots discharge constructor-step premises and cover every source Expr. -/
+def expressionCompilerRoots : Array Lean.Name :=
+  #[`cached_correct, `universe_cacheBlind, `extends_refl, `extends_trans,
+    `lookupConstAddr_run, `lookupConstAddr_correct, `lookupConstAddr_state,
+    `internRef_frame, `internRef_primary_metadata, `internRef_indices,
+    `state_cacheBlind, `natural_go, `natural_toBytes, `string_toBytes,
+    `good_metadata, `internRef_good, `storeBlob_good, `blockReader_blob,
+    `blockReader_ref, `compileLevel_good, `levels_grow,
+    `compileLevels_list_good, `compileLevels_good, `finishReference_returns,
+    `finishReference_checked, `compileConstExprRaw_eq, `constBody_checked,
+    `meaning_grows, `finishApp_checked, `app_pair_checked, `appTotal_app_eq,
+    `appTotal_checked, `app_step_checked, `sequence_pair_checked,
+    `compileName_good, `name_then_checked, `const_step_checked,
+    `finishBinder_checked, `binder_step_eq, `binder_step_checked,
+    `finishLet_checked, `let_step_eq, `let_step_checked,
+    `cached_checked, `partial_checked, `partial_checked_of_step,
+    `finishProjection_checked, `projection_step_eq, `projection_step_checked,
+    `finishLiteral_checked, `literal_checked, `nat_step_checked, `string_step_checked,
+    `Safe.pure, `Safe.throw, `Safe.get, `Safe.read, `Safe.bind,
+    `Safe.mapM_list, `Safe.mapM_array, `Safe.compileName, `Safe.storeBlob,
+    `Safe.storeString, `Safe.serializeIxSubstring, `Safe.serializeIxSourceInfo,
+    `Safe.serializeIxSyntaxPreresolved, `Safe.serializeIxSyntax,
+    `Safe.compileDataValue, `Safe.compileKVMap, `contract_lower_read,
+    `finishMetadata_checked, `metadata_step_eq, `metadata_step_checked,
+    `bvar_step_checked, `sort_step_checked,
+    `compileExprPartial_checked, `compileExprTotal_checked,
+    `initialState_good, `compileExprPartial_initial, `compileExprPartial_read].map (`Ix.CompileCert.ExpressionState ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionCompilerRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let entries := (#[`lookupConstAddr, `serializeIxSubstring, `serializeIxSourceInfo,
+    `serializeIxSyntaxPreresolved, `serializeIxSyntax, `compileDataValue,
+    `compileKVMap].map (`Ix.CompileM ++ ·)) ++
+      #[``Nat.toBytesLE, ``Ix.SemanticContract.hasMetadata,
+        ``Ix.SemanticContract.read, ``Ix.SemanticContract.Contract.lower]
+  for name in entries do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"expression compiler helper has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"expression compiler helper is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"expression compiler helper is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] expression compiler: actual lookup, literal codec and metadata helpers"
 
 run_cmd do
   let env ← getEnv
