@@ -28,6 +28,13 @@ theorem Frame.checkedTableIndex (table : String) (index : Nat) :
   · exact Frame.pure _
   · exact Frame.throw _
 
+theorem Frame.checkedTableCount (table : String) (count : Nat) :
+    Frame (checkedTableCount table count) := by
+  unfold Ix.CompileM.checkedTableCount
+  split
+  · exact Frame.pure _
+  · exact Frame.throw _
+
 theorem Frame.discard {action : CompileM α} (framed : Frame action) : Frame (Functor.discard action) := by
   unfold Functor.discard
   exact Frame.map framed (fun _ => ())
@@ -53,8 +60,8 @@ theorem Frame.internUniv (univ : Ixon.Univ) : Frame (internUniv univ) := by
   with_reducible repeat' first
     | exact Frame.get
     | exact Frame.pure _
-    | exact Frame.checkedTableIndex _ _
-    | exact Frame.discard (Frame.checkedTableIndex _ _)
+    | exact Frame.checkedTableCount _ _
+    | exact Frame.discard (Frame.checkedTableCount _ _)
     | refine Frame.bind ?_ (fun _ => ?_)
     | dsimp only
     | split
@@ -118,8 +125,8 @@ theorem Frame.internRef (address : Address) : Frame (internRef address) := by
   · with_reducible repeat' first
       | exact Frame.get
       | exact Frame.pure _
-      | exact Frame.checkedTableIndex _ _
-      | exact Frame.discard (Frame.checkedTableIndex _ _)
+      | exact Frame.checkedTableCount _ _
+      | exact Frame.discard (Frame.checkedTableCount _ _)
       | refine Frame.bind ?_ (fun _ => ?_)
       | dsimp only
       | split

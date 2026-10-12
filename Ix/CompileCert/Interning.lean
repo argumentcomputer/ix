@@ -158,6 +158,23 @@ theorem checkedTableIndex_value (table : String) (index : Nat)
     exact ⟨UInt64.toNat_ofNat_of_lt' bound, bound⟩
   · cases success
 
+theorem checkedTableCount_state (table : String) (count : Nat)
+    (context : CompileEnv × BlockEnv) (state : BlockState) :
+    (rawRun (checkedTableCount table count) context state).2 = state := by
+  unfold checkedTableCount
+  split <;> rfl
+
+theorem checkedTableCount_value (table : String) (count : Nat)
+    (context : CompileEnv × BlockEnv) (state : BlockState) {value : UInt64}
+    (success : (rawRun (checkedTableCount table count) context state).1 = .ok value) :
+    value.toNat = count ∧ count < UInt64.size := by
+  unfold checkedTableCount at success
+  split at success
+  · rename_i bound
+    cases Except.ok.inj success
+    exact ⟨UInt64.toNat_ofNat_of_lt' bound, bound⟩
+  · cases success
+
 theorem internRef_primary_hit (address : Address) (context : CompileEnv × BlockEnv)
     (state : BlockState) (mode : state.p3MetaMode = false) {index : UInt64}
     (found : state.refsIndex.get? address = some index) :
@@ -169,7 +186,7 @@ theorem internRef_primary_hit (address : Address) (context : CompileEnv × Block
     rfl
   unfold internRef
   simp only [rawRun_bind, rawRun_get, mode, Bool.false_eq_true, ↓reduceIte]
-  by_cases full : state.refs.size ≥ UInt64.size
+  by_cases full : state.refs.size + 1 ≥ UInt64.size
   all_goals
     simp only [full, ↓reduceIte, rawRun_bind, rawRun_get, contains, Bool.not_true,
       Bool.false_eq_true, rawRun_modifyGet, BlockState.internRef, found]
@@ -178,12 +195,12 @@ theorem internRef_primary_miss (address : Address) (context : CompileEnv × Bloc
     (state : BlockState) (mode : state.p3MetaMode = false)
     (miss : state.refsIndex.get? address = none) :
     rawRun (internRef address) context state =
-      if state.refs.size < UInt64.size then
+      if state.refs.size + 1 < UInt64.size then
         (.ok state.refs.size.toUInt64,
           { state with
             refs := state.refs.push address,
             refsIndex := state.refsIndex.insert address state.refs.size.toUInt64 })
-      else rawRun (checkedTableIndex "reference" state.refs.size) context state := by
+      else rawRun (checkedTableCount "reference" (state.refs.size + 1)) context state := by
   have contains : state.refsIndex.contains address = false := by
     rw [Std.HashMap.contains_eq_isSome_getElem?]
     change (state.refsIndex.get? address).isSome = false
@@ -191,12 +208,12 @@ theorem internRef_primary_miss (address : Address) (context : CompileEnv × Bloc
     rfl
   unfold internRef
   simp only [rawRun_bind, rawRun_get, mode, Bool.false_eq_true, ↓reduceIte]
-  by_cases room : state.refs.size < UInt64.size
-  · have full : ¬ state.refs.size ≥ UInt64.size := by omega
+  by_cases room : state.refs.size + 1 < UInt64.size
+  · have full : ¬ state.refs.size + 1 ≥ UInt64.size := by omega
     simp only [full, room, ↓reduceIte, rawRun_modifyGet, BlockState.internRef, miss, mode]
-  · have full : state.refs.size ≥ UInt64.size := by omega
+  · have full : state.refs.size + 1 ≥ UInt64.size := by omega
     simp only [full, room, ↓reduceIte, rawRun_bind, rawRun_get, contains,
-      Bool.not_false, checkedTableIndex, Functor.discard]
+      Bool.not_false, checkedTableCount, Functor.discard]
     rfl
 
 /-- The checked primary-table operation preserves the index invariant and
@@ -216,10 +233,10 @@ theorem internRef_primary_correct (address : Address) (context : CompileEnv × B
     exact sound address index found
   | none =>
     rw [internRef_primary_miss address context state mode found]
-    by_cases room : state.refs.size < UInt64.size
+    by_cases room : state.refs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
-      have keeps := internRef_sound state address sound room
-      have points := internRef_lookup state address sound room
+      have keeps := internRef_sound state address sound (by omega)
+      have points := internRef_lookup state address sound (by omega)
       simp only [BlockState.internRef, found] at keeps points
       refine ⟨keeps, .push _ _, ?_⟩
       intro value same
@@ -227,11 +244,11 @@ theorem internRef_primary_correct (address : Address) (context : CompileEnv × B
       exact points
     · simp only [room, ↓reduceIte]
       refine ⟨?_, ?_, ?_⟩
-      · rwa [checkedTableIndex_state]
-      · rw [checkedTableIndex_state]
+      · rwa [checkedTableCount_state]
+      · rw [checkedTableCount_state]
         exact .refl _
       · intro index success
-        exact (room (checkedTableIndex_value _ _ _ _ success).2).elim
+        exact (room (checkedTableCount_value _ _ _ _ success).2).elim
 
 def refTable (state : BlockState) : Array Address :=
   if state.p3MetaMode then state.refs ++ state.p3MetaRefs else state.refs
@@ -272,13 +289,13 @@ theorem internRef_primary_reading (address : Address) (compileContext : CompileE
     exact blockReader_growth context base param self state state (.refl _) (.refl _) rfl
   | none =>
     rw [internRef_primary_miss address compileContext state mode found]
-    by_cases room : state.refs.size < UInt64.size
+    by_cases room : state.refs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
       apply blockReader_growth context base param self
       · simpa only [refTable, mode, Bool.false_eq_true, ↓reduceIte] using Retains.push state.refs address
       · exact .refl _
       · rfl
-    · simp only [room, ↓reduceIte, checkedTableIndex_state]
+    · simp only [room, ↓reduceIte, checkedTableCount_state]
       exact blockReader_growth context base param self state state (.refl _) (.refl _) rfl
 
 theorem internRefMeta_primary_hit (address : Address) (context : CompileEnv × BlockEnv)
@@ -422,7 +439,7 @@ theorem internRef_cache (address : Address) (context : CompileEnv × BlockEnv) (
       rw [internRef_primary_miss address context state mode found]
       split
       · rfl
-      · rw [checkedTableIndex_state]
+      · rw [checkedTableCount_state]
   | true =>
     rw [internRef_meta_run address context state mode]
     cases primary : state.refsIndex.get? address with
@@ -482,7 +499,7 @@ theorem internUniv_hit (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
     rfl
   unfold internUniv
   simp only [rawRun_bind, rawRun_get]
-  by_cases full : state.univs.size ≥ UInt64.size
+  by_cases full : state.univs.size + 1 ≥ UInt64.size
   all_goals
     simp only [full, ↓reduceIte, rawRun_bind, rawRun_get, contains, Bool.not_true,
       Bool.false_eq_true, rawRun_modifyGet, BlockState.internUniv, found]
@@ -490,11 +507,11 @@ theorem internUniv_hit (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
 theorem internUniv_miss (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
     (state : BlockState) (miss : state.univsIndex.get? univ = none) :
     rawRun (internUniv univ) context state =
-      if state.univs.size < UInt64.size then
+      if state.univs.size + 1 < UInt64.size then
         (.ok state.univs.size.toUInt64, { state with
           univs := state.univs.push univ,
           univsIndex := state.univsIndex.insert univ state.univs.size.toUInt64 })
-      else rawRun (checkedTableIndex "universe" state.univs.size) context state := by
+      else rawRun (checkedTableCount "universe" (state.univs.size + 1)) context state := by
   have contains : state.univsIndex.contains univ = false := by
     rw [Std.HashMap.contains_eq_isSome_getElem?]
     change (state.univsIndex.get? univ).isSome = false
@@ -502,12 +519,12 @@ theorem internUniv_miss (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
     rfl
   unfold internUniv
   simp only [rawRun_bind, rawRun_get]
-  by_cases room : state.univs.size < UInt64.size
-  · have full : ¬ state.univs.size ≥ UInt64.size := by omega
+  by_cases room : state.univs.size + 1 < UInt64.size
+  · have full : ¬ state.univs.size + 1 ≥ UInt64.size := by omega
     simp only [full, room, ↓reduceIte, rawRun_modifyGet, BlockState.internUniv, miss]
-  · have full : state.univs.size ≥ UInt64.size := by omega
+  · have full : state.univs.size + 1 ≥ UInt64.size := by omega
     simp only [full, room, ↓reduceIte, rawRun_bind, rawRun_get, contains,
-      Bool.not_false, checkedTableIndex, Functor.discard]
+      Bool.not_false, checkedTableCount, Functor.discard]
     rfl
 
 theorem internUniv_correct (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
@@ -524,10 +541,10 @@ theorem internUniv_correct (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
     exact sound univ index found
   | none =>
     rw [internUniv_miss univ context state found]
-    by_cases room : state.univs.size < UInt64.size
+    by_cases room : state.univs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
-      have keeps := internUniv_sound state univ sound room
-      have points := internUniv_lookup state univ sound room
+      have keeps := internUniv_sound state univ sound (by omega)
+      have points := internUniv_lookup state univ sound (by omega)
       simp only [BlockState.internUniv, found] at keeps points
       refine ⟨keeps, .push _ _, ?_⟩
       intro value same
@@ -535,10 +552,10 @@ theorem internUniv_correct (univ : Ixon.Univ) (context : CompileEnv × BlockEnv)
       exact points
     · simp only [room, ↓reduceIte]
       refine ⟨?_, ?_, ?_⟩
-      · rwa [checkedTableIndex_state]
-      · rw [checkedTableIndex_state]; exact .refl _
+      · rwa [checkedTableCount_state]
+      · rw [checkedTableCount_state]; exact .refl _
       · intro index success
-        exact (room (checkedTableIndex_value _ _ _ _ success).2).elim
+        exact (room (checkedTableCount_value _ _ _ _ success).2).elim
 
 theorem add_index_eq (base : Nat) (slot : UInt64) :
     base.toUInt64 + slot = (base + slot.toNat).toUInt64 := by
@@ -634,13 +651,13 @@ theorem internUniv_primary_reading (univ : Ixon.Univ) (compileContext : CompileE
     exact blockReader_growth context base param self state state (.refl _) (.refl _) rfl
   | none =>
     rw [internUniv_miss univ compileContext state found]
-    by_cases room : state.univs.size < UInt64.size
+    by_cases room : state.univs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
       apply blockReader_growth context base param self
       · exact .refl _
       · simpa only [univTable, mode, Bool.false_eq_true, ↓reduceIte] using Retains.push state.univs univ
       · rfl
-    · simp only [room, ↓reduceIte, checkedTableIndex_state]
+    · simp only [room, ↓reduceIte, checkedTableCount_state]
       exact blockReader_growth context base param self state state (.refl _) (.refl _) rfl
 
 theorem internMetaUniv_reading (univ : Ixon.Univ) (compileContext : CompileEnv × BlockEnv)
@@ -676,7 +693,7 @@ theorem internUniv_cache (univ : Ixon.Univ) (context : CompileEnv × BlockEnv) (
     rw [internUniv_miss univ context state found]
     split
     · rfl
-    · rw [checkedTableIndex_state]
+    · rw [checkedTableCount_state]
 
 theorem internMetaUniv_cache (univ : Ixon.Univ) (context : CompileEnv × BlockEnv) (state : BlockState) :
     (rawRun (internMetaUniv univ) context state).2.exprCache = state.exprCache := by

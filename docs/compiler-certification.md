@@ -357,6 +357,17 @@ already supplies a checked length bound, so the wrapper avoids the Blake3
 package's `native_decide` default. This is no proof of hash injectivity or of
 the foreign hashing implementation.
 
+[`WireTables.lean`](../Ix/CompileCert/WireTables.lean) establishes primary-table
+wire validity from empty initialization and preserves it through the actual
+reference and universe interners, including failures and metadata mode.
+Incoming references must have 32-byte addresses and incoming universes must
+have representable successor telescopes; the actual hashing wrapper supplies
+the address-width fact for literals. Primary misses check the resulting table
+count before mutation: fitting the new slot index alone would still allow a
+table of length `2^64`, whose serialized count cannot fit. Existing slots remain
+usable at capacity. Connecting the element premises and this invariant through
+the complete expression/preseed pipeline remains a caller obligation.
+
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.
 Production callers must establish the prefix and preseed conditions; other

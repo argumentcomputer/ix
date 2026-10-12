@@ -187,7 +187,7 @@ theorem internUniv_frame (univ : Ixon.Univ) : Preserves withoutUnivTables (inter
     rw [internUniv_miss univ context state found]
     split
     · rfl
-    · rw [checkedTableIndex_state]
+    · rw [checkedTableCount_state]
 
 theorem internMetaUniv_frame (univ : Ixon.Univ) : Preserves withoutUnivTables (internMetaUniv univ) := by
   intro context state
@@ -307,7 +307,7 @@ theorem internUniv_metadata (univ : Ixon.Univ) (context : CompileEnv × BlockEnv
     rw [internUniv_miss univ context state found]
     split
     · exact ⟨rfl, rfl⟩
-    · rw [checkedTableIndex_state]; exact ⟨rfl, rfl⟩
+    · rw [checkedTableCount_state]; exact ⟨rfl, rfl⟩
 
 theorem primary_in_view {state : BlockState} {index : UInt64} {univ : Ixon.Univ}
     (found : state.univs[index.toNat]? = some univ) : (univTable state)[index.toNat]? = some univ := by
@@ -501,7 +501,7 @@ theorem internMetaUniv_returns (univ : Ixon.Univ) (context : CompileEnv × Block
     exact ⟨_, _, rfl, by simp only [Array.size_push]; omega⟩
 
 theorem internUniv_returns (univ : Ixon.Univ) (context : CompileEnv × BlockEnv) (before : BlockState)
-    (room : before.univs.size < UInt64.size) :
+    (room : before.univs.size + 1 < UInt64.size) :
     ∃ index after, rawRun (internUniv univ) context before = (.ok index, after) ∧
       after.univs.size + after.metaUnivs.size ≤ before.univs.size + before.metaUnivs.size + 1 := by
   cases found : before.univsIndex.get? univ with

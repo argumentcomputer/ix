@@ -181,7 +181,7 @@ theorem internRef_frame (address : Address) : UniversePipeline.Preserves without
       rw [internRef_primary_miss address context before mode found]
       split
       · rfl
-      · rw [checkedTableIndex_state]
+      · rw [checkedTableCount_state]
   | true =>
     rw [internRef_meta_run address context before mode]
     cases primary : before.refsIndex.get? address with
@@ -202,7 +202,7 @@ theorem internRef_primary_metadata (address : Address) (context : CompileEnv × 
     rw [internRef_primary_miss address context before mode found]
     split
     · exact ⟨rfl, rfl⟩
-    · rw [checkedTableIndex_state]; exact ⟨rfl, rfl⟩
+    · rw [checkedTableCount_state]; exact ⟨rfl, rfl⟩
 
 open Interning in
 theorem internRef_indices (address : Address) (context : CompileEnv × BlockEnv) (before : BlockState)

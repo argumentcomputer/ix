@@ -71,6 +71,10 @@ def controls : List (String × Bool) := Id.run do
   let (lastIndex, _) := raw (checkedTableIndex "control" largest)
   let (tooLarge, tooLargeState) := raw (checkedTableIndex "control" UInt64.size)
   let (largerStill, _) := raw (checkedTableIndex "control" (UInt64.size + 1))
+  let (emptyCount, _) := raw (checkedTableCount "control" 0)
+  let (largestCount, _) := raw (checkedTableCount "control" largest)
+  let (overflowCount, overflowCountState) := raw (checkedTableCount "control" UInt64.size)
+  let (beyondCount, _) := raw (checkedTableCount "control" (UInt64.size + 1))
   let goodMeta : BlockState := { metadataState with
     p3MetaRefs := #[literalAddress],
     p3MetaRefsIndex := ({} : Std.HashMap Address UInt64).insert literalAddress 0,
@@ -111,6 +115,11 @@ def controls : List (String × Bool) := Id.run do
       zeroIndex.toOption == some 0 && lastIndex.toOption == some largest.toUInt64),
     ("checked indices reject overflow without changing claims",
       resourceFailure tooLarge && resourceFailure largerStill && tooLargeState.p3Heads == retained),
+    ("wire table counts accept empty and largest representable tables",
+      emptyCount.toOption == some 0 && largestCount.toOption == some largest.toUInt64),
+    ("a representable last slot cannot justify an overflowing table count",
+      lastIndex.isOk && resourceFailure overflowCount && resourceFailure beyondCount &&
+        overflowCountState.p3Heads == retained),
     ("virtual reference hit retains its intended slot",
       goodRef.toOption == some 1 && goodRefAfter.refs == #[primary] &&
         goodRefAfter.p3MetaRefs == #[literalAddress]),

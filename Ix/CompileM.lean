@@ -471,6 +471,12 @@ def checkedTableIndex (table : String) (index : Nat) : CompileM UInt64 :=
   if index < UInt64.size then pure index.toUInt64
   else throw (.resourceLimit s!"{table} table index {index} exceeds the Ixon UInt64 range")
 
+/-- Check a serialized table count before conversion. Insertion must check
+the resulting count, which is one greater than the new slot index. -/
+def checkedTableCount (table : String) (count : Nat) : CompileM UInt64 :=
+  if count < UInt64.size then pure count.toUInt64
+  else throw (.resourceLimit s!"{table} table count {count} exceeds the Ixon UInt64 range")
+
 /-- A7 (D8): the named error of an out-of-range access in the compiler. It
     names the block (`BlockEnv.current`) and the site; the drivers record it
     for every member of the block, like any other block failure. -/
@@ -601,11 +607,11 @@ termination_by lvl
 
 /-- Intern a universe into the block's univs table, returning its index. -/
 def internUniv (u : Ixon.Univ) : CompileM UInt64 := do
-  -- A full table may still serve an existing slot. The usual path only
-  -- checks its size; it does not repeat the map lookup.
-  if (← getBlockState).univs.size ≥ UInt64.size then
+  -- A full wire count may still serve an existing slot. Check the count
+  -- after insertion; the usual path does not repeat the map lookup.
+  if (← getBlockState).univs.size + 1 ≥ UInt64.size then
     if !(← getBlockState).univsIndex.contains u then
-      discard <| checkedTableIndex "universe" (← getBlockState).univs.size
+      discard <| checkedTableCount "universe" ((← getBlockState).univs.size + 1)
   modifyGetBlockState fun state =>
     let (state', idx) := state.internUniv u
     (idx, state')
@@ -710,9 +716,9 @@ def internRefMeta (addr : Address) : CompileM UInt64 := do
     state in the update closure. -/
 def internRef (addr : Address) : CompileM UInt64 := do
   if (← getBlockState).p3MetaMode then return ← internRefMeta addr
-  if (← getBlockState).refs.size ≥ UInt64.size then
+  if (← getBlockState).refs.size + 1 ≥ UInt64.size then
     if !(← getBlockState).refsIndex.contains addr then
-      discard <| checkedTableIndex "reference" (← getBlockState).refs.size
+      discard <| checkedTableCount "reference" ((← getBlockState).refs.size + 1)
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')

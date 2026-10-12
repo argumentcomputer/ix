@@ -38,6 +38,7 @@ import Ix.CompileCert.ProductionExpression
 import Ix.CompileCert.DefinitionEmission
 import Ix.CompileCert.SharingRead
 import Ix.CompileCert.DefinitionBlock
+import Ix.CompileCert.WireTables
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2819,6 +2820,7 @@ def interningRoots : Array Lean.Name :=
     `IndexSound.empty, `IndexSound.insert, `univ_beq_iff, `lawfulUnivKeys,
     `refIndexSound_empty, `internRef_retains, `internRef_lookup, `internRef_sound,
     `internRef_limit_wraps, `rawRun_modifyGet, `checkedTableIndex_state, `checkedTableIndex_value,
+    `checkedTableCount_state, `checkedTableCount_value,
     `internRef_primary_hit, `internRef_primary_miss, `internRef_primary_correct,
     `blockReader_growth, `internRef_primary_reading, `internRefMeta_primary_hit,
     `internRefMeta_extension_hit, `internRefMeta_miss, `internRefMeta_correct,
@@ -2829,16 +2831,32 @@ def interningRoots : Array Lean.Name :=
     `internMetaUniv_reading, `internUniv_cache, `internMetaUniv_cache,
     `internUniv_cache_sound, `internMetaUniv_cache_sound].map (`Ix.CompileCert.Interning ++ ·)) ++
     #[``Ix.CompileCert.HeadWriterFrame.Frame.checkedTableIndex,
+      ``Ix.CompileCert.HeadWriterFrame.Frame.checkedTableCount,
       ``Ix.CompileCert.HeadWriterFrame.Frame.discard]
 
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.interningRoots Ix.CompileCert.Audit.allowedAxioms
 
+namespace Ix.CompileCert.Audit
+
+/-- Primary wire-table validity and rejection before count overflow. Incoming
+reference widths and universe wire bounds are explicit; literal address
+widths follow from the actual hashing wrapper. -/
+def wireTableRoots : Array Lean.Name :=
+  #[`of_same, `empty, `internRef_primary, `internRefMeta_tables,
+    `internRef_preserves, `internUniv_preserves, `internRef_count_failure,
+    `internUniv_count_failure, `blake3_width, `internBlake3_preserves].map
+      (`Ix.CompileCert.WireTables ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.wireTableRoots Ix.CompileCert.Audit.allowedAxioms
+
 run_cmd do
   let env ← getEnv
   let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
-  for name in #[`checkedTableIndex, `internRef, `internRefMeta, `internUniv,
+  for name in #[`checkedTableIndex, `checkedTableCount, `internRef, `internRefMeta, `internUniv,
       `internMetaUniv, `BlockState.internRef, `BlockState.internUniv,
       `BlockState.internMetaUniv].map (`Ix.CompileM ++ ·) do
     unless (substitutions.find? name).isNone &&
@@ -2848,7 +2866,7 @@ run_cmd do
       | throwError m!"table interner is not a definition: {name}"
     unless definition.safety == .safe do
       throwError m!"table interner is not kernel-visible and total: {name}"
-  logInfo "[cert-audit] table interners: checked wire indices and executed definitions"
+  logInfo "[cert-audit] table interners: checked wire indices/counts and executed definitions"
 
 run_cmd do
   let env ← getEnv
