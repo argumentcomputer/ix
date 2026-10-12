@@ -29,6 +29,8 @@ import Ix.CompileCert.CanonUnivMeaning
 import Ix.CompileCert.CanonUnivSubsumption
 import Ix.CompileCert.CanonUnivGateOrder
 import Ix.CompileCert.CanonUnivEmit
+import Ix.CompileCert.CanonUnivScope
+import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2361,8 +2363,8 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeMeanin
 namespace Ix.CompileCert.Audit
 
 /-- Exact evaluation of the production cached normalization pass, its state
-invariants, and the actual emission guards. Complete subsumption/linearization
-value preservation remains open. -/
+invariants, and the actual emission guards. Subsumption and complete emission
+are registered separately below. -/
 def canonUniverseMeaningRoots : Array Lean.Name :=
   #[`pathCompare_eq, `pathCompare_trans, `pathCompare_lawful,
     `maxChain_eval, `addSuccs_eval, `emitGated_eval, `emitGated_absorbed,
@@ -2439,6 +2441,55 @@ def universeEmissionRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Parameter provenance through actual canonicalization and the certified
+reader. The raw source relation supplies emitted parameter bounds. -/
+def universeScopeRoots : Array Lean.Name :=
+  #[`Shape.addSuccs, `Shape.gated, `shape_maxFold, `shape_maxChain,
+    `atomTerm_shape, `retainedTerms_shape, `groupOutput_shape, `rootPass_shape,
+    `finishEmission_shape, `emitGroups_shape, `canonUniv_shape, `Shape.parameter_le,
+    `univEval_ext, `canonUniv_occurs, `canonUniv_bounded, `represents_bounded,
+    `convUniv_eval, `convUniv_defined, `paramOf_mem, `convCanon_defined].map (`Ix.CompileCert.CanonUnivScope ++ ·)
+
+/-- Complete universe-operation composition: exact memoization, both table
+modes, source meaning, scope, and success from explicit source/capacity/preseed
+conditions. Empty initialization discharges the state premises. -/
+def universePipelineRoots : Array Lean.Name :=
+  #[`canonCache_empty, `canonCache_insert, `canonUnivCached_run,
+    `canonUnivCached_correct, `canonUnivCached_eval, `Preserves.pure,
+    `Preserves.throw, `Preserves.get, `Preserves.read, `Preserves.modify,
+    `Preserves.bind, `Preserves.checkedIndex, `compileUniv_frame,
+    `compileCanonical_total_eval, `compileCanonical_empty_eval,
+    `internUniv_frame, `internMetaUniv_frame, `internMetaUniv_primary,
+    `internMetaUniv_retains, `compileAndInternUnivCanon_eq, `finishSpelling_correct,
+    `Retains.trans, `internUniv_metadata, `primary_in_view,
+    `internPrimaryCanonical_correct, `internCanonical_correct,
+    `compileAndInternUnivCanon_correct, `blockReader_level,
+    `compileAndInternUnivCanon_read, `internMetaUniv_returns, `internUniv_returns,
+    `finishSpelling_returns, `internPrimaryCanonical_returns, `internCanonical_returns,
+    `compileAndInternUnivCanon_returns, `sound_empty,
+    `compileAndInternUnivCanon_total_read, `compileAndInternUnivCanon_empty_read].map (`Ix.CompileCert.UniversePipeline ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeScopeRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universePipelineRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.canonUnivCached, ``Ix.CompileM.compileAndInternUnivCanon,
+      ``Ix.Kernel.Reader.convUniv, ``Ix.Kernel.Reader.paramOf, ``Ix.Kernel.Reader.ECx.level] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"universe pipeline has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"universe pipeline entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"universe pipeline entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] universe pipeline: production memo/table operation and certified reader definitions"
 
 run_cmd do
   let env ← getEnv
