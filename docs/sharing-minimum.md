@@ -961,7 +961,14 @@ entry and root, establish backward Share validity, and discharge the initial-sta
 premises for the compiler's unshared route. `reexpand_correct` also covers re-expansion
 against an existing DAG, preserving its old node interpretations. These results
 describe the raw ingested DAG; canonical numbering and certified-reader composition
-remain open. No theorem yet states that this canonical
+remain open. `IxSharingVerify/IngestionUnique.lean` discharges the hash-consing
+premise used by `canonicalize_det`: actual ingestion preserves complete exact
+interner indices, and backward edges plus node arities make distinct IDs denote
+distinct terms. `ingestTable_run` supplies the full `Run` contract from production
+ingestion. `canonicalize_ingested` consequently proves that successful ingestion
+of the same ordered unshared roots under different resource limits has the same
+canonical result. This does not prove preservation through renumbering or totality.
+No theorem yet states that this canonical
 DAG denotes all the input roots, so the round trip to the input is proved only relative to
 the DAG; independence from pointer layout is tested, and idempotence is proved only under the
 hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).
