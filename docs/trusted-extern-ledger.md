@@ -111,6 +111,15 @@ and its coverage changes.
 | Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend |
 
+The actual compiler composition results in `Recheck/Proof/Compile.lean`
+retain this same native hash dependency through their ingress/producer premises.
+Seven required exact fences in `CompilatrixTests/Fences/Compile.lean` record
+the three standard logical axioms plus
+`Blake3.HasherOps.hash._native.native_decide.ax_1`. No axiom declaration,
+native symbol or dependency was added. `Recheck.run` and `Recheck.sound` retain
+their original exact fences. The compiler bridge is SrcEval-relative and does
+not discharge the source-model or resource-profile compatibility obligations.
+
 The Nix build shares the root Lean 4.34.1 toolchain with Blake3's Lean modules
 and Rust FFI header generation. It rejects differing root and dependency
 `lean-toolchain` pins. The Lean 4.34.0 update moved Blake3.lean from

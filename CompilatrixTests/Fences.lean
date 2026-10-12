@@ -24,6 +24,7 @@ import CompilatrixTests.Fences.Rt
 import CompilatrixTests.Fences.RtRc
 import CompilatrixTests.Fences.RcPromotion
 import CompilatrixTests.Fences.RecheckReadback
+import CompilatrixTests.Fences.Compile
 import CompilatrixTests.Fences.Erase
 import CompilatrixTests.Fences.Anf
 import CompilatrixTests.Fences.SemForward

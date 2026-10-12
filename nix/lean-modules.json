@@ -3206,6 +3206,9 @@
     "Compilatrix.Src.Relevance.Proof.Sound",
     "Compilatrix.Lam.Erase.Proof.ModesOk",
     "Compilatrix.Lam.Erase.Proof.WFProg"]},
+  "CompilatrixTests.Fences.Compile":
+  {"path": "CompilatrixTests/Fences/Compile.lean",
+   "imports": ["Compilatrix.Recheck.Proof.Compile"]},
   "CompilatrixTests.Fences.CfgProof":
   {"path": "CompilatrixTests/Fences/CfgProof.lean",
    "imports": ["Compilatrix.Cfg.Proof.Fuel"]},
@@ -3321,6 +3324,7 @@
     "CompilatrixTests.Fences.RtRc",
     "CompilatrixTests.Fences.RcPromotion",
     "CompilatrixTests.Fences.RecheckReadback",
+    "CompilatrixTests.Fences.Compile",
     "CompilatrixTests.Fences.Erase",
     "CompilatrixTests.Fences.Anf",
     "CompilatrixTests.Fences.SemForward",
@@ -5580,6 +5584,10 @@
     "Compilatrix.Anf.Proof.Pass.Pipeline",
     "Compilatrix.Cfg.Proof.OfAnf",
     "Compilatrix.Rt.Proof.Lang"]},
+  "Compilatrix.Recheck.Proof.Compile":
+  {"path": "Compilatrix/Recheck/Proof/Compile.lean",
+   "imports":
+   ["Compilatrix.Recheck.Produce", "Compilatrix.Recheck.Proof.Soundness"]},
   "Compilatrix.Recheck.Proof.Back":
   {"path": "Compilatrix/Recheck/Proof/Back.lean",
    "imports":

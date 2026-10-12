@@ -37,6 +37,13 @@ erasure, middle-end transformations, register allocation and ELF emission.
 precise scope and native-model assumptions. Source adequacy against the
 certified kernel's model remains open.
 
+The actual scalar compiler entry point now has a composition theorem:
+`compile_parts` exposes successful ingress, production and certificate replay;
+`compiled_sound` derives the same SrcEval-relative object guarantees from
+successful `compile`. Its seven separate fences retain the existing native
+BLAKE3 dependency. This closes the entry-point composition gap, while source
+adequacy, source safety and the Phase 1.5 acceptance gates remain open.
+
 Lean 4.34.1 and Ixon v4 landed on October 3. Phase 1.5's later resource-checker
 and equation/profile-binding work remains unfinished. The consumer changes
 have been recovered into the integration tree; focused checks and all 14

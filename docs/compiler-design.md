@@ -95,11 +95,15 @@ on three specification assumptions in the
   (`x86-v0-elf-writer`);
 - SrcEval is the source's meaning (stage 2 is not proved).
 
-No theorem is stated of `Recheck.compile` itself. Ixon v4 decoding and address
-authentication use pure BLAKE3, but ingress's erased typechecking and the
-relevance producer still reach native hashing dependencies. Pure decoding
-alone supplies neither a standard-axiom `compile` theorem nor source adequacy;
-the current statements are made of `run`.
+The separate `Recheck.compiled_sound` theorem now derives those same stage-1
+guarantees from success of the actual byte-input `Recheck.compile`.
+`compile_parts` retains the exact ingress/producer/replay chain, and
+`compile_bytes` identifies the emitted bytes with its checked object. These
+statements expose the existing native BLAKE3 dependency through ingress and the
+relevance producer; their exact fences are separate from the standard-axiom
+replay fences. The source remains the artifact's checked Src program. Pure
+decoding and this composition theorem do not establish kernel-model adequacy.
+See the [compile boundary](compile-boundary.md).
 
 **Bounded plain-RC path.** The separate
 [`Compilatrix.Recheck.RcReplay`](../Compilatrix/Recheck/Rc/Replay.lean) API

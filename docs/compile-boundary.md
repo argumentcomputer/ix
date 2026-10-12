@@ -7,6 +7,15 @@ bytes denote that Src program in the certified kernel's model. The existing
 `compile_sound` and `compile_safe` names also have recheck-path premises;
 their names do not supply a theorem about the `Recheck.compile` definition.
 
+The separate [compiler bridge](../Compilatrix/Recheck/Proof/Compile.lean) now
+proves that a successful actual `compile` returns an artifact accepted by
+`run`. `compile_parts` records the exact successful ingress, producer and replay,
+including `cfg.forInput` and the returned certificate. `compiled_sound` derives
+the existing return, safe-source and divergence guarantees for that emitted
+object. `compile_bytes` identifies the returned bytes with the replayed object.
+These statements remain relative to the checked source stored in the artifact;
+they do not identify its denotation with a certified kernel environment.
+
 The implementation composes `compile = ingress; produce; run`. The current
 hashing boundaries are:
 
@@ -40,12 +49,15 @@ resource validator also reach
 `Blake3.HasherOps.hash._native.native_decide.ax_1`. This is an inventory of
 existing dependencies, not a new axiom or an assumption added to `run`.
 
-A separate theorem about `compile` should first expose its composition:
-success yields an ingested program and a certificate for which `run` succeeds.
-It can then apply the existing recheck theorem relative to that program. Its
-axiom fence must report the actual reachable dependency set, including any
-native dependency in the statement, rather than silently copying `run`'s
-fence. Eliminating native hashing from ingress does not prove source adequacy.
+The seven exact [compiler-bridge fences](../CompilatrixTests/Fences/Compile.lean)
+record `propext`, `Classical.choice`, `Quot.sound`, and the existing
+`Blake3.HasherOps.hash._native.native_decide.ax_1` dependency. Mentioning the
+actual ingress/producer in these statements exposes that dependency; no native
+axiom declaration was added and the replay fences are unchanged. The guarantees
+retain `X86.Driver.Ok` and the source `GoesWrong` qualification. They apply to
+both choices of the compiler's `typecheck` flag; neither choice supplies the
+missing model-adequacy proof. Eliminating native hashing from ingress would not
+by itself prove source adequacy.
 
 The stronger theorem relating an input closure to the certified kernel's
 model additionally needs authenticated decoding, accepted environment typing,
