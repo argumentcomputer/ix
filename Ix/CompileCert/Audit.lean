@@ -25,6 +25,7 @@ import Ix.CompileCert.ExpressionCacheRun
 import Ix.CompileCert.ExpressionRead
 import Ix.CompileCert.Interning
 import Ix.CompileCert.UniverseMeaning
+import Ix.CompileCert.CanonUnivMeaning
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2353,6 +2354,47 @@ def universeMeaningRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Exact evaluation of the production cached normalization pass, its state
+invariants, and the actual emission guards. Complete subsumption/linearization
+value preservation remains open. -/
+def canonUniverseMeaningRoots : Array Lean.Name :=
+  #[`pathCompare_eq, `pathCompare_trans, `pathCompare_lawful,
+    `maxChain_eval, `addSuccs_eval, `emitGated_eval, `emitGated_absorbed,
+    `addVar_eval, `norm_merge_eval, `norm_addVar_eval, `norm_addConst_supported_eval,
+    `Supports.insert, `normalizeAux_mono, `normalizeImaxDispatch_mono,
+    `normalizeAux_le, `normalizeImaxDispatch_le, `normalizeAux_newWithin,
+    `normalizeImaxDispatch_newWithin, `SeenSound.completeAux, `SeenSound.completeDispatch,
+    `call_lower, `normalizeAux_lower, `normalizeImaxDispatch_lower,
+    `normalizeAux_eval, `normalizeAux_initial_eval, `normalize_selfGated,
+    `subsumption_selfGated, `covered_sound, `gatesLeakFree_sound,
+    `gateOrder_members, `active_gateOrder, `stripped_emission_le,
+    `stripped_normalized_emission_le].map (`Ix.CompileCert.CanonUnivMeaning ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.canonUniverseMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  let runtime := (#[`normalizeAux, `normalizeImaxMax, `normalizeImaxImax,
+    `normalizeImaxDispatch, `CNode.addVar, `CNorm.addConst, `CNorm.addVar,
+    `NState.addConst, `NState.addVar, `orderedInsert, `subsumeVars,
+    `subsumeVars.go, `subsumption, `normalize, `covered, `gateOrderChecked,
+    `gateOrder, `gatesLeakFree, `maxChain].map (`Ixon.CanonUniv ++ ·)) ++
+      #[``Ixon.Univ.addSuccs]
+  for name in runtime do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"universe-normalization entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"universe-normalization entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"universe-normalization entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] universe normalization and emission guards: actual safe definitions, no unchecked substitutions"
 
 namespace Ix.CompileCert.Audit
 
