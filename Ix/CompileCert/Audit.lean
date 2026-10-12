@@ -31,6 +31,7 @@ import Ix.CompileCert.CanonUnivGateOrder
 import Ix.CompileCert.CanonUnivEmit
 import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.UniversePipeline
+import Ix.CompileCert.ExpressionLeaves
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
 import Ix.CompileCert.AuxDiscoveryFrame
@@ -2533,6 +2534,37 @@ def expressionMeaningRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionMeaningRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual sort and bound-variable emission, metadata blindness, preservation
+of earlier expression readings and integration with the production cache. -/
+def expressionLeafRoots : Array Lean.Name :=
+  #[`sort_step_eq, `finishSort_returns, `withoutExprMetadata_reader,
+    `withoutExprMetadata_sound, `sort_step_total_read, `bvar_step_total_read,
+    `compileUniv_frame, `canonUnivCached_frame, `internUniv_frame,
+    `internMetaUniv_frame, `compileAndInternUnivCanon_frame,
+    `compileAndInternUnivCanon_reading, `compileAndInternUnivCanon_cache,
+    `sort_step_correct, `sort_cached_correct, `partial_miss_run,
+    `sound_exprCache, `sort_miss_total_read, `bvar_miss_total_read].map (`Ix.CompileCert.ExpressionLeaves ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionLeafRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.allocArenaNode, ``Ix.CompileM.pushUnivPatch,
+      ``Ix.Kernel.Reader.convExpr, ``Ix.Kernel.Reader.MemberReader.read] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"expression leaf has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"expression leaf entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"expression leaf entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] expression leaves: actual metadata writes and certified expression reader"
 
 namespace Ix.CompileCert.Audit
 
