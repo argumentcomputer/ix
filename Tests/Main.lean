@@ -27,6 +27,7 @@ import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.HeaderCounts
 import Tests.Ix.Compile.UniverseCache
 import Tests.Ix.Compile.UniverseWire
+import Tests.Ix.Compile.PayloadArrays
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.AuxPublication
@@ -163,6 +164,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
   ("universe-cache", Tests.Ix.Compile.UniverseCache.suite),
   ("universe-wire", Tests.Ix.Compile.UniverseWire.suite),
+  ("payload-arrays", Tests.Ix.Compile.PayloadArrays.suite),
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),

@@ -480,8 +480,8 @@ The Lean producer checks declaration universe arities and natural-number
 recursor/constructor/inductive header fields before their `UInt64` conversions.
 Oversized counts return a resource error instead of wrapping; representable
 values keep their existing encoding. The corresponding Rust Nat conversions
-already reject overflow. A separate count guard bounds the source array used
-to generate standalone constructor-projection indices.
+already reject overflow. Separate count guards bound both the source constructor
+list and the actual pair array enumerated for standalone constructor projections.
 [`DeclarationHeaders.lean`](../Ix/CompileCert/DeclarationHeaders.lean) proves
 exact natural-number fields for successful finalizers and carries exact universe
 arity through actual definition-like singleton compilation and sharing to the
@@ -489,8 +489,29 @@ returned block. These bounds come from executable guards, without adding source
 capacity assumptions to the older correctness or error-state theorems. The
 regressions use finite structured inputs at zero, the largest representable
 value and overflowing counts; they do not claim those oversized headers are
-valid Lean declarations. Full declaration reading/admission, nested array-count
-wire bounds and source-domain totality remain separate obligations.
+valid Lean declarations. Full declaration reading/admission and source-domain
+totality remain separate obligations.
+
+Production finalizers also guard nested recursor-rule and inductive-constructor
+counts, and mutual finalization checks the outer member array and each member's
+nested arrays. [`PayloadArrays.lean`](../Ix/CompileCert/PayloadArrays.lean) proves
+that successful guards establish these capacities, all guard outcomes preserve
+the complete state, and oversized arrays are refused. The pure sharing-builder
+APIs and their success domains remain unchanged.
+[`Builder.lean`](../IxSharingVerify/Builder.lean) separates unchanged header fields
+from rewritten roots: canonical sharing supplies root validity, so its stronger
+wire theorem needs only header capacities/address widths and valid primary tables.
+The older theorem statements remain as compatibility endpoints.
+
+[`FamilyWire.lean`](../Ix/CompileCert/FamilyWire.lean) carries primary-table validity
+through recursor, constructor, inductive and mutual payload compilation. Its
+`constant_codec` theorem covers all eight public `compileConstantInfo` branches;
+`mutualBlock_codec` covers actual whole mutual-block compilation, including its
+context and preseeding. Under explicit initial-state readiness, table validity
+and dependency-address widths, successful execution produces a wire-valid main
+block whose stored bytes decode exactly to that block. These endpoints do not
+yet establish generated projection correspondence, source semantics or target
+declaration admission.
 
 [`DefinitionReading.lean`](../Ix/CompileCert/DefinitionReading.lean) connects
 the actual `compileConstantInfo` definition/theorem/opaque branches to
@@ -538,15 +559,15 @@ Unsafe axiom output is refused by the reader independently of type scope or
 reader-prefix premises. No production compiler or kernel code is changed by
 these proof connections.
 
-These results cover expression and definition-like payload emission, canonical
-sharing, anonymous root reading and serialization with final table-wire validity
-derived from the stated input conditions.
+These results cover main-block encoding for every constant kind and mutual
+blocks, plus source-related anonymous reading for expressions, definitions,
+theorems, opaque constants, axioms and quotients under their stated conditions.
 Production callers must establish prefix correctness and source resource
-conditions; inductive, constructor, recursor and mutual families and their complete header interpretation,
-projection-rewrite semantic preservation,
-source canonicalization/rewriting, auxiliary
-generation, publication, whole-declaration reading and DAG composition
-still need their own connections. This does not prove that every valid
+conditions. Inductive, constructor, recursor and mutual source-related reading,
+generated projection correspondence, complete header interpretation, declaration
+admission, projection-rewrite semantic preservation, source canonicalization,
+auxiliary generation, publication and DAG composition still need their own
+connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder
 contracts.
 

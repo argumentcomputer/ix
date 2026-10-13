@@ -126,10 +126,27 @@ theorem Frame.buildBlockConstant (info : Ixon.ConstantInfo) (refs : Array Addres
     (univs : Array Ixon.Univ) : Frame (buildBlockConstant info refs univs) :=
   Frame.bind Frame.readContext fun _ => Frame.liftSharing _
 
+theorem Frame.checkMutConstArrayCounts (payload : Ixon.MutConst) : Frame (checkMutConstArrayCounts payload) := by
+  cases payload <;> unfold Ix.CompileM.checkMutConstArrayCounts
+  · exact Frame.pure _
+  all_goals exact Frame.bind (Frame.checkedTableCount _ _) (fun _ => Frame.pure _)
+
+theorem Frame.checkMutualPayloadCounts (payloads : Array Ixon.MutConst) : Frame (checkMutualPayloadCounts payloads) := by
+  unfold Ix.CompileM.checkMutualPayloadCounts
+  apply Frame.bind (Frame.checkedTableCount _ _)
+  intro _
+  apply Frame.bind
+  · apply frame_forIn_array
+    intro payload _
+    exact Frame.bind (Frame.checkMutConstArrayCounts payload) (fun _ => Frame.pure _)
+  · intro _; exact Frame.pure _
+
 theorem Frame.finishMutualCompilation (classes : List (List MutConst))
     (payloads : Array Ixon.MutConst) (metas : Array (Name × Ixon.ConstantMeta)) :
     Frame (finishMutualCompilation classes payloads metas) := by
   unfold Ix.CompileM.finishMutualCompilation
+  apply Frame.bind (Frame.checkMutualPayloadCounts payloads)
+  intro _
   apply Frame.bind Frame.get
   intro cache
   apply Frame.bind Frame.readContext
@@ -174,6 +191,7 @@ theorem Frame.finishInductiveFamilyBlock (inductiveVal : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) :
     Frame (finishInductiveFamilyBlock inductiveVal ind indMeta ctorMetaPairs) :=
+  Frame.bind (Frame.checkedTableCount _ _) fun _ =>
   Frame.bind (Frame.checkedTableCount _ _) fun _ =>
   Frame.bind Frame.get fun _ =>
     Frame.bind (Frame.timedC (Frame.buildBlockConstant _ _ _) _) fun _ => Frame.pure _

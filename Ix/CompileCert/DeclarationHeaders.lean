@@ -155,6 +155,26 @@ theorem projection_index (source : InductiveVal) (ind : Ixon.Inductive) (metadat
     (index : Nat) (inside : index < source.ctors.size) : index.toUInt64.toNat = index :=
   exact_header index (Nat.lt_trans inside (projection_count source ind metadata constructors context before output after ran))
 
+/-- `buildInductiveProjections` enumerates this actual pair array. Its guard
+does not rely on the supplied source constructor-name list having the same size. -/
+theorem projection_pairs_count (source : InductiveVal) (ind : Ixon.Inductive) (metadata : Ixon.ConstantMeta)
+    (constructors : Array (Name × Ixon.ConstantMeta)) : Returns (finishInductiveFamilyBlock source ind metadata constructors)
+      (fun _ => constructors.size < UInt64.size) := by
+  unfold finishInductiveFamilyBlock
+  with_reducible
+    refine Returns.bindAny _ (fun _ => ?_)
+    refine Returns.bind (Returns.count "constructor projections" constructors.size) (fun _ bounded => ?_)
+    repeat' first
+      | exact Returns.pure bounded
+      | refine Returns.bindAny _ (fun _ => ?_)
+
+theorem projection_pair_index (source : InductiveVal) (ind : Ixon.Inductive) (metadata : Ixon.ConstantMeta)
+    (constructors : Array (Name × Ixon.ConstantMeta)) (context : CompileEnv × BlockEnv)
+    (before after : BlockState) (output : BlockResult)
+    (ran : rawRun (finishInductiveFamilyBlock source ind metadata constructors) context before = (.ok output, after))
+    (index : Nat) (inside : index < constructors.size) : index.toUInt64.toNat = index :=
+  exact_header index (Nat.lt_trans inside (projection_pairs_count source ind metadata constructors context before output after ran))
+
 theorem recursorRule_refuses (source : RecursorRule) (context : CompileEnv × BlockEnv)
     (before after : BlockState) (rhs : Ixon.Expr) (root : UInt64)
     (compiled : rawRun (compileExpr source.rhs) context before = (.ok (rhs, root), after))

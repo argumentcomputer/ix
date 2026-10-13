@@ -60,6 +60,8 @@ import Ix.CompileCert.MetadataErasure
 import Ix.CompileCert.HeaderEmission
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
+import Ix.CompileCert.PayloadArrays
+import Ix.CompileCert.FamilyWire
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2329,6 +2331,7 @@ def blockFrameRoots : Array Lean.Name :=
     `Frame.collectExprTables, `Frame.collectPreseedExprs, `Frame.internPreseedRefs,
     `Frame.canonPreseedUnivs, `Frame.internPreseedUnivs, `Frame.preseedExprTables,
     `Frame.readContext, `Frame.liftSharing, `Frame.buildBlockConstant,
+    `Frame.checkMutConstArrayCounts, `Frame.checkMutualPayloadCounts,
     `Frame.finishMutualCompilation, `Frame.compileMutualPayload, `Frame.compileMutualBlock,
     `Frame.findConst, `Frame.collectInductiveConstructors, `Frame.lookupInductiveConstructors,
     `Frame.finishInductiveFamilyBlock, `Frame.finishConstantWithSharing,
@@ -3061,7 +3064,8 @@ def declarationHeaderRoots : Array Lean.Name :=
     `exact_header, `definition, `axiomHeader, `quotient, `recursorRule, `recursor,
     `constructorHeader, `inductiveHeader, `inductiveDataHeader, `definitionBody,
     `definitionData, `sharing_header, `definitionBlock, `definitionInfo,
-    `projection_count, `projection_index, `recursorRule_refuses].map
+    `projection_count, `projection_index, `projection_pairs_count,
+    `projection_pair_index, `recursorRule_refuses].map
       (`Ix.CompileCert.DeclarationHeaders ++ ·)
 
 end Ix.CompileCert.Audit
@@ -3157,6 +3161,65 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedValidationRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.checkedPreseedRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Sharing supplies rewritten root validity; the input needs only the
+unchanged non-expression fields required by the wire format. -/
+def sharingHeaderRoots : Array Lean.Name :=
+  #[`MutConstHeaderWF.of_wire, `ConstantInfoHeaderWF.of_wire,
+    `withMutConstRoots_wireWF_headers, `withRoots_wireWF_headers,
+    `withRootExprs_wireWF_headers, `buildConstantWithSharing_wireWF_headers].map
+      (`Ix.Sharing.Verify ++ ·)
+
+/-- Actual nested count guards, complete state preservation and main-block
+codec composition. Rejection witnesses are symbolic capacity statements. -/
+def payloadArrayRoots : Array Lean.Name :=
+  #[`member_counts, `forIn_checks, `mutual_counts, `member_state,
+    `forIn_frame, `mutual_state, `recursor_rules, `inductive_ctors,
+    `inductiveData_ctors, `Returns.withBlockEnv, `Returns.withCurrent,
+    `Returns.withUnivCtx, `recursor_compiled, `inductive_compiled,
+    `member_refuses, `outer_refuses, `standalone_header, `build_mutual_codec,
+    `finish_shared_codec, `finish_mutual_codec].map (`Ix.CompileCert.PayloadArrays ++ ·)
+
+/-- Successful main-block encoding for every public constant kind and whole
+mutual compilation. Source semantics, generated projection correspondence and
+declaration admission are separate obligations. -/
+def familyWireRoots : Array Lean.Name :=
+  #[`Safe.withBlockEnv, `Safe.withCurrent, `Safe.withUnivCtx,
+    `Safe.takeArena, `Safe.takeSharing, `Safe.takeRefs, `Safe.takeUnivs,
+    `Safe.clear, `Safe.reset, `Safe.mutNames, `Safe.rule, `Safe.rules,
+    `Safe.finishRecursor, `Safe.recursor, `Safe.finishConstructor,
+    `Safe.constructor, `Safe.inductiveMetadata, `Safe.constructors,
+    `Safe.finishInductive, `Safe.inductive, `Safe.finishInductiveData,
+    `Safe.inductiveData, `Safe.member, `Safe.equivalents, `Safe.constClass,
+    `Safe.classes, `Safe.mutConsts, `recursorBlock_codec, `build_block_run,
+    `finishInductive_codec, `inductiveFamilyBlock_codec, `seeded_valid,
+    `recursorInfo_codec, `inductiveFamilyInfo_codec, `find_state,
+    `constructors_state, `inductiveInfo_codec, `constructorInfo_codec,
+    `constant_recursor_codec, `constant_inductive_codec,
+    `constant_constructor_codec, `headerInfo_codec, `constant_codec,
+    `mutualPayload_codec, `mutualBlock_codec].map (`Ix.CompileCert.FamilyWire ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingHeaderRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadArrayRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyWireRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.checkMutConstArrayCounts,
+      ``Ix.CompileM.checkMutualPayloadCounts] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"payload count guard has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"payload count guard is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"payload count guard is not kernel-visible and total: {name}"
+  logInfo "[cert-audit] payload arrays: actual outer and nested wire-count guards"
 
 run_cmd do
   let env ← getEnv
