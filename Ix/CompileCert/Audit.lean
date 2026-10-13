@@ -64,6 +64,7 @@ import Ix.CompileCert.RecursorBlock
 import Ix.CompileCert.FamilyFields
 import Ix.CompileCert.FamilyCollection
 import Ix.CompileCert.FamilySourceChecks
+import Ix.CompileCert.FamilyAssembly
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3192,6 +3193,15 @@ def familyConsistencyRoots : Array Lean.Name :=
   #[`related_sortTelescope, `type_count, `expectedK_from_count, `constructor_count,
     `nested_eq, `row_ok, `checks_from_source, `finish_from_source].map (`Ix.CompileCert.FamilySourceChecks ++ ·)
 
+/-- Complete reader assembly, model-prefix accounting and source-driven
+branch selection. Generation itself retains its separate correctness/progress obligations. -/
+def familyAssemblyRoots : Array Lean.Name :=
+  #[`assemble_run, `result_fields, `run_plain, `run_generated, `run_declined,
+    `run_success, `model_type_count, `model_nested, `wants_false,
+    `prepare_plain, `assemble_plain, `prepare_mutual, `prepare_nested,
+    `source_alignment, `finish_plain_from_source, `prepare_required_from_source,
+    `finish_model_from_source].map (`Ix.CompileCert.FamilyAssembly ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3220,6 +3230,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorBlockR
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyFieldRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyCollectionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyConsistencyRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyAssemblyRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
@@ -3278,7 +3289,8 @@ run_cmd do
   for name in #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.readRecord,
       ``Ix.Kernel.Reader.Ctx.recLps, ``Ix.Kernel.Reader.recursorMembers,
       ``Ix.Kernel.Reader.inductiveAt, ``Ix.Kernel.Reader.piTeleLen,
-      ``Ix.Kernel.Expr.piSortTeleLen?, ``Ix.Kernel.Expr.piResult] do
+      ``Ix.Kernel.Expr.piSortTeleLen?, ``Ix.Kernel.Expr.piResult,
+      ``Ix.Kernel.Frontend.InModel.wants, ``Ix.Kernel.Frontend.InModel.generate] do
     unless (substitutions.find? name).isNone &&
         (Lean.Compiler.getImplementedBy? env name).isNone do
       throwError m!"family reader entry has an unreviewed runtime substitution: {name}"

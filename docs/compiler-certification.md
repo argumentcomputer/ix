@@ -716,6 +716,20 @@ reduces finalization to the real assembly/model computation without assuming
 that it succeeds. Source-domain discharge, the singleton K case, generation
 termination/correspondence and kernel admission remain open.
 
+[`FamilyAssembly.lean`](../Ix/CompileCert/FamilyAssembly.lean) connects the
+remaining computation to the complete production `Reader.Read`: generated
+declarations precede the final inductive declaration, their count is exact,
+and projection owners, member/block registrations and rewrite count are
+retained. It preserves both successful generation and the exact decline.
+Source row correspondences establish alignment of the type/payload/name zips.
+Source cardinality and nestedness then justify the ordinary branch or require
+the real modelling call; a short zip cannot silently disable required modelling.
+Under the explicit source consistency/K conditions, an ordinary family returns
+its complete result, while a mutual/nested family retains the actual generator
+computation and context, including failure. This proves dispatch and assembly,
+not generator termination, runtime refinement, semantic correspondence or
+kernel admission. Reading remains separate from `State.commit`.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
