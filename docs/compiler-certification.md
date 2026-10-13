@@ -637,13 +637,27 @@ inductive headers, a source-related type and constructor array, and the ordered
 roots consumed by sharing. Header bounds follow from production guards.
 The source relation uses the family's actual universe context; equality with
 each constructor's own parameter list remains a source-family obligation.
-Sharing, whole-record interpretation, safety/binder checks and admission still
-need to be composed with these inductive payload results.
+
+[`InductiveSharing.lean`](../Ix/CompileCert/InductiveSharing.lean) carries these
+readings through actual singleton-inductive sharing and root write-back. All
+inductive/constructor headers remain unchanged, and shared type readings equal
+the original readings, including their errors.
+[`InductiveBlock.lean`](../Ix/CompileCert/InductiveBlock.lean) connects the public
+`compileConstantInfo` inductive branch through constructor lookup, the actual
+family mutual context, preseeding, compilation, sharing and block assembly.
+It supplies source-related fields and byte round-trip in the returned block,
+with exact serialization/address computation and projection assembly.
+Exact source lookup, query-local scope and prefix/state conditions remain
+explicit. This endpoint does not assume a suitable target artifact or prove
+whole-record admission. `readInductive` also consumes indexed recursor records;
+recursor type/rule correspondence and its family checks must be supplied before
+composing whole-record reading. General mutual sharing remains separate.
 
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
-and source-related constructor/inductive payloads before sharing.
+and source-related constructor/inductive payloads, including sharing and the
+returned byte artifact for public standalone inductive compilation.
 Production callers must establish prefix correctness and source resource
 conditions. Inductive-family whole-record reading, recursor and mutual source-related reading,
 generated projection correspondence, complete header interpretation, declaration
