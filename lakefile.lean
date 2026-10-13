@@ -557,12 +557,93 @@ end IxC
 
 section CompileCert
 
+/-- Why `check-cert` leaves a draft module out. -/
+inductive DraftFailure where
+  /-- The module's own first error under `lake build --wfail`. -/
+  | error (first : String)
+  /-- The module imports another draft. -/
+  | imports (draft : Lean.Name)
+
+/-- A module that `check-cert` would build but leaves out because it does not
+elaborate. Remove the entry once the module builds. -/
+structure CertDraft where
+  module : Lean.Name
+  reason : String
+  failure : DraftFailure
+
+/-- The modules under `Ix/` and `Tests/Ix/CompileCert/` that `check-cert` does
+not build. It builds every other module there, so a new module is either built
+or listed here. -/
+def certDrafts : Array CertDraft := #[
+  { module := `Ix.CompileCert.Canon.ReaderInitialization
+    reason := "unfinished proof: the paired declaration reader and initial context"
+    failure := .error "116:15: unsolved goals (`simp only` leaves `constructorAt` folded)" },
+  { module := `Ix.CompileCert.Canon.InitialSourceSupport
+    reason := "unfinished proof: initial source support of the paired reader"
+    failure := .imports `Ix.CompileCert.Canon.ReaderInitialization },
+  { module := `Ix.CompileCert.Canon.QueryArguments
+    reason := "unfinished proof: query argument transport"
+    failure := .imports `Ix.CompileCert.Canon.InitialSourceSupport },
+  { module := `Ix.CompileCert.Canon.QuerySelection
+    reason := "unfinished proof: query selection transport"
+    failure := .imports `Ix.CompileCert.Canon.QueryArguments },
+  { module := `Ix.CompileCert.Canon.QueryKeep
+    reason := "unfinished proof: allocation preserves an old query's keep decision"
+    failure := .imports `Ix.CompileCert.Canon.QuerySelection },
+  { module := `Ix.CompileCert.RuleSourceTuples
+    reason := "unfinished proof: source-side preparation of firing-row tuples"
+    failure := .error "40:6: unsolved goals (`Expr.bvar _ ≠ Expr.mdata _ _` and its neighbours)" },
+  { module := `Ix.CompileCert.RuleParameterRecipe
+    reason := "unfinished proof: the parameter recipe of a firing row"
+    failure := .imports `Ix.CompileCert.RuleSourceTuples },
+  { module := `Ix.CompileCert.RuleFiringTuples
+    reason := "unfinished proof: firing-row tuples"
+    failure := .imports `Ix.CompileCert.RuleParameterRecipe },
+  { module := `Ix.CompileCert.RuleRowAnnotations
+    reason := "unfinished proof: the outer telescope of an installed equality row"
+    failure := .imports `Ix.CompileCert.RuleFiringTuples },
+  { module := `Ix.CompileCert.Opt.O11aReconstruction
+    reason := "unfinished proof: O11a binder reconstruction"
+    failure := .error "195:6: `rewrite` finds no `Except.map _ (_ >>= _)` in the unfolded goal" },
+  { module := `Ix.CompileCert.Opt.O11aBatchClosing
+    reason := "unfinished proof: O11a batch closing agrees with sequential closing"
+    failure := .imports `Ix.CompileCert.Opt.O11aReconstruction },
+  { module := `Ix.CompileCert.Pj.GeneratedMotiveSource
+    reason := "unfinished proof: the native recursor generator's motive-domain match"
+    failure := .error "103:44: unsolved goals (`if True then some _ else none = some _`)" },
+  { module := `Tests.Ix.CompileCert.O11aReconstructionAudit
+    reason := "axiom audit of a draft"
+    failure := .imports `Ix.CompileCert.Opt.O11aReconstruction },
+  { module := `Tests.Ix.CompileCert.O11aBatchClosingAudit
+    reason := "axiom audit of a draft"
+    failure := .imports `Ix.CompileCert.Opt.O11aBatchClosing },
+  { module := `Tests.Ix.CompileCert.SbFiringTuplesAudit
+    reason := "axiom audit of a draft"
+    failure := .imports `Ix.CompileCert.RuleRowAnnotations },
+  { module := `Tests.Ix.CompileCert.SbRuleRows
+    reason := "firing-row controls of a draft"
+    failure := .imports `Ix.CompileCert.RuleRowAnnotations },
+  { module := `Tests.Ix.CompileCert.SbBoundary
+    reason := "installed-row diagnostic, behind the W+ association interface"
+    failure := .error "338:66: application type mismatch (`some staged`: `staged` is already optional)" }]
+
+/-- The modules of the `.lean` files under `dir`, relative to the package root. -/
+def modulesUnder (dir : System.FilePath) : IO (Array Lean.Name) := do
+  let files ← dir.walkDir
+  let modules := files.filterMap fun path =>
+    if path.extension == some "lean" then
+      some <| (path.withExtension "").components.foldl .str .anonymous
+    else none
+  return modules.qsort (·.toString < ·.toString)
+
 /-- Run the compiler-certification lane's gate (`Ix/CompileCert`): the strict
 build of its axiom audit `Ix.CompileCert.Audit` (the frozen root list, each
 root within `propext`, `Classical.choice`, `Quot.sound`; the build prints the
-audit's own `[cert-audit]` line); the strict build of `compile-cert-c1` and of
-the test modules outside its closure, whose `#eval` and `#guard` controls run
-at elaboration; then the fixture checks, under `lake env` (some import the
+audit's own `[cert-audit]` line); the strict build of every module under `Ix/`
+and `Tests/Ix/CompileCert/` except the drafts of `certDrafts`, which runs the
+other audit modules and the test modules' `#eval` and `#guard` controls at
+elaboration; the strict build of `compile-cert-c1` and `compile-certify`;
+then the fixture checks, under `lake env` (some import the
 test modules' oleans): the self-contained `compile-cert-c1` modes and the test
 modules with their own `main`. Each fails on a wrong verdict and prints its
 own summary. `compiled` writes its producer output, which `projection-support`
@@ -578,13 +659,25 @@ script "check-cert" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
+  let modules := (← modulesUnder "Ix") ++ (← modulesUnder ("Tests" / "Ix" / "CompileCert"))
+  let drafts := certDrafts.map (·.module)
+  for draft in certDrafts do
+    unless modules.contains draft.module do
+      throw <| IO.userError s!"check-cert draft {draft.module} is not a module under Ix/ or Tests/Ix/CompileCert/"
+    if let .imports dependency := draft.failure then
+      unless drafts.contains dependency do
+        throw <| IO.userError s!"check-cert draft {draft.module} imports {dependency}, which is not a draft"
+  unless drafts.toList.eraseDups.length == drafts.size do
+    throw <| IO.userError "check-cert drafts list a module twice"
   let mainTests := #["HelperNames", "InstalledCaps", "InstalledFields", "InstalledRules",
-    "SourceBasis", "Support"]
-  let elabTests := #["AnnotEntry", "AnnotNatOps", "AnnotReduceOps", "AnnotSupport",
-    "InstalledImage", "Telescope", "ValueReceipt", "Publication"]
+    "SourceBasis", "Support", "SbRuleRows"].filter fun test =>
+      !drafts.contains (`Tests.Ix.CompileCert ++ test.toName)
   run "lake" #["build", "--wfail", "Ix.CompileCert.Audit"]
-  run "lake" (#["build", "--wfail", "compile-cert-c1", "compile-certify"] ++
-    (mainTests ++ elabTests).map (s!"+Tests.Ix.CompileCert.{·}"))
+  let built := modules.filter (!drafts.contains ·)
+  IO.println s!"[check-cert] building {built.size} modules under Ix/ and Tests/Ix/CompileCert/; \
+    {drafts.size} drafts left out: {drafts.toList}"
+  run "lake" (#["build", "--wfail"] ++ built.map (s!"+{·}"))
+  run "lake" #["build", "--wfail", "compile-cert-c1", "compile-certify"]
   let outDir := ".lake/build/compile-cert"
   IO.FS.createDirAll outDir
   let exe := ".lake/build/bin/compile-cert-c1"
