@@ -56,7 +56,7 @@ def stage_names(args):
                   'prepare-initstd-imports', 'initstd-provenance-pre', 'initstd-rust', 'initstd-lean']
         names += [f'refuse-{backend}-{mode}' for backend in ('compile', 'compile-lean') for mode in ('off', 'bogus')]
         names += ['initstd-rust-images', 'initstd-lean-images', 'initstd-plans', 'initstd-provenance-post',
-                  'pass3-lib', 'kernel-check', 'kernel-rows', 'pin-controls', 'pin-gen',
+                  'pass3-lib-references', 'kernel-check', 'kernel-rows', 'pin-controls', 'pin-gen',
                   'pin-data-PinData', 'pin-data-NatOpPinData', 'lint', 'prepare-cert-output', 'check-cert',
                   'archive-cert', 'prepare-kernel-output', 'check-kernel', 'archive-kernel']
         names += ['toolchain-' + p for p in ('Benchmarks-Compile', 'IxC', 'Models-SetTheory')]
@@ -603,8 +603,10 @@ class Gate:
             self.compile('initstd-lean-images', 'compile-lean', 'initstd', note=True)
             self.compile('initstd-plans', 'compile-lean', 'initstd', plans=True)
             self.run('initstd-provenance-post', lambda: self.imports('post', 'initstd'), critical=True, force=True)
-            self.run('pass3-lib', lake + ['test', '--wfail', '--', '--ignored', 'pass3-lib'],
-                     env={'PASS3_LIB': f'{a.legacy_ref},{self.out / "initstd-lean.ixe"}', 'PASS3_LIB_ALL': '1'})
+            # Both inputs are pinned: `initstd-lean` has required its output to equal --initstd-ref.
+            # This checks the library comparison on the reviewed pair, not the compiler under test.
+            self.run('pass3-lib-references', lake + ['test', '--wfail', '--', '--ignored', 'pass3-lib'],
+                     env={'PASS3_LIB': f'{a.legacy_ref},{a.initstd_ref}', 'PASS3_LIB_ALL': '1'})
             self.run('kernel-check', [root / '.lake/build/bin/kernel-check-ixe', self.out / 'initstd-lean.ixe',
                                      self.out / 'kernel.jsonl'])
             self.run('kernel-rows', self.kernel_rows)
@@ -700,7 +702,7 @@ def main():
     require(a.out == a.out.resolve() and a.out != root / 'out' and a.out.is_relative_to(root / 'out'),
             '--out must be a fresh nonsymlink path below checkout/out')
     require(not a.out.exists() and not a.out.is_symlink(), 'output path already exists')
-    require(',' not in str(a.legacy_ref) + str(a.out), 'PASS3_LIB paths cannot contain commas')
+    require(',' not in str(a.legacy_ref) + str(a.initstd_ref), 'PASS3_LIB paths cannot contain commas')
     root.joinpath('.lake').mkdir(exist_ok=True)
     lock = root / '.lake/compiler-gate.lock'
     with lock.open('x') as stream:
