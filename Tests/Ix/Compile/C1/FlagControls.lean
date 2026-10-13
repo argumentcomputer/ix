@@ -70,6 +70,11 @@ def checks : Array (String × Bool) := Id.run do
   let first := su.ctors[0]!
   let other := { first with cnst := { first.cnst with name := secondName }, cidx := 1 }
   let su := { su with ctors := su.ctors.push other, ind := { su.ind with ctors := su.ind.ctors.push secondName } }
+  -- A `Sort u` original whose own constructor passes the singleton test,
+  -- with one auxiliary: the expanded block is not a singleton and `u` may
+  -- be zero, so elimination is small, as in the kernels.
+  let nsu := member "NestedSortU" (Level.mkParam u) [] false #[u]
+  let nsuAux := member "NestedSortUAux" (Level.mkParam u) [] true #[u]
   let sequence := runBridge do
     let first ← flags #[p, q]
     let second ← flags #[proofField]
@@ -86,6 +91,7 @@ def checks : Array (String × Bool) := Id.run do
     ("ordinary proof-only singleton retains large elimination", equalsFlags #[proofField] (true,false,true)),
     ("nested Type remains large", equalsFlags #[t,a] (true,false,false)),
     ("Sort u two-constructor neighbour stays small", equalsFlags #[su] (false,false,false)),
+    ("nested Sort u singleton is small", equalsFlags #[nsu,nsuAux] (false,false,false)),
     ("subsequent flag call on retained KEnv keeps its result", match sequence with
       | .ok (first,second) => first == (false,false,true) && second == (true,false,true)
       | .error _ => false)

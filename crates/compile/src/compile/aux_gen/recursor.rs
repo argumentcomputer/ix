@@ -2532,10 +2532,12 @@ fn compute_is_large_and_k(
   // here handles `Zero`, `IMax(_, Zero)`, and the like.
   let is_prop = result_kuniv.is_zero();
 
-  // C1: the full expanded Prop block has multiple members and eliminates
-  // small. Decide this before probing fields in the original-only KEnv;
-  // a field can refer to an auxiliary that was not inserted.
-  let is_large = if is_prop && classes.len() > n_classes {
+  // C1: the kernels' rule (Lean's `elim_only_at_universe_zero`): a block
+  // whose level may be zero eliminates small when the full expanded block
+  // has more than one member, whatever the originals' singleton test says.
+  // Decide this before probing fields in the original-only KEnv; a field
+  // can refer to an auxiliary that was not inserted.
+  let is_large = if !result_kuniv.is_never_zero() && classes.len() != 1 {
     false
   } else {
     tc.is_large_eliminator(&result_kuniv, &ind_infos).map_err(|e| {
@@ -2978,6 +2980,17 @@ mod tests {
     su.ind.ctors.push(other.cnst.name.clone());
     su.ctors.push(other);
     assert_eq!(c1_flags(&[su]).unwrap(), (false, false, false));
+  }
+
+  /// A `Sort u` original whose own constructor passes the singleton test,
+  /// with one auxiliary: the expanded block is not a singleton and `u` may
+  /// be zero, so elimination is small, as in the kernels.
+  #[test]
+  fn c1_nested_sort_u_singleton_is_small() {
+    let u = || vec![n("u")];
+    let nsu = c1_member("NestedSortU", Level::param(n("u")), &[], false, u());
+    let aux = c1_member("NestedSortUAux", Level::param(n("u")), &[], true, u());
+    assert_eq!(c1_flags(&[nsu, aux]).unwrap(), (false, false, false));
   }
 
   #[test]

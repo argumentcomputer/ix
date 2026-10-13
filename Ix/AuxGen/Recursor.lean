@@ -1693,11 +1693,13 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
   -- Prop determination from the WHNF-reduced kernel-derived level.
   let isProp := resultKuniv.isSemanticZero
 
-  -- C1: the full expanded Prop block has multiple members, so it eliminates
-  -- small. Decide this before probing fields in the incomplete original-only
-  -- KEnv; those fields can refer to an auxiliary that was not inserted.
+  -- C1: the kernels' rule (Lean's `elim_only_at_universe_zero`): a block
+  -- whose level may be zero eliminates small when the full expanded block
+  -- has more than one member, whatever the originals' singleton test says.
+  -- Decide this before probing fields in the incomplete original-only KEnv;
+  -- those fields can refer to an auxiliary that was not inserted.
   let isLarge ←
-    if isProp && classes.size > nClasses then
+    if !resultKuniv.isNeverZero && classes.size != 1 then
       pure false
     else
       match ← runTc (Ix.Tc.TcM.runRec

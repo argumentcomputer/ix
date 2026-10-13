@@ -148,6 +148,14 @@ def fixtures : List Fixture := [
   { stem := "SurgName", ns := ["SurgName"] },
   -- A0 item 3 (WB-B8): no forced large elimination.
   { stem := "SortUDecl", ns := ["SortUD"] },
+  -- A nested `Sort u` singleton whose expanded block has two members: its
+  -- recursor eliminates into Prop only, as in Lean. The certified checker's
+  -- modeller declines the field that mentions `Box T` under `K`, and the
+  -- block's dependents are blocked on it.
+  { stem := "NestedSortU", ns := ["NestedSortU"]
+    knownFails := kf "cert" "certified: modeller decline (block mentioned under a binder)"
+      ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
+        "NestedSortU.T._ix.casesOn", "NestedSortU.t_rec"] },
   -- A0 item 3 (WB-E1/A4): an evaporation target that is not a one-motive
   -- recursor is refused, naming the block.
   { stem := "F3_SplitRoseRace", ns := ["A", "B", "Rose"]
