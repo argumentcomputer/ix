@@ -68,6 +68,7 @@ import Ix.CompileCert.FamilyAssembly
 import Ix.CompileCert.FamilyReading
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.ReaderIndex
+import Ix.CompileCert.ReaderIndexEntries
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3229,6 +3230,16 @@ def readerIndexRoots : Array Lean.Name :=
     `singleton_order, `buildIndex_singleton_order, `compiled_shape, `compiled_order,
     `compile_read_indexed].map (`Ix.CompileCert.ReaderIndex ++ ·)
 
+/-- Indexed recursor origins and completed group/member lookup, separating
+scanned-record provenance from the publication/store coherence condition. -/
+def readerIndexEntryRoots : Array Lean.Name :=
+  #[`recs_insert_extends, `provenance_insert, `grouped_extends, `grouped_empty_insert,
+    `found_getD, `found_insert, `valid_empty, `update_valid, `new_block_valid,
+    `candidate_valid, `record_valid, `collect_valid, `complete_valid,
+    `run_valid, `buildIndex_valid, `entry_stored, `grouped_entry,
+    `member_source, `member_unique, `member_lookup, `entry_lookup,
+    `grouped_lookup].map (`Ix.CompileCert.ReaderIndexEntries ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3261,6 +3272,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyAssembly
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyReadingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveReadingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexEntryRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 

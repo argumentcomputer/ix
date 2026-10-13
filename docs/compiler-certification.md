@@ -765,6 +765,18 @@ and the emitted stored block. Index presence, successful source recursor
 analysis, full recursor readiness and publication still need their dischargers;
 no successful-reading premise is used to prove the index shape.
 
+[`ReaderIndexEntries.lean`](../Ix/CompileCert/ReaderIndexEntries.lean) records
+the scanned record/member, successful recursor analysis, block lookup, accepted
+order guards and exact logical name/large-eliminator fields behind each index
+entry. Fresh insertion preserves existing entries. Discovered group pairs
+remain linked to matching entries, and sorting/completion gives every block
+recursor reference an indexed entry owned by that block. The actual member
+enumeration has unique positions, so membership supplies the reader's `find?`
+lookup. Under separately stated record/store coherence, the later store lookup
+retrieves the same record that was analysed. This proves provenance and group
+correspondence; discovery/presence, first-per-motive completeness and coherence
+from actual publication/context construction remain open.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
