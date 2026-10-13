@@ -669,6 +669,23 @@ metadata-value relation is required. The indexed reader's pairing of rules with
 constructors, universe contexts, safety/binder/family checks and admission are
 still separate source-family obligations.
 
+[`FamilyReader.lean`](../Ix/CompileCert/FamilyReader.lean) exposes the kernel
+family reader's type, constructor, recursor and finalization stages and proves
+their composition equal to the existing `readInductive`, including failures.
+The kernel implementation is unchanged.
+[`FamilyFields.lean`](../Ix/CompileCert/FamilyFields.lean) connects public
+recursor compilation to the actual per-recursor action in that traversal.
+The result supplies source-related type/rule bodies, exact rule field counts,
+the parser's initial rule flags and constructor identities in ordinal order.
+It derives the actual `recLps` arity from the family-level relationship and
+instantiates the reader's real self map, retaining the source-key alias condition.
+Index entries, published records, major identity, constructor/rule count and
+source safety remain explicit inputs. The theorem works for any continuation
+of the recursor action, so it applies inside the family loop. Complete
+type/constructor traversal, index construction, all-family composition and
+the final consistency/modeller checks remain open; a successful whole-family
+read or kernel admission is not a premise or conclusion of this checkpoint.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,

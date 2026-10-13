@@ -61,6 +61,7 @@ import Ix.CompileCert.HeaderEmission
 import Ix.CompileCert.InductiveEmission
 import Ix.CompileCert.InductiveBlock
 import Ix.CompileCert.RecursorBlock
+import Ix.CompileCert.FamilyFields
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3164,6 +3165,14 @@ and exact bytes through actual initialization, preseed and block assembly. -/
 def recursorBlockRoots : Array Lean.Name :=
   #[`block_run, `block_correct, `info_correct, `constant_correct].map (`Ix.CompileCert.RecursorBlock ++ ·)
 
+/-- Exact decomposition of the real family reader and source-related rule
+rows in its logical universe/self context and per-recursor continuation. -/
+def familyFieldRoots : Array Lean.Name :=
+  #[`Ix.CompileCert.FamilyReader.run_eq] ++
+  #[`recLps_length, `lpsAt_length, `blob_recLps, `rules_run, `rules_loop,
+    `rules_read, `recursor_action, `singleton_self, `compiled_recursor,
+    `compiled_recursor_action].map (`Ix.CompileCert.FamilyFields ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3189,6 +3198,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveBlock
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorEmissionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorSharingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorBlockRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyFieldRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
@@ -3240,6 +3250,21 @@ run_cmd do
     unless definition.safety == .safe do
       throwError m!"recursor entry is not kernel-visible and safe: {name}"
   logInfo "[cert-audit] recursors: actual type/rule loop, finalizer and block/preseed entries"
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.readRecord,
+      ``Ix.Kernel.Reader.Ctx.recLps, ``Ix.Kernel.Reader.recursorMembers,
+      ``Ix.Kernel.Reader.inductiveAt] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"family reader entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"family reader entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"family reader entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] family reader: actual record/family entries, universe context and member/major lookup"
 
 namespace Ix.CompileCert.Audit
 
