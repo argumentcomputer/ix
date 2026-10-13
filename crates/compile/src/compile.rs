@@ -49,8 +49,8 @@ use crate::{
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
-use expr_key::PreseedKey;
 pub use expr_key::{ExprKey, UnivKey};
+use expr_key::{PreseedKey, UnivContext};
 
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
@@ -593,7 +593,16 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  let key = UnivKey::new(level, univ_params);
+  compile_univ_in(level, &UnivContext::new(univ_params), cache)
+}
+
+/// `compile_univ` under a parameter context built once for the whole level.
+fn compile_univ_in(
+  level: &Level,
+  ctx: &UnivContext,
+  cache: &mut BlockCache,
+) -> Result<Arc<Univ>, CompileError> {
+  let key = UnivKey::new(level, ctx);
   if let Some(cached) = cache.univ_cache.get(&key) {
     return Ok(cached.clone());
   }
@@ -601,22 +610,22 @@ pub fn compile_univ(
   let univ = match level.as_data() {
     LevelData::Zero(_) => Univ::zero(),
     LevelData::Succ(inner, _) => {
-      let inner_univ = compile_univ(inner, univ_params, cache)?;
+      let inner_univ = compile_univ_in(inner, ctx, cache)?;
       Univ::succ(inner_univ)
     },
     LevelData::Max(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_in(a, ctx, cache)?;
+      let b_univ = compile_univ_in(b, ctx, cache)?;
       Univ::max(a_univ, b_univ)
     },
     LevelData::Imax(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_in(a, ctx, cache)?;
+      let b_univ = compile_univ_in(b, ctx, cache)?;
       Univ::imax(a_univ, b_univ)
     },
     LevelData::Param(name, _) => {
       let idx =
-        univ_params.iter().position(|n| n == name).ok_or_else(|| {
+        ctx.params().iter().position(|n| n == name).ok_or_else(|| {
           CompileError::UnknownUnivParam {
             curr: String::new(),
             param: name.pretty(),
