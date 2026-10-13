@@ -1233,54 +1233,10 @@ fn get_name_component(
 // Named serialization
 // ============================================================================
 
-use super::env::{AuxLayout, LazyMetaWindow, Named};
+use super::env::{LazyMetaWindow, Named};
 use super::metadata::{
   ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
 };
-
-/// Serialize an `AuxLayout` side-table entry.
-///
-/// Encoding: two Vec<u64> telescopes. `usize` is written/read as `u64`
-/// (via `put_u64` / `TagN`) to avoid target-word-size divergence in
-/// cross-platform serialized envs.
-pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
-  put_u64(layout.perm.len() as u64, buf);
-  for &p in &layout.perm {
-    put_u64(p as u64, buf);
-  }
-  put_u64(layout.source_ctor_counts.len() as u64, buf);
-  for &c in &layout.source_ctor_counts {
-    put_u64(c as u64, buf);
-  }
-  put_u64(layout.evaporated.len() as u64, buf);
-  for &b in &layout.evaporated {
-    put_u8(u8::from(b), buf);
-  }
-}
-
-/// Deserialize an `AuxLayout` side-table entry.
-pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
-  let n_perm = get_u64(buf)? as usize;
-  let mut perm = Vec::with_capacity(n_perm);
-  for _ in 0..n_perm {
-    perm.push(get_u64(buf)? as usize);
-  }
-  let n_counts = get_u64(buf)? as usize;
-  let mut source_ctor_counts = Vec::with_capacity(n_counts);
-  for _ in 0..n_counts {
-    source_ctor_counts.push(get_u64(buf)? as usize);
-  }
-  let n_evap = get_u64(buf)? as usize;
-  let mut evaporated = Vec::with_capacity(n_evap);
-  for _ in 0..n_evap {
-    evaporated.push(match get_u8(buf)? {
-      0 => false,
-      1 => true,
-      x => return Err(format!("get_aux_layout: invalid evaporated flag {x}")),
-    });
-  }
-  Ok(AuxLayout { perm, source_ctor_counts, evaporated })
-}
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(

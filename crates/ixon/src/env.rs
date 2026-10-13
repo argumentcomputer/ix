@@ -301,13 +301,9 @@ impl Named {
 /// correctly permute source-order aux motives/minors into canonical
 /// positions. Both arrays have one entry per source-walk-discovered aux.
 ///
-/// This lives in `ixon::env` (it originated in `ix_compile::surgery`, deleted
-/// at M6R slice 6) so it can be persisted into the serialized Ixon environment
-/// as a side-table on [`Env::aux_layouts`].
-///
-/// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
-/// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
-/// `.brecOn_N` names off.
+/// It is carried per block in the block's `Muts` metadata
+/// (`ConstantMetaInfo::Muts::aux_layout`, encoded inline there), not in a
+/// side table of the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuxLayout {
   /// `perm[source_j] = canonical_i`: Lean's source-walk position to

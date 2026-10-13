@@ -153,16 +153,6 @@ pub struct CompileState {
   /// Original Lean environment, if available. Used by the decompiler for
   /// aux_gen comparison (verifying regenerated constants match originals).
   pub lean_env: Option<Arc<LeanEnv>>,
-  /// Per-block nested-auxiliary layout (permutation + source ctor
-  /// counts) for each source `InductiveVal.all[0]` name. Used by
-  /// `compile_aux_block` (via `generate_and_compile_aux_recursors`) to
-  ///    register Lean-source aux-rec/below/brecOn names at the canonical
-  ///    DPrj/RPrj position.
-  ///
-  /// Computed once per block in `generate_and_compile_aux_recursors`
-  /// right after `aux_gen::generate_aux_patches`. Blocks without nested
-  /// auxiliaries simply aren't inserted.
-  pub aux_perms: DashMap<Name, ixon::env::AuxLayout>,
   /// Reducibility hints per definition NAME, recorded by
   /// `compile_definition` (the only place the Lean-side hints are in
   /// scope — hints are not part of `ConstantMeta`). The constant
@@ -294,7 +284,6 @@ impl Default for CompileState {
       aux_gen_pending: std::sync::Mutex::new(Vec::new()),
       aux_name_to_addr: Default::default(),
       lean_env: None,
-      aux_perms: Default::default(),
       def_hints: Default::default(),
       sharing_limits: ExactSharingLimits::default(),
       pass3: false,

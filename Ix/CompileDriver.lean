@@ -26,10 +26,6 @@
     The kernel env is content-addressed, so reuse is a cache, not an
     input — the aux-gen-diff dump gates verified byte-identical aux
     output under fresh-per-block contexts.
-  - `stt.aux_perms` is not accumulated (its only consumer is the
-    decompiler, which is out of scope); the per-block `AuxLayout` still
-    flows through the tail into Pass 3 and the re-registered `Muts`
-    entries.
 -/
 module
 import Std.Sync

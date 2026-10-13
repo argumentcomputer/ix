@@ -4292,140 +4292,6 @@ fn decompile_missing_ctor_aliases(
   })
 }
 
-/// Regenerate aux_gen constants for a single mutual inductive block.
-///
-/// Runs the dependency-ordered phases (.rec -> .casesOn -> .recOn -> .below ->
-/// .below.rec -> .brecOn) for one mutual inductive block. Reads parent
-/// inductives from `env` (the shared DashMap) and writes generated constants
-/// back to `dstt.env`.
-///
-/// Returns a list of (name, error) pairs for any failures within the block.
-/// Rehydrate `stt.aux_perms` from persisted Muts.aux_layout entries.
-///
-/// Called once at the start of [`decompile_env`] so that aux_gen's
-/// in-memory perm lookups see the same permutation compile produced,
-/// even when `stt` was reconstructed from a deserialized Ixon env.
-///
-/// Walk every Muts-tagged index entry; if it carries a stored
-/// `aux_layout`, locate the block's source-order first inductive name
-/// via one of its primary members' `Indc.all[0]` and populate
-/// `stt.aux_perms[first_name] = layout`.
-///
-/// Idempotent: if `stt.aux_perms` already has an entry for the name, we
-/// leave it alone (compile-in-progress stt wins over rehydrated copy).
-fn rehydrate_aux_perms_from_env(
-  stt: &CompileState,
-  muts_index: &MutsPlanIndex,
-) {
-  use ixon::metadata::ConstantMetaInfo;
-
-  let mut n_muts_with_layout = 0usize;
-  let mut n_populated = 0usize;
-
-  for entry in &muts_index.entries {
-    let Some(aux_layout) = entry.aux_layout.clone() else {
-      continue;
-    };
-    n_muts_with_layout += 1;
-
-    // The first canonical class representative's Named entry carries
-    // the Indc metadata, whose `all` is in source order.
-    let first_rep_name = &entry.class_names[0][0];
-    let rep_named = match stt.env.named.get(first_rep_name) {
-      Some(r) => r,
-      None => continue,
-    };
-
-    // Source-order `all` lives on any block member's Indc metadata.
-    // (For aux-rewritten inductives, `Named.original` holds a pre-aux
-    // version whose Indc.all is also source-order; we prefer the
-    // canonical-entry `Indc.all` since it's the same source-order list
-    // under spec §10.2.)
-    let rep_meta = rep_named.meta();
-    let source_all: Option<&[Address]> = match &rep_meta.info {
-      ConstantMetaInfo::Indc { all, .. } => Some(all.as_slice()),
-      _ => None,
-    };
-    let source_all = match source_all {
-      Some(s) if !s.is_empty() => s,
-      _ => continue,
-    };
-
-    let source_first_name = match stt.env.get_name(&source_all[0]) {
-      Some(n) => n,
-      None => continue,
-    };
-
-    // Only populate if we haven't already — don't clobber an
-    // in-progress compile's aux_perms entry.
-    if !stt.aux_perms.contains_key(&source_first_name) {
-      stt.aux_perms.insert(source_first_name, aux_layout);
-      n_populated += 1;
-    }
-  }
-
-  if std::env::var_os("IX_AUX_LAYOUT_DEBUG").is_some() {
-    eprintln!(
-      "[rehydrate_aux_perms] scanned {} Muts entries, \
-       {n_muts_with_layout} had stored aux_layout, {n_populated} populated",
-      muts_index.entries.len(),
-    );
-  }
-}
-
-/// One `Muts`-tagged Named entry, pre-resolved for the aux-layout
-/// rehydration.
-struct MutsIndexEntry {
-  class_names: Vec<Vec<Name>>,
-  aux_layout: Option<ixon::env::AuxLayout>,
-}
-
-/// Every `Muts`-tagged Named entry with its class-name lists resolved,
-/// built in one parallel scan over `stt.env.named` (one metadata decode
-/// per entry), read by the aux-layout rehydration (until M6R slice 6 also
-/// by the legacy surgery's per-block plan lookup).
-struct MutsPlanIndex {
-  entries: Vec<MutsIndexEntry>,
-}
-
-fn build_muts_plan_index(stt: &CompileState) -> MutsPlanIndex {
-  use ixon::metadata::ConstantMetaInfo;
-  use rayon::prelude::*;
-
-  let entries: Vec<MutsIndexEntry> = stt
-    .env
-    .named
-    .par_iter()
-    .filter_map(|entry| {
-      let meta = entry.value().meta();
-      let ConstantMetaInfo::Muts { all, aux_layout } = &meta.info else {
-        return None;
-      };
-      let mut class_names = Vec::with_capacity(all.len());
-      for class in all {
-        let names = names_from_addrs(class, stt)?;
-        if names.is_empty() {
-          return None;
-        }
-        class_names.push(names);
-      }
-      if class_names.is_empty() {
-        return None;
-      }
-      Some(MutsIndexEntry { class_names, aux_layout: aux_layout.clone() })
-    })
-    .collect();
-
-  MutsPlanIndex { entries }
-}
-
-fn names_from_addrs(
-  addrs: &[Address],
-  stt: &CompileState,
-) -> Option<Vec<Name>> {
-  addrs.iter().map(|addr| stt.env.get_name(addr)).collect()
-}
-
 /// Source-faithful recovery for an aux constant whose canonical
 /// regeneration diverges from Lean's original declaration (over-merge
 /// splits, alpha collapse, evaporated auxes). `roundtrip_block` pairs the
@@ -4566,6 +4432,14 @@ fn regen_one_cases_on(
   }
 }
 
+/// Regenerate aux_gen constants for a single mutual inductive block.
+///
+/// Runs the dependency-ordered phases (.rec -> .casesOn -> .recOn -> .below ->
+/// .below.rec -> .brecOn) for one mutual inductive block. Reads parent
+/// inductives from `env` (the shared DashMap) and writes generated constants
+/// back to `dstt.env`.
+///
+/// Returns a list of (name, error) pairs for any failures within the block.
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -4662,9 +4536,6 @@ fn decompile_block_aux_gen(
   // to produce canonical bytes at `Named.addr`; decompile feeds
   // discovery order to produce source-form bytes matching
   // `Named.original.0`.
-  //
-  // (The stored `AuxLayout` is still rehydrated into `stt.aux_perms`
-  // at `rehydrate_aux_perms_from_env`: Pass 3 and the regeneration read it.)
   //
   // See `docs/ix_canonicity.md` §9.3 / §17.2 for the canonicity
   // commitment this upholds.
@@ -5416,30 +5287,6 @@ pub fn decompile_env(
   use crate::graph::{NameSet, RefMap, get_constant_info_references};
 
   let dstt = DecompileState::default();
-
-  // Pre-pass: index every Muts-tagged Named entry in one parallel scan.
-  // Rehydration below and Pass 2's per-block call-site planning both
-  // read Muts metadata, which under the demoted repr costs a full
-  // decode per access — the index bounds that to one decode per entry.
-  let t_idx = std::time::Instant::now();
-  let muts_index = build_muts_plan_index(stt);
-  eprintln!(
-    "[decompile] muts plan index built in {:.2}s ({} entries){}",
-    t_idx.elapsed().as_secs_f32(),
-    muts_index.entries.len(),
-    rss_log_suffix(),
-  );
-
-  // Pre-pass: Rehydrate `stt.aux_perms` from persisted Muts metadata.
-  //
-  // When `stt` was freshly constructed from a deserialized Ixon env,
-  // `stt.aux_perms` starts empty — compile wrote it in-memory only. The
-  // aux_layout payload survives serialize via
-  // `ConstantMetaInfo::Muts.aux_layout`, so we reconstitute it here
-  // before Pass 2 runs aux_gen against the decompiled blocks.
-  //
-  // See `docs/ix_canonicity.md` §10.2 / §17.3.
-  rehydrate_aux_perms_from_env(stt, &muts_index);
 
   // Pass 1: Decompile all non-aux_gen constants (parallel).
   // Aux_gen constants (named.original.is_some() && is_aux_gen_suffix) are

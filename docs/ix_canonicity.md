@@ -344,9 +344,8 @@ relevant actual content.
 ### 10.2 Aux layout persistence
 
 `ConstantMetaInfo::Muts.aux_layout` holds the optional `AuxLayout`, including
-source-position permutation and source constructor counts. The decompiler
-rehydrates this source/canonical correspondence into its lookup. Its source
-auxiliary recovery path nevertheless passes no layout override to recursor
+source-position permutation and source constructor counts. The decompiler's
+source auxiliary recovery path passes no layout override to recursor
 generation, preserving source-walk order; §17.2 records the remaining distinction.
 The
 out-of-SCC sentinel stays distinct from a valid canonical index. This persisted

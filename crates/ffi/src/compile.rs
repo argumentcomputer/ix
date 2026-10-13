@@ -2415,10 +2415,9 @@ fn aux_dump_usizes(xs: &[usize]) -> String {
     .join(",")
 }
 
-/// FFI: deterministic text dump of the post-compile AuxLayouts and synthetic
-/// `Muts` named entries — the orchestration parity gate's medium (until M6R
-/// slice 6 it also dumped the legacy call-site surgery's plans). Lines:
-///   layout <all0> perm=<csv> counts=<csv>
+/// FFI: deterministic text dump of the post-compile synthetic `Muts` named
+/// entries and their AuxLayouts — the orchestration parity gate's medium.
+/// Lines:
 ///   muts <name> addr=<hex> all=<h,h;h|...> layout=<perm csv>/<counts csv>|none
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
@@ -2441,25 +2440,6 @@ pub extern "C" fn rs_aux_gen_dump_plans(
   };
 
   let mut out = String::new();
-
-  let mut layouts: Vec<(String, ixon::env::AuxLayout)> = stt
-    .aux_perms
-    .iter()
-    .map(|e| (e.key().pretty(), e.value().clone()))
-    .collect();
-  layouts.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, l) in &layouts {
-    let _ = writeln!(
-      out,
-      "layout {name} perm={} counts={}",
-      aux_dump_usizes(&l.perm),
-      l.source_ctor_counts
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-    );
-  }
 
   // Synthetic Muts named entries (kernel ingress discovery points).
   let mut muts: Vec<(String, String, String, String)> = stt

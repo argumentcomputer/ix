@@ -53,8 +53,8 @@ opaque rsAuxGenDumpExpandFFI
 opaque rsAuxGenDumpPatchesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
-/-- FFI (test-ffi only): post-compile AuxLayouts + Muts named entries (until
-    M6R slice 6 also the legacy surgery's plans) (`rs_aux_gen_dump_plans` in crates/ffi/src/compile.rs) —
+/-- FFI (test-ffi only): post-compile Muts named entries with their
+    AuxLayouts (`rs_aux_gen_dump_plans` in crates/ffi/src/compile.rs) —
     the orchestration gate medium. -/
 @[extern "rs_aux_gen_dump_plans"]
 opaque rsAuxGenDumpPlansFFI

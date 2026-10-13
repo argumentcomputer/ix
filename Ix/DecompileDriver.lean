@@ -74,96 +74,6 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
             isReflexive := flags.isReflexive })
   return .ok result
 
-/-! ## Aux-layout rehydration — decompile.rs:3682-4087
-
-A DESERIALIZED env has no in-memory `aux_perms` (compile-time only). Pass
-2's regeneration needs them back, reconstructed from what DID survive
-serialization: the `Muts` metadata entries' class lists and `AuxLayout`
-payloads. (Until M6R slice 6 this section also rebuilt the legacy call-site
-surgery's plans for the roundtrip recompiles of a surgered environment;
-Pass 3 environments carry no plan, and the surgery is deleted.) -/
-
-/-- One `Muts`-tagged Named entry, class addresses resolved to names.
-    Mirrors Rust `MutsIndexEntry` (decompile.rs). -/
-structure MutsIndexEntry where
-  classNames : Array (Array Ix.Name)
-  flatNames : Array Ix.Name
-  auxLayout : Option Ixon.AuxLayout
-  deriving Inhabited
-
-/-- Index of every Muts-tagged Named entry, plus a member-name → entry
-    index for candidate lookup. Mirrors Rust `MutsPlanIndex`
-    (`build_muts_plan_index`, decompile.rs:3839). -/
-structure MutsPlanIndex where
-  entries : Array MutsIndexEntry
-  byMember : Std.HashMap Ix.Name (Array Nat)
-  deriving Inhabited
-
-/-- Resolve an address list through the env names table; `none` if any
-    address is unnamed (Rust `names_from_addrs`, decompile.rs:3885). -/
-private def namesFromAddrs (ixonEnv : Ixon.Env) (addrs : Array Address)
-    : Option (Array Ix.Name) := Id.run do
-  let mut out : Array Ix.Name := #[]
-  for addr in addrs do
-    match ixonEnv.names.get? addr with
-    | some n => out := out.push n
-    | none => return none
-  return some out
-
-/-- Mirrors Rust `build_muts_plan_index` (decompile.rs:3839): one scan
-    over the named table collecting Muts metadata (sequential here;
-    Rust parallelizes the same per-entry filter_map). -/
-def buildMutsPlanIndex (ixonEnv : Ixon.Env) : MutsPlanIndex := Id.run do
-  let mut entries : Array MutsIndexEntry := #[]
-  for (_, named) in ixonEnv.named do
-    if let .muts all auxLayout := named.constMeta.info then
-      let mut classNames : Array (Array Ix.Name) := #[]
-      let mut flatNames : Array Ix.Name := #[]
-      let mut ok := true
-      for cls in all do
-        if !ok then continue
-        match namesFromAddrs ixonEnv cls with
-        | some names =>
-          if names.isEmpty then
-            ok := false
-          else
-            flatNames := flatNames ++ names
-            classNames := classNames.push names
-        | none => ok := false
-      if ok && !flatNames.isEmpty then
-        entries := entries.push { classNames, flatNames, auxLayout }
-  let mut byMember : Std.HashMap Ix.Name (Array Nat) := {}
-  for h : i in [:entries.size] do
-    for name in entries[i].flatNames do
-      byMember := byMember.alter name fun
-        | some arr => some (arr.push i)
-        | none => some #[i]
-  return { entries, byMember }
-
-/-- Rehydrated aux layouts keyed by the SOURCE block's first name (Rust
-    `stt.aux_perms` after `rehydrate_aux_perms_from_env`,
-    decompile.rs:3682): for each Muts entry carrying a stored
-    `AuxLayout`, the source-order `all` is read off the first canonical
-    class representative's Indc metadata, and the layout is registered
-    under `all[0]` (first entry wins — matching Rust's
-    populate-if-absent). -/
-def rehydrateAuxPerms (ixonEnv : Ixon.Env) (index : MutsPlanIndex)
-    : Std.HashMap Ix.Name Ixon.AuxLayout := Id.run do
-  let mut auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout := {}
-  for entry in index.entries do
-    let some auxLayout := entry.auxLayout | continue
-    let some firstClass := entry.classNames[0]? | continue
-    let some firstRep := firstClass[0]? | continue
-    let some repNamed := ixonEnv.named.get? firstRep | continue
-    let sourceAllAddrs := match repNamed.constMeta.info with
-      | .indc _ _ _ all .. => all
-      | _ => #[]
-    if sourceAllAddrs.isEmpty then continue
-    let some sourceFirst := ixonEnv.names.get? sourceAllAddrs[0]! | continue
-    if !auxPerms.contains sourceFirst then
-      auxPerms := auxPerms.insert sourceFirst auxLayout
-  return auxPerms
-
 /-- Group aux_gen constants (named entries with `original` set) by
     source mutual block, keyed on the decompiled root inductive's
     `all[0]`, carrying the block's `all` and its (kind, name) aux
@@ -232,7 +142,6 @@ structure Pass2St where
   dstt : Std.HashMap Ix.Name Ix.ConstantInfo
   /-- Kernel bridge context, accumulated across blocks (cold start). -/
   kctx : Ix.AuxGen.AuxKernelCtx
-  auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout
   ingressed : Ix.Set Ix.Name := {}
   errors : Array (Ix.Name × String) := #[]
   /-- Wave-driver deltas: every insert into `dstt`/`workEnv`
@@ -244,8 +153,7 @@ structure Pass2St where
   deltaWork : Array (Ix.Name × Ix.ConstantInfo) := #[]
 
 instance : Inhabited Pass2St :=
-  ⟨{ workEnv := {}, dstt := {}, kctx := Ix.AuxGen.AuxKernelCtx.new
-     auxPerms := {} }⟩
+  ⟨{ workEnv := {}, dstt := {}, kctx := Ix.AuxGen.AuxKernelCtx.new }⟩
 
 /-- One block's outputs, as shipped from a wave worker to the merge
     loop of the parallel Pass-2 driver. Deliberately SLIM: the worker's
@@ -374,7 +282,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
 
   -- Phase 1: canonical recursors in SOURCE-WALK order — aux_layout is
   -- deliberately `none` so discovery order mirrors Lean's elaborator
-  -- (decompile.rs; the layout stays rehydrated for the regeneration).
+  -- (decompile.rs).
   let mut canonicalRecs : Array (Ix.Name × Ix.RecursorVal) := #[]
   let mut isProp := false
   if needsRec || needsRecOn || needsCasesOn || needsBelow
@@ -691,8 +599,6 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Pass2St := Id.run do
-  let mutsIndex := buildMutsPlanIndex ixonEnv
-  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
   let blocks := collectAuxBlocks ixonEnv pass1
   let ctx : Pass2Ctx := {
     ixonEnv
@@ -759,8 +665,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
   let mut st : Pass2St := {
     workEnv := pass1
     dstt := pass1
-    kctx := Ix.AuxGen.AuxKernelCtx.new
-    auxPerms }
+    kctx := Ix.AuxGen.AuxKernelCtx.new }
   -- Cold-start kernel prelude (decompile.rs:5140-5142).
   match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
       Ix.AuxGen.ensurePreludeInKenvOf maps) with
@@ -828,8 +733,6 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
     : IO Pass2St := do
-  let mutsIndex := buildMutsPlanIndex ixonEnv
-  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
   let blocks := collectAuxBlocks ixonEnv pass1
   let ctx : Pass2Ctx := {
     ixonEnv
@@ -870,8 +773,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
   let mut st : Pass2St := {
     workEnv := pass1
     dstt := pass1
-    kctx := Ix.AuxGen.AuxKernelCtx.new
-    auxPerms }
+    kctx := Ix.AuxGen.AuxKernelCtx.new }
   match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
       Ix.AuxGen.ensurePreludeInKenvOf maps) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
