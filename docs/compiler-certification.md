@@ -479,11 +479,31 @@ value and overflowing counts; they do not claim those oversized headers are
 valid Lean declarations. Full declaration reading/admission, nested array-count
 wire bounds and source-domain totality remain separate obligations.
 
+[`DefinitionReading.lean`](../Ix/CompileCert/DefinitionReading.lean) connects
+the actual `compileConstantInfo` definition/theorem/opaque branches to
+`Kernel.Reader.readRecord`. It derives the reader's parameter-list length from
+the emitted header and uses the actual singleton self mapping. For the reader's
+allowed source safety cases, successful compilation yields a whole-record
+reading containing exactly one declaration, with source-related raw type/value
+fields and the existing `DefinitionDecl` specification of projection rewriting.
+The endpoint also supplies the production serialization/address wrapper and byte
+round-trip. Reader success is derived, not a premise. For declined safety cases,
+the exact reader refusal follows instead.
+
+The compiler's source Name ordering is hash-based; the singleton-binding lemma
+therefore states the required correspondence for names equal under that lookup
+key explicitly. It assumes no hash injectivity and adds no presentation-metadata
+fidelity requirement. Dependency bindings, source universe bounds and retained
+state readiness remain explicit. Projection-rewrite semantic preservation and
+declaration admission are still separate: the whole-record reading theorem
+records the actual rewrite without asserting that its denotation is unchanged.
+
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization with final table-wire validity
 derived from the stated input conditions.
 Production callers must establish prefix correctness and source resource
 conditions; other declaration families and their complete header interpretation,
+projection-rewrite semantic preservation,
 source canonicalization/rewriting, auxiliary
 generation, publication, whole-declaration reading and DAG composition
 still need their own connections. This does not prove that every valid

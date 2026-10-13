@@ -53,6 +53,7 @@ import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
 import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.DeclarationHeaders
+import Ix.CompileCert.DefinitionReading
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3060,6 +3061,23 @@ def declarationHeaderRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.declarationHeaderRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Actual definition/theorem/opaque dispatch supplies the whole-record
+reader's parameter/self context and raw readings, and derives reader success
+or the exact source safety refusal. Projection rewriting remains explicit. -/
+def definitionReadingRoots : Array Lean.Name :=
+  #[`lpsOf_length, `params_length, `blob_params, `blob_self,
+    `safetyReason_none, `safety_eq, `definition_returns, `definition_declines,
+    `singleton_returns, `singleton_declines, `compile_raw,
+    `RawReading.reads, `RawReading.declines, `compile_reads, `compile_declines,
+    `constant_run, `singleton_self, `constant_reads, `constant_declines].map
+      (`Ix.CompileCert.DefinitionReading ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.definitionReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
