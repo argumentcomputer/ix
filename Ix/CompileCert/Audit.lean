@@ -74,6 +74,7 @@ import Ix.CompileCert.ReaderAdmissionRecords
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.ReaderSpines
 import Ix.CompileCert.ReaderSourceSpines
+import Ix.CompileCert.ReaderReferenceIdentity
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3297,6 +3298,20 @@ def readerSourceSpineRoots : Array Lean.Name :=
     `full_of_strip, `source_stripAllFull, `source_lastHead,
     `source_carrier].map (`Ix.CompileCert.ReaderSourceSpines ++ ·)
 
+/-- Actual pin validation supplies injection and reserved-name separation. -/
+def readerPinNameRoots : Array Lean.Name :=
+  #[`valid_empty, `valid_insert, `run_eq, `step_valid, `pinMap_valid,
+    `defaultPins_valid].map (`Ix.CompileCert.ReaderPinNames ++ ·)
+
+/-- Constructed key/pin/recursor naming identifies non-recursor references;
+stored inductive roles and source-derived major/carrier lookups use it. -/
+def readerReferenceIdentityRoots : Array Lean.Name :=
+  #[`key_root, `base_injective, `entryName_generated, `buildIndex_generated,
+    `base_ne_generated, `nameOf_base, `nameOf_identity, `inductive_unindexed,
+    `inductiveAt_unindexed, `inductive_identity, `stream_identity,
+    `source_reference_exact, `stream_source_reference_exact, `source_carrier_exact,
+    `source_lastHead_exact].map (`Ix.CompileCert.ReaderReferenceIdentity ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3335,6 +3350,8 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerAdmissio
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexDiscoveryRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerSpineRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerSourceSpineRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerPinNameRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerReferenceIdentityRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
@@ -3400,6 +3417,9 @@ run_cmd do
       ``Ix.Kernel.Reader.stripAll, ``Ix.Kernel.Reader.stripAllFull,
       ``Ix.Kernel.Reader.appHead, ``Ix.Kernel.Reader.headRef, ``Ix.Kernel.Reader.analyseRecursor,
       ``Ix.Kernel.Reader.ECx.refAt, ``Ix.Kernel.Expr.stripPis, ``Ix.Kernel.Expr.getAppFn,
+      ``Ix.Kernel.Reader.pinMap, ``Ix.Kernel.Reader.defaultPins,
+      ``Ix.Kernel.Reader.rootComponent, ``Ix.Kernel.Reader.derivedShape,
+      ``Ix.Kernel.Reader.Ctx.nameOf, ``Ix.Kernel.Reader.KeyNames.get,
       ``Ix.Kernel.Reader.inductiveAt, ``Ix.Kernel.Reader.piTeleLen,
       ``Ix.Kernel.Expr.piSortTeleLen?, ``Ix.Kernel.Expr.piResult,
       ``Ix.Kernel.Frontend.InModel.wants, ``Ix.Kernel.Frontend.InModel.generate] do

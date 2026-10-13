@@ -847,6 +847,21 @@ Source validity must still supply the recursor shapes and bounds; self/prefix
 alignment, complete family analysis and original-domain composition remain
 open. No successful index construction or target admission is assumed.
 
+[`ReaderPinNames.lean`](../Ix/CompileCert/ReaderPinNames.lean) proves that the
+actual pin checks, including `defaultPins`, produce an injective table outside
+the reserved key namespace and generated-name forms.
+[`ReaderReferenceIdentity.lean`](../Ix/CompileCert/ReaderReferenceIdentity.lean)
+combines those facts with encoded-key injection and actual recursor-entry
+provenance. A coherently stored inductive member cannot be indexed as a
+recursor, and its internal logical name uniquely identifies its anonymous
+reference, including among recursor names. These conditions are derived for
+the real stream context. The source-head results can therefore produce exact
+major/carrier references from the source correspondence and stored target.
+This concerns anonymous keys and fixed pins, not presentation-metadata
+fidelity or injectivity of an arbitrary `Ctx.nameOf`. Source correspondence,
+stored role availability, self alignment, complete family order and full
+analysis composition remain explicit obligations.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
