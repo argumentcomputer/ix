@@ -833,6 +833,20 @@ application-spine bounds, source/reference identities and general mutual
 builder composition remain separate obligations; the source domain has not
 been restricted to successful analysis.
 
+[`ReaderSourceSpines.lean`](../Ix/CompileCert/ReaderSourceSpines.lean) derives
+unshared telescope and head facts from the expression correspondence already
+supplied by payload compilation. Source metadata is erased in telescope/head
+walks; application depth and motive-variable indices are preserved exactly.
+The actual `compileRecursor` endpoint supplies its reader and header depth to
+the source-derived result-variable walk. Complete source telescopes also
+determine the fuel-bounded domain walk. Major-premise and motive-carrier heads
+resolve through the actual reference table, or an explicitly aligned self
+context, retaining the source/logical-name relation. This does not establish
+that the resulting references have the required block/member roles or order.
+Source validity must still supply the recursor shapes and bounds; self/prefix
+alignment, complete family analysis and original-domain composition remain
+open. No successful index construction or target admission is assumed.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
