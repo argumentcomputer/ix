@@ -3627,8 +3627,8 @@ fn compile_mutual(
           // `remove`, not `get().cloned()`: each name is consumed exactly
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.register_named(n.clone(), Named::new(addr.clone(), meta));
           stt.claim_compiled_name(&n, &addr)?;
+          stt.register_named(n.clone(), Named::new(addr.clone(), meta));
         }
       }
     } else {
@@ -3687,8 +3687,8 @@ fn compile_mutual(
           }
           if aux {
             stt.store_const(proj_addr.clone(), indc_proj)?;
-            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_compiled_name(&n, &proj_addr)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
           }
@@ -3707,11 +3707,11 @@ fn compile_mutual(
             }
             if aux {
               stt.store_const(ctor_addr.clone(), ctor_proj)?;
+              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
               stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
             } else {
               stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
             }
@@ -3730,8 +3730,8 @@ fn compile_mutual(
       }
       if aux {
         stt.store_const(proj_addr.clone(), proj)?;
-        stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.claim_compiled_name(&n, &proj_addr)?;
+        stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
       }
@@ -4588,6 +4588,64 @@ mod tests {
       outputs.push(bytes);
     }
     assert_eq!(outputs[0], outputs[1]);
+  }
+
+  /// A block refused for a conflicting claim leaves the owner's `Named`
+  /// entry as it was (Lean merges a block's state only after its claims
+  /// check), and its rollback removes what it entered.
+  #[test]
+  fn refused_conflicting_claim_keeps_the_owner_named() {
+    use ix_common::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
+    };
+    let f = Name::str(Name::anon(), "f".to_string());
+    let g = Name::str(Name::anon(), "g".to_string());
+    let def = |n: &Name, other: &Name| {
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: n.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::succ(Level::zero())),
+        },
+        value: LeanExpr::cnst(other.clone(), vec![]),
+        hints: ReducibilityHints::Opaque,
+        safety: DefinitionSafety::Safe,
+        all: vec![f.clone(), g.clone()],
+      })
+    };
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(f.clone(), def(&f, &g));
+    lean_env.insert(g.clone(), def(&g, &f));
+    let lean_env = Arc::new(lean_env);
+    let stt = CompileState::default();
+    // `g` is owned by another block, with its original form promoted
+    let owner = Address::hash(b"owner");
+    let owner_original = Address::hash(b"owner-original");
+    let mut named = Named::new(owner.clone(), ConstantMeta::default());
+    named.set_original(owner_original.clone(), ConstantMeta::default());
+    stt.claim_compiled_name(&g, &owner).unwrap();
+    stt.register_named(g.clone(), named);
+    let all: NameSet = [f.clone(), g.clone()].into_iter().collect();
+    block_txn::start();
+    let err = compile_const(
+      &f,
+      &all,
+      &lean_env,
+      &mut BlockCache::default(),
+      &stt,
+      &mut KernelCtx::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    assert!(err.contains("conflicting claims for name 'g'"), "{err}");
+    let kept = stt.env.named.get(&g).map(|r| r.clone()).expect("owner named");
+    assert_eq!(kept.addr, owner);
+    assert_eq!(kept.original().map(|(a, _)| a), Some(owner_original));
+    assert_eq!(stt.name_to_addr.get(&g).map(|r| r.clone()), Some(owner));
+    assert!(!stt.env.named.contains_key(&f));
+    assert!(!stt.name_to_addr.contains_key(&f));
   }
 
   /// Test that alpha-equivalent mutual definitions produce correct projection
