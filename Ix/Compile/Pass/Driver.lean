@@ -130,7 +130,7 @@ def displayInputs (cs : Array MutConst) (classNames : Array (Array Name))
   return (originalAll, rep0, perm)
 
 /-- Move the tail's registrations selected by `sel` to their display names
-(`SideCarEdit` with nothing kept), returning the display map. -/
+(`SideCarEdit`), returning the display map. -/
 def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option Nat))
     (sel : Name → Bool) : CompileM (Std.HashMap Name Name) := do
   let st ← getBlockState
@@ -139,7 +139,7 @@ def moveToDisplay (originalAll : Array Name) (rep0 : Name) (perm : Array (Option
     if display.contains n || hasReserved n || !sel n then continue
     if let some d := ixAuxName originalAll rep0 perm n then
       display := display.insert n d
-  let edit : SideCarEdit := { display, kept := {} }
+  let edit : SideCarEdit := { display }
   let (named, n2a, extra) := edit.apply st.auxNamed st.auxNameToAddr st.auxGenExtraNames
   for (_, d) in display do compileName d
   modifyBlockState fun st => { st with
@@ -476,10 +476,9 @@ def expansionLookupIn (table : Std.HashMap Name (Thunk (Except String (Option Ex
   | some t => t.get
   | none => expansionLookup cenv views n
 
-/-- `imageDecl` from a given rewrite state (its caches: rewritten
-expansions, level-substituted values, rewritten subterms, all without
-records), returning the final state. With a state carried over from an
-earlier run, `needed` lists only what this run met first. -/
+/-- The image of the head `a` as an ordinary definition, from a given
+rewrite state (its caches: rewritten expansions, level-substituted values,
+rewritten subterms, all without records), returning the final state. -/
 def imageDeclWith (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name)
     (table : Std.HashMap Name (Thunk (Except String (Option Expansion))))
     (st0 : RwState) : Except String (Ix.DefinitionVal × RwState) := do
@@ -505,14 +504,6 @@ def imageDeclWith (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : 
   let name := a
   return ({ cnst := { name, levelParams := x.levelParams, type }
             value, hints := .abbrev, safety, all := #[name] }, st)
-
-/-- The image constant `a._ix` of a needed head (a bare or partial
-occurrence) as an ordinary definition, with the heads its rewritten value
-needs in turn (a fresh rewrite state). -/
-def imageDecl (cenv : CompileEnv) (views : Std.HashMap Name BlockView) (a : Name) :
-    Except String (Ix.DefinitionVal × Array Name) := do
-  let (dv, st) ← imageDeclWith cenv views a (expansionTable cenv views) { base := 0 }
-  return (dv, st.needed.filter (· != a))
 
 /-- The image constant with Lean's kind: the image of a Lean theorem (a Prop
 family's `brecOn`, every `brecOn.eq`) is a theorem, the image of anything else
@@ -816,7 +807,7 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
     rounds := rounds - 1
     let mut rest : Array Name := #[]
     for a in pending do
-      -- `imageDecl` does not read `known`: a member retried in a later round
+      -- `imageDeclWith` does not read `known`: a member retried in a later round
       -- reuses its declaration
       if !decls.contains a then
         let st0 := { rwSt with sources := #[], needed := #[], declines := #[] }

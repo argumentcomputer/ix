@@ -90,8 +90,6 @@ def nPProdFst : Name := leanName ``PProd.fst
 def nPProdSnd : Name := leanName ``PProd.snd
 def nAnd : Name := leanName ``And
 def nAndIntro : Name := leanName ``And.intro
-def nAndLeft : Name := leanName ``And.left
-def nAndRight : Name := leanName ``And.right
 
 /-! ## Universe levels, as Lean's `MetaM` builds them -/
 

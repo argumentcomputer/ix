@@ -1122,11 +1122,12 @@ pub fn lambda_telescope(
     match cur.as_data() {
       ExprData::Lam(name, dom, body, bi, _) => {
         let (fv_name, fv) = fresh_fvar(prefix, offset + i);
-        let clean_dom = instantiate_fvars_in_domain(dom, &fvars, &decls);
+        // `dom` is already in FVar form: `instantiate1` opened every
+        // earlier binder in it.
         decls.push(LocalDecl {
           fvar_name: fv_name,
           binder_name: name.clone(),
-          domain: clean_dom,
+          domain: dom.clone(),
           info: bi.clone(),
         });
         fvars.push(fv.clone());
@@ -1136,16 +1137,6 @@ pub fn lambda_telescope(
     }
   }
   (fvars, decls, cur)
-}
-
-/// Instantiate FVars in a domain expression (for dependent binder domains).
-fn instantiate_fvars_in_domain(
-  dom: &LeanExpr,
-  _fvars: &[LeanExpr],
-  _decls: &[LocalDecl],
-) -> LeanExpr {
-  // Domain is already in FVar form from instantiate1 calls.
-  dom.clone()
 }
 
 // =========================================================================

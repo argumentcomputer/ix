@@ -1596,20 +1596,6 @@ def ingressFieldDeps (cls : FlatInfo) (_lvlParams : Array Name)
     queue := collectConstRefs ctor.cnst.type queue
   drainIngressQueue queue maps
 
-/-- Mirrors Rust `peek_result_sort` (recursor.rs:2732).
-
-    Syntactic-only peek at the result sort of a KExpr type. Dead code in
-    Rust too (`#[allow(dead_code)]`) — no longer wired into the K-target
-    check, kept for the historical record and potential future callers. -/
-partial def peekResultSort (ty : MKExpr) : Option MKUniv := Id.run do
-  let mut cur := ty
-  repeat
-    match cur with
-    | .all _ _ _ body _ => cur := body
-    | .sort u _ => return some u
-    | _ => return none
-  return none -- unreachable
-
 /-- Mirrors Rust `compute_is_large_and_k` (recursor.rs:2328).
 
     Compute `(isLarge, k, isProp)` for the canonical recursor using the
@@ -2048,12 +2034,6 @@ def generateCanonicalRecursorsWithOverlay (sortedClasses : Array (Array Name))
     KBridgeM (Array (Name × RecursorVal) × Bool) :=
   generateCanonicalRecursorsWithLayout sortedClasses overlay preFlat maps
     none none
-
-/-- Mirrors Rust `generate_canonical_recursors` (recursor.rs:293) — the
-    Rust version is `#[cfg(test)]`-only; kept callable here for tests. -/
-def generateCanonicalRecursors (sortedClasses : Array (Array Name))
-    (maps : AddrMaps) : KBridgeM (Array (Name × RecursorVal) × Bool) :=
-  generateCanonicalRecursorsWithOverlay sortedClasses none none maps
 
 /-- Mirrors Rust `generate_recursors_from_expanded` (recursor.rs:46).
 

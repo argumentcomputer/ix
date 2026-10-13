@@ -315,17 +315,6 @@ def Spine.projSteps (s : Spine) (j : Nat) : Array (Name × Nat) := Id.run do
 def applyProjs (steps : Array (Name × Nat)) (e : Expr) : Expr :=
   steps.foldl (init := e) fun acc (s, i) => Expr.mkProj s i acc
 
-/-- Which component a step sequence selects, for `n` components (`none`
-when it is not a full path to a component). -/
-def pathIndex (n : Nat) (steps : Array (Name × Nat)) : Option Nat :=
-  if n < 2 then (if steps.isEmpty then some 0 else none) else
-  let ones := steps.takeWhile (·.2 == 1)
-  let k := ones.size
-  if k + 1 < n then
-    if steps.size == k + 1 && (steps[k]!).2 == 0 then some k else none
-  else if k == n - 1 && steps.size == k then some (n - 1)
-  else none
-
 end Ix.Compile.Clique
 
 end

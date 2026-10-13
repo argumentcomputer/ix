@@ -326,10 +326,6 @@ def rewriteConstM (ci : ConstantInfo) : RwM ConstantInfo := do
     for r in v.rules do rules := rules.push { r with rhs := ← go r.rhs }
     pure (.recInfo { v with cnst := ← cnst v.cnst, rules })
 
-/-- The value of a needed image constant whose expansion is `x`, rewritten. -/
-def rewriteExpansionM (n : Name) : RwM (Option Expansion) :=
-  expansionOf expansion? rewriteFuel n
-
 end
 
 /-- The result of rewriting one block. -/

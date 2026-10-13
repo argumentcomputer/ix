@@ -6,27 +6,16 @@ changed Lean block (Pass 2's canonical auxiliaries under Lean's names:
 `Named` entries, the resolution map, the aux-gen name set), and the display
 name of each (`Ix.Compile.Pass.Names.ixAuxName`).
 
-Output, under the switch:
-* every Ix auxiliary is also registered under its display name `x._ix.S`
-  (D14), with its metadata renamed into the `_ix` view (`renameMeta`: the
-  constant's own name, `all`, `ctx`, constructor names, and every reference
-  in its arena, so the entry reads consistently);
-* a Lean name that is an image kind (`Ix.Compile.Pass.imageKinds`: the
-  block's recursors, `casesOn`, `recOn`, and the Type-level `below`/`brecOn`
-  family) keeps its entry pointing at the Ix auxiliary of its class, which is
-  the name map's canonical position for it (`Canon.NameMap`: `T.rec` ↦ the
-  member's class), and gets `Named.original` from the promotion pass as
-  today, computed from Lean's form **without** any call-site rewrite (A0's
-  recommendation: originals are no longer surgered);
-* every other Lean name the tail registered (the canonical `IndPredBelow`
-  family: Lean's `x.below` inductive, its constructors and its recursor) is
-  **moved** to its display name only, so that Lean's own form of it is
-  compiled as an ordinary block (design document §4.6); references to moved
-  names in the kept entries' metadata are renamed too.
+Output: every registration the tail made under a Lean name **moves** to its
+display name `x._ix.S` (D14), with its metadata renamed into the `_ix` view
+(`renameMeta`: the constant's own name, `all`, `ctx`, constructor names, and
+every reference in its arena, so the entry reads consistently). Synthetic
+`Muts` entries keep their keys, with their member lists renamed. The Lean
+names are then free for the images and for Lean's own forms (design document
+§4.5, §4.6).
 
 ## Faithfulness
-Metadata only: no constant's bytes change. Lean's names keep resolving to the
-constants they resolved to (or, for moved names, to Lean's own forms).
+Metadata only: no constant's bytes change.
 
 ## Canonicity
 The display names follow the canonical form (`Names`).
@@ -85,35 +74,26 @@ def renameNamed (m : Std.HashMap Address Address) (n : Ixon.Named) : Ixon.Named 
 structure SideCarEdit where
   /-- Lean name ↦ display name, for every registration that has one. -/
   display : Std.HashMap Name Name
-  /-- Lean names that keep their entry (image kinds). -/
-  kept : Std.HashSet Name
 
 /-- Apply the edit to the tail's registrations, in registration order:
-`(named, nameToAddr, extraNames)` become the edited lists. Synthetic `Muts`
-entries (keyed by block address) keep their keys, with their member lists
-renamed for moved names. -/
+`(named, nameToAddr, extraNames)` become the edited lists. Every registration
+with a display name moves to it. Synthetic `Muts` entries (keyed by block
+address) keep their keys, with their member lists renamed. -/
 def SideCarEdit.apply (e : SideCarEdit) (named : Array (Name × Ixon.Named))
     (nameToAddr : Std.HashMap Name Address) (extra : Std.HashSet Name) :
     Array (Name × Ixon.Named) × Std.HashMap Name Address × Std.HashSet Name := Id.run do
-  let full : Std.HashMap Address Address := e.display.fold (init := {}) fun m k v =>
+  let rename : Std.HashMap Address Address := e.display.fold (init := {}) fun m k v =>
     m.insert k.getHash v.getHash
-  let moved : Std.HashMap Address Address := e.display.fold (init := {}) fun m k v =>
-    if e.kept.contains k then m else m.insert k.getHash v.getHash
   let mut named' : Array (Name × Ixon.Named) := #[]
   for (n, nd) in named do
-    match e.display.get? n with
-    | some d =>
-      if e.kept.contains n then named' := named'.push (n, renameNamed moved nd)
-      named' := named'.push (d, renameNamed full nd)
-    | none => named' := named'.push (n, renameNamed moved nd)
+    named' := named'.push ((e.display.get? n).getD n, renameNamed rename nd)
   let mut n2a := nameToAddr
   for (n, a) in nameToAddr do
     if let some d := e.display.get? n then
-      n2a := n2a.insert d a
-      if !e.kept.contains n then n2a := n2a.erase n
+      n2a := (n2a.insert d a).erase n
   let mut extra' := extra
   for n in extra do
-    if e.display.contains n && !e.kept.contains n then extra' := extra'.erase n
+    if e.display.contains n then extra' := extra'.erase n
   return (named', n2a, extra')
 
 end Ix.Compile.Pass

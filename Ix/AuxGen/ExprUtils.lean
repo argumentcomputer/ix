@@ -673,12 +673,6 @@ def forallTelescopeExact (expr : Expr) (n : Nat) (pfx : String) (startIdx : Nat)
   else
     .ok (fvars, decls, body)
 
-/-- Mirrors Rust `instantiate_fvars_in_domain` (aux_gen/expr_utils.rs:1291).
-    Domain is already in FVar form from `instantiate1` calls — identity. -/
-def instantiateFVarsInDomain (dom : Expr) (_fvars : Array Expr)
-    (_decls : Array LocalDecl) : Expr :=
-  dom
-
 /-- Mirrors Rust `lambda_telescope` (aux_gen/expr_utils.rs:1261).
 
     Open lambda binders into FVars (matching `forallTelescope` but for
@@ -693,9 +687,10 @@ def lambdaTelescope (expr : Expr) (n : Nat) (pfx : String) (offset : Nat) :
     match cur with
     | .lam name dom body bi _ =>
       let (fvName, fv) := freshFVar pfx (offset + i)
-      let cleanDom := instantiateFVarsInDomain dom fvars decls
+      -- `dom` is already in FVar form: `instantiate1` opened every
+      -- earlier binder in it.
       decls := decls.push
-        { fvarName := fvName, binderName := name, domain := cleanDom, info := bi }
+        { fvarName := fvName, binderName := name, domain := dom, info := bi }
       fvars := fvars.push fv
       cur := instantiate1 body fv
     | _ => break

@@ -474,21 +474,6 @@ pub fn apply_projs(steps: &[(Name, usize)], e: &Expr) -> Expr {
   steps.iter().fold(e.clone(), |acc, (s, i)| proj(s, *i, acc))
 }
 
-/// `pathIndex`.
-pub fn path_index(n: usize, steps: &[(Name, usize)]) -> Option<usize> {
-  if n < 2 {
-    return if steps.is_empty() { Some(0) } else { None };
-  }
-  let k = steps.iter().take_while(|s| s.1 == 1).count();
-  if k + 1 < n {
-    if steps.len() == k + 1 && steps[k].1 == 0 { Some(k) } else { None }
-  } else if k == n - 1 && steps.len() == k {
-    Some(n - 1)
-  } else {
-    None
-  }
-}
-
 // ---------------------------------------------------------------------------
 // PackingMatch
 // ---------------------------------------------------------------------------

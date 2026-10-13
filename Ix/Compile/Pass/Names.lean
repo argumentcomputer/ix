@@ -17,10 +17,8 @@ faithful rewrite and the predicates on them.
   representative (`ixAuxName`).
 * The image of a Lean auxiliary `a` (Def 3.4, Def 3.5) is stored under the
   Lean name `a` itself (decision 3, design document §4.5), so a bare or
-  partial occurrence needs no other name. `imageName` (`a._ix`) is the
-  spelling of the retired "residual image"; no compile emits it (the same
-  spelling is `ixFormName`'s, for a definition that is never an image-kind
-  head).
+  partial occurrence needs no other name. The spelling `a._ix` is
+  `ixFormName`'s, for a definition that is never an image-kind head.
 * The check of input names runs over the condensation the driver is given
   (`Ix.CompileM.pass3ReservedInput?`): in `ix compile-lean` that is the
   grounded condensation, so an ungrounded input name (which is not compiled)
@@ -84,15 +82,10 @@ def inlineKey : Name := Name.mkStr (Name.mkStr Name.mkAnon ixComponent) "inline"
 /-- `_ix.inline_meta`: the decompile record's arena root. -/
 def inlineMetaKey : Name := Name.mkStr (Name.mkStr Name.mkAnon ixComponent) "inline_meta"
 
-/-- `a._ix`: the retired display name of a separately stored image of the
-Lean auxiliary `a` (images are stored under `a` itself; unused by the
-compile). -/
-def imageName (a : Name) : Name := Name.mkStr a ixComponent
-
 /-- The canonical form of the Lean constant `c` written by a proof-justified
-pass (O7–O12, decision 5, D1): `c._ix`, the same shape as `imageName` (images
-are stored under their Lean names, so the two never meet: a pass writes the
-canonical form of a definition that is not an image-kind auxiliary). -/
+pass (O7–O12, decision 5, D1): `c._ix`. Images are stored under their Lean
+names, so this name never clashes with an image: a pass writes the canonical
+form of a definition that is not an image-kind auxiliary. -/
 def ixFormName (c : Name) : Name := Name.mkStr c ixComponent
 
 /-- The reserved component of a structural handler re-typed by a

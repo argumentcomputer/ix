@@ -2562,10 +2562,10 @@ fn compute_is_large_and_k(
   // the expanded block (inductive.cpp:556).
   //
   // Use the WHNF-reduced `result_kuniv` / `is_prop` for Prop-detection,
-  // NOT the syntactic `peek_result_sort(first_ty_z)`. For inductives whose
-  // target type is a reducible alias (e.g. `Presieve X := ∀ Y, (Y ⟶ X) →
-  // Prop`), `peek_result_sort` peels foralls but stops at the unreduced
-  // `App(Const(Presieve), X)` and returns `None`, falsely rejecting K.
+  // NOT a syntactic peek at the result sort of `first_ty_z`. For inductives
+  // whose target type is a reducible alias (e.g. `Presieve X := ∀ Y,
+  // (Y ⟶ X) → Prop`), such a peek peels foralls but stops at the unreduced
+  // `App(Const(Presieve), X)` and finds no sort, falsely rejecting K.
   // Lean's C++ init_K_target (`kernel/inductive.cpp`) uses the kernel's
   // `m_result_level` which is set from the WHNF-reduced return-sort —
   // same thing we already computed into `result_kuniv` a few lines up.
@@ -2798,28 +2798,6 @@ pub(crate) fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
         stack.push(e);
       },
       _ => {},
-    }
-  }
-}
-
-/// Peek at the result sort of a KExpr type (peel foralls, check for Sort).
-///
-/// No longer wired into the K-target check (see `compute_is_large_and_k`),
-/// which now uses the WHNF-reduced `result_kuniv` to correctly classify
-/// inductives whose target type is a reducible alias. Kept available for
-/// potential future callers that need a syntactic-only peek, and
-/// referenced by that same comment for the historical record.
-#[allow(dead_code)]
-fn peek_result_sort(
-  ty: &ix_kernel::expr::KExpr<ix_kernel::mode::Meta>,
-) -> Option<ix_kernel::level::KUniv<ix_kernel::mode::Meta>> {
-  use ix_kernel::expr::ExprData as ZED;
-  let mut cur = ty.clone();
-  loop {
-    match cur.data() {
-      ZED::All(_, _, _, body, _) => cur = body.clone(),
-      ZED::Sort(u, _) => return Some(u.clone()),
-      _ => return None,
     }
   }
 }
