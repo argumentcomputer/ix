@@ -31,7 +31,7 @@
   Run with: `lake test -- --ignored opt-census` (`OPT_CENSUS_ONLY` restricts
   the units: comma-separated stems, `twins`, `corpus`).
 -/
-import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Census
 import Ix.CompileCert.Opt
 import Ix.CompileCert.Opt.AuxCore
 
@@ -248,42 +248,12 @@ def summary (name : String) (r : UnitResult) : Array String := Id.run do
   return out
 
 def run (env : Environment) : IO UInt32 := do
-  let want ← Tests.Ix.Compile.Only.select "opt-census" "OPT_CENSUS_ONLY"
-    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·) ++
-      ["twins", "corpus"])
-  let mut all : UnitResult := {}
-  let mut units := 0
-  let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++
-    Tests.Ix.Compile.Pass3.passFiles ++ Tests.Ix.Compile.Pass3.pjPassFiles
-  let mut work : Array (String × IO Tests.Ix.Compile.Pass3.CUnit) := #[]
-  for p in files do
-    let stem := (System.FilePath.mk p).fileStem.getD p
-    if want stem && !Tests.Ix.Compile.Pass3.leanRejects.contains stem then
-      work := work.push (stem, Tests.Ix.Compile.Pass3.unitOfFile p)
-  if want "twins" then
-    work := work.push ("twins", do
-      let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-      pure { name := "twins", env, seeds, closure := Tests.Ix.Compile.Pass3.closureOf env seeds.toList })
-  if want "corpus" then
-    work := work.push ("corpus", do
-      let closure := Tests.Ix.Compile.Pass3.closureOf env ((validateAuxClosure env).map (·.1))
-      pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
-  -- a unit the compile refuses is a problem: a run must measure every unit it selects
-  let mut refused : Array String := #[]
-  for (stem, mk) in work do
-    try
-      let u ← mk
-      let on ← Tests.Ix.Compile.Pass3.compileUnit u
-      let r := runCompiled on.cenv
-      units := units + 1
-      for l in summary stem r do IO.println s!"[opt-census] {l}"
-      all := all.merge { r with problems := r.problems.map (s!"{stem}: " ++ ·) }
-    catch e =>
-      IO.println s!"[opt-census] FAIL {stem}: compile refused ({(toString e).take 160})"
-      refused := refused.push stem
-  for l in summary "TOTAL" all do IO.println s!"[opt-census] {l}"
-  IO.println s!"[opt-census] {units} of {work.size} units, {refused.size} refused, {all.compared} constants, \
+  let o ← Tests.Ix.Compile.Census.run "opt-census" "OPT_CENSUS_ONLY"
+    (Tests.Ix.Compile.Census.fixtureUnits env (whole := true)) runCompiled summary
+    (fun all stem r => all.merge { r with problems := r.problems.map (s!"{stem}: " ++ ·) }) {}
+  let all := o.all
+  IO.println s!"[opt-census] {o.measured} of {o.selected} units, {o.refused.size} refused, {all.compared} constants, \
 {all.problems.size} problem(s)"
-  return if all.problems.isEmpty && refused.isEmpty && units == work.size && units > 0 then 0 else 1
+  return if all.problems.isEmpty && o.complete then 0 else 1
 
 end Tests.Ix.Compile.OptCensus

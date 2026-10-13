@@ -27,7 +27,7 @@
   Run with: `lake test -- --ignored dev-census` (`DEV_CENSUS_ONLY` restricts
   the units: comma-separated stems, `twins`, `corpus`, `initstd`).
 -/
-import Tests.Ix.Compile.Pass3
+import Tests.Ix.Compile.Census
 import Ix.CompileCert.Conv.Core
 
 open Lean (Environment)
@@ -700,62 +700,26 @@ def typingControls : Bool × Bool :=
 def run (env : Environment) : IO UInt32 := do
   let (omegaOk, idOk) := typingControls
   IO.println s!"[dev-census] typing controls: (λx. x x) (λx. x x) typable={omegaOk} (expected false), (λx. x) c typable={idOk} (expected true)"
-  let want ← Tests.Ix.Compile.Only.select "dev-census" "DEV_CENSUS_ONLY"
-    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·) ++
-      ["twins", "corpus", "initstd"])
-  let mut all : UnitResult := {}
-  let mut units := 0
-  let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++
-    Tests.Ix.Compile.Pass3.passFiles ++ Tests.Ix.Compile.Pass3.pjPassFiles
-  let mut work : Array (String × IO Tests.Ix.Compile.Pass3.CUnit) := #[]
-  for p in files do
-    let stem := (System.FilePath.mk p).fileStem.getD p
-    if want stem && !Tests.Ix.Compile.Pass3.leanRejects.contains stem then
-      work := work.push (stem, Tests.Ix.Compile.Pass3.unitOfFile p)
-  if want "twins" then
-    work := work.push ("twins", do
-      let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-      pure { name := "twins", env, seeds, closure := Tests.Ix.Compile.Pass3.closureOf env seeds.toList })
-  if want "corpus" then
-    work := work.push ("corpus", do
-      let closure := Tests.Ix.Compile.Pass3.closureOf env ((validateAuxClosure env).map (·.1))
-      pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
-  -- a unit the compile refuses is a problem: a run must measure every unit it selects
-  let mut refused : Array String := #[]
-  for (stem, mk) in work do
-    try
-      let u ← mk
-      let on ← Tests.Ix.Compile.Pass3.compileUnit u
-      let r := runCompiled on.cenv
-      units := units + 1
-      for l in summary stem r do IO.println s!"[dev-census] {l}"
-      all := { rows := all.rows ++ r.rows, problems := all.problems ++ r.problems.map (s!"{stem}: " ++ ·),
-               blocks := all.blocks + r.blocks, heads := all.heads + r.heads,
-               refused := all.refused + r.refused }
-    catch e =>
-      IO.println s!"[dev-census] FAIL {stem}: compile refused ({(toString e).take 160})"
-      refused := refused.push stem
-  let selected := work.size + (if want "initstd" then 1 else 0)
-  if want "initstd" then
+  -- Init+Std, compiled whole in process
+  let initStd : Tests.Ix.Compile.Census.CensusUnit := ("initstd", do
     let ienv ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
     let whole := ienv.constants.toList
     let input ← IO.ofExcept ((_root_.Ix.Compile.compileInputFromEnv ienv whole).mapError toString)
     match ← _root_.Ix.CompileM.compileLeanInput input (numWorkers := 32) with
     | .ok o =>
-      let r := runCompiled o.cenv
-      units := units + 1
       IO.println s!"[dev-census] initstd: {whole.length} constants"
-      for l in summary "initstd" r do IO.println s!"[dev-census] {l}"
-      all := { rows := all.rows ++ r.rows, problems := all.problems ++ r.problems,
-               blocks := all.blocks + r.blocks, heads := all.heads + r.heads }
-    | .error e =>
-      IO.println s!"[dev-census] FAIL initstd: compile failed: {e}"
-      refused := refused.push "initstd"
-  for l in summary "TOTAL" all do IO.println s!"[dev-census] {l}"
-  IO.println s!"[dev-census] {units} of {selected} units, {refused.size} refused, {all.rows.size} developments, \
+      pure o.cenv
+    | .error e => throw (IO.userError s!"compile failed: {e}"))
+  let o ← Tests.Ix.Compile.Census.run "dev-census" "DEV_CENSUS_ONLY"
+    (Tests.Ix.Compile.Census.fixtureUnits env (whole := true) |>.push initStd) runCompiled summary
+    (fun all stem r => { rows := all.rows ++ r.rows, problems := all.problems ++ r.problems.map (s!"{stem}: " ++ ·),
+                         blocks := all.blocks + r.blocks, heads := all.heads + r.heads,
+                         refused := all.refused + r.refused })
+    {}
+  let all := o.all
+  IO.println s!"[dev-census] {o.measured} of {o.selected} units, {o.refused.size} refused, {all.rows.size} developments, \
 {all.problems.size} problem(s)"
   let bad := all.rows.filter fun r => !r.ok || r.coreEq == some false
-  return if bad.isEmpty && all.problems.isEmpty && !omegaOk && idOk && refused.isEmpty &&
-    units == selected && units > 0 then 0 else 1
+  return if bad.isEmpty && all.problems.isEmpty && !omegaOk && idOk && o.complete then 0 else 1
 
 end Tests.Ix.Compile.DevCensus

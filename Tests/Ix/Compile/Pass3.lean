@@ -1304,6 +1304,16 @@ def protoFiles : List String :=
   ["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
    "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean"
 
+/-- The twins unit: every twin family's fixture constants and their closure. -/
+def twinsUnit (env : Environment) : IO CUnit := do
+  let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
+  pure { name := "twins", env, seeds, closure := closureOf env seeds.toList }
+
+/-- The aux corpus unit: the closure of `validateAuxClosure`. -/
+def corpusUnit (env : Environment) : IO CUnit := do
+  let closure := closureOf env ((validateAuxClosure env).map (·.1))
+  pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure }
+
 /-- The stems of every fixture file of the suite, the names its filter selects. -/
 def fixtureStems : List String :=
   (auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles).map fun p =>
@@ -1362,21 +1372,14 @@ not this suite"
   for p in auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles do
     let stem := (System.FilePath.mk p).fileStem.getD p
     if want stem then units := units.push (stem, unitOfFile p)
-  if want "twins" then
-    units := units.push ("twins", do
-      let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env
-        Tests.Ix.Compile.Twins.allFamilies
-      pure { name := "twins", env, seeds, closure := closureOf env seeds.toList })
+  if want "twins" then units := units.push ("twins", twinsUnit env)
   -- a unit of named constants of the test environment (Lean core included)
   if let some ns := ← IO.getEnv "PASS3_NAMES" then
     let seeds := (ns.splitOn ",").toArray.filterMap fun s =>
       let n := parseName s.trimAscii.toString
       if env.contains n then some n else none
     units := units.push ("names", pure { name := "names", env, seeds, closure := closureOf env seeds.toList })
-  if want "corpus" then
-    units := units.push ("corpus", do
-      let closure := closureOf env ((validateAuxClosure env).map (·.1))
-      pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
+  if want "corpus" then units := units.push ("corpus", corpusUnit env)
   let mut problems : Array String := #[]
   -- the record's `mayBeEmpty` rows (`Pass3Kernels.mayBeEmptyControl`)
   let (mbe, mbeLine) := Pass3Kernels.mayBeEmptyControl
