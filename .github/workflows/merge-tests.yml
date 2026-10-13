@@ -141,7 +141,7 @@ jobs:
               --ignored
               canon-pass1 twins clique-transport aux-oracle pass3 pass3-cliques
               o11a-decline compile-caller-independence
-              aux-source-identity aux-source-family aux-publication
+              aux-source-identity aux-source-family aux-publication pj-census
           - name: Lake ignored tests (compiler validation)
             kind: lake
             test_args: --ignored validate-lean validate-lean-nc adversarial-matrix

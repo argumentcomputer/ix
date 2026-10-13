@@ -260,6 +260,9 @@ not an automatic re-record.
 | [`fidelity-initstd`, `fidelity-flt`, `fidelity-mathlib`](../Tests/Ix/CompileFidelity.lean) | Library `ix validate` reports must be nonempty, passed and have zero total failures, with successful process exit. | No expected-failure table. | InitStd: Miscellaneous; FLT/Mathlib: manual. |
 | [`dev-census`](../Tests/Ix/Compile/DevCensus.lean) | Pass3 fixtures and Init+Std: reconstructed development calls, executable/instrumented-copy comparison, conditional core comparison, depths/levels and typing measurements. See the coverage limits below. | No new acceptance record. | Manual lane census. |
 | [`bridge-roundtrip`](../Tests/Ix/CompileCert/BridgeRoundTrip.lean) | BlockDefs source/bridge export comparison ignoring hints, with at least one reader match; size-bounded Init+Std term comparison; moved-name/shifted-level negative controls. See the coverage limits below. | Inline controls. | Manual lane gate. |
+| [`l2a-syn`](../Tests/Ix/Compile/L2aSyn.lean) | Pass3 fixtures: for every Lean recursor of a changed block's view, `Dom` of the image construction, closedness of what the totality theorem reads, and `imageOfP` (X1's core) against the executable `imageOf`; then the fuel of the D-L2S-1 family. Every selected unit must compile. | None. | Manual lane census. |
+| [`opt-census`](../Tests/Ix/Compile/OptCensus.lean) | Pass3 fixtures, twins and corpus: the definitional passes' core rewrite against the executable rewrite on every rewritten constant, shapes and batch-abstraction copies. Every selected unit must compile. | None. | Manual lane census. |
+| [`pj-census`](../Tests/Ix/CompileCert/PjCensus.lean) | The five O7–O12 firing fixtures through certified admission: every canonical recursor read by the Pj reader, two negative controls beside each read, exactly five units. | None. | Compiler passes; Landing. |
 | [`mathlib-measure`](../Tests/Ix/Compile/MathlibMeasure.lean) | `M1G_PHASE=compile`, `classify`, or `kernels`: retain library compile/changed-name records and checker coverage. It is measurement tooling, not a meaning theorem or substitute for library byte gates. | Supplied old/new artifacts and measured TSVs. | Manual. |
 
 `pass3-rust-parity` reports synthetic `Muts` counts and whole-file
@@ -578,7 +581,7 @@ python3 -B scripts/compiler-gate.py --phase core \
   --workers 32 --cargo-jobs 4 --out "$PWD/out/compiler-core-FRESH"
 ```
 
-`core` runs the full primary suite, all 38 ignored suites listed below, the
+`core` runs the full primary suite, all 39 ignored suites listed below, the
 Init+Std controls and bytes, pin checks, lint, certification and kernel/model
 checks. `--extra-suite NAME` adds a package-specific ignored suite without
 replacing that inventory. Run `--phase mathlib` with a fresh output directory
@@ -648,7 +651,7 @@ crossing the certified reader/order boundary also require `check-kernel`.
    pass3-cliques validate-lean pass3 pass3-plan-cache twins canon-pass1
    clique-transport clique-ownership aux-oracle aux-cert validate-lean-nc
    adversarial-matrix decompile-diff compile-claim-conflict compile-claim-order
-   compiler-selected-closure-e2e o11a-decline aux-source-identity aux-source-family aux-publication compile-closure-whole
+   compiler-selected-closure-e2e o11a-decline aux-source-identity aux-source-family aux-publication pj-census compile-closure-whole
    compile-caller-independence changed-set pack-units validate-aux aux-gen-diff
    rust-decompile kernel-ixon-roundtrip pass3-rust-parity
    compile compile-schedule-identity
