@@ -143,20 +143,19 @@ def RawReading (reader : Ctx) (owner : Address) (source : Def) (record : Ixon.Co
       (definitionReader reader owner record target).read target.typ = .ok type ∧
       (definitionReader reader owner record target).read target.value = .ok value
 
-theorem compile_raw (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+theorem compile_raw_checked (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
     (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv) (source : Def)
     (before after : BlockState) (output : BlockResult)
     (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
     (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
     (selfSound : ExpressionState.SelfCorrect context.2 (selfAt reader output.blockAddr) names)
     (ready : DefinitionEmission.Ready bindings before)
-    (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
     (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
     DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Wrapped output ∧
       RawReading (SharingRead.blobContext reader after) output.blockAddr source output.block names := by
-  have compiled := PreseedState.compileDefinitionDataInfo_correct reader base (selfAt reader output.blockAddr) names
+  have compiled := PreseedState.compileDefinitionDataInfo_correct_checked reader base (selfAt reader output.blockAddr) names
     (paramsFor reader output.blockAddr source) bindings context source (params_length reader output.blockAddr source)
-    aligned external selfSound typeBound valueBound before ready output after ran
+    aligned external selfSound before ready output after ran
   obtain ⟨clean, wrapped, target, info, kind, safety, _, type, value, typeRel, valueRel, typeRead, valueRead⟩ := compiled
   obtain ⟨headerTarget, headerInfo, headerLevels⟩ := DeclarationHeaders.definitionInfo source context before output after ran
   have sameTarget := Ixon.ConstantInfo.defn.inj (info.symm.trans headerInfo)
@@ -175,6 +174,19 @@ theorem compile_raw (reader : Ctx) (base : Ixon.Constant) (names : Name → Kern
   refine ⟨clean, wrapped, target, type, value, info, kind, safety, headerLevels, typeRel, valueRel, ?_, ?_⟩
   · rw [readerEq]; exact typeRead
   · rw [readerEq]; exact valueRead
+
+theorem compile_raw (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+    (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv) (source : Def)
+    (before after : BlockState) (output : BlockResult)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (selfSound : ExpressionState.SelfCorrect context.2 (selfAt reader output.blockAddr) names)
+    (ready : DefinitionEmission.Ready bindings before)
+    (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
+    (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
+    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Wrapped output ∧
+      RawReading (SharingRead.blobContext reader after) output.blockAddr source output.block names :=
+  (fun _ _ => compile_raw_checked reader base names bindings context source before after output aligned external selfSound ready ran) typeBound valueBound
 
 /-- The real declaration shape, retaining the reader's specified projection
 rewrite. Denotational preservation of that rewrite is a separate obligation. -/
@@ -280,6 +292,29 @@ theorem singleton_self (reader : Ctx) (owner : Address) (source : Def)
 kernel record reader, with returned-byte decoding. The source safety policy
 and prefix/source resource conditions are explicit; kernel admission and
 projection-rewrite semantic preservation are not assumed or asserted. -/
+theorem constant_reads_checked (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+    (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
+    (info : ConstantInfo) (source : Def) (view : sourceData info = some source)
+    (before after : BlockState) (output : BlockResult) (state : State)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (aliases : SelfAliases source.name (reader.nameOf (.member output.blockAddr 0)) names)
+    (ready : DefinitionEmission.Ready bindings before)
+    (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
+    (widths : ReferenceWidths.LookupWidths context.1 before)
+    (safe : Readable source)
+    (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
+    DefinitionBlock.Wrapped output ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block ∧
+      ∃ result, readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block = .ok result ∧
+        DeclarationReading (SharingRead.blobContext reader after) state output.blockAddr source names result := by
+  rw [constant_run info source view] at ran
+  have raw := compile_raw_checked reader base names bindings (singletonContext source.name context) source before after output
+    aligned external (singleton_self reader output.blockAddr source context names aliases) ready ran
+  have reading := raw.2.2.reads state ((safetyReason_none source).mpr safe)
+  have codec := EmissionWire.compileDefinitionDataInfo_codec_checked (singletonContext source.name context) source bindings before after
+    ready wire widths output ran
+  exact ⟨raw.2.1, codec.2.1, codec.2.2, reading⟩
+
 theorem constant_reads (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
     (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
     (info : ConstantInfo) (source : Def) (view : sourceData info = some source)
@@ -295,14 +330,24 @@ theorem constant_reads (reader : Ctx) (base : Ixon.Constant) (names : Name → K
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
     DefinitionBlock.Wrapped output ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block ∧
       ∃ result, readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block = .ok result ∧
-        DeclarationReading (SharingRead.blobContext reader after) state output.blockAddr source names result := by
+        DeclarationReading (SharingRead.blobContext reader after) state output.blockAddr source names result :=
+  (fun _ _ => constant_reads_checked reader base names bindings context info source view before after output state
+    aligned external aliases ready wire widths safe ran) typeBound valueBound
+
+theorem constant_declines_checked (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+    (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
+    (info : ConstantInfo) (source : Def) (view : sourceData info = some source)
+    (before after : BlockState) (output : BlockResult) (state : State) (reason : String)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (aliases : SelfAliases source.name (reader.nameOf (.member output.blockAddr 0)) names)
+    (ready : DefinitionEmission.Ready bindings before)
+    (policy : safetyReason source = some reason)
+    (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
+    readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block = .error (.declined reason) := by
   rw [constant_run info source view] at ran
-  have raw := compile_raw reader base names bindings (singletonContext source.name context) source before after output
-    aligned external (singleton_self reader output.blockAddr source context names aliases) ready typeBound valueBound ran
-  have reading := raw.2.2.reads state ((safetyReason_none source).mpr safe)
-  have codec := EmissionWire.compileDefinitionDataInfo_codec (singletonContext source.name context) source bindings before after
-    ready wire widths typeBound valueBound output ran
-  exact ⟨raw.2.1, codec.2.1, codec.2.2, reading⟩
+  exact (compile_raw_checked reader base names bindings (singletonContext source.name context) source before after output
+    aligned external (singleton_self reader output.blockAddr source context names aliases) ready ran).2.2.declines state reason policy
 
 theorem constant_declines (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
     (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
@@ -315,9 +360,8 @@ theorem constant_declines (reader : Ctx) (base : Ixon.Constant) (names : Name �
     (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
     (policy : safetyReason source = some reason)
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
-    readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block = .error (.declined reason) := by
-  rw [constant_run info source view] at ran
-  exact compile_declines reader base names bindings (singletonContext source.name context) source before after output state reason
-    aligned external (singleton_self reader output.blockAddr source context names aliases) ready typeBound valueBound policy ran
+    readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block = .error (.declined reason) :=
+  (fun _ _ => constant_declines_checked reader base names bindings context info source view before after output state reason
+    aligned external aliases ready policy ran) typeBound valueBound
 
 end Ix.CompileCert.DefinitionReading

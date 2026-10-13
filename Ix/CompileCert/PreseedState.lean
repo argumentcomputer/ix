@@ -3,7 +3,7 @@ import Ix.CompileCert.DefinitionBlock
 
 /-! Successful production preseeding establishes the retained-state contract
 used by definition emission. Cache and binding preservation hold on errors
-as well; output coverage additionally requires the source resource bound. -/
+as well; successful checked admission supplies the universe wire domain. -/
 
 namespace Ix.CompileCert.PreseedState
 
@@ -53,6 +53,10 @@ theorem Frame.preseed (roots : Array (Expr × List Name)) : Frame (preseedExprTa
   intro _
   apply Preserves.bind (Frame.canonicalize _ _)
   intro canonical
+  apply Preserves.bind
+  · intro context before
+    rw [PreseedValidation.state]
+  intro _
   apply Preserves.bind (Frame.univs _ none)
   intro _
   exact Preserves.modify retained _ (fun _ => rfl)
@@ -100,15 +104,19 @@ theorem CanonSafe.preseed (roots : Array (Expr × List Name)) : CanonSafe (prese
   intro _
   apply CanonSafe.bind (CanonSafe.canonicalize _ _)
   intro canonical
+  apply CanonSafe.bind
+  · intro context before exactCache
+    rw [PreseedValidation.state]
+    exact exactCache
+  intro _
   apply CanonSafe.bind (CanonSafe.univs _ none)
   intro _
   exact fun _ _ exactCache => exactCache
 
 /-- The actual preseed entry preserves declaration-emission readiness and
-establishes table coverage, with the wire premise derived from source bounds.
+establishes table coverage, with the wire premise derived from admission.
 No separately supplied collection run or output-wire assertion is needed. -/
-theorem preseed_ready (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
-    (bounded : ∀ root ∈ roots, PreseedBounds.ExprBound root.1)
+theorem preseed_ready_checked (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
     (bindings : ExpressionState.Bindings) (before after : BlockState)
     (ready : DefinitionEmission.Ready bindings before)
     (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) :
@@ -122,9 +130,9 @@ theorem preseed_ready (context : CompileEnv × BlockEnv) (roots : Array (Expr ×
   have sequence := ran
   rw [preseedExprTables] at sequence
   obtain ⟨collection, collectedState, collected, _⟩ := PreseedReferences.bind_ok _ _ context before () after sequence
-  have inserted := PreseedBounds.preseed_from_bounded_roots context roots bounded before collectedState after collection
+  have inserted := PreseedInsertion.preseed_from_collection_checked context roots before collectedState after collection
     collected ready.mode ready.refs ready.univs ready.canon ran
-  have reads := PreseedBounds.preseed_reads_bounded context roots bounded before collectedState after collection
+  have reads := PreseedInsertion.preseed_reads_checked context roots before collectedState after collection
     collected ready.mode ready.refs ready.univs ready.canon ran
   have frame := Frame.preseed roots context before
   rw [ran] at frame
@@ -139,6 +147,21 @@ theorem preseed_ready (context : CompileEnv × BlockEnv) (roots : Array (Expr ×
     intro root member
     exact PreseedUniverses.roots_initial context before collectedState roots.toList collection collected root (by simpa using member)
 
+/-- Compatibility interface retaining the original source-bound premise. -/
+theorem preseed_ready (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+    (bounded : ∀ root ∈ roots, PreseedBounds.ExprBound root.1)
+    (bindings : ExpressionState.Bindings) (before after : BlockState)
+    (ready : DefinitionEmission.Ready bindings before)
+    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) :
+    DefinitionEmission.Ready bindings after ∧ after.univsFinal = true ∧
+      (∀ root ∈ roots, PreseedReferences.Covered
+        (ExpressionState.lookupBinding context.1 bindings) context.2.mutCtx after.refs root.1) ∧
+      ∃ collection collectedState,
+        rawRun (collectPreseedExprs roots.toList (#[], #[], {})) context before = (.ok collection, collectedState) ∧
+        (∀ root ∈ roots, PreseedUniverses.Covered root.2 collection.2.1 root.1) ∧
+        (∀ value ∈ collection.2.1, PreseedInsertion.UnivPresent after (Ixon.canonUniv value)) :=
+  (fun _ => preseed_ready_checked context roots bindings before after ready ran) bounded
+
 theorem compileDefinitionInfo_eq (source : DefinitionVal) :
     compileDefinitionInfo source = compileDefinitionDataInfo (definitionValData source) := rfl
 
@@ -146,6 +169,24 @@ theorem compileDefinitionInfo_eq (source : DefinitionVal) :
 payload emission, canonical sharing and the stored-byte wrapper. The caller
 still supplies correct dependency bindings and the singleton mutual context;
 this theorem does not assert source-domain totality or declaration admission. -/
+theorem compileDefinitionDataInfo_correct_checked (context : Kernel.Reader.Ctx) (base : Ixon.Constant)
+    (self : Nat → Option Kernel.Name) (names : Name → Kernel.Name → Prop) (params : List Kernel.Name)
+    (bindings : ExpressionState.Bindings) (environment : CompileEnv × BlockEnv)
+    (source : Def) (arity : params.length = source.levelParams.size)
+    (aligned : ∀ address, context.blob address = environment.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect environment.1 bindings context names)
+    (selfSound : ExpressionState.SelfCorrect environment.2 self names)
+    (before : BlockState) (ready : DefinitionEmission.Ready bindings before)
+    (out : BlockResult) (after : BlockState)
+    (compiled : rawRun (compileDefinitionDataInfo source) environment before = (.ok out, after)) :
+    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Related context self names params after source out := by
+  rw [compileDefinitionDataInfo] at compiled
+  obtain ⟨done, seededState, seeded, blockRun⟩ := PreseedReferences.bind_ok _ _ environment before out after compiled
+  cases done
+  have prepared := preseed_ready_checked environment _ bindings before seededState ready seeded
+  exact DefinitionBlock.compileDefinitionDataBlock_correct context base self names params bindings environment source
+    arity aligned external selfSound seededState prepared.1 out after blockRun
+
 theorem compileDefinitionDataInfo_correct (context : Kernel.Reader.Ctx) (base : Ixon.Constant)
     (self : Nat → Option Kernel.Name) (names : Name → Kernel.Name → Prop) (params : List Kernel.Name)
     (bindings : ExpressionState.Bindings) (environment : CompileEnv × BlockEnv)
@@ -157,19 +198,8 @@ theorem compileDefinitionDataInfo_correct (context : Kernel.Reader.Ctx) (base : 
     (before : BlockState) (ready : DefinitionEmission.Ready bindings before)
     (out : BlockResult) (after : BlockState)
     (compiled : rawRun (compileDefinitionDataInfo source) environment before = (.ok out, after)) :
-    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Related context self names params after source out := by
-  rw [compileDefinitionDataInfo] at compiled
-  obtain ⟨done, seededState, seeded, blockRun⟩ := PreseedReferences.bind_ok _ _ environment before out after compiled
-  cases done
-  have bounds : ∀ root ∈ #[(source.type, source.levelParams.toList), (source.value, source.levelParams.toList)],
-      PreseedBounds.ExprBound root.1 := by
-    intro root member
-    simp at member
-    rcases member with rfl | rfl
-    · exact typeBound
-    · exact valueBound
-  have prepared := preseed_ready environment _ bounds bindings before seededState ready seeded
-  exact DefinitionBlock.compileDefinitionDataBlock_correct context base self names params bindings environment source
-    arity aligned external selfSound seededState prepared.1 out after blockRun
+    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Related context self names params after source out :=
+  (fun _ _ => compileDefinitionDataInfo_correct_checked context base self names params bindings environment source
+    arity aligned external selfSound before ready out after compiled) typeBound valueBound
 
 end Ix.CompileCert.PreseedState

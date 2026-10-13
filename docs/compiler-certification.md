@@ -411,10 +411,22 @@ preserves its memo. [`PreseedInsertion.lean`](../Ix/CompileCert/PreseedInsertion
 connects sorting and duplicate skipping to the real reference/universe index
 maps, preserving earlier bindings. The public preseed composition establishes
 the final flag, sound primary index maps and actual slots for the collected
-references and canonical universes. It carries an explicit wire-format premise
-on canonical universe values: equal serialized keys imply equal universes only
-within that domain. `ExactSeeded` connects these lookups to later production
+references and canonical universes. Its checked endpoint derives the universe
+wire domain from production admission: equal serialized keys imply equal
+universes only within that domain. `ExactSeeded` connects these lookups to later production
 universe interning, including repeated parameter names.
+
+[`PreseedValidation.lean`](../Ix/CompileCert/PreseedValidation.lean) proves the
+actual `checkPreseedUnivs` guard accepts exactly wire-valid universe arrays,
+preserves all state and rejects oversized successor counts with a resource
+error. Production runs it after canonicalization and before serialized-key
+sorting or universe insertion. The pure canonicalization loop and its totality
+contract are unchanged. This closes a real encoding boundary: outside the wire
+domain, successor counts differing by `2^64` can yield identical serialized keys.
+The `*_checked` preseed, wire, readiness and singleton-reader endpoints derive
+the needed wire facts from successful execution, without assuming a bound on
+source-universe evaluation. Older theorem interfaces remain as compatibility
+wrappers with their original premises and domains.
 
 [`CanonUnivWire.lean`](../Ix/CompileCert/CanonUnivWire.lean) derives the canonical
 wire bound from a sufficient bound on the input universe: its evaluation with
@@ -425,25 +437,26 @@ assumption that arbitrary semantically equal universes share wire bounds.
 [`PreseedBounds.lean`](../Ix/CompileCert/PreseedBounds.lean) carries the source
 bound through exact lowering, cache reuse, every collection constructor and
 root initialization. Its table-composition endpoints derive the canonical wire
-premise from source expressions. The bound is an explicit resource condition,
-separate from source typing; no claim is made that source validity implies it
-or that it characterizes every representable input.
+premise from source expressions. This remains a sufficient resource condition
+for proving admission can succeed, separate from source typing; the stronger
+successful-output endpoints no longer require it. No claim is made that source
+validity implies it or that it characterizes every representable input.
 
 [`PreseedState.lean`](../Ix/CompileCert/PreseedState.lean) proves that preseeding
 preserves source bindings, expression-cache contents, metadata mode and
-canonical-cache exactness on every outcome. On success under the source bound
-and sound retained tables, it supplies the declaration-emission readiness
+canonical-cache exactness on every outcome. Successful checked admission from
+sound retained tables supplies the declaration-emission readiness
 contract, final universe-table flag and reference/universe coverage. This
 composes with the actual `compileDefinitionDataInfo` entry, including preseeding,
 payload emission, canonical sharing and the stored-byte wrapper. The ordinary
 definition entry is definitionally the same path; theorem and opaque entries
 already use it. Correct dependency bindings, the caller's mutual context and
-source resource conditions remain explicit.
+retained-state conditions remain explicit.
 
 [`ReferenceWidths.lean`](../Ix/CompileCert/ReferenceWidths.lean) derives collected
 reference widths from the actual dependency lookup and the production hash
 wrapper's 32-byte output. [`PreseedWire.lean`](../Ix/CompileCert/PreseedWire.lean)
-combines those widths with the source universe bound to preserve primary-table
+combines those widths with checked universe admission to preserve primary-table
 wire validity through collection, sorting, canonicalization and insertion.
 The resulting table counts follow the actual checked insertion guards.
 
@@ -457,7 +470,7 @@ record compilation and definition-like payload finalization. Its production
 singleton endpoint derives the final table-wire premise and proves that the
 actual returned bytes decode exactly to the returned anonymous block. A combined
 endpoint also supplies the existing source-related type/value readings.
-Input table validity, dependency widths, source universe bounds and the stated
+Input table validity, dependency widths and the stated
 semantic prefix/context conditions remain explicit. The emission wire theorem
 concerns successful runs: a failed universe miss may write its candidate before
 the guard reports the error. The existing broader error-state semantic/frame
@@ -493,7 +506,7 @@ the exact reader refusal follows instead.
 The compiler's source Name ordering is hash-based; the singleton-binding lemma
 therefore states the required correspondence for names equal under that lookup
 key explicitly. It assumes no hash injectivity and adds no presentation-metadata
-fidelity requirement. Dependency bindings, source universe bounds and retained
+fidelity requirement. Dependency bindings and retained
 state readiness remain explicit. Projection-rewrite semantic preservation and
 declaration admission are still separate: the whole-record reading theorem
 records the actual rewrite without asserting that its denotation is unchanged.
@@ -518,7 +531,7 @@ metadata value correspondence.
 [`HeaderReading.lean`](../Ix/CompileCert/HeaderReading.lean) connect the actual
 axiom/quotient `compileConstantInfo` branches through context initialization,
 preseeding, payload emission, sharing, returned bytes and `readRecord`. Under
-the explicit source type scope, prefix/state and universe-resource conditions,
+the explicit source type scope and prefix/state conditions,
 successful compilation gives the exact expected axiom or quotient declaration
 with a source-related type, and returned bytes decode to the returned block.
 Unsafe axiom output is refused by the reader independently of type scope or

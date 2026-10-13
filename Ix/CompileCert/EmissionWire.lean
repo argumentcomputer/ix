@@ -360,28 +360,20 @@ theorem definitionBlock_wire (context : CompileEnv × BlockEnv) (source : Def)
   exact (Safe.definition source context before valid payload after payloadRan).1.2.1
 
 /-- Actual singleton bytes round-trip, deriving the final table-wire premise
-from input tables, dependency widths and the independent source resource bound.
-This does not infer source validity or successful compilation from those bounds. -/
-theorem compileDefinitionDataInfo_codec (context : CompileEnv × BlockEnv) (source : Def)
+from input tables, dependency widths and executable universe admission.
+This does not infer source validity or successful compilation from those inputs. -/
+theorem compileDefinitionDataInfo_codec_checked (context : CompileEnv × BlockEnv) (source : Def)
     (bindings : ExpressionState.Bindings) (before after : BlockState)
     (ready : DefinitionEmission.Ready bindings before) (wire : BlockWireTablesWF before)
     (widths : ReferenceWidths.LookupWidths context.1 before)
-    (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
     (output : BlockResult)
     (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
     BlockWireTablesWF after ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block := by
   rw [compileDefinitionDataInfo] at ran
   obtain ⟨done, seededState, seeded, emitted⟩ := PreseedReferences.bind_ok _ _ context before output after ran
   cases done
-  have bounds : ∀ root ∈ #[(source.type, source.levelParams.toList), (source.value, source.levelParams.toList)],
-      PreseedBounds.ExprBound root.1 := by
-    intro root member
-    simp at member
-    rcases member with rfl | rfl
-    · exact typeBound
-    · exact valueBound
-  have seedWire := PreseedWire.preseed_wire context _ before seededState wire widths bounds ready.canon seeded
-  have seedReady := PreseedState.preseed_ready context _ bounds bindings before seededState ready seeded
+  have seedWire := PreseedWire.preseed_wire_checked context _ before seededState wire widths seeded
+  have seedReady := PreseedState.preseed_ready_checked context _ bindings before seededState ready seeded
   have same := congrArg Prod.fst (PreseedState.Frame.preseed
     #[(source.type, source.levelParams.toList), (source.value, source.levelParams.toList)] context before)
   rw [seeded] at same
@@ -393,9 +385,37 @@ theorem compileDefinitionDataInfo_codec (context : CompileEnv × BlockEnv) (sour
   have finalWire := definitionBlock_wire context source seededState after ⟨seedWidths, seedWire, seedReady.2.1⟩ output emitted
   exact ⟨finalWire, DefinitionBlock.compileDefinitionDataBlock_codec context source seededState output after emitted finalWire⟩
 
+/-- Compatibility interface retaining the original source-bound premises. -/
+theorem compileDefinitionDataInfo_codec (context : CompileEnv × BlockEnv) (source : Def)
+    (bindings : ExpressionState.Bindings) (before after : BlockState)
+    (ready : DefinitionEmission.Ready bindings before) (wire : BlockWireTablesWF before)
+    (widths : ReferenceWidths.LookupWidths context.1 before)
+    (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
+    (output : BlockResult)
+    (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
+    BlockWireTablesWF after ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block :=
+  (fun _ _ => compileDefinitionDataInfo_codec_checked context source bindings before after ready wire widths output ran) typeBound valueBound
+
 /-- Source-related anonymous readings and lossless returned bytes for the
 complete production singleton definition-like path. Header interpretation,
 declaration admission and source-domain totality remain separate. -/
+theorem compileDefinitionDataInfo_reading_codec_checked (reader : Kernel.Reader.Ctx) (base : Ixon.Constant)
+    (self : Nat → Option Kernel.Name) (names : Name → Kernel.Name → Prop) (params : List Kernel.Name)
+    (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
+    (source : Def) (arity : params.length = source.levelParams.size)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (selfSound : ExpressionState.SelfCorrect context.2 self names)
+    (before after : BlockState) (ready : DefinitionEmission.Ready bindings before)
+    (wire : BlockWireTablesWF before) (widths : ReferenceWidths.LookupWidths context.1 before)
+    (output : BlockResult) (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
+    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Related reader self names params after source output ∧
+      output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block := by
+  have semantics := PreseedState.compileDefinitionDataInfo_correct_checked reader base self names params bindings context source arity
+    aligned external selfSound before ready output after ran
+  have codec := compileDefinitionDataInfo_codec_checked context source bindings before after ready wire widths output ran
+  exact ⟨semantics.1, semantics.2, codec.2⟩
+
 theorem compileDefinitionDataInfo_reading_codec (reader : Kernel.Reader.Ctx) (base : Ixon.Constant)
     (self : Nat → Option Kernel.Name) (names : Name → Kernel.Name → Prop) (params : List Kernel.Name)
     (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
@@ -408,10 +428,8 @@ theorem compileDefinitionDataInfo_reading_codec (reader : Kernel.Reader.Ctx) (ba
     (typeBound : PreseedBounds.ExprBound source.type) (valueBound : PreseedBounds.ExprBound source.value)
     (output : BlockResult) (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
     DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Related reader self names params after source output ∧
-      output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block := by
-  have semantics := PreseedState.compileDefinitionDataInfo_correct reader base self names params bindings context source arity
-    aligned external selfSound typeBound valueBound before ready output after ran
-  have codec := compileDefinitionDataInfo_codec context source bindings before after ready wire widths typeBound valueBound output ran
-  exact ⟨semantics.1, semantics.2, codec.2⟩
+      output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block :=
+  (fun _ _ => compileDefinitionDataInfo_reading_codec_checked reader base self names params bindings context source arity
+    aligned external selfSound before after ready wire widths output ran) typeBound valueBound
 
 end Ix.CompileCert.EmissionWire

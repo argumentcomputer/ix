@@ -215,6 +215,33 @@ theorem info_shape (source : Source) (context : CompileEnv × BlockEnv) (before 
   obtain ⟨_, middle, _, compiled⟩ := PreseedReferences.bind_ok _ _ context before output after ran
   exact block_shape source context middle after output compiled
 
+theorem info_correct_checked (reader : Kernel.Reader.Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+    (params : List Kernel.Name) (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
+    (source : Source) (arity : params.length = source.cnst.levelParams.size)
+    (scope : ExpressionScope.NoSelf context.2 source.cnst.type)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (before after : BlockState) (output : BlockResult) (ready : DefinitionEmission.Ready bindings before)
+    (wire : BlockWireTablesWF before) (widths : ReferenceWidths.LookupWidths context.1 before)
+    (ran : rawRun (info source) context before = (.ok output, after)) :
+    DefinitionEmission.Clean bindings after ∧ DefinitionBlock.Wrapped output ∧
+      source.cnst.levelParams.size < UInt64.size ∧ output.block.wireWF ∧
+      Ixon.deConstant output.blockBytes = .ok output.block ∧
+      HeaderEmission.Related (Kernel.Reader.MemberReader.mk' (SharingRead.blobContext reader after) output.block
+        (Kernel.Reader.paramOf params) (fun _ => none)) names params source output.block.info := by
+  rw [info_eq] at ran
+  obtain ⟨done, middle, seeded, compiled⟩ := PreseedReferences.bind_ok _ _ context before output after ran
+  cases done
+  have prepared := PreseedState.preseed_ready_checked context _ bindings before middle ready seeded
+  have tables := PreseedWire.preseed_wire_checked context _ before middle wire widths seeded
+  have middleWidths : ReferenceWidths.LookupWidths context.1 middle := by
+    intro name address found
+    rw [prepared.1.bindings, ← ready.bindings] at found
+    exact widths name address found
+  have related := block_correct reader base names params bindings context source arity scope aligned external middle after output prepared.1 compiled
+  have codec := block_wire source context middle after output ⟨middleWidths, tables, prepared.2.1⟩ compiled
+  exact ⟨related.1, related.2.1, related.2.2.1, codec.1, codec.2, related.2.2.2⟩
+
 theorem info_correct (reader : Kernel.Reader.Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
     (params : List Kernel.Name) (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv)
     (source : Source) (arity : params.length = source.cnst.levelParams.size)
@@ -229,23 +256,8 @@ theorem info_correct (reader : Kernel.Reader.Ctx) (base : Ixon.Constant) (names 
       source.cnst.levelParams.size < UInt64.size ∧ output.block.wireWF ∧
       Ixon.deConstant output.blockBytes = .ok output.block ∧
       HeaderEmission.Related (Kernel.Reader.MemberReader.mk' (SharingRead.blobContext reader after) output.block
-        (Kernel.Reader.paramOf params) (fun _ => none)) names params source output.block.info := by
-  rw [info_eq] at ran
-  obtain ⟨done, middle, seeded, compiled⟩ := PreseedReferences.bind_ok _ _ context before output after ran
-  cases done
-  have bounds : ∀ root ∈ #[(source.cnst.type, source.cnst.levelParams.toList)], PreseedBounds.ExprBound root.1 := by
-    intro root member
-    have same : root = (source.cnst.type, source.cnst.levelParams.toList) := by simpa using member
-    subst root
-    exact bounded
-  have prepared := PreseedState.preseed_ready context _ bounds bindings before middle ready seeded
-  have tables := PreseedWire.preseed_wire context _ before middle wire widths bounds ready.canon seeded
-  have middleWidths : ReferenceWidths.LookupWidths context.1 middle := by
-    intro name address found
-    rw [prepared.1.bindings, ← ready.bindings] at found
-    exact widths name address found
-  have related := block_correct reader base names params bindings context source arity scope aligned external middle after output prepared.1 compiled
-  have codec := block_wire source context middle after output ⟨middleWidths, tables, prepared.2.1⟩ compiled
-  exact ⟨related.1, related.2.1, related.2.2.1, codec.1, codec.2, related.2.2.2⟩
+        (Kernel.Reader.paramOf params) (fun _ => none)) names params source output.block.info :=
+  (fun _ => info_correct_checked reader base names params bindings context source arity scope aligned external
+    before after output ready wire widths ran) bounded
 
 end Ix.CompileCert.HeaderBlock

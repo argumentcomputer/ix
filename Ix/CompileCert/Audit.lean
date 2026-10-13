@@ -46,6 +46,7 @@ import Ix.CompileCert.UniverseExact
 import Ix.CompileCert.PreseedUniverses
 import Ix.CompileCert.PreseedCanonical
 import Ix.CompileCert.PreseedInsertion
+import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.PreseedBounds
 import Ix.CompileCert.PreseedState
 import Ix.CompileCert.ReferenceWidths
@@ -3128,6 +3129,35 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerEmission
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
+namespace Ix.CompileCert.Audit
+
+/-- Actual admission derives canonical universe wire validity, preserves all
+state and rejects overflowing successor counts before sorting/insertion. -/
+def preseedValidationRoots : Array Lean.Name :=
+  #[`array_valid, `run, `state, `accepts, `valid_of_success, `refuses,
+    `wire_count, `refuses_count, `after_check].map (`Ix.CompileCert.PreseedValidation ++ ·)
+
+/-- Stronger successful-production endpoints no longer need a source-universe
+valuation bound. Compatibility wrappers retain the earlier API domains. -/
+def checkedPreseedRoots : Array Lean.Name := #[
+  `Ix.CompileCert.PreseedInsertion.preseed_from_collection_checked,
+  `Ix.CompileCert.PreseedInsertion.preseed_reads_checked,
+  `Ix.CompileCert.PreseedWire.preseed_wire_checked,
+  `Ix.CompileCert.PreseedState.preseed_ready_checked,
+  `Ix.CompileCert.PreseedState.compileDefinitionDataInfo_correct_checked,
+  `Ix.CompileCert.EmissionWire.compileDefinitionDataInfo_codec_checked,
+  `Ix.CompileCert.EmissionWire.compileDefinitionDataInfo_reading_codec_checked,
+  `Ix.CompileCert.DefinitionReading.compile_raw_checked,
+  `Ix.CompileCert.DefinitionReading.constant_reads_checked,
+  `Ix.CompileCert.DefinitionReading.constant_declines_checked,
+  `Ix.CompileCert.HeaderBlock.info_correct_checked,
+  `Ix.CompileCert.HeaderReading.constant_reads_checked]
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedValidationRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.checkedPreseedRoots Ix.CompileCert.Audit.allowedAxioms
+
 run_cmd do
   let env ← getEnv
   let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
@@ -3249,6 +3279,7 @@ run_cmd do
     unless replacement.toDeclName == target && replacement.thmName == equation do
       throwError m!"wrong production table-worklist substitute: {source} -> {replacement.toDeclName}"
   let runtime := #[``Ix.CompileM.TableWorklist.collect,
+    ``Ix.CompileM.checkPreseedUnivs,
     ``Ix.CompileM.collectExprTablesWorklist, ``Ix.CompileM.TableWorklist.refsStep,
     ``Ix.CompileM.TableWorklist.univsStep, ``Ix.CompileM.TableWorklist.preseed]
   for name in runtime do

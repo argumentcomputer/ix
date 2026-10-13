@@ -3,11 +3,13 @@ import Ix.CompileCert.WireTables
 import Ix.CompileCert.Canon.QSort
 import IxC.Ixon.Verify.Basic
 import Ix.CompileCert.PreseedCanonical
+import Ix.CompileCert.PreseedValidation
 
 /-! Production preseed insertion preserves old index bindings and supplies
 actual lookups for collected references and canonical universes. Serialized
-universe-key equality is used only in the codec's wire domain. The public
-composition keeps that canonical-universe bound explicit. -/
+universe-key equality is used only in the codec's wire domain. Successful
+production admission establishes that domain; compatibility APIs retain
+their older explicit-bound premises. -/
 
 namespace Ix.CompileCert.PreseedInsertion
 
@@ -385,15 +387,13 @@ theorem canonicalize_run (sources : List Ixon.Univ) (initial output : Array Ixon
   subst finalState
   exact ⟨outputEq, exactFinal, frame⟩
 
-/-- Coverage through the actual public preseed entry, under an explicit wire
-bound on its canonicalized collected universes. The bound is not a source
-validity definition and still needs a caller-side derivation. -/
-theorem preseed_from_collection (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+/-- Successful production preseeding derives the canonical universe wire
+domain from its executable admission guard before sorting and insertion. -/
+theorem preseed_from_collection_checked (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
     (before collectedState after : BlockState) (collection : ExprTableCollection)
     (collected : rawRun (collectPreseedExprs roots.toList (#[], #[], {})) context before = (.ok collection, collectedState))
     (ordinary : before.p3MetaMode = false) (refsSound : RefIndexSound before) (univsSound : UnivIndexSound before)
     (canonExact : UniversePipeline.CanonCacheExact before)
-    (wire : ∀ univ ∈ collection.2.1, (Ixon.canonUniv univ).wireWF)
     (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) :
     after.univsFinal = true ∧ after.p3MetaMode = false ∧ RefIndexSound after ∧ UnivIndexSound after ∧
       (∀ address ∈ collection.1, RefPresent after address) ∧
@@ -404,6 +404,7 @@ theorem preseed_from_collection (context : CompileEnv × BlockEnv) (roots : Arra
   obtain ⟨doneRefs, refState, refsRan, tailRan⟩ := PreseedReferences.bind_ok _ _ context collectedState () after ran
   cases doneRefs
   obtain ⟨canonical, canonState, canonRan, finishRan⟩ := PreseedReferences.bind_ok _ _ context refState () after tailRan
+  obtain ⟨canonicalWire, finishRan⟩ := PreseedValidation.after_check canonical _ context canonState after () finishRan
   obtain ⟨doneUnivs, univState, univsRan, flagRan⟩ := PreseedReferences.bind_ok _ _ context canonState () after finishRan
   cases doneUnivs
   change rawRun (internPreseedUnivs (sortedUnivs canonical).toList none) context canonState = (.ok (), univState) at univsRan
@@ -428,11 +429,6 @@ theorem preseed_from_collection (context : CompileEnv × BlockEnv) (roots : Arra
     rw [canonResult.1]
     apply Array.toList_inj.mp
     simp
-  have canonicalWire : ∀ univ ∈ canonical, univ.wireWF := by
-    intro univ member
-    rw [canonicalEq, Array.mem_map] at member
-    obtain ⟨source, sourceMember, rfl⟩ := member
-    exact wire source sourceMember
   have canonUnivs := congrArg UnivIndexSound canonResult.2.2
   have canonRefs := congrArg RefIndexSound canonResult.2.2
   have canonRefMap := congrArg BlockState.refsIndex canonResult.2.2
@@ -459,6 +455,20 @@ theorem preseed_from_collection (context : CompileEnv × BlockEnv) (roots : Arra
     rw [canonicalEq, Array.mem_map]
     exact ⟨univ, member, rfl⟩
 
+/-- Retain the older API and domain. Its wire premise is now discharged by
+the checked producer in the stronger theorem above. -/
+theorem preseed_from_collection (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+    (before collectedState after : BlockState) (collection : ExprTableCollection)
+    (collected : rawRun (collectPreseedExprs roots.toList (#[], #[], {})) context before = (.ok collection, collectedState))
+    (ordinary : before.p3MetaMode = false) (refsSound : RefIndexSound before) (univsSound : UnivIndexSound before)
+    (canonExact : UniversePipeline.CanonCacheExact before)
+    (wire : ∀ univ ∈ collection.2.1, (Ixon.canonUniv univ).wireWF)
+    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) :
+    after.univsFinal = true ∧ after.p3MetaMode = false ∧ RefIndexSound after ∧ UnivIndexSound after ∧
+      (∀ address ∈ collection.1, RefPresent after address) ∧
+      (∀ univ ∈ collection.2.1, UnivPresent after (Ixon.canonUniv univ)) := by
+  exact (fun _ => preseed_from_collection_checked context roots before collectedState after collection collected ordinary refsSound univsSound canonExact ran) wire
+
 theorem RefPresent.slot {state : BlockState} {address : Address} (present : RefPresent state address)
     (sound : RefIndexSound state) :
     ∃ index, state.refsIndex.get? address = some index ∧ state.refs[index.toNat]? = some address := by
@@ -471,6 +481,33 @@ theorem UnivPresent.slot {state : BlockState} {univ : Ixon.Univ} (present : Univ
   obtain ⟨index, found⟩ := present
   exact ⟨index, found, sound univ index found⟩
 
+theorem preseed_reads_checked (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+    (before collectedState after : BlockState) (collection : ExprTableCollection)
+    (collected : rawRun (collectPreseedExprs roots.toList (#[], #[], {})) context before = (.ok collection, collectedState))
+    (ordinary : before.p3MetaMode = false) (refsSound : RefIndexSound before) (univsSound : UnivIndexSound before)
+    (canonExact : UniversePipeline.CanonCacheExact before)
+    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) :
+    (∀ root ∈ roots, PreseedReferences.Covered
+      (ExpressionState.lookupBinding context.1 (ExpressionState.bindingView before)) context.2.mutCtx after.refs root.1) ∧
+    (∀ params level, PreseedUniverses.Present params collection.2.1 level →
+      ∃ raw index, UniverseExact.lower params level = some raw ∧
+        after.univsIndex.get? (Ixon.canonUniv raw) = some index ∧
+        after.univs[index.toNat]? = some (Ixon.canonUniv raw)) := by
+  have inserted := preseed_from_collection_checked context roots before collectedState after collection collected ordinary refsSound univsSound canonExact ran
+  have refCoverage := PreseedReferences.roots_initial context before collectedState roots.toList collection collected
+  refine ⟨?_, ?_⟩
+  · intro root member
+    have covered := refCoverage root (by simpa using member)
+    apply PreseedReferences.Covered.mono _ _ collection.1 after.refs ?_ root.1 covered
+    intro address needed
+    obtain ⟨index, _, atSlot⟩ := (inserted.2.2.2.2.1 address needed).slot inserted.2.2.1
+    exact Array.mem_of_getElem? atSlot
+  · intro params level present
+    obtain ⟨raw, lowered, member⟩ := present
+    obtain ⟨index, mapped, atSlot⟩ := (inserted.2.2.2.2.2 raw member).slot inserted.2.2.2.1
+    exact ⟨raw, index, lowered, mapped, atSlot⟩
+
+/-- Compatibility endpoint with its original premises. -/
 theorem preseed_reads (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
     (before collectedState after : BlockState) (collection : ExprTableCollection)
     (collected : rawRun (collectPreseedExprs roots.toList (#[], #[], {})) context before = (.ok collection, collectedState))
@@ -484,19 +521,7 @@ theorem preseed_reads (context : CompileEnv × BlockEnv) (roots : Array (Expr ×
       ∃ raw index, UniverseExact.lower params level = some raw ∧
         after.univsIndex.get? (Ixon.canonUniv raw) = some index ∧
         after.univs[index.toNat]? = some (Ixon.canonUniv raw)) := by
-  have inserted := preseed_from_collection context roots before collectedState after collection collected ordinary refsSound univsSound canonExact wire ran
-  have refCoverage := PreseedReferences.roots_initial context before collectedState roots.toList collection collected
-  refine ⟨?_, ?_⟩
-  · intro root member
-    have covered := refCoverage root (by simpa using member)
-    apply PreseedReferences.Covered.mono _ _ collection.1 after.refs ?_ root.1 covered
-    intro address needed
-    obtain ⟨index, _, atSlot⟩ := (inserted.2.2.2.2.1 address needed).slot inserted.2.2.1
-    exact Array.mem_of_getElem? atSlot
-  · intro params level present
-    obtain ⟨raw, lowered, member⟩ := present
-    obtain ⟨index, mapped, atSlot⟩ := (inserted.2.2.2.2.2 raw member).slot inserted.2.2.2.1
-    exact ⟨raw, index, lowered, mapped, atSlot⟩
+  exact (fun _ => preseed_reads_checked context roots before collectedState after collection collected ordinary refsSound univsSound canonExact ran) wire
 
 /-- Exact lowering chooses a single canonical lookup, including when a
 parameter occurs more than once. This is a table property, not a successful

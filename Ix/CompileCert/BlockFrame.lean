@@ -103,6 +103,7 @@ theorem Frame.preseedExprTables (roots : Array (Expr × List Name)) :
     | exact Frame.collectPreseedExprs _ _
     | exact Frame.internPreseedRefs _ _
     | exact Frame.canonPreseedUnivs _ _
+    | (unfold Ix.CompileM.checkPreseedUnivs; split <;> first | exact Frame.pure _ | exact Frame.throw _)
     | exact Frame.internPreseedUnivs _ _
     | apply Frame.modify; intro _; rfl
     | refine Frame.bind ?_ (fun value => ?_)

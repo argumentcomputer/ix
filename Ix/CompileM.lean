@@ -15,6 +15,7 @@ module
 import Std.Sync
 public import Ix.Ixon
 public import Ix.IxonUniv
+public import IxC.Ixon.WireCheck
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
@@ -1817,9 +1818,15 @@ def canonPreseedUnivs : List Ixon.Univ → Array Ixon.Univ →
     let canon ← canonUnivCached u
     canonPreseedUnivs rest (result.push canon)
 
-/-- Intern adjacent-unique universes from their canonically sorted serialized
-    keys. `putUniv` is injective, so skipping an equal key skips the same
-    universe value. -/
+/-- Validate the canonical universe wire domain before serialized keys can
+be compared or primary entries inserted. Canonicalization itself stays total. -/
+def checkPreseedUnivs (univs : Array Ixon.Univ) : CompileM Unit :=
+  if univs.all Ixon.WireCheck.validUniv then pure ()
+  else throw (.resourceLimit "canonical universe successor count exceeds the Ixon UInt64 range")
+
+/-- Intern adjacent-unique universes from canonically sorted serialized keys.
+    The caller first validates the wire domain, where equal serialized keys
+    identify the same universe value. -/
 def internPreseedUnivs : List (ByteArray × Ixon.Univ) →
     Option ByteArray → CompileM Unit
   | [], _ => pure ()
@@ -1843,6 +1850,7 @@ def preseedExprTables (exprs : Array (Expr × List Name)) : CompileM Unit := do
   internPreseedRefs sortedRefs.toList none
   let canonUnivs ←
     canonPreseedUnivs univs.toList (Array.mkEmpty univs.size)
+  checkPreseedUnivs canonUnivs
   let keyed := canonUnivs.map fun u => (univSortKey u, u)
   let sortedUnivs :=
     keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
@@ -1903,6 +1911,7 @@ def preseed (exprs : Array (Expr × List Name)) : CompileM Unit := do
   let canonUnivs ← univs.foldlM (fun acc univ => do
     let canon ← canonUnivCached univ
     pure (acc.push canon)) (Array.mkEmpty univs.size)
+  checkPreseedUnivs canonUnivs
   let keyed := canonUnivs.map fun univ => (univSortKey univ, univ)
   let sortedUnivs := keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
   discard <| sortedUnivs.foldlM univsStep none

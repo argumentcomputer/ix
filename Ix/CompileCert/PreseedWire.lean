@@ -4,7 +4,7 @@ import Ix.CompileCert.PreseedKeys
 import Ix.CompileCert.ReferenceWidths
 
 /-! Primary-table wire validity through actual collection and preseeding.
-Source universe bounds and dependency reference widths derive the insertion
+Checked universe admission and dependency reference widths derive the insertion
 premises; the primary count guards preserve the wire-sized table counts. -/
 
 namespace Ix.CompileCert.PreseedWire
@@ -152,11 +152,9 @@ theorem collectRoots (roots : List (Expr × List Name)) (initial : ExprTableColl
     rw [collectPreseedExprs]
     exact Safe.bind (Safe.withUnivCtx params (collect expr (univParamsKey params) initial)) (fun next => ih next)
 
-theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+theorem preseed_wire_checked (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
     (before after : BlockState) (wire : BlockWireTablesWF before)
     (widths : ReferenceWidths.LookupWidths context.1 before)
-    (bounded : ∀ root ∈ roots, PreseedBounds.ExprBound root.1)
-    (canonExact : UniversePipeline.CanonCacheExact before)
     (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) : BlockWireTablesWF after := by
   rw [preseedExprTables] at ran
   obtain ⟨collection, collectedState, collected, tail⟩ := PreseedReferences.bind_ok _ _ context before () after ran
@@ -165,6 +163,7 @@ theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Expr × 
   obtain ⟨doneRefs, refState, refsRan, rest⟩ := PreseedReferences.bind_ok _ _ context collectedState () after tail
   cases doneRefs
   obtain ⟨canonical, canonState, canonRan, finish⟩ := PreseedReferences.bind_ok _ _ context refState () after rest
+  obtain ⟨canonicalWire, finish⟩ := PreseedValidation.after_check canonical _ context canonState after () finish
   obtain ⟨doneUnivs, univState, univsRan, flagRan⟩ := PreseedReferences.bind_ok _ _ context canonState () after finish
   cases doneUnivs
   have collectedWire := collectRoots roots.toList (#[], #[], {}) context before wire
@@ -177,22 +176,8 @@ theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Expr × 
     exact member
   have refWire := internRefs _ none sortedWidths context collectedState collectedWire
   rw [refsRan] at refWire
-  have collectedCanon := PreseedCanonical.roots_cache roots.toList (#[], #[], {}) context before canonExact
-  rw [collected] at collectedCanon
-  have refFrame := PreseedInsertion.refs_frame (refs.qsort (fun a b => a.cmpBytes b == .lt)).toList none context collectedState
-  rw [refsRan] at refFrame
-  have refCanon := (congrArg UniversePipeline.CanonCacheExact refFrame).mpr collectedCanon
-  have canonicalResult := PreseedInsertion.canonicalize_run univs.toList (Array.mkEmpty univs.size) canonical
-    context refState canonState refCanon canonRan
   have canonWire := canonUnivs univs.toList (Array.mkEmpty univs.size) context refState refWire
   rw [canonRan] at canonWire
-  have inputWire := PreseedBounds.roots_wire context roots bounded before collectedState (refs, univs, seen) collected
-  have canonicalWire : ∀ value ∈ canonical, value.wireWF := by
-    intro value member
-    rw [canonicalResult.1] at member
-    simp at member
-    obtain ⟨source, inside, rfl⟩ := member
-    exact inputWire source (by simpa using inside)
   change rawRun (internPreseedUnivs (PreseedInsertion.sortedUnivs canonical).toList none) context canonState = (.ok (), univState) at univsRan
   have entriesWire : ∀ entry ∈ (PreseedInsertion.sortedUnivs canonical).toList, entry.2.wireWF := by
     intro entry member
@@ -204,5 +189,14 @@ theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Expr × 
   dsimp only at same
   subst after
   exact WireTables.of_same outputWire rfl rfl
+
+/-- The original bounded-source interface follows from checked admission. -/
+theorem preseed_wire (context : CompileEnv × BlockEnv) (roots : Array (Expr × List Name))
+    (before after : BlockState) (wire : BlockWireTablesWF before)
+    (widths : ReferenceWidths.LookupWidths context.1 before)
+    (bounded : ∀ root ∈ roots, PreseedBounds.ExprBound root.1)
+    (canonExact : UniversePipeline.CanonCacheExact before)
+    (ran : rawRun (preseedExprTables roots) context before = (.ok (), after)) : BlockWireTablesWF after := by
+  exact (fun _ _ => preseed_wire_checked context roots before after wire widths ran) bounded canonExact
 
 end Ix.CompileCert.PreseedWire

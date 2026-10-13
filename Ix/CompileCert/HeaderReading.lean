@@ -88,6 +88,28 @@ theorem constant_declines (reader : Ctx) (state : State) (context : CompileEnv �
 reading, under the source type's actual self-scope and prefix/resource contract.
 The result contains exactly the expected declaration; it is not an admission
 or source-domain totality theorem. -/
+theorem constant_reads_checked (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
+    (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv) (source : Source)
+    (before after : BlockState) (output : BlockResult) (state : State)
+    (scope : ExpressionScope.NoSelf (DefinitionReading.singletonContext source.cnst.name context).2 source.cnst.type)
+    (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
+    (external : ExpressionState.BindingsCorrect context.1 bindings reader names)
+    (ready : DefinitionEmission.Ready bindings before) (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
+    (widths : ReferenceWidths.LookupWidths context.1 before)
+    (safe : Readable source)
+    (ran : rawRun (compileConstantInfo (constant source)) context before = (.ok output, after)) :
+    DefinitionBlock.Wrapped output ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block ∧
+      ∃ type, ExpressionState.Related names source.cnst.levelParams.toList (paramsFor reader output.blockAddr source) source.cnst.type type ∧
+        readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block =
+          .ok { decls := #[declaration reader output.blockAddr source type] } := by
+  rw [constant_run] at ran
+  obtain ⟨_, wrapped, headerBound, outputWire, bytes, target, type, info, related, read⟩ :=
+    HeaderBlock.info_correct_checked reader base names (paramsFor reader output.blockAddr source) bindings
+      (DefinitionReading.singletonContext source.cnst.name context) source (params_length reader output.blockAddr source)
+      scope aligned external before after output ready wire widths ran
+  have recordRead := read_payload (SharingRead.blobContext reader after) state output.blockAddr source output.block target type info headerBound read safe
+  exact ⟨wrapped, outputWire, bytes, type, related, recordRead⟩
+
 theorem constant_reads (reader : Ctx) (base : Ixon.Constant) (names : Name → Kernel.Name → Prop)
     (bindings : ExpressionState.Bindings) (context : CompileEnv × BlockEnv) (source : Source)
     (before after : BlockState) (output : BlockResult) (state : State)
@@ -101,13 +123,8 @@ theorem constant_reads (reader : Ctx) (base : Ixon.Constant) (names : Name → K
     DefinitionBlock.Wrapped output ∧ output.block.wireWF ∧ Ixon.deConstant output.blockBytes = .ok output.block ∧
       ∃ type, ExpressionState.Related names source.cnst.levelParams.toList (paramsFor reader output.blockAddr source) source.cnst.type type ∧
         readRecord (SharingRead.blobContext reader after) state output.blockAddr output.block =
-          .ok { decls := #[declaration reader output.blockAddr source type] } := by
-  rw [constant_run] at ran
-  obtain ⟨_, wrapped, headerBound, outputWire, bytes, target, type, info, related, read⟩ :=
-    HeaderBlock.info_correct reader base names (paramsFor reader output.blockAddr source) bindings
-      (DefinitionReading.singletonContext source.cnst.name context) source (params_length reader output.blockAddr source)
-      scope aligned external before after output ready wire widths bounded ran
-  have recordRead := read_payload (SharingRead.blobContext reader after) state output.blockAddr source output.block target type info headerBound read safe
-  exact ⟨wrapped, outputWire, bytes, type, related, recordRead⟩
+          .ok { decls := #[declaration reader output.blockAddr source type] } :=
+  (fun _ => constant_reads_checked reader base names bindings context source before after output state scope aligned external
+    ready wire widths safe ran) bounded
 
 end Ix.CompileCert.HeaderReading
