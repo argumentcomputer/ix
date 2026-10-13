@@ -41,6 +41,8 @@ import Ix.CompileCert.DefinitionBlock
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.PreseedKeys
 import Ix.CompileCert.PreseedReferences
+import Ix.CompileCert.UniverseExact
+import Ix.CompileCert.PreseedUniverses
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2888,6 +2890,36 @@ def preseedReferenceRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedReferenceRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Exact lowering agrees across cache states, including repeated parameter
+names, and refines the existing source-universe semantics. -/
+def universeExactRoots : Array Lean.Name :=
+  #[`cache_empty, `cache_insert, `Safe.pure, `Safe.throw, `Safe.bind,
+    `Safe.get, `Safe.readBlock, `Safe.cache, `Safe.checkedIndex, `Safe.finish,
+    `Safe.throwBind, `compileUniv_exact, `lower_represents, `CacheExact.sound,
+    `compileUniv_value, `compileUniv_same, `compileUniv_total].map
+      (`Ix.CompileCert.UniverseExact ++ ·)
+
+/-- Coverage of exact positional universes by the production collector and
+root loop; root initialization derives cache exactness. -/
+def preseedUniverseRoots : Array Lean.Name :=
+  #[`CacheSafe.pure, `CacheSafe.throw, `CacheSafe.bind, `CacheSafe.compileUniv,
+    `CacheSafe.lookup, `CacheSafe.blob, `CacheSafe.levels, `CacheSafe.structural,
+    `Present.mono, `Present.value, `Present.compiled, `Covered.mono,
+    `levels_correct, `Added.refl, `Added.mono, `Added.trans,
+    `Added.close_parent, `Added.ready, `Result.cached, `Result.insert,
+    `prepare_child, `cached_run, `cache_after, `binary, `unary, `ternary,
+    `Correct.of_miss, `collect_correct, `Complete.empty, `Complete.ready,
+    `Complete.after, `public_correct, `root_correct, `roots_correct,
+    `public_initial, `worklist_initial, `roots_initial].map
+      (`Ix.CompileCert.PreseedUniverses ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeExactRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedUniverseRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

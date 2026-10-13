@@ -388,8 +388,23 @@ address. The lookup bindings stay fixed, and earlier references remain present.
 Warm caches have an explicit coverage invariant; the proof handles parents
 marked before their descendants finish without assuming digest injectivity.
 This is coverage relative to the compiler's actual source lookup and mutual
-context. Universe collection, canonical wire bounds, sorting and insertion,
-and the source-semantic correctness of those bindings remain separate.
+context; source-semantic correctness of those bindings remains separate.
+
+[`UniverseExact.lean`](../Ix/CompileCert/UniverseExact.lean) strengthens raw
+universe-cache soundness to exact positional lowering, including the first
+matching parameter and the checked index bound. Empty initialization derives
+the invariant, all outcomes preserve it, and successful runs from different
+exact caches agree. The result refines the existing universe semantics without
+requiring distinct parameter names or changing the older theorem domains.
+
+[`PreseedUniverses.lean`](../Ix/CompileCert/PreseedUniverses.lean) proves universe
+coverage for every expression constructor and the actual root loop. Coverage
+uses each visited key's full parameter context, so it remains valid across
+roots with different parameter orderings. The root loop resets its raw cache
+before each root and therefore needs no assumption on the initial raw cache.
+Any later successful compilation from an exact cache produces the universe
+already represented in the collected array. Canonicalization, wire bounds and
+sorted table insertion remain separate stages.
 
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.
