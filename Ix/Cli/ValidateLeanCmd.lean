@@ -921,11 +921,6 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
-  match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok () => pure ()
-    | .error e =>
-      p.printError s!"error: {e}"
-      return 2
   let skipPhases := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
   let fullOracle := p.hasFlag "full-oracle"
   let mut phases : Array PhaseRow := #[]
@@ -948,7 +943,6 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Phase 9's cliques: the transported cliques of the compiler's clique
   -- record, read off the compile state at phase 1 (path mode).
   let mut cliques9? : Option (Array (Array Lean.Name)) := none
-  IO.println "[validate-lean] mode: Pass 3 (the only mode since M6R slice 6)"
 
   match ixe?, path? with
   | some ixePath, _ =>
@@ -1286,7 +1280,6 @@ phases 6–8 read Lean's forms from the decompiler)"
       , ("input", Lean.Json.str (ixe?.getD (path?.getD "")))
       , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String) |>.getD Lean.Json.null)
       , ("local", Lean.toJson (p.hasFlag "local"))
-      , ("pass3Switch", Lean.toJson true)
       , ("pass3Env", Lean.toJson pass3Env)
       , ("phases", phaseRows)
       , ("totalFailures", Lean.toJson failures.size)

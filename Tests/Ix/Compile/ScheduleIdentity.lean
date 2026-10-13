@@ -5,8 +5,7 @@
   Over the twins closure (`Tests.Ix.Compile.Twins`, every family) and the
   aux fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
-  families), compile with Pass 3 (the only mode since M6R slice 6; until then
-  each leg also ran with the legacy surgery, `IX_PASS3=off`), with
+  families), compile with Pass 3, with
 
   - the sequential driver `Ix.CompileM.compileEnvAux` (the fold that §6.2
     makes the definition: least canonical key first, A7 D9), on the

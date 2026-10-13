@@ -14,8 +14,7 @@
     unrelated constants of the fixture (`CallerInd.Unrelated`) in place of
     the dependents.
 
-  Both are compiled by the Lean pipeline (Pass 3, the only mode since M6R
-  slice 6; until then also with the legacy surgery, `IX_PASS3=off`), and
+  Both are compiled by the Lean pipeline (Pass 3), and
   every name of `U`, and every `_ix` name the compiler stores for a member
   of `U`, must have the same `Named` entry (address and metadata) in both
   outputs, with the same records (the clique table entry, the

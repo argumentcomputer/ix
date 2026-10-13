@@ -81,8 +81,7 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
     cmd := exe.toString
     args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
       ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
-    env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString),
-             ("IX_PASS3", none)] }
+    env := #[("LD_LIBRARY_PATH", none), ("IX_VALIDATE_AUXTABLE", some tsv.toString)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   let verdicts := ((out.stdout.splitOn "\n").find? (·.startsWith "[validate-lean] VERDICTS")).getD "no verdicts"
   let phase4 ← if ← report.pathExists then do

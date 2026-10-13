@@ -10,9 +10,7 @@
   recursor) is O11a's pattern: under Pass 3, the cross field into the
   lower component `SB` gets its size through `PassO2.SB._sizeOf_inst`.
 
-  Two inputs, each compiled by the Lean pipeline (Pass 3, the only mode since
-  M6R slice 6; until then also with the legacy surgery, `IX_PASS3=off`, where
-  nothing was recorded):
+  Two inputs, each compiled by the Lean pipeline (Pass 3):
 
   - **valid neighbour**: the selected closure of `PassO2.SA._sizeOf_1`
     (`Ix.EnvScope.collectSelectedDeps`, which carries the instance). The

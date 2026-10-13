@@ -262,12 +262,9 @@ private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-check-ixe"
 
 /-- Nested `lake` builds (compile-lean builds the fixture module) must not see
-    the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`); `IX_PASS3` is
-    unset, so both compilers run Pass 3, their only mode since M6R slice 6 (the
-    record above was measured with the legacy surgery, `IX_PASS3=off`, until
-    then, and re-measured under Pass 3 at slice 6). -/
+    the toolchain's `LD_LIBRARY_PATH` (see `Tests.Cli.spawnEnv`). -/
 private def spawnEnv : Array (String × Option String) :=
-  #[("LD_LIBRARY_PATH", none), ("IX_PASS3", none)]
+  #[("LD_LIBRARY_PATH", none)]
 
 private def run (cmd : System.FilePath) (args : Array String) : IO IO.Process.Output := do
   let exe ← IO.FS.realPath cmd

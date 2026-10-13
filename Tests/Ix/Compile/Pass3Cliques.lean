@@ -12,9 +12,7 @@
      transport's causes;
   2. **names**: every named entry of the output is an input constant, a
      reserved `_ix` name or a synthetic `Muts` name (`Pass3.namesCheck`), and
-     no block fails (until M6R slice 6 this step compared the output with the
-     legacy surgery's, `IX_PASS3=off`: every moved name in a transported
-     clique's cone; that mode is deleted);
+     no block fails;
   3. **decompile**: the output decompiles to the source constants
      (the members through their `_ix.inline` records);
   4. **kernels**: `ix check-rs`, `ix check-lean` (meta mode) and the

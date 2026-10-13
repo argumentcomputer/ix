@@ -36,9 +36,7 @@
   this head (WB-B1 `FieldBelow`, WB `RecAlias`), with the defect id.
   A constant absent on one side is class (b).
 
-  Under Pass 3 (the only mode since M6R slice 6, 2026-10-07; until then
-  the oracle compiled with the legacy surgery, `IX_PASS3=off`) a changed
-  block's Ix auxiliaries are read at their `_ix` display names
+  Under Pass 3 a changed block's Ix auxiliaries are read at their `_ix` display names
   (`displayOf`), and the users of its images that are not auxiliaries Ix
   regenerates (`ctorIdx`, `ctorElim`, `.elim`, `.inj`, `.injEq`, …) are
   Lean's own terms over the images: the surgery rewrote them onto the
@@ -273,9 +271,7 @@ def run : IO UInt32 := do
   let (seeds, closure) := familyClosure env families
   IO.println s!"[aux-oracle] {families.length} families, {seeds.size} fixture constants, \
 {closure.length} in the closure"
-  -- Pass 3 (the only mode since M6R slice 6; until then the oracle compiled
-  -- with the legacy surgery, `IX_PASS3=off`, which kept the Ix auxiliaries
-  -- under their Lean names): the Ix auxiliary of a changed block is read at
+  -- Pass 3: the Ix auxiliary of a changed block is read at
   -- its display name (`displayOf`); its Lean name holds the image, checked by
   -- the `pass3` suite (rules by `rfl`)
   let out ← leanCompile env closure

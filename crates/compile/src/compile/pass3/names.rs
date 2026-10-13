@@ -1,11 +1,6 @@
-//! Pass 3: the retired switch and the reserved names (D14). A port of
+//! Pass 3: the reserved names (D14). A port of
 //! `Ix/Compile/Pass/Names.lean`, the naming contract of the faithful rewrite.
 //!
-//! * Pass 3 is the only mode since M6R slice 6 (2026-10-07), which deleted
-//!   the legacy call-site surgery (`IX_PASS3=off`) from both compilers. For
-//!   one release `IX_PASS3` is still read: `images` is accepted with a
-//!   deprecation note, `off` and any other value are refused, with the Lean
-//!   side's texts (`switch_check`).
 //! * `_ix` is the reserved component: a Lean input name with a component that
 //!   is `_ix` or starts with `_ix` is rejected.
 //! * The Ix auxiliaries of a changed block are displayed as `x._ix.S` for the
@@ -20,60 +15,6 @@ use ix_common::env::{ConstantInfo, Name, NameData};
 use super::expr::{
   Comp, append_comps, dotted, mk_str, root_name, strip_prefix,
 };
-
-/// The environment variable that selected the mode until M6R slice 6.
-pub const SWITCH_VAR: &str = "IX_PASS3";
-/// The value that selected Pass 3 (accepted, with a deprecation note, for
-/// one release after slice 6).
-pub const SWITCH_VALUE: &str = "images";
-/// The value that selected the legacy surgery, deleted at slice 6.
-pub const SWITCH_OFF_VALUE: &str = "off";
-/// The mode when `IX_PASS3` is unset: Pass 3 (the only mode since M6R slice
-/// 6; the Lean compiler's default since the flip, M6).
-pub const SWITCH_DEFAULT: bool = true;
-
-/// What `IX_PASS3` does since slice 6, word for word the Lean side's
-/// (`Ix.Compile.Pass.switchCheck`): `Ok(None)` when unset, `Ok(Some(note))`
-/// for `images` (no effect; the deprecation note), `Err` for `off` (the
-/// surgery no longer exists, and a caller asking for it expects the legacy
-/// bytes, so compiling Pass 3 instead would be silently wrong) and for any
-/// other value.
-pub fn switch_check(v: Option<&str>) -> Result<Option<String>, String> {
-  match v {
-    None => Ok(None),
-    Some(v) if v == SWITCH_VALUE => Ok(Some(format!(
-      "{SWITCH_VAR}={SWITCH_VALUE} has no effect: Pass 3 is the only mode \
-since M6R slice 6 (2026-10-07); the variable is read for one release and then ignored"
-    ))),
-    Some(v) if v == SWITCH_OFF_VALUE => Err(format!(
-      "{SWITCH_VAR}={SWITCH_OFF_VALUE}: the legacy call-site surgery was deleted \
-from both compilers (M6R slice 6, 2026-10-07); Pass 3 is the only mode, unset {SWITCH_VAR}"
-    )),
-    Some(v) => Err(format!(
-      "{SWITCH_VAR}={v} is not a mode: Pass 3 is the only mode since M6R slice 6; \
-unset {SWITCH_VAR}"
-    )),
-  }
-}
-
-/// `switch_check` on this process's `IX_PASS3`, printing the deprecation
-/// note on stderr when there is one; the refusal is returned.
-pub fn switch_from_env() -> Result<(), String> {
-  let v = match std::env::var(SWITCH_VAR) {
-    Err(std::env::VarError::NotPresent) => None,
-    Err(std::env::VarError::NotUnicode(s)) => {
-      return Err(switch_check(Some(&s.to_string_lossy())).unwrap_err());
-    },
-    Ok(v) => Some(v),
-  };
-  match switch_check(v.as_deref())? {
-    None => Ok(()),
-    Some(note) => {
-      eprintln!("note: {note}");
-      Ok(())
-    },
-  }
-}
 
 /// The reserved component (D14).
 pub const IX_COMPONENT: &str = "_ix";
@@ -292,24 +233,6 @@ pub fn name_num(p: &Name, k: usize) -> Name {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  #[test]
-  fn switch_values() {
-    const { assert!(SWITCH_DEFAULT) };
-    assert_eq!(switch_check(None), Ok(None));
-    assert!(
-      switch_check(Some("images"))
-        .is_ok_and(|n| n.is_some_and(|n| n.contains("has no effect")))
-    );
-    assert!(
-      switch_check(Some("off"))
-        .is_err_and(|e| e.contains("the legacy call-site surgery was deleted"))
-    );
-    assert!(
-      switch_check(Some("on"))
-        .is_err_and(|e| e.starts_with("IX_PASS3=on is not a mode"))
-    );
-  }
 
   #[test]
   fn reserved_names() {

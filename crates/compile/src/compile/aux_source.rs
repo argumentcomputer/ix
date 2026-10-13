@@ -7,11 +7,7 @@
 //! recursive target of a minor's field ([`find_source_rec_target`]). Lean:
 //! `Ix/AuxSource.lean`.
 //!
-//! History: until M6R slice 6 (2026-10-07) these lived in `surgery.rs`, the
-//! legacy call-site surgery (`IX_PASS3=off`), which rewrote the call sites of
-//! a changed block by plans. Pass 3 replaced it (the flip, M6) and slice 6
-//! deleted it; O2 and O11a read a split block's source minors with the same
-//! helpers, which is why they stay.
+//! O2 and O11a read a split block's source minors with these helpers.
 
 use ix_common::env::{
   ConstantInfo as LeanConstantInfo, ConstructorVal, Env as LeanEnv,

@@ -18,12 +18,7 @@
     `.below`/`.brecOn` families of a block), `blockLabel` (the block a
     refusal names).
 
-  History: until M6R slice 6 (2026-10-07) these lived beside the legacy
-  call-site surgery (`Ix/CallSiteSurgery.lean`, `Ix/CallSitePlan.lean`,
-  `Ix/AuxGen/Surgery.lean`), which rewrote the call sites of a changed block
-  by plans under `IX_PASS3=off`. Pass 3 replaced it (the flip, M6) and slice 6
-  deleted it; O2 and O11a read a split block's source minors with the same
-  helpers, which is why they stay.
+  O2 and O11a read a split block's source minors with these helpers.
 
   Lives below `Ix.CompileM` (imports only the environment, Ixon and
   `Ix.AuxGen.ExprUtils`), so the compiler and aux-gen can both use it.

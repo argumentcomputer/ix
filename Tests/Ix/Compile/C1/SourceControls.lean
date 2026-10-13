@@ -144,7 +144,6 @@ def run (args : List String) : IO UInt32 := do
   need (order == "forward" || order == "reverse") "bad source insertion order"
   need ((← IO.getEnv "IX_COMPILE_WORKERS") == some workersS &&
         (← IO.getEnv "RAYON_NUM_THREADS") == some workersS) "explicit Rust workers differ"
-  need ((← IO.getEnv "IX_PASS3").isNone) "requires default compiler mode"
   let dir := System.FilePath.mk output
   need (!(← dir.pathExists)) "fresh output directory required"
   IO.FS.createDirAll dir

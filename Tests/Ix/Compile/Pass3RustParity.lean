@@ -19,9 +19,7 @@
      members and carried lemmas and the hook's canonical constants under
      reserved names; `slice-4 checked`: the Lean names where a
      proof-justified pass fires or O11b applies, and their canonical
-     constants). Until M6R slice 6 a difference could be owned by a later
-     slice, by F1 or by their cascade, and the suite ran an `IX_PASS3=off`
-     control with the legacy surgery on both sides; both are retired.
+     constants).
      (A failed block publishes nothing on either side since slice 2, so the
      names of a failed block are absent from both outputs.)
   4. the two compiles' failures (requested constants whose block failed) and
@@ -319,15 +317,6 @@ canonical constant(s) under reserved names, {(s4canon.filter same).size} identic
   return defects.map (fun (n, _) => s!"{name}: {n.pretty}") ++ extra
 
 def run (env : Environment) : IO UInt32 := do
-  -- both compilers in Pass 3, their only mode (M6R slice 6 deleted the legacy
-  -- surgery and with it this suite's `IX_PASS3=off` control); a leftover
-  -- `IX_PASS3=off` is refused
-  match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok () => pure ()
-    | .error msg =>
-      IO.println s!"[parity] {msg}"
-      return 2
-  IO.println "[parity] mode: Pass 3 (both compilers)"
   let k ← showN
   let mut defects : Array String := #[]
   let mut failures : Array String := #[]

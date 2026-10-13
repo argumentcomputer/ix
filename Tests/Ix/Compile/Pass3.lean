@@ -14,10 +14,7 @@
      failure; every named entry of the output is an input constant, a
      reserved `_ix` name or a synthetic `Muts` name; every block failure is a
      recorded root (`Pass3Kernels.compileFailures`), a consequence of one, or
-     a recorded refusal of the images (`switchOnRefusals`). (Until M6R slice
-     6 the unit was also compiled with the legacy surgery, `IX_PASS3=off`, and
-     step 1 was the identity of the two outputs outside the changed blocks'
-     cones; that mode is deleted.)
+     a recorded refusal of the images (`switchOnRefusals`).
   2. **decompile**: the output, decompiled by the Lean decompiler
      (`decompileEnvFullParallel`), equals the source constants (the
      decompile-diff buckets: plain, aux, call-site, coverage, all zero), but
@@ -126,12 +123,7 @@ structure NamesReport where
 /-- The changed blocks of the output (`CompileEnv.p3Blocks`), and its named
 entries: every input constant is emitted or recorded as ungrounded, and
 every output entry is a constant of the input environment, a reserved `_ix`
-name (D14) or a synthetic `Muts` name, so Pass 3 invents no other name. Until
-M6R slice 6 this step compared the output with the legacy surgery's
-(`IX_PASS3=off`): byte-identical without a changed block, every moved name in
-a changed block's cone, every new name reserved. That mode is deleted; the
-identity it checked is the flip's (M6) evidence, and the fixture outputs are
-compared before and after the deletion by the slice's own gate. -/
+name (D14) or a synthetic `Muts` name, so Pass 3 invents no other name. -/
 def namesCheck (u : CUnit) (on : Ix.CompileM.LeanPipelineOut) : NamesReport := Id.run do
   let blocks := on.cenv.p3Blocks.toArray.map (·.2)
   let mut r : NamesReport := { changedBlocks := blocks }

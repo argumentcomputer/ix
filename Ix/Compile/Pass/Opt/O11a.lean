@@ -444,7 +444,7 @@ untouched). Were the argument wrong, the fold would stop with its
 **Bytes.** No component, representative or iteration order of `blocks` or
 `lowLinks` changes; only the ready order of the fold, which the schedule-
 identity gate requires to be immaterial. Without Pass 3 (a hand-built
-environment; until M6R slice 6 also `IX_PASS3=off`) nothing reads the new
+environment) nothing reads the new
 references. **Where the edges are added** (the drivers are not
 uniform, harmlessly, since an edge only orders blocks):
 `Ix.CompileM.compileEnvAux` (sequential, wave) and

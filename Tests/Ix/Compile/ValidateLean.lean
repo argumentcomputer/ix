@@ -3,9 +3,7 @@
   (`Ix.Cli.ValidateLeanCmd`), on every fixture of `aux-cert`, the prototype's
   cases (`Tests/Ix/Compile/Image/C*.lean`), the twin families
   (`Tests/Ix/Compile/Twins/*`) and the library twins
-  (`Tests/Ix/Compile/Oracle/Lib.lean`), in Pass 3 (the only mode since M6R
-  slice 6; until then each file also ran with the legacy surgery,
-  `IX_PASS3=off`, against its own rows), against the expected verdict table
+  (`Tests/Ix/Compile/Oracle/Lib.lean`), in Pass 3, against the expected verdict table
   below.
 
   Every phase passes, except:
@@ -267,7 +265,7 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
     cmd := exe.toString
     args := #["validate-lean", "--local", "--workers", "8", "--report", report.toString]
       ++ (if noBuild then #["--no-build"] else #[]) ++ #[file]
-    env := #[("LD_LIBRARY_PATH", none), ("IX_PASS3", none)] }
+    env := #[("LD_LIBRARY_PATH", none)] }
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   if !(← report.pathExists) then return (stem, switch, none, s!"exit {out.exitCode}")
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))

@@ -54,8 +54,7 @@ def stage_names(args):
         names += ['suite-' + s for s in SUITES + args.extra_suite]
         names += ['aux-shape-sweep', 'checker-support-regression', 'parity-initstd',
                   'prepare-initstd-imports', 'initstd-provenance-pre', 'initstd-rust', 'initstd-lean']
-        names += [f'refuse-{backend}-{mode}' for backend in ('compile', 'compile-lean') for mode in ('off', 'bogus')]
-        names += ['initstd-rust-images', 'initstd-lean-images', 'initstd-plans', 'initstd-provenance-post',
+        names += ['initstd-plans', 'initstd-provenance-post',
                   'pass3-lib', 'kernel-check', 'kernel-rows', 'pin-controls', 'pin-gen',
                   'pin-data-PinData', 'pin-data-NatOpPinData', 'lint', 'prepare-cert-output', 'check-cert',
                   'archive-cert', 'prepare-kernel-output', 'check-kernel', 'archive-kernel']
@@ -418,7 +417,7 @@ class Gate:
         else:
             require(result == self.library_before[group], f'{group}: import/native identity changed')
 
-    def byte_check(self, name, reference, aligned=False, note=False, plans=False):
+    def byte_check(self, name, reference, aligned=False, plans=False):
         def check(rc, log):
             require(rc == 0, f'{name}: compiler failed ({rc})')
             output = self.out / (name + '.ixe')
@@ -436,8 +435,6 @@ class Gate:
             if aligned:
                 require(text.count(f'[compile-lean] ALIGNED: {row["bytes"]} bytes byte-identical with Rust') == 1,
                         'missing/duplicate Rust alignment result')
-            if note:
-                require('note: IX_PASS3=images has no effect' in text, 'missing deprecation note')
             if plans:
                 matches = re.findall(r'\[pass3\] clique plan table: (\d+) plans, (\d+) taken from the table '
                                      r'\(each recomputed and equal: IX_PASS3_CHECK_PLANS\)', text)
@@ -555,7 +552,7 @@ class Gate:
             args += ['--workers', str(self.args.workers)]
         if checks.get('aligned'):
             args += ['--rust-check']
-        env = {'IX_PASS3': 'images'} if checks.get('note') else {}
+        env = {}
         if checks.get('plans'):
             env['IX_PASS3_CHECK_PLANS'] = '1'
         self.run(name, args, env=env, critical=True, check=self.byte_check(name, library, **checks))
@@ -588,19 +585,6 @@ class Gate:
             self.run('initstd-provenance-pre', lambda: self.imports('pre', 'initstd'), critical=True)
             self.compile('initstd-rust', 'compile', 'initstd')
             self.compile('initstd-lean', 'compile-lean', 'initstd', aligned=True)
-            for backend in ('compile', 'compile-lean'):
-                for mode in ('off', 'bogus'):
-                    name = f'refuse-{backend}-{mode}'
-                    output = self.out / (name + '.ixe')
-                    def refusal(rc, log, backend=backend, mode=mode, output=output):
-                        expected = 'the legacy call-site surgery was deleted' if mode == 'off' else 'IX_PASS3=bogus is not a mode'
-                        require(rc != 0 and (backend != 'compile-lean' or rc == 2) and
-                                expected in log.read_text() and not output.exists() and not output.is_symlink(),
-                                'invalid-mode control failed: exit, diagnostic or output')
-                    self.run(name, [root / '.lake/build/bin/ix', backend, a.benchmark_dir / 'CompileInitStd.lean',
-                        '--out', output], env={'IX_PASS3': mode}, check=refusal)
-            self.compile('initstd-rust-images', 'compile', 'initstd', note=True)
-            self.compile('initstd-lean-images', 'compile-lean', 'initstd', note=True)
             self.compile('initstd-plans', 'compile-lean', 'initstd', plans=True)
             self.run('initstd-provenance-post', lambda: self.imports('post', 'initstd'), critical=True, force=True)
             self.run('pass3-lib', lake + ['test', '--wfail', '--', '--ignored', 'pass3'],

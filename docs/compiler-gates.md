@@ -678,12 +678,7 @@ crossing the certified reader/order boundary also require `check-kernel`.
    cmp out/initstd-plans.ixe /path/to/initstd-a3.ixe
    ```
 
-   Retain the recomputed-hit summary as well as the byte comparison. The retired-mode
-   negative controls require both backends to refuse `IX_PASS3=off` and
-   `IX_PASS3=bogus` with the documented diagnostics and no output; `compile-lean`
-   exits 2 for these invalid settings. The deprecated `IX_PASS3=images` alias
-   must print its no-effect note and preserve the default bytes. These are
-   parser compatibility controls, not additional compiler modes.
+   Retain the recomputed-hit summary as well as the byte comparison.
 
 5. Check the produced default artifact with `kernel-check-ixe`; regenerate the
    artifact pin files to scratch paths with `kernel-pin-gen` and compare them

@@ -19,10 +19,8 @@ records and commands. The [format guide](Ixon.md) defines the representation.
 
 Both compilers run Pass 3. The image rewrite, definitional optimizations,
 proof-justified canonical forms and clique transport are wired into the driver.
-The old call-site surgery has been removed. An unset `IX_PASS3` selects the current
-compiler; `images` is a deprecated spelling that warns, and `off` or any unknown
-value is an error. See [Lean mode validation](../Ix/Compile/Pass/Names.lean) and
-[Rust mode validation](../crates/compile/src/compile/pass3/names.rs).
+The old call-site surgery has been removed, and no environment variable selects
+another compiler mode; `IX_PASS3` is not read.
 
 | Area | Implemented behavior | Evidence and remaining boundary |
 | --- | --- | --- |
@@ -1354,8 +1352,8 @@ None of the accepted finite checks is a general meaning proof.
 Pass 3 became the Lean default on 2026-10-06. The legacy mode was retained briefly
 for paired migration comparisons. On 2026-10-07 slice 6 made Pass 3 the only mode
 of both compilers, deleted the legacy call-site surgery and retired its off-mode
-records. Those old modes and `-a2` reference bytes cannot be reproduced by asking
-the current compiler for `IX_PASS3=off`; that request is refused.
+records. The current compiler cannot reproduce those old modes or the `-a2`
+reference bytes; it ignores `IX_PASS3`.
 
 The `-a3` reference artifacts adopted by the migration are:
 

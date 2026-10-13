@@ -814,8 +814,8 @@ end Tests.Ix.Compile.NonCanonical
 
 namespace Tests.Ix.Compile.NonCanonical
 
-/-- The non-canonical set of the proof-justified passes' fixtures **with the
-    switch on** (`IX_PASS3=images`; `Tests/Ix/Compile/Pass/O7Collapse.lean` …,
+/-- The non-canonical set of the proof-justified passes' fixtures **under
+    Pass 3** (`Tests/Ix/Compile/Pass/O7Collapse.lean` …,
     A6p): every twin pair of those fixtures that the `pass3` suite lists as
     differing (`Tests.Ix.Compile.Pass3.passTwinsNC`), with its cause; exact in
     both directions there (a pair that differs without an entry, an entry
@@ -942,8 +942,8 @@ end Tests.Ix.Compile.NonCanonical
 
 namespace Tests.Ix.Compile.NonCanonical
 
-/-- The non-canonical set of the clique families **with the switch on**
-(`IX_PASS3=images`: changed cliques through the clique transport,
+/-- The non-canonical set of the clique families **under Pass 3**
+(changed cliques through the clique transport,
 `Ix.Compile.Pass.Cliques`), read by `pass3-cliques` and exact in both
 directions there. The names are Lean names and the `_ix` names of the
 canonical constants, relative to the reference presentation. -/

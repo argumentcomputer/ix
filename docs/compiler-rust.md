@@ -110,22 +110,12 @@ compile state until process exit instead of running their large destructors.
 That lifetime choice matters if this entry point is embedded in a long-lived
 process.
 
-## Modes and FFI entry points
+## FFI entry points
 
-[Lean's naming module](../Ix/Compile/Pass/Names.lean) and
-[Rust's naming module](../crates/compile/src/compile/pass3/names.rs) implement
-the same retired-switch contract:
-
-| `IX_PASS3` | Behavior at this revision |
-|---|---|
-| Unset | Pass 3, the only compiler mode. |
-| `images` | Pass 3, with a deprecation note; the variable has no effect. |
-| `off` | Refused because the legacy call-site surgery has been deleted. |
-| Any other value | Refused as an unknown mode. |
-
+Both compilers have one mode, Pass 3; no environment variable selects another.
 An old `IX_PASS3=off` benchmark is historical evidence about a different
-pipeline. It is not an alternate mode that can be selected here. Internal
-compatibility parameters are not a supported route to the deleted compiler.
+pipeline. Internal compatibility parameters are not a supported route to the
+deleted compiler.
 
 | Lean caller / Rust symbol | Purpose |
 |---|---|

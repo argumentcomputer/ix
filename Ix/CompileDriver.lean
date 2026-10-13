@@ -1227,12 +1227,6 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .error e => return .error e
 
   let tPre ← IO.monoMsNow
-  -- Pass 3, the faithful rewrite, is the only mode (M6R slice 6 deleted the
-  -- legacy surgery): a leftover `IX_PASS3=off` is refused, `images` noted
-  -- (`Ix.Compile.Pass.switchFromEnv`).
-  match ← Ix.Compile.Pass.switchFromEnv with
-  | .error e => return .error e
-  | .ok () => pure ()
   -- the plan-table check (`IX_PASS3_CHECK_PLANS=1`; `Ix.Compile.Pass.cliquePlanFor`)
   let checkPlans ← match checkPlans? with
     | some b => pure b

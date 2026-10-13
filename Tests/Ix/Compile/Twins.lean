@@ -12,9 +12,7 @@
   The suite compiles the union of every presentation's closure with the
   Lean compiler (`Ix.CompileM.compileLeanInput`, the `ix compile-lean`
   pipeline) and with the Rust compiler (`rsCompileEnvBytesFFI`, the
-  `ix compile` path), both in Pass 3 (their only mode since M6R slice 6;
-  until then the suite also compiled the legacy surgery, `IX_PASS3=off`,
-  against its own record), and requires:
+  `ix compile` path), both in Pass 3, and requires:
 
   1. the two compilers give every fixture constant the same address, and
      neither refuses anything;

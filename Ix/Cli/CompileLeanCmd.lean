@@ -15,20 +15,15 @@
   for this input; it is not a general proof of compiler semantics. See
   `docs/compiler-rust.md`, "What is trusted" and "What the gates check".
 
-  Mode: Pass 3 (the faithful rewrite) is the only mode of both compilers
-  since M6R slice 6 (2026-10-07), which deleted the legacy call-site surgery
-  (`IX_PASS3=off`) from both; the two outputs are byte-identical on Init+Std
-  and Mathlib (design document `docs/compiler-passes.md` §4.8). For one
-  release `IX_PASS3=images` is accepted with a deprecation note and
-  `IX_PASS3=off` (or any other value) is refused by both compilers with the
-  same explanation (`Ix.Compile.Pass.switchCheck`): this command exits 2;
-  `ix compile` reports the Rust compiler's error.
+  Both compilers run Pass 3 (the faithful rewrite); the two outputs are
+  byte-identical on Init+Std and Mathlib (design document
+  `docs/compiler-passes.md` §4.8).
 
   The command also writes the changed-set record next to the output, `<stem>.changed.json` (`Ix.Compile.ChangedSet`; design document,
   the output contract): a side file, so no byte of the `.ixe` depends on it.
 
   Exit codes: 0 success (and aligned, when checked); 1 pipeline error or
-  divergence; 2 usage (including a refused `IX_PASS3` value).
+  divergence; 2 usage.
 -/
 module
 public import Cli
@@ -77,12 +72,6 @@ def runCompileLeanCmdCore (p : Cli.Parsed) : IO UInt32 := do
   let constList ← Ix.PhaseTimers.timeWall "constant list" do
     if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
-  match ← Ix.Compile.Pass.switchFromEnv with
-    | .ok () => pure ()
-    | .error e =>
-      IO.eprintln s!"[compile-lean] error: {e}"
-      return 2
-  IO.println "[compile-lean] mode: Pass 3 (the only mode since M6R slice 6)"
 
   let t0 ← IO.monoMsNow
   let input ← Ix.PhaseTimers.timeWall "source-contract preparation (compileInputFromEnv)" do

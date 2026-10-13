@@ -1,11 +1,8 @@
 /-
   `ix compile <file.lean>`: compile a Lean file's environment to Ixon with the
-  Rust compiler (through FFI). Mode: Pass 3, the faithful rewrite, the only
-  mode of both compilers since M6R slice 6 (2026-10-07), which deleted the
-  legacy call-site surgery; the output is byte-identical with
-  `ix compile-lean`'s (Init+Std and Mathlib, `--rust-check` ALIGNED). For one
-  release `IX_PASS3=images` is accepted with a deprecation note and
-  `IX_PASS3=off` is refused (`crates/compile/src/compile/pass3/names.rs`).
+  Rust compiler (through FFI), with Pass 3, the faithful rewrite; the output
+  is byte-identical with `ix compile-lean`'s (Init+Std and Mathlib,
+  `--rust-check` ALIGNED).
 -/
 module
 public import Cli
@@ -282,7 +279,7 @@ serialized the grounded subset ({status.named} named, \
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
-  "Compile Lean file to Ixon with the Rust compiler (Pass 3, its only mode since M6R slice 6: byte-identical with `ix compile-lean`; IX_PASS3=off is refused)"
+  "Compile Lean file to Ixon with the Rust compiler (byte-identical with `ix compile-lean`)"
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."

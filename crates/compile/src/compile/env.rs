@@ -199,12 +199,6 @@ fn compile_env_observed(
   // scheduled (Lean `compileEnvParallelAux` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
-  // Pass 3 is the only mode (M6R slice 6 deleted the legacy call-site
-  // surgery): a leftover `IX_PASS3=off` (or any value but `images`) fails
-  // the compile with the Lean side's text; `images` prints a deprecation
-  // note.
-  crate::compile::pass3::names::switch_from_env()
-    .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
   let setup_start = Instant::now();
   // Whole-env scan: ref graph + immediate groundedness + inductive
   // groups in one decode per constant — the env decodes lazily, so

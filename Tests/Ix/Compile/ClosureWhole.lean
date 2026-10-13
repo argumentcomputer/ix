@@ -216,7 +216,7 @@ def localCollapse : IO (Array String) := do
   say s!"local collapse negative control (the pre-M1-d scope: recursors only): {neg.length} refusal(s), first {neg.head?}"
   let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "ix")
   let args : Array String := #["validate-lean", "--local", "--workers", "8", file]
-  let r ← IO.Process.output { cmd := exe.toString, args := args, env := #[("IX_PASS3", none)] }
+  let r ← IO.Process.output { cmd := exe.toString, args := args }
   let verdict := (r.stdout.splitOn "\n").filter (fun l => (l.splitOn "VERDICTS").length > 1)
   say s!"local collapse: ix validate-lean --local: exit {r.exitCode}; {verdict}"
   if r.exitCode != 0 then errors := errors.push s!"local collapse: validate-lean --local exit {r.exitCode}"
