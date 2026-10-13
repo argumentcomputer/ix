@@ -156,6 +156,9 @@ def fixtures : List Fixture := [
     knownFails := kf "cert" "certified: modeller decline (block mentioned under a binder)"
       ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
         "NestedSortU.T._ix.casesOn", "NestedSortU.t_rec"] },
+  -- A nested Prop inductive whose `IndPredBelow` family has `P.below_1.rec`:
+  -- its original form compiles the same in both compilers.
+  { stem := "BelowNRec", ns := ["BelowNRec"] },
   -- A0 item 3 (WB-E1/A4): an evaporation target that is not a one-motive
   -- recursor is refused, naming the block.
   { stem := "F3_SplitRoseRace", ns := ["A", "B", "Rose"]

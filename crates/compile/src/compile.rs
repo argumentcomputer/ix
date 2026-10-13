@@ -2993,6 +2993,48 @@ pub fn compile_const(
   compile_const_inner(name, all, lean_env, cache, stt, kctx, true)
 }
 
+/// The original-form phase of an aux-generated constant
+/// (`compile_const_no_aux`; Lean `NoAuxPhase`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum NoAuxPhase {
+  Rec,
+  BelowIndc,
+  BelowDef,
+  BelowRec,
+  BrecOn,
+}
+
+/// A component naming a member of a Lean `IndPredBelow` family: `below` or
+/// `below_N`.
+fn is_below_component(s: &str) -> bool {
+  s == "below" || s.starts_with("below_")
+}
+
+/// The phase of the aux-generated constant `n` (Lean `compileConstNoAuxPure`).
+fn no_aux_phase(n: &Name, ci: &LeanConstantInfo) -> Option<NoAuxPhase> {
+  match ci {
+    LeanConstantInfo::RecInfo(_) => {
+      // Distinguish .rec from the recursor of a `below` family member
+      if matches!(n.as_data(), NameData::Str(p, _, _)
+        if p.last_str().is_some_and(is_below_component))
+      {
+        Some(NoAuxPhase::BelowRec)
+      } else {
+        Some(NoAuxPhase::Rec)
+      }
+    },
+    LeanConstantInfo::InductInfo(_) => Some(NoAuxPhase::BelowIndc),
+    LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_) => {
+      if n.last_str().is_some_and(is_below_component) {
+        Some(NoAuxPhase::BelowDef)
+      } else {
+        Some(NoAuxPhase::BrecOn)
+      }
+    },
+    _ => None,
+  }
+}
+
 /// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
 /// no aux_gen side effects. Used to compile the original Lean form of
 /// aux_gen-rewritten constants for metadata preservation. A newly compiled
@@ -3016,9 +3058,17 @@ pub fn compile_const_no_aux(
   //   .below.rec   → expand via .below.rec's .all, keep only RecInfo
   //   .brecOn/*    → expand via .all as-is
 
+  // The members in canonical order (Lean `aliasPrecedes`: by name hash), so
+  // that the first matches below are a function of the member set, not of
+  // the set's iteration order.
+  let mut members: Vec<&Name> = all.iter().collect();
+  members.sort_unstable_by(|a, b| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+
   // First, collect the Lean .all names from any constant in the SCC.
   let mut lean_all: Vec<Name> = Vec::new();
-  for n in all {
+  for n in members.iter().copied() {
     if let Some(ci) = lean_env.get(n) {
       let block_all = match &*ci {
         LeanConstantInfo::InductInfo(v) => &v.all,
@@ -3035,39 +3085,11 @@ pub fn compile_const_no_aux(
   }
 
   // Determine phase from the first aux_gen constant in the SCC.
-  #[derive(Clone, Copy, PartialEq, Debug)]
-  enum Phase {
-    Rec,
-    BelowIndc,
-    BelowDef,
-    BelowRec,
-    BrecOn,
-  }
-  let phase = all.iter().find_map(|n| {
+  let phase = members.iter().copied().find_map(|n| {
     if !stt.aux_gen_extra_names.contains(n) {
       return None;
     }
-    match lean_env.get(n).as_deref() {
-      Some(LeanConstantInfo::RecInfo(_)) => {
-        // Distinguish .rec from .below.rec
-        if matches!(n.as_data(), NameData::Str(p, _, _) if p.last_str() == Some("below"))
-        {
-          Some(Phase::BelowRec)
-        } else {
-          Some(Phase::Rec)
-        }
-      },
-      Some(LeanConstantInfo::InductInfo(_)) => Some(Phase::BelowIndc),
-      Some(LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_)) => {
-        if matches!(n.last_str(), Some(s) if s == "below" || s.starts_with("below_"))
-        {
-          Some(Phase::BelowDef)
-        } else {
-          Some(Phase::BrecOn)
-        }
-      },
-      _ => None,
-    }
+    no_aux_phase(n, lean_env.get(n).as_deref()?)
   });
 
   let Some(phase) = phase else {
@@ -3078,7 +3100,7 @@ pub fn compile_const_no_aux(
   // Build the filtered set from the .all field based on phase.
   let mut filtered = NameSet::default();
   match phase {
-    Phase::Rec => {
+    NoAuxPhase::Rec => {
       // All .rec and .rec_N from the mutual block that are in the current SCC.
       // lean_all only contains inductive names (from RecursorVal.all), not the
       // mutually-referencing recursor names. The scheduler's `all` has the full
@@ -3094,9 +3116,9 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowIndc => {
+    NoAuxPhase::BelowIndc => {
       // Use .below's own .all, keep only inductives + their ctors.
-      for n in all {
+      for n in members.iter().copied() {
         if let Some(LeanConstantInfo::InductInfo(v)) =
           lean_env.get(n).as_deref()
         {
@@ -3115,7 +3137,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowDef => {
+    NoAuxPhase::BelowDef => {
       // lean_all for BelowDef already contains .below names
       // (from DefnInfo.all = [EqC.below]), so use directly.
       for a in &lean_all {
@@ -3129,7 +3151,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowRec => {
+    NoAuxPhase::BelowRec => {
       // lean_all for .below.rec already contains .below names
       // (from RecursorVal.all = [A.below, B.below]), so just append ".rec".
       for ind_name in &lean_all {
@@ -3144,7 +3166,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BrecOn => {
+    NoAuxPhase::BrecOn => {
       // Use .all as-is — include all .brecOn/.brecOn.go/.brecOn.eq.
       for n in all {
         if stt.aux_gen_extra_names.contains(n) {
@@ -4588,6 +4610,58 @@ mod tests {
       outputs.push(bytes);
     }
     assert_eq!(outputs[0], outputs[1]);
+  }
+
+  /// The original-form phase classifies the recursor of every member of a
+  /// Lean `IndPredBelow` family, `X.below.rec` and `X.below_N.rec`, as a
+  /// `below` recursor, as Lean's `compileConstNoAuxPure` does.
+  #[test]
+  fn no_aux_phase_classifies_below_family_recursors() {
+    use ix_common::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, RecursorVal,
+      ReducibilityHints,
+    };
+    let nm = |s: &str| {
+      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
+    };
+    let cv = |n: &str| ConstantVal {
+      name: nm(n),
+      level_params: vec![],
+      typ: LeanExpr::sort(Level::zero()),
+    };
+    let rec = |n: &str| {
+      LeanConstantInfo::RecInfo(RecursorVal {
+        cnst: cv(n),
+        all: vec![],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(1u64),
+        num_minors: Nat::from(0u64),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let defn = |n: &str| {
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: cv(n),
+        value: LeanExpr::sort(Level::zero()),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![nm(n)],
+      })
+    };
+    for (n, ci, want) in [
+      ("X.rec", rec("X.rec"), NoAuxPhase::Rec),
+      ("X.rec_1", rec("X.rec_1"), NoAuxPhase::Rec),
+      ("X.below.rec", rec("X.below.rec"), NoAuxPhase::BelowRec),
+      ("X.below_1.rec", rec("X.below_1.rec"), NoAuxPhase::BelowRec),
+      ("X.below", defn("X.below"), NoAuxPhase::BelowDef),
+      ("X.below_2", defn("X.below_2"), NoAuxPhase::BelowDef),
+      ("X.brecOn", defn("X.brecOn"), NoAuxPhase::BrecOn),
+    ] {
+      assert_eq!(no_aux_phase(&nm(n), &ci), Some(want), "{n}");
+    }
   }
 
   /// A block refused for a conflicting claim leaves the owner's `Named`
