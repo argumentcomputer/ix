@@ -193,6 +193,9 @@ lean_exe «uniform-hard» where
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
+lean_exe «trie-export» where
+  root := `Benchmarks.Trie
+
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
