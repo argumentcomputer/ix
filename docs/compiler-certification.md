@@ -701,6 +701,21 @@ concluded. Index construction/publication, source-family shape, shared universe
 context and source constructor identities still need their production
 dischargers, followed by the final family checks and modelling argument.
 
+[`FamilyConsistency.lean`](../Ix/CompileCert/FamilyConsistency.lean) splits
+the actual finalizer into its consistency checks and unchanged assembly/model
+computation, preserving both branches and error paths. It proves that the
+parameter, motive, minor, K and index conditions discharge the ordinary checks;
+the actual nested branch still bypasses those checks and reaches modelling.
+[`FamilySourceChecks.lean`](../Ix/CompileCert/FamilySourceChecks.lean) transports
+source counts and syntactic index telescopes through the collected row
+correspondences, and proves that the reader's nested count equals the source
+count. Its conditions apply only when that source count is zero. The K
+expectation is derived from source type count when the family is not a
+singleton; the general source K correspondence remains explicit. The result
+reduces finalization to the real assembly/model computation without assuming
+that it succeeds. Source-domain discharge, the singleton K case, generation
+termination/correspondence and kernel admission remain open.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
