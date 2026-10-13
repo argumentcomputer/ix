@@ -753,6 +753,18 @@ scope, constructor safety/position/telescope shape, the singleton index order,
 indexed recursor readiness and source signature/K conditions remain explicit;
 neither a suitable output artifact nor reader success is assumed.
 
+[`ReaderIndex.lean`](../Ix/CompileCert/ReaderIndex.lean) proves the actual
+index-builder decomposition and its block-shape invariants across both phases.
+Every discovered block key has a stored shape before recursor-list completion,
+so the final pass preserves the guarded order without relying on its default
+shape. Every resulting shape comes from the real stored mutual block and the
+accepted order-size/membership/deduplication guards. For a stored singleton
+inductive this forces order `#[0]`. The public compiler-reader endpoint uses
+this result, deriving its previous order premise from actual index construction
+and the emitted stored block. Index presence, successful source recursor
+analysis, full recursor readiness and publication still need their dischargers;
+no successful-reading premise is used to prove the index shape.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
