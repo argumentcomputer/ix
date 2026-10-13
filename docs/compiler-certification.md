@@ -789,6 +789,20 @@ public compiler output also supplies its store lookup and derived singleton
 order. The production record-array compatibility/inclusion and index-presence
 conditions still need their admission/publication/discovery dischargers.
 
+[`ReaderAdmissionRecords.lean`](../Ix/CompileCert/ReaderAdmissionRecords.lean)
+connects those conditions to the actual duplicate-key/decode stages and checked
+publication. Decoding preserves addresses and membership; unique byte keys
+give compatible decoded records before target reading succeeds. Compiler maps
+already have unique keys, and checked merge plus the output codec supplies
+the emitted block's inclusion and exact decoded identity. The committed
+prelude's successful construction supplies fallback compatibility.
+The resulting `streamContext` has coherent indexed records and retrieves
+the actual published block and recursor members. Singleton order then follows
+from original compilation, checked publication and decoding. Successful target
+reading/admission is not used to establish these facts. Decode success, index
+presence/completeness, selected-record coverage and the remaining source and
+generator obligations are still separate.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
