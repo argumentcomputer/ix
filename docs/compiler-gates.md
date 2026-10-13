@@ -578,7 +578,7 @@ python3 -B scripts/compiler-gate.py --phase core \
   --workers 32 --cargo-jobs 4 --out "$PWD/out/compiler-core-FRESH"
 ```
 
-`core` runs the full primary suite, all 35 ignored suites listed below, the
+`core` runs the full primary suite, all 38 ignored suites listed below, the
 Init+Std controls and bytes, pin checks, lint, certification and kernel/model
 checks. `--extra-suite NAME` adds a package-specific ignored suite without
 replacing that inventory. Run `--phase mathlib` with a fresh output directory

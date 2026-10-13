@@ -25,7 +25,8 @@ import traceback
 SUITES = """pass3-cliques validate-lean pass3 pass3-plan-cache twins canon-pass1
 clique-transport clique-ownership aux-oracle aux-cert validate-lean-nc
 adversarial-matrix decompile-diff compile-claim-conflict compile-claim-order
-compiler-selected-closure-e2e o11a-decline compile-closure-whole
+compiler-selected-closure-e2e o11a-decline aux-source-identity aux-source-family
+aux-publication compile-closure-whole
 compile-caller-independence changed-set pack-units validate-aux aux-gen-diff
 rust-decompile kernel-ixon-roundtrip pass3-rust-parity compile
 compile-schedule-identity rust-serialize decompile canon-closure-aux ixon-corpus
