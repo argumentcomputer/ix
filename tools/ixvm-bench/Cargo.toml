@@ -1,0 +1,20 @@
+[package]
+name = "ix-ixvm-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+aiur = { path = "../../crates/aiur", default-features = false, features = ["parallel"] }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef", features = ["parallel"] }
+serde = "1"
+serde_json = { version = "1", features = ["unbounded_depth"] }
+stacker = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
