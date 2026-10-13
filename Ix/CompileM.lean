@@ -1599,7 +1599,7 @@ def byteArrayCmp (x y : ByteArray) : Ordering := Id.run do
 /-- Accumulator shared by the proof-visible and iterative preseed walks. -/
 abbrev ExprTableCollection :=
   Array Address × Array Ixon.Univ ×
-    Std.HashMap (Address × Address) Unit
+    Std.HashMap Ix.Compile.ExactKey.PreseedKey Unit
 
 /-- Compile one source level list and append its positional universes in
     source order. This is the proof-visible counterpart of the tight array
@@ -1614,11 +1614,12 @@ def collectExprTableUnivs : List Level → Array Ixon.Univ →
 /-- Structurally recursive semantics of the expression-table collection
     walk. Children are visited in the same preorder as the production stack
     machine: function before argument, binder type before body, and let type,
-    value, then body. The seen set preserves the Rust digest/context dedup. -/
-def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
+    value, then body. Visited keys confirm the complete expression and
+    positional parameter context, matching the Rust collector. -/
+def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) (params : List Name) :
     (e : Expr) → ExprTableCollection → CompileM ExprTableCollection
   | e, (refs, univs, seen) => do
-    let key := (e.getHash, ctxKey)
+    let key : Ix.Compile.ExactKey.PreseedKey := ⟨e, params, ctxKey⟩
     if seen.contains key then
       return (refs, univs, seen)
     let seen := seen.insert key ()
@@ -1633,22 +1634,22 @@ def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
       else
         pure (refs, univs, seen)
     | .app func arg _ =>
-      let acc ← collectExprTablesStructural ctxKey mutCtx func
+      let acc ← collectExprTablesStructural ctxKey mutCtx params func
         (refs, univs, seen)
-      collectExprTablesStructural ctxKey mutCtx arg acc
+      collectExprTablesStructural ctxKey mutCtx params arg acc
     | .lam _ ty body _ _ =>
-      let acc ← collectExprTablesStructural ctxKey mutCtx ty
+      let acc ← collectExprTablesStructural ctxKey mutCtx params ty
         (refs, univs, seen)
-      collectExprTablesStructural ctxKey mutCtx body acc
+      collectExprTablesStructural ctxKey mutCtx params body acc
     | .forallE _ ty body _ _ =>
-      let acc ← collectExprTablesStructural ctxKey mutCtx ty
+      let acc ← collectExprTablesStructural ctxKey mutCtx params ty
         (refs, univs, seen)
-      collectExprTablesStructural ctxKey mutCtx body acc
+      collectExprTablesStructural ctxKey mutCtx params body acc
     | .letE _ ty val body _ _ =>
-      let acc ← collectExprTablesStructural ctxKey mutCtx ty
+      let acc ← collectExprTablesStructural ctxKey mutCtx params ty
         (refs, univs, seen)
-      let acc ← collectExprTablesStructural ctxKey mutCtx val acc
-      collectExprTablesStructural ctxKey mutCtx body acc
+      let acc ← collectExprTablesStructural ctxKey mutCtx params val acc
+      collectExprTablesStructural ctxKey mutCtx params body acc
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
       let addr ← storeBlob bytes
@@ -1659,10 +1660,10 @@ def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
       pure (refs.push addr, univs, seen)
     | .proj typeName _ struct _ =>
       let refs := refs.push (← lookupConstAddr typeName)
-      collectExprTablesStructural ctxKey mutCtx struct
+      collectExprTablesStructural ctxKey mutCtx params struct
         (refs, univs, seen)
     | .mdata _ inner _ =>
-      collectExprTablesStructural ctxKey mutCtx inner
+      collectExprTablesStructural ctxKey mutCtx params inner
         (refs, univs, seen)
     | .fvar .. => throw (.unsupportedExpr "free variable")
     | .mvar .. => throw (.unsupportedExpr "metavariable")
@@ -1679,47 +1680,47 @@ noncomputable def weight : List Expr → Nat
 theorem expr_size_pos (expr : Expr) : 0 < sizeOf expr := by
   cases expr <;> simp <;> omega
 
-/-- Total tail-recursive preorder, preserving the existing digest/context
-visited keys and every monadic effect, including effects before an error. -/
-def collect (context : Address) (mutualContext : MutCtx)
+/-- Total tail-recursive preorder, using the same exact visited keys and
+monadic effects as the structural walk, including effects before an error. -/
+def collect (context : Address) (mutualContext : MutCtx) (params : List Name)
     (work : List Expr) (acc : ExprTableCollection) : CompileM ExprTableCollection := do
   match work with
   | [] => return acc
   | expr :: rest =>
     let (refs, univs, seen) := acc
-    let key := (expr.getHash, context)
-    if seen.contains key then return ← collect context mutualContext rest acc
+    let key : Ix.Compile.ExactKey.PreseedKey := ⟨expr, params, context⟩
+    if seen.contains key then return ← collect context mutualContext params rest acc
     let seen := seen.insert key ()
     match expr with
-    | .bvar .. => collect context mutualContext rest (refs, univs, seen)
+    | .bvar .. => collect context mutualContext params rest (refs, univs, seen)
     | .sort level _ =>
       let univ ← compileUniv level
-      collect context mutualContext rest (refs, univs.push univ, seen)
+      collect context mutualContext params rest (refs, univs.push univ, seen)
     | .const name levels _ =>
       let univs ← levels.foldlM (fun univs level => do
         let univ ← compileUniv level
         pure (univs.push univ)) univs
       if (mutualContext.get? name).isNone then
         let address ← lookupConstAddr name
-        collect context mutualContext rest (refs.push address, univs, seen)
-      else collect context mutualContext rest (refs, univs, seen)
-    | .app fn arg _ => collect context mutualContext (fn :: arg :: rest) (refs, univs, seen)
+        collect context mutualContext params rest (refs.push address, univs, seen)
+      else collect context mutualContext params rest (refs, univs, seen)
+    | .app fn arg _ => collect context mutualContext params (fn :: arg :: rest) (refs, univs, seen)
     | .lam _ type body _ _ | .forallE _ type body _ _ =>
-      collect context mutualContext (type :: body :: rest) (refs, univs, seen)
+      collect context mutualContext params (type :: body :: rest) (refs, univs, seen)
     | .letE _ type value body _ _ =>
-      collect context mutualContext (type :: value :: body :: rest) (refs, univs, seen)
+      collect context mutualContext params (type :: value :: body :: rest) (refs, univs, seen)
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
       let address ← storeBlob bytes
-      collect context mutualContext rest (refs.push address, univs, seen)
+      collect context mutualContext params rest (refs.push address, univs, seen)
     | .lit (.strVal text) _ =>
       let bytes := text.toUTF8
       let address ← storeBlob bytes
-      collect context mutualContext rest (refs.push address, univs, seen)
+      collect context mutualContext params rest (refs.push address, univs, seen)
     | .proj name _ struct _ =>
       let address ← lookupConstAddr name
-      collect context mutualContext (struct :: rest) (refs.push address, univs, seen)
-    | .mdata _ inner _ => collect context mutualContext (inner :: rest) (refs, univs, seen)
+      collect context mutualContext params (struct :: rest) (refs.push address, univs, seen)
+    | .mdata _ inner _ => collect context mutualContext params (inner :: rest) (refs, univs, seen)
     | .fvar .. => throw (.unsupportedExpr "free variable")
     | .mvar .. => throw (.unsupportedExpr "metavariable")
 termination_by weight work
@@ -1738,11 +1739,11 @@ theorem levels_fold (levels : List Level) (univs : Array Ixon.Univ) :
   | cons level levels ih =>
     simp only [List.foldlM_cons, collectExprTableUnivs, bind_assoc, pure_bind, ih]
 
-theorem collect_cons (context : Address) (mutualContext : MutCtx)
+theorem collect_cons (context : Address) (mutualContext : MutCtx) (params : List Name)
     (expr : Expr) (rest : List Expr) (acc : ExprTableCollection) :
-    collect context mutualContext (expr :: rest) acc = (do
-      let acc ← collectExprTablesStructural context mutualContext expr acc
-      collect context mutualContext rest acc) := by
+    collect context mutualContext params (expr :: rest) acc = (do
+      let acc ← collectExprTablesStructural context mutualContext params expr acc
+      collect context mutualContext params rest acc) := by
   induction expr generalizing rest acc
   all_goals try cases ‹Lean.Literal›
   all_goals
@@ -1755,18 +1756,19 @@ theorem collect_cons (context : Address) (mutualContext : MutCtx)
     | simp only [← Array.foldlM_toList, levels_fold]
   all_goals split <;> simp_all only [pure_bind, bind_assoc]
 
-theorem collect_singleton (context : Address) (mutualContext : MutCtx)
+theorem collect_singleton (context : Address) (mutualContext : MutCtx) (params : List Name)
     (expr : Expr) (acc : ExprTableCollection) :
-    collect context mutualContext [expr] acc =
-      collectExprTablesStructural context mutualContext expr acc := by
+    collect context mutualContext params [expr] acc =
+      collectExprTablesStructural context mutualContext params expr acc := by
   rw [collect_cons]
   simp only [collect, bind_pure]
 
 end TableWorklist
 
 /-- Walk one expression collecting refs and univs for preseeding.
-    Mirrors Rust `collect_expr_tables` (compile.rs:490), deduped by
-    `(expr hash, univ-param-context key)`; nat/str literal blobs are stored as
+    Mirrors Rust `collect_expr_tables`: digest pairs choose buckets, while
+    exact expressions and positional parameter lists confirm reuse.
+    Nat/str literal blobs are stored as
     a side effect (their addresses join the refs), and universes are compiled
     through the shared `univCache`. The kernel sees the structurally recursive
     semantics, while generated code uses the equivalent iterative stack walk.
@@ -1774,13 +1776,13 @@ end TableWorklist
     explicitly). -/
 def collectExprTables (top : Expr) (ctxKey : Address)
     (acc : ExprTableCollection) : CompileM ExprTableCollection := do
-  let mutCtx := (← getBlockEnv).mutCtx
-  collectExprTablesStructural ctxKey mutCtx top acc
+  let block ← getBlockEnv
+  collectExprTablesStructural ctxKey block.mutCtx block.univCtx top acc
 
 def collectExprTablesWorklist (top : Expr) (ctxKey : Address)
     (acc : ExprTableCollection) : CompileM ExprTableCollection := do
-  let mutCtx := (← getBlockEnv).mutCtx
-  TableWorklist.collect ctxKey mutCtx [top] acc
+  let block ← getBlockEnv
+  TableWorklist.collect ctxKey block.mutCtx block.univCtx [top] acc
 
 /-- Register the checked runtime equation before compiling any production
 preseed caller. The equality covers arbitrary contexts, states and caches. -/

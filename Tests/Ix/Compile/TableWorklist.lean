@@ -24,6 +24,34 @@ private def resourceFailure (result : Except CompileError α) : Bool :=
   | .error (.resourceLimit _) => true
   | _ => false
 
+private def expressionCollision (collide : Bool) : Bool := Id.run do
+  let u := Name.fromLeanName `u
+  let v := Name.fromLeanName `v
+  let first := Expr.mkSort (Level.mkParam u)
+  let second := if collide then Expr.sort (Level.mkParam v) first.getHash else Expr.mkSort (Level.mkParam v)
+  let env := (context.1, { context.2 with univCtx := [u, v] })
+  let (seeded, state) := (preseedExprTables #[(first, [u, v]), (second, [u, v])] env).run initial
+  let (compiled, after) := (compileExpr second env).run state
+  return seeded.isOk && state.univs == #[.var 0, .var 1] &&
+    compiled.toOption.map (·.1) == some (.sort 1) && after.univs == state.univs && after.univsFinal
+
+private def contextCollision (collide : Bool) : Bool := Id.run do
+  let u := Name.fromLeanName `u
+  let v := if collide then Name.str Name.mkAnon "v" u.getHash else Name.fromLeanName `v
+  let expression := Expr.mkSort (Level.mkParam u)
+  let env := (context.1, { context.2 with univCtx := [v, u] })
+  let (seeded, state) := (preseedExprTables #[(expression, [u, v]), (expression, [v, u])] env).run initial
+  let (compiled, after) := (compileExpr expression env).run state
+  return seeded.isOk && state.univs == #[.var 0, .var 1] &&
+    compiled.toOption.map (·.1) == some (.sort 1) && after.univs == state.univs && after.univsFinal
+
+private def collisionRejectsUnsupported : Bool := Id.run do
+  let valid := Expr.mkSort Level.mkZero
+  let invalid := Expr.mvar (Name.fromLeanName `bad) valid.getHash
+  let (result, state) := raw (preseedExprTables #[(valid, []), (invalid, [])])
+  return (match result with | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
+    state.univs.isEmpty && !state.univsFinal && state.p3Heads == retained
+
 def controls : List (String × Bool) := Id.run do
   let key := univParamsKey []
   let mut shared := Expr.mkBVar 0
@@ -55,8 +83,8 @@ def controls : List (String × Bool) := Id.run do
     (Expr.mkApp (Expr.mkLit (.strVal "kept")) invalid)
     (Expr.mkLit (.strVal "after")) false
   let (failure, failed) := raw (preseedExprTables #[(broken, [])])
-  let seen : Std.HashMap (Address × Address) Unit :=
-    ({} : Std.HashMap (Address × Address) Unit).insert (invalid.getHash, key) ()
+  let seen : Std.HashMap _root_.Ix.Compile.ExactKey.PreseedKey Unit :=
+    ({} : Std.HashMap _root_.Ix.Compile.ExactKey.PreseedKey Unit).insert ⟨invalid, [], key⟩ ()
   let (warm, warmState) := raw (collectExprTables invalid key (#[literalAddress], #[], seen))
   let badLevels := Expr.mkConst (Name.fromLeanName `Missing)
     #[Level.mkZero, Level.mkMvar (Name.fromLeanName `badLevel)]
@@ -103,9 +131,14 @@ def controls : List (String × Bool) := Id.run do
       failed.blockBlobs.get? literalAddress == some literalBytes && failed.blockBlobs.get? textAddress == some textBytes),
     ("preorder error leaves later syntax and tables untouched", !failed.blockBlobs.contains skippedAddress &&
       failed.refs.isEmpty && failed.univs.isEmpty && !failed.univsFinal),
-    ("an arbitrary seen-cache hit retains existing behavior", match warm with
+    ("an exact warm seen-cache hit retains existing behavior", match warm with
       | .ok (refs, univs, afterSeen) => refs == #[literalAddress] && univs.isEmpty && afterSeen.size == 1
       | .error _ => false),
+    ("ordinary distinct expressions preseed both universes", expressionCollision false),
+    ("equal expression digests retain both universe dependencies", expressionCollision true),
+    ("ordinary reordered contexts preseed both positions", contextCollision false),
+    ("equal context digests retain both universe positions", contextCollision true),
+    ("a digest collision cannot suppress an unsupported expression", collisionRejectsUnsupported),
     ("universe failure precedes missing reference lookup", (match levelFailure with
       | .error (.unsupportedExpr "level metavariable") => true | _ => false) &&
       levelState.univCache.get? ⟨Level.mkZero, []⟩ == some .zero),

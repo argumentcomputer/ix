@@ -368,6 +368,18 @@ table of length `2^64`, whose serialized count cannot fit. Existing slots remain
 usable at capacity. Connecting the element premises and this invariant through
 the complete expression/preseed pipeline remains a caller obligation.
 
+Both producers' preseed visited sets retain the exact source expression and
+the full positional universe-parameter list. Digest pairs select buckets;
+structural comparison confirms reuse. Equal cached digests therefore cannot
+omit a different expression's dependencies or merge reordered parameter
+contexts. The production structural/worklist equality still covers arbitrary
+initial caches and error states. [`PreseedKeys.lean`](../Ix/CompileCert/PreseedKeys.lean)
+proves collision separation and a coverage invariant restricted to smaller
+expressions, allowing a parent to be marked before its children are complete.
+These are ingredients for the complete collection theorem; collection coverage
+and the validity of incoming values still need their own proofs. This concerns
+compiler-side binding identity and adds no target-metadata fidelity obligation.
+
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.
 Production callers must establish the prefix and preseed conditions; other

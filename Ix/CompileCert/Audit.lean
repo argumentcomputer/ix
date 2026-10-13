@@ -39,6 +39,7 @@ import Ix.CompileCert.DefinitionEmission
 import Ix.CompileCert.SharingRead
 import Ix.CompileCert.DefinitionBlock
 import Ix.CompileCert.WireTables
+import Ix.CompileCert.PreseedKeys
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2853,6 +2854,21 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.wireTableRoots Ix.CompileCert.Audit.allowedAxioms
 
+namespace Ix.CompileCert.Audit
+
+/-- Exact collector-key identity, collision separation and the size cutoff
+that distinguishes pending ancestors from completed smaller expressions. -/
+def preseedKeyRoots : Array Lean.Name :=
+  #[``Ix.Compile.ExactKey.preseedKeyLawful, ``Ix.Compile.ExactKey.preseedKey_fields] ++
+  (#[`insert_other, `insert_expression_collision, `insert_context_collision,
+    `insert_retains, `CoveredBelow.empty, `CoveredBelow.mono,
+    `CoveredBelow.restrict, `CoveredBelow.insert, `CoveredBelow.insert_above,
+    `CoveredBelow.lookup, `collect_hit].map (`Ix.CompileCert.PreseedKeys ++ ·))
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedKeyRoots Ix.CompileCert.Audit.allowedAxioms
+
 run_cmd do
   let env ← getEnv
   let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
@@ -2890,7 +2906,7 @@ run_cmd do
     `dataDec, `metadataDec, `levelGo, `levelDec, `exprGo, `exprDec, `exprEqImpl,
     `instBEqExprKey, `instHashableExprKey, `instCoeExprExprKey,
     `levelEqImpl, `nameEqImpl, `nameIndex, `univKeyBEq,
-    `univKeyHashable].map (`Ix.Compile.ExactKey ++ ·) |>.append
+    `univKeyHashable, `preseedKeyBEq, `preseedKeyHashable].map (`Ix.Compile.ExactKey ++ ·) |>.append
       #[``Ix.CompileM.compileUniv, ``Ix.CompileM.BlockState.cacheUniv, ``Ix.CompileM.withUnivCtx]
   for name in runtime do
     unless (substitutions.find? name).isNone do
@@ -2903,7 +2919,7 @@ run_cmd do
       | throwError m!"exact-key runtime entry is not a definition: {name}"
     unless definition.safety == .safe do
       throwError m!"exact-key runtime entry is not kernel-visible and total: {name}"
-  logInfo "[cert-audit] expression/universe caches: exact keys, total comparison and checked production substitutions"
+  logInfo "[cert-audit] expression/universe/preseed caches: exact keys, total comparison and checked production substitutions"
 
 namespace Ix.CompileCert.Audit
 

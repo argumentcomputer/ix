@@ -20,8 +20,8 @@ theorem Frame.collectExprTableUnivs (levels : List Level) (univs : Array Ixon.Un
     exact Frame.bind (Frame.compileUniv level) fun _ => ih _
 
 theorem Frame.collectExprTablesStructural (context : Address) (mutualContext : MutCtx)
-    (expr : Expr) (acc : ExprTableCollection) :
-    Frame (collectExprTablesStructural context mutualContext expr acc) := by
+    (params : List Name) (expr : Expr) (acc : ExprTableCollection) :
+    Frame (collectExprTablesStructural context mutualContext params expr acc) := by
   induction expr generalizing acc
   all_goals try cases ‹Lean.Literal›
   all_goals
@@ -43,7 +43,7 @@ theorem Frame.collectExprTablesStructural (context : Address) (mutualContext : M
 
 theorem Frame.collectExprTables (expr : Expr) (context : Address) (acc : ExprTableCollection) :
     Frame (collectExprTables expr context acc) :=
-  Frame.bind Frame.readBlock fun _ => Frame.collectExprTablesStructural _ _ _ _
+  Frame.bind Frame.readBlock fun _ => Frame.collectExprTablesStructural _ _ _ _ _
 
 theorem Frame.collectExprTablesWorklist (expr : Expr) (context : Address) (acc : ExprTableCollection) :
     Frame (Ix.CompileM.collectExprTablesWorklist expr context acc) := by

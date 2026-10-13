@@ -407,4 +407,39 @@ instance : LawfulBEq ExprKey where
     change exprEq a.expr a.expr = true
     simp [exprEq]
 
+/-- A visited collector node retains its expression and complete positional
+parameter context. The supplied context digest only selects a hash bucket;
+equal digests cannot identify different expressions or parameter lists. -/
+structure PreseedKey where
+  expr : Ix.Expr
+  params : List Ix.Name
+  contextHash : Address
+  deriving DecidableEq
+
+instance preseedKeyBEq : BEq PreseedKey :=
+  ⟨fun a b => exprEq a.expr b.expr && a.params.isEqv b.params nameEq && decide (a.contextHash = b.contextHash)⟩
+
+instance preseedKeyHashable : Hashable PreseedKey :=
+  ⟨fun key => hash (key.expr.getHash, key.contextHash)⟩
+
+instance preseedKeyLawful : LawfulBEq PreseedKey where
+  eq_of_beq {a b} same := by
+    cases a with
+    | mk expr params contextHash =>
+      cases b with
+      | mk other otherParams otherHash =>
+        change (exprEq expr other && params.isEqv otherParams nameEq && decide (contextHash = otherHash)) = true at same
+        simp only [Bool.and_eq_true, exprEq_eq, decide_eq_true_eq, paramsEq_iff] at same
+        rcases same with ⟨⟨rfl, rfl⟩, rfl⟩
+        rfl
+  rfl {a} := by
+    change (exprEq a.expr a.expr && a.params.isEqv a.params nameEq && decide (a.contextHash = a.contextHash)) = true
+    simp only [Bool.and_eq_true, exprEq_eq, decide_eq_true_eq, paramsEq_iff, and_self]
+
+theorem preseedKey_fields {a b : PreseedKey} (same : (a == b) = true) :
+    a.expr = b.expr ∧ a.params = b.params ∧ a.contextHash = b.contextHash := by
+  have equal : a = b := eq_of_beq same
+  cases equal
+  exact ⟨rfl, rfl, rfl⟩
+
 end Ix.Compile.ExactKey
