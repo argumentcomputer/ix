@@ -1,7 +1,6 @@
 import Ix.CompileCert.Image.Fuel
 import Ix.CompileCert.Image.Build
 import Ix.CompileCert.Image.Refine
-import Ix.CompileCert.Image.SimRec
 import Ix.CompileCert.Image.Post
 import Ix.CompileCert.Image.Dom
 import Ix.CompileCert.Image.Total
@@ -32,15 +31,6 @@ development calls as a parameter; the executables are the instance at the tabled
 `DevRefines D1 D2`: `D2` returns `D1`'s result wherever `D1` succeeds. Then the construction at `D2`
 returns the image the construction at `D1` returns (`refines_buildRecAppW`, `refines_imageProgW`,
 `imageOfW_of_refines`): the development calls are the only steps that differ.
-
-## The construction from shifted counters (`Ren` … `SimRec`)
-
-The fresh-name counter is irrelevant: `Ren ρ` (the same term up to renaming free variables), the
-equivariance of every helper (`Ren.lean`), the free-variable invariants (`Fv.lean`,
-`SimBuild.lean`), the simulation of two runs from related states (`Sim.lean`), and the
-construction's steps run from shifted counters: telescopes (`sim_telescope`), the analyses
-(`sim_findElim`, `sim_analyzeCanonMinor`, `sim_elimMotiveTypes`) and the relocation step itself
-with two related developments (`sim_buildRecAppW`).
 
 ## L2a-2: the image's type (`Post.lean`)
 

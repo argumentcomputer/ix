@@ -1,11 +1,11 @@
-import Ix.CompileCert.Image.SimRec
+import Ix.CompileCert.Image.Refine
 import Ix.Compile.Pass.ImageView
 
 /-!
 # M7 L2a-syn: what a successful run of the construction establishes
 
 `Post P x`: every successful run of `x` returns a value satisfying `P`. With `post_auto` (the
-program's shape, as `mono_auto`), the facts the construction's code makes true by construction:
+program's shape), the facts the construction's code makes true by construction:
 
 * `imageOfP_type` (**L2a-2**): the image's type is Lean's recursor type over the canonical
   constants, `img.type = spec.tr rv.type` (`imageOf` sets `type := ty`, `ty = spec.tr rv.cnst.type`).
@@ -16,6 +16,14 @@ namespace Ix.CompileCert.Img
 open Ix (Name Level Expr ConstantInfo InductiveVal RecursorVal)
 open Ix.Compile.Image (GenM GenState freshName Local telescope LCtx Elim LeanMinor ImageSpec
   GenOptions Image)
+
+theorem recOf_ok {const? : Name → Option ConstantInfo} {n : Name} {rv : RecursorVal}
+    (h : Ix.Compile.Image.recOf const? n = .ok rv) : const? n = some (.recInfo rv) := by
+  unfold Ix.Compile.Image.recOf at h
+  split at h
+  · cases h; assumption
+  · cases h
+  · cases h
 
 /-- Every successful run of `x` returns a value satisfying `P`. -/
 def Post {α : Type} (P : α → Prop) (x : GenM α) : Prop :=

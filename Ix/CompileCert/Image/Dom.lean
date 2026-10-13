@@ -15,8 +15,7 @@ in the classes. All of it is decidable (`Dom` is a computation).
 * `checkSubst`, `checkInst`: the classes, as `Bool`s (`hdB_iff`, `siteB_iff`, `noOccB_iff`,
   `inertB_iff`);
 * `devRefines_dom`: **on a call `domDev` accepts, the table-free core at `defaultFuel` returns the
-  same result** (the fuel bounds of `Fuel.lean` and `fuel_mono`);
-* `devRel_dom`: the same from shifted counters, with a related result.
+  same result** (the fuel bounds of `Fuel.lean` and `fuel_mono`).
 -/
 
 namespace Ix.CompileCert.Img
@@ -195,17 +194,5 @@ theorem core_inst_of_dom {f : Expr} {args : Array Expr} {r : Expr}
 result**: it refines `domDev`. -/
 theorem devRefines_dom : DevRefines domDev coreDev :=
   ⟨fun _ _ _ _ => core_subst_of_dom, fun _ _ _ => core_inst_of_dom⟩
-
-section
-variable {s0 d B : Nat}
-
-/-- **On the domain, X1's core at `defaultFuel` follows the checking development**, from shifted
-counters too. -/
-theorem devRel_dom (hok : InjOn (shift s0 d) (FreshBelow B)) : DevRel s0 d B domDev coreDev := by
-  refine ⟨fun hxs hv he r hr => ?_, fun hf ha r hr => ?_⟩
-  · exact (devRel_core hok).subst hxs hv he r (core_subst_of_dom hr)
-  · exact (devRel_core hok).inst hf ha r (core_inst_of_dom hr)
-
-end
 
 end Ix.CompileCert.Img

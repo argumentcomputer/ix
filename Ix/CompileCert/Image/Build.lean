@@ -22,10 +22,9 @@ development as a parameter `D : DevOps`; everything else (`findElim`, `elimMotiv
   found them equal on every P3a development of the `pass3` fixtures, and `l2a-syn` (tests)
   compares `imageOfP` with `imageOf` image by image.
 
-Hash-free: the construction compares names with `==` (`Ix.Name`'s hash equality) in `alphaEq`,
-`fvarIdx?`, `findIdx?`, `idxOf?` and `contains`; the theorems take the hypotheses under which
-`==` is equality on the names involved (the reserved fresh names pairwise distinct, `NamesOK`;
-L1's distinctness of the block's names), as L1 does.
+Names: the construction compares names with `==` (`Ix.Name`'s hash equality) in `fvarIdx?`,
+`findIdx?`, `idxOf?` and `contains`, and as raw values in `alphaEq`. No theorem of this package
+takes a hypothesis about either comparison.
 -/
 
 namespace Ix.CompileCert.Img

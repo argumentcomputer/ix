@@ -13,8 +13,5 @@ run_cmd (Ix.CompileCert.Audit.checkAuditRoots #[
   ``Ix.CompileCert.Conv.alphaEq_level_collision_refused,
   ``Ix.CompileCert.Conv.alphaEq_fvar_neighbour,
   ``Ix.CompileCert.Conv.alphaEq_bvar_collision_refused,
-  ``Ix.CompileCert.Conv.alphaEq_one_sided_mdata_refused,
-  ``Ix.CompileCert.Img.fresh_injective,
-  ``Ix.CompileCert.Img.fresh_eq_iff,
-  ``Ix.CompileCert.Img.exactInjOn_shift
+  ``Ix.CompileCert.Conv.alphaEq_one_sided_mdata_refused
 ] Ix.CompileCert.Audit.allowedAxioms)
