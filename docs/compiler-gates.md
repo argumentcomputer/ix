@@ -246,6 +246,7 @@ not an automatic re-record.
 | [`compile-schedule-identity`](../Tests/Ix/Compile/ScheduleIdentity.lean) | Twins and aux corpus: sequential, wave 1/2/4/16/32 and full pipeline 1/4/16; identical serialized environments, complete source emission and refusal results. `SCHED_LEGS=quick` is only a development subset. | None. | Compiler scheduling; Landing uses full tier. |
 | [`compile-claim-conflict`](../Tests/Ix/Compile/ClaimConflict.lean) | Direct claim/merge APIs retain exact conflict and rollback diagnostics. A source `T.below` before `T` stays distinct from generated support: every original schedule must compile, preserve all source names, round-trip exactly, match Rust bytes and pass all three kernels. | Exact diagnostics and positive source-preservation assertions in source. | Compiler scheduling; Landing. |
 | [`compile-claim-order`](../Tests/Ix/Compile/ClaimOrder.lean) | Artificial arrival-order changes: both orders preserve all source declarations, keep custom/generated below definitions distinct, recover source exactly and emit identical bytes. Intrinsic alias ownership still follows source-family metadata. | Inline provenance, source-preservation and byte assertions. | Compiler scheduling; Landing. |
+| [`compile-ind-flags`](../Tests/Ix/Compile/IndFlags.lean) | A recursive inductive with its stored `isRec` cleared: both compilers refuse the input with the same flags message; the true flags compile byte-identically. | None. | Compiler validation; Landing. |
 | [`changed-set`](../Tests/Ix/Compile/ChangedSet.lean) | Pass3/twin/clique units and Init+Std, at 1 and 32 workers: identical bytes/records, address and image/clique/inline/reserved-name coverage. | `initStdRejected` coverage sample; optional CLI record comparison. | Compiler records, parity and pack; Landing. |
 | [`pass3-rust-parity`](../Tests/Ix/Compile/Pass3RustParity.lean) | Pass3 units, ownership cliques, O11a declines and corpus: equal named records excluding synthetic `Muts` entries, compile-failure names and noncanonical `(name, cause)` pairs; Rust pack bytes against Lean's closure oracle. | No accepted parity differences in the checked scope. | Compiler records, parity and pack; Landing fixtures and separate Init+Std file. |
 | [`pack-units`](../Tests/Ix/Compile/PackUnits.lean) | Pack fixture: reference closure rather than the logical unit, retained constant bytes, correct root, reserved-name coverage and Lean pack oracle. Optional stored artifacts extend the run. | Inline roots and neighbours. | Compiler records, parity and pack; Landing. |
@@ -642,6 +643,7 @@ crossing the certified reader/order boundary also require `check-kernel`.
    pass3-cliques validate-lean pass3 pass3-plan-cache twins canon-pass1
    clique-transport clique-ownership aux-oracle aux-cert validate-lean-nc
    adversarial-matrix decompile-diff compile-claim-conflict compile-claim-order
+   compile-ind-flags
    compiler-selected-closure-e2e o11a-decline aux-source-identity aux-source-family aux-publication compile-closure-whole
    compile-caller-independence changed-set pack-units validate-aux aux-gen-diff
    rust-decompile kernel-ixon-roundtrip pass3-rust-parity

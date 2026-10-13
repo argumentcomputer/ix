@@ -1467,10 +1467,10 @@ compile → serialize` — the Lean-side mirror of Rust
 scheduler. This is what `ix compile-lean` and `ix validate-lean`
 phase 1 run.
 
-Rust's env-level `validate_ind_groups` domain restriction is not
-re-scanned here: the per-block nested-expansion path performs the same
-inductive-flag validation when it matters, and the compile fails loudly
-there on non-canonical flags. -/
+After condensation the pipeline applies Rust's env-level domain restriction
+(`validate_ind_groups`): an input inductive group whose stored flags differ
+from the recomputed ones (`Ix.AuxGen.validateIndGroups`) fails the compile
+before any block is scheduled. -/
 
 /-- Result of the full pure-Lean compile pipeline. -/
 structure LeanPipelineOut where
@@ -1639,6 +1639,22 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   -- the same edges again, idempotently.
   let condensed := Ix.Compile.Pass.Opt.addSizeOfEdges codeConsts.get? groundedOutRefs condensed
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
+  -- 4b. Domain restriction (Rust `validate_ind_groups`): every input
+  --     inductive group must carry the recomputed flags. Inductives and
+  --     constructors are code kinds, so `codeConsts` holds all of them.
+  let mut indGroups : Std.HashMap Name (Array Name) := {}
+  for (_, ci) in codeConsts do
+    if let .inductInfo v := ci then
+      if let some first := v.all[0]? then
+        if !indGroups.contains first then
+          indGroups := indGroups.insert first v.all
+  let flagsBlock : BlockEnv :=
+    { all := {}, current := .mkAnon, mutCtx := default, univCtx := [] }
+  match CompileM.run (CompileEnv.new { consts := codeConsts }) flagsBlock {}
+      (Ix.AuxGen.validateIndGroups indGroups) with
+  | .error e => return .error (toString e)
+  | .ok _ => pure ()
+  let t ← tick s!"validate inductive flags ({indGroups.size} groups)" t
   -- 5. Aux-aware parallel compile against the HYBRID environment: code
   --    kinds are the materialized (shared) map; proof bodies
   --    canonicalize on demand from the pinned Lean constants and are
