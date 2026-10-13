@@ -64,6 +64,7 @@ import Ix.CompileCert.PayloadArrays
 import Ix.CompileCert.FamilyWire
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.MutualProjections
+import Ix.CompileCert.SourceConstructorPositions
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3239,6 +3240,19 @@ def mutualProjectionRoots : Array Lean.Name :=
     `reordered_classes_agree, `production_classes, `source_rows_resolve,
     `build_resolves].map (`Ix.CompileCert.MutualProjections ++ ·)
 
+/-- Source-export guards and exact ingestion preserve constructor positions;
+the operational projection endpoint consumes actual lookup/run provenance. -/
+def sourceConstructorPositionRoots : Array Lean.Name :=
+  #[`forIn_checked, `ctorStep_checked, `inductiveStep_checked, `export_checked,
+    `source_export_checked, `exported_constructor, `canonical_constructor,
+    `canonical_constructor_index, `exported_canonical_constructor,
+    `captured_canonical_constructor, `lazy_constructor,
+    `lazy_lookup_constructor, `lazy_lookup_provenance,
+    `array_positions, `projection_positions, `compiled_constructor_resolves,
+    `rewritten_constructor, `rewritten_constructor_index, `rewritten_positions,
+    `compiled_rewritten_constructor_resolves].map
+      (`Ix.CompileCert.SourceConstructorPositions ++ ·)
+
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingHeaderRoots Ix.CompileCert.Audit.allowedAxioms
@@ -3246,6 +3260,22 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadArrayRo
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyWireRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.projectionLayoutRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.mutualProjectionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceConstructorPositionRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CanonM.canonConst, ``Ix.CanonM.canonChunk,
+      ``Ix.CompileCert.exportSourceInductive, ``Ix.CompileCert.exportSourceInductiveP,
+      ``Ix.Compile.Pass.rewriteConstM] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"source constructor entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"source constructor entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"source constructor entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] source constructors: actual export guards, ingestion and rewrite entries"
 
 run_cmd do
   let env ← getEnv

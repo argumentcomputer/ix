@@ -547,6 +547,20 @@ proves recursor-family reordering preserves it. Source-validity discharge,
 installed-store availability, composition of this resolver result with the
 complete returned artifact/driver, and declaration admission remain open.
 
+[`SourceConstructorPositions.lean`](../Ix/CompileCert/SourceConstructorPositions.lean)
+extracts constructor ownership, position and parameter-count facts from the
+actual source-export guards. `CanonM.canonConst` preserves the constructor's
+scalar fields for every cache state; the production singleton chunk/lazy
+decoder supplies the same facts. Exact captured-source lookup and ingestion
+run witnesses therefore discharge constructor-array positions. The actual
+stateful `rewriteConstM` also preserves these scalar fields for every callback
+and successful run, so the position facts compose through type rewriting,
+family compilation and the anonymous constructor-projection resolver.
+The driver must still supply the lookup/ingestion/rewrite witnesses and the
+installed target block. Successful normalized source export has not been substituted for
+the original L4 source domain, and general name/expression-cache fidelity is
+not implied by preservation of these scalar fields.
+
 [`DefinitionReading.lean`](../Ix/CompileCert/DefinitionReading.lean) connects
 the actual `compileConstantInfo` definition/theorem/opaque branches to
 `Kernel.Reader.readRecord`. It derives the reader's parameter-list length from
