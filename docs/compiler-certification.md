@@ -742,6 +742,17 @@ retains the exact generated prefix and registration fields. Source/index/
 publication dischargers, complete compiler-entry composition and generator
 semantics/progress remain open.
 
+[`InductiveReading.lean`](../Ix/CompileCert/InductiveReading.lean) connects
+public `compileConstantInfo` inductive compilation to that whole-record
+endpoint. The actual successful compiler run supplies the block, codec and
+serialization/address wrapper. It also supplies the singleton member shape,
+exact universe/parameter counts and source-related payload used to instantiate
+the real family reader's universe and self context. Ordinary reading and
+required nested modelling retain the same collected data. Source expression
+scope, constructor safety/position/telescope shape, the singleton index order,
+indexed recursor readiness and source signature/K conditions remain explicit;
+neither a suitable output artifact nor reader success is assumed.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,

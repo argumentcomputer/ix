@@ -66,6 +66,7 @@ import Ix.CompileCert.FamilyCollection
 import Ix.CompileCert.FamilySourceChecks
 import Ix.CompileCert.FamilyAssembly
 import Ix.CompileCert.FamilyReading
+import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3211,6 +3212,13 @@ def familyReadingRoots : Array Lean.Name :=
     `Collected.finish_model, `collect_record, `read_record,
     `record_success].map (`Ix.CompileCert.FamilyReading ++ ·)
 
+/-- Actual public inductive emission supplies singleton layout, reader
+universe/self context, source-related fields and exact returned bytes. -/
+def inductiveReadingRoots : Array Lean.Name :=
+  #[`params_length, `blob_params, `blob_self, `singleton_params, `singleton_reader,
+    `singleton_family, `singleton_selection, `compile_raw, `compile_read].map
+      (`Ix.CompileCert.InductiveReading ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3241,6 +3249,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyCollecti
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyConsistencyRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyAssemblyRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyReadingRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveReadingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
