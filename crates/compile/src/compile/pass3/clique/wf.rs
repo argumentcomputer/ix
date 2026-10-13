@@ -1177,11 +1177,9 @@ pub fn owned_wf_body(
     {
       let saved = tm.next;
       match decode_wf_nat_matcher(tm, const_of, &name, &levels) {
-        Err(reason) => {
+        // Not a decodable matcher: keep the faithful recursive-input adapter.
+        Err(_) => {
           tm.next = saved;
-          tm.trace(format!(
-            "{reason}; retaining the faithful recursive-input adapter"
-          ));
         },
         Ok(zero) => {
           let (motive_locals, motive_body) =

@@ -344,7 +344,6 @@ fn build_below_def(
   let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
   let n_indices = try_nat_to_usize(&rec_val.num_indices)?;
   let rec_level_params = &rec_val.cnst.level_params;
-  let _ind_level_params = &ind.cnst.level_params;
 
   // The elimination level is the first level param (for large eliminators).
   let elim_level = Level::param(rec_level_params[0].clone());

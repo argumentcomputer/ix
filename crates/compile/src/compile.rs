@@ -3209,7 +3209,6 @@ pub fn compile_single_def_parts(
   stt: &CompileState,
 ) -> Result<(Address, ConstantMeta, Constant), CompileError> {
   let _t0 = std::time::Instant::now();
-  let _name_str_entry = name.pretty();
   let mut_ctx = MutConst::single_ctx(def.name.clone());
   preseed_expr_tables(
     &[
@@ -3279,7 +3278,6 @@ fn compile_const_inner_body(
   kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
-  let _cci_start = std::time::Instant::now();
   if let Some(cached) = stt.resolve_addr_aux(name, aux) {
     return Ok(cached);
   }
@@ -3298,16 +3296,6 @@ fn compile_const_inner_body(
         caller: "compile_const".into(),
       })?
       .cloned(),
-  };
-  let _cnst_kind = match &cnst {
-    LeanConstantInfo::DefnInfo(_) => "defn",
-    LeanConstantInfo::ThmInfo(_) => "thm",
-    LeanConstantInfo::InductInfo(_) => "indc",
-    LeanConstantInfo::RecInfo(_) => "rec",
-    LeanConstantInfo::CtorInfo(_) => "ctor",
-    LeanConstantInfo::AxiomInfo(_) => "axio",
-    LeanConstantInfo::OpaqueInfo(_) => "opaq",
-    LeanConstantInfo::QuotInfo(_) => "quot",
   };
 
   // Handle each constant type
@@ -3788,9 +3776,8 @@ fn compile_mutual(
     let journal = if stt.pass3 { pass3::journal_take() } else { None };
     let aux_layout_stored = tail?;
 
-    // Change detection (Def 3.1; Lean `Ix.Compile.Pass.isChanged`): the
-    // original inductive `all` list from any InductiveVal in the block, and
-    // the canonical classes restricted to it.
+    // Change detection (Def 3.1; Lean `Ix.Compile.Pass.isChanged`) over the
+    // original inductive `all` list from any InductiveVal in the block.
     let original_all: Vec<Name> = cs
       .iter()
       .find_map(|c| match c {
@@ -3798,23 +3785,11 @@ fn compile_mutual(
         _ => None,
       })
       .unwrap_or_default();
-    let user_class_names: Vec<Vec<Name>> = if original_all.is_empty() {
-      Vec::new()
-    } else {
-      let original_all_lookup: FxHashMap<Name, ()> =
-        original_all.iter().cloned().map(|n| (n, ())).collect();
-      class_names
-        .iter()
-        .filter_map(|class| {
-          let names: Vec<Name> = class
-            .iter()
-            .filter(|n| original_all_lookup.contains_key(*n))
-            .cloned()
-            .collect();
-          (!names.is_empty()).then_some(names)
-        })
-        .collect()
-    };
+    let changed = pass3::driver::is_changed(
+      &class_names,
+      &original_all,
+      aux_layout_stored.as_ref(),
+    );
 
     // If the block carries an aux_layout, patch the primary Muts
     // metadata so the layout travels with the block through serialize /
@@ -3854,26 +3829,6 @@ fn compile_mutual(
       );
     }
 
-    let user_layout_changed = !original_all.is_empty()
-      && (user_class_names.len() < original_all.len()
-        || (user_class_names.len() == original_all.len()
-          && user_class_names
-            .iter()
-            .zip(original_all.iter())
-            .any(|(class, orig)| class[0] != *orig)));
-    let aux_layout_changed = aux_layout_stored.as_ref().is_some_and(|layout| {
-      // An evaporated position changes the block even when no canonical
-      // slot moved (all-OUT perms). `user_layout_changed` happens to cover
-      // today's shapes (evaporation requires an SCC split), but the
-      // predicate must not depend on that coincidence. Keep it identical to
-      // Lean's `isChanged`.
-      layout.evaporated.iter().any(|&b| b)
-        || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
-          canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
-            && canonical_i != source_j
-        })
-    });
-
     // Pass 3: a changed block's Ix auxiliaries move to their `_ix` display
     // names and the block records its image-kind heads
     // (`Driver.editChangedBlock`). Only a driver-prepared state can do that
@@ -3882,7 +3837,7 @@ fn compile_mutual(
     // which the legacy call-site surgery did until M6R slice 6: refused,
     // with the Lean side's text (`compileBlockWithAux`).
     if let Some(journal) = journal {
-      let release = if user_layout_changed || aux_layout_changed {
+      let release = if changed {
         pass3::driver::edit_changed_block(
           stt,
           lean_env,
@@ -3903,7 +3858,7 @@ fn compile_mutual(
       if !release.is_empty() {
         pass3::release_pending(stt, release);
       }
-    } else if user_layout_changed || aux_layout_changed {
+    } else if changed {
       return Err(CompileError::InvalidMutualBlock {
         reason: format!(
           "changed block '{}' compiled with its aux tail outside a \

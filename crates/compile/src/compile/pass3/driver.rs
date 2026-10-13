@@ -43,7 +43,7 @@ use crate::compile::{
   compile_name, compile_single_def_parts, compile_single_definition,
 };
 use crate::graph::NameSet;
-use crate::mutual::{Def, MutConst};
+use crate::mutual::Def;
 
 use super::Journal;
 use super::clique::hook::{CliquePrep, HookEnv, consts_where, value_of};
@@ -57,8 +57,7 @@ use super::pj::{no_confusion_of, o11b_rewrite};
 use super::sidecar::{hash_map_of, rename_named};
 use super::spec::NestedCanon;
 use super::translate::{
-  ExpansionLookup, OptHook, RwState, image_decl_with,
-  rewrite_block_ordered as rewrite_block,
+  ExpansionLookup, OptHook, RwState, image_decl_with, rewrite_block_ordered,
 };
 use super::view::{
   BlockView, ComponentRecord, Expansion, ViewInput, build_view,
@@ -390,8 +389,11 @@ fn insert_once<V: PartialEq + Clone>(
   Ok(())
 }
 
-/// The changed-block predicate (Def 3.1 under the compiler's rules; the
-/// plan predicate of `compile_mutual`).
+/// The changed-block predicate (Def 3.1 under the compiler's rules; Lean
+/// `Ix.Compile.Pass.isChanged`), read by `compile_mutual`. An evaporated
+/// position changes the block even when no canonical slot moved (all-out
+/// perms); the user-order test happens to cover today's shapes, since
+/// evaporation requires an SCC split, but the predicate does not rely on it.
 pub fn is_changed(
   class_names: &[Vec<Name>],
   original_all: &[Name],
@@ -713,7 +715,8 @@ fn rewrite_canon<'h>(
     if !seen.insert(c.clone()) {
       continue;
     }
-    let rw = rewrite_block(lookup, &[(c, ci.clone())], Some(opt), None, true)?;
+    let rw =
+      rewrite_block_ordered(lookup, &[(c, ci.clone())], Some(opt), None, true)?;
     let ci2 = rw.overlay.into_iter().next().map_or(ci, |x| x.1);
     queue.extend(rw.canon);
     done.push((ci2, rw.sources));
@@ -825,7 +828,13 @@ fn prepare_block_rewrite(
   };
   let rw = {
     let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
-    rewrite_block(&mut lookup, members, Some(&opt), Some(&decline), false)?
+    rewrite_block_ordered(
+      &mut lookup,
+      members,
+      Some(&opt),
+      Some(&decline),
+      false,
+    )?
   };
   // the canonical constants (D1): the `_ix` forms where a proof-justified
   // pass fires, the unit passes' (O11b), the helpers the rewrites reference
@@ -1021,7 +1030,8 @@ fn clique_rewrite(
   };
   let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
   let members = vec![(c.clone(), ci.clone())];
-  let rw = rewrite_block(&mut lookup, &members, Some(&opt), None, false)?;
+  let rw =
+    rewrite_block_ordered(&mut lookup, &members, Some(&opt), None, false)?;
   let ci2 = rw.overlay.into_iter().next().map_or_else(|| ci.clone(), |x| x.1);
   Ok((ci2, rw.sources))
 }
@@ -1267,7 +1277,6 @@ pub fn compile_block(
       stt.p3.non_canonical.insert(n, c);
     }
   }
-  let _ = Named::with_addr;
   res
 }
 
@@ -1285,9 +1294,6 @@ pub fn patch_recs(
     })
     .collect()
 }
-
-#[allow(dead_code)]
-fn _unused(_: MutConst) {}
 
 #[cfg(test)]
 mod tests {

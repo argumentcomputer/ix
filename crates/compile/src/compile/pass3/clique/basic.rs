@@ -810,7 +810,6 @@ pub type OwnKey = (Hash, Hash, bool);
 #[derive(Default)]
 pub struct Tm {
   pub next: usize,
-  pub log: Vec<String>,
   pub fallbacks: Vec<String>,
   pub cache_own: FxHashMap<OwnKey, Expr>,
 }
@@ -824,9 +823,6 @@ impl Tm {
     let n = Name::num(fvar_root(), nat(self.next));
     self.next += 1;
     n
-  }
-  pub fn trace(&mut self, s: String) {
-    self.log.push(s);
   }
 }
 

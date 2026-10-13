@@ -407,19 +407,11 @@ pub struct BlockRewrite {
 /// place; otherwise they are Lean constants, which keep the faithful form,
 /// and the canonical form of each one a proof-justified pass fires in is
 /// returned in `canon`.
-pub fn rewrite_block<'h>(
-  lookup: &mut ExpansionLookup<'_>,
-  members: &[(Name, ConstantInfo)],
-  opt: Option<&'h OptHook<'h>>,
-  decline: Option<&'h DeclineHook<'h>>,
-  in_place: bool,
-) -> Result<BlockRewrite, String> {
-  rewrite_block_with_retry(lookup, members, opt, decline, in_place, false)
-}
-
+///
 /// Production engine only: every definitional pass precedes every PJ pass,
 /// and only PJ passes read the site. A PJ hit thus implies the no-site retry
-/// returns None. Generic `rewrite_block` callbacks retain that retry.
+/// returns None, so it is skipped (`RwState.skip_pj_retry`; a generic hook
+/// keeps the retry, see `retry_tests`).
 pub(crate) fn rewrite_block_ordered<'h>(
   lookup: &mut ExpansionLookup<'_>,
   members: &[(Name, ConstantInfo)],
@@ -481,11 +473,6 @@ pub fn image_decl_with(
   let typ = st.rw(lookup, REWRITE_FUEL, false, ty)?;
   st.sources.clear();
   Ok((value, typ))
-}
-
-/// Unused-level helper kept for symmetry with the Lean API.
-pub fn levels_key(us: &[Level]) -> Vec<Hash> {
-  us.iter().map(|u| *u.get_hash()).collect()
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 //! and what they call).
 
 use ix_common::address::Address;
-use ix_common::env::{BinderInfo, Expr, ExprData, Level, Name};
+use ix_common::env::{Expr, ExprData, Level, Name};
 
 use super::basic::*;
 use super::order::{AddrOf, Member, clique_classes, statement_order};
@@ -1409,6 +1409,3 @@ pub fn clique_order(
     },
   }
 }
-
-#[allow(dead_code)]
-fn _unused(_: BinderInfo) {}

@@ -1,7 +1,6 @@
 //! Independent tree-walk implementations for differential tests only.
 //! Raw-map compatibility is retained; binder producers use the shared
 //! structural table and preserve forward insertion / reverse binder order.
-#![allow(dead_code)]
 
 use super::expr_utils::{LocalDecl, fresh_fvar};
 use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};

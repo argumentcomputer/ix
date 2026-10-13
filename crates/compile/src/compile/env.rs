@@ -725,9 +725,9 @@ fn compile_env_observed(
 
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
-              let _cc_start = Instant::now();
-              let _is_precompiled = stt_ref.resolve_addr(&lo).is_some();
-              if _is_precompiled {
+              let cc_start = Instant::now();
+              let is_precompiled = stt_ref.resolve_addr(&lo).is_some();
+              if is_precompiled {
                 // Check if any names in this block are aux_gen-rewritten.
                 let any_aux_gen =
                   all.iter().any(|n| stt_ref.aux_gen_extra_names.contains(n));
@@ -1020,13 +1020,13 @@ fn compile_env_observed(
               // Check for slow blocks
               let elapsed = block_start.elapsed();
               if *crate::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
-                let cc_time = _cc_start.elapsed().as_secs_f32();
+                let cc_time = cc_start.elapsed().as_secs_f32();
                 eprintln!(
                   "Slow block {:?} ({} consts): {:.2}s path={} cc={:.2}s",
                   lo.pretty(),
                   all.len(),
                   elapsed.as_secs_f32(),
-                  if _is_precompiled { "precompiled" } else { "compile" },
+                  if is_precompiled { "precompiled" } else { "compile" },
                   cc_time,
                 );
               }

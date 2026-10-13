@@ -460,9 +460,8 @@ fn describe_expr_head(e: &LeanExpr) -> String {
 /// This is the inverse of `instantiate1`.
 ///
 /// Prefer `batch_abstract` or `mk_forall`/`mk_lambda` which abstract all
-/// FVars in a single pass. This function is retained for cases that need
-/// to abstract a single FVar outside of a binder-chain context.
-#[allow(dead_code)]
+/// FVars in a single pass. This function is for abstracting a single FVar
+/// outside of a binder-chain context (`brecon::handle_substcore_step`).
 pub(super) fn abstract_fvar(
   expr: &LeanExpr,
   fvar_name: &Name,
@@ -704,12 +703,6 @@ pub(crate) fn instantiate_pi_params(
   }
   cur
 }
-
-// NOTE: `subst_at` / `subst_bvar0` (shift-and-substitute-BVar-0 helpers)
-// were removed in Round 4 cleanup. They were marked `#[allow(dead_code)]`
-// and have zero callers. `instantiate1` and `instantiate_rev` cover the
-// substitution shapes the live pipeline actually uses — if a
-// shift-preserving substitution is ever needed, resurrect from git.
 
 /// Convert spec_params from BVar form to FVar form.
 ///

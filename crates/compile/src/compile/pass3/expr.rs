@@ -581,11 +581,10 @@ pub fn consts_in(names: &FxHashSet<Name>, e: &Expr) -> FxHashSet<Name> {
 // The generator's locally nameless toolkit (`Image.Expr`)
 // ---------------------------------------------------------------------------
 
-/// Fresh variables and a trace (`GenM`'s state).
+/// Fresh variables (`GenM`'s state).
 #[derive(Default)]
 pub struct Gen {
   pub next: usize,
-  pub log: Vec<String>,
 }
 
 pub type GenResult<T> = Result<T, String>;
@@ -600,9 +599,6 @@ impl Gen {
     let n = Name::num(fvar_root(), nat(self.next));
     self.next += 1;
     n
-  }
-  pub fn trace(&mut self, s: String) {
-    self.log.push(s);
   }
 }
 

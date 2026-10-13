@@ -424,22 +424,6 @@ fn build_rec_app(
     &subst_levels(&rv.cnst.level_params, &us, &rv.cnst.typ),
     &e.params,
   )?;
-  let classes_s: Vec<String> = classes
-    .iter()
-    .map(|cl| {
-      format!(
-        "#[{}]",
-        cl.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-      )
-    })
-    .collect();
-  let packs_s: Vec<String> = packs.iter().map(ToString::to_string).collect();
-  g.trace(format!(
-    "elim for Lean motive {t}: {} classes=#[{}] packs=#[{}]",
-    e.rec_name.pretty(),
-    classes_s.join(", "),
-    packs_s.join(", ")
-  ));
   let nmot = usz(&rv.num_motives);
   let (xs, _) = telescope(g, &rty, Some(nmot + usz(&rv.num_minors)));
   let ms_c: Vec<Local> = xs[..nmot.min(xs.len())].to_vec();

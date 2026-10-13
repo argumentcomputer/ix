@@ -895,38 +895,22 @@ pub fn generate_canonical_recursors_with_layout(
 // Binder info collected from types
 // =========================================================================
 
-/// A binder extracted from a forall chain.
-///
-/// `name` and `domain` are used by `collect_binders` and retained for
-/// dead-code reference implementations (`_extract_field_binders_from_rec_type`).
+/// A binder extracted from a forall chain: its binder info.
 #[derive(Clone)]
 struct Binder {
-  #[allow(dead_code)]
-  name: Name,
-  #[allow(dead_code)]
-  domain: LeanExpr,
   info: BinderInfo,
 }
 
 /// Collect the first `n` forall binders from an expression. Metadata on the
-/// forall spine is transparent, as it is for `forall_telescope`; domain
-/// metadata remains intact.
+/// forall spine is transparent, as it is for `forall_telescope`.
 fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
   let mut binders = Vec::with_capacity(n);
   let mut cur = expr.clone();
   for _ in 0..n {
     cur = strip_mdata_ref(&cur).clone();
     match cur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        // Strip outParam/semiOutParam/optParam/autoParam wrappers,
-        // matching Lean's consume_type_annotations in mk_local_decl
-        // (inductive.cpp:179).
-        let clean_dom = super::expr_utils::consume_type_annotations(dom);
-        binders.push(Binder {
-          name: name.clone(),
-          domain: clean_dom,
-          info: bi.clone(),
-        });
+      ExprData::ForallE(_, _, body, bi, _) => {
+        binders.push(Binder { info: bi.clone() });
         cur = body.clone();
       },
       _ => break,
@@ -1666,9 +1650,6 @@ fn build_rec_rules(
   let n_motives = n_flat;
   let n_minors: usize = classes.iter().map(|c| c.ctors.len()).sum();
   let pmm = n_params + n_motives + n_minors;
-
-  // Extract PMM binder info from the rec_type for lambda domains/names.
-  let _pmm_binders = collect_binders(rec_type, pmm);
 
   // Collect param binder infos from the inductive type (for rule RHS lambdas).
   let param_binder_infos: Vec<BinderInfo> = {
@@ -3012,7 +2993,6 @@ mod tests {
     assert_eq!(decls.len(), 2);
     assert!(matches!(binders[0].info, BinderInfo::Implicit));
     assert!(matches!(binders[1].info, BinderInfo::InstImplicit));
-    assert_eq!(binders[0].domain, mark(prop.clone()));
     assert_eq!(decls[1].domain, mark(fvars[0].clone()));
     // Valid neighbour: the same spine without metadata.
     let plain = LeanExpr::all(

@@ -134,14 +134,11 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
   let aliases : Std.HashMap Name Name := {}
 
   if originalAll.isEmpty then
-    return { patches, aliases, perm := none,
-             nClasses := sortedClasses.size, nCanonicalAux := 0,
-             nSourceAux := 0 }
+    return { patches, aliases, perm := none, nCanonicalAux := 0 }
 
   let nClasses := sortedClasses.size
   let mut capturedPerm : Option (Array Nat) := none
   let mut capturedNCanonicalAux : Nat := 0
-  let mut capturedNSourceAux : Nat := 0
 
   -- PUnit/PProd must be authoritative BEFORE any ingress (aux_gen.rs:229).
   ensurePreludeInKenvOf maps
@@ -181,7 +178,6 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
           (fun n => some (maps.resolve n)) : CompileM _)
       capturedPerm := some perm
       capturedNCanonicalAux := nCanon
-      capturedNSourceAux := perm.size
 
       -- canonRepr[canonical_i] = min source_j (deterministic under
       -- alpha-collapse); every canonical slot MUST have a source
@@ -259,7 +255,6 @@ refusing to synthesize canonical-indexed _N names")
             (fun n => some (maps.resolve n)) : CompileM _)
         capturedPerm := some perm
         capturedNCanonicalAux := nCanon
-        capturedNSourceAux := perm.size
       generateCanonicalRecursorsWithOverlay sortedClasses none none maps
 
   let names : AuxNames := if privateHelpers then
@@ -751,7 +746,6 @@ refusing to compile the original form")
         evaporated := some evaporatedFlags
 
   return { names, patches, aliases, perm := capturedPerm, evaporated,
-           nClasses, nCanonicalAux := capturedNCanonicalAux,
-           nSourceAux := capturedNSourceAux }
+           nCanonicalAux := capturedNCanonicalAux }
 
 end Ix.AuxGen
