@@ -547,6 +547,21 @@ proves recursor-family reordering preserves it. Source-validity discharge,
 installed-store availability, composition of this resolver result with the
 complete returned artifact/driver, and declaration admission remain open.
 
+[`MutualArtifact.lean`](../Ix/CompileCert/MutualArtifact.lean) supplies the
+returned-artifact and checked-publication composition for a mutual unit. It
+handles both generated projections and collapsed definition/recursor blocks.
+The actual successful compile and accepted `checkCompiledBlock` merge publish
+the expected source-name/address bindings, and the anonymous reader resolves
+their stored records to the specified member/constructor references. Store
+availability follows the checked merge and codec facts. Previously stored
+records, blobs, name bindings and already-resolved references are preserved;
+digest injectivity is not assumed.
+
+This closes the reference/storage portion of that local unit step under the
+stated initial-state, class-layout and constructor-position conditions. It does
+not yet establish source-related declaration fields, model correspondence,
+admission, progress, or the remaining source/prefix-invariant dischargers.
+
 [`SourceConstructorPositions.lean`](../Ix/CompileCert/SourceConstructorPositions.lean)
 extracts constructor ownership, position and parameter-count facts from the
 actual source-export guards. `CanonM.canonConst` preserves the constructor's

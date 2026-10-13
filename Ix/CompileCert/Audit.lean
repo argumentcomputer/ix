@@ -65,6 +65,7 @@ import Ix.CompileCert.FamilyWire
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.MutualProjections
 import Ix.CompileCert.SourceConstructorPositions
+import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3253,6 +3254,18 @@ def sourceConstructorPositionRoots : Array Lean.Name :=
     `compiled_rewritten_constructor_resolves].map
       (`Ix.CompileCert.SourceConstructorPositions ++ ·)
 
+/-- Actual returned mutual artifacts, singleton collapse, decoded publication,
+new source-name bindings and preservation of existing resolved references. -/
+def mutualArtifactRoots : Array Lean.Name :=
+  #[`writeback_standalone, `sharing_standalone, `chosen_standalone,
+    `build_cases, `selected_length, `no_ctor_references, `collapsed_references,
+    `standalone_resolves, `build_resolves, `finish_references,
+    `payload_references, `mutual_references, `mutual_correct,
+    `published_block, `published_projection, `published_rows,
+    `projection_claim, `published_named, `decoded_extends,
+    `resolveSource_extends, `resolve_extends, `checked_merge_prior_reference,
+    `compile_merge_references].map (`Ix.CompileCert.MutualArtifact ++ ·)
+
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingHeaderRoots Ix.CompileCert.Audit.allowedAxioms
@@ -3261,6 +3274,23 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyWireRoot
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.projectionLayoutRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.mutualProjectionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sourceConstructorPositionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.mutualArtifactRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.buildCompiledMutualBlock, ``Ix.CompileM.finishMutualCompilation,
+      ``Ix.CompileM.buildMutualProjections, ``Ix.CompileM.buildStandaloneMutualProjections,
+      ``Ix.CompileM.checkCompiledBlock, ``Ix.CompileM.mergeCompiledBlock,
+      ``Ix.Kernel.Reader.resolveSource, ``Ix.Kernel.Reader.resolve] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"artifact/publication entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"artifact/publication entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"artifact/publication entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] mutual artifacts: actual assembly, checked merge and anonymous reference resolver"
 
 run_cmd do
   let env ← getEnv
