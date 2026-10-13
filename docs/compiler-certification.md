@@ -403,8 +403,20 @@ uses each visited key's full parameter context, so it remains valid across
 roots with different parameter orderings. The root loop resets its raw cache
 before each root and therefore needs no assumption on the initial raw cache.
 Any later successful compilation from an exact cache produces the universe
-already represented in the collected array. Canonicalization, wire bounds and
-sorted table insertion remain separate stages.
+already represented in the collected array.
+
+[`PreseedCanonical.lean`](../Ix/CompileCert/PreseedCanonical.lean) proves the
+actual canonicalization loop returns exactly the normalizer's outputs and
+preserves its memo. [`PreseedInsertion.lean`](../Ix/CompileCert/PreseedInsertion.lean)
+connects sorting and duplicate skipping to the real reference/universe index
+maps, preserving earlier bindings. The public preseed composition establishes
+the final flag, sound primary index maps and actual slots for the collected
+references and canonical universes. It carries an explicit wire-format premise
+on canonical universe values: equal serialized keys imply equal universes only
+within that domain. `ExactSeeded` connects these lookups to later production
+universe interning, including repeated parameter names. Deriving canonical
+universe wire bounds and the remaining declaration/header and driver premises
+is still required for the general compiler theorem.
 
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.

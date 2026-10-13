@@ -43,6 +43,8 @@ import Ix.CompileCert.PreseedKeys
 import Ix.CompileCert.PreseedReferences
 import Ix.CompileCert.UniverseExact
 import Ix.CompileCert.PreseedUniverses
+import Ix.CompileCert.PreseedCanonical
+import Ix.CompileCert.PreseedInsertion
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2920,6 +2922,34 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.universeExactRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedUniverseRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The actual preseed canonicalization loop and preservation of its memo
+through collection. -/
+def preseedCanonicalRoots : Array Lean.Name :=
+  #[`Frame.compileUniv, `Frame.lookup, `Frame.blob, `Frame.levels,
+    `Frame.structural, `Frame.collect, `Frame.withBlockEnv, `Frame.withUnivCtx,
+    `Frame.roots, `roots_cache, `canonicalize].map (`Ix.CompileCert.PreseedCanonical ++ ·)
+
+/-- Sorted insertion, old-map preservation and actual public preseed lookup
+coverage, with the canonical-universe wire bound stated explicitly. -/
+def preseedInsertionRoots : Array Lean.Name :=
+  #[`bytes_beq_iff, `MapExtends.refl, `MapExtends.trans, `MapExtends.insert_fresh,
+    `internRef_index, `internUniv_index, `internRef_mode, `discard_ok,
+    `refs_inserted, `univ_key_injective, `univs_inserted, `refs_sorted,
+    `sortedUnivs_valid, `sortedUnivs_member, `univs_sorted,
+    `CollectionFrame.compileUniv, `CollectionFrame.lookup, `CollectionFrame.blob,
+    `CollectionFrame.levels, `CollectionFrame.structural, `CollectionFrame.collect,
+    `CollectionFrame.withBlockEnv, `CollectionFrame.withUnivCtx, `CollectionFrame.roots,
+    `preserves_discard, `refs_frame, `univs_frame, `canonicalize_run,
+    `preseed_from_collection, `RefPresent.slot, `UnivPresent.slot, `preseed_reads,
+    `exactSeeded_of_present, `compileAndIntern_returns_exact].map (`Ix.CompileCert.PreseedInsertion ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedCanonicalRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedInsertionRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
