@@ -63,6 +63,7 @@ import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
 import Ix.CompileCert.FamilyWire
 import Ix.CompileCert.ProjectionLayout
+import Ix.CompileCert.MutualProjections
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3220,12 +3221,31 @@ def projectionLayoutRoots : Array Lean.Name :=
     `finish_inductive_shape, `family_layout, `inductive_projection_resolves,
     `constructor_projection_resolves].map (`Ix.CompileCert.ProjectionLayout ++ ·)
 
+/-- Exact mutual projection rows, codecs for the actual returned records,
+source-indexed anonymous resolution, and the canonical class-shape discharger.
+Source/store and existing canonicalization premises remain explicit. -/
+def mutualProjectionRoots : Array Lean.Name :=
+  #[`indexed_rows, `constructor_rows, `memberStep_yield, `memberStep_rows,
+    `members_rows, `classes_rows, `build_rows, `empty_tables_wire,
+    `member_wire, `constructor_wire, `source_rows_wire, `build_rows_wire,
+    `build_rows_codec, `pushed_rows, `standalone_classes_rows,
+    `standalone_rows, `standalone_rows_wire, `build_projection_wire,
+    `finish_projection_wire, `payload_projection_wire,
+    `mutual_projection_wire, `mutual_codec, `member_resolves,
+    `constructor_resolves, `selected_member, `class_member, `cmpM_eq_parts,
+    `lex_eq_right, `ctor_compare_index, `ctor_list_indices,
+    `inductive_compare_indices, `const_compare_shape, `compared_shape,
+    `ordered_shape, `sorted_classes_agree, `reordered_member,
+    `reordered_classes_agree, `production_classes, `source_rows_resolve,
+    `build_resolves].map (`Ix.CompileCert.MutualProjections ++ ·)
+
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingHeaderRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadArrayRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyWireRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.projectionLayoutRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.mutualProjectionRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

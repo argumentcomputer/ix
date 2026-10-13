@@ -532,6 +532,21 @@ and store availability from the certified source and driver, relating every
 equivalent member to its representative, and complete mutual projection
 generation/resolution remain separate obligations.
 
+[`MutualProjections.lean`](../Ix/CompileCert/MutualProjections.lean) gives the
+exact anonymous constants and source registration keys emitted by the nested
+mutual-projection loops, independently of metadata values. Its whole mutual
+compiler codec endpoint covers both the returned main block and every returned
+projection, including the collapsed singleton case.
+
+For a stored mutual block with the established representative layout, all
+generated projection rows resolve to their source-indexed member/constructor
+references when classes agree on kind/constructor indices and source constructors
+declare their positions. The module derives class agreement from the existing
+canonical sorting theorem, under its name-key and address-map assumptions, and
+proves recursor-family reordering preserves it. Source-validity discharge,
+installed-store availability, composition of this resolver result with the
+complete returned artifact/driver, and declaration admission remain open.
+
 [`DefinitionReading.lean`](../Ix/CompileCert/DefinitionReading.lean) connects
 the actual `compileConstantInfo` definition/theorem/opaque branches to
 `Kernel.Reader.readRecord`. It derives the reader's parameter-list length from
