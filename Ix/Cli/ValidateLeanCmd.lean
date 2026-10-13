@@ -1261,7 +1261,16 @@ phases 6–8 read Lean's forms from the decompiler)"
     IO.println s!"[validate-lean]   {r.key}. {r.name}: {r.result.render}"
   IO.println s!"[validate-lean] VERDICTS {" ".intercalate (phases.toList.map fun r => s!"{r.key}={r.result.tag}")}"
   let failures := phases.filter (·.result.isFailure)
-  IO.println s!"[validate-lean] RESULT: {failures.size} total failures"
+  -- The memory-diagnosis knobs leave checks out (phases, phase 3's work list or
+  -- its stages): such a run is partial, labelled so, and never a pass.
+  let mut partialBy : Array String := #[]
+  for var in #["IX_SKIP_PHASES", "IX_ANON_CAP", "IX_ANON_STAGE"] do
+    if let some value := ← IO.getEnv var then
+      unless value.isEmpty || (var == "IX_ANON_STAGE" && value == "0") do
+        partialBy := partialBy.push s!"{var}={value}"
+  let passed := failures.isEmpty && partialBy.isEmpty
+  IO.println s!"[validate-lean] RESULT: {failures.size} total failures\
+{if partialBy.isEmpty then "" else s!"; partial run ({", ".intercalate partialBy.toList}), not a pass"}"
   (← IO.getStdout).flush
 
   -- `--report`: machine-readable phase table + verdict.
@@ -1290,10 +1299,12 @@ phases 6–8 read Lean's forms from the decompiler)"
       , ("pass3Env", Lean.toJson pass3Env)
       , ("phases", phaseRows)
       , ("totalFailures", Lean.toJson failures.size)
-      , ("passed", Lean.toJson failures.isEmpty) ]
+      , ("complete", Lean.toJson partialBy.isEmpty)
+      , ("partial", Lean.toJson partialBy)
+      , ("passed", Lean.toJson passed) ]
     IO.FS.writeFile (flag.as! String) (report.pretty ++ "\n")
 
-  return if failures.isEmpty then 0 else 1
+  return if passed then 0 else 1
 
 end Ix.Cli.ValidateLeanCmd
 

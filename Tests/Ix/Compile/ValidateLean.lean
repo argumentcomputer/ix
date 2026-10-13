@@ -271,6 +271,9 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
   IO.FS.writeFile (dir / s!"{stem}-{switch}.log") (out.stdout ++ out.stderr)
   if !(← report.pathExists) then return (stem, switch, none, s!"exit {out.exitCode}")
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
+  -- a partial run (a memory-diagnosis knob in the environment) is not a result
+  unless (j.getObjValAs? Bool "complete" matches .ok true) do
+    return (stem, switch, none, s!"partial run {(j.getObjVal? "partial").toOption.map (·.compress)}")
   let phases ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
   let rows := phases.toList.filterMap fun p =>
     match p.getObjValAs? String "key", p.getObjValAs? String "result" with
