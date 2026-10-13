@@ -777,6 +777,18 @@ retrieves the same record that was analysed. This proves provenance and group
 correspondence; discovery/presence, first-per-motive completeness and coherence
 from actual publication/context construction remain open.
 
+[`ReaderStore.lean`](../Ix/CompileCert/ReaderStore.lean) proves the exact
+first-record-wins lookup of `recordMap` and `storeOf`, including duplicate
+behavior without a compatibility assumption. Compatible records then give
+coherence, allowing identical aliases. For the actual `contextOf`, the proof
+retains supplied-record precedence and its filtering of shadowed fallback
+addresses; compatibility is needed within each input array, not between
+shadowed primary/fallback values. Completed group lookup therefore retrieves
+the indexed source record in that real context. Inclusion of a compatible
+public compiler output also supplies its store lookup and derived singleton
+order. The production record-array compatibility/inclusion and index-presence
+conditions still need their admission/publication/discovery dischargers.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
