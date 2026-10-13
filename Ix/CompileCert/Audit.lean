@@ -65,6 +65,7 @@ import Ix.CompileCert.FamilyFields
 import Ix.CompileCert.FamilyCollection
 import Ix.CompileCert.FamilySourceChecks
 import Ix.CompileCert.FamilyAssembly
+import Ix.CompileCert.FamilyReading
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3202,6 +3203,14 @@ def familyAssemblyRoots : Array Lean.Name :=
     `source_alignment, `finish_plain_from_source, `prepare_required_from_source,
     `finish_model_from_source].map (`Ix.CompileCert.FamilyAssembly ++ ·)
 
+/-- Real whole-record family dispatch and one retained source-related
+collection through concrete consistency conditions and full result assembly. -/
+def familyReadingRoots : Array Lean.Name :=
+  #[`selected_inductive, `has_inductive, `no_definitions, `record_eq,
+    `Collected.finish_run, `Collected.finish_plain, `Collected.model_required,
+    `Collected.finish_model, `collect_record, `read_record,
+    `record_success].map (`Ix.CompileCert.FamilyReading ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3231,6 +3240,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyFieldRoo
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyCollectionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyConsistencyRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyAssemblyRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyReadingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 

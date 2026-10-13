@@ -730,6 +730,18 @@ computation and context, including failure. This proves dispatch and assembly,
 not generator termination, runtime refinement, semantic correspondence or
 kernel admission. Reading remains separate from `State.commit`.
 
+[`FamilyReading.lean`](../Ix/CompileCert/FamilyReading.lean) reaches the actual
+`readRecord` entry: indexed member evidence supplies the inductive branch,
+and a family containing only inductive/recursor members supplies the no-mixed-
+definitions guard. The theorem retains one concrete source-related collection
+through the existing field, consistency and assembly proofs. Its consistency
+condition expands to the source signature/K equations; it does not assume
+reader or generator success. Once discharged, the ordinary case returns the
+complete result, required modelling stays selected, and every successful read
+retains the exact generated prefix and registration fields. Source/index/
+publication dischargers, complete compiler-entry composition and generator
+semantics/progress remain open.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
