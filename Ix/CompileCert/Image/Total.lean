@@ -5,20 +5,21 @@ import Ix.CompileCert.Image.Dom
 
 Nothing below assumes the block non-nested: `Dom` is the construction's own checks, whatever the block.
 
-* `sim_imageProgW`: the construction run twice from the initial state, with two developments the
-  second of which succeeds (related) wherever the first does (`DevRel` at `d = 0`), succeeds twice;
-* `imageOfW_ok_of`: so a construction that succeeds with the first development succeeds with the
-  second;
-* `imageOfP_total` (**L2a-1**): on `Dom`, the image construction at X1's core with its constant
-  fuel `defaultFuel = 2^16` succeeds (the development returns on every call it makes,
-  `devRel_dom`);
+* `imageOfP_total` (**L2a-1**): on `Dom`, the image construction at the table-free core with its
+  constant fuel `defaultFuel = 2^16` succeeds: the core returns the checking development's result
+  on every call (`devRefines_dom`), so it returns the checking construction's image
+  (`imageOfW_of_refines`);
 * `imageOf_total_of`: the same for the executable, given that the tabled development agrees with
   the core where the core succeeds (X1's R-1);
 * `blockView_expansion_total`: in the compiler, every auxiliary of a changed block gets its
   expansion (its image on `Dom`, Lean's value for a definition or theorem) or a decline naming it.
 
-Hypotheses beyond `Dom`: the environment's constants and recursor rules have no free variable
-(`EnvClosed`, `RecRulesClosed`): they are closed terms of the kernel.
+These assume nothing beyond `Dom` and, for the executable, that agreement.
+
+The same through the simulation from shifted counters, with related developments (`DevRel` at
+`d = 0`): `sim_imageProgW` (the construction run twice from the initial state succeeds twice) and
+`imageOfW_ok_of`. These take the environment's constants and recursor rules without free variables
+(`EnvClosed`, `RecRulesClosed`).
 -/
 
 namespace Ix.CompileCert.Img
@@ -235,12 +236,12 @@ theorem imageOfW_ok_of {D1 D2 : DevOps} (hD : ∀ B, DevRel 0 0 B D1 D2) {opts :
 succeed and every development it makes is in the fuel classes), the image construction at X1's
 core development, with its constant fuel `2^16`, succeeds. -/
 theorem imageOfP_total {opts : GenOptions} {const? : Name → Option ConstantInfo} {spec : ImageSpec}
-    {r : Name} (hdom : Dom opts const? spec r) (hcl : EnvClosed const?) (hrc : RecRulesClosed const?) :
+    {r : Name} (hdom : Dom opts const? spec r) :
     ∃ img, imageOfP opts const? spec r = .ok img := by
   unfold Dom at hdom
   cases h : imageOfW domDev opts const? spec r with
   | error e => rw [h] at hdom; cases hdom
-  | ok img => exact imageOfW_ok_of (fun _ => devRel_dom injOn_shift_zero) hcl hrc h
+  | ok img => exact ⟨img, imageOfW_of_refines devRefines_dom h⟩
 
 /-- A development that succeeds wherever the second of a related pair does is related to the
 first. -/
@@ -259,15 +260,13 @@ theorem imageOf_total_of
     (hR1s : ∀ xs vs e r, substFVarsP xs vs e = .ok r → Ix.Compile.Image.substFVars xs vs e = .ok r)
     (hR1i : ∀ f args r, instantiateP f args = .ok r → Ix.Compile.Image.instantiate f args = .ok r)
     {opts : GenOptions} {const? : Name → Option ConstantInfo} {spec : ImageSpec} {r : Name}
-    (hdom : Dom opts const? spec r) (hcl : EnvClosed const?) (hrc : RecRulesClosed const?) :
+    (hdom : Dom opts const? spec r) :
     ∃ img, Ix.Compile.Image.imageOf opts const? spec r = .ok img := by
   rw [imageOf_eq]
   unfold Dom at hdom
   cases h : imageOfW domDev opts const? spec r with
   | error e => rw [h] at hdom; cases hdom
-  | ok img =>
-    exact imageOfW_ok_of (fun _ => (devRel_dom injOn_shift_zero).trans_ok (D3 := execDev) hR1s hR1i)
-      hcl hrc h
+  | ok img => exact ⟨img, imageOfW_of_refines (devRefines_dom.trans (D3 := execDev) ⟨hR1s, hR1i⟩) h⟩
 
 /-- **Totality in the compiler** (Pass 3's view of a changed block, `BlockView.expansion`): every
 auxiliary `a` gets its expansion — its image when it is a Lean recursor in `Dom`, Lean's value when
@@ -277,14 +276,13 @@ theorem blockView_expansion_total
     (hR1s : ∀ xs vs e r, substFVarsP xs vs e = .ok r → Ix.Compile.Image.substFVars xs vs e = .ok r)
     (hR1i : ∀ f args r, instantiateP f args = .ok r → Ix.Compile.Image.instantiate f args = .ok r)
     (inp : Ix.Compile.Pass.ViewInput) (v : Ix.Compile.Pass.BlockView) (a : Name)
-    (hdom : ∀ rv, inp.const? a = some (.recInfo rv) → Dom {} (v.const? inp) v.spec a)
-    (hcl : EnvClosed (v.const? inp)) (hrc : RecRulesClosed (v.const? inp)) :
+    (hdom : ∀ rv, inp.const? a = some (.recInfo rv) → Dom {} (v.const? inp) v.spec a) :
     (∃ x, v.expansion inp a = .ok x) ∨
       v.expansion inp a = .error s!"Pass 3: {a.pretty} has no image (not a recursor or definition)" := by
   unfold Ix.Compile.Pass.BlockView.expansion
   split
   · rename_i rv hrv
-    obtain ⟨img, himg⟩ := imageOf_total_of hR1s hR1i (hdom rv hrv) hcl hrc
+    obtain ⟨img, himg⟩ := imageOf_total_of hR1s hR1i (hdom rv hrv)
     left
     unfold Ix.Compile.Pass.BlockView.image
     rw [himg]

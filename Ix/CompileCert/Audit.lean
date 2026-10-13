@@ -1913,6 +1913,23 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.l2aRoots Ix.CompileCert.Audit.allowedAxioms
 
+/-! The image construction at a development that refines another (`Ix/CompileCert/Image/Refine.lean`)
+returns the same image; the totality theorems above are proved through it. Audited separately,
+against the same allowed set. -/
+
+namespace Ix.CompileCert.Audit
+
+def imageRefinementRoots : Array Lean.Name :=
+  #[`Refines, `Refines.refl, `Refines.trans, `Refines.bind, `Refines.liftExcept,
+    `Refines.forIn_list, `Refines.forIn_array, `Refines.forIn'_list, `Refines.forIn'_range,
+    `Refines.forIn_range, `Refines.run', `DevRefines, `DevRefines.trans, `DevRefines.lift_subst,
+    `DevRefines.lift_inst, `refines_buildRecAppW, `refines_imageProgW, `imageOfW_of_refines,
+    `devRefines_dom].map (`Ix.CompileCert.Img ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.imageRefinementRoots Ix.CompileCert.Audit.allowedAxioms
+
 /-! ## M7 L3-def: the definitional passes
 
 The roots of `Ix.CompileCert.Opt`: telescopes and their β-reduction, simultaneous substitution

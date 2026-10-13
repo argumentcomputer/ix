@@ -1,5 +1,6 @@
 import Ix.CompileCert.Image.Fuel
 import Ix.CompileCert.Image.Build
+import Ix.CompileCert.Image.Refine
 import Ix.CompileCert.Image.SimRec
 import Ix.CompileCert.Image.Post
 import Ix.CompileCert.Image.Dom
@@ -26,6 +27,12 @@ substitutions of `substFVars` (`substChain_sites`, `substChain_passive`).
 development calls as a parameter; the executables are the instance at the tabled development by
 `rfl` (`buildRecApp_eq`, `imageOf_eq`); `imageOfP` is the instance at X1's table-free core.
 
+## A development that refines another (`Refine.lean`)
+
+`DevRefines D1 D2`: `D2` returns `D1`'s result wherever `D1` succeeds. Then the construction at `D2`
+returns the image the construction at `D1` returns (`refines_buildRecAppW`, `refines_imageProgW`,
+`imageOfW_of_refines`): the development calls are the only steps that differ.
+
 ## The construction from shifted counters (`Ren` … `SimRec`)
 
 The fresh-name counter is irrelevant: `Ren ρ` (the same term up to renaming free variables), the
@@ -44,6 +51,7 @@ the image's type is Lean's recursor type over the canonical constants.
 
 `Dom` (decidable): the construction with the checking development `domDev` (every development in a
 fuel class of `Fuel.lean`, within `2^16`) succeeds. `imageOfP_total`: on `Dom`, the construction at
-X1's core with the constant fuel succeeds; `imageOf_total_of` (the executable, given R-1);
-`blockView_expansion_total` (every auxiliary gets its expansion or a decline naming it).
+X1's core with the constant fuel succeeds, since the core refines `domDev` (`devRefines_dom`);
+`imageOf_total_of` (the executable, given R-1); `blockView_expansion_total` (every auxiliary gets
+its expansion or a decline naming it).
 -/

@@ -1,4 +1,5 @@
 import Ix.CompileCert.Image.Ren
+import Ix.CompileCert.Image.Refine
 import Ix.CompileCert.Canon.Ref
 
 /-!
@@ -119,11 +120,6 @@ def Mono {α : Type} (x : GenM α) : Prop := ∀ st a st1, x.run st = .ok (a, st
 
 section
 variable {s0 d B : Nat}
-
-theorem run_bind {α β : Type} (x : GenM α) (f : α → GenM β) (st : GenState) :
-    (x >>= f).run st = (do let (a, st1) ← x.run st; (f a).run st1) := rfl
-
-theorem run_pure {α : Type} (a : α) (st : GenState) : (pure a : GenM α).run st = .ok (a, st) := rfl
 
 theorem Sim.pure {α β : Type} {R : α → β → Prop} {a : α} {b : β} (h : R a b) :
     Sim s0 d B R (Pure.pure a) (Pure.pure b) := by
