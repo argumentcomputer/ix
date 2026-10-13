@@ -236,7 +236,7 @@ pub struct BlockCache {
   /// final. From then on any on-the-fly intern of a canonical form must
   /// HIT a preseeded entry — a miss would silently shift the virtual
   /// indices in `univ_patches` (which are `univs.len() + slot`), so
-  /// `compile_univ_idx` debug-asserts against it.
+  /// `compile_univ_idx` refuses it.
   pub univs_final: bool,
   /// Extension univs of the CURRENT constant: original (non-canonical)
   /// spellings referenced by `univ_patches`, in first-use order.
@@ -676,14 +676,19 @@ fn compile_univ_idx(
     let (slot2, _) = cache.meta_univs.insert_full(univ);
     return Ok((cidx, Some((cache.univs.len() + slot2) as u64)));
   }
-  let (idx, fresh) = cache.univs.insert_full(canon.clone());
-  debug_assert!(
-    !(fresh && cache.univs_final),
-    "compile_univ_idx: preseed missed canonical form {canon:?} while \
-     compiling {:?} — primary univ table grew after preseeding, which \
-     shifts univ_patches virtual indices (canonicity §10.6 V3)",
-    cache.compiling
-  );
+  // V3 tripwire (canonicity §10.6): the primary table must not grow after
+  // preseeding; a miss here would shift every virtual patch index minted so
+  // far. Lean's `compileAndInternUnivCanon` refuses the same way.
+  if cache.univs_final && !cache.univs.contains(&canon) {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "preseed missed canonical form {canon:?} — primary univ table grew \
+         after preseeding, shifting univPatches virtual indices (canonicity \
+         10.6 V3)"
+      ),
+    });
+  }
+  let (idx, _) = cache.univs.insert_full(canon.clone());
   if canon == univ {
     return Ok((idx as u64, None));
   }
@@ -3988,6 +3993,25 @@ mod tests {
     let mut cache = BlockCache::default();
     let univ = compile_univ(&level, &[name], &mut cache).unwrap();
     assert!(matches!(univ.as_ref(), Univ::Var(0)));
+  }
+
+  #[test]
+  fn compile_univ_idx_refuses_growth_after_preseed() {
+    let mut cache = BlockCache::default();
+    let zero = Level::zero();
+    assert_eq!(compile_univ_idx(&zero, &[], &mut cache).unwrap(), (0, None));
+    cache.univs_final = true;
+    // A preseeded canonical form still hits its entry.
+    assert_eq!(compile_univ_idx(&zero, &[], &mut cache).unwrap(), (0, None));
+    // A canonical form the preseed missed is refused, as in Lean, not
+    // appended (which would shift every virtual patch index).
+    let one = Level::succ(Level::zero());
+    match compile_univ_idx(&one, &[], &mut cache) {
+      Err(CompileError::InvalidMutualBlock { reason }) => {
+        assert!(reason.starts_with("preseed missed canonical form"), "{reason}")
+      },
+      other => panic!("expected the V3 refusal, got {other:?}"),
+    }
   }
 
   #[test]
