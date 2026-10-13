@@ -681,10 +681,25 @@ It derives the actual `recLps` arity from the family-level relationship and
 instantiates the reader's real self map, retaining the source-key alias condition.
 Index entries, published records, major identity, constructor/rule count and
 source safety remain explicit inputs. The theorem works for any continuation
-of the recursor action, so it applies inside the family loop. Complete
-type/constructor traversal, index construction, all-family composition and
-the final consistency/modeller checks remain open; a successful whole-family
-read or kernel admission is not a premise or conclusion of this checkpoint.
+of the recursor action, so it applies inside the family loop.
+
+[`FamilyTypes.lean`](../Ix/CompileCert/FamilyTypes.lean),
+[`FamilyConstructors.lean`](../Ix/CompileCert/FamilyConstructors.lean) and
+[`FamilyRecursors.lean`](../Ix/CompileCert/FamilyRecursors.lean) lift those field
+relations through the actual type loop, both constructor loops and the full
+motive-ordered recursor loop. Constructor index/safety guards follow from
+source fields; the binder-count guard follows from the source type's syntactic
+telescope length and the proved expression relation. Constructor groups and
+their identities retain the exact traversal order, and the type loop preserves
+the original payload array for subsequent checks.
+[`FamilyCollection.lean`](../Ix/CompileCert/FamilyCollection.lean) composes
+these results through `readInductive`'s actual header guards and logical
+contexts. It produces source-related collected rows and an equality reducing
+the reader's remaining computation to its existing final consistency/modeller
+stage. Finalization success and kernel admission are neither assumed nor
+concluded. Index construction/publication, source-family shape, shared universe
+context and source constructor identities still need their production
+dischargers, followed by the final family checks and modelling argument.
 
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
