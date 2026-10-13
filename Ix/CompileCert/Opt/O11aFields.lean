@@ -8,7 +8,7 @@ four loop-state fields, and the final expression. A structural field read is
 proved observationally redundant from the empty-array initialization and the
 actual allocator's output, not assumed at a final caller.
 
-This additive leaf is UNCOMPILED. Its support result is relative to the actual
+Its support result is relative to the actual
 input minor; the source-preparation supply-growth, instance conversion,
 abstraction and general O2/O11a faithfulness/totality obligations remain open.
 -/

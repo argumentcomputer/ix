@@ -3,7 +3,7 @@ import Ix.CompileCert.Canon.Cache
 import Std.Data.HashMap.Lemmas
 
 /-!
-UNCOMPILED source diagnostic. No runtime, theorem endpoint or cache policy is changed.
+Source diagnostic. No runtime, theorem endpoint or cache policy is changed.
 The runtime equations are exact ce9/efe Translate; they are unchanged at f7.
 
 A warm state is reached by an actual call from entirely empty caches. Reusing

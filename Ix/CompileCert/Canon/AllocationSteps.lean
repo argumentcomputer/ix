@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.CoreDiscovery
 import Ix.CompileCert.Canon.FreshNames
 
 /-!
-UNCOMPILED additive proof draft over the accepted callback-generic core.
+Additive proof draft over the accepted callback-generic core.
 This file names the actual class/constructor operations and records their
 allocation events. It does not replace runtime code or add a caller premise.
 -/

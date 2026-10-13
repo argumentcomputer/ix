@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.Evaporate
 import Ix.CompileCert.Canon.CallbackBlock
 
 /-!
-UNCOMPILED additive proof proposal. This is the entire five-condition flags
+Additive proof proposal. This is the entire five-condition flags
 characterization for the actual generic protected evaporation loop, including
 all unchanged NestedCanon fields and its final canonBlock consumers. Protection
 is fixed program data, never caller-supplied completeness or trace evidence.

@@ -1,7 +1,7 @@
 import Ix.Compile.Canon.Nested
 
 /-!
-Uncompiled full-result refinement for the additive callback-generic core.
+Full-result refinement for the additive callback-generic core.
 Every left-hand function is the original cb67 definition, retained byte-for-byte
 in Nested. These equalities quantify over arbitrary source contexts/states and
 retain errors and every result field. No source completeness/freshness premise

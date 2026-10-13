@@ -8,7 +8,7 @@ arbitrary raw replacements. The FVar specialization agrees with ordinary
 substitution because an FVar has no loose bound variables. Input-derived
 freshness then gives an opening/abstraction roundtrip on erased terms, without
 a caller freshness or closed-input premise. Full O2/O11a loop and arbitrary
-callback conversion obligations remain separate. This leaf is uncompiled.
+callback conversion obligations remain separate.
 -/
 
 namespace Ix.CompileCert.Opt.FreshFVarsProof

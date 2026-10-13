@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.Total
 import Ix.CompileCert.Canon.ComponentBridge
 
 /-!
-UNCOMPILED additive callback-domain graph/class transport. Every graph proof
+Additive callback-domain graph/class transport. Every graph proof
 uses the original two EnvWF fields and NodupB hypotheses where previously
 required. The environment is unrestricted; no finite callback representation,
 protection law, freshness or new hash premise is introduced. Source-backed

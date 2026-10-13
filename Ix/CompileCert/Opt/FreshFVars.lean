@@ -5,7 +5,7 @@ import Std.Data.HashSet.Lemmas
 
 /-!
 Structural collection and deterministic freshness for the actual F-1 supply.
-This proof leaf is uncompiled. It imports no proof aggregator and adds no
+This proof leaf imports no proof aggregator and adds no
 closed-input, caller-freshness, cached-name or hash-injectivity premise.
 -/
 

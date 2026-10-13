@@ -3,7 +3,7 @@ import Init.Internal.Order.While
 
 /-!
 F-1: growth of the actual repeated source readers and transport of the initial
-protected operands into O11a. This additive proof leaf is UNCOMPILED. It changes
+protected operands into O11a. This additive proof leaf changes
 no runtime clause, callback, result, error, cache or source domain. The repeat
 proof uses the pinned Lean loop equation and a measure of raw forall spines;
 neither hash correctness nor an assumed terminating/fresh caller is required.

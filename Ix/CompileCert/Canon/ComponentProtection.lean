@@ -3,7 +3,7 @@ import Ix.CompileCert.Canon.SourceComponentBridge
 import Ix.CompileCert.Canon.ExpansionOriginValues
 
 /-!
-UNCOMPILED proposal. The source-backed specialization derives protection from
+Proposal. The source-backed specialization derives protection from
 the actual block-reference collector, rather than accepting a caller-provided
 forbidden list. Queue-origin values cover every emitted auxiliary and every
 constructor, so these statements are not merely about whichever origin-table

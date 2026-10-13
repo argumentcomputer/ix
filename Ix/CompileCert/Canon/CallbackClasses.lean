@@ -1,7 +1,7 @@
 import Ix.CompileCert.Canon.CallbackGraph
 
 /-!
-UNCOMPILED additive proof proposal. Class transport retains the complete
+Additive proof proposal. Class transport retains the complete
 class/statistics result and the original node/name hypotheses. Component
 termination is derived internally, not supplied as a second success premise.
 All callbacks are arbitrary; this is not an expansion-totality theorem.

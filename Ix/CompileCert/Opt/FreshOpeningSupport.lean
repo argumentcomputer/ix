@@ -7,7 +7,7 @@ raw bodies, replacements, initial supplies and instance callbacks are retained.
 The source-derived protection corollaries support the O2/O11a loop invariant;
 they do not assume it at a final caller. O11a's actual non-FVar replacement is
 shown to need no bound-variable lifting when its field comes from allocation.
-This additive leaf is UNCOMPILED. Full loop/source adapters, conversion,
+Full loop/source adapters, conversion,
 all-callback totality, Rust correspondence and compiler gates remain open.
 -/
 

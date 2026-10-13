@@ -2,7 +2,7 @@ import Ix.CompileCert.Opt.O11aFields
 
 /-!
 F-1: finite source peeling, recursive-field origins, and the actual O11a
-field-prefix count. This proof-only leaf is UNCOMPILED. It changes no runtime
+field-prefix count. This proof-only leaf changes no runtime
 helper, callback, error or output. The finite peeler preserves protection even
 on failure. Field indices come from the actual declaration array, independently
 of every target-reader answer, and successful binder prefixes supply their own

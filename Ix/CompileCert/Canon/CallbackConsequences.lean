@@ -1,7 +1,7 @@
 import Ix.CompileCert.Canon.CallbackPresentations
 
 /-!
-Uncompiled next proof slice for the remaining public block consumers. These
+Proof slice for the remaining public block consumers. These
 are the original SCC, acyclic-condensation and coarsest-partition conclusions
 over the actual callback-generic block driver. Every original hypothesis is
 retained; no protection, allocation, representation or alignment premise is

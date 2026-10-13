@@ -1566,7 +1566,7 @@ run_cmd Ix.CompileCert.Audit.checkNoHashEqualityExecuted Ix.CompileCert.Audit.sa
 /-! Callback-domain restoration and retained source/index companions. The
 frozen root table and the original L1 list above remain byte-for-byte intact.
 Every wrapper is a real declaration. This additive group also audits all
-accepted/pending generic prerequisites and the uncompiled block transports. -/
+accepted/pending generic prerequisites and the block transports. -/
 namespace Ix.CompileCert.Audit
 def callbackRestorationRoots : Array Lean.Name := #[
   `Ix.CompileCert.Canon.CoreBridge.sourceNames_eq_core,

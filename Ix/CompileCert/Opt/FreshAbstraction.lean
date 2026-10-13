@@ -6,7 +6,7 @@ import Ix.CompileCert.Canon.GeneratedTables
 
 /-!
 Support preservation for the actual total abstraction after input-derived
-fresh allocation. This leaf is uncompiled; it does not equate the opaque
+fresh allocation. This leaf does not equate the opaque
 partial opening helper with a new copy or discharge the general callback
 conversion obligation.
 -/

@@ -5,7 +5,7 @@ import Batteries.Tactic.OpenPrivate
 open private Ix.Compile.Canon.canonicalizeConstNames.go from Ix.Compile.Canon.Expr
 
 /-!
-Uncompiled proof-only transport of the actual initial alias maps and their
+Proof-only transport of the actual initial alias maps and their
 expression walker. The Boolean equality hypothesis is exactly the one already
 used by `sortClasses_rename`; there is no structural/cache-faithfulness premise.
 Classes may contain empty classes, repeated keys and overlapping classes.

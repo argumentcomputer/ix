@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.AllocationHistory
 import Ix.CompileCert.Canon.ComponentDiscovery
 
 /-!
-UNCOMPILED prospective public contracts. This separate namespace permits a
+Prospective public contracts. This separate namespace permits a
 strict additive check before the explicitly documented public-root migration.
 The old public roots are not renamed or replaced by this preparation.
 -/

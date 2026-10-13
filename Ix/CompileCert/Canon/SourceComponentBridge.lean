@@ -5,7 +5,7 @@ import Ix.CompileCert.Canon.NestedCanonSource
 /-!
 The previously checked finite-source bridge, relocated to explicit SourceEnv
 and SourceBlock names. Its complete result/error statements are retained. The
-relocation is UNCOMPILED; the runtime adapter consumes these exact source thunks.
+runtime adapter consumes these exact source thunks.
 -/
 
 namespace Ix.CompileCert.Canon.SourceComponentCoreProof

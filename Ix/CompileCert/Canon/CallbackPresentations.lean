@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.CallbackBlock
 import Ix.CompileCert.Canon.CallbackGraph
 
 /-!
-UNCOMPILED additive companions for the original member-order and separate
+Additive companions for the original member-order and separate
 canonBlock conclusions. These transport the checked graph/class proofs to
 arbitrary callbacks, then use the exact generic component canonical-auxiliary
 lemma. The fixed protection functions are the actual inputs of both runs;

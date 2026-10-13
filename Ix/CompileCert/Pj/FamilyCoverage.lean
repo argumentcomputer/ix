@@ -15,7 +15,7 @@ This is an internal reader/semantic bridge, not a new final input domain.
 The source/export adapter must still produce this complete ordered recursor
 list and discharge the existing literal-header checks or their general
 WHNF/annotation counterpart. No accepted-source completeness, general
-O7--O12 theorem, or runtime change is claimed here. The source is uncompiled.
+O7--O12 theorem, or runtime change is claimed here.
 -/
 
 namespace Ix.CompileCert.Pj

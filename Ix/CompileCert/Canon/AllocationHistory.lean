@@ -1,7 +1,7 @@
 import Ix.CompileCert.Canon.AllocationSteps
 
 /-!
-UNCOMPILED. The trace is constructed from the actual callback-generic query,
+The trace is constructed from the actual callback-generic query,
 recursive walk, constructor write, queue and successful initializer. Internal
 cache correctness is discharged from initialization, never a final premise.
 -/

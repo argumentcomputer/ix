@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.ExpandIndex
 import Ix.CompileCert.Canon.CoreBridge
 
 /-!
-Uncompiled callback-generic discovery/ownership proof, based on the checked
+Callback-generic discovery/ownership proof, based on the checked
 cb67 growth/queue proof. It reuses IndexGrow/QInv and their shared lemmas, with the
 same discovery and owner conclusions and the approved fresh-family naming
 clause. Arbitrary protect/ind?/group callbacks have no validity premises.

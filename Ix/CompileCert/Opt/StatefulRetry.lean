@@ -2,10 +2,7 @@ import Ix.CompileCert.Opt.Engine
 import Init.Data.Array.Lemmas
 import Init.Data.List.Monadic
 
--- V10 proof-body proposal only; V9 is RED and no successor gate is included.
 /-!
-UNCOMPILED candidate against ce9cb85bb688e94f74877c86acde6c3ca1fc2c52.
-
 F14: the actual production engine's retry without a site is empty after
 a proof-justified hit. This is a control-flow statement for arbitrary
 OptEnv, names, levels and arguments. It assumes no EngineLaws, hash law,
@@ -118,10 +115,6 @@ end Ix.CompileCert.Opt
 
 
 /-!
-UNCOMPILED V6 proof repair. `EmptyRetry` is the unchanged excluded five-root
-dependency accepted separately. V2, V3, V4 and V5 were strictly RED; none of their
-additional roots is accepted.
-
 The subject is the actual mutually recursive stateful Translate evaluator.
 All caches are arbitrary and equal in the two initial states. `StateRel`
 allows exactly one changed field, the performance flag; it also retains the
@@ -454,9 +447,7 @@ Reducible transparency still opens the Stable/RwM/getThe abbreviations and
 class projections. In particular a get is handled by sim_get_bind, not by
 inventing an equal-value simulation of its unequal returned records.
 
-All state fields and error paths remain in the original relation. These
-proof-only search changes are UNCOMPILED; V3's partial printing accepted no
-additional roots. -/
+All state fields and error paths remain in the original relation. -/
 syntax "retry_walk " ident ident : tactic
 macro_rules
   | `(tactic| retry_walk $hr:ident $he:ident) => `(tactic| with_reducible first
@@ -772,9 +763,7 @@ end Ix.CompileCert.Opt.RetryStateDraft
 
 
 /-!
-UNCOMPILED V4 repair of the production consumers of the stateful F14 simulation.
-The initial five engine roots are independently checked, but V2 and V3 were strictly
-RED; every addition still requires complete strict elaboration and an axiom audit.
+The production consumers of the stateful F14 simulation.
 No runtime source, original theorem domain or semantic premise is changed.
 -/
 

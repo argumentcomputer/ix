@@ -3,7 +3,7 @@ import Ix.CompileCert.Canon.CallbackClasses
 import Ix.CompileCert.Canon.CallbackEvaporate
 
 /-!
-UNCOMPILED proof proposal. These consequences instantiate the generic driver
+Proof proposal. These consequences instantiate the generic driver
 with the real source collector through complete Except-result equalities.
 They retain the source-backed predicates and every original output condition.
 No finite representation of an arbitrary callback is asserted in the reverse

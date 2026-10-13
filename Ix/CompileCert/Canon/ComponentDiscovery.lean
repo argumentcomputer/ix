@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.ComponentBridge
 import Ix.CompileCert.Canon.CoreDiscovery
 
 /-!
-UNCOMPILED proposal. This module lifts the existing component proof bodies
+Proposal. This module lifts the existing component proof bodies
 through the unrestricted callback facade. Both protection functions and all
 callbacks are arbitrary; there is no finite-environment representation premise.
 The discovery name equation inherited from CoreDiscovery still has an

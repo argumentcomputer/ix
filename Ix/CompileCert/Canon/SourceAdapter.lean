@@ -7,7 +7,7 @@ Complete production-adapter refinement. The old finite program remains under
 explicit SourceEnv/SourceBlock/SourceSpec names. Every equality below compares
 an entire return value, including refusals and all result fields. Protection is
 constructed from actual source data, not supplied as an extra caller premise.
-This relocation is uncompiled and byte neutrality is untested until the full gates.
+Byte neutrality of this relocation is untested until the full gates.
 -/
 
 namespace Ix.CompileCert.Canon.SourceAdapter

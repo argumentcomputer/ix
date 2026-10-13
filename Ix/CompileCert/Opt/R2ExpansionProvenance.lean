@@ -3,7 +3,7 @@ import Ix.Compile.Pass.Driver
 import Ix.CompileCert.Opt.R2FuelDiagnostic
 
 /-!
-UNCOMPILED R-2 proof slice. No production source or theorem endpoint changes.
+R-2 proof slice. No production source or theorem endpoint changes.
 
 Successful producer runs can have different sufficient fuel. Their exact
 expansion results nevertheless agree, and the existing conversion theorem

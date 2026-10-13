@@ -6,7 +6,7 @@ import Ix.CompileCert.Canon.NestedCanonSource
 /-! Complete result/error bridges for the actual public callback entry points.
 The concrete source implementation is retained in SourceComponentBridge; these
 statements quantify over all callbacks and all fixed protection data. No success
-premise is used in any function equality. The relocation is UNCOMPILED. -/
+premise is used in any function equality. -/
 
 namespace Ix.CompileCert.Canon.ComponentCoreProof
 

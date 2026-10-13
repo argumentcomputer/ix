@@ -2,7 +2,7 @@ import Ix.CompileCert.Canon.CallbackPublic
 import Ix.CompileCert.Canon.Loop
 
 /-!
-UNCOMPILED additive callback-domain block proof. No existing public root or
+Additive callback-domain block proof. No existing public root or
 runtime definition is changed. The complete first/second loop specification is
 transported from the checked source-backed driver proof to the exact generic
 driver. History is then carried through the actual nested/evaporation results.

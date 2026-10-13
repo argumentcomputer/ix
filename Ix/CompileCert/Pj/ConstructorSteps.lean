@@ -517,7 +517,7 @@ end Ix.CompileCert.Pj.InstalledHeader
 #print axioms Ix.CompileCert.Pj.InstalledHeader.checkMinorResult_index_count
 #print axioms Ix.CompileCert.Pj.InstalledHeader.RecRd.minor_index_count_of_literal_header
 
-/-! Excluded composition of two UNCOMPILED drafts. `MinorApplication.lean`
+/-! Excluded composition of two drafts. `MinorApplication.lean`
 is the unchanged queued four-root dependency (SHA 051eb3cf...). This theorem
 replaces that helper's free internal `indexCount` argument with the successful
 literal installed-header check; it does NOT add reader success to the original
@@ -896,7 +896,7 @@ The callback consumes actual typed IH VALUES, not a postulated minor-function
 inhabitant. The original constructor-step proof must convert those values into
 its pointwise recursive premises (using the IH interpreter), then supply this
 callback. Neither the callback nor the literal-header test is a new final
-caller premise. This fresh excluded theorem is uncompiled. -/
+caller premise. -/
 theorem RecRd.minor_inhabited_of_applied_step
     {V : Type u} [Kernel.SetTheory V] {env : Kernel.Env} {r : Kernel.Name} {R : RecRd}
     (checked : R.Check env r) (strong : Ix.CompileCert.StrongInstalledModel V env)
@@ -1049,7 +1049,7 @@ end Ix.CompileCert.Pj
 
 /-! The original pointwise recursive premises, obtained from actual IH
 inhabitants. Saturation is an internal accepted-source adapter obligation;
-no final caller is asked to provide this fact. This draft is uncompiled. -/
+no final caller is asked to provide this fact. -/
 
 namespace Ix.CompileCert.Pj
 
@@ -1269,7 +1269,7 @@ end Ix.CompileCert.Pj
 /-! Actual installed-constructor field projection for the literal-header
 branch. The new checks are internal reader data checks, not added assumptions
 of the original accepted-source induction theorem. Accepted-source completeness
-and the general checked-WHNF branch remain required. Uncompiled draft. -/
+and the general checked-WHNF branch remain required. -/
 
 namespace Ix.CompileCert.Pj
 
