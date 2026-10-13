@@ -257,6 +257,10 @@ pub struct BlockCache {
   /// Pass 3: compiling a decompile record; references and universes outside
   /// the primary tables go to the extension tables.
   pub p3_meta_mode: bool,
+  /// Pass 3: the `exprs` inserts made in meta mode, each with the value it
+  /// replaced, undone newest first when the record is compiled (meta mode
+  /// reads the cache but leaves it as it found it).
+  pub p3_meta_undo: Vec<(ExprKey, Option<CachedExpr>)>,
   /// Pass 3: the current constant's extension refs (`meta_refs`).
   pub p3_meta_refs: indexmap::IndexSet<Address>,
   /// Pass 3: the recorded declines of the block's rewrite, merged into the
@@ -956,11 +960,19 @@ fn pass3_compile_records(
         ),
       }
     })?;
-    let saved = cache.exprs.clone();
     cache.p3_meta_mode = true;
     let res = compile_expr(&src, univ_params, mut_ctx, cache, stt);
     cache.p3_meta_mode = false;
-    cache.exprs = saved;
+    while let Some((key, old)) = cache.p3_meta_undo.pop() {
+      match old {
+        Some(v) => {
+          cache.exprs.insert(key, v);
+        },
+        None => {
+          cache.exprs.remove(&key);
+        },
+      }
+    }
     let ix = res?;
     let root = cache.arena_roots.pop().ok_or_else(|| {
       CompileError::InvalidMutualBlock {
@@ -1322,9 +1334,13 @@ pub fn compile_expr(
         if let Some(result) = results.last() {
           let arena_root =
             *cache.arena_roots.last().expect("Cache missing arena root");
-          cache
-            .exprs
-            .insert(e_key, CachedExpr { expr: result.clone(), arena_root });
+          let entry = CachedExpr { expr: result.clone(), arena_root };
+          if cache.p3_meta_mode {
+            let old = cache.exprs.insert(e_key.clone(), entry);
+            cache.p3_meta_undo.push((e_key, old));
+          } else {
+            cache.exprs.insert(e_key, entry);
+          }
         }
       },
     }
