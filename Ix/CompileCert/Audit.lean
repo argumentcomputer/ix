@@ -58,6 +58,7 @@ import Ix.CompileCert.DefinitionReading
 import Ix.CompileCert.ExpressionScope
 import Ix.CompileCert.MetadataErasure
 import Ix.CompileCert.HeaderEmission
+import Ix.CompileCert.InductiveEmission
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3116,6 +3117,20 @@ def headerEmissionRoots : Array Lean.Name :=
   #[`compile_run, `finish_run, `count_preserves, `names_preserves,
     `finish_correct, `body_correct, `compile_correct].map (`Ix.CompileCert.HeaderEmission ++ ·)
 
+/-- Constructors inherit the real universe context/cache. The actual loop
+retains source-related types, exact natural fields and expression-root order. -/
+def constructorEmissionRoots : Array Lean.Name :=
+  #[`reset_clean, `reset_reader, `compile_run, `finish_run, `index_preserves,
+    `checks_preserve, `finish_correct, `related_grows, `list_grows, `body_correct,
+    `compile_correct, `constructors_correct].map (`Ix.CompileCert.ConstructorEmission ++ ·)
+
+/-- Ordinary and mutual inductive payload compilation supplies source-related
+types and constructor arrays before sharing and whole-record admission. -/
+def inductiveEmissionRoots : Array Lean.Name :=
+  #[`compileInductive_eq, `metadata_run, `finish_run, `checks_preserve,
+    `finish_correct, `compile_run, `body_correct, `compile_correct,
+    `ordinary_correct].map (`Ix.CompileCert.InductiveEmission ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3134,8 +3149,27 @@ end Ix.CompileCert.Audit
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionScopeRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.metadataErasureRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.constructorEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveEmissionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.compileConstructor, ``Ix.CompileM.finishConstructorCompilation,
+      ``Ix.CompileM.compileInductiveConstructors, ``Ix.CompileM.takeInductiveTypeCompileMeta,
+      ``Ix.CompileM.compileInductive, ``Ix.CompileM.finishInductiveCompilation,
+      ``Ix.CompileM.compileInductiveData, ``Ix.CompileM.finishInductiveDataCompilation,
+      ``Ix.CompileM.withUnivCtx, ``Ix.CompileM.resetArena] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"inductive payload entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"inductive payload entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"inductive payload entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] inductive payloads: actual constructors, family loops and context initializers"
 
 namespace Ix.CompileCert.Audit
 

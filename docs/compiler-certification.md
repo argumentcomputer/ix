@@ -622,11 +622,30 @@ Unsafe axiom output is refused by the reader independently of type scope or
 reader-prefix premises. No production compiler or kernel code is changed by
 these proof connections.
 
+[`ConstructorEmission.lean`](../Ix/CompileCert/ConstructorEmission.lean) proves
+source-related type reading and exact natural-number header fields for the
+actual constructor compiler. It keeps the inherited universe context and raw
+universe cache: `compileConstructor` resets metadata but does not install its
+own parameter list. The constructor-list theorem preserves prior successful
+readings while tables grow, relates every returned constructor in source order,
+and identifies the emitted expression roots. It requires the existing clean
+state, correct dependency bindings and query-local source scope.
+[`InductiveEmission.lean`](../Ix/CompileCert/InductiveEmission.lean) composes
+that loop with actual type compilation, metadata draining and finalization for
+both `compileInductive` and `compileInductiveData`. Successful runs supply exact
+inductive headers, a source-related type and constructor array, and the ordered
+roots consumed by sharing. Header bounds follow from production guards.
+The source relation uses the family's actual universe context; equality with
+each constructor's own parameter list remains a source-family obligation.
+Sharing, whole-record interpretation, safety/binder checks and admission still
+need to be composed with these inductive payload results.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
-theorems, opaque constants, axioms and quotients under their stated conditions.
+theorems, opaque constants, axioms and quotients under their stated conditions,
+and source-related constructor/inductive payloads before sharing.
 Production callers must establish prefix correctness and source resource
-conditions. Inductive, constructor, recursor and mutual source-related reading,
+conditions. Inductive-family whole-record reading, recursor and mutual source-related reading,
 generated projection correspondence, complete header interpretation, declaration
 admission, projection-rewrite semantic preservation, source canonicalization,
 auxiliary generation, publication and DAG composition still need their own
