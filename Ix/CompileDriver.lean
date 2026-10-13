@@ -9,10 +9,8 @@
   (`Ix.AuxGen.CompileAux.compileMutualAuxTail`).
 
   This module sits ABOVE `Ix.AuxGen` (unlike Rust, where everything
-  shares one crate): `Ix.CompileM`'s own `compileEnv`/`compileEnvParallel`
-  cannot invoke the aux tail without an import cycle, so the aux-aware
-  driver lives here. The pre-existing drivers in `Ix.CompileM` remain as
-  the plain no-aux-pipeline substrate.
+  shares one crate): `Ix.CompileM` cannot invoke the aux tail without an
+  import cycle, so the environment drivers live here.
 
   Deliberate deviations from Rust, none output-visible:
   - Sequential scheduling instead of work-stealing threads. Output maps
@@ -805,6 +803,17 @@ def scheduleDeps (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Set Name) :=
       (if inClosure.contains lo then refs else seeds.foldl (·.insert ·) refs)
   return out
 
+/-- The drivers' refusal of a condensation with a block that has no reference
+set: `scheduleDeps` would schedule such a block without its dependencies.
+`CondenseM.run` and the Rust condensation give every block one. The block
+named is the least by displayed name. -/
+def missingBlockRefs? (blocks : Ix.CondensedBlocks) : Option String :=
+  let missing := blocks.blocks.fold (init := #[]) fun (acc : Array Name) lo _ =>
+    if blocks.blockRefs.contains lo then acc else acc.push lo
+  match (missing.qsort fun a b => a.pretty < b.pretty)[0]? with
+  | some lo => some s!"block {lo.pretty} has no condensation reference set"
+  | none => none
+
 /-- The plan-table check (`IX_PASS3_CHECK_PLANS=1`, `CompileEnv.p3CheckPlans`)
 fails the compile, not only the block: the first (by name) block failure
 that carries `Ix.Compile.Pass.planCheckPrefix`, when the check is on. -/
@@ -891,6 +900,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (schedulingSource? : Option SchedulingSource := none)
     (checkPlans : Bool := false)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
+  if let some msg := missingBlockRefs? blocks then return .error msg
   if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques, p3CliqueRoots) := Ix.Compile.Pass.scheduleCliques env blocks
@@ -1231,6 +1241,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let checkPlans ← match checkPlans? with
     | some b => pure b
     | none => pure ((← IO.getEnv "IX_PASS3_CHECK_PLANS") == some "1")
+  if let some msg := missingBlockRefs? blocks then return .error msg
   if let some msg := pass3ReservedInput? blocks then return .error msg
   -- Pass 3: the changed-clique hook's scheduling edges (`Ix.Compile.Pass.Cliques`)
   let (blocks, p3Cliques, p3CliqueRoots) := Ix.Compile.Pass.scheduleCliques env blocks

@@ -1,5 +1,6 @@
 import LSpec
 import Ix.CompileM
+import Ix.CompileDriver
 import Ix.Compile.Image.Build
 
 namespace Tests.Ix.Compile.IndexSafety
@@ -46,14 +47,14 @@ def suite : List TestSeq := [
       && updateError #[] 0 7 == some
         "invalidMutualBlock: internal error in block 'D8.missing': index-safety update: index 0 out of range (size 0)" : Bool))
   ++ test "sequential compiler reports missing condensation references"
-    (show Bool from match _root_.Ix.CompileM.compileEnv { consts := {} } missingReferences with
-      | .error why => why == "compileEnv: block D8.missing has no condensation reference set"
+    (show Bool from match _root_.Ix.CompileM.compileEnvAux { consts := {} } missingReferences with
+      | .error why => why == "block D8.missing has no condensation reference set"
       | .ok _ => false),
   .individualIO "parallel compiler reports missing condensation references" none (do
-    let result ← _root_.Ix.CompileM.compileEnvParallel { consts := {} } missingReferences (numWorkers := 1)
+    let result ← _root_.Ix.CompileM.compileEnvParallelAux { consts := {} } missingReferences
+      (numWorkers := 1)
     let ok := match result with
-      | .error error => error.systemError ==
-          some "compileEnvParallel: block D8.missing has no condensation reference set"
+      | .error why => why == "block D8.missing has no condensation reference set"
       | .ok _ => false
     return (ok, if ok then 1 else 0, 1,
       if ok then none else some "missing references were not reported by the scheduler")) .done
