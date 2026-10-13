@@ -60,6 +60,7 @@ import Ix.CompileCert.MetadataErasure
 import Ix.CompileCert.HeaderEmission
 import Ix.CompileCert.InductiveEmission
 import Ix.CompileCert.InductiveBlock
+import Ix.CompileCert.RecursorBlock
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3146,6 +3147,23 @@ def inductiveBlockRoots : Array Lean.Name :=
     `constructors_context, `info_run, `info_correct, `constant_correct].map
       (`Ix.CompileCert.InductiveBlock ++ ·)
 
+/-- Recursor type/rule emission carries the real warm cache and final reader
+through the ordered rule loop; production guards supply exact natural counts. -/
+def recursorEmissionRoots : Array Lean.Name :=
+  #[`rule_grows, `rules_grow, `rule_correct, `rules_correct, `finish_run,
+    `checks_preserve, `finish_correct, `compile_run, `body_correct,
+    `compile_correct].map (`Ix.CompileCert.RecursorEmission ++ ·)
+
+/-- Recursor sharing preserves all headers and the ordered type/rule readings. -/
+def recursorSharingRoots : Array Lean.Name :=
+  #[`roots, `writeback, `rules_read, `build_read, `rule_related, `rules_related,
+    `related, `unshared_reading, `build_payload].map (`Ix.CompileCert.RecursorSharing ++ ·)
+
+/-- Public recursor compilation supplies the shared source-related payload
+and exact bytes through actual initialization, preseed and block assembly. -/
+def recursorBlockRoots : Array Lean.Name :=
+  #[`block_run, `block_correct, `info_correct, `constant_correct].map (`Ix.CompileCert.RecursorBlock ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3168,6 +3186,9 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.constructorEmi
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveEmissionRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveSharingRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.inductiveBlockRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorSharingRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.recursorBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
@@ -3203,6 +3224,22 @@ run_cmd do
     unless definition.safety == .safe do
       throwError m!"inductive block entry is not kernel-visible and safe: {name}"
   logInfo "[cert-audit] inductive blocks: actual lookup, context setup, family assembly and public dispatch"
+
+run_cmd do
+  let env ← getEnv
+  let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
+  for name in #[``Ix.CompileM.compileRecursorRule, ``Ix.CompileM.compileRecursorRules,
+      ``Ix.CompileM.finishRecursorCompilation, ``Ix.CompileM.compileRecursor,
+      ``Ix.CompileM.compileRecursorData, ``Ix.CompileM.compileRecursorBlock,
+      ``Ix.CompileM.compileRecursorInfo] do
+    unless (substitutions.find? name).isNone &&
+        (Lean.Compiler.getImplementedBy? env name).isNone do
+      throwError m!"recursor entry has an unreviewed runtime substitution: {name}"
+    let some (.defnInfo definition) := env.find? name
+      | throwError m!"recursor entry is not a definition: {name}"
+    unless definition.safety == .safe do
+      throwError m!"recursor entry is not kernel-visible and safe: {name}"
+  logInfo "[cert-audit] recursors: actual type/rule loop, finalizer and block/preseed entries"
 
 namespace Ix.CompileCert.Audit
 

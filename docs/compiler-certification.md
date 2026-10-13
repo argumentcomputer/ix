@@ -650,16 +650,32 @@ with exact serialization/address computation and projection assembly.
 Exact source lookup, query-local scope and prefix/state conditions remain
 explicit. This endpoint does not assume a suitable target artifact or prove
 whole-record admission. `readInductive` also consumes indexed recursor records;
-recursor type/rule correspondence and its family checks must be supplied before
-composing whole-record reading. General mutual sharing remains separate.
+their family checks must be supplied before composing whole-record reading.
+General mutual sharing remains separate.
+
+[`RecursorEmission.lean`](../Ix/CompileCert/RecursorEmission.lean) proves the
+actual recursor type and source-ordered rule body compilation. The rule loop
+carries the sound expression cache retained after the type and earlier rules;
+it preserves their readings as tables grow. Exact natural header and rule-field
+counts come from production guards, and finalization restores the clean cache.
+[`RecursorSharing.lean`](../Ix/CompileCert/RecursorSharing.lean) transfers those
+source-related readings through actual canonical sharing and root write-back,
+preserving every anonymous recursor/rule header.
+[`RecursorBlock.lean`](../Ix/CompileCert/RecursorBlock.lean) connects public
+recursor dispatch, preseeding, emission and sharing to the returned source-related
+type/rules and exact serialized bytes. Its dependency, logical self-binding,
+parameter-arity and retained-state conditions remain explicit. No presentation
+metadata-value relation is required. The indexed reader's pairing of rules with
+constructors, universe contexts, safety/binder/family checks and admission are
+still separate source-family obligations.
 
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
-and source-related constructor/inductive payloads, including sharing and the
-returned byte artifact for public standalone inductive compilation.
+and source-related constructor/inductive/recursor payloads, including sharing
+and returned byte artifacts for public standalone inductive and recursor compilation.
 Production callers must establish prefix correctness and source resource
-conditions. Inductive-family whole-record reading, recursor and mutual source-related reading,
+conditions. Inductive-family whole-record reading and general mutual source-related reading,
 generated projection correspondence, complete header interpretation, declaration
 admission, projection-rewrite semantic preservation, source canonicalization,
 auxiliary generation, publication and DAG composition still need their own
