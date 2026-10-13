@@ -32,7 +32,7 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
-use crate::condense::compute_sccs;
+use crate::condense::{CondensedBlocks, compute_sccs};
 use crate::graph::{NameSet, RefMap, collect_expr_references};
 use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
@@ -163,7 +163,9 @@ fn mut_const_references(c: &MutConst) -> NameSet {
 /// `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their components
 /// are singletons; the order only matters for a member that refers to another
 /// member of the same batch.
-pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
+pub fn aux_components(
+  consts: &[MutConst],
+) -> Result<Vec<Vec<MutConst>>, CompileError> {
   let by_name: FxHashMap<Name, &MutConst> =
     consts.iter().map(|c| (c.name(), c)).collect();
   let mut refs = RefMap::default();
@@ -175,8 +177,24 @@ pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
     refs.insert(c.name(), r);
   }
   let condensed = compute_sccs(&refs);
-  // Components keyed by representative; dependency order by repeated
-  // selection of the ready components, least member name first.
+  Ok(
+    component_order(&condensed)?
+      .into_iter()
+      .map(|ms| {
+        // Keep the input order of the members inside a component.
+        let set: rustc_hash::FxHashSet<&Name> = ms.iter().collect();
+        consts.iter().filter(|c| set.contains(&c.name())).cloned().collect()
+      })
+      .collect(),
+  )
+}
+
+/// The components of `condensed` in dependency order, each as its members
+/// sorted by name: repeatedly the first ready component (every dependency
+/// done) in least-member-name order.
+fn component_order(
+  condensed: &CondensedBlocks,
+) -> Result<Vec<Vec<Name>>, CompileError> {
   let mut comps: Vec<(Name, Vec<Name>)> = condensed
     .blocks
     .iter()
@@ -188,7 +206,7 @@ pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
     .collect();
   comps.sort_by_key(|(_, ms)| ms[0].pretty());
   let mut done: rustc_hash::FxHashSet<Name> = rustc_hash::FxHashSet::default();
-  let mut out: Vec<Vec<MutConst>> = Vec::with_capacity(comps.len());
+  let mut out: Vec<Vec<Name>> = Vec::with_capacity(comps.len());
   while !comps.is_empty() {
     let pos = comps
       .iter()
@@ -199,16 +217,14 @@ pub fn aux_components(consts: &[MutConst]) -> Vec<Vec<MutConst>> {
           })
         })
       })
-      .unwrap_or(0);
+      .ok_or_else(|| CompileError::InvalidMutualBlock {
+        reason: "auxComponents: no component has all dependencies ready".into(),
+      })?;
     let (root, ms) = comps.remove(pos);
     done.insert(root);
-    // Keep the input order of the members inside a component.
-    let set: rustc_hash::FxHashSet<&Name> = ms.iter().collect();
-    out.push(
-      consts.iter().filter(|c| set.contains(&c.name())).cloned().collect(),
-    );
+    out.push(ms);
   }
-  out
+  Ok(out)
 }
 
 /// Compile a batch of auxiliaries one strongly connected component at a time
@@ -222,7 +238,7 @@ pub fn compile_aux_components(
   name_rename: Option<&FxHashMap<Name, Name>>,
   source_owners: &[Name],
 ) -> Result<(), CompileError> {
-  for comp in aux_components(aux_consts) {
+  for comp in aux_components(aux_consts)? {
     compile_aux_block_with_rename(
       &comp,
       lean_env,
@@ -1603,5 +1619,47 @@ mod source_claim_tests {
     let owners = [owner];
     assert!(check_aux_source_claim(&source, &owners, &env).is_ok());
     assert!(check_aux_source_claim(&target, &owners, &env).is_err());
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn n(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  /// A condensation in which every component waits on another has no ready
+  /// component: refused, as Lean's `auxComponents` refuses it, not compiled
+  /// out of order. The valid neighbour orders a dependency first.
+  #[test]
+  fn component_order_refuses_a_condensation_with_no_ready_component() {
+    let (a, b) = (n("A"), n("B"));
+    let one = |x: &Name| -> NameSet { [x.clone()].into_iter().collect() };
+    let condensed = |a_refs: NameSet| CondensedBlocks {
+      low_links: [(a.clone(), a.clone()), (b.clone(), b.clone())]
+        .into_iter()
+        .collect(),
+      blocks: [(a.clone(), one(&a)), (b.clone(), one(&b))]
+        .into_iter()
+        .collect(),
+      block_refs: [(a.clone(), a_refs), (b.clone(), one(&a))]
+        .into_iter()
+        .collect(),
+    };
+    // valid: B refers to A, so A comes first
+    assert_eq!(
+      component_order(&condensed(NameSet::default())).unwrap(),
+      vec![vec![a.clone()], vec![b.clone()]]
+    );
+    // forged: A and B wait on each other
+    match component_order(&condensed(one(&b))) {
+      Err(CompileError::InvalidMutualBlock { reason }) => assert_eq!(
+        reason,
+        "auxComponents: no component has all dependencies ready"
+      ),
+      other => panic!("expected the refusal, got {other:?}"),
+    }
   }
 }
