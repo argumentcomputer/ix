@@ -71,14 +71,16 @@ def fixtureInput : IO ((input : Input) × AdmittedArtifact input.toArtifactInput
   | .ok artifact => return ⟨input, artifact⟩
   | .error _ => throw (IO.userError "the certified fold refused the fixture artifact")
 
-/-- The fixture round trip: (declarations, bridged = lane export, found among the reader's entries). -/
+/-- The fixture round trip: (declarations, bridged = lane export, declined by both, found among
+the reader's entries, problems). -/
 def fixtureRoundTrip (input : Input) (artifact : AdmittedArtifact input.toArtifactInput)
     (canon : Lean.Expr → _root_.Ix.Expr) (cxOf : ExportContext → ExportContext) :
-    Nat × Nat × Nat × List String := Id.run do
+    Nat × Nat × Nat × Nat × List String := Id.run do
   let cx : ExportContext := cxOf ⟨input.source, input.map, artifact.pins, noImages⟩
   let entries := streamEntries artifact.declarations
   let mut total := 0
   let mut equal := 0
+  let mut declined := 0
   let mut read := 0
   let mut bad : List String := []
   for ci in input.source.declarations do
@@ -89,10 +91,10 @@ def fixtureRoundTrip (input : Input) (artifact : AdmittedArtifact input.toArtifa
         equal := equal + 1
         if entries.any (entryEq b) then read := read + 1
       else bad := s!"{ci.name}: bridged entry differs from the lane's export" :: bad
-    | .error _, .error _ => equal := equal + 1
+    | .error _, .error _ => declined := declined + 1
     | .ok _, .error e => bad := s!"{ci.name}: bridge failed: {e}" :: bad
     | .error e, .ok _ => bad := s!"{ci.name}: lane export failed ({e}), bridge succeeded" :: bad
-  return (total, equal, read, bad)
+  return (total, equal, declined, read, bad)
 
 /-- A tree-size walk that stops at `cap` (the bridge and `er` are tree walks; the lane's export
 is sharing-aware). -/
@@ -107,6 +109,14 @@ partial def treeCap (cap : Nat) (e : Lean.Expr) (acc : Nat) : Nat :=
 
 /-- The tree-size cap of the Init+Std comparison (terms above it are counted, not compared). -/
 def initStdCap : Nat := 1000000
+
+/-- The most fixture declarations the bridge and the lane's export may both decline: a joint
+decline is not a comparison, so more of them fail the run. -/
+def fixtureDeclineBound : Nat := 0
+
+/-- The most Init+Std terms the bridge and the lane's source export may both decline (the
+toolchain's Init and Std are pinned, so the count is fixed). -/
+def initStdDeclineBound : Nat := 0
 
 /-- Init+Std: every type, value and rule right-hand side at the source naming. -/
 def initStdRoundTrip (env : Lean.Environment) : Nat × Nat × Nat × Nat × List String := Id.run do
@@ -142,10 +152,13 @@ def run : IO UInt32 := do
   let mut problems := 0
   -- 1. the fixtures, through the bytes
   let ⟨input, artifact⟩ ← fixtureInput
-  let (total, equal, read, bad) := fixtureRoundTrip input artifact canonOf id
-  IO.println s!"[bridge-roundtrip] fixtures: {total} declarations, {equal} bridged = lane export, {read} found among the certified reader's entries"
+  let (total, equal, declined, read, bad) := fixtureRoundTrip input artifact canonOf id
+  IO.println s!"[bridge-roundtrip] fixtures: {total} declarations, {equal} bridged = lane export, {declined} declined by both (at most {fixtureDeclineBound}), {read} found among the certified reader's entries"
   for b in bad do IO.println s!"[bridge-roundtrip] FAIL {b}"
   problems := problems + bad.length
+  if declined > fixtureDeclineBound then
+    IO.println s!"[bridge-roundtrip] FAIL {declined} fixture declarations declined by both, more than {fixtureDeclineBound}"
+    problems := problems + 1
   if read == 0 then
     IO.println "[bridge-roundtrip] FAIL no bridged declaration was found among the reader's entries"
     problems := problems + 1
@@ -154,24 +167,27 @@ def run : IO UInt32 := do
   let moved : ExportContext → ExportContext := fun cx =>
     { cx with map := cx.map.map fun m =>
         if m.source == target then { m with source := prefixName ++ `getFst } else m }
-  let (_, equalMoved, _, _) := fixtureRoundTrip input artifact canonOf moved
+  let (_, equalMoved, _, _, _) := fixtureRoundTrip input artifact canonOf moved
   let nameControl := equalMoved < equal
   let shiftLevels : Lean.Expr → _root_.Ix.Expr := fun e =>
     canonOf (e.replace fun x => match x with
       | .sort (.succ l) => some (.sort l)
       | _ => none)
-  let (_, equalShifted, _, _) := fixtureRoundTrip input artifact shiftLevels id
+  let (_, equalShifted, _, _, _) := fixtureRoundTrip input artifact shiftLevels id
   let levelControl := equalShifted < equal
   IO.println s!"[bridge-roundtrip] controls: moved name map {if nameControl then "refused" else "NOT refused"} ({equalMoved}/{total} equal), shifted levels {if levelControl then "refused" else "NOT refused"} ({equalShifted}/{total} equal); valid neighbour {equal}/{total}"
   unless nameControl do problems := problems + 1
   unless levelControl do problems := problems + 1
   -- 2. Init+Std
   let ienv ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
-  let (terms, equalI, declined, skipped, badI) := initStdRoundTrip ienv
+  let (terms, equalI, declinedI, skipped, badI) := initStdRoundTrip ienv
   let differing := terms - equalI - skipped
-  IO.println s!"[bridge-roundtrip] initstd: {ienv.constants.toList.length} constants, {terms} terms, {equalI} bridged = lane export ({declined} declined by both), {differing} differing, {skipped} over the tree-size cap {initStdCap} (not compared)"
+  IO.println s!"[bridge-roundtrip] initstd: {ienv.constants.toList.length} constants, {terms} terms, {equalI} bridged = lane export ({declinedI} declined by both, at most {initStdDeclineBound}), {differing} differing, {skipped} over the tree-size cap {initStdCap} (not compared)"
   for b in badI do IO.println s!"[bridge-roundtrip] FAIL {b}"
   problems := problems + differing
+  if declinedI > initStdDeclineBound then
+    IO.println s!"[bridge-roundtrip] FAIL {declinedI} Init+Std terms declined by both, more than {initStdDeclineBound}"
+    problems := problems + 1
   IO.println s!"[bridge-roundtrip] {problems} problem(s)"
   return if problems == 0 then 0 else 1
 

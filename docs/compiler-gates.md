@@ -283,9 +283,11 @@ and inspect unit, development, core-checked, refused and untypable counts
 alongside exit status; the census does not prove the general development-domain
 theorem.
 
-`bridge-roundtrip` counts two export declines as equal and compares successful
-fixture exports without hints. It requires a nonzero reader-match count, not a
-match for every exported declaration. Init+Std terms at or above the 1,000,000
+`bridge-roundtrip` counts two export declines apart from agreement and fails
+when there are more of them than its bounds (`fixtureDeclineBound`,
+`initStdDeclineBound`, both 0). It compares successful fixture exports without
+hints. It requires a nonzero reader-match count, not a match for every exported
+declaration. Init+Std terms at or above the 1,000,000
 node tree cap are counted as skipped and excluded from its differing count.
 Retain matched, declined and skipped counts; zero differences does not establish
 complete reader coverage or acceptance of every term.
