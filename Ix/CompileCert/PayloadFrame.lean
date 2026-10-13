@@ -72,6 +72,8 @@ local macro "frame_metadata" : tactic => `(tactic|
     | exact Frame.takeMetaRefs
     | exact Frame.takeUnivPatches
     | exact Frame.clearExprCache
+    | exact Frame.checkedTableCount _ _
+    | exact Frame.checkedTableIndex _ _
     | exact Frame.compileName _
     | exact Frame.compileNames _
     | exact Frame.getMutCtxAddrs
@@ -90,6 +92,7 @@ theorem Frame.finishDefinitionDataCompilation (definition : Ix.Def)
     | exact Frame.takeMetaRefs
     | exact Frame.takeUnivPatches
     | exact Frame.clearExprCache
+    | exact Frame.checkedTableCount _ _
     | exact Frame.compileName _
     | exact Frame.compileNames _
     | exact Frame.getMutCtxAddrs
@@ -148,7 +151,8 @@ theorem Frame.compileQuotient (declaration : Ix.QuotVal) : Frame (compileQuotien
     Frame.bind (Frame.compileExpr _) fun type => Frame.finishQuotientCompilation _ type.1 type.2
 
 theorem Frame.compileRecursorRule (rule : Ix.RecursorRule) : Frame (compileRecursorRule rule) :=
-  Frame.bind (Frame.compileExpr _) (fun _ => Frame.pure _)
+  Frame.bind (Frame.compileExpr _) fun _ =>
+    Frame.bind (Frame.checkedTableCount _ _) fun _ => Frame.pure _
 
 theorem Frame.compileRecursorRules (rules : List Ix.RecursorRule) (acc : RecursorRuleCompileState) :
     Frame (compileRecursorRules rules acc) := by

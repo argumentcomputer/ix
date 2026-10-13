@@ -78,6 +78,11 @@ theorem Safe.checkedIndex (table : String) (index : Nat) : Safe (checkedTableInd
   intro context before
   rw [Interning.checkedTableIndex_state]
 
+theorem Safe.checkedCount (table : String) (count : Nat) : Safe (checkedTableCount table count) := by
+  apply Safe.framed
+  intro context before
+  rw [Interning.checkedTableCount_state]
+
 theorem Safe.mapM_list (items : List α) (action : α → CompileM β)
     (each : ∀ item ∈ items, Safe (action item)) : Safe (items.mapM action) := by
   induction items with
@@ -334,7 +339,8 @@ theorem Safe.finishDefinition (source : Def) (type value : Ixon.Expr) (typeRoot 
   intro context before valid output after ran
   rw [DefinitionEmission.finishDefinitionDataCompilation_run] at ran
   have validDrained : Valid context.1 (DefinitionEmission.drained before) := valid.of_view rfl
-  exact Safe.seq (Safe.finishNames source context.2) (fun _ => Safe.pure _) context _ validDrained output after ran
+  exact Safe.seq (Safe.checkedCount _ _) (fun _ =>
+    Safe.seq (Safe.finishNames source context.2) (fun _ => Safe.pure _)) context _ validDrained output after ran
 
 theorem Safe.body (source : Def) : Safe (DefinitionEmission.body source) := by
   rw [DefinitionEmission.body]

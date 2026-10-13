@@ -52,6 +52,7 @@ import Ix.CompileCert.ReferenceWidths
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
 import Ix.CompileCert.EmissionWire
+import Ix.CompileCert.DeclarationHeaders
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2653,8 +2654,9 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.productionExpr
 namespace Ix.CompileCert.Audit
 
 /-- Actual definition-like initialization, type/value compilation and payload
-finalization. Header conversion is recorded exactly; natural arity requires
-the explicit capacity bound, and sharing/record admission remain separate. -/
+finalization. The abstract payload relation records conversion exactly;
+`DeclarationHeaders` separately derives natural arity from the actual guard.
+Sharing/record admission remain separate obligations. -/
 def definitionEmissionRoots : Array Lean.Name :=
   #[`Clean.ready, `drained_clean, `Clean.good, `drained_reader,
     `Preserves.pure, `Preserves.bind, `names_clean, `Preserves.names,
@@ -3024,7 +3026,7 @@ table premise and composes with the source-related anonymous readings. -/
 def emissionWireRoots : Array Lean.Name :=
   #[`Valid.of_view, `Safe.framed, `Safe.pure, `Safe.throw, `Safe.bind,
     `Safe.forget, `Safe.seq, `Safe.get, `Safe.read, `Safe.readBlock,
-    `Safe.modify, `Safe.modifyGet, `Safe.checkedIndex, `Safe.mapM_list,
+    `Safe.modify, `Safe.modifyGet, `Safe.checkedIndex, `Safe.checkedCount, `Safe.mapM_list,
     `Safe.map, `Safe.mapM_array, `Safe.compileLevel, `Safe.internRef,
     `Safe.lookup, `Safe.blob, `Safe.compileName, `Safe.alloc, `Safe.patch,
     `Safe.storeString, `Safe.substring, `Safe.sourceInfo, `Safe.preresolved,
@@ -3041,6 +3043,23 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.referenceWidth
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedWireRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.finalUniverseRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.emissionWireRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Executable declaration-header guards establish exact source natural counts,
+including the returned singleton block's arity and generated projection range.
+No new source-capacity premise weakens the existing compilation theorems. -/
+def declarationHeaderRoots : Array Lean.Name :=
+  #[`Returns.pure, `Returns.bind, `Returns.bindAny, `Returns.count, `Returns.index,
+    `exact_header, `definition, `axiomHeader, `quotient, `recursorRule, `recursor,
+    `constructorHeader, `inductiveHeader, `inductiveDataHeader, `definitionBody,
+    `definitionData, `sharing_header, `definitionBlock, `definitionInfo,
+    `projection_count, `projection_index, `recursorRule_refuses].map
+      (`Ix.CompileCert.DeclarationHeaders ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.declarationHeaderRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

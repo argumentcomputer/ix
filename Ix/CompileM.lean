@@ -2220,6 +2220,9 @@ def finishDefinitionDataCompilation (d : Def)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  -- Header counts must fit before the conversions used to assemble the payload.
+  let _ ← checkedTableCount "declaration universe parameters" d.levelParams.size
+
   -- Store name string components as blobs for deduplication
   compileName d.name
   compileNames d.levelParams
@@ -2313,6 +2316,8 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  let _ ← checkedTableCount "declaration universe parameters" a.cnst.levelParams.size
+
   -- Store name string components for deduplication
   compileName a.cnst.name
   compileNames a.cnst.levelParams
@@ -2357,6 +2362,8 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  let _ ← checkedTableCount "declaration universe parameters" q.cnst.levelParams.size
+
   compileName q.cnst.name
   compileNames q.cnst.levelParams
 
@@ -2383,6 +2390,7 @@ def compileQuotient (q : QuotVal) :
 /-- Compile a recursor rule to Ixon, returning the ctor address and rhs expression. -/
 def compileRecursorRule (rule : RecursorRule) : CompileM (Ixon.RecursorRule × Address × UInt64) := do
   let (rhs, ruleRoot) ← compileExpr rule.rhs
+  let _ ← checkedTableCount "recursor rule fields" rule.nfields
   let ctorAddr := rule.ctor.getHash
   pure ({ fields := rule.nfields.toUInt64, rhs }, ctorAddr, ruleRoot)
 
@@ -2417,6 +2425,12 @@ def finishRecursorCompilation (r : RecursorVal)
   let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
+
+  let _ ← checkedTableCount "declaration universe parameters" r.cnst.levelParams.size
+  let _ ← checkedTableCount "recursor parameters" r.numParams
+  let _ ← checkedTableCount "recursor indices" r.numIndices
+  let _ ← checkedTableCount "recursor motives" r.numMotives
+  let _ ← checkedTableCount "recursor minors" r.numMinors
 
   -- Store name string components as blobs for deduplication
   compileName r.cnst.name
@@ -2466,6 +2480,11 @@ def finishConstructorCompilation (c : ConstructorVal)
   let metaRefs ← takeMetaRefs
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
+
+  let _ ← checkedTableCount "declaration universe parameters" c.cnst.levelParams.size
+  let _ ← checkedTableIndex "constructor index" c.cidx
+  let _ ← checkedTableCount "constructor parameters" c.numParams
+  let _ ← checkedTableCount "constructor fields" c.numFields
 
   -- Store name string components as blobs for deduplication
   compileName c.cnst.name
@@ -2541,6 +2560,9 @@ def finishInductiveCompilation (i : InductiveVal)
     (compiledCtors : InductiveConstructorCompileState) :
     CompileM (Ixon.Inductive × Ixon.ConstantMeta ×
       Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  let _ ← checkedTableCount "declaration universe parameters" i.cnst.levelParams.size
+  let _ ← checkedTableCount "inductive parameters" i.numParams
+  let _ ← checkedTableCount "inductive indices" i.numIndices
   -- Store name string components as blobs for deduplication
   compileName i.cnst.name
   compileNames i.cnst.levelParams
@@ -2605,6 +2627,9 @@ def finishInductiveDataCompilation (i : Ind)
     (compiledCtors : InductiveConstructorCompileState) :
     CompileM (Ixon.Inductive × Ixon.ConstantMeta ×
       Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  let _ ← checkedTableCount "declaration universe parameters" i.levelParams.size
+  let _ ← checkedTableCount "inductive parameters" i.numParams
+  let _ ← checkedTableCount "inductive indices" i.numIndices
   -- Store name components for deduplication
   compileName i.name
   compileNames i.levelParams
@@ -2926,6 +2951,7 @@ family. -/
 def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
+  let _ ← checkedTableCount "inductive constructors" i.ctors.size
   let cache ← getBlockState
   let block ← timedC .sharing (buildBlockConstant
     (.muts #[.indc ind]) cache.refs cache.univs)

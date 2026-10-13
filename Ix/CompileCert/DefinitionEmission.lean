@@ -144,6 +144,7 @@ theorem finishDefinitionDataCompilation_run (d : Ix.Def) (type value : Ixon.Expr
     (context : CompileEnv × BlockEnv) (before : BlockState) :
     rawRun (finishDefinitionDataCompilation d type typeRoot value valueRoot) context before =
       rawRun (do
+        let _ ← checkedTableCount "declaration universe parameters" d.levelParams.size
         finishNames d context.2
         pure (definitionPayload d type value, definitionMetadata d context.2 before typeRoot valueRoot, type, value))
         context (drained before) := by
@@ -177,6 +178,17 @@ theorem finishDefinition_correct (cx : Kernel.Reader.Ctx) (base : Ixon.Constant)
         output.2.2 = (type, value) := by
   dsimp only
   rw [finishDefinitionDataCompilation_run, rawRun_bind]
+  by_cases bounded : d.levelParams.size < UInt64.size
+  case neg =>
+    simp only [checkedTableCount, bounded, ↓reduceIte]
+    change Clean bindings (drained before) ∧ _
+    refine ⟨drained_clean bindings before sound mode, ?_, by intro output bad; cases bad⟩
+    change ExpressionRead.Extends (ExpressionRead.blockReader cx base param self before).ecx
+      (ExpressionRead.blockReader cx base param self (drained before)).ecx
+    rw [drained_reader cx base param self before mode]
+    exact ExpressionState.extends_refl _
+  simp only [checkedTableCount, bounded, ↓reduceIte, rawRun_pure]
+  rw [rawRun_bind]
   have tail := finishNames_preserves cx base param self bindings context aligned d (drained before)
     (drained_clean bindings before sound mode)
   rw [drained_reader cx base param self before mode] at tail
@@ -204,8 +216,9 @@ def PayloadRelated (names : Ix.Name → Kernel.Name → Prop) (sourceParams : Li
       ExpressionState.Related names sourceParams params source.value value ∧
       reader.read target.typ = .ok type ∧ reader.read target.value = .ok value
 
-/-- Full natural-number arity additionally requires the wire-capacity bound.
-The production header still uses `Nat.toUInt64`; this is not a totality proof. -/
+/-- The abstract payload relation alone needs a capacity bound for natural
+arity. `DeclarationHeaders` derives exact arity for actual successful runs
+from the production guard; this lemma retains its original general domain. -/
 theorem PayloadRelated.levels {names : Ix.Name → Kernel.Name → Prop} {sourceParams : List Ix.Name}
     {params : List Kernel.Name} {reader : Kernel.Reader.MemberReader} {source : Ix.Def} {target : Ixon.Definition}
     (related : PayloadRelated names sourceParams params reader source target)

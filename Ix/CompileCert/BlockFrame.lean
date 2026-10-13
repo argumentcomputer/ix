@@ -173,6 +173,7 @@ theorem Frame.finishInductiveFamilyBlock (inductiveVal : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) :
     Frame (finishInductiveFamilyBlock inductiveVal ind indMeta ctorMetaPairs) :=
+  Frame.bind (Frame.checkedTableCount _ _) fun _ =>
   Frame.bind Frame.get fun _ =>
     Frame.bind (Frame.timedC (Frame.buildBlockConstant _ _ _) _) fun _ => Frame.pure _
 

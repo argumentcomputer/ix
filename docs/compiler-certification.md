@@ -463,11 +463,27 @@ concerns successful runs: a failed universe miss may write its candidate before
 the guard reports the error. The existing broader error-state semantic/frame
 theorems retain their original domains.
 
+The Lean producer checks declaration universe arities and natural-number
+recursor/constructor/inductive header fields before their `UInt64` conversions.
+Oversized counts return a resource error instead of wrapping; representable
+values keep their existing encoding. The corresponding Rust Nat conversions
+already reject overflow. A separate count guard bounds the source array used
+to generate standalone constructor-projection indices.
+[`DeclarationHeaders.lean`](../Ix/CompileCert/DeclarationHeaders.lean) proves
+exact natural-number fields for successful finalizers and carries exact universe
+arity through actual definition-like singleton compilation and sharing to the
+returned block. These bounds come from executable guards, without adding source
+capacity assumptions to the older correctness or error-state theorems. The
+regressions use finite structured inputs at zero, the largest representable
+value and overflowing counts; they do not claim those oversized headers are
+valid Lean declarations. Full declaration reading/admission, nested array-count
+wire bounds and source-domain totality remain separate obligations.
+
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization with final table-wire validity
 derived from the stated input conditions.
 Production callers must establish prefix correctness and source resource
-conditions; other declaration families, header bounds,
+conditions; other declaration families and their complete header interpretation,
 source canonicalization/rewriting, auxiliary
 generation, publication, whole-declaration reading and DAG composition
 still need their own connections. This does not prove that every valid
