@@ -820,6 +820,19 @@ and complete sequence of required source recursors, and target family
 consistency/modelling remain separate obligations. This is index completeness
 for eligible candidates, not a proof that every valid source produces them.
 
+[`ReaderSpines.lean`](../Ix/CompileCert/ReaderSpines.lean) connects the existing
+sharing expansion theorem to the reader's syntactic recursor analysis, which
+runs before expression conversion. Backward sharing references justify the
+actual `unshare` bound. Exact-length and fuel-bounded telescope walks and
+application-head walks commute with expansion, including failed telescope
+reads. With explicit bounds on inspected application spines, head-reference,
+carrier and complete `analyseRecursor` results agree, including rejection.
+The actual standalone recursor sharing builder supplies the table/root
+invariants and preserves this analysis. The input's syntactic recursor shape,
+application-spine bounds, source/reference identities and general mutual
+builder composition remain separate obligations; the source domain has not
+been restricted to successful analysis.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,

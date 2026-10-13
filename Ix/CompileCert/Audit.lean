@@ -72,6 +72,7 @@ import Ix.CompileCert.ReaderIndexEntries
 import Ix.CompileCert.ReaderStore
 import Ix.CompileCert.ReaderAdmissionRecords
 import Ix.CompileCert.ReaderIndexDiscovery
+import Ix.CompileCert.ReaderSpines
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3273,6 +3274,15 @@ def readerIndexDiscoveryRoots : Array Lean.Name :=
     `collect_backed, `buildIndex_role_unique, `stream_covers,
     `published_stream_order].map (`Ix.CompileCert.ReaderIndexDiscovery ++ ·)
 
+/-- Sharing expansion preserves actual reader spine operations and complete
+recursor analysis under explicit source application-spine bounds. -/
+def readerSpineRoots : Array Lean.Name :=
+  #[`shares_mono, `unshare_go, `unshare_expansion, `unshare_empty,
+    `stripAll_expand, `stripAll_bounded, `stripAllFull_expand, `stripAllFull_bounded,
+    `appHead_expand, `appHead_inline, `headRef_expand, `lastHead_expand,
+    `carrier_expand, `carriers_expand, `analyse_expand,
+    `build_analyse].map (`Ix.CompileCert.ReaderSpines ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3309,6 +3319,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexEnt
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerStoreRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerAdmissionRecordRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexDiscoveryRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerSpineRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
@@ -3370,6 +3381,9 @@ run_cmd do
       ``Ix.Kernel.Reader.readPrelude, ``Ix.Kernel.Reader.builtinPrelude,
       ``Ix.Kernel.Admission.uniqueKeys, ``Ix.Kernel.Admission.decodeRecords, ``Ix.Kernel.Admission.streamContext,
       ``Ix.Kernel.Reader.Ctx.recLps, ``Ix.Kernel.Reader.recursorMembers,
+      ``Ix.Kernel.Reader.unshare, ``Ix.Kernel.Reader.unshare.go,
+      ``Ix.Kernel.Reader.stripAll, ``Ix.Kernel.Reader.stripAllFull,
+      ``Ix.Kernel.Reader.appHead, ``Ix.Kernel.Reader.headRef, ``Ix.Kernel.Reader.analyseRecursor,
       ``Ix.Kernel.Reader.inductiveAt, ``Ix.Kernel.Reader.piTeleLen,
       ``Ix.Kernel.Expr.piSortTeleLen?, ``Ix.Kernel.Expr.piResult,
       ``Ix.Kernel.Frontend.InModel.wants, ``Ix.Kernel.Frontend.InModel.generate] do
