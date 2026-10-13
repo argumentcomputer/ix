@@ -172,6 +172,20 @@ fn move_to_display(
   Ok(moved)
 }
 
+/// Record the component of each member; a new entry is logged for the
+/// failed-block rollback.
+fn record_components<'a>(
+  stt: &CompileState,
+  members: impl Iterator<Item = &'a Name>,
+  record: &ComponentRecord,
+) {
+  for m in members {
+    if stt.p3.components.insert(m.clone(), record.clone()).is_none() {
+      crate::compile::block_txn::log_p3_component(m);
+    }
+  }
+}
+
 fn insert_recs(
   stt: &CompileState,
   recs: &[(Name, ix_common::env::RecursorVal)],
@@ -182,7 +196,7 @@ fn insert_recs(
       n,
       rv.clone(),
       "canonical recursor",
-      |_| {},
+      crate::compile::block_txn::log_p3_canon_rec,
     )?;
   }
   Ok(())
@@ -244,11 +258,7 @@ pub fn edit_changed_block(
     evaporated: l.evaporated.clone(),
   });
   let record = ComponentRecord { classes: planc.clone(), nested };
-  for c in &planc {
-    for m in c {
-      stt.p3.components.insert(m.clone(), record.clone());
-    }
-  }
+  record_components(stt, planc.iter().flatten(), &record);
   Ok(journal.pending.into_iter().filter(|n| !moved.contains(n)).collect())
 }
 
@@ -356,9 +366,7 @@ pub fn edit_permuted_below_family(
   let classes: Vec<Vec<Name>> =
     order.into_iter().map(|(_, n)| vec![n]).collect();
   let record = ComponentRecord { classes, nested: None };
-  for b in &below_all {
-    stt.p3.components.insert(b.clone(), record.clone());
-  }
+  record_components(stt, below_all.iter(), &record);
   Ok(journal.pending.into_iter().filter(|n| !moved.contains(n)).collect())
 }
 
@@ -1337,17 +1345,15 @@ mod tests {
     assert_eq!(stt.resolve_addr(&c), Some(a));
   }
 
-  /// Lean's `checkBlockClaims` compares the whole recursor: a second
-  /// canonical recursor of one name with the same type but other fields is
-  /// a conflict, and the first one stays.
-  #[test]
-  fn conflicting_canonical_recursor_is_refused_by_value() {
+  /// A one-motive recursor `name : Sort 1` of `A` with no rules.
+  fn rec_val(name: &Name) -> ix_common::env::RecursorVal {
     use bignat::Nat;
-    use ix_common::env::RecursorVal;
-    let stt = CompileState::new_empty();
-    let n = dotted("A.rec");
-    let rv = RecursorVal {
-      cnst: ConstantVal { name: n.clone(), level_params: vec![], typ: sort(1) },
+    ix_common::env::RecursorVal {
+      cnst: ConstantVal {
+        name: name.clone(),
+        level_params: vec![],
+        typ: sort(1),
+      },
       all: vec![dotted("A")],
       num_params: Nat::from(0u64),
       num_indices: Nat::from(0u64),
@@ -1356,7 +1362,18 @@ mod tests {
       rules: vec![],
       k: false,
       is_unsafe: false,
-    };
+    }
+  }
+
+  /// Lean's `checkBlockClaims` compares the whole recursor: a second
+  /// canonical recursor of one name with the same type but other fields is
+  /// a conflict, and the first one stays.
+  #[test]
+  fn conflicting_canonical_recursor_is_refused_by_value() {
+    use ix_common::env::RecursorVal;
+    let stt = CompileState::new_empty();
+    let n = dotted("A.rec");
+    let rv = rec_val(&n);
     insert_recs(&stt, &[(n.clone(), rv.clone())]).unwrap();
     // valid neighbour: the identical recursor again
     insert_recs(&stt, &[(n.clone(), rv.clone())]).unwrap();
@@ -1367,6 +1384,35 @@ mod tests {
       "{err}"
     );
     assert_eq!(stt.p3.canon_recs.get(&n).map(|r| r.clone()), Some(rv));
+  }
+
+  /// A failed block leaves no canonical recursor or component record behind
+  /// (Lean merges a block's Pass 3 state only when the block compiles), and
+  /// the rollback keeps the entries another block entered first.
+  #[test]
+  fn failed_block_rollback_removes_its_recursors_and_components() {
+    use crate::compile::block_txn;
+    let stt = CompileState::new_empty();
+    let (owner_rec, owner) = (dotted("B.rec"), dotted("B"));
+    let record =
+      ComponentRecord { classes: vec![vec![owner.clone()]], nested: None };
+    insert_recs(&stt, &[(owner_rec.clone(), rec_val(&owner_rec))]).unwrap();
+    record_components(&stt, [&owner].into_iter(), &record);
+    let (n, a) = (dotted("A.rec"), dotted("A"));
+    block_txn::start();
+    insert_recs(
+      &stt,
+      &[(n.clone(), rec_val(&n)), (owner_rec.clone(), rec_val(&owner_rec))],
+    )
+    .unwrap();
+    let mine = ComponentRecord { classes: vec![vec![a.clone()]], nested: None };
+    record_components(&stt, [&a].into_iter(), &mine);
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    assert!(!stt.p3.canon_recs.contains_key(&n));
+    assert!(!stt.p3.components.contains_key(&a));
+    assert!(stt.p3.canon_recs.contains_key(&owner_rec));
+    assert!(stt.p3.components.contains_key(&owner));
   }
 
   #[test]
