@@ -29,6 +29,7 @@ import Ix.CompileCert.CanonUnivMeaning
 import Ix.CompileCert.CanonUnivSubsumption
 import Ix.CompileCert.CanonUnivGateOrder
 import Ix.CompileCert.CanonUnivEmit
+import Ix.CompileCert.CanonUnivWire
 import Ix.CompileCert.CanonUnivScope
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionLeaves
@@ -45,6 +46,8 @@ import Ix.CompileCert.UniverseExact
 import Ix.CompileCert.PreseedUniverses
 import Ix.CompileCert.PreseedCanonical
 import Ix.CompileCert.PreseedInsertion
+import Ix.CompileCert.PreseedBounds
+import Ix.CompileCert.PreseedState
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2950,6 +2953,40 @@ end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedCanonicalRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedInsertionRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- The actual canonicalizer's output grammar derives wire bounds from a
+source-universe valuation bound. -/
+def canonUnivWireRoots : Array Lean.Name :=
+  #[`succCount_le_eval, `Shape.wire, `Shape.addSuccs, `maxFold_shape,
+    `maxChain_shape, `emitGated_shape, `atomTerm_shape, `retainedTerms_shape,
+    `groupOutput_shape, `rootPass_shape, `finishEmission_shape, `emitGroups_shape,
+    `linearize_shape, `canonUniv_wire].map (`Ix.CompileCert.CanonUnivWire ++ ·)
+
+/-- Source resource bounds through actual collection and sorted insertion.
+The source validity predicate and older theorem domains are unchanged. -/
+def preseedBoundRoots : Array Lean.Name :=
+  #[`lower_bound, `AllBound.push, `Safe.weaken, `Safe.compile, `Safe.lookup,
+    `Safe.blob, `levels_bound, `structural_bound, `root_bound, `roots_bound,
+    `roots_wire, `preseed_from_bounded_roots, `preseed_reads_bounded].map
+      (`Ix.CompileCert.PreseedBounds ++ ·)
+
+/-- The real preseed entry preserves retained state and canonical cache
+exactness, supplies declaration-emission readiness and composes with the
+production definition-like singleton entry. -/
+def preseedStateRoots : Array Lean.Name :=
+  #[`Frame.roots, `Frame.refs, `Frame.univs, `Frame.canon, `Frame.canonicalize,
+    `Frame.preseed, `CanonSafe.pure, `CanonSafe.bind, `CanonSafe.refs,
+    `CanonSafe.univs, `CanonSafe.canonicalize, `CanonSafe.preseed,
+    `preseed_ready, `compileDefinitionInfo_eq, `compileDefinitionDataInfo_correct].map
+      (`Ix.CompileCert.PreseedState ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.canonUnivWireRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedBoundRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedStateRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

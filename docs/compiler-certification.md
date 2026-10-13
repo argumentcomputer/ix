@@ -414,14 +414,37 @@ the final flag, sound primary index maps and actual slots for the collected
 references and canonical universes. It carries an explicit wire-format premise
 on canonical universe values: equal serialized keys imply equal universes only
 within that domain. `ExactSeeded` connects these lookups to later production
-universe interning, including repeated parameter names. Deriving canonical
-universe wire bounds and the remaining declaration/header and driver premises
-is still required for the general compiler theorem.
+universe interning, including repeated parameter names.
+
+[`CanonUnivWire.lean`](../Ix/CompileCert/CanonUnivWire.lean) derives the canonical
+wire bound from a sufficient bound on the input universe: its evaluation with
+all parameters set to one is less than `UInt64.size`. The actual linearizer
+emits `imax` gates with variables on the right, so this valuation bounds every
+successor chain in the output. This is a proved output-shape property, not an
+assumption that arbitrary semantically equal universes share wire bounds.
+[`PreseedBounds.lean`](../Ix/CompileCert/PreseedBounds.lean) carries the source
+bound through exact lowering, cache reuse, every collection constructor and
+root initialization. Its table-composition endpoints derive the canonical wire
+premise from source expressions. The bound is an explicit resource condition,
+separate from source typing; no claim is made that source validity implies it
+or that it characterizes every representable input.
+
+[`PreseedState.lean`](../Ix/CompileCert/PreseedState.lean) proves that preseeding
+preserves source bindings, expression-cache contents, metadata mode and
+canonical-cache exactness on every outcome. On success under the source bound
+and sound retained tables, it supplies the declaration-emission readiness
+contract, final universe-table flag and reference/universe coverage. This
+composes with the actual `compileDefinitionDataInfo` entry, including preseeding,
+payload emission, canonical sharing and the stored-byte wrapper. The ordinary
+definition entry is definitionally the same path; theorem and opaque entries
+already use it. Correct dependency bindings, the caller's mutual context and
+source resource conditions remain explicit.
 
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.
-Production callers must establish the prefix and preseed conditions; other
-declaration families, header bounds, source canonicalization/rewriting, auxiliary
+Production callers must establish prefix correctness and source resource
+conditions; other declaration families, primary-table wire preservation,
+header bounds, source canonicalization/rewriting, auxiliary
 generation, publication, whole-declaration reading and DAG composition
 still need their own connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder
