@@ -1158,7 +1158,7 @@ fn compile_canon(
         ..Default::default()
       };
       let prev_hints = stt.recorded_hint(&c);
-      let (addr, meta, constant) =
+      let (addr, meta, constant, bytes) =
         compile_single_def_parts(&c, &def, &mut cache, stt).map_err(|e| {
           invalid(format!(
             "Pass 3 optimisations: canonical constant {}: {e}",
@@ -1200,7 +1200,7 @@ to the canonical constant {}",
           dashmap::mapref::entry::Entry::Vacant(e) => {
             e.insert(addr.clone());
             crate::compile::block_txn::log_aux(&c);
-            stt.store_const(addr.clone(), constant)?;
+            stt.store_const_bytes(addr.clone(), bytes, constant)?;
             stt.register_named(c.clone(), Named::new(addr, meta));
           },
         },

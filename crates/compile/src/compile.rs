@@ -2233,6 +2233,8 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
+  /// The serialization `addr` hashes
+  pub bytes: Vec<u8>,
 }
 
 /// Compile a mutual block with block-level sharing under `limits`.
@@ -2251,7 +2253,7 @@ pub fn compile_mutual_block(
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
 
-  Ok(CompiledMutualBlock { constant, addr })
+  Ok(CompiledMutualBlock { constant, addr, bytes })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -3210,9 +3212,10 @@ pub(crate) fn compile_single_def(
   stt: &CompileState,
   aux: bool,
 ) -> Result<(Address, ConstantMeta), CompileError> {
-  let (addr, meta, constant) = compile_single_def_parts(name, def, cache, stt)?;
+  let (addr, meta, constant, bytes) =
+    compile_single_def_parts(name, def, cache, stt)?;
   if aux {
-    stt.store_const(addr.clone(), constant)?;
+    stt.store_const_bytes(addr.clone(), bytes, constant)?;
     stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
   } else {
     // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
@@ -3225,14 +3228,15 @@ pub(crate) fn compile_single_def(
 }
 
 /// Compile a single definition standalone without storing anything: its
-/// address, metadata and constant (the caller stores them; Pass 3's
-/// canonical constants check a reserved name's binding first).
+/// address, metadata, constant and the constant's serialization (the caller
+/// stores them; Pass 3's canonical constants check a reserved name's binding
+/// first).
 pub fn compile_single_def_parts(
   name: &Name,
   def: &Def,
   cache: &mut BlockCache,
   stt: &CompileState,
-) -> Result<(Address, ConstantMeta, Constant), CompileError> {
+) -> Result<(Address, ConstantMeta, Constant, Vec<u8>), CompileError> {
   let _t0 = std::time::Instant::now();
   let mut_ctx = MutConst::single_ctx(def.name.clone());
   preseed_expr_tables(
@@ -3280,7 +3284,7 @@ pub fn compile_single_def_parts(
       serialized_size,
     );
   }
-  Ok((addr, meta, constant))
+  Ok((addr, meta, constant, bytes))
 }
 
 /// Compile a definition-like constant standalone under `name` and register
@@ -3370,7 +3374,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.store_const(addr.clone(), constant)?;
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -3397,7 +3401,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.store_const(addr.clone(), constant)?;
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
@@ -3433,7 +3437,7 @@ fn compile_const_inner_body(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.store_const(addr.clone(), constant)?;
+          stt.store_const_bytes(addr.clone(), bytes, constant)?;
           stt.register_named(
             name.clone(),
             Named::new(addr.clone(), meta.clone()),
@@ -3617,7 +3621,7 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.store_const(addr.clone(), standalone_constant)?;
+      stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -3645,7 +3649,11 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.store_const(block_addr.clone(), compiled.constant)?;
+    stt.store_const_bytes(
+      block_addr.clone(),
+      compiled.bytes,
+      compiled.constant,
+    )?;
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -3683,7 +3691,7 @@ fn compile_mutual(
             requested_addr = Some(proj_addr.clone());
           }
           if aux {
-            stt.store_const(proj_addr.clone(), indc_proj)?;
+            stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_compiled_name(&n, &proj_addr)?;
           } else {
@@ -3703,7 +3711,11 @@ fn compile_mutual(
               requested_addr = Some(ctor_addr.clone());
             }
             if aux {
-              stt.store_const(ctor_addr.clone(), ctor_proj)?;
+              stt.store_const_bytes(
+                ctor_addr.clone(),
+                ctor_bytes,
+                ctor_proj,
+              )?;
               stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
@@ -3726,7 +3738,7 @@ fn compile_mutual(
         requested_addr = Some(proj_addr.clone());
       }
       if aux {
-        stt.store_const(proj_addr.clone(), proj)?;
+        stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
         stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.claim_compiled_name(&n, &proj_addr)?;
       } else {

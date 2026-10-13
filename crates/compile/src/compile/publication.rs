@@ -15,27 +15,27 @@ fn conflict(kind: &str) -> CompileError {
 }
 
 impl CompileState {
-  pub(crate) fn store_const(
+  /// Store `constant`, already serialized to `bytes` by the caller (who
+  /// hashed them to `addr`), so it is not serialized again.
+  pub(crate) fn store_const_bytes(
     &self,
     addr: Address,
+    bytes: Vec<u8>,
     constant: Constant,
   ) -> Result<(), CompileError> {
-    self.store_const_demoted(addr, constant, *DEMOTE)
+    self.store_const_bytes_demoted(addr, bytes, constant, *DEMOTE)
   }
 
-  fn store_const_demoted(
+  fn store_const_bytes_demoted(
     &self,
     addr: Address,
+    bytes: Vec<u8>,
     constant: Constant,
     demote: bool,
   ) -> Result<(), CompileError> {
-    // Serialize outside the map lock. Both storage policies compare the
-    // actual bytes; neither overwrites nor silently accepts a conflicting key.
-    let pending = if demote {
-      LazyConstant::from_constant_uncached(&constant)
-    } else {
-      LazyConstant::from_constant(constant)
-    };
+    // Built outside the map lock. Both storage policies compare the actual
+    // bytes; neither overwrites nor silently accepts a conflicting key.
+    let pending = LazyConstant::from_serialized(constant, bytes, !demote);
     match self.env.consts.entry(addr) {
       Entry::Occupied(entry) => {
         if entry.get().raw_bytes() != pending.raw_bytes() {
@@ -93,6 +93,25 @@ mod tests {
     let mut out = Vec::new();
     c.put(&mut out);
     out
+  }
+
+  impl CompileState {
+    fn store_const_demoted(
+      &self,
+      addr: Address,
+      constant: Constant,
+      demote: bool,
+    ) -> Result<(), CompileError> {
+      self.store_const_bytes_demoted(addr, bytes(&constant), constant, demote)
+    }
+
+    fn store_const(
+      &self,
+      addr: Address,
+      constant: Constant,
+    ) -> Result<(), CompileError> {
+      self.store_const_bytes(addr, bytes(&constant), constant)
+    }
   }
 
   #[test]
