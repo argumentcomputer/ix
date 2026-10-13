@@ -126,8 +126,10 @@ the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
-/-- The main library, with Lake's default roots: every `Ix.*` module. Nothing the
-`ix-kernel` dependency or `IxSharingVerify` owns is under the `Ix.` module root
+/-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
+its imports, not every module under `Ix/`. A module that `Ix.lean` does not
+import is built only by a target that does, such as `lake run check-cert`.
+Nothing the `ix-kernel` dependency or `IxSharingVerify` owns is under the `Ix.` module root
 (their declaration namespaces are, their module names are not), so this
 library never shadows them. Keep new modules of theirs under their roots. -/
 @[default_target]
