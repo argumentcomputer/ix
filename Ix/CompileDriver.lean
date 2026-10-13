@@ -870,6 +870,30 @@ def pass3ReservedInput? (blocks : Ix.CondensedBlocks) : Option String := Id.run 
           | none => some msg
   return best
 
+/-- Some component of the Lean name `n` is reserved (`Ix.Compile.Pass.hasReserved`). -/
+def leanNameHasReserved : Lean.Name → Bool
+  | .anonymous => false
+  | .str p s => Ix.Compile.Pass.isReservedComponent s || leanNameHasReserved p
+  | .num p _ => leanNameHasReserved p
+
+/-- Some metadata key in `e` has a reserved component (D14). -/
+def exprHasReservedMetadata (e : Lean.Expr) : Bool :=
+  (e.find? fun
+    | .mdata data _ => data.entries.any (leanNameHasReserved ·.1)
+    | _ => false).isSome
+
+/-- Some expression of the Lean source constant has a metadata key with a
+    reserved component: the expressions the reference graph walks (Rust
+    `graph::inspect_constant_references`). -/
+def sourceHasReservedMetadata (source : Lean.ConstantInfo) : Bool :=
+  exprHasReservedMetadata source.type ||
+    match source with
+    | .defnInfo v => exprHasReservedMetadata v.value
+    | .thmInfo v => exprHasReservedMetadata v.value
+    | .opaqueInfo v => exprHasReservedMetadata v.value
+    | .recInfo v => v.rules.any (exprHasReservedMetadata ·.rhs)
+    | _ => false
+
 /-! ## The aux-aware sequential driver -/
 
 /-- Compile an entire environment with the FULL production pipeline
@@ -1584,7 +1608,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       let mut state : Ix.CanonM.CanonState := {}
       let mut out : Array
         (Ix.Name × Ix.Set Ix.Name × Option Ix.GroundError × UInt64
-          × Option Ix.ConstantInfo) := #[]
+          × Option Ix.ConstantInfo × Bool) := #[]
       for (ixn, lci) in chunk do
         let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
         state := state'
@@ -1596,14 +1620,17 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         let keep? := match ci with
           | .thmInfo _ | .opaqueInfo _ => none
           | _ => some ci
-        out := out.push (ixn, refs, groundErr?, hash ci, keep?)
+        out := out.push (ixn, refs, groundErr?, hash ci, keep?,
+          sourceHasReservedMetadata lci)
       out
   let mut outRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
   let mut immediate : Ix.Map Ix.Name Ix.GroundError := {}
   let mut digests : Std.HashMap Ix.Name UInt64 := {}
   let mut codeConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
+  let mut reservedMetadata : Array Ix.Name := #[]
   for task in tasks do
-    for (n, refs, gerr?, dig, keep?) in task.get do
+    for (n, refs, gerr?, dig, keep?, reserved) in task.get do
+      if reserved then reservedMetadata := reservedMetadata.push n
       outRefs := outRefs.insert n refs
       if let some e := gerr? then
         immediate := immediate.insert n e
@@ -1655,6 +1682,18 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   | .error e => return .error (toString e)
   | .ok _ => pure ()
   let t ← tick s!"validate inductive flags ({indGroups.size} groups)" t
+  -- 4c. D14 for metadata: a compiled input constant with a metadata key that
+  --     has the reserved `_ix` component is refused (it could stand for a
+  --     placeholder or decompile record); the least message, as for names
+  --     (`pass3ReservedInput?`, which the driver applies next).
+  let mut reservedMsg : Option String := none
+  for n in reservedMetadata do
+    if !ungrounded.contains n then
+      let msg := Ix.Compile.Pass.reservedMetadataInput n
+      reservedMsg := match reservedMsg with
+        | some b => if msg < b then some msg else some b
+        | none => some msg
+  if let some msg := reservedMsg then return .error msg
   -- 5. Aux-aware parallel compile against the HYBRID environment: code
   --    kinds are the materialized (shared) map; proof bodies
   --    canonicalize on demand from the pinned Lean constants and are

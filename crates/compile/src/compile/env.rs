@@ -371,6 +371,19 @@ fn compile_env_observed(
     );
   }
 
+  // Pass 3 (D14): a compiled input constant with a metadata key that has
+  // the reserved `_ix` component is refused (it could stand for a
+  // placeholder or decompile record); the least message, as for names.
+  let mut reserved_metadata: Vec<String> = scan
+    .reserved_metadata
+    .iter()
+    .filter(|n| !ungrounded_map.contains_key(*n))
+    .map(crate::compile::pass3::names::reserved_metadata_input)
+    .collect();
+  reserved_metadata.sort();
+  if let Some(msg) = reserved_metadata.into_iter().next() {
+    return Err(CompileError::UnsupportedExpr { desc: msg });
+  }
   // Pass 3 (D14): an input name with a reserved `_ix` component is refused.
   if let Some(msg) = crate::compile::pass3::driver::reserved_input_in(
     condensed.blocks.values().flat_map(|b| b.iter()),

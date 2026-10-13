@@ -6,7 +6,11 @@ faithful rewrite and the predicates on them.
 
 * `_ix` is the reserved name component (D14). A Lean input name with a
   component that is `_ix` or starts with `_ix` is rejected
-  (`reservedInput?`), so every reserved name below is fresh.
+  (`reservedInput?`), so every reserved name below is fresh. A compiled
+  input constant with a metadata key that has such a component is rejected
+  too (`reservedMetadataInput`, checked by the full pipeline before
+  canonicalization), so no source metadata stands for a placeholder or
+  decompile record.
 * The Ix auxiliaries of a changed block (Pass 2's canonical `rec`,
   `casesOn`, `recOn`, `below`, `brecOn`, `.go`, `.eq`, `_N`, and the
   canonical `IndPredBelow` family) are displayed as `x._ix.S` for the Lean
@@ -123,6 +127,13 @@ def reservedInput? (n : Name) : Option String :=
     some s!"input name '{n.pretty}' contains the reserved component `_ix` \
       (D14: `_ix` names the Ix auxiliaries and images of the faithful rewrite)"
   else none
+
+/-- The rejection message of a Lean input constant with a metadata key that
+    has a reserved component (such a key could stand for the placeholder or
+    decompile record of `inlineKey`). -/
+def reservedMetadataInput (n : Name) : String :=
+  s!"input constant '{n.pretty}' has a metadata key with the reserved component `_ix` \
+    (D14: `_ix` names the Ix auxiliaries and images of the faithful rewrite)"
 
 /-- `_ix.inline`: the decompile record's `metaSharing` index (and, before
 compilation, the placeholder index of the source occurrence). -/

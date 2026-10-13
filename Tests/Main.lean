@@ -41,6 +41,7 @@ import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.ClaimOrder
 import Tests.Ix.Compile.IndFlags
+import Tests.Ix.Compile.ReservedMetadata
 import Tests.Ix.Compile.BridgeProvenance
 import Tests.Ix.Compile.BridgeBoundaries
 import Tests.Ix.Compile.BridgeScopes
@@ -445,6 +446,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
   ("compile-ind-flags", Tests.Ix.Compile.IndFlags.run),
+  -- Source metadata keys with the reserved `_ix` component: refused by both
+  -- compilers (Tests.Ix.Compile.ReservedMetadata).
+  ("compile-reserved-mdata", Tests.Ix.Compile.ReservedMetadata.run),
   ("compiler-selected-closure-e2e", Tests.Ix.Compile.SelectedClosure.run),
   -- The clique transport `Φ_σ` (Ix.Compile.Clique) against the measured clique twins: the exact
   -- oracle, the kernel, GuessLex, negative controls (Tests.Ix.Compile.Transport).

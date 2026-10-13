@@ -116,6 +116,17 @@ pub fn reserved_input(n: &Name) -> Option<String> {
   }
 }
 
+/// The rejection message of a Lean input constant with a metadata key that
+/// has a reserved component (such a key could stand for the placeholder or
+/// decompile record of [`inline_key`]).
+pub fn reserved_metadata_input(n: &Name) -> String {
+  format!(
+    "input constant '{}' has a metadata key with the reserved component `_ix` \
+(D14: `_ix` names the Ix auxiliaries and images of the faithful rewrite)",
+    n.pretty()
+  )
+}
+
 /// `_ix.inline`.
 pub fn inline_key() -> Name {
   mk_str(&root_name(IX_COMPONENT), "inline")
