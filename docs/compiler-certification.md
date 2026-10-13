@@ -440,11 +440,35 @@ definition entry is definitionally the same path; theorem and opaque entries
 already use it. Correct dependency bindings, the caller's mutual context and
 source resource conditions remain explicit.
 
+[`ReferenceWidths.lean`](../Ix/CompileCert/ReferenceWidths.lean) derives collected
+reference widths from the actual dependency lookup and the production hash
+wrapper's 32-byte output. [`PreseedWire.lean`](../Ix/CompileCert/PreseedWire.lean)
+combines those widths with the source universe bound to preserve primary-table
+wire validity through collection, sorting, canonicalization and insertion.
+The resulting table counts follow the actual checked insertion guards.
+
+[`FinalUniverses.lean`](../Ix/CompileCert/FinalUniverses.lean) proves that after
+the preseed flag is set, successful universe compilation preserves the entire
+primary universe array. This uses the actual no-growth guard, including its
+metadata branch, and needs no raw/canonical-cache or index-map validity premise.
+[`EmissionWire.lean`](../Ix/CompileCert/EmissionWire.lean) uses it to carry wire
+validity through every expression constructor, metadata serialization, Pass 3
+record compilation and definition-like payload finalization. Its production
+singleton endpoint derives the final table-wire premise and proves that the
+actual returned bytes decode exactly to the returned anonymous block. A combined
+endpoint also supplies the existing source-related type/value readings.
+Input table validity, dependency widths, source universe bounds and the stated
+semantic prefix/context conditions remain explicit. The emission wire theorem
+concerns successful runs: a failed universe miss may write its candidate before
+the guard reports the error. The existing broader error-state semantic/frame
+theorems retain their original domains.
+
 These results cover expression and definition-like payload emission, canonical
-sharing, anonymous root reading and serialization under the stated table bounds.
+sharing, anonymous root reading and serialization with final table-wire validity
+derived from the stated input conditions.
 Production callers must establish prefix correctness and source resource
-conditions; other declaration families, primary-table wire preservation,
-header bounds, source canonicalization/rewriting, auxiliary
+conditions; other declaration families, header bounds,
+source canonicalization/rewriting, auxiliary
 generation, publication, whole-declaration reading and DAG composition
 still need their own connections. This does not prove that every valid
 Lean declaration compiles successfully or establish resource/VM semantics of binder

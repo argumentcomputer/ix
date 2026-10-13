@@ -48,6 +48,10 @@ import Ix.CompileCert.PreseedCanonical
 import Ix.CompileCert.PreseedInsertion
 import Ix.CompileCert.PreseedBounds
 import Ix.CompileCert.PreseedState
+import Ix.CompileCert.ReferenceWidths
+import Ix.CompileCert.PreseedWire
+import Ix.CompileCert.FinalUniverses
+import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2987,6 +2991,56 @@ end Ix.CompileCert.Audit
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.canonUnivWireRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedBoundRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedStateRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Address widths originate in the actual dependency lookup or the proved
+hash output width, and survive all collection constructors and root contexts. -/
+def referenceWidthRoots : Array Lean.Name :=
+  #[`AllWidths.push, `Safe.pure, `Safe.throw, `Safe.bind, `Safe.framed,
+    `Safe.lookup, `Safe.blob, `structural_widths, `root_widths,
+    `roots_widths, `roots_initial].map (`Ix.CompileCert.ReferenceWidths ++ ·)
+
+/-- Primary-table wire validity through actual collection, sorting,
+canonicalization and insertion; source and prefix resource conditions remain
+explicit and independent of source typing. -/
+def preseedWireRoots : Array Lean.Name :=
+  #[`Safe.pure, `Safe.bind, `Safe.discard, `Safe.ref, `Safe.univ,
+    `internRefs, `internUnivs, `Safe.canon, `canonUnivs, `Safe.throw,
+    `Safe.readBlock, `Safe.compileUniv, `Safe.lookup, `Safe.blob,
+    `Safe.withBlockEnv, `Safe.withUnivCtx, `collectLevels,
+    `collectStructural, `collect, `collectRoots, `preseed_wire].map
+      (`Ix.CompileCert.PreseedWire ++ ·)
+
+/-- The real no-growth guard freezes the primary universe array on success,
+without source, cache or index-map validity assumptions. -/
+def finalUniverseRoots : Array Lean.Name :=
+  #[`rawRun_throw, `internMeta_frame, `spelling_frame, `primary_no_growth,
+    `canonical_no_growth, `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·)
+
+/-- Successful payload emission preserves wire-valid primary tables, including
+the metadata prepass. The actual singleton codec endpoint derives its output
+table premise and composes with the source-related anonymous readings. -/
+def emissionWireRoots : Array Lean.Name :=
+  #[`Valid.of_view, `Safe.framed, `Safe.pure, `Safe.throw, `Safe.bind,
+    `Safe.forget, `Safe.seq, `Safe.get, `Safe.read, `Safe.readBlock,
+    `Safe.modify, `Safe.modifyGet, `Safe.checkedIndex, `Safe.mapM_list,
+    `Safe.map, `Safe.mapM_array, `Safe.compileLevel, `Safe.internRef,
+    `Safe.lookup, `Safe.blob, `Safe.compileName, `Safe.alloc, `Safe.patch,
+    `Safe.storeString, `Safe.substring, `Safe.sourceInfo, `Safe.preresolved,
+    `Safe.syntax, `Safe.dataValue, `Safe.kvmap, `Safe.app, `Safe.step,
+    `Safe.fuel, `Safe.partial, `Safe.total, `Safe.forIn_list, `Safe.forIn_array,
+    `Safe.records, `Safe.expression, `Safe.compileNames, `Safe.finishNames,
+    `Safe.finishDefinition, `Safe.body, `Safe.definition, `definitionBlock_wire,
+    `compileDefinitionDataInfo_codec, `compileDefinitionDataInfo_reading_codec].map
+      (`Ix.CompileCert.EmissionWire ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.referenceWidthRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedWireRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.finalUniverseRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.emissionWireRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
