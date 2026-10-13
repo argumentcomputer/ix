@@ -33,8 +33,9 @@ private theorem close_push_fresh (supply : FreshFVars) (decls : Array LocalDecl)
     (name : Name) (domain body : Expr) (info : Lean.BinderInfo) (hash : Address)
     (index : Nat) (covered : Protects supply (.lam name domain body info hash)) :
     er (closeDecls
-      (decls.push { fvarName := (supply.fresh "o11a" index).1.1,
-        binderName := name, domain := domain, info := info }).toList
+      (decls.push
+        { fvarName := (supply.fresh "o11a" index).1.1,
+          binderName := name, domain := domain, info := info }).toList
       (Ix.AuxGen.instantiate1 body (supply.fresh "o11a" index).1.2)) =
       er (closeDecls decls.toList (.lam name domain body info hash)) := by
   rw [Array.toList_push, closeDecls_append]
