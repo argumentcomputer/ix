@@ -498,11 +498,38 @@ state readiness remain explicit. Projection-rewrite semantic preservation and
 declaration admission are still separate: the whole-record reading theorem
 records the actual rewrite without asserting that its denotation is unchanged.
 
+[`ExpressionScope.lean`](../Ix/CompileCert/ExpressionScope.lean) refines ordinary
+expression correctness to the self bindings actually used by source constants,
+including the uncached application spine. The older whole-context APIs retain
+their statements. `NoSelf` requires those actual mutual-context lookups to miss;
+it does not replace the compiler context with an empty map or assume Name hash
+injectivity. Deriving this scope condition from the source unit/prefix remains
+a caller obligation.
+[`MetadataErasure.lean`](../Ix/CompileCert/MetadataErasure.lean) proves that a
+successful Pass 3 prepass restores the ordinary expression cache. From the
+fresh cache installed for a declaration, it supplies state validity and reader
+extension without requiring metadata source expressions to satisfy the payload's
+self scope. An auxiliary total self interpretation is used internally to reuse
+the existing proof; the public result states operational preservation, without
+metadata value correspondence.
+
+[`HeaderEmission.lean`](../Ix/CompileCert/HeaderEmission.lean),
+[`HeaderBlock.lean`](../Ix/CompileCert/HeaderBlock.lean) and
+[`HeaderReading.lean`](../Ix/CompileCert/HeaderReading.lean) connect the actual
+axiom/quotient `compileConstantInfo` branches through context initialization,
+preseeding, payload emission, sharing, returned bytes and `readRecord`. Under
+the explicit source type scope, prefix/state and universe-resource conditions,
+successful compilation gives the exact expected axiom or quotient declaration
+with a source-related type, and returned bytes decode to the returned block.
+Unsafe axiom output is refused by the reader independently of type scope or
+reader-prefix premises. No production compiler or kernel code is changed by
+these proof connections.
+
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization with final table-wire validity
 derived from the stated input conditions.
 Production callers must establish prefix correctness and source resource
-conditions; other declaration families and their complete header interpretation,
+conditions; inductive, constructor, recursor and mutual families and their complete header interpretation,
 projection-rewrite semantic preservation,
 source canonicalization/rewriting, auxiliary
 generation, publication, whole-declaration reading and DAG composition

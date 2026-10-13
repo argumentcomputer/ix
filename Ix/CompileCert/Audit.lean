@@ -54,6 +54,11 @@ import Ix.CompileCert.FinalUniverses
 import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.DeclarationHeaders
 import Ix.CompileCert.DefinitionReading
+import Ix.CompileCert.ExpressionScope
+import Ix.CompileCert.MetadataErasure
+import Ix.CompileCert.HeaderEmission
+import Ix.CompileCert.HeaderBlock
+import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3078,6 +3083,50 @@ def definitionReadingRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.definitionReadingRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Query-local self correspondence and the source-scoped induction retain
+the original whole-context APIs while supporting readers without a self slot. -/
+def expressionScopeRoots : Array Lean.Name :=
+  #[`Ix.CompileCert.ExpressionState.constBody_checked_at,
+    `Ix.CompileCert.ExpressionState.const_step_checked_at] ++
+  #[`Scoped.mono, `NoSelf.scoped, `appTotal_scoped, `app_step_scoped,
+    `partial_scoped, `partial_noSelf].map (`Ix.CompileCert.ExpressionScope ++ ·)
+
+/-- Metadata prepass cache restoration and operational preservation. Only
+the payload expression needs the self-scope premise. -/
+def metadataErasureRoots : Array Lean.Name :=
+  #[`CacheFrame.pure, `CacheFrame.read, `CacheFrame.bind, `CacheFrame.record,
+    `CacheFrame.forIn_list, `CacheFrame.forIn_array, `CacheFrame.records,
+    `growth_retarget, `records_empty, `ordinary_scoped, `compile_scoped].map
+      (`Ix.CompileCert.MetadataErasure ++ ·)
+
+/-- Actual axiom/quotient payload compilation with the real mutual context. -/
+def headerEmissionRoots : Array Lean.Name :=
+  #[`compile_run, `finish_run, `count_preserves, `names_preserves,
+    `finish_correct, `body_correct, `compile_correct].map (`Ix.CompileCert.HeaderEmission ++ ·)
+
+/-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
+def headerBlockRoots : Array Lean.Name :=
+  #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
+    `compile_wire, `block_eq, `block_run, `array_one, `payload_roots, `writeback,
+    `sharing_read, `sharing_wire, `block_correct, `block_wire, `info_eq,
+    `block_shape, `info_shape, `info_correct].map (`Ix.CompileCert.HeaderBlock ++ ·)
+
+/-- Public axiom/quotient constant dispatch and whole-record reader success;
+unsafe axiom refusal is independent of source scope and reader-prefix facts. -/
+def headerReadingRoots : Array Lean.Name :=
+  #[`constant_run, `params_length, `read_payload, `unsafe_axiom,
+    `constant_declines, `constant_reads].map (`Ix.CompileCert.HeaderReading ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.expressionScopeRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.metadataErasureRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerEmissionRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

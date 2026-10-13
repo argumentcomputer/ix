@@ -212,14 +212,15 @@ theorem name_then_checked (source : Ix.Expr) (name : Ix.Name) (body : CompileM (
 
 /-- The full ordinary constant transition, using only the declaration-prefix
 name/reference correspondence and current mutual-unit self correspondence. -/
-theorem const_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
+theorem const_step_checked_at (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
     (name : Ix.Name) (sources : Array Ix.Level) (hash : Address) (context : CompileEnv × BlockEnv)
     (before : BlockState) (good : Good cx base param self related bindings before)
     (params : List Kernel.Name) (parameterMap : param = Kernel.Reader.paramOf params)
     (arity : params.length = context.2.univCtx.length)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (names : Ix.Name → Kernel.Name → Prop) (external : BindingsCorrect context.1 bindings cx names)
-    (selfSound : SelfCorrect context.2 self names)
+    (selfSound : ∀ index, context.2.mutCtx.get? name = some index →
+      ∃ target, self index = some target ∧ names name target)
     (constantRelated : ∀ target levels, names name target →
       List.Forall₂ (ExpressionLeaves.LevelMeaning context.2.univCtx params) sources.toList levels →
       related (.const name sources hash) (.const target levels)) :
@@ -244,9 +245,26 @@ theorem const_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)
         | error error => exact ⟨named.1, extends_trans levelResult.2.1 named.2, by intro value bad; cases bad⟩
         | ok _done =>
           have retainedLevels := named.2.levels (compiled.map Prod.fst) levels readLevels
-          have body := constBody_checked cx base param self related bindings name sources hash compiled levels context afterName
+          have body := constBody_checked_at cx base param self related bindings name sources hash compiled levels context afterName
             named.1 names external selfSound retainedLevels (fun target nameRel => constantRelated target levels nameRel relatedLevels)
           exact ⟨body.1, extends_trans (extends_trans levelResult.2.1 named.2) body.2.1, body.2.2⟩
+
+/-- The original whole-context contract remains available unchanged. -/
+theorem const_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
+    (name : Ix.Name) (sources : Array Ix.Level) (hash : Address) (context : CompileEnv × BlockEnv)
+    (before : BlockState) (good : Good cx base param self related bindings before)
+    (params : List Kernel.Name) (parameterMap : param = Kernel.Reader.paramOf params)
+    (arity : params.length = context.2.univCtx.length)
+    (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
+    (names : Ix.Name → Kernel.Name → Prop) (external : BindingsCorrect context.1 bindings cx names)
+    (selfSound : SelfCorrect context.2 self names)
+    (constantRelated : ∀ target levels, names name target →
+      List.Forall₂ (ExpressionLeaves.LevelMeaning context.2.univCtx params) sources.toList levels →
+      related (.const name sources hash) (.const target levels)) :
+    Checked cx base param self related bindings (.const name sources hash) before
+      (rawRun (compileExprTotalStep compile (.const name sources hash)) context before) :=
+  const_step_checked_at cx base param self related bindings compile name sources hash context before good
+    params parameterMap arity aligned names external (selfSound name) constantRelated
 
 def binderSource (isAll : Bool) (name : Ix.Name) (type body : Ix.Expr) (info : Lean.BinderInfo) (hash : Address) : Ix.Expr :=
   if isAll then .forallE name type body info hash else .lam name type body info hash

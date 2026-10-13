@@ -290,11 +290,12 @@ theorem compileConstExprRaw_eq (name : Ix.Name) (levels : Array Ix.Level) :
     · simp only [finishReference, patches, ↓reduceIte]
     · simp only [finishReference, patches, Bool.false_eq_true, ↓reduceIte, pure_bind]
 
-theorem constBody_checked (name : Ix.Name) (sources : Array Ix.Level) (hash : Address)
+theorem constBody_checked_at (name : Ix.Name) (sources : Array Ix.Level) (hash : Address)
     (compiled : Array (UInt64 × Option UInt64)) (levels : List Kernel.Level)
     (context : CompileEnv × BlockEnv) (before : BlockState) (good : Good cx base param self related bindings before)
     (names : Ix.Name → Kernel.Name → Prop) (external : BindingsCorrect context.1 bindings cx names)
-    (selfSound : SelfCorrect context.2 self names)
+    (selfSound : ∀ index, context.2.mutCtx.get? name = some index →
+      ∃ target, self index = some target ∧ names name target)
     (readLevels : (reader before).ecx.levels (compiled.map Prod.fst) = .ok levels)
     (constantRelated : ∀ target, names name target → related (.const name sources hash) (.const target levels)) :
     Checked cx base param self related bindings (.const name sources hash) before
@@ -313,7 +314,7 @@ theorem constBody_checked (name : Ix.Name) (sources : Array Ix.Level) (hash : Ad
       | error error => exact ⟨good, extends_refl _, by intro value bad; cases bad⟩
       | ok index =>
         have exactIndex := (Interning.checkedTableIndex_value "mutual reference" slot context before (congrArg Prod.fst checked)).1
-        obtain ⟨target, selfFound, nameRel⟩ := selfSound name slot found
+        obtain ⟨target, selfFound, nameRel⟩ := selfSound slot found
         apply finishReference_checked cx base param self related bindings _ name compiled _ (.const target levels) context before good
           (constantRelated target nameRel)
         change (do
@@ -357,6 +358,20 @@ theorem constBody_checked (name : Ix.Name) (sources : Array Ix.Level) (hash : Ad
                 rfl)
             exact ⟨finished.1, extends_trans interned.2.1 finished.2.1, finished.2.2⟩
 
+
+/-- Preserve the original whole-context API; a particular transition uses
+only its queried source name's self-binding correspondence. -/
+theorem constBody_checked (name : Ix.Name) (sources : Array Ix.Level) (hash : Address)
+    (compiled : Array (UInt64 × Option UInt64)) (levels : List Kernel.Level)
+    (context : CompileEnv × BlockEnv) (before : BlockState) (good : Good cx base param self related bindings before)
+    (names : Ix.Name → Kernel.Name → Prop) (external : BindingsCorrect context.1 bindings cx names)
+    (selfSound : SelfCorrect context.2 self names)
+    (readLevels : (reader before).ecx.levels (compiled.map Prod.fst) = .ok levels)
+    (constantRelated : ∀ target, names name target → related (.const name sources hash) (.const target levels)) :
+    Checked cx base param self related bindings (.const name sources hash) before
+      (rawRun (constBody name compiled context.2.mutCtx) context before) :=
+  constBody_checked_at cx base param self related bindings name sources hash compiled levels context before good
+    names external (selfSound name) readLevels constantRelated
 
 end Constructors
 
