@@ -40,6 +40,7 @@ import Ix.CompileCert.SharingRead
 import Ix.CompileCert.DefinitionBlock
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.PreseedKeys
+import Ix.CompileCert.PreseedReferences
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -2868,6 +2869,25 @@ def preseedKeyRoots : Array Lean.Name :=
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedKeyRoots Ix.CompileCert.Audit.allowedAxioms
+
+namespace Ix.CompileCert.Audit
+
+/-- Reference coverage of actual structural/public/worklist collection and
+the root loop, including fixed lookup bindings and empty-cache initialization. -/
+def preseedReferenceRoots : Array Lean.Name :=
+  #[`BindingFrame.compileUniv, `BindingFrame.lookup, `BindingFrame.blob,
+    `BindingFrame.levels, `BindingFrame.structural, `Named.mono, `Covered.mono,
+    `lookup_value, `named_push, `blob_value, `Added.refl, `Added.mono,
+    `Added.trans, `Added.close_parent, `Added.ready, `Result.cached,
+    `Result.insert, `bind_ok, `prepare_child, `cached_run, `binding_after,
+    `binary, `unary, `ternary, `Correct.of_miss, `collect_correct,
+    `Complete.empty, `Complete.below, `Complete.after, `public_correct,
+    `root_run, `root_correct, `roots_correct, `public_initial,
+    `worklist_initial, `roots_initial].map (`Ix.CompileCert.PreseedReferences ++ ·)
+
+end Ix.CompileCert.Audit
+
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.preseedReferenceRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv

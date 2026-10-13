@@ -376,9 +376,20 @@ contexts. The production structural/worklist equality still covers arbitrary
 initial caches and error states. [`PreseedKeys.lean`](../Ix/CompileCert/PreseedKeys.lean)
 proves collision separation and a coverage invariant restricted to smaller
 expressions, allowing a parent to be marked before its children are complete.
-These are ingredients for the complete collection theorem; collection coverage
-and the validity of incoming values still need their own proofs. This concerns
+These are ingredients for the complete collection theorem. This concerns
 compiler-side binding identity and adds no target-metadata fidelity obligation.
+
+[`PreseedReferences.lean`](../Ix/CompileCert/PreseedReferences.lean) proves the
+reference part of collection coverage for every expression constructor, the
+public/worklist entry and the actual root loop. From an empty visited set,
+every successful collection resolves each required external constant or
+projection type and contains its address, together with every required literal
+address. The lookup bindings stay fixed, and earlier references remain present.
+Warm caches have an explicit coverage invariant; the proof handles parents
+marked before their descendants finish without assuming digest injectivity.
+This is coverage relative to the compiler's actual source lookup and mutual
+context. Universe collection, canonical wire bounds, sorting and insertion,
+and the source-semantic correctness of those bindings remain separate.
 
 These results cover expression and definition-like payload emission, canonical
 sharing, anonymous root reading and serialization under the stated table bounds.
