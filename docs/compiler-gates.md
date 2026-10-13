@@ -237,6 +237,8 @@ not an automatic re-record.
 | [`clique-transport`](../Tests/Ix/Compile/Transport.lean) | Clique presentations: transport against Lean's encoding, Lean-kernel acceptance, order/recovered-specification and ownership controls. | `NonCanonical.transportOracle`; explained residual causes. | Compiler passes; Landing. |
 | [`aux-oracle`](../Tests/Ix/Compile/Oracle.lean) | Block twins: regenerated auxiliaries against Lean's canonical presentation, including canonical-presentation checks. Unexpected, packaging and nested-order differences fail. | Oracle classes; relevant `NonCanonicalDefault` entries. | Compiler passes; Landing. |
 | [`pass3`](../Tests/Ix/Compile/Pass3.lean) | AuxCert, image, definitional/PJ-pass fixtures, twins and aux corpus: complete names/refusals, decompilation, three checkers, compiled computation rules and display names. | `Pass3Kernels` tables and `NonCanonical.nonCanonicalPasses`. | Compiler passes; Landing. |
+| [`pass3-tools`](../Tests/Ix/Compile/Pass3.lean) | One evidence or diagnostic tool, selected by exactly one of `PASS3_RECHECK`, `PASS3_EXPECT_EMIT`, `PASS3_CLOSURE`, `PASS3_VIEW`, `PASS3_FIND` and `PASS3_SURGERED`; not a check. `pass3` refuses to run while one of them, or `PASS3_LIB`, is set. | Emits candidate record rows; approves nothing. | Manual. |
+| [`pass3-lib`](../Tests/Ix/Compile/Pass3.lean) | `PASS3_LIB=<off.ixe>,<on.ixe>`: every name moved in the second library is a rewritten constant or depends on one, and every new name is reserved. Fails when the variable is absent. | None. | Gate runner only. |
 | [`pass3-cliques`](../Tests/Ix/Compile/Pass3Cliques.lean) | Clique-family closure: plans, names, decompilation, three checker legs, value pins and exact twin differences. | `NonCanonical.nonCanonicalOn`. | Compiler passes; Landing. |
 | [`o11a-decline`](../Tests/Ix/Compile/O11aDecline.lean) | Withheld size instance and other side conditions: recorded decline cause, untouched surrounding behaviour and valid neighbours. | Inline cases/causes. | Compiler passes; Landing. |
 | [`compile-caller-independence`](../Tests/Ix/Compile/CallerIndependence.lean) | Logical units with dependents versus unrelated constants: same `Named` and compiler records; explicit on-demand-auxiliary and refused-caller controls. | `expectedFailures`, `cliqueCallers`. | Compiler passes; Landing. |
@@ -407,9 +409,9 @@ PASS3_KEEP=out/record-review/pass3 PASS3_FAILURES=out/record-review/rows.tsv \
 PASS3_EMIT_FAILURES=1 lake test --wfail -- --ignored pass3
 PASS3_RECHECK=out/record-review/pass3 PASS3_RECHECK_ANON=1 \
 PASS3_RECHECK_TAG=review PASS3_FAILURES=out/record-review/recheck.tsv \
-  lake test --wfail -- --ignored pass3
+  lake test --wfail -- --ignored pass3-tools
 PASS3_EXPECT_EMIT=out/record-review/rows.tsv,out/record-review/recheck.tsv \
-  lake test --wfail -- --ignored pass3
+  lake test --wfail -- --ignored pass3-tools
 
 VALIDATE_LEAN_KEEP=out/record-review/validate \
   lake test --wfail -- --ignored validate-lean

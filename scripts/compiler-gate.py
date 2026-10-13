@@ -603,7 +603,7 @@ class Gate:
             self.compile('initstd-lean-images', 'compile-lean', 'initstd', note=True)
             self.compile('initstd-plans', 'compile-lean', 'initstd', plans=True)
             self.run('initstd-provenance-post', lambda: self.imports('post', 'initstd'), critical=True, force=True)
-            self.run('pass3-lib', lake + ['test', '--wfail', '--', '--ignored', 'pass3'],
+            self.run('pass3-lib', lake + ['test', '--wfail', '--', '--ignored', 'pass3-lib'],
                      env={'PASS3_LIB': f'{a.legacy_ref},{self.out / "initstd-lean.ixe"}', 'PASS3_LIB_ALL': '1'})
             self.run('kernel-check', [root / '.lake/build/bin/kernel-check-ixe', self.out / 'initstd-lean.ixe',
                                      self.out / 'kernel.jsonl'])

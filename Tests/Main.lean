@@ -454,6 +454,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Pass 3, the faithful rewrite (the only mode since M6R slice 6): identity, cones, decompile,
   -- kernels and the computation rules on every fixture family (Tests.Ix.Compile.Pass3).
   ("pass3", Tests.Ix.Compile.Pass3.run env),
+  -- Its evidence and diagnostic tools, and the library comparison, each its own runner.
+  ("pass3-tools", Tests.Ix.Compile.Pass3.tools),
+  ("pass3-lib", Tests.Ix.Compile.Pass3.lib),
   -- M6R: per-address parity of the Rust Pass 3 against the Lean one, every difference a
   -- defect, and `ix pack` against its Lean oracle (Tests.Ix.Compile.Pass3RustParity).
   ("pass3-rust-parity", Tests.Ix.Compile.Pass3RustParity.run env),

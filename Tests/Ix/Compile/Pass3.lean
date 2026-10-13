@@ -38,9 +38,13 @@
   Run with: `lake test -- --ignored pass3` (after `lake build ix
   kernel-check-ixe`). `PASS3_ONLY` restricts the units (comma-separated
   stems or `twins`, `corpus`); `PASS3_KEEP=<dir>` keeps the outputs;
-  `PASS3_FAILURES=<file>` writes every kernel failure; `PASS3_RECHECK` and
+  `PASS3_FAILURES=<file>` writes every kernel failure. The runner
+  `pass3-tools` (`tools`) runs one tool instead: `PASS3_RECHECK` and
   `PASS3_EXPECT_EMIT` rerun the kernels on kept outputs and write the record
-  from the dumps (see `runRecheck` and `Pass3Kernels.emit`).
+  from the dumps (see `runRecheck` and `Pass3Kernels.emit`); `PASS3_CLOSURE`,
+  `PASS3_VIEW`, `PASS3_FIND` and `PASS3_SURGERED` print diagnostics. The
+  runner `pass3-lib` (`lib`) compares two libraries (`runLib`). The suite
+  refuses to run while any of their variables is set.
 -/
 import Ix.Meta
 import Ix.EnvScope
@@ -1305,7 +1309,18 @@ def fixtureStems : List String :=
   (auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles).map fun p =>
     (System.FilePath.mk p).fileStem.getD p
 
-def run (env : Environment) : IO UInt32 := do
+/-- The environment variables that select a `pass3-tools` mode. -/
+def toolModes : List String :=
+  ["PASS3_CLOSURE", "PASS3_VIEW", "PASS3_FIND", "PASS3_SURGERED", "PASS3_RECHECK", "PASS3_EXPECT_EMIT"]
+
+/-- The runner `pass3-tools`: the one tool of `toolModes` set in the
+environment. These print, record or re-check evidence; they are not the
+`pass3` suite. Fails when no mode, or more than one, is set. -/
+def tools : IO UInt32 := do
+  let set ← toolModes.filterM fun var => return (← IO.getEnv var).isSome
+  unless set.length == 1 do
+    IO.println s!"[pass3-tools] set exactly one of {toolModes} (set: {set})"
+    return 2
   if let some spec := ← IO.getEnv "PASS3_CLOSURE" then
     match spec.splitOn "," with
     | [p, c] => return ← runClosure p c
@@ -1321,12 +1336,26 @@ def run (env : Environment) : IO UInt32 := do
     match spec.splitOn "," with
     | rows :: recheck :: more => return ← Pass3Kernels.emit rows recheck more
     | _ =>
-      IO.println "[pass3] PASS3_EXPECT_EMIT=<rows.tsv>,<recheck.tsv>[,<meta recheck.tsv>…]"
+      IO.println "[pass3-tools] PASS3_EXPECT_EMIT=<rows.tsv>,<recheck.tsv>[,<meta recheck.tsv>…]"
       return 2
-  if let some spec := ← IO.getEnv "PASS3_LIB" then
-    match spec.splitOn "," with
-    | [a, b] => return ← runLib a b
-    | _ => IO.println "[pass3-lib] PASS3_LIB=<switch-off.ixe>,<switch-on.ixe>"; return 2
+  return 2
+
+/-- The runner `pass3-lib`: `runLib` on the two libraries of `PASS3_LIB`,
+failing when it is not set. -/
+def lib : IO UInt32 := do
+  match (← IO.getEnv "PASS3_LIB").map (·.splitOn ",") with
+  | some [a, b] => runLib a b
+  | _ =>
+    IO.println "[pass3-lib] PASS3_LIB=<switch-off.ixe>,<switch-on.ixe> is required"
+    return 2
+
+def run (env : Environment) : IO UInt32 := do
+  -- a tool's variable in the environment must not replace the suite
+  for var in toolModes ++ ["PASS3_LIB"] do
+    if (← IO.getEnv var).isSome then
+      IO.println s!"[pass3] FAIL {var} is set: it selects the `pass3-tools` or `pass3-lib` runner, \
+not this suite"
+      return 1
   let want ← Only.select "pass3" "PASS3_ONLY" (fixtureStems ++ ["twins", "corpus", "ReservedIx"])
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let mut units : Array (String × IO CUnit) := #[]
