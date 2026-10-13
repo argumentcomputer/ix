@@ -71,6 +71,7 @@ import Ix.CompileCert.ReaderIndex
 import Ix.CompileCert.ReaderIndexEntries
 import Ix.CompileCert.ReaderStore
 import Ix.CompileCert.ReaderAdmissionRecords
+import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
@@ -3261,6 +3262,17 @@ def readerAdmissionRecordRoots : Array Lean.Name :=
     `builtinPrelude_consistent, `stream_coherent, `stream_grouped_lookup,
     `published_stream_order].map (`Ix.CompileCert.ReaderAdmissionRecords ++ ·)
 
+/-- Actual index discovery covers every eligible block/motive and retains
+one representative through sorted completion and production stream contexts. -/
+def readerIndexDiscoveryRoots : Array Lean.Name :=
+  #[`from_role_unique, `found_push_extends, `backed_insert, `candidate_transition,
+    `covered_extends, `candidate_covers, `valid_empty, `candidate_next,
+    `record_next, `record_covers, `collect_covers, `complete_pair,
+    `complete_preserves, `complete_covers, `complete_recs, `buildIndex_covers,
+    `buildIndex_unique_reference, `one_push, `candidate_unique, `collect_unique,
+    `collect_backed, `buildIndex_role_unique, `stream_covers,
+    `published_stream_order].map (`Ix.CompileCert.ReaderIndexDiscovery ++ ·)
+
 /-- Axiom/quotient preseeding, sharing, source-related reading and exact bytes. -/
 def headerBlockRoots : Array Lean.Name :=
   #[`finish_bound, `compile_bound, `finish_shape, `compile_shape, `finish_wire,
@@ -3296,6 +3308,7 @@ run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexRoo
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexEntryRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerStoreRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerAdmissionRecordRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.readerIndexDiscoveryRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerBlockRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.headerReadingRoots Ix.CompileCert.Audit.allowedAxioms
 

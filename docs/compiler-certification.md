@@ -803,6 +803,23 @@ reading/admission is not used to establish these facts. Decode success, index
 presence/completeness, selected-record coverage and the remaining source and
 generator obligations are still separate.
 
+[`ReaderIndexDiscovery.lean`](../Ix/CompileCert/ReaderIndexDiscovery.lean)
+proves discovery and completeness for candidates satisfying the actual
+recursor-analysis and block/order guards. Coherent scanned records make a
+reference's block/motive role unambiguous. Every candidate step preserves
+existing entries and discovered pairs, and every indexed entry is backed by
+its discovered group. The actual nested scans therefore cover every eligible
+block/motive, including when a duplicate candidate is skipped. Sorting and
+completion retain the representative in the final block shape; the resulting
+recursor map has at most one reference per block/motive. If a source-family
+argument establishes a unique eligible reference for the role, that exact
+reference is retained. The production stream and published singleton
+consequences derive block presence and singleton order without an assumed
+index entry. Source-derived recursor analysis/order eligibility, the identity
+and complete sequence of required source recursors, and target family
+consistency/modelling remain separate obligations. This is index completeness
+for eligible candidates, not a proof that every valid source produces them.
+
 These results cover main-block encoding for every constant kind and mutual
 blocks, plus source-related anonymous reading for expressions, definitions,
 theorems, opaque constants, axioms and quotients under their stated conditions,
