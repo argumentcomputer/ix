@@ -177,15 +177,13 @@ fn insert_recs(
   recs: &[(Name, ix_common::env::RecursorVal)],
 ) -> Result<(), CompileError> {
   for (n, rv) in recs {
-    if let Some(e) = stt.p3.canon_recs.get(n)
-      && e.cnst.typ.get_hash() != rv.cnst.typ.get_hash()
-    {
-      return Err(invalid(format!(
-        "Pass 3: conflicting canonical recursor '{}'",
-        n.pretty()
-      )));
-    }
-    stt.p3.canon_recs.insert(n.clone(), rv.clone());
+    insert_once(
+      &stt.p3.canon_recs,
+      n,
+      rv.clone(),
+      "canonical recursor",
+      |_| {},
+    )?;
   }
   Ok(())
 }
@@ -1337,6 +1335,38 @@ mod tests {
         .to_string();
     assert!(err.contains("reserved name T.f._ix is already bound to"), "{err}");
     assert_eq!(stt.resolve_addr(&c), Some(a));
+  }
+
+  /// Lean's `checkBlockClaims` compares the whole recursor: a second
+  /// canonical recursor of one name with the same type but other fields is
+  /// a conflict, and the first one stays.
+  #[test]
+  fn conflicting_canonical_recursor_is_refused_by_value() {
+    use bignat::Nat;
+    use ix_common::env::RecursorVal;
+    let stt = CompileState::new_empty();
+    let n = dotted("A.rec");
+    let rv = RecursorVal {
+      cnst: ConstantVal { name: n.clone(), level_params: vec![], typ: sort(1) },
+      all: vec![dotted("A")],
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(0u64),
+      rules: vec![],
+      k: false,
+      is_unsafe: false,
+    };
+    insert_recs(&stt, &[(n.clone(), rv.clone())]).unwrap();
+    // valid neighbour: the identical recursor again
+    insert_recs(&stt, &[(n.clone(), rv.clone())]).unwrap();
+    let other = RecursorVal { k: true, ..rv.clone() };
+    let err = insert_recs(&stt, &[(n.clone(), other)]).unwrap_err().to_string();
+    assert!(
+      err.contains("Pass 3: conflicting canonical recursor 'A.rec'"),
+      "{err}"
+    );
+    assert_eq!(stt.p3.canon_recs.get(&n).map(|r| r.clone()), Some(rv));
   }
 
   #[test]
