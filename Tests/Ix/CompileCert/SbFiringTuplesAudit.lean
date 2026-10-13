@@ -1,51 +1,59 @@
+import Ix.CompileCert.Audit
 import Ix.CompileCert.RuleRowAnnotations
 
-#print axioms Ix.CompileCert.installedTypeRowF
-#print axioms Ix.CompileCert.installedTypeRowF_spec
-#print axioms Ix.CompileCert.checkInstalledTypesRowsF
-#print axioms Ix.CompileCert.checkInstalledTypesRows
-#print axioms Ix.CompileCert.checkInstalledTypesRows_member
-#print axioms Ix.CompileCert.checkInstalledTypesRows_sound
-#print axioms Ix.CompileCert.checkedTypeRowsModel
-#print axioms Ix.CompileCert.checkedTypeRowsValueModel
-#print axioms Ix.CompileCert.InstalledRuleFrame.rowLeft
-#print axioms Ix.CompileCert.InstalledRuleFrame.rowRight
-#print axioms Ix.CompileCert.ruleRowForalls
-#print axioms Ix.CompileCert.InstalledRuleFrame.rowBody
-#print axioms Ix.CompileCert.InstalledRuleFrame.rowStatement
-#print axioms Ix.CompileCert.ruleRowForalls_strip
-#print axioms Ix.CompileCert.InstalledTelescope.ruleRow_arity
-#print axioms Ix.CompileCert.checkInstalledFiringRow
-#print axioms Ix.CompileCert.checkInstalledFiringRow_spec
-#print axioms Ix.CompileCert.checkInstalledFiringRow_sound
-#print axioms Ix.CompileCert.exportRuleResidual
-#print axioms Ix.CompileCert.exportExpr_sourceDropMData
-#print axioms Ix.CompileCert.exportExpr_sourceInstForalls
-#print axioms Ix.CompileCert.InstalledTelescope.instPisAtLift_prefix
-#print axioms Ix.CompileCert.InstalledTelescope.ruleRow_binders
-#print axioms Ix.CompileCert.RuleTupleTyping.constructor_parameter_instance
-#print axioms Ix.CompileCert.RuleTupleTyping.firing_field_row
-#print axioms Ix.CompileCert.open_rule_parameter_control
-#print axioms Ix.CompileCert.closed_rule_parameter_neighbour
-#print axioms Ix.CompileCert.InstalledRuleFrame.openParameterRecipe
-#print axioms Ix.CompileCert.SourceRuleComparisons.openParameterRecipe_reading
-#print axioms Ix.CompileCert.RuleTupleTyping.generated_parameter_field_row
-#print axioms Ix.CompileCert.SourceRuleComparisons.nested_recipe_shape
-#print axioms Ix.CompileCert.RuleUniverseSelection.constructor_value
-#print axioms Ix.CompileCert.InstalledRuleFrame.firingParameterRecipe
-#print axioms Ix.CompileCert.SourceRuleComparisons.firingParameterRecipe_reading
-#print axioms Ix.CompileCert.RuleTupleTyping.firing_recipe_fields
-#print axioms Ix.CompileCert.InstalledTelescope.split_arguments
-#print axioms Ix.CompileCert.ruleRowForalls_append
-#print axioms Ix.CompileCert.RuleTupleTyping.firing_recursor_prefix
-#print axioms Ix.CompileCert.RuleTupleTyping.firing_open_row
-#print axioms Ix.CompileCert.DenotedApplication.instPisAtLift_result
-#print axioms Ix.CompileCert.RuleTupleTyping.firing_constructor_indices
-#print axioms Ix.CompileCert.equationRowBinders
-#print axioms Ix.CompileCert.equationRowBinders_domains
-#print axioms Ix.CompileCert.equationRowBinders_length
-#print axioms Ix.CompileCert.FiringRowProposal.forEquation
-#print axioms Ix.CompileCert.FiringRowProposal.forEquation_preserves
-#print axioms Ix.CompileCert.InstalledTelescope.equation_row_annotations
-#print axioms Ix.CompileCert.checkInstalledFiringRow_equation_spec
-#print axioms Ix.CompileCert.checkInstalledFiringRow_equation_sound
+/-! The axiom audit of the S+b firing-row stack (`Ix.CompileCert.RuleRowAnnotations` and
+the modules it imports).
+Elaboration fails unless every root exists, none is listed twice, and each
+depends only on the standard axioms (`Ix.CompileCert.Audit.checkAuditRoots`). -/
+
+run_cmd (Ix.CompileCert.Audit.checkAuditRoots #[
+  ``Ix.CompileCert.installedTypeRowF,
+  ``Ix.CompileCert.installedTypeRowF_spec,
+  ``Ix.CompileCert.checkInstalledTypesRowsF,
+  ``Ix.CompileCert.checkInstalledTypesRows,
+  ``Ix.CompileCert.checkInstalledTypesRows_member,
+  ``Ix.CompileCert.checkInstalledTypesRows_sound,
+  ``Ix.CompileCert.checkedTypeRowsModel,
+  ``Ix.CompileCert.checkedTypeRowsValueModel,
+  ``Ix.CompileCert.InstalledRuleFrame.rowLeft,
+  ``Ix.CompileCert.InstalledRuleFrame.rowRight,
+  ``Ix.CompileCert.ruleRowForalls,
+  ``Ix.CompileCert.InstalledRuleFrame.rowBody,
+  ``Ix.CompileCert.InstalledRuleFrame.rowStatement,
+  ``Ix.CompileCert.ruleRowForalls_strip,
+  ``Ix.CompileCert.InstalledTelescope.ruleRow_arity,
+  ``Ix.CompileCert.checkInstalledFiringRow,
+  ``Ix.CompileCert.checkInstalledFiringRow_spec,
+  ``Ix.CompileCert.checkInstalledFiringRow_sound,
+  ``Ix.CompileCert.exportRuleResidual,
+  ``Ix.CompileCert.exportExpr_sourceDropMData,
+  ``Ix.CompileCert.exportExpr_sourceInstForalls,
+  ``Ix.CompileCert.InstalledTelescope.instPisAtLift_prefix,
+  ``Ix.CompileCert.InstalledTelescope.ruleRow_binders,
+  ``Ix.CompileCert.RuleTupleTyping.constructor_parameter_instance,
+  ``Ix.CompileCert.RuleTupleTyping.firing_field_row,
+  ``Ix.CompileCert.open_rule_parameter_control,
+  ``Ix.CompileCert.closed_rule_parameter_neighbour,
+  ``Ix.CompileCert.InstalledRuleFrame.openParameterRecipe,
+  ``Ix.CompileCert.SourceRuleComparisons.openParameterRecipe_reading,
+  ``Ix.CompileCert.RuleTupleTyping.generated_parameter_field_row,
+  ``Ix.CompileCert.SourceRuleComparisons.nested_recipe_shape,
+  ``Ix.CompileCert.RuleUniverseSelection.constructor_value,
+  ``Ix.CompileCert.InstalledRuleFrame.firingParameterRecipe,
+  ``Ix.CompileCert.SourceRuleComparisons.firingParameterRecipe_reading,
+  ``Ix.CompileCert.RuleTupleTyping.firing_recipe_fields,
+  ``Ix.CompileCert.InstalledTelescope.split_arguments,
+  ``Ix.CompileCert.ruleRowForalls_append,
+  ``Ix.CompileCert.RuleTupleTyping.firing_recursor_prefix,
+  ``Ix.CompileCert.RuleTupleTyping.firing_open_row,
+  ``Ix.CompileCert.DenotedApplication.instPisAtLift_result,
+  ``Ix.CompileCert.RuleTupleTyping.firing_constructor_indices,
+  ``Ix.CompileCert.equationRowBinders,
+  ``Ix.CompileCert.equationRowBinders_domains,
+  ``Ix.CompileCert.equationRowBinders_length,
+  ``Ix.CompileCert.FiringRowProposal.forEquation,
+  ``Ix.CompileCert.FiringRowProposal.forEquation_preserves,
+  ``Ix.CompileCert.InstalledTelescope.equation_row_annotations,
+  ``Ix.CompileCert.checkInstalledFiringRow_equation_spec,
+  ``Ix.CompileCert.checkInstalledFiringRow_equation_sound
+] Ix.CompileCert.Audit.allowedAxioms)
