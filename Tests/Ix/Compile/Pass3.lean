@@ -49,6 +49,7 @@ import Ix.CompileM
 import Ix.CompileDriver
 import Ix.DecompileDriver
 import Ix.Compile.Pass
+import Tests.Ix.Compile.Only
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxCert
@@ -1299,6 +1300,11 @@ def protoFiles : List String :=
   ["C1Perm", "C2Split", "C3PropSplit", "C4Evap", "C5Collapse", "C6NestedCollapse", "C7IndPred",
    "C8Collapse3", "C9Params"].map fun s => s!"Tests/Ix/Compile/Image/{s}.lean"
 
+/-- The stems of every fixture file of the suite, the names its filter selects. -/
+def fixtureStems : List String :=
+  (auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles).map fun p =>
+    (System.FilePath.mk p).fileStem.getD p
+
 def run (env : Environment) : IO UInt32 := do
   if let some spec := ← IO.getEnv "PASS3_CLOSURE" then
     match spec.splitOn "," with
@@ -1321,9 +1327,8 @@ def run (env : Environment) : IO UInt32 := do
     match spec.splitOn "," with
     | [a, b] => return ← runLib a b
     | _ => IO.println "[pass3-lib] PASS3_LIB=<switch-off.ixe>,<switch-on.ixe>"; return 2
-  let only := ((← IO.getEnv "PASS3_ONLY").map (·.splitOn ",")).getD []
+  let want ← Only.select "pass3" "PASS3_ONLY" (fixtureStems ++ ["twins", "corpus", "ReservedIx"])
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
-  let want := fun (s : String) => only.isEmpty || only.contains s
   let mut units : Array (String × IO CUnit) := #[]
   for p in auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles do
     let stem := (System.FilePath.mk p).fileStem.getD p

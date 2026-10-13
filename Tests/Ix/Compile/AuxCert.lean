@@ -64,6 +64,7 @@
 -/
 import Lean.Data.Json
 import Tests.Ix.Compile.KernelReport
+import Tests.Ix.Compile.Only
 import LSpec
 import Ix.Ixon
 
@@ -530,9 +531,9 @@ def suite : List TestSeq := [
       unless ← exe.pathExists do
         return (false, 0, 0, some s!"{exe} missing — run `lake build ix kernel-check-ixe`")
     let jobs := ((← IO.getEnv "AUX_CERT_JOBS").bind String.toNat?).getD 4
-    let only := ((← IO.getEnv "AUX_CERT_ONLY").map (·.splitOn ",")).getD []
+    let want ← Only.select "aux-cert" "AUX_CERT_ONLY" (fixtures.map (·.stem))
     let whole := ((← IO.getEnv "AUX_CERT_WHOLE").map (· != "0")).getD false
-    let fs := if only.isEmpty then fixtures else fixtures.filter (only.contains ·.stem)
+    let fs := fixtures.filter (want ·.stem)
     IO.println s!"[aux-cert] {fs.length} fixtures, {jobs} jobs, \
 {if whole then "whole-file scope with the local bridge" else "local scope"}"
     let t0 ← IO.monoMsNow

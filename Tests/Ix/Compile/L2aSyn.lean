@@ -128,8 +128,8 @@ def leastFuel (f : Expr) (args : Array Expr) : Nat := Id.run do
 
 def run (env : Environment) : IO UInt32 := do
   let _ := env
-  let only := ((← IO.getEnv "L2A_SYN_ONLY").map (·.splitOn ",")).getD []
-  let want := fun (s : String) => only.isEmpty || only.contains s
+  let want ← Tests.Ix.Compile.Only.select "l2a-syn" "L2A_SYN_ONLY"
+    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·))
   let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++
     Tests.Ix.Compile.Pass3.passFiles ++ Tests.Ix.Compile.Pass3.pjPassFiles
   let mut all : UnitResult := {}

@@ -203,14 +203,13 @@ def runFile (path : String) : IO UInt32 := do
 
 def run (env : Environment) : IO UInt32 := do
   if let some p := ← IO.getEnv "PASS3_CLIQUES_FILE" then return ← runFile p
-  let only := ← IO.getEnv "PASS3_CLIQUES_ONLY"
+  let all := Tests.Ix.Compile.Twins.cliqueFamilies ++ Tests.Ix.Compile.Twins.ownershipFamilies
+  let want ← Tests.Ix.Compile.Only.selectContaining "pass3-cliques" "PASS3_CLIQUES_ONLY"
+    (all.map (·.fixture.toString))
   let keep? := (← IO.getEnv "PASS3_KEEP").map System.FilePath.mk
   let dumpDir := (← IO.getEnv "IX_TWINS_DUMP").map System.FilePath.mk
   if let some d := dumpDir then IO.FS.createDirAll d
-  let families := (Tests.Ix.Compile.Twins.cliqueFamilies ++ Tests.Ix.Compile.Twins.ownershipFamilies).filter fun f =>
-    match only with
-    | some s => (f.fixture.toString.splitOn s).length > 1
-    | none => true
+  let families := all.filter (want ·.fixture.toString)
   let (seeds, _) := Tests.Ix.Compile.Twins.familyClosure env families
   -- the composition fallback of `partial_fixpoint` needs `monotone_compose`
   -- (a library compile has it; a closure has it only when asked)

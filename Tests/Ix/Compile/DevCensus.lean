@@ -700,8 +700,9 @@ def typingControls : Bool × Bool :=
 def run (env : Environment) : IO UInt32 := do
   let (omegaOk, idOk) := typingControls
   IO.println s!"[dev-census] typing controls: (λx. x x) (λx. x x) typable={omegaOk} (expected false), (λx. x) c typable={idOk} (expected true)"
-  let only := ((← IO.getEnv "DEV_CENSUS_ONLY").map (·.splitOn ",")).getD []
-  let want := fun (s : String) => only.isEmpty || only.contains s
+  let want ← Tests.Ix.Compile.Only.select "dev-census" "DEV_CENSUS_ONLY"
+    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·) ++
+      ["twins", "corpus", "initstd"])
   let mut all : UnitResult := {}
   let mut units := 0
   let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++

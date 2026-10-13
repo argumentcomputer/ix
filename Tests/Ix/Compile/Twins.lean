@@ -48,6 +48,7 @@ import Ix.EnvScope
 import Ix.CompileM
 import Ix.CompileDriver
 import Tests.Ix.Compile.NonCanonical
+import Tests.Ix.Compile.Only
 import Tests.Ix.Compile.NonCanonicalDefault
 
 import Tests.Ix.Compile.Twins.Cliques
@@ -793,11 +794,8 @@ def pairsGate (env : Environment) (families : List Family) (label : String) (lea
 /-- The gate. -/
 def run : IO UInt32 := do
   let env ← get_env!
-  let only := (← IO.getEnv "IX_TWINS_ONLY")
-  let families := allFamilies.filter fun f =>
-    match only with
-    | some s => (f.fixture.toString.splitOn s).length > 1
-    | none => true
+  let want ← Only.selectContaining "twins" "IX_TWINS_ONLY" (allFamilies.map (·.fixture.toString))
+  let families := allFamilies.filter (want ·.fixture.toString)
   let dumpDir := (← IO.getEnv "IX_TWINS_DUMP").map System.FilePath.mk
   let kernels ← match ← IO.getEnv "IX_TWINS_KERNELS" with
     | some d => loadKernels d

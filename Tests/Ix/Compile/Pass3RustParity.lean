@@ -73,7 +73,7 @@ open Lean
 namespace Tests.Ix.Compile.Pass3RustParity
 
 open Tests.Ix.Compile.Pass3 (CUnit unitOfFile ixN toLeanName auxCertFiles protoFiles passFiles
-  pjPassFiles closureOf leanRejects)
+  pjPassFiles closureOf leanRejects fixtureStems)
 
 abbrev IxName := _root_.Ix.Name
 
@@ -336,8 +336,9 @@ def run (env : Environment) : IO UInt32 := do
     let closure := fe.constants.toList
     defects := defects ++ (← runOne p fe closure)
   else
-    let only := ((← IO.getEnv "PARITY_ONLY").map (·.splitOn ",")).getD []
-    let want := fun (s : String) => only.isEmpty || only.contains s
+    let want ← Only.select "parity" "PARITY_ONLY"
+      (fixtureStems.filter (fun s => !leanRejects.contains s && s != "ReservedIx") ++
+        ["twins", "cliques", "clique-ownership", "corpus", "o11a"])
     for p in auxCertFiles ++ protoFiles ++ passFiles ++ pjPassFiles do
       let stem := (System.FilePath.mk p).fileStem.getD p
       if !want stem || leanRejects.contains stem || stem == "ReservedIx" then continue

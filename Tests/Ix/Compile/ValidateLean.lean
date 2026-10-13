@@ -279,13 +279,13 @@ def runOne (dir : System.FilePath) (file switch : String) (noBuild : Bool := fal
   return (stem, switch, some rows, s!"exit {out.exitCode}")
 
 def run : IO UInt32 := do
-  let only := ((← IO.getEnv "VALIDATE_LEAN_ONLY").map (·.splitOn ",")).getD []
+  let want ← Only.select "validate-lean" "VALIDATE_LEAN_ONLY"
+    (files.map fun f => (System.FilePath.mk f).fileStem.getD f)
   let keep? := (← IO.getEnv "VALIDATE_LEAN_KEEP").map System.FilePath.mk
   let dir ← match keep? with
     | some d => do IO.FS.createDirAll d; pure d
     | none => IO.FS.createTempDir
-  let todo := (files.filter fun f =>
-      only.isEmpty || only.contains ((System.FilePath.mk f).fileStem.getD f)).map fun f =>
+  let todo := (files.filter fun f => want ((System.FilePath.mk f).fileStem.getD f)).map fun f =>
     (f, "on")
   let t0 ← IO.monoMsNow
   let noBuild ← prebuild (todo.map (·.1)).eraseDups leanRejects
@@ -347,19 +347,19 @@ def run : IO UInt32 := do
   for (stem, switch, p) in phase9Pins do
     let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
       (rows?.getD []).any fun (k', r, _) => k' == "9" && r == "pass"
-    if !used && (only.isEmpty || only.contains stem) then
+    if !used && want stem then
       problems := problems.push s!"{stem} {switch}: phase 9 recorded as '{p}' (stale)"
   -- every phase-9 control ran
   for (stem, switch, _) in phase9Controls do
     let ran := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
       (rows?.getD []).any fun (k', _, _) => k' == "9"
-    if !ran && (only.isEmpty || only.contains stem) then
+    if !ran && want stem then
       problems := problems.push s!"{stem} {switch}: phase 9 control did not run"
   -- every pin belongs to a recorded failing phase of a run
   for (stem, switch, k, p) in pins do
     let used := results.any fun (s, sw, rows?, _) => s == stem && sw == switch &&
       (rows?.getD []).any fun (k', r, _) => k' == k && r == "fail"
-    if !used && (only.isEmpty || only.contains stem) then
+    if !used && want stem then
       problems := problems.push s!"{stem} {switch}: phase {k} recorded as failing with '{p}' (stale)"
   for p in problems do IO.println s!"[validate-lean] FAIL {p}"
   IO.println s!"[validate-lean] {results.size} runs ({todo.length} files, Pass 3), \

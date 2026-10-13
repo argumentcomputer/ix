@@ -248,8 +248,9 @@ def summary (name : String) (r : UnitResult) : Array String := Id.run do
   return out
 
 def run (env : Environment) : IO UInt32 := do
-  let only := ((← IO.getEnv "OPT_CENSUS_ONLY").map (·.splitOn ",")).getD []
-  let want := fun (s : String) => only.isEmpty || only.contains s
+  let want ← Tests.Ix.Compile.Only.select "opt-census" "OPT_CENSUS_ONLY"
+    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·) ++
+      ["twins", "corpus"])
   let mut all : UnitResult := {}
   let mut units := 0
   let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++

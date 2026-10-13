@@ -149,8 +149,9 @@ def endsWithFragment (n : String) (frag : String) : Bool :=
   n == frag || n.endsWith ("." ++ frag)
 
 def run (env : Environment) : IO UInt32 := do
-  let only := ((← IO.getEnv "CHANGED_SET_ONLY").map (·.splitOn ",")).getD []
-  let want := fun (s : String) => only.isEmpty || only.contains s
+  let want ← Tests.Ix.Compile.Only.select "changed-set" "CHANGED_SET_ONLY"
+    (Tests.Ix.Compile.Pass3.fixtureStems.filter (!Tests.Ix.Compile.Pass3.leanRejects.contains ·) ++
+      ["twins", "cliques", "initstd"])
   let mut problems : Array String := #[]
   let mut units := 0
   let files := Tests.Ix.Compile.Pass3.auxCertFiles ++ Tests.Ix.Compile.Pass3.protoFiles ++
