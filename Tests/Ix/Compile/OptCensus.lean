@@ -268,6 +268,8 @@ def run (env : Environment) : IO UInt32 := do
     work := work.push ("corpus", do
       let closure := Tests.Ix.Compile.Pass3.closureOf env ((validateAuxClosure env).map (·.1))
       pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
+  -- a unit the compile refuses is a problem: a run must measure every unit it selects
+  let mut refused : Array String := #[]
   for (stem, mk) in work do
     try
       let u ← mk
@@ -277,9 +279,11 @@ def run (env : Environment) : IO UInt32 := do
       for l in summary stem r do IO.println s!"[opt-census] {l}"
       all := all.merge { r with problems := r.problems.map (s!"{stem}: " ++ ·) }
     catch e =>
-      IO.println s!"[opt-census] {stem}: compile refused ({(toString e).take 160})"
+      IO.println s!"[opt-census] FAIL {stem}: compile refused ({(toString e).take 160})"
+      refused := refused.push stem
   for l in summary "TOTAL" all do IO.println s!"[opt-census] {l}"
-  IO.println s!"[opt-census] {units} units, {all.compared} constants, {all.problems.size} problem(s)"
-  return if all.problems.isEmpty && units > 0 then 0 else 1
+  IO.println s!"[opt-census] {units} of {work.size} units, {refused.size} refused, {all.compared} constants, \
+{all.problems.size} problem(s)"
+  return if all.problems.isEmpty && refused.isEmpty && units == work.size && units > 0 then 0 else 1
 
 end Tests.Ix.Compile.OptCensus

@@ -275,11 +275,11 @@ artifacts. These bounds are coverage limits, not runtime budgets.
 
 `dev-census` compares the memo-free core only for developments below 20,000
 measured nodes. Typability is reported but is absent from the failure predicate;
-its positive and negative typing controls still must pass. Caught fixture
-compile refusals and the Init+Std compiler error branch are printed without
-adding a problem. There is no minimum unit/development count. Retain and inspect
-unit, development, core-checked, refused and untypable counts alongside exit
-status; the census does not prove the general development-domain theorem.
+its positive and negative typing controls still must pass. A fixture or Init+Std
+compile refusal is a problem, and every selected unit must be measured. Retain
+and inspect unit, development, core-checked, refused and untypable counts
+alongside exit status; the census does not prove the general development-domain
+theorem.
 
 `bridge-roundtrip` counts two export declines as equal and compares successful
 fixture exports without hints. It requires a nonzero reader-match count, not a

@@ -134,9 +134,13 @@ def run (env : Environment) : IO UInt32 := do
     Tests.Ix.Compile.Pass3.passFiles ++ Tests.Ix.Compile.Pass3.pjPassFiles
   let mut all : UnitResult := {}
   let mut units := 0
+  let mut selected := 0
+  -- a fixture the compile refuses is a problem: a run must measure every unit it selects
+  let mut refused : Array String := #[]
   for p in files do
     let stem := (System.FilePath.mk p).fileStem.getD p
     if !want stem || Tests.Ix.Compile.Pass3.leanRejects.contains stem then continue
+    selected := selected + 1
     try
       let u ← Tests.Ix.Compile.Pass3.unitOfFile p
       let on ← Tests.Ix.Compile.Pass3.compileUnit u
@@ -145,7 +149,8 @@ def run (env : Environment) : IO UInt32 := do
       for l in summary stem r do IO.println s!"[l2a-syn] {l}"
       all := { rows := all.rows ++ r.rows, problems := all.problems ++ r.problems.map (s!"{stem}: " ++ ·) }
     catch e =>
-      IO.println s!"[l2a-syn] {stem}: compile refused ({(toString e).take 160})"
+      IO.println s!"[l2a-syn] FAIL {stem}: compile refused ({(toString e).take 160})"
+      refused := refused.push stem
   for l in summary "TOTAL" all do IO.println s!"[l2a-syn] {l}"
   -- D-L2S-1
   for n in [2, 4, 8, 16, 32, 64] do
@@ -153,8 +158,10 @@ def run (env : Environment) : IO UInt32 := do
     let h := args.foldl (fun m a => max m (_root_.Ix.CompileCert.Img.hgt a)) (_root_.Ix.CompileCert.Img.hgt f)
     let fuel := leastFuel f args
     IO.println s!"[l2a-syn] D-L2S-1 N={n}: input height={h} least fuel={fuel} fuel/height={fuel / h}"
-  IO.println s!"[l2a-syn] {units} units, {all.rows.size} recursors, {all.problems.size} problem(s)"
+  IO.println s!"[l2a-syn] {units} of {selected} units, {refused.size} refused, {all.rows.size} recursors, \
+{all.problems.size} problem(s)"
   let bad := all.rows.filter fun r => !r.dom || !r.closed || !r.same
-  return if bad.isEmpty && all.problems.isEmpty then 0 else 1
+  return if bad.isEmpty && all.problems.isEmpty && refused.isEmpty && units == selected && units > 0
+    then 0 else 1
 
 end Tests.Ix.Compile.L2aSyn

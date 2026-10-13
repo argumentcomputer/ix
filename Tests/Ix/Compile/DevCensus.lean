@@ -720,6 +720,8 @@ def run (env : Environment) : IO UInt32 := do
     work := work.push ("corpus", do
       let closure := Tests.Ix.Compile.Pass3.closureOf env ((validateAuxClosure env).map (·.1))
       pure { name := "corpus", env, seeds := (closure.map (·.1)).toArray, closure })
+  -- a unit the compile refuses is a problem: a run must measure every unit it selects
+  let mut refused : Array String := #[]
   for (stem, mk) in work do
     try
       let u ← mk
@@ -731,7 +733,9 @@ def run (env : Environment) : IO UInt32 := do
                blocks := all.blocks + r.blocks, heads := all.heads + r.heads,
                refused := all.refused + r.refused }
     catch e =>
-      IO.println s!"[dev-census] {stem}: compile refused ({(toString e).take 160})"
+      IO.println s!"[dev-census] FAIL {stem}: compile refused ({(toString e).take 160})"
+      refused := refused.push stem
+  let selected := work.size + (if want "initstd" then 1 else 0)
   if want "initstd" then
     let ienv ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
     let whole := ienv.constants.toList
@@ -744,10 +748,14 @@ def run (env : Environment) : IO UInt32 := do
       for l in summary "initstd" r do IO.println s!"[dev-census] {l}"
       all := { rows := all.rows ++ r.rows, problems := all.problems ++ r.problems,
                blocks := all.blocks + r.blocks, heads := all.heads + r.heads }
-    | .error e => IO.println s!"[dev-census] initstd: compile failed: {e}"
+    | .error e =>
+      IO.println s!"[dev-census] FAIL initstd: compile failed: {e}"
+      refused := refused.push "initstd"
   for l in summary "TOTAL" all do IO.println s!"[dev-census] {l}"
-  IO.println s!"[dev-census] {units} units, {all.rows.size} developments, {all.problems.size} problem(s)"
+  IO.println s!"[dev-census] {units} of {selected} units, {refused.size} refused, {all.rows.size} developments, \
+{all.problems.size} problem(s)"
   let bad := all.rows.filter fun r => !r.ok || r.coreEq == some false
-  return if bad.isEmpty && all.problems.isEmpty && !omegaOk && idOk then 0 else 1
+  return if bad.isEmpty && all.problems.isEmpty && !omegaOk && idOk && refused.isEmpty &&
+    units == selected && units > 0 then 0 else 1
 
 end Tests.Ix.Compile.DevCensus
