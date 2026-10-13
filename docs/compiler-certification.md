@@ -513,6 +513,25 @@ block whose stored bytes decode exactly to that block. These endpoints do not
 yet establish generated projection correspondence, source semantics or target
 declaration admission.
 
+[`ProjectionLayout.lean`](../Ix/CompileCert/ProjectionLayout.lean) proves that
+actual constructor compilation retains source indices and registration order,
+and that mutual compilation retains exactly the selected representatives'
+kinds and natural constructor indices through sharing and singleton collapse.
+The production sorter supplies nonempty classes, recursor-family reordering
+preserves that condition, and the actual payload-count guard bounds class
+positions. The layout theorem also describes arbitrary class lists without
+assuming they came from the sorter.
+
+For a standalone inductive family, the module connects the shared main block
+to the actual generated projection array. When the emitted block is available
+in the reader store, the inductive projection resolves to its member reference.
+Each constructor projection resolves to its source position when the source
+constructor declares that index. Metadata values are uninterpreted; registration
+keys matter for the source-reference association. Deriving source-index validity
+and store availability from the certified source and driver, relating every
+equivalent member to its representative, and complete mutual projection
+generation/resolution remain separate obligations.
+
 [`DefinitionReading.lean`](../Ix/CompileCert/DefinitionReading.lean) connects
 the actual `compileConstantInfo` definition/theorem/opaque branches to
 `Kernel.Reader.readRecord`. It derives the reader's parameter-list length from

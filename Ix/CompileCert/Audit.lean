@@ -62,6 +62,7 @@ import Ix.CompileCert.HeaderBlock
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.PayloadArrays
 import Ix.CompileCert.FamilyWire
+import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.BlobWrites
 import Ix.CompileCert.PayloadFrame
 import Ix.CompileCert.BlockFrame
@@ -3201,11 +3202,30 @@ def familyWireRoots : Array Lean.Name :=
     `constant_constructor_codec, `headerInfo_codec, `constant_codec,
     `mutualPayload_codec, `mutualBlock_codec].map (`Ix.CompileCert.FamilyWire ++ ·)
 
+/-- Source constructor positions and class representatives survive actual
+payload compilation and sharing. Standalone inductive projections resolve
+under the stated store and source-index conditions. -/
+def projectionLayoutRoots : Array Lean.Name :=
+  #[`constructor_index, `constructors_layout, `equivalents_count,
+    `class_count, `classes_count, `payload_count, `mutual_class_capacity,
+    `sorted_nonempty, `sort_nonempty, `ordered_nonempty,
+    `mutual_block_capacity, `mutual_class_index,
+    `finish_inductive_layout, `finish_inductiveData_layout,
+    `inductive_layout, `inductiveData_layout, `member_shape,
+    `equivalents_payloads, `class_shapes, `classes_shapes, `payload_shapes,
+    `writeback_member_shape, `writeback_mutual_shape, `sharing_mutual_shape,
+    `writeback_shape, `sharing_shape, `standalone_shape,
+    `build_mutual_shape, `finish_mutual_shape, `mutual_shape,
+    `mutual_block_shape, `singleton_inductive_shape, `shared_inductive_shape,
+    `finish_inductive_shape, `family_layout, `inductive_projection_resolves,
+    `constructor_projection_resolves].map (`Ix.CompileCert.ProjectionLayout ++ ·)
+
 end Ix.CompileCert.Audit
 
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.sharingHeaderRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.payloadArrayRoots Ix.CompileCert.Audit.allowedAxioms
 run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.familyWireRoots Ix.CompileCert.Audit.allowedAxioms
+run_cmd Ix.CompileCert.Audit.checkAuditRoots Ix.CompileCert.Audit.projectionLayoutRoots Ix.CompileCert.Audit.allowedAxioms
 
 run_cmd do
   let env ← getEnv
