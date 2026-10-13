@@ -61,9 +61,9 @@
     as `SourceGroups` says: Lean's `I.all` (`leanSourceGroup`), or, in the compiler, the
     external block's compiled canonical classes (`sourceGroupsOfBlocks`), which is
     what the kernels recompute from the stored Ixon; the two agree whenever
-    the external block is an identity block. The compiler reads this order
-    through `canonicalAuxOrder` (`sortAuxByPartitionRefinement`), and it is
-    the identity on the canonical expansion.
+    the external block is an identity block. Under `Rules.compiler` this
+    order (`canonicalAuxOrder`) is the identity on the canonical expansion,
+    so the compiler applies no sort.
 
   `perm` maps each of Lean's source positions (discovery order over the
   block's `all`) to its canonical position (`computeAuxPerm`): signatures
@@ -837,8 +837,7 @@ def markerize (np : Nat) : Expr → Nat → Expr
   | .mdata md x _, k => Expr.mkMData md (markerize np x k)
   | e, _ => e
 
-/-- The auxiliaries as the inductives the compiler sorts
-(`sortAuxByPartitionRefinement`). -/
+/-- The auxiliaries as the inductives the structural order sorts. -/
 def auxMutConsts (x : Expanded) : Array MutConst :=
   x.aux.map fun mem =>
     let ctors := mem.ctors.zipIdx.map fun (c, ci) =>
@@ -864,8 +863,7 @@ def Rules.structuralAux (rules : Rules) : Rules :=
   { Rules.today with portFixes := rules.portFixes }
 
 /-- Today's structural order of the auxiliaries of an expansion: their
-classes, in order, under `rules.structuralAux`
-(`sortAuxByPartitionRefinement` reads this). -/
+classes, in order, under `rules.structuralAux`. -/
 def structuralAuxClasses (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
     Except String (List (List MutConst)) :=
   (·.1) <$> sortClasses rules.structuralAux addr? (auxMutConsts x).toList

@@ -166,8 +166,7 @@ def firstDiff (a b : ByteArray) : Option Nat := Id.run do
 `leanDumpExpand` reproduces — byte for byte — the text that
 `rs_aux_gen_dump_expand` emits from the Rust side, by running the
 pure-Lean `Ix.AuxGen` pipeline (`sortConsts` → `expandNestedBlock` →
-`sortAuxByPartitionRefinement` → `computeAuxPerm` →
-`sourceAuxOrderWithOwner`) per inductive SCC block. The gate is a line
+`computeAuxPerm` → `sourceAuxOrderWithOwner`) per inductive SCC block. The gate is a line
 diff; the first diverging line pinpoints the phase. -/
 
 /-- Expr content hash as lowercase hex (mirrors Rust
@@ -240,15 +239,6 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
 
   if !(metadataHasNested && structuralHasNested) then
     return out
-
-  let (expanded, sortperm) ← Ix.AuxGen.sortAuxByPartitionRefinement expanded
-  out := out ++ s!"sortperm {" ".intercalate (sortperm.toList.map toString)}\n"
-  for (mem, i) in expanded.types.zipIdx do
-    if i < expanded.nOriginals then
-      continue
-    out := out ++ s!"post {i} name={mem.name.pretty} owner={mem.sourceOwner.pretty} typ={exprAddr mem.typ}\n"
-    for (ctor, j) in mem.ctors.zipIdx do
-      out := out ++ s!"postctor {i} {j} name={ctor.name.pretty} typ={exprAddr ctor.typ}\n"
 
   let mut origToCanonMap : Std.HashMap Ix.Name Ix.Name := {}
   for cls in sortedClasses do

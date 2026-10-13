@@ -201,8 +201,7 @@ newly discovered auxiliaries. Repeated matching occurrences reuse an auxiliary.
 structural/content-hash sort is run under `Rules.compiler`.
 
 The source walk may discover a different order; §6.4 records its correspondence.
-The historical function name `sort_aux_by_partition_refinement` does not imply
-that the production canonical walk sorts its auxiliary segment. See
+See
 [the Pass 1 expansion](../Ix/Compile/Canon/Nested.lean) and the
 [nested layout contract](compiler-passes.md#25-nested-auxiliaries-in-discovery-order-def-25-d2).
 

@@ -784,52 +784,17 @@ fn expand_nested_block_checked(
   })
 }
 
-// =========================================================================
-// Canonical order of the aux section: discovery order
-// =========================================================================
-
-/// The canonical order of the aux section of an `ExpandedBlock`, as
-/// `perm: Vec<usize>` mapping each aux index (0-based, 0 = first aux after
-/// the `n_originals` user members) to its canonical index.
-///
-/// The canonical order is the **discovery order** of the expansion of the
-/// canonical block (design document §2.5, Phase A decision D2; Lean
-/// `Ix.Compile.Canon.canonicalAuxOrder` under `Rules.compiler`): the
-/// callers expand the class representatives in canonical order, with
-/// alias references rewritten to them and external groups opened as their
-/// compiled canonical classes ([`expand_nested_block_canonical`]), and that
-/// expansion lists its auxiliaries in discovery order already. So the
-/// permutation is the identity and `expanded` is left unchanged. On every
-/// block whose canonical member order is Lean's `all` order (no split, no
-/// collapse) this is Lean's own `X.rec_N` order, so the block is an identity
-/// block (`compute_aux_perm` is the identity and no call-site plan is
-/// registered); the kernels recompute the same order by the same walk over
-/// the stored members (`build_flat_block`), with no sort.
-///
-/// This replaces the structural sort of A2-wire and before (an
-/// identity-marker constructor per auxiliary, ordered by `sort_consts` with
-/// the block's members external by address), which made the order depend on
-/// addresses and moved Lean's auxiliaries on 16 of Mathlib's nested blocks.
-/// The name and signature are kept for the callers.
-pub fn sort_aux_by_partition_refinement(
-  expanded: &mut ExpandedBlock,
-  _stt: &crate::compile::CompileState,
-) -> Result<Vec<usize>, CompileError> {
-  let n_aux = expanded.types.len().saturating_sub(expanded.n_originals);
-  Ok((0..n_aux).collect())
-}
-
 /// Compute the source-walk discovery order of nested auxiliaries by
 /// running `expand_nested_block` on **source-order originals** (no alias
-/// rewriting, no canonical aux-sort post-pass). Returns a vector of
+/// rewriting). Returns a vector of
 /// `(ext_ind_name, normalized_spec_params)` entries, one per aux, in
 /// the exact order Lean's C++ elaborator discovers them.
 ///
 /// This walker structurally mirrors Lean's `inductive.cpp:1045`, so the
 /// returned order matches Lean's aux-recursor numbering (`X.rec_1`,
-/// `X.rec_2`, …). Used together with the canonical order (output of
-/// `sort_aux_by_partition_refinement` on a second expansion) to compute a
-/// permutation `perm[source_j] = canonical_i`.
+/// `X.rec_2`, …). Used together with the canonical order (the discovery
+/// order of the canonical expansion, [`expand_nested_block_canonical`]) to
+/// compute a permutation `perm[source_j] = canonical_i`.
 ///
 /// `original_all` is the source-order Lean `InductiveVal.all` list —
 /// not alpha-collapsed representatives, and not canonical-aux-sorted.
@@ -1007,8 +972,8 @@ fn signatures_by_head(
 /// walk sees them as separate.
 ///
 /// Inputs:
-/// - `expanded`: the canonical (post-`sort_aux_by_partition_refinement`) expanded
-///   block. Auxes are in `expanded.types[n_originals..]`, structurally sorted.
+/// - `expanded`: the canonical expanded
+///   block. Auxes are in `expanded.types[n_originals..]`, in canonical order.
 /// - `original_all`: Lean's source-order inductive names (from any
 ///   `InductiveVal.all` in the block). Drives the second expansion that
 ///   reveals Lean's own aux-walk numbering. May be LARGER than the
@@ -1450,8 +1415,8 @@ pub fn position_claimed_by_spec_scc(
 
 /// Semantic equality for nested auxiliary spec parameters.
 ///
-/// `sort_aux_by_partition_refinement` canonicalizes aux motives by structural content,
-/// not by raw Lean names. Source-walk signatures therefore need the same notion
+/// The canonical expansion identifies aux motives by structural content, not
+/// by raw Lean names. Source-walk signatures therefore need the same notion
 /// of equality: constants are equal if their names are equal or if both names
 /// already resolve to the same compiled address. Everything else is compared
 /// structurally, ignoring mdata and level parameter names.
@@ -2675,85 +2640,6 @@ mod tests {
   }
 
   // ---- expr_mentions_any_name ----
-
-  /// The canonical aux order is the discovery order (A2-order): the
-  /// order function is the identity on an expansion and leaves it unchanged,
-  /// including two auxes whose instantiated views are alpha-identical
-  /// because the distinguishing spec param is phantom in the external's
-  /// ctors (the `IxVMInd.DedupM` shape: `Bar2 M Nat` vs `Bar2 M Bool` where
-  /// `Bar2.mk : α → Bar2 α β` never uses `β`).
-  #[test]
-  fn aux_order_is_discovery_order() {
-    use crate::compile::CompileState;
-
-    let all0 = mk_name_for("M");
-    let nested_prefix = Name::str(all0.clone(), "_nested".to_string());
-    let aux_name =
-      |i: usize| Name::str(nested_prefix.clone(), format!("Bar2_{i}"));
-    let ty1 = LeanExpr::sort(LL::succ(LL::zero()));
-    let mk_orig = || ExpandedMember {
-      name: all0.clone(),
-      source_owner: all0.clone(),
-      typ: ty1.clone(),
-      ctors: vec![],
-      n_params: 0,
-      n_indices: 0,
-    };
-    // Aux views identical modulo the self-reference name: `mk : Nat → self`.
-    let mk_aux = |i: usize| ExpandedMember {
-      name: aux_name(i),
-      source_owner: all0.clone(),
-      typ: ty1.clone(),
-      ctors: vec![ExpandedCtor {
-        name: Name::str(aux_name(i), "mk".to_string()),
-        typ: LeanExpr::all(
-          mk_name_for("_"),
-          LeanExpr::cnst(mk_name_for("Nat"), vec![]),
-          LeanExpr::cnst(aux_name(i), vec![]),
-          BinderInfo::Default,
-        ),
-        n_fields: 1,
-      }],
-      n_params: 0,
-      n_indices: 0,
-    };
-    let nested_id = |spec: &str| {
-      LeanExpr::app(
-        LeanExpr::cnst(mk_name_for("Bar2"), vec![]),
-        LeanExpr::cnst(mk_name_for(spec), vec![]),
-      )
-    };
-    let build = |spec2: &str| {
-      let mut aux_to_nested = NameTable::default();
-      aux_to_nested.insert(aux_name(1), nested_id("Nat"));
-      aux_to_nested.insert(aux_name(2), nested_id(spec2));
-      ExpandedBlock {
-        types: vec![mk_orig(), mk_aux(1), mk_aux(2)],
-        aux_to_nested,
-        aux_ctor_map: NameTable::default(),
-        block_param_fvars: vec![],
-        n_originals: 1,
-        level_params: vec![],
-      }
-    };
-    let stt = CompileState::new_empty();
-    // Discovery order (A2-order): the canonical order is the expansion's
-    // own, so every aux keeps its discovery position and its name. Two
-    // auxes whose instantiated views are alpha-identical (the phantom
-    // `IxVMInd.DedupM` shape) stay distinct, as they are distinct
-    // occurrences. Equal nested identities never reach this point: the
-    // expansion deduplicates occurrences by `aux_seen`.
-    for spec2 in ["Bool", "Nat"] {
-      let mut expanded = build(spec2);
-      let before: Vec<Name> =
-        expanded.types.iter().map(|m| m.name.clone()).collect();
-      let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
-      assert_eq!(perm, vec![0, 1], "discovery order is the identity");
-      let after: Vec<Name> =
-        expanded.types.iter().map(|m| m.name.clone()).collect();
-      assert_eq!(before, after, "the expansion is left unchanged");
-    }
-  }
 
   #[test]
   fn expr_mentions_any_name_none() {

@@ -165,107 +165,85 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
 
   let (canonicalRecs, isProp) ←
     if metadataHasNested && structuralHasNested then do
-      -- Canonicalize the aux tail; every downstream patch layout depends
-      -- on this order (aux_gen.rs:280).
-      let (expanded, _sortPerm) ← liftM
-        (Ix.AuxGen.sortAuxByPartitionRefinement expandedProbe : CompileM _)
-      if expanded.types.size > expanded.nOriginals then do
-        -- Source→canonical permutation FIRST, so the generator emits
-        -- Lean-source-indexed `_N` suffixes directly (aux_gen.rs:283).
-        let mut origToCanonMap : Std.HashMap Name Name := {}
-        for cls in sortedClasses do
-          let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
-          for n in cls do
-            origToCanonMap := origToCanonMap.insert n rep
-        let nCanon := expanded.types.size - expanded.nOriginals
-        let perm ← liftM
-          (Ix.AuxGen.computeAuxPerm expanded originalAll origToCanonMap
-            (fun n => some (maps.resolve n)) : CompileM _)
-        capturedPerm := some perm
-        capturedNCanonicalAux := nCanon
-        capturedNSourceAux := perm.size
+      -- The canonical expansion lists its auxiliaries in canonical
+      -- (discovery) order already, and it has some (`structuralHasNested`).
+      let expanded := expandedProbe
+      -- Source→canonical permutation FIRST, so the generator emits
+      -- Lean-source-indexed `_N` suffixes directly (aux_gen.rs:283).
+      let mut origToCanonMap : Std.HashMap Name Name := {}
+      for cls in sortedClasses do
+        let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
+        for n in cls do
+          origToCanonMap := origToCanonMap.insert n rep
+      let nCanon := expanded.types.size - expanded.nOriginals
+      let perm ← liftM
+        (Ix.AuxGen.computeAuxPerm expanded originalAll origToCanonMap
+          (fun n => some (maps.resolve n)) : CompileM _)
+      capturedPerm := some perm
+      capturedNCanonicalAux := nCanon
+      capturedNSourceAux := perm.size
 
-        -- canonRepr[canonical_i] = min source_j (deterministic under
-        -- alpha-collapse); every canonical slot MUST have a source
-        -- mapping (aux_gen.rs:318-341).
-        let mut canonRepr : Array Nat := Array.replicate nCanon PERM_OUT_OF_SCC
-        for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
-          if canonI != PERM_OUT_OF_SCC && canonI < nCanon
-              && canonRepr[canonI]? == some PERM_OUT_OF_SCC then
-            canonRepr ← arrSet canonRepr canonI srcJ "generateAuxPatches: canonical representative"
-        for (srcJ, ci) in canonRepr.zipIdx do
-          if srcJ == PERM_OUT_OF_SCC then
-            throw (.invalidMutualBlock
-              s!"aux_gen canonical aux #{ci} has no Lean source mapping; \
+      -- canonRepr[canonical_i] = min source_j (deterministic under
+      -- alpha-collapse); every canonical slot MUST have a source
+      -- mapping (aux_gen.rs:318-341).
+      let mut canonRepr : Array Nat := Array.replicate nCanon PERM_OUT_OF_SCC
+      for (canonI, srcJ) in perm.zipIdx.map (fun (p, i) => (p, i)) do
+        if canonI != PERM_OUT_OF_SCC && canonI < nCanon
+            && canonRepr[canonI]? == some PERM_OUT_OF_SCC then
+          canonRepr ← arrSet canonRepr canonI srcJ "generateAuxPatches: canonical representative"
+      for (srcJ, ci) in canonRepr.zipIdx do
+        if srcJ == PERM_OUT_OF_SCC then
+          throw (.invalidMutualBlock
+            s!"aux_gen canonical aux #{ci} has no Lean source mapping; \
 refusing to synthesize canonical-indexed _N names")
-        let sourceOfCanonical := canonRepr
+      let sourceOfCanonical := canonRepr
 
-        let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
-          expanded (some sourceOfCanonical) maps
+      let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
+        expanded (some sourceOfCanonical) maps
 
-        -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
-        -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
-        -- inductive, NOT the class rep — below/brecOn hang their `_N`
-        -- names off it too).
-        let sourceAll0 ← arrIdx originalAll 0 "generateAuxPatches: Lean all0"
-        let mut auxRecMap : Ix.Compile.Canon.NameTable Name := {}
-        for (mem, canonicalI) in
-            ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
-          let sourceJ ← arrIdx sourceOfCanonical canonicalI "generateAuxPatches: source of canonical aux"
-          let auxNestedRecName := Name.mkStr mem.name "rec"
-          let sourceRecName := Name.mkStr sourceAll0 s!"rec_{sourceJ + 1}"
-          auxRecMap := auxRecMap.insert auxNestedRecName sourceRecName
+      -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
+      -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
+      -- inductive, NOT the class rep — below/brecOn hang their `_N`
+      -- names off it too).
+      let sourceAll0 ← arrIdx originalAll 0 "generateAuxPatches: Lean all0"
+      let mut auxRecMap : Ix.Compile.Canon.NameTable Name := {}
+      for (mem, canonicalI) in
+          ((expanded.types.toList.drop expanded.nOriginals).toArray).zipIdx do
+        let sourceJ ← arrIdx sourceOfCanonical canonicalI "generateAuxPatches: source of canonical aux"
+        let auxNestedRecName := Name.mkStr mem.name "rec"
+        let sourceRecName := Name.mkStr sourceAll0 s!"rec_{sourceJ + 1}"
+        auxRecMap := auxRecMap.insert auxNestedRecName sourceRecName
 
-        let mut restoreCtx := RestoreCtx.new expanded.auxToNested
-          expanded.auxCtorMap auxRecMap expanded.blockParamFvars
-          ((expanded.types[0]?.map (·.nParams)).getD 0)
+      let mut restoreCtx := RestoreCtx.new expanded.auxToNested
+        expanded.auxCtorMap auxRecMap expanded.blockParamFvars
+        ((expanded.types[0]?.map (·.nParams)).getD 0)
 
-        -- Restored `all` = the CANONICAL original member names — the
-        -- shadowing at aux_gen.rs:406 is deliberate.
-        let restoredAll : Array Name :=
-          ((expanded.types.toList.take expanded.nOriginals).toArray).map (·.name)
+      -- Restored `all` = the CANONICAL original member names — the
+      -- shadowing at aux_gen.rs:406 is deliberate.
+      let restoredAll : Array Name :=
+        ((expanded.types.toList.take expanded.nOriginals).toArray).map (·.name)
 
-        let mut restoredRecs : Array (Name × RecursorVal) := #[]
-        for (name, rv) in rawRecs do
-          let newName := (auxRecMap.get? name).getD name
-          let (restoredType, ctx1) := restoreCtx.restore rv.cnst.type
-          restoreCtx := ctx1
-          let mut restoredRules : Array RecursorRule := #[]
-          for r in rv.rules do
-            let newCtor := match expanded.auxCtorMap.get? r.ctor with
-              | some (origCtor, _) => origCtor
-              | none => r.ctor
-            let (rhs', ctx2) := restoreCtx.restore r.rhs
-            restoreCtx := ctx2
-            restoredRules := restoredRules.push
-              { ctor := newCtor, nfields := r.nfields, rhs := rhs' }
-          restoredRecs := restoredRecs.push (newName,
-            { rv with
-              cnst := { name := newName, type := restoredType,
-                        levelParams := rv.cnst.levelParams }
-              all := restoredAll
-              rules := restoredRules })
-        pure (restoredRecs, isProp)
-      else do
-        -- Defensive: post-sort aux tail empty (aux_gen.rs:454-499).
-        if structuralHasNested then do
-          let expandedForPerm ← liftM
-            (Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true
-              : CompileM _)
-          let mut origToCanonMap : Std.HashMap Name Name := {}
-          for cls in sortedClasses do
-            let rep ← arrIdx cls 0 "generateAuxPatches: class representative"
-            for n in cls do
-              origToCanonMap := origToCanonMap.insert n rep
-          let nCanon :=
-            expandedForPerm.types.size - expandedForPerm.nOriginals
-          let perm ← liftM
-            (Ix.AuxGen.computeAuxPerm expandedForPerm originalAll
-              origToCanonMap (fun n => some (maps.resolve n)) : CompileM _)
-          capturedPerm := some perm
-          capturedNCanonicalAux := nCanon
-          capturedNSourceAux := perm.size
-        generateCanonicalRecursorsWithOverlay sortedClasses none none maps
+      let mut restoredRecs : Array (Name × RecursorVal) := #[]
+      for (name, rv) in rawRecs do
+        let newName := (auxRecMap.get? name).getD name
+        let (restoredType, ctx1) := restoreCtx.restore rv.cnst.type
+        restoreCtx := ctx1
+        let mut restoredRules : Array RecursorRule := #[]
+        for r in rv.rules do
+          let newCtor := match expanded.auxCtorMap.get? r.ctor with
+            | some (origCtor, _) => origCtor
+            | none => r.ctor
+          let (rhs', ctx2) := restoreCtx.restore r.rhs
+          restoreCtx := ctx2
+          restoredRules := restoredRules.push
+            { ctor := newCtor, nfields := r.nfields, rhs := rhs' }
+        restoredRecs := restoredRecs.push (newName,
+          { rv with
+            cnst := { name := newName, type := restoredType,
+                      levelParams := rv.cnst.levelParams }
+            all := restoredAll
+            rules := restoredRules })
+      pure (restoredRecs, isProp)
     else do
       -- Standard flat-block generation; disagreement flavors still need
       -- the perm for the layout and the aliases (aux_gen.rs:500-548).

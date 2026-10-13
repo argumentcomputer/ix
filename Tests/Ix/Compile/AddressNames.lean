@@ -70,14 +70,12 @@ def run : IO Unit := do
       current := root
       mutCtx := Ix.MutConst.ctx classes
       univCtx := v.cnst.levelParams.toList }
-    let ((prod,sorted),_) ← IO.ofExcept <|
-      (Ix.CompileM.CompileM.run penv benv {} do
-        let x ← Ix.AuxGen.expandNestedBlock ordered aliases true
-        let (y,_) ← Ix.AuxGen.sortAuxByPartitionRefinement x
-        pure (x,y)).mapError toString
+    let (prod,_) ← IO.ofExcept <|
+      (Ix.CompileM.CompileM.run penv benv {}
+        (Ix.AuxGen.expandNestedBlock ordered aliases true)).mapError toString
     require (src.aux.size == 2 && canon.aux.size == 2 &&
-        prod.types.size - prod.nOriginals == 2 && sorted.types.size - sorted.nOriginals == 2)
-      s!"{root.pretty}: source/canonical/production/post-order lost an auxiliary"
+        prod.types.size - prod.nOriginals == 2)
+      s!"{root.pretty}: source/canonical/production expansion lost an auxiliary"
   let seeds := collisionSeeds ++ neighbourSeeds
   let entries := closure le seeds
   for runId in [1, 2] do

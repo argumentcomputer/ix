@@ -13,9 +13,9 @@
   * `Ix.CompileM.sortConsts` (classes and canonical order of every block,
     primary and auxiliary) is `sortClasses Rules.compiler`, with external
     addresses from `Ix.CompileM.constAddrLookup`;
-  * `Ix.AuxGen.sortAuxByPartitionRefinement` takes its order from
-    `canonicalAuxOrder` (the identity on the canonical expansion) and
-    `Ix.AuxGen.computeAuxPerm` is `computePerm`, both on
+  * the auxiliary order, `canonicalAuxOrder Rules.compiler`, is the
+    identity on the canonical expansion, so the compiler applies no sort;
+    `Ix.AuxGen.computeAuxPerm` is `computePerm` on
     `Ix.AuxGen.ExpandedBlock.toCanon`.
   The compiler's nested expansion (`expandNestedBlock`, locally nameless)
   and the evaporation probe (`positionClaimedBySpecScc`) are still its own.

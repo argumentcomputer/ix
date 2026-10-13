@@ -8,8 +8,8 @@
   is `Rules.phaseA` since A2-order (levels after `canonUniv`, nested
   auxiliaries in discovery order, the port fixes): `Ix.CondenseM.run` is
   `condensation`, `Ix.CompileM.sortConsts` is `sortClasses`, and
-  `Ix.AuxGen.sortAuxByPartitionRefinement`/`computeAuxPerm` take their
-  order and permutation from `canonicalAuxOrder`/`computePerm`. The
+  `Ix.AuxGen.computeAuxPerm` takes its permutation from `computePerm` (the
+  auxiliary order, `canonicalAuxOrder`, is the expansion's own). The
   compiler side below is that wired path, called in a `CompileEnv` seeded
   with the Rust compile of the same closure (the `aux-gen-diff` harness's
   setup). Checked:
@@ -24,8 +24,7 @@
      components whose order today's rules would give differently, i.e.
      the order moves of comparing levels after `canonUniv`, are counted);
   3. for every inductive component with nested auxiliaries, the wired
-     compiler path (`expandNestedBlock` → `sortAuxByPartitionRefinement` →
-     `computeAuxPerm`) gives the canonical auxiliary count and the source
+     compiler path (`expandNestedBlock` → `computeAuxPerm`) gives the canonical auxiliary count and the source
      permutation of Pass 1's own expansion (`componentNested
      Rules.compiler`, external groups from the compiled class registry).
      Under discovery order this is Lean's `rec_N` order wherever the
@@ -334,9 +333,8 @@ def nestedLevelChecks (cenv : CompileEnv) (t : Tally) : Tally := Id.run do
             let benv : Ix.CompileM.BlockEnv := {
               all := names.foldl (·.insert ·) {}, current := rep,
               mutCtx := Ix.MutConst.ctx cls, univCtx := [] }
-            let (y, _) ← (Ix.CompileM.CompileM.run cenv benv {} do
-              let y ← Ix.AuxGen.expandNestedBlock #[rep] aliases true
-              pure (← Ix.AuxGen.sortAuxByPartitionRefinement y).1).mapError toString
+            let (y, _) ← (Ix.CompileM.CompileM.run cenv benv {}
+              (Ix.AuxGen.expandNestedBlock #[rep] aliases true)).mapError toString
             results := results.push (x.aux.size, y.types.size - y.nOriginals,
               ← expandedPayload cenv x, ← expandedPayload cenv y.toCanon)
           pure (cls.map List.length, results)
@@ -761,11 +759,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
         let structNested := probe.types.size > probe.nOriginals
         if metaNested || structNested then
           if metaNested && structNested then auxX := some probe.toCanon
-          let x ← if metaNested && structNested then
-              (·.1) <$> Ix.AuxGen.sortAuxByPartitionRefinement probe
-            else pure probe
-          let perm ← Ix.AuxGen.computeAuxPerm x originalAll o2c addr?
-          nestedOut := some (x.types.size - x.nOriginals, perm)
+          let perm ← Ix.AuxGen.computeAuxPerm probe originalAll o2c addr?
+          nestedOut := some (probe.types.size - probe.nOriginals, perm)
       pure (cs, classes, nestedOut, auxX)
     match ixRes with
     | .error e => t := t.check false s!"compiler side {namePretty lo}: {repr e}"

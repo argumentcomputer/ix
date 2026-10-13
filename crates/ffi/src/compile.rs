@@ -1910,8 +1910,8 @@ fn aux_dump_expr_addr(e: &ix_common::env::Expr) -> String {
 /// rebuilding exactly the production aux_gen Phase-1 inputs
 /// (`compile_mutual` → `generate_aux_patches`): member `MutConst`s →
 /// `sort_consts` → `ordered_originals`/`alias_to_rep` →
-/// `expand_nested_block` → (nested path) `sort_aux_by_partition_refinement`
-/// → `compute_aux_perm` → `source_aux_order_with_owner`. Every step is
+/// `expand_nested_block` → (nested path) `compute_aux_perm` →
+/// `source_aux_order_with_owner`. Every step is
 /// deterministic, so a post-compile re-run reproduces what production did
 /// (same argument as the `validate-aux` Phase 2 re-run).
 #[cfg(feature = "test-ffi")]
@@ -1989,7 +1989,7 @@ fn aux_dump_block(
     )
   });
 
-  let mut expanded = match nested::expand_nested_block_canonical(
+  let expanded = match nested::expand_nested_block_canonical(
     &ordered_originals,
     lean_env,
     &alias_to_rep,
@@ -2057,36 +2057,6 @@ fn aux_dump_block(
 
   if !(metadata_has_nested && structural_has_nested) {
     return;
-  }
-
-  // Canonical sort of the aux tail (aux_gen.rs:280).
-  let sortperm =
-    match nested::sort_aux_by_partition_refinement(&mut expanded, stt) {
-      Ok(p) => p,
-      Err(e) => {
-        let _ = writeln!(out, "error sortaux {e:?}");
-        return;
-      },
-    };
-  let sortperm_strs: Vec<String> =
-    sortperm.iter().map(|p| p.to_string()).collect();
-  let _ = writeln!(out, "sortperm {}", sortperm_strs.join(" "));
-  for (i, mem) in expanded.types.iter().enumerate().skip(expanded.n_originals) {
-    let _ = writeln!(
-      out,
-      "post {i} name={} owner={} typ={}",
-      mem.name.pretty(),
-      mem.source_owner.pretty(),
-      aux_dump_expr_addr(&mem.typ)
-    );
-    for (j, ctor) in mem.ctors.iter().enumerate() {
-      let _ = writeln!(
-        out,
-        "postctor {i} {j} name={} typ={}",
-        ctor.name.pretty(),
-        aux_dump_expr_addr(&ctor.typ)
-      );
-    }
   }
 
   // Source→canonical permutation (aux_gen.rs:292-307).
