@@ -66,12 +66,39 @@ first proving operation:
 
 | Variable | Values | Default |
 | --- | --- | --- |
-| `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated | every supported device |
+| `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
 | `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
 | `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | `8`, leaving the rest of the device for lookup and quotient working sets |
 | `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
 | `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
 | `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
+
+With several devices selected, each runs one native operation at a time
+and the work spreads by job: partitions prove concurrently, FFT queues and
+MSM chunks split across the devices, and resident coefficients are retained
+on whichever device has the most room. A lookup, quotient or constraint
+pass runs whole on one device that admits its working set, preferring the
+device holding most of its resident columns and uploading the others from
+the host; the first free admitted device is taken rather than waiting for
+the preferred one. Devices never exchange data directly, so there is no
+peer access to configure. The pipeline selects one device by default
+because the warm stages are host-bound: on two RTX PRO 6000 the second
+device shortened the first stage's proof from 33 s to 25 s and nothing
+else, 270 s against 260 s for the pipeline, so select more devices only
+for an experiment.
+
+### Disk placement
+
+Put the output directory and both caches on the instance-store NVMe, not
+the root volume. On the AWS GPU instances used so far the root disk is an
+EBS volume that sustains about 100 to 250 MB/s, while the 3.5 TB
+instance store that the DLAMI mounts at `/opt/dlami/nvme` writes at about
+2.9 GB/s. Every checkpoint is fsynced before it is renamed into place, so
+the cold first stage, which writes ten 9.1 GB fixed checkpoints, spends
+about 95 s per partition on the root volume against 3 s to commit it on
+the device, and finishes in 18 minutes instead of about 5. The instance
+store is wiped when the instance stops; copy the final packet and any
+cache worth keeping off it.
 
 ### Measured proving time
 
@@ -93,6 +120,26 @@ The warm trial hashed every cached checkpoint at restore; the restore now
 hashes only the metadata files, since checkpoints verify their own recorded
 digest on every read, and has not been re-measured. The final packet is
 2,181 bytes in every run.
+
+The same procedure on two RTX PRO 6000, 48 host cores, 499 GiB without a
+cgroup cap, the NVMe instance store, and `IX_KZG_CUDA_SRS_CACHE=1`, from
+the archived root proof rather than the committed outer proof. The two-GPU
+columns select both devices with `IX_KZG_CUDA_DEVICES=0,1`; the last
+column is the pipeline's default. Every run produced the same final
+packet, and the FRI stage reproduced the archived outer proof byte for byte.
+
+| Stage | Cold, 2 GPUs | Warm, 2 GPUs | Warm, 1 GPU |
+| --- | ---: | ---: | ---: |
+| FRI compression, GPU | 58 s | 57 s | 55 s |
+| First KZG stage | 207 s | 120 s | 130 s |
+| Recursive KZG stage | 205 s | 83 s | 85 s |
+| Pipeline | 470 s | 260 s | 270 s |
+
+The first stage's cold time is fixed preprocessing: on this host's EBS
+root volume the same stage took 1,089 s, see [Disk placement](#disk-placement).
+Of the warm first stage, 25 s is the proof and about a minute is circuit
+translation on the host; the recursive stage's 2^27 lookup and quotient
+run as constraint passes on one device in either configuration.
 
 `IX_KZG_CUDA_ARCHS` selects the SM architectures at build time and falls
 back to `MULTI_STARK_CUDA_ARCHS`, so one variable configures both CUDA

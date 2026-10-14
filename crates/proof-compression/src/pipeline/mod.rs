@@ -33,20 +33,24 @@ pub fn command(stage: &str, args: &[String]) -> Result<()> {
 /// kept. The recursive stage caps device residency unless the environment
 /// sets it, so its constraint passes can be admitted beside the resident
 /// columns.
+///
+/// The pipeline proves on one device unless the environment selects more.
+/// Its stages are host-bound once the caches are warm: a second device
+/// shortened only the first stage's proof, 33 s to 25 s, in a 260 s
+/// pipeline, while doubling the device memory in play.
 #[cfg(feature = "cuda")]
 fn configure_backend(stage: &str) -> Result<()> {
   use crate::kzg::cuda::{PassMode, Settings};
   let var = |name: &str| std::env::var(name).ok();
-  let mut settings = Settings::default();
-  if let Some(list) = var("IX_KZG_CUDA_DEVICES") {
-    settings.devices = Some(
-      list
-        .split(',')
-        .map(|id| id.trim().parse())
-        .collect::<std::result::Result<Vec<i32>, _>>()
-        .map_err(|_error| "IX_KZG_CUDA_DEVICES must list CUDA ordinals")?,
-    );
-  }
+  let devices = match var("IX_KZG_CUDA_DEVICES") {
+    Some(list) => list
+      .split(',')
+      .map(|id| id.trim().parse())
+      .collect::<std::result::Result<Vec<i32>, _>>()
+      .map_err(|_error| "IX_KZG_CUDA_DEVICES must list CUDA ordinals")?,
+    None => vec![0],
+  };
+  let mut settings = Settings { devices: Some(devices), ..Settings::default() };
   if let Some(value) = var("IX_KZG_MSM_CHUNK_POINTS") {
     settings.msm_chunk_points = value
       .parse()

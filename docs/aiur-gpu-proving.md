@@ -193,6 +193,19 @@ command, recorded with its identities. The script that produced the
 measurements below does only this: write the provenance, sample the
 devices, run the one command under the cap, and keep the exit status.
 
+Run it from the instance store. Every GPU machine we use has the same
+disk layout: the root volume (`/`, `$HOME`; `/tmp` is tmpfs) is EBS and
+sustains about 100 to 250 MB/s, and a 3.5 TB NVMe instance store is
+mounted by the DLAMI at `/opt/dlami/nvme` and writes at about 2.9 GB/s.
+Check with `lsblk -d -o NAME,SIZE,MODEL` and `findmnt /opt/dlami/nvme`.
+The lanes cache, the proof-compression output directories and both KZG
+caches (`IX_KZG_FIXED_CACHE`, `IX_KZG_SRS_CACHE`) all write fsynced
+checkpoints, and on the root volume those dominate: a cold KZG first
+stage spends 95 s per 9 GB partition writing against 3 s computing and
+takes 18 minutes instead of about 3.5. The instance store is wiped when
+the instance stops, so copy final packets and any cache worth keeping off
+it before then.
+
 ```sh
 #!/bin/bash
 # run-lanes4.sh <label> [extra ix prove flags]
@@ -201,7 +214,7 @@ LABEL=$1; shift
 EXEC_JOBS=${EXEC_JOBS:-3}; MAX_RAM=${MAX_RAM:-230}; MEM_MAX=${MEM_MAX:-920G}
 IXE=${IXE:-mathlib.ixe}; IXES=${IXES:-mathlib.ixes}
 BIN=${BIN:-$HOME/repos/ix/.lake/build/bin/ix}
-OUT=runs/$LABEL; mkdir -p "$OUT/cache"
+OUT=${RUNS_DIR:-/opt/dlami/nvme/runs}/$LABEL; mkdir -p "$OUT/cache"
 [ -n "${RECORD_MAX_GIB:-}" ] && export AIUR_RECORD_MAX_BYTES=$((RECORD_MAX_GIB << 30))
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$OUT/cache
