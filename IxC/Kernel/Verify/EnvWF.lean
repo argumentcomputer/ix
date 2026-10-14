@@ -18,14 +18,13 @@ namespace Ix.Kernel
 /-- The projection-table name shape is injective. -/
 theorem projFnName_inj {T T' : Key} {i i' : Nat}
     (h : projFnName T i = projFnName T' i') : T = T' ∧ i = i' := by
-  simp only [projFnName, Name.num.injEq, Name.str.injEq] at h
-  exact ⟨h.1.1, h.2⟩
+  obtain ⟨hT, hi⟩ := auxKey_inj₂ (d := .projFn i) (d' := .projFn i') rfl h
+  exact ⟨hT, Derived.projFn.inj hi⟩
 
 /-- The projection-table name shape is injective (task #175 S1). -/
 theorem projTableName_inj {T T' : Key} (h : projTableName T = projTableName T') :
     T = T' := by
-  simp only [projTableName, Name.num.injEq, Name.str.injEq] at h
-  exact h.1.1
+  exact auxKey_inj.mp h
 
 /-- Unfold a successful projection-table lookup to the stored table:
 the structure's table is stored, the index is in range, and the entry
@@ -326,22 +325,6 @@ theorem Expr.constsResolve_instantiateLevelParams {env : Env} (ks : List LevelPa
     ∀ {e : Expr}, (e.instantiateLevelParams ks us).constsResolve env = e.constsResolve env := by
   intro e
   induction e <;> simp_all [Expr.instantiateLevelParams, Expr.constsResolve]
-
-/-- No name equals its own string extension. -/
-theorem Name.str_ne (n : Key) (s : String) : n.str s ≠ n := by
-  intro h
-  have h1 : sizeOf (Name.str n s) = sizeOf n := congrArg sizeOf h
-  simp at h1
-  omega
-
-/-- No name equals its own two-step string extension. -/
-theorem Name.str_str_ne (n : Key) (s₁ s₂ : String) :
-    (n.str s₁).str s₂ ≠ n := by
-  intro h
-  have h1 : sizeOf ((Name.str (Name.str n s₁) s₂)) = sizeOf n :=
-    congrArg sizeOf h
-  simp at h1
-  omega
 
 /-- Resolution only reads whether names are stored. -/
 theorem Expr.constsResolve_congr {env₁ env₂ : Env}

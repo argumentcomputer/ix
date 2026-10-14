@@ -49,16 +49,16 @@ constant.  That is the house rule's point exactly (`IxC/Kernel/Term/DESIGN.md`
   if n = natName then some (.const .nat [])
   else if n = natZeroName then some (.const .natZero [])
   else if n = natSuccName then some (.const .natSucc [])
-  else if n = natName.str "rec" then some (.const .natRec [ψ uN])
+  else if n = natRecName then some (.const .natRec [ψ uN])
   else if n = punitName then some (.const .punit [ψ uN])
   else if n = punitUnitName then some (.const .punitUnit [ψ uN])
-  else if n = punitName.str "rec" then
+  else if n = punitRecName then
     some (.const .punitRec [ψ uN, ψ u1N])
   else if n = emptyName then some (.const .empty [1])
-  else if n = emptyName.str "rec" then
+  else if n = emptyRecName then
     some (.const .emptyRec [1, ψ uN])
   else if n = falseName then some (.const .empty [0])
-  else if n = falseName.str "rec" then
+  else if n = falseRecName then
     some (.const .emptyRec [0, ψ uN])
   else if n = quotName then some (.const .quot [ψ uN])
   else if n = quotMkName then some (.const .quotMk [ψ uN])
@@ -79,11 +79,8 @@ is the shape `projFstMk` is stated at.
 **The declaration clause came back** (the retired lane's record, §12.10).
 It was dropped on the first transposition as "syntactic, no consumer",
 and `ProofIrrelStepTT`'s unit-like branch is the consumer: `isUnitLikeTy`
-accepts a `.const c _` whose `c.str "rec"` is *reserved*, so identifying
-`c` as `PUnit` — which is what the unit-like eta law is stated at — is
-exactly reading the four other reserved recursors' pinned shapes and
-finding that none of them is single-rule, zero-field and index-free.
-Without the clause the branch is unprovable; with it, it is a `decide`.
+accepts a `.const punitName _`, and the clause identifies the stored former
+with the pinned `PUnit`, which is what the unit-like eta law is stated at.
 
 **The declaration clause is unconditional** (task #283).  It used to be
 premised on `ConstantInfo.isBasis ci`, which every establishment site

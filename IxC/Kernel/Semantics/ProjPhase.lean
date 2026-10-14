@@ -33,16 +33,16 @@ def ProjPhaseInvS (T ctorName : Key) (nF : Nat) (env' : Env)
     (cval : TConstVal) : Prop :=
   (∀ ci, env'.find? T = some ci →
     ∃ cvm mval hmcvm,
-      env'.find? (T.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : LevelParam → Nat, cval T ψ = cval (T.str "_model") ψ) ∧
+      ∀ ψ : LevelParam → Nat, cval T ψ = cval (auxKey T .model) ψ) ∧
   (∀ ci, env'.find? ctorName = some ci →
     ∃ cvm mval hmcvm,
-      env'.find? (ctorName.str "_model")
+      env'.find? (auxKey ctorName .model)
         = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
       ∀ ψ : LevelParam → Nat,
-        cval ctorName ψ = cval (ctorName.str "_model") ψ) ∧
+        cval ctorName ψ = cval (auxKey ctorName .model) ψ) ∧
   (∀ j, j < nF → ∀ ci, env'.find? (projFnName T j) = some ci →
     ∃ cvm mval hmcvm,
       env'.find? (projModelName T j)

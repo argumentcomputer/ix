@@ -519,7 +519,7 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
   have hF₂M := (checked.foldlM (fun (acc : Env)
       (c : ConstantVal × Nat × Nat × List RecRule) => do
       let rules' ← checkIotaRules mode (fueledOpsM mode) env₂ feSelf.env
-        (fun n => if blockNames.contains n then n.str "_model" else n)
+        (fun n => if blockNames.contains n then auxKey n .model else n)
         c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
       pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
       env₂ : FueledM Env).property (Nat.le_max_right F₁ F₂) hF₂

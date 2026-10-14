@@ -30,11 +30,11 @@ theorem checkMemberVal_inv {blockNames : List Key} {env' : Env}
     checkConstantVal (fueledOps mode F) env' cv = .ok cvA ∧
     cvA.name.isModelSuffix = false ∧
     ∃ cvm mval hmcvm,
-      env'.find? (cvA.name.str "_model") =
+      env'.find? (auxKey cvA.name .model) =
         some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = cvA.levelParams ∧
       ((cvA.type.renameConsts (fun n =>
-        if blockNames.contains n then n.str "_model" else n)) == cvm.type) =
+        if blockNames.contains n then auxKey n .model else n)) == cvm.type) =
         true := by
   simp only [checkMemberVal, fueledOps_annotate, fueledOps_inferType,
     fueledOps_isDefEq, fueledOps_ensureSort, fueledOps_whnf, Bind.bind,
@@ -51,7 +51,7 @@ theorem checkMemberVal_inv {blockNames : List Key} {env' : Env}
     revert hms; cases cvA'.name.isModelSuffix <;> simp
   try dsimp only at h
   revert h
-  match hfm : env'.find? (cvA'.name.str "_model") with
+  match hfm : env'.find? (auxKey cvA'.name .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -67,7 +67,7 @@ theorem checkMemberVal_inv {blockNames : List Key} {env' : Env}
   rw [if_pos hlps] at h
   try dsimp only at h
   by_cases hren : ((cvA'.type.renameConsts (fun n =>
-      if blockNames.contains n then n.str "_model" else n)) == cvm.type)
+      if blockNames.contains n then auxKey n .model else n)) == cvm.type)
       = true
   case neg => rw [if_neg hren] at h; exact nomatch h
   rw [if_pos hren] at h
@@ -82,10 +82,10 @@ theorem checkIndMember_inv {blockNames : List Key} {caps : IndCaps}
     ∃ cvA cvm mval hmcvm,
       checkConstantVal (fueledOps mode F) env' ci.toConstantVal = .ok cvA ∧
       cvA.name.isModelSuffix = false ∧
-      env'.find? (cvA.name.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
+      env'.find? (auxKey cvA.name .model) = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = cvA.levelParams ∧
       ((cvA.type.renameConsts (fun n =>
-        if blockNames.contains n then n.str "_model" else n)) == cvm.type) =
+        if blockNames.contains n then auxKey n .model else n)) == cvm.type) =
         true ∧
       ((∃ cv caps', ci = .indInfo cv caps') ∧
          env₁ = ⟨.indInfo cvA caps :: env'.consts⟩ ∨

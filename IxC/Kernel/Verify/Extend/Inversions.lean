@@ -114,21 +114,10 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
     by simpa using hif,
     type, stype, u, rfl, htp, htr, hst, hsort, h.symm⟩
 
-/-- Numeric names are never `str`-shaped. -/
-theorem Name.num_ne_str (p : Key) (k : Nat) (q : Key) (s : String) :
-    Name.num p k ≠ Name.str q s := fun h => nomatch h
-
-/-- Reserved basis names are all `str`-shaped. -/
-theorem reservedBasisNames_not_num (p : Key) (k : Nat) :
-    reservedBasisNames.contains (Name.num p k) = false := rfl
-
-/-- No `_model`-companion name equals a name that is not itself
-`_model`-shaped. -/
-theorem Name.str_model_ne {n m : Key} (hm : m.isModelSuffix = false) :
-    n.str "_model" ≠ m := by
-  intro h
-  rw [← h] at hm
-  simp [Key.isModelSuffix] at hm
+/-- No projection function is a reserved basis name. -/
+theorem reservedBasisNames_not_projFn (T : Key) (i : Nat) :
+    reservedBasisNames.contains (projFnName T i) = false :=
+  reservedBasisNames_contains_auxKey T (d := .projFn i) nofun nofun
 
 theorem domsMatchAux_inv {g : Nat → Expr → Expr}
     {bs₁ bs₂ : List (Expr × BinderMeta)} {o₁ o₂ n : Nat}

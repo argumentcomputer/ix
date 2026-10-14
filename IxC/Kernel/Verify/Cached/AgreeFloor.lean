@@ -708,7 +708,7 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List Key)
           (sk' : List InstallSkel), SkelIs acc sk' →
           Yields (do
             let rules' ← checkIotaRulesF mode (sharedOpsC mode feSelf) fe₂ feSelf
-              (fun n => if blockNames.contains n then n.str "_model" else n)
+              (fun n => if blockNames.contains n then auxKey n .model else n)
               c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
             pure (acc.push (.recInfo c.1 c.2.1 c.2.2.1 rules')))
             (fun acc' => SkelIs acc' (provSkel c :: sk')) := by

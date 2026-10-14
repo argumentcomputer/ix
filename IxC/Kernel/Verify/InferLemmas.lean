@@ -1691,20 +1691,15 @@ theorem iotaCerts_step_inv {env : Env} {fuel d : Nat}
   · exact absurd hg (by simp)
   · exact hrun
 
-/-- Inversion of the unit-type check.
-
-Task #161 item C1: the test is now the pinned-name one, so the
-inversion additionally reads off `c = punitName` — the conclusion is
-unchanged (`reservedBasisNames.contains (punitName.str "rec")` is
-`true` by computation), which is what keeps `unitLike_eq_punit` and
-every downstream consumer working verbatim. -/
+/-- Inversion of the unit-type check (task #161 item C1: the test is the
+pinned-name one): the head is `PUnit`, stored as an inductive, and its
+recursor `PUnit.rec` is stored with no indices and one zero-field rule. -/
 theorem isUnitLikeTy_inv {env : Env} {e : Expr}
     (h : isUnitLikeTy env e = true) :
-    ∃ c us cvi capsi cvr mI rP r, e = .const c us ∧
-      env.find? c = some (.indInfo cvi capsi) ∧
-      env.find? (c.str "rec") = some (.recInfo cvr mI rP [r]) ∧
-      mI = rP ∧ r.nfields = 0 ∧
-      reservedBasisNames.contains (c.str "rec") = true := by
+    ∃ us cvi capsi cvr mI rP r, e = .const punitName us ∧
+      env.find? punitName = some (.indInfo cvi capsi) ∧
+      env.find? punitRecName = some (.recInfo cvr mI rP [r]) ∧
+      mI = rP ∧ r.nfields = 0 := by
   match e, h with
   | .const c us, h =>
     simp only [isUnitLikeTy, Bool.and_eq_true, beq_iff_eq] at h
@@ -1735,8 +1730,7 @@ theorem isUnitLikeTy_inv {env : Env} {e : Expr}
     match rules, h2 with
     | [r], h2 =>
       simp only [Bool.and_eq_true, beq_iff_eq] at h2
-      exact ⟨punitName, us, cvi, capsi, cvr, mI, rP, r, rfl, hfc, hfr,
-        h2.1, h2.2, by decide⟩
+      exact ⟨us, cvi, capsi, cvr, mI, rP, r, rfl, rfl, rfl, h2.1, h2.2⟩
     | [], h2 => exact nomatch h2
     | _ :: _ :: _, h2 => exact nomatch h2
 

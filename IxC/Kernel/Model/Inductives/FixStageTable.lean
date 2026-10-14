@@ -313,7 +313,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     rw [← h, hCshape] at this
     exact nomatch this
   have hnres : Ix.Kernel.reservedBasisNames.contains (projTableName p.cvT.name) = false :=
-    Ix.Kernel.reservedBasisNames_not_num _ _
+    Ix.Kernel.reservedBasisNames_contains_auxKey _ (d := .projTable) nofun nofun
   -- the crossings
   have hcrossT : ConsCrossAt (.projInfo tbl) cvTa.type := by
     intro t2 he' j

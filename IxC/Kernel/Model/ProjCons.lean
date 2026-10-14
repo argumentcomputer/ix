@@ -45,14 +45,14 @@ variable {μ : CheckMode}
 
 /-- `BlockAcvalInstalled` crosses a fresh cons whose name is not a
 block name (`BlockInstalledTT.fresh_cons`'s annotated half).  The
-`_model` side is free: the head's name is `projFnName T i`, a `Name.num`,
-and `n.str "_model"` never is. -/
+`_model` side is free: the head's name is `projFnName T i`, a derived key
+of another shape than `auxKey n .model` (`auxKey_ne_of_endsNum`). -/
 theorem blockAcvalInstalled_fresh_cons {blockNames : List Key}
     {env : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hIA : BlockAcvalInstalled blockNames env acval)
     (hnotb : blockNames.contains c₀.name = false)
-    (hstrNe : ∀ n : Key, c₀.name ≠ n.str "_model") :
+    (hstrNe : ∀ n : Key, c₀.name ≠ auxKey n .model) :
     BlockAcvalInstalled blockNames ⟨c₀ :: env.consts⟩
       (acvalWith acval c₀.name A) := by
   intro n hbn ci hf ψ
@@ -130,10 +130,10 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     rw [hname]; exact hfreshP
   have hnotb₀ : blockNames.contains c₀.name = false := by
     rw [hname]; exact hnotb
-  have hstrNe₀ : ∀ n : Key, c₀.name ≠ n.str "_model" := by
-    rw [hname]; exact fun n => Ix.Kernel.Name.num_ne_str _ _ _ _
+  have hstrNe₀ : ∀ n : Key, c₀.name ≠ auxKey n .model := by
+    rw [hname]; exact fun n => Ix.Kernel.auxKey_ne_of_endsNum (by simp [Derived.endsNum])
   have hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false := by
-    rw [hname]; exact Ix.Kernel.reservedBasisNames_not_num _ _
+    rw [hname]; exact Ix.Kernel.reservedBasisNames_not_projFn _ _
   -- the installed leaf
   obtain ⟨A, hA⟩ : ∃ A : (LevelParam → Nat) → AnnotTerm,
       A = fun ψ => mp.base2.acval (projModelName T i) ψ := ⟨_, rfl⟩
@@ -228,10 +228,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
         rw [hac, ← hname, acvalWith_self, hAdef]
       · have hjneP : projFnName T j ≠ projFnName T i := by
           intro hh
-          have hh2 : Ix.Kernel.Name.num (T.str "proj") j
-            = Ix.Kernel.Name.num (T.str "proj") i := hh
-          injection hh2 with _hp hij
-          exact hji hij
+          exact hji (Ix.Kernel.projFnName_inj hh).2
         obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfam.2.2 j hj
         rw [Env.find?_cons,
           if_neg (fun hh => hjneP (hname.symm.trans hh).symm)] at hf2

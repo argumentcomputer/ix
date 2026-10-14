@@ -140,7 +140,7 @@ theorem denoteMeta_quotMkTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
       = some (quotMkTy (pwBit ψ (.ifAllZero [uN])) (ψ uN)) := by
   have hQc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
-        (Expr.const (Name.str Name.anonymous "Quot")
+        (Expr.const (roleKey .quot)
           [Level.param 0])
         = some (AnnotTerm.const .quot
             [ψ 0]) := by

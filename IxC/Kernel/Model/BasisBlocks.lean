@@ -1097,14 +1097,14 @@ theorem denoteMeta_natRec_succRhs (ψ : LevelParam → Nat)
       denoteMeta (acvalWith m.acval natRecA.name
           (fun ψ => AnnotTerm.const .natRec [ψ uN]))
         ⟨natRecA :: env.consts⟩ ψ d
-        (.const (natName.str "rec") [.param uN])
+        (.const natRecName [.param uN])
         = some (AnnotTerm.const .natRec [ψ uN]) := by
     intro d
-    have hf : (⟨natRecA :: env.consts⟩ : Env).find? (natName.str "rec")
+    have hf : (⟨natRecA :: env.consts⟩ : Env).find? natRecName
         = some natRecA := by
       rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
     rw [denoteMeta_const hf (by rfl),
-      show natName.str "rec" = natRecA.name from rfl, acvalWith_self]
+      show natRecName = natRecA.name from rfl, acvalWith_self]
     show some (AnnotTerm.const .natRec
       [Level.substFn ψ natRecA.toConstantVal.levelParams
         [Level.param uN] uN]) = _
@@ -1125,7 +1125,7 @@ theorem denoteMeta_natRec_succRhs (ψ : LevelParam → Nat)
           (Expr.lam (.const natName [])
             (.app (.app (.bvar 1) (.bvar 0))
               (.app (.app (.app (.app
-                (.const (natName.str "rec") [.param uN]) (.bvar 3))
+                (.const natRecName [.param uN]) (.bvar 3))
                 (.bvar 2)) (.bvar 1)) (.bvar 0)))
             { pw := .ifAllZero [uN] })
           { pw := .ifAllZero [uN] })
@@ -2042,7 +2042,7 @@ theorem declBasisPB_natK {env₁ : Env} (mp : EnvModelM V μ env)
           · subst h1'; rfl
           · show Expr.constsResolve _ natRecSuccRule.rhs = true
             have hfR : (⟨natRecA :: natSuccA :: natZeroA :: natA
-                :: env.consts⟩ : Env).find? (natName.str "rec")
+                :: env.consts⟩ : Env).find? natRecName
                 = some natRecA := by
               rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
             simp only [natRecSuccRule, Expr.constsResolve, hfN, hfZ,

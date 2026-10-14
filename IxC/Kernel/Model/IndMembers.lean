@@ -34,7 +34,7 @@ open.
 leaf *is* the model's, so the fresh entry satisfies the predicate by
 `acvalWith_self`, and every earlier entry survives because neither
 `n` nor `n ++ "_model"` can be the member's name —
-`Name.str_model_ne` against `MemberValR`'s `isModelSuffix = false`
+`auxKey_model_ne` against `MemberValR`'s `isModelSuffix = false`
 conjunct, which is exactly the conjunct v1's `BlockInstalledTT.step`
 consumes for the same purpose.
 -/
@@ -79,7 +79,7 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
         ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps
 
 /-- **The member cons's live unit-like law** (`unitLawKeyS`'s
@@ -108,7 +108,7 @@ must prove. -/
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
         ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' c₀.name cvT caps
 
 /-- **One member installed at both tiers**, with every carried
@@ -137,7 +137,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
     ∃ mp₁ : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp₁.base2.cvalE = cvalModeled mp.base2.cvalE cvA.name ∧
       mp₁.base2.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) ∧
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) ∧
       BlockInstalledTT blockNames ⟨c₀ :: env.consts⟩
         mp₁.base2.cvalE ∧
       BlockAcvalInstalled blockNames ⟨c₀ :: env.consts⟩
@@ -209,7 +209,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
     by_cases hn : n = cvA.name
     · subst hn
       rw [acvalWith_self]
-      show (mp.base2.acval (cvA.name.str "_model") ψ).erase = _
+      show (mp.base2.acval (auxKey cvA.name .model) ψ).erase = _
       rw [mp.base2.acval_erase]
       exact (congrFun cvalWith_self ψ).symm
     · rw [acvalWith_ne hn, mp.base2.acval_erase]
@@ -222,8 +222,8 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
   rw [hmp₁ac]
   by_cases hn : n = cvA.name
   · subst hn
-    rw [acvalWith_ne (Ix.Kernel.Name.str_model_ne hmsA), acvalWith_self]
-  · rw [acvalWith_ne (Ix.Kernel.Name.str_model_ne hmsA), acvalWith_ne hn]
+    rw [acvalWith_ne (Ix.Kernel.auxKey_model_ne hmsA), acvalWith_self]
+  · rw [acvalWith_ne (Ix.Kernel.auxKey_model_ne hmsA), acvalWith_ne hn]
     refine hIA n hbnn ci ?_ ψ
     rw [Ix.Kernel.Env.find?_cons,
       if_neg (fun hh => hn (by rw [← hh, hc₀name]))] at hfn

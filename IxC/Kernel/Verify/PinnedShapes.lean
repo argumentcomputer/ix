@@ -30,9 +30,9 @@ The `pinnedInfoT` counterpart of `IxC/Kernel/Verify/EnvPreds.lean`'s
 theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
     {mI rP : Nat} {rules : List RecRule}
     (h : pinnedInfo n = .recInfo cv mI rP rules) :
-    n = eqName.str "rec" ∨ n = natName.str "rec" ∨
-    n = punitName.str "rec" ∨
-    n = emptyName.str "rec" ∨ n = falseName.str "rec" ∨
+    n = eqRecName ∨ n = natRecName ∨
+    n = punitRecName ∨
+    n = emptyRecName ∨ n = falseRecName ∨
     n = quotLiftName ∨ n = quotIndName := by
   unfold pinnedInfo at h
   by_cases h1 : n = eqName
@@ -41,7 +41,7 @@ theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
   by_cases h2 : n = eqReflName
   · rw [if_pos h2] at h; exact nomatch h
   rw [if_neg h2] at h
-  by_cases h3 : n = eqName.str "rec"
+  by_cases h3 : n = eqRecName
   · exact Or.inl h3
   rw [if_neg h3] at h
   by_cases h4 : n = natName
@@ -53,7 +53,7 @@ theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
   by_cases h6 : n = natSuccName
   · rw [if_pos h6] at h; exact nomatch h
   rw [if_neg h6] at h
-  by_cases h7 : n = natName.str "rec"
+  by_cases h7 : n = natRecName
   · exact Or.inr (Or.inl h7)
   rw [if_neg h7] at h
   by_cases h11 : n = punitName
@@ -62,19 +62,19 @@ theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
   by_cases h12 : n = punitUnitName
   · rw [if_pos h12] at h; exact nomatch h
   rw [if_neg h12] at h
-  by_cases h13 : n = punitName.str "rec"
+  by_cases h13 : n = punitRecName
   · exact Or.inr (Or.inr (Or.inl h13))
   rw [if_neg h13] at h
   by_cases h14 : n = emptyName
   · rw [if_pos h14] at h; exact nomatch h
   rw [if_neg h14] at h
-  by_cases h15 : n = emptyName.str "rec"
+  by_cases h15 : n = emptyRecName
   · exact Or.inr (Or.inr (Or.inr (Or.inl h15)))
   rw [if_neg h15] at h
   by_cases h15a : n = falseName
   · rw [if_pos h15a] at h; exact nomatch h
   rw [if_neg h15a] at h
-  by_cases h15b : n = falseName.str "rec"
+  by_cases h15b : n = falseRecName
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h15b))))
   rw [if_neg h15b] at h
   by_cases h16 : n = quotName
@@ -94,46 +94,14 @@ theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
   rw [if_neg h20] at h
   exact nomatch h
 
-/-- **Only `PUnit` passes the unit-like test.**  Every other reserved
-recursor's pinned shape fails one of its three conditions. -/
+/-- **Only `PUnit` passes the unit-like test**: the test compares the head
+with `punitName`, and the pin identifies the stored former. -/
 theorem unitLike_eq_punit {env : Env} {cval : TConstVal}
     (hbp : BasisPinnedTT env cval) {e : Expr}
     (h : isUnitLikeTy env e = true) :
     ∃ us, e = .const punitName us ∧
       env.find? punitName = some punitA := by
-  obtain ⟨c, us, cvi, capsi, cvr, mI, rP, r, rfl, hfc, hfr, hmI, hnf,
-    hres⟩ := isUnitLikeTy_inv h
-  -- the recursor's stored declaration is the pinned one
-  have hpin : pinnedInfo (c.str "rec") = .recInfo cvr mI rP [r] :=
-    (hbp _ _ hfr hres).1.symm
-  -- and every pin but `PUnit.rec`'s is refuted by the test's own
-  -- three conditions, or by its name
-  have hc : c = punitName := by
-    rcases pinnedInfoT_recInfo_cases hpin with
-      he | he | he | he | he | he | he
-    · -- `Eq.rec` has an index: `mI = 5`, `rP = 4`
-      rw [he] at hpin
-      rw [show pinnedInfo (eqName.str "rec") = eqRecA from rfl] at hpin
-      simp only [eqRecA, ConstantInfo.recInfo.injEq] at hpin
-      omega
-    · -- `Nat.rec` has two rules
-      rw [he] at hpin
-      rw [show pinnedInfo (natName.str "rec") = natRecA from rfl] at hpin
-      simp [natRecA] at hpin
-    · exact (Name.str.injEq .. ▸ he).1
-    · -- `Empty.rec` has no rules
-      rw [he] at hpin
-      rw [show pinnedInfo (emptyName.str "rec") = emptyRecA from rfl]
-        at hpin
-      simp [emptyRecA] at hpin
-    · -- `False.rec` has no rules (task #181)
-      rw [he] at hpin
-      rw [show pinnedInfo (falseName.str "rec") = falseRecA from rfl]
-        at hpin
-      simp [falseRecA] at hpin
-    · exact absurd (Name.str.injEq .. ▸ he).2 (by decide)
-    · exact absurd (Name.str.injEq .. ▸ he).2 (by decide)
-  subst hc
+  obtain ⟨us, cvi, capsi, -, -, -, -, rfl, hfc, -, -, -⟩ := isUnitLikeTy_inv h
   have hp : ConstantInfo.indInfo cvi capsi = pinnedInfo punitName :=
     (hbp _ _ hfc (by decide)).1
   rw [show pinnedInfo punitName = punitA from rfl] at hp

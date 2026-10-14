@@ -28,13 +28,13 @@ extending by one (fresh) constant: if the constant is a recursor-kind
 record, the members of its block are already stored. -/
 def SibFinds (env : Env) (c₀ : ConstantInfo) : Prop :=
   ∀ cv mI rP rules, c₀ = .recInfo cv mI rP rules →
-    (c₀.name = eqName.str "rec" →
+    (c₀.name = eqRecName →
       env.find? eqName = some eqA ∧ env.find? eqReflName = some eqReflA) ∧
-    (c₀.name = natName.str "rec" →
+    (c₀.name = natRecName →
       env.find? natName = some natA ∧
       env.find? natZeroName = some natZeroA ∧
       env.find? natSuccName = some natSuccA) ∧
-    (c₀.name = punitName.str "rec" →
+    (c₀.name = punitRecName →
       env.find? punitName = some punitA ∧
       env.find? punitUnitName = some punitUnitA)
 

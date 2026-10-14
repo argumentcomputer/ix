@@ -131,7 +131,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
   obtain ⟨cvmC, mvalC, hmC, hCmE', hCmlps⟩ := hCmE
   -- ===== the two valuation identifications (v1's `hvT`/`hvC`) =====
   have hvT : ∀ ψ : LevelParam → Nat,
-      m₂.acval T ψ = mp.base2.acval (T.str "_model") ψ := by
+      m₂.acval T ψ = mp.base2.acval (auxKey T .model) ψ := by
     intro ψ
     by_cases hT0 : T = c₀.name
     · subst hT0
@@ -143,7 +143,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
       exact (hIA T hbT _ hfE ψ).symm
   have hvC : ∀ ψ : LevelParam → Nat,
       m₂.acval caps.etaCtor ψ
-        = mp.base2.acval (caps.etaCtor.str "_model") ψ := by
+        = mp.base2.acval (auxKey caps.etaCtor .model) ψ := by
     intro ψ
     by_cases hC0 : caps.etaCtor = c₀.name
     · rw [hac, hC0, acvalWith_self, hc₀name]
@@ -273,7 +273,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
       (acval_interp_closedC mp.base2 _ ψ σ ρ)
   -- the major's slot
   obtain ⟨mx, hxb⟩ := hxdom
-  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
       ((List.range caps.etaParams).map fun q =>
         AnnotTerm.bvar (caps.etaParams - 1 - (0 + q))) := by
     have h := hdomsS caps.etaParams _ hxb
@@ -308,11 +308,11 @@ theorem memberEtaLaw : MemberEtaLaw V := by
   have hCs : Cs = .app (.app (.app
       (mp.base2.acval eqName
         (Level.substFn ψ eqA.toConstantVal.levelParams [ℓA]))
-      (AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))))
       (.bvar 0))
-      (AnnotTerm.mkAppN (mp.base2.acval (caps.etaCtor.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey caps.etaCtor .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))) := by
     have h := hbodyS
@@ -367,7 +367,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
   have hSuniv := eqSlot_univ mp heqfE _ (hCs ▸ hokCs)
   rw [hSval] at hSuniv
   have hxS : x ∈ˢ ts.foldl SetTheory.app
-      (interp V ρ (mp.base2.acval (T.str "_model") ψ)) := hmx
+      (interp V ρ (mp.base2.acval (auxKey T .model) ψ)) := hmx
   have hRS := eqThird_mem mp heqfE _ (hCs ▸ hokCs)
     (by rw [hSval]; exact hSuniv)
     (by rw [hSval]; exact hxS)

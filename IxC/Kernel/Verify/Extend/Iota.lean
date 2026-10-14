@@ -48,7 +48,7 @@ rule-less recursors (the definitional-equality checks ran there). -/
     ci.toConstantVal = cvt ∧
     -- task #148 T6: the name the checker looked the statement up at,
     -- recorded (the proof always knew it; the statement now says so)
-    thmName = (cvA.name.str "_model").str s!"iota_{j}" ∧
+    thmName = auxKey (auxKey cvA.name .model) (.iota j) ∧
     cvt.levelParams = cvA.levelParams ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     tbody.getAppFn = .const eqName [ℓA] ∧
@@ -115,7 +115,7 @@ the constructor residual's canonical tuple). -/
     ci.toConstantVal = cvt ∧
     -- task #148 T6: the name the checker looked the statement up at,
     -- recorded (the proof always knew it; the statement now says so)
-    thmName = (cvA.name.str "_model").str s!"iota_{j}" ∧
+    thmName = auxKey (auxKey cvA.name .model) (.iota j) ∧
     cvt.levelParams = cvA.levelParams ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     tbody.getAppFn = .const eqName [ℓA] ∧
@@ -186,7 +186,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Key → Key}
     fueledOps_inferType, fueledOps_isDefEq, fueledOps_ensureSort,
     fueledOps_whnf, Bind.bind, Except.bind, pure, Except.pure] at h
   revert h
-  match hfthm : env'.find? ((cvA.name.str "_model").str s!"iota_{j}") with
+  match hfthm : env'.find? (auxKey (auxKey cvA.name .model) (.iota j)) with
   | none => intro h; exact nomatch h
   | some ci => ?_
   intro h
@@ -377,7 +377,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Key → Key}
   | false =>
     rw [htt] at h
     simp only [Bool.false_eq_true, if_false, pure, Except.pure] at h
-    exact ⟨(cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+    exact ⟨auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
       tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
       restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
       hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -406,7 +406,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Key → Key}
   | true =>
   rw [hheadEq] at hdα
   intro h
-  exact ⟨(cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+  exact ⟨auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
     tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
     restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
     hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -531,7 +531,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Key → Key}
     fueledOps_inferType, fueledOps_isDefEq, fueledOps_ensureSort,
     fueledOps_whnf, Bind.bind, Except.bind, pure, Except.pure] at h
   revert h
-  match hfthm : env'.find? ((cvA.name.str "_model").str s!"iota_{j}") with
+  match hfthm : env'.find? (auxKey (auxKey cvA.name .model) (.iota j)) with
   | none => intro h; exact nomatch h
   | some ci => ?_
   intro h
@@ -759,7 +759,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Key → Key}
     simp only [Bool.false_eq_true, if_false, if_true, ite_true, pure,
       Except.pure, Bind.bind, Except.bind, Except.ok.injEq] at h
     exact Or.inr ⟨lvls, pins, h.symm, rfl,
-          (cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+          auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
           tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
           restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
           hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -793,7 +793,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Key → Key}
   intro h
   simp only [if_true, Except.ok.injEq] at h
   exact Or.inr ⟨lvls, pins, h.symm, rfl,
-        (cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+        auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
         tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
         restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
         hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -1063,11 +1063,11 @@ statement names (see `checkEtaThm`). -/
     (hmcvmT : ReducibilityHint)
     (sbinders tbindersM : List (Expr × BinderMeta))
     (sbody tbodyM tySlot : Expr) (ℓA : Level),
-    env'.find? ((T.str "_model").str "eta") = some (.thmInfo tcv tval) ∧
+    env'.find? (auxKey (auxKey T .model) .eta) = some (.thmInfo tcv tval) ∧
     tcv.levelParams = lps ∧
-    env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+    env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
     cvmT.levelParams = lps ∧
-    (∃ cvmC mvalC hmcvmC, env'.find? (caps.etaCtor.str "_model") =
+    (∃ cvmC mvalC hmcvmC, env'.find? (auxKey caps.etaCtor .model) =
       some (.defnInfo cvmC mvalC hmcvmC) ∧ cvmC.levelParams = lps) ∧
     (∀ j, j < caps.etaFields → ∃ cvmj mvalj hmcvmj,
       env'.find? (projModelName T j) = some (.defnInfo cvmj mvalj hmcvmj) ∧
@@ -1079,12 +1079,12 @@ statement names (see `checkEtaThm`). -/
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1) ∧
     (∃ mx, sbinders[caps.etaParams]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.etaParams).map fun k =>
           Expr.bvar (caps.etaParams - 1 - k)), mx)) ∧
     sbody = Expr.mkAppN (.const eqName [ℓA])
       [tySlot, .bvar 0,
-       Expr.mkAppN (.const (caps.etaCtor.str "_model") (lps.map .param))
+       Expr.mkAppN (.const (auxKey caps.etaCtor .model) (lps.map .param))
         (((List.range caps.etaParams).map fun k =>
             Expr.bvar (caps.etaParams - k)) ++
          (List.range caps.etaFields).map fun j => Expr.mkAppN
@@ -1092,7 +1092,7 @@ statement names (see `checkEtaThm`). -/
            (((List.range caps.etaParams).map fun k =>
                Expr.bvar (caps.etaParams - k)) ++
             [Expr.bvar 0]))] ∧
-    tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+    tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
       ((List.range caps.etaParams).map fun k =>
         Expr.bvar (caps.etaParams - k)) ∧
     -- TT-lane conjunct (task #147): delivered only at `mode.ttChecks`
@@ -1102,10 +1102,10 @@ statement names (see `checkEtaThm`). -/
     (hmcvmT : ReducibilityHint)
     (sbinders tbindersM : List (Expr × BinderMeta))
     (sbody tbodyM tySlot : Expr) (ℓA : Level),
-    env'.find? ((T.str "_model").str "unitlike") =
+    env'.find? (auxKey (auxKey T .model) .unitlike) =
       some (.thmInfo tcv tval) ∧
     tcv.levelParams = lps ∧
-    env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+    env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
     cvmT.levelParams = lps ∧
     env'.find? eqName = some eqA ∧
     tcv.type.stripPis (caps.unitParams + 2) = some (sbinders, sbody) ∧
@@ -1115,15 +1115,15 @@ statement names (see `checkEtaThm`). -/
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1) ∧
     (∃ mx, sbinders[caps.unitParams]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.unitParams).map fun k =>
           Expr.bvar (caps.unitParams - 1 - k)), mx)) ∧
     (∃ my, sbinders[caps.unitParams + 1]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.unitParams).map fun k =>
           Expr.bvar (caps.unitParams - k)), my)) ∧
     sbody = Expr.mkAppN (.const eqName [ℓA]) [tySlot, .bvar 1, .bvar 0] ∧
-    tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+    tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
       ((List.range caps.unitParams).map fun k =>
         Expr.bvar (caps.unitParams + 1 - k)) ∧
     -- TT-lane conjunct (task #147): delivered only at `mode.ttChecks`
@@ -1138,10 +1138,10 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
       (mvalT : Expr) (hmcvmT : ReducibilityHint)
       (sbinders tbindersM : List (Expr × BinderMeta))
       (sbody tbodyM tySlot : Expr) (ℓA : Level),
-      env'.find? ((T.str "_model").str "unitlike") =
+      env'.find? (auxKey (auxKey T .model) .unitlike) =
         some (.thmInfo tcv tval) ∧
       tcv.levelParams = lps ∧
-      env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
       cvmT.levelParams = lps ∧
       env'.find? eqName = some eqA ∧
       tcv.type.stripPis (nP + 2) = some (sbinders, sbody) ∧
@@ -1150,19 +1150,19 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
         sbinders[k]? = some b → tbindersM[k]? = some b' →
         b.1 = b'.1) ∧
       (∃ mx, sbinders[nP]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx)) ∧
       (∃ my, sbinders[nP + 1]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - k)), my)) ∧
       sbody = Expr.mkAppN (.const eqName [ℓA])
         [tySlot, .bvar 1, .bvar 0] ∧
-      tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP + 1 - k)) ∧
       (mode.ttChecks = true → tbodyM = Expr.sort ℓA) := by
   rw [checkUnitThm] at h
   revert h
-  match hthm : env'.find? ((T.str "_model").str "unitlike") with
+  match hthm : env'.find? (auxKey (auxKey T .model) .unitlike) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1173,7 +1173,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
   | some (.thmInfo tcv tval) => ?_
   intro h
   revert h
-  match hTm : env'.find? (T.str "_model") with
+  match hTm : env'.find? (auxKey T .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1210,7 +1210,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
     exact domsMatchAux_inv hdomsB hk
       (by rw [Nat.zero_add]; exact hb) (by rw [Nat.zero_add]; exact hb')
   have hxdom : ∃ mx, sbinders[nP]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx) := by
     revert hxdomB
     match hbx : sbinders[nP]? with
@@ -1219,7 +1219,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
       intro hx
       exact ⟨mx, by rw [eq_of_beq hx]⟩
   have hydom : ∃ my, sbinders[nP + 1]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - k)), my) := by
     revert hydomB
     match hby : sbinders[nP + 1]? with
@@ -1296,12 +1296,12 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
       (mvalT : Expr) (hmcvmT : ReducibilityHint)
       (sbinders tbindersM : List (Expr × BinderMeta))
       (sbody tbodyM tySlot : Expr) (ℓA : Level),
-      env'.find? ((T.str "_model").str "eta") =
+      env'.find? (auxKey (auxKey T .model) .eta) =
         some (.thmInfo tcv tval) ∧
       tcv.levelParams = lps ∧
-      env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
       cvmT.levelParams = lps ∧
-      (∃ cvmC mvalC hmcvmC, env'.find? (ctorName.str "_model") =
+      (∃ cvmC mvalC hmcvmC, env'.find? (auxKey ctorName .model) =
         some (.defnInfo cvmC mvalC hmcvmC) ∧ cvmC.levelParams = lps) ∧
       (∀ j, j < nF → ∃ cvmj mvalj hmcvmj,
         env'.find? (projModelName T j) = some (.defnInfo cvmj mvalj hmcvmj) ∧
@@ -1313,22 +1313,22 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
         sbinders[k]? = some b → tbindersM[k]? = some b' →
         b.1 = b'.1) ∧
       (∃ mx, sbinders[nP]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx)) ∧
       sbody = Expr.mkAppN (.const eqName [ℓA])
         [tySlot, .bvar 0,
-         Expr.mkAppN (.const (ctorName.str "_model") (lps.map .param))
+         Expr.mkAppN (.const (auxKey ctorName .model) (lps.map .param))
           (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
            (List.range nF).map fun j => Expr.mkAppN
              (.const (projModelName T j) (lps.map .param))
              (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
               [Expr.bvar 0]))] ∧
-      tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - k)) ∧
       (mode.ttChecks = true → tbodyM = Expr.sort ℓA) := by
   rw [checkEtaThm] at h
   revert h
-  match hthm : env'.find? ((T.str "_model").str "eta") with
+  match hthm : env'.find? (auxKey (auxKey T .model) .eta) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1339,7 +1339,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
   | some (.thmInfo tcv tval) => ?_
   intro h
   revert h
-  match hTm : env'.find? (T.str "_model") with
+  match hTm : env'.find? (auxKey T .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1350,7 +1350,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
   | some (.defnInfo cvmT mvalT hmcvmT) => ?_
   intro h
   revert h
-  match hCm : env'.find? (ctorName.str "_model") with
+  match hCm : env'.find? (auxKey ctorName .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1404,7 +1404,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
     exact domsMatchAux_inv hdomsB hk
       (by rw [Nat.zero_add]; exact hb) (by rw [Nat.zero_add]; exact hb')
   have hxdom : ∃ mx, sbinders[nP]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx) := by
     revert hxdomB
     match hbx : sbinders[nP]? with
@@ -1582,10 +1582,8 @@ unable to complete before the projection fold runs. -/
 /-- A projection function's name is never a block member's: block
 members are guarded `isProjFnShape = false`. -/
 theorem projFnName_ne_of_shape {T n : Key} {j : Nat}
-    (h : n.isProjFnShape = false) : projFnName T j ≠ n := by
-  intro he
-  rw [← he] at h
-  simp [projFnName, Key.isProjFnShape] at h
+    (h : n.isProjFnShape = false) : projFnName T j ≠ n :=
+  auxKey_projFn_ne h
 
 /-- The stored-pins invariant steps at any fresh install whose name is
 not projection-shaped, given the new member's own data when it is an
@@ -1644,7 +1642,7 @@ theorem indCapsWF_of_pins {μ : CheckMode} {env : Env} {cvA : ConstantVal}
     {caps : IndCaps} {f : Key → Key}
     (hpins : EtaPins μ env cvA.name cvA.levelParams caps)
     {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hfm : env.find? (cvA.name.str "_model") =
+    (hfm : env.find? (auxKey cvA.name .model) =
       some (.defnInfo cvm mval hint))
     (hty : (cvA.type.renameConsts f == cvm.type) = true) :
     IndCapsWF (.indInfo cvA caps) := by

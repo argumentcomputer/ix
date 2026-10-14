@@ -67,11 +67,11 @@ def MemberValRun (μ : CheckMode) (F : Nat) (env' : Env)
     cvA = ⟨cv.name, cv.levelParams, type'⟩ ∧
     cvA.name.isModelSuffix = false ∧
     ∃ cvm mval hint,
-      env'.find? (cvA.name.str "_model")
+      env'.find? (auxKey cvA.name .model)
         = some (.defnInfo cvm mval hint) ∧
       cvm.levelParams = cvA.levelParams ∧
       ((cvA.type.renameConsts fun n =>
-          if blockNames.contains n then n.str "_model" else n)
+          if blockNames.contains n then auxKey n .model else n)
           == cvm.type) = true
 
 /-- `IndMembersR`'s run/guard half.  **The running valuation is gone**:
@@ -121,7 +121,7 @@ def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
     (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
     (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr) : Prop :=
   ∃ cvt fvs tbody,
-    env'.findCV? ((cvName.str "_model").str s!"iota_{j}") = some cvt ∧
+    env'.findCV? (auxKey (auxKey cvName .model) (.iota j)) = some cvt ∧
     cvt.levelParams = lps ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     isEqHead tbody.getAppFn = true ∧
@@ -172,7 +172,7 @@ def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
   nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
     = some (lvls, pins) ∧
   ∃ cvt fvs tbody,
-    env'.findCV? ((cvName.str "_model").str s!"iota_{j}") = some cvt ∧
+    env'.findCV? (auxKey (auxKey cvName .model) (.iota j)) = some cvt ∧
     cvt.levelParams = lps ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     isEqHead tbody.getAppFn = true ∧
@@ -289,7 +289,7 @@ where
     | acc, c :: rest, out =>
       ∃ rules',
         IotaRulesRun μ F envBase envSelf
-          (fun n => if blockNames.contains n then n.str "_model" else n)
+          (fun n => if blockNames.contains n then auxKey n .model else n)
           c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
           rules' ∧
         IndRecsFoldRun μ F blockNames envBase envSelf
@@ -335,7 +335,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
           b.1 = b'.1) ∧
       (∃ t', inferTypeCore μ env' F 0 rhsA = .ok t') ∧
       (∃ tcv tval,
-        env'.find? ((projModelName T i).str "iota")
+        env'.find? (auxKey (projModelName T i) .projIota)
           = some (.thmInfo tcv tval) ∧
         tcv.levelParams = lps ∧
         (∃ (sbinders : List (Expr × BinderMeta)) (ℓA : Level)
@@ -347,7 +347,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
                 (((List.range nP).map fun k =>
                     Expr.bvar (nP + nF - 1 - k)) ++
                  [Expr.mkAppN
-                   (.const (ctorName.str "_model")
+                   (.const (auxKey ctorName .model)
                      (cvj.levelParams.map .param))
                    (((List.range nP).map fun k =>
                        Expr.bvar (nP + nF - 1 - k)) ++

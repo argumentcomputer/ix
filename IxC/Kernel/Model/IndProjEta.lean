@@ -203,12 +203,12 @@ theorem projEtaLaw : ProjEtaLaw V := by
   -- one `acvalWith_ne` each: no case split, because a `recInfo` cons
   -- is neither the former nor the capability constructor
   have hvT : ∀ ψ : LevelParam → Nat,
-      m₂.acval T ψ = mp.base2.acval (T.str "_model") ψ := fun ψ => by
+      m₂.acval T ψ = mp.base2.acval (auxKey T .model) ψ := fun ψ => by
     rw [hac, acvalWith_ne hT0]
     exact (hIA T hbT _ hfE ψ).symm
   have hvC : ∀ ψ : LevelParam → Nat,
       m₂.acval caps.etaCtor ψ
-        = mp.base2.acval (caps.etaCtor.str "_model") ψ := fun ψ => by
+        = mp.base2.acval (auxKey caps.etaCtor .model) ψ := fun ψ => by
     rw [hac, acvalWith_ne hC0]
     exact (hIA caps.etaCtor hbC _ hfCe ψ).symm
   -- ===== the former's type reads as its model's =====
@@ -319,7 +319,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
       (acval_interp_closedC mp.base2 _ ψ σ ρ)
   -- the major's slot
   obtain ⟨mx, hxb⟩ := hxdom
-  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
       ((List.range caps.etaParams).map fun q =>
         AnnotTerm.bvar (caps.etaParams - 1 - (0 + q))) := by
     have h := hdomsS caps.etaParams _ hxb
@@ -365,13 +365,13 @@ theorem projEtaLaw : ProjEtaLaw V := by
     exact denoteMeta_openSpine hfj hlpj (caps.etaParams + 1)
       (caps.etaParams + 1) (Nat.le_refl _)
   have hctorHead : denoteMeta mp.base2.acval env ψ (caps.etaParams + 1)
-      (.const (caps.etaCtor.str "_model") (cvT.levelParams.map .param))
-      = some (mp.base2.acval (caps.etaCtor.str "_model") ψ) := by
+      (.const (auxKey caps.etaCtor .model) (cvT.levelParams.map .param))
+      = some (mp.base2.acval (auxKey caps.etaCtor .model) ψ) := by
     rw [denoteMeta_const hCmE'
       (by show (cvT.levelParams.map Level.param).length
               = cvmC.levelParams.length
           rw [hCmlps, List.length_map])]
-    show some (mp.base2.acval (caps.etaCtor.str "_model")
+    show some (mp.base2.acval (auxKey caps.etaCtor .model)
         (Level.substFn ψ cvmC.levelParams
           (cvT.levelParams.map .param))) = _
     rw [hCmlps, show Level.substFn ψ cvT.levelParams
@@ -401,11 +401,11 @@ theorem projEtaLaw : ProjEtaLaw V := by
   have hCs : Cs = .app (.app (.app
       (mp.base2.acval eqName
         (Level.substFn ψ eqA.toConstantVal.levelParams [ℓA]))
-      (AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))))
       (.bvar 0))
-      (AnnotTerm.mkAppN (mp.base2.acval (caps.etaCtor.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey caps.etaCtor .model) ψ)
         (((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))
           ++ (List.range caps.etaFields).map fun j =>
@@ -424,7 +424,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
     -- the two halves separately
     rw [Expr.instSeq_mkAppN,
       Expr.instSeq_eq_self _ _
-        (e := .const (caps.etaCtor.str "_model")
+        (e := .const (auxKey caps.etaCtor .model)
           (cvT.levelParams.map .param)) rfl,
       List.map_append,
       instSeq_openSpine_list caps.etaParams (caps.etaParams + 1)
@@ -499,7 +499,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
   have hSuniv := eqSlot_univ mp heqfE _ (hCs ▸ hokCs)
   rw [hSval] at hSuniv
   have hxS : x ∈ˢ ts.foldl SetTheory.app
-      (interp V ρ (mp.base2.acval (T.str "_model") ψ)) := hmx
+      (interp V ρ (mp.base2.acval (auxKey T .model) ψ)) := hmx
   have hRS := eqThird_mem mp heqfE _ (hCs ▸ hokCs)
     (by rw [hSval]; exact hSuniv)
     (by rw [hSval]; exact hxS)
@@ -532,7 +532,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
     exact List.map_congr_left fun j _ => hPval _
   rw [List.map_map] at hmapS hmapP
   rw [hmapS, hmapP,
-    acval_interp_closedC mp.base2 (caps.etaCtor.str "_model") ψ
+    acval_interp_closedC mp.base2 (auxKey caps.etaCtor .model) ψ
       (cons x (consN ts ρ)) ρ] at hRS
   have hlanded := memFoldl_of_teleFit (ts ++ [x]) (hokua ρ)
     (hmemua ρ) hfitFull
@@ -542,7 +542,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
   rw [interp_mkAppN_map, List.map_append, List.map_map, List.map_map]
     at hlanded
   rw [hmapS, hmapP,
-    acval_interp_closedC mp.base2 (caps.etaCtor.str "_model") ψ
+    acval_interp_closedC mp.base2 (auxKey caps.etaCtor .model) ψ
       (cons x (consN ts ρ)) ρ] at hlanded
   rw [(mp.eq_law heqfE _).1 (cons x (consN ts ρ)) _ x _
     hSuniv hxS hRS] at hlanded

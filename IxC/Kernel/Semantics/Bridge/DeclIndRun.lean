@@ -77,7 +77,7 @@ theorem memberValRun_of {env' : Env} {μ : CheckMode} {F : Nat}
   have hmsF : cv.name.isModelSuffix = false := by
     revert hms; cases cv.name.isModelSuffix <;> simp
   revert h
-  cases hfm : env'.find? (cv.name.str "_model") with
+  cases hfm : env'.find? (auxKey cv.name .model) with
   | none => intro h; simp [throw, throwThe, MonadExceptOf.throw] at h
   | some ci =>
     match ci with
@@ -87,7 +87,7 @@ theorem memberValRun_of {env' : Env} {μ : CheckMode} {F : Nat}
       by_cases hlp : cvm.levelParams = cv.levelParams
       · rw [if_pos hlp] at h
         by_cases het : ((type.renameConsts fun n =>
-            if blockNames.contains n then n.str "_model" else n) == cvm.type)
+            if blockNames.contains n then auxKey n .model else n) == cvm.type)
             = true
         · rw [if_pos het] at h
           simp only [pure, Except.pure, Except.ok.injEq] at h
@@ -391,7 +391,7 @@ where
         checked.foldlM (fun (acc : Env) c => do
           let rules' ← checkIotaRules (m := CheckM) μ (fueledOps μ F)
             envBase envSelf
-            (fun n => if blockNames.contains n then n.str "_model" else n)
+            (fun n => if blockNames.contains n then auxKey n .model else n)
             c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
           pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
           acc = .ok env₃ →
@@ -409,7 +409,7 @@ where
       revert h
       cases hr : checkIotaRules (m := CheckM) μ (fueledOps μ F) envBase
           envSelf
-          (fun n => if blockNames.contains n then n.str "_model" else n)
+          (fun n => if blockNames.contains n then auxKey n .model else n)
           c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2 with
       | error e => intro h; exact nomatch h
       | ok rules' => ?_

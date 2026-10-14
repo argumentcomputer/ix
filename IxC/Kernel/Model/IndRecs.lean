@@ -71,7 +71,7 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
     (mp : EnvModelM V μ envSelf)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hroT : RenameOk mp.base2.acval envSelf (fun n =>
-      if blockNames.contains n then n.str "_model" else n))
+      if blockNames.contains n then auxKey n .model else n))
     (hupB : FoldUpS envBase envSelf)
     (heqfB : envBase.find? eqName = some eqA) :
     ∀ (recs : List ConstantInfo) {envP envF env₃ : Env}

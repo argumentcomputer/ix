@@ -41,10 +41,10 @@ component, one currency over; the lookups stay in the v1 predicate. -/
 @[expose] def ProjPhaseAcval (T ctorName : Key) (nF : Nat) (env' : Env)
     (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ((env'.find? T).isSome = true →
-    ∀ ψ : LevelParam → Nat, acval T ψ = acval (T.str "_model") ψ) ∧
+    ∀ ψ : LevelParam → Nat, acval T ψ = acval (auxKey T .model) ψ) ∧
   ((env'.find? ctorName).isSome = true →
     ∀ ψ : LevelParam → Nat,
-      acval ctorName ψ = acval (ctorName.str "_model") ψ) ∧
+      acval ctorName ψ = acval (auxKey ctorName .model) ψ) ∧
   (∀ j, j < nF → (env'.find? (projFnName T j)).isSome = true →
     ∀ ψ : LevelParam → Nat,
       acval (projFnName T j) ψ = acval (projModelName T j) ψ)
@@ -119,9 +119,9 @@ theorem projPhaseAcval_cons {T ctorName : Key} {nF : Nat}
     rw [hh, hfresh] at hn
     exact nomatch hn
   have hmodelNeP : ∀ j : Nat, projModelName T j ≠ projFnName T i :=
-    fun j hh => Ix.Kernel.Name.num_ne_str _ _ _ _ hh.symm
-  have hstrNeP : ∀ n : Key, n.str "_model" ≠ projFnName T i :=
-    fun n hh => Ix.Kernel.Name.num_ne_str _ _ _ _ hh.symm
+    fun j hh => Ix.Kernel.auxKey_ne_of_endsNum (by simp [Derived.endsNum]) hh
+  have hstrNeP : ∀ n : Key, auxKey n .model ≠ projFnName T i :=
+    fun n hh => Ix.Kernel.auxKey_ne_of_endsNum (by simp [Derived.endsNum]) hh
   have hne : ∀ n : Key, n ≠ projFnName T i → n ≠ c₀.name :=
     fun n hn hh => hn (by rw [hh, hname])
   have hdown : ∀ n : Key, n ≠ projFnName T i →
@@ -147,10 +147,7 @@ theorem projPhaseAcval_cons {T ctorName : Key} {nF : Nat}
       exact hself ψ
     · have hjneP : projFnName T j ≠ projFnName T i := by
         intro hh
-        have hh2 : Ix.Kernel.Name.num (T.str "proj") j
-          = Ix.Kernel.Name.num (T.str "proj") i := hh
-        injection hh2 with _hp hij
-        exact hji hij
+        exact hji (Ix.Kernel.projFnName_inj hh).2
       rw [acvalWith_ne (hne _ hjneP),
         acvalWith_ne (hne _ (hmodelNeP j))]
       exact hinvA.2.2 j hj (hdown _ hjneP hP) ψ

@@ -861,7 +861,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    ((cvName.str "_model").str s!"iota_{j}")) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1127,7 +1127,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    ((cvName.str "_model").str s!"iota_{j}")) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1524,7 +1524,7 @@ theorem checkMemberVal_wfimp {blockNames : List Key} {env' : Env}
     exact absurd h atF_throw_bind
   rw [if_neg h1] at h ⊢
   revert h
-  match hm : env'.find? (cvA.name.str "_model") with
+  match hm : env'.find? (auxKey cvA.name .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1539,7 +1539,7 @@ theorem checkMemberVal_wfimp {blockNames : List Key} {env' : Env}
   case neg => rw [if_neg h2] at h; exact absurd h atF_throw_bind
   rw [if_pos h2] at h ⊢
   by_cases h3 : ((cvA.type.renameConsts
-      (fun n => if blockNames.contains n then n.str "_model" else n))
+      (fun n => if blockNames.contains n then auxKey n .model else n))
       == cvm.type) = true
   case neg => rw [if_neg h3] at h; exact absurd h atF_throw_bind
   rw [if_pos h3] at h ⊢
@@ -1797,7 +1797,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
       = .ok v := by
   unfold checkProjIota at h ⊢
   revert h
-  match hthm : env'.find? ((projModelName T i).str "iota") with
+  match hthm : env'.find? (auxKey (projModelName T i) .projIota) with
   | none => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
   | some (.axiomInfo _) => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
   | some (.projInfo _) => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
@@ -1900,7 +1900,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
       (.const (projModelName T i) (lps.map .param))
       (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
        [Expr.mkAppN
-         (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+         (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
          (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
           ((List.range nF).map fun k => Expr.bvar (nF - 1 - k)))])) = true
   case neg =>

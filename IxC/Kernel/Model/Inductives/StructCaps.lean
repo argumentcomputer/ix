@@ -33,7 +33,7 @@ universe w
 variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 
 theorem projFnName_isProjFnShape (T : Key) (j : Nat) :
-    (projFnName T j).isProjFnShape = true := rfl
+    (projFnName T j).isProjFnShape = true := isProjFnShape_auxKey_projFn T j
 
 /-- **The block's own capability laws at a carrier** (task #210 Part
 A): what `capsOk_cons_native` asks of the family being installed at

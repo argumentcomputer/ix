@@ -58,7 +58,7 @@ the v1 predicate directly. -/
     (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo,
     env.find? n = some ci →
-    ∀ ψ : LevelParam → Nat, acval (n.str "_model") ψ = acval n ψ
+    ∀ ψ : LevelParam → Nat, acval (auxKey n .model) ψ = acval n ψ
 
 /-- The P invariant's three type facts at a *stored* constant, keyed
 by `find?` rather than by membership (`EnvS.cval_memType`'s
@@ -89,14 +89,14 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
-        interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)
+        interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)
           ∈ˢ interp V ρ ta := by
   obtain ⟨type', hcv, rfl, -, cvm, mval, hint, hfm, hlpm, hren⟩ := hmv
   obtain ⟨-, -, -, -, -, -, -, -, htr, -⟩ := hcv
   -- the renaming's two `RenameOkT` clauses, at a member environment
   have hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? ((fun n =>
-          if blockNames.contains n then n.str "_model" else n) n)
+          if blockNames.contains n then auxKey n .model else n) n)
         = some ci' ∧
         ci'.toConstantVal.levelParams
           = ci.toConstantVal.levelParams := by
@@ -110,7 +110,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
   have hval : ∀ (n : Key) (ci : ConstantInfo),
       env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
-        if blockNames.contains n then n.str "_model" else n) n) ψ'
+        if blockNames.contains n then auxKey n .model else n) n) ψ'
         = mp.base2.acval n ψ' := by
     intro n ci hfn ψ'
     dsimp only
@@ -119,7 +119,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
     · rw [if_neg hb]
   -- the model constant's own facts, and the two types read the same
   obtain ⟨ta, hta, hokta, hmem⟩ :=
-    mp.acval_memType (n := cv.name.str "_model") hfm ψ
+    mp.acval_memType (n := auxKey cv.name .model) hfm ψ
   refine ⟨ta, ?_, hokta, hmem⟩
   show denoteMeta mp.base2.acval env ψ 0 type' = some ta
   rw [← hta]
@@ -154,7 +154,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
     (hnres : Ix.Kernel.reservedBasisNames.contains cvA.name = false)
     -- the model artifact whose leaf the member takes
     {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hmE : env.find? (cvA.name.str "_model")
+    (hmE : env.find? (auxKey cvA.name .model)
       = some (.defnInfo cvm mval hint))
     (hmlps : cvm.levelParams = cvA.levelParams)
     -- the member's type resolves in the prefix (`ConstantValR`)
@@ -168,16 +168,16 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
-        interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)
+        interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)
           ∈ˢ interp V ρ ta)
     -- the block fold's row
     (hcaps : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
       CapsOk m₂) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) := by
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) := by
   -- the three kinds share a constant value and a name
   have hcvA : c₀.toConstantVal = cvA := by
     rcases hkind with ⟨caps, rfl⟩ | ⟨nP, nF, rfl⟩ | ⟨mI, rP, rfl⟩ <;> rfl
@@ -200,7 +200,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
   have hcross : ∀ (ψ : LevelParam → Nat) {ta : AnnotTerm},
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta →
       denoteMeta (acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ))
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ))
         ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta := by
     intro ψ ta h
     rw [hcvA]
@@ -209,7 +209,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
         intro _ h <;> exact nomatch h)
       ψ 0 cvA.type hcb h
   have hgoal := declStep_preserves_of_ind_cons mp (c₀ := c₀)
-    (A := fun ψ => mp.base2.acval (cvA.name.str "_model") ψ)
+    (A := fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ)
     hfresh' hnres'
     (by rcases hkind with ⟨caps, rfl⟩ | ⟨nP, nF, rfl⟩ | ⟨mI, rP, rfl⟩ <;>
           intro _ _ _ h <;> exact nomatch h)

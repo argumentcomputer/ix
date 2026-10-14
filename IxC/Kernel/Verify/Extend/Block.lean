@@ -35,12 +35,12 @@ identification, discarded at the block's end. -/
     (cval : TConstVal) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci, env'.find? n = some ci →
     ∃ cvm mval hmcvm,
-      env'.find? (n.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
+      env'.find? (auxKey n .model) = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
       ((ci.toConstantVal.type.renameConsts (fun n' =>
-        if blockNames.contains n' then n'.str "_model" else n'))
+        if blockNames.contains n' then auxKey n' .model else n'))
         == cvm.type) = true ∧
-      ∀ ψ : LevelParam → Nat, cval n ψ = cval (n.str "_model") ψ
+      ∀ ψ : LevelParam → Nat, cval n ψ = cval (auxKey n .model) ψ
 
 /-- Installing one member valued by its model preserves the fold
 invariant.  Transpose of `BlockInstalled.step`. -/
@@ -49,13 +49,13 @@ theorem BlockInstalledTT.step {blockNames : List Key} {env' : Env}
     {mval : Expr} {hmcvm : ReducibilityHint}
     (hI : BlockInstalledTT blockNames env' cval)
     (hms : ci₁.name.isModelSuffix = false)
-    (hfm : env'.find? (ci₁.name.str "_model") =
+    (hfm : env'.find? (auxKey ci₁.name .model) =
       some (.defnInfo cvm mval hmcvm))
     (hlps : cvm.levelParams = ci₁.toConstantVal.levelParams)
     (hren : ((ci₁.toConstantVal.type.renameConsts (fun n' =>
-      if blockNames.contains n' then n'.str "_model" else n'))
+      if blockNames.contains n' then auxKey n' .model else n'))
       == cvm.type) = true)
-    (hval₁ : ∀ ψ, cval₁ ci₁.name ψ = cval (ci₁.name.str "_model") ψ)
+    (hval₁ : ∀ ψ, cval₁ ci₁.name ψ = cval (auxKey ci₁.name .model) ψ)
     (hpres₁ : ∀ n ψ, n ≠ ci₁.name → cval₁ n ψ = cval n ψ) :
     BlockInstalledTT blockNames ⟨ci₁ :: env'.consts⟩ cval₁ := by
   intro n hbn ci₂ hf₂
@@ -66,19 +66,19 @@ theorem BlockInstalledTT.step {blockNames : List Key} {env' : Env}
     obtain rfl : ci₁.name = n := hh
     refine ⟨cvm, mval, hmcvm, ?_, hlps, hren, ?_⟩
     · rw [Env.find?_cons,
-        if_neg (fun h => Name.str_ne ci₁.name "_model" h.symm)]
+        if_neg (fun h => auxKey_ne_self ci₁.name .model h.symm)]
       exact hfm
     · intro ψ
-      rw [hval₁ ψ, hpres₁ _ ψ (Name.str_ne ci₁.name "_model")]
+      rw [hval₁ ψ, hpres₁ _ ψ (auxKey_ne_self ci₁.name .model)]
   · next hh =>
     obtain ⟨cvm₂, mval₂, hm₂, hfm₂, hlps₂, hren₂, hv₂⟩ := hI n hbn ci₂ hf₂
     refine ⟨cvm₂, mval₂, hm₂, ?_, hlps₂, hren₂, ?_⟩
-    · rw [Env.find?_cons, if_neg (show ¬ci₁.name = n.str "_model" from
-        fun h => Name.str_model_ne hms h.symm)]
+    · rw [Env.find?_cons, if_neg (show ¬ci₁.name = auxKey n .model from
+        fun h => auxKey_model_ne hms h.symm)]
       exact hfm₂
     · intro ψ
       rw [hpres₁ _ ψ (fun h => hh h.symm),
-        hpres₁ _ ψ (fun h => Name.str_model_ne hms h),
+        hpres₁ _ ψ (fun h => auxKey_model_ne hms h),
         hv₂ ψ]
 
 /-- Prepending a fresh non-member constant preserves the fold
@@ -102,7 +102,7 @@ theorem BlockInstalledTT.fresh_cons {blockNames : List Key} {env' : Env}
   · next hh =>
     obtain ⟨cvm₂, mval₂, hm₂, hfm₂, hlps₂, hren₂, hv₂⟩ := hI n hbn ci₂ hf₂
     have hnne : n ≠ c₀.name := fun h => hh h.symm
-    have hmne : n.str "_model" ≠ c₀.name := by
+    have hmne : auxKey n .model ≠ c₀.name := by
       intro h
       rw [← h] at hfresh
       rw [hfresh] at hfm₂
@@ -120,7 +120,7 @@ theorem BlockInstalledTT.renameOkT {blockNames : List Key} {env₁ : Env}
     {cval₁ : TConstVal}
     (hI : BlockInstalledTT blockNames env₁ cval₁) :
     RenameOkT cval₁ env₁ (fun n => if (env₁.find? n).isSome = true then
-      (if blockNames.contains n then n.str "_model" else n) else n) := by
+      (if blockNames.contains n then auxKey n .model else n) else n) := by
   refine ⟨?_, ?_, ?_⟩
   · intro n ci₂ hf₂
     have hsome : (env₁.find? n).isSome = true := by rw [hf₂]; rfl

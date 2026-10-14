@@ -71,7 +71,7 @@ def DeclBasisRun (env : Env) (kind : BasisKind) (env₂ : Env) : Prop :=
 model artifact's.  The block folds thread it (finding 5's resolution,
 option 3 — see the `IndMembersR` docstring). -/
 def cvalModeled (cval : TConstVal) (n : Key) : TConstVal :=
-  cvalWith cval n (fun ψ => cval (n.str "_model") ψ)
+  cvalWith cval n (fun ψ => cval (auxKey n .model) ψ)
 
 /-- **The walks' recorded runs** (task #161 ind tier, the H1 exposure
 at the last tier — the campaign's first move returned): the

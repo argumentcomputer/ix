@@ -49,16 +49,14 @@ compared at a use. -/
   ∀ j, j < caps.etaFields → ∃ cv mI rP rules,
     env.find? (projFnName T j) = some (.recInfo cv mI rP rules)
 
-/-- A projection function is never a reserved basis name: `projFnName`
-builds a `Name.num` node, and every reserved name is a `Name.str`. -/
+/-- A projection function is never a reserved basis name: a derived key is
+not a role key (`reservedBasisNames_contains_auxKey`). -/
 theorem projFnName_ne_reserved {T n : Key} {j : Nat}
     (h : reservedBasisNames.contains n = true) : projFnName T j ≠ n := by
   intro hh
   subst hh
-  simp only [reservedBasisNames, List.contains_cons, List.contains_nil,
-    Bool.or_eq_true, beq_iff_eq, projFnName] at h
-  rcases h with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
-    h | h | h | h | h | h <;> exact nomatch h
+  rw [projFnName, reservedBasisNames_contains_auxKey T (d := .projFn j) nofun nofun] at h
+  exact Bool.false_ne_true h
 
 /-- Everything `natLitSupported` checked, as separate facts. -/
 theorem natLitSupported_inv {env : Env} (hs : natLitSupported env = true) :

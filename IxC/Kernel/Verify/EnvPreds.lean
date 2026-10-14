@@ -41,14 +41,14 @@ because blocks install as a unit with the recursor last; iota soundness
 uses it to resolve the constants a rule right-hand side mentions. -/
 @[expose] def BasisBlocks (env : Env) : Prop :=
   (∀ cv mI rP rules,
-    env.find? (eqName.str "rec") = some (.recInfo cv mI rP rules) →
+    env.find? eqRecName = some (.recInfo cv mI rP rules) →
     env.find? eqName = some eqA ∧ env.find? eqReflName = some eqReflA) ∧
   (∀ cv mI rP rules,
-    env.find? (natName.str "rec") = some (.recInfo cv mI rP rules) →
+    env.find? natRecName = some (.recInfo cv mI rP rules) →
     env.find? natName = some natA ∧ env.find? natZeroName = some natZeroA ∧
     env.find? natSuccName = some natSuccA) ∧
   (∀ cv mI rP rules,
-    env.find? (punitName.str "rec") = some (.recInfo cv mI rP rules) →
+    env.find? punitRecName = some (.recInfo cv mI rP rules) →
     env.find? punitName = some punitA ∧
     env.find? punitUnitName = some punitUnitA)
 
@@ -308,18 +308,22 @@ the discipline is uniform over every stored one. -/
 theorem ProjOkT.empty : ProjOkT Env.empty := by
   intro n tbl h; simp [Env.find?, Env.empty] at h
 
-/-- A constant stored under a name that is not a `num` name is not a
-tower table (those live under `projTableName`, a `num` name). -/
+/-- A projection table is not a role's constant. -/
+theorem projTableName_ne_roleKey (T : Key) (r : Role) : projTableName T ≠ roleKey r :=
+  auxKey_ne_roleKey r (by decide) (by decide)
+
+/-- A constant stored under a name that is no structure's projection table
+is not a tower table. -/
 theorem isTowerEntry_false_of_find? {env : Env} {n : Key} {c : ConstantInfo}
-    (hf : env.find? n = some c) (hn : ∀ p k, n ≠ Name.num p k) :
+    (hf : env.find? n = some c) (hn : ∀ T, n ≠ projTableName T) :
     c.isTowerEntry = false := by
   cases c with
   | projInfo tbl =>
     exfalso
     have h1 := List.find?_some hf
     have hname : (ConstantInfo.projInfo tbl).name = n := eq_of_beq (by simpa using h1)
-    simp only [ConstantInfo.name, ConstantInfo.toConstantVal, projTableName] at hname
-    exact hn _ _ hname.symm
+    simp only [ConstantInfo.name, ConstantInfo.toConstantVal] at hname
+    exact hn _ hname.symm
   | _ => rfl
 
 /-- The discipline at a lookup: a stored entry's head data. -/
@@ -338,18 +342,18 @@ theorem BasisBlocks.empty : BasisBlocks Env.empty := by
 @[expose] def pinnedInfo (n : Key) : ConstantInfo :=
   if n = eqName then eqA
   else if n = eqReflName then eqReflA
-  else if n = eqName.str "rec" then eqRecA
+  else if n = eqRecName then eqRecA
   else if n = natName then natA
   else if n = natZeroName then natZeroA
   else if n = natSuccName then natSuccA
-  else if n = natName.str "rec" then natRecA
+  else if n = natRecName then natRecA
   else if n = punitName then punitA
   else if n = punitUnitName then punitUnitA
-  else if n = punitName.str "rec" then punitRecA
+  else if n = punitRecName then punitRecA
   else if n = emptyName then emptyA
-  else if n = emptyName.str "rec" then emptyRecA
+  else if n = emptyRecName then emptyRecA
   else if n = falseName then falseA
-  else if n = falseName.str "rec" then falseRecA
+  else if n = falseRecName then falseRecA
   else if n = quotName then quotA
   else if n = quotMkName then quotMkA
   else if n = quotLiftName then quotLiftA
@@ -369,7 +373,7 @@ theorem pinnedInfo_ctorInfo_cases {n : Key} {cv : ConstantVal} {nP nF : Nat}
   by_cases h2 : n = eqReflName
   · exact Or.inl h2
   rw [if_neg h2] at h
-  by_cases h3 : n = eqName.str "rec"
+  by_cases h3 : n = eqRecName
   · rw [if_pos h3] at h; exact nomatch h
   rw [if_neg h3] at h
   by_cases h4 : n = natName
@@ -381,7 +385,7 @@ theorem pinnedInfo_ctorInfo_cases {n : Key} {cv : ConstantVal} {nP nF : Nat}
   by_cases h6 : n = natSuccName
   · exact Or.inr (Or.inr (Or.inl h6))
   rw [if_neg h6] at h
-  by_cases h7 : n = natName.str "rec"
+  by_cases h7 : n = natRecName
   · rw [if_pos h7] at h; exact nomatch h
   rw [if_neg h7] at h
   by_cases h11 : n = punitName
@@ -390,19 +394,19 @@ theorem pinnedInfo_ctorInfo_cases {n : Key} {cv : ConstantVal} {nP nF : Nat}
   by_cases h12 : n = punitUnitName
   · exact Or.inr (Or.inr (Or.inr (Or.inl h12)))
   rw [if_neg h12] at h
-  by_cases h13 : n = punitName.str "rec"
+  by_cases h13 : n = punitRecName
   · rw [if_pos h13] at h; exact nomatch h
   rw [if_neg h13] at h
   by_cases h14 : n = emptyName
   · rw [if_pos h14] at h; exact nomatch h
   rw [if_neg h14] at h
-  by_cases h15 : n = emptyName.str "rec"
+  by_cases h15 : n = emptyRecName
   · rw [if_pos h15] at h; exact nomatch h
   rw [if_neg h15] at h
   by_cases h15a : n = falseName
   · rw [if_pos h15a] at h; exact nomatch h
   rw [if_neg h15a] at h
-  by_cases h15b : n = falseName.str "rec"
+  by_cases h15b : n = falseRecName
   · rw [if_pos h15b] at h; exact nomatch h
   rw [if_neg h15b] at h
   by_cases h16 : n = quotName

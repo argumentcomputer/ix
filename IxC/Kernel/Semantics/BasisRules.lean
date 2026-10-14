@@ -59,7 +59,7 @@ def natRecSuccRule : RecRule :=
             { pw := .ifAllZero [uN] })
           (Expr.lam (.const natName [])
             (.app (.app (.bvar 1) (.bvar 0))
-              (.app (.app (.app (.app (.const (natName.str "rec")
+              (.app (.app (.app (.app (.const natRecName
                 [.param uN]) (.bvar 3)) (.bvar 2)) (.bvar 1)) (.bvar
                   0)))
             { pw := .ifAllZero [uN] })

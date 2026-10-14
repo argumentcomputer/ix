@@ -681,7 +681,7 @@ theorem checkMemberValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
   by_cases h1 : cvA.name.isModelSuffix = true
   · simp only [if_pos h1]; exact SimC.throw_bind
   simp only [if_neg h1]
-  match hm : env.find? (cvA.name.str "_model") with
+  match hm : env.find? (auxKey cvA.name .model) with
   | none => exact SimC.throw
   | some (.axiomInfo _) => exact SimC.throw
   | some (.projInfo _) => exact SimC.throw
@@ -695,7 +695,7 @@ theorem checkMemberValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
   case neg => simp only [if_neg h2]; exact SimC.throw_bind
   simp only [if_pos h2]
   by_cases h3 : ((cvA.type.renameConsts
-      (fun n => if blockNames.contains n then n.str "_model" else n))
+      (fun n => if blockNames.contains n then auxKey n .model else n))
       == cvm.type) = true
   case neg => simp only [if_neg h3]; exact SimC.throw_bind
   simp only [if_pos h3]
@@ -915,7 +915,7 @@ theorem checkProjIotaS_sim (hμ : mode.verifiedChecks = true) {T ctorName : Key}
       (checkProjIota mode (fueledOpsM mode) env env T ctorName lps cvj nP nF
         i) := by
   unfold checkProjIota
-  match h1 : env.find? ((projModelName T i).str "iota") with
+  match h1 : env.find? (auxKey (projModelName T i) .projIota) with
   | none => exact SimC.throw
   | some (.axiomInfo _) => exact SimC.throw
   | some (.projInfo _) => exact SimC.throw
@@ -963,7 +963,7 @@ theorem checkProjIotaS_sim (hμ : mode.verifiedChecks = true) {T ctorName : Key}
                   (.const (projModelName T i) (lps.map .param))
                   (((List.range nP).map fun k =>
                     Expr.bvar (nP + nF - 1 - k)) ++
-                   [Expr.mkAppN (.const (ctorName.str "_model")
+                   [Expr.mkAppN (.const (auxKey ctorName .model)
                      (cvj.levelParams.map .param))
                      ((((List.range nP).map fun k =>
                        Expr.bvar (nP + nF - 1 - k)) ++

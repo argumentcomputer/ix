@@ -115,7 +115,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     exact projFwd_model_self hPCne
   have hfCt : (if (env'.find? ctorName).isSome = true then
       projFwd T ctorName nF ctorName else ctorName)
-      = ctorName.str "_model" := by
+      = auxKey ctorName .model := by
     rw [if_pos hCf]
     unfold projFwd
     by_cases hCT : ctorName = T
@@ -136,7 +136,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   obtain ⟨hfvsIlen, hheadEqO, αS, hargs3O⟩ :=
     projStmtParts hilt hSb hopen hSstrip
   obtain ⟨ctorSpine, hctorSpine⟩ : ∃ e, e = Expr.mkAppN
-      (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+      (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
       (fvsI.take nP ++ fvsI.drop nP) := ⟨_, rfl⟩
   obtain ⟨lhsLit, hlhsLit⟩ : ∃ e, e = Expr.mkAppN
       (.const (projModelName T i) (lps.map .param))

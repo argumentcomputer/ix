@@ -697,7 +697,7 @@ theorem indRecsFoldFactsRun {μ : CheckMode} {F : Nat}
       blockNames.contains cvA.name = true →
       envSelf.find? cvA.name = some (.recInfo cvA mI rP []) →
       IotaRulesRun μ F envBase envSelf
-        (fun n => if blockNames.contains n then n.str "_model" else n)
+        (fun n => if blockNames.contains n then auxKey n .model else n)
         cvA.name cvA.levelParams cvA.type mI rP 0 rules rules' →
       ∀ rl ∈ rules', RF cvA mI rP rl) :
     ∀ (recs : List ConstantInfo) {envP envF env₃ : Env}

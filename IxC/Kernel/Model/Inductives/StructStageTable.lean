@@ -42,6 +42,6 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 
 /-- The table name has the reserved shape. -/
 theorem projTableName_isProjFnShape (T : Key) :
-    (projTableName T).isProjFnShape = true := rfl
+    (projTableName T).isProjFnShape = true := isProjFnShape_auxKey_projTable T
 
 end Ix.Kernel.Model

@@ -54,7 +54,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Key} {f : Key → Key}
     (hf : f = fun n =>
-      if blockNames.contains n then n.str "_model" else n)
+      if blockNames.contains n then auxKey n .model else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hup : ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
@@ -204,10 +204,10 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     ldomsL, lrest2, hinstLam, hTypedP, hruns⟩ := hthmN
   -- the statement's stored entry and front doors
   obtain ⟨ciT, hciTS, hciTcv⟩ : ∃ ciT, envSelf.find?
-      ((cvA.name.str "_model").str s!"iota_{j}") = some ciT ∧
+      (auxKey (auxKey cvA.name .model) (.iota j)) = some ciT ∧
       ciT.toConstantVal = cvt := by
     unfold Env.findCV? at hcvtE
-    rcases h : env₂.find? ((cvA.name.str "_model").str s!"iota_{j}")
+    rcases h : env₂.find? (auxKey (auxKey cvA.name .model) (.iota j))
       with _ | ci₂
     · rw [h] at hcvtE; exact nomatch hcvtE
     · rw [h] at hcvtE
@@ -483,7 +483,7 @@ theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Key} {f : Key → Key}
     (hf : f = fun n =>
-      if blockNames.contains n then n.str "_model" else n)
+      if blockNames.contains n then auxKey n .model else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hup : ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
@@ -520,7 +520,7 @@ theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Key} {f : Key → Key}
     (hf : f = fun n =>
-      if blockNames.contains n then n.str "_model" else n)
+      if blockNames.contains n then auxKey n .model else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hup : FoldUpS env₂ envSelf)

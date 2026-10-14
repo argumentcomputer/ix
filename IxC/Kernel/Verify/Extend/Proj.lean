@@ -280,7 +280,7 @@ theorem checkProjIota_inv {env' : Env} {T ctorName : Key}
     (h : checkProjIota mode (fueledOps mode F) env' env' T ctorName lps cvj nP
       nF i = .ok u) :
     ∃ tcv tval sbinders cbindersR cbody tySlot ℓA,
-      env'.find? ((projModelName T i).str "iota") =
+      env'.find? (auxKey (projModelName T i) .projIota) =
         some (.thmInfo tcv tval) ∧
       tcv.levelParams = lps ∧
       cvj.type.stripPis (nP + nF) = some (cbindersR, cbody) ∧
@@ -291,7 +291,7 @@ theorem checkProjIota_inv {env' : Env} {T ctorName : Key}
           (Expr.mkAppN (.const (projModelName T i) (lps.map .param))
             (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
              [Expr.mkAppN
-               (.const (ctorName.str "_model")
+               (.const (auxKey ctorName .model)
                  (cvj.levelParams.map .param))
                (((List.range nP).map fun k =>
                    Expr.bvar (nP + nF - 1 - k)) ++
@@ -318,7 +318,7 @@ theorem checkProjIota_inv {env' : Env} {T ctorName : Key}
     fueledOps_inferType, fueledOps_isDefEq, Bind.bind, Except.bind,
     pure, Except.pure] at h
   revert h
-  match hthm : env'.find? ((projModelName T i).str "iota") with
+  match hthm : env'.find? (auxKey (projModelName T i) .projIota) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -410,7 +410,7 @@ theorem checkProjIota_inv {env' : Env} {T ctorName : Key}
       (.const (projModelName T i) (lps.map .param))
       (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
        [Expr.mkAppN
-         (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+         (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
          (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
           ((List.range nF).map fun k => Expr.bvar (nF - 1 - k)))])) = true
   case neg => rw [if_neg hlhs] at h; exact nomatch h

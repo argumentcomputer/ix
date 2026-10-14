@@ -114,7 +114,7 @@ theorem blockRenameOkT {blockNames : List Key} {envSelf : Env}
     (hnames : ∀ n, blockNames.contains n = true →
       (envSelf.find? n).isSome = true) :
     RenameOkT cvalSelf envSelf (fun n =>
-      if blockNames.contains n then n.str "_model" else n) := by
+      if blockNames.contains n then auxKey n .model else n) := by
     refine ⟨?_, ?_, ?_⟩
     · intro n ciS hfS
       dsimp only

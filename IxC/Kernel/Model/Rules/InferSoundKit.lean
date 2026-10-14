@@ -338,7 +338,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           ciH.toConstantVal.levelParams []) = some ((.sort 1) : AnnotTerm) := by
       rw [hIH, denoteMeta_sort]
       rfl
-    have h := (head _ _ _ _ hfH (Ix.Kernel.isTowerEntry_false_of_find? hfH (fun _ _ h => by simp [Ix.Kernel.charName] at h)) (by simp [hlpH]) hR).2 ρ
+    have h := (head _ _ _ _ hfH (Ix.Kernel.isTowerEntry_false_of_find? hfH (fun T h => Ix.Kernel.projTableName_ne_roleKey T .char h.symm)) (by simp [hlpH]) hR).2 ρ
     rw [hlpH, interp_sort] at h
     exact h
   -- `List.nil`
@@ -364,7 +364,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.fvar 0 (Expr.sort (Level.succ Level.zero))) from rfl,
       denoteMeta_app, hKL, denoteMeta_fvar]
     rfl
-  obtain ⟨hokRN, hmemRN⟩ := head _ _ _ _ hfN (Ix.Kernel.isTowerEntry_false_of_find? hfN (fun _ _ h => by simp [Ix.Kernel.listNilName] at h)) (by simp [hlpN]) hRN
+  obtain ⟨hokRN, hmemRN⟩ := head _ _ _ _ hfN (Ix.Kernel.isTowerEntry_false_of_find? hfN (fun T h => Ix.Kernel.projTableName_ne_roleKey T .listNil h.symm)) (by simp [hlpN]) hRN
   -- `List.cons`
   have hIC : ciC.toConstantVal.type.instantiateLevelParams
       ciC.toConstantVal.levelParams [Level.zero]
@@ -429,7 +429,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.fvar 0 (Expr.sort (Level.succ Level.zero))) from rfl,
       denoteMeta_app, hKL, denoteMeta_fvar]
     rfl
-  obtain ⟨hokRC, hmemRC⟩ := head _ _ _ _ hfC (Ix.Kernel.isTowerEntry_false_of_find? hfC (fun _ _ h => by simp [Ix.Kernel.listConsName] at h)) (by simp [hlpC]) hRC
+  obtain ⟨hokRC, hmemRC⟩ := head _ _ _ _ hfC (Ix.Kernel.isTowerEntry_false_of_find? hfC (fun T h => Ix.Kernel.projTableName_ne_roleKey T .listCons h.symm)) (by simp [hlpC]) hRC
   -- `Char.ofNat`
   have hIF : ciF.toConstantVal.type.instantiateLevelParams
       ciF.toConstantVal.levelParams []
@@ -448,7 +448,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.fvar 0 (Expr.const Ix.Kernel.natName []))
         = Expr.const Ix.Kernel.charName [] from rfl, hKH]
     rfl
-  obtain ⟨hokRF, hmemRF⟩ := head _ _ _ _ hfF (Ix.Kernel.isTowerEntry_false_of_find? hfF (fun _ _ h => by simp [Ix.Kernel.charOfNatName] at h)) (by simp [hlpF]) hRF
+  obtain ⟨hokRF, hmemRF⟩ := head _ _ _ _ hfF (Ix.Kernel.isTowerEntry_false_of_find? hfF (fun T h => Ix.Kernel.projTableName_ne_roleKey T .charOfNat h.symm)) (by simp [hlpF]) hRF
   -- `String.ofList`
   have hIO : ciO.toConstantVal.type.instantiateLevelParams
       ciO.toConstantVal.levelParams []
@@ -474,7 +474,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.const Ix.Kernel.charName [])))
         = Expr.const Ix.Kernel.stringName [] from rfl, hKS]
     rfl
-  obtain ⟨hokRO, hmemRO⟩ := head _ _ _ _ hfO (Ix.Kernel.isTowerEntry_false_of_find? hfO (fun _ _ h => by simp [Ix.Kernel.stringOfListName] at h)) (by simp [hlpO]) hRO
+  obtain ⟨hokRO, hmemRO⟩ := head _ _ _ _ hfO (Ix.Kernel.isTowerEntry_false_of_find? hfO (fun T h => Ix.Kernel.projTableName_ne_roleKey T .stringOfList h.symm)) (by simp [hlpO]) hRO
   -- the numeral heads
   obtain ⟨hz, hsucc⟩ := hnh hs ρ
   -- the chain

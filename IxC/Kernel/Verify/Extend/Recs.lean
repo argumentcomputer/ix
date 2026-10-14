@@ -44,11 +44,11 @@ inductive ProvFacts (F : Nat) (blockNames : List Key) :
       cvA.type.looseBVarsBounded 0 = true →
       cvA.type.allLevelParamsDefined cvA.levelParams = true →
       cvA.type.constsResolve envAcc = true →
-      (∃ cvm mval hmcvm, envAcc.find? (cvA.name.str "_model") =
+      (∃ cvm mval hmcvm, envAcc.find? (auxKey cvA.name .model) =
         some (.defnInfo cvm mval hmcvm) ∧
         cvm.levelParams = cvA.levelParams ∧
         ((cvA.type.renameConsts (fun n =>
-          if blockNames.contains n then n.str "_model" else n))
+          if blockNames.contains n then auxKey n .model else n))
           == cvm.type) = true) →
       ProvFacts F blockNames
         ⟨.recInfo cvA mI rP [] :: envAcc.consts⟩ envSelf rest →
@@ -247,11 +247,11 @@ theorem ProvFacts.mem_facts {F : Nat} {blockNames : List Key} :
         c.1.type.looseBVarsBounded 0 = true ∧
         c.1.type.allLevelParamsDefined c.1.levelParams = true ∧
         c.1.type.constsResolve envSelf = true ∧
-        (∃ cvm mval hmcvm, envSelf.find? (c.1.name.str "_model") =
+        (∃ cvm mval hmcvm, envSelf.find? (auxKey c.1.name .model) =
           some (.defnInfo cvm mval hmcvm) ∧
           cvm.levelParams = c.1.levelParams ∧
           ((c.1.type.renameConsts (fun n =>
-            if blockNames.contains n then n.str "_model" else n))
+            if blockNames.contains n then auxKey n .model else n))
             == cvm.type) = true) ∧
         envSelf.find? c.1.name =
           some (.recInfo c.1 c.2.1 c.2.2.1 []) := by

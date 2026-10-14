@@ -136,7 +136,7 @@ theorem blockRenameOk {blockNames : List Key} {cval : TConstVal}
     (hnames : ∀ n, blockNames.contains n = true →
       (env.find? n).isSome = true) :
     RenameOk acval env (fun n =>
-      if blockNames.contains n then n.str "_model" else n) := by
+      if blockNames.contains n then auxKey n .model else n) := by
   refine ⟨?_, ?_, ?_⟩
   · intro n ciS hfS
     dsimp only

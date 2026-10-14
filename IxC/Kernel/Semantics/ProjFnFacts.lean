@@ -296,13 +296,13 @@ theorem projFwd_model_self {T ctorName : Key} {nF i : Nat}
     (hC : projModelName T i ≠ ctorName) :
     projFwd T ctorName nF (projModelName T i) = projModelName T i := by
   unfold projFwd
-  rw [if_neg (show ¬projModelName T i = T from Name.str_str_ne T _ _),
+  rw [if_neg (show ¬projModelName T i = T from auxKey_auxKey_ne_self T _ _),
     if_neg hC]
   rw [show (List.range nF).find?
       (fun j => projModelName T i == projFnName T j) = none from by
     rw [List.find?_eq_none]
     intro j _
     intro hh
-    exact Name.num_ne_str _ _ _ _ (eq_of_beq hh).symm]
+    exact auxKey_ne_of_endsNum (by simp [Derived.endsNum]) (eq_of_beq hh)]
 
 end Ix.Kernel.Semantics

@@ -86,7 +86,7 @@ theorem EnvFacts.consBlockMember {env : Env} (m : EnvFacts env)
     (hfresh : env.find? cvA.name = none)
     (hwf : EnvWF ⟨c₀ :: env.consts⟩)
     {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hmE : env.find? (cvA.name.str "_model")
+    (hmE : env.find? (auxKey cvA.name .model)
       = some (.defnInfo cvm mval hint))
     (hmlps : cvm.levelParams = cvA.levelParams)
     (hty : ∀ ψ : LevelParam → Nat,
@@ -149,7 +149,7 @@ theorem EnvFacts.consBlockMember {env : Env} (m : EnvFacts env)
     by_cases hn : n = cvA.name
     · subst hn
       rw [show cvalModeled m.cval cvA.name cvA.name
-          = fun ψ => m.cval (cvA.name.str "_model") ψ from cvalWith_self]
+          = fun ψ => m.cval (auxKey cvA.name .model) ψ from cvalWith_self]
       exact m.cval_closed _ _
     · rw [show cvalModeled m.cval cvA.name n = m.cval n from cvalWith_ne hn]
       exact m.cval_closed _ _
@@ -158,7 +158,7 @@ theorem EnvFacts.consBlockMember {env : Env} (m : EnvFacts env)
     rcases hdown n ci hf with ⟨rfl, rfl⟩ | ⟨hn, hf'⟩
     · rw [hc₀name,
         show cvalModeled m.cval cvA.name cvA.name
-          = fun ψ => m.cval (cvA.name.str "_model") ψ from cvalWith_self]
+          = fun ψ => m.cval (auxKey cvA.name .model) ψ from cvalWith_self]
       refine m.val_params _ _ hmE φ₁ φ₂ ?_
       intro p hpm
       exact hp p (by rw [hlpsA, ← hmlps]; exact hpm)
@@ -353,7 +353,7 @@ theorem projPhaseInvS_cons {T ctorName : Key} {nF : Nat} {env' : Env}
       ¬c₀.name = n :=
     fun n hn hh => hneP n hn (by rw [← hh, hname])
   have hmodelNeP : ∀ j : Nat, projModelName T j ≠ projFnName T i :=
-    fun j hh => Name.num_ne_str _ _ _ _ hh.symm
+    fun j hh => auxKey_ne_of_endsNum (by simp [Derived.endsNum]) hh
   have hmodelNe : ∀ (j : Nat), ¬c₀.name = projModelName T j :=
     fun j hh => hmodelNeP j (by rw [← hh, hname])
   have hdown : ∀ (n : Key) (ci : ConstantInfo),
@@ -368,9 +368,9 @@ theorem projPhaseInvS_cons {T ctorName : Key} {nF : Nat} {env' : Env}
     intro n ci hf hn
     rw [Env.find?_cons, if_neg hn]
     exact hf
-  have hstrNeP : ∀ n : Key, n.str "_model" ≠ projFnName T i :=
-    fun n hh => Name.num_ne_str _ _ _ _ hh.symm
-  have hstrNe : ∀ n : Key, ¬c₀.name = n.str "_model" :=
+  have hstrNeP : ∀ n : Key, auxKey n .model ≠ projFnName T i :=
+    fun n hh => auxKey_ne_of_endsNum (by simp [Derived.endsNum]) hh
+  have hstrNe : ∀ n : Key, ¬c₀.name = auxKey n .model :=
     fun n hh => hstrNeP n (by rw [← hh, hname])
   refine ⟨?_, ?_, ?_⟩
   · intro ci hf
@@ -398,10 +398,7 @@ theorem projPhaseInvS_cons {T ctorName : Key} {nF : Nat} {env' : Env}
         rw [hself, ← hag _ (hmodelNeP j)]
     · have hjneP : projFnName T j ≠ projFnName T i := by
         intro hh
-        have hh2 : Name.num (T.str "proj") j
-          = Name.num (T.str "proj") i := hh
-        injection hh2 with _hp hij
-        exact hji hij
+        exact hji (projFnName_inj hh).2
       have hjne : ¬c₀.name = projFnName T j :=
         fun hh => hjneP (by rw [← hh, hname])
       obtain ⟨cvm, mv, hm, hfm', hlps', hv'⟩ :=
