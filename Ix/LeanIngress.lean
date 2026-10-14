@@ -32,7 +32,8 @@ its block's `n` and whose other parameters are the block's, the shape
 `elim :: lps` the checker recognises, numbered as the Ixon reader numbers
 them. Nothing is hashed and nothing is rewritten: terms are converted by
 `Ix.LeanIngress.Expr` (Lean's levels as they are up to the numbering,
-`mdata` erased, binder names, binder infos and `nonDep` dropped,
+`mdata` erased except the compiler's contract frames, whose contracts go on the
+binders they wrap, binder names, binder infos and `nonDep` dropped,
 `pw := .never`).
 
 ## Grouping

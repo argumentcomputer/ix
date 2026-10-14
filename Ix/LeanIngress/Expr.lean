@@ -1,5 +1,6 @@
 import Ix.Environment
 import IxC.Kernel.Expr
+import Ix.SemanticContract
 
 /-! # Lean's terms as the checker's terms
 
@@ -16,11 +17,31 @@ The term half of the Source-mode ingress (`Ix.LeanIngress`): an
   canonicalized. A level parameter becomes its position `σ n` under the
   constant's numbering `σ` of its own level parameters
   (`Ix.LeanIngress.Numbering`). A level metavariable is refused.
-* **Terms**: `mdata` is erased, binder names and binder infos and `letE`'s
-  `nonDep` flag are dropped, every binder carries `pw := .never` (the checker's
-  annotation pass computes the datum, as for the Ixon reader's terms),
-  literals stay literals and a projection names its structure. A free variable
-  or a metavariable is refused.
+* **Terms**: `mdata` is erased (except a contract frame, below), binder names
+  and binder infos and `letE`'s `nonDep` flag are dropped, every binder
+  carries `pw := .never` (the checker's annotation pass computes the datum,
+  as for the Ixon reader's terms), literals stay literals and a projection
+  names its structure. A free variable or a metavariable is refused.
+* **Binder contracts.** Lean has none, so a binder carries the Lean
+  fragment's (`BinderMeta`'s defaults) unless a contract frame wraps it: an
+  `mdata` node with `ix.contract` fields (`Ix.SemanticContract`). Frames are
+  how the compiler's input carries resolved source contracts:
+  `Ix.Compile.CompileInput.prepare` resolves the source markers
+  (`ix.source.binder` metadata) and registrations on the Lean constants and
+  puts a frame directly around each annotated binder, `Ix.CanonM` keeps
+  the frames, and the compiler lowers each one into the Ixon binder it wraps
+  (`Ix.SemanticContract.Contract.lower`). The ingress reads a frame as the
+  compiler does, with the compiler's own `hasMetadata` and `read`
+  (`ingressMData`): a `lam` frame's contract becomes the binder's
+  `contract`; an `all` frame's input and result contracts become `contract`
+  and `result`; a `letE` frame's contract is erased, as the Ixon reader
+  erases a `let` contract (the checker's `letE` has no field for it); and a
+  malformed frame, or one that is not directly around a binder of its kind,
+  is refused, as the compiler refuses it. So a Source term carries the
+  contracts that `Ix.Cert.compile` writes into the Ixon term the reader
+  reads back, by construction. Unresolved source markers are plain metadata
+  to both the ingress and `Ix.Cert.compile`, which then both give the
+  defaults; the IO pipeline refuses them.
 
 `ingressExpr` is the specification, a structural recursion over the term
 tree. A canonicalized term is a DAG (`CanonM` interns structurally equal
@@ -57,11 +78,13 @@ abbrev KName := Ix.Kernel.Name
 abbrev KLevel := Ix.Kernel.Level
 abbrev KExpr := Ix.Kernel.Expr
 
-/-- A term the checker has no syntax for. -/
+/-- A term the checker has no syntax for, or a contract frame the compiler
+does not lower. -/
 inductive ExprError where
   | fvar (name : KName)
   | mvar (name : KName)
   | levelMVar (name : KName)
+  | contract (reason : String)
   deriving Repr, Inhabited, BEq
 
 def ingressName : Ix.Name → KName
@@ -74,6 +97,7 @@ instance : ToString ExprError where
     | .fvar n => s!"free variable {n}"
     | .mvar n => s!"metavariable {n}"
     | .levelMVar n => s!"level metavariable {n}"
+    | .contract r => s!"contract frame: {r}"
 
 def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError KLevel
   | .zero _ => pure .zero
@@ -82,6 +106,29 @@ def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError K
   | .imax u v _ => return .imax (← ingressLevel σ u) (← ingressLevel σ v)
   | .param n _ => pure (.param (σ n))
   | .mvar n _ => throw (.levelMVar (ingressName n))
+
+/-- The conversion `x` of the term `e` under a contract frame `c`: the
+binder `e` with `c` on it, where the compiler's `Contract.lower` puts it
+(`Ix.SemanticContract`). A `letE`'s contract is erased. -/
+def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
+    Except ExprError KExpr :=
+  match c.kind, e, x with
+  | .lam, .lam .., .lam t b m => pure (.lam t b { m with contract := c.binder })
+  | .all, .forallE .., .forallE t b m =>
+    pure (.forallE t b { m with contract := c.binder, result := c.result })
+  | .letE, .letE .., x => pure x
+  | _, _, _ => throw (.contract "semantic contract is not attached to its original binder")
+
+/-- An `mdata` node with data `d` over the term `e`, whose conversion is `x`:
+a contract frame (`Ix.SemanticContract.hasMetadata`) puts its contract on
+`e`'s binder (`withContract`), as the compiler reads it; any other metadata
+is erased. -/
+def ingressMData (d : Array (Ix.Name × Ix.DataValue)) (e : Ix.Expr)
+    (x : Except ExprError KExpr) : Except ExprError KExpr :=
+  if Ix.SemanticContract.hasMetadata d then do
+    let c ← (Ix.SemanticContract.read d).mapError .contract
+    withContract c e (← x)
+  else x
 
 /-- **The term conversion** (the specification), under the constant's
 numbering `σ` of its level parameters. -/
@@ -98,12 +145,19 @@ def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KEx
     return .letE (← ingressExpr σ t) (← ingressExpr σ v) (← ingressExpr σ b)
   | .lit (.natVal n) _ => pure (.lit (.natVal n))
   | .lit (.strVal s) _ => pure (.lit (.strVal s))
-  | .mdata _ e _ => ingressExpr σ e
+  | .mdata d e _ => ingressMData d e (ingressExpr σ e)
   | .proj n i e _ => return .proj (ingressName n) i (← ingressExpr σ e)
 
-/-- Metadata is erased. -/
+/-- Metadata is read by `ingressMData`. -/
 theorem ingressExpr_mdata (σ : Ix.Name → LevelParam) (d : Array (Ix.Name × Ix.DataValue))
-    (e : Ix.Expr) (h : Address) : ingressExpr σ (.mdata d e h) = ingressExpr σ e := rfl
+    (e : Ix.Expr) (h : Address) :
+    ingressExpr σ (.mdata d e h) = ingressMData d e (ingressExpr σ e) := rfl
+
+/-- Metadata that is not a contract frame is erased. -/
+theorem ingressExpr_mdata_plain (σ : Ix.Name → LevelParam) {d : Array (Ix.Name × Ix.DataValue)}
+    (e : Ix.Expr) (h : Address) (hd : Ix.SemanticContract.hasMetadata d = false) :
+    ingressExpr σ (.mdata d e h) = ingressExpr σ e := by
+  simp [ingressExpr_mdata, ingressMData, hd]
 
 /-- The conversion of several terms. -/
 def ingressExprs (σ : Ix.Name → LevelParam) (es : List Ix.Expr) : Except ExprError (List KExpr) :=
@@ -205,7 +259,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
         | .lit (.strVal s) _ => Squash.mk ⟨.ok (.lit (.strVal s)), rfl, memo⟩
         | .mdata d b h =>
           Squash.lift (go memo b) fun r =>
-            Squash.mk ⟨r.val, r.eq.trans (ingressExpr_mdata σ d b h).symm, r.memo⟩
+            Squash.mk ⟨ingressMData d b r.val, by rw [ingressExpr_mdata, r.eq], r.memo⟩
         | .app f a h =>
           Squash.lift (go memo f) fun r₁ =>
             match h₁ : r₁.val with
