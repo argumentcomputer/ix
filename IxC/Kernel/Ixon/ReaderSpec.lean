@@ -217,7 +217,7 @@ theorem readDefinition_spec {cx : Ctx} {st : State} {heights : CName → Nat}
     ∃ ty value, mr.read d.typ = .ok ty ∧ mr.read d.value = .ok value ∧
       DefinitionDecl ⟨cx.nameOf ref, lps, ty⟩ value (projRewrite st ⟨cx.nameOf ref, lps, ty⟩ value)
         d.kind decl := by
-  unfold readDefinition at h
+  unfold readDefinition lowerDefinition at h
   cases ht : mr.read d.typ with
   | error e => simp [ht, bind, Except.bind] at h
   | ok ty =>
@@ -226,7 +226,7 @@ theorem readDefinition_spec {cx : Ctx} {st : State} {heights : CName → Nat}
     | ok value =>
       refine ⟨ty, value, rfl, rfl, ?_⟩
       simp only [ht, hv, bind, Except.bind] at h
-      cases hs : safetyDecline d with
+      cases hs : safetyDeclineOf d.kind d.safety with
       | some why => simp [hs, declined, throw, throwThe, MonadExceptOf.throw] at h
       | none =>
         simp only [hs] at h

@@ -798,14 +798,37 @@ def safetyWord : Ix.DefinitionSafety → String
   | .part => "partial"
   | .safe => "safe"
 
-/-- The safety policy of a definition record (`ExportC.processLineCoreD`): a
-definition that is not safe, and an unsafe opaque, decline; the reason. The
-same for a singleton and for every member of a block. -/
-def safetyDecline (d : Ixon.Definition) : Option String :=
-  match d.kind with
-  | .defn => if d.safety == .safe then none else some s!"definition with safety '{safetyWord d.safety}'"
-  | .opaq => if d.safety == .unsaf then some "unsafe opaque declaration" else none
+/-- The safety policy of a definition (`ExportC.processLineCoreD`) of a kind
+and a safety: a definition that is not safe, and an unsafe opaque, decline;
+the reason. -/
+def safetyDeclineOf (kind : Ix.DefKind) (safety : Ix.DefinitionSafety) : Option String :=
+  match kind with
+  | .defn => if safety == .safe then none else some s!"definition with safety '{safetyWord safety}'"
+  | .opaq => if safety == .unsaf then some "unsafe opaque declaration" else none
   | .thm => none
+
+/-- The safety policy of a definition record. The same for a singleton and
+for every member of a block. -/
+def safetyDecline (d : Ixon.Definition) : Option String :=
+  safetyDeclineOf d.kind d.safety
+
+/-- A definition's declaration from its header `cv` and its value's reading,
+and whether the projection rewrite applied: the record-agnostic half of
+`readDefinition`, which every front end lowers through. `hint` is the host's
+hint; without one a definition gets the height rule's, over `heights`. -/
+def lowerDefinition (hint : Option Ix.Kernel.ReducibilityHint) (st : State)
+    (heights : CName → Nat) (cv : CVal) (value : CExpr) (kind : Ix.DefKind)
+    (safety : Ix.DefinitionSafety) : ReadM (CDecl × Bool) := do
+  let rewritten := projRewrite st cv value
+  let value' := rewritten.getD value
+  if let some why := safetyDeclineOf kind safety then declined why
+  let decl := match kind with
+    | .defn =>
+      let hint := hint.getD (Ix.Kernel.Frontend.InModel.hintFor heights value')
+      Ix.Kernel.Declaration.defnDecl cv value' hint
+    | .thm => Ix.Kernel.Declaration.thmDecl cv value'
+    | .opaq => Ix.Kernel.Declaration.opaqueDecl cv value
+  pure (decl, rewritten.isSome && kind != .opaq)
 
 /-- A definition member: its declaration (`ExportC.processLineCoreD`), and
 whether the projection rewrite applied. `heights` are the definitional
@@ -815,16 +838,7 @@ def readDefinition (cx : Ctx) (st : State) (heights : CName → Nat) (ref : Cons
   let name := cx.nameOf ref
   let cv : CVal := ⟨name, lps, ← mr.read d.typ⟩
   let value ← mr.read d.value
-  let rewritten := projRewrite st cv value
-  let value' := rewritten.getD value
-  if let some why := safetyDecline d then declined why
-  let decl := match d.kind with
-    | .defn =>
-      let hint := (cx.hint ref).getD (Ix.Kernel.Frontend.InModel.hintFor heights value')
-      Ix.Kernel.Declaration.defnDecl cv value' hint
-    | .thm => Ix.Kernel.Declaration.thmDecl cv value'
-    | .opaq => Ix.Kernel.Declaration.opaqueDecl cv value
-  pure (decl, rewritten.isSome && d.kind != .opaq)
+  lowerDefinition (cx.hint ref) st heights cv value d.kind d.safety
 
 /-- The members of a definition block that member `i`'s expressions name by
 `recur`. -/
@@ -864,9 +878,108 @@ def defOrder (deps : Array (Std.HashSet Nat)) : Option (Array Nat) := Id.run do
     unless progressed do return none
   return if out.size == n then some out else none
 
-/-- An inductive block with its recursors: one `indDecl`, preceded by the
+/-- A recursor's declared counts. -/
+structure RecCounts where
+  params : Nat
+  motives : Nat
+  minors : Nat
+  indices : Nat
+  k : Bool
+
+/-- An inductive block as a front end reads it, before lowering: the block's
+declared parameter count; its types in motive order, each with its declared
+parameter and index counts; its constructors in the block's order, each with
+its parameter and field counts, and their names per type; its recursors in
+motive order, each with its declared counts and its rules. -/
+structure BlockRead where
+  numParams : Nat
+  types : Array (CVal × Nat × Nat)
+  ctors : Array (CVal × Nat × Nat)
+  ctorNames : Array (List CName)
+  recs : Array (CVal × RecCounts × List Ix.Kernel.RecRule)
+
+/-- An inductive block's declarations: one `indDecl`, preceded by the
 modeller's records for a nested or mutual block (`ExportC.validateIndD` and
-`installIndD`). -/
+`installIndD`). The record-agnostic half of `readInductive`, which every
+front end lowers through. -/
+def lowerInductive (st : State) (rb : BlockRead) : ReadM Read := do
+  let ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
+  -- the stream's own consistency checks (`validateIndD`)
+  let nTypes := types.size
+  let nCtors := ctors.size
+  let numNested := match recs[0]? with
+    | some (_, r, _) => r.motives - nTypes
+    | none => 0
+  let nested := numNested != 0
+  let kExpected? : Option Bool :=
+    match types.toList, ctorNames.toList, ctors.toList with
+    | [(ty, _, _)], [[_]], [(_, _, nF)] =>
+      match ty.type.piResult with
+      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+      | _ => none
+    | _, _, _ => some false
+  unless nested do
+    for (cv, r, _) in recs do
+      unless r.params == nPd do
+        malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"
+      unless r.motives == nTypes do
+        malformed s!"recursor {cv.name} declares {r.motives} motives; the block has {nTypes} types"
+      unless r.minors == nCtors do
+        malformed s!"recursor {cv.name} declares {r.minors} minor premises; the block has {nCtors} constructors"
+      if let some kE := kExpected? then
+        unless r.k == kE do
+          malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
+      if let .str T "rec" := cv.name then
+        for (ty, _, _) in types do
+          if ty.name == T then
+            if let some n := ty.type.piSortTeleLen? then
+              unless nPd + r.indices == n do
+                malformed s!"recursor {cv.name} declares {r.indices} indices; {T} has {n - nPd}"
+  -- the block's constants
+  let typeInfos : List CInfo := types.toList.map fun (cv, _, _) => .indInfo cv {}
+  let ctorInfos : List CInfo := ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF
+  let recInfos : List CInfo := recs.toList.map fun (cv, r, rules) =>
+    .recInfo cv (r.params + r.motives + r.minors + r.indices) (r.params + r.motives + r.minors) rules
+  let block := typeInfos ++ ctorInfos ++ recInfos
+  -- shape flags the export carries and Ixon does not: recursive and
+  -- reflexive occurrences, read off the constructors' field domains
+  let memberNames := types.toList.map (·.1.name)
+  let fieldDoms := ctors.toList.flatMap fun (cv, _, _) =>
+    (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)
+  let isRec := fieldDoms.any fun d => memberNames.any (Ix.Kernel.Frontend.occursConstFast · d)
+  let isReflexive := fieldDoms.any fun d =>
+    let (bs, body) := Ix.Kernel.Frontend.stripPisAll d
+    !bs.isEmpty && memberNames.any (Ix.Kernel.Frontend.headIs · body)
+  -- the projection rewrite's owners (`registerProjOwners`)
+  let ownerTypes := types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
+    (cv.name, cv.levelParams, cv.type, nP, nIdx, cs, isRec)
+  let ownerCtors := ctors.toList.map fun (cv, _, nF) => (cv.name, nF, cv.type)
+  let ownerRecs := recs.toList.map fun (cv, r, _) =>
+    (cv.name, cv.levelParams, cv.type, r.motives, r.minors)
+  let owners := Ix.Kernel.Frontend.projRecOwners block ownerTypes ownerCtors ownerRecs
+  -- the in-process modeller
+  let b : Ix.Kernel.Frontend.InModel.BlockRec :=
+    ⟨types.toList.zip ctorNames.toList |>.map fun ((cv, nP, nIdx), cs) =>
+        { cv, nP, nIdx, ctors := cs, isRec, isReflexive, numNested },
+     ctors.toList.map fun (cv, nP, nF) => { cv, nP, nF },
+     recs.toList.map fun (cv, r, rules) =>
+       { cv, nP := r.params, nM := r.motives, nm := r.minors, nI := r.indices, rules }⟩
+  let blocks := b.types.map (·.cv.name, b)
+  let decl := Ix.Kernel.Declaration.indDecl block nPd
+  if Ix.Kernel.Frontend.InModel.wants b then
+    -- the block's own members are visible to the nested rung, as in the
+    -- decoder (`installIndD` registers the block before generating)
+    let ctx : Ix.Kernel.Frontend.InModel.Ctx :=
+      ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
+       fun n => if memberNames.contains n then some b else st.indBlocks[n]?⟩
+    match Ix.Kernel.Frontend.InModel.generate ctx b with
+    | .error why => declined s!"in-process model of {(types[0]?.map (·.1.name)).getD .anonymous}: {why}"
+    | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }
+  else
+    pure { decls := #[decl], owners, blocks }
+
+/-- An inductive block with its recursors, read from its records and lowered
+by `lowerInductive`. -/
 def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
     (ms : Array Ixon.MutConst) : ReadM Read := do
   let some shape := cx.index.blocks[owner]?
@@ -888,11 +1001,10 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
   let lpsAt (lvls : UInt64) : List CName :=
     if lvls == first.lvls then blockLps else levelNames lvls.toNat
   -- types, in motive order
-  let mut types : Array CVal := #[]
-  let mut tyRecs : Array (Nat × Ixon.Inductive) := #[]
+  let mut types : Array (CVal × Nat × Nat) := #[]
   for (i, ind) in indcs do
-    types := types.push ⟨cx.nameOf (.member owner i), lpsAt ind.lvls, ← mrInd.read ind.typ⟩
-    tyRecs := tyRecs.push (i, ind)
+    types := types.push (⟨cx.nameOf (.member owner i), lpsAt ind.lvls, ← mrInd.read ind.typ⟩,
+      ind.params.toNat, ind.indices.toNat)
   -- constructors, in the block's own order
   let mut ctors : Array (CVal × Nat × Nat) := #[]
   let mut ctorNames : Array (List CName) := #[]
@@ -909,7 +1021,7 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
       names := names ++ [cv.name]
     ctorNames := ctorNames.push names
   -- recursors, in motive order
-  let mut recs : Array (CVal × Ixon.Recursor × List Ix.Kernel.RecRule) := #[]
+  let mut recs : Array (CVal × RecCounts × List Ix.Kernel.RecRule) := #[]
   for ref in shape.recs do
     let some entry := cx.index.recs[ref]? | malformed "unindexed recursor"
     let .member rOwner j := ref | malformed "recursor reference is a constructor"
@@ -931,84 +1043,9 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
     for (rule, k) in r.rules.zipIdx do
       rules := rules ++ [Ix.Kernel.RecRule.mk (cx.nameOf (.ctor mb mi k)) rule.fields.toNat 0 .inert
         (← mr.read rule.rhs) false false false]
-    recs := recs.push (cv, r, rules)
-  -- the stream's own consistency checks (`validateIndD`)
-  let nTypes := types.size
-  let nCtors := ctors.size
-  let numNested := match recs[0]? with
-    | some (_, r, _) => r.motives.toNat - nTypes
-    | none => 0
-  let nested := numNested != 0
-  let kExpected? : Option Bool :=
-    match types.toList, ctorNames.toList, ctors.toList with
-    | [ty], [[_]], [(_, _, nF)] =>
-      match ty.type.piResult with
-      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
-      | _ => none
-    | _, _, _ => some false
-  unless nested do
-    for (cv, r, _) in recs do
-      unless r.params.toNat == nPd do
-        malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"
-      unless r.motives.toNat == nTypes do
-        malformed s!"recursor {cv.name} declares {r.motives} motives; the block has {nTypes} types"
-      unless r.minors.toNat == nCtors do
-        malformed s!"recursor {cv.name} declares {r.minors} minor premises; the block has {nCtors} constructors"
-      if let some kE := kExpected? then
-        unless r.k == kE do
-          malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
-      if let .str T "rec" := cv.name then
-        for ty in types do
-          if ty.name == T then
-            if let some n := ty.type.piSortTeleLen? then
-              unless nPd + r.indices.toNat == n do
-                malformed s!"recursor {cv.name} declares {r.indices} indices; {T} has {n - nPd}"
-  -- the block's constants
-  let typeInfos : List CInfo := types.toList.map (.indInfo · {})
-  let ctorInfos : List CInfo := ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF
-  let recInfos : List CInfo := recs.toList.map fun (cv, r, rules) =>
-    let nP := r.params.toNat; let nM := r.motives.toNat
-    let nm := r.minors.toNat; let nI := r.indices.toNat
-    .recInfo cv (nP + nM + nm + nI) (nP + nM + nm) rules
-  let block := typeInfos ++ ctorInfos ++ recInfos
-  -- shape flags the export carries and Ixon does not: recursive and
-  -- reflexive occurrences, read off the constructors' field domains
-  let memberNames := types.toList.map (·.name)
-  let fieldDoms := ctors.toList.flatMap fun (cv, _, _) =>
-    (Ix.Kernel.Frontend.stripPisAll cv.type).1.map (·.1)
-  let isRec := fieldDoms.any fun d => memberNames.any (Ix.Kernel.Frontend.occursConstFast · d)
-  let isReflexive := fieldDoms.any fun d =>
-    let (bs, body) := Ix.Kernel.Frontend.stripPisAll d
-    !bs.isEmpty && memberNames.any (Ix.Kernel.Frontend.headIs · body)
-  -- the projection rewrite's owners (`registerProjOwners`)
-  let ownerTypes := (types.zip tyRecs).toList.zip ctorNames.toList |>.map fun ((cv, (_, ind)), cs) =>
-    (cv.name, cv.levelParams, cv.type, ind.params.toNat, ind.indices.toNat, cs, isRec)
-  let ownerCtors := ctors.toList.map fun (cv, _, nF) => (cv.name, nF, cv.type)
-  let ownerRecs := recs.toList.map fun (cv, r, _) =>
-    (cv.name, cv.levelParams, cv.type, r.motives.toNat, r.minors.toNat)
-  let owners := Ix.Kernel.Frontend.projRecOwners block ownerTypes ownerCtors ownerRecs
-  -- the in-process modeller
-  let b : Ix.Kernel.Frontend.InModel.BlockRec :=
-    ⟨(types.zip tyRecs).toList.zip ctorNames.toList |>.map fun ((cv, (_, ind)), cs) =>
-        { cv, nP := ind.params.toNat, nIdx := ind.indices.toNat, ctors := cs, isRec,
-          isReflexive, numNested },
-     ctors.toList.map fun (cv, nP, nF) => { cv, nP, nF },
-     recs.toList.map fun (cv, r, rules) =>
-       { cv, nP := r.params.toNat, nM := r.motives.toNat, nm := r.minors.toNat,
-         nI := r.indices.toNat, rules }⟩
-  let blocks := b.types.map (·.cv.name, b)
-  let decl := Ix.Kernel.Declaration.indDecl block nPd
-  if Ix.Kernel.Frontend.InModel.wants b then
-    -- the block's own members are visible to the nested rung, as in the
-    -- decoder (`installIndD` registers the block before generating)
-    let ctx : Ix.Kernel.Frontend.InModel.Ctx :=
-      ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
-       fun n => if memberNames.contains n then some b else st.indBlocks[n]?⟩
-    match Ix.Kernel.Frontend.InModel.generate ctx b with
-    | .error why => declined s!"in-process model of {(types[0]?.map (·.name)).getD .anonymous}: {why}"
-    | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }
-  else
-    pure { decls := #[decl], owners, blocks }
+    recs := recs.push (cv, ⟨r.params.toNat, r.motives.toNat, r.minors.toNat, r.indices.toNat, r.k⟩,
+      rules)
+  lowerInductive st ⟨nPd, types, ctors, ctorNames, recs⟩
 
 /-- One primary or projection record: its declarations. The state is read,
 not changed; `State.commit` applies what the record taught. -/
