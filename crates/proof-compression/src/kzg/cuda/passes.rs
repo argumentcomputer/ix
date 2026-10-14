@@ -27,16 +27,16 @@ struct NativePass {
   group: usize,
 }
 
-struct Pass {
+pub(super) struct Pass {
   program: Program,
-  columns: Vec<Column>,
+  pub(super) columns: Vec<Column>,
   evaluated: usize,
   group: usize,
   weight: Fr,
 }
 
 impl Pass {
-  fn new(
+  pub(super) fn new(
     program: Program,
     all: &[PolynomialView<'_>],
     extra: &[usize],
@@ -124,19 +124,28 @@ fn memory_bound(
   .try_fold(0usize, usize::checked_add)
 }
 
-fn admit(bytes: usize) -> Option<Device<'static>> {
-  let devices = Devices::get();
-  if devices.ids.len() != 1 || bytes > devices.potential_budget(0) {
+/// Lease an admitted device for `passes`, preferring the one holding most of
+/// their resident columns, and bind that device's residents into every
+/// pass. A pass reads the same columns as the dense working set, so the
+/// device choice follows the same admission rule.
+pub(super) fn admit(
+  passes: &mut [Pass],
+  all: &[PolynomialView<'_>],
+  bytes: usize,
+) -> Option<Device<'static>> {
+  let eligible = quotient::eligible_devices(all, bytes);
+  let Some(device) = quotient::acquire_device(&eligible, bytes) else {
     tracing::info!(
       bytes,
-      devices = devices.ids.len(),
-      budget = devices.potential_budget(0),
+      budgets = ?quotient::device_budgets(),
       "KZG constraint passes not admitted"
     );
     return None;
+  };
+  for pass in passes {
+    quotient::bind_resident(&mut pass.columns, all, &device);
   }
-  let device = devices.acquire_at(0);
-  device.prepare_budget(bytes).then_some(device)
+  Some(device)
 }
 
 pub(super) fn lookup_coefficients(
@@ -145,9 +154,6 @@ pub(super) fn lookup_coefficients(
   all: &[PolynomialView<'_>],
   widths: [usize; 3],
 ) -> Option<(Vec<Vec<Fr>>, Scalar)> {
-  if Devices::get().ids.len() != 1 {
-    return None;
-  }
   let rows = 1usize.checked_shl(parameters.trace_log)?;
   let group_size = parameters.group_size as usize;
   let graph = &input.circuit.graph;
@@ -155,7 +161,7 @@ pub(super) fn lookup_coefficients(
   if groups == 0 {
     return None;
   }
-  let passes: Vec<_> = (0..groups)
+  let mut passes: Vec<_> = (0..groups)
     .map(|group| {
       let start = group * group_size;
       let program = quotient::encode_pass(
@@ -175,7 +181,7 @@ pub(super) fn lookup_coefficients(
     groups.checked_add(3)?,
     0,
   )?;
-  let device = admit(bytes)?;
+  let device = admit(&mut passes, all, bytes)?;
   let native: Vec<_> = passes.iter().map(Pass::native).collect();
   let mut outputs = vec![vec![Fr::ZERO; rows]; groups];
   let pointers: Vec<*mut [u64; 4]> =
@@ -218,9 +224,6 @@ pub(super) fn quotient_coefficients(
   shifts: &[Fr],
   inverse_vanishing: &[Fr],
 ) -> Option<Vec<Vec<Fr>>> {
-  if Devices::get().ids.len() != 1 {
-    return None;
-  }
   if !(10..=27).contains(&input.trace_domain.log_size) {
     return None;
   }
@@ -276,7 +279,7 @@ pub(super) fn quotient_coefficients(
     ratio.checked_add(1)?,
     input.lookup_publics.len(),
   )?;
-  let device = admit(bytes)?;
+  let device = admit(&mut passes, all, bytes)?;
   let native: Vec<_> = passes.iter().map(Pass::native).collect();
   let mut outputs = vec![vec![Fr::ZERO; rows]; ratio];
   let pointers: Vec<*mut [u64; 4]> =

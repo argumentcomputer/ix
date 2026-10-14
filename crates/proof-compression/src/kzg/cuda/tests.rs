@@ -419,6 +419,45 @@ fn with_deadline(seconds: u64, test: impl FnOnce() + Send + 'static) {
 }
 
 #[test]
+#[ignore = "requires two CUDA GPUs; pass admission across resident columns on both"]
+fn pass_admission_binds_only_the_admitted_devices_residents() {
+  let devices = Devices::get();
+  assert!(devices.ids.len() >= 2, "run with two devices selected");
+  let values = scalars(1 << 16);
+  // Reservations balance retained bytes across the devices.
+  let retained: Vec<_> =
+    (0..4).map(|_| retain(&values).expect("resident column")).collect();
+  let a: &ResidentPolynomial = &retained[0];
+  let b: &ResidentPolynomial = retained
+    .iter()
+    .map(|r| &**r)
+    .find(|r| r.reservation.index != a.reservation.index)
+    .expect("retentions spread over two devices");
+  fn expect_device(all: &[quotient::PolynomialView<'_>], expected: usize) {
+    let empty = quotient::Program {
+      nodes: vec![],
+      roots: vec![],
+      lookups: vec![],
+      args: vec![],
+      slots: 0,
+    };
+    let mut passes =
+      vec![passes::Pass::new(empty, all, &[], 0, Fr::ONE).expect("pass")];
+    let device = passes::admit(&mut passes, all, 1 << 20).expect("admitted");
+    assert_eq!(device.index, expected);
+    for (column, (_, resident, _)) in passes[0].columns.iter().zip(all) {
+      let local = resident.is_some_and(|r| r.reservation.index == expected);
+      assert_eq!(!column.resident.is_null(), local);
+    }
+  }
+  let host = (&values[..], None, false);
+  let on_a = (&values[..], Some(a), false);
+  let on_b = (&values[..], Some(b), false);
+  expect_device(&[on_a, on_a, on_b, host], a.reservation.index);
+  expect_device(&[on_b, host], b.reservation.index);
+}
+
+#[test]
 #[ignore = "requires one CUDA GPU; two Rayon threads race uncached MSMs and divisions"]
 fn concurrent_uncached_msm_completes() {
   with_deadline(120, concurrent_uncached_msm_body);

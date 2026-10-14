@@ -32,7 +32,7 @@ pub(super) struct Lookup {
 #[repr(C, align(32))]
 pub(super) struct Column {
   input: *const [u64; 4],
-  resident: *const c_void,
+  pub(super) resident: *const c_void,
   count: usize,
   padding: u64,
   constant: [u64; 4],
@@ -273,7 +273,7 @@ pub(super) fn pass_columns(
   for &column in extra {
     *used.get_mut(column)? = true;
   }
-  let mut columns = resident_column_descriptors(all);
+  let mut columns = column_descriptors(all);
   let mut count = 0;
   for ((descriptor, (_, _, constant)), needed) in
     columns.iter_mut().zip(all).zip(used)
@@ -558,21 +558,10 @@ pub(super) fn column_descriptors(
     .collect()
 }
 
-pub(super) fn resident_column_descriptors(
-  all_columns: &[PolynomialView<'_>],
-) -> Vec<Column> {
-  let mut columns = column_descriptors(all_columns);
-  for (descriptor, (_, resident, _)) in columns.iter_mut().zip(all_columns) {
-    descriptor.resident =
-      resident.map_or(std::ptr::null(), |r| r.context as *const c_void);
-  }
-  columns
-}
-
-pub(super) fn acquire_columns(
+/// Lease the first free device among `eligible`, in its order of preference,
+/// with `bytes` of budget prepared on it.
+pub(super) fn acquire_device(
   eligible: &[(usize, usize)],
-  columns: &mut [Column],
-  all_columns: &[PolynomialView<'_>],
   bytes: usize,
 ) -> Option<Device<'static>> {
   Device::assert_unleased();
@@ -592,15 +581,31 @@ pub(super) fn acquire_columns(
       busy = devices.available.wait(busy).unwrap();
     }
   };
-  if !device.prepare_budget(bytes) {
-    return None;
-  }
+  device.prepare_budget(bytes).then_some(device)
+}
+
+/// Point descriptors at the resident copies that live on `device`. The
+/// kernels reject a resident pointer from another device and upload every
+/// unbound column from its host slice instead.
+pub(super) fn bind_resident(
+  columns: &mut [Column],
+  all_columns: &[PolynomialView<'_>],
+  device: &Device<'_>,
+) {
   for (column, (_, resident, _)) in columns.iter_mut().zip(all_columns) {
-    if let Some(resident) =
-      resident.filter(|r| r.reservation.index == device.index)
-    {
-      column.resident = resident.context as *const c_void;
-    }
+    column.resident = resident
+      .filter(|r| r.reservation.index == device.index)
+      .map_or(std::ptr::null(), |r| r.context as *const c_void);
   }
+}
+
+pub(super) fn acquire_columns(
+  eligible: &[(usize, usize)],
+  columns: &mut [Column],
+  all_columns: &[PolynomialView<'_>],
+  bytes: usize,
+) -> Option<Device<'static>> {
+  let device = acquire_device(eligible, bytes)?;
+  bind_resident(columns, all_columns, &device);
   Some(device)
 }
