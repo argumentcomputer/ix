@@ -234,6 +234,15 @@ rebuild and reports subterm, candidate and MSS statistics. -/
 lean_exe «sharing-study» where
   root := `Benchmarks.SharingStudy
 
+/-- The Lean names whose address differs between two compiled environments,
+grouped by block with a one-word cause (packaging, nested order, cascade,
+content); `--originals` lists the regenerated auxiliaries whose
+`Named.original` differs from their address: `ixe-diff <old.ixe> <new.ixe>
+[--names] [--tsv <rows.tsv>]` (`Benchmarks/Canon/IxeDiff.lean`). -/
+lean_exe «ixe-diff» where
+  root := `Benchmarks.Canon.IxeDiff
+  moreLinkObjs := #[ix_rs]
+
 /- Typed TruthMines corpus records: the package catalog, the frozen admission
 spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace
 projections consumed by the `truthmines` driver and the `truthmines-spec`
