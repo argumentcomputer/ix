@@ -49,8 +49,8 @@ binders they wrap, binder names, binder infos and `nonDep` dropped,
   groups them into `muts` blocks. A singleton becomes one declaration
   (`Reader.lowerDefinition`). A larger component is handled as the reader
   handles a definition block: the safety policy first, member by member, then
-  `Reader.defOrder` over the references between the members, and one
-  declaration per member in that order.
+  `Reader.defOrder` over the references between the members (taken in Lean's
+  name order), and one declaration per member in that order.
 * **Axioms** and **quotient constants** become one declaration each.
 * Hints are Lean's own `ReducibilityHints`; the safety policy (an unsafe or
   partial definition, an unsafe opaque, an unsafe axiom or inductive decline)
@@ -62,13 +62,16 @@ binders they wrap, binder names, binder infos and `nonDep` dropped,
 ## Order
 
 The groups follow a depth-first postorder of the reference graph between
-groups (`orderOf`): every group follows the groups its constants reference
-(the condensation's `blockRefs`), and a group that contains a literal follows
-the constants the literal references (`Reader.literalEdges`'s edges, by
-name). A group whose reference graph has a cycle through other groups is
-refused. The fold's input is then `Frontend.preparePrelude`'s, as for the
-Ixon reader: the stream's own copies of the prelude's declarations move to
-the front, the prelude fills in the ones the environment lacks.
+groups (`orderOf`), with roots and successors taken in Lean's name order
+(`nameCmp`), so the order is a function of the environment's names and
+references, not of hash-map iteration or name hashes. Every group follows the
+groups its constants reference (the condensation's `blockRefs`), and a group
+that contains a literal follows the constants the literal references
+(`Reader.literalEdges`'s edges, by name). A group whose reference graph has a
+cycle through other groups is refused. The fold's input is then
+`Frontend.preparePrelude`'s, as for the Ixon reader: the stream's own copies
+of the prelude's declarations move to the front, the prelude fills in the
+ones the environment lacks.
 
 ## The reader's back half
 
@@ -179,12 +182,32 @@ def isDefinition : Ix.ConstantInfo → Bool
   | .defnInfo _ | .thmInfo _ | .opaqueInfo _ => true
   | _ => false
 
+/-- **Lean's name order**, structural: a name's prefix first, then its last
+component, a number before a string (`Lean.Name.cmp`). It reads no hash. -/
+def nameCmp : Ix.Name → Ix.Name → Ordering
+  | .anonymous _, .anonymous _ => .eq
+  | .anonymous _, _ => .lt
+  | _, .anonymous _ => .gt
+  | .num p₁ i₁ _, .num p₂ i₂ _ => (nameCmp p₁ p₂).then (compare i₁ i₂)
+  | .num .., .str .. => .lt
+  | .str .., .num .. => .gt
+  | .str p₁ s₁ _, .str p₂ s₂ _ => (nameCmp p₁ p₂).then (compare s₁ s₂)
+
+/-- `names` before `names'` in Lean's name order, first name first. -/
+def namesLt (names names' : Array Ix.Name) : Bool := Id.run do
+  for (a, b) in names.zip names' do
+    match nameCmp a b with
+    | .lt => return true
+    | .gt => return false
+    | .eq => pure ()
+  return names.size < names'.size
+
 /-- The group of a strongly connected component's constants outside the
-inductive families (none if it has none), its members in name-hash order. -/
+inductive families (none if it has none), its members in Lean's name order. -/
 def componentGroup (env : Ix.Environment) (members : Ix.Set Ix.Name) : Option Group :=
   let cis : Array Ix.ConstantInfo := members.toArray.filterMap (env.consts.get? ·)
   let others := (cis.filter (!isFamily ·)).qsort fun a b =>
-    Ix.nameCompare a.getCnst.name b.getCnst.name == .lt
+    nameCmp a.getCnst.name b.getCnst.name == .lt
   let names := others.map (·.getCnst.name)
   if others.isEmpty then none
   else if cis.any isFamily then some (.invalid names (.malformed "a block mixes inductives and definitions"))
@@ -536,14 +559,20 @@ def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
     | .error _ => #[]
   return ⟨groups, converted, hard, literal, unplaced⟩
 
-/-- **The order**: a depth-first postorder over the hard and literal edges,
-from the groups in their own order. -/
+/-- **The order**: a depth-first postorder over the hard and literal edges.
+The roots are taken, and every group's successors visited, in Lean's name
+order of the groups' constants (`namesLt`), so the order depends on the
+environment's names and references and not on the groups' indices, which
+follow the environment's hash-map iteration. -/
 def orderOf (g : Graph) : Array Nat := Id.run do
   let n := g.groups.size
+  let byName := (Array.range n).qsort fun i j => namesLt g.groups[i]!.names g.groups[j]!.names
+  let mut rank : Array Nat := Array.replicate n 0
+  for (i, r) in byName.zipIdx do rank := rank.set! i r
   let mut done : Array Bool := Array.replicate n false
   let mut active : Array Bool := Array.replicate n false
   let mut out : Array Nat := #[]
-  for root in [0:n] do
+  for root in byName do
     if done[root]! then continue
     let mut stack : Array (Nat × Bool) := #[(root, false)]
     while h : stack.size > 0 do
@@ -557,7 +586,9 @@ def orderOf (g : Graph) : Array Nat := Id.run do
       else unless done[node]! || active[node]! do
         active := active.set! node true
         stack := stack.push (node, true)
-        for d in g.hard[node]! ++ g.literal[node]! do
+        -- pushed last-first, so that they are visited first-first
+        let succs := (g.hard[node]! ++ g.literal[node]!).qsort fun a b => rank[a]! > rank[b]!
+        for d in succs do
           unless done[d]! || active[d]! do stack := stack.push (d, false)
   return out
 
