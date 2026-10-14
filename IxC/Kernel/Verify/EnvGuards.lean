@@ -44,8 +44,9 @@ compared at a use. -/
   -- name-only conjunct (static in `caps`): a reserved-named capability
   -- constructor never completes a family, which keeps the basis
   -- installs' head obligations vacuous by computation
-  reservedBasisNames.contains caps.etaCtor = false ∧
-  (∃ cvC cnP cnF, env.find? caps.etaCtor = some (.ctorInfo cvC cnP cnF)) ∧
+  ∃ C, caps.etaCtor = some C ∧
+  reservedBasisNames.contains C = false ∧
+  (∃ cvC cnP cnF, env.find? C = some (.ctorInfo cvC cnP cnF)) ∧
   ∀ j, j < caps.etaFields → ∃ cv mI rP rules,
     env.find? (projFnName T j) = some (.recInfo cv mI rP rules)
 
@@ -236,8 +237,8 @@ refute a fresh constructor completing an *older* former's eta family
   ∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     reservedBasisNames.contains T = false →
-    ∃ cvC, env.find? caps.etaCtor =
-      some (.ctorInfo cvC caps.etaParams caps.etaFields)
+    ∃ C cvC, caps.etaCtor = some C ∧
+      env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
 theorem EtaFamiliesClosed.empty : EtaFamiliesClosed Env.empty := by
   intro T cvT caps h
@@ -259,8 +260,8 @@ theorem EtaFamiliesClosed.cons_nonind {env : Env} {c₀ : ConstantInfo}
     rw [← hh] at hr
     rw [hknd cvT caps rfl he] at hr
     exact nomatch hr
-  · obtain ⟨cvC, hfC⟩ := hE1 T cvT caps hf he hr
-    refine ⟨cvC, ?_⟩
+  · obtain ⟨C, cvC, hC, hfC⟩ := hE1 T cvT caps hf he hr
+    refine ⟨C, cvC, hC, ?_⟩
     rw [Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]
     exact hfC
 
@@ -273,8 +274,8 @@ former's cons) is not yet complete. -/
   ∀ (T' : Key) (cvT : ConstantVal) (caps : IndCaps),
     env.find? T' = some (.indInfo cvT caps) → T' ≠ T → caps.eta = true →
     reservedBasisNames.contains T' = false →
-    ∃ cvC, env.find? caps.etaCtor =
-      some (.ctorInfo cvC caps.etaParams caps.etaFields)
+    ∃ C cvC, caps.etaCtor = some C ∧
+      env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
 theorem EtaFamiliesClosed.except {env : Env} (h : EtaFamiliesClosed env) (T : Key) :
     EtaFamiliesClosedExcept env T :=
@@ -297,8 +298,8 @@ theorem EtaFamiliesClosedExcept.cons {env : Env} {T : Key} {c₀ : ConstantInfo}
     rcases hknd cvT caps rfl he with hres | hT
     · rw [← hh] at hr; rw [hres] at hr; exact nomatch hr
     · exact absurd (hh.symm.trans hT) hne
-  · obtain ⟨cvC, hfC⟩ := hE1 T' cvT caps hf hne he hr
-    refine ⟨cvC, ?_⟩
+  · obtain ⟨C, cvC, hC, hfC⟩ := hE1 T' cvT caps hf hne he hr
+    refine ⟨C, cvC, hC, ?_⟩
     rw [Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]
     exact hfC
 
@@ -308,7 +309,8 @@ theorem EtaFamiliesClosedExcept.closed {env : Env} {T : Key}
     (hT : ∀ (cvT : ConstantVal) (caps : IndCaps),
       env.find? T = some (.indInfo cvT caps) → caps.eta = true →
       reservedBasisNames.contains T = false →
-      ∃ cvC, env.find? caps.etaCtor = some (.ctorInfo cvC caps.etaParams caps.etaFields)) :
+      ∃ C cvC, caps.etaCtor = some C ∧
+        env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)) :
     EtaFamiliesClosed env := by
   intro T' cvT caps hf he hr
   by_cases hne : T' = T
@@ -351,8 +353,8 @@ theorem EtaFamiliesClosed.keep {env env' : Env}
     (hE : EtaFamiliesClosed env) (hx : ExtEta env env') :
     EtaFamiliesClosed env' := by
   intro T cvT caps hf he hr
-  obtain ⟨cvC, hfC⟩ := hE T cvT caps (hx.2 T cvT caps hf) he hr
-  exact ⟨cvC, hx.1 _ _ hfC (fun _ _ _ _ hh => nomatch hh)⟩
+  obtain ⟨C, cvC, hC, hfC⟩ := hE T cvT caps (hx.2 T cvT caps hf) he hr
+  exact ⟨C, cvC, hC, hx.1 _ _ hfC (fun _ _ _ _ hh => nomatch hh)⟩
 
 /-! ## The guard, inverted -/
 

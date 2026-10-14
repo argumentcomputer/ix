@@ -90,7 +90,7 @@ structure PreludeIx where
 /-- The name a prelude record is looked up by: the block's type former,
 the quotient constant, the axiom.  (`Declaration.names` lists every
 name a record declares; the first is the record's own handle.) -/
-def preludeKey (d : Declaration) : Key := (d.names.head?).getD .anonymous
+def preludeKey (d : Declaration) : Option Key := d.names.head?
 
 /-! ## Pulling the stream's own copy out
 
@@ -106,11 +106,11 @@ the size when no record declares the name — is exactly "the stream
 does not declare it, nothing is erased".
 -/
 
-/-- The name-test a record is picked by. -/
-def declares (n : Key) (d : Declaration) : Bool := d.names.contains n
+/-- The name-test a record is picked by (no record declares no name). -/
+def declares (n : Option Key) (d : Declaration) : Bool := n.any d.names.contains
 
 /-- The first record declaring `n`, and the list without it. -/
-def pickSpec (n : Key) : List Declaration → Option Declaration × List Declaration
+def pickSpec (n : Option Key) : List Declaration → Option Declaration × List Declaration
   | [] => (none, [])
   | d :: ds =>
     if declares n d then (some d, ds)
@@ -119,7 +119,7 @@ def pickSpec (n : Key) : List Declaration → Option Declaration × List Declara
       (m, d :: ds')
 
 /-- `pickSpec` on the parse's array. -/
-def pick (n : Key) (ds : Array Declaration) : Option Declaration × Array Declaration :=
+def pick (n : Option Key) (ds : Array Declaration) : Option Declaration × Array Declaration :=
   let i := ds.findIdx (declares n)
   (ds[i]?, ds.eraseIdxIfInBounds i)
 

@@ -198,22 +198,24 @@ theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Key}
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     env.find? T = some (.indInfo cvT caps) ∧
       Ix.Kernel.EtaFamilyStored env T caps ∧
-      T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+      T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
       ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
-  obtain ⟨hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
+  obtain ⟨C, hC, hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
   have hnT : T ≠ c₀.name := fun hh => by rw [hh, hres₀] at hresT
                                          exact nomatch hresT
-  have hnC : caps.etaCtor ≠ c₀.name := fun hh => by
+  have hnC' : C ≠ c₀.name := fun hh => by
     rw [hh, hres₀] at hCres; exact nomatch hCres
+  have hnC : caps.etaCtor ≠ some c₀.name := fun h =>
+    hnC' (Option.some.inj (hC.symm.trans h))
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name :=
     fun _ _ => projFnName_ne_reserved hres₀
   have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  refine ⟨by rwa [hdown _ hnT] at hf, ⟨hCres, ⟨cvC, ?_⟩, ?_⟩,
+  refine ⟨by rwa [hdown _ hnT] at hf, ⟨C, hC, hCres, ⟨cvC, ?_⟩, ?_⟩,
     hnT, hnC, hnP⟩
-  · rwa [hdown _ hnC] at hfC
+  · rwa [hdown _ hnC'] at hfC
   · intro j hj
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [hdown _ (hnP j hj)] at hf2
@@ -236,11 +238,12 @@ theorem capsOk_cons_basis (mp : EnvModelM V μ env)
     CapsOk m₂ := by
   constructor
   · -- the η half
-    intro T cvT caps hf hcape hres hfam φ' us hlen
+    intro T cvT caps hf hcape hres hfam φ' C hC us hlen
     obtain ⟨hfE, hfam₀, hnT, hnC, hnP⟩ :=
       etaFamilyStored_descend_reserved hres₀ hres hf hfam
+    have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh
@@ -261,7 +264,7 @@ theorem capsOk_cons_basis (mp : EnvModelM V μ env)
         refine congrArg _ (List.map_congr_left fun j hj => ?_)
         dsimp only
         rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-      rw [hfab, hac, acvalWith_ne hnC]
+      rw [hfab, hac, acvalWith_ne hnC']
       exact hlaw ρ ts rest x hlents hfit hmem
   · -- the unit-like half: one leaf to move, the disequality off the
     -- law's own non-reserved premise

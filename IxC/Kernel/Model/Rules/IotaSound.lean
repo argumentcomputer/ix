@@ -614,7 +614,7 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
     (hlen : tmaj.getAppArgs.length = caps.etaParams)
     (hlv : ust.length = cvT.levelParams.length)
     (hnz : Ix.Kernel.capsNeverZero cvT.levelParams ust caps = true)
-    (hfab : fab = Expr.mkAppN (.const caps.etaCtor ust)
+    (hfab : fab = Expr.mkAppN (.const rl.ctor ust)
       (Ix.Kernel.etaFabArgsE env T ust tmaj.getAppArgs major caps.etaFields))
     (hws : fab.wscopedB d = true) (hb : fab.looseBVarsBounded 0 = true)
     (hlv' : fab.fvarLeaves.all (fun l => major.fvarLeaves.contains l) = true)
@@ -637,7 +637,7 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
   -- carries the former's level parameters (`RecCtorsStored`)
   obtain ⟨-, hEbits⟩ := Ix.Kernel.recCtors_bits m.rec_ctors hrec
     List.mem_cons_self hctor hres hind
-  obtain ⟨hcapseta, hectr, hlpsE⟩ := hEbits heta
+  obtain ⟨hcapseta, -, hlpsE⟩ := hEbits heta
   have hlpj : ust.length = cvj.levelParams.length := by
     rw [hlpsE]; exact hlv
   -- the major's io-inferred type, reduced, is the family at its spine
@@ -664,9 +664,9 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
     constTy_pkg hin.const_ty hctor rfl (show ust.length = _ from hlpj)
   dsimp only [Ix.Kernel.ConstantInfo.toConstantVal] at hTVjaD hmemCj hnfJ hbdJ
   obtain ⟨hfJ, hCJ⟩ := frame_of_not_hasFvar (m := m) (Δa := Δa) hnfJ hbdJ hCM.1
-  have hheadCj : denoteMeta m.acval env φ d (.const caps.etaCtor ust)
+  have hheadCj : denoteMeta m.acval env φ d (.const rl.ctor ust)
       = some (m.acval rl.ctor (Level.substFn φ cvj.levelParams ust)) := by
-    rw [← hectr]; exact denoteMeta_const hctor (show ust.length = _ from hlpj)
+    exact denoteMeta_const hctor (show ust.length = _ from hlpj)
   -- the fabricated projections' frames (a `.proj` node over the major)
   have hprFr : ∀ j, Frame d (Expr.proj T j major) ∧
       CtxOk m φ d Δa (Expr.proj T j major) := fun j =>

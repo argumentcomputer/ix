@@ -85,19 +85,21 @@ theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Key}
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     env.find? T = some (.indInfo cvT caps) ∧
       Ix.Kernel.EtaFamilyStored env T caps ∧
-      T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+      T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
       ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
-  obtain ⟨hCres, ⟨cvC, cnP, cnF, hfC⟩, hfP⟩ := hfam
+  obtain ⟨C, hC, hCres, ⟨cvC, cnP, cnF, hfC⟩, hfP⟩ := hfam
   -- the former is not the cons: the cons is not an `indInfo`
   have hnT : T ≠ c₀.name := by
     rintro rfl
     rw [Ix.Kernel.Env.find?_cons, if_pos rfl] at hf
     exact hnotind cvT caps (Option.some.inj hf)
   -- the capability constructor is not the cons: it is a `ctorInfo`
-  have hnC : caps.etaCtor ≠ c₀.name := by
+  have hnC' : C ≠ c₀.name := by
     intro heq
     rw [heq, Ix.Kernel.Env.find?_cons, if_pos rfl] at hfC
     exact hnotctor cvC cnP cnF (Option.some.inj hfC)
+  have hnC : caps.etaCtor ≠ some c₀.name := fun h =>
+    hnC' (Option.some.inj (hC.symm.trans h))
   -- no projection function is the cons: they are `recInfo`s
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
     intro j hj heq
@@ -108,9 +110,9 @@ theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Key}
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  refine ⟨by rwa [hdown _ hnT] at hf, ⟨hCres, ⟨cvC, cnP, cnF, ?_⟩, ?_⟩,
+  refine ⟨by rwa [hdown _ hnT] at hf, ⟨C, hC, hCres, ⟨cvC, cnP, cnF, ?_⟩, ?_⟩,
     hnT, hnC, hnP⟩
-  · rwa [hdown _ hnC] at hfC
+  · rwa [hdown _ hnC'] at hfC
   · intro j hj
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [hdown _ (hnP j hj)] at hf2
@@ -158,7 +160,7 @@ in the census, named, for the lane lead. -/
 a constructor that is stored nowhere. -/
 def unitNoFamilyCaps : IndCaps where
   eta := false
-  etaCtor := Name.anonymous.str "ConLecheCapsWall.mk"
+  etaCtor := some (Name.anonymous.str "ConLecheCapsWall.mk")
   etaParams := 0
   etaFields := 0
   unitlike := true
@@ -190,7 +192,8 @@ theorem etaFamilyStored_not_derivable :
     exact ⟨rfl, rfl, rfl, rfl, by rintro _ _ _ ⟨⟩,
       by rintro _ _ _ _ ⟨⟩, by rintro _ ⟨⟩,
       Ix.Kernel.IndCapsWF.of_caps (fun _ => rfl) (fun h => nomatch h)⟩
-  · rintro ⟨-, ⟨cvC, _, _, hfC⟩, -⟩
+  · rintro ⟨C, hC, -, ⟨cvC, _, _, hfC⟩, -⟩
+    obtain rfl := Option.some.inj hC
     exact nomatch hfC
 
 /-! ## The crossing -/
@@ -213,11 +216,12 @@ theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
     CapsOk m₂ := by
   constructor
   · -- the η half
-    intro T cvT caps hf hcape hres hfam φ' us hlen
+    intro T cvT caps hf hcape hres hfam φ' C hC us hlen
     obtain ⟨hfE, hfam₀, hnT, hnC, hnP⟩ :=
       etaFamilyStored_descend hnotind hnotctor hnotrec hf hfam
+    have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh
@@ -238,7 +242,7 @@ theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
         refine congrArg _ (List.map_congr_left fun j hj => ?_)
         dsimp only
         rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-      rw [hfab, hac, acvalWith_ne hnC]
+      rw [hfab, hac, acvalWith_ne hnC']
       exact hlaw ρ ts rest x hlents hfit hmem
   · -- the unit-like half: no fabricated spine, one leaf to move
     -- (and, post-repair, no family premise: the former's freshness

@@ -876,19 +876,19 @@ theorem declIndEtaClosedRun {μ : CheckMode} {F : Nat} {env env₂ : Env}
     intro T cvT' caps' hf he hr
     rcases indMembersRun_indNew _ hmem T cvT' caps'
       (hx.2 T cvT' caps' hf) with hfE | ⟨rfl, -⟩
-    · obtain ⟨cvC', hfC⟩ := hE T cvT' caps' hfE he hr
-      exact ⟨cvC', hx.1 _ _ (indMembersRun_mono _ hmem _ _ hfC)
+    · obtain ⟨C, cvC', hC, hfC⟩ := hE T cvT' caps' hfE he hr
+      exact ⟨C, cvC', hC, hx.1 _ _ (indMembersRun_mono _ hmem _ _ hfC)
         (fun _ _ _ _ hh => nomatch hh)⟩
     · obtain ⟨cvA', hfA⟩ :=
         indMembersRun_ctorEntry _ hmem cvC nP nF hCnon
-      exact ⟨cvA', hx.1 _ _ hfA (fun _ _ _ _ hh => nomatch hh)⟩
+      exact ⟨cvC.name, cvA', rfl, hx.1 _ _ hfA (fun _ _ _ _ hh => nomatch hh)⟩
   · -- the generic arm: an empty capability record
     intro T cvT' caps' hf he hr
     have hfM := indRecsRun_noInd hrecs T cvT' caps' hf
     rcases indMembersRun_indNew _ hmem T cvT' caps' hfM with
       hfE | ⟨rfl, -⟩
-    · obtain ⟨cvC, hfC⟩ := hE T cvT' caps' hfE he hr
-      exact ⟨cvC, indRecsRun_keep hrecs _ _
+    · obtain ⟨C, cvC, hC, hfC⟩ := hE T cvT' caps' hfE he hr
+      exact ⟨C, cvC, hC, indRecsRun_keep hrecs _ _
         (indMembersRun_mono _ hmem _ _ hfC)⟩
     · exact absurd he (by decide)
 

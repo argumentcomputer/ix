@@ -281,8 +281,9 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     intro env' m' hfrC he hfam φ'
     exfalso
     obtain ⟨c, hc⟩ := hetaOf he
-    obtain ⟨-, ⟨cvC, cnP, cnF, hf⟩, -⟩ := hfam
-    rw [Ix.Kernel.nativeCaps_single hc] at hf
+    obtain ⟨C, hCe, -, ⟨cvC, cnP, cnF, hf⟩, -⟩ := hfam
+    rw [Ix.Kernel.nativeCaps_single hc] at hCe
+    obtain rfl : c.1.name = C := Option.some.inj hCe
     have hf' : env'.find? c.1.name = some (.ctorInfo cvC cnP cnF) := hf
     rw [hfrC c hc] at hf'
     exact nomatch hf'
@@ -835,11 +836,11 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         rw [hFs, hdrop] at h0'
         simp only [List.getElem?_cons_zero, Option.some.injEq] at h0'
         rw [hFs, h0']
-      have hleafC : ∀ ψ, m'.acval (Ix.Kernel.nativeCaps p).etaCtor ψ
+      have hleafC : ∀ C, (Ix.Kernel.nativeCaps p).etaCtor = some C → ∀ ψ, m'.acval C ψ
           = sumMkAV (p.resSort.eval ψ) 0 (dsF 0 ψ) [] (uChains [[]]) := by
-        intro ψ
-        rw [Ix.Kernel.nativeCaps_single hc]
-        show m'.acval c.1.name ψ = _
+        intro C hCe ψ
+        rw [Ix.Kernel.nativeCaps_single hc] at hCe
+        obtain rfl : c.1.name = C := Option.some.inj hCe
         rw [← hCname, hC cA hA ψ, hdrop, hfss]
       refine fixFibreEtaLaw0 (u := uAV) (w := fun ψ => p.resSort.eval ψ) (rss := rss)
         (tlss := Tlss₀) (eiss := Eiss₀) (Fss₀ := Fss₀) (Ess := Ess₀) (ds := fun ψ => dsF 0 ψ)

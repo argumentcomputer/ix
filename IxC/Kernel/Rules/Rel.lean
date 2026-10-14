@@ -269,7 +269,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       tmaj.getAppArgs.length = caps.etaParams →
       ust.length = cvT.levelParams.length →
       capsNeverZero cvT.levelParams ust caps = true →
-      fab = Expr.mkAppN (.const caps.etaCtor ust)
+      fab = Expr.mkAppN (.const rl.ctor ust)
         (etaFabArgsE env T ust tmaj.getAppArgs major caps.etaFields) →
       fab.wscopedB d = true → fab.looseBVarsBounded 0 = true →
       fab.fvarLeaves.all (fun l => major.fvarLeaves.contains l) = true →
@@ -446,7 +446,7 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
       a.getAppArgs.length = cnP + cnF →
       wtb.getAppFn = .const T us' →
       env.find? T = some (.indInfo cvT caps) →
-      caps.eta = true → caps.etaCtor = c →
+      caps.eta = true → caps.etaCtor = some c →
       reservedBasisNames.contains T = false →
       reservedBasisNames.contains c = false →
       wtb.getAppArgs.length = caps.etaParams →

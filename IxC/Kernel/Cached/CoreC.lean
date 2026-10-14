@@ -420,7 +420,7 @@ def structEtaCertWithI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
           match fe.find? Tn with
           | some (.indInfo cvT caps) => do
             let targs ← pure (Expr.getAppArgsC wtb)
-            if caps.eta = true ∧ caps.etaCtor = cn ∧
+            if caps.eta = true ∧ caps.etaCtor = some cn ∧
                 reservedBasisNames.contains Tn = false ∧
                 reservedBasisNames.contains cn = false ∧
                 targs.length = caps.etaParams ∧
@@ -610,7 +610,7 @@ def majorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
                   capsNeverZero cvT.levelParams ustL caps = true then do
                 let TI ← pure T
                 let projs ← projAppsI fe T TI ust margs major caps.etaFields
-                let ctorI ← pure caps.etaCtor
+                let ctorI ← pure rl.ctor
                 let h ← pure (Expr.const ctorI ust)
                 let fab ← mkAppNM h (margs ++ projs)
                 if ← pure (Expr.wscopedBC depth fab &&

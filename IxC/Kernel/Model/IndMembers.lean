@@ -75,7 +75,7 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
       -- `BlockAcvalInstalled`, which is the only bridge between the
       -- law's *subject* and the model artifacts the pins name
       blockNames.contains T = true →
-      blockNames.contains caps.etaCtor = true →
+      (∀ C, caps.etaCtor = some C → blockNames.contains C = true) →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
@@ -123,7 +123,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cv.name cv.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cv.name 0) = none))
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
@@ -160,7 +160,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
   -- the `cvA`-form pins the P row wants
   have hpinsA : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none) := by
     intro caps2 hceq
@@ -247,7 +247,7 @@ theorem indMembersPM (hetaP : MemberEtaLaw V)
         ConstantInfo.indInfo cv caps₂ ∈ members →
         Ix.Kernel.EtaPins μ env cv.name cv.levelParams caps ∧
           (caps.eta = true →
-            blockNames.contains caps.etaCtor = true) ∧
+            (∀ C, caps.etaCtor = some C → blockNames.contains C = true)) ∧
           (caps.eta = true → 0 < caps.etaFields →
             env.find? (Ix.Kernel.projFnName cv.name 0) = none)) →
       IndMembersRun μ F blockNames caps env members env₂ →

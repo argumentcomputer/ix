@@ -195,7 +195,9 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         (fun cv caps₂ hmm => by
           obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj
             (hsingle hIfilt (List.mem_filter.mp hmm).1 rfl)
-          exact ⟨etaPins_of_indBlockCaps, fun _ => hCblockN,
+          exact ⟨etaPins_of_indBlockCaps, fun _ C hC => by
+              obtain rfl : cvC.name = C := Option.some.inj hC
+              exact hCblockN,
             fun _ h0 => hpf0 h0⟩)
         hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     -- the recursor group
@@ -263,9 +265,10 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     have hCblockR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →
         capsT'.eta = true →
-        (block.map (·.name)).contains capsT'.etaCtor = true := by
-      intro cvT' capsT' hf _
+        (∀ C, capsT'.etaCtor = some C → (block.map (·.name)).contains C = true) := by
+      intro cvT' capsT' hf _ C hC
       obtain ⟨-, rfl⟩ := hidR cvT' capsT' hf
+      obtain rfl : cvC.name = C := Option.some.inj hC
       exact hCblockN
     have hFieldsR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →

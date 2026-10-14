@@ -63,7 +63,7 @@ theorem memberEtaSplit {blockNames : List Key}
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none))
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
@@ -76,11 +76,11 @@ theorem memberEtaSplit {blockNames : List Key}
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     (env.find? T = some (.indInfo cvT caps) ∧
         Ix.Kernel.EtaFamilyStored env T caps ∧
-        T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+        T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
         ∀ j, j < caps.etaFields → Ix.Kernel.projFnName T j ≠ c₀.name) ∨
       (Ix.Kernel.EtaPins μ env T cvT.levelParams caps ∧
         caps.etaFields = 0 ∧ blockNames.contains T = true ∧
-        blockNames.contains caps.etaCtor = true) := by
+        (∀ C, caps.etaCtor = some C → blockNames.contains C = true)) := by
   have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
@@ -97,7 +97,8 @@ theorem memberEtaSplit {blockNames : List Key}
     rcases Nat.eq_zero_or_pos caps.etaFields with h | h
     · exact h
     · exfalso
-      obtain ⟨cvp, mI, rP, rules, hfp⟩ := hfam.2.2 0 h
+      obtain ⟨-, -, -, -, hfP0⟩ := hfam
+      obtain ⟨cvp, mI, rP, rules, hfp⟩ := hfP0 0 h
       rw [hdown _ (hnP 0 h), hprojF h] at hfp
       exact nomatch hfp
   by_cases hT0 : T = c₀.name
@@ -116,21 +117,22 @@ theorem memberEtaSplit {blockNames : List Key}
     · rw [hT0, hc₀name]; exact hbn
   · have hfE : env.find? T = some (.indInfo cvT caps) := by
       rwa [hdown _ hT0] at hfT
-    by_cases hC0 : caps.etaCtor = c₀.name
+    by_cases hC0 : caps.etaCtor = some c₀.name
     · -- the cons is the family's capability constructor
       right
       by_cases hTb : blockNames.contains T = true
       · obtain ⟨hp, hbc, hj⟩ := hBP T cvT caps hTb hfE hcape
         exact ⟨hp, hzero hj, hTb, hbc⟩
       · exfalso
-        obtain ⟨cvC, hfC⟩ :=
+        obtain ⟨C, cvC, hC, hfC⟩ :=
           hEC T cvT caps hfE hcape hnresT (by simpa using hTb)
-        rw [hC0, hfresh] at hfC
+        rw [Option.some.inj (hC.symm.trans hC0), hfresh] at hfC
         exact nomatch hfC
     · -- the family descends untouched
       left
-      obtain ⟨hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
-      refine ⟨hfE, ⟨hCres, ⟨cvC, by rwa [hdown _ hC0] at hfC⟩, ?_⟩,
+      obtain ⟨C, hC, hCres, ⟨cvC, hfC⟩, hfP⟩ := hfam
+      have hCne : C ≠ c₀.name := fun h => hC0 (h ▸ hC)
+      refine ⟨hfE, ⟨C, hC, hCres, ⟨cvC, by rwa [hdown _ hCne] at hfC⟩, ?_⟩,
         hT0, hC0, hnP⟩
       intro j hj
       obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
@@ -149,7 +151,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none))
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
@@ -161,7 +163,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
       Ix.Kernel.EtaPins μ env T cvT.levelParams caps →
       caps.etaFields = 0 →
       blockNames.contains T = true →
-      blockNames.contains caps.etaCtor = true →
+      (∀ C, caps.etaCtor = some C → blockNames.contains C = true) →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name A →
@@ -185,9 +187,10 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
         hBP hf hcape hres hfam with
       ⟨hfE, hfam₀, hnT, hnC, hnP⟩ | ⟨hp, h0, hbT, hbC⟩
     · -- the transport (`capsOk_cons_fresh`'s η branch verbatim)
-      intro us hlen
+      intro C hC us hlen
+      have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
       obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-        mp.caps_ok.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+        mp.caps_ok.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
       refine ⟨TVa, ?_, hokTVa, ?_⟩
       · rw [hac]
         exact denoteMeta_cons_fresh_mono hfresh hntc _ 0 _
@@ -208,7 +211,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
           refine congrArg _ (List.map_congr_left fun j hj => ?_)
           dsimp only
           rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-        rw [hfab, hac, acvalWith_ne hnC]
+        rw [hfab, hac, acvalWith_ne hnC']
         exact hlaw ρ ts rest x hlents hfit hmem
     · exact hetaLive T cvT caps hf hcape hres hp h0 hbT hbC hfam m₂ hac φ'
   · -- the unit half: two ways, and no family premise

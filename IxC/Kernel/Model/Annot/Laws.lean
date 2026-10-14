@@ -252,10 +252,12 @@ applied to the type arguments and the stuck member
   ts ++ projSpines val T ts b nF
 
 /-- **The fired structural-η law of an η-capable stored family**
-(`EtaLawV`'s mirror; see the note above for the shape). -/
+(`EtaLawV`'s mirror; see the note above for the shape), through the
+record's constructor `C`. -/
 @[expose] def EtaLaw {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key)
     (cvT : ConstantVal) (caps : IndCaps) : Prop :=
+  ∀ C : Key, caps.etaCtor = some C →
   ∀ us : List Level, us.length = cvT.levelParams.length →
   ∃ TVa : AnnotTerm,
     denoteMeta m.acval env φ' 0
@@ -272,7 +274,7 @@ applied to the type arguments and the stuck member
               (m.acval n (Level.substFn φ' cvT.levelParams us)))
             T ts x caps.etaFields).foldl SetTheory.app
           (interp V ρ
-            (m.acval caps.etaCtor
+            (m.acval C
               (Level.substFn φ' cvT.levelParams us)))
 
 /-- **The fired unit-like law of a unit-like stored family**
@@ -697,7 +699,7 @@ dummy binders carry the reading only; the law never reads them. -/
     -- not a proposition, and the record names this table's shape
     (capsT.eta = true →
       (Level.isEquiv entry.structSort .zero == some true) = false ∧
-      capsT.etaCtor = entry.ctor ∧
+      capsT.etaCtor = some entry.ctor ∧
       capsT.etaParams = entry.numParams ∧
       capsT.etaFields = entry.numFields)) ∧
   TowerO5 entry ∧

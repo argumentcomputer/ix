@@ -1059,15 +1059,16 @@ statement names (see `checkEtaThm`). -/
 @[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Key) (lps : List LevelParam)
     (caps : IndCaps) : Prop :=
   (caps.eta = true →
-  ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
+  ∃ (C : Key) (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
     (hmcvmT : ReducibilityHint)
     (sbinders tbindersM : List (Expr × BinderMeta))
     (sbody tbodyM tySlot : Expr) (ℓA : Level),
+    caps.etaCtor = some C ∧
     env'.find? (auxKey (auxKey T .model) .eta) = some (.thmInfo tcv tval) ∧
     tcv.levelParams = lps ∧
     env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
     cvmT.levelParams = lps ∧
-    (∃ cvmC mvalC hmcvmC, env'.find? (auxKey caps.etaCtor .model) =
+    (∃ cvmC mvalC hmcvmC, env'.find? (auxKey C .model) =
       some (.defnInfo cvmC mvalC hmcvmC) ∧ cvmC.levelParams = lps) ∧
     (∀ j, j < caps.etaFields → ∃ cvmj mvalj hmcvmj,
       env'.find? (projModelName T j) = some (.defnInfo cvmj mvalj hmcvmj) ∧
@@ -1084,7 +1085,7 @@ statement names (see `checkEtaThm`). -/
           Expr.bvar (caps.etaParams - 1 - k)), mx)) ∧
     sbody = Expr.mkAppN (.const eqName [ℓA])
       [tySlot, .bvar 0,
-       Expr.mkAppN (.const (auxKey caps.etaCtor .model) (lps.map .param))
+       Expr.mkAppN (.const (auxKey C .model) (lps.map .param))
         (((List.range caps.etaParams).map fun k =>
             Expr.bvar (caps.etaParams - k)) ++
          (List.range caps.etaFields).map fun j => Expr.mkAppN
@@ -1490,11 +1491,11 @@ theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Key}
       exact nomatch hf
   refine ⟨?_, ?_⟩
   · intro hcape
-    obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
+    obtain ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
       heqf, h8, h9, h10, h11, h12, h13⟩ := h.1 hcape
-    refine ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hkeep _ _ hthm, h2, hkeep _ _ hTm, h4,
+    refine ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hkeep _ _ hthm, h2, hkeep _ _ hTm, h4,
       ⟨cvmC, mvalC, hmC, hkeep _ _ hCm, hClps⟩, ?_, hkeep _ _ heqf,
       h8, h9, h10, h11, h12, h13⟩
     intro j hj
@@ -1532,11 +1533,11 @@ theorem EtaPins.transport {env₁ env₂ : Env} {T : Key}
     fun hf => hkeep _ _ hf (fun _ _ _ _ hc => nomatch hc)
   refine ⟨?_, ?_⟩
   · intro hcape
-    obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
+    obtain ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
       heqf, h8, h9, h10, h11, h12, h13⟩ := h.1 hcape
-    refine ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hk _ _ _ hthm, h2, hkd _ _ _ _ hTm, h4,
+    refine ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hk _ _ _ hthm, h2, hkd _ _ _ _ hTm, h4,
       ⟨cvmC, mvalC, hmC, hkd _ _ _ _ hCm, hClps⟩, ?_, hke heqf,
       h8, h9, h10, h11, h12, h13⟩
     intro j hj
@@ -1576,7 +1577,7 @@ unable to complete before the projection fold runs. -/
     blockNames.contains n = true →
     env.find? n = some (.indInfo cvS capsS) → capsS.eta = true →
     EtaPins mode env n cvS.levelParams capsS ∧
-      blockNames.contains capsS.etaCtor = true ∧
+      (∀ C, capsS.etaCtor = some C → blockNames.contains C = true) ∧
       (0 < capsS.etaFields → env.find? (projFnName n 0) = none)
 
 /-- A projection function's name is never a block member's: block
@@ -1595,7 +1596,7 @@ theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Key}
     (hshape : c₀.name.isProjFnShape = false)
     (hnew : ∀ cvS capsS, c₀ = .indInfo cvS capsS → capsS.eta = true →
       EtaPins mode env c₀.name cvS.levelParams capsS ∧
-        blockNames.contains capsS.etaCtor = true ∧
+        (∀ C, capsS.etaCtor = some C → blockNames.contains C = true) ∧
         (0 < capsS.etaFields →
           env.find? (projFnName c₀.name 0) = none)) :
     BlockEtaPinned mode blockNames ⟨c₀ :: env.consts⟩ := by
@@ -1627,7 +1628,9 @@ theorem etaPins_of_indBlockCaps {μ : CheckMode} {env : Env}
   refine ⟨?_, ?_⟩
   · intro hcape
     simp only [indBlockCaps, Bool.and_eq_true] at hcape
-    exact checkEtaThm_inv hcape.2
+    obtain ⟨tcv, tval, cvmT, mvalT, hm, sb, tb, sbody, tbodyM, tySlot, ℓA, h⟩ :=
+      checkEtaThm_inv hcape.2
+    exact ⟨cvC.name, tcv, tval, cvmT, mvalT, hm, sb, tb, sbody, tbodyM, tySlot, ℓA, rfl, h⟩
   · intro hcapu
     simp only [indBlockCaps] at hcapu
     exact checkUnitThm_inv hcapu
@@ -1656,7 +1659,7 @@ theorem indCapsWF_of_pins {μ : CheckMode} {env : Env} {cvA : ConstantVal}
     exact Expr.stripPis_isSome_of_renameConsts (f := f) _
       (by rw [hty', hstrip]; rfl)
   · intro he
-    obtain ⟨_, _, cvmT, _, _, _, _, _, _, _, _, -, -, hfmT, -, -, -, -, -,
+    obtain ⟨_, _, _, cvmT, _, _, _, _, _, _, _, _, -, -, -, hfmT, -, -, -, -, -,
       hstrip, -⟩ := hpins.1 he
     rw [hfm] at hfmT
     obtain ⟨rfl, -, -⟩ := ConstantInfo.defnInfo.inj (Option.some.inj hfmT)

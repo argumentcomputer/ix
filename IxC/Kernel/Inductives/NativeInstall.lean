@@ -88,7 +88,7 @@ def nativeCapsAt (p : InductiveShape) (isRec : Bool) : IndCaps :=
   match p.ctors with
   | [c] =>
     { eta := p.nIdx == 0 && !p.isProp && !isRec
-      etaCtor := c.1.name
+      etaCtor := some c.1.name
       etaParams := p.nP
       etaFields := c.2
       unitlike := p.nIdx == 0 && c.2 == 0

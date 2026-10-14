@@ -74,11 +74,11 @@ theorem etaMemberData_step {μ : CheckMode} {blockNames : List Key}
     {lps : List LevelParam} (hfresh : env.find? c₀.name = none)
     (hshape : c₀.name.isProjFnShape = false)
     (h : EtaPins μ env n lps caps ∧
-      (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+      (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
       (caps.eta = true → 0 < caps.etaFields →
         env.find? (projFnName n 0) = none)) :
     EtaPins μ ⟨c₀ :: env.consts⟩ n lps caps ∧
-      (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+      (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
       (caps.eta = true → 0 < caps.etaFields →
         (⟨c₀ :: env.consts⟩ : Env).find? (projFnName n 0) = none) :=
   ⟨EtaPins.step h.1 hfresh, h.2.1, fun he hlt => by

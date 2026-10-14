@@ -24,7 +24,7 @@ open BasisDSL
 /-- `PUnit.{u} : Sort u`. -/
 def punitRaw : ConstantInfo :=
   .indInfo ⟨punitName, [uN], srt u⟩
-    { eta := true, etaCtor := punitUnitName,
+    { eta := true, etaCtor := some punitUnitName,
       etaParams := 0, etaFields := 0, unitlike := true,
       sortZ := .ifAllZero [uN] }
 

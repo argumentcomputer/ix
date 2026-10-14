@@ -110,7 +110,7 @@ set_option maxHeartbeats 3200000 in
 the campaign's first `EtaLaw` producer. -/
 theorem memberEtaLaw : MemberEtaLaw V := by
   intro μ F blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
-    hntc T cvT caps hfT hcape hnresT hp h0 hbT hbC hfam m₂ hac φ'
+    hntc T cvT caps hfT hcape hnresT hp h0 hbT hbC hfam m₂ hac φ' C hC
   -- `MemberValR`'s data
   obtain ⟨type', hcv, hcvAeq, hms, cvm₀, mval₀, hint₀, hfm₀, hlpm₀,
     hren₀⟩ := id hmv
@@ -124,10 +124,11 @@ theorem memberEtaLaw : MemberEtaLaw V := by
   have hms0 : c₀.name.isModelSuffix = false := by
     rw [hc₀name]; exact hms
   -- the kernel's η-capability pins
-  obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody,
-    tbodyM, tySlot, ℓA, hthmE, htlps, hTmE, hTmlps, hCmE, hprojE,
+  obtain ⟨C', tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody,
+    tbodyM, tySlot, ℓA, hC', hthmE, htlps, hTmE, hTmlps, hCmE, hprojE,
     heqfE, hSstrip, hTstrip, hsdoms, hxdom, hsbody, htySlot, -⟩ :=
     hp.1 hcape
+  obtain rfl : C' = C := Option.some.inj (hC'.symm.trans hC)
   obtain ⟨cvmC, mvalC, hmC, hCmE', hCmlps⟩ := hCmE
   -- ===== the two valuation identifications (v1's `hvT`/`hvC`) =====
   have hvT : ∀ ψ : LevelParam → Nat,
@@ -142,18 +143,19 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         exact hfT
       exact (hIA T hbT _ hfE ψ).symm
   have hvC : ∀ ψ : LevelParam → Nat,
-      m₂.acval caps.etaCtor ψ
-        = mp.base2.acval (auxKey caps.etaCtor .model) ψ := by
+      m₂.acval C' ψ
+        = mp.base2.acval (auxKey C' .model) ψ := by
     intro ψ
-    by_cases hC0 : caps.etaCtor = c₀.name
+    by_cases hC0 : C' = c₀.name
     · rw [hac, hC0, acvalWith_self, hc₀name]
     · rw [hac, acvalWith_ne hC0]
-      obtain ⟨cvC, cnP, cnF, hfC⟩ := hfam.2.1
-      have hfCe : env.find? caps.etaCtor
+      obtain ⟨C'', hC'', -, ⟨cvC, cnP, cnF, hfC⟩, -⟩ := hfam
+      obtain rfl : C'' = C' := Option.some.inj (hC''.symm.trans hC')
+      have hfCe : env.find? C''
           = some (.ctorInfo cvC cnP cnF) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hC0 hh.symm)] at hfC
         exact hfC
-      exact (hIA caps.etaCtor hbC _ hfCe ψ).symm
+      exact (hIA C'' (hbC C'' hC'') _ hfCe ψ).symm
   -- ===== the former's type reads as its model's =====
   have hEqTy : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 cvT.type
@@ -312,7 +314,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))))
       (.bvar 0))
-      (AnnotTerm.mkAppN (mp.base2.acval (auxKey caps.etaCtor .model) ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey C' .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))) := by
     have h := hbodyS

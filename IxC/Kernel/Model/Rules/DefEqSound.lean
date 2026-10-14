@@ -346,7 +346,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
     (_hlen : a.getAppArgs.length = cnP + cnF)
     (hthead : wtb.getAppFn = .const T us')
     (hind : env.find? T = some (.indInfo cvT caps))
-    (heta : caps.eta = true) (hetaCtor : caps.etaCtor = c)
+    (heta : caps.eta = true) (hetaCtor : caps.etaCtor = some c)
     (hresT : Ix.Kernel.reservedBasisNames.contains T = false)
     (hresc : Ix.Kernel.reservedBasisNames.contains c = false)
     (htlen : wtb.getAppArgs.length = caps.etaParams)
@@ -588,13 +588,11 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
         hdrop, List.map_map, ← hfld']
       refine congrArg _ (List.map_congr_left fun j _ => ?_)
       rw [Function.comp_apply, projAV_interp]
-    rw [hb, interp_mkAppN, hfold, hfab, hψc, ← hctr', hetaCtor, hlpsT']
+    rw [hb, interp_mkAppN, hfold, hfab, hψc,
+      Option.some.inj (hctr'.symm.trans hetaCtor), hlpsT']
   · -- PROJECTION-FUNCTION SLOTS
     have hfam : Ix.Kernel.EtaFamilyStored env T caps := by
-      refine ⟨by rw [hetaCtor]; exact hresc, ⟨cvc, cnP, cnF, ?_⟩, ?_⟩
-      · rw [hetaCtor]; exact hctor
-      · intro j hj
-        exact hrecs j hj
+      exact ⟨c, hetaCtor, hresc, ⟨cvc, cnP, cnF, hctor⟩, fun j hj => hrecs j hj⟩
     have hetaP : Ix.Kernel.etaProjs env T us' wtb.getAppArgs b caps.etaFields
         = (List.range caps.etaFields).map (fun i =>
             Expr.mkAppN (.const (projFnName T i) us') (wtb.getAppArgs ++ [b])) := by
@@ -604,7 +602,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
       · rfl
     rw [hetaP] at hfields
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hin.caps_ok.1 T cvT caps hind heta hresT hfam φ us' hlv
+      hin.caps_ok.1 T cvT caps hind heta hresT hfam φ c hetaCtor us' hlv
     obtain ⟨rest, hfitT⟩ := hfitOf TVa hTVa hokTVa
     have hb := hlaw ρ (tsa.map (interp V ρ)) rest (interp V ρ ba)
       hlenTs hfitT hmemFam
@@ -710,7 +708,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
         (Level.substFn φ cvT.levelParams us')) (tsa ++ [ba])) = _
       rw [interp_mkAppN, hfold, List.map_append]
       rfl
-    rw [hb, interp_mkAppN, hfold, hfab, hψc, hetaCtor]
+    rw [hb, interp_mkAppN, hfold, hfab, hψc]
 
 /-- Unit-like structure (`structUnitIrrel_of_claims`, `Steps/CapsRows.lean:944`). -/
 theorem DefEq.structUnit_sound (hin : RulesInputs V m φ) {d : Nat}

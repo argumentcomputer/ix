@@ -850,7 +850,7 @@ def recRuleEtaOf (find? : Key → Option ConstantInfo) (recName ctor : Key) :
     | .const T _ =>
       match find? T with
       | some (.indInfo cvT caps) =>
-        caps.eta && caps.etaCtor == ctor && !Key.isProjFnShape recName &&
+        caps.eta && caps.etaCtor == some ctor && !Key.isProjFnShape recName &&
           cvj.levelParams == cvT.levelParams
       | _ => false
     | _ => false

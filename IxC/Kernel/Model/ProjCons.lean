@@ -92,7 +92,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     (hpinsT : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT)
     (hCblock : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
-      capsT.eta = true → blockNames.contains capsT.etaCtor = true)
+      capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true)
     (hFields : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       capsT.eta = true → capsT.etaFields = nF)
     -- the head's own obligations (task #161 S7: `projFn_head`
@@ -229,7 +229,8 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
       · have hjneP : projFnName T j ≠ projFnName T i := by
           intro hh
           exact hji (Ix.Kernel.projFnName_inj hh).2
-        obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfam.2.2 j hj
+        obtain ⟨-, -, -, -, hfP⟩ := hfam
+        obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
         rw [Env.find?_cons,
           if_neg (fun hh => hjneP (hname.symm.trans hh).symm)] at hf2
         rw [hac, acvalWith_ne (fun hh => hjneP (hh.trans hname))]

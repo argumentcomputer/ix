@@ -166,7 +166,8 @@ theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key
       ts.foldl SetTheory.app (interp V ρ
           (nativeTyAVI (u ψ) (w ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ)))
         = sumSet (w ψ) (sumFibre (w ψ) (consList ts ρ) [[] ++ [idxEqAV []]]))
-    (hleafC : ∀ ψ, m.acval caps.etaCtor ψ = sumMkAV (w ψ) 0 (ds ψ) [] (uChains [[]]))
+    (hleafC : ∀ C, caps.etaCtor = some C →
+      ∀ ψ, m.acval C ψ = sumMkAV (w ψ) 0 (ds ψ) [] (uChains [[]]))
     (hread : ∀ ψ, denoteMeta m.acval env ψ 0 cvT.type
       = some (mkPisAV (pps ψ) (.sort (w ψ))))
     (hokTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -175,7 +176,7 @@ theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key
       SpineFit ρ ((pps ψ).map (·.2.2)) as → SpineFit ρ ((ds ψ).map (·.2.2)) as)
     (hpar : ∀ ψ, caps.etaParams = (pps ψ).length) :
     EtaLaw m φ' T cvT caps := by
-  intro us _
+  intro C hC us _
   refine ⟨mkPisAV (pps (Level.substFn φ' cvT.levelParams us))
     (.sort (w (Level.substFn φ' cvT.levelParams us))), ?_, hokTy _, ?_⟩
   · rw [denotePInstLevels m φ' cvT.levelParams us 0 cvT.type]
@@ -185,7 +186,7 @@ theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key
     rw [hleaf, hfold _ ρ ts hsp] at hx
     rw [hfields]
     simp only [etaFabArgsV, projSpines, List.range_zero, List.map_nil, List.append_nil]
-    rw [hleafC]
+    rw [hleafC C hC]
     by_cases hw : w (Level.substFn φ' cvT.levelParams us) = 0
     · rw [hw] at hx
       obtain ⟨rfl, -⟩ := fixFibre_zero_elim hx

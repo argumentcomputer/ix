@@ -228,7 +228,7 @@ theorem memberInstallInv {μ : CheckMode} {F : Nat}
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
       EtaPins μ env cv.name cv.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (projFnName cv.name 0) = none))
     (hEC : EtaFamiliesClosedO blockNames env)
@@ -273,7 +273,7 @@ theorem memberInstallInv {μ : CheckMode} {F : Nat}
         intro tbl heq <;> exact nomatch heq
   have hpinsA : ∀ caps, c₀ = .indInfo cvA caps →
       EtaPins μ env cvA.name cvA.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (projFnName cvA.name 0) = none) := by
     intro caps2 hceq

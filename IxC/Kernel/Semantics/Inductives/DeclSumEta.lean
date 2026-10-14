@@ -173,7 +173,7 @@ theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env}
           have hn' : cA.1.name = c.1.name := by simpa using hnames
           obtain ⟨-, _, -, hrun⟩ := hall 0 c cA rfl rfl
           simp only [consSumCtors]
-          refine ⟨cA.1, ?_⟩
+          refine ⟨c.1.name, cA.1, rfl, ?_⟩
           show Env.find? ⟨.ctorInfo cA.1 p.nP cA.2 :: _⟩ c.1.name
             = some (.ctorInfo cA.1 p.nP c.2)
           have hnF : cA.2 = c.2 := (hall 0 c cA rfl rfl).1

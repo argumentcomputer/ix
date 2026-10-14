@@ -204,9 +204,13 @@ private def qRecRule (r : Ix.Kernel.RecRule) : Lean.Expr :=
       qRecRuleFire r.fire, qExpr r.rhs, qBool r.k, qBool r.eta,
       qBool r.paramsBlind]
 
+private def qOptionKey : Option Ix.Kernel.Key → Lean.Expr
+  | some k => mkApp2 (mkConst ``Option.some [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key) (qName k)
+  | none => mkApp (mkConst ``Option.none [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key)
+
 private def qIndCaps (c : Ix.Kernel.IndCaps) : Lean.Expr :=
   mkAppN (mkConst ``Ix.Kernel.IndCaps.mk)
-    #[qBool c.eta, qName c.etaCtor, mkRawNatLit c.etaParams,
+    #[qBool c.eta, qOptionKey c.etaCtor, mkRawNatLit c.etaParams,
       mkRawNatLit c.etaFields, qBool c.unitlike, mkRawNatLit c.unitParams,
       qBool c.ruleK, qPropWhen c.sortZ]
 

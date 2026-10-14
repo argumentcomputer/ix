@@ -351,9 +351,10 @@ recursor.  The pinned basis blocks carry pinned capabilities; modeled
 blocks earn them from checked `_model` theorems. -/
 structure IndCaps where
   eta : Bool := false
-  /-- The single constructor the eta law reconstructs through
-  (meaningful only when `eta`). -/
-  etaCtor : Key := .anonymous
+  /-- The single constructor the eta law reconstructs through (meaningful
+  only when `eta`; `none` at a block with another number of
+  constructors). -/
+  etaCtor : Option Key := none
   /-- Its parameter count (meaningful only when `eta`). -/
   etaParams : Nat := 0
   /-- Its field count (meaningful only when `eta`). -/
@@ -561,11 +562,12 @@ inductive Declaration where
 
 namespace Declaration
 
-/-- The name of a non-basis declaration (basis blocks install several). -/
-def name : Declaration → Key
-  | .axiomDecl v | .defnDecl v _ _ | .thmDecl v _ | .opaqueDecl v _ => v.name
-  | .quotDecl _ v => v.name
-  | .basisDecl _ | .indDecl _ _ => .anonymous
+/-- The name of a non-basis declaration (none at a basis block or an
+inductive block, which install several). -/
+def name : Declaration → Option Key
+  | .axiomDecl v | .defnDecl v _ _ | .thmDecl v _ | .opaqueDecl v _ => some v.name
+  | .quotDecl _ v => some v.name
+  | .basisDecl _ | .indDecl _ _ => none
 
 end Declaration
 

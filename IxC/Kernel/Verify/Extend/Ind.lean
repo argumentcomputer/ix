@@ -233,8 +233,8 @@ for a former whose constructor is still pending). -/
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     reservedBasisNames.contains T = false →
     blockNames.contains T = false →
-    ∃ cvC, env.find? caps.etaCtor =
-      some (.ctorInfo cvC caps.etaParams caps.etaFields)
+    ∃ C cvC, caps.etaCtor = some C ∧
+      env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
 /-- Stored block formers carry exactly the fold's capability record. -/
 def BlockCapsPinned (blockNames : List Key) (caps : IndCaps)
@@ -256,8 +256,8 @@ theorem EtaFamiliesClosedO.cons {blockNames : List Key} {env : Env}
     rw [he, hbn] at hTb
     exact nomatch hTb
   rw [Env.find?_cons, if_neg (fun hh => hTne hh.symm)] at hfT
-  obtain ⟨cvC, hfC⟩ := h T cvT caps hfT hcape hres hTb
-  exact ⟨cvC, by
+  obtain ⟨C, cvC, hC, hfC⟩ := h T cvT caps hfT hcape hres hTb
+  exact ⟨C, cvC, hC, by
     rw [Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]
     exact hfC⟩
 

@@ -312,8 +312,8 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
         Ix.Kernel.EtaFamilyStored env₃ T caps →
         Ix.Kernel.EtaFamilyStored env₀ T caps := by
       intro T caps hst
-      obtain ⟨h1, ⟨cvC, cnP, cnF, hC⟩, h3⟩ := hst
-      refine ⟨h1, ⟨cvC, cnP, cnF, (hsame _ _
+      obtain ⟨C, hCe, h1, ⟨cvC, cnP, cnF, hC⟩, h3⟩ := hst
+      refine ⟨C, hCe, h1, ⟨cvC, cnP, cnF, (hsame _ _
         (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hC⟩, ?_⟩
       intro j hj
       obtain ⟨cv, mI, rP, rules, hfj⟩ := h3 j hj
@@ -322,11 +322,11 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
       · exact ⟨cv, mI, rP, rules, by rw [← heq]; exact hfj⟩
       · exact ⟨cv2, mI2, rP2, [], h₀⟩
     refine ⟨?_, ?_⟩
-    · intro T cvT caps hf hcap hres hfamS φ' us hus
+    · intro T cvT caps hf hcap hres hfamS φ' C hC us hus
       obtain ⟨TVa, hTVa, hokT, hlaw⟩ :=
         he T cvT caps ((hsame _ _
           (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf) hcap
-          hres (hfam T caps hfamS) φ' us hus
+          hres (hfam T caps hfamS) φ' C hC us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hokT, hlaw⟩
     · intro T cvT caps hf hcap hres φ' us hus
       obtain ⟨TVa, hTVa, hokT, hlaw⟩ :=

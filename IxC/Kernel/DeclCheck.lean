@@ -432,7 +432,7 @@ def indBlockCapsF (fe : FEnv) (cvT cvC : ConstantVal) (nP nF : Nat) :
     IndCaps where
   eta := (cvC.levelParams = cvT.levelParams) &&
     checkEtaThmF mode fe cvT.name cvC.name cvT.levelParams nP nF
-  etaCtor := cvC.name
+  etaCtor := some cvC.name
   etaParams := nP
   etaFields := nF
   unitlike := checkUnitThmF mode fe cvT.name cvT.levelParams nP

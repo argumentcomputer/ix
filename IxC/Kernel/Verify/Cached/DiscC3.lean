@@ -75,7 +75,7 @@ private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Key)
                 if T' = T ∧ tmaj.getAppArgs.length = caps.etaParams ∧
                     ust.length = cvT.levelParams.length ∧
                     capsNeverZero cvT.levelParams ust caps = true then
-                  let fab := Expr.mkAppN (.const caps.etaCtor ust)
+                  let fab := Expr.mkAppN (.const rl.ctor ust)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)
                   if fab.wscopedB d && fab.looseBVarsBounded 0 &&
@@ -213,7 +213,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                     pure T >>= fun TI =>
                     projAppsI (mkFEnv env) T TI ust margs i
                         caps.etaFields >>= fun projs =>
-                    pure caps.etaCtor >>= fun ctorI =>
+                    pure rl.ctor >>= fun ctorI =>
                     pure (Expr.const ctorI ust) >>= fun h =>
                     mkAppNM h (margs ++ projs) >>= fun fab =>
                     pure (Expr.wscopedBC d fab &&
@@ -466,17 +466,17 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                           caps.etaFields hs₂r hmargs hden)
                           (fun s₃ projs hs₃ hQp => ?_)
                         refine SimC.bind_left (pureEq_eff hs₃
-                          caps.etaCtor)
+                          rl.ctor)
                           (fun s₃n ctorI hs₃ hQctorI => ?_)
                         subst hQctorI
                         refine SimC.bind_left (pureC_eff hs₃
-                          (x := Expr.const caps.etaCtor ust))
+                          (x := Expr.const rl.ctor ust))
                           (fun s₄ hd hs₄ hQh => ?_)
                         refine SimC.bind_left (mkAppNM_eff hs₄ hQh
                           (hmargs.append hQp))
                           (fun s₅ fab hs₅ hQfab => ?_)
                         have hQfab' : RelC fab
-                            (Expr.mkAppN (.const caps.etaCtor ust)
+                            (Expr.mkAppN (.const rl.ctor ust)
                               (etaFabArgsE env T ust (Expr.getAppArgs tmaj) i
                                 caps.etaFields)) := hQfab
                         refine SimC.pureB ?_

@@ -443,7 +443,7 @@ def constantInfo : Ix.Kernel.ConstantInfo → Ix.Kernel.ConstantInfo
   | .axiomInfo v => .axiomInfo (constantVal σ v)
   | .defnInfo v e h => .defnInfo (constantVal σ v) (expr σ e) h
   | .thmInfo v e => .thmInfo (constantVal σ v) (expr σ e)
-  | .indInfo v caps => .indInfo (constantVal σ v) { caps with etaCtor := σ caps.etaCtor }
+  | .indInfo v caps => .indInfo (constantVal σ v) { caps with etaCtor := caps.etaCtor.map σ }
   | .ctorInfo v nP nF => .ctorInfo (constantVal σ v) nP nF
   | .recInfo v major pre rules => .recInfo (constantVal σ v) major pre (rules.map (recRule σ))
   | .projInfo tbl => .projInfo { tbl with
@@ -502,7 +502,7 @@ def constantInfo : Ix.Kernel.ConstantInfo → List Ix.Kernel.Name
   | .axiomInfo v => constantVal v
   | .defnInfo v e _ => constantVal v ++ expr e
   | .thmInfo v e => constantVal v ++ expr e
-  | .indInfo v caps => constantVal v ++ [caps.etaCtor]
+  | .indInfo v caps => constantVal v ++ caps.etaCtor.toList
   | .ctorInfo v _ _ => constantVal v
   | .recInfo v _ _ rules => constantVal v ++ rules.flatMap recRule
   | .projInfo tbl => tbl.structName :: tbl.ctor :: tbl.bodies.toList.flatMap expr
@@ -574,7 +574,8 @@ structure RenamingHyp (σ : Ix.Kernel.Name → Ix.Kernel.Name) (pins : List Ix.K
     σ (.str p s) = .str (σ p) s
   /-- the front door's shape tests give the same answers (SP3 D5) -/
   shapes : ∀ k, InputKey pins ds k →
-    (σ k).isProjFnShape = k.isProjFnShape ∧ (σ k).isModelSuffix = k.isModelSuffix
+    Ix.Kernel.Key.isProjFnShape (σ k) = Ix.Kernel.Key.isProjFnShape k ∧
+      Ix.Kernel.Key.isModelSuffix (σ k) = Ix.Kernel.Key.isModelSuffix k
   /-- `σ` is injective on the names a run can build -/
   injective : ∀ a b, Built pins ds a → Built pins ds b → σ a = σ b → a = b
 

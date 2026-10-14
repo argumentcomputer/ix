@@ -801,7 +801,7 @@ private theorem structEtaCertWithC_unfold (env : Env) (d : Nat)
           | .const T us' =>
             match env.find? T with
             | some (.indInfo cvT caps) =>
-              if caps.eta = true ∧ caps.etaCtor = c ∧
+              if caps.eta = true ∧ caps.etaCtor = some c ∧
                   reservedBasisNames.contains T = false ∧
                   reservedBasisNames.contains c = false ∧
                   wtb.getAppArgs.length = caps.etaParams ∧
@@ -876,7 +876,7 @@ theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mo
               match (mkFEnv env).find? Tn with
               | some (.indInfo cvT caps) =>
                 pure (Expr.getAppArgsC w) >>= fun targs =>
-                if caps.eta = true ∧ caps.etaCtor = cn ∧
+                if caps.eta = true ∧ caps.etaCtor = some cn ∧
                     reservedBasisNames.contains Tn = false ∧
                     reservedBasisNames.contains cn = false ∧
                     targs.length = caps.etaParams ∧

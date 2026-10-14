@@ -154,7 +154,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       (Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts) 1 cvCa env = .ok envOut)
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     (hcaps : caps.eta = true → (Level.isEquiv p.resSort .zero == some true) = false ∧
-      caps.etaCtor = cvCa.name ∧ caps.etaParams = p.nP ∧ caps.etaFields = nF)
+      caps.etaCtor = some cvCa.name ∧ caps.etaParams = p.nP ∧ caps.etaFields = nF)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hfC : env.find? cvCa.name = some (.ctorInfo cvCa p.nP nF))
     (hlpsC : cvCa.levelParams = p.cvT.levelParams)
@@ -627,13 +627,13 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
       have hcapsR := Ix.Kernel.nativeCaps_single (p := p) hc'
       have hcaps : (Ix.Kernel.nativeCaps p).eta = true →
           (Level.isEquiv p.resSort .zero == some true) = false ∧
-          (Ix.Kernel.nativeCaps p).etaCtor = cA.1.name ∧
+          (Ix.Kernel.nativeCaps p).etaCtor = some cA.1.name ∧
           (Ix.Kernel.nativeCaps p).etaParams = p.nP ∧
           (Ix.Kernel.nativeCaps p).etaFields = cA.2 := by
         intro he
         rw [hcapsR] at he ⊢
         simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at he
-        refine ⟨by rw [← hProp]; exact he.1.2, hCname.symm, rfl, hnFc'.symm⟩
+        refine ⟨by rw [← hProp]; exact he.1.2, by rw [hCname], rfl, hnFc'.symm⟩
       -- the recursor's constant and its freshness
       obtain ⟨cvRi, recTy, sty, u, hccvR, hgenR, -, -, -, -, -, -, -, hrules, hcvRa⟩ :=
         Ix.Kernel.checkNativeRec_shape hRec

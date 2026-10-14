@@ -69,7 +69,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     (hpinsT : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT)
     (hCblock : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
-      capsT.eta = true → blockNames.contains capsT.etaCtor = true)
+      capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true)
     (hFields : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       capsT.eta = true → capsT.etaFields = nF) :
     ∃ mp₁ : EnvModelM V μ env₁,
@@ -424,7 +424,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
         Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT) →
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
-        capsT.eta = true → blockNames.contains capsT.etaCtor = true) →
+        capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true) →
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
         capsT.eta = true → capsT.etaFields = nF) →
       ∃ mp₄ : EnvModelM V μ env₄,

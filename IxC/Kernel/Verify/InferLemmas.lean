@@ -1070,7 +1070,7 @@ theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
          capsNeverZero cvT.levelParams ust caps = true ∧
          tmaj.getAppArgs.length = caps.etaParams ∧
          ust.length = cvT.levelParams.length ∧
-         major' = Expr.mkAppN (.const caps.etaCtor ust)
+         major' = Expr.mkAppN (.const rl.ctor ust)
            (etaFabArgsE env T ust tmaj.getAppArgs major caps.etaFields) ∧
          iotaCertsFueled mode env fuel d false
            (cvj.type.instantiateLevelParams cvj.levelParams ust)
@@ -1497,13 +1497,13 @@ theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
       exact Or.inl h.symm
     obtain ⟨rfl, hplen, hlvl, hnz⟩ := hTl
     rw [if_pos ⟨rfl, hplen, hlvl, hnz⟩] at h
-    cases hguard : (Expr.mkAppN (.const caps.etaCtor ust)
+    cases hguard : (Expr.mkAppN (.const rl.ctor ust)
           (etaFabArgsE env T' ust tmaj.getAppArgs major
             caps.etaFields)).wscopedB d &&
-        (Expr.mkAppN (.const caps.etaCtor ust)
+        (Expr.mkAppN (.const rl.ctor ust)
           (etaFabArgsE env T' ust tmaj.getAppArgs major
             caps.etaFields)).looseBVarsBounded 0 &&
-        (Expr.mkAppN (.const caps.etaCtor ust)
+        (Expr.mkAppN (.const rl.ctor ust)
           (etaFabArgsE env T' ust tmaj.getAppArgs major
             caps.etaFields)).fvarLeaves.all
           (fun l => major.fvarLeaves.contains l) with
@@ -1532,7 +1532,7 @@ theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
     simp only [↓reduceIte] at h
     try simp only [Bind.bind, Except.bind] at h
     cases hse : structEtaCertWithFueled mode env fuel d
-        (Expr.mkAppN (.const caps.etaCtor ust)
+        (Expr.mkAppN (.const rl.ctor ust)
           (etaFabArgsE env T' ust tmaj.getAppArgs major caps.etaFields))
         major tmaj with
     | error err => rw [hse] at h; exact nomatch h
@@ -1550,7 +1550,7 @@ theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
       rw [if_pos hZ] at h
       try simp only [Bind.bind, Except.bind] at h
       cases hpi : proofIrrelFueled mode env fuel d
-          (Expr.mkAppN (.const caps.etaCtor ust)
+          (Expr.mkAppN (.const rl.ctor ust)
             (etaFabArgsE env T' ust tmaj.getAppArgs major caps.etaFields))
           major with
       | error err => rw [hpi] at h; exact nomatch h
@@ -2057,7 +2057,7 @@ theorem structEtaCertWith_inv {env : Env} {fuel d : Nat} {a b wtb : Expr}
       a.getAppArgs.length = cnP + cnF ∧
       wtb.getAppFn = .const T us' ∧
       env.find? T = some (.indInfo cvT caps) ∧
-      caps.eta = true ∧ caps.etaCtor = c ∧
+      caps.eta = true ∧ caps.etaCtor = some c ∧
       reservedBasisNames.contains T = false ∧
       reservedBasisNames.contains c = false ∧
       wtb.getAppArgs.length = caps.etaParams ∧
@@ -2144,7 +2144,7 @@ theorem structEtaCertWith_inv {env : Env} {fuel d : Nat} {a b wtb : Expr}
   | some (.indInfo cvT caps) => ?_
   intro h
   dsimp only at h
-  by_cases hcond : caps.eta = true ∧ caps.etaCtor = c ∧
+  by_cases hcond : caps.eta = true ∧ caps.etaCtor = some c ∧
       reservedBasisNames.contains T = false ∧
       reservedBasisNames.contains c = false ∧
       wtb.getAppArgs.length = caps.etaParams ∧

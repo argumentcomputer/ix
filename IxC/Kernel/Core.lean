@@ -388,7 +388,7 @@ def structEtaCertWith (r : CoreFns m) (env : Env) (depth : Nat)
         | .const T us' =>
           match env.find? T with
           | some (.indInfo cvT caps) =>
-            if caps.eta = true ∧ caps.etaCtor = c ∧
+            if caps.eta = true ∧ caps.etaCtor = some c ∧
                 reservedBasisNames.contains T = false ∧
                 reservedBasisNames.contains c = false ∧
                 wtb.getAppArgs.length = caps.etaParams ∧
@@ -639,7 +639,7 @@ def majorToCtor (r : CoreFns m) (env : Env) (depth : Nat)
                 -- only at a constructor stored with the former's own
                 -- level parameters (`RecCtorsStored`), which the
                 -- fabrication's levels are those of
-                let fab := Expr.mkAppN (.const caps.etaCtor ust)
+                let fab := Expr.mkAppN (.const rl.ctor ust)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)
                 -- scope guard, as in the K branch

@@ -1173,11 +1173,11 @@ private theorem majorToCtor_shift (henv : EnvWF env)
               rw [getAppArgs_shiftFrom, List.length_map]
               refine ite_rel _ (fun _ => ?_) (fun _ => rfl)
               rw [etaFabArgsE_shift]
-              have hfab : Expr.mkAppN (Expr.const caps.etaCtor ust)
+              have hfab : Expr.mkAppN (Expr.const rl.ctor ust)
                   (List.map (shiftFrom p)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)) =
-                  shiftFrom p (Expr.mkAppN (.const caps.etaCtor ust)
+                  shiftFrom p (Expr.mkAppN (.const rl.ctor ust)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)) := by
                 rw [shiftFrom_mkAppN]
@@ -1199,7 +1199,7 @@ private theorem majorToCtor_shift (henv : EnvWF env)
                     rcases List.mem_append.mp hy with hy | hy
                     · exact hwtmaj.getAppArgs y hy
                     · rw [List.mem_singleton.mp hy]; exact hwmaj
-              have hwfab : WScoped d (Expr.mkAppN (.const caps.etaCtor ust)
+              have hwfab : WScoped d (Expr.mkAppN (.const rl.ctor ust)
                   (etaFabArgsE env T ust tmaj.getAppArgs major
                     caps.etaFields)) :=
                 Expr.WScoped.mkAppN (by simp [WScoped]) hwfabArgs

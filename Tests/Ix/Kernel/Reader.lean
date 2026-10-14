@@ -153,9 +153,9 @@ def quotLift := pinned "Quot.lift"
     | _, _ => false
   | .error _ => false
 #guard builtinPins.names.size == 55
-#guard (builtinPre.ix.decls.toList.map (toString ∘ Ix.Kernel.Frontend.preludeKey)) ==
+#guard (builtinPre.ix.decls.toList.map (fun d => toString <$> Ix.Kernel.Frontend.preludeKey d)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
-   "And", "Bool"]
+   "And", "Bool"].map some
 #guard [eq, eqRefl, nat, natZero, natSucc, quotMk, quotLift].all (· != address 0)
 -- the empty stream: the prelude alone
 #guard (namesOf []).length == 27 && (namesOf []).contains "Eq.rec" && (namesOf []).contains "Bool.true"

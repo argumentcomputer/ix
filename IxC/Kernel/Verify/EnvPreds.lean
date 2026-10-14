@@ -133,7 +133,7 @@ theorem recRuleEtaOf_inv {f : Key → Option ConstantInfo}
       f ctor = some (.ctorInfo cvj cnP cnF) ∧
       (cvj.type.piResult).getAppFn = .const T us ∧
       f T = some (.indInfo cvT caps) ∧ caps.eta = true ∧
-      caps.etaCtor = ctor ∧ Key.isProjFnShape recName = false ∧
+      caps.etaCtor = some ctor ∧ Key.isProjFnShape recName = false ∧
       cvj.levelParams = cvT.levelParams := by
   revert h
   unfold recRuleEtaOf
@@ -169,7 +169,7 @@ theorem recRuleEtaOf_of {f : Key → Option ConstantInfo}
     (h1 : f ctor = some (.ctorInfo cvj cnP cnF))
     (h2 : (cvj.type.piResult).getAppFn = .const T us)
     (h3 : f T = some (.indInfo cvT caps)) (h4 : caps.eta = true)
-    (h5 : caps.etaCtor = ctor) (h6 : Key.isProjFnShape recName = false)
+    (h5 : caps.etaCtor = some ctor) (h6 : Key.isProjFnShape recName = false)
     (h7 : cvj.levelParams = cvT.levelParams) :
     recRuleEtaOf f recName ctor = true := by
   unfold recRuleEtaOf
@@ -221,7 +221,7 @@ theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
     (hpres : (cvj.type.piResult).getAppFn = .const T us₀)
     (hfT : env.find? T = some (.indInfo cvT caps)) :
     (rl.k = true → caps.ruleK = true ∧ cnF = 0) ∧
-    (rl.eta = true → caps.eta = true ∧ rl.ctor = caps.etaCtor ∧
+    (rl.eta = true → caps.eta = true ∧ caps.etaCtor = some rl.ctor ∧
       cvj.levelParams = cvT.levelParams) := by
   obtain ⟨-, hk, he⟩ := hctors recName cv mI rP rules hfrec rl hmem
   constructor
@@ -244,7 +244,7 @@ theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
     obtain ⟨rfl, -⟩ := Expr.const.inj h2
     rw [hfT] at h3
     obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj h3)
-    exact ⟨h4, h5.symm, h7⟩
+    exact ⟨h4, h5, h7⟩
 
 /-- Both bits at a rule the install stamped (`recRuleBits`) are the
 lookup's own verdict, by construction. -/

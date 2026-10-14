@@ -59,7 +59,7 @@ theorem capsLawsAt_vacuous {env : Env} (m : EnvModel V env) {T : Key} {cvT : Con
   refine ⟨fun he hfam => ?_, fun hu => absurd (hU.symm.trans hu) Bool.false_ne_true⟩
   exfalso
   obtain ⟨hpos, hfresh⟩ := hE he
-  obtain ⟨-, -, hslots⟩ := hfam
+  obtain ⟨-, -, -, -, hslots⟩ := hfam
   obtain ⟨cv, mI, rP, rules, hf⟩ := hslots 0 hpos
   rw [hfresh] at hf
   exact nomatch hf
@@ -80,8 +80,8 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       env.find? T' = some (.indInfo cvT' caps') → T' ≠ T →
       Ix.Kernel.reservedBasisNames.contains T' = false →
       caps'.eta = true →
-      ∃ cvC', env.find? caps'.etaCtor
-        = some (.ctorInfo cvC' caps'.etaParams caps'.etaFields))
+      ∃ C cvC', caps'.etaCtor = some C ∧
+        env.find? C = some (.ctorInfo cvC' caps'.etaParams caps'.etaFields))
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     (hTlaws : ∀ (cvT : ConstantVal) (caps : IndCaps),
@@ -106,16 +106,17 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       exact hnotind cvT' caps' (Option.some.inj hf)
   constructor
   · -- the η half
-    intro T' cvT' caps' hf hcape hres hfam φ' us hlen
+    intro T' cvT' caps' hf hcape hres hfam φ' C hC us hlen
     by_cases hTT : T' = T
     · subst hTT
-      exact (hTlaws cvT' caps' hf hres).1 hcape hfam φ' us hlen
+      exact (hTlaws cvT' caps' hf hres).1 hcape hfam φ' C hC us hlen
     have hnT' : T' ≠ c₀.name := hneT T' cvT' caps' hf hTT
     have hfE : env.find? T' = some (.indInfo cvT' caps') := by
       rwa [hdown _ hnT'] at hf
     -- the family's names are all prefix lookups
-    obtain ⟨cvC', hfC'⟩ := hother T' cvT' caps' hfE hTT hres hcape
-    have hnC : caps'.etaCtor ≠ c₀.name := by
+    obtain ⟨C', cvC', hC', hfC'⟩ := hother T' cvT' caps' hfE hTT hres hcape
+    obtain rfl : C' = C := Option.some.inj (hC'.symm.trans hC)
+    have hnC : C' ≠ c₀.name := by
       intro hh
       rw [hh, hfresh] at hfC'
       exact nomatch hfC'
@@ -125,13 +126,14 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       rw [hh, hpshape] at this
       exact nomatch this
     have hfam₀ : Ix.Kernel.EtaFamilyStored env T' caps' := by
-      obtain ⟨hCres, ⟨cvC'', hfC''⟩, hfP⟩ := hfam
-      refine ⟨hCres, ⟨cvC'', by rwa [hdown _ hnC] at hfC''⟩, ?_⟩
+      obtain ⟨C'', hC'', hCres, ⟨cvC'', hfC''⟩, hfP⟩ := hfam
+      obtain rfl : C'' = C' := Option.some.inj (hC''.symm.trans hC')
+      refine ⟨C'', hC'', hCres, ⟨cvC'', by rwa [hdown _ hnC] at hfC''⟩, ?_⟩
       intro j hj
       obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
       exact ⟨cv2, mI2, rP2, rules2, by rwa [hdown _ (hnP j hj)] at hf2⟩
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      mp.caps_ok.1 T' cvT' caps' hfE hcape hres hfam₀ φ' us hlen
+      mp.caps_ok.1 T' cvT' caps' hfE hcape hres hfam₀ φ' C' hC' us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh
