@@ -32,6 +32,17 @@ impl PublicSetup {
   }
 }
 
+/// The development trapdoor of `seed`.
+pub(super) fn dev_tau(seed: &[u8]) -> Fr {
+  let mut wide = [0u8; 64];
+  blake3::Hasher::new()
+    .update(b"multi-stark/kzg/dev-srs")
+    .update(seed)
+    .finalize_xof()
+    .fill(&mut wide);
+  Fr::from_le_bytes_mod_order(&wide)
+}
+
 /// `[G, τG, τ²G, …]` in G1 and `[H, τH]` in G2.
 pub struct Srs {
   pub g1: Vec<G1Affine>,
@@ -50,6 +61,23 @@ impl Srs {
     path: impl AsRef<std::path::Path>,
   ) -> Result<Self, ark_serialize::SerializationError> {
     super::srs_cache::cached(max_len, max_len - 1, seed, path.as_ref())
+  }
+
+  /// Reuse or populate a shared cache directory holding one file per
+  /// prefix length and seed, so stages of different heights share one
+  /// trusted-local location.
+  pub fn unsafe_dev_setup_prefix_in_cache_directory(
+    max_len: usize,
+    public_max_degree: usize,
+    seed: &[u8],
+    directory: impl AsRef<std::path::Path>,
+  ) -> std::io::Result<Self> {
+    super::srs_cache::cached_in_directory(
+      max_len,
+      public_max_degree,
+      seed,
+      directory.as_ref(),
+    )
   }
 
   /// Cache a development prefix while preserving its complete public degree.
@@ -174,30 +202,30 @@ impl Srs {
     assert!(max_len >= 2 && max_len.is_power_of_two());
     assert!(public_max_degree >= max_len - 1);
     let public_setup = PublicSetup::known_trapdoor(public_max_degree, seed);
-    let mut wide = [0u8; 64];
-    blake3::Hasher::new()
-      .update(b"multi-stark/kzg/dev-srs")
-      .update(seed)
-      .finalize_xof()
-      .fill(&mut wide);
-    let tau = Fr::from_le_bytes_mod_order(&wide);
+    let tau = dev_tau(seed);
 
     let g1_gen = G1Projective::generator();
     // τ-powers in independent chunks (each chunk seeds itself with
     // τ^start), so the scalar multiplications parallelize under the
-    // `parallel` feature; serial otherwise.
+    // `parallel` feature; serial otherwise. A bounded fixed-base table
+    // amortizes the generator multiplication across powers without a table
+    // whose size grows with the SRS degree.
     let chunk = 1usize << 14;
+    let table = ark_ec::scalar_mul::BatchMulPreprocessing::new(
+      g1_gen,
+      max_len.min(1 << 12),
+    );
     let mut g1 = vec![G1Affine::identity(); max_len];
     g1.par_chunks_mut(chunk).enumerate().for_each(|(i, dst)| {
       let mut acc = tau.pow([(i * chunk) as u64]);
-      let powers: Vec<_> = (0..dst.len())
+      let scalars: Vec<_> = (0..dst.len())
         .map(|_| {
-          let point = g1_gen * acc;
+          let value = acc;
           acc *= tau;
-          point
+          value
         })
         .collect();
-      dst.copy_from_slice(&G1Projective::normalize_batch(&powers));
+      dst.copy_from_slice(&table.batch_mul(&scalars));
     });
     let g2_gen = G2Projective::generator();
     Self {

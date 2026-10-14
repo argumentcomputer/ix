@@ -39,6 +39,87 @@ proving prefix or only verifier anchors preserves that degree and the setup
 identity. Development identities derive from the seed and declared degree;
 the trapdoor remains known.
 
+## GPU proving
+
+The `cuda` feature compiles the KZG kernels with nvcc and runs
+interpolation, commitments, coset evaluation, lookup and quotient
+construction and opening divisions on NVIDIA GPUs. It needs the CUDA
+toolkit at build time and a visible GPU at runtime; a CPU-only build
+neither compiles sppark nor links CUDA.
+
+```sh
+IX_CUDA=1 MULTI_STARK_CUDA_ARCHS=120 lake build ix
+cargo test --release -p ix-proof-compression --features cuda
+```
+
+`IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
+prover and the KZG backend here; there is no separate switch.
+
+With the feature compiled, every proving operation above the size
+thresholds in the prover runs on the devices and a rejected memory
+admission is an error; tune the residency limit or chunk size below rather
+than expecting a host fallback. A CUDA build keeps every checkpoint in
+memory, as the original pipeline did, so `--resident` changes nothing
+there; a CPU build proves disk-backed checkpoints with identical proof
+bytes. The worker installs its settings from the environment before the
+first proving operation:
+
+| Variable | Values | Default |
+| --- | --- | --- |
+| `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated | every supported device |
+| `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | `8`, leaving the rest of the device for lookup and quotient working sets |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
+| `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
+
+### Measured proving time
+
+One RTX PRO 6000, 24 host cores, a 230 GiB cgroup limit without swap,
+sequential stages, the fused `run` and `stage-and-prove` entries, trace cap
+2^24, witness prefetch off, and the caches shared through
+`IX_KZG_FIXED_CACHE` and `IX_KZG_SRS_CACHE` from a fresh output directory.
+The cold trial generates both development SRS files and all fixed
+preprocessing; the warm trial reuses them.
+
+| Stage | Cold | Warm | multi-stark `sb/kzg` warm |
+| --- | ---: | ---: | ---: |
+| FRI compression, GPU | 62 s | 61 s | 60 s |
+| First KZG stage | 307 s | 178 s | 164 s |
+| Recursive KZG stage | 307 s | 121 s | 113 s |
+| Pipeline | 676 s | 360 s | 336 s |
+
+The warm trial hashed every cached checkpoint at restore; the restore now
+hashes only the metadata files, since checkpoints verify their own recorded
+digest on every read, and has not been re-measured. The final packet is
+2,181 bytes in every run.
+
+`IX_KZG_CUDA_ARCHS` selects the SM architectures at build time and falls
+back to `MULTI_STARK_CUDA_ARCHS`, so one variable configures both CUDA
+backends of a Lake build. The feature-compiled test suite needs a GPU host;
+the device unit tests are marked ignored and run with `--ignored`. CPU/GPU
+proof-byte parity is checked by comparing the two builds' outputs.
+
+## Stage entries and caches
+
+`init_fri_kzg run <saved-fri-dir> <output-dir> <log-height> [--resident]`
+stages and proves the first KZG stage in one process, feeding generated
+traces straight into commitment; `ix compress` uses it for a fresh run and
+falls back to `stage` then `prove` when resuming a staged directory.
+`init_fri_kzg serve <responses.jsonl> [log-height] [--resident]` keeps a
+prepared worker resident across requests. The recursive stage has the same
+fused entry, `init_kzg_wrap stage-and-prove <first-stage-dir> <output-dir>`,
+which `ix compress` uses for a fresh run; it caps device residency at 8 GiB
+so the constraint passes of the 2^27 trace are admitted, unless
+`IX_KZG_CUDA_RESIDENT_GIB` is set.
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `IX_KZG_FIXED_CACHE` | directory of fixed-preprocessing checkpoints, bound to the executable digest, plan and setup identity | `<dir>/kzg/fixed-cache` |
+| `IX_KZG_SRS_CACHE` | directory holding block-checksummed development SRS files shared across stages | per-stage `kzg/dev-srs.bin` |
+| `IX_KZG_PREFETCH_GIB` | bound on the next partition's witness prefetched during proving | `32` |
+| `IX_KZG_TRACE_CODEC` | `pzstd` or `zstd` for staged trace files | `pzstd` when installed |
+
 ## Code and tests
 
 `fri` constrains FRI verification, `foreign` translates Goldilocks arithmetic

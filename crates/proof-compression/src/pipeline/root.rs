@@ -48,7 +48,44 @@ fn claims_from_bytes(bytes: &[u8]) -> Result<Vec<Vec<Val>>, String> {
   Ok(claims)
 }
 
+/// Compiled features of this binary, for harnesses that check what a
+/// measured executable can do before trusting its timings.
+fn print_capabilities() {
+  println!(
+    concat!(
+      "{{\"format\":\"ix-compression-capabilities/v1\",\"binary\":\"init_fri\",",
+      "\"cuda\":{},\"parallel\":{}}}"
+    ),
+    cfg!(feature = "cuda"),
+    cfg!(feature = "parallel"),
+  );
+}
+
+/// Report the process's resident and virtual size every 30 seconds so a
+/// long stage's memory profile is visible in its log.
+fn spawn_memory_monitor() {
+  std::thread::spawn(|| {
+    loop {
+      std::thread::sleep(std::time::Duration::from_secs(30));
+      if let Ok(status) = fs::read_to_string("/proc/self/status") {
+        eprintln!(
+          "{}",
+          status
+            .lines()
+            .filter(|l| l.starts_with("VmRSS:") || l.starts_with("VmSize:"))
+            .collect::<Vec<_>>()
+            .join(" ")
+        );
+      }
+    }
+  });
+}
+
 pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+  if args.len() == 1 && args[0] == "capabilities" {
+    print_capabilities();
+    return Ok(());
+  }
   if args.len() < 2 {
     return Err("usage: init_fri <ix-artifacts> <output-dir> [--native-only | --check-only | --prove-outer]".into());
   }
@@ -61,6 +98,7 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     return Err("invalid mode".into());
   }
   fs::create_dir_all(&out)?;
+  spawn_memory_monitor();
   let _ = tracing_subscriber::fmt()
     .with_ansi(false)
     .with_target(false)
@@ -231,12 +269,19 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   )?;
   let start = Instant::now();
   let mut witness = circuit.witness();
+  inputs.assign_statement(
+    &mut witness,
+    &Statement {
+      claims: claims.clone(),
+      messages: proof
+        .preamble
+        .messages
+        .iter()
+        .map(|m| Message { args: m.args.clone(), multiplicity: m.multiplicity })
+        .collect(),
+    },
+  )?;
   expanded.assign_proof(&mut witness, &inputs)?;
-  for (wires, claim) in inputs.proof().algebra.claims.iter().zip(&claims) {
-    for (&wire, &value) in wires.iter().zip(claim) {
-      witness.set(wire, value)?;
-    }
-  }
   let assignment = witness.generate()?;
   let public: Vec<_> = claims.iter().flatten().copied().collect();
   assert_eq!(assignment.public_values(), public);
@@ -300,10 +345,11 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   drop(plan);
   drop(verifier_key);
   let start = Instant::now();
-  let compiled = circuit.lower_to_multi_stark_with_max_height(
-    Val::from_u8(107),
-    max_trace_height,
-  )?;
+  // Sharded lowering keeps integer copy links instead of materializing the
+  // dense fixed matrix and wires of the whole circuit; the layout, fixed
+  // columns and proof bytes are the same as the dense lowering's.
+  let compiled = circuit
+    .lower_to_multi_stark_sharded(Val::from_u8(107), max_trace_height)?;
   println!("Lowering: {:?}", start.elapsed());
   let outer_claims = compiled.claims(&public)?;
   let mut wrong_public = public.clone();

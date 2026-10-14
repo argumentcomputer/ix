@@ -20,6 +20,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+rayon = { workspace = true, optional = true }
+blst = { version = "=0.3.16", features = ["portable"], optional = true }
 p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
@@ -30,8 +32,22 @@ p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }
 
+# The CUDA transform engine for the KZG backend. The fork supplies column
+# batching, borrowed streams, the device-selecting synchronization and the
+# MSM profiling hooks, and a runtime compatible with the Lean executable's
+# C++ linkage. The revision must match multi-stark's Goldilocks pin.
+[dependencies.sppark]
+git = "https://github.com/argumentcomputer/sppark"
+rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8"
+optional = true
+features = ["cuda"]
+
 [features]
 default = ["parallel"]
+# GPU proving: multi-stark's Goldilocks backend for FRI compression and the
+# KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
+# at runtime; CPU-only builds neither compile sppark nor link CUDA.
+cuda = ["multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
 parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
 
 [lints]

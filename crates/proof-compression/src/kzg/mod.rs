@@ -1,10 +1,14 @@
 //! BLS12-381 KZG backend for multi-stark, with a BLAKE3 transcript.
 //! Commitments contain one G1 point per column; openings are batched by point.
 
+mod buffer;
 mod coefficients;
 pub mod compact;
 pub mod config;
+#[cfg(feature = "cuda")]
+pub mod cuda;
 pub mod domain;
+pub mod encoding;
 mod fft_batch;
 pub mod field;
 pub mod pcs;

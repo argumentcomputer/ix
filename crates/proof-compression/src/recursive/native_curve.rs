@@ -1,14 +1,13 @@
-//! Affine arithmetic with constrained denominators; exceptional sums reject.
+//! Affine arithmetic with constrained denominators and a complete final addition.
 use crate::kzg::Scalar;
-use crate::recursive::native_field::Builder;
-use crate::recursive::native_field::FqGadget;
-use crate::recursive::native_field::FqVar;
+use crate::recursive::native_field::{Builder, FqGadget, FqVar, fq_value};
 use ark_bls12_381::{Fq, G1Affine};
 use ark_ec::{AdditiveGroup, AffineRepr};
 use ark_ff::Field;
-use multi_stark::plonkish::Bool;
-use multi_stark::plonkish::Value;
-use multi_stark::traits::Field as NativeField;
+use multi_stark::{
+  plonkish::{Bool, Value},
+  traits::{Algebra, Field as NativeField},
+};
 
 #[derive(Clone, Copy)]
 pub struct Affine {
@@ -37,7 +36,7 @@ impl Affine {
     f.relation(b, &[(1, xx, self.x), (-1, self.y, self.y)], &[], 4);
   }
   pub fn double(self, b: &mut Builder, f: &FqGadget) -> Self {
-    let slope = f.hint(b, "doubling slope", &[self.x, self.y], |v| {
+    let slope = f.hint_pure(b, "doubling slope", &[self.x, self.y], |v| {
       Ok(
         v[0].square()
           * Fq::from(3u8)
@@ -47,11 +46,11 @@ impl Affine {
     f.relation(b, &[(2, self.y, slope), (-3, self.x, self.x)], &[], 0);
     // For an on-curve input y=0 implies x != 0, so the slope equation
     // itself rejects the only possible zero denominator.
-    let x = f.hint(b, "double x", &[slope, self.x], |v| {
+    let x = f.hint_pure(b, "double x", &[slope, self.x], |v| {
       Ok(v[0].square() - v[1].double())
     });
     f.relation(b, &[(1, slope, slope)], &[(-2, self.x), (-1, x)], 0);
-    let y = f.hint(b, "double y", &[slope, self.x, x, self.y], |v| {
+    let y = f.hint_pure(b, "double y", &[slope, self.x, x, self.y], |v| {
       Ok(v[0] * (v[1] - v[2]) - v[3])
     });
     f.relation(
@@ -63,11 +62,11 @@ impl Affine {
     Self { x, y }
   }
   pub fn add(self, b: &mut Builder, f: &FqGadget, rhs: Self) -> Self {
-    let inv = f.hint(b, "addition inverse", &[rhs.x, self.x], |v| {
+    let inv = f.hint_pure(b, "addition inverse", &[rhs.x, self.x], |v| {
       (v[0] - v[1]).inverse().ok_or("exceptional affine addition".into())
     });
     f.relation(b, &[(1, rhs.x, inv), (-1, self.x, inv)], &[], -1);
-    let slope = f.hint(b, "addition slope", &[rhs.y, self.y, inv], |v| {
+    let slope = f.hint_pure(b, "addition slope", &[rhs.y, self.y, inv], |v| {
       Ok((v[0] - v[1]) * v[2])
     });
     f.relation(
@@ -76,7 +75,7 @@ impl Affine {
       &[(-1, rhs.y), (1, self.y)],
       0,
     );
-    let x = f.hint(b, "sum x", &[slope, self.x, rhs.x], |v| {
+    let x = f.hint_pure(b, "sum x", &[slope, self.x, rhs.x], |v| {
       Ok(v[0].square() - v[1] - v[2])
     });
     f.relation(
@@ -85,7 +84,7 @@ impl Affine {
       &[(-1, self.x), (-1, rhs.x), (-1, x)],
       0,
     );
-    let y = f.hint(b, "sum y", &[slope, self.x, x, self.y], |v| {
+    let y = f.hint_pure(b, "sum y", &[slope, self.x, x, self.y], |v| {
       Ok(v[0] * (v[1] - v[2]) - v[3])
     });
     f.relation(
@@ -95,6 +94,37 @@ impl Affine {
       0,
     );
     Self { x, y }
+  }
+
+  /// Complete addition of nonidentity prime-order inputs. The ordinary affine
+  /// branch receives fixed, distinct points when its denominator would vanish.
+  /// Equal inputs use doubling; opposite inputs have canonical zero coordinates.
+  pub fn add_complete(
+    self,
+    b: &mut Builder,
+    f: &FqGadget,
+    rhs: Self,
+  ) -> PointInput {
+    let same_x = equal_flag(b, f, self.x, rhs.x);
+    let same_y = equal_flag(b, f, self.y, rhs.y);
+    let g = G1Affine::generator();
+    let fallback_left = Self::constant(b, f, g);
+    let fallback_right = Self::constant(b, f, (g + g).into());
+    let left = Self::select(b, same_x, fallback_left, self);
+    let right = Self::select(b, same_x, fallback_right, rhs);
+    let ordinary = left.add(b, f, right);
+    let doubled = self.double(b, f);
+    let zero = f.constant(b, Fq::from(0u8));
+    let exceptional =
+      Self::select(b, same_y, doubled, Self { x: zero, y: zero });
+    let point = Self::select(b, same_x, exceptional, ordinary);
+    let different_y = b.affine(
+      [same_y.value(), same_y.value()],
+      [Scalar::NEG_ONE, Scalar::ZERO],
+      Scalar::ONE,
+    );
+    let infinity = b.mul(same_x.value(), different_y);
+    PointInput { point, infinity: b.assert_bool(infinity) }
   }
   pub fn constant_mul(self, b: &mut Builder, f: &FqGadget, n: u64) -> Self {
     assert!(n > 0);
@@ -114,10 +144,12 @@ impl Affine {
   pub fn subgroup(self, b: &mut Builder, f: &FqGadget) {
     // Same endomorphism criterion as ark-bls12-381's native checker.
     let xp = self.constant_mul(b, f, 0xd201000000010000);
-    let inv =
-      f.hint(b, "reject exceptional subgroup point", &[xp.x, self.x], |v| {
-        (v[0] - v[1]).inverse().ok_or("exceptional subgroup point".into())
-      });
+    let inv = f.hint_pure(
+      b,
+      "reject exceptional subgroup point",
+      &[xp.x, self.x],
+      |v| (v[0] - v[1]).inverse().ok_or("exceptional subgroup point".into()),
+    );
     f.relation(b, &[(1, xp.x, inv), (-1, self.x, inv)], &[], -1);
     let x2p = xp.constant_mul(b, f, 0xd201000000010000);
     let beta = f.constant(b, ark_bls12_381::g1::BETA);
@@ -125,6 +157,24 @@ impl Affine {
     f.relation(b, &[], &[(1, self.y), (1, x2p.y)], 0);
   }
 }
+
+fn equal_flag(b: &mut Builder, f: &FqGadget, lhs: FqVar, rhs: FqVar) -> Bool {
+  let deps: Vec<_> = lhs.0.into_iter().chain(rhs.0).collect();
+  let equal = b.hint("Fq equality", &deps, |v| {
+    Ok(Scalar::from_bool(fq_value(&v[..5]) == fq_value(&v[5..])))
+  });
+  let flag = b.assert_bool(equal);
+  let zero = b.constant(Scalar::ZERO);
+  let flag_fq = FqVar([equal, zero, zero, zero, zero]);
+  let inverse = f.hint_pure(b, "Fq equality inverse", &[lhs, rhs], |v| {
+    Ok((v[0] - v[1]).inverse().unwrap_or(Fq::from(0u8)))
+  });
+  f.relation(b, &[(1, lhs, inverse), (-1, rhs, inverse)], &[(1, flag_fq)], -1);
+  f.relation(b, &[(1, lhs, flag_fq), (-1, rhs, flag_fq)], &[], 0);
+  f.relation(b, &[(1, inverse, flag_fq)], &[], 0);
+  flag
+}
+
 impl PointInput {
   pub fn new(b: &mut Builder, f: &FqGadget, name: &str) -> Self {
     let point = Affine {
@@ -146,6 +196,15 @@ impl PointInput {
   pub fn nonzero(self, b: &mut Builder, f: &FqGadget) -> Affine {
     let g = Affine::constant(b, f, G1Affine::generator());
     Affine::select(b, self.infinity, g, self.point)
+  }
+  pub fn canonical(self, b: &mut Builder, f: &FqGadget) -> Self {
+    let x = f.hint_pure(b, "output x", &[self.point.x], |v| Ok(v[0]));
+    f.equal(b, x, self.point.x);
+    f.canonical(b, x);
+    let y = f.hint_pure(b, "output y", &[self.point.y], |v| Ok(v[0]));
+    f.equal(b, y, self.point.y);
+    f.canonical(b, y);
+    Self { point: Affine { x, y }, infinity: self.infinity }
   }
   pub fn inputs(self, p: G1Affine) -> Vec<(Value, Scalar)> {
     let (x, y) =
@@ -259,6 +318,37 @@ mod tests {
   fn affine_operations() {
     for operation in ["native-add", "native-double"] {
       measure(operation).unwrap();
+    }
+  }
+
+  #[test]
+  fn complete_add_equal_opposite_and_distinct_points() {
+    let mut b = Builder::new();
+    let f = FqGadget::new(&mut b);
+    let left = PointInput::new(&mut b, &f, "left");
+    let right = PointInput::new(&mut b, &f, "right");
+    let lhs = left.nonzero(&mut b, &f);
+    let rhs = right.nonzero(&mut b, &f);
+    let result = lhs.add_complete(&mut b, &f, rhs);
+    let result = result.canonical(&mut b, &f);
+    let c = b.finish();
+    let p = G1Affine::generator();
+    for q in [p, -p, (p * ark_bls12_381::Fr::from(7u8)).into_affine()] {
+      let mut w = c.witness();
+      for (v, n) in left.inputs(p).into_iter().chain(right.inputs(q)) {
+        w.set(v, n).unwrap();
+      }
+      let a = w.generate().unwrap();
+      let x = fq_value(&result.point.x.0.map(|v| a.value(v).unwrap()));
+      let y = fq_value(&result.point.y.0.map(|v| a.value(v).unwrap()));
+      let actual = if a.value(result.infinity.value()).unwrap() == Scalar::ONE {
+        assert_eq!(x, Fq::from(0u8));
+        assert_eq!(y, Fq::from(0u8));
+        G1Affine::identity()
+      } else {
+        G1Affine::new_unchecked(x, y)
+      };
+      assert_eq!(actual, (p + q).into_affine());
     }
   }
 }

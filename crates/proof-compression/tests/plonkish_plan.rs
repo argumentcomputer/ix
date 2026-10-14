@@ -633,6 +633,10 @@ fn profile_enforces_native_quotient_domain_bound() {
       CircuitInputs {
         main_width: 1,
         preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 2])),
+        // A constraint-free circuit has an empty graph, which the CUDA
+        // quotient kernel rejects; the bound under test is the second
+        // circuit's.
+        constraints: vec![x.clone() - Expr::preprocessed(0)],
         ..Default::default()
       },
       CircuitInputs {

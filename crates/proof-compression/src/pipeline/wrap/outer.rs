@@ -1,12 +1,29 @@
-use crate::foreign::KzgCircuitExt;
-use crate::recursive::native_verifier::Built;
-
-use super::super::{setup::SetupSource, storage};
-use crate::kzg::Scalar;
-use multi_stark::plonkish::Assignment;
-use multi_stark::traits::Field;
+//! Recursive KZG wrapper: fused or checkpointed staging, proving and the
+//! portable development verifier.
+use super::{
+  super::Result as PipelineResult,
+  super::{
+    init_claim, setup::SetupSource, storage,
+    support::kzg_fixed_cache as fixed_cache,
+  },
+};
+use crate::{
+  foreign::KzgCircuitExt,
+  kzg::{KzgCommitment, KzgConfig, Scalar, compact::FixedProofCodec},
+  recursive::native_verifier::Built,
+};
+use multi_stark::{
+  plonkish::{Assignment, MultiStarkCircuit, TraceShards},
+  traits::Field,
+};
 use p3_matrix::Matrix;
 use std::{fs, path::Path};
+
+pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
+/// Largest admitted recursive computation trace. The development public
+/// degree of a staged profile covers exactly its own height.
+pub(super) const MAX_TRACE_LEN: usize = 1 << 27;
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Pairings {
   keys: Vec<u8>,
@@ -16,55 +33,168 @@ pub(crate) fn stage(
   built: Built,
   assignment: &Assignment<Scalar>,
   dir: &Path,
+  profile: &[u8],
+  fused: bool,
 ) -> storage::Result<()> {
-  use ark_serialize::CanonicalSerialize;
-  if dir.join("manifest.bin").exists() {
-    return Err("already staged".into());
-  }
-  let start = std::time::Instant::now();
-  let mut keys = vec![];
-  built.pairing_keys.serialize_compressed(&mut keys)?;
-  storage::save(&dir.join("pairings.bin"), &Pairings { keys })?;
-  let height = built.circuit.multi_stark_layout()?.main_height;
-  eprintln!(
-    "Lowering recursive circuit into one {height}-row computation trace"
-  );
-  let compiled = built
-    .circuit
-    .lower_to_multi_stark_sharded(Scalar::from_u8(94), height)?
-    .merge_table_traces(height)?;
-  let claims = compiled.claims(assignment.public_values())?;
-  let mut manifest =
-    storage::Manifest { widths: vec![], heights: vec![], claims };
-  let traces = compiled.trace_shards(assignment)?;
-  for i in 0..compiled.num_circuits() {
-    eprintln!("Preparing recursive trace {i}/{}", compiled.num_circuits());
-    let mut definition =
-      compiled.kzg_circuit_input(i, height, 2)?.ok_or("missing circuit")?;
-    let fixed =
-      definition.preprocessed.take().ok_or("missing preprocessing")?;
-    manifest.widths.push(definition.main_width);
-    manifest.heights.push(fixed.height());
-    storage::save(&dir.join(format!("{i}.meta")), &definition)?;
-    storage::write_matrix(&dir.join(format!("{i}.fixed.zst")), &fixed)?;
-    drop(fixed);
-    let trace = traces.trace(i)?;
-    storage::write_matrix(&dir.join(format!("{i}.witness.zst")), &trace)?;
-    eprintln!("Staged recursive trace {i}: {:?}", start.elapsed());
-  }
-  SetupSource::development(OUTER_SEED, height - 1, None)?
-    .bind_stage(dir, height, 2)?;
-  storage::save(&dir.join("manifest.bin"), &manifest)?;
-  fs::write(
-    dir.join("SECURITY.txt"),
-    "Development SRS with known trapdoor; not production-secure. The final verifier must check the 18-word Init claim and the external opening pairing equation.\n",
-  )?;
-  eprintln!("Recursive staging complete: {:?}", start.elapsed());
-  Ok(())
+  Frontend::new(built.circuit, &built.pairing_keys, profile, MAX_TRACE_LEN)?
+    .stage(assignment, dir, fused)
 }
 
-const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
-use super::init_claim;
+/// A recursive circuit lowered into one computation trace and one merged
+/// table, ready to stage any number of requests of its profile.
+pub(crate) struct Frontend {
+  compiled: MultiStarkCircuit<Scalar>,
+  pairings: Pairings,
+  profile: Vec<u8>,
+}
+
+impl Frontend {
+  pub(crate) fn new(
+    circuit: multi_stark::plonkish::Circuit<Scalar>,
+    keys: &[ark_bls12_381::G2Affine],
+    profile: &[u8],
+    max_height: usize,
+  ) -> storage::Result<Self> {
+    use ark_serialize::CanonicalSerialize;
+    if keys.len() != 2 {
+      return Err("invalid recursive pairing profile".into());
+    }
+    let height = circuit.multi_stark_layout()?.main_height;
+    if height > max_height {
+      return Err(
+        "recursive computation exceeds its single-trace height cap".into(),
+      );
+    }
+    let mut encoded = vec![];
+    keys.serialize_compressed(&mut encoded)?;
+    eprintln!(
+      "Lowering recursive circuit into one {height}-row computation trace"
+    );
+    let compiled = circuit
+      .lower_to_multi_stark_sharded(Scalar::from_u8(94), height)?
+      .merge_table_traces(height)?;
+    if compiled.num_circuits() != 2 || compiled.main_heights() != [height] {
+      return Err("expected one computation trace and one merged table".into());
+    }
+    Ok(Self {
+      compiled,
+      pairings: Pairings { keys: encoded },
+      profile: profile.to_vec(),
+    })
+  }
+
+  /// Stage one request. Fused staging keeps the witness traces in memory
+  /// and proves immediately; otherwise the traces are checkpointed for a
+  /// later `prove`. Fixed preprocessing comes from the trusted cache when
+  /// one is configured and already holds this profile.
+  pub(crate) fn stage(
+    &self,
+    assignment: &Assignment<Scalar>,
+    dir: &Path,
+    fused: bool,
+  ) -> storage::Result<()> {
+    if dir.join("manifest.bin").exists() {
+      // A fused run writes its manifest before proving and keeps no witness
+      // files; a directory with a manifest but no traces is an interrupted
+      // fused run and is staged again.
+      if !fused || super::super::first::has_restartable_traces(dir)? {
+        return Err("already staged".into());
+      }
+      fs::remove_file(dir.join("manifest.bin"))?;
+    }
+    super::super::first::clear_partition_artifacts(dir)?;
+    if assignment.public_values().len() != 18 + 2 * 2
+      || assignment.public_values()[..18]
+        .iter()
+        .zip(init_claim::INIT_PUBLIC_WORDS)
+        .any(|(&value, word)| value != Scalar::from_u64(word))
+    {
+      return Err(
+        "recursive assignment differs from the independently expected statement"
+          .into(),
+      );
+    }
+    let start = std::time::Instant::now();
+    let height = self.compiled.main_height();
+    let setup = SetupSource::development(OUTER_SEED, height - 1, None)?;
+    let setup_id = setup.identity(height, 2)?;
+    let traces = self.compiled.trace_shards(assignment)?;
+    fs::create_dir_all(dir)?;
+    setup.bind_stage(dir, height, 2)?;
+    fs::write(
+      dir.join("frontend-id.bin"),
+      blake3::hash(&self.profile).as_bytes(),
+    )?;
+    storage::save(&dir.join("pairings.bin"), &self.pairings)?;
+    let mut manifest = storage::Manifest {
+      widths: vec![],
+      heights: vec![],
+      claims: self.compiled.claims(assignment.public_values())?,
+    };
+    let cache_profile = [self.profile.as_slice(), &setup_id].concat();
+    let cache = Some(fixed_cache::FixedCache::for_stage(dir, &cache_profile)?);
+    let cached =
+      cache.as_ref().map(|cache| cache.restore(dir)).transpose()?.flatten();
+    if cached.as_ref().is_some_and(|shape| {
+      shape.widths.len() != self.compiled.num_circuits()
+        || shape.heights.len() != self.compiled.num_circuits()
+    }) {
+      return Err(
+        "cached trace count differs from the compiled circuit".into(),
+      );
+    }
+    for i in 0..self.compiled.num_circuits() {
+      let (expected_height, expected_width) =
+        self.compiled.trace_dimensions(i).ok_or("missing compiled trace")?;
+      if let Some(shape) = &cached {
+        if shape.widths[i] != expected_width
+          || shape.heights[i] != expected_height
+        {
+          return Err(
+            "cached fixed trace dimensions differ from the compiled circuit"
+              .into(),
+          );
+        }
+        manifest.widths.push(shape.widths[i]);
+        manifest.heights.push(shape.heights[i]);
+      } else if fused {
+        manifest.widths.push(expected_width);
+        manifest.heights.push(expected_height);
+      } else {
+        let mut definition = self
+          .compiled
+          .kzg_circuit_input(i, height, 2)?
+          .ok_or("missing circuit")?;
+        let fixed =
+          definition.preprocessed.take().ok_or("missing preprocessing")?;
+        manifest.widths.push(definition.main_width);
+        manifest.heights.push(fixed.height());
+        storage::save(&dir.join(format!("{i}.meta")), &definition)?;
+        storage::write_matrix(&dir.join(format!("{i}.fixed.zst")), &fixed)?;
+      }
+      if !fused {
+        let trace = traces.trace(i)?;
+        if trace.width() != manifest.widths[i]
+          || trace.height() != manifest.heights[i]
+        {
+          return Err(
+            "cached fixed trace and witness have different shapes".into(),
+          );
+        }
+        storage::write_matrix(&dir.join(format!("{i}.witness.zst")), &trace)?;
+      }
+      eprintln!("Staged recursive trace {i}: {:?}", start.elapsed());
+    }
+    storage::save(&dir.join("manifest.bin"), &manifest)?;
+    fs::write(dir.join("SECURITY.txt"), setup.security_description())?;
+    eprintln!("Recursive staging complete: {:?}", start.elapsed());
+    if fused {
+      prove_with_traces(dir, false, true, Some(&traces))?;
+      eprintln!("Recursive stage-and-prove complete: {:?}", start.elapsed());
+    }
+    Ok(())
+  }
+}
 
 fn pairing_keys(dir: &Path) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
   let profile: Pairings = storage::load(&dir.join("pairings.bin"))?;
@@ -173,8 +303,8 @@ fn packet_claims(
   Ok((claims, offset))
 }
 fn verify_packet(
-  system: &multi_stark::system::System<crate::kzg::KzgConfig>,
-  codec: &crate::kzg::compact::FixedProofCodec,
+  system: &multi_stark::system::System<KzgConfig>,
+  codec: &FixedProofCodec,
   packet: &[u8],
   profile: &[u8; 32],
   keys: &[ark_bls12_381::G2Affine],
@@ -218,23 +348,29 @@ pub(crate) fn prove(
   verify_only: bool,
   resident: bool,
 ) -> storage::Result<()> {
-  use crate::kzg::KzgCommitment;
-  use crate::kzg::compact::FixedProofCodec;
+  prove_with_traces(dir, verify_only, resident, None)
+}
+
+/// Prove or verify a staged request. With `traces`, the fused witness is
+/// committed from memory and never checkpointed; otherwise the staged
+/// witness files are read. Fixed columns are always checkpointed because
+/// every proof of the profile shares them. Without `resident`, committed
+/// columns are served from their checkpoints instead of host memory.
+fn prove_with_traces(
+  dir: &Path,
+  verify_only: bool,
+  resident: bool,
+  traces: Option<&TraceShards<'_, Scalar>>,
+) -> storage::Result<()> {
   use crate::kzg::pcs::KzgProverData;
-  use multi_stark::config::ProofConfig;
-  use multi_stark::lookup::LookupValues;
-  use multi_stark::prover::Stage1;
-  use multi_stark::system::Circuit;
-  use multi_stark::system::CircuitInputs;
-  use multi_stark::system::ProverKey;
-  use multi_stark::system::System;
-  use multi_stark::traits::Algebra;
-  use multi_stark::traits::Pcs;
-  use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    time::Instant,
+  use multi_stark::{
+    config::ProofConfig,
+    lookup::LookupValues,
+    prover::Stage1,
+    system::{Circuit, CircuitInputs, ProverKey, System},
+    traits::{Algebra, Pcs},
   };
+  use std::{fs::File, time::Instant};
   let _ = tracing_subscriber::fmt()
     .with_ansi(false)
     .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
@@ -255,6 +391,20 @@ pub(crate) fn prove(
   }
   let count = manifest.heights.len();
   let height = manifest.heights[0];
+  if let Some(traces) = traces {
+    let compiled = traces.compiled();
+    if compiled.num_circuits() != count
+      || compiled.main_heights() != [height]
+      || (0..count).any(|i| {
+        compiled.trace_dimensions(i)
+          != Some((manifest.heights[i], manifest.widths[i]))
+      })
+    {
+      return Err(
+        "compiled trace dimensions differ from the staged manifest".into(),
+      );
+    }
+  }
   let keys = pairing_keys(dir)?;
   let publics = staged_publics(&manifest.claims, keys.len())?;
   let point_bytes = pairing_bytes(&publics[18..])?;
@@ -268,38 +418,29 @@ pub(crate) fn prove(
   }
   let out = dir.join("kzg");
   fs::create_dir_all(&out)?;
-  fs::write(
-    out.join("SECURITY.txt"),
-    "Known-trapdoor development SRS. Not production-secure.\n",
-  )?;
-  eprintln!("Generating development SRS for 2^{} rows", height.ilog2());
-  let setup = SetupSource::development(
+  eprintln!("Preparing KZG parameters for 2^{} rows", height.ilog2());
+  let mut setup = SetupSource::development(
     OUTER_SEED,
     height - 1,
     Some(out.join("dev-srs.bin")),
   )?;
+  if let Some(directory) = SetupSource::cache_directory_from_env() {
+    setup = setup.with_cache_directory(directory);
+  }
   setup.check_binding(dir, height, 2)?;
+  fs::write(out.join("SECURITY.txt"), setup.security_description())?;
+  let setup_id = setup.identity(height, 2)?;
   let verifier_params = setup.verifier_params(height)?;
+  let config_started = Instant::now();
   let config = setup
     .config(height, 2, verify_only)?
     .with_streaming_lookups()
     .with_streaming_quotient();
-  eprintln!("Outer development SRS ready: {:?}", start.elapsed());
-  let checkpoint = |path: &Path, data: &KzgProverData| -> storage::Result<()> {
-    let temp = path.with_extension("partial");
-    let mut writer = BufWriter::with_capacity(1 << 20, File::create(&temp)?);
-    data.write_checkpoint(&mut writer)?;
-    writer.flush()?;
-    drop(writer);
-    fs::rename(temp, path)?;
-    Ok(())
-  };
-  let mut circuits = vec![];
-  let mut commits = vec![];
-  let mut fixed_parts = vec![];
-  let mut main_parts = vec![];
+  let srs_config_load_seconds = config_started.elapsed().as_secs_f64();
+  eprintln!("Outer KZG parameters ready: {:?}", start.elapsed());
+  let checkpoint = super::super::first::write_checkpoint;
   let load = |path: &Path| -> storage::Result<KzgProverData> {
-    Ok(if resident {
+    Ok(if resident || cfg!(feature = "cuda") {
       KzgProverData::read_checkpoint(std::io::BufReader::with_capacity(
         1 << 20,
         File::open(path)?,
@@ -308,15 +449,24 @@ pub(crate) fn prove(
       KzgProverData::read_checkpoint_file(path)?
     })
   };
-  let retain =
-    |path: &Path, data: KzgProverData| -> storage::Result<KzgProverData> {
-      if resident {
-        return Ok(data);
+  let retain = |path: &Path,
+                data: KzgProverData,
+                persist: bool|
+   -> storage::Result<KzgProverData> {
+    if resident {
+      if persist {
+        checkpoint(path, &data)?;
       }
-      checkpoint(path, &data)?;
-      drop(data);
-      load(path)
-    };
+      return Ok(data);
+    }
+    checkpoint(path, &data)?;
+    drop(data);
+    load(path)
+  };
+  let mut circuits = vec![];
+  let mut commits = vec![];
+  let mut fixed_parts = vec![];
+  let mut main_parts = vec![];
   for i in 0..count {
     let meta = out.join(format!("setup-{i}.bin"));
     let fixed_path = out.join(format!("fixed-{i}.bin"));
@@ -332,19 +482,35 @@ pub(crate) fn prove(
       if verify_only {
         return Err("missing setup checkpoint".into());
       }
-      let mut definition: CircuitInputs<Scalar> =
-        storage::load(&dir.join(format!("{i}.meta")))?;
-      definition.preprocessed = Some(storage::read_matrix_bounded(
-        &dir.join(format!("{i}.fixed.zst")),
-        height,
-      )?);
+      let mut definition: CircuitInputs<Scalar> = match traces {
+        Some(traces) => traces
+          .compiled()
+          .kzg_circuit_input(i, height, 2)?
+          .ok_or("missing compiled circuit")?,
+        None => storage::definition(dir, i, height)?,
+      };
+      if definition.main_width != manifest.widths[i]
+        || definition.preprocessed.as_ref().is_none_or(|fixed| {
+          fixed.width() == 0 || fixed.height() != manifest.heights[i]
+        })
+      {
+        return Err(
+          "fixed trace dimensions differ from the staged manifest".into(),
+        );
+      }
+      if traces.is_some() {
+        let fixed =
+          definition.preprocessed.take().ok_or("missing preprocessing")?;
+        storage::save(&dir.join(format!("{i}.meta")), &definition)?;
+        definition.preprocessed = Some(fixed);
+      }
       eprintln!("Committing recursive fixed trace {i}: {:?}", start.elapsed());
       let (mut local, key) =
         System::new_without_preprocessed(config.clone(), [definition]);
       let mut circuit = local.circuits.remove(0);
       circuit.preprocessed = None;
       let data = key.preprocessed_data.unwrap();
-      fixed_parts.push(retain(&fixed_path, data)?);
+      fixed_parts.push(retain(&fixed_path, data, true)?);
       let pair = (circuit, local.preprocessed_commit.unwrap());
       storage::save(&meta, &pair)?;
       pair
@@ -357,19 +523,30 @@ pub(crate) fn prove(
     circuits.push(circuit);
     commits.push(commit);
     if !verify_only {
-      let data = if main_path.exists() {
+      let data = if traces.is_none() && main_path.exists() {
         load(&main_path)?
       } else {
-        let main = storage::read_matrix_bounded(
-          &dir.join(format!("{i}.witness.zst")),
-          height,
-        )?;
+        let main = match traces {
+          Some(traces) => traces.trace(i)?,
+          None => storage::read_matrix_with_shape(
+            &dir.join(format!("{i}.witness.zst")),
+            manifest.widths[i],
+            manifest.heights[i],
+          )?,
+        };
+        if main.width() != manifest.widths[i]
+          || main.height() != manifest.heights[i]
+        {
+          return Err(
+            "generated trace dimensions differ from the staged manifest".into(),
+          );
+        }
         eprintln!("Committing recursive main trace {i}: {:?}", start.elapsed());
         let (_, data) = config.pcs().commit(vec![(
           config.pcs().natural_domain_for_degree(manifest.heights[i]),
           main,
         )]);
-        retain(&main_path, data)?
+        if traces.is_none() { retain(&main_path, data, false)? } else { data }
       };
       main_parts.push(data);
     }
@@ -444,8 +621,16 @@ pub(crate) fn prove(
   }
   packet.extend(point_bytes);
   packet.extend(&bytes);
-  if verify_only && fs::read(out.join("packet.bin"))? != packet {
-    return Err("saved packet differs".into());
+  if packet.len() >= 3_000 {
+    return Err(
+      "final public-degree proof packet must be smaller than 3000 bytes".into(),
+    );
+  }
+  if verify_only
+    && (fs::read(out.join("packet.bin"))? != packet
+      || fs::read(out.join("profile-id.bin"))? != profile)
+  {
+    return Err("saved packet or profile differs".into());
   }
   let verify_start = Instant::now();
   verify_packet(&system, &codec, &packet, &profile, &keys)?;
@@ -481,22 +666,47 @@ pub(crate) fn prove(
   let mut extra = packet.clone();
   extra.push(0);
   assert!(verify_packet(&system, &codec, &extra, &profile, &keys).is_err());
-  fs::write(out.join("packet.bin"), &packet)?;
-  fs::write(out.join("profile-id.bin"), profile)?;
-  let verifier = VerifierProfile {
-    version: 4,
-    heights: [manifest.heights[0], manifest.heights[1]],
-    setup: [
-      fs::read(out.join("setup-0.bin"))?,
-      fs::read(out.join("setup-1.bin"))?,
-    ],
-    pairings: fs::read(dir.join("pairings.bin"))?,
-    parameters: verifier_params.to_bytes()?,
-  };
-  let encoded =
-    bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
-  fs::write(dir.join("verifier.bin"), encoded)?;
-  let report = serde_json::json!({"proof_bytes":bytes.len(),"packet_bytes":packet.len(),"claim_bytes":144,"pairing_bytes":keys.len()*48,"profile_bytes":32,"total_seconds":start.elapsed().as_secs_f64(),"verify_seconds":verify_seconds,"external_pairings_pass":true,"negative_tests_pass":true,"development_srs":true});
+  if !verify_only {
+    fs::write(out.join("packet.bin"), &packet)?;
+    fs::write(out.join("profile-id.bin"), profile)?;
+    let verifier = VerifierProfile {
+      version: 4,
+      heights: [manifest.heights[0], manifest.heights[1]],
+      setup: [
+        fs::read(out.join("setup-0.bin"))?,
+        fs::read(out.join("setup-1.bin"))?,
+      ],
+      pairings: fs::read(dir.join("pairings.bin"))?,
+      parameters: verifier_params.to_bytes()?,
+    };
+    let encoded =
+      bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
+    fs::write(dir.join("verifier.bin"), encoded)?;
+  }
+  let public_setup = system.config.pcs().verifier_params().public_setup();
+  let report = serde_json::json!({
+    "proof_bytes": bytes.len(),
+    "packet_bytes": packet.len(),
+    "claim_bytes": 144,
+    "pairing_bytes": keys.len() * 48,
+    "profile_bytes": 32,
+    "total_seconds": start.elapsed().as_secs_f64(),
+    "verify_seconds": verify_seconds,
+    "srs_config_load_seconds": srs_config_load_seconds,
+    "native_verification_passed": true,
+    "external_pairings_pass": true,
+    "negative_tests_pass": true,
+    "development_srs": true,
+    "known_trapdoor": true,
+    "setup": "development",
+    "fused_witness": traces.is_some(),
+    "resident_columns": resident,
+    "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_hex().to_string(),
+    "public_max_degree": public_setup.max_degree,
+    "setup_id": blake3::Hash::from_bytes(setup_id).to_hex().to_string(),
+    "profile_id": blake3::Hash::from_bytes(profile).to_hex().to_string(),
+    "trace_heights": manifest.heights,
+  });
   fs::write(
     out.join(if verify_only {
       "verify-report.json"
@@ -506,6 +716,10 @@ pub(crate) fn prove(
     serde_json::to_vec_pretty(&report)?,
   )?;
   println!("{}", serde_json::to_string_pretty(&report)?);
+  if !verify_only && let Some(cache) = fixed_cache::FixedCache::for_prove(dir)?
+  {
+    cache.publish(dir)?;
+  }
   Ok(())
 }
 
@@ -534,7 +748,7 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifierProfile {
-  pub(crate) fn from_bytes(bytes: &[u8]) -> storage::Result<Self> {
+  pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
     let profile: Self = decode(bytes)?;
     profile.system()?;
     profile.keys()?;
@@ -558,10 +772,8 @@ impl VerifierProfile {
     decode_pairing_keys(&decode(&self.pairings)?)
   }
 
-  fn system(
-    &self,
-  ) -> storage::Result<multi_stark::system::System<crate::kzg::KzgConfig>> {
-    use crate::kzg::{KzgCommitment, KzgConfig, VerifierParams};
+  fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
+    use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
     if self.version != 4
       || self
@@ -597,18 +809,18 @@ impl VerifierProfile {
     })
   }
 
-  pub(crate) fn verify(&self, packet: &[u8]) -> storage::Result<()> {
+  pub(crate) fn verify(&self, packet: &[u8]) -> PipelineResult<()> {
     let keys = self.keys()?;
     packet_claims(packet, &self.id(), keys.len())?;
     let system = self.system()?;
     let logs: Vec<_> =
       self.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
-    let codec = crate::kzg::compact::FixedProofCodec::new(&system, &logs)?;
+    let codec = FixedProofCodec::new(&system, &logs)?;
     verify_packet(&system, &codec, packet, &self.id(), &keys)
   }
 }
 
-pub(crate) fn verify_saved(dir: &Path, packet: &[u8]) -> storage::Result<()> {
+pub(crate) fn verify_saved(dir: &Path, packet: &[u8]) -> PipelineResult<()> {
   VerifierProfile::from_bytes(&fs::read(dir.join("verifier.bin"))?)?
     .verify(packet)
 }
@@ -616,16 +828,16 @@ pub(crate) fn verify_saved(dir: &Path, packet: &[u8]) -> storage::Result<()> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kzg::KzgConfig;
   use crate::kzg::Srs;
-  use crate::kzg::compact::FixedProofCodec;
   use ark_ec::CurveGroup;
   use ark_serialize::CanonicalSerialize;
-  use multi_stark::plonkish::CircuitBuilder;
-  use multi_stark::system::System;
-  use multi_stark::system::SystemWitness;
-  use multi_stark::traits::Algebra;
+  use multi_stark::{
+    plonkish::CircuitBuilder,
+    system::{System, SystemWitness},
+    traits::Algebra,
+  };
   use std::sync::Arc;
+
   #[test]
   fn packet_requires_outer_proof_claim_and_external_pairings() {
     let inner = Srs::unsafe_dev_setup(8, b"packet-inner");
@@ -718,115 +930,320 @@ mod tests {
     }
   }
 
+  fn init_packet_claims(inner: &Srs) -> Vec<Vec<Scalar>> {
+    let mut prefix = [0u8; 32].to_vec();
+    for word in init_claim::INIT_PUBLIC_WORDS {
+      prefix.extend(word.to_le_bytes());
+    }
+    inner.g1[1].serialize_compressed(&mut prefix).unwrap();
+    (-inner.g1[0]).serialize_compressed(&mut prefix).unwrap();
+    packet_claims(&prefix, &[0u8; 32], 2).unwrap().0
+  }
+
   #[test]
   fn staged_profiles_prove_in_both_storage_modes() -> storage::Result<()> {
-    {
-      let dir = std::env::temp_dir()
-        .join(format!("outer-staged-{}-v4", std::process::id()));
-      fs::create_dir(&dir)?;
-      let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
-      let keys = vec![inner.g2, inner.tau_g2];
-      let mut prefix = [17u8; 32].to_vec();
-      for word in init_claim::INIT_PUBLIC_WORDS {
-        prefix.extend(word.to_le_bytes());
-      }
-      inner.g1[1].serialize_compressed(&mut prefix)?;
-      (-inner.g1[0]).serialize_compressed(&mut prefix)?;
-      let (claims, _) = packet_claims(&prefix, &[17u8; 32], keys.len())?;
-      let mut b = CircuitBuilder::new();
-      let table =
-        b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
-      let one = b.constant(Scalar::ONE);
-      b.lookup(table, &[one]);
-      for claim in &claims[1..] {
-        let value = b.constant(claim[3]);
-        b.expose_public(value);
-      }
-      let compiled = b
-        .finish()
-        .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
-        .merge_table_traces(128)?;
-      let assignment = compiled.witness().generate()?;
-      let traces = compiled.trace_shards(&assignment)?;
-      let height = compiled
-        .circuit_inputs()
-        .iter()
-        .map(|c| c.preprocessed.as_ref().unwrap().height())
-        .max()
-        .unwrap();
-      let mut manifest = storage::Manifest {
-        widths: vec![],
-        heights: vec![],
-        claims: compiled.claims(assignment.public_values())?,
-      };
-      assert_eq!(manifest.claims, claims);
-      for i in 0..compiled.num_circuits() {
-        let mut definition = compiled.kzg_circuit_input(i, height, 2)?.unwrap();
-        let fixed = definition.preprocessed.take().unwrap();
-        manifest.widths.push(definition.main_width);
-        manifest.heights.push(fixed.height());
-        storage::save(&dir.join(format!("{i}.meta")), &definition)?;
-        storage::write_matrix(&dir.join(format!("{i}.fixed.zst")), &fixed)?;
-        storage::write_matrix(
-          &dir.join(format!("{i}.witness.zst")),
-          &traces.trace(i)?,
-        )?;
-      }
-      SetupSource::development(OUTER_SEED, height - 1, None)?
-        .bind_stage(&dir, height, 2)?;
-      storage::save(&dir.join("manifest.bin"), &manifest)?;
-      let mut encoded = vec![];
-      keys.serialize_compressed(&mut encoded)?;
-      storage::save(&dir.join("pairings.bin"), &Pairings { keys: encoded })?;
-      prove(&dir, false, true)?;
-      assert!(!dir.join("kzg/fixed-0.bin").exists());
-      assert!(!dir.join("kzg/main-0.bin").exists());
-      let resident = fs::read(dir.join("kzg/packet.bin"))?;
-      verify_saved(&dir, &resident)?;
-      for offset in [0, 32, resident.len() - 1] {
-        let mut bad = resident.clone();
-        bad[offset] ^= 1;
-        assert!(verify_saved(&dir, &bad).is_err());
-      }
-      assert!(verify_saved(&dir, &resident[..resident.len() - 1]).is_err());
-      let mut extra = resident.clone();
-      extra.push(0);
-      assert!(verify_saved(&dir, &extra).is_err());
-      prove(&dir, true, false)?;
-      prove(&dir, false, false)?;
-      assert_eq!(resident, fs::read(dir.join("kzg/packet.bin"))?);
-      prove(&dir, true, false)?;
-      for (row, col) in [(0, 3), (1, 0), (1, 1), (1, 2)] {
-        let mut bad = claims.clone();
-        bad[row][col] += Scalar::ONE;
-        assert!(staged_publics(&bad, keys.len()).is_err());
-      }
-      let mut bad = claims.clone();
-      bad[1].pop();
-      assert!(staged_publics(&bad, keys.len()).is_err());
-      assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
-      let portable = fs::read(dir.join("verifier.bin"))?;
-      let profile = VerifierProfile::from_bytes(&portable)?;
-      let digest = blake3::hash(&portable).to_hex().to_string();
-      let registry = dir.join("registry");
-      let file = dir.join("verifier.bin");
-      assert!(
-        super::super::super::registry::register(
-          &file,
-          &registry,
-          Some(&"00".repeat(32))
-        )
-        .is_err()
-      );
-      assert!(!registry.exists());
-      super::super::super::registry::register(&file, &registry, Some(&digest))?;
-      // Verify using only the portable object after deleting the SRS and all checkpoints.
-      fs::remove_dir_all(&dir)?;
-      profile.verify(&resident)?;
-      let mut wrong_range: VerifierProfile = decode(&portable)?;
-      wrong_range.heights[0] *= 2;
-      assert!(wrong_range.system().is_err());
+    let dir = std::env::temp_dir()
+      .join(format!("outer-staged-{}-v4", std::process::id()));
+    fs::create_dir(&dir)?;
+    let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
+    let keys = vec![inner.g2, inner.tau_g2];
+    let claims = init_packet_claims(&inner);
+    let mut b = CircuitBuilder::new();
+    let table =
+      b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let one = b.constant(Scalar::ONE);
+    b.lookup(table, &[one]);
+    for claim in &claims[1..] {
+      let value = b.constant(claim[3]);
+      b.expose_public(value);
     }
+    let compiled = b
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+      .merge_table_traces(128)?;
+    let assignment = compiled.witness().generate()?;
+    let traces = compiled.trace_shards(&assignment)?;
+    let height = compiled
+      .circuit_inputs()
+      .iter()
+      .map(|c| c.preprocessed.as_ref().unwrap().height())
+      .max()
+      .unwrap();
+    let mut manifest = storage::Manifest {
+      widths: vec![],
+      heights: vec![],
+      claims: compiled.claims(assignment.public_values())?,
+    };
+    assert_eq!(manifest.claims, claims);
+    for i in 0..compiled.num_circuits() {
+      let mut definition = compiled.kzg_circuit_input(i, height, 2)?.unwrap();
+      let fixed = definition.preprocessed.take().unwrap();
+      manifest.widths.push(definition.main_width);
+      manifest.heights.push(fixed.height());
+      storage::save(&dir.join(format!("{i}.meta")), &definition)?;
+      storage::write_matrix(&dir.join(format!("{i}.fixed.zst")), &fixed)?;
+      storage::write_matrix(
+        &dir.join(format!("{i}.witness.zst")),
+        &traces.trace(i)?,
+      )?;
+    }
+    SetupSource::development(OUTER_SEED, height - 1, None)?
+      .bind_stage(&dir, height, 2)?;
+    storage::save(&dir.join("manifest.bin"), &manifest)?;
+    let mut encoded = vec![];
+    keys.serialize_compressed(&mut encoded)?;
+    storage::save(&dir.join("pairings.bin"), &Pairings { keys: encoded })?;
+    prove(&dir, false, true)?;
+    assert!(dir.join("kzg/fixed-0.bin").exists());
+    assert!(!dir.join("kzg/main-0.bin").exists());
+    let resident = fs::read(dir.join("kzg/packet.bin"))?;
+    verify_saved(&dir, &resident)?;
+    for offset in [0, 32, resident.len() - 1] {
+      let mut bad = resident.clone();
+      bad[offset] ^= 1;
+      assert!(verify_saved(&dir, &bad).is_err());
+    }
+    assert!(verify_saved(&dir, &resident[..resident.len() - 1]).is_err());
+    let mut extra = resident.clone();
+    extra.push(0);
+    assert!(verify_saved(&dir, &extra).is_err());
+    prove(&dir, true, false)?;
+    prove(&dir, false, false)?;
+    assert!(dir.join("kzg/main-0.bin").exists());
+    assert_eq!(resident, fs::read(dir.join("kzg/packet.bin"))?);
+    prove(&dir, true, false)?;
+    for (row, col) in [(0, 3), (1, 0), (1, 1), (1, 2)] {
+      let mut bad = claims.clone();
+      bad[row][col] += Scalar::ONE;
+      assert!(staged_publics(&bad, keys.len()).is_err());
+    }
+    let mut bad = claims.clone();
+    bad[1].pop();
+    assert!(staged_publics(&bad, keys.len()).is_err());
+    assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
+    let portable = fs::read(dir.join("verifier.bin"))?;
+    let profile = VerifierProfile::from_bytes(&portable)?;
+    let digest = blake3::hash(&portable).to_hex().to_string();
+    let registry = dir.join("registry");
+    let file = dir.join("verifier.bin");
+    assert!(
+      super::super::super::registry::register(
+        &file,
+        &registry,
+        Some(&"00".repeat(32))
+      )
+      .is_err()
+    );
+    assert!(!registry.exists());
+    super::super::super::registry::register(&file, &registry, Some(&digest))?;
+    // Verify using only the portable object after deleting the SRS and all checkpoints.
+    fs::remove_dir_all(&dir)?;
+    profile.verify(&resident)?;
+    let mut wrong_range: VerifierProfile = decode(&portable)?;
+    wrong_range.heights[0] *= 2;
+    assert!(wrong_range.system().is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn fused_recursive_traces_preserve_proof_bytes_and_resume_verification()
+  -> storage::Result<()> {
+    let inner = Srs::unsafe_dev_setup(8, b"fused-recursive-inner");
+    let claims = init_packet_claims(&inner);
+    let make = |private| -> storage::Result<(Built, Assignment<Scalar>)> {
+      let mut builder = CircuitBuilder::new();
+      let input = builder.input("private");
+      let table = builder.fixed_table(
+        "small",
+        (0..16).map(|v| vec![Scalar::from_u8(v)]).collect(),
+      );
+      builder.lookup(table, &[input]);
+      for _ in 0..8 {
+        builder.mul(input, input);
+      }
+      for claim in &claims[1..] {
+        let wire = builder.constant(claim[3]);
+        builder.expose_public(wire);
+      }
+      let circuit = builder.finish();
+      let mut witness = circuit.witness();
+      witness.set(input, Scalar::from_u8(private))?;
+      let assignment = witness.generate()?;
+      Ok((
+        Built {
+          circuit,
+          inputs: vec![],
+          points: vec![],
+          pairing_outputs: vec![],
+          pairing_keys: vec![inner.g2, inner.tau_g2],
+          terms: vec![],
+        },
+        assignment,
+      ))
+    };
+    let root = std::env::temp_dir()
+      .join(format!("kzg-recursive-fused-{}", std::process::id()));
+    fs::create_dir(&root)?;
+    let mut outputs = vec![];
+    for (name, fused, private) in
+      [("checkpointed", false, 7), ("fused", true, 7), ("fresh", true, 9)]
+    {
+      let dir = root.join(name);
+      fs::create_dir(&dir)?;
+      let (built, assignment) = make(private)?;
+      stage(built, &assignment, &dir, b"recursive-fixture", fused)?;
+      if !fused {
+        prove(&dir, false, false)?;
+      }
+      prove(&dir, true, false)?;
+      for name in ["prove-report.json", "verify-report.json"] {
+        let report: serde_json::Value =
+          serde_json::from_slice(&fs::read(dir.join("kzg").join(name))?)?;
+        assert_eq!(report["setup"], "development");
+        assert_eq!(report["development_srs"], true);
+        assert_eq!(report["native_verification_passed"], true);
+        assert!(report["public_max_degree"].is_u64());
+        assert_eq!(report["trace_heights"].as_array().unwrap().len(), 2);
+      }
+      let manifest: storage::Manifest =
+        storage::load(&dir.join("manifest.bin"))?;
+      assert_eq!(
+        fs::read(dir.join("frontend-id.bin"))?,
+        blake3::hash(b"recursive-fixture").as_bytes()
+      );
+      for i in 0..manifest.heights.len() {
+        assert_eq!(dir.join(format!("{i}.witness.zst")).exists(), !fused);
+        assert_eq!(dir.join(format!("kzg/main-{i}.bin")).exists(), !fused);
+        assert!(dir.join(format!("kzg/fixed-{i}.bin")).exists());
+      }
+      outputs.push(
+        ["proof.compact.bin", "packet.bin", "profile-id.bin"]
+          .map(|name| fs::read(dir.join("kzg").join(name)).unwrap()),
+      );
+    }
+    assert_eq!(outputs[0], outputs[1]);
+    assert_ne!(outputs[1][0], outputs[2][0]);
+    assert_eq!(outputs[1][2], outputs[2][2]);
+    let resumed = root.join("checkpointed");
+    let old_checkpoint = fs::read(resumed.join("kzg/main-0.bin"))?;
+    let (built, assignment) = make(9)?;
+    let height = built.circuit.multi_stark_layout()?.main_height;
+    let compiled = built
+      .circuit
+      .lower_to_multi_stark_sharded(Scalar::from_u8(94), height)?
+      .merge_table_traces(height)?;
+    let traces = compiled.trace_shards(&assignment)?;
+    prove_with_traces(&resumed, false, true, Some(&traces))?;
+    prove(&resumed, true, false)?;
+    assert_eq!(fs::read(resumed.join("kzg/proof.compact.bin"))?, outputs[2][0]);
+    assert_eq!(fs::read(resumed.join("kzg/main-0.bin"))?, old_checkpoint);
+    for name in ["packet.bin", "profile-id.bin"] {
+      let path = resumed.join("kzg").join(name);
+      let original = fs::read(&path)?;
+      let mut altered = original.clone();
+      altered[0] ^= 1;
+      fs::write(&path, &altered)?;
+      let error = prove(&resumed, true, false).unwrap_err();
+      assert!(error.to_string().contains("saved packet or profile differs"));
+      assert_eq!(fs::read(&path)?, altered);
+      fs::write(path, original)?;
+    }
+    fs::remove_dir_all(root)?;
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "eight-minute CPU outer proof over an identity-commitment wrapper"]
+  fn constant_column_first_stage_proof_wraps_proves_and_verifies()
+  -> storage::Result<()> {
+    use crate::recursive::native_verifier::Plan;
+    use multi_stark::{expr::Expr, lookup::Lookup, system::CircuitInputs};
+    use p3_matrix::dense::RowMajorMatrix;
+    let words = init_claim::INIT_PUBLIC_WORDS;
+    let srs = Arc::new(Srs::unsafe_dev_setup(8, b"constant-column-inner"));
+    let (system, key) = System::new(
+      KzgConfig::new(srs.clone(), 2),
+      [CircuitInputs {
+        main_width: 18,
+        preprocessed: Some(RowMajorMatrix::new_col(vec![
+          Scalar::ONE,
+          Scalar::ZERO,
+          Scalar::ZERO,
+          Scalar::ZERO,
+        ])),
+        constraints: (0..18)
+          .map(|i| Expr::main_next(i) - Expr::main(i))
+          .collect(),
+        lookups: (0..19)
+          .map(|index| {
+            Lookup::pull(
+              Expr::preprocessed(0),
+              vec![
+                Expr::constant(Scalar::from_u8(93)),
+                Expr::constant(Scalar::ONE),
+                Expr::constant(Scalar::from_usize(index)),
+                if index == 0 {
+                  Expr::constant(Scalar::ZERO)
+                } else {
+                  Expr::main(u32::try_from(index - 1).unwrap())
+                },
+              ],
+            )
+          })
+          .collect(),
+        ..Default::default()
+      }],
+    );
+    let claims: Vec<_> = std::iter::once(0)
+      .chain(words)
+      .enumerate()
+      .map(|(index, value)| {
+        vec![
+          Scalar::from_u8(93),
+          Scalar::ONE,
+          Scalar::from_usize(index),
+          Scalar::from_u64(value),
+        ]
+      })
+      .collect();
+    // Every main column is constant and the first is zero, so the proof
+    // carries an identity commitment and generator multiples the affine
+    // wrapper arithmetic must handle without exceptional additions.
+    let main = RowMajorMatrix::new(
+      words.into_iter().map(Scalar::from_u64).collect::<Vec<_>>().repeat(4),
+      18,
+    );
+    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    let proof = system.prove_multiple_claims(
+      &key,
+      &refs,
+      SystemWitness::from_stage_1(vec![main], &system),
+    );
+    system
+      .verify_multiple_claims(&refs, &proof)
+      .map_err(|e| format!("inner proof: {e:?}"))?;
+    assert!(
+      proof.commitments.stage_1_trace.0.iter().flatten().any(|p| p.infinity)
+    );
+    let plan = Plan::new(
+      &system,
+      &[2],
+      super::super::saved::claim_schema(&claims)?,
+      super::super::saved::layout(),
+    )?;
+    let built = plan.build(&proof, &claims)?;
+    let (_, assignment) = built.check_and_assign()?;
+    let dir = std::env::temp_dir()
+      .join(format!("kzg-recursive-constant-{}", std::process::id()));
+    fs::create_dir(&dir)?;
+    stage(built, &assignment, &dir, &plan.identity(), true)?;
+    prove(&dir, true, false)?;
+    let packet = fs::read(dir.join("kzg/packet.bin"))?;
+    verify_saved(&dir, &packet)?;
+    let mut bad = packet.clone();
+    bad[32 + 18 * 8 + 1] ^= 1;
+    assert!(verify_saved(&dir, &bad).is_err());
+    fs::remove_dir_all(dir)?;
     Ok(())
   }
 }

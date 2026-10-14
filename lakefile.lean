@@ -70,7 +70,8 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "h" ||
+    path.extension == some "cuh" || path.extension == some "cpp" ||
+    path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
   let manifests := Job.collectArray #[

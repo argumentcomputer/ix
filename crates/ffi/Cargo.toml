@@ -49,7 +49,7 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 [features]
 default = []
 parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
-cuda = ["aiur/cuda"]
+cuda = ["aiur/cuda", "ix-proof-compression/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
