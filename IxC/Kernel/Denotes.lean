@@ -104,9 +104,6 @@ open SetTheory Ix.Kernel.SetModel
 
 universe w
 
-/-- A universe parameter: a name. -/
-abbrev LevelParam := Name
-
 /-- A de Bruijn index: the number of binders between a variable's
 occurrence and its binder. -/
 abbrev BVarIdx := Nat

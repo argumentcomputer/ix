@@ -221,7 +221,7 @@ not memoized). -/
     CheckCM (Option Expr) :=
   pure (Expr.piResidual e args)
 
-@[inline] def instLevelParamsM (ks : List Name) (us : List Level)
+@[inline] def instLevelParamsM (ks : List LevelParam) (us : List Level)
     (e : Expr) : CheckCM Expr :=
   pure (Expr.instLevelParams ks us e)
 
@@ -232,7 +232,7 @@ memos are keyed structurally — the one place a non-`O(1)` hash is
 paid.  The *results* are cached (`lsimpC`, `lnzC`, `eqvC`), so a
 decided comparison is never recomputed. -/
 
-@[inline] def substLevelTreesM (ks : List Name) (us : List Level)
+@[inline] def substLevelTreesM (ks : List LevelParam) (us : List Level)
     (ls : List Level) : CheckCM (List Level) :=
   pure (ls.map (Level.subst ks us))
 

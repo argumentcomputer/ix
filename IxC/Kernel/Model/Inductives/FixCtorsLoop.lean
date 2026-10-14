@@ -38,34 +38,34 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
     (hnd : (ctorsA.map (·.1.name)).Nodup)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hlpsA : ∀ cA ∈ ctorsA, cA.1.levelParams = p.cvT.levelParams)
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    (hFssParams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxF : Nat → List Expr} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       fssOf p.nP (ctorDataList dsF esF ψ₁ ctorsA 0) = fssOf p.nP (ctorDataList dsF esF ψ₂ ctorsA 0))
-    (hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
       FieldsBelow p.nP Fs)
-    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ)
-    (hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (p.resSort.eval ψ) ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) ∧
       SumFieldsValid ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)))
-    (hIdx : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hIdx : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         SpineFit ρ (((ppsAll ψ).drop p.nP).map (·.2.2)) (idxValsAt ρ (esF j ψ) bs))
     (Inv : ∀ {env' : Env}, EnvModel V env' → Prop)
     (hInv : ∀ {env' : Env} (m' : EnvModel V env') (cA : ConstantVal × Nat)
-      (A : (Name → Nat) → AnnotTerm)
+      (A : (LevelParam → Nat) → AnnotTerm)
       (mC : EnvModel V ⟨.ctorInfo cA.1 p.nP cA.2 :: env'.consts⟩),
       cA ∈ ctorsA → env'.find? cA.1.name = none →
       mC.acval = acvalWith m'.acval cA.1.name A → Inv m' → Inv mC)
     -- the block's capability record and its laws at every carrier the
     -- invariant reaches (task #210 Part A)
     (caps : IndCaps)
-    (leafT : (Name → Nat) → AnnotTerm)
+    (leafT : (LevelParam → Nat) → AnnotTerm)
     (hTlawsOf : ∀ {env' : Env} (m' : EnvModel V env') (k : Nat) (cA : ConstantVal × Nat),
       ctorsA[k]? = some cA → Inv m' →
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
@@ -74,7 +74,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
         = sumMkAV (p.resSort.eval ψ) k (dsF k ψ) (((dsF k ψ).drop p.nP).map (·.2.2))
             (uChains (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)))) →
       CapsLawsAt m' p.cvT.name cvTa caps)
-    (hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         interp V (consList bs ρ)
@@ -127,7 +127,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
       intro ψ
       rw [essOf_getElem?, ctorDataList_getElem?, hcAk, Nat.zero_add]; rfl
     -- the stage
-    have hfoldC : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    have hfoldC : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
         ∀ bs : List V, SpineFit ρ (((dsF k ψ).drop p.nP).map (·.2.2)) bs →
           interp V (consList bs ρ) (ctorBodyAVI mp.base2 p.cvT.name p.nP cA.2 ψ (esF k ψ))

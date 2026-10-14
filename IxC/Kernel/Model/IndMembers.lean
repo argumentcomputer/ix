@@ -80,7 +80,7 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
           (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps
 
 /-- **The member cons's live unit-like law** (`unitLawKeyS`'s
 transpose's obligation): the cons's own former.
@@ -109,7 +109,7 @@ must prove. -/
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
           (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
-        ∀ φ' : Name → Nat, UnitLaw m₂ φ' c₀.name cvT caps
+        ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' c₀.name cvT caps
 
 /-- **One member installed at both tiers**, with every carried
 invariant stepped — `memberInstallS`'s joint twin. -/

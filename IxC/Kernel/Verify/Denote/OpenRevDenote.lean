@@ -26,7 +26,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 
 /-- The reverse opening's leaves sit below the opened depth. -/
 theorem openRev_fvarsBelow {e : Expr} {d : Nat}
@@ -116,7 +116,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 
 /-- The reverse opening is well-scoped at the opened depth. -/
 theorem openRev_WScoped {e : Expr} {d : Nat}
@@ -252,7 +252,7 @@ theorem denote_openRev (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
 
 /-- The reverse opening commutes with level instantiation: the opener
 annotations are `.sort .zero`, fixed points of the substitution. -/
-theorem openRev_instantiateLevelParams (ks : List Name)
+theorem openRev_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
     ∀ (d n : Nat) (e : Expr),
       openRev d n (e.instantiateLevelParams ks us)

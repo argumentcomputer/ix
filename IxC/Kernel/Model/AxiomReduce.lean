@@ -129,7 +129,7 @@ theorem ofReduce_bits (hμ : μ.verifiedChecks = true)
               (.bvar 0))
             (.app (.app (.app (.const eqName [.succ .zero])
                 (.const E [])) (.bvar 2)) (.bvar 1)) m₃) m₂) m₁)
-      = .ok stype) (φ : Name → Nat) :
+      = .ok stype) (φ : LevelParam → Nat) :
     pwBit φ m₁.pw = 0 ∧ pwBit φ m₂.pw = 0 ∧ pwBit φ m₃.pw = 0 := by
   match F, hrun with
   | 0, hrun => rw [Ix.Kernel.inferTypeCore_zero] at hrun; exact nomatch hrun
@@ -202,7 +202,7 @@ theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       cvA.name = Ix.Kernel.ofReduceBoolName)
     {d : Nat} {stype : Expr}
     (hrun : inferTypeCore μ env F d cvA.type = .ok stype)
-    (ψ : Name → Nat) (ta : AnnotTerm)
+    (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
     (ρ : Nat → V) :
     interp V ρ (AnnotTerm.prf) ∈ˢ interp V ρ ta := by

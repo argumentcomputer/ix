@@ -39,7 +39,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level whnf inferTypeCore)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat} {fuel : Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat} {fuel : Nat}
 
 -- The recomposition, re-exported under the names the fold has always
 -- used (`Model/Rules/Recompose.lean`): `checkSoundAtP5` is the five
@@ -63,7 +63,7 @@ form, whose premise IS the context, and every consumer held one
 (`LeafReads.of_ctxOk hC` at each call site, now just `hC`);
 `LeafReads` retires with the Steps tier (task #305 closing). -/
 @[expose] def InferReads {env : Env} (m : EnvModel V env) (μ : CheckMode)
-    (φ : Name → Nat) (fuel : Nat) : Prop :=
+    (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
   ∀ {d : Nat} {e t : Expr} {Δa : List AnnotTerm} {ea : AnnotTerm},
     inferTypeCore μ env fuel d e = .ok t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -98,7 +98,7 @@ and `sortSemAt_of_claims` *derives* the fact from the claims one
 level down — another canonical-frontier residue dissolved.  The
 subject's scoping package is carried so the claims can be applied. -/
 @[expose] def SortSemAt {env : Env} (m : EnvModel V env) (μ : CheckMode)
-    (φ : Name → Nat) (fuel : Nat) : Prop :=
+    (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
   ∀ {d : Nat} {e t : Expr} {u : Level} {Δa : List AnnotTerm}
     {ea : AnnotTerm},
     CtxOk m φ d Δa e →
@@ -111,7 +111,7 @@ subject's scoping package is carried so the claims can be applied. -/
       WellDenotedV V ρ ea ∧ interp V ρ ea ∈ˢ (univ (u.eval φ) : V)
 
 /-- `denoteMeta` at a sort (the `denote2_sortQ` mirror). -/
-theorem denoteMeta_sortQ {acval : Name → (Name → Nat) → AnnotTerm} {d : Nat}
+theorem denoteMeta_sortQ {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {u : Level} :
     denoteMeta acval env φ d (.sort u) = some (.sort (u.eval φ)) := by
   rw [denoteMeta]
@@ -241,7 +241,7 @@ theorem inferTypeCore_strLit_inv {fuel d : Nat} {s : String} {t : Expr}
 /-! ## The walk -/
 
 /-- The walk, with the fuel explicit (the induction's own shape). -/
-private theorem acceptedReads_aux (m : EnvModel V env) (φ : Name → Nat) :
+private theorem acceptedReads_aux (m : EnvModel V env) (φ : LevelParam → Nat) :
     ∀ (F : Nat) {d : Nat} {e t : Expr},
       inferTypeCore μ env F d e = .ok t →
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -328,7 +328,7 @@ carried as its last field, now a theorem.  Whatever the front door's
 inference accepts, the validated-annotation reading reads.  See the
 module docstring for the guard table and for the vacuous `letE`
 clause. -/
-theorem acceptedReads_of (m : EnvModel V env) (φ : Name → Nat)
+theorem acceptedReads_of (m : EnvModel V env) (φ : LevelParam → Nat)
     {F d : Nat} {e t : Expr}
     (h : inferTypeCore μ env F d e = .ok t)
     (hws : Expr.WScoped d e) (hb : e.looseBVarsBounded 0 = true)

@@ -112,7 +112,7 @@ theorem checkSumIndF_pushC (ops : CheckerOps CheckCM) (env : Env)
     pure_bind, ite_bindC, throwC_bind_eq] <;> rfl
 
 /-- The projection table through the index (task #175 S1). -/
-theorem checkStructProjTableF_pushC (T C : Name) (lps : List Name)
+theorem checkStructProjTableF_pushC (T C : Name) (lps : List LevelParam)
     (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal)
     (env : Env) :
     checkStructProjTableF (m := CheckCM) .plain T C lps nP nF rs guards off cvCa (mkFEnv env)
@@ -131,7 +131,7 @@ projection route) -/
 /-- The projection-table stage of the cached driver, run-level (task
 #175 S1): operation-free, the state is unchanged, the environment is
 the pure stage's. -/
-theorem checkStructProjTableS_run {T C : Name} {lps : List Name} {nP nF : Nat}
+theorem checkStructProjTableS_run {T C : Name} {lps : List LevelParam} {nP nF : Nat}
     {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal}
     (env : Env) {s₀ : CState} {fe' : FEnv} {s' : CState}
     (henv : EnvWF env) (hwf : CSOKF s₀)
@@ -220,7 +220,7 @@ set_option maxHeartbeats 1600000 in
 /-- The kinds' classification is operation-free: in the cached monad it
 leaves the state alone and computes what the pure one does (task #210
 Part D). -/
-theorem classifyFixKindsC_ok {T : Name} {lps : List Name} {nP nIdx : Nat}
+theorem classifyFixKindsC_ok {T : Name} {lps : List LevelParam} {nP nIdx : Nat}
     {ctorsA : List (ConstantVal × Nat)} {s₀ s' : CState}
     {kinds : List (List RecFieldKind)}
     (h : classifyFixKinds (m := CheckCM) T lps nP nIdx ctorsA s₀ = .ok (kinds, s')) :

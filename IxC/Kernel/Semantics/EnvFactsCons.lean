@@ -89,7 +89,7 @@ theorem EnvFacts.consBlockMember {env : Env} (m : EnvFacts env)
     (hmE : env.find? (cvA.name.str "_model")
       = some (.defnInfo cvm mval hint))
     (hmlps : cvm.levelParams = cvA.levelParams)
-    (hty : ∀ ψ : Name → Nat,
+    (hty : ∀ ψ : LevelParam → Nat,
       ∃ t, denoteClosed m.cval env ψ cvA.type = some t) :
     ∃ m₁ : EnvFacts ⟨c₀ :: env.consts⟩,
       m₁.cval = cvalModeled m.cval cvA.name := by
@@ -325,7 +325,7 @@ invariant never reads.  (Moved to the base at task #161 S6, unchanged:
 `projFnInv` below is the second consumer and the P lane must reach
 it.) -/
 theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
-    {cval cval₀ : TConstVal} {c₀ : ConstantInfo} {lps : List Name}
+    {cval cval₀ : TConstVal} {c₀ : ConstantInfo} {lps : List LevelParam}
     {pty : Expr} {i : Nat} {mcv : ConstantVal} {mval : Expr}
     {mhint : ReducibilityHint}
     (hcvA : c₀.toConstantVal = ⟨projFnName T i, lps, pty⟩)
@@ -337,7 +337,7 @@ theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
       = some (.defnInfo mcv mval mhint))
     (hmlps : mcv.levelParams = lps)
     (hilt : i < nF)
-    (hself : ∀ ψ : Name → Nat,
+    (hself : ∀ ψ : LevelParam → Nat,
       cval₀ (projFnName T i) ψ = cval (projModelName T i) ψ)
     (hag : ∀ n, n ≠ projFnName T i → cval n = cval₀ n) :
     ProjPhaseInvS T ctorName nF ⟨c₀ :: env'.consts⟩ cval₀ := by
@@ -414,7 +414,7 @@ theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
 /-- **The two model-free conclusions of a projection-function
 install** — `projFnS`'s invariant half, off the record alone. -/
 theorem projFnInv {μ : CheckMode} {F : Nat} {env' env₁ : Env}
-    {cval : TConstVal} {T ctorName : Name} {lps : List Name}
+    {cval : TConstVal} {T ctorName : Name} {lps : List LevelParam}
     {nP nF i : Nat} {blockNames : List Name}
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' cval)

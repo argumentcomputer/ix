@@ -716,7 +716,7 @@ theorem projAppsC_eff (T : Name) (us' : List Level) (nF : Nat)
 
 /-- Port of `structEtaProjCertsI_sim`. -/
 theorem structEtaProjCertsC_sim (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} (TI : Name) (T : Name) (us' : List Level) (lpsT : List Name) :
+    {d : Nat} (TI : Name) (T : Name) (us' : List Level) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat) {s₀ : CState}, CSOK mode env s₀ →
       ∀ {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr},
       RelCL targs xs → RelC b xb →

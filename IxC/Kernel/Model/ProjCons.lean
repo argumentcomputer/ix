@@ -48,8 +48,8 @@ block name (`BlockInstalledTT.fresh_cons`'s annotated half).  The
 `_model` side is free: the head's name is `projFnName T i`, a `Name.num`,
 and `n.str "_model"` never is. -/
 theorem blockAcvalInstalled_fresh_cons {blockNames : List Name}
-    {env : Env} {acval : Name → (Name → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {env : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hIA : BlockAcvalInstalled blockNames env acval)
     (hnotb : blockNames.contains c₀.name = false)
     (hstrNe : ∀ n : Name, c₀.name ≠ n.str "_model") :
@@ -68,7 +68,7 @@ theorem blockAcvalInstalled_fresh_cons {blockNames : List Name}
 set_option maxHeartbeats 1600000 in
 /-- **The projection entry installs, P tier** (`projConsS`). -/
 theorem projCons {env' : Env} (mp : EnvModelM V μ env')
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     {rules : List RecRule} {blockNames : List Name}
     {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
     {pty : Expr}
@@ -111,7 +111,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     (hnew : ∀ m₂ : EnvModel V ⟨c₀ :: env'.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (projFnName T i)
         (fun ψ => mp.base2.acval (projModelName T i) ψ) →
-      ∀ (φ : Name → Nat), ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
+      ∀ (φ : LevelParam → Nat), ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
         RecRuleLaw m₂ φ (projFnName T i) ⟨projFnName T i, lps, pty⟩
           nP nP rl) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env'.consts⟩,
@@ -135,7 +135,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
   have hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false := by
     rw [hname]; exact Ix.Kernel.reservedBasisNames_not_num _ _
   -- the installed leaf
-  obtain ⟨A, hA⟩ : ∃ A : (Name → Nat) → AnnotTerm,
+  obtain ⟨A, hA⟩ : ∃ A : (LevelParam → Nat) → AnnotTerm,
       A = fun ψ => mp.base2.acval (projModelName T i) ψ := ⟨_, rfl⟩
   have hAdef : ∀ ψ, A ψ = mp.base2.acval (projModelName T i) ψ :=
     fun ψ => by rw [hA]
@@ -148,7 +148,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
       (g := projFwd T ctorName nF)
       (fun n hn => by simp only [hn, if_true]) _ hptyres]
     exact eq_of_beq hround
-  have htyPre : ∀ ψ : Name → Nat, ∃ ta : AnnotTerm,
+  have htyPre : ∀ ψ : LevelParam → Nat, ∃ ta : AnnotTerm,
       denoteMeta mp.base2.acval env' ψ 0 pty = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta := by
@@ -160,7 +160,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     · intro ρ; rw [hAdef]; exact hmem ρ
   have hcbPty : ConstsBound env' pty :=
     constsBound_of_constsResolve _ hptyres
-  have htyExt : ∀ ψ : Name → Nat, ∃ ta : AnnotTerm,
+  have htyExt : ∀ ψ : LevelParam → Nat, ∃ ta : AnnotTerm,
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env'.consts⟩ ψ 0 c₀.toConstantVal.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
@@ -173,12 +173,12 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
       (fun _ h => by rw [hc₀] at h; exact nomatch h)
       ψ 0 pty hcbPty hta
   -- the eight mechanical rows
-  have hAclosedH : ∀ (ψ : Name → Nat) (k : Nat),
+  have hAclosedH : ∀ (ψ : LevelParam → Nat) (k : Nat),
       (A ψ).liftN 1 k = A ψ := by
     intro ψ k
     rw [hAdef]
     exact mp.base2.acval_closed _ _ _
-  have hAparamsH : ∀ ψ₁ ψ₂ : Name → Nat,
+  have hAparamsH : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂ := by
     intro ψ₁ ψ₂ hp
@@ -186,7 +186,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     refine mp.base2.acval_params _ _ hfm ψ₁ ψ₂ ?_
     intro p hp'
     exact hp p (by rw [hcvA, ← hmlps]; exact hp')
-  have htyOkH : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  have htyOkH : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env'.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta := by
@@ -194,7 +194,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     obtain ⟨ta', hta', hok, -⟩ := htyExt ψ
     obtain rfl : ta' = ta := Option.some.inj (hta'.symm.trans hta)
     exact hok ρ
-  have hmemNewH : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  have hmemNewH : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env'.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta := by
@@ -217,7 +217,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
       · rw [hc₀] at hfT; exact nomatch (Option.some.inj hfT)
       · exact hfT
     -- v1's `hvP`, from the completed family's own storedness
-    have hvP : ∀ j, j < caps.etaFields → ∀ ψ : Name → Nat,
+    have hvP : ∀ j, j < caps.etaFields → ∀ ψ : LevelParam → Nat,
         m₂.acval (projFnName T j) ψ
           = mp.base2.acval (projModelName T j) ψ := by
       intro j hj ψ
@@ -244,7 +244,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
   -- `rec_rules`: the bottom fires below this cons
   have hrecH : ∀ m₂ : EnvModel V ⟨c₀ :: env'.consts⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
-      ∀ φ : Name → Nat, RecRules m₂ φ := by
+      ∀ φ : LevelParam → Nat, RecRules m₂ φ := by
     intro m₂ hac φ
     refine recRules_cons_rec mp hfresh hc₀ m₂ hac φ ?_
     intro rl hrl hfire

@@ -60,9 +60,9 @@ set_option maxHeartbeats 12800000 in
 (`iotaRuleS`'s canonical branch). -/
 theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Name} {f : Name → Name}
     (hf : f = fun n =>
       if blockNames.contains n then n.str "_model" else n)
@@ -81,7 +81,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (heqfind : env₂.find? eqName = some eqA)
     (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
-    (hfireP : RecRule.fire r' = .plain) (φ : Name → Nat) :
+    (hfireP : RecRule.fire r' = .plain) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
   obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
     -- `-` at position 13: `IotaRuleR`'s rule-rhs **derivation** row,
@@ -139,7 +139,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   have hRmlps : (ConstantInfo.defnInfo cvm mval
       hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   -- the recursor type's grading, at the provisioned entry
-  have htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta :=
     mp.type_wellDenotedV _ (Env.find?_mem hself)
@@ -152,7 +152,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   have hrhsLb : Expr.LeavesBounded rhsA :=
     fun l hl => absurd hl (fun h => hrhsLeafNil l h)
   obtain ⟨t', hrun⟩ := hrun0
-  have hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+  have hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval envSelf ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta := by
@@ -221,7 +221,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   rw [hciTcv] at hSw0 hSb0
   have hSw : cvt.type.hasFvar = false := hSw0
   have hSb : cvt.type.looseBVarsBounded 0 = true := hSb0
-  have hthm : ∀ ψ : Name → Nat, ∃ ta,
+  have hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval envSelf ψ 0 cvt.type = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta := by

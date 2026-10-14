@@ -41,23 +41,25 @@ namespace BasisDSL
 /-- A top-level (single-component) name: `bn "Eq"` is `Eq`. -/
 def bn (s : String) : Name := .str .anonymous s
 
-/-- The universe parameter `u` — every basis block's first one. -/
-def uN : Name := bn "u"
+/-- Universe parameter `0` (the exporter's `u`) — every basis block's
+first one. -/
+def uN : LevelParam := 0
 
-/-- The universe parameter `u`, as a level. -/
+/-- The universe parameter `uN`, as a level. -/
 def u : Level := .param uN
 
-/-- The universe parameter `v` (`Quot.lift`'s target sort). -/
-def vN : Name := bn "v"
+/-- Universe parameter `1` (the exporter's `v`, `Quot.lift`'s target
+sort). -/
+def vN : LevelParam := 1
 
-/-- The universe parameter `v`, as a level. -/
+/-- The universe parameter `vN`, as a level. -/
 def v : Level := .param vN
 
-/-- The universe parameter `u_1` — the motive sort the exporter names
-for a recursor whose type former already spends `u`. -/
-def u1N : Name := bn "u_1"
+/-- Universe parameter `1` — a recursor's elimination parameter
+after its block's one parameter `uN` (the exporter's `u_1`). -/
+def u1N : LevelParam := 1
 
-/-- The universe parameter `u_1`, as a level. -/
+/-- The universe parameter `u1N`, as a level. -/
 def u1 : Level := .param u1N
 
 /-- A bound variable, by de Bruijn index. -/

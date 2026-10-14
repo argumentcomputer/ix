@@ -81,14 +81,14 @@ namespace Ix.Kernel
 
 /-- The type former applied to its parameter variables, `bvar` indices
 offset by `o` (the number of binders crossed since the parameters). -/
-def structFam (T : Name) (lps : List Name) (nP o : Nat) : Expr :=
+def structFam (T : Name) (lps : List LevelParam) (nP o : Nat) : Expr :=
   Expr.mkAppN (.const T (lps.map .param))
     ((List.range nP).map fun k => Expr.bvar (o + nP - 1 - k))
 
 /-- The constructor applied to the parameter and field variables, as
 spelled inside the recursor's minor premise (parameters sit above the
 motive binder). -/
-def structCtorSpine (C : Name) (lps : List Name) (nP nF : Nat) : Expr :=
+def structCtorSpine (C : Name) (lps : List LevelParam) (nP nF : Nat) : Expr :=
   Expr.mkAppN (.const C (lps.map .param))
     (((List.range nP).map fun i => Expr.bvar (nF + nP - i)) ++
      (List.range nF).map fun j => Expr.bvar (nF - 1 - j))
@@ -138,14 +138,14 @@ def structPsAt (o nP : Nat) : List Expr :=
 
 /-- The recursor's elimination level: the fresh parameter at the large
 eliminator, `zero` at the small one. -/
-def structElimLevel (elim : Name) (large : Bool) : Level :=
+def structElimLevel (elim : LevelParam) (large : Bool) : Level :=
   if large then .param elim else .zero
 
 /-- The constructor applied to the parameter and field variables, as
 spelled under `o` binders between the parameters and the fields (the
 motive and the earlier minor premises); `structCtorSpine` is the
 `o = 1` case (`structCtorSpine_eq_at`). -/
-def structCtorSpineAt (C : Name) (lps : List Name) (o nP nF : Nat) : Expr :=
+def structCtorSpineAt (C : Name) (lps : List LevelParam) (o nP nF : Nat) : Expr :=
   Expr.mkAppN (.const C (lps.map .param))
     (structPsAt (o + nF) nP ++ (List.range nF).map fun j => Expr.bvar (nF - 1 - j))
 
@@ -190,13 +190,13 @@ generator below is the index-free one above. -/
 variables: `e` extra binders sit between the parameters and the
 indices (the motive and the minors), `o` binders below the index
 frame. -/
-def structFamI (T : Name) (lps : List Name) (nP nIdx e o : Nat) : Expr :=
+def structFamI (T : Name) (lps : List LevelParam) (nP nIdx e o : Nat) : Expr :=
   Expr.mkAppN (.const T (lps.map .param)) (structPsAt (o + e + nIdx) nP ++ structPsAt o nIdx)
 
 /-- A constructor residual's shape at an indexed family: the family
 at exactly the parameter variables (`o` binders below the parameter
 frame) followed by `nIdx` index expressions. -/
-def structCtorResidOk (T : Name) (lps : List Name) (nP o nIdx : Nat) (cbody : Expr) : Bool :=
+def structCtorResidOk (T : Name) (lps : List LevelParam) (nP o nIdx : Nat) (cbody : Expr) : Bool :=
   cbody.getAppFn == .const T (lps.map .param) &&
   cbody.getAppArgs.length == nP + nIdx &&
   cbody.getAppArgs.take nP == structPsAt o nP
@@ -205,7 +205,7 @@ def structCtorResidOk (T : Name) (lps : List Name) (nP o nIdx : Nat) (cbody : Ex
 frame, over the former's index telescope `itele = ∀ ı⃗, Sort w` (scoped
 at the parameters); every binder's codomain is a type former, never a
 proposition. -/
-def structMotiveTyI (T : Name) (lps : List Name) (nP nIdx : Nat) (ℓ : Level) (itele : Expr) :
+def structMotiveTyI (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (ℓ : Level) (itele : Expr) :
     Option Expr :=
   Expr.replacePisPw .never nIdx itele
     (.forallE (structFamI T lps nP nIdx 0 0) (.sort ℓ) ⟨.never⟩)
@@ -223,8 +223,8 @@ structure StructParts where
   /-- the recursor -/
   cvR : ConstantVal
   /-- the recursor's fresh elimination level parameter (`large` only;
-  `.anonymous` for a small eliminator) -/
-  elim : Name
+  `0` for a small eliminator) -/
+  elim : LevelParam
   /-- the structure's result sort -/
   resSort : Level
   /-- the single rule's right-hand side (as exported) -/
@@ -255,7 +255,7 @@ a syntactic pin would wrongly reject; `checkStructCtor` pins the
 parameter domains definitionally over the opened telescopes, and the
 recursor is generated and compared as a whole (`checkStructRec`, task
 #175 S2). -/
-def structShape (T C : Name) (lps : List Name) (elim : Name) (large : Bool)
+def structShape (T C : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nF : Nat) (tty cty rty : Expr) : Bool :=
   match tty.stripPis nP, cty.stripPis (nP + nF), rty.stripPis (nP + 3) with
   | some (_, .sort _), some (_, cbody), some (rbs, rbody) =>
@@ -305,7 +305,7 @@ def structPartsCore? (block : List ConstantInfo) : Option StructParts :=
         -- the large eliminator: a fresh elimination level parameter in
         -- front of the block's own; else the small eliminator at the
         -- block's own level parameters (task #175 W4c/O4)
-        let large? : Option Name :=
+        let large? : Option LevelParam :=
           match cvR.levelParams with
           | elim :: relps =>
             if relps == lps && !lps.contains elim &&
@@ -319,9 +319,9 @@ def structPartsCore? (block : List ConstantInfo) : Option StructParts :=
           some ⟨cvT, cvC, nP, nF, cvR, elim, s, rule.rhs, true, isProp⟩
         | none =>
           if cvR.levelParams == lps &&
-              structShape T C lps .anonymous false nP nF cvT.type cvC.type
+              structShape T C lps 0 false nP nF cvT.type cvC.type
                 cvR.type then
-            some ⟨cvT, cvC, nP, nF, cvR, .anonymous, s, rule.rhs, false,
+            some ⟨cvT, cvC, nP, nF, cvR, 0, s, rule.rhs, false,
               isProp⟩
           else none
       | _ => none

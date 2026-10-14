@@ -32,8 +32,8 @@ open Ix.Kernel (Env Expr Name)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-- Pointwise reading of a read spine (`denoteSpine_getElem?'`). -/
 theorem denoteMetaSpine_getElem?' {d : Nat} :

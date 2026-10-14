@@ -78,7 +78,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 set_option linter.unusedVariables false in
 /-- The ι row (`iotaStep_of`, `Steps/IotaRows.lean:492`, with
 `iotaReads_of`, `:332`, for the reduct's reading): the stored

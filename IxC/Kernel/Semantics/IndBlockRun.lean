@@ -36,7 +36,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 
 /-- The projection-function fold is an `ExtEta` extension, run half. -/
 theorem projInstallRun_ext {μ : CheckMode} {F : Nat}
-    {T ctorName : Name} {lps : List Name} {nP nF : Nat} :
+    {T ctorName : Name} {lps : List LevelParam} {nP nF : Nat} :
     ∀ (idxs : List Nat) {env' env₄ : Env},
       ProjInstallRun μ F T ctorName lps nP nF env' idxs env₄ →
       ExtEta env' env₄ := by
@@ -606,7 +606,7 @@ theorem iotaRulesFactsRun {μ : CheckMode} {F : Nat}
     (hden : ∀ e : Expr, e.hasFvar = false →
       e.looseBVarsBounded 0 = true →
       (∃ t', inferTypeCore μ envSelf F 0 e = .ok t') →
-      ∀ φ : Name → Nat,
+      ∀ φ : LevelParam → Nat,
         ∃ Rv, denoteClosed cvalSelf envSelf φ e = some Rv)
     {cvA : ConstantVal} {mI rP : Nat} :
     ∀ (j : Nat) (rules rules' : List RecRule),

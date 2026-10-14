@@ -57,8 +57,8 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The reading's telescope -/
 

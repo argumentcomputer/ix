@@ -36,7 +36,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 mutual
 
@@ -167,7 +167,7 @@ theorem defEqList_sound (hin : RulesInputs V m φ) :
 
 theorem etaProjCerts_sound (hin : RulesInputs V m φ) :
     ∀ {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
-      {lpsT : List Name} {idxs : List Nat},
+      {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs →
       EtaProjCertsSem m φ d T us' targs b lpsT idxs
   | _, _, _, _, _, _, _, .nil => EtaProjCerts.nil_sound

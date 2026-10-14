@@ -55,13 +55,13 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- The set-valued leaf of an annotated valuation. -/
-noncomputable def cvalOf (acval : Name → (Name → Nat) → AnnotTerm)
-    (n : Name) (ψ : Name → Nat) : V :=
+noncomputable def cvalOf (acval : Name → (LevelParam → Nat) → AnnotTerm)
+    (n : Name) (ψ : LevelParam → Nat) : V :=
   interp V (fun _ => SetTheory.empty) (acval n ψ)
 
 /-- A closed leaf interprets to its `cvalOf` under every environment. -/
-theorem interp_cvalOf {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) (n : Name) (ψ : Name → Nat)
+theorem interp_cvalOf {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) (n : Name) (ψ : LevelParam → Nat)
     (ρ : Nat → V) : interp V ρ (acval n ψ) = cvalOf acval n ψ :=
   interp_closed (V := V) (hcl n ψ) ρ _
 
@@ -73,15 +73,15 @@ theorem field_eq_projS : ∀ (i : Nat) (p : V), Ix.Kernel.field i p = projS i p
   | 0, _ => rfl
   | i + 1, p => field_eq_projS i (ssnd p)
 
-theorem regime_eq_pwBit (φ : Name → Nat) (pw : Ix.Kernel.PropWhen) :
+theorem regime_eq_pwBit (φ : LevelParam → Nat) (pw : Ix.Kernel.PropWhen) :
     Ix.Kernel.regime φ pw = pwBit φ pw := rfl
 
 /-! ### The literal spines -/
 
 /-- A constant stored without universe parameters, at the empty
 instantiation. -/
-private theorem Denotes_const_nil {cval : Name → (Name → Nat) → V} {env : Env}
-    {φ : Name → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo}
+private theorem Denotes_const_nil {cval : Name → (LevelParam → Nat) → V} {env : Env}
+    {φ : LevelParam → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo}
     (hf : env.find? n = some ci) (h0 : ci.toConstantVal.levelParams = []) :
     Denotes cval env φ ρ (.const n []) (cval n (Level.substFn φ [] [])) := by
   have h := Denotes.const (cval := cval) (env := env) (φ := φ) (ρ := ρ) hf
@@ -90,8 +90,8 @@ private theorem Denotes_const_nil {cval : Name → (Name → Nat) → V} {env : 
 
 /-- A constant stored with one universe parameter, at `[.zero]`, valued
 at the stored parameter list as `denoteMeta` spells it. -/
-private theorem Denotes_const_one {cval : Name → (Name → Nat) → V} {env : Env}
-    {φ : Name → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo} {p : Name}
+private theorem Denotes_const_one {cval : Name → (LevelParam → Nat) → V} {env : Env}
+    {φ : LevelParam → Nat} {ρ : Nat → V} {n : Name} {ci : ConstantInfo} {p : LevelParam}
     (hf : env.find? n = some ci) (h1 : ci.toConstantVal.levelParams = [p]) :
     Denotes cval env φ ρ (.const n [.zero])
       (cval n (Level.substFn φ (levelParamsAt env n) [.zero])) := by
@@ -103,8 +103,8 @@ private theorem Denotes_const_one {cval : Name → (Name → Nat) → V} {env : 
 
 /-- Under the `Nat`-literal guard, the constructor form of a literal
 denotes the annotated numeral `denoteMeta` reads. -/
-theorem Denotes_natLitToConstructor {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+theorem Denotes_natLitToConstructor {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.natLitSupported env = true) (ρ : Nat → V) :
     ∀ k, Denotes (cvalOf (V := V) acval) env φ ρ (Ix.Kernel.natLitToConstructor k)
       (interp V ρ (natLitAV (acval natZeroName (Level.substFn φ [] []))
@@ -123,8 +123,8 @@ theorem Denotes_natLitToConstructor {acval : Name → (Name → Nat) → AnnotTe
 /-- Under the `String`-literal guard, the character-list spine of a
 literal's constructor form denotes the annotated spine `denoteMeta`
 reads. -/
-private theorem Denotes_charList {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+private theorem Denotes_charList {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.strLitSupported env = true) (ρ : Nat → V) :
     ∀ l : List Char,
       Denotes (cvalOf (V := V) acval) env φ ρ
@@ -162,8 +162,8 @@ private theorem Denotes_charList {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- Under the `String`-literal guard, the constructor form of a literal
 denotes what `denoteMeta` reads for the literal. -/
-theorem Denotes_strLitToConstructor {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat}
+theorem Denotes_strLitToConstructor {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : LevelParam → Nat}
     (hsup : Ix.Kernel.strLitSupported env = true) (ρ : Nat → V) (s : String) :
     Denotes (cvalOf (V := V) acval) env φ ρ (Ix.Kernel.strLitToConstructor s)
       (interp V ρ (.app (acval stringOfListName (Level.substFn φ [] []))
@@ -219,8 +219,8 @@ private theorem fvarsBelow_zero_of_not_hasFvar :
 /-- **The bridge**: wherever `denoteMeta` reads a term whose reading is
 graded and bit-valid, `interp` of the reading is a denotation of the
 term's closure under `Denotes` at the interpreted leaves. -/
-theorem Denotes_of_denoteMeta {acval : Name → (Name → Nat) → AnnotTerm}
-    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : Name → Nat} :
+theorem Denotes_of_denoteMeta {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hcl : ∀ n ψ, Term.Closed (acval n ψ).erase) {env : Env} {φ : LevelParam → Nat} :
     ∀ (d : Nat) (e : Expr) {ta : AnnotTerm},
       denoteMeta acval env φ d e = some ta →
       Expr.fvarsBelow d e → e.looseBVarsBounded 0 = true →
@@ -395,7 +395,7 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env}
     exact m.mem_type c hc φ ta hta ρ
   false_empty := by
     intro φ ρ F h
-    suffices hs : ∀ (ψ : Name → Nat) (ci : ConstantInfo),
+    suffices hs : ∀ (ψ : LevelParam → Nat) (ci : ConstantInfo),
         env.find? falseName = some ci →
         cvalOf (V := V) m.base2.acval falseName ψ = SetTheory.empty by
       cases h with

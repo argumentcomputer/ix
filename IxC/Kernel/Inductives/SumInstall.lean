@@ -217,7 +217,7 @@ not mention each other — and the block conses them afterwards
 sorts (task #210 Part A: the projection table's guard levels at a
 structure-like block on the fixpoint route are computed from them). -/
 def checkSumCtor (ops : CheckerOps m) (env₀ env : Env) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
+    (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) : m (ConstantVal × List Level) := do
   let cvCa₀ ← checkConstantVal ops env cvC
   let cvCa ← normCtorVal ops env T nP nF cvC cvCa₀
@@ -256,7 +256,7 @@ def checkSumCtor (ops : CheckerOps m) (env₀ env : Env) (T : Name)
 type former; returns the annotated constructors with their field
 counts, and beside them the constructors' field sorts. -/
 def checkSumCtors (ops : CheckerOps m) (env₀ env : Env) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
+    (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     List (ConstantVal × Nat) → m (List (ConstantVal × Nat) × List (List Level))
   | [] => pure ([], [])

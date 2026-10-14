@@ -247,7 +247,7 @@ abbrev structEtaCertWithFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat
     Expr → CheckM Bool := structEtaCertWith mode (pureFns mode env fuel) env
 
 abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat) (T : Name)
-    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List Name) :
+    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     List Nat → CheckM Bool :=
   structEtaProjCerts (pureFns mode env fuel) env d T us' targs b lpsT
 

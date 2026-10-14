@@ -50,7 +50,7 @@ open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The parameter walk's gradings and memberships, by position.**

@@ -192,7 +192,7 @@ operation environment is `env` = the provisioned `envSelf`; `env'` only
 feeds the pure model lookups). -/
 theorem checkIotaThmS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
     (henv : EnvWF env) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
     (hrhsA : rhsA.hasFvar = false) (hs : CSOK mode env s₀) :
@@ -370,7 +370,7 @@ theorem checkIotaThmS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv'
 operations. -/
 theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
     (henv : EnvWF env) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
     (hrhsA : rhsA.hasFvar = false) (hs : CSOK mode env s₀) :
@@ -585,7 +585,7 @@ theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv
 /-- One modeled recursor rule at the cached shared operations. -/
 theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
     (henv : EnvWF env) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     (htyA : tyA.hasFvar = false) (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkIotaRule mode (sharedOpsC mode (mkFEnv env)) env' env f cvName lps
@@ -648,7 +648,7 @@ theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv
 /-- The rule fold at the cached shared operations. -/
 theorem checkIotaRulesS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
     (henv : EnvWF env) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP : Nat}
+    {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     (htyA : tyA.hasFvar = false) :
     ∀ {j : Nat} {rules : List RecRule} {s₀ : CState}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
@@ -703,7 +703,7 @@ theorem checkMemberValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
 
 /-- The projection-rule stage at the cached shared operations. -/
 theorem checkProjRuleS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {pty : Expr}
-    {cvj : ConstantVal} {lps : List Name} {nP nF i : Nat}
+    {cvj : ConstantVal} {lps : List LevelParam} {nP nF i : Nat}
     (hptyf : pty.hasFvar = false)
     (hCf : cvj.type.hasFvar = false)
     (hs : CSOK mode env s₀) :
@@ -801,7 +801,7 @@ theorem checkProjRuleS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
 
 /-- `checkProjLookups` (operation-free) as a `SimC`. -/
 theorem checkProjLookupsS_sim {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF i : Nat} (hs : CSOK mode env s₀) :
+    {lps : List LevelParam} {nP nF i : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjLookups env' T ctorName lps nP nF i : CheckCM _)
       (checkProjLookups env' T ctorName lps nP nF i : FueledM _) := by
@@ -845,7 +845,7 @@ theorem checkProjLookupsS_sim {env' : Env} {T ctorName : Name}
 
 /-- `checkProjTy` (operation-free) as a `SimC`. -/
 theorem checkProjTyS_sim {env' : Env} {T ctorName : Name}
-    {lps : List Name} {mty : Expr} {nP nF : Nat} (hs : CSOK mode env s₀) :
+    {lps : List LevelParam} {mty : Expr} {nP nF : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjTy env' T ctorName lps mty nP nF : CheckCM _)
       (checkProjTy env' T ctorName lps mty nP nF : FueledM _) := by
@@ -907,7 +907,7 @@ the side certificates make it consult the ops at the opened statement
 telescope). -/
 theorem checkProjIotaS_sim (hμ : mode.verifiedChecks = true) {T ctorName : Name}
     (henv : EnvWF env)
-    {lps : List Name} {cvj : ConstantVal} {nP nF i : Nat}
+    {lps : List LevelParam} {cvj : ConstantVal} {nP nF i : Nat}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjIota mode (sharedOpsC mode (mkFEnv env)) env env T ctorName lps

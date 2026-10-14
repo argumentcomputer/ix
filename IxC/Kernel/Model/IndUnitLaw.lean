@@ -66,7 +66,7 @@ universe w
 
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode} {env : Env} {F : Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
 
 /-! ## The capability statements' type slot, opened
 
@@ -100,7 +100,7 @@ theorem instSeq_openSpine (K : Name) (lvls : List Level)
 /-- The opened slot, read: the model former's leaf applied to the
 descending bound variables at whatever depth the slot sits. -/
 theorem denoteMeta_openSpine {K : Name} {ci : ConstantInfo}
-    {lps : List Name} (hf : env.find? K = some ci)
+    {lps : List LevelParam} (hf : env.find? K = some ci)
     (hlps : ci.toConstantVal.levelParams = lps)
     (nP d : Nat) (hd : nP ≤ d) :
     denoteMeta acval env φ d
@@ -128,7 +128,7 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
     (hren : ((ty.renameConsts (fun n' =>
       if blockNames.contains n' then n'.str "_model" else n')) == cvm.type)
       = true)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     denoteMeta mp.base2.acval env ψ 0 ty
       = denoteMeta mp.base2.acval env ψ 0 cvm.type := by
   have hup : ∀ n ci, env.find? n = some ci →
@@ -144,7 +144,7 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
         hlp₂⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
   have hval : ∀ (n : Name) (ci : ConstantInfo),
-      env.find? n = some ci → ∀ ψ' : Name → Nat,
+      env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
         if blockNames.contains n then n.str "_model" else n) n) ψ'
         = mp.base2.acval n ψ' := by
@@ -165,7 +165,7 @@ theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
     {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
     (hfm : env.find? (cvA.name.str "_model")
       = some (.defnInfo cvm mval hint))
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     denoteMeta mp.base2.acval env ψ 0 cvA.type
       = denoteMeta mp.base2.acval env ψ 0 cvm.type := by
   obtain ⟨type', hcv, rfl, -, cvm', mval', hint', hfm', hlpm, hren⟩ := hmv
@@ -179,7 +179,7 @@ theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
 
 /-- `denoteMeta_eqA_type` at an arbitrary environment: `Eq`'s type has no
 `const` leaf, so its reading does not consult the environment. -/
-theorem denoteMeta_eqA_type_gen (ψ : Name → Nat) :
+theorem denoteMeta_eqA_type_gen (ψ : LevelParam → Nat) :
     denoteMeta acval env ψ 0 eqA.toConstantVal.type = some (eqTy ψ) := by
   simp [eqA, ConstantInfo.toConstantVal, denoteMeta_forallE, denoteMeta_sort,
     denoteMeta_fvar, Expr.instantiate1, eqTy, pwBit_never, Level.eval, uN]
@@ -188,7 +188,7 @@ theorem denoteMeta_eqA_type_gen (ψ : Name → Nat) :
 `EqLawV.dom`'s P counterpart, and the only place the unit key needs
 rigidity at all. -/
 theorem eqSlot_univ (mp : EnvModelM V μ env)
-    (heqfE : env.find? eqName = some eqA) (χ : Name → Nat)
+    (heqfE : env.find? eqName = some eqA) (χ : LevelParam → Nat)
     {σ : Nat → V} {Sa la ra : AnnotTerm}
     (hok : WellDenotedV V σ
       (.app (.app (.app (mp.base2.acval eqName χ) Sa) la) ra)) :
@@ -250,7 +250,7 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   have hcb : ConstsBound env cvA.type :=
     constsBound_of_constsResolve _ (by rw [htypeA]; exact htr)
   intro us hus
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ' cvA.levelParams us := ⟨_, rfl⟩
   -- the member's type reading, and its crossing to the extension
   obtain ⟨ta, hta, hokta, -⟩ := memberKey mp hmv hIB hIA ψ

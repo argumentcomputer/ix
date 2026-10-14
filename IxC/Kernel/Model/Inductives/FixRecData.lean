@@ -37,24 +37,24 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 
 /-- The recursive recursor's binder data at the block. -/
 @[expose] def fixRdsAV {env : Env} (m : EnvModel V env) (p : NativeParts)
-    (ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm)))
-    (ctorsA : List (ConstantVal × Nat)) (ψ : Name → Nat) : List (Nat × Nat × AnnotTerm) :=
+    (ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm)))
+    (ctorsA : List (ConstantVal × Nat)) (ψ : LevelParam → Nat) : List (Nat × Nat × AnnotTerm) :=
   fixRecDataAV m p.cvT.name ψ p.nP p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
     ((ppsAll ψ).take p.nP) ((ppsAll ψ).drop p.nP) (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)
 
 theorem fixRdsAV_length {m : EnvModel V env} {p : NativeParts}
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     {ctorsA : List (ConstantVal × Nat)}
     {cvTa : ConstantVal} (hFD : FormerData m cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ).length = p.nP + ctorsA.length + p.nIdx + 2 := by
   unfold fixRdsAV
   rw [fixRecDataAV_length (by rw [List.length_take, hFD.len ψ]; omega)
@@ -64,7 +64,7 @@ theorem fixRdsAV_length {m : EnvModel V env} {p : NativeParts}
 
 section Congr
 
-variable {env₁ env₂ : Env} {m₁ : EnvModel V env₁} {m₂ : EnvModel V env₂} {ψ : Name → Nat}
+variable {env₁ env₂ : Env} {m₁ : EnvModel V env₁} {m₂ : EnvModel V env₂} {ψ : LevelParam → Nat}
   {T : Name} {nP nIdx : Nat}
 
 theorem minorAVAtR_congr {C : Name} {nF b o : Nat} {ds : List (Nat × Nat × AnnotTerm)}
@@ -108,13 +108,13 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {tfvs : List Expr} {trest : Expr}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
     {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
@@ -122,7 +122,7 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA) :
     SumRecData mp.base2 cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
         (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA) ∧
-      ∃ u : Level, ∀ (ψ : Name → Nat) (ρ : Nat → V),
+      ∃ u : Level, ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         interp V ρ (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) ∈ˢ (univ (u.eval ψ) : V) := by
   obtain ⟨cvRi, recTy, sty, u, -, hgen, htp, -, hbt, hRf, hsty, hens, -, -, rfl⟩ :=
@@ -132,7 +132,7 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   have hcr : ∀ ψ, CtorReadsR mp.base2 ψ p.cvT.name p.cvT.levelParams p.nP p.nIdx
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) :=
     fun ψ => fixCtorReadsR_of ψ hlenK hks hcf
-  have hread : ∀ ψ : Name → Nat, denoteMeta mp.base2.acval env ψ 0 recTy
+  have hread : ∀ ψ : LevelParam → Nat, denoteMeta mp.base2.acval env ψ 0 recTy
       = some (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) := fun ψ => by
     have := denoteMeta_structRecTyR hfT (show (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams
@@ -177,10 +177,10 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
     {bsT : List (Expr × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     (hlenK : p.kinds.length = ctorsA.length)
-    {rds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {rds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hRD : SumRecData mp.base2 cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
       rds) :
-    ∃ (fvsR : List Expr) (oR : Expr), ∀ ψ : Name → Nat,
+    ∃ (fvsR : List Expr) (oR : Expr), ∀ ψ : LevelParam → Nat,
       Opened mp.base2 ψ (p.nP + ctorsA.length + p.nIdx + 2) cvRa.type fvsR oR
         (((rds ψ).map (·.2.2)).reverse) (recConcAV ctorsA.length p.nIdx) := by
   obtain ⟨cvRi, recTy, sty, u, -, hgen, -, -, hbt, hRf, -, -, -, -, rfl⟩ :=

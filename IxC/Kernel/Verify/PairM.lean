@@ -295,7 +295,7 @@ theorem defeqSpine_snd (d : Nat) (a b : Expr) :
     | split)
 
 theorem structEtaProjCerts_fst (d : Nat) (T : Name) (us' : List Level)
-    (targs : List Expr) (b : Expr) (lpsT : List Name) :
+    (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
         idxs).val.1 =
@@ -350,7 +350,7 @@ theorem structEtaProjCerts_fst (d : Nat) (T : Name) (us' : List Level)
       | ctorInfo cv nP nF => rfl
 
 theorem structEtaProjCerts_snd (d : Nat) (T : Name) (us' : List Level)
-    (targs : List Expr) (b : Expr) (lpsT : List Name) :
+    (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
         idxs).val.2 =

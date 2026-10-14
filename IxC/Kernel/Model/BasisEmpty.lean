@@ -75,7 +75,7 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [1]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_emptyA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 emptyA.toConstantVal.type
       = some (BConst.typeAV .empty [1]) := by
   rw [show emptyA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,
@@ -118,13 +118,13 @@ Two binders, three stored `PropWhen` pins, and the reading's numerals
 are all three of them. -/
 
 /-- `pwBit` at a `.never` pin: the graph regime, unconditionally. -/
-theorem pwBit_never (ψ : Name → Nat) :
+theorem pwBit_never (ψ : LevelParam → Nat) :
     pwBit ψ Ix.Kernel.PropWhen.never = 1 := by rfl
 
 /-- `pwBit` at a one-parameter `.ifAllZero` pin: zero exactly when the
 parameter is.  One of the *three* shapes every basis binder reduces to
 — see `pwBit_ifAllZero_nil`/`pwBit_ifAllZero_pair` for the other two. -/
-theorem pwBit_ifAllZero_single (ψ : Name → Nat) (n : Name) :
+theorem pwBit_ifAllZero_single (ψ : LevelParam → Nat) (n : LevelParam) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [n]) = 0 ↔ ψ n = 0 := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -153,7 +153,7 @@ vacuity the same way; this is the third such retirement running. -/
 because `[].all _` is `true`.  The pin the `Prop`-valued basis
 constants carry (`Eq.refl`, `PSigma'.rec`, `Quot.ind`, `Quot.sound`,
 and `Quot.lift`'s invariance binder). -/
-theorem pwBit_ifAllZero_nil (ψ : Name → Nat) :
+theorem pwBit_ifAllZero_nil (ψ : LevelParam → Nat) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero []) = 0 := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -161,7 +161,7 @@ theorem pwBit_ifAllZero_nil (ψ : Name → Nat) :
 /-- `pwBit` at a two-parameter `.ifAllZero` pin: zero exactly when
 *both* parameters are.  `PSigma'.mk`'s pin, and the basis tier's only
 instance. -/
-theorem pwBit_ifAllZero_pair (ψ : Name → Nat) (n m : Name) :
+theorem pwBit_ifAllZero_pair (ψ : LevelParam → Nat) (n m : LevelParam) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [n, m]) = 0 ↔ (ψ n = 0 ∧ ψ m = 0) := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -169,7 +169,7 @@ theorem pwBit_ifAllZero_pair (ψ : Name → Nat) (n m : Name) :
 /-- **`Empty.rec`'s type reading.**  The four moves of the module
 docstring; the leaves are `acval_basis_pinned` at `Empty`. -/
 theorem denoteMeta_emptyRecA_type {m : EnvModel V env}
-    {A : (Name → Nat) → AnnotTerm} (ψ : Name → Nat)
+    {A : (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat)
     (hE : env.find? emptyName = some emptyA) :
     denoteMeta (acvalWith m.acval emptyRecA.name A)
         ⟨emptyRecA :: env.consts⟩ ψ 0 emptyRecA.toConstantVal.type
@@ -208,7 +208,7 @@ theorem denoteMeta_emptyRecA_type {m : EnvModel V env}
 reads.**  Three binders, three `pwBit`s, three `typeAV` slots, and the
 iffs are `pwBit_never` and `pwBit_ifAllZero_single` — nothing here is
 chosen. -/
-theorem bitAgree_emptyRecA (ψ : Name → Nat) :
+theorem bitAgree_emptyRecA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ (.ifAllZero [uN]))
         (.pi 0 (pwBit ψ .never) (.const .empty [1]) (.sort (ψ uN)))

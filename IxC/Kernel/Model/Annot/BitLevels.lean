@@ -45,7 +45,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ### The literal-support slot lemmas, transposed to the core
 
@@ -58,7 +58,7 @@ variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
 theorem acval_isEmpty (m : EnvModel V env) {n : Name}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
-    (ψ₁ ψ₂ : Name → Nat) : m.acval n ψ₁ = m.acval n ψ₂ := by
+    (ψ₁ ψ₂ : LevelParam → Nat) : m.acval n ψ₁ = m.acval n ψ₂ := by
   refine m.acval_params n ci hf ψ₁ ψ₂ fun p hpm => ?_
   rw [List.isEmpty_iff] at he
   rw [he] at hpm
@@ -69,7 +69,7 @@ independently of the assignment. -/
 theorem acval_oneParam (m : EnvModel V env) {n : Name}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
-    (ψ₁ ψ₂ : Name → Nat) :
+    (ψ₁ ψ₂ : LevelParam → Nat) :
     m.acval n (Level.substFn ψ₁ ci.toConstantVal.levelParams [.zero])
       = m.acval n
         (Level.substFn ψ₂ ci.toConstantVal.levelParams [.zero]) := by
@@ -89,7 +89,7 @@ theorem acval_scalar (m : EnvModel V env) (nm : Name)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.isEmpty = true)
-    (ψ₁ ψ₂ : Name → Nat) : m.acval nm ψ₁ = m.acval nm ψ₂ := by
+    (ψ₁ ψ₂ : LevelParam → Nat) : m.acval nm ψ₁ = m.acval nm ψ₂ := by
   cases hx : env.find? nm with
   | none => rw [hx, hnone] at hfok; exact nomatch hfok
   | some ci =>
@@ -102,7 +102,7 @@ theorem acval_one (m : EnvModel V env) (nm : Name)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.length = 1)
-    (ψ₁ ψ₂ : Name → Nat) :
+    (ψ₁ ψ₂ : LevelParam → Nat) :
     m.acval nm (Level.substFn ψ₁ (levelParamsAt env nm) [.zero])
       = m.acval nm
         (Level.substFn ψ₂ (levelParamsAt env nm) [.zero]) := by
@@ -117,7 +117,7 @@ theorem acval_one (m : EnvModel V env) (nm : Name)
 
 /-- The `Nat`-literal leaves are assignment-independent. -/
 theorem acval_natPair (m : EnvModel V env)
-    (hg : Ix.Kernel.natLitSupported env = true) (ψ₁ ψ₂ : Name → Nat) :
+    (hg : Ix.Kernel.natLitSupported env = true) (ψ₁ ψ₂ : LevelParam → Nat) :
     m.acval natZeroName ψ₁ = m.acval natZeroName ψ₂ ∧
       m.acval natSuccName ψ₁ = m.acval natSuccName ψ₂ := by
   simp only [Ix.Kernel.natLitSupported, Bool.and_eq_true] at hg
@@ -144,7 +144,7 @@ composed valuation `Level.substFn φ ks us`.  The binder step is
 `EnvModel.acval_params` + `Level.substFn_map_subst`, as in the canonical
 walk. -/
 theorem denotePInstLevels (m : EnvModel V env)
-    (φ : Name → Nat) (ks : List Name) (us : List Level) :
+    (φ : LevelParam → Nat) (ks : List LevelParam) (us : List Level) :
     ∀ (d : Nat) (e : Expr),
       denoteMeta m.acval env φ d (e.instantiateLevelParams ks us)
         = denoteMeta m.acval env (Level.substFn φ ks us) d e := by
@@ -262,7 +262,7 @@ numeral: `PropWhen.holds_ext` at the meta's `paramsDefined` conjunct —
 which is exactly why task #161 folded the datum's footprint into
 `Expr.allLevelParamsDefined`. -/
 theorem denoteMeta_params_ext (m : EnvModel V env)
-    {ps : List Name} {φ₁ φ₂ : Name → Nat}
+    {ps : List LevelParam} {φ₁ φ₂ : LevelParam → Nat}
     (hφ : ∀ p ∈ ps, φ₁ p = φ₂ p) :
     ∀ (d : Nat) (e : Expr), e.allLevelParamsDefined ps = true →
       denoteMeta m.acval env φ₁ d e = denoteMeta m.acval env φ₂ d e := by

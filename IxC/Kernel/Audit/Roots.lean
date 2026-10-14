@@ -38,11 +38,11 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3022 compiled functions, with the computed-field overrides of
+reaches 3003 compiled functions, with the computed-field overrides of
 `Level`, `Expr` and `Name` and 20 proved csimps; the Ixon reader
-(`readRecords` with `Admission.readStream`) reaches 1886, adding the
-in-model generator's 10 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5297 with 121 inherited externs, adding the
+(`readRecords` with `Admission.readStream`) reaches 1861, adding the
+in-model generator's 9 `partial` definitions; the entry (the four
+`publicOperations`) reaches 5138 with 120 inherited externs, adding the
 byte stage (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`) and
 the committed tables. The content hash is the entry's parameter, so no
 hasher is in the closure. The byte stage reads and re-encodes Ixon v4's TagN integers
@@ -279,9 +279,9 @@ elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
 the rulings they use: the fold reaches the kernel's computed-field
 overrides of `Level`, `Expr` and `Name` (18) and 20 project csimps; the
-reader adds the in-model generator's 10 `partial` definitions; the entry
+reader adds the in-model generator's 9 `partial` definitions; the entry
 adds the byte stage and the committed tables. The pin-parametric forms
-(`checkBytesWith`, `checkConstantsWith`) reach 4527 functions; the
+(`checkBytesWith`, `checkConstantsWith`) reach 4493 functions; the
 committed pin table, prelude and Nat-operation pin decoder add the rest. -/
 
 #guard_msgs (drop info) in
@@ -309,22 +309,22 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3022 compiled functions; inherited externs 83,
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3003 compiled functions; inherited externs 82,
 implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 1886 compiled functions; inherited externs 82, implemented_by 0,
-unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 10 -/
+ Ix.Kernel.Admission.readStream]: 1861 compiled functions; inherited externs 81, implemented_by 0,
+unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5297 compiled functions; inherited externs 121, implemented_by 0,
-unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
+ Ix.Kernel.Admission.checkConstants]: 5138 compiled functions; inherited externs 120, implemented_by 0,
+unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

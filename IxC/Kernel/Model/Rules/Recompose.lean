@@ -40,7 +40,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 /-- **The P soundness at one environment — the five claims at every
 fuel.**  Recomposed from the bridge and the rules soundness; the

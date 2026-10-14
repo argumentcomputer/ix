@@ -862,7 +862,7 @@ theorem abstractRangeC_spec {e : Expr} {d k c : Nat} :
 
 /-- **The plain descent computes `Expr.instantiateLevelParams`**: the
 reference of `instLevelParamsXP`. -/
-theorem instLevelParamsP_spec {ks : List Name} {us : List Level} : ∀ (e : Expr),
+theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e : Expr),
     Expr.instLevelParamsP ks us e = e.instantiateLevelParams ks us := by
   intro e
   induction e with
@@ -937,7 +937,7 @@ theorem instLevelParamsP_spec {ks : List Name} {us : List Level} : ∀ (e : Expr
       rw [mkProj_eq, ih]
       rfl
 
-theorem instLevelParams_spec {ks : List Name} {us : List Level} {e : Expr} :
+theorem instLevelParams_spec {ks : List LevelParam} {us : List Level} {e : Expr} :
     (Expr.instLevelParams ks us e) = e.instantiateLevelParams ks us := by
   rw [instLevelParams]
   split

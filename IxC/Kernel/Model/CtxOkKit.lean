@@ -34,7 +34,7 @@ open Ix.Kernel (CheckMode Env Expr Name)
 universe w
 
 variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
-variable {m : EnvModel V env} {φ : Name → Nat}
+variable {m : EnvModel V env} {φ : LevelParam → Nat}
 
 namespace CtxOk
 

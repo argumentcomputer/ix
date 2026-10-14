@@ -389,7 +389,7 @@ def projAppsI (fe : FEnv) (Tn T : Name) (us' : List Level)
 def structEtaProjCertsI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
     (TI : Name) (T : Name) (us' : List Level) (targs : List Expr)
     (b : Expr)
-    (lpsT : List Name) : List Nat → CheckCM Bool
+    (lpsT : List LevelParam) : List Nat → CheckCM Bool
   | [] => pure true
   | i :: rest => do
     match fe.find? (projFnName T i) with
@@ -709,7 +709,7 @@ def prepareMajorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
 
 /-- The nested-rule pin instantiations (structural recursion;
 the spec side is `(recFireComparands …).2`'s `List.map`). -/
-def pinArgsI (lps : List Name) (us : List Level) (args : List Expr)
+def pinArgsI (lps : List LevelParam) (us : List Level) (args : List Expr)
     (t : Nat) : List Expr → CheckCM (List Expr)
   | [] => pure []
   | p :: ps => do

@@ -1,5 +1,6 @@
 module
 
+public import IxC.Kernel.Name
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
@@ -43,7 +44,7 @@ inductive Level where
   | succ (u : Level)
   | max (u v : Level)
   | imax (u v : Level)
-  | param (n : Name)
+  | param (n : LevelParam)
 with
   /-- The cached hash of a level. -/
   @[computed_field] hashData : Level → UInt64

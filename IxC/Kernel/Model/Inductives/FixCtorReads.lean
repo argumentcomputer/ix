@@ -69,10 +69,10 @@ theorem Expr.getAppArgs_instSeq_fvars :
 
 /-- The recursive constructor data of a list of constructors, from
 constructor `j` on. -/
-@[expose] def fixCtorDataList (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : Name → Nat) :
+@[expose] def fixCtorDataList (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
     List (ConstantVal × Nat) → Nat → List CtorDatumR
   | [], _ => []
   | c :: cs, j =>
@@ -80,10 +80,10 @@ constructor `j` on. -/
       fixCtorDataList dsF esF ksF eissF tssF ψ cs (j + 1)
 
 omit [SetTheory V] in
-theorem fixCtorDataList_length (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : Name → Nat) :
+theorem fixCtorDataList_length (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (j : Nat),
       (fixCtorDataList dsF esF ksF eissF tssF ψ cs j).length = cs.length
   | [], _ => rfl
@@ -91,10 +91,10 @@ theorem fixCtorDataList_length (dsF : Nat → (Name → Nat) → List (Nat × Na
     simp [fixCtorDataList, fixCtorDataList_length dsF esF ksF eissF tssF ψ cs (j + 1)]
 
 omit [SetTheory V] in
-theorem fixCtorDataList_getElem? (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : Name → Nat) :
+theorem fixCtorDataList_getElem? (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (j i : Nat),
       (fixCtorDataList dsF esF ksF eissF tssF ψ cs j)[i]?
         = (cs[i]?).map fun c =>
@@ -110,13 +110,13 @@ theorem fixCtorDataList_getElem? (dsF : Nat → (Name → Nat) → List (Nat × 
     rw [show j + 1 + i = j + (i + 1) from by omega]
 
 /-- The per-constructor facts of a recursive block at a position. -/
-@[expose] def FixCtorFactsAt {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Name) (lps : List Name)
+@[expose] def FixCtorFactsAt {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Name) (lps : List LevelParam)
     (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
     (ksF : Nat → List RecFieldKind) (fvsPF xFvsF : Nat → List Expr) (xrestF : Nat → Expr)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm)))
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm)))
     (j : Nat) (cA : ConstantVal × Nat) : Prop :=
   env.find? cA.1.name = some (.ctorInfo cA.1 nP cA.2) ∧
   cA.1.levelParams = lps ∧
@@ -138,7 +138,7 @@ theorem recIdxOf_pairwise (ks : List RecFieldKind) : (Ix.Kernel.recIdxOf ks).Pai
   (List.pairwise_lt_range).filter _
 
 /-- A positional characterisation of the reading premises. -/
-theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} :
     ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
       ctors.length = cds.length →
@@ -153,13 +153,13 @@ theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : Name → Nat} {T : Nam
       fun i c' cd' hc hcd => h (i + 1) c' cd' (by simpa using hc) (by simpa using hcd))
 
 /-- **The reading premises from the constructor facts.** -/
-theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Name} {lps : List Name}
+theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxF : Nat → List Expr}
-    {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
     {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} (ψ : Name → Nat)
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} (ψ : LevelParam → Nat)
     {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
     (hlenK : kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → kinds[i]? = some (ksF i))

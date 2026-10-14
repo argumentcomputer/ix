@@ -58,7 +58,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 
 /-- Lifts at cut `0` compose by addition. -/
 theorem liftN_liftN : ∀ (v : Term) (m n k : Nat),

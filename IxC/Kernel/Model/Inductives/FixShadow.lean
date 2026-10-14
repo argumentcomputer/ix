@@ -114,7 +114,7 @@ end Kit
 /-- `CtxOk` at the shadow context for a term whose leaves avoid the
 recursive variables, from the grading of the non-recursive entries at
 the shadow context below it. -/
-theorem shadowCtxOk {m : EnvModel V env} {ψ : Name → Nat} {k : Nat} {e : Expr}
+theorem shadowCtxOk {m : EnvModel V env} {ψ : LevelParam → Nat} {k : Nat} {e : Expr}
     {fvs : List Expr} {o : Expr} {Γ : List AnnotTerm} {R : AnnotTerm}
     (hO : Opened m ψ k e fvs o Γ R) (hlenF : fvs.length = k)
     {nP : Nat} {ks : List RecFieldKind}
@@ -214,19 +214,19 @@ it (a non-recursive field entry moreover in the family's universe when
 that is not `Prop`), and so is the residual at the full shadow
 context. -/
 theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
-    {idxArgs : List Expr} {ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {Es : (Name → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (Name → Nat) → List (List AnnotTerm)}
-    {tss : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     (∀ b, b < nP + nF → ∀ ρ : Nat → V,
       Sat V ((shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)).drop (nP + nF - b)) ρ →
       WellDenotedV V ρ ((((ds ψ).map (·.2.2)).reverse).getD (nP + nF - 1 - b) default) ∧

@@ -134,7 +134,7 @@ structure MCtor where
 /-- Is `e` member `m'` of the block applied to the parameter variables
 (`o` binders below the parameter frame) and `nIdx_{m'}` index
 expressions?  Returns the member. -/
-def memberApp? (members : List (Name × Nat × Nat)) (lps : List Name) (nP o : Nat)
+def memberApp? (members : List (Name × Nat × Nat)) (lps : List LevelParam) (nP o : Nat)
     (e : Expr) : Option Nat :=
   match e.getAppFn with
   | .const x us =>
@@ -155,7 +155,7 @@ not this rung's (nested, non-positive).  `members` lists
 `(T, m, nIdx)`.  A recursive field is recorded by position and target
 member; its telescope is read off the constructor's type again where it
 is needed (`structFieldTeleOf`, the iota right-hand sides). -/
-def classifyCtor (members : List (Name × Nat × Nat)) (lps : List Name) (nP : Nat)
+def classifyCtor (members : List (Name × Nat × Nat)) (lps : List LevelParam) (nP : Nat)
     (m : Nat) (c : IndCtorRec) : Except String MCtor := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
@@ -236,12 +236,12 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     match b.recs.find? (·.cv.name == t.cv.name.str "rec") with
     | some r => pure r
     | none => throw s!"member {t.cv.name} has no recursor {t.cv.name.str "rec"}"
-  let large? : Option Name :=
+  let large? : Option LevelParam :=
     match (← recOf 0).cv.levelParams with
     | e :: rest => if rest == lps && !lps.contains e then some e else none
     | [] => none
   let large := large?.isSome
-  let elim := large?.getD (freshLevelName lps)
+  let elim := large?.getD (freshLevelParam lps)
   let rlps := if large then elim :: lps else lps
   for m in List.range k do
     let r ← recOf m
@@ -258,7 +258,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     throw "Prop block with a large eliminator (the auxiliary family eliminates into Prop only)"
   let ℓ := structElimLevel elim large
   let rlvls : List Level := if large then ℓ :: lps.map .param else lps.map .param
-  let elimTag := if large then elim else freshLevelName lps
+  let elimTag := if large then elim else freshLevelParam lps
   -- the block renaming of the modeled install (types, constructors, recursors)
   let blockNames := memberNames ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
   let rn : Expr → Expr := Expr.renameConsts fun x =>
@@ -429,7 +429,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- lost: official's `is_structure_like` is single-type, so a mutual
   -- member never carries `.proj`; the artifacts only feed the
   -- projection rewrite's levels.
-  let genTypes : List (Name × List Name × Expr) :=
+  let genTypes : List (Name × List LevelParam × Expr) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
   let tbl' : ConstTable := fun x =>

@@ -163,7 +163,7 @@ theorem checkConstantVal_wfimp {env : Env} (henv : EnvWF env)
   · rw [if_pos h3] at h
     exact absurd h atF_throw_bind
   rw [if_neg h3] at h ⊢
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg =>
     rw [if_neg h4] at h
     exact absurd h atF_throw_bind
@@ -847,7 +847,7 @@ closed; everything the check compares is scoped at the opened
 telescope's depth. -/
 theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
     {v : Unit}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
@@ -1082,7 +1082,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
 /-- A successful `nestedRuleShape` guards its stored parameter
 instantiations: they are fvar-free. -/
 theorem nestedRuleShape_pins {env' envSelf : Env} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP cnP j : Nat}
+    {lps : List LevelParam} {tyA : Expr} {mI rP cnP j : Nat}
     {lvls : List Level} {pins : List Expr}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
       some (lvls, pins)) :
@@ -1104,7 +1104,7 @@ set_option maxHeartbeats 6400000 in
 fixed at the stored instantiations. -/
 theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
     {v : RecRuleFire}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
@@ -1403,7 +1403,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
 
 theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
+    {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {F : Nat} {v : RecRule} (htyA : tyA.hasFvar = false)
     (h : (checkIotaRule mode (wfOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r).val F = .ok v) :
@@ -1483,7 +1483,7 @@ theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
 
 theorem checkIotaRules_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP : Nat} {F : Nat}
+    {lps : List LevelParam} {tyA : Expr} {mI rP : Nat} {F : Nat}
     (htyA : tyA.hasFvar = false) :
     ∀ {j : Nat} {rules rules' : List RecRule},
       (checkIotaRules mode (wfOpsM mode) env' envSelf f cvName lps tyA
@@ -1546,7 +1546,7 @@ theorem checkMemberVal_wfimp {blockNames : List Name} {env' : Env}
   exact h
 
 theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
-    {pty : Expr} {cvj : ConstantVal} {lps : List Name}
+    {pty : Expr} {cvj : ConstantVal} {lps : List LevelParam}
     {nP nF i F : Nat} {v : Expr}
     (hptyf : pty.hasFvar = false)
     (_hptyb : pty.looseBVarsBounded 0 = true)
@@ -1708,7 +1708,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
 
 /-- The stored constructor behind a successful projection lookup. -/
 theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF i : Nat} {cvj mcv : ConstantVal}
+    {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal}
     (h : (checkProjLookups env' T ctorName lps nP nF i :
       CheckM (ConstantVal × ConstantVal)) = .ok (cvj, mcv)) :
     ∃ cnP cnF, env'.find? ctorName = some (.ctorInfo cvj cnP cnF) := by
@@ -1760,7 +1760,7 @@ theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
 
 /-- Well-formedness of a successfully checked projection type. -/
 theorem checkProjTy_wf {env' : Env} {T ctorName : Name}
-    {lps : List Name} {mty pty : Expr} {nP nF : Nat}
+    {lps : List LevelParam} {mty pty : Expr} {nP nF : Nat}
     (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM Expr) =
       .ok pty) :
     pty.hasFvar = false ∧ pty.looseBVarsBounded 0 = true := by
@@ -1789,7 +1789,7 @@ set_option maxHeartbeats 6400000 in
 stage 3: the side certificates run at the opened statement telescope,
 which is scoped by the stored statement's closedness). -/
 theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List Name} {cvj : ConstantVal}
+    {T ctorName : Name} {lps : List LevelParam} {cvj : ConstantVal}
     {nP nF i F : Nat} {v : Unit}
     (h : (checkProjIota mode (wfOpsM mode) env' env' T ctorName lps cvj nP nF
       i).val F = .ok v) :
@@ -1933,7 +1933,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
     (WScoped_getD' htargsW 1) (WScoped_getD' htargsW 2) h
 
 theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List Name} {nP nF i F : Nat} {v : Env}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i F : Nat} {v : Env}
     (h : (checkProjFn mode (wfOpsM mode) env' T ctorName lps nP nF i).val F = .ok v) :
     checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok v := by
   unfold checkProjFn at h ⊢
@@ -1978,7 +1978,7 @@ theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
   exact h
 
 theorem installProjFnStep_wfimp {e : Env} (he : EnvWF e)
-    {T ctorName : Name} {lps : List Name} {nP nF i F : Nat} {e' : Env}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i F : Nat} {e' : Env}
     (h : (installProjFnStep mode (wfOpsM mode) T ctorName lps nP nF e i).val F =
       .ok e') :
     installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF e i = .ok e' := by
@@ -2375,7 +2375,7 @@ theorem checkConstantVal_typeWF {env : Env} {cv cvA : ConstantVal}
   by_cases h3 : cv.name.isProjFnShape = true
   · rw [if_pos h3] at h; throwM_elim h
   rw [if_neg h3] at h
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg => rw [if_neg h4] at h; throwM_elim h
   rw [if_pos h4] at h
   by_cases h5 : Expr.looseBVarsBounded 0 cv.type = true
@@ -2444,7 +2444,7 @@ theorem stripPis_WScoped {d : Nat} :
 
 /-- The projection table, `wfOpsM mode` run to pure run (the stage is
 ops-free, task #175 S1). -/
-theorem checkStructProjTable_wfimp {T C : Name} {lps : List Name}
+theorem checkStructProjTable_wfimp {T C : Name} {lps : List LevelParam}
     {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal}
     {env v : Env} {F : Nat}
     (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM Env).val F

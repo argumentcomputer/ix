@@ -33,20 +33,20 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 /-! ## The constructors' data, positionally -/
 
 /-- The constructor data list from position-indexed data functions. -/
-@[expose] def ctorDataList (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ψ : Name → Nat) :
+@[expose] def ctorDataList (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ψ : LevelParam → Nat) :
     List (ConstantVal × Nat) → Nat → List CtorDatum
   | [], _ => []
   | c :: cs, j => (c.1.name, c.2, dsF j ψ, esF j ψ) :: ctorDataList dsF esF ψ cs (j + 1)
 
-theorem ctorDataList_length (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ψ : Name → Nat) :
+theorem ctorDataList_length (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (j : Nat), (ctorDataList dsF esF ψ cs j).length = cs.length
   | [], _ => rfl
   | _ :: cs, j => by simp [ctorDataList, ctorDataList_length dsF esF ψ cs (j + 1)]
 
-theorem ctorDataList_getElem? (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ψ : Name → Nat) :
+theorem ctorDataList_getElem? (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (j i : Nat),
       (ctorDataList dsF esF ψ cs j)[i]? = cs[i]?.map fun c => (c.1.name, c.2, dsF (j + i) ψ, esF (j + i) ψ)
   | [], _, _ => by simp [ctorDataList]
@@ -55,8 +55,8 @@ theorem ctorDataList_getElem? (dsF : Nat → (Name → Nat) → List (Nat × Nat
     simp only [ctorDataList, List.getElem?_cons_succ]
     rw [ctorDataList_getElem? dsF esF ψ cs (j + 1) i, show j + 1 + i = j + (i + 1) from by omega]
 
-theorem ctorDataList_params {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ψ₁ ψ₂ : Name → Nat} :
+theorem ctorDataList_params {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ψ₁ ψ₂ : LevelParam → Nat} :
     ∀ {cs : List (ConstantVal × Nat)} {j : Nat},
       (∀ i, i < cs.length → dsF (j + i) ψ₁ = dsF (j + i) ψ₂ ∧ esF (j + i) ψ₁ = esF (j + i) ψ₂) →
       ctorDataList dsF esF ψ₁ cs j = ctorDataList dsF esF ψ₂ cs j
@@ -73,10 +73,10 @@ theorem ctorDataList_params {dsF : Nat → (Name → Nat) → List (Nat × Nat �
 
 /-- What the readings need of every constructor at its position:
 stored, at the block's level parameters, and its data. -/
-@[expose] def CtorFactsAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List Name) (nP nIdx : Nat)
+@[expose] def CtorFactsAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
     (j : Nat) (cA : ConstantVal × Nat) : Prop :=
   env.find? cA.1.name = some (.ctorInfo cA.1 nP cA.2) ∧
   cA.1.levelParams = lps ∧
@@ -87,25 +87,25 @@ stored, at the block's level parameters, and its data. -/
 /-- **The sum recursor type's reading, peeled.** -/
 structure SumRecData {env : Env} (m : EnvModel V env) (cvR : ConstantVal)
     (nP n nIdx : Nat) (elimL : Level)
-    (rds : (Name → Nat) → List (Nat × Nat × AnnotTerm)) : Prop where
-  read : ∀ ψ : Name → Nat, denoteMeta m.acval env ψ 0 cvR.type
+    (rds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)) : Prop where
+  read : ∀ ψ : LevelParam → Nat, denoteMeta m.acval env ψ 0 cvR.type
     = some (mkPisAV (rds ψ) (recConcAV n nIdx))
-  len : ∀ ψ : Name → Nat, (rds ψ).length = nP + n + nIdx + 2
-  bits : ∀ (ψ : Name → Nat) (d : Nat × Nat × AnnotTerm), d ∈ rds ψ →
+  len : ∀ ψ : LevelParam → Nat, (rds ψ).length = nP + n + nIdx + 2
+  bits : ∀ (ψ : LevelParam → Nat) (d : Nat × Nat × AnnotTerm), d ∈ rds ψ →
     (elimL.eval ψ = 0 ↔ d.2.1 = 0)
-  okTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  okTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
     WellDenotedV V ρ (mkPisAV (rds ψ) (recConcAV n nIdx))
-  below : ∀ ψ : Name → Nat, DomsBelow 0 (rds ψ)
-  params : ∀ ψ₁ ψ₂ : Name → Nat, (∀ p ∈ cvR.levelParams, ψ₁ p = ψ₂ p) →
+  below : ∀ ψ : LevelParam → Nat, DomsBelow 0 (rds ψ)
+  params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ p ∈ cvR.levelParams, ψ₁ p = ψ₂ p) →
     rds ψ₁ = rds ψ₂
 
 /-- The recursor's data crosses a cons whose slot does not mention the
 stored recursor. -/
 theorem SumRecData.cross {m : EnvModel V env} {cvR : ConstantVal}
     {nP n nIdx : Nat} {elimL : Level}
-    {rds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {rds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (h : SumRecData m cvR nP n nIdx elimL rds)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hat : ConsCrossAt c₀ cvR.type)
     (hcb : ConstsBound env cvR.type)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)

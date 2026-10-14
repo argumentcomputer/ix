@@ -39,7 +39,7 @@ bit validity.  (from `Model/Claims.lean`, task #305 closing) -/
 telescope, and they are `WellDenotedV` under every satisfying valuation.
 No fuel parameter.  (from `Model/Claims.lean`, task #305 closing) -/
 @[expose] def CtxOk {env : Env} (m : EnvModel V env)
-    (φ : Name → Nat) (d : Nat) (Δa : List AnnotTerm) (e : Expr) : Prop :=
+    (φ : LevelParam → Nat) (d : Nat) (Δa : List AnnotTerm) (e : Expr) : Prop :=
   Δa.length = d ∧
   ∀ l ∈ e.fvarLeaves, l.1 < d ∧ Expr.fvarsBelow l.1 l.2 ∧
     ∃ tya Aa,

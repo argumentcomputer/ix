@@ -166,38 +166,38 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     (hresR : Ix.Kernel.reservedBasisNames.contains (p.cvT.name.str "rec") = false)
     (hresC : Ix.Kernel.reservedBasisNames.contains cvCa.name = false)
     (hnp : ∀ j, NoProjEnv env p.cvT.name j)
-    {pps ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (Name → Nat) → List AnnotTerm}
+    {pps ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     (hFD : FormerData mp.base2 cvTa p.nP p.resSort pps)
     (hCDread : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 cvCa.type
       = some (mkPisAV (ds ψ) (ctorBodyAVI mp.base2 p.cvT.name p.nP nF ψ (Es ψ))))
     (hCDlen : ∀ ψ, (ds ψ).length = p.nP + nF)
     (hCDbelow : ∀ ψ, DomsBelow 0 (ds ψ))
     (hleq : ∀ k, k < nF → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true)
-    {u : (Name → Nat) → Nat} {rss : List (List Bool)}
-    {tlss : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
-    {eiss : (Name → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (Name → Nat) → List (List AnnotTerm)}
+    {u : (LevelParam → Nat) → Nat} {rss : List (List Bool)}
+    {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
+    {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}
     (hleafT : ∀ ψ, mp.base2.acval p.cvT.name ψ
       = nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ))
     (hleafC : ∀ ψ, mp.base2.acval cvCa.name ψ
       = sumMkAV (p.resSort.eval ψ) 0 (ds ψ) (((ds ψ).drop p.nP).map (·.2.2))
           (uChains [((ds ψ).drop p.nP).map (·.2.2)]))
-    (hfold : ∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
       SpineFit ρ ((pps ψ).map (·.2.2)) ts →
       ts.foldl SetTheory.app (interp V ρ
           (nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ)))
         = sumSet (p.resSort.eval ψ) (sumFibre (p.resSort.eval ψ) (consList ts ρ)
             [((ds ψ).drop p.nP).map (·.2.2) ++ [idxEqAV []]]))
-    (hiff : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V ((pps ψ).map (·.2.2)).reverse ρ ↔
         Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ)
-    (hfields : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hfields : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ →
         FieldsOkB (p.resSort.eval ψ) ρ (((ds ψ).drop p.nP).map (·.2.2)) ∧
         FieldsValid ρ (((ds ψ).drop p.nP).map (·.2.2)))
-    (hboundP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hboundP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ →
         p.isProp = false → FieldsBound (p.resSort.eval ψ) ρ (((ds ψ).drop p.nP).map (·.2.2)))
-    (hsortsF : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hsortsF : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ →
         ∀ j, j < nF → ∀ as : List V,
           SpineFit ρ ((((ds ψ).drop p.nP).map (·.2.2)).take j) as →
@@ -209,7 +209,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
   let tbl : ProjTable := ⟨p.cvT.name, p.cvT.levelParams, p.nP, cvCa.name, nF, p.resSort,
     bodies, Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts, 1⟩
   -- the field-chain facts, in the frames' spelling
-  have hbound : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hbound : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ → p.resSort.eval ψ ≠ 0 →
       FieldsBound (p.resSort.eval ψ) ρ (((ds ψ).drop p.nP).map (·.2.2)) := by
     intro ψ ρ hρ hw
@@ -219,12 +219,12 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       apply hw
       rw [hp] at hProp
       exact Level.isEquiv_sound (beq_iff_eq.mp hProp.symm) ψ
-  have hokB : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hokB : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take p.nP).map (·.2.2)).reverse ρ →
       FieldsOkB (p.resSort.eval ψ) ρ (((ds ψ).drop p.nP).map (·.2.2)) :=
     fun ψ ρ h => (hfields ψ ρ h).1
   -- the guards' content: the official join over the used earlier slots
-  have hguardSem : ∀ k, k < nF → ∀ ψ : Name → Nat,
+  have hguardSem : ∀ k, k < nF → ∀ ψ : LevelParam → Nat,
       ((Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts).getD k .zero).eval ψ = 0 →
       (sorts.getD k .zero).eval ψ = 0 ∧
       ∀ j, j < k → Ix.Kernel.structUsedLater cvCa.type p.nP j = true →
@@ -234,7 +234,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       eval_foldl_max_if_zero_iff ψ (Ix.Kernel.structUsedLater cvCa.type p.nP)
         (fun j => sorts.getD j .zero)] at h0
     exact ⟨h0.1, fun j hj hu => h0.2 j (List.mem_range.mpr hj) hu⟩
-  have hguardOf : ∀ k, k < nF → ∀ ψ : Name → Nat,
+  have hguardOf : ∀ k, k < nF → ∀ ψ : LevelParam → Nat,
       (∀ j, j ≤ k → (sorts.getD j .zero).eval ψ = 0) →
       ((Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts).getD k .zero).eval ψ = 0 := by
     intro k hk ψ hall
@@ -243,7 +243,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
         (fun j => sorts.getD j .zero)]
     exact ⟨hall k (Nat.le_refl _), fun j hj _ => hall j (Nat.le_of_lt (List.mem_range.mp hj))⟩
   have hO5 : ∀ k, k < nF → (Level.isEquiv p.resSort .zero == some true) = false →
-      ∀ ψ : Name → Nat, p.resSort.eval ψ = 0 →
+      ∀ ψ : LevelParam → Nat, p.resSort.eval ψ = 0 →
       ((Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts).getD k .zero).eval ψ = 0 := by
     intro k hk hne ψ h0
     refine hguardOf k hk ψ fun j hj => ?_
@@ -255,7 +255,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
   -- the unused earlier fields are free in the projected field's type
   obtain ⟨fvsA, oA, hopAll⟩ := openPisAtFvars_of_stripPis_isSome (p.nP + nF) 0 hstripC
   have hlenA : fvsA.length = p.nP + nF := openPisAtFvars_length _ hopAll
-  have hfree : ∀ (ψ : Name → Nat) (k : Nat), k < nF → ∀ (j : Nat), j < k →
+  have hfree : ∀ (ψ : LevelParam → Nat) (k : Nat), k < nF → ∀ (j : Nat), j < k →
       Ix.Kernel.structUsedLater cvCa.type p.nP j = false →
       ∃ X : AnnotTerm, (((ds ψ).drop p.nP).map (·.2.2)).getD k default = X.liftN 1 (k - 1 - j) := by
     intro ψ k hk j hj hun
@@ -348,7 +348,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       ⟨cvCa, hfC₂, hlpsC, hstripC⟩⟩
   suffices hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
-      ∀ (φ : Name → Nat) (i : Nat), i < tbl.numFields →
+      ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
         TowerEntryLaw m₂ φ tbl.structName i (tbl.entry i) by
     obtain ⟨mp', -⟩ := declStep_preserves_of_tower_cons mp (tbl := tbl) hfresh hnres hwf' hnp hhead hlaw
     exact ⟨mp'⟩
@@ -523,12 +523,12 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (mp₃ : EnvModelM V μ ⟨.recInfo cvRa p.majorIdx p.rulePrefix
         (Ix.Kernel.sumRules envC.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: envC.consts⟩)
-    {sAV : (Name → Nat) → Nat} {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {sAV : (LevelParam → Nat) → Nat} {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxF : Nat → List Expr} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
     {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hac₃ : mp₃.base2.acval = acvalWith mpC.base2.acval cvRa.name
       (fixLeafAV mpC.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV))
     (hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true))
@@ -560,7 +560,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hcf_C : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
       FixCtorFactsAt mpC.base2 env p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF j cA)
-    {uAV : (Name → Nat) → Nat} {fssZ : (Name → Nat) → List (List AnnotTerm)}
+    {uAV : (LevelParam → Nat) → Nat} {fssZ : (LevelParam → Nat) → List (List AnnotTerm)}
     (hleafT : ∀ ψ, mpC.base2.acval p.cvT.name ψ
       = nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) (((ppsAll ψ).drop p.nP).map (·.2.2))
           (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -570,10 +570,10 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
       = sumMkAV (p.resSort.eval ψ) j (dsF j ψ) (((dsF j ψ).drop p.nP).map (·.2.2))
           (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))))
     (hframes : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
           Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
           FieldsOkB (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
           FieldsValid ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
@@ -583,7 +583,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hsortsOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
       (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
         (p.isProp = false →
           FieldsBound (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2))) ∧
@@ -591,7 +591,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
           SpineFit ρ ((((dsF j ψ).drop p.nP).map (·.2.2)).take k) as →
           interp V (consList as ρ) ((((dsF j ψ).drop p.nP).map (·.2.2)).getD k default)
             ∈ˢ (univ ((sorts.getD k .zero).eval ψ) : V)))
-    (hXR : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hXR : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2))
         (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -779,7 +779,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
         intro ψ
         rw [hac₃, acvalWith_ne hCR, hleafC 0 cA rfl ψ, hFssEq ψ]
       -- the family at the parameters is the one-constructor fibre
-      have hfoldAt : ∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+      have hfoldAt : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
           SpineFit ρ ((ppsAll ψ).map (·.2.2)) ts →
           ts.foldl SetTheory.app (interp V ρ
               (nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) [] (rssOfK ksF [cA].length)

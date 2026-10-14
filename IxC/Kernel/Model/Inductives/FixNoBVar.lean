@@ -28,7 +28,7 @@ open Ix.Kernel (Env Expr Name)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 /-- The slots the variables of `Q` read as at depth `d`. -/
 @[expose] def exclP (Q : Nat → Prop) (d : Nat) : Nat → Prop :=
@@ -84,7 +84,7 @@ theorem NoBVar_projAV {P : Nat → Prop} :
   | i + 1, e, h => NoBVar_projAV i (.snd e) h
 
 /-- **A leaf-free reading mentions none of the excluded slots.** -/
-theorem noBVar_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Name → Nat} :
+theorem noBVar_of_leaf_free {env : Env} (m : EnvModel V env) {φ : LevelParam → Nat} :
     ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
       ∀ {Q : Nat → Prop}, (∀ q, Q q → q < d) → (∀ l ∈ e.fvarLeaves, ¬ Q l.1) →
       ∀ {ea : AnnotTerm}, denoteMeta m.acval env φ d e = some ea →

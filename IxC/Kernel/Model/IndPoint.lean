@@ -58,13 +58,13 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 12800000 in
 /-- **The point stage, at the reading** (`pointS`). -/
-theorem point {m : EnvModel V env} {F : Nat} {ψ' : Name → Nat}
+theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hclaims : DefEqClaim μ m ψ' F)
-    {lps : List Name}
+    {lps : List LevelParam}
     {f : Name → Name} (hroT : RenameOk m.acval env f)
     {Rn : Name}
     {rP cnP cnF mI : Nat} {xs ys zs : List AnnotTerm} {ρ : Nat → V}
@@ -224,7 +224,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : Name → Nat}
       _ hcinst hspScope hfbCty hCbR hTVjK (hokTVj _) (hspMem σ hσ)
       vCres hvCres
   -- the head of the statement's lhs is the recursor's leaf
-  have hconstDen : ∀ (c : Name) (ci : ConstantInfo) (ks : List Name),
+  have hconstDen : ∀ (c : Name) (ci : ConstantInfo) (ks : List LevelParam),
       env.find? c = some ci → ci.toConstantVal.levelParams = ks →
       denoteMeta m.acval env ψ' (rP + cnF) (.const c (ks.map .param))
         = some (m.acval c ψ') := by

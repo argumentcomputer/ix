@@ -726,7 +726,7 @@ variable {env : Env} {f : Nat}
 nested comparand's mapped list.  (The interned original's separate
 `us : List LIdx` / `lus : List Level` pair collapses to the single
 level list, so its `denoteLList` premise vanishes.) -/
-theorem pinArgsC_eff (lps : List Name) (us : List Level) :
+theorem pinArgsC_eff (lps : List LevelParam) (us : List Level) :
     ∀ (ps : List Expr) {s₀ : CState}, CSOK mode env s₀ →
       ∀ {args : List Expr} {xs : List Expr} (t : Nat),
       RelCL args xs →

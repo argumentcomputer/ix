@@ -298,7 +298,7 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
   · by_cases hn2 : cv.name = choiceName
     · -- the pin fixes the axiom's one level parameter, so both the v1
       -- witness and the P leaf read only `ψ uN`
-      have huN : ∀ ψ₁ ψ₂ : Name → Nat,
+      have huN : ∀ ψ₁ ψ₂ : LevelParam → Nat,
           (∀ p ∈ cv.levelParams, ψ₁ p = ψ₂ p) → ψ₁ uN = ψ₂ uN := by
         intro ψ₁ ψ₂ hp
         obtain ⟨-, -, -, hApin⟩ := nonempty_shapes hok hn2

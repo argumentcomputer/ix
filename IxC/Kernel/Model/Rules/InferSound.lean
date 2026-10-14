@@ -41,7 +41,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 /-! ## The grade kit
 

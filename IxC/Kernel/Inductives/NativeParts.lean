@@ -80,7 +80,7 @@ up) followed by `nIdx` index expressions none of which mentions the
 block?  Official's `is_valid_ind_app` exactly: the head, the arity,
 the parameters (structurally) and `has_ind_occ` on every index
 argument (inductive.cpp, task #210 Part D). -/
-def recFamOk (T : Name) (lps : List Name) (nP nIdx o : Nat) (e : Expr) : Bool :=
+def recFamOk (T : Name) (lps : List LevelParam) (nP nIdx o : Nat) (e : Expr) : Bool :=
   e.getAppFn == Expr.const T (lps.map .param) &&
   e.getAppArgs.length == nP + nIdx &&
   e.getAppArgs.take nP == structPsAt o nP &&
@@ -94,7 +94,7 @@ block's, with the wrong number of arguments, or whose INDEX expressions
 mention the block is the official "non valid occurrence" (`.negative`:
 `is_valid_ind_app` rejects all three); an application of another
 constant is a nested occurrence (`.unsupported`: the modeled path). -/
-def recPositivity (T : Name) (lps : List Name) (nP nIdx o : Nat) : Expr → Nat → RecFieldKind
+def recPositivity (T : Name) (lps : List LevelParam) (nP nIdx o : Nat) : Expr → Nat → RecFieldKind
   | .forallE dom body _, k =>
     if dom.mentionsConst T then .negative else recPositivity T lps nP nIdx o body (k + 1)
   | e, k =>
@@ -112,7 +112,7 @@ def recPositivity (T : Name) (lps : List Name) (nP nIdx o : Nat) : Expr → Nat 
 
 /-- The kind of a field whose domain is `dom`, `o` fields into the
 constructor's telescope. -/
-def recFieldKind (T : Name) (lps : List Name) (nP nIdx o : Nat) (dom : Expr) : RecFieldKind :=
+def recFieldKind (T : Name) (lps : List LevelParam) (nP nIdx o : Nat) (dom : Expr) : RecFieldKind :=
   if dom.mentionsConst T then recPositivity T lps nP nIdx o dom 0 else .ordinary
 
 /-- The kinds of one constructor's fields, off its (raw or annotated)
@@ -131,7 +131,7 @@ invalid, and the residual's index expressions are `T`-free for the
 same reason (official's "invalid return type", the last conjunct
 below, `.negative`).  So the guard is the model's own invariant, never
 a verdict of its own. -/
-def recCtorKinds (T : Name) (lps : List Name) (nP nIdx : Nat) (c : ConstantVal × Nat) :
+def recCtorKinds (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (c : ConstantVal × Nat) :
     Option (List RecFieldKind) :=
   match c.1.type.stripPis (nP + c.2) with
   | some (cbs, cbody) =>
@@ -309,7 +309,7 @@ telescope lifted under the `o` extras, every binder's datum reset to
 the elimination datum, then the `ih` binders, ending in
 `motive e⃗ (C p⃗ f⃗)` — `structMinorTyI`'s conclusion — lifted above
 the `ih`s. -/
-def structMinorTyR (C : Name) (lps : List Name) (nP nF o : Nat) (pw : PropWhen)
+def structMinorTyR (C : Name) (lps : List LevelParam) (nP nF o : Nat) (pw : PropWhen)
     (cty : Expr) (recIdx : List Nat) : Option Expr :=
   (cty.stripPis nP).bind fun q =>
   (q.2.stripPis nF).bind fun r =>
@@ -321,7 +321,7 @@ def structMinorTyR (C : Name) (lps : List Name) (nP nF o : Nat) (pw : PropWhen)
 
 /-- The minor premises' `∀`-telescope at a recursive block, one per
 constructor `(C, nF, cty, recIdx)`. -/
-def structMinorsPisR (lps : List Name) (nP : Nat) (pw : PropWhen) :
+def structMinorsPisR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
     List (Name × Nat × Expr × List Nat) → Nat → Expr → Option Expr
   | [], _, body => some body
   | (C, nF, cty, recIdx) :: cs, o, body =>
@@ -330,7 +330,7 @@ def structMinorsPisR (lps : List Name) (nP : Nat) (pw : PropWhen) :
         .forallE mty rest ⟨pw⟩
 
 /-- The `λ` twin of `structMinorsPisR`. -/
-def structMinorsLamsR (lps : List Name) (nP : Nat) (pw : PropWhen) :
+def structMinorsLamsR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
     List (Name × Nat × Expr × List Nat) → Nat → Expr → Option Expr
   | [], _, body => some body
   | (C, nF, cty, recIdx) :: cs, o, body =>
@@ -346,7 +346,7 @@ def structMinorsLamsR (lps : List Name) (nP : Nat) (pw : PropWhen) :
 
 (`structRecTyI` with `ih` binders in the minors; `tty = ∀ p⃗ ı⃗, Sort w`
 is the annotated type former's type). -/
-def structRecTyR (T : Name) (lps : List Name) (elim : Name) (large : Bool)
+def structRecTyR (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat)) : Option Expr :=
   let ℓ := structElimLevel elim large
   let pw := Level.zeronessOf ℓ
@@ -365,7 +365,7 @@ def structRecTyR (T : Name) (lps : List Name) (elim : Name) (large : Bool)
 `λ p⃗ motive minor⃗ f⃗_j, minor_j f⃗_j (T.rec p⃗ motive minor⃗ e⃗_i f_i)…`
 (`structRecRhsI` with the inductive hypotheses; `recC`/`rlvls` are the
 recursor's name and its level parameters as levels). -/
-def structRecRhsR (T : Name) (lps : List Name) (elim : Name) (large : Bool)
+def structRecRhsR (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat))
     (recC : Name) (rlvls : List Level) (j : Nat) : Option Expr :=
   let ℓ := structElimLevel elim large
@@ -601,14 +601,14 @@ def nativeShape? (nPd : Nat) (block : List ConstantInfo) : Option InductiveShape
         -- FAILING (task #220: `nativeRecLpsOk`, thrown at
         -- `checkNativeRec`) rather than refusing the block, so that
         -- its type and constructors are checked first
-        let large? : Option Name :=
+        let large? : Option LevelParam :=
           match cvR.levelParams with
           | elim :: relps =>
             if relps == lps && !lps.contains elim then some elim else none
           | [] => none
         match large? with
         | some elim => some ⟨cvT, ctors, nP, nIdx, cvR, elim, s, rhss, true, isProp⟩
-        | none => some ⟨cvT, ctors, nP, nIdx, cvR, .anonymous, s, rhss, false, isProp⟩
+        | none => some ⟨cvT, ctors, nP, nIdx, cvR, 0, s, rhss, false, isProp⟩
       else none
     | none => none
   | _ => none

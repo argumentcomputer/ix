@@ -81,7 +81,7 @@ one `iotaCerts_bridge` per field). -/
 theorem structEtaProjCerts_bridge (hd : DefEqBridge env fuel)
     (hio : InferIOBridge env fuel) :
     ∀ {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
-      {lpsT : List Name} {idxs : List Nat},
+      {lpsT : List LevelParam} {idxs : List Nat},
       structEtaProjCertsFueled .verified env fuel d T us' targs b lpsT idxs
         = .ok true →
       EtaProjCerts env d T us' targs b lpsT idxs := by

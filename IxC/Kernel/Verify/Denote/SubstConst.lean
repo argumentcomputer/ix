@@ -34,7 +34,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-private theorem substFn_nil0 (φ : Name → Nat) :
+private theorem substFn_nil0 (φ : LevelParam → Nat) :
     Level.substFn φ [] [] = φ := funext fun _ => rfl
 
 /-- The fragment `Expr.substConst0` is faithful on: application spines
@@ -52,7 +52,7 @@ extended valuation is denoting the *substituted* expression in the old
 one. -/
 theorem denote_substConst0 {env : Env} {cval : TConstVal}
     (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {c₀ : ConstantInfo}
-    {c : Name} {v : Expr} {V : Term} (φ : Name → Nat)
+    {c : Name} {v : Expr} {V : Term} (φ : LevelParam → Nat)
     (hname : c₀.name = c) (hfresh : env.find? c = none)
     (hlp : c₀.toConstantVal.levelParams = [])
     (hv : denoteClosed cval env φ v = some V)

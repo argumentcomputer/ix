@@ -31,14 +31,14 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## Frame arithmetic -/
 
 /-! ## The generated data, by position -/
 
 section Data
-variable {m : EnvModel V env} {T C : Name} {ψ : Name → Nat} {nP nF : Nat} {ℓ : Level}
+variable {m : EnvModel V env} {T C : Name} {ψ : LevelParam → Nat} {nP nF : Nat} {ℓ : Level}
   {pps ds : List (Nat × Nat × AnnotTerm)}
 
 end Data

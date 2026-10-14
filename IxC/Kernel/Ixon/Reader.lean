@@ -68,15 +68,14 @@ Three kinds of names are not of this form:
   exact type shapes and certified recurrences; the standard and trust axioms
   by `matchesPin`), so a table entry on a constant of another shape is
   rejected or declined, never accepted under the pinned name.
-* **Level parameters** are positional except in two places where the
-  checker reads them by name. The standard-axiom pins (`matchesPin`) compare level
-  parameter names, so the pinned constants and their recursors carry Lean's
-  own level names (`Pins.levels`, from the same generator; a block's
-  constructors take its members' names). And the checker recognises a large
-  eliminator by the spelling `elim :: lps` of its level parameters, so a
-  recursor with one level more than its block names its parameter `0` with
-  a fresh name and its parameter `k + 1` as the block's `k`. Both rename a
-  constant's own parameters only; references instantiate by position.
+* **Level parameters** are positional: a record's universe variable `i` is
+  the level parameter `i`, and a constant with `n` of them has the level
+  parameters `[0, …, n-1]`. The one exception is a recursor with one level
+  more than its block (a large eliminator), which the checker recognises by
+  the shape `elim :: lps` of its level parameters with `elim` not among the
+  block's `lps`: its variable `0` is the fresh parameter `n` (the block has
+  `n`) and its variable `k + 1` is the block's `k`. References instantiate
+  by position.
 
 ## Regrouping
 
@@ -138,11 +137,6 @@ def blockName (b : Address) : CName := .str ixRoot (addressHex b)
 def keyName : ConstRef Address → CName
   | .member b i => .num (blockName b) i
   | .ctor b i c => .num (.num (blockName b) i) c
-
-/-- Level parameter `i`. -/
-def levelName (i : Nat) : CName := .num .anonymous i
-
-def levelNames (n : Nat) : List CName := (List.range n).map levelName
 
 /-! ### `keyName` is injective
 
@@ -306,13 +300,9 @@ def pinMap (pins : Array Pin) : Except String (Std.HashMap (ConstRef Address) CN
     byRef := byRef.insert p.ref p.name
   return byRef
 
-/-- The pinned names and the level-parameter names a reading uses. -/
+/-- The pinned names a reading uses. -/
 structure Pins where
   names : Std.HashMap (ConstRef Address) CName := {}
-  /-- level-parameter names for pinned constants and their blocks'
-  recursors (`matchesPin` compares the standard axioms' level parameters
-  by name) -/
-  levels : Std.HashMap (ConstRef Address) (List CName) := {}
 
 /-! ## Stores and references -/
 
@@ -590,27 +580,12 @@ def Ctx.nameOf (cx : Ctx) (r : ConstRef Address) : CName :=
     | some n => n
     | none => cx.keys.get r
 
-/-- A constant's level-parameter names: the table's where it has a list of
-the right length, positional otherwise. -/
-def Ctx.lpsOf (cx : Ctx) (r : ConstRef Address) (lvls : Nat) : List CName :=
-  match cx.pins.levels[r]? with
-  | some ns => if ns.length == lvls then ns else levelNames lvls
-  | none => levelNames lvls
-
-/-- A recursor's level-parameter names: the table's, or the block's
-behind a fresh elimination level for a large eliminator (Lean's
-`elim :: lps`, which the checker recognises by name). -/
-def Ctx.recLps (cx : Ctx) (r : ConstRef Address) (large : Bool) (lvls : Nat)
-    (blockLps : List CName) : List CName :=
-  match cx.pins.levels[r]? with
-  | some ns => if ns.length == lvls then ns else fallback
-  | none => fallback
-where
-  fallback : List CName :=
-    if large then
-      let elim := (List.range (lvls + 1)).map levelName |>.find? (!blockLps.contains ·)
-      elim.getD (levelName lvls) :: blockLps
-    else blockLps
+/-- A recursor's level parameters: its block's `blockLps`, behind the
+fresh elimination parameter `blockLps.length` for a large eliminator (the
+shape `elim :: lps`, `elim` not among `lps`, by which the checker
+recognises one). -/
+def recLps (large : Bool) (blockLps : List LevelParam) : List LevelParam :=
+  if large then blockLps.length :: blockLps else blockLps
 
 /-! ## Expressions -/
 
@@ -618,22 +593,22 @@ where
 def natural (bytes : ByteArray) : Nat :=
   bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0
 
-def convUniv (param : Nat → CName) : Ixon.Univ → CLevel
+def convUniv (param : Nat → LevelParam) : Ixon.Univ → CLevel
   | .zero => .zero
   | .succ u => .succ (convUniv param u)
   | .max a b => .max (convUniv param a) (convUniv param b)
   | .imax a b => .imax (convUniv param a) (convUniv param b)
   | .var i => .param (param i.toNat)
 
-/-- The naming of a member's universe variables: variable `i` is its
-`i`-th level parameter. -/
-def paramOf (lps : List CName) (i : Nat) : CName := lps.getD i (levelName i)
+/-- A recursor's universe variable `i` is its `i`-th level parameter
+(`recLps`); every other member's is the level parameter `i`. -/
+def recParam (lps : List LevelParam) (i : Nat) : LevelParam := lps.getD i i
 
 /-- The context of one member's expressions. -/
 structure ECx where
   cx : Ctx
   src : Ixon.Constant
-  /-- the member's universe table under its level naming -/
+  /-- the member's universe table, its variables read as level parameters -/
   univs : Array CLevel
   /-- `recur i` -/
   self : Nat → Option CName
@@ -691,7 +666,7 @@ structure MemberReader where
   ecx : ECx
   tbl : Array (ReadM CExpr)
 
-def MemberReader.mk' (cx : Ctx) (src : Ixon.Constant) (param : Nat → CName)
+def MemberReader.mk' (cx : Ctx) (src : Ixon.Constant) (param : Nat → LevelParam)
     (self : Nat → Option CName) : MemberReader := Id.run do
   let ecx : ECx := ⟨cx, src, src.univs.map (convUniv param), self⟩
   let mut tbl : Array (ReadM CExpr) := Array.mkEmpty src.sharing.size
@@ -709,7 +684,7 @@ declarations before the current one (upstream con-leche's `StateD`, minus
 the NDJSON tables). -/
 
 structure State where
-  constTypes : Std.HashMap CName (List CName × CExpr) := {}
+  constTypes : Std.HashMap CName (List LevelParam × CExpr) := {}
   heights : Std.HashMap CName Nat := {}
   indBlocks : Std.HashMap CName Ix.Kernel.Frontend.InModel.BlockRec := {}
   projOwners : Std.HashMap CName Ix.Kernel.Frontend.ProjRecOwner := {}
@@ -722,7 +697,7 @@ structure State where
 
 /-- Record a declaration's constants (`ExportC.noteDecl`). -/
 def State.note (st : State) (d : CDecl) : State :=
-  let cvs : List (CName × List CName × CExpr × Option Nat) := match d with
+  let cvs : List (CName × List LevelParam × CExpr × Option Nat) := match d with
     | .axiomDecl cv => [(cv.name, cv.levelParams, cv.type, none)]
     | .defnDecl cv _ h =>
       [(cv.name, cv.levelParams, cv.type, some (Ix.Kernel.Frontend.InModel.hintHeight h))]
@@ -834,7 +809,7 @@ def lowerDefinition (hint : Option Ix.Kernel.ReducibilityHint) (st : State)
 whether the projection rewrite applied. `heights` are the definitional
 heights so far (the block's earlier members included). -/
 def readDefinition (cx : Ctx) (st : State) (heights : CName → Nat) (ref : ConstRef Address)
-    (lps : List CName) (mr : MemberReader) (d : Ixon.Definition) : ReadM (CDecl × Bool) := do
+    (lps : List LevelParam) (mr : MemberReader) (d : Ixon.Definition) : ReadM (CDecl × Bool) := do
   let name := cx.nameOf ref
   let cv : CVal := ⟨name, lps, ← mr.read d.typ⟩
   let value ← mr.read d.value
@@ -996,14 +971,13 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
   let nPd := first.params.toNat
   unless indcs.all (·.2.params.toNat == nPd) do
     declined "inductive block whose type records disagree on numParams"
-  let blockLps := cx.lpsOf (.member owner (indcs[0]!.1)) first.lvls.toNat
-  let mrInd := MemberReader.mk' cx c (paramOf blockLps) self
-  let lpsAt (lvls : UInt64) : List CName :=
-    if lvls == first.lvls then blockLps else levelNames lvls.toNat
+  let blockLps := List.range first.lvls.toNat
+  let mrInd := MemberReader.mk' cx c id self
   -- types, in motive order
   let mut types : Array (CVal × Nat × Nat) := #[]
   for (i, ind) in indcs do
-    types := types.push (⟨cx.nameOf (.member owner i), lpsAt ind.lvls, ← mrInd.read ind.typ⟩,
+    types := types.push (⟨cx.nameOf (.member owner i), List.range ind.lvls.toNat,
+      ← mrInd.read ind.typ⟩,
       ind.params.toNat, ind.indices.toNat)
   -- constructors, in the block's own order
   let mut ctors : Array (CVal × Nat × Nat) := #[]
@@ -1013,7 +987,8 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
     for (ctor, j) in ind.ctors.zipIdx do
       unless ctor.cidx.toNat == j do malformed "constructor index differs from its position"
       if ctor.isUnsafe then declined "unsafe inductive declaration"
-      let cv : CVal := ⟨cx.nameOf (.ctor owner i j), lpsAt ctor.lvls, ← mrInd.read ctor.typ⟩
+      let cv : CVal :=
+        ⟨cx.nameOf (.ctor owner i j), List.range ctor.lvls.toNat, ← mrInd.read ctor.typ⟩
       unless nPd + ctor.fields.toNat == piTeleLen cv.type do
         malformed s!"constructor {cv.name} declares {ctor.fields} fields at {nPd} parameters; \
           its type has {piTeleLen cv.type} binders"
@@ -1031,8 +1006,8 @@ def readInductive (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant)
     let rself : Nat → Option CName := fun i => match rc.info with
       | .muts rms => if i < rms.size then some (cx.nameOf (.member rOwner i)) else none
       | _ => if i == 0 then some entry.name else none
-    let lps := cx.recLps ref entry.large r.lvls.toNat blockLps
-    let mr := MemberReader.mk' cx rc (paramOf lps) rself
+    let lps := recLps entry.large blockLps
+    let mr := MemberReader.mk' cx rc (recParam lps) rself
     let cv : CVal := ⟨entry.name, lps, ← mr.read r.typ⟩
     let some major := inductiveAt cx.store entry.major
       | declined s!"recursor {entry.name}: its major premise is not an inductive"
@@ -1057,9 +1032,8 @@ def readRecord (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) : R
     pure {}
   | .defn d =>
     let self : Nat → Option CName := fun i => if i == 0 then some (cx.nameOf (.member owner 0)) else none
-    let lps := cx.lpsOf (.member owner 0) d.lvls.toNat
-    let (decl, rw) ← readDefinition cx st (st.heights.getD · 0) (.member owner 0) lps
-      (.mk' cx c (paramOf lps) self) d
+    let (decl, rw) ← readDefinition cx st (st.heights.getD · 0) (.member owner 0)
+      (List.range d.lvls.toNat) (.mk' cx c id self) d
     pure { decls := #[decl], projRewrites := if rw then 1 else 0 }
   | .recr _ =>
     unless cx.index.recs.contains (.member owner 0) do
@@ -1067,14 +1041,12 @@ def readRecord (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) : R
     pure {}
   | .axio a =>
     if a.isUnsafe then declined "unsafe axiom"
-    let lps := cx.lpsOf (.member owner 0) a.lvls.toNat
-    let mr := MemberReader.mk' cx c (paramOf lps) (fun _ => none)
-    let cv : CVal := ⟨cx.nameOf (.member owner 0), lps, ← mr.read a.typ⟩
+    let mr := MemberReader.mk' cx c id (fun _ => none)
+    let cv : CVal := ⟨cx.nameOf (.member owner 0), List.range a.lvls.toNat, ← mr.read a.typ⟩
     pure { decls := #[Ix.Kernel.Declaration.axiomDecl cv] }
   | .quot q =>
-    let lps := cx.lpsOf (.member owner 0) q.lvls.toNat
-    let mr := MemberReader.mk' cx c (paramOf lps) (fun _ => none)
-    let cv : CVal := ⟨cx.nameOf (.member owner 0), lps, ← mr.read q.typ⟩
+    let mr := MemberReader.mk' cx c id (fun _ => none)
+    let cv : CVal := ⟨cx.nameOf (.member owner 0), List.range q.lvls.toNat, ← mr.read q.typ⟩
     let kind : Ix.Kernel.QuotKind := match q.kind with
       | .type => .type | .ctor => .ctor | .lift => .lift | .ind => .ind
     pure { decls := #[Ix.Kernel.Declaration.quotDecl kind cv] }
@@ -1097,20 +1069,14 @@ def readRecord (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) : R
         | declined "mutually recursive definition block"
       let self : Nat → Option CName := fun i =>
         if i < ms.size then some (cx.nameOf (.member owner i)) else none
-      let mut readers : List (List CName × MemberReader) := []
+      let mr := MemberReader.mk' cx c id self
       let mut blockHeights : Std.HashMap CName Nat := {}
       let mut out : Array CDecl := #[]
       let mut rewrites := 0
       for i in order do
-        let lps := cx.lpsOf (.member owner i) defs[i]!.lvls.toNat
-        let mr ← match readers.lookup lps with
-          | some mr => pure mr
-          | none =>
-            let mr := MemberReader.mk' cx c (paramOf lps) self
-            readers := (lps, mr) :: readers
-            pure mr
         let heights : CName → Nat := fun n => blockHeights.getD n (st.heights.getD n 0)
-        let (decl, rw) ← readDefinition cx st heights (.member owner i) lps mr defs[i]!
+        let (decl, rw) ← readDefinition cx st heights (.member owner i)
+          (List.range defs[i]!.lvls.toNat) mr defs[i]!
         if let .defnDecl cv _ h := decl then
           blockHeights := blockHeights.insert cv.name (Ix.Kernel.Frontend.InModel.hintHeight h)
         if rw then rewrites := rewrites + 1

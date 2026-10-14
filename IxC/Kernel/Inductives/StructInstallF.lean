@@ -71,7 +71,7 @@ def StructWalkers.plain : StructWalkers :=
   ⟨fun fe e => e.constsResolveF fe, structProjBodies⟩
 
 /-- `checkStructProjTable` through the index (task #175 S1). -/
-def checkStructProjTableF (w : StructWalkers) (T C : Name) (lps : List Name) (nP nF : Nat)
+def checkStructProjTableF (w : StructWalkers) (T C : Name) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) (fe : FEnv) :
     m FEnv := do
   let bodies ← unwrapOr (w.projBodies T nP nF cvCa.type)

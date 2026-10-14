@@ -99,7 +99,7 @@ theorem piDoms_of_infer {mode : CheckMode} :
 frame satisfying the earlier domains, the next domain's reading is
 graded and lies in `univ w` — the sort claim at the context opened by
 the earlier binders. -/
-theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) (ψ : Name → Nat)
+theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
     {w : Nat} :
     ∀ (n : Nat) {d : Nat} {e : Expr} {fvs : List Expr} {o : Expr} {Δ : List AnnotTerm}
       {tl : List (Nat × Nat × AnnotTerm)},
@@ -185,19 +185,19 @@ next domain's reading lies in `univ w`.  The install's field-sort
 check bounds the field's Π-type's sort by the block's, hence (the
 family's sort being nonzero) every domain's. -/
 theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
-    {idxArgs : List Expr} {ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {Es : (Name → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (Name → Nat) → List (List AnnotTerm)}
-    {tss : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
-    (ψ : Name → Nat) (hw : resSort.eval ψ ≠ 0) {i : Nat} (hi : i < nF)
+    (ψ : LevelParam → Nat) (hw : resSort.eval ψ ≠ 0) {i : Nat} (hi : i < nF)
     (hk : ks.getD i .ordinary = .reflexive) {ρp : Nat → V}
     (hρp' : Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρp) {as' : List V}
     (hsp' : SpineFit ρp ((shadowFs nP ks nF (((ds ψ).drop nP).map (·.2.2))).take i) as') :

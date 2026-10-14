@@ -424,7 +424,7 @@ The five stage inversions are `projFn_of`'s own — one `_inv` call
 each, all relation-free — and what does not happen here is the rule's
 front-door conversion and the `proj_i.iota` sides pack's `∀ φ` walk. -/
 theorem projFnRun_of {env' env₁ : Env} {μ : CheckMode}
-    {F : Nat} {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {F : Nat} {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     (h : checkProjFn μ (fueledOps μ F) env' T ctorName lps nP nF i
       = .ok env₁) :
     ProjFnRun μ F env' T ctorName lps nP nF i env₁ := by
@@ -475,7 +475,7 @@ without the install: `ProjPhaseInvS` and `BlockInstalledTT` were
 `projFnRR`'s inputs, and `projFnRR` existed to carry the `EnvFacts` across
 the cons — which the run record does not need. -/
 theorem projInstallRunRS {μ : CheckMode} {F : Nat} {T ctorName : Name}
-    {lps : List Name} {nP nF : Nat} :
+    {lps : List LevelParam} {nP nF : Nat} :
     ∀ (fields : List Nat) {env' env₄ : Env},
       fields.foldlM (installProjFnStep (m := CheckM) μ (fueledOps μ F)
         T ctorName lps nP nF) env' = .ok env₄ →

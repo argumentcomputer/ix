@@ -213,7 +213,7 @@ theorem piResidualM_eff (hs : CSOK mode env s₀) {e : Expr}
   rw [← he.erase, ← hargs.map]
   exact h
 
-theorem instLevelParamsM_eff (hs : CSOK mode env s₀) {ks : List Name}
+theorem instLevelParamsM_eff (hs : CSOK mode env s₀) {ks : List LevelParam}
     {us : List Level} {e : Expr} {a : Expr} (he : RelC e a) :
     CEff mode env s₀
       (fun i => RelC i (a.instantiateLevelParams ks us))
@@ -240,7 +240,7 @@ theorem pureEq_eff {α : Type} (hs : CSOK mode env s₀) (x : α) :
     CEff mode env s₀ (fun v => v = x) (pure x) :=
   CEff.pure hs rfl
 
-theorem substLevelTreesM_eff (hs : CSOK mode env s₀) (ks : List Name)
+theorem substLevelTreesM_eff (hs : CSOK mode env s₀) (ks : List LevelParam)
     (us : List Level) (ls : List Level) :
     CEff mode env s₀ (fun vs => vs = ls.map (Level.subst ks us))
       (substLevelTreesM ks us ls) :=

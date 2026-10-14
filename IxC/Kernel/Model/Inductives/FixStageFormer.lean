@@ -41,22 +41,22 @@ theorem frameIdx_eq_reverse_map (n : Nat) (σ : Nat → V) :
 /-- **The fixed-point leaf's two hereditary premises**, from the
 former's data and the base facts at the parameter frame. -/
 theorem fixLeafWalks {m : EnvModel V env} {cvT : ConstantVal} {nP nIdx : Nat}
-    {resSort : Level} {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {resSort : Level} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvT (nP + nIdx) resSort pps)
-    {u : (Name → Nat) → Nat} {rss : List (List Bool)}
-    {tlss : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
-    {Eiss : (Name → Nat) → List (List (List AnnotTerm))} {Fss Ess : (Name → Nat) → List (List AnnotTerm)}
-    (hIdx : ∀ (ψ : Name → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
+    {u : (LevelParam → Nat) → Nat} {rss : List (List Bool)}
+    {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
+    {Eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
       IdxOk (u ψ) ρp (((pps ψ).drop nP).map (·.2.2)) ∧ FieldsValid ρp (((pps ψ).drop nP).map (·.2.2)))
-    (hX : ∀ (ψ : Name → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
+    (hX : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
       XChainsOk (u ψ) (resSort.eval ψ) ρp (((pps ψ).drop nP).map (·.2.2)) rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ))
-    (hXV : ∀ (ψ : Name → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
+    (hXV : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V), Sat V (((pps ψ).take nP).map (·.2.2)).reverse ρp →
       ∀ X, X ∈ˢ lfpFamSpace V (resSort.eval ψ) (idxSet (u ψ) ρp (((pps ψ).drop nP).map (·.2.2))) →
       ∀ t, t ∈ˢ idxSet (u ψ) ρp (((pps ψ).drop nP).map (·.2.2)) →
       SumFieldsValid (cons t (cons X ρp))
         (chainsXI (u ψ) (((pps ψ).drop nP).map (·.2.2)) (((pps ψ).drop nP).map (·.2.2)).length
           rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)))
-    (ψ : Name → Nat) (ρ : Nat → V) :
+    (ψ : LevelParam → Nat) (ρ : Nat → V) :
     ParamsOkXI (u ψ) (resSort.eval ψ) ρ (((pps ψ).drop nP).map (·.2.2)) rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)
         (pps ψ) ∧
       UnderTowerValid ρ
@@ -141,24 +141,24 @@ theorem stageFixFormer (mp : EnvModelM V μ env)
     -- `stageSumFormer`)
     (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
     (hname₀ : cvT.name = p.cvT.name)
-    {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
-    (u : (Name → Nat) → Nat) (rss : List (List Bool))
-    (tlss : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm))))
-    (Eiss : (Name → Nat) → List (List (List AnnotTerm))) (Fss Ess : (Name → Nat) → List (List AnnotTerm))
-    (hParams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
+    (u : (LevelParam → Nat) → Nat) (rss : List (List Bool))
+    (tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm))))
+    (Eiss : (LevelParam → Nat) → List (List (List AnnotTerm))) (Fss Ess : (LevelParam → Nat) → List (List AnnotTerm))
+    (hParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
       u ψ₁ = u ψ₂ ∧ tlss ψ₁ = tlss ψ₂ ∧ Eiss ψ₁ = Eiss ψ₂ ∧ Fss ψ₁ = Fss ψ₂ ∧ Ess ψ₁ = Ess ψ₂)
     (hbelow : ∀ ψ, ∀ chain ∈ chainsXI (u ψ) (((pps ψ).drop p.nP).map (·.2.2)) p.nIdx rss (tlss ψ) (Eiss ψ)
       (Fss ψ) (Ess ψ), FieldsBelow (p.nP + 2) chain)
-    (hIdx : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
       IdxOk (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) ∧
       FieldsValid ρp (((pps ψ).drop p.nP).map (·.2.2)))
-    (hX : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hX : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (u ψ) (p.resSort.eval ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) rss (tlss ψ) (Eiss ψ) (Fss ψ)
         (Ess ψ))
-    (hXV : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hXV : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
       ∀ X, X ∈ˢ lfpFamSpace V (p.resSort.eval ψ)
         (idxSet (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2))) →
@@ -191,13 +191,13 @@ theorem stageFixFormer (mp : EnvModelM V μ env)
     Ix.Kernel.envWF_cons_ind mp.base2.wf hccv hicw
   have hIdsLen : ∀ ψ, ((((pps ψ).drop p.nP).map (·.2.2))).length = p.nIdx := by
     intro ψ; simp [hFD.len ψ]
-  let A : (Name → Nat) → AnnotTerm :=
+  let A : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
       rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)
   have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
     nativeTyAVI_below (hFD.below ψ) (hFD.len ψ) (hIdsLen ψ) (hbelow ψ) rfl
   have hwalks := fixLeafWalks hFD hIdx hX hXV
-  have hreadI : ∀ ψ : Name → Nat,
+  have hreadI : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval cvTa.name A)
         ⟨.indInfo cvTa caps :: env.consts⟩ ψ 0 cvTa.type
         = some (mkPisAV (pps ψ) (.sort (p.resSort.eval ψ))) := fun ψ =>

@@ -58,8 +58,8 @@ extension's fresh leaf is stepped over by `acvalWith_ne`, the prefix
 lookup by `Env.find?_cons`, and the leaf itself is
 `acval_basis_pinned`. -/
 theorem denoteMeta_pinned_const {m : EnvModel V env}
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
-    {n : Name} {ci : ConstantInfo} {ψ : Name → Nat} {ls : List Level}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {n : Name} {ci : ConstantInfo} {ψ : LevelParam → Nat} {ls : List Level}
     (hne : ¬ c₀.name = n)
     (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
@@ -119,12 +119,12 @@ section PUnit
 
 open Ix.Kernel (punitA punitUnitA punitRecA punitName punitUnitName)
 
-variable {m : EnvModel V env} {A : (Name → Nat) → AnnotTerm}
+variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 
 /-- `PUnit`'s type reading: `Sort u`, which is `BConst.typeAV .punit
 [ψ u]` on the nose. -/
 theorem denoteMeta_punitA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨punitA :: env.consts⟩ ψ 0 punitA.toConstantVal.type
       = some (BConst.typeAV .punit [ψ uN]) := by
   rw [show punitA.toConstantVal.type = Expr.sort (.param uN) from rfl,
@@ -133,7 +133,7 @@ theorem denoteMeta_punitA_type
 
 /-- `PUnit.unit`'s type reading: the `PUnit` leaf, which is
 `BConst.typeAV .punitUnit [ψ u]` on the nose. -/
-theorem denoteMeta_punitUnitA_type (ψ : Name → Nat)
+theorem denoteMeta_punitUnitA_type (ψ : LevelParam → Nat)
     (hP : env.find? punitName = some punitA) :
     denoteMeta (acvalWith m.acval punitUnitA.name A)
         ⟨punitUnitA :: env.consts⟩ ψ 0
@@ -150,7 +150,7 @@ theorem denoteMeta_punitUnitA_type (ψ : Name → Nat)
 
 /-- The pinned `PUnit`/`PUnit.unit` leaves at the `PUnit.rec`
 extension, at any level. -/
-theorem denoteMeta_punitRec_leaves (ψ : Name → Nat)
+theorem denoteMeta_punitRec_leaves (ψ : LevelParam → Nat)
     (hP : env.find? punitName = some punitA)
     (hU : env.find? punitUnitName = some punitUnitA) :
     (∀ (d : Nat) (l : Level),
@@ -177,7 +177,7 @@ theorem denoteMeta_punitRec_leaves (ψ : Name → Nat)
 
 /-- **`PUnit.rec`'s type reading.**  Three binders, three stored pins;
 the numerals are `pwBit`s of exactly those pins. -/
-theorem denoteMeta_punitRecA_type (ψ : Name → Nat)
+theorem denoteMeta_punitRecA_type (ψ : LevelParam → Nat)
     (hP : env.find? punitName = some punitA)
     (hU : env.find? punitUnitName = some punitUnitA) :
     denoteMeta (acvalWith m.acval punitRecA.name A)
@@ -209,7 +209,7 @@ theorem denoteMeta_punitRecA_type (ψ : Name → Nat)
 /-- **The reading agrees with `BConst.typeAV`.**  Four codomain
 numerals: three `pwBit_ifAllZero_single` at the motive level, and the
 motive-space binder's `pwBit_never` against `v + 1`. -/
-theorem bitAgree_punitRecA (ψ : Name → Nat) :
+theorem bitAgree_punitRecA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ (.ifAllZero [u1N]))
         (.pi 0 (pwBit ψ .never) (.const .punit [ψ uN])
@@ -247,7 +247,7 @@ theorem punitRecA_eq :
   rfl
 
 /-- **`PUnit.rec`'s rule's RHS reading**, at any assignment. -/
-theorem denoteMeta_punitRec_rhs (ψ : Name → Nat)
+theorem denoteMeta_punitRec_rhs (ψ : LevelParam → Nat)
     (hP : env.find? punitName = some punitA)
     (hU : env.find? punitUnitName = some punitUnitA) :
     denoteMeta (acvalWith m.acval punitRecA.name A)
@@ -271,13 +271,13 @@ theorem denoteMeta_punitRec_rhs (ψ : Name → Nat)
     denoteMeta_fvar, Expr.instantiate1, hPc, hUc, Level.eval]
 
 /-- `PUnit.rec`'s rule's RHS reading, named. -/
-def punitRa (ψ : Name → Nat) : AnnotTerm :=
+def punitRa (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam (pwBit ψ (.ifAllZero [u1N]))
     (.pi 0 (pwBit ψ .never) (.const .punit [ψ uN]) (.sort (ψ u1N)))
     (.lam (pwBit ψ (.ifAllZero [u1N]))
       (.app (.bvar 0) (.const .punitUnit [ψ uN])) (.bvar 0))
 
-theorem punitRa_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem punitRa_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (punitRa ψ)
       = lamR (pwBit ψ (.ifAllZero [u1N]))
           (piR 1 (unitSet : V) fun _ => univ (ψ u1N))
@@ -287,7 +287,7 @@ theorem punitRa_interp (ψ : Name → Nat) (ρ : Nat → V) :
     interp_const, interp_sort, cons, pwBit_never, bval]
 
 /-- `PUnit.rec`'s RHS reading is graded, at every environment. -/
-theorem punitRa_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem punitRa_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (punitRa ψ) := by
   constructor
   · refine ⟨⟨trivial, fun _ _ => trivial⟩, fun M hM => ?_, ?_⟩
@@ -339,11 +339,11 @@ theorem punitRecLaw {m : EnvModel V env}
     (hU : env.find? punitUnitName = some punitUnitA)
     (hac : m₂.acval = acvalWith m.acval punitRecA.name
       (fun ψ => AnnotTerm.const .punitRec [ψ uN, ψ u1N]))
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ punitRecA.name punitRecA.toConstantVal 2 2
       punitRecRule := by
   refine ⟨Nat.le_refl 2, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ punitRecA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   have hRa : denoteMeta m₂.acval ⟨punitRecA :: env.consts⟩ φ 0
@@ -701,12 +701,12 @@ section Nat
 open Ix.Kernel (natA natZeroA natSuccA natRecA natName natZeroName
   natSuccName)
 
-variable {m : EnvModel V env} {A : (Name → Nat) → AnnotTerm}
+variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 
 /-- `Nat`'s type reading: `Sort 1`, `BConst.typeAV .nat []` on the
 nose. -/
 theorem denoteMeta_natA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨natA :: env.consts⟩ ψ 0 natA.toConstantVal.type
       = some (BConst.typeAV .nat []) := by
   rw [show natA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,
@@ -714,7 +714,7 @@ theorem denoteMeta_natA_type
   rfl
 
 /-- The pinned `Nat` leaf at an extension. -/
-theorem denoteMeta_natLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_natLeaf {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = natName)
     (hN : env.find? natName = some natA) (d : Nat) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
@@ -723,7 +723,7 @@ theorem denoteMeta_natLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
   simp +decide [Ix.Kernel.Verify.pinnedStructT]
 
 /-- `Nat.zero`'s type reading. -/
-theorem denoteMeta_natZeroA_type (ψ : Name → Nat)
+theorem denoteMeta_natZeroA_type (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA) :
     denoteMeta (acvalWith m.acval natZeroA.name A)
         ⟨natZeroA :: env.consts⟩ ψ 0 natZeroA.toConstantVal.type
@@ -735,7 +735,7 @@ theorem denoteMeta_natZeroA_type (ψ : Name → Nat)
 numeral is `1` on both sides.  Stated at *any* extension whose cons is
 not `Nat`, because the `Nat.rec` row reads it too (its rule's
 constructor is `Nat.succ`). -/
-theorem denoteMeta_natSuccTy {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_natSuccTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = natName)
     (hN : env.find? natName = some natA) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ 0
@@ -749,7 +749,7 @@ theorem denoteMeta_natSuccTy {c₀ : ConstantInfo} (ψ : Name → Nat)
           (.const natName []) { pw := .never } from rfl]
   simp [denoteMeta_forallE, Expr.instantiate1, hNc]
 
-theorem denoteMeta_natSuccA_type (ψ : Name → Nat)
+theorem denoteMeta_natSuccA_type (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA) :
     denoteMeta (acvalWith m.acval natSuccA.name A)
         ⟨natSuccA :: env.consts⟩ ψ 0 natSuccA.toConstantVal.type
@@ -757,7 +757,7 @@ theorem denoteMeta_natSuccA_type (ψ : Name → Nat)
           (.const .nat [])) :=
   denoteMeta_natSuccTy (m := m) (A := A) ψ (by decide) hN
 
-theorem bitAgree_natSuccA (ψ : Name → Nat) :
+theorem bitAgree_natSuccA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ .never) (.const .nat []) (.const .nat []))
       (BConst.typeAV .natSucc []) := by
@@ -765,7 +765,7 @@ theorem bitAgree_natSuccA (ψ : Name → Nat) :
   rw [pwBit_never]
 
 /-- The three pinned `Nat` leaves at the `Nat.rec` extension. -/
-theorem denoteMeta_natRec_leaves (ψ : Name → Nat)
+theorem denoteMeta_natRec_leaves (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
@@ -789,7 +789,7 @@ theorem denoteMeta_natRec_leaves (ψ : Name → Nat)
 
 /-- **`Nat.rec`'s type reading.**  Seven binders; six carry
 `.ifAllZero [u]` and the motive's domain carries `.never`. -/
-theorem denoteMeta_natRecA_type (ψ : Name → Nat)
+theorem denoteMeta_natRecA_type (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
@@ -832,7 +832,7 @@ theorem denoteMeta_natRecA_type (ψ : Name → Nat)
   simp [denoteMeta_forallE, denoteMeta_sort, denoteMeta_app, denoteMeta_fvar,
     Expr.instantiate1, hNc, hZc, hSc, Level.eval]
 
-theorem bitAgree_natRecA (ψ : Name → Nat) :
+theorem bitAgree_natRecA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ (.ifAllZero [uN]))
         (.pi 0 (pwBit ψ .never) (.const .nat []) (.sort (ψ uN)))
@@ -1010,22 +1010,22 @@ The three telescope domains, named once: their readings are the
 content of "the reading's numerals are the pin's". -/
 
 /-- The motive binder's domain reading. -/
-def natMotiveTy (ψ : Name → Nat) : AnnotTerm :=
+def natMotiveTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 (pwBit ψ .never) (.const .nat []) (.sort (ψ uN))
 
 /-- The step binder's domain reading. -/
-def natStepTy (ψ : Name → Nat) : AnnotTerm :=
+def natStepTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 (pwBit ψ (.ifAllZero [uN])) (.const .nat [])
     (.pi 0 (pwBit ψ (.ifAllZero [uN])) (.app (.bvar 2) (.bvar 0))
       (.app (.bvar 3) (.app (.const .natSucc []) (.bvar 1))))
 
-theorem natMotiveTy_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natMotiveTy_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (natMotiveTy ψ) = natMotiveSpace V (ψ uN) := by
   rw [natMotiveTy, interp_pi, natMotiveSpace]
   refine piR_zero_agree (show pwBit ψ Ix.Kernel.PropWhen.never = 0
       ↔ ψ uN + 1 = 0 by rw [pwBit_never]; simp) (fun _ _ => rfl)
 
-theorem natStepTy_interp (ψ : Name → Nat) (ρ : Nat → V) (M z : V) :
+theorem natStepTy_interp (ψ : LevelParam → Nat) (ρ : Nat → V) (M z : V) :
     interp V (cons z (cons M ρ)) (natStepTy ψ)
       = natStepSpace V (pwBit ψ (.ifAllZero [uN])) M := by
   rw [natStepTy, interp_pi, natStepSpace]
@@ -1036,7 +1036,7 @@ theorem natStepTy_interp (ψ : Name → Nat) (ρ : Nat → V) (M z : V) :
   exact piR_congr fun _ _ => by rw [natSuccV_app V hn]
 
 /-- The `zero` rule's RHS reading. -/
-def natZeroRa (ψ : Name → Nat) : AnnotTerm :=
+def natZeroRa (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam (pwBit ψ (.ifAllZero [uN])) (natMotiveTy ψ)
     (.lam (pwBit ψ (.ifAllZero [uN]))
       (.app (.bvar 0) (.const .natZero []))
@@ -1044,7 +1044,7 @@ def natZeroRa (ψ : Name → Nat) : AnnotTerm :=
 
 /-- The `succ` rule's RHS reading — the recursive occurrence is the
 *fresh* leaf, so it reads to `.const .natRec [ψ u]`. -/
-def natSuccRa (ψ : Name → Nat) : AnnotTerm :=
+def natSuccRa (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam (pwBit ψ (.ifAllZero [uN])) (natMotiveTy ψ)
     (.lam (pwBit ψ (.ifAllZero [uN]))
       (.app (.bvar 0) (.const .natZero []))
@@ -1054,7 +1054,7 @@ def natSuccRa (ψ : Name → Nat) : AnnotTerm :=
             (.app (.app (.app (.app (.const .natRec [ψ uN]) (.bvar 3))
               (.bvar 2)) (.bvar 1)) (.bvar 0))))))
 
-theorem denoteMeta_natRec_zeroRhs (ψ : Name → Nat)
+theorem denoteMeta_natRec_zeroRhs (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
@@ -1082,7 +1082,7 @@ theorem denoteMeta_natRec_zeroRhs (ψ : Name → Nat)
     denoteMeta_fvar, Expr.instantiate1, hNc, hZc, hSc, Level.eval,
     natZeroRa, natMotiveTy, natStepTy]
 
-theorem denoteMeta_natRec_succRhs (ψ : Name → Nat)
+theorem denoteMeta_natRec_succRhs (ψ : LevelParam → Nat)
     (hN : env.find? natName = some natA)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA) :
@@ -1142,7 +1142,7 @@ theorem natStepSpace_bit_agree {b u : Nat} (hz : b = 0 ↔ u = 0)
   exact piR_zero_agree hz fun _ _ => piR_zero_agree hz fun _ _ => rfl
 
 /-- The motive binder's domain is graded — no numeral is read. -/
-theorem natMotiveTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natMotiveTy_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (natMotiveTy ψ) :=
   ⟨⟨trivial, fun _ _ => trivial⟩,
     ⟨trivial, fun _ _ => trivial, fun h => by
@@ -1151,7 +1151,7 @@ theorem natMotiveTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
 /-- The step binder's domain is graded, under a motive membership: the
 three residual fibre obligations are `natMotive_apply` at `n`, at
 `n + 1`, and `piR_zero_mem_univZero`. -/
-theorem natStepTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) (M z : V)
+theorem natStepTy_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) (M z : V)
     (hM : M ∈ˢ natMotiveSpace V (ψ uN)) :
     WellDenotedV V (cons z (cons M ρ)) (natStepTy ψ) := by
   have hMn : ∀ n : V, n ∈ˢ (omega : V) → app M n ∈ˢ (univ (ψ uN) : V) :=
@@ -1202,7 +1202,7 @@ theorem natStepTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) (M z : V)
 
 /-! ### The two RHS towers, interpreted and graded -/
 
-theorem natZeroRa_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natZeroRa_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (natZeroRa ψ)
       = lamR (pwBit ψ (.ifAllZero [uN])) (natMotiveSpace V (ψ uN))
           (fun M => lamR (pwBit ψ (.ifAllZero [uN])) (app M natzero)
@@ -1212,7 +1212,7 @@ theorem natZeroRa_interp (ψ : Name → Nat) (ρ : Nat → V) :
   simp only [natZeroRa, interp_lam, interp_app, interp_bvar,
     interp_const, cons, bval, natMotiveTy_interp, natStepTy_interp]
 
-theorem natSuccRa_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natSuccRa_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (natSuccRa ψ)
       = lamR (pwBit ψ (.ifAllZero [uN])) (natMotiveSpace V (ψ uN))
           (fun M => lamR (pwBit ψ (.ifAllZero [uN])) (app M natzero)
@@ -1293,7 +1293,7 @@ theorem natRecSpine_validV {u : Nat} (ρ : Nat → V)
   ⟨⟨⟨⟨trivial, h1⟩, h2⟩, h3⟩, h4⟩
 
 /-- The `zero` rule's RHS tower is graded. -/
-theorem natZeroRa_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natZeroRa_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (natZeroRa ψ) := by
   have hb : ∀ M : V, M ∈ˢ natMotiveSpace V (ψ uN) →
       pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [uN]) = 0 →
@@ -1348,7 +1348,7 @@ theorem natZeroRa_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
 set_option maxHeartbeats 1000000 in
 /-- The `succ` rule's RHS tower is graded — the extra layer over the
 `zero` rule's is the recursive spine, `natRecSpine_wellDenoted`. -/
-theorem natSuccRa_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natSuccRa_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (natSuccRa ψ) := by
   have hzty : ∀ M : V, interp V (cons M ρ)
       (AnnotTerm.app (.bvar 0) (.const .natZero [])) = app M natzero := by
@@ -1497,7 +1497,7 @@ itself, read through the **fresh** leaf. -/
 
 /-- The recursor's telescope, unpacked into the four memberships
 `Interp/Value.lean`'s laws are stated with. -/
-theorem natRecTelescope (ψ : Name → Nat) (ρ : Nat → V)
+theorem natRecTelescope (ψ : LevelParam → Nat) (ρ : Nat → V)
     {xs : List AnnotTerm} (hxs : xs.length = 3) (tl rest : AnnotTerm)
     (hfit : TeleFitPA V ρ
       (.pi 0 (pwBit ψ (.ifAllZero [uN])) (natMotiveTy ψ)
@@ -1543,7 +1543,7 @@ theorem natRecTelescope (ψ : Name → Nat) (ρ : Nat → V)
       using h4
 
 /-- The `zero` tower's product membership. -/
-theorem natZeroRa_mem (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natZeroRa_mem (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (natZeroRa ψ)
       ∈ˢ piR (pwBit ψ (.ifAllZero [uN])) (natMotiveSpace V (ψ uN))
         (fun M => piR (pwBit ψ (.ifAllZero [uN])) (app M natzero)
@@ -1554,7 +1554,7 @@ theorem natZeroRa_mem (ψ : Name → Nat) (ρ : Nat → V) :
   exact lamR_mem fun _ _ => lamR_mem fun z hz => lamR_mem fun _ _ => hz
 
 /-- The `succ` tower's product membership. -/
-theorem natSuccRa_mem (ψ : Name → Nat) (ρ : Nat → V) :
+theorem natSuccRa_mem (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (natSuccRa ψ)
       ∈ˢ piR (pwBit ψ (.ifAllZero [uN])) (natMotiveSpace V (ψ uN))
         (fun M => piR (pwBit ψ (.ifAllZero [uN])) (app M natzero)
@@ -1581,7 +1581,7 @@ theorem natSuccRa_mem (ψ : Name → Nat) (ρ : Nat → V) :
 
 /-- The `zero` rule's transport: three `WellDenoted_app` steps over
 `natZeroRa_mem`. -/
-theorem natZeroRa_transport (ψ : Name → Nat) (ρ : Nat → V)
+theorem natZeroRa_transport (ψ : LevelParam → Nat) (ρ : Nat → V)
     {M z s : AnnotTerm}
     (hM : interp V ρ M ∈ˢ natMotiveSpace V (ψ uN))
     (hz : interp V ρ z ∈ˢ app (interp V ρ M) natzero)
@@ -1619,7 +1619,7 @@ theorem natZeroRa_transport (ψ : Name → Nat) (ρ : Nat → V)
   · exact ⟨⟨⟨(natZeroRa_wellDenotedV ψ ρ).2, okM.2⟩, okz.2⟩, oks.2⟩
 
 /-- The `succ` rule's transport: four steps. -/
-theorem natSuccRa_transport (ψ : Name → Nat) (ρ : Nat → V)
+theorem natSuccRa_transport (ψ : LevelParam → Nat) (ρ : Nat → V)
     {M z s n : AnnotTerm}
     (hM : interp V ρ M ∈ˢ natMotiveSpace V (ψ uN))
     (hz : interp V ρ z ∈ˢ app (interp V ρ M) natzero)
@@ -1664,7 +1664,7 @@ theorem natRecTyRead (m₂ : EnvModel V ⟨natRecA :: env.consts⟩)
     (hZ : env.find? natZeroName = some natZeroA)
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name A)
-    (φ : Name → Nat) (us : List Level) {ψ : Name → Nat}
+    (φ : LevelParam → Nat) (us : List Level) {ψ : LevelParam → Nat}
     (hψ : ψ = Level.substFn φ natRecA.toConstantVal.levelParams us) :
     denoteMeta m₂.acval ⟨natRecA :: env.consts⟩ φ 0
         (natRecA.toConstantVal.type.instantiateLevelParams
@@ -1687,11 +1687,11 @@ theorem natRecZeroLaw {m : EnvModel V env}
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name
       (fun ψ => AnnotTerm.const .natRec [ψ uN]))
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ natRecA.name natRecA.toConstantVal 3 3
       natRecZeroRule := by
   refine ⟨Nat.le_refl 3, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ natRecA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   refine ⟨natZeroRa ψ, ?_, natZeroRa_wellDenotedV ψ, ?_, ?_⟩
@@ -1748,11 +1748,11 @@ theorem natRecSuccLaw {m : EnvModel V env}
     (hS : env.find? natSuccName = some natSuccA)
     (hac : m₂.acval = acvalWith m.acval natRecA.name
       (fun ψ => AnnotTerm.const .natRec [ψ uN]))
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ natRecA.name natRecA.toConstantVal 3 3
       natRecSuccRule := by
   refine ⟨Nat.le_refl 3, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ natRecA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   refine ⟨natSuccRa ψ, ?_, natSuccRa_wellDenotedV ψ, ?_, ?_⟩

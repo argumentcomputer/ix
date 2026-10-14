@@ -57,7 +57,7 @@ telescopes re-bit to the elimination bit `b`, task #202 A2). -/
 constructor's field data lifted `o` under (bits reset to `b`), the ih
 binders, the motive at the constructor's index readings and spine
 lifted above the ih binders. -/
-@[expose] def minorAVAtR {env : Env} (m : EnvModel V env) (C : Name) (ψ : Name → Nat) (nP nF b o : Nat)
+@[expose] def minorAVAtR {env : Env} (m : EnvModel V env) (C : Name) (ψ : LevelParam → Nat) (nP nF b o : Nat)
     (ds : List (Nat × Nat × AnnotTerm)) (Es : List AnnotTerm) (recIdx : List Nat)
     (tls : List (List (Nat × Nat × AnnotTerm))) (Eiss : List (List AnnotTerm)) : AnnotTerm :=
   mkPisAV (rebit b (liftDoms o 0 (ds.drop nP)))
@@ -76,18 +76,18 @@ abbrev CtorDatumR :=
     List (List (Nat × Nat × AnnotTerm))
 
 /-- The minor entries, one per constructor datum, from offset `o`. -/
-@[expose] def fixMinorsData {env : Env} (m : EnvModel V env) (ψ : Name → Nat) (nP b : Nat) :
+@[expose] def fixMinorsData {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP b : Nat) :
     List CtorDatumR → Nat → List (Nat × Nat × AnnotTerm)
   | [], _ => []
   | (C, nF, ds, Es, recIdx, Eiss, tls) :: cs, o =>
     (0, b, minorAVAtR m C ψ nP nF b o ds Es recIdx tls Eiss) :: fixMinorsData m ψ nP b cs (o + 1)
 
-theorem fixMinorsData_length {m : EnvModel V env} {ψ : Name → Nat} {nP b : Nat} :
+theorem fixMinorsData_length {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
     ∀ (cds : List CtorDatumR) (o : Nat), (fixMinorsData m ψ nP b cds o).length = cds.length
   | [], _ => rfl
   | (_, _, _, _, _, _, _) :: cs, o => by simp [fixMinorsData, fixMinorsData_length cs (o + 1)]
 
-theorem mem_fixMinorsData {m : EnvModel V env} {ψ : Name → Nat} {nP b : Nat} :
+theorem mem_fixMinorsData {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
     ∀ {cds : List CtorDatumR} {o : Nat} {d : Nat × Nat × AnnotTerm},
       d ∈ fixMinorsData m ψ nP b cds o → d.2.1 = b
   | [], _, _, h => nomatch h
@@ -97,7 +97,7 @@ theorem mem_fixMinorsData {m : EnvModel V env} {ψ : Name → Nat} {nP b : Nat} 
     · rfl
     · exact mem_fixMinorsData h
 
-theorem fixMinorsData_getElem? {m : EnvModel V env} {ψ : Name → Nat} {nP b : Nat} :
+theorem fixMinorsData_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
     ∀ (cds : List CtorDatumR) (o j : Nat),
       (fixMinorsData m ψ nP b cds o)[j]?
         = (cds[j]?).map fun cd => (0, b, minorAVAtR m cd.1 ψ nP cd.2.1 b (o + j) cd.2.2.1 cd.2.2.2.1
@@ -114,7 +114,7 @@ theorem fixMinorsData_getElem? {m : EnvModel V env} {ψ : Name → Nat} {nP b : 
 /-- **The generated recursive recursor type's binder data**: parameters,
 motive, minors (with the ih binders), the index telescope lifted under
 the motive and the minors, major. -/
-@[expose] def fixRecDataAV {env : Env} (m : EnvModel V env) (T : Name) (ψ : Name → Nat)
+@[expose] def fixRecDataAV {env : Env} (m : EnvModel V env) (T : Name) (ψ : LevelParam → Nat)
     (nP nIdx : Nat) (ℓ : Level) (pps ips : List (Nat × Nat × AnnotTerm))
     (cds : List CtorDatumR) : List (Nat × Nat × AnnotTerm) :=
   rebit (pwBit ψ (Level.zeronessOf ℓ)) pps ++
@@ -123,7 +123,7 @@ the motive and the minors, major. -/
     rebit (pwBit ψ (Level.zeronessOf ℓ)) (liftDoms (cds.length + 1) 0 ips) ++
     [(0, pwBit ψ (Level.zeronessOf ℓ), majorAVAt m T ψ nP nIdx cds.length)]
 
-theorem mem_fixRecDataAV {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP nIdx : Nat}
+theorem mem_fixRecDataAV {m : EnvModel V env} {T : Name} {ψ : LevelParam → Nat} {nP nIdx : Nat}
     {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
     {d : Nat × Nat × AnnotTerm}
     (hd : d ∈ fixRecDataAV m T ψ nP nIdx ℓ pps ips cds) : d.2.1 = pwBit ψ (Level.zeronessOf ℓ) := by
@@ -135,7 +135,7 @@ theorem mem_fixRecDataAV {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP
   · exact mem_rebit h
   · rfl
 
-theorem fixRecDataAV_length {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP nIdx : Nat}
+theorem fixRecDataAV_length {m : EnvModel V env} {T : Name} {ψ : LevelParam → Nat} {nP nIdx : Nat}
     {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
     (hp : pps.length = nP) (hi : ips.length = nIdx) :
     (fixRecDataAV m T ψ nP nIdx ℓ pps ips cds).length = nP + cds.length + nIdx + 2 := by
@@ -183,7 +183,7 @@ elimination bit `b`, task #202 A2). -/
 /-- **Rule `j`'s binder data** at a recursive block: the recursor's
 parameter, motive and minor entries, then constructor `j`'s field data
 lifted `n + 1` under. -/
-@[expose] def fixRuleDataAV {env : Env} (m : EnvModel V env) (T : Name) (ψ : Name → Nat)
+@[expose] def fixRuleDataAV {env : Env} (m : EnvModel V env) (T : Name) (ψ : LevelParam → Nat)
     (nP nIdx : Nat) (ℓ : Level) (pps ips : List (Nat × Nat × AnnotTerm))
     (cds : List CtorDatumR) (ds : List (Nat × Nat × AnnotTerm)) :
     List (Nat × AnnotTerm) :=
@@ -194,7 +194,7 @@ lifted `n + 1` under. -/
     fun d : Nat × Nat × AnnotTerm => (d.2.1, d.2.2)
 
 /-- Every rule binder carries the elimination level's bit. -/
-theorem mem_fixRuleDataAV {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP nIdx : Nat}
+theorem mem_fixRuleDataAV {m : EnvModel V env} {T : Name} {ψ : LevelParam → Nat} {nP nIdx : Nat}
     {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
     {ds : List (Nat × Nat × AnnotTerm)} {d : Nat × AnnotTerm}
     (hd : d ∈ fixRuleDataAV m T ψ nP nIdx ℓ pps ips cds ds) :
@@ -215,8 +215,8 @@ and its datum `(C, nF, ds, Es, recIdx, Eiss)`: the sum route's
 field's index expressions at the field's own depth (`Eiss.getD i`, as
 many as the indices) with the field's entry the family at the
 parameter variables and those readings. -/
-structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : Name → Nat) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) (c : Name × Nat × Expr × List Nat) (cd : CtorDatumR) :
+structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Name)
+    (lps : List LevelParam) (nP nIdx : Nat) (c : Name × Nat × Expr × List Nat) (cd : CtorDatumR) :
     Prop where
   name : cd.1 = c.1
   nF : cd.2.1 = c.2.1
@@ -268,14 +268,14 @@ structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : Name → Nat) (T : Na
               cd.2.2.2.2.2.1.getD i []))
 
 /-- The constructors' reading premises, positionally. -/
-inductive CtorReadsR {env : Env} (m : EnvModel V env) (ψ : Name → Nat) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) :
+inductive CtorReadsR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Name)
+    (lps : List LevelParam) (nP nIdx : Nat) :
     List (Name × Nat × Expr × List Nat) → List CtorDatumR → Prop
   | nil : CtorReadsR m ψ T lps nP nIdx [] []
   | cons {c cd cs cds} : CtorReadR m ψ T lps nP nIdx c cd → CtorReadsR m ψ T lps nP nIdx cs cds →
       CtorReadsR m ψ T lps nP nIdx (c :: cs) (cd :: cds)
 
-theorem CtorReadsR.length_eq {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem CtorReadsR.length_eq {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} :
     ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
       CtorReadsR m ψ T lps nP nIdx ctors cds → cds.length = ctors.length
@@ -434,7 +434,7 @@ theorem openPisAtFvars_fvarTypeD :
           rfl
       · exact nomatch hop
 
-theorem CtorReadsR.getElem? {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem CtorReadsR.getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} :
     ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
       CtorReadsR m ψ T lps nP nIdx ctors cds →

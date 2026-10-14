@@ -47,7 +47,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The frame splitters -/
 
@@ -179,7 +179,7 @@ theorem Graded.head_congr {Δa : List AnnotTerm} {A B e : AnnotTerm}
     (h : Graded V (B :: Δa) e) : Graded V (A :: Δa) e :=
   fun ρ hρ => h ρ (Sat.head_congr heq hρ)
 
-theorem denoteMeta_open_rename {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMeta_open_rename {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {d : Nat} {bd ty ty' : Expr} {ba : AnnotTerm}
     (h : denoteMeta acval env φ (d + 1) (bd.instantiate1 (.fvar d ty))
       = some ba) :
@@ -280,14 +280,14 @@ theorem interp_mkAppN_pt {ρ : Nat → V} {f : AnnotTerm}
 version of the claims' zero side: the bit is `0` at every valuation
 (the dual of `pwBit_ne_zero_of_isNever`). -/
 theorem pwBit_eq_zero_of_isProp {pw : PropWhen}
-    (h : pw.isProp = true) (φ : Name → Nat) : pwBit φ pw = 0 := by
+    (h : pw.isProp = true) (φ : LevelParam → Nat) : pwBit φ pw = 0 := by
   rw [eq_of_beq h]
   simp [pwBit]
 
 /-- **Exactness**: `pw.isProp` is *the* datum that is zero at every
 valuation — `isNever_iff_forall_pwBit_ne_zero`'s mirror. -/
 theorem alwaysZero_iff_forall_pwBit_eq_zero {pw : PropWhen} :
-    pw.isProp = true ↔ ∀ φ : Name → Nat, pwBit φ pw = 0 := by
+    pw.isProp = true ↔ ∀ φ : LevelParam → Nat, pwBit φ pw = 0 := by
   constructor
   · exact pwBit_eq_zero_of_isProp
   · intro h
@@ -302,7 +302,7 @@ theorem alwaysZero_iff_forall_pwBit_eq_zero {pw : PropWhen} :
 
 /-- A level whose zero-ness datum is always-zero evaluates to `0`. -/
 theorem eval_eq_zero_of_isProp {u : Level}
-    (h : (Level.zeronessOf u).isProp = true) (φ : Name → Nat) :
+    (h : (Level.zeronessOf u).isProp = true) (φ : LevelParam → Nat) :
     Level.eval φ u = 0 := by
   have := pwBit_eq_zero_of_isProp h φ
   rw [pwBit_eq_zero_iff, Ix.Kernel.PropWhen.zeronessOf_sound] at this
@@ -364,7 +364,7 @@ theorem NeverChain.inst : ∀ {n u : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : N
 
 /-- **A `.never`-peeled telescope reads to a chain**: each binder's bit
 is nonzero (`pwBit_ne_zero_of_isNever`), the residual sort evaluates. -/
-theorem neverChain_of_peel {acval : Name → (Name → Nat) → AnnotTerm} :
+theorem neverChain_of_peel {acval : Name → (LevelParam → Nat) → AnnotTerm} :
     ∀ (n : Nat) {d : Nat} {T : Expr} {u : Level} {ta : AnnotTerm},
       T.peelNeverPis n = some (.sort u) →
       denoteMeta acval env φ d T = some ta →

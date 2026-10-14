@@ -29,7 +29,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## Renaming constants -/
 
@@ -41,7 +41,7 @@ on the renaming.  Transpose of `RenameOk`. -/
   (∀ n ci, env.find? n = some ci → ∃ ci', env.find? (f n) = some ci' ∧
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
-  (∀ (n : Name) (ψ : Name → Nat), cval (f n) ψ = cval n ψ)
+  (∀ (n : Name) (ψ : LevelParam → Nat), cval (f n) ψ = cval n ψ)
   -- (task #175 wiring W3 added a fourth, tower-freeness conjunct here
   -- because the branched `.proj` reading consulted the table at both
   -- the source and the image name; W5 fixed the struct name under
@@ -209,7 +209,7 @@ theorem denote_renameConsts_resolve {f : Name → Name}
       ∃ ci', env.find? (f n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams)
     (hval : ∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
-      ∀ ψ : Name → Nat, cval (f n) ψ = cval n ψ) :
+      ∀ ψ : LevelParam → Nat, cval (f n) ψ = cval n ψ) :
     ∀ (e : Expr) (d : Nat), e.constsResolve env = true →
       denote cval env φ d (e.renameConsts f) = denote cval env φ d e
   | .bvar _, _, _ => by simp [Expr.renameConsts]

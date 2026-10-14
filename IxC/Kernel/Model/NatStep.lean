@@ -43,7 +43,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The pieces the rows read -/
 
@@ -99,7 +99,7 @@ task #305 closing. -/
 the `Nat.succ` application *is* the packed numeral: the head reads to
 the `Nat.succ` leaf, the argument to the numeral spine, and
 `natLit_succ` is the packing. -/
-theorem natSuccRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
+theorem natSuccRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.NatSuccRow mp.base2 φ := by
   intro d w n Δa ea hnat hraw hea hg
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
@@ -125,7 +125,7 @@ at two literal readings: the head reads to the stored operation's
 leaf, the arguments to the numeral spines, and the operation's own
 recurrence law (`EnvModelM.nat_ops` / `EnvModelM.div_mod`, through the
 `natOpV_*` transports) computes the interpretation of `natOpResult`. -/
-theorem natOpRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
+theorem natOpRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.NatOpRow mp.base2 φ := by
   intro d c wa wb r n₁ n₂ Δa ea hc hstored hrawa hrawb hres hea hg
   have h14 : c = Ix.Kernel.natAddName ∨ c = Ix.Kernel.natSubName ∨

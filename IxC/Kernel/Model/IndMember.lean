@@ -55,17 +55,17 @@ member's *leaf* is its model's.  The other three conjuncts of
 `BlockInstalledTT` are V-free environment facts and are consumed from
 the v1 predicate directly. -/
 @[expose] def BlockAcvalInstalled (blockNames : List Name) (env : Env)
-    (acval : Name → (Name → Nat) → AnnotTerm) : Prop :=
+    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo,
     env.find? n = some ci →
-    ∀ ψ : Name → Nat, acval (n.str "_model") ψ = acval n ψ
+    ∀ ψ : LevelParam → Nat, acval (n.str "_model") ψ = acval n ψ
 
 /-- The P invariant's three type facts at a *stored* constant, keyed
 by `find?` rather than by membership (`EnvS.cval_memType`'s
 transpose). -/
 theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Name}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 ci.toConstantVal.type
         = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
@@ -85,7 +85,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
@@ -108,7 +108,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
         hlp'⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
   have hval : ∀ (n : Name) (ci : ConstantInfo),
-      env.find? n = some ci → ∀ ψ' : Name → Nat,
+      env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
         if blockNames.contains n then n.str "_model" else n) n) ψ'
         = mp.base2.acval n ψ' := by
@@ -164,7 +164,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
     -- ever supplied here)
     (hwf : EnvWF ⟨c₀ :: env.consts⟩)
     -- the member's key at the prefix (`memberKey`)
-    (hkeyP : ∀ ψ : Name → Nat, ∃ ta,
+    (hkeyP : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
@@ -197,7 +197,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
   have hcb : ConstsBound env cvA.type :=
     constsBound_of_constsResolve _ hres
   -- the crossing, forward
-  have hcross : ∀ (ψ : Name → Nat) {ta : AnnotTerm},
+  have hcross : ∀ (ψ : LevelParam → Nat) {ta : AnnotTerm},
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta →
       denoteMeta (acvalWith mp.base2.acval c₀.name
           (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ))

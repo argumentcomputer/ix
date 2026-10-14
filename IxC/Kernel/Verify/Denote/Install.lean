@@ -100,7 +100,7 @@ nothing else — that derivation is `natLitSupported_inv` +
 `IxC/Kernel/Verify/EnvGuards.lean`.  They are passed in rather than
 derived here so that the install sites, which have the freshness facts
 in hand, discharge them the cheap way. -/
-theorem denote_mono {cval : TConstVal} {env₁ env₂ : Env} {φ : Name → Nat}
+theorem denote_mono {cval : TConstVal} {env₁ env₂ : Env} {φ : LevelParam → Nat}
     (hext : EnvExtends env₁ env₂)
     (hproj : ∀ (sn : Name) (i : Nat),
       env₁.findProj? sn i = none → env₂.findProj? sn i = none)
@@ -273,7 +273,7 @@ them from freshness directly. -/
 /-- Denotation reads the valuation only at names the environment
 resolves, so valuations agreeing there give equal denotations. -/
 theorem denote_cval_congr {cval₁ cval₂ : TConstVal} {env : Env}
-    {φ : Name → Nat}
+    {φ : LevelParam → Nat}
     (hag : ∀ n ci, env.find? n = some ci → cval₁ n = cval₂ n)
     (hnat : natLitSupported env = true →
       cval₁ natZeroName = cval₂ natZeroName)
@@ -486,7 +486,7 @@ theorem ne_of_isSome_fresh {env : Env} {c₀ : ConstantInfo} {n : Name}
 
 /-- Denotation is unchanged by a fresh install on expressions whose
 constants already resolve.  Transpose of `interp_mono`. -/
-theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {c₀ : ConstantInfo} (hfresh : env.find? c₀.name = none)
     (hntc : ∀ e', c₀ ≠ .projInfo e') :
     ∀ (d : Nat) (e : Expr), e.constsResolve env = true →
@@ -641,7 +641,7 @@ theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : Name → Nat}
 environment, changed valuation.  The shared core of every field's
 transport — `has_type_cons` above is this plus a valuation rewrite, and
 `defn_eq_cons` below is the same again. -/
-theorem denote_install {cval cval' : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_install {cval cval' : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {c₀ : ConstantInfo} {d : Nat} {e : Expr} {v : Term}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ e', c₀ ≠ .projInfo e')
@@ -826,7 +826,7 @@ theorem Installs.of_fresh {env : Env} {cval cval' : TConstVal}
 none. -/
 theorem Installs.denoteUp {env : Env} {cval cval' : TConstVal}
     {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀)
-    {φ : Name → Nat} {d : Nat} {e : Expr} {v : Term}
+    {φ : LevelParam → Nat} {d : Nat} {e : Expr} {v : Term}
     (h : denote cval env φ d e = some v) :
     denote cval' ⟨c₀ :: env.consts⟩ φ d e = some v :=
   denote_install hi.fresh hi.ntc hi.ag hi.lit
@@ -845,7 +845,7 @@ environment.  The two moves compose in one order only: shrink first
 agree on everything stored there, but not at the new constant). -/
 theorem Installs.denoteDown {env : Env} {cval cval' : TConstVal}
     {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀)
-    {φ : Name → Nat} {d : Nat} {e : Expr} {v : Term}
+    {φ : LevelParam → Nat} {d : Nat} {e : Expr} {v : Term}
     (hres : e.constsResolve env = true)
     (h : denote cval' ⟨c₀ :: env.consts⟩ φ d e = some v) :
     denote cval env φ d e = some v := by
@@ -881,7 +881,7 @@ theorem BasisPinnedTT.cons {env : Env} {cval cval' : TConstVal}
     (hi : Installs env cval cval' c₀)
     (hhead : reservedBasisNames.contains c₀.name = true →
       c₀ = pinnedInfo c₀.name ∧
-      ∀ (ψ : Name → Nat) (t : Term),
+      ∀ (ψ : LevelParam → Nat) (t : Term),
         pinnedStructT c₀.name ψ = some t → cval' c₀.name ψ = t) :
     BasisPinnedTT ⟨c₀ :: env.consts⟩ cval' := by
   intro n ci hf hres
@@ -950,16 +950,16 @@ theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Name}
 
 
 /-- Extend a valuation at one name by an explicitly chosen term. -/
-@[expose] def cvalWith (cval : TConstVal) (n : Name) (V : (Name → Nat) → Term) :
+@[expose] def cvalWith (cval : TConstVal) (n : Name) (V : (LevelParam → Nat) → Term) :
     TConstVal := fun c ψ => if c = n then V ψ else cval c ψ
 
 theorem cvalWith_ne {cval : TConstVal} {n : Name}
-    {V : (Name → Nat) → Term} {c : Name} (h : c ≠ n) :
+    {V : (LevelParam → Nat) → Term} {c : Name} (h : c ≠ n) :
     cvalWith cval n V c = cval c := by
   funext ψ; simp [cvalWith, h]
 
 theorem cvalWith_self {cval : TConstVal} {n : Name}
-    {V : (Name → Nat) → Term} : cvalWith cval n V n = V := by
+    {V : (LevelParam → Nat) → Term} : cvalWith cval n V n = V := by
   funext ψ; simp [cvalWith]
 
 /-! ## The valuation an install chooses
@@ -981,7 +981,7 @@ theorem cvalAt_ne {cval : TConstVal} {env : Env} {n : Name} {value : Expr}
   funext ψ; simp [cvalAt, h]
 
 theorem cvalAt_self {cval : TConstVal} {env : Env} {n : Name}
-    {value : Expr} {ψ : Name → Nat} {v : Term}
+    {value : Expr} {ψ : LevelParam → Nat} {v : Term}
     (h : denoteClosed cval env ψ value = some v) :
     cvalAt cval env n value n ψ = v := by
   simp [cvalAt, h]

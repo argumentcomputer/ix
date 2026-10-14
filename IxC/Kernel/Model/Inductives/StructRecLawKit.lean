@@ -25,7 +25,7 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The frame values (from the retired `StructRecLawFitsP`, task #175 S2) -/
 
@@ -76,7 +76,7 @@ theorem spineFit_of_chain {Ds : List AnnotTerm} {ws : List AnnotTerm} {ρ : Nat 
 /-- The constructor's level assignment, fixed by the recursor's through
 `recFireComparands`, agrees with the recursor's on the block's
 parameters. -/
-theorem substFn_agree_of_comparand {lps lpsR : List Name} {us usj : List Level}
+theorem substFn_agree_of_comparand {lps lpsR : List LevelParam} {us usj : List Level}
     (hψ : Level.substFn φ lps usj
       = Level.substFn φ lps (lps.map fun q => Level.subst lpsR us (.param q))) :
     ∀ q ∈ lps, Level.substFn φ lps usj q = Level.substFn φ lpsR us q := by

@@ -148,7 +148,7 @@ identification lives. -/
 @[expose] def ProjEtaLaw (V : Type w) [SetTheory V] : Prop :=
   ∀ {μ : CheckMode} {blockNames : List Name} {env : Env}
     (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
-    {A : (Name → Nat) → AnnotTerm} {T : Name} {i : Nat},
+    {A : (LevelParam → Nat) → AnnotTerm} {T : Name} {i : Nat},
     c₀.name = Ix.Kernel.projFnName T i →
     (∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules) →
     env.find? c₀.name = none →
@@ -165,10 +165,10 @@ identification lives. -/
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name A →
         -- v1's `hvP`, install-supplied
-        (∀ j, j < caps.etaFields → ∀ ψ : Name → Nat,
+        (∀ j, j < caps.etaFields → ∀ ψ : LevelParam → Nat,
           m₂.acval (Ix.Kernel.projFnName T j) ψ
             = mp.base2.acval (Ix.Kernel.projModelName T j) ψ) →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps
 
 set_option maxHeartbeats 3200000 in
 theorem projEtaLaw : ProjEtaLaw V := by
@@ -202,17 +202,17 @@ theorem projEtaLaw : ProjEtaLaw V := by
   -- ===== the two valuation identifications (v1's `hvT`/`hvC`) =====
   -- one `acvalWith_ne` each: no case split, because a `recInfo` cons
   -- is neither the former nor the capability constructor
-  have hvT : ∀ ψ : Name → Nat,
+  have hvT : ∀ ψ : LevelParam → Nat,
       m₂.acval T ψ = mp.base2.acval (T.str "_model") ψ := fun ψ => by
     rw [hac, acvalWith_ne hT0]
     exact (hIA T hbT _ hfE ψ).symm
-  have hvC : ∀ ψ : Name → Nat,
+  have hvC : ∀ ψ : LevelParam → Nat,
       m₂.acval caps.etaCtor ψ
         = mp.base2.acval (caps.etaCtor.str "_model") ψ := fun ψ => by
     rw [hac, acvalWith_ne hC0]
     exact (hIA caps.etaCtor hbC _ hfCe ψ).symm
   -- ===== the former's type reads as its model's =====
-  have hEqTy : ∀ ψ : Name → Nat,
+  have hEqTy : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 cvT.type
         = denoteMeta mp.base2.acval env ψ 0 cvmT.type := by
     intro ψ
@@ -228,7 +228,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
       mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfE)
     exact constsBound_of_constsResolve _ hty
   intro us hus
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ' cvT.levelParams us := ⟨_, rfl⟩
   obtain ⟨ta, htaM, hokta, -⟩ := mp.acval_memType hTmE ψ
   have htaM' : denoteMeta mp.base2.acval env ψ 0 cvmT.type = some ta := htaM
@@ -558,7 +558,7 @@ family's own data because `hvP` mentions `caps.etaFields`, which is not
 in scope until the family is found. -/
 theorem capsOk_cons_proj_of (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
     {blockNames : List Name}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
@@ -574,7 +574,7 @@ theorem capsOk_cons_proj_of (mp : EnvModelM V μ env)
       Ix.Kernel.EtaPins μ env T₀ cvT.levelParams caps ∧
         blockNames.contains T₀ = true ∧
         blockNames.contains caps.etaCtor = true ∧
-        ∀ j, j < caps.etaFields → ∀ ψ : Name → Nat,
+        ∀ j, j < caps.etaFields → ∀ ψ : LevelParam → Nat,
           m₂.acval (Ix.Kernel.projFnName T₀ j) ψ
             = mp.base2.acval (Ix.Kernel.projModelName T₀ j) ψ) :
     CapsOk m₂ :=

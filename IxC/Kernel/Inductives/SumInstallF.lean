@@ -96,7 +96,7 @@ def normCtorValF (ops : CheckerOps m) (fe : FEnv) (T : Name) (nP nF : Nat)
 
 /-- `checkSumCtor` through the index. -/
 def checkSumCtorF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
+    (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) : m (ConstantVal × List Level) := do
   let cvCa₀ ← checkConstantValF ops fe cvC
   let cvCa ← normCtorValF ops fe T nP nF cvC cvCa₀
@@ -129,7 +129,7 @@ def checkSumCtorF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Name)
 
 /-- `checkSumCtors` through the index. -/
 def checkSumCtorsF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Name)
-    (lps : List Name) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
+    (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     List (ConstantVal × Nat) → m (List (ConstantVal × Nat) × List (List Level))
   | [] => pure ([], [])

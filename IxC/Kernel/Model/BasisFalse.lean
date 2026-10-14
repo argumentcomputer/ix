@@ -49,7 +49,7 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [0]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_falseA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨falseA :: env.consts⟩ ψ 0 falseA.toConstantVal.type
       = some (BConst.typeAV .empty [0]) := by
   rw [show falseA.toConstantVal.type = Expr.sort .zero from rfl,
@@ -98,7 +98,7 @@ motive's domain `False → Sort u` has sort `imax 0 (u+1) = u+1`, never
 /-- **`False.rec`'s type reading.**  The four moves of the module
 docstring; the leaves are `acval_basis_pinned` at `Empty`. -/
 theorem denoteMeta_falseRecA_type {m : EnvModel V env}
-    {A : (Name → Nat) → AnnotTerm} (ψ : Name → Nat)
+    {A : (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat)
     (hE : env.find? falseName = some falseA) :
     denoteMeta (acvalWith m.acval falseRecA.name A)
         ⟨falseRecA :: env.consts⟩ ψ 0 falseRecA.toConstantVal.type
@@ -137,7 +137,7 @@ theorem denoteMeta_falseRecA_type {m : EnvModel V env}
 reads.**  Three binders, three `pwBit`s, three `typeAV` slots, and the
 iffs are `pwBit_never` and `pwBit_ifAllZero_single` — nothing here is
 chosen. -/
-theorem bitAgree_falseRecA (ψ : Name → Nat) :
+theorem bitAgree_falseRecA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ (.ifAllZero [uN]))
         (.pi 0 (pwBit ψ .never) (.const .empty [0]) (.sort (ψ uN)))

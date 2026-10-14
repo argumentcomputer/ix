@@ -65,7 +65,7 @@ over.  The fabricated constructor application is typed by no
 `--verified` check; what types it is the *pinned* `Eq` former's own
 graph, against the statement's grading. -/
 theorem eqThird_mem (mp : EnvModelM V μ env)
-    (heqfE : env.find? eqName = some eqA) (χ : Name → Nat)
+    (heqfE : env.find? eqName = some eqA) (χ : LevelParam → Nat)
     {σ : Nat → V} {Sa la ra : AnnotTerm}
     (hok : WellDenotedV V σ
       (.app (.app (.app (mp.base2.acval eqName χ) Sa) la) ra))
@@ -130,7 +130,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
     hp.1 hcape
   obtain ⟨cvmC, mvalC, hmC, hCmE', hCmlps⟩ := hCmE
   -- ===== the two valuation identifications (v1's `hvT`/`hvC`) =====
-  have hvT : ∀ ψ : Name → Nat,
+  have hvT : ∀ ψ : LevelParam → Nat,
       m₂.acval T ψ = mp.base2.acval (T.str "_model") ψ := by
     intro ψ
     by_cases hT0 : T = c₀.name
@@ -141,7 +141,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hT0 hh.symm)] at hfT
         exact hfT
       exact (hIA T hbT _ hfE ψ).symm
-  have hvC : ∀ ψ : Name → Nat,
+  have hvC : ∀ ψ : LevelParam → Nat,
       m₂.acval caps.etaCtor ψ
         = mp.base2.acval (caps.etaCtor.str "_model") ψ := by
     intro ψ
@@ -155,7 +155,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         exact hfC
       exact (hIA caps.etaCtor hbC _ hfCe ψ).symm
   -- ===== the former's type reads as its model's =====
-  have hEqTy : ∀ ψ : Name → Nat,
+  have hEqTy : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 cvT.type
         = denoteMeta mp.base2.acval env ψ 0 cvmT.type := by
     intro ψ
@@ -194,7 +194,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfE)
       exact constsBound_of_constsResolve _ hty
   intro us hus
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ' cvT.levelParams us := ⟨_, rfl⟩
   obtain ⟨ta, htaM, hokta, -⟩ := mp.acval_memType hTmE ψ
   have htaM' : denoteMeta mp.base2.acval env ψ 0 cvmT.type = some ta := htaM

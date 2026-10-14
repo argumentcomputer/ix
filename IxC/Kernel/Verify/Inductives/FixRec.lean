@@ -36,7 +36,7 @@ open Expr
 /-! ## The recursive generators, unfolded -/
 
 /-- `structMinorTyR`, unfolded to its three steps. -/
-theorem structMinorTyR_unfold {C : Name} {lps : List Name} {nP nF o : Nat} {pw : PropWhen}
+theorem structMinorTyR_unfold {C : Name} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
     {cty mty : Expr} {recIdx : List Nat}
     (h : structMinorTyR C lps nP nF o pw cty recIdx = some mty) :
     ∃ (cbs fbs : List (Expr × BinderMeta)) (crest0 res : Expr),
@@ -54,7 +54,7 @@ theorem structMinorTyR_unfold {C : Name} {lps : List Name} {nP nF o : Nat} {pw :
   exact ⟨q.1, r.1, q.2, r.2, hq, hr, hmty⟩
 
 /-- The recursive minors' `∀`-telescope, one constructor peeled. -/
-theorem structMinorsPisR_cons {lps : List Name} {nP : Nat} {pw : PropWhen} {C : Name}
+theorem structMinorsPisR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Name}
     {nF : Nat} {cty : Expr} {recIdx : List Nat} {cs : List (Name × Nat × Expr × List Nat)}
     {o : Nat} {body mins : Expr}
     (h : structMinorsPisR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
@@ -67,7 +67,7 @@ theorem structMinorsPisR_cons {lps : List Name} {nP : Nat} {pw : PropWhen} {C : 
   exact ⟨mty, rest, hmty, hrest, hmin.symm⟩
 
 /-- The recursive minors' `λ`-telescope, one constructor peeled. -/
-theorem structMinorsLamsR_cons {lps : List Name} {nP : Nat} {pw : PropWhen} {C : Name}
+theorem structMinorsLamsR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Name}
     {nF : Nat} {cty : Expr} {recIdx : List Nat} {cs : List (Name × Nat × Expr × List Nat)}
     {o : Nat} {body mins : Expr}
     (h : structMinorsLamsR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
@@ -80,20 +80,20 @@ theorem structMinorsLamsR_cons {lps : List Name} {nP : Nat} {pw : PropWhen} {C :
   exact ⟨mty, rest, hmty, hrest, hmin.symm⟩
 
 /-- The empty recursive `∀`-telescope is its body. -/
-theorem structMinorsPisR_nil {lps : List Name} {nP : Nat} {pw : PropWhen} {o : Nat}
+theorem structMinorsPisR_nil {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {o : Nat}
     {body mins : Expr} (h : structMinorsPisR lps nP pw [] o body = some mins) : mins = body := by
   simp only [structMinorsPisR, Option.some.injEq] at h
   exact h.symm
 
 /-- The empty recursive `λ`-telescope is its body. -/
-theorem structMinorsLamsR_nil {lps : List Name} {nP : Nat} {pw : PropWhen} {o : Nat}
+theorem structMinorsLamsR_nil {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {o : Nat}
     {body mins : Expr} (h : structMinorsLamsR lps nP pw [] o body = some mins) : mins = body := by
   simp only [structMinorsLamsR, Option.some.injEq] at h
   exact h.symm
 
 /-- `structRecTyR`, unfolded to its five steps (`structRecTyI_unfold`
 with the recursive minors). -/
-theorem structRecTyR_unfold {T : Name} {lps : List Name} {elim : Name} {large : Bool}
+theorem structRecTyR_unfold {T : Name} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
     {nP nIdx : Nat} {tty recTy : Expr} {ctors : List (Name × Nat × Expr × List Nat)}
     (h : structRecTyR T lps elim large nP nIdx tty ctors = some recTy) :
     ∃ (tbs : List (Expr × BinderMeta)) (itele motiveTy major minors : Expr),
@@ -115,7 +115,7 @@ theorem structRecTyR_unfold {T : Name} {lps : List Name} {elim : Name} {large : 
   exact ⟨q.1, q.2, motiveTy, major, minors, hq, hmot, hmaj, hmin, hr⟩
 
 /-- `structRecRhsR` at rule `j`, unfolded. -/
-theorem structRecRhsR_unfold {T : Name} {lps : List Name} {elim : Name} {large : Bool}
+theorem structRecRhsR_unfold {T : Name} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
     {nP nIdx : Nat} {tty rhs : Expr} {ctors : List (Name × Nat × Expr × List Nat)} {j : Nat}
     {recC : Name} {rlvls : List Level}
     (h : structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j = some rhs) :
@@ -583,7 +583,7 @@ theorem NoProjAt.structIhPis {nF o : Nat} {pw : PropWhen} {teleOf : Nat → List
     · exact NoProjAt.structIdxAt (hidx k e he)
     · exact NoProjAt.mkAppN (by simp) (NoProjAt.structTeleVars _)
 
-theorem NoProjAt.structMinorTyR {C : Name} {lps : List Name} {nP nF o : Nat} {pw : PropWhen}
+theorem NoProjAt.structMinorTyR {C : Name} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
     {cty mty : Expr} {recIdx : List Nat} (h : structMinorTyR C lps nP nF o pw cty recIdx = some mty)
     (hC : NoProjAt T i cty) : NoProjAt T i mty := by
   obtain ⟨cbs, fbs, crest0, res, hs, hr, hm⟩ := structMinorTyR_unfold h
@@ -599,7 +599,7 @@ theorem NoProjAt.structMinorTyR {C : Name} {lps : List Name} {nP nF o : Nat} {pw
   · exact (NoProjAt.getAppArgs (NoProjAt.stripPis nF hr hcrest) e (List.mem_of_mem_drop he)).liftLooseBVars
   · exact NoProjAt.structCtorSpineAt _ _ _ _ _
 
-theorem NoProjAt.structMinorsPisR {lps : List Name} {nP : Nat} {pw : PropWhen} :
+theorem NoProjAt.structMinorsPisR {lps : List LevelParam} {nP : Nat} {pw : PropWhen} :
     ∀ {ctors : List (Name × Nat × Expr × List Nat)} {o : Nat} {body mins : Expr},
       structMinorsPisR lps nP pw ctors o body = some mins →
       (∀ c ∈ ctors, NoProjAt T i c.2.2.1) → NoProjAt T i body → NoProjAt T i mins
@@ -610,7 +610,7 @@ theorem NoProjAt.structMinorsPisR {lps : List Name} {nP : Nat} {pw : PropWhen} :
     exact ⟨NoProjAt.structMinorTyR hmty (hcs _ List.mem_cons_self),
       NoProjAt.structMinorsPisR hrest (fun c hc => hcs c (List.mem_cons_of_mem _ hc)) hb⟩
 
-theorem NoProjAt.structMinorsLamsR {lps : List Name} {nP : Nat} {pw : PropWhen} :
+theorem NoProjAt.structMinorsLamsR {lps : List LevelParam} {nP : Nat} {pw : PropWhen} :
     ∀ {ctors : List (Name × Nat × Expr × List Nat)} {o : Nat} {body mins : Expr},
       structMinorsLamsR lps nP pw ctors o body = some mins →
       (∀ c ∈ ctors, NoProjAt T i c.2.2.1) → NoProjAt T i body → NoProjAt T i mins
@@ -621,7 +621,7 @@ theorem NoProjAt.structMinorsLamsR {lps : List Name} {nP : Nat} {pw : PropWhen} 
     exact ⟨NoProjAt.structMinorTyR hmty (hcs _ List.mem_cons_self),
       NoProjAt.structMinorsLamsR hrest (fun c hc => hcs c (List.mem_cons_of_mem _ hc)) hb⟩
 
-theorem NoProjAt.structFamI (T' : Name) (lps : List Name) (nP nIdx e o : Nat) :
+theorem NoProjAt.structFamI (T' : Name) (lps : List LevelParam) (nP nIdx e o : Nat) :
     NoProjAt T i (structFamI T' lps nP nIdx e o) := by
   unfold Ix.Kernel.structFamI
   refine NoProjAt.mkAppN (by simp) ?_
@@ -630,7 +630,7 @@ theorem NoProjAt.structFamI (T' : Name) (lps : List Name) (nP nIdx e o : Nat) :
   · exact NoProjAt.structPsAt _ _ a h
   · exact NoProjAt.structPsAt _ _ a h
 
-theorem NoProjAt.structMotiveTyI {T' : Name} {lps : List Name} {nP nIdx : Nat} {ℓ : Level}
+theorem NoProjAt.structMotiveTyI {T' : Name} {lps : List LevelParam} {nP nIdx : Nat} {ℓ : Level}
     {itele mty : Expr} (h : structMotiveTyI T' lps nP nIdx ℓ itele = some mty)
     (hI : NoProjAt T i itele) : NoProjAt T i mty := by
   unfold Ix.Kernel.structMotiveTyI at h
@@ -640,7 +640,7 @@ theorem NoProjAt.structMotiveTyI {T' : Name} {lps : List Name} {nP nIdx : Nat} {
 
 /-- **The generated recursor type at a recursive block has no `.proj`
 node** the type former's and the constructors' types do not have. -/
-theorem NoProjAt.structRecTyR {T' : Name} {lps : List Name} {elim : Name} {large : Bool}
+theorem NoProjAt.structRecTyR {T' : Name} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
     {nP nIdx : Nat} {tty recTy : Expr} {ctors : List (Name × Nat × Expr × List Nat)}
     (h : structRecTyR T' lps elim large nP nIdx tty ctors = some recTy)
     (hT : NoProjAt T i tty) (hC : ∀ c ∈ ctors, NoProjAt T i c.2.2.1) : NoProjAt T i recTy := by
@@ -659,7 +659,7 @@ theorem NoProjAt.structRecTyR {T' : Name} {lps : List Name} {elim : Name} {large
 
 /-- **The generated rules at a recursive block have no `.proj` node**
 the type former's and the constructors' types do not have. -/
-theorem NoProjAt.structRecRhsR {T' : Name} {lps : List Name} {elim : Name} {large : Bool}
+theorem NoProjAt.structRecRhsR {T' : Name} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
     {nP nIdx j : Nat} {tty rhs : Expr} {ctors : List (Name × Nat × Expr × List Nat)}
     {recC : Name} {rlvls : List Level}
     (h : structRecRhsR T' lps elim large nP nIdx tty ctors recC rlvls j = some rhs)

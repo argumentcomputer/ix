@@ -55,14 +55,14 @@ section Quot
 open Ix.Kernel (quotA quotMkA quotLiftA quotIndA quotSoundA quotName
   quotMkName quotLiftName quotIndName quotSoundName eqA eqName)
 
-variable {m : EnvModel V env} {A : (Name → Nat) → AnnotTerm}
+variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The block's two pinned leaves
 
 `Quot` and `Quot.mk` are read by every later constant in the block. -/
 
 /-- The pinned `Quot` leaf at an extension, at any level. -/
-theorem denoteMeta_quotLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_quotLeaf {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = quotName)
     (hQ : env.find? quotName = some quotA) (d : Nat) (l : Level) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
@@ -74,7 +74,7 @@ theorem denoteMeta_quotLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
   simp [Level.substFn]
 
 /-- The pinned `Quot.mk` leaf at an extension, at any level. -/
-theorem denoteMeta_quotMkLeaf {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_quotMkLeaf {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = quotMkName)
     (hM : env.find? quotMkName = some quotMkA) (d : Nat) (l : Level) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
@@ -94,7 +94,7 @@ def quotRelTy : AnnotTerm :=
 
 /-- **`Quot`'s type reading.** -/
 theorem denoteMeta_quotA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨quotA :: env.consts⟩ ψ 0 quotA.toConstantVal.type
       = some (.pi 0 (pwBit ψ .never) (.sort (ψ uN))
           (.pi 0 (pwBit ψ .never) (quotRelTy) (.sort (ψ uN)))) := by
@@ -111,7 +111,7 @@ theorem bitAgree_quotRelTy (j : Nat) :
       (fun h => absurd h (maxOne_ne_zero j)))
     (.bvar 0) (.pi Iff.rfl (.bvar 1) (.sort 0))
 
-theorem bitAgree_quotA (ψ : Name → Nat) :
+theorem bitAgree_quotA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ .never) (.sort (ψ uN))
         (.pi 0 (pwBit ψ .never) (quotRelTy) (.sort (ψ uN))))
@@ -132,7 +132,7 @@ def quotMkTy (b u : Nat) : AnnotTerm :=
 /-- **`Quot.mk`'s type reading.**  Stated at *any* extension whose cons
 is neither `Quot` nor `Quot.mk` as well, because both recursor rows
 read it as their fired constructor's telescope (`TVja`). -/
-theorem denoteMeta_quotMkTy {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_quotMkTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = quotName)
     (hQ : env.find? quotName = some quotA) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ 0
@@ -141,9 +141,9 @@ theorem denoteMeta_quotMkTy {c₀ : ConstantInfo} (ψ : Name → Nat)
   have hQc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
         (Expr.const (Name.str Name.anonymous "Quot")
-          [Level.param (Name.str Name.anonymous "u")])
+          [Level.param 0])
         = some (AnnotTerm.const .quot
-            [ψ (Name.str Name.anonymous "u")]) := by
+            [ψ 0]) := by
     intro d
     exact denoteMeta_quotLeaf (m := m) (A := A) (c₀ := c₀) ψ hne hQ d
       (Level.param uN)
@@ -151,14 +151,14 @@ theorem denoteMeta_quotMkTy {c₀ : ConstantInfo} (ψ : Name → Nat)
     denoteMeta_sort, denoteMeta_app, denoteMeta_fvar, Expr.instantiate1,
     quotRelTy, quotMkTy, pwBit_never, hQc, Level.eval, uN]
 
-theorem denoteMeta_quotMkA_type (ψ : Name → Nat)
+theorem denoteMeta_quotMkA_type (ψ : LevelParam → Nat)
     (hQ : env.find? quotName = some quotA) :
     denoteMeta (acvalWith m.acval quotMkA.name A)
         ⟨quotMkA :: env.consts⟩ ψ 0 quotMkA.toConstantVal.type
       = some (quotMkTy (pwBit ψ (.ifAllZero [uN])) (ψ uN)) :=
   denoteMeta_quotMkTy (m := m) (A := A) ψ (by decide) hQ
 
-theorem bitAgree_quotMkA (ψ : Name → Nat) :
+theorem bitAgree_quotMkA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree (quotMkTy (pwBit ψ (.ifAllZero [uN])) (ψ uN))
       (BConst.typeAV .quotMk [ψ uN]) := by
   have hz : pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [uN]) = 0 ↔ ψ uN = 0 :=
@@ -415,7 +415,7 @@ def quotIndTy (u : Nat) : AnnotTerm :=
           (.pi 0 0 (quotApp u 3 2) (.app (.bvar 2) (.bvar 0))))))
 
 /-- **`Quot.ind`'s type reading.** -/
-theorem denoteMeta_quotIndA_type (ψ : Name → Nat)
+theorem denoteMeta_quotIndA_type (ψ : LevelParam → Nat)
     (hQ : env.find? quotName = some quotA)
     (hM : env.find? quotMkName = some quotMkA) :
     denoteMeta (acvalWith m.acval quotIndA.name A)
@@ -465,7 +465,7 @@ theorem denoteMeta_quotIndA_type (ψ : Name → Nat)
     quotIndMotiveTy, quotIndMinorTy, quotIndTy, pwBit_never,
     pwBit_ifAllZero_nil, hQc, hMc, Level.eval]
 
-theorem bitAgree_quotIndA (ψ : Name → Nat) :
+theorem bitAgree_quotIndA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree (quotIndTy (ψ uN))
       (BConst.typeAV .quotInd [ψ uN]) :=
   .pi Iff.rfl (.sort _)
@@ -636,7 +636,7 @@ theorem quotIndRa_wellDenotedV (u : Nat) (ρ : Nat → V) :
   · exact fun a ha => (hbody a (by rwa [hdom] at ha)).2
 
 /-- **`Quot.ind`'s rule's RHS reading.** -/
-theorem denoteMeta_quotInd_rhs (ψ : Name → Nat)
+theorem denoteMeta_quotInd_rhs (ψ : LevelParam → Nat)
     (hQ : env.find? quotName = some quotA)
     (hM : env.find? quotMkName = some quotMkA) :
     denoteMeta (acvalWith m.acval quotIndA.name A)
@@ -672,11 +672,11 @@ theorem quotIndLaw {m : EnvModel V env}
     (hM : env.find? quotMkName = some quotMkA)
     (hac : m₂.acval = acvalWith m.acval quotIndA.name
       (fun ψ => AnnotTerm.const .quotInd [ψ uN]))
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ quotIndA.name quotIndA.toConstantVal 4 4
       quotIndRule := by
   refine ⟨Nat.le_refl 4, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ quotIndA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   have hRa : denoteMeta m₂.acval ⟨quotIndA :: env.consts⟩ φ 0
@@ -825,7 +825,7 @@ level the constant reads `Eq` at, so neither mentions `EnvModelM`. -/
 
 /-- The stored `Eq` former's leaf at a `Quot`-block extension: the
 prefix's own, by `acvalWith_ne`. -/
-theorem denoteMeta_eqLeaf {c₀ : ConstantInfo} (ψ : Name → Nat) (l : Level)
+theorem denoteMeta_eqLeaf {c₀ : ConstantInfo} (ψ : LevelParam → Nat) (l : Level)
     (hne : ¬ c₀.name = eqName)
     (hE : env.find? eqName = some eqA) (d : Nat) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
@@ -885,7 +885,7 @@ def quotSoundTy (E : AnnotTerm) (u : Nat) : AnnotTerm :=
               (quotMkApp u 4 3 2)) (quotMkApp u 4 3 1))))))
 
 /-- **`Quot.sound`'s type reading.** -/
-theorem denoteMeta_quotSoundA_type (ψ : Name → Nat)
+theorem denoteMeta_quotSoundA_type (ψ : LevelParam → Nat)
     (hQ : env.find? quotName = some quotA)
     (hM : env.find? quotMkName = some quotMkA)
     (hE : env.find? eqName = some eqA) :
@@ -1587,7 +1587,7 @@ theorem interp_inst_cons4 (e a : AnnotTerm) (x1 x2 x3 x4 : V)
 /-- Every stored leaf absorbs instantiation: `EnvS.cval_closed`
 through `EnvModel.acval_erase` and `AnnotTerm.inst_eq_self`. -/
 theorem acval_inst_eq_self (m : EnvModel V env) (n : Name)
-    (ψ : Name → Nat) (a : AnnotTerm) (k : Nat) :
+    (ψ : LevelParam → Nat) (a : AnnotTerm) (k : Nat) :
     (m.acval n ψ).inst a k = m.acval n ψ :=
   AnnotTerm.inst_eq_self _
     (Term.bvarsBelow.mono (Nat.zero_le k)
@@ -1596,7 +1596,7 @@ theorem acval_inst_eq_self (m : EnvModel V env) (n : Name)
 /-! ### `Quot.lift`'s type reading, and its rule -/
 
 /-- **`Quot.lift`'s type reading.** -/
-theorem denoteMeta_quotLiftA_type (ψ : Name → Nat)
+theorem denoteMeta_quotLiftA_type (ψ : LevelParam → Nat)
     (hQ : env.find? quotName = some quotA)
     (hE : env.find? eqName = some eqA) :
     denoteMeta (acvalWith m.acval quotLiftA.name A)
@@ -1663,7 +1663,7 @@ def quotLiftRa (E : AnnotTerm) (b u v : Nat) : AnnotTerm :=
             (.lam b (.bvar 4) (.app (.bvar 2) (.bvar 0)))))))
 
 /-- **`Quot.lift`'s rule's RHS reading.** -/
-theorem denoteMeta_quotLift_rhs (ψ : Name → Nat)
+theorem denoteMeta_quotLift_rhs (ψ : LevelParam → Nat)
     (hE : env.find? eqName = some eqA) :
     denoteMeta (acvalWith m.acval quotLiftA.name A)
         ⟨quotLiftA :: env.consts⟩ ψ 0 quotLiftRule.rhs
@@ -2025,11 +2025,11 @@ theorem quotLiftLaw {m : EnvModel V env}
     (hE : env.find? eqName = some eqA) (heq : EqLaw m)
     (hac : m₂.acval = acvalWith m.acval quotLiftA.name
       (fun ψ => AnnotTerm.const .quotLift [ψ uN, ψ vN]))
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ quotLiftA.name quotLiftA.toConstantVal 5 5
       quotLiftRule := by
   refine ⟨Nat.le_refl 5, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ quotLiftA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   have hEuN : Level.substFn ψ [uN] [Level.param vN] uN = ψ vN := by
@@ -2198,7 +2198,7 @@ theorem quotLiftLaw {m : EnvModel V env}
 /-- The two `EqLaw` halves at the assignment `Quot.lift` reads the
 `Eq` former at — `v`, not the constant's own first parameter. -/
 theorem quotLift_eqLaws (mp : EnvModelM V μ env)
-    (hE : env.find? eqName = some eqA) (ψ : Name → Nat) :
+    (hE : env.find? eqName = some eqA) (ψ : LevelParam → Nat) :
     (∀ (ρ : Nat → V) (T x y : V), T ∈ˢ (univ (ψ vN) : V) →
       x ∈ˢ T → y ∈ˢ T →
       app (app (app (interp V ρ (mp.base2.acval eqName
@@ -2231,7 +2231,7 @@ theorem extendQuotLift (mp : EnvModelM V μ env)
   have hty := fun ψ =>
     denoteMeta_quotLiftA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .quotLift [ψ uN, ψ vN]) ψ hQ hE
-  have hz : ∀ ψ : Name → Nat,
+  have hz : ∀ ψ : LevelParam → Nat,
       pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [vN]) = 0 ↔ ψ vN = 0 :=
     fun ψ => pwBit_ifAllZero_single ψ vN
   refine nonempty_of_exists (declStep_preserves_of_basis_rec_cons mp

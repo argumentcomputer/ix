@@ -109,7 +109,7 @@ pin.**  From `EnvS.basis_pinned` and `acval_erase`, by injectivity of
 theorem acval_basis_pinned {m : EnvModel V env}
     {n : Name} {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
-    {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : Name → Nat}
+    {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : LevelParam → Nat}
     (hd : Ix.Kernel.Verify.pinnedStructT n ψ
       = some (Term.const c us)) :
     m.acval n ψ = .const c us := by
@@ -149,12 +149,12 @@ their obligation here, and so would any inductive-kind cons.  (The
 `Nat` block itself is where the guard *becomes* true; it supplies
 `nat_heads` bespoke, and no back-transfer exists.) -/
 theorem natHeads_cons_offNat (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
     (hnS : c₀.name ≠ natSuccName)
     (m2 : EnvModel V ⟨c₀ :: env.consts⟩)
     (hacval : m2.acval = acvalWith mp.base2.acval c₀.name A)
-    (φ : Name → Nat) : NatHeads m2 φ := by
+    (φ : LevelParam → Nat) : NatHeads m2 φ := by
   intro hg ρ
   rw [hacval]
   -- the three lookups are the prefix's, so the guard reflects
@@ -227,7 +227,7 @@ stored family can be completed here and the law's leaves are all
 prefix leaves. -/
 theorem capsOk_cons_basis (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)

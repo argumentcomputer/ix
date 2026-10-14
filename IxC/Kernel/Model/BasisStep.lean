@@ -76,7 +76,7 @@ theorem bitAgree_wellDenotedV {e e' : AnnotTerm} (h : e.BitAgree e')
 eleven premises are discharged here; what remains is the tower and its
 type's reading. -/
 theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     -- a basis cons is never a value kind
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
@@ -98,23 +98,23 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
     -- the head's own obligations (task #161 S7: what the v1 base at
     -- the extension used to supply)
     (hh : ConsHead env c₀ A)
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
-    (hAparams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂)
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
-    (hAvalid : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
+    (hAvalid : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (A ψ))
     -- the type's reading, its grading, and the tower's membership
-    (htyReads : ∀ ψ : Name → Nat,
+    (htyReads : ∀ ψ : LevelParam → Nat,
       ∃ ta : AnnotTerm,
         denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta)
-    (htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
-    (hmemNew : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (hmemNew : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
@@ -162,7 +162,7 @@ any carrier whose base and `acval` are the extension's — so a caller
 never has to spell `declStep_preserves_of_cons`'s anonymous-constructor
 carrier. -/
 theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
@@ -171,28 +171,28 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
     (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
-    (hAparams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂)
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
-    (hAvalid : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
+    (hAvalid : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (A ψ))
-    (htyReads : ∀ ψ : Name → Nat,
+    (htyReads : ∀ ψ : LevelParam → Nat,
       ∃ ta : AnnotTerm,
         denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta)
-    (htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
-    (hmemNew : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (hmemNew : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
     (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
-      ∀ φ : Name → Nat, RecRules m₂ φ)
+      ∀ φ : LevelParam → Nat, RecRules m₂ φ)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry := by
       intro _ h; exact nomatch h) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
@@ -221,7 +221,7 @@ side condition is `eqName ≠ c₀.name`, and at this cons the constant
 supplies it from its own tower (`eqLaw_of_tower`).  Seven of the
 eight rows still collapse. -/
 theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
@@ -232,22 +232,22 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
     (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
-    (hAparams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂)
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
-    (hAvalid : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
+    (hAvalid : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (A ψ))
-    (htyReads : ∀ ψ : Name → Nat,
+    (htyReads : ∀ ψ : LevelParam → Nat,
       ∃ ta : AnnotTerm,
         denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta)
-    (htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
-    (hmemNew : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (hmemNew : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
@@ -280,7 +280,7 @@ block needs this: its first three conses *are* the three names
 every one of them, and `Nat.rec` owes a `rec_rules` row besides.  Five
 rows still collapse. -/
 theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnEq : eqName ≠ c₀.name)
@@ -288,31 +288,31 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
     (hred : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ Ix.Kernel.reduceOpNames)
     (hh : ConsHead env c₀ A)
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
-    (hAparams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂)
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
-    (hAvalid : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
+    (hAvalid : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (A ψ))
-    (htyReads : ∀ ψ : Name → Nat,
+    (htyReads : ∀ ψ : LevelParam → Nat,
       ∃ ta : AnnotTerm,
         denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta)
-    (htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
-    (hmemNew : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (hmemNew : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
     (hnh : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
-      ∀ φ : Name → Nat, NatHeads m₂ φ)
+      ∀ φ : LevelParam → Nat, NatHeads m₂ φ)
     (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
-      ∀ φ : Name → Nat, RecRules m₂ φ)
+      ∀ φ : LevelParam → Nat, RecRules m₂ φ)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry := by
       intro _ h; exact nomatch h) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,

@@ -30,8 +30,8 @@ private theorem fixThrow_ne_ok {α : Type} {e : CheckError} {a : α}
 
 /-- The generated rules loop: `k` rules for constructors `j, j+1, …`,
 each the generator's output at its position, scoped at `envR`. -/
-theorem checkNativeRules_inv {envR : Env} {rlps : List Name} {T : Name}
-    {lps : List Name} {elim : Name} {large : Bool} {nP nIdx : Nat} {tty : Expr}
+theorem checkNativeRules_inv {envR : Env} {rlps : List LevelParam} {T : Name}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr}
     {ctors : List (Name × Nat × Expr × List Nat)} {recC : Name} {rlvls : List Level} :
     ∀ {k j : Nat} {rhss : List Expr},
       checkNativeRules (m := CheckM) envR rlps T lps elim large nP nIdx tty ctors recC
@@ -218,7 +218,7 @@ theorem checkNativeRec_shape {env : Env} {p : NativeParts}
 /-- The kinds' classification at install (task #210 Part D): the
 recogniser's syntactic reading of the stored constructors, with no
 non-positive and no unmodeled occurrence. -/
-theorem classifyFixKinds_inv {T : Name} {lps : List Name} {nP nIdx : Nat}
+theorem classifyFixKinds_inv {T : Name} {lps : List LevelParam} {nP nIdx : Nat}
     {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
     (h : classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA = .ok kinds) :
     ctorsA.mapM (recCtorKinds T lps nP nIdx) = some kinds ∧

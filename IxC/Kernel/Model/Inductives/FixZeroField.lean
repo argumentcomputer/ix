@@ -78,13 +78,13 @@ theorem chainsRealI_zero {μ : V} {u w : Nat} {ρp : Nat → V} {rss : List (Lis
 
 /-- **Unit-likeness at the dummy former's leaf**: the family with no
 constructor chain is empty, so the law is vacuous. -/
-theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
+theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
     {cvT : ConstantVal} {caps : IndCaps}
-    {w : (Name → Nat) → Nat} {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hleaf : ∀ ψ, m.acval T ψ = sumTyAV (w ψ) (pps ψ) [])
     (hread : ∀ ψ, denoteMeta m.acval env ψ 0 cvT.type
       = some (mkPisAV (pps ψ) (.sort (w ψ))))
-    (hokTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hokTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenotedV V ρ (mkPisAV (pps ψ) (.sort (w ψ))))
     (hpar : ∀ ψ, caps.unitParams = (pps ψ).length) :
     UnitLaw m φ' T cvT caps := by
@@ -109,21 +109,21 @@ theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
 /-- **Unit-likeness at the fixpoint leaf of a fieldless one-constructor
 block**: the fibre is the one tagged empty tuple (the point at a
 squash instance). -/
-theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
+theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
     {cvT : ConstantVal} {caps : IndCaps}
-    {u w : (Name → Nat) → Nat} {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {rss : List (List Bool)} {tlss : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
-    {eiss : (Name → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (Name → Nat) → List (List AnnotTerm)}
+    {u w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
+    {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}
     (hleaf : ∀ ψ, m.acval T ψ
       = nativeTyAVI (u ψ) (w ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ))
-    (hfold : ∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
       SpineFit ρ ((pps ψ).map (·.2.2)) ts →
       ts.foldl SetTheory.app (interp V ρ
           (nativeTyAVI (u ψ) (w ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ)))
         = sumSet (w ψ) (sumFibre (w ψ) (consList ts ρ) [[] ++ [idxEqAV []]]))
     (hread : ∀ ψ, denoteMeta m.acval env ψ 0 cvT.type
       = some (mkPisAV (pps ψ) (.sort (w ψ))))
-    (hokTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hokTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenotedV V ρ (mkPisAV (pps ψ) (.sort (w ψ))))
     (hpar : ∀ ψ, caps.unitParams = (pps ψ).length) :
     UnitLaw m φ' T cvT caps := by
@@ -153,15 +153,15 @@ theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
 tagged empty tuple, and the constructor along the parameters is that
 tuple (the point at a squash instance) — the fabricated η spine at no
 field is the constructor at the parameters. -/
-theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
+theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
     {cvT : ConstantVal} {caps : IndCaps}
-    {u w : (Name → Nat) → Nat} {pps ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {rss : List (List Bool)} {tlss : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
-    {eiss : (Name → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (Name → Nat) → List (List AnnotTerm)}
+    {u w : (LevelParam → Nat) → Nat} {pps ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
+    {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}
     (hfields : caps.etaFields = 0)
     (hleaf : ∀ ψ, m.acval T ψ
       = nativeTyAVI (u ψ) (w ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ))
-    (hfold : ∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
       SpineFit ρ ((pps ψ).map (·.2.2)) ts →
       ts.foldl SetTheory.app (interp V ρ
           (nativeTyAVI (u ψ) (w ψ) (pps ψ) [] rss (tlss ψ) (eiss ψ) (Fss₀ ψ) (Ess ψ)))
@@ -169,9 +169,9 @@ theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : Name → Nat} {T : Name}
     (hleafC : ∀ ψ, m.acval caps.etaCtor ψ = sumMkAV (w ψ) 0 (ds ψ) [] (uChains [[]]))
     (hread : ∀ ψ, denoteMeta m.acval env ψ 0 cvT.type
       = some (mkPisAV (pps ψ) (.sort (w ψ))))
-    (hokTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hokTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenotedV V ρ (mkPisAV (pps ψ) (.sort (w ψ))))
-    (hfit : ∀ (ψ : Name → Nat) (ρ : Nat → V) (as : List V),
+    (hfit : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (as : List V),
       SpineFit ρ ((pps ψ).map (·.2.2)) as → SpineFit ρ ((ds ψ).map (·.2.2)) as)
     (hpar : ∀ ψ, caps.etaParams = (pps ψ).length) :
     EtaLaw m φ' T cvT caps := by

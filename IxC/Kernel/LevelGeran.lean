@@ -36,12 +36,12 @@ namespace Ix.Kernel.Level.Geran
 /-- A sublevel: `const p c` is Géran's `C(p, c)` and `var p x k` is
 `V(p, x, k)`. -/
 inductive Sub where
-  | const (path : List Name) (c : Nat)
-  | var (path : List Name) (x : Name) (k : Nat)
+  | const (path : List LevelParam) (c : Nat)
+  | var (path : List LevelParam) (x : LevelParam) (k : Nat)
 
 /-- Condition sets under which `l` is nonzero: `l` is nonzero exactly when
 every parameter of one of them is nonzero. -/
-def nzConds : Level → List (List Name)
+def nzConds : Level → List (List LevelParam)
   | .zero => []
   | .succ _ => [[]]
   | .param x => [[x]]
@@ -51,7 +51,7 @@ def nzConds : Level → List (List Name)
 /-- The sublevels of `l + k` under the condition set `path`, prepended to
 `acc`. `imax u v` is `v`, together with `u` under each condition set that
 makes `v` nonzero. -/
-def decomposeAux : List Name → Nat → Level → List Sub → List Sub
+def decomposeAux : List LevelParam → Nat → Level → List Sub → List Sub
   | path, k, .zero, acc => .const path k :: acc
   | path, k, .succ u, acc => decomposeAux path (k + 1) u acc
   | path, k, .max u v, acc => decomposeAux path k v (decomposeAux path k u acc)
@@ -63,7 +63,7 @@ def decomposeAux : List Name → Nat → Level → List Sub → List Sub
     else .var (x :: path) x k :: .const path k :: acc
 
 /-- Every parameter of `p` is in `q`. -/
-def subset (p q : List Name) : Bool := p.all (q.contains ·)
+def subset (p q : List LevelParam) : Bool := p.all (q.contains ·)
 
 /-- `C(p, 0)` is `0` under every valuation. -/
 def Sub.isZero : Sub → Bool

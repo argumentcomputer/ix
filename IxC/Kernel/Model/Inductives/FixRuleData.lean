@@ -85,10 +85,10 @@ theorem openPisAtFvars_constsBound {env₀ : Env} :
 /-- A recursive constructor's reading premise crosses a cons whose
 head is not the block's former and is not mentioned by the
 constructor's type. -/
-theorem CtorReadR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem CtorReadR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {c : Name × Nat × Expr × List Nat} {cd : CtorDatumR}
     (h : CtorReadR m ψ T lps nP nIdx c cd)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
     (hat : ∀ e : Expr, ConsCrossAt c₀ e) (hcb : ConstsBound env c.2.2.1)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
@@ -116,8 +116,8 @@ theorem CtorReadR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps
     exact h.recEntry i hi
 
 /-- The reading premises cross the recursor's cons. -/
-theorem CtorReadsR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
-    {nP nIdx : Nat} {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+    {nP nIdx : Nat} {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
     (hat : ∀ e : Expr, ConsCrossAt c₀ e)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
@@ -145,13 +145,13 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {tfvs : List Expr} {trest : Expr}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
     {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
@@ -159,14 +159,14 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA)
     {mI rP : Nat} {rules : List Ix.Kernel.RecRule}
     (hfresh : env.find? cvRa.name = none) (hT : p.cvT.name ≠ cvRa.name)
-    {A : (Name → Nat) → AnnotTerm}
+    {A : (LevelParam → Nat) → AnnotTerm}
     (m₂ : EnvModel V ⟨.recInfo cvRa mI rP rules :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval cvRa.name A)
     {j : Nat} {cA : ConstantVal × Nat} (hj : ctorsA[j]? = some cA) :
     ∃ rhs : Expr, rhss[j]? = some rhs ∧
       rhs.constsResolve ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ = true ∧
       rhs.hasFvar = false ∧ rhs.looseBVarsBounded 0 = true ∧
-      ∀ ψ : Name → Nat, denoteMeta m₂.acval ⟨.recInfo cvRa mI rP rules :: env.consts⟩ ψ 0 rhs
+      ∀ ψ : LevelParam → Nat, denoteMeta m₂.acval ⟨.recInfo cvRa mI rP rules :: env.consts⟩ ψ 0 rhs
         = some (mkLamsAV (fixRuleDataAV m₂ p.cvT.name ψ p.nP p.nIdx
             (Ix.Kernel.structElimLevel p.elim p.large) ((ppsAll ψ).take p.nP) ((ppsAll ψ).drop p.nP)
             (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))

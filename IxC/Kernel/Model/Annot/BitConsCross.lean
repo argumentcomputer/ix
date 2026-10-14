@@ -75,7 +75,7 @@ theorem ConsCrossAt.ofNtc {c₀ : ConstantInfo} {e : Expr}
     ConsCrossAt c₀ e := fun tbl heq => absurd heq (hntc tbl)
 
 theorem ConsCrossAt.instantiateLevelParams {c₀ : ConstantInfo} {e : Expr}
-    (h : ConsCrossAt c₀ e) (ks : List Name) (us : List Level) :
+    (h : ConsCrossAt c₀ e) (ks : List LevelParam) (us : List Level) :
     ConsCrossAt c₀ (e.instantiateLevelParams ks us) := fun tbl heq i =>
   Expr.NoProjAt.instantiateLevelParams ks us e (h tbl heq i)
 

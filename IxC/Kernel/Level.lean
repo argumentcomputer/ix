@@ -26,19 +26,19 @@ namespace Ix.Kernel.Level
 
 /-- Substitute level parameters: `subst ks vs l` replaces `param k` by the
 corresponding `v`.  Unlisted parameters remain. -/
-def subst (ks : List Name) (vs : List Level) : Level → Level
+def subst (ks : List LevelParam) (vs : List Level) : Level → Level
   | .zero => .zero
   | .succ l => .succ (subst ks vs l)
   | .max l r => .max (subst ks vs l) (subst ks vs r)
   | .imax l r => .imax (subst ks vs l) (subst ks vs r)
   | .param n => go ks vs n
 where
-  go : List Name → List Level → Name → Level
+  go : List LevelParam → List Level → LevelParam → Level
   | k :: ks, v :: vs, n => if k = n then v else go ks vs n
   | _, _, n => .param n
 
 /-- Are all parameters of `l` among `params`? -/
-def allParamsDefined (params : List Name) : Level → Bool
+def allParamsDefined (params : List LevelParam) : Level → Bool
   | .zero => true
   | .succ l => allParamsDefined params l
   | .max l r | .imax l r => allParamsDefined params l && allParamsDefined params r
@@ -129,7 +129,7 @@ def imaxRules (fuel : Nat) (l r : Level) (diff : Int) : Option Bool :=
   | _, _ => none  -- unreachable for simplified input; an internal error
 
 /-- Split on the parameter `p` being zero or positive. -/
-def byCases (fuel : Nat) (p : Name) (l r : Level) (diff : Int) : Option Bool := do
+def byCases (fuel : Nat) (p : LevelParam) (l r : Level) (diff : Int) : Option Bool := do
   let l0 := simplify (subst [p] [.zero] l)
   let r0 := simplify (subst [p] [.zero] r)
   if ← leqCore fuel l0 r0 diff then
@@ -211,7 +211,7 @@ Canonical on output (`PropWhen.bindZ`, task #194): an unlisted
 parameter reproduces `ifAllZero [n]`, so instantiating a declaration
 at its own parameters is the identity here too (`substPW_self`) —
 unconditionally, because every datum is canonical by construction. -/
-def substPW (ks : List Name) (vs : List Level) (pw : PropWhen) :
+def substPW (ks : List LevelParam) (vs : List Level) (pw : PropWhen) :
     PropWhen :=
   pw.bindZ fun n => zeronessOf (subst.go ks vs n)
 
@@ -219,10 +219,10 @@ end Ix.Kernel.Level
 
 namespace Ix.Kernel
 
-/-- No duplicates in a list of names. -/
-def Name.nodup : List Name → Bool
+/-- No duplicates in a list of level parameters. -/
+def LevelParam.nodup : List LevelParam → Bool
   | [] => true
-  | n :: ns => !ns.contains n && Name.nodup ns
+  | n :: ns => !ns.contains n && LevelParam.nodup ns
 
 /-- Is this a `_model`-suffixed name (the shape of model companions)? -/
 def Name.isModelSuffix : Name → Bool
@@ -240,7 +240,7 @@ def Name.isProjFnShape : Name → Bool
 
 /-- Substitute level parameters throughout an expression (sorts and
 constant level arguments). -/
-def Expr.instantiateLevelParams (ks : List Name) (us : List Level) : Expr → Expr
+def Expr.instantiateLevelParams (ks : List LevelParam) (us : List Level) : Expr → Expr
   | .bvar i => .bvar i
   | .fvar idx ty => .fvar idx (ty.instantiateLevelParams ks us)
   | .sort u => .sort (Level.subst ks us u)
@@ -262,7 +262,7 @@ prop-ness data included (task #161): their parameters are level
 parameters of the term — `instantiateLevelParams` substitutes into
 them, and its composition law needs them covered exactly as it needs
 the levels'. -/
-def Expr.allLevelParamsDefined (params : List Name) : Expr → Bool
+def Expr.allLevelParamsDefined (params : List LevelParam) : Expr → Bool
   | .bvar _ => true
   | .fvar _ t => t.allLevelParamsDefined params
   | .sort u => u.allParamsDefined params
@@ -286,13 +286,13 @@ trust point, the pure walk stays the spec.  Keyed by the node, dropped
 after each call (the answer depends on `params`). -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def LPMemoInv (params : List Name) (memo : Std.HashMap Expr Bool) : Prop :=
+def LPMemoInv (params : List LevelParam) (memo : Std.HashMap Expr Bool) : Prop :=
   ∀ (k : Expr) (r : Bool), memo[k]? = some r → r = k.allLevelParamsDefined params
 
-theorem LPMemoInv.empty {params : List Name} : LPMemoInv params {} := by
+theorem LPMemoInv.empty {params : List LevelParam} : LPMemoInv params {} := by
   intro k r h; simp at h
 
-theorem LPMemoInv.insert {params : List Name} {memo : Std.HashMap Expr Bool}
+theorem LPMemoInv.insert {params : List LevelParam} {memo : Std.HashMap Expr Bool}
     (hm : LPMemoInv params memo) {e : Expr} {r : Bool}
     (heq : r = e.allLevelParamsDefined params) :
     LPMemoInv params (memo.insert e r) := by
@@ -306,7 +306,7 @@ theorem LPMemoInv.insert {params : List Name} {memo : Std.HashMap Expr Bool}
   · exact hm k r' hk
 
 /-- Memoized `allLevelParamsDefined`. -/
-def Expr.allLevelParamsDefinedGo (params : List Name) (memo : Std.HashMap Expr Bool) :
+def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap Expr Bool) :
     Expr → Bool × Std.HashMap Expr Bool
   | .bvar _ => (true, memo)
   | .sort u => (u.allParamsDefined params, memo)
@@ -341,7 +341,7 @@ def Expr.allLevelParamsDefinedGo (params : List Name) (memo : Std.HashMap Expr B
       (r, memo.insert e r)
 
 /-- **The memoized walk is `allLevelParamsDefined`.** -/
-theorem Expr.allLevelParamsDefinedGo_spec {params : List Name} :
+theorem Expr.allLevelParamsDefinedGo_spec {params : List LevelParam} :
     ∀ (e : Expr) (memo : Std.HashMap Expr Bool), LPMemoInv params memo →
       (allLevelParamsDefinedGo params memo e).1 = e.allLevelParamsDefined params ∧
         LPMemoInv params (allLevelParamsDefinedGo params memo e).2 := by
@@ -412,7 +412,7 @@ theorem Expr.allLevelParamsDefinedGo_spec {params : List Name} :
       exact h2.insert (by simp [allLevelParamsDefined, h1])
 
 /-- The executed `allLevelParamsDefined` (one memoized DAG walk). -/
-def Expr.allLevelParamsDefinedFast (params : List Name) (e : Expr) : Bool :=
+def Expr.allLevelParamsDefinedFast (params : List LevelParam) (e : Expr) : Bool :=
   (allLevelParamsDefinedGo params {} e).1
 
 @[csimp] theorem Expr.allLevelParamsDefined_eq_allLevelParamsDefinedFast :

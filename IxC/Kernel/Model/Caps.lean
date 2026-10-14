@@ -202,7 +202,7 @@ and so genuinely owes the law; those installs supply it bespoke —
 `IndStepPB`'s bill.) -/
 theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)

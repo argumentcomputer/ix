@@ -40,13 +40,13 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
+variable {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The numeral spine, and its facts -/
 
 /-- The numeral spine at an environment's `Nat` heads — exactly
 `denoteMeta`'s `.lit (.natVal n)` clause. -/
-@[expose] def natLit {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def natLit {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (n : Nat) : AnnotTerm :=
   natLitAV (m.acval Ix.Kernel.natZeroName φ)
     (m.acval Ix.Kernel.natSuccName φ) n

@@ -154,7 +154,7 @@ theorem Expr.peelNeverPis_instantiate1 : ∀ (k : Nat) {T : Expr} {u : Level}
 /-- Peeling commutes with level instantiation: a `.never` datum
 instantiates to `.never`, a `Sort` residual to its instance. -/
 theorem Expr.peelNeverPis_instantiateLevelParams : ∀ (k : Nat) {T : Expr}
-    {u : Level} (ks : List Name) (vs : List Level),
+    {u : Level} (ks : List LevelParam) (vs : List Level),
     T.peelNeverPis k = some (.sort u) →
     (T.instantiateLevelParams ks vs).peelNeverPis k =
       some (.sort (Level.subst ks vs u)) := by
@@ -330,7 +330,7 @@ theorem isProofFast_inv (find? : Name → Option ConstantInfo) {a : Expr}
 
 @[simp] theorem PropWhen.isProp_never : PropWhen.isProp .never = false := by rfl
 
-@[simp] theorem Level.substPW_never (ks : List Name) (vs : List Level) :
+@[simp] theorem Level.substPW_never (ks : List LevelParam) (vs : List Level) :
     Level.substPW ks vs .never = .never := by rfl
 
 end Ix.Kernel

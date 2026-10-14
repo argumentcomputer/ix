@@ -34,7 +34,7 @@ parameters and the two literal guards.**  Transpose of
 denote *hypotheses* and *conclusions* both move across it for free —
 which is what makes the fired-form fields transportable at all. -/
 theorem denote_env_ext {cval : TConstVal} {env₁ env₂ : Env}
-    {φ : Name → Nat}
+    {φ : LevelParam → Nat}
     (henvLev : ∀ n,
       (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))

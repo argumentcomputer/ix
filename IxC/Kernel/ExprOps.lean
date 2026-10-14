@@ -2408,14 +2408,14 @@ def _root_.Ix.Kernel.Level.hasParam : Level → Bool
   | .max u v | .imax u v => u.hasParam || v.hasParam
 
 /-- Substitution is the identity on param-free levels. -/
-theorem _root_.Ix.Kernel.Level.subst_eq_self {ks : List Name}
+theorem _root_.Ix.Kernel.Level.subst_eq_self {ks : List LevelParam}
     {vs : List Level} {l : Level} (h : l.hasParam = false) :
     l.subst ks vs = l := by
   induction l <;> simp_all [Level.hasParam, Level.subst]
 
 /-- Parameter definedness is trivial on param-free levels. -/
 theorem _root_.Ix.Kernel.Level.allParamsDefined_of_not_hasParam
-    {params : List Name} {l : Level} (h : l.hasParam = false) :
+    {params : List LevelParam} {l : Level} (h : l.hasParam = false) :
     l.allParamsDefined params = true := by
   induction l <;> simp_all [Level.hasParam, Level.allParamsDefined]
 
@@ -2439,7 +2439,7 @@ def _root_.Ix.Kernel.Expr.hasLevelParam : Expr → Bool
 /-- `substPW` is the identity on parameter-free data (`never` and
 `ifAllZero []`) — the meta half of the has-param shortcut's
 soundness. -/
-theorem _root_.Ix.Kernel.Level.substPW_eq_self {ks : List Name}
+theorem _root_.Ix.Kernel.Level.substPW_eq_self {ks : List LevelParam}
     {us : List Level} {pw : PropWhen} (h : pw.hasParams = false) :
     Level.substPW ks us pw = pw := by
   cases pw with
@@ -2451,7 +2451,7 @@ theorem _root_.Ix.Kernel.Level.substPW_eq_self {ks : List Name}
 
 /-- Parameter-free data are defined under any parameter list. -/
 theorem _root_.Ix.Kernel.PropWhen.paramsDefined_of_not_hasParams
-    {params : List Name} {pw : PropWhen} (h : pw.hasParams = false) :
+    {params : List LevelParam} {pw : PropWhen} (h : pw.hasParams = false) :
     pw.paramsDefined params = true := by
   cases pw with
   | never => rfl
@@ -2463,7 +2463,7 @@ theorem _root_.Ix.Kernel.PropWhen.paramsDefined_of_not_hasParams
 /-- Level-parameter instantiation is the identity on level-param-free
 expressions. -/
 theorem _root_.Ix.Kernel.Expr.instantiateLevelParams_eq_self
-    {ks : List Name} {us : List Level} {x : Expr}
+    {ks : List LevelParam} {us : List Level} {x : Expr}
     (h : x.hasLevelParam = false) :
     x.instantiateLevelParams ks us = x := by
   induction x with
@@ -2544,13 +2544,13 @@ theorem Expr.hasLP_eq : ∀ e : Expr, e.hasLP = e.hasLevelParam := by
     simp_all [Expr.hasLevelParam, Expr.levelHasParam_eq, Expr.levelsHaveParam_eq]
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def ILPMemoInv (ks : List Name) (us : List Level) (memo : Std.HashMap Expr Expr) : Prop :=
+def ILPMemoInv (ks : List LevelParam) (us : List Level) (memo : Std.HashMap Expr Expr) : Prop :=
   ∀ (k : Expr) (r : Expr), memo[k]? = some r → r = k.instantiateLevelParams ks us
 
-theorem ILPMemoInv.empty {ks : List Name} {us : List Level} : ILPMemoInv ks us {} := by
+theorem ILPMemoInv.empty {ks : List LevelParam} {us : List Level} : ILPMemoInv ks us {} := by
   intro k r h; simp at h
 
-theorem ILPMemoInv.insert {ks : List Name} {us : List Level}
+theorem ILPMemoInv.insert {ks : List LevelParam} {us : List Level}
     {memo : Std.HashMap Expr Expr} (hm : ILPMemoInv ks us memo) {e r : Expr}
     (heq : r = e.instantiateLevelParams ks us) :
     ILPMemoInv ks us (memo.insert e r) := by
@@ -2564,7 +2564,7 @@ theorem ILPMemoInv.insert {ks : List Name} {us : List Level}
   · exact hm k r' hk
 
 @[inherit_doc Expr.hasLP_eq]
-def Expr.instLPGo (ks : List Name) (us : List Level)
+def Expr.instLPGo (ks : List LevelParam) (us : List Level)
     (memo : Std.HashMap Expr Expr) (e : Expr) : Expr × Std.HashMap Expr Expr :=
   if !e.hasLP then (e, memo) else
   match e with
@@ -2605,7 +2605,7 @@ def Expr.instLPGo (ks : List Name) (us : List Level)
       (r, memo.insert e r)
 
 /-- **The memoized walk is `instantiateLevelParams`.** -/
-theorem Expr.instLPGo_spec {ks : List Name} {us : List Level} :
+theorem Expr.instLPGo_spec {ks : List LevelParam} {us : List Level} :
     ∀ (e : Expr) (memo : Std.HashMap Expr Expr), ILPMemoInv ks us memo →
       (instLPGo ks us memo e).1 = e.instantiateLevelParams ks us ∧
         ILPMemoInv ks us (instLPGo ks us memo e).2 := by
@@ -2718,7 +2718,7 @@ theorem Expr.instLPGo_spec {ks : List Name} {us : List Level} :
         exact h2.insert (by simp [Expr.instantiateLevelParams, h1])
 
 @[inherit_doc Expr.instLPGo]
-def Expr.instLPFast (ks : List Name) (us : List Level) (e : Expr) : Expr :=
+def Expr.instLPFast (ks : List LevelParam) (us : List Level) (e : Expr) : Expr :=
   (Expr.instLPGo ks us {} e).1
 
 @[csimp] theorem Expr.instantiateLevelParams_eq_instLPFast :
@@ -2729,7 +2729,7 @@ def Expr.instLPFast (ks : List Name) (us : List Level) (e : Expr) : Expr :=
 /-- Level-parameter definedness is trivial on level-param-free
 expressions. -/
 theorem _root_.Ix.Kernel.Expr.allLevelParamsDefined_of_not_hasLevelParam
-    {params : List Name} {x : Expr} (h : x.hasLevelParam = false) :
+    {params : List LevelParam} {x : Expr} (h : x.hasLevelParam = false) :
     x.allLevelParamsDefined params = true := by
   induction x with
   | lam ty body m iht ihb =>

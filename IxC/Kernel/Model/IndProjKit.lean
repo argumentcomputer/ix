@@ -47,8 +47,8 @@ open Ix.Kernel (Env Expr Name BinderMeta)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The read Π-tower is determined -/
 
@@ -434,7 +434,7 @@ position's reading is a `.bvar` and the run's `q`-th domain reads (at
 depth `q`) to the tower slot the frame's `Sat` already inhabits;
 `denoteMeta_lift` moves both to the frame depth. -/
 theorem projSpineMem
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     {K : Nat} {fvs : List Expr} (hfvslen : fvs.length = K)
     (hshapeS : ∀ (q : Nat) (x : Expr), fvs[q]? = some x →

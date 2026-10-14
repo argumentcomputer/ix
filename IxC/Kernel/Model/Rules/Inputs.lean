@@ -51,7 +51,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 /-- **The successor packing's semantic row**: `Nat.succ w` at a literal
 reading of `w` interprets as the packed literal, which reads and is
 graded. -/
-@[expose] def NatSuccRow {env : Env} (m : EnvModel V env) (φ : Name → Nat) :
+@[expose] def NatSuccRow {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
   ∀ {d : Nat} {w : Expr} {n : Nat} {Δa : List AnnotTerm} {ea : AnnotTerm},
     Ix.Kernel.natLitSupported env = true →
@@ -65,7 +65,7 @@ graded. -/
 /-- **The binary acceleration's semantic row**: a stored operation on
 two literal readings interprets as `natOpResult`, which reads and is
 graded. -/
-@[expose] def NatOpRow {env : Env} (m : EnvModel V env) (φ : Name → Nat) :
+@[expose] def NatOpRow {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
   ∀ {d : Nat} {c : Name} {wa wb r : Expr} {n₁ n₂ : Nat} {Δa : List AnnotTerm}
     {ea : AnnotTerm},
@@ -81,7 +81,7 @@ graded. -/
 /-- **The environment-level inputs of the rules soundness**, at one
 `(env, m, φ)`, sorted by discharging tier. -/
 structure RulesInputs (V : Type w) [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ : Name → Nat) : Prop where
+    (m : EnvModel V env) (φ : LevelParam → Nat) : Prop where
   /-- install tier: a stored constant's type row -/
   const_ty : ConstType m φ
   /-- install tier: leaf bit-validity -/
@@ -107,7 +107,7 @@ arguments because `natSuccRow_of`/`natOpRow_of` (`Model/NatStep.lean`)
 sit above this file — `Model/Capstone.lean`'s `RulesInputs.ofSem`
 supplies them.  Replaces `TierInputsAt.ofEnvModelM` (task #305
 closing). -/
-theorem RulesInputs.ofEnvModelM {env : Env} {φ : Name → Nat}
+theorem RulesInputs.ofEnvModelM {env : Env} {φ : LevelParam → Nat}
     (mp : EnvModelM V μ env)
     (hsucc : NatSuccRow mp.base2 φ) (hop : NatOpRow mp.base2 φ) :
     RulesInputs V mp.base2 φ where

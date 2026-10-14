@@ -87,7 +87,7 @@ structure ProjRecOwner where
   T : Name
   /-- the block's level parameters (the owner's, the constructor's,
   and the recursor's after its elimination level) -/
-  lps : List Name
+  lps : List LevelParam
   /-- parameter count -/
   nP : Nat
   /-- the single constructor -/
@@ -96,7 +96,7 @@ structure ProjRecOwner where
   nF : Nat
   /-- the owner's recursor `T.rec`: name, level parameters, type -/
   recName : Name
-  recLps : List Name
+  recLps : List LevelParam
   recType : Expr
   /-- the recursor's motive and minor counts (the export's own) -/
   numMotives : Nat
@@ -342,9 +342,9 @@ carries no elimination level parameter are left out.
 isRec)`, `ctors` `(name, numFields, type)`, `recs` `(name, levelParams,
 type, numMotives, numMinors)` — the export record's own data. -/
 def projRecOwners (block : List ConstantInfo)
-    (types : List (Name × List Name × Expr × Nat × Nat × List Name × Bool))
+    (types : List (Name × List LevelParam × Expr × Nat × Nat × List Name × Bool))
     (ctors : List (Name × Nat × Expr))
-    (recs : List (Name × List Name × Expr × Nat × Nat)) : List ProjRecOwner :=
+    (recs : List (Name × List LevelParam × Expr × Nat × Nat)) : List ProjRecOwner :=
   let blockNames := types.map (·.1)
   -- a block name in a constructor's binder *domains* (its result names
   -- the owner by definition)

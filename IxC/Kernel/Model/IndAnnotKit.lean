@@ -111,7 +111,7 @@ docstring: `CtxOk`'s per-leaf obligation is semantic, so a frame whose
 openers are only *defeq* to the context's entries correlates just as
 well as one whose openers are them. -/
 theorem ctxOk_of_walked_openers {env : Env} {m : EnvModel V env}
-    {φ : Name → Nat}
+    {φ : LevelParam → Nat}
     {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
     (hshape : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →

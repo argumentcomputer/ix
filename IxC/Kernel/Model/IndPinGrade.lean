@@ -62,7 +62,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The padding element
 
@@ -222,11 +222,11 @@ the object the part-6 probe showed the certificate is actually about.
 
 The conclusion is `RecRuleLaw`'s repaired conjunct verbatim, at the
 chain the equality half names. -/
-theorem nestedPinGrade {acval : Name → (Name → Nat) → AnnotTerm}
+theorem nestedPinGrade {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {cval : TConstVal}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))

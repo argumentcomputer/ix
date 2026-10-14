@@ -14,7 +14,7 @@ run projection was not yet designed.  This module supplies it.
 
 **The shape, and why it is exactly this** (task #161 S10 ruling 1,
 "payload ZERO"): the family below is `DeclIndRun`
-(`SetBase/Decl.lean`) with every `∀ φ : Name → Nat, …` conjunct struck
+(`SetBase/Decl.lean`) with every `∀ φ : LevelParam → Nat, …` conjunct struck
 out.  That is not a preference — it is a measurement.  The S10 seal
 counted the derivation conjuncts the graded lane reads from the
 ind-tier cone and found **three**, then rewired all three to
@@ -118,7 +118,7 @@ parameter-domain comparison's recorded run (`DefEqListOk`), and
 the `∀ φ` parameter-domain walk and `IotaWalksR` itself. -/
 def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
     (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
+    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
     (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr) : Prop :=
   ∃ cvt fvs tbody,
     env'.findCV? ((cvName.str "_model").str s!"iota_{j}") = some cvt ∧
@@ -166,7 +166,7 @@ pin), the pins' recorded typing run (`TypedListOk`), and `IotaRuns`.
 Struck: the `∀ φ` `TypedListW` walk and `IotaWalksR`. -/
 def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
     (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
+    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
     (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr)
     (lvls : List Level) (pins : List Expr) : Prop :=
   nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
@@ -229,7 +229,7 @@ the λ-telescope shape and the fire-mode dispatch, with the rhs front
 door's derivation struck and its recorded `inferTypeCore` run kept. -/
 def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
     (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP j : Nat) (r r' : RecRule) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r r' : RecRule) :
     Prop :=
   ∃ cvj cnP cnF rhsA,
     env'.find? r.ctor = some (.ctorInfo cvj cnP cnF) ∧
@@ -259,7 +259,7 @@ def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 /-- `IotaRulesR`'s run/guard half. -/
 def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
     (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP : Nat) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP : Nat) :
     Nat → List RecRule → List RecRule → Prop
   | _, [], out => out = []
   | j, r :: rest, out =>
@@ -302,7 +302,7 @@ with the rule's front-door derivation and the `proj_i.iota` sides
 pack's `∀ φ` walk struck (their recorded runs — the `inferTypeCore`
 verdict and `checkIotaSidesTy`'s literal pair — stay). -/
 def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
-    (T ctorName : Name) (lps : List Name) (nP nF i : Nat)
+    (T ctorName : Name) (lps : List LevelParam) (nP nF i : Nat)
     (env'' : Env) : Prop :=
   ∃ cvj mcv mval mhint pty rhsA,
     env'.find? ctorName = some (.ctorInfo cvj nP nF) ∧
@@ -374,7 +374,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
 for the projection function (`cvalWith … (projModelName T i)`) was the
 `ProjFnR` front door's, so it goes with it. -/
 def ProjInstallRun (μ : CheckMode) (F : Nat)
-    (T ctorName : Name) (lps : List Name) (nP nF : Nat) :
+    (T ctorName : Name) (lps : List LevelParam) (nP nF : Nat) :
     Env → List Nat → Env → Prop
   | env', [], env₄ => env₄ = env'
   | env', i :: rest, env₄ =>

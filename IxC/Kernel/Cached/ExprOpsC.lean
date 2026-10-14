@@ -758,7 +758,7 @@ def abstractRangeC (e : @& Expr) (d k : Nat) (c : Nat := 0) : Expr :=
 
 /-- The plain descent of `instLevelParams`: the reference of
 `instLevelParamsXP`. -/
-def instLevelParamsP (ks : List Name) (us : List Level) (e : Expr) : Expr :=
+def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr) : Expr :=
   if !e.hasLP then e else
   match e with
   | .bvar .. | .lit .. => e
@@ -776,7 +776,7 @@ def instLevelParamsP (ks : List Name) (us : List Level) (e : Expr) : Expr :=
       (instLevelParamsP ks us body)
   | .proj s i sub .. => mkProj s i (instLevelParamsP ks us sub)
 
-theorem instLevelParamsP_cut {ks : List Name} {us : List Level} {e : Expr}
+theorem instLevelParamsP_cut {ks : List LevelParam} {us : List Level} {e : Expr}
     (h : (!e.hasLP) = true) : instLevelParamsP ks us e = e := by
   rw [instLevelParamsP.eq_def]; simp [h]
 
@@ -784,7 +784,7 @@ theorem instLevelParamsP_cut {ks : List Name} {us : List Level} {e : Expr}
 exclusivity read on EVERY node past it — there is no compound test
 here, since a `const` with level parameters is a `Level.subst` per
 occurrence and worth recording. -/
-@[inline] def enterLPP (ks : @& List Name) (us : @& List Level) (e : @& Expr)
+@[inline] def enterLPP (ks : @& List LevelParam) (us : @& List Level) (e : @& Expr)
     (memo : MemoXP0 (instLevelParamsP ks us))
     (rec : (hcut : ¬ (!e.hasLP) = true) → Squash (ResXP0 (instLevelParamsP ks us) e)) :
     Squash (ResXP0 (instLevelParamsP ks us) e) :=
@@ -793,7 +793,7 @@ occurrence and worth recording. -/
     if excl then rec hcut else memo.shared e fun _ => rec hcut
 
 /-- The walk of `instLevelParams`. -/
-def instLevelParamsXP (ks : @& List Name) (us : @& List Level)
+def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
     (memo : MemoXP0 (instLevelParamsP ks us)) (e : @& Expr) (hcut : ¬ (!e.hasLP) = true) :
     Squash (ResXP0 (instLevelParamsP ks us) e) :=
   match e with
@@ -832,7 +832,7 @@ def instLevelParamsXP (ks : @& List Name) (us : @& List Level)
 
 /-- The cached `Expr.instantiateLevelParams`: the cutoff, then the
 walk. -/
-def instLevelParams (ks : List Name) (us : List Level) (e : @& Expr) : Expr :=
+def instLevelParams (ks : List LevelParam) (us : List Level) (e : @& Expr) : Expr :=
   if hcut : (!e.hasLP) = true then e else
   resTerm (instLevelParamsXP ks us none e hcut)
 
@@ -1313,7 +1313,7 @@ walk is verified against (`allLevelParamsDefinedP_spec`,
 `IxC/Kernel/Verify/Cached/GuardsC.lean`, is the equation to
 `Expr.allLevelParamsDefined`).  The cutoff: a node without a level
 parameter is `true` without traversal. -/
-def allLevelParamsDefinedP (params : List Name) (e : Expr) : Bool :=
+def allLevelParamsDefinedP (params : List LevelParam) (e : Expr) : Bool :=
   if e.hasLP then
     match e with
     | .bvar .. | .lit .. => true
@@ -1331,13 +1331,13 @@ def allLevelParamsDefinedP (params : List Name) (e : Expr) : Bool :=
     | .proj _ _ sub .. => allLevelParamsDefinedP params sub
   else true
 
-theorem allLevelParamsDefinedP_cut {params : List Name} {e : Expr}
+theorem allLevelParamsDefinedP_cut {params : List LevelParam} {e : Expr}
     (h : ¬ e.hasLP = true) : allLevelParamsDefinedP params e = true := by
   rw [allLevelParamsDefinedP.eq_def]; simp [h]
 
 /-- The child step of `allLevelParamsDefinedXP`: the cutoff, the
 compound test, the exclusivity read. -/
-@[inline] def enterLPD (params : @& List Name) (e : @& Expr)
+@[inline] def enterLPD (params : @& List LevelParam) (e : @& Expr)
     (memo : MemoB0 (allLevelParamsDefinedP params))
     (rec : (hcut : e.hasLP = true) →
       Squash (ResB0 (allLevelParamsDefinedP params) e)) :
@@ -1350,7 +1350,7 @@ compound test, the exclusivity read. -/
 
 /-- The walk of `allLevelParamsDefinedC` (the node is past the
 cutoff: the wrapper and `enterLPD` test it). -/
-def allLevelParamsDefinedXP (params : @& List Name)
+def allLevelParamsDefinedXP (params : @& List LevelParam)
     (memo : MemoB0 (allLevelParamsDefinedP params)) (e : @& Expr)
     (hcut : e.hasLP = true) :
     Squash (ResB0 (allLevelParamsDefinedP params) e) :=
@@ -1422,7 +1422,7 @@ def allLevelParamsDefinedXP (params : @& List Name)
 
 /-- The cached `Expr.allLevelParamsDefined params` (one memoized DAG
 walk): the cutoff, then the walk. -/
-def allLevelParamsDefinedC (params : List Name) (e : Expr) : Bool :=
+def allLevelParamsDefinedC (params : List LevelParam) (e : Expr) : Bool :=
   if hcut : e.hasLP = true then resBool (allLevelParamsDefinedXP params none e hcut)
   else true
 

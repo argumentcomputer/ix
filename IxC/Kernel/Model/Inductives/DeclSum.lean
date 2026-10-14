@@ -58,10 +58,10 @@ theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
 /-! ## The constructors' loop -/
 
 /-- The facts about the pending constructors at an environment. -/
-@[expose] def PendingAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List Name) (nP nIdx : Nat)
+@[expose] def PendingAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
     (ctorsA : List (ConstantVal × Nat)) (k : Nat) : Prop :=
   ∀ i cA, k ≤ i → ctorsA[i]? = some cA →
     env.find? cA.1.name = none ∧ cA.1.type.constsResolve env = true ∧
@@ -69,10 +69,10 @@ theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
     CtorDataI m T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF i) (dsF i) (esF i) (srcsF i)
 
 /-- The facts about the consed constructors at an environment. -/
-@[expose] def ConsedAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List Name) (nP nIdx : Nat)
+@[expose] def ConsedAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
     (ctorsA : List (ConstantVal × Nat)) (k : Nat) : Prop :=
   ∀ i cA, i < k → ctorsA[i]? = some cA →
     CtorFactsAt m T lps nP nIdx resSort isProp large idxF dsF esF srcsF i cA ∧

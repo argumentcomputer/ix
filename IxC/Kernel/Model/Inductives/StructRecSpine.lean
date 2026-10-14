@@ -34,7 +34,7 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## Inference kit -/
 
@@ -83,7 +83,7 @@ theorem stripPisAV_mkPisAV_take :
 /-- **The residual reads to the tower's core** (`instPisAt_openerDoms`'s
 companion): at an opener spine the run instantiates with the very
 `fvar`s the reading opens with. -/
-theorem instPisAt_openerRes {acval : Name → (Name → Nat) → AnnotTerm} :
+theorem instPisAt_openerRes {acval : Name → (LevelParam → Nat) → AnnotTerm} :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {j : Nat} {T : AnnotTerm},
@@ -166,7 +166,7 @@ theorem paramBvars_eq_paramBvarsAt (nP nF : Nat) :
     paramBvars nP nF = paramBvarsAt nP (nP + nF) := rfl
 
 /-- A same-index `fvar` spine reads to the parameter variables. -/
-theorem denoteMetaSpine_fvars {acval : Name → (Name → Nat) → AnnotTerm} (D : Nat) :
+theorem denoteMetaSpine_fvars {acval : Name → (LevelParam → Nat) → AnnotTerm} (D : Nat) :
     ∀ (fvs : List Expr) (k₀ : Nat),
       (∀ (k : Nat) (x : Expr), fvs[k]? = some x → ∃ ty, x = Expr.fvar (k₀ + k) ty) →
       DenoteMetaSpine acval env φ D fvs

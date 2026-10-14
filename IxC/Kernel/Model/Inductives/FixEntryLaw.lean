@@ -157,7 +157,7 @@ theorem wellDenoted_projAV_succ_fibre {w i : Nat} {ρ' ρ : Nat → V} {Fs : Lis
 theorem fixEntryTypingCore {u w nP nF i : Nat} {pps ds eds : List (Nat × Nat × AnnotTerm)}
     {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))}
     {eiss : List (List (List AnnotTerm))} {Fss₀ Ess : List (List AnnotTerm)}
-    {R : AnnotTerm} {sorts : List Level} {ψ : Name → Nat}
+    {R : AnnotTerm} {sorts : List Level} {ψ : LevelParam → Nat}
     (hlenDs : ds.length = nP + nF) (hlenPps : pps.length = nP) (hlenEds : eds.length = nP + 1)
     (hiff : ∀ ρ : Nat → V, Sat V (pps.map (·.2.2)).reverse ρ ↔
       Sat V ((ds.take nP).map (·.2.2)).reverse ρ)
@@ -335,7 +335,7 @@ theorem fixEntryIotaCore {w nP nF i : Nat} {ds : List (Nat × Nat × AnnotTerm)}
 is the point, so is its projection, and the selected field is a
 proposition's member. -/
 theorem fixEntryIotaCoreZero {nP nF i : Nat} {ds : List (Nat × Nat × AnnotTerm)} {ρ : Nat → V}
-    {sorts : List Level} {ψ : Name → Nat}
+    {sorts : List Level} {ψ : LevelParam → Nat}
     (hlenDs : ds.length = nP + nF) (hi : i < nF)
     (hsorts : ∀ ρ : Nat → V, Sat V ((ds.take nP).map (·.2.2)).reverse ρ →
       ∀ j, j < nF → ∀ as : List V,

@@ -342,7 +342,7 @@ def divModCertsGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Name)
     (fun p => divModCertGuardF fe c annVal p.1.1 p.1.2 p.2)
 
 /-- `checkEtaThm` through the index. -/
-def checkEtaThmF (fe : FEnv) (T ctorName : Name) (lps : List Name)
+def checkEtaThmF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
   match fe.find? ((T.str "_model").str "eta"),
       fe.find? (T.str "_model"),
@@ -382,7 +382,7 @@ def checkEtaThmF (fe : FEnv) (T ctorName : Name) (lps : List Name)
   | _, _, _, _ => false
 
 /-- `checkUnitThm` through the index. -/
-def checkUnitThmF (fe : FEnv) (T : Name) (lps : List Name)
+def checkUnitThmF (fe : FEnv) (T : Name) (lps : List LevelParam)
     (nP : Nat) : Bool :=
   match fe.find? ((T.str "_model").str "unitlike"),
       fe.find? (T.str "_model"), fe.find? eqName with
@@ -416,7 +416,7 @@ def checkUnitThmF (fe : FEnv) (T : Name) (lps : List Name)
 /-- `ctorResidualOk` through the index (task #136; the reasoning,
 including why the subject is the *stored* constant and why the
 capability guard is load-bearing, is at `ctorResidualOk`). -/
-def ctorResidualOkF (fe : FEnv) (T ctorName : Name) (lps : List Name)
+def ctorResidualOkF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
     (nP nF : Nat) (eta : Bool) : Bool :=
   -- TT-lane check (task #147): trivially true unless `mode.ttChecks`.
   !mode.ttChecks || !eta ||
@@ -469,7 +469,7 @@ def checkConstantValF (ops : CheckerOps m) (fe : FEnv)
     throw (.invalid s!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
     throw (.invalid s!"reserved projection name {cv.name}")
-  unless Name.nodup cv.levelParams do
+  unless LevelParam.nodup cv.levelParams do
     throw (.invalid s!"duplicate universe parameters in {cv.name}")
   unless cv.type.looseBVarsBounded 0 do
     throw (.invalid s!"loose bound variable in type of {cv.name}")
@@ -506,7 +506,7 @@ def checkMemberValF (ops : CheckerOps m) (blockNames : List Name)
 
 /-- `checkIotaThm` through the index. -/
 def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m Unit := do
     let cvt ← unwrapOr
@@ -574,7 +574,7 @@ def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
 
 /-- `nestedRuleShape` through the index. -/
 def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP cnP j : Nat) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     Option (List Level × List Expr) :=
   if (fe'.findCV? ((cvName.str "_model").str s!"iota_{j}")).isSome ∧
       rP ≤ mI then
@@ -600,7 +600,7 @@ def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Name)
 
 /-- `checkIotaThmN` through the index. -/
 def checkIotaThmNF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m RecRuleFire := do
     match nestedRuleShapeF fe' feSelf cvName lps tyA mI rP cnP j with
@@ -686,7 +686,7 @@ def checkIotaThmNF (ops : CheckerOps m) (fe' feSelf : FEnv)
 
 /-- `checkIotaRule` through the index. -/
 def checkIotaRuleF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) : m RecRule := do
     let some (.ctorInfo cvj cnP cnF) := fe'.find? r.ctor
       | throw (.invalid s!"iota rule constructor {r.ctor} not stored")
@@ -717,7 +717,7 @@ def checkIotaRuleF (ops : CheckerOps m) (fe' feSelf : FEnv)
 
 /-- `checkIotaRules` through the index. -/
 def checkIotaRulesF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP : Nat) : Nat → List RecRule → m (List RecRule)
   | _, [] => pure []
   | j, r :: rest => do
@@ -727,7 +727,7 @@ def checkIotaRulesF (ops : CheckerOps m) (fe' feSelf : FEnv)
     pure (r' :: rest')
 
 /-- `checkProjLookups` through the index. -/
-def checkProjLookupsF (fe : FEnv) (T ctorName : Name) (lps : List Name)
+def checkProjLookupsF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) : m (ConstantVal × ConstantVal) := do
   let some (.ctorInfo cvj cnP cnF) := fe.find? ctorName
     | throw (.notImplemented "projection constructor not stored")
@@ -746,7 +746,7 @@ def checkProjLookupsF (fe : FEnv) (T ctorName : Name) (lps : List Name)
   pure (cvj, mcv)
 
 /-- `checkProjTy` through the index. -/
-def checkProjTyF (fe : FEnv) (T ctorName : Name) (lps : List Name)
+def checkProjTyF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
     (mty : Expr) (nP nF : Nat) : m Expr := do
   let pty := mty.renameConsts (projBack T ctorName nF)
   unless (pty.renameConsts (projFwd T ctorName nF)) == mty do
@@ -762,7 +762,7 @@ def checkProjTyF (fe : FEnv) (T ctorName : Name) (lps : List Name)
 
 /-- `checkProjRule` through the index. -/
 def checkProjRuleF (ops : CheckerOps m) (fe : FEnv) (pty : Expr) (cvj : ConstantVal)
-    (lps : List Name) (nP nF i : Nat) : m Expr := do
+    (lps : List LevelParam) (nP nF i : Nat) : m Expr := do
   let some rhs := Expr.pisToLams (nP + nF) cvj.type (.bvar (nF - 1 - i))
     | throw (.notImplemented "projection rule telescope")
   unless !rhs.hasFvar && rhs.looseBVarsBounded 0 do
@@ -796,7 +796,7 @@ def checkProjRuleF (ops : CheckerOps m) (fe : FEnv) (pty : Expr) (cvj : Constant
 
 /-- `checkProjIota` through the index. -/
 def checkProjIotaF (ops : CheckerOps m) (fe : FEnv)
-    (T ctorName : Name) (lps : List Name)
+    (T ctorName : Name) (lps : List LevelParam)
     (cvj : ConstantVal) (nP nF i : Nat) : m Unit := do
   let some (.thmInfo tcv _) := fe.find? ((projModelName T i).str "iota")
     | throw (.notImplemented "missing projection iota theorem")

@@ -37,8 +37,8 @@ open Ix.Kernel (Env Expr Name Level PropWhen)
 annotation is closed, in the lifting form `EnvModelU.acval_closed` and
 `ValueResidues2.closed` state it.  Mirror of `denoteAnnot_closed`, with
 `denoteMeta_erase` in place of `denoteAnnot_erase`. -/
-theorem denoteMeta_closed {acval : Name → (Name → Nat) → AnnotTerm}
-    {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denoteMeta_closed {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
     {e : Expr} {ea : AnnotTerm} (hnf : e.hasFvar = false)
@@ -52,9 +52,9 @@ theorem denoteMeta_closed {acval : Name → (Name → Nat) → AnnotTerm}
 /-- **A closed term's validated annotation does not depend on the
 depth**, provided the annotation itself is lift-invariant.  Mirror of
 `denote2_depth_of_closed`; `EnvWF` goes with `denoteMeta_shiftFrom`. -/
-theorem denoteMeta_depth_of_closed {env : Env} {φ : Name → Nat}
-    {acval : Name → (Name → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+theorem denoteMeta_depth_of_closed {env : Env} {φ : LevelParam → Nat}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     {e : Expr} {ea : AnnotTerm} (hfv : e.hasFvar = false)
     (hcl : ∀ k : Nat, ea.liftN 1 k = ea)

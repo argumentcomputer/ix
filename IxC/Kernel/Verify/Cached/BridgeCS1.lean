@@ -59,7 +59,7 @@ theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
   · simp only [if_pos h3]
     exact SimC.throw_bind
   simp only [if_neg h3]
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg =>
     simp only [if_neg h4]
     exact SimC.throw_bind

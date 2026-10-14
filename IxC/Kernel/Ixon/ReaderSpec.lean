@@ -18,7 +18,7 @@ declarations the fold checks are the ones the records describe.
   `Ix.Kernel.Ingress.Records`).
 * `readRecord_singleton`: a singleton definition, axiom or quotient record
   contributes exactly one declaration, under the record's name
-  (`Ctx.nameOf (.member owner 0)`), with the record's level-parameter names,
+  (`Ctx.nameOf (.member owner 0)`), with the record's level parameters,
   the reading of its type (`MemberReader.read`), and for a definition or
   theorem the reading of its value, or that value's projection rewrite
   (`projRewrite`, upstream con-leche's `ExportC.projRewriteD`) where it applies
@@ -180,22 +180,23 @@ theorem readRecords_nodup {cx : Ctx} {st st' : State} {records : Array (Address 
 
 /-! ## Singleton records -/
 
-/-- The level-parameter names of a singleton record's member, as
-`readRecord` assigns them. -/
-def singletonLps (cx : Ctx) (owner : Address) (lvls : UInt64) : List CName :=
-  cx.lpsOf (.member owner 0) lvls.toNat
+/-- The level parameters of a singleton record's member, as `readRecord`
+assigns them: one per universe variable, `[0, …, lvls - 1]`. -/
+def singletonLps (lvls : UInt64) : List LevelParam :=
+  List.range lvls.toNat
 
 /-- The expression reader of a singleton definition record, as `readRecord`
-builds it: `recur 0` is the record itself. -/
-def definitionReader (cx : Ctx) (owner : Address) (c : Ixon.Constant) (d : Ixon.Definition) :
+builds it: `recur 0` is the record itself, and universe variable `i` is the
+level parameter `i` (the definition's header does not enter). -/
+def definitionReader (cx : Ctx) (owner : Address) (c : Ixon.Constant) (_d : Ixon.Definition) :
     MemberReader :=
-  .mk' cx c (paramOf (singletonLps cx owner d.lvls))
+  .mk' cx c id
     (fun i => if i == 0 then some (cx.nameOf (.member owner 0)) else none)
 
 /-- The expression reader of a singleton axiom or quotient record, as
 `readRecord` builds it (no `recur`). -/
-def headerReader (cx : Ctx) (c : Ixon.Constant) (lps : List CName) : MemberReader :=
-  .mk' cx c (paramOf lps) (fun _ => none)
+def headerReader (cx : Ctx) (c : Ixon.Constant) : MemberReader :=
+  .mk' cx c id (fun _ => none)
 
 /-- The declaration a definition record's kind makes of its header `cv`, the
 reading of its value `value`, and the projection rewrite's result
@@ -211,7 +212,7 @@ inductive DefinitionDecl (cv : CVal) (value : CExpr) (rewritten : Option CExpr) 
 
 /-- What `readDefinition` makes of a definition member. -/
 theorem readDefinition_spec {cx : Ctx} {st : State} {heights : CName → Nat}
-    {ref : ConstRef Address} {lps : List CName} {mr : MemberReader} {d : Ixon.Definition}
+    {ref : ConstRef Address} {lps : List LevelParam} {mr : MemberReader} {d : Ixon.Definition}
     {decl : CDecl} {rw : Bool}
     (h : readDefinition cx st heights ref lps mr d = .ok (decl, rw)) :
     ∃ ty value, mr.read d.typ = .ok ty ∧ mr.read d.value = .ok value ∧
@@ -247,7 +248,7 @@ def quotKind : Ix.QuotKind → Ix.Kernel.QuotKind
 /-- **The reading of a singleton record**: the declaration a `defn`, `axio`
 or `quot` record contributes. It is stored under the record's name
 `cx.nameOf (.member owner 0)` (the address encoding `keyName`, or the
-record's pinned or recursor name), with the record's level-parameter names
+record's pinned or recursor name), with the record's level parameters
 and the reading of its type; a definition or theorem also carries the
 reading of its value (or its projection rewrite), an opaque its value as
 read. Unsafe axioms and unsafe or partial definitions are never read
@@ -258,20 +259,20 @@ inductive SingletonRead (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Cons
       (info : c.info = .defn d)
       (type : (definitionReader cx owner c d).read d.typ = .ok ty)
       (body : (definitionReader cx owner c d).read d.value = .ok value)
-      (kind : DefinitionDecl ⟨cx.nameOf (.member owner 0), singletonLps cx owner d.lvls, ty⟩ value
-        (projRewrite st ⟨cx.nameOf (.member owner 0), singletonLps cx owner d.lvls, ty⟩ value)
+      (kind : DefinitionDecl ⟨cx.nameOf (.member owner 0), singletonLps d.lvls, ty⟩ value
+        (projRewrite st ⟨cx.nameOf (.member owner 0), singletonLps d.lvls, ty⟩ value)
         d.kind decl) :
       SingletonRead cx st owner c decl
   | axio {ax : Ixon.Axiom} {ty : CExpr}
       (info : c.info = .axio ax) (safe : ax.isUnsafe = false)
-      (type : (headerReader cx c (singletonLps cx owner ax.lvls)).read ax.typ = .ok ty) :
+      (type : (headerReader cx c).read ax.typ = .ok ty) :
       SingletonRead cx st owner c
-        (.axiomDecl ⟨cx.nameOf (.member owner 0), singletonLps cx owner ax.lvls, ty⟩)
+        (.axiomDecl ⟨cx.nameOf (.member owner 0), singletonLps ax.lvls, ty⟩)
   | quot {q : Ixon.Quotient} {ty : CExpr}
       (info : c.info = .quot q)
-      (type : (headerReader cx c (singletonLps cx owner q.lvls)).read q.typ = .ok ty) :
+      (type : (headerReader cx c).read q.typ = .ok ty) :
       SingletonRead cx st owner c
-        (.quotDecl (quotKind q.kind) ⟨cx.nameOf (.member owner 0), singletonLps cx owner q.lvls, ty⟩)
+        (.quotDecl (quotKind q.kind) ⟨cx.nameOf (.member owner 0), singletonLps q.lvls, ty⟩)
 
 /-- The singleton record kinds. -/
 def isSingleton : Ixon.ConstantInfo → Bool
@@ -294,28 +295,28 @@ theorem readRecord_singleton {cx : Ctx} {st : State} {owner : Address} {c : Ixon
     simp only [hc] at h
     cases hu : ax.isUnsafe
     · simp only [hu, Bool.false_eq_true, ↓reduceIte] at h
-      cases hty : (headerReader cx c (singletonLps cx owner ax.lvls)).read ax.typ with
+      cases hty : (headerReader cx c).read ax.typ with
       | error e =>
-        simp only [headerReader, singletonLps] at hty
+        simp only [headerReader] at hty
         simp [hty, bind, Except.bind] at h
       | ok ty =>
-        simp only [headerReader, singletonLps] at hty
+        simp only [headerReader] at hty
         simp only [hty, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
         subst h
         exact ⟨_, .axio hc hu (by simpa [headerReader, singletonLps] using hty), rfl⟩
     · simp [hu, declined, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
   | quot q =>
     simp only [hc] at h
-    cases hty : (headerReader cx c (singletonLps cx owner q.lvls)).read q.typ with
+    cases hty : (headerReader cx c).read q.typ with
     | error e =>
-      simp only [headerReader, singletonLps] at hty
+      simp only [headerReader] at hty
       simp [hty, bind, Except.bind] at h
     | ok ty =>
-      simp only [headerReader, singletonLps] at hty
+      simp only [headerReader] at hty
       simp only [hty, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
       subst h
       refine ⟨.quotDecl (quotKind q.kind)
-        ⟨cx.nameOf (.member owner 0), singletonLps cx owner q.lvls, ty⟩,
+        ⟨cx.nameOf (.member owner 0), singletonLps q.lvls, ty⟩,
         .quot hc (by simpa [headerReader, singletonLps] using hty), ?_⟩
       obtain ⟨kind, lvls, typ⟩ := q
       cases kind <;> rfl
@@ -357,12 +358,14 @@ theorem MemberReader.read_ref {mr : MemberReader} {i : UInt64} {a : Address}
   simp [MemberReader.read, convExpr, ECx.refAt, ECx.levels, href, hres, bind, Except.bind,
     pure, Except.pure]
 
-@[simp] theorem MemberReader.mk'_ecx_cx (cx : Ctx) (src : Ixon.Constant) (param : Nat → CName)
+@[simp] theorem MemberReader.mk'_ecx_cx (cx : Ctx) (src : Ixon.Constant)
+    (param : Nat → LevelParam)
     (self : Nat → Option CName) : (MemberReader.mk' cx src param self).ecx.cx = cx := by
   simp only [MemberReader.mk']
   rfl
 
-@[simp] theorem MemberReader.mk'_ecx_src (cx : Ctx) (src : Ixon.Constant) (param : Nat → CName)
+@[simp] theorem MemberReader.mk'_ecx_src (cx : Ctx) (src : Ixon.Constant)
+    (param : Nat → LevelParam)
     (self : Nat → Option CName) : (MemberReader.mk' cx src param self).ecx.src = src := by
   simp only [MemberReader.mk']
   rfl

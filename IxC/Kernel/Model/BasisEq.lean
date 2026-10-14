@@ -53,19 +53,19 @@ section Eq
 
 open Ix.Kernel (eqA eqReflA eqRecA eqName eqReflName)
 
-variable {m : EnvModel V env} {A : (Name → Nat) → AnnotTerm}
+variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The two spines the block's types are built from -/
 
 /-- `@Eq.{u} α a b`, read through the tower. -/
-def eqSpine (ψ : Name → Nat) (i j k : Nat) : AnnotTerm :=
+def eqSpine (ψ : LevelParam → Nat) (i j k : Nat) : AnnotTerm :=
   .app (.app (.app (eqValAV ψ) (.bvar i)) (.bvar j)) (.bvar k)
 
 /-- `@Eq.refl.{u} α a`, read through the tower. -/
-def eqReflSpine (ψ : Name → Nat) (i j : Nat) : AnnotTerm :=
+def eqReflSpine (ψ : LevelParam → Nat) (i j : Nat) : AnnotTerm :=
   .app (.app (eqReflValAV ψ) (.bvar i)) (.bvar j)
 
-theorem eqSpine_interp {ψ : Name → Nat} {i j k : Nat} {ρ : Nat → V}
+theorem eqSpine_interp {ψ : LevelParam → Nat} {i j k : Nat} {ρ : Nat → V}
     {Aset a b : V} (hi : ρ i = Aset) (hj : ρ j = a) (hk : ρ k = b)
     (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset) (hb : b ∈ˢ Aset) :
     interp V ρ (eqSpine ψ i j k) = eqv a b ∧
@@ -85,7 +85,7 @@ theorem eqSpine_interp {ψ : Name → Nat} {i j k : Nat} {ρ : Nat → V}
   rw [eqSpine, interp_app, interp_app, interp_app, hAi, haj, hbk,
     eqValAV_app₃ ψ ρ Aset a b hA ha hb]
 
-theorem eqReflSpine_data {ψ : Name → Nat} {i j : Nat} {ρ : Nat → V}
+theorem eqReflSpine_data {ψ : LevelParam → Nat} {i j : Nat} {ρ : Nat → V}
     {Aset a : V} (hi : ρ i = Aset) (hj : ρ j = a)
     (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset) :
     interp V ρ (eqReflSpine ψ i j) = (pt : V) ∧
@@ -106,23 +106,23 @@ theorem eqReflSpine_data {ψ : Name → Nat} {i j : Nat} {ρ : Nat → V}
 /-! ## `Eq` and `Eq.refl` -/
 
 /-- `Eq`'s type reading: three graph-regime binders. -/
-@[expose] def eqTy (ψ : Name → Nat) : AnnotTerm :=
+@[expose] def eqTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 1 (.sort (ψ uN)) (.pi 0 1 (.bvar 0) (.pi 0 1 (.bvar 1) (.sort 0)))
 
 /-- `Eq.refl`'s type reading: two squash-regime binders over the
 spine. -/
-def eqReflTy (ψ : Name → Nat) : AnnotTerm :=
+def eqReflTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 0 (.sort (ψ uN)) (.pi 0 0 (.bvar 0) (eqSpine ψ 1 0 0))
 
 /-- **`Eq`'s type reading.** -/
 theorem denoteMeta_eqA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨eqA :: env.consts⟩ ψ 0 eqA.toConstantVal.type
       = some (eqTy ψ) := by
   simp [eqA, ConstantInfo.toConstantVal, denoteMeta_forallE, denoteMeta_sort,
     denoteMeta_fvar, Expr.instantiate1, eqTy, pwBit_never, Level.eval, uN]
 
-theorem eqTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqTy_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (eqTy ψ) :=
   ⟨⟨trivial, fun _ _ => ⟨trivial, fun _ _ => ⟨trivial,
       fun _ _ => trivial⟩⟩⟩,
@@ -131,7 +131,7 @@ theorem eqTy_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
       fun h => absurd h Nat.one_ne_zero⟩,
     fun h => absurd h Nat.one_ne_zero⟩⟩
 
-theorem eqTy_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqTy_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (eqTy ψ)
       = piR 1 (univ (ψ uN) : V)
           (fun a => piR 1 a (fun _ => piR 1 a (fun _ => univZero))) := by
@@ -147,10 +147,10 @@ theorem eqTy_interp (ψ : Name → Nat) (ρ : Nat → V) :
 /-- **`Eq.refl`'s type reading.**  Stated at *any* extension whose
 cons is not `Eq`, because `Eq.rec`'s row reads it as its fired
 constructor's telescope. -/
-theorem denoteMeta_eqReflTy {c₀ : ConstantInfo} (ψ : Name → Nat)
+theorem denoteMeta_eqReflTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = eqName)
     (hE : env.find? eqName = some eqA)
-    (hEv : ∀ ψ : Name → Nat, m.acval eqName ψ = eqValAV ψ) :
+    (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ 0
         eqReflA.toConstantVal.type
       = some (eqReflTy ψ) := by
@@ -173,7 +173,7 @@ theorem denoteMeta_eqReflTy {c₀ : ConstantInfo} (ψ : Name → Nat)
     Expr.instantiate1, eqReflTy, eqSpine, pwBit_ifAllZero_nil, hEc,
     Level.eval]
 
-theorem eqReflTy_data (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflTy_data (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (eqReflTy ψ) ∧
       interp V ρ (eqReflTy ψ)
         = piR 0 (univ (ψ uN) : V) (fun a => piR 0 a (fun x => eqv x x)) := by
@@ -252,7 +252,7 @@ theorem extendEq (mp : EnvModelM V μ env)
 /-- **`Eq.refl`, installed at the P tier.** -/
 theorem extendEqRefl (mp : EnvModelM V μ env)
     (hE : env.find? eqName = some eqA)
-    (hEv : ∀ ψ : Name → Nat, mp.base2.acval eqName ψ = eqValAV ψ)
+    (hEv : ∀ ψ : LevelParam → Nat, mp.base2.acval eqName ψ = eqValAV ψ)
     (hfresh : env.find? eqReflA.name = none)
     (hwf : EnvWF ⟨eqReflA :: env.consts⟩) :
     ∃ mp' : EnvModelM V μ ⟨eqReflA :: env.consts⟩,
@@ -306,15 +306,15 @@ the inhabitant is the canonical proof by `mem_univ_zero`.
 seal recorded as owed; both are below. -/
 
 /-- `Eq.rec`'s motive binder domain reading. -/
-def eqRecMotiveTy (ψ : Name → Nat) : AnnotTerm :=
+def eqRecMotiveTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 1 (.bvar 1) (.pi 0 1 (eqSpine ψ 2 1 0) (.sort (ψ u1N)))
 
 /-- `Eq.rec`'s minor binder domain reading. -/
-def eqRecMinorTy (ψ : Name → Nat) : AnnotTerm :=
+def eqRecMinorTy (ψ : LevelParam → Nat) : AnnotTerm :=
   .app (.app (.bvar 0) (.bvar 1)) (eqReflSpine ψ 2 1)
 
 /-- `Eq.rec`'s type reading. -/
-def eqRecTy (b : Nat) (ψ : Name → Nat) : AnnotTerm :=
+def eqRecTy (b : Nat) (ψ : LevelParam → Nat) : AnnotTerm :=
   .pi 0 b (.sort (ψ uN))
     (.pi 0 b (.bvar 0)
       (.pi 0 b (eqRecMotiveTy ψ)
@@ -325,7 +325,7 @@ def eqRecTy (b : Nat) (ψ : Name → Nat) : AnnotTerm :=
 
 /-- `Eq.rec`'s rule's RHS reading: the same four domains, over the
 minor premise. -/
-def eqRecRa (b : Nat) (ψ : Name → Nat) : AnnotTerm :=
+def eqRecRa (b : Nat) (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam b (.sort (ψ uN))
     (.lam b (.bvar 0)
       (.lam b (eqRecMotiveTy ψ)
@@ -336,7 +336,7 @@ noncomputable def eqRecMotiveSpace (V : Type w) [SetTheory V]
     (u1 : Nat) (Aset a : V) : V :=
   piR 1 Aset fun b => piR 1 (eqv a b) fun _ => (univ u1 : V)
 
-theorem eqRecMotiveTy_data {ψ : Name → Nat} {Aset a : V}
+theorem eqRecMotiveTy_data {ψ : LevelParam → Nat} {Aset a : V}
     (ρ : Nat → V) (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset) :
     interp V (cons a (cons Aset ρ)) (eqRecMotiveTy ψ)
         = eqRecMotiveSpace V (ψ u1N) Aset a ∧
@@ -364,7 +364,7 @@ theorem eqRecMotiveTy_data {ψ : Name → Nat} {Aset a : V}
       exact ⟨(hsp b hb).2.1.2, fun _ _ => trivial,
         fun h => absurd h Nat.one_ne_zero⟩
 
-theorem eqRecMinorTy_data {ψ : Name → Nat} {Aset a M : V}
+theorem eqRecMinorTy_data {ψ : LevelParam → Nat} {Aset a M : V}
     (ρ : Nat → V) (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset)
     (hM : M ∈ˢ eqRecMotiveSpace V (ψ u1N) Aset a) :
     interp V (cons M (cons a (cons Aset ρ))) (eqRecMinorTy ψ)
@@ -415,7 +415,7 @@ are `BitAgree` — which is the whole distance between the tower the
 ENDGAME E seal built and the tower this block's walk wants. -/
 
 /-- The tower with the reading's own numerals. -/
-def eqRecRaTower (b : Nat) (ψ : Name → Nat) : AnnotTerm :=
+def eqRecRaTower (b : Nat) (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam b (.sort (ψ uN))
     (.lam b (.bvar 0)
       (.lam b (eqRecMotiveTy ψ)
@@ -423,7 +423,7 @@ def eqRecRaTower (b : Nat) (ψ : Name → Nat) : AnnotTerm :=
           (.lam b (.bvar 3)
             (.lam b (eqSpine ψ 4 3 0) (.bvar 2))))))
 
-theorem bitAgree_eqRecValAV (ψ : Name → Nat) :
+theorem bitAgree_eqRecValAV (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree (eqRecRaTower (pwBit ψ (.ifAllZero [u1N])) ψ)
       (eqRecValAV ψ) :=
   .lam Iff.rfl (.sort _)
@@ -442,7 +442,7 @@ the two items the ENDGAME E seal recorded as owed, taken in one walk
 (`WellDenotedV_lam_mem` six times).  The only content is at the bottom:
 the major premise collapses `b` onto `a` and itself onto `pt`, and the
 minor premise is already there. -/
-theorem eqRecRaTower_data {b : Nat} (ψ : Name → Nat)
+theorem eqRecRaTower_data {b : Nat} (ψ : LevelParam → Nat)
     (hz : b = 0 ↔ ψ u1N = 0) (ρ : Nat → V) :
     WellDenotedV V ρ (eqRecRaTower b ψ) ∧
       interp V ρ (eqRecRaTower b ψ)
@@ -638,11 +638,11 @@ theorem eqRecRaTower_data {b : Nat} (ψ : Name → Nat)
 /-! ### The two readings -/
 
 /-- **`Eq.rec`'s type reading.** -/
-theorem denoteMeta_eqRecA_type (ψ : Name → Nat)
+theorem denoteMeta_eqRecA_type (ψ : LevelParam → Nat)
     (hE : env.find? eqName = some eqA)
     (hR : env.find? eqReflName = some eqReflA)
-    (hEv : ∀ ψ : Name → Nat, m.acval eqName ψ = eqValAV ψ)
-    (hRv : ∀ ψ : Name → Nat, m.acval eqReflName ψ = eqReflValAV ψ) :
+    (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ)
+    (hRv : ∀ ψ : LevelParam → Nat, m.acval eqReflName ψ = eqReflValAV ψ) :
     denoteMeta (acvalWith m.acval eqRecA.name A)
         ⟨eqRecA :: env.consts⟩ ψ 0 eqRecA.toConstantVal.type
       = some (eqRecTy (pwBit ψ (.ifAllZero [u1N])) ψ) := by
@@ -700,11 +700,11 @@ theorem denoteMeta_eqRecA_type (ψ : Name → Nat)
     eqSpine, eqReflSpine, pwBit_never, hEc, hRc, Level.eval]
 
 /-- **`Eq.rec`'s rule's RHS reading.** -/
-theorem denoteMeta_eqRec_rhs (ψ : Name → Nat)
+theorem denoteMeta_eqRec_rhs (ψ : LevelParam → Nat)
     (hE : env.find? eqName = some eqA)
     (hR : env.find? eqReflName = some eqReflA)
-    (hEv : ∀ ψ : Name → Nat, m.acval eqName ψ = eqValAV ψ)
-    (hRv : ∀ ψ : Name → Nat, m.acval eqReflName ψ = eqReflValAV ψ) :
+    (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ)
+    (hRv : ∀ ψ : LevelParam → Nat, m.acval eqReflName ψ = eqReflValAV ψ) :
     denoteMeta (acvalWith m.acval eqRecA.name A)
         ⟨eqRecA :: env.consts⟩ ψ 0 eqRecRule.rhs
       = some (eqRecRa (pwBit ψ (.ifAllZero [u1N])) ψ) := by
@@ -746,7 +746,7 @@ noncomputable def eqRecRaSpace (V : Type w) [SetTheory V]
     piR b (eqRecMotiveSpace V u1 Aset a) fun M =>
       piR b (app (app M a) pt) fun _ => app (app M a) pt
 
-theorem eqRecRa_data {b : Nat} (ψ : Name → Nat)
+theorem eqRecRa_data {b : Nat} (ψ : LevelParam → Nat)
     (hz : b = 0 ↔ ψ u1N = 0) (ρ : Nat → V) :
     WellDenotedV V ρ (eqRecRa b ψ) ∧
       interp V ρ (eqRecRa b ψ)
@@ -835,7 +835,7 @@ theorem eqRecRa_data {b : Nat} (ψ : Name → Nat)
 `b ≠ 0` by six `app_lamR_pos`, at `b = 0` because the motive's fibre
 is then a truth value and the minor premise *is* the canonical
 proof. -/
-theorem eqRecRaTower_app₆ {b : Nat} (ψ : Name → Nat)
+theorem eqRecRaTower_app₆ {b : Nat} (ψ : LevelParam → Nat)
     (hz : b = 0 ↔ ψ u1N = 0) (ρ : Nat → V) {Aset a M mn bb h : V}
     (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset)
     (hM : M ∈ˢ eqRecMotiveSpace V (ψ u1N) Aset a)
@@ -870,7 +870,7 @@ theorem eqRecRaTower_app₆ {b : Nat} (ψ : Name → Nat)
     simp [interp_bvar, cons]
 
 /-- …and the RHS tower's four-fold application is the same value. -/
-theorem eqRecRa_app₄ {b : Nat} (ψ : Name → Nat)
+theorem eqRecRa_app₄ {b : Nat} (ψ : LevelParam → Nat)
     (hz : b = 0 ↔ ψ u1N = 0) (ρ : Nat → V) {Aset a M mn : V}
     (hA : Aset ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ Aset)
     (hM : M ∈ˢ eqRecMotiveSpace V (ψ u1N) Aset a)
@@ -896,7 +896,7 @@ theorem eqRecRa_app₄ {b : Nat} (ψ : Name → Nat)
 
 /-! ### The row -/
 
-theorem eqRecValAV_congr {ψ₁ ψ₂ : Name → Nat} (hu : ψ₁ uN = ψ₂ uN)
+theorem eqRecValAV_congr {ψ₁ ψ₂ : LevelParam → Nat} (hu : ψ₁ uN = ψ₂ uN)
     (hu1 : ψ₁ u1N = ψ₂ u1N) : eqRecValAV ψ₁ = eqRecValAV ψ₂ := by
   have hb : pwBit ψ₁ (Ix.Kernel.PropWhen.ifAllZero [u1N])
       = pwBit ψ₂ (Ix.Kernel.PropWhen.ifAllZero [u1N]) := by
@@ -914,14 +914,14 @@ theorem eqRecLaw {m : EnvModel V env}
     (m₂ : EnvModel V ⟨eqRecA :: env.consts⟩)
     (hE : env.find? eqName = some eqA)
     (hR : env.find? eqReflName = some eqReflA)
-    (hEv : ∀ ψ : Name → Nat, m.acval eqName ψ = eqValAV ψ)
-    (hRv : ∀ ψ : Name → Nat, m.acval eqReflName ψ = eqReflValAV ψ)
+    (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ)
+    (hRv : ∀ ψ : LevelParam → Nat, m.acval eqReflName ψ = eqReflValAV ψ)
     (hac : m₂.acval = acvalWith m.acval eqRecA.name eqRecValAV)
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ eqRecA.name eqRecA.toConstantVal 5 4
       eqRecRule := by
   refine ⟨by decide, fun us hus => ?_⟩
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ eqRecA.toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   have hz : pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [u1N]) = 0 ↔ ψ u1N = 0 :=
@@ -1049,7 +1049,7 @@ theorem eqRecLaw {m : EnvModel V env}
 /-- **`Eq.rec`'s type reading is graded** — six `WellDenotedV_pi_bit`
 steps; the innermost body is the motive applied to the major premise,
 whose fibre is a truth value exactly when the bit is zero. -/
-theorem eqRecTy_wellDenotedV {b : Nat} (ψ : Name → Nat)
+theorem eqRecTy_wellDenotedV {b : Nat} (ψ : LevelParam → Nat)
     (hz : b = 0 ↔ ψ u1N = 0) (ρ : Nat → V) :
     WellDenotedV V ρ (eqRecTy b ψ) := by
   have h6 : ∀ Aset a M mn bb : V, Aset ∈ˢ (univ (ψ uN) : V) →
@@ -1163,8 +1163,8 @@ theorem eqRecTy_wellDenotedV {b : Nat} (ψ : Name → Nat)
 theorem extendEqRec (mp : EnvModelM V μ env)
     (hE : env.find? eqName = some eqA)
     (hR : env.find? eqReflName = some eqReflA)
-    (hEv : ∀ ψ : Name → Nat, mp.base2.acval eqName ψ = eqValAV ψ)
-    (hRv : ∀ ψ : Name → Nat,
+    (hEv : ∀ ψ : LevelParam → Nat, mp.base2.acval eqName ψ = eqValAV ψ)
+    (hRv : ∀ ψ : LevelParam → Nat,
       mp.base2.acval eqReflName ψ = eqReflValAV ψ)
     (hfresh : env.find? eqRecA.name = none)
     (hwf : EnvWF ⟨eqRecA :: env.consts⟩) :
@@ -1173,7 +1173,7 @@ theorem extendEqRec (mp : EnvModelM V μ env)
         = acvalWith mp.base2.acval eqRecA.name eqRecValAV := by
   have hty := fun ψ =>
     denoteMeta_eqRecA_type (m := mp.base2) (A := eqRecValAV) ψ hE hR hEv hRv
-  have hz : ∀ ψ : Name → Nat,
+  have hz : ∀ ψ : LevelParam → Nat,
       pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [u1N]) = 0 ↔ ψ u1N = 0 :=
     fun ψ => pwBit_ifAllZero_single ψ u1N
   refine declStep_preserves_of_basis_rec_cons mp (A := eqRecValAV) hfresh
@@ -1245,7 +1245,7 @@ theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
             first | exact absurd h (by decide) | rfl)
         | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
   obtain ⟨mp1, hac1⟩ := extendEq mp hf1 hwf1
-  have hEv1 : ∀ ψ : Name → Nat, mp1.base2.acval eqName ψ
+  have hEv1 : ∀ ψ : LevelParam → Nat, mp1.base2.acval eqName ψ
       = eqValAV ψ := by
     intro ψ
     rw [hac1, show eqName = eqA.name from rfl, acvalWith_self]
@@ -1280,12 +1280,12 @@ theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
   have hR2 : (⟨eqReflA :: eqA :: env.consts⟩ : Env).find? eqReflName
       = some eqReflA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
-  have hEv2 : ∀ ψ : Name → Nat, mp2.base2.acval eqName ψ
+  have hEv2 : ∀ ψ : LevelParam → Nat, mp2.base2.acval eqName ψ
       = eqValAV ψ := by
     intro ψ
     rw [hac2, acvalWith_ne (by decide)]
     exact hEv1 ψ
-  have hRv2 : ∀ ψ : Name → Nat, mp2.base2.acval eqReflName ψ
+  have hRv2 : ∀ ψ : LevelParam → Nat, mp2.base2.acval eqReflName ψ
       = eqReflValAV ψ := by
     intro ψ
     rw [hac2, show eqReflName = eqReflA.name from rfl, acvalWith_self]

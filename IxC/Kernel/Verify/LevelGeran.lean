@@ -25,7 +25,7 @@ namespace Ix.Kernel.Level.Geran
 
 /-- Level evaluation under an assignment of the parameters, as
 `Ix.Kernel.Level.eval`. -/
-def levelEval (φ : Name → Nat) : Level → Nat
+def levelEval (φ : LevelParam → Nat) : Level → Nat
   | .zero => 0
   | .succ l => levelEval φ l + 1
   | .max l r => Max.max (levelEval φ l) (levelEval φ r)
@@ -33,10 +33,10 @@ def levelEval (φ : Name → Nat) : Level → Nat
   | .param n => φ n
 
 section Eval
-variable (φ : Name → Nat)
+variable (φ : LevelParam → Nat)
 
 /-- Every parameter of the condition set is nonzero. -/
-def active (p : List Name) : Bool := p.all fun i => decide (0 < φ i)
+def active (p : List LevelParam) : Bool := p.all fun i => decide (0 < φ i)
 
 /-- The value of a sublevel. -/
 def Sub.eval : Sub → Nat
@@ -49,7 +49,7 @@ def evalList : List Sub → Nat
   | s :: l => Max.max (s.eval φ) (evalList l)
 
 /-- `n` under a condition set. -/
-def gate (p : List Name) (n : Nat) : Nat := if active φ p then n else 0
+def gate (p : List LevelParam) (n : Nat) : Nat := if active φ p then n else 0
 
 end Eval
 
@@ -59,19 +59,19 @@ def Sub.WF : Sub → Prop
   | .var p x _ => x ∈ p
 
 section Lemmas
-variable {φ : Name → Nat}
+variable {φ : LevelParam → Nat}
 
-theorem active_iff {p : List Name} : active φ p = true ↔ ∀ i ∈ p, 0 < φ i := by
+theorem active_iff {p : List LevelParam} : active φ p = true ↔ ∀ i ∈ p, 0 < φ i := by
   simp [active]
 
-theorem active_cons {x : Name} {p : List Name} :
+theorem active_cons {x : LevelParam} {p : List LevelParam} :
     active φ (x :: p) = (decide (0 < φ x) && active φ p) := rfl
 
-theorem active_append {c p : List Name} :
+theorem active_append {c p : List LevelParam} :
     active φ (c ++ p) = (active φ c && active φ p) := by
   simp [active, List.all_append]
 
-theorem contains_iff {p : List Name} {x : Name} : p.contains x = true ↔ x ∈ p := by
+theorem contains_iff {p : List LevelParam} {x : LevelParam} : p.contains x = true ↔ x ∈ p := by
   simp
 
 /-- `nzConds` is exact: some condition set is active iff the level is
@@ -95,10 +95,10 @@ theorem evalList_cons {s : Sub} {l : List Sub} :
     evalList φ (s :: l) = Max.max (s.eval φ) (evalList φ l) := rfl
 
 /-- The `imax` step: `u` under each condition set of `cs`. -/
-theorem foldl_eval {u : Level} {k : Nat} {path : List Name}
-    (ih : ∀ (path : List Name) (acc : List Sub), evalList φ (decomposeAux path k u acc) =
+theorem foldl_eval {u : Level} {k : Nat} {path : List LevelParam}
+    (ih : ∀ (path : List LevelParam) (acc : List Sub), evalList φ (decomposeAux path k u acc) =
       Max.max (gate φ path (levelEval φ u + k)) (evalList φ acc)) :
-    ∀ (cs : List (List Name)) (acc : List Sub),
+    ∀ (cs : List (List LevelParam)) (acc : List Sub),
       evalList φ (cs.foldl (fun acc c => decomposeAux (c ++ path) k u acc) acc) =
         Max.max (if (active φ path && cs.any (active φ)) = true then levelEval φ u + k else 0)
           (evalList φ acc) := by
@@ -114,7 +114,7 @@ theorem foldl_eval {u : Level} {k : Nat} {path : List Name}
 
 /-- The sublevels of `l + k` under `path` evaluate to `l + k` where `path`
 is active. -/
-theorem decomposeAux_eval (l : Level) : ∀ (path : List Name) (k : Nat) (acc : List Sub),
+theorem decomposeAux_eval (l : Level) : ∀ (path : List LevelParam) (k : Nat) (acc : List Sub),
     evalList φ (decomposeAux path k l acc) =
       Max.max (gate φ path (levelEval φ l + k)) (evalList φ acc) := by
   induction l with
@@ -155,7 +155,7 @@ theorem decompose_eval (l : Level) (k : Nat) :
     evalList φ (decomposeAux [] k l []) = levelEval φ l + k := by
   rw [decomposeAux_eval]; simp [gate, active, evalList_nil]
 
-theorem decomposeAux_wf (l : Level) : ∀ (path : List Name) (k : Nat) (acc : List Sub),
+theorem decomposeAux_wf (l : Level) : ∀ (path : List LevelParam) (k : Nat) (acc : List Sub),
     (∀ a ∈ acc, a.WF) → ∀ a ∈ decomposeAux path k l acc, a.WF := by
   induction l with
   | zero =>
@@ -168,7 +168,7 @@ theorem decomposeAux_wf (l : Level) : ∀ (path : List Name) (k : Nat) (acc : Li
   | imax u v ihu ihv =>
     intro path k acc h
     rw [decomposeAux]
-    have : ∀ (cs : List (List Name)) (acc : List Sub), (∀ a ∈ acc, a.WF) →
+    have : ∀ (cs : List (List LevelParam)) (acc : List Sub), (∀ a ∈ acc, a.WF) →
         ∀ a ∈ cs.foldl (fun acc c => decomposeAux (c ++ path) k u acc) acc, a.WF := by
       intro cs
       induction cs with
@@ -209,7 +209,7 @@ theorem exists_of_le_eval {s : List Sub} {c : Nat} (hc : 0 < c) (h : c ≤ evalL
 
 /-! ## Soundness -/
 
-theorem subset_active {p q : List Name} (h : subset q p = true) (hp : active φ p = true) :
+theorem subset_active {p q : List LevelParam} (h : subset q p = true) (hp : active φ p = true) :
     active φ q = true := by
   simp only [subset, List.all_eq_true, contains_iff] at h
   exact active_iff.2 fun i hi => active_iff.1 hp i (h i hi)
@@ -257,7 +257,7 @@ end Lemmas
 
 /-- **Soundness**: `leq l r diff = true` implies `l ≤ r + diff` at every
 valuation. -/
-theorem leq_sound {l r : Level} {diff : Int} (h : leq l r diff = true) (φ : Name → Nat) :
+theorem leq_sound {l r : Level} {diff : Int} (h : leq l r diff = true) (φ : LevelParam → Nat) :
     (levelEval φ l : Int) ≤ levelEval φ r + diff := by
   unfold leq at h
   split at h
@@ -275,7 +275,7 @@ def valueBound : List Sub → Nat
   | .const _ c :: t => Max.max c (valueBound t)
   | .var _ _ k :: t => Max.max (k + 1) (valueBound t)
 
-theorem const_le_valueBound {t : List Sub} {q : List Name} {c : Nat} (h : .const q c ∈ t) :
+theorem const_le_valueBound {t : List Sub} {q : List LevelParam} {c : Nat} (h : .const q c ∈ t) :
     c ≤ valueBound t := by
   induction t with
   | nil => cases h
@@ -284,7 +284,7 @@ theorem const_le_valueBound {t : List Sub} {q : List Name} {c : Nat} (h : .const
     · exact Nat.le_max_left ..
     · have := ih h; cases b <;> simp [valueBound] <;> omega
 
-theorem var_le_valueBound {t : List Sub} {q : List Name} {y : Name} {k : Nat}
+theorem var_le_valueBound {t : List Sub} {q : List LevelParam} {y : LevelParam} {k : Nat}
     (h : .var q y k ∈ t) : k + 1 ≤ valueBound t := by
   induction t with
   | nil => cases h
@@ -293,7 +293,7 @@ theorem var_le_valueBound {t : List Sub} {q : List Name} {y : Name} {k : Nat}
     · exact Nat.le_max_left ..
     · have := ih h; cases b <;> simp [valueBound] <;> omega
 
-theorem active_subset {φ : Name → Nat} {p q : List Name} (hp : ∀ i, 0 < φ i → i ∈ p)
+theorem active_subset {φ : LevelParam → Nat} {p q : List LevelParam} (hp : ∀ i, 0 < φ i → i ∈ p)
     (hq : active φ q = true) : subset q p = true := by
   simp only [subset, List.all_eq_true, contains_iff]
   exact fun i hi => hp i (active_iff.1 hq i hi)
@@ -309,7 +309,7 @@ theorem dominated_of_le {s t : List Sub} (hs : ∀ a ∈ s, a.WF) (ht : ∀ b �
     | zero => exact .inl rfl
     | succ c =>
       refine .inr ?_
-      let φ : Name → Nat := fun i => if i ∈ p then 1 else 0
+      let φ : LevelParam → Nat := fun i => if i ∈ p then 1 else 0
       have hact : active φ p = true := active_iff.2 fun i hi => by simp [φ, hi]
       have ha' : c + 1 ≤ evalList φ s := by
         have := le_eval (φ := φ) ha; simp only [Sub.eval, hact, ite_true] at this; exact this
@@ -335,7 +335,7 @@ theorem dominated_of_le {s t : List Sub} (hs : ∀ a ∈ s, a.WF) (ht : ∀ b �
   | .var p x k, (hx : x ∈ p) =>
     refine .inr ?_
     let N := valueBound t + 1
-    let φ : Name → Nat := fun i => if i = x then N else if i ∈ p then 1 else 0
+    let φ : LevelParam → Nat := fun i => if i = x then N else if i ∈ p then 1 else 0
     have hsub : ∀ i, 0 < φ i → i ∈ p := fun i hi => by
       simp only [φ] at hi
       split at hi
@@ -374,7 +374,7 @@ theorem le_complete {s t : List Sub} (hs : ∀ a ∈ s, a.WF) (ht : ∀ b ∈ t,
 /-- **Completeness**: if `l ≤ r + diff` at every valuation, `leq` says
 so. -/
 theorem leq_complete {l r : Level} {diff : Int}
-    (h : ∀ φ : Name → Nat, (levelEval φ l : Int) ≤ levelEval φ r + diff) :
+    (h : ∀ φ : LevelParam → Nat, (levelEval φ l : Int) ≤ levelEval φ r + diff) :
     leq l r diff = true := by
   unfold leq
   split
@@ -385,7 +385,7 @@ theorem leq_complete {l r : Level} {diff : Int}
 
 /-- `leq` decides `l ≤ r + diff` at every valuation. -/
 theorem leq_iff {l r : Level} {diff : Int} :
-    leq l r diff = true ↔ ∀ φ : Name → Nat, (levelEval φ l : Int) ≤ levelEval φ r + diff :=
+    leq l r diff = true ↔ ∀ φ : LevelParam → Nat, (levelEval φ l : Int) ≤ levelEval φ r + diff :=
   ⟨fun h φ => leq_sound h φ, leq_complete⟩
 
 end Ix.Kernel.Level.Geran

@@ -165,9 +165,9 @@ operation stored in the prefix keeps its `DivMod` entry at the
 extension: the guard by `natOpGuard_cons`, the clauses by
 `divModClausesV_congr` at the heads the fresh valuation does not
 move. -/
-theorem divMod_entry_cons {m : EnvModel V env} {φ : Name → Nat}
+theorem divMod_entry_cons {m : EnvModel V env} {φ : LevelParam → Nat}
     (hprev : DivMod m φ)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
@@ -207,9 +207,9 @@ theorem divMod_entry_cons {m : EnvModel V env} {φ : Name → Nat}
 
 /-- **`DivMod` at a fresh non-operation cons** — every value-kind step
 except a WF operation's own install discharges its obligation here. -/
-theorem divMod_cons_fresh {m : EnvModel V env} {φ : Name → Nat}
+theorem divMod_cons_fresh {m : EnvModel V env} {φ : LevelParam → Nat}
     (hprev : DivMod m φ)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv v hint, c₀ ≠ .defnInfo cv v hint) ∨
       c₀.name ∉ Ix.Kernel.natDivModNames)
@@ -237,7 +237,7 @@ the cons *is* `Eq`, which is the basis install's own case and is
 excluded by the premise's shape there.) -/
 theorem eqLaw_cons_fresh {m : EnvModel V env}
     (hprev : EqLaw m)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hne : eqName ≠ c₀.name)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -258,7 +258,7 @@ needed: `Eq`'s pin is an `indInfo`, so a `defn`/`thm`/`axiom`/`opaque`
 cons named `Eq` makes the law's own premise false. -/
 theorem eqLaw_cons_valueKind {m : EnvModel V env}
     (hprev : EqLaw m)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -289,7 +289,7 @@ standard/`trustCompiler`/`ofReduce*` family, none of which is a reduce
 operation). -/
 theorem reduceOps_entry_cons {m : EnvModel V env}
     (hprev : ReduceOps m)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
@@ -299,7 +299,7 @@ theorem reduceOps_entry_cons {m : EnvModel V env}
     (hpin : ConstantVal.matchesPin cv (Ix.Kernel.reduceOpCvA c) = true) :
     ((⟨c₀ :: env.consts⟩ : Env).find?
         (Ix.Kernel.reduceElemName c)).isSome = true ∧
-      ∀ (ψ : Name → Nat) (ρ : Nat → V) (x : V),
+      ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (x : V),
         x ∈ˢ interp V ρ (m₂.acval (Ix.Kernel.reduceElemName c) ψ) →
         SetTheory.app (interp V ρ (m₂.acval c ψ)) x = x := by
   have hf : env.find? c = some (.axiomInfo cv) := by
@@ -335,7 +335,7 @@ standard/`trustCompiler`/`ofReduce*` family, none of which is a reduce
 operation). -/
 theorem reduceOps_cons_fresh {m : EnvModel V env}
     (hprev : ReduceOps m)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ Ix.Kernel.reduceOpNames)

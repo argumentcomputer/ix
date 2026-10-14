@@ -186,7 +186,7 @@ licence reads the datum and nothing else, as the licence ruling of
 /-- Data common to all constants: name, universe parameters, type. -/
 structure ConstantVal where
   name : Name
-  levelParams : List Name
+  levelParams : List LevelParam
   type : Expr
   deriving DecidableEq, Repr, Inhabited
 
@@ -401,7 +401,7 @@ hold uniformly over every entry of every stored table. -/
 structure ProjTable where
   structName : Name
   /-- the parent type former's level parameters -/
-  levelParams : List Name
+  levelParams : List LevelParam
   /-- the parent's parameter count -/
   numParams : Nat
   /-- the single constructor (the structural rule's head) -/
@@ -437,7 +437,7 @@ the table's data at field `idx`.  `body` is `bodies[idx]` and
 structure ProjEntry where
   structName : Name
   idx : Nat
-  levelParams : List Name
+  levelParams : List LevelParam
   numParams : Nat
   ctor : Name
   numFields : Nat

@@ -31,13 +31,13 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 /-- **The sum former leaf's two hereditary premises**, from the former's
 data and the chains' grading at the parameter frame. -/
 theorem formerWalksS {m : EnvModel V env} {cvT : ConstantVal} {nP : Nat}
-    {resSort : Level} {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {resSort : Level} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvT nP resSort pps)
-    {Fss : (Name → Nat) → List (List AnnotTerm)}
-    (hFssOk : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    {Fss : (LevelParam → Nat) → List (List AnnotTerm)}
+    (hFssOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V ((pps ψ).map (·.2.2)).reverse ρ →
       SumFieldsOkB (resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
-    (ψ : Name → Nat) (ρ : Nat → V) :
+    (ψ : LevelParam → Nat) (ρ : Nat → V) :
     ParamsOkS (resSort.eval ψ) ρ (Fss ψ) (pps ψ) ∧
       UnderTowerValid ρ (sumBodyAV (resSort.eval ψ) (Fss ψ)) (pps ψ) := by
   have hst := stripPisAV_mkPisAV (pps ψ) (.sort (resSort.eval ψ))
@@ -82,13 +82,13 @@ theorem stageSumFormer (mp : EnvModelM V μ env)
     -- asks which
     (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
     (hname₀ : cvT.name = p.cvT.name)
-    {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
-    (Fss : (Name → Nat) → List (List AnnotTerm))
-    (hFssParams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (Fss : (LevelParam → Nat) → List (List AnnotTerm))
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) → Fss ψ₁ = Fss ψ₂)
-    (hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow (p.nP + p.nIdx) Fs)
-    (hFssOk : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow (p.nP + p.nIdx) Fs)
+    (hFssOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V ((pps ψ).map (·.2.2)).reverse ρ →
       SumFieldsOkB (p.resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
     -- the block's capability record and its laws at the cons (task
@@ -113,13 +113,13 @@ theorem stageSumFormer (mp : EnvModelM V μ env)
   have hcb : ConstsBound env cvTa.type := constsBound_of_constsResolve _ htr
   have hwfI : Ix.Kernel.EnvWF ⟨.indInfo cvTa caps :: env.consts⟩ :=
     Ix.Kernel.envWF_cons_ind mp.base2.wf hccv hicw
-  let A : (Name → Nat) → AnnotTerm :=
+  let A : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)
   have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
     sumTyAV_below (hFD.below ψ)
       (by rw [hFD.len ψ, Nat.zero_add]; exact hFssBelow ψ)
   have hwalks := formerWalksS hFD hFssOk
-  have hreadI : ∀ ψ : Name → Nat,
+  have hreadI : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval cvTa.name A)
         ⟨.indInfo cvTa caps :: env.consts⟩ ψ 0 cvTa.type
         = some (mkPisAV (pps ψ) (.sort (p.resSort.eval ψ))) := fun ψ =>

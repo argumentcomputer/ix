@@ -46,7 +46,7 @@ theorem direct_sum_ind_wf {env env₁ : Env} (henv : EnvWF env)
 
 /-- A constructor's run at the former's environment: its type is
 closed and bounded. -/
-theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Name} {lps : List Name}
+theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large

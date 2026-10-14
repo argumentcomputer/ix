@@ -27,7 +27,7 @@ open Expr
 
 /-- Invert stage 1 of `checkProjFn` (the stored-constant lookups). -/
 theorem checkProjLookups_inv {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF i : Nat} {cvj mcv : ConstantVal}
+    {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal}
     (h : (checkProjLookups env' T ctorName lps nP nF i : CheckM _) =
       .ok (cvj, mcv)) :
     ∃ mval hmmcv,
@@ -90,7 +90,7 @@ theorem checkProjLookups_inv {env' : Env} {T ctorName : Name}
   exact ⟨mval, hmv', rfl, rfl, hmlps, hpnone, hTf, heqf⟩
 
 /-- Invert stage 2 of `checkProjFn` (the public projection type). -/
-theorem checkProjTy_inv {env' : Env} {T ctorName : Name} {lps : List Name}
+theorem checkProjTy_inv {env' : Env} {T ctorName : Name} {lps : List LevelParam}
     {mty pty : Expr} {nP nF : Nat}
     (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM _) =
       .ok pty) :
@@ -137,7 +137,7 @@ theorem checkProjTy_inv {env' : Env} {T ctorName : Name} {lps : List Name}
 
 /-- Invert stage 3 of `checkProjFn` (the reduction rule). -/
 theorem checkProjRule_inv {env' : Env} {pty : Expr} {cvj : ConstantVal}
-    {lps : List Name} {nP nF i : Nat} {rhsA : Expr}
+    {lps : List LevelParam} {nP nF i : Nat} {rhsA : Expr}
     (h : checkProjRule (fueledOps mode F) env' pty cvj lps nP nF i =
       .ok rhsA) :
     ∃ raw rbinders cbindersR cbody,
@@ -276,7 +276,7 @@ instead both equation sides carry definitional type certificates at
 the opened telescope (task #100 stage 3), and the slot itself one
 against the sort its `Eq.{ℓA}` names (task #146). -/
 theorem checkProjIota_inv {env' : Env} {T ctorName : Name}
-    {lps : List Name} {cvj : ConstantVal} {nP nF i : Nat} {u : Unit}
+    {lps : List LevelParam} {cvj : ConstantVal} {nP nF i : Nat} {u : Unit}
     (h : checkProjIota mode (fueledOps mode F) env' env' T ctorName lps cvj nP
       nF i = .ok u) :
     ∃ tcv tval sbinders cbindersR cbody tySlot ℓA,
@@ -536,7 +536,7 @@ theorem checkProjShape_inv {pty cty : Expr} {nP nF : Nat} {u : Unit}
 
 /-- Invert a successful `checkProjFn` into its stages. -/
 theorem checkProjFn_inv {env' env₁ : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF i : Nat}
+    {lps : List LevelParam} {nP nF i : Nat}
     (h : checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok env₁) :
     ∃ cvj mcv,
       (checkProjLookups env' T ctorName lps nP nF i : CheckM _) =
@@ -592,7 +592,7 @@ theorem checkProjFn_inv {env' env₁ : Env} {T ctorName : Name}
 
 /-- The projection-artifact phase adds only recursor-kind constants
 (and only extends the environment). -/
-theorem checkProjFold_find_new {T ctorName : Name} {lps : List Name}
+theorem checkProjFold_find_new {T ctorName : Name} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
@@ -637,7 +637,7 @@ theorem checkProjFold_find_new {T ctorName : Name} {lps : List Name}
       exact checkProjFold_find_new rest env' env₁ h n ci hf
 
 /-- The projection-artifact phase only extends the environment. -/
-theorem checkProjFold_mono {T ctorName : Name} {lps : List Name}
+theorem checkProjFold_mono {T ctorName : Name} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
@@ -674,7 +674,7 @@ theorem checkProjFold_mono {T ctorName : Name} {lps : List Name}
 /-- The projection-artifact phase preserves stored lookups exactly
 (every install is fresh). -/
 theorem checkProjFold_find_preserved {T ctorName : Name}
-    {lps : List Name} {nP nF : Nat} :
+    {lps : List LevelParam} {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
       env' = .ok env₁ →

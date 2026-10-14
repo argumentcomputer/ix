@@ -24,7 +24,7 @@ which needs no justification, and `none` is an internal error.
 namespace Ix.Kernel.Level
 
 /-- Evaluate a level under an assignment of its parameters. -/
-@[expose] def eval (φ : Name → Nat) : Level → Nat
+@[expose] def eval (φ : LevelParam → Nat) : Level → Nat
   | .zero => 0
   | .succ l => eval φ l + 1
   | .max l r => Max.max (eval φ l) (eval φ r)
@@ -32,29 +32,29 @@ namespace Ix.Kernel.Level
   | .param n => φ n
 
 /-- The assignment corresponding to a parameter substitution. -/
-@[expose] def substFn (φ : Name → Nat) : List Name → List Level → Name → Nat
+@[expose] def substFn (φ : LevelParam → Nat) : List LevelParam → List Level → LevelParam → Nat
   | k :: ks, v :: vs, n => if k = n then eval φ v else substFn φ ks vs n
   | _, _, n => φ n
 
-theorem eval_subst_go (φ : Name → Nat) (ks : List Name) (vs : List Level) (n : Name) :
+theorem eval_subst_go (φ : LevelParam → Nat) (ks : List LevelParam) (vs : List Level) (n : LevelParam) :
     eval φ (subst.go ks vs n) = substFn φ ks vs n := by
   fun_induction subst.go with grind [eval, substFn]
 
-theorem eval_subst (φ : Name → Nat) (ks : List Name) (vs : List Level) (l : Level) :
+theorem eval_subst (φ : LevelParam → Nat) (ks : List LevelParam) (vs : List Level) (l : Level) :
     eval φ (subst ks vs l) = eval (substFn φ ks vs) l := by
   fun_induction subst with grind [eval, eval_subst_go]
 
-theorem eval_combining (φ : Name → Nat) (l r : Level) :
+theorem eval_combining (φ : LevelParam → Nat) (l r : Level) :
     eval φ (combining l r) = Max.max (eval φ l) (eval φ r) := by
   fun_induction combining with grind [eval]
 
-theorem eval_simplify (φ : Name → Nat) (l : Level) :
+theorem eval_simplify (φ : LevelParam → Nat) (l : Level) :
     eval φ (simplify l) = eval φ l := by
   fun_induction simplify with grind [eval, eval_combining]
 
 /-- The semantic statement decided by `leqCore fuel l r diff = some true`. -/
 def Sem (l r : Level) (diff : Int) : Prop :=
-  ∀ φ : Name → Nat, (eval φ l : Int) ≤ eval φ r + diff
+  ∀ φ : LevelParam → Nat, (eval φ l : Int) ≤ eval φ r + diff
 
 private theorem bind_and_some_true {x y : Option Bool}
     (h : (do if ← x then y else pure false : Option Bool) = some true) :
@@ -71,10 +71,10 @@ private theorem bind_or_some_true {x y : Option Bool}
   | some b => cases b <;> simp_all [Bind.bind, Option.bind, Pure.pure]
 
 /-- Point update of an assignment. -/
-private def upd (φ : Name → Nat) (p : Name) (v : Nat) : Name → Nat :=
+private def upd (φ : LevelParam → Nat) (p : LevelParam) (v : Nat) : LevelParam → Nat :=
   fun n => if p = n then v else φ n
 
-private theorem eval_subst_single (φ : Name → Nat) (p : Name) (v : Level) (l : Level) :
+private theorem eval_subst_single (φ : LevelParam → Nat) (p : LevelParam) (v : Level) (l : Level) :
     eval φ (subst [p] [v] l) = eval (upd φ p (eval φ v)) l := by
   rw [eval_subst]
   have h : substFn φ [p] [v] = upd φ p (eval φ v) := by
@@ -84,7 +84,7 @@ private theorem eval_subst_single (φ : Name → Nat) (p : Name) (v : Level) (l 
 /-- `byCases` is sound for an arbitrary split parameter. -/
 theorem byCases_sound {fuel : Nat}
     (ih : ∀ l r diff, leqCore fuel l r diff = some true → Sem l r diff)
-    {p : Name} {l r : Level} {diff : Int}
+    {p : LevelParam} {l r : Level} {diff : Int}
     (h : byCases fuel p l r diff = some true) : Sem l r diff := by
   unfold byCases at h
   obtain ⟨h0, hs⟩ := bind_and_some_true h
@@ -106,16 +106,16 @@ theorem byCases_sound {fuel : Nat}
     rw [hupd] at this
     exact this
 
-private theorem eval_imax_imax (φ : Name → Nat) (a x y : Level) :
+private theorem eval_imax_imax (φ : LevelParam → Nat) (a x y : Level) :
     eval φ (Level.imax a (.imax x y)) = eval φ (Level.max (.imax a y) (.imax x y)) := by
   simp only [eval]; grind
 
-private theorem eval_imax_max (φ : Name → Nat) (a x y : Level) :
+private theorem eval_imax_max (φ : LevelParam → Nat) (a x y : Level) :
     eval φ (Level.imax a (.max x y)) = eval φ (Level.max (.imax a x) (.imax a y)) := by
   simp only [eval]; grind
 
 /-- `Geran.levelEval` (`Verify/LevelGeran.lean`, Ix) is `eval`. -/
-theorem eval_eq_levelEval (φ : Name → Nat) (l : Level) : eval φ l = Geran.levelEval φ l := by
+theorem eval_eq_levelEval (φ : LevelParam → Nat) (l : Level) : eval φ l = Geran.levelEval φ l := by
   induction l <;> simp_all [eval, Geran.levelEval]
 
 /-- Soundness of `leqCore` (with `rest`, `imaxRules`, `byCases`):
@@ -220,7 +220,7 @@ theorem isEquiv_sound' {l r : Level} (h : isEquiv l r = some true) :
     exact Nat.le_antisymm (leq_sound h1 φ) (leq_sound h2 φ)
 
 /-- Pointwise evaluation equality of two level lists. -/
-def EvalEqList (φ : Name → Nat) : List Level → List Level → Prop
+def EvalEqList (φ : LevelParam → Nat) : List Level → List Level → Prop
   | [], [] => True
   | u :: us, v :: vs => eval φ u = eval φ v ∧ EvalEqList φ us vs
   | _, _ => False
@@ -245,7 +245,7 @@ theorem isEquivList_length : ∀ {us vs : List Level}, isEquivList us vs = some 
   | _ :: _, [], h => by simp [isEquivList] at h
 
 /-- Pointwise-equivalent substitutions induce the same assignment. -/
-theorem substFn_congr {φ : Name → Nat} : ∀ {ks : List Name} {us vs : List Level},
+theorem substFn_congr {φ : LevelParam → Nat} : ∀ {ks : List LevelParam} {us vs : List Level},
     EvalEqList φ us vs → substFn φ ks us = substFn φ ks vs := by
   intro ks
   induction ks with
@@ -269,8 +269,8 @@ theorem substFn_congr {φ : Name → Nat} : ∀ {ks : List Name} {us vs : List L
         · exact congrFun (ih hrest) n
 
 /-- Evaluation reads the assignment only at the level's parameters. -/
-theorem eval_ext {ps : List Name} : ∀ {u : Level}, u.allParamsDefined ps = true →
-    ∀ {φ₁ φ₂ : Name → Nat}, (∀ p ∈ ps, φ₁ p = φ₂ p) → eval φ₁ u = eval φ₂ u := by
+theorem eval_ext {ps : List LevelParam} : ∀ {u : Level}, u.allParamsDefined ps = true →
+    ∀ {φ₁ φ₂ : LevelParam → Nat}, (∀ p ∈ ps, φ₁ p = φ₂ p) → eval φ₁ u = eval φ₂ u := by
   intro u
   induction u with
   | zero => intro _ _ _ _; rfl
@@ -289,8 +289,8 @@ theorem eval_ext {ps : List Name} : ∀ {u : Level}, u.allParamsDefined ps = tru
 
 /-- Substituting pre-substituted levels agrees with composing assignments,
 at the substituted parameters. -/
-theorem substFn_map_subst {φ : Name → Nat} {ks : List Name} {vs : List Level} :
-    ∀ {ks' : List Name} {ws : List Level} {p : Name},
+theorem substFn_map_subst {φ : LevelParam → Nat} {ks : List LevelParam} {vs : List Level} :
+    ∀ {ks' : List LevelParam} {ws : List Level} {p : LevelParam},
       ws.length = ks'.length → p ∈ ks' →
       substFn φ ks' (ws.map (subst ks vs)) p = substFn (substFn φ ks vs) ks' ws p := by
   intro ks'
@@ -311,8 +311,8 @@ theorem substFn_map_subst {φ : Name → Nat} {ks : List Name} {vs : List Level}
         · exact h
 
 /-- Substituting a parameter list for itself is the identity assignment. -/
-theorem substFn_map_param {φ : Name → Nat} :
-    ∀ {ks : List Name} {p : Name}, substFn φ ks (ks.map .param) p = φ p := by
+theorem substFn_map_param {φ : LevelParam → Nat} :
+    ∀ {ks : List LevelParam} {p : LevelParam}, substFn φ ks (ks.map .param) p = φ p := by
   intro ks
   induction ks with
   | nil => intro p; rfl
@@ -325,9 +325,9 @@ theorem substFn_map_param {φ : Name → Nat} :
 
 /-- `substFn` only reads the assignment through the substituted levels'
 parameters (given membership and alignment). -/
-theorem substFn_ext {φ₁ φ₂ : Name → Nat} {ps : List Name}
+theorem substFn_ext {φ₁ φ₂ : LevelParam → Nat} {ps : List LevelParam}
     (hφ : ∀ p ∈ ps, φ₁ p = φ₂ p) :
-    ∀ {ks' : List Name} {ws : List Level},
+    ∀ {ks' : List LevelParam} {ws : List Level},
       (∀ u ∈ ws, u.allParamsDefined ps = true) → ws.length = ks'.length →
       ∀ p ∈ ks', substFn φ₁ ks' ws p = substFn φ₂ ks' ws p := by
   intro ks'
@@ -362,8 +362,8 @@ about levels alone. -/
 to a substitution.  The checker compares levels with `Level.isEquiv`,
 which is sound for `eval` and nothing stronger, so this is exactly the
 form the spine short-circuit's soundness needs. -/
-theorem substFn_of_evalEqList {φ : Name → Nat} :
-    ∀ (ks : List Name) {us us' : List Level}, EvalEqList φ us us' →
+theorem substFn_of_evalEqList {φ : LevelParam → Nat} :
+    ∀ (ks : List LevelParam) {us us' : List Level}, EvalEqList φ us us' →
       ∀ p, substFn φ ks us p = substFn φ ks us' p := by
   intro ks
   induction ks with
@@ -388,8 +388,8 @@ theorem substFn_of_evalEqList {φ : Name → Nat} :
 /-- A declaration read at its *own* level parameters is read at the
 ambient assignment.  Every basis constant's type mentions its siblings
 this way. -/
-theorem substFn_param_self (φ : Name → Nat) :
-    ∀ (ks : List Name), Level.substFn φ ks (ks.map Level.param) = φ := by
+theorem substFn_param_self (φ : LevelParam → Nat) :
+    ∀ (ks : List LevelParam), Level.substFn φ ks (ks.map Level.param) = φ := by
   intro ks
   induction ks with
   | nil => funext n; rfl

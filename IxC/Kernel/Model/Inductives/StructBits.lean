@@ -119,14 +119,14 @@ theorem inferTypeCore_mkAppN_sort {env : Env} {F d : Nat} :
 
 /-- The first `n` binders of `e`, opened from depth `d` with the
 inference's own `fvar`s, each codomain bit zero exactly when `z`. -/
-def PiBitsOpen (φ : Name → Nat) (z : Prop) : Nat → Nat → Expr → Prop
+def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr → Prop
   | 0, _, _ => True
   | n + 1, d, .forallE dom body mb =>
     (pwBit φ mb.pw = 0 ↔ z) ∧
       PiBitsOpen φ z n (d + 1) (body.instantiate1 (.fvar d dom))
   | _ + 1, _, _ => False
 
-theorem eval_imax_eq_zero_iff (φ : Name → Nat) (l r : Level) :
+theorem eval_imax_eq_zero_iff (φ : LevelParam → Nat) (l r : Level) :
     Level.eval φ (.imax l r) = 0 ↔ Level.eval φ r = 0 := by
   simp only [Level.eval]
   split
@@ -187,8 +187,8 @@ theorem piBits_of_infer {env : Env} (hver : mode.verifiedChecks = true) :
 
 /-- The reading's Π-peel carries the syntactic bits: `denoteMeta` opens
 with the same `fvar`s. -/
-theorem stripPisAV_bits {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} {z : Prop} :
+theorem stripPisAV_bits {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+    {φ : LevelParam → Nat} {z : Prop} :
     ∀ (n : Nat) {d : Nat} {e : Expr} {ea : AnnotTerm}
       {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm},
       PiBitsOpen φ z n d e → denoteMeta acval env φ d e = some ea →

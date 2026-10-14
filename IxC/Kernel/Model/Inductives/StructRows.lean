@@ -26,13 +26,13 @@ open Ix.Kernel.Semantics (AnnotTerm)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The claims at one fuel -/
 
 /-- The claims a P carrier answers at fuel `F` and assignment `φ`. -/
 structure ClaimsAt (μ : CheckMode) {env : Env} (m : EnvModel V env)
-    (φ : Name → Nat) (F : Nat) : Prop where
+    (φ : LevelParam → Nat) (F : Nat) : Prop where
   whnf : WhnfClaim μ m φ F
   defeq : DefEqClaim μ m φ F
   infer : InferClaim μ m φ F
@@ -41,7 +41,7 @@ structure ClaimsAt (μ : CheckMode) {env : Env} (m : EnvModel V env)
 
 /-- A P carrier answers them (the sealed capstone). -/
 theorem claimsAt_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    (φ : Name → Nat) (F : Nat) : ClaimsAt μ mp.base2 φ F :=
+    (φ : LevelParam → Nat) (F : Nat) : ClaimsAt μ mp.base2 φ F :=
   have h := checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp φ) F
   have hr : InferReads mp.base2 μ φ F :=
     inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
@@ -103,7 +103,7 @@ end ClaimsAt
 
 /-- **The opened type record**: a closed, bounded type with a graded
 reading, opened at its own variables. -/
-structure Opened {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+structure Opened {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (k : Nat) (e : Expr) (fvs : List Expr) (o : Expr)
     (Γ : List AnnotTerm) (R : AnnotTerm) : Prop where
   /-- the context has one entry per binder -/
@@ -139,7 +139,7 @@ structure Opened {env : Env} (m : EnvModel V env) (φ : Name → Nat)
 
 /-- The opened type record, from the opening, the closedness and the
 reading's grading. -/
-theorem opened_of {env : Env} {m : EnvModel V env} {φ : Name → Nat}
+theorem opened_of {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
     {k : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
     (hop : openPisAtFvars k e 0 = some (fvs, o)) (hcl : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true)

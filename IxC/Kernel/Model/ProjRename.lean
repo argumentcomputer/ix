@@ -39,14 +39,14 @@ parent type, the constructor and every installed projection function
 carry their model artifact's *leaf*.  `ProjPhaseInvS`'s third
 component, one currency over; the lookups stay in the v1 predicate. -/
 @[expose] def ProjPhaseAcval (T ctorName : Name) (nF : Nat) (env' : Env)
-    (acval : Name → (Name → Nat) → AnnotTerm) : Prop :=
+    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ((env'.find? T).isSome = true →
-    ∀ ψ : Name → Nat, acval T ψ = acval (T.str "_model") ψ) ∧
+    ∀ ψ : LevelParam → Nat, acval T ψ = acval (T.str "_model") ψ) ∧
   ((env'.find? ctorName).isSome = true →
-    ∀ ψ : Name → Nat,
+    ∀ ψ : LevelParam → Nat,
       acval ctorName ψ = acval (ctorName.str "_model") ψ) ∧
   (∀ j, j < nF → (env'.find? (projFnName T j)).isSome = true →
-    ∀ ψ : Name → Nat,
+    ∀ ψ : LevelParam → Nat,
       acval (projFnName T j) ψ = acval (projModelName T j) ψ)
 
 /-- The projection renaming, pruned to the stored names, is sound at
@@ -54,7 +54,7 @@ the reading.  Its first two clauses are v1's verbatim
 (`projFwd_renameOkT`); only the valuation clause is new, and its three
 cases *are* `ProjPhaseAcval`'s three conjuncts. -/
 theorem projFwd_renameOk {T ctorName : Name} {nF : Nat} {env' : Env}
-    {cval : TConstVal} {acval : Name → (Name → Nat) → AnnotTerm}
+    {cval : TConstVal} {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hinv : ProjPhaseInvS T ctorName nF env' cval)
     (hinvA : ProjPhaseAcval T ctorName nF env' acval) :
     RenameOk acval env' (fun n => if (env'.find? n).isSome = true then
@@ -100,7 +100,7 @@ is neither `T`, nor the constructor, nor any *other* field's slot, nor
 any model artifact's name — so the three equations are either the
 installed one (`acvalWith_self`) or carried unchanged. -/
 theorem projPhaseAcval_cons {T ctorName : Name} {nF : Nat}
-    {env' : Env} {acval : Name → (Name → Nat) → AnnotTerm}
+    {env' : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {i : Nat}
     (hname : c₀.name = projFnName T i)
     (hinvA : ProjPhaseAcval T ctorName nF env' acval)
@@ -108,8 +108,8 @@ theorem projPhaseAcval_cons {T ctorName : Name} {nF : Nat}
     (hTf : (env'.find? T).isSome = true)
     (hCf : (env'.find? ctorName).isSome = true)
     (hilt : i < nF)
-    (A : (Name → Nat) → AnnotTerm)
-    (hself : ∀ ψ : Name → Nat, A ψ = acval (projModelName T i) ψ) :
+    (A : (LevelParam → Nat) → AnnotTerm)
+    (hself : ∀ ψ : LevelParam → Nat, A ψ = acval (projModelName T i) ψ) :
     ProjPhaseAcval T ctorName nF ⟨c₀ :: env'.consts⟩
       (acvalWith acval c₀.name A) := by
   -- the head's name differs from every name the invariant reads

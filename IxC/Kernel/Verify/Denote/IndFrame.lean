@@ -180,7 +180,7 @@ entry.  (Consumers lift with `denote_lift`; the entry `Γ.getD (k-1-i)`
 is the `i`-th binder's domain as written, which is where a variable
 rule wants it.) -/
 theorem openPisAtFvars_denoteTele {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} :
+    {ψ : LevelParam → Nat} :
     ∀ (k : Nat) {e : Expr} {j : Nat} {fvs : List Expr} {body : Expr}
       {T : Term},
       openPisAtFvars k e j = some (fvs, body) →
@@ -756,7 +756,7 @@ theorem Expr.getAppArgs_length_instantiate1_const {c : Name}
 
 /-- Level instantiation never changes an application's arity. -/
 theorem Expr.getAppArgs_length_instantiateLevelParams
-    (ks : List Name) (us : List Level) :
+    (ks : List LevelParam) (us : List Level) :
     ∀ (e : Expr),
       ((e.instantiateLevelParams ks us).getAppArgs).length =
         e.getAppArgs.length := by
@@ -832,7 +832,7 @@ theorem Expr.getAppFn_renameConsts (f : Name → Name) :
   | _ => rfl
 
 /-- The application head under level instantiation. -/
-theorem Expr.getAppFn_instantiateLevelParams (ks : List Name)
+theorem Expr.getAppFn_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
     ∀ (e : Expr),
       (e.instantiateLevelParams ks us).getAppFn =
@@ -880,7 +880,7 @@ theorem instPisAt_length :
 denoting residual — the definedness half of
 `instPisAt_denote_cross`. -/
 theorem instPisAt_fvar_denote_defined {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
+    {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
@@ -971,7 +971,7 @@ what the `iota_j` statement walks need per element (task #148, T6:
 `DefEqAtW` asserts its two denotations exist, where `DefEqClaimsR`
 takes them as inputs). -/
 theorem instPisAt_denote_doms {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
+    {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
@@ -1034,7 +1034,7 @@ discards the residual component of every frame lemma it calls; the
 λ-row of `IotaWalksR` opens exactly that residual, so it needs the
 denotation too (task #148 T6). -/
 theorem instPisAt_denote_res {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
+    {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
@@ -1202,7 +1202,7 @@ theorem PiTele.head : ∀ {k : Nat} {T : Term} {Γ : List Term} {R : Term},
 
 /-- A denoted spine, built pointwise. -/
 theorem DenoteSpine.of_getElem {cval : TConstVal} {env : Env}
-    {φ : Name → Nat} {d : Nat} :
+    {φ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List Expr} {vs : List Term}, as.length = vs.length →
       (∀ (q : Nat), q < as.length →
         denote cval env φ d (as.getD q default) =
@@ -1233,7 +1233,7 @@ with the body and each raw domain denoted under the anonymous openers
 (`openFvars`) — annotations are denote-irrelevant, so any same-index
 opener family produces the same values. -/
 theorem stripLams_denoteTele {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} :
+    {ψ : LevelParam → Nat} :
     ∀ (k : Nat) {e : Expr} {j : Nat}
       {bs : List (Expr × BinderMeta)} {body : Expr} {V : Term},
       e.stripLams k = some (bs, body) →
@@ -1424,7 +1424,7 @@ with the body and each raw domain denoted under the anonymous openers
 (`openFvars`) — annotations are denote-irrelevant, so any same-index
 opener family produces the same values. -/
 theorem stripPis_denoteTele {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} :
+    {ψ : LevelParam → Nat} :
     ∀ (k : Nat) {e : Expr} {j : Nat}
       {bs : List (Expr × BinderMeta)} {body : Expr} {V : Term},
       e.stripPis k = some (bs, body) →
@@ -1560,7 +1560,7 @@ theorem stripPis_denoteTele {cval : TConstVal} {env : Env}
 /-- The projection rule's opened body denotes to the field's bound
 variable (sealed: the `instSeq`-of-`bvar` computation in a small
 context; DESIGN §22). -/
-theorem projBodyValue {cval : TConstVal} {env : Env} {ψ : Name → Nat}
+theorem projBodyValue {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
     {cnP cnF i : Nat} (hilt : i < cnF) {Cβ : Term}
     (hCβden : denote cval env ψ (0 + (cnP + cnF))
       (Expr.instSeq (openFvars 0 (cnP + cnF)) (cnP + cnF - 1)
@@ -1586,7 +1586,7 @@ at their own depths have the same denoted context.  The denote-level
 form is what a *renamed* domain pin needs (the projection statement's
 telescope is the constructor's renamed, not equal to it — task #148,
 T5 c4); `towerCtxEq` is the syntactic corollary. -/
-theorem towerCtxEqD {cval : TConstVal} {env : Env} {ψ : Name → Nat}
+theorem towerCtxEqD {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
     {k : Nat} {Γβ Γc : List Term}
     {rbinders cbinders : List (Expr × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
@@ -1634,7 +1634,7 @@ theorem towerCtxEqD {cval : TConstVal} {env : Env} {ψ : Name → Nat}
 
 /-- Two canonically-opened towers with pointwise-equal raw domains
 have the same denoted context (sealed for the same reason). -/
-theorem towerCtxEq {cval : TConstVal} {env : Env} {ψ : Name → Nat}
+theorem towerCtxEq {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
     {k : Nat} {Γβ Γc : List Term}
     {rbinders cbinders : List (Expr × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
@@ -1668,7 +1668,7 @@ rewrites under `denote` terms.
 Relocated verbatim from `IxC/Kernel/TTVerify/DeclIndRecs.lean` (task #148,
 T5 stage 3b): the statement is about `denote` and a `TConstVal`, so
 both verified lanes' nested bottoms read it. -/
-theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : Name → Nat}
+theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : LevelParam → Nat}
     {stmtTy : Expr} {K : Nat} {fvs : List Expr} {tbody : Expr}
     {ℓA : Level} {αS lhsS rhsS : Expr} {fRn fCtor : Name}
     {lpsE lvls : List Level} {mI : Nat} {spN : List Expr}
@@ -1712,7 +1712,7 @@ theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : Name → Nat}
 
 /-- The projection statement's right side denotes to the field's
 frame variable (sealed). -/
-theorem projRhsValue {cval : TConstVal} {env : Env} {ψ : Name → Nat}
+theorem projRhsValue {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
     {fvs : List Expr} {rP cnF i : Nat} {vR : Term}
     (hshapeS : ∀ (i0 : Nat) (x : Expr), fvs[i0]? = some x →
       ∃ ty, x = Expr.fvar i0 ty)
@@ -1792,7 +1792,7 @@ and whose core is the residual's denotation — `denote` reads neither an
 opener's name nor its annotation, so any same-index opener spine
 produces the same tower. -/
 theorem instLamsAt_denoteTele {cval : TConstVal} {env : Env}
-    {ψ : Name → Nat} :
+    {ψ : LevelParam → Nat} :
     ∀ (sp : List Expr) {e : Expr} {j : Nat} {ds : List Expr}
       {rest : Expr} {Vv : Term},
       Expr.instLamsAt sp e = some (ds, rest) →

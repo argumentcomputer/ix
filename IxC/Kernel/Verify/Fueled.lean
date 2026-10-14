@@ -156,7 +156,7 @@ theorem defEqList_atF (d : Nat) (F : Nat) :
   | _ :: _, [] => rfl
 
 theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Name)
-    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List Name) :
+    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (fueledFns mode env) env d T us' targs b lpsT
         idxs).val F =

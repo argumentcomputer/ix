@@ -58,7 +58,7 @@ is here. -/
 def RecLawsAt {env : Env} (m : EnvModel V env) (cv : ConstantVal)
     (mI rP : Nat) (rules : List RecRule) : Prop :=
   ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
-    ∀ φ : Name → Nat, RecRuleLaw m φ cv.name cv mI rP rl
+    ∀ φ : LevelParam → Nat, RecRuleLaw m φ cv.name cv mI rP rl
 
 set_option maxHeartbeats 1600000 in
 /-- **The provisioning and the install fold, run together at the
@@ -93,11 +93,11 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
   -- the four claims and the reads, at every assignment (`hμ` + `mp`)
   have hclaims := fun ψ =>
     checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F :=
+  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F :=
+  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F :=
+  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
     fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
   intro recs
   induction recs with
@@ -137,7 +137,7 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
 environment only through "this name is stored", and a swap changes no
 stored name. -/
 theorem blockAcvalInstalled_swap {blockNames : List Name}
-    {env₀ env₃ : Env} {acval : Name → (Name → Nat) → AnnotTerm}
+    {env₀ env₃ : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     (h : BlockAcvalInstalled blockNames env₀ acval) :
     BlockAcvalInstalled blockNames env₃ acval := by
@@ -202,7 +202,7 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
   have hdenS : ∀ e : Expr, e.hasFvar = false →
       e.looseBVarsBounded 0 = true →
       (∃ t', inferTypeCore μ envSelf F 0 e = .ok t') →
-      ∀ φ : Name → Nat,
+      ∀ φ : LevelParam → Nat,
         ∃ Rv, denoteClosed mS.base2.cvalE envSelf φ e = some Rv := by
     intro e hef heb hrun φ
     obtain ⟨t', hrun'⟩ := hrun
@@ -240,7 +240,7 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
     hbn hprov hfold
   -- `rec_rules` at the swapped carrier
   have hrecP : ∀ m₃ : EnvModel V env₃, m₃.acval = mS.base2.acval →
-      ∀ φ : Name → Nat, RecRules m₃ φ := by
+      ∀ φ : LevelParam → Nat, RecRules m₃ φ := by
     intro m₃ hac φ n cv mI rP rules hf rl hrl hfire
     rcases hentF n cv mI rP rules hf with hfS | hlaws
     · exact RecRuleLaw.swapP hcg hac

@@ -56,13 +56,13 @@ set_option maxHeartbeats 25600000 in
 /-- **The projection bottom, at the reading** (`indBottomProjS`). -/
 theorem indBottomProj {μ : CheckMode} {env : Env}
     (mp : EnvModelM V μ env) {F : Nat}
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     -- the totality residue (routed: `inferReads_of` at the caller)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {f : Name → Name} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
-    {Rn : Name} {lps : List Name} {tyA : Expr} {mI rP : Nat}
+    {Rn : Name} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     {ciRm : ConstantInfo}
     (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
@@ -95,14 +95,14 @@ theorem indBottomProj {μ : CheckMode} {env : Env}
       cbinders[i0]? = some b' → b.1 = b'.1)
     -- the rule rhs's front door, at the reading (`ProjFnR`'s recorded
     -- run row, graded through `InferClaim` at the caller)
-    (hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+    (hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval env ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta)
     -- the checked statement's front doors and opened kit
     {stmtTy : Expr} (hSw : stmtTy.hasFvar = false)
     (hSb : stmtTy.looseBVarsBounded 0 = true)
-    (hthm : ∀ ψ : Name → Nat, ∃ ta,
+    (hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env ψ 0 stmtTy = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta)
@@ -129,7 +129,7 @@ theorem indBottomProj {μ : CheckMode} {env : Env}
       isDefEqCore μ env F (rP + cnF) tl αS = .ok true)
     (hsideR : ∃ tr, inferTypeCore μ env F (rP + cnF) rhsS = .ok tr ∧
       isDefEqCore μ env F (rP + cnF) tr αS = .ok true) :
-    ∀ (φ : Name → Nat) (us : List Level), us.length = lps.length →
+    ∀ (φ : LevelParam → Nat) (us : List Level), us.length = lps.length →
       ∃ Ra : AnnotTerm,
         denoteMeta mp.base2.acval env φ 0
           (rhsA.instantiateLevelParams lps us) = some Ra ∧

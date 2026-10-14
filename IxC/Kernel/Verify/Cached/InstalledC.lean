@@ -77,7 +77,7 @@ theorem annotConstantValC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv
   by_cases h3 : cv.name.isProjFnShape = true
   · rw [if_pos h3] at h; exact absurd h throwC_bind_ok
   rw [if_neg h3] at h
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg => rw [if_neg h4] at h; exact absurd h throwC_bind_ok
   rw [if_pos h4] at h
   by_cases h5 : Expr.looseBVarsBounded 0 cv.type = true

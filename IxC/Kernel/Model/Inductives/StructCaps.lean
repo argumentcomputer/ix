@@ -45,8 +45,8 @@ discharges it from the leaves (or vacuously: `capsLawsAt_of_none`,
 @[expose] def CapsLawsAt {env : Env} (m : EnvModel V env) (T : Name) (cvT : ConstantVal)
     (caps : IndCaps) : Prop :=
   (caps.eta = true → Ix.Kernel.EtaFamilyStored env T caps →
-    ∀ φ' : Name → Nat, EtaLaw m φ' T cvT caps) ∧
-  (caps.unitlike = true → ∀ φ' : Name → Nat, UnitLaw m φ' T cvT caps)
+    ∀ φ' : LevelParam → Nat, EtaLaw m φ' T cvT caps) ∧
+  (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m φ' T cvT caps)
 
 /-- A record claiming η at a family with a field and no unit-likeness
 owes nothing while its projection-function family is free: the η
@@ -70,7 +70,7 @@ inductive at all; every other stored family's capability constructor
 is stored in the prefix (`hother`); the block's own family's laws at
 the extension are supplied (`hTlaws`). -/
 theorem capsOk_cons_native (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T : Name}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T : Name}
     (hfresh : env.find? c₀.name = none)
     (hcross : ConsCrossEnv env c₀)
     (hpshape : c₀.name.isProjFnShape = false)
@@ -88,8 +88,8 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
       Ix.Kernel.reservedBasisNames.contains T = false →
       (caps.eta = true → Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps) ∧
-      (caps.unitlike = true → ∀ φ' : Name → Nat, UnitLaw m₂ φ' T cvT caps)) :
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps) ∧
+      (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' T cvT caps)) :
     CapsOk m₂ := by
   -- a stored family other than the block's is a prefix lookup
   have hdown : ∀ n : Name, n ≠ c₀.name →

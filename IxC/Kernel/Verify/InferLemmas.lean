@@ -1022,7 +1022,7 @@ test**: at a capability record whose `sortZ` is the family's own
 (`piResultZ` of the type the environment stores — what every install
 route computes it from), reading the datum at a use's levels gives
 exactly the walk `piResultNeverZero` would have made down that type. -/
-theorem capsNeverZero_eq {lps : List Name} {us : List Level}
+theorem capsNeverZero_eq {lps : List LevelParam} {us : List Level}
     {caps : IndCaps} {e : Expr} (h : caps.sortZ = piResultZ e) :
     capsNeverZero lps us caps = piResultNeverZero lps us e := by
   unfold capsNeverZero piResultNeverZero
@@ -2002,7 +2002,7 @@ theorem recSlotsAll_slot {env : Env} {T : Name} {nF : Nat}
 
 /-- Invert the per-projection telescope certificates. -/
 theorem structEtaProjCerts_inv {env : Env} {fuel d : Nat} {T : Name}
-    {us' : List Level} {targs : List Expr} {b : Expr} {lpsT : List Name} :
+    {us' : List Level} {targs : List Expr} {b : Expr} {lpsT : List LevelParam} :
     ∀ (idxs : List Nat),
       structEtaProjCertsFueled mode env fuel d T us' targs b lpsT idxs = .ok true →
       ∀ i ∈ idxs,

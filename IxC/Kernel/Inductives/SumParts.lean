@@ -88,8 +88,8 @@ structure InductiveShape where
   /-- the recursor -/
   cvR : ConstantVal
   /-- the recursor's fresh elimination level parameter (`large` only;
-  `.anonymous` for a small eliminator) -/
-  elim : Name
+  `0` for a small eliminator) -/
+  elim : LevelParam
   /-- the result sort -/
   resSort : Level
   /-- the rules' right-hand sides as exported, in constructor order -/

@@ -63,26 +63,26 @@ structure EnvFacts (env : Env) where
   cval : TConstVal
   /-- Every constant denotes to a closed term.  Consumed by every
   lifting step (`denote_weaken_top`, `denote_lift`) and by M1. -/
-  cval_closed : ∀ (n : Name) (ψ : Name → Nat), Term.Closed (cval n ψ)
+  cval_closed : ∀ (n : Name) (ψ : LevelParam → Nat), Term.Closed (cval n ψ)
   /-- Stored declarations are syntactically well-formed.  Consumed by
   the frame-condition lemmas of `IxC/Kernel/Verify/*`. -/
   wf : EnvWF env
   /-- A constant's term only depends on its own level parameters.
   Consumed by the same-head spine short-circuit. -/
   val_params : ∀ n ci, env.find? n = some ci →
-    ∀ φ₁ φ₂ : Name → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
+    ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
       cval n φ₁ = cval n φ₂
   /-- **Every stored constant's type denotes.**  The weakest form of
   `EnvTT.has_type` / `EnvS.mem_type` the bridge needs: it names the
   `Term` the `.const` rule's `denoteClosed` side condition asks for,
   and nothing else. -/
-  ty_denotes : ∀ c ∈ env.consts, ∀ ψ : Name → Nat,
+  ty_denotes : ∀ c ∈ env.consts, ∀ ψ : LevelParam → Nat,
     ∃ t, denoteClosed cval env ψ c.toConstantVal.type = some t
   /-- Every definition is denoted by its body — the fact that makes a
   delta step an *identity* of denotations, hence contributes no rule to
   the family (design §7.2, R17). -/
   defn_eq : ∀ cv value hint,
-    ConstantInfo.defnInfo cv value hint ∈ env.consts → ∀ ψ : Name → Nat,
+    ConstantInfo.defnInfo cv value hint ∈ env.consts → ∀ ψ : LevelParam → Nat,
       denoteClosed cval env ψ value = some (cval cv.name ψ)
   /-- **Every stored fireable recursor rule's right-hand side denotes**,
   at every instantiation of the recursor's level parameters.
@@ -97,7 +97,7 @@ structure EnvFacts (env : Env) where
   rec_rhs_denotes : ∀ n cv mI rP rules,
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ r ∈ rules, RecRule.fire r ≠ .inert →
-      ∀ (us : List Level) (ψ : Name → Nat),
+      ∀ (us : List Level) (ψ : LevelParam → Nat),
         us.length = cv.levelParams.length →
         ∃ R, denoteClosed cval env ψ
           (r.rhs.instantiateLevelParams cv.levelParams us) = some R

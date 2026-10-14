@@ -43,8 +43,8 @@ a name `env₀` lacks: every `.const` the reading looks up resolves in
 `constsResolve`'s literal clauses.  Stated as an equation — the two
 runs are `none` together. -/
 theorem denoteMeta_acvalWith_unmentioned
-    {acval : Name → (Name → Nat) → AnnotTerm} {T : Name}
-    {A : (Name → Nat) → AnnotTerm} {env₀ env : Env} {φ : Name → Nat}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} {T : Name}
+    {A : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env} {φ : LevelParam → Nat}
     (hfresh : env₀.find? T = none) :
     ∀ (d : Nat) (e : Expr), Expr.constsResolve env₀ e = true →
       denoteMeta (acvalWith acval T A) env φ d e
@@ -133,8 +133,8 @@ theorem denoteMeta_acvalWith_unmentioned
 
 /-- Two leaves at the block's name read a pre-block term alike. -/
 theorem denoteMeta_acvalWith_unmentioned₂
-    {acval : Name → (Name → Nat) → AnnotTerm} {T : Name}
-    {A₁ A₂ : (Name → Nat) → AnnotTerm} {env₀ env : Env} {φ : Name → Nat}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} {T : Name}
+    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env} {φ : LevelParam → Nat}
     (hfresh : env₀.find? T = none)
     (d : Nat) (e : Expr) (hcr : Expr.constsResolve env₀ e = true) :
     denoteMeta (acvalWith acval T A₁) env φ d e
@@ -149,8 +149,8 @@ theorem denoteMeta_acvalWith_unmentioned₂
 variables' annotation readings at their own depths (domain sort
 numeral `0`, the codomain bit the binder's own), and whose residual is
 the opened body's reading at the full depth. -/
-theorem denoteMeta_openPis {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} :
+theorem denoteMeta_openPis {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+    {φ : LevelParam → Nat} :
     ∀ (n : Nat) {d : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
       {ea : AnnotTerm},
       openPisAtFvars n e d = some (fvs, o) →

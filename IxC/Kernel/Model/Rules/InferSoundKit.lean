@@ -42,7 +42,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
+variable {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The `WellDenotedV` splitters (`Steps/InferIO.lean:75`, `:123`, `:142`)
 
@@ -279,10 +279,10 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
   have hlpAtC : levelParamsAt env Ix.Kernel.listConsName
       = ciC.toConstantVal.levelParams := by rw [levelParamsAt, hfC]
   -- every leaf is closed, graded and bit-valid
-  have hleafC : ∀ (n : Name) (ψ : Name → Nat) (σ : Nat → V),
+  have hleafC : ∀ (n : Name) (ψ : LevelParam → Nat) (σ : Nat → V),
       interp V σ (m.acval n ψ) = interp V ρ (m.acval n ψ) := fun n ψ σ =>
     interp_closed V (by rw [m.acval_erase]; exact m.cval_closed n ψ) σ ρ
-  have hleafOk : ∀ (n : Name) (ψ : Name → Nat) (σ : Nat → V),
+  have hleafOk : ∀ (n : Name) (ψ : LevelParam → Nat) (σ : Nat → V),
       WellDenotedV V σ (m.acval n ψ) := fun n ψ σ =>
     ⟨m.acval_wellDenoted _ _ σ, hval _ _ σ⟩
   -- the stored types' rows, from the `const` residue
@@ -561,9 +561,9 @@ the type's reading** — `teleFitPA_residual` without the fit: the two
 walks step in lockstep (`body.instantiate1 a` against `B.inst a`), and
 the per-step content is `denoteMeta_beta`, once. -/
 theorem denoteMeta_instPisAt_peel
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {d : Nat} :
     ∀ (args : List Expr) {ty rest : Expr} {ds : List Expr} {Ta : AnnotTerm}

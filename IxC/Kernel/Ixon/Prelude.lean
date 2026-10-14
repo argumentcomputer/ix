@@ -48,16 +48,9 @@ def pinTable : Except String (Array Pin) :=
     let ref : ConstRef Address := if c == 0 then .member b i else .ctor b i (c - 1)
     pure ⟨ref, nameOfComponents cs⟩
 
-/-- The committed level-parameter names. -/
-def levelTable : Except String (Std.HashMap (ConstRef Address) (List CName)) :=
-  PinData.levels.foldlM (init := {}) fun m (hex, i, c, ns) => do
-    let some b := addressOfHex hex | throw s!"level table: bad address {hex}"
-    let ref : ConstRef Address := if c == 0 then .member b i else .ctor b i (c - 1)
-    pure (m.insert ref (ns.map nameOfComponents))
-
-/-- The committed pin and level tables, the former checked (`pinMap`). -/
+/-- The committed pin table, checked (`pinMap`). -/
 def defaultPins : Except String Pins := do
-  pure { names := ← pinMap (← pinTable), levels := ← levelTable }
+  pure { names := ← pinMap (← pinTable) }
 
 /-! ## The Nat-operation pins, from Ixon
 
@@ -85,7 +78,7 @@ byte outside `[A-Za-z0-9._'!?-]` as `%XX`).
 | line | node |
 |---|---|
 | `n p s` / `m p k` | `Name.str p s` / `Name.num p k` |
-| `S u` / `M u v` / `I u v` / `P n` | `Level.succ` / `max` / `imax` / `param` |
+| `S u` / `M u v` / `I u v` / `P k` | `Level.succ` / `max` / `imax` / `param` |
 | `B k` / `Y u` / `C n u…` / `A f a` | `Expr.bvar` / `sort` / `const` / `app` |
 | `L t b` / `F t b` / `E t v b` | `lam` / `forallE` / `letE` (every binder `pw := .never`) |
 | `N k` / `T s` / `J n i e` | a `Nat` literal / a `String` literal / `proj` |
@@ -163,7 +156,7 @@ def decodePinTable (text : String) : Except String (Array PinNode) := do
       | "S" => pure (.level (.succ (← levelAt 1)))
       | "M" => pure (.level (.max (← levelAt 1) (← levelAt 2)))
       | "I" => pure (.level (.imax (← levelAt 1) (← levelAt 2)))
-      | "P" => pure (.level (.param (← nameAt 1)))
+      | "P" => pure (.level (.param (← num 1)))
       | "B" => pure (.expr (Ix.Kernel.Expr.mkBvar (← num 1)))
       | "Y" => pure (.expr (.sort (← levelAt 1)))
       | "C" => do

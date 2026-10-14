@@ -31,7 +31,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 theorem DefEq.refl_sound {d : Nat} {a : Expr} : DefEqSem m φ d a a := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _

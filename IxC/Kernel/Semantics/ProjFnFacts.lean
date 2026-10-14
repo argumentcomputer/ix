@@ -52,7 +52,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 rule list the caller installs.  (Moved to the base at task #161 S7 —
 `SetR/Install/ProjInstallS.lean` was its only home and both lanes'
 conses now name it.) -/
-abbrev projEntry (T : Name) (lps : List Name) (pty : Expr)
+abbrev projEntry (T : Name) (lps : List LevelParam) (pty : Expr)
     (nP i : Nat) (rules : List RecRule) : ConstantInfo :=
   .recInfo ⟨projFnName T i, lps, pty⟩ nP nP rules
 
@@ -60,7 +60,7 @@ abbrev projEntry (T : Name) (lps : List Name) (pty : Expr)
 front door.  Parameterised by the rule list exactly as `projConsS` is,
 because the projection bottom fires *below* the cons. -/
 theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     {rules : List RecRule}
     {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
     {pty : Expr}
@@ -82,7 +82,7 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
       (RecRule.rhs r).looseBVarsBounded 0 = true ∧
       ∀ lvls pins, RecRule.fire r ≠ .nested lvls pins)
     (hrhsDen : ∀ r ∈ rules, RecRule.fire r ≠ .inert →
-      ∀ ψ : Name → Nat,
+      ∀ ψ : LevelParam → Nat,
         ∃ Rv, denoteClosed m.cval env' ψ (RecRule.rhs r) = some Rv) :
     ∃ m₁ : EnvFacts ⟨projEntry T lps pty nP i rules :: env'.consts⟩,
       m₁.cval = cvalWith m.cval (projFnName T i)
@@ -99,13 +99,13 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
   have hi : Installs env' m.cval cval₀ (projEntry T lps pty nP i rules) :=
     Installs.of_fresh hfresh0
       (fun _ heq => ConstantInfo.noConfusion heq) hag
-  have hselfA : ∀ ψ : Name → Nat,
+  have hselfA : ∀ ψ : LevelParam → Nat,
       cval₀ (projFnName T i) ψ = m.cval (projModelName T i) ψ := by
     intro ψ
     rw [hcval₀]
     exact congrFun cvalWith_self ψ
   -- the head's type denotes: the model projection's, read backwards
-  have htyHead : ∀ ψ : Name → Nat,
+  have htyHead : ∀ ψ : LevelParam → Nat,
       ∃ t, denoteClosed m.cval env' ψ pty = some t := by
     intro ψ
     have hro := projFwd_renameOkT hinv
@@ -232,7 +232,7 @@ stored rule's constructor.  Both lanes' conses need them — the R lane
 inside `projConsS`, the P lane at `projCons` — and neither is
 semantic. -/
 theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env}
-    {T ctorName : Name} {lps : List Name}
+    {T ctorName : Name} {lps : List LevelParam}
     {nP nF i : Nat}
     (hwfE : EnvWF env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁) :

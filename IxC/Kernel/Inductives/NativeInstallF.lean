@@ -20,7 +20,7 @@ section Mirrors
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
 /-- `nativeOpenedOk` through the index. -/
-def nativeOpenedOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List Name) (nP nIdx : Nat)
+def nativeOpenedOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with
   | some (fvsP, crest) =>
@@ -59,7 +59,7 @@ def nativeOpenedOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List Na
   | none => false
 
 /-- `nativeFieldsOk` through the index. -/
-def nativeFieldsOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List Name) (nP nIdx : Nat)
+def nativeFieldsOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
   ctorsA.length == kinds.length &&
   (List.range ctorsA.length).all fun j =>
@@ -69,8 +69,8 @@ def nativeFieldsOkF (w : StructWalkers) (fe₀ : FEnv) (T : Name) (lps : List Na
     | _, _ => false
 
 /-- `checkNativeRules` through the index. -/
-def checkNativeRulesF (w : StructWalkers) (feR : FEnv) (rlps : List Name) (T : Name) (lps : List Name)
-    (elim : Name) (large : Bool) (nP nIdx : Nat) (tty : Expr)
+def checkNativeRulesF (w : StructWalkers) (feR : FEnv) (rlps : List LevelParam) (T : Name) (lps : List LevelParam)
+    (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
     (ctors : List (Name × Nat × Expr × List Nat)) (recC : Name) (rlvls : List Level) :
     Nat → Nat → m (List Expr)
   | 0, _ => pure []

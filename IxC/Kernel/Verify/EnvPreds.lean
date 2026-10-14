@@ -26,9 +26,9 @@ namespace Ix.Kernel
 
 open Name
 
-@[expose] def uN : Name := anonymous |>.str "u"
-@[expose] def u1N : Name := anonymous |>.str "u_1"
-@[expose] def vN : Name := anonymous |>.str "v"
+@[expose] def uN : LevelParam := 0
+@[expose] def u1N : LevelParam := 1
+@[expose] def vN : LevelParam := 1
 
 /-- Is this constant-info one of the basis kinds? -/
 @[expose] def ConstantInfo.isBasis : ConstantInfo → Bool

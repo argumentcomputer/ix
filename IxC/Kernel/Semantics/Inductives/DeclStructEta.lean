@@ -39,7 +39,7 @@ open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
 /-- The table stage's run: the tower table consed at a fresh table
 name (task #175 S1). -/
 theorem checkStructProjTable_shape {T C : Name}
-    {lps : List Name} {nP nF : Nat} {resSort : Level}
+    {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env' : Env}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
       resSort guards off cvCa env = .ok env') :
@@ -53,7 +53,7 @@ theorem checkStructProjTable_shape {T C : Name}
 /-- The table stage keeps the η-families closed: a fresh cons of a
 table. -/
 theorem checkStructProjTable_etaClosed {T C : Name}
-    {lps : List Name} {nP nF : Nat} {resSort : Level}
+    {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env₂ : Env}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
       resSort guards off cvCa env = .ok env₂)

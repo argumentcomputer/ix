@@ -124,7 +124,7 @@ descends by kind at once, and — post-repair — the unit half carries no
 family premise to re-establish. -/
 theorem capsOk_cons_proj (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
@@ -136,7 +136,7 @@ theorem capsOk_cons_proj (mp : EnvModelM V μ env)
       caps.eta = true → i < caps.etaFields →
       Ix.Kernel.reservedBasisNames.contains T₀ = false →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T₀ caps →
-      ∀ φ' : Name → Nat, EtaLaw m₂ φ' T₀ cvT caps) :
+      ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T₀ cvT caps) :
     CapsOk m₂ := by
   have hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps := by
     obtain ⟨cvr, mIr, rPr, rulesr, rfl⟩ := hc₀rec

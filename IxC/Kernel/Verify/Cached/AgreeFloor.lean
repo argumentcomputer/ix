@@ -523,7 +523,7 @@ theorem checkMemberValF_name (ops : CheckerOps CheckCM)
 
 theorem checkIotaRuleF_ctor (mode : CheckMode) (ops : CheckerOps CheckCM)
     (fe' feSelf : FEnv) (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP j : Nat) (r : RecRule) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule) :
     Yields (checkIotaRuleF mode ops fe' feSelf f cvName lps tyA mI rP j r)
       (fun r' => r'.ctor = r.ctor) := by
   unfold checkIotaRuleF
@@ -532,7 +532,7 @@ theorem checkIotaRuleF_ctor (mode : CheckMode) (ops : CheckerOps CheckCM)
 
 theorem checkIotaRulesF_ctors (mode : CheckMode) (ops : CheckerOps CheckCM)
     (fe' feSelf : FEnv) (f : Name → Name) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP : Nat) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP : Nat) :
     ∀ (j : Nat) (rules : List RecRule),
       Yields (checkIotaRulesF mode ops fe' feSelf f cvName lps tyA mI rP j rules)
         (fun rules' => rules'.map (·.ctor) = rules.map (·.ctor))
@@ -731,7 +731,7 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List Name)
 
 theorem checkProjFnS_skels (mode : CheckMode) {fe : FEnv}
     {sk : List InstallSkel} (h : SkelIs fe sk) (T ctorName : Name)
-    (lps : List Name) (nP nF i : Nat) :
+    (lps : List LevelParam) (nP nF i : Nat) :
     Yields (checkProjFnS mode fe T ctorName lps nP nF i)
       (fun fe' => SkelIs fe' (.recr (projFnName T i) nP nP [ctorName] :: sk)) := by
   unfold checkProjFnS
@@ -740,7 +740,7 @@ theorem checkProjFnS_skels (mode : CheckMode) {fe : FEnv}
 
 theorem installProjFnStepS_skels (mode : CheckMode) {fe : FEnv}
     {sk : List InstallSkel} (h : SkelIs fe sk) (T ctorName : Name)
-    (lps : List Name) (nP nF i : Nat) :
+    (lps : List LevelParam) (nP nF i : Nat) :
     Yields (installProjFnStepS mode T ctorName lps nP nF fe i)
       (fun fe' => SkelIs fe' (projFnStepSkels T ctorName nP sk i)) := by
   unfold installProjFnStepS projFnStepSkels
@@ -757,7 +757,7 @@ check; the stored constants' names are the block's (`checkConstantValF`
 keeps the name). -/
 
 theorem checkStructProjTableF_skels {w : StructWalkers} {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) (T C : Name) (lps : List Name) (nP nF : Nat)
+    (h : SkelIs fe sk) (T C : Name) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) :
     Yields (checkStructProjTableF (m := CheckCM) w T C lps nP nF resSort guards
         off cvCa fe)
@@ -883,7 +883,7 @@ theorem normCtorValF_name (ops : CheckerOps CheckCM) (fe : FEnv) (T : Name) (nP 
     | exact Yields.mono (checkConstantValF_name ops fe _) (fun _ h => h)
 
 theorem checkSumCtorF_name (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List Name) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
     Yields (checkSumCtorF ops fe₀ fe T lps nP nIdx rs isProp large cvC nF cvTa)
       (fun r => r.1.name = cvC.name) := by
@@ -896,7 +896,7 @@ theorem checkSumCtorF_name (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
 /-- The constructor list's names and field counts are the block's, and
 the field-sort lists come one per constructor (task #210 Part A). -/
 theorem checkSumCtorsF_names (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List Name) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     ∀ (cs : List (ConstantVal × Nat)),
       Yields (checkSumCtorsF ops fe₀ fe T lps nP nIdx rs isProp large cvTa cs)
@@ -953,7 +953,7 @@ private theorem nativeCtors4_length' {ctorsA : List (ConstantVal × Nat)}
   simp [nativeCtors4, List.length_zipWith, h]
 
 theorem checkNativeRulesF_len {w : StructWalkers} (fe : FEnv)
-    (rlps : List Name) (T : Name) (lps : List Name) (elim : Name) (large : Bool)
+    (rlps : List LevelParam) (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat))
     (recC : Name) (rlvls : List Level) :
     ∀ (k j : Nat),

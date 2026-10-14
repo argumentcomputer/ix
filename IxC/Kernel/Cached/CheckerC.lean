@@ -152,7 +152,7 @@ def checkIndRecsS (blockNames : List Name) (fe₂ : FEnv)
 
 /-- The public projection function for field `i` (mirrors
 `checkProjFn`; the single-environment stages are the generic ones). -/
-def checkProjFnS (fe : FEnv) (T ctorName : Name) (lps : List Name)
+def checkProjFnS (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) : CheckCM FEnv := do
   let (cvj, mcv) ← checkProjLookupsF (m := CheckCM) fe T ctorName lps
     nP nF i
@@ -167,7 +167,7 @@ def checkProjFnS (fe : FEnv) (T ctorName : Name) (lps : List Name)
 
 /-- One projection-function install step (mirrors `installProjFnStep`;
 the artifact lookup goes through the index). -/
-def installProjFnStepS (T ctorName : Name) (lps : List Name)
+def installProjFnStepS (T ctorName : Name) (lps : List LevelParam)
     (nP nF : Nat) (fe : FEnv) (i : Nat) : CheckCM FEnv := do
   if (fe.find? (projModelName T i)).isSome then do
     flushC

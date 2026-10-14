@@ -66,7 +66,7 @@ quantifies over transfer along these equalities.  Definitional
 comparison makes the checks insensitive to hygienic binder names and
 reducible wrappers (`optParam` etc.) in the stored types. -/
 def checkIotaThm (ops : CheckerOps m) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m Unit := do
     let cvt ← unwrapOr
@@ -165,7 +165,7 @@ well-formedness guards (closed, bounded by the prefix telescope,
 constants resolving, levels declared — the facts `EnvWF` records for
 the stored rule). -/
 def nestedRuleShape (env' envSelf : Env) (cvName : Name)
-    (lps : List Name) (tyA : Expr) (mI rP cnP j : Nat) :
+    (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     Option (List Level × List Expr) :=
   if (env'.findCV? ((cvName.str "_model").str s!"iota_{j}")).isSome ∧
       rP ≤ mI then
@@ -206,7 +206,7 @@ the rule has no certifiable shape the rule is stored inert (`.inert`;
 a matched major positively declines at fire time); a shape whose
 theorem then fails the pin is a positive decline here. -/
 def checkIotaThmN (ops : CheckerOps m) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m RecRuleFire := do
     match nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j with
@@ -323,7 +323,7 @@ rules the generalized pin over the stored instantiations
 (`checkIotaThmN`; rules without a certifiable shape are stored inert:
 `iotaRec` never fires on them and a matched major declines). -/
 def checkIotaRule (ops : CheckerOps m) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) : m RecRule := do
     let some (.ctorInfo cvj cnP cnF) := env'.find? r.ctor
       | throw (.invalid s!"iota rule constructor {r.ctor} not stored")
@@ -361,7 +361,7 @@ def checkIotaRule (ops : CheckerOps m) (env' envSelf : Env)
 
 /-- The per-rule check, folded over a modeled recursor's rules. -/
 def checkIotaRules (ops : CheckerOps m) (env' envSelf : Env) (f : Name → Name)
-    (cvName : Name) (lps : List Name) (tyA : Expr)
+    (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP : Nat) : Nat → List RecRule → m (List RecRule)
   | _, [] => pure []
   | j, r :: rest => do
@@ -476,7 +476,7 @@ def projFwd (T ctor : Name) (nF : Nat) : Name → Name := fun n =>
 depends on — the single constructor (arity-matched), the model's
 `proj_i` definition (level-matched), the parent type, and the pinned
 equality former; the projection's own name must be free. -/
-def checkProjLookups (env' : Env) (T ctorName : Name) (lps : List Name)
+def checkProjLookups (env' : Env) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) : m (ConstantVal × ConstantVal) := do
   let some (.ctorInfo cvj cnP cnF) := env'.find? ctorName
     | throw (.notImplemented "projection constructor not stored")
@@ -496,7 +496,7 @@ def checkProjLookups (env' : Env) (T ctorName : Name) (lps : List Name)
 
 /-- Stage 2: the public projection type — the model's, renamed back
 (pinned by the renaming roundtrip), well-formed and parameter-led. -/
-def checkProjTy (env' : Env) (T ctorName : Name) (lps : List Name)
+def checkProjTy (env' : Env) (T ctorName : Name) (lps : List LevelParam)
     (mty : Expr) (nP nF : Nat) : m Expr := do
   let pty := mty.renameConsts (projBack T ctorName nF)
   unless (pty.renameConsts (projFwd T ctorName nF)) == mty do
@@ -520,7 +520,7 @@ the collapse removed value-driven domain pinning, and dependent field
 types are emitted through the projections, so a syntactic pin on the
 type slot would reject real streams; task #146 for the slot's sort). -/
 def checkProjIota (ops : CheckerOps m) (env' envSelf : Env)
-    (T ctorName : Name) (lps : List Name)
+    (T ctorName : Name) (lps : List LevelParam)
     (cvj : ConstantVal) (nP nF i : Nat) : m Unit := do
   let some (.thmInfo tcv _) := env'.find? ((projModelName T i).str "iota")
     | throw (.notImplemented "missing projection iota theorem")
@@ -567,7 +567,7 @@ a modeled single-constructor structure, against the model's
 `T._model.proj_i` definition and its `iota` theorem.  The function is
 stored as a degenerate recursor (no motive, no minors) carrying one
 rule, so the generic iota machinery reduces it. -/
-def checkProjFn (ops : CheckerOps m) (env' : Env) (T ctorName : Name) (lps : List Name)
+def checkProjFn (ops : CheckerOps m) (env' : Env) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) : m Env := do
   let (cvj, mcv) ← checkProjLookups env' T ctorName lps nP nF i
   let pty ← checkProjTy env' T ctorName lps mcv.type nP nF
@@ -593,7 +593,7 @@ pinned against the constructor *model*'s (both live on the model side
 and are annotated by the same pipeline); the equality's type slot is
 pinned to the family application (task #100) and its sort to the
 statement's own `Eq` level (task #135). -/
-def checkEtaThm (env' : Env) (T ctorName : Name) (lps : List Name)
+def checkEtaThm (env' : Env) (T ctorName : Name) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
   match env'.find? ((T.str "_model").str "eta"),
       env'.find? (T.str "_model"),
@@ -645,7 +645,7 @@ def checkEtaThm (env' : Env) (T ctorName : Name) (lps : List Name)
 `T._model.unitlike` theorem with the pinned statement
 `∀ p⃗ (x y : T._model p⃗), x = y`?  Checked before install; a positive
 answer records the unit-like capability on the stored inductive. -/
-def checkUnitThm (env' : Env) (T : Name) (lps : List Name)
+def checkUnitThm (env' : Env) (T : Name) (lps : List LevelParam)
     (nP : Nat) : Bool :=
   match env'.find? ((T.str "_model").str "unitlike"),
       env'.find? (T.str "_model"), env'.find? eqName with
@@ -703,7 +703,7 @@ one: the decision is then a function of the block, which is what the
 parity↔P agreement floor's skeleton specification
 (`indDeclSkelsModeled`) can compute.  It is a gate, not a pin — the
 installs it admits are checked in full by `checkProjFn`. -/
-def ctorTargetsFam (ctorTy : Expr) (T : Name) (lps : List Name)
+def ctorTargetsFam (ctorTy : Expr) (T : Name) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
   match ctorTy.stripPis (nP + nF) with
   | some (_, cbody) => cbody == structFam T lps nP nF
@@ -716,7 +716,7 @@ tower-flag retired the inert elimination-template table that used to
 record the family).  The whole fold is skipped for a block that is not
 structure-like (`ctorTargetsFam`). -/
 def installProjFnStep (ops : CheckerOps m) (T ctorName : Name)
-    (lps : List Name) (nP nF : Nat) (e : Env) (i : Nat) : m Env :=
+    (lps : List LevelParam) (nP nF : Nat) (e : Env) (i : Nat) : m Env :=
   if (e.find? (projModelName T i)).isSome then
     checkProjFn mode ops e T ctorName lps nP nF i
   else pure e
@@ -767,7 +767,7 @@ installing untouched.  Guarded on `eta` it is corpus-clean: 975/975
 eta-capable blocks satisfy it, and every one of the 91 failures is a
 block with neither capability.  `unitlike` does not need it — its
 right-hand side is a law premise, not a fabricated spine. -/
-def ctorResidualOk (env' : Env) (T ctorName : Name) (lps : List Name)
+def ctorResidualOk (env' : Env) (T ctorName : Name) (lps : List LevelParam)
     (nP nF : Nat) (eta : Bool) : Bool :=
   -- TT-lane check (task #147): trivially true unless `mode.ttChecks`.
   !mode.ttChecks || !eta ||

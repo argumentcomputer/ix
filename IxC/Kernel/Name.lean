@@ -14,9 +14,7 @@ import all Init.Util
 
 `Ix.Kernel.Name`, the checker's own mirror of `Lean.Name` (cached hash in
 a `@[computed_field]`, pointer-and-hash-guarded equality substituted by
-`@[csimp]`).  Split out of `IxC/Kernel/Expr.lean` on 2026-09-06 so
-that `IxC/Kernel/PropWhen.lean` — which needs names and nothing
-else — can sit *below* the expression type it annotates.
+`@[csimp]`).  Split out of `IxC/Kernel/Expr.lean` on 2026-09-06.
 -/
 
 @[expose] public section

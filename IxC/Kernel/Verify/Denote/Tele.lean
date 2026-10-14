@@ -33,7 +33,7 @@ reassemble the denotation — `majorToCtor`'s rescues, and the iota
 clause's redex. -/
 
 /-- Each expression of a spine denotes to the corresponding term. -/
-inductive DenoteSpine (cval : TConstVal) (env : Env) (φ : Name → Nat)
+inductive DenoteSpine (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
     (d : Nat) : List Expr → List Term → Prop
   | nil : DenoteSpine cval env φ d [] []
   | cons {a : Expr} {v : Term} {as : List Expr} {vs : List Term} :
@@ -42,7 +42,7 @@ inductive DenoteSpine (cval : TConstVal) (env : Env) (φ : Name → Nat)
       DenoteSpine cval env φ d (a :: as) (v :: vs)
 
 /-- Denotation commutes with application spines. -/
-theorem denote_mkAppN {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_mkAppN {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as : List Expr} {vs : List Term}
     (h : DenoteSpine cval env φ d as vs) :
     ∀ {f : Expr} {vf : Term}, denote cval env φ d f = some vf →
@@ -55,7 +55,7 @@ theorem denote_mkAppN {cval : TConstVal} {env : Env} {φ : Name → Nat}
     rw [denote_app, hf, ha]
 
 /-- Denoted spines append. -/
-theorem DenoteSpine.append {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.append {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as bs : List Expr} {xs ys : List Term}
     (h1 : DenoteSpine cval env φ d as xs)
     (h2 : DenoteSpine cval env φ d bs ys) :
@@ -65,7 +65,7 @@ theorem DenoteSpine.append {cval : TConstVal} {env : Env} {φ : Name → Nat}
   | cons ha _ ih => exact .cons ha ih
 
 /-- A denoted spine's prefix. -/
-theorem DenoteSpine.take {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.take {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as : List Expr} {xs : List Term}
     (h : DenoteSpine cval env φ d as xs) :
     ∀ k, DenoteSpine cval env φ d (as.take k) (xs.take k) := by
@@ -78,7 +78,7 @@ theorem DenoteSpine.take {cval : TConstVal} {env : Env} {φ : Name → Nat}
     | succ k => exact .cons ha (ih k)
 
 /-- A denoted spine's suffix. -/
-theorem DenoteSpine.drop {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.drop {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as : List Expr} {xs : List Term}
     (h : DenoteSpine cval env φ d as xs) :
     ∀ k, DenoteSpine cval env φ d (as.drop k) (xs.drop k) := by
@@ -91,7 +91,7 @@ theorem DenoteSpine.drop {cval : TConstVal} {env : Env} {φ : Name → Nat}
     | succ k => exact ih k
 
 /-- A denoted spine has the same length as its source. -/
-theorem DenoteSpine.length {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.length {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as : List Expr} {xs : List Term}
     (h : DenoteSpine cval env φ d as xs) : xs.length = as.length := by
   induction h with
@@ -100,7 +100,7 @@ theorem DenoteSpine.length {cval : TConstVal} {env : Env} {φ : Name → Nat}
 
 /-- A mapped spine denotes pointwise — the shape the eta fabrication
 has, where the fields are a `List.range` map. -/
-theorem DenoteSpine.map {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.map {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {α : Type} {as : List α} {f : α → Expr} {g : α → Term}
     (h : ∀ a ∈ as, denote cval env φ d (f a) = some (g a)) :
     DenoteSpine cval env φ d (as.map f) (as.map g) := by
@@ -113,7 +113,7 @@ theorem DenoteSpine.map {cval : TConstVal} {env : Env} {φ : Name → Nat}
 /-- A denoted spine's entries, indexed.  (Relocated from
 `IxC/Kernel/TTVerify/DefEqStep.lean`: `Iota.lean` needs it too, and
 `Tele.lean` is where `DenoteSpine` is declared.) -/
-theorem DenoteSpine.get {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem DenoteSpine.get {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} {as : List Expr} {vs : List Term}
     (h : DenoteSpine cval env φ d as vs) :
     ∀ i : Fin as.length,
@@ -132,7 +132,7 @@ theorem DenoteSpine.get {cval : TConstVal} {env : Env} {φ : Name → Nat}
 argument denote, and the value is their `Term` application.  The
 converse of `denote_mkAppN`, and what the delta step needs to read a
 redex apart. -/
-theorem denote_mkAppN_inv {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_mkAppN_inv {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {d : Nat} : ∀ {as : List Expr} {f : Expr} {v : Term},
     denote cval env φ d (Expr.mkAppN f as) = some v →
     ∃ vf vs, denote cval env φ d f = some vf ∧

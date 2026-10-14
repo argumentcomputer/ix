@@ -34,7 +34,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
+variable {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The small numerals, unfolded -/
 

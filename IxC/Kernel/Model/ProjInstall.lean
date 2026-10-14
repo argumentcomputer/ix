@@ -56,7 +56,7 @@ twin).  The bottom fires at the *base* environment under
 `acvalWith_self` makes the base law's head the installed constant's
 leaf. -/
 theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     {blockNames : List Name} (mp : EnvModelM V μ env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' mp.base2.cvalE)
@@ -191,11 +191,11 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   -- the four claims and the reads, at every assignment
   have hclaims := fun ψ =>
     checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F :=
+  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F :=
+  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F :=
+  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
     fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
   -- ===== the rule rhs's front door, at the reading (the H1 exposure,
   -- fourth widening — `iotaRulePlain`'s three-part construction)
@@ -207,7 +207,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   have hrhsLb : Expr.LeavesBounded rhsA :=
     fun l hl => absurd hl (fun h => hrhsLeafNil l h)
   obtain ⟨t', hrun⟩ := hrhsRun
-  have hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+  have hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval env' ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta := by
@@ -231,7 +231,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     exact ⟨Ra, ta, hRa, fun ρ =>
       ⟨hokRa ρ (Sat_nil V ρ), hmemRa ρ (Sat_nil V ρ)⟩⟩
   -- the statement's front doors
-  have hthmP : ∀ ψ : Name → Nat, ∃ ta,
+  have hthmP : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env' ψ 0 tcv.type = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta := by
@@ -287,7 +287,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     refine constsBound_of_constsResolve _ ?_
     rw [Expr.constsResolve_instantiateLevelParams]
     exact hptyres
-  have hptyReadPre : ∀ (ψ : Name → Nat), ∃ ta : AnnotTerm,
+  have hptyReadPre : ∀ (ψ : LevelParam → Nat), ∃ ta : AnnotTerm,
       denoteMeta mp.base2.acval env' ψ 0 pty = some ta := by
     intro ψ
     obtain ⟨ta, hta, -, -⟩ := mp.acval_memType hfm ψ
@@ -302,7 +302,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
         [projFnRule env'.find? T ctorName pty nP nF i rhsA] :: env'.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (projFnName T i)
         (fun ψ => mp.base2.acval (projModelName T i) ψ) →
-      ∀ (φ : Name → Nat),
+      ∀ (φ : LevelParam → Nat),
         ∀ rl ∈ [projFnRule env'.find? T ctorName pty nP nF i rhsA],
         RecRule.fire rl ≠ .inert →
         RecRuleLaw m₂ φ (projFnName T i) ⟨projFnName T i, lps, pty⟩
@@ -409,7 +409,7 @@ The skip branch is a no-op; the block-level premises are re-established
 at each step exactly as in v1 (`EtaPins.step` plus "a projection name
 is never a block name"). -/
 theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
-    {T ctorName : Name} {lps : List Name} {nP nF : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF : Nat}
     {blockNames : List Name}
     (hTblock : blockNames.contains T = true)
     (hbshape : ∀ n, blockNames.contains n = true →

@@ -103,7 +103,7 @@ def checkConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal) : m Con
     throw (.invalid s!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
     throw (.invalid s!"reserved projection name {cv.name}")
-  unless Name.nodup cv.levelParams do
+  unless LevelParam.nodup cv.levelParams do
     throw (.invalid s!"duplicate universe parameters in {cv.name}")
   unless cv.type.looseBVarsBounded 0 do
     throw (.invalid s!"loose bound variable in type of {cv.name}")
@@ -273,7 +273,7 @@ def checkProjShape (pty ctorTy : Expr) (nP nF : Nat) : m Unit := do
 
 /-- Stage 3: the reduction rule — λ over the constructor telescope
 returning field `i`, annotated; its λ-domains stay the constructor's. -/
-def checkProjRule (ops : CheckerOps m) (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List Name)
+def checkProjRule (ops : CheckerOps m) (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List LevelParam)
     (nP nF i : Nat) : m Expr := do
   let some rhs := Expr.pisToLams (nP + nF) cvj.type (.bvar (nF - 1 - i))
     | throw (.notImplemented "projection rule telescope")

@@ -53,7 +53,7 @@ open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## One comparison -/
 

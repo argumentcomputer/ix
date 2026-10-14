@@ -597,13 +597,13 @@ inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where
 certification at a projection-function family**
 (`structEtaProjCerts`, `Core.lean:358-377`). -/
 inductive EtaProjCerts (env : Env) :
-    Nat → Name → List Level → List Expr → Expr → List Name → List Nat → Prop
+    Nat → Name → List Level → List Expr → Expr → List LevelParam → List Nat → Prop
     where
   | nil {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
-      {lpsT : List Name} :
+      {lpsT : List LevelParam} :
       EtaProjCerts env d T us' targs b lpsT []
   | cons {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
-      {lpsT : List Name} {i : Nat} {rest : List Nat} {cvp : ConstantVal}
+      {lpsT : List LevelParam} {i : Nat} {rest : List Nat} {cvp : ConstantVal}
       {mI rP : Nat} {rules : List RecRule} :
       env.find? (projFnName T i) = some (.recInfo cvp mI rP rules) →
       cvp.levelParams = lpsT →

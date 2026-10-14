@@ -126,7 +126,7 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
     (hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval
         (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
-      ∀ (φ : Name → Nat) (i : Nat), i < tbl.numFields →
+      ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
         TowerEntryLaw m₂ φ tbl.structName i (tbl.entry i)) :
     ∃ mp' : EnvModelM V μ ⟨.projInfo tbl :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval
@@ -141,7 +141,7 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
         obtain rfl := ConstantInfo.projInfo.inj heq
         exact hhead,
       fun _ _ _ _ heq => nomatch heq⟩
-  have hreads : ∀ ψ : Name → Nat,
+  have hreads : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0))
         ⟨.projInfo tbl :: env.consts⟩ ψ 0 (ConstantInfo.projInfo tbl).toConstantVal.type
         = some (.sort 1) := by

@@ -40,8 +40,8 @@ is checked in canonical structural order. Its codec is the projection
 entry's: Ixon v4's TagN reader and writer (`Ixon.getTagN`, `putTagN`). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5461 compiled functions; inherited externs 121, implemented_by 0,
-unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
+ Ixon.BlockOrder.compareExpr]: 5303 compiled functions; inherited externs 121, implemented_by 0,
+unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -204,10 +204,11 @@ fun source size start members =>
 #guard_msgs (whitespace := lax) in
 #check @Ixon.BlockOrder.checkBytes_of_ordered
 
-/- The certified entry's order check reaches no extern or unsafe primitive
-beyond the certified projection entry's (the fold's closure already uses
-`String.compare`, the `UInt64` operations and `Array.uget`). -/
-/-- info: Additional certified block-order externs: []
+/- The certified entry's order check reaches one extern beyond the certified
+projection entry's, `String.compare`, by which it orders string literals,
+and no unsafe primitive (the fold's closure already uses the `UInt64`
+operations and `Array.uget`). -/
+/-- info: Additional certified block-order externs: [String.compare]
 ---
 info: Additional certified block-order unsafe: [] -/
 #guard_msgs (whitespace := lax) in

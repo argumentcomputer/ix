@@ -293,16 +293,15 @@ block-order check is.
 by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
 reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
 `ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
-parameters are positional. Three kinds of names differ:
+parameters are positions (`LevelParam := Nat`): a constant's are
+`0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]` after its
+block's `n`, the shape by which the checker recognises it (`Reader.recLps`).
+Two kinds of names differ:
 
 - recursors are named after what they eliminate, as Lean names them
   (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
   block), because the checker finds a block's recursor by name;
-- pinned references take their pinned name;
-- the pinned standard-axiom constants and their recursors carry Lean's own
-  level-parameter names (`Pins.levels`), because the checker's `matchesPin`
-  compares them, and a large eliminator names its extra level parameter
-  so that the checker recognises it.
+- pinned references take their pinned name.
 
 **Pins** (`IxC/Kernel/Ixon/PinData.lean`, generated). The table maps 55
 references to the checker's pinned names and no others: the basis (`Eq`,
@@ -436,13 +435,13 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
-| reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5297 | 121 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5295 | 121 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5328 | 121 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5461 | 121 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5479 | 124 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3003 | 82 |
+| reader `readRecords`, `readStream` | 1861 | 81 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5138 | 120 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5136 | 120 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5169 | 120 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5303 | 121 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5321 | 124 |
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.

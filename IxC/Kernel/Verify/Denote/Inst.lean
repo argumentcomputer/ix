@@ -45,7 +45,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 
 /-- `projNV` commutes with instantiation (no binders; task #175
 wiring W3). -/
@@ -206,7 +206,7 @@ pin ignores.  It does — `denote` reads a binder's name only to build the
 of syntax**, which is why a `matchesPin` hit is usable at all. -/
 
 /-- Erasure-equal expressions denote equally. -/
-theorem denote_erasedEq {cval : TConstVal} {env : Env} {φ : Name → Nat} :
+theorem denote_erasedEq {cval : TConstVal} {env : Env} {φ : LevelParam → Nat} :
     ∀ {e₁ e₂ : Expr}, Expr.ErasedEq e₁ e₂ →
       ∀ d : Nat, denote cval env φ d e₁ = denote cval env φ d e₂
   | .bvar i, e₂, he, d => by
@@ -300,7 +300,7 @@ theorem Expr.erasePw_instantiate1 :
 /-- **`pw` transparency**: erasing the binder prop-ness data does not
 change a denotation.  `denote` reads a binder's metadata never, and its
 name only to build the `fvar` it opens with. -/
-theorem denote_erasePw {cval : TConstVal} {env : Env} {φ : Name → Nat} :
+theorem denote_erasePw {cval : TConstVal} {env : Env} {φ : LevelParam → Nat} :
     ∀ (e : Expr) (d : Nat),
       denote cval env φ d e.erasePw = denote cval env φ d e
   | .bvar _, _ => rfl
@@ -338,14 +338,14 @@ types that agree after both erasures — exactly what
 `ConstantVal.matchesPin` checks of them — denote equally.  This is the
 form the pinned-family shape facts (`Verify/StdAxiomPin.lean`) hand to
 their consumers. -/
-theorem denote_pinEq {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_pinEq {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {a b : Expr} (h : a.erasePw = b.erasePw)
     (d : Nat) : denote cval env φ d a = denote cval env φ d b := by
   rw [← denote_erasePw a d, ← denote_erasePw b d]
   exact denote_erasedEq (h ▸ Expr.ErasedEq.rfl _) d
 
 /-- A `matchesPin` hit lets a stored type be denoted on the pin. -/
-theorem denote_matchesPin {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denote_matchesPin {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     {cv pin : ConstantVal} (h : ConstantVal.matchesPin cv pin = true)
     (d : Nat) :
     denote cval env φ d cv.type = denote cval env φ d pin.type := by

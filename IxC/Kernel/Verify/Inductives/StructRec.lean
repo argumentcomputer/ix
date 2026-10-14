@@ -415,7 +415,7 @@ theorem NoProjAt.structPsAt (o nP : Nat) : ∀ a ∈ structPsAt o nP, NoProjAt T
   obtain ⟨k, -, rfl⟩ := List.mem_map.mp ha
   simp
 
-theorem NoProjAt.structCtorSpineAt (C : Name) (lps : List Name) (o nP nF : Nat) :
+theorem NoProjAt.structCtorSpineAt (C : Name) (lps : List LevelParam) (o nP nF : Nat) :
     NoProjAt T i (structCtorSpineAt C lps o nP nF) := by
   unfold Ix.Kernel.structCtorSpineAt
   refine NoProjAt.mkAppN (by simp) ?_

@@ -22,7 +22,7 @@ conjunct:
   verdicts, and the `env₂ = ⟨… :: env.consts⟩` shapes.  These mention
   no valuation at all.  They are what the P lane consumes (task #161
   P4 H1 widened `DeclR` five times precisely to record them);
-* **derivations** — the trailing `∀ φ : Name → Nat, ∃ …, denote cval
+* **derivations** — the trailing `∀ φ : LevelParam → Nat, ∃ …, denote cval
   … ∧ Infer … ∧ DefEq …` conjuncts.  These are keyed by a
   `TConstVal` and are what the *collapsed* lane's installs consume.
 
@@ -95,7 +95,7 @@ def ConstantValRun (μ : CheckMode) (F : Nat) (env : Env)
   (env.find? cv.name).isNone = true ∧
   reservedBasisNames.contains cv.name = false ∧
   cv.name.isProjFnShape = false ∧
-  Name.nodup cv.levelParams = true ∧
+  LevelParam.nodup cv.levelParams = true ∧
   cv.type.looseBVarsBounded 0 = true ∧
   cv.type.hasFvar = false ∧
   annotateCore μ env F 0 cv.type = .ok type' ∧

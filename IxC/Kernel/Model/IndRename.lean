@@ -41,19 +41,19 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo)
 
 universe w
 
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-- **The renaming condition at the reading** (`RenameOkT`): every
 renamed constant resolves with the same level parameters, unresolved
 names stay unresolved, and the *annotated* valuation agrees on the
 renaming. -/
-@[expose] def RenameOk (acval : Name → (Name → Nat) → AnnotTerm) (env : Env)
+@[expose] def RenameOk (acval : Name → (LevelParam → Nat) → AnnotTerm) (env : Env)
     (f : Name → Name) : Prop :=
   (∀ n ci, env.find? n = some ci → ∃ ci', env.find? (f n) = some ci' ∧
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
-  (∀ (n : Name) (ψ : Name → Nat), acval (f n) ψ = acval n ψ)
+  (∀ (n : Name) (ψ : LevelParam → Nat), acval (f n) ψ = acval n ψ)
   -- (the W3 tower-freeness conjunct is gone with W5's `renameConsts`
   -- fix — see `RenameOkT`)
 

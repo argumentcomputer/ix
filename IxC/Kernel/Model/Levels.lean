@@ -57,9 +57,9 @@ variable {env : Env}
 /-- A leaf reads only its own level parameters — `EnvModel.acval_params`
 as a standalone predicate, so the crossing does not need a carrier. -/
 def AcvalParamsAt (env : Env)
-    (acval : Name → (Name → Nat) → AnnotTerm) : Prop :=
+    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
-    ∀ ψ₁ ψ₂ : Name → Nat,
+    ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       acval n ψ₁ = acval n ψ₂
 
@@ -67,14 +67,14 @@ def AcvalParamsAt (env : Env)
 theorem acvalParamsAt_of_core (m : EnvModel V env) :
     AcvalParamsAt env m.acval := m.acval_params
 
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-- A stored slot with no level parameters is valued independently of
 the assignment (`acval_isEmpty`, off the bare hypothesis). -/
 theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Name}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
-    (ψ₁ ψ₂ : Name → Nat) : acval n ψ₁ = acval n ψ₂ := by
+    (ψ₁ ψ₂ : LevelParam → Nat) : acval n ψ₁ = acval n ψ₂ := by
   refine hp n ci hf ψ₁ ψ₂ fun p hpm => ?_
   rw [List.isEmpty_iff] at he
   rw [he] at hpm
@@ -85,7 +85,7 @@ independently of the assignment (`acval_oneParam`). -/
 theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Name}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
-    (ψ₁ ψ₂ : Name → Nat) :
+    (ψ₁ ψ₂ : LevelParam → Nat) :
     acval n (Level.substFn ψ₁ ci.toConstantVal.levelParams [.zero])
       = acval n
         (Level.substFn ψ₂ ci.toConstantVal.levelParams [.zero]) := by
@@ -105,7 +105,7 @@ theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Name)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.isEmpty = true)
-    (ψ₁ ψ₂ : Name → Nat) : acval nm ψ₁ = acval nm ψ₂ := by
+    (ψ₁ ψ₂ : LevelParam → Nat) : acval nm ψ₁ = acval nm ψ₂ := by
   cases hx : env.find? nm with
   | none => rw [hx, hnone] at hfok; exact nomatch hfok
   | some ci =>
@@ -118,7 +118,7 @@ theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Name)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.length = 1)
-    (ψ₁ ψ₂ : Name → Nat) :
+    (ψ₁ ψ₂ : LevelParam → Nat) :
     acval nm (Level.substFn ψ₁ (Ix.Kernel.Verify.levelParamsAt env nm) [.zero])
       = acval nm
         (Level.substFn ψ₂ (Ix.Kernel.Verify.levelParamsAt env nm) [.zero]) := by
@@ -134,7 +134,7 @@ theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Name)
 
 /-- The `Nat`-literal leaves are assignment-independent. -/
 theorem acvalAt_natPair (hp : AcvalParamsAt env acval)
-    (hg : Ix.Kernel.natLitSupported env = true) (ψ₁ ψ₂ : Name → Nat) :
+    (hg : Ix.Kernel.natLitSupported env = true) (ψ₁ ψ₂ : LevelParam → Nat) :
     acval Ix.Kernel.natZeroName ψ₁ = acval Ix.Kernel.natZeroName ψ₂ ∧
       acval Ix.Kernel.natSuccName ψ₁ = acval Ix.Kernel.natSuccName ψ₂ := by
   simp only [Ix.Kernel.natLitSupported, Bool.and_eq_true] at hg
@@ -163,7 +163,7 @@ the reading runs no checker.  v1's `denote_instLevels` clause for
 clause, with `pwBit_substPW` at the binders (its docstring's named
 consumer) and `AcvalParamsAt` where v1 has `ValParams`. -/
 theorem denoteMeta_instLevels (hp : AcvalParamsAt env acval)
-    {ks : List Name} {us : List Level} (φ : Name → Nat) :
+    {ks : List LevelParam} {us : List Level} (φ : LevelParam → Nat) :
     ∀ (d : Nat) (e : Expr),
       denoteMeta acval env φ d (e.instantiateLevelParams ks us)
         = denoteMeta acval env (Level.substFn φ ks us) d e := by

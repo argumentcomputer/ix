@@ -75,7 +75,7 @@ def piResultZ (e : Expr) : PropWhen :=
 the given levels, provably nonzero (official `is_never_zero`)?  The
 **specification** of `capsNeverZero`: the walk down the family's type
 that the stored datum replaces. -/
-def piResultNeverZero (lps : List Name) (us : List Level) (e : Expr) :
+def piResultNeverZero (lps : List LevelParam) (us : List Level) (e : Expr) :
     Bool :=
   match e.piResult with
   | .sort u => (Level.subst lps us u).isNeverZero
@@ -90,7 +90,7 @@ parameter `u` itself does not).  Read off the stored datum: the
 instantiated datum is unsatisfiable exactly where the instantiated
 sort is never zero (`capsNeverZero_eq`,
 `IxC/Kernel/Verify/InferLemmas.lean`). -/
-def capsNeverZero (lps : List Name) (us : List Level) (caps : IndCaps) :
+def capsNeverZero (lps : List LevelParam) (us : List Level) (caps : IndCaps) :
     Bool :=
   (Level.substPW lps us caps.sortZ).isNever
 
@@ -955,8 +955,8 @@ major-domain instantiations, at the recursor's level instantiation and
 spine (the stored pins live in the `rP`-binder prefix context — index
 arguments never occur in them, by the shape certification).
 (Junk for `.inert` rules — `iotaRec` declines before reading it.) -/
-def recFireComparands (rl : RecRule) (lps : List Name)
-    (us : List Level) (cvjLps : List Name) (args : List Expr)
+def recFireComparands (rl : RecRule) (lps : List LevelParam)
+    (us : List Level) (cvjLps : List LevelParam) (args : List Expr)
     (rP : Nat) : List Level × List Expr :=
   match rl.fire with
   | .nested lvls pins =>

@@ -736,7 +736,7 @@ private theorem proofIrrel_shift (henv : EnvWF env)
 
 private theorem structEtaProjCerts_shift (henv : EnvWF env)
     (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (T : Name)
-    (us' : List Level) {targs : List Expr} {b : Expr} (lpsT : List Name) :
+    (us' : List Level) {targs : List Expr} {b : Expr} (lpsT : List LevelParam) :
     ∀ (idxs : List Nat), (∀ x ∈ targs, WScoped d x) → WScoped d b →
       structEtaProjCerts (pureFns mode env fuel) env (d + 1) T us'
           (targs.map (shiftFrom p)) (shiftFrom p b) lpsT idxs =

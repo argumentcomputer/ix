@@ -50,7 +50,7 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
     env.find? cv.name = none ∧
     reservedBasisNames.contains cv.name = false ∧
     cv.name.isProjFnShape = false ∧
-    Name.nodup cv.levelParams = true ∧
+    LevelParam.nodup cv.levelParams = true ∧
     cv.type.looseBVarsBounded 0 = true ∧
     cv.type.hasFvar = false ∧
     ∃ type stype u,
@@ -77,7 +77,7 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
   rw [if_neg hpshape] at h
   have hpshapeF : cv.name.isProjFnShape = false := by
     revert hpshape; cases cv.name.isProjFnShape <;> simp
-  by_cases hnd : Name.nodup cv.levelParams = true
+  by_cases hnd : LevelParam.nodup cv.levelParams = true
   case neg => simp [hnd] at h
   simp only [hnd] at h
   by_cases hlb : cv.type.looseBVarsBounded 0 = true

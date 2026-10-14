@@ -58,7 +58,7 @@ open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The tower's body, graded top-down -/
 
@@ -187,7 +187,7 @@ theorem teleFitPA_nonempty {ρ : Nat → V} :
 /-- **What the firing stage needs of the environment** (`EqFormerKeyV`
 at the reading): the pinned `Eq` former's leaf is closed, and inhabits
 its own type's reading, graded. -/
-def EqFormerKey {env : Env} (m : EnvModel V env) (φ : Name → Nat) :
+def EqFormerKey {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
   ∀ us : List Level,
     us.length = eqA.toConstantVal.levelParams.length →
@@ -232,7 +232,7 @@ The equation slot's universe membership — v1's one place for
 (top-down along the satisfying environment) plus graph rigidity of the
 pinned `Eq` former, whose product is positive-kind because the stored
 type's outer binder carries `PropWhen.never`. -/
-theorem fire {m : EnvModel V env} {ψ' : Name → Nat}
+theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
     (hkey : EqFormerKey m ψ') (heqlaw : EqLaw m)
     (heqfE : env.find? eqName = some eqA)
     {K : Nat}
@@ -401,7 +401,7 @@ Where v1 rebuilds three `CtxOkR`s and fires quantified-context packs,
 the P tier reads the two runs `IotaRuns` records straight through
 `InferClaim`/`DefEqClaim`; the context is the stages' shared
 one. -/
-theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : Name → Nat}
+theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hinfer : InferClaim μ m ψ' F) (hclaims : DefEqClaim μ m ψ' F)
     {d : Nat} {Δa : List AnnotTerm} {αS lhsS rhsS : Expr}
     (hctxα : CtxOk m ψ' d Δa αS)

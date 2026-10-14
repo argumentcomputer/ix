@@ -40,14 +40,14 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCap
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 /-! ## Reading through an inserted block of variables -/
 
 /-- **`denoteMeta_shiftFrom`, iterated**: inserting `o` fresh variable
 slots at index `p` lifts the reading by `o` at the cut `d - p`. -/
-theorem denoteMeta_shiftFromN {acval : Name → (Name → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
+theorem denoteMeta_shiftFromN {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
     {p : Nat} :
     ∀ (o : Nat) {e : Expr} {d : Nat}, p ≤ d → Expr.WScoped d e →
       denoteMeta acval env φ (d + o) (Expr.shiftFromN p o e)
@@ -73,7 +73,7 @@ theorem denoteMeta_shiftFromN {acval : Name → (Name → Nat) → AnnotTerm}
 variables `0 … A.length - 1`; `B` opens it at the same variables with
 those at or above `p` moved `o` slots up.  The reading moves with
 them: it is lifted by `o` at the cut `d - p`. -/
-theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : Name → Nat} {p o d t : Nat}
+theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : LevelParam → Nat} {p o d t : Nat}
     {e : Expr} (hef : e.hasFvar = false)
     {A B : List Expr} (hlen : A.length = B.length) (hpd : p ≤ d)
     (hAw : ∀ (k : Nat) (x : Expr), A[k]? = some x → Expr.WScoped d x)
@@ -111,7 +111,7 @@ theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : Name → Nat} {p o d
 /-! ## Spine bookkeeping -/
 
 /-- A read spine, re-read entry by entry at another frame. -/
-theorem DenoteMetaSpine.map_map {acval : Name → (Name → Nat) → AnnotTerm} {d d' : Nat}
+theorem DenoteMetaSpine.map_map {acval : Name → (LevelParam → Nat) → AnnotTerm} {d d' : Nat}
     {f g : Expr → Expr} {h : AnnotTerm → AnnotTerm} :
     ∀ {as : List Expr} {vs : List AnnotTerm},
       DenoteMetaSpine acval env φ d (as.map f) vs →
@@ -129,7 +129,7 @@ theorem DenoteMetaSpine.map_map {acval : Name → (Name → Nat) → AnnotTerm} 
         (DenoteMetaSpine.map_map htl fun x v hx hv => hfg x v (List.mem_cons_of_mem _ hx) hv)
 
 /-- A pointwise-read mapped spine. -/
-theorem DenoteMetaSpine.of_map {α : Type} {acval : Name → (Name → Nat) → AnnotTerm} {d : Nat}
+theorem DenoteMetaSpine.of_map {α : Type} {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {f : α → Expr} {g : α → AnnotTerm} :
     ∀ (l : List α), (∀ a ∈ l, denoteMeta acval env φ d (f a) = some (g a)) →
       DenoteMetaSpine acval env φ d (l.map f) (l.map g)
@@ -142,7 +142,7 @@ theorem DenoteMetaSpine.of_map {α : Type} {acval : Name → (Name → Nat) → 
 
 /-- Two frames of the same variables read an expression the same: the
 variables' annotations do not matter (`denoteMeta_erasedEq`). -/
-theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : Name → Nat} {d t : Nat} {e : Expr}
+theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : LevelParam → Nat} {d t : Nat} {e : Expr}
     {L L' : List Expr} (hlen : L.length = L'.length)
     (hidx : ∀ (k : Nat) (a b : Expr), L[k]? = some a → L'[k]? = some b →
       ∃ (q : Nat) (ty ty' : Expr), a = Expr.fvar q ty ∧ b = Expr.fvar q ty') :
@@ -154,7 +154,7 @@ theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : Name → Nat} {d t :
   exact Eq.refl _
 
 /-- A frame of the variables `0 … D-1` is the canonical opening. -/
-theorem denoteMeta_instSeq_canon {m : EnvModel V env} {ψ : Name → Nat} {d t D : Nat} {e : Expr}
+theorem denoteMeta_instSeq_canon {m : EnvModel V env} {ψ : LevelParam → Nat} {d t D : Nat} {e : Expr}
     {L : List Expr} (hlen : L.length = D)
     (hidx : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) :
     denoteMeta m.acval env ψ d (Expr.instSeq L t e)
@@ -337,7 +337,7 @@ earlier fields, then the `j` openers of the field's own telescope);
 the frame `p⃗ x⃗ f⃗ ih⃗ a⃗` reads it at the same variables with the fields
 `o` slots higher and `nF - i + l` binders below — the telescope's own
 openers staying innermost — which is `ihIdxAtM`. -/
-theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : Name → Nat} {nP nF o l i j : Nat}
+theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o l i j : Nat}
     {e : Expr} {E : AnnotTerm} (hef : e.hasFvar = false)
     (heb : e.looseBVarsBounded (nP + i + j) = true) (hi : i ≤ nF)
     {S : List Expr} (hS : S.length = nP + i)
@@ -538,7 +538,7 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : Name → Nat} {nP nF o l 
 set_option maxHeartbeats 1600000 in
 /-- **A recursive field's index expressions at the recursor's frame**,
 spine-wise. -/
-theorem denoteMetaSpine_ihIdx {m : EnvModel V env} {ψ : Name → Nat}
+theorem denoteMetaSpine_ihIdx {m : EnvModel V env} {ψ : LevelParam → Nat}
     {nP nF o l i j : Nat} {cty : Expr} {Eis : List AnnotTerm}
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (hi : i < nF)
@@ -637,7 +637,7 @@ theorem ihTeleAtGo_getElem? (nF o i l : Nat) :
 
 /-- The telescope's openers, re-associated: its first opener is the
 frame's last variable. -/
-theorem denoteMeta_frame_cons {m : EnvModel V env} {ψ : Name → Nat} {L : List Expr} {D : Nat}
+theorem denoteMeta_frame_cons {m : EnvModel V env} {ψ : LevelParam → Nat} {L : List Expr} {D : Nat}
     (hL : L.length = D)
     (hidxL : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (ty₀ : Expr) (k t dd : Nat) (e : Expr) :
@@ -684,7 +684,7 @@ theorem denoteMeta_frame_cons {m : EnvModel V env} {ψ : Name → Nat} {L : List
 set_option maxHeartbeats 1600000 in
 /-- **A Π-tower over a frame reads to the Π-tower of the readings**:
 binder `k` read under the `k` earlier openers, the body under all. -/
-theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : Name → Nat} :
+theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : LevelParam → Nat} :
     ∀ (tele : List (Expr × BinderMeta)) (tl : List (Nat × Nat × AnnotTerm)) (body : Expr)
       (B : AnnotTerm) (L : List Expr) (D : Nat), L.length = D →
       (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
@@ -765,7 +765,7 @@ theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : Name → Nat} :
 
 set_option maxHeartbeats 1600000 in
 /-- **A λ-tower over a frame reads to the λ-tower of the readings.** -/
-theorem denoteMeta_instSeq_mkLamsOf {m : EnvModel V env} {ψ : Name → Nat} :
+theorem denoteMeta_instSeq_mkLamsOf {m : EnvModel V env} {ψ : LevelParam → Nat} :
     ∀ (tele : List (Expr × BinderMeta)) (tl : List (Nat × AnnotTerm)) (body : Expr)
       (B : AnnotTerm) (L : List Expr) (D : Nat), L.length = D →
       (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
@@ -847,7 +847,7 @@ theorem denoteMeta_instSeq_mkLamsOf {m : EnvModel V env} {ψ : Name → Nat} :
 set_option maxHeartbeats 1600000 in
 /-- **A Π-tower over a frame, read**: the reading is the Π-tower of
 the binders' readings over the body's. -/
-theorem denoteMeta_instSeq_mkPisOf_inv {m : EnvModel V env} {ψ : Name → Nat} :
+theorem denoteMeta_instSeq_mkPisOf_inv {m : EnvModel V env} {ψ : LevelParam → Nat} :
     ∀ (tele : List (Expr × BinderMeta)) (body : Expr) (L : List Expr) (D : Nat)
       (ea : AnnotTerm), L.length = D →
       (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
@@ -940,7 +940,7 @@ entries — bits included — and its domain's index expressions, read
 under the whole telescope, are the field's readings (task #202; a
 finitary field: the telescope is empty and this is the old
 `eisRead`). -/
-@[expose] def FieldReadAt {env : Env} (m : EnvModel V env) (ψ : Name → Nat) (nP nF i : Nat) (cty : Expr)
+@[expose] def FieldReadAt {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP nF i : Nat) (cty : Expr)
     (fvs0 : List Expr) (tl : List (Nat × Nat × AnnotTerm)) (Eis : List AnnotTerm) : Prop :=
   tl.length = (Ix.Kernel.structFieldTeleOf cty nP nF i).length ∧
   (∀ (k : Nat) (b : Expr × BinderMeta) (p : Nat × Nat × AnnotTerm),
@@ -962,7 +962,7 @@ parameters and the field's index readings (`recEntry`); peeling the
 tower at the raw binder's own `∀`-binders (`teleLen`) gives the
 telescope binderwise, and inverting the body's application spine
 (`fieldArity`) the index expressions. -/
-theorem fieldReadAt_of {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {c : Name × Nat × Expr × List Nat} {cd : CtorDatumR}
     (hc : CtorReadR m ψ T lps nP nIdx c cd) {i : Nat} (hi : i ∈ c.2.2.2)
     {fvs0 : List Expr} {crest : Expr}
@@ -1044,7 +1044,7 @@ position `l`, instantiated at the recursor's frame, reads to
 `ihDomAV`: the field's telescope moved binderwise (`denoteMeta_ihIdxAtM`
 at each binder), then the motive at the field's index readings and the
 field applied to the telescope's own variables. -/
-theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : Name → Nat} {nP nF o l i : Nat} {pw : PropWhen}
+theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o l i : Nat} {pw : PropWhen}
     {cty : Expr}
     {fvs0 : List Expr} {crest : Expr} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
@@ -1180,7 +1180,7 @@ theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : Name → Nat} {nP nF o l i :
 set_option maxHeartbeats 1600000 in
 /-- **The `ih` binders' `∀`-tower** reads to `ihPisAV`, the body read
 under all of them. -/
-theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : Name → Nat} {nP nF o : Nat} {pw : PropWhen}
+theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o : Nat} {pw : PropWhen}
     {cty : Expr} {Eiss : List (List AnnotTerm)} {tls : List (List (Nat × Nat × AnnotTerm))}
     {fvs0 : List Expr} {crest : Expr}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
@@ -1284,7 +1284,7 @@ theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : Name → Nat} {nP nF o : Nat
 reads the same at every deeper frame, up to the lift: the variables'
 annotations do not matter (`denoteMeta_erasedEq`), so `denoteMeta_lift`
 applies at the canonical opening. -/
-theorem denoteMeta_instSeq_lift {m : EnvModel V env} {ψ : Name → Nat} {d d' t : Nat}
+theorem denoteMeta_instSeq_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {d d' t : Nat}
     {e : Expr} (hef : e.hasFvar = false) {L : List Expr}
     (hidxL : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (hlenL : L.length ≤ d) (hdd : d ≤ d') {E : AnnotTerm}
@@ -1332,7 +1332,7 @@ parameters and the `o` extras, reads to `minorAVAtR`: the sum route's
 reading (`denoteP_minorAt`) with the `ih` binders (`denoteMeta_ihPis`)
 between the fields and the conclusion, which is therefore read one
 frame lower and lifted (`denoteMeta_instSeq_lift`). -/
-theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : Name → Nat} {T C : Name} {lps : List Name}
+theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C : Name} {lps : List LevelParam}
     {ciT ci : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     (hfC : env.find? C = some ci) (hlpsC : ci.toConstantVal.levelParams = lps)
@@ -1538,7 +1538,7 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : Name → Nat} {T C : Name
 set_option maxHeartbeats 1600000 in
 /-- **The `∀`-telescope of recursive minors** reads to the Π-tower over
 `fixMinorsData`, the body read under the motive and all minors. -/
-theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
@@ -1626,7 +1626,7 @@ set_option maxHeartbeats 1600000 in
 /-- **The `λ`-telescope of recursive minors** reads to the λ-tower over
 `fixMinorsData`'s domains, the body read under the motive and all
 minors. -/
-theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
+theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
     {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
@@ -1716,8 +1716,8 @@ theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : Name → Nat} {T : Nam
 set_option maxHeartbeats 3200000 in
 /-- **The generated recursive recursor type reads to the Π-tower over
 `fixRecDataAV`** with the core `motive ı⃗ t`. -/
-theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : Name → Nat} {T : Name}
-    {lps : List Name} {elim : Name} {large : Bool} {nP nIdx : Nat} {ciT : ConstantInfo}
+theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {ciT : ConstantInfo}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
     {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
@@ -1927,8 +1927,8 @@ instantiated at the rule's frame, reads to `ihAppAV`: the field's
 telescope as a λ-tower (`denoteMeta_ihIdxAtM` at each binder), then the
 recursor's leaf at the block's variables, the field's index readings
 and the field applied to the telescope's own variables. -/
-theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : Name → Nat} {nP nF n i : Nat} {pw : PropWhen}
-    {cty : Expr} {recC : Name} {rlps : List Name} {ciR : ConstantInfo}
+theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n i : Nat} {pw : PropWhen}
+    {cty : Expr} {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {fvs0 : List Expr} {crest : Expr} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
@@ -2173,8 +2173,8 @@ set_option maxHeartbeats 3200000 in
 /-- **Rule `j`'s core at a recursive block**: minor `j` at the field
 variables and the inductive hypotheses, read at the full frame under
 the motive and `n` minors. -/
-theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : Name → Nat} {pw : PropWhen}
-    {recC : Name} {rlps : List Name} {ciR : ConstantInfo}
+theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw : PropWhen}
+    {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {nP nF n j : Nat} {cty : Expr} {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
@@ -2293,12 +2293,12 @@ theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : Name → Nat} {pw : Prop
 set_option maxHeartbeats 3200000 in
 /-- **Rule `j` reads to the λ-tower over `fixRuleDataAV`** at
 constructor `j`'s data, with the core `minor_j f⃗ ih⃗`. -/
-theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : Name → Nat} {T : Name}
-    {lps : List Name} {elim : Name} {large : Bool} {nP nIdx j : Nat} {ciT : ConstantInfo}
+theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx j : Nat} {ciT : ConstantInfo}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
     {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
-    {recC : Name} {rlps : List Name} {ciR : ConstantInfo}
+    {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {tty rhs : Expr}
     (hgen : Ix.Kernel.structRecRhsR T lps elim large nP nIdx tty ctors recC (rlps.map .param) j

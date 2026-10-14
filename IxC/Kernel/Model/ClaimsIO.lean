@@ -89,7 +89,7 @@ variable {V : Type w} [SetTheory V]
 Compare `InferClaim`: the subject's `WellDenotedV` is a *premise* here,
 and the run is the io lane's. -/
 @[expose] def InferClaimIO (μ : CheckMode) {env : Env} (m : EnvModel V env)
-    (φ : Name → Nat) (fuel : Nat) : Prop :=
+    (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
   ∀ {d : Nat} {e t : Expr} {Δa : List AnnotTerm},
     inferTypeCoreIO μ env fuel d e = .ok t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -117,7 +117,7 @@ call site's `of_claims` supplier consumes this one family. -/
 
 /-- Premise form at the io slot. -/
 @[expose] def InferClaimIOS (μ : CheckMode) {env : Env} (m : EnvModel V env)
-    (φ : Name → Nat) (fuel : Nat) : Prop :=
+    (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
   ∀ {d : Nat} {e t : Expr} {Δa : List AnnotTerm},
     Ix.Kernel.inferTypeIO μ env fuel d e = .ok t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -136,7 +136,7 @@ on the mode's gate bit, one lane equation each way.  (The gate-off arm
 drops the establishment conclusion's first conjunct; the premise is
 unused there.) -/
 theorem inferClaimIOS_of {μ : CheckMode} {env : Env}
-    {m : EnvModel V env} {φ : Name → Nat} {fuel : Nat}
+    {m : EnvModel V env} {φ : LevelParam → Nat} {fuel : Nat}
     (hfull : InferClaim μ m φ fuel) (hio : InferClaimIO μ m φ fuel) :
     InferClaimIOS μ m φ fuel := by
   intro d e t Δa hrun hws hb hLb ea ta hC hea hta hok
@@ -153,7 +153,7 @@ theorem inferClaimIOS_of {μ : CheckMode} {env : Env}
 campaign's B4).  The four sealed families and the io family, all at
 `fuel`, give the same five at `fuel + 1`. -/
 @[expose] def CheckStep5 (μ : CheckMode) (V : Type w) [SetTheory V] : Prop :=
-  ∀ (env : Env) (m : EnvModel V env) (φ : Name → Nat) (fuel : Nat),
+  ∀ (env : Env) (m : EnvModel V env) (φ : LevelParam → Nat) (fuel : Nat),
     WhnfCoreClaim μ m φ fuel → WhnfClaim μ m φ fuel →
     DefEqClaim μ m φ fuel → InferClaim μ m φ fuel →
     InferClaimIO μ m φ fuel →
@@ -166,7 +166,7 @@ checker's own zero-fuel throws — the io lane's zero level throws the
 same `internal` error as the full one (`inferTypeCoreIO_zero`), so the
 currency swap costs nothing here either. -/
 theorem checkSound5 {μ : CheckMode} {env : Env}
-    (hstep : CheckStep5 μ V) (m : EnvModel V env) (φ : Name → Nat) :
+    (hstep : CheckStep5 μ V) (m : EnvModel V env) (φ : LevelParam → Nat) :
     ∀ fuel : Nat,
       WhnfCoreClaim μ m φ fuel ∧ WhnfClaim μ m φ fuel ∧
         DefEqClaim μ m φ fuel ∧ InferClaim μ m φ fuel ∧

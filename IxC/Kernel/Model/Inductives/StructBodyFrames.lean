@@ -60,8 +60,8 @@ variable {V : Type w} [SetTheory V]
 /-- **The dummy telescope reads to the opened body**: `k` dummy
 binders at depth `d` open at the variables `d, …, d + k - 1`, and the
 residual is the body's instantiation sequence at them. -/
-theorem denoteMeta_projTele {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} :
+theorem denoteMeta_projTele {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+    {φ : LevelParam → Nat} :
     ∀ (k d : Nat) (body : Expr) {RA : AnnotTerm},
       denoteMeta acval env φ (d + k)
         (Expr.instSeq ((List.range k).map fun j =>
@@ -93,8 +93,8 @@ theorem denoteMeta_projTele {acval : Name → (Name → Nat) → AnnotTerm} {env
 /-- The telescope over the parameters and the subject, at depth `0`:
 the residual is the body at the direct install's own variable
 spelling (`fvsD`/`tfvD`). -/
-theorem denoteMeta_projTele_zero {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} {nP : Nat} {body : Expr} {RA : AnnotTerm}
+theorem denoteMeta_projTele_zero {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+    {φ : LevelParam → Nat} {nP : Nat} {body : Expr} {RA : AnnotTerm}
     (h : denoteMeta acval env φ (nP + 1)
       (Expr.instSpine (Ix.Kernel.fvsD nP ++ [Ix.Kernel.tfvD nP]) nP body) = some RA) :
     denoteMeta acval env φ 0 (Ix.Kernel.projTele (nP + 1) body)
@@ -140,7 +140,7 @@ theorem bodyFrames {env : Env} (m : EnvModel V env)
     -- its fields at offset `1`)
     (hprev : ∀ j, j < i → ∃ entry, env.findProj? T j = some entry ∧ entry.off = off)
     (hi : i < nF)
-    {ds : List (Nat × Nat × AnnotTerm)} {bodyA : AnnotTerm} {ψ : Name → Nat} {w : Nat}
+    {ds : List (Nat × Nat × AnnotTerm)} {bodyA : AnnotTerm} {ψ : LevelParam → Nat} {w : Nat}
     (hlenDs : ds.length = nP + nF) (hbelow : DomsBelow 0 ds)
     (hctyRead0 : denoteMeta m.acval env ψ 0 cty = some (mkPisAV ds bodyA))
     {sorts : List Level}

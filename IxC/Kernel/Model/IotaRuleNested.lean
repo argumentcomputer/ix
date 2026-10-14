@@ -49,9 +49,9 @@ variable {V : Type w} [SetTheory V]
 
 theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Name} {f : Name → Name}
     (hf : f = fun n =>
       if blockNames.contains n then n.str "_model" else n)
@@ -69,7 +69,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
     {lvls : List Level} {pins : List Expr}
-    (hfireN : RecRule.fire r' = .nested lvls pins) (φ : Name → Nat) :
+    (hfireN : RecRule.fire r' = .nested lvls pins) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
   obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
     -- `-` at position 13: `IotaRuleR`'s rule-rhs **derivation** row,
@@ -126,7 +126,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   obtain ⟨hrhsAw, hrhsAb⟩ := annotate_syntax hann hrf hrb
   have hRmlps : (ConstantInfo.defnInfo cvm mval
       hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
-  have htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta :=
     mp.type_wellDenotedV _ (Env.find?_mem hself)
@@ -139,7 +139,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   have hrhsLb : Expr.LeavesBounded rhsA :=
     fun l hl => absurd hl (fun h => hrhsLeafNil l h)
   obtain ⟨t', hrun⟩ := hrun0
-  have hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+  have hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval envSelf ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta := by
@@ -222,7 +222,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   rw [hciTcv] at hSw0 hSb0
   have hSw : cvt.type.hasFvar = false := hSw0
   have hSb : cvt.type.looseBVarsBounded 0 = true := hSb0
-  have hthm : ∀ ψ : Name → Nat, ∃ ta,
+  have hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval envSelf ψ 0 cvt.type = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta := by
@@ -278,7 +278,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
       (denoteMeta_erase mp.base2.acval_erase 0 _ hTst0)
       hopen hheadEq hargs3 (eq_of_beq hlhead0) hlarity0 hmaj0 hfCmE
   -- ===== the public frame, at the instantiated valuation =====
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ cvA.levelParams us := ⟨_, rfl⟩
   obtain ⟨TV, hTV0R⟩ := mp.type_reads _ (Env.find?_mem hself) ψ
   have hTV0 : denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some TV :=
@@ -478,9 +478,9 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
 branches, dispatched on the stored fire mode. -/
 theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Name} {f : Name → Name}
     (hf : f = fun n =>
       if blockNames.contains n then n.str "_model" else n)
@@ -497,7 +497,7 @@ theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (heqfind : env₂.find? eqName = some eqA)
     (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
-    (hfire : RecRule.fire r' ≠ .inert) (φ : Name → Nat) :
+    (hfire : RecRule.fire r' ≠ .inert) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
   cases hfm : RecRule.fire r' with
   | inert => exact absurd hfm hfire
@@ -515,9 +515,9 @@ is the row. -/
 
 theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {blockNames : List Name} {f : Name → Name}
     (hf : f = fun n =>
       if blockNames.contains n then n.str "_model" else n)
@@ -531,7 +531,7 @@ theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     ∀ (j : Nat) (rules rules' : List RecRule),
       IotaRulesRun μ F env₂ envSelf f cvA.name
         cvA.levelParams cvA.type mI rP j rules rules' →
-      ∀ rl ∈ rules', RecRule.fire rl ≠ .inert → ∀ φ : Name → Nat,
+      ∀ rl ∈ rules', RecRule.fire rl ≠ .inert → ∀ φ : LevelParam → Nat,
         RecRuleLaw mp.base2 φ cvA.name cvA mI rP rl := by
   intro j rules
   induction rules generalizing j with

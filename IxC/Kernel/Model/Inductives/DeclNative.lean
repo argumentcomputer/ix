@@ -210,7 +210,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega)]; rfl
   let rss : List (List Bool) := rssOfK ksF ctorsA.length
   have hrss : ∀ j, j < ctorsA.length → rss.getD j [] = rsOf (ksF j) := fun j hj => rssOfK_getD hj
-  let Ids : (Name → Nat) → List AnnotTerm := fun ψ => ((ppsAll ψ).drop p.nP).map (·.2.2)
+  let Ids : (LevelParam → Nat) → List AnnotTerm := fun ψ => ((ppsAll ψ).drop p.nP).map (·.2.2)
   have hlenIds : ∀ ψ, (Ids ψ).length = p.nIdx := by
     intro ψ; simp [Ids, hFD.len ψ]
   have hlenPps : ∀ ψ, (ppsAll ψ).length = p.nP + (Ids ψ).length := by
@@ -219,8 +219,8 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     intro ψ
     have := (DomsBelow.drop p.nP (hFD.below ψ)).fields
     rwa [Nat.zero_add] at this
-  let uAV : (Name → Nat) → Nat := fun ψ => idxUniv (restrictΨ p.cvT.levelParams ψ) isorts
-  have hUparams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+  let uAV : (LevelParam → Nat) → Nat := fun ψ => idxUniv (restrictΨ p.cvT.levelParams ψ) isorts
+  have hUparams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       uAV ψ₁ = uAV ψ₂ := by
     intro ψ₁ ψ₂ hφ
     show idxUniv (restrictΨ p.cvT.levelParams ψ₁) isorts = idxUniv (restrictΨ p.cvT.levelParams ψ₂) isorts
@@ -336,7 +336,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [hacI₀, ← hTname, acvalWith_self]
     exact ⟨_, rfl⟩
   -- the index telescope
-  have hIdx : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       IdxOk (uAV ψ) ρp (Ids ψ) ∧ FieldsValid ρp (Ids ψ) := by
     intro ψ ρp hρp
@@ -348,13 +348,13 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   -- the constructors' data at the dummy former
   obtain ⟨idxF₀, dsF₀, esF₀, srcsF₀, fvsPF₀, xFvsF₀, xrestF₀, eissF₀, tssF₀, hcf₀⟩ :=
     fixCtorFuns_of hμ mpI₀ hfT_I hlpsT hstripT hFOk hrunOf'
-  let Fss₀ : (Name → Nat) → List (List AnnotTerm) :=
+  let Fss₀ : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => fssOfR p.nP (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Ess₀ : (Name → Nat) → List (List AnnotTerm) :=
+  let Ess₀ : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => essOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Eiss₀ : (Name → Nat) → List (List (List AnnotTerm)) :=
+  let Eiss₀ : (LevelParam → Nat) → List (List (List AnnotTerm)) :=
     fun ψ => eissOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Tlss₀ : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm))) :=
+  let Tlss₀ : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm))) :=
     fun ψ => tlssOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
   have hFss₀D : ∀ ψ j cA, ctorsA[j]? = some cA →
       (Fss₀ ψ).getD j [] = ((dsF₀ j ψ).drop p.nP).map (·.2.2) :=
@@ -376,7 +376,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hksLen : ∀ j cA, ctorsA[j]? = some cA → (ksF j).length = cA.2 :=
     fun j cA hj => (hcf₀ j cA hj).ksLen
   -- the chain facts at the dummy former
-  have hC₀ : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hC₀ : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainFacts (uAV ψ) (p.resSort.eval ψ) p.nP cA.2 ρp (Ids ψ) (ksF j) (tssF₀ j ψ)
         (((dsF₀ j ψ).drop p.nP).map (·.2.2)) (eissF₀ j ψ) (esF₀ j ψ) ∧
@@ -394,7 +394,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by
       rw [tlssOfR_length, fixCtorDataList_length]; omega)]
     rfl
-  have hX₀ : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hX₀ : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ) (Ess₀ ψ) ∧
       ∀ X, X ∈ˢ lfpFamSpace V (p.resSort.eval ψ) (idxSet (uAV ψ) ρp (Ids ψ)) →
@@ -414,7 +414,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       rw [hlenFs₀ ψ j cA hjA, hFss₀D ψ j cA hjA, hEss₀D ψ j cA hjA, hEiss₀D ψ j cA hjA,
         hTlss₀D ψ j cA hjA]
       exact (hC₀ j cA hjA ψ ρp hρp).2
-  let leafT : (Name → Nat) → AnnotTerm := fun ψ =>
+  let leafT : (LevelParam → Nat) → AnnotTerm := fun ψ =>
     nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ) (Ess₀ ψ)
   -- the laws at the fixpoint leaf: unit-likeness (one fieldless
   -- index-free constructor) folds the leaf to the one tagged empty
@@ -425,7 +425,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hzero : (Ix.Kernel.nativeCaps p).unitlike = true →
       ∃ (c cA : ConstantVal × Nat), p.ctors = [c] ∧ ctorsA = [cA] ∧ ctorsA[0]? = some cA ∧
         p.nIdx = 0 ∧ c.2 = 0 ∧ cA.2 = 0 ∧
-        (∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+        (∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
           SpineFit ρ ((ppsAll ψ).map (·.2.2)) ts →
           ts.foldl SetTheory.app (interp V ρ
               (nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) [] rss (Tlss₀ ψ) (Eiss₀ ψ)
@@ -496,7 +496,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
     obtain ⟨-, -, -, hlps, -, -, -, -, -, -⟩ := hrunOf j cA hj
     exact hlps
-  have hcds₀Params : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
+  have hcds₀Params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
       fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ₁ ctorsA 0
         = fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ₂ ctorsA 0 := by
     intro ψ₁ ψ₂ hφ
@@ -605,7 +605,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [Nat.zero_add]
     obtain ⟨cAi, hi'⟩ : ∃ cAi, ctorsA[i]? = some cAi := ⟨_, List.getElem?_eq_getElem hi⟩
     exact (hident i cAi hi').2.2.1 ψ
-  let Fss : (Name → Nat) → List (List AnnotTerm) :=
+  let Fss : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)
   have hFssD : ∀ ψ j cA, ctorsA[j]? = some cA →
       (Fss ψ).getD j [] = ((dsF j ψ).drop p.nP).map (·.2.2) :=
@@ -618,10 +618,10 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     simp [(hcf j cA hj).len ψ]
   -- the frames of the real data
   have hframes : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
           Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
           FieldsOkB (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
           FieldsValid ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
@@ -638,7 +638,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hsortsOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
       (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
         (p.isProp = false →
           FieldsBound (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2))) ∧
@@ -651,7 +651,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨-, hfields, hlenS', hleq, hmem⟩ := ctorFramesGen hμ mpI hCtor hfT_I hProp' hFD_I
       (hcf j cA hj).toCtorDataI hleafT_I'
     exact ⟨sorts, hsj, hlenS', hleq, fun ψ ρ h => ⟨(hfields ψ ρ h).2.2.1, hmem ψ ρ h⟩⟩
-  have hC : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hC : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainFacts (uAV ψ) (p.resSort.eval ψ) p.nP cA.2 ρp (Ids ψ) (ksF j) (tssF j ψ)
         (((dsF j ψ).drop p.nP).map (·.2.2)) (eissF j ψ) (esF j ψ) := by
@@ -659,7 +659,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨c, -, -, -, -, -, -, _, -, hCtor⟩ := hrunOf j cA hj
     exact fixChainFacts_of hμ mpI hCtor hfT_I hProp' hFD_I hleafT_I' (hcf j cA hj) (uAV ψ) ψ ρp hρp
   -- the real chains against the leaf's
-  have hreal : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hreal : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainsRealI (fixFamI (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) (Ids ψ).length rss (Tlss₀ ψ) (Eiss₀ ψ)
           (Fss₀ ψ) (Ess₀ ψ)) (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ)
@@ -734,7 +734,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
           rw [hlenAB, ← Nat.add_assoc] at this
           exact this
   -- the constructors' conses
-  have hFssParams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+  have hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       fssOf p.nP (ctorDataList dsF esF ψ₁ ctorsA 0) = fssOf p.nP (ctorDataList dsF esF ψ₂ ctorsA 0) := by
     intro ψ₁ ψ₂ hφ
     have hcds : ctorDataList dsF esF ψ₁ ctorsA 0 = ctorDataList dsF esF ψ₂ ctorsA 0 := by
@@ -751,7 +751,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     cases h : ctorsA[i]? with
     | none => rw [h] at hi; exact nomatch hi
     | some cA => rw [h] at hi; exact ⟨cA, rfl, (Option.some.inj hi).symm⟩
-  have hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
+  have hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
       FieldsBelow p.nP Fs := by
     intro ψ Fs hFs
     obtain ⟨cd, hcdm, rfl⟩ := List.mem_map.mp hFs
@@ -759,7 +759,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨cA, hiA, rfl⟩ := hcdMem ψ i cd hi
     have := (DomsBelow.drop p.nP ((hcf i cA hiA).below ψ)).fields
     rwa [Nat.zero_add] at this
-  have hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (p.resSort.eval ψ) ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) ∧
       SumFieldsValid ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) := by
@@ -775,7 +775,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       obtain ⟨i, hi⟩ := List.getElem?_of_mem hcdm
       obtain ⟨cA, hiA, rfl⟩ := hcdMem ψ i cd hi
       exact ((hframes i cA hiA).2 ψ ρ (((hframes i cA hiA).1 ψ ρ).mp hρ)).2.1
-  have hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         interp V (consList bs ρ)
@@ -875,7 +875,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         p.large (idxF j) (dsF j) (esF j) (srcsF j) (ksF j) (fvsPF j) (xFvsF j) (xrestF j) (eissF j)
         (tssF j)
   have hInv : ∀ {env' : Env} (m' : EnvModel V env') (cA : ConstantVal × Nat)
-      (A : (Name → Nat) → AnnotTerm)
+      (A : (LevelParam → Nat) → AnnotTerm)
       (mC : EnvModel V ⟨.ctorInfo cA.1 p.nP cA.2 :: env'.consts⟩),
       cA ∈ ctorsA → env'.find? cA.1.name = none →
       mC.acval = acvalWith m'.acval cA.1.name A → Inv m' → Inv mC := by
@@ -960,7 +960,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     simp only [InductiveShape.majorIdx, InductiveShape.rulePrefix, hlenA]
   have hrP : p.rulePrefix = p.nP + 1 + ctorsA.length := by
     simp only [InductiveShape.rulePrefix, hlenA]
-  have hframesR : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hframesR : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss
         (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))

@@ -191,7 +191,7 @@ theorem propext_bits (hμ : μ.verifiedChecks = true)
             (.app (.app (.const iffName []) (.bvar 1)) (.bvar 0))
             (.app (.app (.app (.const eqName [.succ .zero])
                 (.sort .zero)) (.bvar 2)) (.bvar 1)) m₃) m₂) m₁)
-      = .ok stype) (φ : Name → Nat) :
+      = .ok stype) (φ : LevelParam → Nat) :
     pwBit φ m₁.pw = 0 ∧ pwBit φ m₂.pw = 0 ∧ pwBit φ m₃.pw = 0 := by
   match F, hrun with
   | 0, hrun => rw [Ix.Kernel.inferTypeCore_zero] at hrun; exact nomatch hrun
@@ -282,7 +282,7 @@ theorem choice_bits (hμ : μ.verifiedChecks = true)
       (.forallE (.sort (.param uN))
         (.forallE
           (.app (.const nonemptyName [.param uN]) (.bvar 0))
-          (.bvar 1) m₂) m₁) = .ok stype) (φ : Name → Nat) :
+          (.bvar 1) m₂) m₁) = .ok stype) (φ : LevelParam → Nat) :
     (pwBit φ m₁.pw = 0 ↔ φ uN = 0) ∧ (pwBit φ m₂.pw = 0 ↔ φ uN = 0) := by
   match F, hrun with
   | 0, hrun => rw [Ix.Kernel.inferTypeCore_zero] at hrun; exact nomatch hrun

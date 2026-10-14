@@ -26,7 +26,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 theorem Certs.nil_sound {d : Nat} {lic : Bool} {T : Expr} :
     CertsSem m φ d lic T [] := by
@@ -211,13 +211,13 @@ theorem DefEqList.cons_sound {d : Nat} {a b : Expr} {as bs : List Expr}
       (fun x hx => hgb x (List.mem_cons_of_mem vb hx)) ρ hρ⟩
 
 theorem EtaProjCerts.nil_sound {d : Nat} {T : Name} {us' : List Level}
-    {targs : List Expr} {b : Expr} {lpsT : List Name} :
+    {targs : List Expr} {b : Expr} {lpsT : List LevelParam} :
     EtaProjCertsSem m φ d T us' targs b lpsT [] := by
   intro i hi
   exact nomatch hi
 
 theorem EtaProjCerts.cons_sound {d : Nat} {T : Name} {us' : List Level}
-    {targs : List Expr} {b : Expr} {lpsT : List Name} {i : Nat}
+    {targs : List Expr} {b : Expr} {lpsT : List LevelParam} {i : Nat}
     {rest : List Nat} {cvp : ConstantVal} {mI rP : Nat} {rules : List RecRule}
     (hf : env.find? (projFnName T i) = some (.recInfo cvp mI rP rules))
     (hlps : cvp.levelParams = lpsT)

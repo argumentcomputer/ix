@@ -282,7 +282,7 @@ theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Name)
     · exact Yields.ofThrowBind
 
 theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Name)
-    (lps : List Name) (nP nF i : Nat) :
+    (lps : List LevelParam) (nP nF i : Nat) :
     Yields (checkProjLookupsF (m := CheckCM) fe T ctorName lps nP nF i)
       (fun _ => fe.find? (projFnName T i) = none) := by
   unfold checkProjLookupsF
@@ -290,7 +290,7 @@ theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Name)
   all_goals (apply Yields.pure; exact Option.isNone_iff_eq_none.mp (by assumption))
 
 theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Name) (lps : List Name)
+    (h : PushChain env fe) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (checkProjFnS mode fe T ctorName lps nP nF i)
       (fun fe' => PushChain env fe') := by
@@ -301,7 +301,7 @@ theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
   all_goals (apply Yields.pure; exact h.push hfr)
 
 theorem installProjFnStepS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Name) (lps : List Name)
+    (h : PushChain env fe) (T ctorName : Name) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (installProjFnStepS mode T ctorName lps nP nF fe i)
       (fun fe' => PushChain env fe') := by
@@ -383,7 +383,7 @@ theorem checkSumIndF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
      rw [hn']; exact hfr)
 
 theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List Name) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
     Yields (checkSumCtorF ops fe₀ fe T lps nP nIdx rs isProp large cvC nF cvTa)
       (fun r => r.1.name = cvC.name ∧ fe.find? cvC.name = none) := by
@@ -395,7 +395,7 @@ theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
   all_goals (apply Yields.pure; exact ⟨hn, hfr⟩)
 
 theorem checkSumCtorsF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List Name) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     ∀ (cs : List (ConstantVal × Nat)),
       Yields (checkSumCtorsF ops fe₀ fe T lps nP nIdx rs isProp large cvTa cs)
@@ -454,7 +454,7 @@ theorem checkNativeRecF_fresh (ops : CheckerOps CheckCM) {w : StructWalkers}
   all_goals (apply Yields.pure; exact ⟨rfl, hcv.2⟩)
 
 theorem checkStructProjTableF_push {w : StructWalkers} {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T C : Name) (lps : List Name) (nP nF : Nat)
+    (h : PushChain env fe) (T C : Name) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) :
     Yields (checkStructProjTableF (m := CheckCM) w T C lps nP nF resSort guards
         off cvCa fe)

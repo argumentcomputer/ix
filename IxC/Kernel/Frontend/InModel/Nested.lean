@@ -126,7 +126,7 @@ structure Group where
 /-- The family read off the block. -/
 structure Family where
   T : Name
-  lps : List Name
+  lps : List LevelParam
   nP : Nat
   /-- the parameter binders (from the first former) -/
   pbs : List Expr
@@ -136,7 +136,7 @@ structure Family where
   mems : List Mem
   ctors : List ACtor
   large : Bool
-  elim : Name
+  elim : LevelParam
   deriving Repr, Inhabited
 
 /-! ## Carriers and the family rewrite -/
@@ -259,7 +259,7 @@ def stripAllPis (e : Expr) : List (Expr × BinderMeta) × Expr :=
 
 /-- Read the members off the motives of the first recursor's type
 (after the parameters): motive `m`'s domain `∀ ı⃗ (t : C), Sort ℓ`. -/
-def readMems (lps : List Name) (nP : Nat) (types : List IndTypeRec)
+def readMems (lps : List LevelParam) (nP : Nat) (types : List IndTypeRec)
     (motives : List Expr) : Except String (List Mem) := do
   let r := types.length
   let memberNames := types.map (·.cv.name)
@@ -433,12 +433,12 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let some (minorBs, _) := afterM.stripPis n | throw "recursor: minor telescope"
   -- the members: real ones and mimics
   let mems ← readMems lps nP b.types (motiveBs.map (·.1))
-  let large? : Option Name :=
+  let large? : Option LevelParam :=
     match r0.cv.levelParams with
     | e :: rest => if rest == lps && !lps.contains e then some e else none
     | [] => none
   let large := large?.isSome
-  let elim := large?.getD (freshLevelName lps)
+  let elim := large?.getD (freshLevelParam lps)
   let rlps := if large then elim :: lps else lps
   let fam0 : Family := ⟨T, lps, nP, pbs, u, r, mems, [], large, elim⟩
   -- the recursor of each member: `T_m.rec` at a real member, `T.rec_j`
@@ -527,9 +527,9 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       -- container's parameters (under the member's index binders)
       -- (the carrier under the member's `nIdx` index binders: the
       -- container's parameters sit above them)
-      let carrI := carrierAt ⟨I1, lpsI, nPI, [], .zero, cb.types.length, memsI, [], false, .anonymous⟩
+      let carrI := carrierAt ⟨I1, lpsI, nPI, [], .zero, cb.types.length, memsI, [], false, 0⟩
         memI memI.nIdx (varsAt 0 memI.nIdx) false
-      -- levels first (the container's level names may coincide with the
+      -- levels first (the container's level parameters may coincide with the
       -- block's, which the pins mention), then the pins
       let carr := substParams memI.nIdx nPI (mem.pins.map (·.liftLooseBVars memI.nIdx 0))
         (carrI.instantiateLevelParams lpsI mem.lv)
@@ -569,7 +569,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     throw "Prop block with a large eliminator (the auxiliary family eliminates into Prop only)"
   let ℓ := structElimLevel elim large
   let rlvls : List Level := if large then ℓ :: lps.map .param else lps.map .param
-  let elimTag := if large then elim else freshLevelName lps
+  let elimTag := if large then elim else freshLevelParam lps
   let blockNames := (b.types.map (·.cv.name)) ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
   let rnF : Name → Name := fun x => if blockNames.contains x then modelName x else x
   let rn : Expr → Expr := Expr.renameConsts rnF
@@ -581,7 +581,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     match hs.find? (·.1 == x) with
     | some (_, h) => h
     | none => ctx.heights x
-  let push := fun (o : Array Declaration) (hs : List (Name × Nat)) (nm : Name) (l : List Name)
+  let push := fun (o : Array Declaration) (hs : List (Name × Nat)) (nm : Name) (l : List LevelParam)
       (ty v : Expr) =>
     let h := hintFor (hOf hs) v
     (o.push (.defnDecl ⟨nm, l, ty⟩ v h), (nm, hintHeight h) :: hs)
@@ -1247,7 +1247,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       out := out.push (.thmDecl ⟨iotaName rr.cv.name c.jIn, rlps, stmt⟩ proof)
   -- 10. projection artifacts of structure-like non-Prop real members
   -- (under a LARGE eliminator only: `Mutual.lean` step 7)
-  let genTypes : List (Name × List Name × Expr) :=
+  let genTypes : List (Name × List LevelParam × Expr) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
   let tbl' : ConstTable := fun x =>

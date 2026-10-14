@@ -69,13 +69,13 @@ invariant, because each entry carries its own proof. -/
 
 /-- The walk's cutoff, read as the specification: a node without a
 level parameter has all of them defined. -/
-private theorem lpdP_cut_spec {ps : List Name} {e : Expr} (h : ¬ e.hasLP = true) :
+private theorem lpdP_cut_spec {ps : List LevelParam} {e : Expr} (h : ¬ e.hasLP = true) :
     true = Expr.allLevelParamsDefined ps e :=
   (Expr.allLevelParamsDefined_of_not_hasLevelParam (params := ps)
     (by rw [← hasLP_eq _]; simpa using h)).symm
 
 /-- **The plain descent is `Expr.allLevelParamsDefined`.** -/
-theorem allLevelParamsDefinedP_spec {ps : List Name} : ∀ {e : Expr},
+theorem allLevelParamsDefinedP_spec {ps : List LevelParam} : ∀ {e : Expr},
     Expr.allLevelParamsDefinedP ps e = Expr.allLevelParamsDefined ps e := by
   intro e
   induction e with
@@ -132,7 +132,7 @@ theorem allLevelParamsDefinedP_spec {ps : List Name} : ∀ {e : Expr},
 
 /-- **`Expr.allLevelParamsDefined` is `Expr.allLevelParamsDefined` of
 the erasure.** -/
-theorem allLevelParamsDefinedC_spec {ps : List Name} {e : Expr} :
+theorem allLevelParamsDefinedC_spec {ps : List LevelParam} {e : Expr} :
     Expr.allLevelParamsDefinedC ps e = (Expr.allLevelParamsDefined ps e) := by
   rw [Expr.allLevelParamsDefinedC.eq_def]
   split

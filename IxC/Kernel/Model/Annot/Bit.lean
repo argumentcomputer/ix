@@ -72,14 +72,14 @@ valuation: `0` (the squash regime) exactly when the datum holds —
 "the codomain is a proposition here" — and `1` otherwise.  The value
 `1` is arbitrary; `interp` reads binder numerals only through the
 `v = 0` test (`piR_zero_agree`/`lamR_zero_agree`). -/
-@[expose] def pwBit (φ : Name → Nat) (pw : PropWhen) : Nat :=
+@[expose] def pwBit (φ : LevelParam → Nat) (pw : PropWhen) : Nat :=
   if pw.holds φ then 0 else 1
 
-@[simp] theorem pwBit_eq_zero_iff {φ : Name → Nat} {pw : PropWhen} :
+@[simp] theorem pwBit_eq_zero_iff {φ : LevelParam → Nat} {pw : PropWhen} :
     pwBit φ pw = 0 ↔ pw.holds φ = true := by
   unfold pwBit; split <;> simp_all
 
-theorem pwBit_ne_zero_iff {φ : Name → Nat} {pw : PropWhen} :
+theorem pwBit_ne_zero_iff {φ : LevelParam → Nat} {pw : PropWhen} :
     pwBit φ pw ≠ 0 ↔ pw.holds φ = false := by
   rw [Ne, pwBit_eq_zero_iff]
   simp
@@ -104,7 +104,7 @@ clause (`inferBodyIO`) and any future β-cert gate alike. -/
 /-- **Soundness of the gate's condition**: a `never` datum is positive
 at every valuation. -/
 theorem pwBit_ne_zero_of_isNever {pw : PropWhen}
-    (h : Ix.Kernel.PropWhen.isNever pw = true) (φ : Name → Nat) :
+    (h : Ix.Kernel.PropWhen.isNever pw = true) (φ : LevelParam → Nat) :
     pwBit φ pw ≠ 0 := by
   cases pw with
   | never => rw [pwBit_ne_zero_iff]; rfl
@@ -115,7 +115,7 @@ is positive at every valuation — an `ifAllZero` datum lands in the
 squash regime at the all-zero valuation, where the certificate is
 consumed and the skip would be unlicensed. -/
 theorem isNever_iff_forall_pwBit_ne_zero {pw : PropWhen} :
-    Ix.Kernel.PropWhen.isNever pw = true ↔ ∀ φ : Name → Nat, pwBit φ pw ≠ 0 := by
+    Ix.Kernel.PropWhen.isNever pw = true ↔ ∀ φ : LevelParam → Nat, pwBit φ pw ≠ 0 := by
   constructor
   · exact pwBit_ne_zero_of_isNever
   · intro h
@@ -130,7 +130,7 @@ against a computed codomain sort is `zeronessOf v` itself (the run
 inversions' conjunct `Level.zeronessOf v = m.pw` — an equality, since
 the datum is canonical, task #194/#197), and its bit is the sort's
 true zero bit. -/
-theorem pwBit_zeronessOf (φ : Name → Nat) (v : Level) :
+theorem pwBit_zeronessOf (φ : LevelParam → Nat) (v : Level) :
     (pwBit φ (Level.zeronessOf v) = 0 ↔ Level.eval φ v = 0) := by
   rw [pwBit_eq_zero_iff, Ix.Kernel.PropWhen.zeronessOf_sound]
   simp
@@ -138,7 +138,7 @@ theorem pwBit_zeronessOf (φ : Name → Nat) (v : Level) :
 /-- **The crossing reading**: the instantiated datum's bit at `φ` is
 the datum's bit at the composed valuation — `denotePInstLevels`'
 binder step. -/
-theorem pwBit_substPW (φ : Name → Nat) (ks : List Name)
+theorem pwBit_substPW (φ : LevelParam → Nat) (ks : List LevelParam)
     (vs : List Level) (pw : PropWhen) :
     pwBit φ (Level.substPW ks vs pw) = pwBit (Level.substFn φ ks vs) pw := by
   unfold pwBit
@@ -150,8 +150,8 @@ theorem pwBit_substPW (φ : Name → Nat) (ks : List Name)
 binder numeral read off the term's own meta (`pwBit φ m.pw`) — no
 checker runs, no fuel, no mode.  See the module docstring for the
 `pi` `u`-slot convention. -/
-@[expose] def denoteMeta (acval : Name → (Name → Nat) → AnnotTerm)
-    (env : Env) (φ : Name → Nat) :
+@[expose] def denoteMeta (acval : Name → (LevelParam → Nat) → AnnotTerm)
+    (env : Env) (φ : LevelParam → Nat) :
     (d : Nat) → Expr → Option AnnotTerm
   | _, .sort u => some (.sort (u.eval φ))
   | d, .fvar idx _ => some (.bvar (d - 1 - idx))
@@ -228,8 +228,8 @@ the denotation does not. -/
 
 /-- The validated-annotation reading is an annotation of the
 denotation, exactly. -/
-theorem denoteMeta_erase {acval : Name → (Name → Nat) → AnnotTerm}
-    {cval : TConstVal} {env : Env} {φ : Name → Nat}
+theorem denoteMeta_erase {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ) :
     ∀ (d : Nat) (e : Expr) {ea : AnnotTerm},
       denoteMeta acval env φ d e = some ea →

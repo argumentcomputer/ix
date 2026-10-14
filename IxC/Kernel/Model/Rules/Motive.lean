@@ -68,7 +68,7 @@ claim carries. -/
 /-- **`Red`'s motive**: a reduction of a framed, graded, readable
 subject preserves the frame, reads, is graded, and has the same
 interpretation. -/
-@[expose] def RedSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def RedSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (e e' : Expr) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
@@ -81,7 +81,7 @@ interpretation. -/
         ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea = interp V ρ ea'
 
 /-- **`DefEq`'s motive**: `DefEqClaim`'s conclusion under its premises. -/
-@[expose] def DefEqSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def DefEqSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (a b : Expr) : Prop :=
   Frame d a → Frame d b →
   ∀ {Δa : List AnnotTerm} {aa ba : AnnotTerm},
@@ -93,7 +93,7 @@ interpretation. -/
 
 /-- **`Infer`'s motive at the full grade** — establishment: the
 subject's grading is a conclusion. -/
-@[expose] def InferSemFull {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def InferSemFull {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (e t : Expr) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
@@ -106,7 +106,7 @@ subject's grading is a conclusion. -/
 
 /-- **`Infer`'s motive at the io grade** — consumption: the subject's
 grading is a premise (`InferClaimIO`'s premise form). -/
-@[expose] def InferSemIO {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def InferSemIO {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (e t : Expr) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
@@ -119,7 +119,7 @@ grading is a premise (`InferClaimIO`'s premise form). -/
         ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea ∈ˢ interp V ρ ta
 
 /-- The grade-dispatched inference motive. -/
-@[expose] def InferSem {env : Env} (m : EnvModel V env) (φ : Name → Nat) :
+@[expose] def InferSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Grade → Nat → Expr → Expr → Prop
   | .full, d, e, t => InferSemFull m φ d e t
   | .io, d, e, t => InferSemIO m φ d e t
@@ -130,7 +130,7 @@ reading, substitution-peeling (`certs_telePA` / `certs_teleLic`,
 walk the skipped slots are recovered from the spine's own grading and
 the head's membership (`iota_slot_transfer`), which are therefore
 premises exactly there. -/
-@[expose] def CertsSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def CertsSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (lic : Bool) (ty : Expr) (args : List Expr) : Prop :=
   Frame d ty →
   ∀ {Δa : List AnnotTerm} {Ta fa : AnnotTerm} {vs : List AnnotTerm},
@@ -153,7 +153,7 @@ with `defEqListFueled_length`).  The length is a conclusion of its own
 because the pointwise equality is only available once both lists have
 been handed over as read spines — and a consumer (`Red.iota_sound`'s
 `.nested` pin block) needs the length to BUILD the second spine. -/
-@[expose] def DefEqListSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def DefEqListSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (as bs : List Expr) : Prop :=
   as.length = bs.length ∧
   ∀ {Δa : List AnnotTerm} {asa bsa : List AnnotTerm},
@@ -169,9 +169,9 @@ been handed over as read spines — and a consumer (`Red.iota_sound`'s
 /-- **`EtaProjCerts`' motive**: each certified field slot is a stored
 projection function whose telescope the type's arguments and the
 stuck side fit — `CertsSem` at every listed index. -/
-@[expose] def EtaProjCertsSem {env : Env} (m : EnvModel V env) (φ : Name → Nat)
+@[expose] def EtaProjCertsSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     (d : Nat) (T : Name) (us' : List Level) (targs : List Expr) (b : Expr)
-    (lpsT : List Name) (idxs : List Nat) : Prop :=
+    (lpsT : List LevelParam) (idxs : List Nat) : Prop :=
   ∀ i ∈ idxs, ∃ (cvp : ConstantVal) (mI rP : Nat) (rules : List RecRule),
     env.find? (projFnName T i) = some (.recInfo cvp mI rP rules) ∧
     cvp.levelParams = lpsT ∧

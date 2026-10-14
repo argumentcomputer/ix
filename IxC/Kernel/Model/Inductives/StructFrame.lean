@@ -78,7 +78,7 @@ theorem Sat_drop {Δ : List AnnotTerm} {ρ : Nat → V} (h : Sat V Δ ρ)
 /-- **Context transfer**: a correspondence survives replacing the
 context by one with the same satisfying valuations whose entries
 interpret alike under them. -/
-theorem CtxOk.transfer {env : Env} {m : EnvModel V env} {φ : Name → Nat}
+theorem CtxOk.transfer {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
     {d : Nat} {Δ₁ Δ₂ : List AnnotTerm} {b : Expr}
     (h : CtxOk m φ d Δ₁ b) (hlen : Δ₂.length = d)
     (hsat : ∀ ρ : Nat → V, Sat V Δ₂ ρ → Sat V Δ₁ ρ)
@@ -156,7 +156,7 @@ theorem piTeleAV_graded :
 `i ≤ k` over the opening's variables correlates with the reading's
 context at that depth (`Γ.drop (k - i)` — the earlier domains,
 innermost first). -/
-theorem ctxOk_opened {env : Env} {m : EnvModel V env} {φ : Name → Nat}
+theorem ctxOk_opened {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
     {k : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
     (hop : openPisAtFvars k e 0 = some (fvs, o)) (hcl : e.hasFvar = false)
     {Γ : List AnnotTerm} (hΓ : Γ.length = k)

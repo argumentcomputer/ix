@@ -135,7 +135,7 @@ different context, and the packages never read one.) -/
 /-- **A binary head, from its parts**: a membership in the two-step
 pinned product's reading, and that reading's own grading (which is
 where the fibre facts at the unknown regime bits come from). -/
-theorem dmBinV_of_parts (m : EnvModel V env) {ψ : Name → Nat}
+theorem dmBinV_of_parts (m : EnvModel V env) {ψ : LevelParam → Nat}
     {b₁ b₂ : Nat} {codN : Name} {fa : AnnotTerm} {ρ : Nat → V}
     (hmem : interp V ρ fa ∈ˢ interp V ρ
       ((.pi 0 b₁ (m.acval Ix.Kernel.natName ψ)
@@ -196,7 +196,7 @@ theorem dmBinV_of_parts (m : EnvModel V env) {ψ : Name → Nat}
     rwa [acval_interp_closedC m _ ψ _ ρ] at h
 
 /-- **A unary head, from its parts.** -/
-theorem dmUnV_of_parts (m : EnvModel V env) {ψ : Name → Nat}
+theorem dmUnV_of_parts (m : EnvModel V env) {ψ : LevelParam → Nat}
     {b₁ : Nat} {codN : Name} {fa : AnnotTerm} {ρ : Nat → V}
     (hmem : interp V ρ fa ∈ˢ interp V ρ
       ((.pi 0 b₁ (m.acval Ix.Kernel.natName ψ) (m.acval codN ψ))
@@ -220,7 +220,7 @@ theorem dmUnV_of_parts (m : EnvModel V env) {ψ : Name → Nat}
     rwa [acval_interp_closedC m _ ψ _ ρ] at h
 
 /-- **A stored pinned binary head, at the value level.** -/
-theorem dmBinV_of_stored (mp : EnvModelM V μ env) (ψ : Name → Nat)
+theorem dmBinV_of_stored (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
     {o : Name} {cio : ConstantInfo}
     (hf : env.find? o = some cio)
     {mb₁ mb₂ : Ix.Kernel.BinderMeta} {codN : Name}
@@ -250,7 +250,7 @@ theorem dmBinV_of_stored (mp : EnvModelM V μ env) (ψ : Name → Nat)
   exact dmBinV_of_parts mp.base2 hmem (mp.type_wellDenotedV _ hmemE ψ _ hta ρ)
 
 /-- **A stored pinned unary head, at the value level.** -/
-theorem dmUnV_of_stored (mp : EnvModelM V μ env) (ψ : Name → Nat)
+theorem dmUnV_of_stored (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
     {o : Name} {cio : ConstantInfo}
     (hf : env.find? o = some cio)
     {mb₁ : Ix.Kernel.BinderMeta} {codN : Name}
@@ -312,8 +312,8 @@ the `dmEvalV` chain `DivModClausesV` is written in.
 
 The valuation is quantified *inside* the reading, because the P claims
 grade at every valuation satisfying the telescope, not at one. -/
-theorem dmNatFrag_graded {m : EnvModel V env} {ψ : Name → Nat}
-    {c : Name} {A : (Name → Nat) → AnnotTerm} {value' : Expr}
+theorem dmNatFrag_graded {m : EnvModel V env} {ψ : LevelParam → Nat}
+    {c : Name} {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr}
     {bins uns : List Name} {d : Nat} {natS : V}
     (hread : ∀ n ∈ Ix.Kernel.natZeroName :: (bins ++ uns), ∀ d' : Nat,
       denoteMeta m.acval env ψ d' (Expr.substConst0 c value' (.const n []))
@@ -424,7 +424,7 @@ existence; the P claim takes the reading as a premise, so the reads
 bundle supplies it). -/
 
 /-- **One certificate, extracted at `interp`.** -/
-theorem certValue {F : Nat} (mp : EnvModelM V μ env) (ψ : Name → Nat)
+theorem certValue {F : Nat} (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
     (hacc : ∀ {d : Nat} {e t : Expr},
       Ix.Kernel.inferTypeCore μ env F d e = .ok t →
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -499,9 +499,9 @@ grading conjunct, which is supplied at the depth-4 reading and
 transported by the same equation. -/
 
 /-- Two weakenings, composed. -/
-theorem denotePLift {acval : Name → (Name → Nat) → AnnotTerm}
-    {ψ : Name → Nat}
-    (hacl : ∀ (n : Name) (ψ' : Name → Nat) (k : Nat),
+theorem denotePLift {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat}
+    (hacl : ∀ (n : Name) (ψ' : LevelParam → Nat) (k : Nat),
       (acval n ψ').liftN 1 k = acval n ψ')
     {d n : Nat} {e : Expr} {W : AnnotTerm} (hw : Expr.WScoped d e)
     (h : denoteMeta acval env ψ d e = some W) :
@@ -516,7 +516,7 @@ theorem denotePLift {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- **The certificate frame's leaf discipline, in the lift-carrying
 form.** -/
-theorem ctxOk_pinnedLift {m : EnvModel V env} {ψ : Name → Nat}
+theorem ctxOk_pinnedLift {m : EnvModel V env} {ψ : LevelParam → Nat}
     {d : Nat} {Δa : List AnnotTerm} {e : Expr}
     (hlen : Δa.length = d)
     (hslot : ∀ l ∈ e.fvarLeaves, l.1 < d ∧ Expr.fvarsBelow l.1 l.2 ∧
@@ -545,8 +545,8 @@ theorem ctxOk_pinnedLift {m : EnvModel V env} {ψ : Name → Nat}
 /-- The pinned `Eq` spine's reading (`denote_eqSpine`'s mirror): the
 head carries `Eq.{1}`, whose level argument is not `[]`, so the
 operation substitution leaves it alone. -/
-theorem denoteMeta_eqSpine {acval : Name → (Name → Nat) → AnnotTerm}
-    {ψ : Name → Nat} {c : Name} {value' : Expr}
+theorem denoteMeta_eqSpine {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {c : Name} {value' : Expr}
     (hEq : env.find? eqName = some eqA) {A a b : Expr}
     {Aa aa ba : AnnotTerm} {d : Nat}
     (hA : denoteMeta acval env ψ d (Expr.substConst0 c value' A)
@@ -578,7 +578,7 @@ theorem denoteMeta_eqSpine {acval : Name → (Name → Nat) → AnnotTerm}
   rfl
 
 /-- The `Eq.{1}` level assignment sends `u` to `1`. -/
-theorem eqSubst_uN (ψ : Name → Nat) :
+theorem eqSubst_uN (ψ : LevelParam → Nat) :
     Level.substFn ψ eqA.toConstantVal.levelParams [Level.zero.succ] uN
       = 1 := rfl
 
@@ -588,7 +588,7 @@ theorem eqSubst_uN (ψ : Name → Nat) :
 (through the annotated stored value), every dependency at its
 storage. -/
 def dmLeaf {env : Env} (m : EnvModel V env) (c : Name)
-    (A : (Name → Nat) → AnnotTerm) (ψ : Name → Nat) (n : Name) : AnnotTerm :=
+    (A : (LevelParam → Nat) → AnnotTerm) (ψ : LevelParam → Nat) (n : Name) : AnnotTerm :=
   acvalWith m.acval c A n ψ
 
 /-- The binary heads the statements apply: the recurrence dependencies
@@ -713,7 +713,7 @@ a structure. -/
 
 /-- **The div/mod certificate frame at `interp`.** -/
 structure DmFrame {env : Env} (mp : EnvModelM V μ env) (c : Name)
-    (A : (Name → Nat) → AnnotTerm) (value' : Expr) (ψ : Name → Nat) :
+    (A : (LevelParam → Nat) → AnnotTerm) (value' : Expr) (ψ : LevelParam → Nat) :
     Prop where
   /-- the pinned `Eq` is stored -/
   eqStored : env.find? eqName = some eqA
@@ -766,8 +766,8 @@ structure DmFrame {env : Env} (mp : EnvModelM V μ env) (c : Name)
 
 namespace DmFrame
 
-variable {mp : EnvModelM V μ env} {c : Name} {A : (Name → Nat) → AnnotTerm}
-variable {value' : Expr} {ψ : Name → Nat}
+variable {mp : EnvModelM V μ env} {c : Name} {A : (LevelParam → Nat) → AnnotTerm}
+variable {value' : Expr} {ψ : LevelParam → Nat}
 
 /-- **A head reads to its leaf**, at every depth: the operation itself
 through the substitution, a dependency through its storage. -/
@@ -815,7 +815,7 @@ satisfying valuation. -/
 
 /-- The frame's `Nat` leaf reads. -/
 theorem DmFrame.readNat {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (d : Nat) :
     denoteMeta mp.base2.acval env ψ d (Expr.const Ix.Kernel.natName [])
       = some (mp.base2.acval Ix.Kernel.natName ψ) := by
@@ -827,7 +827,7 @@ theorem DmFrame.readNat {mp : EnvModelM V μ env} {c : Name}
 /-- A `dmLeavesOk` term's leaves are the two `Nat` slots, so the frame
 discipline is free for it. -/
 theorem dmCtxOk_natLeaves {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) {Δa : List AnnotTerm}
     (hlen : Δa.length = 4)
     (h3 : Δa.getD 3 default = mp.base2.acval Ix.Kernel.natName ψ)
@@ -855,7 +855,7 @@ theorem dmCtxOk_natLeaves {mp : EnvModelM V μ env} {c : Name}
     rw [h2, hself 3]
 
 /-- The frame's two `Nat` slots, read off satisfaction. -/
-theorem dmSat_slots {mp : EnvModelM V μ env} {ψ : Name → Nat}
+theorem dmSat_slots {mp : EnvModelM V μ env} {ψ : LevelParam → Nat}
     {Δa : List AnnotTerm} (hlen : Δa.length = 4)
     (h3 : Δa.getD 3 default = mp.base2.acval Ix.Kernel.natName ψ)
     (h2 : Δa.getD 2 default = mp.base2.acval Ix.Kernel.natName ψ)
@@ -876,7 +876,7 @@ theorem dmSat_slots {mp : EnvModelM V μ env} {ψ : Name → Nat}
 statement's two sides are `Nat`-valued fragments; how the frame's
 hypothesis slots came to be satisfied is the caller's business. -/
 theorem dmStmtEq {F : Nat} {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (heqlaw : EqLaw mp.base2)
     (hacc : ∀ {d : Nat} {e t : Expr},
       Ix.Kernel.inferTypeCore μ env F d e = .ok t →
@@ -1041,7 +1041,7 @@ reads. -/
 
 /-- The walk's inputs, packaged from the frame. -/
 theorem dmWalkInputs {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (ρ₀ : Nat → V) :
     (∀ n ∈ Ix.Kernel.natZeroName :: (dmBinNames c ++ dmUnNames c),
       ∀ d' : Nat, denoteMeta mp.base2.acval env ψ d'
@@ -1075,7 +1075,7 @@ theorem dmWalkInputs {mp : EnvModelM V μ env} {c : Name}
 
 /-- **The guard spine, read and graded.** -/
 theorem dmGuardSpine {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (heqlaw : EqLaw mp.base2)
     {t1 t2 : Expr} {bn : Name}
     (hbn : bn = Ix.Kernel.boolTrueName ∨ bn = Ix.Kernel.boolFalseName)
@@ -1181,7 +1181,7 @@ hand the statement to `dmStmtEq`. -/
 
 /-- **A guarded div/mod clause, discharged at `interp`.** -/
 theorem dmClause1 {F : Nat} {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (heqlaw : EqLaw mp.base2)
     (hacc : ∀ {d : Nat} {e t : Expr},
       Ix.Kernel.inferTypeCore μ env F d e = .ok t →
@@ -1402,7 +1402,7 @@ theorem dmClause1 {F : Nat} {mp : EnvModelM V μ env} {c : Name}
 type is stated one binder deeper, so its telescope entry is its
 *depth-3* reading. -/
 theorem dmClause2 {F : Nat} {mp : EnvModelM V μ env} {c : Name}
-    {A : (Name → Nat) → AnnotTerm} {value' : Expr} {ψ : Name → Nat}
+    {A : (LevelParam → Nat) → AnnotTerm} {value' : Expr} {ψ : LevelParam → Nat}
     (fr : DmFrame mp c A value' ψ) (heqlaw : EqLaw mp.base2)
     (hacc : ∀ {d : Nat} {e t : Expr},
       Ix.Kernel.inferTypeCore μ env F d e = .ok t →
@@ -1704,22 +1704,22 @@ what the declaration is installing. -/
 set_option maxHeartbeats 1600000 in
 /-- **The div/mod certificate frame at `interp`, assembled.** -/
 theorem dmFrame_of {mp : EnvModelM V μ env} {c : Name}
-    {lps : List Name} {type' value' : Expr} {hint : ReducibilityHint}
+    {lps : List LevelParam} {type' value' : Expr} {hint : ReducibilityHint}
     (hmem : c ∈ Ix.Kernel.natDivModNames)
     (hgenv : Ix.Kernel.divModEnvGuard
       (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env) c
       = true)
-    {A Ta : (Name → Nat) → AnnotTerm}
+    {A Ta : (LevelParam → Nat) → AnnotTerm}
     (hA : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ))
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
     (hvf' : value'.hasFvar = false)
     (hbv' : value'.looseBVarsBounded 0 = true)
     (hTa : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 type' = some (Ta ψ))
-    (hTok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
-    (hmemA : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hTok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
+    (hmemA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ))
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     DmFrame mp c A value' ψ := by
   obtain ⟨hnog, hdeps, hEq2, hbT2, hbF2⟩ :=
     Ix.Kernel.divModEnvGuard_inv hgenv
@@ -1822,7 +1822,7 @@ theorem dmFrame_of {mp : EnvModelM V μ env} {c : Name}
       List.not_mem_nil, or_false] at hmem
     rcases hmem with h|h|h|h|h|h|h|h <;> (rw [h]; decide)
   -- the leaves' closedness and grading
-  have hAerCl : ∀ ψ' : Name → Nat, Term.Closed (A ψ').erase :=
+  have hAerCl : ∀ ψ' : LevelParam → Nat, Term.Closed (A ψ').erase :=
     fun ψ' => denote_closed mp.base2.cval_closed hvf' hbv'
       (denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ'))
   have hleafOk : ∀ (n : Name) (ρ : Nat → V),
@@ -2022,7 +2022,7 @@ set_option maxHeartbeats 3200000 in
 /-- **`DivMod` at the operation's own install** — the
 run-certificate conversion for the WF-recursive family. -/
 theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
-    {φ : Name → Nat} (hprev : DivMod mp.base2 φ)
+    {φ : LevelParam → Nat} (hprev : DivMod mp.base2 φ)
     (heqlaw : EqLaw mp.base2)
     (hacc : ∀ {d : Nat} {e t : Expr},
       Ix.Kernel.inferTypeCore μ env F d e = .ok t →
@@ -2032,7 +2032,7 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
     (hreads : InferReads mp.base2 μ φ F)
     (hinfC : InferClaim μ mp.base2 φ F)
     (hdeC : DefEqClaim μ mp.base2 φ F)
-    {c : Name} {lps : List Name} {type' value' : Expr}
+    {c : Name} {lps : List LevelParam} {type' value' : Expr}
     {hint : ReducibilityHint}
     (hcmem : c ∈ Ix.Kernel.natDivModNames)
     (hfresh : env.find? c = none)
@@ -2044,15 +2044,15 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
       (Ix.Kernel.fueledOps μ F) env c value'
       (Ix.Kernel.divModCertStmts c) (Ix.Kernel.divModCertProofs ps c)
       = .ok true)
-    {A Ta : (Name → Nat) → AnnotTerm}
+    {A Ta : (LevelParam → Nat) → AnnotTerm}
     (hA : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ))
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
     (hvf' : value'.hasFvar = false)
     (hbv' : value'.looseBVarsBounded 0 = true)
     (hTa : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 type' = some (Ta ψ))
-    (hTok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
-    (hmemA : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hTok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
+    (hmemA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ))
     (m₂ : EnvModel V
       ⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩)

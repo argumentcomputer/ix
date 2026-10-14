@@ -111,7 +111,7 @@ theorem hasLP_eq : ∀ e : Expr, e.hasLP = Expr.hasLevelParam e := by
 /-- Invisibility consequence: level instantiation is the identity on a
 node whose flag is off (the `O(1)` shortcut every `instLevelParams`
 traversal takes). -/
-theorem hasLP_false {e : Expr} {ks : List Name} {us : List Level}
+theorem hasLP_false {e : Expr} {ks : List LevelParam} {us : List Level}
     (h : e.hasLP = false) :
     e.instantiateLevelParams ks us = e :=
   Expr.instantiateLevelParams_eq_self (by rw [← hasLP_eq e, h])

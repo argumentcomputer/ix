@@ -86,7 +86,7 @@ theorem projTele_constsResolve : ∀ (k : Nat) (body : Expr) (env : Env),
     simp [projTele, Expr.constsResolve, projTele_constsResolve k body env]
 
 theorem projTele_instantiateLevelParams : ∀ (k : Nat) (body : Expr)
-    (ks : List Name) (us : List Level),
+    (ks : List LevelParam) (us : List Level),
     (projTele k body).instantiateLevelParams ks us
       = projTele k (body.instantiateLevelParams ks us)
   | 0, _, _, _ => rfl

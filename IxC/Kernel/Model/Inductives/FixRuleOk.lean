@@ -37,7 +37,7 @@ variable {V : Type w} [SetTheory V] {env : Env}
 /-- **The block split** of a spine fitting the recursor's binder data
 below the indices: the parameters, the motive (in its reading), the
 minors (in their ih-extended readings). -/
-theorem fixBlock_split {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {elimL : Level}
+theorem fixBlock_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
     {nP nIdx n ℓ w b : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP)
     {cds : List CtorDatumR} (hn : cds.length = n)
@@ -358,7 +358,7 @@ theorem ihAppAV_facts {ℓ w u s nP nF nIdx n j i : Nat} {rds : List (Nat × Nat
 
 set_option maxHeartbeats 6400000 in
 /-- **The rule's right-hand side is `WellDenotedV`** at every frame. -/
-theorem fixRuleOk {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {elimL : Level}
+theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
     {nP nIdx n ℓ w u s b : Nat} (hℓ : elimL.eval ψ = ℓ)
     (hb : pwBit ψ (Level.zeronessOf elimL) = b) (hbz : ℓ = 0 ↔ b = 0)
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)

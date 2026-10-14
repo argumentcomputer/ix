@@ -32,7 +32,7 @@ open Ix.Kernel (Env Expr Name Level PropWhen
 reading of a subject with no `.proj T i` node is reproduced at an
 extension whose only new tower slot is `(T, i)`. -/
 theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
-    {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     {T : Name}
     (hF : FindPreserved env₀ env) (hG : LitGuardsMono env₀ env)
     (hproj : ∀ (sn : Name) (j : Nat) (entry : Ix.Kernel.ProjEntry),

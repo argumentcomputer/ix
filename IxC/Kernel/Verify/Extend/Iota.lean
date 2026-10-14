@@ -425,7 +425,7 @@ were read off — the major domain applies the family to the
 instantiations' liftings past the index binders followed by the index
 variables in order. -/
 theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP cnP j : Nat}
+    {lps : List LevelParam} {tyA : Expr} {mI rP cnP j : Nat}
     {lvls : List Level} {pins : List Expr}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
       some (lvls, pins)) :
@@ -1056,7 +1056,7 @@ conjunct of each half is task #135's: the model former's telescope
 residual is `Sort ℓA` at the statement's own `Eq` level, which is what
 lets a consumer type the equation's type slot at the level the
 statement names (see `checkEtaThm`). -/
-@[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Name) (lps : List Name)
+@[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Name) (lps : List LevelParam)
     (caps : IndCaps) : Prop :=
   (caps.eta = true →
   ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
@@ -1132,7 +1132,7 @@ statement names (see `checkEtaThm`). -/
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive unit-capability check into the stored pins. -/
 theorem checkUnitThm_inv {env' : Env} {T : Name}
-    {lps : List Name} {nP : Nat}
+    {lps : List LevelParam} {nP : Nat}
     (h : checkUnitThm mode env' T lps nP = true) :
     ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
       (mvalT : Expr) (hmcvmT : ReducibilityHint)
@@ -1290,7 +1290,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive eta-capability check into the stored pins. -/
 theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF : Nat}
+    {lps : List LevelParam} {nP nF : Nat}
     (h : checkEtaThm mode env' T ctorName lps nP nF = true) :
     ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
       (mvalT : Expr) (hmcvmT : ReducibilityHint)
@@ -1475,7 +1475,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
 
 /-- The pins persist under a fresh install. -/
 theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
-    {lps : List Name} {caps : IndCaps}
+    {lps : List LevelParam} {caps : IndCaps}
     (h : EtaPins mode env' T lps caps)
     (hfresh : env'.find? c₁.name = none) :
     EtaPins mode ⟨c₁ :: env'.consts⟩ T lps caps := by
@@ -1513,7 +1513,7 @@ theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
 non-recursor kinds (the pins only look up theorems, definitions and
 the pinned equality former). -/
 theorem EtaPins.transport {env₁ env₂ : Env} {T : Name}
-    {lps : List Name} {caps : IndCaps}
+    {lps : List LevelParam} {caps : IndCaps}
     (h : EtaPins mode env₁ T lps caps)
     (hkeep : ∀ (n : Name) (ci : ConstantInfo), env₁.find? n = some ci →
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →

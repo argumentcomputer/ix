@@ -270,7 +270,7 @@ theorem iffVal_app₂_memP (mp : EnvModelM V μ env)
     (hfI : env.find? iffName = some (.indInfo cvI caps))
     (htyI : cvI.type.erasePw
       = iffA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A B : V}
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A B : V}
     (hA : A ∈ˢ (univ 0 : V)) (hB : B ∈ˢ (univ 0 : V)) :
     SetTheory.app (SetTheory.app
         (interp V ρ (mp.base2.acval iffName ψ)) A) B
@@ -340,7 +340,7 @@ theorem iff_forces_eq (mp : EnvModelM V μ env)
     (hfIr : env.find? iffRecName = some (.recInfo cvIr mI rP rules))
     (htyIr : cvIr.type.erasePw
       = iffRecA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A B w : V}
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A B w : V}
     (hA : A ∈ˢ (univ 0 : V)) (hB : B ∈ˢ (univ 0 : V))
     (hw : w ∈ˢ SetTheory.app (SetTheory.app
       (interp V ρ (mp.base2.acval iffName ψ)) A) B) :
@@ -486,7 +486,7 @@ theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     {cvA : ConstantVal} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
     (hn : cvA.name = propextName) {F d : Nat} {stype : Expr}
     (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
-    (ψ : Name → Nat) (ta : AnnotTerm)
+    (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
     (ρ : Nat → V) :
     interp V ρ (.const .propext []) ∈ˢ interp V ρ ta := by
@@ -641,8 +641,8 @@ theorem nonemptyRec_shapeS {ty : Expr}
 
 /-- A member of the `Nonempty` family, referenced at its own level
 parameter, reads to its leaf at the plain assignment. -/
-theorem denoteMeta_selfParam_constS {acval : Name → (Name → Nat) → AnnotTerm}
-    {ψ : Name → Nat} {d : Nat} {n : Name} {ci : ConstantInfo}
+theorem denoteMeta_selfParam_constS {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {d : Nat} {n : Name} {ci : ConstantInfo}
     (hf : env.find? n = some ci)
     (hlp : ci.toConstantVal.levelParams = [uN]) :
     denoteMeta acval env ψ d (.const n [.param uN]) = some (acval n ψ) := by
@@ -659,7 +659,7 @@ theorem nonemptyVal_app_mem (mp : EnvModelM V μ env)
     (hfN : env.find? nonemptyName = some (.indInfo cvN capsN))
     (htyN : cvN.type.erasePw
       = nonemptyA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
     SetTheory.app (interp V ρ (mp.base2.acval nonemptyName ψ)) A
       ∈ˢ (univ 0 : V) := by
   obtain ⟨m₁, hsh⟩ := nonempty_shapeS htyN
@@ -683,7 +683,7 @@ theorem nonemptyIntroVal_app₂_memP (mp : EnvModelM V μ env)
     (hfNi : env.find? nonemptyIntroName = some (.ctorInfo cvNi 1 1))
     (htyNi : cvNi.type.erasePw
       = nonemptyIntroA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A a : V} (hA : A ∈ˢ univ (ψ uN))
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A a : V} (hA : A ∈ˢ univ (ψ uN))
     (ha : a ∈ˢ A) :
     SetTheory.app (SetTheory.app
         (interp V ρ (mp.base2.acval nonemptyIntroName ψ)) A) a
@@ -740,7 +740,7 @@ theorem nonemptyVal_forces (mp : EnvModelM V μ env)
       = some (.recInfo cvNr mI rP rulesN))
     (htyNr : cvNr.type.erasePw
       = nonemptyRecA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A h : V} (hA : A ∈ˢ univ (ψ uN))
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A h : V} (hA : A ∈ˢ univ (ψ uN))
     (hh : h ∈ˢ SetTheory.app
       (interp V ρ (mp.base2.acval nonemptyName ψ)) A) :
     ∃ x, x ∈ˢ A := by
@@ -852,7 +852,7 @@ theorem dneg_eq_nonempty (mp : EnvModelM V μ env)
       = some (.recInfo cvNr mI rP rulesN))
     (htyNr : cvNr.type.erasePw
       = nonemptyRecA.toConstantVal.type.erasePw)
-    (ψ : Name → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
+    (ψ : LevelParam → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
     dnegSpace V A
       = SetTheory.app (interp V ρ (mp.base2.acval nonemptyName ψ)) A := by
   have hNE := nonemptyVal_app_mem mp hfN htyN ψ ρ hA
@@ -880,7 +880,7 @@ theorem choice_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     {cvA : ConstantVal} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
     (hn : cvA.name = choiceName) {F d : Nat} {stype : Expr}
     (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
-    (ψ : Name → Nat) (ta : AnnotTerm)
+    (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
     (ρ : Nat → V) :
     interp V ρ (.const .choice [ψ uN]) ∈ˢ interp V ρ ta := by

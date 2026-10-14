@@ -35,20 +35,20 @@ def ProjPhaseInvS (T ctorName : Name) (nF : Nat) (env' : Env)
     ∃ cvm mval hmcvm,
       env'.find? (T.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat, cval T ψ = cval (T.str "_model") ψ) ∧
+      ∀ ψ : LevelParam → Nat, cval T ψ = cval (T.str "_model") ψ) ∧
   (∀ ci, env'.find? ctorName = some ci →
     ∃ cvm mval hmcvm,
       env'.find? (ctorName.str "_model")
         = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat,
+      ∀ ψ : LevelParam → Nat,
         cval ctorName ψ = cval (ctorName.str "_model") ψ) ∧
   (∀ j, j < nF → ∀ ci, env'.find? (projFnName T j) = some ci →
     ∃ cvm mval hmcvm,
       env'.find? (projModelName T j)
         = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat,
+      ∀ ψ : LevelParam → Nat,
         cval (projFnName T j) ψ = cval (projModelName T j) ψ)
 
 /-- The projection renaming, pruned to the stored names, is sound at
@@ -61,7 +61,7 @@ theorem projFwd_renameOkT {T ctorName : Name} {nF : Nat} {env' : Env}
   have hfound : ∀ n ci₂, env'.find? n = some ci₂ →
       (∃ ci', env'.find? (projFwd T ctorName nF n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci₂.toConstantVal.levelParams) ∧
-      (∀ ψ : Name → Nat,
+      (∀ ψ : LevelParam → Nat,
         cval (projFwd T ctorName nF n) ψ = cval n ψ) := by
     intro n ci₂ hf₂
     unfold projFwd

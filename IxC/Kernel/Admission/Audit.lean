@@ -66,8 +66,8 @@ string-scanning externs (below). -/
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5295 compiled functions; inherited externs 121, implemented_by 0,
-unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 10 -/
+ Ix.Kernel.Admission.checkBytes]: 5136 compiled functions; inherited externs 120, implemented_by 0,
+unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

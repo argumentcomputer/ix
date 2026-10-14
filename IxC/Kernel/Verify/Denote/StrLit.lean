@@ -30,14 +30,14 @@ namespace Ix.Kernel.Verify
 open Ix.Kernel.Term
 
 /-- The empty level substitution is the identity assignment. -/
-theorem substFn_nil (φ : Name → Nat) : Level.substFn φ [] [] = φ := by
+theorem substFn_nil (φ : LevelParam → Nat) : Level.substFn φ [] [] = φ := by
   funext q
   rfl
 
 /-- A stored constant with no level parameters denotes to its valuation
 at the ambient assignment. -/
 theorem denote_const_nolevelsV {env : Env} {cval : TConstVal}
-    (φ : Name → Nat) {c : Name} {ci : ConstantInfo}
+    (φ : LevelParam → Nat) {c : Name} {ci : ConstantInfo}
     (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = []) (d : Nat) :
     denote cval env φ d (.const c []) = some (cval c φ) := by
@@ -176,7 +176,7 @@ theorem listCons_shape {env : Env} (hg : strLitSupported env = true) :
 any valuation that reads only its constants' own level parameters. -/
 
 /-- `List.nil.{0} Char`, denoted. -/
-theorem denote_nilTermV {env : Env} {cval : TConstVal} (φ : Name → Nat)
+theorem denote_nilTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     denote cval env φ d
         (.app (.const listNilName [.zero]) (.const charName []))
@@ -193,7 +193,7 @@ theorem denote_nilTermV {env : Env} {cval : TConstVal} (φ : Name → Nat)
     denote_const_nolevelsV φ hfC hlpC d]
 
 /-- `List.cons.{0} Char`, denoted. -/
-theorem denote_consTermV {env : Env} {cval : TConstVal} (φ : Name → Nat)
+theorem denote_consTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     denote cval env φ d
         (.app (.const listConsName [.zero]) (.const charName []))
@@ -210,7 +210,7 @@ theorem denote_consTermV {env : Env} {cval : TConstVal} (φ : Name → Nat)
     denote_const_nolevelsV φ hfC hlpC d]
 
 /-- **The character-list expression denotes to `charListT`.** -/
-theorem denote_strLitListV {env : Env} {cval : TConstVal} (φ : Name → Nat)
+theorem denote_strLitListV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     ∀ cs : List Char,
       denote cval env φ d (strLitList cs) = some (charListT
@@ -246,7 +246,7 @@ theorem denote_strLitListV {env : Env} {cval : TConstVal} (φ : Name → Nat)
 The fact R7/R16 (`Red.strLitCtor`) and `defeqStep`'s two string
 expansions all consume. -/
 theorem denote_strLitToConstructorV {env : Env} {cval : TConstVal}
-    (φ : Name → Nat) (hg : strLitSupported env = true) (d : Nat)
+    (φ : LevelParam → Nat) (hg : strLitSupported env = true) (d : Nat)
     (s : String) :
     denote cval env φ d (strLitToConstructor s)
       = denote cval env φ d (.lit (.strVal s)) := by

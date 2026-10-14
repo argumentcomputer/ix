@@ -282,13 +282,13 @@ theorem checkConstantVal_datF (env : Env) (cv : ConstantVal) (F : Nat) :
   unfold checkConstantVal
   datF_tac
 
-theorem checkProjLookups_datF (env' : Env) (T ctorName : Name) (lps : List Name) (nP nF i : Nat) (F : Nat) :
+theorem checkProjLookups_datF (env' : Env) (T ctorName : Name) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjLookups env' T ctorName lps nP nF i : FueledM _).val F =
       (checkProjLookups env' T ctorName lps nP nF i : CheckM _) := by
   unfold checkProjLookups
   datF_tac
 
-theorem checkProjTy_datF (env' : Env) (T ctorName : Name) (lps : List Name) (mty : Expr) (nP nF : Nat) (F : Nat) :
+theorem checkProjTy_datF (env' : Env) (T ctorName : Name) (lps : List LevelParam) (mty : Expr) (nP nF : Nat) (F : Nat) :
     (checkProjTy env' T ctorName lps mty nP nF : FueledM _).val F =
       (checkProjTy env' T ctorName lps mty nP nF : CheckM _) := by
   unfold checkProjTy
@@ -376,14 +376,14 @@ macro "datF_stepPI_alt" : tactic =>
     | (simp only []))
 
 
-theorem checkProjIota_datF (env' envSelf : Env) (T ctorName : Name) (lps : List Name) (cvj : ConstantVal) (nP nF i : Nat) (F : Nat) :
+theorem checkProjIota_datF (env' envSelf : Env) (T ctorName : Name) (lps : List LevelParam) (cvj : ConstantVal) (nP nF i : Nat) (F : Nat) :
     (checkProjIota mode (fueledOpsM mode) env' envSelf T ctorName lps cvj nP nF i).val F =
       checkProjIota mode (fueledOps mode F) env' envSelf T ctorName lps cvj nP nF i := by
   unfold checkProjIota
   repeat' datF_stepPI_alt
 
 theorem checkIotaThm_datF (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) (F : Nat) :
     (checkIotaThm mode (fueledOpsM mode) env' envSelf f cvName lps tyA
@@ -396,7 +396,7 @@ theorem checkIotaThm_datF (env' envSelf : Env)
     checkDefEqList_datF, checkTypedList_datF, checkIotaSidesTy_datF]
 
 theorem checkIotaThmN_datF (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) (F : Nat) :
     (checkIotaThmN mode (fueledOpsM mode) env' envSelf f cvName lps tyA
@@ -413,7 +413,7 @@ theorem checkIotaThmN_datF (env' envSelf : Env)
 
 set_option maxHeartbeats 12800000 in
 theorem checkIotaRule_datF (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (F : Nat) :
     (checkIotaRule mode (fueledOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r).val F =
@@ -426,7 +426,7 @@ theorem checkIotaRule_datF (env' envSelf : Env)
   | rw [checkIotaThmN_datF]
 
 theorem checkIotaRules_datF (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name) (lps : List Name) (tyA : Expr)
+    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
     (mI rP : Nat) (F : Nat) :
     ∀ (j : Nat) (rules : List RecRule),
       (checkIotaRules mode (fueledOpsM mode) env' envSelf f cvName lps tyA
@@ -477,7 +477,7 @@ macro "datF_step2" : tactic => `(tactic| repeat datF_step2_alt)
 macro "datF_tac2" : tactic =>
   `(tactic| repeat' datF_step2_alt)
 
-theorem checkProjRule_datF (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List Name) (nP nF i : Nat) (F : Nat) :
+theorem checkProjRule_datF (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjRule (fueledOpsM mode) env' pty cvj lps nP nF i).val F =
       checkProjRule (fueledOps mode F) env' pty cvj lps nP nF i := by
   unfold checkProjRule
@@ -543,14 +543,14 @@ macro "datF_step3" : tactic => `(tactic| repeat datF_step3_alt)
 macro "datF_tac3" : tactic =>
   `(tactic| repeat' datF_step3_alt)
 
-theorem checkProjFn_datF (env' : Env) (T ctorName : Name) (lps : List Name) (nP nF i : Nat) (F : Nat) :
+theorem checkProjFn_datF (env' : Env) (T ctorName : Name) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjFn mode (fueledOpsM mode) env' T ctorName lps nP nF i).val F =
       checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i := by
   unfold checkProjFn
   datF_tac3 <;> datF_step3 <;> datF_step3 <;> datF_step3
 
 theorem installProjFnStep_datF (T ctorName : Name)
-    (lps : List Name) (nP nF : Nat) (e : Env) (i : Nat) (F : Nat) :
+    (lps : List LevelParam) (nP nF : Nat) (e : Env) (i : Nat) (F : Nat) :
     (installProjFnStep mode (fueledOpsM mode) T ctorName lps nP nF e i).val F
       = installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF e i := by
   unfold installProjFnStep
@@ -588,7 +588,7 @@ theorem checkStructDomsAt_datF (env : Env) (off : Nat)
       FueledM.atF_ite, fueledOpsM_isDefEq_atF, unwrapOr_atF,
       checkStructDomsAt_datF env off fvs doms F j]
 
-theorem checkStructProjTable_datF (T C : Name) (lps : List Name)
+theorem checkStructProjTable_datF (T C : Name) (lps : List LevelParam)
     (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal)
     (env : Env) (F : Nat) :
     (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM _).val F =
@@ -720,7 +720,7 @@ theorem normCtorVal_datF (env : Env) (T : Name) (nP nF : Nat) (cvC cvCa : Consta
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
     unwrapOr_atF, checkConstantVal_datF, normFieldDoms_datF]
 
-theorem checkSumCtor_datF (env₀ env : Env) (T : Name) (lps : List Name)
+theorem checkSumCtor_datF (env₀ env : Env) (T : Name) (lps : List LevelParam)
     (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvC : ConstantVal) (nF : Nat)
     (cvTa : ConstantVal) (F : Nat) :
     (checkSumCtor (fueledOpsM mode) env₀ env T lps nP nIdx rs isProp large
@@ -732,7 +732,7 @@ theorem checkSumCtor_datF (env₀ env : Env) (T : Name) (lps : List Name)
     FueledM.atF_ite, unwrapOr_atF, checkConstantVal_datF, normCtorVal_datF,
     checkStructFieldSortsI_datF, checkStructDomsAt_datF]
 
-theorem checkSumCtors_datF (env₀ env : Env) (T : Name) (lps : List Name)
+theorem checkSumCtors_datF (env₀ env : Env) (T : Name) (lps : List LevelParam)
     (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvTa : ConstantVal) (F : Nat) :
     ∀ cs : List (ConstantVal × Nat),
       (checkSumCtors (fueledOpsM mode) env₀ env T lps nP nIdx rs isProp large
@@ -747,8 +747,8 @@ theorem checkSumCtors_datF (env₀ env : Env) (T : Name) (lps : List Name)
 
 /-! ### The direct recursive install (task #188) -/
 
-theorem checkNativeRules_datF (envR : Env) (rlps : List Name) (T : Name)
-    (lps : List Name) (elim : Name) (large : Bool) (nP nIdx : Nat) (tty : Expr)
+theorem checkNativeRules_datF (envR : Env) (rlps : List LevelParam) (T : Name)
+    (lps : List LevelParam) (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
     (ctors : List (Name × Nat × Expr × List Nat)) (recC : Name) (rlvls : List Level)
     (F : Nat) :
     ∀ k j : Nat,
@@ -789,7 +789,7 @@ theorem checkNativeTable_datF (p : NativeParts) (ctorsA : List (ConstantVal × N
 
 /-- The kinds' classification at fuel `F` (task #210 Part D):
 operation-free, so the fuel is irrelevant. -/
-theorem classifyFixKinds_datF (T : Name) (lps : List Name) (nP nIdx : Nat)
+theorem classifyFixKinds_datF (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
     (ctorsA : List (ConstantVal × Nat)) (F : Nat) :
     (classifyFixKinds (m := FueledM) T lps nP nIdx ctorsA).val F =
       classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA := by

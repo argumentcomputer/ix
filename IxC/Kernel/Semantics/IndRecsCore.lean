@@ -75,7 +75,7 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
       (rules : List RecRule),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       ∀ r ∈ rules, RecRule.fire r ≠ .inert →
-        ∀ (us : List Level) (ψ : Name → Nat),
+        ∀ (us : List Level) (ψ : LevelParam → Nat),
           us.length = cv.levelParams.length →
           ∃ R, denoteClosed m₀.cval env₃ ψ
             (r.rhs.instantiateLevelParams cv.levelParams us) = some R) :
@@ -87,10 +87,10 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
         env₃.find? n = some (.recInfo cv mI rP rules) ∧
         cv.name = n := swapSh_find?_corr hsw
   have hcg : SwapCongr env₀ env₃ := SwapShList.congr hsw
-  have hde : ∀ (φ : Name → Nat) (d : Nat) (e : Expr),
+  have hde : ∀ (φ : LevelParam → Nat) (d : Nat) (e : Expr),
       denote m₀.cval env₀ φ d e = denote m₀.cval env₃ φ d e :=
     fun _ => denote_env_ext hcg.levelsEq hcg.natEq hcg.strEq hcg.projEq
-  have hdeC : ∀ (φ : Name → Nat) (e : Expr),
+  have hdeC : ∀ (φ : LevelParam → Nat) (e : Expr),
       denoteClosed m₀.cval env₀ φ e = denoteClosed m₀.cval env₃ φ e :=
     fun φ e => hde φ 0 e
   have hsame : ∀ (n : Name) (ci : ConstantInfo),

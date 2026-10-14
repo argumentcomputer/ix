@@ -321,7 +321,7 @@ theorem Expr.constsResolve_instantiate1 {env : Env} {d : Nat} {ty : Expr}
     · split <;> simp [Expr.constsResolve]
 
 /-- Level instantiation does not change which constants occur. -/
-theorem Expr.constsResolve_instantiateLevelParams {env : Env} (ks : List Name)
+theorem Expr.constsResolve_instantiateLevelParams {env : Env} (ks : List LevelParam)
     (us : List Level) :
     ∀ {e : Expr}, (e.instantiateLevelParams ks us).constsResolve env = e.constsResolve env := by
   intro e

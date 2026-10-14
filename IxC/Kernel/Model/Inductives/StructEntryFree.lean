@@ -243,7 +243,7 @@ theorem natLitAV_liftN {za sa : AnnotTerm} {k : Nat} (hz : za.liftN 1 k = za)
 without the `q`-th variable as a leaf reads, at depth `d`, as a
 reading lifted over index `d - 1 - q` — the slot that variable would
 read as. -/
-theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Name → Nat} :
+theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : LevelParam → Nat} :
     ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
       ∀ {q : Nat}, q < d → (∀ l ∈ e.fvarLeaves, l.1 ≠ q) →
       ∀ {ea : AnnotTerm}, denoteMeta m.acval env φ d e = some ea →
@@ -526,7 +526,7 @@ prefix differ, the fitting value is not the point, so that field is
 not a proposition there, so (under the guard) no later field uses it,
 so the projected field is a lift over that slot. -/
 theorem free_of_diff {nP nF i : Nat} {ds : List (Nat × Nat × AnnotTerm)} {sorts : List Level}
-    {ψ : Name → Nat} {ρ' : Nat → V} {used : Nat → Bool}
+    {ψ : LevelParam → Nat} {ρ' : Nat → V} {used : Nat → Bool}
     (hlenDs : ds.length = nP + nF) (hi : i < nF)
     (hsorts : ∀ j, j < nF → ∀ as : List V,
       SpineFit ρ' (((ds.drop nP).map (·.2.2)).take j) as →
@@ -569,7 +569,7 @@ theorem spineFit_take_length {Fs : List AnnotTerm} {ρ : Nat → V} {as : List V
 omit [SetTheory V] in
 /-- The evaluated join over the used slots is zero exactly when the
 base and every used joined level are. -/
-theorem eval_foldl_max_if_zero_iff (ψ : Name → Nat) (used : Nat → Bool) (s : Nat → Level) :
+theorem eval_foldl_max_if_zero_iff (ψ : LevelParam → Nat) (used : Nat → Bool) (s : Nat → Level) :
     ∀ (l : List Nat) (s0 : Level),
       Level.eval ψ (l.foldl (fun acc j => if used j then Level.max acc (s j) else acc) s0) = 0 ↔
         Level.eval ψ s0 = 0 ∧ ∀ j ∈ l, used j = true → Level.eval ψ (s j) = 0

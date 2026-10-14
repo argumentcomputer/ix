@@ -44,19 +44,19 @@ set_option maxHeartbeats 25600000 in
 /-- **The plain bottom, at the reading** (`indBottomPlainS`). -/
 theorem indBottomPlain {μ : CheckMode} {env : Env}
     (mp : EnvModelM V μ env) {F : Nat}
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     -- the totality residue (routed: `inferReads_of` at the caller)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
     {f : Name → Name} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
-    {Rn : Name} {lps : List Name} {tyA : Expr} {mI rP : Nat}
+    {Rn : Name} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     (htyw : tyA.hasFvar = false)
     (htyb : tyA.looseBVarsBounded 0 = true)
     -- the public recursor type's reading is graded (the install's
     -- `htyOk`; the recursor itself is not yet stored, so this cannot
     -- be `mp.type_wellDenotedV`)
-    (htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval env ψ 0 tyA = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
     {ciRm : ConstantInfo}
@@ -74,14 +74,14 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     -- the rule rhs's front door, at the reading
-    (hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+    (hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval env ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta)
     {stmtTy : Expr} (hSw : stmtTy.hasFvar = false)
     (hSb : stmtTy.looseBVarsBounded 0 = true)
     -- the statement's front doors, at the reading
-    (hthm : ∀ ψ : Name → Nat, ∃ ta,
+    (hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env ψ 0 stmtTy = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta)
@@ -132,7 +132,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       isDefEqCore μ env F (rP + cnF) tl αS = .ok true)
     (hsideR : ∃ tr, inferTypeCore μ env F (rP + cnF) rhsS = .ok tr ∧
       isDefEqCore μ env F (rP + cnF) tr αS = .ok true) :
-    ∀ (φ : Name → Nat) (us : List Level), us.length = lps.length →
+    ∀ (φ : LevelParam → Nat) (us : List Level), us.length = lps.length →
       ∃ Ra : AnnotTerm,
         denoteMeta mp.base2.acval env φ 0
           (rhsA.instantiateLevelParams lps us) = some Ra ∧
@@ -784,7 +784,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     (hctxOf tl hleafTl hltTl) (hctxOf tr hleafTr hltTr)
     hwsTl hbTl hLTl hwsTr hbTr hLTr
   -- ===== the transport's frame data =====
-  have hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+  have hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (mp.base2.acval n ψ).inst y k = mp.base2.acval n ψ :=
     fun n ψ y k =>
       AVExprSubst.inst_eq_self_of_closed (mp.base2.acval_closed n ψ) y k

@@ -40,7 +40,7 @@ identification, discarded at the block's end. -/
       ((ci.toConstantVal.type.renameConsts (fun n' =>
         if blockNames.contains n' then n'.str "_model" else n'))
         == cvm.type) = true ∧
-      ∀ ψ : Name → Nat, cval n ψ = cval (n.str "_model") ψ
+      ∀ ψ : LevelParam → Nat, cval n ψ = cval (n.str "_model") ψ
 
 /-- Installing one member valued by its model preserves the fold
 invariant.  Transpose of `BlockInstalled.step`. -/

@@ -44,8 +44,8 @@ open Ix.Kernel (Env Expr Name BinderMeta)
 
 universe w
 
-variable {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The opened `∀` telescope -/
 

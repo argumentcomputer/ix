@@ -123,8 +123,8 @@ theorem instSpine_constsResolve {env : Env} :
 
 /-- The level comparand of a rule does not depend on the argument
 spine. -/
-theorem recFireComparands_fst_congr (rl : RecRule) (lps : List Name)
-    (us : List Level) (cvjLps : List Name) (args args' : List Expr)
+theorem recFireComparands_fst_congr (rl : RecRule) (lps : List LevelParam)
+    (us : List Level) (cvjLps : List LevelParam) (args args' : List Expr)
     (mI : Nat) :
     (recFireComparands rl lps us cvjLps args mI).1 =
       (recFireComparands rl lps us cvjLps args' mI).1 := by
@@ -133,7 +133,7 @@ theorem recFireComparands_fst_congr (rl : RecRule) (lps : List Name)
 /-- The parameter comparand commutes with `shiftFrom` on the argument
 spine (the stored instantiations of a nested rule are fvar-free). -/
 theorem recFireComparands_snd_shift {p : Nat} (rl : RecRule)
-    (lps : List Name) (us : List Level) (cvjLps : List Name)
+    (lps : List LevelParam) (us : List Level) (cvjLps : List LevelParam)
     (args : List Expr) (mI : Nat)
     (hpins : ∀ lvls pins, rl.fire = .nested lvls pins →
       ∀ pin ∈ pins, pin.hasFvar = false) :
@@ -163,7 +163,7 @@ theorem recFireComparands_snd_shift {p : Nat} (rl : RecRule)
 depth (arguments well-scoped; a nested rule's stored instantiations
 fvar-free). -/
 theorem recFireComparands_snd_WScoped {d : Nat} (rl : RecRule)
-    (lps : List Name) (us : List Level) (cvjLps : List Name)
+    (lps : List LevelParam) (us : List Level) (cvjLps : List LevelParam)
     (args : List Expr) (mI : Nat)
     (hargs : ∀ a ∈ args, WScoped d a)
     (hpins : ∀ lvls pins, rl.fire = .nested lvls pins →
@@ -233,8 +233,8 @@ theorem recRulePlain_le_mIT {recTy : Expr} {mI rP cnP : Nat}
   exact of_decide_eq_true h.1.2
 
 /-- The fire comparand levels of a plain rule. -/
-theorem recFireComparands_plain {rl : RecRule} {lps : List Name}
-    {us : List Level} {cvjLps : List Name} {args : List Expr} {rP : Nat}
+theorem recFireComparands_plain {rl : RecRule} {lps : List LevelParam}
+    {us : List Level} {cvjLps : List LevelParam} {args : List Expr} {rP : Nat}
     (h : RecRule.fire rl = .plain) :
     (recFireComparands rl lps us cvjLps args rP).1 =
       cvjLps.map fun p => Level.subst lps us (.param p) := by
@@ -242,8 +242,8 @@ theorem recFireComparands_plain {rl : RecRule} {lps : List Name}
   rw [h]
 
 /-- The fire comparand levels of a nested rule. -/
-theorem recFireComparands_nested {rl : RecRule} {lps : List Name}
-    {us : List Level} {cvjLps : List Name} {args : List Expr} {rP : Nat}
+theorem recFireComparands_nested {rl : RecRule} {lps : List LevelParam}
+    {us : List Level} {cvjLps : List LevelParam} {args : List Expr} {rP : Nat}
     {lvls : List Level} {pins : List Expr}
     (h : RecRule.fire rl = .nested lvls pins) :
     (recFireComparands rl lps us cvjLps args rP).1 =
@@ -277,7 +277,7 @@ theorem wscoped_getD {d : Nat} :
 /-- A level-instantiated `fvar`-free expression (e.g. a stored type or
 rule right-hand side) is well-scoped at any depth. -/
 theorem wscoped_instLevels_of_not_hasFvar {e : Expr}
-    (h : e.hasFvar = false) (ps : List Name) (us : List Level) {d : Nat} :
+    (h : e.hasFvar = false) (ps : List LevelParam) (us : List Level) {d : Nat} :
     WScoped d (e.instantiateLevelParams ps us) :=
   WScoped.of_not_hasFvar (by rw [hasFvar_instantiateLevelParams]; exact h)
 

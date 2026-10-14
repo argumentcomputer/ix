@@ -40,8 +40,8 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## Bits reset -/
 
@@ -264,7 +264,7 @@ theorem opening_vars_at {n d : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
 
 /-- The constructor's field telescope at the parameter variables: its
 reading at depth `nP`, its scoping, and its strip. -/
-theorem ctorResidual {m : EnvModel V env} {ψ : Name → Nat} {nP nF : Nat} {cty : Expr}
+theorem ctorResidual {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat} {cty : Expr}
     (hCf : cty.hasFvar = false)
     {ds : List (Nat × Nat × AnnotTerm)} {bodyC : AnnotTerm}
     (hCread : denoteMeta m.acval env ψ 0 cty = some (mkPisAV ds bodyC))
@@ -295,7 +295,7 @@ theorem ctorResidual {m : EnvModel V env} {ψ : Name → Nat} {nP nF : Nat} {cty
 
 /-- The reading of the constructor's residual, one under (the motive):
 the field data lifted once. -/
-theorem ctorResidual_read_lift {m : EnvModel V env} {ψ : Name → Nat} {nP nF : Nat}
+theorem ctorResidual_read_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat}
     {crest : Expr} {ds : List (Nat × Nat × AnnotTerm)} {bodyC : AnnotTerm}
     (hread : denoteMeta m.acval env ψ nP crest = some (mkPisAV (ds.drop nP) bodyC))
     (hw : Expr.WScoped nP crest) (hlenD : ds.length = nP + nF) (e : Nat) :

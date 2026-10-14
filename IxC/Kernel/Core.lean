@@ -358,7 +358,7 @@ S1) has no per-field telescope and needs no certificate: its η law
 which the caller already holds. -/
 def structEtaProjCerts (r : CoreFns m) (env : Env) (depth : Nat)
     (T : Name) (us' : List Level) (targs : List Expr) (b : Expr)
-    (lpsT : List Name) : List Nat → m Bool
+    (lpsT : List LevelParam) : List Nat → m Bool
   | [] => pure true
   | i :: rest => do
     match env.find? (projFnName T i) with

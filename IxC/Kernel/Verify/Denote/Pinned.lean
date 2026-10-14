@@ -14,7 +14,7 @@ declarative layer, where it denotes to a bare `BConst` built-in.
 Relocated verbatim from `IxC/Kernel/TTVerify/EnvTT.lean` (task #148, T1):
 the definition is `V`-free — it is a table from the checker's reserved
 names to `IxC/Kernel/Term/Const.lean`'s built-ins — so it belongs where both
-verification lanes can import it.  The level-parameter names it reads
+verification lanes can import it.  The level parameters it reads
 are `IxC/Kernel/Verify/EnvPreds.lean`'s `uN`/`vN`/`u1N` (the `uN`/`vN`/
 `u1N` restatements that stood beside it were the same relocation's
 fourth item).
@@ -45,7 +45,7 @@ Each would have been caught only here, because `val_params` is what
 they violate and nothing before the install asserts it for a basis
 constant.  That is the house rule's point exactly (`IxC/Kernel/Term/DESIGN.md`
 §3.1): a definition is a conjecture until a consumer elaborates it. -/
-@[expose] def pinnedStructT (n : Name) (ψ : Name → Nat) : Option Term :=
+@[expose] def pinnedStructT (n : Name) (ψ : LevelParam → Nat) : Option Term :=
   if n = natName then some (.const .nat [])
   else if n = natZeroName then some (.const .natZero [])
   else if n = natSuccName then some (.const .natSucc [])
@@ -99,7 +99,7 @@ speak about the stored `Eq` without hypothesising its declaration. -/
     env.find? n = some ci →
     reservedBasisNames.contains n = true →
     ci = pinnedInfo n ∧
-    ∀ (t : Term) (ψ : Name → Nat), pinnedStructT n ψ = some t →
+    ∀ (t : Term) (ψ : LevelParam → Nat), pinnedStructT n ψ = some t →
       cval n ψ = t
 
 theorem BasisPinnedTT.empty (cval : TConstVal) :

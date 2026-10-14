@@ -73,17 +73,13 @@ def modelName (n : Name) : Name := n.str "_model"
 `R._model.iota_j` (`IxC/Kernel/Inductives/Modeled.lean`'s lookup). -/
 def iotaName (R : Name) (j : Nat) : Name := (modelName R).str s!"iota_{j}"
 
-/-- A level-parameter name not among `lps`: `u`, then `u_1`, `u_2`, …
-— the official kernel's `mk_fresh_lvl_name` convention for a
-recursor's elimination level (`inductive.cpp`), so a generated
-recursor's level parameters are the ones Lean's own kernel would
-mint for the same block. -/
-partial def freshLevelName (lps : List Name) (base : String := "u") : Name :=
-  if lps.contains (Name.str .anonymous base) then go 1 else Name.str .anonymous base
-where
-  go (i : Nat) : Name :=
-    let n := Name.str .anonymous s!"{base}_{i}"
-    if lps.contains n then go (i + 1) else n
+/-- A level parameter not among `lps`: the least number that is not in
+the list — `n` for a block's `[0, …, n-1]`, the number the front ends
+give a large eliminator's elimination parameter, so a generated
+recursor's level parameters are the ones the reader would give the
+same block's recursor. -/
+def freshLevelParam (lps : List LevelParam) : LevelParam :=
+  ((List.range (lps.length + 1)).find? (!lps.contains ·)).getD lps.length
 
 /-! ## Binders and frames -/
 
@@ -105,7 +101,7 @@ binders seen from `o` binders below it (`structPsAt`). -/
 def varsAt (o n : Nat) : List Expr := structPsAt o n
 
 /-- A constant at its level parameters. -/
-def constP (n : Name) (lps : List Name) : Expr := .const n (lps.map .param)
+def constP (n : Name) (lps : List LevelParam) : Expr := .const n (lps.map .param)
 
 /-- The domains of a `∀`-telescope's binder list. -/
 def piBinders (bs : List (Expr × BinderMeta)) : List Expr :=
@@ -141,7 +137,7 @@ One memoized DAG walk (keyed by the node — the rewrite reads no binder
 cursor), and, like `mentionsAnyGo`, with no spec lemma: the modeller
 is untrusted.  Without it the rebuild runs once per path, which is what
 `tests/e2e/tower_mutual.ndjson` exposes. -/
-partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
+partial def specFamGo (T : Name) (lps : List LevelParam) (nP : Nat)
     (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
     Expr → Expr × Std.HashMap Expr Expr
   | .bvar i => (.bvar i, memo)
@@ -204,7 +200,7 @@ partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
       (r, memo.insert e r)
 
 @[inherit_doc specFamGo]
-partial def specFamGoList (T : Name) (lps : List Name) (nP : Nat)
+partial def specFamGoList (T : Name) (lps : List LevelParam) (nP : Nat)
     (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
     List Expr → List Expr × Std.HashMap Expr Expr
   | [] => ([], memo)
@@ -216,7 +212,7 @@ partial def specFamGoList (T : Name) (lps : List Name) (nP : Nat)
 end
 
 @[inherit_doc specFamGo]
-def specFam (T : Name) (lps : List Name) (nP : Nat)
+def specFam (T : Name) (lps : List LevelParam) (nP : Nat)
     (members : List (Name × Nat × Nat)) (e : Expr) : Expr :=
   (specFamGo T lps nP members {} e).1
 
@@ -339,7 +335,7 @@ output, and the route's comparison of the stream's record against them
 holds by construction. -/
 
 /-- **The recursor type** of a recursive family (`structRecTyR`). -/
-def recTy (T : Name) (lps : List Name) (elim : Name) (large : Bool)
+def recTy (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat)) : Option Expr :=
   structRecTyR T lps elim large nP nIdx tty ctors
 
@@ -350,7 +346,7 @@ compares a stream rule's body SYNTACTICALLY with the generator's output
 reset to the placeholder (`nativeRulesOk`), as a parsed stream carries
 it everywhere — and a reflexive hypothesis `λ a⃗, T.rec … (f a⃗)` is
 where a generated body has binders of its own. -/
-def recRhs (T : Name) (lps : List Name) (elim : Name) (large : Bool)
+def recRhs (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat))
     (recC : Name) (rlvls : List Level) (j : Nat) : Option Expr :=
   (structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j).map Expr.resetMeta
@@ -366,7 +362,7 @@ syntactically a `∀` after instantiation fails.  `sortOf` reads the
 result as a sort. -/
 
 /-- The declared type of a constant: its level parameters and type. -/
-abbrev ConstTable := Name → Option (List Name × Expr)
+abbrev ConstTable := Name → Option (List LevelParam × Expr)
 
 /-- Head β-reduction only. -/
 partial def betaHead : Expr → Expr

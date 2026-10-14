@@ -141,7 +141,7 @@ theorem memberEtaSplit {blockNames : List Name}
 what remains as premises is exactly the two live laws. -/
 theorem capsOk_cons_member (mp : EnvModelM V μ env)
     {blockNames : List Name} {c₀ : ConstantInfo} {cvA : ConstantVal}
-    {A : (Name → Nat) → AnnotTerm}
+    {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
     (hc₀cv : c₀.toConstantVal = cvA) (hc₀name : c₀.name = cvA.name)
@@ -165,7 +165,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name A →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps)
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps)
     -- the live unit row: the cons's own former (the pins travel with
     -- it — see `MemberUnitLaw`'s note; `hpins` is right here)
     (hunitLive : ∀ (cvT : ConstantVal) (caps : IndCaps),
@@ -174,7 +174,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name A →
-        ∀ φ' : Name → Nat, UnitLaw m₂ φ' c₀.name cvT caps)
+        ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' c₀.name cvT caps)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A) :
     CapsOk m₂ := by

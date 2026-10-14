@@ -47,8 +47,8 @@ parameters and the two literal guards** — `denote_env_ext`'s twin.  An
 equation, so a law's `denoteMeta` *hypotheses* and *conclusions* both move
 across it for free, which is what makes the fired-form fields
 transportable at all. -/
-theorem denoteMeta_env_ext {acval : Name → (Name → Nat) → AnnotTerm}
-    {env₁ env₂ : Env} {φ : Name → Nat}
+theorem denoteMeta_env_ext {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    {env₁ env₂ : Env} {φ : LevelParam → Nat}
     (henvLev : ∀ n,
       (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))
@@ -128,9 +128,9 @@ theorem denoteMeta_env_ext {acval : Name → (Name → Nat) → AnnotTerm}
       | strVal s => exact absurd rfl (hstr' s)
 
 /-- The reading crosses a swap congruence. -/
-theorem denoteMeta_swap {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMeta_swap {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {env₀ env₃ : Env} (hcg : Ix.Kernel.SwapCongr env₀ env₃)
-    (φ : Name → Nat) (d : Nat) (e : Expr) :
+    (φ : LevelParam → Nat) (d : Nat) (e : Expr) :
     denoteMeta acval env₀ φ d e = denoteMeta acval env₃ φ d e :=
   denoteMeta_env_ext hcg.levelsEq hcg.natEq hcg.strEq hcg.projEq d e
 
@@ -144,7 +144,7 @@ theorem RecRuleLaw.swapP {env₀ env₃ : Env}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     {m₀ : EnvModel V env₀} {m₃ : EnvModel V env₃}
     (hac : m₃.acval = m₀.acval)
-    {φ : Name → Nat} {n : Name} {cv : ConstantVal} {mI rP : Nat}
+    {φ : LevelParam → Nat} {n : Name} {cv : ConstantVal} {mI rP : Nat}
     {rl : RecRule} (h : RecRuleLaw m₀ φ n cv mI rP rl) :
     RecRuleLaw m₃ φ n cv mI rP rl := by
   have hde : ∀ (d : Nat) (e : Expr),
@@ -196,12 +196,12 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
     (hbp₃ : BasisPinnedTT env₃ mp.base2.cvalE)
     (hproj₃ : ProjOkT env₃)
     (hrecP : ∀ (m₃ : EnvModel V env₃), m₃.acval = mp.base2.acval →
-      ∀ φ : Name → Nat, RecRules m₃ φ) :
+      ∀ φ : LevelParam → Nat, RecRules m₃ φ) :
     ∃ mp₃ : EnvModelM V μ env₃, mp₃.base2.acval = mp.base2.acval ∧
       mp₃.base2.cvalE = mp.base2.cvalE := by
   have hcg : Ix.Kernel.SwapCongr env₀ env₃ := Ix.Kernel.SwapShList.congr hsw
   have hcorr := Ix.Kernel.swapSh_find?_corr hsw
-  have hde : ∀ (ψ : Name → Nat) (d : Nat) (e : Expr),
+  have hde : ∀ (ψ : LevelParam → Nat) (d : Nat) (e : Expr),
       denoteMeta mp.base2.acval env₀ ψ d e
         = denoteMeta mp.base2.acval env₃ ψ d e :=
     fun ψ d e => denoteMeta_swap hcg ψ d e

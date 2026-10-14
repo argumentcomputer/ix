@@ -74,8 +74,8 @@ carrier field takes (`∀ ψ, ∃ u, cvalE emptyName ψ = emptyT u`), so S7
 discharges it by projection when the field lands; until then the fold
 layer supplies it from its v1 residue. -/
 theorem acval_empty_pinnedC (m : EnvModel V env) {n : Name}
-    (hpin : ∀ ψ : Name → Nat, ∃ u, m.cvalE n ψ = emptyT u)
-    (ψ : Name → Nat) :
+    (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
+    (ψ : LevelParam → Nat) :
     ∃ u, m.acval n ψ = .const .empty [u] := by
   obtain ⟨u, hu⟩ := hpin ψ
   exact ⟨u, erase_eq_const (by rw [m.acval_erase, hu]; rfl)⟩
@@ -84,8 +84,8 @@ theorem acval_empty_pinnedC (m : EnvModel V env) {n : Name}
 assignment.  Stated at any name whose leaf is an `emptyT` pin (task
 #181): `Empty`'s is `emptyT 1`, `False`'s is `emptyT 0`. -/
 theorem interp_acval_emptyC (m : EnvModel V env) {n : Name}
-    (hpin : ∀ ψ : Name → Nat, ∃ u, m.cvalE n ψ = emptyT u)
-    (ψ : Name → Nat) (ρ : Nat → V) :
+    (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
+    (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (m.acval n ψ) = SetTheory.empty := by
   obtain ⟨u, hu⟩ := acval_empty_pinnedC m hpin ψ
   rw [hu, interp_const]
@@ -100,7 +100,7 @@ empty set by erasure injectivity plus `basis_pinnedL`.  The `Empty` and
 `False` capstones are its two instances. -/
 theorem no_constant_of_emptyPin (mp : EnvModelM V μ env) {n : Name} {u : Nat}
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
-    (hpin : ∀ ψ : Name → Nat,
+    (hpin : ∀ ψ : LevelParam → Nat,
       Ix.Kernel.Verify.pinnedStructT n ψ = some (emptyT u))
     (c : ConstantInfo) (hc : c ∈ env.consts)
     (hty : c.toConstantVal.type = .const n []) : False := by
@@ -177,7 +177,7 @@ literal rows are this file's own imports — `natSuccRow_of`/
 `natOpRow_of` (`Model/NatStep.lean`), which stand on the numeral
 transports and so cannot be projections down there.  Successor of
 `Rules.RulesInputs.ofSem` (task #305 closing). -/
-theorem Rules.RulesInputs.ofSem (mp : EnvModelM V μ env) (φ : Name → Nat) :
+theorem Rules.RulesInputs.ofSem (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.RulesInputs V mp.base2 φ :=
   Rules.RulesInputs.ofEnvModelM mp (natSuccRow_of mp φ) (natOpRow_of mp φ)
 

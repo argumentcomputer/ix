@@ -62,7 +62,7 @@ instantiation (a used-later data field of a `Prop` structure) simply
 fails that guard at every use (`invalid`, as official).  The body
 walk cannot fail on a constructor type `checkStructCtor` accepted
 (it peels exactly `nP + nF` binders), so its failure is internal. -/
-def checkStructProjTable (T C : Name) (lps : List Name) (nP nF : Nat)
+def checkStructProjTable (T C : Name) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) (env : Env) :
     m Env := do
   let bodies ← unwrapOr (structProjBodies T nP nF cvCa.type)

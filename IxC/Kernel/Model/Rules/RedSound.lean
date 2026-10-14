@@ -33,7 +33,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
-  {φ : Name → Nat}
+  {φ : LevelParam → Nat}
 
 theorem Red.refl_sound {d : Nat} {e : Expr} : RedSem m φ d e e := by
   intro hf Δa ea _ hea hg

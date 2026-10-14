@@ -238,7 +238,7 @@ theorem normCtorVal_inv {env : Env} {T : Name} {nP nF : Nat} {cvC cvCa₀ cvCa :
     exact ⟨cvC.type, h₀⟩
   · exact ⟨_, h⟩
 
-theorem checkSumCtor_shape {env₀ env : Env} {T : Name} {lps : List Name}
+theorem checkSumCtor_shape {env₀ env : Env} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
@@ -314,7 +314,7 @@ theorem checkSumCtor_shape {env₀ env : Env} {T : Name} {lps : List Name}
 
 /-- All constructors, positionally: the annotated list is as long as
 the input and every entry is its constructor's run. -/
-theorem checkSumCtors_inv {env₀ env : Env} {T : Name} {lps : List Name}
+theorem checkSumCtors_inv {env₀ env : Env} {T : Name} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvTa : ConstantVal} {F : Nat} :
     ∀ {cs ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)},
       checkSumCtors (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large

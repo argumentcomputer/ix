@@ -53,7 +53,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 
 /-- An empty capability record pins nothing, and asks nothing. -/
 theorem etaPins_empty {μ : CheckMode} {env : Env} {T : Name}
-    {lps : List Name} : EtaPins μ env T lps {} :=
+    {lps : List LevelParam} : EtaPins μ env T lps {} :=
   ⟨fun h => absurd h (by decide), fun h => absurd h (by decide)⟩
 
 /-! ## The provisioning's syntactic residue -/
@@ -71,7 +71,7 @@ install: `EtaPins.step` for the pins, nothing for the (environment-free)
 constructor fact, and the name shape for the projection freshness. -/
 theorem etaMemberData_step {μ : CheckMode} {blockNames : List Name}
     {caps : IndCaps} {env : Env} {c₀ : ConstantInfo} {n : Name}
-    {lps : List Name} (hfresh : env.find? c₀.name = none)
+    {lps : List LevelParam} (hfresh : env.find? c₀.name = none)
     (hshape : c₀.name.isProjFnShape = false)
     (h : EtaPins μ env n lps caps ∧
       (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
@@ -210,7 +210,7 @@ def RuleFacts (envSelf : Env) (cvalSelf : TConstVal)
     envSelf.find? (RecRule.ctor rl) = some (.ctorInfo cvj cnP cnF)) ∧
   (RecRule.fire rl ≠ .inert →
     rP ≤ mI ∧
-    ∀ φ : Name → Nat,
+    ∀ φ : LevelParam → Nat,
       ∃ Rv, denoteClosed cvalSelf envSelf φ (RecRule.rhs rl) = some Rv) ∧
   -- the two install-computed rescue bits are the store's own verdict
   (rl.k = true → recRuleKOf envSelf.find? rl.ctor = true) ∧

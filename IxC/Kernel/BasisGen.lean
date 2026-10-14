@@ -99,7 +99,7 @@ private def qList (ty : Lean.Expr) (xs : List Lean.Expr) : Lean.Expr :=
   xs.foldr (fun x acc => mkApp3 (mkConst ``List.cons [Lean.Level.zero]) ty x acc)
     (mkApp (mkConst ``List.nil [Lean.Level.zero]) ty)
 
-private def nameTy : Lean.Expr := mkConst ``Ix.Kernel.Name
+private def levelParamTy : Lean.Expr := mkConst ``Ix.Kernel.LevelParam
 private def levelTy : Lean.Expr := mkConst ``Ix.Kernel.Level
 private def exprTy : Lean.Expr := mkConst ``Ix.Kernel.Expr
 private def recRuleTy : Lean.Expr := mkConst ``Ix.Kernel.RecRule
@@ -111,15 +111,15 @@ private def qName : Ix.Kernel.Name → Lean.Expr
   | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (qName p) (mkStrLit s)
   | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (qName p) (mkRawNatLit i)
 
-private def qNames (ns : List Ix.Kernel.Name) : Lean.Expr :=
-  qList nameTy (ns.map qName)
+private def qLevelParams (ps : List Ix.Kernel.LevelParam) : Lean.Expr :=
+  qList levelParamTy (ps.map mkRawNatLit)
 
 private def qLevel : Ix.Kernel.Level → Lean.Expr
   | .zero => mkConst ``Ix.Kernel.Level.zero
   | .succ a => mkApp (mkConst ``Ix.Kernel.Level.succ) (qLevel a)
   | .max a b => mkApp2 (mkConst ``Ix.Kernel.Level.max) (qLevel a) (qLevel b)
   | .imax a b => mkApp2 (mkConst ``Ix.Kernel.Level.imax) (qLevel a) (qLevel b)
-  | .param n => mkApp (mkConst ``Ix.Kernel.Level.param) (qName n)
+  | .param n => mkApp (mkConst ``Ix.Kernel.Level.param) (mkRawNatLit n)
 
 private def qLevels (us : List Ix.Kernel.Level) : Lean.Expr :=
   qList levelTy (us.map qLevel)
@@ -130,7 +130,7 @@ of its parameter list. -/
 private def qPropWhen (pw : Ix.Kernel.PropWhen) : Lean.Expr :=
   match pw.toList? with
   | none => mkConst ``Ix.Kernel.PropWhen.never
-  | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qNames ps)
+  | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qLevelParams ps)
 
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
   mkApp (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
@@ -157,7 +157,7 @@ private def qExpr : Ix.Kernel.Expr → Lean.Expr
 
 private def qConstantVal (cv : Ix.Kernel.ConstantVal) : Lean.Expr :=
   mkApp3 (mkConst ``Ix.Kernel.ConstantVal.mk) (qName cv.name)
-    (qNames cv.levelParams) (qExpr cv.type)
+    (qLevelParams cv.levelParams) (qExpr cv.type)
 
 private def qRecRuleFire : Ix.Kernel.RecRuleFire → Lean.Expr
   | .inert => mkConst ``Ix.Kernel.RecRuleFire.inert

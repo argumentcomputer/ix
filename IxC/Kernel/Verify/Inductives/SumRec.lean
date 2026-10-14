@@ -32,7 +32,7 @@ instantiated at the parameters and the extras and then at the
 fields: the motive extra applied to the constructor at the
 variables. -/
 theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Name}
-    {lps : List Name} {nP nF : Nat} {mfv : Expr}
+    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hclE : ∀ a ∈ extras, a.looseBVarsBounded 0 = true)
@@ -96,7 +96,7 @@ open Expr
 
 /-- `Level.isNeverZero` is sound: such a level evaluates to a nonzero
 number at every assignment. -/
-theorem Level.isNeverZero_sound (φ : Name → Nat) :
+theorem Level.isNeverZero_sound (φ : LevelParam → Nat) :
     ∀ l : Level, l.isNeverZero = true → Level.eval φ l ≠ 0
   | .zero, h => by simp [Level.isNeverZero] at h
   | .param _, h => by simp [Level.isNeverZero] at h
@@ -188,7 +188,7 @@ at the parameters, the extras and the fields: the motive extra at the
 index expressions (instantiated at the parameters and the fields
 alone) and the constructor at the variables. -/
 theorem instSeq_minorBodyI_at (tfvs extras xFvs : List Expr) {C : Name}
-    {lps : List Name} {nP nF : Nat} {mfv : Expr} {es : List Expr}
+    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr} {es : List Expr}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hclE : ∀ a ∈ extras, a.looseBVarsBounded 0 = true)

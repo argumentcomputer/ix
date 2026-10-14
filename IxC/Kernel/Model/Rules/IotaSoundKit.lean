@@ -50,7 +50,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 /-! ## The `DenoteMetaSpine` API
 
@@ -59,7 +59,7 @@ variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
 
 namespace DenoteMetaSpine
 
-variable {acval : Name → (Name → Nat) → AnnotTerm} {d : Nat}
+variable {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat}
 
 /-- Every list of readable expressions has a reading spine. -/
 theorem exists_of_all :
@@ -176,7 +176,7 @@ theorem frame_of_not_hasFvar {m : EnvModel V env} {d : Nat}
 /-- A `.const` that reads was applied at the stored arity, and its
 reading is the leaf (`denoteMeta_const_arity`,
 `Model/Steps/IotaRows.lean:233`). -/
-theorem denoteMeta_const_arityK {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMeta_const_arityK {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {d : Nat} {n : Name} {us : List Level} {ci : Ix.Kernel.ConstantInfo}
     {ea : AnnotTerm} (hf : env.find? n = some ci)
     (h : denoteMeta acval env φ d (.const n us) = some ea) :
@@ -354,10 +354,10 @@ theorem piResidual_frameK {m : EnvModel V env} {d : Nat}
 
 /-- **A `TeleFitPA` fit's residual is the reading of the checker's own
 `piResidual`** (`teleFitPA_residual`, `Model/Steps/IotaKit.lean:174`). -/
-theorem teleFitPA_residualK {acval : Name → (Name → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+theorem teleFitPA_residualK {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {ρ : Nat → V} {d : Nat} :
     ∀ (args : List Expr) {ty rest : Expr} {Ta restA : AnnotTerm}
@@ -421,9 +421,9 @@ depth. -/
 constant-frame subject's reverse opening reads to the same annotation at every base.  The lift the
 induction has to absorb is killed by `AnnotTerm.liftN_eq_self` at the
 erasure's bvar bound — `denoteMeta_closed`'s route, one depth up. -/
-theorem denoteMeta_openRev_base {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMeta_openRev_base {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {cval : TConstVal}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
@@ -459,10 +459,10 @@ theorem denoteMeta_openRev_base {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- **Real-argument instantiation, read through the reverse opening**
 (`denote_openRev`'s mirror, `Model/Steps/IotaKit.lean:103`). -/
-theorem denoteMeta_openRev {acval : Name → (Name → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+theorem denoteMeta_openRev {acval : Name → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
     ∀ (as : List Expr) {e : Expr} {d : Nat},
       (∀ a ∈ as, Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true) →
@@ -526,9 +526,9 @@ theorem denoteMeta_openRev {acval : Name → (Name → Nat) → AnnotTerm}
 /-- **The base-independence of the opened validated reading**, at the
 lane's own spelling — `denoteMeta_openRev_base` above, whose statement
 this is. -/
-theorem denoteMeta_openRev_baseK {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMeta_openRev_baseK {acval : Name → (LevelParam → Nat) → AnnotTerm}
     {cval : TConstVal}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
@@ -541,9 +541,9 @@ theorem denoteMeta_openRev_baseK {acval : Name → (Name → Nat) → AnnotTerm}
 /-- **Real-argument instantiation, read through the reverse opening**,
 at the lane's own spelling — `denoteMeta_openRev` above at `m.acval`. -/
 theorem denoteMeta_openRevK {m : EnvModel V env}
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
       (m.acval n ψ).liftN 1 k = m.acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (m.acval n ψ).inst y k = m.acval n ψ) :
     ∀ (as : List Expr) {e : Expr} {d : Nat},
       (∀ a ∈ as, Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true) →

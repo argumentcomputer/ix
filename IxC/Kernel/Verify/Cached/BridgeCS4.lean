@@ -593,7 +593,7 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
 
 /-- The projection-function install (mirrors `checkProjFn`). -/
 theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     {s₀ : CState} (hs : CSOK mode env s₀) {fe' : FEnv} {s' : CState}
     (h : checkProjFnS mode (mkFEnv env) T ctorName lps nP nF i s₀ =
       .ok (fe', s')) :
@@ -732,7 +732,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
 
 /-- One projection-function install step. -/
 theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
+    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
     {s₀ : CState} (hwf : CSOKF s₀) {fe' : FEnv} {s' : CState}
     (h : installProjFnStepS mode T ctorName lps nP nF (mkFEnv env) i s₀ =
       .ok (fe', s')) :
@@ -764,7 +764,7 @@ theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (h
     rfl
 
 /-- The artifact-phase fold. -/
-theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Name} {lps : List Name}
+theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Name} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env : Env) {s₀ : CState} {fe' : FEnv}
       {s' : CState},

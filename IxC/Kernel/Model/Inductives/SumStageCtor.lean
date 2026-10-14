@@ -31,7 +31,7 @@ open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveSh
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
@@ -50,14 +50,14 @@ theorem frameIdx_consList {nIdx : Nat} {is : List V} (hlen : is.length = nIdx) (
 
 /-- **The constructor leaf's hereditary premises**: `MkPreS` along
 the parameters and `UnderTowerValid` along the whole frame. -/
-theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List Name} {cvT cvC : ConstantVal}
+theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List LevelParam} {cvT cvC : ConstantVal}
     {nP nF nIdx j : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List Expr}
-    {ppsAll ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (Name → Nat) → List AnnotTerm}
+    {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
-    {Fss Ess : (Name → Nat) → List (List AnnotTerm)}
+    {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
     (_hFD : FormerData m cvT (nP + nIdx) resSort ppsAll)
     (hCD : CtorDataI m T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs)
-    (hfold : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
         interp V (consList bs ρ) (ctorBodyAVI m T nP nF ψ (Es ψ))
@@ -65,17 +65,17 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List Name} {cvT cvC 
               (rChains nIdx nIdx (Fss ψ) (Ess ψ))))
     (hFsj : ∀ ψ, (Fss ψ)[j]? = some (((ds ψ).drop nP).map (·.2.2)))
     (hEsj : ∀ ψ, (Ess ψ)[j]? = some (Es ψ))
-    (hiff : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
         Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ)
-    (hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
-    (_hIdx : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (_hIdx : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
         SpineFit ρ (((ppsAll ψ).drop nP).map (·.2.2)) (idxValsAt ρ (Es ψ) bs))
-    (ψ : Name → Nat) (ρ : Nat → V) :
+    (ψ : LevelParam → Nat) (ρ : Nat → V) :
     MkPreS (resSort.eval ψ) j ρ (((ds ψ).drop nP).map (·.2.2)) (uChains (Fss ψ))
         (ctorBodyAVI m T nP nF ψ (Es ψ)) ((ds ψ).take nP) ∧
       UnderTowerValid ρ
@@ -175,7 +175,7 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List Name} {cvT cvC 
 /-- **The P step at a sum-shaped constructor's cons**, for a given fibre fold. -/
 theorem stageCtorGen {T : Name}
     (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
-    {F : Nat} {lps : List Name} {nP nF nIdx j : Nat} {resSort : Level}
+    {F : Nat} {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     (mp : EnvModelM V μ env)
     {sorts : List Level}
@@ -189,9 +189,9 @@ theorem stageCtorGen {T : Name}
     (hlpsT : cvTa.levelParams = lps)
     (hlpsC : cvCa.levelParams = lps)
     {idxArgs : List Expr}
-    {ppsAll ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (Name → Nat) → List AnnotTerm}
+    {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
-    {Fss Ess : (Name → Nat) → List (List AnnotTerm)}
+    {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
     -- the block's own capability laws at the cons (task #210 Parts A
     -- and B), at any carrier agreeing with this one off the
     -- constructor's name and storing the constructor's leaf there
@@ -202,7 +202,7 @@ theorem stageCtorGen {T : Name}
       CapsLawsAt m₂ T cvTa caps)
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
     (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
-    (hfold : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hfold : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
         interp V (consList bs ρ) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))
@@ -210,16 +210,16 @@ theorem stageCtorGen {T : Name}
               (rChains nIdx nIdx (Fss ψ) (Ess ψ))))
     (hFsj : ∀ ψ, (Fss ψ)[j]? = some (((ds ψ).drop nP).map (·.2.2)))
     (hEsj : ∀ ψ, (Ess ψ)[j]? = some (Es ψ))
-    (hFssParams : ∀ ψ₁ ψ₂ : Name → Nat,
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ q ∈ lps, ψ₁ q = ψ₂ q) → Fss ψ₁ = Fss ψ₂)
-    (hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow nP Fs)
-    (hiff : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow nP Fs)
+    (hiff : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
         Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ)
-    (hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
-    (hIdx : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
         SpineFit ρ (((ppsAll ψ).drop nP).map (·.2.2)) (idxValsAt ρ (Es ψ) bs)) :
@@ -241,8 +241,8 @@ theorem stageCtorGen {T : Name}
     · show cvCa.type.hasFvar = false; rw [hty]; exact htf'
     · show cvCa.type.allLevelParamsDefined cvCa.levelParams = true; rw [hty]; exact htp
     · show cvCa.type.looseBVarsBounded 0 = true; rw [hty]; exact hbt'
-  let Fs : (Name → Nat) → List AnnotTerm := fun ψ => ((ds ψ).drop nP).map (·.2.2)
-  let A : (Name → Nat) → AnnotTerm :=
+  let Fs : (LevelParam → Nat) → List AnnotTerm := fun ψ => ((ds ψ).drop nP).map (·.2.2)
+  let A : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => sumMkAV (resSort.eval ψ) j (ds ψ) (Fs ψ) (uChains (Fss ψ))
   have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
     sumMkAV_below (hCD.below ψ)
@@ -256,7 +256,7 @@ theorem stageCtorGen {T : Name}
     intro ψ d hd
     rw [List.take_append_drop] at hd
     exact hCD.bits ψ d hd
-  have hreadC : ∀ ψ : Name → Nat,
+  have hreadC : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval cvCa.name A)
         ⟨.ctorInfo cvCa nP nF :: env.consts⟩ ψ 0 cvCa.type
         = some (mkPisAV (ds ψ) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))) := fun ψ =>

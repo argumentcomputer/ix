@@ -36,10 +36,10 @@ variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env}
 
 omit [SetTheory V] in
 /-- The recursive route's field chains are the sum route's. -/
-theorem fssOfR_fixCtorDataList (nP : Nat) (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : Name → Nat) :
+theorem fssOfR_fixCtorDataList (nP : Nat) (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (k : Nat),
       fssOfR nP (fixCtorDataList dsF esF ksF eissF tssF ψ cs k) = fssOf nP (ctorDataList dsF esF ψ cs k)
   | [], _ => rfl
@@ -50,10 +50,10 @@ theorem fssOfR_fixCtorDataList (nP : Nat) (dsF : Nat → (Name → Nat) → List
 
 omit [SetTheory V] in
 /-- The recursive route's index readings are the sum route's. -/
-theorem essOfR_fixCtorDataList (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : Name → Nat) :
+theorem essOfR_fixCtorDataList (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
     ∀ (cs : List (ConstantVal × Nat)) (k : Nat),
       essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ cs k) = essOf (ctorDataList dsF esF ψ cs k)
   | [], _ => rfl
@@ -65,7 +65,7 @@ theorem essOfR_fixCtorDataList (dsF : Nat → (Name → Nat) → List (Nat × Na
 /-! ## Read spines -/
 
 /-- A read spine transports along pointwise-equal readings. -/
-theorem DenoteMetaSpine.congr {acval₁ acval₂ : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+theorem DenoteMetaSpine.congr {acval₁ acval₂ : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval₁ env φ d as vs →
       (∀ a ∈ as, denoteMeta acval₁ env φ d a = denoteMeta acval₂ env φ d a) →
@@ -84,9 +84,9 @@ theorem idxValid_of (mp : EnvModelM V μ env)
     {caps : IndCaps} (hfT : env.find? T = some (.indInfo cvTa caps))
     {tfvs : List Expr} {trest : Expr}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
-    (ψ : Name → Nat) (ρp : Nat → V)
+    (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     FieldsValid ρp (((ppsAll ψ).drop nP).map (·.2.2)) := by
   obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
@@ -108,23 +108,23 @@ theorem idxValid_of (mp : EnvModelM V μ env)
 data at a carrier storing the former as a λ-tower over the parameters
 (the validity halves of the shadow gradings). -/
 theorem fixChainValidFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
     (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B)
-    {idxArgs : List Expr} {ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {Es : (Name → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (Name → Nat) → List (List AnnotTerm)}
-    {tss : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
-    (ψ : Name → Nat) (ρp : Nat → V)
+    (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     ChainValidFacts nP nF ρp ks (tss ψ) (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) := by
   have hlenDs := hD.len ψ
@@ -181,10 +181,10 @@ theorem fixChainValidFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V
 omit [SetTheory V] in
 /-- The per-field index expressions depend on the data only through
 their own component. -/
-theorem eissOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF₁ esF₂ : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF₁ eissF₂ : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF₁ tssF₂ : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat} :
+theorem eissOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF₁ esF₂ : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF₁ eissF₂ : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF₁ tssF₂ : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat} :
     ∀ (cs : List (ConstantVal × Nat)) (k : Nat),
       (∀ i, i < cs.length → eissF₁ (k + i) ψ = eissF₂ (k + i) ψ) →
       eissOfR (fixCtorDataList dsF₁ esF₁ ksF eissF₁ tssF₁ ψ cs k)
@@ -204,10 +204,10 @@ theorem eissOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) �
 omit [SetTheory V] in
 /-- The per-field telescopes depend on the data only through their own
 component (task #202). -/
-theorem tlssOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF₁ esF₂ : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF₁ eissF₂ : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF₁ tssF₂ : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat} :
+theorem tlssOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF₁ esF₂ : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF₁ eissF₂ : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF₁ tssF₂ : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat} :
     ∀ (cs : List (ConstantVal × Nat)) (k : Nat),
       (∀ i, i < cs.length → tssF₁ (k + i) ψ = tssF₂ (k + i) ψ) →
       tlssOfR (fixCtorDataList dsF₁ esF₁ ksF eissF₁ tssF₁ ψ cs k)
@@ -227,10 +227,10 @@ theorem tlssOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) �
 omit [SetTheory V] in
 /-- The index readings depend on the data only through their own
 component. -/
-theorem essOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF₁ esF₂ : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF₁ eissF₂ : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF₁ tssF₂ : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat} :
+theorem essOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF₁ esF₂ : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF₁ eissF₂ : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF₁ tssF₂ : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat} :
     ∀ (cs : List (ConstantVal × Nat)) (k : Nat),
       (∀ i, i < cs.length → esF₁ (k + i) ψ = esF₂ (k + i) ψ) →
       essOfR (fixCtorDataList dsF₁ esF₁ ksF eissF₁ tssF₁ ψ cs k)
@@ -248,38 +248,38 @@ theorem essOfR_fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) →
         rw [Nat.add_right_comm]; exact h (i + 1) (by simp; omega)
 
 omit [SetTheory V] in
-theorem fssOfR_fixCtorDataList_getD {nP : Nat} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat}
+theorem fssOfR_fixCtorDataList_getD {nP : Nat} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat}
     {cs : List (ConstantVal × Nat)} {j : Nat} {cA : ConstantVal × Nat} (hj : cs[j]? = some cA) :
     (fssOfR nP (fixCtorDataList dsF esF ksF eissF tssF ψ cs 0)).getD j []
       = ((dsF j ψ).drop nP).map (·.2.2) := by
   rw [List.getD_eq_getElem?_getD, fssOfR_getElem?, fixCtorDataList_getElem?, hj, Nat.zero_add]; rfl
 
 omit [SetTheory V] in
-theorem essOfR_fixCtorDataList_getD {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat}
+theorem essOfR_fixCtorDataList_getD {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat}
     {cs : List (ConstantVal × Nat)} {j : Nat} {cA : ConstantVal × Nat} (hj : cs[j]? = some cA) :
     (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ cs 0)).getD j [] = esF j ψ := by
   rw [List.getD_eq_getElem?_getD, essOfR_getElem?, fixCtorDataList_getElem?, hj, Nat.zero_add]; rfl
 
 omit [SetTheory V] in
-theorem eissOfR_fixCtorDataList_getD {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat}
+theorem eissOfR_fixCtorDataList_getD {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat}
     {cs : List (ConstantVal × Nat)} {j : Nat} {cA : ConstantVal × Nat} (hj : cs[j]? = some cA) :
     (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ cs 0)).getD j [] = eissF j ψ := by
   rw [List.getD_eq_getElem?_getD, eissOfR_getElem?, fixCtorDataList_getElem?, hj, Nat.zero_add]; rfl
 
 omit [SetTheory V] in
-theorem tlssOfR_fixCtorDataList_getD {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : Name → Nat}
+theorem tlssOfR_fixCtorDataList_getD {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ : LevelParam → Nat}
     {cs : List (ConstantVal × Nat)} {j : Nat} {cA : ConstantVal × Nat} (hj : cs[j]? = some cA) :
     (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ cs 0)).getD j [] = tssF j ψ := by
   rw [List.getD_eq_getElem?_getD, tlssOfR_getElem?, fixCtorDataList_getElem?, hj, Nat.zero_add]; rfl
@@ -358,18 +358,18 @@ theorem chainsXI_below_of {u nP nIdx n : Nat} {Ids : List AnnotTerm} {rss : List
 /-- A recursive constructor's data, bundled for the choice. -/
 structure FixCtorPick where
   idxArgs : List Expr
-  ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)
-  Es : (Name → Nat) → List AnnotTerm
+  ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)
+  Es : (LevelParam → Nat) → List AnnotTerm
   srcs : List (Option Nat)
   fvsP : List Expr
   xFvs : List Expr
   xrest : Expr
-  Eiss : (Name → Nat) → List (List AnnotTerm)
-  tss : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))
+  Eiss : (LevelParam → Nat) → List (List AnnotTerm)
+  tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))
 
 /-- `fixCtorData_of`, its witnesses bundled. -/
 theorem fixCtorPick_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {bs : List (Expr × BinderMeta)} {ks : List RecFieldKind}
     {sorts : List Level}
@@ -389,7 +389,7 @@ theorem fixCtorPick_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
 /-- **The constructors' data functions** at a carrier storing the
 former: every constructor's recursive data, its kind list the guard's. -/
 theorem fixCtorFuns_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Name} {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvTa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {bs : List (Expr × BinderMeta)} {ctorsA : List (ConstantVal × Nat)}
     {kinds : List (List RecFieldKind)}
@@ -401,11 +401,11 @@ theorem fixCtorFuns_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
       ∃ (c : ConstantVal × Nat) (sorts : List Level),
         Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx
           resSort isProp large c.1 cA.2 cvTa = .ok (cA.1, sorts)) :
-    ∃ (idxF : Nat → List Expr) (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-      (esF : Nat → (Name → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
+    ∃ (idxF : Nat → List Expr) (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+      (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
       (fvsPF xFvsF : Nat → List Expr) (xrestF : Nat → Expr)
-      (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-      (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))),
+      (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+      (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))),
       ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
         FixCtorDataI mp.base2 env₀ T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF j) (dsF j)
           (esF j) (srcsF j) (kinds.getD j []) (fvsPF j) (xFvsF j) (xrestF j) (eissF j) (tssF j) := by
@@ -437,17 +437,17 @@ at the former: the openings and the residual's index arguments are
 syntactic, the index readings, the recursive slots' index expressions
 and the ordinary fields' domains read the same (none mentions the
 former). -/
-theorem fixCtorDataI_ident {acval : Name → (Name → Nat) → AnnotTerm} {T : Name}
-    {A₁ A₂ : (Name → Nat) → AnnotTerm} {env₀ : Env}
+theorem fixCtorDataI_ident {acval : Name → (LevelParam → Nat) → AnnotTerm} {T : Name}
+    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T A₁)
     (hac₂ : m₂.acval = acvalWith acval T A₂) (hfresh : env₀.find? T = none)
-    {lps : List Name} {cvC : ConstantVal} {nP nF nIdx : Nat} {resSort : Level}
+    {lps : List LevelParam} {cvC : ConstantVal} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {idx₁ idx₂ : List Expr}
-    {ds₁ ds₂ : (Name → Nat) → List (Nat × Nat × AnnotTerm)} {Es₁ Es₂ : (Name → Nat) → List AnnotTerm}
+    {ds₁ ds₂ : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es₁ Es₂ : (LevelParam → Nat) → List AnnotTerm}
     {srcs₁ srcs₂ : List (Option Nat)} {ks : List RecFieldKind}
     {fvsP₁ fvsP₂ xFvs₁ xFvs₂ : List Expr} {xrest₁ xrest₂ : Expr}
-    {Eiss₁ Eiss₂ : (Name → Nat) → List (List AnnotTerm)}
-    {tss₁ tss₂ : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {Eiss₁ Eiss₂ : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss₁ tss₂ : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (h₁ : FixCtorDataI m₁ env₀ T lps cvC nP nF nIdx resSort isProp large idx₁ ds₁ Es₁ srcs₁ ks
       fvsP₁ xFvs₁ xrest₁ Eiss₁ tss₁)
     (h₂ : FixCtorDataI m₂ env₀ T lps cvC nP nF nIdx resSort isProp large idx₂ ds₂ Es₂ srcs₂ ks

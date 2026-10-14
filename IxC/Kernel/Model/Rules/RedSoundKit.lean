@@ -52,7 +52,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 variable {m : EnvModel V env}
 
 /-! ## The level crossing — `Model/Annot/BitLevels.lean`, imported
@@ -66,7 +66,7 @@ and there is ONE copy, under that file's own names. -/
 
 /-! ## The two `Nat` constructor readings and the literal expansions -/
 
-theorem denoteMetaNatZeroConst {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMetaNatZeroConst {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) {d : Nat} :
     denoteMeta acval env φ d (.const Ix.Kernel.natZeroName [])
       = some (acval Ix.Kernel.natZeroName (Level.substFn φ [] [])) := by
@@ -85,7 +85,7 @@ theorem denoteMetaNatZeroConst {acval : Name → (Name → Nat) → AnnotTerm}
       | _ => simp [Ix.Kernel.natZeroOk] at h2
     rw [denoteMeta_const hf (by simp [hlp]), hlp]
 
-theorem denoteMetaNatSuccConst {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMetaNatSuccConst {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) {d : Nat} :
     denoteMeta acval env φ d (.const Ix.Kernel.natSuccName [])
       = some (acval Ix.Kernel.natSuccName (Level.substFn φ [] [])) := by
@@ -106,7 +106,7 @@ theorem denoteMetaNatSuccConst {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- `denoteMeta` is blind to the `Nat`-literal constructor expansion. -/
 theorem denoteMeta_natLitToConstructor
-    {acval : Name → (Name → Nat) → AnnotTerm}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) (d n : Nat) :
     denoteMeta acval env φ d (Ix.Kernel.natLitToConstructor n)
       = denoteMeta acval env φ d (.lit (.natVal n)) := by
@@ -121,14 +121,14 @@ theorem denoteMeta_natLitToConstructor
     rfl
 
 theorem denoteMetaConstNolevels
-    {acval : Name → (Name → Nat) → AnnotTerm} {c : Name}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm} {c : Name}
     {ci : Ix.Kernel.ConstantInfo} (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = []) (d : Nat) :
     denoteMeta acval env φ d (.const c [])
       = some (acval c (Level.substFn φ [] [])) := by
   rw [denoteMeta_const hf (by simp [hlp]), hlp]
 
-theorem denoteMetaNilTerm {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMetaNilTerm {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     denoteMeta acval env φ d
         (.app (.const Ix.Kernel.listNilName [.zero])
@@ -146,7 +146,7 @@ theorem denoteMetaNilTerm {acval : Name → (Name → Nat) → AnnotTerm}
     denoteMetaConstNolevels hfC hlpC d, hlpa]
   rfl
 
-theorem denoteMetaConsTerm {acval : Name → (Name → Nat) → AnnotTerm}
+theorem denoteMetaConsTerm {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     denoteMeta acval env φ d
         (.app (.const Ix.Kernel.listConsName [.zero])
@@ -165,7 +165,7 @@ theorem denoteMetaConsTerm {acval : Name → (Name → Nat) → AnnotTerm}
   rfl
 
 theorem denoteMetaStrLitList
-    {acval : Name → (Name → Nat) → AnnotTerm}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     ∀ cs : List Char,
       denoteMeta acval env φ d (Ix.Kernel.strLitList cs)
@@ -198,7 +198,7 @@ theorem denoteMetaStrLitList
 
 /-- `denoteMeta` is blind to the string-literal constructor expansion. -/
 theorem denoteMeta_strLitToConstructor
-    {acval : Name → (Name → Nat) → AnnotTerm}
+    {acval : Name → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) (s : String) :
     denoteMeta acval env φ d (Ix.Kernel.strLitToConstructor s)
       = denoteMeta acval env φ d (.lit (.strVal s)) := by
@@ -543,7 +543,7 @@ theorem PiChain.inst : ∀ {n : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : Nat),
 
 /-- **A syntactic ∀-telescope reads to a ∀-chain**
 (`piChain_of_stripPis`). -/
-theorem piChain_of_stripPis {acval : Name → (Name → Nat) → AnnotTerm} :
+theorem piChain_of_stripPis {acval : Name → (LevelParam → Nat) → AnnotTerm} :
     ∀ (n : Nat) {d : Nat} {e : Expr} {ea : AnnotTerm},
       (e.stripPis n).isSome = true →
       denoteMeta acval env φ d e = some ea → PiChain n ea := by
@@ -633,7 +633,7 @@ theorem teleFit_of_teleFitPA {ρ : Nat → V} :
 /-- The instantiated form of `AcvalDefnInst`, by the level crossing
 (`acvalDefnInst_subst`, `Steps/Whnf.lean:277`). -/
 theorem denoteMetaDefnInst {m : EnvModel V env} (hdi : AcvalDefnInst m)
-    (φ : Name → Nat) {cv : ConstantVal} {value : Expr} {us : List Level}
+    (φ : LevelParam → Nat) {cv : ConstantVal} {value : Expr} {us : List Level}
     (hmem : ∃ hint : Ix.Kernel.ReducibilityHint,
       ConstantInfo.defnInfo cv value hint ∈ env.consts) :
     denoteMeta m.acval env φ 0

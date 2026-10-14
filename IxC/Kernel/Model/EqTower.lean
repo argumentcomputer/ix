@@ -103,20 +103,20 @@ former a graph and not a proof point. -/
 
 /-- `Eq`'s annotated valuation: v1's `eqValT` with all three binders in
 the graph regime (forced — see the module docstring). -/
-@[expose] def eqValAV (ψ : Name → Nat) : AnnotTerm :=
+@[expose] def eqValAV (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam 1 (.sort (ψ uN)) (.lam 1 (.bvar 0) (.lam 1 (.bvar 1)
     (.eqE (.bvar 1) (.bvar 0))))
 
 /-- `Eq.refl`'s annotated valuation: `.prf` under two **squash-regime**
 binders (forced: the pinned `pw` is `.ifAllZero []` at both, because
 `Eq α a a` is a proposition). -/
-@[expose] def eqReflValAV (ψ : Name → Nat) : AnnotTerm :=
+@[expose] def eqReflValAV (ψ : LevelParam → Nat) : AnnotTerm :=
   .lam 0 (.sort (ψ uN)) (.lam 0 (.bvar 0) .prf)
 
 /-- `Eq.rec`'s annotated valuation: the minor premise, returned, under
 six binders whose bit is the motive level's own zero test — the pinned
 `pw` is `.ifAllZero [u_1]` at every one of them. -/
-@[expose] def eqRecValAV (ψ : Name → Nat) : AnnotTerm :=
+@[expose] def eqRecValAV (ψ : LevelParam → Nat) : AnnotTerm :=
   let m : Nat := pwBit ψ (.ifAllZero [u1N])
   .lam m (.sort (ψ uN))
     (.lam m (.bvar 0)
@@ -132,28 +132,28 @@ six binders whose bit is the motive level's own zero test — the pinned
 
 /-! ### Erasure: the towers project onto v1's -/
 
-@[simp] theorem eqValAV_erase (ψ : Name → Nat) :
+@[simp] theorem eqValAV_erase (ψ : LevelParam → Nat) :
     (eqValAV ψ).erase = eqValT ψ := rfl
 
-@[simp] theorem eqReflValAV_erase (ψ : Name → Nat) :
+@[simp] theorem eqReflValAV_erase (ψ : LevelParam → Nat) :
     (eqReflValAV ψ).erase = eqReflValT ψ := rfl
 
-@[simp] theorem eqRecValAV_erase (ψ : Name → Nat) :
+@[simp] theorem eqRecValAV_erase (ψ : LevelParam → Nat) :
     (eqRecValAV ψ).erase = eqRecValT ψ := rfl
 
-/-! ### The towers read the assignment only at their own level names -/
+/-! ### The towers read the assignment only at their own level parameters -/
 
-theorem eqValAV_congr {ψ₁ ψ₂ : Name → Nat} (h : ψ₁ uN = ψ₂ uN) :
+theorem eqValAV_congr {ψ₁ ψ₂ : LevelParam → Nat} (h : ψ₁ uN = ψ₂ uN) :
     eqValAV ψ₁ = eqValAV ψ₂ := by rw [eqValAV, eqValAV, h]
 
-theorem eqReflValAV_congr {ψ₁ ψ₂ : Name → Nat} (h : ψ₁ uN = ψ₂ uN) :
+theorem eqReflValAV_congr {ψ₁ ψ₂ : LevelParam → Nat} (h : ψ₁ uN = ψ₂ uN) :
     eqReflValAV ψ₁ = eqReflValAV ψ₂ := by rw [eqReflValAV, eqReflValAV, h]
 
 /-! ## `Eq`'s tower, interpreted -/
 
 /-- **`Eq`'s tower, interpreted**: a three-deep graph-regime `lamR` over
 the truth-set former. -/
-theorem eqValAV_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqValAV_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (eqValAV ψ)
       = lamR 1 (univ (ψ uN))
         (fun a => lamR 1 a (fun x => lamR 1 a (fun y => eqv x y))) := by
@@ -161,7 +161,7 @@ theorem eqValAV_interp (ψ : Name → Nat) (ρ : Nat → V) :
 
 /-- **The full spine's value** — `EqLaw`'s first conjunct at the tower:
 three `app_lamR_pos`, one per binder, each on its domain. -/
-theorem eqValAV_app₃ (ψ : Name → Nat) (ρ : Nat → V) (A a b : V)
+theorem eqValAV_app₃ (ψ : LevelParam → Nat) (ρ : Nat → V) (A a b : V)
     (hA : A ∈ˢ (univ (ψ uN) : V)) (ha : a ∈ˢ A) (hb : b ∈ˢ A) :
     SetTheory.app (SetTheory.app (SetTheory.app
         (interp V ρ (eqValAV ψ)) A) a) b = eqv a b := by
@@ -170,7 +170,7 @@ theorem eqValAV_app₃ (ψ : Name → Nat) (ρ : Nat → V) (A a b : V)
 
 /-- The tower inhabits the `Eq` former's product tower, at the pinned
 type's own numerals (all nonzero). -/
-theorem eqValAV_mem (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqValAV_mem (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (eqValAV ψ) ∈ˢ piR 1 (univ (ψ uN) : V)
       (fun a => piR 1 a (fun _ => piR 1 a (fun _ => univZero))) := by
   rw [eqValAV_interp]
@@ -178,7 +178,7 @@ theorem eqValAV_mem (ψ : Name → Nat) (ρ : Nat → V) :
     lamR_mem (fun _y _ => eqv_mem_univZero _ _)))
 
 /-- The tower is graded (`WellDenoted`), at every environment. -/
-theorem eqValAV_wellDenoted (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqValAV_wellDenoted (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenoted V ρ (eqValAV ψ) := by
   refine ⟨trivial, fun A _ => ⟨trivial, fun a _ => ⟨trivial,
     fun b _ => ⟨trivial, trivial⟩, ?_⟩, ?_⟩, ?_⟩
@@ -194,13 +194,13 @@ theorem eqValAV_wellDenoted (ψ : Name → Nat) (ρ : Nat → V) :
 
 /-- The tower is bit-valid (`AnnotValid`) — the `lam` clause is
 bit-free, so this is pure structure. -/
-theorem eqValAV_validV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqValAV_validV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     AnnotValid V ρ (eqValAV ψ) := by
   refine ⟨trivial, fun A _ => ⟨trivial, fun a _ => ⟨trivial,
     fun b _ => ⟨trivial, trivial⟩⟩⟩⟩
 
 /-- The P currency, packaged. -/
-theorem eqValAV_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqValAV_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (eqValAV ψ) :=
   ⟨eqValAV_wellDenoted ψ ρ, eqValAV_validV ψ ρ⟩
 
@@ -208,21 +208,21 @@ theorem eqValAV_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
 
 /-- **`Eq.refl`'s tower, interpreted**: `pt`, because its outer binder's
 codomain `(a : α) → Eq α a a` is a proposition. -/
-theorem eqReflValAV_interp (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflValAV_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (eqReflValAV ψ) = (pt : V) := by
   simp [eqReflValAV, lamR_zero]
 
 /-- The tower inhabits `Eq.refl`'s product tower at the pinned type's
 numerals (both zero) — `pt_mem_piR_zero_of` twice, bottoming at
 `pt_mem_eqv_self`. -/
-theorem eqReflValAV_mem (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflValAV_mem (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (eqReflValAV ψ) ∈ˢ piR 0 (univ (ψ uN) : V)
       (fun a => piR 0 a (fun x => eqv x x)) := by
   rw [eqReflValAV_interp]
   exact pt_mem_piR_zero_of fun _A _ =>
     pt_mem_piR_zero_of fun x _ => pt_mem_eqv_self x
 
-theorem eqReflValAV_wellDenoted (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflValAV_wellDenoted (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenoted V ρ (eqReflValAV ψ) := by
   refine ⟨trivial, fun A _ => ⟨trivial, fun _a _ => trivial, ?_⟩, ?_⟩
   · exact ⟨fun x => eqv x x, fun x _ => pt_mem_eqv_self x,
@@ -231,11 +231,11 @@ theorem eqReflValAV_wellDenoted (ψ : Name → Nat) (ρ : Nat → V) :
       fun _ _ => pt_mem_piR_zero_of fun y _ => pt_mem_eqv_self y,
       fun _ _ _ => piR_zero_mem_univZero⟩
 
-theorem eqReflValAV_validV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflValAV_validV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     AnnotValid V ρ (eqReflValAV ψ) :=
   ⟨trivial, fun _ _ => ⟨trivial, fun _ _ => trivial⟩⟩
 
-theorem eqReflValAV_wellDenotedV (ψ : Name → Nat) (ρ : Nat → V) :
+theorem eqReflValAV_wellDenotedV (ψ : LevelParam → Nat) (ρ : Nat → V) :
     WellDenotedV V ρ (eqReflValAV ψ) :=
   ⟨eqReflValAV_wellDenoted ψ ρ, eqReflValAV_validV ψ ρ⟩
 
@@ -260,7 +260,7 @@ Both conjuncts come off `eqValAV` directly:
 `EqLaw`'s second conjunct, factored out: the `Eq.refl` and `Eq.rec`
 type readings both mention the spine directly, not through the
 field. -/
-theorem eqValAV_app₃_okP (ψ : Name → Nat) (ρ : Nat → V)
+theorem eqValAV_app₃_okP (ψ : LevelParam → Nat) (ρ : Nat → V)
     {Aa la ra : AnnotTerm} (hAa : WellDenotedV V ρ Aa) (hla : WellDenotedV V ρ la)
     (hra : WellDenotedV V ρ ra)
     (hA : interp V ρ Aa ∈ˢ (univ (ψ uN) : V))
@@ -290,7 +290,7 @@ theorem eqValAV_app₃_okP (ψ : Name → Nat) (ρ : Nat → V)
 /-- **`EqLaw` from the tower.**  Any environment carrier whose `Eq`
 leaf is the annotated tower satisfies the field. -/
 theorem eqLaw_of_tower {env : Ix.Kernel.Env} (m : EnvModel V env)
-    (hleaf : ∀ ψ : Name → Nat, m.acval eqName ψ = eqValAV ψ) :
+    (hleaf : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ) :
     EqLaw m := by
   intro _hf ψ
   refine ⟨fun ρ A a b hA ha hb => ?_, fun ρ Aa la ra hAa hla hra
