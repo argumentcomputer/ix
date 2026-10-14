@@ -1,15 +1,16 @@
-import Ix.Address.Pure
 import IxC.Ixon.Codec
 import IxC.Kernel.Admission
 import IxC.Kernel.Egress.Projection
 
-/-! Pure projection reconstruction outside the hash-free kernel.
+/-! Projection reconstruction outside the hash-free kernel.
 
 Projection records are derived from physical mutual blocks, using the same
 variant/member/constructor positions as production ingress. Their keys are
-the pure BLAKE3 hash of the complete production serialization. Existing
-records are retained exactly; a conflicting payload at a generated key is
-an error, so no collision assumption is needed to extend the supplied store.
+the content hash `hash` of the complete production serialization, the same
+hash the entry authenticates the supplied records with; the root library
+instantiates it at BLAKE3 (`Ixon.Authenticated`). Existing records are
+retained exactly; a conflicting payload at a generated key is an error, so no
+collision assumption is needed to extend the supplied store.
 -/
 
 namespace Ixon.Projection
@@ -39,9 +40,10 @@ def requests (constants : Ingress.Constants) : List Request :=
 def primaries (constants : Ingress.Constants) : Ingress.Constants :=
   constants.filter fun pair => !Ingress.isProjection pair.2.info
 
-/-- The address is a theorem-level computation, not a host hash result. -/
-def address (record : Ixon.Constant) : Address :=
-  Address.blake3Pure (Ixon.serConstant record)
+/-- A record's address: `hash` of its complete serialization, as for a
+supplied record. -/
+def address (hash : ByteArray → Address) (record : Ixon.Constant) : Address :=
+  hash (Ixon.serConstant record)
 
 /-- Compare only exact projection records, including their empty tables.
 This avoids evaluating structural equality on unrelated declaration trees. -/
@@ -61,26 +63,28 @@ inductive Error where
 /-- Reserve one request before writing or hashing it. Existing identical
 records spend a request too. Newly derived projections precede the input;
 the relative order and fields of primary declarations are preserved. -/
-def reconstructLoop : Nat → List Request → Ingress.Constants → Except Error Ingress.Constants
+def reconstructLoop (hash : ByteArray → Address) :
+    Nat → List Request → Ingress.Constants → Except Error Ingress.Constants
   | _, [], constants => .ok constants
   | 0, _ :: _, _ => .error .limit
   | remaining + 1, request :: rest, constants => do
     if request.reference.block.hash.size != 32 then
       throw (.ownerWidth request.reference.block)
     let record ← (Egress.writeProjection request.layout request.reference).mapError .projection
-    let key := address record
+    let key := address hash record
     match Ingress.lookup constants key with
     | some existing =>
-      if matchesRecord request existing then reconstructLoop remaining rest constants
+      if matchesRecord request existing then reconstructLoop hash remaining rest constants
       else throw (.conflict key)
-    | none => reconstructLoop remaining rest ((key, record) :: constants)
+    | none => reconstructLoop hash remaining rest ((key, record) :: constants)
 
 /-- Reconstruct every member and constructor projection from the supplied
-physical blocks. `maxProjections` bounds requests, including reused records.
-The final kernel admission validates owners and constructor metadata. -/
-def reconstruct (maxProjections : Nat) (constants : Ingress.Constants) :
+physical blocks, under `hash`. `maxProjections` bounds requests, including
+reused records. The final kernel admission validates owners and constructor
+metadata. -/
+def reconstruct (hash : ByteArray → Address) (maxProjections : Nat) (constants : Ingress.Constants) :
     Except Error Ingress.Constants :=
-  reconstructLoop maxProjections (requests constants) constants
+  reconstructLoop hash maxProjections (requests constants) constants
 
 /-- Failures of the certified entry: byte admission and reconstruction
 (`Error`), or the checker (`Admission.Error`). -/
@@ -112,18 +116,21 @@ def CheckError.outcome : CheckError → Admission.Outcome
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then the
 verified checker behind the Ixon reader (`Admission.checkConstants`)
-on the expanded records. Input byte limits and key uniqueness apply before
-reconstruction; the separate projection limit bounds generated requests. Owner keys remain
-supplied keys: only derived projection addresses are authenticated here. -/
-def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (records : Admission.Records)
-    (blobs : Ingress.Blobs)
+on the expanded records. Input byte limits, key uniqueness and
+authentication apply before reconstruction: every supplied record and blob
+is stored under `hash` of its bytes, and every reconstructed projection under
+`hash` of its serialization. The separate projection limit bounds generated
+requests. -/
+def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : Admission.Limits)
+    (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .reconstruction (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .reconstruction (.admission error))
+  (Admission.authenticate hash records blobs).mapError (fun error => .reconstruction (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError
     (fun error => .reconstruction (.admission error))
-  let expanded ← (reconstruct maxProjections constants).mapError .reconstruction
+  let expanded ← (reconstruct hash maxProjections constants).mapError .reconstruction
   (Admission.checkConstants expanded blobs hint).mapError .checker
 
 end Ixon.Projection

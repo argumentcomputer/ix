@@ -1,13 +1,13 @@
-import Ix.Ixon.Projection
-import Ix.Ixon.BlockOrder
+import Ix.Ixon.Authenticated
 import Tests.Ix.Kernel.ReaderFidelity
 
 /-! # The kernel's output side against the compiler's records
 
 The certified entries write Ixon records on one path only: projection
 records, from a block member or constructor reference
-(`Ix.Kernel.Egress.writeProjection`), keyed by their pure BLAKE3 address
-(`Ixon.Projection.address`). `Projection.reconstruct` writes a batch's
+(`Ix.Kernel.Egress.writeProjection`), keyed by the entry's content hash of
+their serialization (`Ixon.Projection.address`), here the admission hash,
+BLAKE3 (`Ixon.Authenticated`). `Projection.reconstruct` writes a batch's
 projections from its `muts` blocks, and `BlockOrder` decides that a block's
 members are in canonical order with the same addresses. This module checks
 that output against real compiled environments:
@@ -15,7 +15,7 @@ that output against real compiled environments:
 1. **Records written are the compiler's** (`projections`, every environment): for
    every `muts` record, the projections `Projection.reconstruct` writes for
    that block alone are exactly the compiler's projection records of that
-   block, with the same keys (pure BLAKE3 against the compiler's hash) and the
+   block, with the same keys (the admission hash against the compiler's) and the
    same canonical bytes, and every compiler projection record is written this
    way. Every block also passes the certified order entry's check
    (`BlockOrder.checkRecord`): the compiler's member order is the one it
@@ -26,8 +26,9 @@ that output against real compiled environments:
    - the reader's declarations with the compiler's projections and with the
      reconstructed ones are equal (`Admission.readStream`);
    - `Admission.checkConstants` with the compiler's projections,
-     `Projection.checkBytes` with the projections omitted (reconstructed) and
-     `BlockOrder.checkBytes` (reconstructed, order decided) install the same
+     `Authenticated.checkBytesProjection` with the projections omitted
+     (reconstructed) and `Authenticated.checkBytesBlockOrder` (reconstructed,
+     order decided), both authenticating the supplied records, install the same
      environment: the same constants, in the same order, of the same kinds,
      with equal types;
    - every projection record names a constant installed in that environment,
@@ -145,7 +146,7 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
   for (a, c) in store.toList do
     let .muts ms := c.info | continue
     report := { report with blocks := report.blocks + 1 }
-    match Ixon.Projection.reconstruct maxProjections [(a, c)] with
+    match Ixon.Authenticated.reconstruct maxProjections [(a, c)] with
     | .error e => report := { report with problems := report.problems.push s!"{a}: {reprStr e}" }
     | .ok expanded =>
       let written := expanded.filter (·.1 != a)
@@ -164,13 +165,14 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
     if ms.size ≥ 2 then
       let kind := blockKind ms
       report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
-      match Ixon.BlockOrder.checkRecord {} blobs a c with
+      match Ixon.BlockOrder.checkRecord Address.admissionHash {} blobs a c with
       | .ok () =>
         if kind == "recursor" then
           report := { report with motiveOrdered := report.motiveOrdered.push a }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
-          if let .error (.motiveOrder ..) := Ixon.BlockOrder.checkRecord {} blobs a swapped then
+          if let .error (.motiveOrder ..) :=
+              Ixon.BlockOrder.checkRecord Address.admissionHash {} blobs a swapped then
             report := { report with swapsRefused := report.swapsRefused + 1 }
       | .error _ =>
         report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
@@ -249,7 +251,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let mut report : EntryReport := { records := prim.length, projectionRecords := projs.length }
   -- the reader, with the compiler's projections and with the written ones
   let compiled := prim ++ projs
-  let reconstructed ← match Ixon.Projection.reconstruct maxProjections prim with
+  let reconstructed ← match Ixon.Authenticated.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
   let decls₁ ← IO.ofExcept ((Ix.Kernel.Admission.readStream pins pre compiled blobs hints.lookup).mapError toString)
@@ -260,7 +262,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
-  let env₂ ← match Ixon.Projection.checkBytes maxProjections limits bytes blobs hints.lookup with
+  let env₂ ← match Ixon.Authenticated.checkBytesProjection maxProjections limits bytes blobs hints.lookup with
     | .ok env => pure env
     | .error (.reconstruction e) => throw (IO.userError s!"Projection.checkBytes: {reprStr e}")
     | .error (.checker e) => throw (IO.userError s!"Projection.checkBytes: {e}")
@@ -268,7 +270,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   if let some d := envDiff env₁ env₂ then
     report := { report with problems := report.problems.push s!"projection entry: {d}" }
   -- the block-order entry accepts the same batch with the same environment
-  match Ixon.BlockOrder.checkBytes maxProjections limits {} bytes blobs hints.lookup with
+  match Ixon.Authenticated.checkBytesBlockOrder maxProjections limits {} bytes blobs hints.lookup with
   | .ok env₃ =>
     if let some d := envDiff env₁ env₃ then
       report := { report with problems := report.problems.push s!"block-order entry: {d}" }

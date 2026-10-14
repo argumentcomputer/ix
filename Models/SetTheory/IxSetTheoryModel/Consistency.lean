@@ -7,9 +7,9 @@ import IxC.Kernel.Admission.Theorems
 The checker's theorems hold in every `Ix.Kernel.SetTheory V`
 (`Ix.Kernel.Admission.Theorems`). With the instance on Mathlib's `ZFSet` built
 from `ω` inaccessible cardinals (`zfSetTheoryOfCarneiro`), they hold in
-a concrete model: every environment the certified Ixon entry accepts has a
-model in `ZFSet`, and no accepted constant has the pinned `False` as its type.
-The inaccessible cardinals remain a hypothesis.
+a concrete model: every environment the certified Ixon entry accepts, at any
+content hash, has a model in `ZFSet`, and no accepted constant has the pinned
+`False` as its type. The inaccessible cardinals remain a hypothesis.
 -/
 
 universe u
@@ -20,24 +20,24 @@ open Ix.Kernel.Admission (checkBytes)
 
 /-- **Every input the certified Ixon entry accepts has a model in `ZFSet`**,
 given `ω` strongly inaccessible cardinals. -/
-theorem checkBytes_has_ZFSet_model (h : OmegaInaccessibles.{u})
+theorem checkBytes_has_ZFSet_model (h : OmegaInaccessibles.{u}) {hash : ByteArray → Address}
     {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
     {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (accepted : checkBytes limits records blobs hint = .ok env) :
+    (accepted : checkBytes hash limits records blobs hint = .ok env) :
     Nonempty (@Ix.Kernel.Model ZFSet.{u} (zfSetTheoryOfCarneiro h) env) :=
   @Ix.Kernel.Admission.checkBytes_has_model ZFSet.{u} (zfSetTheoryOfCarneiro h)
-    limits records blobs hint env accepted
+    hash limits records blobs hint env accepted
 
 /-- **No accepted constant proves the pinned `False`**, given `ω` strongly
 inaccessible cardinals. -/
-theorem checkBytes_no_proof_of_False (h : OmegaInaccessibles.{u})
+theorem checkBytes_no_proof_of_False (h : OmegaInaccessibles.{u}) {hash : ByteArray → Address}
     {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
     {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (accepted : checkBytes limits records blobs hint = .ok env) :
+    (accepted : checkBytes hash limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False :=
   @Ix.Kernel.Admission.checkBytes_no_proof_of_False ZFSet.{u} (zfSetTheoryOfCarneiro h)
-    limits records blobs hint env accepted
+    hash limits records blobs hint env accepted
 
 end IxSetTheoryModel

@@ -1,9 +1,15 @@
 import IxC.Kernel.Admission.Theorems
+import IxC.Fixtures.Authentic
+import Ix.Address.Admission
 
 /-! # Ixon records through the verified checker
 
-End-to-end fixtures for `Ix.Kernel.Admission.checkBytes`: canonical
-record bytes are preflighted, decoded, read by `Ix.Kernel.Reader`,
+End-to-end fixtures for `Ix.Kernel.Admission.checkBytes` at the admission
+hash (BLAKE3): the fixtures are written with stand-in keys and re-keyed to
+their BLAKE3 addresses before admission (`Tests.Ix.Kernel.Authentic.rekey`),
+with pin tables renamed and installed names spelled back in the stand-in
+keys, so the expectations below are stated in the stand-ins. Canonical
+record bytes are preflighted, authenticated, decoded, read by `Ix.Kernel.Reader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
 checked by `Ix.Kernel.Cached.checkDecls .verified`.
@@ -23,7 +29,7 @@ Géran fallback of the level comparison equates (the `RatFunc.liftOn_def`
 shape).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
-named `Eq` and rejected by the checker's reserved-name check; a definition
+refused, because the address is not its hash; a definition
 block with an ill-typed member is rejected by the checker; a `partial` block
 whose members call each other (the shape of Lean's `_unsafe_rec` companions)
 declines with its safety, as a partial singleton does, and the same block
@@ -37,6 +43,7 @@ and unsafe declarations;
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
 open Ix.Kernel.Admission
+open Tests.Ix.Kernel.Authentic (rekey Rekeyed)
 
 namespace Tests.Ix.Kernel.Reader
 
@@ -76,9 +83,31 @@ def builtinPins : Pins := match defaultPins with | .ok p => p | .error _ => {}
 def builtinPre : Prelude := match builtinPrelude with | .ok p => p | .error _ => default
 def builtinNatPins : List Ix.Kernel.NatOpPinSet := match builtinNatOpPins with | .ok ps => ps | .error _ => []
 
+/-- The admission hash: BLAKE3 (the Rust backend executes it). -/
+def hash : ByteArray → Address := Address.admissionHash
+
+/-- A fixture under its BLAKE3 keys. -/
+def rekeyed (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Rekeyed :=
+  rekey hash cs blobs
+
+/-- A pin table over a fixture's stand-in keys, on its BLAKE3 keys. -/
+def renamePins (r : Rekeyed) (pins : Pins) : Pins :=
+  let rename : ConstRef Address → ConstRef Address
+    | .member b i => .member (r.rename b) i
+    | .ctor b i c => .ctor (r.rename b) i c
+  { names := pins.names.fold (init := {}) fun m k v => m.insert (rename k) v
+    levels := pins.levels.fold (init := {}) fun m k v => m.insert (rename k) v }
+
+/-- A name with a fixture's stand-in keys in place of its BLAKE3 keys. -/
+def unrename (r : Rekeyed) : CName → CName
+  | .anonymous => .anonymous
+  | .str p s => .str (unrename r p) (((r.renamed.find? (toString ·.2 == s)).map (toString ·.1)).getD s)
+  | .num p n => .num (unrename r p) n
+
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (pins : Pins := builtinPins) : Except Error Ix.Kernel.Env :=
-  checkBytesWith pins builtinPre builtinNatPins limits (encode cs) blobs
+  let r := rekeyed cs blobs
+  checkBytesWith hash (renamePins r pins) builtinPre builtinNatPins limits r.encoded r.blobs
 
 def accepts (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (pins : Pins := builtinPins) : Bool :=
@@ -87,7 +116,7 @@ def accepts (cs : List (Address × Ixon.Constant)) (blobs : List (Address × Byt
 def namesOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (pins : Pins := builtinPins) : List String :=
   match run cs blobs pins with
-  | .ok env => env.consts.map (toString ·.name)
+  | .ok env => env.consts.map fun c => toString (unrename (rekeyed cs blobs) c.name)
   | .error _ => []
 
 def keyString (r : ConstRef Address) : String := toString (keyName r)
@@ -224,12 +253,14 @@ def declineReason (cs : List (Address × Ixon.Constant)) : Option String :=
 
 /-! ## An inductive with its separately stored recursor
 
-`inductive Two | a | b` and `Two.rec.{u}`, as the compiler lays them out: the
-block, its projection records, the recursor as its own record. -/
+`inductive Two : Type 1 | a | b` and `Two.rec.{u}`, as the compiler lays
+them out: the block, its projection records, the recursor as its own record.
+(In `Type` its block would be `Bool`'s, byte for byte, and so would be the
+prelude's `Bool` under its content address.) -/
 
 def twoBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [one]
+    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [.succ one]
 
 def twoMotive : E := all (ref 0) (sort 0)
 def twoRec : Ixon.Constant :=
@@ -612,7 +643,7 @@ def lTreeNames : List String :=
 #guard !lTreeNames.isEmpty && lTreeNames.eraseDups.length == lTreeNames.length
 #guard (lTreeNames.filter (· == keyString (.member lTreeBlock 0) ++ "._model._impl.pack_0")).length == 1
 -- and the block, its three recursors and the container's install
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits lTreeStream [] with
+#guard match checkBytesWith hash builtinPins builtinPre builtinNatPins limits lTreeStream [] with
   | .ok env =>
     let names := env.consts.map (toString ·.name)
     let t := keyString (.member lTreeBlock 0)
@@ -716,7 +747,7 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 -- the `1` where it is zero
 #guard Ix.Kernel.Level.Geran.leq lx (subtypeLevel) (-1)
 -- and the theorem is accepted
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits levelStream [] with
+#guard match checkBytesWith hash builtinPins builtinPre builtinNatPins limits levelStream [] with
   | .ok env => (env.consts.map (toString ·.name)).contains
       (keyString (.member ((addressOfHex levelTheorem).getD (address 0)) 0))
   | .error _ => false
@@ -724,8 +755,9 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 /-! ## Negative: pinned names on constants of another shape -/
 
 /-- A one-constructor `Type` stored under the real `Eq` block's address, with
-its recursor over the real `Eq`/`Eq.refl` projection records: the reader
-names it `Eq` (by address), and the checker rejects the reserved name. -/
+its recursor over the real `Eq`/`Eq.refl` projection records: the address is
+not the block's hash, so the entry refuses it before the reader names it
+`Eq` (by address). -/
 def eqBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == "Eq") with
   | some (r, _) => r.block
   | none => address 0
@@ -733,7 +765,24 @@ def eqBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == 
 def fakeEq : List (Address × Ixon.Constant) :=
   [(eqBlock, unitBlock), (address 90, unitRec eq eqRefl)]
 
-#guard match run fakeEq with
+#guard match checkBytesWith hash builtinPins builtinPre builtinNatPins limits (encode fakeEq) [] with
+  | .error e@(.mismatch .records 0 a) => a == eqBlock && e.outcome == .rejected
+  | _ => false
+
+/-- The same block under its own address, with its projection records and
+recursor, and a pin table that names it `Eq` in place of Init's: the reader
+names it `Eq`, and the checker rejects the reserved name. -/
+def ownEq : List (Address × Ixon.Constant) :=
+  [(address 89, unitBlock), (address 88, iPrj (address 89)), (address 87, cPrj (address 89) 0),
+   (address 90, unitRec (address 88) (address 87))]
+
+def eqPins : Pins :=
+  let kept := builtinPins.names.toList.filter fun p => !["Eq", "Eq.refl"].contains (toString p.2)
+  let test : List (ConstRef Address × CName) :=
+    [(.member (address 89) 0, .str .anonymous "Eq"), (.ctor (address 89) 0 0, .str (.str .anonymous "Eq") "refl")]
+  { builtinPins with names := (kept ++ test).foldl (fun m (r, n) => m.insert r n) {} }
+
+#guard match run ownEq (pins := eqPins) with
   | .error (.kernel (.invalid msg) _) => msg.startsWith "reserved basis name"
   | _ => false
 
@@ -777,7 +826,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
 -- the same address twice: the byte stage rejects it (`uniqueKeys`),
 -- and the reader rejects it in decoded records (`readRecords_nodup`)
 #guard match run [(address 10, idNat), (address 10, idNat)] with
-  | .error (.duplicate .records 1 a) => a == address 10
+  | .error (.duplicate .records 1 a) => a == (rekeyed [(address 10, idNat)]).rename (address 10)
   | _ => false
 #guard match checkConstantsWith builtinPins builtinPre builtinNatPins
     [(address 10, idNat), (address 10, idNat)] [] with
@@ -798,9 +847,13 @@ def natBlockRecord : Ixon.Constant := Id.run do
 #guard match run [(address 10, defn .defn (all (ref 0) (ref 0)) (lam (ref 0) (var 0)) [nat] (safety := .part))] with
   | .error (.read 0 (.declined _)) => true
   | _ => false
--- a non-canonical byte string fails at decoding
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits [(address 10, ⟨#[0xff]⟩)] [] with
+-- a non-canonical byte string under its own hash fails at decoding; under
+-- any other key it fails at authentication, before decoding
+#guard match checkBytesWith hash builtinPins builtinPre builtinNatPins limits [(hash ⟨#[0xff]⟩, ⟨#[0xff]⟩)] [] with
   | .error (.decode 0 _ _) => true
+  | _ => false
+#guard match checkBytesWith hash builtinPins builtinPre builtinNatPins limits [(address 10, ⟨#[0xff]⟩)] [] with
+  | .error (.mismatch .records 0 a) => a == address 10
   | _ => false
 
 /-! ## The table's own refusals -/
@@ -822,7 +875,7 @@ example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_
 
 example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
     {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : checkBytes limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
+    (h : checkBytes hash limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}

@@ -13,7 +13,8 @@ import Ix.Ixon.ReduceUniverse
 Full partition refinement uses only the ordering component of the production
 comparator. It avoids the native hash-equality shortcut and the strong-order
 fast path. Lists compare lexicographically (including unequal lengths).
-Projection addresses are computed by the pure writer/hash path. Universes
+Projection addresses are computed by the projection writer and the entry's
+content hash, the one it authenticates the supplied records with. Universes
 are rebuilt once through the same simplifying constructors as host ingress.
 Sharing is followed only to earlier entries, without constructing another
 expanded expression tree. Literal comparison uses values, not blob addresses.
@@ -76,28 +77,29 @@ structure Block where
   universes : Array Univ
   blobs : Ingress.Blobs
 
-def projectionAddress (layout : Egress.ProjectionLayout) (reference : ConstRef Address) :
-    Except Error Address := do
+def projectionAddress (hash : ByteArray → Address) (layout : Egress.ProjectionLayout)
+    (reference : ConstRef Address) : Except Error Address := do
   if reference.block.hash.size != 32 then
     throw (.projection (.ownerWidth reference.block))
   let record ← (Egress.writeProjection layout reference).mapError
     (fun error => .projection (.projection error))
-  return Projection.address record
+  return Projection.address hash record
 
-def prepareEntry (owner : Address) (index : Nat) (member : MutConst) : Except Error Entry := do
+def prepareEntry (hash : ByteArray → Address) (owner : Address) (index : Nat) (member : MutConst) :
+    Except Error Entry := do
   match member with
-  | .defn _ => return ⟨← projectionAddress .definition (.member owner index), [], member⟩
-  | .recr _ => return ⟨← projectionAddress .recursor (.member owner index), [], member⟩
+  | .defn _ => return ⟨← projectionAddress hash .definition (.member owner index), [], member⟩
+  | .recr _ => return ⟨← projectionAddress hash .recursor (.member owner index), [], member⟩
   | .indc value =>
-    let address ← projectionAddress .inductive (.member owner index)
+    let address ← projectionAddress hash .inductive (.member owner index)
     let constructors ← value.ctors.toList.zipIdx.mapM fun (_, ctor) =>
-      projectionAddress .constructor (.ctor owner index ctor)
+      projectionAddress hash .constructor (.ctor owner index ctor)
     return ⟨address, constructors, member⟩
 
-def prepare (owner : Address) (source : Ixon.Constant) (blobs : Ingress.Blobs) :
-    Except Error Block := do
+def prepare (hash : ByteArray → Address) (owner : Address) (source : Ixon.Constant)
+    (blobs : Ingress.Blobs) : Except Error Block := do
   let .muts members := source.info | throw (.malformed "expected a mutual block")
-  let entries ← members.toList.zipIdx.mapM fun (member, index) => prepareEntry owner index member
+  let entries ← members.toList.zipIdx.mapM fun (member, index) => prepareEntry hash owner index member
   return ⟨source, entries.toArray, source.univs.map Ixon.reduceUniv, blobs⟩
 
 def required (reason : String) : Option α → Except Error α
@@ -358,9 +360,9 @@ def canonicalClasses (limits : Limits) (block : Block) : Except Error Classes :=
 
 def orderedSingletons (size : Nat) : Classes := (List.range size).map fun index => [index]
 
-def checkBlock (limits : Limits) (owner : Address) (source : Ixon.Constant)
+def checkBlock (hash : ByteArray → Address) (limits : Limits) (owner : Address) (source : Ixon.Constant)
     (blobs : Ingress.Blobs) : Except Error Unit := do
-  let block ← prepare owner source blobs
+  let block ← prepare hash owner source blobs
   let classes ← canonicalClasses limits block
   if classes = orderedSingletons block.entries.size then return ()
   throw (.nonCanonical owner classes)
@@ -401,20 +403,20 @@ def checkMotives (owner : Address) (source : Ixon.Constant) (size : Nat) :
 
 /-- One record's order check: a recursor block in motive order, any other
 `muts` block in canonical structural order (`checkBlock`), nothing else. -/
-def checkRecord (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
+def checkRecord (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs) (owner : Address)
     (source : Ixon.Constant) : Except Error Unit :=
   match source.info with
   | .muts members =>
     if members.all isRecursor then checkMotives owner source members.size 0 members.toList
-    else checkBlock limits owner source blobs
+    else checkBlock hash limits owner source blobs
   | _ => .ok ()
 
-def checkConstants (limits : Limits) (blobs : Ingress.Blobs) :
+def checkConstants (hash : ByteArray → Address) (limits : Limits) (blobs : Ingress.Blobs) :
     Ingress.Constants → Except Error Unit
   | [] => .ok ()
   | (owner, source) :: rest => do
-    checkRecord limits blobs owner source
-    checkConstants limits blobs rest
+    checkRecord hash limits blobs owner source
+    checkConstants hash limits blobs rest
 
 /-- Failures of the certified entry: byte admission, reconstruction and
 order (`Error`), or the checker (`Admission.Error`). -/
@@ -444,20 +446,21 @@ def CheckError.outcome : CheckError → Admission.Outcome
   | .checker error => error.outcome
 
 /-- **The certified entry with canonical block order**: byte spelling,
-computed projections, canonical block order (recursor blocks in motive
-order), and the verified
+authentication under `hash`, computed projections, canonical block order
+(recursor blocks in motive order), and the verified
 checker behind the Ixon reader are all executed here. No host ordering
 verdict is input. -/
-def checkBytes (maxProjections : Nat) (limits : Admission.Limits) (orderLimits : Limits)
-    (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : Admission.Limits)
+    (orderLimits : Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .order (.admission error))
+  (Admission.authenticate hash records blobs).mapError (fun error => .order (.admission error))
   let constants ← (Admission.decodeRecords limits records).mapError (fun error => .order (.admission error))
-  let expanded ← (Projection.reconstruct maxProjections constants).mapError
+  let expanded ← (Projection.reconstruct hash maxProjections constants).mapError
     (fun error => .order (.projection error))
-  (checkConstants orderLimits blobs constants).mapError .order
+  (checkConstants hash orderLimits blobs constants).mapError .order
   (Admission.checkConstants expanded blobs hint).mapError .checker
 
 end Ixon.BlockOrder

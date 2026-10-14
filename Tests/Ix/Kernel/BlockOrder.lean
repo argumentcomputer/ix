@@ -1,9 +1,11 @@
-import Ix.Ixon.BlockOrder.Theorems
+import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Projection
 
 /-! Canonical block order (`Ixon.BlockOrder`): canonical classes,
 accepted and refused member orders, and the refinement budget, checked at
-elaboration. -/
+elaboration, with projection addresses under pure BLAKE3; the ordered entry
+at BLAKE3 (`Ixon.Authenticated.checkBytesBlockOrder`) on fixtures re-keyed
+to their BLAKE3 addresses. -/
 
 open Ix.Kernel
 open Ixon.BlockOrder
@@ -30,14 +32,14 @@ def record (members : Array Ixon.MutConst) : Ixon.Constant :=
 
 def classes (source : Ixon.Constant) (blobs : List (Address × ByteArray) := [])
     (limits : Limits := {}) : Except Error Classes := do
-  canonicalClasses limits (← prepare owner source blobs)
+  canonicalClasses limits (← prepare Projection.spec owner source blobs)
 
 def accepts (source : Ixon.Constant) (blobs : List (Address × ByteArray) := []) (limits : Limits := {}) : Bool :=
-  (checkBlock limits owner source blobs).isOk
+  (checkBlock Projection.spec limits owner source blobs).isOk
 
 def compareIn (source : Ixon.Constant) (left right : Ixon.Expr)
     (blobs : List (Address × ByteArray) := []) (partition : Classes := []) (fuel : Nat := 32) : Except Error Ordering := do
-  let block ← prepare owner source blobs
+  let block ← prepare Projection.spec owner source blobs
   let ctx ← localContext block partition
   compareRoot block ctx fuel left right
 
@@ -109,7 +111,7 @@ def blobs : List (Address × ByteArray) := [(address 1, ⟨#[0, 1]⟩), (address
 -- Ref and recur denote the same physical key; projection heads use the
 -- local constructor offsets. Unequal external alias keys stay unequal.
 def localAliases : Ixon.Constant :=
-  { weak with refs := #[Ixon.Projection.address ⟨.dPrj ⟨1, owner⟩, #[], #[], #[]⟩, address 1] }
+  { weak with refs := #[Ixon.Projection.address Projection.spec ⟨.dPrj ⟨1, owner⟩, #[], #[], #[]⟩, address 1] }
 #guard compareIn localAliases (.ref 0 #[]) (.recur 1 #[]) [] [[0], [1], [2]] == .ok .eq
 #guard compareIn localAliases (.recur 1 #[]) (.ref 1 #[]) [] [[0], [1], [2]] == .ok .lt
 #guard compareIn localAliases (.prj 0 0 (.var 0)) (.prj 1 0 (.var 0)) [] [[0], [1], [2]] == .ok .lt
@@ -117,7 +119,7 @@ def localAliases : Ixon.Constant :=
 def ctor (index fields : UInt64) : Ixon.Constructor := ⟨false, 0, index, 0, fields, .sort 0⟩
 def ctorBlock : Ixon.Constant := record #[indc 0 #[ctor 0 0, ctor 1 0], indc 0 #[ctor 0 1], indc 1 #[ctor 0 0]]
 def ctorContext : Except Error (List (Option Nat)) := do
-  let block ← prepare owner ctorBlock []
+  let block ← prepare Projection.spec owner ctorBlock []
   let ctx ← localContext block [[0, 1], [2]]
   let keys := block.entries.toList.flatMap fun e => e.address :: e.constructors
   return keys.map (Ingress.lookup ctx)
@@ -141,7 +143,7 @@ def motive (j : Nat) (motives : UInt64 := 2) : Ixon.MutConst :=
   .recr ⟨false, false, 0, 0, 0, motives, 0,
     (List.range depth).foldl (fun body _ => binder body) (.var (UInt64.ofNat (depth - 1 - j))), #[]⟩
 
-def recordCheck (source : Ixon.Constant) : Except Error Unit := checkRecord {} [] owner source
+def recordCheck (source : Ixon.Constant) : Except Error Unit := checkRecord Projection.spec {} [] owner source
 
 def motiveOrdered : Ixon.Constant := record #[motive 0, motive 1]
 def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
@@ -166,32 +168,43 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 #guard recordCheck reversed == .error (.nonCanonical owner [[2], [1], [0]])
 #guard (recordCheck (record #[motive 0, indc 0])).isOk == accepts (record #[motive 0, indc 0])
 #guard (recordCheck (record #[indc 0, motive 0])).isOk == accepts (record #[indc 0, motive 0])
-#guard checkConstants {} [] [(owner, motiveOrdered), (owner, simple)] == .ok ()
-#guard checkConstants {} [] [(owner, simple), (owner, motiveSwapped)] ==
+#guard checkConstants Projection.spec {} [] [(owner, motiveOrdered), (owner, simple)] == .ok ()
+#guard checkConstants Projection.spec {} [] [(owner, simple), (owner, motiveSwapped)] ==
   .error (.motiveOrder owner 0 (some 1))
+/-- The ordered entry at BLAKE3 on records already under their keys. -/
+def checkAt (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :
+    Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
+  Ixon.Authenticated.checkBytesBlockOrder 16 ByteAdmission.limits orderLimits (Projection.encode input) []
+
+/-- The ordered entry at BLAKE3 on a fixture re-keyed under BLAKE3. -/
+def checkRekeyed (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :
+    Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
+  checkAt (Tests.Ix.Kernel.Authentic.rekey Projection.spec input).records orderLimits
+
 -- through the bytes: the motive-ordered block passes the order stage (and the
 -- checker then declines recursors without their inductive block); the swapped
 -- one stops at the order stage
-#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveOrdered)]) [] with
+#guard match checkRekeyed [(owner, motiveOrdered)] with
   | .error e@(.checker _) => e.outcome == .declined
   | _ => false
-#guard match checkBytes 16 ByteAdmission.limits {} (Projection.encode [(owner, motiveSwapped)]) [] with
+#guard match checkRekeyed [(owner, motiveSwapped)] with
   | .error e@(.order (.motiveOrder _ 0 (some 1))) => e.outcome == .rejected
+  | _ => false
+-- a stand-in key is not the block's hash: refused before the order stage
+#guard match checkAt [(owner, motiveSwapped)] with
+  | .error e@(.order (.admission (.mismatch .records 0 a))) => a == owner && e.outcome == .rejected
   | _ => false
 
 -- The certified entry with canonical block order admits the separately
 -- stored family/recursor fixture and derives its model through the same
 -- checker success.
-def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
-  (Projection.encode Projection.separatedInput) []).isOk
+def byteAccepts : Bool := (checkAt Projection.separatedInput).isOk
 #guard byteAccepts
 
-#guard match checkBytes 16 ByteAdmission.limits {}
-    (Projection.encode [(owner, reversed)]) [] with
+#guard match checkRekeyed [(owner, reversed)] with
   | .error e@(.order (.nonCanonical _ _)) => e.outcome == .rejected
   | _ => false
-#guard match checkBytes 16 ByteAdmission.limits ⟨32, 2⟩
-    (Projection.encode [(owner, weak)]) [] with
+#guard match checkRekeyed [(owner, weak)] ⟨32, 2⟩ with
   | .error e@(.order (.exhausted .refinement)) => e.outcome == .declined
   | _ => false
 
@@ -205,11 +218,11 @@ def byteAccepts : Bool := (checkBytes 16 ByteAdmission.limits {}
 #guard (Error.projection (.ownerWidth owner)).outcome == .rejected
 #guard (Error.projection .limit).outcome == .declined
 #guard (Error.admission (.decode 0 owner "")).outcome == .rejected
+#guard (Error.admission (.mismatch .blobs 0 owner)).outcome == .rejected
 #guard (Error.admission (.limit .totalBytes)).outcome == .declined
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
-    (h : checkBytes 16 ByteAdmission.limits {}
-      (Projection.encode Projection.separatedInput) [] = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
-  checkBytes_has_model V h
+    (h : checkAt Projection.separatedInput = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
+  Ixon.Authenticated.checkBytesBlockOrder_has_model V h
 
 end Tests.Ix.Kernel.BlockOrder

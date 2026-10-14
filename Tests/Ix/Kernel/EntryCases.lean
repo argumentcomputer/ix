@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission
+import Ix.Ixon.Authenticated
 import Ix.CompileDriver
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
@@ -14,8 +14,11 @@ loads the serialized environment with the host codec, orders the primary
 records as the environment check does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
 submits canonical record bytes, the literal blobs and the compiler's
-reducibility hints to the certified entry `Ix.Kernel.Admission.checkBytes`.
-Some cases first alter the input (bytes, keys, a recursor header).
+reducibility hints to the certified entry at BLAKE3,
+`Ixon.Authenticated.checkBytes` (`Ix.Kernel.Admission.checkBytes` at the
+admission hash). Some cases first alter the input (bytes, keys, a recursor
+header); an altered record or blob under its original key is refused at
+authentication.
 
 Every case has an exact expected verdict: accepted with each seed installed
 under its reader name, or the entry's error at a named stage with the
@@ -162,6 +165,14 @@ def positionOf (input : Input) (name : Lean.Name) : Option Nat := do
   let c ← (input.constants.find? (·.1 == a)).map (·.2)
   input.constants.findIdx? (·.1 == owner a c)
 
+/-- The position of a compiled name's own record in the submitted order. -/
+def positionOfRecord (input : Input) (name : Lean.Name) : Option Nat := do
+  let a ← input.named name
+  input.constants.findIdx? (·.1 == a)
+
+/-- A payload without its last byte. -/
+def truncated (bytes : ByteArray) : ByteArray := bytes.extract 0 (bytes.size - 1)
+
 /-- The reader's name of a compiled singleton record. -/
 def keyOf (input : Input) (name : Lean.Name) : Option String :=
   (input.named name).map fun a => toString (keyName (.member a 0))
@@ -198,15 +209,35 @@ def cases : List Case := [
   -- level comparison equates them; the shape of `RatFunc.liftOn_def`)
   { label := "level-comparison", seeds := [seed "levelCanon"], expected := .accept },
   -- rejected: malformed input
+  -- a truncated record under its own hash: it fails to decode
   { label := "malformed-bytes", seeds := [seed "twiceId"],
     expected := .fail .rejected "decode" fun input e => match e with
       | .decode p a r =>
-        p + 1 == input.constants.length && some a == input.constants.getLast?.map (·.1) && r == "EOF"
+        p + 1 == input.constants.length && some a == (input.constants.getLast?.map fun (_, c) =>
+          Address.admissionHash (truncated (Ixon.serConstant c))) && r == "EOF"
       | _ => false,
     alter := fun input =>
       let s := encode input
       pure { s with records := s.records.dropLast ++
-        s.records.getLast?.toList.map fun (a, b) => (a, b.extract 0 (b.size - 1)) } },
+        s.records.getLast?.toList.map fun (_, b) => (Address.admissionHash (truncated b), truncated b) } },
+  -- the same truncation under the record's original address: its key is no
+  -- longer the hash of its bytes
+  { label := "unauthentic-record", seeds := [seed "twiceId"],
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => p + 1 == input.constants.length && some a == input.constants.getLast?.map (·.1)
+      | _ => false,
+    alter := fun input =>
+      let s := encode input
+      pure { s with records := s.records.dropLast ++
+        s.records.getLast?.toList.map fun (a, b) => (a, truncated b) } },
+  -- a literal's blob with another value under the original blob's address
+  { label := "unauthentic-blob", seeds := [seed "natLit"],
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .blobs 0 a => some a == input.blobs.head?.map (·.1)
+      | _ => false,
+    alter := fun input =>
+      let s := encode input
+      pure { s with blobs := (s.blobs.take 1).map (fun (a, b) => (a, b.push 1)) ++ s.blobs.drop 1 } },
   { label := "duplicate-constant", seeds := [seed "twiceId"],
     expected := .fail .rejected "duplicate record" fun input e => match e with
       | .duplicate .records p a => p == input.constants.length && some a == input.constants.head?.map (·.1)
@@ -222,22 +253,21 @@ def cases : List Case := [
       let s := encode input
       pure { s with blobs := s.blobs ++ s.blobs.take 1 } },
   -- `Nat.rec`, the recursor of the pinned `Nat` block, under its own
-  -- address with its K flag set: the reader regenerates the recursor and
-  -- refuses the header
+  -- address with its K flag set: the address is not the altered record's
+  -- hash, so the entry refuses it before the reader would read the header
   { label := "wrong-shaped-pinned-recursor", seeds := [seed "natLit"],
-    expected := .fail .rejected "reader: malformed" fun input e => match e with
-      | .read p (.malformed m) => some p == positionOf input `Nat &&
-        m == "recursor Nat.rec declares k := true; the generated recursor is not K-like"
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => some a == input.named `Nat.rec && some p == positionOfRecord input `Nat.rec
       | _ => false,
     alter := fun input => alterRecord input `Nat.rec fun c => match c.info with
       | .recr r => pure { c with info := .recr { r with k := true } }
       | _ => throw "Nat.rec is not a recursor record" },
   -- `Nat.add`, a pinned `Nat` operation, under its own address with the
-  -- value `fun n m => n`: the checker refuses the pin (a checker verdict,
-  -- so a decline at the Ix API)
+  -- value `fun n m => n`: the address is not the altered record's hash, so
+  -- the entry refuses it before the checker would compare the pin
   { label := "wrong-valued-pinned-operation", seeds := [seed "natAdd"],
-    expected := .fail .declined "checker" fun _ e => match e with
-      | .kernel (.notImplemented m) _ => m == "nonstandard structural Nat operation (Nat.add)"
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => some a == input.named `Nat.add && some p == positionOfRecord input `Nat.add
       | _ => false,
     alter := fun input => alterRecord input `Nat.add fun c => match c.info with
       | .defn d => pure { c with info := .defn { d with value := .leanLam (.ref 0 #[]) (.leanLam (.ref 0 #[]) (.var 1)) } }
@@ -273,7 +303,7 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let started ← IO.monoMsNow
   let input ← prepare leanEnv test.seeds
   let submission ← IO.ofExcept (test.alter input)
-  let result := Ix.Kernel.Admission.checkBytes limits submission.records submission.blobs input.hints.lookup
+  let result := Ixon.Authenticated.checkBytes limits submission.records submission.blobs input.hints.lookup
   let (outcome, detail, passed) := match result, test.expected with
     | .ok env, .accept =>
       let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with
