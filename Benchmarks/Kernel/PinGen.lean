@@ -52,7 +52,7 @@ report rows.
    pin-certified ones by these pins and certificates), both literal
    capabilities hold in the final environment, and every recursor the
    prelude names gets its derived name.
-5. **Output.** `PinData.lean`: the table, sorted by name, the level names,
+5. **Output.** `PinData.lean`: the table, sorted by name,
    and the prelude's records (the twelve declarations of the checker's
    prelude, with their projection and recursor records) as canonical bytes.
    `NatOpPinData.lean`: the pin variant as a share table (the format is in
@@ -63,7 +63,7 @@ Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <PinData.lean> <NatOpPinData.lean>
 
 namespace Benchmarks.Kernel.PinGen
 
-open Ix.Kernel (ConstRef)
+open Ix.Kernel (ConstRef LevelParam)
 open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
@@ -143,19 +143,6 @@ def componentLit : String ⊕ Nat → String
   | .inl s => s!".inl {s.quote}"
   | .inr n => s!".inr {n}"
 
-def ixToC : Ix.Name → CName
-  | .anonymous _ => .anonymous
-  | .str p s _ => .str (ixToC p) s
-  | .num p n _ => .num (ixToC p) n
-
-/-- The level-parameter names a constant's metadata records. -/
-def metaLevels (env : Ixon.Env) (named : Ixon.Named) : Option (List CName) := do
-  let addrs := match named.constMeta.info with
-    | .defn _ lvls .. | .axio _ lvls .. | .quot _ lvls .. | .indc _ lvls .. | .ctor _ lvls ..
-    | .recr _ lvls .. => lvls
-    | _ => #[]
-  addrs.toList.mapM fun a => ixToC <$> env.names[a]?
-
 def refFields : ConstRef Address → String × Nat × Nat
   | .member b i => (toString b, i, 0)
   | .ctor b i c => (toString b, i, c + 1)
@@ -210,7 +197,7 @@ def reachable (store : RecordStore) (roots : Array Address) : Std.HashSet Addres
 definitions, theorems and opaques (with their level parameters), and the
 parameter counts of the constructors. -/
 structure Universe where
-  values : Std.HashMap CName (List CName × CExpr) := {}
+  values : Std.HashMap CName (List LevelParam × CExpr) := {}
   ctorParams : Std.HashMap CName Nat := {}
 
 def Universe.add (u : Universe) (d : CDecl) : Universe :=
@@ -227,7 +214,8 @@ def Universe.add (u : Universe) (d : CDecl) : Universe :=
 abbrev Memo := Std.HashMap CExpr CExpr
 
 /-- The level parameters `ks` instantiated by `us`. -/
-partial def instLevelsGo (ks : List CName) (us : List CLevel) (e : CExpr) : StateM Memo CExpr := do
+partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr) :
+    StateM Memo CExpr := do
   if !e.hasLP then return e
   if let some r := (← get)[e]? then return r
   let r ← match e with
@@ -244,7 +232,7 @@ partial def instLevelsGo (ks : List CName) (us : List CLevel) (e : CExpr) : Stat
   modify (·.insert e r)
   return r
 
-def instLevels (ks : List CName) (us : List CLevel) (e : CExpr) : CExpr :=
+def instLevels (ks : List LevelParam) (us : List CLevel) (e : CExpr) : CExpr :=
   if ks.isEmpty then e else (instLevelsGo ks us e |>.run {}).1
 
 /-- No loose `bvar` at or above `d`. -/
@@ -430,7 +418,7 @@ partial def encLevel (l : CLevel) : EncM Nat := do
     | .succ u => do let a ← encLevel u; emit s!"S {a}"
     | .max u v => do let a ← encLevel u; let b ← encLevel v; emit s!"M {a} {b}"
     | .imax u v => do let a ← encLevel u; let b ← encLevel v; emit s!"I {a} {b}"
-    | .param n => do let a ← encName n; emit s!"P {a}"
+    | .param n => emit s!"P {n}"
     | .zero => pure 1
   modify fun s => { s with levels := s.levels.insert l i }
   return i
@@ -621,20 +609,8 @@ def run (args : List String) : IO UInt32 := do
       byRef := byRef.insert p.ref p.name
       kept := kept.push p
   let pinnedNames ← IO.ofExcept (pinMap kept)
-  -- level-parameter names: every pinned constant's, and the recursors' of
-  -- every pinned inductive (`matchesPin` compares them by name)
-  let mut levels : Std.HashMap (ConstRef Address) (List CName) := {}
-  for p in kept do
-    let some named := env.named[Ix.Name.fromLeanName (toLeanName p.name)]? | continue
-    if let some ns := metaLevels env named then levels := levels.insert p.ref ns
-    if (inductiveAt lookup p.ref).isSome then
-      for r in (List.range 8).map (fun k => if k == 0 then p.name.str "rec" else p.name.str s!"rec_{k}") do
-        let some rn := env.named[Ix.Name.fromLeanName (toLeanName r)]? | continue
-        let some rc := store[rn.addr]? | continue
-        let some rref := resolveSource lookup rn.addr rc | continue
-        if let some ns := metaLevels env rn then levels := levels.insert rref ns
-  let pinned : Pins := { names := pinnedNames, levels }
-  IO.eprintln s!"pin-gen: {kept.size} pins, {levels.size} level lists, {recNames.size} derived recursor names"
+  let pinned : Pins := { names := pinnedNames }
+  IO.eprintln s!"pin-gen: {kept.size} pins, {recNames.size} derived recursor names"
   -- the prelude records, in prelude order
   let mut preludeAddrs : Array Address := #[]
   for group in preludeGroups do
@@ -718,10 +694,6 @@ def run (args : List String) : IO UInt32 := do
   let pinLines := sorted.toList.map fun p =>
     let (b, i, c) := refFields p.ref
     s!"  ([{", ".intercalate ((components p.name).map componentLit)}], {b.quote}, {i}, {c})"
-  let levelLines := (levels.toArray.qsort (fun a b => toString (refFields a.1) < toString (refFields b.1))).toList.map
-    fun (r, ns) =>
-      let (b, i, c) := refFields r
-      s!"  ({b.quote}, {i}, {c}, [{", ".intercalate (ns.map fun n => s!"[{", ".intercalate ((components n).map componentLit)}]")}])"
   let preLines := preRecords.toList.map fun (a, c) =>
     s!"  ({(toString a).quote},\n   {(hexOfBytes (Ixon.serConstant c)).quote})"
   let recipe := "\n".intercalate (regenerate.map ("    " ++ ·))
@@ -738,8 +710,6 @@ generated; see `IxC/Kernel/Ixon/Reader.lean` for what the table may affect
 (coverage, never soundness). Source: sha256 {digest}.
 
 `pins`: (name components, block address, member, constructor + 1 or 0).
-`levels`: (block address, member, constructor + 1 or 0, level-parameter
-names), for the pinned constants and their recursors.
 `prelude`: (record address, canonical record bytes), in the checker's
 prelude order. -/
 
@@ -749,9 +719,6 @@ def source : String := {s!"sha256:{digest}".quote}
 
 def pins : Array (List (String ⊕ Nat) × String × Nat × Nat) := #[
 {",\n".intercalate pinLines}]
-
-def levels : Array (String × Nat × Nat × List (List (String ⊕ Nat))) := #[
-{",\n".intercalate levelLines}]
 
 def prelude : Array (String × String) := #[
 {",\n".intercalate preLines}]

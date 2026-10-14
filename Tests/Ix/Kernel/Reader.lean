@@ -95,8 +95,7 @@ def renamePins (r : Rekeyed) (pins : Pins) : Pins :=
   let rename : ConstRef Address → ConstRef Address
     | .member b i => .member (r.rename b) i
     | .ctor b i c => .ctor (r.rename b) i c
-  { names := pins.names.fold (init := {}) fun m k v => m.insert (rename k) v
-    levels := pins.levels.fold (init := {}) fun m k v => m.insert (rename k) v }
+  { names := pins.names.fold (init := {}) fun m k v => m.insert (rename k) v }
 
 /-- A name with a fixture's stand-in keys in place of its BLAKE3 keys. -/
 def unrename (r : Rekeyed) : CName → CName
@@ -720,9 +719,9 @@ def levelTheorem : String := "9ba138c292613a142ae19b183bcda2530ea8a96905139bce04
 def levelStream : Ix.Kernel.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
-/-- The theorem's level parameters as the reader names them. -/
-def lw : Ix.Kernel.Level := .param (levelName 0)
-def lx : Ix.Kernel.Level := .param (levelName 1)
+/-- The theorem's level parameters as the reader numbers them. -/
+def lw : Ix.Kernel.Level := .param 0
+def lx : Ix.Kernel.Level := .param 1
 def lsucc (l : Ix.Kernel.Level) : Nat → Ix.Kernel.Level
   | 0 => l
   | k + 1 => .succ (lsucc l k)
@@ -736,7 +735,7 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 -- equal at every valuation of `w, x` in `0‥5` (both are `1` at `x = 0`, and
 -- `max (w+2) (x+1)` otherwise)
 #guard (List.range 6).all fun i => (List.range 6).all fun j =>
-  let φ : Ix.Kernel.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
+  let φ : Ix.Kernel.LevelParam → Nat := fun n => if n == 0 then i else if n == 1 then j else 0
   Ix.Kernel.Level.eval φ subtypeLevel == Ix.Kernel.Level.eval φ eqLevel
 -- the comparison establishes both directions, and so the equivalence
 #guard Ix.Kernel.Level.leq subtypeLevel eqLevel == some true

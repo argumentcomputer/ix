@@ -8,12 +8,14 @@ The term half of the Source-mode ingress (`Ix.LeanIngress`): an
 `Ix.Kernel.Expr` with nothing hashed and nothing rewritten.
 
 * **Names** are Lean's own: `Ix.Name` ↦ `Ix.Kernel.Name` component by
-  component, the hash fields dropped (`ingressName`). Constants and level
-  parameters alike keep their Lean names, so the checker's pinned names
-  (`Eq`, `Nat`, `Quot`, the literal support, the `Nat` operations, the standard
-  axioms) are met under the names it pins.
+  component, the hash fields dropped (`ingressName`). Constants keep their
+  Lean names, so the checker's pinned names (`Eq`, `Nat`, `Quot`, the literal
+  support, the `Nat` operations, the standard axioms) are met under the names
+  it pins.
 * **Levels** are Lean's levels, constructor by constructor; they are not
-  canonicalized. A level metavariable is refused.
+  canonicalized. A level parameter becomes its position `σ n` under the
+  constant's numbering `σ` of its own level parameters
+  (`Ix.LeanIngress.Numbering`). A level metavariable is refused.
 * **Terms**: `mdata` is erased, binder names and binder infos and `letE`'s
   `nonDep` flag are dropped, every binder carries `pw := .never` (the checker's
   annotation pass computes the datum, as for the Ixon reader's terms),
@@ -23,9 +25,10 @@ The term half of the Source-mode ingress (`Ix.LeanIngress`): an
 `ingressExpr` is the specification, a structural recursion over the term
 tree. A canonicalized term is a DAG (`CanonM` interns structurally equal
 subterms, and a proof's tree can be exponentially larger than its DAG). The
-ingress converts a declaration group's terms together, through
-`ingressExprs`, and compiled code runs `ingressExprsShared` for it, the same
-function computed on the DAG with one memo for all the terms, substituted by
+ingress converts the terms of a declaration group's constants that number
+their level parameters alike together, through `ingressExprs`, and compiled
+code runs `ingressExprsShared` for them, the same function computed on the
+DAG with one memo for all the terms, substituted by
 `@[csimp]` on its proof (`ingressExprs_eq_shared`). The memo is verified, not
 trusted, in the arrangement of the checker's `Expr.beqMemo`:
 
@@ -47,6 +50,8 @@ and the runtime's `withPtrAddr`/`withPtrEq`, as for the checker's own
 `beqMemo`. -/
 
 namespace Ix.LeanIngress
+
+open Ix.Kernel (LevelParam)
 
 abbrev KName := Ix.Kernel.Name
 abbrev KLevel := Ix.Kernel.Level
@@ -70,49 +75,59 @@ instance : ToString ExprError where
     | .mvar n => s!"metavariable {n}"
     | .levelMVar n => s!"level metavariable {n}"
 
-def ingressLevel : Ix.Level → Except ExprError KLevel
+def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError KLevel
   | .zero _ => pure .zero
-  | .succ u _ => return .succ (← ingressLevel u)
-  | .max u v _ => return .max (← ingressLevel u) (← ingressLevel v)
-  | .imax u v _ => return .imax (← ingressLevel u) (← ingressLevel v)
-  | .param n _ => pure (.param (ingressName n))
+  | .succ u _ => return .succ (← ingressLevel σ u)
+  | .max u v _ => return .max (← ingressLevel σ u) (← ingressLevel σ v)
+  | .imax u v _ => return .imax (← ingressLevel σ u) (← ingressLevel σ v)
+  | .param n _ => pure (.param (σ n))
   | .mvar n _ => throw (.levelMVar (ingressName n))
 
-/-- **The term conversion** (the specification). -/
-def ingressExpr : Ix.Expr → Except ExprError KExpr
+/-- **The term conversion** (the specification), under the constant's
+numbering `σ` of its level parameters. -/
+def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KExpr
   | .bvar i _ => pure (Ix.Kernel.Expr.mkBvar i)
   | .fvar n _ => throw (.fvar (ingressName n))
   | .mvar n _ => throw (.mvar (ingressName n))
-  | .sort u _ => return .sort (← ingressLevel u)
-  | .const n us _ => return .const (ingressName n) (← us.toList.mapM ingressLevel)
-  | .app f a _ => return .app (← ingressExpr f) (← ingressExpr a)
-  | .lam _ t b _ _ => return .lam (← ingressExpr t) (← ingressExpr b) ⟨.never⟩
-  | .forallE _ t b _ _ => return .forallE (← ingressExpr t) (← ingressExpr b) ⟨.never⟩
-  | .letE _ t v b _ _ => return .letE (← ingressExpr t) (← ingressExpr v) (← ingressExpr b)
+  | .sort u _ => return .sort (← ingressLevel σ u)
+  | .const n us _ => return .const (ingressName n) (← us.toList.mapM (ingressLevel σ))
+  | .app f a _ => return .app (← ingressExpr σ f) (← ingressExpr σ a)
+  | .lam _ t b _ _ => return .lam (← ingressExpr σ t) (← ingressExpr σ b) ⟨.never⟩
+  | .forallE _ t b _ _ => return .forallE (← ingressExpr σ t) (← ingressExpr σ b) ⟨.never⟩
+  | .letE _ t v b _ _ =>
+    return .letE (← ingressExpr σ t) (← ingressExpr σ v) (← ingressExpr σ b)
   | .lit (.natVal n) _ => pure (.lit (.natVal n))
   | .lit (.strVal s) _ => pure (.lit (.strVal s))
-  | .mdata _ e _ => ingressExpr e
-  | .proj n i e _ => return .proj (ingressName n) i (← ingressExpr e)
+  | .mdata _ e _ => ingressExpr σ e
+  | .proj n i e _ => return .proj (ingressName n) i (← ingressExpr σ e)
 
 /-- Metadata is erased. -/
-theorem ingressExpr_mdata (d : Array (Ix.Name × Ix.DataValue)) (e : Ix.Expr) (h : Address) :
-    ingressExpr (.mdata d e h) = ingressExpr e := rfl
+theorem ingressExpr_mdata (σ : Ix.Name → LevelParam) (d : Array (Ix.Name × Ix.DataValue))
+    (e : Ix.Expr) (h : Address) : ingressExpr σ (.mdata d e h) = ingressExpr σ e := rfl
 
 /-- The conversion of several terms. -/
-def ingressExprs (es : List Ix.Expr) : Except ExprError (List KExpr) :=
-  es.mapM ingressExpr
+def ingressExprs (σ : Ix.Name → LevelParam) (es : List Ix.Expr) : Except ExprError (List KExpr) :=
+  es.mapM (ingressExpr σ)
 
-/-! ## The conversion on the DAG -/
+/-! ## The conversion on the DAG
+
+The walk converts terms under one numbering `σ`, so a memo holds the
+conversions under that numbering only. -/
+
+section Shared
+
+variable (σ : Ix.Name → LevelParam)
 
 /-- Is `value` the conversion of `e`? The fallback of a memo probe (pure
 model only). -/
 def ingressIs (e : Ix.Expr) (value : KExpr) : Bool :=
-  match ingressExpr e with
+  match ingressExpr σ e with
   | .ok v => decide (v = value)
   | .error _ => false
 
+variable {σ} in
 theorem ingressIs_iff {e : Ix.Expr} {value : KExpr} :
-    ingressIs e value = true ↔ ingressExpr e = .ok value := by
+    ingressIs σ e value = true ↔ ingressExpr σ e = .ok value := by
   unfold ingressIs
   split <;> simp_all
 
@@ -120,75 +135,77 @@ theorem ingressIs_iff {e : Ix.Expr} {value : KExpr} :
 structure Entry where
   node : Ix.Expr
   value : KExpr
-  ok : ingressExpr node = .ok value
+  ok : ingressExpr σ node = .ok value
 
 /-- The memo: entries under the address of their node. -/
-abbrev Memo := Std.HashMap Nat Entry
+abbrev Memo := Std.HashMap Nat (Entry σ)
 
 /-- One node's result: its conversion, proved to be the tree conversion, and
 the memo after it. -/
 structure Res (e : Ix.Expr) where
   val : Except ExprError KExpr
-  eq : val = ingressExpr e
-  memo : Memo
+  eq : val = ingressExpr σ e
+  memo : Memo σ
 
 /-- The result behind `Squash`: a subsingleton, so it may depend on
 addresses. -/
-abbrev Out (e : Ix.Expr) := Squash (Res e)
+abbrev Out (e : Ix.Expr) := Squash (Res σ e)
 
 /-- The entry under `key`, if it is `e`'s: confirmed by identity
 (`withPtrEq`), whose pure meaning is `ingressIs`. -/
-@[inline] def probe (memo : Memo) (key : Nat) (e : Ix.Expr) :
-    Option { v : KExpr // ingressExpr e = .ok v } :=
+@[inline] def probe (memo : Memo σ) (key : Nat) (e : Ix.Expr) :
+    Option { v : KExpr // ingressExpr σ e = .ok v } :=
   match memo.get? key with
   | none => none
   | some p =>
-    if h : withPtrEq p.node e (fun _ => ingressIs e p.value)
+    if h : withPtrEq p.node e (fun _ => ingressIs σ e p.value)
         (fun same => ingressIs_iff.mpr (same ▸ p.ok)) = true then
       some ⟨p.value, ingressIs_iff.mp h⟩
     else none
 
-theorem ingressExpr_app (f a : Ix.Expr) (h : Address) : ingressExpr (.app f a h) =
-    (ingressExpr f >>= fun x => ingressExpr a >>= fun y => pure (.app x y)) := rfl
+theorem ingressExpr_app (f a : Ix.Expr) (h : Address) : ingressExpr σ (.app f a h) =
+    (ingressExpr σ f >>= fun x => ingressExpr σ a >>= fun y => pure (.app x y)) := rfl
 
 theorem ingressExpr_lam (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo) (h : Address) :
-    ingressExpr (.lam n t b bi h) =
-    (ingressExpr t >>= fun x => ingressExpr b >>= fun y => pure (.lam x y ⟨.never⟩)) := rfl
+    ingressExpr σ (.lam n t b bi h) =
+    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.lam x y ⟨.never⟩)) := rfl
 
 theorem ingressExpr_forallE (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo) (h : Address) :
-    ingressExpr (.forallE n t b bi h) =
-    (ingressExpr t >>= fun x => ingressExpr b >>= fun y => pure (.forallE x y ⟨.never⟩)) := rfl
+    ingressExpr σ (.forallE n t b bi h) =
+    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.forallE x y ⟨.never⟩)) :=
+  rfl
 
 theorem ingressExpr_letE (n : Ix.Name) (t v b : Ix.Expr) (nd : Bool) (h : Address) :
-    ingressExpr (.letE n t v b nd h) =
-    (ingressExpr t >>= fun x => ingressExpr v >>= fun y =>
-      ingressExpr b >>= fun z => pure (.letE x y z)) := rfl
+    ingressExpr σ (.letE n t v b nd h) =
+    (ingressExpr σ t >>= fun x => ingressExpr σ v >>= fun y =>
+      ingressExpr σ b >>= fun z => pure (.letE x y z)) := rfl
 
 theorem ingressExpr_proj (n : Ix.Name) (i : Nat) (b : Ix.Expr) (h : Address) :
-    ingressExpr (.proj n i b h) =
-    (ingressExpr b >>= fun y => pure (.proj (ingressName n) i y)) := rfl
+    ingressExpr σ (.proj n i b h) =
+    (ingressExpr σ b >>= fun y => pure (.proj (ingressName n) i y)) := rfl
 
 /-- The DAG walk. A node is probed under its address; on a miss it is
 converted from its children's results (each child through the walk, so a
 shared child is converted once) and, on success, recorded. A failure is not
 recorded: it ends the conversion. -/
-def go (memo : Memo) (e : @& Ix.Expr) : Out e :=
+def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
   withPtrAddr e (fun pa =>
-    match probe memo pa.toNat e with
+    match probe σ memo pa.toNat e with
     | some hit => Squash.mk ⟨.ok hit.1, hit.2.symm, memo⟩
     | none =>
-      let node : Out e := match e with
+      let node : Out σ e := match e with
         | .bvar i _ => Squash.mk ⟨.ok (Ix.Kernel.Expr.mkBvar i), rfl, memo⟩
         | .fvar n _ => Squash.mk ⟨throw (.fvar (ingressName n)), rfl, memo⟩
         | .mvar n _ => Squash.mk ⟨throw (.mvar (ingressName n)), rfl, memo⟩
-        | .sort u _ => Squash.mk ⟨(do return .sort (← ingressLevel u)), rfl, memo⟩
+        | .sort u _ => Squash.mk ⟨(do return .sort (← ingressLevel σ u)), rfl, memo⟩
         | .const n us _ =>
-          Squash.mk ⟨(do return .const (ingressName n) (← us.toList.mapM ingressLevel)), rfl, memo⟩
+          Squash.mk ⟨(do return .const (ingressName n) (← us.toList.mapM (ingressLevel σ))), rfl,
+            memo⟩
         | .lit (.natVal n) _ => Squash.mk ⟨.ok (.lit (.natVal n)), rfl, memo⟩
         | .lit (.strVal s) _ => Squash.mk ⟨.ok (.lit (.strVal s)), rfl, memo⟩
         | .mdata d b h =>
           Squash.lift (go memo b) fun r =>
-            Squash.mk ⟨r.val, r.eq.trans (ingressExpr_mdata d b h).symm, r.memo⟩
+            Squash.mk ⟨r.val, r.eq.trans (ingressExpr_mdata σ d b h).symm, r.memo⟩
         | .app f a h =>
           Squash.lift (go memo f) fun r₁ =>
             match h₁ : r₁.val with
@@ -264,15 +281,15 @@ def go (memo : Memo) (e : @& Ix.Expr) : Out e :=
 conversions, and the memo after them. -/
 structure ResList (es : List Ix.Expr) where
   val : Except ExprError (List KExpr)
-  eq : val = ingressExprs es
-  memo : Memo
+  eq : val = ingressExprs σ es
+  memo : Memo σ
 
 /-- The DAG walk over several terms, with one memo: a subterm shared between
 them is converted once. -/
-def goList (memo : Memo) : (es : List Ix.Expr) → Squash (ResList es)
+def goList (memo : Memo σ) : (es : List Ix.Expr) → Squash (ResList σ es)
   | [] => Squash.mk ⟨.ok [], rfl, memo⟩
   | e :: es =>
-    Squash.lift (go memo e) fun r =>
+    Squash.lift (go σ memo e) fun r =>
       match h : r.val with
       | .error err =>
         Squash.mk ⟨.error err, by
@@ -291,25 +308,28 @@ def goList (memo : Memo) : (es : List Ix.Expr) → Squash (ResList es)
 /-- A conversion with its proof: a subsingleton. -/
 structure ListVal (es : List Ix.Expr) where
   val : Except ExprError (List KExpr)
-  eq : val = ingressExprs es
+  eq : val = ingressExprs σ es
 
-instance (es : List Ix.Expr) : Subsingleton (ListVal es) :=
+instance (es : List Ix.Expr) : Subsingleton (ListVal σ es) :=
   ⟨fun ⟨a, ha⟩ ⟨b, hb⟩ => by subst ha; subst hb; rfl⟩
 
 /-- The DAG walk from an empty memo, its memo dropped. -/
-def ingressExprsVal (es : List Ix.Expr) : ListVal es :=
-  Squash.lift (goList {} es) fun r => ⟨r.val, r.eq⟩
+def ingressExprsVal (es : List Ix.Expr) : ListVal σ es :=
+  Squash.lift (goList σ {} es) fun r => ⟨r.val, r.eq⟩
 
 /-- **The conversion on the DAG.** -/
 def ingressExprsShared (es : List Ix.Expr) : Except ExprError (List KExpr) :=
-  (ingressExprsVal es).val
+  (ingressExprsVal σ es).val
 
-theorem ingressExprsShared_eq (es : List Ix.Expr) : ingressExprsShared es = ingressExprs es :=
-  (ingressExprsVal es).eq
+theorem ingressExprsShared_eq (es : List Ix.Expr) :
+    ingressExprsShared σ es = ingressExprs σ es :=
+  (ingressExprsVal σ es).eq
+
+end Shared
 
 /-- Compiled code runs the DAG walk wherever it calls `ingressExprs`. -/
 @[csimp] theorem ingressExprs_eq_shared : @ingressExprs = @ingressExprsShared := by
-  funext es
-  exact (ingressExprsShared_eq es).symm
+  funext σ es
+  exact (ingressExprsShared_eq σ es).symm
 
 end Ix.LeanIngress

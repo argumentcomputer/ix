@@ -31,15 +31,16 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
   committed table pins that reference. A recursor is named after what it
   eliminates, by Lean's own convention: `T.rec` ↦ `⟦T⟧.rec`, `T.rec_j` ↦
   `⟦T⟧.rec_j` with `T` the block's first member.
-* **Level parameters.** Positional (`levelName i`), except at a reference
-  the pin table gives level names to, where they are Lean's own names (the
-  table must agree with Lean; a disagreement is reported). A recursor whose
-  block has one level fewer is a large eliminator: its parameter `0` is the
-  first positional name its block does not use, the rest are the block's.
+* **Level parameters.** Positional: a constant's are `0, …, n-1`, one per
+  Lean level parameter (a constructor's are its inductive's). A recursor
+  whose block has one level fewer is a large eliminator: its parameter `0`
+  is the position `n` after its block's `n`, the rest are the block's
+  (`Reader.recLps`).
 * **Levels.** Lean's level, with its parameters by position, through
   `Ixon.canonUniv` (the compiler stores every universe level as the
   canonical representative of its semantic class, `Ix/IxonUniv.lean`), then
-  with variable `i` named as above.
+  with variable `i` the level parameter `i` of the constant (a recursor's as
+  above).
 * **Expressions.** `mdata` is erased (Ixon keeps it as metadata), binder
   names and infos are dropped, every binder's `pw` is `.never` (the reader's
   placeholder; the checker's annotation computes it), `let`'s `nonDep` flag is
@@ -103,7 +104,7 @@ No reader defect is known. Every difference on the fixture closure and on all of
 * **Declines** the reader is expected to make (unsafe and partial constants).
 * Anything else is **unexplained** and fails the drivers. -/
 
-open Ix.Kernel (ConstRef)
+open Ix.Kernel (ConstRef LevelParam)
 open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep (RecordStore Hints setup Setup owner)
 
@@ -284,34 +285,28 @@ def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM CName := do
     | _ => throw s!"recursor {n} has no recursor name"
   | _ => cx.memberName n
 
-/-- Positional level names, or Lean's own where the pin table names the
-reference's level parameters. -/
-def RefCx.plainLps (cx : RefCx) (n : Lean.Name) (ci : Lean.ConstantInfo) : RefM (List CName) := do
-  let some r := cx.refOf n | throw s!"{n} was not compiled"
-  let k := ci.levelParams.length
-  pure <| match cx.pins.levels[r]? with
-    | some ns => if ns.length == k then ci.levelParams.map cname else levelNames k
-    | none => levelNames k
-
-/-- A constant's level-parameter names. -/
-def RefCx.lps (cx : RefCx) (n : Lean.Name) (ci : Lean.ConstantInfo) : RefM (List CName) := do
+/-- A constant's level parameters: one per Lean level parameter, by position
+(a constructor's are its inductive's). A recursor whose block has one level
+fewer is a large eliminator: its parameter `0` is the position after its
+block's, the rest are the block's. -/
+def RefCx.lps (cx : RefCx) (n : Lean.Name) (ci : Lean.ConstantInfo) : RefM (List LevelParam) := do
+  let compiled (m : Lean.Name) : RefM Unit := do
+    if (cx.refOf m).isNone then throw s!"{m} was not compiled"
   match ci with
   | .ctorInfo cv =>
     let some ind := cx.find cv.induct | throw s!"{n}: inductive {cv.induct} is missing"
-    cx.plainLps cv.induct ind
+    compiled cv.induct
+    pure (List.range ind.levelParams.length)
   | .recInfo rv =>
-    let some r := cx.refOf n | throw s!"{n} was not compiled"
-    if let some ns := cx.pins.levels[r]? then
-      if ns.length == ci.levelParams.length then return ci.levelParams.map cname
+    compiled n
     let some first := rv.all.head? | throw s!"{n}: recursor of an empty block"
     let some ind := cx.find first | throw s!"{n}: inductive {first} is missing"
-    let blockLps ← cx.plainLps first ind
+    compiled first
     let k := ind.levelParams.length
-    if ci.levelParams.length == k + 1 then
-      let elim := (List.range (k + 2)).map levelName |>.find? (!blockLps.contains ·)
-      pure (elim.getD (levelName (k + 1)) :: blockLps)
-    else pure blockLps
-  | _ => cx.plainLps n ci
+    pure (Ix.Kernel.Reader.recLps (ci.levelParams.length == k + 1) (List.range k))
+  | _ =>
+    compiled n
+    pure (List.range ci.levelParams.length)
 
 /-- A Lean level with its parameters by position. -/
 def toUniv (params : List Lean.Name) : Lean.Level → RefM Ixon.Univ
@@ -324,13 +319,14 @@ def toUniv (params : List Lean.Name) : Lean.Level → RefM Ixon.Univ
     | none => throw s!"unknown level parameter {n}"
   | .mvar _ => throw "level metavariable"
 
-/-- An Ixon level as a kernel level, variable `i` named `lps[i]`. -/
-def ofUniv (lps : List CName) : Ixon.Univ → CLevel
+/-- An Ixon level as a kernel level, variable `i` the level parameter
+`lps[i]` (`Reader.recParam`). -/
+def ofUniv (lps : List LevelParam) : Ixon.Univ → CLevel
   | .zero => .zero
   | .succ u => .succ (ofUniv lps u)
   | .max a b => .max (ofUniv lps a) (ofUniv lps b)
   | .imax a b => .imax (ofUniv lps a) (ofUniv lps b)
-  | .var i => .param (lps.getD i.toNat (levelName i.toNat))
+  | .var i => .param (Ix.Kernel.Reader.recParam lps i.toNat)
 
 /-- The translation state: the name memo is shared by all constants, the
 level and expression memos are per constant (they depend on its level
@@ -361,7 +357,7 @@ def liftRef (x : RefM α) : TrM α := match x with
 structure TrCx where
   ref : RefCx
   params : List Lean.Name
-  lps : List CName
+  lps : List LevelParam
 
 def trName (cx : TrCx) (n : Lean.Name) : TrM CName := do
   if let some c ← modifyGet (fun s => (s.names[n]?, s)) then return c
@@ -613,8 +609,8 @@ def closure (env : Lean.Environment) (seeds : Array Lean.Name) :
   return out.toList
 
 /-- The pin table's agreement with Lean: a pinned name is a Lean name
-compiled at its reference, and a level list is that constant's levels. -/
-def pinProblems (pins : Pins) (find : Lean.Name → Option Lean.ConstantInfo)
+compiled at its reference. -/
+def pinProblems (pins : Pins)
     (byRef : Std.HashMap (ConstRef Address) (Array Lean.Name)) : Array String := Id.run do
   let mut out := #[]
   for (r, n) in pins.names.toList do
@@ -622,11 +618,6 @@ def pinProblems (pins : Pins) (find : Lean.Name → Option Lean.ConstantInfo)
     unless leans.isEmpty || leans.any (cname · == n) do
       out := out.push s!"pin {n} is not the Lean name of a constant at its reference \
         (there: {leans.toList.take 4})"
-  for (r, ns) in pins.levels.toList do
-    for ln in byRef.getD r #[] do
-      if let some ci := find ln then
-        unless ci.levelParams.map cname == ns do
-          out := out.push s!"pinned level names of {ln}: {ns} vs Lean's {ci.levelParams}"
   return out
 
 /-- What the comparison of one record reads besides the record. -/
@@ -807,7 +798,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
         else
           report := report.problem s!"name of {n}: reader {actual}, reference {c}"
     | .error e => report := report.problem s!"name of {n}: {e}"
-  for p in pinProblems pins input.lean byRef do report := report.problem p
+  for p in pinProblems pins byRef do report := report.problem p
   let foreign : Std.HashSet Address := input.foreign.foldl (fun acc a =>
     match store[a]? with
     | some c => acc.insert (owner a c)

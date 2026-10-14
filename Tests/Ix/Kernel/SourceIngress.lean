@@ -21,8 +21,9 @@ the `partial`/`unsafe` definitions the reader declines) and everything in
 * all at once (`checkSource`), on the closure of the fixtures that are
   expected to be accepted, which must be accepted;
 * on hand-built terms: a free variable, a metavariable and a level
-  metavariable are refused, `mdata` is erased, and the conversion of a shared
-  DAG is the tree conversion. -/
+  metavariable are refused, `mdata` is erased, level parameters become
+  positions (a large eliminator's elimination level after its block's), and
+  the conversion of a shared DAG is the tree conversion. -/
 
 namespace Tests.Ix.Kernel.SourceIngress
 
@@ -106,12 +107,15 @@ def acceptedSeeds : Array Lean.Name := #[defs "Color", defs "Point3", defs "Vec.
 def anon : Ix.Name := .mkAnon
 def nm (s : String) : Ix.Name := .mkStr anon s
 
+/-- The numbering of a constant with no level parameters. -/
+def noParams : Numbering := ⟨#[], false⟩
+
 def refusals : TestSeq :=
   let fv := Ix.Expr.mkFVar (nm "x")
   let mv := Ix.Expr.mkMVar (nm "m")
   let lv := Ix.Expr.mkSort (Ix.Level.mkMvar (nm "u"))
   let refused (e : Ix.Expr) (k : ExprError → Bool) : Bool :=
-    match ingressExprs [Ix.Expr.mkApp (Ix.Expr.mkBVar 0) e] with
+    match ingressExprs noParams.pos [Ix.Expr.mkApp (Ix.Expr.mkBVar 0) e] with
     | .error err => k err
     | .ok _ => false
   test "free variable refused" (refused fv fun | .fvar _ => true | _ => false) ++
@@ -130,8 +134,27 @@ def erasure : TestSeq :=
   let body := Ix.Expr.mkConst (nm "Nat") #[]
   let withData := Ix.Expr.mkMData #[(nm "k", .ofBool true)] body
   let lam := Ix.Expr.mkLam (nm "x") body (.mkBVar 0) .implicit
-  test "mdata erased" (sameResult (ingressExprs [withData]) (ingressExprs [body])) ++
-  test "binder name and info dropped, pw never" (lamDropped (ingressExprs [lam]))
+  test "mdata erased"
+    (sameResult (ingressExprs noParams.pos [withData]) (ingressExprs noParams.pos [body])) ++
+  test "binder name and info dropped, pw never" (lamDropped (ingressExprs noParams.pos [lam]))
+
+def sortOf : Except ExprError (List KExpr) → Option Ix.Kernel.Level
+  | .ok [.sort l] => some l
+  | _ => none
+
+/-- Level parameters are positions: a constant's `i`-th is `i`, and a large
+eliminator's first, its elimination level, follows its block's. -/
+def numbering : TestSeq :=
+  let u := nm "u"
+  let v := nm "v"
+  let ty := Ix.Expr.mkSort (Ix.Level.mkMax (Ix.Level.mkParam u) (Ix.Level.mkParam v))
+  let large : Numbering := ⟨#[v, u], true⟩
+  test "the i-th level parameter is position i"
+    (sortOf (ingressExprs (Numbering.mk #[u, v] false).pos [ty]) ==
+      some (.max (.param 0) (.param 1))) ++
+  test "a large eliminator's elimination level follows its block's parameters"
+    (sortOf (ingressExprs large.pos [ty]) == some (.max (.param 0) (.param 1)) &&
+      large.params == [1, 0])
 
 /-- A DAG of depth `n` whose tree has `2^n` leaves: the shared conversion
 finishes, and agrees with the tree conversion at a depth the tree walk still
@@ -150,9 +173,9 @@ def agrees : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
   | _, _ => false
 
 def sharing : TestSeq :=
-  test "a 2^64-leaf DAG converts" ((ingressExprs [sharedDag 64]).isOk) ++
+  test "a 2^64-leaf DAG converts" ((ingressExprs noParams.pos [sharedDag 64]).isOk) ++
   test "the DAG walk is the tree walk at depth 12"
-    (agrees (ingressExprsShared [sharedDag 12]) (ingressExpr (sharedDag 12)))
+    (agrees (ingressExprsShared noParams.pos [sharedDag 12]) (ingressExpr noParams.pos (sharedDag 12)))
 
 /-! ## The fixtures -/
 
@@ -198,6 +221,6 @@ def fixtures : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, expected.length, 0, msg)) .done
 
-def suite : List TestSeq := [refusals, erasure, sharing, fixtures]
+def suite : List TestSeq := [refusals, erasure, numbering, sharing, fixtures]
 
 end Tests.Ix.Kernel.SourceIngress

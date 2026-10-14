@@ -22,15 +22,18 @@ the faithfulness of the accepted environment to the Lean environment.
 
 ## Keys
 
-The kernel key is Lean's own name (`ingressName`) and a constant's level
-parameters are Lean's own level-parameter names. The checker's pinned names
+The kernel key is Lean's own name (`ingressName`). The checker's pinned names
 are Lean's names, so the pin table is the identity and no `ix.<hex>` name
 occurs. A recursor keeps its Lean name, which is the name the checker's
-frontend derives (`T.rec`, `T.rec_j`), and its Lean level parameters, which
-for a large eliminator are the spelling `elim :: lps` the checker
-recognises. Nothing is hashed and nothing is rewritten: terms are converted
-by `Ix.LeanIngress.Expr` (Lean's levels as they are, `mdata` erased, binder
-names, binder infos and `nonDep` dropped, `pw := .never`).
+frontend derives (`T.rec`, `T.rec_j`). Level parameters are positions
+(`Numbering`): a constant's `i`-th Lean level parameter is `i`, except at a
+large eliminator, whose elimination level is the fresh position `n` after
+its block's `n` and whose other parameters are the block's, the shape
+`elim :: lps` the checker recognises, numbered as the Ixon reader numbers
+them. Nothing is hashed and nothing is rewritten: terms are converted by
+`Ix.LeanIngress.Expr` (Lean's levels as they are up to the numbering,
+`mdata` erased, binder names, binder infos and `nonDep` dropped,
+`pw := .never`).
 
 ## Grouping
 
@@ -223,7 +226,31 @@ def groupsOf (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Array Group 
 /-! ## Conversion
 
 A group's terms are converted together (`ingressExprs`, one memo for the
-group), before any state is read; what the lowering reads is `Converted`. -/
+terms of the group's constants that number their level parameters alike),
+before any state is read; what the lowering reads is `Converted`. -/
+
+/-- How a constant's Lean level parameters `names` become the checker's
+positions: name `i` is position `i`, except at a large eliminator (`large`:
+a recursor with one level parameter more than its block's `n`), whose first
+name, the elimination level, is the fresh position `n` and whose name
+`i + 1` is the block's position `i`, as the Ixon reader numbers a recursor
+(`Reader.recLps`). A name that is not among `names` is the position
+`names.size`, which no parameter of the constant has. -/
+structure Numbering where
+  names : Array Ix.Name
+  large : Bool := false
+  deriving BEq
+
+/-- The position of a level-parameter name. -/
+def Numbering.pos (σ : Numbering) (n : Ix.Name) : Ix.Kernel.LevelParam :=
+  match σ.names.findIdx? (· == n) with
+  | none => σ.names.size
+  | some 0 => if σ.large then σ.names.size - 1 else 0
+  | some (i + 1) => if σ.large then i else i + 1
+
+/-- The constant's own level parameters, numbered. -/
+def Numbering.params (σ : Numbering) : List Ix.Kernel.LevelParam :=
+  σ.names.toList.map σ.pos
 
 def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
   | .opaque => .opaque
@@ -273,19 +300,33 @@ inductive Converted where
   | axiom (cv : CVal)
   | quot (kind : Ix.Kernel.QuotKind) (cv : CVal)
 
-/-- A term conversion failure is a malformed group. -/
-def exprsOf (es : List Ix.Expr) : Except ReadError (Array CExpr) :=
-  match ingressExprs es with
-  | .ok ks => .ok ks.toArray
-  | .error e => .error (.malformed s!"source term: {e}")
-
-def levelParams (cv : Ix.ConstantVal) : List CName :=
-  cv.levelParams.toList.map ingressName
+/-- The conversion of terms, each under its constant's numbering: a run of
+consecutive terms under one numbering is converted together (one memo). A
+term conversion failure is a malformed group. -/
+def exprsOf (items : Array (Numbering × Ix.Expr)) : Except ReadError (Array CExpr) := do
+  let flush (σ : Numbering) (es : Array Ix.Expr) (out : Array CExpr) :
+      Except ReadError (Array CExpr) :=
+    match ingressExprs σ.pos es.toList with
+    | .ok ks => .ok (out ++ ks.toArray)
+    | .error e => .error (.malformed s!"source term: {e}")
+  let mut out : Array CExpr := Array.mkEmpty items.size
+  let mut run : Option (Numbering × Array Ix.Expr) := none
+  for (σ, e) in items do
+    match run with
+    | some (τ, es) =>
+      if σ == τ then run := some (τ, es.push e)
+      else
+        out ← flush τ es out
+        run := some (σ, #[e])
+    | none => run := some (σ, #[e])
+  if let some (τ, es) := run then out ← flush τ es out
+  return out
 
 /-- An inductive block converted, with the reader's own checks on it: unsafe
 members decline, members that disagree on `numParams` decline, a
 constructor's field count must be its type's telescope past the block's
-parameters. -/
+parameters. A recursor with one level parameter more than the block's first
+member is a large eliminator. -/
 def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal))
     (recs : Array Ix.RecursorVal) : Except ReadError Converted := do
   let some first := types[0]? | throw (.malformed "empty inductive block")
@@ -294,21 +335,26 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
   let nPd := first.numParams
   unless types.all (·.numParams == nPd) do
     throw (.declined "inductive block whose type records disagree on numParams")
-  let exprs : List Ix.Expr :=
-    (types.map (·.cnst.type)).toList ++ (ctors.flatMap (·.map (·.cnst.type))).toList ++
-      (recs.flatMap fun r => #[r.cnst.type] ++ r.rules.map (·.rhs)).toList
-  let ks ← exprsOf exprs
+  let own (cv : Ix.ConstantVal) : Numbering := ⟨cv.levelParams, false⟩
+  let ofRec (r : Ix.RecursorVal) : Numbering :=
+    ⟨r.cnst.levelParams, r.cnst.levelParams.size == first.cnst.levelParams.size + 1⟩
+  let items : Array (Numbering × Ix.Expr) :=
+    types.map (fun v => (own v.cnst, v.cnst.type)) ++
+      ctors.flatMap (·.map fun c => (own c.cnst, c.cnst.type)) ++
+      recs.flatMap fun r => #[(ofRec r, r.cnst.type)] ++ r.rules.map ((ofRec r, ·.rhs))
+  let ks ← exprsOf items
   let mut i := 0
   let mut tys : Array (CVal × Nat × Nat) := #[]
   for v in types do
-    tys := tys.push (⟨ingressName v.cnst.name, levelParams v.cnst, ks[i]!⟩, v.numParams, v.numIndices)
+    tys := tys.push (⟨ingressName v.cnst.name, (own v.cnst).params, ks[i]!⟩, v.numParams,
+      v.numIndices)
     i := i + 1
   let mut cts : Array (CVal × Nat × Nat) := #[]
   let mut ctorNames : Array (List CName) := #[]
   for cs in ctors do
     let mut names : List CName := []
     for c in cs do
-      let cv : CVal := ⟨ingressName c.cnst.name, levelParams c.cnst, ks[i]!⟩
+      let cv : CVal := ⟨ingressName c.cnst.name, (own c.cnst).params, ks[i]!⟩
       i := i + 1
       unless nPd + c.numFields == Ix.Kernel.Reader.piTeleLen cv.type do
         throw (.malformed s!"constructor {cv.name} declares {c.numFields} fields at {nPd} parameters; \
@@ -318,7 +364,7 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
     ctorNames := ctorNames.push names
   let mut rs : Array (CVal × RecCounts × List Ix.Kernel.RecRule) := #[]
   for r in recs do
-    let cv : CVal := ⟨ingressName r.cnst.name, levelParams r.cnst, ks[i]!⟩
+    let cv : CVal := ⟨ingressName r.cnst.name, (ofRec r).params, ks[i]!⟩
     i := i + 1
     let mut rules : List Ix.Kernel.RecRule := []
     for rule in r.rules do
@@ -340,9 +386,11 @@ def convertDefinitions (members : Array Ix.ConstantInfo) : Except ReadError Conv
   if shapes.size > 1 then
     if let some why := shapes.findSome? fun (_, (k, s, _), _) => Ix.Kernel.Reader.safetyDeclineOf k s then
       throw (.declined why)
-  let ks ← exprsOf (shapes.toList.flatMap fun (ci, _, v) => [ci.getCnst.type, v])
+  let own (ci : Ix.ConstantInfo) : Numbering := ⟨ci.getCnst.levelParams, false⟩
+  let ks ← exprsOf (shapes.flatMap fun (ci, _, v) => #[(own ci, ci.getCnst.type), (own ci, v)])
   let ms : Array DefMember := shapes.zipIdx.map fun ((ci, (kind, safety, hint), _), j) =>
-    ⟨⟨ingressName ci.getCnst.name, levelParams ci.getCnst, ks[2 * j]!⟩, ks[2 * j + 1]!, kind, safety, hint⟩
+    ⟨⟨ingressName ci.getCnst.name, (own ci).params, ks[2 * j]!⟩, ks[2 * j + 1]!, kind, safety,
+      hint⟩
   if ms.size ≤ 1 then return .definitions ms
   let names := ms.map (·.cv.name)
   let deps : Array (Std.HashSet Nat) := ms.map fun m =>
@@ -359,11 +407,13 @@ def convert : Group → Except ReadError Converted
   | .definitions members => convertDefinitions members
   | .axiom v => do
     if v.isUnsafe then throw (.declined "unsafe axiom")
-    let ks ← exprsOf [v.cnst.type]
-    return .axiom ⟨ingressName v.cnst.name, levelParams v.cnst, ks[0]!⟩
+    let σ : Numbering := ⟨v.cnst.levelParams, false⟩
+    let ks ← exprsOf #[(σ, v.cnst.type)]
+    return .axiom ⟨ingressName v.cnst.name, σ.params, ks[0]!⟩
   | .quot v => do
-    let ks ← exprsOf [v.cnst.type]
-    return .quot (quotKindOf v.kind) ⟨ingressName v.cnst.name, levelParams v.cnst, ks[0]!⟩
+    let σ : Numbering := ⟨v.cnst.levelParams, false⟩
+    let ks ← exprsOf #[(σ, v.cnst.type)]
+    return .quot (quotKindOf v.kind) ⟨ingressName v.cnst.name, σ.params, ks[0]!⟩
   | .invalid _ e => throw e
 
 /-! ## Lowering -/
