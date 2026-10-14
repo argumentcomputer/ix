@@ -6,11 +6,15 @@ checker: `IxC/Kernel/**` holds a modified copy under the namespace
 `Ix.Kernel` (see "Origin and attribution" below), run on Ixon records by Ix's
 reader in `IxC/Kernel/Ixon/`. The certified API is
 `Ix.Kernel.Admission.checkBytes` (`import IxC.Kernel.Admission`; its theorems
-are in `Ix.Kernel.Admission.Theorems`). This page states what that entry does, what
+are in `Ix.Kernel.Admission.Theorems`), which takes its content hash as a
+parameter; the root library runs it at BLAKE3 as
+`Ixon.Authenticated.checkBytes` (`import Ix.Ixon.Authenticated`). This page
+states what that entry does, what
 is proved about it, what is trusted, how the gate checks the trust boundary,
 where the kernel comes from, and how to check a whole compiled environment.
 This page is the contract: what an accept promises (a set-theoretic model,
-no constant of the pinned `False`, the checked declarations are the ones
+no constant of the pinned `False`, every record and blob stored under the
+hash of its bytes, the checked declarations are the ones
 the bytes encode, bounded resources), under which assumptions (an
 `Ix.Kernel.SetTheory V`; proofs on `propext`, `Classical.choice` and
 `Quot.sound` only), on which execution foundation ("Trust surface"), and
@@ -24,18 +28,42 @@ the original Lean source meant is outside the claim.
 ## The certified entry
 
 ```lean
-def Ix.Kernel.Admission.checkBytes (limits : Limits) (records : Records)
-    (blobs : Ix.Kernel.Ingress.Blobs)
+def Ix.Kernel.Admission.checkBytes (hash : ByteArray → Address) (limits : Limits)
+    (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error Ix.Kernel.Env
+
+def Ixon.Authenticated.checkBytes (limits : Admission.Limits) (records : Admission.Records)
+    (blobs : Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Admission.Error Ix.Kernel.Env :=
+  Admission.checkBytes Address.admissionHash limits records blobs hint
 ```
+
+`hash` is the content hash every address is authenticated against. The
+kernel admits no hasher (its import fence, below), so the entry and every
+theorem about it are generic in `hash`. The root library instantiates the
+entry and its two variants at `Address.admissionHash`
+(`Ix/Address/Admission.lean`), which is pure BLAKE3 (`Address.blake3Pure`)
+for every theorem and executes as the Rust BLAKE3 (`Address.blake3`); that
+substitution is an assumption ("Trust surface").
+
+An Ixon address is BLAKE3 of exact bytes, with no tag and no length prefix: a
+record's is BLAKE3 of its complete serialization (`Ixon.serConstant`, the
+bytes an `.ixe` stores for it after its length prefix), a projection
+record's likewise, and a blob's is BLAKE3 of its payload. The compiler
+addresses them so (`Address::hash` over `Constant::put`), the `.ixe` loaders
+verify them so, and the resource adapter commits them so
+(`Ix.Resource.Addressed.commit`).
 
 Each entry has one runnable module, which holds definitions only, and its
 theorems and audit beside it: `IxC/Kernel/Admission.lean` (the entry, its
 `Error` and `Outcome`), `IxC/Kernel/Admission/Bytes.lean` (the byte stage
 and its `ByteError`), `IxC/Kernel/Admission/{Theorems,Bytes/Theorems,
 Audit}.lean`; the variants `Ix/Ixon/{Projection,BlockOrder}.lean` with
-`Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`. Running the entry
+`Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`; the instantiations
+at BLAKE3 `Ix/Ixon/Authenticated.lean` with
+`Ix/Ixon/Authenticated/{Theorems,Audit}.lean`. Running the entry
 does not build the proof tree: the import closure of
 `Ix.Kernel.Admission` is 76 repository modules and does not reach
 `Ix.Kernel.MainTheorem`.
@@ -54,6 +82,7 @@ The entry runs, in order:
 | the committed pin table, prelude and Nat-operation pins load | `defaultPins`, `builtinPrelude`, `builtinNatOpPins` | `.prelude reason` |
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
+| authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration` | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
@@ -62,9 +91,10 @@ The entry runs, in order:
 The pipeline is `Ix.Kernel.Admission.checkBytes`; `checkBytesWith`
 takes the pin table, prelude and Nat-operation pin list as parameters, and
 `checkConstants{,With}` start from decoded records. Two variants share the
-byte stage and the checker: `Ixon.Projection.checkBytes` reconstructs
-omitted projection records (addresses by pure BLAKE3 of their canonical
-bytes) before checking, and `Ixon.BlockOrder.checkBytes` also checks the
+byte stage and the checker, and take the same `hash`:
+`Ixon.Projection.checkBytes` reconstructs omitted projection records
+(addresses by `hash` of their canonical bytes) before checking, and
+`Ixon.BlockOrder.checkBytes` also checks the
 order of mutual blocks: an inductive, definition or mixed block in canonical
 structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
 of recursors in motive order (member `j` eliminates motive `j`, read off its
@@ -81,6 +111,7 @@ does not certify it):
 | --- | --- | --- |
 | `.limit` | decline | a coverage bound, not evidence about the input |
 | `.duplicate`, `.decode` | reject | the bytes are malformed |
+| `.mismatch` | reject | a key is not the hash of the bytes stored under it |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
 | `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
 | `.prelude` | decline | a corrupted committed table |
@@ -89,8 +120,8 @@ does not certify it):
 The variants keep their own errors (`Ixon.Projection.CheckError`,
 `Ixon.BlockOrder.CheckError`) and the same classifier, `e.outcome`: a
 checker failure (`.checker e`) as above, the byte stage
-(`Admission.ByteError.outcome`) as `.limit`, `.duplicate` and `.decode`
-above, and their own failures as follows.
+(`Admission.ByteError.outcome`) as `.limit`, `.duplicate`, `.mismatch` and
+`.decode` above, and their own failures as follows.
 
 | Error | Outcome | Why |
 | --- | --- | --- |
@@ -102,8 +133,10 @@ above, and their own failures as follows.
 Only an accept carries the theorems below.
 
 **Host obligations.** The host supplies the order, the address keys and the
-blobs. Addresses are keys, not authenticated hashes (only the projection
-variant derives addresses). The entry does not reorder beyond
+blobs. Every key is authenticated as `hash` of the bytes stored under it, so
+a key names exactly one payload (up to a collision of `hash`); the
+projection variant derives the addresses of omitted projection records with
+the same `hash`. The entry does not reorder beyond
 `preparePrelude`: each record must follow the records it references; a
 record that contains a literal must follow the constants the literal names
 (`Reader.literalEdges`: the `Nat` block, and for a string literal
@@ -116,20 +149,30 @@ order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 All public theorems are in `IxC/Kernel/Admission/Theorems.lean` (namespace
 `Ix.Kernel.Admission`), about the executed function `checkBytes`, at the
-committed tables. Each follows from the corresponding theorem at
-`checkBytesWith`, where it holds for every pin table, prelude and
-Nat-operation pin list, so no theorem depends on how the tables were
-generated. Every public and fidelity root depends on exactly `propext`,
-`Classical.choice` and `Quot.sound`.
+committed tables. Each holds at every content hash `hash`, and follows from
+the corresponding theorem at `checkBytesWith`, where it holds for every pin
+table, prelude and Nat-operation pin list, so no theorem depends on which
+hash executes or on how the tables were generated. Every public and fidelity
+root depends on exactly `propext`, `Classical.choice` and `Quot.sound`.
 
-| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
+| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes hash limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
 | `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
 | `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
-| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_authentic` | `Authentic hash records blobs`: every record and every blob is stored under `hash` of its bytes, as supplied |
+| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed pins pre natPins constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
+
+The variants have the same theorems at every `hash`
+(`Ixon.{Projection,BlockOrder}.checkBytes_{ok_iff,reading,authentic,has_model,no_proof_of_False}`);
+their `checkBytes_authentic` adds that every record the checker read, supplied
+or reconstructed, is stored under `hash` of its serialization
+(`Projection.Expanded.hashed`). `Ixon.Authenticated.Theorems` states them at
+the specification hash `Address.blake3Pure` for the BLAKE3 entries (for
+example `Ixon.Authenticated.checkBytes_authentic : … →
+Authentic Address.blake3Pure records blobs`).
 
 `Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`) assigns a set
 `cval c φ` to every constant at every level assignment such that every
@@ -150,6 +193,10 @@ equation, by upstream's design.
 - `WithinBatch` and `UniqueKeys` (`IxC/Kernel/Admission/Bytes/Theorems.lean`): the
   batch limits hold, and the record keys and the blob keys are each
   pairwise distinct (`preflight_ok_iff`, `uniqueKeys_ok_iff`).
+- `Authentic` (`authenticate_ok_iff`): every record and blob key is `hash` of
+  the bytes stored under it, exactly as supplied; with `RecordsRead`, every
+  decoded record is stored under `hash` of its canonical encoding (`Hashed`,
+  `RecordsRead.hashed`).
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
@@ -316,8 +363,21 @@ compiled code reaches (the entry's closure reaches 121 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
 Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
-lean4export parser. The projection variant computes addresses with pure
-Lean BLAKE3 (`Address.blake3Pure`).
+lean4export parser. The entry and its variants hash only through their
+`hash` parameter.
+
+The root library's authenticated entries (`Ixon.Authenticated`) add one
+substitution, admitted on an assumption rather than a proof (owner,
+2026-10-13): the admission hash `Address.admissionHash` is defined as pure
+BLAKE3 (`Address.blake3Pure`), which every theorem about those entries is
+stated at, and executes as the Rust BLAKE3 (`Address.blake3`,
+`@[implemented_by]`), whose three foreign primitives
+(`Blake3.Rust.hasherInit`, `hasherUpdate`, `hasherFinalize`) it brings into
+the compiled closure. The assumption is that the two implementations agree
+on every input; `Tests.Ix.Kernel.AddressPure` checks it on fixture inputs.
+The runtime audit admits it by name (`Ix.Kernel.Audit.assumedSubstitutions`,
+the `assumed` ruling) only for those entries, and the trust-surface fence
+scans `Ix/Address/Admission.lean`.
 
 Project-level execution constructs are admitted only as named by
 `runtimeRulings` (`IxC/Kernel/Audit/Roots.lean`):
@@ -330,6 +390,7 @@ Project-level execution constructs are admitted only as named by
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxC/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
 | `partial` | `Ix.Kernel.Frontend.InModel*` | the in-process modeller, as upstream con-leche has it |
+| `Address.admissionHash` `implemented_by` `Address.blake3`, with its three Rust externs | `Ix/Address/Admission.lean` (root library; `assumedSubstitutions`, for `Ixon.Authenticated` only) | an explicit, owner-approved assumption that the Rust BLAKE3 equals pure BLAKE3 |
 
 Import allowlists (`IxC/Kernel/Audit/Roots.lean`):
 
@@ -358,14 +419,16 @@ Import allowlists (`IxC/Kernel/Audit/Roots.lean`):
 The audits are Lean modules that fail elaboration on a violation. The core
 kernel and codec audits are built by the strict standalone package `IxC/`
 (`lake -d IxC build --wfail`, sources from the repository, no dependency
-beyond the toolchain). The projection and block-order audits build in the root
-package, and the model audit builds in `Models/SetTheory`.
+beyond the toolchain). The projection, block-order and authenticated-entry
+audits build in the root package, and the model audit builds in
+`Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
-| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 15, `fidelityRoots` 16, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
+| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 17, `fidelityRoots` 17, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
-| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
+| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
+| `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
@@ -375,10 +438,11 @@ Frozen runtime closures (compiled functions; inherited externs):
 | --- | ---: | ---: |
 | fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
 | reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5295 | 121 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5293 | 121 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5416 | 130 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5549 | 130 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5297 | 121 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5295 | 121 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5328 | 121 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5461 | 121 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5479 | 124 |
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
@@ -386,10 +450,13 @@ re-records it states why the closure or the statement moved.
 `lake run check-kernel [--with-model]` is the gate. In order:
 
 1. the strict `IxC` build with the core kernel and codec audits;
-2. the host build of the kernel tests (`Tests/Ix/Kernel/{Reader,
-   CertifiedEntry, Projection, BlockOrder, AddressPure, ...}`), whose
-   `#guard`s run at elaboration; the certified fixtures
-   (`IxC/Fixtures/*`) were already built in step 1;
+2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
+   Authenticated}/Audit.lean`) and the kernel tests
+   (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Projection,
+   BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
+   fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
+   (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
+   already built in step 1;
 3. `kernel-codec` (production codec against Rust) and `kernel-order`
    (canonical block order against Rust);
 4. with `--with-model`, the `Models/SetTheory` build and its audit;
@@ -405,26 +472,30 @@ re-records it states why the closure or the statement moved.
 6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
-   checker and the theory for compiler escapes (`unsafe`, `implemented_by`,
-   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
-   allowlisted files (`IxC/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
-   are permitted, each with its justification in the tool's header;
+   checker, the theory and the admission hash (`Ix/Address/Admission.lean`)
+   for compiler escapes (`unsafe`, `implemented_by`, `computed_field`,
+   `native_decide`, `extern`, `sorry`, `axiom`, ...); the escapes in five
+   allowlisted files (`IxC/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`,
+   `Ix/Address/Admission.lean`) are permitted, each with its justification
+   in the tool's header;
 7. `kernel-level-comparison`: the level comparison (`Level.leq`,
    `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
    on random levels and on Ixon's canonical forms;
 8. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
-   submitted as canonical bytes to `checkBytes`, each with an exact expected
-   verdict (accepts: a definition, a theorem, an inductive with its
-   recursor, a structure with a projection, a quotient reduction, `Nat`
-   literals and a pinned `Nat` operation, a `String` literal, a nested
+   submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
+   an exact expected verdict (accepts: a definition, a theorem, an inductive
+   with its recursor, a structure with a projection, a quotient reduction,
+   `Nat` literals and a pinned `Nat` operation, a `String` literal, a nested
    inductive, a mutual inductive with definitions by structural recursion
    over it, a mutual and nested inductive, the opaque face of a `partial`
-   definition; rejects: truncated
-   bytes, a duplicate constant, a duplicate blob, `Nat.rec` with a wrong K
-   flag; declines: `Nat.add` with another value, a `partial` definition's
-   `_unsafe_rec` body, a non-standard axiom, a theorem of `False`). Rows go
-   to `.lake/build/kernel-entry-cases.jsonl`;
+   definition; rejects: truncated bytes under their own hash, the same bytes
+   under the record's address, a blob changed under its address, a duplicate
+   constant, a duplicate blob, `Nat.rec` with a wrong K flag and `Nat.add`
+   with another value under their addresses (refused at authentication);
+   declines: a `partial` definition's `_unsafe_rec` body, a non-standard
+   axiom, a theorem of `False`). Rows go to
+   `.lake/build/kernel-entry-cases.jsonl`;
 9. `kernel-reader-fidelity --fixture` and `--check-kernel`: the Ixon reader
    against a direct translation of the Lean constants it was compiled from,
    and the projection output against the compiler's records, on the fixture
