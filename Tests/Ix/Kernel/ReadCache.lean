@@ -24,11 +24,10 @@ def rowKey (r : Row) : String :=
 
 def check : IO (Nat × Array String) := do
   let (_, inp) ← Tests.Ix.Kernel.ReaderRoundtrip.input
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
-  let natPins ← IO.ofExcept builtinNatOpPins
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore inp.store inp.ixon.anonHints
-  let s : Setup := setup inp.store (inp.ixon.blobs[·]?) pins pre hints.lookup
+  let s : Setup := setup inp.store (inp.ixon.blobs[·]?) table pre hints.lookup
   let names := reportNames inp.ixon inp.store
   let roots := Tests.Ix.Kernel.ReaderRoundtrip.nestedSeeds.filterMap fun n =>
     (inp.ixon.named[_root_.Ix.Name.fromLeanName n]?).map (·.addr)
@@ -36,7 +35,7 @@ def check : IO (Nat × Array String) := do
   -- a live run, recording its readings
   let liveRows ← IO.mkRef (#[] : Array Row)
   let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
-  let _ ← checkLoop s natPins (names.getD · #[]) ordered {} (emit := fun r => liveRows.modify (·.push r))
+  let _ ← checkLoop s (names.getD · #[]) ordered {} (emit := fun r => liveRows.modify (·.push r))
     (onRead := fun a r _ => readings.modify (·.push (a, r)))
   -- the plan, written and mapped back
   let dir ← IO.FS.createTempDir
@@ -51,7 +50,7 @@ def check : IO (Nat × Array String) := do
     unless mapped.records.size == (← readings.get).size do
       errors := errors.push s!"{mapped.records.size} plan records for {(← readings.get).size} readings"
     let plannedRows ← IO.mkRef (#[] : Array Row)
-    let _ ← Benchmarks.Kernel.CheckIxeReadCache.checkLoopPlan mapped natPins none {}
+    let _ ← Benchmarks.Kernel.CheckIxeReadCache.checkLoopPlan mapped none {}
       (emit := fun r => plannedRows.modify (·.push r))
     let live := (← liveRows.get).map rowKey
     let planned := (← plannedRows.get).map rowKey

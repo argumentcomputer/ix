@@ -32,9 +32,14 @@ def roundtrip (constants : List (Address × Ixon.Constant)) : Bool :=
   | .ok decoded => decoded == constants
   | .error _ => false
 
+/-- The default role table's section, sealed under the fixture hash. -/
+def binding : Binding :=
+  let bytes := (Ix.Kernel.Reader.defaultTableBytes.toOption).getD ByteArray.empty
+  ⟨fixtureHash bytes, bytes⟩
+
 def check (records : Records) (blobs : List (Address × ByteArray) := []) (bounds : Limits := limits) :
     Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
-  checkBytes fixtureHash bounds records blobs
+  checkBytes fixtureHash binding bounds records blobs
 
 /-- The entry's verdict on a fixture sealed under the fixture hash. -/
 def accepts (constants : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Bool :=
@@ -226,7 +231,7 @@ def blob : List (Address × ByteArray) := [authentic ⟨#[1, 2, 3]⟩]
 #guard decodeFailureOf [authentic (recordUnivsPayload 1 successorBomb)] 0
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
-    (h : checkBytes fixtureHash limits (sealed separatedFalse) [] = .ok env) :
+    (h : checkBytes fixtureHash binding limits (sealed separatedFalse) [] = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
@@ -234,26 +239,37 @@ example {constants : List (Address × Ixon.Constant)} {records : Records}
     (h : Ix.Kernel.Admission.RecordsRead limits records constants) : records = encode constants :=
   h.encode
 
-example {hash : ByteArray → Address} {records : Records} {blobs : List (Address × ByteArray)}
-    {env : Ix.Kernel.Env} (h : checkBytes hash limits records blobs = .ok env) :
+example {hash : ByteArray → Address} {b : Binding} {records : Records}
+    {blobs : List (Address × ByteArray)}
+    {env : Ix.Kernel.Env} (h : checkBytes hash b limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup := by
-  obtain ⟨_, _, _, _, _, _, _, keys, _⟩ := checkBytes_reading h
+  obtain ⟨_, _, _, _, _, keys, _⟩ := checkBytes_reading h
   exact keys
 
-example {hash : ByteArray → Address} {records : Records} {blobs : List (Address × ByteArray)}
-    {env : Ix.Kernel.Env} (h : checkBytes hash limits records blobs = .ok env) :
+example {hash : ByteArray → Address} {b : Binding} {records : Records}
+    {blobs : List (Address × ByteArray)}
+    {env : Ix.Kernel.Env} (h : checkBytes hash b limits records blobs = .ok env) :
     (∀ entry ∈ records, entry.1 = hash entry.2) ∧ ∀ entry ∈ blobs, entry.1 = hash entry.2 :=
-  checkBytes_authentic h
+  (checkBytes_authentic h).1
 
-example {hash : ByteArray → Address} {records : Records} {blobs : List (Address × ByteArray)}
-    {env : Ix.Kernel.Env} (h : checkBytes hash limits records blobs = .ok env) :
+example {hash : ByteArray → Address} {b : Binding} {records : Records}
+    {blobs : List (Address × ByteArray)}
+    {env : Ix.Kernel.Env} (h : checkBytes hash b limits records blobs = .ok env) :
+    ∃ t, Ix.Kernel.RoleTable.ofBytes b.bytes = some t ∧ t.check = .ok () ∧ hash b.bytes = b.address := by
+  obtain ⟨t, ht⟩ := checkBytes_binding h
+  exact ⟨t, (Ix.Kernel.RoleTable.ofBytes_eq_some_iff _ _).mpr ht.canonical, ht.wellFormed, ht.authentic⟩
+
+example {hash : ByteArray → Address} {b : Binding} {records : Records}
+    {blobs : List (Address × ByteArray)}
+    {env : Ix.Kernel.Env} (h : checkBytes hash b limits records blobs = .ok env) :
     ∃ constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
       ∀ entry ∈ constants, entry.1 = hash (Ixon.serConstant entry.2) := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, constants, reading, hashed, _⟩ := checkBytes_reading h
+  obtain ⟨_, _, _, _, _, _, _, constants, _, reading, hashed, _⟩ := checkBytes_reading h
   exact ⟨constants, reading, hashed⟩
 
-example {hash : ByteArray → Address} {records : Records} {blobs : List (Address × ByteArray)}
-    {env : Ix.Kernel.Env} (h : checkBytes hash limits records blobs = .ok env) :
+example {hash : ByteArray → Address} {b : Binding} {records : Records}
+    {blobs : List (Address × ByteArray)}
+    {env : Ix.Kernel.Env} (h : checkBytes hash b limits records blobs = .ok env) :
     ∃ constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
       Ix.Kernel.Admission.resourceUnits constants ≤
         2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes :=

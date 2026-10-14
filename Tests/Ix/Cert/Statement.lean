@@ -232,12 +232,14 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   lines := lines.push s!"compiled closure: {seeds.size} published addresses \
     ({byAddress.size} distinct; {aliased} names share an address), {order.size} records, \
     {blobs.length} blobs"
-  let envA ← match Ixon.Authenticated.checkBytes limits records blobs (Ix.Cert.hintsOf ixe) with
+  let some binding := Ix.Kernel.Admission.defaultBinding.toOption
+    | return (errors.push "the default role table does not load", lines)
+  let envA ← match Ixon.Authenticated.checkBytes binding limits records blobs (Ix.Cert.hintsOf ixe) with
     | .ok envA => pure envA
     | .error e => return (errors.push s!"the certified entry refuses the compiled closure: {e}", lines)
   lines := lines.push s!"the certified entry accepts it: {envA.consts.length} kernel constants"
   -- the reading
-  let some cx := Ix.Cert.admissionContext limits ixe order.toList
+  let some cx := Ix.Cert.admissionContext binding limits ixe order.toList
     | return (errors.push "no admission context", lines)
   let mut read := 0
   let mut unread : Array Ix.Kernel.Name := #[]
@@ -311,10 +313,12 @@ def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
   let order := closureOrder ixe seeds
   let records := Ix.Cert.recordsOf ixe order.toList
   let blobs := Ix.Cert.blobsOf ixe order.toList
-  let envA ← match Ixon.Authenticated.checkBytes limits records blobs (Ix.Cert.hintsOf ixe) with
+  let some binding := Ix.Kernel.Admission.defaultBinding.toOption
+    | return (#["the default role table does not load"], lines)
+  let envA ← match Ixon.Authenticated.checkBytes binding limits records blobs (Ix.Cert.hintsOf ixe) with
     | .ok envA => pure envA
     | .error e => return (#[s!"the certified entry refuses the compiled fixtures: {e}"], lines)
-  let some cx := Ix.Cert.admissionContext limits ixe order.toList
+  let some cx := Ix.Cert.admissionContext binding limits ixe order.toList
     | return (#["no admission context"], lines)
   let mut contracted : Array Lean.Name := #[]
   let mut seen : Std.HashMap Lean.Name (Contracts × Contracts) := {}

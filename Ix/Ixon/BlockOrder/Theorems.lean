@@ -240,20 +240,20 @@ universe v
 
 /-! ## The certified entry -/
 
-open Ix.Kernel.Reader (defaultPins builtinPrelude builtinNatOpPins)
+open Ix.Kernel.Reader (preludeFor)
 
-theorem checkBytes_run_iff (hash : ByteArray → Address) (maxProjections : Nat)
+theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
     (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
-    checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env ↔
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env ↔
       Admission.preflight limits records blobs = .ok () ∧
       Admission.uniqueKeys records blobs = .ok () ∧
       Admission.authenticate hash records blobs = .ok () ∧ ∃ input output,
         Admission.decodeRecords limits records = .ok input ∧
         Projection.reconstruct hash maxProjections input = .ok output ∧
         checkConstants hash orderLimits blobs input = .ok () ∧
-        Admission.checkConstants output blobs hint = .ok env := by
+        Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
   | error error => simp [checkBytes, flight, Except.mapError, bind, Except.bind]
   | ok value =>
@@ -281,20 +281,20 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (maxProjections : Nat)
                 bind, Except.bind]
             | ok value =>
               cases value
-              cases checked : Admission.checkConstants output blobs hint <;>
+              cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
                 simp [checkBytes, flight, unique, authentic, decoded, expanded, ordered, checked,
                   Except.mapError, bind, Except.bind]
 
-theorem checkBytes_ok_iff (hash : ByteArray → Address) (maxProjections : Nat)
+theorem checkBytes_ok_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
     (limits : Admission.Limits) (orderLimits : Limits)
     (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
-    checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env ↔
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env ↔
       Admission.WithinBatch limits records blobs ∧
       Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧ ∃ input output,
         Admission.RecordsRead limits records input ∧
         Projection.Expanded hash maxProjections input output ∧ Ordered hash orderLimits blobs input ∧
-        Admission.checkConstants output blobs hint = .ok env := by
+        Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   simp only [checkBytes_run_iff, Admission.preflight_ok_iff, Admission.uniqueKeys_ok_iff,
     Admission.authenticate_ok_iff, Admission.decodeRecords_ok_iff, Projection.reconstruct_ok_iff,
     checkConstants_ok_iff]
@@ -303,72 +303,74 @@ theorem checkBytes_ok_iff (hash : ByteArray → Address) (maxProjections : Nat)
 projections, canonical order, every record the checker read stored under
 `hash` of its serialization, and the checker installed what the expanded
 records describe. -/
-theorem checkBytes_reading {hash : ByteArray → Address} {maxProjections : Nat}
+theorem checkBytes_reading {hash : ByteArray → Address} {binding : Admission.Binding}
+    {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env) :
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
     Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧
       ∃ input output, Admission.RecordsRead limits records input ∧
       Projection.Expanded hash maxProjections input output ∧ Ordered hash orderLimits blobs input ∧
       Admission.Hashed hash output ∧
-      ∃ pins pre natPins, defaultPins = .ok pins ∧ builtinPrelude = .ok pre ∧
-        builtinNatOpPins = .ok natPins ∧
-        Admission.Installed pins pre natPins output blobs hint env := by
+      ∃ t pre, Admission.BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
+        Admission.Installed t pre output blobs hint env := by
   obtain ⟨_, keys, authentic, input, output, reading, expanded, ordered, checked⟩ :=
-    (checkBytes_ok_iff _ _ _ _ _ _ _ _).mp h
-  obtain ⟨pins, pre, natPins, hp, hq, hn, hw⟩ := Admission.checkConstants_with checked
+    (checkBytes_ok_iff _ _ _ _ _ _ _ _ _).mp h
+  obtain ⟨t, pre, hb, hq, hw⟩ := Admission.checkConstantsAt_with checked
   exact ⟨keys, authentic, input, output, reading, expanded, ordered,
-    expanded.hashed (reading.hashed authentic.1), pins, pre, natPins, hp, hq, hn,
+    expanded.hashed (reading.hashed authentic.1), t, pre, hb, hq,
     Admission.checkConstantsWith_installed hw⟩
 
 /-- **Authentication** for the ordered entry: every supplied record and blob
 is stored under `hash` of its bytes, and every record the checker read,
 supplied or reconstructed, under `hash` of its serialization. -/
-theorem checkBytes_authentic {hash : ByteArray → Address} {maxProjections : Nat}
+theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Admission.Binding}
+    {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
-    (h : checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env) :
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
     Admission.Authentic hash records blobs ∧ ∃ output, Admission.Hashed hash output ∧
-      Admission.checkConstants output blobs hint = .ok env := by
+      Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   obtain ⟨_, _, authentic, input, output, reading, expanded, _, checked⟩ :=
-    (checkBytes_ok_iff _ _ _ _ _ _ _ _).mp h
+    (checkBytes_ok_iff _ _ _ _ _ _ _ _ _).mp h
   exact ⟨authentic, output, expanded.hashed (reading.hashed authentic.1), checked⟩
 
 /-- **Model existence** for the certified ordered entry. -/
 theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
-    {maxProjections : Nat}
+    {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
     {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env}
-    (h : checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env) :
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.has_model V
 
 /-- **No proof of `False`** for the certified ordered entry. -/
 theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
-    {maxProjections : Nat}
+    {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {orderLimits : Limits} {records : Admission.Records}
     {blobs : Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env}
-    (h : checkBytes hash maxProjections limits orderLimits records blobs hint = .ok env) :
-    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
+    (h : checkBytes hash binding maxProjections limits orderLimits records blobs hint = .ok env) :
+    ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
   exact installed.no_proof_of_False V
 
 /-- On a read, authenticated, expanded, canonically ordered input, every
 checker outcome survives unchanged. -/
-theorem checkBytes_of_ordered {hash maxProjections limits orderLimits records input output blobs hint}
+theorem checkBytes_of_ordered {hash binding maxProjections limits orderLimits records input output blobs
+    hint}
     (within : Admission.WithinBatch limits records blobs)
     (keys : Admission.UniqueKeys records blobs)
     (authentic : Admission.Authentic hash records blobs)
     (reading : Admission.RecordsRead limits records input)
     (expanded : Projection.Expanded hash maxProjections input output)
     (ordered : Ordered hash orderLimits blobs input) :
-    checkBytes hash maxProjections limits orderLimits records blobs hint =
-      (Admission.checkConstants output blobs hint).mapError .checker := by
+    checkBytes hash binding maxProjections limits orderLimits records blobs hint =
+      (Admission.checkConstantsAt hash binding output blobs hint).mapError .checker := by
   have flight := (Admission.preflight_ok_iff _ _ _).mpr within
   have unique := (Admission.uniqueKeys_ok_iff _ _).mpr keys
   have hashed := (Admission.authenticate_ok_iff _ _ _).mpr authentic

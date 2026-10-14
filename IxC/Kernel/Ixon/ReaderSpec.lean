@@ -23,8 +23,8 @@ declarations the fold checks are the ones the records describe.
   theorem the reading of its value, or that value's projection rewrite
   (`projRewrite`, upstream con-leche's `ExportC.projRewriteD`) where it applies
   (`SingletonRead`).
-* `Ctx.nameOf_of_pin`, `Ctx.nameOf_of_unpinned`: when a reference takes its
-  pinned name and when its address encoding. The encoding is injective
+* `Ctx.nameOf_of_role`, `Ctx.nameOf_of_unbound`: when a reference takes its
+  role key and when its address encoding. The encoding is injective
   (`keyName_injective`, proved in `Ix.Kernel.Reader` itself).
 
 None of this is needed for consistency: `Ix.Kernel.model_exists` holds for
@@ -336,18 +336,18 @@ theorem StreamRead.singleton {cx : Ctx} {st st' : State} {records : List (Addres
 
 /-! ### The name a reference is read under -/
 
-/-- A reference that is not an indexed recursor takes its pinned name where
-the table has one. -/
-theorem Ctx.nameOf_of_pin {cx : Ctx} {r : ConstRef Address} {n : CName}
-    (hrec : cx.index.recs[r]? = none) (hpin : cx.pins.names[r]? = some n) : cx.nameOf r = n := by
-  simp [Ctx.nameOf, hrec, hpin]
+/-- A reference that is not an indexed recursor takes its role key where
+the role table binds it. -/
+theorem Ctx.nameOf_of_role {cx : Ctx} {r : ConstRef Address} {n : CName}
+    (hrec : cx.index.recs[r]? = none) (hrole : cx.roles.names[r]? = some n) : cx.nameOf r = n := by
+  simp [Ctx.nameOf, hrec, hrole]
 
-/-- A reference that is neither an indexed recursor nor pinned takes its
-address encoding. -/
-theorem Ctx.nameOf_of_unpinned {cx : Ctx} {r : ConstRef Address}
-    (hrec : cx.index.recs[r]? = none) (hpin : cx.pins.names[r]? = none) :
+/-- A reference that is neither an indexed recursor nor bound to a role takes
+its address encoding. -/
+theorem Ctx.nameOf_of_unbound {cx : Ctx} {r : ConstRef Address}
+    (hrec : cx.index.recs[r]? = none) (hrole : cx.roles.names[r]? = none) :
     cx.nameOf r = keyName r := by
-  simp [Ctx.nameOf, hrec, hpin, KeyNames.get_eq]
+  simp [Ctx.nameOf, hrec, hrole, KeyNames.get_eq]
 
 /-- The reading of a bare reference with no universe arguments: the
 constant the reference resolves to, under its name. -/

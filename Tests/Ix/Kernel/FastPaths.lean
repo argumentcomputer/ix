@@ -16,8 +16,8 @@ three kernels:
 * the Rust kernel (`rsCheckConstsFFI`, every closure member by name);
 * `Ix.Tc` (`checkIxeBytesAnon` on the compiled bytes);
 * IxC, through the environment check (`SourceIngressCompare.ixonVerdicts`:
-  the verified fold one record at a time, at the committed `Nat`-operation
-  pins).
+  the verified fold one record at a time, under the default role table and
+  its evidence).
 
 A probe expected to be rejected names its culprit: the false or
 non-definitional equation itself, or, for a derivation of `False`, the
@@ -114,8 +114,7 @@ def tcVerdicts (compiled : Ix.CompileM.LeanPipelineOut) (names : List Lean.Name)
 /-- IxC's environment check on the compiled environment, by name. -/
 def ixcVerdicts (compiled : Ix.CompileM.LeanPipelineOut) (names : List Lean.Name) :
     IO Verdicts := do
-  let natPins ← IO.ofExcept Ix.Kernel.Reader.builtinNatOpPins
-  let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env natPins
+  let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env
   let mut out : Verdicts := {}
   for n in names do
     if let some (outcome, reason) := rows[Ix.LeanIngress.ingressName (Ix.Name.fromLeanName n)]? then

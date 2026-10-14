@@ -138,8 +138,8 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
         IO.Process.exit 3
 
 /-- The setup line of a live run. -/
-def setupLine (s : Setup) (blobs pins hints : Nat) (pre : Prelude) : String :=
-  s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {pins} pins, \
+def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude) : String :=
+  s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {roles} roles bound, \
     {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, {hints} hints"
 
 /-- Mark a live run's read-only inputs persistent before the loop's thread
@@ -157,7 +157,6 @@ def run (args : List String) : IO UInt32 := do
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
-  let natPins ← IO.ofExcept builtinNatOpPins
   let rootsEnv ← IO.getEnv "CHECK_IXE_ROOTS"
   -- the persistent read cache (`CheckIxeReadCache`): full-order runs only
   let cacheDir ← IO.getEnv "CHECK_IXE_READ_CACHE"
@@ -191,7 +190,7 @@ def run (args : List String) : IO UInt32 := do
     | some n => a.extract 0 (min n a.size)
     | none => a
   -- the loop over a source: the per-record check, or with `--jobs` the pool
-  let check {σ : Type} (src : LoopSource σ) (names : Address → Array String)
+  let check {σ : Type} (ev : Ix.Kernel.Evidences) (src : LoopSource σ) (names : Address → Array String)
       (addresses : Array Address)
       (onRead : Address → Except ReadError Read → Nat → IO Unit) : IO Counts := do
     let total := addresses.size
@@ -200,10 +199,10 @@ def run (args : List String) : IO UInt32 := do
         IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
           RSS {(← statusKb "VmRSS:") / 1024} MB"
     match options.jobs with
-    | some _ => CheckIxePool.run src natPins names addresses skip slots emit log progress onRead
+    | some _ => CheckIxePool.run src ev names addresses skip slots emit log progress onRead
     | none => do
       let st ← src.init
-      let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord natPins) {}
+      let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord ev) {}
         names addresses skip emit
         (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
         (after := slot0.set none)
@@ -216,7 +215,7 @@ def run (args : List String) : IO UInt32 := do
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
       (addresses : Array Address) : IO Counts := do
     let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
-    let out ← check src (names.getD · #[]) addresses
+    let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
     if let some (path, ixe) := cache then
       if record then
@@ -240,10 +239,11 @@ def run (args : List String) : IO UInt32 := do
       let path := (cache.map (·.1.toString)).getD ""
       IO.eprintln s!"{plan.header}; read cache {path}, mapped in {(← IO.monoMsNow) - started} ms"
       let names := plan.nameMap
-      onThread (check plan.source (names.getD · #[]) (plan.addresses options.limit) fun _ _ _ => pure ())
+      onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
+        fun _ _ _ => pure ())
     | none => do
-      let pins ← IO.ofExcept defaultPins
-      let pre ← IO.ofExcept builtinPrelude
+      let table ← IO.ofExcept defaultTable
+      let pre ← IO.ofExcept (preludeFor table)
       match options.load with
       | .eager => do
         let env ← IO.ofExcept (Ixon.deEnv bytes)
@@ -252,16 +252,16 @@ def run (args : List String) : IO UInt32 := do
           store := store.insert address (← IO.ofExcept lazy.get)
         let names := reportNames env store
         let hints := Hints.ofStore store env.anonHints
-        let s := setup store (env.blobs[·]?) pins pre hints.lookup
-        log s!"eager load: {setupLine s env.blobs.size pins.names.size hints.hints.size pre}"
+        let s := setup store (env.blobs[·]?) table pre hints.lookup
+        log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
         let addresses := limited (← orderOf s env.named pre rootsEnv)
         if thread then markInputs s names
         onThread (live s s.source names addresses)
       | .stream => do
-        let l ← CheckIxeStream.load bytes pins pre
+        let l ← CheckIxeStream.load bytes table pre
         let s := l.setup
         let names := reportNames l.env s.store
-        log s!"streaming load: {setupLine s l.env.blobs.size pins.names.size l.env.anonHints.size pre}"
+        log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
         let addresses := limited (← orderOf s l.env.named pre rootsEnv)
         -- the setup and the names only: the records' windows go to the loop
         -- unmarked, so that they are freed once it has taken their bytes

@@ -41,7 +41,7 @@ namespace Tests.Ix.Kernel.Contracts
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
     Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
   let r := rekeyed cs blobs
-  Ixon.Authenticated.checkBytes limits r.encoded r.blobs
+  Ixon.Authenticated.checkBytes builtinBinding limits r.encoded r.blobs
 
 def outcomeOf (cs : List (Address × Ixon.Constant)) : Option Ix.Kernel.Admission.Outcome :=
   match check cs with

@@ -11,6 +11,13 @@ open Ix.Kernel Tests.Ix.Kernel.IxonFixtures Tests.Ix.Kernel.Codec Tests.Ix.Kerne
 
 namespace Tests.Ix.Kernel.Projection
 
+/-- The default role table's section, committed under its BLAKE3 hash
+(`Ix.Kernel.Admission.defaultBinding`). -/
+def blake3Binding : Ix.Kernel.Admission.Binding :=
+  match Ix.Kernel.Admission.defaultBinding with
+  | .ok b => b
+  | .error _ => ⟨default, .empty⟩
+
 /-- The specification hash, pure BLAKE3. -/
 def spec : ByteArray → Address := Address.blake3Pure
 
@@ -103,7 +110,7 @@ def encode (input : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Recor
 def checkAt (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
     (bounds : Ix.Kernel.Admission.Limits := ByteAdmission.limits) :
     Except Ixon.Projection.CheckError Ix.Kernel.Env :=
-  Ixon.Authenticated.checkBytesProjection limit bounds (encode input) []
+  Ixon.Authenticated.checkBytesProjection blake3Binding limit bounds (encode input) []
 
 /-- The entry on a fixture re-keyed under BLAKE3. -/
 def check (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
@@ -116,7 +123,7 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 
 #guard separatedInput.length == 2
 #guard (checkAt separatedInput).isOk
-#guard !(Ixon.Authenticated.checkBytes ByteAdmission.limits (encode separatedInput) []).isOk
+#guard !(Ixon.Authenticated.checkBytes blake3Binding ByteAdmission.limits (encode separatedInput) []).isOk
 #guard accepts [(address 3, falseBlock)]
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard (checkAt separated.records).isOk
@@ -132,7 +139,7 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 #guard match check [] 0 { ByteAdmission.limits with maxRecords := 0 } with
   | .ok _ => true
   | _ => false
-#guard match Ixon.Authenticated.checkBytesProjection 0 { ByteAdmission.limits with maxRecords := 0 }
+#guard match Ixon.Authenticated.checkBytesProjection blake3Binding 0 { ByteAdmission.limits with maxRecords := 0 }
     [(address 1, ⟨#[]⟩)] [] with
   | .error e@(.reconstruction (.admission (.limit .records))) => e.outcome == .declined
   | _ => false
@@ -162,15 +169,15 @@ def wrongConstructorIndex : Ixon.Constant :=
   | _ => false
 
 example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
-    (h : Ixon.Authenticated.checkBytesProjection 16 ByteAdmission.limits (encode separatedInput) [] = .ok env) :
+    (h : Ixon.Authenticated.checkBytesProjection blake3Binding 16 ByteAdmission.limits (encode separatedInput) [] = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesProjection_has_model V h
 
-example {hash : ByteArray → Address} {maxProjections : Nat} {records : Ix.Kernel.Admission.Records}
-    {blobs : Ingress.Blobs} {env : Ix.Kernel.Env}
-    (h : Ixon.Projection.checkBytes hash maxProjections ByteAdmission.limits records blobs = .ok env) :
+example {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat}
+    {records : Ix.Kernel.Admission.Records} {blobs : Ingress.Blobs} {env : Ix.Kernel.Env}
+    (h : Ixon.Projection.checkBytes hash binding maxProjections ByteAdmission.limits records blobs = .ok env) :
     ∃ output, (∀ entry ∈ output, entry.1 = hash (Ixon.serConstant entry.2)) ∧
-      Ix.Kernel.Admission.checkConstants output blobs = .ok env :=
+      Ix.Kernel.Admission.checkConstantsAt hash binding output blobs = .ok env :=
   (Ixon.Projection.checkBytes_authentic h).2
 
 end Tests.Ix.Kernel.Projection

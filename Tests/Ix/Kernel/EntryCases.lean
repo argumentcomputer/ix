@@ -105,10 +105,10 @@ def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := 
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup
+  let s := setup store (env.blobs[·]?) table pre hints.lookup
   let primaries := s.ordered.filterMap fun a => (store[a]?).map (a, ·)
   let projections := (store.toArray.filter fun (a, c) => owner a c != a).qsort
     fun x y => x.1.cmpBytes y.1 == .lt
@@ -303,7 +303,8 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let started ← IO.monoMsNow
   let input ← prepare leanEnv test.seeds
   let submission ← IO.ofExcept (test.alter input)
-  let result := Ixon.Authenticated.checkBytes limits submission.records submission.blobs input.hints.lookup
+  let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+  let result := Ixon.Authenticated.checkBytes binding limits submission.records submission.blobs input.hints.lookup
   let (outcome, detail, passed) := match result, test.expected with
     | .ok env, .accept =>
       let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with
@@ -353,9 +354,8 @@ def stepCases : List StepCase := [
 
 def runStep (leanEnv : Lean.Environment) (test : StepCase) : IO Bool := do
   let input ← prepare leanEnv [test.seed]
-  let natPins ← IO.ofExcept builtinNatOpPins
   let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
-  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop input.step natPins (fun _ => #[])
+  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop input.step (fun _ => #[])
     input.step.ordered {} (emit := fun row => rows.modify (·.push row))
   let some a := input.named test.seed | throw (IO.userError s!"seed {test.seed} was not compiled")
   let row := (← rows.get).find? (·.address == a)

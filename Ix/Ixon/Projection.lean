@@ -115,14 +115,15 @@ def CheckError.outcome : CheckError → Admission.Outcome
 
 /-- **The certified entry with optional omission of projection records**:
 canonical byte admission, projection reconstruction, then the
-verified checker behind the Ixon reader (`Admission.checkConstants`)
-on the expanded records. Input byte limits, key uniqueness and
+verified checker behind the Ixon reader under the role table's section
+(`Admission.checkConstantsAt`: the table admitted under `hash`, then
+`Admission.checkConstants`) on the expanded records. Input byte limits, key uniqueness and
 authentication apply before reconstruction: every supplied record and blob
 is stored under `hash` of its bytes, and every reconstructed projection under
 `hash` of its serialization. The separate projection limit bounds generated
 requests. -/
-def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : Admission.Limits)
-    (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytes (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .reconstruction (.admission error))
@@ -131,6 +132,6 @@ def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : A
   let constants ← (Admission.decodeRecords limits records).mapError
     (fun error => .reconstruction (.admission error))
   let expanded ← (reconstruct hash maxProjections constants).mapError .reconstruction
-  (Admission.checkConstants expanded blobs hint).mapError .checker
+  (Admission.checkConstantsAt hash binding expanded blobs hint).mapError .checker
 
 end Ixon.Projection

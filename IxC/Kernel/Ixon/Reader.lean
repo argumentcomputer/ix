@@ -3,6 +3,7 @@ import IxC.Kernel.Frontend.Prepare
 import IxC.Address.Core
 import IxC.Ixon.Types
 import IxC.Kernel.Ref
+import IxC.Kernel.Ixon.RoleTable
 
 /-! # Ixon records as kernel declarations
 
@@ -18,7 +19,7 @@ fold.
 ## Soundness: nothing here is trusted
 
 `Ix.Kernel.model_exists` holds for every `ds : Array Declaration` that
-`checkDecls .verified pins ds` accepts, at every pin list. So no property of
+`checkDecls .verified ev ds` accepts, at every role table and evidence. So no property of
 this reader is needed for the consistency of what the fold accepts: a wrong
 name, a wrong grouping, a wrong rule order or a wrong level parameter can
 only make the fold reject or decline, or make it accept a different
@@ -51,23 +52,27 @@ Three kinds of names are not of this form:
   auxiliary (nested) motive is `T_0.rec_j` (1-based), exactly Lean's own
   convention. The motive is read off the recursor's type (the head of its
   result), the member off that motive's major carrier.
-* **Pinned names** (`Pins.names`): the checker's own pinned names and no
-  others: the basis (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the `Quot`
-  package), the prelude's `And` and `Bool`, the literal support (`String`,
-  `String.ofList`, `List`, `Char`, `Char.ofNat`), the structural and
-  pin-certified Nat operations, the standard axioms with `Iff` and
+* **Role keys** (`Bindings.names`): every reference the input's role table
+  (`Ix.Kernel.RoleTable`) binds is named after its role (`roleKey r`, the
+  role's Lean name), and no other: the basis (`Eq`, `Nat`, `PUnit`,
+  `Empty`, `False`, the `Quot` package), `And` and `Bool`, the literal
+  support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`), the
+  certified `Nat` operations, the standard axioms with `Iff` and
   `Nonempty`, the compiler-trust family with `True`, and `sorryAx`. The table
-  maps a `ConstRef Address` to its pinned name; it is generated from the
-  compiled Init records (`Benchmarks/Kernel/PinGen.lean`, which
-  checks every entry through the verified fold) and committed
-  (`IxC/Kernel/Ixon/PinData.lean`); the reader never reads Ixon metadata.
-  `pinMap` refuses a table that is not a partial injection or that uses the
-  reserved root or a derived shape. The checker itself compares every pinned
-  name's declaration with its pinned shape, binder contracts included (basis
-  blocks up to `canon`, with a reserved-name reject otherwise; literal support and Nat operations by
-  exact type shapes and certified recurrences; the standard and trust axioms
-  by `matchesPin`), so a table entry on a constant of another shape is
-  rejected or declined, never accepted under the pinned name.
+  is input: it is authenticated and checked for well-formedness at admission
+  (`RoleTable.check`), and its bound addresses are resolved here
+  (`bindingsOf`); the reader never reads Ixon metadata. The checker itself
+  validates every role-keyed declaration against the role's specification
+  (`Role.spec`: basis blocks up to `canon`, with a reserved-name reject
+  otherwise; literal support and `Nat` operations by exact type shapes and
+  their evidence; the standard and trust axioms by `matchesPin`), so a table
+  entry on a constant of another shape is rejected or declined, never
+  accepted under the role.
+* **Evidence** (`evidenceOf`): a proof entry of the table names a theorem
+  record; the reader resolves it to the record's key and its value's
+  reading, which is what the fold checks the operation's certificates with.
+  An entry that does not resolve to a theorem leaves its operation without
+  evidence, which declines it.
 * **Level parameters** are positional: a record's universe variable `i` is
   the level parameter `i`, and a constant with `n` of them has the level
   parameters `[0, …, n-1]`. The one exception is a recursor with one level
@@ -270,42 +275,12 @@ abbrev ReadM := Except ReadError
 def malformed (reason : String) : ReadM α := throw (.malformed reason)
 def declined (reason : String) : ReadM α := throw (.declined reason)
 
-/-! ## The pin table -/
+/-! ## The role bindings -/
 
-/-- One pinned name: the reference it is assigned to. -/
-structure Pin where
-  ref : ConstRef Address
-  name : CName
-
-/-- The first component of a name. -/
-def rootComponent : CName → Option String
-  | .anonymous => none
-  | .str .anonymous s => some s
-  | .num .anonymous _ => none
-  | .str p _ | .num p _ => rootComponent p
-
-/-- Names the frontend derives from others (a recursor's spelling, a model
-companion, a projection function or table); a pin may not take one. -/
-def derivedShape (n : CName) : Bool :=
-  n.isRecSpelling || n.isModelSuffix || n.isProjFnShape
-
-/-- The table as a lookup, after checking that it is a partial injection
-from references to names outside the reserved `ix` root and the derived
-shapes. A table that fails the check is not used at all. -/
-def pinMap (pins : Array Pin) : Except String (Std.HashMap (ConstRef Address) CName) := do
-  let mut byRef : Std.HashMap (ConstRef Address) CName := {}
-  let mut names : Std.HashSet CName := {}
-  for p in pins do
-    if rootComponent p.name == some "ix" then throw s!"pin {p.name} is under the reserved root"
-    if derivedShape p.name then throw s!"pin {p.name} has a derived shape"
-    if names.contains p.name then throw s!"pin {p.name} is assigned twice"
-    if byRef.contains p.ref then throw s!"pin {p.name}: its reference is pinned twice"
-    names := names.insert p.name
-    byRef := byRef.insert p.ref p.name
-  return byRef
-
-/-- The pinned names a reading uses. -/
-structure Pins where
+/-- **The role bindings a reading uses**: each reference the role table binds
+(`Ix.Kernel.RoleTable`), renamed to its role's key (`roleKey r`, its Lean
+name while keys are names). Built from a table by `bindingsOf`. -/
+structure Bindings where
   names : Std.HashMap (ConstRef Address) CName := {}
 
 /-! ## Stores and references -/
@@ -348,6 +323,20 @@ def resolveSource (store : Store) (address : Address) (c : Ixon.Constant) :
 
 def resolve (store : Store) (address : Address) : Option (ConstRef Address) := do
   resolveSource store address (← store address)
+
+/-- **The bindings of a role table over a store**: each bound address
+resolved to the reference it denotes (`resolve`), renamed to its role's key.
+An address the store does not resolve binds nothing, which affects coverage
+only; a reference two roles resolve to keeps the first. Well-formedness
+(`RoleTable.check`) has made the table injective in both directions; on
+canonical records two addresses never resolve to one reference. Role keys
+are never under the reserved `ix` root nor of a derived shape (`roleKey` is a
+role's Lean name), the two checks the committed pin table needed (SP3 D6). -/
+def bindingsOf (store : Store) (t : Ix.Kernel.RoleTable) : Bindings :=
+  { names := t.bound.foldl (init := {}) fun m (r, a) =>
+      match resolve store a with
+      | some ref => if m.contains ref then m else m.insert ref (Ix.Kernel.roleKey r)
+      | none => m }
 
 /-- The inductive at a member reference, if the store has one there. -/
 def inductiveAt (store : Store) : ConstRef Address → Option Ixon.Inductive
@@ -479,9 +468,9 @@ def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
 it (`T_m.rec`, or `T_0.rec_j` at the `j`-th auxiliary motive). A recursor
 whose type does not have the recursor shape is not indexed; its record and
 its block then decline. -/
-def buildIndex (store : Store) (pins : Std.HashMap (ConstRef Address) CName)
+def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) CName)
     (records : Array (Address × Ixon.Constant)) : RecIndex := Id.run do
-  let memberName (r : ConstRef Address) : CName := pins.getD r (keyName r)
+  let memberName (r : ConstRef Address) : CName := roles.getD r (keyName r)
   let mut idx : RecIndex := {}
   let mut found : Std.HashMap Address (Array (Nat × ConstRef Address)) := {}
   for (owner, c) in records do
@@ -556,23 +545,23 @@ def KeyNames.insert (k : KeyNames) (r : ConstRef Address) : KeyNames :=
       rw [beq_iff_eq.mp hr]
     · exact k.sound r' n h⟩
 
-/-- The address encodings of the unpinned references `records` denote (each
+/-- The address encodings of the unbound references `records` denote (each
 record's `resolveSource`), for `Ctx.keys`. -/
-def keyNamesOf (store : Store) (pins : Std.HashMap (ConstRef Address) CName)
+def keyNamesOf (store : Store) (roles : Std.HashMap (ConstRef Address) CName)
     (records : Array (Address × Ixon.Constant)) : KeyNames :=
   records.foldl (init := {}) fun k (a, c) =>
     match resolveSource store a c with
-    | some r => if pins.contains r || k.map.contains r then k else k.insert r
+    | some r => if roles.contains r || k.map.contains r then k else k.insert r
     | none => k
 
-/-- Everything a record is read against: the stores, the pins, the
+/-- Everything a record is read against: the stores, the role bindings, the
 recursor index, the host's (optional, untrusted) reducibility hints, and the
 address encodings computed ahead (`keyNamesOf`; an empty table only costs
 time). -/
 structure Ctx where
   store : Store
   blob : Address → Option ByteArray
-  pins : Pins
+  roles : Bindings
   index : RecIndex
   hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none
   keys : KeyNames := {}
@@ -580,7 +569,7 @@ structure Ctx where
 def Ctx.nameOf (cx : Ctx) (r : ConstRef Address) : CName :=
   match cx.index.recs[r]? with
   | some e => e.name
-  | none => match cx.pins.names[r]? with
+  | none => match cx.roles.names[r]? with
     | some n => n
     | none => cx.keys.get r
 
@@ -1104,7 +1093,7 @@ nodes point at blobs), so a dependency order over table references alone can
 put a literal user before the support: `String.instInhabited`, whose value
 is `⟨""⟩`, comes before `String.ofList` and `Char.ofNat` in such an order of
 Init, and without these edges blocks 760 records. `literalEdges` adds those implicit references as
-dependency edges, as the environment check adds a pinned `Nat` operation's certificate
+dependency edges, as the environment check adds a certified `Nat` operation's certificate
 ground (`natOpDeps`). The `Nat` trio is the prelude's `Nat` block, which
 every order here puts first, so only the string edges change an order; the
 `Nat` edges keep the relation complete for the blocking report. -/
@@ -1146,12 +1135,12 @@ def strLitSupportNames : List CName :=
      Ix.Kernel.listConsName, Ix.Kernel.charName, Ix.Kernel.charOfNatName]
 
 /-- Dependency edges from every record that contains a literal to the records
-(block addresses) of the constants the literal references, under a pin table.
-A support constant the table does not pin contributes no edge (the checker
+(block addresses) of the constants the literal references, under role bindings.
+A support constant the table does not bind contributes no edge (the checker
 then declines the literal, as it would anyway). -/
-def literalEdges (pins : Std.HashMap (ConstRef Address) CName)
+def literalEdges (roles : Std.HashMap (ConstRef Address) CName)
     (records : Array (Address × Ixon.Constant)) : Std.HashMap Address (Array Address) := Id.run do
-  let byName : Std.HashMap CName Address := pins.fold (fun m r n => m.insert n r.block) {}
+  let byName : Std.HashMap CName Address := roles.fold (fun m r n => m.insert n r.block) {}
   let targets (names : List CName) : Array Address :=
     names.foldl (fun acc n => match byName[n]? with
       | some a => if acc.contains a then acc else acc.push a
@@ -1200,5 +1189,52 @@ def readRecords (cx : Ctx) (st : State) (records : Array (Address × Ixon.Consta
       out := out ++ r.decls
     | .error e => throw (e, i)
   return (st, out)
+
+end Ix.Kernel.Reader
+
+namespace Ix.Kernel.Reader
+
+/-! ## Evidence
+
+A role table's evidence names theorems by address (`Evidence Address`). The
+fold receives each proof entry as the theorem's key and the reading of its
+value (`Ix.Kernel.Evidences`), and checks the operation's certificates with
+that value. The reading is the reader's own, under the reading's final state
+(projection functions rewritten as everywhere else). -/
+
+/-- The theorem record at `a`, read: its key and its value's reading. `none`
+when `a` is not a theorem (a singleton or a definition block's member) in the
+store, or does not read. -/
+def evidenceValue? (cx : Ctx) (st : State) (a : Address) : Option (CName × CExpr) := do
+  let ref ← resolve cx.store a
+  let .member owner i := ref | none
+  let c ← cx.store owner
+  let (d, self) ← match c.info with
+    | .defn d =>
+      if i == 0 then
+        some (d, fun j => if j == 0 then some (cx.nameOf (.member owner 0)) else none)
+      else none
+    | .muts ms =>
+      match ms[i]? with
+      | some (.defn d) => some (d, fun j => if j < ms.size then some (cx.nameOf (.member owner j)) else none)
+      | _ => none
+    | _ => none
+  unless d.kind == .thm do none
+  match readDefinition cx st (st.heights.getD · 0) ref (List.range d.lvls.toNat)
+      (.mk' cx c id self) d with
+  | .ok (.thmDecl cv value, _) => some (cv.name, value)
+  | _ => none
+
+/-- **The fold's evidence from a role table**: each operation's entries,
+`defeq` as it is and each proof resolved to its theorem's key and value
+(`evidenceValue?`). An operation one of whose proofs does not resolve gets no
+evidence, which declines it. -/
+def evidenceOf (cx : Ctx) (st : State) (t : Ix.Kernel.RoleTable) : Ix.Kernel.Evidences :=
+  t.evidence.toList.map fun (r, es) =>
+    (r, (es.toList.mapM (fun (e : Ix.Kernel.Evidence Address) =>
+      (match e with
+        | .defeq => some Ix.Kernel.Evidence.defeq
+        | .proof a => (evidenceValue? cx st a).map Ix.Kernel.Evidence.proof :
+        Option (Ix.Kernel.Evidence (CName × CExpr))))).getD [])
 
 end Ix.Kernel.Reader

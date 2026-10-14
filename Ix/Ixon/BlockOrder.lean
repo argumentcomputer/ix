@@ -450,8 +450,8 @@ authentication under `hash`, computed projections, canonical block order
 (recursor blocks in motive order), and the verified
 checker behind the Ixon reader are all executed here. No host ordering
 verdict is input. -/
-def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : Admission.Limits)
-    (orderLimits : Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytes (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (orderLimits : Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except CheckError Ix.Kernel.Env := do
   (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
@@ -461,6 +461,6 @@ def checkBytes (hash : ByteArray → Address) (maxProjections : Nat) (limits : A
   let expanded ← (Projection.reconstruct hash maxProjections constants).mapError
     (fun error => .order (.projection error))
   (checkConstants hash orderLimits blobs constants).mapError .order
-  (Admission.checkConstants expanded blobs hint).mapError .checker
+  (Admission.checkConstantsAt hash binding expanded blobs hint).mapError .checker
 
 end Ixon.BlockOrder

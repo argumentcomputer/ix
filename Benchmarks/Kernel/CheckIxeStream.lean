@@ -81,7 +81,7 @@ structure Loaded where
 
 /-- Load an `.ixe` for streaming: decode every record once for its skeleton
 and its literal kinds, and build the setup over the skeletons. -/
-def load (bytes : ByteArray) (pins : Pins) (pre : Prelude) : IO Loaded := do
+def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude) : IO Loaded := do
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
   let consts := env.consts
   let env := { env with consts := {} }
@@ -95,7 +95,7 @@ def load (bytes : ByteArray) (pins : Pins) (pre : Prelude) : IO Loaded := do
   let preludeOnly := pre.records.foldl (init := {}) fun (acc : Std.HashSet Address) (a, _) =>
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup (literals := some lits)
+  let s := setup store (env.blobs[·]?) table pre hints.lookup (literals := some lits)
   return { env, setup := s, windows := ← IO.mkRef consts, preludeOnly }
 
 /-! ## Reading -/

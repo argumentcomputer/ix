@@ -57,7 +57,7 @@ instance : Inhabited Installer := ⟨{}⟩
 recorded checks; the first failure ends it, rolled back as `Checker.step`
 rolls back (the index rebuilt from the constants before the declaration,
 the memo state reset), with the checks the declarations before it recorded. -/
-def installDecls (pins : List Ix.Kernel.NatOpPinSet) :
+def installDecls (ev : Ix.Kernel.Evidences) :
     Nat → Ix.Kernel.FEnv → Array Ix.Kernel.Cached.PendingCheck → Ix.Kernel.Cached.CState →
       List Ix.Kernel.Declaration →
       Nat × Ix.Kernel.FEnv × Array Ix.Kernel.Cached.PendingCheck × Ix.Kernel.Cached.CState ×
@@ -66,15 +66,15 @@ def installDecls (pins : List Ix.Kernel.NatOpPinSet) :
   | pos, fe, pend, cs, d :: rest =>
     let before := fe.env
     let recorded := pend
-    match Ix.Kernel.Cached.annotDeclStep .verified pins (pos, fe, pend) d cs with
-    | .ok ((pos', fe', pend'), cs') => installDecls pins pos' fe' pend' cs' rest
+    match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, pend) d cs with
+    | .ok ((pos', fe', pend'), cs') => installDecls ev pos' fe' pend' cs' rest
     | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, {}, some e)
 
 /-- Phase A's step: install a record's declarations, recording their checks. -/
-def Installer.stepRecord (pins : List Ix.Kernel.NatOpPinSet) (c : Installer) (address : Address)
+def Installer.stepRecord (ev : Ix.Kernel.Evidences) (c : Installer) (address : Address)
     (rd : Read) : Installer × Option Ix.Kernel.CheckError :=
   let ⟨fe, cs, pos, pend, owners, installErrors⟩ := c
-  let (pos, fe, recorded, cs, err) := installDecls pins pos fe #[] cs rd.decls.toList
+  let (pos, fe, recorded, cs, err) := installDecls ev pos fe #[] cs rd.decls.toList
   let owners := owners ++ Array.replicate recorded.size address
   let pend := pend ++ recorded
   let installErrors := match err with
@@ -137,7 +137,7 @@ def pool (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck)
 slot (`slots`, the watchdog's; at least one). Rows go to `emit`, in the
 per-record check's order; stage lines go to `log`. Returns the outcome and
 first-cause counts. -/
-def run {σ : Type} (src : LoopSource σ) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
+def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String) (slots : Array Slot)
     (emit : Row → IO Unit) (log : String → IO Unit)
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
@@ -150,7 +150,7 @@ def run {σ : Type} (src : LoopSource σ) (pins : List Ix.Kernel.NatOpPinSet) (n
   let recOwner ← IO.mkRef ({} : Std.HashMap Address Address)
   let tA ← IO.monoMsNow
   let st ← src.init
-  let installed ← checkLoopWith src.view src.read src.commit st (Installer.stepRecord pins) {}
+  let installed ← checkLoopWith src.view src.read src.commit st (Installer.stepRecord ev) {}
     names addresses skip
     (emit := fun row => times.modify (·.insert row.address (row.micros, row.readMicros)))
     (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))

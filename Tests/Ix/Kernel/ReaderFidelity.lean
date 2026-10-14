@@ -27,8 +27,8 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 
 * **Names.** A Lean constant's name is the reader's key of the reference its
   record resolves to: `ix.<hex b>.i` for member `i` of record `b`,
-  `ix.<hex b>.i.c` for a constructor (`keyName`), or the pinned name where the
-  committed table pins that reference. A recursor is named after what it
+  `ix.<hex b>.i.c` for a constructor (`keyName`), or the role key (the
+  role's Lean name) where the default role table binds that reference. A recursor is named after what it
   eliminates, by Lean's own convention: `T.rec` ↦ `⟦T⟧.rec`, `T.rec_j` ↦
   `⟦T⟧.rec_j` with `T` the block's first member.
 * **Level parameters.** Positional: a constant's are `0, …, n-1`, one per
@@ -259,18 +259,18 @@ def cname : Lean.Name → CName
   | .num p n => .num (cname p) n
 
 /-- What the reference reads: Lean's constants, the compiled environment's
-name ↦ reference map, and the pin table. -/
+name ↦ reference map, and the role table's bindings. -/
 structure RefCx where
   find : Lean.Name → Option Lean.ConstantInfo
   refOf : Lean.Name → Option (ConstRef Address)
-  pins : Pins
+  roles : Bindings
 
 abbrev RefM := Except String
 
 /-- A non-recursor constant's reference name. -/
 def RefCx.memberName (cx : RefCx) (n : Lean.Name) : RefM CName := do
   let some r := cx.refOf n | throw s!"{n} was not compiled"
-  pure (cx.pins.names.getD r (keyName r))
+  pure (cx.roles.names.getD r (keyName r))
 
 /-- A Lean constant's reference name (recursors by Lean's convention). -/
 def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM CName := do
@@ -610,15 +610,15 @@ def closure (env : Lean.Environment) (seeds : Array Lean.Name) :
     todo := todo ++ references env ci
   return out.toList
 
-/-- The pin table's agreement with Lean: a pinned name is a Lean name
-compiled at its reference. -/
-def pinProblems (pins : Pins)
+/-- The role table's agreement with Lean: a bound role's key is the Lean
+name of a constant compiled at the reference its address resolves to. -/
+def bindingProblems (roles : Bindings)
     (byRef : Std.HashMap (ConstRef Address) (Array Lean.Name)) : Array String := Id.run do
   let mut out := #[]
-  for (r, n) in pins.names.toList do
+  for (r, n) in roles.names.toList do
     let leans := byRef.getD r #[]
     unless leans.isEmpty || leans.any (cname · == n) do
-      out := out.push s!"pin {n} is not the Lean name of a constant at its reference \
+      out := out.push s!"role {n} is not the Lean name of a constant at its reference \
         (there: {leans.toList.take 4})"
   return out
 
@@ -770,10 +770,10 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     (roots : Option (Array Address) := none) :
     IO Report := do
   let t0 ← IO.monoMsNow
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore input.store input.ixon.anonHints
-  let s : Setup := setup input.store (input.ixon.blobs[·]?) pins pre hints.lookup
+  let s : Setup := setup input.store (input.ixon.blobs[·]?) table pre hints.lookup
   let store := s.store
   -- the bridge: Lean name ↦ reference, from the compiled metadata
   let mut refs : Std.HashMap Lean.Name (ConstRef Address) := {}
@@ -782,7 +782,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     if let some nd := input.ixon.named[_root_.Ix.Name.fromLeanName n]? then
       named := named.insert n nd
       if let some r := resolve (store[·]?) nd.addr then refs := refs.insert n r
-  let rcx : RefCx := { find := input.lean, refOf := (refs[·]?), pins }
+  let rcx : RefCx := { find := input.lean, refOf := (refs[·]?), roles := s.cx.roles }
   let mut report : Report := {}
   -- reference names, the inverse map, and the reader's own names
   let mut byName : Std.HashMap CName (Array Lean.Name) := {}
@@ -800,7 +800,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
         else
           report := report.problem s!"name of {n}: reader {actual}, reference {c}"
     | .error e => report := report.problem s!"name of {n}: {e}"
-  for p in pinProblems pins byRef do report := report.problem p
+  for p in bindingProblems s.cx.roles byRef do report := report.problem p
   let foreign : Std.HashSet Address := input.foreign.foldl (fun acc a =>
     match store[a]? with
     | some c => acc.insert (owner a c)

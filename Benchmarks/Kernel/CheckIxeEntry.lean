@@ -34,17 +34,16 @@ def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<
 
 def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 
-/-- The entry's stages without authentication, at the committed tables. -/
+/-- The entry's stages without authentication, at the default role table. -/
 def unauthenticated (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     Except Ix.Kernel.Admission.Error Ix.Kernel.Env := do
-  let pins ← defaultPins.mapError .prelude
-  let pre ← builtinPrelude.mapError .prelude
-  let natPins ← builtinNatOpPins.mapError .prelude
+  let table ← defaultTable.mapError .prelude
+  let pre ← (preludeFor table).mapError .prelude
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
   (Ix.Kernel.Admission.uniqueKeys records blobs).mapError .ofBytes
   let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
-  Ix.Kernel.Admission.checkConstantsWith pins pre natPins constants blobs hint
+  Ix.Kernel.Admission.checkConstantsWith table pre constants blobs hint
 
 def verdict : Except Ix.Kernel.Admission.Error Ix.Kernel.Env → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"
@@ -58,10 +57,11 @@ def run (args : List String) : IO UInt32 := do
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup
+  let s := setup store (env.blobs[·]?) table pre hints.lookup
   let (selected, dropped) ← IO.lazyPure fun _ => CheckIxeFold.acceptedRecords s
   -- exact `.ixe` bytes; a prelude record the `.ixe` lacks is the entry's own
   let records : Ix.Kernel.Admission.Records := selected.toList.filterMap fun (a, _) =>
@@ -86,7 +86,7 @@ def run (args : List String) : IO UInt32 := do
   | "authenticated" | "unauthenticated" =>
     let t0 ← IO.monoNanosNow
     let result ← IO.lazyPure fun _ =>
-      if mode == "authenticated" then Ixon.Authenticated.checkBytes limits records blobs hints.lookup
+      if mode == "authenticated" then Ixon.Authenticated.checkBytes binding limits records blobs hints.lookup
       else unauthenticated records blobs hints.lookup
     let t1 ← IO.monoNanosNow
     IO.eprintln s!"entry: {mode}: {verdict result} in {millis t0 t1} ms; \

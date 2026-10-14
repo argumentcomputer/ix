@@ -174,7 +174,7 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 /-- The ordered entry at BLAKE3 on records already under their keys. -/
 def checkAt (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :
     Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
-  Ixon.Authenticated.checkBytesBlockOrder 16 ByteAdmission.limits orderLimits (Projection.encode input) []
+  Ixon.Authenticated.checkBytesBlockOrder Tests.Ix.Kernel.Projection.blake3Binding 16 ByteAdmission.limits orderLimits (Projection.encode input) []
 
 /-- The ordered entry at BLAKE3 on a fixture re-keyed under BLAKE3. -/
 def checkRekeyed (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :

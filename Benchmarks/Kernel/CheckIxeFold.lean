@@ -162,11 +162,10 @@ def run (args : List String) : IO UInt32 := do
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
-  let natPins ← IO.ofExcept builtinNatOpPins
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup
+  let s := setup store (env.blobs[·]?) table pre hints.lookup
   let tLoad ← IO.monoMsNow
   let (records, dropped) ← IO.lazyPure fun _ => acceptedRecords s
   let tSelect ← IO.monoMsNow
@@ -179,9 +178,9 @@ def run (args : List String) : IO UInt32 := do
   let blobs := env.blobs.toList
   let r0 ← IO.monoNanosNow
   let decls ← IO.lazyPure fun _ =>
-    Ix.Kernel.Admission.readStream pins pre records.toList blobs hints.lookup
-  let decls ← match decls with
-    | .ok ds => pure ds
+    Ix.Kernel.Admission.readStream table pre records.toList blobs hints.lookup
+  let (ev, decls) ← match decls with
+    | .ok r => pure r
     | .error e => IO.eprintln s!"fold: read failed: {e}"; return 1
   let prepared ← IO.lazyPure fun _ => Ix.Kernel.Frontend.preparePrelude pre.ix decls
   let r1 ← IO.monoNanosNow
@@ -194,7 +193,7 @@ def run (args : List String) : IO UInt32 := do
     else pure prepared
   let a0 ← IO.monoNanosNow
   let phaseA ← IO.lazyPure fun _ =>
-    (prepared.foldlM (Ix.Kernel.Cached.annotDeclStep .verified natPins)
+    (prepared.foldlM (Ix.Kernel.Cached.annotDeclStep .verified ev)
       (0, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])) {}
   let a1 ← IO.monoNanosNow
   let ((_, fe, pend), _) ← match phaseA with

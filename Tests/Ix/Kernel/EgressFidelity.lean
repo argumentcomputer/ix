@@ -237,8 +237,9 @@ def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 16, 1 <<< 16, 1 <<< 28, 1 <<
 records `primaries` (in a dependency order the checker accepts), with all
 of the store's projection records of their blocks. -/
 def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore input.store input.ixon.anonHints
   let owners : Std.HashSet Address := primaries.foldl (·.insert ·) {}
   let prim : List (Address × Ixon.Constant) :=
@@ -254,15 +255,15 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let reconstructed ← match Ixon.Authenticated.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
-  let decls₁ ← IO.ofExcept ((Ix.Kernel.Admission.readStream pins pre compiled blobs hints.lookup).mapError toString)
-  let decls₂ ← IO.ofExcept ((Ix.Kernel.Admission.readStream pins pre reconstructed blobs hints.lookup).mapError toString)
+  let (_, decls₁) ← IO.ofExcept ((Ix.Kernel.Admission.readStream table pre compiled blobs hints.lookup).mapError toString)
+  let (_, decls₂) ← IO.ofExcept ((Ix.Kernel.Admission.readStream table pre reconstructed blobs hints.lookup).mapError toString)
   if let some d := declsDiff decls₁ decls₂ then
     report := { report with problems := report.problems.push s!"re-read with written projections: {d}" }
   -- the three certified entries
-  let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants compiled blobs hints.lookup).mapError
+  let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants table compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
-  let env₂ ← match Ixon.Authenticated.checkBytesProjection maxProjections limits bytes blobs hints.lookup with
+  let env₂ ← match Ixon.Authenticated.checkBytesProjection binding maxProjections limits bytes blobs hints.lookup with
     | .ok env => pure env
     | .error (.reconstruction e) => throw (IO.userError s!"Projection.checkBytes: {reprStr e}")
     | .error (.checker e) => throw (IO.userError s!"Projection.checkBytes: {e}")
@@ -270,7 +271,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   if let some d := envDiff env₁ env₂ then
     report := { report with problems := report.problems.push s!"projection entry: {d}" }
   -- the block-order entry accepts the same batch with the same environment
-  match Ixon.Authenticated.checkBytesBlockOrder maxProjections limits {} bytes blobs hints.lookup with
+  match Ixon.Authenticated.checkBytesBlockOrder binding maxProjections limits {} bytes blobs hints.lookup with
   | .ok env₃ =>
     if let some d := envDiff env₁ env₃ then
       report := { report with problems := report.problems.push s!"block-order entry: {d}" }
@@ -279,7 +280,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   | .error (.checker e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
-  let cx := Ix.Kernel.Admission.streamContext pins pre compiled blobs hints.lookup
+  let cx := Ix.Kernel.Admission.streamContext table pre compiled blobs hints.lookup
   let installed : Std.HashMap CName String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do
@@ -300,17 +301,16 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
 /-- The records of `roots`' closure that the environment check accepts, in the
 check order (the certified entries take only accepted batches). -/
 def acceptedClosure (input : Input) (roots : Array Lean.Name) : IO (Array Address) := do
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
-  let natPins ← IO.ofExcept builtinNatOpPins
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore input.store input.ixon.anonHints
-  let s : Setup := setup input.store (input.ixon.blobs[·]?) pins pre hints.lookup
+  let s : Setup := setup input.store (input.ixon.blobs[·]?) table pre hints.lookup
   let rootAddrs := roots.filterMap fun n =>
     (input.ixon.named[_root_.Ix.Name.fromLeanName n]?).map (·.addr)
   let ordered := Benchmarks.Kernel.CheckIxeStep.closure s.store s.extra
     (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rootAddrs)
   let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
-  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop s natPins (fun _ => #[]) ordered {}
+  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop s (fun _ => #[]) ordered {}
     (emit := fun row => rows.modify (·.push row))
   let accepted : Std.HashSet Address := (← rows.get).foldl
     (fun acc r => if r.outcome == "accept" then acc.insert r.address else acc) {}

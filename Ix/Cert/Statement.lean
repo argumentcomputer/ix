@@ -10,11 +10,15 @@ One checker, two front ends:
 * **Source mode.** `Ix.CanonM` turns a Lean environment into an
   `Ix.Environment`, the compiler's input. `Ix.LeanIngress.checkSource` hands
   its constants, under Lean's own names, to IxC's verified fold
-  `Ix.Kernel.Cached.checkDecls`. IxC's model of the result is the source
-  semantics.
+  `Ix.Kernel.Cached.checkDecls`, under the fixed Source role table (each
+  role bound to its Lean name) with the evidence the environment's certificate
+  theorems give (`Ix.LeanIngress.sourceEvidence`). IxC's model of the result
+  is the source semantics.
 * **Ixon mode.** The compiled artifact's records, as the bytes their
   addresses are computed over, go through the certified entry at BLAKE3,
-  `Ixon.Authenticated.checkBytes`.
+  `Ixon.Authenticated.checkBytes`, with a role table's binding section (the
+  default table, `Ix.Kernel.Admission.defaultBinding`, where a statement fixes
+  one).
 
 `compile` (`Ix.Cert.Compile`) relates them. Every statement is per root:
 `checkSource` is all or nothing, and every real environment has `partial` or
@@ -25,10 +29,10 @@ the closure's published addresses reach (`CompiledReach`).
 
 Statements (`def … : Prop`) and the theorems proved now:
 
-* `SourceConsistent`, `IxonConsistent`: nothing either mode accepts has the
-  pinned `False` as its type (`sourceConsistent`, `ixonConsistent`);
-* `IxonAuthentic`: every accepted record and blob is stored under the pure
-  BLAKE3 hash of its bytes (`ixonAuthentic`);
+* `SourceConsistent`, `IxonConsistent`: nothing either mode accepts has
+  `False`'s role key as its type (for every role table, on the Ixon side) (`sourceConsistent`, `ixonConsistent`);
+* `IxonAuthentic`: every accepted record and blob, and the role table's
+  section, is stored under the pure BLAKE3 hash of its bytes (`ixonAuthentic`);
 * `SourceValueSound`, `IxonValueSound`: every accepted environment has a
   value model (`sourceValueSound`, `ixonValueSound`);
 * `CompileCorrect`: if Source accepts a closure and the compiler compiled it,
@@ -39,10 +43,11 @@ Statements (`def … : Prop`) and the theorems proved now:
 * `RenamingLemma`: the fold commutes with a renaming of constant names that
   satisfies `RenamingHyp`. Stated, not proved.
 
-No reverse statement ("Ixon accepts, so Source accepts") is made: Ixon runs
-at the committed `Nat`-operation pins and Source at the empty list, so Ixon
-accepts `Nat.div`, `Nat.mod`, `Nat.shiftLeft` and their dependents, which
-Source declines; and fuel can run out on either side alone.
+No reverse statement ("Ixon accepts, so Source accepts") is made: the two
+modes' evidence differs (Ixon's comes with the table, Source's from the
+certificate theorems in the checked environment, so a closure without them
+declines `Nat.div`, `Nat.mod`, `Nat.shiftLeft` and their dependents in Source
+only); and fuel can run out on either side alone.
 
 The statements are frozen in `Ix.Cert.Audit`, and checked on fixtures in
 `Tests.Ix.Cert.Statement`. -/
@@ -50,7 +55,7 @@ The statements are frozen in `Ix.Cert.Audit`, and checked on fixtures in
 namespace Ix.Cert
 
 open Ix.Kernel (Env Model Denotes SetTheory LevelParam BVarIdx ConstRef falseName)
-open Ix.Kernel.Admission (Limits Records)
+open Ix.Kernel.Admission (Limits Records Binding)
 
 universe w
 
@@ -217,14 +222,14 @@ def hintsOf (ixe : Ixon.Env) : ConstRef Address → Option Ix.Kernel.Reducibilit
   fun r => hintOf <$> ixe.anonHints.get? ((projAt.get? r).getD r.block)
 
 /-- **Ixon acceptance** of the compiled closure of `S`: the certified entry
-at BLAKE3 accepts the records of `order` with their stored bytes, the blobs
-they reference and the artifact's hints, and installs `envA`. `limits` are
-resource bounds only. -/
-def IxonAccepts (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop) (order : List Address)
+at BLAKE3 accepts the role table `binding` and the records of `order` with
+their stored bytes, the blobs they reference and the artifact's hints, and
+installs `envA`. `limits` are resource bounds only. -/
+def IxonAccepts (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop) (order : List Address)
     (envA : Env) : Prop :=
   ClosureOrder ixe S order ∧
-    Ixon.Authenticated.checkBytes limits (recordsOf ixe order) (blobsOf ixe order) (hintsOf ixe) =
-      .ok envA
+    Ixon.Authenticated.checkBytes binding limits (recordsOf ixe order) (blobsOf ixe order)
+      (hintsOf ixe) = .ok envA
 
 /-- The addresses the artifact publishes for the constants of `sub`
 (`Ixon.Env.named`): the seeds of the compiled closure. -/
@@ -262,21 +267,21 @@ def publishedAddress (ixe : Ixon.Env) (n : Ix.Kernel.Name) : Option Address :=
   (ixe.named.toList.find? fun (m, _) => Ix.LeanIngress.nameIs m n).map (·.2.addr)
 
 /-- The reader's context of an Ixon run: the one `Ixon.Authenticated.checkBytes`
-reads the decoded records against, at the committed pin table and prelude
-(`Ix.Kernel.Admission.checkBytesWith_eq`). -/
-def admissionContext (limits : Limits) (ixe : Ixon.Env) (order : List Address) :
-    Option Ix.Kernel.Reader.Ctx := do
-  let pins ← Ix.Kernel.Reader.defaultPins.toOption
-  let pre ← Ix.Kernel.Reader.builtinPrelude.toOption
+reads the decoded records against, under the admitted role table and its
+prelude (`Ix.Kernel.Admission.checkBytes_reading`). -/
+def admissionContext (binding : Binding) (limits : Limits) (ixe : Ixon.Env)
+    (order : List Address) : Option Ix.Kernel.Reader.Ctx := do
+  let t ← (Ix.Kernel.Admission.admitBinding Address.blake3Pure binding).toOption
+  let pre ← (Ix.Kernel.Reader.preludeFor t).toOption
   let constants ← (Ix.Kernel.Admission.decodeRecords limits (recordsOf ixe order)).toOption
-  pure (Ix.Kernel.Admission.streamContext pins pre constants (blobsOf ixe order) (hintsOf ixe))
+  pure (Ix.Kernel.Admission.streamContext t pre constants (blobsOf ixe order) (hintsOf ixe))
 
 /-- **The reading τ**: the compiled term the artifact reads the source
 constant `c` as. That is the constant the reader keys `c`'s published
 address by, applied to `c`'s own level parameters by position, so that
 compiled parameter `i` is source parameter `i`. Today the key is the
 reader's name: `ix.<hex>.i` (`Ix.Kernel.Reader.keyName`) through `resolve`,
-a pinned name, or a recursor's name after its block. Under `Key m` (IXC-PLAN
+a role key the table binds, or a recursor's name after its block. Under `Key m` (IXC-PLAN
 step 5) the key is the published address itself, and this is the one
 definition that changes.
 
@@ -312,9 +317,9 @@ def HashAgreement : Prop :=
 /-- **Compiler correctness, forward, per root.** Suppose Source accepts the
 closure `sub` of `roots` in `env`, grouped as the compiler groups it,
 `compile env` returns `ixe`, and `ixe` publishes every constant of `sub`.
-Then Ixon accepts the compiled closure, within some resource limits and in
-some order that respects its references, and the compiled environment
-commutes with the source through the reading.
+Then Ixon accepts the compiled closure under the default role table, within
+some resource limits and in some order that respects its references, and the
+compiled environment commutes with the source through the reading.
 
 This is partial correctness. A closure that Source rejects or declines, a
 compile that fails, and constants the compile leaves out are outside the
@@ -324,33 +329,37 @@ def CompileCorrect : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env)
     (ixe : Ixon.Env),
     SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe → Published ixe sub →
-    ∃ limits order envA cx, IxonAccepts limits ixe (Seed ixe sub) order envA ∧
-      admissionContext limits ixe order = some cx ∧ Commutes.{w} (reading ixe cx) envS envA
+    ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
+    ∃ limits order envA cx, IxonAccepts binding limits ixe (Seed ixe sub) order envA ∧
+      admissionContext binding limits ixe order = some cx ∧
+        Commutes.{w} (reading ixe cx) envS envA
 
 /-! ## The theorems that hold now -/
 
 /-- **Source consistency, per root**: under every grouping function, nothing
-Source accepts has the pinned `False` as its type. -/
+Source accepts has `False`'s role key as its type. -/
 def SourceConsistent : Prop :=
   ∀ (condense : Ix.Environment → Ix.CondensedBlocks) (V : Type w) [SetTheory V]
     (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env),
     SourceAccepts condense env roots sub envS →
       ∀ ci ∈ envS.consts, ci.toConstantVal.type = .const falseName [] → False
 
-/-- **Ixon consistency**: nothing Ixon accepts has the pinned `False` as its
-type. -/
+/-- **Ixon consistency**: under every role table, nothing Ixon accepts has
+`False`'s role key as its type. -/
 def IxonConsistent : Prop :=
-  ∀ (V : Type w) [SetTheory V] (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
-    (order : List Address) (envA : Env), IxonAccepts limits ixe S order envA →
+  ∀ (V : Type w) [SetTheory V] (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env), IxonAccepts binding limits ixe S order envA →
       ∀ ci ∈ envA.consts, ci.toConstantVal.type = .const falseName [] → False
 
 /-- **Authenticity**: every record Ixon accepts is stored under the pure
-BLAKE3 hash of its bytes, and so is every blob. -/
+BLAKE3 hash of its bytes, and so is every blob and the role table's section. -/
 def IxonAuthentic : Prop :=
-  ∀ (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop) (order : List Address) (envA : Env),
-    IxonAccepts limits ixe S order envA →
+  ∀ (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env),
+    IxonAccepts binding limits ixe S order envA →
       (∀ a ∈ order, ∀ lc, ixe.consts.get? a = some lc → a = Address.blake3Pure lc.rawBytes) ∧
-        ∀ b ∈ blobsOf ixe order, b.1 = Address.blake3Pure b.2
+        (∀ b ∈ blobsOf ixe order, b.1 = Address.blake3Pure b.2) ∧
+        Address.blake3Pure binding.bytes = binding.address
 
 /-- **Source value soundness**: every environment Source accepts has a value
 model. -/
@@ -360,34 +369,34 @@ def SourceValueSound : Prop :=
       ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envS)
 
 /-- **Ixon value soundness**: every environment Ixon accepts has a value
-model, so `Commutes` is not vacuous. -/
+model, under every role table, so `Commutes` is not vacuous. -/
 def IxonValueSound : Prop :=
-  ∀ (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop) (order : List Address) (envA : Env),
-    IxonAccepts limits ixe S order envA → ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envA)
+  ∀ (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) (envA : Env),
+    IxonAccepts binding limits ixe S order envA → ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envA)
 
 theorem sourceConsistent : SourceConsistent.{w} := by
   intro _ V _ _ _ _ _ h
   exact Ix.LeanIngress.checkSource_no_proof_of_False V h.2
 
 theorem ixonConsistent : IxonConsistent.{w} := by
-  intro V _ _ _ _ _ _ h
+  intro V _ _ _ _ _ _ _ h
   exact Ixon.Authenticated.checkBytes_no_proof_of_False V h.2
 
 theorem ixonAuthentic : IxonAuthentic := by
-  intro _ ixe _ order _ h
-  have ha := Ixon.Authenticated.checkBytes_authentic h.2
-  refine ⟨fun a hmem lc hlc => ?_, fun b hb => ha.2 b hb⟩
+  intro _ _ ixe _ order _ h
+  obtain ⟨ha, hb⟩ := Ixon.Authenticated.checkBytes_authentic h.2
+  refine ⟨fun a hmem lc hlc => ?_, fun b hmem => ha.2 b hmem, hb⟩
   exact ha.1 (a, lc.rawBytes) (List.mem_filterMap.mpr ⟨a, hmem, by simp only [hlc, Option.map_some]⟩)
 
 theorem sourceValueSound : SourceValueSound.{w} := by
   intro _ _ _ _ envS h V _
-  obtain ⟨_, _, hw⟩ := Ix.LeanIngress.checkSource_with h.2
-  obtain ⟨_, _, hc⟩ := Ix.LeanIngress.checkSourceWith_reading hw
-  obtain ⟨M, hM⟩ := Ix.Kernel.Cached.checkDecls_model_defn_values V [] _ envS hc
+  obtain ⟨_, _, _, _, hc⟩ := Ix.LeanIngress.checkSource_reading h.2
+  obtain ⟨M, hM⟩ := Ix.Kernel.Cached.checkDecls_model_defn_values V _ _ envS hc
   exact ⟨{ M with defn_value := hM }⟩
 
 theorem ixonValueSound : IxonValueSound.{w} := by
-  intro _ _ _ _ _ h V _
+  intro _ _ _ _ _ _ h V _
   obtain ⟨M, hM⟩ := Ix.Kernel.Admission.checkBytes_has_model_values (hash := Address.blake3Pure) V h.2
   exact ⟨{ M with defn_value := hM }⟩
 
@@ -460,16 +469,15 @@ def declaration : Ix.Kernel.Declaration → Ix.Kernel.Declaration
   | .indDecl block nP => .indDecl (block.map (constantInfo σ)) nP
   | .quotDecl k v => .quotDecl k (constantVal σ v)
 
-def natOpPinSet (p : Ix.Kernel.NatOpPinSet) : Ix.Kernel.NatOpPinSet :=
-  { p with
-    divPin := expr σ p.divPin, modPin := expr σ p.modPin, gcdPin := expr σ p.gcdPin
-    landPin := expr σ p.landPin, lorPin := expr σ p.lorPin, xorPin := expr σ p.xorPin
-    shiftLeftPin := expr σ p.shiftLeftPin, shiftRightPin := expr σ p.shiftRightPin
-    divProofs := p.divProofs.map (expr σ), modProofs := p.modProofs.map (expr σ)
-    gcdProofs := p.gcdProofs.map (expr σ), landProofs := p.landProofs.map (expr σ)
-    lorProofs := p.lorProofs.map (expr σ), xorProofs := p.xorProofs.map (expr σ)
-    shiftLeftProofs := p.shiftLeftProofs.map (expr σ)
-    shiftRightProofs := p.shiftRightProofs.map (expr σ) }
+/-- An evidence entry: a proof's theorem key and its proof term. -/
+def evidence : Ix.Kernel.Evidence (Ix.Kernel.Name × Ix.Kernel.Expr) →
+    Ix.Kernel.Evidence (Ix.Kernel.Name × Ix.Kernel.Expr)
+  | .defeq => .defeq
+  | .proof (k, v) => .proof (σ k, expr σ v)
+
+/-- The fold's evidence: roles are fixed, their entries renamed. -/
+def evidences (ev : Ix.Kernel.Evidences) : Ix.Kernel.Evidences :=
+  ev.map fun (r, es) => (r, es.map (evidence σ))
 
 def env (e : Env) : Env := ⟨e.consts.map (constantInfo σ)⟩
 
@@ -516,23 +524,22 @@ def declaration : Ix.Kernel.Declaration → List Ix.Kernel.Name
   | .indDecl block _ => block.flatMap constantInfo
   | .quotDecl _ v => constantVal v
 
-def natOpPinSet (p : Ix.Kernel.NatOpPinSet) : List Ix.Kernel.Name :=
-  ([p.divPin, p.modPin, p.gcdPin, p.landPin, p.lorPin, p.xorPin, p.shiftLeftPin,
-    p.shiftRightPin] ++ p.divProofs ++ p.modProofs ++ p.gcdProofs ++ p.landProofs ++
-    p.lorProofs ++ p.xorProofs ++ p.shiftLeftProofs ++ p.shiftRightProofs).flatMap expr
+def evidences (ev : Ix.Kernel.Evidences) : List Ix.Kernel.Name :=
+  ev.flatMap fun (_, es) => es.flatMap fun
+    | .defeq => []
+    | .proof (k, v) => k :: expr v
 
 end Keys
 
-/-- `n` is a key of the declarations `ds` or of the pin variants `pins`. -/
-def InputKey (pins : List Ix.Kernel.NatOpPinSet) (ds : Array Ix.Kernel.Declaration)
+/-- `n` is a key of the declarations `ds` or of the evidence `ev`. -/
+def InputKey (ev : Ix.Kernel.Evidences) (ds : Array Ix.Kernel.Declaration)
     (n : Ix.Kernel.Name) : Prop :=
-  (∃ d ∈ ds, n ∈ Keys.declaration d) ∨ ∃ p ∈ pins, n ∈ Keys.natOpPinSet p
+  (∃ d ∈ ds, n ∈ Keys.declaration d) ∨ n ∈ Keys.evidences ev
 
-/-- The checker's pinned names: the basis blocks' and the reader's pin
-table's. -/
+/-- The checker's fixed names: the basis blocks' and the role keys (every
+role's, bound or not: the specification set mentions them). -/
 def Pinned (n : Ix.Kernel.Name) : Prop :=
-  n ∈ Ix.Kernel.reservedBasisNames ∨
-    ∃ tbl, Ix.Kernel.Reader.pinTable = .ok tbl ∧ ∃ p ∈ tbl, p.name = n
+  n ∈ Ix.Kernel.reservedBasisNames ∨ ∃ r : Ix.Kernel.Role, Ix.Kernel.roleKey r = n
 
 /-- `n` is `k` followed by components, the first a string: the shape of
 every name the checker derives from `k` (`k._model…`, `k.proj.i`,
@@ -544,9 +551,9 @@ inductive DerivedFrom (k : Ix.Kernel.Name) : Ix.Kernel.Name → Prop
 
 /-- The names a run can look up or install: the input keys, the pinned
 names, and the names derived from either. -/
-def Built (pins : List Ix.Kernel.NatOpPinSet) (ds : Array Ix.Kernel.Declaration)
+def Built (ev : Ix.Kernel.Evidences) (ds : Array Ix.Kernel.Declaration)
     (n : Ix.Kernel.Name) : Prop :=
-  ∃ k, (InputKey pins ds k ∨ Pinned k) ∧ (n = k ∨ DerivedFrom k n)
+  ∃ k, (InputKey ev ds k ∨ Pinned k) ∧ (n = k ∨ DerivedFrom k n)
 
 /-- **The renaming lemma's hypotheses** on today's names (SP3 §9, H1–H8).
 
@@ -557,27 +564,27 @@ cover the sites that read the structure of input names (SP3 D1 and D5).
 Under `Key m` (IXC-PLAN step 5) this reduces to `σ = Key.map f` with `f`
 injective on the input ids: roles are fixed and derived keys commute by
 construction, and recursors have keys of their own. -/
-structure RenamingHyp (σ : Ix.Kernel.Name → Ix.Kernel.Name) (pins : List Ix.Kernel.NatOpPinSet)
+structure RenamingHyp (σ : Ix.Kernel.Name → Ix.Kernel.Name) (ev : Ix.Kernel.Evidences)
     (ds : Array Ix.Kernel.Declaration) : Prop where
-  /-- the pinned names are fixed -/
+  /-- the fixed names are fixed -/
   pinned : ∀ n, Pinned n → σ n = n
-  /-- no unpinned input key is renamed to a pinned name -/
-  fresh : ∀ k, InputKey pins ds k → ¬ Pinned k → ¬ Pinned (σ k)
+  /-- no other input key is renamed to a fixed name -/
+  fresh : ∀ k, InputKey ev ds k → ¬ Pinned k → ¬ Pinned (σ k)
   /-- off the input keys, `σ` commutes with appending a component -/
-  str : ∀ p s, ¬ InputKey pins ds (.str p s) → σ (.str p s) = .str (σ p) s
-  num : ∀ p i, ¬ InputKey pins ds (.num p i) → σ (.num p i) = .num (σ p) i
+  str : ∀ p s, ¬ InputKey ev ds (.str p s) → σ (.str p s) = .str (σ p) s
+  num : ∀ p i, ¬ InputKey ev ds (.num p i) → σ (.num p i) = .num (σ p) i
   /-- the `etaCtor` sentinel (SP3 D10) -/
   anonymous : σ .anonymous = .anonymous
   /-- an input recursor `T.rec`, `T.rec_j` is renamed after `T`: the checker
   finds a block's recursor by that spelling (SP3 D1) -/
-  recursor : ∀ p s, InputKey pins ds (.str p s) → (s = "rec" ∨ s.startsWith "rec_" = true) →
+  recursor : ∀ p s, InputKey ev ds (.str p s) → (s = "rec" ∨ s.startsWith "rec_" = true) →
     σ (.str p s) = .str (σ p) s
   /-- the front door's shape tests give the same answers (SP3 D5) -/
-  shapes : ∀ k, InputKey pins ds k →
+  shapes : ∀ k, InputKey ev ds k →
     Ix.Kernel.Key.isProjFnShape (σ k) = Ix.Kernel.Key.isProjFnShape k ∧
       Ix.Kernel.Key.isModelSuffix (σ k) = Ix.Kernel.Key.isModelSuffix k
   /-- `σ` is injective on the names a run can build -/
-  injective : ∀ a b, Built pins ds a → Built pins ds b → σ a = σ b → a = b
+  injective : ∀ a b, Built ev ds a → Built ev ds b → σ a = σ b → a = b
 
 /-- What a fold failure says without its message: `CheckError` carries
 strings that spell names, so until structured errors (IXC-PLAN step 6) the
@@ -600,10 +607,10 @@ def verdict : Except (Ix.Kernel.CheckError × Nat) Env → Except (ErrorKind × 
 
 /-- **The renaming lemma.** Stated, not proved. -/
 def RenamingLemma : Prop :=
-  ∀ (σ : Ix.Kernel.Name → Ix.Kernel.Name) (pins : List Ix.Kernel.NatOpPinSet)
-    (ds : Array Ix.Kernel.Declaration), RenamingHyp σ pins ds →
-      verdict (Ix.Kernel.Cached.checkDecls .verified (pins.map (Rename.natOpPinSet σ))
+  ∀ (σ : Ix.Kernel.Name → Ix.Kernel.Name) (ev : Ix.Kernel.Evidences)
+    (ds : Array Ix.Kernel.Declaration), RenamingHyp σ ev ds →
+      verdict (Ix.Kernel.Cached.checkDecls .verified (Rename.evidences σ ev)
           (ds.map (Rename.declaration σ))) =
-        (verdict (Ix.Kernel.Cached.checkDecls .verified pins ds)).map (Rename.env σ)
+        (verdict (Ix.Kernel.Cached.checkDecls .verified ev ds)).map (Rename.env σ)
 
 end Ix.Cert

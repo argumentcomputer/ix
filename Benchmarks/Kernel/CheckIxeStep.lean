@@ -1,7 +1,6 @@
 import Ix.Ixon
 import IxC.Kernel.Ixon.Prelude
 import IxC.Kernel.Cached.Installed
-import IxC.Kernel.NatOpPinSet
 
 /-! # The verified fold one record at a time (untrusted harness)
 
@@ -13,7 +12,7 @@ them one record at a time, continuing past failures.
 
 **The order.** The prelude's records first, then a depth-first postorder
 over table references with projections replaced by their owners, in which a
-pinned `Nat` operation also depends on its certificate ground
+certified `Nat` operation also depends on its certificate ground
 (`natOpDeps`), as `Frontend.preparePrelude`'s hoist arranges, and a record
 that contains a literal depends on the constants the literal references
 (`Reader.literalEdges`: the `Nat` trio, and for a string literal the
@@ -47,11 +46,11 @@ structure Checker where
 instance : Inhabited Checker := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
-def Checker.step (pins : List Ix.Kernel.NatOpPinSet) (c : Checker) (d : Ix.Kernel.Declaration) :
+def Checker.step (ev : Ix.Kernel.Evidences) (c : Checker) (d : Ix.Kernel.Declaration) :
     Checker × Option Ix.Kernel.CheckError :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
-  match Ix.Kernel.Cached.annotDeclStep .verified pins (pos, fe, #[]) d cs with
+  match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
   | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos + 1⟩, some e)
   | .ok ((pos', fe', pend), cs') =>
     match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
@@ -59,11 +58,11 @@ def Checker.step (pins : List Ix.Kernel.NatOpPinSet) (c : Checker) (d : Ix.Kerne
     | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos'⟩, some e)
 
 /-- One record's declarations, in order; the first failure ends it. -/
-def Checker.steps (pins : List Ix.Kernel.NatOpPinSet) (c : Checker)
+def Checker.steps (ev : Ix.Kernel.Evidences) (c : Checker)
     (ds : Array Ix.Kernel.Declaration) : Checker × Option Ix.Kernel.CheckError := Id.run do
   let mut c := c
   for d in ds do
-    let (c', e) := c.step pins d
+    let (c', e) := c.step ev d
     c := c'
     if e.isSome then return (c, e)
   return (c, none)
@@ -178,14 +177,14 @@ def dependencies (store : RecordStore) (index : RecIndex) (extra : Std.HashMap A
         unless o == address || recs.contains o do out := out.insert o
   return out
 
-/-- The pinned `Nat` operations' certificate ground as extra edges
+/-- The certified `Nat` operations' certificate ground as extra edges
 (`Frontend/NatOpGround.lean`): an operation's record depends on the records
 of the operations its recurrences name. -/
-def groundEdges (pins : Std.HashMap (ConstRef Address) CName) : Std.HashMap Address (Array Address) :=
+def groundEdges (roles : Std.HashMap (ConstRef Address) CName) : Std.HashMap Address (Array Address) :=
   Id.run do
-  let byName : Std.HashMap CName (ConstRef Address) := pins.fold (fun m r n => m.insert n r) {}
+  let byName : Std.HashMap CName (ConstRef Address) := roles.fold (fun m r n => m.insert n r) {}
   let mut out : Std.HashMap Address (Array Address) := {}
-  for (r, n) in pins.toList do
+  for (r, n) in roles.toList do
     if Ix.Kernel.natOpNames.contains n || Ix.Kernel.natDivModNames.contains n then
       for g in Ix.Kernel.natOpDeps n do
         if let some gr := byName[g]? then
@@ -253,6 +252,12 @@ structure Setup where
   cx : Ctx
   extra : Std.HashMap Address (Array Address)
   ordered : Array Address
+  /-- the role table the setup reads under -/
+  table : Ix.Kernel.RoleTable := default
+  /-- the table's evidence, resolved against the prelude's reading state
+  (a theorem's value reads the same at every state: the projection rewrite
+  applies only to projection functions) -/
+  evidence : Ix.Kernel.Evidences := []
 
 /-- The store backed by the prelude's records, the reader context, and the
 order (the prelude's owners first). A store of record skeletons
@@ -260,7 +265,7 @@ order (the prelude's owners first). A store of record skeletons
 with the same literal kinds (`literalKinds`), from which the literal edges
 are computed instead of from the store. -/
 def setup (store : RecordStore) (blobs : Address → Option ByteArray)
-    (pins : Pins) (pre : Prelude)
+    (t : Ix.Kernel.RoleTable) (pre : Prelude)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
     (literals : Option (Array (Address × Ixon.Constant)) := none) : Setup := Id.run do
   let mut store := store
@@ -270,17 +275,25 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
       store := store.insert a c
       added := added.push (a, c)
   let records := store.toArray
-  let index := buildIndex (store[·]?) pins.names records
-  let cx : Ctx := { store := (store[·]?), blob := blobs, pins, index, hint,
-                    keys := keyNamesOf (store[·]?) pins.names records }
+  let blobs' : Address → Option ByteArray := fun a =>
+    blobs a <|> (pre.blobs.find? (·.1 == a)).map (·.2)
+  -- the evidence records back the reader's store only: they are not records
+  -- of the run (not ordered, not checked)
+  let evidence : Std.HashMap Address Ixon.Constant := pre.evidence.foldl
+    (fun m (a, c) => if store.contains a then m else m.insert a c) {}
+  let look : Address → Option Ixon.Constant := fun a => store[a]? <|> evidence[a]?
+  let roles := bindingsOf look t
+  let index := buildIndex look roles.names records
+  let cx : Ctx := { store := look, blob := blobs', roles, index, hint,
+                    keys := keyNamesOf look roles.names records }
   let literalRecords := match literals with
     | some ls => ls ++ added
     | none => records
-  let extra := mergeEdges (groundEdges pins.names) (literalEdges pins.names literalRecords)
+  let extra := mergeEdges (groundEdges roles.names) (literalEdges roles.names literalRecords)
   let first := pre.records.foldl (fun acc (a, c) =>
     let o := owner a c
     if acc.contains o then acc else acc.push o) #[]
-  return ⟨store, cx, extra, order store extra first⟩
+  return ⟨store, cx, extra, order store extra first, t, evidenceOf cx pre.state t⟩
 
 /-- The outcome of one check loop over `addresses` (in order): the final
 step state, the outcome and first-cause counts, and every failed or blocked
@@ -310,9 +323,9 @@ def Setup.view (s : Setup) (address : Address) : Option RecordView := do
 
 /-- The per-record step as the check loop's step: install and check the
 record's declarations (`Checker.steps`). -/
-def Checker.stepRecord (pins : List Ix.Kernel.NatOpPinSet) (c : Checker) (_ : Address) (rd : Read) :
+def Checker.stepRecord (ev : Ix.Kernel.Evidences) (c : Checker) (_ : Address) (rd : Read) :
     Checker × Option Ix.Kernel.CheckError :=
-  c.steps pins rd.decls
+  c.steps ev rd.decls
 
 /-- Check `addresses` in order, continuing past failures; each row is passed
 to `emit`. The records' views and readings come from `view` and `read`; the
@@ -427,13 +440,13 @@ def Setup.source (s : Setup) : LoopSource State :=
 
 /-- `checkLoopWith` over a check setup with the per-record step: each record
 is read by the reader at the state the records before it left. -/
-def checkLoop (s : Setup) (pins : List Ix.Kernel.NatOpPinSet) (names : Address → Array String)
+def checkLoop (s : Setup) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
     (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO Outcome :=
-  checkLoopWith s.view s.read (fun st _ rd => st.commit rd) {} (Checker.stepRecord pins) {}
+  checkLoopWith s.view s.read (fun st _ rd => st.commit rd) {} (Checker.stepRecord s.evidence) {}
     names addresses skip emit before after progress onRead
 
 /-- Names by owning record, for reporting only (at most three). -/

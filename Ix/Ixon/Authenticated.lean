@@ -29,26 +29,29 @@ open Ix.Kernel
 
 /-- **The certified Ixon entry at BLAKE3** (`Ix.Kernel.Admission.checkBytes`
 at `Address.admissionHash`). -/
-def checkBytes (limits : Admission.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytes (binding : Admission.Binding) (limits : Admission.Limits) (records : Admission.Records)
+    (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Admission.Error Ix.Kernel.Env :=
-  Admission.checkBytes Address.admissionHash limits records blobs hint
+  Admission.checkBytes Address.admissionHash binding limits records blobs hint
 
 /-- The entry with omitted projection records reconstructed, at BLAKE3
 (`Ixon.Projection.checkBytes` at `Address.admissionHash`). -/
-def checkBytesProjection (maxProjections : Nat) (limits : Admission.Limits)
-    (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytesProjection (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Projection.CheckError Ix.Kernel.Env :=
-  Projection.checkBytes Address.admissionHash maxProjections limits records blobs hint
+  Projection.checkBytes Address.admissionHash binding maxProjections limits records blobs hint
 
 /-- The entry with canonical block order, at BLAKE3
 (`Ixon.BlockOrder.checkBytes` at `Address.admissionHash`). -/
-def checkBytesBlockOrder (maxProjections : Nat) (limits : Admission.Limits)
-    (orderLimits : BlockOrder.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
+def checkBytesBlockOrder (binding : Admission.Binding) (maxProjections : Nat)
+    (limits : Admission.Limits) (orderLimits : BlockOrder.Limits) (records : Admission.Records)
+    (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except BlockOrder.CheckError Ix.Kernel.Env :=
-  BlockOrder.checkBytes Address.admissionHash maxProjections limits orderLimits records blobs hint
+  BlockOrder.checkBytes Address.admissionHash binding maxProjections limits orderLimits records blobs
+    hint
 
 /-- A projection record's address at BLAKE3. -/
 def projectionAddress (record : Ixon.Constant) : Address :=

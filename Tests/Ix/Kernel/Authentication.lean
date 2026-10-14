@@ -16,8 +16,10 @@ addresses (`Tests.Ix.Kernel.Reader`):
   batch; a supplied projection under another key is refused;
 - the accept path is unchanged: the compiler's own records (the frozen
   `lTreeRecords` and `levelRecords`) are authentic as compiled;
-- the committed prelude records (`PinData.prelude`) are keyed by the pure
-  BLAKE3 hashes of their committed bytes. -/
+- the committed prelude and evidence records (`RoleData.prelude`,
+  `RoleData.evidence`), the evidence's blobs and the default table's binding
+  section (`RoleData.table`) are keyed by the pure BLAKE3 hashes of their
+  committed bytes. -/
 
 open Ix.Kernel.Reader
 open Tests.Ix.Kernel.Reader
@@ -37,47 +39,47 @@ def litBlobs : List (Address × ByteArray) := (rekeyed [(address 42, litEq)] [(a
 /-! ## Unauthentic records and blobs are refused -/
 
 -- the controls: the re-keyed fixtures are accepted by all three entries
-#guard (Ixon.Authenticated.checkBytes limits (records definitions) []).isOk
-#guard (Ixon.Authenticated.checkBytesProjection 16 limits (records definitions) []).isOk
-#guard (Ixon.Authenticated.checkBytesBlockOrder 16 limits {} (records definitions) []).isOk
-#guard (Ixon.Authenticated.checkBytes limits litRecords litBlobs).isOk
+#guard (Ixon.Authenticated.checkBytes builtinBinding limits (records definitions) []).isOk
+#guard (Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (records definitions) []).isOk
+#guard (Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} (records definitions) []).isOk
+#guard (Ixon.Authenticated.checkBytes builtinBinding limits litRecords litBlobs).isOk
 
 -- a record under another record's key, under a stand-in key, or with its
 -- payload changed under its own key
-#guard match Ixon.Authenticated.checkBytes limits
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits
     (rekeyAt (records definitions) 1 ((records definitions)[2]!.1)) [] with
   | .error (.duplicate .records 2 _) => true
   | _ => false
-#guard match Ixon.Authenticated.checkBytes limits
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits
     ((rekeyAt (records definitions) 1 ((records definitions)[2]!.1)).take 2) [] with
   | .error e@(.mismatch .records 1 a) => a == (records definitions)[2]!.1 && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytes limits (rekeyAt (records definitions) 1 (address 11)) [] with
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits (rekeyAt (records definitions) 1 (address 11)) [] with
   | .error e@(.mismatch .records 1 a) => a == address 11 && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytes limits
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits
     ((records definitions).map fun (a, b) => if a == (rekeyed definitions).rename (address 12) then (a, b.push 0) else (a, b)) [] with
   | .error e@(.mismatch .records 2 a) => a == (rekeyed definitions).rename (address 12) && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytesProjection 16 limits (rekeyAt (records definitions) 0 (address 10)) [] with
+#guard match Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (rekeyAt (records definitions) 0 (address 10)) [] with
   | .error e@(.reconstruction (.admission (.mismatch .records 0 a))) => a == address 10 && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder 16 limits {} (rekeyAt (records definitions) 0 (address 10)) [] with
+#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} (rekeyAt (records definitions) 0 (address 10)) [] with
   | .error e@(.order (.admission (.mismatch .records 0 a))) => a == address 10 && e.outcome == .rejected
   | _ => false
 
 -- a blob under a key that is not its hash, and a blob's bytes changed under
 -- its key (the literal's value would change)
-#guard match Ixon.Authenticated.checkBytes limits litRecords [(address 41, ⟨#[2]⟩)] with
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits litRecords [(address 41, ⟨#[2]⟩)] with
   | .error e@(.mismatch .blobs 0 a) => a == address 41 && e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytes limits litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
+#guard match Ixon.Authenticated.checkBytes builtinBinding limits litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
   | .error e@(.mismatch .blobs 0 _) => e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytesProjection 16 limits litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
+#guard match Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
   | .error e@(.reconstruction (.admission (.mismatch .blobs 0 _))) => e.outcome == .rejected
   | _ => false
-#guard match Ixon.Authenticated.checkBytesBlockOrder 16 limits {} litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
+#guard match Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} litRecords (litBlobs.map fun (a, _) => (a, ⟨#[3]⟩)) with
   | .error e@(.order (.admission (.mismatch .blobs 0 _))) => e.outcome == .rejected
   | _ => false
 
@@ -111,9 +113,9 @@ def derived : List (Address × Ixon.Constant) :=
 #guard reconstructed.length == (rekeyed twoFixture).records.length
 -- the entry accepts the batch without them, and refuses a projection record
 -- supplied under another key
-#guard (Ixon.Authenticated.checkBytesProjection 16 limits omitted []).isOk
-#guard (Ixon.Authenticated.checkBytesProjection 16 limits (records twoFixture) []).isOk
-#guard match Ixon.Authenticated.checkBytesProjection 16 limits (rekeyAt (records twoFixture) 1 (address 21)) [] with
+#guard (Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits omitted []).isOk
+#guard (Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (records twoFixture) []).isOk
+#guard match Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits (rekeyAt (records twoFixture) 1 (address 21)) [] with
   | .error e@(.reconstruction (.admission (.mismatch .records 1 a))) => a == address 21 && e.outcome == .rejected
   | _ => false
 
@@ -122,33 +124,39 @@ def derived : List (Address × Ixon.Constant) :=
 #guard (Ix.Kernel.Admission.authenticate Address.blake3Pure lTreeStream []).isOk
 #guard (Ix.Kernel.Admission.authenticate Address.blake3Pure levelStream []).isOk
 #guard lTreeStream.all fun (a, b) => a == Address.blake3 b
-#guard (Ixon.Authenticated.checkBytes limits lTreeStream []).isOk
+#guard (Ixon.Authenticated.checkBytes builtinBinding limits lTreeStream []).isOk
 
-/-! ## The committed prelude is keyed by its records' hashes -/
+/-! ## The committed prelude, evidence and table are keyed by their hashes -/
 
 def preludeEntries : List (Option Address × Option ByteArray) :=
-  PinData.prelude.toList.map fun (a, b) => (addressOfHex a, bytesOfHex b)
+  (RoleData.prelude ++ RoleData.evidence ++ RoleData.blobs ++
+    #[(RoleData.tableAddress, RoleData.table)]).toList.map fun (a, b) =>
+      (addressOfHex a, bytesOfHex b)
 
-#guard preludeEntries.length == PinData.prelude.size && preludeEntries.length > 0
+#guard preludeEntries.length ==
+    RoleData.prelude.size + RoleData.evidence.size + RoleData.blobs.size + 1 &&
+  RoleData.prelude.size > 0 && RoleData.evidence.size > 0
 #guard preludeEntries.all fun
   | (some a, some b) => a == Address.blake3Pure b && a == Address.blake3 b
   | _ => false
 -- the prelude the entry loads holds exactly those records, decoded canonically
 #guard match builtinPrelude with
-  | .ok pre => pre.records.size == PinData.prelude.size && pre.records.all fun (a, c) =>
+  | .ok pre => pre.records.size == RoleData.prelude.size &&
+    pre.evidence.size == RoleData.evidence.size &&
+    (pre.records ++ pre.evidence).all fun (a, c) =>
       a == Address.blake3Pure (Ixon.serConstant c)
   | .error _ => false
 
 /-! ## The theorems, applied -/
 
 example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ixon.Authenticated.checkBytesProjection 16 limits records blobs = .ok env) :
+    (h : Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits records blobs = .ok env) :
     ∃ output, (∀ entry ∈ output, entry.1 = Address.blake3Pure (Ixon.serConstant entry.2)) ∧
-      Ix.Kernel.Admission.checkConstants output blobs = .ok env :=
+      Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure builtinBinding output blobs = .ok env :=
   (Ixon.Authenticated.checkBytesProjection_authentic h).2
 
 example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : Ixon.Authenticated.checkBytesBlockOrder 16 limits {} records blobs = .ok env) :
+    (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
     ∀ entry ∈ blobs, entry.1 = Address.blake3Pure entry.2 :=
   (Ixon.Authenticated.checkBytesBlockOrder_authentic h).1.2
 
