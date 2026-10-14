@@ -10,15 +10,20 @@ its import printed: the receipt of the complete `2^27` cache is built in, and
 `IX_KZG_FILECOIN_MANIFEST` names the receipt of a cache with another prefix.
 The recursive stage needs the `2^27` prefix, about 12 GiB.
 
+The provisioned parameters live in the S3 bucket
+`argument-kzg-params-063002298335-us-east-1-an` in `us-east-1`, under their
+file names: the `2^27` prover cache `filecoin-prefix-2p27.bin` and the
+complete 72 GiB `challenge_19` it was imported from. Fetch the cache onto
+the instance-store NVMe (see [Disk placement](#disk-placement)) and point
+the pipeline at it; `challenge_19` is only needed to re-run the import.
+
 ```sh
-IX_KZG_FILECOIN_CACHE=/data/filecoin/filecoin-prefix-2p27.bin ix compress ROOT_PROOF_ADDRESS
+aws s3 cp s3://argument-kzg-params-063002298335-us-east-1-an/filecoin-prefix-2p27.bin /opt/dlami/nvme/filecoin/
+IX_KZG_FILECOIN_CACHE=/opt/dlami/nvme/filecoin/filecoin-prefix-2p27.bin ix compress ROOT_PROOF_ADDRESS
 ix verify COMPRESSED_PROOF_ADDRESS
 ```
 
-The provisioned parameters live in the S3 bucket
-`argument-kzg-params-063002298335-us-east-1-an`: the `2^27` prover cache
-`filecoin-prefix-2p27.bin` and the complete 72 GiB `challenge_19` it was
-imported from. Neither download needs to be trusted: the importer checks the
+Neither download needs to be trusted: the importer checks the
 source against the ceremony's published BLAKE2b-512 digest, and loading
 checks the cache against its built-in receipt and the pinned tau anchors. A
 256-power cache from the same import is checked in at
