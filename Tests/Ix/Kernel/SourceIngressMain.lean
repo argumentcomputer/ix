@@ -12,9 +12,10 @@ import Tests.Ix.Kernel.SourceIngressCompare
   from this toolchain's `.olean` files, canonicalized (`Ix.CanonM`) and
   condensed (`Ix.GraphM`, `Ix.CondenseM`) on `n` workers (default 8), and
   checked in Source mode group by group (`Tests.Ix.Kernel.SourceIngressStep`)
-  at the empty `Nat`-operation pin list. The report (counts of constants and
-  groups by outcome, constants by outcome and reason, the blocked constants'
-  roots, the phases' times) goes to stdout; with `--rows`, one line per
+  at the empty `Nat`-operation pin list. The report (the input names of a
+  derived shape the front door reserves, counts of constants and groups by
+  outcome, constants by outcome and reason, the blocked constants' roots, the
+  phases' times) goes to stdout; with `--rows`, one line per
   constant, `name<TAB>outcome<TAB>kind<TAB>reason`, goes to `path`.
   With `--ixe`, the same environment compiled by Ix's compiler (compiled to
   `path` first if there is no file there) is checked by the Ixon environment
@@ -65,6 +66,16 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"source-ingress: {modules}: {consts.size} Lean constants, {env.consts.size} \
     canonicalized, {blocks.blocks.size} components; load {t1 - t0} ms, canon {t2 - t1} ms, \
     condense {t3 - t2} ms"
+  -- the derived shapes the front door reserves (`Key.isProjFnShape`,
+  -- `Key.isModelSuffix`), among the input names: with none, those tests
+  -- decide no verdict on this input
+  let mut reserved : Array Ix.Kernel.Key := #[]
+  for (n, _) in env.consts do
+    let k := Ix.LeanIngress.ingressName n
+    if k.isProjFnShape || k.isModelSuffix then reserved := reserved.push k
+  IO.println s!"input names of a reserved derived shape: {reserved.size}"
+  for k in reserved.extract 0 20 do
+    IO.println s!"  {k}"
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let r ← run pre [] env blocks a.workers (progress := true)
   let t4 ← IO.monoMsNow
