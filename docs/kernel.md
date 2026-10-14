@@ -323,14 +323,18 @@ usage, ownership and locality contracts, inside the committed bytes. The
 reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
 `all`'s input and result contracts (`contract`, `result`); it erases a
 `let`'s, since the checker's `letE` has no field for one. They are identity
-data in every respect but typing. Structural equality, the expression hash
-and the pinned-shape comparisons see them; every pin carries the Lean
-fragment's defaults (`many`, `shared`, `unrestricted`), so a constant with
-other contracts is not the pinned one. Typing does not read them: the binder
-congruences compare only the `pw` datum, and the model reads only `pw`. So
-the entry accepts `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, and an
-accepted environment says nothing about contracts (`Tests/Ix/Kernel/Contracts.lean`).
-The kernel imports these data types from Ixon, and nothing else
+data. Structural equality, the expression hash and the pinned-shape
+comparisons see them; every pin carries the Lean fragment's defaults
+(`many`, `shared`, `unrestricted`), so a constant with other contracts is
+not the pinned one. Conversion compares input contracts: the binder
+congruences and η require equal input contracts as well as equal `pw` data,
+so the entry declines `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It
+never compares result contracts: a `lam` has none, so the type inferred for
+one carries the default, and `fun[linear] x => x` checks against
+`∀[linear] (x : Nat), unique Nat`. The model reads only `pw`, so an
+accepted environment says nothing about how a variable is used
+(`Tests/Ix/Kernel/Contracts.lean`). The kernel imports these data types
+from Ixon, and nothing else
 (`kernel-layering`). Source mode gives Lean's binders the defaults and reads
 the compiler's resolved contract frames as the compiler lowers them
 (`Ix/LeanIngress/Expr.lean`).
@@ -842,7 +846,7 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
 | Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`IxC/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
-| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader keeps `lam` and `all` contracts as identity data that typing does not read, and erases `let` contracts ("Binder contracts" above) | No Lean4Lean interpretation is retained as a hidden premise; an accept checks no contract |
+| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader keeps `lam` and `all` contracts as identity data, conversion compares input contracts and not result contracts, and `let` contracts are erased ("Binder contracts" above) | No Lean4Lean interpretation is retained as a hidden premise; an accept checks no use of a variable against its contract |
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
 These contracts are stated about the Ixon v4 codec (TagN integers), with the

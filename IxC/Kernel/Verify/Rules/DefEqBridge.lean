@@ -84,8 +84,8 @@ theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fu
   | strLitR hg hde => exact .strLitR hg (hd hde)
   | fvar => exact .fvar
   | const hle => exact .const hle
-  | forallE hdt hbd hpw => exact .forallE (hd hdt) (hd hbd) hpw
-  | lam hdt hbd hpw => exact .lam (hd hdt) (hd hbd) hpw
+  | forallE hdt hbd hpw hc => exact .forallE (hd hdt) (hd hbd) hpw hc
+  | lam hdt hbd hpw hc => exact .lam (hd hdt) (hd hbd) hpw hc
   | spine hhd hls => exact .spine (hd hhd) (defEqList_bridge hd hls)
   | proj hde => exact .proj (hd hde)
   | etaL he => exact etaCert_bridge hw hd hio he

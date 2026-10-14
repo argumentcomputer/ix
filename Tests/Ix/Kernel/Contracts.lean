@@ -5,19 +5,23 @@ import Tests.Ix.Kernel.Reader
 /-! # Ixon binder contracts in the checker
 
 Ixon's binder contracts (`IxC/Ixon/Types/Contract.lean`) are identity data
-in the checker's `BinderMeta`, and typing does not read them:
+in the checker's `BinderMeta`. Conversion compares binders' input contracts
+and never their result contracts:
 
 * **The reader keeps them.** A definition whose `all` and `lam` carry
   non-default contracts, read through the certified entry at BLAKE3
   (`Ixon.Authenticated.checkBytes`), is installed with those contracts in
   its type's and value's `BinderMeta`; a `let` contract is erased.
-* **Verdicts do not depend on them.** Pairs of fixtures that differ only in
-  binder contracts get the same verdict: definitions, a conversion between
-  λs and between ∀s whose contracts differ, and a false equation. That
-  includes a value whose binder contract disagrees with its type's,
-  `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, which is accepted:
-  typing is contract-blind (the binder congruences compare `pw` only),
-  and a result contract is never compared.
+* **Matching input contracts convert.** A value whose binders' input
+  contracts are its type's is accepted, at every input and result contract;
+  so is a conversion between λs, and between ∀s, with equal input contracts.
+* **Unequal input contracts do not.** A value whose binder's input contract
+  is not its type's, `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, is
+  declined, and so is an equation between λs whose input contracts differ.
+* **Result contracts do not matter.** Pairs of fixtures that differ only in
+  result contracts get the same verdict: a λ, which has none, checks against
+  a ∀ with any result contract, and ∀s whose result contracts differ
+  convert. A false equation is declined whatever the contracts.
 * **Pinned shapes compare them.** The basis blocks are matched up to
   `canon` and the standard pins by `matchesPin`, and both compare
   contracts: the prelude's `Eq` block with a non-default contract on a
@@ -72,10 +76,10 @@ def defnContracts : Option Ix.Kernel.ConstantInfo →
 
 /-! ## The reader keeps binder contracts -/
 
-def linearUnique : Ixon.Constant := idNatWith .linear .unique .affine
+def linearUnique : Ixon.Constant := idNatWith .linear .unique .linear
 
 #guard defnContracts (installed [(address 10, linearUnique)] (address 10)) ==
-  some ([(.linear, .unique)], [(.affine, .shared)])
+  some ([(.linear, .unique)], [(.linear, .shared)])
 -- Lean-fragment binders carry the defaults
 #guard defnContracts (installed [(address 10, idNat)] (address 10)) ==
   some ([(.many, .shared)], [(.many, .shared)])
@@ -96,45 +100,22 @@ def borrowLet : Ixon.Constant :=
 #guard defnContracts (installed [(address 10, borrowLet)] (address 10)) ==
   some ([(.many, .shared)], [(.many, .shared)])
 
-/-! ## Verdicts do not depend on binder contracts -/
+/-! ## Conversion compares input contracts, not result contracts -/
 
 /-- Both fixtures get the verdict `v`. -/
 def sameVerdict (a b : List (Address × Ixon.Constant)) (v : Option Ix.Kernel.Admission.Outcome) :
     Bool :=
   outcomeOf a == v && outcomeOf b == v
 
--- definitions
-#guard sameVerdict [(address 10, idNat)] [(address 10, linearUnique)] none
-#guard binderContracts.all fun c => valueContracts.all fun r =>
-  outcomeOf [(address 10, idNatWith c r .many)] == none
--- a value whose binder contract is not its type's: contract-blind typing
--- accepts `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, whose type and
--- value keep their own contracts
-def erasedType : Ixon.Constant := idNatWith .erased .shared .many
-#guard sameVerdict [(address 10, idNat)] [(address 10, erasedType)] none
-#guard defnContracts (installed [(address 10, erasedType)] (address 10)) ==
-  some ([(.erased, .shared)], [(.many, .shared)])
--- a result contract is never compared: `∀[linear] (x : Nat), unique Nat`
--- holds `fun[linear] x => x`, whose type is inferred with the default result
-#guard sameVerdict [(address 10, idNat)] [(address 10, idNatWith .linear .unique .linear)] none
+def natPi (c : Ixon.BinderContract) (r : Ixon.ValueContract) : E := .all c r (ref 2) (ref 2)
 
-/-- `@Eq.{1} (Nat → Nat) l r := @Eq.refl.{1} (Nat → Nat) v`, refs
+/-- `@Eq.{1} (∀[c] (n : Nat), Nat) l r := @Eq.refl.{1} _ v`, refs
 `[Eq, Eq.refl, Nat]`. -/
-def lamEq (l r v : E) : Ixon.Constant :=
-  defn .thm (apps (ref 0 [0]) [all (ref 2) (ref 2), l, r]) (apps (ref 1 [0]) [all (ref 2) (ref 2), v])
+def lamEq (c : Ixon.BinderContract) (l r v : E) : Ixon.Constant :=
+  defn .thm (apps (ref 0 [0]) [natPi c .shared, l, r]) (apps (ref 1 [0]) [natPi c .shared, v])
     [eq, eqRefl, nat] [one]
 
 def idLam (c : Ixon.BinderContract) : E := .lam c (ref 2) (var 0)
-
--- conversion between λs that differ only in contracts
-#guard sameVerdict [(address 10, lamEq (idLam .many) (idLam .many) (idLam .many))]
-  [(address 10, lamEq (idLam .linear) (idLam .erased) (idLam .affine))] none
--- and a false equation, whatever the contracts
-def zeroLam (c : Ixon.BinderContract) : E := .lam c (ref 2) (ref 3)
-def falseLamEq (c : Ixon.BinderContract) : Ixon.Constant :=
-  defn .thm (apps (ref 0 [0]) [all (ref 2) (ref 2), idLam c, zeroLam c])
-    (apps (ref 1 [0]) [all (ref 2) (ref 2), idLam c]) [eq, eqRefl, nat, natZero] [one]
-#guard sameVerdict [(address 10, falseLamEq .many)] [(address 10, falseLamEq .linear)] (some .declined)
 
 /-- `@Eq.{2} Type l r := @Eq.refl.{2} Type v`, refs `[Eq, Eq.refl, Nat]`,
 universes `[2, 1]`. -/
@@ -142,11 +123,43 @@ def piEq (l r v : E) : Ixon.Constant :=
   defn .thm (apps (ref 0 [0]) [sort 1, l, r]) (apps (ref 1 [0]) [sort 1, v])
     [eq, eqRefl, nat] [.succ one, one]
 
-def natPi (c : Ixon.BinderContract) (r : Ixon.ValueContract) : E := .all c r (ref 2) (ref 2)
+-- matching input contracts convert: a value whose λ's input contract is its
+-- type's, at every input and result contract
+#guard binderContracts.all fun c => valueContracts.all fun r =>
+  outcomeOf [(address 10, idNatWith c r c)] == none
+-- λs, and ∀s, with equal input contracts
+#guard outcomeOf [(address 10, lamEq .linear (idLam .linear) (idLam .linear) (idLam .linear))] == none
+#guard outcomeOf [(address 10, piEq (natPi .erased .shared) (natPi .erased .shared)
+  (natPi .erased .shared))] == none
 
--- conversion between ∀s that differ only in input and result contracts
+-- unequal input contracts do not: `f : ∀[erased] (x : Nat), Nat :=
+-- fun[many] x => x` is declined, as is every value whose λ's input contract
+-- is not its type's
+def erasedType : Ixon.Constant := idNatWith .erased .shared .many
+#guard outcomeOf [(address 10, erasedType)] == some .declined
+#guard binderContracts.all fun c => binderContracts.all fun c' =>
+  c == c' || outcomeOf [(address 10, idNatWith c .shared c')] == some .declined
+-- an equation between ∀s whose input contracts differ, and between λs (whose
+-- types then differ too)
+#guard outcomeOf [(address 10, piEq (natPi .erased .shared) (natPi .many .shared)
+  (natPi .many .shared))] == some .declined
+#guard outcomeOf [(address 10, lamEq .many (idLam .linear) (idLam .many) (idLam .many))] ==
+  some .declined
+
+-- result contracts are never compared: a λ has none, so the type inferred
+-- for `fun[linear] x => x` has the default result, and it checks against
+-- `∀[linear] (x : Nat), unique Nat`
+#guard sameVerdict [(address 10, idNatWith .linear .shared .linear)]
+  [(address 10, idNatWith .linear .unique .linear)] none
+-- ∀s that differ only in result contracts convert
 #guard sameVerdict [(address 10, piEq (natPi .many .shared) (natPi .many .shared) (natPi .many .shared))]
-  [(address 10, piEq (natPi .erased .unique) (natPi .many .shared) (natPi .linear .localShared))] none
+  [(address 10, piEq (natPi .linear .unique) (natPi .linear .shared) (natPi .linear .localShared))] none
+-- and a false equation is declined, whatever the contracts
+def zeroLam (c : Ixon.BinderContract) : E := .lam c (ref 2) (ref 3)
+def falseLamEq (c : Ixon.BinderContract) : Ixon.Constant :=
+  defn .thm (apps (ref 0 [0]) [natPi c .shared, idLam c, zeroLam c])
+    (apps (ref 1 [0]) [natPi c .shared, idLam c]) [eq, eqRefl, nat, natZero] [one]
+#guard sameVerdict [(address 10, falseLamEq .many)] [(address 10, falseLamEq .linear)] (some .declined)
 
 /-! ## Pinned shapes compare binder contracts -/
 

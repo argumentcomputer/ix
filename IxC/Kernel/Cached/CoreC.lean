@@ -520,12 +520,14 @@ def etaCertI (r : CoreFnsI) (_fe : FEnv) (depth : Nat)
   let wtb ← r.whnf depth tb
   match wtb with
   | .forallE ty₂ _ m₂ => do
-    -- prop-ness agreement checked LAST (task #161); see `etaCert`
+    -- input contracts compared, and prop-ness agreement checked LAST
+    -- (task #161); see `etaCert`
     if ← r.defeq depth ty₂ ty₁ then do
       let fv ← pure (Expr.fvar depth ty₁)
       let b₁ ← inst1M body₁ fv
       let ba ← pure (Expr.app b fv)
       unless ← r.defeq (depth + 1) b₁ ba do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (eta)")
       pure true
@@ -1570,12 +1572,14 @@ def defeqStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
         else stuckIrrelI mode r fe depth a' b'
       else stuckIrrelI mode r fe depth a' b'
     | .forallE ty₁ body₁ m₁, .forallE ty₂ body₂ m₂ => do
-      -- prop-ness agreement checked LAST (task #161); see `defeqBody`
+      -- input contracts compared, results not, and prop-ness agreement
+      -- checked LAST (task #161); see `defeqBody`
       unless ← r.defeq depth ty₁ ty₂ do return false
       let fv ← pure (Expr.fvar depth ty₂)
       let b₁ ← inst1M body₁ fv
       let b₂ ← inst1M body₂ fv
       unless ← r.defeq (depth + 1) b₁ b₂ do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
       pure true
@@ -1585,6 +1589,7 @@ def defeqStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
       let b₁ ← inst1M body₁ fv
       let b₂ ← inst1M body₂ fv
       unless ← r.defeq (depth + 1) b₁ b₂ do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
       pure true

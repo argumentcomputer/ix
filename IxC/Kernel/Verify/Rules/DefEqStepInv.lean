@@ -85,19 +85,20 @@ inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop whe
       Level.isEquivList us us' = some true →
       DefeqStuckExit env fuel d (.const n us) (.const n us')
   /-- `:1627-1643`: ∀-congruence, the bodies opened at the RIGHT domain,
-  the annotations equal (the `.verified` validation). -/
+  the annotations equal (the `.verified` validation), the input contracts
+  equal. -/
   | forallE {ty₁ bd₁ ty₂ bd₂ : Expr} {m₁ m₂ : BinderMeta} :
       isDefEqCore .verified env fuel d ty₁ ty₂ = .ok true →
       isDefEqCore .verified env fuel (d + 1) (bd₁.instantiate1 (.fvar d ty₂))
         (bd₂.instantiate1 (.fvar d ty₂)) = .ok true →
-      m₁.pw = m₂.pw →
+      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefeqStuckExit env fuel d (.forallE ty₁ bd₁ m₁) (.forallE ty₂ bd₂ m₂)
   /-- `:1644-1651`: λ-congruence, likewise. -/
   | lam {ty₁ bd₁ ty₂ bd₂ : Expr} {m₁ m₂ : BinderMeta} :
       isDefEqCore .verified env fuel d ty₁ ty₂ = .ok true →
       isDefEqCore .verified env fuel (d + 1) (bd₁.instantiate1 (.fvar d ty₂))
         (bd₂.instantiate1 (.fvar d ty₂)) = .ok true →
-      m₁.pw = m₂.pw →
+      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefeqStuckExit env fuel d (.lam ty₁ bd₁ m₁) (.lam ty₂ bd₂ m₂)
   /-- `:1652-1678`: the stuck spine congruence (the equal-length guard is
   `defEqList`'s own). -/
@@ -349,7 +350,17 @@ theorem defeqStep_inv {d : Nat} {k : Bool → Expr → Expr → CheckM Bool}
                 dsimp only at h
                 rw [hq1] at h
                 simp [throw, throwThe, MonadExceptOf.throw] at h
-            exact .forallE hdt hbd (eq_of_beq hq)
+                split at h <;> simp [pure, Except.pure] at h
+            have hc : (mb₁.contract == mb₂.contract) = true := by
+              by_cases hc0 : (mb₁.contract == mb₂.contract) = true
+              · exact hc0
+              · exfalso
+                have hc1 : (mb₁.contract == mb₂.contract) = false := by simpa using hc0
+                rw [hbd] at h
+                dsimp only at h
+                rw [hc1] at h
+                simp [pure, Except.pure] at h
+            exact .forallE hdt hbd (eq_of_beq hq) (eq_of_beq hc)
         · -- 12: λ-congruence
           rename_i ty₁ bd₁ mb₁ ty₂ bd₂ mb₂
           cases hdt : isDefEqCore .verified env fuel d ty₁ ty₂ with
@@ -383,7 +394,17 @@ theorem defeqStep_inv {d : Nat} {k : Bool → Expr → Expr → CheckM Bool}
                 dsimp only at h
                 rw [hq1] at h
                 simp [throw, throwThe, MonadExceptOf.throw] at h
-            exact .lam hdt hbd (eq_of_beq hq)
+                split at h <;> simp [pure, Except.pure] at h
+            have hc : (mb₁.contract == mb₂.contract) = true := by
+              by_cases hc0 : (mb₁.contract == mb₂.contract) = true
+              · exact hc0
+              · exfalso
+                have hc1 : (mb₁.contract == mb₂.contract) = false := by simpa using hc0
+                rw [hbd] at h
+                dsimp only at h
+                rw [hc1] at h
+                simp [pure, Except.pure] at h
+            exact .lam hdt hbd (eq_of_beq hq) (eq_of_beq hc)
         · -- 13: the stuck spine congruence
           rename_i f₁ a₁ f₂ a₂
           split at h

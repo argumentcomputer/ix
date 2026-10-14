@@ -600,12 +600,18 @@ theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f
                         -- decides only one `if`; `by_cases` on the
                         -- guard plus `↓reduceIte` decides both.
                         simp only [↓reduceIte]
-                        by_cases hpw :
-                            (mode.verifiedChecks && !m₁.pw == m₂.pw) = true
-                        · simp only [hpw, ↓reduceIte]
-                          exact SimC.throw_bind
-                        · simp only [Bool.not_eq_true] at hpw
-                          simp only [hpw, ↓reduceIte]
+                        by_cases hct :
+                            (m₁.contract == m₂.contract) = true
+                        · simp only [hct, ↓reduceIte]
+                          by_cases hpw :
+                              (mode.verifiedChecks && !m₁.pw == m₂.pw) = true
+                          · simp only [hpw, ↓reduceIte]
+                            exact SimC.throw_bind
+                          · simp only [Bool.not_eq_true] at hpw
+                            simp only [hpw, ↓reduceIte]
+                            exact SimC.pure hs₁₂ rfl
+                        · simp only [Bool.not_eq_true] at hct
+                          simp only [hct, Bool.false_eq_true, ↓reduceIte]
                           exact SimC.pure hs₁₂ rfl
                   | lam t₂ b₂ m₂ =>
                     dsimp only
@@ -669,12 +675,18 @@ theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f
                         -- decides only one `if`; `by_cases` on the
                         -- guard plus `↓reduceIte` decides both.
                         simp only [↓reduceIte]
-                        by_cases hpw :
-                            (mode.verifiedChecks && !m₁.pw == m₂.pw) = true
-                        · simp only [hpw, ↓reduceIte]
-                          exact SimC.throw_bind
-                        · simp only [Bool.not_eq_true] at hpw
-                          simp only [hpw, ↓reduceIte]
+                        by_cases hct :
+                            (m₁.contract == m₂.contract) = true
+                        · simp only [hct, ↓reduceIte]
+                          by_cases hpw :
+                              (mode.verifiedChecks && !m₁.pw == m₂.pw) = true
+                          · simp only [hpw, ↓reduceIte]
+                            exact SimC.throw_bind
+                          · simp only [Bool.not_eq_true] at hpw
+                            simp only [hpw, ↓reduceIte]
+                            exact SimC.pure hs₁₂ rfl
+                        · simp only [Bool.not_eq_true] at hct
+                          simp only [hct, Bool.false_eq_true, ↓reduceIte]
                           exact SimC.pure hs₁₂ rfl
                   | _ =>
                     dsimp only

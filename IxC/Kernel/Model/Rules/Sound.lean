@@ -94,13 +94,13 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
   | _, _, _, .const h => DefEq.const_sound h
   | _, _, _, .natZero => DefEq.natZero_sound
   | _, _, _, .natSucc h => DefEq.natSucc_sound (defeq_sound hin h)
-  | _, _, _, .forallE hty hbody hpw =>
+  | _, _, _, .forallE hty hbody hpw _ =>
     DefEq.forallE_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
-  | _, _, _, .lam hty hbody hpw =>
+  | _, _, _, .lam hty hbody hpw _ =>
     DefEq.lam_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .app hf ha => DefEq.app_sound (defeq_sound hin hf) (defeq_sound hin ha)
   | _, _, _, .proj h => DefEq.proj_sound (defeq_sound hin h)
-  | _, _, _, .eta htb hwtb hty hbody hpw =>
+  | _, _, _, .eta htb hwtb hty hbody hpw _ =>
     DefEq.eta_sound (infer_sound hin htb) (red_sound hin hwtb)
       (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .proofFast ha hb => DefEq.proofFast_sound hin ha hb

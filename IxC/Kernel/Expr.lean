@@ -113,13 +113,14 @@ a constant's address), so they are identity data, not display data:
 
 Lean has no contracts: Lean-fragment binders carry the defaults, `many`,
 `shared`, `unrestricted` in and `shared`, `unrestricted` out, which is
-what `{ pw := … }` builds. Typing is contract-blind: the binder
-congruences compare `pw` alone (`Rules/Rel.lean`; `defeqStep` in
-`Core.lean`), and the model reads only `pw`. Structural `=` and the
-packed hash (`BinderMeta.hashData`) see the contracts, so terms that
-differ only in contracts are different terms, as their Ixon addresses
-are; basis and pin matching (`canonExprEqFast`, `Expr.erasePwEq`)
-compare them too. -/
+what `{ pw := … }` builds. Conversion compares input contracts: the
+binder congruences and η require equal `contract`s besides equal `pw`s
+(`Rules/Rel.lean`; `defeqStep` and `etaCert` in `Core.lean`). It never
+compares `result`s: a `lam` has none, so the type inferred for one carries
+the default. The model reads only `pw`. Structural `=` and the packed
+hash (`BinderMeta.hashData`) see all the contracts, so terms that differ
+only in contracts are different terms, as their Ixon addresses are; basis
+and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too. -/
 structure BinderMeta where
   pw : PropWhen
   contract : Ixon.BinderContract := .many

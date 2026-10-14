@@ -503,9 +503,9 @@ def structUnitCert (r : CoreFns m) (env : Env) (depth : Nat) (a b : Expr) :
   | _ => pure false
 
 /-- Eta certification for a one-sided λ against a stuck term `b`: `b`'s
-type whnfs to a `∀` whose domain is defeq to the λ's, and the λ's body
-is pointwise the application of `b`.  The λ is then `b`'s eta-expansion
-(soundness: `SetTheory.lam_eta`). -/
+type whnfs to a `∀` whose domain is defeq to the λ's and whose input
+contract is the λ's, and the λ's body is pointwise the application of
+`b`.  The λ is then `b`'s eta-expansion (soundness: `SetTheory.lam_eta`). -/
 def etaCert (mode : CheckMode) (r : CoreFns m) (_env : Env) (depth : Nat)
     (ty₁ body₁ : Expr) (m₁ : BinderMeta) (b : Expr) :
     m Bool := do
@@ -523,6 +523,7 @@ def etaCert (mode : CheckMode) (r : CoreFns m) (_env : Env) (depth : Nat)
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₁))
           (.app b (.fvar depth ty₁)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (eta)")
       pure true
@@ -1641,10 +1642,14 @@ def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
       -- is exactly the cross-provenance coherence corner, declined
       -- loudly.  (The official kernel compares no annotations; the
       -- pre-#100 zero-ness comparison is back in validated clothing.)
+      -- The binders' input contracts must also be equal (a mismatch is
+      -- an inequality, `false`).  Result contracts are not compared: a
+      -- `λ` has none, so the type inferred for one carries the default.
       unless ← r.defeq depth ty₁ ty₂ do return false
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
       pure true
@@ -1653,6 +1658,7 @@ def defeqStep (r : CoreFns m) (env : Env) (depth : Nat)
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
+      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
       pure true

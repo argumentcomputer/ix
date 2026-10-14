@@ -331,10 +331,12 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
           (coreKnotI mode (mkFEnv env) f).defeq (d + 1) b₁ ba
             >>= fun r₂ =>
           if r₂ = true then
-            if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
-              (throw (.notImplemented "sort-annotation mismatch (eta)")
-                : CheckCM Unit) >>= fun _ => pure true
-            else pure true
+            if (m₁.contract == m₂.contract) = true then
+              if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
+                (throw (.notImplemented "sort-annotation mismatch (eta)")
+                  : CheckCM Unit) >>= fun _ => pure true
+              else pure true
+            else pure false
           else pure false
         else pure false
       | _ => pure false)
@@ -348,10 +350,12 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
             (body₁x.instantiate1 (.fvar d ty₁x))
             (.app bx (.fvar d ty₁x)) >>= fun r₂ =>
           if r₂ = true then
-            if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
-              (throw (.notImplemented "sort-annotation mismatch (eta)")
-                : FueledM Unit) >>= fun _ => pure true
-            else pure true
+            if (m₁.contract == m₂.contract) = true then
+              if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
+                (throw (.notImplemented "sort-annotation mismatch (eta)")
+                  : FueledM Unit) >>= fun _ => pure true
+              else pure true
+            else pure false
           else pure false
         else pure false
       | _ => pure false)
@@ -411,7 +415,9 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
       | true =>
         simp only [↓reduceIte]
         split
-        · exact SimC.throw_bind
+        · split
+          · exact SimC.throw_bind
+          · exact SimC.pure hs₈ rfl
         · exact SimC.pure hs₈ rfl
   | bvar k => exact SimC.pure hs₂ rfl
   | sort u => exact SimC.pure hs₂ rfl

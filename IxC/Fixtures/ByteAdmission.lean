@@ -103,8 +103,12 @@ def decodeFailureOf (records : Records) (position : Nat) (bounds : Limits := lim
 -- The entry admits a sharing table that is not the canonical one (a slot
 -- referenced once): Ixon v4 does not check the table's canonicity on read.
 #guard accepts [(address 1, singleUseSharing)]
--- Typing is contract-blind: a `linear` λ checks against a `many` type.
-#guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
+-- Conversion compares binder input contracts: a `linear` λ does not check
+-- against a `many` type, and does against a `linear` one.
+#guard outcomeOf [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
+    .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })] = some .declined
+#guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1,
+    .all .linear .shared (.sort 0) (.leanAll (.var 0) (.var 1)),
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
 
 -- A duplicate record or blob address is malformed (the byte stage rejects

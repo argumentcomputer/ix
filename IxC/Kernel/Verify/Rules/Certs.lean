@@ -200,15 +200,16 @@ theorem structUnitCert_bridge (hw : WhnfBridge env fuel)
     (iotaCerts_bridge hd hio hic)
 
 /-- `etaCert` ⇒ `DefEq.eta` (`etaCert_inv`; the annotation agreement is
-the inversion's `verifiedChecks = true →` conjunct at `rfl`). -/
+the inversion's `verifiedChecks = true →` conjunct at `rfl`, the input
+contracts' equality its last conjunct). -/
 theorem etaCert_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
     {d : Nat} {ty body b : Expr} {mb : BinderMeta}
     (h : etaCertFueled .verified env fuel d ty body mb b = .ok true) :
     DefEq env d (.lam ty body mb) b := by
-  obtain ⟨tb, ty₂, fb, m₂, htb, hwtb, hdty, hdbody, hpw⟩ := etaCert_inv h
+  obtain ⟨tb, ty₂, fb, m₂, htb, hwtb, hdty, hdbody, hpw, hc⟩ := etaCert_inv h
   exact .eta (inferTypeIO_bridge hio htb) (hw hwtb) (hd hdty) (hd hdbody)
-    (hpw rfl)
+    (hpw rfl) hc
 
 /-- `stuckIrrel` ⇒ one of its four arms (`structEtaCert_bridge` twice —
 the second through `DefEq.structEtaR` —, `structUnitCert_bridge`,

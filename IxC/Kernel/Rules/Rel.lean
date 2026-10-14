@@ -369,19 +369,20 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
       DefEq env d (.lit (.natVal k)) x →
       DefEq env d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x)
   /-- ∀-congruence (`Core.lean:1627-1643`): domains, then bodies opened
-  with the RIGHT domain, then the annotation agreement. -/
+  with the RIGHT domain, then the annotation agreement and equal input
+  contracts. The result contracts are not compared. -/
   | forallE {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr} {m₁ m₂ : BinderMeta} :
       DefEq env d ty₁ ty₂ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
         (body₂.instantiate1 (.fvar d ty₂)) →
-      m₁.pw = m₂.pw →
+      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefEq env d (.forallE ty₁ body₁ m₁) (.forallE ty₂ body₂ m₂)
   /-- λ-congruence (`Core.lean:1644-1651`), as for ∀. -/
   | lam {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr} {m₁ m₂ : BinderMeta} :
       DefEq env d ty₁ ty₂ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₂))
         (body₂.instantiate1 (.fvar d ty₂)) →
-      m₁.pw = m₂.pw →
+      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefEq env d (.lam ty₁ body₁ m₁) (.lam ty₂ body₂ m₂)
   /-- Per-node application congruence.  The checker's spine-wise
   congruence (`Core.lean:1652-1678`) and the same-head short-circuit
@@ -396,13 +397,14 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
   /-- **η** (`etaCert`, `Core.lean:508-534`, at the one-sided λ arm
   `:1690-1692`): `b`'s io-inferred type head-normalises to a ∀ whose
   domain is definitionally equal to the λ's, the body is pointwise
-  `b` applied, and the annotations agree. -/
+  `b` applied, the annotations agree and the input contracts are
+  equal. -/
   | eta {d : Nat} {ty₁ body₁ b tb ty₂ B : Expr} {m₁ m₂ : BinderMeta} :
       Infer env .io d b tb → Red env d tb (.forallE ty₂ B m₂) →
       DefEq env d ty₂ ty₁ →
       DefEq env (d + 1) (body₁.instantiate1 (.fvar d ty₁))
         (.app b (.fvar d ty₁)) →
-      m₁.pw = m₂.pw →
+      m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefEq env d (.lam ty₁ body₁ m₁) b
   /-- **The `isProofFast` yes-arm** (`propIrrel`, `Core.lean:331-332`):
   both heads' validated data say "a proposition at every valuation" —

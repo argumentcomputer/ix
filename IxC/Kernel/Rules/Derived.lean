@@ -171,9 +171,9 @@ theorem DefEq.etaR {d : Nat} {a ta ty₁ B ty₂ body₂ : Expr} {m₁ m₂ : Bi
     (hty : DefEq env d ty₁ ty₂)
     (hbody : DefEq env (d + 1) (body₂.instantiate1 (.fvar d ty₂))
       (.app a (.fvar d ty₂)))
-    (hpw : m₂.pw = m₁.pw) :
+    (hpw : m₂.pw = m₁.pw) (hc : m₂.contract = m₁.contract) :
     DefEq env d a (.lam ty₂ body₂ m₂) :=
-  .symm (.eta hi hr hty hbody hpw)
+  .symm (.eta hi hr hty hbody hpw hc)
 
 /-- Congruence along a spine: the head and the arguments pairwise. -/
 theorem DefEq.mkAppN {d : Nat} : ∀ {as bs : List Expr} {f g : Expr},
