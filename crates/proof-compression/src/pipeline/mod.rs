@@ -367,3 +367,6 @@ mod tests {
     assert!(verify(PROOF_TAG, b"wrong", true).is_err());
   }
 }
+
+#[cfg(feature = "solidity")]
+pub use wrap::{export_solidity_verifier, write_solidity_fixture};

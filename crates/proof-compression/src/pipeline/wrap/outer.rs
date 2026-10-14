@@ -1,5 +1,10 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
+#[cfg(feature = "solidity")]
+mod solidity;
+#[cfg(feature = "solidity")]
+pub use solidity::{export_solidity_verifier, write_solidity_fixture};
+
 use super::super::stages::{
   construct::{self, Lowered},
   statement::Statement as StageStatement,
@@ -192,7 +197,7 @@ fn packet_body<'a>(
   Ok(&packet[offset..])
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "solidity"))]
 fn packet_claims(
   packet: &[u8],
   profile: &[u8; 32],

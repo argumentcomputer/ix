@@ -58,3 +58,6 @@ fn spawn_memory_monitor() {
 pub(super) use outer::verify_saved as verify;
 
 pub(super) use outer::{PreparedVerifierProfile, VerifierProfile};
+
+#[cfg(feature = "solidity")]
+pub use outer::{export_solidity_verifier, write_solidity_fixture};
