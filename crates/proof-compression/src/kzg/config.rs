@@ -1,5 +1,5 @@
 //! [`ProofConfig`] instantiation for the KZG backend: BLS12-381
-//! scalar field (its own challenge field, `D = 1`), Blake3 transcript,
+//! scalar field (its own challenge field, `D = 1`), a selected transcript,
 //! monomial KZG commitments.
 
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use super::cuda;
 use super::field::Scalar;
 use super::pcs::{KzgCommitment, KzgPcs, KzgProverData};
 use super::srs::Srs;
-use super::transcript::Blake3Transcript;
+use super::transcript::{KzgTranscript, TranscriptKind};
 
 #[derive(Clone)]
 pub struct KzgConfig {
@@ -24,6 +24,7 @@ pub struct KzgConfig {
   /// digest of the protocol parameters INCLUDING the SRS (see the
   /// transcript contract on [`ProofConfig::initialise_challenger`]).
   transcript_seed: Vec<u8>,
+  transcript_kind: TranscriptKind,
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
@@ -66,35 +67,57 @@ impl KzgConfig {
   ) -> Self {
     let max_log_degree = p3_util::log2_strict_usize(params.max_trace_len());
     assert!(max_quotient_degree.is_power_of_two());
-    let mut transcript_seed = b"multi-stark/kzg/v4".to_vec();
-    for parameter in [max_log_degree, max_quotient_degree] {
-      transcript_seed.extend(u64::try_from(parameter).unwrap().to_le_bytes());
-    }
-    transcript_seed
-      .extend((params.public_setup.max_degree as u64).to_le_bytes());
-    transcript_seed.extend(params.public_setup.id);
-    // Proving and portable verification bind the same public anchors.
-    params.g1[0]
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params
-      .g2
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params.g1[1]
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
-    params
-      .tau_g2
-      .serialize_compressed(&mut transcript_seed)
-      .expect("Vec serialization");
+    let transcript_kind = TranscriptKind::Blake3;
+    let transcript_seed =
+      Self::make_transcript_seed(&params, max_quotient_degree, transcript_kind);
     Self {
       pcs: KzgPcs::verifier_only(params, max_quotient_degree),
       transcript_seed,
+      transcript_kind,
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
     }
+  }
+
+  /// Select the Fiat-Shamir protocol and its parameter-binding domain.
+  pub fn with_transcript(mut self, kind: TranscriptKind) -> Self {
+    self.transcript_seed = Self::make_transcript_seed(
+      self.pcs.verifier_params(),
+      self.pcs.max_quotient_degree(),
+      kind,
+    );
+    self.transcript_kind = kind;
+    self
+  }
+
+  pub fn transcript_kind(&self) -> TranscriptKind {
+    self.transcript_kind
+  }
+
+  fn make_transcript_seed(
+    params: &super::VerifierParams,
+    max_quotient_degree: usize,
+    kind: TranscriptKind,
+  ) -> Vec<u8> {
+    let domain: &[u8] = match kind {
+      TranscriptKind::Blake3 => b"multi-stark/kzg/v4",
+      TranscriptKind::Keccak256 => b"multi-stark/kzg/keccak256/v1",
+    };
+    let mut seed = domain.to_vec();
+    for parameter in
+      [p3_util::log2_strict_usize(params.max_trace_len()), max_quotient_degree]
+    {
+      seed.extend(u64::try_from(parameter).unwrap().to_le_bytes());
+    }
+    seed.extend((params.public_setup.max_degree as u64).to_le_bytes());
+    seed.extend(params.public_setup.id);
+    // Proving and portable verification bind the same public anchors.
+    params.g1[0].serialize_compressed(&mut seed).expect("Vec serialization");
+    params.g2.serialize_compressed(&mut seed).expect("Vec serialization");
+    params.g1[1].serialize_compressed(&mut seed).expect("Vec serialization");
+    params.tau_g2.serialize_compressed(&mut seed).expect("Vec serialization");
+    seed
   }
 
   /// Reconstruct and commit one lookup trace at a time from committed columns.
@@ -380,14 +403,14 @@ impl ProofConfig for KzgConfig {
 
   type Pcs = KzgPcs;
   type Challenge = Scalar;
-  type Challenger = Blake3Transcript;
+  type Challenger = KzgTranscript;
 
   fn pcs(&self) -> &KzgPcs {
     &self.pcs
   }
 
-  fn initialise_challenger(&self) -> Blake3Transcript {
-    let mut challenger = Blake3Transcript::new();
+  fn initialise_challenger(&self) -> KzgTranscript {
+    let mut challenger = KzgTranscript::new(self.transcript_kind);
     challenger.observe_bytes(&self.transcript_seed);
     challenger
   }

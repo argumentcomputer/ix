@@ -9,7 +9,9 @@ use super::{
 };
 use crate::{
   foreign::KzgCircuitExt,
-  kzg::{KzgCommitment, KzgConfig, Scalar, compact::FixedProofCodec},
+  kzg::{
+    KzgCommitment, KzgConfig, Scalar, TranscriptKind, compact::FixedProofCodec,
+  },
   recursive::native_verifier::Built,
 };
 use multi_stark::{
@@ -20,6 +22,7 @@ use p3_matrix::Matrix;
 use std::{fs, path::Path};
 
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
+const OUTER_PROFILE_VERSION: u32 = 5;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged profile covers exactly its own height.
 pub(super) const MAX_TRACE_LEN: usize = 1 << 27;
@@ -116,7 +119,8 @@ impl Frontend {
     }
     let start = std::time::Instant::now();
     let height = self.compiled.main_height();
-    let setup = SetupSource::development(OUTER_SEED, height - 1, None)?;
+    let setup = SetupSource::for_stage(OUTER_SEED, height, None)?
+      .with_transcript(TranscriptKind::Keccak256);
     let setup_id = setup.identity(height, 2)?;
     let traces = self.compiled.trace_shards(assignment)?;
     fs::create_dir_all(dir)?;
@@ -419,14 +423,9 @@ fn prove_with_traces(
   let out = dir.join("kzg");
   fs::create_dir_all(&out)?;
   eprintln!("Preparing KZG parameters for 2^{} rows", height.ilog2());
-  let mut setup = SetupSource::development(
-    OUTER_SEED,
-    height - 1,
-    Some(out.join("dev-srs.bin")),
-  )?;
-  if let Some(directory) = SetupSource::cache_directory_from_env() {
-    setup = setup.with_cache_directory(directory);
-  }
+  let setup =
+    SetupSource::for_stage(OUTER_SEED, height, Some(out.join("dev-srs.bin")))?
+      .with_transcript(TranscriptKind::Keccak256);
   setup.check_binding(dir, height, 2)?;
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let setup_id = setup.identity(height, 2)?;
@@ -605,16 +604,17 @@ fn prove_with_traces(
     fs::write(&path, &bytes)?;
     bytes
   };
-  let mut hash = blake3::Hasher::new();
-  hash.update(b"init-kzg-recursive-profile/v4");
-  hash.update(OUTER_SEED);
-  hash.update(&verifier_params.to_bytes()?);
-  hash.update(&(height as u64).to_le_bytes());
-  for i in 0..count {
-    hash.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
-  }
-  hash.update(&fs::read(dir.join("pairings.bin"))?);
-  let profile = *hash.finalize().as_bytes();
+  let verifier = VerifierProfile {
+    version: OUTER_PROFILE_VERSION,
+    heights: [manifest.heights[0], manifest.heights[1]],
+    setup: [
+      fs::read(out.join("setup-0.bin"))?,
+      fs::read(out.join("setup-1.bin"))?,
+    ],
+    pairings: fs::read(dir.join("pairings.bin"))?,
+    parameters: verifier_params.to_bytes()?,
+  };
+  let profile = verifier.id();
   let mut packet = profile.to_vec();
   for word in init_claim::INIT_PUBLIC_WORDS {
     packet.extend(word.to_le_bytes());
@@ -669,16 +669,6 @@ fn prove_with_traces(
   if !verify_only {
     fs::write(out.join("packet.bin"), &packet)?;
     fs::write(out.join("profile-id.bin"), profile)?;
-    let verifier = VerifierProfile {
-      version: 4,
-      heights: [manifest.heights[0], manifest.heights[1]],
-      setup: [
-        fs::read(out.join("setup-0.bin"))?,
-        fs::read(out.join("setup-1.bin"))?,
-      ],
-      pairings: fs::read(dir.join("pairings.bin"))?,
-      parameters: verifier_params.to_bytes()?,
-    };
     let encoded =
       bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
     fs::write(dir.join("verifier.bin"), encoded)?;
@@ -690,6 +680,8 @@ fn prove_with_traces(
     "claim_bytes": 144,
     "pairing_bytes": keys.len() * 48,
     "profile_bytes": 32,
+    "profile_version": OUTER_PROFILE_VERSION,
+    "transcript": "keccak256",
     "total_seconds": start.elapsed().as_secs_f64(),
     "verify_seconds": verify_seconds,
     "srs_config_load_seconds": srs_config_load_seconds,
@@ -723,7 +715,7 @@ fn prove_with_traces(
   Ok(())
 }
 
-/// Portable development verifier. Authentication is handled by the registry.
+/// Portable recursive verifier. Authentication is handled by the registry.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct VerifierProfile {
   version: u32,
@@ -757,7 +749,9 @@ impl VerifierProfile {
 
   pub(crate) fn id(&self) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"init-kzg-recursive-profile/v4");
+    hash.update(
+      format!("init-kzg-recursive-profile/v{}", self.version).as_bytes(),
+    );
     hash.update(OUTER_SEED);
     hash.update(&self.parameters);
     hash.update(&(self.heights[0] as u64).to_le_bytes());
@@ -772,14 +766,29 @@ impl VerifierProfile {
     decode_pairing_keys(&decode(&self.pairings)?)
   }
 
+  /// The public setup the profile's verifier parameters declare.
+  pub(crate) fn public_setup(
+    &self,
+  ) -> storage::Result<crate::kzg::PublicSetup> {
+    Ok(crate::kzg::VerifierParams::from_bytes(&self.parameters)?.public_setup())
+  }
+
+  fn transcript_kind(&self) -> storage::Result<TranscriptKind> {
+    match self.version {
+      4 => Ok(TranscriptKind::Blake3),
+      5 => Ok(TranscriptKind::Keccak256),
+      _ => Err("unsupported recursive verifier profile".into()),
+    }
+  }
+
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
-    if self.version != 4
-      || self
-        .heights
-        .iter()
-        .any(|h| *h < 2 || !h.is_power_of_two() || *h > 1 << 28)
+    let kind = self.transcript_kind()?;
+    if self
+      .heights
+      .iter()
+      .any(|h| *h < 2 || !h.is_power_of_two() || *h > 1 << 28)
       || self.heights[1] > self.heights[0]
     {
       return Err("unsupported recursive verifier profile".into());
@@ -802,7 +811,7 @@ impl VerifierProfile {
       fixed.0.append(&mut commit.0);
     }
     Ok(System {
-      config: KzgConfig::verifier_only(params, 2),
+      config: KzgConfig::verifier_only(params, 2).with_transcript(kind),
       circuits,
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
@@ -870,7 +879,8 @@ mod tests {
     let circuit = b.finish();
     let lowered = circuit.lower_to_multi_stark(Scalar::from_u8(94)).unwrap();
     let config =
-      KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(64, b"packet-outer")), 2);
+      KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(64, b"packet-outer")), 2)
+        .with_transcript(TranscriptKind::Keccak256);
     let (system, key) =
       System::new(config, lowered.kzg_circuit_inputs(64, 2).unwrap());
     let codec = FixedProofCodec::new(
@@ -943,7 +953,7 @@ mod tests {
   #[test]
   fn staged_profiles_prove_in_both_storage_modes() -> storage::Result<()> {
     let dir = std::env::temp_dir()
-      .join(format!("outer-staged-{}-v4", std::process::id()));
+      .join(format!("outer-staged-{}-v5", std::process::id()));
     fs::create_dir(&dir)?;
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
@@ -988,6 +998,7 @@ mod tests {
       )?;
     }
     SetupSource::development(OUTER_SEED, height - 1, None)?
+      .with_transcript(TranscriptKind::Keccak256)
       .bind_stage(&dir, height, 2)?;
     storage::save(&dir.join("manifest.bin"), &manifest)?;
     let mut encoded = vec![];
@@ -1023,6 +1034,61 @@ mod tests {
     assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
     let portable = fs::read(dir.join("verifier.bin"))?;
     let profile = VerifierProfile::from_bytes(&portable)?;
+    assert_eq!(profile.version, OUTER_PROFILE_VERSION);
+    assert_eq!(
+      profile.system()?.config.transcript_kind(),
+      TranscriptKind::Keccak256
+    );
+
+    let mut legacy: VerifierProfile = decode(&portable)?;
+    legacy.version = 4;
+    assert_eq!(
+      legacy.system()?.config.transcript_kind(),
+      TranscriptKind::Blake3
+    );
+    assert_ne!(legacy.id(), profile.id());
+    let legacy_config = SetupSource::development(OUTER_SEED, height - 1, None)?
+      .config(height, 2, false)?;
+    let (legacy_system, legacy_key) =
+      System::new(legacy_config, compiled.kzg_circuit_inputs(height, 2)?);
+    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    let legacy_proof = legacy_system.prove_multiple_claims(
+      &legacy_key,
+      &refs,
+      SystemWitness::from_stage_1(
+        compiled.traces(&assignment)?,
+        &legacy_system,
+      ),
+    );
+    let logs: Vec<_> = manifest
+      .heights
+      .iter()
+      .map(|h| u8::try_from(h.ilog2()).unwrap())
+      .collect();
+    let legacy_proof =
+      FixedProofCodec::new(&legacy_system, &logs)?.encode(&legacy_proof)?;
+    let offset = 32 + 18 * 8 + 2 * 48;
+    let mut legacy_packet = legacy.id().to_vec();
+    legacy_packet.extend_from_slice(&resident[32..offset]);
+    legacy_packet.extend_from_slice(&legacy_proof);
+    assert_eq!(legacy_packet.len(), resident.len());
+    let legacy_bytes =
+      bincode::serde::encode_to_vec(&legacy, bincode::config::standard())?;
+    VerifierProfile::from_bytes(&legacy_bytes)?.verify(&legacy_packet)?;
+
+    let mut downgraded = resident.clone();
+    downgraded[..32].copy_from_slice(&legacy.id());
+    assert!(legacy.verify(&downgraded).is_err());
+    let mut upgraded = legacy_packet.clone();
+    upgraded[..32].copy_from_slice(&profile.id());
+    assert!(profile.verify(&upgraded).is_err());
+
+    let mut unsupported: VerifierProfile = decode(&portable)?;
+    unsupported.version = 6;
+    let unsupported =
+      bincode::serde::encode_to_vec(&unsupported, bincode::config::standard())?;
+    assert!(VerifierProfile::from_bytes(&unsupported).is_err());
+
     let digest = blake3::hash(&portable).to_hex().to_string();
     let registry = dir.join("registry");
     let file = dir.join("verifier.bin");
@@ -1030,15 +1096,22 @@ mod tests {
       super::super::super::registry::register(
         &file,
         &registry,
-        Some(&"00".repeat(32))
+        Some(&"00".repeat(32)),
+        true,
       )
       .is_err()
     );
     assert!(!registry.exists());
-    super::super::super::registry::register(&file, &registry, Some(&digest))?;
+    super::super::super::registry::register(
+      &file,
+      &registry,
+      Some(&digest),
+      true,
+    )?;
     // Verify using only the portable object after deleting the SRS and all checkpoints.
     fs::remove_dir_all(&dir)?;
     profile.verify(&resident)?;
+    legacy.verify(&legacy_packet)?;
     let mut wrong_range: VerifierProfile = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());

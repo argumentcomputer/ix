@@ -1,6 +1,6 @@
 use super::{
   super::{
-    setup::{FIRST_SEED, SetupSource},
+    setup::{FIRST_SEED, SetupClass, SetupSource},
     support::kzg_setup::BINDING_FILE,
   },
   init_claim,
@@ -71,6 +71,7 @@ struct Input {
   proof_bytes: Vec<u8>,
   input_blake3: BTreeMap<String, String>,
   setup_identity: [u8; 32],
+  development_srs: bool,
   load_seconds: f64,
 }
 
@@ -135,7 +136,7 @@ impl Input {
     } else {
       dir.to_path_buf()
     };
-    let setup = SetupSource::development(FIRST_SEED, height - 1, None)?;
+    let setup = SetupSource::for_stage(FIRST_SEED, height, None)?;
     setup.check_binding(dir, height, 2)?;
     let setup_id = setup.identity(height, 2)?;
     if read_recorded(dir, BINDING_FILE, &mut input_blake3)? != setup_id {
@@ -192,6 +193,7 @@ impl Input {
       proof_bytes,
       input_blake3,
       setup_identity: setup_id,
+      development_srs: setup.class() == SetupClass::Development,
       load_seconds: start.elapsed().as_secs_f64(),
     })
   }
@@ -222,7 +224,7 @@ pub(crate) fn check(
   result["load_and_native_verify_seconds"] = input.load_seconds.into();
   result["build_seconds"] = build_seconds.into();
   result["total_seconds"] = start.elapsed().as_secs_f64().into();
-  result["development_srs"] = true.into();
+  result["development_srs"] = input.development_srs.into();
   result["scope"] = "Full saved Init KZG proof checked by recursive constraints and external pairings; no outer proof yet".into();
   fs::write(report, serde_json::to_vec_pretty(&result)?)?;
   println!("{}", serde_json::to_string_pretty(&result)?);
@@ -282,6 +284,7 @@ mod tests {
       proof_bytes,
       input_blake3: BTreeMap::new(),
       setup_identity: [0; 32],
+      development_srs: true,
       load_seconds: 0.0,
     }
   }

@@ -144,6 +144,11 @@ pub fn check_claim(claim: &[u8]) -> Result<()> {
   Ok(())
 }
 
+/// Describe the setup a new run would prove under, or why none is allowed.
+pub fn setup_description(allow_development: bool) -> Result<&'static str> {
+  Ok(setup::SetupClass::configured(allow_development)?.description())
+}
+
 pub fn verify(dir: &Path, proof: &[u8], claim: &[u8]) -> Result<()> {
   check_claim(claim)?;
   let packet = proof
@@ -180,6 +185,7 @@ pub fn compress(
   out: &Path,
   resume: bool,
   resident: bool,
+  allow_development: bool,
   log_height: u32,
 ) -> Result<Vec<u8>> {
   check_claim(claim)?;
@@ -189,6 +195,9 @@ pub fn compress(
         .into(),
     );
   }
+  // Child stages re-read the same environment; the policy is enforced once
+  // here so an unconfigured run fails before any checkpoint is written.
+  setup::SetupClass::configured(allow_development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
       "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
@@ -338,6 +347,7 @@ mod tests {
         Path::new("/does-not-exist"),
         false,
         false,
+        true,
         24
       )
       .is_err()

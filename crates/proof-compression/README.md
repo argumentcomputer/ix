@@ -1,8 +1,23 @@
 # Proof compression
 
 Compress the aggregated Init root through FRI → KZG → recursive KZG.
-The supported Init profile uses a **known-trapdoor development SRS**:
-`--dev-srs` is required, and the proofs are **not production-secure**.
+
+The KZG stages prove under the Filecoin phase-one powers of tau when
+`IX_KZG_FILECOIN_CACHE` names a prefix cache produced by the authenticated
+import in `kzg::srs::filecoin` (`examples/kzg_filecoin_import.rs` drives it
+from the 72 GiB `challenge_19`). The cache is pinned by the manifest receipt
+its import printed: the receipt of the complete `2^27` cache is built in, and
+`IX_KZG_FILECOIN_MANIFEST` names the receipt of a cache with another prefix.
+The recursive stage needs the `2^27` prefix, about 12 GiB.
+
+```sh
+IX_KZG_FILECOIN_CACHE=/data/filecoin/filecoin-prefix-2p27.bin ix compress ROOT_PROOF_ADDRESS
+ix verify COMPRESSED_PROOF_ADDRESS
+```
+
+Without a Filecoin cache, `--dev-srs` selects a **known-trapdoor development
+SRS**. Its proofs are **not production-secure**, and `ix verify` and
+`ix verifier import` accept them only with `--dev-srs`.
 
 ```sh
 ix compress ROOT_PROOF_ADDRESS --dev-srs
@@ -25,8 +40,10 @@ ix verifier import verifier.bin --digest TRUSTED_DIGEST --dev-srs
 ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 ```
 
-Accepted verifiers are stored under `~/.ix/verifiers/development/`.
-Unknown profiles, altered keys and conflicting registrations are rejected.
+Accepted verifiers are stored under `~/.ix/verifiers/filecoin/` or
+`~/.ix/verifiers/development/` by the class of their public setup, and a
+verifier's class is checked again on every use. Unknown profiles, altered
+keys and conflicting registrations are rejected.
 Verification checks the proof, public setup binding and external opening
 pairing equation using the portable verifier; it does not load the proving SRS.
 
@@ -36,8 +53,34 @@ portable verifier supplies the circuit and public setup parameters.
 
 Every setup declares its complete public polynomial degree. Loading a shorter
 proving prefix or only verifier anchors preserves that degree and the setup
-identity. Development identities derive from the seed and declared degree;
-the trapdoor remains known.
+identity. The Filecoin identity derives from the ceremony digest and its
+`2^28 - 2` public degree, so every prefix cache of it binds the same
+checkpoints and verifier profiles. Development identities derive from the
+seed and declared degree; the trapdoor remains known.
+
+## Final proof transcript
+
+New recursive KZG proofs use Keccak-256 in portable verifier profile v5.
+The FRI proof, first KZG proof and the recursive circuit's verification of
+that first proof retain BLAKE3. The compact proof layout and SRS are unchanged.
+Portable v4 verifiers continue to verify their BLAKE3 proofs; the profile
+version selects the transcript, without trying alternatives. New outer
+checkpoint bindings include the transcript choice, so v4 checkpoints require
+a fresh output directory. Metadata checksums and registry digests remain BLAKE3.
+
+The Keccak transcript starts with a zero 32-byte state. For counters 0, 1 and
+2 it computes Keccak-256 over
+`"multi-stark/kzg/keccak256/v1" || counter:u8 || state:bytes32 || observations`.
+The first two digests concatenate into a 512-bit **big-endian** integer reduced
+modulo the BLS12-381 scalar field; the third digest becomes the next state.
+All three hashes use the old state, then the observation buffer is cleared.
+Observations keep the existing canonical field/point and vector encodings.
+The parameter seed has its own Keccak protocol domain and binds the same
+public setup anchors and degree limits as the BLAKE3 configuration.
+
+This profile makes a custom Ethereum verifier's transcript use native Keccak;
+it does not change the proof into a standard PLONK format or implement a
+Solidity verifier.
 
 ## GPU proving
 
@@ -163,6 +206,8 @@ so the constraint passes of the 2^27 trace are admitted, unless
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `IX_KZG_FIXED_CACHE` | directory of fixed-preprocessing checkpoints, bound to the executable digest, plan and setup identity | `<dir>/kzg/fixed-cache` |
+| `IX_KZG_FILECOIN_CACHE` | receipt-pinned Filecoin prefix cache; selects the Filecoin setup for every stage | unset: development setup, requiring `--dev-srs` |
+| `IX_KZG_FILECOIN_MANIFEST` | BLAKE3 manifest receipt of that cache | the built-in receipt of the complete `2^27` cache |
 | `IX_KZG_SRS_CACHE` | directory holding block-checksummed development SRS files shared across stages | per-stage `kzg/dev-srs.bin` |
 | `IX_KZG_PREFETCH_GIB` | bound on the next partition's witness prefetched during proving | `32` |
 | `IX_KZG_TRACE_CODEC` | `pzstd` or `zstd` for staged trace files | `pzstd` when installed |

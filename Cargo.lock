@@ -390,6 +390,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
 
 [[package]]
+name = "blake2b_simd"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3560a7b1951efe814fcd721938313adc56753ca39f4b23847d7e9a2402f5dbff"
+dependencies = [
+ "arrayvec",
+ "constant_time_eq",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2079,6 +2089,7 @@ dependencies = [
  "ark-poly",
  "ark-serialize",
  "bincode",
+ "blake2b_simd",
  "blake3",
  "blst",
  "multi-stark",
@@ -2096,6 +2107,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sppark",
+ "tiny-keccak",
  "tracing",
  "tracing-subscriber",
 ]

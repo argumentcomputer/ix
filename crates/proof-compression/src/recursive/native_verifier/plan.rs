@@ -154,6 +154,7 @@ impl<'a> Plan<'a> {
         .as_ref()
         .ok_or("missing fixed commitment")?,
       transcript_seed: system.config.transcript_seed(),
+      transcript_kind: system.config.transcript_kind(),
       generator: params.g1[0],
       g2: params.g2,
       tau_g2: params.tau_g2,
@@ -180,6 +181,11 @@ impl<'a> Plan<'a> {
     claims: ClaimSchema,
     layout: LayoutPolicy,
   ) -> Result<Self, String> {
+    if profile.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
+      return Err(
+        "recursive circuit requires a BLAKE3 inner transcript".into(),
+      );
+    }
     layout.validate()?;
     let shape = Shape::new(profile, logs)?;
     for point in profile

@@ -41,10 +41,10 @@ public def run : IO Unit := do
     unless !(← (home / "run").pathExists) do
       throw <| IO.userError "unsupported input created checkpoints"
     rejects home #["compress", toString addr, "--dev-srs"] "already compressed"
-    rejects home #["verify", toString addr] "--dev-srs"
+    rejects home #["verify", toString addr] "only the measured Init root claim"
     rejects home #["verify", toString addr, "--dev-srs"] "only the measured Init root claim"
     rejects home #["compress", toString old, "--dev-srs"] "only the measured Init root claim"
-    rejects home #["verifier", "import", "/missing"] "--dev-srs"
+    rejects home #["verifier", "import", "/missing"] "--digest"
     rejects home #["verifier", "import", "/missing", "--dev-srs"] "--digest"
     -- Optional verification of the measured full Init packet through the actual CLI.
     if let some root ← IO.getEnv "IX_COMPRESSION_TEST_ROOT" then
@@ -82,9 +82,13 @@ public def run : IO Unit := do
       let importArgs := #["verifier", "import", keyFile.toString, "--dev-srs", "--digest", toString keyDigest]
       rejects home (importArgs.set! 5 (toString (Address.blake3 "wrong".toUTF8))) "verifier digest mismatch"
       rejects home args "unknown compression verifier"
+      -- The measured profile was proved under the development setup, which
+      -- neither registration nor verification accepts without --dev-srs.
+      rejects home #["verifier", "import", keyFile.toString, "--digest", toString keyDigest] "--dev-srs"
       let imported ← invoke home importArgs
       unless imported.exitCode == 0 do throw <| IO.userError s!"verifier import failed: {imported.stderr}"
       IO.FS.removeFile keyFile
+      rejects home args.pop "--dev-srs"
       -- Registration copies the verifier; neither the original key file nor SRS is needed later.
       let alias := toString (Address.mk (packet.extract 0 32))
       let storedKey := home / ".ix/verifiers/development/keys" / s!"{keyDigest}.bin"
