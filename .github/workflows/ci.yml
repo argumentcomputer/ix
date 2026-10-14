@@ -31,7 +31,7 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
         with:
           sccache: s3
           sticky_cache: |
@@ -48,7 +48,7 @@ jobs:
       # default lib — fails CI. A push to main already passed the tests in
       # the merge queue; that run only exists to snapshot the build
       # products, so the tests are skipped there.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           build-args: "--wfail -v"
           test: ${{ github.event_name != 'push' }}
@@ -88,7 +88,7 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
         with:
           sccache: s3
           sticky_cache: |
@@ -99,11 +99,11 @@ jobs:
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: nextest
       # Install Lean for rust-bindgen step
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           use-github-cache: false
@@ -153,7 +153,7 @@ jobs:
       # instance role need checking first), and an `NVCC` wrapper running
       # `sccache nvcc` for the kernels, which multi-stark's build script
       # must compile with `-c` per source for sccache to cache them.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -172,7 +172,7 @@ jobs:
           path: .lake
           key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           use-github-cache: false
