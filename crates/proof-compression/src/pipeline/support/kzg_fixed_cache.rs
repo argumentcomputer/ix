@@ -21,13 +21,10 @@ pub(crate) struct Shape {
 struct CachedFile {
   name: String,
   size: u64,
-  /// Absent for checkpoint files, which record a digest that every read
-  /// verifies; hashing them again here would cost a minute per restore.
-  digest: Option<[u8; 32]>,
-}
-
-fn self_verifying(name: &str) -> bool {
-  name.starts_with("kzg/fixed-")
+  /// BLAKE3 of the file at publication, checked on every restore. Checkpoint
+  /// readers only detect changes made after they index a file, so a
+  /// checkpoint damaged in the cache would otherwise be proved against.
+  digest: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -75,7 +72,7 @@ impl FixedCache {
 
   pub(crate) fn from_profile(root: &Path, profile: &[u8]) -> Result<Self> {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"ix/kzg-fixed-cache/v3");
+    hasher.update(b"ix/kzg-fixed-cache/v4");
     hasher.update(&executable_digest()?);
     hasher.update(profile);
     let identity = *hasher.finalize().as_bytes();
@@ -122,13 +119,9 @@ impl FixedCache {
     let expected = file_names(entry.shape.widths.len());
     for (file, expected) in entry.files.iter().zip(expected) {
       let path = self.directory.join(&file.name);
-      let damaged = match file.digest {
-        Some(digest) => file_digest(&path)? != digest,
-        None => false,
-      };
       if file.name != expected
         || fs::metadata(&path)?.len() != file.size
-        || damaged
+        || file_digest(&path)? != file.digest
       {
         return Err("fixed cache entry is incomplete or damaged".into());
       }
@@ -163,8 +156,7 @@ impl FixedCache {
     for name in file_names(manifest.widths.len()) {
       let source = staged.join(&name);
       let size = fs::metadata(&source)?.len();
-      let digest =
-        if self_verifying(&name) { None } else { Some(file_digest(&source)?) };
+      let digest = file_digest(&source)?;
       let published = temporary.join(&name);
       link_or_copy(&source, &published)?;
       File::open(published)?.sync_all()?;

@@ -95,6 +95,14 @@ pub(crate) fn sync_directory(directory: &Path) -> io::Result<()> {
   File::open(directory)?.sync_all()
 }
 
+/// Write `bytes` to `path` through a staged file, so a crash leaves either
+/// the previous file or the complete new one.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+  let temp = temporary_path(path);
+  fs::write(&temp, bytes)?;
+  persist(&temp, path)
+}
+
 pub(crate) fn save<T: Serialize>(path: &Path, value: &T) -> Result<()> {
   let temp = temporary_path(path);
   let mut f = BufWriter::new(File::create(&temp)?);

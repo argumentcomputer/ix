@@ -94,8 +94,9 @@ impl Input {
     // The partition count follows the outer FRI proof's layout; the trace
     // height is the supported profile's. Profile identity is bound separately
     // through the profile and frontend ids and the verifier registry.
+    // Ten partitions carry the public words; the rest are tables.
     if ![1 << 24, 1 << 25].contains(&height)
-      || count == 0
+      || count < 10
       || manifest.widths.len() != count
       || manifest.widths.contains(&0)
       || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
