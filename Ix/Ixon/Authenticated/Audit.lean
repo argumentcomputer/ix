@@ -36,7 +36,7 @@ end Ixon.Authenticated.Audit
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5416 compiled functions; inherited externs 124, implemented_by 1,
+ Address.admissionHash]: 5407 compiled functions; inherited externs 124, implemented_by 1,
 unsafe 23, csimp 4; ruled assumed 4, computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings

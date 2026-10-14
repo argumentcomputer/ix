@@ -66,7 +66,7 @@ string-scanning externs (below). -/
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5231 compiled functions; inherited externs 120, implemented_by 0,
+ Ix.Kernel.Admission.checkBytes]: 5222 compiled functions; inherited externs 120, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
@@ -225,10 +225,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_resources
 
-/- The certified entry adds ten Init externs beyond the codec, the reader and
-the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin
+/- The certified entry adds eleven Init externs beyond the codec, the reader
+and the fold: `ByteArray.mk` and `Array.pop`, used to load the committed pin
 table and prelude (`Ix.Kernel.Reader.defaultPins`, `builtinPrelude`),
-and the eight string-scanning primitives of the Nat-operation pin decoder
+`String.Slice.Pattern.Internal.memcmpStr`, the pin table's derived-shape check
+(`Reader.derivedShape`, through `String.startsWith`), and the eight
+string-scanning primitives of the Nat-operation pin decoder
 (`builtinNatOpPins`). No further unsafe primitive. -/
 /-- info: Additional certified-entry externs: [Array.pop,
  String.decodeChar,
@@ -239,7 +241,8 @@ and the eight string-scanning primitives of the Nat-operation pin decoder
  String.Pos.Raw.next,
  String.Pos.Raw.get,
  String.Pos.Raw.atEnd,
- ByteArray.mk]
+ ByteArray.mk,
+ String.Slice.Pattern.Internal.memcmpStr]
 ---
 info: Additional certified-entry unsafe: [] -/
 #guard_msgs (whitespace := lax) in

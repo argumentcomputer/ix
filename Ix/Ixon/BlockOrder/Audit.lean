@@ -40,7 +40,7 @@ is checked in canonical structural order. Its codec is the projection
 entry's: Ixon v4's TagN reader and writer (`Ixon.getTagN`, `putTagN`). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5398 compiled functions; inherited externs 121, implemented_by 0,
+ Ixon.BlockOrder.compareExpr]: 5389 compiled functions; inherited externs 121, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

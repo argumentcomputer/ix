@@ -243,7 +243,7 @@ number of parameters: 3
 parents:
   Ix.Cert.ValueModel.toModel : Ix.Kernel.Model V env
 fields:
-  Ix.Kernel.Model.cval : Ix.Kernel.Name → (Ix.Kernel.LevelParam → Nat) → V
+  Ix.Kernel.Model.cval : Ix.Kernel.Key → (Ix.Kernel.LevelParam → Nat) → V
   Ix.Kernel.Model.mem : ∀ (c : Ix.Kernel.ConstantInfo),
       c ∈ env.consts →
         ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
@@ -423,7 +423,7 @@ fun σ x =>
     Ix.Kernel.ConstantInfo.thmInfo (Ix.Cert.Rename.constantVal σ v) (Ix.Cert.Rename.expr σ e)
   | Ix.Kernel.ConstantInfo.indInfo v caps =>
     Ix.Kernel.ConstantInfo.indInfo (Ix.Cert.Rename.constantVal σ v)
-      { eta := caps.eta, etaCtor := σ caps.etaCtor, etaParams := caps.etaParams, etaFields := caps.etaFields,
+      { eta := caps.eta, etaCtor := Option.map σ caps.etaCtor, etaParams := caps.etaParams, etaFields := caps.etaFields,
         unitlike := caps.unitlike, unitParams := caps.unitParams, ruleK := caps.ruleK, sortZ := caps.sortZ }
   | Ix.Kernel.ConstantInfo.ctorInfo v nP nF => Ix.Kernel.ConstantInfo.ctorInfo (Ix.Cert.Rename.constantVal σ v) nP nF
   | Ix.Kernel.ConstantInfo.recInfo v major pre rules =>
@@ -510,7 +510,7 @@ fun x =>
   | Ix.Kernel.ConstantInfo.axiomInfo v => Ix.Cert.Keys.constantVal v
   | Ix.Kernel.ConstantInfo.defnInfo v e hint => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
   | Ix.Kernel.ConstantInfo.thmInfo v e => Ix.Cert.Keys.constantVal v ++ Ix.Cert.Keys.expr e
-  | Ix.Kernel.ConstantInfo.indInfo v caps => Ix.Cert.Keys.constantVal v ++ [caps.etaCtor]
+  | Ix.Kernel.ConstantInfo.indInfo v caps => Ix.Cert.Keys.constantVal v ++ caps.etaCtor.toList
   | Ix.Kernel.ConstantInfo.ctorInfo v numParams numFields => Ix.Cert.Keys.constantVal v
   | Ix.Kernel.ConstantInfo.recInfo v majorIdx rulePrefix rules =>
     Ix.Cert.Keys.constantVal v ++ List.flatMap Ix.Cert.Keys.recRule rules
@@ -587,7 +587,9 @@ fields:
   Ix.Cert.RenamingHyp.recursor : ∀ (p : Ix.Kernel.Name) (s : String),
       Ix.Cert.InputKey pins ds (p.str s) → s = "rec" ∨ s.startsWith "rec_" = true → σ (p.str s) = (σ p).str s
   Ix.Cert.RenamingHyp.shapes : ∀ (k : Ix.Kernel.Name),
-      Ix.Cert.InputKey pins ds k → (σ k).isProjFnShape = k.isProjFnShape ∧ (σ k).isModelSuffix = k.isModelSuffix
+      Ix.Cert.InputKey pins ds k →
+        Ix.Kernel.Key.isProjFnShape (σ k) = Ix.Kernel.Key.isProjFnShape k ∧
+          Ix.Kernel.Key.isModelSuffix (σ k) = Ix.Kernel.Key.isModelSuffix k
   Ix.Cert.RenamingHyp.injective : ∀ (a b : Ix.Kernel.Name),
       Ix.Cert.Built pins ds a → Ix.Cert.Built pins ds b → σ a = σ b → a = b
 constructor:
@@ -602,7 +604,9 @@ constructor:
         Ix.Cert.InputKey pins ds (p.str s) → s = "rec" ∨ s.startsWith "rec_" = true → σ (p.str s) = (σ p).str s)
     (shapes :
       ∀ (k : Ix.Kernel.Name),
-        Ix.Cert.InputKey pins ds k → (σ k).isProjFnShape = k.isProjFnShape ∧ (σ k).isModelSuffix = k.isModelSuffix)
+        Ix.Cert.InputKey pins ds k →
+          Ix.Kernel.Key.isProjFnShape (σ k) = Ix.Kernel.Key.isProjFnShape k ∧
+            Ix.Kernel.Key.isModelSuffix (σ k) = Ix.Kernel.Key.isModelSuffix k)
     (injective : ∀ (a b : Ix.Kernel.Name), Ix.Cert.Built pins ds a → Ix.Cert.Built pins ds b → σ a = σ b → a = b) :
     Ix.Cert.RenamingHyp σ pins ds -/
 #guard_msgs (whitespace := lax) in
