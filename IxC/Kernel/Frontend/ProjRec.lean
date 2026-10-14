@@ -109,13 +109,6 @@ modeller; the naming is the one `lean-inductive-models` used before
 task #207 dropped it). -/
 def projIotaName (T : Key) (i : Nat) : Key := auxKey (projModelName T i) .projIota
 
-/-- Is `n` of the shape `X._model.proj_i.iota`?  Cheap pre-filter for
-the theorem records (the last component decides before anything is
-compared). -/
-def isProjIotaName : Key → Bool
-  | .str (.str (.str _ "_model") s) "iota" => s.startsWith "proj_"
-  | _ => false
-
 /-- The `Eq` level of an artifact iota statement `∀ …, @Eq.{ℓ} α a b`:
 the field's sort.  `none` on any other shape. -/
 def projIotaLevel (ty : Expr) : Option Level :=
@@ -358,13 +351,15 @@ def projRecOwners (block : List ConstantInfo)
   -- record's, which is the one the parse carries into `indDecl`)
   else if (nativeParts? ((types.head?.map (·.2.2.2.1)).getD 0) block).isSome then []
   else
-    types.filterMap fun (T, lps, tty, nP, nI, cs, _) => do
+    -- the owner's recursor by motive position: the front ends list a
+    -- block's types and recursors in motive order
+    types.zipIdx.filterMap fun ((T, lps, tty, nP, nI, cs, _), m) => do
       let [C] := cs | none
       guard (nI == 0)
       let (_, .sort s) ← tty.stripPis nP | none
       guard (Level.isEquiv s .zero != some true)
       let (_, nF, _) ← ctors.find? (·.1 == C)
-      let (rn, rlps, rty, nM, nm) ← recs.find? (·.1 == T.str "rec")
+      let (rn, rlps, rty, nM, nm) ← recs[m]?
       guard (rlps.length == lps.length + 1)
       pure ⟨T, lps, nP, C, nF, rn, rlps, rty, nM, nm⟩
 

@@ -212,7 +212,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     | _ => throw s!"former {t.cv.name} is not a telescope ending in a sort"
   let memberNames := b.types.map (·.cv.name)
   let members : List (Key × Nat × Nat) :=
-    (List.range k).map fun m => (memberNames.getD m .anonymous, m, (b.types.getD m default).nIdx)
+    b.types.zipIdx.map fun (t, m) => (t.cv.name, m, t.nIdx)
   let nIdxOf : Nat → Nat := fun m => (b.types.getD m default).nIdx
   -- the constructors, per member, classified
   let mut mctors : List MCtor := []
@@ -226,16 +226,15 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       mctors := mctors ++ [← classifyCtor members lps nP m c]
   let n := mctors.length
   unless b.ctors.length == n do throw "constructors not all owned by a member"
-  -- the recursors: `T_m.rec`, one per member, `k` motives, `n` minors,
-  -- no indices, one eliminator shape
+  -- the recursors: one per member, `k` motives, `n` minors, no indices,
+  -- one eliminator shape
   unless b.recs.length == k do throw "recursor count differs from member count"
-  -- the member's recursor, by name (the export's `recs` order is not
-  -- the members' in general)
+  -- the member's recursor, by motive position: the front ends list a
+  -- block's recursors in motive order, member `m`'s at `m`
   let recOf : Nat → Except String IndRecRec := fun m => do
-    let t := b.types.getD m default
-    match b.recs.find? (·.cv.name == t.cv.name.str "rec") with
+    match b.recs[m]? with
     | some r => pure r
-    | none => throw s!"member {t.cv.name} has no recursor {t.cv.name.str "rec"}"
+    | none => throw s!"member {(b.types.getD m default).cv.name} has no recursor"
   let large? : Option LevelParam :=
     match (← recOf 0).cv.levelParams with
     | e :: rest => if rest == lps && !lps.contains e then some e else none
@@ -403,19 +402,21 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let idxC := cresid.getAppArgs.drop nP
       let α : Expr := Expr.mkAppN (.bvar (nF + n + k - 1 - m)) (idxC ++ [ctorApp])
       let lhs := Expr.mkAppN (.const (modelName r.cv.name) rlvls) (prefixVars ++ idxC ++ [ctorApp])
-      let rhs := Expr.mkAppN (.bvar (nF + n - 1 - J))
-        (fields ++ mc.recFields.map fun (i, tgt) =>
+      let ihs ← mc.recFields.mapM fun (i, tgt) => do
           -- the recursive field's domain `∀ a⃗, T_tgt p⃗ e⃗(a⃗)`, lifted
           -- from its binder to the statement frame; the hypothesis'
-          -- value is `λ a⃗, T_tgt.rec._model p⃗ M⃗ S⃗ e⃗(a⃗) (f_i a⃗)`
-          -- (official `mk_rec_rules`; at a finitary field `a⃗` is
-          -- empty and this is the recursor at the field)
+          -- value is `λ a⃗, R_tgt._model p⃗ M⃗ S⃗ e⃗(a⃗) (f_i a⃗)` at member
+          -- `tgt`'s recursor `R_tgt` (official `mk_rec_rules`; at a
+          -- finitary field `a⃗` is empty and this is the recursor at the
+          -- field)
           let (tele, body) := ((doms.getD i default).liftLooseBVars (nF - i) 0).piBinders
           let a := tele.length
-          Expr.mkLamsOf tele
-            (Expr.mkAppN (.const (modelName ((memberNames.getD tgt .anonymous).str "rec")) rlvls)
+          let rt ← recOf tgt
+          pure <| Expr.mkLamsOf tele
+            (Expr.mkAppN (.const (modelName rt.cv.name) rlvls)
               (prefixVars.map (·.liftLooseBVars a 0) ++ body.getAppArgs.drop nP ++
-                [Expr.mkAppN (.bvar (nF - 1 - i + a)) (structTeleVars a)])))
+                [Expr.mkAppN (.bvar (nF - 1 - i + a)) (structTeleVars a)]))
+      let rhs := Expr.mkAppN (.bvar (nF + n - 1 - J)) (fields ++ ihs)
       let stmt := mkPis (piBinders prefixBs ++ piBinders fieldBs)
         (Expr.mkAppN (.const eqName [ℓ]) [α, lhs, rhs])
       let value ← need "iota proof" (Expr.pisToLams (rP + nF) stmt

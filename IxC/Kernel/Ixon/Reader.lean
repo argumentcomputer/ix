@@ -720,13 +720,14 @@ def State.note (st : State) (d : CDecl) : State :=
       constTypes := st.constTypes.insert n (lps, ty)
       heights := match h with | some h => st.heights.insert n h | none => st.heights }) st
 
-/-- A generated record: noted, and an artifact `T._model.proj_i.iota`
-registers its field sort for the projection rewrite
-(`ExportC.pushGenD`/`noteProjIota`). -/
+/-- A generated record: noted, and an artifact `T._model.proj_i.iota` (a
+constructor-reduction theorem, `auxKey _ .projIota`) registers its field
+sort for the projection rewrite (`ExportC.pushGenD`/`noteProjIota`), under
+its key, where `projRewrite` looks it up. -/
 def State.noteGenerated (st : State) (d : CDecl) : State :=
   let st := match d with
     | .thmDecl cv _ =>
-      if Ix.Kernel.Frontend.isProjIotaName cv.name then
+      if cv.name.isProjIota then
         match Ix.Kernel.Frontend.projIotaLevel cv.type with
         | some l => { st with projLevels := st.projLevels.insert cv.name l }
         | none => st

@@ -279,8 +279,8 @@ def readMems (lps : List LevelParam) (nP : Nat) (types : List IndTypeRec)
       let args := carr.getAppArgs
       if m < r then
         -- a real member, in order
-        unless I == memberNames.getD m .anonymous do
-          throw s!"motive {m} is not member {memberNames.getD m .anonymous}"
+        unless memberNames[m]? == some I do
+          throw s!"motive {m} is not member {m} of the block"
         unless us == lps.map .param && args == varsAt nIdx nP ++ varsAt 0 nIdx do
           throw s!"motive {m}: the member's carrier is not at its parameters and indices"
         unless (types.getD m default).nIdx == nIdx do
@@ -424,7 +424,8 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     | some (_, .sort _) => pure ()
     | _ => throw s!"former {t.cv.name} is not a telescope ending in a sort"
   -- the first recursor's telescope: parameters, `M` motives, `n` minors
-  let some r0 := b.recs.find? (·.cv.name == T.str "rec") | throw s!"no recursor {T}.rec"
+  -- (the front ends list a block's recursors in motive order)
+  let some r0 := b.recs[0]? | throw s!"no recursor for {T}"
   let M := r0.nM
   let n := r0.nm
   unless M ≥ r do throw "fewer motives than members"
@@ -441,15 +442,11 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let elim := large?.getD (freshLevelParam lps)
   let rlps := if large then elim :: lps else lps
   let fam0 : Family := ⟨T, lps, nP, pbs, u, r, mems, [], large, elim⟩
-  -- the recursor of each member: `T_m.rec` at a real member, `T.rec_j`
-  -- (1-based) at a mimic
+  -- the recursor of each member, by its motive position
   let recOf : Mem → Except String IndRecRec := fun mem => do
-    let nm := match mem.real? with
-      | some m => (b.types.getD m default).cv.name.str "rec"
-      | none => T.str s!"rec_{mem.j + 1}"
-    match b.recs.find? (·.cv.name == nm) with
+    match b.recs[mem.tag]? with
     | some rr => pure rr
-    | none => throw s!"no recursor {nm}"
+    | none => throw s!"no recursor at motive {mem.tag}"
   for mem in mems do
     let rr ← recOf mem
     unless rr.nP == nP && rr.nM == M && rr.nm == n && rr.nI == mem.nIdx do
@@ -500,9 +497,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- member with an earlier one declines.
   let familySize : Mem → Nat := fun mem =>
     match ctx.blocks mem.I with
-    | some cb =>
-      let I1 := (cb.types.getD 0 default).cv.name
-      ((cb.recs.find? (·.cv.name == I1.str "rec")).map (·.nM)).getD 0
+    | some cb => (cb.recs[0]?.map (·.nM)).getD 0
     | none => 0
   let mimics := (mems.filter (·.real?.isNone)).mergeSort fun a b => familySize b ≤ familySize a
   let mut groups : List Group := []
@@ -515,7 +510,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let nPI := cI0.nP
     unless nPI == mem.pins.length do throw s!"container {mem.I}: parameter count"
     unless lpsI.length == mem.lv.length do throw s!"container {mem.I}: level count"
-    let some rI := cb.recs.find? (·.cv.name == I1.str "rec") | throw s!"container {I1}: no recursor"
+    let some rI := cb.recs[0]? | throw s!"container {I1}: no recursor"
     let MI := rI.nM
     let some (_, afterPI) := rI.cv.type.stripPis nPI | throw s!"container {I1}: recursor parameters"
     let some (motivesI, _) := afterPI.stripPis MI | throw s!"container {I1}: recursor motives"
@@ -535,10 +530,10 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         (carrI.instantiateLevelParams lpsI mem.lv)
       let some (t, _) := matchCarrier fam memI.nIdx carr
         | throw s!"container {mem.I}: family member {memI.I} at the pins is not among the mimics"
+      let some rIm := cb.recs[memI.tag]?
+        | throw s!"container {I1}: no recursor at motive {memI.tag}"
       tags := tags ++ [t]
-      recNames := recNames ++ [match memI.real? with
-        | some m => (cb.types.getD m default).cv.name.str "rec"
-        | none => I1.str s!"rec_{memI.j + 1}"]
+      recNames := recNames ++ [rIm.cv.name]
     let large := rI.cv.levelParams.length == lpsI.length + 1
     if groups.any (fun g => tags.any g.tags.contains) then
       throw s!"container {mem.I}: its family shares a member with another container group"
@@ -748,8 +743,9 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   --    `unpackPack_j` for every member by that member's container
   --    recursor at the group's motives, `unpack_j`/`congrPack_j` per member
   for g in order do
-    let cRec := fun (k : Nat) (ℓe : Level) =>
-      Expr.const (g.recNames.getD k .anonymous) ((if g.large then [ℓe] else []) ++ g.lv)
+    let cRec := fun (k : Nat) (ℓe : Level) => do
+      let some rn := g.recNames[k]? | throw s!"container group {g.tags}: no recursor {k}"
+      pure (Expr.const rn ((if g.large then [ℓe] else []) ++ g.lv))
     if !g.large && !(Level.isEquiv u .zero == some true) then
       throw s!"container of group {g.tags} eliminates into Prop only but the block is not Prop"
     let pinsAt := fun (o : Nat) => (carrM (mems.getD (g.tags.getD 0 0) default) o []).getAppArgs.take g.nPI
@@ -795,7 +791,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let bsX := pbs ++ idxBsAtM mem 0 ++ [carrM mem nI (varsAt 0 nI)]
       let packTy := mkPis bsX (auxAt fam t o0 (varsAt 1 nI))
       let packVal := mkLams bsX
-        (Expr.mkAppN (cRec k u)
+        (Expr.mkAppN (← cRec k u)
           (pinsAt o0 ++ packMotives o0 ++ packMinors o0 ++ varsAt 1 nI ++ [.bvar 0]))
       (out, heights) := push out heights (packName j) lps packTy packVal
     for t in g.tags do
@@ -881,7 +877,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let bsX := pbs ++ idxBsAtM mem 0 ++ [carrM mem nI (varsAt 0 nI)]
       let upTy := mkPis bsX (upStmtOf mem o0 (varsAt 1 nI) (.bvar 0))
       let upVal := mkLams bsX
-        (Expr.mkAppN (cRec k .zero)
+        (Expr.mkAppN (← cRec k .zero)
           (pinsAt o0 ++ upMotives o0 ++ upMinors o0 ++ varsAt 1 nI ++ [.bvar 0]))
       out := out.push (.thmDecl ⟨unpackPackName mem.j, lps, upTy⟩ upVal)
   -- 5. `_impl.packUnpack : ∀ p⃗ i s, MotPU i s` (all mimics at once)
@@ -1102,10 +1098,8 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let lhs := Expr.mkAppN (.const (modelName rr.cv.name) rlvls) (prefixVars ++ idxC ++ [ctorApp])
       let ihApp := fun (i : Nat) =>
         let t' := (c.kinds.getD i none).getD 0
-        let mem' := mems.getD t' default
-        let rn' := match mem'.real? with
-          | some m' => modelName ((b.types.getD m' default).cv.name.str "rec")
-          | none => modelName (T.str s!"rec_{mem'.j + 1}")
+        -- the recursor at the field's motive
+        let rn' := modelName (b.recs.getD t' default).cv.name
         let idxI := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF)
         Expr.mkAppN (.const rn' rlvls) (prefixVars ++ idxI ++ [.bvar (nF - 1 - i)])
       let rhs := Expr.mkAppN (.bvar (nF + (n - 1 - c.J)))
