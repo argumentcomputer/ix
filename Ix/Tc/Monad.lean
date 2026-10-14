@@ -126,9 +126,8 @@ structure TcState (m : Mode) where
       fallback (stats; cross-kernel comparand of Rust `IX_KSYNTH_LOG`). -/
   kSynthRejects : UInt64 := 0
   /-- Disable the Ix-specific semantic shortcuts that have COMPLETE pure
-      fallbacks — BitVec natives, Decidable natives, `Fin.val`-through-
-      `Decidable.rec`, `reduceBool`/`reduceNat` markers — so accelerated
-      and pure reduction can be differential-tested
+      fallbacks — BitVec natives, Decidable natives, `reduceBool`/`reduceNat`
+      markers — so accelerated and pure reduction can be differential-tested
       (`IX_TC_NO_ACCEL=1`). Deliberately does NOT gate Nat-literal or
       string-literal bridging: those are representation-level (the
       official kernel computes them natively) and the pure path cannot
