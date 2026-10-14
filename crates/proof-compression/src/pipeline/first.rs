@@ -35,7 +35,7 @@ use std::{
 use super::init_fri;
 use super::support::{
   kzg_fixed_cache::FixedCache,
-  kzg_setup::{FIRST_SEED, SetupSource},
+  kzg_setup::{FIRST_SEED, SetupClass, SetupSource},
   kzg_storage as storage, kzg_worker_protocol as worker_protocol,
 };
 
@@ -864,11 +864,14 @@ fn prove_with_state(
       return Err("saved packet or profile differs".into());
     }
   } else {
-    fs::write(out.join("profile-id.bin"), profile)?;
-    fs::write(out.join("packet.bin"), &packet)?;
+    // The packet is published last, so its presence means the profile it
+    // depends on is complete; a stage without a packet is proved again.
+    storage::write_atomic(&out.join("profile-id.bin"), &profile)?;
+    storage::write_atomic(&out.join("packet.bin"), &packet)?;
   }
+  let development = setup.class() == SetupClass::Development;
   let report = format!(
-    "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} altered_claims_rejected=18 development_srs=true\n",
+    "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} altered_claims_rejected=18 development_srs={development}\n",
     bytes.len(),
     packet.len(),
     start.elapsed().as_secs_f64()
@@ -884,8 +887,9 @@ fn prove_with_state(
     "native_verification_passed": true,
     "negative_tests_pass": true,
     "altered_claims_rejected": 18,
-    "development_srs": true,
-    "known_trapdoor": true,
+    "development_srs": development,
+    "known_trapdoor": development,
+    "setup": setup.class().label(),
     "setup_id": blake3::Hash::from_bytes(setup_id).to_string(),
     "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_string(),
     "public_max_degree": public_setup.max_degree,
@@ -1357,10 +1361,10 @@ mod tests {
       FixedCache::from_profile(&dir.join("cache"), b"different-profile")?;
     assert!(different.restore(&dir.join("miss"))?.is_none());
 
-    // A metadata file whose bytes no longer match the digest recorded at
-    // publication is rejected before anything is linked into the stage;
-    // checkpoint files verify their own digest on every read. The file is
-    // replaced rather than edited so the hard links into `direct` and
+    // A file whose bytes no longer match the digest recorded at publication
+    // is rejected before anything is linked into the stage, whether it is
+    // metadata or a fixed checkpoint whose interior bytes still decode. Files
+    // are replaced rather than edited so the hard links into `direct` and
     // `reused` keep their contents.
     let entries = fs::read_dir(dir.join("cache"))?
       .map(|entry| Ok(entry?.path()))
@@ -1368,13 +1372,32 @@ mod tests {
     let [entry] = entries.as_slice() else {
       panic!("expected one published entry, found {entries:?}");
     };
+    let damaged = dir.join("damaged");
+    for name in ["kzg/fixed-0.bin", "kzg/setup-0.bin"] {
+      let published = entry.join(name);
+      let original = fs::read(&published)?;
+      let mut bytes = original.clone();
+      let middle = bytes.len() / 2;
+      bytes[middle] ^= 1;
+      fs::remove_file(&published)?;
+      fs::write(&published, bytes)?;
+      fs::create_dir(&damaged)?;
+      let error =
+        cache.restore(&damaged).err().ok_or("damaged cache was restored")?;
+      assert!(error.to_string().contains("incomplete or damaged"));
+      assert!(!damaged.join("kzg").exists());
+      fs::remove_dir_all(&damaged)?;
+      fs::remove_file(&published)?;
+      fs::write(&published, original)?;
+    }
+    assert!(cache.restore(&damaged)?.is_some());
+    fs::remove_dir_all(&damaged)?;
+    fs::create_dir(&damaged)?;
     let published = entry.join("kzg/setup-0.bin");
     let mut bytes = fs::read(&published)?;
     bytes[0] ^= 1;
     fs::remove_file(&published)?;
     fs::write(&published, bytes)?;
-    let damaged = dir.join("damaged");
-    fs::create_dir(&damaged)?;
     let error =
       cache.restore(&damaged).err().ok_or("damaged cache was restored")?;
     assert!(error.to_string().contains("incomplete or damaged"));

@@ -3,7 +3,9 @@
 use super::{
   super::Result as PipelineResult,
   super::{
-    init_claim, setup::SetupSource, storage,
+    init_claim,
+    setup::{SetupClass, SetupSource},
+    storage,
     support::kzg_fixed_cache as fixed_cache,
   },
 };
@@ -667,13 +669,17 @@ fn prove_with_traces(
   extra.push(0);
   assert!(verify_packet(&system, &codec, &extra, &profile, &keys).is_err());
   if !verify_only {
-    fs::write(out.join("packet.bin"), &packet)?;
-    fs::write(out.join("profile-id.bin"), profile)?;
+    // The packet is published last, so its presence means the portable
+    // verifier and profile it depends on are complete; a stage without a
+    // packet is proved again.
     let encoded =
       bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
-    fs::write(dir.join("verifier.bin"), encoded)?;
+    storage::write_atomic(&dir.join("verifier.bin"), &encoded)?;
+    storage::write_atomic(&out.join("profile-id.bin"), &profile)?;
+    storage::write_atomic(&out.join("packet.bin"), &packet)?;
   }
   let public_setup = system.config.pcs().verifier_params().public_setup();
+  let development = setup.class() == SetupClass::Development;
   let report = serde_json::json!({
     "proof_bytes": bytes.len(),
     "packet_bytes": packet.len(),
@@ -688,9 +694,9 @@ fn prove_with_traces(
     "native_verification_passed": true,
     "external_pairings_pass": true,
     "negative_tests_pass": true,
-    "development_srs": true,
-    "known_trapdoor": true,
-    "setup": "development",
+    "development_srs": development,
+    "known_trapdoor": development,
+    "setup": setup.class().label(),
     "fused_witness": traces.is_some(),
     "resident_columns": resident,
     "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_hex().to_string(),

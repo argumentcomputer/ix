@@ -64,7 +64,7 @@ public def run : IO Unit := do
         "--out", runDir.toString]
       rejects home compressArgs "compression fri failed"
       rejects home compressArgs "output already initialized"
-      rejects home (compressArgs ++ #["--resume", "--log-height", "25"]) "resume input or compression profile differs"
+      rejects home (compressArgs ++ #["--resume", "--log-height", "25"]) "different build, input or compression profile"
       rejects home (compressArgs.push "--resume") "compression fri failed"
       unless !(← (runDir / "first-kzg").pathExists) do
         throw <| IO.userError "compression continued after failed source verification"
@@ -105,7 +105,11 @@ public def run : IO Unit := do
         let vk ← IO.FS.readBinFile vkPath
         let le64 := fun (n : Nat) => ByteArray.mk <| (Array.range 8).map fun i =>
           ((n >>> (8 * i)) % 256).toUInt8
-        let mut identity := "ix-compress-run/v1".toUTF8
+        -- The run identity binds the executable's own digest, so a rebuilt
+        -- binary never resumes checkpoints another build produced.
+        let ix ← IO.FS.realPath ".lake/build/bin/ix"
+        let exeDigest := Address.blake3 (← IO.FS.readBinFile ix)
+        let mut identity := "ix-compress-run/v5".toUTF8 ++ exeDigest.hash
         for bytes in [vk, original.proof, Ix.Claim.ser original.claim] do
           identity := identity ++ le64 bytes.size ++ bytes
         identity := identity ++ ByteArray.mk #[25, 0, 0, 0]
