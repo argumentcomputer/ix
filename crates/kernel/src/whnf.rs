@@ -185,19 +185,10 @@ fn prim_family_uncached<M: KernelMode>(
   {
     return PrimFamily::Decidable;
   }
-  if *addr == p.bit_vec_to_nat.addr
-    || *addr == p.bit_vec_ult.addr
-    || *addr == p.decidable_decide.addr
-  {
+  if *addr == p.bit_vec_to_nat.addr || *addr == p.bit_vec_ult.addr {
     return PrimFamily::BitVec;
   }
-  if *addr == p.punit_size_of_1.addr
-    || *addr == p.subtype_val.addr
-    || *addr == p.size_of_size_of.addr
-    || *addr == p.system_platform_num_bits.addr
-    || *addr == p.reduce_bool.addr
-    || *addr == p.reduce_nat.addr
-  {
+  if *addr == p.reduce_bool.addr || *addr == p.reduce_nat.addr {
     return PrimFamily::Native;
   }
   if *addr == p.string_back.addr
@@ -434,7 +425,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // BitVec definitions reduce through Nat comparisons. Keep this before
-      // delta so small definitional facts such as `x < 0#w` collapse
+      // delta so small definitional facts such as `BitVec.ult x 0#w` collapse
       // without unfolding the full Fin-backed representation of BitVec.
       if family == PrimFamily::BitVec
         && let Some(reduced) = self.try_reduce_bitvec(&cur)?
@@ -1186,7 +1177,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Native/string primitives must run before projection-definition
       // rewriting. In the compiled environment, wrappers such as
-      // `Subtype.val` and `String.toByteArray` are projection definitions;
+      // `String.toByteArray` are projection definitions;
       // once rewritten to `Prj`, the cheap primitive recognizers no longer
       // see the original head.
       if family == PrimFamily::Native
@@ -2074,13 +2065,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let (head, args) = collect_app_spine(wval);
 
-    if let Some(result) =
-      self.try_reduce_fin_val_decidable_rec(id, field, &head, &args)
-    {
-      self.dump_proj_trace(id, field, wval, None, Some(&result));
-      return Ok(Some(result));
-    }
-
     let ctor_id = match head.data() {
       ExprData::Const(id, _, _) => id,
       _ => {
@@ -2108,68 +2092,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let result = args.get(idx).cloned();
     self.dump_proj_trace(id, field, wval, Some(ctor_params), result.as_ref());
     Ok(result)
-  }
-
-  fn try_reduce_fin_val_decidable_rec(
-    &mut self,
-    id: &KId<M>,
-    field: u64,
-    head: &KExpr<M>,
-    args: &[KExpr<M>],
-  ) -> Option<KExpr<M>> {
-    if id.addr != self.prims.fin.addr || field != 0 {
-      return None;
-    }
-
-    let ExprData::Const(rec_id, rec_us, _) = head.data() else {
-      return None;
-    };
-    if rec_id.addr != self.prims.decidable_rec.addr || args.len() < 5 {
-      return None;
-    }
-
-    let ExprData::Lam(motive_name, motive_bi, motive_dom, _, _) =
-      args[1].data()
-    else {
-      return None;
-    };
-    let false_minor =
-      self.project_decidable_fin_val_minor(id, field, &args[2])?;
-    let true_minor =
-      self.project_decidable_fin_val_minor(id, field, &args[3])?;
-
-    let nat_ty = self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])));
-    let motive = self.intern(KExpr::lam(
-      motive_name.clone(),
-      motive_bi.clone(),
-      motive_dom.clone(),
-      nat_ty,
-    ));
-
-    let mut result = self.intern(KExpr::cnst(rec_id.clone(), rec_us.clone()));
-    result = self.intern(KExpr::app(result, args[0].clone()));
-    result = self.intern(KExpr::app(result, motive));
-    result = self.intern(KExpr::app(result, false_minor));
-    result = self.intern(KExpr::app(result, true_minor));
-    result = self.intern(KExpr::app(result, args[4].clone()));
-    for arg in args.iter().skip(5) {
-      result = self.intern(KExpr::app(result, arg.clone()));
-    }
-
-    Some(result)
-  }
-
-  fn project_decidable_fin_val_minor(
-    &mut self,
-    id: &KId<M>,
-    field: u64,
-    minor: &KExpr<M>,
-  ) -> Option<KExpr<M>> {
-    let ExprData::Lam(name, bi, dom, body, _) = minor.data() else {
-      return None;
-    };
-    let proj = self.intern(KExpr::prj(id.clone(), field, body.clone()));
-    Some(self.intern(KExpr::lam(name.clone(), bi.clone(), dom.clone(), proj)))
   }
 
   /// Try to reduce a projection-headed application: App(Prj(S, i, v), args...).
@@ -3171,7 +3093,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Reduce the small BitVec fragment that is definitionally Nat-backed:
   /// - `BitVec.toNat (BitVec.ofNat w n)` reduces to `n % 2^w`
   /// - `BitVec.ult w x y` reduces by evaluating `x.toNat < y.toNat`
-  /// - `decide (x < y)` for BitVec reduces through the same comparison
+  ///
+  /// Both heads are functions, so every argument they depend on is read.
+  /// Class methods (`OfNat.ofNat (BitVec w) n inst`, `@LT.lt (BitVec w) inst
+  /// x y` under `decide`) are not recognized: their value is the instance's,
+  /// which a prover chooses, so they reduce by unfolding the instance.
   fn try_reduce_bitvec(
     &mut self,
     e: &KExpr<M>,
@@ -3195,13 +3121,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(Some(self.finish_app_result(result, &args, 3)));
       }
       return Ok(None);
-    }
-
-    if id.addr == self.prims.decidable_decide.addr
-      && args.len() >= 2
-      && let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])?
-    {
-      return Ok(Some(self.finish_app_result(result, &args, 2)));
     }
 
     Ok(None)
@@ -3248,29 +3167,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     } else {
       Ok(None)
     }
-  }
-
-  fn try_reduce_bitvec_lt_prop(
-    &mut self,
-    prop: &KExpr<M>,
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let (head, args) = collect_app_spine(prop);
-    let ExprData::Const(id, _, _) = head.data() else {
-      return Ok(None);
-    };
-    if id.addr != self.prims.lt_lt.addr || args.len() != 4 {
-      return Ok(None);
-    }
-
-    let (type_head, type_args) = collect_app_spine(&args[0]);
-    let ExprData::Const(type_id, _, _) = type_head.data() else {
-      return Ok(None);
-    };
-    if type_id.addr != self.prims.bit_vec.addr || type_args.len() != 1 {
-      return Ok(None);
-    }
-
-    self.try_reduce_bitvec_ult(&type_args[0], &args[2], &args[3])
   }
 
   fn bitvec_to_nat_expr(
@@ -3323,24 +3219,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     Ok(Some(self.nat_expr_from_value(result)))
   }
 
+  /// `(w, n)` of `BitVec.ofNat w n`. The numeral `@OfNat.ofNat (BitVec w) n
+  /// inst` is not read here: its value is `inst`'s.
   fn bitvec_of_nat_args(&self, e: &KExpr<M>) -> Option<(KExpr<M>, KExpr<M>)> {
     let (head, args) = collect_app_spine(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return None;
     };
     if id.addr == self.prims.bit_vec_of_nat.addr && args.len() == 2 {
-      return Some((args[0].clone(), args[1].clone()));
-    }
-    if id.addr != self.prims.of_nat_of_nat.addr || args.len() < 2 {
-      return None;
-    }
-
-    let (type_head, type_args) = collect_app_spine(&args[0]);
-    let ExprData::Const(type_id, _, _) = type_head.data() else {
-      return None;
-    };
-    if type_id.addr == self.prims.bit_vec.addr && type_args.len() == 1 {
-      Some((type_args[0].clone(), args[1].clone()))
+      Some((args[0].clone(), args[1].clone()))
     } else {
       None
     }
@@ -3372,13 +3259,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   // -----------------------------------------------------------------------
-  // Native reduction (Lean.reduceBool, Lean.reduceNat, System.Platform.numBits)
+  // Native reduction (Lean.reduceBool, Lean.reduceNat)
   // -----------------------------------------------------------------------
 
   /// Try native reduction, matching C++ kernel's `reduce_native`.
   /// - `Lean.reduceBool arg`: look up `arg` (a constant), evaluate its body, return Bool
   /// - `Lean.reduceNat arg`: look up `arg` (a constant), evaluate its body, return Nat
-  /// - `System.Platform.numBits`: return 64 (matching Lean's 64-bit platform)
+  ///
+  /// Nothing else reduces here. As in Lean's kernel, `System.Platform.numBits`
+  /// stays the value of the opaque `System.Platform.getNumBits ()`, and
+  /// `SizeOf.sizeOf` reduces through its instance like any class method.
   pub(super) fn try_reduce_native(
     &mut self,
     e: &KExpr<M>,
@@ -3388,54 +3278,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::Const(id, _, _) => id.addr.clone(),
       _ => return Ok(None),
     };
-
-    if let ExprData::Const(id, _, _) = head.data() {
-      let is_unit_sizeof_impl =
-        id.addr == self.prims.punit_size_of_1.addr && args.len() == 1;
-
-      if e.lbr() > 0 {
-        if is_unit_sizeof_impl {
-          return Ok(Some(self.nat_literal(1)));
-        }
-        return Ok(None);
-      }
-
-      // `System.Platform.numBits` is defined as the value projection from the
-      // platform subtype returned by `System.Platform.getNumBits ()`.
-      if id.addr == self.prims.subtype_val.addr && args.len() == 3 {
-        let (value_head, value_args) = collect_app_spine(&args[2]);
-        if value_args.len() == 1
-          && let ExprData::Const(value_id, _, _) = value_head.data()
-          && value_id.addr == self.prims.system_platform_get_num_bits.addr
-        {
-          return Ok(Some(self.nat_literal(64)));
-        }
-      }
-
-      // Lean's generated `PUnit`/`Unit` SizeOf instance is extensionally the
-      // constant function 1, but its body recurses on an open unit variable.
-      // Reduce this primitive singleton case directly.
-      if id.addr == self.prims.size_of_size_of.addr && args.len() == 3 {
-        let ty_head = app_head(&args[0]);
-        if let ExprData::Const(ty_id, _, _) = ty_head.data()
-          && (ty_id.addr == self.prims.unit.addr
-            || ty_id.addr == self.prims.punit.addr)
-        {
-          return Ok(Some(self.nat_literal(1)));
-        }
-      }
-
-      if is_unit_sizeof_impl {
-        return Ok(Some(self.nat_literal(1)));
-      }
-    }
-
-    // System.Platform.numBits is a Nat-valued wrapper around the opaque
-    // extern `System.Platform.getNumBits`. Delta-unfolding gets stuck at
-    // the extern, so reduce the public Nat constant directly.
-    if head_addr == self.prims.system_platform_num_bits.addr && args.is_empty()
-    {
-      return Ok(Some(self.nat_literal(64)));
+    if e.lbr() > 0 {
+      return Ok(None);
     }
 
     // Lean.reduceBool / Lean.reduceNat: arg must be a single constant
@@ -5245,8 +5089,13 @@ mod tests {
     }
   }
 
+  // The class methods below take their value from an instance a prover
+  // chooses. With the instance an opaque variable, none may reduce: a
+  // non-canonical `LT (BitVec w)` can make `x < 0#w` hold, an `OfNat (BitVec
+  // w) 5` can be `0#w`, and a `SizeOf Unit` can give any size.
+
   #[test]
-  fn whnf_decide_bitvec_lt_zero_is_false() {
+  fn whnf_decide_bitvec_lt_reads_the_instance() {
     use super::super::testing as kt;
 
     let mut env = KEnv::<Meta>::new();
@@ -5262,12 +5111,98 @@ mod tests {
     let prop = kt::apps(lt_lt, &[bv_ty, kt::var(2), kt::var(0), zero]);
     let decide = kt::apps(dec_decide, &[prop, kt::var(3)]);
     let result = tc.whnf(&decide).unwrap();
-    match result.data() {
-      ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.bool_false.addr)
-      },
-      other => panic!("expected Bool.false, got {:?}", other),
-    }
+    assert!(
+      tc.bool_lit_value(&result).is_none(),
+      "decide over an opaque LT instance must not reduce, got {result:?}"
+    );
+  }
+
+  #[test]
+  fn whnf_bitvec_to_nat_of_numeral_reads_the_instance() {
+    use super::super::testing as kt;
+
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let width = mk_meta_nat(8);
+    let bv_const = kt::ME::cnst(tc.prims.bit_vec.clone(), Box::new([]));
+    let of_nat = kt::ME::cnst(tc.prims.of_nat_of_nat.clone(), Box::new([]));
+    let bv_to_nat = kt::ME::cnst(tc.prims.bit_vec_to_nat.clone(), Box::new([]));
+    let bv_ty = kt::apps(bv_const, std::slice::from_ref(&width));
+    let five = kt::apps(of_nat, &[bv_ty, mk_meta_nat(5), kt::var(0)]);
+    let expr = kt::apps(bv_to_nat, &[width, five]);
+    let result = tc.whnf(&expr).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Nat(..)),
+      "BitVec.toNat of a numeral with an opaque instance must not reduce, \
+       got {result:?}"
+    );
+  }
+
+  #[test]
+  fn whnf_size_of_unit_reads_the_instance() {
+    use super::super::testing as kt;
+
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let unit = kt::ME::cnst(tc.prims.unit.clone(), Box::new([]));
+    let size_of = kt::ME::cnst(
+      tc.prims.size_of_size_of.clone(),
+      Box::new([kt::usucc(kt::uzero())]),
+    );
+    let expr = kt::apps(size_of, &[unit, kt::var(1), kt::var(0)]);
+    let result = tc.whnf(&expr).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Nat(..)),
+      "SizeOf.sizeOf Unit with an opaque instance must not reduce, got {result:?}"
+    );
+  }
+
+  #[test]
+  fn whnf_punit_size_of_1_has_no_native_rule() {
+    // `PUnit._sizeOf_1 x` reduces by unfolding its body (`PUnit.rec 1 x`,
+    // structure eta on `x`), not by a rule of its own: with no definition
+    // in the environment it stays stuck.
+    use super::super::testing as kt;
+
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let size_of_1 = kt::ME::cnst(
+      tc.prims.punit_size_of_1.clone(),
+      Box::new([kt::usucc(kt::uzero())]),
+    );
+    let expr = kt::app(size_of_1, kt::var(0));
+    let result = tc.whnf(&expr).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Nat(..)),
+      "PUnit._sizeOf_1 must not reduce natively, got {result:?}"
+    );
+  }
+
+  #[test]
+  fn whnf_fin_val_of_decidable_rec_on_a_variable_stays_a_projection() {
+    // `(Decidable.rec p motive f g d).val` with `d` a variable: Lean's
+    // kernel leaves the projection on the stuck recursor, so does this one.
+    use super::super::testing as kt;
+
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
+    let fin = kt::ME::cnst(tc.prims.fin.clone(), Box::new([]));
+    let fin3 = kt::app(fin, mk_meta_nat(3));
+    let rec = kt::ME::cnst(
+      tc.prims.decidable_rec.clone(),
+      Box::new([kt::usucc(kt::uzero())]),
+    );
+    let motive = kt::lam(kt::sort0(), fin3);
+    let minor_f = kt::lam(kt::sort0(), kt::var(3));
+    let minor_g = kt::lam(kt::sort0(), kt::var(4));
+    let rec_app =
+      kt::apps(rec, &[kt::var(0), motive, minor_f, minor_g, kt::var(1)]);
+    let expr = kt::ME::prj(tc.prims.fin.clone(), 0, rec_app);
+    let result = tc.whnf(&expr).unwrap();
+    assert!(
+      matches!(result.data(), ExprData::Prj(..)),
+      "Fin.val of a stuck Decidable.rec must stay a projection, got {result:?}"
+    );
   }
 
   #[test]
@@ -5361,18 +5296,38 @@ mod tests {
   // USize.size reduction chain tests
   // -----------------------------------------------------------------------
 
-  /// Build an env that includes the full USize.size reduction chain:
-  ///   System.Platform.numBits (handled by try_reduce_native → 64)
+  /// Build an env with a USize.size-shaped reduction chain over a 64-bit
+  /// width:
+  ///   `bits64 := 64` (reducible def)
   ///   Nat.pow at the correct primitive address
-  ///   USize.size := Nat.pow 2 numBits (reducible def)
+  ///   USize.size := Nat.pow 2 bits64 (reducible def)
+  /// and `System.Platform.numBits` at its primitive address over a stuck
+  /// body: in Lean it is the value of the opaque `getNumBits ()`, which no
+  /// kernel reduces, so the chain takes its width from `bits64`.
   fn usize_env() -> KEnv<Anon> {
     let mut env = nat_env();
     let empty = KEnv::new();
     let prims = Primitives::from_env(&empty);
 
-    // System.Platform.numBits — insert at the real primitive address
-    // so try_reduce_native recognizes it. Give it a stuck body so this test
-    // fails if native handling regresses and WHNF falls through to delta.
+    // `bits64 := 64`
+    env.insert(
+      mk_id("bits64"),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Abbrev,
+        lvls: 0,
+        ty: nat(),
+        val: mk_nat(64),
+        lean_all: (),
+        block: mk_id("bits64"),
+      },
+    );
+
+    // System.Platform.numBits — insert at the real primitive address with a
+    // stuck body.
     env.insert(
       prims.system_platform_num_bits.clone(),
       KConst::Defn {
@@ -5451,10 +5406,10 @@ mod tests {
       },
     );
 
-    // USize.size := Nat.pow 2 System.Platform.numBits
+    // USize.size := Nat.pow 2 bits64
     let usize_size_val = app(
       app(AE::cnst(prims.nat_pow.clone(), Box::new([])), mk_nat(2)),
-      AE::cnst(prims.system_platform_num_bits.clone(), Box::new([])),
+      AE::cnst(mk_id("bits64"), Box::new([])),
     );
     env.insert(
       mk_id("USize.size"),
@@ -5476,19 +5431,15 @@ mod tests {
   }
 
   #[test]
-  fn whnf_system_platform_num_bits() {
-    // System.Platform.numBits should reduce to 64 via try_reduce_native
+  fn whnf_system_platform_num_bits_is_not_a_literal() {
+    // `System.Platform.numBits` unfolds to its (here stuck) body; it is not
+    // reduced to 64, which would make `numBits = 64` hold by `rfl`.
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
     let num_bits =
       AE::cnst(tc.prims.system_platform_num_bits.clone(), Box::new([]));
     let result = tc.whnf(&num_bits).unwrap();
-    match result.data() {
-      ExprData::Nat(v, _, _) => {
-        assert_eq!(v.0, num_bigint::BigUint::from(64u64))
-      },
-      other => panic!("expected Nat(64), got {:?}", other),
-    }
+    assert_eq!(result, AE::cnst(mk_id("opaque.bits"), Box::new([])));
   }
 
   #[test]
@@ -5511,7 +5462,7 @@ mod tests {
 
   #[test]
   fn whnf_usize_size() {
-    // USize.size := Nat.pow 2 numBits should reduce to 2^64
+    // USize.size := Nat.pow 2 bits64 should reduce to 2^64
     let mut env = usize_env();
     let mut tc = TypeChecker::new(&mut env);
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
