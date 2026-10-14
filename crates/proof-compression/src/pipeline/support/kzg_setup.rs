@@ -11,7 +11,9 @@ use super::kzg_storage as storage;
 use crate::kzg::{
   KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams,
   srs::filecoin::{
-    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
+    FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors,
+    load_filecoin_cache,
   },
 };
 use std::{
@@ -522,19 +524,14 @@ mod tests {
     Ok(())
   }
 
-  /// Opt-in: `IX_KZG_FILECOIN_CACHE` names a cache holding at least 256
-  /// powers whose receipt is pinned or given in `IX_KZG_FILECOIN_MANIFEST`.
   #[test]
-  fn configured_filecoin_cache_proves_and_binds_under_its_identity()
+  fn checked_in_filecoin_cache_proves_and_binds_under_its_identity()
   -> storage::Result<()> {
-    let Some(setup) = SetupSource::filecoin_from_env()? else {
-      return Ok(());
-    };
-    assert_eq!(SetupClass::configured(false)?, SetupClass::Filecoin);
-    assert_eq!(
-      SetupSource::for_stage(FIRST_SEED, 256, None)?.identity(256, 2)?,
-      setup.identity(256, 2)?
+    let setup = SetupSource::filecoin(
+      PathBuf::from(FILECOIN_PREFIX_2P8_FIXTURE),
+      FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
     );
+    assert!(setup.srs(512, false).is_err());
     let verifier = setup.srs(256, true)?;
     assert_eq!(verifier.max_len(), 2);
     assert_eq!(

@@ -185,31 +185,16 @@ fn default_transcript_preserves_explicit_blake3_proof_bytes() {
 }
 
 #[test]
-#[ignore = "requires IX_KZG_FILECOIN_CACHE and IX_KZG_FILECOIN_MANIFEST"]
 fn filecoin_keccak_proof_verifies_with_portable_authenticated_parameters() {
   use ix_proof_compression::kzg::VerifierParams;
   use ix_proof_compression::kzg::srs::filecoin::{
+    FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
     filecoin_setup_id, load_filecoin_cache,
   };
 
-  let path = std::path::PathBuf::from(
-    std::env::var_os("IX_KZG_FILECOIN_CACHE")
-      .expect("IX_KZG_FILECOIN_CACHE must name an authenticated prefix cache"),
-  );
-  let manifest = std::env::var("IX_KZG_FILECOIN_MANIFEST")
-    .expect("IX_KZG_FILECOIN_MANIFEST must pin the cache's import receipt");
-  let manifest = manifest.trim();
-  assert!(
-    manifest.len() == 64 && manifest.is_ascii(),
-    "IX_KZG_FILECOIN_MANIFEST must be a 64-character BLAKE3 digest"
-  );
-  let mut receipt = [0; 32];
-  for (i, byte) in receipt.iter_mut().enumerate() {
-    *byte = u8::from_str_radix(&manifest[2 * i..2 * i + 2], 16)
-      .expect("IX_KZG_FILECOIN_MANIFEST must contain hexadecimal digits");
-  }
-
-  let srs = load_filecoin_cache(&path, receipt, 8).unwrap();
+  let path = std::path::Path::new(FILECOIN_PREFIX_2P8_FIXTURE);
+  let receipt = FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3;
+  let srs = load_filecoin_cache(path, receipt, 8).unwrap();
   assert_eq!(srs.public_setup.id, filecoin_setup_id());
   let config = KzgConfig::new(Arc::new(srs), MAX_QUOTIENT_DEGREE)
     .with_transcript(TranscriptKind::Keccak256);
@@ -225,7 +210,7 @@ fn filecoin_keccak_proof_verifies_with_portable_authenticated_parameters() {
   assert_eq!(decoded.to_bytes().unwrap(), proof.to_bytes().unwrap());
   assert_eq!(codec.encode(&decoded).unwrap(), compact);
 
-  let anchors = load_filecoin_cache(&path, receipt, 2).unwrap();
+  let anchors = load_filecoin_cache(path, receipt, 2).unwrap();
   let params = VerifierParams::with_max_trace_len(&anchors, 8);
   let params_bytes = params.to_bytes().unwrap();
   assert_eq!(
@@ -248,5 +233,5 @@ fn filecoin_keccak_proof_verifies_with_portable_authenticated_parameters() {
 
   let mut wrong_receipt = receipt;
   wrong_receipt[0] ^= 1;
-  assert!(load_filecoin_cache(&path, wrong_receipt, 8).is_err());
+  assert!(load_filecoin_cache(path, wrong_receipt, 8).is_err());
 }

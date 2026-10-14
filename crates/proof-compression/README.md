@@ -15,6 +15,21 @@ IX_KZG_FILECOIN_CACHE=/data/filecoin/filecoin-prefix-2p27.bin ix compress ROOT_P
 ix verify COMPRESSED_PROOF_ADDRESS
 ```
 
+The provisioned parameters live in the S3 bucket
+`argument-kzg-params-063002298335-us-east-1-an`: the `2^27` prover cache
+`filecoin-prefix-2p27.bin` and the complete 72 GiB `challenge_19` it was
+imported from. Neither download needs to be trusted: the importer checks the
+source against the ceremony's published BLAKE2b-512 digest, and loading
+checks the cache against its built-in receipt and the pinned tau anchors. A
+256-power cache from the same import is checked in at
+`tests/fixtures/filecoin-prefix-2p8.bin` for tests of the real format.
+
+| Artifact | Size | Pin |
+| --- | ---: | --- |
+| `challenge_19` | 77,309,411,488 bytes | BLAKE2b-512 `5a26015b…4df76b`, `FILECOIN_CHALLENGE_19_BLAKE2B` |
+| `filecoin-prefix-2p27.bin` | 12,884,919,006 bytes | BLAKE3 receipt `14423860…37f10a`, `FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3` |
+| `tests/fixtures/filecoin-prefix-2p8.bin` | 25,342 bytes | BLAKE3 receipt `185c556e…a0507d`, `FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3` |
+
 Without a Filecoin cache, `--dev-srs` selects a **known-trapdoor development
 SRS**. Its proofs are **not production-secure**, and `ix verify` and
 `ix verifier import` accept them only with `--dev-srs`.

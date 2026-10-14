@@ -56,12 +56,19 @@ pub const FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3: [u8; 32] = [
   0x94, 0xeb, 0x9b, 0xb1, 0x6f, 0xe5, 0x4b, 0xc5, 0x70, 0x8f, 0x03, 0x80, 0x65,
   0x8a, 0xc9, 0x9a, 0x37, 0xf1, 0x0a,
 ];
-/// Manifest receipt of the 256-power prefix cache used by opt-in tests.
+/// Manifest receipt of the checked-in 256-power prefix cache at
+/// [`FILECOIN_PREFIX_2P8_FIXTURE`].
 pub const FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3: [u8; 32] = [
   0x18, 0x5c, 0x55, 0x6e, 0x5f, 0x5f, 0x0c, 0x67, 0xdd, 0xc0, 0xc8, 0xac, 0x21,
   0x0c, 0x8b, 0x11, 0xd1, 0xa4, 0x85, 0x74, 0xde, 0xfb, 0xc4, 0x42, 0x99, 0xdc,
   0x71, 0x27, 0x47, 0xa0, 0x50, 0x7d,
 ];
+/// The 256-power prefix cache imported from the authenticated source, enough
+/// for tests of the real cache format without the 12 GiB `2^27` cache.
+pub const FILECOIN_PREFIX_2P8_FIXTURE: &str = concat!(
+  env!("CARGO_MANIFEST_DIR"),
+  "/tests/fixtures/filecoin-prefix-2p8.bin"
+);
 
 /// `τ·G` of the ceremony, big-endian uncompressed `x || y`, as read from the
 /// authenticated source. Avail's independent extraction publishes the same
@@ -724,6 +731,32 @@ mod tests {
     std::array::from_fn(|i| {
       u8::from_str_radix(&input[2 * i..2 * i + 2], 16).unwrap()
     })
+  }
+
+  #[test]
+  fn checked_in_prefix_cache_matches_its_pinned_receipt() {
+    let path = Path::new(FILECOIN_PREFIX_2P8_FIXTURE);
+    let srs =
+      load_filecoin_cache(path, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3, 256)
+        .unwrap();
+    let anchors = filecoin_anchors();
+    assert_eq!(srs.max_len(), 256);
+    assert_eq!(srs.g1[..2], anchors.g1[..]);
+    assert_eq!(srs.g2, anchors.g2);
+    assert_eq!(srs.tau_g2, anchors.tau_g2);
+    assert_eq!(srs.public_setup, anchors.public_setup);
+    srs.validate().unwrap();
+    let two = load_filecoin_cache(path, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3, 2)
+      .unwrap();
+    assert_eq!(two.g1, anchors.g1);
+    assert!(
+      load_filecoin_cache(path, FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, 256)
+        .is_err()
+    );
+    assert!(
+      load_filecoin_cache(path, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3, 512)
+        .is_err()
+    );
   }
 
   #[test]
