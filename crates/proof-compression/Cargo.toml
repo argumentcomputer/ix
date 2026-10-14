@@ -44,7 +44,12 @@ rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8"
 optional = true
 features = ["cuda"]
 
+[[example]]
+name = "solidity_export"
+required-features = ["solidity-export"]
+
 [features]
+solidity-export = []
 default = ["parallel"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU

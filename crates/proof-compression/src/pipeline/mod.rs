@@ -355,3 +355,6 @@ mod tests {
     assert!(verify(Path::new("/does-not-exist"), PROOF_TAG, b"wrong").is_err());
   }
 }
+
+#[cfg(feature = "solidity-export")]
+pub use wrap::{export_solidity_verifier, write_solidity_fixture};

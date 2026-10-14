@@ -73,3 +73,6 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 pub(super) use outer::verify_saved as verify;
 
 pub(super) use outer::VerifierProfile;
+
+#[cfg(feature = "solidity-export")]
+pub use outer::{export_solidity_verifier, write_solidity_fixture};

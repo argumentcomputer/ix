@@ -11,9 +11,7 @@ use super::kzg_storage as storage;
 use crate::kzg::{
   KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams,
   srs::filecoin::{
-    FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
-    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors,
-    load_filecoin_cache,
+    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
   },
 };
 use std::{
@@ -371,6 +369,9 @@ impl SetupSource {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::srs::filecoin::{
+    FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
+  };
 
   #[test]
   fn setup_binding_preserves_public_identity_and_rejects_mismatch()

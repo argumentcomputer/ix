@@ -101,8 +101,9 @@ The parameter seed has its own Keccak protocol domain and binds the same
 public setup anchors and degree limits as the BLAKE3 configuration.
 
 This profile makes a custom Ethereum verifier's transcript use native Keccak;
-it does not change the proof into a standard PLONK format or implement a
-Solidity verifier.
+it does not change the proof into a standard PLONK format. The optional
+[Solidity verifier prototype](../../contracts/kzg/README.md) provides a native
+profile exporter and local EVM conformance tests.
 
 ## GPU proving
 

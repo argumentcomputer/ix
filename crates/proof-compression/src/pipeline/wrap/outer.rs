@@ -1,5 +1,10 @@
 //! Recursive KZG wrapper: fused or checkpointed staging, proving and the
 //! portable development verifier.
+#[cfg(feature = "solidity-export")]
+mod solidity;
+#[cfg(feature = "solidity-export")]
+pub use solidity::{export_solidity_verifier, write_solidity_fixture};
+
 use super::{
   super::Result as PipelineResult,
   super::{
@@ -269,10 +274,25 @@ fn check_pairings(
   }
   Ok(())
 }
+#[cfg(test)]
 fn packet_claims(
   packet: &[u8],
   profile: &[u8; 32],
   pairing_count: usize,
+) -> storage::Result<(Vec<Vec<Scalar>>, usize)> {
+  packet_claims_for_statement(
+    packet,
+    profile,
+    pairing_count,
+    &init_claim::INIT_PUBLIC_WORDS,
+  )
+}
+
+fn packet_claims_for_statement(
+  packet: &[u8],
+  profile: &[u8; 32],
+  pairing_count: usize,
+  expected_claim: &[u64; 18],
 ) -> storage::Result<(Vec<Vec<Scalar>>, usize)> {
   use multi_stark::traits::Algebra;
   let offset = 32 + 18 * 8 + pairing_count * 48;
@@ -280,15 +300,12 @@ fn packet_claims(
     return Err("packet profile mismatch".into());
   }
   let mut publics = vec![];
-  for (bytes, expected) in packet[32..32 + 18 * 8]
-    .as_chunks::<8>()
-    .0
-    .iter()
-    .zip(init_claim::INIT_PUBLIC_WORDS)
+  for (bytes, expected) in
+    packet[32..32 + 18 * 8].as_chunks::<8>().0.iter().zip(expected_claim)
   {
     let word = u64::from_le_bytes(*bytes);
-    if word != expected {
-      return Err("unexpected Init claim".into());
+    if word != *expected {
+      return Err("unexpected library claim".into());
     }
     publics.push(Scalar::from_u64(word));
   }
@@ -315,7 +332,26 @@ fn verify_packet(
   profile: &[u8; 32],
   keys: &[ark_bls12_381::G2Affine],
 ) -> storage::Result<()> {
-  let (claims, offset) = packet_claims(packet, profile, keys.len())?;
+  verify_packet_for_statement(
+    system,
+    codec,
+    packet,
+    profile,
+    keys,
+    &init_claim::INIT_PUBLIC_WORDS,
+  )
+}
+
+fn verify_packet_for_statement(
+  system: &multi_stark::system::System<KzgConfig>,
+  codec: &FixedProofCodec,
+  packet: &[u8],
+  profile: &[u8; 32],
+  keys: &[ark_bls12_381::G2Affine],
+  expected_claim: &[u64; 18],
+) -> storage::Result<()> {
+  let (claims, offset) =
+    packet_claims_for_statement(packet, profile, keys.len(), expected_claim)?;
   let proof = codec.decode(&packet[offset..])?;
   system
     .verify_multiple_claims(
@@ -825,13 +861,33 @@ impl VerifierProfile {
   }
 
   pub(crate) fn verify(&self, packet: &[u8]) -> PipelineResult<()> {
+    self.verify_with_claim(packet, &init_claim::INIT_PUBLIC_WORDS)
+  }
+
+  pub(crate) fn verify_with_claim(
+    &self,
+    packet: &[u8],
+    expected_claim: &[u64; 18],
+  ) -> PipelineResult<()> {
     let keys = self.keys()?;
-    packet_claims(packet, &self.id(), keys.len())?;
+    packet_claims_for_statement(
+      packet,
+      &self.id(),
+      keys.len(),
+      expected_claim,
+    )?;
     let system = self.system()?;
     let logs: Vec<_> =
       self.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
     let codec = FixedProofCodec::new(&system, &logs)?;
-    verify_packet(&system, &codec, packet, &self.id(), &keys)
+    verify_packet_for_statement(
+      &system,
+      &codec,
+      packet,
+      &self.id(),
+      &keys,
+      expected_claim,
+    )
   }
 }
 
