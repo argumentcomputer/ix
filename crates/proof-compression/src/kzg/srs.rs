@@ -14,6 +14,8 @@ use ark_ff::{Field, PrimeField, Zero};
 use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
+pub mod filecoin;
+
 /// Identity and maximum polynomial degree of the complete public parameter set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicSetup {
