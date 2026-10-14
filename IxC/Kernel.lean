@@ -19,9 +19,13 @@ boundary:
   `ReaderSpec`): the Ixon reader from decoded records to
   `Array Ix.Kernel.Declaration`, its address-to-name encoding (`keyName`,
   injective) and its record-by-record specification;
-* `IxC/Kernel/Ixon/{PinData,NatOpPinData,Prelude}.lean`: the committed pin
-  table, Nat-operation pins and Ixon prelude, generated from the compiled
-  Init's records;
+* `IxC/Kernel/Ixon/RoleTable.lean`: the role table, its binding-section
+  format and canonical decoder (`RoleTable.ofBytes_eq_some_iff`) and its
+  well-formedness (`RoleTable.check`); the specification set it binds is
+  `IxC/Kernel/Roles.lean`;
+* `IxC/Kernel/Ixon/{RoleData,Prelude}.lean`: the default role table, its
+  evidence records and the Ixon prelude, generated from the compiled Init's
+  records (`kernel-pin-gen`);
 * `IxC/Kernel/Ixon/{Installed,Values}.lean`: installation and definition
   values of the fold (`Ix.Kernel.Cached.checkDecls_installs`,
   `Ix.Kernel.Cached.checkDecls_model_defn_values`, beside the fold they

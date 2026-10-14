@@ -80,8 +80,7 @@ codec: projection records are written with Ixon v4's TagN writer
 (`getTagN`, `getTagNWide`, `getTagN0Values`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5255 compiled functions; inherited externs 120, implemented_by 0,
-unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
+ Ixon.Projection.checkBytes]: 5687 compiled functions; inherited externs 111, implemented_by 0, unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -175,22 +174,23 @@ fun hash record => hash (Ixon.serConstant record) -/
 
 /-! ### The certified entry's theorems -/
 
-/-- info: Ixon.Projection.checkBytes_ok_iff : ∀ (hash : ByteArray → Address) (maxProjections : Nat)
-  (limits : Ix.Kernel.Admission.Limits) (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
-  (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env),
-  Ixon.Projection.checkBytes hash maxProjections limits records blobs hint = Except.ok env ↔
+/-- info: Ixon.Projection.checkBytes_ok_iff : ∀ (hash : ByteArray → Address) (binding : Ix.Kernel.Admission.Binding)
+  (maxProjections : Nat) (limits : Ix.Kernel.Admission.Limits) (records : Ix.Kernel.Admission.Records)
+  (blobs : Ix.Kernel.Ingress.Blobs) (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint)
+  (env : Ix.Kernel.Env),
+  Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint = Except.ok env ↔
     Ix.Kernel.Admission.WithinBatch limits records blobs ∧
       Ix.Kernel.Admission.UniqueKeys records blobs ∧
         Ix.Kernel.Admission.Authentic hash records blobs ∧
           ∃ input output,
             Ix.Kernel.Admission.RecordsRead limits records input ∧
               Ixon.Projection.Expanded hash maxProjections input output ∧
-                Ix.Kernel.Admission.checkConstants output blobs hint = Except.ok env -/
+                Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_ok_iff
 
-/-- info: @Ixon.Projection.checkBytes_of_expansion : ∀ {hash : ByteArray → Address} {maxProjections : Nat}
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+/-- info: @Ixon.Projection.checkBytes_of_expansion : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
   {input output : Ix.Kernel.Ingress.Constants} {blobs : Ix.Kernel.Ingress.Blobs}
   {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint},
   Ix.Kernel.Admission.WithinBatch limits records blobs →
@@ -198,55 +198,58 @@ fun hash record => hash (Ixon.serConstant record) -/
       Ix.Kernel.Admission.Authentic hash records blobs →
         Ix.Kernel.Admission.RecordsRead limits records input →
           Ixon.Projection.Expanded hash maxProjections input output →
-            Ixon.Projection.checkBytes hash maxProjections limits records blobs hint =
-              Except.mapError Ixon.Projection.CheckError.checker (Ix.Kernel.Admission.checkConstants output blobs hint) -/
+            Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint =
+              Except.mapError Ixon.Projection.CheckError.checker
+                (Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint) -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_of_expansion
 
-/-- info: @Ixon.Projection.checkBytes_reading : ∀ {hash : ByteArray → Address} {maxProjections : Nat}
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ixon.Projection.checkBytes hash maxProjections limits records blobs hint = Except.ok env →
+/-- info: @Ixon.Projection.checkBytes_reading : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
+  Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.UniqueKeys records blobs ∧
       Ix.Kernel.Admission.Authentic hash records blobs ∧
         ∃ input output,
           Ix.Kernel.Admission.RecordsRead limits records input ∧
             Ixon.Projection.Expanded hash maxProjections input output ∧
               Ix.Kernel.Admission.Hashed hash output ∧
-                ∃ pins pre natPins,
-                  Ix.Kernel.Reader.defaultPins = Except.ok pins ∧
-                    Ix.Kernel.Reader.builtinPrelude = Except.ok pre ∧
-                      Ix.Kernel.Reader.builtinNatOpPins = Except.ok natPins ∧
-                        Ix.Kernel.Admission.Installed pins pre natPins output blobs hint env -/
+                ∃ t pre,
+                  Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
+                    Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
+                      Ix.Kernel.Admission.Installed t pre output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_reading
 
-/-- info: @Ixon.Projection.checkBytes_authentic : ∀ {hash : ByteArray → Address} {maxProjections : Nat}
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
-  Ixon.Projection.checkBytes hash maxProjections limits records blobs hint = Except.ok env →
+/-- info: @Ixon.Projection.checkBytes_authentic : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env},
+  Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.Authentic hash records blobs ∧
       ∃ output,
-        Ix.Kernel.Admission.Hashed hash output ∧ Ix.Kernel.Admission.checkConstants output blobs hint = Except.ok env -/
+        Ix.Kernel.Admission.Hashed hash output ∧
+          Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_authentic
 
 /-- info: Ixon.Projection.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
-  {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
-  Ixon.Projection.checkBytes hash maxProjections limits records blobs hint = Except.ok env →
+  {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
+  Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint = Except.ok env →
     Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_has_model
 
 /-- info: Ixon.Projection.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
-  {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
-  Ixon.Projection.checkBytes hash maxProjections limits records blobs hint = Except.ok env →
+  {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
+  Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint = Except.ok env →
     ∀ (ci : Ix.Kernel.ConstantInfo),
-      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
+      ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_no_proof_of_False
 

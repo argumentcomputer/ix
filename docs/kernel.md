@@ -13,9 +13,9 @@ states what that entry does, what
 is proved about it, what is trusted, how the gate checks the trust boundary,
 where the kernel comes from, and how to check a whole compiled environment.
 This page is the contract: what an accept promises (a set-theoretic model,
-no constant of the pinned `False`, every record and blob stored under the
-hash of its bytes, the checked declarations are the ones
-the bytes encode, bounded resources), under which assumptions (an
+no constant of `False`'s role key, every record and blob and the role
+table's binding section stored under the hash of its bytes, the checked
+declarations are the ones the bytes encode, bounded resources), under which assumptions (an
 `Ix.Kernel.SetTheory V`; proofs on `propext`, `Classical.choice` and
 `Quot.sound` only), on which execution foundation ("Trust surface"), and
 with which outcomes (accept, reject, decline; only an accept carries the
@@ -28,17 +28,25 @@ the original Lean source meant is outside the claim.
 ## The certified entry
 
 ```lean
-def Ix.Kernel.Admission.checkBytes (hash : ByteArray → Address) (limits : Limits)
-    (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+def Ix.Kernel.Admission.checkBytes (hash : ByteArray → Address) (binding : Binding)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error Ix.Kernel.Env
 
-def Ixon.Authenticated.checkBytes (limits : Admission.Limits) (records : Admission.Records)
-    (blobs : Ingress.Blobs)
+def Ixon.Authenticated.checkBytes (binding : Admission.Binding) (limits : Admission.Limits)
+    (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Admission.Error Ix.Kernel.Env :=
-  Admission.checkBytes Address.admissionHash limits records blobs hint
+  Admission.checkBytes Address.admissionHash binding limits records blobs hint
 ```
+
+`binding` is the role table's binding section and the address it claims
+(`Admission.Binding`: `address`, `bytes`; "Roles, the role table and the
+prelude" below). The entry admits it before it reads any record: the
+address must be `hash` of the bytes, the bytes a canonical section
+(`RoleTable.ofBytes`), and the table well formed (`RoleTable.check`). The
+default table of the compiled Init is `Admission.defaultBinding`, for tests
+and the command line; every theorem holds for every table.
 
 `hash` is the content hash every address is authenticated against. The
 kernel admits no hasher (its import fence, below), so the entry and every
@@ -79,18 +87,24 @@ The entry runs, in order:
 
 | Stage | Function | Fails with |
 | --- | --- | --- |
-| the committed pin table, prelude and Nat-operation pins load | `defaultPins`, `builtinPrelude`, `builtinNatOpPins` | `.prelude reason` |
+| the role table's admission: its section under `hash` of its bytes, canonical, well formed | `Admission.admitBinding` | `.binding (.mismatch _ \| .decode \| .malformed _)` |
+| the committed prelude, read under the admitted table | `Reader.preludeFor` | `.prelude reason` |
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
-| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
-| the verified fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
+| the verified fold | `Ix.Kernel.Cached.checkDecls .verified ev` | `.kernel error position` |
 
-The pipeline is `Ix.Kernel.Admission.checkBytes`; `checkBytesWith`
-takes the pin table, prelude and Nat-operation pin list as parameters, and
-`checkConstants{,With}` start from decoded records. Two variants share the
+The pipeline is `Ix.Kernel.Admission.checkBytes`: it admits the binding and
+reads the prelude under the table (`checkBytesUsing`), then runs
+`checkBytesWith`, which takes the prelude as a parameter and whose
+`prepareWith` runs the byte stages, admits the binding again (the theorems
+read the table off it), decodes and reads; `checkConstants{,With}`
+start from decoded records under an admitted table, and `checkConstantsAt`
+admits a binding first. Two variants share the
 byte stage and the checker, and take the same `hash`:
 `Ixon.Projection.checkBytes` reconstructs omitted projection records
 (addresses by `hash` of their canonical bytes) before checking, and
@@ -114,7 +128,8 @@ does not certify it):
 | `.mismatch` | reject | a key is not the hash of the bytes stored under it |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
 | `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
-| `.prelude` | decline | a corrupted committed table |
+| `.binding` | reject | the role table's section is not the hash of its bytes, not canonical, or not well formed |
+| `.prelude` | decline | a corrupted committed prelude |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 
 The variants keep their own errors (`Ixon.Projection.CheckError`,
@@ -140,29 +155,30 @@ the same `hash`. The entry does not reorder beyond
 `preparePrelude`: each record must follow the records it references; a
 record that contains a literal must follow the constants the literal names
 (`Reader.literalEdges`: the `Nat` block, and for a string literal
-`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
-operation must follow its certificate ground. A host order that violates
+`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a bound `Nat`
+operation must follow the constants its evidence references. A host order that violates
 this declines; it cannot cause an unsound accept. The environment check's
 order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
 
 ## The theorems
 
 All public theorems are in `IxC/Kernel/Admission/Theorems.lean` (namespace
-`Ix.Kernel.Admission`), about the executed function `checkBytes`, at the
-committed tables. Each holds at every content hash `hash`, and follows from
-the corresponding theorem at `checkBytesWith`, where it holds for every pin
-table, prelude and Nat-operation pin list, so no theorem depends on which
-hash executes or on how the tables were generated. Every public and fidelity
+`Ix.Kernel.Admission`), about the executed function `checkBytes`. Each holds
+at every content hash `hash` and for every role table `binding`, and follows
+from the corresponding theorem at `checkBytesWith`, where it holds for every
+prelude as well, so no theorem depends on which hash executes, which table
+is supplied, or how the committed prelude was generated. Every public and fidelity
 root depends on exactly `propext`, `Classical.choice` and `Quot.sound`.
 
-| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes hash limits records blobs hint = .ok env` |
+| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes hash binding limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
-| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
-| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
-| `checkBytes_authentic` | `Authentic hash records blobs`: every record and every blob is stored under `hash` of its bytes, as supplied |
-| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const (roleKey .false) []` (`False`'s role key, whatever the table binds) |
+| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader, under the admitted table, reads as `.const (roleKey .false) []` |
+| `checkBytes_authentic` | `Authentic hash records blobs` (every record and every blob is stored under `hash` of its bytes, as supplied) and `hash binding.bytes = binding.address` |
+| `checkBytes_binding` | `BindingAdmitted hash binding t` for some table `t`: the section is authentic, `t` is its canonical decoding (`t.wireWF`, `t.toBytes = binding.bytes`) and `t.check = .ok ()` (`admitBinding_ok_iff`) |
+| `checkBytes_reading` | the binding admits as some `t` and the prelude reads under it (`preludeFor t = .ok pre`); `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `BindingAdmitted hash binding t`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed t pre constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
 
 The variants have the same theorems at every `hash`
@@ -213,10 +229,14 @@ equation, by upstream's design.
   quotient record is read under its name with its level parameters, its
   type's reading and its value's reading (or the projection rewrite), and
   is installed under that name with its kind (a quotient record,
-  `sorryAx` and `Quot.sound` install as the pinned blocks do).
-- `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
+  `sorryAx` and `Quot.sound` install as the basis blocks do).
+- `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_role`/`Ctx.nameOf_of_unbound`
   (`IxC/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which name a reference
-  is read under.
+  is read under (its role's key where the table binds it, `keyName`
+  otherwise).
+- `RoleTable.ofBytes_eq_some_iff` (`IxC/Kernel/Ixon/RoleTable.lean`): the
+  binding section's decoder is canonical: it returns `t` exactly when `t` is
+  in the format's domain and encodes to the given bytes.
 
 Not proved:
 
@@ -229,9 +249,14 @@ Not proved:
   and recursor headers, rule constructors) through `readInductive`;
 - per-member completeness of definition blocks (`defOrder` is not proved to
   be a permutation);
-- that the committed table pins Init's own constants. That is the
-  generator's verification, not a theorem; the no-False theorems are stated
-  at `falseName` and hold for any table.
+- that a bound role's constant meets its specification (`Role.spec`)
+  beyond what the fold checks: the block roles are checked against their
+  specifications by the basis install, the operations by their evidence,
+  the axioms by `matchesPin`; the anchors (`Bool`, `True`, `And`, `Iff`,
+  `Nonempty`, `List`, `String`, `Char`, ...) by their install only. That the
+  default table binds Init's own constants is the generator's
+  verification, not a theorem; the no-False theorems are stated at
+  `False`'s role key and hold for any table.
 
 The projection and block-order variants have the same shape:
 `Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
@@ -256,14 +281,14 @@ checker; neither is in its closure ("Trust surface"). An input may declare
 Init's compiler-trust family (`IxC/Kernel/TrustAxioms.lean`):
 `Lean.trustCompiler` installs as an opaque with value `True.intro`,
 `Lean.reduceBool` and `Lean.reduceNat` as opaques whose stored values are
-pinned against the identity (a drifted value declines), and
-`Lean.ofReduceBool` and `Lean.ofReduceNat` as pinned axioms over them.
-`sorryAx` is tolerated as a declaration and installs nothing; any use of it
-declines (`IxC/Kernel/Core.lean`). The well-founded `Nat` operations are
-admitted through pins and certificates the checker checks itself
-("Nat-operation pins" below).
+certified to be the identity (`checkReduceIdentity`; a drifted value
+declines), and `Lean.ofReduceBool` and `Lean.ofReduceNat` as bound axioms
+over them. `sorryAx` is tolerated as a declaration and installs nothing; any
+use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
+operations are admitted through the role table's evidence, which the
+checker checks itself ("Roles and the role table" below).
 
-## Keys, pins and the prelude
+## Keys, roles and the prelude
 
 **Records** are Ixon v4 constant payloads ([Ixon](Ixon.md), [Ixon v4](Ixon-v4.md)):
 TagN integers, and a sharing table per constant. The reader consumes decoded
@@ -301,32 +326,87 @@ Two kinds of names differ:
 - recursors are named after what they eliminate, as Lean names them
   (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
   block), because the checker finds a block's recursor by name;
-- pinned references take their pinned name.
+- references the role table binds take their role's key (`roleKey r`, the
+  role's Lean name, `Role.leanName`; `Reader.bindingsOf`).
 
-**Pins** (`IxC/Kernel/Ixon/PinData.lean`, generated). The table maps 55
-references to the checker's pinned names and no others: the basis (`Eq`,
-`Nat`, `PUnit`, `Empty`, `False`, the `Quot` package), `And` and `Bool`, the
-literal support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`),
-the structural and pin-certified `Nat` operations, the standard axioms with
-`Iff` and `Nonempty`, the compiler-trust family with `True`, and `sorryAx`.
-`pinMap` refuses a table that is not a partial injection or that uses the
-`ix` root or a derived name shape. The table decides coverage only:
-the checker compares every pinned name's declaration with its pinned shape,
-binder contracts included (basis blocks up to `canon`, with a reserved-name
-reject otherwise; literal support and `Nat` operations by exact type shapes
-and certified recurrences; standard and trust axioms by `matchesPin`), so a
-pin on a constant of another shape is refused, never accepted under the
-pinned name.
+**Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
+knows 64 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
+`Empty`, `False`, the `Quot` package, every member), `Bool`, `True`, `And`,
+`Iff`, `Nonempty` with their constructors and recursors, the literal support
+(`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`,
+`Char.ofNat`), the fifteen certified `Nat` operations (`pred`, `add`, `sub`,
+`mul`, `pow`, `beq`, `ble` structural; `div`, `mod`, `gcd`, `land`, `lor`,
+`xor`, `shiftLeft`, `shiftRight` well-founded), the standard and
+compiler-trust axioms, `Lean.reduceBool`, `Lean.reduceNat` and `sorryAx`.
+Each has a fixed specification (`Role.spec`): a closed term over role keys
+and positional levels, of one of five kinds (a basis `block`'s declarations;
+an `anchor`'s type; an operation's type and characterizing equations,
+`ops`; an `axiom`'s exact type, or none for the inert `sorryAx`; an
+`identity`'s type), its block (`Role.block`, the roles bound together) and
+its dependencies (`Role.deps`). The specifications are today's checks
+respelled, not new ones (`Role.spec_*` are `rfl` against the data the
+checker compares). They carry no address and no input key, so one set
+serves every toolchain. The set is versioned (`specVersion`, 1) and has a
+digest: BLAKE3 of its canonical encoding (`Ix.SpecDigest.specBytes`, 8863
+bytes), computed in the root library because the kernel admits no hasher,
+`70fedb021efa660e13618a7dbaa8f76ee0a91ac95fbd353ce05100248872e1ec`
+(`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
+set's shape). Four anchors are recorded but not validated by the checker:
+`Bool.rec`, `And`, `And.intro`, `And.rec`.
+
+**The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
+`RoleTable` has the version of the specification set it was made for, the
+bound roles' addresses (`bound`, by role, ascending) and the operations'
+evidence (`evidence`, one entry per equation). Its bytes are a binding
+section of their own:
+
+| bytes | field |
+| --- | --- |
+| `E8 03` | the section's tag |
+| `v` | the specification version |
+| `n`, `n × (r, a)` | the bound roles: a role's index in `Role.all` and its 32-byte address, indices strictly increasing |
+| `m`, `m × (r, k, e₁ … e_k)` | the evidence: a role's index, its entry count and its entries, indices strictly increasing |
+| `e` | `00` for `defeq`, `01` and a 32-byte address for `proof` |
+
+Every integer is one byte. The decoder `RoleTable.ofBytes` is canonical
+(`ofBytes_eq_some_iff`: it returns `t` exactly when `t.wireWF` and
+`t.toBytes` is the input). The entry admits a section (`admitBinding`) when
+its address is `hash` of its bytes (the binding hash), it decodes, and the
+table is well formed (`RoleTable.check`, decidable): the version is
+`specVersion`; no role and no address is bound twice; every bound role's
+block and dependencies are bound; and the evidence is exactly the bound
+operations', one entry per equation, of the kind the equation fixes
+(`.defeq` for an unconditional equation, `.proof thm` for a conditional
+one). An unbound role affects coverage only: inputs that need it decline.
+
+**Validation.** The reader names every bound reference by its role key; the
+fold validates each bound constant against its role's specification when it
+installs it, and a mismatch declines. Basis blocks are compared with their
+specification up to `canon`, with a reserved-name reject otherwise; anchors
+and axioms by type (`matchesPin`); an operation's type exactly, and its
+equations certified by its evidence in the environment before the
+operation's insertion, with the operation's self-references replaced by its
+value: a `.defeq` entry by definitional equality after opening
+(`certifyNatEqs`), a `.proof` entry by checking the theorem's proof against
+the equation like a theorem declaration (`checkDivModEvidence`), under a
+closure condition (`evidenceLocal`): every constant the proof mentions is
+installed and in the operation's dependency closure. The evidence reaches
+the fold resolved (`Reader.evidenceOf`: each proof entry's theorem record
+read to its key and value); an entry that does not resolve leaves its
+operation without evidence, which declines it. The fast path of an
+operation (`Nat` literal arithmetic) is enabled exactly when the operation
+is installed and validated. `model_exists` holds for every evidence, so the
+evidence is untrusted.
 
 **Binder contracts** (`IxC/Ixon/Types/Contract.lean`). Ixon binders carry
 usage, ownership and locality contracts, inside the committed bytes. The
 reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
 `all`'s input and result contracts (`contract`, `result`); it erases a
 `let`'s, since the checker's `letE` has no field for one. They are identity
-data. Structural equality, the expression hash and the pinned-shape
-comparisons see them; every pin carries the Lean fragment's defaults
-(`many`, `shared`, `unrestricted`), so a constant with other contracts is
-not the pinned one. Conversion compares input contracts: the binder
+data. Structural equality, the expression hash and the specification
+comparisons see them; every specification carries the Lean fragment's
+defaults (`many`, `shared`, `unrestricted`), so a constant with other
+contracts does not meet it. Conversion compares input contracts: the binder
 congruences and η require equal input contracts as well as equal `pw` data,
 so the entry declines `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It
 never compares result contracts: a `lam` has none, so the type inferred for
@@ -339,47 +419,58 @@ from Ixon, and nothing else
 the compiler's resolved contract frames as the compiler lowers them
 (`Ix/LeanIngress/Expr.lean`).
 
-**Nat-operation pins** (`IxC/Kernel/Ixon/NatOpPinData.lean`, generated).
-One `Ix.Kernel.NatOpPinSet` for the eight pin-certified operations (`div`,
-`mod`, `gcd`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight`): the pins are
-the operations' stored values in the compiled Init, the certificates are the
-theorems of `IxC/Kernel/PinGen/Certs.lean` compiled by Ix. `model_exists`
-holds at every pin list, so the list is untrusted.
+**Source mode** uses a fixed table: every role is bound to its own Lean name
+(`Ix.LeanIngress.sourceBinding`), and the evidence is the certificate
+theorems of `IxC/Kernel/PinGen/Certs.lean` as they appear in the checked
+environment, through the same ingress (`Ix.LeanIngress.sourceEvidence`): an
+environment without them declines the well-founded operations.
 
 **Prelude** (`IxC/Kernel/Ixon/Prelude.lean`). The checker puts twelve
 declarations in front of every fold (`preparePrelude`): the basis blocks `Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the quotient package (four `Quot` constants and
 `Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
-records (`PinData.prelude`, canonical bytes by address), decoded by the
-canonical decoder and read by the same reader. The empty stream installs
-27 constants. A stream that declares a prelude constant is checked on its
-own record (`preparePrelude` moves the stream's copy to the front); the
-prelude's copy fills in where the stream has none.
+records (`RoleData.prelude`, canonical bytes by address), decoded by the
+canonical decoder and read by the same reader under the admitted table
+(`preludeFor`). The empty stream installs 27 constants. A stream that
+declares a prelude constant is checked on its own record (`preparePrelude`
+moves the stream's copy to the front); the prelude's copy fills in where
+the stream has none.
 
-**Regeneration.** Both tables come from `kernel-pin-gen`
-(`Benchmarks/Kernel/PinGen.lean`), which checks every pinned
-constant's record and the literal capabilities through the verified fold
-before writing:
+**The default table** (`IxC/Kernel/Ixon/RoleData.lean`, generated) binds
+every role to the compiled Init's constant of its Lean name, with the
+evidence: the structural operations' `.defeq` entries and, for the eight
+well-founded operations, theorem records (`RoleData.evidence`, 18 records,
+and the blobs their literals use, `RoleData.blobs`) holding the certificate
+theorems of `IxC/Kernel/PinGen/Certs.lean` compiled by Ix and closed over
+the operations' dependency closure. The evidence records back the reader's
+store (`Prelude.evidence`); they are never read as declarations of their
+own. Its section is at `RoleData.tableAddress` (BLAKE3 of `RoleData.table`),
+`Admission.defaultBinding`. It is untrusted, for tests and the command line.
+
+**Regeneration.** `kernel-pin-gen` (`Benchmarks/Kernel/PinGen.lean`)
+generates the default table, checks that the evidence reads back as the
+closed proofs, and checks the dependency closure of every bound constant
+through the verified fold under the table before writing:
 
 ```sh
-lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-lake exe ix compile IxC/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts <the certificate theorems>
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe
+lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts <the certificate theorems>
 lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \
-  IxC/Kernel/Ixon/PinData.lean IxC/Kernel/Ixon/NatOpPinData.lean
+  IxC/Kernel/Ixon/RoleData.lean
 ```
 
-The full `--consts` list and the source hashes are in the generated files'
-headers. The table names addresses, so a toolchain, compiler or format
-change that moves Init's addresses requires regeneration: until then the moved
-constants are not pinned and the inputs that need them (literals, the
-pinned `Nat` operations, the standard axioms) decline. Soundness does not
-depend on the table.
+(`--no-build`: the files import only `Init`, and the root package does not
+know `IxC/Kernel/PinGen/Certs.lean` as a target of its own.) The full
+`--consts` list and the source hashes are in the generated file's header. The
+table names addresses, so a toolchain, compiler or format change that moves
+Init's addresses requires regeneration; the specifications, `specVersion`
+and the digest stay. Soundness does not depend on the table.
 
 ## Trust surface
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
 kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
-compiled code reaches (the entry's closure reaches 121 inherited externs,
+compiled code reaches (the entry's closure reaches 111 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
 Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
@@ -445,8 +536,10 @@ audits build in the root package, and the model audit builds in
 
 | Module | Checks |
 | --- | --- |
-| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 17, `fidelityRoots` 17, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
+| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 21, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
+| `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
+| `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
 | `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
 | `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
@@ -456,13 +549,20 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3095 | 82 |
-| reader `readRecords`, `readStream` | 1890 | 81 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5233 | 120 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5231 | 120 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5264 | 120 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5398 | 121 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5416 | 124 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3350 | 82 |
+| reader `readRecords`, `readStream` | 2018 | 79 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5656 | 111 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5653 | 111 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5687 | 111 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5820 | 112 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5839 | 115 |
+
+Step 4 (primitives by specification) moved them from 3086, 1886, 5224 (120),
+5222 (120), 5255 (120), 5389 (121) and 5407 (124): the fold gained the
+specification set and the evidence checks, the reader the role bindings and
+the evidence resolution, the entry the binding section's admission; nine
+externs left with the retired Nat-operation pin decoder (eight string
+scanners) and the pin table's derived-shape check (`memcmpStr`).
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
@@ -508,7 +608,7 @@ re-records it states why the closure or the statement moved.
    submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
    an exact expected verdict (accepts: a definition, a theorem, an inductive
    with its recursor, a structure with a projection, a quotient reduction,
-   `Nat` literals and a pinned `Nat` operation, a `String` literal, a nested
+   `Nat` literals and a certified `Nat` operation, a `String` literal, a nested
    inductive, a mutual inductive with definitions by structural recursion
    over it, a mutual and nested inductive, the opaque face of a `partial`
    definition; rejects: truncated bytes under their own hash, the same bytes
@@ -540,11 +640,12 @@ Mathlib tag but regenerates nothing), the change also does the following.
    `rev` in `Models/SetTheory/lakefile.toml` is Mathlib's tag for that
    release; after changing it, `lake -d Models/SetTheory update mathlib`
    refreshes `Models/SetTheory/lake-manifest.json`.
-2. **Pin tables.** A new toolchain moves Init's addresses: regenerate
-   `PinData.lean` and `NatOpPinData.lean` with the three commands under
-   "Regeneration" above (the full `--consts` list is in the generated
-   headers). Until then the moved constants are not pinned, and the
-   inputs and entry cases that need them decline.
+2. **The default role table.** A new toolchain moves Init's addresses:
+   regenerate `RoleData.lean` with the three commands under "Regeneration"
+   above (the full `--consts` list is in the generated header). The
+   specifications, `specVersion` and the digest do not change. Until then
+   the moved constants are not bound, and the inputs and entry cases that
+   need them decline.
 3. **Frozen audit records.** The runtime closures (`N compiled functions;
    inherited externs M, ...`), the extern differences and the frozen
    `#check` statements are `#guard_msgs` records in
@@ -600,7 +701,7 @@ interleaved:
    them from the serializers' output. The independent expression vectors
    (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
    specification.
-5. **Pin tables**, as step 2 of a toolchain bump: the three commands under
+5. **The default role table**, as step 2 of a toolchain bump: the three commands under
    "Regeneration" above. Write the two environments to fresh files, never
    to paths that are symbolic links to another format's stored environments:
    the commands write through a link.
@@ -645,17 +746,18 @@ calls and `Verify/Cached/StreamThm.lean`, from
 upstream task #323 changed) at `3ca9e2fe749a51cba4c6e3527aeecba074c29316`.
 The axiom pin `Tests/Ix/Kernel/Axioms.lean` is derived from upstream's
 `tests/ConLecheTests/Axioms.lean`. Upstream's
-`ConLeche/Kernel/NatOpPins.lean` is not included: Ix's Nat-operation pins
-are generated from Ixon records (`IxC/Kernel/Ixon/NatOpPinData.lean`).
+`ConLeche/Kernel/NatOpPins.lean` is not included: Ix validates the bound
+constants against fixed specifications (`IxC/Kernel/Roles.lean`) with the
+role table's evidence (the default table: `IxC/Kernel/Ixon/RoleData.lean`).
 
 **What was changed.** Every file was moved (`ConLeche/Kernel/X` and
 `ConLeche/X` to `IxC/Kernel/X`) and its namespace and module prefix renamed
-(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). Seven
+(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). These
 files carry further changes:
 
 | File | Change | Why |
 | --- | --- | --- |
-| `IxC/Kernel/CheckerBase.lean` | imports `NatOpPinSet` instead of `NatOpPins` | upstream's `NatOpPins` splices JSON pin dumps; Ix's pins come from Ixon records |
+| `IxC/Kernel/{CheckerBase,Checker,TrustAxioms,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them | imports `Roles` instead of `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`), the reduce opaques keep their identity certificate, the pin variants and pin comparisons are gone; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications (IXC-PLAN step 4) |
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
 | `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
@@ -663,9 +765,9 @@ files carry further changes:
 
 Ix's own files under `IxC/Kernel/` are `Admission.lean` and the `Admission`
 directory (the certified entry, its byte stage, theorems and audit),
-`Ref.lean`, `Search.lean`, the `Audit`, `Ingress`, `Egress` and `Ixon`
-directories (the Ixon reader and its specification, the committed pins and
-prelude, the record store, the projection writer and the audits), and
+`Roles.lean` (the role specifications), `Ref.lean`, `Search.lean`, the `Audit`, `Ingress`, `Egress` and `Ixon`
+directories (the Ixon reader and its specification, the role table, the
+default table and prelude, the record store, the projection writer and the audits), and
 `LevelGeran.lean` and
 `Verify/LevelGeran.lean` (Géran's sublevels and their soundness and
 completeness), which the changed `Level` files import.
