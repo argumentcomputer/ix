@@ -45,7 +45,6 @@ def functionGroups : Array (String × Array String) := #[
     "relaxed_u64_succ",
     "quot_kind_tag",
     "klimbs_mod",
-    "system_platform_get_num_bits_addr",
     "str_addr",
     "convert_axiom",
     "convert_quotient",
@@ -184,8 +183,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_14", #[
     "put_quot_kind",
     "pack_def_kind_safety",
-    "mk_nat_literal_64",
-    "mk_nat_one",
     "char_of_nat_addr",
     "char_type_addr",
     "byte_array_empty_addr",
@@ -238,7 +235,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_17", #[
     "put_address",
     "u64_mul",
-    "try_reduce_decide_bitvec_lt",
     "try_nat_binop_addr",
     "build_rec_type_from",
     "check_recursor_canonical_full"
@@ -485,7 +481,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_42", #[
     "u64_and",
     "klimbs_land",
-    "try_reduce_subtype_val",
     "try_str_to_byte_array",
     "try_int_prim_second",
     "try_quot_lift",
@@ -500,7 +495,6 @@ def functionGroups : Array (String × Array String) := #[
     "nat_sub_addr",
     "nat_xor_addr",
     "nat_shift_right_addr",
-    "punit_size_of_1_addr",
     "reduce_bool_addr",
     "reduce_nat_addr",
     "string_utf8_byte_size_addr",
@@ -517,9 +511,6 @@ def functionGroups : Array (String × Array String) := #[
     "bool_true_addr",
     "bool_false_addr",
     "bit_vec_of_nat_addr",
-    "bit_vec_addr",
-    "lt_lt_addr",
-    "decidable_rec_addr",
     "decidable_is_true_addr_dec",
     "decidable_is_false_addr_dec",
     "nat_le_of_ble_eq_true_addr_dec",
@@ -541,8 +532,6 @@ def functionGroups : Array (String × Array String) := #[
     "int_pow_addr",
     "bit_vec_to_nat_addr",
     "bit_vec_ult_addr",
-    "decidable_decide_addr",
-    "fin_addr",
     "int_dec_eq_addr_dec",
     "int_dec_le_addr_dec",
     "int_dec_lt_addr_dec"
@@ -566,8 +555,6 @@ def functionGroups : Array (String × Array String) := #[
     "nat_dec_lt_addr_dec"
   ]),
   ("ixvm_group_47", #[
-    "system_platform_num_bits_addr",
-    "subtype_val_addr",
     "mk_nat_lit",
     "build_recur_addrs",
     "level_eq",
@@ -812,7 +799,6 @@ def functionGroups : Array (String × Array String) := #[
     "whnf_nd_proj_head"
   ]),
   ("ixvm_group_77", #[
-    "try_reduce_fin_val_decidable_rec",
     "prim_family"
   ]),
   ("ixvm_group_78", #[

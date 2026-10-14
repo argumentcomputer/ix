@@ -93,10 +93,8 @@ def whnf := ⟦
   }
 
   -- Proj-head WHNF: whnf inner, if it's a Ctor application, pull the
-  -- corresponding field.  Otherwise stays stuck as `Proj(struct, fidx, inner_whnf)`.
-  -- : try_reduce_fin_val_decidable_rec hook — Fin.val on
-  -- Decidable.rec pushes Proj inside minors, unblocks iota once
-  -- major is Decidable.isTrue/isFalse.
+  -- corresponding field.  Otherwise stays stuck as `Proj(struct, fidx, inner_whnf)`
+  -- (in particular over a recursor whose major is stuck, as in Lean).
   fn whnf_proj_head(struct_addr: Addr, fidx: G, inner: KExpr,
                         spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
     let inner_whnf = whnf(inner, types);
@@ -105,47 +103,21 @@ def whnf := ⟦
     let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
-        match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
-                inner_head, inner_args) {
-          (1, rewritten) => whnf_with_spine(rewritten, spine, types),
-          _ =>
-            match load(inner_head) {
-              KExprNode.Const(_, _) =>
-                match load(whnf_get_ctor_or_none(inner_head)) {
-                  KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
-                    let field = list_lookup(inner_args, nparams + fidx);
-                    whnf_with_spine(field, spine, types),
-                  _ =>
-                    let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
-                    apply_spine(stuck, spine),
-                },
+        match load(inner_head) {
+          KExprNode.Const(_, _) =>
+            match load(whnf_get_ctor_or_none(inner_head)) {
+              KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
+                let field = list_lookup(inner_args, nparams + fidx);
+                whnf_with_spine(field, spine, types),
               _ =>
                 let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
                 apply_spine(stuck, spine),
             },
+          _ =>
+            let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
+            apply_spine(stuck, spine),
         },
     }
-  }
-
-  fn fin_addr() -> Addr {
-    store([0x1eu8, 0x1au8, 0x2bu8, 0xbbu8, 0x19u8, 0x20u8, 0xedu8, 0x4au8,
-     0x12u8, 0x81u8, 0xa3u8, 0xdeu8, 0xcau8, 0x64u8, 0x6au8, 0xd3u8,
-     0x13u8, 0xcau8, 0x9cu8, 0x7bu8, 0xf7u8, 0xeau8, 0xbdu8, 0xc3u8,
-     0x65u8, 0x59u8, 0x87u8, 0x79u8, 0x7cu8, 0xccu8, 0x0cu8, 0x55u8])
-  }
-
-  fn decidable_rec_addr() -> Addr {
-    store([0x3eu8, 0xa7u8, 0xe1u8, 0x8fu8, 0xcbu8, 0xb7u8, 0xc4u8, 0x98u8,
-     0xb2u8, 0xa4u8, 0x52u8, 0x37u8, 0xbdu8, 0xa6u8, 0x59u8, 0xc0u8,
-     0xedu8, 0xc9u8, 0x7bu8, 0x3du8, 0x54u8, 0xa4u8, 0xadu8, 0x0du8,
-     0x11u8, 0xbcu8, 0x2eu8, 0xbeu8, 0xc8u8, 0x0cu8, 0xfau8, 0x17u8])
-  }
-
-  fn nat_ty_addr() -> Addr {
-    store([0x35u8, 0xe1u8, 0xccu8, 0x80u8, 0x9fu8, 0x6fu8, 0x07u8, 0x65u8,
-     0x21u8, 0xa4u8, 0x3fu8, 0x85u8, 0x06u8, 0x8du8, 0x55u8, 0x92u8,
-     0x22u8, 0x04u8, 0x07u8, 0xc0u8, 0x53u8, 0x2bu8, 0x6au8, 0x08u8,
-     0x95u8, 0x2fu8, 0x40u8, 0xd8u8, 0x52u8, 0x3du8, 0x04u8, 0xbcu8])
   }
 
   -- The three quotient primitives reduction is allowed to fire on.
@@ -172,76 +144,6 @@ def whnf := ⟦
      0xbeu8, 0xa5u8, 0x89u8, 0xd5u8, 0xffu8, 0xfbu8, 0xc9u8, 0xbcu8,
      0x4du8, 0x7fu8, 0xbeu8, 0x89u8, 0x7cu8, 0x1du8, 0x80u8, 0x5bu8,
      0x1fu8, 0x7fu8, 0x59u8, 0xcau8, 0x96u8, 0x96u8, 0xa6u8, 0xefu8])
-  }
-
-  -- Mirror try_reduce_fin_val_decidable_rec (Primitive.lean:3141+).
-  -- Rewrites `Proj Fin 0 (Decidable.rec α motive f_min t_min major post)`
-  -- to  `Decidable.rec α (fun _ => Nat)
-  --          (fun x => Proj Fin 0 (f_min x))
-  --          (fun x => Proj Fin 0 (t_min x)) major post`
-  -- so iota fires once major = Decidable.isTrue/isFalse.
-  fn try_reduce_fin_val_decidable_rec(struct_addr: Addr, fidx: G,
-                                            inner_head: KExpr,
-                                            inner_args: List‹KExpr›)
-                                            -> (G, KExpr) {
-    match address_eq(struct_addr, fin_addr()) {
-      0 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        match fidx {
-          0 =>
-            match load(inner_head) {
-              KExprNode.Const(rec_addr, rec_us) =>
-                match address_eq(rec_addr, decidable_rec_addr()) {
-                  0 => (0, store(KExprNode.BVar(0))),
-                  _ =>
-                    match u32_less_than(list_length(inner_args), 5) {
-                      1 => (0, store(KExprNode.BVar(0))),
-                      _ =>
-                        let a0 = list_lookup(inner_args, 0);
-                        let a1 = list_lookup(inner_args, 1);
-                        let a2 = list_lookup(inner_args, 2);
-                        let a3 = list_lookup(inner_args, 3);
-                        let a4 = list_lookup(inner_args, 4);
-                        match load(a1) {
-                          KExprNode.Lam(motive_dom, _) =>
-                            match load(a2) {
-                              KExprNode.Lam(fdom, fbody) =>
-                                let fproj = store(KExprNode.Proj(
-                                  struct_addr, fidx, fbody));
-                                let false_minor = store(KExprNode.Lam(
-                                  fdom, fproj));
-                                match load(a3) {
-                                  KExprNode.Lam(tdom, tbody) =>
-                                    let tproj = store(KExprNode.Proj(
-                                      struct_addr, fidx, tbody));
-                                    let true_minor = store(KExprNode.Lam(
-                                      tdom, tproj));
-                                    let nat_ty = store(KExprNode.Const(
-                                      nat_ty_addr(), store(ListNode.Nil)));
-                                    let new_motive = store(KExprNode.Lam(
-                                      motive_dom, nat_ty));
-                                    let head_const = store(KExprNode.Const(
-                                      rec_addr, rec_us));
-                                    let r1 = store(KExprNode.App(head_const, a0));
-                                    let r2 = store(KExprNode.App(r1, new_motive));
-                                    let r3 = store(KExprNode.App(r2, false_minor));
-                                    let r4 = store(KExprNode.App(r3, true_minor));
-                                    let r5 = store(KExprNode.App(r4, a4));
-                                    let post = list_drop(inner_args, 5);
-                                    (1, apply_spine(r5, post)),
-                                  _ => (0, store(KExprNode.BVar(0))),
-                                },
-                              _ => (0, store(KExprNode.BVar(0))),
-                            },
-                          _ => (0, store(KExprNode.BVar(0))),
-                        },
-                    },
-                },
-              _ => (0, store(KExprNode.BVar(0))),
-            },
-          _ => (0, store(KExprNode.BVar(0))),
-        },
-    }
   }
 
   -- Returns the Ctor KCI if `head` is a Const of a Ctor, else a stub axiom
@@ -1280,8 +1182,8 @@ def whnf := ⟦
     }
   }
 
-  -- Proj head in no-delta mode: whnf_nd the scrutinee; ctor-field pull
-  -- and the fin_val_decidable_rec push still apply.
+  -- Proj head in no-delta mode: whnf_nd the scrutinee; the ctor-field pull
+  -- still applies.
   fn whnf_nd_proj_head(struct_addr: Addr, fidx: G, inner: KExpr,
                            spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
     let inner_whnf = whnf_nd(inner, types);
@@ -1289,24 +1191,19 @@ def whnf := ⟦
     let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
-        match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
-                inner_head, inner_args) {
-          (1, rewritten) => whnf_nd_with_spine(rewritten, spine, types),
-          _ =>
-            match load(inner_head) {
-              KExprNode.Const(_, _) =>
-                match load(whnf_get_ctor_or_none(inner_head)) {
-                  KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
-                    let field = list_lookup(inner_args, nparams + fidx);
-                    whnf_nd_with_spine(field, spine, types),
-                  _ =>
-                    let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
-                    apply_spine(stuck, spine),
-                },
+        match load(inner_head) {
+          KExprNode.Const(_, _) =>
+            match load(whnf_get_ctor_or_none(inner_head)) {
+              KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
+                let field = list_lookup(inner_args, nparams + fidx);
+                whnf_nd_with_spine(field, spine, types),
               _ =>
                 let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
                 apply_spine(stuck, spine),
             },
+          _ =>
+            let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
+            apply_spine(stuck, spine),
         },
     }
   }
