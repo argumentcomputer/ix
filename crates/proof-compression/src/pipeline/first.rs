@@ -2,6 +2,7 @@
 use crate::foreign::KzgCircuitExt;
 
 use super::init_fri;
+use super::setup::{FIRST_SEED, SetupSource};
 use super::storage;
 
 pub(super) fn run(args: &[String]) -> storage::Result<()> {
@@ -116,6 +117,9 @@ pub(super) fn run(args: &[String]) -> storage::Result<()> {
     storage::write_matrix(&out.join(format!("{i}.witness.zst")), &trace)?;
     println!("Staged {i}/{}: {:?}", compiled.num_circuits(), start.elapsed());
   }
+  let height = *manifest.heights.iter().max().ok_or("empty manifest")?;
+  SetupSource::development(FIRST_SEED, height - 1, None)?
+    .bind_stage(&out, height, 2)?;
   storage::save(&out.join("manifest.bin"), &manifest)?;
   println!("STAGING COMPLETE: {:?}", start.elapsed());
   Ok(())
@@ -126,9 +130,7 @@ fn prove(
   verify_only: bool,
   resident: bool,
 ) -> storage::Result<()> {
-  use crate::kzg::KzgConfig;
   use crate::kzg::Scalar;
-  use crate::kzg::Srs;
   use crate::kzg::compact::FixedProofCodec;
   use crate::kzg::pcs::KzgProverData;
   use multi_stark::config::ProofConfig;
@@ -143,7 +145,6 @@ fn prove(
   use std::{
     fs::{self, File},
     io::{BufWriter, Write},
-    sync::Arc,
     time::Instant,
   };
   let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
@@ -196,16 +197,16 @@ fn prove(
     "Development SRS with known trapdoor. Correctness and cost experiment only.\n",
   )?;
   let start = Instant::now();
-  let config = KzgConfig::new(
-    Arc::new(Srs::unsafe_dev_setup_cached(
-      height,
-      b"init-fri-kzg-ordinary-v1",
-      out.join("dev-srs.bin"),
-    )?),
-    2,
-  )
-  .with_streaming_lookups()
-  .with_streaming_quotient();
+  let setup = SetupSource::development(
+    FIRST_SEED,
+    height - 1,
+    Some(out.join("dev-srs.bin")),
+  )?;
+  setup.check_binding(dir, height, 2)?;
+  let config = setup
+    .config(height, 2, verify_only)?
+    .with_streaming_lookups()
+    .with_streaming_quotient();
   println!("Development SRS: {:?}", start.elapsed());
   let mut circuits = Vec::new();
   let mut fixed_parts = Vec::new();
@@ -291,10 +292,9 @@ fn prove(
     }
     println!("Prepared {i}/{count}: {:?}", start.elapsed());
   }
-  let mut commitment = crate::kzg::KzgCommitment(vec![], vec![]);
+  let mut commitment = crate::kzg::KzgCommitment(vec![]);
   for mut c in commits {
     commitment.0.append(&mut c.0);
-    commitment.1.append(&mut c.1);
   }
   let system = System {
     config,
@@ -376,6 +376,7 @@ fn prove(
   assert!(codec.decode(&extended).is_err());
   let mut profile = blake3::Hasher::new();
   profile.update(b"init-fri-kzg-ordinary-v1/development-srs/quotient2");
+  profile.update(system.config.transcript_seed());
   profile.update(&fs::read(dir.join("plan-id.bin"))?);
   profile.update(&fs::read(dir.join("manifest.bin"))?);
   for i in 0..count {
@@ -473,6 +474,8 @@ mod tests {
         &traces.trace(i)?,
       )?;
     }
+    SetupSource::development(FIRST_SEED, height - 1, None)?
+      .bind_stage(&dir, height, 2)?;
     storage::save(&dir.join("manifest.bin"), &manifest)?;
     std::fs::write(dir.join("plan-id.bin"), [0u8; 32])?;
     assert_eq!(compiled.num_circuits(), if log_height == 16 { 12 } else { 11 });
@@ -485,6 +488,8 @@ mod tests {
     assert_eq!(first, std::fs::read(dir.join("kzg/proof.compact.bin"))?);
     prove(&dir, true, false)?;
     manifest.claims.pop();
+    SetupSource::development(FIRST_SEED, height - 1, None)?
+      .bind_stage(&dir, height, 2)?;
     storage::save(&dir.join("manifest.bin"), &manifest)?;
     assert!(prove(&dir, true, false).is_err());
     std::fs::remove_dir_all(dir)?;

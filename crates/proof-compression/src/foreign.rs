@@ -29,28 +29,27 @@ const P: u64 = <Val as PrimeField64>::ORDER_U64;
 pub trait KzgCircuitExt {
   fn kzg_circuit_inputs(
     &self,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError>;
   fn kzg_circuit_input(
     &self,
     index: usize,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError>;
 }
 impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
   /// Minimize KZG commitment/evaluation bytes by choosing lookup groups per
-  /// trace, within the supplied quotient budget. Include the actual SRS length
-  /// because smaller traces also need shifted degree commitments.
+  /// trace, within the supplied trace cap and quotient budget.
   fn kzg_circuit_inputs(
     &self,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError> {
     let mut inputs = self.circuit_inputs();
     for input in &mut inputs {
-      tune_kzg_input(input, srs_len, quotient_budget)?;
+      tune_kzg_input(input, max_trace_len, quotient_budget)?;
     }
     Ok(inputs)
   }
@@ -59,20 +58,20 @@ impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
   fn kzg_circuit_input(
     &self,
     index: usize,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError> {
     let Some(mut input) = self.circuit_input(index) else {
       return Ok(None);
     };
-    tune_kzg_input(&mut input, srs_len, quotient_budget)?;
+    tune_kzg_input(&mut input, max_trace_len, quotient_budget)?;
     Ok(Some(input))
   }
 }
 
 fn tune_kzg_input(
   input: &mut CircuitInputs<Scalar>,
-  srs_len: usize,
+  max_trace_len: usize,
   quotient_budget: usize,
 ) -> Result<(), LoweringError> {
   use multi_stark::graph::ExtensionParams;
@@ -80,7 +79,7 @@ fn tune_kzg_input(
   use multi_stark::lookup::logup_max_degree;
   use multi_stark::lookup::stage2_width;
   let fixed = input.preprocessed.as_ref().expect("lowering has fixed columns");
-  if fixed.height() > srs_len {
+  if fixed.height() > max_trace_len {
     return Err(LoweringError::InvalidTraceHeight);
   }
   let graph = input
@@ -90,7 +89,7 @@ fn tune_kzg_input(
       karatsuba: false,
     })
     .expect("valid lowering");
-  let commitment_bytes = if fixed.height() == srs_len { 48 } else { 96 };
+  let commitment_bytes = 48;
   let best = (1..=MAX_LOOKUP_GROUP)
     .filter_map(|group| {
       let degree = graph

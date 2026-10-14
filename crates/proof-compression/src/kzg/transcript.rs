@@ -76,7 +76,6 @@ impl Transcript for Blake3Transcript {
 
   fn observe_commitment(&mut self, c: KzgCommitment) {
     self.observe_canonical(&c.0);
-    self.observe_canonical(&c.1);
   }
 
   fn sample_challenge(&mut self) -> Scalar {

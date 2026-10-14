@@ -27,12 +27,17 @@ ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 
 Accepted verifiers are stored under `~/.ix/verifiers/development/`.
 Unknown profiles, altered keys and conflicting registrations are rejected.
-Verification checks the proof, degree bounds and external pairing equations
-using the portable verifier; it does not load the proving SRS.
+Verification checks the proof, public setup binding and external opening
+pairing equation using the portable verifier; it does not load the proving SRS.
 
-The measured Init packet is 2,757 bytes, including its public claim and pairing
-operands. Its stored ix wrapper is 2,803 bytes; the portable verifier is
-5,847 bytes, distributed separately. These sizes exclude QR encoding overhead.
+The packet carries the 18-word public claim, a profile ID, two compressed G1
+opening-pairing operands and the compact KZG proof. The independently accepted
+portable verifier supplies the circuit and public setup parameters.
+
+Every setup declares its complete public polynomial degree. Loading a shorter
+proving prefix or only verifier anchors preserves that degree and the setup
+identity. Development identities derive from the seed and declared degree;
+the trapdoor remains known.
 
 ## Code and tests
 

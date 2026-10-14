@@ -34,7 +34,7 @@ use multi_stark::traits::Pcs;
 use multi_stark::traits::TwoAdicField;
 use std::collections::BTreeMap;
 
-type Commitment = (Vec<Vec<usize>>, Vec<Vec<usize>>);
+type Commitment = Vec<Vec<usize>>;
 type Openings = Vec<Vec<Vec<Value>>>;
 
 pub struct Built {
@@ -43,7 +43,6 @@ pub struct Built {
   pub points: Vec<G1Affine>,
   pub pairing_outputs: Vec<Affine>,
   pub pairing_keys: Vec<G2Affine>,
-  pub degree_output_count: usize,
   pub terms: Vec<Vec<(usize, Value)>>,
 }
 struct Context {
@@ -111,16 +110,10 @@ impl Context {
     id
   }
   fn commitment(&mut self, c: &KzgCommitment, fixed: bool) -> Commitment {
-    (
-      c.0
-        .iter()
-        .map(|row| row.iter().map(|&p| self.point(p, fixed)).collect())
-        .collect(),
-      c.1
-        .iter()
-        .map(|row| row.iter().map(|&p| self.point(p, fixed)).collect())
-        .collect(),
-    )
+    c.0
+      .iter()
+      .map(|row| row.iter().map(|&p| self.point(p, fixed)).collect())
+      .collect()
   }
   fn openings(&mut self, name: &str, values: &[Vec<Vec<Scalar>>]) -> Openings {
     values
@@ -152,13 +145,11 @@ impl Context {
     self.observe_scalar(t, v);
   }
   fn observe_commitment(&mut self, t: &mut Transcript, c: &Commitment) {
-    for rows in [&c.0, &c.1] {
-      t.constant(&mut self.b, &self.bytes, &(rows.len() as u64).to_le_bytes());
-      for row in rows {
-        t.constant(&mut self.b, &self.bytes, &(row.len() as u64).to_le_bytes());
-        for &id in row {
-          t.observe(&self.encodings[id]);
-        }
+    t.constant(&mut self.b, &self.bytes, &(c.len() as u64).to_le_bytes());
+    for row in c {
+      t.constant(&mut self.b, &self.bytes, &(row.len() as u64).to_le_bytes());
+      for &id in row {
+        t.observe(&self.encodings[id]);
       }
     }
   }
@@ -196,6 +187,21 @@ pub fn build(
   claims: &[Vec<Scalar>],
   public_locations: &[(usize, usize)],
 ) -> Result<Built, String> {
+  let parameters = crate::kzg::VerifierParams::with_max_trace_len(
+    srs,
+    1usize << system.config.max_log_degree(),
+  );
+  if KzgConfig::verifier_only(
+    parameters,
+    system.config.pcs().max_quotient_degree(),
+  )
+  .transcript_seed()
+    != system.config.transcript_seed()
+  {
+    return Err(
+      "recursive verifier setup differs from the proof configuration".into(),
+    );
+  }
   let quotients =
     system.verify_shape(proof).map_err(|e| format!("shape: {e:?}"))?;
   if !proof.active.iter().all(|&v| v)
@@ -250,14 +256,8 @@ pub fn build(
     c.b.expose_public(v);
     claim_vars[i][j] = v;
   }
-  let mut seed = b"multi-stark/kzg/v3".to_vec();
-  seed.extend((system.config.max_log_degree() as u64).to_le_bytes());
-  seed.extend((system.config.pcs().max_quotient_degree() as u64).to_le_bytes());
-  srs.g1[0].serialize_compressed(&mut seed).unwrap();
-  srs.g2.serialize_compressed(&mut seed).unwrap();
-  srs.g1[1].serialize_compressed(&mut seed).unwrap();
-  srs.tau_g2.serialize_compressed(&mut seed).unwrap();
-  let mut t = Transcript::new(&mut c.b, &c.bytes, &seed);
+  let mut t =
+    Transcript::new(&mut c.b, &c.bytes, system.config.transcript_seed());
   c.observe_constant(&mut t, system.circuits.len());
   for circuit in &system.circuits {
     for v in [
@@ -318,26 +318,6 @@ pub fn build(
       t.constant(&mut c.b, &c.bytes, &u64::from(log).to_le_bytes());
     }
   }
-  let degree_challenge = c.sample(&mut t);
-  let mut degree_groups = BTreeMap::<u8, Vec<(usize, Value)>>::new();
-  let mut shifted = vec![];
-  let mut weight = c.b.constant(Scalar::ONE);
-  for (commit, _) in rounds {
-    for (i, &log) in logs.iter().enumerate() {
-      if usize::from(log) < system.config.max_log_degree() {
-        if commit.0[i].len() != commit.1[i].len() {
-          return Err("shifted commitment width".into());
-        }
-        for (&p, &s) in commit.0[i].iter().zip(&commit.1[i]) {
-          degree_groups.entry(log).or_default().push((p, weight));
-          shifted.push((s, weight));
-          weight = c.b.mul(weight, degree_challenge);
-        }
-      } else if !commit.1[i].is_empty() {
-        return Err("unexpected shifted commitments".into());
-      }
-    }
-  }
   let mut batches: Vec<(Scalar, Vec<usize>, Vec<Value>)> = vec![];
   for (commit, openings) in rounds {
     for (i, rows) in openings.iter().enumerate() {
@@ -358,7 +338,7 @@ pub fn build(
           batches.push((g, vec![], vec![]));
           batches.len() - 1
         };
-        batches[index].1.extend_from_slice(&commit.0[i]);
+        batches[index].1.extend_from_slice(&commit[i]);
         batches[index].2.extend_from_slice(row);
       }
     }
@@ -503,19 +483,6 @@ pub fn build(
   eprintln!("AIR checks complete: {:?}", c.b.stats());
   let mut terms = vec![];
   let mut keys = vec![];
-  if !shifted.is_empty() {
-    terms.push(combine(&mut c.b, shifted));
-    keys.push(srs.g2);
-  }
-  for (log, group) in degree_groups {
-    let group = group
-      .into_iter()
-      .map(|(id, v)| (id, c.b.scale(v, Scalar::NEG_ONE)))
-      .collect();
-    terms.push(combine(&mut c.b, group));
-    keys.push(srs.degree_keys[usize::from(log)]);
-  }
-  let degree_output_count = terms.len();
   terms.push(combine(&mut c.b, lhs));
   keys.push(srs.g2);
   let rhs = rhs
@@ -572,7 +539,6 @@ pub fn build(
     points: c.points,
     pairing_outputs: outputs,
     pairing_keys: keys,
-    degree_output_count,
     terms,
   })
 }
@@ -615,17 +581,12 @@ impl Built {
       }
       outputs.push(point);
     }
-    for range in
-      [0..self.degree_output_count, self.degree_output_count..outputs.len()]
+    if outputs.len() != 2
+      || self.pairing_keys.len() != 2
+      || !Bls12_381::multi_pairing(outputs.clone(), self.pairing_keys.clone())
+        .is_zero()
     {
-      if !Bls12_381::multi_pairing(
-        outputs[range.clone()].to_vec(),
-        self.pairing_keys[range].to_vec(),
-      )
-      .is_zero()
-      {
-        return Err("external pairing check failed".into());
-      }
+      return Err("external opening pairing check failed".into());
     }
     let stats = self.circuit.stats();
     Ok((

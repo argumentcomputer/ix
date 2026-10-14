@@ -35,10 +35,26 @@ impl KzgConfig {
   /// Panics if the SRS length is not a power of two (trace domains
   /// are, and `max_log_degree` is read off the SRS).
   pub fn new(srs: Arc<Srs>, max_quotient_degree: usize) -> Self {
-    let verifier = super::VerifierParams::from_srs(&srs);
+    let max_trace_len = srs.max_len();
+    Self::with_max_trace_len(srs, max_trace_len, max_quotient_degree)
+  }
+
+  /// Bind the admitted trace cap independently of the loaded public-power prefix.
+  pub fn with_max_trace_len(
+    srs: Arc<Srs>,
+    max_trace_len: usize,
+    max_quotient_degree: usize,
+  ) -> Self {
+    let verifier =
+      super::VerifierParams::with_max_trace_len(&srs, max_trace_len);
     let mut config = Self::verifier_only(verifier, max_quotient_degree);
-    config.pcs = KzgPcs::new(srs, max_quotient_degree);
+    config.pcs =
+      KzgPcs::with_max_trace_len(srs, max_trace_len, max_quotient_degree);
     config
+  }
+
+  pub fn transcript_seed(&self) -> &[u8] {
+    &self.transcript_seed
   }
 
   /// Construct a verifier without retaining the proving powers. No proving operation is available.
@@ -46,12 +62,16 @@ impl KzgConfig {
     params: super::VerifierParams,
     max_quotient_degree: usize,
   ) -> Self {
-    let max_log_degree = p3_util::log2_strict_usize(params.max_len());
-    let mut transcript_seed = b"multi-stark/kzg/v3".to_vec();
+    let max_log_degree = p3_util::log2_strict_usize(params.max_trace_len());
+    assert!(max_quotient_degree.is_power_of_two());
+    let mut transcript_seed = b"multi-stark/kzg/v4".to_vec();
     for parameter in [max_log_degree, max_quotient_degree] {
       transcript_seed.extend(u64::try_from(parameter).unwrap().to_le_bytes());
     }
-    // Preserve the proving configuration's transcript exactly.
+    transcript_seed
+      .extend((params.public_setup.max_degree as u64).to_le_bytes());
+    transcript_seed.extend(params.public_setup.id);
+    // Proving and portable verification bind the same public anchors.
     params.g1[0]
       .serialize_compressed(&mut transcript_seed)
       .expect("Vec serialization");
@@ -363,6 +383,33 @@ mod tests {
     system
       .verify_multiple_claims(no_claims, &proof)
       .expect("KZG proof failed to verify");
+  }
+
+  #[test]
+  fn proof_binds_public_identity_degree_and_trace_cap() {
+    let srs = Arc::new(Srs::unsafe_dev_setup(16, b"public-parameters"));
+    let params = super::super::VerifierParams::from_srs(&srs);
+    let (mut system, key) =
+      System::new(KzgConfig::new(srs.clone(), 8), [mul_circuit()]);
+    let proof = system.prove_multiple_claims(&key, &[], witness(&system));
+    let anchors = Srs::unsafe_dev_setup_prefix(2, 15, b"public-parameters");
+    system.config = KzgConfig::verifier_only(
+      super::super::VerifierParams::with_max_trace_len(&anchors, 16),
+      8,
+    );
+    system.verify_multiple_claims(&[], &proof).unwrap();
+    let mut identity = params.clone();
+    identity.public_setup.id[0] ^= 1;
+    let mut degree = params;
+    degree.public_setup.max_degree = 31;
+    for changed in [
+      identity,
+      degree,
+      super::super::VerifierParams::with_max_trace_len(&srs, 8),
+    ] {
+      system.config = KzgConfig::verifier_only(changed, 8);
+      assert!(system.verify_multiple_claims(&[], &proof).is_err());
+    }
   }
 
   #[test]

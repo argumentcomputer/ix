@@ -1,8 +1,6 @@
 use super::init_claim;
 use crate::kzg::KzgCommitment;
-use crate::kzg::KzgConfig;
 use crate::kzg::Scalar;
-use crate::kzg::Srs;
 use crate::kzg::compact::FixedProofCodec;
 use multi_stark::system::Circuit;
 use multi_stark::system::System;
@@ -13,7 +11,6 @@ use std::{
   fs,
   io::{BufReader, Read},
   path::Path,
-  sync::Arc,
   time::Instant,
 };
 #[derive(serde::Deserialize)]
@@ -82,15 +79,16 @@ pub(crate) fn check(
   eprintln!("Loading development SRS and saved proof");
   let proof_dir =
     if dir.join("kzg").is_dir() { dir.join("kzg") } else { dir.to_path_buf() };
-  let cache = proof_dir.join("dev-srs.bin");
-  let srs = Arc::new(if cache.exists() {
-    Srs::unsafe_dev_setup_cached(height, b"init-fri-kzg-ordinary-v1", cache)?
-  } else {
-    Srs::unsafe_dev_setup(height, b"init-fri-kzg-ordinary-v1")
-  });
-  let config = KzgConfig::new(srs.clone(), 2);
+  let setup = super::super::setup::SetupSource::development(
+    super::super::setup::FIRST_SEED,
+    height - 1,
+    None,
+  )?;
+  setup.check_binding(dir, height, 2)?;
+  let srs = setup.srs(height, true)?;
+  let config = setup.config(height, 2, true)?;
   let mut circuits = vec![];
-  let mut commitment = KzgCommitment(vec![], vec![]);
+  let mut commitment = KzgCommitment(vec![]);
   for i in 0..count {
     let (circuit, mut part): (Circuit<Scalar>, KzgCommitment) =
       load(&proof_dir.join(format!("setup-{i}.bin")))?;
@@ -101,7 +99,6 @@ pub(crate) fn check(
     }
     circuits.push(circuit);
     commitment.0.append(&mut part.0);
-    commitment.1.append(&mut part.1);
   }
   let system = System {
     config,

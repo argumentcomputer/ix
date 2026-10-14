@@ -1,7 +1,7 @@
 use crate::foreign::KzgCircuitExt;
 use crate::recursive::native_verifier::Built;
 
-use super::super::storage;
+use super::super::{setup::SetupSource, storage};
 use crate::kzg::Scalar;
 use multi_stark::plonkish::Assignment;
 use multi_stark::traits::Field;
@@ -9,7 +9,6 @@ use p3_matrix::Matrix;
 use std::{fs, path::Path};
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Pairings {
-  degree_count: usize,
   keys: Vec<u8>,
 }
 
@@ -25,10 +24,7 @@ pub(crate) fn stage(
   let start = std::time::Instant::now();
   let mut keys = vec![];
   built.pairing_keys.serialize_compressed(&mut keys)?;
-  storage::save(
-    &dir.join("pairings.bin"),
-    &Pairings { degree_count: built.degree_output_count, keys },
-  )?;
+  storage::save(&dir.join("pairings.bin"), &Pairings { keys })?;
   let height = built.circuit.multi_stark_layout()?.main_height;
   eprintln!(
     "Lowering recursive circuit into one {height}-row computation trace"
@@ -56,10 +52,12 @@ pub(crate) fn stage(
     storage::write_matrix(&dir.join(format!("{i}.witness.zst")), &trace)?;
     eprintln!("Staged recursive trace {i}: {:?}", start.elapsed());
   }
+  SetupSource::development(OUTER_SEED, height - 1, None)?
+    .bind_stage(dir, height, 2)?;
   storage::save(&dir.join("manifest.bin"), &manifest)?;
   fs::write(
     dir.join("SECURITY.txt"),
-    "Development SRS with known trapdoor; not production-secure. The final verifier must check the 18-word Init claim and both external pairing equations.\n",
+    "Development SRS with known trapdoor; not production-secure. The final verifier must check the 18-word Init claim and the external opening pairing equation.\n",
   )?;
   eprintln!("Recursive staging complete: {:?}", start.elapsed());
   Ok(())
@@ -68,19 +66,33 @@ pub(crate) fn stage(
 const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
 use super::init_claim;
 
-fn pairing_keys(
-  dir: &Path,
-) -> storage::Result<(usize, Vec<ark_bls12_381::G2Affine>)> {
-  use ark_serialize::CanonicalDeserialize;
+fn pairing_keys(dir: &Path) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
   let profile: Pairings = storage::load(&dir.join("pairings.bin"))?;
+  decode_pairing_keys(&profile)
+}
+
+fn decode_pairing_keys(
+  profile: &Pairings,
+) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
+  use ark_ec::AffineRepr;
+  use ark_serialize::CanonicalDeserialize;
+  if profile.keys.len() != 8 + 2 * 96
+    || profile.keys.get(..8) != Some(&2u64.to_le_bytes())
+  {
+    return Err("invalid pairing profile".into());
+  }
   let mut input = profile.keys.as_slice();
   let keys =
     Vec::<ark_bls12_381::G2Affine>::deserialize_compressed(&mut input)?;
-  if !input.is_empty() || keys.len() != profile.degree_count + 2 {
+  if !input.is_empty()
+    || keys.len() != 2
+    || keys.iter().any(AffineRepr::is_zero)
+  {
     return Err("invalid pairing profile".into());
   }
-  Ok((profile.degree_count, keys))
+  Ok(keys)
 }
+
 fn pairing_bytes(publics: &[Scalar]) -> storage::Result<Vec<u8>> {
   let mut bytes = vec![];
   for value in publics {
@@ -98,13 +110,12 @@ fn pairing_bytes(publics: &[Scalar]) -> storage::Result<Vec<u8>> {
 }
 fn check_pairings(
   bytes: &[u8],
-  degree_count: usize,
   keys: &[ark_bls12_381::G2Affine],
 ) -> storage::Result<()> {
   use ark_ec::pairing::Pairing;
   use ark_ff::Zero;
   use ark_serialize::CanonicalDeserialize;
-  if bytes.len() != keys.len() * 48 || keys.len() != degree_count + 2 {
+  if bytes.len() != keys.len() * 48 || keys.len() != 2 {
     return Err("pairing point count".into());
   }
   let points = bytes
@@ -115,15 +126,10 @@ fn check_pairings(
       ark_bls12_381::G1Affine::deserialize_compressed(bytes.as_slice())
     })
     .collect::<Result<Vec<_>, _>>()?;
-  for range in [0..degree_count, degree_count..keys.len()] {
-    if !ark_bls12_381::Bls12_381::multi_pairing(
-      points[range.clone()].to_vec(),
-      keys[range].to_vec(),
-    )
+  if !ark_bls12_381::Bls12_381::multi_pairing(points, keys.iter().copied())
     .is_zero()
-    {
-      return Err("external pairing equation failed".into());
-    }
+  {
+    return Err("external opening pairing equation failed".into());
   }
   Ok(())
 }
@@ -171,7 +177,6 @@ fn verify_packet(
   codec: &crate::kzg::compact::FixedProofCodec,
   packet: &[u8],
   profile: &[u8; 32],
-  degree_count: usize,
   keys: &[ark_bls12_381::G2Affine],
 ) -> storage::Result<()> {
   let (claims, offset) = packet_claims(packet, profile, keys.len())?;
@@ -182,7 +187,7 @@ fn verify_packet(
       &proof,
     )
     .map_err(|e| format!("outer KZG proof: {e:?}"))?;
-  check_pairings(&packet[32 + 18 * 8..offset], degree_count, keys)
+  check_pairings(&packet[32 + 18 * 8..offset], keys)
 }
 
 fn staged_publics(
@@ -214,8 +219,6 @@ pub(crate) fn prove(
   resident: bool,
 ) -> storage::Result<()> {
   use crate::kzg::KzgCommitment;
-  use crate::kzg::KzgConfig;
-  use crate::kzg::Srs;
   use crate::kzg::compact::FixedProofCodec;
   use crate::kzg::pcs::KzgProverData;
   use multi_stark::config::ProofConfig;
@@ -230,7 +233,6 @@ pub(crate) fn prove(
   use std::{
     fs::File,
     io::{BufWriter, Write},
-    sync::Arc,
     time::Instant,
   };
   let _ = tracing_subscriber::fmt()
@@ -253,10 +255,10 @@ pub(crate) fn prove(
   }
   let count = manifest.heights.len();
   let height = manifest.heights[0];
-  let (degree_count, keys) = pairing_keys(dir)?;
+  let keys = pairing_keys(dir)?;
   let publics = staged_publics(&manifest.claims, keys.len())?;
   let point_bytes = pairing_bytes(&publics[18..])?;
-  check_pairings(&point_bytes, degree_count, &keys)?;
+  check_pairings(&point_bytes, &keys)?;
   for (&value, expected) in
     publics[..18].iter().zip(init_claim::INIT_PUBLIC_WORDS)
   {
@@ -271,14 +273,17 @@ pub(crate) fn prove(
     "Known-trapdoor development SRS. Not production-secure.\n",
   )?;
   eprintln!("Generating development SRS for 2^{} rows", height.ilog2());
-  let srs = Arc::new(Srs::unsafe_dev_setup_cached(
-    height,
+  let setup = SetupSource::development(
     OUTER_SEED,
-    out.join("dev-srs.bin"),
-  )?);
-  let verifier_params = crate::kzg::VerifierParams::from_srs(&srs);
-  let config =
-    KzgConfig::new(srs, 2).with_streaming_lookups().with_streaming_quotient();
+    height - 1,
+    Some(out.join("dev-srs.bin")),
+  )?;
+  setup.check_binding(dir, height, 2)?;
+  let verifier_params = setup.verifier_params(height)?;
+  let config = setup
+    .config(height, 2, verify_only)?
+    .with_streaming_lookups()
+    .with_streaming_quotient();
   eprintln!("Outer development SRS ready: {:?}", start.elapsed());
   let checkpoint = |path: &Path, data: &KzgProverData| -> storage::Result<()> {
     let temp = path.with_extension("partial");
@@ -370,10 +375,9 @@ pub(crate) fn prove(
     }
     eprintln!("Prepared recursive trace {i}: {:?}", start.elapsed());
   }
-  let mut fixed_commit = KzgCommitment(vec![], vec![]);
+  let mut fixed_commit = KzgCommitment(vec![]);
   for mut commit in commits {
     fixed_commit.0.append(&mut commit.0);
-    fixed_commit.1.append(&mut commit.1);
   }
   let system = System {
     config,
@@ -425,8 +429,9 @@ pub(crate) fn prove(
     bytes
   };
   let mut hash = blake3::Hasher::new();
-  hash.update(b"init-kzg-recursive-profile/v1");
+  hash.update(b"init-kzg-recursive-profile/v4");
   hash.update(OUTER_SEED);
+  hash.update(&verifier_params.to_bytes()?);
   hash.update(&(height as u64).to_le_bytes());
   for i in 0..count {
     hash.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
@@ -443,7 +448,7 @@ pub(crate) fn prove(
     return Err("saved packet differs".into());
   }
   let verify_start = Instant::now();
-  verify_packet(&system, &codec, &packet, &profile, degree_count, &keys)?;
+  verify_packet(&system, &codec, &packet, &profile, &keys)?;
   let verify_seconds = verify_start.elapsed().as_secs_f64();
   let decoded = codec.decode(&bytes)?;
   for i in 0..18 {
@@ -461,10 +466,7 @@ pub(crate) fn prove(
   for offset in [0, 32, 32 + 18 * 8, packet.len() - 1] {
     let mut wrong = packet.clone();
     wrong[offset] ^= 1;
-    assert!(
-      verify_packet(&system, &codec, &wrong, &profile, degree_count, &keys)
-        .is_err()
-    );
+    assert!(verify_packet(&system, &codec, &wrong, &profile, &keys).is_err());
   }
   assert!(
     verify_packet(
@@ -472,21 +474,17 @@ pub(crate) fn prove(
       &codec,
       &packet[..packet.len() - 1],
       &profile,
-      degree_count,
       &keys
     )
     .is_err()
   );
   let mut extra = packet.clone();
   extra.push(0);
-  assert!(
-    verify_packet(&system, &codec, &extra, &profile, degree_count, &keys)
-      .is_err()
-  );
+  assert!(verify_packet(&system, &codec, &extra, &profile, &keys).is_err());
   fs::write(out.join("packet.bin"), &packet)?;
   fs::write(out.join("profile-id.bin"), profile)?;
   let verifier = VerifierProfile {
-    version: 1,
+    version: 4,
     heights: [manifest.heights[0], manifest.heights[1]],
     setup: [
       fs::read(out.join("setup-0.bin"))?,
@@ -545,8 +543,9 @@ impl VerifierProfile {
 
   pub(crate) fn id(&self) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"init-kzg-recursive-profile/v1");
+    hash.update(b"init-kzg-recursive-profile/v4");
     hash.update(OUTER_SEED);
+    hash.update(&self.parameters);
     hash.update(&(self.heights[0] as u64).to_le_bytes());
     for setup in &self.setup {
       hash.update(setup);
@@ -555,24 +554,8 @@ impl VerifierProfile {
     *hash.finalize().as_bytes()
   }
 
-  fn keys(&self) -> storage::Result<(usize, Vec<ark_bls12_381::G2Affine>)> {
-    use ark_serialize::CanonicalDeserialize;
-    let profile: Pairings = decode(&self.pairings)?;
-    // Bounded count before arkworks allocates the vector.
-    if profile.degree_count > 32
-      || profile.keys.len() != 8 + (profile.degree_count + 2) * 96
-      || profile.keys.get(..8)
-        != Some(&(profile.degree_count as u64 + 2).to_le_bytes())
-    {
-      return Err("invalid pairing profile".into());
-    }
-    let mut input = profile.keys.as_slice();
-    let keys =
-      Vec::<ark_bls12_381::G2Affine>::deserialize_compressed(&mut input)?;
-    if !input.is_empty() || keys.len() != profile.degree_count + 2 {
-      return Err("invalid pairing profile".into());
-    }
-    Ok((profile.degree_count, keys))
+  fn keys(&self) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
+    decode_pairing_keys(&decode(&self.pairings)?)
   }
 
   fn system(
@@ -580,7 +563,7 @@ impl VerifierProfile {
   ) -> storage::Result<multi_stark::system::System<crate::kzg::KzgConfig>> {
     use crate::kzg::{KzgCommitment, KzgConfig, VerifierParams};
     use multi_stark::system::{Circuit, System};
-    if self.version != 1
+    if self.version != 4
       || self
         .heights
         .iter()
@@ -590,11 +573,11 @@ impl VerifierProfile {
       return Err("unsupported recursive verifier profile".into());
     }
     let params = VerifierParams::from_bytes(&self.parameters)?;
-    if params.max_len() != self.heights[0] {
+    if params.max_trace_len() != self.heights[0] {
       return Err("verifier SRS range mismatch".into());
     }
     let mut circuits = vec![];
-    let mut fixed = KzgCommitment(vec![], vec![]);
+    let mut fixed = KzgCommitment(vec![]);
     for (i, bytes) in self.setup.iter().enumerate() {
       let (circuit, mut commit): (Circuit<Scalar>, KzgCommitment) =
         decode(bytes)?;
@@ -605,7 +588,6 @@ impl VerifierProfile {
       }
       circuits.push(circuit);
       fixed.0.append(&mut commit.0);
-      fixed.1.append(&mut commit.1);
     }
     Ok(System {
       config: KzgConfig::verifier_only(params, 2),
@@ -616,13 +598,13 @@ impl VerifierProfile {
   }
 
   pub(crate) fn verify(&self, packet: &[u8]) -> storage::Result<()> {
-    let (degree_count, keys) = self.keys()?;
+    let keys = self.keys()?;
     packet_claims(packet, &self.id(), keys.len())?;
     let system = self.system()?;
     let logs: Vec<_> =
       self.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
     let codec = crate::kzg::compact::FixedProofCodec::new(&system, &logs)?;
-    verify_packet(&system, &codec, packet, &self.id(), degree_count, &keys)
+    verify_packet(&system, &codec, packet, &self.id(), &keys)
   }
 }
 
@@ -699,14 +681,14 @@ mod tests {
       );
       packet.extend(codec.encode(&proof).unwrap());
       assert_eq!(
-        verify_packet(&system, &codec, &packet, &profile, 0, &keys).is_ok(),
+        verify_packet(&system, &codec, &packet, &profile, &keys).is_ok(),
         !wrong
       );
       if !wrong {
         let mut changed = packet.clone();
         changed[32 + 8] ^= 1;
         assert!(
-          verify_packet(&system, &codec, &changed, &profile, 0, &keys).is_err()
+          verify_packet(&system, &codec, &changed, &profile, &keys).is_err()
         );
         let mut changed_claims = claims.clone();
         changed_claims[2][3] += Scalar::ONE;
@@ -724,14 +706,13 @@ mod tests {
             &codec,
             &packet[..packet.len() - 1],
             &profile,
-            0,
             &keys
           )
           .is_err()
         );
         packet.push(0);
         assert!(
-          verify_packet(&system, &codec, &packet, &profile, 0, &keys).is_err()
+          verify_packet(&system, &codec, &packet, &profile, &keys).is_err()
         );
       }
     }
@@ -739,20 +720,15 @@ mod tests {
 
   #[test]
   fn staged_profiles_prove_in_both_storage_modes() -> storage::Result<()> {
-    for degree_count in [0, 2] {
+    {
       let dir = std::env::temp_dir()
-        .join(format!("outer-staged-{}-{degree_count}", std::process::id()));
+        .join(format!("outer-staged-{}-v4", std::process::id()));
       fs::create_dir(&dir)?;
       let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
-      let mut keys = vec![inner.g2; degree_count];
-      keys.extend([inner.g2, inner.tau_g2]);
+      let keys = vec![inner.g2, inner.tau_g2];
       let mut prefix = [17u8; 32].to_vec();
       for word in init_claim::INIT_PUBLIC_WORDS {
         prefix.extend(word.to_le_bytes());
-      }
-      if degree_count != 0 {
-        inner.g1[0].serialize_compressed(&mut prefix)?;
-        (-inner.g1[0]).serialize_compressed(&mut prefix)?;
       }
       inner.g1[1].serialize_compressed(&mut prefix)?;
       (-inner.g1[0]).serialize_compressed(&mut prefix)?;
@@ -796,13 +772,12 @@ mod tests {
           &traces.trace(i)?,
         )?;
       }
+      SetupSource::development(OUTER_SEED, height - 1, None)?
+        .bind_stage(&dir, height, 2)?;
       storage::save(&dir.join("manifest.bin"), &manifest)?;
       let mut encoded = vec![];
       keys.serialize_compressed(&mut encoded)?;
-      storage::save(
-        &dir.join("pairings.bin"),
-        &Pairings { degree_count, keys: encoded },
-      )?;
+      storage::save(&dir.join("pairings.bin"), &Pairings { keys: encoded })?;
       prove(&dir, false, true)?;
       assert!(!dir.join("kzg/fixed-0.bin").exists());
       assert!(!dir.join("kzg/main-0.bin").exists());

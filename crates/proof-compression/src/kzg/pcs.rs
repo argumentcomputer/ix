@@ -1,7 +1,9 @@
 //! Monomial-basis KZG over BLS12-381 implementing [`Pcs`].
 //!
-//! Each column has a G1 commitment; shorter polynomials also carry a shifted
-//! commitment for degree checks. Openings at each point are folded with a
+//! Each column has one G1 commitment under the declared full public degree.
+//! Domain sizes describe trace geometry; the public setup supplies the global
+//! polynomial degree allowance used by the enclosing constraint argument.
+//! Openings at each point are folded with a
 //! transcript challenge, producing one witness commitment per distinct point.
 //! A second challenge batches their pairing equations.
 //!
@@ -36,9 +38,9 @@ use super::field::Scalar;
 use super::srs::Srs;
 use super::transcript::Blake3Transcript;
 
-/// Per-matrix column commitments and optional shifted degree commitments.
+/// Per-matrix column commitments.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KzgCommitment(pub Vec<Vec<G1Affine>>, pub Vec<Vec<G1Affine>>);
+pub struct KzgCommitment(pub Vec<Vec<G1Affine>>);
 
 /// One opening proof: one witness point per distinct opening point, in
 /// transcript (first-appearance) order.
@@ -77,36 +79,7 @@ macro_rules! serde_via_canonical {
     }
   };
 }
-impl Serialize for KzgCommitment {
-  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    let mut bytes = Vec::new();
-    self
-      .0
-      .serialize_compressed(&mut bytes)
-      .map_err(serde::ser::Error::custom)?;
-    self
-      .1
-      .serialize_compressed(&mut bytes)
-      .map_err(serde::ser::Error::custom)?;
-    bytes.serialize(serializer)
-  }
-}
-impl<'de> Deserialize<'de> for KzgCommitment {
-  fn deserialize<D: Deserializer<'de>>(
-    deserializer: D,
-  ) -> Result<Self, D::Error> {
-    let bytes = Vec::<u8>::deserialize(deserializer)?;
-    let mut input = bytes.as_slice();
-    let main = Vec::<Vec<G1Affine>>::deserialize_compressed(&mut input)
-      .map_err(serde::de::Error::custom)?;
-    let shifted = Vec::<Vec<G1Affine>>::deserialize_compressed(&mut input)
-      .map_err(serde::de::Error::custom)?;
-    if !input.is_empty() {
-      return Err(serde::de::Error::custom("trailing commitment bytes"));
-    }
-    Ok(Self(main, shifted))
-  }
-}
+serde_via_canonical!(KzgCommitment, Vec<Vec<G1Affine>>);
 serde_via_canonical!(KzgProof, Vec<G1Affine>);
 
 /// A committed matrix on the prover side: its domain and each column
@@ -128,8 +101,8 @@ impl KzgProverData {
     &self,
     mut out: impl std::io::Write,
   ) -> Result<(), ark_serialize::SerializationError> {
+    out.write_all(b"IXKZGCP4")?;
     self.commitment.0.serialize_compressed(&mut out)?;
-    self.commitment.1.serialize_compressed(&mut out)?;
     (self.matrices.len() as u64).serialize_compressed(&mut out)?;
     for matrix in &self.matrices {
       (matrix.domain.log_size as u64).serialize_compressed(&mut out)?;
@@ -163,13 +136,15 @@ impl KzgProverData {
   pub fn read_checkpoint(
     mut input: impl std::io::Read,
   ) -> Result<Self, ark_serialize::SerializationError> {
-    let commitment = KzgCommitment(
-      Vec::deserialize_compressed(&mut input)?,
-      Vec::deserialize_compressed(&mut input)?,
-    );
+    let mut magic = [0; 8];
+    input.read_exact(&mut magic)?;
+    if &magic != b"IXKZGCP4" {
+      return Err(ark_serialize::SerializationError::InvalidData);
+    }
+    let commitment = KzgCommitment(Vec::deserialize_compressed(&mut input)?);
     let count = usize::try_from(u64::deserialize_compressed(&mut input)?)
       .map_err(|_error| ark_serialize::SerializationError::InvalidData)?;
-    if count != commitment.0.len() || count != commitment.1.len() {
+    if count != commitment.0.len() {
       return Err(ark_serialize::SerializationError::InvalidData);
     }
     let mut matrices = Vec::with_capacity(count);
@@ -213,13 +188,15 @@ impl KzgProverData {
     let mut guard =
       file.lock().map_err(|_error| SerializationError::InvalidData)?;
     let mut reader = BufReader::with_capacity(1 << 20, &mut *guard);
-    let commitment = KzgCommitment(
-      Vec::deserialize_compressed(&mut reader)?,
-      Vec::deserialize_compressed(&mut reader)?,
-    );
+    let mut magic = [0; 8];
+    reader.read_exact(&mut magic)?;
+    if &magic != b"IXKZGCP4" {
+      return Err(SerializationError::InvalidData);
+    }
+    let commitment = KzgCommitment(Vec::deserialize_compressed(&mut reader)?);
     let count = usize::try_from(u64::deserialize_compressed(&mut reader)?)
       .map_err(|_error| SerializationError::InvalidData)?;
-    if count != commitment.0.len() || count != commitment.1.len() {
+    if count != commitment.0.len() {
       return Err(SerializationError::InvalidData);
     }
     let mut matrices = Vec::with_capacity(count);
@@ -263,11 +240,10 @@ impl KzgProverData {
   pub fn concatenate(
     parts: impl IntoIterator<Item = Self>,
   ) -> (KzgCommitment, Self) {
-    let mut commitment = KzgCommitment(vec![], vec![]);
+    let mut commitment = KzgCommitment(vec![]);
     let mut matrices = Vec::new();
     for mut part in parts {
       commitment.0.append(&mut part.commitment.0);
-      commitment.1.append(&mut part.commitment.1);
       matrices.append(&mut part.matrices);
     }
     (commitment.clone(), Self { commitment, matrices })
@@ -280,7 +256,6 @@ pub enum KzgError {
   ShapeMismatch,
   /// The batched pairing equation does not hold.
   PairingCheckFailed,
-  DegreeBoundFailed,
 }
 
 /// See the module docs.
@@ -345,7 +320,17 @@ impl KzgPcs {
   }
 
   pub fn new(srs: Arc<Srs>, max_quotient_degree: usize) -> Self {
-    let verifier = super::VerifierParams::from_srs(&srs);
+    let max_trace_len = srs.max_len();
+    Self::with_max_trace_len(srs, max_trace_len, max_quotient_degree)
+  }
+
+  pub fn with_max_trace_len(
+    srs: Arc<Srs>,
+    max_trace_len: usize,
+    max_quotient_degree: usize,
+  ) -> Self {
+    let verifier =
+      super::VerifierParams::with_max_trace_len(&srs, max_trace_len);
     Self { srs: Some(srs), verifier, max_quotient_degree }
   }
 
@@ -381,20 +366,20 @@ impl KzgPcs {
 
   fn msm(&self, coeffs: &[Fr]) -> G1Projective {
     assert!(
-      coeffs.len() <= self.verifier.max_len(),
-      "polynomial length {} exceeds the SRS ({})",
+      coeffs.len() <= self.verifier.max_trace_len(),
+      "polynomial length {} exceeds the trace cap ({})",
       coeffs.len(),
-      self.verifier.max_len()
+      self.verifier.max_trace_len()
     );
     if coeffs.is_empty() {
       return G1Projective::zero();
     }
-    self.msm_at(coeffs, 0)
-  }
-
-  fn msm_at(&self, coeffs: &[Fr], shift: usize) -> G1Projective {
+    assert!(
+      coeffs.len() <= self.prover_srs().max_len(),
+      "proving requires the complete coefficient prefix"
+    );
     if coeffs.iter().skip(1).all(Zero::is_zero) {
-      return self.prover_srs().g1[shift]
+      return self.prover_srs().g1[0]
         * coeffs.first().copied().unwrap_or(Fr::ZERO);
     }
     // Bound digit/bucket scratch and expose point-range parallelism in
@@ -407,7 +392,7 @@ impl KzgPcs {
         .par_chunks(CHUNK)
         .enumerate()
         .map(|(i, scalars)| {
-          let start = shift + batch * CHUNK * concurrency + i * CHUNK;
+          let start = batch * CHUNK * concurrency + i * CHUNK;
           G1Projective::msm(
             &self.prover_srs().g1[start..start + scalars.len()],
             scalars,
@@ -494,23 +479,6 @@ impl Pcs for KzgPcs {
       .collect();
     let commitment = KzgCommitment(
       matrices.iter().map(|m| self.commit_columns(&m.columns)).collect(),
-      matrices
-        .iter()
-        .map(|m| {
-          let shift = self.verifier.max_len() - m.domain.size();
-          if shift == 0 {
-            return vec![];
-          }
-          let points: Vec<_> = m
-            .columns
-            .iter()
-            .map(|c| {
-              self.msm_at(&c.load().expect("coefficient checkpoint"), shift)
-            })
-            .collect();
-          G1Projective::normalize_batch(&points)
-        })
-        .collect(),
     );
     (commitment.clone(), KzgProverData { matrices, commitment })
   }
@@ -550,23 +518,6 @@ impl Pcs for KzgPcs {
       .collect();
     let commitment = KzgCommitment(
       matrices.iter().map(|m| self.commit_columns(&m.columns)).collect(),
-      matrices
-        .iter()
-        .map(|m| {
-          let shift = self.verifier.max_len() - m.domain.size();
-          if shift == 0 {
-            return vec![];
-          }
-          let points: Vec<_> = m
-            .columns
-            .iter()
-            .map(|c| {
-              self.msm_at(&c.load().expect("coefficient checkpoint"), shift)
-            })
-            .collect();
-          G1Projective::normalize_batch(&points)
-        })
-        .collect(),
     );
     (commitment.clone(), KzgProverData { matrices, commitment })
   }
@@ -596,7 +547,6 @@ impl Pcs for KzgPcs {
         challenger.observe_canonical(&(m.domain.log_size as u64));
       }
     }
-    let _degree_challenge = challenger.sample_challenge();
     // Pass 1: evaluate everything, observing values in traversal
     // order, and batch (polynomial, value) pairs per distinct point.
     struct PointBatch<'a> {
@@ -737,50 +687,14 @@ impl Pcs for KzgPcs {
         challenger.observe_canonical(&(domain.log_size as u64));
       }
     }
-    let degree_challenge = challenger.sample_challenge().0;
-    let mut weight = Fr::ONE;
-    let mut shifted_sum = G1Projective::zero();
-    let mut by_degree =
-      vec![G1Projective::zero(); self.verifier.degree_keys.len()];
     for (commitment, matrices) in &rounds {
       if commitment.0.len() != matrices.len()
-        || commitment.1.len() != matrices.len()
+        || matrices.iter().any(|(domain, _)| {
+          domain.log_size > self.verifier.max_trace_len().ilog2() as usize
+        })
       {
         return Err(KzgError::ShapeMismatch);
       }
-      for ((columns, shifted), (domain, _)) in
-        commitment.0.iter().zip(&commitment.1).zip(matrices)
-      {
-        let log = domain.log_size;
-        if log >= by_degree.len() {
-          return Err(KzgError::ShapeMismatch);
-        }
-        if domain.size() == self.verifier.max_len() {
-          if !shifted.is_empty() {
-            return Err(KzgError::ShapeMismatch);
-          }
-        } else {
-          if shifted.len() != columns.len() {
-            return Err(KzgError::ShapeMismatch);
-          }
-          for (&c, &s) in columns.iter().zip(shifted) {
-            by_degree[log] += c * weight;
-            shifted_sum += s * weight;
-            weight *= degree_challenge;
-          }
-        }
-      }
-    }
-    let mut g1 = vec![shifted_sum.into_affine()];
-    let mut g2 = vec![self.verifier.g2];
-    for (sum, key) in by_degree.into_iter().zip(&self.verifier.degree_keys) {
-      if !sum.is_zero() {
-        g1.push((-sum).into_affine());
-        g2.push(*key);
-      }
-    }
-    if !Bls12_381::multi_pairing(g1, g2).is_zero() {
-      return Err(KzgError::DegreeBoundFailed);
     }
     // Mirror `open`'s traversal exactly: observe claimed values and
     // batch (commitment, value) pairs per distinct point.
@@ -925,7 +839,7 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
 }
 
 #[cfg(test)]
-mod degree_tests {
+mod tests {
   use super::*;
 
   #[test]
@@ -1027,7 +941,7 @@ mod degree_tests {
   use multi_stark::traits::Field;
 
   #[test]
-  fn chunked_commitment_matches_native_msm_with_shift_and_tail() {
+  fn chunked_commitment_matches_native_msm_with_tail() {
     let pcs =
       KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(1 << 18, b"chunked-msm")), 4);
     let mut value = Fr::from(17u64);
@@ -1037,20 +951,20 @@ mod degree_tests {
         value
       })
       .collect();
-    for shift in [0, 7] {
-      let expected = G1Projective::msm(
-        &pcs.prover_srs().g1[shift..shift + coefficients.len()],
-        &coefficients,
-      )
-      .unwrap();
-      assert_eq!(pcs.msm_at(&coefficients, shift), expected);
-    }
+    let expected = G1Projective::msm(
+      &pcs.prover_srs().g1[..coefficients.len()],
+      &coefficients,
+    )
+    .unwrap();
+    assert_eq!(pcs.msm(&coefficients), expected);
   }
 
   #[test]
-  fn mixed_degree_openings_enforce_every_bound() {
-    let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(16, b"degree-test")), 4);
+  fn mixed_height_openings_verify_without_proving_powers() {
+    let pcs = KzgPcs::new(
+      Arc::new(Srs::unsafe_dev_setup(16, b"public-degree-test")),
+      4,
+    );
     let domains =
       [pcs.natural_domain_for_degree(2), pcs.natural_domain_for_degree(16)];
     let (commitment, data) = pcs.commit(
@@ -1061,60 +975,39 @@ mod degree_tests {
         })
         .collect(),
     );
+    assert_eq!(commitment.0.iter().map(Vec::len).collect::<Vec<_>>(), [1, 1]);
     let z = Scalar::from_u8(19);
     let (values, proof) = pcs.open(
       vec![(&data, vec![vec![z], vec![z]])],
       &mut Blake3Transcript::new(),
     );
     let rounds = vec![(
-      commitment.clone(),
+      commitment,
       domains
         .into_iter()
-        .zip(values[0].iter())
+        .zip(&values[0])
         .map(|(d, v)| (d, vec![(z, v[0].clone())]))
         .collect(),
     )];
-    pcs.verify(rounds.clone(), &proof, &mut Blake3Transcript::new()).unwrap();
     let verifier = KzgPcs::verifier_only(pcs.verifier.clone(), 4);
     assert!(verifier.srs.is_none());
     verifier
       .verify(rounds.clone(), &proof, &mut Blake3Transcript::new())
       .unwrap();
-    let mut missing = rounds.clone();
-    missing[0].0.1[0].clear();
+    let mut corrupt = rounds.clone();
+    corrupt[0].1[0].1[0].1[0] += Scalar::ONE;
     assert!(
-      verifier.verify(missing, &proof, &mut Blake3Transcript::new()).is_err()
+      verifier.verify(corrupt, &proof, &mut Blake3Transcript::new()).is_err()
     );
-    let mut corrupt = rounds;
-    corrupt[0].0.1[0][0] = pcs.prover_srs().g1[0];
+    let mut oversized = rounds;
+    oversized[0].1[0].0.log_size = 5;
     assert!(matches!(
-      verifier.verify(corrupt, &proof, &mut Blake3Transcript::new()),
-      Err(KzgError::DegreeBoundFailed)
-    ));
-
-    // A valid KZG opening for a polynomial too large for its declared
-    // two-row domain must be rejected, even though it fits the global SRS.
-    let columns = vec![Column::from(vec![Fr::ZERO, Fr::ZERO, Fr::ONE])];
-    let commitment = KzgCommitment(
-      pcs.commit_columns(&columns).into_iter().map(|c| vec![c]).collect(),
-      vec![vec![pcs.prover_srs().g1[0]]],
-    );
-    let data = KzgProverData {
-      commitment: commitment.clone(),
-      matrices: vec![CommittedMatrix { domain: domains[0], columns }],
-    };
-    let (values, proof) =
-      pcs.open(vec![(&data, vec![vec![z]])], &mut Blake3Transcript::new());
-    assert!(matches!(
-      verifier.verify(
-        vec![(
-          commitment,
-          vec![(domains[0], vec![(z, values[0][0][0].clone())])]
-        )],
-        &proof,
-        &mut Blake3Transcript::new()
-      ),
-      Err(KzgError::DegreeBoundFailed)
+      verifier.verify(oversized, &proof, &mut Blake3Transcript::new()),
+      Err(KzgError::ShapeMismatch)
     ));
   }
 }
+
+#[cfg(test)]
+#[path = "pcs/public_degree_tests.rs"]
+mod public_degree_tests;

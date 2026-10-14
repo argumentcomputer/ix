@@ -69,7 +69,7 @@ public def run : IO Unit := do
       unless !(← (runDir / "first-kzg").pathExists) do
         throw <| IO.userError "compression continued after failed source verification"
       let packet ← IO.FS.readBinFile (System.FilePath.mk profile / "kzg/packet.bin")
-      let tag := ByteArray.mk #[73, 88, 67, 77, 80, 0, 0, 1]
+      let tag := ByteArray.mk #[73, 88, 67, 77, 80, 0, 0, 4]
       let proof := tag ++ packet
       let wrapped : Ixon.Proof := { claim := original.claim, proof }
       let compressedAddr ← store home (Ixon.Proof.ser wrapped)

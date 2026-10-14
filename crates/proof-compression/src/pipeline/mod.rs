@@ -4,6 +4,7 @@ mod init_claim;
 mod init_fri;
 pub mod registry;
 mod root;
+mod setup;
 mod storage;
 mod wrap;
 
@@ -13,7 +14,7 @@ use std::{
   process::{Command, Stdio},
 };
 
-pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x01";
+pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x04";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn command(stage: &str, args: &[String]) -> Result<()> {
@@ -82,7 +83,7 @@ fn identity(
   log_height: u32,
 ) -> blake3::Hash {
   let mut h = blake3::Hasher::new();
-  h.update(b"ix-compress-run/v1");
+  h.update(b"ix-compress-run/v4");
   for bytes in [vk, proof, claim] {
     h.update(&(bytes.len() as u64).to_le_bytes());
     h.update(bytes);
