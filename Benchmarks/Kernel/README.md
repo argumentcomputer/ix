@@ -77,6 +77,12 @@ coverage is flagged next to the wall-time ratio.
 - `kernel-check-ixe --fold` (`Benchmarks/Kernel/CheckIxeFold.lean`): the
   batch fold over the constants the environment check accepts, for
   comparison with the per-constant step.
+- `kernel-check-ixe --entry authenticated|unauthenticated|hash <input.ixe>`
+  (`Benchmarks/Kernel/CheckIxeEntry.lean`): the certified entry at BLAKE3,
+  `Ixon.Authenticated.checkBytes`, run once over the same records as their
+  exact `.ixe` bytes; `unauthenticated` runs the same stages without
+  authentication, and `hash` times authentication alone at the Rust and at
+  the pure BLAKE3. The verdict and timings go to stderr.
 
 ## Recorded results (2026-10-02)
 

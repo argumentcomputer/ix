@@ -398,7 +398,7 @@ lean_exe «kernel-source-ingress» where
 lean_lib KernelEntry where
   roots := #[`Benchmarks.Kernel.CheckIxeStep,
     `Benchmarks.Kernel.CheckIxeReadCache, `Benchmarks.Kernel.CheckIxeStream, `Benchmarks.Kernel.CheckIxePool,
-    `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold,
+    `Benchmarks.Kernel.CheckIxe, `Benchmarks.Kernel.CheckIxeFold, `Benchmarks.Kernel.CheckIxeEntry,
     `Benchmarks.Kernel.CheckIxeGuarded, `Benchmarks.Kernel.CheckIxeRows,
     `Benchmarks.Kernel.CheckIxeReport, `Benchmarks.Kernel.CheckIxePaired]
 
