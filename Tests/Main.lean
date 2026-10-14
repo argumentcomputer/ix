@@ -34,6 +34,7 @@ import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
+import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.SourceIngress
@@ -197,6 +198,10 @@ seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
 about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
 def primaryRunners : List (String × IO UInt32) := [
   ("aiur-rust-syntax", AiurTests.RustSyntax.run),
+  -- Reductions no kernel may make beyond Lean's (class methods reduced
+  -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
+  -- probe's closure through the Rust kernel, Ix.Tc and IxC (about 9 s).
+  ("kernel-fast-paths", Tests.Ix.Kernel.FastPaths.run),
   -- The circuit TagN codec against the host codec (about 16 s).
   ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
   ("aiur-prove", do
