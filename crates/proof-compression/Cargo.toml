@@ -15,6 +15,7 @@ ark-poly = "0.5"
 ark-serialize = { version = "0.5", features = ["std"] }
 bincode = { version = "2", features = ["serde"] }
 blake3 = { workspace = true }
+tiny-keccak = { workspace = true }
 blake2b_simd = "1"
 num-bigint = { workspace = true }
 serde = { version = "1", features = ["derive"] }

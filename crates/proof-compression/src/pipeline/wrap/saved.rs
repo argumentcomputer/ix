@@ -284,6 +284,7 @@ mod tests {
       proof_bytes,
       input_blake3: BTreeMap::new(),
       setup_identity: [0; 32],
+      development_srs: true,
       load_seconds: 0.0,
     }
   }

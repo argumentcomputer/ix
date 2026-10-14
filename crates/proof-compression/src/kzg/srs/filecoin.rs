@@ -158,8 +158,10 @@ pub fn load_filecoin_cache(
   load_cache(cache, expected_manifest_digest, prefix_len, FILECOIN)
 }
 
-fn invalid(message: impl ToString) -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidData, message.to_string())
+fn invalid(
+  message: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> io::Error {
+  io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 fn validate_prefix(prefix_len: usize, spec: ChallengeSpec) -> io::Result<()> {
@@ -367,7 +369,7 @@ impl Temporary {
       ));
       match OpenOptions::new().write(true).create_new(true).open(&path) {
         Ok(file) => return Ok((Self(path), file)),
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {},
         Err(error) => return Err(error),
       }
     }
@@ -392,7 +394,8 @@ fn hash_exact(
   buffer: &mut [u8],
 ) -> io::Result<()> {
   while remaining != 0 {
-    let count = remaining.min(buffer.len() as u64) as usize;
+    let count = usize::try_from(remaining.min(buffer.len() as u64))
+      .expect("read length is bounded by the buffer");
     source.read_exact(&mut buffer[..count])?;
     hasher.update(&buffer[..count]);
     remaining -= count as u64;

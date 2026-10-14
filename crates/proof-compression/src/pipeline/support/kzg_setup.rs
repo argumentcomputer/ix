@@ -9,7 +9,7 @@
 //! file or from the shared directory named by `IX_KZG_SRS_CACHE`.
 use super::kzg_storage as storage;
 use crate::kzg::{
-  KzgConfig, PublicSetup, Srs, VerifierParams,
+  KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams,
   srs::filecoin::{
     FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, FILECOIN_PUBLIC_MAX_DEGREE,
     filecoin_setup_id, load_filecoin_cache,
@@ -101,6 +101,7 @@ enum Policy {
 pub(crate) struct SetupSource {
   policy: Policy,
   public_setup: PublicSetup,
+  transcript_kind: TranscriptKind,
 }
 
 fn parse_digest(text: &str) -> storage::Result<[u8; 32]> {
@@ -133,6 +134,7 @@ impl SetupSource {
         cache_directory: None,
       },
       public_setup: PublicSetup::known_trapdoor(public_max_degree, seed),
+      transcript_kind: TranscriptKind::Blake3,
     })
   }
 
@@ -145,6 +147,7 @@ impl SetupSource {
         max_degree: FILECOIN_PUBLIC_MAX_DEGREE,
         id: filecoin_setup_id(),
       },
+      transcript_kind: TranscriptKind::Blake3,
     }
   }
 
@@ -191,6 +194,12 @@ impl SetupSource {
       setup = setup.with_cache_directory(directory);
     }
     Ok(setup)
+  }
+
+  /// Bind checkpoint identity to the selected Fiat-Shamir protocol.
+  pub(crate) fn with_transcript(mut self, kind: TranscriptKind) -> Self {
+    self.transcript_kind = kind;
+    self
   }
 
   /// Prefer a shared directory of cached development parameters, keyed by
@@ -289,15 +298,18 @@ impl SetupSource {
     if !quotient.is_power_of_two() {
       return Err("invalid quotient budget".into());
     }
-    Ok(if verify_only {
-      KzgConfig::verifier_only(self.verifier_params(height)?, quotient)
-    } else {
-      KzgConfig::with_max_trace_len(
-        Arc::new(self.srs(height, false)?),
-        height,
-        quotient,
-      )
-    })
+    Ok(
+      (if verify_only {
+        KzgConfig::verifier_only(self.verifier_params(height)?, quotient)
+      } else {
+        KzgConfig::with_max_trace_len(
+          Arc::new(self.srs(height, false)?),
+          height,
+          quotient,
+        )
+      })
+      .with_transcript(self.transcript_kind),
+    )
   }
 
   /// The setup identity bound into checkpoints and fixed-cache profiles.
@@ -343,7 +355,8 @@ impl SetupSource {
   ) -> storage::Result<()> {
     if fs::read(dir.join(BINDING_FILE))? != self.identity(height, quotient)? {
       return Err(
-        "checkpoint setup, public degree or trace cap mismatch".into(),
+        "checkpoint setup, transcript, public degree or trace cap mismatch"
+          .into(),
       );
     }
     Ok(())
@@ -371,6 +384,18 @@ mod tests {
     );
     setup.bind_stage(&dir, 64, 2)?;
     setup.check_binding(&dir, 64, 2)?;
+    let keccak = setup.clone().with_transcript(TranscriptKind::Keccak256);
+    assert_eq!(
+      setup.verifier_params(64)?.to_bytes()?,
+      keccak.verifier_params(64)?.to_bytes()?
+    );
+    assert_ne!(setup.identity(64, 2)?, keccak.identity(64, 2)?);
+    assert_eq!(
+      keccak.config(64, 2, false)?.transcript_seed(),
+      keccak.config(64, 2, true)?.transcript_seed()
+    );
+    assert!(keccak.check_binding(&dir, 64, 2).is_err());
+    assert!(keccak.bind_stage(&dir, 64, 2).is_err());
     assert!(setup.check_binding(&dir, 32, 2).is_err());
     assert!(setup.check_binding(&dir, 64, 4).is_err());
     assert!(

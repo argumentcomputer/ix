@@ -58,6 +58,30 @@ identity. The Filecoin identity derives from the ceremony digest and its
 checkpoints and verifier profiles. Development identities derive from the
 seed and declared degree; the trapdoor remains known.
 
+## Final proof transcript
+
+New recursive KZG proofs use Keccak-256 in portable verifier profile v5.
+The FRI proof, first KZG proof and the recursive circuit's verification of
+that first proof retain BLAKE3. The compact proof layout and SRS are unchanged.
+Portable v4 verifiers continue to verify their BLAKE3 proofs; the profile
+version selects the transcript, without trying alternatives. New outer
+checkpoint bindings include the transcript choice, so v4 checkpoints require
+a fresh output directory. Metadata checksums and registry digests remain BLAKE3.
+
+The Keccak transcript starts with a zero 32-byte state. For counters 0, 1 and
+2 it computes Keccak-256 over
+`"multi-stark/kzg/keccak256/v1" || counter:u8 || state:bytes32 || observations`.
+The first two digests concatenate into a 512-bit **big-endian** integer reduced
+modulo the BLS12-381 scalar field; the third digest becomes the next state.
+All three hashes use the old state, then the observation buffer is cleared.
+Observations keep the existing canonical field/point and vector encodings.
+The parameter seed has its own Keccak protocol domain and binds the same
+public setup anchors and degree limits as the BLAKE3 configuration.
+
+This profile makes a custom Ethereum verifier's transcript use native Keccak;
+it does not change the proof into a standard PLONK format or implement a
+Solidity verifier.
+
 ## GPU proving
 
 The `cuda` feature compiles the KZG kernels with nvcc and runs

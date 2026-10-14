@@ -45,7 +45,7 @@ use super::cuda;
 use super::domain::Radix2Coset;
 use super::field::Scalar;
 use super::srs::Srs;
-use super::transcript::Blake3Transcript;
+use super::transcript::KzgTranscript;
 
 /// Per-matrix column commitments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -856,7 +856,7 @@ impl Pcs for KzgPcs {
   type F = Scalar;
   type Challenge = Scalar;
   type Domain = Radix2Coset;
-  type Challenger = Blake3Transcript;
+  type Challenger = KzgTranscript;
   type Commitment = KzgCommitment;
   type ProverData = KzgProverData;
   type Proof = KzgProof;
@@ -941,7 +941,7 @@ impl Pcs for KzgPcs {
   fn open(
     &self,
     rounds: OpeningRounds<'_, KzgProverData, Scalar>,
-    challenger: &mut Blake3Transcript,
+    challenger: &mut KzgTranscript,
   ) -> (OpenedValues<Scalar>, KzgProof) {
     for (data, _) in &rounds {
       challenger.observe_commitment(data.commitment.clone());
@@ -1111,7 +1111,7 @@ impl Pcs for KzgPcs {
     &self,
     rounds: VerifyRounds<KzgCommitment, Radix2Coset, Scalar>,
     proof: &KzgProof,
-    challenger: &mut Blake3Transcript,
+    challenger: &mut KzgTranscript,
   ) -> Result<(), KzgError> {
     // Serde-decoded points were validated; in-memory callers may not be.
     let points: Vec<_> = rounds
@@ -1354,10 +1354,10 @@ mod tests {
       Scalar::from_u8(23),
       Scalar::from_u8(29),
     ]];
-    let expected =
-      pcs.open(vec![(&resident, points.clone())], &mut Blake3Transcript::new());
+    let expected = pcs
+      .open(vec![(&resident, points.clone())], &mut KzgTranscript::default());
     let actual =
-      pcs.open(vec![(&disk, points.clone())], &mut Blake3Transcript::new());
+      pcs.open(vec![(&disk, points.clone())], &mut KzgTranscript::default());
     pcs
       .verify(
         vec![(
@@ -1368,7 +1368,7 @@ mod tests {
           )],
         )],
         &actual.1,
-        &mut Blake3Transcript::new(),
+        &mut KzgTranscript::default(),
       )
       .unwrap();
     assert_eq!(actual, expected);
@@ -1503,7 +1503,7 @@ mod tests {
     let z = Scalar::from_u8(19);
     let (values, proof) = pcs.open(
       vec![(&data, vec![vec![z], vec![z]])],
-      &mut Blake3Transcript::new(),
+      &mut KzgTranscript::default(),
     );
     let rounds = vec![(
       commitment,
@@ -1516,17 +1516,17 @@ mod tests {
     let verifier = KzgPcs::verifier_only(pcs.verifier.clone(), 4);
     assert!(verifier.srs.is_none());
     verifier
-      .verify(rounds.clone(), &proof, &mut Blake3Transcript::new())
+      .verify(rounds.clone(), &proof, &mut KzgTranscript::default())
       .unwrap();
     let mut corrupt = rounds.clone();
     corrupt[0].1[0].1[0].1[0] += Scalar::ONE;
     assert!(
-      verifier.verify(corrupt, &proof, &mut Blake3Transcript::new()).is_err()
+      verifier.verify(corrupt, &proof, &mut KzgTranscript::default()).is_err()
     );
     let mut oversized = rounds;
     oversized[0].1[0].0.log_size = 5;
     assert!(matches!(
-      verifier.verify(oversized, &proof, &mut Blake3Transcript::new()),
+      verifier.verify(oversized, &proof, &mut KzgTranscript::default()),
       Err(KzgError::ShapeMismatch)
     ));
   }

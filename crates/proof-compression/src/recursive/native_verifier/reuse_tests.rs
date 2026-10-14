@@ -408,3 +408,26 @@ fn recursive_shape_deduplicates_log_zero_opening_points() {
   .unwrap();
   assert_eq!(plan.shape.opening_generators, [Scalar::ONE]);
 }
+
+#[test]
+fn recursive_profile_rejects_keccak_before_circuit_construction() {
+  let mut fixture = Fixture::new();
+  let (_, claims) = fixture.proof(7);
+  let plan =
+    Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
+  let mut profile = plan.profile;
+  profile.transcript_kind = crate::kzg::TranscriptKind::Keccak256;
+  assert!(matches!(
+    Plan::from_profile(&profile, &[2], schema(&claims), layout()),
+    Err(error) if error.contains("requires a BLAKE3 inner transcript")
+  ));
+  fixture.system.config = fixture
+    .system
+    .config
+    .clone()
+    .with_transcript(crate::kzg::TranscriptKind::Keccak256);
+  assert!(matches!(
+    Plan::new(&fixture.system, &[2], schema(&claims), layout()),
+    Err(error) if error.contains("requires a BLAKE3 inner transcript")
+  ));
+}
