@@ -35,7 +35,7 @@ use std::{
 use super::init_fri;
 use super::support::{
   kzg_fixed_cache::FixedCache,
-  kzg_setup::{FIRST_SEED, SetupSource},
+  kzg_setup::{FIRST_SEED, SetupClass, SetupSource},
   kzg_storage as storage, kzg_worker_protocol as worker_protocol,
 };
 
@@ -867,8 +867,9 @@ fn prove_with_state(
     fs::write(out.join("profile-id.bin"), profile)?;
     fs::write(out.join("packet.bin"), &packet)?;
   }
+  let development = setup.class() == SetupClass::Development;
   let report = format!(
-    "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} altered_claims_rejected=18 development_srs=true\n",
+    "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} altered_claims_rejected=18 development_srs={development}\n",
     bytes.len(),
     packet.len(),
     start.elapsed().as_secs_f64()
@@ -884,8 +885,9 @@ fn prove_with_state(
     "native_verification_passed": true,
     "negative_tests_pass": true,
     "altered_claims_rejected": 18,
-    "development_srs": true,
-    "known_trapdoor": true,
+    "development_srs": development,
+    "known_trapdoor": development,
+    "setup": setup.class().label(),
     "setup_id": blake3::Hash::from_bytes(setup_id).to_string(),
     "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_string(),
     "public_max_degree": public_setup.max_degree,

@@ -3,7 +3,9 @@
 use super::{
   super::Result as PipelineResult,
   super::{
-    init_claim, setup::SetupSource, storage,
+    init_claim,
+    setup::{SetupClass, SetupSource},
+    storage,
     support::kzg_fixed_cache as fixed_cache,
   },
 };
@@ -674,6 +676,7 @@ fn prove_with_traces(
     fs::write(dir.join("verifier.bin"), encoded)?;
   }
   let public_setup = system.config.pcs().verifier_params().public_setup();
+  let development = setup.class() == SetupClass::Development;
   let report = serde_json::json!({
     "proof_bytes": bytes.len(),
     "packet_bytes": packet.len(),
@@ -688,9 +691,9 @@ fn prove_with_traces(
     "native_verification_passed": true,
     "external_pairings_pass": true,
     "negative_tests_pass": true,
-    "development_srs": true,
-    "known_trapdoor": true,
-    "setup": "development",
+    "development_srs": development,
+    "known_trapdoor": development,
+    "setup": setup.class().label(),
     "fused_witness": traces.is_some(),
     "resident_columns": resident,
     "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_hex().to_string(),
