@@ -191,7 +191,7 @@ jobs:
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
         with:
           sccache: s3
           sticky_cache: |
@@ -202,7 +202,7 @@ jobs:
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           use-github-cache: false
@@ -264,7 +264,7 @@ jobs:
             exit 1
           fi
 
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@17b59092eb37ebfdbb034460892887c09100eaa3 # v2.5.0
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: generic
@@ -275,7 +275,7 @@ jobs:
           path: ./.lake
           key: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@f061402b660e0c34644504b324e830f2991d4865 # v1.6.1
         with:
           auto-config: false
           use-github-cache: false
