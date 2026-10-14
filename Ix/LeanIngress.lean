@@ -2,6 +2,7 @@ import Ix.CondenseM
 import Ix.LeanIngress.Expr
 import IxC.Kernel.Ixon.Prelude
 import IxC.Kernel.Cached.Installed
+import Ix.RoleEvidence
 
 /-! # Source mode: Lean environments as the checker's declarations
 
@@ -22,9 +23,9 @@ the faithfulness of the accepted environment to the Lean environment.
 
 ## Keys
 
-The kernel key is Lean's own name (`ingressName`). The checker's pinned names
-are Lean's names, so the pin table is the identity and no `ix.<hex>` name
-occurs. A recursor keeps its Lean name, which is the name the checker's
+The kernel key is Lean's own name (`ingressName`). A role's key is its Lean
+name, so Source mode's role table is the identity (`sourceBinding`) and no
+`ix.<hex>` name occurs. A recursor keeps its Lean name, which is the name the checker's
 frontend derives (`T.rec`, `T.rec_j`). Level parameters are positions
 (`Numbering`): a constant's `i`-th Lean level parameter is `i`, except at a
 large eliminator, whose elimination level is the fresh position `n` after
@@ -668,20 +669,65 @@ def prepareSource (pre : Ix.Kernel.Reader.Prelude) (env : Ix.Environment)
   let decls ← (leanIngress env blocks pre.state).mapError .ingress
   pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
-/-- The Source-mode check over an explicit prelude and `Nat`-operation pin
-list. -/
-def checkSourceWith (pre : Ix.Kernel.Reader.Prelude) (natPins : List Ix.Kernel.NatOpPinSet)
+/-! ## Source mode's role table
+
+**The table is fixed**: every role is bound to the constant under its Lean
+name (`Role.leanName`). The ingress keeps Lean's names (`ingressName`), and a
+role's key is its Lean name (`roleKey`), so the binding is the identity and no
+renaming happens; a declaration under a role's name with another shape is
+rejected or declined by the fold, as for Ixon.
+
+**The evidence** is fixed too: the structural operations' `defeq` entries,
+and for each well-founded operation the certificate theorems of
+`IxC/Kernel/PinGen/Certs.lean` (`Ix.RoleEvidence.certTheorems`) under their
+Lean names, **ingested with the environment**: an environment that imports
+`IxC.Kernel.PinGen.Certs` carries them as ordinary declarations, which the
+fold checks as theorems like any other. Each proof is closed over the
+operation's dependency closure (`Ix.RoleEvidence.closedProofs`) before the
+fold receives it, as the fold's locality condition requires. An operation
+whose theorems are not in the environment, or do not close, gets no evidence,
+and declines. -/
+
+/-- Source mode's binding: role `r` is the constant named `r.leanName`. -/
+def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Key := r.leanName
+
+/-- **Source mode's evidence** over the prepared declarations, with the
+reason each well-founded operation without evidence has none. -/
+def sourceEvidenceReport (decls : Array CDecl) : Ix.Kernel.Evidences × List String := Id.run do
+  let uni : Ix.RoleEvidence.Universe := decls.foldl Ix.RoleEvidence.Universe.add {}
+  let lookMap := Ix.RoleEvidence.lookupOf decls
+  let look : CName → Option Ix.Kernel.ConstantInfo := (lookMap[·]?)
+  let mut ev : Ix.Kernel.Evidences :=
+    Ix.RoleEvidence.defeqRoles.map fun r => (r, Ix.RoleEvidence.defeqEvidence r)
+  let mut why : List String := []
+  for (r, _) in Ix.RoleEvidence.certTheorems do
+    match Ix.RoleEvidence.closedProofs decls uni look Ix.RoleEvidence.ofLeanName r with
+    | .ok ps => ev := ev ++ [(r, ps.map fun p => .proof p)]
+    | .error e => why := why ++ [s!"{repr r}: {e}"]
+  return (ev, why)
+
+/-- **Source mode's evidence** over the prepared declarations. -/
+def sourceEvidence (decls : Array CDecl) : Ix.Kernel.Evidences := (sourceEvidenceReport decls).1
+
+/-- The Source-mode check over an explicit prelude and evidence. -/
+def checkSourceWith (pre : Ix.Kernel.Reader.Prelude) (ev : Ix.Kernel.Evidences)
     (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except SourceError Ix.Kernel.Env := do
   let decls ← prepareSource pre env blocks
-  (Ix.Kernel.Cached.checkDecls .verified natPins decls).mapError fun (e, i) => .kernel e i
+  (Ix.Kernel.Cached.checkDecls .verified ev decls).mapError fun (e, i) => .kernel e i
 
 /-- **The Source-mode check**: `leanIngress` behind the committed prelude
 (the Ixon reader's, whose constants carry Lean's names), then the verified
-fold at the empty `Nat`-operation pin list (the pinned `Nat` operations
-decline). -/
+fold at Source mode's evidence (`sourceEvidence`: the certificate theorems the
+environment carries, closed). -/
+def checkSourceUsing (prelude : Except String Ix.Kernel.Reader.Prelude) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError Ix.Kernel.Env := do
+  let pre ← prelude.mapError .prelude
+  let decls ← prepareSource pre env blocks
+  (Ix.Kernel.Cached.checkDecls .verified (sourceEvidence decls) decls).mapError
+    fun (e, i) => .kernel e i
+
 def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
-    Except SourceError Ix.Kernel.Env := do
-  let pre ← Ix.Kernel.Reader.builtinPrelude.mapError .prelude
-  checkSourceWith pre [] env blocks
+    Except SourceError Ix.Kernel.Env :=
+  checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
 
 end Ix.LeanIngress

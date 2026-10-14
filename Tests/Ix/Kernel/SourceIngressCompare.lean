@@ -7,7 +7,8 @@ The same Lean environment checked both ways, constant by constant: the
 Source-mode run (`Tests.Ix.Kernel.SourceIngressStep`) and the environment
 check of its Ixon compilation (`Benchmarks.Kernel.CheckIxeStep`: the Ixon
 reader, the prelude's records first, one record at a time, the compiler's
-hints), at a `Nat`-operation pin list of the caller's choosing. A Lean name
+hints), under the default role table and its evidence
+(`Ix.Kernel.Reader.defaultTable`). A Lean name
 gets the verdict of the record its compiled constant resolves to (a block
 member's projection resolves to its block, a recursor to its recursor
 record's row). -/
@@ -19,19 +20,19 @@ open Benchmarks.Kernel.CheckIxeStep
 
 /-- The verdicts of the Ixon environment check of `ixon`, by Lean name (the
 checker's spelling of it). -/
-def ixonVerdicts (ixon : Ixon.Env) (natPins : List Ix.Kernel.NatOpPinSet) :
+def ixonVerdicts (ixon : Ixon.Env) :
     IO (Std.HashMap CName (String × String)) := do
   let mut store : RecordStore := {}
   for (address, lazy) in ixon.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store ixon.anonHints
-  let s := setup store (ixon.blobs[·]?) pins pre hints.lookup
+  let s := setup store (ixon.blobs[·]?) table pre hints.lookup
   let rows ← IO.mkRef (Std.HashMap.emptyWithCapacity (α := Address) (β := String × String) 0)
   let names := reportNames ixon store
   let total := s.ordered.size
-  let _ ← checkLoop s natPins (names.getD · #[]) s.ordered {}
+  let _ ← checkLoop s (names.getD · #[]) s.ordered {}
     (fun row => rows.modify (·.insert row.address (row.outcome, row.reason)))
     (progress := fun i _ => do
       if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")

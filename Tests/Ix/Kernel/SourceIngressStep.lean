@@ -85,10 +85,17 @@ structure Run where
   generated : Nat
   projRewrites : Nat
   times : Array (String × Nat)
+  /-- Source mode's evidence (`Ix.LeanIngress.sourceEvidence`), and why each
+  well-founded operation without evidence has none -/
+  evidence : Ix.Kernel.Evidences := []
+  evidenceErrors : List String := []
 
-/-- **The run.** -/
-def run (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet) (env : Ix.Environment)
-    (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false) : IO Run := do
+/-- **The run.** The evidence is Source mode's, from the prepared declarations
+(`Ix.LeanIngress.sourceEvidenceReport`): the environment's certificate theorems,
+closed, unless `evidence` is given. -/
+def run (pre : Prelude) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false)
+    (evidence : Option Ix.Kernel.Evidences := none) : IO Run := do
   let t0 ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let t1 ← IO.monoMsNow
@@ -120,6 +127,10 @@ def run (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet) (env : Ix.Environ
       lowered := lowered ++ r.decls
   let t4 ← IO.monoMsNow
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  let (ev, evErrors) ← match evidence with
+    | some ev => pure (ev, [])
+    | none => IO.lazyPure fun _ => Ix.LeanIngress.sourceEvidenceReport prepared
+  let t4e ← IO.monoMsNow
   -- the step check
   let mut checker : Checker := {}
   let mut failed : Std.HashMap Nat Nat := {}
@@ -144,7 +155,7 @@ def run (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet) (env : Ix.Environ
             s!"{(names[root]!)[0]?.getD .anonymous}", 0⟩)
           continue
     let s0 ← IO.monoNanosNow
-    let (c', err) ← IO.lazyPure fun _ => checker.step natPins d
+    let (c', err) ← IO.lazyPure fun _ => checker.step ev d
     let us := ((← IO.monoNanosNow) - s0) / 1000
     checker := c'
     match gi? with
@@ -163,7 +174,8 @@ def run (pre : Prelude) (natPins : List Ix.Kernel.NatOpPinSet) (env : Ix.Environ
   return { graph := g, order := sched.map (·.1), rows := rows', decls := prepared.size, generated,
            projRewrites := rewrites,
            times := #[("group", t1 - t0), ("convert", t2 - t1), ("order", t3 - t2),
-             ("lower", t4 - t3), ("check", t5 - t4)] }
+             ("lower", t4 - t3), ("evidence", t4e - t4), ("check", t5 - t4e)],
+           evidence := ev, evidenceErrors := evErrors }
 
 /-- Counts by outcome (constants and groups) and by outcome and reason
 (constants). -/

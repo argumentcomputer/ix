@@ -13,8 +13,9 @@ fidelity fixtures: structures, nested, mutual, indexed and reflexive
 inductives, projections, quotients, literals, theorems, opaques, axioms, and
 the `partial`/`unsafe` definitions the reader declines) and everything in
 `Init` they reach are canonicalized (`Ix.CanonM`), condensed (`Ix.GraphM`,
-`Ix.CondenseM`) and checked in Source mode (`Ix.LeanIngress`) at the empty
-`Nat`-operation pin list:
+`Ix.CondenseM`) and checked in Source mode (`Ix.LeanIngress`) at Source mode's
+evidence (`Ix.LeanIngress.sourceEvidence`: the certificate theorems of
+`IxC.Kernel.PinGen.Certs`, loaded and checked with the fixtures):
 
 * group by group (`Tests.Ix.Kernel.SourceIngressStep`), where every fixture
   declaration must get its expected verdict;
@@ -76,10 +77,10 @@ def expected : List (Lean.Name × String) := [
   (defs "isEven", "accept"), (defs "isOdd", "accept"), (defs "Tm.size", "accept"),
   (defs "WTree.depthAt", "accept"),
   (own "BoolQ", "accept"), (own "BoolQ.mk", "accept"), (own "BoolQ.const", "accept"),
-  -- the reader's fixture quotient divides (`parity`), and `Nat.mod` declines
-  -- at the empty pin list
-  (defs "ParityQ", "blocked"), (defs "ParityQ.toBool", "blocked"),
-  (defs "ParityQ.toBool_mk", "blocked"),
+  -- the reader's fixture quotient divides (`parity`): `Nat.mod` is accepted
+  -- on its certificate theorems' evidence, so the quotient is too
+  (defs "ParityQ", "accept"), (defs "ParityQ.toBool", "accept"),
+  (defs "ParityQ.toBool_mk", "accept"),
   -- literals
   (defs "smallNat", "accept"), (defs "bigNat", "accept"),
   -- theorems, opaques, axioms
@@ -91,9 +92,11 @@ def expected : List (Lean.Name × String) := [
   (defs "levelMax", "accept"), (defs "levelImax", "accept"),
   -- declined: a `partial` definition's compiled companion and an `unsafe` one
   (defs "spin._unsafe_rec", "decline"), (defs "unsafeId", "decline"),
-  -- `Nat.div` is a pinned operation and declines at the empty pin list;
-  -- the well-founded `log2` divides
-  (`Nat.div, "decline"), (defs "log2", "blocked"),
+  -- `Nat.div` is a certified operation, accepted on the proof evidence of
+  -- the certificate theorems the environment carries
+  -- (`IxC.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
+  -- `log2` divides
+  (`Nat.div, "accept"), (defs "log2", "accept"),
   -- the prelude, checked on the environment's own copies
   (`Eq, "accept"), (`Eq.rec, "accept"), (`Nat, "accept"), (`Quot, "accept"),
   (`Quot.lift, "accept"), (`Quot.sound, "accept"), (`Bool, "accept"), (`And, "accept")]
@@ -239,16 +242,17 @@ def sharing : TestSeq :=
 /-- The run on the fixture closure, its expected verdicts, and `checkSource` on
 the accepted closure: failures as messages, and lines for the report. -/
 def evaluate : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[defsModule, ownModule]
+  let leanEnv ← getCompileEnv #[defsModule, ownModule, `IxC.Kernel.PinGen.Certs]
   let some idx := leanEnv.getModuleIdx? defsModule | throw (IO.userError "fixture module not loaded")
   let some idx' := leanEnv.getModuleIdx? ownModule | throw (IO.userError "fixture module not loaded")
   let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
     let m := leanEnv.getModuleIdxFor? n
     if m == some idx || m == some idx' then some n else none
-  let env ← envOf leanEnv (seeds ++ #[`Nat.div])
+  let certs := (Ix.RoleEvidence.certTheorems.flatMap (·.2)).toArray
+  let env ← envOf leanEnv (seeds ++ #[`Nat.div] ++ certs)
   let blocks := condense env
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
-  let r ← run pre [] env blocks
+  let r ← run pre env blocks
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   for (n, want) in expected do
