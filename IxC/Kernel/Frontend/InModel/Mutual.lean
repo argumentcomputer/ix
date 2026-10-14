@@ -127,6 +127,8 @@ structure Ctx where
 field positions with the target member of each. -/
 structure MCtor where
   m : Nat
+  /-- its position among member `m`'s constructors -/
+  j : Nat
   c : IndCtorRec
   recFields : List (Nat × Nat)
   deriving Repr, Inhabited
@@ -156,7 +158,7 @@ not this rung's (nested, non-positive).  `members` lists
 member; its telescope is read off the constructor's type again where it
 is needed (`structFieldTeleOf`, the iota right-hand sides). -/
 def classifyCtor (members : List (Key × Nat × Nat)) (lps : List LevelParam) (nP : Nat)
-    (m : Nat) (c : IndCtorRec) : Except String MCtor := do
+    (m j : Nat) (c : IndCtorRec) : Except String MCtor := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
     | throw s!"constructor {c.cv.name} is not a telescope"
@@ -177,7 +179,7 @@ def classifyCtor (members : List (Key × Nat × Nat)) (lps : List LevelParam) (n
         throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
           member application under the field's own binders (nested or non-positive \
           occurrence)"
-  pure ⟨m, c, recFields⟩
+  pure ⟨m, j, c, recFields⟩
 
 /-- Unwrap a generator step that cannot fail on a well-formed block. -/
 def need (what : String) : Option α → Except String α
@@ -218,12 +220,12 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let mut mctors : List MCtor := []
   for m in List.range k do
     let t := b.types.getD m default
-    for cn in t.ctors do
+    for (cn, j) in t.ctors.zipIdx do
       let some c := b.ctors.find? (·.cv.name == cn)
         | throw s!"constructor {cn} of {t.cv.name} is not in the block"
       unless c.nP == nP && c.cv.levelParams == lps do
         throw s!"constructor {cn}: parameter count or level parameters differ"
-      mctors := mctors ++ [← classifyCtor members lps nP m c]
+      mctors := mctors ++ [← classifyCtor members lps nP m j c]
   let n := mctors.length
   unless b.ctors.length == n do throw "constructors not all owned by a member"
   -- the recursors: one per member, `k` motives, `n` minors, no indices,
@@ -316,7 +318,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let auxCtors : List (Key × Nat × Expr × List Nat) ← mctors.mapM fun mc => do
     let ty ← need "aux constructor type"
       (overFirstParams nP t0.cv.type (specFam T lps nP members mc.c.cv.type))
-    pure (auxCtorName T mc.m mc.c.cv.name, mc.c.nF, ty, mc.recFields.map (·.1))
+    pure (auxCtorName T mc.m mc.j, mc.c.nF, ty, mc.recFields.map (·.1))
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
     let rhs ← need "aux rule"
@@ -343,7 +345,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let nF := mc.c.nF
     let ty := rn mc.c.cv.type
     let value ← need "constructor model" (Expr.pisToLams (nP + nF) ty
-      (Expr.mkAppN (constP (auxCtorName T mc.m mc.c.cv.name) lps)
+      (Expr.mkAppN (constP (auxCtorName T mc.m mc.j) lps)
         (varsAt nF nP ++ (List.range nF).map fun i => Expr.bvar (nF - 1 - i))))
     let h := hintFor (hOf heights) value
     heights := (modelName mc.c.cv.name, hintHeight h) :: heights

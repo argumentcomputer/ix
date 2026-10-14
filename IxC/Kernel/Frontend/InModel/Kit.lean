@@ -59,13 +59,9 @@ def tagCtorName (T : Key) (k : Nat) : Key := auxKey (tagName T) (.member k)
 /-- The auxiliary family `T._model._impl.aux`. -/
 def auxName (T : Key) : Key := auxKey (implKey T) .auxFamily
 
-/-- The auxiliary constructor of member `k`'s constructor `C`:
-`T._model._impl.aux.k.<last component of C>`. -/
-def auxCtorName (T : Key) (k : Nat) (C : Key) : Key :=
-  match C with
-  | .str _ s => ((auxName T).num k).str s
-  | .num _ n => ((auxName T).num k).num n
-  | .anonymous => (auxName T).num k
+/-- The auxiliary constructor of member `k`'s constructor `j`:
+`T._model._impl.aux.k.ctor_j`. -/
+def auxCtorName (T : Key) (k j : Nat) : Key := auxKey (auxKey (auxName T) (.member k)) (.ctor j)
 
 /-- The model companion of a block member: `X._model`. -/
 def modelName (n : Key) : Key := auxKey n .model

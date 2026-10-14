@@ -614,7 +614,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       specAll fam i (c.doms.getD i default)
     let ty ← need "aux constructor type" (Expr.replacePiBody nP t0.cv.type
       (mkPis doms' (auxAt fam c.mem c.nF c.idx)))
-    pure (auxCtorName T c.mem c.cname, c.nF, ty,
+    pure (auxCtorName T c.mem c.jIn, c.nF, ty,
       (List.range c.nF).filter fun i => (c.kinds.getD i none).isSome)
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
@@ -629,7 +629,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     nP)
   -- ---------------------------------------------------------------
   -- shared builders
-  let auxCtorName' := fun (c : ACtor) => auxCtorName T c.mem c.cname
+  let auxCtorName' := fun (c : ACtor) => auxCtorName T c.mem c.jIn
   -- the spec'd field domains of a constructor at `o` extra binders
   -- below the parameter frame (field `i` sits `o + i` below)
   let specDoms := fun (c : ACtor) (o : Nat) => (List.range c.nF).map fun i =>
