@@ -346,7 +346,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
       ciN.toConstantVal.levelParams [Level.zero]
       = Expr.forallE (.sort (Level.succ Level.zero))
           (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 0))
-          ⟨Level.substPW [pN] [Level.zero] mbN.pw⟩ := by
+          { mbN with pw := Level.substPW [pN] [Level.zero] mbN.pw } := by
     rw [hlpN, hTN]
     simp [Expr.instantiateLevelParams, Level.subst, Level.subst.go]
   have hRN : denoteMeta m.acval env φ 0
@@ -372,9 +372,9 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.forallE (.bvar 0)
             (.forallE (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 1))
               (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 2))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩)
-          ⟨Level.substPW [pC] [Level.zero] mb1.pw⟩ := by
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw })
+          { mb1 with pw := Level.substPW [pC] [Level.zero] mb1.pw } := by
     rw [hlpC, hTC]
     simp [Expr.instantiateLevelParams, Level.subst, Level.subst.go]
   have hRC : denoteMeta m.acval env φ 0
@@ -394,8 +394,8 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
       show (Expr.forallE (.bvar 0)
             (.forallE (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 1))
               (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 2))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩).instantiate1
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw }).instantiate1
           (.fvar 0 (Expr.sort (Level.succ Level.zero)))
         = Expr.forallE (.fvar 0 (Expr.sort (Level.succ Level.zero)))
             (.forallE
@@ -403,22 +403,22 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩ from rfl,
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw } from rfl,
       denoteMeta_forallE, denoteMeta_fvar,
       show (Expr.forallE
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩).instantiate1
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw }).instantiate1
           (.fvar (0 + 1) (.fvar 0 (Expr.sort (Level.succ Level.zero))))
         = Expr.forallE
             (.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero))))
             (.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-            ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩ from rfl,
+            { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw } from rfl,
       denoteMeta_forallE, denoteMeta_app, hKL, denoteMeta_fvar,
       show (Expr.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero)))).instantiate1
@@ -434,7 +434,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
   have hIF : ciF.toConstantVal.type.instantiateLevelParams
       ciF.toConstantVal.levelParams []
       = Expr.forallE (.const Ix.Kernel.natName []) (.const Ix.Kernel.charName [])
-          ⟨Level.substPW [] [] mbF.pw⟩ := by
+          { mbF with pw := Level.substPW [] [] mbF.pw } := by
     rw [hlpF, hTF]
     simp [Expr.instantiateLevelParams]
   have hRF : denoteMeta m.acval env φ 0
@@ -456,7 +456,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.app (.const Ix.Kernel.listName [Level.zero])
             (.const Ix.Kernel.charName []))
           (.const Ix.Kernel.stringName [])
-          ⟨Level.substPW [] [] mbO.pw⟩ := by
+          { mbO with pw := Level.substPW [] [] mbO.pw } := by
     rw [hlpO, hTO]
     simp [Expr.instantiateLevelParams, Level.subst]
   have hRO : denoteMeta m.acval env φ 0

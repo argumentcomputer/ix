@@ -423,8 +423,10 @@ partial def encLevel (l : CLevel) : EncM Nat := do
   modify fun s => { s with levels := s.levels.insert l i }
   return i
 
-def requireNever (m : Ix.Kernel.BinderMeta) : EncM Unit :=
+def requireNever (m : Ix.Kernel.BinderMeta) : EncM Unit := do
   unless m.pw.toList?.isNone do throw "a binder with a prop-ness annotation other than `never`"
+  unless m.contract == .many && m.result == .shared do
+    throw "a binder with a non-default contract (the prelude encoding has no contract field)"
 
 partial def encExpr (e : CExpr) : EncM Nat := do
   if let some i := (← get).exprs[e]? then return i

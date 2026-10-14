@@ -266,7 +266,7 @@ theorem annotateCore_forallE_inv {env : Env} {fuel d : Nat}
     ∃ ty' body' pw, annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel (d + 1)
         (body.instantiate1 (.fvar d ty')) = .ok body' ∧
-      e' = .forallE ty' (body'.abstract1 d) ⟨pw⟩ := by
+      e' = .forallE ty' (body'.abstract1 d) { m with pw } := by
   rw [annotateCore_succ] at h
   simp only [annotateBody, Bind.bind, Except.bind] at h
   simp only [annotate_def] at h
@@ -298,7 +298,7 @@ theorem annotateCore_lam_inv {env : Env} {fuel d : Nat}
     ∃ ty' body' pw, annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel (d + 1)
         (body.instantiate1 (.fvar d ty')) = .ok body' ∧
-      e' = .lam ty' (body'.abstract1 d) ⟨pw⟩ := by
+      e' = .lam ty' (body'.abstract1 d) { m with pw } := by
   rw [annotateCore_succ] at h
   simp only [annotateBody, Bind.bind, Except.bind] at h
   simp only [annotate_def] at h

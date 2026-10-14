@@ -335,7 +335,7 @@ def annotatePisWrap (r : CoreFns m) (env : Env) (d : Nat) :
         annotPwPi r env (d + j + 1) body'
       else pure mb.pw
     annotatePisWrap r env d rest (j - 1)
-      (.forallE ty' (body'.abstract1 (d + j)) ⟨pw⟩)
+      (.forallE ty' (body'.abstract1 (d + j)) { mb with pw })
 
 /-- The chained `annotateBody` λ-tail folded over the peeled binders. -/
 def annotateLamsWrap (r : CoreFns m) (env : Env) (d : Nat) :
@@ -346,7 +346,7 @@ def annotateLamsWrap (r : CoreFns m) (env : Env) (d : Nat) :
         annotPwLam r env (d + j + 1) body'
       else pure mb.pw
     annotateLamsWrap r env d rest (j - 1)
-      (.lam ty' (body'.abstract1 (d + j)) ⟨pw⟩)
+      (.lam ty' (body'.abstract1 (d + j)) { mb with pw })
 
 /-! ## Unfolding equations -/
 
@@ -505,8 +505,8 @@ theorem annotateCore_forallE_eq (env : Env) (F d : Nat)
              (body.instantiate1 (.fvar d ty')) >>= fun body' =>
            if !pwWritten mb.pw then
              annotPwPi (pureFns mode env F) env (d + 1) body' >>= fun pw =>
-               pure (Expr.forallE ty' (body'.abstract1 d) ⟨pw⟩)
-           else pure (Expr.forallE ty' (body'.abstract1 d) ⟨mb.pw⟩)) := rfl
+               pure (Expr.forallE ty' (body'.abstract1 d) { mb with pw })
+           else pure (Expr.forallE ty' (body'.abstract1 d) { mb with pw := mb.pw })) := rfl
 
 theorem annotateCore_lam_eq (env : Env) (F d : Nat)
     (ty body : Expr) (mb : BinderMeta) :
@@ -516,8 +516,8 @@ theorem annotateCore_lam_eq (env : Env) (F d : Nat)
              (body.instantiate1 (.fvar d ty')) >>= fun body' =>
            if !pwWritten mb.pw then
              annotPwLam (pureFns mode env F) env (d + 1) body' >>= fun pw =>
-               pure (Expr.lam ty' (body'.abstract1 d) ⟨pw⟩)
-           else pure (Expr.lam ty' (body'.abstract1 d) ⟨mb.pw⟩)) := rfl
+               pure (Expr.lam ty' (body'.abstract1 d) { mb with pw })
+           else pure (Expr.lam ty' (body'.abstract1 d) { mb with pw := mb.pw })) := rfl
 
 theorem ensureSortCore_eq (env : Env) (F d : Nat) (e : Expr) :
     ensureSortCore mode env F d e
@@ -1327,9 +1327,9 @@ theorem annotateBindersOut_wrap
       wrap ((ty', mb) :: rest) j bt
         = (if !pwWritten mb.pw then
             pwf (d + j + 1) bt >>= fun pw =>
-              wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) ⟨pw⟩)
+              wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) { mb with pw })
           else wrap rest (j - 1)
-              (mk ty' (bt.abstract1 (d + j)) ⟨mb.pw⟩))) :
+              (mk ty' (bt.abstract1 (d + j)) { mb with pw := mb.pw }))) :
     ∀ (stk : List AnnotBinderEntryX) (j : Nat) (bt : Expr)
       (pw? : Option PropWhen),
       stk.length = j + 1 →
@@ -1348,11 +1348,11 @@ theorem annotateBindersOut_wrap
     have hq : ∃ q : PropWhen,
         (if !pwWritten mb.pw then
             pwf (d + j + 1) bt >>= fun pw =>
-              wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) ⟨pw⟩)
+              wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) { mb with pw })
           else wrap rest (j - 1)
-              (mk ty' (bt.abstract1 (d + j)) ⟨mb.pw⟩))
-          = wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) ⟨q⟩) ∧
-        annotBinderMeta pw? mb = (⟨q⟩ : BinderMeta) := by
+              (mk ty' (bt.abstract1 (d + j)) { mb with pw := mb.pw }))
+          = wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) { mb with pw := q }) ∧
+        annotBinderMeta pw? mb = ({ mb with pw := q } : BinderMeta) := by
       simp only [annotBinderMeta]
       cases pw? with
       | none => exact (hinv : False).elim
@@ -1369,23 +1369,23 @@ theorem annotateBindersOut_wrap
         rest (j - 1)
         (mk (ty'.abstractRange d j) (bt.abstractRange d (j + 1))
           (annotBinderMeta pw? mb))
-      = wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) ⟨q⟩)
+      = wrap rest (j - 1) (mk ty' (bt.abstract1 (d + j)) { mb with pw := q })
     rw [hqm]
     cases rest with
     | nil =>
       obtain rfl : j = 0 := by simpa using hlen
       rw [hwrap_nil]
       show (pure (mk (ty'.abstractRange d 0)
-          (bt.abstractRange d (0 + 1)) ⟨q⟩) : CheckM Expr)
-        = pure (mk ty' (bt.abstract1 (d + 0)) ⟨q⟩)
+          (bt.abstractRange d (0 + 1)) { mb with pw := q }) : CheckM Expr)
+        = pure (mk ty' (bt.abstract1 (d + 0)) { mb with pw := q })
       rw [abstractRange_zero, abstractRange_succ, abstractRange_zero]
     | cons e' rest' =>
       have hj1 : 1 ≤ j := by
         simp only [List.length_cons] at hlen
         omega
       have hnode : mk (ty'.abstractRange d j)
-          (bt.abstractRange d (j + 1)) ⟨q⟩
-          = (mk ty' (bt.abstract1 (d + j)) ⟨q⟩).abstractRange
+          (bt.abstractRange d (j + 1)) { mb with pw := q }
+          = (mk ty' (bt.abstract1 (d + j)) { mb with pw := q }).abstractRange
               d ((j - 1) + 1) := by
         have hj : (j - 1) + 1 = j := by omega
         rw [hj, hmkR]
@@ -1403,7 +1403,7 @@ theorem annotateBindersOut_wrap
       | some pw =>
         show _ = Except.ok _
         rw [hj]
-        exact hpwf_read _ _ _ (hmkRd ty' (bt.abstract1 (d + j)) ⟨q⟩)
+        exact hpwf_read _ _ _ (hmkRd ty' (bt.abstract1 (d + j)) { mb with pw := q })
 
 /-! ### The write's fuel monotonicity and the leaf bridge (task #161 P5) -/
 
@@ -1419,9 +1419,9 @@ theorem annotatePisWrap_cons (r : CoreFns CheckM) (env : Env) (d : Nat)
       = (if !pwWritten mb.pw then
           annotPwPi r env (d + j + 1) bt >>= fun pw =>
             annotatePisWrap r env d rest (j - 1)
-              (.forallE ty' (bt.abstract1 (d + j)) ⟨pw⟩)
+              (.forallE ty' (bt.abstract1 (d + j)) { mb with pw })
         else annotatePisWrap r env d rest (j - 1)
-              (.forallE ty' (bt.abstract1 (d + j)) ⟨mb.pw⟩)) := by
+              (.forallE ty' (bt.abstract1 (d + j)) { mb with pw := mb.pw })) := by
   simp only [annotatePisWrap]
   split <;> rfl
 
@@ -1436,9 +1436,9 @@ theorem annotateLamsWrap_cons (r : CoreFns CheckM) (env : Env) (d : Nat)
       = (if !pwWritten mb.pw then
           annotPwLam r env (d + j + 1) bt >>= fun pw =>
             annotateLamsWrap r env d rest (j - 1)
-              (.lam ty' (bt.abstract1 (d + j)) ⟨pw⟩)
+              (.lam ty' (bt.abstract1 (d + j)) { mb with pw })
         else annotateLamsWrap r env d rest (j - 1)
-              (.lam ty' (bt.abstract1 (d + j)) ⟨mb.pw⟩)) := by
+              (.lam ty' (bt.abstract1 (d + j)) { mb with pw := mb.pw })) := by
   simp only [annotateLamsWrap]
   split <;> rfl
 

@@ -372,7 +372,7 @@ def trLevel (cx : TrCx) (l : Lean.Level) : TrM CLevel := do
   modify fun s => { s with levels := s.levels.insert l c }
   return c
 
-def never : Ix.Kernel.BinderMeta := ⟨.never⟩
+def never : Ix.Kernel.BinderMeta := { pw := .never }
 
 partial def trExpr (cx : TrCx) (e : Lean.Expr) : TrM CExpr := do
   let p := _root_.Ix.CanonM.leanExprPtr e

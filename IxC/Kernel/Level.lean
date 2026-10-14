@@ -248,10 +248,10 @@ def Expr.instantiateLevelParams (ks : List LevelParam) (us : List Level) : Expr 
   | .app f a => .app (f.instantiateLevelParams ks us) (a.instantiateLevelParams ks us)
   | .lam ty body m =>
     .lam (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
-      ⟨Level.substPW ks us m.pw⟩
+      { m with pw := Level.substPW ks us m.pw }
   | .forallE ty body m =>
     .forallE (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
-      ⟨Level.substPW ks us m.pw⟩
+      { m with pw := Level.substPW ks us m.pw }
   | .letE ty val body => .letE (ty.instantiateLevelParams ks us)
       (val.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
   | .lit l => .lit l

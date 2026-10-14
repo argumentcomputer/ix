@@ -115,7 +115,7 @@ def expected : List (Lean.Name × Verdict) := [
 
 /-! ## Tampering: the comparison has teeth -/
 
-def always : Ix.Kernel.BinderMeta := ⟨.ifAllZero []⟩
+def always : Ix.Kernel.BinderMeta := { pw := .ifAllZero [] }
 
 /-- The first binder's annotation set to `always`. -/
 def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr

@@ -132,8 +132,30 @@ private def qPropWhen (pw : Ix.Kernel.PropWhen) : Lean.Expr :=
   | none => mkConst ``Ix.Kernel.PropWhen.never
   | some ps => mkApp (mkConst ``Ix.Kernel.PropWhen.ifAllZero) (qLevelParams ps)
 
+private def qUses : Ixon.Uses → Lean.Expr
+  | .erased => mkConst ``Ixon.Uses.erased
+  | .linear => mkConst ``Ixon.Uses.linear
+  | .affine => mkConst ``Ixon.Uses.affine
+  | .many => mkConst ``Ixon.Uses.many
+
+private def qValueContract (v : Ixon.ValueContract) : Lean.Expr :=
+  mkApp2 (mkConst ``Ixon.ValueContract.mk)
+    (match v.owned with
+      | .unique => mkConst ``Ixon.Owned.unique
+      | .shared => mkConst ``Ixon.Owned.shared)
+    (match v.locality with
+      | .unrestricted => mkConst ``Ixon.Locality.unrestricted
+      | .local => mkConst ``Ixon.Locality.local)
+
+/-- Defaults are quoted as the default constants, so a quoted pin is the
+same term `{ pw := … }` elaborates to. -/
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
+  mkApp3 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
+    (if m.contract == .many then mkConst ``Ixon.BinderContract.many else
+      mkApp2 (mkConst ``Ixon.BinderContract.mk) (qUses m.contract.uses)
+        (qValueContract m.contract.value))
+    (if m.result == .shared then mkConst ``Ixon.ValueContract.shared else
+      qValueContract m.result)
 
 private def qLiteral : Ix.Kernel.Literal → Lean.Expr
   | .natVal n => mkApp (mkConst ``Ix.Kernel.Literal.natVal) (mkRawNatLit n)

@@ -200,7 +200,7 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
   have hs4 : ∃ bs, (Expr.forallE
       (Ix.Kernel.structFamI p.cvT.name p.cvT.levelParams p.nP p.nIdx (ctors.length + 1) 0)
       (Expr.mkAppN (.bvar (p.nIdx + ctors.length + 1)) (Ix.Kernel.structPsAt 1 p.nIdx ++ [.bvar 0]))
-      ⟨Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large)⟩).stripPis 1
+      { pw := Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large) }).stripPis 1
       = some (bs, Expr.mkAppN (.bvar (p.nIdx + ctors.length + 1))
         (Ix.Kernel.structPsAt 1 p.nIdx ++ [.bvar 0])) :=
     ⟨_, rfl⟩
@@ -220,14 +220,14 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
       obtain ⟨mty, rest, -, hrest, rfl⟩ := Ix.Kernel.structMinorsPisR_cons h
       obtain ⟨bs, hbs⟩ := ih (o + 1) body rest hrest
       exact ⟨((mty : Expr),
-        ⟨Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large)⟩) :: bs,
+        { pw := Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large) }) :: bs,
         by simp [Expr.stripPis, hbs]⟩
   obtain ⟨bsm, hbsm⟩ := hsmin _ _ _ _ hmin
   have h23 := Ix.Kernel.stripPis_append _ hbsm hs34
   have hs2 := Ix.Kernel.stripPis_append 1 (e := Expr.forallE motiveTy minors
-      ⟨Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large)⟩)
+      { pw := Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large) })
     (bs := [((motiveTy : Expr),
-      ⟨Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large)⟩)])
+      { pw := Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large) })])
     (by simp [Expr.stripPis]) h23
   have hs1 := Ix.Kernel.replacePisPw_stripPis p.nP hrec hsT
   have hs := Ix.Kernel.stripPis_append p.nP hs1 hs2

@@ -249,7 +249,7 @@ def structTeleAt (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr × BinderMe
     List (Expr × BinderMeta) :=
   (List.range tele.length).map fun k =>
     let b := tele.getD k default
-    (structIdxAt nF o i l k b.1, ⟨pw⟩)
+    (structIdxAt nF o i l k b.1, { pw })
 
 /-- The variables of an `m`-binder telescope, innermost last. -/
 def structTeleVars (m : Nat) : List Expr := (List.range m).map fun k => Expr.bvar (m - 1 - k)
@@ -302,7 +302,7 @@ def structIhPis (nF o : Nat) (pw : PropWhen) (teleOf : Nat → List (Expr × Bin
         (Expr.mkAppN (.bvar (nF + o - 1 + l + m))
           ((idxOf i).map (structIdxAt nF o i l m) ++
             [Expr.mkAppN (.bvar (nF - 1 - i + l + m)) (structTeleVars m)])))
-      (structIhPis nF o pw teleOf idxOf is (l + 1) body) ⟨pw⟩
+      (structIhPis nF o pw teleOf idxOf is (l + 1) body) { pw }
 
 /-- A constructor's minor premise at a recursive block: its field
 telescope lifted under the `o` extras, every binder's datum reset to
@@ -327,7 +327,7 @@ def structMinorsPisR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
   | (C, nF, cty, recIdx) :: cs, o, body =>
     (structMinorTyR C lps nP nF o pw cty recIdx).bind fun mty =>
       (structMinorsPisR lps nP pw cs (o + 1) body).map fun rest =>
-        .forallE mty rest ⟨pw⟩
+        .forallE mty rest { pw }
 
 /-- The `λ` twin of `structMinorsPisR`. -/
 def structMinorsLamsR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
@@ -336,7 +336,7 @@ def structMinorsLamsR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
   | (C, nF, cty, recIdx) :: cs, o, body =>
     (structMinorTyR C lps nP nF o pw cty recIdx).bind fun mty =>
       (structMinorsLamsR lps nP pw cs (o + 1) body).map fun rest =>
-        .lam mty rest ⟨pw⟩
+        .lam mty rest { pw }
 
 /-- **The generated recursor type at a recursive block**
 
@@ -356,10 +356,10 @@ def structRecTyR (T : Name) (lps : List LevelParam) (elim : LevelParam) (large :
   (Expr.replacePisPw pw nIdx (q.2.liftLooseBVars (n + 1) 0)
       (.forallE (structFamI T lps nP nIdx (n + 1) 0)
         (Expr.mkAppN (.bvar (nIdx + n + 1)) (structPsAt 1 nIdx ++ [.bvar 0]))
-        ⟨pw⟩)).bind fun major =>
+        { pw })).bind fun major =>
   (structMinorsPisR lps nP pw ctors 1 major).bind fun minors =>
     Expr.replacePisPw pw nP tty
-      (.forallE motiveTy minors ⟨pw⟩)
+      (.forallE motiveTy minors { pw })
 
 /-- **The generated rule** for constructor `j` at a recursive block:
 `λ p⃗ motive minor⃗ f⃗_j, minor_j f⃗_j (T.rec p⃗ motive minor⃗ e⃗_i f_i)…`
@@ -383,7 +383,7 @@ def structRecRhsR (T : Name) (lps : List LevelParam) (elim : LevelParam) (large 
       fun inner =>
     (structMinorsLamsR lps nP pw ctors 1 inner).bind fun minors =>
     Expr.pisToLamsPw pw nP tty
-      (.lam motiveTy minors ⟨pw⟩)
+      (.lam motiveTy minors { pw })
 
 /-- The constructors zipped with their recursive positions, as the
 generators take them. -/

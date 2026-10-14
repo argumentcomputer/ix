@@ -1976,7 +1976,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     unfold inferBody
     dsimp only
     try dsimp only
-    obtain ⟨mpw⟩ := m
+    obtain ⟨mpw, mc, mr⟩ := m
     refine SimC.bind (ih.infer hs rfl hwtb.1)
       (fun s₁ tty ttyx hs₁ hP => ?_)
     obtain ⟨httyd, hwtty⟩ := hP

@@ -87,25 +87,25 @@ where the signature says `{…}`.  All five build the same node shape. -/
 /-- `∀ (x : ty), body` — an explicit binder (`x` documents the
 `Init.Prelude` spelling). -/
 def pi (_x : String) (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+  .forallE ty body { pw := .never }
 
 /-- `∀ {x : ty}, body` — an implicit binder in `Init.Prelude` (the
 same node as `pi`; the braces are for the reader). -/
 def piI (_x : String) (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+  .forallE ty body { pw := .never }
 
 /-- `∀ (_ : ty), body` — an anonymous explicit binder (`ty → body`). -/
 def piA (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+  .forallE ty body { pw := .never }
 
 /-- `fun (x : ty) => body` — an explicit binder (name for the reader). -/
 def lm (_x : String) (ty body : Expr) : Expr :=
-  .lam ty body ⟨.never⟩
+  .lam ty body { pw := .never }
 
 /-- `fun {x : ty} => body` — an implicit binder in `Init.Prelude` (the
 same node as `lm`). -/
 def lmI (_x : String) (ty body : Expr) : Expr :=
-  .lam ty body ⟨.never⟩
+  .lam ty body { pw := .never }
 
 /-- Binary application. -/
 def ap2 (f a b : Expr) : Expr := .app (.app f a) b

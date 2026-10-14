@@ -767,10 +767,10 @@ def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr) : Expr 
   | .fvar idx ty .. => mkFVar idx (instLevelParamsP ks us ty)
   | .app f a .. => mkApp (instLevelParamsP ks us f) (instLevelParamsP ks us a)
   | .lam ty body m .. =>
-    mkLam (instLevelParamsP ks us ty) (instLevelParamsP ks us body) ⟨Level.substPW ks us m.pw⟩
+    mkLam (instLevelParamsP ks us ty) (instLevelParamsP ks us body) { m with pw := Level.substPW ks us m.pw }
   | .forallE ty body m .. =>
     mkForallE (instLevelParamsP ks us ty) (instLevelParamsP ks us body)
-      ⟨Level.substPW ks us m.pw⟩
+      { m with pw := Level.substPW ks us m.pw }
   | .letE ty val body .. =>
     mkLetE (instLevelParamsP ks us ty) (instLevelParamsP ks us val)
       (instLevelParamsP ks us body)
@@ -814,12 +814,12 @@ def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
   | .lam ty body m .. =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLam ty' b' ⟨Level.substPW ks us m.pw⟩,
+    Squash.mk (⟨mkLam ty' b' { m with pw := Level.substPW ks us m.pw },
       by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hb, mkLam]⟩, memo)
   | .forallE ty body m .. =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkForallE ty' b' ⟨Level.substPW ks us m.pw⟩,
+    Squash.mk (⟨mkForallE ty' b' { m with pw := Level.substPW ks us m.pw },
       by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hb, mkForallE]⟩, memo)
   | .letE ty val body .. =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>

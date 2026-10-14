@@ -1847,14 +1847,14 @@ def annotateBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
       let pw ← if !pwWritten mb.pw then
           annotPwPi r env (depth + 1) body'
         else pure mb.pw
-      pure (.forallE ty' (body'.abstract1 depth) ⟨pw⟩)
+      pure (.forallE ty' (body'.abstract1 depth) { mb with pw })
     | .lam ty body mb => do
       let ty' ← r.annotate depth ty
       let body' ← r.annotate (depth + 1) (body.instantiate1 (.fvar depth ty'))
       let pw ← if !pwWritten mb.pw then
           annotPwLam r env (depth + 1) body'
         else pure mb.pw
-      pure (.lam ty' (body'.abstract1 depth) ⟨pw⟩)
+      pure (.lam ty' (body'.abstract1 depth) { mb with pw })
     | .letE ty v b => do
       -- The body is annotated *with the value transparent* — nanoda's
       -- `infer_let` instantiates the body with the value and recurses

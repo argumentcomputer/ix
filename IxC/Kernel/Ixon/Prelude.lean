@@ -163,8 +163,8 @@ def decodePinTable (text : String) : Except String (Array PinNode) := do
         let us ← ((List.range (fs.size - 2)).map (· + 2)).mapM levelAt
         pure (.expr (.const (← nameAt 1) us))
       | "A" => pure (.expr (.app (← exprAt 1) (← exprAt 2)))
-      | "L" => pure (.expr (.lam (← exprAt 1) (← exprAt 2) ⟨.never⟩))
-      | "F" => pure (.expr (.forallE (← exprAt 1) (← exprAt 2) ⟨.never⟩))
+      | "L" => pure (.expr (.lam (← exprAt 1) (← exprAt 2) { pw := .never }))
+      | "F" => pure (.expr (.forallE (← exprAt 1) (← exprAt 2) { pw := .never }))
       | "E" => pure (.expr (.letE (← exprAt 1) (← exprAt 2) (← exprAt 3)))
       | "N" => pure (.expr (.lit (.natVal (← num 1))))
       | "T" => pure (.expr (.lit (.strVal (← percentDecode (← field 1)))))

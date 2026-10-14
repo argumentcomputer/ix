@@ -146,7 +146,7 @@ theorem stripPis_instantiateLevelParams_eq (ks : List LevelParam)
         cases h1; exact ⟨rfl, rfl⟩
       obtain ⟨hb2, hbody2⟩ :
           (d.instantiateLevelParams ks us,
-            (⟨Level.substPW ks us m.pw⟩ : BinderMeta)) :: p2.1
+            ({ m with pw := Level.substPW ks us m.pw } : BinderMeta)) :: p2.1
               = bs' ∧
             p2.2 = body' := by
         cases h2; exact ⟨rfl, rfl⟩

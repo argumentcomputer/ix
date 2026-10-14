@@ -716,9 +716,9 @@ theorem pisToLams_shiftFrom {p : Nat} :
       -- (a ∀'s `pw` is not the λ's claim); the shift commutation is
       -- unaffected — `shiftFrom` never reads binder metadata.
       show (Expr.pisToLams k (shiftFrom p rest) (shiftFrom p body)).map
-          (fun b => Expr.lam (shiftFrom p ty) b ⟨.never⟩) =
+          (fun b => Expr.lam (shiftFrom p ty) b { pw := .never }) =
         ((Expr.pisToLams k rest body).map
-          (fun b => Expr.lam ty b ⟨.never⟩)).map (shiftFrom p)
+          (fun b => Expr.lam ty b { pw := .never })).map (shiftFrom p)
       rw [pisToLams_shiftFrom k rest body]
       cases Expr.pisToLams k rest body <;> rfl
 

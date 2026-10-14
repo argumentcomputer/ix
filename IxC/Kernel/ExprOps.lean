@@ -540,9 +540,9 @@ def liftLooseBVarsFast (amount c : Nat) (e : Expr) : Expr :=
 
 /-! ### `resetMeta` (task #210 Part D)
 
-Every binder's datum reset to the parse placeholder `⟨.never⟩`: the
-stream's recursor rules are compared syntactically against the
-generated ones (official's replay compares an exported recursor
+Every binder's datum reset to the parse placeholder `.never`, its
+contracts kept: the stream's recursor rules are compared syntactically
+against the generated ones (official's replay compares an exported recursor
 structurally with the one it generates), and the generated body is
 built from ANNOTATED pieces — the stored constructor's normalised field
 telescopes and index expressions — while the stream's carries the
@@ -551,8 +551,8 @@ memoized by `@[csimp]` (the `mentionsConst` arrangement). -/
 
 def resetMeta : Expr → Expr
   | .app f a => .app (resetMeta f) (resetMeta a)
-  | .lam ty b _ => .lam (resetMeta ty) (resetMeta b) ⟨.never⟩
-  | .forallE ty b _ => .forallE (resetMeta ty) (resetMeta b) ⟨.never⟩
+  | .lam ty b bm => .lam (resetMeta ty) (resetMeta b) { bm with pw := .never }
+  | .forallE ty b bm => .forallE (resetMeta ty) (resetMeta b) { bm with pw := .never }
   | .letE ty v b => .letE (resetMeta ty) (resetMeta v) (resetMeta b)
   | .proj s i e => .proj s i (resetMeta e)
   | .fvar i ty => .fvar i (resetMeta ty)
@@ -595,14 +595,14 @@ def resetMetaGo (memo : Std.HashMap Expr Expr) : Expr → Expr × Std.HashMap Ex
           let (f', memo) := resetMetaGo memo f
           let (a', memo) := resetMetaGo memo a
           (.app f' a', memo)
-        | .lam ty body _ =>
+        | .lam ty body bm =>
           let (t, memo) := resetMetaGo memo ty
           let (b, memo) := resetMetaGo memo body
-          (.lam t b ⟨.never⟩, memo)
-        | .forallE ty body _ =>
+          (.lam t b { bm with pw := .never }, memo)
+        | .forallE ty body bm =>
           let (t, memo) := resetMetaGo memo ty
           let (b, memo) := resetMetaGo memo body
-          (.forallE t b ⟨.never⟩, memo)
+          (.forallE t b { bm with pw := .never }, memo)
         | .letE ty val body =>
           let (t, memo) := resetMetaGo memo ty
           let (w, memo) := resetMetaGo memo val
@@ -1257,7 +1257,7 @@ went with task #175 wiring W5). -/
 def pisToLams : Nat → Expr → Expr → Option Expr
   | 0, _, body => some body
   | k + 1, .forallE ty rest _, body =>
-    (pisToLams k rest body).map fun b => .lam ty b ⟨.never⟩
+    (pisToLams k rest body).map fun b => .lam ty b { pw := .never }
   | _ + 1, _, _ => none
 
 /-- Replace the body under the first `k` `∀`-binders (binder domains and
@@ -1265,7 +1265,7 @@ names kept, codomain-sort annotations reset — the caller annotates). -/
 def replacePiBody : Nat → Expr → Expr → Option Expr
   | 0, _, b => some b
   | k + 1, .forallE ty rest m, b =>
-    (replacePiBody k rest b).map fun r => .forallE ty r ⟨m.pw⟩
+    (replacePiBody k rest b).map fun r => .forallE ty r m
   | _ + 1, _, _ => none
 
 /-- The length of the leading `∀`-telescope. -/
@@ -2588,11 +2588,11 @@ def Expr.instLPGo (ks : List LevelParam) (us : List Level)
         | .lam ty body m =>
           let (t, memo) := instLPGo ks us memo ty
           let (b, memo) := instLPGo ks us memo body
-          (.lam t b ⟨Level.substPW ks us m.pw⟩, memo)
+          (.lam t b { m with pw := Level.substPW ks us m.pw }, memo)
         | .forallE ty body m =>
           let (t, memo) := instLPGo ks us memo ty
           let (b, memo) := instLPGo ks us memo body
-          (.forallE t b ⟨Level.substPW ks us m.pw⟩, memo)
+          (.forallE t b { m with pw := Level.substPW ks us m.pw }, memo)
         | .letE ty val body =>
           let (t, memo) := instLPGo ks us memo ty
           let (w, memo) := instLPGo ks us memo val

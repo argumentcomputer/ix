@@ -650,8 +650,8 @@ def convExpr (e : ECx) (tbl : Array (ReadM CExpr)) : Ixon.Expr → ReadM CExpr
     pure (.lit (.strVal s))
   | .nat i => do pure (.lit (.natVal (natural (← e.blobAt i))))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
-  | .lam _ t b => do pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) ⟨.never⟩)
-  | .all _ _ t b => do pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) ⟨.never⟩)
+  | .lam _ t b => do pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never })
+  | .all _ _ t b => do pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never })
   | .letE _ t v b => do
     pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b))
   | .share i =>

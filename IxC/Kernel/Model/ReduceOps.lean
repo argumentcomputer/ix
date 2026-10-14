@@ -136,7 +136,7 @@ theorem reduceOp_shapeS {c : Name} {type' : Expr}
   have hshape : (Ix.Kernel.reduceOpCvA c).type.erasePw
       = .forallE
           (Ix.Kernel.reduceElemTy c) (Ix.Kernel.reduceElemTy c)
-          ⟨.never⟩ := by
+          { pw := .never } := by
     rcases hcases with rfl | rfl <;>
       simp [Ix.Kernel.reduceOpCvA, Ix.Kernel.reduceNatCvA,
         Ix.Kernel.reduceBoolCvA, Ix.Kernel.reduceElemTy, Ix.Kernel.reduceNatName,

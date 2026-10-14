@@ -3,6 +3,7 @@ module
 public import IxC.Kernel.Name
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
+public import IxC.Ixon.Types.Contract
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
 is that it is *definitionally* `k ()` — which is what
 `Level.beqPtr_eq` and `Expr.beqMemo_eq` prove.  `import all` makes that
@@ -100,12 +101,40 @@ read it).  Unannotated input defaults to `.never` at the parser — a
 definite, validatable claim.  The display `BinderInfo` that used to
 sit beside it is gone (task #205): the official kernel's equality and
 hash ignore it, so it was never data the checker held — the frontend
-validates a stream's spelling and drops it (`parseBinderInfo`). -/
+validates a stream's spelling and drops it (`parseBinderInfo`).
+
+The binder also carries Ixon's binder contracts
+(`IxC/Ixon/Types/Contract.lean`). They are committed content (they move
+a constant's address), so they are identity data, not display data:
+* `contract`: the bound variable's usage, ownership and locality (Ixon's
+  `lam` and `all` input contract);
+* `result`: the value contract of a `forallE`'s result (Ixon's `all`
+  result contract). A `lam` has none and carries `shared`.
+
+Lean has no contracts: Lean-fragment binders carry the defaults, `many`,
+`shared`, `unrestricted` in and `shared`, `unrestricted` out, which is
+what `{ pw := … }` builds. Typing is contract-blind: the binder
+congruences compare `pw` alone (`Rules/Rel.lean`; `defeqStep` in
+`Core.lean`), and the model reads only `pw`. Structural `=` and the
+packed hash (`BinderMeta.hashData`) see the contracts, so terms that
+differ only in contracts are different terms, as their Ixon addresses
+are; basis and pin matching (`canonExprEqFast`, `Expr.erasePwEq`)
+compare them too. -/
 structure BinderMeta where
   pw : PropWhen
+  contract : Ixon.BinderContract := .many
+  result : Ixon.ValueContract := .shared
   deriving DecidableEq, Repr, Hashable
 
-instance : Inhabited BinderMeta := ⟨⟨.never⟩⟩
+instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
+
+/-- A binder's share of its node's hash: the hash of `pw`, mixed with the
+contracts' hashes unless they are the Lean fragment's. So the hash is a
+function of all of the binder's identity data, and a Lean-fragment binder
+hashes by `pw` alone. -/
+@[inline] def BinderMeta.hashData (m : BinderMeta) : UInt64 :=
+  if m.contract == .many && m.result == .shared then Hashable.hash m.pw
+  else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
 
 /-- Literals. -/
 inductive Literal where
@@ -377,14 +406,14 @@ with
     | .lam ty b m =>
       packData (hash32 (mixHash 19
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData b.data) (Hashable.hash m.pw)))))
+            (mixHash (hashOfData b.data) m.hashData))))
         (max (bvarOfData ty.data) (satPred (bvarOfData b.data)))
         (max (fvarOfData ty.data) (fvarOfData b.data))
         (lpOfData ty.data || lpOfData b.data || m.pw.hasParams)
     | .forallE ty b m =>
       packData (hash32 (mixHash 23
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData b.data) (Hashable.hash m.pw)))))
+            (mixHash (hashOfData b.data) m.hashData))))
         (max (bvarOfData ty.data) (satPred (bvarOfData b.data)))
         (max (fvarOfData ty.data) (fvarOfData b.data))
         (lpOfData ty.data || lpOfData b.data || m.pw.hasParams)
@@ -418,8 +447,9 @@ namespace Expr
 
 /-- The node's 32-bit hash (`O(1)`).  The recurrence reads exactly
 what `is_equal` in the official kernel reads (`expr_eq_fn.cpp`) plus
-the validated `pw` datum; there is no display data in a node (task
-#205), so hashing and `DecidableEq` are α-equivalence outright. -/
+the validated `pw` datum and the binder contracts
+(`BinderMeta.hashData`); there is no display data in a node (task #205),
+so hashing and `DecidableEq` are α-equivalence outright. -/
 @[inline] def hash (e : Expr) : UInt64 := hashOfData e.data
 
 /-- Has-level-param: is level instantiation ever non-trivial here?

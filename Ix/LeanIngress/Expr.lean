@@ -92,8 +92,8 @@ def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KEx
   | .sort u _ => return .sort (← ingressLevel σ u)
   | .const n us _ => return .const (ingressName n) (← us.toList.mapM (ingressLevel σ))
   | .app f a _ => return .app (← ingressExpr σ f) (← ingressExpr σ a)
-  | .lam _ t b _ _ => return .lam (← ingressExpr σ t) (← ingressExpr σ b) ⟨.never⟩
-  | .forallE _ t b _ _ => return .forallE (← ingressExpr σ t) (← ingressExpr σ b) ⟨.never⟩
+  | .lam _ t b _ _ => return .lam (← ingressExpr σ t) (← ingressExpr σ b) { pw := .never }
+  | .forallE _ t b _ _ => return .forallE (← ingressExpr σ t) (← ingressExpr σ b) { pw := .never }
   | .letE _ t v b _ _ =>
     return .letE (← ingressExpr σ t) (← ingressExpr σ v) (← ingressExpr σ b)
   | .lit (.natVal n) _ => pure (.lit (.natVal n))
@@ -168,11 +168,11 @@ theorem ingressExpr_app (f a : Ix.Expr) (h : Address) : ingressExpr σ (.app f a
 
 theorem ingressExpr_lam (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo) (h : Address) :
     ingressExpr σ (.lam n t b bi h) =
-    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.lam x y ⟨.never⟩)) := rfl
+    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.lam x y { pw := .never })) := rfl
 
 theorem ingressExpr_forallE (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo) (h : Address) :
     ingressExpr σ (.forallE n t b bi h) =
-    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.forallE x y ⟨.never⟩)) :=
+    (ingressExpr σ t >>= fun x => ingressExpr σ b >>= fun y => pure (.forallE x y { pw := .never })) :=
   rfl
 
 theorem ingressExpr_letE (n : Ix.Name) (t v b : Ix.Expr) (nd : Bool) (h : Address) :
@@ -230,7 +230,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
                 Squash.mk ⟨.error err, by rw [ingressExpr_lam, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl,
                   r₂.memo⟩
               | .ok y =>
-                Squash.mk ⟨.ok (.lam x y ⟨.never⟩),
+                Squash.mk ⟨.ok (.lam x y { pw := .never }),
                   by rw [ingressExpr_lam, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
         | .forallE n t b bi h =>
           Squash.lift (go memo t) fun r₁ =>
@@ -243,7 +243,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
                 Squash.mk ⟨.error err,
                   by rw [ingressExpr_forallE, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
               | .ok y =>
-                Squash.mk ⟨.ok (.forallE x y ⟨.never⟩),
+                Squash.mk ⟨.ok (.forallE x y { pw := .never }),
                   by rw [ingressExpr_forallE, ← r₁.eq, h₁, ← r₂.eq, h₂]; rfl, r₂.memo⟩
         | .letE n t v b nd h =>
           Squash.lift (go memo t) fun r₁ =>

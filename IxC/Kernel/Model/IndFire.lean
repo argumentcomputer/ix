@@ -300,26 +300,26 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
         = .forallE (.sort ℓA)
             (.forallE (.bvar 0)
               (.forallE (.bvar 1)
-                (.sort .zero) ⟨.never⟩)
-              ⟨.never⟩) ⟨.never⟩ := rfl
+                (.sort .zero) { pw := .never })
+              { pw := .never }) { pw := .never } := rfl
     have hb1 : (Expr.forallE (.bvar 0)
         (.forallE (.bvar 1)
-          (.sort .zero) ⟨.never⟩) ⟨.never⟩).instantiate1
+          (.sort .zero) { pw := .never }) { pw := .never }).instantiate1
         (.fvar 0 (.sort ℓA))
         = .forallE
             (.fvar 0 (.sort ℓA))
             (.forallE
               (.fvar 0 (.sort ℓA))
-              (.sort .zero) ⟨.never⟩)
-            ⟨.never⟩ := rfl
+              (.sort .zero) { pw := .never })
+            { pw := .never } := rfl
     have hb2 : (Expr.forallE
         (.fvar 0 (.sort ℓA))
-        (.sort .zero) ⟨.never⟩).instantiate1
+        (.sort .zero) { pw := .never }).instantiate1
         (.fvar 1
           (.fvar 0 (.sort ℓA)))
         = .forallE
             (.fvar 0 (.sort ℓA))
-            (.sort .zero) ⟨.never⟩ := rfl
+            (.sort .zero) { pw := .never } := rfl
     have hb3 : (Expr.sort .zero).instantiate1
         (.fvar 2
           (.fvar 0 (.sort ℓA)))

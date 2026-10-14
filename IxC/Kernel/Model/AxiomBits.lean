@@ -152,24 +152,24 @@ theorem inferTypeCore_eqSpineS {fuel d : Nat} {X Y Z bt : Expr}
       = .forallE (.sort (.succ .zero))
         (.forallE (.bvar 0)
           (.forallE (.bvar 1) (.sort .zero)
-            ⟨.never⟩) ⟨.never⟩)
-        ⟨.never⟩ from rfl] at hw3
+            { pw := .never }) { pw := .never })
+        { pw := .never } from rfl] at hw3
   injection Ix.Kernel.whnf_forallE_eq hw3 with e1 e2 e3
   subst e2
   subst hb2
   rw [show (Expr.forallE (.bvar 0)
         (.forallE (.bvar 1) (.sort .zero)
-          ⟨.never⟩) ⟨.never⟩).instantiate1 X
+          { pw := .never }) { pw := .never }).instantiate1 X
       = .forallE X
         (.forallE X (.sort .zero)
-          ⟨.never⟩) ⟨.never⟩ from rfl] at hw2
+          { pw := .never }) { pw := .never } from rfl] at hw2
   injection Ix.Kernel.whnf_forallE_eq hw2 with f1 f2 f3
   subst f2
   subst hb1
   rw [show (Expr.forallE X
-        (.sort .zero) ⟨.never⟩).instantiate1 Y
+        (.sort .zero) { pw := .never }).instantiate1 Y
       = .forallE (X.instantiate1 Y 0)
-        (.sort .zero) ⟨.never⟩ from rfl] at hw1
+        (.sort .zero) { pw := .never } from rfl] at hw1
   injection Ix.Kernel.whnf_forallE_eq hw1 with g1 g2 g3
   subst g2
   rfl

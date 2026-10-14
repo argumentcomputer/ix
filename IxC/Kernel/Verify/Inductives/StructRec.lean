@@ -129,7 +129,7 @@ body. -/
 theorem replacePisPw_stripPis {pw : PropWhen} :
     ∀ (k : Nat) {e b r : Expr} {bs : List (Expr × BinderMeta)} {body : Expr},
       Expr.replacePisPw pw k e b = some r → e.stripPis k = some (bs, body) →
-      r.stripPis k = some (bs.map fun x => (x.1, (⟨pw⟩ : BinderMeta)), b)
+      r.stripPis k = some (bs.map fun x => (x.1, ({ pw } : BinderMeta)), b)
   | 0, e, b, r, bs, body, h, hs => by
     simp only [Expr.replacePisPw, Option.some.injEq] at h
     simp only [stripPis, Option.some.injEq, Prod.mk.injEq] at hs

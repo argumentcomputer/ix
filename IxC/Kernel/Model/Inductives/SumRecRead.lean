@@ -362,9 +362,9 @@ theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : N
       Ix.Kernel.map_instSeq_fieldBvars ifvs nIdx hclI hlenI]
   have hbody : Expr.instSeq ifvs (nIdx - 1) (Expr.instSeq tfvs (nP - 1 + nIdx)
       (.forallE (Ix.Kernel.structFamI T lps nP nIdx 0 0) (.sort ℓ)
-        ⟨.never⟩))
+        { pw := .never }))
       = .forallE (Expr.mkAppN (.const T (lps.map .param)) (tfvs ++ ifvs))
-          (.sort ℓ) ⟨.never⟩ := by
+          (.sort ℓ) { pw := .never } := by
     rw [Expr.instSeq_forallE tfvs (nP - 1 + nIdx) _ _ _ (by omega), hdom1,
       Expr.instSeq_eq_self _ _ (e := Expr.sort ℓ) rfl,
       Expr.instSeq_forallE ifvs (nIdx - 1) _ _ _ (by omega), hdom2,
@@ -375,7 +375,7 @@ theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : N
   rw [Nat.add_zero] at hspine
   have hpi : denoteMeta m.acval env ψ (nP + nIdx)
       (.forallE (Expr.mkAppN (.const T (lps.map .param)) (tfvs ++ ifvs))
-        (.sort ℓ) ⟨.never⟩)
+        (.sort ℓ) { pw := .never })
       = some (.pi 0 (pwBit ψ PropWhen.never)
           (AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + nIdx) ++ fieldBvars nIdx))
           (.sort (ℓ.eval ψ))) := by

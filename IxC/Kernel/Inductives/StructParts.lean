@@ -154,7 +154,7 @@ codomain data to `pw` (the domains are kept). -/
 def Expr.replacePisPw (pw : PropWhen) : Nat → Expr → Expr → Option Expr
   | 0, _, b => some b
   | k + 1, .forallE ty rest _, b =>
-    (replacePisPw pw k rest b).map fun r => .forallE ty r ⟨pw⟩
+    (replacePisPw pw k rest b).map fun r => .forallE ty r { pw }
   | _ + 1, _, _ => none
 
 /-- Convert the first `k` `∀`-binders into `λ`-binders with datum `pw`
@@ -163,7 +163,7 @@ over a body (`pisToLams` with the datum supplied instead of the
 def Expr.pisToLamsPw (pw : PropWhen) : Nat → Expr → Expr → Option Expr
   | 0, _, b => some b
   | k + 1, .forallE ty rest _, b =>
-    (pisToLamsPw pw k rest b).map fun r => .lam ty r ⟨pw⟩
+    (pisToLamsPw pw k rest b).map fun r => .lam ty r { pw }
   | _ + 1, _, _ => none
 
 /-! ## The generated recursor at an indexed family (task #175 indexed)
@@ -208,7 +208,7 @@ proposition. -/
 def structMotiveTyI (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (ℓ : Level) (itele : Expr) :
     Option Expr :=
   Expr.replacePisPw .never nIdx itele
-    (.forallE (structFamI T lps nP nIdx 0 0) (.sort ℓ) ⟨.never⟩)
+    (.forallE (structFamI T lps nP nIdx 0 0) (.sort ℓ) { pw := .never })
 
 /-- The pieces of a recognised simple-structure block. -/
 structure StructParts where

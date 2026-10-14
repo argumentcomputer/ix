@@ -219,15 +219,15 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       -- The rebuilt node is the same on both sides whatever the datum.
       have hstep : ∀ (s' : CState) (pw : PropWhen), CSOK mode env s' →
           SimC mode env s' (RelEC d)
-            (pure (Expr.lam ty' bAbs ⟨pw⟩))
+            (pure (Expr.lam ty' bAbs { m with pw }))
             (pure (Expr.lam ty' (body'x.abstract1 d)
-              ⟨pw⟩)) := by
+              { m with pw })) := by
         intro s' pw hsS
         refine SimC.of_eff (pureC_eff hsS
-          (x := Expr.lam ty' bAbs ⟨pw⟩)) _ (fun r hQ => ⟨by
+          (x := Expr.lam ty' bAbs { m with pw })) _ (fun r hQ => ⟨by
             show _ = _
             have h2 : r
-              = Expr.lam ty' bAbs ⟨pw⟩ := hQ
+              = Expr.lam ty' bAbs { m with pw } := hQ
             rw [h2, hQabs], by
             simp only [Expr.WScoped]
             exact ⟨hwty', Ix.Kernel.WScoped.abstract1 0 hwbody'⟩⟩)

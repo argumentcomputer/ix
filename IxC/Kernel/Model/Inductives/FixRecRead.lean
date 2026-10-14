@@ -611,7 +611,7 @@ to the `ih` binder's frame, its datum the elimination regime's (task
 theorem structTeleAt_getElem? {nF o i l k : Nat} {pw : PropWhen} {tele : List (Expr × BinderMeta)}
     {b : Expr × BinderMeta} (hb : tele[k]? = some b) :
     (Ix.Kernel.structTeleAt nF o i l pw tele)[k]?
-      = some (Ix.Kernel.structIdxAt nF o i l k b.1, ⟨pw⟩) := by
+      = some (Ix.Kernel.structIdxAt nF o i l k b.1, { pw }) := by
   have hk : k < tele.length := (List.getElem?_eq_some_iff.mp hb).1
   unfold Ix.Kernel.structTeleAt
   rw [List.getElem?_map,
@@ -1866,9 +1866,9 @@ theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {
   have hbody : Expr.instSeq ifvs (nIdx - 1) (Expr.instSeq (tfvs ++ extras') (nP + 1 + n - 1 + nIdx)
       (.forallE (Ix.Kernel.structFamI T lps nP nIdx (n + 1) 0)
         (Expr.mkAppN (.bvar (nIdx + n + 1)) (Ix.Kernel.structPsAt 1 nIdx ++ [.bvar 0]))
-        ⟨pw⟩))
+        { pw }))
       = .forallE (Expr.mkAppN (.const T (lps.map .param)) (tfvs ++ ifvs))
-          (Expr.mkAppN (.fvar nP tyM) (ifvs ++ [.bvar 0])) ⟨pw⟩ := by
+          (Expr.mkAppN (.fvar nP tyM) (ifvs ++ [.bvar 0])) { pw } := by
     rw [Expr.instSeq_forallE (tfvs ++ extras') (nP + 1 + n - 1 + nIdx) _ _ _
         (by rw [hlenTE]; omega), hdom1, hcod1,
       Expr.instSeq_forallE ifvs (nIdx - 1) _ _ _ (by omega), hdom2, hcod2]
@@ -1906,7 +1906,7 @@ theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {
     rfl
   have hpi : denoteMeta m.acval env ψ (nP + 1 + n + nIdx)
       (.forallE (Expr.mkAppN (.const T (lps.map .param)) (tfvs ++ ifvs))
-        (Expr.mkAppN (.fvar nP tyM) (ifvs ++ [.bvar 0])) ⟨pw⟩)
+        (Expr.mkAppN (.fvar nP tyM) (ifvs ++ [.bvar 0])) { pw })
       = some (.pi 0 (pwBit ψ pw) (majorAVAt m T ψ nP nIdx n) (recConcAV n nIdx)) := by
     rw [denoteMeta_forallE, hspine, hconc]
     rfl

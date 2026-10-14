@@ -60,7 +60,9 @@ def nonemptyIntroName : Name := nonemptyName |>.str "intro"
 def nonemptyRecName : Name := nonemptyName |>.str "rec"
 
 /-- Shape comparison for the standard pins: exact name, level
-parameters and counts, type up to the `pw` datum.
+parameters and counts, type up to the `pw` datum.  Binder contracts are
+compared: every pin carries the Lean fragment's, so a stored constant with
+other contracts does not match.
 
 **Guidance for anyone adding a pin.**  Two properties of a pin decide
 how expensive it is for a *consumer* of the pin (the checker's own
@@ -106,8 +108,8 @@ def Expr.erasePw : Expr → Expr
   | .sort u => .sort u
   | .const n us => .const n us
   | .app f a => .app f.erasePw a.erasePw
-  | .lam ty b _ => .lam ty.erasePw b.erasePw ⟨.never⟩
-  | .forallE ty b _ => .forallE ty.erasePw b.erasePw ⟨.never⟩
+  | .lam ty b bm => .lam ty.erasePw b.erasePw { bm with pw := .never }
+  | .forallE ty b bm => .forallE ty.erasePw b.erasePw { bm with pw := .never }
   | .letE ty v b => .letE ty.erasePw v.erasePw b.erasePw
   | .lit l => .lit l
   | .proj s i e => .proj s i e.erasePw
@@ -144,8 +146,10 @@ def Expr.erasePwEq : Expr → Expr → Bool
   | .sort u, .sort v => u == v
   | .const n us, .const n' us' => n == n' && us == us'
   | .app f a, .app f' a' => f.erasePwEq f' && a.erasePwEq a'
-  | .lam t b _, .lam t' b' _ => t.erasePwEq t' && b.erasePwEq b'
-  | .forallE t b _, .forallE t' b' _ => t.erasePwEq t' && b.erasePwEq b'
+  | .lam t b m, .lam t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
+      m.contract == m'.contract && m.result == m'.result
+  | .forallE t b m, .forallE t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
+      m.contract == m'.contract && m.result == m'.result
   | .letE t v b, .letE t' v' b' =>
       t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b'
   | .lit l, .lit l' => l == l'
@@ -172,10 +176,10 @@ theorem Expr.erasePwEq_iff :
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb]
+      simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
   | letE t v b iht ihv ihb =>
     intro c; cases c <;>
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihv, ihb, and_assoc]

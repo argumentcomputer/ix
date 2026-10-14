@@ -127,7 +127,7 @@ def sameResult : Except ExprError (List KExpr) → Except ExprError (List KExpr)
   | _, _ => false
 
 def lamDropped : Except ExprError (List KExpr) → Bool
-  | .ok [.lam (.const n []) (.bvar 0) m] => n == .str .anonymous "Nat" && m == ⟨.never⟩
+  | .ok [.lam (.const n []) (.bvar 0) m] => n == .str .anonymous "Nat" && m == { pw := .never }
   | _ => false
 
 def erasure : TestSeq :=

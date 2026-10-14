@@ -60,7 +60,7 @@ theorem structMinorsPisR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen}
     (h : structMinorsPisR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
     ∃ mty rest, structMinorTyR C lps nP nF o pw cty recIdx = some mty ∧
       structMinorsPisR lps nP pw cs (o + 1) body = some rest ∧
-      mins = .forallE mty rest ⟨pw⟩ := by
+      mins = .forallE mty rest { pw } := by
   unfold structMinorsPisR at h
   simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
   obtain ⟨mty, hmty, rest, hrest, hmin⟩ := h
@@ -73,7 +73,7 @@ theorem structMinorsLamsR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen
     (h : structMinorsLamsR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
     ∃ mty rest, structMinorTyR C lps nP nF o pw cty recIdx = some mty ∧
       structMinorsLamsR lps nP pw cs (o + 1) body = some rest ∧
-      mins = .lam mty rest ⟨pw⟩ := by
+      mins = .lam mty rest { pw } := by
   unfold structMinorsLamsR at h
   simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
   obtain ⟨mty, hmty, rest, hrest, hmin⟩ := h
@@ -103,12 +103,12 @@ theorem structRecTyR_unfold {T : Name} {lps : List LevelParam} {elim : LevelPara
         (itele.liftLooseBVars (ctors.length + 1) 0)
         (.forallE (structFamI T lps nP nIdx (ctors.length + 1) 0)
           (Expr.mkAppN (.bvar (nIdx + ctors.length + 1)) (structPsAt 1 nIdx ++ [.bvar 0]))
-          ⟨Level.zeronessOf (structElimLevel elim large)⟩) = some major ∧
+          { pw := Level.zeronessOf (structElimLevel elim large) }) = some major ∧
       structMinorsPisR lps nP (Level.zeronessOf (structElimLevel elim large)) ctors 1 major
         = some minors ∧
       Expr.replacePisPw (Level.zeronessOf (structElimLevel elim large)) nP tty
         (.forallE motiveTy minors
-          ⟨Level.zeronessOf (structElimLevel elim large)⟩) = some recTy := by
+          { pw := Level.zeronessOf (structElimLevel elim large) }) = some recTy := by
   unfold structRecTyR at h
   simp only [Option.bind_eq_some_iff] at h
   obtain ⟨q, hq, motiveTy, hmot, major, hmaj, minors, hmin, hr⟩ := h
@@ -135,7 +135,7 @@ theorem structRecRhsR_unfold {T : Name} {lps : List LevelParam} {elim : LevelPar
         = some minors ∧
       Expr.pisToLamsPw (Level.zeronessOf (structElimLevel elim large)) nP tty
         (.lam motiveTy minors
-          ⟨Level.zeronessOf (structElimLevel elim large)⟩) = some rhs := by
+          { pw := Level.zeronessOf (structElimLevel elim large) }) = some rhs := by
   unfold structRecRhsR at h
   cases hj : ctors[j]? with
   | none => rw [hj] at h; exact nomatch h

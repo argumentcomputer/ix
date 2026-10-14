@@ -8,10 +8,10 @@ public import IxC.Kernel.Env
 # The level-parameter canonical form the pinned blocks are matched up to
 
 A stream's `Nat` block and the checker's pinned one are the same
-declaration when they agree up to binder annotations and a renumbering
-of their level parameters (each constant's `i`-th parameter becomes
-`i`).  This module is that canonical form and the lockstep comparisons
-built on it.
+declaration when they agree up to the binders' `pw` annotations and a
+renumbering of their level parameters (each constant's `i`-th parameter
+becomes `i`), binder contracts included.  This module is that canonical
+form and the lockstep comparisons built on it.
 
 It sits in the KERNEL because the matching does (task #293): the
 decoder emits the file's records and nothing else, and it is
@@ -49,16 +49,18 @@ signatures.  Since task #203 the pin builder
 and the parser emits `.anonymous` too, so the name/annotation erasure
 here is the identity on both sides; what this canonical form still
 *does* is rename level parameters and reset `pw` (the pin side is
-annotated, the stream side is at the parse placeholder). -/
+annotated, the stream side is at the parse placeholder).  Binder contracts
+are kept, so a block whose binders carry contracts other than the pinned
+block's (the Lean fragment's) does not match. -/
 def canonExpr (m : LevelParam → LevelParam) : Expr → Expr
   | .bvar i => .bvar i
   | .fvar idx ty => .fvar idx (canonExpr m ty)
   | .sort u => .sort (canonLevel m u)
   | .const n us => .const n (us.map (canonLevel m))
   | .app f a => .app (canonExpr m f) (canonExpr m a)
-  | .lam ty b _ => .lam (canonExpr m ty) (canonExpr m b) ⟨.never⟩
-  | .forallE ty b _ =>
-      .forallE (canonExpr m ty) (canonExpr m b) ⟨.never⟩
+  | .lam ty b bm => .lam (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
+  | .forallE ty b bm =>
+      .forallE (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
   | .letE ty v b => .letE (canonExpr m ty) (canonExpr m v)
       (canonExpr m b)
   | .lit l => .lit l
@@ -133,10 +135,12 @@ def canonExprEqFast (m m' : LevelParam → LevelParam) : Expr → Expr → Bool
       n == n' && us.map (canonLevel m) == us'.map (canonLevel m')
   | .app f a, .app f' a' =>
       canonExprEqFast m m' f f' && canonExprEqFast m m' a a'
-  | .lam t b _, .lam t' b' _ =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
-  | .forallE t b _, .forallE t' b' _ =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
+  | .lam t b bm, .lam t' b' bm' =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
+        bm.contract == bm'.contract && bm.result == bm'.result
+  | .forallE t b bm, .forallE t' b' bm' =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
+        bm.contract == bm'.contract && bm.result == bm'.result
   | .letE t v b, .letE t' v' b' =>
       canonExprEqFast m m' t t' && canonExprEqFast m m' v v' &&
         canonExprEqFast m m' b b'
@@ -164,10 +168,10 @@ theorem canonExprEqFast_iff (m m' : LevelParam → LevelParam) :
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
   | letE t v b iht ihv ihb =>
     intro c; cases c <;>
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihv, ihb, and_assoc]

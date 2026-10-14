@@ -27,9 +27,10 @@ import edges:
      longer reached is progress to record by deleting it there. Both fail.
   5. THE BOUNDARY: a covered module imports only covered modules, `Init`,
      `Std` and `Lean` (the last at elaboration time; the Lean import audit
-     checks that part). Ix's boundary (`Ixon`, `Audit`, `Ingress`,
-     `Egress`, `Ref`, `Search`) imports the kernel, never the other way
-     round.
+     checks that part), and the two pure contract-data modules of Ixon
+     that `BinderMeta` carries (`contractData`). Ix's boundary (`Ixon`,
+     `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) imports the kernel,
+     never the other way round.
 
 Every import kind is an edge: `public`, `private`, `meta`, `import all`.
 Lake gives no import barrier between `lean_lib`s of one package, so this
@@ -156,6 +157,12 @@ def lane (path : String) : String :=
 /-- The kernel imports only itself and the toolchain. -/
 def boundary : List String := ["Init", "Std", "Lean"]
 
+/-- The Ixon binder contracts that `BinderMeta` carries: pure data types
+whose modules import only each other. The codec may not import the kernel
+(`IxC/Ixon/Audit.lean`), so the types cannot move into the kernel, and
+the kernel may import these two modules of Ixon and no other. -/
+def contractData : List String := ["IxC.Ixon.Types.Modes", "IxC.Ixon.Types.Contract"]
+
 def rulesExempt : List String := ["IxC.Kernel.Model.Rules.Recompose"]
 
 /-- The pure implementation the rules tier may not import. -/
@@ -242,7 +249,8 @@ def run (args : List String) : IO UInt32 := do
   let basev := pairs (fun a b => laneOf a == "base" && laneOf b == "model") edges
   let implv := pairs (fun a b => part? (pathOf a) == some .checker && theoryPrefixes.any (fun d => b.startsWith d))
     edges
-  let boundv := pairs (fun _ b => !modSet.contains b && !boundary.contains ((b.splitOn ".").headD ""))
+  let boundv := pairs (fun _ b => !modSet.contains b && !boundary.contains ((b.splitOn ".").headD "") &&
+      !contractData.contains b)
     (imports.getD · #[])
   let isRules (a : String) := isRulesTier (pathOf a) && !rulesExempt.contains a
   let rulesv := pairs (fun a b => isRules a && implMod b) edges

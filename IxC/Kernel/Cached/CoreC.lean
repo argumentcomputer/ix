@@ -1644,7 +1644,7 @@ abbrev AnnotBinderEntry := Expr × BinderMeta
 /-- The cached twin of `annotBinderMeta`. -/
 def annotBinderMetaI (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
   match pw? with
-  | some pw => if pwWritten mb.pw then mb else ⟨pw⟩
+  | some pw => if pwWritten mb.pw then mb else { mb with pw }
   | none => mb
 
 /-- Rebuild loop of the annotation binder-telescope loops: fold the
@@ -1827,7 +1827,7 @@ def annotateBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
         let pw ← if !pwWritten mb.pw then
             annotPwLamI r fe (depth + 1) body'
           else pure mb.pw
-        pure (Expr.lam ty' bAbs ⟨pw⟩)
+        pure (Expr.lam ty' bAbs { mb with pw })
     | .letE ty v b => do
       -- official `infer_let` check order (see the spec body): the
       -- annotation is a type, the value's inferred type matches it,

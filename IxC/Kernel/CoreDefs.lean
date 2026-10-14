@@ -1020,7 +1020,7 @@ the node below (the chain rule), unless it carries a real input
 annotation — those are judged by validation, never overwritten. -/
 def annotBinderMeta (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
   match pw? with
-  | some pw => if pwWritten mb.pw then mb else ⟨pw⟩
+  | some pw => if pwWritten mb.pw then mb else { mb with pw }
   | none => mb
 
 end Ix.Kernel

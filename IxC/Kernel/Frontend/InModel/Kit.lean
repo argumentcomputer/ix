@@ -86,7 +86,7 @@ def freshLevelParam (lps : List LevelParam) : LevelParam :=
 /-- The default binder datum of a generated binder: `.never` — what the
 frontend gives every parsed binder (task #161; the annotate pass
 recomputes the datum before it is validated). -/
-def bm : BinderMeta := ⟨.never⟩
+def bm : BinderMeta := { pw := .never }
 
 /-- `λ`-telescope over domains (outermost first). -/
 def mkLams (bs : List Expr) (body : Expr) : Expr :=

@@ -39,7 +39,7 @@ open Expr
 @[expose] def projTele : Nat → Expr → Expr
   | 0, body => body
   | k + 1, body =>
-    .forallE (.sort .zero) (projTele k body) ⟨.never⟩
+    .forallE (.sort .zero) (projTele k body) { pw := .never }
 
 theorem projTele_instantiate1 :
     ∀ (k : Nat) (body a : Expr) (c : Nat),
@@ -105,7 +105,7 @@ theorem Expr.NoProjAt.projTele (T : Name) (i : Nat) :
 
 theorem projTele_stripPis : ∀ (k : Nat) (body : Expr),
     (projTele k body).stripPis k
-      = some (List.replicate k ((.sort .zero : Expr), (⟨.never⟩ : BinderMeta)), body)
+      = some (List.replicate k ((.sort .zero : Expr), ({ pw := .never } : BinderMeta)), body)
   | 0, _ => rfl
   | k + 1, body => by
     simp [projTele, Expr.stripPis, projTele_stripPis k body, List.replicate_succ]
