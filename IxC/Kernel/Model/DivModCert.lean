@@ -2039,10 +2039,10 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
     (hgenv : Ix.Kernel.divModEnvGuard
       (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env) c
       = true)
-    {ps : Ix.Kernel.NatOpPinSet}
+    {prs : List Expr}
     (hcerts : Ix.Kernel.checkDivModCerts (m := Ix.Kernel.CheckM)
       (Ix.Kernel.fueledOps μ F) env c value'
-      (Ix.Kernel.divModCertStmts c) (Ix.Kernel.divModCertProofs ps c)
+      (Ix.Kernel.divModCertStmts c) prs
       = .ok true)
     {A Ta : (LevelParam → Nat) → AnnotTerm}
     (hA : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ))
@@ -2077,10 +2077,9 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
   have fr := dmFrame_of hcmem hgenv hA hAclosed hvf' hbv' hTa hTok
     hAok hmemA φ
   have hruns := Ix.Kernel.checkDivModCerts_inv hcerts
-  -- the matched variant's proof list stays opaque (task #273): the
-  -- `CertRuns` destructuring below reads the STATEMENT list's shape
-  -- and takes the proofs as they come
-  generalize Ix.Kernel.divModCertProofs ps cq = prs at hruns
+  -- the evidence's proof list stays opaque: the `CertRuns`
+  -- destructuring below reads the STATEMENT list's shape and takes the
+  -- proofs as they come
   rw [hac]
   simp only [Ix.Kernel.natDivModNames, List.mem_cons, List.not_mem_nil,
     or_false] at hcmem

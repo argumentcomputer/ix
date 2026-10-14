@@ -301,12 +301,6 @@ def ofReduceAxOkF (fe : FEnv) (cvA : ConstantVal) : Bool :=
   reduceStoredOkF fe c &&
   ConstantVal.matchesPin cvA (ofReducePinA cvA.name)
 
-/-- `reducePinGuard` through the index. -/
-def reducePinGuardF (fe : FEnv) (c : Key) : Bool :=
-  (reduceDeclPin c).looseBVarsBounded 0 && !(reduceDeclPin c).hasFvar &&
-  (reduceDeclPin c).allLevelParamsDefined [] &&
-  (reduceDeclPin c).constsResolveF fe
-
 /-- `divModEnvGuard` through the index. -/
 def divModEnvGuardF (fe2 : FEnv) (c : Key) : Bool :=
   natOpGuardF fe2 c && (natOpDeps c).all (natOpStoredOkF fe2) &&
@@ -329,16 +323,10 @@ def divModCertGuardF (fe : FEnv) (c : Key) (annVal : Expr)
     (fun h => h.constsResolveF fe) &&
   (Expr.substConst0 c annVal eqE).constsResolveF fe
 
-/-- `divModPinGuard` through the index. -/
-def divModPinGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Key) : Bool :=
-  (divModDeclPin ps c).looseBVarsBounded 0 && !(divModDeclPin ps c).hasFvar &&
-  (divModDeclPin ps c).allLevelParamsDefined [] &&
-  (divModDeclPin ps c).constsResolveF fe
-
 /-- `divModCertsGuard` through the index. -/
-def divModCertsGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Key)
+def divModCertsGuardF (proofs : List Expr) (fe : FEnv) (c : Key)
     (annVal : Expr) : Bool :=
-  ((divModCertStmts c).zip (divModCertProofs ps c)).all
+  ((divModCertStmts c).zip proofs).all
     (fun p => divModCertGuardF fe c annVal p.1.1 p.1.2 p.2)
 
 /-- `checkEtaThm` through the index. -/
@@ -874,62 +862,36 @@ def checkDivModCertsF (ops : CheckerOps m) (fe : FEnv) (c : Key)
     else pure false
   | _, _ => pure false
 
-/-- `checkDivModPinAt` through the index. -/
-def checkDivModPinAtF (ops : CheckerOps m) (fe : FEnv) (c : Key)
-    (value' : Expr) (ps : NatOpPinSet) : m Bool := do
-  let pinA ← ops.annotate fe.env 0 (divModDeclPin ps c)
-  let okPin ← ops.isDefEq fe.env 0 value' pinA
-  if okPin then
-    checkDivModCertsF ops fe c value' (divModCertStmts c)
-      (divModCertProofs ps c)
-  else pure false
-
-/-- `checkDivModPinLoop` through the index. -/
-def checkDivModPinLoopF (ops : CheckerOps m) (fe : FEnv) (c : Key)
-    (value' : Expr) : List NatOpPinSet → List String → m Unit
-  | [], tried =>
-    throw (.notImplemented s!"unsupported Nat.div/mod spelling ({c}: no \
-      pin variant matched — {String.intercalate "; " tried})")
-  | ps :: rest, tried =>
-    if divModPinGuardF ps fe c && divModCertsGuardF ps fe c value' then
-      ops.orElse (checkDivModPinAtF ops fe c value' ps) fun r =>
-        checkDivModPinLoopF ops fe c value' rest
-          (tried ++ [divModAttemptReason ps r])
-    else
-      checkDivModPinLoopF ops fe c value' rest
-        (tried ++ [s!"{ps.toolchain}: pin or certificate ground constants \
-          absent"])
-
-/-- `checkDivModPin` through the index — the variant list is its
-parameter too (task #304). -/
-def checkDivModPinF (ops : CheckerOps m) (pins : List NatOpPinSet)
+/-- `checkDivModEvidence` through the index — the evidence is its
+parameter too. -/
+def checkDivModEvidenceF (ops : CheckerOps m) (ev : Evidences)
     (fe fe2 : FEnv) (c : Key) : m Unit := do
   if divModEnvGuardF fe2 c then
     match fe2.find? c with
     | some (.defnInfo _ value' _) =>
-      checkDivModPinLoopF ops fe c value' pins []
+      match evidenceProofs ev c with
+      | some proofs =>
+        if divModCertsGuardF proofs fe c value' && evidenceLocal fe.find? c value' proofs then
+          ops.orElse (checkDivModCertsF ops fe c value' (divModCertStmts c) proofs) fun r =>
+            throw (.notImplemented (divModEvidenceReason c r))
+        else throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: certificate \
+          ground constants absent or outside the dependency closure)")
+      | none => throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: no proof \
+          evidence, one per certificate statement)")
     | _ => throw (.internal s!"Nat.div/mod operation not stored ({c})")
   else throw (.notImplemented
     s!"unsupported Nat.div/mod environment ({c})")
 
-/-- `checkReducePin` through the index. -/
-def checkReducePinF (ops : CheckerOps m) (fe fe2 : FEnv) (c : Key)
+/-- `checkReduceIdentity` through the index. -/
+def checkReduceIdentityF (ops : CheckerOps m) (fe fe2 : FEnv) (c : Key)
     (value : Expr) : m Unit := do
-  if reduceStoredOkF fe2 c && reduceElemOkF fe c then
-    if reducePinGuardF fe c then do
-      let valA ← ops.annotate fe.env 0 value
-      let pinA ← ops.annotate fe.env 0 (reduceDeclPin c)
-      let okPin ← ops.isDefEq fe.env 0 valA pinA
-      if okPin then do
-        let x := reduceCertVar c
-        let ok ← ops.isDefEq fe.env 1 (.app valA x) x
-        if ok then pure ()
-        else throw (.internal
-          s!"pinned compiler-trust opaque is not the identity ({c})")
-      else throw (.notImplemented
-        s!"unsupported compiler-trust opaque spelling ({c})")
+  if reduceStoredOkF fe2 c && reduceElemOkF fe c then do
+    let valA ← ops.annotate fe.env 0 value
+    let x := reduceCertVar c
+    let ok ← ops.isDefEq fe.env 1 (.app valA x) x
+    if ok then pure ()
     else throw (.notImplemented
-      s!"unsupported compiler-trust opaque spelling ({c}: pin ground constants absent)")
+      s!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
   else throw (.notImplemented
     s!"unsupported compiler-trust opaque declaration ({c})")
 

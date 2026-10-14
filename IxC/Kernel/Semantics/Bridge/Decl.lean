@@ -37,7 +37,7 @@ namespace Ix.Kernel.Semantics
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-- **`certifyNatEqs`, exposed as runs** (task #161 P4 H1 at the
 literal tier): the verdict is one `isDefEqCore` success per equation,
@@ -119,7 +119,7 @@ theorem declBasisRunOf {env env₂ : Env} {kind : BasisKind}
 /-- **`basisDecl`, bridged.** -/
 theorem declBasisRun {μ : CheckMode} {F : Nat} {env env₂ : Env}
     {kind : BasisKind}
-    (h : checkDecl μ (fueledOps μ F) pins env (.basisDecl kind) = .ok env₂) :
+    (h : checkDecl μ (fueledOps μ F) ev env (.basisDecl kind) = .ok env₂) :
     DeclBasisRun env kind env₂ := declBasisRunOf h
 
 end Ix.Kernel.Semantics

@@ -7,16 +7,17 @@ public import IxC.Kernel.Verify.NatOpFrag
 public section
 
 /-!
-# The compiler-trust opaque pin, inverted (V-free)
+# The compiler-trust identity gate, inverted (V-free)
 
-`checkReducePin`'s inversion and the element type's shape.  Both
+`checkReduceIdentity`'s inversion and the element type's shape.  Both
 soundness routes consume them and neither may import the other, so
 they live in the shared tier (task #148 T6).
 
-The inversion records **all** of the run's data — both guards, both
-annotate outputs and both `isDefEq` verdicts.  The TT lane consumes
-only the identity certificate; `SetR`'s `ReducePinR` also records the
-guards and the pin comparison, and the proof always had them.
+The inversion records all of the run's data — the two guards, the
+value's annotation and the identity certificate's `isDefEq` verdict.
+Since step 4 there is no pin comparison (`checkReducePin` and the
+toolchain pin `fun b => b` are retired): the identity certificate is
+the specification.
 -/
 
 namespace Ix.Kernel.Verify
@@ -25,12 +26,8 @@ variable {mode : CheckMode} {F : Nat}
 
 /-! ## The walk
 
-`checkReducePin` is four nested guards and two `isDefEq`s; only the
-second `isDefEq` is consumed here.  The first (`valA ≡ pin`) is the
-*elaborator-drift* gate — it exists so a toolchain change surfaces as a
-decline rather than silently — and the bridge needs nothing from it,
-which is the expected shape: a gate that protects the *checker's* other
-guarantees leaves the derivation layer alone. -/
+`checkReduceIdentity` is two guards, an annotation and one `isDefEq`,
+the identity certificate the model consumes. -/
 
 /-- The element type is a stored constant with no level parameters. -/
 theorem reduceElem_shape {env : Env} {c : Key}
@@ -56,49 +53,26 @@ theorem reduceElem_shape {env : Env} {c : Key}
         exact h.1.2
       | _ => exact nomatch h
 
-/-- Inversion of the compiler-trust pin: the identity certificate. -/
-theorem checkReducePin_inv {env env2 : Env} {c : Key} {value : Expr}
-    (h : checkReducePin (fueledOps mode F) env env2 c value = .ok ()) :
+/-- Inversion of the compiler-trust identity gate: the identity
+certificate. -/
+theorem checkReduceIdentity_inv {env env2 : Env} {c : Key} {value : Expr}
+    (h : checkReduceIdentity (fueledOps mode F) env env2 c value = .ok ()) :
     reduceStoredOk env2 c = true ∧ reduceElemOk env c = true ∧
-    reducePinGuard env c = true ∧
-    ∃ valA pinA, annotateCore mode env F 0 value = .ok valA ∧
-      annotateCore mode env F 0 (reduceDeclPin c) = .ok pinA ∧
-      -- task #148 T6: the pin side, appended.  The TT lane consumes
-      -- only the identity certificate and dropped the rest; `SetR`'s
-      -- `ReducePinR` records the guards and the `DefEq` against the
-      -- pin, and the proof below already had every one of them in
-      -- scope.  Appended, never reconstructed.
-      isDefEqCore mode env F 0 valA pinA = .ok true ∧
+    ∃ valA, annotateCore mode env F 0 value = .ok valA ∧
       isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
         (reduceCertVar c) = .ok true := by
-  simp only [checkReducePin, fueledOps_annotate, fueledOps_isDefEq,
+  simp only [checkReduceIdentity, fueledOps_annotate, fueledOps_isDefEq,
     Bind.bind, Except.bind] at h
   by_cases hg : (reduceStoredOk env2 c && reduceElemOk env c) = true
   case neg => rw [if_neg hg] at h; exact nomatch h
   rw [if_pos hg] at h
-  by_cases hpg : reducePinGuard env c = true
-  case neg => rw [if_neg hpg] at h; exact nomatch h
-  rw [if_pos hpg] at h
   obtain ⟨hstored, helem⟩ := by simpa only [Bool.and_eq_true] using hg
-  refine ⟨hstored, helem, hpg, ?_⟩
+  refine ⟨hstored, helem, ?_⟩
   cases hva : annotateCore mode env F 0 value with
   | error e => rw [hva] at h; exact nomatch h
   | ok valA =>
   rw [hva] at h
   dsimp only at h
-  cases hpa : annotateCore mode env F 0 (reduceDeclPin c) with
-  | error e => rw [hpa] at h; exact nomatch h
-  | ok pinA =>
-  rw [hpa] at h
-  dsimp only at h
-  cases hp1 : isDefEqCore mode env F 0 valA pinA with
-  | error e => rw [hp1] at h; exact nomatch h
-  | ok b1 =>
-  rw [hp1] at h
-  cases b1 with
-  | false => simp [throw, throwThe, MonadExceptOf.throw] at h
-  | true =>
-  simp only [if_true] at h
   cases hp2 : isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
       (reduceCertVar c) with
   | error e => rw [hp2] at h; exact nomatch h
@@ -106,6 +80,6 @@ theorem checkReducePin_inv {env env2 : Env} {c : Key} {value : Expr}
   rw [hp2] at h
   cases b2 with
   | false => simp [throw, throwThe, MonadExceptOf.throw] at h
-  | true => exact ⟨valA, pinA, rfl, rfl, hp1, hp2⟩
+  | true => exact ⟨valA, rfl, hp2⟩
 
 end Ix.Kernel.Verify

@@ -65,7 +65,7 @@ namespace Ix.Kernel.Cached
 
 open Ix.Kernel
 
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-! ## The kit: final-value reasoning for `CheckCM`
 
@@ -1243,7 +1243,7 @@ theorem checkBasisDeclC_skels {fe : FEnv}
 
 theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv}
     {sk : List InstallSkel} (h : SkelIs fe sk) (pd : Declaration) :
-    Yields (checkDeclC mode pins fe pd)
+    Yields (checkDeclC mode ev fe pd)
       (fun fe' => SkelIs fe' (declCSkels pd sk)) := by
   unfold checkDeclC declCSkels
   cases pd with
@@ -1337,7 +1337,7 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv}
 
 theorem checkDeclStepC_skels (mode : CheckMode) {fe : FEnv}
     {sk : List InstallSkel} (h : SkelIs fe sk) (pd : Declaration) :
-    Yields (checkDeclStepC mode pins fe pd)
+    Yields (checkDeclStepC mode ev fe pd)
       (fun fe' => SkelIs fe' (declCSkels pd sk)) := by
   unfold checkDeclStepC
   ybind
@@ -1373,8 +1373,8 @@ kinds push the one constant the fold's value checkers push, everything
 else runs `checkDeclStepC`. -/
 theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv}
     {sk : List InstallSkel} (h : SkelIs fe sk) (pend : Array PendingCheck) (pd : Declaration) :
-    Yields (annotStepC mode pins i fe pend pd) (fun r => SkelIs r.1 (declCSkels pd sk)) := by
-  have hord : ∀ pd', Yields (do pure (← checkDeclStepC mode pins fe pd', pend) :
+    Yields (annotStepC mode ev i fe pend pd) (fun r => SkelIs r.1 (declCSkels pd sk)) := by
+  have hord : ∀ pd', Yields (do pure (← checkDeclStepC mode ev fe pd', pend) :
       CheckCM (FEnv × Array PendingCheck)) (fun r => SkelIs r.1 (declCSkels pd' sk)) :=
     fun pd' => Yields.bind' (checkDeclStepC_skels mode h pd') fun fe' h' => Yields.pure h'
   unfold annotStepC
@@ -1415,7 +1415,7 @@ theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv}
 theorem installRun_skels (mode : CheckMode) {ds : List Declaration}
     {p : Nat × FEnv × Array PendingCheck} {s : CState}
     {q : Nat × FEnv × Array PendingCheck} {s' : CState}
-    (h : InstallRun mode pins ds p s q s') {sk : List InstallSkel} (hp : SkelIs p.2.1 sk) :
+    (h : InstallRun mode ev ds p s q s') {sk : List InstallSkel} (hp : SkelIs p.2.1 sk) :
     SkelIs q.2.1 (ds.foldl (fun sk pd => declCSkels pd sk) sk) := by
   induction h generalizing sk with
   | nil p s => exact hp
@@ -1427,7 +1427,7 @@ theorem installRun_skels (mode : CheckMode) {ds : List Declaration}
 /-- **The skeleton spec, at every mode.**  This is the floor's whole
 content since the twin's retirement: one fold, one proof. -/
 theorem checkDecls_skels {mode : CheckMode} {ds : Array Declaration}
-    {env : Env} (h : checkDecls mode pins ds = .ok env) :
+    {env : Env} (h : checkDecls mode ev ds = .ok env) :
     envSkels env = streamSkels ds.toList := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
   obtain ⟨n, s, r⟩ := fc.1.run
@@ -1441,16 +1441,16 @@ for any two modes: the old two-driver statement is the instance
 `.trusted` / `.verified` (`trusted_agrees_skels_shipped`). -/
 theorem trusted_agrees_skels_D {μP μT : CheckMode} {ds : Array Declaration}
     {envP envN : Env}
-    (hP : checkDecls μP pins ds = .ok envP)
-    (hN : checkDecls μT pins ds = .ok envN) :
+    (hP : checkDecls μP ev ds = .ok envP)
+    (hN : checkDecls μT ev ds = .ok envN) :
     envSkels envN = envSkels envP :=
   (checkDecls_skels hN).trans (checkDecls_skels hP).symm
 
 /-- The census's sentence: the accepted declaration **names** agree. -/
 theorem trusted_agrees_names_D {μP μT : CheckMode} {ds : Array Declaration}
     {envP envN : Env}
-    (hP : checkDecls μP pins ds = .ok envP)
-    (hN : checkDecls μT pins ds = .ok envN) :
+    (hP : checkDecls μP ev ds = .ok envP)
+    (hN : checkDecls μT ev ds = .ok envN) :
     envN.consts.map ConstantInfo.name = envP.consts.map ConstantInfo.name := by
   have h := congrArg (List.map skelName) (trusted_agrees_skels_D hP hN)
   simpa [envSkels, List.map_map, Function.comp_def] using h
@@ -1458,8 +1458,8 @@ theorem trusted_agrees_names_D {μP μT : CheckMode} {ds : Array Declaration}
 /-- … and so do the accepted declaration **counts**. -/
 theorem trusted_agrees_count_D {μP μT : CheckMode} {ds : Array Declaration}
     {envP envN : Env}
-    (hP : checkDecls μP pins ds = .ok envP)
-    (hN : checkDecls μT pins ds = .ok envN) :
+    (hP : checkDecls μP ev ds = .ok envP)
+    (hN : checkDecls μT ev ds = .ok envN) :
     envN.consts.length = envP.consts.length := by
   have h := congrArg List.length (trusted_agrees_skels_D hP hN)
   simpa [envSkels] using h
@@ -1467,8 +1467,8 @@ theorem trusted_agrees_count_D {μP μT : CheckMode} {ds : Array Declaration}
 /-- The shipped pair, spelled out: `--trusted` and `--verified` agree on
 the install skeletons whenever both accept. -/
 theorem trusted_agrees_skels_shipped {ds : Array Declaration} {envP envT : Env}
-    (hP : checkDecls .verified pins ds = .ok envP)
-    (hT : checkDecls .trusted pins ds = .ok envT) :
+    (hP : checkDecls .verified ev ds = .ok envP)
+    (hT : checkDecls .trusted ev ds = .ok envT) :
     envSkels envT = envSkels envP :=
   trusted_agrees_skels_D hP hT
 

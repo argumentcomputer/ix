@@ -149,9 +149,9 @@ def checkBasisDeclC (fe : FEnv) (kind : BasisKind) : CheckCM FEnv := do
 
 /-- One converted declaration (mirrors `checkDeclSPPlain` branch by
 branch; inductive and basis blocks reuse the `Expr`-level drivers).
-`pins` is the `Nat.div`/`Nat.mod` pin-variant list the install gate
-tries (task #304), threaded from the fold. -/
-def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
+`ev` is the role table's evidence the operations' install gates read,
+threaded from the fold. -/
+def checkDeclC (ev : Evidences) (fe : FEnv) (pd : Declaration) :
     CheckCM FEnv :=
   match pd with
   | .defnDecl cv value hint => do
@@ -159,6 +159,9 @@ def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
     if natOpNames.contains cvA.name || natDivModNames.contains cvA.name then
       let fe2 ← checkDefnValC mode fe cvA jty value hint
       if natOpNames.contains cvA.name then
+        unless evidenceDefeqOk ev cvA.name do
+          throw (.notImplemented
+            s!"unsupported structural Nat operation evidence ({cvA.name})")
         unless natOpGuardF fe2 cvA.name &&
             (natOpDeps cvA.name).all (natOpStoredOkF fe2) do
           throw (.notImplemented
@@ -175,7 +178,7 @@ def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
         | _ => throw (.internal
             s!"structural Nat operation not stored ({cvA.name})")
       if natDivModNames.contains cvA.name then
-        checkDivModPinF (sharedOpsC mode fe) pins fe fe2 cvA.name
+        checkDivModEvidenceF (sharedOpsC mode fe) ev fe fe2 cvA.name
       pure fe2
     else
       checkDefnValC mode fe cvA jty value hint
@@ -191,7 +194,7 @@ def checkDeclC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
     -- the push unshared.
     if reduceOpNames.contains cvA.name then do
       let fe2 ← checkOpaqueValC mode fe cvA jty value
-      checkReducePinF (sharedOpsC mode fe) fe fe2 cvA.name value
+      checkReduceIdentityF (sharedOpsC mode fe) fe fe2 cvA.name value
       pure fe2
     else
       checkOpaqueValC mode fe cvA jty value
@@ -276,9 +279,9 @@ def declCLabel : Declaration → String
   | .quotDecl _ cv => s!"quot {cv.name}"
 
 /-- One step of the converted-declaration fold: flush, then check. -/
-def checkDeclStepC (pins : List NatOpPinSet) (fe : FEnv) (pd : Declaration) :
+def checkDeclStepC (ev : Evidences) (fe : FEnv) (pd : Declaration) :
     CheckCM FEnv := do
   flushC
-  checkDeclC mode pins fe pd
+  checkDeclC mode ev fe pd
 
 end Ix.Kernel.Cached

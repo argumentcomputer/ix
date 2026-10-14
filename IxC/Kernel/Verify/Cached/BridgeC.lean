@@ -48,7 +48,7 @@ open Ix.Kernel
 open Ix.Kernel.Expr
 
 variable {mode : CheckMode}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-! ## The declaration
 
@@ -399,8 +399,8 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     {pd : Declaration}
     (hnotind : ∀ block nP, pd ≠ .indDecl block nP) :
     SimC mode env s₀ (fun v w => v.env = w ∧ v = mkFEnv v.env)
-      (checkDeclC mode pins (mkFEnv env) pd)
-      (checkDecl mode (fueledOpsM mode) pins env pd) := by
+      (checkDeclC mode ev (mkFEnv env) pd)
+      (checkDecl mode (fueledOpsM mode) ev env pd) := by
   cases pd with
   | indDecl block nP => exact absurd rfl (hnotind _ _)
   | basisDecl kind => exact checkBasisDeclC_sim hs kind
@@ -509,8 +509,8 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     subst henvEq
     rw [hmk]
     simp only [mkFEnv_env]
-    rw [checkReducePinF_eq]
-    refine SimC.bind (checkReducePinS_sim hμ henv hvf hs₂)
+    rw [checkReduceIdentityF_eq]
+    refine SimC.bind (checkReduceIdentityS_sim hμ henv hvf hs₂)
       (fun s₄ u u' hs₄ hP₄ => ?_)
     exact SimC.pure hs₄ ⟨rfl, hmk ▸ hmk⟩
   | defnDecl cv value hint =>
@@ -541,7 +541,7 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     subst henvEq
     rw [hmk]
     simp only [natOpGuardF_eq, natOpStoredOkF_eq_fun, mkFEnv_find?,
-      checkDivModPinF_eq, mkFEnv_env]
+      checkDivModEvidenceF_eq, mkFEnv_env]
     by_cases h1 : natOpNames.contains cvR.name = true
     case neg =>
       simp only [if_neg h1]
@@ -550,11 +550,14 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
         simp only [if_neg h4]
         exact SimC.pure hs₂ ⟨rfl, hmk ▸ hmk⟩
       simp only [if_pos h4]
-      refine SimC.bind (checkDivModPinS_sim hμ henv
+      refine SimC.bind (checkDivModEvidenceS_sim hμ henv
           (List.contains_iff_mem.mp h4) hv'fD hs₂)
         (fun s₃ u u' hs₃ hP₃ => ?_)
       exact SimC.pure hs₃ ⟨rfl, hmk ▸ hmk⟩
     simp only [if_pos h1]
+    by_cases hev : evidenceDefeqOk ev cvR.name = true
+    case neg => simp only [if_neg hev]; exact SimC.throw_bind
+    simp only [hev, ↓reduceIte]
     by_cases h2 : (natOpGuard fe2.env cvR.name &&
         (natOpDeps cvR.name).all (natOpStoredOk fe2.env)) = true
     case neg => simp only [if_neg h2]; exact SimC.throw_bind
@@ -590,7 +593,7 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
             simp only [if_neg h4]
             exact SimC.pure hs₃ ⟨rfl, hmk ▸ hmk⟩
           simp only [if_pos h4]
-          refine SimC.bind (checkDivModPinS_sim hμ henv
+          refine SimC.bind (checkDivModEvidenceS_sim hμ henv
               (List.contains_iff_mem.mp h4) hv'fD hs₃)
             (fun s₄ u u' hs₄ hP₄ => ?_)
           exact SimC.pure hs₄ ⟨rfl, hmk ▸ hmk⟩
@@ -608,9 +611,9 @@ driver has no bracket and no index-range check, so the step is `flushC`
 followed by `checkDeclC`. -/
 theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env) {pd : Declaration}
     {s₀ : CState} (hres : CSOKF s₀) {fe' : FEnv} {s' : CState}
-    (h : checkDeclStepC mode pins (mkFEnv env) pd s₀ = .ok (fe', s')) :
+    (h : checkDeclStepC mode ev (mkFEnv env) pd s₀ = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
-    ∃ F, checkDecl mode (fueledOps mode F) pins env pd = .ok fe'.env := by
+    ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
   unfold checkDeclStepC at h
   obtain ⟨u, s₁, hflush, h⟩ := bindC_ok h
   rw [flushC_run] at hflush
@@ -619,7 +622,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
   have hcsok : CSOK mode env s₀.flushed := flushC_csok hres
   have main : (∀ block nP, pd ≠ .indDecl block nP) →
       CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
-      ∃ F, checkDecl mode (fueledOps mode F) pins env pd = .ok fe'.env := by
+      ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
     intro hind
     obtain ⟨hs', v, ⟨henvEq, hmk⟩, F, hF⟩ :=
       (checkDeclC_sim hμ henv hcsok hind) fe' s' h
@@ -647,7 +650,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
       obtain ⟨hs', v, ⟨henvEq, hmk⟩, F, hF⟩ :=
         (checkBasisDeclC_sim hcsok kind) fe' s' hd
       refine ⟨hs'.residue, hmk, F, ?_⟩
-      show checkDecl mode (fueledOps mode F) pins env (.indDecl block nP) = _
+      show checkDecl mode (fueledOps mode F) ev env (.indDecl block nP) = _
       simp only [checkDecl, hpin]
       rw [← checkBasisDecl_datF, henvEq]
       exact hF

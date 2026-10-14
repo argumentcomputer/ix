@@ -468,7 +468,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
     -- preserves the stored entries
     intro φ
     by_cases hno : Ix.Kernel.natDivModNames.contains cv.name = true
-    · obtain ⟨hgenv, _, -, -, _, -, hcerts⟩ := hdmc hno
+    · obtain ⟨hgenv, _, -, hcerts⟩ := hdmc hno
       exact divMod_install mp (mp.div_mod φ) mp.eq_law
         (fun {d} {e} {t} hrun hw hb hL =>
           acceptedReads_of mp.base2 φ hrun hw hb hL)

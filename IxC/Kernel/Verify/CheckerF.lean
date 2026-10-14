@@ -32,7 +32,7 @@ theorem mkFEnv_find?_fun (env : Env) :
 theorem mkFEnv_env (env : Env) : (mkFEnv env).env = env := rfl
 
 variable {mode : CheckMode}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 theorem mkFEnv_findCV? (env : Env) (n : Key) :
     (mkFEnv env).findCV? n = env.findCV? n := by
@@ -106,10 +106,6 @@ theorem ofReduceAxOkF_eq (env : Env) (cvA : ConstantVal) :
   simp only [ofReduceAxOkF, ofReduceAxOk, mkFEnv_find?,
     reduceElemOkF_eq, reduceStoredOkF_eq] <;> rfl
 
-theorem reducePinGuardF_eq (env : Env) (c : Key) :
-    reducePinGuardF (mkFEnv env) c = reducePinGuard env c := by
-  simp only [reducePinGuardF, reducePinGuard, constsResolveF_eq] <;> rfl
-
 theorem natOpStoredOkF_eq_fun (env : Env) :
     natOpStoredOkF (mkFEnv env) = natOpStoredOk env :=
   funext (natOpStoredOkF_eq env)
@@ -125,14 +121,10 @@ theorem divModCertGuardF_eq (env : Env) (c : Key) (annVal : Expr)
       = divModCertGuard env c annVal hyps eqE proof := by
   simp only [divModCertGuardF, divModCertGuard, constsResolveF_eq] <;> rfl
 
-theorem divModPinGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Key) :
-    divModPinGuardF ps (mkFEnv env) c = divModPinGuard ps env c := by
-  simp only [divModPinGuardF, divModPinGuard, constsResolveF_eq] <;> rfl
-
-theorem divModCertsGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Key)
+theorem divModCertsGuardF_eq (proofs : List Expr) (env : Env) (c : Key)
     (annVal : Expr) :
-    divModCertsGuardF ps (mkFEnv env) c annVal
-      = divModCertsGuard ps env c annVal := by
+    divModCertsGuardF proofs (mkFEnv env) c annVal
+      = divModCertsGuard proofs env c annVal := by
   simp only [divModCertsGuardF, divModCertsGuard, divModCertGuardF_eq] <;> rfl
 
 theorem checkEtaThmF_eq (env : Env) (T ctorName : Key)
@@ -334,38 +326,19 @@ theorem checkDivModCertsF_eq (ops : CheckerOps m) (env : Env) (c : Key)
     simp only [checkDivModCertsF, checkDivModCerts, divModCertGuardF_eq,
       mkFEnv_env, checkDivModCertsF_eq ops env c annVal srest prest]
 
-omit [MonadExceptOf CheckError m] in
-theorem checkDivModPinAtF_eq (ops : CheckerOps m) (env : Env) (c : Key)
-    (value' : Expr) (ps : NatOpPinSet) :
-    checkDivModPinAtF ops (mkFEnv env) c value' ps
-      = checkDivModPinAt ops env c value' ps := by
-  simp only [checkDivModPinAtF, checkDivModPinAt, mkFEnv_env,
-    checkDivModCertsF_eq]
-
-theorem checkDivModPinLoopF_eq (ops : CheckerOps m) (env : Env) (c : Key)
-    (value' : Expr) :
-    ∀ (pss : List NatOpPinSet) (tried : List String),
-      checkDivModPinLoopF ops (mkFEnv env) c value' pss tried
-        = checkDivModPinLoop ops env c value' pss tried
-  | [], _ => rfl
-  | ps :: rest, tried => by
-    simp only [checkDivModPinLoopF, checkDivModPinLoop, divModPinGuardF_eq,
-      divModCertsGuardF_eq, checkDivModPinAtF_eq,
-      checkDivModPinLoopF_eq ops env c value' rest]
-
-theorem checkDivModPinF_eq (ops : CheckerOps m) (env env2 : Env)
+theorem checkDivModEvidenceF_eq (ops : CheckerOps m) (env env2 : Env)
     (c : Key) :
-    checkDivModPinF ops pins (mkFEnv env) (mkFEnv env2) c
-      = checkDivModPin ops pins env env2 c := by
-  simp only [checkDivModPinF, checkDivModPin, mkFEnv_find?,
-    divModEnvGuardF_eq, checkDivModPinLoopF_eq] <;> rfl
+    checkDivModEvidenceF ops ev (mkFEnv env) (mkFEnv env2) c
+      = checkDivModEvidence ops ev env env2 c := by
+  simp only [checkDivModEvidenceF, checkDivModEvidence, mkFEnv_find?, mkFEnv_find?_fun,
+    divModEnvGuardF_eq, divModCertsGuardF_eq, checkDivModCertsF_eq] <;> rfl
 
-theorem checkReducePinF_eq (ops : CheckerOps m) (env env2 : Env)
+theorem checkReduceIdentityF_eq (ops : CheckerOps m) (env env2 : Env)
     (c : Key) (value : Expr) :
-    checkReducePinF ops (mkFEnv env) (mkFEnv env2) c value
-      = checkReducePin ops env env2 c value := by
-  simp only [checkReducePinF, checkReducePin, mkFEnv_env,
-    reduceStoredOkF_eq, reduceElemOkF_eq, reducePinGuardF_eq] <;> rfl
+    checkReduceIdentityF ops (mkFEnv env) (mkFEnv env2) c value
+      = checkReduceIdentity ops env env2 c value := by
+  simp only [checkReduceIdentityF, checkReduceIdentity, mkFEnv_env,
+    reduceStoredOkF_eq, reduceElemOkF_eq] <;> rfl
 
 end Monadic
 

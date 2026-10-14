@@ -115,113 +115,7 @@ def certifyNatEqs (ops : CheckerOps m) (env : Env) :
       certifyNatEqs ops env rest
     else pure false
 
-/-- The pinned defining expression of a pin-certified WF-recursive op
-in one **pin variant** (`IxC/Kernel/NatOpPinSet.lean`: one
-toolchain's generated pins, `IxC/Kernel/NatOpPins.lean` splices one
-per committed dump). -/
-def divModDeclPin (ps : NatOpPinSet) (c : Key) : Expr :=
-  if c = natDivName then ps.divPin
-  else if c = natGcdName then ps.gcdPin
-  else if c = natLandName then ps.landPin
-  else if c = natLorName then ps.lorPin
-  else if c = natXorName then ps.xorPin
-  else if c = natShiftLeftName then ps.shiftLeftPin
-  else if c = natShiftRightName then ps.shiftRightPin
-  else ps.modPin
-
-/-- The certificate proof terms of a pin-certified WF-recursive op in
-one pin variant, one per statement of `divModCertStmts`. -/
-def divModCertProofs (ps : NatOpPinSet) (c : Key) : List Expr :=
-  if c = natDivName then ps.divProofs
-  else if c = natGcdName then ps.gcdProofs
-  else if c = natLandName then ps.landProofs
-  else if c = natLorName then ps.lorProofs
-  else if c = natXorName then ps.xorProofs
-  else if c = natShiftLeftName then ps.shiftLeftProofs
-  else if c = natShiftRightName then ps.shiftRightProofs
-  else ps.modProofs
-
-/-- The pinned characterization statements of a pin-certified
-WF-recursive op, in *open* form over `x := fvar 0`, `y := fvar 1` (the
-hypotheses become `fvar 2, fvar 3`): per certificate, the list of
-hypothesis types and the characteristic equation `Eq Nat lhs rhs`.
-The guards are spelled with the already-certified `Nat.ble` (never the
-`Nat.le`/`Nat.lt` `Prop` inductives) and the numeral `1` as
-`Nat.succ Nat.zero`, so the model side consumes them through the
-existing `NatOpsOk` literal semantics for `ble`/`sub`.  The op's
-self-reference is `.const c []`, substituted with the stored annotated
-value before checking (all statement components are application
-spines, so `Expr.substConst0` applies). -/
-def divModCertStmts (c : Key) : List (List Expr × Expr) :=
-  let natTy : Expr := .const natName []
-  let x : Expr := .fvar 0 natTy
-  let y : Expr := .fvar 1 natTy
-  let one : Expr := .app (.const natSuccName []) (.const natZeroName [])
-  let ble2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natBleName []) a) b
-  let eqB : Expr → Expr → Expr := fun a b =>
-    .app (.app (.app (.const eqName [.succ .zero]) (.const boolName [])) a) b
-  let eqN : Expr → Expr → Expr := fun a b =>
-    .app (.app (.app (.const eqName [.succ .zero]) natTy) a) b
-  let op2 : Expr → Expr → Expr := fun a b => .app (.app (.const c []) a) b
-  let sub2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natSubName []) a) b
-  let bT : Expr := .const boolTrueName []
-  let bF : Expr := .const boolFalseName []
-  let z : Expr := .const natZeroName []
-  let two : Expr := .app (.const natSuccName []) one
-  let mod2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natModName []) a) b
-  let div2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natDivName []) a) b
-  let add2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natAddName []) a) b
-  let mul2 : Expr → Expr → Expr := fun a b =>
-    .app (.app (.const natMulName []) a) b
-  if c = natGcdName then
-    -- `gcd`: `1 ≤ x → gcd x y = gcd (y % x) x`, `x = 0 → gcd x y = y`
-    [([eqB (ble2 one x) bT], eqN (op2 x y) (op2 (mod2 y x) x)),
-     ([eqB (ble2 one x) bF], eqN (op2 x y) y)]
-  else if c = natShiftLeftName then
-    -- `1 ≤ y → x <<< y = (2*x) <<< (y-1)`, `y = 0 → x <<< y = x`
-    [([eqB (ble2 one y) bT], eqN (op2 x y) (op2 (mul2 two x) (sub2 y one))),
-     ([eqB (ble2 one y) bF], eqN (op2 x y) x)]
-  else if c = natShiftRightName then
-    -- `1 ≤ y → x >>> y = (x >>> (y-1)) / 2`, `y = 0 → x >>> y = x`
-    [([eqB (ble2 one y) bT], eqN (op2 x y) (div2 (op2 x (sub2 y one)) two)),
-     ([eqB (ble2 one y) bF], eqN (op2 x y) x)]
-  else if c = natLandName then
-    -- `1 ≤ x → x &&& y = 2*((x/2) &&& (y/2)) + (x%2)*(y%2)`,
-    -- `x = 0 → x &&& y = 0`
-    [([eqB (ble2 one x) bT],
-      eqN (op2 x y) (add2 (mul2 two (op2 (div2 x two) (div2 y two)))
-        (mul2 (mod2 x two) (mod2 y two)))),
-     ([eqB (ble2 one x) bF], eqN (op2 x y) z)]
-  else if c = natLorName then
-    -- `1 ≤ x → x ||| y = 2*((x/2) ||| (y/2)) + (x%2 + y%2 - (x%2)*(y%2))`,
-    -- `x = 0 → x ||| y = y`
-    [([eqB (ble2 one x) bT],
-      eqN (op2 x y) (add2 (mul2 two (op2 (div2 x two) (div2 y two)))
-        (sub2 (add2 (mod2 x two) (mod2 y two))
-          (mul2 (mod2 x two) (mod2 y two))))),
-     ([eqB (ble2 one x) bF], eqN (op2 x y) y)]
-  else if c = natXorName then
-    -- `1 ≤ x → x ^^^ y = 2*((x/2) ^^^ (y/2)) + (x%2 + y%2) % 2`,
-    -- `x = 0 → x ^^^ y = y`
-    [([eqB (ble2 one x) bT],
-      eqN (op2 x y) (add2 (mul2 two (op2 (div2 x two) (div2 y two)))
-        (mod2 (add2 (mod2 x two) (mod2 y two)) two))),
-     ([eqB (ble2 one x) bF], eqN (op2 x y) y)]
-  else
-  let recRhs : Expr :=
-    if c = natDivName then .app (.const natSuccName []) (op2 (sub2 x y) y)
-    else op2 (sub2 x y) y
-  let baseRhs : Expr := if c = natDivName then .const natZeroName [] else x
-  [([eqB (ble2 y x) bT, eqB (ble2 one y) bT], eqN (op2 x y) recRhs),
-   ([eqB (ble2 y x) bF], eqN (op2 x y) baseRhs),
-   ([eqB (ble2 one y) bF], eqN (op2 x y) baseRhs)]
-
-/-- The vendored proof applied to the statement's free variables
+/-- The proof applied to the statement's free variables
 (`x`, `y`, then one `fvar` per hypothesis, carrying the hypothesis
 *type* as its `fvar` annotation — the checker's implicit local
 context). -/
@@ -249,16 +143,16 @@ def divModCertGuard (env : Env) (c : Key) (annVal : Expr)
     (fun h => h.constsResolve env) &&
   (Expr.substConst0 c annVal eqE).constsResolve env
 
-/-- Check the pinned certificates of op `c`: per certificate, the
-vendored proof (with the op's self-references replaced by the stored
-annotated value — the checks run in the *pre-insertion* environment,
-exactly like the structural-Nat certification: post-insertion the op's
-own just-enabled fast path would participate in checking the very
-certificates that justify it) is applied to free variables typed by
-the pinned open statement, its type inferred, and compared against the
-pinned characteristic equation.  This checks each certificate exactly
-like a theorem declaration over an opened telescope — nothing is
-installed. -/
+/-- Check the certificates of op `c` against its specification's
+statements (`divModCertStmts`): per certificate, the evidence's proof
+(with the op's self-references replaced by the stored annotated value —
+the checks run in the *pre-insertion* environment, exactly like the
+structural-Nat certification: post-insertion the op's own just-enabled
+fast path would participate in checking the very certificates that
+justify it) is applied to free variables typed by the open statement,
+its type inferred, and compared against the characteristic equation.
+This checks each certificate exactly like a theorem declaration over an
+opened telescope — nothing is installed. -/
 def checkDivModCerts (ops : CheckerOps m) (env : Env) (c : Key)
     (annVal : Expr) : List (List Expr × Expr) → List Expr → m Bool
   | [], [] => pure true
@@ -274,11 +168,12 @@ def checkDivModCerts (ops : CheckerOps m) (env : Env) (c : Key)
     else pure false
   | _, _ => pure false
 
-/-- Environment prerequisites of a certified `Nat.div`/`Nat.mod`:
-dependency guard, pinned dependencies, the pinned `Eq` basis (the
-certificate statements are equations in the pinned equality), and the
-`Bool` constructors stored at the type `Bool` itself (the guards'
-`true`/`false` must inhabit the `Bool` value semantically). -/
+/-- Environment prerequisites of a certified well-founded operation:
+dependency guard, its dependencies stored at their pinned types, the
+pinned `Eq` basis (the certificate statements are equations in the
+pinned equality), and the `Bool` constructors stored at the type
+`Bool` itself (the guards' `true`/`false` must inhabit the `Bool` value
+semantically). -/
 def divModEnvGuard (env2 : Env) (c : Key) : Bool :=
   natOpGuard env2 c && (natOpDeps c).all (natOpStoredOk env2) &&
   env2.find? eqName == some eqA &&
@@ -289,138 +184,81 @@ def divModEnvGuard (env2 : Env) (c : Key) : Bool :=
     | some ci => ci.toConstantVal.type == .const boolName []
     | none => false)
 
-/-- Syntactic guards on one variant's pin (generated; checked once at
-install rather than proven about the blob). -/
-def divModPinGuard (ps : NatOpPinSet) (env : Env) (c : Key) : Bool :=
-  (divModDeclPin ps c).looseBVarsBounded 0 && !(divModDeclPin ps c).hasFvar &&
-  (divModDeclPin ps c).allLevelParamsDefined [] &&
-  (divModDeclPin ps c).constsResolve env
-
-/-- All of one variant's certificates' syntactic guards at once.
-Checked *before* the pin comparison; a failure moves on to the next
-variant: a stream may legitimately stop short of the constants a
-variant's proofs mention. -/
-def divModCertsGuard (ps : NatOpPinSet) (env : Env) (c : Key)
+/-- All certificates' syntactic guards at once, over the evidence's proof
+terms, one per statement of `divModCertStmts`. -/
+def divModCertsGuard (proofs : List Expr) (env : Env) (c : Key)
     (annVal : Expr) : Bool :=
-  ((divModCertStmts c).zip (divModCertProofs ps c)).all
+  ((divModCertStmts c).zip proofs).all
     (fun p => divModCertGuard env c annVal p.1.1 p.1.2 p.2)
 
-/-- **One pin variant's attempt** (task #273): the stored value against
-the variant's pin by definitional equality, and on a match the
-variant's certificates (`checkDivModCerts`).  `true` = matched, the
-fast path is justified; `false` = the pin is not definitionally equal,
-or a certificate did not check.  The third outcome is an error thrown
-from inside — a certificate blob generated by another toolchain can be
-ill-typed against this stream (the v4.33.0 blobs apply `Decidable.rec`
-with two minors; on lean4 master it has one), and the pin comparison
-does not see that (the pins mention `ite`/`dite`/`Nat.decLe` BY NAME,
-so a stream from another toolchain matches the pin syntactically).
-`CheckerOps.orElse` turns that error into "this variant does not
-match" — the only place a thrown error is recovered from, and it is
-scoped to exactly this attempt. -/
-def checkDivModPinAt (ops : CheckerOps m) (env : Env) (c : Key)
-    (value' : Expr) (ps : NatOpPinSet) : m Bool := do
-  let pinA ← ops.annotate env 0 (divModDeclPin ps c)
-  let okPin ← ops.isDefEq env 0 value' pinA
-  if okPin then
-    checkDivModCerts ops env c value' (divModCertStmts c)
-      (divModCertProofs ps c)
-  else pure false
-
-/-- What a variant failed on, for the decline message.  The pure
-instantiations always report the `none` text (see
+/-- What a certificate check failed on, for the decline message.  The
+pure instantiations always report the `none` text (see
 `CheckerOps.orElse`); the executable reports the error. -/
-def divModAttemptReason (ps : NatOpPinSet) : Option CheckError → String
-  | none => s!"{ps.toolchain}: pin not definitionally equal, or a \
-      certificate failed"
-  | some e => s!"{ps.toolchain}: {e}"
+def divModEvidenceReason (c : Key) : Option CheckError → String
+  | none => s!"unsupported Nat.div/mod evidence ({c}: a certificate did not check)"
+  | some e => s!"unsupported Nat.div/mod evidence ({c}: {e})"
 
-/-- **The variant loop**: the first variant whose guards pass and whose
-attempt succeeds enables the fast path; every other outcome moves on
-to the next variant, and when none is left the stream DECLINES with
-the per-variant reasons.  A certificate failure after a pin match used
-to be an internal error (exit 3); with variants it is one variant not
-matching (the pin comparison cannot tell toolchains apart, see
-`checkDivModPinAt`), so the decline message is the operator's
-diagnosis: `scripts/diagnose_natop_prefix.py` explains a "ground
-constants absent" entry, the executable's error text the rest. -/
-def checkDivModPinLoop (ops : CheckerOps m) (env : Env) (c : Key)
-    (value' : Expr) : List NatOpPinSet → List String → m Unit
-  | [], tried =>
-    throw (.notImplemented s!"unsupported Nat.div/mod spelling ({c}: no \
-      pin variant matched — {String.intercalate "; " tried})")
-  | ps :: rest, tried =>
-    if divModPinGuard ps env c && divModCertsGuard ps env c value' then
-      ops.orElse (checkDivModPinAt ops env c value' ps) fun r =>
-        checkDivModPinLoop ops env c value' rest
-          (tried ++ [divModAttemptReason ps r])
-    else
-      checkDivModPinLoop ops env c value' rest
-        (tried ++ [s!"{ps.toolchain}: pin or certificate ground constants \
-          absent"])
-
-/-- The pin-certified operations' install gate, run after the ordinary
+/-- **The well-founded operations' install gate**, run after the ordinary
 definition check (`env2` is the already-extended environment, `env`
-the pre-insertion one all checks run in): the dependency and
-pinned-`Eq` guards, then the pin variants in `pins` order
-(`checkDivModPinLoop`) — the stored value against each variant's pin
-of its toolchain's own helper-unfolded definition by definitional
-equality, and on a match that variant's certificates
-(`checkDivModCerts`).  No variant matching is a decline (exit 2),
-never a silent accept; the operation's literal fast path is enabled
-exactly when a variant's certificates checked in this run.
+the pre-insertion one all checks run in): the dependency and pinned-`Eq`
+guards, then the operation's evidence from the role table (`ev`): one
+`.proof` entry per certificate statement (`evidenceProofs`), whose proofs
+pass the syntactic guards and the closure condition (`evidenceLocal`: the
+proofs reach only the operation's dependency closure), and whose
+certificates check (`checkDivModCerts`).  Anything else is a decline (exit
+2), never a silent accept; the operation's literal fast path is enabled
+exactly when its certificates checked in this run.
 
-**The variant list is a parameter** (task #304): every function from
-here up to the fold takes it, and the shipped checker passes
-`natOpPinSets` — so a statement about the checker can be made for an
-arbitrary list, which is what the pin list being data rather than a
-constant buys.  The parameter sits right after `ops` (the "how to
-check" arguments) all the way up, and right after `mode` in the cached
-driver. -/
-def checkDivModPin (ops : CheckerOps m) (pins : List NatOpPinSet)
+**The evidence is a parameter**: every function from here up to the fold
+takes it, and soundness holds at every value — the model consumes the
+certificate runs, not where the proofs came from
+(`IxC/Kernel/Model/DivModCert.lean`).  A certificate that is ill-typed
+against this stream throws inside the check; `CheckerOps.orElse` turns
+that into this decline, as it does a `false`. -/
+def checkDivModEvidence (ops : CheckerOps m) (ev : Evidences)
     (env env2 : Env) (c : Key) : m Unit := do
   if divModEnvGuard env2 c then
     match env2.find? c with
     | some (.defnInfo _ value' _) =>
-      checkDivModPinLoop ops env c value' pins []
+      match evidenceProofs ev c with
+      | some proofs =>
+        if divModCertsGuard proofs env c value' && evidenceLocal env.find? c value' proofs then
+          ops.orElse (checkDivModCerts ops env c value' (divModCertStmts c) proofs) fun r =>
+            throw (.notImplemented (divModEvidenceReason c r))
+        else throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: certificate \
+          ground constants absent or outside the dependency closure)")
+      | none => throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: no proof \
+          evidence, one per certificate statement)")
     | _ => throw (.internal s!"Nat.div/mod operation not stored ({c})")
   else throw (.notImplemented
     s!"unsupported Nat.div/mod environment ({c})")
 
-/-- The `Lean.reduceNat`/`Lean.reduceBool` install gate, run after the
-ordinary opaque check (`env2` is the already-extended environment,
-`env` the pre-insertion one the comparisons run in; `value` the
-declaration's raw witness value, annotated again here — the stored
-constant is an `axiomInfo`, which carries no value):
+/-- **The `Lean.reduceNat`/`Lean.reduceBool` install gate** (their
+specification is `identity`), run after the ordinary opaque check (`env2`
+is the already-extended environment, `env` the pre-insertion one the
+certificate runs in; `value` the declaration's raw witness value,
+annotated again here — the stored constant is an `axiomInfo`, which
+carries no value):
 
-* the stored constant must carry the pinned type;
-* the witness value must be definitionally equal to the build-time pin
-  of the toolchain's own defining expression
-  (`IxC/Kernel/TrustPins.lean`) — toolchain drift surfaces as a
-  decline (exit 2), never silently;
+* the stored constant must carry the pinned type, over the element
+  inductive's pinned shape;
 * the *identity certificate*: `value x ≡ x` over an opened `fvar` at
   the element type.  This is what the model consumes
   (`EnvModel.reduce_ops`): with the operation interpreted as the
-  identity, the `ofReduce*` axioms' types are trivially inhabited.  A
-  certificate failure after the pin matched is an internal
-  inconsistency (the pin *is* the identity function). -/
-def checkReducePin (ops : CheckerOps m) (env env2 : Env) (c : Key)
+  identity, the `ofReduce*` axioms' types are trivially inhabited.
+
+There is no comparison with a toolchain's defining expression any more
+(the pin `fun b => b` and `checkReducePin` are retired): the certificate
+is the specification, and a value that is not the identity declines. -/
+def checkReduceIdentity (ops : CheckerOps m) (env env2 : Env) (c : Key)
     (value : Expr) : m Unit := do
-  if reduceStoredOk env2 c && reduceElemOk env c then
-    if reducePinGuard env c then do
-      let valA ← ops.annotate env 0 value
-      let pinA ← ops.annotate env 0 (reduceDeclPin c)
-      let okPin ← ops.isDefEq env 0 valA pinA
-      if okPin then do
-        let x := reduceCertVar c
-        let ok ← ops.isDefEq env 1 (.app valA x) x
-        if ok then pure ()
-        else throw (.internal
-          s!"pinned compiler-trust opaque is not the identity ({c})")
-      else throw (.notImplemented
-        s!"unsupported compiler-trust opaque spelling ({c})")
+  if reduceStoredOk env2 c && reduceElemOk env c then do
+    let valA ← ops.annotate env 0 value
+    let x := reduceCertVar c
+    let ok ← ops.isDefEq env 1 (.app valA x) x
+    if ok then pure ()
     else throw (.notImplemented
-      s!"unsupported compiler-trust opaque spelling ({c}: pin ground constants absent)")
+      s!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
   else throw (.notImplemented
     s!"unsupported compiler-trust opaque declaration ({c})")
 
@@ -437,13 +275,16 @@ def checkBasisDecl (env : Env) (kind : BasisKind) : m Env := do
   kind.declsA.foldlM installBasisDecl env
 
 /-- Check a single declaration, extending the environment on success. -/
-def checkDecl (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
+def checkDecl (ops : CheckerOps m) (ev : Evidences) (env : Env)
     (d : Declaration) : m Env := do
   match d with
   | .defnDecl cv value hint => do
     let cv ← checkConstantVal ops env cv
     let env2 ← checkDefnVal ops env cv value hint
-    -- Structural-Nat pins: the fast-path ops must be the standard
+    -- Structural-Nat operations: their evidence is one `.defeq` entry
+    -- per recurrence equation (`evidenceDefeqOk`, the role table's
+    -- evidence for an `ops` specification's unconditional equations), and
+    -- the fast-path ops must be the standard
     -- structural recursions — their recurrence equations are checked
     -- by definitional equality here, once, so the literal fast path's
     -- reduction-time certification never fails on an accepted
@@ -455,6 +296,9 @@ def checkDecl (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
     -- path discharge its all-literal equations vacuously), and the
     -- operation's and its dependencies' stored types are pinned.
     if natOpNames.contains cv.name then
+      unless evidenceDefeqOk ev cv.name do
+        throw (.notImplemented
+          s!"unsupported structural Nat operation evidence ({cv.name})")
       unless natOpGuard env2 cv.name &&
           (natOpDeps cv.name).all (natOpStoredOk env2) do
         throw (.notImplemented
@@ -469,18 +313,16 @@ def checkDecl (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
           throw (.notImplemented
             s!"nonstandard structural Nat operation ({cv.name})")
       | _ => throw (.internal s!"structural Nat operation not stored ({cv.name})")
-    -- WF-recursive Nat pins (`Nat.div`/`Nat.mod`): the stored value must
-    -- be definitionally equal to some committed pin variant of a
-    -- toolchain's own (helper-unfolded) definition, and that variant's
-    -- pinned `Nat.ble`-guarded characterization certificates must
-    -- check (in the pre-insertion environment, self-references
-    -- substituted; see `checkDivModCerts`) — they are not installed;
-    -- their success is what the model side consumes for the literal
-    -- fast path.  No variant matching is a decline (exit 2) naming
-    -- what each variant failed on — elaborator drift surfaces
-    -- visibly, never silently (task #273).
+    -- Well-founded `Nat` operations (`Nat.div`, `Nat.mod`, …): their
+    -- evidence is one `.proof` entry per certificate statement of their
+    -- `ops` specification, and the proofs' `Nat.ble`-guarded
+    -- characterization certificates must check (in the pre-insertion
+    -- environment, self-references substituted; see `checkDivModCerts`)
+    -- — they are not installed; their success is what the model side
+    -- consumes for the literal fast path.  Missing or failing evidence is
+    -- a decline (exit 2), never a silent accept.
     if natDivModNames.contains cv.name then
-      checkDivModPin ops pins env env2 cv.name
+      checkDivModEvidence ops ev env env2 cv.name
     pure env2
   | .thmDecl cv value =>
     let cv ← checkConstantVal ops env cv
@@ -489,12 +331,12 @@ def checkDecl (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
     let cv ← checkConstantVal ops env cv
     let env2 ← checkOpaqueVal ops env cv value
     -- Compiler-trust opaques (`Lean.reduceNat`/`Lean.reduceBool`,
-    -- task #95): the stored value must be definitionally equal to the
-    -- build-time pin of the toolchain's own defining expression — the
-    -- gate that lets the `ofReduce*` axioms' identity certificates
-    -- never fail on an accepted environment.
+    -- task #95): their specification is `identity`, so the stored value
+    -- is certified to be the identity function — the gate that lets the
+    -- `ofReduce*` axioms' identity certificates never fail on an
+    -- accepted environment.
     if reduceOpNames.contains cv.name then
-      checkReducePin ops env env2 cv.name value
+      checkReduceIdentity ops env env2 cv.name value
     pure env2
   | .axiomDecl cv =>
     -- Pinned axioms are *installed*: the two standard axioms
@@ -627,8 +469,8 @@ def checkDecl (ops : CheckerOps m) (pins : List NatOpPinSet) (env : Env)
 
 /-- Check a list of declarations in order, starting from the empty
 environment. -/
-def checkDeclsPure (ops : CheckerOps m) (pins : List NatOpPinSet)
+def checkDeclsPure (ops : CheckerOps m) (ev : Evidences)
     (ds : List Declaration) : m Env :=
-  ds.foldlM (checkDecl mode ops pins) Env.empty
+  ds.foldlM (checkDecl mode ops ev) Env.empty
 
 end Ix.Kernel

@@ -41,7 +41,7 @@ set_option maxHeartbeats 3200000
 namespace Ix.Kernel
 
 variable {mode : CheckMode}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-- Success on the executable side is reproduced at some fuel. -/
 def bridgeRel : MonadRel FueledM CheckM where
@@ -921,52 +921,22 @@ theorem checkDivModCerts_datF (env : Env) (c : Key) (annVal : Expr)
       | false => rfl
     · rfl
 
-theorem checkDivModPinAt_datF (env : Env) (c : Key) (value' : Expr)
-    (ps : NatOpPinSet) (F : Nat) :
-    (checkDivModPinAt (fueledOpsM mode) env c value' ps).val F =
-      checkDivModPinAt (fueledOps mode F) env c value' ps := by
-  unfold checkDivModPinAt
+theorem checkDivModEvidence_datF (env env2 : Env) (c : Key) (F : Nat) :
+    (checkDivModEvidence (fueledOpsM mode) ev env env2 c).val F =
+      checkDivModEvidence (fueledOps mode F) ev env env2 c := by
+  unfold checkDivModEvidence
   repeat (first
-    | (rw [checkDivModCerts_datF])
+    | (rw [fueledOpsM_orElse_atF, fueledOps_orElse', checkDivModCerts_datF])
     | split
     | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
     | rfl
     | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
 
-theorem checkDivModPinLoop_datF (env : Env) (c : Key) (value' : Expr)
+theorem checkReduceIdentity_datF (env env2 : Env) (c : Key) (value : Expr)
     (F : Nat) :
-    ∀ (pss : List NatOpPinSet) (tried : List String),
-      (checkDivModPinLoop (fueledOpsM mode) env c value' pss tried).val F =
-        checkDivModPinLoop (fueledOps mode F) env c value' pss tried
-  | [], _ => rfl
-  | ps :: rest, tried => by
-    unfold checkDivModPinLoop
-    split
-    · rw [fueledOpsM_orElse_atF, fueledOps_orElse', checkDivModPinAt_datF]
-      cases checkDivModPinAt (fueledOps mode F) env c value' ps with
-      | ok b =>
-        cases b with
-        | true => rfl
-        | false => exact checkDivModPinLoop_datF env c value' F rest _
-      | error e => exact checkDivModPinLoop_datF env c value' F rest _
-    · exact checkDivModPinLoop_datF env c value' F rest _
-
-theorem checkDivModPin_datF (env env2 : Env) (c : Key) (F : Nat) :
-    (checkDivModPin (fueledOpsM mode) pins env env2 c).val F =
-      checkDivModPin (fueledOps mode F) pins env env2 c := by
-  unfold checkDivModPin
-  repeat (first
-    | (rw [checkDivModPinLoop_datF])
-    | split
-    | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
-    | rfl
-    | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
-
-theorem checkReducePin_datF (env env2 : Env) (c : Key) (value : Expr)
-    (F : Nat) :
-    (checkReducePin (fueledOpsM mode) env env2 c value).val F =
-      checkReducePin (fueledOps mode F) env env2 c value := by
-  unfold checkReducePin
+    (checkReduceIdentity (fueledOpsM mode) env env2 c value).val F =
+      checkReduceIdentity (fueledOps mode F) env env2 c value := by
+  unfold checkReduceIdentity
   repeat (first
     | split
     | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
@@ -995,8 +965,8 @@ theorem checkBasisDecl_datF (env : Env) (kind : BasisKind) (F : Nat) :
     simp only [installBasisDecl_datF]
 
 theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
-    (checkDecl mode (fueledOpsM mode) pins env d).val F =
-      checkDecl mode (fueledOps mode F) pins env d := by
+    (checkDecl mode (fueledOpsM mode) ev env d).val F =
+      checkDecl mode (fueledOps mode F) ev env d := by
   unfold checkDecl
   cases d with
   | defnDecl cv value hint =>
@@ -1009,7 +979,7 @@ theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
     funext env2
     repeat (first
       | (rw [certifyNatEqs_datF])
-      | (rw [checkDivModPin_datF])
+      | (rw [checkDivModEvidence_datF])
       | split
       | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
       | rfl
@@ -1030,7 +1000,7 @@ theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
     congr 1
     funext env2
     repeat (first
-      | (rw [checkReducePin_datF])
+      | (rw [checkReduceIdentity_datF])
       | split
       | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
       | rfl
@@ -1071,8 +1041,8 @@ theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
       · rfl
 
 theorem checkDeclsPure_datF (ds : List Declaration) (F : Nat) :
-    (checkDeclsPure mode (fueledOpsM mode) pins ds).val F =
-      checkDeclsPure mode (fueledOps mode F) pins ds := by
+    (checkDeclsPure mode (fueledOpsM mode) ev ds).val F =
+      checkDeclsPure mode (fueledOps mode F) ev ds := by
   unfold checkDeclsPure
   rw [foldlM_atF]
   simp only [checkDecl_datF]

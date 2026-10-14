@@ -41,8 +41,8 @@ statement is frozen before a consumer has exercised it):
 | `ConstantValR` | the `∀ φ, ∃ Tv tT u, denoteClosed … ∧ Infer … ∧ DefEq …` front door | the six freshness/reservation/level/scoping guards (`hfresh` at every harvest and at `declEtaStep`), the annotate output (`annotate_syntax`), the two `allLevelParamsDefined`/`constsResolve` guards, and H1's own run chain `∃ stype u, inferTypeCore … ∧ ensureSortCore …` (the type's reading, through `acceptedReads_of`) |
 | `ValueFrontR` | the `∀ φ, ∃ Tv Vv tv, …` front door | the value's two syntactic guards, its annotate output, its two resolution guards, and H1's run **pair** `∃ vtype, inferTypeCore … ∧ isDefEqCore …` (the leaf's reading, and the membership crossing) |
 | `NatEqsR` | **the whole relation** | replaced by its twin `NatEqsRun`, which `DeclDefnR` already carries beside it (H1); `natOps_install` consumes the runs |
-| `DivModPinR` | nothing — it is already valuation-free (its `_cval` parameter is unused) | re-stated without the dead parameter as `DivModPinRun`; `divMod_install` consumes the guards and the certificate verdict |
-| `ReducePinR` | the `∀ φ, ∃ E V, … DefEq …` identity | the three storage guards, both annotate outputs and the recorded identity-certificate run; `reduceOps_install` consumes exactly these |
+| `DivModPinR` | nothing — it was already valuation-free | re-stated as `DivModCertRun` (since step 4 over the evidence's proofs, no pin); `divMod_install` consumes the guards and the certificate verdict |
+| `ReducePinR` | the `∀ φ, ∃ E V, … DefEq …` identity | as `ReduceIdentityRun`: the two storage guards, the value's annotate output and the recorded identity-certificate run (since step 4 no pin); `reduceOps_install` consumes exactly these |
 | `DeclThmR` | the `∀ φ, ∃ Tv sT, … DefEq … (.sort 0)` is-a-proposition front | H1's prop-check run triple (`inferTypeCore` + `ensureSortCore` + `Level.isEquiv`) |
 | `DeclAxiomR` | (via `ConstantValR`) | the four-way branch disjunction verbatim — pure stored-data guards |
 | `DeclBasisRun` | nothing | re-used **verbatim**: it is already guards only |
@@ -116,46 +116,32 @@ def ValueFrontRun (μ : CheckMode) (F : Nat) (env : Env)
   (∃ vtype, inferTypeCore μ env F 0 value' = .ok vtype ∧
     isDefEqCore μ env F 0 vtype type' = .ok true)
 
-/-! ## The conditional pin packs, run half -/
+/-! ## The conditional evidence packs, run half -/
 
-/-- `DivModPinR` without its dead valuation parameter.  The pack was
-already run-only (task #148 T6 recorded the reason: the pin comparison
-is not transposed and the certificates enter as the checker's verdict),
-so this is a re-statement, not a projection.
-
-**The matched variant is existential and unlisted** (task #304): the
-pack used to say `∃ ps ∈ natOpPinSets`, and the install gate's pin
-list is now a parameter of the fold, so naming the shipped list here
-would have tied the whole run tier to it.  Nothing downstream reads
-the membership — the model's conversion (`divMod_install`,
-`IxC/Kernel/Model/DivModCert.lean`) is over an arbitrary
-`ps : NatOpPinSet`, because what it consumes is the certificates'
-verdict *in this environment* and not where the variant came from.  So
-the pack says only that SOME variant's guards passed and certificates
-checked, which is what an install at any pin list establishes. -/
-def DivModPinRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
+/-- **A well-founded operation's install, run half**: the environment
+guard, and the operation's evidence — SOME proof list, past its guards,
+whose certificates checked.  The proofs are existential and unlisted:
+the model's conversion (`divMod_install`, `IxC/Kernel/Model/DivModCert.lean`)
+is over an arbitrary proof list, because what it consumes is the
+certificates' verdict *in this environment* and not where the proofs came
+from — which is why the fold is sound at every role-table evidence. -/
+def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
     (c : Key) (value' : Expr) : Prop :=
   divModEnvGuard env₂ c = true ∧
-  -- the pin variant that matched (task #273): its guards, its pin
-  -- annotated, its certificates checked
-  ∃ ps : NatOpPinSet,
-    divModPinGuard ps env c = true ∧
-    divModCertsGuard ps env c value' = true ∧
-    ∃ pinA, annotateCore μ env F 0 (divModDeclPin ps c) = .ok pinA ∧
-      checkDivModCerts (m := CheckM) (fueledOps μ F) env c value'
-        (divModCertStmts c) (divModCertProofs ps c) = .ok true
+  ∃ proofs : List Expr,
+    divModCertsGuard proofs env c value' = true ∧
+    checkDivModCerts (m := CheckM) (fueledOps μ F) env c value'
+      (divModCertStmts c) proofs = .ok true
 
-/-- `ReducePinR`'s run/guard half: the storage guards, both annotate
-outputs and the recorded identity-certificate run, without the
-derivation the identity carries beside it. -/
-def ReducePinRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
+/-- **A compiler-trust opaque's install, run half**: the storage guards,
+the value's annotation and the recorded identity-certificate run, without
+the derivation the identity carries beside it. -/
+def ReduceIdentityRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
     (c : Key) (value : Expr) : Prop :=
   reduceStoredOk env₂ c = true ∧
   reduceElemOk env c = true ∧
-  reducePinGuard env c = true ∧
-  ∃ valA pinA,
+  ∃ valA,
     annotateCore μ env F 0 value = .ok valA ∧
-    annotateCore μ env F 0 (reduceDeclPin c) = .ok pinA ∧
     isDefEqCore μ env F 1 (.app valA (reduceCertVar c))
       (reduceCertVar c) = .ok true
 
@@ -178,7 +164,7 @@ def DeclDefnRun (μ : CheckMode) (F : Nat) (env : Env)
           (Expr.substConst0 cv.name value' eq.1,
            Expr.substConst0 cv.name value' eq.2))) ∧
     (natDivModNames.contains cv.name = true →
-      DivModPinRun μ F env env₂ cv.name value')
+      DivModCertRun μ F env env₂ cv.name value')
 
 /-- `DeclThmR`'s run/guard half. -/
 def DeclThmRun (μ : CheckMode) (F : Nat) (env : Env)
@@ -202,7 +188,7 @@ def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env)
     ValueFrontRun μ F env cv value type' value' ∧
     env₂ = ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩ ∧
     (reduceOpNames.contains cv.name = true →
-      ReducePinRun μ F env env₂ cv.name value)
+      ReduceIdentityRun μ F env env₂ cv.name value)
 
 /-- `DeclAxiomR`'s run/guard half: the branch disjunction is pure
 stored-data guards and is carried verbatim. -/

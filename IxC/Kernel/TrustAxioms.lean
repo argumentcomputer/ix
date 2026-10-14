@@ -3,7 +3,6 @@ module
 public import IxC.Kernel.StdAxioms
 public meta import IxC.Kernel.BasisA
 public import IxC.Kernel.Core
-public import IxC.Kernel.TrustPins
 
 @[expose] public section
 
@@ -20,11 +19,11 @@ declined:
   interpretation.
 * `Lean.reduceNat` / `Lean.reduceBool` then check as ordinary
   `opaque`s (their exported values are identity functions modulo the
-  `have := trustCompiler` wrapper); at install their stored values are
-  pinned against the identity function
-  (`IxC/Kernel/TrustPins.lean`, hand-pinned since task #273 —
-  every toolchain's definition after zeta) by definitional equality —
-  the task-#47 pattern: drift declines, never silently.
+  `have := trustCompiler` wrapper); their specification is `identity`
+  (`Role.spec`), so at install their stored values are certified to be
+  the identity, `value x ≡ x`, by definitional equality
+  (`checkReduceIdentity`): a value that is not declines, never
+  silently. Since step 4 there is no toolchain pin to compare with.
 * `Lean.ofReduceNat` / `Lean.ofReduceBool` are pinned axioms over
   those stored opaques (the task-#34 standard-axioms machinery).  With
   the stored reduce operation certified to be the identity (a
@@ -187,8 +186,8 @@ def reduceElemOk (env : Env) (c : Key) : Bool :=
 /-- Is this checked axiom a pinned `ofReduce*` over a standardly-shaped
 environment?  Requires the pinned `Eq` basis (the type is an equality
 implication), the element inductive, and the reduce operation stored
-as a pinned opaque — whose install already ran the identity
-certificate (`checkReducePin`), the fact the model consumes here. -/
+as a bound opaque — whose install already ran the identity
+certificate (`checkReduceIdentity`), the fact the model consumes here. -/
 def ofReduceAxOk (env : Env) (cvA : ConstantVal) : Bool :=
   let c := ofReduceOp cvA.name
   decide (env.find? eqName = some eqA) &&
@@ -196,20 +195,7 @@ def ofReduceAxOk (env : Env) (cvA : ConstantVal) : Bool :=
   reduceStoredOk env c &&
   ConstantVal.matchesPin cvA (ofReducePinA cvA.name)
 
-/-! ## The reduce-operation install pin -/
-
-/-- The pinned defining expression of a reduce operation
-(`IxC/Kernel/TrustPins.lean`: the plain identity, hand-written
-with the basis builder — every toolchain's `have := trustCompiler; b`
-after zeta). -/
-def reduceDeclPin (c : Key) : Expr :=
-  if c = reduceNatName then reduceNatDeclPin else reduceBoolDeclPin
-
-/-- Syntactic guards on the generated pin (checked once at install). -/
-def reducePinGuard (env : Env) (c : Key) : Bool :=
-  (reduceDeclPin c).looseBVarsBounded 0 && !(reduceDeclPin c).hasFvar &&
-  (reduceDeclPin c).allLevelParamsDefined [] &&
-  (reduceDeclPin c).constsResolve env
+/-! ## The reduce-operation identity certificate -/
 
 /-- The identity certificate's variable: `fvar 0` at the element
 type. -/

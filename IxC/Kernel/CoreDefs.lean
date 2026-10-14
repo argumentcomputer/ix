@@ -480,14 +480,13 @@ def natOpNames : List Key :=
    natBeqName, natBleName]
 
 /-- The WF-recursive operations with a *pinned-declaration* certified
-fast path: at install, `checkDecl` compares the stream's definition
-against a vendored pin of the toolchain's own (helper-unfolded)
-definition by definitional equality, and then checks the pinned
-`Nat.ble`-guarded characterization certificates
-(`IxC/Kernel/NatOpPins.lean`) like theorem declarations — without
-installing them.  Presence in the store is therefore again the
-capability: a stored operation under one of these names has passed pin
-and certificates, or the install declined.  (The name is historic:
+fast path: at install, `checkDecl` checks the role table's evidence for
+the operation, the theorems proving its `Nat.ble`-guarded
+characterization equations (`divModCertStmts`, `IxC/Kernel/Roles.lean`),
+like theorem declarations — without installing them — under the closure
+condition `evidenceLocal`.  Presence in the store is therefore again the
+capability: a stored operation under one of these names has passed its
+evidence, or the install declined.  (The name is historic:
 the family started with `Nat.div`/`Nat.mod` and now covers every
 pin-certified WF-recursive kernel-accelerated `Nat` operation —
 `Nat.log2` left the list when its fast path did, official folding no

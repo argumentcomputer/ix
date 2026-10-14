@@ -32,9 +32,9 @@ private theorem fvarsBelow_zero_of_not_hasFvar :
 /-- **Model existence with definition values.** Every environment the fold
 accepts has a model in which every stored definition's value denotes the
 constant, at every level assignment and variable environment. -/
-theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (pins : List NatOpPinSet)
+theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (ev : Evidences)
     (ds : Array Declaration) (env : Env)
-    (accepted : Cached.checkDecls .verified pins ds = .ok env) :
+    (accepted : Cached.checkDecls .verified ev ds = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ (cv : ConstantVal) (value : Expr) (hint : ReducibilityHint),
       ConstantInfo.defnInfo cv value hint ∈ env.consts →
       ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ) := by

@@ -57,7 +57,7 @@ universe w
 
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode}
-variable {pins : List Ix.Kernel.NatOpPinSet}
+variable {ev : Ix.Kernel.Evidences}
 
 /-- The axiom kind's whole step — **no longer routed** (ENDGAME D):
 `axiomStepPB_of` below discharges it.  The definition is kept because
@@ -225,14 +225,14 @@ theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env�
 theorem foldPM (hμ : μ.verifiedChecks = true) {F : Nat} :
     ∀ (ds : List Declaration) (env : Env) {env' : Env},
       EnvModelOk V μ env →
-      ds.foldlM (checkDecl μ (fueledOps μ F) pins) env = .ok env' →
+      ds.foldlM (checkDecl μ (fueledOps μ F) ev) env = .ok env' →
       EnvModelOk V μ env'
   | [], _, _, hm, h => by
     simp only [List.foldlM, pure, Except.pure, Except.ok.injEq] at h
     exact h ▸ hm
   | d :: ds, env, _, hm, h => by
     simp only [List.foldlM, Bind.bind, Except.bind] at h
-    cases hd : checkDecl μ (fueledOps μ F) pins env d with
+    cases hd : checkDecl μ (fueledOps μ F) ev env d with
     | error e => rw [hd] at h; exact nomatch h
     | ok env1 =>
       rw [hd] at h
@@ -253,7 +253,7 @@ on the tier bundles; the final form replaces them with the tiers'
 theorems). -/
 theorem checkDeclsPure_sound_of (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List Declaration} {env' : Env}
-    (h : checkDeclsPure μ (fueledOps μ F) pins ds = .ok env') :
+    (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     Nonempty (EnvModelM V μ env') :=
   (foldPM hμ ds Env.empty
     ⟨⟨EnvModelM.empty V μ⟩, EtaFamiliesClosed.empty⟩ h).1
@@ -265,7 +265,7 @@ bundles. -/
 theorem no_proof_of_Empty_pure_of (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List Declaration} {env' : Env}
-    (h : checkDeclsPure μ (fueledOps μ F) pins ds = .ok env')
+    (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env')
     (c : ConstantInfo) (hc : c ∈ env'.consts)
     (hty : c.toConstantVal.type = .const emptyName []) : False := by
   obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) hμ h
@@ -291,7 +291,7 @@ argument (project rule: consistency proofs stay parametric in the
 theorem no_proof_of_Empty_pure (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List Declaration} {env' : Env}
-    (h : checkDeclsPure μ (fueledOps μ F) pins ds = .ok env') :
+    (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const emptyName [] → False :=
   fun c hc hty => no_proof_of_Empty_pure_of V hμ h c hc hty
@@ -308,7 +308,7 @@ mode, the accepted run, the stored constant, its type. -/
 theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List Declaration} {env' : Env}
-    (h : checkDeclsPure μ (fueledOps μ F) pins ds = .ok env') :
+    (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const falseName [] → False := by
   obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) hμ h

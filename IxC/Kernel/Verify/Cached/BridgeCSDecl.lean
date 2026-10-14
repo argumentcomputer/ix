@@ -49,7 +49,7 @@ theorem throwC_bind_eq {α β : Type} (e : CheckError)
 open Ix.Kernel
 
 variable {mode : CheckMode}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-! ## `CheckCM` peels (the `CheckIM` helpers of
 `IxC/Kernel/Verify/CheckerF.lean` at the cached monad) -/
@@ -539,7 +539,7 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
     have hcapsv' : indBlockCaps mode env cvT cvC nP nF = caps := by
       rw [← indBlockCapsF_eq]; exact hcapsv
     obtain ⟨fe₂, s₂, hfold, h⟩ := bindC_ok h
-    -- the block's capability pins at its (single) inductive member:
+    -- the block's capability ev at its (single) inductive member:
     -- the member IS the former the record was computed for
     obtain ⟨hwf₂, hfe₂, henv₂, F₁, hF₁⟩ :=
       foldIndMemberS_run hμ _ env henv hwf (by
@@ -729,7 +729,7 @@ theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env
           | none => checkIndDeclSF mode (mkFEnv env) block) s₀ =
       .ok (feOut, s')) :
     CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
-    ∃ F, checkDecl mode (fueledOps mode F) pins env (.indDecl block nP) =
+    ∃ F, checkDecl mode (fueledOps mode F) ev env (.indDecl block nP) =
       .ok feOut.env := by
   -- the declared parameter count (task #228) is a pure guard shared by
   -- the two drivers: `hok` is the branch both take

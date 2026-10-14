@@ -137,8 +137,8 @@ over, with `interp`/`cval` replaced by `interp`/`acval`.  The stored
 element type's reading, *is* that member.
 
 **This is an environment law, exactly as `eq_law` is**: the opaque's
-leaf value is fixed by its own install (`checkReducePin`'s identity
-certificate) and by nothing else, so the only possible supplier is
+leaf value is fixed by its own install (`checkReduceIdentity`'s
+identity certificate) and by nothing else, so the only possible supplier is
 that install.  The v1 field cannot be imported — the transfer would
 be an erasure factoring of `interp` through `interp`, refuted at
 exactly the λ-nodes the operation's leaf is made of (the literal-tier

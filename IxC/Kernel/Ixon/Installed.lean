@@ -130,8 +130,8 @@ theorem streamSkels_mem {ds : List Declaration} {d : Declaration} (hd : d ∈ ds
 axiom declaration of an accepted array is installed under its name, as a
 constant of its kind (a definition as a definition, a theorem as a theorem,
 an opaque or an axiom as an axiom); `sorryAx` and `Quot.sound` excepted. -/
-theorem checkDecls_installs {pins : List NatOpPinSet} {mode : CheckMode} {ds : Array Declaration}
-    {env : Env} (h : checkDecls mode pins ds = .ok env) {d : Declaration} (hd : d ∈ ds)
+theorem checkDecls_installs {ev : Evidences} {mode : CheckMode} {ds : Array Declaration}
+    {env : Env} (h : checkDecls mode ev ds = .ok env) {d : Declaration} (hd : d ∈ ds)
     {s : InstallSkel} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by
   have hm : s ∈ envSkels env := by
     rw [checkDecls_skels h]

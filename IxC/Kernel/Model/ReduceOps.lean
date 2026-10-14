@@ -23,8 +23,8 @@ erasure factoring of `interp` through `interp`, refuted at the very
 
 ## The route: the run-certificate move, fifth execution
 
-`checkReducePin` runs the identity certificate and `ReducePinR`
-**records the run** (`SetR/Decl.lean:270`):
+`checkReduceIdentity` runs the identity certificate and
+`ReduceIdentityRun` **records the run** (`Semantics/DeclRun.lean`):
 
 > `isDefEqCore μ env F 1 (.app valA (reduceCertVar c)) (reduceCertVar c)
 > = .ok true`
@@ -193,7 +193,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
     (hmemA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ))
     (hred : Ix.Kernel.reduceOpNames.contains cv.name = true →
-      ReducePinRun μ F env
+      ReduceIdentityRun μ F env
         ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩
         cv.name value)
     (m₂ : EnvModel V
@@ -208,7 +208,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
       hfresh m₂ hac hcN hne hf₂ hpin
   subst hne
   -- the recorded certificate, and its annotated subject
-  obtain ⟨-, helemOk, -, valA, pinA, hannA, -, hrun⟩ :=
+  obtain ⟨-, helemOk, valA, hannA, hrun⟩ :=
     hred (List.contains_iff_mem.mpr hcN)
   obtain rfl : valA = value' := Except.ok.inj (hannA.symm.trans hannv)
   -- the element inductive is stored, level-free, and is not the cons

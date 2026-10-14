@@ -23,7 +23,7 @@ model's declaration step consumes.
 namespace Ix.Kernel
 
 variable {μ : CheckMode} {F : Nat} {env : Env}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences}
 
 /-! ## The install half -/
 
@@ -323,7 +323,7 @@ theorem checkDecl_of_split_defn {cv : ConstantVal} {value : Expr}
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hV : installValue (fueledOps μ F) env vg.cvA value = .ok vg.jv)
     (hC : checkValueGroup (fueledOps μ F) env vg = .ok ()) :
-    checkDecl μ (fueledOps μ F) pins env (.defnDecl cv value hint)
+    checkDecl μ (fueledOps μ F) ev env (.defnDecl cv value hint)
       = .ok ⟨.defnInfo vg.cvA vg.jv hint :: env.consts⟩ := by
   obtain ⟨hfind, hres, hshape, hnd, hlb, hif, type', hann, htp, htr, hcvA⟩ :=
     installConstantVal_inv hI
@@ -346,7 +346,7 @@ theorem checkDecl_of_split_thm {cv : ConstantVal} {value : Expr} {vg : ValueGrou
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hjv : vg.jv = value)
     (hC : checkValueGroup (fueledOps μ F) env vg = .ok ()) :
-    checkDecl μ (fueledOps μ F) pins env (.thmDecl cv value)
+    checkDecl μ (fueledOps μ F) ev env (.thmDecl cv value)
       = .ok ⟨.thmInfo vg.cvA value :: env.consts⟩ := by
   obtain ⟨hfind, hres, hshape, hnd, hlb, hif, type', hann, htp, htr, hcvA⟩ :=
     installConstantVal_inv hI
@@ -367,7 +367,7 @@ theorem checkDecl_of_split_opaque {cv : ConstantVal} {value : Expr} {vg : ValueG
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hV : installValue (fueledOps μ F) env vg.cvA value = .ok vg.jv)
     (hC : checkValueGroup (fueledOps μ F) env vg = .ok ()) :
-    checkDecl μ (fueledOps μ F) pins env (.opaqueDecl cv value)
+    checkDecl μ (fueledOps μ F) ev env (.opaqueDecl cv value)
       = .ok ⟨.axiomInfo vg.cvA :: env.consts⟩ := by
   obtain ⟨hfind, hres, hshape, hnd, hlb, hif, type', hann, htp, htr, hcvA⟩ :=
     installConstantVal_inv hI
