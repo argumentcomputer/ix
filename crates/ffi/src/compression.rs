@@ -23,6 +23,7 @@ extern "C" fn rs_compression_run(
   registry: LeanString<LeanBorrowed<'_>>,
   resume: bool,
   resident: bool,
+  dev_srs: bool,
   log_height: u32,
 ) -> LeanIOResult<LeanOwned> {
   let result = (|| -> pipeline::Result<Vec<u8>> {
@@ -35,6 +36,7 @@ extern "C" fn rs_compression_run(
       dir,
       resume,
       resident,
+      dev_srs,
       log_height,
     )?;
     pipeline::verify(&dir.join("final-kzg"), &bytes, claim.as_bytes())?;
@@ -42,6 +44,7 @@ extern "C" fn rs_compression_run(
       &dir.join("final-kzg/verifier.bin"),
       std::path::Path::new(&registry.to_string()),
       None,
+      dev_srs,
     )?;
     Ok(bytes)
   })();
@@ -56,13 +59,23 @@ extern "C" fn rs_compression_verify(
   dir: LeanString<LeanBorrowed<'_>>,
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
+  dev_srs: bool,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::registry::verify(
     std::path::Path::new(&dir.to_string()),
     proof.as_bytes(),
     claim.as_bytes(),
+    dev_srs,
   ) {
-    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Ok(class) => LeanIOResult::ok(LeanString::new(class.label())),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_setup(dev_srs: bool) -> LeanIOResult<LeanOwned> {
+  match pipeline::setup_description(dev_srs) {
+    Ok(description) => LeanIOResult::ok(LeanString::new(description)),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
 }
@@ -82,13 +95,17 @@ extern "C" fn rs_compression_import_verifier(
   file: LeanString<LeanBorrowed<'_>>,
   digest: LeanString<LeanBorrowed<'_>>,
   registry: LeanString<LeanBorrowed<'_>>,
+  dev_srs: bool,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::registry::register(
     std::path::Path::new(&file.to_string()),
     std::path::Path::new(&registry.to_string()),
     Some(&digest.to_string()),
+    dev_srs,
   ) {
-    Ok(id) => LeanIOResult::ok(LeanString::new(&id)),
+    Ok((class, id)) => {
+      LeanIOResult::ok(LeanString::new(&format!("{} {id}", class.label())))
+    },
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
 }

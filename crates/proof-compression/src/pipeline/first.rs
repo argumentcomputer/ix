@@ -347,7 +347,7 @@ fn stage(
   drop(assignment);
   println!("Scalar witness satisfied: {:?}", start.elapsed());
   let height = frontend.height()?;
-  let setup = SetupSource::development(FIRST_SEED, height - 1, None)?;
+  let setup = SetupSource::for_stage(FIRST_SEED, height, None)?;
   setup.bind_stage(out, height, 2)?;
   let setup_id = setup.identity(height, 2)?;
   let cache = FixedCache::for_stage(out, &[plan_id, setup_id].concat())?;
@@ -447,15 +447,7 @@ fn expected_claims(count: usize) -> Vec<Vec<Scalar>> {
 }
 
 fn setup_for(dir: &Path, height: usize) -> storage::Result<SetupSource> {
-  let mut setup = SetupSource::development(
-    FIRST_SEED,
-    height - 1,
-    Some(dir.join("kzg/dev-srs.bin")),
-  )?;
-  if let Some(directory) = SetupSource::cache_directory_from_env() {
-    setup = setup.with_cache_directory(directory);
-  }
-  Ok(setup)
+  SetupSource::for_stage(FIRST_SEED, height, Some(dir.join("kzg/dev-srs.bin")))
 }
 
 pub(super) fn write_checkpoint(
@@ -1013,7 +1005,7 @@ impl<'a> Worker<'a> {
       );
     }
     let height = self.frontend.height()?;
-    let setup = SetupSource::development(FIRST_SEED, height - 1, None)?;
+    let setup = SetupSource::for_stage(FIRST_SEED, height, None)?;
     setup.bind_stage(output, height, 2)?;
     let setup_id = setup.identity(height, 2)?;
     let claims = self.frontend.compiled.claims(&public)?;

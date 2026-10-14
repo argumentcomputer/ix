@@ -1,5 +1,6 @@
-//! Accepted development profiles, separate from untrusted proof/checkpoint storage.
-use super::{PROOF_TAG, Result, wrap::VerifierProfile};
+//! Accepted verifier profiles, separate from untrusted proof/checkpoint
+//! storage and filed by the trust class of their public setup.
+use super::{PROOF_TAG, Result, setup::SetupClass, wrap::VerifierProfile};
 use std::{
   fs,
   io::{Read, Write},
@@ -61,12 +62,15 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
   result
 }
 
-/// Called only after local compression, or with an independently authenticated digest on import.
+/// Called only after local compression, or with an independently
+/// authenticated digest on import. A development-setup verifier is filed
+/// only with explicit permission.
 pub fn register(
   file: &Path,
   registry: &Path,
   expected_digest: Option<&str>,
-) -> Result<String> {
+  allow_development: bool,
+) -> Result<(SetupClass, String)> {
   let bytes = read(file)?;
   let digest = *blake3::hash(&bytes).as_bytes();
   if let Some(expected) = expected_digest
@@ -75,26 +79,52 @@ pub fn register(
     return Err("verifier digest mismatch; nothing registered".into());
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
+  let class = SetupClass::of(profile.public_setup()?);
+  if class == SetupClass::Development && !allow_development {
+    return Err(
+      "verifier uses the known-trapdoor development setup; pass --dev-srs to \
+       register it (not production-secure)"
+        .into(),
+    );
+  }
   let id = hex(profile.id());
-  let registry = registry.join("development");
+  let registry = registry.join(class.label());
   publish(&registry.join("keys").join(format!("{}.bin", hex(digest))), &bytes)?;
   publish(&registry.join("profiles").join(&id), &digest)?;
-  Ok(id)
+  Ok((class, id))
 }
 
-pub fn verify(registry: &Path, proof: &[u8], claim: &[u8]) -> Result<()> {
+/// Verify a compressed proof against its registered verifier and report the
+/// setup class it was proved under. A development-setup proof is accepted
+/// only with explicit permission.
+pub fn verify(
+  registry: &Path,
+  proof: &[u8],
+  claim: &[u8],
+  allow_development: bool,
+) -> Result<SetupClass> {
   super::check_claim(claim)?;
   let packet = proof
     .strip_prefix(PROOF_TAG)
     .ok_or("unsupported compressed proof version")?;
   let id: [u8; 32] =
     packet.get(..32).ok_or("truncated compressed proof")?.try_into()?;
-  let registry = registry.join("development");
-  let mapping = registry.join("profiles").join(hex(id));
-  if !mapping.exists() {
-    return Err(format!("unknown compression verifier {}; import an independently trusted verifier with ix verifier import FILE --digest HASH --dev-srs", hex(id)).into());
+  let Some(class) =
+    [SetupClass::Filecoin, SetupClass::Development].into_iter().find(|class| {
+      registry.join(class.label()).join("profiles").join(hex(id)).exists()
+    })
+  else {
+    return Err(format!("unknown compression verifier {}; import an independently trusted verifier with ix verifier import FILE --digest HASH", hex(id)).into());
+  };
+  if class == SetupClass::Development && !allow_development {
+    return Err(
+      "compressed proof was produced under the known-trapdoor development \
+       setup; pass --dev-srs to accept it (not production-secure)"
+        .into(),
+    );
   }
-  let digest: [u8; 32] = read(&mapping)?
+  let registry = registry.join(class.label());
+  let digest: [u8; 32] = read(&registry.join("profiles").join(hex(id)))?
     .try_into()
     .map_err(|_error| "invalid verifier registry entry")?;
   let bytes =
@@ -103,10 +133,11 @@ pub fn verify(registry: &Path, proof: &[u8], claim: &[u8]) -> Result<()> {
     return Err("registered verifier digest mismatch".into());
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
-  if profile.id() != id {
+  if profile.id() != id || SetupClass::of(profile.public_setup()?) != class {
     return Err("registered verifier profile mismatch".into());
   }
-  profile.verify(packet)
+  profile.verify(packet)?;
+  Ok(class)
 }
 
 #[cfg(test)]
@@ -129,5 +160,16 @@ mod tests {
     assert!(parse_hex("../untrusted").is_err());
     assert!(parse_hex(&"g".repeat(64)).is_err());
     assert_eq!(parse_hex(&"00".repeat(32)).unwrap(), [0; 32]);
+  }
+  #[test]
+  fn unknown_profiles_are_rejected_before_any_setup_policy() {
+    let dir = std::env::temp_dir()
+      .join(format!("ix-verifier-unknown-{}", std::process::id()));
+    let mut proof = PROOF_TAG.to_vec();
+    proof.extend([7; 32]);
+    for allow in [false, true] {
+      let error = verify(&dir, &proof, b"wrong", allow).unwrap_err();
+      assert!(error.to_string().contains("Init root claim"));
+    }
   }
 }

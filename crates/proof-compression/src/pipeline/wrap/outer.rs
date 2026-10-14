@@ -116,7 +116,7 @@ impl Frontend {
     }
     let start = std::time::Instant::now();
     let height = self.compiled.main_height();
-    let setup = SetupSource::development(OUTER_SEED, height - 1, None)?;
+    let setup = SetupSource::for_stage(OUTER_SEED, height, None)?;
     let setup_id = setup.identity(height, 2)?;
     let traces = self.compiled.trace_shards(assignment)?;
     fs::create_dir_all(dir)?;
@@ -419,14 +419,8 @@ fn prove_with_traces(
   let out = dir.join("kzg");
   fs::create_dir_all(&out)?;
   eprintln!("Preparing KZG parameters for 2^{} rows", height.ilog2());
-  let mut setup = SetupSource::development(
-    OUTER_SEED,
-    height - 1,
-    Some(out.join("dev-srs.bin")),
-  )?;
-  if let Some(directory) = SetupSource::cache_directory_from_env() {
-    setup = setup.with_cache_directory(directory);
-  }
+  let setup =
+    SetupSource::for_stage(OUTER_SEED, height, Some(out.join("dev-srs.bin")))?;
   setup.check_binding(dir, height, 2)?;
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let setup_id = setup.identity(height, 2)?;
@@ -770,6 +764,13 @@ impl VerifierProfile {
 
   fn keys(&self) -> storage::Result<Vec<ark_bls12_381::G2Affine>> {
     decode_pairing_keys(&decode(&self.pairings)?)
+  }
+
+  /// The public setup the profile's verifier parameters declare.
+  pub(crate) fn public_setup(
+    &self,
+  ) -> storage::Result<crate::kzg::PublicSetup> {
+    Ok(crate::kzg::VerifierParams::from_bytes(&self.parameters)?.public_setup())
   }
 
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {

@@ -8,8 +8,7 @@ namespace Ix.Cli.CompressCmd
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
-    unless p.hasFlag "dev-srs" do
-      throw <| IO.userError "compression currently uses a known-trapdoor development SRS; --dev-srs is required (not production-secure)"
+    let setup ← Compression.describeSetup (p.hasFlag "dev-srs")
     let hex := p.positionalArg! "proof" |>.as! String
     let some addr := Address.fromString hex | throw <| IO.userError "expected a 64-character proof address"
     let wrapper ← Compression.readProof addr
@@ -33,9 +32,10 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
       | none =>
         let backend ← IO.ofExcept (← Aggr.buildVerificationBackend Aggr.defaultRecursionParameters)
         pure backend.system.vkBytes
-    IO.eprintln "Compressing Init with a development SRS (not production-secure)."
+    IO.eprintln s!"Compressing Init with {setup}."
     let proof ← Compression.compress vk wrapper.proof (Ix.Claim.ser wrapper.claim)
-      out (← Compression.registryDir).toString resume (p.hasFlag "resident") height.toUInt32
+      out (← Compression.registryDir).toString resume (p.hasFlag "resident")
+      (p.hasFlag "dev-srs") height.toUInt32
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     let result ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
     IO.eprintln s!"Verifier registered locally; portable key: {out}/final-kzg/verifier.bin"
@@ -56,7 +56,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "resident"; "Keep polynomial checkpoints in RAM; faster but uses more memory."
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
-    "dev-srs"; "Explicitly allow the known-trapdoor development setup; results are not production-secure."
+    "dev-srs"; "Allow the known-trapdoor development setup when no Filecoin SRS cache is configured; results are not production-secure."
   ARGS:
     proof : String; "Address of an aggregate Ixon.Proof in the ix store."
 ]
