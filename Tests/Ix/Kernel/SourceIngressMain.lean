@@ -21,7 +21,8 @@ import Tests.Ix.Kernel.SourceIngressCompare
   check at the empty pin list (or the committed one, `--ixon-pins builtin`),
   and the verdicts are compared constant by constant
   (`Tests.Ix.Kernel.SourceIngressCompare`); the differing constants go to
-  `path.diff`. -/
+  `path.diff`, and the Ixon verdicts, one line per Lean name sorted by name,
+  `name<TAB>outcome<TAB>reason`, to `path.rows`. -/
 
 namespace Tests.Ix.Kernel.SourceIngressMain
 
@@ -106,6 +107,11 @@ def main (args : List String) : IO UInt32 := do
     let h ← IO.FS.Handle.mk (path.toString ++ ".diff") .write
     for (n, so, sr, io, ir) in cmp.differing do
       h.putStrLn s!"{n}\t{so}\t{sr}\t{io}\t{ir}"
+    h.flush
+    let h ← IO.FS.Handle.mk (path.toString ++ ".rows") .write
+    let named := (verdicts.toArray.map fun (n, v) => (toString n, v)).qsort (·.1 < ·.1)
+    for (n, o, why) in named do
+      h.putStrLn s!"{n}\t{o}\t{why}"
     h.flush
     let mut pairReasons : Std.HashMap String Nat := {}
     for (_, so, sr, io, ir) in cmp.differing do
