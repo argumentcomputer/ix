@@ -2,6 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.SourceContract.SyntaxFixture
 
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
@@ -24,6 +25,13 @@ import Tests.Ix.Kernel.SourceIngress
   - the reading (`Ix.Cert.reading`) reads every constant of the closure as an
     installed compiled constant with as many level parameters as it has
     level arguments, the condition under which `Commutes` can hold.
+* **Binder contracts on both sides**, on declarations of the source-contract
+  syntax fixture (`Tests.Ix.SourceContract.SyntaxFixture`) with input and
+  result contracts on arrows, λs and lets: their source contracts resolved
+  (`Ix.Compile.prepareRegisteredConstants`, as the IO pipeline does) and
+  canonicalized, Source mode accepts them, and every constant's binders carry
+  the same contracts in Source mode as its reading does in the certified
+  entry's environment of `Ix.Cert.compile`'s output.
 
 Importing `Ix.Cert.Audit` builds the statements' freeze with the tests. -/
 
@@ -259,6 +267,91 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     (for example {unread.toList.take 6})"
   return (errors, lines)
 
+/-! ## Binder contracts on both sides -/
+
+def syntaxModule : Lean.Name := `Tests.Ix.SourceContract.SyntaxFixture
+
+/-- Declarations of the syntax fixture whose binders carry contracts: inputs,
+arrow results, λs, and value and borrow lets. -/
+def contractSeeds : Array Lean.Name := #[`linear, `unique, `erased, `dependent, `withInstance,
+  `localResult, `localUniqueResult, `curriedResult, `dependentArrow, `anonymousArrow,
+  `quantified, `nestedLambda, `lambdaDefinition, `localLet, `sharedLoan].map (syntaxModule ++ ·)
+
+abbrev Contracts := List (Ixon.BinderContract × Ixon.ValueContract)
+
+/-- The contracts of a term's binders, in preorder. -/
+def contractsOf : Ix.Kernel.Expr → Contracts
+  | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contractsOf t ++ contractsOf b)
+  | .app f a => contractsOf f ++ contractsOf a
+  | .letE t v b => contractsOf t ++ contractsOf v ++ contractsOf b
+  | .proj _ _ e | .fvar _ e => contractsOf e
+  | _ => []
+
+/-- An installed constant's type's and value's binder contracts. -/
+def installedContracts : Ix.Kernel.ConstantInfo → Contracts × Contracts
+  | .defnInfo cv v _ => (contractsOf cv.type, contractsOf v)
+  | .thmInfo cv v => (contractsOf cv.type, contractsOf v)
+  | ci => (contractsOf ci.toConstantVal.type, [])
+
+/-- The resolved syntax fixtures in Source mode and through `Ix.Cert.compile`
+and the certified entry: errors, and lines for the report. -/
+def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv (contractSeeds ++ preludeNames))
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let envS ← match Ix.LeanIngress.checkSource env (Ix.Cert.blocksOf env) with
+    | .ok envS => pure envS
+    | .error e => return (#[s!"Source mode refuses the resolved fixtures: {e}"], lines)
+  let ixe ← match Ix.Cert.compile env with
+    | .ok ixe => pure ixe
+    | .error e => return (#[s!"Ix.Cert.compile failed on the resolved fixtures: {e}"], lines)
+  let seeds : Array Address := env.consts.toArray.filterMap fun (n, _) => (ixe.named.get? n).map (·.addr)
+  let order := closureOrder ixe seeds
+  let records := Ix.Cert.recordsOf ixe order.toList
+  let blobs := Ix.Cert.blobsOf ixe order.toList
+  let envA ← match Ixon.Authenticated.checkBytes limits records blobs (Ix.Cert.hintsOf ixe) with
+    | .ok envA => pure envA
+    | .error e => return (#[s!"the certified entry refuses the compiled fixtures: {e}"], lines)
+  let some cx := Ix.Cert.admissionContext limits ixe order.toList
+    | return (#["no admission context"], lines)
+  let mut contracted : Array Lean.Name := #[]
+  let mut seen : Std.HashMap Lean.Name (Contracts × Contracts) := {}
+  for n in contractSeeds do
+    let some c := envS.find? (Ix.Kernel.Name.ofLeanName n)
+      | errors := errors.push s!"{n}: not installed in Source mode"
+    let some (.const k _) := Ix.Cert.reading ixe cx c
+      | errors := errors.push s!"{n}: not read"
+    let some ci := envA.find? k
+      | errors := errors.push s!"{n}: its reading {k} is not installed"
+    let s := installedContracts c
+    let a := installedContracts ci
+    unless s == a do errors := errors.push s!"{n}: Source {repr s} but Ixon {repr a}"
+    if (s.1 ++ s.2).any (· != (.many, .shared)) then contracted := contracted.push n
+    seen := seen.insert n s
+  -- every declaration keeps a binder contract on both sides except `localLet`,
+  -- whose only contract is its `let`'s: erased on both sides, as the checker's
+  -- `letE` has no field for it
+  let letOnly := syntaxModule ++ `localLet
+  unless contracted == contractSeeds.filter (· != letOnly) do
+    errors := errors.push s!"declarations that keep a contract: {contracted}"
+  -- the resolved contracts themselves
+  let expect (n : Lean.Name) (s : Contracts × Contracts) :=
+    seen.get? (syntaxModule ++ n) == some s
+  unless expect `linear ([(.linear, .shared)], [(.linear, .shared)]) &&
+      expect `localUniqueResult
+        ([({ uses := .linear, value := .localUnique }, .localUnique)],
+          [({ uses := .linear, value := .localUnique }, .shared)]) &&
+      expect `anonymousArrow ([(.many, .localUnique)], [(.many, .shared)]) do
+    errors := errors.push s!"unexpected contracts: {repr (seen.toList.filter fun (n, _) =>
+      [`linear, `localUniqueResult, `anonymousArrow].any (syntaxModule ++ · == n))}"
+  lines := lines.push s!"contracts: {env.consts.size} resolved constants; Source accepts them \
+    ({envS.consts.length} kernel constants), the certified entry accepts the compile \
+    ({envA.consts.length}); {contractSeeds.size} declarations with contracts, each carrying the \
+    same contracts on both sides ({contracted.size} keep one; `localLet`'s is a `let`'s)"
+  return (errors, lines)
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -271,7 +364,9 @@ def suite : List TestSeq := [
     let leanEnv ← getCompileEnv #[defsModule, ownModule]
     parity "fixtures" (← fixtureConsts leanEnv) 4) 1,
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
-    perRoot (← getCompileEnv #[defsModule, ownModule])) 1]
+    perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
+    contractAgreement (← getCompileEnv #[syntaxModule])) 1]
 
 /-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
 def initSuite : List TestSeq := [

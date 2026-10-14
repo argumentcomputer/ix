@@ -21,9 +21,12 @@ the `partial`/`unsafe` definitions the reader declines) and everything in
 * all at once (`checkSource`), on the closure of the fixtures that are
   expected to be accepted, which must be accepted;
 * on hand-built terms: a free variable, a metavariable and a level
-  metavariable are refused, `mdata` is erased, level parameters become
-  positions (a large eliminator's elimination level after its block's), and
-  the conversion of a shared DAG is the tree conversion. -/
+  metavariable are refused, `mdata` is erased, a binder carries the Lean
+  fragment's contracts unless a contract frame (`ix.contract`) wraps it,
+  whose contract it then carries (a `let` frame's is erased, and a frame
+  the compiler refuses is refused), level parameters become positions (a
+  large eliminator's elimination level after its block's), and the
+  conversion of a shared DAG is the tree conversion. -/
 
 namespace Tests.Ix.Kernel.SourceIngress
 
@@ -138,6 +141,60 @@ def erasure : TestSeq :=
     (sameResult (ingressExprs noParams.pos [withData]) (ingressExprs noParams.pos [body])) ++
   test "binder name and info dropped, pw never" (lamDropped (ingressExprs noParams.pos [lam]))
 
+/-- `e` under the contract frame of `c`, as `Ix.Compile.CompileInput.prepare`
+writes it and `Ix.CanonM` keeps it. -/
+def framed (c : Ix.SemanticContract.Contract) (e : Ix.Expr) : Ix.Expr :=
+  Ix.Expr.mkMData c.ixMetadata e
+
+def binderOf : Except ExprError (List KExpr) → Option Ix.Kernel.BinderMeta
+  | .ok [.lam _ _ m] | .ok [.forallE _ _ m] => some m
+  | _ => none
+
+def frameRefused : Except ExprError (List KExpr) → Bool
+  | .error (.contract _) => true
+  | _ => false
+
+def sameTree : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
+  | .ok [a], .ok b => decide (a = b)
+  | _, _ => false
+
+/-- Binder contracts: a plain binder carries the Lean fragment's, and a
+contract frame puts its contract on the binder it wraps, as the compiler
+lowers it; a `let` frame's contract is erased; a frame the compiler refuses
+is refused. -/
+def contractFrames : TestSeq :=
+  let nat := Ix.Expr.mkConst (nm "Nat") #[]
+  let lam := Ix.Expr.mkLam (nm "x") nat (.mkBVar 0) .default
+  let pi := Ix.Expr.mkForallE (nm "x") nat nat .default
+  let letE := Ix.Expr.mkLetE (nm "y") nat (Ix.Expr.mkConst (nm "Nat.zero") #[]) (.mkBVar 0) false
+  let plain (e : Ix.Expr) := Ix.Expr.mkMData #[(nm "k", .ofBool true)] e
+  let conv (e : Ix.Expr) := ingressExprs noParams.pos [e]
+  let lamC : Ix.SemanticContract.Contract := { kind := .lam, binder := .linear }
+  let allC : Ix.SemanticContract.Contract :=
+    { kind := .all, binder := .erased, result := .localUnique }
+  let letC : Ix.SemanticContract.Contract := { kind := .letE, binder := .affine }
+  let key := Ix.Name.mkStr (nm "ix") "contract"
+  let dag := Ix.Expr.mkApp (framed allC pi) (plain (framed lamC lam))
+  test "a plain binder carries the Lean fragment's contracts"
+    (binderOf (conv lam) == some { pw := .never, contract := .many, result := .shared }) ++
+  test "a lam frame's contract is the binder's"
+    (binderOf (conv (framed lamC lam)) == some { pw := .never, contract := .linear }) ++
+  test "an all frame's input and result contracts are the binder's"
+    (binderOf (conv (framed allC pi)) ==
+      some { pw := .never, contract := .erased, result := .localUnique }) ++
+  test "a let frame's contract is erased" (sameResult (conv (framed letC letE)) (conv letE)) ++
+  test "plain metadata around a frame is erased"
+    (binderOf (conv (plain (framed lamC lam))) == some { pw := .never, contract := .linear }) ++
+  test "a frame not directly around a binder of its kind is refused"
+    (frameRefused (conv (framed lamC (plain lam))) && frameRefused (conv (framed lamC pi)) &&
+      frameRefused (conv (framed allC nat))) ++
+  test "a malformed frame is refused"
+    (frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 3)] lam)) &&
+      frameRefused (conv (Ix.Expr.mkMData #[(key, .ofNat 2), (Ix.Name.mkStr key "kind", .ofNat 0),
+        (Ix.Name.mkStr key "code", .ofNat 1)] lam))) ++
+  test "the DAG walk is the tree walk on frames"
+    (sameTree (ingressExprsShared noParams.pos [dag]) (ingressExpr noParams.pos dag))
+
 def sortOf : Except ExprError (List KExpr) → Option Ix.Kernel.Level
   | .ok [.sort l] => some l
   | _ => none
@@ -221,6 +278,6 @@ def fixtures : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, expected.length, 0, msg)) .done
 
-def suite : List TestSeq := [refusals, erasure, numbering, sharing, fixtures]
+def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, sharing, fixtures]
 
 end Tests.Ix.Kernel.SourceIngress
