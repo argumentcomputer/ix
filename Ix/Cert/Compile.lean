@@ -1,0 +1,77 @@
+module
+
+public import Ix.CompileDriver
+
+/-! # The compiler as a pure function
+
+`compile` is the function the certification statements (`Ix.Cert.Statement`)
+are about. It is the compile pipeline after canonicalization, as
+`Ix.CompileM.compileDecoratedConsts` runs it, with the same stages:
+
+1. the reference graph (`Ix.GraphM`);
+2. the ground filter: the immediately ungrounded constants
+   (`Ix.groundConstCheck`), spread through the reverse graph
+   (`Ix.proliferateUngrounded`), are removed from the graph together with
+   every edge into them (`Ix.groundConsts` composes the two);
+3. the condensation (`Ix.CondenseM.run`), which `blocksOf` names because the
+   Source-mode statements group by it too;
+4. the aux-aware driver, `Ix.CompileM.compileEnvAux`.
+
+Its input is `Ix.Environment`, `Ix.CanonM`'s output, which is also Source
+mode's input (`Ix.LeanIngress`). Only `env.consts` is read: the streaming
+fallback (`Ix.Environment.fallback?`) is dropped.
+
+What the IO pipeline does that this function does not:
+* it starts from Lean's constants: it resolves source contracts
+  (`Ix.Compile.CompileInput.prepare`), refuses unresolved binder contracts,
+  inspects semantic contracts and canonicalizes (`Ix.CanonM`) itself;
+* it compiles against a hybrid environment, in which theorem and opaque
+  bodies are canonicalized again on demand (`fallback?`) instead of
+  materialized, and passes the name-hash index (`CompileEnv.nameByHash`)
+  that such an environment needs;
+* it schedules the driver in parallel waves (`compileEnvParallelAux`) and
+  reads the sharing limits from `IX_SHARING_LIMITS`;
+* for annotated sources or a resource profile it refuses a partial result
+  and validates resources;
+* it serializes (`Ixon.serEnv`).
+
+`Tests.Ix.Cert.Statement` compares the serialized output of the two on the
+Source-mode fixtures (`cert-statement`) and on `Init`
+(`cert-compile-parity-init`, ignored by default). -/
+
+public section
+
+namespace Ix.Cert
+
+/-- The reference graph of `env` without its ungrounded constants, and
+without the edges into them. -/
+@[expose] def groundedRefs (env : Ix.Environment) : Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+  let outRefs := Ix.GraphM.envSerial env
+  let inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := outRefs.fold (init := {}) fun m n refs =>
+    refs.fold (init := m) fun m r =>
+      m.alter r fun
+        | some s => some (s.insert n)
+        | none => some (({} : Ix.Set Ix.Name).insert n)
+  let ungrounded := Ix.groundConsts env inRefs
+  if ungrounded.isEmpty then outRefs
+  else outRefs.fold (init := {}) fun m n refs =>
+    if ungrounded.contains n then m
+    else m.insert n (refs.fold (init := {}) fun s r =>
+      if ungrounded.contains r then s else s.insert r)
+
+/-- The compiler's declaration groups: the strongly connected components of
+the grounded reference graph. -/
+@[expose] def blocksOf (env : Ix.Environment) : Ix.CondensedBlocks :=
+  Ix.CondenseM.run (groundedRefs env)
+
+/-- **The pure compiler.** A block that fails to compile is recorded in the
+driver's state and left out of the result, together with its dependents;
+the result is an error only when the driver itself fails. -/
+@[expose] def compile (env : Ix.Environment) : Except String Ixon.Env := do
+  let env : Ix.Environment := { consts := env.consts }
+  let (ixe, _, _) ← Ix.CompileM.compileEnvAux env (blocksOf env)
+  pure ixe
+
+end Ix.Cert
+
+end
