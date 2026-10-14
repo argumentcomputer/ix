@@ -70,7 +70,7 @@ def checkIotaThm (ops : CheckerOps m) (env' envSelf : Env)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m Unit := do
     let cvt ← unwrapOr
-        (env'.findCV? ((cvName.str "_model").str s!"iota_{j}"))
+        (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
         (.notImplemented s!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
       throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
@@ -167,7 +167,7 @@ the stored rule). -/
 def nestedRuleShape (env' envSelf : Env) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     Option (List Level × List Expr) :=
-  if (env'.findCV? ((cvName.str "_model").str s!"iota_{j}")).isSome ∧
+  if (env'.findCV? (auxKey (auxKey cvName .model) (.iota j))).isSome ∧
       rP ≤ mI then
     match tyA.stripPis mI with
     | some (_, .forallE dom _ _) =>
@@ -213,7 +213,7 @@ def checkIotaThmN (ops : CheckerOps m) (env' envSelf : Env)
     | none => pure .inert
     | some (lvls, pins) => do
     let cvt ← unwrapOr
-        (env'.findCV? ((cvName.str "_model").str s!"iota_{j}"))
+        (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
         (.notImplemented s!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
       throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
@@ -381,14 +381,14 @@ immediately. -/
 def checkMemberVal (ops : CheckerOps m) (blockNames : List Key)
     (env' : Env) (cv : ConstantVal) : m ConstantVal := do
   let f : Key → Key := fun n =>
-    if blockNames.contains n then n.str "_model" else n
+    if blockNames.contains n then auxKey n .model else n
   let cvA ← checkConstantVal ops env' cv
   -- a member may not itself be shaped like a model companion, so the
   -- block renaming can never map onto a member
   if cvA.name.isModelSuffix then
     throw (.invalid s!"model-shaped member name {cvA.name}")
   -- the model counterpart
-  let some (.defnInfo cvm _mval _) := env'.find? (cvA.name.str "_model")
+  let some (.defnInfo cvm _mval _) := env'.find? (auxKey cvA.name .model)
     | throw (.notImplemented s!"no install route for inductive block \
         {blockNames.headD cvA.name}: no direct route recognises it and no \
         model for {cvA.name} was generated")
@@ -443,7 +443,7 @@ def checkIndRecs (ops : CheckerOps m) (blockNames : List Key)
     pure env₂
   else do
     let f : Key → Key := fun n =>
-      if blockNames.contains n then n.str "_model" else n
+      if blockNames.contains n then auxKey n .model else n
     -- iota statements are equations: pin the pinned equality former
     unless env₂.find? eqName = some eqA do
       throw (.notImplemented "modeled recursor requires the pinned Eq basis")
@@ -456,8 +456,8 @@ def checkIndRecs (ops : CheckerOps m) (blockNames : List Key)
 
 /-- Rename a model-side projection type back to public names. -/
 def projBack (T ctor : Key) (nF : Nat) : Key → Key := fun n =>
-  if n = T.str "_model" then T
-  else if n = ctor.str "_model" then ctor
+  if n = auxKey T .model then T
+  else if n = auxKey ctor .model then ctor
   else
     match (List.range nF).find? (fun j => n == projModelName T j) with
     | some j => projFnName T j
@@ -465,8 +465,8 @@ def projBack (T ctor : Key) (nF : Nat) : Key → Key := fun n =>
 
 /-- The forward (public → model) map on the projection family. -/
 def projFwd (T ctor : Key) (nF : Nat) : Key → Key := fun n =>
-  if n = T then T.str "_model"
-  else if n = ctor then ctor.str "_model"
+  if n = T then auxKey T .model
+  else if n = ctor then auxKey ctor .model
   else
     match (List.range nF).find? (fun j => n == projFnName T j) with
     | some j => projModelName T j
@@ -522,7 +522,7 @@ type slot would reject real streams; task #146 for the slot's sort). -/
 def checkProjIota (ops : CheckerOps m) (env' envSelf : Env)
     (T ctorName : Key) (lps : List LevelParam)
     (cvj : ConstantVal) (nP nF i : Nat) : m Unit := do
-  let some (.thmInfo tcv _) := env'.find? ((projModelName T i).str "iota")
+  let some (.thmInfo tcv _) := env'.find? (auxKey (projModelName T i) .projIota)
     | throw (.notImplemented "missing projection iota theorem")
   unless tcv.levelParams = lps do
     throw (.notImplemented "projection iota level mismatch")
@@ -538,7 +538,7 @@ def checkProjIota (ops : CheckerOps m) (env' envSelf : Env)
   let pArgs := (List.range nP).map fun k => Expr.bvar (depth - 1 - k)
   let xArgs := (List.range nF).map fun k => Expr.bvar (nF - 1 - k)
   let mkSpine := Expr.mkAppN
-    (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+    (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
     (pArgs ++ xArgs)
   let lhsS := Expr.mkAppN
     (.const (projModelName T i) (lps.map .param)) (pArgs ++ [mkSpine])
@@ -595,9 +595,9 @@ pinned to the family application (task #100) and its sort to the
 statement's own `Eq` level (task #135). -/
 def checkEtaThm (env' : Env) (T ctorName : Key) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
-  match env'.find? ((T.str "_model").str "eta"),
-      env'.find? (T.str "_model"),
-      env'.find? (ctorName.str "_model"), env'.find? eqName with
+  match env'.find? (auxKey (auxKey T .model) .eta),
+      env'.find? (auxKey T .model),
+      env'.find? (auxKey ctorName .model), env'.find? eqName with
   | some (.thmInfo tcv _), some (.defnInfo cvmT _ _),
       some (.defnInfo cvmC _ _), some eqStored =>
     eqStored == eqA && tcv.levelParams == lps &&
@@ -612,7 +612,7 @@ def checkEtaThm (env' : Env) (T ctorName : Key) (lps : List LevelParam)
        domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
        (match sbinders[nP]? with
         | some (xdom, _) =>
-          xdom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
         | none => false) &&
        (match sbody with
@@ -621,10 +621,10 @@ def checkEtaThm (env' : Env) (T ctorName : Key) (lps : List LevelParam)
           -- the equation's type slot is the family application (task
           -- #100 stage-3: the fold derivation reads the statement's
           -- domain off this pin)
-          tySlot == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - k)) &&
           rhsC == Expr.mkAppN
-            (.const (ctorName.str "_model") (lps.map .param))
+            (.const (auxKey ctorName .model) (lps.map .param))
             (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
              (List.range nF).map fun j => Expr.mkAppN
                (.const (projModelName T j) (lps.map .param))
@@ -647,8 +647,8 @@ def checkEtaThm (env' : Env) (T ctorName : Key) (lps : List LevelParam)
 answer records the unit-like capability on the stored inductive. -/
 def checkUnitThm (env' : Env) (T : Key) (lps : List LevelParam)
     (nP : Nat) : Bool :=
-  match env'.find? ((T.str "_model").str "unitlike"),
-      env'.find? (T.str "_model"), env'.find? eqName with
+  match env'.find? (auxKey (auxKey T .model) .unitlike),
+      env'.find? (auxKey T .model), env'.find? eqName with
   | some (.thmInfo tcv _), some (.defnInfo cvmT _ _), some eqStored =>
     eqStored == eqA && tcv.levelParams == lps &&
     cvmT.levelParams == lps &&
@@ -657,19 +657,19 @@ def checkUnitThm (env' : Env) (T : Key) (lps : List LevelParam)
        domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
        (match sbinders[nP]? with
         | some (xdom, _) =>
-          xdom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
         | none => false) &&
        (match sbinders[nP + 1]? with
         | some (ydom, _) =>
-          ydom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          ydom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - k))
         | none => false) &&
        (match sbody with
         | .app (.app (.app (.const c [ℓA]) tySlot) lhsC) rhsC =>
           c == eqName && lhsC == Expr.bvar 1 && rhsC == Expr.bvar 0 &&
           -- type-slot pin, as in `checkEtaThm` (task #100 stage 3)
-          tySlot == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP + 1 - k)) &&
           -- and the slot's sort is the equation's own level (task
           -- #135; see `checkEtaThm`).  TT-lane check (task #147):

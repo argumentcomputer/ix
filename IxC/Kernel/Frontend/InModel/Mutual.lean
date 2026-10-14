@@ -301,12 +301,12 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let tagRecTy ← need "tag recursor type" (recTy tag lps elimTag true nP 0 tagTy tagCtors)
   let tagRules ← (List.range k).mapM fun m => do
     let rhs ← need "tag rule"
-      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (tag.str "rec") (.param elimTag :: lps.map .param) m)
+      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (auxKey tag .recursor) (.param elimTag :: lps.map .param) m)
     pure (RecRule.mk (tagCtorName T m) (nIdxOf m) 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨tag, lps, tagTy⟩ {}] ++
      tagCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨tag.str "rec", elimTag :: lps, tagRecTy⟩ (nP + 1 + k) (nP + 1 + k) tagRules])
+     [.recInfo ⟨auxKey tag .recursor, elimTag :: lps, tagRecTy⟩ (nP + 1 + k) (nP + 1 + k) tagRules])
     nP)
   -- 2. the auxiliary family
   let auxTy ← need "aux type" (Expr.replacePiBody nP t0.cv.type
@@ -321,13 +321,13 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
     let rhs ← need "aux rule"
-      (recRhs aux lps elim large nP 1 auxTy auxCtors (aux.str "rec") rlvls j)
+      (recRhs aux lps elim large nP 1 auxTy auxCtors (auxKey aux .recursor) rlvls j)
     pure (RecRule.mk (auxCtors.getD j default).1
       (auxCtors.getD j default).2.1 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨aux, lps, auxTy⟩ {}] ++
      auxCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨aux.str "rec", rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
+     [.recInfo ⟨auxKey aux .recursor, rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
     nP)
   -- 3. the member models `T_m._model := λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)`
   for m in List.range k do
@@ -364,13 +364,13 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e + 2) nP))
       (.forallE
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 3) nP ++ [.bvar 0])) (.sort ℓ) bm) bm
-    let tagRecApp := Expr.mkAppN (.const (tag.str "rec") (ℓ' :: lps.map .param))
+    let tagRecApp := Expr.mkAppN (.const (auxKey tag .recursor) (ℓ' :: lps.map .param))
       (varsAt (k + n + e + 2) nP ++ [motTag] ++ varsAt (n + e + 2) k ++ [.bvar 1, .bvar 0])
     let mot : Expr := .lam
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e) nP))
       (.lam
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 1) nP ++ [.bvar 0])) tagRecApp bm) bm
-    let body := Expr.mkAppN (.const (aux.str "rec") rlvls)
+    let body := Expr.mkAppN (.const (auxKey aux .recursor) rlvls)
       (varsAt (k + n + e) nP ++ [mot] ++ varsAt e n ++
        [Expr.mkAppN (constP (tagCtorName T m) lps) (varsAt (k + n + e) nP ++ varsAt 1 nI),
         .bvar 0])
@@ -480,7 +480,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         let some pf := Expr.pisToLams (nP + nF) stmt
             (Expr.mkAppN (.const eqReflName [ℓi]) [slot, .bvar (nF - 1 - i)])
           | stop := true; continue
-        out := out.push (.thmDecl ⟨(projModelName t.cv.name i).str "iota", lps, stmt⟩ pf)
+        out := out.push (.thmDecl ⟨auxKey (projModelName t.cv.name i) .projIota, lps, stmt⟩ pf)
   pure out.toList
 
 end Ix.Kernel.Frontend.InModel

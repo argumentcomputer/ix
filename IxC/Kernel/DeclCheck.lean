@@ -344,9 +344,9 @@ def divModCertsGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Key)
 /-- `checkEtaThm` through the index. -/
 def checkEtaThmF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
-  match fe.find? ((T.str "_model").str "eta"),
-      fe.find? (T.str "_model"),
-      fe.find? (ctorName.str "_model"), fe.find? eqName with
+  match fe.find? (auxKey (auxKey T .model) .eta),
+      fe.find? (auxKey T .model),
+      fe.find? (auxKey ctorName .model), fe.find? eqName with
   | some (.thmInfo tcv _), some (.defnInfo cvmT _ _),
       some (.defnInfo cvmC _ _), some eqStored =>
     eqStored == eqA && tcv.levelParams == lps &&
@@ -360,16 +360,16 @@ def checkEtaThmF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
        domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
        (match sbinders[nP]? with
         | some (xdom, _) =>
-          xdom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
         | none => false) &&
        (match sbody with
         | .app (.app (.app (.const c [ℓA]) tySlot) lhsC) rhsC =>
           c == eqName && lhsC == Expr.bvar 0 &&
-          tySlot == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - k)) &&
           rhsC == Expr.mkAppN
-            (.const (ctorName.str "_model") (lps.map .param))
+            (.const (auxKey ctorName .model) (lps.map .param))
             (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
              (List.range nF).map fun j => Expr.mkAppN
                (.const (projModelName T j) (lps.map .param))
@@ -384,8 +384,8 @@ def checkEtaThmF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
 /-- `checkUnitThm` through the index. -/
 def checkUnitThmF (fe : FEnv) (T : Key) (lps : List LevelParam)
     (nP : Nat) : Bool :=
-  match fe.find? ((T.str "_model").str "unitlike"),
-      fe.find? (T.str "_model"), fe.find? eqName with
+  match fe.find? (auxKey (auxKey T .model) .unitlike),
+      fe.find? (auxKey T .model), fe.find? eqName with
   | some (.thmInfo tcv _), some (.defnInfo cvmT _ _), some eqStored =>
     eqStored == eqA && tcv.levelParams == lps &&
     cvmT.levelParams == lps &&
@@ -394,18 +394,18 @@ def checkUnitThmF (fe : FEnv) (T : Key) (lps : List LevelParam)
        domsMatchAux (fun _ e => e) sbinders tbindersM 0 0 nP &&
        (match sbinders[nP]? with
         | some (xdom, _) =>
-          xdom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          xdom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - 1 - k))
         | none => false) &&
        (match sbinders[nP + 1]? with
         | some (ydom, _) =>
-          ydom == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          ydom == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP - k))
         | none => false) &&
        (match sbody with
         | .app (.app (.app (.const c [ℓA]) tySlot) lhsC) rhsC =>
           c == eqName && lhsC == Expr.bvar 1 && rhsC == Expr.bvar 0 &&
-          tySlot == Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+          tySlot == Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
             ((List.range nP).map fun k => Expr.bvar (nP + 1 - k)) &&
           -- TT-lane check (task #147): skipped unless `mode.ttChecks`
           (!mode.ttChecks || tbodyM == Expr.sort ℓA)
@@ -488,11 +488,11 @@ def checkConstantValF (ops : CheckerOps m) (fe : FEnv)
 def checkMemberValF (ops : CheckerOps m) (blockNames : List Key)
     (fe : FEnv) (cv : ConstantVal) : m ConstantVal := do
   let f : Key → Key := fun n =>
-    if blockNames.contains n then n.str "_model" else n
+    if blockNames.contains n then auxKey n .model else n
   let cvA ← checkConstantValF ops fe cv
   if cvA.name.isModelSuffix then
     throw (.invalid s!"model-shaped member name {cvA.name}")
-  let some (.defnInfo cvm _mval _) := fe.find? (cvA.name.str "_model")
+  let some (.defnInfo cvm _mval _) := fe.find? (auxKey cvA.name .model)
     | throw (.notImplemented s!"no install route for inductive block \
         {blockNames.headD cvA.name}: no direct route recognises it and no \
         model for {cvA.name} was generated")
@@ -510,7 +510,7 @@ def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m Unit := do
     let cvt ← unwrapOr
-        (fe'.findCV? ((cvName.str "_model").str s!"iota_{j}"))
+        (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
         (.notImplemented s!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
       throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
@@ -576,7 +576,7 @@ def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
 def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     Option (List Level × List Expr) :=
-  if (fe'.findCV? ((cvName.str "_model").str s!"iota_{j}")).isSome ∧
+  if (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j))).isSome ∧
       rP ≤ mI then
     match tyA.stripPis mI with
     | some (_, .forallE dom _ _) =>
@@ -607,7 +607,7 @@ def checkIotaThmNF (ops : CheckerOps m) (fe' feSelf : FEnv)
     | none => pure .inert
     | some (lvls, pins) => do
     let cvt ← unwrapOr
-        (fe'.findCV? ((cvName.str "_model").str s!"iota_{j}"))
+        (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
         (.notImplemented s!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
       throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
@@ -798,7 +798,7 @@ def checkProjRuleF (ops : CheckerOps m) (fe : FEnv) (pty : Expr) (cvj : Constant
 def checkProjIotaF (ops : CheckerOps m) (fe : FEnv)
     (T ctorName : Key) (lps : List LevelParam)
     (cvj : ConstantVal) (nP nF i : Nat) : m Unit := do
-  let some (.thmInfo tcv _) := fe.find? ((projModelName T i).str "iota")
+  let some (.thmInfo tcv _) := fe.find? (auxKey (projModelName T i) .projIota)
     | throw (.notImplemented "missing projection iota theorem")
   unless tcv.levelParams = lps do
     throw (.notImplemented "projection iota level mismatch")
@@ -814,7 +814,7 @@ def checkProjIotaF (ops : CheckerOps m) (fe : FEnv)
   let pArgs := (List.range nP).map fun k => Expr.bvar (depth - 1 - k)
   let xArgs := (List.range nF).map fun k => Expr.bvar (nF - 1 - k)
   let mkSpine := Expr.mkAppN
-    (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+    (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
     (pArgs ++ xArgs)
   let lhsS := Expr.mkAppN
     (.const (projModelName T i) (lps.map .param)) (pArgs ++ [mkSpine])

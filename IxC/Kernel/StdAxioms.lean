@@ -32,32 +32,31 @@ bridges a hit.
 
 namespace Ix.Kernel
 
-open Name (anonymous)
 open BasisDSL
 
 /-- The name `propext`. -/
-def propextName : Key := anonymous |>.str "propext"
+def propextName : Key := roleKey .propext
 
 /-- The name `Classical.choice`. -/
-def choiceName : Key := (anonymous |>.str "Classical") |>.str "choice"
+def choiceName : Key := roleKey .choice
 
 /-- The name `Iff`. -/
-def iffName : Key := anonymous |>.str "Iff"
+def iffName : Key := roleKey .iff
 
 /-- The name `Iff.intro`. -/
-def iffIntroName : Key := iffName |>.str "intro"
+def iffIntroName : Key := roleKey .iffIntro
 
 /-- The name `Iff.rec`. -/
-def iffRecName : Key := iffName |>.str "rec"
+def iffRecName : Key := roleKey .iffRec
 
 /-- The name `Nonempty`. -/
-def nonemptyName : Key := anonymous |>.str "Nonempty"
+def nonemptyName : Key := roleKey .nonempty
 
 /-- The name `Nonempty.intro`. -/
-def nonemptyIntroName : Key := nonemptyName |>.str "intro"
+def nonemptyIntroName : Key := roleKey .nonemptyIntro
 
 /-- The name `Nonempty.rec`. -/
-def nonemptyRecName : Key := nonemptyName |>.str "rec"
+def nonemptyRecName : Key := roleKey .nonemptyRec
 
 /-- Shape comparison for the standard pins: exact name, level
 parameters and counts, type up to the `pw` datum.  Binder contracts are

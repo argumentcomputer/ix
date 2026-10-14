@@ -284,10 +284,10 @@ def rootComponent : CName → Option String
   | .num .anonymous _ => none
   | .str p _ | .num p _ => rootComponent p
 
-/-- Names the frontend derives from others; a pin may not take one. -/
-def derivedShape : CName → Bool
-  | .str _ s => s == "rec" || s.startsWith "rec_" || s == "_model"
-  | n => n.isProjFnShape
+/-- Names the frontend derives from others (a recursor's spelling, a model
+companion, a projection function or table); a pin may not take one. -/
+def derivedShape (n : CName) : Bool :=
+  n.isRecSpelling || n.isModelSuffix || n.isProjFnShape
 
 /-- The table as a lookup, after checking that it is a partial injection
 from references to names outside the reserved `ix` root and the derived

@@ -626,13 +626,13 @@ def indParamsOk (nP : Nat) (block : List ConstantInfo) : Bool :=
 identifiers; installs are duplicate-checked regardless).  Since task
 #175 S1 no table entry lives under this name: the direct install's
 table is one constant per structure, `projTableName`. -/
-def projFnName (T : Key) (i : Nat) : Key := (T.str "proj").num i
+def projFnName (T : Key) (i : Nat) : Key := auxKey T (.projFn i)
 
 /-- The reserved name of structure `T`'s projection table (task #175
 S1): one constant per structure, a `Nat` component keeping it out of
 the way of exported identifiers (the front door rejects the shape,
 `Key.isProjFnShape`), distinct from every `projFnName` name. -/
-def projTableName (T : Key) : Key := (T.str "projTable").num 0
+def projTableName (T : Key) : Key := auxKey T .projTable
 
 namespace ConstantInfo
 

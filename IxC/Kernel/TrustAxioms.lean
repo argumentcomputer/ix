@@ -45,29 +45,28 @@ from them at elaboration time by `#annotate_pins`
 
 namespace Ix.Kernel
 
-open Name (anonymous)
 open BasisDSL
 
 /-- The name `True`. -/
-def trueName : Key := anonymous |>.str "True"
+def trueName : Key := roleKey .true
 
 /-- The name `True.intro`. -/
-def trueIntroName : Key := trueName |>.str "intro"
+def trueIntroName : Key := roleKey .trueIntro
 
 /-- The name `Lean.trustCompiler`. -/
-def trustCompilerName : Key := (anonymous |>.str "Lean") |>.str "trustCompiler"
+def trustCompilerName : Key := roleKey .trustCompiler
 
 /-- The name `Lean.reduceNat`. -/
-def reduceNatName : Key := (anonymous |>.str "Lean") |>.str "reduceNat"
+def reduceNatName : Key := roleKey .reduceNat
 
 /-- The name `Lean.reduceBool`. -/
-def reduceBoolName : Key := (anonymous |>.str "Lean") |>.str "reduceBool"
+def reduceBoolName : Key := roleKey .reduceBool
 
 /-- The name `Lean.ofReduceNat`. -/
-def ofReduceNatName : Key := (anonymous |>.str "Lean") |>.str "ofReduceNat"
+def ofReduceNatName : Key := roleKey .ofReduceNatAx
 
 /-- The name `Lean.ofReduceBool`. -/
-def ofReduceBoolName : Key := (anonymous |>.str "Lean") |>.str "ofReduceBool"
+def ofReduceBoolName : Key := roleKey .ofReduceBoolAx
 
 /-- The reduce operations pinned at their `opaque` install. -/
 def reduceOpNames : List Key := [reduceNatName, reduceBoolName]

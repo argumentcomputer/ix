@@ -40,8 +40,7 @@ namespace Ix.Kernel
 
 /-- The model-side name of field `i`'s projection for `T`
 (the documented public interface of a `_model` family). -/
-def projModelName (T : Key) (i : Nat) : Key :=
-  (T.str "_model").str ("proj_" ++ toString i)
+def projModelName (T : Key) (i : Nat) : Key := auxKey (auxKey T .model) (.projModel i)
 
 /-- Is the expression headed by a stored constructor? -/
 def isCtorApp (env : Env) (e : Expr) : Bool :=
@@ -430,24 +429,24 @@ which meta-level induction over the literal yields the computed
 value.  WF-recursive operations (`div`, `mod`, `gcd`) and string
 literals are deferred. -/
 
-def natPredName : Key := natName.str "pred"
-def natAddName : Key := natName.str "add"
-def natSubName : Key := natName.str "sub"
-def natMulName : Key := natName.str "mul"
-def natPowName : Key := natName.str "pow"
-def natBeqName : Key := natName.str "beq"
-def natBleName : Key := natName.str "ble"
-def natDivName : Key := natName.str "div"
-def natModName : Key := natName.str "mod"
-def natGcdName : Key := natName.str "gcd"
-def natLandName : Key := natName.str "land"
-def natLorName : Key := natName.str "lor"
-def natXorName : Key := natName.str "xor"
-def natShiftLeftName : Key := natName.str "shiftLeft"
-def natShiftRightName : Key := natName.str "shiftRight"
-def boolName : Key := .str .anonymous "Bool"
-def boolTrueName : Key := boolName.str "true"
-def boolFalseName : Key := boolName.str "false"
+def natPredName : Key := roleKey .natPred
+def natAddName : Key := roleKey .natAdd
+def natSubName : Key := roleKey .natSub
+def natMulName : Key := roleKey .natMul
+def natPowName : Key := roleKey .natPow
+def natBeqName : Key := roleKey .natBeq
+def natBleName : Key := roleKey .natBle
+def natDivName : Key := roleKey .natDiv
+def natModName : Key := roleKey .natMod
+def natGcdName : Key := roleKey .natGcd
+def natLandName : Key := roleKey .natLand
+def natLorName : Key := roleKey .natLor
+def natXorName : Key := roleKey .natXor
+def natShiftLeftName : Key := roleKey .natShiftLeft
+def natShiftRightName : Key := roleKey .natShiftRight
+def boolName : Key := roleKey .bool
+def boolTrueName : Key := roleKey .boolTrue
+def boolFalseName : Key := roleKey .boolFalse
 
 /-- Is `e` the constant `Bool.true` — the official kernel's
 `is_constant(e, Bool.true)` (`type_checker.cpp:1097`): the name, no

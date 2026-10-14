@@ -107,8 +107,7 @@ structure ProjRecOwner where
 field `i` of `T`: `T._model.proj_i.iota` (emitted by the in-process
 modeller; the naming is the one `lean-inductive-models` used before
 task #207 dropped it). -/
-def projIotaName (T : Key) (i : Nat) : Key :=
-  ((T.str "_model").str s!"proj_{i}").str "iota"
+def projIotaName (T : Key) (i : Nat) : Key := auxKey (projModelName T i) .projIota
 
 /-- Is `n` of the shape `X._model.proj_i.iota`?  Cheap pre-filter for
 the theorem records (the last component decides before anything is

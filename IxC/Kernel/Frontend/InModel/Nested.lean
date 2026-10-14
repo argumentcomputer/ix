@@ -359,7 +359,7 @@ def mkRefl (ℓ : Level) (α a : Expr) : Expr := Expr.mkAppN (.const eqReflName 
 
 /-- `@Eq.rec.{ℓm, ℓα} α a motive refl b h`. -/
 def mkEqRec (ℓm ℓα : Level) (α a motive refl b h : Expr) : Expr :=
-  Expr.mkAppN (.const (eqName.str "rec") [ℓm, ℓα]) [α, a, motive, refl, b, h]
+  Expr.mkAppN (.const eqRecName [ℓm, ℓα]) [α, a, motive, refl, b, h]
 
 /-- Lift every entry. -/
 def liftAll (n : Nat) (es : List Expr) : List Expr := es.map (·.liftLooseBVars n 0)
@@ -604,12 +604,12 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let tagRecTy ← need "tag recursor type" (recTy tag lps elimTag true nP 0 tagTy tagCtors)
   let tagRules ← mems.mapM fun mem => do
     let rhs ← need "tag rule"
-      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (tag.str "rec") (.param elimTag :: lps.map .param) mem.tag)
+      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (auxKey tag .recursor) (.param elimTag :: lps.map .param) mem.tag)
     pure (RecRule.mk (tagCtorName T mem.tag) mem.nIdx 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨tag, lps, tagTy⟩ {}] ++
      tagCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨tag.str "rec", elimTag :: lps, tagRecTy⟩ (nP + 1 + M) (nP + 1 + M) tagRules])
+     [.recInfo ⟨auxKey tag .recursor, elimTag :: lps, tagRecTy⟩ (nP + 1 + M) (nP + 1 + M) tagRules])
     nP)
   -- 2. the auxiliary family
   let auxTy ← need "aux type" (Expr.replacePiBody nP t0.cv.type
@@ -624,13 +624,13 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
     let rhs ← need "aux rule"
-      (recRhs aux lps elim large nP 1 auxTy auxCtors (aux.str "rec") rlvls j)
+      (recRhs aux lps elim large nP 1 auxTy auxCtors (auxKey aux .recursor) rlvls j)
     pure (RecRule.mk (auxCtors.getD j default).1
       (auxCtors.getD j default).2.1 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨aux, lps, auxTy⟩ {}] ++
      auxCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨aux.str "rec", rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
+     [.recInfo ⟨auxKey aux .recursor, rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
     nP)
   -- ---------------------------------------------------------------
   -- shared builders
@@ -655,7 +655,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       (Expr.mkAppN (constP tag lps) (varsAt o nP))
       (.forallE
         (Expr.mkAppN (constP aux lps) (varsAt (o + 1) nP ++ [.bvar 0])) (.sort ℓs) bm) bm
-    Expr.mkAppN (.const (tag.str "rec") (Level.imax u (.succ ℓs) :: lps.map .param))
+    Expr.mkAppN (.const (auxKey tag .recursor) (Level.imax u (.succ ℓs) :: lps.map .param))
       (varsAt o nP ++ [motTag] ++ branches ++ [i, s])
   -- the dispatching motive `λ i s, tag.rec … i s` at frame `o`, with
   -- the branches built at frame `o + 2`
@@ -671,14 +671,14 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     (specAll fam j (mem.idxBs.getD j default)).liftLooseBVars o j
   let idxBsAtM := fun (mem : Mem) (o : Nat) => (List.range mem.nIdx).map fun j =>
     (rn (mem.idxBs.getD j default)).liftLooseBVars o j
-  let packName := fun (j : Nat) => implName T s!"pack_{j}"
-  let unpackName := fun (j : Nat) => implName T s!"unpack_{j}"
-  let unpackPackName := fun (j : Nat) => implName T s!"unpackPack_{j}"
-  let packUnpackName := fun (j : Nat) => implName T s!"packUnpack_{j}"
-  let congrPackName := fun (j : Nat) => implName T s!"congrPack_{j}"
-  let unpackAll := implName T "unpack"
-  let packUnpackAll := implName T "packUnpack"
-  let recAll := implName T "rec"
+  let packName := fun (j : Nat) => auxKey (implKey T) (.pack j)
+  let unpackName := fun (j : Nat) => auxKey (implKey T) (.unpack j)
+  let unpackPackName := fun (j : Nat) => auxKey (implKey T) (.unpackPack j)
+  let packUnpackName := fun (j : Nat) => auxKey (implKey T) (.packUnpack j)
+  let congrPackName := fun (j : Nat) => auxKey (implKey T) (.congrPack j)
+  let unpackAll := auxKey (implKey T) .unpackAll
+  let packUnpackAll := auxKey (implKey T) .packUnpackAll
+  let recAll := auxKey (implKey T) .implRec
   -- `pack_j p⃗ idx x`, `unpack_j p⃗ idx s` … applications at frame `o`
   let appImpl := fun (nm : Key) (o : Nat) (idx : List Expr) (args : List Expr) =>
     Expr.mkAppN (constP nm lps) (varsAt o nP ++ idx ++ args)
@@ -740,7 +740,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       Expr.mkAppN (constP aux lps) (varsAt 1 nP ++ [.bvar 0])])
     (Expr.mkAppN (motU 2) [.bvar 1, .bvar 0])
   let unpackAllVal := mkLams pbs
-    (Expr.mkAppN (.const (aux.str "rec") ((if large then [u] else []) ++ lps.map .param))
+    (Expr.mkAppN (.const (auxKey aux .recursor) ((if large then [u] else []) ++ lps.map .param))
       (varsAt 0 nP ++ [motU 0] ++ unpackMinors 0))
   if !large && !isProp then throw "small eliminator on a non-Prop block"
   (out, heights) := push out heights unpackAll lps unpackAllTy unpackAllVal
@@ -937,7 +937,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       Expr.mkAppN (constP aux lps) (varsAt 1 nP ++ [.bvar 0])])
     (Expr.mkAppN (motPU 2) [.bvar 1, .bvar 0])
   let puVal := mkLams pbs
-    (Expr.mkAppN (.const (aux.str "rec") ((if large then [Level.zero] else []) ++ lps.map .param))
+    (Expr.mkAppN (.const (auxKey aux .recursor) ((if large then [Level.zero] else []) ++ lps.map .param))
       (varsAt 0 nP ++ [motPU 0] ++ puMinors 0))
   out := out.push (.thmDecl ⟨packUnpackAll, lps, puTy⟩ puVal)
   for mem in mimics do
@@ -1054,7 +1054,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       Expr.mkAppN (constP aux lps) (varsAt (M + n + 1) nP ++ [.bvar 0])])
     (Expr.mkAppN (motR 2) [.bvar 1, .bvar 0])
   let recAllVal := mkLams prefixBsL
-    (Expr.mkAppN (.const (aux.str "rec") rlvls) (varsAt (M + n) nP ++ [motR 0] ++ recMinors 0))
+    (Expr.mkAppN (.const (auxKey aux .recursor) rlvls) (varsAt (M + n) nP ++ [motR 0] ++ recMinors 0))
   (out, heights) := push out heights recAll rlps recAllTy recAllVal
   -- 8. the recursor models
   for mem in mems do
@@ -1316,7 +1316,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
             else .const punitUnitName [ℓi]
           mkLams (fbs ++ ihbs) body
         let pval := mkLams (pbs ++ [Expr.mkAppN (constP (modelName t.cv.name) lps) (varsAt 0 nP)])
-          (Expr.mkAppN (.const (aux.str "rec") ((if large then [ℓi] else []) ++ lps.map .param))
+          (Expr.mkAppN (.const (auxKey aux .recursor) ((if large then [ℓi] else []) ++ lps.map .param))
             (varsAt 1 nP ++ [motP 1] ++ minorsP 1 ++
              [Expr.mkAppN (constP (tagCtorName T m) lps) (varsAt 1 nP), .bvar 0]))
         (out, heights) := push out heights (projModelName t.cv.name i) lps pty pval
@@ -1333,7 +1333,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
             else mkRefl ℓi slot (.bvar (nF - 1 - i))
           | none => mkRefl ℓi slot (.bvar (nF - 1 - i))
         let some pfL := Expr.pisToLams (nP + nF) stmt pf | stop := true; continue
-        out := out.push (.thmDecl ⟨(projModelName t.cv.name i).str "iota", lps, stmt⟩ pfL)
+        out := out.push (.thmDecl ⟨auxKey (projModelName t.cv.name i) .projIota, lps, stmt⟩ pfL)
   pure out.toList
 
 end Ix.Kernel.Frontend.InModel

@@ -139,7 +139,7 @@ def checkIndRecsS (blockNames : List Key) (fe₂ : FEnv)
     pure fe₂
   else do
     let f : Key → Key := fun n =>
-      if blockNames.contains n then n.str "_model" else n
+      if blockNames.contains n then auxKey n .model else n
     unless fe₂.find? eqName = some eqA do
       throw (.notImplemented "modeled recursor requires the pinned Eq basis")
     let (feSelf, checked) ← provisionRecsS mode blockNames fe₂ recs

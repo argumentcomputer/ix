@@ -26,7 +26,7 @@ def emptyRaw : ConstantInfo :=
 The exporter emits the motive as an *explicit* binder here (there is
 no major premise to infer it from). -/
 def emptyRecRaw : ConstantInfo :=
-  .recInfo ⟨emptyName.str "rec", [uN],
+  .recInfo ⟨emptyRecName, [uN],
     pi "motive" (pi "t" (cnst emptyName) (srt u)) <|
     pi "t" (cnst emptyName) (.app (bv 1) (bv 0))⟩
     1 1 []

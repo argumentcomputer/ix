@@ -44,7 +44,7 @@ def eqRecMotive : Expr :=
 /-- `Eq.rec.{u_1, u} {α : Sort u} {a : α} {motive : ∀ b, Eq α a b → Sort u_1}
 (refl : motive a (Eq.refl α a)) {b : α} (t : Eq α a b) : motive b t`. -/
 def eqRecRaw : ConstantInfo :=
-  .recInfo ⟨eqName.str "rec", [u1N, uN],
+  .recInfo ⟨eqRecName, [u1N, uN],
     piI "α" (srt u) <|
     piI "a" (bv 0) <|
     piI "motive" eqRecMotive <|

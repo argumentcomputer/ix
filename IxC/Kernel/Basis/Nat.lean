@@ -46,7 +46,7 @@ def natRecSucc : Expr :=
 /-- `Nat.rec.{u} {motive : Nat → Sort u} (zero : motive Nat.zero)
 (succ : ∀ n, motive n → motive n.succ) (t : Nat) : motive t`. -/
 def natRecRaw : ConstantInfo :=
-  .recInfo ⟨natName.str "rec", [uN],
+  .recInfo ⟨natRecName, [uN],
     piI "motive" natRecMotive <|
     pi "zero" (.app (bv 0) (cnst natZeroName)) <|
     pi "succ" natRecSucc <|
@@ -62,7 +62,7 @@ def natRecRaw : ConstantInfo :=
       lm "zero" (.app (bv 0) (cnst natZeroName)) <|
       lm "succ" natRecSucc <|
       lm "n" natT <|
-      ap2 (bv 1) (bv 0) (ap4 (cnst (natName.str "rec") [u]) (bv 3) (bv 2) (bv 1) (bv 0))]
+      ap2 (bv 1) (bv 0) (ap4 (cnst natRecName [u]) (bv 3) (bv 2) (bv 1) (bv 0))]
 
 /-- The pinned `Nat` basis block, in install order. -/
 def natBasis : List ConstantInfo := [natRaw, natZeroRaw, natSuccRaw, natRecRaw]

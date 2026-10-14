@@ -43,7 +43,7 @@ def falseRaw : ConstantInfo :=
 The exporter emits the motive as an *explicit* binder here (there is
 no major premise to infer it from), as for `Empty.rec`. -/
 def falseRecRaw : ConstantInfo :=
-  .recInfo ⟨falseName.str "rec", [uN],
+  .recInfo ⟨falseRecName, [uN],
     pi "motive" (pi "t" (cnst falseName) (srt u)) <|
     pi "t" (cnst falseName) (.app (bv 1) (bv 0))⟩
     1 1 []

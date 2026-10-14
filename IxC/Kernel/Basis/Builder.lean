@@ -38,9 +38,6 @@ annotations.  Opened by the pin modules (`IxC/Kernel/Basis/*`,
 
 namespace BasisDSL
 
-/-- A top-level (single-component) name: `bn "Eq"` is `Eq`. -/
-def bn (s : String) : Key := .str .anonymous s
-
 /-- Universe parameter `0` (the exporter's `u`) — every basis block's
 first one. -/
 def uN : LevelParam := 0

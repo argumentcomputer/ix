@@ -106,10 +106,20 @@ private def recRuleTy : Lean.Expr := mkConst ``Ix.Kernel.RecRule
 private def constantInfoTy : Lean.Expr := mkConst ``Ix.Kernel.ConstantInfo
 private def constantValTy : Lean.Expr := mkConst ``Ix.Kernel.ConstantVal
 
-private def qName : Ix.Kernel.Name → Lean.Expr
-  | .anonymous => mkConst ``Ix.Kernel.Name.anonymous
-  | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (qName p) (mkStrLit s)
-  | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (qName p) (mkRawNatLit i)
+/-- A role's constructor (`Role` derives `Repr` with the constructor's full
+name). -/
+private def qRole (r : Ix.Kernel.Role) : Lean.Expr := mkConst (reprStr r).toName
+
+/-- A key: a role's Lean name as its `roleKey`, any other name structurally. -/
+private def qName (n : Ix.Kernel.Key) : Lean.Expr :=
+  match Ix.Kernel.Role.ofLeanName? n with
+  | some r => mkApp (mkConst ``Ix.Kernel.roleKey) (qRole r)
+  | none => go n
+where
+  go : Ix.Kernel.Name → Lean.Expr
+    | .anonymous => mkConst ``Ix.Kernel.Name.anonymous
+    | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (go p) (mkStrLit s)
+    | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (go p) (mkRawNatLit i)
 
 private def qLevelParams (ps : List Ix.Kernel.LevelParam) : Lean.Expr :=
   qList levelParamTy (ps.map mkRawNatLit)

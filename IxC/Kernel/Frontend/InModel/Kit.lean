@@ -46,17 +46,18 @@ open Ix.Kernel
 
 /-! ## Names -/
 
-/-- `T._model._impl.<s>`. -/
-def implName (T : Key) (s : String) : Key := ((T.str "_model").str "_impl").str s
+/-- The modeller's namespace `T._model._impl` of the block owned by `T`
+(never declared itself). -/
+def implKey (T : Key) : Key := auxKey (auxKey T .model) .impl
 
 /-- The tag family `T._model._impl.tag` of the block owned by `T`. -/
-def tagName (T : Key) : Key := implName T "tag"
+def tagName (T : Key) : Key := auxKey (implKey T) .tag
 
 /-- The tag constructor of member `k`: `T._model._impl.tag.k`. -/
-def tagCtorName (T : Key) (k : Nat) : Key := (tagName T).num k
+def tagCtorName (T : Key) (k : Nat) : Key := auxKey (tagName T) (.member k)
 
 /-- The auxiliary family `T._model._impl.aux`. -/
-def auxName (T : Key) : Key := implName T "aux"
+def auxName (T : Key) : Key := auxKey (implKey T) .auxFamily
 
 /-- The auxiliary constructor of member `k`'s constructor `C`:
 `T._model._impl.aux.k.<last component of C>`. -/
@@ -67,11 +68,11 @@ def auxCtorName (T : Key) (k : Nat) (C : Key) : Key :=
   | .anonymous => (auxName T).num k
 
 /-- The model companion of a block member: `X._model`. -/
-def modelName (n : Key) : Key := n.str "_model"
+def modelName (n : Key) : Key := auxKey n .model
 
 /-- The iota theorem of rule `j` of a modeled recursor `R`:
 `R._model.iota_j` (`IxC/Kernel/Inductives/Modeled.lean`'s lookup). -/
-def iotaName (R : Key) (j : Nat) : Key := (modelName R).str s!"iota_{j}"
+def iotaName (R : Key) (j : Nat) : Key := auxKey (modelName R) (.iota j)
 
 /-- A level parameter not among `lps`: the least number that is not in
 the list — `n` for a block's `[0, …, n-1]`, the number the front ends

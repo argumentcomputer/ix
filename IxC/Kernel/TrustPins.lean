@@ -40,9 +40,9 @@ namespace Ix.Kernel
 open BasisDSL
 
 /-- `Lean.reduceBool`'s pinned value: `fun (b : Bool) => b`. -/
-def reduceBoolDeclPin : Expr := lm "b" (cnst (bn "Bool")) (bv 0)
+def reduceBoolDeclPin : Expr := lm "b" (cnst (roleKey .bool)) (bv 0)
 
 /-- `Lean.reduceNat`'s pinned value: `fun (n : Nat) => n`. -/
-def reduceNatDeclPin : Expr := lm "n" (cnst (bn "Nat")) (bv 0)
+def reduceNatDeclPin : Expr := lm "n" (cnst natName) (bv 0)
 
 end Ix.Kernel
