@@ -1,7 +1,7 @@
 #pragma once
 
-// Goldilocks links sppark without its C++ thread pool. Its gpu_t layout and
-// field-specific NTT singletons must not alias this instantiation's symbols.
+// Field-specific NTT singletons and the per-backend device registries must
+// not alias the Goldilocks instantiation's symbols.
 #define gpu_t kzg_gpu_t
 #define gpus_t kzg_gpus_t
 #define stream_t kzg_stream_t

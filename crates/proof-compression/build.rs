@@ -31,6 +31,9 @@ fn main() {
     "NVCC",
     "CUDA_HOME",
     "CUDA_PATH",
+    "NVCC_CCBIN",
+    "NVCC_PREPEND_FLAGS",
+    "NVCC_APPEND_FLAGS",
     "IX_KZG_CUDA_ARCHS",
     "MULTI_STARK_CUDA_ARCHS",
   ] {
@@ -132,9 +135,9 @@ fn cuda_compile_command(
 }
 
 fn link_cuda_runtime(nvcc: &std::ffi::OsStr) {
-  // The runtime is bundled into the Rust staticlib so the Lean executable's
-  // foreign linker does not need to know about it. The multi-stark Goldilocks
-  // backend emits the same directives; duplicates are harmless.
+  // CUDA is bundled into Rust staticlibs. Dynamic host dependencies must
+  // also be supplied by foreign final linkers; Lake isolates a static
+  // libstdc++ from the same nvcc host compiler in its native archive.
   println!("cargo:rustc-link-lib=static=cudart_static");
   for lib in ["dl", "rt", "pthread", "stdc++"] {
     println!("cargo:rustc-link-lib=dylib={lib}");

@@ -98,6 +98,15 @@ cargo test --release -p ix-proof-compression --features cuda
 `IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
 prover and the KZG backend here; there is no separate switch.
 
+CUDA Lake builds require Python 3, GNU binutils, and the host compiler's
+static `libstdc++.a`. Lake bundles the native CUDA objects with a private
+copy of that runtime, including exception metadata, so it cannot collide
+with Lean's libc++/libc++abi. Only the native C entry points remain public.
+The executable links the host compiler's C library family and therefore
+requires a compatible glibc on deployment hosts. `NVCC`,
+`CUDA_HOME`/`CUDA_PATH`, and nvcc's host-compiler overrides apply to runtime
+discovery as well as kernel compilation. CPU builds skip this packaging.
+
 With the feature compiled, every proving operation above the size
 thresholds in the prover runs on the devices and a rejected memory
 admission is an error; tune the residency limit or chunk size below rather
