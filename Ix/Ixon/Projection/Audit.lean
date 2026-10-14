@@ -80,7 +80,7 @@ codec: projection records are written with Ixon v4's TagN writer
 (`getTagN`, `getTagNWide`, `getTagN0Values`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5169 compiled functions; inherited externs 120, implemented_by 0,
+ Ixon.Projection.checkBytes]: 5264 compiled functions; inherited externs 120, implemented_by 0,
 unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings

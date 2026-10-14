@@ -311,12 +311,29 @@ the structural and pin-certified `Nat` operations, the standard axioms with
 `Iff` and `Nonempty`, the compiler-trust family with `True`, and `sorryAx`.
 `pinMap` refuses a table that is not a partial injection or that uses the
 `ix` root or a derived name shape. The table decides coverage only:
-the checker compares every pinned name's declaration with its pinned shape
-(basis blocks up to `canon`, with a reserved-name reject otherwise; literal
-support and `Nat` operations by exact type shapes and certified
-recurrences; standard and trust axioms by `matchesPin`), so a pin on a
-constant of another shape is refused, never accepted under the pinned
-name.
+the checker compares every pinned name's declaration with its pinned shape,
+binder contracts included (basis blocks up to `canon`, with a reserved-name
+reject otherwise; literal support and `Nat` operations by exact type shapes
+and certified recurrences; standard and trust axioms by `matchesPin`), so a
+pin on a constant of another shape is refused, never accepted under the
+pinned name.
+
+**Binder contracts** (`IxC/Ixon/Types/Contract.lean`). Ixon binders carry
+usage, ownership and locality contracts, inside the committed bytes. The
+reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
+`all`'s input and result contracts (`contract`, `result`); it erases a
+`let`'s, since the checker's `letE` has no field for one. They are identity
+data in every respect but typing. Structural equality, the expression hash
+and the pinned-shape comparisons see them; every pin carries the Lean
+fragment's defaults (`many`, `shared`, `unrestricted`), so a constant with
+other contracts is not the pinned one. Typing does not read them: the binder
+congruences compare only the `pw` datum, and the model reads only `pw`. So
+the entry accepts `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`, and an
+accepted environment says nothing about contracts (`Tests/Ix/Kernel/Contracts.lean`).
+The kernel imports these data types from Ixon, and nothing else
+(`kernel-layering`). Source mode gives Lean's binders the defaults and reads
+the compiler's resolved contract frames as the compiler lowers them
+(`Ix/LeanIngress/Expr.lean`).
 
 **Nat-operation pins** (`IxC/Kernel/Ixon/NatOpPinData.lean`, generated).
 One `Ix.Kernel.NatOpPinSet` for the eight pin-certified operations (`div`,
@@ -435,13 +452,13 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3003 | 82 |
-| reader `readRecords`, `readStream` | 1861 | 81 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5138 | 120 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5136 | 120 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5169 | 120 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5303 | 121 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5321 | 124 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3095 | 82 |
+| reader `readRecords`, `readStream` | 1890 | 81 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5233 | 120 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5231 | 120 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5264 | 120 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5398 | 121 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5416 | 124 |
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
@@ -451,8 +468,8 @@ re-records it states why the closure or the statement moved.
 1. the strict `IxC` build with the core kernel and codec audits;
 2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
    Authenticated}/Audit.lean`) and the kernel tests
-   (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Projection,
-   BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
+   (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Contracts,
+   Projection, BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
    (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
    already built in step 1;
@@ -465,9 +482,11 @@ re-records it states why the closure or the statement moved.
    an unclassified file fails): the checker never imports the theory, the
    base never imports the model lane, the rules fence and its five recorded
    doors, and the boundary: the checker and the theory import only
-   themselves, `Init`, `Std` and, at elaboration time, `Lean` (Ix's
-   boundary modules `Admission`, `Ixon`, `Audit`, `Ingress`, `Egress`, `Ref`
-   and `Search` import the kernel, not the reverse);
+   themselves, `Init`, `Std`, at elaboration time `Lean`, and of Ixon only
+   the binder-contract data types `IxC.Ixon.Types.{Modes,Contract}` that
+   `BinderMeta` carries (Ix's boundary modules `Admission`, `Ixon`, `Audit`,
+   `Ingress`, `Egress`, `Ref` and `Search` import the kernel, not the
+   reverse);
 6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
@@ -823,7 +842,7 @@ acceptance/rejection behavior or full `Nat.add_comm` certified parity.
 | `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
 | Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`IxC/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
 | `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
-| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader erases binder contracts | No Lean4Lean interpretation is retained as a hidden premise |
+| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader keeps `lam` and `all` contracts as identity data that typing does not read, and erases `let` contracts ("Binder contracts" above) | No Lean4Lean interpretation is retained as a hidden premise; an accept checks no contract |
 | Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
 
 These contracts are stated about the Ixon v4 codec (TagN integers), with the
