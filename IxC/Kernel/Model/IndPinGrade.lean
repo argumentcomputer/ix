@@ -57,7 +57,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level)
+open Ix.Kernel (CheckMode Env Expr Key Level)
 
 universe w
 
@@ -222,11 +222,11 @@ the object the part-6 probe showed the certificate is actually about.
 
 The conclusion is `RecRuleLaw`'s repaired conjunct verbatim, at the
 chain the equality half names. -/
-theorem nestedPinGrade {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem nestedPinGrade {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {cval : TConstVal}
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))

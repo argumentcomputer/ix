@@ -99,7 +99,7 @@ elaborator-drift verdict (`hp1`, which no record ever carried) and
 minus the identity's `DefEq` transport (`reducePinR_of`'s whole
 `fun φ` block). -/
 theorem reducePinRun_of {env env' : Env} {μ : CheckMode} {F : Nat}
-    {c : Name} {value : Expr}
+    {c : Key} {value : Expr}
     (h : checkReducePin (m := CheckM) (fueledOps μ F) env env' c value
       = .ok ()) :
     ReducePinRun μ F env env' c value := by
@@ -112,7 +112,7 @@ valuation-free (its `_cval` is a dead parameter), so this is
 `divModPinR_of`'s script with the `EnvFacts` dropped — the one kind where
 "the projection is the identity" was true all along. -/
 theorem divModPinRun_of {env env' : Env} {μ : CheckMode} {F : Nat}
-    {c : Name} {cv0 : ConstantVal} {v : Expr} {hint0 : ReducibilityHint}
+    {c : Key} {cv0 : ConstantVal} {v : Expr} {hint0 : ReducibilityHint}
     (hstore : env'.find? c = some (.defnInfo cv0 v hint0))
     (h : checkDivModPin (m := CheckM) (fueledOps μ F) pins env env' c
       = .ok ()) :

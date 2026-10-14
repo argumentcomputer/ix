@@ -85,7 +85,7 @@ inductive Grade where
 /-- The fourteen binary `Nat` operations `reduceNat` accelerates
 (`Core.lean:180-183`; official `reduce_nat`, `type_checker.cpp:639-668`):
 the six structural ones and the eight pin-certified WF ones. -/
-def natBinOpNames : List Name :=
+def natBinOpNames : List Key :=
   [natAddName, natSubName, natMulName, natPowName, natBeqName, natBleName] ++
     natDivModNames
 
@@ -112,7 +112,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
       Red env d f f' → Red env d (.app f a) (.app f' a)
   /-- Reduction of a projection's scrutinee (`whnfCoreBody`'s `.proj`
   clause, `Core.lean:1004-1006`: `whnf pe`). -/
-  | projArg {d : Nat} {sn : Name} {i : Nat} {e e' : Expr} :
+  | projArg {d : Nat} {sn : Key} {i : Nat} {e e' : Expr} :
       Red env d e e' → Red env d (.proj sn i e) (.proj sn i e')
   /-- **β at a fired gate** (`Core.lean:989-990`, `betaGateFires` at
   `.verified`): a λ whose validated annotation datum is `.never`
@@ -152,7 +152,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   /-- **Binary `Nat` acceleration** (`reduceNat`, `Core.lean:181-201`):
   a stored operation on two arguments that reduce to literal readings
   folds to `natOpResult`. -/
-  | natOp {d : Nat} {c : Name} {a wa b wb r : Expr} {n₁ n₂ : Nat} :
+  | natOp {d : Nat} {c : Key} {a wa b wb r : Expr} {n₁ n₂ : Nat} :
       c ∈ natBinOpNames → natOpStored env c = true →
       Red env d a wa → rawNatLit? wa = some n₁ →
       Red env d b wb → rawNatLit? wb = some n₂ →
@@ -163,7 +163,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   the projection table, fired under the entry's guard, and certified
   by the constructor spine's licensed telescope certificate
   (`projCertAt` at `.verified` = `projCert`, `:940-965`). -/
-  | proj {d : Nat} {sn : Name} {i : Nat} {e : Expr} {entry : ProjEntry}
+  | proj {d : Nat} {sn : Key} {i : Nat} {e : Expr} {entry : ProjEntry}
       {us : List Level} {cvC : ConstantVal} {nP nF : Nat} :
       env.findProj? sn i = some entry →
       e.getAppFn = .const entry.ctor us →
@@ -181,8 +181,8 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   constructor application with a firing rule.  The level comparands,
   the parameter comparison, the two licensed telescope certificates
   and the index comparison are the checker's, in its order. -/
-  | iota {d : Nat} {e : Expr} {c : Name} {us : List Level} {cv : ConstantVal}
-      {mI rP : Nat} {rules : List RecRule} {major : Expr} {cj : Name}
+  | iota {d : Nat} {e : Expr} {c : Key} {us : List Level} {cv : ConstantVal}
+      {mI rP : Nat} {rules : List RecRule} {major : Expr} {cj : Key}
       {usj : List Level} {cvj : ConstantVal} {cnP cnF : Nat} {rl : RecRule}
       {residual : Expr} :
       e.getAppFn = .const c us →
@@ -222,9 +222,9 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   against the constructor's telescope, type-checked against the major's
   type, and equated to the major by proof irrelevance (the last `DefEq`
   premise: the bridge builds it from `proofIrrel`'s two arms). -/
-  | rescueK {d : Nat} {major tm tmaj fab tf : Expr} {recName : Name}
+  | rescueK {d : Nat} {major tm tmaj fab tf : Expr} {recName : Key}
       {cv : ConstantVal} {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal}
-      {cnP cnF : Nat} {T : Name} {tus ust : List Level} {cvT : ConstantVal}
+      {cnP cnF : Nat} {T : Key} {tus ust : List Level} {cvT : ConstantVal}
       {caps : IndCaps} :
       env.find? recName = some (.recInfo cv mI rP [rl]) →
       rl.k = true →
@@ -255,9 +255,9 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   own, as in `DefEq.structEta`: the rescue's η certificate runs
   `structEtaProjCerts` there (`structEtaCertWith`, `Core.lean:412-417`),
   and the fabrication READS only through those slots' storage. -/
-  | rescueEta {d : Nat} {major tm tmaj fab : Expr} {recName : Name}
+  | rescueEta {d : Nat} {major tm tmaj fab : Expr} {recName : Key}
       {cv : ConstantVal} {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal}
-      {cnP cnF : Nat} {T : Name} {tus ust : List Level} {cvT : ConstantVal}
+      {cnP cnF : Nat} {T : Key} {tus ust : List Level} {cvT : ConstantVal}
       {caps : IndCaps} :
       env.find? recName = some (.recInfo cv mI rP [rl]) →
       rl.eta = true →
@@ -284,7 +284,7 @@ inductive Red (env : Env) : Nat → Expr → Expr → Prop where
   `Core.lean:673-732`; `And` only, by ruling): `And.intro a b
   (.proj And 0 h) (.proj And 1 h)` is fabricated for a stuck proof
   `h`, certified the K branch's way. -/
-  | rescueAnd {d : Nat} {major tm tmaj fab tf : Expr} {recName : Name}
+  | rescueAnd {d : Nat} {major tm tmaj fab tf : Expr} {recName : Key}
       {cv : ConstantVal} {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal}
       {cnP cnF : Nat} {tus ust : List Level} {cvT : ConstantVal}
       {caps : IndCaps} :
@@ -357,7 +357,7 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
       DefEq env d (.fvar i ty₁) (.fvar i ty₂)
   /-- Two constants of the same name at equivalent levels
   (`Core.lean:1621-1626`). -/
-  | const {d : Nat} {n : Name} {us us' : List Level} :
+  | const {d : Nat} {n : Key} {us us' : List Level} :
       Level.isEquivList us us' = some true →
       DefEq env d (.const n us) (.const n us')
   /-- The packed zero against `Nat.zero` (`Core.lean:1586-1591`; no
@@ -392,7 +392,7 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
       DefEq env d f₁ f₂ → DefEq env d a₁ a₂ →
       DefEq env d (.app f₁ a₁) (.app f₂ a₂)
   /-- Projection congruence at the same table slot (`Core.lean:1679-1689`). -/
-  | proj {d : Nat} {s : Name} {i : Nat} {e₁ e₂ : Expr} :
+  | proj {d : Nat} {s : Key} {i : Nat} {e₁ e₂ : Expr} :
       DefEq env d e₁ e₂ → DefEq env d (.proj s i e₁) (.proj s i e₂)
   /-- **η** (`etaCert`, `Core.lean:508-534`, at the one-sided λ arm
   `:1690-1692`): `b`'s io-inferred type head-normalises to a ∀ whose
@@ -437,8 +437,8 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
   per-field telescopes of a projection-function family are certified,
   the parameters agree pairwise, and every field is the corresponding
   projection of `b`. -/
-  | structEta {d : Nat} {a b tb wtb : Expr} {c : Name} {us : List Level}
-      {cvc : ConstantVal} {cnP cnF : Nat} {T : Name} {us' : List Level}
+  | structEta {d : Nat} {a b tb wtb : Expr} {c : Key} {us : List Level}
+      {cvc : ConstantVal} {cnP cnF : Nat} {T : Key} {us' : List Level}
       {cvT : ConstantVal} {caps : IndCaps} :
       Infer env .io d b tb → Red env d tb wtb →
       a.getAppFn = .const c us →
@@ -469,7 +469,7 @@ inductive DefEq (env : Env) : Nat → Expr → Expr → Prop where
   io-inferred type head-normalises to it, `b`'s type is definitionally
   equal, and the type application is certified against the family's
   telescope. -/
-  | structUnit {d : Nat} {a ta wta b tb wtb : Expr} {T : Name}
+  | structUnit {d : Nat} {a ta wta b tb wtb : Expr} {T : Key}
       {us' : List Level} {cvT : ConstantVal} {caps : IndCaps} :
       Infer env .io d a ta → Red env d ta wta →
       wta.getAppFn = .const T us' →
@@ -495,7 +495,7 @@ inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
       idx < d → Infer env g d (.fvar idx ty) ty
   /-- `Core.lean:1125-1136` / `:1298-1309`: a stored constant that is
   not a projection table, at the right level arity. -/
-  | const {g : Grade} {d : Nat} {n : Name} {us : List Level}
+  | const {g : Grade} {d : Nat} {n : Key} {us : List Level}
       {ci : ConstantInfo} :
       env.find? n = some ci → ci.isTowerEntry = false →
       us.length = ci.toConstantVal.levelParams.length →
@@ -559,7 +559,7 @@ inductive Infer (env : Env) : Grade → Nat → Expr → Expr → Prop where
   structure with a table entry at the right arities, the `Prop`
   restriction holds, and the type is the entry's body at the spine
   and the subject. -/
-  | proj {g : Grade} {d : Nat} {sn : Name} {i : Nat} {pe tpe te : Expr}
+  | proj {g : Grade} {d : Nat} {sn : Key} {i : Nat} {pe tpe te : Expr}
       {us : List Level} {entry : ProjEntry} :
       Infer env g d pe tpe → Red env d tpe te →
       te.getAppFn = .const sn us →
@@ -599,12 +599,12 @@ inductive DefEqList (env : Env) : Nat → List Expr → List Expr → Prop where
 certification at a projection-function family**
 (`structEtaProjCerts`, `Core.lean:358-377`). -/
 inductive EtaProjCerts (env : Env) :
-    Nat → Name → List Level → List Expr → Expr → List LevelParam → List Nat → Prop
+    Nat → Key → List Level → List Expr → Expr → List LevelParam → List Nat → Prop
     where
-  | nil {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
+  | nil {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
       {lpsT : List LevelParam} :
       EtaProjCerts env d T us' targs b lpsT []
-  | cons {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
+  | cons {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
       {lpsT : List LevelParam} {i : Nat} {rest : List Nat} {cvp : ConstantVal}
       {mI rP : Nat} {rules : List RecRule} :
       env.find? (projFnName T i) = some (.recInfo cvp mI rP rules) →

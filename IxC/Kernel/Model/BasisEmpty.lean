@@ -61,7 +61,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   emptyA emptyRecA emptyName uN)
 
 universe w
@@ -75,7 +75,7 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [1]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_emptyA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 emptyA.toConstantVal.type
       = some (BConst.typeAV .empty [1]) := by
   rw [show emptyA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,

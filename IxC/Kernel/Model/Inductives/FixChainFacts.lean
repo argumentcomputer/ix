@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w'
 
@@ -63,7 +63,7 @@ theorem eval_le_idxUniv {ψ : LevelParam → Nat} {isorts : List Level} {j : Nat
 /-- **The former's index telescope**, graded and bounded by the tuple
 universe at every parameter frame. -/
 theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal} {T : Name}
+    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal} {T : Key}
     {caps : IndCaps} (hfT : env.find? T = some (.indInfo cvTa caps))
     {tfvs : List Expr} {trest : Expr}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
@@ -129,7 +129,7 @@ theorem WScoped_of_mem_getAppArgs : ∀ (e a : Expr) {d : Nat}, Expr.WScoped d e
   | .lit _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
 
 /-- Every reading of a read spine is the reading of one of its terms. -/
-theorem DenoteMetaSpine.mem_inv {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat} {d : Nat} :
+theorem DenoteMetaSpine.mem_inv {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
       ∀ v ∈ vs, ∃ a ∈ as, denoteMeta acval env φ d a = some v
   | _, _, .nil, _, hv => nomatch hv
@@ -172,7 +172,7 @@ set_option maxHeartbeats 1600000 in
 /-- **The walk's inputs**, from a recursive constructor's data at a
 carrier storing the former as a λ-tower over the parameters. -/
 theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort

@@ -52,7 +52,7 @@ namespace Ix.Kernel.Semantics
 open Ix.Kernel.Term Ix.Kernel.Verify
 
 /-- An empty capability record pins nothing, and asks nothing. -/
-theorem etaPins_empty {μ : CheckMode} {env : Env} {T : Name}
+theorem etaPins_empty {μ : CheckMode} {env : Env} {T : Key}
     {lps : List LevelParam} : EtaPins μ env T lps {} :=
   ⟨fun h => absurd h (by decide), fun h => absurd h (by decide)⟩
 
@@ -69,8 +69,8 @@ freshness chain `provisionRecsS_mono` uses. -/
 /-- The fold's per-member eta data steps at a fresh, non-projection
 install: `EtaPins.step` for the pins, nothing for the (environment-free)
 constructor fact, and the name shape for the projection freshness. -/
-theorem etaMemberData_step {μ : CheckMode} {blockNames : List Name}
-    {caps : IndCaps} {env : Env} {c₀ : ConstantInfo} {n : Name}
+theorem etaMemberData_step {μ : CheckMode} {blockNames : List Key}
+    {caps : IndCaps} {env : Env} {c₀ : ConstantInfo} {n : Key}
     {lps : List LevelParam} (hfresh : env.find? c₀.name = none)
     (hshape : c₀.name.isProjFnShape = false)
     (h : EtaPins μ env n lps caps ∧
@@ -108,7 +108,7 @@ consumer, which is the relocation rule's threshold.
 valuation in its own statement — S5's finding-2 shape, third instance
 in the ind tier — so it is re-signed over a bare `TConstVal` and moved
 to the base, where the P lane reaches it without a crossing. -/
-theorem blockRenameOkT {blockNames : List Name} {envSelf : Env}
+theorem blockRenameOkT {blockNames : List Key} {envSelf : Env}
     {cvalSelf : TConstVal}
     (hIS : BlockInstalledTT blockNames envSelf cvalSelf)
     (hnames : ∀ n, blockNames.contains n = true →
@@ -147,7 +147,7 @@ theorem blockRenameOkT {blockNames : List Name} {envSelf : Env}
 /-- The reserved-name side condition of the group swap: a genuinely
 swapped entry never sits at a pinned basis name. -/
 def SwapNResS (env₀ env₃ : Env) : Prop :=
-  ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+  ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
     env₀.find? n = some (.recInfo cv mI rP []) →
     env₃.find? n = some (.recInfo cv mI rP rules) →
     rules = [] ∨ reservedBasisNames.contains n = false
@@ -161,7 +161,7 @@ theorem SwapNResS.of_eq (env : Env) : SwapNResS env env := by
 /-- The install fold's accumulator, read against the self environment:
 a lookup either agrees or differs only in a recursor's rule list. -/
 def FoldUpS (envAcc envSelf : Env) : Prop :=
-  ∀ (n : Name) (ci : ConstantInfo), envAcc.find? n = some ci →
+  ∀ (n : Key) (ci : ConstantInfo), envAcc.find? n = some ci →
     envSelf.find? n = some ci ∨
     ∃ cv mI' rP' rules rules',
       ci = .recInfo cv mI' rP' rules ∧

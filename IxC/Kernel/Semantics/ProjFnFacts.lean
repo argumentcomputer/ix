@@ -52,7 +52,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 rule list the caller installs.  (Moved to the base at task #161 S7 —
 `SetR/Install/ProjInstallS.lean` was its only home and both lanes'
 conses now name it.) -/
-abbrev projEntry (T : Name) (lps : List LevelParam) (pty : Expr)
+abbrev projEntry (T : Key) (lps : List LevelParam) (pty : Expr)
     (nP i : Nat) (rules : List RecRule) : ConstantInfo :=
   .recInfo ⟨projFnName T i, lps, pty⟩ nP nP rules
 
@@ -60,7 +60,7 @@ abbrev projEntry (T : Name) (lps : List LevelParam) (pty : Expr)
 front door.  Parameterised by the rule list exactly as `projConsS` is,
 because the projection bottom fires *below* the cons. -/
 theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
     {rules : List RecRule}
     {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
     {pty : Expr}
@@ -123,7 +123,7 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
       eq_of_beq hround]
     exact ht
   -- the two lookup shapes in the extended store
-  have hdown : ∀ (n : Name) (ci : ConstantInfo),
+  have hdown : ∀ (n : Key) (ci : ConstantInfo),
       (⟨projEntry T lps pty nP i rules :: env'.consts⟩ : Env).find? n
         = some ci →
       (n = projFnName T i ∧ ci = projEntry T lps pty nP i rules) ∨
@@ -232,7 +232,7 @@ stored rule's constructor.  Both lanes' conses need them — the R lane
 inside `projConsS`, the P lane at `projCons` — and neither is
 semantic. -/
 theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env}
-    {T ctorName : Name} {lps : List LevelParam}
+    {T ctorName : Key} {lps : List LevelParam}
     {nP nF i : Nat}
     (hwfE : EnvWF env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁) :
@@ -292,7 +292,7 @@ projection conses read them and neither reading is semantic. -/
 /-- The model projection's own name is a `projFwd` fixed point: it is
 not the family, not the constructor (their stored *kinds* differ), and
 not shaped like a public projection. -/
-theorem projFwd_model_self {T ctorName : Name} {nF i : Nat}
+theorem projFwd_model_self {T ctorName : Key} {nF i : Nat}
     (hC : projModelName T i ≠ ctorName) :
     projFwd T ctorName nF (projModelName T i) = projModelName T i := by
   unfold projFwd

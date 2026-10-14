@@ -59,7 +59,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 `constantValRun_of` in place of `constantValR_of`: the member's front
 door and the model-counterpart lookups, no carrier. -/
 theorem memberValRun_of {env' : Env} {μ : CheckMode} {F : Nat}
-    {blockNames : List Name} {cv cvA : ConstantVal}
+    {blockNames : List Key} {cv cvA : ConstantVal}
     (h : checkMemberVal (m := CheckM) (fueledOps μ F) blockNames env' cv
       = .ok cvA) :
     MemberValRun μ F env' blockNames cv cvA := by
@@ -109,7 +109,7 @@ checker's `checkIndMember` step inverted at each member, and the
 relation it builds is the same walk over the running environment. -/
 theorem indMembersRunRS
     {μ : CheckMode} {F : Nat}
-    {blockNames : List Name} {caps : IndCaps} :
+    {blockNames : List Key} {caps : IndCaps} :
     ∀ (members : List ConstantInfo) {env env₂ : Env},
       members.foldlM (checkIndMember (m := CheckM) (fueledOps μ F)
         blockNames caps) env = .ok env₂ →
@@ -142,7 +142,7 @@ theorem indMembersRunRS
 
 /-- **The provisioning fold, run half.** -/
 theorem provisionRecsRunRS
-    {μ : CheckMode} {F : Nat} {blockNames : List Name} :
+    {μ : CheckMode} {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) {envAcc envSelf : Env}
       {checked : List (ConstantVal × Nat × Nat × List RecRule)},
       provisionRecs (m := CheckM) (fueledOps μ F) blockNames envAcc recs
@@ -197,7 +197,7 @@ the kit already carries. -/
 `refine` with the parameter-domain walk and `IotaWalksR` struck: the
 remaining rows are `PlainChecked`'s own components. -/
 theorem iotaThmRun_of {env' envSelf : Env}
-    {μ : CheckMode} {F : Nat} {f : Name → Name} {cvA cvj : ConstantVal}
+    {μ : CheckMode} {F : Nat} {f : Key → Key} {cvA cvj : ConstantVal}
     {mI rP cnP cnF j : Nat} {r : RecRule} {rhsA : Expr}
     (h : PlainChecked μ F env' envSelf f cvA mI rP cnP cnF j
       { r with rhs := rhsA } cvj) :
@@ -228,7 +228,7 @@ move against `NestedChecked`; the generalized major pin, the
 `checkAnnotList` fixed points and the arity pin are all stored-data
 rows and carry over. -/
 theorem iotaThmNRun_of {env' envSelf : Env}
-    {μ : CheckMode} {F : Nat} {f : Name → Name} {cvA cvj : ConstantVal}
+    {μ : CheckMode} {F : Nat} {f : Key → Key} {cvA cvj : ConstantVal}
     {mI rP cnP cnF j : Nat} {r : RecRule} {rhsA : Expr}
     {lvls : List Level} {pins : List Expr}
     (hshape : nestedRuleShape env' envSelf cvA.name cvA.levelParams
@@ -266,7 +266,7 @@ happen here is the rhs front door's conversion (`checkBridge` at the
 empty context), whose *recorded run* — the fold's own `inferTypeCore`
 verdict — is what the run record carries instead. -/
 theorem iotaRuleRun_of {env' envSelf : Env}
-    {μ : CheckMode} {F : Nat} {f : Name → Name} {cvA : ConstantVal}
+    {μ : CheckMode} {F : Nat} {f : Key → Key} {cvA : ConstantVal}
     {mI rP j : Nat} {r r' : RecRule}
     (h : checkIotaRule μ (fueledOps μ F) env' envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r = .ok r') :
@@ -303,7 +303,7 @@ theorem iotaRuleRun_of {env' envSelf : Env}
 
 /-- **The per-recursor rule fold, run half.** -/
 theorem iotaRulesRun_of {env' envSelf : Env}
-    {μ : CheckMode} {F : Nat} {f : Name → Name} {cvA : ConstantVal}
+    {μ : CheckMode} {F : Nat} {f : Key → Key} {cvA : ConstantVal}
     {mI rP : Nat} :
     ∀ (j : Nat) (rules rules' : List RecRule),
       checkIotaRules μ (fueledOps μ F) env' envSelf f cvA.name
@@ -347,7 +347,7 @@ the two provisioning monotonicity facts — for one purpose: to build the
 self environment, so the fold takes the checker's verdict and nothing
 else. -/
 theorem indRecsRunRS
-    {μ : CheckMode} {F : Nat} {blockNames : List Name} :
+    {μ : CheckMode} {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) {env₂ env₃ : Env},
       checkIndRecs (m := CheckM) μ (fueledOps μ F) blockNames env₂ recs
         = .ok env₃ →
@@ -384,7 +384,7 @@ where
   /-- The rules fold, run half — at the fixed self environment, as the
   derivation fold already was (`IndRecsFoldR`'s own note: the rules are
   checked at the *base* environment, the accumulator only collects). -/
-  indRecsFoldRunRS {μ : CheckMode} {F : Nat} {blockNames : List Name}
+  indRecsFoldRunRS {μ : CheckMode} {F : Nat} {blockNames : List Key}
       {envBase envSelf : Env} :
       ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule))
         {acc env₃ : Env},
@@ -424,7 +424,7 @@ The five stage inversions are `projFn_of`'s own — one `_inv` call
 each, all relation-free — and what does not happen here is the rule's
 front-door conversion and the `proj_i.iota` sides pack's `∀ φ` walk. -/
 theorem projFnRun_of {env' env₁ : Env} {μ : CheckMode}
-    {F : Nat} {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
+    {F : Nat} {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
     (h : checkProjFn μ (fueledOps μ F) env' T ctorName lps nP nF i
       = .ok env₁) :
     ProjFnRun μ F env' T ctorName lps nP nF i env₁ := by
@@ -474,7 +474,7 @@ theorem projFnRun_of {env' env₁ : Env} {μ : CheckMode}
 without the install: `ProjPhaseInvS` and `BlockInstalledTT` were
 `projFnRR`'s inputs, and `projFnRR` existed to carry the `EnvFacts` across
 the cons — which the run record does not need. -/
-theorem projInstallRunRS {μ : CheckMode} {F : Nat} {T ctorName : Name}
+theorem projInstallRunRS {μ : CheckMode} {F : Nat} {T ctorName : Key}
     {lps : List LevelParam} {nP nF : Nat} :
     ∀ (fields : List Nat) {env' env₄ : Env},
       fields.foldlM (installProjFnStep (m := CheckM) μ (fueledOps μ F)

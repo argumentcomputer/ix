@@ -93,7 +93,7 @@ nothing here.*
 What did have to be re-pointed is the **clause** built on top, below.
 -/
 
-open Ix.Kernel (CheckMode Env Expr Name inferTypeCore inferBody
+open Ix.Kernel (CheckMode Env Expr Key inferTypeCore inferBody
   natLitSupported)
 
 variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat} {fuel : Nat}

@@ -40,19 +40,19 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name BinderMeta)
+open Ix.Kernel (Env Expr Key BinderMeta)
 
 universe w
 
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- **The residual of an `instPisAt` run reads** when the type and
 every spine element do (`instPisAt_fvar_denote_defined`). -/
 theorem instPisAt_denoteMeta_defined
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
@@ -113,9 +113,9 @@ variables, read at the frame and instantiated along the frame's full
 value spine, is the walk of the (spine-instantiated) read tower at the
 values the openers map to. -/
 theorem instPisAt_denoteMeta_cross
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →

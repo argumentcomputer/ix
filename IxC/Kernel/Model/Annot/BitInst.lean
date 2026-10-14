@@ -124,10 +124,10 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level PropWhen)
+open Ix.Kernel (Env Expr Key Level PropWhen)
 
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- The `Nat`-literal spine is `inst`-invariant when its two heads
 are.  `BitShift.lean`'s `natLitAV_liftN` one operation over. -/
@@ -164,7 +164,7 @@ out of `denoteMeta_weaken_top`.  The scoping premise is `WScoped` rather
 than v1's `fvarsBelow` because that is what `denoteMeta_shiftFrom` takes
 (the annotations have to be scoped too, hereditarily). -/
 theorem denoteMeta_lift
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     {p : Nat} {e : Expr} (hw : Expr.WScoped p e) :
     ∀ D : Nat, p ≤ D →
@@ -203,9 +203,9 @@ instantiating the annotation at de Bruijn cut `D - p`.  Mirror of
 `denote_substFvarAt`; see the module docstring for the two leaf
 premises and for why `EnvWF` is absent. -/
 theorem denoteMeta_substFvarAt
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {p : Nat} {a : Expr} {x : AnnotTerm}
     (hwa : Expr.WScoped p a) (hba : a.looseBVarsBounded 0 = true)
@@ -338,9 +338,9 @@ clauses consume: opening a binder body with the argument directly is
 opening it with a fresh variable and then instantiating.  Mirror of
 `denote_beta`. -/
 theorem denoteMeta_beta
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {d : Nat} {ty body a : Expr} {x : AnnotTerm}
     (hfb : Expr.fvarsBelow d body) (hwa : Expr.WScoped d a)

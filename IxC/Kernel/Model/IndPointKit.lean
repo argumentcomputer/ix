@@ -27,13 +27,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- Pointwise reading of a read spine (`denoteSpine_getElem?'`). -/
 theorem denoteMetaSpine_getElem?' {d : Nat} :

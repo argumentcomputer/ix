@@ -119,7 +119,7 @@ open Ix.Kernel.Term
 declarative type theory — level-polymorphically, each constant being a
 function of the level-parameter assignment.  The exact transpose of
 `Ix.Kernel.ConstVal V = Name → (LevelParam → Nat) → V`. -/
-abbrev TConstVal := Name → (LevelParam → Nat) → Term
+abbrev TConstVal := Key → (LevelParam → Nat) → Term
 
 /-- The term of a `Nat` literal: the `Nat.succ` valuation iterated on
 the `Nat.zero` valuation.  Transpose of `natLitVal`.
@@ -144,7 +144,7 @@ Transpose of `charListVal`. -/
 /-- The stored level-parameter list of a constant (`[]` when absent).
 Transpose of `Ix.Kernel.Env.levelParamsAt`; restated here because
 `IxC/Kernel/TTVerify/*` does not import the set model. -/
-@[expose] def levelParamsAt (env : Env) (n : Name) : List LevelParam :=
+@[expose] def levelParamsAt (env : Env) (n : Key) : List LevelParam :=
   match env.find? n with
   | some ci => ci.toConstantVal.levelParams
   | none => []
@@ -263,7 +263,7 @@ rewrite rules every consumer uses. -/
   rw [denote]
 
 theorem denote_const (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (n : Name) (us : List Level) :
+    (d : Nat) (n : Key) (us : List Level) :
     denote cval env φ d (.const n us) =
       match env.find? n with
       | some ci =>
@@ -309,7 +309,7 @@ theorem denote_letE (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
   rw [denote]
 
 theorem denote_proj (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (T : Name) (i : Nat) (e : Expr) :
+    (d : Nat) (T : Key) (i : Nat) (e : Expr) :
     denote cval env φ d (.proj T i e) =
       match denote cval env φ d e with
       | none => none

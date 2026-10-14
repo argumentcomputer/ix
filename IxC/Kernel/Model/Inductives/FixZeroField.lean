@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps)
 
 universe w
 
@@ -78,7 +78,7 @@ theorem chainsRealI_zero {μ : V} {u w : Nat} {ρp : Nat → V} {rss : List (Lis
 
 /-- **Unit-likeness at the dummy former's leaf**: the family with no
 constructor chain is empty, so the law is vacuous. -/
-theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
+theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
     {cvT : ConstantVal} {caps : IndCaps}
     {w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hleaf : ∀ ψ, m.acval T ψ = sumTyAV (w ψ) (pps ψ) [])
@@ -109,7 +109,7 @@ theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Nam
 /-- **Unit-likeness at the fixpoint leaf of a fieldless one-constructor
 block**: the fibre is the one tagged empty tuple (the point at a
 squash instance). -/
-theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
+theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
     {cvT : ConstantVal} {caps : IndCaps}
     {u w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
@@ -153,7 +153,7 @@ theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Nam
 tagged empty tuple, and the constructor along the parameters is that
 tuple (the point at a squash instance) — the fabricated η spine at no
 field is the constructor at the parameters. -/
-theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Name}
+theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
     {cvT : ConstantVal} {caps : IndCaps}
     {u w : (LevelParam → Nat) → Nat} {pps ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}

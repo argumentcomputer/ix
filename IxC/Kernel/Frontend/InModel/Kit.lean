@@ -47,31 +47,31 @@ open Ix.Kernel
 /-! ## Names -/
 
 /-- `T._model._impl.<s>`. -/
-def implName (T : Name) (s : String) : Name := ((T.str "_model").str "_impl").str s
+def implName (T : Key) (s : String) : Key := ((T.str "_model").str "_impl").str s
 
 /-- The tag family `T._model._impl.tag` of the block owned by `T`. -/
-def tagName (T : Name) : Name := implName T "tag"
+def tagName (T : Key) : Key := implName T "tag"
 
 /-- The tag constructor of member `k`: `T._model._impl.tag.k`. -/
-def tagCtorName (T : Name) (k : Nat) : Name := (tagName T).num k
+def tagCtorName (T : Key) (k : Nat) : Key := (tagName T).num k
 
 /-- The auxiliary family `T._model._impl.aux`. -/
-def auxName (T : Name) : Name := implName T "aux"
+def auxName (T : Key) : Key := implName T "aux"
 
 /-- The auxiliary constructor of member `k`'s constructor `C`:
 `T._model._impl.aux.k.<last component of C>`. -/
-def auxCtorName (T : Name) (k : Nat) (C : Name) : Name :=
+def auxCtorName (T : Key) (k : Nat) (C : Key) : Key :=
   match C with
   | .str _ s => ((auxName T).num k).str s
   | .num _ n => ((auxName T).num k).num n
   | .anonymous => (auxName T).num k
 
 /-- The model companion of a block member: `X._model`. -/
-def modelName (n : Name) : Name := n.str "_model"
+def modelName (n : Key) : Key := n.str "_model"
 
 /-- The iota theorem of rule `j` of a modeled recursor `R`:
 `R._model.iota_j` (`IxC/Kernel/Inductives/Modeled.lean`'s lookup). -/
-def iotaName (R : Name) (j : Nat) : Name := (modelName R).str s!"iota_{j}"
+def iotaName (R : Key) (j : Nat) : Key := (modelName R).str s!"iota_{j}"
 
 /-- A level parameter not among `lps`: the least number that is not in
 the list — `n` for a block's `[0, …, n-1]`, the number the front ends
@@ -101,7 +101,7 @@ binders seen from `o` binders below it (`structPsAt`). -/
 def varsAt (o n : Nat) : List Expr := structPsAt o n
 
 /-- A constant at its level parameters. -/
-def constP (n : Name) (lps : List LevelParam) : Expr := .const n (lps.map .param)
+def constP (n : Key) (lps : List LevelParam) : Expr := .const n (lps.map .param)
 
 /-- The domains of a `∀`-telescope's binder list. -/
 def piBinders (bs : List (Expr × BinderMeta)) : List Expr :=
@@ -137,8 +137,8 @@ One memoized DAG walk (keyed by the node — the rewrite reads no binder
 cursor), and, like `mentionsAnyGo`, with no spec lemma: the modeller
 is untrusted.  Without it the rebuild runs once per path, which is what
 `tests/e2e/tower_mutual.ndjson` exposes. -/
-partial def specFamGo (T : Name) (lps : List LevelParam) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
+partial def specFamGo (T : Key) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
     Expr → Expr × Std.HashMap Expr Expr
   | .bvar i => (.bvar i, memo)
   | .sort u => (.sort u, memo)
@@ -200,8 +200,8 @@ partial def specFamGo (T : Name) (lps : List LevelParam) (nP : Nat)
       (r, memo.insert e r)
 
 @[inherit_doc specFamGo]
-partial def specFamGoList (T : Name) (lps : List LevelParam) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
+partial def specFamGoList (T : Key) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
     List Expr → List Expr × Std.HashMap Expr Expr
   | [] => ([], memo)
   | x :: xs =>
@@ -212,8 +212,8 @@ partial def specFamGoList (T : Name) (lps : List LevelParam) (nP : Nat)
 end
 
 @[inherit_doc specFamGo]
-def specFam (T : Name) (lps : List LevelParam) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (e : Expr) : Expr :=
+def specFam (T : Key) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key × Nat × Nat)) (e : Expr) : Expr :=
   (specFamGo T lps nP members {} e).1
 
 /-- Simultaneous substitution of a parameter block: under `d` binders,
@@ -282,7 +282,7 @@ declaration), so a memo here needs no `@[csimp]` twin — unlike
 `tests/e2e/tower_mutual.ndjson` is what walks it: `classifyCtor` asks
 this of every ordinary field domain, and a domain carrying a depth-60
 shared tower mentions no member, so nothing short-circuits. -/
-def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
+def mentionsAnyGo (ns : List Key) (memo : Std.HashMap Expr Bool) :
     Expr → Bool × Std.HashMap Expr Bool
   | .bvar _ => (false, memo)
   | .sort _ => (false, memo)
@@ -316,7 +316,7 @@ def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
       (r, memo.insert e r)
 
 @[inherit_doc mentionsAnyGo]
-def mentionsAny (ns : List Name) (e : Expr) : Bool := (mentionsAnyGo ns {} e).1
+def mentionsAny (ns : List Key) (e : Expr) : Bool := (mentionsAnyGo ns {} e).1
 
 /-! ## The kernel-shape recursor of an indexed recursive family
 
@@ -335,8 +335,8 @@ output, and the route's comparison of the stream's record against them
 holds by construction. -/
 
 /-- **The recursor type** of a recursive family (`structRecTyR`). -/
-def recTy (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat)) : Option Expr :=
+def recTy (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr) (ctors : List (Key × Nat × Expr × List Nat)) : Option Expr :=
   structRecTyR T lps elim large nP nIdx tty ctors
 
 /-- **The rule** of constructor `j` (`structRecRhsR`; `recC`, `rlvls`:
@@ -346,9 +346,9 @@ compares a stream rule's body SYNTACTICALLY with the generator's output
 reset to the placeholder (`nativeRulesOk`), as a parsed stream carries
 it everywhere — and a reflexive hypothesis `λ a⃗, T.rec … (f a⃗)` is
 where a generated body has binders of its own. -/
-def recRhs (T : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat))
-    (recC : Name) (rlvls : List Level) (j : Nat) : Option Expr :=
+def recRhs (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr) (ctors : List (Key × Nat × Expr × List Nat))
+    (recC : Key) (rlvls : List Level) (j : Nat) : Option Expr :=
   (structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j).map Expr.resetMeta
 
 /-! ## A syntactic sort inferer
@@ -362,7 +362,7 @@ syntactically a `∀` after instantiation fails.  `sortOf` reads the
 result as a sort. -/
 
 /-- The declared type of a constant: its level parameters and type. -/
-abbrev ConstTable := Name → Option (List LevelParam × Expr)
+abbrev ConstTable := Key → Option (List LevelParam × Expr)
 
 /-- Head β-reduction only. -/
 partial def betaHead : Expr → Expr
@@ -475,7 +475,7 @@ anything else).  One memoized DAG walk, keyed by the node — and, like
 and the hint it computes is checked with the declaration it rides on.
 Every generated value embeds the block's constructor domains, so a
 tower in one of them is walked here once per path without it. -/
-def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
+def maxHeightGo (heights : Key → Nat) (memo : Std.HashMap Expr Nat) :
     Expr → Nat × Std.HashMap Expr Nat
   | .const n _ => (heights n, memo)
   | .bvar _ => (0, memo)
@@ -506,13 +506,13 @@ def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
       (r, memo.insert e r)
 
 @[inherit_doc maxHeightGo]
-def maxHeight (heights : Name → Nat) (e : Expr) : Nat :=
+def maxHeight (heights : Key → Nat) (e : Expr) : Nat :=
   (maxHeightGo heights {} e).1
 
 /-- The reducibility hint of a generated definition: one above the
 highest constant its value mentions (the kernel's `getMaxHeight`
 rule). -/
-def hintFor (heights : Name → Nat) (value : Expr) : ReducibilityHint :=
+def hintFor (heights : Key → Nat) (value : Expr) : ReducibilityHint :=
   .regular (maxHeight heights value + 1)
 
 /-- The height a hint records. -/

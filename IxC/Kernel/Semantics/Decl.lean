@@ -70,7 +70,7 @@ def DeclBasisRun (env : Env) (kind : BasisKind) (env₂ : Env) : Prop :=
 /-- The valuation a modeled block member takes at its install: the
 model artifact's.  The block folds thread it (finding 5's resolution,
 option 3 — see the `IndMembersR` docstring). -/
-def cvalModeled (cval : TConstVal) (n : Name) : TConstVal :=
+def cvalModeled (cval : TConstVal) (n : Key) : TConstVal :=
   cvalWith cval n (fun ψ => cval (n.str "_model") ψ)
 
 /-- **The walks' recorded runs** (task #161 ind tier, the H1 exposure

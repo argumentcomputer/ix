@@ -41,7 +41,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule uN u1N vN)
 
 universe w
@@ -59,7 +59,7 @@ lookup by `Env.find?_cons`, and the leaf itself is
 `acval_basis_pinned`. -/
 theorem denoteMeta_pinned_const {m : EnvModel V env}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
-    {n : Name} {ci : ConstantInfo} {ψ : LevelParam → Nat} {ls : List Level}
+    {n : Key} {ci : ConstantInfo} {ψ : LevelParam → Nat} {ls : List Level}
     (hne : ¬ c₀.name = n)
     (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
@@ -124,7 +124,7 @@ variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 /-- `PUnit`'s type reading: `Sort u`, which is `BConst.typeAV .punit
 [ψ u]` on the nose. -/
 theorem denoteMeta_punitA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨punitA :: env.consts⟩ ψ 0 punitA.toConstantVal.type
       = some (BConst.typeAV .punit [ψ uN]) := by
   rw [show punitA.toConstantVal.type = Expr.sort (.param uN) from rfl,
@@ -706,7 +706,7 @@ variable {m : EnvModel V env} {A : (LevelParam → Nat) → AnnotTerm}
 /-- `Nat`'s type reading: `Sort 1`, `BConst.typeAV .nat []` on the
 nose. -/
 theorem denoteMeta_natA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨natA :: env.consts⟩ ψ 0 natA.toConstantVal.type
       = some (BConst.typeAV .nat []) := by
   rw [show natA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,

@@ -24,7 +24,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   NativeParts RecRule)
 
 universe w
@@ -88,7 +88,7 @@ theorem rssOfK_getD {ksF : Nat → List RecFieldKind} {n j : Nat} (hj : j < n) :
 
 /-! ## The rule's binder data as domains -/
 
-theorem fixRuleDataAV_map_dom {m : EnvModel V env} {T : Name} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+theorem fixRuleDataAV_map_dom {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat} {nP nIdx : Nat}
     {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
     {ds : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx) :
     (fixRuleDataAV m T ψ nP nIdx ℓ pps ips cds ds).map (·.2)
@@ -152,7 +152,7 @@ theorem fixSortAV_zero_iff (elimL u : Level) (lps : List LevelParam) (ψ : Level
 
 /-! ## The data at the parameters -/
 
-theorem fixRecDataAV_take_nP {m : EnvModel V env} {T : Name} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+theorem fixRecDataAV_take_nP {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat} {nP nIdx : Nat}
     {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
     (hlenP : pps.length = nP) :
     ((fixRecDataAV m T ψ nP nIdx ℓ pps ips cds).take nP).map (·.2.2) = pps.map (·.2.2) := by

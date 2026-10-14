@@ -45,7 +45,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta isDefEqCore inferTypeCore DefEqListOk)
 
 universe w
@@ -60,13 +60,13 @@ theorem indBottomProj {μ : CheckMode} {env : Env}
     (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     -- the totality residue (routed: `inferReads_of` at the caller)
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
-    {f : Name → Name} (hroT : RenameOk mp.base2.acval env f)
+    {f : Key → Key} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
-    {Rn : Name} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
+    {Rn : Key} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     {ciRm : ConstantInfo}
     (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
-    {ctor : Name} {cvj : ConstantVal} {cnP cnF : Nat}
+    {ctor : Key} {cvj : ConstantVal} {cnP cnF : Nat}
     (hctorE : env.find? ctor = some (.ctorInfo cvj cnP cnF))
     {ciCm : ConstantInfo}
     (hfCmE : env.find? (f ctor) = some ciCm)

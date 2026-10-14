@@ -26,7 +26,7 @@ variable {mode : CheckMode}
 open Expr
 
 /-- Invert stage 1 of `checkProjFn` (the stored-constant lookups). -/
-theorem checkProjLookups_inv {env' : Env} {T ctorName : Name}
+theorem checkProjLookups_inv {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal}
     (h : (checkProjLookups env' T ctorName lps nP nF i : CheckM _) =
       .ok (cvj, mcv)) :
@@ -90,7 +90,7 @@ theorem checkProjLookups_inv {env' : Env} {T ctorName : Name}
   exact ⟨mval, hmv', rfl, rfl, hmlps, hpnone, hTf, heqf⟩
 
 /-- Invert stage 2 of `checkProjFn` (the public projection type). -/
-theorem checkProjTy_inv {env' : Env} {T ctorName : Name} {lps : List LevelParam}
+theorem checkProjTy_inv {env' : Env} {T ctorName : Key} {lps : List LevelParam}
     {mty pty : Expr} {nP nF : Nat}
     (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM _) =
       .ok pty) :
@@ -275,7 +275,7 @@ dependent field types spelled through projections defeat any pin);
 instead both equation sides carry definitional type certificates at
 the opened telescope (task #100 stage 3), and the slot itself one
 against the sort its `Eq.{ℓA}` names (task #146). -/
-theorem checkProjIota_inv {env' : Env} {T ctorName : Name}
+theorem checkProjIota_inv {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {cvj : ConstantVal} {nP nF i : Nat} {u : Unit}
     (h : checkProjIota mode (fueledOps mode F) env' env' T ctorName lps cvj nP
       nF i = .ok u) :
@@ -535,7 +535,7 @@ theorem checkProjShape_inv {pty cty : Expr} {nP nF : Nat} {u : Unit}
   next => exact nomatch h
 
 /-- Invert a successful `checkProjFn` into its stages. -/
-theorem checkProjFn_inv {env' env₁ : Env} {T ctorName : Name}
+theorem checkProjFn_inv {env' env₁ : Env} {T ctorName : Key}
     {lps : List LevelParam} {nP nF i : Nat}
     (h : checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok env₁) :
     ∃ cvj mcv,
@@ -592,12 +592,12 @@ theorem checkProjFn_inv {env' env₁ : Env} {T ctorName : Name}
 
 /-- The projection-artifact phase adds only recursor-kind constants
 (and only extends the environment). -/
-theorem checkProjFold_find_new {T ctorName : Name} {lps : List LevelParam}
+theorem checkProjFold_find_new {T ctorName : Key} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
       env' = .ok env₁ →
-    ∀ (n : Name) (ci : ConstantInfo), env₁.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), env₁.find? n = some ci →
     env'.find? n = some ci ∨
       ∃ cv mI rP rules, ci = .recInfo cv mI rP rules
   | [], env', env₁, h, n, ci, hf => by
@@ -616,7 +616,7 @@ theorem checkProjFold_find_new {T ctorName : Name} {lps : List LevelParam}
       rw [hstep] at h
       obtain ⟨cvj, mcv, hlk, pty, hty, hshape, hi, rhsA, hrule, hio,
         henv₂⟩ := checkProjFn_inv hstep
-      have hcons : ∀ (n' : Name) (ci' : ConstantInfo),
+      have hcons : ∀ (n' : Key) (ci' : ConstantInfo),
           env₂.find? n' = some ci' →
           env'.find? n' = some ci' ∨
             ∃ cv mI rP rules, ci' = .recInfo cv mI rP rules := by
@@ -637,7 +637,7 @@ theorem checkProjFold_find_new {T ctorName : Name} {lps : List LevelParam}
       exact checkProjFold_find_new rest env' env₁ h n ci hf
 
 /-- The projection-artifact phase only extends the environment. -/
-theorem checkProjFold_mono {T ctorName : Name} {lps : List LevelParam}
+theorem checkProjFold_mono {T ctorName : Key} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
@@ -673,12 +673,12 @@ theorem checkProjFold_mono {T ctorName : Name} {lps : List LevelParam}
 
 /-- The projection-artifact phase preserves stored lookups exactly
 (every install is fresh). -/
-theorem checkProjFold_find_preserved {T ctorName : Name}
+theorem checkProjFold_find_preserved {T ctorName : Key}
     {lps : List LevelParam} {nP nF : Nat} :
     ∀ (idxs : List Nat) (env' env₁ : Env),
     idxs.foldlM (installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF)
       env' = .ok env₁ →
-    ∀ (n : Name) (ci : ConstantInfo), env'.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), env'.find? n = some ci →
     env₁.find? n = some ci
   | [], env', env₁, h, n, ci, hf => by
     simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h

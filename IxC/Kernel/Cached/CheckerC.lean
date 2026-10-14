@@ -35,7 +35,7 @@ def instPisAtLiftC : List Expr → Expr → Option Expr
   | _ :: _, _ => none
 
 /-- `structProjBodiesGo` at the memoised substitution. -/
-def structProjBodiesGoC (T : Name) : Nat → Nat → Expr → Option (List Expr)
+def structProjBodiesGoC (T : Key) : Nat → Nat → Expr → Option (List Expr)
   | 0, _, _ => some []
   | k + 1, i, .forallE fdom body _ =>
     (structProjBodiesGoC T k (i + 1) (Expr.instantiate1LiftC body (structProjArgP T i))).map
@@ -44,7 +44,7 @@ def structProjBodiesGoC (T : Name) : Nat → Nat → Expr → Option (List Expr)
 
 /-- `structProjBodies` at the memoised substitution
 (`structProjBodiesC_eq`). -/
-def structProjBodiesC (T : Name) (nP nF : Nat) (cty : Expr) : Option (Array Expr) :=
+def structProjBodiesC (T : Key) (nP nF : Nat) (cty : Expr) : Option (Array Expr) :=
   match instPisAtLiftC (structProjPs nP) cty with
   | some r => (structProjBodiesGoC T nF 0 r).map List.toArray
   | none => none
@@ -103,7 +103,7 @@ transitions, `FEnv.push` maintaining the index, and *every*
 environment lookup routed through the index (task #63). -/
 
 /-- One non-recursor member (mirrors `checkIndMember`). -/
-def checkIndMemberS (blockNames : List Name) (caps : IndCaps)
+def checkIndMemberS (blockNames : List Key) (caps : IndCaps)
     (fe : FEnv) (ci : ConstantInfo) : CheckCM FEnv := do
   flushC
   let cvA ← checkMemberValF (sharedOpsC mode fe) blockNames fe ci.toConstantVal
@@ -113,7 +113,7 @@ def checkIndMemberS (blockNames : List Name) (caps : IndCaps)
   | _ => throw (.invalid s!"non-inductive member {cvA.name} in block")
 
 /-- Phase 0 of the recursor group (mirrors `provisionRecs`). -/
-def provisionRecsS (blockNames : List Name) :
+def provisionRecsS (blockNames : List Key) :
     FEnv → List ConstantInfo →
     CheckCM (FEnv × List (ConstantVal × Nat × Nat × List RecRule))
   | feAcc, [] => pure (feAcc, [])
@@ -133,12 +133,12 @@ run at `envSelf` — one flush entering the phase, none inside the fold
 (the fold's accumulator environments are never passed to the
 operations).  The ruled recursors are installed on the `env₂` snapshot
 of the index. -/
-def checkIndRecsS (blockNames : List Name) (fe₂ : FEnv)
+def checkIndRecsS (blockNames : List Key) (fe₂ : FEnv)
     (recs : List ConstantInfo) : CheckCM FEnv := do
   if recs.isEmpty then
     pure fe₂
   else do
-    let f : Name → Name := fun n =>
+    let f : Key → Key := fun n =>
       if blockNames.contains n then n.str "_model" else n
     unless fe₂.find? eqName = some eqA do
       throw (.notImplemented "modeled recursor requires the pinned Eq basis")
@@ -152,7 +152,7 @@ def checkIndRecsS (blockNames : List Name) (fe₂ : FEnv)
 
 /-- The public projection function for field `i` (mirrors
 `checkProjFn`; the single-environment stages are the generic ones). -/
-def checkProjFnS (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
+def checkProjFnS (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (nP nF i : Nat) : CheckCM FEnv := do
   let (cvj, mcv) ← checkProjLookupsF (m := CheckCM) fe T ctorName lps
     nP nF i
@@ -167,7 +167,7 @@ def checkProjFnS (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
 
 /-- One projection-function install step (mirrors `installProjFnStep`;
 the artifact lookup goes through the index). -/
-def installProjFnStepS (T ctorName : Name) (lps : List LevelParam)
+def installProjFnStepS (T ctorName : Key) (lps : List LevelParam)
     (nP nF : Nat) (fe : FEnv) (i : Nat) : CheckCM FEnv := do
   if (fe.find? (projModelName T i)).isSome then do
     flushC

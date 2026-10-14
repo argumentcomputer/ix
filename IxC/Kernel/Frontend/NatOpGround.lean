@@ -53,8 +53,8 @@ open Ix.Kernel
 
 /-- The constants an `Expr` DAG references, each node visited once
 (`Std.HashSet Expr`: pointer-first equality, computed hash). -/
-def usedConstsGo (seen : Std.HashSet Expr) (acc : Array Name) (e : Expr) :
-    Std.HashSet Expr × Array Name :=
+def usedConstsGo (seen : Std.HashSet Expr) (acc : Array Key) (e : Expr) :
+    Std.HashSet Expr × Array Key :=
   if seen.contains e then (seen, acc) else
   let seen := seen.insert e
   match e with
@@ -79,13 +79,13 @@ def usedConstsGo (seen : Std.HashSet Expr) (acc : Array Name) (e : Expr) :
 /-- The constants a parsed record references (types, values, recursor
 rule right-hand sides; a basis block references nothing the stream
 declares). -/
-def _root_.Ix.Kernel.Declaration.usedConsts : Declaration → Array Name
+def _root_.Ix.Kernel.Declaration.usedConsts : Declaration → Array Key
   | .axiomDecl cv => (usedConstsGo {} #[] cv.type).2
   | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
     let (seen, acc) := usedConstsGo {} #[] cv.type
     (usedConstsGo seen acc v).2
   | .indDecl block _ =>
-    (block.foldl (init := (({} : Std.HashSet Expr), (#[] : Array Name)))
+    (block.foldl (init := (({} : Std.HashSet Expr), (#[] : Array Key)))
       fun (seen, acc) ci =>
         let (seen, acc) := usedConstsGo seen acc ci.toConstantVal.type
         match ci with
@@ -97,7 +97,7 @@ def _root_.Ix.Kernel.Declaration.usedConsts : Declaration → Array Name
 /-- The pinned `Nat` operation records whose ground the pass serves:
 the pin-certified WF operations and the structural ones (whose
 `natOpDeps` are in their own closures already — kept uniform). -/
-def isNatOpRecord : Declaration → Option Name
+def isNatOpRecord : Declaration → Option Key
   | .defnDecl cv .. =>
     if natDivModNames.contains cv.name || natOpNames.contains cv.name then some cv.name
     else none
@@ -110,7 +110,7 @@ precedes its operations. -/
 def hoistTargets (ds : Array Declaration) : Std.HashMap Nat Nat := Id.run do
   -- name ↦ the index of the record declaring it (the first, on a
   -- duplicate — the fold rejects the second anyway)
-  let mut idx : Std.HashMap Name Nat := {}
+  let mut idx : Std.HashMap Key Nat := {}
   for i in [0:ds.size] do
     for n in ds[i]!.names do
       if !idx.contains n then idx := idx.insert n i
@@ -148,7 +148,7 @@ prepared list's shape lemma states (`mergeSort_perm`,
 distinct (each carries its own index), so the order is the same one
 `qsort` produced. -/
 def applyHoist (ds : Array Declaration) (target : Std.HashMap Nat Nat) :
-    Array Declaration × Array Name :=
+    Array Declaration × Array Key :=
   let key : Nat → Nat × Nat × Nat := fun k =>
     match target[k]? with
     | some t => (t, 0, k)
@@ -164,7 +164,7 @@ def applyHoist (ds : Array Declaration) (target : Std.HashMap Nat Nat) :
 /-- **The hoist.**  Returns the reordered records and the names of the
 records moved (empty, and the array untouched, when no operation's
 ground is declared after it). -/
-def hoistNatOpGround (ds : Array Declaration) : Array Declaration × Array Name :=
+def hoistNatOpGround (ds : Array Declaration) : Array Declaration × Array Key :=
   let target := hoistTargets ds
   if target.isEmpty then (ds, #[]) else applyHoist ds target
 

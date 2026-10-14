@@ -44,7 +44,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint)
 
 universe w
@@ -55,7 +55,7 @@ variable {μ : CheckMode} {env : Env}
 /-- **The member cons's η split** (v1's `memberEtaS`, first half,
 V-free).  Either the family descends untouched, or `T` is a block
 former with no projection fields. -/
-theorem memberEtaSplit {blockNames : List Name}
+theorem memberEtaSplit {blockNames : List Key}
     {c₀ : ConstantInfo} {cvA : ConstantVal}
     (hfresh : env.find? c₀.name = none)
     (hc₀cv : c₀.toConstantVal = cvA) (hc₀name : c₀.name = cvA.name)
@@ -68,7 +68,7 @@ theorem memberEtaSplit {blockNames : List Name}
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none))
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
     (hBP : Ix.Kernel.BlockEtaPinned μ blockNames env)
-    {T : Name} {cvT : ConstantVal} {caps : IndCaps}
+    {T : Key} {cvT : ConstantVal} {caps : IndCaps}
     (hfT : (⟨c₀ :: env.consts⟩ : Env).find? T
       = some (.indInfo cvT caps))
     (hcape : caps.eta = true)
@@ -81,7 +81,7 @@ theorem memberEtaSplit {blockNames : List Name}
       (Ix.Kernel.EtaPins μ env T cvT.levelParams caps ∧
         caps.etaFields = 0 ∧ blockNames.contains T = true ∧
         blockNames.contains caps.etaCtor = true) := by
-  have hdown : ∀ n : Name, n ≠ c₀.name →
+  have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
@@ -140,7 +140,7 @@ theorem memberEtaSplit {blockNames : List Name}
 /-- **`caps_ok` at a member cons.**  The descending case transports;
 what remains as premises is exactly the two live laws. -/
 theorem capsOk_cons_member (mp : EnvModelM V μ env)
-    {blockNames : List Name} {c₀ : ConstantInfo} {cvA : ConstantVal}
+    {blockNames : List Key} {c₀ : ConstantInfo} {cvA : ConstantVal}
     {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
@@ -155,7 +155,7 @@ theorem capsOk_cons_member (mp : EnvModelM V μ env)
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
     (hBP : Ix.Kernel.BlockEtaPinned μ blockNames env)
     -- the live η row: a block former at `etaFields = 0`
-    (hetaLive : ∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+    (hetaLive : ∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
       (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
       caps.eta = true → Ix.Kernel.reservedBasisNames.contains T = false →
       Ix.Kernel.EtaPins μ env T cvT.levelParams caps →

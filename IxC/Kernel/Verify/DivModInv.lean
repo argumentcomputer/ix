@@ -41,7 +41,7 @@ inductive CertRuns (P : (List Expr × Expr) → Expr → Prop) :
       CertRuns P (st :: srest) (proof :: prest)
 
 /-- The per-certificate content of a successful run. -/
-@[expose] def CertRunFacts (mode : CheckMode) (env : Env) (F : Nat) (c : Name) (annVal : Expr)
+@[expose] def CertRunFacts (mode : CheckMode) (env : Env) (F : Nat) (c : Key) (annVal : Expr)
     (st : List Expr × Expr) (proof : Expr) : Prop :=
   divModCertGuard env c annVal st.1 st.2 proof = true ∧
   ∃ appliedA tp,
@@ -52,7 +52,7 @@ inductive CertRuns (P : (List Expr × Expr) → Expr → Prop) :
     isDefEqCore mode env F 4 tp (Expr.substConst0 c annVal st.2) = .ok true
 
 /-- Unpack a successful `checkDivModCerts` run, per certificate. -/
-theorem checkDivModCerts_inv {env : Env} {F : Nat} {c : Name}
+theorem checkDivModCerts_inv {env : Env} {F : Nat} {c : Key}
     {annVal : Expr} :
     ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
       checkDivModCerts (fueledOps mode F) env c annVal stmts proofs = .ok true →
@@ -96,7 +96,7 @@ theorem checkDivModCerts_inv {env : Env} {F : Nat} {c : Name}
                 (checkDivModCerts_inv h)
 
 /-- `natOpStoredOk`, split. -/
-theorem natOpStoredOk_tyPinned {n : Name}
+theorem natOpStoredOk_tyPinned {n : Key}
     (h : natOpStoredOk env n = true) :
     ∃ cv v hint, env.find? n = some (.defnInfo cv v hint) ∧
       natOpTyPinned env n cv.type = true := by
@@ -112,7 +112,7 @@ theorem natOpStoredOk_tyPinned {n : Name}
 /-- One variant's successful attempt, unpacked: the variant's pin
 annotated and definitionally equal to the stored value, and the
 variant's certificates checked (task #273). -/
-theorem checkDivModPinAt_inv {env : Env} {F : Nat} {c : Name}
+theorem checkDivModPinAt_inv {env : Env} {F : Nat} {c : Key}
     {value' : Expr} {ps : NatOpPinSet}
     (h : checkDivModPinAt (fueledOps mode F) env c value' ps = .ok true) :
     (∃ pinA, annotateCore mode env F 0 (divModDeclPin ps c) = .ok pinA ∧
@@ -141,7 +141,7 @@ theorem checkDivModPinAt_inv {env : Env} {F : Nat} {c : Name}
 
 /-- The variant loop's success: some listed variant passed its guards
 and its attempt. -/
-theorem checkDivModPinLoop_inv {env : Env} {F : Nat} {c : Name}
+theorem checkDivModPinLoop_inv {env : Env} {F : Nat} {c : Key}
     {value' : Expr} {u : Unit} :
     ∀ {pss : List NatOpPinSet} {tried : List String},
       checkDivModPinLoop (fueledOps mode F) env c value' pss tried = .ok u →
@@ -176,7 +176,7 @@ theorem checkDivModPinLoop_inv {env : Env} {F : Nat} {c : Name}
 the stored definition, and the pin variant that matched — its guards,
 its pin definitionally equal to the stored value, its certificates
 checked. -/
-theorem checkDivModPin_inv {env env2 : Env} {F : Nat} {c : Name} {u : Unit}
+theorem checkDivModPin_inv {env env2 : Env} {F : Nat} {c : Key} {u : Unit}
     (h : checkDivModPin (fueledOps mode F) pins env env2 c = .ok u) :
     divModEnvGuard env2 c = true ∧
     ∃ cv' value' hint',
@@ -214,7 +214,7 @@ theorem checkDivModPin_inv {env env2 : Env} {F : Nat} {c : Name} {u : Unit}
 /-- The pin names are distinct from every constant the install path
 transports (the `Nat`/`Bool` pins, the pinned equality, and the
 already-certified dependencies). -/
-theorem natDivModNames_ne_env {c : Name} (hc : c ∈ natDivModNames) :
+theorem natDivModNames_ne_env {c : Key} (hc : c ∈ natDivModNames) :
     c ≠ natName ∧ c ≠ natZeroName ∧ c ≠ natSuccName ∧ c ≠ boolName ∧
     c ≠ boolTrueName ∧ c ≠ boolFalseName ∧ c ≠ eqName ∧
     c ≠ natBleName ∧ c ≠ natSubName ∧ c ≠ natPredName ∧
@@ -226,7 +226,7 @@ theorem natDivModNames_ne_env {c : Name} (hc : c ∈ natDivModNames) :
       by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 /-- `divModEnvGuard`, split into facts. -/
-theorem divModEnvGuard_inv {env2 : Env} {c : Name}
+theorem divModEnvGuard_inv {env2 : Env} {c : Key}
     (h : divModEnvGuard env2 c = true) :
     natOpGuard env2 c = true ∧
     (natOpDeps c).all (natOpStoredOk env2) = true ∧

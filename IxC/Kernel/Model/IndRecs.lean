@@ -43,7 +43,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps)
 
 universe w
@@ -67,7 +67,7 @@ reading** (`indRecsFoldS`'s P half).  The conclusion is the single row
 either sits unchanged in the self environment — where `rec_rules`
 already covers it — or carries the rules `iotaRules` fired. -/
 theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
-    {blockNames : List Name} {envSelf envBase : Env}
+    {blockNames : List Key} {envSelf envBase : Env}
     (mp : EnvModelM V μ envSelf)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     (hroT : RenameOk mp.base2.acval envSelf (fun n =>
@@ -76,7 +76,7 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
     (heqfB : envBase.find? eqName = some eqA) :
     ∀ (recs : List ConstantInfo) {envP envF env₃ : Env}
       {checked : List (ConstantVal × Nat × Nat × List RecRule)},
-      (∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+      (∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
         (rules : List RecRule),
         envF.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
@@ -85,7 +85,7 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
       ProvisionRecsRun μ F blockNames envP recs envSelf checked →
       IndRecsRun.IndRecsFoldRun μ F blockNames envBase envSelf
         envF checked env₃ →
-      ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+      ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
         (rules : List RecRule),
         env₃.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
@@ -136,8 +136,8 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
 /-- `BlockAcvalInstalled` crosses the swap: the predicate reads the
 environment only through "this name is stored", and a swap changes no
 stored name. -/
-theorem blockAcvalInstalled_swap {blockNames : List Name}
-    {env₀ env₃ : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem blockAcvalInstalled_swap {blockNames : List Key}
+    {env₀ env₃ : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     (h : BlockAcvalInstalled blockNames env₀ acval) :
     BlockAcvalInstalled blockNames env₃ acval := by
@@ -155,7 +155,7 @@ The v1 carrier at the group's output is a premise — the install runs
 `RecCtorsStored` and `RecRulesV` out of the P lane entirely. -/
 theorem indRecs (hμ : μ.verifiedChecks = true)
     (hetaP : MemberEtaLaw V) (hunitP : MemberUnitLaw V) {F : Nat}
-    {blockNames : List Name} {env₂ env₃ : Env}
+    {blockNames : List Key} {env₂ env₃ : Env}
     {recs : List ConstantInfo}
     (mp : EnvModelM V μ env₂)
     (hI : BlockInstalledTT blockNames env₂ mp.base2.cvalE)

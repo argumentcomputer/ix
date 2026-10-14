@@ -34,7 +34,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level whnf inferTypeCore)
+open Ix.Kernel (CheckMode Env Expr Key Level whnf inferTypeCore)
 
 universe w
 
@@ -111,7 +111,7 @@ subject's scoping package is carried so the claims can be applied. -/
       WellDenotedV V ρ ea ∧ interp V ρ ea ∈ˢ (univ (u.eval φ) : V)
 
 /-- `denoteMeta` at a sort (the `denote2_sortQ` mirror). -/
-theorem denoteMeta_sortQ {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat}
+theorem denoteMeta_sortQ {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {u : Level} :
     denoteMeta acval env φ d (.sort u) = some (.sort (u.eval φ)) := by
   rw [denoteMeta]
@@ -187,7 +187,7 @@ there drops the arity equation (it is consumed inside its own
 equation the clause's second `throw` tests — which is precisely
 `denoteMeta`'s `.const` guard. -/
 theorem inferTypeCore_const_inv_len {fuel d : Nat}
-    {n : Name} {us : List Level} {t : Expr}
+    {n : Key} {us : List Level} {t : Expr}
     (h : inferTypeCore μ env fuel d (.const n us) = .ok t) :
     ∃ ci, env.find? n = some ci ∧
       us.length = ci.toConstantVal.levelParams.length := by

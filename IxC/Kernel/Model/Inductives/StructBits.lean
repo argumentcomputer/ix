@@ -36,7 +36,7 @@ namespace Ix.Kernel.Model
 open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta inferTypeCore ensureSortCore whnf openPisAtFvars)
 
 variable {mode : CheckMode}
@@ -187,7 +187,7 @@ theorem piBits_of_infer {env : Env} (hver : mode.verifiedChecks = true) :
 
 /-- The reading's Π-peel carries the syntactic bits: `denoteMeta` opens
 with the same `fvar`s. -/
-theorem stripPisAV_bits {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+theorem stripPisAV_bits {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
     {φ : LevelParam → Nat} {z : Prop} :
     ∀ (n : Nat) {d : Nat} {e : Expr} {ea : AnnotTerm}
       {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm},

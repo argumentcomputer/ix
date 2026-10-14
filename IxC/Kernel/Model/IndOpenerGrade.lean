@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key Level DefEqListOk)
 
 universe w
 
@@ -57,7 +57,7 @@ magnitude more there.  A stage lemma is the fix that scales — its
 context is its premise set. -/
 theorem annotOpeners {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
     {K : Nat}
     -- the statement frame and its tower
     {fvs : List Expr} (hfvslen : fvs.length = K)

@@ -122,7 +122,7 @@ theorem EnvFacts.consBlockMember {env : Env} (m : EnvFacts env)
   have hlpsA : c₀.toConstantVal.levelParams = cvA.levelParams := by
     rw [hc₀cv]
   -- the two shapes of a lookup in the extended store
-  have hdown : ∀ (n : Name) (ci : ConstantInfo),
+  have hdown : ∀ (n : Key) (ci : ConstantInfo),
       (⟨c₀ :: env.consts⟩ : Env).find? n = some ci →
       (n = c₀.name ∧ ci = c₀) ∨
         (n ≠ c₀.name ∧ env.find? n = some ci) := by
@@ -220,7 +220,7 @@ relation both prove a preservation fact, prove it at the relation. -/
 
 /-- **The three model-free conclusions of a block-member install.** -/
 theorem memberInstallInv {μ : CheckMode} {F : Nat}
-    {blockNames : List Name} {env : Env} {cval : TConstVal}
+    {blockNames : List Key} {env : Env} {cval : TConstVal}
     (hwfE : EnvWF env)
     {cv cvA : ConstantVal} {c₀ : ConstantInfo}
     (hmv : MemberValRun μ F env blockNames cv cvA)
@@ -324,7 +324,7 @@ ruled entry need it — they differ only in a rule list, which the
 invariant never reads.  (Moved to the base at task #161 S6, unchanged:
 `projFnInv` below is the second consumer and the P lane must reach
 it.) -/
-theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
+theorem projPhaseInvS_cons {T ctorName : Key} {nF : Nat} {env' : Env}
     {cval cval₀ : TConstVal} {c₀ : ConstantInfo} {lps : List LevelParam}
     {pty : Expr} {i : Nat} {mcv : ConstantVal} {mval : Expr}
     {mhint : ReducibilityHint}
@@ -344,33 +344,33 @@ theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
   have hname : c₀.name = projFnName T i := by
     rw [show c₀.name = c₀.toConstantVal.name from rfl, hcvA]
   -- the head's name differs from every name the invariant reads
-  have hneP : ∀ n : Name, (env'.find? n).isSome = true →
+  have hneP : ∀ n : Key, (env'.find? n).isSome = true →
       n ≠ projFnName T i := by
     intro n hn hh
     rw [hh, hfresh] at hn
     exact nomatch hn
-  have hne : ∀ n : Name, (env'.find? n).isSome = true →
+  have hne : ∀ n : Key, (env'.find? n).isSome = true →
       ¬c₀.name = n :=
     fun n hn hh => hneP n hn (by rw [← hh, hname])
   have hmodelNeP : ∀ j : Nat, projModelName T j ≠ projFnName T i :=
     fun j hh => Name.num_ne_str _ _ _ _ hh.symm
   have hmodelNe : ∀ (j : Nat), ¬c₀.name = projModelName T j :=
     fun j hh => hmodelNeP j (by rw [← hh, hname])
-  have hdown : ∀ (n : Name) (ci : ConstantInfo),
+  have hdown : ∀ (n : Key) (ci : ConstantInfo),
       Env.find? ⟨c₀ :: env'.consts⟩ n = some ci → ¬c₀.name = n →
       env'.find? n = some ci := by
     intro n ci hf hn
     rw [Env.find?_cons, if_neg hn] at hf
     exact hf
-  have hup : ∀ (n : Name) (ci : ConstantInfo),
+  have hup : ∀ (n : Key) (ci : ConstantInfo),
       env'.find? n = some ci → ¬c₀.name = n →
       Env.find? ⟨c₀ :: env'.consts⟩ n = some ci := by
     intro n ci hf hn
     rw [Env.find?_cons, if_neg hn]
     exact hf
-  have hstrNeP : ∀ n : Name, n.str "_model" ≠ projFnName T i :=
+  have hstrNeP : ∀ n : Key, n.str "_model" ≠ projFnName T i :=
     fun n hh => Name.num_ne_str _ _ _ _ hh.symm
-  have hstrNe : ∀ n : Name, ¬c₀.name = n.str "_model" :=
+  have hstrNe : ∀ n : Key, ¬c₀.name = n.str "_model" :=
     fun n hh => hstrNeP n (by rw [← hh, hname])
   refine ⟨?_, ?_, ?_⟩
   · intro ci hf
@@ -414,8 +414,8 @@ theorem projPhaseInvS_cons {T ctorName : Name} {nF : Nat} {env' : Env}
 /-- **The two model-free conclusions of a projection-function
 install** — `projFnS`'s invariant half, off the record alone. -/
 theorem projFnInv {μ : CheckMode} {F : Nat} {env' env₁ : Env}
-    {cval : TConstVal} {T ctorName : Name} {lps : List LevelParam}
-    {nP nF i : Nat} {blockNames : List Name}
+    {cval : TConstVal} {T ctorName : Key} {lps : List LevelParam}
+    {nP nF i : Nat} {blockNames : List Key}
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' cval)
     (hIB : BlockInstalledTT blockNames env' cval)

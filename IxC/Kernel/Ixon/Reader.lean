@@ -29,7 +29,7 @@ environment to the Ixon records; the latter is the fidelity theorem
 
 ## Keys
 
-The kernel key stays `Ix.Kernel.Name`. A constant reference `ConstRef Address`
+The kernel key is `Ix.Kernel.Key`. A constant reference `ConstRef Address`
 is encoded injectively under the reserved root `ix`:
 
 * `.member b i` ↦ `ix.<hex b>.i` (a `.num` component);
@@ -120,7 +120,7 @@ open Ix.Kernel (ConstRef)
 /-! The checker's syntax (`Ix.Kernel`), abbreviated so that the reader's
 signatures tell it apart from Ixon's and Lean's. -/
 
-abbrev CName := Ix.Kernel.Name
+abbrev CName := Ix.Kernel.Key
 abbrev CExpr := Ix.Kernel.Expr
 abbrev CLevel := Ix.Kernel.Level
 abbrev CDecl := Ix.Kernel.Declaration

@@ -46,7 +46,7 @@ theorem direct_sum_ind_wf {env env₁ : Env} (henv : EnvWF env)
 
 /-- A constructor's run at the former's environment: its type is
 closed and bounded. -/
-theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Name} {lps : List LevelParam}
+theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
@@ -58,7 +58,7 @@ theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Name} {lps : List LevelPa
 
 /-- A name fresh above the constructors' conses is fresh below them
 (task #210 Part A). -/
-theorem consSumCtors_find?_none {nP : Nat} {n : Name} :
+theorem consSumCtors_find?_none {nP : Nat} {n : Key} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
       (consSumCtors nP ctorsA env).find? n = none → env.find? n = none
   | [], _, h => h
@@ -93,7 +93,7 @@ theorem envWF_consSumCtors {nP : Nat} :
 
 /-- The stored rules carry the generated right-hand sides and are
 never `.nested`. -/
-theorem sumRules_mem {find? : Name → Option ConstantInfo} {recName : Name}
+theorem sumRules_mem {find? : Key → Option ConstantInfo} {recName : Key}
     {nP mI rP : Nat} {recTy : Expr} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →
@@ -111,7 +111,7 @@ theorem sumRules_mem {find? : Name → Option ConstantInfo} {recName : Name}
 
 /-- Every stored rule of the fixpoint route carries the two rescue
 bits its own install-time lookup computes. -/
-theorem sumRules_bits {find? : Name → Option ConstantInfo} {recName : Name}
+theorem sumRules_bits {find? : Key → Option ConstantInfo} {recName : Key}
     {nP mI rP : Nat} {recTy : Expr} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →

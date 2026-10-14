@@ -41,7 +41,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level inferTypeCore whnf
+open Ix.Kernel (CheckMode Env Expr Key Level inferTypeCore whnf
   natLitSupported strLitSupported)
 
 /-- The sort of `e`'s **type**, as the checker computes it: infer,
@@ -89,7 +89,7 @@ computed by the checker's own functions and every constant leaf drawn
 from the canonical annotated valuation.  Clause for clause the
 `denote` recursion (`IxC/Kernel/Verify/Denote.lean`), so the two erase
 pointwise (`denoteAnnot_erase`). -/
-def denoteAnnot (mode : CheckMode) (acval : Name → (LevelParam → Nat) → AnnotTerm)
+def denoteAnnot (mode : CheckMode) (acval : Key → (LevelParam → Nat) → AnnotTerm)
     (env : Env) (φ : LevelParam → Nat) (fuel : Nat) :
     (d : Nat) → Expr → Option AnnotTerm
   | _, .sort u => some (.sort (u.eval φ))
@@ -190,7 +190,7 @@ theorem charListAV_erase {nilA consA ofNatA za sa : AnnotTerm}
 the denotation, exactly (no ζ slack — `denoteAnnot`'s `letE` clause is
 structural). -/
 theorem denoteAnnot_erase {mode : CheckMode}
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
     {env : Env} {φ : LevelParam → Nat} {fuel : Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ) :
     ∀ (d : Nat) (e : Expr) {ea : AnnotTerm},

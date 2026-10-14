@@ -35,13 +35,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta PropWhen)
 
 universe w
 
 variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## Bits reset -/
 

@@ -80,7 +80,7 @@ theorem defEqList_bridge (hd : DefEqBridge env fuel) :
 one `iotaCerts_bridge` per field). -/
 theorem structEtaProjCerts_bridge (hd : DefEqBridge env fuel)
     (hio : InferIOBridge env fuel) :
-    ∀ {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
+    ∀ {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
       {lpsT : List LevelParam} {idxs : List Nat},
       structEtaProjCertsFueled .verified env fuel d T us' targs b lpsT idxs
         = .ok true →
@@ -137,7 +137,7 @@ family's identity is the caller's (`hwfn`, `hfT`); the inversion's own
 is reconciled against it. -/
 theorem structEtaCertWith_projCerts_bridge (hd : DefEqBridge env fuel)
     (hio : InferIOBridge env fuel)
-    {d : Nat} {a b wtb : Expr} {T : Name} {us' : List Level}
+    {d : Nat} {a b wtb : Expr} {T : Key} {us' : List Level}
     {cvT : ConstantVal} {caps : IndCaps}
     (hwfn : wtb.getAppFn = .const T us')
     (hfT : env.find? T = some (.indInfo cvT caps))

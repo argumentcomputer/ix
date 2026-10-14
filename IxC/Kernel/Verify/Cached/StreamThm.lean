@@ -52,14 +52,14 @@ variable {pins : List NatOpPinSet}
 
 /-- The annotation pass's `.const` arm: a bare constant annotates to
 itself. -/
-theorem annotateBodyI_const (r : CoreFnsI) (fe : FEnv) (d : Nat) (n : Name)
+theorem annotateBodyI_const (r : CoreFnsI) (fe : FEnv) (d : Nat) (n : Key)
     (ls : List Level) :
     annotateBodyI r fe d (.const n ls) = pure (.const n ls) := rfl
 
 /-- With the annotation memo missing the key, the memoized entry point
 returns what the body returns: a bare constant annotates to itself. -/
 theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv} {f d : Nat}
-    {n : Name} {ls : List Level} {s₀ s' : CState} {j : Expr}
+    {n : Key} {ls : List Level} {s₀ s' : CState} {j : Expr}
     (hmiss : s₀.annotC[(Expr.const n ls : Expr)]? = none)
     (h : (coreKnotI mode fe (f + 1)).annotate d (.const n ls) s₀ = .ok (j, s')) :
     j = .const n ls := by
@@ -85,7 +85,7 @@ theorem flushed_annotC_none (s : CState) (e : Expr) :
 /-- Phase A's header install, at a flushed state, returns the header
 with the declared type unchanged when that type is a bare constant. -/
 theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
-    {cv cvA : ConstantVal} {jty : Expr} {n : Name} {ls : List Level}
+    {cv cvA : ConstantVal} {jty : Expr} {n : Key} {ls : List Level}
     {s₀ s' : CState} (hty : cv.type = .const n ls)
     (h : annotConstantValC mode fe cv s₀.flushed = .ok ((cvA, jty), s')) :
     cvA = ⟨cv.name, cv.levelParams, .const n ls⟩ := by
@@ -129,7 +129,7 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
 the constant it pushes is a `.thmInfo` of that very type. -/
 theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
     {pend : Array PendingCheck} {cv : ConstantVal} {value : Expr}
-    {n : Name} {ls : List Level} {s₀ s' : CState}
+    {n : Key} {ls : List Level} {s₀ s' : CState}
     {fe' : FEnv} {pend' : Array PendingCheck} (hty : cv.type = .const n ls)
     (h : annotStepC mode pins i fe pend (.thmDecl cv value) s₀ = .ok ((fe', pend'), s')) :
     fe'.env.consts =
@@ -155,7 +155,7 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
 list of records containing a `thmDecl` whose declared type is a bare
 constant, the environment it returns holds a constant of that type. -/
 theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
-    {cv : ConstantVal} {value : Expr} {n : Name} {ls : List Level}
+    {cv : ConstantVal} {value : Expr} {n : Key} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
     {p q : Nat × FEnv × Array PendingCheck} {s s' : CState}
     (h : InstallRun mode pins ds p s q s') (hcanon : p.2.1 = mkFEnv p.2.1.env) :
@@ -181,7 +181,7 @@ theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
 that declares a theorem of a bare constant type leaves a constant of
 that type in the environment. -/
 theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array Declaration} {env : Env}
-    {cv : ConstantVal} {value : Expr} {n : Name} {ls : List Level}
+    {cv : ConstantVal} {value : Expr} {n : Key} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
     (h : checkDecls mode pins ds = .ok env) :
     ∃ c ∈ env.consts, c.toConstantVal.type = .const n ls := by

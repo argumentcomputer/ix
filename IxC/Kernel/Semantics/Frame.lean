@@ -23,7 +23,7 @@ The statement is verbatim, in its original namespace
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Expr Name)
+open Ix.Kernel (Expr Key)
 
 /-- The frame conditions of an opened binder, *without* the context —
 `frame_openR`'s first three components, which need no correspondence in

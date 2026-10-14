@@ -335,7 +335,7 @@ theorem inferTypeCoreIO_letE_inv {env : Env} {fuel d : Nat}
 /-- Inversion for the projection rule of the io lane
 (`inferTypeCore_proj_inv`'s twin: the scrutinee's inference at the io
 lane, the reduction at the full one). -/
-theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Name}
+theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
     {i : Nat} {e t : Expr}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.proj sn i e) = .ok t) :
     ∃ tpe te T us entry,
@@ -453,7 +453,7 @@ theorem inferTypeCoreIO_fvar_eq {env : Env} {fuel d idx : Nat}
   rfl
 
 /-- `.const` is lane-independent (the stored type, no run). -/
-theorem inferTypeCoreIO_const_eq {env : Env} {fuel d : Nat} {n : Name}
+theorem inferTypeCoreIO_const_eq {env : Env} {fuel d : Nat} {n : Key}
     {us : List Level} :
     inferTypeCoreIO mode env (fuel + 1) d (.const n us) =
       inferTypeCore mode env (fuel + 1) d (.const n us) := by

@@ -25,7 +25,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -76,7 +76,7 @@ theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr} :
 
 /-- `acval_const_congr` (`Steps/DefEq.lean:844`) with `AcvalParams`
 (`Model/Annot/EnvModel.lean:164`, `acvalParams m`). -/
-theorem DefEq.const_sound {d : Nat} {n : Name} {us us' : List Level}
+theorem DefEq.const_sound {d : Nat} {n : Key} {us us' : List Level}
     (h : Level.isEquivList us us' = some true) :
     DefEqSem m φ d (.const n us) (.const n us') := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
@@ -172,7 +172,7 @@ theorem DefEq.app_sound {d : Nat} {f₁ a₁ f₂ a₂ : Expr}
       (Graded.app hga).2 (Graded.app hgb).2 ρ hρ)
 
 /-- `interp_projAV_congr` (`Steps/ProjAVKit.lean:85`). -/
-theorem DefEq.proj_sound {d : Nat} {s : Name} {i : Nat} {e₁ e₂ : Expr}
+theorem DefEq.proj_sound {d : Nat} {s : Key} {i : Nat} {e₁ e₂ : Expr}
     (h : DefEqSem m φ d e₁ e₂) :
     DefEqSem m φ d (.proj s i e₁) (.proj s i e₂) := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
@@ -337,8 +337,8 @@ theorem DefEq.unitLike_sound {d : Nat}
 and `structEtaIrrel_of_claims`, `:897`): the stored η law at the
 certified type application. -/
 theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
-    {a b tb wtb : Expr} {c : Name} {us : List Level} {cvc : ConstantVal}
-    {cnP cnF : Nat} {T : Name} {us' : List Level} {cvT : ConstantVal}
+    {a b tb wtb : Expr} {c : Key} {us : List Level} {cvc : ConstantVal}
+    {cnP cnF : Nat} {T : Key} {us' : List Level} {cvT : ConstantVal}
     {caps : IndCaps}
     (htb : InferSemIO m φ d b tb) (hwtb : RedSem m φ d tb wtb)
     (hhead : a.getAppFn = .const c us)
@@ -714,7 +714,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
 
 /-- Unit-like structure (`structUnitIrrel_of_claims`, `Steps/CapsRows.lean:944`). -/
 theorem DefEq.structUnit_sound (hin : RulesInputs V m φ) {d : Nat}
-    {a ta wta b tb wtb : Expr} {T : Name} {us' : List Level}
+    {a ta wta b tb wtb : Expr} {T : Key} {us' : List Level}
     {cvT : ConstantVal} {caps : IndCaps}
     (hta : InferSemIO m φ d a ta) (hwta : RedSem m φ d ta wta)
     (hthead : wta.getAppFn = .const T us')

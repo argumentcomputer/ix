@@ -90,7 +90,7 @@ structure PreludeIx where
 /-- The name a prelude record is looked up by: the block's type former,
 the quotient constant, the axiom.  (`Declaration.names` lists every
 name a record declares; the first is the record's own handle.) -/
-def preludeKey (d : Declaration) : Name := (d.names.head?).getD .anonymous
+def preludeKey (d : Declaration) : Key := (d.names.head?).getD .anonymous
 
 /-! ## Pulling the stream's own copy out
 
@@ -107,10 +107,10 @@ does not declare it, nothing is erased".
 -/
 
 /-- The name-test a record is picked by. -/
-def declares (n : Name) (d : Declaration) : Bool := d.names.contains n
+def declares (n : Key) (d : Declaration) : Bool := d.names.contains n
 
 /-- The first record declaring `n`, and the list without it. -/
-def pickSpec (n : Name) : List Declaration → Option Declaration × List Declaration
+def pickSpec (n : Key) : List Declaration → Option Declaration × List Declaration
   | [] => (none, [])
   | d :: ds =>
     if declares n d then (some d, ds)
@@ -119,7 +119,7 @@ def pickSpec (n : Name) : List Declaration → Option Declaration × List Declar
       (m, d :: ds')
 
 /-- `pickSpec` on the parse's array. -/
-def pick (n : Name) (ds : Array Declaration) : Option Declaration × Array Declaration :=
+def pick (n : Key) (ds : Array Declaration) : Option Declaration × Array Declaration :=
   let i := ds.findIdx (declares n)
   (ds[i]?, ds.eraseIdxIfInBounds i)
 
@@ -154,7 +154,7 @@ structure Prepared where
   synthesised : Nat := 0
   /-- the records moved ahead of a pinned `Nat` operation they ground
   (names, for the driver's receipt) -/
-  hoisted : Array Name := #[]
+  hoisted : Array Key := #[]
 
 /-- **`preparePrelude`, with its receipts.** -/
 def prepareD (pre : PreludeIx) (ds : Array Declaration) : Prepared :=

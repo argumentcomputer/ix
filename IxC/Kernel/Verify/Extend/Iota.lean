@@ -35,10 +35,10 @@ open Expr
 everything `modeled_rule_fold` consumes.  `env` is the environment the
 theorem is stored in, `env₀` the provisional one carrying the block's
 rule-less recursors (the definitional-equality checks ran there). -/
-@[expose] def PlainChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
+@[expose] def PlainChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Key → Key)
     (cvA : ConstantVal) (mI rP cnP cnF j : Nat) (r : RecRule)
     (cvj : ConstantVal) : Prop :=
-  ∃ (thmName : Name) (cvt : ConstantVal) (ci : ConstantInfo)
+  ∃ (thmName : Key) (cvt : ConstantVal) (ci : ConstantInfo)
     (fvs : List Expr) (tbody : Expr) (ℓA : Level) (αS lhsS rhsS : Expr)
     (cdoms : List Expr) (cres : Expr) (rdoms : List Expr) (rrest : Expr)
     (fvsP : List Expr) (restP : Expr) (cdomsP : List Expr)
@@ -102,10 +102,10 @@ prefix variables) instead of the leading telescope variables; index
 premises between the prefix and the major flow through exactly as on
 the plain path (the statement's index arguments are pinned against
 the constructor residual's canonical tuple). -/
-@[expose] def NestedChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
+@[expose] def NestedChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Key → Key)
     (cvA : ConstantVal) (mI rP cnP cnF j : Nat) (r : RecRule)
     (cvj : ConstantVal) (lvls : List Level) (pins : List Expr) : Prop :=
-  ∃ (thmName : Name) (cvt : ConstantVal) (ci : ConstantInfo)
+  ∃ (thmName : Key) (cvt : ConstantVal) (ci : ConstantInfo)
     (fvs : List Expr) (tbody : Expr) (ℓA : Level) (αS lhsS rhsS : Expr)
     (cdoms : List Expr) (cres : Expr) (rdoms : List Expr) (rrest : Expr)
     (fvsP : List Expr) (restP : Expr) (cdomsP : List Expr)
@@ -175,7 +175,7 @@ the constructor residual's canonical tuple). -/
 
 /-- Invert a successful `checkIotaThm` run (on the rule as returned,
 whose `rhs` is the annotated right-hand side). -/
-theorem checkIotaThm_inv {env' env₀ : Env} {f : Name → Name}
+theorem checkIotaThm_inv {env' env₀ : Env} {f : Key → Key}
     {cvA cvj : ConstantVal} {mI rP j cnP cnF : Nat}
     {r : RecRule} {rhsA : Expr} {u : Unit}
     (h : checkIotaThm mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
@@ -424,7 +424,7 @@ rule-prefix context), and the recursor-type pin the instantiations
 were read off — the major domain applies the family to the
 instantiations' liftings past the index binders followed by the index
 variables in order. -/
-theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
+theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP cnP j : Nat}
     {lvls : List Level} {pins : List Expr}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
@@ -503,7 +503,7 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
 is the annotated right-hand side): either the rule was stored inert,
 or the returned flag carries the certified shape and the full
 `NestedChecked` hypothesis kit. -/
-theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
+theorem checkIotaThmN_inv {env' env₀ : Env} {f : Key → Key}
     {cvA cvj : ConstantVal} {mI rP j cnP cnF : Nat}
     {r : RecRule} {rhsA : Expr} {fire : RecRuleFire}
     (h : checkIotaThmN mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
@@ -812,7 +812,7 @@ hypothesis kit its fold obligation consumes.  `env` is the environment
 before the recursor group's installation, `env₀` the provisional one
 with the block's rule-less recursors (in which the rule's right-hand
 side was annotated). -/
-@[expose] def RuleChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
+@[expose] def RuleChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Key → Key)
     (cvA : ConstantVal) (mI rP j : Nat) (r : RecRule) : Prop :=
   ∃ (cvj : ConstantVal) (cnP cnF : Nat) (raw rhsTy : Expr)
     (rbinders : List (Expr × BinderMeta)) (rbody : Expr),
@@ -851,7 +851,7 @@ side was annotated). -/
       PlainChecked mode F env env₀ f cvA mI rP cnP cnF j r cvj)
 
 /-- Invert one `checkIotaRule` run. -/
-theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
+theorem checkIotaRule_inv {env' env₀ : Env} {f : Key → Key}
     {cvA : ConstantVal} {mI rP j : Nat} {r r' : RecRule}
     (h : checkIotaRule mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j r = .ok r') :
@@ -1006,7 +1006,7 @@ theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
 
 /-- Invert a successful `checkIotaRules` run: every returned rule
 carries the full `RuleChecked` hypothesis kit. -/
-theorem checkIotaRules_inv {env' env₀ : Env} {f : Name → Name}
+theorem checkIotaRules_inv {env' env₀ : Env} {f : Key → Key}
     {cvA : ConstantVal} {mI rP : Nat} :
     ∀ (j : Nat) (rules rules' : List RecRule),
     checkIotaRules mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
@@ -1056,7 +1056,7 @@ conjunct of each half is task #135's: the model former's telescope
 residual is `Sort ℓA` at the statement's own `Eq` level, which is what
 lets a consumer type the equation's type slot at the level the
 statement names (see `checkEtaThm`). -/
-@[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Name) (lps : List LevelParam)
+@[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Key) (lps : List LevelParam)
     (caps : IndCaps) : Prop :=
   (caps.eta = true →
   ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
@@ -1131,7 +1131,7 @@ statement names (see `checkEtaThm`). -/
 
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive unit-capability check into the stored pins. -/
-theorem checkUnitThm_inv {env' : Env} {T : Name}
+theorem checkUnitThm_inv {env' : Env} {T : Key}
     {lps : List LevelParam} {nP : Nat}
     (h : checkUnitThm mode env' T lps nP = true) :
     ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
@@ -1289,7 +1289,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
 
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive eta-capability check into the stored pins. -/
-theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
+theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {nP nF : Nat}
     (h : checkEtaThm mode env' T ctorName lps nP nF = true) :
     ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
@@ -1474,12 +1474,12 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   rfl
 
 /-- The pins persist under a fresh install. -/
-theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
+theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Key}
     {lps : List LevelParam} {caps : IndCaps}
     (h : EtaPins mode env' T lps caps)
     (hfresh : env'.find? c₁.name = none) :
     EtaPins mode ⟨c₁ :: env'.consts⟩ T lps caps := by
-  have hkeep : ∀ (n : Name) (ci : ConstantInfo),
+  have hkeep : ∀ (n : Key) (ci : ConstantInfo),
       env'.find? n = some ci →
       (⟨c₁ :: env'.consts⟩ : Env).find? n = some ci := by
     intro n ci hf
@@ -1512,18 +1512,18 @@ theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
 /-- The pins transport along any lookup preservation covering the
 non-recursor kinds (the pins only look up theorems, definitions and
 the pinned equality former). -/
-theorem EtaPins.transport {env₁ env₂ : Env} {T : Name}
+theorem EtaPins.transport {env₁ env₂ : Env} {T : Key}
     {lps : List LevelParam} {caps : IndCaps}
     (h : EtaPins mode env₁ T lps caps)
-    (hkeep : ∀ (n : Name) (ci : ConstantInfo), env₁.find? n = some ci →
+    (hkeep : ∀ (n : Key) (ci : ConstantInfo), env₁.find? n = some ci →
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env₂.find? n = some ci) :
     EtaPins mode env₂ T lps caps := by
-  have hk : ∀ (n : Name) (cv : ConstantVal) (tv : Expr),
+  have hk : ∀ (n : Key) (cv : ConstantVal) (tv : Expr),
       env₁.find? n = some (.thmInfo cv tv) →
       env₂.find? n = some (.thmInfo cv tv) :=
     fun n cv tv hf => hkeep n _ hf (fun _ _ _ _ hc => nomatch hc)
-  have hkd : ∀ (n : Name) (cv : ConstantVal) (v : Expr)
+  have hkd : ∀ (n : Key) (cv : ConstantVal) (v : Expr)
       (hh : ReducibilityHint), env₁.find? n = some (.defnInfo cv v hh) →
       env₂.find? n = some (.defnInfo cv v hh) :=
     fun n cv v hh hf => hkeep n _ hf (fun _ _ _ _ hc => nomatch hc)
@@ -1570,9 +1570,9 @@ itself a block member (so the block invariant's public/model
 identification reaches it), and — when it has fields — the freshness
 of its first projection, which is what makes a `etaFields > 0` family
 unable to complete before the projection fold runs. -/
-@[expose] def BlockEtaPinned (mode : CheckMode) (blockNames : List Name)
+@[expose] def BlockEtaPinned (mode : CheckMode) (blockNames : List Key)
     (env : Env) : Prop :=
-  ∀ (n : Name) (cvS : ConstantVal) (capsS : IndCaps),
+  ∀ (n : Key) (cvS : ConstantVal) (capsS : IndCaps),
     blockNames.contains n = true →
     env.find? n = some (.indInfo cvS capsS) → capsS.eta = true →
     EtaPins mode env n cvS.levelParams capsS ∧
@@ -1581,16 +1581,16 @@ unable to complete before the projection fold runs. -/
 
 /-- A projection function's name is never a block member's: block
 members are guarded `isProjFnShape = false`. -/
-theorem projFnName_ne_of_shape {T n : Name} {j : Nat}
+theorem projFnName_ne_of_shape {T n : Key} {j : Nat}
     (h : n.isProjFnShape = false) : projFnName T j ≠ n := by
   intro he
   rw [← he] at h
-  simp [projFnName, Name.isProjFnShape] at h
+  simp [projFnName, Key.isProjFnShape] at h
 
 /-- The stored-pins invariant steps at any fresh install whose name is
 not projection-shaped, given the new member's own data when it is an
 eta-capable former. -/
-theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Name}
+theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Key}
     {env : Env} {c₀ : ConstantInfo}
     (h : BlockEtaPinned mode blockNames env)
     (hfresh : env.find? c₀.name = none)
@@ -1601,7 +1601,7 @@ theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Name}
         (0 < capsS.etaFields →
           env.find? (projFnName c₀.name 0) = none)) :
     BlockEtaPinned mode blockNames ⟨c₀ :: env.consts⟩ := by
-  have hup : ∀ n : Name, env.find? (projFnName n 0) = none →
+  have hup : ∀ n : Key, env.find? (projFnName n 0) = none →
       (⟨c₀ :: env.consts⟩ : Env).find? (projFnName n 0) = none := by
     intro n hn
     rw [Env.find?_cons, if_neg (fun he =>
@@ -1641,7 +1641,7 @@ parameter count (`checkEtaThm`/`checkUnitThm`, through `EtaPins`),
 and the member's stored type is the model's under the block renaming
 (`checkMemberVal`), which keeps the telescope. -/
 theorem indCapsWF_of_pins {μ : CheckMode} {env : Env} {cvA : ConstantVal}
-    {caps : IndCaps} {f : Name → Name}
+    {caps : IndCaps} {f : Key → Key}
     (hpins : EtaPins μ env cvA.name cvA.levelParams caps)
     {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
     (hfm : env.find? (cvA.name.str "_model") =

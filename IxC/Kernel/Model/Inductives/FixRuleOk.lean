@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w
 
@@ -37,7 +37,7 @@ variable {V : Type w} [SetTheory V] {env : Env}
 /-- **The block split** of a spine fitting the recursor's binder data
 below the indices: the parameters, the motive (in its reading), the
 minors (in their ih-extended readings). -/
-theorem fixBlock_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
+theorem fixBlock_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
     {nP nIdx n ℓ w b : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP)
     {cds : List CtorDatumR} (hn : cds.length = n)
@@ -358,7 +358,7 @@ theorem ihAppAV_facts {ℓ w u s nP nF nIdx n j i : Nat} {rds : List (Nat × Nat
 
 set_option maxHeartbeats 6400000 in
 /-- **The rule's right-hand side is `WellDenotedV`** at every frame. -/
-theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
+theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
     {nP nIdx n ℓ w u s b : Nat} (hℓ : elimL.eval ψ = ℓ)
     (hb : pwBit ψ (Level.zeronessOf elimL) = b) (hbz : ℓ = 0 ↔ b = 0)
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
@@ -410,7 +410,7 @@ theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {eli
       srcOfEs (Ess.getD j []) (Fss.getD j []).length i = none →
       ∀ fs : List V, SpineFit ρp ((Fss.getD j []).take i) fs →
         interp V (consList fs ρp) ((Fss.getD j []).getD i default) ∈ˢ (univZero : V))
-    {j : Nat} {C : Name} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
+    {j : Nat} {C : Key} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
     {recIdxJ : List Nat} {EissJ : List (List AnnotTerm)} {tlsJ : List (List (Nat × Nat × AnnotTerm))}
     (hcd : cds[j]? = some (C, nF, ds, Es, recIdxJ, EissJ, tlsJ))
     (hlenDs : ds.length = nP + nF) (hFsj : Fss[j]? = some ((ds.drop nP).map (·.2.2)))

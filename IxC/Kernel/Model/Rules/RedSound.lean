@@ -27,7 +27,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -102,7 +102,7 @@ theorem Red.appFn_sound {d : Nat} {f f' a : Expr}
 
 /-- The `.proj` clause's scrutinee reduction (`projStep_of_claims`'s
 stuck branch, `Steps/ProjRows.lean:278`; `WellDenotedV_projAV_congr`). -/
-theorem Red.projArg_sound {d : Nat} {sn : Name}
+theorem Red.projArg_sound {d : Nat} {sn : Key}
     {i : Nat} {e e' : Expr} (he : RedSem m φ d e e') :
     RedSem m φ d (.proj sn i e) (.proj sn i e') := by
   intro hf Δa ea hC hea hg
@@ -314,7 +314,7 @@ theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr}
   exact heqra σ hσ
 
 /-- The binary row at the reduced arguments (`NatOpRow`). -/
-theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Name}
+theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Key}
     {a wa b wb r : Expr} {n₁ n₂ : Nat}
     (hc : c ∈ natBinOpNames) (hst : Ix.Kernel.natOpStored env c = true)
     (hwa : RedSem m φ d a wa) (hn₁ : Ix.Kernel.rawNatLit? wa = some n₁)
@@ -357,7 +357,7 @@ theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Name}
 
 /-- The tower law's iota clause at a certified spine (`projStep_of_claims`'s
 firing branch, `Steps/ProjRows.lean:278`; `teleFit_of_teleFitPA`). -/
-theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Name} {i : Nat}
+theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key} {i : Nat}
     {e : Expr} {entry : ProjEntry} {us : List Level} {cvC : ConstantVal}
     {nP nF : Nat}
     (hent : env.findProj? sn i = some entry)

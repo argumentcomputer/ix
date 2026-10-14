@@ -154,7 +154,7 @@ theorem instSeq_eq_self_of_bounded :
     exact ih (t - 1) hb (by simp only [List.length_cons] at hle; omega)
 
 theorem instSeq_proj :
-    ∀ (args : List Expr) (t : Nat) (s : Name) (j : Nat) (e : Expr),
+    ∀ (args : List Expr) (t : Nat) (s : Key) (j : Nat) (e : Expr),
       instSeq args t (.proj s j e) = .proj s j (instSeq args t e)
   | [], _, _, _, _ => rfl
   | a :: as, t, s, j, e => by
@@ -198,7 +198,7 @@ theorem stripPis_binder_bounded :
 
 /-! ## The generator -/
 
-theorem structProjBodiesGo_spec (T : Name) :
+theorem structProjBodiesGo_spec (T : Key) :
     ∀ (k i : Nat) (r : Expr) (bs : List Expr),
       structProjBodiesGo T k i r = some bs →
       bs.length = k ∧
@@ -238,7 +238,7 @@ theorem structProjBodiesGo_spec (T : Name) :
 of the constructor telescope peeled at the loose parameters and the
 first `i` subject projections (`structProjResidP`), and there is one
 per field. -/
-theorem structProjBodies_spec {T : Name} {nP nF : Nat} {cty : Expr}
+theorem structProjBodies_spec {T : Key} {nP nF : Nat} {cty : Expr}
     {bodies : Array Expr} (h : structProjBodies T nP nF cty = some bodies) :
     bodies.size = nF ∧
     ∀ i, i < nF → ∃ b' mb,
@@ -278,12 +278,12 @@ annotations). -/
 @[expose] def tfvD (nP : Nat) : Expr := Expr.fvar nP (.sort .zero)
 
 /-- The earlier projections of the subject variable. -/
-@[expose] def projArgsD (T : Name) (i nP : Nat) : List Expr :=
+@[expose] def projArgsD (T : Key) (i nP : Nat) : List Expr :=
   (List.range i).map fun j => Expr.proj T j (tfvD nP)
 
 theorem fvsD_length (nP : Nat) : (fvsD nP).length = nP := by simp [fvsD]
 
-theorem projArgsD_length (T : Name) (i nP : Nat) : (projArgsD T i nP).length = i := by
+theorem projArgsD_length (T : Key) (i nP : Nat) : (projArgsD T i nP).length = i := by
   simp [projArgsD]
 
 theorem fvsD_closed (nP : Nat) : ∀ a ∈ fvsD nP ++ [tfvD nP], a.looseBVarsBounded 0 = true := by
@@ -298,7 +298,7 @@ theorem fvsD_getElem? (nP k : Nat) (hk : k < nP) :
 
 /-- The loose parameter variables and projection substitutes are
 bounded at the parameters and the subject. -/
-theorem structProjArgs_bounded (T : Name) (nP i : Nat) :
+theorem structProjArgs_bounded (T : Key) (nP i : Nat) :
     ∀ a ∈ structProjPs nP ++ (List.range i).map (structProjArgP T),
       a.looseBVarsBounded (nP + 1) = true := by
   intro a ha
@@ -313,7 +313,7 @@ theorem structProjArgs_bounded (T : Name) (nP i : Nat) :
 /-- Instantiating the loose parameter variables and projection
 substitutes at the variables gives the variables and their
 projections. -/
-theorem structProjArgs_instSeq (T : Name) (nP i : Nat) :
+theorem structProjArgs_instSeq (T : Key) (nP i : Nat) :
     (structProjPs nP ++ (List.range i).map (structProjArgP T)).map
         (instSeq (fvsD nP ++ [tfvD nP]) nP)
       = fvsD nP ++ projArgsD T i nP := by
@@ -363,7 +363,7 @@ subject variables (the reading's opening of `projTele`) is the head
 domain of the constructor telescope instantiated at the variables and
 the subject's earlier projections — the fvar-side peel the readings
 already know how to read. -/
-theorem structProjBody_open {T : Name} {nP nF : Nat} {cty : Expr}
+theorem structProjBody_open {T : Key} {nP nF : Nat} {cty : Expr}
     {bodies : Array Expr} (h : structProjBodies T nP nF cty = some bodies)
     (hstrip : (cty.stripPis (nP + nF)).isSome = true)
     (hcl : cty.looseBVarsBounded 0 = true) {i : Nat} (hi : i < nF) :

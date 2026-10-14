@@ -32,7 +32,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal BinderMeta PropWhen)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal BinderMeta PropWhen)
 
 universe w
 
@@ -134,7 +134,7 @@ theorem liftN_eq_self_of_one {e : AnnotTerm} (h : ∀ k, AnnotTerm.liftN 1 e k =
     rw [show n + 1 = 1 + n from by omega, ← AnnotTerm.liftN_liftN e 1 n k,
       liftN_eq_self_of_one h n k, h k]
 
-theorem DenoteMetaSpine.append_inv {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+theorem DenoteMetaSpine.append_inv {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
     ∀ {as bs : List Expr} {vs : List AnnotTerm},
       DenoteMetaSpine acval env φ d (as ++ bs) vs →
       ∃ vs₁ vs₂, vs = vs₁ ++ vs₂ ∧
@@ -147,7 +147,7 @@ theorem DenoteMetaSpine.append_inv {acval : Name → (LevelParam → Nat) → An
       obtain ⟨vs₁, vs₂, rfl, h1, h2⟩ := DenoteMetaSpine.append_inv htl
       exact ⟨_ :: vs₁, vs₂, rfl, .cons ha h1, h2⟩
 
-theorem DenoteMetaSpine.unique {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+theorem DenoteMetaSpine.unique {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
     ∀ {as : List Expr} {vs vs' : List AnnotTerm},
       DenoteMetaSpine acval env φ d as vs → DenoteMetaSpine acval env φ d as vs' → vs = vs'
   | [], _, _, .nil, .nil => rfl
@@ -158,7 +158,7 @@ theorem DenoteMetaSpine.unique {acval : Name → (LevelParam → Nat) → AnnotT
 
 /-- The motive's domain reading `∀ ı⃗ (t : T p⃗ ı⃗), Sort ℓ` at the
 parameters' frame, over the former's index data `ips`. -/
-@[expose] def motiveAVI {env : Env} (m : EnvModel V env) (T : Name) (ψ : LevelParam → Nat) (nP nIdx : Nat)
+@[expose] def motiveAVI {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat) (nP nIdx : Nat)
     (ℓ : Level) (ips : List (Nat × Nat × AnnotTerm)) : AnnotTerm :=
   mkPisAV (rebit (pwBit ψ PropWhen.never) ips)
     (.pi 0 (pwBit ψ PropWhen.never)
@@ -168,12 +168,12 @@ parameters' frame, over the former's index data `ips`. -/
 /-- The major premise's domain reading under the motive, `n` minors
 and the index variables: the family at the parameters and the index
 variables. -/
-@[expose] def majorAVAt {env : Env} (m : EnvModel V env) (T : Name) (ψ : LevelParam → Nat) (nP nIdx n : Nat) :
+@[expose] def majorAVAt {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat) (nP nIdx n : Nat) :
     AnnotTerm :=
   AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + 1 + n + nIdx) ++ fieldBvars nIdx)
 
 /-- A constructor datum: name, field count, field data, index readings. -/
-abbrev CtorDatum := Name × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm
+abbrev CtorDatum := Key × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm
 
 /-! ## The per-constructor reading premise -/
 
@@ -182,7 +182,7 @@ abbrev CtorDatum := Name × Nat × List (Nat × Nat × AnnotTerm) × List AnnotT
 /-- A constant at the parameter variables and `nF` more variables
 above `o` extras reads to its leaf at the parameter and field
 variables. -/
-theorem denoteMeta_famSpine_at {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Name}
+theorem denoteMeta_famSpine_at {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key}
     {lps : List LevelParam} {ci : ConstantInfo} (hfC : env.find? C = some ci)
     (hlpsC : ci.toConstantVal.levelParams = lps)
     {nP nF o : Nat} {tfvs xFvs : List Expr}
@@ -227,7 +227,7 @@ Under `o` extras and the field variables, the residual's index
 expressions read to the constructor's own index readings lifted `o`
 above the fields: the opened residual `T p⃗ e⃗` reads to the lifted
 constructor body, whose spine is inverted. -/
-theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
+theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
     {lps : List LevelParam} {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nF nIdx o : Nat} {crest0 : Expr} {fbs : List (Expr × BinderMeta)} {es : List Expr}
@@ -306,7 +306,7 @@ theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → N
 
 /-- **The motive's type**, instantiated at the parameters, reads to
 `motiveAVI` over the former's index data. -/
-theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
     {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nIdx : Nat} {ℓ : Level} {tty itele motiveTy : Expr}

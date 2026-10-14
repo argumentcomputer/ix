@@ -35,7 +35,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -171,7 +171,7 @@ theorem Infer.fvar_sound {g : Grade} {d idx : Nat} {ty : Expr} (h : idx < d) :
 
 /-- `infer_const_claim(IO)`: `ConstType` + `AcvalValid`. -/
 theorem Infer.const_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
-    {n : Name} {us : List Level} {ci : Ix.Kernel.ConstantInfo}
+    {n : Key} {us : List Level} {ci : Ix.Kernel.ConstantInfo}
     (hf : env.find? n = some ci) (htower : ci.isTowerEntry = false)
     (hus : us.length = ci.toConstantVal.levelParams.length) :
     InferSem m φ g d (.const n us)
@@ -709,7 +709,7 @@ theorem Infer.appSkip_sound {d : Nat}
 /-- `inferProjStep_of_claims` / `inferProjStepIO_of_claims`
 (`Steps/ProjRows.lean:71`, `:160`): the tower law's typing clause. -/
 theorem Infer.proj_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
-    {sn : Name} {i : Nat} {pe tpe te : Expr} {us : List Level}
+    {sn : Key} {i : Nat} {pe tpe te : Expr} {us : List Level}
     {entry : ProjEntry}
     (htpe : InferSem m φ g d pe tpe) (hte : RedSem m φ d tpe te)
     (hhead : te.getAppFn = .const sn us)

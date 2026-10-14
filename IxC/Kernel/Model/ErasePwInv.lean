@@ -23,7 +23,7 @@ namespace Ix.Kernel.Model
 open Ix.Kernel.Semantics
 
 open Ix.Kernel.Term Ix.Kernel.Verify
-open Ix.Kernel (Expr Name Level BinderMeta)
+open Ix.Kernel (Expr Key Level BinderMeta)
 
 /-- `erasePw` inversion at a `∀`: the head is a `∀`, and
 its meta is exactly what the comparison forgives. -/
@@ -58,7 +58,7 @@ theorem erasePwNames_app_invS {e : Expr} {f a : Expr}
 
 /-- `erasePw` inversion at a constant (`Install/Axiom.lean`'s head
 inversion). -/
-theorem erasePwNames_const_invS {e : Expr} {n : Name} {us : List Level}
+theorem erasePwNames_const_invS {e : Expr} {n : Key} {us : List Level}
     (h : e.erasePw = .const n us) : e = .const n us :=
   erasePw_const_invS h
 

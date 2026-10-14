@@ -51,14 +51,14 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The reading's telescope -/
 

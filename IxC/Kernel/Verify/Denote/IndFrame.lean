@@ -361,7 +361,7 @@ theorem openPisAtFvars_instPisAt :
 
 /-- `instPisAt` outputs at `RenEqT`-related inputs are `RenEqT`-related,
 pointwise on the domains and on the residual. -/
-theorem instPisAt_renEq {f : Name → Name} :
+theorem instPisAt_renEq {f : Key → Key} :
     ∀ (as as' : List Expr) {ty ty' : Expr} {ds ds' : List Expr}
       {rs rs' : Expr},
       Expr.instPisAt as ty = some (ds, rs) →
@@ -664,7 +664,7 @@ theorem Expr.getAppArgs_length_instantiate1_fvar {i : Nat}
   | _ => intro k; first | rfl | (simp only [Expr.instantiate1]; rfl)
 
 /-- Renaming constants never changes an application's arity. -/
-theorem Expr.getAppArgs_length_renameConsts (f : Name → Name) :
+theorem Expr.getAppArgs_length_renameConsts (f : Key → Key) :
     ∀ (e : Expr),
       ((e.renameConsts f).getAppArgs).length = e.getAppArgs.length := by
   intro e
@@ -727,7 +727,7 @@ theorem instPisAt_fvar_residual_arity :
 /-- Substituting under a constant-headed application never changes its
 arity (the head cannot be hit, so no application node is created or
 absorbed). -/
-theorem Expr.getAppArgs_length_instantiate1_const {c : Name}
+theorem Expr.getAppArgs_length_instantiate1_const {c : Key}
     {cus : List Level} {v : Expr} :
     ∀ (e : Expr) (k : Nat), e.getAppFn = .const c cus →
       ((e.instantiate1 v k).getAppArgs).length = e.getAppArgs.length ∧
@@ -772,7 +772,7 @@ theorem Expr.getAppArgs_length_instantiateLevelParams
 /-- An `instPisAt` run over any spine lands at the raw telescope
 residual's arity, provided the residual is constant-headed (the
 nested runs' spines hold pin instantiations, not variables). -/
-theorem instPisAt_residual_arity_const {c : Name} {cus : List Level} :
+theorem instPisAt_residual_arity_const {c : Key} {cus : List Level} :
     ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {bs : List (Expr × BinderMeta)} {body : Expr},
@@ -821,7 +821,7 @@ theorem instPisAt_residual_arity_const {c : Name} {cus : List Level} :
         (Expr.getAppArgs_length_instantiate1_const _ _ hhead).1]
 
 /-- The application head under constant renaming. -/
-theorem Expr.getAppFn_renameConsts (f : Name → Name) :
+theorem Expr.getAppFn_renameConsts (f : Key → Key) :
     ∀ (e : Expr),
       (e.renameConsts f).getAppFn = (e.getAppFn).renameConsts f := by
   intro e
@@ -845,7 +845,7 @@ theorem Expr.getAppFn_instantiateLevelParams (ks : List LevelParam)
   | _ => rfl
 
 /-- Renaming constants never changes loose-bvar levels. -/
-theorem Expr.looseBVarsBounded_renameConsts (f : Name → Name) :
+theorem Expr.looseBVarsBounded_renameConsts (f : Key → Key) :
     ∀ (e : Expr) (k : Nat),
       Expr.looseBVarsBounded k (e.renameConsts f) =
         Expr.looseBVarsBounded k e := by
@@ -938,7 +938,7 @@ theorem instPisAt_fvar_denote_defined {cval : TConstVal} {env : Env}
 `proj` structure names, never `fvar` indices or `bvar`s (task #148,
 T6, prospective relocation — the TT lane's renamed walks want this
 too). -/
-theorem wscoped_renameConsts {f : Name → Name} :
+theorem wscoped_renameConsts {f : Key → Key} :
     ∀ (e : Expr) {d : Nat},
       Expr.WScoped d e → Expr.WScoped d (e.renameConsts f) := by
   intro e
@@ -947,7 +947,7 @@ theorem wscoped_renameConsts {f : Name → Name} :
 
 /-- Renaming rewrites each leaf's *annotation* and nothing else — the
 indices are untouched. -/
-theorem fvarLeaves_renameConstsE {f : Name → Name} :
+theorem fvarLeaves_renameConstsE {f : Key → Key} :
     ∀ (e : Expr), (e.renameConsts f).fvarLeaves
       = e.fvarLeaves.map
         (fun l => (l.1, l.2.renameConsts f)) := by
@@ -956,7 +956,7 @@ theorem fvarLeaves_renameConstsE {f : Name → Name} :
 
 /-- …so renaming preserves the leaf-annotation bound, by
 `looseBVarsBounded_renameConsts` at each leaf. -/
-theorem leavesBounded_renameConsts {f : Name → Name} (e : Expr)
+theorem leavesBounded_renameConsts {f : Key → Key} (e : Expr)
     (h : Expr.LeavesBounded e) :
     Expr.LeavesBounded (e.renameConsts f) := by
   intro l hl
@@ -1670,7 +1670,7 @@ T5 stage 3b): the statement is about `denote` and a `TConstVal`, so
 both verified lanes' nested bottoms read it. -/
 theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : LevelParam → Nat}
     {stmtTy : Expr} {K : Nat} {fvs : List Expr} {tbody : Expr}
-    {ℓA : Level} {αS lhsS rhsS : Expr} {fRn fCtor : Name}
+    {ℓA : Level} {αS lhsS rhsS : Expr} {fRn fCtor : Key}
     {lpsE lvls : List Level} {mI : Nat} {spN : List Expr}
     {ciCm : ConstantInfo} {Tstmt : Term}
     (hTstmt : denote cval env₀ ψ 0 stmtTy = some Tstmt)
@@ -1961,7 +1961,7 @@ theorem openPisAtFvars_length :
 
 
 /-- Constant renaming leaves the loose-bvar bound unchanged. -/
-theorem looseBVarsBounded_renameConsts {f : Name → Name} :
+theorem looseBVarsBounded_renameConsts {f : Key → Key} :
     ∀ (e : Expr) (k : Nat),
       (e.renameConsts f).looseBVarsBounded k = e.looseBVarsBounded k := by
   intro e
@@ -1971,7 +1971,7 @@ theorem looseBVarsBounded_renameConsts {f : Name → Name} :
 
 /-- `stripPis` commutes with constant renaming (renaming touches no
 binder structure). -/
-theorem stripPis_renameConsts {f : Name → Name} :
+theorem stripPis_renameConsts {f : Key → Key} :
     ∀ (n : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
       {body : Expr},
       e.stripPis n = some (bs, body) →
@@ -2003,7 +2003,7 @@ theorem stripPis_renameConsts {f : Name → Name} :
         rfl
 
 /-- Constant renaming keeps the application-spine arity. -/
-theorem getAppArgs_length_renameConsts {f : Name → Name} :
+theorem getAppArgs_length_renameConsts {f : Key → Key} :
     ∀ (e : Expr),
       (e.renameConsts f).getAppArgs.length = e.getAppArgs.length := by
   intro e

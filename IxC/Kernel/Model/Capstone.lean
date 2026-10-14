@@ -55,7 +55,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo)
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo)
 
 universe w
 
@@ -73,7 +73,7 @@ The premise is stated in exactly the shape the census's §1.5 P-native
 carrier field takes (`∀ ψ, ∃ u, cvalE emptyName ψ = emptyT u`), so S7
 discharges it by projection when the field lands; until then the fold
 layer supplies it from its v1 residue. -/
-theorem acval_empty_pinnedC (m : EnvModel V env) {n : Name}
+theorem acval_empty_pinnedC (m : EnvModel V env) {n : Key}
     (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
     (ψ : LevelParam → Nat) :
     ∃ u, m.acval n ψ = .const .empty [u] := by
@@ -83,7 +83,7 @@ theorem acval_empty_pinnedC (m : EnvModel V env) {n : Name}
 /-- …so its `interp` reading is the empty set, at every
 assignment.  Stated at any name whose leaf is an `emptyT` pin (task
 #181): `Empty`'s is `emptyT 1`, `False`'s is `emptyT 0`. -/
-theorem interp_acval_emptyC (m : EnvModel V env) {n : Name}
+theorem interp_acval_emptyC (m : EnvModel V env) {n : Key}
     (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
     (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (m.acval n ψ) = SetTheory.empty := by
@@ -98,7 +98,7 @@ a reserved constant whose direct pin is `emptyT u` — the membership is
 the leaf by the constant clause, and the leaf's `interp` value is the
 empty set by erasure injectivity plus `basis_pinnedL`.  The `Empty` and
 `False` capstones are its two instances. -/
-theorem no_constant_of_emptyPin (mp : EnvModelM V μ env) {n : Name} {u : Nat}
+theorem no_constant_of_emptyPin (mp : EnvModelM V μ env) {n : Key} {u : Nat}
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
     (hpin : ∀ ψ : LevelParam → Nat,
       Ix.Kernel.Verify.pinnedStructT n ψ = some (emptyT u))

@@ -36,7 +36,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape
   NativeParts BinderMeta ProjEntry ProjTable RecRule RecFieldKind projTableName)
 
 universe w
@@ -129,7 +129,7 @@ theorem fixCapsLawsAt_vacuous {env' : Env} (m' : EnvModel V env') {p : NativePar
   · exact nomatch he'
 
 /-- `NoProjEnv` across the constructors' conses. -/
-theorem noProjEnv_consSumCtors {T : Name} {i nP : Nat} :
+theorem noProjEnv_consSumCtors {T : Key} {i nP : Nat} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {env₀ : Env},
       NoProjEnv env₀ T i → (∀ cA ∈ ctorsA, Expr.NoProjAt T i cA.1.type) →
       NoProjEnv (Ix.Kernel.consSumCtors nP ctorsA env₀) T i

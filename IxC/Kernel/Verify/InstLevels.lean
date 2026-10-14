@@ -229,7 +229,7 @@ theorem allLevelParamsDefined_stripPis_body {ps : List LevelParam} :
       exact ih hb hp.1.2
 
 /-- Renaming constants commutes with instantiation (general argument). -/
-theorem renameConsts_instantiate1_gen (f : Name → Name) {v : Expr} :
+theorem renameConsts_instantiate1_gen (f : Key → Key) {v : Expr} :
     ∀ (e : Expr) (k : Nat),
       (e.instantiate1 v k).renameConsts f =
         (e.renameConsts f).instantiate1 (v.renameConsts f) k := by
@@ -259,7 +259,7 @@ theorem instantiateLevelParams_instantiate1 (ks : List LevelParam) (us : List Le
     · rfl
     · split <;> simp [instantiateLevelParams]
 
-theorem renameConsts_instantiate1 (f : Name → Name)
+theorem renameConsts_instantiate1 (f : Key → Key)
     {d : Nat} {ty : Expr} :
     ∀ (e : Expr) (k : Nat),
       (e.instantiate1 (.fvar d ty) k).renameConsts f =
@@ -286,7 +286,7 @@ theorem allLevelParamsDefined_instantiate1 {ps : List LevelParam} {d : Nat} {ty 
 
 /-- Renaming an instantiation sequence: pushing the renaming inside is
 exact on the telescope and erased on the (fvar) arguments. -/
-theorem instSeq_renameConsts {f : Name → Name} :
+theorem instSeq_renameConsts {f : Key → Key} :
     ∀ (args : List Expr) (t : Nat) {X : Expr},
       (∀ a ∈ args, ErasedEq (a.renameConsts f) a) →
       ErasedEq ((instSeq args t X).renameConsts f)

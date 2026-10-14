@@ -41,7 +41,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 
 universe w
 
@@ -53,7 +53,7 @@ set_option maxHeartbeats 6400000 in
 spine satisfies and fits the checked statement's telescope. -/
 theorem zipper {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
     {rP cnP cnF mI : Nat} {xs ys : List AnnotTerm} {ρ : Nat → V}
     (hrPmI : rP ≤ mI) (hlenX : xs.length = mI)
     (hlenY : ys.length = cnP + cnF)

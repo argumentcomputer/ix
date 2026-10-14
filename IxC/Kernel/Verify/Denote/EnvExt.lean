@@ -20,7 +20,7 @@ open Ix.Kernel.Term
 
 /-- The stored level parameters only read the constant's
 level-parameter slot. -/
-theorem levelParamsAt_ext {env₁ env₂ : Env} {n : Name}
+theorem levelParamsAt_ext {env₁ env₂ : Env} {n : Key}
     (h : (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams)) :
     levelParamsAt env₁ n = levelParamsAt env₂ n := by
@@ -40,7 +40,7 @@ theorem denote_env_ext {cval : TConstVal} {env₁ env₂ : Env}
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))
     (hnat : natLitSupported env₁ = natLitSupported env₂)
     (hstr : strLitSupported env₁ = strLitSupported env₂)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key) (i : Nat),
       env₁.findProj? sn i = env₂.findProj? sn i) :
     ∀ (d : Nat) (e : Expr),
       denote cval env₁ φ d e = denote cval env₂ φ d e := by

@@ -246,7 +246,7 @@ abbrev structEtaCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat →
 abbrev structEtaCertWithFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
     Expr → CheckM Bool := structEtaCertWith mode (pureFns mode env fuel) env
 
-abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat) (T : Name)
+abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat) (T : Key)
     (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     List Nat → CheckM Bool :=
   structEtaProjCerts (pureFns mode env fuel) env d T us' targs b lpsT
@@ -258,21 +258,21 @@ abbrev etaCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat)
     (ty body : Expr) (mb : BinderMeta) (b : Expr) : CheckM Bool :=
   etaCert mode (pureFns mode env fuel) env d ty body mb b
 
-abbrev majorToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Name →
+abbrev majorToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Key →
     List RecRule → Expr → CheckM Expr := majorToCtor mode (pureFns mode env fuel) env
 
 abbrev litMajorToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
     CheckM Expr := litMajorToCtor (pureFns mode env fuel) env
 
-abbrev prepareMajorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Name →
+abbrev prepareMajorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Key →
     List RecRule → Expr → CheckM Expr := prepareMajor mode (pureFns mode env fuel) env
 
 abbrev projLitToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
     CheckM Expr := projLitToCtor (pureFns mode env fuel) env
 
-abbrev projCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Name →
+abbrev projCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Key →
     List Level → List Expr → CheckM Bool := projCert (pureFns mode env fuel) env
-abbrev projCertAtFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Bool → Name →
+abbrev projCertAtFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Bool → Key →
     List Level → List Expr → CheckM Bool := projCertAt (pureFns mode env fuel) env
 
 abbrev reduceNatFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →

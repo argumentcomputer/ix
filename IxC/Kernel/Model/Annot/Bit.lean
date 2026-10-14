@@ -62,7 +62,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level PropWhen
+open Ix.Kernel (CheckMode Env Expr Key Level PropWhen
   natLitSupported strLitSupported)
 
 /-! ## The regime bit -/
@@ -150,7 +150,7 @@ theorem pwBit_substPW (φ : LevelParam → Nat) (ks : List LevelParam)
 binder numeral read off the term's own meta (`pwBit φ m.pw`) — no
 checker runs, no fuel, no mode.  See the module docstring for the
 `pi` `u`-slot convention. -/
-@[expose] def denoteMeta (acval : Name → (LevelParam → Nat) → AnnotTerm)
+@[expose] def denoteMeta (acval : Key → (LevelParam → Nat) → AnnotTerm)
     (env : Env) (φ : LevelParam → Nat) :
     (d : Nat) → Expr → Option AnnotTerm
   | _, .sort u => some (.sort (u.eval φ))
@@ -228,7 +228,7 @@ the denotation does not. -/
 
 /-- The validated-annotation reading is an annotation of the
 denotation, exactly. -/
-theorem denoteMeta_erase {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_erase {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ) :
     ∀ (d : Nat) (e : Expr) {ea : AnnotTerm},

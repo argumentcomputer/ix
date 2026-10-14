@@ -40,7 +40,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo)
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo)
 
 universe w
 
@@ -55,7 +55,7 @@ variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 `EnvModel` (batch 8 — the canonical file stays untouched). -/
 
 /-- A parameter-free slot is valued independently of the assignment. -/
-theorem acval_isEmpty (m : EnvModel V env) {n : Name}
+theorem acval_isEmpty (m : EnvModel V env) {n : Key}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (ψ₁ ψ₂ : LevelParam → Nat) : m.acval n ψ₁ = m.acval n ψ₂ := by
@@ -66,7 +66,7 @@ theorem acval_isEmpty (m : EnvModel V env) {n : Name}
 
 /-- A one-parameter slot substituted at `Level.zero` is valued
 independently of the assignment. -/
-theorem acval_oneParam (m : EnvModel V env) {n : Name}
+theorem acval_oneParam (m : EnvModel V env) {n : Key}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
     (ψ₁ ψ₂ : LevelParam → Nat) :
@@ -84,7 +84,7 @@ theorem acval_oneParam (m : EnvModel V env) {n : Name}
   · simp [hlen]
 
 /-- The scalar literal-support slots, read off their shape guards. -/
-theorem acval_scalar (m : EnvModel V env) (nm : Name)
+theorem acval_scalar (m : EnvModel V env) (nm : Key)
     (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
@@ -97,7 +97,7 @@ theorem acval_scalar (m : EnvModel V env) (nm : Name)
     exact acval_isEmpty m hx (hshape ci hfok) _ _
 
 /-- The two one-parameter literal-support slots. -/
-theorem acval_one (m : EnvModel V env) (nm : Name)
+theorem acval_one (m : EnvModel V env) (nm : Key)
     (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →

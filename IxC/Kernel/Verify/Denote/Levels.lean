@@ -47,7 +47,7 @@ private theorem cval_of_isEmpty {env : Env} {cval : TConstVal}
       ∀ φ₁ φ₂ : LevelParam → Nat,
         (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
         cval n φ₁ = cval n φ₂)
-    {n : Name} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (φ₁ φ₂ : LevelParam → Nat) : cval n φ₁ = cval n φ₂ := by
   refine hp n ci hf φ₁ φ₂ ?_
@@ -104,7 +104,7 @@ private theorem natLitT_params {env : Env} {cval : TConstVal}
 independently of the assignment: the substitution overrides the only
 parameter the valuation may read. -/
 private theorem cval_of_oneParam {env : Env} {cval : TConstVal}
-    (hp : ValParams env cval) {n : Name} {ci : ConstantInfo}
+    (hp : ValParams env cval) {n : Key} {ci : ConstantInfo}
     (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1) (φ₁ φ₂ : LevelParam → Nat) :
     cval n (Level.substFn φ₁ ci.toConstantVal.levelParams [.zero])
@@ -129,7 +129,7 @@ private theorem strLitT_params {env : Env} {cval : TConstVal}
   simp only [natLitSupported, Bool.and_eq_true] at h0
   obtain ⟨⟨-, hz⟩, hs⟩ := h0
   -- the five scalar slots
-  have scalar : ∀ (nm : Name) (f : Option ConstantInfo → Bool),
+  have scalar : ∀ (nm : Key) (f : Option ConstantInfo → Bool),
       f (env.find? nm) = true → f none = false →
       (∀ ci, f (some ci) = true → ci.toConstantVal.levelParams.isEmpty = true) →
       cval nm (Level.substFn φ₁ [] []) = cval nm (Level.substFn φ₂ [] []) := by
@@ -164,7 +164,7 @@ private theorem strLitT_params {env : Env} {cval : TConstVal}
             simpa [ConstantInfo.toConstantVal] using h.1
           | _ => simp [natSuccOk] at h)
   -- the two one-parameter slots
-  have oneParam : ∀ (nm : Name) (f : Option ConstantInfo → Bool),
+  have oneParam : ∀ (nm : Key) (f : Option ConstantInfo → Bool),
       f (env.find? nm) = true → f none = false →
       (∀ ci, f (some ci) = true →
         ci.toConstantVal.levelParams.length = 1) →

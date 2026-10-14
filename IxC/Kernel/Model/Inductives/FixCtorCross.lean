@@ -21,7 +21,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w
 
@@ -61,7 +61,7 @@ theorem ConstsBound.cons {c : ConstantInfo} :
 
 /-- **The recursive constructor data cross a cons** whose head is not
 the block's former. -/
-theorem FixCtorDataI.cross {m : EnvModel V env} {env₀ : Env} {T : Name} {lps : List LevelParam}
+theorem FixCtorDataI.cross {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : List LevelParam}
     {cvC : ConstantVal} {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool}
     {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}

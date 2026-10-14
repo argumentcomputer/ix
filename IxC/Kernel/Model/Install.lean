@@ -41,7 +41,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint)
 
 universe w
@@ -66,12 +66,12 @@ theorem findPreserved_cons {c₀ : ConstantInfo}
 
 /-- The bit-validity combinator for a fresh leaf (`acvalWith_wellDenoted`'s
 `AnnotValid` twin). -/
-theorem acvalWith_validV {acval : Name → (LevelParam → Nat) → AnnotTerm}
-    {n : Name} {A : (LevelParam → Nat) → AnnotTerm}
-    (h : ∀ (m : Name) (ψ : LevelParam → Nat) (ρ : Nat → V),
+theorem acvalWith_validV {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    {n : Key} {A : (LevelParam → Nat) → AnnotTerm}
+    (h : ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (acval m ψ))
     (hA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), AnnotValid V ρ (A ψ)) :
-    ∀ (m : Name) (ψ : LevelParam → Nat) (ρ : Nat → V),
+    ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (acvalWith acval n A m ψ) := by
   intro m ψ ρ
   by_cases hm : m = n
@@ -83,7 +83,7 @@ survive the extension and ignore the fresh leaf — the composition of
 `denoteMeta_envExtend` (a theorem) and `denoteMeta_acvalWith_fresh`.  The
 harvest layer reads it directly; `declStep_preserves_of_cons` uses it for
 every old-constant field. -/
-theorem denoteMeta_cons_fresh {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_fresh {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
@@ -102,7 +102,7 @@ equality form is refutable at support-completing installs — see
 extension and ignores the fresh leaf.  The only direction the step
 and the harvests use for their subjects, whose acceptance guaranteed
 prefix-supported literals. -/
-theorem denoteMeta_cons_fresh_mono {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_fresh_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
@@ -120,7 +120,7 @@ prefix reading of a subject the head's slot does not mention
 (`ConsCrossAt`) survives the cons — the fresh crossing at a non-table
 head, the table-slot refinement (`denoteMeta_envExtend_mono_at`) at a
 table one. -/
-theorem denoteMeta_cons_mono {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     {e : Expr} (hat : ConsCrossAt c₀ e)

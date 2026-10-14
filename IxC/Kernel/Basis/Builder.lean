@@ -39,7 +39,7 @@ annotations.  Opened by the pin modules (`IxC/Kernel/Basis/*`,
 namespace BasisDSL
 
 /-- A top-level (single-component) name: `bn "Eq"` is `Eq`. -/
-def bn (s : String) : Name := .str .anonymous s
+def bn (s : String) : Key := .str .anonymous s
 
 /-- Universe parameter `0` (the exporter's `u`) — every basis block's
 first one. -/
@@ -75,7 +75,7 @@ def prop : Expr := .sort .zero
 def type1 : Expr := .sort (.succ .zero)
 
 /-- A constant, at the given universe arguments. -/
-def cnst (n : Name) (us : List Level := []) : Expr := .const n us
+def cnst (n : Key) (us : List Level := []) : Expr := .const n us
 
 /-! **Binder names and binder infos are for the reader only** (tasks
 #203/#205).  `Expr` carries neither (task #205: the official kernel's
@@ -119,7 +119,7 @@ def ap4 (f a b c d : Expr) : Expr := .app (.app (.app (.app f a) b) c) d
 /-- A raw iota rule: the install-computed fields (`ctorParams`,
 `fire`, `k`, `eta`, `paramsBlind`) at their parse placeholders, which
 is what the exporter emits and what `#annotate_basis` recomputes. -/
-def rule (ctor : Name) (nfields : Nat) (rhs : Expr) : RecRule :=
+def rule (ctor : Key) (nfields : Nat) (rhs : Expr) : RecRule :=
   ⟨ctor, nfields, 0, .inert, rhs, false, false, false⟩
 
 end BasisDSL

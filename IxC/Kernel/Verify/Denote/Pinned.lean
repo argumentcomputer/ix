@@ -45,7 +45,7 @@ Each would have been caught only here, because `val_params` is what
 they violate and nothing before the install asserts it for a basis
 constant.  That is the house rule's point exactly (`IxC/Kernel/Term/DESIGN.md`
 §3.1): a definition is a conjecture until a consumer elaborates it. -/
-@[expose] def pinnedStructT (n : Name) (ψ : LevelParam → Nat) : Option Term :=
+@[expose] def pinnedStructT (n : Key) (ψ : LevelParam → Nat) : Option Term :=
   if n = natName then some (.const .nat [])
   else if n = natZeroName then some (.const .natZero [])
   else if n = natSuccName then some (.const .natSucc [])
@@ -95,7 +95,7 @@ from the table: that a stored reserved name holds the pin whatever its
 kind — which is what lets `Model.eq_equality` (`IxC/Kernel/Denotes.lean`)
 speak about the stored `Eq` without hypothesising its declaration. -/
 @[expose] def BasisPinnedTT (env : Env) (cval : TConstVal) : Prop :=
-  ∀ (n : Name) (ci : ConstantInfo),
+  ∀ (n : Key) (ci : ConstantInfo),
     env.find? n = some ci →
     reservedBasisNames.contains n = true →
     ci = pinnedInfo n ∧

@@ -54,7 +54,7 @@ theorem hasFvar_liftLooseBVars (n : Nat) :
     simp_all [Expr.liftLooseBVars, Expr.hasFvar]
   case bvar i => split <;> simp [Expr.hasFvar]
 
-theorem hasFvar_renameConsts (f : Name → Name) :
+theorem hasFvar_renameConsts (f : Key → Key) :
     ∀ (e : Expr), (e.renameConsts f).hasFvar = e.hasFvar := by
   intro e
   induction e <;> simp_all [Expr.renameConsts, Expr.hasFvar]
@@ -657,7 +657,7 @@ theorem unwrapOr_atF_ok {α : Type} {o : Option α} {err : CheckError}
 
 /-- Invert a stored-constant lookup (kind-agnostic: the certificate
 checks consume only the stored constant's type). -/
-theorem findCV?_ok {env : Env} {n : Name} {cvt : ConstantVal}
+theorem findCV?_ok {env : Env} {n : Key} {cvt : ConstantVal}
     (h : env.findCV? n = some cvt) :
     ∃ ci, env.find? n = some ci ∧ ci.toConstantVal = cvt := by
   simp only [Env.findCV?, Option.map_eq_some_iff] at h
@@ -762,7 +762,7 @@ set_option maxHeartbeats 6400000 in
 /-- The iota-sides type certificate, `wfOpsM mode` to pure (task #100
 stage 3). -/
 theorem checkIotaSidesTy_wfimp {envSelf : Env} (henvSelf : EnvWF envSelf)
-    {depth : Nat} {alphaS lhsS rhsS : Expr} {ℓA : Level} {cvName : Name}
+    {depth : Nat} {alphaS lhsS rhsS : Expr} {ℓA : Level} {cvName : Key}
     {F : Nat} {v : Unit}
     (hα : WScoped depth alphaS) (hl : WScoped depth lhsS)
     (hr : WScoped depth rhsS)
@@ -846,7 +846,7 @@ type, the constructor type and the annotated rule right-hand side are
 closed; everything the check compares is scoped at the opened
 telescope's depth. -/
 theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
+    (henvSelf : EnvWF envSelf) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
     {v : Unit}
@@ -1081,7 +1081,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
 
 /-- A successful `nestedRuleShape` guards its stored parameter
 instantiations: they are fvar-free. -/
-theorem nestedRuleShape_pins {env' envSelf : Env} {cvName : Name}
+theorem nestedRuleShape_pins {env' envSelf : Env} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP cnP j : Nat}
     {lvls : List Level} {pins : List Expr}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
@@ -1103,7 +1103,7 @@ set_option maxHeartbeats 6400000 in
 `checkIotaThm_wfimp` with the constructor's parameters and levels
 fixed at the stored instantiations. -/
 theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
+    (henvSelf : EnvWF envSelf) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
     {v : RecRuleFire}
@@ -1402,7 +1402,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     exact h
 
 theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
+    (henvSelf : EnvWF envSelf) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {F : Nat} {v : RecRule} (htyA : tyA.hasFvar = false)
     (h : (checkIotaRule mode (wfOpsM mode) env' envSelf f cvName lps tyA
@@ -1482,7 +1482,7 @@ theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   exact h
 
 theorem checkIotaRules_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
+    (henvSelf : EnvWF envSelf) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP : Nat} {F : Nat}
     (htyA : tyA.hasFvar = false) :
     ∀ {j : Nat} {rules rules' : List RecRule},
@@ -1508,7 +1508,7 @@ theorem checkIotaRules_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     exact h
 
 /-- The member-against-model check, `wfOpsM mode` run to pure run. -/
-theorem checkMemberVal_wfimp {blockNames : List Name} {env' : Env}
+theorem checkMemberVal_wfimp {blockNames : List Key} {env' : Env}
     (henv' : EnvWF env') {cv : ConstantVal} {F : Nat} {v : ConstantVal}
     (h : (checkMemberVal (wfOpsM mode) blockNames env' cv).val F = .ok v) :
     checkMemberVal (fueledOps mode F) blockNames env' cv = .ok v := by
@@ -1707,7 +1707,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
   exact h
 
 /-- The stored constructor behind a successful projection lookup. -/
-theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
+theorem checkProjLookups_ctor {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal}
     (h : (checkProjLookups env' T ctorName lps nP nF i :
       CheckM (ConstantVal × ConstantVal)) = .ok (cvj, mcv)) :
@@ -1759,7 +1759,7 @@ theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
   next => exact nomatch h
 
 /-- Well-formedness of a successfully checked projection type. -/
-theorem checkProjTy_wf {env' : Env} {T ctorName : Name}
+theorem checkProjTy_wf {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {mty pty : Expr} {nP nF : Nat}
     (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM Expr) =
       .ok pty) :
@@ -1789,7 +1789,7 @@ set_option maxHeartbeats 6400000 in
 stage 3: the side certificates run at the opened statement telescope,
 which is scoped by the stored statement's closedness). -/
 theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List LevelParam} {cvj : ConstantVal}
+    {T ctorName : Key} {lps : List LevelParam} {cvj : ConstantVal}
     {nP nF i F : Nat} {v : Unit}
     (h : (checkProjIota mode (wfOpsM mode) env' env' T ctorName lps cvj nP nF
       i).val F = .ok v) :
@@ -1933,7 +1933,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
     (WScoped_getD' htargsW 1) (WScoped_getD' htargsW 2) h
 
 theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i F : Nat} {v : Env}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i F : Nat} {v : Env}
     (h : (checkProjFn mode (wfOpsM mode) env' T ctorName lps nP nF i).val F = .ok v) :
     checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok v := by
   unfold checkProjFn at h ⊢
@@ -1978,7 +1978,7 @@ theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
   exact h
 
 theorem installProjFnStep_wfimp {e : Env} (he : EnvWF e)
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i F : Nat} {e' : Env}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i F : Nat} {e' : Env}
     (h : (installProjFnStep mode (wfOpsM mode) T ctorName lps nP nF e i).val F =
       .ok e') :
     installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF e i = .ok e' := by
@@ -1994,7 +1994,7 @@ theorem installProjFnStep_wfimp {e : Env} (he : EnvWF e)
 
 /-- The recurrence equations' sides are well-scoped at depth 2 (their
 free variables are `fvar 0`/`fvar 1` with closed annotations). -/
-theorem natOpEquations_wscopedB {c : Name} (hc : c ∈ natOpNames) :
+theorem natOpEquations_wscopedB {c : Key} (hc : c ∈ natOpNames) :
     ∀ eq ∈ natOpEquations 0 c,
       eq.1.wscopedB 2 = true ∧ eq.2.wscopedB 2 = true := by
   simp only [natOpNames, List.mem_cons, List.not_mem_nil, or_false] at hc
@@ -2010,7 +2010,7 @@ theorem natOpEquations_wscopedB {c : Name} (hc : c ∈ natOpNames) :
            simp +decide [Expr.wscopedB])
 
 /-- Substituting a closed value for a constant preserves scoping. -/
-theorem wscopedB_substConst0 {n : Name} {r : Expr}
+theorem wscopedB_substConst0 {n : Key} {r : Expr}
     (hr : r.hasFvar = false) :
     ∀ (e : Expr) {d : Nat}, e.wscopedB d = true →
       (Expr.substConst0 n r e).wscopedB d = true
@@ -2036,7 +2036,7 @@ theorem atF_throw {α : Type} {e : CheckError} {F : Nat} {v : α}
 /-- The pinned open certificate statements are well-scoped at the
 certificate frame: hypotheses at their own binder index (they ride as
 the `fvar 2`/`fvar 3` annotations), the equation at the full frame. -/
-theorem divModCertStmts_wscopedB {c : Name} (hc : c ∈ natDivModNames) :
+theorem divModCertStmts_wscopedB {c : Key} (hc : c ∈ natDivModNames) :
     ∀ st ∈ divModCertStmts c,
       (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧ st.2.wscopedB 4 = true := by
   simp only [natDivModNames, List.mem_cons, List.not_mem_nil, or_false] at hc
@@ -2064,7 +2064,7 @@ theorem divModCertApplied_wscopedB {proofS : Expr} {hyps : List Expr}
   | _ :: _ :: _ :: _, hh => simp [Expr.wscopedB, hpw]
 
 theorem checkDivModCerts_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} {annVal : Expr} (hvf : annVal.hasFvar = false) :
+    {c : Key} {annVal : Expr} (hvf : annVal.hasFvar = false) :
     ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
       (∀ st ∈ stmts, (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧
         st.2.wscopedB 4 = true) →
@@ -2129,7 +2129,7 @@ theorem checkDivModCerts_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
 variant's guards supply the pin's scoping, the definition check the
 stored value's; task #273). -/
 theorem checkDivModPinAt_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames) {value' : Expr}
+    {c : Key} (hc : c ∈ natDivModNames) {value' : Expr}
     (hvf : value'.hasFvar = false) {ps : NatOpPinSet}
     (hping : (divModPinGuard ps env c &&
       divModCertsGuard ps env c value') = true) {b : Bool}
@@ -2171,7 +2171,7 @@ family's combinator hands its continuation `none`, and so does the
 pure lane's — the two loops accumulate the same reasons and agree
 branch for branch. -/
 theorem checkDivModPinLoop_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames) {value' : Expr}
+    {c : Key} (hc : c ∈ natDivModNames) {value' : Expr}
     (hvf : value'.hasFvar = false) {u : Unit} :
     ∀ {pss : List NatOpPinSet} {tried : List String},
       (checkDivModPinLoop (wfOpsM mode) env c value' pss tried).val F = .ok u →
@@ -2200,7 +2200,7 @@ theorem checkDivModPinLoop_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
     case isFalse => exact checkDivModPinLoop_wfimp henv hc hvf
 
 theorem checkDivModPin_wfimp {env env2 : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames)
+    {c : Key} (hc : c ∈ natDivModNames)
     (hv'f : ∀ cv' v' h', env2.find? c = some (.defnInfo cv' v' h') →
       v'.hasFvar = false)
     {u : Unit} (h : (checkDivModPin (wfOpsM mode) pins env env2 c).val F = .ok u) :
@@ -2228,7 +2228,7 @@ theorem checkDivModPin_wfimp {env env2 : Env} (henv : EnvWF env) {F : Nat}
 /-- The compiler-trust install gate, `wfOpsM mode` run to pure run (the
 raw witness value's scoping comes from the preceding opaque check). -/
 theorem checkReducePin_wfimp {env env2 : Env} (henv : EnvWF env)
-    {F : Nat} {c : Name} {value : Expr}
+    {F : Nat} {c : Key} {value : Expr}
     (hvf : value.hasFvar = false)
     {u : Unit}
     (h : (checkReducePin (wfOpsM mode) env env2 c value).val F = .ok u) :
@@ -2444,7 +2444,7 @@ theorem stripPis_WScoped {d : Nat} :
 
 /-- The projection table, `wfOpsM mode` run to pure run (the stage is
 ops-free, task #175 S1). -/
-theorem checkStructProjTable_wfimp {T C : Name} {lps : List LevelParam}
+theorem checkStructProjTable_wfimp {T C : Key} {lps : List LevelParam}
     {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal}
     {env v : Env} {F : Nat}
     (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM Env).val F

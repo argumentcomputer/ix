@@ -134,7 +134,7 @@ verdict *in this environment* and not where the variant came from.  So
 the pack says only that SOME variant's guards passed and certificates
 checked, which is what an install at any pin list establishes. -/
 def DivModPinRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
-    (c : Name) (value' : Expr) : Prop :=
+    (c : Key) (value' : Expr) : Prop :=
   divModEnvGuard env₂ c = true ∧
   -- the pin variant that matched (task #273): its guards, its pin
   -- annotated, its certificates checked
@@ -149,7 +149,7 @@ def DivModPinRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
 outputs and the recorded identity-certificate run, without the
 derivation the identity carries beside it. -/
 def ReducePinRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
-    (c : Name) (value : Expr) : Prop :=
+    (c : Key) (value : Expr) : Prop :=
   reduceStoredOk env₂ c = true ∧
   reduceElemOk env c = true ∧
   reducePinGuard env c = true ∧

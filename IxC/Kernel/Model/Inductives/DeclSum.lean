@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape
   BinderMeta RecRule)
 
 universe w
@@ -58,7 +58,7 @@ theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
 /-! ## The constructors' loop -/
 
 /-- The facts about the pending constructors at an environment. -/
-@[expose] def PendingAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+@[expose] def PendingAt {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
@@ -69,7 +69,7 @@ theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
     CtorDataI m T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF i) (dsF i) (esF i) (srcsF i)
 
 /-- The facts about the consed constructors at an environment. -/
-@[expose] def ConsedAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+@[expose] def ConsedAt {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))

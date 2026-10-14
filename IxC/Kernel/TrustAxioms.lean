@@ -49,31 +49,31 @@ open Name (anonymous)
 open BasisDSL
 
 /-- The name `True`. -/
-def trueName : Name := anonymous |>.str "True"
+def trueName : Key := anonymous |>.str "True"
 
 /-- The name `True.intro`. -/
-def trueIntroName : Name := trueName |>.str "intro"
+def trueIntroName : Key := trueName |>.str "intro"
 
 /-- The name `Lean.trustCompiler`. -/
-def trustCompilerName : Name := (anonymous |>.str "Lean") |>.str "trustCompiler"
+def trustCompilerName : Key := (anonymous |>.str "Lean") |>.str "trustCompiler"
 
 /-- The name `Lean.reduceNat`. -/
-def reduceNatName : Name := (anonymous |>.str "Lean") |>.str "reduceNat"
+def reduceNatName : Key := (anonymous |>.str "Lean") |>.str "reduceNat"
 
 /-- The name `Lean.reduceBool`. -/
-def reduceBoolName : Name := (anonymous |>.str "Lean") |>.str "reduceBool"
+def reduceBoolName : Key := (anonymous |>.str "Lean") |>.str "reduceBool"
 
 /-- The name `Lean.ofReduceNat`. -/
-def ofReduceNatName : Name := (anonymous |>.str "Lean") |>.str "ofReduceNat"
+def ofReduceNatName : Key := (anonymous |>.str "Lean") |>.str "ofReduceNat"
 
 /-- The name `Lean.ofReduceBool`. -/
-def ofReduceBoolName : Name := (anonymous |>.str "Lean") |>.str "ofReduceBool"
+def ofReduceBoolName : Key := (anonymous |>.str "Lean") |>.str "ofReduceBool"
 
 /-- The reduce operations pinned at their `opaque` install. -/
-def reduceOpNames : List Name := [reduceNatName, reduceBoolName]
+def reduceOpNames : List Key := [reduceNatName, reduceBoolName]
 
 /-- The reduce operation an `ofReduce*` axiom speaks about. -/
-def ofReduceOp (n : Name) : Name :=
+def ofReduceOp (n : Key) : Key :=
   if n = ofReduceNatName then reduceNatName else reduceBoolName
 
 /-! ## Pinned shapes
@@ -98,20 +98,20 @@ def trustCompilerA : ConstantVal := ⟨trustCompilerName, [], .const trueName []
 def boolCvA : ConstantVal := ⟨boolName, [], .sort (.succ .zero)⟩
 
 /-- The element inductive of a reduce operation. -/
-def reduceElemName (c : Name) : Name :=
+def reduceElemName (c : Key) : Key :=
   if c = reduceNatName then natName else boolName
 
 /-- The element type of a reduce operation, as the pinned constant. -/
-def reduceElemTy (c : Name) : Expr :=
+def reduceElemTy (c : Key) : Expr :=
   if c = reduceNatName then .const natName [] else .const boolName []
 
 /-- Raw pinned type of `Lean.reduceNat` / `Lean.reduceBool`. -/
-def reduceOpRaw (c : Name) : ConstantVal :=
+def reduceOpRaw (c : Key) : ConstantVal :=
   ⟨c, [], pi "n" (reduceElemTy c) (reduceElemTy c)⟩
 
 /-- Raw pinned type of `Lean.ofReduceNat` / `Lean.ofReduceBool`:
 `∀ (a b : τ), reduce a = b → a = b` at `τ = Nat` / `Bool`. -/
-def ofReduceRaw (n : Name) : ConstantVal :=
+def ofReduceRaw (n : Key) : ConstantVal :=
   let c := ofReduceOp n
   let τ := reduceElemTy c
   let eqApp : Expr → Expr → Expr := fun x y =>
@@ -146,11 +146,11 @@ private def trustPinEnv : List ConstantInfo :=
   | ofReduceBoolA := ofReduceRaw ofReduceBoolName
 
 /-- The annotated pinned type of a reduce operation. -/
-def reduceOpCvA (c : Name) : ConstantVal :=
+def reduceOpCvA (c : Key) : ConstantVal :=
   if c = reduceNatName then reduceNatCvA else reduceBoolCvA
 
 /-- The annotated pin an `ofReduce*` axiom is matched against. -/
-def ofReducePinA (n : Name) : ConstantVal :=
+def ofReducePinA (n : Key) : ConstantVal :=
   if n = ofReduceNatName then ofReduceNatA else ofReduceBoolA
 
 /-! ## Environment predicates -/
@@ -171,14 +171,14 @@ def trustCompilerOk (env : Env) (cvA : ConstantVal) : Bool :=
 /-- Is the reduce operation `c` stored as a checked opaque
 (`axiomInfo`, the storage kind of every checked `opaque`) of the
 pinned type? -/
-def reduceStoredOk (env : Env) (c : Name) : Bool :=
+def reduceStoredOk (env : Env) (c : Key) : Bool :=
   match env.find? c with
   | some (.axiomInfo cvR) => ConstantVal.matchesPin cvR (reduceOpCvA c)
   | _ => false
 
 /-- The element-inductive shape an `ofReduce*` axiom needs: the pinned
 `Nat` basis resp. a standardly-shaped stored `Bool`. -/
-def reduceElemOk (env : Env) (c : Name) : Bool :=
+def reduceElemOk (env : Env) (c : Key) : Bool :=
   if c = reduceNatName then decide (env.find? natName = some natA)
   else
     match env.find? boolName with
@@ -203,18 +203,18 @@ def ofReduceAxOk (env : Env) (cvA : ConstantVal) : Bool :=
 (`IxC/Kernel/TrustPins.lean`: the plain identity, hand-written
 with the basis builder — every toolchain's `have := trustCompiler; b`
 after zeta). -/
-def reduceDeclPin (c : Name) : Expr :=
+def reduceDeclPin (c : Key) : Expr :=
   if c = reduceNatName then reduceNatDeclPin else reduceBoolDeclPin
 
 /-- Syntactic guards on the generated pin (checked once at install). -/
-def reducePinGuard (env : Env) (c : Name) : Bool :=
+def reducePinGuard (env : Env) (c : Key) : Bool :=
   (reduceDeclPin c).looseBVarsBounded 0 && !(reduceDeclPin c).hasFvar &&
   (reduceDeclPin c).allLevelParamsDefined [] &&
   (reduceDeclPin c).constsResolve env
 
 /-- The identity certificate's variable: `fvar 0` at the element
 type. -/
-def reduceCertVar (c : Name) : Expr :=
+def reduceCertVar (c : Key) : Expr :=
   .fvar 0 (reduceElemTy c)
 
 end Ix.Kernel

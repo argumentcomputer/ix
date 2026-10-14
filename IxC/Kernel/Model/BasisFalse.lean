@@ -35,7 +35,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   falseA falseRecA falseName uN)
 
 universe w
@@ -49,7 +49,7 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [0]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_falseA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨falseA :: env.consts⟩ ψ 0 falseA.toConstantVal.type
       = some (BConst.typeAV .empty [0]) := by
   rw [show falseA.toConstantVal.type = Expr.sort .zero from rfl,

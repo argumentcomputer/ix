@@ -611,7 +611,7 @@ private theorem iotaCerts_shift (henv : EnvWF env)
 /-- The fabricated projections commute with the shift (task #175 W4c:
 both entry kinds — the `.proj` nodes by `shiftFrom`'s own clause, the
 projection-function applications by `shiftFrom_mkAppN`). -/
-private theorem etaProjs_shift (p : Nat) (env : Env) (T : Name)
+private theorem etaProjs_shift (p : Nat) (env : Env) (T : Key)
     (us : List Level) (targs : List Expr) (b : Expr) (nF : Nat) :
     etaProjs env T us (List.map (shiftFrom p) targs) (shiftFrom p b) nF
       = List.map (shiftFrom p) (etaProjs env T us targs b nF) := by
@@ -624,7 +624,7 @@ private theorem etaProjs_shift (p : Nat) (env : Env) (T : Name)
     rw [Function.comp_apply, shiftFrom_mkAppN, List.map_append]
     rfl
 
-private theorem etaFabArgsE_shift (p : Nat) (env : Env) (T : Name)
+private theorem etaFabArgsE_shift (p : Nat) (env : Env) (T : Key)
     (ust : List Level) (targs : List Expr) (major : Expr) (nF : Nat) :
     etaFabArgsE env T ust (List.map (shiftFrom p) targs) (shiftFrom p major)
       nF = List.map (shiftFrom p) (etaFabArgsE env T ust targs major nF) := by
@@ -735,7 +735,7 @@ private theorem proofIrrel_shift (henv : EnvWF env)
     case fvar => rw [shiftFrom_fvar]
 
 private theorem structEtaProjCerts_shift (henv : EnvWF env)
-    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (T : Name)
+    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (T : Key)
     (us' : List Level) {targs : List Expr} {b : Expr} (lpsT : List LevelParam) :
     ∀ (idxs : List Nat), (∀ x ∈ targs, WScoped d x) → WScoped d b →
       structEtaProjCerts (pureFns mode env fuel) env (d + 1) T us'
@@ -1041,7 +1041,7 @@ private theorem propIrrel_shift (henv : EnvWF env)
   case fvar => rw [shiftFrom_fvar]
 
 private theorem projCert_shift (henv : EnvWF env) (ih : ShiftClaims mode env fuel)
-    {p d : Nat} (hpd : p ≤ d) (lic : Bool) {c : Name} {us : List Level}
+    {p d : Nat} (hpd : p ≤ d) (lic : Bool) {c : Key} {us : List Level}
     {args : List Expr} (hwargs : ∀ x ∈ args, WScoped d x) :
     projCert (pureFns mode env fuel) env (d + 1) lic c us (args.map (shiftFrom p)) =
       projCert (pureFns mode env fuel) env d lic c us args := by
@@ -1055,7 +1055,7 @@ private theorem projCert_shift (henv : EnvWF env) (ih : ShiftClaims mode env fue
   · rfl
 
 private theorem projCertAt_shift (henv : EnvWF env) (ih : ShiftClaims mode env fuel)
-    {p d : Nat} (hpd : p ≤ d) (v lic : Bool) {c : Name} {us : List Level}
+    {p d : Nat} (hpd : p ≤ d) (v lic : Bool) {c : Key} {us : List Level}
     {args : List Expr} (hwargs : ∀ x ∈ args, WScoped d x) :
     projCertAt (pureFns mode env fuel) env (d + 1) v lic c us (args.map (shiftFrom p)) =
       projCertAt (pureFns mode env fuel) env d v lic c us args := by
@@ -1065,7 +1065,7 @@ private theorem projCertAt_shift (henv : EnvWF env) (ih : ShiftClaims mode env f
   · rfl
 
 private theorem majorToCtor_shift (henv : EnvWF env)
-    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (recName : Name)
+    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (recName : Key)
     (rules : List RecRule) {major : Expr} (hwmaj : WScoped d major) :
     majorToCtor mode (pureFns mode env fuel) env (d + 1) recName rules
         (shiftFrom p major) =
@@ -1466,7 +1466,7 @@ private theorem iotaIndexOk_shift (henv : EnvWF env)
 
 /-- The major chain commutes with the shift, in either order. -/
 private theorem prepareMajor_shift (henv : EnvWF env)
-    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (recName : Name)
+    (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) (recName : Key)
     (rules : List RecRule) {major : Expr} (hwmaj : WScoped d major) :
     prepareMajor mode (pureFns mode env fuel) env (d + 1) recName rules
         (shiftFrom p major) =

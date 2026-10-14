@@ -67,11 +67,11 @@ the iota bottoms, here from `RuleFacts`). -/
 def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
     (hsw : SwapShList env₀.consts env₃.consts)
     (hwf : EnvWF env₃)
-    (hle : ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+    (hle : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
       (rules : List RecRule),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       ∀ r ∈ rules, RecRule.fire r ≠ .inert → rP ≤ mI)
-    (hrhs : ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+    (hrhs : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
       (rules : List RecRule),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       ∀ r ∈ rules, RecRule.fire r ≠ .inert →
@@ -80,7 +80,7 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
           ∃ R, denoteClosed m₀.cval env₃ ψ
             (r.rhs.instantiateLevelParams cv.levelParams us) = some R) :
     EnvFacts env₃ := by
-  have hcorr : ∀ n : Name,
+  have hcorr : ∀ n : Key,
       env₃.find? n = env₀.find? n ∨
       ∃ cv mI rP rules,
         env₀.find? n = some (.recInfo cv mI rP []) ∧
@@ -93,7 +93,7 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
   have hdeC : ∀ (φ : LevelParam → Nat) (e : Expr),
       denoteClosed m₀.cval env₀ φ e = denoteClosed m₀.cval env₃ φ e :=
     fun φ e => hde φ 0 e
-  have hsame : ∀ (n : Name) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ env₀.find? n = some ci) :=
     fun n ci hnr =>
@@ -164,7 +164,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
       ∃ (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
         c = .recInfo cv mI rP rules ∧
         ∀ rl ∈ rules, RuleFacts envSelf cvalSelf cv mI rP rl)
-    (hentF : ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+    (hentF : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
       (rules : List RecRule),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       envSelf.find? n = some (.recInfo cv mI rP rules) ∨
@@ -172,13 +172,13 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
     EnvWF env₃ ∧ RecCtorsStored env₃ ∧
       BasisPinnedTT env₃ cvalSelf ∧ ProjOkT env₃ := by
   have hcg : SwapCongr envSelf env₃ := SwapShList.congr hswR
-  have hcorr : ∀ n : Name,
+  have hcorr : ∀ n : Key,
       env₃.find? n = envSelf.find? n ∨
       ∃ cv mI rP rules,
         envSelf.find? n = some (.recInfo cv mI rP []) ∧
         env₃.find? n = some (.recInfo cv mI rP rules) ∧
         cv.name = n := swapSh_find?_corr hswR
-  have hsame : ∀ (n : Name) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ envSelf.find? n = some ci) :=
     fun n ci hnr =>
@@ -235,7 +235,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
       exact ⟨p1, p2, hres₃ _ p3, p4⟩
   · -- `RecCtorsStored`
     intro n cv mI rP rules hf r hr
-    have hkeep : ∀ (m : Name) (ci : ConstantInfo),
+    have hkeep : ∀ (m : Key) (ci : ConstantInfo),
         (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
         envSelf.find? m = some ci → env₃.find? m = some ci :=
       fun m ci hnr hfc => hcg.findUp m ci hfc hnr

@@ -218,7 +218,7 @@ theorem checkStructFieldSortsI_inv {env : Env} {isProp large : Bool}
 or a from-scratch check of the rebuilt constant — in both cases some
 constant with the declared name and level parameters (task #210 Part
 D). -/
-theorem normCtorVal_inv {env : Env} {T : Name} {nP nF : Nat} {cvC cvCa₀ cvCa : ConstantVal}
+theorem normCtorVal_inv {env : Env} {T : Key} {nP nF : Nat} {cvC cvCa₀ cvCa : ConstantVal}
     {F : Nat} (h₀ : checkConstantVal (fueledOps mode F) env cvC = .ok cvCa₀)
     (h : normCtorVal (fueledOps mode F) env T nP nF cvC cvCa₀ = .ok cvCa) :
     ∃ ty', checkConstantVal (fueledOps mode F) env { cvC with type := ty' } = .ok cvCa := by
@@ -238,7 +238,7 @@ theorem normCtorVal_inv {env : Env} {T : Name} {nP nF : Nat} {cvC cvCa₀ cvCa :
     exact ⟨cvC.type, h₀⟩
   · exact ⟨_, h⟩
 
-theorem checkSumCtor_shape {env₀ env : Env} {T : Name} {lps : List LevelParam}
+theorem checkSumCtor_shape {env₀ env : Env} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
@@ -314,7 +314,7 @@ theorem checkSumCtor_shape {env₀ env : Env} {T : Name} {lps : List LevelParam}
 
 /-- All constructors, positionally: the annotated list is as long as
 the input and every entry is its constructor's run. -/
-theorem checkSumCtors_inv {env₀ env : Env} {T : Name} {lps : List LevelParam}
+theorem checkSumCtors_inv {env₀ env : Env} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvTa : ConstantVal} {F : Nat} :
     ∀ {cs ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)},
       checkSumCtors (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large

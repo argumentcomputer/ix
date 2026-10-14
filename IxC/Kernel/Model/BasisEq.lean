@@ -41,7 +41,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm eqValT eqReflValT eqRecValT)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule uN u1N vN)
 
 universe w
@@ -116,7 +116,7 @@ def eqReflTy (ψ : LevelParam → Nat) : AnnotTerm :=
 
 /-- **`Eq`'s type reading.** -/
 theorem denoteMeta_eqA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨eqA :: env.consts⟩ ψ 0 eqA.toConstantVal.type
       = some (eqTy ψ) := by
   simp [eqA, ConstantInfo.toConstantVal, denoteMeta_forallE, denoteMeta_sort,

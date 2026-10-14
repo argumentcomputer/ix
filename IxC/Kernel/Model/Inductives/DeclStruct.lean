@@ -28,7 +28,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta ProjEntry projFnName)
 
 universe w
@@ -38,7 +38,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 /-! ## Readings under two leaves -/
 
 /-- A name fresh at a cons is fresh below it. -/
-theorem find?_none_of_cons {c : ConstantInfo} {env : Env} {n : Name}
+theorem find?_none_of_cons {c : ConstantInfo} {env : Env} {n : Key}
     (h : Env.find? ⟨c :: env.consts⟩ n = none) : env.find? n = none := by
   rw [Ix.Kernel.Env.find?_cons] at h
   split at h

@@ -20,7 +20,7 @@ stores carries the sum's capability record (`sumCaps`, whose
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
+open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
   InductiveShape fueledOps checkSumInd checkSumCtors
    consSumCtors sumRules nativeCaps EtaFamiliesClosed
   EtaFamiliesClosedExcept)
@@ -28,7 +28,7 @@ open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
 /-- The constructors' conses keep the OTHER families closed (task
 #210 Part A: the block's own family may claim η before its constructor
 is stored). -/
-theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Name} :
+theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Key} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
       EtaFamiliesClosedExcept env T →
       (∀ c ∈ ctorsA, env.find? c.1.name = none) →
@@ -53,7 +53,7 @@ theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Name} :
 
 /-- A name none of the consed constructors carries looks up below the
 conses. -/
-theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Name} :
+theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Key} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
       n ∉ ctorsA.map (·.1.name) → (consSumCtors nP ctorsA env).find? n = env.find? n
   | [], _, _ => rfl

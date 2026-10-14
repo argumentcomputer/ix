@@ -52,7 +52,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   isDefEqCore DefEqListOk)
 
 universe w
@@ -65,13 +65,13 @@ set_option maxHeartbeats 12800000 in
 theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hclaims : DefEqClaim μ m ψ' F)
     {lps : List LevelParam}
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
-    {Rn : Name}
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
+    {Rn : Key}
     {rP cnP cnF mI : Nat} {xs ys zs : List AnnotTerm} {ρ : Nat → V}
     (hzs : zs = xs.take rP ++ ys.drop cnP)
     (hrPmI : rP ≤ mI) (hlenX : xs.length = mI)
     (hlenY : ys.length = cnP + cnF)
-    {ctor : Name} {cvj : ConstantVal} {usj : List Level}
+    {ctor : Key} {cvj : ConstantVal} {usj : List Level}
     {ciRm : ConstantInfo} (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
     -- the statement frame
@@ -224,7 +224,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
       _ hcinst hspScope hfbCty hCbR hTVjK (hokTVj _) (hspMem σ hσ)
       vCres hvCres
   -- the head of the statement's lhs is the recursor's leaf
-  have hconstDen : ∀ (c : Name) (ci : ConstantInfo) (ks : List LevelParam),
+  have hconstDen : ∀ (c : Key) (ci : ConstantInfo) (ks : List LevelParam),
       env.find? c = some ci → ci.toConstantVal.levelParams = ks →
       denoteMeta m.acval env ψ' (rP + cnF) (.const c (ks.map .param))
         = some (m.acval c ψ') := by

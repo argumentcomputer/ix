@@ -35,7 +35,7 @@ every fact below is stated once and discharged by `rcases` on the two
 possibilities. -/
 
 /-- The element type expression of an `ofReduce*` axiom's operation. -/
-theorem ofReduce_elemTy {n : Name} :
+theorem ofReduce_elemTy {n : Key} :
     reduceElemTy (ofReduceOp n)
       = .const (reduceElemName (ofReduceOp n)) [] := by
   unfold reduceElemTy reduceElemName
@@ -43,7 +43,7 @@ theorem ofReduce_elemTy {n : Name} :
 
 /-- The pinned type of an `ofReduce*` axiom, in the uniform spelling
 its two instances share. -/
-theorem ofReducePin_type {n : Name}
+theorem ofReducePin_type {n : Key}
     (hn : n = ofReduceNatName ∨ n = ofReduceBoolName) :
     (ofReducePinA n).type =
       .forallE
@@ -62,7 +62,7 @@ theorem ofReducePin_type {n : Name}
   rcases hn with rfl | rfl <;> rfl
 
 /-- The pinned type of the operation itself. -/
-theorem reduceOpCv_type {n : Name}
+theorem reduceOpCv_type {n : Key}
     (hn : n = ofReduceNatName ∨ n = ofReduceBoolName) :
     (reduceOpCvA (ofReduceOp n)).type =
       .forallE
@@ -71,7 +71,7 @@ theorem reduceOpCv_type {n : Name}
   rcases hn with rfl | rfl <;> rfl
 
 /-- The element inductive's pinned type is `Sort 1`. -/
-theorem reduceElem_sort {env : Env} {c : Name}
+theorem reduceElem_sort {env : Env} {c : Key}
     (h : reduceElemOk env c = true) :
     ∃ ci, env.find? (reduceElemName c) = some ci ∧
       ci.toConstantVal.levelParams = [] ∧

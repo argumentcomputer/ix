@@ -1474,7 +1474,7 @@ the step without ever producing one. -/
 @[simp] theorem instantiate1_bvar (i : Nat) (v : Expr) (d : Nat) :
     (Expr.bvar i).instantiate1 v d =
       if i = d then v else if i > d then .bvar (i - 1) else .bvar i := rfl
-@[simp] theorem instantiate1_const (n : Name) (us : List Level)
+@[simp] theorem instantiate1_const (n : Key) (us : List Level)
     (v : Expr) (d : Nat) : (Expr.const n us).instantiate1 v d = .const n us :=
   rfl
 @[simp] theorem instantiate1_sort (u : Level) (v : Expr) (d : Nat) :

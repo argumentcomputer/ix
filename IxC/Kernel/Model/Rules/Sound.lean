@@ -30,7 +30,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -166,7 +166,7 @@ theorem defEqList_sound (hin : RulesInputs V m φ) :
     DefEqList.cons_sound (defeq_sound hin h) (defEqList_sound hin hs)
 
 theorem etaProjCerts_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {T : Name} {us' : List Level} {targs : List Expr} {b : Expr}
+    ∀ {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs →
       EtaProjCertsSem m φ d T us' targs b lpsT idxs

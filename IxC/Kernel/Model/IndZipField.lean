@@ -41,19 +41,19 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name BinderMeta)
+open Ix.Kernel (Env Expr Key BinderMeta)
 
 universe w
 
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 set_option maxHeartbeats 3200000 in
 /-- **The field domain, crossed, at the reading** (`zipFieldTermEq`). -/
 theorem zipFieldTermEq
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {rP cnP cnF : Nat} {fvs : List Expr}
     {ctyR : Expr} (hCwR : ctyR.hasFvar = false)

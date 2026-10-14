@@ -81,7 +81,7 @@ inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop whe
   | fvar {i : Nat} {ty₁ ty₂ : Expr} :
       DefeqStuckExit env fuel d (.fvar i ty₁) (.fvar i ty₂)
   /-- `:1621-1626`: the same constant at equivalent levels. -/
-  | const {n : Name} {us us' : List Level} :
+  | const {n : Key} {us us' : List Level} :
       Level.isEquivList us us' = some true →
       DefeqStuckExit env fuel d (.const n us) (.const n us')
   /-- `:1627-1643`: ∀-congruence, the bodies opened at the RIGHT domain,
@@ -107,7 +107,7 @@ inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop whe
       defEqListFueled .verified env fuel d a.getAppArgs b.getAppArgs = .ok true →
       DefeqStuckExit env fuel d a b
   /-- `:1679-1689`: the stuck projection congruence, same table slot. -/
-  | proj {sn : Name} {i : Nat} {e₁ e₂ : Expr} :
+  | proj {sn : Key} {i : Nat} {e₁ e₂ : Expr} :
       isDefEqCore .verified env fuel d e₁ e₂ = .ok true →
       DefeqStuckExit env fuel d (.proj sn i e₁) (.proj sn i e₂)
   /-- `:1690-1692`: a one-sided λ on the left — η. -/

@@ -34,7 +34,7 @@ theorem mkFEnv_env (env : Env) : (mkFEnv env).env = env := rfl
 variable {mode : CheckMode}
 variable {pins : List NatOpPinSet}
 
-theorem mkFEnv_findCV? (env : Env) (n : Name) :
+theorem mkFEnv_findCV? (env : Env) (n : Key) :
     (mkFEnv env).findCV? n = env.findCV? n := by
   simp only [FEnv.findCV?, Env.findCV?, mkFEnv_find?] <;> rfl
 
@@ -72,15 +72,15 @@ theorem constsResolveF_eq_fun (env : Env) :
     (Expr.constsResolveF (mkFEnv env)) = (Expr.constsResolve env ·) :=
   funext (constsResolveF_eq env)
 
-theorem natOpCodF_eq (env : Env) (c : Name) (e : Expr) :
+theorem natOpCodF_eq (env : Env) (c : Key) (e : Expr) :
     natOpCodF (mkFEnv env) c e = natOpCod env c e := by
   simp only [natOpCodF, natOpCod, mkFEnv_find?] <;> rfl
 
-theorem natOpTyPinnedF_eq (env : Env) (c : Name) (ty : Expr) :
+theorem natOpTyPinnedF_eq (env : Env) (c : Key) (ty : Expr) :
     natOpTyPinnedF (mkFEnv env) c ty = natOpTyPinned env c ty := by
   simp only [natOpTyPinnedF, natOpTyPinned, natOpCodF_eq] <;> rfl
 
-theorem natOpStoredOkF_eq (env : Env) (n : Name) :
+theorem natOpStoredOkF_eq (env : Env) (n : Key) :
     natOpStoredOkF (mkFEnv env) n = natOpStoredOk env n := by
   simp only [natOpStoredOkF, natOpStoredOk, mkFEnv_find?,
     natOpTyPinnedF_eq] <;> rfl
@@ -93,11 +93,11 @@ theorem trustCompilerOkF_eq (env : Env) (cvA : ConstantVal) :
     trustCompilerOkF (mkFEnv env) cvA = trustCompilerOk env cvA := by
   simp only [trustCompilerOkF, trustCompilerOk, mkFEnv_find?] <;> rfl
 
-theorem reduceStoredOkF_eq (env : Env) (c : Name) :
+theorem reduceStoredOkF_eq (env : Env) (c : Key) :
     reduceStoredOkF (mkFEnv env) c = reduceStoredOk env c := by
   simp only [reduceStoredOkF, reduceStoredOk, mkFEnv_find?] <;> rfl
 
-theorem reduceElemOkF_eq (env : Env) (c : Name) :
+theorem reduceElemOkF_eq (env : Env) (c : Key) :
     reduceElemOkF (mkFEnv env) c = reduceElemOk env c := by
   simp only [reduceElemOkF, reduceElemOk, mkFEnv_find?] <;> rfl
 
@@ -106,7 +106,7 @@ theorem ofReduceAxOkF_eq (env : Env) (cvA : ConstantVal) :
   simp only [ofReduceAxOkF, ofReduceAxOk, mkFEnv_find?,
     reduceElemOkF_eq, reduceStoredOkF_eq] <;> rfl
 
-theorem reducePinGuardF_eq (env : Env) (c : Name) :
+theorem reducePinGuardF_eq (env : Env) (c : Key) :
     reducePinGuardF (mkFEnv env) c = reducePinGuard env c := by
   simp only [reducePinGuardF, reducePinGuard, constsResolveF_eq] <;> rfl
 
@@ -114,34 +114,34 @@ theorem natOpStoredOkF_eq_fun (env : Env) :
     natOpStoredOkF (mkFEnv env) = natOpStoredOk env :=
   funext (natOpStoredOkF_eq env)
 
-theorem divModEnvGuardF_eq (env : Env) (c : Name) :
+theorem divModEnvGuardF_eq (env : Env) (c : Key) :
     divModEnvGuardF (mkFEnv env) c = divModEnvGuard env c := by
   simp only [divModEnvGuardF, divModEnvGuard, mkFEnv_find?,
     natOpGuardF_eq, natOpStoredOkF_eq_fun] <;> rfl
 
-theorem divModCertGuardF_eq (env : Env) (c : Name) (annVal : Expr)
+theorem divModCertGuardF_eq (env : Env) (c : Key) (annVal : Expr)
     (hyps : List Expr) (eqE proof : Expr) :
     divModCertGuardF (mkFEnv env) c annVal hyps eqE proof
       = divModCertGuard env c annVal hyps eqE proof := by
   simp only [divModCertGuardF, divModCertGuard, constsResolveF_eq] <;> rfl
 
-theorem divModPinGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Name) :
+theorem divModPinGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Key) :
     divModPinGuardF ps (mkFEnv env) c = divModPinGuard ps env c := by
   simp only [divModPinGuardF, divModPinGuard, constsResolveF_eq] <;> rfl
 
-theorem divModCertsGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Name)
+theorem divModCertsGuardF_eq (ps : NatOpPinSet) (env : Env) (c : Key)
     (annVal : Expr) :
     divModCertsGuardF ps (mkFEnv env) c annVal
       = divModCertsGuard ps env c annVal := by
   simp only [divModCertsGuardF, divModCertsGuard, divModCertGuardF_eq] <;> rfl
 
-theorem checkEtaThmF_eq (env : Env) (T ctorName : Name)
+theorem checkEtaThmF_eq (env : Env) (T ctorName : Key)
     (lps : List LevelParam) (nP nF : Nat) :
     checkEtaThmF mode (mkFEnv env) T ctorName lps nP nF
       = checkEtaThm mode env T ctorName lps nP nF := by
   simp only [checkEtaThmF, checkEtaThm, mkFEnv_find?] <;> rfl
 
-theorem checkUnitThmF_eq (env : Env) (T : Name) (lps : List LevelParam)
+theorem checkUnitThmF_eq (env : Env) (T : Key) (lps : List LevelParam)
     (nP : Nat) :
     checkUnitThmF mode (mkFEnv env) T lps nP = checkUnitThm mode env T lps nP := by
   simp only [checkUnitThmF, checkUnitThm, mkFEnv_find?] <;> rfl
@@ -153,13 +153,13 @@ theorem indBlockCapsF_eq (env : Env) (cvT cvC : ConstantVal)
   simp only [indBlockCapsF, indBlockCaps, checkEtaThmF_eq,
     checkUnitThmF_eq] <;> rfl
 
-theorem ctorResidualOkF_eq (env : Env) (T ctorName : Name)
+theorem ctorResidualOkF_eq (env : Env) (T ctorName : Key)
     (lps : List LevelParam) (nP nF : Nat) (eta : Bool) :
     ctorResidualOkF mode (mkFEnv env) T ctorName lps nP nF eta
       = ctorResidualOk mode env T ctorName lps nP nF eta := by
   simp only [ctorResidualOkF, ctorResidualOk, mkFEnv_find?] <;> rfl
 
-theorem nestedRuleShapeF_eq (env' envS : Env) (cvName : Name)
+theorem nestedRuleShapeF_eq (env' envS : Env) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     nestedRuleShapeF (mkFEnv env') (mkFEnv envS) cvName lps tyA
         mI rP cnP j
@@ -179,7 +179,7 @@ theorem checkConstantValF_eq (ops : CheckerOps m) (env : Env)
   simp only [checkConstantValF, checkConstantVal, mkFEnv_find?,
     constsResolveF_eq] <;> rfl
 
-theorem checkMemberValF_eq (ops : CheckerOps m) (blockNames : List Name)
+theorem checkMemberValF_eq (ops : CheckerOps m) (blockNames : List Key)
     (env : Env) (cv : ConstantVal) :
     checkMemberValF ops blockNames (mkFEnv env) cv
       = checkMemberVal ops blockNames env cv := by
@@ -187,7 +187,7 @@ theorem checkMemberValF_eq (ops : CheckerOps m) (blockNames : List Name)
     checkConstantValF_eq] <;> rfl
 
 theorem checkIotaThmF_eq (ops : CheckerOps m) (env' envS : Env)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) :
     checkIotaThmF mode ops (mkFEnv env') (mkFEnv envS) f cvName lps tyA
@@ -197,7 +197,7 @@ theorem checkIotaThmF_eq (ops : CheckerOps m) (env' envS : Env)
   simp only [checkIotaThmF, checkIotaThm, mkFEnv_findCV?] <;> rfl
 
 theorem checkIotaThmNF_eq (ops : CheckerOps m) (env' envS : Env)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) :
     checkIotaThmNF mode ops (mkFEnv env') (mkFEnv envS) f cvName lps tyA
@@ -208,7 +208,7 @@ theorem checkIotaThmNF_eq (ops : CheckerOps m) (env' envS : Env)
     nestedRuleShapeF_eq] <;> rfl
 
 theorem checkIotaRuleF_eq (ops : CheckerOps m) (env' envS : Env)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) :
     checkIotaRuleF mode ops (mkFEnv env') (mkFEnv envS) f cvName lps tyA
         mI rP j r
@@ -217,7 +217,7 @@ theorem checkIotaRuleF_eq (ops : CheckerOps m) (env' envS : Env)
     constsResolveF_eq, checkIotaThmF_eq, checkIotaThmNF_eq] <;> rfl
 
 theorem checkIotaRulesF_eq (ops : CheckerOps m) (env' envS : Env)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP : Nat) :
     ∀ (j : Nat) (rs : List RecRule),
       checkIotaRulesF mode ops (mkFEnv env') (mkFEnv envS) f cvName lps tyA
@@ -229,13 +229,13 @@ theorem checkIotaRulesF_eq (ops : CheckerOps m) (env' envS : Env)
       checkIotaRulesF_eq ops env' envS f cvName lps tyA mI rP
         (j + 1) rest]
 
-theorem checkProjLookupsF_eq (env : Env) (T ctorName : Name)
+theorem checkProjLookupsF_eq (env : Env) (T ctorName : Key)
     (lps : List LevelParam) (nP nF i : Nat) :
     (checkProjLookupsF (mkFEnv env) T ctorName lps nP nF i : m _)
       = checkProjLookups env T ctorName lps nP nF i := by
   simp only [checkProjLookupsF, checkProjLookups, mkFEnv_find?] <;> rfl
 
-theorem checkProjTyF_eq (env : Env) (T ctorName : Name)
+theorem checkProjTyF_eq (env : Env) (T ctorName : Key)
     (lps : List LevelParam) (mty : Expr) (nP nF : Nat) :
     (checkProjTyF (mkFEnv env) T ctorName lps mty nP nF : m _)
       = checkProjTy env T ctorName lps mty nP nF := by
@@ -250,7 +250,7 @@ theorem checkProjRuleF_eq (ops : CheckerOps m) (env : Env) (pty : Expr)
     instLamsAtF_eq] <;> rfl
 
 theorem checkProjIotaF_eq (ops : CheckerOps m) (env : Env)
-    (T ctorName : Name)
+    (T ctorName : Key)
     (lps : List LevelParam) (cvj : ConstantVal) (nP nF i : Nat) :
     checkProjIotaF mode ops (mkFEnv env) T ctorName lps cvj nP nF i
       = checkProjIota mode ops env env T ctorName lps cvj nP nF i := by
@@ -293,12 +293,12 @@ theorem checkStructFieldSortsIFA_eq (ops : CheckerOps m) (fe : FEnv)
       List.getElem?_toArray,
       checkStructFieldSortsIFA_eq ops fe isProp large s nP fvs idxArgs j]
 
-theorem normCtorValF_eq (ops : CheckerOps m) (env : Env) (T : Name) (nP nF : Nat)
+theorem normCtorValF_eq (ops : CheckerOps m) (env : Env) (T : Key) (nP nF : Nat)
     (cvC cvCa : ConstantVal) :
     normCtorValF ops (mkFEnv env) T nP nF cvC cvCa = normCtorVal ops env T nP nF cvC cvCa := by
   simp only [normCtorValF, normCtorVal, mkFEnv_env, checkConstantValF_eq]
 
-theorem checkSumCtorF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Name)
+theorem checkSumCtorF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Key)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
     checkSumCtorF ops (mkFEnv env₀) (mkFEnv env) T lps nP nIdx resSort isProp
@@ -309,7 +309,7 @@ theorem checkSumCtorF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Name)
     checkStructDomsAtFA_eq, checkStructDomsAtF_eq, openPisAtFvarsF_eq,
     checkStructFieldSortsIFA_eq, checkStructFieldSortsIF_eq, constsResolveF_eq]
 
-theorem checkSumCtorsF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Name)
+theorem checkSumCtorsF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Key)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     ∀ (cs : List (ConstantVal × Nat)),
@@ -322,7 +322,7 @@ theorem checkSumCtorsF_eq (ops : CheckerOps m) (env₀ env : Env) (T : Name)
       checkSumCtorsF_eq ops env₀ env T lps nP nIdx resSort isProp large cvTa cs]
 
 omit [MonadExceptOf CheckError m] in
-theorem checkDivModCertsF_eq (ops : CheckerOps m) (env : Env) (c : Name)
+theorem checkDivModCertsF_eq (ops : CheckerOps m) (env : Env) (c : Key)
     (annVal : Expr) :
     ∀ (stmts : List (List Expr × Expr)) (proofs : List Expr),
       checkDivModCertsF ops (mkFEnv env) c annVal stmts proofs
@@ -335,14 +335,14 @@ theorem checkDivModCertsF_eq (ops : CheckerOps m) (env : Env) (c : Name)
       mkFEnv_env, checkDivModCertsF_eq ops env c annVal srest prest]
 
 omit [MonadExceptOf CheckError m] in
-theorem checkDivModPinAtF_eq (ops : CheckerOps m) (env : Env) (c : Name)
+theorem checkDivModPinAtF_eq (ops : CheckerOps m) (env : Env) (c : Key)
     (value' : Expr) (ps : NatOpPinSet) :
     checkDivModPinAtF ops (mkFEnv env) c value' ps
       = checkDivModPinAt ops env c value' ps := by
   simp only [checkDivModPinAtF, checkDivModPinAt, mkFEnv_env,
     checkDivModCertsF_eq]
 
-theorem checkDivModPinLoopF_eq (ops : CheckerOps m) (env : Env) (c : Name)
+theorem checkDivModPinLoopF_eq (ops : CheckerOps m) (env : Env) (c : Key)
     (value' : Expr) :
     ∀ (pss : List NatOpPinSet) (tried : List String),
       checkDivModPinLoopF ops (mkFEnv env) c value' pss tried
@@ -354,14 +354,14 @@ theorem checkDivModPinLoopF_eq (ops : CheckerOps m) (env : Env) (c : Name)
       checkDivModPinLoopF_eq ops env c value' rest]
 
 theorem checkDivModPinF_eq (ops : CheckerOps m) (env env2 : Env)
-    (c : Name) :
+    (c : Key) :
     checkDivModPinF ops pins (mkFEnv env) (mkFEnv env2) c
       = checkDivModPin ops pins env env2 c := by
   simp only [checkDivModPinF, checkDivModPin, mkFEnv_find?,
     divModEnvGuardF_eq, checkDivModPinLoopF_eq] <;> rfl
 
 theorem checkReducePinF_eq (ops : CheckerOps m) (env env2 : Env)
-    (c : Name) (value : Expr) :
+    (c : Key) (value : Expr) :
     checkReducePinF ops (mkFEnv env) (mkFEnv env2) c value
       = checkReducePin ops env env2 c value := by
   simp only [checkReducePinF, checkReducePin, mkFEnv_env,
@@ -397,22 +397,22 @@ section FixMirrors
 
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
-theorem nativeOpenedOkF_eq (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+theorem nativeOpenedOkF_eq (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr) (nF : Nat) (ks : List RecFieldKind) :
     nativeOpenedOkF .plain (mkFEnv env₀) T lps nP nIdx cty nF ks
       = nativeOpenedOk env₀ T lps nP nIdx cty nF ks := by
   simp only [nativeOpenedOkF, nativeOpenedOk, StructWalkers.plain, constsResolveF_eq]
     <;> rfl
 
-theorem nativeFieldsOkF_eq (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+theorem nativeFieldsOkF_eq (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) :
     nativeFieldsOkF .plain (mkFEnv env₀) T lps nP nIdx ctorsA kinds
       = nativeFieldsOk env₀ T lps nP nIdx ctorsA kinds := by
   simp only [nativeFieldsOkF, nativeFieldsOk, nativeOpenedOkF_eq] <;> rfl
 
-theorem checkNativeRulesF_eq (envR : Env) (rlps : List LevelParam) (T : Name) (lps : List LevelParam)
+theorem checkNativeRulesF_eq (envR : Env) (rlps : List LevelParam) (T : Key) (lps : List LevelParam)
     (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
-    (ctors : List (Name × Nat × Expr × List Nat)) (recC : Name) (rlvls : List Level) :
+    (ctors : List (Key × Nat × Expr × List Nat)) (recC : Key) (rlvls : List Level) :
     ∀ (k j : Nat),
       checkNativeRulesF (m := m) .plain (mkFEnv envR) rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j

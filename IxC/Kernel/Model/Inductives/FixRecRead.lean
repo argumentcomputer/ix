@@ -35,7 +35,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   PropWhen)
 
 universe w
@@ -46,8 +46,8 @@ variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 /-- **`denoteMeta_shiftFrom`, iterated**: inserting `o` fresh variable
 slots at index `p` lifts the reading by `o` at the cut `d - p`. -/
-theorem denoteMeta_shiftFromN {acval : Name → (LevelParam → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
+theorem denoteMeta_shiftFromN {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
     {p : Nat} :
     ∀ (o : Nat) {e : Expr} {d : Nat}, p ≤ d → Expr.WScoped d e →
       denoteMeta acval env φ (d + o) (Expr.shiftFromN p o e)
@@ -111,7 +111,7 @@ theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : LevelParam → Nat} 
 /-! ## Spine bookkeeping -/
 
 /-- A read spine, re-read entry by entry at another frame. -/
-theorem DenoteMetaSpine.map_map {acval : Name → (LevelParam → Nat) → AnnotTerm} {d d' : Nat}
+theorem DenoteMetaSpine.map_map {acval : Key → (LevelParam → Nat) → AnnotTerm} {d d' : Nat}
     {f g : Expr → Expr} {h : AnnotTerm → AnnotTerm} :
     ∀ {as : List Expr} {vs : List AnnotTerm},
       DenoteMetaSpine acval env φ d (as.map f) vs →
@@ -129,7 +129,7 @@ theorem DenoteMetaSpine.map_map {acval : Name → (LevelParam → Nat) → Annot
         (DenoteMetaSpine.map_map htl fun x v hx hv => hfg x v (List.mem_cons_of_mem _ hx) hv)
 
 /-- A pointwise-read mapped spine. -/
-theorem DenoteMetaSpine.of_map {α : Type} {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat}
+theorem DenoteMetaSpine.of_map {α : Type} {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {f : α → Expr} {g : α → AnnotTerm} :
     ∀ (l : List α), (∀ a ∈ l, denoteMeta acval env φ d (f a) = some (g a)) →
       DenoteMetaSpine acval env φ d (l.map f) (l.map g)
@@ -962,8 +962,8 @@ parameters and the field's index readings (`recEntry`); peeling the
 tower at the raw binder's own `∀`-binders (`teleLen`) gives the
 telescope binderwise, and inverting the body's application spine
 (`fieldArity`) the index expressions. -/
-theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
-    {nP nIdx : Nat} {c : Name × Nat × Expr × List Nat} {cd : CtorDatumR}
+theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
+    {nP nIdx : Nat} {c : Key × Nat × Expr × List Nat} {cd : CtorDatumR}
     (hc : CtorReadR m ψ T lps nP nIdx c cd) {i : Nat} (hi : i ∈ c.2.2.2)
     {fvs0 : List Expr} {crest : Expr}
     (hop0 : openPisAtFvars (nP + c.2.1) c.2.2.1 0 = some (fvs0, crest)) :
@@ -1332,7 +1332,7 @@ parameters and the `o` extras, reads to `minorAVAtR`: the sum route's
 reading (`denoteP_minorAt`) with the `ih` binders (`denoteMeta_ihPis`)
 between the fields and the conclusion, which is therefore read one
 frame lower and lifted (`denoteMeta_instSeq_lift`). -/
-theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C : Name} {lps : List LevelParam}
+theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C : Key} {lps : List LevelParam}
     {ciT ci : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     (hfC : env.find? C = some ci) (hlpsC : ci.toConstantVal.levelParams = lps)
@@ -1538,13 +1538,13 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C 
 set_option maxHeartbeats 1600000 in
 /-- **The `∀`-telescope of recursive minors** reads to the Π-tower over
 `fixMinorsData`, the body read under the motive and all minors. -/
-theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
     {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
     (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
-    ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
       {body mins : Expr} {extras : List Expr},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       Ix.Kernel.structMinorsPisR lps nP pw ctors extras.length body = some mins →
@@ -1626,13 +1626,13 @@ set_option maxHeartbeats 1600000 in
 /-- **The `λ`-telescope of recursive minors** reads to the λ-tower over
 `fixMinorsData`'s domains, the body read under the motive and all
 minors. -/
-theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
     {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
     (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
-    ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
       {body mins : Expr} {extras : List Expr},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       Ix.Kernel.structMinorsLamsR lps nP pw ctors extras.length body = some mins →
@@ -1716,10 +1716,10 @@ theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T
 set_option maxHeartbeats 3200000 in
 /-- **The generated recursive recursor type reads to the Π-tower over
 `fixRecDataAV`** with the core `motive ı⃗ t`. -/
-theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
+theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
     {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {ciT : ConstantInfo}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
     {tty recTy : Expr}
     (hgen : Ix.Kernel.structRecTyR T lps elim large nP nIdx tty ctors = some recTy)
@@ -1928,7 +1928,7 @@ telescope as a λ-tower (`denoteMeta_ihIdxAtM` at each binder), then the
 recursor's leaf at the block's variables, the field's index readings
 and the field applied to the telescope's own variables. -/
 theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n i : Nat} {pw : PropWhen}
-    {cty : Expr} {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {cty : Expr} {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {fvs0 : List Expr} {crest : Expr} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
@@ -2174,7 +2174,7 @@ set_option maxHeartbeats 3200000 in
 variables and the inductive hypotheses, read at the full frame under
 the motive and `n` minors. -/
 theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw : PropWhen}
-    {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {nP nF n j : Nat} {cty : Expr} {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
@@ -2293,12 +2293,12 @@ theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw 
 set_option maxHeartbeats 3200000 in
 /-- **Rule `j` reads to the λ-tower over `fixRuleDataAV`** at
 constructor `j`'s data, with the core `minor_j f⃗ ih⃗`. -/
-theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
+theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
     {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx j : Nat} {ciT : ConstantInfo}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
-    {recC : Name} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
     {tty rhs : Expr}
     (hgen : Ix.Kernel.structRecRhsR T lps elim large nP nIdx tty ctors recC (rlps.map .param) j
@@ -2309,7 +2309,7 @@ theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} 
     {ppsAll : List (Nat × Nat × AnnotTerm)} {w : Nat}
     (hTread : denoteMeta m.acval env ψ 0 tty = some (mkPisAV ppsAll (.sort w)))
     (hlenP : ppsAll.length = nP + nIdx)
-    {C : Name} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
+    {C : Key} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
     {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
     (hjd : cds[j]? = some (C, nF, ds, Es, recIdx, Eiss, tls)) :

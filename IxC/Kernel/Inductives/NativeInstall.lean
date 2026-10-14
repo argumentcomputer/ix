@@ -187,7 +187,7 @@ theorem Expr.mentionsFvar_letE (q : Nat) (t v b : Expr) :
       = (t.mentionsFvar q || v.mentionsFvar q || b.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves, Bool.or_assoc]
 
-theorem Expr.mentionsFvar_proj (q : Nat) (s : Name) (i : Nat) (e : Expr) :
+theorem Expr.mentionsFvar_proj (q : Nat) (s : Key) (i : Nat) (e : Expr) :
     (Expr.proj s i e).mentionsFvar q = e.mentionsFvar q := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
@@ -394,7 +394,7 @@ resolving in `env₀`, and the variable occurs in no later field's
 domain nor in the residual (the model reads those at a frame whose
 recursive slots hold an arbitrary member of the family being defined);
 the residual's index expressions resolve in `env₀`. -/
-def nativeOpenedOk (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+def nativeOpenedOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with
   | some (fvsP, crest) =>
@@ -435,7 +435,7 @@ def nativeOpenedOk (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : 
 /-- The kinds, re-checked on every annotated constructor
 (`nativeOpenedOk`), one kind list per constructor, one kind per
 field. -/
-def nativeFieldsOk (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+def nativeFieldsOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
   ctorsA.length == kinds.length &&
   (List.range ctorsA.length).all fun j =>
@@ -447,9 +447,9 @@ def nativeFieldsOk (env₀ : Env) (T : Name) (lps : List LevelParam) (nP nIdx : 
 /-- The generated rules for constructors `j, j+1, …` (`k` of them),
 each scoped at the environment holding the recursor's constant
 (`envR`): a rule mentions the recursor and is not inferred. -/
-def checkNativeRules (envR : Env) (rlps : List LevelParam) (T : Name) (lps : List LevelParam)
+def checkNativeRules (envR : Env) (rlps : List LevelParam) (T : Key) (lps : List LevelParam)
     (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
-    (ctors : List (Name × Nat × Expr × List Nat)) (recC : Name) (rlvls : List Level) :
+    (ctors : List (Key × Nat × Expr × List Nat)) (recC : Key) (rlvls : List Level) :
     Nat → Nat → m (List Expr)
   | 0, _ => pure []
   | k + 1, j => do
@@ -543,7 +543,7 @@ positivity walk (`normCtorVal`), so the syntactic classification
 is INVALID (official's "non positive occurrence", "non valid
 occurrence", "invalid return type"), a nested occurrence — the one
 positive occurrence the route does not model — a positive decline. -/
-def classifyFixKinds (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+def classifyFixKinds (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (ctorsA : List (ConstantVal × Nat)) : m (List (List RecFieldKind)) := do
   let kinds ← unwrapOr (ctorsA.mapM (recCtorKinds T lps nP nIdx))
     (.notImplemented "direct rec: constructor telescope")

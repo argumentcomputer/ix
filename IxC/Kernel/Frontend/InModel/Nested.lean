@@ -76,7 +76,7 @@ structure Mem where
   /-- mimic ordinal (0-based; meaningful when `real? = none`) -/
   j : Nat
   /-- the carrier's head: `T_m` at a real member, the container `I` at a mimic -/
-  I : Name
+  I : Key
   /-- the carrier's levels -/
   lv : List Level
   /-- the pins (the container's parameters), at the parameter frame;
@@ -93,7 +93,7 @@ structure ACtor where
   /-- the member it belongs to -/
   mem : Nat
   /-- the public constructor name (the container's at a mimic) and levels -/
-  cname : Name
+  cname : Key
   clv : List Level
   /-- field count -/
   nF : Nat
@@ -116,7 +116,7 @@ container's levels and pins (shared by the group), `large` whether its
 recursors carry an elimination level. -/
 structure Group where
   tags : List Nat
-  recNames : List Name
+  recNames : List Key
   lv : List Level
   pins : List Expr
   nPI : Nat
@@ -125,7 +125,7 @@ structure Group where
 
 /-- The family read off the block. -/
 structure Family where
-  T : Name
+  T : Key
   lps : List LevelParam
   nP : Nat
   /-- the parameter binders (from the first former) -/
@@ -305,7 +305,7 @@ def readMems (lps : List LevelParam) (nP : Nat) (types : List IndTypeRec)
 /-- Read the constructors off the minors: minor `J`'s domain
 `∀ f⃗ ih⃗, motive_m e⃗ (C As f⃗)`, `nF` from the rules. -/
 def readCtors (fam : Family) (M : Nat) (minors : List Expr)
-    (nFOf : Name → Nat → Except String Nat) : Except String (List ACtor) := do
+    (nFOf : Key → Nat → Except String Nat) : Except String (List ACtor) := do
   let mut out : List ACtor := []
   let mut perMem : List Nat := fam.mems.map fun _ => 0
   for J in List.range minors.length do
@@ -457,7 +457,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     unless rr.cv.levelParams == rlps do throw s!"recursor {rr.cv.name}: eliminator shape differs"
   -- field counts: a real constructor's from the block, a mimic's from
   -- the member's recursor rules
-  let nFOf : Name → Nat → Except String Nat := fun cname mem => do
+  let nFOf : Key → Nat → Except String Nat := fun cname mem => do
     let some memR := mems.find? (·.tag == mem) | throw "unreachable"
     match memR.real? with
     | some _ =>
@@ -521,7 +521,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let some (motivesI, _) := afterPI.stripPis MI | throw s!"container {I1}: recursor motives"
     let memsI ← readMems lpsI nPI cb.types (motivesI.map (·.1))
     let mut tags : List Nat := []
-    let mut recNames : List Name := []
+    let mut recNames : List Key := []
     for memI in memsI do
       -- the family member's carrier at the pins: instantiate the
       -- container's parameters (under the member's index binders)
@@ -571,17 +571,17 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let rlvls : List Level := if large then ℓ :: lps.map .param else lps.map .param
   let elimTag := if large then elim else freshLevelParam lps
   let blockNames := (b.types.map (·.cv.name)) ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
-  let rnF : Name → Name := fun x => if blockNames.contains x then modelName x else x
+  let rnF : Key → Key := fun x => if blockNames.contains x then modelName x else x
   let rn : Expr → Expr := Expr.renameConsts rnF
   let tag := tagName T
   let aux := auxName T
   let mut out : Array Declaration := #[]
-  let mut heights : List (Name × Nat) := []
-  let hOf : List (Name × Nat) → Name → Nat := fun hs x =>
+  let mut heights : List (Key × Nat) := []
+  let hOf : List (Key × Nat) → Key → Nat := fun hs x =>
     match hs.find? (·.1 == x) with
     | some (_, h) => h
     | none => ctx.heights x
-  let push := fun (o : Array Declaration) (hs : List (Name × Nat)) (nm : Name) (l : List LevelParam)
+  let push := fun (o : Array Declaration) (hs : List (Key × Nat)) (nm : Key) (l : List LevelParam)
       (ty v : Expr) =>
     let h := hintFor (hOf hs) v
     (o.push (.defnDecl ⟨nm, l, ty⟩ v h), (nm, hintHeight h) :: hs)
@@ -596,7 +596,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         | throw s!"cannot bound the sort of index {j} of member {mem.tag} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
-  let tagCtors : List (Name × Nat × Expr × List Nat) ← mems.mapM fun mem => do
+  let tagCtors : List (Key × Nat × Expr × List Nat) ← mems.mapM fun mem => do
     let ty ← need "tag constructor type" (Expr.replacePiBody nP t0.cv.type
       (mkPis (mem.idxBs.map fun d => specAll fam 0 d)
         (Expr.mkAppN (constP tag lps) (varsAt mem.nIdx nP))))
@@ -614,7 +614,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- 2. the auxiliary family
   let auxTy ← need "aux type" (Expr.replacePiBody nP t0.cv.type
     (.forallE (Expr.mkAppN (constP tag lps) (varsAt 0 nP)) (.sort u) bm))
-  let auxCtors : List (Name × Nat × Expr × List Nat) ← ctors.mapM fun c => do
+  let auxCtors : List (Key × Nat × Expr × List Nat) ← ctors.mapM fun c => do
     let doms' := (List.range c.nF).map fun i =>
       specAll fam i (c.doms.getD i default)
     let ty ← need "aux constructor type" (Expr.replacePiBody nP t0.cv.type
@@ -680,7 +680,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let packUnpackAll := implName T "packUnpack"
   let recAll := implName T "rec"
   -- `pack_j p⃗ idx x`, `unpack_j p⃗ idx s` … applications at frame `o`
-  let appImpl := fun (nm : Name) (o : Nat) (idx : List Expr) (args : List Expr) =>
+  let appImpl := fun (nm : Key) (o : Nat) (idx : List Expr) (args : List Expr) =>
     Expr.mkAppN (constP nm lps) (varsAt o nP ++ idx ++ args)
   -- the model-side carrier of a member at frame `o`
   let carrM := fun (mem : Mem) (o : Nat) (idx : List Expr) => carrierAt fam mem o idx true
@@ -1247,7 +1247,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       out := out.push (.thmDecl ⟨iotaName rr.cv.name c.jIn, rlps, stmt⟩ proof)
   -- 10. projection artifacts of structure-like non-Prop real members
   -- (under a LARGE eliminator only: `Mutual.lean` step 7)
-  let genTypes : List (Name × List LevelParam × Expr) :=
+  let genTypes : List (Key × List LevelParam × Expr) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
   let tbl' : ConstTable := fun x =>

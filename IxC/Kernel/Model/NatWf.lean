@@ -28,7 +28,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported)
 
 universe w
@@ -283,7 +283,7 @@ variable {m : EnvModel V env}
 /-- The common induction for `Nat.div` and `Nat.mod` (they share their
 guards and their step argument) — `natOpV_divmod`'s mirror. -/
 theorem natOpV_divmod (hops : NatOps m φ) (hnh : NatHeads m φ)
-    (hval : AcvalValid m) (hdm : DivMod m φ) {c : Name}
+    (hval : AcvalValid m) (hdm : DivMod m φ) {c : Key}
     (hc : c = Ix.Kernel.natDivName ∨ c = Ix.Kernel.natModName)
     {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
     (hf : env.find? c = some (.defnInfo cv v hint)) (ρ : Nat → V) :

@@ -243,7 +243,7 @@ iota-certificate checks below consume only the stored constant's
 *type* (any stored constant witnesses its type's inhabitation in the
 model — `EnvModel.mem_type` is kind-agnostic), so no theorem-kind
 filter is imposed. -/
-def Env.findCV? (env : Env) (n : Name) : Option ConstantVal :=
+def Env.findCV? (env : Env) (n : Key) : Option ConstantVal :=
   (env.find? n).map (·.toConstantVal)
 
 /-- The result sort of a syntactic pi telescope (the sort the type

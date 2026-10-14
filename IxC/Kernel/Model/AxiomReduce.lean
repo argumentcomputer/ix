@@ -44,7 +44,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta inferTypeCore)
 
 universe w
@@ -60,7 +60,7 @@ spine are binder-free, so the pin fixes the whole shape and leaves
 exactly the three binder names and the three binder metas free —
 which is precisely the freedom the bit lemma below removes
 (`propext_shapeS`'s pattern at a longer spine). -/
-theorem ofReduce_shapeS {n : Name} {type' : Expr}
+theorem ofReduce_shapeS {n : Key} {type' : Expr}
     (hn : n = Ix.Kernel.ofReduceNatName ∨ n = Ix.Kernel.ofReduceBoolName)
     (h : type'.erasePw
       = (Ix.Kernel.ofReducePinA n).type.erasePw) :
@@ -118,7 +118,7 @@ element type is the spine's type argument, and the peel never reads
 it, so nothing about the stored `Nat`/`Bool` enters. -/
 theorem ofReduce_bits (hμ : μ.verifiedChecks = true)
     (hEq : env.find? eqName = some eqA)
-    {E c : Name} {m₁ m₂ m₃ : BinderMeta}
+    {E c : Key} {m₁ m₂ m₃ : BinderMeta}
     {d : Nat} {stype : Expr}
     (hrun : inferTypeCore μ env F d
       (.forallE (.const E [])

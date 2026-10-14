@@ -29,7 +29,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 model values, and every installed projection function carries its
 `_model.proj_j`'s.  These three conjuncts are `projFwd`'s three
 cases. -/
-def ProjPhaseInvS (T ctorName : Name) (nF : Nat) (env' : Env)
+def ProjPhaseInvS (T ctorName : Key) (nF : Nat) (env' : Env)
     (cval : TConstVal) : Prop :=
   (∀ ci, env'.find? T = some ci →
     ∃ cvm mval hmcvm,
@@ -54,7 +54,7 @@ def ProjPhaseInvS (T ctorName : Name) (nF : Nat) (env' : Env)
 /-- The projection renaming, pruned to the stored names, is sound at
 the phase invariant.  Its three cases *are* the invariant's three
 conjuncts. -/
-theorem projFwd_renameOkT {T ctorName : Name} {nF : Nat} {env' : Env}
+theorem projFwd_renameOkT {T ctorName : Key} {nF : Nat} {env' : Env}
     {cval : TConstVal} (hinv : ProjPhaseInvS T ctorName nF env' cval) :
     RenameOkT cval env' (fun n => if (env'.find? n).isSome = true then
       projFwd T ctorName nF n else n) := by

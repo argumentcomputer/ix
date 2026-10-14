@@ -38,7 +38,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 
 universe w
 
@@ -100,7 +100,7 @@ theorem plainParamSupply {m : EnvModel V env} {F : Nat}
     {ctyR : Expr} {cdoms : List Expr} {cres : Expr}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     -- the renaming between the two runs' types
-    {f : Name → Name} (hro : RenameOk m.acval env f)
+    {f : Key → Key} (hro : RenameOk m.acval env f)
     (hrenCty : RenEqT f ctyP ctyR) :
     ∀ q, q < cnP → ∀ ρ' : Nat → V, Sat V Δa ρ' →
       ∃ w, denoteMeta m.acval env φ (rP + cnF) (sp.getD q default)

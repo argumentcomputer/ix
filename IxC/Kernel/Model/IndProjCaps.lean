@@ -50,7 +50,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps)
 
 universe w
@@ -62,10 +62,10 @@ variable {μ : CheckMode} {env : Env}
 `recInfo` head, V-free).  Either the family descends untouched — with
 the three disequalities the transport needs — or the cons completes
 it, at the cons's own former and field index. -/
-theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Name} {i : Nat}
+theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Key} {i : Nat}
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
-    {T : Name} {cvT : ConstantVal} {caps : IndCaps}
+    {T : Key} {cvT : ConstantVal} {caps : IndCaps}
     (hfT : (⟨c₀ :: env.consts⟩ : Env).find? T
       = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
@@ -75,7 +75,7 @@ theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Name} {i : Nat}
         ∀ j, j < caps.etaFields → Ix.Kernel.projFnName T j ≠ c₀.name) ∨
       (T = T₀ ∧ i < caps.etaFields) := by
   obtain ⟨cvr, mIr, rPr, rulesr, hc₀eq⟩ := hc₀rec
-  have hdown : ∀ n : Name, n ≠ c₀.name →
+  have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
@@ -124,7 +124,7 @@ descends by kind at once, and — post-repair — the unit half carries no
 family premise to re-establish. -/
 theorem capsOk_cons_proj (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key} {i : Nat}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)

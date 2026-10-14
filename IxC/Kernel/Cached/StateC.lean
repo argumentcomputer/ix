@@ -129,10 +129,10 @@ caches for the five entry points, the lazy caches for
 level-instantiated stored constants, the level-operation memos, and
 the persistent bulk-instantiation memo (task #145). -/
 structure CState where
-  ienv : Std.HashMap Name CConstE := {}
-  constTyAt : Std.HashMap (Name × List Level) Expr := {}
-  constValAt : Std.HashMap (Name × List Level) Expr := {}
-  ruleRhsAt : Std.HashMap (Name × Name × List Level) Expr := {}
+  ienv : Std.HashMap Key CConstE := {}
+  constTyAt : Std.HashMap (Key × List Level) Expr := {}
+  constValAt : Std.HashMap (Key × List Level) Expr := {}
+  ruleRhsAt : Std.HashMap (Key × Key × List Level) Expr := {}
   whnfCoreC : Std.HashMap Expr Expr := {}
   whnfC : Std.HashMap Expr Expr := {}
   inferC : Std.HashMap Expr Expr := {}
@@ -311,7 +311,7 @@ def isEquivListLM : List Level → List Level → CheckCM (Option Bool)
 
 /-- The `Expr` of a stored constant's type: the cached entry when its
 `Expr` tag validates by pointer equality, else a fresh conversion. -/
-def storedTyIdxM (n : Name) (ty : Expr) : CheckCM Expr := do
+def storedTyIdxM (n : Key) (ty : Expr) : CheckCM Expr := do
   let ent? : Option CConstE ← modifyGet fun s => (s.ienv[n]?, s)
   match ent? with
   | some ent =>
@@ -321,7 +321,7 @@ def storedTyIdxM (n : Name) (ty : Expr) : CheckCM Expr := do
 
 /-- The `Expr` of a stored definition/theorem value (see
 `storedTyIdxM`). -/
-def storedValIdxM (n : Name) (v : Expr) : CheckCM Expr := do
+def storedValIdxM (n : Key) (v : Expr) : CheckCM Expr := do
   let ent? : Option CConstE ← modifyGet fun s => (s.ienv[n]?, s)
   match ent? with
   | some ⟨_, _, some (vE, vi)⟩ =>
@@ -330,7 +330,7 @@ def storedValIdxM (n : Name) (v : Expr) : CheckCM Expr := do
   | _ => pure v
 
 /-- The level-instantiated *type* of the stored constant `n`. -/
-def constTyAtM (fe : FEnv) (_nI : Name) (n : Name) (us : List Level) :
+def constTyAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
     CheckCM Expr := do
   let hit? ← modifyGet fun s => (s.constTyAt[(n, us)]?, s)
   match hit? with
@@ -349,7 +349,7 @@ def constTyAtM (fe : FEnv) (_nI : Name) (n : Name) (us : List Level) :
     | none => throw (.internal "constTyAtM: unknown constant")
 
 /-- The level-instantiated *value* of the stored definition `n`. -/
-def constValAtM (fe : FEnv) (_nI : Name) (n : Name) (us : List Level) :
+def constValAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
     CheckCM Expr := do
   let hit? ← modifyGet fun s => (s.constValAt[(n, us)]?, s)
   match hit? with
@@ -368,7 +368,7 @@ def constValAtM (fe : FEnv) (_nI : Name) (n : Name) (us : List Level) :
 
 /-- The level-instantiated right-hand side of the rule for constructor
 `j` of the stored recursor `c`. -/
-def ruleRhsAtM (fe : FEnv) (_cI _jI : Name) (c j : Name) (us : List Level) :
+def ruleRhsAtM (fe : FEnv) (_cI _jI : Key) (c j : Key) (us : List Level) :
     CheckCM Expr := do
   let hit? ← modifyGet fun s => (s.ruleRhsAt[(c, j, us)]?, s)
   match hit? with
@@ -521,7 +521,7 @@ def constsResolveFC (fe : FEnv) (e : Expr) : Bool :=
 /-- Record an accepted constant's converted type/value, tagged with the
 very `Expr` objects pushed into the environment (the counterpart of
 `recordIConst`). -/
-def recordCConst (n : Name) (tyE : Expr) (ty : Expr)
+def recordCConst (n : Key) (tyE : Expr) (ty : Expr)
     (val : Option (Expr × Expr)) : CheckCM Unit :=
   modify fun s =>
     let m := s.ienv

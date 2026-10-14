@@ -66,7 +66,7 @@ theorem EnvExtends.cons {env : Env} {c₀ : ConstantInfo}
 /-- `findProj?` transports up an extension (a table is stored under a
 name; `hext` carries the lookup). -/
 theorem EnvExtends.findProj?_mono {env₁ env₂ : Env}
-    (hext : EnvExtends env₁ env₂) {sn : Name} {i : Nat}
+    (hext : EnvExtends env₁ env₂) {sn : Key} {i : Nat}
     {entry : ProjEntry} (h : env₁.findProj? sn i = some entry) :
     env₂.findProj? sn i = some entry := by
   obtain ⟨tbl, h0, hi, rfl⟩ := Env.findProj?_some h
@@ -76,7 +76,7 @@ theorem EnvExtends.findProj?_mono {env₁ env₂ : Env}
 lookup where none existed. -/
 theorem findProj?_cons_of_base_none {env : Env} {c₀ : ConstantInfo}
     (hntc : ∀ tbl, c₀ ≠ .projInfo tbl) :
-    ∀ (sn : Name) (i : Nat),
+    ∀ (sn : Key) (i : Nat),
       env.findProj? sn i = none →
       Env.findProj? ⟨c₀ :: env.consts⟩ sn i = none := by
   intro sn i h0
@@ -102,7 +102,7 @@ derived here so that the install sites, which have the freshness facts
 in hand, discharge them the cheap way. -/
 theorem denote_mono {cval : TConstVal} {env₁ env₂ : Env} {φ : LevelParam → Nat}
     (hext : EnvExtends env₁ env₂)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key) (i : Nat),
       env₁.findProj? sn i = none → env₂.findProj? sn i = none)
     (hnat : natLitSupported env₁ = true → natLitSupported env₂ = true)
     (hstr : strLitSupported env₁ = true → strLitSupported env₂ = true)
@@ -394,7 +394,7 @@ theorem LitAgree.of_fresh {env : Env} {cval cval' : TConstVal}
     {c₀ : ConstantInfo} (hfresh : env.find? c₀.name = none)
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n) :
     LitAgree env cval cval' := by
-  have step : ∀ n : Name, (env.find? n).isSome = true →
+  have step : ∀ n : Key, (env.find? n).isSome = true →
       cval n = cval' n := fun n hn =>
     hag n (fun hh => by rw [hh, hfresh] at hn; exact nomatch hn)
   refine ⟨fun hg => step _ ?_, fun hg => step _ ?_, fun hg => step _ ?_,
@@ -449,7 +449,7 @@ theorem strLitSupported_cons_of_ne {env : Env} {c₀ : ConstantInfo}
     if_neg h10]
 
 /-- The stored level parameters of a name other than the new one. -/
-theorem levelParamsAt_cons_of_ne {env : Env} {c₀ : ConstantInfo} {n : Name}
+theorem levelParamsAt_cons_of_ne {env : Env} {c₀ : ConstantInfo} {n : Key}
     (h : c₀.name ≠ n) :
     levelParamsAt ⟨c₀ :: env.consts⟩ n = levelParamsAt env n := by
   unfold levelParamsAt
@@ -477,7 +477,7 @@ every slot the guard reads is stored in the *small* environment, and
 freshness then says the new constant is none of them. -/
 
 /-- A stored name is not the freshly installed one. -/
-theorem ne_of_isSome_fresh {env : Env} {c₀ : ConstantInfo} {n : Name}
+theorem ne_of_isSome_fresh {env : Env} {c₀ : ConstantInfo} {n : Key}
     (hfresh : env.find? c₀.name = none) (h : (env.find? n).isSome = true) :
     c₀.name ≠ n := by
   intro he
@@ -491,7 +491,7 @@ theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : LevelParam → Na
     (hntc : ∀ e', c₀ ≠ .projInfo e') :
     ∀ (d : Nat) (e : Expr), e.constsResolve env = true →
       denote cval ⟨c₀ :: env.consts⟩ φ d e = denote cval env φ d e := by
-  have hbranch : ∀ (sn : Name) (i : Nat) (ve : Term),
+  have hbranch : ∀ (sn : Key) (i : Nat) (ve : Term),
       (match Env.findProj? ⟨c₀ :: env.consts⟩ sn i with
         | some entry => some (projNV (i + entry.off) ve)
         | none => Term.projPair? i ve)
@@ -729,7 +729,7 @@ theorem strLitSupported_cons {env : Env} {c₀ : ConstantInfo}
   exact ⟨⟨⟨⟨⟨⟨⟨natLitSupported_cons hfresh h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩
 
 /-- The `Nat`-operation guard is monotone under a fresh install. -/
-theorem natOpGuard_cons {env : Env} {c₀ : ConstantInfo} {c : Name}
+theorem natOpGuard_cons {env : Env} {c₀ : ConstantInfo} {c : Key}
     (hfresh : env.find? c₀.name = none) (h : natOpGuard env c = true) :
     natOpGuard ⟨c₀ :: env.consts⟩ c = true := by
   simp only [natOpGuard, Bool.and_eq_true] at h ⊢
@@ -807,7 +807,7 @@ theorem Installs.of_fresh {env : Env} {cval cval' : TConstVal}
     (hntc : ∀ e', c₀ ≠ .projInfo e')
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n) :
     Installs env cval cval' c₀ := by
-  have step : ∀ n : Name, (env.find? n).isSome = true →
+  have step : ∀ n : Key, (env.find? n).isSome = true →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := fun n hn =>
     Env.find?_cons_of_isSome hfresh hn
   refine ⟨hfresh, hntc, hag, LitAgree.of_fresh hfresh hag, fun hg => ?_,
@@ -835,7 +835,7 @@ theorem Installs.denoteUp {env : Env} {cval cval' : TConstVal}
 
 /-- A stored name is valued the same after an ordinary install. -/
 theorem Installs.agree {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Name}
+    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Key}
     (h : (env.find? n).isSome = true) : cval n = cval' n :=
   hi.ag n (Ne.symm (ne_of_isSome_fresh hi.fresh h))
 
@@ -861,7 +861,7 @@ theorem Installs.denoteDown {env : Env} {cval cval' : TConstVal}
 
 /-- Lookups of stored names are unchanged by an ordinary install. -/
 theorem Installs.find {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Name}
+    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Key}
     (h : (env.find? n).isSome = true) :
     Env.find? ⟨c₀ :: env.consts⟩ n = env.find? n :=
   Env.find?_cons_of_isSome hi.fresh h
@@ -903,7 +903,7 @@ theorem ProjOkT.cons {env : Env} {c₀ : ConstantInfo} (h : ProjOkT env)
     (hheadTower : ∀ tbl, c₀ = .projInfo tbl →
       ∀ i, i < tbl.numFields → TowerHead ⟨c₀ :: env.consts⟩ (tbl.entry i)) :
     ProjOkT ⟨c₀ :: env.consts⟩ := by
-  have hkeep : ∀ (n : Name) (ci : ConstantInfo),
+  have hkeep : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → (⟨c₀ :: env.consts⟩ : Env).find? n = some ci := by
     intro n ci _ hf
@@ -918,7 +918,7 @@ theorem ProjOkT.cons {env : Env} {c₀ : ConstantInfo} (h : ProjOkT env)
 
 /-- Every name a clause set reads is valued the same after an install
 at a different name. -/
-theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Name}
+theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Key}
     (hag : ∀ n, (env.find? n).isSome = true → cval n = cval' n)
     (hg : natOpGuard env c = true) :
     (∀ n ∈ natOpDeps c, cval n = cval' n) ∧
@@ -950,15 +950,15 @@ theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Name}
 
 
 /-- Extend a valuation at one name by an explicitly chosen term. -/
-@[expose] def cvalWith (cval : TConstVal) (n : Name) (V : (LevelParam → Nat) → Term) :
+@[expose] def cvalWith (cval : TConstVal) (n : Key) (V : (LevelParam → Nat) → Term) :
     TConstVal := fun c ψ => if c = n then V ψ else cval c ψ
 
-theorem cvalWith_ne {cval : TConstVal} {n : Name}
-    {V : (LevelParam → Nat) → Term} {c : Name} (h : c ≠ n) :
+theorem cvalWith_ne {cval : TConstVal} {n : Key}
+    {V : (LevelParam → Nat) → Term} {c : Key} (h : c ≠ n) :
     cvalWith cval n V c = cval c := by
   funext ψ; simp [cvalWith, h]
 
-theorem cvalWith_self {cval : TConstVal} {n : Name}
+theorem cvalWith_self {cval : TConstVal} {n : Key}
     {V : (LevelParam → Nat) → Term} : cvalWith cval n V n = V := by
   funext ψ; simp [cvalWith]
 
@@ -971,16 +971,16 @@ function that could satisfy it.) -/
 
 /-- Extend a valuation at one name by a closed expression's
 denotation. -/
-def cvalAt (cval : TConstVal) (env : Env) (n : Name) (value : Expr) :
+def cvalAt (cval : TConstVal) (env : Env) (n : Key) (value : Expr) :
     TConstVal := fun c ψ =>
   if c = n then (denoteClosed cval env ψ value).getD (cval c ψ)
   else cval c ψ
 
-theorem cvalAt_ne {cval : TConstVal} {env : Env} {n : Name} {value : Expr}
-    {c : Name} (h : c ≠ n) : cvalAt cval env n value c = cval c := by
+theorem cvalAt_ne {cval : TConstVal} {env : Env} {n : Key} {value : Expr}
+    {c : Key} (h : c ≠ n) : cvalAt cval env n value c = cval c := by
   funext ψ; simp [cvalAt, h]
 
-theorem cvalAt_self {cval : TConstVal} {env : Env} {n : Name}
+theorem cvalAt_self {cval : TConstVal} {env : Env} {n : Key}
     {value : Expr} {ψ : LevelParam → Nat} {v : Term}
     (h : denoteClosed cval env ψ value = some v) :
     cvalAt cval env n value n ψ = v := by

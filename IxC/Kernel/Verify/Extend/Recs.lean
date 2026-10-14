@@ -28,7 +28,7 @@ open Expr
 
 /-- The per-item facts of the provisioning phase, chaining the
 provisional environments. -/
-inductive ProvFacts (F : Nat) (blockNames : List Name) :
+inductive ProvFacts (F : Nat) (blockNames : List Key) :
     Env → Env →
     List (ConstantVal × Nat × Nat × List RecRule) → Prop
   | nil {env : Env} : ProvFacts F blockNames env env []
@@ -56,11 +56,11 @@ inductive ProvFacts (F : Nat) (blockNames : List Name) :
         ((cvA, mI, rP, rules) :: rest)
 
 /-- Lookups below the provisional chain are preserved. -/
-theorem ProvFacts.find?_preserved {F : Nat} {blockNames : List Name} :
+theorem ProvFacts.find?_preserved {F : Nat} {blockNames : List Key} :
     ∀ {envAcc envSelf : Env}
       {checked : List (ConstantVal × Nat × Nat × List RecRule)},
       ProvFacts F blockNames envAcc envSelf checked →
-      ∀ (n : Name) (ci : ConstantInfo), envAcc.find? n = some ci →
+      ∀ (n : Key) (ci : ConstantInfo), envAcc.find? n = some ci →
         envSelf.find? n = some ci := by
   intro envAcc envSelf checked h
   induction h with
@@ -99,7 +99,7 @@ theorem SwapPairSh.name_eq {c₀ c₃ : ConstantInfo}
 theorem swapSh_find?_corr :
     ∀ {consts₀ consts₃ : List ConstantInfo},
     SwapShList consts₀ consts₃ →
-    ∀ n : Name,
+    ∀ n : Key,
     (Env.mk consts₃).find? n = (Env.mk consts₀).find? n ∨
     ∃ cv mI rP rules,
       (Env.mk consts₀).find? n = some (.recInfo cv mI rP []) ∧
@@ -142,7 +142,7 @@ theorem swapSh_find?_corr :
 environments; the list pairs each provisioned item with its checked
 rule list. -/
 inductive RulesChain (mode : CheckMode) (F : Nat)
-    (env' envS : Env) (f : Name → Name) :
+    (env' envS : Env) (f : Key → Key) :
     Env → Env →
     List ((ConstantVal × Nat × Nat × List RecRule) ×
       List RecRule) → Prop
@@ -158,7 +158,7 @@ inductive RulesChain (mode : CheckMode) (F : Nat)
         (((cvA, mI, rP, rules), rules') :: rest)
 
 /-- Invert the rule-checking fold into its chain. -/
-theorem rulesFold_inv {F : Nat} {env' envS : Env} {f : Name → Name} :
+theorem rulesFold_inv {F : Nat} {env' envS : Env} {f : Key → Key} :
     ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule)) (envAcc env₃ : Env),
     checked.foldlM (fun (acc : Env) c => do
         let rules' ← checkIotaRules mode (fueledOps mode F) env' envS f c.1.name
@@ -186,8 +186,8 @@ theorem rulesFold_inv {F : Nat} {env' envS : Env} {f : Name → Name} :
       exact RulesChain.cons hcir hchain⟩
 
 /-- The two chains' environments correspond pointwise (shape level). -/
-theorem chains_swapSh {F : Nat} {blockNames : List Name}
-    {env' envS : Env} {f : Name → Name} :
+theorem chains_swapSh {F : Nat} {blockNames : List Key}
+    {env' envS : Env} {f : Key → Key} :
     ∀ {zipped : List ((ConstantVal × Nat × Nat × List RecRule) × List RecRule)}
       {accS acc₃ envSelf env₃ : Env},
       ProvFacts F blockNames accS envSelf (zipped.map Prod.fst) →
@@ -214,7 +214,7 @@ theorem chains_swapSh {F : Nat} {blockNames : List Name}
 
 /-- Per-item extraction from the rule chain. -/
 theorem RulesChain.mem_facts {F : Nat} {env' envS : Env}
-    {f : Name → Name} :
+    {f : Key → Key} :
     ∀ {envAcc env₃ : Env}
       {zipped : List ((ConstantVal × Nat × Nat × List RecRule) × List RecRule)},
       RulesChain mode F env' envS f envAcc env₃ zipped →
@@ -234,7 +234,7 @@ theorem RulesChain.mem_facts {F : Nat} {env' envS : Env}
 /-- Per-item extraction from the provisioning chain: each item's
 recorded facts, its stored provisional recursor, and the embedding of
 its own environment into the final provisional one. -/
-theorem ProvFacts.mem_facts {F : Nat} {blockNames : List Name} :
+theorem ProvFacts.mem_facts {F : Nat} {blockNames : List Key} :
     ∀ {envAcc envSelf : Env}
       {checked : List (ConstantVal × Nat × Nat × List RecRule)},
       ProvFacts F blockNames envAcc envSelf checked →
@@ -262,7 +262,7 @@ theorem ProvFacts.mem_facts {F : Nat} {blockNames : List Name} :
       hms hbnc htyf htyb htlp htres hmodel hrest ih =>
     intro c hc
     rcases List.mem_cons.mp hc with rfl | hc
-    · have hupN : ∀ (n : Name) (ci : ConstantInfo),
+    · have hupN : ∀ (n : Key) (ci : ConstantInfo),
           (⟨.recInfo cvA mI rP [] ::
             envAcc.consts⟩ : Env).find? n = some ci →
           envSelf.find? n = some ci :=
@@ -293,7 +293,7 @@ theorem ProvFacts.mem_facts {F : Nat} {blockNames : List Name} :
     · exact ih c hc
 
 /-- Every input recursor is represented in the provisioned list. -/
-theorem provisionRecs_names {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_names {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -313,7 +313,7 @@ theorem provisionRecs_names {F : Nat} {blockNames : List Name} :
       exact ⟨c, List.mem_cons_of_mem _ hc, hcn⟩
 
 /-- Provisioning only extends the environment. -/
-theorem provisionRecs_mono {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_mono {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -335,7 +335,7 @@ theorem provisionRecs_mono {F : Nat} {blockNames : List Name} :
 
 /-- Every input recursor was fresh at the base of the provisioning
 chain. -/
-theorem provisionRecs_fresh {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_fresh {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -357,7 +357,7 @@ theorem provisionRecs_fresh {F : Nat} {blockNames : List Name} :
 
 /-- Provisioned recursors never carry a model-shaped name
 (`checkMemberVal` rejects them). -/
-theorem provisionRecs_modelfree {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_modelfree {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -377,7 +377,7 @@ theorem provisionRecs_modelfree {F : Nat} {blockNames : List Name} :
 
 /-- The provisioning chain's facts, model-free (for the run-level
 `EnvWF` threading). -/
-theorem provisionRecs_facts {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_facts {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -446,7 +446,7 @@ theorem swapSh_mem_corr :
 
 /-- Membership in the rule-checking fold's final environment: either
 an accumulator constant or an installed recursor of the chain. -/
-theorem rulesChain_mem {F : Nat} {env' envS : Env} {f : Name → Name} :
+theorem rulesChain_mem {F : Nat} {env' envS : Env} {f : Key → Key} :
     ∀ {envAcc env₃ : Env}
       {zipped : List ((ConstantVal × Nat × Nat × List RecRule) × List RecRule)},
       RulesChain mode F env' envS f envAcc env₃ zipped →
@@ -467,7 +467,7 @@ theorem rulesChain_mem {F : Nat} {env' envS : Env} {f : Name → Name} :
 
 /-- Provisioned recursors never carry a projection-function-shaped
 name (`checkConstantVal` rejects the shape). -/
-theorem provisionRecs_projshape {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_projshape {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
@@ -484,11 +484,11 @@ theorem provisionRecs_projshape {F : Nat} {blockNames : List Name} :
     · exact provisionRecs_projshape rest _ p' hrec ci hci
 
 /-- Provisioning adds only recursor-kind constants. -/
-theorem provisionRecs_find_new {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_find_new {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
-    ∀ (n : Name) (ci : ConstantInfo), p.1.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), p.1.find? n = some ci →
     envAcc.find? n = some ci ∨
       ∃ cv mI rP rules, ci = .recInfo cv mI rP rules
   | [], envAcc, p, h, n, ci, hf => by
@@ -508,11 +508,11 @@ theorem provisionRecs_find_new {F : Nat} {blockNames : List Name} :
 
 /-- Provisioning preserves stored lookups exactly (every cons is
 fresh). -/
-theorem provisionRecs_find_preserved {F : Nat} {blockNames : List Name} :
+theorem provisionRecs_find_preserved {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (envAcc : Env)
       (p : Env × List (ConstantVal × Nat × Nat × List RecRule)),
     provisionRecs (fueledOps mode F) blockNames envAcc recs = .ok p →
-    ∀ (n : Name) (ci : ConstantInfo), envAcc.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), envAcc.find? n = some ci →
     p.1.find? n = some ci
   | [], envAcc, p, h, n, ci, hf => by
     simp only [provisionRecs, pure, Except.pure, Except.ok.injEq] at h
@@ -555,11 +555,11 @@ structure SwapCongr (env₀ env₃ : Env) : Prop where
   /-- The `Nat`-operation guards are unchanged. -/
   guardEq : ∀ c, natOpGuard env₀ c = natOpGuard env₃ c
   /-- A non-recursor lookup transports down. -/
-  findDown : ∀ (n : Name) (ci : ConstantInfo), env₃.find? n = some ci →
+  findDown : ∀ (n : Key) (ci : ConstantInfo), env₃.find? n = some ci →
     (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
     env₀.find? n = some ci
   /-- …and up. -/
-  findUp : ∀ (n : Name) (ci : ConstantInfo), env₀.find? n = some ci →
+  findUp : ∀ (n : Key) (ci : ConstantInfo), env₀.find? n = some ci →
     (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
     env₃.find? n = some ci
 
@@ -568,7 +568,7 @@ is never a recursor, so `findDown`/`findUp` move it both ways (task
 #175 wiring W3 — `denote`'s `.proj` clause now reads the entry
 kind). -/
 theorem SwapCongr.projEq {env₀ env₃ : Env} (hcg : SwapCongr env₀ env₃) :
-    ∀ (sn : Name) (i : Nat), env₀.findProj? sn i = env₃.findProj? sn i := by
+    ∀ (sn : Key) (i : Nat), env₀.findProj? sn i = env₃.findProj? sn i := by
   intro sn i
   unfold Env.findProj?
   cases h0 : env₀.find? (projTableName sn) with
@@ -683,7 +683,7 @@ theorem SwapShList.congr {consts₀ consts₃ : List ConstantInfo}
 The checker-side twin of `indRecsR_fresh`, which the *bridge* needs
 (the install derives its base invariant from the relation; the bridge
 has to derive it from the checker — task #148 T6). -/
-theorem checkIndRecs_fresh {F : Nat} {blockNames : List Name}
+theorem checkIndRecs_fresh {F : Nat} {blockNames : List Key}
     {env₂ env₃ : Env} {recs : List ConstantInfo}
     (h : checkIndRecs mode (fueledOps mode F) blockNames env₂ recs
       = .ok env₃) :

@@ -48,7 +48,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta RecRule isDefEqCore inferTypeCore DefEqListOk)
 
 universe w
@@ -63,14 +63,14 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
     (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
-    {blockNames : List Name} {f : Name → Name}
+    {blockNames : List Key} {f : Key → Key}
     (hf : f = fun n =>
       if blockNames.contains n then n.str "_model" else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     -- the rule kits are checked against the running accumulator (see
     -- `iotaRuleS`: a correspondence, not an inclusion)
-    (hup : ∀ (n : Name) (ci : ConstantInfo), env₂.find? n = some ci →
+    (hup : ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
       envSelf.find? n = some ci ∨
       ∃ cv mI' rP' rules rules',
         ci = .recInfo cv mI' rP' rules ∧

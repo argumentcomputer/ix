@@ -115,20 +115,20 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
     type, stype, u, rfl, htp, htr, hst, hsort, h.symm⟩
 
 /-- Numeric names are never `str`-shaped. -/
-theorem Name.num_ne_str (p : Name) (k : Nat) (q : Name) (s : String) :
+theorem Name.num_ne_str (p : Key) (k : Nat) (q : Key) (s : String) :
     Name.num p k ≠ Name.str q s := fun h => nomatch h
 
 /-- Reserved basis names are all `str`-shaped. -/
-theorem reservedBasisNames_not_num (p : Name) (k : Nat) :
+theorem reservedBasisNames_not_num (p : Key) (k : Nat) :
     reservedBasisNames.contains (Name.num p k) = false := rfl
 
 /-- No `_model`-companion name equals a name that is not itself
 `_model`-shaped. -/
-theorem Name.str_model_ne {n m : Name} (hm : m.isModelSuffix = false) :
+theorem Name.str_model_ne {n m : Key} (hm : m.isModelSuffix = false) :
     n.str "_model" ≠ m := by
   intro h
   rw [← h] at hm
-  simp [Name.isModelSuffix] at hm
+  simp [Key.isModelSuffix] at hm
 
 theorem domsMatchAux_inv {g : Nat → Expr → Expr}
     {bs₁ bs₂ : List (Expr × BinderMeta)} {o₁ o₂ n : Nat}

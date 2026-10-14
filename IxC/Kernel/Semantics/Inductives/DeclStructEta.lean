@@ -30,7 +30,7 @@ the former master switch (gone at W4c).
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
+open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
   StructParts fueledOps checkConstantVal
   checkStructProjTable projTableName EtaFamiliesClosed ProjEntry)
 
@@ -38,7 +38,7 @@ open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
 
 /-- The table stage's run: the tower table consed at a fresh table
 name (task #175 S1). -/
-theorem checkStructProjTable_shape {T C : Name}
+theorem checkStructProjTable_shape {T C : Key}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env' : Env}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
@@ -52,7 +52,7 @@ theorem checkStructProjTable_shape {T C : Name}
 
 /-- The table stage keeps the η-families closed: a fresh cons of a
 table. -/
-theorem checkStructProjTable_etaClosed {T C : Name}
+theorem checkStructProjTable_etaClosed {T C : Key}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env₂ : Env}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF

@@ -35,7 +35,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps projFnName projModelName projFwd ReducibilityHint)
 
 universe w
@@ -47,12 +47,12 @@ variable {μ : CheckMode}
 block name (`BlockInstalledTT.fresh_cons`'s annotated half).  The
 `_model` side is free: the head's name is `projFnName T i`, a `Name.num`,
 and `n.str "_model"` never is. -/
-theorem blockAcvalInstalled_fresh_cons {blockNames : List Name}
-    {env : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem blockAcvalInstalled_fresh_cons {blockNames : List Key}
+    {env : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hIA : BlockAcvalInstalled blockNames env acval)
     (hnotb : blockNames.contains c₀.name = false)
-    (hstrNe : ∀ n : Name, c₀.name ≠ n.str "_model") :
+    (hstrNe : ∀ n : Key, c₀.name ≠ n.str "_model") :
     BlockAcvalInstalled blockNames ⟨c₀ :: env.consts⟩
       (acvalWith acval c₀.name A) := by
   intro n hbn ci hf ψ
@@ -68,8 +68,8 @@ theorem blockAcvalInstalled_fresh_cons {blockNames : List Name}
 set_option maxHeartbeats 1600000 in
 /-- **The projection entry installs, P tier** (`projConsS`). -/
 theorem projCons {env' : Env} (mp : EnvModelM V μ env')
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
-    {rules : List RecRule} {blockNames : List Name}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
+    {rules : List RecRule} {blockNames : List Key}
     {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
     {pty : Expr}
     {c₀ : ConstantInfo} (hc₀ : c₀ = projEntry T lps pty nP i rules)
@@ -130,7 +130,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     rw [hname]; exact hfreshP
   have hnotb₀ : blockNames.contains c₀.name = false := by
     rw [hname]; exact hnotb
-  have hstrNe₀ : ∀ n : Name, c₀.name ≠ n.str "_model" := by
+  have hstrNe₀ : ∀ n : Key, c₀.name ≠ n.str "_model" := by
     rw [hname]; exact fun n => Ix.Kernel.Name.num_ne_str _ _ _ _
   have hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false := by
     rw [hname]; exact Ix.Kernel.reservedBasisNames_not_num _ _

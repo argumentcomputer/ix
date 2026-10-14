@@ -161,7 +161,7 @@ private theorem envWF_cons_provRec {env : Env} (henv : EnvWF env)
 stays canonical, the index invariant is maintained, the output
 environment is well-formed, and the step is reproduced by the fueled
 generic step. -/
-theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Name} {caps : IndCaps}
+theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {caps : IndCaps}
     {env : Env} (henv : EnvWF env) {ci : ConstantInfo} {fe' : FEnv}
     {s₀ s' : CState} (hwf : CSOKF s₀)
     -- the block's capability pins at an inductive member (its stored
@@ -229,7 +229,7 @@ theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : Lis
   | recInfo cv mI rP rules => exact nomatch h
 
 /-- The member fold of the shared driver. -/
-theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Name} {caps : IndCaps} :
+theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {caps : IndCaps} :
     ∀ (cis : List ConstantInfo) (env : Env) {s₀ : CState}
       {fe' : FEnv} {s' : CState},
       EnvWF env → CSOKF s₀ →
@@ -278,7 +278,7 @@ theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List
 /-! ## The recursor group -/
 
 /-- The provisioning fold of the shared driver. -/
-theorem provisionRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Name} :
+theorem provisionRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) (env : Env) {s₀ : CState}
       {p : FEnv × List (ConstantVal × Nat × Nat × List RecRule)}
       {s' : CState},
@@ -372,7 +372,7 @@ theorem throwC_bind_ok {α β : Type} {e : CheckError} {k : α → CheckCM β}
 /-- The iota fold of the shared driver: all operations run at
 `envSelf`, one shared state across the whole fold. -/
 private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf : Env}
-    (henv₂ : EnvWF env₂) (henvS : EnvWF envSelf) {f : Name → Name} :
+    (henv₂ : EnvWF env₂) (henvS : EnvWF envSelf) {f : Key → Key} :
     ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule))
       (acc : FEnv) {s₀ : CState} {fe₃ : FEnv} {s' : CState},
       (∀ c ∈ checked, c.1.type.hasFvar = false) →
@@ -421,7 +421,7 @@ private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf
 
 /-- Convert the constructed fueled iota fold to a pure fold at the
 same fuel. -/
-private theorem iotaFold_datF {env₂ envSelf : Env} {f : Name → Name}
+private theorem iotaFold_datF {env₂ envSelf : Env} {f : Key → Key}
     {F : Nat} :
     ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule))
       (acc : Env) {env₃ : Env},
@@ -456,7 +456,7 @@ private theorem iotaFold_datF {env₂ envSelf : Env} {f : Name → Name}
     exact iotaFold_datF rest e₁ h
 
 /-- The recursor group of the shared driver. -/
-theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Name} {env₂ : Env}
+theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {env₂ : Env}
     {recs : List ConstantInfo} (henv₂ : EnvWF env₂)
     (hbn : ∀ ci ∈ recs, blockNames.contains ci.name = true)
     {s₀ : CState} (hwf : CSOKF s₀) {fe₃ : FEnv} {s' : CState}
@@ -593,7 +593,7 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
 
 /-- The projection-function install (mirrors `checkProjFn`). -/
 theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
     {s₀ : CState} (hs : CSOK mode env s₀) {fe' : FEnv} {s' : CState}
     (h : checkProjFnS mode (mkFEnv env) T ctorName lps nP nF i s₀ =
       .ok (fe', s')) :
@@ -732,7 +732,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
 
 /-- One projection-function install step. -/
 theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
     {s₀ : CState} (hwf : CSOKF s₀) {fe' : FEnv} {s' : CState}
     (h : installProjFnStepS mode T ctorName lps nP nF (mkFEnv env) i s₀ =
       .ok (fe', s')) :
@@ -764,7 +764,7 @@ theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (h
     rfl
 
 /-- The artifact-phase fold. -/
-theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Name} {lps : List LevelParam}
+theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Key} {lps : List LevelParam}
     {nP nF : Nat} :
     ∀ (idxs : List Nat) (env : Env) {s₀ : CState} {fe' : FEnv}
       {s' : CState},

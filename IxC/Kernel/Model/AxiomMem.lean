@@ -83,7 +83,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta)
 
 universe w
@@ -641,8 +641,8 @@ theorem nonemptyRec_shapeS {ty : Expr}
 
 /-- A member of the `Nonempty` family, referenced at its own level
 parameter, reads to its leaf at the plain assignment. -/
-theorem denoteMeta_selfParam_constS {acval : Name → (LevelParam → Nat) → AnnotTerm}
-    {ψ : LevelParam → Nat} {d : Nat} {n : Name} {ci : ConstantInfo}
+theorem denoteMeta_selfParam_constS {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {d : Nat} {n : Key} {ci : ConstantInfo}
     (hf : env.find? n = some ci)
     (hlp : ci.toConstantVal.levelParams = [uN]) :
     denoteMeta acval env ψ d (.const n [.param uN]) = some (acval n ψ) := by

@@ -278,7 +278,7 @@ environment extends `env` by exactly the constants above `env`'s
 length is `env`'s lookup. -/
 theorem restrictTo_find?_of_extends {feFinal : FEnv} {env : Env}
     (hcanon : feFinal = mkFEnv feFinal.env) (hnd : NodupNames feFinal.env)
-    {new : List ConstantInfo} (hext : feFinal.env.consts = new ++ env.consts) (n : Name) :
+    {new : List ConstantInfo} (hext : feFinal.env.consts = new ++ env.consts) (n : Key) :
     (feFinal.restrictTo env.consts.length).find? n = env.find? n := by
   have h1 : (feFinal.restrictTo env.consts.length).find? n
       = ((mkFEnv feFinal.env).restrictTo env.consts.length).find? n := by

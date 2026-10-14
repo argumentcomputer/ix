@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w'
 
@@ -65,7 +65,7 @@ theorem essOfR_fixCtorDataList (dsF : Nat → (LevelParam → Nat) → List (Nat
 /-! ## Read spines -/
 
 /-- A read spine transports along pointwise-equal readings. -/
-theorem DenoteMetaSpine.congr {acval₁ acval₂ : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+theorem DenoteMetaSpine.congr {acval₁ acval₂ : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval₁ env φ d as vs →
       (∀ a ∈ as, denoteMeta acval₁ env φ d a = denoteMeta acval₂ env φ d a) →
@@ -80,7 +80,7 @@ theorem DenoteMetaSpine.congr {acval₁ acval₂ : Name → (LevelParam → Nat)
 /-- **The former's index telescope**, valid at the parameter frame
 (beside `idxOk_of`). -/
 theorem idxValid_of (mp : EnvModelM V μ env)
-    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal} {T : Name}
+    {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal} {T : Key}
     {caps : IndCaps} (hfT : env.find? T = some (.indInfo cvTa caps))
     {tfvs : List Expr} {trest : Expr}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
@@ -108,7 +108,7 @@ theorem idxValid_of (mp : EnvModelM V μ env)
 data at a carrier storing the former as a λ-tower over the parameters
 (the validity halves of the shadow gradings). -/
 theorem fixChainValidFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
@@ -369,7 +369,7 @@ structure FixCtorPick where
 
 /-- `fixCtorData_of`, its witnesses bundled. -/
 theorem fixCtorPick_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {bs : List (Expr × BinderMeta)} {ks : List RecFieldKind}
     {sorts : List Level}
@@ -389,7 +389,7 @@ theorem fixCtorPick_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
 /-- **The constructors' data functions** at a carrier storing the
 former: every constructor's recursive data, its kind list the guard's. -/
 theorem fixCtorFuns_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvTa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
     {bs : List (Expr × BinderMeta)} {ctorsA : List (ConstantVal × Nat)}
     {kinds : List (List RecFieldKind)}
@@ -437,7 +437,7 @@ at the former: the openings and the residual's index arguments are
 syntactic, the index readings, the recursive slots' index expressions
 and the ordinary fields' domains read the same (none mentions the
 former). -/
-theorem fixCtorDataI_ident {acval : Name → (LevelParam → Nat) → AnnotTerm} {T : Name}
+theorem fixCtorDataI_ident {acval : Key → (LevelParam → Nat) → AnnotTerm} {T : Key}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T A₁)
     (hac₂ : m₂.acval = acvalWith acval T A₂) (hfresh : env₀.find? T = none)

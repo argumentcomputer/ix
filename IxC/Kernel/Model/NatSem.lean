@@ -34,7 +34,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported)
 
 universe w
@@ -98,7 +98,7 @@ theorem natLit_mem (m : EnvModel V env) (hnh : NatHeads m φ)
 /-- One certified recurrence equation, read at value slots
 (`natEq_value`'s mirror over `NatOps`). -/
 theorem natEq_value (m : EnvModel V env) (hops : NatOps m φ)
-    {c : Name} (hc : c ∈ Ix.Kernel.natOpNames) {cv : ConstantVal}
+    {c : Key} (hc : c ∈ Ix.Kernel.natOpNames) {cv : ConstantVal}
     {v : Expr} {hint : ReducibilityHint}
     (hf : env.find? c = some (.defnInfo cv v hint))
     {eq : Expr × Expr} (heq : eq ∈ Ix.Kernel.natOpEquations 0 c)

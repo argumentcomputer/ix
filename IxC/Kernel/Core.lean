@@ -97,7 +97,7 @@ so a `sorryAx` in a domain reaches inference first.  Its companion
 `unresolvedConstsError` (`IxC/Kernel/CheckerBase.lean`) decides
 the same question at the guard, for the `sorryAx` occurrences
 inference never reaches. -/
-def unknownConstError (n : Name) : CheckError :=
+def unknownConstError (n : Key) : CheckError :=
   if n = sorryAxName then .notImplemented "use of the sorryAx axiom"
   else .invalid s!"unknown constant {n}"
 
@@ -357,7 +357,7 @@ S1) has no per-field telescope and needs no certificate: its η law
 (`TowerEtaLaw`) is keyed on the family's typing of the stuck side,
 which the caller already holds. -/
 def structEtaProjCerts (r : CoreFns m) (env : Env) (depth : Nat)
-    (T : Name) (us' : List Level) (targs : List Expr) (b : Expr)
+    (T : Key) (us' : List Level) (targs : List Expr) (b : Expr)
     (lpsT : List LevelParam) : List Nat → m Bool
   | [] => pure true
   | i :: rest => do
@@ -556,7 +556,7 @@ major's projections is fabricated and certified by proof irrelevance
 (the `And` branch below).  An uncertified major stays put — sound, the
 reduction simply stays stuck. -/
 def majorToCtor (r : CoreFns m) (env : Env) (depth : Nat)
-    (_recName : Name) (rules : List RecRule) (major : Expr) : m Expr := do
+    (_recName : Key) (rules : List RecRule) (major : Expr) : m Expr := do
   -- cheap syntactic gates before any inference: a rescue needs a
   -- single-rule recursor whose rule carries the matching install-time
   -- rescue bit (`RecRule.k`/`RecRule.eta`)
@@ -785,7 +785,7 @@ theorem application — `Eq.ndrec … (Int.decEq._proof_1 a b h)` with
 official order fabricates `Eq.refl` from the type (`a ≡ b` by the
 `Nat` literal fast paths) and never opens either proof. -/
 def prepareMajor (r : CoreFns m) (env : Env) (depth : Nat)
-    (recName : Name) (rules : List RecRule) (major : Expr) : m Expr := do
+    (recName : Key) (rules : List RecRule) (major : Expr) : m Expr := do
   if recRuleK rules then
     let majorK ← majorToCtor mode r env depth recName rules major
     let major₀ ← r.whnf depth majorK
@@ -940,7 +940,7 @@ certificate is skipped — every field binder of an ordinary `structure`
 — which is the io skip the retired two-run certificate had through
 `inferSpine`. -/
 def projCert (r : CoreFns m) (env : Env) (depth : Nat) (lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : m Bool := do
+    (c : Key) (us : List Level) (args : List Expr) : m Bool := do
   match env.find? c with
   | some (.ctorInfo cvC _ _) =>
     iotaCerts r env depth lic
@@ -958,7 +958,7 @@ unconditionally.  The trusted lane stays an accept-superset of the P
 lane, which is all the agreement floor
 (`Verify/Cached/AgreeFloor.lean`) asks of it. -/
 def projCertAt (r : CoreFns m) (env : Env) (depth : Nat) (verified lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : m Bool :=
+    (c : Key) (us : List Level) (args : List Expr) : m Bool :=
   if verified then projCert r env depth lic c us args else pure true
 
 /-- The head-normalization body: beta (with the per-redex argument

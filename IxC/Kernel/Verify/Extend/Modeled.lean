@@ -24,7 +24,7 @@ variable {mode : CheckMode}
 open Expr
 
 /-- Invert a successful `checkMemberVal` run. -/
-theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
+theorem checkMemberVal_inv {blockNames : List Key} {env' : Env}
     {cv cvA : ConstantVal}
     (h : checkMemberVal (fueledOps mode F) blockNames env' cv = .ok cvA) :
     checkConstantVal (fueledOps mode F) env' cv = .ok cvA ∧
@@ -76,7 +76,7 @@ theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
   exact ⟨rfl, hmsF, cvm, mval, hmcvm, hfm, hlps, hren⟩
 
 /-- Invert a successful `checkIndMember` run (non-recursor members). -/
-theorem checkIndMember_inv {blockNames : List Name} {caps : IndCaps}
+theorem checkIndMember_inv {blockNames : List Key} {caps : IndCaps}
     {env' env₁ : Env} {ci : ConstantInfo}
     (h : checkIndMember (fueledOps mode F) blockNames caps env' ci = .ok env₁) :
     ∃ cvA cvm mval hmcvm,
@@ -114,7 +114,7 @@ theorem checkIndMember_inv {blockNames : List Name} {caps : IndCaps}
     exact Or.inr ⟨cv, nP, nF, rfl, h.symm⟩
 
 /-- One step of `provisionRecs`. -/
-theorem provisionRecs_cons_inv {blockNames : List Name}
+theorem provisionRecs_cons_inv {blockNames : List Key}
     {envAcc : Env} {ci : ConstantInfo} {rest : List ConstantInfo}
     {p : Env × List (ConstantVal × Nat × Nat × List RecRule)}
     (h : provisionRecs (fueledOps mode F) blockNames envAcc (ci :: rest) =

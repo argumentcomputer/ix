@@ -25,7 +25,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w
 
@@ -110,7 +110,7 @@ theorem fixCtorDataList_getElem? (dsF : Nat → (LevelParam → Nat) → List (N
     rw [show j + 1 + i = j + (i + 1) from by omega]
 
 /-- The per-constructor facts of a recursive block at a position. -/
-@[expose] def FixCtorFactsAt {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Name) (lps : List LevelParam)
+@[expose] def FixCtorFactsAt {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Key) (lps : List LevelParam)
     (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
@@ -138,11 +138,11 @@ theorem recIdxOf_pairwise (ks : List RecFieldKind) : (Ix.Kernel.recIdxOf ks).Pai
   (List.pairwise_lt_range).filter _
 
 /-- A positional characterisation of the reading premises. -/
-theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} :
-    ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR},
       ctors.length = cds.length →
-      (∀ (i : Nat) (c : Name × Nat × Expr × List Nat) (cd : CtorDatumR),
+      (∀ (i : Nat) (c : Key × Nat × Expr × List Nat) (cd : CtorDatumR),
         ctors[i]? = some c → cds[i]? = some cd → CtorReadR m ψ T lps nP nIdx c cd) →
       CtorReadsR m ψ T lps nP nIdx ctors cds
   | [], [], _, _ => .nil
@@ -153,7 +153,7 @@ theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T
       fun i c' cd' hc hcd => h (i + 1) c' cd' (by simpa using hc) (by simpa using hcd))
 
 /-- **The reading premises from the constructor facts.** -/
-theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Name} {lps : List LevelParam}
+theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxF : Nat → List Expr}
     {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}

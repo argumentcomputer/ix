@@ -59,14 +59,14 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint BinderMeta)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode} {env : Env} {F : Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
 
 /-! ## The capability statements' type slot, opened
 
@@ -75,7 +75,7 @@ type slot — open to the *same* expression, the model former applied to
 the canonical opener; only the depth they are read at differs.  One
 lemma, parameterised by the cut. -/
 
-theorem instSeq_openSpine (K : Name) (lvls : List Level)
+theorem instSeq_openSpine (K : Key) (lvls : List Level)
     (nP L t : Nat) (hnL : nP ≤ L) (hnP : nP ≤ t + 1) :
     Expr.instSeq (openFvars 0 L) t
         (Expr.mkAppN (.const K lvls)
@@ -99,7 +99,7 @@ theorem instSeq_openSpine (K : Name) (lvls : List Level)
 
 /-- The opened slot, read: the model former's leaf applied to the
 descending bound variables at whatever depth the slot sits. -/
-theorem denoteMeta_openSpine {K : Name} {ci : ConstantInfo}
+theorem denoteMeta_openSpine {K : Key} {ci : ConstantInfo}
     {lps : List LevelParam} (hf : env.find? K = some ci)
     (hlps : ci.toConstantVal.levelParams = lps)
     (nP d : Nat) (hd : nP ≤ d) :
@@ -120,7 +120,7 @@ type whose telescope the pins speak about.  Same two-move argument
 (`denoteMeta_renameConsts_resolve` past `denoteMeta_erasedEq`), stated as
 the equality. -/
 
-theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
+theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Key}
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
     {ty : Expr} (htr : ty.constsResolve env = true)
@@ -143,7 +143,7 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
       exact ⟨.defnInfo cvm₂ mval₂ hint₂, by rw [if_pos hb]; exact hfm₂,
         hlp₂⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
-  have hval : ∀ (n : Name) (ci : ConstantInfo),
+  have hval : ∀ (n : Key) (ci : ConstantInfo),
       env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
         if blockNames.contains n then n.str "_model" else n) n) ψ'
@@ -157,7 +157,7 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
   exact (denoteMeta_renameConsts_resolve hup hval ty 0 htr).symm
 
 /-- The member cons's instance: `MemberValR` supplies both data. -/
-theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
+theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Key}
     {cv cvA : ConstantVal}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)

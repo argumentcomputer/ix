@@ -40,7 +40,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 
 universe w
 
@@ -52,7 +52,7 @@ set_option maxHeartbeats 3200000 in
 (`annotPFrameEqS`): the public frame's opener annotations read to the
 statement tower's slots, and are graded. -/
 theorem annotPFrameEq {m : EnvModel V env}
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
     {rP cnP cnF : Nat}
     {Γs : List AnnotTerm}
     -- the public frame: the recursor prefix and the constructor fields

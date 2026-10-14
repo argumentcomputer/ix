@@ -31,7 +31,7 @@ namespace Ix.Kernel
 variable (mode : CheckMode)
 
 /-- Indexed `Env.findCV?`. -/
-def FEnv.findCV? (fe : FEnv) (n : Name) : Option ConstantVal :=
+def FEnv.findCV? (fe : FEnv) (n : Key) : Option ConstantVal :=
   (fe.find? n).map (·.toConstantVal)
 
 /-- Indexed `Expr.constsResolve` (same clauses, lookups through the
@@ -207,7 +207,7 @@ def Expr.constsResolveFFast (fe : FEnv) (e : Expr) : Bool :=
 `mkFEnv`; agreement lemmas in `IxC/Kernel/Verify/CheckerF.lean`) -/
 
 /-- `natOpCod` through the index. -/
-def natOpCodF (fe : FEnv) (c : Name) (e : Expr) : Bool :=
+def natOpCodF (fe : FEnv) (c : Key) (e : Expr) : Bool :=
   if c = natBeqName || c = natBleName then
     e == .const boolName [] &&
     (match fe.find? boolName with
@@ -217,7 +217,7 @@ def natOpCodF (fe : FEnv) (c : Name) (e : Expr) : Bool :=
   else e == .const natName []
 
 /-- `natOpTyPinned` through the index. -/
-def natOpTyPinnedF (fe : FEnv) (c : Name) (ty : Expr) : Bool :=
+def natOpTyPinnedF (fe : FEnv) (c : Key) (ty : Expr) : Bool :=
   if c = natPredName then
     match ty with
     | .forallE dom body _mb =>
@@ -231,7 +231,7 @@ def natOpTyPinnedF (fe : FEnv) (c : Name) (ty : Expr) : Bool :=
     | _ => false
 
 /-- `natOpStoredOk` through the index. -/
-def natOpStoredOkF (fe : FEnv) (n : Name) : Bool :=
+def natOpStoredOkF (fe : FEnv) (n : Key) : Bool :=
   match fe.find? n with
   | some (.defnInfo cv _ _) =>
     cv.levelParams.isEmpty && natOpTyPinnedF fe n cv.type
@@ -280,13 +280,13 @@ def trustCompilerOkF (fe : FEnv) (cvA : ConstantVal) : Bool :=
   ConstantVal.matchesPin cvA trustCompilerA
 
 /-- `reduceStoredOk` through the index. -/
-def reduceStoredOkF (fe : FEnv) (c : Name) : Bool :=
+def reduceStoredOkF (fe : FEnv) (c : Key) : Bool :=
   match fe.find? c with
   | some (.axiomInfo cvR) => ConstantVal.matchesPin cvR (reduceOpCvA c)
   | _ => false
 
 /-- `reduceElemOk` through the index. -/
-def reduceElemOkF (fe : FEnv) (c : Name) : Bool :=
+def reduceElemOkF (fe : FEnv) (c : Key) : Bool :=
   if c = reduceNatName then decide (fe.find? natName = some natA)
   else
     match fe.find? boolName with
@@ -302,13 +302,13 @@ def ofReduceAxOkF (fe : FEnv) (cvA : ConstantVal) : Bool :=
   ConstantVal.matchesPin cvA (ofReducePinA cvA.name)
 
 /-- `reducePinGuard` through the index. -/
-def reducePinGuardF (fe : FEnv) (c : Name) : Bool :=
+def reducePinGuardF (fe : FEnv) (c : Key) : Bool :=
   (reduceDeclPin c).looseBVarsBounded 0 && !(reduceDeclPin c).hasFvar &&
   (reduceDeclPin c).allLevelParamsDefined [] &&
   (reduceDeclPin c).constsResolveF fe
 
 /-- `divModEnvGuard` through the index. -/
-def divModEnvGuardF (fe2 : FEnv) (c : Name) : Bool :=
+def divModEnvGuardF (fe2 : FEnv) (c : Key) : Bool :=
   natOpGuardF fe2 c && (natOpDeps c).all (natOpStoredOkF fe2) &&
   fe2.find? eqName == some eqA &&
   (match fe2.find? boolTrueName with
@@ -319,7 +319,7 @@ def divModEnvGuardF (fe2 : FEnv) (c : Name) : Bool :=
     | none => false)
 
 /-- `divModCertGuard` through the index. -/
-def divModCertGuardF (fe : FEnv) (c : Name) (annVal : Expr)
+def divModCertGuardF (fe : FEnv) (c : Key) (annVal : Expr)
     (hyps : List Expr) (eqE proof : Expr) : Bool :=
   (Expr.substConstAll c annVal proof).looseBVarsBounded 0 &&
   !(Expr.substConstAll c annVal proof).hasFvar &&
@@ -330,19 +330,19 @@ def divModCertGuardF (fe : FEnv) (c : Name) (annVal : Expr)
   (Expr.substConst0 c annVal eqE).constsResolveF fe
 
 /-- `divModPinGuard` through the index. -/
-def divModPinGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Name) : Bool :=
+def divModPinGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Key) : Bool :=
   (divModDeclPin ps c).looseBVarsBounded 0 && !(divModDeclPin ps c).hasFvar &&
   (divModDeclPin ps c).allLevelParamsDefined [] &&
   (divModDeclPin ps c).constsResolveF fe
 
 /-- `divModCertsGuard` through the index. -/
-def divModCertsGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Name)
+def divModCertsGuardF (ps : NatOpPinSet) (fe : FEnv) (c : Key)
     (annVal : Expr) : Bool :=
   ((divModCertStmts c).zip (divModCertProofs ps c)).all
     (fun p => divModCertGuardF fe c annVal p.1.1 p.1.2 p.2)
 
 /-- `checkEtaThm` through the index. -/
-def checkEtaThmF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
+def checkEtaThmF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (nP nF : Nat) : Bool :=
   match fe.find? ((T.str "_model").str "eta"),
       fe.find? (T.str "_model"),
@@ -382,7 +382,7 @@ def checkEtaThmF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
   | _, _, _, _ => false
 
 /-- `checkUnitThm` through the index. -/
-def checkUnitThmF (fe : FEnv) (T : Name) (lps : List LevelParam)
+def checkUnitThmF (fe : FEnv) (T : Key) (lps : List LevelParam)
     (nP : Nat) : Bool :=
   match fe.find? ((T.str "_model").str "unitlike"),
       fe.find? (T.str "_model"), fe.find? eqName with
@@ -416,7 +416,7 @@ def checkUnitThmF (fe : FEnv) (T : Name) (lps : List LevelParam)
 /-- `ctorResidualOk` through the index (task #136; the reasoning,
 including why the subject is the *stored* constant and why the
 capability guard is load-bearing, is at `ctorResidualOk`). -/
-def ctorResidualOkF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
+def ctorResidualOkF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (nP nF : Nat) (eta : Bool) : Bool :=
   -- TT-lane check (task #147): trivially true unless `mode.ttChecks`.
   !mode.ttChecks || !eta ||
@@ -485,9 +485,9 @@ def checkConstantValF (ops : CheckerOps m) (fe : FEnv)
   pure { cv with type := type }
 
 /-- `checkMemberVal` through the index. -/
-def checkMemberValF (ops : CheckerOps m) (blockNames : List Name)
+def checkMemberValF (ops : CheckerOps m) (blockNames : List Key)
     (fe : FEnv) (cv : ConstantVal) : m ConstantVal := do
-  let f : Name → Name := fun n =>
+  let f : Key → Key := fun n =>
     if blockNames.contains n then n.str "_model" else n
   let cvA ← checkConstantValF ops fe cv
   if cvA.name.isModelSuffix then
@@ -506,7 +506,7 @@ def checkMemberValF (ops : CheckerOps m) (blockNames : List Name)
 
 /-- `checkIotaThm` through the index. -/
 def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m Unit := do
     let cvt ← unwrapOr
@@ -573,7 +573,7 @@ def checkIotaThmF (ops : CheckerOps m) (fe' feSelf : FEnv)
       rhsS (eqHeadLevel tbody.getAppFn) cvName
 
 /-- `nestedRuleShape` through the index. -/
-def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Name)
+def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP cnP j : Nat) :
     Option (List Level × List Expr) :=
   if (fe'.findCV? ((cvName.str "_model").str s!"iota_{j}")).isSome ∧
@@ -600,7 +600,7 @@ def nestedRuleShapeF (fe' feSelf : FEnv) (cvName : Name)
 
 /-- `checkIotaThmN` through the index. -/
 def checkIotaThmNF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
     (cnP cnF : Nat) (rhsA : Expr) : m RecRuleFire := do
     match nestedRuleShapeF fe' feSelf cvName lps tyA mI rP cnP j with
@@ -686,7 +686,7 @@ def checkIotaThmNF (ops : CheckerOps m) (fe' feSelf : FEnv)
 
 /-- `checkIotaRule` through the index. -/
 def checkIotaRuleF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP j : Nat) (r : RecRule) : m RecRule := do
     let some (.ctorInfo cvj cnP cnF) := fe'.find? r.ctor
       | throw (.invalid s!"iota rule constructor {r.ctor} not stored")
@@ -717,7 +717,7 @@ def checkIotaRuleF (ops : CheckerOps m) (fe' feSelf : FEnv)
 
 /-- `checkIotaRules` through the index. -/
 def checkIotaRulesF (ops : CheckerOps m) (fe' feSelf : FEnv)
-    (f : Name → Name) (cvName : Name) (lps : List LevelParam) (tyA : Expr)
+    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
     (mI rP : Nat) : Nat → List RecRule → m (List RecRule)
   | _, [] => pure []
   | j, r :: rest => do
@@ -727,7 +727,7 @@ def checkIotaRulesF (ops : CheckerOps m) (fe' feSelf : FEnv)
     pure (r' :: rest')
 
 /-- `checkProjLookups` through the index. -/
-def checkProjLookupsF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
+def checkProjLookupsF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (nP nF i : Nat) : m (ConstantVal × ConstantVal) := do
   let some (.ctorInfo cvj cnP cnF) := fe.find? ctorName
     | throw (.notImplemented "projection constructor not stored")
@@ -746,7 +746,7 @@ def checkProjLookupsF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
   pure (cvj, mcv)
 
 /-- `checkProjTy` through the index. -/
-def checkProjTyF (fe : FEnv) (T ctorName : Name) (lps : List LevelParam)
+def checkProjTyF (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
     (mty : Expr) (nP nF : Nat) : m Expr := do
   let pty := mty.renameConsts (projBack T ctorName nF)
   unless (pty.renameConsts (projFwd T ctorName nF)) == mty do
@@ -796,7 +796,7 @@ def checkProjRuleF (ops : CheckerOps m) (fe : FEnv) (pty : Expr) (cvj : Constant
 
 /-- `checkProjIota` through the index. -/
 def checkProjIotaF (ops : CheckerOps m) (fe : FEnv)
-    (T ctorName : Name) (lps : List LevelParam)
+    (T ctorName : Key) (lps : List LevelParam)
     (cvj : ConstantVal) (nP nF i : Nat) : m Unit := do
   let some (.thmInfo tcv _) := fe.find? ((projModelName T i).str "iota")
     | throw (.notImplemented "missing projection iota theorem")
@@ -859,7 +859,7 @@ def installBasisDeclF (fe : FEnv) (ci : ConstantInfo) : m FEnv := do
   pure (fe.push ci)
 
 /-- `checkDivModCerts` through the index. -/
-def checkDivModCertsF (ops : CheckerOps m) (fe : FEnv) (c : Name)
+def checkDivModCertsF (ops : CheckerOps m) (fe : FEnv) (c : Key)
     (annVal : Expr) : List (List Expr × Expr) → List Expr → m Bool
   | [], [] => pure true
   | (hyps, eqE) :: srest, proof :: prest => do
@@ -875,7 +875,7 @@ def checkDivModCertsF (ops : CheckerOps m) (fe : FEnv) (c : Name)
   | _, _ => pure false
 
 /-- `checkDivModPinAt` through the index. -/
-def checkDivModPinAtF (ops : CheckerOps m) (fe : FEnv) (c : Name)
+def checkDivModPinAtF (ops : CheckerOps m) (fe : FEnv) (c : Key)
     (value' : Expr) (ps : NatOpPinSet) : m Bool := do
   let pinA ← ops.annotate fe.env 0 (divModDeclPin ps c)
   let okPin ← ops.isDefEq fe.env 0 value' pinA
@@ -885,7 +885,7 @@ def checkDivModPinAtF (ops : CheckerOps m) (fe : FEnv) (c : Name)
   else pure false
 
 /-- `checkDivModPinLoop` through the index. -/
-def checkDivModPinLoopF (ops : CheckerOps m) (fe : FEnv) (c : Name)
+def checkDivModPinLoopF (ops : CheckerOps m) (fe : FEnv) (c : Key)
     (value' : Expr) : List NatOpPinSet → List String → m Unit
   | [], tried =>
     throw (.notImplemented s!"unsupported Nat.div/mod spelling ({c}: no \
@@ -903,7 +903,7 @@ def checkDivModPinLoopF (ops : CheckerOps m) (fe : FEnv) (c : Name)
 /-- `checkDivModPin` through the index — the variant list is its
 parameter too (task #304). -/
 def checkDivModPinF (ops : CheckerOps m) (pins : List NatOpPinSet)
-    (fe fe2 : FEnv) (c : Name) : m Unit := do
+    (fe fe2 : FEnv) (c : Key) : m Unit := do
   if divModEnvGuardF fe2 c then
     match fe2.find? c with
     | some (.defnInfo _ value' _) =>
@@ -913,7 +913,7 @@ def checkDivModPinF (ops : CheckerOps m) (pins : List NatOpPinSet)
     s!"unsupported Nat.div/mod environment ({c})")
 
 /-- `checkReducePin` through the index. -/
-def checkReducePinF (ops : CheckerOps m) (fe fe2 : FEnv) (c : Name)
+def checkReducePinF (ops : CheckerOps m) (fe fe2 : FEnv) (c : Key)
     (value : Expr) : m Unit := do
   if reduceStoredOkF fe2 c && reduceElemOkF fe c then
     if reducePinGuardF fe c then do

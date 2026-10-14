@@ -128,7 +128,7 @@ noncomputable def field : Nat → V → V
 
 /-- `Denotes cval env φ ρ e v`: the term `e` denotes the set `v`.  See
 the module docstring. -/
-inductive Denotes (cval : Name → (LevelParam → Nat) → V) (env : Env) (φ : LevelParam → Nat) :
+inductive Denotes (cval : Key → (LevelParam → Nat) → V) (env : Env) (φ : LevelParam → Nat) :
     (BVarIdx → V) → Expr → V → Prop
   /-- a bound variable denotes what the environment assigns it -/
   | bvar {ρ : BVarIdx → V} {i : BVarIdx} :
@@ -138,7 +138,7 @@ inductive Denotes (cval : Name → (LevelParam → Nat) → V) (env : Env) (φ :
       Denotes cval env φ ρ (.sort u) (univ (Level.eval φ u))
   /-- a stored constant, used at as many levels as it has parameters,
   denotes its `cval` at the assignment those levels induce -/
-  | const {ρ : BVarIdx → V} {n : Name} {us : List Level} {ci : ConstantInfo}
+  | const {ρ : BVarIdx → V} {n : Key} {us : List Level} {ci : ConstantInfo}
       (hf : env.find? n = some ci)
       (hlen : us.length = ci.toConstantVal.levelParams.length) :
       Denotes cval env φ ρ (.const n us)
@@ -166,15 +166,15 @@ inductive Denotes (cval : Name → (LevelParam → Nat) → V) (env : Env) (φ :
       Denotes cval env φ ρ (.forallE ty body m) (piR (regime φ m.pw) A B)
   /-- a projection at a stored table reads the field's position in the
   pair chain -/
-  | proj_table {ρ : BVarIdx → V} {T : Name} {i : Nat} {e : Expr} {entry : ProjEntry} {P : V}
+  | proj_table {ρ : BVarIdx → V} {T : Key} {i : Nat} {e : Expr} {entry : ProjEntry} {P : V}
       (ht : env.findProj? T i = some entry) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T i e) (field (i + entry.off) P)
   /-- field `0` of a bare pair -/
-  | proj_fst {ρ : BVarIdx → V} {T : Name} {e : Expr} {P : V}
+  | proj_fst {ρ : BVarIdx → V} {T : Key} {e : Expr} {P : V}
       (ht : env.findProj? T 0 = none) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T 0 e) (sfst P)
   /-- field `1` of a bare pair -/
-  | proj_snd {ρ : BVarIdx → V} {T : Name} {e : Expr} {P : V}
+  | proj_snd {ρ : BVarIdx → V} {T : Key} {e : Expr} {P : V}
       (ht : env.findProj? T 1 = none) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T 1 e) (ssnd P)
   /-- a `Nat` literal denotes what its constructor form denotes -/
@@ -192,7 +192,7 @@ overlap are separated by whether the environment holds a projection
 table — so the relation is a partial function, and `∃ T, Denotes … T ∧ …`
 in `Model.mem` below is a statement about *the* denotation. -/
 theorem Denotes_functional {V : Type w} [SetTheory V]
-    {cval : Name → (LevelParam → Nat) → V} {env : Env} {φ : LevelParam → Nat}
+    {cval : Key → (LevelParam → Nat) → V} {env : Env} {φ : LevelParam → Nat}
     {ρ : BVarIdx → V} {e : Expr} {v w : V}
     (hv : Denotes cval env φ ρ e v) (hw : Denotes cval env φ ρ e w) :
     v = w := by
@@ -266,7 +266,7 @@ two sides of every accepted equation denote the same set.  Types are
 the whole statement; values are the checker's business. -/
 structure Model (V : Type w) [SetTheory V] (env : Env) where
   /-- the set a constant denotes, per level assignment -/
-  cval : Name → (LevelParam → Nat) → V
+  cval : Key → (LevelParam → Nat) → V
   /-- every stored constant is a member of what its type denotes, at
   every level assignment (and every variable environment — the type
   is closed) -/

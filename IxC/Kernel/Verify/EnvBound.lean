@@ -42,7 +42,7 @@ namespace Ix.Kernel
 together with its installation counter — the number of *older*
 constants, i.e. the length of the tail it heads (`consts` is
 newest-first). -/
-def idxSpec : List ConstantInfo → Name → Option (Nat × ConstantInfo)
+def idxSpec : List ConstantInfo → Key → Option (Nat × ConstantInfo)
   | [], _ => none
   | ci :: cs, n => if ci.name == n then some (cs.length, ci) else idxSpec cs n
 
@@ -52,7 +52,7 @@ theorem mkFEnvGo_fst : ∀ l : List ConstantInfo, (mkFEnvGo l).1 = l.length
     show (mkFEnvGo cs).1 + 1 = _
     rw [mkFEnvGo_fst cs, List.length_cons]
 
-theorem mkFEnvGo_snd (n : Name) : ∀ l : List ConstantInfo,
+theorem mkFEnvGo_snd (n : Key) : ∀ l : List ConstantInfo,
     (mkFEnvGo l).2[n]? = idxSpec l n
   | [] => by simp [mkFEnvGo, idxSpec]
   | ci :: cs => by
@@ -63,7 +63,7 @@ theorem mkFEnvGo_snd (n : Name) : ∀ l : List ConstantInfo,
     · rw [if_neg hn, if_neg hn, mkFEnvGo_snd n cs]
 
 /-- The index of `mkFEnv`, as the specification. -/
-theorem mkFEnv_idx (env : Env) (n : Name) :
+theorem mkFEnv_idx (env : Env) (n : Key) :
     (mkFEnv env).idx[n]? = idxSpec env.consts n :=
   mkFEnvGo_snd n env.consts
 
@@ -74,7 +74,7 @@ theorem mkFEnv_visibleBelow (env : Env) :
 
 /-- Counters are positions from the bottom, so they are below the
 length. -/
-theorem idxSpec_lt {n : Name} : ∀ {l : List ConstantInfo} {c : Nat}
+theorem idxSpec_lt {n : Key} : ∀ {l : List ConstantInfo} {c : Nat}
     {ci : ConstantInfo}, idxSpec l n = some (c, ci) → c < l.length
   | [], _, _, h => by simp [idxSpec] at h
   | cj :: cs, c, ci, h => by
@@ -91,7 +91,7 @@ theorem idxSpec_lt {n : Name} : ∀ {l : List ConstantInfo} {c : Nat}
       omega
 
 /-- Forgetting the counter, the index's specification is `List.find?`. -/
-theorem idxSpec_snd (n : Name) : ∀ l : List ConstantInfo,
+theorem idxSpec_snd (n : Key) : ∀ l : List ConstantInfo,
     (idxSpec l n).map (·.2) = l.find? (·.name == n)
   | [] => rfl
   | ci :: cs => by
@@ -104,7 +104,7 @@ theorem idxSpec_snd (n : Name) : ∀ l : List ConstantInfo,
 
 /-- The per-entry-call name index computes `Env.find?` (nothing is
 hidden: `mkFEnv`'s bound is the constant count). -/
-theorem mkFEnv_find? (env : Env) (n : Name) :
+theorem mkFEnv_find? (env : Env) (n : Key) :
     (mkFEnv env).find? n = env.find? n := by
   rw [FEnv.find?, mkFEnv_idx, mkFEnv_visibleBelow, Env.find?,
     ← idxSpec_snd n env.consts]
@@ -137,18 +137,18 @@ theorem Env.prefixTo_of_extends {env env' : Env} {new : List ConstantInfo}
 @[expose] def NodupNames (env : Env) : Prop := (env.consts.map (·.name)).Nodup
 
 /-- The bounded index lookup, on the specification. -/
-private def idxBelow (l : List ConstantInfo) (k : Nat) (n : Name) :
+private def idxBelow (l : List ConstantInfo) (k : Nat) (n : Key) :
     Option ConstantInfo :=
   match idxSpec l n with
   | some (c, ci) => if c < k then some ci else none
   | none => none
 
-private theorem idxBelow_cons_pos {k : Nat} {n : Name} {cj : ConstantInfo}
+private theorem idxBelow_cons_pos {k : Nat} {n : Key} {cj : ConstantInfo}
     {cs : List ConstantInfo} (hn : cj.name == n) :
     idxBelow (cj :: cs) k n = if cs.length < k then some cj else none := by
   rw [idxBelow, idxSpec, if_pos hn]
 
-private theorem idxBelow_cons_neg {k : Nat} {n : Name} {cj : ConstantInfo}
+private theorem idxBelow_cons_neg {k : Nat} {n : Key} {cj : ConstantInfo}
     {cs : List ConstantInfo} (hn : ¬ (cj.name == n)) :
     idxBelow (cj :: cs) k n = idxBelow cs k n := by
   rw [idxBelow, idxSpec, if_neg hn, idxBelow]
@@ -156,7 +156,7 @@ private theorem idxBelow_cons_neg {k : Nat} {n : Name} {cj : ConstantInfo}
 /-- **Soundness of the bound, unconditional**: whatever the bounded
 lookup finds, the truncated list finds too — a bounded lookup can never
 see past its bound. -/
-private theorem idxBelow_eq_some {k : Nat} {n : Name} {ci : ConstantInfo} :
+private theorem idxBelow_eq_some {k : Nat} {n : Key} {ci : ConstantInfo} :
     ∀ {l : List ConstantInfo}, idxBelow l k n = some ci →
       (l.drop (l.length - k)).find? (·.name == n) = some ci
   | [], h => by simp [idxBelow, idxSpec] at h
@@ -186,7 +186,7 @@ private theorem idxBelow_eq_some {k : Nat} {n : Name} {ci : ConstantInfo} :
 lookup is exactly the lookup in the truncated list.  (Without it the
 bounded lookup can only return *less*: a name shadowed inside the
 prefix by a newer entry above the bound.) -/
-private theorem idxBelow_eq {k : Nat} {n : Name} :
+private theorem idxBelow_eq {k : Nat} {n : Key} :
     ∀ {l : List ConstantInfo}, (l.map (·.name)).Nodup →
       idxBelow l k n = (l.drop (l.length - k)).find? (·.name == n)
   | [], _ => by simp [idxBelow, idxSpec]
@@ -218,7 +218,7 @@ private theorem idxBelow_eq {k : Nat} {n : Name} :
       · rw [idxBelow_cons_neg hn, ih]
 
 /-- The bounded index lookup on `mkFEnv` is the specification's. -/
-private theorem restrictTo_find?_eq (env : Env) (k : Nat) (n : Name) :
+private theorem restrictTo_find?_eq (env : Env) (k : Nat) (n : Key) :
     ((mkFEnv env).restrictTo k).find? n = idxBelow env.consts k n := by
   show (match (mkFEnv env).idx[n]? with
         | some (c, ci) => if c < k then some ci else none
@@ -228,7 +228,7 @@ private theorem restrictTo_find?_eq (env : Env) (k : Nat) (n : Name) :
 /-- **Soundness of the bound** (unconditional): a bounded lookup in the
 full index returns only what the environment truncated to that prefix
 returns.  Nothing installed at or after the bound is reachable. -/
-theorem mkFEnv_find?_visibleBelow_some {env : Env} {k : Nat} {n : Name}
+theorem mkFEnv_find?_visibleBelow_some {env : Env} {k : Nat} {n : Key}
     {ci : ConstantInfo} (h : ((mkFEnv env).restrictTo k).find? n = some ci) :
     (env.prefixTo k).find? n = some ci := by
   rw [restrictTo_find?_eq] at h
@@ -240,7 +240,7 @@ with the bound `k` is looking it up in the environment truncated to its
 first `k` installed constants.  The hypothesis is name uniqueness, which
 the checker establishes at insertion (`checkConstantValP` rejects a
 duplicate name before any push). -/
-theorem mkFEnv_find?_visibleBelow (env : Env) (k : Nat) (n : Name)
+theorem mkFEnv_find?_visibleBelow (env : Env) (k : Nat) (n : Key)
     (hnd : (env.consts.map (·.name)).Nodup) :
     ((mkFEnv env).restrictTo k).find? n = (env.prefixTo k).find? n := by
   rw [restrictTo_find?_eq, idxBelow_eq hnd, Env.prefixTo, Env.find?]
@@ -249,7 +249,7 @@ theorem mkFEnv_find?_visibleBelow (env : Env) (k : Nat) (n : Name)
 raising the bound by one: a re-check that walks a declaration's
 provisional environments sees exactly what the original interleaved run
 saw at each of them. -/
-theorem restrictTo_push_find? (env : Env) (k : Nat) (n : Name)
+theorem restrictTo_push_find? (env : Env) (k : Nat) (n : Key)
     (ci : ConstantInfo) (hnd : (env.consts.map (·.name)).Nodup)
     (hci : (env.prefixTo (k + 1)).consts = ci :: (env.prefixTo k).consts) :
     (((mkFEnv env).restrictTo k).push ci).find? n
@@ -279,7 +279,7 @@ theorem restrictTo_push_find? (env : Env) (k : Nat) (n : Name)
 are in `IxC/Kernel/Verify/EnvBound.lean`.) -/
 
 /-- The indexed projection lookup computes `Env.findProj?`. -/
-theorem mkFEnv_findProj? (env : Env) (T : Name) (i : Nat) :
+theorem mkFEnv_findProj? (env : Env) (T : Key) (i : Nat) :
     (mkFEnv env).findProj? T i = env.findProj? T i := by
   rw [FEnv.findProj?, Env.findProj?, mkFEnv_find?]
   rfl
@@ -295,12 +295,12 @@ theorem strLitSupportedF_eq (env : Env) :
   simp only [strLitSupportedF, strLitSupported, mkFEnv_find?,
     natLitSupportedF_eq]
 
-theorem natOpStoredF_eq (env : Env) (c : Name) :
+theorem natOpStoredF_eq (env : Env) (c : Key) :
     natOpStoredF (mkFEnv env) c = natOpStored env c := by
   simp only [natOpStoredF, natOpStored, mkFEnv_find?]
   rfl
 
-theorem natOpGuardF_eq (env : Env) (c : Name) :
+theorem natOpGuardF_eq (env : Env) (c : Key) :
     natOpGuardF (mkFEnv env) c = natOpGuard env c := by
   simp only [natOpGuardF, natOpGuard, mkFEnv_find?, natLitSupportedF_eq]
   rfl

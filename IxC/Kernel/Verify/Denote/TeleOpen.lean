@@ -353,7 +353,7 @@ spine computes through `Expr.instSeq` at the openers. -/
 theorem projStmtParts {sty : Expr} {nP nF i : Nat}
     {fvsO : List Expr} {sbodyO : Expr}
     {sbinders : List (Expr × BinderMeta)}
-    {tySlot : Expr} {ℓA : Level} {Pm Cm : Name}
+    {tySlot : Expr} {ℓA : Level} {Pm Cm : Key}
     {lpsE cusE : List Level}
     (hilt : i < nF)
     (_hSb : sty.looseBVarsBounded 0 = true)

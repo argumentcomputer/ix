@@ -40,7 +40,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName)
 
 universe w
@@ -76,7 +76,7 @@ name families miss the fresh name. -/
 
 /-- **The stored family descends past a value-kind cons**, together
 with the three disequalities the law's leaf transport needs. -/
-theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Name}
+theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Key}
     {cvT : ConstantVal} {caps : IndCaps}
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
     (hnotctor : ∀ cv np nf, c₀ ≠ .ctorInfo cv np nf)
@@ -104,7 +104,7 @@ theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Name}
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [heq, Ix.Kernel.Env.find?_cons, if_pos rfl] at hf2
     exact hnotrec cv2 mI2 rP2 rules2 (Option.some.inj hf2)
-  have hdown : ∀ n : Name, n ≠ c₀.name →
+  have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
@@ -176,7 +176,7 @@ non-reserved `unitlike` family for which `EtaFamilyStored` is FALSE.
 Everything `structUnitCert`'s inversion can ever hand a consumer holds
 here, and the frozen `CapsOk`'s unit half is vacuous. -/
 theorem etaFamilyStored_not_derivable :
-    ∃ (env : Env) (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+    ∃ (env : Env) (T : Key) (cvT : ConstantVal) (caps : IndCaps),
       Ix.Kernel.EnvWF env ∧
       env.find? T = some (.indInfo cvT caps) ∧
       caps.unitlike = true ∧

@@ -95,7 +95,7 @@ theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
   exact SimC.pure hs₃ ⟨rfl, hwty⟩
 
 /-- `checkReducePin` at the cached shared operations. -/
-theorem checkReducePinS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env2 : Env} {c : Name}
+theorem checkReducePinS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env2 : Env} {c : Key}
     {value : Expr} (hvf : value.hasFvar = false)
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
@@ -178,7 +178,7 @@ theorem certifyNatEqsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
       exact SimC.pure hs₁ rfl
 
 /-- `checkDivModCerts` at the cached shared operations. -/
-theorem checkDivModCertsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {c : Name}
+theorem checkDivModCertsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {c : Key}
     {annVal : Expr} (hvf : annVal.hasFvar = false) :
     ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
       (∀ st ∈ stmts, (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧
@@ -285,7 +285,7 @@ theorem SimC.orElse {s₀ : CState} (hs : CSOK mode env s₀)
 
 /-- One pin variant's attempt as a `SimC`. -/
 theorem checkDivModPinAtS_sim (hμ : mode.verifiedChecks = true)
-    (henv : EnvWF env) {c : Name} (hc : c ∈ natDivModNames)
+    (henv : EnvWF env) {c : Key} (hc : c ∈ natDivModNames)
     {value' : Expr} (hvf : value'.hasFvar = false) {ps : NatOpPinSet}
     (hping : (divModPinGuard ps env c &&
       divModCertsGuard ps env c value') = true)
@@ -322,7 +322,7 @@ theorem checkDivModPinAtS_sim (hμ : mode.verifiedChecks = true)
 cached lane's carry the outcomes, the fueled lane's the `none` text;
 neither affects success). -/
 theorem checkDivModPinLoopS_sim (hμ : mode.verifiedChecks = true)
-    (henv : EnvWF env) {c : Name} (hc : c ∈ natDivModNames)
+    (henv : EnvWF env) {c : Key} (hc : c ∈ natDivModNames)
     {value' : Expr} (hvf : value'.hasFvar = false) :
     ∀ (pss : List NatOpPinSet) (tried tried' : List String) {s₀ : CState},
       CSOK mode env s₀ →
@@ -345,7 +345,7 @@ theorem checkDivModPinLoopS_sim (hμ : mode.verifiedChecks = true)
       (fun r s₁ hs₁ => checkDivModPinLoopS_sim hμ henv hc hvf rest _ _ hs₁)
 
 /-- `checkDivModPin` at the cached shared operations. -/
-theorem checkDivModPinS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env2 : Env} {c : Name}
+theorem checkDivModPinS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env2 : Env} {c : Key}
     (hc : c ∈ natDivModNames)
     (hv'f : ∀ cv' v' h', env2.find? c = some (.defnInfo cv' v' h') →
       v'.hasFvar = false)

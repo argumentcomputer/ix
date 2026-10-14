@@ -132,7 +132,7 @@ theorem checkAnnotListS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
 /-- The iota-sides type certificate at the cached shared operations
 (task #100 stage 3). -/
 theorem checkIotaSidesTyS_sim (hμ : mode.verifiedChecks = true) {depth : Nat} {alphaS lhsS rhsS : Expr}
-    {ℓA : Level} {cvName : Name} (henv : EnvWF env)
+    {ℓA : Level} {cvName : Key} (henv : EnvWF env)
     (hα : Expr.WScoped depth alphaS) (hl : Expr.WScoped depth lhsS)
     (hr : Expr.WScoped depth rhsS) (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
@@ -191,7 +191,7 @@ theorem checkIotaSidesTyS_sim (hμ : mode.verifiedChecks = true) {depth : Nat} {
 operation environment is `env` = the provisioned `envSelf`; `env'` only
 feeds the pure model lookups). -/
 theorem checkIotaThmS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
-    (henv : EnvWF env) {f : Name → Name} {cvName : Name}
+    (henv : EnvWF env) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
@@ -369,7 +369,7 @@ theorem checkIotaThmS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv'
 /-- The nested-auxiliary iota-theorem check at the cached shared
 operations. -/
 theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
-    (henv : EnvWF env) {f : Name → Name} {cvName : Name}
+    (henv : EnvWF env) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
@@ -584,7 +584,7 @@ theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv
 
 /-- One modeled recursor rule at the cached shared operations. -/
 theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
-    (henv : EnvWF env) {f : Name → Name} {cvName : Name}
+    (henv : EnvWF env) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
     (htyA : tyA.hasFvar = false) (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
@@ -647,7 +647,7 @@ theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv
 
 /-- The rule fold at the cached shared operations. -/
 theorem checkIotaRulesS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (henv' : EnvWF env')
-    (henv : EnvWF env) {f : Name → Name} {cvName : Name}
+    (henv : EnvWF env) {f : Key → Key} {cvName : Key}
     {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     (htyA : tyA.hasFvar = false) :
     ∀ {j : Nat} {rules : List RecRule} {s₀ : CState}, CSOK mode env s₀ →
@@ -669,7 +669,7 @@ theorem checkIotaRulesS_sim (hμ : mode.verifiedChecks = true) {env' : Env} (hen
 
 /-- The member-against-model check at the cached shared operations; the
 returned constant's type is well-scoped. -/
-theorem checkMemberValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {blockNames : List Name}
+theorem checkMemberValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {blockNames : List Key}
     {cv : ConstantVal} (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v = w ∧ Expr.WScoped 0 v.type)
       (checkMemberVal (sharedOpsC mode (mkFEnv env)) blockNames env cv)
@@ -800,7 +800,7 @@ theorem checkProjRuleS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
   exact SimC.pure hs₄ rfl
 
 /-- `checkProjLookups` (operation-free) as a `SimC`. -/
-theorem checkProjLookupsS_sim {env' : Env} {T ctorName : Name}
+theorem checkProjLookupsS_sim {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {nP nF i : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjLookups env' T ctorName lps nP nF i : CheckCM _)
@@ -844,7 +844,7 @@ theorem checkProjLookupsS_sim {env' : Env} {T ctorName : Name}
   exact SimC.pure hs rfl
 
 /-- `checkProjTy` (operation-free) as a `SimC`. -/
-theorem checkProjTyS_sim {env' : Env} {T ctorName : Name}
+theorem checkProjTyS_sim {env' : Env} {T ctorName : Key}
     {lps : List LevelParam} {mty : Expr} {nP nF : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjTy env' T ctorName lps mty nP nF : CheckCM _)
@@ -905,7 +905,7 @@ theorem checkProjShapeS_sim {pty cty : Expr} {nP nF : Nat}
 /-- `checkProjIota` at the cached shared operations (task #100 stage 3:
 the side certificates make it consult the ops at the opened statement
 telescope). -/
-theorem checkProjIotaS_sim (hμ : mode.verifiedChecks = true) {T ctorName : Name}
+theorem checkProjIotaS_sim (hμ : mode.verifiedChecks = true) {T ctorName : Key}
     (henv : EnvWF env)
     {lps : List LevelParam} {cvj : ConstantVal} {nP nF i : Nat}
     (hs : CSOK mode env s₀) :

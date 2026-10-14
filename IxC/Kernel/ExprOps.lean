@@ -931,7 +931,7 @@ def mkAppN (f : Expr) : List Expr → Expr
 annotations and `proj` type names); levels and binders untouched.  Used
 to compare a modeled inductive's members against their `_model`
 counterparts. -/
-def renameConsts (f : Name → Name) : Expr → Expr
+def renameConsts (f : Key → Key) : Expr → Expr
   | .bvar i => .bvar i
   | .fvar i ty => .fvar i (renameConsts f ty)
   | .sort u => .sort u
@@ -980,13 +980,13 @@ the modeled install, once per member type, never from a hot
 small-term path — measured on `init-full` at the task's gate. -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def RenameMemoInv (f : Name → Name) (memo : Std.HashMap Expr Expr) : Prop :=
+def RenameMemoInv (f : Key → Key) (memo : Std.HashMap Expr Expr) : Prop :=
   ∀ k v, memo[k]? = some v → v = renameConsts f k
 
-theorem RenameMemoInv.empty {f : Name → Name} : RenameMemoInv f {} := by
+theorem RenameMemoInv.empty {f : Key → Key} : RenameMemoInv f {} := by
   intro k v h; simp at h
 
-theorem RenameMemoInv.insert {f : Name → Name} {memo : Std.HashMap Expr Expr}
+theorem RenameMemoInv.insert {f : Key → Key} {memo : Std.HashMap Expr Expr}
     (hm : RenameMemoInv f memo) {e r : Expr} (heq : r = renameConsts f e) :
     RenameMemoInv f (memo.insert e r) := by
   intro k v hk
@@ -999,7 +999,7 @@ theorem RenameMemoInv.insert {f : Name → Name} {memo : Std.HashMap Expr Expr}
   · exact hm k v hk
 
 /-- Memoized `renameConsts`. -/
-def renameConstsGo (f : Name → Name) (memo : Std.HashMap Expr Expr) :
+def renameConstsGo (f : Key → Key) (memo : Std.HashMap Expr Expr) :
     Expr → Expr × Std.HashMap Expr Expr
   | e@(.bvar _) => (e, memo)
   | e@(.sort _) => (e, memo)
@@ -1038,7 +1038,7 @@ def renameConstsGo (f : Name → Name) (memo : Std.HashMap Expr Expr) :
       (r, memo.insert e r)
 
 /-- **The memoized walk is `renameConsts`.** -/
-theorem renameConstsGo_spec {f : Name → Name} :
+theorem renameConstsGo_spec {f : Key → Key} :
     ∀ (e : Expr) {memo : Std.HashMap Expr Expr}, RenameMemoInv f memo →
       (renameConstsGo f memo e).1 = renameConsts f e ∧
         RenameMemoInv f (renameConstsGo f memo e).2 := by
@@ -1109,7 +1109,7 @@ theorem renameConstsGo_spec {f : Name → Name} :
       exact h2.insert (by simp [renameConsts, h1])
 
 /-- The executed `renameConsts` (one memoized DAG walk). -/
-def renameConstsFast (f : Name → Name) (e : Expr) : Expr :=
+def renameConstsFast (f : Key → Key) (e : Expr) : Expr :=
   (renameConstsGo f {} e).1
 
 @[csimp] theorem renameConsts_eq_renameConstsFast :

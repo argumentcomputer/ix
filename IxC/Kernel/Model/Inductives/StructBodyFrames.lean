@@ -48,7 +48,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta)
 
 universe w
@@ -60,7 +60,7 @@ variable {V : Type w} [SetTheory V]
 /-- **The dummy telescope reads to the opened body**: `k` dummy
 binders at depth `d` open at the variables `d, …, d + k - 1`, and the
 residual is the body's instantiation sequence at them. -/
-theorem denoteMeta_projTele {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+theorem denoteMeta_projTele {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
     {φ : LevelParam → Nat} :
     ∀ (k d : Nat) (body : Expr) {RA : AnnotTerm},
       denoteMeta acval env φ (d + k)
@@ -93,7 +93,7 @@ theorem denoteMeta_projTele {acval : Name → (LevelParam → Nat) → AnnotTerm
 /-- The telescope over the parameters and the subject, at depth `0`:
 the residual is the body at the direct install's own variable
 spelling (`fvsD`/`tfvD`). -/
-theorem denoteMeta_projTele_zero {acval : Name → (LevelParam → Nat) → AnnotTerm} {env : Env}
+theorem denoteMeta_projTele_zero {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
     {φ : LevelParam → Nat} {nP : Nat} {body : Expr} {RA : AnnotTerm}
     (h : denoteMeta acval env φ (nP + 1)
       (Expr.instSpine (Ix.Kernel.fvsD nP ++ [Ix.Kernel.tfvD nP]) nP body) = some RA) :
@@ -129,7 +129,7 @@ domain at the subject's projection spine.  The grading in the squash
 regime rides the official guard's content (`hguard`) and the unused
 earlier fields' invariance (`hfree`). -/
 theorem bodyFrames {env : Env} (m : EnvModel V env)
-    {nP nF i off : Nat} {T : Name} {cty : Expr} {cds : List Expr}
+    {nP nF i off : Nat} {T : Key} {cty : Expr} {cds : List Expr}
     {bodyC : Expr} {mbC : BinderMeta} {body : Expr}
     (hcf : Expr.instPisAt (Ix.Kernel.fvsD nP ++ Ix.Kernel.projArgsD T i nP) cty
       = some (cds, .forallE

@@ -77,7 +77,7 @@ theorem inferTypeCore_bvar_inv {d i : Nat} {t : Expr}
 guard, the level arity and the instantiated type
 (`inferTypeCore_const_inv` drops the arity — it is consumed inside its
 own `split`; `Model/Steps/Accepted.lean:70`'s `_inv_len` recovers it). -/
-theorem inferTypeCore_const_inv_full {d : Nat} {n : Name} {us : List Level}
+theorem inferTypeCore_const_inv_full {d : Nat} {n : Key} {us : List Level}
     {t : Expr} (h : inferTypeCore mode env (fuel + 1) d (.const n us) = .ok t) :
     ∃ ci, env.find? n = some ci ∧ ci.isTowerEntry = false ∧
       us.length = ci.toConstantVal.levelParams.length ∧

@@ -77,7 +77,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName RecRule)
 
 
@@ -107,7 +107,7 @@ the basis tier's structural crux, and this is its P half. -/
 pin.**  From `EnvS.basis_pinned` and `acval_erase`, by injectivity of
 `erase` at a constant head. -/
 theorem acval_basis_pinned {m : EnvModel V env}
-    {n : Name} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
     {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : LevelParam → Nat}
     (hd : Ix.Kernel.Verify.pinnedStructT n ψ
@@ -158,7 +158,7 @@ theorem natHeads_cons_offNat (mp : EnvModelM V μ env)
   intro hg ρ
   rw [hacval]
   -- the three lookups are the prefix's, so the guard reflects
-  have hfind : ∀ p : Name, c₀.name ≠ p →
+  have hfind : ∀ p : Key, c₀.name ≠ p →
       (⟨c₀ :: env.consts⟩ : Env).find? p = env.find? p := by
     intro p hp
     show List.find? _ (c₀ :: env.consts) = _
@@ -190,7 +190,7 @@ from the name rather than from the kind: the law's own
 `EtaFamilyStored`'s name-only conjunct separates the capability
 constructor, and `projFnName_ne_reserved` separates every projection
 slot. -/
-theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Name}
+theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Key}
     {cvT : ConstantVal} {caps : IndCaps}
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
     (hresT : Ix.Kernel.reservedBasisNames.contains T = false)
@@ -207,7 +207,7 @@ theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Name}
     rw [hh, hres₀] at hCres; exact nomatch hCres
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name :=
     fun _ _ => projFnName_ne_reserved hres₀
-  have hdown : ∀ n : Name, n ≠ c₀.name →
+  have hdown : ∀ n : Key, n ≠ c₀.name →
       (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]

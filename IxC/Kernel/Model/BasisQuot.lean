@@ -42,7 +42,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule uN u1N vN)
 
 universe w
@@ -94,7 +94,7 @@ def quotRelTy : AnnotTerm :=
 
 /-- **`Quot`'s type reading.** -/
 theorem denoteMeta_quotA_type
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
     denoteMeta acval ⟨quotA :: env.consts⟩ ψ 0 quotA.toConstantVal.type
       = some (.pi 0 (pwBit ψ .never) (.sort (ψ uN))
           (.pi 0 (pwBit ψ .never) (quotRelTy) (.sort (ψ uN)))) := by
@@ -1586,7 +1586,7 @@ theorem interp_inst_cons4 (e a : AnnotTerm) (x1 x2 x3 x4 : V)
 
 /-- Every stored leaf absorbs instantiation: `EnvS.cval_closed`
 through `EnvModel.acval_erase` and `AnnotTerm.inst_eq_self`. -/
-theorem acval_inst_eq_self (m : EnvModel V env) (n : Name)
+theorem acval_inst_eq_self (m : EnvModel V env) (n : Key)
     (ψ : LevelParam → Nat) (a : AnnotTerm) (k : Nat) :
     (m.acval n ψ).inst a k = m.acval n ψ :=
   AnnotTerm.inst_eq_self _

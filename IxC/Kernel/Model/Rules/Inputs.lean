@@ -41,7 +41,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name)
+open Ix.Kernel (CheckMode Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -67,7 +67,7 @@ two literal readings interprets as `natOpResult`, which reads and is
 graded. -/
 @[expose] def NatOpRow {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
-  ∀ {d : Nat} {c : Name} {wa wb r : Expr} {n₁ n₂ : Nat} {Δa : List AnnotTerm}
+  ∀ {d : Nat} {c : Key} {wa wb r : Expr} {n₁ n₂ : Nat} {Δa : List AnnotTerm}
     {ea : AnnotTerm},
     c ∈ natBinOpNames → Ix.Kernel.natOpStored env c = true →
     Ix.Kernel.rawNatLit? wa = some n₁ → Ix.Kernel.rawNatLit? wb = some n₂ →

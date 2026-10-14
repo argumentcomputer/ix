@@ -46,7 +46,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 
 universe w
 
@@ -86,7 +86,7 @@ theorem prefixGradeFire {m : EnvModel V env} {F : Nat}
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
     -- the renamed recursor run and its identification
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
     {tyAR : Expr} (htyRw : tyAR.hasFvar = false)
     (htyRb : tyAR.looseBVarsBounded 0 = true)
     {rdoms : List Expr} {rrest : Expr}

@@ -59,7 +59,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm eqValT eqReflValT eqRecValT)
-open Ix.Kernel (Name)
+open Ix.Kernel (Key)
 
 universe w
 

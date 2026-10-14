@@ -42,7 +42,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint)
 
 universe w
@@ -54,8 +54,8 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
 member's *leaf* is its model's.  The other three conjuncts of
 `BlockInstalledTT` are V-free environment facts and are consumed from
 the v1 predicate directly. -/
-@[expose] def BlockAcvalInstalled (blockNames : List Name) (env : Env)
-    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
+@[expose] def BlockAcvalInstalled (blockNames : List Key) (env : Env)
+    (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo,
     env.find? n = some ci →
     ∀ ψ : LevelParam → Nat, acval (n.str "_model") ψ = acval n ψ
@@ -63,7 +63,7 @@ the v1 predicate directly. -/
 /-- The P invariant's three type facts at a *stored* constant, keyed
 by `find?` rather than by membership (`EnvS.cval_memType`'s
 transpose). -/
-theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Name}
+theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Key}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 ci.toConstantVal.type
@@ -80,7 +80,7 @@ theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Name}
 /-- **The block member's key, P tier.**  The model artifact's leaf
 inhabits the checked member's type's reading, graded, at every
 assignment. -/
-theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
+theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
     {cv cvA : ConstantVal}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
@@ -107,7 +107,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
       exact ⟨.defnInfo cvm' mval' hint', by rw [if_pos hb]; exact hfm',
         hlp'⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
-  have hval : ∀ (n : Name) (ci : ConstantInfo),
+  have hval : ∀ (n : Key) (ci : ConstantInfo),
       env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
         if blockNames.contains n then n.str "_model" else n) n) ψ'

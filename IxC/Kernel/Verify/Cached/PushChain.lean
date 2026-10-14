@@ -55,13 +55,13 @@ theorem PushChain.self {fe : FEnv} (h : fe = mkFEnv fe.env) : PushChain fe.env f
   ⟨h, ⟨[], rfl⟩, id⟩
 
 theorem PushChain.find? {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (n : Name) : fe.find? n = fe.env.find? n := by
+    (n : Key) : fe.find? n = fe.env.find? n := by
   have h1 := h.1
   calc fe.find? n = (mkFEnv fe.env).find? n := by rw [← h1]
     _ = fe.env.find? n := mkFEnv_find? _ n
 
 /-- A lookup that fails names no stored constant. -/
-theorem Env.find?_none_notin {env : Env} {n : Name} (h : env.find? n = none) :
+theorem Env.find?_none_notin {env : Env} {n : Key} (h : env.find? n = none) :
     n ∉ env.consts.map (·.name) := by
   intro hmem
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hmem
@@ -94,7 +94,7 @@ theorem PushChain.trans {env : Env} {fe₁ fe₂ : FEnv} (h₁ : PushChain env f
 
 /-- A list of names, pairwise distinct and all fresh at `env`: pushing
 constants of these names in this order is a fresh chain. -/
-def FreshNames (env : Env) (ns : List Name) : Prop :=
+def FreshNames (env : Env) (ns : List Key) : Prop :=
   ns.Nodup ∧ ∀ n ∈ ns, env.find? n = none
 
 theorem FreshNames.nil (env : Env) : FreshNames env [] :=
@@ -102,7 +102,7 @@ theorem FreshNames.nil (env : Env) : FreshNames env [] :=
 
 /-- After pushing the head's constant, the tail is fresh at the
 extended environment. -/
-theorem FreshNames.step {env : Env} {c : ConstantInfo} {ns : List Name}
+theorem FreshNames.step {env : Env} {c : ConstantInfo} {ns : List Key}
     (h : FreshNames env (c.name :: ns)) : FreshNames ⟨c :: env.consts⟩ ns := by
   obtain ⟨hnd, hfr⟩ := h
   rw [List.nodup_cons] at hnd
@@ -112,7 +112,7 @@ theorem FreshNames.step {env : Env} {c : ConstantInfo} {ns : List Name}
 
 /-- Freshness at the extended environment, with the head fresh at the
 base, is freshness of the whole list at the base. -/
-theorem FreshNames.cons_of {env : Env} {c : ConstantInfo} {ns : List Name}
+theorem FreshNames.cons_of {env : Env} {c : ConstantInfo} {ns : List Key}
     (hc : env.find? c.name = none) (h : FreshNames ⟨c :: env.consts⟩ ns) :
     FreshNames env (c.name :: ns) := by
   obtain ⟨hnd, hfr⟩ := h
@@ -140,7 +140,7 @@ theorem checkConstantValF_fresh (ops : CheckerOps CheckCM) (fe : FEnv)
   all_goals exact Yields.pure ⟨rfl, Option.not_isSome_iff_eq_none.mp (by assumption)⟩
 
 theorem checkMemberValF_fresh (ops : CheckerOps CheckCM)
-    (blockNames : List Name) (fe : FEnv) (cv : ConstantVal) :
+    (blockNames : List Key) (fe : FEnv) (cv : ConstantVal) :
     Yields (checkMemberValF ops blockNames fe cv)
       (fun cvA => cvA.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold checkMemberValF
@@ -187,7 +187,7 @@ theorem checkOpaqueValC_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-! ## The modeled route -/
 
-theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List Name)
+theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List Key)
     (caps : IndCaps) {env : Env} {fe : FEnv} (h : PushChain env fe)
     (ci : ConstantInfo) :
     Yields (checkIndMemberS mode blockNames caps fe ci)
@@ -209,7 +209,7 @@ theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List Name)
     rw [hn]; exact hfr
   | _ => exact Yields.ofThrow
 
-theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List Name) :
+theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List Key) :
     ∀ (recs : List ConstantInfo) {env : Env} (feAcc : FEnv),
       PushChain env feAcc →
       Yields (provisionRecsS mode blockNames feAcc recs)
@@ -239,8 +239,8 @@ theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List Name) :
 
 /-- The recursor group's install fold: the provisioned names are pushed
 in order onto the group's base index. -/
-theorem recFold_push (mode : CheckMode) (blockNames : List Name)
-    (fe₂ feSelf : FEnv) (f : Name → Name) :
+theorem recFold_push (mode : CheckMode) (blockNames : List Key)
+    (fe₂ feSelf : FEnv) (f : Key → Key) :
     ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule)) {env : Env}
       (acc : FEnv), PushChain env acc →
       FreshNames acc.env (checked.map (·.1.name)) →
@@ -264,7 +264,7 @@ theorem recFold_push (mode : CheckMode) (blockNames : List Name)
     exact recFold_push mode blockNames fe₂ feSelf f cs _ (h.push hfr)
       (FreshNames.step (c := .recInfo c.1 c.2.1 c.2.2.1 rules') hf)
 
-theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Name)
+theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Key)
     {env : Env} {fe₂ : FEnv} (h : PushChain env fe₂)
     (recs : List ConstantInfo) :
     Yields (checkIndRecsS mode blockNames fe₂ recs)
@@ -281,7 +281,7 @@ theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Name)
       exact recFold_push mode blockNames fe₂ feSelf _ checked fe₂ h hq
     · exact Yields.ofThrowBind
 
-theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Name)
+theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Key)
     (lps : List LevelParam) (nP nF i : Nat) :
     Yields (checkProjLookupsF (m := CheckCM) fe T ctorName lps nP nF i)
       (fun _ => fe.find? (projFnName T i) = none) := by
@@ -290,7 +290,7 @@ theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Name)
   all_goals (apply Yields.pure; exact Option.isNone_iff_eq_none.mp (by assumption))
 
 theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Name) (lps : List LevelParam)
+    (h : PushChain env fe) (T ctorName : Key) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (checkProjFnS mode fe T ctorName lps nP nF i)
       (fun fe' => PushChain env fe') := by
@@ -301,7 +301,7 @@ theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
   all_goals (apply Yields.pure; exact h.push hfr)
 
 theorem installProjFnStepS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Name) (lps : List LevelParam)
+    (h : PushChain env fe) (T ctorName : Key) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (installProjFnStepS mode T ctorName lps nP nF fe i)
       (fun fe' => PushChain env fe') := by
@@ -313,7 +313,7 @@ theorem installProjFnStepS_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-- The members-then-recursors phase, shared by both arms of
 `checkIndDeclSF`'s block match. -/
-theorem indBase_push (mode : CheckMode) (blockNames : List Name)
+theorem indBase_push (mode : CheckMode) (blockNames : List Key)
     (caps : IndCaps) {env : Env} {fe : FEnv} (h : PushChain env fe)
     (nonrecs recs : List ConstantInfo) :
     Yields (do
@@ -383,7 +383,7 @@ theorem checkSumIndF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
      rw [hn']; exact hfr)
 
 theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
     Yields (checkSumCtorF ops fe₀ fe T lps nP nIdx rs isProp large cvC nF cvTa)
       (fun r => r.1.name = cvC.name ∧ fe.find? cvC.name = none) := by
@@ -395,7 +395,7 @@ theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
   all_goals (apply Yields.pure; exact ⟨hn, hfr⟩)
 
 theorem checkSumCtorsF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     ∀ (cs : List (ConstantVal × Nat)),
       Yields (checkSumCtorsF ops fe₀ fe T lps nP nIdx rs isProp large cvTa cs)
@@ -454,7 +454,7 @@ theorem checkNativeRecF_fresh (ops : CheckerOps CheckCM) {w : StructWalkers}
   all_goals (apply Yields.pure; exact ⟨rfl, hcv.2⟩)
 
 theorem checkStructProjTableF_push {w : StructWalkers} {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T C : Name) (lps : List LevelParam) (nP nF : Nat)
+    (h : PushChain env fe) (T C : Key) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) :
     Yields (checkStructProjTableF (m := CheckCM) w T C lps nP nF resSort guards
         off cvCa fe)

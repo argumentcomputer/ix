@@ -30,7 +30,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level DefEqListOk)
+open Ix.Kernel (CheckMode Env Expr Key Level DefEqListOk)
 
 universe w
 

@@ -44,7 +44,7 @@ private theorem consFold_suffix {α β : Type} (f : β → α) (l : List β) (ac
     acc <:+ l.foldl (fun acc y => f y :: acc) acc :=
   foldl_suffix (fun acc y => cons_suffix (f y) acc) l acc
 
-private theorem projFnStepSkels_suffix (T c : Name) (nP : Nat) (sk : List InstallSkel) (i : Nat) :
+private theorem projFnStepSkels_suffix (T c : Key) (nP : Nat) (sk : List InstallSkel) (i : Nat) :
     sk <:+ projFnStepSkels T c nP sk i := by
   unfold projFnStepSkels
   split

@@ -54,7 +54,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint inferTypeCore isDefEqCore)
 
 universe w
@@ -72,7 +72,7 @@ theorem natLitSupported_cons_back {env : Env} {c₀ : ConstantInfo}
       ∀ cv a b, c₀ ≠ .ctorInfo cv a b)
     (hg : Ix.Kernel.natLitSupported ⟨c₀ :: env.consts⟩ = true) :
     Ix.Kernel.natLitSupported env = true := by
-  have hfind : ∀ p : Name,
+  have hfind : ∀ p : Key,
       (⟨c₀ :: env.consts⟩ : Env).find? p
         = if c₀.name = p then some c₀ else env.find? p := by
     intro p

@@ -27,7 +27,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape)
 
 universe w
 
@@ -50,7 +50,7 @@ theorem frameIdx_consList {nIdx : Nat} {is : List V} (hlen : is.length = nIdx) (
 
 /-- **The constructor leaf's hereditary premises**: `MkPreS` along
 the parameters and `UnderTowerValid` along the whole frame. -/
-theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List LevelParam} {cvT cvC : ConstantVal}
+theorem ctorWalksGen {m : EnvModel V env} {T : Key} {lps : List LevelParam} {cvT cvC : ConstantVal}
     {nP nF nIdx j : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List Expr}
     {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
@@ -173,7 +173,7 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Name} {lps : List LevelParam} {cv
     rwa [consList_range_reverse] at this
 
 /-- **The P step at a sum-shaped constructor's cons**, for a given fibre fold. -/
-theorem stageCtorGen {T : Name}
+theorem stageCtorGen {T : Key}
     (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
     {F : Nat} {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}

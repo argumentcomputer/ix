@@ -32,7 +32,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps projFnName projModelName Declaration)
 
 universe w
@@ -165,7 +165,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     -- carrier-building `indRecsCoreR` used to report — an equation, no
     -- "not a recursor" side condition — so the ind tier's P summit no
     -- longer runs a second, model-free *install* for it.
-    have hkeepR : ∀ (n : Name) (ci : ConstantInfo),
+    have hkeepR : ∀ (n : Key) (ci : ConstantInfo),
         env.find? n = some ci → envR.find? n = some ci :=
       fun n ci hf => indRecsRun_keep hrecs n ci
         (indMembersRun_mono _ hmem n ci hf)

@@ -40,7 +40,7 @@ open Ix.Kernel
 shape the array implementation computes.  Where no record declares
 `n`, `findIdx` is the length, `getElem?` is `none` and `eraseIdx`
 changes nothing. -/
-theorem pickSpec_eq (n : Name) : ∀ l : List Declaration,
+theorem pickSpec_eq (n : Key) : ∀ l : List Declaration,
     pickSpec n l = (l[l.findIdx (declares n)]?, l.eraseIdx (l.findIdx (declares n)))
   | [] => rfl
   | d :: ds => by
@@ -53,7 +53,7 @@ theorem pickSpec_eq (n : Name) : ∀ l : List Declaration,
 
 /-- **The implementation is its specification**: the array pick is the
 list pick, on the array's records. -/
-theorem pick_toList (n : Name) (ds : Array Declaration) :
+theorem pick_toList (n : Key) (ds : Array Declaration) :
     ((pick n ds).1, (pick n ds).2.toList) = pickSpec n ds.toList := by
   rw [pickSpec_eq]
   cases ds
@@ -61,7 +61,7 @@ theorem pick_toList (n : Name) (ds : Array Declaration) :
 
 /-- What `pickSpec` removes and what it leaves is a permutation of what
 it was given. -/
-theorem pickSpec_perm (n : Name) : ∀ l : List Declaration,
+theorem pickSpec_perm (n : Key) : ∀ l : List Declaration,
     ((pickSpec n l).1.toList ++ (pickSpec n l).2).Perm l
   | [] => by simp [pickSpec]
   | d :: ds => by

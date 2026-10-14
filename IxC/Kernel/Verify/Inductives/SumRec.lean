@@ -31,7 +31,7 @@ open Expr
 instantiated at the parameters and the extras and then at the
 fields: the motive extra applied to the constructor at the
 variables. -/
-theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Name}
+theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Key}
     {lps : List LevelParam} {nP nF : Nat} {mfv : Expr}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
@@ -82,7 +82,7 @@ theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Name}
 
 namespace Expr
 
-variable {T : Name} {i : Nat}
+variable {T : Key} {i : Nat}
 
 end Expr
 
@@ -116,8 +116,8 @@ theorem Level.isNeverZero_sound (φ : LevelParam → Nat) :
 /-! ## The stored rules, positionally -/
 
 /-- A stored rule is constructor `j`'s rule at right-hand side `j`. -/
-theorem sumRules_getElem? {find? : Name → Option ConstantInfo}
-    {recName : Name} {nP mI rP : Nat} {recTy : Expr} :
+theorem sumRules_getElem? {find? : Key → Option ConstantInfo}
+    {recName : Key} {nP mI rP : Nat} {recTy : Expr} :
     ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →
       ∃ (j : Nat) (cA : ConstantVal × Nat) (rhs : Expr),
@@ -187,7 +187,7 @@ theorem instSeq_liftLooseBVars_mid :
 at the parameters, the extras and the fields: the motive extra at the
 index expressions (instantiated at the parameters and the fields
 alone) and the constructor at the variables. -/
-theorem instSeq_minorBodyI_at (tfvs extras xFvs : List Expr) {C : Name}
+theorem instSeq_minorBodyI_at (tfvs extras xFvs : List Expr) {C : Key}
     {lps : List LevelParam} {nP nF : Nat} {mfv : Expr} {es : List Expr}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)

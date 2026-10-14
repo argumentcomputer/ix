@@ -31,7 +31,7 @@ parameters), its checked type is the companion's under the block
 renaming (up to display names), and it is *valued* by the companion.
 Transpose of `BlockInstalled`; the group-local public↔`_model`
 identification, discarded at the block's end. -/
-@[expose] def BlockInstalledTT (blockNames : List Name) (env' : Env)
+@[expose] def BlockInstalledTT (blockNames : List Key) (env' : Env)
     (cval : TConstVal) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci, env'.find? n = some ci →
     ∃ cvm mval hmcvm,
@@ -44,7 +44,7 @@ identification, discarded at the block's end. -/
 
 /-- Installing one member valued by its model preserves the fold
 invariant.  Transpose of `BlockInstalled.step`. -/
-theorem BlockInstalledTT.step {blockNames : List Name} {env' : Env}
+theorem BlockInstalledTT.step {blockNames : List Key} {env' : Env}
     {cval cval₁ : TConstVal} {ci₁ : ConstantInfo} {cvm : ConstantVal}
     {mval : Expr} {hmcvm : ReducibilityHint}
     (hI : BlockInstalledTT blockNames env' cval)
@@ -84,7 +84,7 @@ theorem BlockInstalledTT.step {blockNames : List Name} {env' : Env}
 /-- Prepending a fresh non-member constant preserves the fold
 invariant (the projection-family phase's installs).  Transpose of
 `BlockInstalled.fresh_cons`. -/
-theorem BlockInstalledTT.fresh_cons {blockNames : List Name} {env' : Env}
+theorem BlockInstalledTT.fresh_cons {blockNames : List Key} {env' : Env}
     {cval cval₁ : TConstVal} {c₀ : ConstantInfo}
     (hI : BlockInstalledTT blockNames env' cval)
     (hnotb : blockNames.contains c₀.name = false)
@@ -116,7 +116,7 @@ theorem BlockInstalledTT.fresh_cons {blockNames : List Name} {env' : Env}
 /-- The semantically pruned block renaming is `RenameOkT` at any
 environment/valuation carrying the block invariant.  Transpose of
 `BlockInstalled.renameOk`. -/
-theorem BlockInstalledTT.renameOkT {blockNames : List Name} {env₁ : Env}
+theorem BlockInstalledTT.renameOkT {blockNames : List Key} {env₁ : Env}
     {cval₁ : TConstVal}
     (hI : BlockInstalledTT blockNames env₁ cval₁) :
     RenameOkT cval₁ env₁ (fun n => if (env₁.find? n).isSome = true then
@@ -149,7 +149,7 @@ theorem BlockInstalledTT.renameOkT {blockNames : List Name} {env₁ : Env}
 
 /-- Value one name by another's valuation — the modeled member's
 valuation is its `_model` companion's. -/
-def cvalAlias (cval : TConstVal) (n mn : Name) : TConstVal := fun c ψ =>
+def cvalAlias (cval : TConstVal) (n mn : Key) : TConstVal := fun c ψ =>
   if c = n then cval mn ψ else cval c ψ
 
 

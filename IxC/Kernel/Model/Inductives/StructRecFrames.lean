@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta)
 
 universe w
@@ -38,7 +38,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelPara
 /-! ## The generated data, by position -/
 
 section Data
-variable {m : EnvModel V env} {T C : Name} {ψ : LevelParam → Nat} {nP nF : Nat} {ℓ : Level}
+variable {m : EnvModel V env} {T C : Key} {ψ : LevelParam → Nat} {nP nF : Nat} {ℓ : Level}
   {pps ds : List (Nat × Nat × AnnotTerm)}
 
 end Data

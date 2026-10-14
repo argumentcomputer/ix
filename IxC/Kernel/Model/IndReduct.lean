@@ -31,13 +31,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level isDefEqCore)
+open Ix.Kernel (CheckMode Env Expr Key Level isDefEqCore)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- A spine every element of which reads, reads as a spine. -/
 theorem denoteMetaSpine_of_all {d : Nat} :
@@ -79,7 +79,7 @@ set_option maxHeartbeats 3200000 in
 /-- **The reduct stage, at the reading** (`reductS`). -/
 theorem reduct {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hclaims : DefEqClaim μ m ψ' F)
-    {f : Name → Name} (hroT : RenameOk m.acval env f)
+    {f : Key → Key} (hroT : RenameOk m.acval env f)
     {rP cnF : Nat} {fvs : List Expr}
     (hfvslen : fvs.length = rP + cnF)
     (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →

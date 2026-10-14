@@ -45,7 +45,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal)
 
 universe w
 
@@ -57,8 +57,8 @@ variable {env : Env}
 /-- A leaf reads only its own level parameters — `EnvModel.acval_params`
 as a standalone predicate, so the crossing does not need a carrier. -/
 def AcvalParamsAt (env : Env)
-    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
-  ∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
+    (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
+  ∀ (n : Key) (ci : ConstantInfo), env.find? n = some ci →
     ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       acval n ψ₁ = acval n ψ₂
@@ -67,11 +67,11 @@ def AcvalParamsAt (env : Env)
 theorem acvalParamsAt_of_core (m : EnvModel V env) :
     AcvalParamsAt env m.acval := m.acval_params
 
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- A stored slot with no level parameters is valued independently of
 the assignment (`acval_isEmpty`, off the bare hypothesis). -/
-theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Name}
+theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Key}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (ψ₁ ψ₂ : LevelParam → Nat) : acval n ψ₁ = acval n ψ₂ := by
@@ -82,7 +82,7 @@ theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Name}
 
 /-- A one-parameter slot substituted at `Level.zero` is valued
 independently of the assignment (`acval_oneParam`). -/
-theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Name}
+theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Key}
     {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
     (ψ₁ ψ₂ : LevelParam → Nat) :
@@ -100,7 +100,7 @@ theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Name}
   · simp [hlen]
 
 /-- The scalar literal-support slots, read off their shape guards. -/
-theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Name)
+theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Key)
     (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
@@ -113,7 +113,7 @@ theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Name)
     exact acvalAt_isEmpty hp hx (hshape ci hfok) _ _
 
 /-- The two one-parameter literal-support slots. -/
-theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Name)
+theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Key)
     (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →

@@ -43,7 +43,7 @@ frame variables `x`, `y`, annotated by `Nat`.
 Shared with the div/mod certificates (`IxC/Kernel/TTVerify/DivModPin.lean`),
 whose statements are the same shape but mention `Eq.{1}` — which is why
 the constant clause counts levels instead of demanding none. -/
-@[expose] def natFragOk (env : Env) (c : Name) : Expr → Bool
+@[expose] def natFragOk (env : Env) (c : Key) : Expr → Bool
   | .sort _ => true
   | .fvar i ty =>
     (decide (i = 0) || decide (i = 1)) && (ty == .const natName [])
@@ -56,7 +56,7 @@ the constant clause counts levels instead of demanding none. -/
 
 /-- A fragment expression is shallow, so `substConst0` is faithful on
 it. -/
-theorem shallowE_of_natFragOk {env : Env} {c : Name} :
+theorem shallowE_of_natFragOk {env : Env} {c : Key} :
     ∀ {e : Expr}, natFragOk env c e = true → shallowE e = true
   | .sort _, _ => rfl
   | .fvar _ _, _ => rfl
@@ -76,12 +76,12 @@ WF-recursive family, so their obligation is vacuous), and each mentions
 exactly the constants the guard pins. -/
 
 /-- A constant is stored at empty level parameters. -/
-def storedNoLevels (env : Env) (n : Name) : Prop :=
+def storedNoLevels (env : Env) (n : Key) : Prop :=
   (match env.find? n with
    | some ci => ci.toConstantVal.levelParams.isEmpty
    | none => false) = true
 
-theorem natFragOk_const {env : Env} {c n : Name}
+theorem natFragOk_const {env : Env} {c n : Key}
     (h : storedNoLevels env n) : natFragOk env c (.const n []) = true := by
   simp only [natFragOk, Bool.or_eq_true]
   refine Or.inr ?_
@@ -94,12 +94,12 @@ theorem natFragOk_const {env : Env} {c n : Name}
     rw [List.isEmpty_iff] at h
     simp [h]
 
-theorem natFragOk_self {env : Env} {c : Name} :
+theorem natFragOk_self {env : Env} {c : Key} :
     natFragOk env c (.const c []) = true := by
   simp [natFragOk]
 
 /-- Both sides of every recurrence lie in the fragment. -/
-theorem natOpEquations_frag {env : Env} {c : Name}
+theorem natOpEquations_frag {env : Env} {c : Key}
     (hz : storedNoLevels env natZeroName)
     (hs : storedNoLevels env natSuccName)
     (hdep : ∀ n ∈ natOpDeps c, n ≠ c → storedNoLevels env n)
@@ -209,7 +209,7 @@ theorem natOpEquations_frag {env : Env} {c : Name}
 
 /-! ## The guard delivers exactly those facts -/
 
-theorem storedNoLevels_exists {env : Env} {n : Name}
+theorem storedNoLevels_exists {env : Env} {n : Key}
     (h : storedNoLevels env n) :
     ∃ ci, env.find? n = some ci ∧ ci.toConstantVal.levelParams = [] := by
   unfold storedNoLevels at h
@@ -217,7 +217,7 @@ theorem storedNoLevels_exists {env : Env} {n : Name}
   | none => rw [hf] at h; exact nomatch h
   | some ci => rw [hf] at h; exact ⟨ci, rfl, by simpa [List.isEmpty_iff] using h⟩
 
-theorem storedNoLevels_of_cons {env : Env} {ci : ConstantInfo} {c n : Name}
+theorem storedNoLevels_of_cons {env : Env} {ci : ConstantInfo} {c n : Key}
     (hname : ci.name = c) (hne : n ≠ c)
     (h : storedNoLevels ⟨ci :: env.consts⟩ n) : storedNoLevels env n := by
   unfold storedNoLevels at h ⊢
@@ -225,13 +225,13 @@ theorem storedNoLevels_of_cons {env : Env} {ci : ConstantInfo} {c n : Name}
 
 /-- A name that occurs in no `natOpNames` entry differs from the
 operation being installed. -/
-theorem ne_of_mem_natOpNames {n c : Name}
+theorem ne_of_mem_natOpNames {n c : Key}
     (h : natOpNames.all (fun x => n != x) = true) (hc : c ∈ natOpNames) :
     n ≠ c := fun hh => by
   have := List.all_eq_true.mp h c hc
   rw [hh] at this; simp at this
 
-theorem storedNoLevels_of_ctorOk {env : Env} {n : Name}
+theorem storedNoLevels_of_ctorOk {env : Env} {n : Key}
     (h : natZeroOk (env.find? n) = true ∨ natSuccOk (env.find? n) = true) :
     storedNoLevels env n := by
   unfold storedNoLevels
@@ -248,7 +248,7 @@ theorem storedNoLevels_of_ctorOk {env : Env} {n : Name}
     · exact nomatch h
 
 /-- The guard's three clauses, as the fragment lemma wants them. -/
-theorem natOpGuard_stored {env : Env} {c : Name}
+theorem natOpGuard_stored {env : Env} {c : Key}
     (h : natOpGuard env c = true) :
     storedNoLevels env natName ∧ storedNoLevels env natZeroName ∧
     storedNoLevels env natSuccName ∧

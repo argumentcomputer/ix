@@ -45,7 +45,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint)
 
 universe w
@@ -58,14 +58,14 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
 `etaFields = 0`.  v1's counterpart is `etaLawKeyS`, reached through
 `memberEtaS`. -/
 @[expose] def MemberEtaLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Name} {env : Env}
+  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Key} {env : Env}
     (mp : EnvModelM V μ env) {cv cvA : ConstantVal} {c₀ : ConstantInfo},
     MemberValRun μ F env blockNames cv cvA →
     BlockInstalledTT blockNames env mp.base2.cvalE →
     BlockAcvalInstalled blockNames env mp.base2.acval →
     c₀.toConstantVal = cvA → c₀.name = cvA.name →
     (∀ entry, c₀ ≠ .projInfo entry) →
-    ∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+    ∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
       (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
       caps.eta = true → Ix.Kernel.reservedBasisNames.contains T = false →
       Ix.Kernel.EtaPins μ env T cvT.levelParams caps →
@@ -96,7 +96,7 @@ stored, its telescope is pinned) is unreachable.  The caller has them
 — so this is a threading fix, not a strengthening of what the fold
 must prove. -/
 @[expose] def MemberUnitLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Name} {env : Env}
+  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Key} {env : Env}
     (mp : EnvModelM V μ env) {cv cvA : ConstantVal} {c₀ : ConstantInfo},
     MemberValRun μ F env blockNames cv cvA →
     BlockInstalledTT blockNames env mp.base2.cvalE →
@@ -115,7 +115,7 @@ must prove. -/
 invariant stepped — `memberInstallS`'s joint twin. -/
 theorem memberInstallPM (hetaP : MemberEtaLaw V)
     (hunitP : MemberUnitLaw V)
-    {blockNames : List Name} (mp : EnvModelM V μ env)
+    {blockNames : List Key} (mp : EnvModelM V μ env)
     {cv cvA : ConstantVal} {c₀ : ConstantInfo}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hI : BlockInstalledTT blockNames env mp.base2.cvalE)
@@ -238,7 +238,7 @@ rule-less recursors), exactly as `memberInstallS` serves both of v1's:
 the step's `hkind` disjunct covers all three shapes. -/
 theorem indMembersPM (hetaP : MemberEtaLaw V)
     (hunitP : MemberUnitLaw V)
-    {μ : CheckMode} {F : Nat} {blockNames : List Name}
+    {μ : CheckMode} {F : Nat} {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (members : List ConstantInfo) {env : Env} (mp : EnvModelM V μ env)
       {env₂ : Env},
@@ -327,7 +327,7 @@ at `Rules.RulesInputs.ofSem` and there is no other way to get one at
 `envSelf`. -/
 theorem provisionRecsPM (hetaP : MemberEtaLaw V)
     (hunitP : MemberUnitLaw V)
-    {μ : CheckMode} {F : Nat} {blockNames : List Name} :
+    {μ : CheckMode} {F : Nat} {blockNames : List Key} :
     ∀ (recs : List ConstantInfo) {envAcc : Env}
       (mp : EnvModelM V μ envAcc)
       {envSelf : Env}

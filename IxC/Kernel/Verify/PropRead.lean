@@ -51,7 +51,7 @@ theorem residualPW_peelNeverPis_shiftFrom {p : Nat} :
       · exact ih b
       · rfl
 
-theorem headTypePW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem headTypePW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (h : Expr) (n : Nat) :
     headTypePW find? (shiftFrom p h) n = headTypePW find? h n := by
   cases h <;> try rfl
@@ -59,7 +59,7 @@ theorem headTypePW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
     simp only [shiftFrom]
     split <;> simp only [headTypePW, residualPW_peelNeverPis_shiftFrom]
 
-theorem typeSortPW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem typeSortPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (T : Expr) :
     typeSortPW find? (shiftFrom p T) = typeSortPW find? T := by
   cases T <;> try rfl
@@ -73,7 +73,7 @@ theorem typeSortPW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
     simp only [shiftFrom] at h1 h2 ⊢
     simp only [typeSortPW, h1, h2, headTypePW_shiftFrom]
 
-theorem headProofPW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem headProofPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (h : Expr) :
     headProofPW find? (shiftFrom p h) = headProofPW find? h := by
   cases h <;> try rfl
@@ -83,25 +83,25 @@ theorem headProofPW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
 
 /-- `proofPW` through the total `lamPw` reader (the shape the walks
 rewrite). -/
-theorem proofPW_eq (find? : Name → Option ConstantInfo) (a : Expr) :
+theorem proofPW_eq (find? : Key → Option ConstantInfo) (a : Expr) :
     proofPW find? a =
       match a.lamPw with
       | some pw => some pw
       | none => headProofPW find? a.getAppFn := by
   cases a <;> rfl
 
-theorem proofPW_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem proofPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (a : Expr) :
     proofPW find? (shiftFrom p a) = proofPW find? a := by
   rw [proofPW_eq, proofPW_eq, lamPw_shiftFrom, getAppFn_shiftFrom,
     headProofPW_shiftFrom]
 
-theorem notProofFast_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem notProofFast_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (a : Expr) :
     notProofFast find? (shiftFrom p a) = notProofFast find? a := by
   simp only [notProofFast, proofPW_shiftFrom]
 
-theorem isProofFast_shiftFrom (find? : Name → Option ConstantInfo) {p : Nat}
+theorem isProofFast_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     (a : Expr) :
     isProofFast find? (shiftFrom p a) = isProofFast find? a := by
   simp only [isProofFast, proofPW_shiftFrom]
@@ -208,7 +208,7 @@ theorem residualPW_some_inv {o : Option Expr} {pw : PropWhen}
   | some (.letE _ _ _), h | some (.lit _), h | some (.proj _ _ _), h =>
     exact nomatch h
 
-theorem headTypePW_some_inv (find? : Name → Option ConstantInfo) {hd : Expr}
+theorem headTypePW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
     {k : Nat} {pw : PropWhen} (h : headTypePW find? hd k = some pw) :
     (∃ I us ci u, hd = .const I us ∧ find? I = some ci ∧
         ci.isTowerEntry = false ∧
@@ -244,7 +244,7 @@ theorem headTypePW_some_inv (find? : Name → Option ConstantInfo) {hd : Expr}
 
 /-- `typeSortPW` through the two special cases (the shape the
 inversion rewrites). -/
-theorem typeSortPW_eq (find? : Name → Option ConstantInfo) (T : Expr) :
+theorem typeSortPW_eq (find? : Key → Option ConstantInfo) (T : Expr) :
     typeSortPW find? T =
       match T with
       | .forallE _ _ m => some m.pw
@@ -252,7 +252,7 @@ theorem typeSortPW_eq (find? : Name → Option ConstantInfo) (T : Expr) :
       | T => headTypePW find? T.getAppFn T.getAppArgs.length := by
   cases T <;> simp [typeSortPW, Expr.numArgs_eq_length]
 
-theorem typeSortPW_some_inv (find? : Name → Option ConstantInfo) {T : Expr}
+theorem typeSortPW_some_inv (find? : Key → Option ConstantInfo) {T : Expr}
     {pw : PropWhen} (h : typeSortPW find? T = some pw) :
     (∃ A B mb, T = .forallE A B mb ∧ pw = mb.pw) ∨
     pw = .never ∨
@@ -277,7 +277,7 @@ theorem typeSortPW_some_inv (find? : Name → Option ConstantInfo) {T : Expr}
     · exact Or.inr (Or.inr (Or.inl ⟨I, us, ci, u, hfn, hf, hnt, hlen, hpeel, rfl⟩))
     · exact Or.inr (Or.inr (Or.inr ⟨idx, ty, u, hfn, hpeel, rfl⟩))
 
-theorem headProofPW_some_inv (find? : Name → Option ConstantInfo) {hd : Expr}
+theorem headProofPW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
     {pw : PropWhen} (h : headProofPW find? hd = some pw) :
     (∃ c us ci, hd = .const c us ∧ find? c = some ci ∧
         ci.isTowerEntry = false ∧
@@ -308,7 +308,7 @@ theorem headProofPW_some_inv (find? : Name → Option ConstantInfo) {hd : Expr}
   case fvar idx ty => exact Or.inr (Or.inl ⟨idx, ty, rfl, h⟩)
   all_goals exact Or.inr (Or.inr h.symm)
 
-theorem proofPW_some_inv (find? : Name → Option ConstantInfo) {a : Expr}
+theorem proofPW_some_inv (find? : Key → Option ConstantInfo) {a : Expr}
     {pw : PropWhen} (h : proofPW find? a = some pw) :
     (∃ ty bd mb, a = .lam ty bd mb ∧ pw = mb.pw) ∨
     (a.lamPw = none ∧ headProofPW find? a.getAppFn = some pw) := by
@@ -320,7 +320,7 @@ theorem proofPW_some_inv (find? : Name → Option ConstantInfo) {a : Expr}
     exact Or.inl ⟨ty, bd, mb, rfl, (Option.some.inj h).symm⟩
   | none => rw [hl] at h; exact Or.inr ⟨rfl, h⟩
 
-theorem isProofFast_inv (find? : Name → Option ConstantInfo) {a : Expr}
+theorem isProofFast_inv (find? : Key → Option ConstantInfo) {a : Expr}
     (h : isProofFast find? a = true) :
     ∃ pw, proofPW find? a = some pw ∧ pw.isProp = true := by
   unfold isProofFast at h

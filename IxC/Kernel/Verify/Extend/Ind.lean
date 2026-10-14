@@ -27,7 +27,7 @@ open Expr
 
 /-- A successful fold's members were all fresh at their own step, hence
 already fresh at any earlier point. -/
-theorem checkIndMember_fold_names {blockNames : List Name}
+theorem checkIndMember_fold_names {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
@@ -59,7 +59,7 @@ theorem checkIndMember_fold_names {blockNames : List Name}
 
 /-- Members installed by the fold never carry a model-shaped name
 (`checkMemberVal` rejects them). -/
-theorem checkIndFold_modelfree {blockNames : List Name}
+theorem checkIndFold_modelfree {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
@@ -86,7 +86,7 @@ theorem checkIndFold_modelfree {blockNames : List Name}
 
 /-- Members installed by the fold never carry a
 projection-function-shaped name. -/
-theorem checkIndFold_projshape {blockNames : List Name}
+theorem checkIndFold_projshape {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
@@ -110,12 +110,12 @@ theorem checkIndFold_projshape {blockNames : List Name}
 
 /-- The member fold adds only block-named inductive-former or
 constructor constants. -/
-theorem checkIndFold_find_new {blockNames : List Name}
+theorem checkIndFold_find_new {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     (∀ ci ∈ rest, blockNames.contains ci.name = true) →
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
-    ∀ (n : Name) (ci : ConstantInfo), env₂.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
     env'.find? n = some ci ∨
       (blockNames.contains n = true ∧
         ((∃ cv, ci = .indInfo cv caps) ∨
@@ -164,7 +164,7 @@ theorem checkIndFold_find_new {blockNames : List Name}
 
 /-- Every successfully folded member is an inductive former or a
 constructor. -/
-theorem checkIndFold_kinds {blockNames : List Name} {caps : IndCaps} :
+theorem checkIndFold_kinds {blockNames : List Key} {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
     ∀ ci ∈ rest, (∃ cv caps', ci = .indInfo cv caps') ∨
@@ -189,11 +189,11 @@ theorem checkIndFold_kinds {blockNames : List Name} {caps : IndCaps} :
 
 /-- The member fold preserves stored lookups exactly (every install is
 fresh). -/
-theorem checkIndFold_find_preserved {blockNames : List Name}
+theorem checkIndFold_find_preserved {blockNames : List Key}
     {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
-    ∀ (n : Name) (ci : ConstantInfo), env'.find? n = some ci →
+    ∀ (n : Key) (ci : ConstantInfo), env'.find? n = some ci →
     env₂.find? n = some ci
   | [], _, _, h, n, ci, hf => by
     simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
@@ -228,8 +228,8 @@ theorem checkIndFold_find_preserved {blockNames : List Name}
 their capability constructor is stored at the record's arities.  The
 block-fold form of the threaded `EtaFamiliesClosed` (which cannot hold
 for a former whose constructor is still pending). -/
-@[expose] def EtaFamiliesClosedO (blockNames : List Name) (env : Env) : Prop :=
-  ∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+@[expose] def EtaFamiliesClosedO (blockNames : List Key) (env : Env) : Prop :=
+  ∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     reservedBasisNames.contains T = false →
     blockNames.contains T = false →
@@ -237,15 +237,15 @@ for a former whose constructor is still pending). -/
       some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
 /-- Stored block formers carry exactly the fold's capability record. -/
-def BlockCapsPinned (blockNames : List Name) (caps : IndCaps)
+def BlockCapsPinned (blockNames : List Key) (caps : IndCaps)
     (env : Env) : Prop :=
-  ∀ (n : Name) (cvS : ConstantVal) (capsS : IndCaps),
+  ∀ (n : Key) (cvS : ConstantVal) (capsS : IndCaps),
     blockNames.contains n = true →
     env.find? n = some (.indInfo cvS capsS) → capsS = caps
 
 /-- The outside-families invariant steps at any fresh *block* install:
 a block name is never an outside former's name. -/
-theorem EtaFamiliesClosedO.cons {blockNames : List Name} {env : Env}
+theorem EtaFamiliesClosedO.cons {blockNames : List Key} {env : Env}
     {c₀ : ConstantInfo} (h : EtaFamiliesClosedO blockNames env)
     (hfresh : env.find? c₀.name = none)
     (hbn : blockNames.contains c₀.name = true) :
@@ -263,7 +263,7 @@ theorem EtaFamiliesClosedO.cons {blockNames : List Name} {env : Env}
 
 /-- The member fold only extends the environment: stored lookups stay
 stored. -/
-theorem checkIndFold_mono {blockNames : List Name} {caps : IndCaps} :
+theorem checkIndFold_mono {blockNames : List Key} {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' =
       .ok env₂ →
@@ -295,7 +295,7 @@ theorem checkIndFold_mono {blockNames : List Name} {caps : IndCaps} :
       exact hn
 
 /-- After the member fold every folded member is stored. -/
-theorem checkIndFold_stored {blockNames : List Name} {caps : IndCaps} :
+theorem checkIndFold_stored {blockNames : List Key} {caps : IndCaps} :
     ∀ (rest : List ConstantInfo) (env' env₂ : Env),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' =
       .ok env₂ →

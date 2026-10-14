@@ -118,7 +118,7 @@ theorem envWF_cons_ind {env : Env} (henv : EnvWF env)
 /-- The table stage's run, inverted: the bodies are the generator's,
 they pass the scoping guard, the table name is fresh, and the output
 is the table consed. -/
-theorem checkStructProjTable_inv {env envOut : Env} {T C : Name}
+theorem checkStructProjTable_inv {env envOut : Env} {T C : Key}
     {lps : List LevelParam} {nP nF : Nat} {rs : Level} {guards : List Level}
     {cvCa : ConstantVal}
     (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
@@ -149,7 +149,7 @@ theorem checkStructProjTable_inv {env envOut : Env} {T C : Name}
 environment it produces is well-formed — the table's constant type is
 the closed `Sort 1`, and the bodies' scoping is the stage's own guard. -/
 theorem direct_table_wf {env envOut : Env} (henv : EnvWF env)
-    {T C : Name} {lps : List LevelParam} {nP nF : Nat} {rs : Level}
+    {T C : Key} {lps : List LevelParam} {nP nF : Nat} {rs : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal}
     (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
       = .ok envOut) :

@@ -62,7 +62,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint)
 
 universe w
@@ -74,7 +74,7 @@ variable {μ : CheckMode} {env : Env}
 inductive tier's workhorse: `ConstantValR`'s second conjunct is the
 hypothesis, and the four names the mechanical rows read
 (`Nat`/`Nat.zero`/`Nat.succ`/`Eq`) are all reserved. -/
-theorem ne_of_notReserved {n m : Name}
+theorem ne_of_notReserved {n m : Key}
     (h : Ix.Kernel.reservedBasisNames.contains n = false)
     (hm : Ix.Kernel.reservedBasisNames.contains m = true) : n ≠ m := by
   intro hh

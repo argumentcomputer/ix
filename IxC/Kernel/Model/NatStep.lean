@@ -37,7 +37,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported natOpResult reduceNatFueled)
 
 universe w
@@ -74,7 +74,7 @@ theorem denoteMeta_rawNatLit (m : EnvModel V env)
     · exact nomatch h
 
 /-- A stored level-monomorphic head's reading, inverted. -/
-theorem denoteMeta_head {m : EnvModel V env} {d : Nat} {c : Name}
+theorem denoteMeta_head {m : EnvModel V env} {d : Nat} {c : Key}
     {ci : ConstantInfo} {fa : AnnotTerm}
     (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = [])
@@ -184,7 +184,7 @@ theorem natOpRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     · rw [interp_app, interp_app]
       exact hop ρ
   have closeB : (c = Ix.Kernel.natBeqName ∨ c = Ix.Kernel.natBleName) →
-      ∀ bn : Name,
+      ∀ bn : Key,
       (bn = Ix.Kernel.boolTrueName ∨ bn = Ix.Kernel.boolFalseName) →
       r = .const bn [] →
       (∀ ρ : Nat → V, SetTheory.app (SetTheory.app

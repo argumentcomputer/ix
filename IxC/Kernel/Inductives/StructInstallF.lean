@@ -64,14 +64,14 @@ structure StructWalkers where
   /-- `Expr.constsResolveF` or its memoised twin -/
   resolve : FEnv → Expr → Bool
   /-- `structProjBodies` or its memoised twin -/
-  projBodies : Name → Nat → Nat → Expr → Option (Array Expr)
+  projBodies : Key → Nat → Nat → Expr → Option (Array Expr)
 
 /-- The plain walkers: the specification. -/
 def StructWalkers.plain : StructWalkers :=
   ⟨fun fe e => e.constsResolveF fe, structProjBodies⟩
 
 /-- `checkStructProjTable` through the index (task #175 S1). -/
-def checkStructProjTableF (w : StructWalkers) (T C : Name) (lps : List LevelParam) (nP nF : Nat)
+def checkStructProjTableF (w : StructWalkers) (T C : Key) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) (fe : FEnv) :
     m FEnv := do
   let bodies ← unwrapOr (w.projBodies T nP nF cvCa.type)

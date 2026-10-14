@@ -274,7 +274,7 @@ theorem openRev_instantiateLevelParams (ks : List LevelParam)
 
 /-- The reverse opening commutes with constant renaming (the opener
 annotations mention no constants). -/
-theorem openRev_renameConsts (f : Name → Name) :
+theorem openRev_renameConsts (f : Key → Key) :
     ∀ (d n : Nat) (e : Expr),
       openRev d n (e.renameConsts f)
         = (openRev d n e).renameConsts f := by

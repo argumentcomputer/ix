@@ -151,7 +151,7 @@ private theorem fvarLeaves_bvar (i : Nat) :
 private theorem fvarLeaves_sort (u : Level) :
     (Expr.sort u).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
-private theorem fvarLeaves_const (n : Name) (us : List Level) :
+private theorem fvarLeaves_const (n : Key) (us : List Level) :
     (Expr.const n us).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
 private theorem fvarLeaves_lit (l : Literal) :
@@ -178,7 +178,7 @@ private theorem fvarLeaves_letE (ty v b : Expr) :
       = ty.fvarLeaves ++ v.fvarLeaves ++ b.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_proj (s : Name) (i : Nat) (e : Expr) :
+private theorem fvarLeaves_proj (s : Key) (i : Nat) (e : Expr) :
     (Expr.proj s i e).fvarLeaves = e.fvarLeaves := by rw [Expr.fvarLeaves]
 
 /-- The clone's `fvarB == 0` shortcut on the leaf walks: a node whose
@@ -925,7 +925,7 @@ theorem unfoldableHeadC_spec' {env : Env} {e : Expr} {ex : Expr}
 /-- **The `And`-rescue gate through the index is the spec's gate**:
 both sides are `andRescueSlotsOf` at a lookup, and the index's lookup
 is `Env.findProj?` (`mkFEnv_findProj?`). -/
-theorem andRescueSlotsF_spec {env : Env} {ctor : Name} {nP : Nat}
+theorem andRescueSlotsF_spec {env : Env} {ctor : Key} {nP : Nat}
     {ust : List Level} :
     (mkFEnv env).andRescueSlotsF ctor nP ust = andRescueSlots env ctor nP ust := by
   unfold FEnv.andRescueSlotsF andRescueSlots

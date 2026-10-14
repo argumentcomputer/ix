@@ -550,7 +550,7 @@ section CacheFill
 variable {s₀ : CState}
 
 /-- Recording a converted constant preserves the invariant. -/
-theorem CSOK.insertIEnv {s : CState} (hs : CSOK mode env s) {n : Name}
+theorem CSOK.insertIEnv {s : CState} (hs : CSOK mode env s) {n : Key}
     {ent : CConstE} (hty : RelC ent.ty ent.tyE)
     (hval : ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE) :
     CSOK mode env { s with ienv := s.ienv.insert n ent } := by
@@ -570,7 +570,7 @@ theorem CSOK.insertIEnv {s : CState} (hs : CSOK mode env s) {n : Name}
 /-- Inserting a backed entry into `constTyAt` preserves the
 invariant. -/
 theorem CSOK.insertConstTy {s : CState} (hs : CSOK mode env s)
-    {n : Name} {us : List Level} {i : Expr} {ci : ConstantInfo}
+    {n : Key} {us : List Level} {i : Expr} {ci : ConstantInfo}
     (hfind : env.find? n = some ci)
     (hrel : RelC i (ci.toConstantVal.type.instantiateLevelParams
       ci.toConstantVal.levelParams us)) :
@@ -580,7 +580,7 @@ theorem CSOK.insertConstTy {s : CState} (hs : CSOK mode env s)
   intro n' us' i' hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
-  by_cases hk : ((n, us) : Name × List Level) == (n', us')
+  by_cases hk : ((n, us) : Key × List Level) == (n', us')
   · rw [if_pos hk] at hl
     obtain ⟨rfl, rfl⟩ : n = n' ∧ us = us' := by
       have h := eq_of_beq hk
@@ -593,7 +593,7 @@ theorem CSOK.insertConstTy {s : CState} (hs : CSOK mode env s)
 /-- Inserting a backed entry into `constValAt` preserves the
 invariant. -/
 theorem CSOK.insertConstVal {s : CState} (hs : CSOK mode env s)
-    {n : Name} {us : List Level} {i : Expr}
+    {n : Key} {us : List Level} {i : Expr}
     {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
     (hfind : env.find? n = some (.defnInfo cv v hint))
     (hrel : RelC i (v.instantiateLevelParams cv.levelParams us)) :
@@ -603,7 +603,7 @@ theorem CSOK.insertConstVal {s : CState} (hs : CSOK mode env s)
   intro n' us' i' hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
-  by_cases hk : ((n, us) : Name × List Level) == (n', us')
+  by_cases hk : ((n, us) : Key × List Level) == (n', us')
   · rw [if_pos hk] at hl
     obtain ⟨rfl, rfl⟩ : n = n' ∧ us = us' := by
       have h := eq_of_beq hk
@@ -616,7 +616,7 @@ theorem CSOK.insertConstVal {s : CState} (hs : CSOK mode env s)
 /-- Inserting a backed entry into `ruleRhsAt` preserves the
 invariant. -/
 theorem CSOK.insertRuleRhs {s : CState} (hs : CSOK mode env s)
-    {c j : Name} {us : List Level} {i : Expr}
+    {c j : Key} {us : List Level} {i : Expr}
     {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule} {rl : RecRule}
     (hfind : env.find? c = some (.recInfo cv mI rP rules))
     (hrl : rules.find? (fun r' => r'.ctor == j) = some rl)
@@ -628,7 +628,7 @@ theorem CSOK.insertRuleRhs {s : CState} (hs : CSOK mode env s)
   intro c' j' us' i' hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
-  by_cases hk : ((c, j, us) : Name × Name × List Level) == (c', j', us')
+  by_cases hk : ((c, j, us) : Key × Key × List Level) == (c', j', us')
   · rw [if_pos hk] at hl
     obtain ⟨rfl, rfl, rfl⟩ : c = c' ∧ j = j' ∧ us = us' := by
       have h := eq_of_beq hk
@@ -642,7 +642,7 @@ theorem CSOK.insertRuleRhs {s : CState} (hs : CSOK mode env s)
 converted-constant hit path via the self-certifying `ienv` clause (the
 pointer gate ties the tag to the argument), the miss paths via
 `pureC_eff`. -/
-theorem storedTyIdxM_eff (hs : CSOK mode env s₀) {n : Name} (x : Expr) :
+theorem storedTyIdxM_eff (hs : CSOK mode env s₀) {n : Key} (x : Expr) :
     CEff mode env s₀ (fun i => RelC i x) (storedTyIdxM n x) := by
   intro v' s' hr
   rw [show storedTyIdxM n x = (do
@@ -674,7 +674,7 @@ theorem storedTyIdxM_eff (hs : CSOK mode env s₀) {n : Name} (x : Expr) :
 
 /-- `storedValIdxM` yields a term related to the given value (see
 `storedTyIdxM_eff`). -/
-theorem storedValIdxM_eff (hs : CSOK mode env s₀) {n : Name} (x : Expr) :
+theorem storedValIdxM_eff (hs : CSOK mode env s₀) {n : Key} (x : Expr) :
     CEff mode env s₀ (fun i => RelC i x) (storedValIdxM n x) := by
   intro v' s' hr
   rw [show storedValIdxM n x = (do
@@ -715,7 +715,7 @@ theorem storedValIdxM_eff (hs : CSOK mode env s₀) {n : Name} (x : Expr) :
 
 /-- `constTyAtM` under the index of `env`: the result is related to the
 level-instantiated stored type. -/
-theorem constTyAtM_eff (hs : CSOK mode env s₀) {nI n : Name}
+theorem constTyAtM_eff (hs : CSOK mode env s₀) {nI n : Key}
     {us : List Level} {ci : ConstantInfo} (hfind : env.find? n = some ci) :
     CEff mode env s₀ (fun i => RelC i
         (ci.toConstantVal.type.instantiateLevelParams
@@ -779,7 +779,7 @@ theorem constTyAtM_eff (hs : CSOK mode env s₀) {nI n : Name}
 
 /-- `constValAtM` under the index of `env` (the head is a stored
 definition). -/
-theorem constValAtM_eff (hs : CSOK mode env s₀) {nI n : Name}
+theorem constValAtM_eff (hs : CSOK mode env s₀) {nI n : Key}
     {us : List Level} {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
     (hfind : env.find? n = some (.defnInfo cv v hint)) :
     CEff mode env s₀
@@ -839,7 +839,7 @@ theorem constValAtM_eff (hs : CSOK mode env s₀) {nI n : Name}
           exact ⟨hs₂.insertConstVal hfind hrel, hrel⟩
 
 /-- `ruleRhsAtM` under the index of `env`. -/
-theorem ruleRhsAtM_eff (hs : CSOK mode env s₀) {cI jI c j : Name}
+theorem ruleRhsAtM_eff (hs : CSOK mode env s₀) {cI jI c j : Key}
     {us : List Level} {cv : ConstantVal} {mI rP : Nat}
     {rules : List RecRule} {rl : RecRule}
     (hfind : env.find? c = some (.recInfo cv mI rP rules))
@@ -903,14 +903,14 @@ theorem ruleRhsAtM_eff (hs : CSOK mode env s₀) {cI jI c j : Name}
       obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ hr
       exact ⟨hs₂.insertRuleRhs hfind hrl hrel, hrel⟩
 
-private theorem recordCConst_run (n : Name) (tyE : Expr) (ty : Expr)
+private theorem recordCConst_run (n : Key) (tyE : Expr) (ty : Expr)
     (val : Option (Expr × Expr)) (s : CState) :
     recordCConst n tyE ty val s =
       .ok ((), { s with ienv := s.ienv.insert n ⟨tyE, ty, val⟩ }) := rfl
 
 /-- `recordCConst` as a state-only effect: the recorded conversions
 must be related to the very `Expr` objects they are tagged with. -/
-theorem recordCConst_eff (hs : CSOK mode env s₀) {n : Name} {tyE : Expr}
+theorem recordCConst_eff (hs : CSOK mode env s₀) {n : Key} {tyE : Expr}
     {ty : Expr} {val : Option (Expr × Expr)}
     (hty : RelC ty tyE)
     (hval : ∀ vE vi, val = some (vE, vi) → RelC vi vE) :

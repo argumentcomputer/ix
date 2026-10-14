@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts)
 
 universe w
 
@@ -36,7 +36,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelPara
 
 /-- A spine of position-indexed variables reads to the frame's own
 `bvar`s. -/
-theorem denoteMetaSpine_indexed {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+theorem denoteMetaSpine_indexed {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
     ∀ (fvs : List Expr) (off : Nat),
       (∀ (j : Nat) (x : Expr), fvs[j]? = some x →
         ∃ ty, x = Expr.fvar (off + j) ty) →

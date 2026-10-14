@@ -110,7 +110,7 @@ typed the node (which stays, with the display name normalized to the
 type's head).  Task #175 wiring W5: the elimination fallbacks are
 gone, so this is the only accepting arm; task #175 tower-flag: every
 stored table is one, so the entry's existence is the whole test. -/
-theorem annotateCore_proj_inv {env : Env} {fuel d : Nat} {sn : Name}
+theorem annotateCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
     {i : Nat} {e e' : Expr}
     (h : annotateCore mode env (fuel + 1) d (.proj sn i e) = .ok e') :
     ∃ e₂ tt te, annotateCore mode env fuel d e = .ok e₂ ∧

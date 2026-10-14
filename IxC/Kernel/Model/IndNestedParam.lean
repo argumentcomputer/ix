@@ -57,7 +57,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore inferTypeCore
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore inferTypeCore
   DefEqListOk TypedListOk)
 
 universe w
@@ -404,7 +404,7 @@ theorem nestedParamSupply {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     (hinfC : InferClaim μ m φ F)
     (hreads : InferReads m μ φ F)
-    {f : Name → Name} (hro : RenameOk m.acval env f)
+    {f : Key → Key} (hro : RenameOk m.acval env f)
     {rP cnP cnF N : Nat} (hrPN : rP ≤ N)
     -- the statement frame
     {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)

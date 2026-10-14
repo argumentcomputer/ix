@@ -33,7 +33,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name isDefEqCore inferTypeCore
+open Ix.Kernel (CheckMode Env Expr Key isDefEqCore inferTypeCore
   TypedListOk)
 
 universe w

@@ -79,7 +79,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name inferTypeCoreIO)
+open Ix.Kernel (CheckMode Env Expr Key inferTypeCoreIO)
 
 universe w
 

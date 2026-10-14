@@ -25,7 +25,7 @@ section Walks
 
 variable {env : Env} {f : Nat}
 
-private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Name)
+private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Key)
     (rules : List RecRule) (major : Expr) :
     majorToCtor mode (fueledFns mode env) env d recName rules major =
     (if isCtorApp env major then pure major else
@@ -139,7 +139,7 @@ private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Name)
 
 /-- Port of `majorToCtorI_sim`. -/
 theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {recName : Name} {rules : List RecRule} {i : Expr}
+    {d : Nat} {recName : Key} {rules : List RecRule} {i : Expr}
     {major : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
     (hden : RelC i major) (hmaj : Expr.WScoped d major) :
     SimC mode env s₀ (RelEC d)
@@ -843,8 +843,8 @@ telescope runs and the canonical-index comparison.  The interned
 original's `cI jI : NIdx` name indices stay as (unconstrained) `Name`
 parameters; their `denoteN` premises vanish with the name collapse. -/
 private theorem iotaRec_certs_tail (ih : SSimC mode env f) (henv : EnvWF env)
-    {mi : CheckMode} {d : Nat} {i major : Expr} {ex majorx : Expr} {cI jI : Name}
-    {c cj : Name}
+    {mi : CheckMode} {d : Nat} {i major : Expr} {ex majorx : Expr} {cI jI : Key}
+    {c cj : Key}
     {us usj : List Level}
     {cv cvj : ConstantVal} {mI rP cnP cnF : Nat}
     {rules : List RecRule} {rl : RecRule}
@@ -967,7 +967,7 @@ private theorem iotaRec_certs_tail (ih : SSimC mode env f) (henv : EnvWF env)
 /-- Simulation of the major chain, in either order (the K flag is the
 single rule's stored bit, read identically on both sides). -/
 theorem prepareMajorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {recName : Name} {rules : List RecRule} {i : Expr}
+    {d : Nat} {recName : Key} {rules : List RecRule} {i : Expr}
     {major : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
     (hden : RelC i major) (hmaj : Expr.WScoped d major) :
     SimC mode env s₀ (RelEC d)

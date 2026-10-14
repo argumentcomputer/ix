@@ -35,7 +35,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps BinderMeta)
 
 universe w
 
@@ -126,7 +126,7 @@ theorem spineFit_of_wellDenoted_lams {u : Nat} (hu : u ≠ 0) {b : AnnotTerm} :
     simp only [List.length_cons, List.take_succ_cons, List.map_cons, SpineFit]
     exact ⟨ham, ih⟩
 
-theorem DenoteMetaSpine.getElem? {acval : Name → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+theorem DenoteMetaSpine.getElem? {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
       ∀ {l : Nat} {a : Expr}, as[l]? = some a →
         ∃ v, vs[l]? = some v ∧ denoteMeta acval env φ d a = some v
@@ -142,7 +142,7 @@ theorem DenoteMetaSpine.getElem? {acval : Name → (LevelParam → Nat) → Anno
       exact DenoteMetaSpine.getElem? htl h
 
 /-- A read spine crosses a cons its terms do not mention. -/
-theorem DenoteMetaSpine.cons_mono {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem DenoteMetaSpine.cons_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} (hfresh : env.find? c₀.name = none)
     (hat : ∀ e : Expr, ConsCrossAt c₀ e) {ψ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, (∀ a ∈ as, ConstsBound env a) →
@@ -270,7 +270,7 @@ theorem fieldsBoundSrc_of_frame {Γ : List AnnotTerm} {k nP nF : Nat} {srcs : Li
 
 /-- The family at the parameter variables and the index readings,
 read at the constructor's full frame. -/
-@[expose] def ctorBodyAVI {env : Env} (m : EnvModel V env) (T : Name) (nP nF : Nat)
+@[expose] def ctorBodyAVI {env : Env} (m : EnvModel V env) (T : Key) (nP nF : Nat)
     (ψ : LevelParam → Nat) (Es : List AnnotTerm) : AnnotTerm :=
   AnnotTerm.mkAppN (m.acval T ψ) (paramBvars nP nF ++ Es)
 
@@ -281,7 +281,7 @@ residual's index expressions `idxArgs` at the constructor's frame; the
 sources `srcs` name, per field, the index it literally is, and at a
 large-eliminating `Prop` family the other fields are
 propositional. -/
-structure CtorDataI {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam)
+structure CtorDataI {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam)
     (cvC : ConstantVal) (nP nF nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (idxArgs : List Expr)
     (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)) (Es : (LevelParam → Nat) → List AnnotTerm)
@@ -314,7 +314,7 @@ structure CtorDataI {env : Env} (m : EnvModel V env) (T : Name) (lps : List Leve
 
 /-- The data crosses a cons whose head is neither the former nor
 mentioned. -/
-theorem CtorDataI.cross {m : EnvModel V env} {T : Name} {lps : List LevelParam} {cvC : ConstantVal}
+theorem CtorDataI.cross {m : EnvModel V env} {T : Key} {lps : List LevelParam} {cvC : ConstantVal}
     {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List Expr}
     {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
@@ -340,7 +340,7 @@ theorem CtorDataI.cross {m : EnvModel V env} {T : Name} {lps : List LevelParam} 
 
 /-- A read spine of terms not mentioning a constant reads alike at
 either valuation of it. -/
-theorem DenoteMetaSpine.acvalWith_congr {acval : Name → (LevelParam → Nat) → AnnotTerm} {T' : Name}
+theorem DenoteMetaSpine.acvalWith_congr {acval : Key → (LevelParam → Nat) → AnnotTerm} {T' : Key}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env} (hfresh : env₀.find? T' = none)
     {ψ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List Expr} {vs : List AnnotTerm}, (∀ e ∈ as, e.constsResolve env₀ = true) →
@@ -356,7 +356,7 @@ theorem DenoteMetaSpine.acvalWith_congr {acval : Name → (LevelParam → Nat) �
 
 /-- The index readings of two data at the same residual agree across
 carriers that differ only at an unmentioned constant. -/
-theorem CtorDataI.Es_eq {env : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm} {T T' : Name}
+theorem CtorDataI.Es_eq {env : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm} {T T' : Key}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T' A₁)
     (hac₂ : m₂.acval = acvalWith acval T' A₂) (hfresh : env₀.find? T' = none)
@@ -377,7 +377,7 @@ theorem CtorDataI.Es_eq {env : Env} {acval : Name → (LevelParam → Nat) → A
 /-- The constructor's data, from its stage run at the environment
 holding the former. -/
 theorem sumCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ : Env} {caps : IndCaps}
     {bs : List (Expr × Ix.Kernel.BinderMeta)}
     {sorts : List Level}
@@ -606,7 +606,7 @@ bit-valid, bounded when the family is not `Prop`, and the index
 expressions graded and fitting the former's index telescope at every
 fitting field spine. -/
 theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ : Env} {caps : IndCaps}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort

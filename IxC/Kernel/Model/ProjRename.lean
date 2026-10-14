@@ -27,7 +27,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps projFnName projModelName projFwd ReducibilityHint)
 
 universe w
@@ -38,8 +38,8 @@ variable {V : Type w} [SetTheory V]
 parent type, the constructor and every installed projection function
 carry their model artifact's *leaf*.  `ProjPhaseInvS`'s third
 component, one currency over; the lookups stay in the v1 predicate. -/
-@[expose] def ProjPhaseAcval (T ctorName : Name) (nF : Nat) (env' : Env)
-    (acval : Name → (LevelParam → Nat) → AnnotTerm) : Prop :=
+@[expose] def ProjPhaseAcval (T ctorName : Key) (nF : Nat) (env' : Env)
+    (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
   ((env'.find? T).isSome = true →
     ∀ ψ : LevelParam → Nat, acval T ψ = acval (T.str "_model") ψ) ∧
   ((env'.find? ctorName).isSome = true →
@@ -53,8 +53,8 @@ component, one currency over; the lookups stay in the v1 predicate. -/
 the reading.  Its first two clauses are v1's verbatim
 (`projFwd_renameOkT`); only the valuation clause is new, and its three
 cases *are* `ProjPhaseAcval`'s three conjuncts. -/
-theorem projFwd_renameOk {T ctorName : Name} {nF : Nat} {env' : Env}
-    {cval : TConstVal} {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem projFwd_renameOk {T ctorName : Key} {nF : Nat} {env' : Env}
+    {cval : TConstVal} {acval : Key → (LevelParam → Nat) → AnnotTerm}
     (hinv : ProjPhaseInvS T ctorName nF env' cval)
     (hinvA : ProjPhaseAcval T ctorName nF env' acval) :
     RenameOk acval env' (fun n => if (env'.find? n).isSome = true then
@@ -99,8 +99,8 @@ theorem projFwd_renameOk {T ctorName : Name} {nF : Nat} {env' : Env}
 is neither `T`, nor the constructor, nor any *other* field's slot, nor
 any model artifact's name — so the three equations are either the
 installed one (`acvalWith_self`) or carried unchanged. -/
-theorem projPhaseAcval_cons {T ctorName : Name} {nF : Nat}
-    {env' : Env} {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem projPhaseAcval_cons {T ctorName : Key} {nF : Nat}
+    {env' : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {c₀ : ConstantInfo} {i : Nat}
     (hname : c₀.name = projFnName T i)
     (hinvA : ProjPhaseAcval T ctorName nF env' acval)
@@ -113,18 +113,18 @@ theorem projPhaseAcval_cons {T ctorName : Name} {nF : Nat}
     ProjPhaseAcval T ctorName nF ⟨c₀ :: env'.consts⟩
       (acvalWith acval c₀.name A) := by
   -- the head's name differs from every name the invariant reads
-  have hneP : ∀ n : Name, (env'.find? n).isSome = true →
+  have hneP : ∀ n : Key, (env'.find? n).isSome = true →
       n ≠ projFnName T i := by
     intro n hn hh
     rw [hh, hfresh] at hn
     exact nomatch hn
   have hmodelNeP : ∀ j : Nat, projModelName T j ≠ projFnName T i :=
     fun j hh => Ix.Kernel.Name.num_ne_str _ _ _ _ hh.symm
-  have hstrNeP : ∀ n : Name, n.str "_model" ≠ projFnName T i :=
+  have hstrNeP : ∀ n : Key, n.str "_model" ≠ projFnName T i :=
     fun n hh => Ix.Kernel.Name.num_ne_str _ _ _ _ hh.symm
-  have hne : ∀ n : Name, n ≠ projFnName T i → n ≠ c₀.name :=
+  have hne : ∀ n : Key, n ≠ projFnName T i → n ≠ c₀.name :=
     fun n hn hh => hn (by rw [hh, hname])
-  have hdown : ∀ n : Name, n ≠ projFnName T i →
+  have hdown : ∀ n : Key, n ≠ projFnName T i →
       (Env.find? ⟨c₀ :: env'.consts⟩ n).isSome = true →
       (env'.find? n).isSome = true := by
     intro n hn hs

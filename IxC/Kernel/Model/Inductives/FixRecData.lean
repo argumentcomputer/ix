@@ -26,7 +26,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   NativeParts)
 
 universe w
@@ -65,9 +65,9 @@ theorem fixRdsAV_length {m : EnvModel V env} {p : NativeParts}
 section Congr
 
 variable {env₁ env₂ : Env} {m₁ : EnvModel V env₁} {m₂ : EnvModel V env₂} {ψ : LevelParam → Nat}
-  {T : Name} {nP nIdx : Nat}
+  {T : Key} {nP nIdx : Nat}
 
-theorem minorAVAtR_congr {C : Name} {nF b o : Nat} {ds : List (Nat × Nat × AnnotTerm)}
+theorem minorAVAtR_congr {C : Key} {nF b o : Nat} {ds : List (Nat × Nat × AnnotTerm)}
     {Es : List AnnotTerm} {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
     (hC : m₁.acval C ψ = m₂.acval C ψ) :
@@ -207,7 +207,7 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
   obtain ⟨bs4, hs4⟩ := hs4
   have hs34 := Ix.Kernel.stripPis_append p.nIdx hs3 hs4
   -- the minors' telescope strips its `n` binders
-  have hsmin : ∀ (cs : List (Name × Nat × Expr × List Nat)) (o : Nat) (body mins : Expr),
+  have hsmin : ∀ (cs : List (Key × Nat × Expr × List Nat)) (o : Nat) (body mins : Expr),
       Ix.Kernel.structMinorsPisR p.cvT.levelParams p.nP
         (Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large)) cs o body = some mins →
       ∃ bs, mins.stripPis cs.length = some (bs, body) := by

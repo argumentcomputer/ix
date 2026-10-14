@@ -29,7 +29,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecRule ProjEntry
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecRule ProjEntry
   ProjTable natName natZeroName natSuccName eqName)
 
 universe w
@@ -40,7 +40,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
 
 /-- A well-formed environment that does not store `T` has no `.proj T _`
 node anywhere: every stored piece resolves in it. -/
-theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Name}
+theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Key}
     (hT : env.find? T = none) (i : Nat) : NoProjEnv env T i where
   type c hc := Ix.Kernel.Expr.noProjAt_of_constsResolve hT _ (hwf c hc).2.2.1
   defn cv v hint hc :=
@@ -62,7 +62,7 @@ theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Name}
     exact Ix.Kernel.Expr.noProjAt_of_constsResolve hT _ this.2.2.1
 
 /-- The head's pieces, for a cons step of `NoProjEnv`. -/
-structure NoProjHead (c₀ : ConstantInfo) (T : Name) (i : Nat) : Prop where
+structure NoProjHead (c₀ : ConstantInfo) (T : Key) (i : Nat) : Prop where
   type : Expr.NoProjAt T i c₀.toConstantVal.type
   defn : ∀ (cv : ConstantVal) (v : Expr) (hint : Ix.Kernel.ReducibilityHint),
     c₀ = .defnInfo cv v hint → Expr.NoProjAt T i v
@@ -76,7 +76,7 @@ structure NoProjHead (c₀ : ConstantInfo) (T : Name) (i : Nat) : Prop where
 
 /-- A head with no value, rule or body pieces (an inductive, a
 constructor, a recursor-free constant): only its type is asked. -/
-theorem NoProjHead.ofType {c₀ : ConstantInfo} {T : Name} {i : Nat}
+theorem NoProjHead.ofType {c₀ : ConstantInfo} {T : Key} {i : Nat}
     (hty : Expr.NoProjAt T i c₀.toConstantVal.type)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnotrec : ∀ cv mI rP rules, c₀ ≠ .recInfo cv mI rP rules)
@@ -86,7 +86,7 @@ theorem NoProjHead.ofType {c₀ : ConstantInfo} {T : Name} {i : Nat}
     fun cv mI rP rules h => absurd h (hnotrec cv mI rP rules),
     fun tbl h => absurd h (hnottable tbl)⟩
 
-theorem NoProjEnv.cons {T : Name} {i : Nat} (h : NoProjEnv env T i)
+theorem NoProjEnv.cons {T : Key} {i : Nat} (h : NoProjEnv env T i)
     {c₀ : ConstantInfo} (hh : NoProjHead c₀ T i) :
     NoProjEnv ⟨c₀ :: env.consts⟩ T i where
   type c hc := by

@@ -108,7 +108,7 @@ so nothing is added at runtime. -/
 
 @[inline] def mkSort (u : Level) : Expr := .sort u
 
-@[inline] def mkConst (n : Name) (us : List Level) : Expr := .const n us
+@[inline] def mkConst (n : Key) (us : List Level) : Expr := .const n us
 
 @[inline] def mkApp (f a : Expr) : Expr := .app f a
 
@@ -123,7 +123,7 @@ so nothing is added at runtime. -/
 
 @[inline] def mkLit (l : Literal) : Expr := .lit l
 
-@[inline] def mkProj (s : Name) (i : Nat) (e : Expr) : Expr := .proj s i e
+@[inline] def mkProj (s : Key) (i : Nat) (e : Expr) : Expr := .proj s i e
 
 /-! ## Equality, hashing and the trust census
 
@@ -164,7 +164,7 @@ own equations, and the tier still rewrites with them. -/
 
 @[simp] theorem mkSort_eq (u : Level) : mkSort u = .sort u := rfl
 
-@[simp] theorem mkConst_eq (n : Name) (us : List Level) :
+@[simp] theorem mkConst_eq (n : Key) (us : List Level) :
     mkConst n us = .const n us := rfl
 
 @[simp] theorem mkApp_eq (f a : Expr) : mkApp f a = .app f a := rfl
@@ -180,7 +180,7 @@ own equations, and the tier still rewrites with them. -/
 
 @[simp] theorem mkLit_eq (l : Literal) : mkLit l = .lit l := rfl
 
-@[simp] theorem mkProj_eq (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem mkProj_eq (s : Key) (i : Nat) (e : Expr) :
     mkProj s i e = .proj s i e := rfl
 
 end Ix.Kernel.Expr

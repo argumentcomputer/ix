@@ -37,7 +37,7 @@ theorem instPisAtLiftC_eq : ∀ (as : List Expr) (e : Expr),
     simp only [instPisAtLiftC, Expr.instPisAtLift, Expr.instantiate1LiftC_spec]
     exact instPisAtLiftC_eq as _
 
-theorem structProjBodiesGoC_eq (T : Name) : ∀ (k i : Nat) (r : Expr),
+theorem structProjBodiesGoC_eq (T : Key) : ∀ (k i : Nat) (r : Expr),
     structProjBodiesGoC T k i r = structProjBodiesGo T k i r
   | 0, _, _ => rfl
   | _ + 1, _, .bvar _ => rfl
@@ -53,7 +53,7 @@ theorem structProjBodiesGoC_eq (T : Name) : ∀ (k i : Nat) (r : Expr),
     simp only [structProjBodiesGoC, structProjBodiesGo, Expr.instantiate1LiftC_spec]
     rw [structProjBodiesGoC_eq T k (i + 1)]
 
-theorem structProjBodiesC_eq (T : Name) (nP nF : Nat) (cty : Expr) :
+theorem structProjBodiesC_eq (T : Key) (nP nF : Nat) (cty : Expr) :
     structProjBodiesC T nP nF cty = structProjBodies T nP nF cty := by
   unfold structProjBodiesC structProjBodies
   rw [instPisAtLiftC_eq]

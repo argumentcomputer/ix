@@ -16,13 +16,13 @@ delta-unfolding and monotonicity lemmas need it.
 namespace Ix.Kernel
 
 /-- The projection-table name shape is injective. -/
-theorem projFnName_inj {T T' : Name} {i i' : Nat}
+theorem projFnName_inj {T T' : Key} {i i' : Nat}
     (h : projFnName T i = projFnName T' i') : T = T' ∧ i = i' := by
   simp only [projFnName, Name.num.injEq, Name.str.injEq] at h
   exact ⟨h.1.1, h.2⟩
 
 /-- The projection-table name shape is injective (task #175 S1). -/
-theorem projTableName_inj {T T' : Name} (h : projTableName T = projTableName T') :
+theorem projTableName_inj {T T' : Key} (h : projTableName T = projTableName T') :
     T = T' := by
   simp only [projTableName, Name.num.injEq, Name.str.injEq] at h
   exact h.1.1
@@ -30,7 +30,7 @@ theorem projTableName_inj {T T' : Name} (h : projTableName T = projTableName T')
 /-- Unfold a successful projection-table lookup to the stored table:
 the structure's table is stored, the index is in range, and the entry
 is the table's view at it (task #175 S1). -/
-theorem Env.findProj?_some {env : Env} {T : Name} {i : Nat}
+theorem Env.findProj?_some {env : Env} {T : Key} {i : Nat}
     {entry : ProjEntry} (h : env.findProj? T i = some entry) :
     ∃ tbl : ProjTable, env.find? (projTableName T) = some (.projInfo tbl) ∧
       i < tbl.numFields ∧ entry = tbl.entry i := by
@@ -43,7 +43,7 @@ theorem Env.findProj?_some {env : Env} {T : Name} {i : Nat}
   next => exact nomatch h
 
 /-- The lookup at a stored table, in range. -/
-theorem Env.findProj?_of_table {env : Env} {T : Name} {tbl : ProjTable}
+theorem Env.findProj?_of_table {env : Env} {T : Key} {tbl : ProjTable}
     (h : env.find? (projTableName T) = some (.projInfo tbl)) {i : Nat}
     (hi : i < tbl.numFields) : env.findProj? T i = some (tbl.entry i) := by
   unfold Env.findProj?
@@ -51,7 +51,7 @@ theorem Env.findProj?_of_table {env : Env} {T : Name} {tbl : ProjTable}
   exact if_pos hi
 
 /-- No table stored, no entry. -/
-theorem Env.findProj?_none_of_fresh {env : Env} {T : Name}
+theorem Env.findProj?_none_of_fresh {env : Env} {T : Key}
     (h : env.find? (projTableName T) = none) (i : Nat) : env.findProj? T i = none := by
   unfold Env.findProj?
   rw [h]
@@ -59,12 +59,12 @@ theorem Env.findProj?_none_of_fresh {env : Env} {T : Name}
 /-- **The stored table's projection offset** of structure `T` (task
 #210 Part A; `0` when no table is stored): what every entry of the
 table carries (`Env.findProj?_off`). -/
-def Env.projOff (env : Env) (T : Name) : Nat :=
+def Env.projOff (env : Env) (T : Key) : Nat :=
   match env.find? (projTableName T) with
   | some (.projInfo tbl) => tbl.off
   | _ => 0
 
-theorem Env.findProj?_off {env : Env} {T : Name} {i : Nat} {e : ProjEntry}
+theorem Env.findProj?_off {env : Env} {T : Key} {i : Nat} {e : ProjEntry}
     (hi : env.findProj? T i = some e) : e.off = env.projOff T := by
   obtain ⟨tbl, hf, -, rfl⟩ := Env.findProj?_some hi
   unfold Env.projOff
@@ -73,7 +73,7 @@ theorem Env.findProj?_off {env : Env} {T : Name} {i : Nat} {e : ProjEntry}
 
 /-- Two entries of one structure's table carry the same projection
 offset (task #210 Part A): both are views of the one stored table. -/
-theorem Env.findProj?_off_eq {env : Env} {T : Name} {i j : Nat} {e e' : ProjEntry}
+theorem Env.findProj?_off_eq {env : Env} {T : Key} {i j : Nat} {e e' : ProjEntry}
     (hi : env.findProj? T i = some e) (hj : env.findProj? T j = some e') : e.off = e'.off := by
   obtain ⟨tbl, hf, -, rfl⟩ := Env.findProj?_some hi
   obtain ⟨tbl', hf', -, rfl⟩ := Env.findProj?_some hj
@@ -201,7 +201,7 @@ theorem stripPis_isSome_of_le :
 @[expose] def EnvWF (env : Env) : Prop := ∀ c ∈ env.consts, ConstWF env c
 
 /-- The capability arities of a stored inductive, off `EnvWF`. -/
-theorem EnvWF.indCaps {env : Env} (henv : EnvWF env) {T : Name}
+theorem EnvWF.indCaps {env : Env} (henv : EnvWF env) {T : Key}
     {cv : ConstantVal} {caps : IndCaps}
     (h : env.find? T = some (.indInfo cv caps)) :
     (caps.unitlike = true → (cv.type.stripPis caps.unitParams).isSome = true) ∧
@@ -209,7 +209,7 @@ theorem EnvWF.indCaps {env : Env} (henv : EnvWF env) {T : Name}
   (henv _ (List.mem_of_find?_eq_some h)).2.2.2.2.2.2.2 cv caps rfl
 
 /-- `find?` on a cons. -/
-theorem Env.find?_cons {c : ConstantInfo} {env : Env} {n : Name} :
+theorem Env.find?_cons {c : ConstantInfo} {env : Env} {n : Key} :
     Env.find? ⟨c :: env.consts⟩ n = if c.name = n then some c else env.find? n := by
   simp only [Env.find?, List.find?]
   split
@@ -223,7 +223,7 @@ theorem Env.find?_cons_self (c : ConstantInfo) (env : Env) :
 
 /-- A cons of a *fresh* head does not find anything new. -/
 theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
-    {n : Name} {ci : ConstantInfo} (hfresh : env.find? c.name = none)
+    {n : Key} {ci : ConstantInfo} (hfresh : env.find? c.name = none)
     (h : env.find? n = some ci) :
     Env.find? ⟨c :: env.consts⟩ n = some ci := by
   rw [Env.find?_cons]
@@ -233,7 +233,7 @@ theorem Env.find?_cons_of_fresh {c : ConstantInfo} {env : Env}
 
 /-- Extending the environment with a fresh constant does not change
 successful lookups. -/
-theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
+theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Key}
     (hfresh : env.find? c.name = none) (h : (env.find? n).isSome = true) :
     Env.find? ⟨c :: env.consts⟩ n = env.find? n := by
   rw [Env.find?_cons]
@@ -242,7 +242,7 @@ theorem Env.find?_cons_of_isSome {c : ConstantInfo} {env : Env} {n : Name}
   · rfl
 
 /-- A cons at another name does not change a table lookup. -/
-theorem Env.findProj?_cons_ne {env : Env} {c₀ : ConstantInfo} {T : Name}
+theorem Env.findProj?_cons_ne {env : Env} {c₀ : ConstantInfo} {T : Key}
     (hn : c₀.name ≠ projTableName T) (i : Nat) :
     Env.findProj? ⟨c₀ :: env.consts⟩ T i = env.findProj? T i := by
   unfold Env.findProj?
@@ -328,14 +328,14 @@ theorem Expr.constsResolve_instantiateLevelParams {env : Env} (ks : List LevelPa
   induction e <;> simp_all [Expr.instantiateLevelParams, Expr.constsResolve]
 
 /-- No name equals its own string extension. -/
-theorem Name.str_ne (n : Name) (s : String) : n.str s ≠ n := by
+theorem Name.str_ne (n : Key) (s : String) : n.str s ≠ n := by
   intro h
   have h1 : sizeOf (Name.str n s) = sizeOf n := congrArg sizeOf h
   simp at h1
   omega
 
 /-- No name equals its own two-step string extension. -/
-theorem Name.str_str_ne (n : Name) (s₁ s₂ : String) :
+theorem Name.str_str_ne (n : Key) (s₁ s₂ : String) :
     (n.str s₁).str s₂ ≠ n := by
   intro h
   have h1 : sizeOf ((Name.str (Name.str n s₁) s₂)) = sizeOf n :=
@@ -387,7 +387,7 @@ theorem Expr.constsResolve_stripPis {env : Env} :
         · exact hd bnd hb
 
 /-- `stripPis` commutes with constant renaming. -/
-theorem Expr.stripPis_renameConsts {f : Name → Name} :
+theorem Expr.stripPis_renameConsts {f : Key → Key} :
     ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
       {body : Expr},
       e.stripPis k = some (bs, body) →
@@ -420,7 +420,7 @@ theorem Expr.stripPis_renameConsts {f : Name → Name} :
 
 /-- A `∀`-telescope pin of a renamed expression is one of the
 expression itself (renaming touches no binder structure). -/
-theorem Expr.stripPis_isSome_of_renameConsts {f : Name → Name} :
+theorem Expr.stripPis_isSome_of_renameConsts {f : Key → Key} :
     ∀ (k : Nat) {e : Expr},
       ((e.renameConsts f).stripPis k).isSome = true →
       (e.stripPis k).isSome = true
@@ -436,7 +436,7 @@ theorem Expr.stripPis_isSome_of_renameConsts {f : Name → Name} :
 
 /-- Renaming maps that agree on every stored name rename a resolving
 expression identically. -/
-theorem Expr.renameConsts_congr_resolve {env : Env} {f g : Name → Name}
+theorem Expr.renameConsts_congr_resolve {env : Env} {f g : Key → Key}
     (hfg : ∀ n, (env.find? n).isSome = true → f n = g n) :
     ∀ (e : Expr), e.constsResolve env = true →
       e.renameConsts f = e.renameConsts g := by

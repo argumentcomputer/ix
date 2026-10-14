@@ -158,7 +158,7 @@ theorem projLitToCtor_bridge (hw : WhnfBridge env fuel)
 licensed `Certs` walk (`projCertAtFueled_verified`, `projCert_inv`,
 `iotaCerts_bridge`). -/
 theorem projCertAt_bridge (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {c : Name} {us : List Level} {args : List Expr}
+    {d : Nat} {c : Key} {us : List Level} {args : List Expr}
     (h : projCertAtFueled .verified env fuel d true true c us args = .ok true) :
     ∃ cvC nP nF, env.find? c = some (.ctorInfo cvC nP nF) ∧
       Certs env d true (cvC.type.instantiateLevelParams cvC.levelParams us) args := by
@@ -180,7 +180,7 @@ caller must: `iotaRec_inv` hands it over at the one site that runs the
 chain (through `prepareMajor_bridge`, which passes it through). -/
 theorem majorToCtor_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {recName : Name} {rules : List RecRule} {major major' : Expr}
+    {d : Nat} {recName : Key} {rules : List RecRule} {major major' : Expr}
     (hrec : ∃ cv mI rP, env.find? recName = some (.recInfo cv mI rP rules))
     (h : majorToCtorFueled .verified env fuel d recName rules major = .ok major') :
     Red env d major major' := by
@@ -215,7 +215,7 @@ motive `Red env d a ·`: each of the three steps is a `Red.trans`).
 `hrec` is `majorToCtor_bridge`'s, passed through. -/
 theorem prepareMajor_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {recName : Name} {rules : List RecRule} {a m : Expr}
+    {d : Nat} {recName : Key} {rules : List RecRule} {a m : Expr}
     (hrec : ∃ cv mI rP, env.find? recName = some (.recInfo cv mI rP rules))
     (h : prepareMajorFueled .verified env fuel d recName rules a = .ok m) :
     Red env d a m :=

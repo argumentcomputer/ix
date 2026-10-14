@@ -27,7 +27,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint IndCaps projFnName RecRule)
 
 universe w
@@ -240,21 +240,21 @@ end
 applied to the type arguments and the stuck member
 (`projSpinesV`'s value level). -/
 @[expose] noncomputable def projSpines {V : Type w} [SetTheory V]
-    (val : Name → V) (T : Name) (ts : List V) (b : V) (nF : Nat) :
+    (val : Key → V) (T : Key) (ts : List V) (b : V) (nF : Nat) :
     List V :=
   (List.range nF).map fun j =>
     (ts ++ [b]).foldl SetTheory.app (val (projFnName T j))
 
 /-- The fabricated η spine's values (`etaFabArgsV`'s value level). -/
 @[expose] noncomputable def etaFabArgsV {V : Type w} [SetTheory V]
-    (val : Name → V) (T : Name) (ts : List V) (b : V) (nF : Nat) :
+    (val : Key → V) (T : Key) (ts : List V) (b : V) (nF : Nat) :
     List V :=
   ts ++ projSpines val T ts b nF
 
 /-- **The fired structural-η law of an η-capable stored family**
 (`EtaLawV`'s mirror; see the note above for the shape). -/
 @[expose] def EtaLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Name)
+    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key)
     (cvT : ConstantVal) (caps : IndCaps) : Prop :=
   ∀ us : List Level, us.length = cvT.levelParams.length →
   ∃ TVa : AnnotTerm,
@@ -278,7 +278,7 @@ applied to the type arguments and the stuck member
 /-- **The fired unit-like law of a unit-like stored family**
 (`UnitLawV`'s mirror). -/
 @[expose] def UnitLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Name)
+    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key)
     (cvT : ConstantVal) (caps : IndCaps) : Prop :=
   ∀ us : List Level, us.length = cvT.levelParams.length →
   ∃ TVa : AnnotTerm,
@@ -300,7 +300,7 @@ applied to the type arguments and the stuck member
 install — `IndStepPB`'s bill). -/
 @[expose] def CapsOk {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) : Prop :=
-  (∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+  (∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
     Ix.Kernel.EtaFamilyStored env T caps →
@@ -313,7 +313,7 @@ install — `IndStepPB`'s bill). -/
   -- the premise is false and the law vacuous), and the deletion was
   -- ratified — it strengthens the field, consumers and the
   -- `IndStepPB` establishment unchanged.
-  (∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+  (∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
     env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
     ∀ φ' : LevelParam → Nat, UnitLaw m φ' T cvT caps)
@@ -435,7 +435,7 @@ all at the ambient environment. -/
 every deviation). -/
 @[expose] def RecRuleLaw {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) (φ : LevelParam → Nat)
-    (n : Name) (cv : ConstantVal) (mI rP : Nat) (rl : RecRule) :
+    (n : Key) (cv : ConstantVal) (mI rP : Nat) (rl : RecRule) :
     Prop :=
   rP ≤ mI ∧
   ∀ us : List Level, us.length = cv.levelParams.length →
@@ -531,7 +531,7 @@ every deviation). -/
 (`RecRulesV`'s mirror). -/
 @[expose] def RecRules {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
-  ∀ (n : Name) (cv : ConstantVal) (mI rP : Nat)
+  ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
     (rules : List RecRule),
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
@@ -597,7 +597,7 @@ the entry so that the direct install alone answers it (the modeled
 route stores no tower entries); the η row reads it through slot `0` of
 an all-tower family. -/
 @[expose] def TowerEtaLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ : LevelParam → Nat) (T : Name)
+    (m : EnvModel V env) (φ : LevelParam → Nat) (T : Key)
     (entry : ProjEntry) : Prop :=
   ∀ (cvT : ConstantVal) (capsT : IndCaps),
     env.find? T = some (.indInfo cvT capsT) →
@@ -685,7 +685,7 @@ parameters and the subject is exactly the checker's one
 dummy binders carry the reading only; the law never reads them. -/
 @[expose] def TowerEntryLaw {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) (φ : LevelParam → Nat)
-    (T : Name) (i : Nat) (entry : ProjEntry) : Prop :=
+    (T : Key) (i : Nat) (entry : ProjEntry) : Prop :=
   entry.structName = T ∧ entry.idx = i ∧
   i < entry.numFields ∧
   (∃ (cvT : ConstantVal) (capsT : IndCaps),
@@ -754,7 +754,7 @@ dummy binders carry the reading only; the law never reads them. -/
 a real one, so the law is uniform — no flag premise. -/
 @[expose] def TowerOk {V : Type w} [SetTheory V] {env : Env}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
-  ∀ (T : Name) (i : Nat) (entry : ProjEntry),
+  ∀ (T : Key) (i : Nat) (entry : ProjEntry),
     env.findProj? T i = some entry →
     TowerEntryLaw m φ T i entry
 
@@ -769,14 +769,14 @@ checker's own front door, which is establishment — and folded into the
 environment structure there (with the owed `EnvWF` records, if the
 seal's invariants state them naturally). -/
 @[expose] def AcvalValid {env : Env} (m : EnvModel V env) : Prop :=
-  ∀ (n : Name) (ψ : LevelParam → Nat) (ρ : Nat → V),
+  ∀ (n : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
     AnnotValid V ρ (m.acval n ψ)
 
 /-- **The `const` clause's residue, P currency** (`ConstType2C`
 transposed: no fuel, `WellDenotedV` conclusion). -/
 @[expose] def ConstType {env : Env} (m : EnvModel V env)
     (φ : LevelParam → Nat) : Prop :=
-  ∀ (d : Nat) (n : Name) (ci : Ix.Kernel.ConstantInfo) (us : List Level),
+  ∀ (d : Nat) (n : Key) (ci : Ix.Kernel.ConstantInfo) (us : List Level),
     env.find? n = some ci → ci.isTowerEntry = false →
     us.length = ci.toConstantVal.levelParams.length →
     ∃ ta,

@@ -29,7 +29,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name)
+open Ix.Kernel (CheckMode Env Expr Key)
 
 universe w
 
@@ -155,7 +155,7 @@ theorem letE_val {d : Nat} {Δa : List AnnotTerm}
     rw [Expr.fvarLeaves]
     exact List.mem_append_left _ (List.mem_append_right _ hl)
 
-theorem proj_arg {d : Nat} {Δa : List AnnotTerm} {sn : Name}
+theorem proj_arg {d : Nat} {Δa : List AnnotTerm} {sn : Key}
     {i : Nat} {e : Expr}
     (hC : CtxOk m φ d Δa (.proj sn i e)) :
     CtxOk m φ d Δa e :=

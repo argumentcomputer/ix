@@ -198,7 +198,7 @@ theorem DefEq.spine {d : Nat} {a b : Expr}
 /-- **The same-head short-circuit** (`defeqSpine`, `Core.lean:1426-1458`, at `:1570`;
 official `try_eq_const_app`): both heads the same constant at
 equivalent levels, the spines pairwise. -/
-theorem DefEq.constSpine {d : Nat} {a b : Expr} {n : Name} {us us' : List Level}
+theorem DefEq.constSpine {d : Nat} {a b : Expr} {n : Key} {us us' : List Level}
     (ha : a.getAppFn = .const n us) (hb : b.getAppFn = .const n us')
     (hus : Level.isEquivList us us' = some true)
     (hargs : DefEqList env d a.getAppArgs b.getAppArgs) :

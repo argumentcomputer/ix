@@ -26,7 +26,7 @@ below the two non-recursive ones, closes the module.
 
 namespace Ix.Kernel.Semantics
 
-open Ix.Kernel (Env Expr Name Level CheckMode ConstantVal ConstantInfo
+open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
   InductiveShape NativeParts RecRule fueledOps checkSumInd checkSumCtors
   checkNativeRec checkNative checkNativeTable consSumCtors sumRules
   nativeFieldsOk nativeCaps)

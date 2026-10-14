@@ -51,11 +51,11 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level)
+open Ix.Kernel (Env Expr Key Level)
 
 universe w
 
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
 variable {env : Env} {φ : LevelParam → Nat}
 
 /-! ## `instSeq` corollaries at bounded readings -/
@@ -226,9 +226,9 @@ same two laws run backwards: `Rules.denoteMeta_openRev` presents the
 instantiated reading as an `Option.map` of the `openRev` one, so the
 former being `some` forces the latter. -/
 theorem pinOpenRevReads
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
@@ -305,9 +305,9 @@ padding, `vals` the fired statement spine).  `nestedChain` was
 already generic in exactly this way; only `pinCross`'s own statement
 had baked the producer's instance in. -/
 theorem pinCross
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))

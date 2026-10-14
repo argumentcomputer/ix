@@ -21,7 +21,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   NativeParts)
 
 universe w
@@ -85,8 +85,8 @@ theorem openPisAtFvars_constsBound {env₀ : Env} :
 /-- A recursive constructor's reading premise crosses a cons whose
 head is not the block's former and is not mentioned by the
 constructor's type. -/
-theorem CtorReadR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
-    {nP nIdx : Nat} {c : Name × Nat × Expr × List Nat} {cd : CtorDatumR}
+theorem CtorReadR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
+    {nP nIdx : Nat} {c : Key × Nat × Expr × List Nat} {cd : CtorDatumR}
     (h : CtorReadR m ψ T lps nP nIdx c cd)
     {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
@@ -116,13 +116,13 @@ theorem CtorReadR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name
     exact h.recEntry i hi
 
 /-- The reading premises cross the recursor's cons. -/
-theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {lps : List LevelParam}
+theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
     {nP nIdx : Nat} {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
     (hat : ∀ e : Expr, ConsCrossAt c₀ e)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
-    ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       (∀ c ∈ ctors, ConstsBound env c.2.2.1) →
       CtorReadsR m₂ ψ T lps nP nIdx ctors cds

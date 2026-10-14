@@ -74,7 +74,7 @@ def residualPW : Option Expr → Option PropWhen
 a constant head reads its stored type (level-instantiated), an fvar
 head its declared type; the residual after `n` syntactic binders is
 read by `residualPW`. -/
-def headTypePW (find? : Name → Option ConstantInfo) : Expr → Nat →
+def headTypePW (find? : Key → Option ConstantInfo) : Expr → Nat →
     Option PropWhen
   | .const I us, n =>
     match find? I with
@@ -95,7 +95,7 @@ carries it on its binder (`(forall-cod)`); a sort's sort is never zero;
 a constant- or fvar-headed type-former application reads the head's
 stored/declared type, peels the arity syntactically and reads the
 residual, level-instantiated for a constant.  `none` = unknown. -/
-def typeSortPW (find? : Name → Option ConstantInfo) (T : Expr) :
+def typeSortPW (find? : Key → Option ConstantInfo) (T : Expr) :
     Option PropWhen :=
   match T with
   | .forallE _ _ m => some m.pw
@@ -106,7 +106,7 @@ def typeSortPW (find? : Name → Option ConstantInfo) (T : Expr) :
 from its stored type (prop-ness is invariant under application), an
 fvar head from its declared type; sorts, ∀s and literals are never
 proofs. -/
-def headProofPW (find? : Name → Option ConstantInfo) : Expr →
+def headProofPW (find? : Key → Option ConstantInfo) : Expr →
     Option PropWhen
   | .const c us =>
     match find? c with
@@ -127,7 +127,7 @@ head answers from its stored/declared type; an unapplied λ answers from
 its own datum (the zero-ness of the sort of the body's type,
 `(lam-cod-leaf)`); sorts, ∀s and literals are never proofs.  `none` =
 unknown. -/
-def proofPW (find? : Name → Option ConstantInfo) (a : Expr) :
+def proofPW (find? : Key → Option ConstantInfo) (a : Expr) :
     Option PropWhen :=
   match a with
   | .lam _ _ m => some m.pw
@@ -140,14 +140,14 @@ valuation? -/
 
 /-- **Definitely not a proof** (the no arm): the datum is known and is
 not always-zero. -/
-def notProofFast (find? : Name → Option ConstantInfo) (a : Expr) : Bool :=
+def notProofFast (find? : Key → Option ConstantInfo) (a : Expr) : Bool :=
   match proofPW find? a with
   | some pw => !pw.isProp
   | none => false
 
 /-- **Definitely a proof** (the yes arm): the datum is known and
 always-zero. -/
-def isProofFast (find? : Name → Option ConstantInfo) (a : Expr) : Bool :=
+def isProofFast (find? : Key → Option ConstantInfo) (a : Expr) : Bool :=
   match proofPW find? a with
   | some pw => pw.isProp
   | none => false

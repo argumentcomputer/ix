@@ -72,7 +72,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -84,9 +84,9 @@ set_option linter.unusedVariables false in
 `iotaReads_of`, `:332`, for the reduct's reading): the stored
 recursor's fired contract (`RecRules`) at the two certified telescopes
 and the parameter/index comparisons. -/
-theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Name}
+theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr} {c : Key}
     {us : List Level} {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule}
-    {major : Expr} {cj : Name} {usj : List Level} {cvj : ConstantVal}
+    {major : Expr} {cj : Key} {usj : List Level} {cvj : ConstantVal}
     {cnP cnF : Nat} {rl : RecRule} {residual : Expr}
     (hhead : e.getAppFn = .const c us)
     (hrec : env.find? c = some (.recInfo cv mI rP rules))
@@ -522,8 +522,8 @@ this branch and build `proofIrrel`'s argument; at the motive the whole
 of that argument is the `DefEq fab major` premise.  Hence the linter
 option. -/
 theorem Red.rescueK_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab tf : Expr} {recName : Name} {cv : ConstantVal}
-    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
+    {major tm tmaj fab tf : Expr} {recName : Key} {cv : ConstantVal}
+    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
     {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))
     (hk : rl.k = true)
@@ -601,8 +601,8 @@ nodes, whose storage and telescope fit come from the rule's
 `EtaProjCerts` premise (`hproj`) — the same premise `DefEq.structEta`
 carries, and the same certificate the checker runs there. -/
 theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab : Expr} {recName : Name} {cv : ConstantVal}
-    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
+    {major tm tmaj fab : Expr} {recName : Key} {cv : ConstantVal}
+    {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
     {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))
     (heta : rl.eta = true)
@@ -890,7 +890,7 @@ fabricated spine is the reduced type's parameters plus the major's two
 two stored entries' typing law (`TowerOk`); the `DefEq fab major`
 premise carries the proof-irrelevance identification. -/
 theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
-    {major tm tmaj fab tf : Expr} {recName : Name} {cv : ConstantVal}
+    {major tm tmaj fab tf : Expr} {recName : Key} {cv : ConstantVal}
     {mI rP : Nat} {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat}
     {tus ust : List Level} {cvT : ConstantVal} {caps : IndCaps}
     (hrec : env.find? recName = some (.recInfo cv mI rP [rl]))

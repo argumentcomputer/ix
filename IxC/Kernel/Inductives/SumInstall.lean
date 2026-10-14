@@ -159,7 +159,7 @@ re-checked from scratch on the rebuilt type (`normCtorVal`), so
 nothing about the reduction is trusted — task #195's arrangement at
 the type former, now at the fields.  `fuel` bounds the Π walk (a
 reflexive field's own telescope); exhaustion is a positive decline. -/
-def normPosDom (ops : CheckerOps m) (env : Env) (T : Name) : Nat → Nat → Expr → m Expr
+def normPosDom (ops : CheckerOps m) (env : Env) (T : Key) : Nat → Nat → Expr → m Expr
   | _, 0, _ => throw (.notImplemented "direct sum: positivity walk fuel")
   | d, fuel + 1, e => do
     if !e.mentionsConst T then pure e else
@@ -178,7 +178,7 @@ def normPosDom (ops : CheckerOps m) (env : Env) (T : Name) : Nat → Nat → Exp
 (`normPosDom`), opened at the free variables `i ..< i + n` as
 `whnfTelescope` opens the former's; the residual returned scoped at
 those variables. -/
-def normFieldDoms (ops : CheckerOps m) (env : Env) (T : Name) :
+def normFieldDoms (ops : CheckerOps m) (env : Env) (T : Key) :
     Nat → Nat → Expr → m (List (Expr × BinderMeta) × Expr)
   | _, 0, e => pure ([], e)
   | i, n + 1, .forallE dom body bm => do
@@ -192,7 +192,7 @@ parameter binders as declared, the field binders through
 `normFieldDoms`, closed back into a telescope (`closeTelescope`) and
 — when anything changed — checked as the constructor's type in its
 place, from scratch. -/
-def normCtorVal (ops : CheckerOps m) (env : Env) (T : Name) (nP nF : Nat)
+def normCtorVal (ops : CheckerOps m) (env : Env) (T : Key) (nP nF : Nat)
     (cvC cvCa : ConstantVal) : m ConstantVal := do
   let (cbs, _) ← unwrapOr (cvCa.type.stripPis nP)
     (.notImplemented "direct sum: constructor telescope")
@@ -216,7 +216,7 @@ not mention each other — and the block conses them afterwards
 (`checkSum`).  Returns the annotated constructor and its fields'
 sorts (task #210 Part A: the projection table's guard levels at a
 structure-like block on the fixpoint route are computed from them). -/
-def checkSumCtor (ops : CheckerOps m) (env₀ env : Env) (T : Name)
+def checkSumCtor (ops : CheckerOps m) (env₀ env : Env) (T : Key)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) : m (ConstantVal × List Level) := do
   let cvCa₀ ← checkConstantVal ops env cvC
@@ -255,7 +255,7 @@ def checkSumCtor (ops : CheckerOps m) (env₀ env : Env) (T : Name)
 /-- Stage 2, all constructors' types, at the environment holding the
 type former; returns the annotated constructors with their field
 counts, and beside them the constructors' field sorts. -/
-def checkSumCtors (ops : CheckerOps m) (env₀ env : Env) (T : Name)
+def checkSumCtors (ops : CheckerOps m) (env₀ env : Env) (T : Key)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
     (cvTa : ConstantVal) :
     List (ConstantVal × Nat) → m (List (ConstantVal × Nat) × List (List Level))
@@ -278,7 +278,7 @@ parameters (always, by construction), carrying the two rescue bits
 constructors are installed before the recursor — and `paramsBlind`,
 because the route's rule law holds at any pair of fitting parameter
 spines. -/
-def sumRules (find? : Name → Option ConstantInfo) (recName : Name)
+def sumRules (find? : Key → Option ConstantInfo) (recName : Key)
     (nP mI rP : Nat) (recTy : Expr) :
     List (ConstantVal × Nat) → List Expr → List RecRule
   | c :: cs, rhs :: rhss =>

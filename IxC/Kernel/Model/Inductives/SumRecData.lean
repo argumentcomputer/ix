@@ -23,7 +23,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape
   BinderMeta RecRule)
 
 universe w
@@ -73,7 +73,7 @@ theorem ctorDataList_params {dsF : Nat → (LevelParam → Nat) → List (Nat ×
 
 /-- What the readings need of every constructor at its position:
 stored, at the block's level parameters, and its data. -/
-@[expose] def CtorFactsAt {env : Env} (m : EnvModel V env) (T : Name) (lps : List LevelParam) (nP nIdx : Nat)
+@[expose] def CtorFactsAt {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
     (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))

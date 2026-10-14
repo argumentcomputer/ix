@@ -446,7 +446,7 @@ theorem RelCL.getD {dflt : Expr} {dfltx : Expr} (hd : RelC dflt dfltx) :
 the constructor's stored type — `constTyAtM` reads it, `iotaCertsC_sim`
 walks it). -/
 theorem projCertC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {lic : Bool} {c : Name} {us : List Level} {args : List Expr} {xs : List Expr}
+    {lic : Bool} {c : Key} {us : List Level} {args : List Expr} {xs : List Expr}
     {s₀ : CState} (hs : CSOK mode env s₀)
     (hargs : RelCL args xs) (hw : ∀ x ∈ xs, Expr.WScoped d x) :
     SimC mode env s₀ RelVC
@@ -486,7 +486,7 @@ theorem projCertC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
 /-- `projCertC_sim` at the mode's gate (`projCertAt`; parity mirrors
 official, 2026-09-06). -/
 theorem projCertAtC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {v lic : Bool} {c : Name} {us : List Level} {args : List Expr} {xs : List Expr}
+    {v lic : Bool} {c : Key} {us : List Level} {args : List Expr} {xs : List Expr}
     {s₀ : CState} (hs : CSOK mode env s₀)
     (hargs : RelCL args xs) (hw : ∀ x ∈ xs, Expr.WScoped d x) :
     SimC mode env s₀ RelVC
@@ -640,7 +640,7 @@ variable {env : Env} {f : Nat}
 
 /-- Port of `projAppsFnI_eff`: the cached projection-function spine
 denotes the spec's mapped list. -/
-theorem projAppsFnC_eff (T : Name) (us' : List Level) :
+theorem projAppsFnC_eff (T : Key) (us' : List Level) :
     ∀ (l : List Nat) {s₀ : CState}, CSOK mode env s₀ →
       ∀ {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr},
       RelCL targs xs → RelC b xb →
@@ -670,7 +670,7 @@ theorem projAppsFnC_eff (T : Name) (us' : List Level) :
     exact CEff.pure hs₃ (RelCL.cons hQr hQrs)
 
 /-- The cached `.proj` spine (the tower spelling, task #175 W4c). -/
-theorem projNodesC_eff (T : Name) :
+theorem projNodesC_eff (T : Key) :
     ∀ (l : List Nat) {s₀ : CState}, CSOK mode env s₀ →
       ∀ {b : Expr} {xb : Expr}, RelC b xb →
       CEff mode env s₀ (fun rs => RelCL rs (l.map fun i => Expr.proj T i xb))
@@ -690,12 +690,12 @@ theorem projNodesC_eff (T : Name) :
     exact CEff.pure hs₂ (RelCL.cons hQr hQrs)
 
 /-- The index's slot tests are the spec's (`mkFEnv`). -/
-theorem towerSlotsAllF_mkFEnv (env : Env) (T : Name) (n : Nat) :
+theorem towerSlotsAllF_mkFEnv (env : Env) (T : Key) (n : Nat) :
     (mkFEnv env).towerSlotsAllF T n = towerSlotsAll env T n := by
   simp only [FEnv.towerSlotsAllF, towerSlotsAll, mkFEnv_findProj?]
   all_goals rfl
 
-theorem recSlotsAllF_mkFEnv (env : Env) (T : Name) (n : Nat) :
+theorem recSlotsAllF_mkFEnv (env : Env) (T : Key) (n : Nat) :
     (mkFEnv env).recSlotsAllF T n = recSlotsAll env T n := by
   simp only [FEnv.recSlotsAllF, recSlotsAll, mkFEnv_find?]
   all_goals first
@@ -708,7 +708,7 @@ theorem recSlotsAllF_mkFEnv (env : Env) (T : Name) (n : Nat) :
 
 /-- Port of `projAppsI_eff`: the cached fabricated-projection spine
 denotes `etaProjs` (task #175 W4c: by entry kind). -/
-theorem projAppsC_eff (T : Name) (us' : List Level) (nF : Nat)
+theorem projAppsC_eff (T : Key) (us' : List Level) (nF : Nat)
     {s₀ : CState} (hs : CSOK mode env s₀)
     {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr}
     (htargs : RelCL targs xs) (hb : RelC b xb) :
@@ -722,7 +722,7 @@ theorem projAppsC_eff (T : Name) (us' : List Level) (nF : Nat)
 
 /-- Port of `structEtaProjCertsI_sim`. -/
 theorem structEtaProjCertsC_sim (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} (TI : Name) (T : Name) (us' : List Level) (lpsT : List LevelParam) :
+    {d : Nat} (TI : Key) (T : Key) (us' : List Level) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat) {s₀ : CState}, CSOK mode env s₀ →
       ∀ {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr},
       RelCL targs xs → RelC b xb →

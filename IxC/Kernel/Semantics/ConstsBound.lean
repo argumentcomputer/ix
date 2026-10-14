@@ -32,7 +32,7 @@ Statements verbatim, namespace (`Ix.Kernel.SetR.Interp`) unchanged.
 namespace Ix.Kernel.Semantics
 
 open Ix.Kernel.Verify
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo
   natLitSupported strLitSupported)
 
 /-- Every constant the expression mentions is bound in `env₀`
@@ -58,7 +58,7 @@ decreasing_by all_goals first
 as a premise and never took it apart.  These are the clause equations
 and the one closure fact `denoteAnnot`'s binder cases need. -/
 
-@[simp] theorem constsBound_const {env₀ : Env} {n : Name}
+@[simp] theorem constsBound_const {env₀ : Env} {n : Key}
     {us : List Level} :
     ConstsBound env₀ (.const n us) ↔ (env₀.find? n).isSome = true := by
   rw [ConstsBound]
@@ -86,7 +86,7 @@ and the one closure fact `denoteAnnot`'s binder cases need. -/
       ConstsBound env₀ t ∧ ConstsBound env₀ v ∧ ConstsBound env₀ b := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_proj {env₀ : Env} {s : Name} {i : Nat}
+@[simp] theorem constsBound_proj {env₀ : Env} {s : Key} {i : Nat}
     {e : Expr} :
     ConstsBound env₀ (.proj s i e) ↔ ConstsBound env₀ e := by
   rw [ConstsBound]
@@ -178,7 +178,7 @@ them. -/
 survives verbatim (no shadowing — duplicate installs are
 rejected). -/
 def FindPreserved (env₀ env : Env) : Prop :=
-  ∀ {n : Name} {ci : Ix.Kernel.ConstantInfo},
+  ∀ {n : Key} {ci : Ix.Kernel.ConstantInfo},
     env₀.find? n = some ci → env.find? n = some ci
 
 def LitGuardsAgree (env₀ env : Env) : Prop :=
@@ -187,7 +187,7 @@ def LitGuardsAgree (env₀ env : Env) : Prop :=
 
 /-- A stored lookup's level parameters do not move. -/
 theorem levelParamsAt_congr {env₀ env : Env}
-    (hF : FindPreserved env₀ env) {n : Name}
+    (hF : FindPreserved env₀ env) {n : Key}
     (h : (env₀.find? n).isSome = true) :
     levelParamsAt env₀ n = levelParamsAt env n := by
   cases hf : env₀.find? n with

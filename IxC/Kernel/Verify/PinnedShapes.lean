@@ -27,7 +27,7 @@ open Ix.Kernel.Term
 /-- Which reserved names carry recursor-shaped pinned declarations.
 The `pinnedInfoT` counterpart of `IxC/Kernel/Verify/EnvPreds.lean`'s
 `pinnedInfo_ctorInfo_cases`, and proved the same way. -/
-theorem pinnedInfoT_recInfo_cases {n : Name} {cv : ConstantVal}
+theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
     {mI rP : Nat} {rules : List RecRule}
     (h : pinnedInfo n = .recInfo cv mI rP rules) :
     n = eqName.str "rec" ∨ n = natName.str "rec" ∨

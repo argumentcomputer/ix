@@ -93,7 +93,7 @@ theorem direct_fix_rec_wf {env : Env} (henv : EnvWF env)
 /-- The field-kinds guard, per constructor: the kind list has one
 entry per field and the opened form passes the guard at the pre-block
 environment. -/
-theorem nativeFieldsOk_inv {env₀ : Env} {T : Name} {lps : List LevelParam} {nP nIdx : Nat}
+theorem nativeFieldsOk_inv {env₀ : Env} {T : Key} {lps : List LevelParam} {nP nIdx : Nat}
     {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
     (h : nativeFieldsOk env₀ T lps nP nIdx ctorsA kinds = true)
     {j : Nat} {cA : ConstantVal × Nat} (hj : ctorsA[j]? = some cA) :

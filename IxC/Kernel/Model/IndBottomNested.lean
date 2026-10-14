@@ -44,7 +44,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta isDefEqCore inferTypeCore DefEqListOk TypedListOk)
 
 universe w
@@ -59,9 +59,9 @@ theorem indBottomNested {μ : CheckMode} {env : Env}
     (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     -- the totality residue (routed: `inferReads_of` at the caller)
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
-    {f : Name → Name} (hroT : RenameOk mp.base2.acval env f)
+    {f : Key → Key} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
-    {Rn : Name} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
+    {Rn : Key} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
     (htyw : tyA.hasFvar = false)
     (htyb : tyA.looseBVarsBounded 0 = true)
     (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
@@ -70,7 +70,7 @@ theorem indBottomNested {μ : CheckMode} {env : Env}
     {ciRm : ConstantInfo}
     (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
-    {ctor : Name} {cvj : ConstantVal} {cnP cnF : Nat}
+    {ctor : Key} {cvj : ConstantVal} {cnP cnF : Nat}
     (hctorE : env.find? ctor = some (.ctorInfo cvj cnP cnF))
     {ciCm : ConstantInfo}
     (hfCmE : env.find? (f ctor) = some ciCm)
@@ -203,7 +203,7 @@ theorem indBottomNested {μ : CheckMode} {env : Env}
   intro usj ρ xs ys TVa TVja restR restC hlenX hlenY husjlen hlev hparP
     hidx hTVa hTVja hfitR hfitC
   -- the acval's substitution facts, named once
-  have hainst : ∀ (n : Name) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+  have hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (mp.base2.acval n ψ).inst y k = mp.base2.acval n ψ :=
     fun n ψ y k =>
       AVExprSubst.inst_eq_self_of_closed (mp.base2.acval_closed n ψ) y k

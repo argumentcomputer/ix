@@ -38,7 +38,7 @@ open Ix.Kernel.Expr
 /-! ## `NoProjAt` -/
 
 /-- No `.proj T i` node, hereditarily (through fvar types). -/
-@[expose] def Expr.NoProjAt (T : Name) (i : Nat) : Expr → Prop
+@[expose] def Expr.NoProjAt (T : Key) (i : Nat) : Expr → Prop
   | .proj s j e => ¬ (s = T ∧ j = i) ∧ NoProjAt T i e
   | .app f a => NoProjAt T i f ∧ NoProjAt T i a
   | .lam ty b _ => NoProjAt T i ty ∧ NoProjAt T i b
@@ -53,9 +53,9 @@ decreasing_by all_goals first
 
 namespace Expr
 
-variable {T : Name} {i : Nat}
+variable {T : Key} {i : Nat}
 
-@[simp] theorem noProjAt_proj {s : Name} {j : Nat} {e : Expr} :
+@[simp] theorem noProjAt_proj {s : Key} {j : Nat} {e : Expr} :
     NoProjAt T i (.proj s j e) ↔ ¬ (s = T ∧ j = i) ∧ NoProjAt T i e := by
   rw [NoProjAt]
 @[simp] theorem noProjAt_app {f a : Expr} :
@@ -78,7 +78,7 @@ variable {T : Name} {i : Nat}
   rw [NoProjAt] <;> simp
 @[simp] theorem noProjAt_sort {u : Level} : NoProjAt T i (.sort u) := by
   rw [NoProjAt] <;> simp
-@[simp] theorem noProjAt_const {n : Name} {us : List Level} :
+@[simp] theorem noProjAt_const {n : Key} {us : List Level} :
     NoProjAt T i (.const n us) := by
   rw [NoProjAt] <;> simp
 @[simp] theorem noProjAt_lit {l : Literal} : NoProjAt T i (.lit l) := by
@@ -284,7 +284,7 @@ decreasing_by all_goals first
 
 variable {env : Env}
 
-@[simp] theorem projSlotsOk_proj {s : Name} {j : Nat} {e : Expr} :
+@[simp] theorem projSlotsOk_proj {s : Key} {j : Nat} {e : Expr} :
     ProjSlotsOk env (.proj s j e) ↔
       (∃ entry : ProjEntry, env.findProj? s j = some entry) ∧
         ProjSlotsOk env e := by
@@ -312,7 +312,7 @@ variable {env : Env}
   rw [ProjSlotsOk] <;> simp
 @[simp] theorem projSlotsOk_sort {u : Level} : ProjSlotsOk env (.sort u) := by
   rw [ProjSlotsOk] <;> simp
-@[simp] theorem projSlotsOk_const {n : Name} {us : List Level} :
+@[simp] theorem projSlotsOk_const {n : Key} {us : List Level} :
     ProjSlotsOk env (.const n us) := by
   rw [ProjSlotsOk] <;> simp
 @[simp] theorem projSlotsOk_lit {l : Literal} : ProjSlotsOk env (.lit l) := by
@@ -321,7 +321,7 @@ variable {env : Env}
 @[simp] theorem fvarTysOk_fvar {idx : Nat} {ty : Expr} :
     FvarTysOk env (.fvar idx ty) ↔ ProjSlotsOk env ty := by
   rw [FvarTysOk]
-@[simp] theorem fvarTysOk_proj {s : Name} {j : Nat} {e : Expr} :
+@[simp] theorem fvarTysOk_proj {s : Key} {j : Nat} {e : Expr} :
     FvarTysOk env (.proj s j e) ↔ FvarTysOk env e := by
   rw [FvarTysOk]
 @[simp] theorem fvarTysOk_app {f a : Expr} :
@@ -342,7 +342,7 @@ variable {env : Env}
   rw [FvarTysOk] <;> simp
 @[simp] theorem fvarTysOk_sort {u : Level} : FvarTysOk env (.sort u) := by
   rw [FvarTysOk] <;> simp
-@[simp] theorem fvarTysOk_const {n : Name} {us : List Level} :
+@[simp] theorem fvarTysOk_const {n : Key} {us : List Level} :
     FvarTysOk env (.const n us) := by
   rw [FvarTysOk] <;> simp
 @[simp] theorem fvarTysOk_lit {l : Literal} : FvarTysOk env (.lit l) := by
@@ -662,7 +662,7 @@ theorem annotateCore_projSlotsOk {env : Env} :
 closed input at an environment where the slot `(T, i)` is empty has no
 `.proj T i` node. -/
 theorem annotateCore_noProjAt {env : Env} {fuel d : Nat} {e e' : Expr}
-    {T : Name} {i : Nat}
+    {T : Key} {i : Nat}
     (h : annotateCore mode env fuel d e = .ok e') (hfv : e.hasFvar = false)
     (hslot : env.findProj? T i = none) :
     Expr.NoProjAt T i e' :=

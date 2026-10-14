@@ -356,7 +356,7 @@ def propIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
 /-- The projection-application spine
 `[proj_0 targs b, …]` (structural recursion; the spec side is a pure
 `List.map`). -/
-def projAppsFnI (T : Name) (us' : List Level) (targs : List Expr)
+def projAppsFnI (T : Key) (us' : List Level) (targs : List Expr)
     (b : Expr) : List Nat → CheckCM (List Expr)
   | [] => pure []
   | i :: rest => do
@@ -368,7 +368,7 @@ def projAppsFnI (T : Name) (us' : List Level) (targs : List Expr)
 
 /-- The `.proj T i b` spine (the tower spelling, task #175
 W4c). -/
-def projNodesI (T : Name) (b : Expr) : List Nat → CheckCM (List Expr)
+def projNodesI (T : Key) (b : Expr) : List Nat → CheckCM (List Expr)
   | [] => pure []
   | i :: rest => do
     let r ← pure (Expr.proj T i b)
@@ -378,7 +378,7 @@ def projNodesI (T : Name) (b : Expr) : List Nat → CheckCM (List Expr)
 /-- Twin of `etaProjs`: the tower spelling at an all-tower slot family
 (`towerSlotsAll` through the index), the projection-function spelling
 otherwise. -/
-def projAppsI (fe : FEnv) (Tn T : Name) (us' : List Level)
+def projAppsI (fe : FEnv) (Tn T : Key) (us' : List Level)
     (targs : List Expr) (b : Expr) (nF : Nat) :
     CheckCM (List Expr) :=
   if fe.towerSlotsAllF Tn nF then
@@ -387,7 +387,7 @@ def projAppsI (fe : FEnv) (Tn T : Name) (us' : List Level)
 
 /-- Twin of `structEtaProjCerts`. -/
 def structEtaProjCertsI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (TI : Name) (T : Name) (us' : List Level) (targs : List Expr)
+    (TI : Key) (T : Key) (us' : List Level) (targs : List Expr)
     (b : Expr)
     (lpsT : List LevelParam) : List Nat → CheckCM Bool
   | [] => pure true
@@ -544,7 +544,7 @@ def stuckIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
 
 /-- Twin of `majorToCtor`. -/
 def majorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (_recName : Name) (rules : List RecRule) (major : Expr) :
+    (_recName : Key) (rules : List RecRule) (major : Expr) :
     CheckCM Expr := do
   if ← pure (isCtorAppC fe major) then pure major else
   match rules with
@@ -698,7 +698,7 @@ order (K rescue on the raw major, then whnf and the literal
 conversion; elsewhere whnf, literal, eta).  The K flag is the single
 rule's stored bit, as in the spec (`recRuleK`). -/
 def prepareMajorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (recName : Name) (rules : List RecRule) (major : Expr) :
+    (recName : Key) (rules : List RecRule) (major : Expr) :
     CheckCM Expr := do
   if recRuleK rules then do
     let majorK ← majorToCtorI mode r fe depth recName rules major
@@ -798,7 +798,7 @@ def iotaRecI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
                  if ← (if rl.compareParams then
                     certUnlessI mode
                       ((match rl.fire with | .nested _ _ => true | _ => false)
-                        || Name.isProjFnShape cn)
+                        || Key.isProjFnShape cn)
                       (defEqListI r fe depth (margs.take rl.ctorParams)
                         cmpArgs)
                     else pure true) then do
@@ -841,7 +841,7 @@ def iotaRecI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
 
 /-- Twin of `projCert`. -/
 def projCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : CheckCM Bool := do
+    (c : Key) (us : List Level) (args : List Expr) : CheckCM Bool := do
   let cn ← pure c
   match fe.find? cn with
   | some (.ctorInfo _ _ _) => do
@@ -851,7 +851,7 @@ def projCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool)
 
 /-- Twin of `projCertAt`. -/
 def projCertAtI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (verified lic : Bool)
-    (c : Name) (us : List Level) (args : List Expr) : CheckCM Bool :=
+    (c : Key) (us : List Level) (args : List Expr) : CheckCM Bool :=
   if verified then projCertI r fe depth lic c us args else pure true
 
 mutual

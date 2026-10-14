@@ -33,7 +33,7 @@ which is the expected shape: a gate that protects the *checker's* other
 guarantees leaves the derivation layer alone. -/
 
 /-- The element type is a stored constant with no level parameters. -/
-theorem reduceElem_shape {env : Env} {c : Name}
+theorem reduceElem_shape {env : Env} {c : Key}
     (h : reduceElemOk env c = true) :
     ∃ ci, env.find? (reduceElemName c) = some ci ∧
       ci.toConstantVal.levelParams = [] := by
@@ -57,7 +57,7 @@ theorem reduceElem_shape {env : Env} {c : Name}
       | _ => exact nomatch h
 
 /-- Inversion of the compiler-trust pin: the identity certificate. -/
-theorem checkReducePin_inv {env env2 : Env} {c : Name} {value : Expr}
+theorem checkReducePin_inv {env env2 : Env} {c : Key} {value : Expr}
     (h : checkReducePin (fueledOps mode F) env env2 c value = .ok ()) :
     reduceStoredOk env2 c = true ∧ reduceElemOk env c = true ∧
     reducePinGuard env c = true ∧

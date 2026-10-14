@@ -53,7 +53,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule)
 
 universe w
@@ -97,7 +97,7 @@ theorem recRuleLaw_cons_prefix (mp : EnvModelM V μ env)
     (hntc : ConsCrossEnv env c₀)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
-    (φ : LevelParam → Nat) {n : Name} {cv : ConstantVal} {mI rP : Nat}
+    (φ : LevelParam → Nat) {n : Key} {cv : ConstantVal} {mI rP : Nat}
     {rules : List RecRule} (hnN : n ≠ c₀.name)
     (hfE : env.find? n = some (.recInfo cv mI rP rules))
     {rl : RecRule} (hmem : rl ∈ rules)
@@ -302,14 +302,14 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
     (hcross : ConsCrossEnv env c₀)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
-    (φ : LevelParam → Nat) {T : Name} {i : Nat} {entry : ProjEntry}
+    (φ : LevelParam → Nat) {T : Key} {i : Nat} {entry : ProjEntry}
     (hfP : env.findProj? T i = some entry) :
     TowerEntryLaw m₂ φ T i entry := by
   obtain ⟨tbl, hfP0, hi, hentry⟩ := Ix.Kernel.Env.findProj?_some hfP
   obtain ⟨hsn, hidx, hlt, ⟨cvT, capsT, hfT, hlpsT⟩, hO5, cvC, hfC, hlpsC,
     hlaw, hetaL⟩ := mp.tower_ok φ T i entry hfP
   -- the two stored names are not the fresh one
-  have hne : ∀ {n : Name} {ci : ConstantInfo}, env.find? n = some ci →
+  have hne : ∀ {n : Key} {ci : ConstantInfo}, env.find? n = some ci →
       n ≠ c₀.name := by
     intro n ci hn hh
     rw [hh, hfresh] at hn

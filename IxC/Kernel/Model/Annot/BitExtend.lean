@@ -39,7 +39,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level PropWhen
+open Ix.Kernel (Env Expr Key Level PropWhen
   natLitSupported strLitSupported)
 
 /-- **`denoteMeta` is stable under environment extension**, stated.
@@ -49,7 +49,7 @@ An **equation**, not an implication, for the reason the original is
 one: an install must not be able to assume silently that an
 annotation exists on one side and not the other. -/
 @[expose] def DenotePEnvExtend (env₀ env : Env)
-    (acval : Name → (LevelParam → Nat) → AnnotTerm) (φ : LevelParam → Nat) : Prop :=
+    (acval : Key → (LevelParam → Nat) → AnnotTerm) (φ : LevelParam → Nat) : Prop :=
   ∀ (d : Nat) (e : Expr), ConstsBound env₀ e →
     denoteMeta acval env₀ φ d e = denoteMeta acval env φ d e
 
@@ -57,13 +57,13 @@ annotation exists on one side and not the other. -/
 `LitGuardsAgree` alone.  See the module docstring for the dropped
 `SortAgree`. -/
 theorem denoteMeta_envExtend {env₀ env : Env}
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     (hF : FindPreserved env₀ env) (hG : LitGuardsAgree env₀ env)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key) (i : Nat),
       env₀.findProj? sn i = none → env.findProj? sn i = none) :
     DenotePEnvExtend env₀ env acval φ := by
   -- a preserved lookup carries its entry across unchanged
-  have hmono : ∀ (sn : Name) (i : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key) (i : Nat) (entry : Ix.Kernel.ProjEntry),
       env₀.findProj? sn i = some entry →
       env.findProj? sn i = some entry := by
     intro sn i entry h
@@ -178,14 +178,14 @@ theorem litGuardsMono_cons {env : Env} {c₀ : Ix.Kernel.ConstantInfo}
 /-- **The monotone crossing**: a successful prefix reading is
 reproduced verbatim at the extension. -/
 theorem denoteMeta_envExtend_mono {env₀ env : Env}
-    {acval : Name → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+    {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     (hF : FindPreserved env₀ env) (hG : LitGuardsMono env₀ env)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key) (i : Nat),
       env₀.findProj? sn i = none → env.findProj? sn i = none) :
     ∀ (d : Nat) (e : Expr), ConstsBound env₀ e →
       ∀ {ea : AnnotTerm}, denoteMeta acval env₀ φ d e = some ea →
         denoteMeta acval env φ d e = some ea := by
-  have hmono : ∀ (sn : Name) (i : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key) (i : Nat) (entry : Ix.Kernel.ProjEntry),
       env₀.findProj? sn i = some entry →
       env.findProj? sn i = some entry := by
     intro sn i entry h

@@ -155,7 +155,7 @@ theorem defEqList_atF (d : Nat) (F : Nat) :
   | [], _ :: _ => rfl
   | _ :: _, [] => rfl
 
-theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Name)
+theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Key)
     (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (fueledFns mode env) env d T us' targs b lpsT
@@ -289,7 +289,7 @@ theorem etaCert_atF (d : Nat) (ty body : Expr) (mb : BinderMeta) (b : Expr) (F :
   unfold etaCert
   atF_tac
 
-theorem projCert_atF (d : Nat) (lic : Bool) (c : Name) (us : List Level)
+theorem projCert_atF (d : Nat) (lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) (F : Nat) :
     (projCert (fueledFns mode env) env d lic c us args).val F =
       projCert (pureFns mode env F) env d lic c us args := by
@@ -298,7 +298,7 @@ theorem projCert_atF (d : Nat) (lic : Bool) (c : Name) (us : List Level)
   · exact iotaCerts_atF d lic F _ _
   · rfl
 
-theorem projCertAt_atF (d : Nat) (v lic : Bool) (c : Name) (us : List Level)
+theorem projCertAt_atF (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) (F : Nat) :
     (projCertAt (fueledFns mode env) env d v lic c us args).val F =
       projCertAt (pureFns mode env F) env d v lic c us args := by
@@ -344,7 +344,7 @@ theorem structEtaCert_atF (d : Nat) (a b : Expr) (F : Nat) :
 -- Outer casing peeled by hand (as in `IxC/Kernel/Verify/PairM.lean`): the
 -- body outgrew the split-driven macro.
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_atF (d : Nat) (c : Name) (rules : List RecRule) (e : Expr) (F : Nat) :
+theorem majorToCtor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) (F : Nat) :
     (majorToCtor mi (fueledFns mode env) env d c rules e).val F =
       majorToCtor mi (pureFns mode env F) env d c rules e := by
   unfold majorToCtor
@@ -389,7 +389,7 @@ theorem litMajorToCtor_atF (d : Nat) (e : Expr) (F : Nat) :
   unfold litMajorToCtor
   atF_tac2
 
-theorem prepareMajor_atF (d : Nat) (c : Name) (rules : List RecRule) (e : Expr)
+theorem prepareMajor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr)
     (F : Nat) :
     (prepareMajor mi (fueledFns mode env) env d c rules e).val F =
       prepareMajor mi (pureFns mode env F) env d c rules e := by

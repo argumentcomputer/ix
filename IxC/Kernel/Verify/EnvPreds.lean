@@ -77,9 +77,9 @@ theorem RecCtorsStored.empty : RecCtorsStored Env.empty := by
 /-- **What a set K bit says about the store**: the rule's constructor
 is stored with no fields, its result type is headed by a stored
 inductive, and that inductive carries the K capability. -/
-theorem recRuleKOf_inv {f : Name → Option ConstantInfo} {ctor : Name}
+theorem recRuleKOf_inv {f : Key → Option ConstantInfo} {ctor : Key}
     (h : recRuleKOf f ctor = true) :
-    ∃ (cvj : ConstantVal) (cnP : Nat) (T : Name) (us : List Level)
+    ∃ (cvj : ConstantVal) (cnP : Nat) (T : Key) (us : List Level)
       (cvT : ConstantVal) (caps : IndCaps),
       f ctor = some (.ctorInfo cvj cnP 0) ∧
       (cvj.type.piResult).getAppFn = .const T us ∧
@@ -110,8 +110,8 @@ theorem recRuleKOf_inv {f : Name → Option ConstantInfo} {ctor : Name}
         exact ⟨cvj, cnP, T, us, cvT, caps, by rw [h.2], hpr, hfT, h.1⟩
 
 /-- The K bit, from the store. -/
-theorem recRuleKOf_of {f : Name → Option ConstantInfo} {ctor : Name}
-    {cvj : ConstantVal} {cnP : Nat} {T : Name} {us : List Level}
+theorem recRuleKOf_of {f : Key → Option ConstantInfo} {ctor : Key}
+    {cvj : ConstantVal} {cnP : Nat} {T : Key} {us : List Level}
     {cvT : ConstantVal} {caps : IndCaps}
     (h1 : f ctor = some (.ctorInfo cvj cnP 0))
     (h2 : (cvj.type.piResult).getAppFn = .const T us)
@@ -126,14 +126,14 @@ constructor is stored, its result type is headed by a stored
 inductive, that inductive is η-capable through this very constructor,
 the constructor carries the inductive's own level parameters, and the
 recursor is not a projection function. -/
-theorem recRuleEtaOf_inv {f : Name → Option ConstantInfo}
-    {recName ctor : Name} (h : recRuleEtaOf f recName ctor = true) :
-    ∃ (cvj : ConstantVal) (cnP cnF : Nat) (T : Name) (us : List Level)
+theorem recRuleEtaOf_inv {f : Key → Option ConstantInfo}
+    {recName ctor : Key} (h : recRuleEtaOf f recName ctor = true) :
+    ∃ (cvj : ConstantVal) (cnP cnF : Nat) (T : Key) (us : List Level)
       (cvT : ConstantVal) (caps : IndCaps),
       f ctor = some (.ctorInfo cvj cnP cnF) ∧
       (cvj.type.piResult).getAppFn = .const T us ∧
       f T = some (.indInfo cvT caps) ∧ caps.eta = true ∧
-      caps.etaCtor = ctor ∧ Name.isProjFnShape recName = false ∧
+      caps.etaCtor = ctor ∧ Key.isProjFnShape recName = false ∧
       cvj.levelParams = cvT.levelParams := by
   revert h
   unfold recRuleEtaOf
@@ -163,13 +163,13 @@ theorem recRuleEtaOf_inv {f : Name → Option ConstantInfo}
           h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 /-- The η-rescue bit, from the store. -/
-theorem recRuleEtaOf_of {f : Name → Option ConstantInfo}
-    {recName ctor : Name} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
+theorem recRuleEtaOf_of {f : Key → Option ConstantInfo}
+    {recName ctor : Key} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
     {us : List Level} {cvT : ConstantVal} {caps : IndCaps}
     (h1 : f ctor = some (.ctorInfo cvj cnP cnF))
     (h2 : (cvj.type.piResult).getAppFn = .const T us)
     (h3 : f T = some (.indInfo cvT caps)) (h4 : caps.eta = true)
-    (h5 : caps.etaCtor = ctor) (h6 : Name.isProjFnShape recName = false)
+    (h5 : caps.etaCtor = ctor) (h6 : Key.isProjFnShape recName = false)
     (h7 : cvj.levelParams = cvT.levelParams) :
     recRuleEtaOf f recName ctor = true := by
   unfold recRuleEtaOf
@@ -179,8 +179,8 @@ theorem recRuleEtaOf_of {f : Name → Option ConstantInfo}
 /-- The K bit's verdict survives any change of store that keeps the
 non-recursor lookups (a fresh cons, the `_model` swap): it reads a
 constructor and an inductive only. -/
-theorem recRuleKOf_mono {f g : Name → Option ConstantInfo} {ctor : Name}
-    (hkeep : ∀ (n : Name) (ci : ConstantInfo),
+theorem recRuleKOf_mono {f g : Key → Option ConstantInfo} {ctor : Key}
+    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       f n = some ci → g n = some ci)
     (h : recRuleKOf f ctor = true) : recRuleKOf g ctor = true := by
@@ -190,9 +190,9 @@ theorem recRuleKOf_mono {f g : Name → Option ConstantInfo} {ctor : Name}
     (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) h3) h4
 
 /-- The η-rescue bit's verdict, likewise. -/
-theorem recRuleEtaOf_mono {f g : Name → Option ConstantInfo}
-    {recName ctor : Name}
-    (hkeep : ∀ (n : Name) (ci : ConstantInfo),
+theorem recRuleEtaOf_mono {f g : Key → Option ConstantInfo}
+    {recName ctor : Key}
+    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       f n = some ci → g n = some ci)
     (h : recRuleEtaOf f recName ctor = true) :
@@ -212,8 +212,8 @@ constructor, which carries the inductive's own level parameters".
 These are the cross-constant conditions `majorToCtor` used to
 re-derive at every recursor application. -/
 theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
-    {recName : Name} {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule}
-    {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Name}
+    {recName : Key} {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule}
+    {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
     {us₀ : List Level} {cvT : ConstantVal} {caps : IndCaps}
     (hfrec : env.find? recName = some (.recInfo cv mI rP rules))
     (hmem : rl ∈ rules)
@@ -248,8 +248,8 @@ theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
 
 /-- Both bits at a rule the install stamped (`recRuleBits`) are the
 lookup's own verdict, by construction. -/
-theorem recRuleBits_head {find? : Name → Option ConstantInfo}
-    {recName : Name} {rl : RecRule} :
+theorem recRuleBits_head {find? : Key → Option ConstantInfo}
+    {recName : Key} {rl : RecRule} :
     ((recRuleBits find? recName rl).k = true →
       recRuleKOf find? (recRuleBits find? recName rl).ctor = true) ∧
     ((recRuleBits find? recName rl).eta = true →
@@ -281,7 +281,7 @@ the bodies' scoping is `EnvWF`'s table clause.) -/
 
 /-- The head data survives any extension that keeps the two lookups. -/
 theorem TowerHead.mono {env env' : Env} {entry : ProjEntry}
-    (hkeep : ∀ (n : Name) (ci : ConstantInfo),
+    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
@@ -310,7 +310,7 @@ theorem ProjOkT.empty : ProjOkT Env.empty := by
 
 /-- A constant stored under a name that is not a `num` name is not a
 tower table (those live under `projTableName`, a `num` name). -/
-theorem isTowerEntry_false_of_find? {env : Env} {n : Name} {c : ConstantInfo}
+theorem isTowerEntry_false_of_find? {env : Env} {n : Key} {c : ConstantInfo}
     (hf : env.find? n = some c) (hn : ∀ p k, n ≠ Name.num p k) :
     c.isTowerEntry = false := by
   cases c with
@@ -324,7 +324,7 @@ theorem isTowerEntry_false_of_find? {env : Env} {n : Name} {c : ConstantInfo}
 
 /-- The discipline at a lookup: a stored entry's head data. -/
 theorem ProjOkT.towerHead {env : Env} (h : ProjOkT env)
-    {sn : Name} {i : Nat} {entry : ProjEntry}
+    {sn : Key} {i : Nat} {entry : ProjEntry}
     (hf : env.findProj? sn i = some entry) :
     TowerHead env entry := by
   obtain ⟨tbl, hf', hi, rfl⟩ := Env.findProj?_some hf
@@ -335,7 +335,7 @@ theorem BasisBlocks.empty : BasisBlocks Env.empty := by
     (intro cv mI rP rules h; simp [Env.find?, Env.empty] at h)
 
 /-- The pinned (annotated) declaration of one basis constant. -/
-@[expose] def pinnedInfo (n : Name) : ConstantInfo :=
+@[expose] def pinnedInfo (n : Key) : ConstantInfo :=
   if n = eqName then eqA
   else if n = eqReflName then eqReflA
   else if n = eqName.str "rec" then eqRecA
@@ -358,7 +358,7 @@ theorem BasisBlocks.empty : BasisBlocks Env.empty := by
   else .axiomInfo ⟨n, [], .sort .zero⟩
 
 /-- Which names carry constructor-shaped pinned declarations. -/
-theorem pinnedInfo_ctorInfo_cases {n : Name} {cv : ConstantVal} {nP nF : Nat}
+theorem pinnedInfo_ctorInfo_cases {n : Key} {cv : ConstantVal} {nP nF : Nat}
     (h : pinnedInfo n = .ctorInfo cv nP nF) :
     n = eqReflName ∨ n = natZeroName ∨ n = natSuccName ∨
     n = punitUnitName ∨ n = quotMkName := by

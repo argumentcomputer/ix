@@ -59,7 +59,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName RecRule)
 
 universe w
@@ -75,7 +75,7 @@ structure EnvModelM (μ : CheckMode) (env : Env) where
   none of them) -/
   base2 : EnvModel V env
   /-- every leaf is bit-valid (`acval_wellDenoted`'s `AnnotValid` half) -/
-  acval_validV : ∀ (n : Name) (ψ : LevelParam → Nat) (ρ : Nat → V),
+  acval_validV : ∀ (n : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
     AnnotValid V ρ (base2.acval n ψ)
   /-- every stored type reads, at every ground assignment -/
   type_reads : ∀ c ∈ env.consts, ∀ ψ : LevelParam → Nat,

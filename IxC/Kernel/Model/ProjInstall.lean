@@ -40,7 +40,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule RecRuleFire IndCaps ProjEntry BinderMeta projFnName
   projModelName projFwd ReducibilityHint inferTypeCore isDefEqCore)
 
@@ -56,8 +56,8 @@ twin).  The bottom fires at the *base* environment under
 `acvalWith_self` makes the base law's head the installed constant's
 leaf. -/
 theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
-    {T ctorName : Name} {lps : List LevelParam} {nP nF i : Nat}
-    {blockNames : List Name} (mp : EnvModelM V μ env')
+    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
+    {blockNames : List Key} (mp : EnvModelM V μ env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' mp.base2.cvalE)
     (hinvA : ProjPhaseAcval T ctorName nF env' mp.base2.acval)
@@ -409,8 +409,8 @@ The skip branch is a no-op; the block-level premises are re-established
 at each step exactly as in v1 (`EtaPins.step` plus "a projection name
 is never a block name"). -/
 theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
-    {T ctorName : Name} {lps : List LevelParam} {nP nF : Nat}
-    {blockNames : List Name}
+    {T ctorName : Key} {lps : List LevelParam} {nP nF : Nat}
+    {blockNames : List Key}
     (hTblock : blockNames.contains T = true)
     (hbshape : ∀ n, blockNames.contains n = true →
       n.isProjFnShape = false) :

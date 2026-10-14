@@ -23,7 +23,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w
 
@@ -131,7 +131,7 @@ theorem consList_kframe (ps : List V) (M : V) (ms is : List V) (ρb : Nat → V)
 /-- **The K-frame split** of a spine fitting the recursor's binder
 data below the major: the parameters, the motive (in its reading),
 the minors (in their ih-extended readings) and a fitting index tuple. -/
-theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
+theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
     {nP nIdx n ℓ w b : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
     {cds : List CtorDatumR} (hn : cds.length = n)
@@ -193,7 +193,7 @@ theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name}
 
 set_option maxHeartbeats 3200000 in
 /-- **The recursor's premise from the readings.** -/
-theorem fixPre_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Name} {elimL : Level}
+theorem fixPre_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
     {nP nIdx n ℓ w u s b : Nat} (hℓ : elimL.eval ψ = ℓ)
     (hb : pwBit ψ (Level.zeronessOf elimL) = b) (hbz : ℓ = 0 ↔ b = 0)
     (hs0 : s = 0 ↔ ℓ = 0)

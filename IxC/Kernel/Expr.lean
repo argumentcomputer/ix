@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Name
+public import IxC.Kernel.Key
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
 public import IxC.Ixon.Types.Contract
@@ -376,13 +376,13 @@ inductive Expr where
   | bvar (i : Nat)
   | fvar (idx : Nat) (type : Expr)
   | sort (u : Level)
-  | const (n : Name) (us : List Level)
+  | const (n : Key) (us : List Level)
   | app (f a : Expr)
   | lam (type body : Expr) (m : BinderMeta)
   | forallE (type body : Expr) (m : BinderMeta)
   | letE (type value body : Expr)
   | lit (l : Literal)
-  | proj (structName : Name) (idx : Nat) (e : Expr)
+  | proj (structName : Key) (idx : Nat) (e : Expr)
 with
   /-- The packed derived-data word: `hash` (32) ǀ reserved (1) ǀ
   `bvarB` (15, saturating) ǀ `fvarB` (15, saturating) ǀ `hasLP` (1). -/
@@ -517,7 +517,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
   show (bvarOfData (packData _ 0 0 _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem bvarBRaw_const (n : Name) (us : List Level) :
+@[simp] theorem bvarBRaw_const (n : Key) (us : List Level) :
     (Expr.const n us).bvarBRaw = 0 := by
   show (bvarOfData (packData _ 0 0 _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
@@ -570,7 +570,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     toNat_satPred (bvarOfData_lt _)]
   rfl
 
-@[simp] theorem bvarBRaw_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem bvarBRaw_proj (s : Key) (i : Nat) (e : Expr) :
     (Expr.proj s i e).bvarBRaw = e.bvarBRaw := by
   show (bvarOfData (packData _ _ _ _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]
@@ -589,7 +589,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
   show (fvarOfData (packData _ 0 0 _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem fvarBRaw_const (n : Name) (us : List Level) :
+@[simp] theorem fvarBRaw_const (n : Key) (us : List Level) :
     (Expr.const n us).fvarBRaw = 0 := by
   show (fvarOfData (packData _ 0 0 _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
@@ -634,7 +634,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
       (fvarOfData_lt _)), toNat_max, toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem fvarBRaw_proj (s : Key) (i : Nat) (e : Expr) :
     (Expr.proj s i e).fvarBRaw = e.fvarBRaw := by
   show (fvarOfData (packData _ _ _ _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]
@@ -656,7 +656,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
   show lpOfData (packData _ 0 0 _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (by decide)]
 
-@[simp] theorem hasLP_const (n : Name) (us : List Level) :
+@[simp] theorem hasLP_const (n : Key) (us : List Level) :
     (Expr.const n us).hasLP = levelsHaveParam us := by
   show lpOfData (packData _ 0 0 _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (by decide)]
@@ -701,7 +701,7 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
       (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem hasLP_proj (s : Key) (i : Nat) (e : Expr) :
     (Expr.proj s i e).hasLP = e.hasLP := by
   show lpOfData (packData _ _ _ _) = _
   rw [lpOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]

@@ -42,7 +42,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -65,7 +65,7 @@ theorem Frame.app_arg {d : Nat} {f x : Expr} (h : Frame d (.app f x)) :
   simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
   exact ⟨hw.2, hb.2, fun l hl => hL l (by simp [Expr.fvarLeaves, hl])⟩
 
-theorem Frame.proj_arg {d : Nat} {s : Name} {i : Nat} {e : Expr}
+theorem Frame.proj_arg {d : Nat} {s : Key} {i : Nat} {e : Expr}
     (h : Frame d (.proj s i e)) : Frame d e := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
@@ -179,7 +179,7 @@ theorem Graded.head_congr {Δa : List AnnotTerm} {A B e : AnnotTerm}
     (h : Graded V (B :: Δa) e) : Graded V (A :: Δa) e :=
   fun ρ hρ => h ρ (Sat.head_congr heq hρ)
 
-theorem denoteMeta_open_rename {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_open_rename {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {d : Nat} {bd ty ty' : Expr} {ba : AnnotTerm}
     (h : denoteMeta acval env φ (d + 1) (bd.instantiate1 (.fvar d ty))
       = some ba) :
@@ -194,7 +194,7 @@ theorem denoteMeta_open_rename {acval : Name → (LevelParam → Nat) → AnnotT
 /-- The same constant at level-equivalent instantiations has one
 validated reading. -/
 theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
-    {d : Nat} {n : Name} {us us' : List Level} {aa ba : AnnotTerm}
+    {d : Nat} {n : Key} {us us' : List Level} {aa ba : AnnotTerm}
     (hlev : Level.isEquivList us us' = some true)
     (hda : denoteMeta m.acval env φ d (.const n us) = some aa)
     (hdb : denoteMeta m.acval env φ d (.const n us') = some ba) :
@@ -226,7 +226,7 @@ theorem Graded.projAV {Δa : List AnnotTerm} {i : Nat} {e : AnnotTerm}
 /-- A stored declaration's instantiated type: read at every depth,
 graded, inhabited, and framed (closed, so the frames are free). -/
 theorem constType_pkg {m : EnvModel V env} (hct : ConstType m φ)
-    {n : Name} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
     (hnt : ci.isTowerEntry = false) {us : List Level}
     (hlen : us.length = ci.toConstantVal.levelParams.length) :
     ∃ ta : AnnotTerm,
@@ -364,7 +364,7 @@ theorem NeverChain.inst : ∀ {n u : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : N
 
 /-- **A `.never`-peeled telescope reads to a chain**: each binder's bit
 is nonzero (`pwBit_ne_zero_of_isNever`), the residual sort evaluates. -/
-theorem neverChain_of_peel {acval : Name → (LevelParam → Nat) → AnnotTerm} :
+theorem neverChain_of_peel {acval : Key → (LevelParam → Nat) → AnnotTerm} :
     ∀ (n : Nat) {d : Nat} {T : Expr} {u : Level} {ta : AnnotTerm},
       T.peelNeverPis n = some (.sort u) →
       denoteMeta acval env φ d T = some ta →
@@ -449,7 +449,7 @@ its instantiated stored type and that type's grading; the chain is
 read off the stored syntax at the composed valuation. -/
 theorem typeFormer_mem_univ_zero {m : EnvModel V env}
     (hct : ConstType m φ) {ρ : Nat → V} {d : Nat} {T : Expr}
-    {I : Name} {us : List Level} {ci : ConstantInfo} {u : Level} {Ta : AnnotTerm}
+    {I : Key} {us : List Level} {ci : ConstantInfo} {u : Level} {Ta : AnnotTerm}
     (hfn : T.getAppFn = .const I us) (hfI : env.find? I = some ci)
     (hnt : ci.isTowerEntry = false)
     (hlen : us.length = ci.toConstantVal.levelParams.length)
@@ -624,7 +624,7 @@ definitions are `@[expose]`d, so the clause is available by `rfl`
 here, in this tier's own module, and the proof term names nothing
 outside it. -/
 
-theorem etaProjs_eq (T : Name) (us : List Level) (targs : List Expr)
+theorem etaProjs_eq (T : Key) (us : List Level) (targs : List Expr)
     (b : Expr) (nF : Nat) :
     Ix.Kernel.etaProjs env T us targs b nF =
       if Ix.Kernel.towerSlotsAll env T nF then
@@ -637,7 +637,7 @@ theorem etaProjs_eq (T : Name) (us : List Level) (targs : List Expr)
 /-- The fabricated η spine's values, unfolded here for the same reason
 (`etaFabArgsV`/`projSpines` are `EnvModelM`'s; `rfl` beats naming
 their equation lemmas here too). -/
-theorem etaFabArgsV_eq (val : Name → V) (T : Name) (ts : List V) (b : V)
+theorem etaFabArgsV_eq (val : Key → V) (T : Key) (ts : List V) (b : V)
     (nF : Nat) :
     etaFabArgsV val T ts b nF =
       ts ++ (List.range nF).map

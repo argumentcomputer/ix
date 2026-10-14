@@ -49,7 +49,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint BinderMeta)
 
 universe w
@@ -248,7 +248,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         from by omega] at h1
     exact Option.some.inj h1
   -- ===== the opened slot, read and evaluated =====
-  have hKle : ∀ (K : Name) (ci : ConstantInfo),
+  have hKle : ∀ (K : Key) (ci : ConstantInfo),
       env.find? K = some ci →
       ci.toConstantVal.levelParams = cvT.levelParams →
       ∀ d : Nat, caps.etaParams ≤ d →
@@ -259,7 +259,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
           ((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q)))) :=
     fun K ci hf hlps d hd => denoteMeta_openSpine hf hlps _ d hd
-  have hspineVal : ∀ (K : Name) (d : Nat) (σ : Nat → V),
+  have hspineVal : ∀ (K : Key) (d : Nat) (σ : Nat → V),
       (∀ q, q < ts.length →
         σ (d - 1 - (0 + q)) = consN ts ρ (ts.length - 1 - q)) →
       interp V σ (AnnotTerm.mkAppN (mp.base2.acval K ψ)
@@ -354,7 +354,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
     have h := teleFit_wellDenotedV_residual (ts ++ [x]) hteleFull (hokua ρ)
       hfitFull
     rwa [hconsApp] at h
-  have hSval : ∀ K : Name, interp V (cons x (consN ts ρ))
+  have hSval : ∀ K : Key, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))

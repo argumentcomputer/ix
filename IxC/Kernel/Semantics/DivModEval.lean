@@ -32,7 +32,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 variable {V : Type w} [SetTheory V]
 
 /-- A closed replacement moves no leaf. -/
-theorem fvarLeaves_substConst0 {n : Name} {r : Expr}
+theorem fvarLeaves_substConst0 {n : Key} {r : Expr}
     (hr : r.hasFvar = false) :
     ∀ e : Expr, (Expr.substConst0 n r e).fvarLeaves = e.fvarLeaves
   | .const c us => by
@@ -49,7 +49,7 @@ theorem fvarLeaves_substConst0 {n : Name} {r : Expr}
   | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ => rfl
 
 /-- A `looseBVars`-closed replacement keeps the bound. -/
-theorem looseBVarsBounded_substConst0 {n : Name} {r : Expr}
+theorem looseBVarsBounded_substConst0 {n : Key} {r : Expr}
     (hr : r.looseBVarsBounded 0 = true) :
     ∀ (e : Expr) {k : Nat}, e.looseBVarsBounded k = true →
       (Expr.substConst0 n r e).looseBVarsBounded k = true
@@ -68,7 +68,7 @@ theorem looseBVarsBounded_substConst0 {n : Name} {r : Expr}
   | .letE _ _ _, _, he | .proj _ _ _, _, he => he
 
 /-- The binary pinned type, inverted. -/
-theorem natOpTyPinned_binaryE {env : Env} {n : Name} {ty : Expr}
+theorem natOpTyPinned_binaryE {env : Env} {n : Key} {ty : Expr}
     (hn : ¬(n = natPredName))
     (h : natOpTyPinned env n ty = true) :
     ∃ mb mb2 cod, ty = .forallE (.const natName [])
@@ -91,7 +91,7 @@ theorem natOpTyPinned_binaryE {env : Env} {n : Name} {ty : Expr}
   | .forallE _ (.proj _ _ _) _ => intro h; exact nomatch h
 
 /-- The codomain is a stored, level-monomorphic constant. -/
-theorem natOpCod_stored {env : Env} {n : Name} {cod : Expr}
+theorem natOpCod_stored {env : Env} {n : Key} {cod : Expr}
     (h : natOpCod env n cod = true) :
     (∃ ci, cod = .const boolName [] ∧
       env.find? boolName = some ci ∧
@@ -196,7 +196,7 @@ theorem dmLeavesOk_mem {e : Expr} (h : dmLeavesOk e = true)
       rw [h1, h2])
 
 /-- `dmLeavesOk` survives the operation substitution. -/
-theorem dmLeavesOk_substConst0 {c : Name} {value' e : Expr}
+theorem dmLeavesOk_substConst0 {c : Key} {value' e : Expr}
     (hvf : value'.hasFvar = false) (h : dmLeavesOk e = true) :
     dmLeavesOk (Expr.substConst0 c value' e) = true := by
   unfold dmLeavesOk at h ⊢
@@ -260,21 +260,21 @@ theorem dmApplied1_frame {p a : Expr}
 
 /-- The grammar's value at a valuation of the heads. -/
 noncomputable def dmEvalV (W : Type w) [SetTheory W]
-    (val : Name → W) (x y : W) : Expr → W
+    (val : Key → W) (x y : W) : Expr → W
   | Expr.const n _ => val n
   | Expr.app f a =>
     SetTheory.app (dmEvalV W val x y f) (dmEvalV W val x y a)
   | Expr.fvar i _ => if i = 0 then x else y
   | _ => pt
 
-@[simp] theorem dmEvalV_const (val : Name → V) (x y : V) (n : Name)
+@[simp] theorem dmEvalV_const (val : Key → V) (x y : V) (n : Key)
     (us : List Level) : dmEvalV V val x y (Expr.const n us) = val n := rfl
 
-@[simp] theorem dmEvalV_app (val : Name → V) (x y : V) (f a : Expr) :
+@[simp] theorem dmEvalV_app (val : Key → V) (x y : V) (f a : Expr) :
     dmEvalV V val x y (Expr.app f a)
       = SetTheory.app (dmEvalV V val x y f) (dmEvalV V val x y a) := rfl
 
-@[simp] theorem dmEvalV_fvar (val : Name → V) (x y : V) (i : Nat)
+@[simp] theorem dmEvalV_fvar (val : Key → V) (x y : V) (i : Nat)
     (ty : Expr) :
     dmEvalV V val x y (Expr.fvar i ty) = if i = 0 then x else y := rfl
 
@@ -282,7 +282,7 @@ noncomputable def dmEvalV (W : Type w) [SetTheory W]
 /-- The `ble`-guarded value-level clauses of a pin-certified
 WF-recursive operation, over a value valuation of the level-mono
 heads (`DivModClauses` transpose, verbatim — value-level). -/
-def DivModClausesV (V : Type w) [SetTheory V] (val : Name → V) (c : Name) (x y : V) : Prop :=
+def DivModClausesV (V : Type w) [SetTheory V] (val : Key → V) (c : Key) (x y : V) : Prop :=
   let vT := val boolTrueName
   let vF := val boolFalseName
   let one : V := SetTheory.app (val natSuccName) (val natZeroName)
@@ -339,7 +339,7 @@ def DivModClausesV (V : Type w) [SetTheory V] (val : Name → V) (c : Name) (x y
 
 /-- For `c` one of `Nat.div`/`Nat.mod`, the clause dispatch collapses
 to the original three `ble`-guarded clauses. -/
-theorem divModClausesV_divmod {V : Type w} [SetTheory V] {val : Name → V} {c : Name} {x y : V}
+theorem divModClausesV_divmod {V : Type w} [SetTheory V] {val : Key → V} {c : Key} {x y : V}
     (hc : c = natDivName ∨ c = natModName)
     (h : DivModClausesV V val c x y) :
     (app (app (val natBleName) y) x = val boolTrueName →

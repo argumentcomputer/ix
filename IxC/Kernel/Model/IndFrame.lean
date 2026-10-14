@@ -451,7 +451,7 @@ frame's own-depth read annotations correlates with a kit expression;
 padding slots are never consulted. -/
 theorem ctxOk_of_openers {env : Env} {m : EnvModel V env}
     {φ : LevelParam → Nat}
-    (hacl : ∀ (n : Name) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
       (m.acval n ψ).liftN 1 k = m.acval n ψ)
     {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)

@@ -35,7 +35,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported)
 
 universe w
@@ -50,7 +50,7 @@ and its two constructors, the two `Bool` constructors, the guard's
 `Nat.ble`, the operation itself, and its recurrence dependencies.
 (`natBleName` is in `natOpDeps c` for every WF-recursive `c`, but it is
 listed here too so the congruence's users need not know that.) -/
-def dmValNames (c : Name) : List Name :=
+def dmValNames (c : Key) : List Key :=
   Ix.Kernel.natName :: Ix.Kernel.boolTrueName :: Ix.Kernel.boolFalseName ::
     Ix.Kernel.natZeroName :: Ix.Kernel.natSuccName :: Ix.Kernel.natBleName ::
     c :: Ix.Kernel.natOpDeps c
@@ -63,7 +63,7 @@ set_option linter.unusedSimpArgs false in
 /-- **The clauses read the valuation only at `dmValNames`.**  Proved
 per operation: with `c` concrete the `if`-chain reduces to one branch,
 and that branch's heads are exactly the ones supplied. -/
-theorem divModClausesV_congr {val val' : Name → V} {c : Name} {x y : V}
+theorem divModClausesV_congr {val val' : Key → V} {c : Key} {x y : V}
     (hc : c ∈ Ix.Kernel.natDivModNames)
     (h : ∀ n ∈ dmValNames c, val n = val' n) :
     DivModClausesV V val c x y ↔ DivModClausesV V val' c x y := by
@@ -128,7 +128,7 @@ inversion supplies the numeral heads (`natLitSupported`), the
 dependencies, and — because a WF-recursive name is in the `Bool`
 branch of the guard — the two `Bool` constructors; the operation
 itself is stored by hypothesis. -/
-theorem dmValNames_stored {c : Name} (hc : c ∈ Ix.Kernel.natDivModNames)
+theorem dmValNames_stored {c : Key} (hc : c ∈ Ix.Kernel.natDivModNames)
     (hg : natOpGuard env c = true) (hcs : (env.find? c).isSome = true) :
     ∀ n ∈ dmValNames c, (env.find? n).isSome = true := by
   obtain ⟨hs, hdeps, hbool⟩ := Ix.Kernel.natOpGuard_inv hg
@@ -171,7 +171,7 @@ theorem divMod_entry_cons {m : EnvModel V env} {φ : LevelParam → Nat}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
-    {c : Name} (hcN : c ∈ Ix.Kernel.natDivModNames) (hne : c ≠ c₀.name)
+    {c : Key} (hcN : c ∈ Ix.Kernel.natDivModNames) (hne : c ≠ c₀.name)
     {cv' : ConstantVal} {v' : Expr} {hint' : ReducibilityHint}
     (hf₂ : (⟨c₀ :: env.consts⟩ : Env).find? c
       = some (.defnInfo cv' v' hint')) :
@@ -293,7 +293,7 @@ theorem reduceOps_entry_cons {m : EnvModel V env}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
-    {c : Name} (hcN : c ∈ Ix.Kernel.reduceOpNames) (hne : c ≠ c₀.name)
+    {c : Key} (hcN : c ∈ Ix.Kernel.reduceOpNames) (hne : c ≠ c₀.name)
     {cv : ConstantVal}
     (hf₂ : (⟨c₀ :: env.consts⟩ : Env).find? c = some (.axiomInfo cv))
     (hpin : ConstantVal.matchesPin cv (Ix.Kernel.reduceOpCvA c) = true) :

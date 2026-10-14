@@ -45,7 +45,7 @@ open Ix.Kernel.SetModel
 
 open SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Name Level PropWhen)
+open Ix.Kernel (Key Level PropWhen)
 
 universe w
 

@@ -303,7 +303,7 @@ structure CSOK (mode : CheckMode) (env : Env) (s : CState) : Prop where
   cached term is `RelC`-related to the very `Expr` object it is tagged
   with.  The clause never mentions `env`, so it survives every flush
   and every environment transition. -/
-  ienv : ∀ (nm : Name) (ent : CConstE), s.ienv[nm]? = some ent →
+  ienv : ∀ (nm : Key) (ent : CConstE), s.ienv[nm]? = some ent →
     RelC ent.ty ent.tyE ∧
     ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
   instC : ∀ (k : Expr) (vs : List Expr) (d : Nat) (r : Expr),
@@ -318,7 +318,7 @@ structure CSOKF (s : CState) : Prop where
   lsimp : ∀ u v, s.lsimpC[u]? = some v → v = Level.simplify u
   lnz : ∀ u b, s.lnzC[u]? = some b → b = Level.isNonZero u
   eqv : ∀ l r b, s.eqvC[(l, r)]? = some b → Level.isEquiv l r = some b
-  ienv : ∀ (nm : Name) (ent : CConstE), s.ienv[nm]? = some ent →
+  ienv : ∀ (nm : Key) (ent : CConstE), s.ienv[nm]? = some ent →
     RelC ent.ty ent.tyE ∧
     ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
 

@@ -96,7 +96,7 @@ theorem projTele_instantiateLevelParams : ∀ (k : Nat) (body : Expr)
     rfl
 
 /-- The telescope mentions no slot its body does not. -/
-theorem Expr.NoProjAt.projTele (T : Name) (i : Nat) :
+theorem Expr.NoProjAt.projTele (T : Key) (i : Nat) :
     ∀ (k : Nat) (body : Expr), Expr.NoProjAt T i body →
       Expr.NoProjAt T i (projTele k body)
   | 0, _, h => h

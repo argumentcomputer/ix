@@ -81,14 +81,14 @@ namespace Ix.Kernel
 
 /-- The type former applied to its parameter variables, `bvar` indices
 offset by `o` (the number of binders crossed since the parameters). -/
-def structFam (T : Name) (lps : List LevelParam) (nP o : Nat) : Expr :=
+def structFam (T : Key) (lps : List LevelParam) (nP o : Nat) : Expr :=
   Expr.mkAppN (.const T (lps.map .param))
     ((List.range nP).map fun k => Expr.bvar (o + nP - 1 - k))
 
 /-- The constructor applied to the parameter and field variables, as
 spelled inside the recursor's minor premise (parameters sit above the
 motive binder). -/
-def structCtorSpine (C : Name) (lps : List LevelParam) (nP nF : Nat) : Expr :=
+def structCtorSpine (C : Key) (lps : List LevelParam) (nP nF : Nat) : Expr :=
   Expr.mkAppN (.const C (lps.map .param))
     (((List.range nP).map fun i => Expr.bvar (nF + nP - i)) ++
      (List.range nF).map fun j => Expr.bvar (nF - 1 - j))
@@ -145,7 +145,7 @@ def structElimLevel (elim : LevelParam) (large : Bool) : Level :=
 spelled under `o` binders between the parameters and the fields (the
 motive and the earlier minor premises); `structCtorSpine` is the
 `o = 1` case (`structCtorSpine_eq_at`). -/
-def structCtorSpineAt (C : Name) (lps : List LevelParam) (o nP nF : Nat) : Expr :=
+def structCtorSpineAt (C : Key) (lps : List LevelParam) (o nP nF : Nat) : Expr :=
   Expr.mkAppN (.const C (lps.map .param))
     (structPsAt (o + nF) nP ++ (List.range nF).map fun j => Expr.bvar (nF - 1 - j))
 
@@ -190,13 +190,13 @@ generator below is the index-free one above. -/
 variables: `e` extra binders sit between the parameters and the
 indices (the motive and the minors), `o` binders below the index
 frame. -/
-def structFamI (T : Name) (lps : List LevelParam) (nP nIdx e o : Nat) : Expr :=
+def structFamI (T : Key) (lps : List LevelParam) (nP nIdx e o : Nat) : Expr :=
   Expr.mkAppN (.const T (lps.map .param)) (structPsAt (o + e + nIdx) nP ++ structPsAt o nIdx)
 
 /-- A constructor residual's shape at an indexed family: the family
 at exactly the parameter variables (`o` binders below the parameter
 frame) followed by `nIdx` index expressions. -/
-def structCtorResidOk (T : Name) (lps : List LevelParam) (nP o nIdx : Nat) (cbody : Expr) : Bool :=
+def structCtorResidOk (T : Key) (lps : List LevelParam) (nP o nIdx : Nat) (cbody : Expr) : Bool :=
   cbody.getAppFn == .const T (lps.map .param) &&
   cbody.getAppArgs.length == nP + nIdx &&
   cbody.getAppArgs.take nP == structPsAt o nP
@@ -205,7 +205,7 @@ def structCtorResidOk (T : Name) (lps : List LevelParam) (nP o nIdx : Nat) (cbod
 frame, over the former's index telescope `itele = ∀ ı⃗, Sort w` (scoped
 at the parameters); every binder's codomain is a type former, never a
 proposition. -/
-def structMotiveTyI (T : Name) (lps : List LevelParam) (nP nIdx : Nat) (ℓ : Level) (itele : Expr) :
+def structMotiveTyI (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (ℓ : Level) (itele : Expr) :
     Option Expr :=
   Expr.replacePisPw .never nIdx itele
     (.forallE (structFamI T lps nP nIdx 0 0) (.sort ℓ) { pw := .never })
@@ -255,7 +255,7 @@ a syntactic pin would wrongly reject; `checkStructCtor` pins the
 parameter domains definitionally over the opened telescopes, and the
 recursor is generated and compared as a whole (`checkStructRec`, task
 #175 S2). -/
-def structShape (T C : Name) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+def structShape (T C : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nF : Nat) (tty cty rty : Expr) : Bool :=
   match tty.stripPis nP, cty.stripPis (nP + nF), rty.stripPis (nP + 3) with
   | some (_, .sort _), some (_, cbody), some (rbs, rbody) =>
@@ -341,14 +341,14 @@ generated type (task #175 wiring): the first-class node `t.j`
 (`.proj T j` of the subject), at `structProjArg`'s frame (subject
 `t = bvar 0`).  No `projFnName` chain — each field's entry stands
 alone, which is what makes O4's per-field entry branch real. -/
-def structProjArgP (T : Name) (j : Nat) : Expr :=
+def structProjArgP (T : Key) (j : Nat) : Expr :=
   Expr.proj T j (Expr.bvar 0)
 
 /-- `structProjResid` in the `.proj`-node spelling: the constructor
 telescope peeled at the parameters and the first `i` subject
 projections, threaded incrementally (step `i → i + 1` is a single
 `instantiate1Lift`). -/
-def structProjResidP (T : Name) (nP : Nat) (cty : Expr) : Nat → Option Expr
+def structProjResidP (T : Key) (nP : Nat) (cty : Expr) : Nat → Option Expr
   | 0 => Expr.instPisAtLift (structProjPs nP) cty
   | i + 1 => (structProjResidP T nP cty i).bind
       (Expr.instPisAtLift [structProjArgP T i])
@@ -758,21 +758,21 @@ subject type's arguments and the subject (`ProjEntry.typeAt`).  The
 table holds every field (the official `infer_proj` restriction at a
 `Prop`-declared structure is the per-use guard level,
 `structProjGuards`); no entry is annotated, inferred or pinned. -/
-def structProjBodiesGo (T : Name) : Nat → Nat → Expr → Option (List Expr)
+def structProjBodiesGo (T : Key) : Nat → Nat → Expr → Option (List Expr)
   | 0, _, _ => some []
   | k + 1, i, .forallE fdom body _ =>
     (structProjBodiesGo T k (i + 1) (body.instantiate1Lift (structProjArgP T i))).map
       (fdom :: ·)
   | _ + 1, _, _ => none
 
-def structProjBodies (T : Name) (nP nF : Nat) (cty : Expr) : Option (Array Expr) :=
+def structProjBodies (T : Key) (nP nF : Nat) (cty : Expr) : Option (Array Expr) :=
   match Expr.instPisAtLift (structProjPs nP) cty with
   | some r => (structProjBodiesGo T nF 0 r).map List.toArray
   | none => none
 
 /-- Does the constant `T` occur in `e`?  A syntactic walk (`fvar`
 annotations included; a `.proj` node names its structure). -/
-def Expr.mentionsConst (T : Name) : Expr → Bool
+def Expr.mentionsConst (T : Key) : Expr → Bool
   | .bvar _ | .sort _ | .lit _ => false
   | .const n _ => n == T
   | .fvar _ ty => ty.mentionsConst T
@@ -793,13 +793,13 @@ definition stays what every proof consumes.  The memo is keyed by the
 node and dropped after each call (the answer depends on `T`). -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def MentionsMemoInv (T : Name) (memo : Std.HashMap Expr Bool) : Prop :=
+def MentionsMemoInv (T : Key) (memo : Std.HashMap Expr Bool) : Prop :=
   ∀ (k : Expr) (r : Bool), memo[k]? = some r → r = k.mentionsConst T
 
-theorem MentionsMemoInv.empty {T : Name} : MentionsMemoInv T {} := by
+theorem MentionsMemoInv.empty {T : Key} : MentionsMemoInv T {} := by
   intro k r h; simp at h
 
-theorem MentionsMemoInv.insert {T : Name} {memo : Std.HashMap Expr Bool}
+theorem MentionsMemoInv.insert {T : Key} {memo : Std.HashMap Expr Bool}
     (hm : MentionsMemoInv T memo) {e : Expr} {r : Bool} (heq : r = e.mentionsConst T) :
     MentionsMemoInv T (memo.insert e r) := by
   intro k r' hk
@@ -812,7 +812,7 @@ theorem MentionsMemoInv.insert {T : Name} {memo : Std.HashMap Expr Bool}
   · exact hm k r' hk
 
 /-- Memoized `mentionsConst`. -/
-def Expr.mentionsConstGo (T : Name) (memo : Std.HashMap Expr Bool) :
+def Expr.mentionsConstGo (T : Key) (memo : Std.HashMap Expr Bool) :
     Expr → Bool × Std.HashMap Expr Bool
   | .bvar _ => (false, memo)
   | .sort _ => (false, memo)
@@ -849,7 +849,7 @@ def Expr.mentionsConstGo (T : Name) (memo : Std.HashMap Expr Bool) :
       (r, memo.insert e r)
 
 /-- **The memoized walk is `mentionsConst`.** -/
-theorem Expr.mentionsConstGo_spec {T : Name} :
+theorem Expr.mentionsConstGo_spec {T : Key} :
     ∀ (e : Expr) (memo : Std.HashMap Expr Bool), MentionsMemoInv T memo →
       (mentionsConstGo T memo e).1 = e.mentionsConst T ∧
         MentionsMemoInv T (mentionsConstGo T memo e).2 := by
@@ -920,7 +920,7 @@ theorem Expr.mentionsConstGo_spec {T : Name} :
       exact h2.insert (by simp [mentionsConst, h1])
 
 /-- The executed `mentionsConst` (one memoized DAG walk). -/
-def Expr.mentionsConstFast (T : Name) (e : Expr) : Bool :=
+def Expr.mentionsConstFast (T : Key) (e : Expr) : Bool :=
   (mentionsConstGo T {} e).1
 
 @[csimp] theorem Expr.mentionsConst_eq_mentionsConstFast :

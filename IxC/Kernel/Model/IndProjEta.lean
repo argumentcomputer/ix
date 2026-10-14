@@ -70,7 +70,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint BinderMeta)
 
 universe w
@@ -146,9 +146,9 @@ because the family's earlier projection slots were installed by
 earlier `ProjInstallR` steps and that fold is where the
 identification lives. -/
 @[expose] def ProjEtaLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {blockNames : List Name} {env : Env}
+  ∀ {μ : CheckMode} {blockNames : List Key} {env : Env}
     (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
-    {A : (LevelParam → Nat) → AnnotTerm} {T : Name} {i : Nat},
+    {A : (LevelParam → Nat) → AnnotTerm} {T : Key} {i : Nat},
     c₀.name = Ix.Kernel.projFnName T i →
     (∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules) →
     env.find? c₀.name = none →
@@ -294,7 +294,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
         from by omega] at h1
     exact Option.some.inj h1
   -- ===== the opened slot, read and evaluated =====
-  have hKle : ∀ (K : Name) (ci : ConstantInfo),
+  have hKle : ∀ (K : Key) (ci : ConstantInfo),
       env.find? K = some ci →
       ci.toConstantVal.levelParams = cvT.levelParams →
       ∀ d : Nat, caps.etaParams ≤ d →
@@ -305,7 +305,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
           ((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q)))) :=
     fun K ci hf hlps d hd => denoteMeta_openSpine hf hlps _ d hd
-  have hspineVal : ∀ (K : Name) (d : Nat) (σ : Nat → V),
+  have hspineVal : ∀ (K : Key) (d : Nat) (σ : Nat → V),
       (∀ q, q < ts.length →
         σ (d - 1 - (0 + q)) = consN ts ρ (ts.length - 1 - q)) →
       interp V σ (AnnotTerm.mkAppN (mp.base2.acval K ψ)
@@ -466,7 +466,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
     have h := teleFit_wellDenotedV_residual (ts ++ [x]) hteleFull (hokua ρ)
       hfitFull
     rwa [hconsApp] at h
-  have hSval : ∀ K : Name, interp V (cons x (consN ts ρ))
+  have hSval : ∀ K : Key, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))
@@ -478,7 +478,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
         rfl)
   -- the projection arguments, evaluated: the side condition is
   -- reflexivity, because `consN (ts ++ [x]) ρ` IS the environment
-  have hPval : ∀ K : Name, interp V (cons x (consN ts ρ))
+  have hPval : ∀ K : Key, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range (caps.etaParams + 1)).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))
@@ -558,8 +558,8 @@ family's own data because `hvP` mentions `caps.etaFields`, which is not
 in scope until the family is found. -/
 theorem capsOk_cons_proj_of (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
-    {blockNames : List Name}
+    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key} {i : Nat}
+    {blockNames : List Key}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)

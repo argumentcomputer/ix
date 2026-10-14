@@ -207,7 +207,7 @@ theorem checkSumIndS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
 /-- Official's positivity walk (task #210 Part D) at the shared
 operations: every `whnf` is the shared one, on a well-scoped input at
 its depth. -/
-theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Name) :
+theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key) :
     ∀ {fuel d : Nat} {e : Expr} {s₀ : CState}, CSOK mode env s₀ → WScoped d e →
       SimC mode env s₀ RelVC
         (normPosDom (sharedOpsC mode (mkFEnv env)) env T d fuel e)
@@ -235,7 +235,7 @@ theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T
           exact SimC.pure hs₂ rfl
       · exact SimC.pure hs₁ rfl
 
-theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Name) :
+theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key) :
     ∀ {n i : Nat} {e : Expr} {s₀ : CState}, CSOK mode env s₀ → WScoped i e →
       SimC mode env s₀ RelVC
         (normFieldDoms (sharedOpsC mode (mkFEnv env)) env T i n e)
@@ -259,7 +259,7 @@ theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
       simp only [normFieldDoms]
       exact SimC.throw
 
-theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {T : Name}
+theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {T : Key}
     {nP nF : Nat} {cvC cvCa : ConstantVal} (hs : CSOK mode env s₀)
     (hCw : WScoped 0 cvCa.type) :
     SimC mode env s₀ (fun v w => v = w ∧ WScoped 0 v.type)
@@ -286,7 +286,7 @@ theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
 
 /-- Stage 2 (one constructor, the constructor and its field count
 explicit) at the shared operations. -/
-theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Name}
+theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Key}
     {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level} {isProp large : Bool}
     {cvC : ConstantVal} {nF : Nat} {cvTa : ConstantVal}
     (hTf : cvTa.type.hasFvar = false) (hs : CSOK mode env s₀) :
@@ -367,7 +367,7 @@ theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
 /-- Stage 2, the whole constructor list: every constructor is checked
 at the *same* environment (the one holding the type former alone), so
 the walk is a plain induction on the list. -/
-theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Name}
+theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Key}
     {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level} {isProp large : Bool}
     {cvTa : ConstantVal} (hTf : cvTa.type.hasFvar = false) :
     ∀ {cs : List (ConstantVal × Nat)} {s₀ : CState}, CSOK mode env s₀ →
@@ -396,9 +396,9 @@ theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
 /-- The generated rules loop of the recursive route: no operation is
 called (a rule mentions the recursor and is not inferred), so the walk
 is the identity on a pure program. -/
-theorem checkNativeRulesS_sim {envR : Env} {rlps : List LevelParam} {T : Name}
+theorem checkNativeRulesS_sim {envR : Env} {rlps : List LevelParam} {T : Key}
     {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr}
-    {ctors : List (Name × Nat × Expr × List Nat)} {recC : Name} {rlvls : List Level} :
+    {ctors : List (Key × Nat × Expr × List Nat)} {recC : Key} {rlvls : List Level} :
     ∀ {k j : Nat} {s₀ : CState}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (checkNativeRules (m := CheckCM) envR rlps T lps elim large nP nIdx tty ctors

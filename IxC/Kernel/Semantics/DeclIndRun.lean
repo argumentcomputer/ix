@@ -60,7 +60,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 (`ConstantValRun`) and the model-counterpart pins, which were always
 pure stored-data lookups. -/
 def MemberValRun (μ : CheckMode) (F : Nat) (env' : Env)
-    (blockNames : List Name) (cv : ConstantVal) (cvA : ConstantVal) :
+    (blockNames : List Key) (cv : ConstantVal) (cvA : ConstantVal) :
     Prop :=
   ∃ type',
     ConstantValRun μ F env' cv type' ∧
@@ -81,7 +81,7 @@ and the front door is the only thing that reads it.  With the front
 door's derivation struck, the fold is a plain walk over the running
 *environment*. -/
 def IndMembersRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Name) (caps : IndCaps) :
+    (blockNames : List Key) (caps : IndCaps) :
     Env → List ConstantInfo → Env → Prop
   | env', [], env₂ => env₂ = env'
   | env', ci :: rest, env₂ =>
@@ -97,7 +97,7 @@ def IndMembersRun (μ : CheckMode) (F : Nat)
 
 /-- `ProvisionRecsR`'s run/guard half. -/
 def ProvisionRecsRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Name) :
+    (blockNames : List Key) :
     Env → List ConstantInfo →
     Env → List (ConstantVal × Nat × Nat × List RecRule) → Prop
   | envAcc, [], envSelf, checked =>
@@ -117,7 +117,7 @@ parameter-domain comparison's recorded run (`DefEqListOk`), and
 `IotaRuns` — the six walk rows' checker verdicts.  What is struck is
 the `∀ φ` parameter-domain walk and `IotaWalksR` itself. -/
 def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name)
+    (f : Key → Key) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
     (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr) : Prop :=
   ∃ cvt fvs tbody,
@@ -165,7 +165,7 @@ generalized major pin, the `checkAnnotList` fixed points, the arity
 pin), the pins' recorded typing run (`TypedListOk`), and `IotaRuns`.
 Struck: the `∀ φ` `TypedListW` walk and `IotaWalksR`. -/
 def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name)
+    (f : Key → Key) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
     (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr)
     (lvls : List Level) (pins : List Expr) : Prop :=
@@ -228,7 +228,7 @@ def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 the λ-telescope shape and the fire-mode dispatch, with the rhs front
 door's derivation struck and its recorded `inferTypeCore` run kept. -/
 def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name)
+    (f : Key → Key) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r r' : RecRule) :
     Prop :=
   ∃ cvj cnP cnF rhsA,
@@ -258,7 +258,7 @@ def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 
 /-- `IotaRulesR`'s run/guard half. -/
 def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Name → Name) (cvName : Name)
+    (f : Key → Key) (cvName : Key)
     (lps : List LevelParam) (tyA : Expr) (mI rP : Nat) :
     Nat → List RecRule → List RecRule → Prop
   | _, [], out => out = []
@@ -271,7 +271,7 @@ def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 
 /-- `IndRecsR`'s run/guard half. -/
 def IndRecsRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Name) (env₂ : Env)
+    (blockNames : List Key) (env₂ : Env)
     (recs : List ConstantInfo) (env₃ : Env) : Prop :=
   (recs = [] ∧ env₃ = env₂) ∨
   (recs ≠ [] ∧
@@ -281,7 +281,7 @@ def IndRecsRun (μ : CheckMode) (F : Nat)
      IndRecsFoldRun μ F blockNames env₂ envSelf env₂ checked env₃)
 where
   /-- The install fold over the provisioned group, run half. -/
-  IndRecsFoldRun (μ : CheckMode) (F : Nat) (blockNames : List Name)
+  IndRecsFoldRun (μ : CheckMode) (F : Nat) (blockNames : List Key)
       (envBase envSelf : Env) :
       Env → List (ConstantVal × Nat × Nat × List RecRule) →
       Env → Prop
@@ -302,7 +302,7 @@ with the rule's front-door derivation and the `proj_i.iota` sides
 pack's `∀ φ` walk struck (their recorded runs — the `inferTypeCore`
 verdict and `checkIotaSidesTy`'s literal pair — stay). -/
 def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
-    (T ctorName : Name) (lps : List LevelParam) (nP nF i : Nat)
+    (T ctorName : Key) (lps : List LevelParam) (nP nF i : Nat)
     (env'' : Env) : Prop :=
   ∃ cvj mcv mval mhint pty rhsA,
     env'.find? ctorName = some (.ctorInfo cvj nP nF) ∧
@@ -374,7 +374,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
 for the projection function (`cvalWith … (projModelName T i)`) was the
 `ProjFnR` front door's, so it goes with it. -/
 def ProjInstallRun (μ : CheckMode) (F : Nat)
-    (T ctorName : Name) (lps : List LevelParam) (nP nF : Nat) :
+    (T ctorName : Key) (lps : List LevelParam) (nP nF : Nat) :
     Env → List Nat → Env → Prop
   | env', [], env₄ => env₄ = env'
   | env', i :: rest, env₄ =>

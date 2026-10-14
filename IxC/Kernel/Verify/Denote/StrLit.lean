@@ -37,7 +37,7 @@ theorem substFn_nil (φ : LevelParam → Nat) : Level.substFn φ [] [] = φ := b
 /-- A stored constant with no level parameters denotes to its valuation
 at the ambient assignment. -/
 theorem denote_const_nolevelsV {env : Env} {cval : TConstVal}
-    (φ : LevelParam → Nat) {c : Name} {ci : ConstantInfo}
+    (φ : LevelParam → Nat) {c : Key} {ci : ConstantInfo}
     (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = []) (d : Nat) :
     denote cval env φ d (.const c []) = some (cval c φ) := by

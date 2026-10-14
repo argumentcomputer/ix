@@ -20,7 +20,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w
@@ -210,13 +210,13 @@ theorem DefEqList.cons_sound {d : Nat} {a b : Expr} {as bs : List Expr}
       (fun x hx => hga x (List.mem_cons_of_mem va hx))
       (fun x hx => hgb x (List.mem_cons_of_mem vb hx)) ρ hρ⟩
 
-theorem EtaProjCerts.nil_sound {d : Nat} {T : Name} {us' : List Level}
+theorem EtaProjCerts.nil_sound {d : Nat} {T : Key} {us' : List Level}
     {targs : List Expr} {b : Expr} {lpsT : List LevelParam} :
     EtaProjCertsSem m φ d T us' targs b lpsT [] := by
   intro i hi
   exact nomatch hi
 
-theorem EtaProjCerts.cons_sound {d : Nat} {T : Name} {us' : List Level}
+theorem EtaProjCerts.cons_sound {d : Nat} {T : Key} {us' : List Level}
     {targs : List Expr} {b : Expr} {lpsT : List LevelParam} {i : Nat}
     {rest : List Nat} {cvp : ConstantVal} {mI rP : Nat} {rules : List RecRule}
     (hf : env.find? (projFnName T i) = some (.recInfo cvp mI rP rules))

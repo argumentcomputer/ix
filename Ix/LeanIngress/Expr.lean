@@ -87,7 +87,7 @@ inductive ExprError where
   | contract (reason : String)
   deriving Repr, Inhabited, BEq
 
-def ingressName : Ix.Name → KName
+def ingressName : Ix.Name → Ix.Kernel.Key
   | .anonymous _ => .anonymous
   | .str p s _ => .str (ingressName p) s
   | .num p n _ => .num (ingressName p) n

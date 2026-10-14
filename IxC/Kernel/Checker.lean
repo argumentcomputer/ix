@@ -119,7 +119,7 @@ def certifyNatEqs (ops : CheckerOps m) (env : Env) :
 in one **pin variant** (`IxC/Kernel/NatOpPinSet.lean`: one
 toolchain's generated pins, `IxC/Kernel/NatOpPins.lean` splices one
 per committed dump). -/
-def divModDeclPin (ps : NatOpPinSet) (c : Name) : Expr :=
+def divModDeclPin (ps : NatOpPinSet) (c : Key) : Expr :=
   if c = natDivName then ps.divPin
   else if c = natGcdName then ps.gcdPin
   else if c = natLandName then ps.landPin
@@ -131,7 +131,7 @@ def divModDeclPin (ps : NatOpPinSet) (c : Name) : Expr :=
 
 /-- The certificate proof terms of a pin-certified WF-recursive op in
 one pin variant, one per statement of `divModCertStmts`. -/
-def divModCertProofs (ps : NatOpPinSet) (c : Name) : List Expr :=
+def divModCertProofs (ps : NatOpPinSet) (c : Key) : List Expr :=
   if c = natDivName then ps.divProofs
   else if c = natGcdName then ps.gcdProofs
   else if c = natLandName then ps.landProofs
@@ -152,7 +152,7 @@ existing `NatOpsOk` literal semantics for `ble`/`sub`.  The op's
 self-reference is `.const c []`, substituted with the stored annotated
 value before checking (all statement components are application
 spines, so `Expr.substConst0` applies). -/
-def divModCertStmts (c : Name) : List (List Expr × Expr) :=
+def divModCertStmts (c : Key) : List (List Expr × Expr) :=
   let natTy : Expr := .const natName []
   let x : Expr := .fvar 0 natTy
   let y : Expr := .fvar 1 natTy
@@ -239,7 +239,7 @@ def divModCertApplied (proofS : Expr) (hyps : List Expr) : Expr :=
 /-- The syntactic guards of one certificate check: the substituted
 proof is closed, level-monomorphic and resolving, and the substituted
 statement components resolve. -/
-def divModCertGuard (env : Env) (c : Name) (annVal : Expr)
+def divModCertGuard (env : Env) (c : Key) (annVal : Expr)
     (hyps : List Expr) (eqE proof : Expr) : Bool :=
   (Expr.substConstAll c annVal proof).looseBVarsBounded 0 &&
   !(Expr.substConstAll c annVal proof).hasFvar &&
@@ -259,7 +259,7 @@ the pinned open statement, its type inferred, and compared against the
 pinned characteristic equation.  This checks each certificate exactly
 like a theorem declaration over an opened telescope — nothing is
 installed. -/
-def checkDivModCerts (ops : CheckerOps m) (env : Env) (c : Name)
+def checkDivModCerts (ops : CheckerOps m) (env : Env) (c : Key)
     (annVal : Expr) : List (List Expr × Expr) → List Expr → m Bool
   | [], [] => pure true
   | (hyps, eqE) :: srest, proof :: prest => do
@@ -279,7 +279,7 @@ dependency guard, pinned dependencies, the pinned `Eq` basis (the
 certificate statements are equations in the pinned equality), and the
 `Bool` constructors stored at the type `Bool` itself (the guards'
 `true`/`false` must inhabit the `Bool` value semantically). -/
-def divModEnvGuard (env2 : Env) (c : Name) : Bool :=
+def divModEnvGuard (env2 : Env) (c : Key) : Bool :=
   natOpGuard env2 c && (natOpDeps c).all (natOpStoredOk env2) &&
   env2.find? eqName == some eqA &&
   (match env2.find? boolTrueName with
@@ -291,7 +291,7 @@ def divModEnvGuard (env2 : Env) (c : Name) : Bool :=
 
 /-- Syntactic guards on one variant's pin (generated; checked once at
 install rather than proven about the blob). -/
-def divModPinGuard (ps : NatOpPinSet) (env : Env) (c : Name) : Bool :=
+def divModPinGuard (ps : NatOpPinSet) (env : Env) (c : Key) : Bool :=
   (divModDeclPin ps c).looseBVarsBounded 0 && !(divModDeclPin ps c).hasFvar &&
   (divModDeclPin ps c).allLevelParamsDefined [] &&
   (divModDeclPin ps c).constsResolve env
@@ -300,7 +300,7 @@ def divModPinGuard (ps : NatOpPinSet) (env : Env) (c : Name) : Bool :=
 Checked *before* the pin comparison; a failure moves on to the next
 variant: a stream may legitimately stop short of the constants a
 variant's proofs mention. -/
-def divModCertsGuard (ps : NatOpPinSet) (env : Env) (c : Name)
+def divModCertsGuard (ps : NatOpPinSet) (env : Env) (c : Key)
     (annVal : Expr) : Bool :=
   ((divModCertStmts c).zip (divModCertProofs ps c)).all
     (fun p => divModCertGuard env c annVal p.1.1 p.1.2 p.2)
@@ -318,7 +318,7 @@ so a stream from another toolchain matches the pin syntactically).
 `CheckerOps.orElse` turns that error into "this variant does not
 match" — the only place a thrown error is recovered from, and it is
 scoped to exactly this attempt. -/
-def checkDivModPinAt (ops : CheckerOps m) (env : Env) (c : Name)
+def checkDivModPinAt (ops : CheckerOps m) (env : Env) (c : Key)
     (value' : Expr) (ps : NatOpPinSet) : m Bool := do
   let pinA ← ops.annotate env 0 (divModDeclPin ps c)
   let okPin ← ops.isDefEq env 0 value' pinA
@@ -344,7 +344,7 @@ matching (the pin comparison cannot tell toolchains apart, see
 `checkDivModPinAt`), so the decline message is the operator's
 diagnosis: `scripts/diagnose_natop_prefix.py` explains a "ground
 constants absent" entry, the executable's error text the rest. -/
-def checkDivModPinLoop (ops : CheckerOps m) (env : Env) (c : Name)
+def checkDivModPinLoop (ops : CheckerOps m) (env : Env) (c : Key)
     (value' : Expr) : List NatOpPinSet → List String → m Unit
   | [], tried =>
     throw (.notImplemented s!"unsupported Nat.div/mod spelling ({c}: no \
@@ -378,7 +378,7 @@ constant buys.  The parameter sits right after `ops` (the "how to
 check" arguments) all the way up, and right after `mode` in the cached
 driver. -/
 def checkDivModPin (ops : CheckerOps m) (pins : List NatOpPinSet)
-    (env env2 : Env) (c : Name) : m Unit := do
+    (env env2 : Env) (c : Key) : m Unit := do
   if divModEnvGuard env2 c then
     match env2.find? c with
     | some (.defnInfo _ value' _) =>
@@ -404,7 +404,7 @@ constant is an `axiomInfo`, which carries no value):
   identity, the `ofReduce*` axioms' types are trivially inhabited.  A
   certificate failure after the pin matched is an internal
   inconsistency (the pin *is* the identity function). -/
-def checkReducePin (ops : CheckerOps m) (env env2 : Env) (c : Name)
+def checkReducePin (ops : CheckerOps m) (env env2 : Env) (c : Key)
     (value : Expr) : m Unit := do
   if reduceStoredOk env2 c && reduceElemOk env c then
     if reducePinGuard env c then do

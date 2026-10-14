@@ -36,28 +36,28 @@ open Name (anonymous)
 open BasisDSL
 
 /-- The name `propext`. -/
-def propextName : Name := anonymous |>.str "propext"
+def propextName : Key := anonymous |>.str "propext"
 
 /-- The name `Classical.choice`. -/
-def choiceName : Name := (anonymous |>.str "Classical") |>.str "choice"
+def choiceName : Key := (anonymous |>.str "Classical") |>.str "choice"
 
 /-- The name `Iff`. -/
-def iffName : Name := anonymous |>.str "Iff"
+def iffName : Key := anonymous |>.str "Iff"
 
 /-- The name `Iff.intro`. -/
-def iffIntroName : Name := iffName |>.str "intro"
+def iffIntroName : Key := iffName |>.str "intro"
 
 /-- The name `Iff.rec`. -/
-def iffRecName : Name := iffName |>.str "rec"
+def iffRecName : Key := iffName |>.str "rec"
 
 /-- The name `Nonempty`. -/
-def nonemptyName : Name := anonymous |>.str "Nonempty"
+def nonemptyName : Key := anonymous |>.str "Nonempty"
 
 /-- The name `Nonempty.intro`. -/
-def nonemptyIntroName : Name := nonemptyName |>.str "intro"
+def nonemptyIntroName : Key := nonemptyName |>.str "intro"
 
 /-- The name `Nonempty.rec`. -/
-def nonemptyRecName : Name := nonemptyName |>.str "rec"
+def nonemptyRecName : Key := nonemptyName |>.str "rec"
 
 /-- Shape comparison for the standard pins: exact name, level
 parameters and counts, type up to the `pw` datum.  Binder contracts are

@@ -39,14 +39,14 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo)
+open Ix.Kernel (Env Expr Key Level ConstantInfo)
 
 variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Name → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
 
 /-- **Erasure-equal expressions read equally** (`denote_erasedEq`'s
 transpose). -/
-theorem denoteMeta_erasedEq {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_erasedEq {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {env : Env} {φ : LevelParam → Nat} :
     ∀ {e₁ e₂ : Expr}, Expr.ErasedEq e₁ e₂ →
       ∀ d : Nat, denoteMeta acval env φ d e₁ = denoteMeta acval env φ d e₂
@@ -112,11 +112,11 @@ decreasing_by
 /-- **Renaming preserves the reading of a *resolving* expression**
 (`denote_renameConsts_resolve`'s transpose; see the module
 docstring). -/
-theorem denoteMeta_renameConsts_resolve {f : Name → Name}
+theorem denoteMeta_renameConsts_resolve {f : Key → Key}
     (hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? (f n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams)
-    (hval : ∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
+    (hval : ∀ (n : Key) (ci : ConstantInfo), env.find? n = some ci →
       ∀ ψ : LevelParam → Nat, acval (f n) ψ = acval n ψ) :
     ∀ (e : Expr) (d : Nat), e.constsResolve env = true →
       denoteMeta acval env φ d (e.renameConsts f)

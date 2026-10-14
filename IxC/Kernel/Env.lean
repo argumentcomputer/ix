@@ -185,7 +185,7 @@ licence reads the datum and nothing else, as the licence ruling of
 
 /-- Data common to all constants: name, universe parameters, type. -/
 structure ConstantVal where
-  name : Name
+  name : Key
   levelParams : List LevelParam
   type : Expr
   deriving DecidableEq, Repr, Inhabited
@@ -247,7 +247,7 @@ capabilities, the recursor type and the installing route — input rules
 carry the parse placeholders `0`/`.inert`/`false`; reduction reads only
 the installed values, never re-deriving them per fire. -/
 structure RecRule where
-  ctor : Name
+  ctor : Key
   nfields : Nat
   /-- The constructor's parameter count (install-computed; parse
   placeholder `0`). -/
@@ -353,7 +353,7 @@ structure IndCaps where
   eta : Bool := false
   /-- The single constructor the eta law reconstructs through
   (meaningful only when `eta`). -/
-  etaCtor : Name := .anonymous
+  etaCtor : Key := .anonymous
   /-- Its parameter count (meaningful only when `eta`). -/
   etaParams : Nat := 0
   /-- Its field count (meaningful only when `eta`). -/
@@ -399,13 +399,13 @@ a modeled one, and `findProj? = none` already says so at every
 nodes and fires its rule, and the projection typing and iota laws
 hold uniformly over every entry of every stored table. -/
 structure ProjTable where
-  structName : Name
+  structName : Key
   /-- the parent type former's level parameters -/
   levelParams : List LevelParam
   /-- the parent's parameter count -/
   numParams : Nat
   /-- the single constructor (the structural rule's head) -/
-  ctor : Name
+  ctor : Key
   /-- its field count -/
   numFields : Nat
   /-- the parent's result sort -/
@@ -435,11 +435,11 @@ structure ProjTable where
 the table's data at field `idx`.  `body` is `bodies[idx]` and
 `fieldSort` is `guards[idx]`. -/
 structure ProjEntry where
-  structName : Name
+  structName : Key
   idx : Nat
   levelParams : List LevelParam
   numParams : Nat
-  ctor : Name
+  ctor : Key
   numFields : Nat
   /-- the projection's result-type body, scoped at `numParams + 1`
   (see `ProjTable.bodies`) -/
@@ -562,7 +562,7 @@ inductive Declaration where
 namespace Declaration
 
 /-- The name of a non-basis declaration (basis blocks install several). -/
-def name : Declaration → Name
+def name : Declaration → Key
   | .axiomDecl v | .defnDecl v _ _ | .thmDecl v _ | .opaqueDecl v _ => v.name
   | .quotDecl _ v => v.name
   | .basisDecl _ | .indDecl _ _ => .anonymous
@@ -626,13 +626,13 @@ def indParamsOk (nP : Nat) (block : List ConstantInfo) : Bool :=
 identifiers; installs are duplicate-checked regardless).  Since task
 #175 S1 no table entry lives under this name: the direct install's
 table is one constant per structure, `projTableName`. -/
-def projFnName (T : Name) (i : Nat) : Name := (T.str "proj").num i
+def projFnName (T : Key) (i : Nat) : Key := (T.str "proj").num i
 
 /-- The reserved name of structure `T`'s projection table (task #175
 S1): one constant per structure, a `Nat` component keeping it out of
 the way of exported identifiers (the front door rejects the shape,
-`Name.isProjFnShape`), distinct from every `projFnName` name. -/
-def projTableName (T : Name) : Name := (T.str "projTable").num 0
+`Key.isProjFnShape`), distinct from every `projFnName` name. -/
+def projTableName (T : Key) : Key := (T.str "projTable").num 0
 
 namespace ConstantInfo
 
@@ -641,7 +641,7 @@ def toConstantVal : ConstantInfo → ConstantVal
   | .indInfo v _ | .ctorInfo v _ _ | .recInfo v _ _ _ => v
   | .projInfo tbl => ⟨projTableName tbl.structName, tbl.levelParams, .sort (.succ .zero)⟩
 
-def name (c : ConstantInfo) : Name := c.toConstantVal.name
+def name (c : ConstantInfo) : Key := c.toConstantVal.name
 
 /-- A projection table (task #175 W4c): a table, not a term — no
 `.const` node names it (`inferTypeCore` rejects one), so the model
@@ -663,7 +663,7 @@ A quotient record declares the one constant it carries — the other
 three constants of the pinned block are other records' — and a
 `basisDecl`, which no frontend function produces (it is the fold's own
 record for "install the pinned block"), declares the pin's. -/
-def names : Declaration → List Name
+def names : Declaration → List Key
   | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. => [cv.name]
   | .quotDecl _ cv => [cv.name]
   | .indDecl block _ => block.map (·.name)
@@ -683,13 +683,13 @@ namespace Env
 /-- The empty environment; the starting point of every checker run. -/
 def empty : Env := ⟨[]⟩
 
-def find? (env : Env) (n : Name) : Option ConstantInfo :=
+def find? (env : Env) (n : Key) : Option ConstantInfo :=
   env.consts.find? (·.name == n)
 
 /-- Look up the projection-table entry for field `i` of `T`: the
 structure's table (`projTableName T`), viewed at field `i` (task #175
 S1; `none` beyond the table's field count). -/
-def findProj? (env : Env) (T : Name) (i : Nat) : Option ProjEntry :=
+def findProj? (env : Env) (T : Key) (i : Nat) : Option ProjEntry :=
   match env.find? (projTableName T) with
   | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none
   | _ => none

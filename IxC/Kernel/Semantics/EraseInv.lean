@@ -22,7 +22,7 @@ namespace Ix.Kernel.Semantics
 /-- `erasePw` fixes a constant (task #161 P5: `matchesPin` compares
 through `Expr.erasePw`, so a pinned-shape inversion has to see through
 that erasure).  Head inversion. -/
-theorem erasePw_const_invS {e : Expr} {n : Name} {us : List Level}
+theorem erasePw_const_invS {e : Expr} {n : Key} {us : List Level}
     (h : e.erasePw = .const n us) : e = .const n us := by
   cases e <;> simp only [Expr.erasePw] at h <;> first
     | exact h

@@ -33,7 +33,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule IndCaps)
 
 universe w
@@ -47,14 +47,14 @@ parameters and the two literal guards** — `denote_env_ext`'s twin.  An
 equation, so a law's `denoteMeta` *hypotheses* and *conclusions* both move
 across it for free, which is what makes the fired-form fields
 transportable at all. -/
-theorem denoteMeta_env_ext {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_env_ext {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {env₁ env₂ : Env} {φ : LevelParam → Nat}
     (henvLev : ∀ n,
       (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))
     (hnat : Ix.Kernel.natLitSupported env₁ = Ix.Kernel.natLitSupported env₂)
     (hstr : Ix.Kernel.strLitSupported env₁ = Ix.Kernel.strLitSupported env₂)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key) (i : Nat),
       env₁.findProj? sn i = env₂.findProj? sn i) :
     ∀ (d : Nat) (e : Expr),
       denoteMeta acval env₁ φ d e = denoteMeta acval env₂ φ d e := by
@@ -128,7 +128,7 @@ theorem denoteMeta_env_ext {acval : Name → (LevelParam → Nat) → AnnotTerm}
       | strVal s => exact absurd rfl (hstr' s)
 
 /-- The reading crosses a swap congruence. -/
-theorem denoteMeta_swap {acval : Name → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_swap {acval : Key → (LevelParam → Nat) → AnnotTerm}
     {env₀ env₃ : Env} (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     (φ : LevelParam → Nat) (d : Nat) (e : Expr) :
     denoteMeta acval env₀ φ d e = denoteMeta acval env₃ φ d e :=
@@ -144,7 +144,7 @@ theorem RecRuleLaw.swapP {env₀ env₃ : Env}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     {m₀ : EnvModel V env₀} {m₃ : EnvModel V env₃}
     (hac : m₃.acval = m₀.acval)
-    {φ : LevelParam → Nat} {n : Name} {cv : ConstantVal} {mI rP : Nat}
+    {φ : LevelParam → Nat} {n : Key} {cv : ConstantVal} {mI rP : Nat}
     {rl : RecRule} (h : RecRuleLaw m₀ φ n cv mI rP rl) :
     RecRuleLaw m₃ φ n cv mI rP rl := by
   have hde : ∀ (d : Nat) (e : Expr),
@@ -206,7 +206,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
         = denoteMeta mp.base2.acval env₃ ψ d e :=
     fun ψ d e => denoteMeta_swap hcg ψ d e
   -- an unchanged lookup, either way
-  have hsame : ∀ (n : Name) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ env₀.find? n = some ci) :=
     fun n ci hnr =>
@@ -308,7 +308,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
         (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf)
   · -- `caps_ok`
     obtain ⟨he, hu⟩ := mp.caps_ok
-    have hfam : ∀ (T : Name) (caps : IndCaps),
+    have hfam : ∀ (T : Key) (caps : IndCaps),
         Ix.Kernel.EtaFamilyStored env₃ T caps →
         Ix.Kernel.EtaFamilyStored env₀ T caps := by
       intro T caps hst

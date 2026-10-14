@@ -36,10 +36,10 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecRule)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecRule)
 
 /-- No stored piece of the environment mentions the slot `(T, i)`. -/
-structure NoProjEnv (env : Env) (T : Name) (i : Nat) : Prop where
+structure NoProjEnv (env : Env) (T : Key) (i : Nat) : Prop where
   type : ∀ c ∈ env.consts, Expr.NoProjAt T i c.toConstantVal.type
   defn : ∀ (cv : ConstantVal) (v : Expr) (hint : Ix.Kernel.ReducibilityHint),
     ConstantInfo.defnInfo cv v hint ∈ env.consts → Expr.NoProjAt T i v
@@ -107,7 +107,7 @@ theorem ConsCrossEnv.type {env : Env} {c₀ : ConstantInfo}
   (h tbl heq i).type c hc
 
 theorem ConsCrossEnv.typeOf {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {n : Name} {c : ConstantInfo}
+    (h : ConsCrossEnv env c₀) {n : Key} {c : ConstantInfo}
     (hf : env.find? n = some c) : ConsCrossAt c₀ c.toConstantVal.type :=
   h.type (Ix.Kernel.Semantics.Env.find?_mem hf)
 
@@ -120,7 +120,7 @@ theorem ConsCrossEnv.defn {env : Env} {c₀ : ConstantInfo}
 
 /-- A stored table's body at a field (task #175 S1). -/
 theorem ConsCrossEnv.body {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {n : Name} {tbl : Ix.Kernel.ProjTable}
+    (h : ConsCrossEnv env c₀) {n : Key} {tbl : Ix.Kernel.ProjTable}
     (hf : env.find? n = some (.projInfo tbl)) {j : Nat} (hj : j < tbl.numFields) :
     ConsCrossAt c₀ (tbl.entry j).body := fun tbl' heq i =>
   (h tbl' heq i).table tbl (Ix.Kernel.Semantics.Env.find?_mem hf) j hj

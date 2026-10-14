@@ -294,7 +294,7 @@ theorem defeqSpine_snd (d : Nat) (a b : Expr) :
     | (dsimp only [])
     | split)
 
-theorem structEtaProjCerts_fst (d : Nat) (T : Name) (us' : List Level)
+theorem structEtaProjCerts_fst (d : Nat) (T : Key) (us' : List Level)
     (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
@@ -349,7 +349,7 @@ theorem structEtaProjCerts_fst (d : Nat) (T : Name) (us' : List Level)
       | indInfo cv caps => rfl
       | ctorInfo cv nP nF => rfl
 
-theorem structEtaProjCerts_snd (d : Nat) (T : Name) (us' : List Level)
+theorem structEtaProjCerts_snd (d : Nat) (T : Key) (us' : List Level)
     (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
@@ -544,7 +544,7 @@ theorem etaCert_snd_proj (d : Nat) (ty body : Expr) (mb : BinderMeta) (b : Expr)
   unfold etaCert
   snd_tac
 
-theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Name) (us : List Level)
+theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) :
     (projCert (pairFns r₁ r₂ h) env d lic c us args).val.1 =
       projCert r₁ env d lic c us args := by
@@ -553,7 +553,7 @@ theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Name) (us : List Level)
   · exact iotaCerts_fst d lic _ _
   · rfl
 
-theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Name) (us : List Level)
+theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) :
     (projCert (pairFns r₁ r₂ h) env d lic c us args).val.2 =
       projCert r₂ env d lic c us args := by
@@ -562,7 +562,7 @@ theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Name) (us : List Level)
   · exact iotaCerts_snd d lic _ _
   · rfl
 
-theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Name) (us : List Level)
+theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) :
     (projCertAt (pairFns r₁ r₂ h) env d v lic c us args).val.1 =
       projCertAt r₁ env d v lic c us args := by
@@ -571,7 +571,7 @@ theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Name) (us : List Level
   · exact projCert_fst_proj d lic c us args
   · rfl
 
-theorem projCertAt_snd_proj (d : Nat) (v lic : Bool) (c : Name) (us : List Level)
+theorem projCertAt_snd_proj (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
     (args : List Expr) :
     (projCertAt (pairFns r₁ r₂ h) env d v lic c us args).val.2 =
       projCertAt r₂ env d v lic c us args := by
@@ -653,7 +653,7 @@ theorem structEtaCert_snd_proj (d : Nat) (a b : Expr) :
 -- tower), so the outer casing is peeled by hand and the macro closes
 -- each rescue branch separately.
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_fst_proj (d : Nat) (c : Name) (rules : List RecRule) (e : Expr) :
+theorem majorToCtor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
     (majorToCtor mode (pairFns r₁ r₂ h) env d c rules e).val.1 =
       majorToCtor mode r₁ env d c rules e := by
   unfold majorToCtor
@@ -693,7 +693,7 @@ theorem majorToCtor_fst_proj (d : Nat) (c : Name) (rules : List RecRule) (e : Ex
     rfl
 
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_snd_proj (d : Nat) (c : Name) (rules : List RecRule) (e : Expr) :
+theorem majorToCtor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
     (majorToCtor mode (pairFns r₁ r₂ h) env d c rules e).val.2 =
       majorToCtor mode r₂ env d c rules e := by
   unfold majorToCtor
@@ -744,7 +744,7 @@ theorem litMajorToCtor_snd_proj (d : Nat) (e : Expr) :
   unfold litMajorToCtor
   snd_tac2
 
-theorem prepareMajor_fst_proj (d : Nat) (c : Name) (rules : List RecRule) (e : Expr) :
+theorem prepareMajor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
     (prepareMajor mode (pairFns r₁ r₂ h) env d c rules e).val.1 =
       prepareMajor mode r₁ env d c rules e := by
   unfold prepareMajor
@@ -755,7 +755,7 @@ theorem prepareMajor_fst_proj (d : Nat) (c : Name) (rules : List RecRule) (e : E
     | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])))
 
-theorem prepareMajor_snd_proj (d : Nat) (c : Name) (rules : List RecRule) (e : Expr) :
+theorem prepareMajor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
     (prepareMajor mode (pairFns r₁ r₂ h) env d c rules e).val.2 =
       prepareMajor mode r₂ env d c rules e := by
   unfold prepareMajor

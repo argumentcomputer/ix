@@ -43,7 +43,7 @@ the first `k` installed constants (`mkFEnv_find?_visibleBelow`,
 `IxC/Kernel/Verify/EnvBound.lean`). -/
 structure FEnv where
   env : Env
-  idx : Std.HashMap Name (Nat × ConstantInfo)
+  idx : Std.HashMap Key (Nat × ConstantInfo)
   /-- Entries with counter `< visibleBelow` are visible; also the next
   counter `push` hands out. -/
   visibleBelow : Nat
@@ -53,7 +53,7 @@ inserted last and wins, exactly as `List.find?` takes the first match —
 so the agreement with `Env.find?` is unconditional (no freshness
 assumption).  The `Nat` component is the running counter, so the build
 stays linear (the tail's length is returned, not recomputed). -/
-def mkFEnvGo : List ConstantInfo → Nat × Std.HashMap Name (Nat × ConstantInfo)
+def mkFEnvGo : List ConstantInfo → Nat × Std.HashMap Key (Nat × ConstantInfo)
   | [] => (0, ∅)
   | ci :: cs =>
     let p := mkFEnvGo cs
@@ -69,7 +69,7 @@ namespace FEnv
 
 /-- Indexed lookup, bounded by the visibility counter (`= Env.find?` for
 `mkFEnv`, which hides nothing). -/
-def find? (fe : FEnv) (n : Name) : Option ConstantInfo :=
+def find? (fe : FEnv) (n : Key) : Option ConstantInfo :=
   match fe.idx[n]? with
   | some (c, ci) => if c < fe.visibleBelow then some ci else none
   | none => none
@@ -89,21 +89,21 @@ def push (fe : FEnv) (ci : ConstantInfo) : FEnv :=
    fe.visibleBelow + 1⟩
 
 /-- Indexed projection-table lookup (`= Env.findProj?` for `mkFEnv`). -/
-def findProj? (fe : FEnv) (T : Name) (i : Nat) : Option ProjEntry :=
+def findProj? (fe : FEnv) (T : Key) (i : Nat) : Option ProjEntry :=
   match fe.find? (projTableName T) with
   | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none
   | _ => none
 
 /-- `towerSlotsAll` through the index. -/
-def towerSlotsAllF (fe : FEnv) (T : Name) (nF : Nat) : Bool :=
+def towerSlotsAllF (fe : FEnv) (T : Key) (nF : Nat) : Bool :=
   (List.range nF).all fun j => (fe.findProj? T j).isSome
 
 /-- `andRescueSlots` through the index. -/
-def andRescueSlotsF (fe : FEnv) (ctor : Name) (nP : Nat) (ust : List Level) : Bool :=
+def andRescueSlotsF (fe : FEnv) (ctor : Key) (nP : Nat) (ust : List Level) : Bool :=
   andRescueSlotsOf fe.findProj? ctor nP ust
 
 /-- `recSlotsAll` through the index. -/
-def recSlotsAllF (fe : FEnv) (T : Name) (nF : Nat) : Bool :=
+def recSlotsAllF (fe : FEnv) (T : Key) (nF : Nat) : Bool :=
   (List.range nF).all fun j =>
     match fe.find? (projFnName T j) with
     | some (.recInfo _ _ _ _) => true
@@ -130,7 +130,7 @@ def strLitSupportedF (fe : FEnv) : Bool :=
     charOfNatTyOk (fe.find? charOfNatName)
 
 /-- `natOpGuard` through the index. -/
-def natOpGuardF (fe : FEnv) (c : Name) : Bool :=
+def natOpGuardF (fe : FEnv) (c : Key) : Bool :=
   natLitSupportedF fe &&
   (natOpDeps c).all (fun n => match fe.find? n with
     | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
@@ -145,7 +145,7 @@ def natOpGuardF (fe : FEnv) (c : Name) : Bool :=
    else true)
 
 /-- `natOpStored` through the index (task #161 item B3). -/
-def natOpStoredF (fe : FEnv) (c : Name) : Bool :=
+def natOpStoredF (fe : FEnv) (c : Key) : Bool :=
   match fe.find? c with
   | some (.defnInfo _ _ _) => true
   | _ => false

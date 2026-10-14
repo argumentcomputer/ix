@@ -55,7 +55,7 @@ because a lemma that mentions only `Env`/`Expr` belongs below both
 lanes, which is this file's own stated threshold ("a second consumer
 and nothing lane-specific in the statement").  `natEqFrame_of_frag`
 now calls it for its first four components. -/
-theorem natFrag_subst_syntax {c : Name} {v : Expr}
+theorem natFrag_subst_syntax {c : Key} {v : Expr}
     (hvf : v.hasFvar = false) (hvb : v.looseBVarsBounded 0 = true) :
     ∀ {e : Expr}, natFragOk env c e = true →
       Expr.WScoped 2 (Expr.substConst0 c v e) ∧

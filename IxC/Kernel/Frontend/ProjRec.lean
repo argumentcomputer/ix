@@ -84,18 +84,18 @@ namespace Ix.Kernel.Frontend
 of a parsed inductive block that the direct install does not serve. -/
 structure ProjRecOwner where
   /-- the type former -/
-  T : Name
+  T : Key
   /-- the block's level parameters (the owner's, the constructor's,
   and the recursor's after its elimination level) -/
   lps : List LevelParam
   /-- parameter count -/
   nP : Nat
   /-- the single constructor -/
-  ctor : Name
+  ctor : Key
   /-- its field count -/
   nF : Nat
   /-- the owner's recursor `T.rec`: name, level parameters, type -/
-  recName : Name
+  recName : Key
   recLps : List LevelParam
   recType : Expr
   /-- the recursor's motive and minor counts (the export's own) -/
@@ -107,13 +107,13 @@ structure ProjRecOwner where
 field `i` of `T`: `T._model.proj_i.iota` (emitted by the in-process
 modeller; the naming is the one `lean-inductive-models` used before
 task #207 dropped it). -/
-def projIotaName (T : Name) (i : Nat) : Name :=
+def projIotaName (T : Key) (i : Nat) : Key :=
   ((T.str "_model").str s!"proj_{i}").str "iota"
 
 /-- Is `n` of the shape `X._model.proj_i.iota`?  Cheap pre-filter for
 the theorem records (the last component decides before anything is
 compared). -/
-def isProjIotaName : Name → Bool
+def isProjIotaName : Key → Bool
   | .str (.str (.str _ "_model") s) "iota" => s.startsWith "proj_"
   | _ => false
 
@@ -126,7 +126,7 @@ def projIotaLevel (ty : Expr) : Option Level :=
 
 /-- Does the constant `n` occur in `e`?  (Not through fvar type
 annotations — parsed declarations are fvar-free.) -/
-def occursConst (n : Name) : Expr → Bool
+def occursConst (n : Key) : Expr → Bool
   | .const m _ => m == n
   | .app f a => occursConst n f || occursConst n a
   | .lam ty b _ => occursConst n ty || occursConst n b
@@ -149,7 +149,7 @@ depends on it, so the memoised walk is simply what that caller uses;
 the pure definition above stays as its specification. -/
 
 /-- Allocation-free descent on a node budget; `none` when it runs out. -/
-def occursConstB (n : Name) : Nat → Expr → Option Bool × Nat
+def occursConstB (n : Key) : Nat → Expr → Option Bool × Nat
   | fuel, .const m _ => (some (m == n), fuel)
   | fuel, .bvar _ => (some false, fuel)
   | fuel, .fvar _ _ => (some false, fuel)
@@ -179,7 +179,7 @@ def occursConstB (n : Name) : Nat → Expr → Option Bool × Nat
 
 /-- The memoised descent: the set holds the subterms already shown NOT
 to mention `n`. -/
-def occursConstGo (n : Name) (seen : Std.HashSet Expr) : Expr →
+def occursConstGo (n : Key) (seen : Std.HashSet Expr) : Expr →
     Bool × Std.HashSet Expr
   | .const m _ => (m == n, seen)
   | .bvar _ | .fvar .. | .sort _ | .lit _ => (false, seen)
@@ -225,7 +225,7 @@ def occursConstGo (n : Name) (seen : Std.HashSet Expr) : Expr →
       | r => r
 
 /-- The executed `occursConst` (see above). -/
-def occursConstFast (n : Name) (e : Expr) : Bool :=
+def occursConstFast (n : Key) (e : Expr) : Bool :=
   match (occursConstB n 4096 e).1 with
   | some r => r
   | none => (occursConstGo n {} e).1
@@ -271,7 +271,7 @@ def buildBinders (mk : Expr → Option Expr) :
 /-- Is `T` the head of the owner's own carrier: the motive domain
 `∀ (t : T p⃗), Sort ℓ` (exactly one binder) or the major-premise
 domain. -/
-def headIs (T : Name) (e : Expr) : Bool :=
+def headIs (T : Key) (e : Expr) : Bool :=
   match e.getAppFn with
   | .const n _ => n == T
   | _ => false
@@ -342,9 +342,9 @@ carries no elimination level parameter are left out.
 isRec)`, `ctors` `(name, numFields, type)`, `recs` `(name, levelParams,
 type, numMotives, numMinors)` — the export record's own data. -/
 def projRecOwners (block : List ConstantInfo)
-    (types : List (Name × List LevelParam × Expr × Nat × Nat × List Name × Bool))
-    (ctors : List (Name × Nat × Expr))
-    (recs : List (Name × List LevelParam × Expr × Nat × Nat)) : List ProjRecOwner :=
+    (types : List (Key × List LevelParam × Expr × Nat × Nat × List Key × Bool))
+    (ctors : List (Key × Nat × Expr))
+    (recs : List (Key × List LevelParam × Expr × Nat × Nat)) : List ProjRecOwner :=
   let blockNames := types.map (·.1)
   -- a block name in a constructor's binder *domains* (its result names
   -- the owner by definition)

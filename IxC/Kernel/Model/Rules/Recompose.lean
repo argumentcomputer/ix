@@ -34,7 +34,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name)
+open Ix.Kernel (CheckMode Env Expr Key)
 open Ix.Kernel.Rules
 
 universe w

@@ -254,7 +254,7 @@ private theorem instList_letE (ty v b : Expr) (ws : List Expr)
           (b.instantiateList ws (d + 1)) := by
   rw [Expr.instantiateList]
 
-private theorem instList_proj (s : Name) (i : Nat) (e : Expr)
+private theorem instList_proj (s : Key) (i : Nat) (e : Expr)
     (ws : List Expr) (d : Nat) :
     (Expr.proj s i e).instantiateList ws d
       = .proj s i (e.instantiateList ws d) := by
@@ -967,7 +967,7 @@ private theorem wscopedB_bvar (i d : Nat) :
 private theorem wscopedB_sort (u : Level) (d : Nat) :
     (Expr.sort u).wscopedB d = true := by rw [Expr.wscopedB]
 
-private theorem wscopedB_const (n : Name) (us : List Level) (d : Nat) :
+private theorem wscopedB_const (n : Key) (us : List Level) (d : Nat) :
     (Expr.const n us).wscopedB d = true := by rw [Expr.wscopedB]
 
 private theorem wscopedB_lit (l : Literal) (d : Nat) :
@@ -996,7 +996,7 @@ private theorem wscopedB_letE (ty v b : Expr) (d : Nat) :
       = (ty.wscopedB d && v.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_proj (s : Name) (i : Nat) (e : Expr) (d : Nat) :
+private theorem wscopedB_proj (s : Key) (i : Nat) (e : Expr) (d : Nat) :
     (Expr.proj s i e).wscopedB d = e.wscopedB d := by rw [Expr.wscopedB]
 
 /-- The clone's `fvarB == 0` shortcut: a node whose cached fvar range is

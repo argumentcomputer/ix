@@ -42,7 +42,7 @@ theorem BasisBlocks.cons {env : Env} {c₀ : ConstantInfo}
     (hb : BasisBlocks env) (hfind' : env.find? c₀.name = none)
     (hsib : SibFinds env c₀) :
     BasisBlocks (⟨c₀ :: env.consts⟩ : Env) := by
-  have keep : ∀ {s : Name} {X : ConstantInfo}, env.find? s = some X →
+  have keep : ∀ {s : Key} {X : ConstantInfo}, env.find? s = some X →
       Env.find? ⟨c₀ :: env.consts⟩ s = some X := by
     intro s X hs
     rw [Env.find?_cons_of_isSome hfind' (by rw [hs]; rfl)]
@@ -94,7 +94,7 @@ theorem RecCtorsStored.cons {env : Env} {c₀ : ConstantInfo}
         (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true → recRuleEtaOf env.find? c₀.name r.ctor = true)) :
     RecCtorsStored (⟨c₀ :: env.consts⟩ : Env) := by
-  have hkeep : ∀ (m : Name) (ci : ConstantInfo),
+  have hkeep : ∀ (m : Key) (ci : ConstantInfo),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? m = some ci → (⟨c₀ :: env.consts⟩ : Env).find? m = some ci := by
     intro m ci _ hf
