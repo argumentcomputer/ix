@@ -46,8 +46,9 @@ def topLevel : List (String × Part) := [
   ("Checker", .checker), ("CheckerBase", .checker), ("CheckerSplit", .checker),
   ("Core", .checker), ("CoreDefs", .checker), ("CoreIO", .checker), ("DeclCheck", .checker),
   ("Env", .checker), ("Exclusive", .checker), ("Expr", .checker), ("ExprOps", .checker),
-  ("FEnv", .checker), ("Inductives", .checker), ("Level", .checker), ("LevelGeran", .checker),
-  ("Name", .checker), ("NatOpPinSet", .checker), ("PropRead", .checker), ("PropWhen", .checker),
+  ("FEnv", .checker), ("Inductives", .checker), ("Key", .checker), ("Level", .checker),
+  ("LevelGeran", .checker), ("Name", .checker), ("NatOpPinSet", .checker),
+  ("PropRead", .checker), ("PropWhen", .checker),
   ("StdAxioms", .checker), ("TrustAxioms", .checker), ("TrustPins", .checker),
   ("TypeChecker", .checker),
   -- the checker: con-leche's cached checker and frontend
