@@ -10,7 +10,9 @@ script). Upstream's is a Python program in a shell wrapper.
 
 It scans the checker and the theory under `IxC/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
-file under `IxC/Kernel/`) for compiler escapes. Ix's boundary (`Ixon`,
+file under `IxC/Kernel/`) for compiler escapes, and the root library's files
+that substitute code in the certified entries' execution (`rootSources`).
+Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
 in `IxC/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
 are recorded once more in the Lean runtime audit
@@ -64,6 +66,19 @@ list fails just as loudly as one in a bare file.
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
 
+  Ix/Address/Admission.lean     implemented_by
+      The admission hash: `Address.admissionHash` is defined as pure
+      BLAKE3 (`Address.blake3Pure`), which every theorem about the
+      authenticated entries (`Ixon.Authenticated`) is stated at, and
+      `@[implemented_by]` the Rust BLAKE3 `Address.blake3`. Unlike the
+      entries above, no obligation proves the substitution: the owner
+      approved it (2026-10-13) on the explicit assumption that the two
+      agree on every input, which `Tests.Ix.Kernel.AddressPure` checks on
+      fixture inputs. It is the one such assumption; the runtime audit
+      admits it by name only for the authenticated entries
+      (`Ix.Kernel.Audit.assumedSubstitutions`). The file's docstring is
+      the justification.
+
 Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
 `opaque`, `noncomputable`. The Lean runtime audit polices the compiled
 form of the first two (`partial` only in `IxC/Kernel/Frontend/InModel*`,
@@ -104,7 +119,12 @@ def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
   ("IxC/Kernel/Name.lean", ["computed_field"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"])]
+  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("Ix/Address/Admission.lean", ["implemented_by"])]
+
+/-- Root-library files in the certified entries' execution that substitute
+code: the admission hash, which the authenticated entries run. -/
+def rootSources : Array String := #["Ix/Address/Admission.lean"]
 
 def allowed (file tok : String) : Bool :=
   ((allow.lookup file).getD []).contains tok
@@ -462,8 +482,13 @@ def selftest : IO UInt32 := do
 def run (args : List String) : IO UInt32 := do
   if args.contains "--selftest" then return ← selftest
   if (← selftest) != 0 then return 1
-  let (sources, unclassified) ← covered
+  let (kernelSources, unclassified) ← covered
   if ← reportUnclassified "TRUST-SURFACE" unclassified then return 1
+  for rel in rootSources do
+    unless ← System.FilePath.pathExists rel do
+      IO.println s!"TRUST-SURFACE FAIL - a root source is missing: {rel}"
+      return 1
+  let sources := kernelSources ++ rootSources
   let mut occurrences : Array (String × Nat × String × String) := #[]
   for rel in sources do
     match ← scanFile rel with
