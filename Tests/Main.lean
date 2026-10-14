@@ -37,6 +37,7 @@ import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.Cert.Statement
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -125,6 +126,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   ("kernel-source-ingress", Tests.Ix.Kernel.SourceIngress.suite),
+  -- the certification statements on the same fixtures: compile parity, and
+  -- the per-root hypotheses and conclusion
+  ("cert-statement", Tests.Ix.Cert.Statement.suite),
   -- the environment check's persistent read cache: a run from the mapped plan gives the live rows
   ("kernel-read-cache", Tests.Ix.Kernel.ReadCache.suite),
   ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
@@ -181,6 +185,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
   -- aux addresses do not depend on the compile set (closure vs whole env)
   ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
+  -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
+  ("cert-compile-parity-init", Tests.Ix.Cert.Statement.initSuite),
 ]
 
 /-- Primary test runners — quick suites run by default alongside
