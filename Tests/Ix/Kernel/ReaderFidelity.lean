@@ -43,8 +43,10 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
   above).
 * **Expressions.** `mdata` is erased (Ixon keeps it as metadata), binder
   names and infos are dropped, every binder's `pw` is `.never` (the reader's
-  placeholder; the checker's annotation computes it), `let`'s `nonDep` flag is
-  dropped, literals stay literals, a projection names its structure.
+  placeholder; the checker's annotation computes it) and its contracts are
+  the Lean fragment's (the compiled sources are plain Lean, without contract
+  frames, and the reader keeps Ixon's binder contracts), `let`'s `nonDep`
+  flag is dropped, literals stay literals, a projection names its structure.
 * **Constants.** Axioms, definitions (with Lean's own hint), theorems,
   opaques and quotient constants become the reader's declarations of the
   same kind; an inductive block becomes its members, constructors

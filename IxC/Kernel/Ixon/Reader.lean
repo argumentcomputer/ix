@@ -63,8 +63,8 @@ Three kinds of names are not of this form:
   (`IxC/Kernel/Ixon/PinData.lean`); the reader never reads Ixon metadata.
   `pinMap` refuses a table that is not a partial injection or that uses the
   reserved root or a derived shape. The checker itself compares every pinned
-  name's declaration with its pinned shape (basis blocks up to `canon`, with
-  a reserved-name reject otherwise; literal support and Nat operations by
+  name's declaration with its pinned shape, binder contracts included (basis
+  blocks up to `canon`, with a reserved-name reject otherwise; literal support and Nat operations by
   exact type shapes and certified recurrences; the standard and trust axioms
   by `matchesPin`), so a table entry on a constant of another shape is
   rejected or declined, never accepted under the pinned name.
@@ -104,7 +104,11 @@ Three kinds of names are not of this form:
 * `defn`/`axio`/`quot` singletons become one declaration each; projection
   records emit nothing (they are only checked to resolve).
 * Every binder carries `pw := .never` (the checker's annotation pass computes
-  the datum); Ixon binder contracts are erased, as by Ix's own reader.
+  the datum) and keeps its Ixon contracts in `BinderMeta`: a `lam`'s
+  binder contract as `contract` (its `result` is `shared`), an `all`'s input
+  contract as `contract` and its result contract as `result`. A `letE`'s
+  contract (`Ixon.LetContract`) is erased: the checker's `letE` has no field
+  for it yet (it is to arrive with a `LetMeta` field).
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
@@ -650,8 +654,11 @@ def convExpr (e : ECx) (tbl : Array (ReadM CExpr)) : Ixon.Expr → ReadM CExpr
     pure (.lit (.strVal s))
   | .nat i => do pure (.lit (.natVal (natural (← e.blobAt i))))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
-  | .lam _ t b => do pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never })
-  | .all _ _ t b => do pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never })
+  | .lam c t b => do
+    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never, contract := c })
+  | .all c r t b => do
+    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b)
+      { pw := .never, contract := c, result := r })
   | .letE _ t v b => do
     pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b))
   | .share i =>

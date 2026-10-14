@@ -102,8 +102,8 @@ def decodeFailureOf (records : Records) (position : Nat) (bounds : Limits := lim
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)]
 -- The entry admits a sharing table that is not the canonical one (a slot
 -- referenced once): Ixon v4 does not check the table's canonicity on read.
--- Binder contracts are erased.
 #guard accepts [(address 1, singleUseSharing)]
+-- Typing is contract-blind: a `linear` λ checks against a `many` type.
 #guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
     .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
 
