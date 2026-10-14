@@ -386,6 +386,14 @@ lean_exe «kernel-reader-fidelity» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- The Source-mode check (`Ix.LeanIngress`) on Lean environments loaded from
+this toolchain's `.olean` files, group by group: the `lake test` fixture
+(`--fixture`) or the given modules (`kernel-source-ingress Init Std`). -/
+lean_exe «kernel-source-ingress» where
+  root := `Tests.Ix.Kernel.SourceIngressMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- The certified checker's benchmark drivers and reporting helpers. -/
 lean_lib KernelEntry where
   roots := #[`Benchmarks.Kernel.CheckIxeStep,
