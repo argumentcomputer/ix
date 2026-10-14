@@ -766,11 +766,11 @@ impl VerifierProfile {
     decode_pairing_keys(&decode(&self.pairings)?)
   }
 
-  /// The public setup the profile's verifier parameters declare.
-  pub(crate) fn public_setup(
+  /// The verifier parameters the profile carries.
+  pub(crate) fn verifier_params(
     &self,
-  ) -> storage::Result<crate::kzg::PublicSetup> {
-    Ok(crate::kzg::VerifierParams::from_bytes(&self.parameters)?.public_setup())
+  ) -> storage::Result<crate::kzg::VerifierParams> {
+    Ok(crate::kzg::VerifierParams::from_bytes(&self.parameters)?)
   }
 
   fn transcript_kind(&self) -> storage::Result<TranscriptKind> {
