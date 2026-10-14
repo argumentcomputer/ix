@@ -79,31 +79,18 @@ theorem checkNativeRules_inv {envR : Env} {rlps : List LevelParam} {T : Key}
       exact ⟨rhs', hget', hgen', hlp, hres, hbv, hfv⟩
 
 /-- **The recursor record's pins** (task #220): a successful recursor
-stage says the block's recursor record is NAMED the one official
-generates (`T.rec`) and carries its level parameters — the block's own,
-with the fresh elimination parameter in front at the large eliminator.
-Before task #220 both were recogniser conjuncts, so a block whose
-recursor record was a stub fell through to a DECLINE; they are now
-install checks whose failure REJECTS (official's replay finds no such
-generated recursor, or one that differs from it), and this is where the
-P tier reads them off. -/
+stage says the block's recursor record carries the generated level
+parameters — the block's own, with the fresh elimination parameter in
+front at the large eliminator. They are install checks whose failure
+REJECTS (official's replay finds a generated recursor that differs from
+the record), and this is where the P tier reads them off. -/
 theorem checkNativeRec_pins {env : Env} {p : NativeParts}
     {cvTa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
     {r : ConstantVal × List Expr} {F : Nat}
     (h : checkNativeRec (fueledOps mode F) env p cvTa ctorsA = .ok r) :
-    p.cvR.name = p.cvT.name.str "rec" ∧
     (p.large = true → p.elim ∈ p.cvR.levelParams) ∧
     (∀ q ∈ p.cvT.levelParams, q ∈ p.cvR.levelParams) := by
   unfold checkNativeRec at h
-  by_cases hn : (p.cvR.name == p.cvT.name.str "rec") = true
-  case neg =>
-    exfalso
-    rw [if_neg hn] at h
-    first
-      | exact fixThrow_ne_ok h
-      | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
-  rw [if_pos hn] at h
-  try simp only [bind, Except.bind] at h
   by_cases hlp : nativeRecLpsOk p.toInductiveShape = true
   case neg =>
     exfalso
@@ -112,7 +99,7 @@ theorem checkNativeRec_pins {env : Env} {p : NativeParts}
       | exact fixThrow_ne_ok h
       | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
   unfold nativeRecLpsOk at hlp
-  refine ⟨beq_iff_eq.mp hn, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro hL
     rw [if_pos hL] at hlp
     simp only [beq_iff_eq] at hlp
@@ -151,16 +138,7 @@ theorem checkNativeRec_shape {env : Env} {p : NativeParts}
         (nativeCtors4 ctorsA p.kinds).length 0 = .ok rhss ∧
       cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := by
   unfold checkNativeRec at h
-  -- the recursor pin (task #220): the name and the record's structure
-  by_cases hn : (p.cvR.name == p.cvT.name.str "rec") = true
-  case neg =>
-    exfalso
-    rw [if_neg hn] at h
-    first
-      | exact fixThrow_ne_ok h
-      | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
-  rw [if_pos hn] at h
-  try simp only [bind, Except.bind] at h
+  -- the recursor pin (task #220): the record's structure
   by_cases hlp : nativeRecLpsOk p.toInductiveShape = true
   case neg =>
     exfalso

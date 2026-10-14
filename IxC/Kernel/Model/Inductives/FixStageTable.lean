@@ -163,7 +163,6 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     (hTshape : p.cvT.name.isProjFnShape = false)
     (hCshape : cvCa.name.isProjFnShape = false)
     (hresT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false)
-    (hresR : Ix.Kernel.reservedBasisNames.contains (p.cvT.name.str "rec") = false)
     (hresC : Ix.Kernel.reservedBasisNames.contains cvCa.name = false)
     (hnp : ∀ j, NoProjEnv env p.cvT.name j)
     {pps ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
@@ -344,7 +343,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     fun j hj => ⟨tbl.entry j, Ix.Kernel.Env.findProj?_of_table hfTbl₂ hj⟩
   -- the head data at every field
   have hhead : ∀ i, i < nF → Ix.Kernel.TowerHead ⟨.projInfo tbl :: env.consts⟩ (tbl.entry i) :=
-    fun i hi => ⟨hresT, hresR, hresC, hi, ⟨cvTa, caps, hfT₂, hlpsT⟩,
+    fun i hi => ⟨hresT, hresC, hi, ⟨cvTa, caps, hfT₂, hlpsT⟩,
       ⟨cvCa, hfC₂, hlpsC, hstripC⟩⟩
   suffices hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
@@ -532,11 +531,9 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hac₃ : mp₃.base2.acval = acvalWith mpC.base2.acval cvRa.name
       (fixLeafAV mpC.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV))
     (hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true))
-    (hRname : p.cvR.name = p.cvT.name.str "rec")
     (hCres : ∀ c ∈ p.ctors, c.1.levelParams = p.cvT.levelParams ∧
       Ix.Kernel.reservedBasisNames.contains c.1.name = false)
     (hresT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false)
-    (hresR₀ : Ix.Kernel.reservedBasisNames.contains p.cvR.name = false)
     (hTshape : p.cvT.name.isProjFnShape = false)
     (hwfEnv : Ix.Kernel.EnvWF env)
     (hlenA : ctorsA.length = p.ctors.length)
@@ -626,8 +623,6 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
       have hnFc' : cA.2 = c.2 := hnFc 0 cA c rfl hc
       have hresC : Ix.Kernel.reservedBasisNames.contains cA.1.name = false := by
         rw [hCname]; exact (hCres c (by rw [hc']; exact List.mem_singleton_self _)).2
-      have hresR : Ix.Kernel.reservedBasisNames.contains (p.cvT.name.str "rec") = false := by
-        rw [← hRname]; exact hresR₀
       -- the capability record at a structure-like block
       have hcapsR := Ix.Kernel.nativeCaps_single (p := p) hc'
       have hcaps : (Ix.Kernel.nativeCaps p).eta = true →
@@ -816,7 +811,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
       obtain ⟨sorts'', hsj', -, hleq, hsortsAll⟩ := hsortsOf 0 cA rfl
       obtain rfl : sorts = sorts'' := Option.some.inj hsj'
       refine stageFixTable mp₃ hTbl hfT₃ hcaps hlpsT hfC₃ hlpsC hstripC
-        hProp hTshape hCshape hresT hresR hresC hnp₃ hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
+        hProp hTshape hCshape hresT hresC hnp₃ hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
         hleafT₃ hleafC₃ hfoldAt ?_ ?_ ?_ ?_
       · intro ψ ρ
         have := hframes₀.1 ψ ρ

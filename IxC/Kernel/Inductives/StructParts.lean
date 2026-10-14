@@ -290,7 +290,7 @@ def structPartsCore? (block : List ConstantInfo) : Option StructParts :=
     let C := cvC.name
     let lps := cvT.levelParams
     -- the shape facts common to both eliminator shapes
-    if cvR.name == T.str "rec" && cvC.levelParams == lps &&
+    if cvC.levelParams == lps &&
         reservedBasisNames.contains T == false &&
         reservedBasisNames.contains C == false &&
         reservedBasisNames.contains cvR.name == false &&

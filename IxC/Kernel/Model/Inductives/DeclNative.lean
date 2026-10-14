@@ -67,7 +67,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   obtain ⟨hnd₀, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     hInd, rfl, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, -, hRec, hTbl⟩ := h
   obtain ⟨hshape, -⟩ := Ix.Kernel.nativeParts?_inv hdp
-  obtain ⟨-, hClps₀, hresT₀, hresR₀⟩ := Ix.Kernel.nativeShape?_inv hshape
+  obtain ⟨-, hClps₀, hresT₀, -⟩ := Ix.Kernel.nativeShape?_inv hshape
   -- the former: its run completed the record with the sort it read
   -- (task #195; task #210 Part B: on this route too) — every later
   -- stage runs on the completed record `p`, and the recogniser's
@@ -109,15 +109,12 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hlenK : p.kinds.length = p.ctors.length := by rw [hpK, hpC]; exact hlenK₀
   have hClps : ∀ c ∈ p.ctors, c.1.levelParams = p.cvT.levelParams ∧
       Ix.Kernel.reservedBasisNames.contains c.1.name = false := by rw [hpC, hpT]; exact hClps₀
-  -- the recursor's NAME and its LEVEL PARAMETERS are the RECURSOR
-  -- STAGE's pins since task #220 (the recogniser no longer refuses a
-  -- block over its recursor record; the stage REJECTS it, as
-  -- official's replay does)
-  obtain ⟨hRname, helimR, hRlps⟩ := Ix.Kernel.checkNativeRec_pins hRec
+  -- the recursor's LEVEL PARAMETERS are the RECURSOR STAGE's pins
+  -- since task #220 (the recogniser no longer refuses a block over its
+  -- recursor record; the stage REJECTS it, as official's replay does)
+  obtain ⟨helimR, hRlps⟩ := Ix.Kernel.checkNativeRec_pins hRec
   have hresT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false := by
     rw [hpT]; exact hresT₀
-  have hresR : Ix.Kernel.reservedBasisNames.contains p.cvR.name = false := by
-    rw [hpR]; exact hresR₀
   have hTname₀ : cvT.name = p.cvT.name := by rw [hpT]; exact hTname₀₀
   have hTlps₀ : cvT.levelParams = p.cvT.levelParams := by rw [hpT]; exact hTlps₀₀
   have hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort) := by
@@ -1054,7 +1051,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     (fun j cA hj => (hframes j cA hj).1) hframesR
     (fun hl => (hwl hl).imp_right fun h => by rw [hlenA]; exact h)
   -- the projection table at a structure-like block (task #210 Parts A, B)
-  exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hRname hClps hresT hresR
+  exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
     (by rw [← hTname₀]; exact hpshapeT)
     mp.base2.wf hlenA hnFc hrunOf hfT_C hlpsT hTfresh'
     (by rw [hTtype]; exact htrT) hFD_C hcf_C hleafT_C' hleafC_C hframes hsortsOf

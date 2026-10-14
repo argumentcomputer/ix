@@ -38,8 +38,8 @@ large eliminator, task #202 Stage A2), the constructors' distinct
 names.
 
 **The recursor pin is the LAST of the block's checks** (task #220):
-everything the stream's recursor RECORD claims — its name, its level
-parameters, its argument sums, its rules — is compared at
+everything the stream's recursor RECORD claims — its level parameters,
+its argument sums, its rules — is compared at
 `checkNativeRec`/`nativeRulesOk`, where a mismatch is `.invalid`,
 and none of it is a condition of recognition.  Official never reads the
 exported recursor as an input either: `add_inductive` generates one and
@@ -472,11 +472,10 @@ def checkNativeRec (ops : CheckerOps m) (env : Env) (p : NativeParts)
   -- THE RECURSOR PIN (task #220), split off the type-and-constructor
   -- gate above and thrown here: official generates the recursor and its
   -- replay compares the exported record with the generated one
-  -- structurally, so a record naming something other than the generated
-  -- `T.rec` ("No such recursor") or contradicting it in its argument
-  -- sums or its rules ("Invalid recursor") is INVALID INPUT
-  unless p.cvR.name == p.cvT.name.str "rec" do
-    throw (.invalid "direct rec: the block's recursor is not the generated T.rec")
+  -- structurally, so a record contradicting it in its level parameters,
+  -- its argument sums or its rules ("Invalid recursor") is INVALID INPUT.
+  -- The recursor is the block's by position (`nativeShape?`), under its
+  -- own key
   unless nativeRecLpsOk p.toInductiveShape do
     throw (.invalid "direct rec: the recursor's level parameters are not the generated ones")
   unless p.recPinned do

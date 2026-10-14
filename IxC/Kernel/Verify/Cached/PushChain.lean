@@ -446,9 +446,6 @@ theorem checkNativeRecF_fresh (ops : CheckerOps CheckCM) {w : StructWalkers}
   refine Yields.letFun ?_
   refine Yields.ofDecCases (fun _ => Yields.ofThrowBind) (fun _ => ?_)
   try simp only []
-  refine Yields.letFun ?_
-  refine Yields.ofDecCases (fun _ => Yields.ofThrowBind) (fun _ => ?_)
-  try simp only []
   refine Yields.bind' (checkConstantValF_fresh ops fe p.cvR) fun cvRi hcv => ?_
   yields
   all_goals (apply Yields.pure; exact ⟨rfl, hcv.2⟩)

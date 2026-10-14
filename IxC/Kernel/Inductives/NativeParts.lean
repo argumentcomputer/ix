@@ -491,8 +491,8 @@ telescope and against every constructor), the indices off the type
 former's own telescope — and pins nothing of the recursor record
 beyond the level-parameter shape that decides which recursor is
 generated.  Everything the recursor record claims is compared at the
-install (`nativeRecPinOk` here, the name and the type and the rule
-bodies at `checkNativeRec`/`nativeRulesOk`), where a mismatch
+install (`nativeRecPinOk` here, the type and the rule bodies at
+`checkNativeRec`/`nativeRulesOk`), where a mismatch
 REJECTS.  Before task #220 those pins sat in the recogniser, so a block
 whose recursor record was a stub fell through to a DECLINE and the
 semantic checks that would have rejected it — positivity, the field

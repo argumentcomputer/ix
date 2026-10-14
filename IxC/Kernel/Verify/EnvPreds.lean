@@ -259,16 +259,15 @@ theorem recRuleBits_head {find? : Key → Option ConstantInfo}
 /-- **A table entry's syntactic head data** (task #175 wiring
 W5): the facts the direct install establishes syntactically for every
 entry of the table it stores, and which the readings' consumers need
-with no environment record beyond `ProjOkT` — the former, its
-recursor and the constructor are unreserved names (the recogniser's
-own guards, so a tower entry never sits at a pinned basis family);
+with no environment record beyond `ProjOkT` — the former and the
+constructor are unreserved names (the recogniser's own guards, so a
+tower entry never sits at a pinned basis family);
 the index is in range; the former is stored as an inductive and the
 constructor as a constructor at the entry's own arities and level
 parameters.  (Task #175 S1: the entry carries a *body*, not a type;
 the bodies' scoping is `EnvWF`'s table clause.) -/
 @[expose] def TowerHead (env : Env) (entry : ProjEntry) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
-  reservedBasisNames.contains (entry.structName.str "rec") = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
   entry.idx < entry.numFields ∧
   (∃ (cvT : ConstantVal) (caps : IndCaps),
@@ -285,8 +284,8 @@ theorem TowerHead.mono {env env' : Env} {entry : ProjEntry}
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
-  obtain ⟨h2, h3, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
-  exact ⟨h2, h3, h4, h5,
+  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
+  exact ⟨h2, h4, h5,
     ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hT, hlT⟩,
     ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hC, hlC, hstrip⟩⟩
 

@@ -50,8 +50,8 @@ the official `inductive.cpp`):
 * no recursive occurrence: every constructor binder domain resolves
   in the pre-block environment (`sumNonRec`), which subsumes
   positivity for this class and is what the model construction needs;
-* the recursor is `T.rec` with `numIndices` indices, one motive, one
-  minor per constructor (`rulePrefix = numParams + 1 + n`, `majorIdx =
+* the recursor, the block's last member, has `numIndices` indices, one
+  motive, one minor per constructor (`rulePrefix = numParams + 1 + n`, `majorIdx =
   rulePrefix + numIndices`), one rule per constructor in constructor
   order whose right-hand side is
   `λ p⃗ motive minor⃗ f⃗_j, minor_j f⃗_j` (`mkRecRules`); the large

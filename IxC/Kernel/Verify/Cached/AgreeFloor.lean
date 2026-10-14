@@ -988,9 +988,6 @@ theorem checkNativeRecF_yields (ops : CheckerOps CheckCM) {w : StructWalkers} (f
   refine Yields.letFun ?_
   refine Yields.ofDecCases (fun _ => Yields.ofThrowBind) (fun _ => ?_)
   try simp only []
-  refine Yields.letFun ?_
-  refine Yields.ofDecCases (fun _ => Yields.ofThrowBind) (fun _ => ?_)
-  try simp only []
   refine Yields.bind fun cvRi => ?_
   refine Yields.bind fun recTy => ?_
   try ylet

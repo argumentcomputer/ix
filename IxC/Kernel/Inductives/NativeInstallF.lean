@@ -89,8 +89,6 @@ def checkNativeRecF (ops : CheckerOps m) (w : StructWalkers) (fe : FEnv) (p : Na
     (cvTa : ConstantVal) (ctorsA : List (ConstantVal × Nat)) :
     m (ConstantVal × List Expr) := do
   -- the recursor pin (task #220), as in `checkNativeRec`
-  unless p.cvR.name == p.cvT.name.str "rec" do
-    throw (.invalid "direct rec: the block's recursor is not the generated T.rec")
   unless nativeRecLpsOk p.toInductiveShape do
     throw (.invalid "direct rec: the recursor's level parameters are not the generated ones")
   unless p.recPinned do

@@ -430,10 +430,7 @@ theorem checkNativeRecS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
       (checkNativeRec (fueledOpsM mode) env p cvTa ctorsA) := by
   unfold checkNativeRec
   dsimp only [sharedOpsC]
-  -- the recursor pin (task #220): both sides throw at the same guard
-  by_cases hn : (p.cvR.name == p.cvT.name.str "rec") = true
-  case neg => simp only [if_neg hn]; intro v' s' hr; exact nomatch hr
-  simp only [if_pos hn]
+  -- the recursor pin (task #220): both sides throw at the same guards
   by_cases hlp : nativeRecLpsOk p.toInductiveShape = true
   case neg => simp only [if_neg hlp]; intro v' s' hr; exact nomatch hr
   simp only [if_pos hlp]

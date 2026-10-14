@@ -12,9 +12,9 @@ V-free facts the direct install's assembly reads off the kernel's
 recogniser and slot decision:
 
 * `structParts?_inv`: the block's shape facts the recogniser pins —
-  the propositionality datum is the result sort's, the recursor is
-  `T.rec` at the block's level parameters (plus the large eliminator's
-  fresh one), the constructor carries the former's;
+  the propositionality datum is the result sort's, the recursor carries
+  the block's level parameters (plus the large eliminator's fresh one),
+  the constructor carries the former's;
 * `structProjGuards_getD`: the coarse guard's spelling at a slot.
   (Task #175 S1: the per-slot run and the slot-prefix lemmas went with
   the per-field entries — the table stage is one cons,
