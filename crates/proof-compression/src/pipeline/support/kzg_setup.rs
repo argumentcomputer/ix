@@ -11,8 +11,7 @@ use super::kzg_storage as storage;
 use crate::kzg::{
   KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams,
   srs::filecoin::{
-    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, FILECOIN_PUBLIC_MAX_DEGREE,
-    filecoin_setup_id, load_filecoin_cache,
+    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
   },
 };
 use std::{
@@ -26,7 +25,7 @@ pub(crate) const BINDING_FILE: &str = "kzg-setup-id.bin";
 pub(crate) const FILECOIN_CACHE_VAR: &str = "IX_KZG_FILECOIN_CACHE";
 pub(crate) const FILECOIN_MANIFEST_VAR: &str = "IX_KZG_FILECOIN_MANIFEST";
 
-/// The trust class a public setup identity declares.
+/// The trust class of verifier parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupClass {
   /// Filecoin's phase-one powers of tau. The trapdoor is unknown unless
@@ -37,9 +36,15 @@ pub enum SetupClass {
 }
 
 impl SetupClass {
-  pub fn of(setup: PublicSetup) -> Self {
-    if setup.id == filecoin_setup_id()
-      && setup.max_degree == FILECOIN_PUBLIC_MAX_DEGREE
+  /// Filecoin only when the identity, public degree and all four anchor
+  /// points equal the pinned ceremony values; an identity alone is just
+  /// bytes any profile could carry.
+  pub fn of(params: &VerifierParams) -> Self {
+    let pinned = filecoin_anchors();
+    if params.public_setup == pinned.public_setup
+      && params.g1 == [pinned.g1[0], pinned.g1[1]]
+      && params.g2 == pinned.g2
+      && params.tau_g2 == pinned.tau_g2
     {
       Self::Filecoin
     } else {
@@ -138,15 +143,12 @@ impl SetupSource {
     })
   }
 
-  /// Filecoin parameters from an authenticated prefix cache, pinned by the
-  /// manifest receipt of its import.
+  /// Filecoin parameters: pinned anchors for verification, and proving
+  /// prefixes from an authenticated cache pinned by its import receipt.
   pub(crate) fn filecoin(cache: PathBuf, manifest: [u8; 32]) -> Self {
     Self {
       policy: Policy::Filecoin { cache, manifest },
-      public_setup: PublicSetup {
-        max_degree: FILECOIN_PUBLIC_MAX_DEGREE,
-        id: filecoin_setup_id(),
-      },
+      public_setup: filecoin_anchors().public_setup,
       transcript_kind: TranscriptKind::Blake3,
     }
   }
@@ -253,6 +255,7 @@ impl SetupSource {
     self.check_height(height)?;
     let length = if verify_only { 2 } else { height };
     match &self.policy {
+      Policy::Filecoin { .. } if verify_only => Ok(filecoin_anchors()),
       Policy::Filecoin { cache, manifest } => {
         Ok(load_filecoin_cache(cache, *manifest, length)?)
       },
@@ -445,30 +448,55 @@ mod tests {
   }
 
   #[test]
-  fn setup_class_follows_the_public_identity() {
+  fn setup_class_requires_the_pinned_anchors_and_identity() {
+    let pinned = filecoin_anchors();
     assert_eq!(
-      SetupClass::of(PublicSetup::known_trapdoor(63, FIRST_SEED)),
-      SetupClass::Development
-    );
-    assert_eq!(
-      SetupClass::of(PublicSetup {
-        max_degree: FILECOIN_PUBLIC_MAX_DEGREE,
-        id: filecoin_setup_id(),
-      }),
+      SetupClass::of(&VerifierParams::from_srs(&pinned)),
       SetupClass::Filecoin
     );
+    let development = Srs::unsafe_dev_setup(8, FIRST_SEED);
     assert_eq!(
-      SetupClass::of(PublicSetup {
-        max_degree: FILECOIN_PUBLIC_MAX_DEGREE - 1,
-        id: filecoin_setup_id(),
-      }),
+      SetupClass::of(&VerifierParams::from_srs(&development)),
+      SetupClass::Development
+    );
+    // The Filecoin identity over development anchors is not Filecoin.
+    let forged = Srs {
+      g1: development.g1[..2].to_vec(),
+      g2: development.g2,
+      tau_g2: development.tau_g2,
+      public_setup: pinned.public_setup,
+    };
+    assert_eq!(
+      SetupClass::of(&VerifierParams::from_srs(&forged)),
+      SetupClass::Development
+    );
+    // The pinned anchors under another identity are not Filecoin either.
+    let relabeled = Srs {
+      g1: pinned.g1.clone(),
+      g2: pinned.g2,
+      tau_g2: pinned.tau_g2,
+      public_setup: PublicSetup {
+        max_degree: pinned.public_setup.max_degree - 1,
+        id: pinned.public_setup.id,
+      },
+    };
+    assert_eq!(
+      SetupClass::of(&VerifierParams::from_srs(&relabeled)),
       SetupClass::Development
     );
     let filecoin = SetupSource::filecoin(PathBuf::from("/missing"), [0; 32]);
     assert_eq!(filecoin.class(), SetupClass::Filecoin);
-    assert_eq!(filecoin.public_setup.max_degree, FILECOIN_PUBLIC_MAX_DEGREE);
+    assert_eq!(filecoin.public_setup, pinned.public_setup);
+    // Verification needs no cache file; proving does.
+    assert_eq!(filecoin.srs(1 << 27, true).unwrap().g1, pinned.g1);
     assert!(filecoin.srs(1 << 28, true).is_err());
-    assert!(filecoin.srs(1 << 27, true).is_err());
+    assert!(filecoin.srs(1 << 27, false).is_err());
+    assert_eq!(
+      filecoin.identity(1 << 27, 2).unwrap(),
+      SetupSource::filecoin(PathBuf::from("/other"), [1; 32])
+        .identity(1 << 27, 2)
+        .unwrap()
+    );
     assert!(parse_digest(&"0".repeat(63)).is_err());
     assert!(parse_digest(&"g".repeat(64)).is_err());
     assert_eq!(parse_digest(&"00".repeat(32)).unwrap(), [0; 32]);
@@ -509,10 +537,19 @@ mod tests {
     );
     let verifier = setup.srs(256, true)?;
     assert_eq!(verifier.max_len(), 2);
-    assert_eq!(SetupClass::of(verifier.public_setup), SetupClass::Filecoin);
+    assert_eq!(
+      SetupClass::of(&VerifierParams::from_srs(&verifier)),
+      SetupClass::Filecoin
+    );
     let prover = setup.srs(256, false)?;
     assert_eq!(prover.max_len(), 256);
     assert_eq!(prover.public_setup, verifier.public_setup);
+    assert_eq!(prover.g1[..2], verifier.g1[..]);
+    assert_eq!(prover.tau_g2, verifier.tau_g2);
+    assert_eq!(
+      SetupClass::of(&VerifierParams::with_max_trace_len(&prover, 256)),
+      SetupClass::Filecoin
+    );
     assert_eq!(
       setup.config(256, 2, false)?.transcript_seed(),
       setup.config(256, 2, true)?.transcript_seed()

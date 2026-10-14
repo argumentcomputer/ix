@@ -79,7 +79,7 @@ pub fn register(
     return Err("verifier digest mismatch; nothing registered".into());
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
-  let class = SetupClass::of(profile.public_setup()?);
+  let class = SetupClass::of(&profile.verifier_params()?);
   if class == SetupClass::Development && !allow_development {
     return Err(
       "verifier uses the known-trapdoor development setup; pass --dev-srs to \
@@ -133,7 +133,8 @@ pub fn verify(
     return Err("registered verifier digest mismatch".into());
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
-  if profile.id() != id || SetupClass::of(profile.public_setup()?) != class {
+  if profile.id() != id || SetupClass::of(&profile.verifier_params()?) != class
+  {
     return Err("registered verifier profile mismatch".into());
   }
   profile.verify(packet)?;

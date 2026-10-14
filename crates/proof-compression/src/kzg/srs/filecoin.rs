@@ -63,6 +63,40 @@ pub const FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3: [u8; 32] = [
   0x71, 0x27, 0x47, 0xa0, 0x50, 0x7d,
 ];
 
+/// `τ·G` of the ceremony, big-endian uncompressed `x || y`, as read from the
+/// authenticated source. Avail's independent extraction publishes the same
+/// x-coordinate.
+pub const FILECOIN_TAU_G1: [u8; 96] = [
+  0x0e, 0x3f, 0x32, 0x1e, 0x2b, 0xa2, 0x4e, 0x30, 0x25, 0x42, 0xa3, 0xec, 0xf8,
+  0x84, 0x7e, 0x8e, 0x82, 0x0f, 0x9c, 0xa1, 0xb3, 0xa6, 0xa6, 0x3b, 0xae, 0x25,
+  0x14, 0x0f, 0x21, 0x53, 0x44, 0x31, 0x4e, 0x1b, 0xfc, 0x9c, 0x36, 0xbf, 0x2c,
+  0x3d, 0xcb, 0xe9, 0x4d, 0xec, 0x33, 0xd7, 0x1f, 0x3c, 0x16, 0x3a, 0x59, 0xba,
+  0x33, 0xf7, 0x4f, 0xe5, 0x3c, 0xe0, 0x12, 0x18, 0x1a, 0xe8, 0xb9, 0xf2, 0x03,
+  0x83, 0xeb, 0xd2, 0x89, 0xfb, 0x12, 0x72, 0x31, 0x49, 0x2e, 0x94, 0x9d, 0x3f,
+  0xd7, 0x64, 0x0a, 0x2b, 0x49, 0xd0, 0x82, 0x24, 0xf6, 0x25, 0xec, 0x38, 0x35,
+  0xa5, 0xff, 0x8f, 0xc1, 0x0d,
+];
+/// `τ·H` of the ceremony, big-endian uncompressed `x || y` with each
+/// coordinate as `c1 || c0`, as read from the authenticated source. Avail's
+/// independent extraction publishes the same x-coordinate.
+pub const FILECOIN_TAU_G2: [u8; 192] = [
+  0x11, 0x60, 0x10, 0xf1, 0xb3, 0xd3, 0x3a, 0xa5, 0xf3, 0xf6, 0x08, 0xc3, 0x85,
+  0x40, 0x09, 0x79, 0xed, 0x36, 0xdc, 0x3f, 0xab, 0x53, 0xd3, 0x62, 0x6f, 0x51,
+  0x9c, 0x74, 0xd7, 0xe1, 0xeb, 0xef, 0x62, 0xc9, 0xad, 0x35, 0x79, 0x64, 0x04,
+  0xce, 0x2f, 0xc3, 0xeb, 0xb4, 0x21, 0x67, 0xb5, 0xa1, 0x05, 0x0a, 0xc2, 0x7c,
+  0x35, 0x27, 0x07, 0x2b, 0x81, 0xaf, 0x0f, 0xa9, 0xa6, 0x83, 0xe2, 0x26, 0xda,
+  0x79, 0x27, 0x5f, 0x29, 0x85, 0xc9, 0xe8, 0x9a, 0x0d, 0xb9, 0x69, 0xb7, 0x6e,
+  0x0b, 0x6b, 0xe9, 0x4f, 0xee, 0x87, 0x4c, 0x48, 0x58, 0x67, 0x37, 0xad, 0x55,
+  0x88, 0xcf, 0x1e, 0x10, 0x41, 0x19, 0x93, 0xb9, 0xf2, 0x9f, 0x67, 0xc4, 0x8d,
+  0x2c, 0xbc, 0xb7, 0x6a, 0x6e, 0x31, 0xc3, 0x41, 0xc9, 0xda, 0x84, 0x6f, 0x9f,
+  0xc9, 0x9c, 0xa4, 0x13, 0x0e, 0x2b, 0xea, 0x5f, 0x95, 0x80, 0x5b, 0x4b, 0x42,
+  0xa4, 0x04, 0xa9, 0x9b, 0x9e, 0x3b, 0x08, 0x35, 0xa7, 0x25, 0xbd, 0x90, 0xae,
+  0x66, 0x04, 0x4e, 0xda, 0x01, 0x71, 0x4f, 0x35, 0x7c, 0xb8, 0xc4, 0x1b, 0x01,
+  0xf8, 0x9b, 0x03, 0x98, 0x13, 0x00, 0x96, 0xfb, 0x65, 0x4a, 0x9d, 0x23, 0xb0,
+  0x35, 0x28, 0xba, 0x2d, 0x79, 0xa2, 0xe3, 0x76, 0x03, 0x8a, 0xa7, 0x0d, 0xbf,
+  0xc9, 0x79, 0xb0, 0x81, 0x49, 0x72, 0x6e, 0xb1, 0x84, 0x1d,
+];
+
 const MAGIC: &[u8] = b"multi-stark/bls12-381/filecoin-srs/v1\0";
 const G1_BYTES: usize = 96;
 const G2_BYTES: usize = 192;
@@ -76,12 +110,15 @@ struct ChallengeSpec {
   power: u32,
   digest: [u8; 64],
   block_points: usize,
+  /// Whether the tau anchors must equal the pinned ceremony values.
+  pinned_anchors: bool,
 }
 
 const FILECOIN: ChallengeSpec = ChallengeSpec {
   power: 27,
   digest: FILECOIN_CHALLENGE_19_BLAKE2B,
   block_points: BLOCK_POINTS,
+  pinned_anchors: true,
 };
 
 impl ChallengeSpec {
@@ -116,6 +153,23 @@ impl ChallengeSpec {
 /// Stable ceremony identity, independent of retained prefix or cache layout.
 pub fn filecoin_setup_id() -> [u8; 32] {
   FILECOIN.setup_id()
+}
+
+/// The verifier's view of the ceremony: `[G, τG]`, `H`, `τH` and the public
+/// setup, built from the pinned constants without any cache file. Prover
+/// prefixes loaded from a cache must agree with these anchors.
+pub fn filecoin_anchors() -> Srs {
+  let tau_g1 = decode_g1(&FILECOIN_TAU_G1, true).expect("pinned tau G1");
+  let tau_g2 = decode_g2(&FILECOIN_TAU_G2).expect("pinned tau G2");
+  Srs {
+    g1: vec![G1Affine::generator(), tau_g1],
+    g2: G2Affine::generator(),
+    tau_g2,
+    public_setup: PublicSetup {
+      max_degree: FILECOIN.max_degree(),
+      id: FILECOIN.setup_id(),
+    },
+  }
 }
 
 /// A receipt for a successfully authenticated import.
@@ -220,10 +274,10 @@ impl Anchors {
     let mut g2 = [0; 2 * G2_BYTES];
     source.seek(SeekFrom::Start(spec.g2_offset()))?;
     source.read_exact(&mut g2)?;
-    Self::decode(&g1, &g2)
+    Self::decode(&g1, &g2, spec)
   }
 
-  fn decode(g1: &[u8], g2: &[u8]) -> io::Result<Self> {
+  fn decode(g1: &[u8], g2: &[u8], spec: ChallengeSpec) -> io::Result<Self> {
     let anchors = Self {
       g1: [
         decode_g1(&g1[..G1_BYTES], true)?,
@@ -235,6 +289,14 @@ impl Anchors {
       || anchors.g2[0] != G2Affine::generator()
     {
       return Err(invalid("Filecoin generators do not match BLS12-381"));
+    }
+    if spec.pinned_anchors {
+      let pinned = filecoin_anchors();
+      if anchors.g1[1] != pinned.g1[1] || anchors.g2[1] != pinned.tau_g2 {
+        return Err(invalid(
+          "Filecoin tau anchors differ from the pinned ceremony values",
+        ));
+      }
     }
     if !Bls12_381::multi_pairing(
       [anchors.g1[1], -anchors.g1[0]],
@@ -527,7 +589,7 @@ fn load_cache(
   let g1_offset = numbers + 24;
   let g2_offset = g1_offset + 2 * G1_BYTES;
   let anchors =
-    Anchors::decode(&header[g1_offset..g2_offset], &header[g2_offset..])?;
+    Anchors::decode(&header[g1_offset..g2_offset], &header[g2_offset..], spec)?;
   let mut g1 = Vec::new();
   g1.try_reserve_exact(prefix_len).map_err(io::Error::other)?;
   if prefix_len == 2 {
@@ -594,8 +656,12 @@ mod tests {
         NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
       ));
       fs::create_dir(&directory).unwrap();
-      let mut spec =
-        ChallengeSpec { power: 3, digest: [0; 64], block_points: 4 };
+      let mut spec = ChallengeSpec {
+        power: 3,
+        digest: [0; 64],
+        block_points: 4,
+        pinned_anchors: false,
+      };
       let source = directory.join("challenge");
       let cache = directory.join("cache");
       let tau = Fr::from(7u64);
@@ -658,6 +724,24 @@ mod tests {
     std::array::from_fn(|i| {
       u8::from_str_radix(&input[2 * i..2 * i + 2], 16).unwrap()
     })
+  }
+
+  #[test]
+  fn pinned_tau_anchors_are_one_tau_progression() {
+    let anchors = filecoin_anchors();
+    assert_eq!(anchors.max_len(), 2);
+    assert!(
+      Bls12_381::multi_pairing(
+        [anchors.g1[1], -anchors.g1[0]],
+        [anchors.g2, anchors.tau_g2],
+      )
+      .is_zero()
+    );
+    assert_eq!(anchors.public_setup.id, filecoin_setup_id());
+    assert_eq!(anchors.public_setup.max_degree, FILECOIN_PUBLIC_MAX_DEGREE);
+    let mut altered = FILECOIN_TAU_G1;
+    altered[95] ^= 1;
+    assert!(decode_g1(&altered, true).is_err());
   }
 
   #[test]

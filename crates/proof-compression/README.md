@@ -42,7 +42,9 @@ ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 
 Accepted verifiers are stored under `~/.ix/verifiers/filecoin/` or
 `~/.ix/verifiers/development/` by the class of their public setup, and a
-verifier's class is checked again on every use. Unknown profiles, altered
+verifier's class is checked again on every use. A profile is Filecoin only
+when its identity, public degree and all four anchor points equal the
+ceremony values pinned in `kzg::srs::filecoin`; verification needs no cache. Unknown profiles, altered
 keys and conflicting registrations are rejected.
 Verification checks the proof, public setup binding and external opening
 pairing equation using the portable verifier; it does not load the proving SRS.
