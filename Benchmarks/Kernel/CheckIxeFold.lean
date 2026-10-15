@@ -32,8 +32,8 @@ main thread, `FOLD_PERSIST=0` skips the mark, `FOLD_SHARE=1` runs
 `ShareCommon.shareCommon'` over all prepared declarations before phase A
 (environment-wide sharing of every subterm, name and level), and
 `FOLD_READSTATS=1` only reports the reader's per-reference work (node and
-reference counts, the time of `resolve`, `Ctx.nameOf` and `keyName` over
-every reference-table entry). -/
+reference counts, the time of `resolve`, of `Ctx.keyAt`, of building an input
+key with its hash, and of key equality over every reference-table entry). -/
 
 namespace Benchmarks.Kernel.CheckIxeFold
 
@@ -125,11 +125,14 @@ where
     | .letE _ t v b => go (go (go (acc.1 + 1, acc.2) t) v) b
     | _ => (acc.1 + 1, acc.2)
 
-/-- What the reader's per-reference work costs. The reader resolves and names
-a reference at every `ref`/`prj` node it converts; this reports the node and
-reference counts of the kept records, and the time of `resolve`, of
-`Ctx.nameOf` (a lookup in `Ctx.keys`) and of `keyName` (the spelling that
-lookup saves at every occurrence) over every reference-table entry once. -/
+/-- What the reader's per-reference work costs. The reader keys a reference at
+every `ref`/`prj` node it converts; this reports the node and reference
+counts of the kept records, and over every reference-table entry once: the
+time of `resolve`, of `Ctx.keyAt` (a lookup in `Ctx.keys`), of building the
+input key `.id a` with its hash (what that lookup saves at every occurrence),
+and of key equality: between equal keys that are distinct objects (the hash
+guard passes and the addresses are compared) and between neighbouring keys
+(mostly unequal: the hash guard decides). -/
 def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit := do
   let mut nodes := 0
   let mut refNodes := 0
@@ -141,18 +144,33 @@ def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit
     tableRefs := tableRefs + c.refs.size
   IO.eprintln s!"stats: {records.size} records, {nodes} expression nodes as read, {refNodes} ref/prj \
     nodes, {tableRefs} reference-table entries"
+  let addresses := records.foldl (fun acc (_, c) => acc ++ c.refs) (#[] : Array Address)
   let t0 ← IO.monoNanosNow
-  let resolved ← IO.lazyPure fun _ => records.foldl (fun acc (_, c) =>
-    c.refs.foldl (fun acc a => match resolve s.cx.store a with
-      | some r => acc.push r
-      | none => acc) acc) (#[] : Array (ConstRef Address))
+  let resolved ← IO.lazyPure fun _ => addresses.foldl (fun n a => match resolve s.cx.store a with
+      | some _ => n + 1
+      | none => n) 0
   let t1 ← IO.monoNanosNow
-  let names ← IO.lazyPure fun _ => resolved.foldl (fun n r => n + (s.cx.nameOf r).hashData.toNat % 2) 0
+  let keys ← IO.lazyPure fun _ => addresses.filterMap fun a => (s.cx.keyAt a).toOption
   let t2 ← IO.monoNanosNow
-  let keys ← IO.lazyPure fun _ => resolved.foldl (fun n r => n + (keyName (md := .anon) r).hashData.toNat % 2) 0
+  let fresh ← IO.lazyPure fun _ => addresses.map fun a => Ix.Kernel.Key.id (md := .anon) a
+  let freshOdd := fresh.foldl (fun n k => n + k.hashData.toNat % 2) 0
+  let tFresh ← IO.monoNanosNow
+  -- each input key beside a new key object of the same address
+  let pairs ← IO.lazyPure fun _ => addresses.filterMap fun a => match s.cx.keyAt a with
+    | .ok k@(.id _) => some (k, Ix.Kernel.Key.id (md := .anon) a)
+    | _ => none
   let t3 ← IO.monoNanosNow
-  IO.eprintln s!"stats: resolve over {resolved.size} table entries {(t1 - t0) / 1000000} ms; \
-    nameOf {(t2 - t1) / 1000000} ms; keyName {(t3 - t2) / 1000000} ms ({names + keys} odd)"
+  let same ← IO.lazyPure fun _ =>
+    pairs.foldl (fun n (k, k') => if k == k' then n + 1 else n) 0
+  let t4 ← IO.monoNanosNow
+  let neighbours ← IO.lazyPure fun _ =>
+    (keys.zip (keys.extract 1 keys.size)).foldl (fun n (k, k') => if k == k' then n + 1 else n) 0
+  let t5 ← IO.monoNanosNow
+  IO.eprintln s!"stats: over {addresses.size} table entries ({resolved} resolve, {keys.size} keyed): \
+    resolve {(t1 - t0) / 1000000} ms; keyAt {(t2 - t1) / 1000000} ms; Key.id with its hash \
+    {(tFresh - t2) / 1000000} ms ({freshOdd} odd); {pairs.size} input keys against an equal new \
+    key {(t4 - t3) / 1000000} ms ({same} equal); neighbouring keys {(t5 - t4) / 1000000} ms \
+    ({neighbours} equal)"
 
 def run (args : List String) : IO UInt32 := do
   let [input, output] := args
@@ -178,7 +196,7 @@ def run (args : List String) : IO UInt32 := do
   let blobs := env.blobs.toList
   let r0 ← IO.monoNanosNow
   let decls ← IO.lazyPure fun _ =>
-    Ix.Kernel.Admission.readStream table pre records.toList blobs hints.lookup
+    Ix.Kernel.Admission.readStream Address.blake3 table pre records.toList blobs hints.lookup
   let (ev, decls) ← match decls with
     | .ok r => pure r
     | .error e => IO.eprintln s!"fold: read failed: {e}"; return 1

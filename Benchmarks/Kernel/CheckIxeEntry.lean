@@ -43,7 +43,7 @@ def unauthenticated (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.I
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
   (Ix.Kernel.Admission.uniqueKeys records blobs).mapError .ofBytes
   let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
-  Ix.Kernel.Admission.checkConstantsWith table pre constants blobs hint
+  Ix.Kernel.Admission.checkConstantsWith Address.blake3 table pre constants blobs hint
 
 def verdict : Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"

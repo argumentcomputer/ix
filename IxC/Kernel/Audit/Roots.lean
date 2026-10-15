@@ -39,14 +39,25 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3412 compiled functions, with the computed-field overrides of
+reaches 3439 compiled functions, with the computed-field overrides of
 `Level`, `Expr`, `Name` and `Key` and 20 proved csimps; the Ixon reader
-(`readRecords` with `Admission.readStream`) reaches 2030, adding the
+(`readRecords` with `Admission.readStream`) reaches 2127, adding the
 in-model generator's 9 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5578 with 111 inherited externs, adding the
+`publicOperations`) reaches 5552 with 113 inherited externs, adding the
 byte stage (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`), the
 binding section's admission (`admitBinding`, `RoleTable.ofBytes`,
 `RoleTable.check`) and the committed default table and prelude. Step 5b's
+address keys (an `.anon` input key is the address its references use) moved
+them from 3412, 2030 and 5578, and their inherited externs from 82, 79 and
+111 to 90, 89 and 113, all `Init`'s: the fold compares and hashes addresses
+(`ByteArray.decEq`, `ByteArray.get!`, `ByteArray.size`) and prints them in
+its messages as twelve hexadecimal digits (`UInt8` shifts and masks,
+`String.extract`, `String.Pos.next`); the reader keys a block member whose
+projection record the input omits by that record's address under the entry's
+hash, so it serializes the record (`ByteArray.push`, `copySlice`,
+`emptyWithCapacity`, `UInt64.toUInt8`, `UInt8` shifts and `lor`,
+`String.utf8ByteSize`); the hexadecimal key spelling (`keyName` and its
+table) and the recursors' spelled keys left. Step 5b's
 mode index (the kernel's types take a `Mode`) moved them from 3364, 2066 and
 5566: the pinned names and the basis declarations are generic in the mode, so
 their closed terms are hoisted where they are used rather than where they are
@@ -119,7 +130,9 @@ def publicRoots : Array Lean.Name :=
 /-- Fidelity and the facts it is built from: the reading of accepted bytes,
 key uniqueness and authentication, the binding section's admission and
 canonical decoding, the record-by-record reading of the reader, per-record
-installation, and the address encoding's injectivity. -/
+installation, and the keys the reader gives a reference and a member: the
+address it is keyed by, or its role (`Ctx.keyAt_eq_ok`,
+`Ctx.memberKey_of_unbound`). -/
 def fidelityRoots : Array Lean.Name :=
   #[``Ix.Kernel.Admission.checkBytes_reading, ``Ix.Kernel.Admission.checkBytesWith_reading,
     ``Ix.Kernel.Admission.checkConstantsWith_installed, ``Ix.Kernel.Admission.Installed.skels,
@@ -130,7 +143,8 @@ def fidelityRoots : Array Lean.Name :=
     ``Ix.Kernel.Admission.admitBinding_ok_iff, ``Ix.Kernel.RoleTable.ofBytes_eq_some_iff,
     ``Ix.Kernel.RoleTable.ofBytes_toBytes, ``Ix.Kernel.Admission.readStream_spec,
     ``Ix.Kernel.Reader.readRecord_singleton,
-    ``Ix.Kernel.Reader.StreamRead.singleton, ``Ix.Kernel.Reader.keyName_injective,
+    ``Ix.Kernel.Reader.StreamRead.singleton, ``Ix.Kernel.Reader.Ctx.keyAt_eq_ok,
+    ``Ix.Kernel.Reader.Ctx.memberKey_of_unbound,
     ``Ix.Kernel.Cached.checkDecls_installs, ``Ix.Kernel.Cached.checkDecls_model_defn_values]
 
 /-- The executable entry whose runtime closure is audited: the certified entry
@@ -311,7 +325,8 @@ run_cmd do
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytesWith_authentic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Reader.readRecord_singleton [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Reader.StreamRead.singleton [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Reader.keyName_injective [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Reader.Ctx.keyAt_eq_ok [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Reader.Ctx.memberKey_of_unbound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_installs [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_model_defn_values [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes [propext, Classical.choice, Quot.sound]
@@ -357,19 +372,19 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3412 compiled functions; inherited externs 82, implemented_by 0, unsafe 24, csimp 4; ruled computed_field 20, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3439 compiled functions; inherited externs 90, implemented_by 0, unsafe 24, csimp 4; ruled computed_field 20, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2030 compiled functions; inherited externs 79, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2127 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5578 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5552 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -380,51 +395,54 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
 
 /-! ### Frozen statements -/
 
-/-- info: @Ix.Kernel.Admission.checkBytes_has_model : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
-  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
-  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+/-- info: Ix.Kernel.Admission.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_has_model
 
-/-- info: @Ix.Kernel.Admission.checkBytesWith_has_model : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
-  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {pre : Ix.Kernel.Reader.Prelude md}
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+/-- info: Ix.Kernel.Admission.checkBytesWith_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env →
     Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytesWith_has_model
 
-/-- info: @Ix.Kernel.Admission.checkBytes_has_model_values : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
+/-- info: Ix.Kernel.Admission.checkBytes_has_model_values : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
   {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ M,
-      ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md) (hint' : Ix.Kernel.ReducibilityHint),
+      ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon) (value : Ix.Kernel.Expr Ix.Kernel.Mode.anon)
+        (hint' : Ix.Kernel.ReducibilityHint),
         Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
           ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
             Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_has_model_values
 
-/-- info: @Ix.Kernel.Admission.checkBytes_no_proof_of_False : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [Ix.Kernel.SetTheory V]
-  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
-  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+/-- info: Ix.Kernel.Admission.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
-    ∀ (ci : Ix.Kernel.ConstantInfo md),
+    ∀ (ci : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.anon),
       ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_no_proof_of_False
 
-/-- info: @Ix.Kernel.Admission.checkBytesWith_no_False_theorem : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [Ix.Kernel.SetTheory V]
-  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {pre : Ix.Kernel.Reader.Prelude md}
-  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+/-- info: Ix.Kernel.Admission.checkBytesWith_no_False_theorem : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env →
     ∀ {t : Ix.Kernel.RoleTable},
       Ix.Kernel.Admission.admitBinding hash binding = Except.ok t →
@@ -434,18 +452,17 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
               (owner, c) ∈ constants →
                 c.info = Ixon.ConstantInfo.defn d →
                   d.kind = Ix.DefKind.thm →
-                    (Ix.Kernel.Reader.definitionReader (Ix.Kernel.Admission.streamContext t pre constants blobs hint)
-                              owner c d).read
+                    (Ix.Kernel.Reader.definitionReader
+                              (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) owner c d).read
                           d.typ =
                         Except.ok (Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) []) →
                       False -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytesWith_no_False_theorem
 
-/-- info: @Ix.Kernel.Admission.checkBytes_reading : ∀ {md : Ix.Kernel.Mode} {hash : ByteArray → Address}
-  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env md},
+/-- info: @Ix.Kernel.Admission.checkBytes_reading : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ t pre,
       Ix.Kernel.Admission.admitBinding hash binding = Except.ok t ∧
@@ -457,23 +474,22 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
                   Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
                     Ix.Kernel.Admission.RecordsRead limits records constants ∧
                       Ix.Kernel.Admission.Hashed hash constants ∧
-                        Ix.Kernel.Admission.Installed t pre constants blobs hint env -/
+                        Ix.Kernel.Admission.Installed hash t pre constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_reading
 
-/-- info: @Ix.Kernel.Admission.checkBytes_authentic : ∀ {md : Ix.Kernel.Mode} {hash : ByteArray → Address}
-  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env md},
+/-- info: @Ix.Kernel.Admission.checkBytes_authentic : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.Authentic hash records blobs ∧ hash binding.bytes = binding.address -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_authentic
 
-/-- info: @Ix.Kernel.Admission.checkBytesWith_reading : ∀ {md : Ix.Kernel.Mode} {hash : ByteArray → Address}
-  {binding : Ix.Kernel.Admission.Binding} {pre : Ix.Kernel.Reader.Prelude md} {limits : Ix.Kernel.Admission.Limits}
+/-- info: @Ix.Kernel.Admission.checkBytesWith_reading : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {limits : Ix.Kernel.Admission.Limits}
   {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.WithinBatch limits records blobs ∧
       Ix.Kernel.Admission.UniqueKeys records blobs ∧
@@ -481,7 +497,8 @@ run_cmd Ix.Kernel.Audit.checkRuntime Ix.Kernel.Audit.kernelOperations Ix.Kernel.
           ∃ t constants,
             Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
               Ix.Kernel.Admission.RecordsRead limits records constants ∧
-                Ix.Kernel.Admission.Hashed hash constants ∧ Ix.Kernel.Admission.Installed t pre constants blobs hint env -/
+                Ix.Kernel.Admission.Hashed hash constants ∧
+                  Ix.Kernel.Admission.Installed hash t pre constants blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytesWith_reading
 
@@ -519,27 +536,27 @@ fun hash constants =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Reader.readRecords_nodup
 
-/-- info: @Ix.Kernel.Admission.Installed.singleton : ∀ {md : Ix.Kernel.Mode} {t : Ix.Kernel.RoleTable}
-  {pre : Ix.Kernel.Reader.Prelude md} {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md},
-  Ix.Kernel.Admission.Installed t pre constants blobs hint env →
+/-- info: @Ix.Kernel.Admission.Installed.singleton : ∀ {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {constants : List (Address × Ixon.Constant)}
+  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.Installed hash t pre constants blobs hint env →
     ∀ {owner : Address} {c : Ixon.Constant},
       (owner, c) ∈ constants →
         Ix.Kernel.Reader.isSingleton c.info = true →
           ∃ st decl ev ds,
-            Ix.Kernel.Reader.SingletonRead (Ix.Kernel.Admission.streamContext t pre constants blobs hint) st owner c
-                decl ∧
+            Ix.Kernel.Reader.SingletonRead (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) st owner
+                c decl ∧
               decl ∈ ds ∧
                 Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds = Except.ok env ∧
-                  ∀ (s : Ix.Kernel.Cached.InstallSkel md),
+                  ∀ (s : Ix.Kernel.Cached.InstallSkel Ix.Kernel.Mode.anon),
                     Ix.Kernel.Cached.declSkel decl = some s → ∃ ci, ci ∈ env.consts ∧ Ix.Kernel.Cached.ciSkel ci = s -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.Installed.singleton
 
-/-- info: @Ix.Kernel.Admission.checkBytes_resources : ∀ {md : Ix.Kernel.Mode} {hash : ByteArray → Address}
-  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env md},
+/-- info: @Ix.Kernel.Admission.checkBytes_resources : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ constants,
       Ix.Kernel.Admission.RecordsRead limits records constants ∧
@@ -548,10 +565,9 @@ fun hash constants =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_resources
 
-/-- info: @Ix.Kernel.Admission.checkBytes_binding : ∀ {md : Ix.Kernel.Mode} {hash : ByteArray → Address}
-  {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
-  {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env md},
+/-- info: @Ix.Kernel.Admission.checkBytes_binding : ∀ {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ix.Kernel.Admission.checkBytes hash binding limits records blobs hint = Except.ok env →
     ∃ t, Ix.Kernel.Admission.BindingAdmitted hash binding t -/
 #guard_msgs (whitespace := lax) in
@@ -582,12 +598,21 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.RoleTable.ofBytes_eq_some_iff
 
-/-- info: @Ix.Kernel.Reader.keyName_injective : ∀ {md : Ix.Kernel.Mode} {r s : Ix.Kernel.ConstRef Address},
-  Ix.Kernel.Reader.keyName r = Ix.Kernel.Reader.keyName s → r = s -/
+/-- info: @Ix.Kernel.Reader.Ctx.keyAt_eq_ok : ∀ {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Reader.Ctx md} {a : Address}
+  {k : Ix.Kernel.Reader.CName md}, cx.keyAt a = Except.ok k ↔ Ix.Kernel.Reader.keyOfAddress cx.store cx.roles a = some k -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Kernel.Reader.keyName_injective
+#check @Ix.Kernel.Reader.Ctx.keyAt_eq_ok
 
-/-- info: @Ix.Kernel.model_exists : ∀ {md : Ix.Kernel.Mode} (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
+/-- info: @Ix.Kernel.Reader.Ctx.memberKey_of_unbound : ∀ {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Reader.Ctx md}
+  {r : Ix.Kernel.ConstRef Address} {a : Address} {k : Ix.Kernel.Reader.CName md},
+  cx.roles.names[r]? = none →
+    cx.keys.address[r]? = some a →
+      cx.memberKey r = Except.ok k →
+        Ix.Kernel.Reader.resolve cx.store a = some r ∧ ∃ i, md.addressId? a = some i ∧ k = Ix.Kernel.Key.id i -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Reader.Ctx.memberKey_of_unbound
+
+/-- info: @Ix.Kernel.model_exists : ∀ {md : Ix.Kernel.Mode} [md.Certified] (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md)) (env : Ix.Kernel.Env md),
   Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in

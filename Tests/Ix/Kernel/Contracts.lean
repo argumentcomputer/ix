@@ -30,7 +30,6 @@ and never their result contracts:
   forgive the `pw` datum. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.Reader (keyName)
 open Tests.Ix.Kernel.Reader
 
 namespace Tests.Ix.Kernel.Contracts
@@ -51,7 +50,7 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) : Option Ix.Kernel.Admissio
 /-- The installed constant of the stand-in record `a`'s member `0`. -/
 def installed (cs : List (Address × Ixon.Constant)) (a : Address) : Option (Ix.Kernel.ConstantInfo .anon) :=
   match check cs with
-  | .ok env => env.find? (keyName (.member ((rekeyed cs).rename a) 0))
+  | .ok env => env.find? (.id ((rekeyed cs).rename a))
   | .error _ => none
 
 /-- `∀[c, r] (n : Nat), Nat := fun[c'] n => n`, over the prelude's `Nat`. -/

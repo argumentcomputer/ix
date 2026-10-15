@@ -160,7 +160,7 @@ in the census, named, for the lane lead. -/
 a constructor that is stored nowhere. -/
 def unitNoFamilyCaps : IndCaps md where
   eta := false
-  etaCtor := some (.id (Name.anonymous.str "ConLecheCapsWall.mk"))
+  etaCtor := some (.aux (.role .true) .unitlike)
   etaParams := 0
   etaFields := 0
   unitlike := true
@@ -170,7 +170,7 @@ def unitNoFamilyCaps : IndCaps md where
 /-- The witnessing environment: one non-reserved `unitlike` former
 carrying `unitNoFamilyCaps`. -/
 def unitNoFamilyEnv : Env md :=
-  ⟨[.indInfo ⟨.id (Name.anonymous.str "ConLecheCapsWall.T"), [], .sort .zero⟩
+  ⟨[.indInfo ⟨.aux (.role .true) .eta, [], .sort .zero⟩
       unitNoFamilyCaps]⟩
 
 /-- **The wall, mechanized**: a well-formed environment storing a
@@ -184,8 +184,8 @@ theorem etaFamilyStored_not_derivable :
       caps.unitlike = true ∧
       Ix.Kernel.reservedBasisNames.contains T = false ∧
       ¬ Ix.Kernel.EtaFamilyStored env T caps := by
-  refine ⟨unitNoFamilyEnv, .id (Name.anonymous.str "ConLecheCapsWall.T"),
-    ⟨.id (Name.anonymous.str "ConLecheCapsWall.T"), [], .sort .zero⟩,
+  refine ⟨unitNoFamilyEnv, .aux (.role .true) .eta,
+    ⟨.aux (.role .true) .eta, [], .sort .zero⟩,
     unitNoFamilyCaps, ?_, rfl, rfl, by (cases md <;> decide), ?_⟩
   · intro c hc
     rcases List.mem_singleton.mp hc with rfl

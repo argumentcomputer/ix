@@ -68,7 +68,7 @@ where
     | .num p n => .num (go p) n
 
 /-- The key of a Lean name under Source mode's binding (`Ix.Kernel.Key.ofName`). -/
-def ofLeanName (n : Lean.Name) : CName md := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
+def ofLeanName (n : Lean.Name) : CName .source := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
 
 /-! ## The declarations read so far, as the closure sees them -/
 

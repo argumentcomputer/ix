@@ -113,6 +113,10 @@ instance : Inhabited (Prelude md) := ⟨{}⟩
 fallback store `fallback` and fallback blobs `fallbackBlobs`: the bound
 addresses resolve against both stores (`bindingsOf`).
 
+`reconstruct store` gives the addresses of the projection records the input
+omits (`Admission.projectionAddress`, under the entry's hash); without it a
+block member with no projection record among the records declines.
+
 The store is `storeOf records (storeOf fallback)` with both maps built here,
 once: `storeOf` partially applied would rebuild its map at every lookup (it
 is compiled at its full arity), which makes reading quadratic in the number
@@ -121,7 +125,8 @@ minutes that way; built once, they read in 14 s). -/
 def contextOf (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Constant))
     (blobs : List (Address × ByteArray)) (fallback : Array (Address × Ixon.Constant) := #[])
     (fallbackBlobs : List (Address × ByteArray) := [])
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) : Ctx md :=
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (reconstruct : Store → ConstRef Address → Option Address := fun _ _ => none) : Ctx md :=
   let m := recordMap records
   let fm := recordMap fallback
   let store : Store := fun a => m[a]? <|> (fm[a]? <|> none)
@@ -129,9 +134,7 @@ def contextOf (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Consta
     (blobs ++ fallbackBlobs).foldl (fun m (a, b) => if m.contains a then m else m.insert a b) {}
   let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
   let all := records ++ fallback.filter (fun (a, _) => !known.contains a)
-  let roles := bindingsOf store t
-  { store, blob := (blobMap[·]?), roles, index := buildIndex store roles.names all, hint,
-    keys := keyNamesOf store roles.names all }
+  contextWith store (blobMap[·]?) t all hint (reconstruct store)
 
 /-- Read prelude records under a role table, with `extra` records and blobs
 backing the store (the evidence). -/

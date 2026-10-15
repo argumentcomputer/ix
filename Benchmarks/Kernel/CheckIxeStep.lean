@@ -1,6 +1,7 @@
 import Ix.Ixon
 import IxC.Kernel.Ixon.Prelude
 import IxC.Kernel.Cached.Installed
+import IxC.Kernel.Admission
 
 /-! # The verified fold one record at a time (untrusted harness)
 
@@ -158,14 +159,14 @@ def kindOf (source : Ixon.Constant) : String :=
   | _ => "projection"
 
 /-- The recursor records read with an inductive block. -/
-def recursorRecords (index : RecIndex .anon) (block : Address) : Array Address :=
+def recursorRecords (index : RecIndex) (block : Address) : Array Address :=
   ((index.blocks[block]?.map (·.recs)).getD #[]).foldl (fun acc r =>
     let a := r.block
     if a == block || acc.contains a then acc else acc.push a) #[]
 
 /-- The record owners a record depends on: its references' owners, its
 recursor records' references' owners, and the extra edges. -/
-def dependencies (store : RecordStore) (index : RecIndex .anon) (extra : Std.HashMap Address (Array Address))
+def dependencies (store : RecordStore) (index : RecIndex) (extra : Std.HashMap Address (Array Address))
     (address : Address) (source : Ixon.Constant) : Array Address := Std.HashSet.toArray <| Id.run do
   let recs := recursorRecords index address
   let mut out : Std.HashSet Address := {}
@@ -282,10 +283,9 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
   let evidence : Std.HashMap Address Ixon.Constant := pre.evidence.foldl
     (fun m (a, c) => if store.contains a then m else m.insert a c) {}
   let look : Address → Option Ixon.Constant := fun a => store[a]? <|> evidence[a]?
-  let roles := bindingsOf look t
-  let index := buildIndex look roles.names records
-  let cx : Ctx .anon :=
-    { store := look, blob := blobs', roles, index, hint, keys := keyNamesOf look roles.names records }
+  let cx : Ctx .anon := contextWith look blobs' t records hint
+    (Ix.Kernel.Admission.projectionAddress Address.blake3 look)
+  let roles := cx.roles
   let literalRecords := match literals with
     | some ls => ls ++ added
     | none => records

@@ -82,10 +82,11 @@ count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
 `LetMeta` from 5478, by the let contract's equality, hash and `Repr`; step 5b's
 walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
 reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
-5b's mode index from 5598, by the entry's change. -/
+5b's mode index from 5598, by the entry's change; its address keys from 5610
+and 111 inherited externs, by the entry's change. -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5610 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ixon.Projection.checkBytes]: 5574 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -223,7 +224,7 @@ fun hash record => hash (Ixon.serConstant record) -/
                 ∃ t pre,
                   Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
                     Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
-                      Ix.Kernel.Admission.Installed t pre output blobs hint env -/
+                      Ix.Kernel.Admission.Installed hash t pre output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_reading
 

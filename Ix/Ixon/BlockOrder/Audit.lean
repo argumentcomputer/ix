@@ -43,10 +43,11 @@ entry's: Ixon v4's TagN reader and writer (`Ixon.getTagN`, `putTagN`). Step 5a
 contract's equality, hash and `Repr`; step 5b's walk change from 5638, by the
 sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 `csimp` or `partial` constant among them); step 5b's mode index from 5733, by
-the entry's change. -/
+the entry's change; its address keys from 5745 and 112 inherited
+externs, by the entry's change. -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5745 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5708 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -158,7 +159,7 @@ fun source size start members =>
                   ∃ t pre,
                     Ix.Kernel.Admission.BindingAdmitted hash binding t ∧
                       Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
-                        Ix.Kernel.Admission.Installed t pre output blobs hint env -/
+                        Ix.Kernel.Admission.Installed hash t pre output blobs hint env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.BlockOrder.checkBytes_reading
 

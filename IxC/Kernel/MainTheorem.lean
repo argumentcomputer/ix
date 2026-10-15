@@ -54,8 +54,10 @@ universe w
 model in every set theory — at every role-table evidence `ev`, so
 consistency does not depend on the evidence the install gates are
 handed (none included: then every stream that declares a certified
-`Nat` operation declines). -/
-theorem model_exists (V : Type w) [SetTheory V]
+`Nat` operation declines). It is stated at the certified modes
+(`Mode.Certified`: `.anon`, the Ixon entry's, and `.source`, the Lean
+ingress's); `.meta`'s verdicts are never reported (IXC-PLAN §11). -/
+theorem model_exists {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
     (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
     (accepted : checkDecls .verified ev ds = .ok env) :
     Nonempty (Model V env) := by

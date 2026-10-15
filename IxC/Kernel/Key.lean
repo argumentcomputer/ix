@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Name
+public import IxC.Address.Core
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
 is that it is *definitionally* `k ()`, which is what `Key.beqPtr_eq`
 proves. `import all` makes that body visible **in this module only**, as in
@@ -17,8 +18,8 @@ What the checker knows a constant by, and the two vocabularies in which it
 names constants itself:
 
 * `Key`, the identity of a constant: an input constant's identifier
-  (`Key.id`: Lean's own name in Source mode, the reader's `ix.<hex>`
-  encoding of a record address in Ixon mode), a constant bound to a role
+  (`Key.id`: Lean's own name in Source mode, the address its references use
+  in the Ixon modes), a constant bound to a role
   (`Key.role`), or a constant the checker or the front ends' shared back half
   generates from another key (`Key.aux`);
 * `Role`, the closed set of constants the checker names (the basis blocks,
@@ -41,12 +42,12 @@ together (`auxKey_inj₂`); a derived key differs from its base
 input key (`auxKey_ne_id`); `roleKey` is injective (`roleKey_inj`), so a
 `decide` between role keys is a `decide` between roles.
 
-**Rendering.** `Key.toName` spells a key as the name it had while keys were
-names: `.id n` is `n`, `.role r` is `r.leanName`, and `.aux k d` is `k`'s
-spelling with `d`'s suffix (`Derived.spell`). `ToString` and `Repr` print that
-name, so messages and rows read as before. The checker never reads a key's
-spelling; the front ends read it for their name maps and, until recursors
-have keys of their own (SP3 D8), for the reader's recursor keys.
+**Rendering.** `Key.toName` spells a key for display, each mode its own way:
+an input key as its id (`Mode.idName`: an address as `#` and its first twelve
+hexadecimal digits, a name as itself), `.role r` as `r.leanName`, and
+`.aux k d` as `k`'s spelling with `d`'s suffix (`Derived.spell`). `ToString`
+and `Repr` print that name. The checker never reads a key's spelling; the
+front ends read it for their name maps only.
 -/
 
 namespace Ix.Kernel
@@ -276,8 +277,12 @@ inductive Mode where
 
 namespace Mode
 
-/-- What identifies an input constant. -/
-@[reducible] def Id (_ : Mode) : Type := Name
+/-- What identifies an input constant: its address in the Ixon modes (the
+address in a record's `refs` table: a singleton's own, a block member's
+projection record's), its name in Source mode. -/
+@[reducible] def Id : Mode → Type
+  | .anon | .meta => Address
+  | .source => Name
 
 /-- Display data: present only in `.meta`, and never read by the checker. -/
 @[reducible] def D : Mode → Type → Type
@@ -291,11 +296,31 @@ class Certified (md : Mode) : Prop where
 instance : Certified .anon := ⟨fun _ => rfl⟩
 instance : Certified .source := ⟨fun _ => rfl⟩
 
-/-- An input id's share of its key's hash. -/
-@[inline] def idHash {md : Mode} (i : md.Id) : UInt64 := Name.hashData i
+/-- Input ids compare as addresses or as names. -/
+def decEqId : (md : Mode) → DecidableEq md.Id
+  | .anon | .meta => inferInstanceAs (DecidableEq Address)
+  | .source => inferInstanceAs (DecidableEq Name)
 
-/-- An input id's spelling, for display. -/
-@[inline] def idName {md : Mode} (i : md.Id) : Name := i
+instance {md : Mode} : DecidableEq md.Id := decEqId md
+
+/-- An input id's share of its key's hash: an address's leading eight bytes
+(`Hashable Address`), a name's cached hash. -/
+def idHash : {md : Mode} → md.Id → UInt64
+  | .anon, a | .meta, a => hash a
+  | .source, n => n.hashData
+
+/-- An input id for display: an address as its first twelve hexadecimal
+digits after `#`, a name as itself. -/
+def idName : {md : Mode} → md.Id → Name
+  | .anon, a | .meta, a => .str .anonymous ("#" ++ (hexOfBytes a.hash).take 12)
+  | .source, n => n
+
+/-- The id an Ixon address gives an input constant: the address itself in the
+modes keyed by address; none in Source mode (its ids are names, and its one
+reading of Ixon records, the prelude's, names every constant by its role). -/
+def addressId? : (md : Mode) → Address → Option md.Id
+  | .anon, a | .meta, a => some a
+  | .source, _ => none
 
 end Mode
 
@@ -361,9 +386,9 @@ instance : LawfulBEq (Key md) where
 
 /-! ## Rendering -/
 
-/-- **A key's spelling**: the name it had while keys were names. `.id n` is
-`n`, `.role r` is `r.leanName`, `.aux k d` is `k`'s spelling with `d`'s
-suffix. For messages, rows and the front ends' name maps only. -/
+/-- **A key's spelling**: an input key's id as `Mode.idName` shows it,
+`.role r` as `r.leanName`, `.aux k d` as `k`'s spelling with `d`'s suffix. For
+messages, rows and the front ends' name maps only. -/
 def Key.toName : Key md → Name
   | .id i => Mode.idName i
   | .role r => r.leanName
@@ -371,7 +396,7 @@ def Key.toName : Key md → Name
 
 instance : ToString (Key md) := ⟨fun k => k.toName.toString⟩
 
-/-- A key prints as its spelling's `Repr`, as it did while keys were names. -/
+/-- A key prints as its spelling's `Repr`. -/
 instance : Repr (Key md) := ⟨fun k prec => reprPrec k.toName prec⟩
 
 /-! ## Source mode's naming -/
@@ -383,7 +408,7 @@ def Role.byLeanName : Std.HashMap Name Role :=
 /-- **The key of the constant Lean names `n`**, under Source mode's fixed
 binding: the role whose Lean name `n` is, otherwise the input key `n`. For
 the front ends and their tests; the checker never reads a key's name. -/
-def Key.ofName (n : Name) : Key md :=
+def Key.ofName (n : Name) : Key .source :=
   match Role.byLeanName[n]? with
   | some r => .role r
   | none => .id n

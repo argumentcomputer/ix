@@ -344,7 +344,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
             simp [checkBytes, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
               Except.bind]
           | ok output =>
-            cases checked : Admission.checkConstantsAt (md := .anon) hash binding output blobs hint <;>
+            cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
               simp [checkBytes, flight, unique, authentic, decoded, expanded, checked, Except.mapError,
                 bind, Except.bind]
 
@@ -397,7 +397,7 @@ theorem checkBytes_reading {hash : ByteArray → Address} {binding : Admission.B
     ∃ input output, Admission.RecordsRead limits records input ∧
       Expanded hash maxProjections input output ∧ Admission.Hashed hash output ∧
       ∃ t pre, Admission.BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
-        Admission.Installed t pre output blobs hint env := by
+        Admission.Installed hash t pre output blobs hint env := by
   obtain ⟨_, keys, authentic, input, output, reading, expanded, checked⟩ :=
     (checkBytes_ok_iff _ _ _ _ _ _ _ _).mp h
   obtain ⟨t, pre, hb, hq, hw⟩ := Admission.checkConstantsAt_with checked

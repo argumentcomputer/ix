@@ -403,5 +403,5 @@ end Ix.LeanIngress
 /-! Source mode's binding, checked: every role's Lean name keys that role, and
 the name map holds the roles' names and nothing else. -/
 
-#guard Ix.Kernel.Role.all.all fun r => Ix.Kernel.Key.ofName (md := .source) r.leanName == .role r
+#guard Ix.Kernel.Role.all.all fun r => (Ix.Kernel.Key.ofName r.leanName == .role r : Bool)
 #guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length

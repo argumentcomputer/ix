@@ -273,16 +273,16 @@ def admissionContext (binding : Binding) (limits : Limits) (ixe : Ixon.Env)
   let t ← (Ix.Kernel.Admission.admitBinding Address.blake3Pure binding).toOption
   let pre ← (Ix.Kernel.Reader.preludeFor t).toOption
   let constants ← (Ix.Kernel.Admission.decodeRecords limits (recordsOf ixe order)).toOption
-  pure (Ix.Kernel.Admission.streamContext t pre constants (blobsOf ixe order) (hintsOf ixe))
+  pure (Ix.Kernel.Admission.streamContext Address.blake3Pure t pre constants (blobsOf ixe order)
+    (hintsOf ixe))
 
 /-- **The reading τ**: the compiled term the artifact reads the source
 constant `c` as. That is the constant the reader keys `c`'s published
 address by, applied to `c`'s own level parameters by position, so that
-compiled parameter `i` is source parameter `i`. Today the key is the
-reader's: the input key `ix.<hex>.i` (`Ix.Kernel.Reader.keyName`) through
-`resolve`, a role key the table binds, or a recursor's key spelled after its
-block. Under `Key m` (IXC-PLAN step 5b) the input key is the published address
-itself, and this is the one definition that changes.
+compiled parameter `i` is source parameter `i`. The key is the reader's
+(`Ix.Kernel.Reader.Ctx.keyAt`): the role key where the table binds the
+reference the address resolves to, otherwise the input key of the published
+address itself.
 
 Several source names can share an address (α-equal constants, one record).
 They then read as the same constant, so a commuting source model gives them
@@ -290,8 +290,8 @@ one value (`Commutes.alias`). -/
 def reading (ixe : Ixon.Env) (cx : Ix.Kernel.Reader.Ctx .anon) (c : Ix.Kernel.ConstantInfo .source) :
     Option (Ix.Kernel.Expr .anon) := do
   let a ← publishedAddress ixe c.name
-  let r ← Ix.Kernel.Reader.resolve cx.store a
-  pure (.const (cx.nameOf r) (c.toConstantVal.levelParams.map .param))
+  let k ← (cx.keyAt a).toOption
+  pure (.const k (c.toConstantVal.levelParams.map .param))
 
 /-! ## Commutation -/
 

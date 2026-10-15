@@ -25,8 +25,7 @@ the faithfulness of the accepted environment to the Lean environment.
 
 A constant's key is its role's key if Source mode's fixed table binds its Lean
 name to a role (`sourceBinding`: role `r` is the constant named `r.leanName`),
-and otherwise the input key of its Lean name (`ingressKey`), so no `ix.<hex>`
-name occurs. A recursor is keyed by its own Lean name (`T.rec`, `T.rec_j`),
+and otherwise the input key of its Lean name (`ingressKey`, a `Key .source`). A recursor is keyed by its own Lean name (`T.rec`, `T.rec_j`),
 as any input constant. Level parameters are positions
 (`Numbering`): a constant's `i`-th Lean level parameter is `i`, except at a
 large eliminator, whose elimination level is the fresh position `n` after
@@ -397,7 +396,11 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
       rules := rules ++ [Ix.Kernel.RecRule.mk (ingressKey rule.ctor) rule.nfields 0 .inert ks[i]!
         false false false]
       i := i + 1
-    rs := rs.push (cv, ⟨r.numParams, r.numMotives, r.numMinors, r.numIndices, r.k⟩, rules)
+    -- the motive a recursor eliminates, by Lean's naming: `T.rec` eliminates `T`
+    let motive := match r.cnst.name with
+      | .str T "rec" _ => types.findIdx? (·.cnst.name == T)
+      | _ => none
+    rs := rs.push (cv, ⟨r.numParams, r.numMotives, r.numMinors, r.numIndices, r.k, motive⟩, rules)
   return .inductive ⟨nPd, tys, cts, ctorNames, rs⟩
 
 /-- A definition group converted. A singleton is lowered as the reader lowers

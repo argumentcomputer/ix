@@ -38,11 +38,12 @@ end Ixon.Authenticated.Audit
 -- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 -- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
--- the generic entries' change.
+-- the generic entries' change; its address keys from 5764 and 115 inherited
+-- externs, by the generic entries' change.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5764 compiled functions; inherited externs 115, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
+ Address.admissionHash]: 5727 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

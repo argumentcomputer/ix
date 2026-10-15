@@ -25,13 +25,11 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 
 ## The reference translation
 
-* **Keys.** A Lean constant's key is the reader's key of the reference its
-  record resolves to: the input key `ix.<hex b>.i` for member `i` of record
-  `b`, `ix.<hex b>.i.c` for a constructor (`keyName`), or the role key where
-  the default role table binds that reference. A recursor the table does not
-  bind is keyed after what it eliminates, by Lean's own convention: `T.rec` ↦
-  `⟦T⟧.rec`, `T.rec_j` ↦ `⟦T⟧.rec_j` with `T` the block's first member, as
-  spellings of input keys.
+* **Keys.** A Lean constant's key is the role key where the default role
+  table binds the reference its published address (`Ixon.Env.named`)
+  resolves to, otherwise the input key of that address: a singleton's own
+  record's, a block member's projection record's. A recursor is keyed by its
+  own record like any other constant.
 * **Level parameters.** Positional: a constant's are `0, …, n-1`, one per
   Lean level parameter (a constructor's are its inductive's). A recursor
   whose block has one level fewer is a large eliminator: its parameter `0`
@@ -62,7 +60,7 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 1. **Per constant**, exact structural equality of the reader's entry and the
    reference (the kernel's executed `Expr`, `Level` and `Key` equalities, field
    by field), with the first difference located when there is one.
-2. **Names**: the reader's `Ctx.nameOf` of each constant's reference against
+2. **Names**: the reader's `Ctx.memberKey` of each constant's reference against
    the reference name.
 3. **Block order**: each inductive block's members, constructors and
    recursors in Lean's order (`all`, `ctors`, `T.rec`, `T₀.rec_j`).
@@ -254,46 +252,26 @@ where
 
 /-! ## The reference translation -/
 
-/-- A Lean name's key under Source mode's binding: the role whose Lean name
-it is, otherwise the input key of the name. -/
-def cname (n : Lean.Name) : CName .anon := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
-
 /-- What the reference reads: Lean's constants, the compiled environment's
-name ↦ reference map, and the role table's bindings. -/
+name ↦ address map (the address it publishes for the name: a singleton's
+record, a block member's projection record) and name ↦ reference map, and
+the role table's bindings. -/
 structure RefCx where
   find : Lean.Name → Option Lean.ConstantInfo
+  addrOf : Lean.Name → Option Address
   refOf : Lean.Name → Option (ConstRef Address)
   roles : Bindings .anon
 
 abbrev RefM := Except String
 
-/-- A non-recursor constant's reference name. -/
-def RefCx.memberName (cx : RefCx) (n : Lean.Name) : RefM (CName .anon) := do
-  let some r := cx.refOf n | throw s!"{n} was not compiled"
-  pure (cx.roles.names.getD r (keyName r))
-
-/-- A recursor's reference key: its role's key where the table binds its own
-reference, otherwise the input key spelled after the member `p` it is named
-for (`⟦p⟧.s`). -/
-def RefCx.recName (cx : RefCx) (n p : Lean.Name) (s : String) : RefM (CName .anon) := do
-  if let some r := cx.refOf n then
-    if let some k := cx.roles.names[r]? then return k
-  pure (.id ((← cx.memberName p).toName.str s))
-
-/-- A Lean constant's reference name (recursors by Lean's convention). -/
+/-- A Lean constant's reference key: its role's key where the table binds the
+reference its published address resolves to, otherwise the input key of that
+address. A recursor is keyed by its own record like any other constant. -/
 def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM (CName .anon) := do
-  match cx.find n with
-  | some (.recInfo rv) =>
-    match n with
-    | .str p "rec" =>
-      unless rv.all.contains p do throw s!"recursor {n} of no member of its block"
-      cx.recName n p "rec"
-    | .str p s =>
-      unless s.startsWith "rec_" && rv.all.head? == some p do
-        throw s!"recursor {n} has no recursor name"
-      cx.recName n p s
-    | _ => throw s!"recursor {n} has no recursor name"
-  | _ => cx.memberName n
+  let some r := cx.refOf n | throw s!"{n} was not compiled"
+  if let some k := cx.roles.names[r]? then return k
+  let some a := cx.addrOf n | throw s!"{n} was not compiled"
+  pure (.id a)
 
 /-- A constant's level parameters: one per Lean level parameter, by position
 (a constructor's are its inductive's). A recursor whose block has one level
@@ -626,7 +604,10 @@ def bindingProblems (roles : Bindings .anon)
   let mut out := #[]
   for (r, n) in roles.names.toList do
     let leans := byRef.getD r #[]
-    unless leans.isEmpty || leans.any (cname · == n) do
+    let named := match n with
+      | .role role => leans.any (Ix.Kernel.Name.ofLeanName · == role.leanName)
+      | _ => false
+    unless leans.isEmpty || named do
       out := out.push s!"role {n} is not the Lean name of a constant at its reference \
         (there: {leans.toList.take 4})"
   return out
@@ -791,7 +772,9 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     if let some nd := input.ixon.named[_root_.Ix.Name.fromLeanName n]? then
       named := named.insert n nd
       if let some r := resolve (store[·]?) nd.addr then refs := refs.insert n r
-  let rcx : RefCx := { find := input.lean, refOf := (refs[·]?), roles := s.cx.roles }
+  let rcx : RefCx :=
+    { find := input.lean, addrOf := fun n => (named[n]?).map (·.addr), refOf := (refs[·]?),
+      roles := s.cx.roles }
   let mut report : Report := {}
   -- reference names, the inverse map, and the reader's own names
   let mut byName : Std.HashMap (CName .anon) (Array Lean.Name) := {}
@@ -802,8 +785,8 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     match rcx.name n with
     | .ok c =>
       byName := byName.insert c ((byName.getD c #[]).push n)
-      let actual := s.cx.nameOf r
-      if actual != c then
+      let actual := (s.cx.memberKey r).toOption
+      if actual != some c then
         if (named[n]?.map (·.original.isSome)).getD false then
           report := { report with renamedAux := report.renamedAux + 1 }
         else

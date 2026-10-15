@@ -27,8 +27,9 @@ import edges:
      longer reached is progress to record by deleting it there. Both fail.
   5. THE BOUNDARY: a covered module imports only covered modules, `Init`,
      `Std` and `Lean` (the last at elaboration time; the Lean import audit
-     checks that part), and the two pure contract-data modules of Ixon
-     that `BinderMeta` carries (`contractData`). Ix's boundary (`Ixon`,
+     checks that part), the two pure contract-data modules of Ixon
+     that `BinderMeta` carries (`contractData`), and the pure address type
+     an Ixon-mode input key carries (`addressData`). Ix's boundary (`Ixon`,
      `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) imports the kernel,
      never the other way round.
 
@@ -163,6 +164,13 @@ whose modules import only each other. The codec may not import the kernel
 the kernel may import these two modules of Ixon and no other. -/
 def contractData : List String := ["IxC.Ixon.Types.Modes", "IxC.Ixon.Types.Contract"]
 
+/-- The address type an input key carries in the Ixon modes (`Mode.Id .anon =
+Address`, IXC-PLAN §3): the pure key type, its equality, order, hash and
+hexadecimal spelling, in a module that imports nothing. The hashers that
+make addresses live outside it (`Ix.Address`), and the kernel may import
+this module of the address library and no other. -/
+def addressData : List String := ["IxC.Address.Core"]
+
 def rulesExempt : List String := ["IxC.Kernel.Model.Rules.Recompose"]
 
 /-- The pure implementation the rules tier may not import. -/
@@ -250,7 +258,7 @@ def run (args : List String) : IO UInt32 := do
   let implv := pairs (fun a b => part? (pathOf a) == some .checker && theoryPrefixes.any (fun d => b.startsWith d))
     edges
   let boundv := pairs (fun _ b => !modSet.contains b && !boundary.contains ((b.splitOn ".").headD "") &&
-      !contractData.contains b)
+      !contractData.contains b && !addressData.contains b)
     (imports.getD · #[])
   let isRules (a : String) := isRulesTier (pathOf a) && !rulesExempt.contains a
   let rulesv := pairs (fun a b => isRules a && implMod b) edges

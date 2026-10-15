@@ -274,7 +274,7 @@ def declCLabel : Declaration md → String
   | .thmDecl cv _ => s!"theorem {cv.name}"
   | .opaqueDecl cv _ => s!"opaque {cv.name}"
   | .axiomDecl cv => s!"axiom {cv.name}"
-  | .indDecl b _ => s!"inductive {(b.head?.map (·.name)).getD (.id .anonymous)}"
+  | .indDecl b _ => s!"inductive {(b.head?.map (toString ·.name)).getD "[anonymous]"}"
   | .basisDecl k => s!"basis block {repr k}"
   | .quotDecl _ cv => s!"quot {cv.name}"
 

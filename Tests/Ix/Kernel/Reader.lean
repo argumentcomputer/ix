@@ -107,14 +107,9 @@ def rebind (pairs : List (Ix.Kernel.Role × Address)) : Ix.Kernel.RoleTable :=
 
 /-- A key with a fixture's stand-in keys in place of its BLAKE3 keys. -/
 def unrename (r : Rekeyed) : CName .anon → CName .anon
-  | .id n => .id (go n)
+  | .id a => .id (r.original a)
   | .role ro => .role ro
   | .aux k d => .aux (unrename r k) d
-where
-  go : Ix.Kernel.Name → Ix.Kernel.Name
-    | .anonymous => .anonymous
-    | .str p s => .str (go p) (((r.renamed.find? (toString ·.2 == s)).map (toString ·.1)).getD s)
-    | .num p n => .num (go p) n
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (table : Ix.Kernel.RoleTable := builtinTable) : Except Error (Ix.Kernel.Env .anon) :=
@@ -131,7 +126,8 @@ def namesOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × Byt
   | .ok env => env.consts.map fun c => toString (unrename (rekeyed cs blobs) c.name)
   | .error _ => []
 
-def keyString (r : ConstRef Address) : String := toString (keyName (md := .anon) r)
+/-- How the input key of the record at `a` prints. -/
+def idString (a : Address) : String := toString (Ix.Kernel.Key.id (md := .anon) a)
 
 /-- The address the default table binds a role to (a prelude record). -/
 def bound (r : Ix.Kernel.Role) : Address := (builtinTable.addressOf? r).getD (address 0)
@@ -195,8 +191,8 @@ def definitions : List (Address × Ixon.Constant) :=
   [(address 10, idNat), (address 11, twoDef), (address 12, twoEq)]
 
 #guard accepts definitions
-#guard (namesOf definitions).contains (keyString (.member (address 10) 0))
-#guard (namesOf definitions).contains (keyString (.member (address 12) 0))
+#guard (namesOf definitions).contains (idString (address 10))
+#guard (namesOf definitions).contains (idString (address 12))
 -- a false equation is not
 #guard !accepts [(address 10, idNat), (address 11, twoDef),
   (address 12, defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 4]) (apps (ref 5 [0]) [ref 1, ref 4])
@@ -235,8 +231,9 @@ def abFixture (block : Ixon.Constant := abBlock) : List (Address × Ixon.Constan
 #guard defOrder #[Std.HashSet.ofList [0], {}] == some #[0, 1]
 #guard defOrder #[Std.HashSet.ofList [1], Std.HashSet.ofList [0]] == none
 #guard accepts abFixture
-#guard (namesOf abFixture).contains (keyString (.member (address 100) 0)) &&
-  (namesOf abFixture).contains (keyString (.member (address 100) 1))
+-- the members are keyed by their projection records
+#guard (namesOf abFixture).contains (idString (address 101)) &&
+  (namesOf abFixture).contains (idString (address 102))
 -- `b = succ zero` is not
 #guard !accepts ((abFixture.take 3) ++ [(address 103,
   defn .thm (apps (ref 0 [0]) [ref 1, ref 2, .app (ref 5) (ref 3)]) (apps (ref 4 [0]) [ref 1, ref 3])
@@ -302,8 +299,9 @@ def twoFixture : List (Address × Ixon.Constant) :=
    (address 23, cPrj (address 20) 1), (address 24, twoRec), (address 25, twoIota)]
 
 #guard accepts twoFixture
-#guard (namesOf twoFixture).contains (keyString (.member (address 20) 0) ++ ".rec")
-#guard (namesOf twoFixture).contains (keyString (.ctor (address 20) 0 1))
+-- the recursor is keyed by its own record, a constructor by its projection record
+#guard (namesOf twoFixture).contains (idString (address 24))
+#guard (namesOf twoFixture).contains (idString (address 23))
 -- the recursor record may come before its block
 #guard accepts [(address 24, twoRec), (address 20, twoBlock), (address 21, iPrj (address 20)),
   (address 22, cPrj (address 20) 0), (address 23, cPrj (address 20) 1), (address 25, twoIota)]
@@ -622,19 +620,35 @@ def lTreeStream : Ix.Kernel.Admission.Records :=
 def lTreeBlock : Address := (addressOfHex "504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df8").getD (address 0)
 def lNodeBlock : Address := (addressOfHex "0e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc9461381").getD (address 0)
 
+/-- The stream's records and its reading context, as the entry builds them. -/
+def lTreeContext : Option (List (Address × Ixon.Constant) × Ctx .anon) := do
+  let constants ← (Ix.Kernel.Admission.decodeRecords limits lTreeStream).toOption
+  pure (constants, streamContext hash builtinTable builtinPre constants [] (fun _ => none))
+
+/-- The key the stream's reading gives the constant at `r`. -/
+def lTreeKey (r : ConstRef Address) : Option (CName .anon) := do
+  let (_, cx) ← lTreeContext
+  (cx.memberKey r).toOption
+
+/-- The keys of the recursors that eliminate `LTree`'s block, in motive order. -/
+def lTreeRecKeys : List (CName .anon) := Id.run do
+  let some (_, cx) := lTreeContext | return []
+  let some shape := cx.index.blocks[lTreeBlock]? | return []
+  return shape.recs.toList.filterMap fun r => (cx.memberKey r).toOption
+
 /-- The reader's state and declarations after the stream. -/
 def lTreeRead : Option (State .anon × Array (Ix.Kernel.Declaration .anon)) := do
-  let constants ← (Ix.Kernel.Admission.decodeRecords limits lTreeStream).toOption
-  let cx := streamContext builtinTable builtinPre constants [] (fun _ => none)
+  let (constants, cx) ← lTreeContext
   (readRecords cx builtinPre.state constants.toArray).toOption
 
 /-- The carriers' heads of `LTree.rec`'s motives, in motive order, as the
 modeller reads them. -/
 def lTreeMotiveHeads : Option (List String) := do
   let (st, _) ← lTreeRead
-  let b ← st.indBlocks[keyName (md := .anon) (.member lTreeBlock 0)]?
+  let b ← st.indBlocks[← lTreeKey (.member lTreeBlock 0)]?
   let t0 ← b.types.head?
-  let r0 ← b.recs.find? (·.cv.name.toName == t0.cv.name.toName.str "rec")
+  -- the recursor of the first motive
+  let r0 ← b.recs.head?
   let (_, afterP) ← r0.cv.type.stripPis t0.nP
   let (motives, _) ← afterP.stripPis r0.nM
   let mems ← (Ix.Kernel.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types
@@ -654,17 +668,18 @@ def lTreeNames : List String :=
 #guard lTreeStream.length == lTreeRecords.length && lTreeRecords.length == 19
 -- the order that exercises the grouping: `List (LNode LTree)` before `LNode LTree`
 #guard lTreeMotiveHeads ==
-  some [keyString (.member lTreeBlock 0), "List", keyString (.member lNodeBlock 0)]
+  some [toString (lTreeKey (.member lTreeBlock 0)).get!, "List",
+    toString (lTreeKey (.member lNodeBlock 0)).get!]
 -- the modeller's records introduce every name once (`pack_0` was emitted twice)
 #guard !lTreeNames.isEmpty && lTreeNames.eraseDups.length == lTreeNames.length
-#guard (lTreeNames.filter (· == keyString (.member lTreeBlock 0) ++ "._model._impl.pack_0")).length == 1
+#guard (lTreeNames.filter
+  (· == toString (lTreeKey (.member lTreeBlock 0)).get! ++ "._model._impl.pack_0")).length == 1
 -- and the block, its three recursors and the container's install
 #guard match checkBytesWith hash builtinBinding builtinPre limits lTreeStream [] with
   | .ok env =>
-    let names := env.consts.map (toString ·.name)
-    let t := keyString (.member lTreeBlock 0)
-    names.contains t && names.contains (t ++ ".rec") && names.contains (t ++ ".rec_1") &&
-      names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
+    let names := env.consts.map (·.name)
+    (lTreeKey (.member lTreeBlock 0)).any names.contains && lTreeRecKeys.length == 3 &&
+      lTreeRecKeys.all names.contains && (lTreeKey (.member lNodeBlock 0)).any names.contains
   | .error _ => false
 
 /-! ## Universe levels in canonical form
@@ -765,7 +780,7 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 -- and the theorem is accepted
 #guard match checkBytesWith hash builtinBinding builtinPre limits levelStream [] with
   | .ok env => (env.consts.map (toString ·.name)).contains
-      (keyString (.member ((addressOfHex levelTheorem).getD (address 0)) 0))
+      (idString ((addressOfHex levelTheorem).getD (address 0)))
   | .error _ => false
 
 /-! ## Negative: pinned names on constants of another shape -/
@@ -809,27 +824,38 @@ def addTable : Ix.Kernel.RoleTable := rebind [(.natAdd, address 91)]
 #guard !accepts [(address 91, fakeAdd)] (table := addTable)
 #guard accepts [(address 91, fakeAdd)]
 
-/-- Names attach to addresses, not to contents: `Nat`'s block stored at
-another address is not named `Nat`. -/
+/-- Keys attach to addresses, not to contents: `Nat`'s block stored at another
+address is not keyed as `Nat`. -/
 def natBlockRecord : Ixon.Constant := Id.run do
   let some r := boundRef .nat | return default
   let some (_, c) := builtinPre.records.find? (·.1 == r.block) | return default
   return c
 
+-- its member is keyed by the address its projection record would have (none is
+-- in the input), under the entry's hash; without the hash it has no key
 #guard
   let cx := contextOf (md := .anon) builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
-  toString (cx.nameOf (.member (address 92) 0)) == keyString (.member (address 92) 0) &&
-    toString (cx.nameOf (.member (address 92) 0)) != "Nat"
+    (reconstruct := Ix.Kernel.Admission.projectionAddress hash)
+  let projection := Ix.Kernel.Admission.projectionAddress hash cx.store (.member (address 92) 0)
+  match cx.memberKey (.member (address 92) 0) with
+  | .ok (.id a) => projection == some a && a != address 92
+  | _ => false
+#guard
+  let cx := contextOf (md := .anon) builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
+  match cx.memberKey (.member (address 92) 0) with
+  | .error (.declined _) => true
+  | _ => false
 
--- The address encodings are computed ahead (`Ctx.keys`): an unpinned
--- record's reference is in the table, under `keyName`'s spelling, and a
--- pinned one is not.
+-- The keys are computed ahead (`Ctx.keys`): every record address has its key,
+-- an unbound singleton its own address and a bound reference its role's, and
+-- every reference its address
 #guard
   let cx := contextOf (md := .anon) builtinTable #[(address 93, idNat)] [] builtinPre.records
   let natRef := boundRef .nat
-  cx.keys.map.contains (.member (address 93) 0) &&
-    toString (cx.nameOf (.member (address 93) 0)) == keyString (.member (address 93) 0) &&
-    natRef.isSome && natRef.all (!cx.keys.map.contains ·)
+  cx.keys.byAddress[address 93]? == some (.id (address 93)) &&
+    cx.keys.address[ConstRef.member (address 93) 0]? == some (address 93) &&
+    (cx.memberKey (.member (address 93) 0)).toOption == some (.id (address 93)) &&
+    natRef.isSome && natRef.all fun r => (cx.memberKey r).toOption == some (.role .nat)
 
 /-! ## Negative: malformed and unsupported records -/
 
@@ -838,7 +864,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
 #guard match run [(address 10, idNat), (address 10, idNat)] with
   | .error (.duplicate .records 1 a) => a == (rekeyed [(address 10, idNat)]).rename (address 10)
   | _ => false
-#guard match checkConstantsWith builtinTable builtinPre
+#guard match checkConstantsWith hash builtinTable builtinPre
     [(address 10, idNat), (address 10, idNat)] [] with
   | .error (.read 1 (.malformed _)) => true
   | _ => false
@@ -919,12 +945,14 @@ formed (`admitBinding`), before it reads any record. -/
   | .error (.binding .decode) => true
   | _ => false
 
-/-! ## The key encoding is injective -/
+/-! ## The keys a reading gives -/
 
-example {r s : ConstRef Address} (h : keyName (md := .anon) r = keyName s) : r = s := keyName_injective h
+example {cx : Ctx .anon} {a : Address} {k : CName .anon} (h : cx.keyAt a = .ok k) :
+    keyOfAddress cx.store cx.roles a = some k :=
+  Ctx.keyAt_eq_ok.mp h
 
-/-- info: 'Ix.Kernel.Reader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms keyName_injective
+/-- info: 'Ix.Kernel.Reader.Ctx.keyAt_eq_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ctx.keyAt_eq_ok
 
 /-! ## Model existence -/
 

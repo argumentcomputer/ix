@@ -59,7 +59,8 @@ back to Ixon records. The installed terms are annotated (binder regimes
 computed, `let` ζ-reduced, projection functions in recursor form, opaques
 installed without their values), so they cannot be inverted from the
 environment; a faithful egress is the accepted input records themselves,
-with `keyName` as the map between addresses and names. -/
+with the reader's keys, the records' own addresses (`Ctx.keyAt`), as the map
+between the two. -/
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
@@ -255,12 +256,12 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   let reconstructed ← match Ixon.Authenticated.reconstruct maxProjections prim with
     | .ok cs => pure cs
     | .error e => throw (IO.userError s!"reconstruct: {reprStr e}")
-  let (_, decls₁) ← IO.ofExcept ((Ix.Kernel.Admission.readStream table pre compiled blobs hints.lookup).mapError toString)
-  let (_, decls₂) ← IO.ofExcept ((Ix.Kernel.Admission.readStream table pre reconstructed blobs hints.lookup).mapError toString)
+  let (_, decls₁) ← IO.ofExcept ((Ix.Kernel.Admission.readStream Address.blake3Pure table pre compiled blobs hints.lookup).mapError toString)
+  let (_, decls₂) ← IO.ofExcept ((Ix.Kernel.Admission.readStream Address.blake3Pure table pre reconstructed blobs hints.lookup).mapError toString)
   if let some d := declsDiff decls₁ decls₂ then
     report := { report with problems := report.problems.push s!"re-read with written projections: {d}" }
   -- the three certified entries
-  let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants table compiled blobs hints.lookup).mapError
+  let env₁ ← IO.ofExcept ((Ix.Kernel.Admission.checkConstants Address.blake3Pure table compiled blobs hints.lookup).mapError
     fun e => s!"checkConstants: {e}")
   let bytes := prim.map fun (a, c) => (a, Ixon.serConstant c)
   let env₂ ← match Ixon.Authenticated.checkBytesProjection binding maxProjections limits bytes blobs hints.lookup with
@@ -280,22 +281,25 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
   | .error (.checker e) =>
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
-  let cx := Ix.Kernel.Admission.streamContext table pre compiled blobs hints.lookup
+  let cx := Ix.Kernel.Admission.streamContext Address.blake3Pure table pre compiled blobs hints.lookup
   let installed : Std.HashMap (CName .anon) String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do
     match Ix.Kernel.Egress.readProjection p with
     | .error _ => report := { report with problems := report.problems.push s!"projection {k} does not read" }
-    | .ok (layout, ref) =>
-      let n := cx.nameOf ref
-      match installed[n]? with
-      | some kind =>
-        if (layoutKinds layout).contains kind then
-          report := { report with projectionsInstalled := report.projectionsInstalled + 1 }
-        else report := { report with problems := report.problems.push (
-          s!"projection {k} ({reprStr layout}) names {n}, installed as {kind}") }
-      | none => report := { report with problems := report.problems.push (
-          s!"projection {k} ({reprStr layout}) names {n}, which is not installed") }
+    | .ok (layout, _) =>
+      match cx.keyAt k with
+      | .error e => report := { report with problems := report.problems.push (
+          s!"projection {k} ({reprStr layout}) is not keyed: {e}") }
+      | .ok n =>
+        match installed[n]? with
+        | some kind =>
+          if (layoutKinds layout).contains kind then
+            report := { report with projectionsInstalled := report.projectionsInstalled + 1 }
+          else report := { report with problems := report.problems.push (
+            s!"projection {k} ({reprStr layout}) names {n}, installed as {kind}") }
+        | none => report := { report with problems := report.problems.push (
+            s!"projection {k} ({reprStr layout}) names {n}, which is not installed") }
   return report
 
 /-- The records of `roots`' closure that the environment check accepts, in the

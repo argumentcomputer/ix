@@ -175,7 +175,7 @@ def truncated (bytes : ByteArray) : ByteArray := bytes.extract 0 (bytes.size - 1
 
 /-- The reader's name of a compiled singleton record. -/
 def keyOf (input : Input) (name : Lean.Name) : Option String :=
-  (input.named name).map fun a => toString (keyName (md := .anon) (.member a 0))
+  (input.named name).map fun a => toString (Ix.Kernel.Key.id (md := .anon) a)
 
 def cases : List Case := [
   -- accepted
@@ -297,7 +297,7 @@ def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<
 
 /-- The names the seeds are installed under. -/
 def seedNames (input : Input) : List (Lean.Name × Option (CName .anon)) :=
-  input.seeds.map fun (n, a) => (n, (resolve input.cx.store a).map input.cx.nameOf)
+  input.seeds.map fun (n, a) => (n, (input.cx.keyAt a).toOption)
 
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let started ← IO.monoMsNow

@@ -230,10 +230,10 @@ equation, by upstream's design.
   type's reading and its value's reading (or the projection rewrite), and
   is installed under that name with its kind (a quotient record,
   `sorryAx` and `Quot.sound` install as the basis blocks do).
-- `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_role`/`Ctx.nameOf_of_unbound`
-  (`IxC/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which key a reference
-  is read under (its role's key where the table binds it, the input key
-  `keyName` otherwise).
+- `Ctx.keyAt_eq_ok`, `Ctx.memberKey_of_role` and `Ctx.memberKey_of_unbound`
+  (`IxC/Kernel/Ixon/ReaderSpec.lean`): which key a reference and a member are
+  read under (the role's key where the table binds the reference, otherwise
+  the input key of the address it is keyed by).
 - `RoleTable.ofBytes_eq_some_iff` (`IxC/Kernel/Ixon/RoleTable.lean`): the
   binding section's decoder is canonical: it returns `t` exactly when `t` is
   in the format's domain and encodes to the given bytes.
@@ -319,20 +319,26 @@ block-order check is.
 `Mode`: `.anon` (Ixon: an input constant is identified by its address),
 `.meta` (the same, with display data; it has no reader yet) and `.source`
 (Lean through `CanonM`: an input constant is identified by its name).
-`Mode.Id md` is what identifies an input constant (a name in every mode for
-now), `Mode.D md α` the display data (`Unit` outside `.meta`), and
-`Mode.Certified` holds of the modes the theorems are stated at (`.anon`,
-`.source`). The checker and its proofs are generic in the mode. Source mode
-installs an `Env .source`; the Ixon entries at BLAKE3 install an `Env .anon`.
+`Mode.Id md` is what identifies an input constant (an `Address` in `.anon`
+and `.meta`, a `Name` in `.source`), `Mode.D md α` the display data (`Unit`
+outside `.meta`), and `Mode.Certified` holds of the modes the theorems are
+stated at (`.anon`, `.source`; `model_exists` takes it). The checker and its
+proofs are generic in the mode. Source mode installs an `Env .source`; the
+Ixon entry installs an `Env .anon`.
 
 **Keys** (`IxC/Kernel/Key.lean`, `IxC/Kernel/Ixon/Reader.lean`). The kernel's
 environment is keyed by `Ix.Kernel.Key md`, an inductive with a cached hash:
 
-- `.id n`, an input constant. The reader encodes a reference
-  `ConstRef Address` under the reserved root `ix`: `.member b i` is
-  `.id ix.<hex b>.i` and `.ctor b i c` is `.id ix.<hex b>.i.c`, with numeric
-  components (`keyName`, injective). The Lean ingress keys a constant by its
-  Lean name (`Ix.LeanIngress.ingressKey`).
+- `.id i`, an input constant. In Ixon mode `i` is the address its references
+  use, the address in a record's `refs` table: a singleton's (`defn`, `recr`,
+  `axio`, `quot`) own record's, a block member's projection record's (`iPrj`,
+  `cPrj`, `rPrj`, `dPrj`); a `muts` block's own address is never a key. A
+  member whose projection record the input omits is keyed by the address that
+  record would have under the entry's hash (`Admission.projectionAddress`).
+  The reader keeps the side map from a member's position to its address
+  (`Reader.Keys.address`) and resolves an address to its block and position
+  (`Reader.resolve`) to group a block. The Lean ingress keys a constant by
+  its Lean name (`Ix.LeanIngress.ingressKey`).
 - `.role r`, the constant a role is bound to: in Ixon mode the reference the
   role table binds (`Reader.bindingsOf`), in Source mode the constant under
   the role's Lean name (`Role.leanName`, `Key.ofName`).
@@ -344,18 +350,20 @@ environment is keyed by `Ix.Kernel.Key md`, an inductive with a cached hash:
   generated keys, never an input name.
 
 Equality is structural behind a pointer and hash guard (`Key.beq`, `@[csimp]`
-on `Key.beqPtr_eq`). A key prints as the name it had while keys were names
-(`Key.toName`: `.role r` as `r.leanName`, `.aux k d` as `k`'s spelling with
-`d`'s suffix, `Derived.spell`). Only messages and the front ends read that
-spelling: their name maps, the reader's key for an unbound recursor (below)
-and the stream check that pairs a recursor with its type by it; the fold
-never does. Level parameters are positions (`LevelParam := Nat`): a
+on `Key.beqPtr_eq`); the cached hash of an input key is its address's first
+eight bytes, or its name's hash. The reader computes every record address's
+key ahead (`Reader.Keys.byAddress`), so every occurrence of an address reads
+one key object. A key prints per mode (`Key.toName`): an address as `#` and
+its first twelve hexadecimal digits, a name as itself, `.role r` as
+`r.leanName`, `.aux k d` as `k`'s spelling with `d`'s suffix
+(`Derived.spell`). Only messages and the front ends' name maps read that
+spelling; the fold never does. Level parameters are positions (`LevelParam := Nat`): a
 constant's are `0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]`
 after its block's `n`, the shape by which the checker recognises it
-(`Reader.recLps`). A recursor the table does not bind is keyed after what it
-eliminates, as Lean names it (`.id ⟦T⟧.rec`, and `.id ⟦T⟧.rec_j` for the
-`j`-th auxiliary motive of a nested block); the checker takes a block's
-recursors by position, not by name.
+(`Reader.recLps`). A recursor is keyed by its own record (a `recr`'s or an
+`rPrj`'s address), never after what it eliminates; an inductive block lists
+its recursors in motive order, and the stream's index-count check pairs the
+recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
 knows 64 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
@@ -567,7 +575,7 @@ audits build in the root package, and the model audit builds in
 
 | Module | Checks |
 | --- | --- |
-| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 21, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
+| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 22, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
 | `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
@@ -580,13 +588,22 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3412 | 82 |
-| reader `readRecords`, `readStream` | 2030 | 79 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5578 | 111 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5575 | 111 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5610 | 111 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5745 | 112 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5764 | 115 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3439 | 90 |
+| reader `readRecords`, `readStream` | 2127 | 89 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5552 | 113 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5549 | 113 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5574 | 113 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5708 | 114 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5727 | 117 |
+
+Step 5b's address keys (an `.anon` input key is the address its references
+use) moved them from 3412, 2030, 5578, 5575, 5610, 5745 and 5764, and the
+inherited externs from 82, 79, 111, 111, 111, 112 and 115, all `Init`'s: the
+fold compares, hashes and prints addresses (`ByteArray.decEq`,
+`ByteArray.get!`, the hexadecimal digits of a message); the reader serializes
+the projection record of a member the input omits one of, to key it by that
+record's address; the hexadecimal key spelling and the recursors' spelled
+keys left.
 
 Step 5b's mode index (the kernel's types take a `Mode`) moved them from 3364,
 2066, 5566, 5563, 5598, 5733 and 5752, externs unchanged: the pinned names and

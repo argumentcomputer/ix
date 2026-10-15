@@ -58,7 +58,7 @@ theorem checkBytes_reading {binding : Admission.Binding} {limits : Admission.Lim
         ∃ constants, Admission.BindingAdmitted Address.blake3Pure binding t ∧
           Admission.RecordsRead limits records constants ∧
           Admission.Hashed Address.blake3Pure constants ∧
-          Admission.Installed t pre constants blobs hint env :=
+          Admission.Installed Address.blake3Pure t pre constants blobs hint env :=
   Admission.checkBytes_reading h
 
 /-- **Model existence** at BLAKE3. -/
@@ -105,7 +105,7 @@ theorem checkBytesProjection_reading {binding : Admission.Binding} {maxProjectio
       Projection.Expanded Address.blake3Pure maxProjections input output ∧
       Admission.Hashed Address.blake3Pure output ∧
       ∃ t pre, Admission.BindingAdmitted Address.blake3Pure binding t ∧ preludeFor t = .ok pre ∧
-        Admission.Installed t pre output blobs hint env :=
+        Admission.Installed Address.blake3Pure t pre output blobs hint env :=
   Projection.checkBytes_reading h
 
 theorem checkBytesProjection_has_model (V : Type v) [Ix.Kernel.SetTheory V]
@@ -148,7 +148,7 @@ theorem checkBytesBlockOrder_reading {binding : Admission.Binding} {maxProjectio
       BlockOrder.Ordered Address.blake3Pure orderLimits blobs input ∧
       Admission.Hashed Address.blake3Pure output ∧
       ∃ t pre, Admission.BindingAdmitted Address.blake3Pure binding t ∧ preludeFor t = .ok pre ∧
-        Admission.Installed t pre output blobs hint env :=
+        Admission.Installed Address.blake3Pure t pre output blobs hint env :=
   BlockOrder.checkBytes_reading h
 
 theorem checkBytesBlockOrder_has_model (V : Type v) [Ix.Kernel.SetTheory V]

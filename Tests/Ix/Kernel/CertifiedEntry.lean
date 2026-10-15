@@ -19,7 +19,7 @@ applied. The byte stage and the shared Ixon record fixtures are tested in
 `Tests.Ix.Kernel.Authentication`. -/
 
 open Ix.Kernel (ConstRef)
-open Ix.Kernel.Reader (isSingleton SingletonRead keyName keyName_injective)
+open Ix.Kernel.Reader (isSingleton SingletonRead)
 open Tests.Ix.Kernel.Reader
 
 namespace Tests.Ix.Kernel.CertifiedEntry
@@ -221,8 +221,8 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
     (h : Ixon.Authenticated.checkBytes binding limits records blobs = .ok env) :
     ∃ t pre constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
-        ∃ st decl, SingletonRead (Ix.Kernel.Admission.streamContext t pre constants blobs
-          (fun _ => none)) st owner c decl ∧
+        ∃ st decl, SingletonRead (Ix.Kernel.Admission.streamContext Address.blake3Pure t pre constants
+          blobs (fun _ => none)) st owner c decl ∧
           ∀ s, Ix.Kernel.Cached.declSkel decl = some s →
             ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
   obtain ⟨t, pre, _, _, _, _, _, constants, _, reading, _, installed⟩ :=
@@ -240,7 +240,7 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
     (h : Ixon.Authenticated.checkBytes binding limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
       ∃ t pre constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
-        Ix.Kernel.Admission.Installed t pre constants blobs (fun _ => none) env ∧
+        Ix.Kernel.Admission.Installed Address.blake3Pure t pre constants blobs (fun _ => none) env ∧
         (constants.map Prod.fst).Nodup ∧
         ∀ entry ∈ constants, entry.1 = Address.blake3Pure (Ixon.serConstant entry.2) := by
   obtain ⟨t, pre, _, _, _, keys, _, constants, _, reading, hashed, installed⟩ :=
@@ -258,7 +258,5 @@ example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Record
     (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesBlockOrder_has_model V h
-
-example : Function.Injective (keyName (md := .anon)) := fun _ _ h => keyName_injective h
 
 end Tests.Ix.Kernel.CertifiedEntry

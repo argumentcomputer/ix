@@ -4,6 +4,7 @@ import IxC.Address.Core
 import IxC.Ixon.Types
 import IxC.Kernel.Ref
 import IxC.Kernel.Ixon.RoleTable
+import IxC.Kernel.Ingress.Records
 
 /-! # Ixon records as kernel declarations
 
@@ -30,32 +31,31 @@ environment to the Ixon records; the latter is the fidelity theorem
 
 ## Keys
 
-The kernel key is `Ix.Kernel.Key` (`IxC/Kernel/Key.lean`). A constant
-reference `ConstRef Address` is an input key, encoded injectively under the
-reserved root `ix`:
+The kernel key is `Ix.Kernel.Key md` (`IxC/Kernel/Key.lean`). In the Ixon
+modes an input constant is keyed by the address its references use, the
+address in a record's `refs` table (IXC-PLAN §4):
 
-* `.member b i` ↦ `.id ix.<hex b>.i` (a `.num` component);
-* `.ctor b i c` ↦ `.id ix.<hex b>.i.c`;
-* a level parameter is positional: parameter `i` is the number `i`.
+* a singleton (`defn`, `recr`, `axio`, `quot`) by its own record's address;
+* a block member by its projection record's (`iPrj`, `cPrj`, `rPrj` or
+  `dPrj`); a `muts` block's own address is never a key. A member whose
+  projection record the input omits is keyed by the address that record
+  would have, under the entry's hash (`Ctx.reconstruct`).
 
-Hex spelling of the address bytes is injective, and the two shapes differ in
-their number of `.num` components, so distinct references get distinct keys
-(`keyName_injective`). No input key is derived (`.aux`), so none is a key
-the checker or the modeller generates (`_model`, `T.proj.i`,
-`T.projTable.0`, …).
+The reader keeps the side map from a member's position to its address
+(`Keys.address`), and resolves an address to its block and position
+(`resolve`) to group a block. Distinct references have distinct addresses,
+so distinct input constants get distinct keys; one address is one key
+object (`Keys.byAddress`), read at every occurrence. No input key is derived
+(`.aux`), so none is a key the checker or the modeller generates (`_model`,
+`T.proj.i`, `T.projTable.0`, …). A level parameter is positional: parameter
+`i` is the number `i`. Source mode's only reading of Ixon records is the
+prelude's, whose every constant is bound to a role (`Mode.addressId?`).
 
-Two kinds of keys are not of this form:
-
-* **Recursors** the role table does not bind are keyed after what they
-  eliminate: the recursor whose motive is the block's member `m` (in motive
-  order) is `.id ⟦T_m⟧.rec`, and the one whose motive is the `j`-th
-  auxiliary (nested) motive is `.id ⟦T_0⟧.rec_j` (1-based), spelled from
-  the member's key (`Key.toName`), exactly Lean's own convention. The
-  motive is read off the recursor's type (the head of its result), the
-  member off that motive's major carrier. The checker and the modeller take
-  a block's recursors by position; only the stream check that pairs a
-  recursor with its type for the index count (`lowerInductive`) reads the
-  spelling, until recursors are keyed by their own records.
+* **Recursors** have keys of their own, their own records' addresses (a
+  `recr` singleton's, or an `rPrj`'s). The motive a recursor eliminates is
+  read off its type (the head of its result), and an inductive block lists
+  its recursors in motive order; the stream check of a recursor's index
+  count pairs it with the type of its motive (`RecCounts.motive`).
 * **Role keys** (`Bindings.names`): every reference the input's role table
   (`Ix.Kernel.RoleTable`) binds is keyed by its role (`roleKey r = .role r`),
   and no other: the basis (`Eq`, `Nat`, `PUnit`,
@@ -134,138 +134,6 @@ abbrev CLevel := Ix.Kernel.Level
 abbrev CDecl (md : Mode) := Ix.Kernel.Declaration md
 abbrev CInfo (md : Mode) := Ix.Kernel.ConstantInfo md
 abbrev CVal (md : Mode) := Ix.Kernel.ConstantVal md
-
-/-! ## Keys -/
-
-/-- The reserved root of address-encoded names. -/
-def ixRoot : Ix.Kernel.Name := .str .anonymous "ix"
-
-def addressHex (a : Address) : String := hexOfBytes a.hash
-
-/-- `ix.<hex b>`. -/
-def blockName (b : Address) : Ix.Kernel.Name := .str ixRoot (addressHex b)
-
-/-- The address encoding of a constant reference, as a name. -/
-def addressName : ConstRef Address → Ix.Kernel.Name
-  | .member b i => .num (blockName b) i
-  | .ctor b i c => .num (.num (blockName b) i) c
-
-/-- The key of a constant reference the role table does not bind: an input
-key, its address encoding. -/
-def keyName (r : ConstRef Address) : CName md := .id (addressName r)
-
-/-! ### `keyName` is injective
-
-Distinct references get distinct names: the hexadecimal spelling of the
-address bytes is injective (each byte is two digits that `byteOfHex` reads
-back, checked for all 256 bytes by kernel evaluation), and a member's name
-and a constructor's name differ in their number of trailing `.num`
-components. Nothing in the checker's soundness needs this (`model_exists`
-holds for every declaration array); it is what makes the encoding a key. -/
-
-/-- `ByteArray.toList`'s loop, in closed form. -/
-theorem byteArray_toList_loop (bs : ByteArray) (i : Nat) (r : List UInt8) :
-    ByteArray.toList.loop bs i r = r.reverse ++ bs.data.toList.drop i := by
-  fun_induction ByteArray.toList.loop bs i r with
-  | case1 i r h ih =>
-    rw [ih]
-    have h' : i < bs.data.size := h
-    have hl : i < bs.data.toList.length := by rw [Array.length_toList]; exact h'
-    rw [List.drop_eq_getElem_cons hl]
-    simp only [ByteArray.get!, getElem!_pos bs.data i h', List.reverse_cons, List.append_assoc,
-      List.singleton_append, Array.getElem_toList]
-  | case2 i r h =>
-    have : bs.data.toList.length ≤ i := by rw [Array.length_toList]; exact Nat.le_of_not_lt h
-    rw [List.drop_eq_nil_of_le this, List.append_nil]
-
-theorem byteArray_toList (bs : ByteArray) : bs.toList = bs.data.toList := by
-  rw [ByteArray.toList, byteArray_toList_loop]; rfl
-
-/-- The two hexadecimal digits `hexOfByte` writes for a byte. -/
-def hexDigits (b : UInt8) : List Char :=
-  [(hexOfNat (UInt8.toNat (b >>> 4))).get!, (hexOfNat (UInt8.toNat (b &&& 0xF))).get!]
-
-theorem hexOfByte_toList (b : UInt8) : (hexOfByte b).toList = hexDigits b := by
-  simp [hexOfByte, hexDigits]
-
-/-- Every byte's digits read back as the byte (all 256, by kernel evaluation). -/
-theorem byteOfHex_hexDigits_lt : ∀ n, n < 256 →
-    byteOfHex (hexDigits (UInt8.ofNat n))[0]! (hexDigits (UInt8.ofNat n))[1]! =
-      some (UInt8.ofNat n) := by
-  decide +kernel
-
-theorem byteOfHex_hexDigits (b : UInt8) :
-    byteOfHex (hexDigits b)[0]! (hexDigits b)[1]! = some b := by
-  have := byteOfHex_hexDigits_lt b.toNat b.toNat_lt
-  rwa [UInt8.ofNat_toNat] at this
-
-theorem hexOfBytes_toList_foldl (acc : String) (l : List UInt8) :
-    ((l.map hexOfByte).foldl (· ++ ·) acc).toList = acc.toList ++ l.flatMap hexDigits := by
-  induction l generalizing acc with
-  | nil => simp
-  | cons b l ih => simp [ih, String.toList_append, hexOfByte_toList, List.append_assoc]
-
-theorem hexOfBytes_toList (bs : ByteArray) :
-    (hexOfBytes bs).toList = bs.data.toList.flatMap hexDigits := by
-  rw [hexOfBytes, hexOfBytes_toList_foldl, byteArray_toList]; simp
-
-theorem hexDigits_injective {a b : UInt8} (h : hexDigits a = hexDigits b) : a = b := by
-  have ha := byteOfHex_hexDigits a
-  rw [h, byteOfHex_hexDigits b] at ha
-  exact (Option.some.inj ha).symm
-
-theorem hexDigits_length (b : UInt8) : (hexDigits b).length = 2 := rfl
-
-theorem flatMap_hexDigits_injective :
-    ∀ {l m : List UInt8}, l.flatMap hexDigits = m.flatMap hexDigits → l = m
-  | [], [], _ => rfl
-  | [], b :: m, h => by simp [List.flatMap_cons, hexDigits] at h
-  | a :: l, [], h => by simp [List.flatMap_cons, hexDigits] at h
-  | a :: l, b :: m, h => by
-    rw [List.flatMap_cons, List.flatMap_cons] at h
-    obtain ⟨hd, tl⟩ := List.append_inj h (by rw [hexDigits_length, hexDigits_length])
-    rw [hexDigits_injective hd, flatMap_hexDigits_injective tl]
-
-/-- The hexadecimal spelling of a byte array is injective. -/
-theorem hexOfBytes_injective {a b : ByteArray} (h : hexOfBytes a = hexOfBytes b) : a = b := by
-  have hl := congrArg String.toList h
-  rw [hexOfBytes_toList, hexOfBytes_toList] at hl
-  have hd := flatMap_hexDigits_injective hl
-  cases a; cases b
-  simp only [Array.toList_inj] at hd
-  rw [hd]
-
-theorem addressHex_injective {a b : Address} (h : addressHex a = addressHex b) : a = b := by
-  cases a; cases b
-  simp only [addressHex] at h
-  rw [hexOfBytes_injective h]
-
-/-- **`addressName` is injective**: distinct constant references get
-distinct names. -/
-theorem addressName_injective {r s : ConstRef Address} (h : addressName r = addressName s) :
-    r = s := by
-  cases r with
-  | member b i =>
-    cases s with
-    | member b' i' =>
-      simp only [addressName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
-        true_and] at h
-      obtain ⟨hb, hi⟩ := h
-      rw [addressHex_injective hb, hi]
-    | ctor b' i' c' => simp [addressName, blockName] at h
-  | ctor b i c =>
-    cases s with
-    | member b' i' => simp [addressName, blockName] at h
-    | ctor b' i' c' =>
-      simp only [addressName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
-        true_and] at h
-      obtain ⟨⟨hb, hi⟩, hc⟩ := h
-      rw [addressHex_injective hb, hi, hc]
-
-/-- **`keyName` is injective**: distinct constant references get distinct
-keys. -/
-theorem keyName_injective {r s : ConstRef Address} (h : keyName (md := md) r = keyName s) : r = s :=
-  addressName_injective (Ix.Kernel.Key.id.inj h)
 
 /-! ## Errors -/
 
@@ -431,7 +299,7 @@ def headRef (store : Store) (owner : Address) (c : Ixon.Constant) (e : Ixon.Expr
 /-! ## The recursor index -/
 
 /-- What the reader knows about a recursor before reading its block. -/
-structure RecEntry (md : Mode) where
+structure RecEntry where
   /-- the inductive block it eliminates -/
   block : Address
   /-- the motive it eliminates (its result's head), in motive order -/
@@ -442,8 +310,6 @@ structure RecEntry (md : Mode) where
   /-- whether its level parameters carry an elimination level in front of
   the block's (its parameter `0` is then named after the block's) -/
   large : Bool
-  /-- its name -/
-  name : CName md
 
 /-- What the reader knows about an inductive block before reading it. -/
 structure BlockShape where
@@ -453,8 +319,8 @@ structure BlockShape where
   recs : Array (ConstRef Address)
   deriving Inhabited
 
-structure RecIndex (md : Mode) where
-  recs : Std.HashMap (ConstRef Address) (RecEntry md) := {}
+structure RecIndex where
+  recs : Std.HashMap (ConstRef Address) RecEntry := {}
   blocks : Std.HashMap Address BlockShape := {}
   deriving Inhabited
 
@@ -477,16 +343,12 @@ def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
   let major ← headRef store owner c (← doms.getLast?)
   pure (pos - nP, carriers, major)
 
-/-- Index every recursor of `records` by the block it eliminates, and key
-it: its role's key if the table binds its reference, otherwise the input key
-spelled `T_m.rec`, or `T_0.rec_j` at the `j`-th auxiliary motive, from the
-spelling of its member's key. A recursor whose type does not have the
+/-- Index every recursor of `records` by the block it eliminates and the motive
+it eliminates there. A recursor is keyed by its own record (`Ctx.memberKey`),
+never after the type it eliminates. A recursor whose type does not have the
 recursor shape is not indexed; its record and its block then decline. -/
-def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) (CName md))
-    (records : Array (Address × Ixon.Constant)) : RecIndex md := Id.run do
-  let memberSpelling (r : ConstRef Address) : Ix.Kernel.Name :=
-    (roles.getD r (keyName r)).toName
-  let mut idx : RecIndex md := {}
+def buildIndex (store : Store) (records : Array (Address × Ixon.Constant)) : RecIndex := Id.run do
+  let mut idx : RecIndex := {}
   let mut found : Std.HashMap Address (Array (Nat × ConstRef Address)) := {}
   for (owner, c) in records do
     for (j, r) in recursorMembers c do
@@ -506,18 +368,12 @@ def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) (CName md
       unless order.size == size && order[0]? == some i0 &&
           order.all (fun i => indc.any (·.1 == i)) &&
           (order.toList.eraseDups.length == size) do continue
-      let base : ConstRef Address := .member b (order[0]!)
-      let name : CName md := match roles[ref]? with
-        | some k => k
-        | none => .id <|
-          if m < size then (memberSpelling (.member b (order[m]!))).str "rec"
-          else (memberSpelling base).str s!"rec_{m - size + 1}"
       -- one recursor per motive of a block: the first record's (the supplied
       -- records come before the prelude's fallback); a second one is not
       -- grouped with the block and declines as a recursor without its block
       if (found.getD b #[]).any (·.1 == m) then continue
       let large := r.lvls.toNat == first.lvls.toNat + 1
-      idx := { idx with recs := idx.recs.insert ref ⟨b, m, major, large, name⟩ }
+      idx := { idx with recs := idx.recs.insert ref ⟨b, m, major, large⟩ }
       found := found.insert b ((found.getD b #[]).push (m, ref))
       unless idx.blocks.contains b do
         idx := { idx with blocks := idx.blocks.insert b ⟨order, #[]⟩ }
@@ -529,66 +385,144 @@ def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) (CName md
 
 /-! ## The reader's context -/
 
-/-- Address encodings computed ahead of reading: every entry is `keyName` of
-its key. The reader names a reference at every occurrence (3.7 million
-`ref`/`prj` nodes in Init+Std); calling `keyName` there would spell the
-address in hexadecimal each time, which dominates the reading time, and give
-every occurrence its own name object. Looked up here, each reference is spelled once and every
-occurrence reads the same object, as a lean4export stream's name table
-gives upstream con-leche's parser one name per index. -/
-structure KeyNames (md : Mode) where
-  map : Std.HashMap (ConstRef Address) (CName md) := {}
-  sound : ∀ r n, map[r]? = some n → n = keyName r := by simp
+/-- **The key of the constant at a record address**, as a reading gives it:
+the key of the role the table binds the reference the address resolves to,
+otherwise the input key of the address itself (`Mode.addressId?`). `none` for
+an address the store does not resolve, and for an unbound one in Source mode,
+which keys no constant by an address. -/
+def keyOfAddress (store : Store) (roles : Bindings md) (a : Address) : Option (CName md) := do
+  let r ← resolve store a
+  match roles.names[r]? with
+  | some k => some k
+  | none => (Mode.addressId? md a).map .id
 
-/-- `keyName r`, from the table where it has an entry. -/
-def KeyNames.get (k : KeyNames md) (r : ConstRef Address) : CName md :=
-  match k.map[r]? with
-  | some n => n
-  | none => keyName r
+/-- **Keys computed ahead of reading.** `byAddress` holds record addresses'
+keys (`keyOfAddress`): the reader names a reference at every occurrence (3.7
+million `ref`/`prj` nodes in Init+Std), and looked up here every occurrence of
+an address reads the same key object. `address` is the side map from a
+member's position to the address it is keyed by, its record's. -/
+structure Keys (md : Mode) (store : Store) (roles : Bindings md) where
+  byAddress : Std.HashMap Address (CName md) := {}
+  address : Std.HashMap (ConstRef Address) Address := {}
+  byAddress_sound : ∀ a k, byAddress[a]? = some k → keyOfAddress store roles a = some k := by simp
+  address_sound : ∀ r a, address[r]? = some a → resolve store a = some r := by simp
 
-theorem KeyNames.get_eq (k : KeyNames md) (r : ConstRef Address) : k.get r = keyName r := by
-  unfold KeyNames.get
-  cases h : k.map[r]? with
-  | none => rfl
-  | some n => exact k.sound r n h
+/-- The tables with the key of the record address `a` added; an address
+already there keeps its key object. -/
+def Keys.withKey (k : Keys md store roles) (a : Address) (key : CName md)
+    (h : keyOfAddress store roles a = some key) : Keys md store roles :=
+  if k.byAddress.contains a then k else
+  { k with
+    byAddress := k.byAddress.insert a key
+    byAddress_sound := fun a' key' h' => by
+      rw [Std.HashMap.getElem?_insert] at h'
+      split at h'
+      · next he => cases h'; rw [← beq_iff_eq.mp he]; exact h
+      · exact k.byAddress_sound a' key' h' }
 
-/-- The table with `r`'s encoding added. -/
-def KeyNames.insert (k : KeyNames md) (r : ConstRef Address) : KeyNames md :=
-  ⟨k.map.insert r (keyName r), fun r' n h => by
-    rw [Std.HashMap.getElem?_insert] at h
-    split at h
-    · next hr =>
-      cases h
-      rw [beq_iff_eq.mp hr]
-    · exact k.sound r' n h⟩
+/-- The tables with the reference `r` keyed by the record address `a`; the
+first address of a reference stays. -/
+def Keys.withAddress (k : Keys md store roles) (r : ConstRef Address) (a : Address)
+    (h : resolve store a = some r) : Keys md store roles :=
+  if k.address.contains r then k else
+  { k with
+    address := k.address.insert r a
+    address_sound := fun r' a' h' => by
+      rw [Std.HashMap.getElem?_insert] at h'
+      split at h'
+      · next he => cases h'; rw [← beq_iff_eq.mp he]; exact h
+      · exact k.address_sound r' a' h' }
 
-/-- The address encodings of the unbound references `records` denote (each
-record's `resolveSource`), for `Ctx.keys`. -/
-def keyNamesOf (store : Store) (roles : Std.HashMap (ConstRef Address) (CName md))
-    (records : Array (Address × Ixon.Constant)) : KeyNames md :=
-  records.foldl (init := {}) fun k (a, c) =>
-    match resolveSource store a c with
-    | some r => if roles.contains r || k.map.contains r then k else k.insert r
+/-- The keys of `records`' addresses and the side map of the references they
+denote. -/
+def keysOf (store : Store) (roles : Bindings md) (records : Array (Address × Ixon.Constant)) :
+    Keys md store roles :=
+  records.foldl (init := {}) fun k (a, _) =>
+    let k := match h : resolve store a with
+      | some r => k.withAddress r a h
+      | none => k
+    match h : keyOfAddress store roles a with
+    | some key => k.withKey a key h
     | none => k
 
 /-- Everything a record is read against: the stores, the role bindings, the
-recursor index, the host's (optional, untrusted) reducibility hints, and the
-address encodings computed ahead (`keyNamesOf`; an empty table only costs
-time). -/
+recursor index, the host's (optional, untrusted) reducibility hints, the
+addresses of the projection records the input omits (`reconstruct`: under
+the entry's hash; none outside the entry) and the keys computed ahead
+(`keysOf`; empty tables only cost time). -/
 structure Ctx (md : Mode) where
   store : Store
   blob : Address → Option ByteArray
   roles : Bindings md
-  index : RecIndex md
+  index : RecIndex
   hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none
-  keys : KeyNames md := {}
+  reconstruct : ConstRef Address → Option Address := fun _ => none
+  keys : Keys md store roles := {}
 
-def Ctx.nameOf (cx : Ctx md) (r : ConstRef Address) : CName md :=
-  match cx.index.recs[r]? with
-  | some e => e.name
-  | none => match cx.roles.names[r]? with
-    | some n => n
-    | none => cx.keys.get r
+/-- **The key a reference reads as**: the constant at the record address `a`
+(an entry of a record's `refs`), by `keyOfAddress`, looked up in `keys` first. -/
+def Ctx.keyAt (cx : Ctx md) (a : Address) : ReadM (CName md) :=
+  match cx.keys.byAddress[a]? with
+  | some k => pure k
+  | none =>
+    match resolve cx.store a with
+    | none => malformed s!"reference {a} is missing or has invalid ownership"
+    | some r =>
+      match cx.roles.names[r]? with
+      | some k => pure k
+      | none =>
+        match Mode.addressId? md a with
+        | some i => pure (.id i)
+        | none => declined s!"reference {a} is not bound to a role"
+
+/-- The address of a singleton record (`defn`, `recr`, `axio`, `quot`) at a
+member reference `.member b 0`: `b` itself. -/
+def singletonAt (store : Store) : ConstRef Address → Option Address
+  | .member b 0 => do
+    match (← store b).info with
+    | .defn _ | .recr _ | .axio _ | .quot _ => some b
+    | _ => none
+  | _ => none
+
+/-- **The address a member reference is keyed by**: its record's (a
+singleton's own, a projection's: `Keys.address`, else `singletonAt`), or for
+a block member whose projection record the input omits, the address that
+record would have (`reconstruct`). -/
+def Ctx.addressOf (cx : Ctx md) (r : ConstRef Address) : ReadM Address :=
+  match cx.keys.address[r]? with
+  | some a => pure a
+  | none =>
+    match singletonAt cx.store r with
+    | some a => pure a
+    | none =>
+      match cx.reconstruct r with
+      | some a => pure a
+      | none => declined s!"a member of block {r.block} has no projection record"
+
+/-- **The key of the constant at a member reference**, as its declaration is
+keyed: its role's key if the table binds it, otherwise the input key of the
+address it is keyed by (`addressOf`). -/
+def Ctx.memberKey (cx : Ctx md) (r : ConstRef Address) : ReadM (CName md) :=
+  match cx.roles.names[r]? with
+  | some k => pure k
+  | none => do
+    let a ← cx.addressOf r
+    match cx.keys.byAddress[a]? with
+    | some k => pure k
+    | none =>
+      match Mode.addressId? md a with
+      | some i => pure (.id i)
+      | none => declined s!"a member of block {r.block} is not bound to a role"
+
+/-- The reader's context over `store`, whose records are `records`: the role
+bindings of the table `t`, the recursor index and the keys computed ahead. -/
+def contextWith (store : Store) (blob : Address → Option ByteArray) (t : Ix.Kernel.RoleTable)
+    (records : Array (Address × Ixon.Constant))
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (reconstruct : ConstRef Address → Option Address := fun _ => none) : Ctx md :=
+  let roles := bindingsOf store t
+  { store, blob, roles, index := buildIndex store records, hint, reconstruct,
+    keys := keysOf store roles records }
 
 /-- A recursor's level parameters: its block's `blockLps`, behind the
 fresh elimination parameter `blockLps.length` for a large eliminator (the
@@ -620,8 +554,8 @@ structure ECx (md : Mode) where
   src : Ixon.Constant
   /-- the member's universe table, its variables read as level parameters -/
   univs : Array CLevel
-  /-- `recur i` -/
-  self : Nat → Option (CName md)
+  /-- `recur i`: the key of the block's member `i`, `none` outside the block -/
+  self : Nat → Option (ReadM (CName md))
 
 def ECx.level (e : ECx md) (i : UInt64) : ReadM CLevel :=
   match e.univs[i.toNat]? with
@@ -631,10 +565,10 @@ def ECx.level (e : ECx md) (i : UInt64) : ReadM CLevel :=
 def ECx.levels (e : ECx md) (us : Array UInt64) : ReadM (List CLevel) :=
   us.toList.mapM e.level
 
-def ECx.refAt (e : ECx md) (i : UInt64) : ReadM (ConstRef Address) := do
+/-- The key of the reference at `refs[i]` (`Ctx.keyAt`). -/
+def ECx.keyAt (e : ECx md) (i : UInt64) : ReadM (CName md) := do
   let some a := e.src.refs[i.toNat]? | malformed "reference index is out of bounds"
-  let some r := resolve e.cx.store a | malformed s!"reference {a} is missing or has invalid ownership"
-  pure r
+  e.cx.keyAt a
 
 def ECx.blobAt (e : ECx md) (i : UInt64) : ReadM ByteArray := do
   let some a := e.src.refs[i.toNat]? | malformed "literal reference index is out of bounds"
@@ -646,14 +580,14 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
   | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
   | .sort i => do pure (.sort (← e.level i))
   | .ref i us => do
-    let r ← e.refAt i
-    pure (.const (e.cx.nameOf r) (← e.levels us))
+    let k ← e.keyAt i
+    pure (.const k (← e.levels us))
   | .recur i us => do
     let some n := e.self i.toNat | malformed "recursive reference is outside its block"
-    pure (.const n (← e.levels us))
+    pure (.const (← n) (← e.levels us))
   | .prj i field v => do
-    let r ← e.refAt i
-    pure (.proj (e.cx.nameOf r) field.toNat (← convExpr e tbl v))
+    let k ← e.keyAt i
+    pure (.proj k field.toNat (← convExpr e tbl v))
   | .str i => do
     let bytes ← e.blobAt i
     let some s := String.fromUTF8? bytes | malformed "string literal is not valid UTF-8"
@@ -680,7 +614,7 @@ structure MemberReader (md : Mode) where
   tbl : Array (ReadM (CExpr md))
 
 def MemberReader.mk' (cx : Ctx md) (src : Ixon.Constant) (param : Nat → LevelParam)
-    (self : Nat → Option (CName md)) : MemberReader md := Id.run do
+    (self : Nat → Option (ReadM (CName md))) : MemberReader md := Id.run do
   let ecx : ECx md := ⟨cx, src, src.univs.map (convUniv param), self⟩
   let mut tbl : Array (ReadM (CExpr md)) := Array.mkEmpty src.sharing.size
   for entry in src.sharing do
@@ -824,7 +758,7 @@ whether the projection rewrite applied. `heights` are the definitional
 heights so far (the block's earlier members included). -/
 def readDefinition (cx : Ctx md) (st : State md) (heights : CName md → Nat) (ref : ConstRef Address)
     (lps : List LevelParam) (mr : MemberReader md) (d : Ixon.Definition) : ReadM (CDecl md × Bool) := do
-  let name := cx.nameOf ref
+  let name ← cx.memberKey ref
   let cv : CVal md := ⟨name, lps, ← mr.read d.typ⟩
   let value ← mr.read d.value
   lowerDefinition (cx.hint ref) st heights cv value d.kind d.safety
@@ -874,6 +808,9 @@ structure RecCounts where
   minors : Nat
   indices : Nat
   k : Bool
+  /-- the motive it eliminates, where the front end knows it (the reader by
+  the recursor's type, the Lean ingress by the recursor's name) -/
+  motive : Option Nat
 
 /-- An inductive block as a front end reads it, before lowering: the block's
 declared parameter count; its types in motive order, each with its declared
@@ -918,14 +855,12 @@ def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
       if let some kE := kExpected? then
         unless r.k == kE do
           malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
-      -- the recursor of the type its spelling names (SP3 D8: pairing by the
-      -- motive replaces the spelling when recursors get their own keys)
-      if let .str T "rec" := cv.name.toName then
-        for (ty, _, _) in types do
-          if ty.name.toName == T then
-            if let some n := ty.type.piSortTeleLen? then
-              unless nPd + r.indices == n do
-                malformed s!"recursor {cv.name} declares {r.indices} indices; {T} has {n - nPd}"
+      -- the recursor of motive `m` eliminates the block's type `m` (SP3 D8)
+      if let some m := r.motive then
+        if let some (ty, _, _) := types[m]? then
+          if let some n := ty.type.piSortTeleLen? then
+            unless nPd + r.indices == n do
+              malformed s!"recursor {cv.name} declares {r.indices} indices; {ty.name} has {n - nPd}"
   -- the block's constants
   let typeInfos : List (CInfo md) := types.toList.map fun (cv, _, _) => .indInfo cv {}
   let ctorInfos : List (CInfo md) := ctors.toList.map fun (cv, nP, nF) => .ctorInfo cv nP nF
@@ -964,7 +899,7 @@ def lowerInductive (st : State md) (rb : BlockRead md) : ReadM (Read md) := do
       ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
        fun n => if memberNames.contains n then some b else st.indBlocks[n]?⟩
     match Ix.Kernel.Frontend.InModel.generate ctx b with
-    | .error why => declined s!"in-process model of {(types[0]?.map (·.1.name)).getD (.id .anonymous)}: {why}"
+    | .error why => declined s!"in-process model of {(types[0]?.map (toString ·.1.name)).getD "[anonymous]"}: {why}"
     | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }
   else
     pure { decls := #[decl], owners, blocks }
@@ -975,8 +910,8 @@ def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Cons
     (ms : Array Ixon.MutConst) : ReadM (Read md) := do
   let some shape := cx.index.blocks[owner]?
     | declined "inductive block without a recursor in the input"
-  let self : Nat → Option (CName md) := fun i =>
-    if i < ms.size then some (cx.nameOf (.member owner i)) else none
+  let self : Nat → Option (ReadM (CName md)) := fun i =>
+    if i < ms.size then some (cx.memberKey (.member owner i)) else none
   let indcs : Array (Nat × Ixon.Inductive) :=
     shape.order.filterMap fun i => match (ms[i]? : Option Ixon.MutConst) with
       | some (.indc ind) => some (i, ind)
@@ -992,7 +927,7 @@ def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Cons
   -- types, in motive order
   let mut types : Array (CVal md × Nat × Nat) := #[]
   for (i, ind) in indcs do
-    types := types.push (⟨cx.nameOf (.member owner i), List.range ind.lvls.toNat,
+    types := types.push (⟨← cx.memberKey (.member owner i), List.range ind.lvls.toNat,
       ← mrInd.read ind.typ⟩,
       ind.params.toNat, ind.indices.toNat)
   -- constructors, in the block's own order
@@ -1004,7 +939,7 @@ def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Cons
       unless ctor.cidx.toNat == j do malformed "constructor index differs from its position"
       if ctor.isUnsafe then declined "unsafe inductive declaration"
       let cv : CVal md :=
-        ⟨cx.nameOf (.ctor owner i j), List.range ctor.lvls.toNat, ← mrInd.read ctor.typ⟩
+        ⟨← cx.memberKey (.ctor owner i j), List.range ctor.lvls.toNat, ← mrInd.read ctor.typ⟩
       unless nPd + ctor.fields.toNat == piTeleLen cv.type do
         malformed s!"constructor {cv.name} declares {ctor.fields} fields at {nPd} parameters; \
           its type has {piTeleLen cv.type} binders"
@@ -1019,23 +954,24 @@ def readInductive (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Cons
     let some rc := cx.store rOwner | malformed "recursor record is missing"
     let some (_, r) := (recursorMembers rc).find? (·.1 == j) | malformed "recursor member is missing"
     if r.isUnsafe then declined "unsafe inductive declaration"
-    let rself : Nat → Option (CName md) := fun i => match rc.info with
-      | .muts rms => if i < rms.size then some (cx.nameOf (.member rOwner i)) else none
-      | _ => if i == 0 then some entry.name else none
+    let key ← cx.memberKey ref
+    let rself : Nat → Option (ReadM (CName md)) := fun i => match rc.info with
+      | .muts rms => if i < rms.size then some (cx.memberKey (.member rOwner i)) else none
+      | _ => if i == 0 then some (pure key) else none
     let lps := recLps entry.large blockLps
     let mr := MemberReader.mk' cx rc (recParam lps) rself
-    let cv : CVal md := ⟨entry.name, lps, ← mr.read r.typ⟩
+    let cv : CVal md := ⟨key, lps, ← mr.read r.typ⟩
     let some major := inductiveAt cx.store entry.major
-      | declined s!"recursor {entry.name}: its major premise is not an inductive"
+      | declined s!"recursor {key}: its major premise is not an inductive"
     unless major.ctors.size == r.rules.size do
-      malformed s!"recursor {entry.name} has {r.rules.size} rules for {major.ctors.size} constructors"
+      malformed s!"recursor {key} has {r.rules.size} rules for {major.ctors.size} constructors"
     let .member mb mi := entry.major | malformed "recursor major is a constructor"
     let mut rules : List (Ix.Kernel.RecRule md) := []
     for (rule, k) in r.rules.zipIdx do
-      rules := rules ++ [Ix.Kernel.RecRule.mk (cx.nameOf (.ctor mb mi k)) rule.fields.toNat 0 .inert
+      rules := rules ++ [Ix.Kernel.RecRule.mk (← cx.memberKey (.ctor mb mi k)) rule.fields.toNat 0 .inert
         (← mr.read rule.rhs) false false false]
-    recs := recs.push (cv, ⟨r.params.toNat, r.motives.toNat, r.minors.toNat, r.indices.toNat, r.k⟩,
-      rules)
+    recs := recs.push (cv, ⟨r.params.toNat, r.motives.toNat, r.minors.toNat, r.indices.toNat, r.k,
+      some entry.motive⟩, rules)
   lowerInductive st ⟨nPd, types, ctors, ctorNames, recs⟩
 
 /-- One primary or projection record: its declarations. The state is read,
@@ -1047,7 +983,7 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
       malformed "projection record has invalid tables, owner, kind, or position"
     pure {}
   | .defn d =>
-    let self : Nat → Option (CName md) := fun i => if i == 0 then some (cx.nameOf (.member owner 0)) else none
+    let self : Nat → Option (ReadM (CName md)) := fun i => if i == 0 then some (cx.memberKey (.member owner 0)) else none
     let (decl, rw) ← readDefinition cx st (st.heights.getD · 0) (.member owner 0)
       (List.range d.lvls.toNat) (.mk' cx c id self) d
     pure { decls := #[decl], projRewrites := if rw then 1 else 0 }
@@ -1058,11 +994,11 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
   | .axio a =>
     if a.isUnsafe then declined "unsafe axiom"
     let mr := MemberReader.mk' cx c id (fun _ => none)
-    let cv : CVal md := ⟨cx.nameOf (.member owner 0), List.range a.lvls.toNat, ← mr.read a.typ⟩
+    let cv : CVal md := ⟨← cx.memberKey (.member owner 0), List.range a.lvls.toNat, ← mr.read a.typ⟩
     pure { decls := #[Ix.Kernel.Declaration.axiomDecl cv] }
   | .quot q =>
     let mr := MemberReader.mk' cx c id (fun _ => none)
-    let cv : CVal md := ⟨cx.nameOf (.member owner 0), List.range q.lvls.toNat, ← mr.read q.typ⟩
+    let cv : CVal md := ⟨← cx.memberKey (.member owner 0), List.range q.lvls.toNat, ← mr.read q.typ⟩
     let kind : Ix.Kernel.QuotKind := match q.kind with
       | .type => .type | .ctor => .ctor | .lift => .lift | .ind => .ind
     pure { decls := #[Ix.Kernel.Declaration.quotDecl kind cv] }
@@ -1083,8 +1019,8 @@ def readRecord (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constan
       if let some why := defs.findSome? safetyDecline then declined why
       let some order := defOrder (defs.map (recurDeps c))
         | declined "mutually recursive definition block"
-      let self : Nat → Option (CName md) := fun i =>
-        if i < ms.size then some (cx.nameOf (.member owner i)) else none
+      let self : Nat → Option (ReadM (CName md)) := fun i =>
+        if i < ms.size then some (cx.memberKey (.member owner i)) else none
       let mr := MemberReader.mk' cx c id self
       let mut blockHeights : Std.HashMap (CName md) Nat := {}
       let mut out : Array (CDecl md) := #[]
@@ -1231,11 +1167,11 @@ def evidenceValue? (cx : Ctx md) (st : State md) (a : Address) : Option (CName m
   let (d, self) ← match c.info with
     | .defn d =>
       if i == 0 then
-        some (d, fun j => if j == 0 then some (cx.nameOf (.member owner 0)) else none)
+        some (d, fun j => if j == 0 then some (cx.memberKey (.member owner 0)) else none)
       else none
     | .muts ms =>
       match ms[i]? with
-      | some (.defn d) => some (d, fun j => if j < ms.size then some (cx.nameOf (.member owner j)) else none)
+      | some (.defn d) => some (d, fun j => if j < ms.size then some (cx.memberKey (.member owner j)) else none)
       | _ => none
     | _ => none
   unless d.kind == .thm do none

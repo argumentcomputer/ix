@@ -141,16 +141,42 @@ private def qDerived : Ix.Kernel.Derived → Lean.Expr
   | .packUnpackAll => mkConst ``Ix.Kernel.Derived.packUnpackAll
   | .implRec => mkConst ``Ix.Kernel.Derived.implRec
 
-/-- A name, constructor by constructor. -/
-private def qName : Ix.Kernel.Name → Lean.Expr
-  | .anonymous => mkConst ``Ix.Kernel.Name.anonymous
-  | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (qName p) (mkStrLit s)
-  | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (qName p) (mkRawNatLit i)
+/-- A key that names no input constant: a role key, or one derived from it.
+The generated declarations hold only such keys (`pinnedOnly`), which mean the
+same in every mode; an input key's id is an address in `.anon` and has no
+counterpart in `.source`. -/
+private def roleBased : Ix.Kernel.Key .anon → Bool
+  | .id _ => false
+  | .role _ => true
+  | .aux k _ => roleBased k
 
-/-- A key at mode `mdE`: a role key as `roleKey`, a derived key as `auxKey`,
-an input key by its id. -/
+private def roleBasedExpr : Ix.Kernel.Expr .anon → Bool
+  | .const n _ => roleBased n
+  | .proj s _ e => roleBased s && roleBasedExpr e
+  | .fvar _ ty => roleBasedExpr ty
+  | .app f a | .lam f a _ | .forallE f a _ => roleBasedExpr f && roleBasedExpr a
+  | .letE t v b _ => roleBasedExpr t && roleBasedExpr v && roleBasedExpr b
+  | _ => true
+
+private def roleBasedVal (cv : Ix.Kernel.ConstantVal .anon) : Bool :=
+  roleBased cv.name && roleBasedExpr cv.type
+
+/-- Every key of a generated declaration is role-based. -/
+private def pinnedOnly : Ix.Kernel.ConstantInfo .anon → Bool
+  | .axiomInfo cv | .ctorInfo cv _ _ => roleBasedVal cv
+  | .defnInfo cv v _ | .thmInfo cv v => roleBasedVal cv && roleBasedExpr v
+  | .indInfo cv caps => roleBasedVal cv && caps.etaCtor.all roleBased
+  | .recInfo cv _ _ rules => roleBasedVal cv && rules.all fun r =>
+      roleBased r.ctor && roleBasedExpr r.rhs && match r.fire with
+        | .nested _ pins => pins.all roleBasedExpr
+        | _ => true
+  | .projInfo _ => false
+
+/-- A key at mode `mdE`: a role key as `roleKey`, a derived key as `auxKey`.
+An input key does not occur (`pinnedOnly` is checked first); it is quoted as
+the unbound name `inputKey`, which no declaration elaborates with. -/
 private def qKey (mdE : Lean.Expr) : Ix.Kernel.Key .anon → Lean.Expr
-  | .id n => mkApp2 (mkConst ``Ix.Kernel.Key.id) mdE (qName n)
+  | .id _ => mkConst `inputKey
   | .role r => mkApp2 (mkConst ``Ix.Kernel.roleKey) mdE (qRole r)
   | .aux k d => mkApp3 (mkConst ``Ix.Kernel.auxKey) mdE (qKey mdE k) (qDerived d)
 
@@ -263,7 +289,12 @@ private def qReducibilityHint : Ix.Kernel.ReducibilityHint → Lean.Expr
   | .«abbrev» => mkConst ``Ix.Kernel.ReducibilityHint.«abbrev»
   | .regular h => mkApp (mkConst ``Ix.Kernel.ReducibilityHint.regular) (mkRawNatLit h)
 
-private def qConstantInfo (mdE : Lean.Expr) : Ix.Kernel.ConstantInfo .anon → CoreM Lean.Expr
+private def qConstantInfo (mdE : Lean.Expr) (ci : Ix.Kernel.ConstantInfo .anon) : CoreM Lean.Expr := do
+  if let .projInfo _ := ci then
+    throwError "#annotate_basis: a projection table is not a pinnable declaration"
+  unless pinnedOnly ci do
+    throwError "#annotate_basis: a generated declaration names an input constant"
+  match ci with
   | .axiomInfo cv =>
     pure (mkApp2 (mkConst ``Ix.Kernel.ConstantInfo.axiomInfo) mdE (qConstantVal mdE cv))
   | .defnInfo cv v h =>
@@ -428,6 +459,8 @@ def elabAnnotatePins : CommandElab := fun stx => do
         throwErrorAt rawStx
           "#annotate_pins: annotating {id.getId} failed: {toString err}"
     liftTermElabM do
+      unless roleBasedVal cv do
+        throwErrorAt rawStx "#annotate_pins: {id.getId} names an input constant"
       splice ((← getCurrNamespace) ++ id.getId) constantValTy (qConstantVal (.bvar 0) cv)
 
 end Ix.Kernel.BasisGen

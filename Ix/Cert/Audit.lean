@@ -23,7 +23,11 @@ with the modes made explicit and nothing else changed: Source mode installs
 an `Env .source`, Ixon mode an `Env .anon`, and the reading takes a source
 constant to a compiled term (`ConstantInfo .source → Option (Expr .anon)`).
 Value models, the renaming and the key sets it reads are generic in the
-mode (`{md : Mode}`), and `RenamingLemma` quantifies over it. -/
+mode (`{md : Mode}`), and `RenamingLemma` quantifies over it. With Ixon
+addresses as `.anon` keys, the reading and the admission context were
+re-frozen: a source constant reads as the reader's key of its published
+address (`Ix.Kernel.Reader.Ctx.keyAt`), and the context carries the hash that
+keys a block member whose projection record the artifact omits. -/
 
 /-- info: def Ix.Cert.refsOf : Ix.ConstantInfo → Ix.Set Ix.Name :=
 fun ci => (Ix.GraphM.run { consts := ∅ } Ix.GraphState.init (Ix.graphConst ci)).fst -/
@@ -310,7 +314,9 @@ fun binding limits ixe order => do
   let t ← (Ix.Kernel.Admission.admitBinding Address.blake3Pure binding).toOption
   let pre ← (Ix.Kernel.Reader.preludeFor t).toOption
   let constants ← (Ix.Kernel.Admission.decodeRecords limits (Ix.Cert.recordsOf ixe order)).toOption
-  pure (Ix.Kernel.Admission.streamContext t pre constants (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe)) -/
+  pure
+      (Ix.Kernel.Admission.streamContext Address.blake3Pure t pre constants (Ix.Cert.blobsOf ixe order)
+        (Ix.Cert.hintsOf ixe)) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.admissionContext
 
@@ -319,8 +325,8 @@ fun binding limits ixe order => do
     Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source → Option (Ix.Kernel.Expr Ix.Kernel.Mode.anon) :=
 fun ixe cx c => do
   let a ← Ix.Cert.publishedAddress ixe c.name
-  let r ← Ix.Kernel.Reader.resolve cx.store a
-  pure (Ix.Kernel.Expr.const (cx.nameOf r) (List.map Ix.Kernel.Level.param c.toConstantVal.levelParams)) -/
+  let k ← Except.toOption (cx.keyAt a)
+  pure (Ix.Kernel.Expr.const k (List.map Ix.Kernel.Level.param c.toConstantVal.levelParams)) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.reading
 

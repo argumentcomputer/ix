@@ -272,8 +272,8 @@ def run (args : List String) : IO UInt32 := do
   let s0 := setup store (env.blobs[·]?) boundOnly pre0 hints.lookup
   for r in Role.all do
     let some ref := refOfRole[r]? | continue
-    unless s0.cx.nameOf ref == Ix.Kernel.roleKey r do
-      fail s!"{repr r} is read as {s0.cx.nameOf ref}"
+    unless (s0.cx.memberKey ref).toOption == some (Ix.Kernel.roleKey r) do
+      fail s!"{repr r} is not read as its role"
   -- 3: the evidence
   let (certEnv, certRecords) ← loadStore certInput
   let mut certStore := s0.store
@@ -312,17 +312,15 @@ def run (args : List String) : IO UInt32 := do
     records read, {uni.values.size} values"
   -- every record's address by the reader's name for it
   let mut addrOfName : Std.HashMap (CName .anon) Address := {}
-  for (a, c) in cs.store.toList do
-    if let some ref := resolveSource (cs.store[·]?) a c then
-      let n := cs.cx.nameOf ref
+  for (a, _) in cs.store.toList do
+    if let .ok n := cs.cx.keyAt a then
       unless addrOfName.contains n do addrOfName := addrOfName.insert n a
   for (r, a) in bound do addrOfName := addrOfName.insert (Ix.Kernel.roleKey r) a
   let keyOf (t : Lean.Name) : CName .anon :=
     match certAt[t]? with
-    | some a => match (resolve (cs.store[·]?) a) with
-      | some ref => cs.cx.nameOf ref
-      | none => .id .anonymous
-    | none => .id .anonymous
+    -- a name that is not a certificate theorem keys `sorryAx`, which no proof is
+    | some a => (cs.cx.keyAt a).toOption.getD (Ix.Kernel.roleKey .sorryAx)
+    | none => Ix.Kernel.roleKey .sorryAx
   let mut evidence : Array (Role × Array (Ix.Kernel.Evidence Address)) :=
     Ix.RoleEvidence.defeqRoles.toArray.map fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)
   let mut evRecords : Array (Address × Ixon.Constant) := #[]
