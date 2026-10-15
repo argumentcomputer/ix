@@ -92,11 +92,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- inside `namespace Tests.Ix.Kernel.TutorialDefs` that register
   -- under bare `basicDef`. The module that elaborated them is
   -- `Tests.Ix.Kernel.TutorialDefs`, so the prefix still matches.
-  -- Seeds pass through `collectDeps` for the transitive-dep closure.
+  -- Seeds pass through `collectSelectedDeps` (a selected input's closure:
+  -- recursors, whole logical units and checker support included), as do
+  -- `--consts` and `--exclude` seeds.
   -- Flag name is `--module` (not `--ns`) because the match is against
   -- the source module name, not the decl's own namespace.
   -- `--consts` / `--consts-file`: seed by EXACT constant name, transitive
-  -- deps via `collectDeps` — a closure-only env (e.g. one benchmark constant
+  -- deps via `collectSelectedDeps` — a closure-only env (e.g. one benchmark constant
   -- + deps) instead of the whole import env. Resolution tries `String.toName`
   -- first, then a displayed-form scan so `_private`/numeric components
   -- round-trip. Mutually exclusive with `--module`; `--exclude` doesn't
@@ -135,7 +137,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         p.printError s!"error: no constant(s) named {missing} in the environment"
         return 1
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
-      let closed := collectDeps leanEnv seeds
+      let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
       pure closed
     else match p.flag? "module" with
@@ -148,7 +150,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectDeps leanEnv seeds)
+        pure (collectSelectedDeps leanEnv seeds)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
@@ -165,7 +167,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
             let mod := moduleNames[idx.toNat]!
             if prefixes.any (·.isPrefixOf mod) then some n else none
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
-        let closed := collectDeps leanEnv seeds
+        let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
         pure closed
 

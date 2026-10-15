@@ -6,8 +6,8 @@
   `.brecOn.go`, `.brecOn`, `.brecOn.eq`, `.below.casesOn`) is compiled as
   one Ixon block holding the member of every class (and of every nested
   auxiliary, `_N`), and each name is a projection into it. A closure-only
-  environment (`ix compile --consts`, any claim built from a dependency
-  closure) holds only the members its seeds reach. Before the fix the
+  environment (any claim built from a dependency closure) holds only the
+  members its seeds reach. Before the fix the
   compiler emitted only the members present, so a closure compile gave
   `A.brecOn` (and `.casesOn`, `.recOn`, `.brecOn.go`, `.brecOn.eq`,
   `.below` of a nested block, and everything that references them: the
@@ -22,9 +22,12 @@
   that the address is the reference's; and type-checks the seed with the
   Rust kernel. Two legs:
 
-  - `collectDeps`: the closure producers' closure, which pulls an
+  - `collectDeps`: the raw closure producers' closure, which pulls an
     auxiliary's whole family (`Lean.auxFamilySiblings`) and a definition's
-    `all`. Every address must match.
+    `all`. Every address must match. (`ix compile --consts` now takes the
+    selected closure, `collectSelectedDeps`, a superset with recursors,
+    whole logical units and checker support, CQ2.19; this leg keeps the
+    raw collector, which reaches fewer family members.)
   - `raw`: the closure without family completion (`rawDeps`), which tests
     the compiler's per-family block membership on its own. Every address
     must match except a nested block's class `.brecOn.eq`: its canonical
@@ -154,7 +157,7 @@ end
 
 end Fx
 
-/-- Compile `consts` with the Rust compiler (the `ix compile --consts`
+/-- Compile `consts` with the Rust compiler (the `ix compile`
     path: fail-closed) and read the output back. -/
 def compileClosure (env : Lean.Environment) (dir : System.FilePath)
     (tag : String) (consts : List (Lean.Name × Lean.ConstantInfo)) :
