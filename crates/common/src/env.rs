@@ -143,6 +143,26 @@ pub enum NameData {
 }
 
 impl Name {
+  /// Component equality, independent of every cached digest.
+  pub fn same_structure(&self, other: &Self) -> bool {
+    let (mut a, mut b) = (self, other);
+    loop {
+      if Arc::ptr_eq(&a.0, &b.0) {
+        return true;
+      }
+      match (a.as_data(), b.as_data()) {
+        (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
+        (NameData::Str(ap, av, _), NameData::Str(bp, bv, _)) if av == bv => {
+          (a, b) = (ap, bp);
+        },
+        (NameData::Num(ap, av, _), NameData::Num(bp, bv, _)) if av == bv => {
+          (a, b) = (ap, bp);
+        },
+        _ => return false,
+      }
+    }
+  }
+
   /// Returns a reference to the inner [`NameData`].
   pub fn as_data(&self) -> &NameData {
     &self.0
@@ -311,6 +331,39 @@ pub enum LevelData {
 }
 
 impl Level {
+  /// Structural equality, independent of all level and name cached digests.
+  /// The completed pair memo is local to this comparison; both borrowed roots
+  /// keep every node alive, and no digest is an equality witness.
+  pub fn same_structure(&self, other: &Self) -> bool {
+    fn compare(
+      a: &Level,
+      b: &Level,
+      memo: &mut FxHashMap<(*const LevelData, *const LevelData), bool>,
+    ) -> bool {
+      let pair = (Arc::as_ptr(&a.0), Arc::as_ptr(&b.0));
+      if pair.0 == pair.1 {
+        return true;
+      }
+      if let Some(result) = memo.get(&pair) {
+        return *result;
+      }
+      let result = match (a.as_data(), b.as_data()) {
+        (LevelData::Zero(_), LevelData::Zero(_)) => true,
+        (LevelData::Succ(a, _), LevelData::Succ(b, _)) => compare(a, b, memo),
+        (LevelData::Max(a, b, _), LevelData::Max(c, d, _))
+        | (LevelData::Imax(a, b, _), LevelData::Imax(c, d, _)) => {
+          compare(a, c, memo) && compare(b, d, memo)
+        },
+        (LevelData::Param(a, _), LevelData::Param(b, _))
+        | (LevelData::Mvar(a, _), LevelData::Mvar(b, _)) => a.same_structure(b),
+        _ => false,
+      };
+      memo.insert(pair, result);
+      result
+    }
+    compare(self, other, &mut FxHashMap::default())
+  }
+
   /// Returns a reference to the inner [`LevelData`].
   pub fn as_data(&self) -> &LevelData {
     &self.0
@@ -361,7 +414,7 @@ impl Level {
       let _ = (bx, by);
       return if ox >= oy { x } else { y };
     }
-    if x == y {
+    if x.same_structure(&y) {
       return x;
     }
     if matches!(x.as_data(), LevelData::Zero(_)) {
@@ -372,20 +425,20 @@ impl Level {
     }
     // max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
     if let LevelData::Max(bl, br, _) = y.as_data()
-      && (*bl == x || *br == x)
+      && (bl.same_structure(&x) || br.same_structure(&x))
     {
       return y;
     }
     // max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
     if let LevelData::Max(al, ar, _) = x.as_data()
-      && (*al == y || *ar == y)
+      && (al.same_structure(&y) || ar.same_structure(&y))
     {
       return x;
     }
     // Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
     let (base_x, off_x) = x.peel_succ();
     let (base_y, off_y) = y.peel_succ();
-    if base_x == base_y {
+    if base_x.same_structure(&base_y) {
       return if off_x >= off_y { x } else { y };
     }
     Self::max(x, y)
@@ -413,7 +466,7 @@ impl Level {
     {
       return y;
     }
-    if x == y {
+    if x.same_structure(&y) {
       return x;
     }
     Self::imax(x, y)
@@ -1794,5 +1847,55 @@ pub mod arbitrary {
         _ => Self::Regular(u32::arbitrary(g)),
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod scalar_structure_tests {
+  use super::*;
+
+  #[test]
+  fn cache_fields_do_not_decide_smart_equalities() {
+    let u = Name::str(Name::anon(), "u".into());
+    let v = Name::str(Name::anon(), "v".into());
+    let a = Level::param(u.clone());
+    let digest = blake3::hash(b"deliberately unrelated cache");
+    let rehashed_name = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(digest))),
+      "u".into(),
+      digest,
+    )));
+    let b = Level(Arc::new(LevelData::Param(rehashed_name, digest)));
+    let collision = Level(Arc::new(LevelData::Param(v, *a.get_hash())));
+    assert_ne!(a, b); // Existing derived equality includes the cached fields.
+    assert!(a.same_structure(&b));
+    assert!(!a.same_structure(&collision));
+    assert_eq!(Level::max_smart(a.clone(), b.clone()), a);
+    assert_eq!(Level::imax_smart(a.clone(), b), a);
+    assert!(matches!(
+      Level::max_smart(a.clone(), collision).as_data(),
+      LevelData::Max(..)
+    ));
+    let valid_neighbour = Level::param(u);
+    assert_eq!(Level::max_smart(a.clone(), valid_neighbour), a);
+  }
+
+  #[test]
+  fn separate_shared_level_dags_keep_structural_leaf_differences() {
+    fn dag(depth: usize, name: &str, cache: Hash) -> Level {
+      let mut value = Level(Arc::new(LevelData::Param(
+        Name::str(Name::anon(), name.into()),
+        cache,
+      )));
+      for _ in 0..depth {
+        value = Level(Arc::new(LevelData::Max(value.clone(), value, cache)));
+      }
+      value
+    }
+    let a = dag(18, "u", blake3::hash(b"left"));
+    let b = dag(18, "u", blake3::hash(b"right"));
+    let different = dag(18, "v", blake3::hash(b"left"));
+    assert!(a.same_structure(&b));
+    assert!(!a.same_structure(&different));
   }
 }

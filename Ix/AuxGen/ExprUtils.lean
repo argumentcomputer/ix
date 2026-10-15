@@ -368,6 +368,24 @@ def levelExplicitOffset (l : Level) : Option (Level × Nat) :=
   | .zero _ => some (base, n)
   | _ => none
 
+/-- The digest-free key of a name: its components as a `Lean.Name`. Two names
+    have equal keys exactly when Rust `Name::same_structure` holds; a stored
+    digest never decides the comparison. -/
+def nameKey : Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (nameKey p) s
+  | .num p n _ => .num (nameKey p) n
+
+/-- Level equality ignoring every stored digest (Rust `Level::same_structure`). -/
+def levelSameStructure : Level → Level → Bool
+  | .zero _, .zero _ => true
+  | .succ a _, .succ b _ => levelSameStructure a b
+  | .max a b _, .max c d _ => levelSameStructure a c && levelSameStructure b d
+  | .imax a b _, .imax c d _ => levelSameStructure a c && levelSameStructure b d
+  | .param a _, .param b _ => nameKey a == nameKey b
+  | .mvar a _, .mvar b _ => nameKey a == nameKey b
+  | _, _ => false
+
 /-- Mirrors Rust `Level::max_smart` (common/src/env.rs:356).
 
     Smart `max x y` constructor mirroring the kernel's `KUniv::max`.
@@ -378,7 +396,7 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
   if let (some (_, ox), some (_, oy)) := (levelExplicitOffset x, levelExplicitOffset y) then
     -- Both explicit numerals (Succ^n(Zero)): take the larger.
     return if ox >= oy then x else y
-  if x == y then
+  if levelSameStructure x y then
     return x
   if let .zero _ := x then
     return y
@@ -386,16 +404,16 @@ def levelMaxSmart (x y : Level) : Level := Id.run do
     return x
   -- max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
   if let .max bl br _ := y then
-    if bl == x || br == x then
+    if levelSameStructure bl x || levelSameStructure br x then
       return y
   -- max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
   if let .max al ar _ := x then
-    if al == y || ar == y then
+    if levelSameStructure al y || levelSameStructure ar y then
       return x
   -- Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
   let (baseX, offX) := levelPeelSucc x
   let (baseY, offY) := levelPeelSucc y
-  if baseX == baseY then
+  if levelSameStructure baseX baseY then
     return if offX >= offY then x else y
   return Level.mkMax x y
 
@@ -417,7 +435,7 @@ def levelImaxSmart (x y : Level) : Level := Id.run do
   if let .succ inner _ := x then
     if let .zero _ := inner then
       return y
-  if x == y then
+  if levelSameStructure x y then
     return x
   return Level.mkIMax x y
 
@@ -439,7 +457,7 @@ partial def substLevel (lvl : Level) (params : Array Name) (univs : Array Level)
     levelImaxSmart (substLevel a params univs) (substLevel b params univs)
   | .param name _ => Id.run do
     for h : i in [0:params.size] do
-      if hu : params[i] == name ∧ i < univs.size then
+      if hu : nameKey params[i] == nameKey name ∧ i < univs.size then
         return univs[i]'hu.2
     return lvl
 
@@ -734,17 +752,19 @@ def mkBinderChain (body : Expr) (binders : Array LocalDecl) (kind : BinderKind) 
   let k := binders.size
   if k == 0 then
     return body
-  -- Build FVar name → binder position map (0 = outermost).
-  let mut fvarMap : Std.HashMap Name Nat := {}
+  -- Structural name → position map (0 = outermost); later writes win
+  -- (Rust `ix_common::name_table::NameTable`).
+  let mut fvarMap : Std.HashMap Lean.Name Nat := {}
   for (b, i) in binders.zipIdx do
-    fvarMap := fvarMap.insert b.fvarName i
+    fvarMap := fvarMap.insert (nameKey b.fvarName) i
+  let lookup := fun (n : Name) => fvarMap.get? (nameKey n)
   -- Abstract body: all k binders in scope.
-  let mut result := batchAbstract body fvarMap k 0
+  let mut result := batchAbstractWith lookup body k 0
   -- Build binder chain from innermost to outermost.
   for (decl, j) in binders.zipIdx.reverse do
     -- Domain D_j: only binders 0..j-1 are in scope (scopeDepth = j).
     -- Binder j's domain is NOT under binder j itself — only the body is.
-    let domain := batchAbstract decl.domain fvarMap j 0
+    let domain := batchAbstractWith lookup decl.domain j 0
     result := match kind with
       | .forallE => Expr.mkForallE decl.binderName domain result decl.info
       | .lambda => Expr.mkLam decl.binderName domain result decl.info

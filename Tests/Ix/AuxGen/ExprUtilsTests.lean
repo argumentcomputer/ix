@@ -5,16 +5,12 @@ public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.BRecOn
 
 /-!
-Hash-identity property tests for `Ix.AuxGen.ExprUtils` (the pure-Lean port
-of `crates/compile/src/compile/aux_gen/expr_utils.rs`).
+Regression tests for `Ix.AuxGen.ExprUtils` and its Rust mirror.
 
-All expressions are built through the hash-maintaining smart constructors
-in `Ix.Environment`, and every assertion is a hash-based `==` (`Ix.Expr`'s
-`BEq` compares embedded blake3 addresses) — so each roundtrip check is a
-bit-parity check, not just a structural one.
-
-Not yet registered in `Tests/Main.lean`; suite entry point is
-`Tests.AuxGen.ExprUtils.suite`.
+The existing smart-constructor roundtrips compare cached hashes. The
+structural binder and level controls additionally forge cache fields and
+compare the complete derived tree representation, including each cached
+field. Registered in `Tests/Main.lean` as part of `aux-gen-unit`.
 -/
 
 public section
@@ -194,9 +190,57 @@ def restoreTests : TestSeq :=
       let (out, _) := ctx.restore (Expr.mkApp (cst "auxrec") (cst "a"))
       out == Expr.mkApp (cst "origrec") (cst "a") : Bool))
 
+/-- Complete raw-tree comparison, including cached fields; the deliberately
+forged caches below must not turn an output hash match into a passing test. -/
+def sameRawTree (a b : Expr) : Bool := reprStr a == reprStr b
+
+/-- Actual forall/lambda producers use the last structural name position.
+The forged case changes an ancestor cache and collides two distinct names;
+the neighbour uses constructor-built names with the same duplicate order. -/
+def structuralBinderControl (forged : Bool) : Bool := Id.run do
+  let a := nm "a"
+  let b := if forged then Name.str Name.mkAnon "b" a.getHash else nm "b"
+  let lastA := if forged then
+    Name.str (Name.anonymous (nm "root-cache").getHash) "a" (nm "leaf-cache").getHash
+    else a
+  let decls : Array LocalDecl := #[
+    { fvarName := a, binderName := nm "a", domain := sort0, info := .default },
+    { fvarName := b, binderName := nm "b", domain := sort0, info := .default },
+    { fvarName := lastA, binderName := nm "c", domain := sort0, info := .default }]
+  let source := Expr.mkApp (Expr.mkFVar a) (Expr.mkFVar b)
+  let expectedBody := Expr.mkApp (bv 0) (bv 1)
+  let expectedForall := tripleForall sort0 sort0 sort0 expectedBody
+  let expectedLambda := Expr.mkLam (nm "a") sort0
+    (Expr.mkLam (nm "b") sort0 (Expr.mkLam (nm "c") sort0 expectedBody .default) .default) .default
+  return sameRawTree (mkForall source decls) expectedForall &&
+    sameRawTree (mkLambda source decls) expectedLambda
+
+/-- Smart level constructors and parameter substitution compare structurally:
+a forged digest neither merges different parameters nor separates equal ones
+(Rust `cache_fields_do_not_decide_smart_equalities`). -/
+def structuralLevelControl : Bool := Id.run do
+  let u := nm "u"
+  let a := Level.mkParam u
+  let rehashed := Name.str (Name.anonymous (nm "prefix-cache").getHash) "u" (nm "leaf-cache").getHash
+  let b := Level.param rehashed (nm "level-cache").getHash
+  let collision := Level.param (nm "v") a.getHash
+  let substituted := substLevel (Level.mkParam rehashed) #[u] #[Level.mkZero]
+  return sameRawTree (.mkSort (levelMaxSmart a b)) (.mkSort a) &&
+    sameRawTree (.mkSort (levelImaxSmart a b)) (.mkSort a) &&
+    (match levelMaxSmart a collision with | .max .. => true | _ => false) &&
+    sameRawTree (.mkSort substituted) sort0
+
+def structuralBinderTests : TestSeq :=
+  test "binder names use structural last-write lookup despite forged cached fields"
+    (structuralBinderControl true)
+  ++ test "binder-name valid neighbour preserves ordinary duplicate order"
+    (structuralBinderControl false)
+  ++ test "smart level constructors and substitution ignore cached digests"
+    structuralLevelControl
+
 public def suite : List TestSeq :=
   [freshFVarTests, roundtripTests, substShiftTests, betaTests, miscTests,
-   levelTests, substLevelInExprTests, restoreTests]
+   levelTests, substLevelInExprTests, restoreTests, structuralBinderTests]
 
 end Tests.AuxGen.ExprUtils
 
