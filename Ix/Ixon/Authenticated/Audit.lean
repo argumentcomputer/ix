@@ -42,11 +42,12 @@ end Ixon.Authenticated.Audit
 -- externs, by the generic entries' change; the IxC performance series (PERF
 -- P16, P14, P3, P2) from 5727 and 117 inherited externs, by the generic
 -- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
--- from 5745 and 119 inherited externs, by the generic entries' change.
+-- from 5745 and 119 inherited externs, by the generic entries' change; the
+-- validation of the four install anchors from 5963, by the generic entries' change.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5963 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
+ Address.admissionHash]: 5974 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

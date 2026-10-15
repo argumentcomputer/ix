@@ -252,8 +252,9 @@ Not proved:
 - that a bound role's constant meets its specification (`Role.spec`)
   beyond what the fold checks: the block roles are checked against their
   specifications by the basis install, the operations by their evidence,
-  the axioms by `matchesPin`; the anchors (`Bool`, `True`, `And`, `Iff`,
-  `Nonempty`, `List`, `String`, `Char`, ...) by their install only. That the
+  the axioms by `matchesPin`; the anchors (`Bool`, `True`, `Iff`, `Nonempty`,
+  `List`, `String`, `Char`, ...) by their uses, and `Bool.rec`, `And`,
+  `And.intro`, `And.rec` by the fold's step at install (`matchesPin`). That the
   default table binds Init's own constants is the generator's
   verification, not a theorem; the no-False theorems are stated at
   `False`'s role key and hold for any table.
@@ -396,8 +397,13 @@ digest: BLAKE3 of its canonical encoding (`Ix.SpecDigest.specBytes`, 8863
 bytes), computed in the root library because the kernel admits no hasher,
 `70fedb021efa660e13618a7dbaa8f76ee0a91ac95fbd353ce05100248872e1ec`
 (`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
-set's shape). Four anchors are recorded but not validated by the checker:
-`Bool.rec`, `And`, `And.intro`, `And.rec`.
+set's shape). Four anchors that no use site validates, `Bool.rec`, `And`,
+`And.intro` and `And.rec`, are validated at install (owner, 2026-10-15): the
+fold's step (`Cached.annotDeclStep`) matches a constant bound to one against
+its specification's type up to binder data and level-parameter names
+(`installAnchorPin?`, `matchesPin`) before installing its declaration, and a
+mismatch declines (`role specification mismatch`). The Rust kernel does not
+match them yet (its alignment is step 9's).
 
 **The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
 `RoleTable` has the version of the specification set it was made for, the
@@ -606,13 +612,19 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3352 | 67 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3399 | 67 |
 | reader `readRecords`, `readStream` | 2134 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5788 | 113 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5785 | 113 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5810 | 113 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5944 | 114 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5963 | 117 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5799 | 113 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5796 | 113 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5821 | 113 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5955 | 114 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5974 | 117 |
+
+The validation of the four install anchors (`Bool.rec`, `And`, `And.intro`,
+`And.rec`; owner, 2026-10-15) moved them from 3352, 5788, 5785, 5810, 5944 and
+5963: 11 more everywhere (the guard in the fold's step and its message), and in
+the fold 36 more for the four specification types and their closed terms,
+which the entry reached already.
 
 IxC step 6's structured errors (`CheckError md`: prose and keys, rendered
 outside the checker) moved them from 3446, 5570, 5567, 5592, 5726 and 5745,

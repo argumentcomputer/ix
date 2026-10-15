@@ -30,11 +30,13 @@ taken from where it lives (`Role.spec_*` below are `rfl`):
 | `axiom` | `propext`, `Classical.choice`, `Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); an inert axiom installs nothing and has no type constraint |
 | `identity` | `Lean.reduceBool`, `Lean.reduceNat` | the stored type, and the value certified to be the identity, `value x ≡ x` |
 
-Four anchors are recorded but not validated by today's checker: `Bool.rec`,
-`And`, `And.intro` and `And.rec` (the `And` rescue relies on `And`'s
-projection table and proof irrelevance at use, `andRescueSlots`). They are
-listed so that the set is complete; validating them would add a decline
-condition and is an owner's decision (`roles.md`).
+Four anchors have no use site that validates them: `Bool.rec`, `And`,
+`And.intro` and `And.rec` (the `And` rescue relies on `And`'s projection
+table and proof irrelevance at use, `andRescueSlots`, and needs nothing of
+`And`'s type). The fold's step validates them at install (owner, 2026-10-15;
+`installAnchors`, `Cached.annotDeclStep`): a declaration that declares one
+whose type is not its specification's, up to binder data and level-parameter
+names (`matchesPin`), declines.
 
 **Evidence.** An operation's equations are certified by evidence the role
 table supplies, one entry per equation (`Evidence`): an unconditional
@@ -596,5 +598,57 @@ theorem divModSpec_stmts (c : Key md)
      | _ => []) = divModCertStmts c := by
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
   rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (cases md <;> decide)
+/-! ## The anchors validated at install (owner, 2026-10-15)
+
+`Bool.rec`, `And`, `And.intro` and `And.rec` have `anchor` specifications
+that no use site validates (`Bool.rec` has no use site; the `And` rescue
+relies on `And`'s projection table and on proof irrelevance at use,
+`andRescueSlots`). The fold's step validates them when it installs them
+(`Cached.annotDeclStep`): a constant bound to one of them must have its
+specification's type up to binder data and level-parameter names
+(`ConstantVal.matchesPin`, as the standard axioms' families are matched,
+`stdAxiomOkF`), or the declaration declines. -/
+
+/-- The roles whose constants the fold's step matches against their
+specifications at install. -/
+def installAnchors : List Role := [.boolRec, .and, .andIntro, .andRec]
+
+/-- **The pin of an anchor validated at install**: the role's key, its
+specification's level count (positional) and type. Spelled out rather than
+read from `Role.spec`, so that the fold's code reaches these four terms and
+not the whole specification set; `installAnchorPin?_role` relates the two. -/
+def installAnchorPin? : Key md → Option (ConstantVal md)
+  | .role .boolRec => some { name := .role .boolRec, levelParams := [0], type := boolRecSpecTy }
+  | .role .and => some { name := .role .and, levelParams := [], type := andSpecTy }
+  | .role .andIntro => some { name := .role .andIntro, levelParams := [], type := andIntroSpecTy }
+  | .role .andRec => some { name := .role .andRec, levelParams := [0], type := andRecSpecTy }
+  | _ => none
+
+/-- The pins are the specifications: at a role of `installAnchors` the pin is
+the role's `anchor` specification (its level count positional, its type);
+at any other role there is none. -/
+theorem installAnchorPin?_role (r : Role) :
+    (installAnchorPin? (md := md) (.role r)) =
+      if r ∈ installAnchors then
+        match (Role.spec (md := md)) r with
+        | .anchor n ty => some { name := .role r, levelParams := List.range n, type := ty }
+        | _ => none
+      else none := by
+  cases r <;> rfl
+
+/-- A constant's key, when it is bound to an anchor validated at install and
+its type is not the specification's (`ConstantVal.matchesPin`). -/
+def anchorMismatch? (cv : ConstantVal md) : Option (Key md) :=
+  match installAnchorPin? cv.name with
+  | some pin => if cv.matchesPin pin then none else some cv.name
+  | none => none
+
+/-- **The first constant a declaration declares whose anchor does not
+match**, if any (`anchorMismatch?`). -/
+def Declaration.anchorMismatch? : Declaration md → Option (Key md)
+  | .axiomDecl cv | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .quotDecl _ cv =>
+    Ix.Kernel.anchorMismatch? cv
+  | .indDecl block _ => block.findSome? (Ix.Kernel.anchorMismatch? ·.toConstantVal)
+  | .basisDecl _ => none
 
 end Ix.Kernel

@@ -39,15 +39,24 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3352 compiled functions with 67 inherited externs, with the
+reaches 3399 compiled functions with 67 inherited externs, with the
 computed-field overrides of `Level`, `Expr` and `Key` and 20 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2134, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5788 with
+TagN writer twin; the entry (the four `publicOperations`) reaches 5799 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
-default table and prelude, and the codec's two TagN twins. Step 6's
+default table and prelude, and the codec's two TagN twins. The validation
+of the four install anchors (`Bool.rec`, `And`, `And.intro`, `And.rec`;
+`Declaration.anchorMismatch?` in `Cached.annotDeclStep`, owner 2026-10-15)
+moved the fold from 3352 to 3399 and the entry from 5788 to 5799: the guard
+(`anchorMismatch?`, `Declaration.anchorMismatch?` with its `findSome?`
+specialisation, `installAnchorPin?` and a closed term, six closed terms of the
+step's message), 11 in both, and in the fold the four specification types
+(`boolRecSpecTy`, `andSpecTy`, `andIntroSpecTy`, `andRecSpecTy`) with 29 closed
+terms and three closed terms they share with the literal support's
+specifications, which the entry reached already. Step 6's
 structured errors (`CheckError md`: a message is prose and keys, `Msg md`, and
 the checker never spells a key) moved them from 3446 and 5570, and the
 fold's and the entry's inherited externs from 92 and 115; the reader is
@@ -426,7 +435,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3352 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3399 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -438,7 +447,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5788 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5799 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

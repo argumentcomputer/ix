@@ -183,14 +183,23 @@ def annotStepC (ev : Evidences md) (i : Nat) (fe : FEnv md)
 /-- Phase A's step with the position carried and the error tagged: the
 accumulator is `(i, fe, pend)`, and a failing step reports the
 `CheckError` together with `i`, the fold position of the declaration
-that failed. -/
+that failed.
+
+First it validates the anchors no use site validates (`Bool.rec`, `And`,
+`And.intro`, `And.rec`; `installAnchors`, owner 2026-10-15): a declaration
+that declares one whose type is not its specification's
+(`Declaration.anchorMismatch?`) declines here, before anything is
+installed. -/
 def annotDeclStep (ev : Evidences md)
     (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) :
     StateT (CState md) (Except (CheckError md × Nat)) (Nat × FEnv md × Array (PendingCheck md)) :=
   fun s =>
-    match annotStepC mode ev p.1 p.2.1 p.2.2 pd s with
-    | .ok ((fe', pend'), s') => .ok ((p.1 + 1, fe', pend'), s')
-    | .error e => .error (e, p.1)
+    match pd.anchorMismatch? with
+    | some k => .error (.notImplemented msg!"role specification mismatch ({k})", p.1)
+    | none =>
+      match annotStepC mode ev p.1 p.2.1 p.2.2 pd s with
+      | .ok ((fe', pend'), s') => .ok ((p.1 + 1, fe', pend'), s')
+      | .error e => .error (e, p.1)
 
 /-- **Phase A's accepting run**: a chain of accepting `annotDeclStep`s
 over the records, from an accumulator and memo state to the final
@@ -214,6 +223,8 @@ theorem annotDeclStep_ok {mode : CheckMode} {ev : Evidences md}
     ∃ fe' pend', q = (p.1 + 1, fe', pend') ∧
       annotStepC mode ev p.1 p.2.1 p.2.2 pd s = .ok ((fe', pend'), s') := by
   unfold annotDeclStep at h
+  split at h
+  · exact nomatch h
   cases hs : annotStepC mode ev p.1 p.2.1 p.2.2 pd s with
   | error e => rw [hs] at h; exact nomatch h
   | ok r =>

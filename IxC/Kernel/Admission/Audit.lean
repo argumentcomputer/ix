@@ -85,12 +85,14 @@ the ruled csimps 21 to 23, the references they replace still reached, csimp
 moved it from 5567 and 115 inherited externs by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`): the fold no longer prints terms (two string
 externs fewer), and every fixed message of the fold is a one-part list (two
-more closed objects per message site). -/
+more closed objects per message site). The validation of the four install
+anchors moved it from 5785 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
+11 more). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5785 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5796 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
