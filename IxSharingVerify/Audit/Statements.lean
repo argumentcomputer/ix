@@ -55,6 +55,10 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ixon.Verify.TagN.putTagN_inj,
     standardAxioms := noChoice },
+  -- Compiled host code (`Ix.Ixon` and its importers) writes TagN integers
+  -- with the inlined copy `putTagNI` (`@[csimp]`, by `rfl`).
+  { root := ``Ixon.putTagN_eq_I,
+    standardAxioms := noChoice },
   { root := ``Ixon.Verify.TagN.getTagN_rejects_code,
     standardAxioms := standard },
   { root := ``Ixon.Verify.TagN.getTagN_rejects_overflow,
