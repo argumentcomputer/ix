@@ -6,7 +6,9 @@ import Ix.CompileM
 `preseedExprTables_eq_worklist`), not as `implemented_by` unsafe code: shared
 DAGs need no tree-size prepass, deep pending siblings use the worklist (no
 native recursion proportional to depth), wide root arrays use the folds, and
-the effects and errors are the structural semantics'. -/
+the effects and errors are the structural semantics'. Table indices and
+counts that do not fit the wire's `UInt64` are refused (`checkedTableIndex`,
+`checkedTableCount`), virtual universe indices included. -/
 
 namespace Tests.Ix.Compile.TableWorklist
 
@@ -19,6 +21,11 @@ private def context : CompileEnv × BlockEnv :=
 
 private def raw (action : CompileM α) (state : BlockState := {}) :
     Except CompileError α × BlockState := (action context).run state
+
+private def resourceFailure (result : Except CompileError α) : Bool :=
+  match result with
+  | .error (.resourceLimit _) => true
+  | _ => false
 
 def controls : List (String × Bool) := Id.run do
   let key := univParamsKey []
@@ -57,6 +64,24 @@ def controls : List (String × Bool) := Id.run do
   let badLevels := Expr.mkConst (Name.fromLeanName `Missing)
     #[Level.mkZero, Level.mkMvar (Name.fromLeanName `badLevel)]
   let (levelFailure, levelState) := raw (preseedExprTables #[(badLevels, [])])
+  let largest := UInt64.size - 1
+  let (zeroIndex, _) := raw (checkedTableIndex "control" 0)
+  let (lastIndex, _) := raw (checkedTableIndex "control" largest)
+  let (tooLarge, _) := raw (checkedTableIndex "control" UInt64.size)
+  let (largerStill, _) := raw (checkedTableIndex "control" (UInt64.size + 1))
+  let (emptyCount, _) := raw (checkedTableCount "control" 0)
+  let (largestCount, _) := raw (checkedTableCount "control" largest)
+  let (overflowCount, _) := raw (checkedTableCount "control" UInt64.size)
+  let (beyondCount, _) := raw (checkedTableCount "control" (UInt64.size + 1))
+  let one : Ixon.Univ := .succ .zero
+  let goodMeta : BlockState :=
+    { univs := #[.zero]
+      metaUnivs := #[one]
+      metaUnivsIndex := ({} : Std.HashMap Ixon.Univ UInt64).insert one 0 }
+  let badMeta := { goodMeta with
+    metaUnivsIndex := goodMeta.metaUnivsIndex.insert one largest.toUInt64 }
+  let (goodUniv, goodUnivAfter) := raw (internMetaUniv one) goodMeta
+  let (badUniv, badUnivAfter) := raw (internMetaUniv one) badMeta
   return [
     ("shared DAG collector has no tree-size prepass", match sharedResult with
       | .ok (refs, univs, seen) => refs.isEmpty && univs.isEmpty && seen.size == 65
@@ -82,7 +107,21 @@ def controls : List (String × Bool) := Id.run do
       | .error _ => false),
     ("universe failure precedes missing reference lookup", (match levelFailure with
       | .error (.unsupportedExpr "level metavariable") => true | _ => false) &&
-      levelState.univCache.get? Level.mkZero == some .zero)]
+      levelState.univCache.get? Level.mkZero == some .zero),
+    ("checked indices accept zero and the last wire slot",
+      zeroIndex.toOption == some 0 && lastIndex.toOption == some largest.toUInt64),
+    ("checked indices reject overflow", resourceFailure tooLarge && resourceFailure largerStill),
+    ("wire table counts accept empty and largest representable tables",
+      emptyCount.toOption == some 0 && largestCount.toOption == some largest.toUInt64),
+    ("a representable last slot cannot justify an overflowing table count",
+      lastIndex.isOk && resourceFailure overflowCount && resourceFailure beyondCount),
+    ("virtual universe hit retains its intended slot",
+      goodUniv.toOption == some 1 && goodUnivAfter.univs == #[.zero] &&
+        goodUnivAfter.metaUnivs == #[one]),
+    ("overflowing virtual universe cannot wrap to the primary slot",
+      resourceFailure badUniv && badUnivAfter.univs == badMeta.univs &&
+        badUnivAfter.metaUnivs == badMeta.metaUnivs &&
+        badUnivAfter.metaUnivsIndex.get? one == some largest.toUInt64)]
 
 def suite : List TestSeq := controls.map fun (label, ok) => test s!"table worklist: {label}" ok
 

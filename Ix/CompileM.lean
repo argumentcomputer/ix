@@ -452,8 +452,30 @@ def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
   pure u
 termination_by lvl
 
+/-- A source index (bound variable, mutual slot, projection field) or a
+    table index as its Ixon wire integer, or the compile's refusal when it
+    does not fit in a `UInt64`. `Nat.toUInt64` would wrap it to its residue,
+    so a `bvar 2⁶⁴` would compile as `bvar 0`; the Rust compiler refuses
+    these (`nat_to_u64` in `compile_expr`). Virtual indices are checked after
+    adding their natural offsets, before any truncation or machine-word
+    addition. -/
+def checkedTableIndex (table : String) (index : Nat) : CompileM UInt64 :=
+  if index < UInt64.size then pure index.toUInt64
+  else throw (.resourceLimit s!"{table} table index {index} exceeds the Ixon UInt64 range")
+
+/-- Check a serialized table count before conversion. Insertion must check
+    the resulting count, which is one greater than the new slot index. -/
+def checkedTableCount (table : String) (count : Nat) : CompileM UInt64 :=
+  if count < UInt64.size then pure count.toUInt64
+  else throw (.resourceLimit s!"{table} table count {count} exceeds the Ixon UInt64 range")
+
 /-- Intern a universe into the block's univs table, returning its index. -/
-def internUniv (u : Ixon.Univ) : CompileM UInt64 :=
+def internUniv (u : Ixon.Univ) : CompileM UInt64 := do
+  -- A full wire count may still serve an existing slot. Check the count
+  -- after insertion; the usual path does not repeat the map lookup.
+  if (← getBlockState).univs.size + 1 ≥ UInt64.size then
+    if !(← getBlockState).univsIndex.contains u then
+      discard <| checkedTableCount "universe" ((← getBlockState).univs.size + 1)
   modifyGetBlockState fun state =>
     let (state', idx) := state.internUniv u
     (idx, state')
@@ -481,7 +503,12 @@ def BlockState.internMetaUniv (state : BlockState)
                   metaUnivsIndex := state.metaUnivsIndex.insert raw k },
       state.univs.size.toUInt64 + k)
 
-def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
+def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 := do
+  let state ← getBlockState
+  let offset := match state.metaUnivsIndex.get? raw with
+    | some index => index.toNat
+    | none => state.metaUnivs.size
+  discard <| checkedTableIndex "metadata universe" (state.univs.size + offset)
   modifyGetBlockState fun st =>
     let (st', idx) := st.internMetaUniv raw
     (idx, st')
@@ -523,8 +550,13 @@ def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
 
 /-! ## Reference Handling -/
 
-/-- Intern an address into the block's refs table, returning its index. -/
-def internRef (addr : Address) : CompileM UInt64 :=
+/-- Intern an address into the block's refs table, returning its index.
+    Read the capacity before the update without retaining the old state in
+    the update closure. -/
+def internRef (addr : Address) : CompileM UInt64 := do
+  if (← getBlockState).refs.size + 1 ≥ UInt64.size then
+    if !(← getBlockState).refsIndex.contains addr then
+      discard <| checkedTableCount "reference" ((← getBlockState).refs.size + 1)
   modifyGetBlockState fun state =>
     let (state', idx) := state.internRef addr
     (idx, state')
@@ -776,15 +808,6 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
     compileName k
     let vData ← compileDataValue v
     pure (k.getHash, vData)
-
-/-- A source index (bound variable, mutual slot, projection field) as its
-    Ixon wire integer, or the compile's refusal when it does not fit in a
-    `UInt64`. `Nat.toUInt64` would wrap it to its residue, so a
-    `bvar 2⁶⁴` would compile as `bvar 0`; the Rust compiler refuses these
-    (`nat_to_u64` in `compile_expr`). -/
-def checkedTableIndex (table : String) (index : Nat) : CompileM UInt64 :=
-  if index < UInt64.size then pure index.toUInt64
-  else throw (.resourceLimit s!"{table} table index {index} exceeds the Ixon UInt64 range")
 
 /-! ## Expression Compilation -/
 
