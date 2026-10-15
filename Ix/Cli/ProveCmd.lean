@@ -252,7 +252,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
   -- each `aiur/` / `stark/` span closes: the per-phase wall + RSS
   -- breakdown (execute vs witness vs STARK) of every prove in the run.
-  if p.hasFlag "texray" then TracingTexray.init {}
+  if ← TracingTexray.enabled (p.hasFlag "texray") then TracingTexray.init {}
   let keepGoing := p.hasFlag "keep-going"
   -- Same units as `ix shard --max-ram`: the per-shard prover budget the
   -- partition was sized against, re-checked here against each shard's

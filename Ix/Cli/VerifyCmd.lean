@@ -94,7 +94,7 @@ structure ExpectedAggregate where
   claim : Ix.Claim
   constantCount : Nat
 
-private def verifyAggregateProof (backend : Aggr.VerificationBackend)
+private def verifyAggregateProof (getBackend : IO (Except String Aggr.VerificationBackend))
     (expected? : Option ExpectedAggregate) (proofAddr : Address)
     (devSrs : Bool := false) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
@@ -117,6 +117,9 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
     | .error e =>
       IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
       return 1
+  let backend ← match ← getBackend with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
   let outerClaim := Aggr.aggregateOuterClaim
     backend.allowed backend.aggrIdx wrapper.claim
   let verifyStarted ← IO.monoMsNow
@@ -271,16 +274,21 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
           {(← IO.monoMsNow) - started}ms"
         pure (some { claim, constantCount := native.constantCount })
       | none, some _ => unreachable!
-    let backendStarted ← IO.monoMsNow
-    let backend ← match ← Aggr.buildVerificationBackend recursionParameters with
-      | .error e => IO.eprintln e; return 1
-      | .ok backend => pure backend
-    IO.println s!"[verify] aggregate backend setup: \
-      {(← IO.monoMsNow) - backendStarted}ms"
+    let backendRef ← IO.mkRef (none : Option (Except String Aggr.VerificationBackend))
+    let getBackend : IO (Except String Aggr.VerificationBackend) := do
+      if let some result ← backendRef.get then
+        return result
+      let backendStarted ← IO.monoMsNow
+      let result ← Aggr.buildVerificationBackend recursionParameters
+      backendRef.set (some result)
+      if let .ok _ := result then
+        IO.println s!"[verify] aggregate backend setup: \
+          {(← IO.monoMsNow) - backendStarted}ms"
+      return result
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
-      if (← verifyAggregateProof backend expected? proofAddr
+      if (← verifyAggregateProof getBackend expected? proofAddr
           (p.hasFlag "dev-srs")) != 0 then
         rc := 1
     return rc

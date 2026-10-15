@@ -26,6 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-texray = { workspace = true }
 rayon = { workspace = true, optional = true }
 blst = { version = "=0.3.16", features = ["portable"], optional = true }
 p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c83775a8076cc262ffc48a1fd7c" }

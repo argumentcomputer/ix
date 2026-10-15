@@ -305,6 +305,59 @@ fn parity_algebra_rejects_tampered_claim_openings_accumulators_and_challenges()
 }
 
 #[test]
+fn algebra_rejects_zero_ood_challenge_with_satisfied_openings() {
+  use multi_stark::system::CircuitInputs;
+
+  let (system, _) = System::new(
+    parity::config(),
+    [CircuitInputs { main_width: 1, ..Default::default() }],
+  );
+  let mut builder = CircuitBuilder::new();
+  let inputs = AlgebraicInputs::allocate(&mut builder, &system.circuits, &[]);
+  constrain_algebraic_checks(&mut builder, &system.circuits, &[1], &inputs);
+  let circuit = builder.finish();
+  let imaginary =
+    ExtVal::from_basis_coefficients_slice(&[Val::ZERO, Val::ONE]).unwrap();
+  for (zeta, valid) in [
+    (ExtVal::ZERO, false),
+    (ExtVal::ONE, false),
+    (ExtVal::from_u8(2), true),
+    (imaginary, true),
+  ] {
+    let mut witness = circuit.witness();
+    let c = inputs.challenges;
+    for (wire, value) in [
+      (c.beta, ExtVal::from_u8(3)),
+      (c.gamma, ExtVal::from_u8(5)),
+      (c.alpha, ExtVal::from_u8(7)),
+      (c.zeta, zeta),
+    ] {
+      adapter::set_extension(&mut witness, wire, value).unwrap();
+    }
+    // Zero openings satisfy the AIR identity even at zeta = 0.
+    for opening in &inputs.openings {
+      for &wire in opening
+        .preprocessed
+        .iter()
+        .flatten()
+        .chain(opening.main.iter().flatten())
+        .chain(opening.stage2.iter().flatten())
+        .chain(&opening.quotient)
+        .chain(std::iter::once(&opening.accumulator))
+      {
+        adapter::set_extension(&mut witness, wire, ExtVal::ZERO).unwrap();
+      }
+    }
+    let result = witness.generate();
+    if valid {
+      result.unwrap();
+    } else {
+      assert!(matches!(result, Err(WitnessError::HintFailed { .. })));
+    }
+  }
+}
+
+#[test]
 fn algebraic_relations_can_be_proved_independently() {
   let (system, key) = System::new(parity::config(), parity::circuit_inputs());
   let claim = parity::claim(parity::Function::Odd, 17, true);

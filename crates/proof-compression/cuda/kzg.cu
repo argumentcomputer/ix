@@ -108,47 +108,6 @@ extern "C" int ix_kzg_memory(int device, size_t* free, size_t* total) {
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-struct IdleMemory {
-    uint64_t driver_free_bytes, total_bytes;
-    uint64_t current_pool_reserved_bytes, current_pool_used_bytes;
-    uint64_t default_pool_reserved_bytes, default_pool_used_bytes;
-    uint64_t current_pool_is_default;
-};
-static_assert(sizeof(IdleMemory) == 7 * sizeof(uint64_t));
-
-extern "C" int ix_kzg_idle_memory(int device, bool trim, IdleMemory* report) {
-    try {
-        if (!report) return cudaErrorInvalidValue;
-        device_gpu(device);
-        CUDA_OK(cudaDeviceSynchronize());
-        cudaMemPool_t current = nullptr, standard = nullptr;
-        CUDA_OK(cudaDeviceGetMemPool(&current, device));
-        CUDA_OK(cudaDeviceGetDefaultMemPool(&standard, device));
-        if (trim) {
-            // Sppark's cudaMallocAsync uses the current pool. A different
-            // default pool can retain pages from other completed CUDA phases.
-            CUDA_OK(cudaMemPoolTrimTo(current, 0));
-            if (standard != current) CUDA_OK(cudaMemPoolTrimTo(standard, 0));
-            CUDA_OK(cudaDeviceSynchronize());
-        }
-        size_t free = 0, total = 0;
-        CUDA_OK(cudaMemGetInfo(&free, &total));
-        report->driver_free_bytes = free;
-        report->total_bytes = total;
-        CUDA_OK(cudaMemPoolGetAttribute(current, cudaMemPoolAttrReservedMemCurrent,
-                                       &report->current_pool_reserved_bytes));
-        CUDA_OK(cudaMemPoolGetAttribute(current, cudaMemPoolAttrUsedMemCurrent,
-                                       &report->current_pool_used_bytes));
-        CUDA_OK(cudaMemPoolGetAttribute(standard, cudaMemPoolAttrReservedMemCurrent,
-                                       &report->default_pool_reserved_bytes));
-        CUDA_OK(cudaMemPoolGetAttribute(standard, cudaMemPoolAttrUsedMemCurrent,
-                                       &report->default_pool_used_bytes));
-        report->current_pool_is_default = current == standard;
-        return 0;
-    } catch (const cuda_error& e) { return failure(e.code(), e.what()); }
-      catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
-}
-
 namespace {
 struct MsmContext {
     size_t count;

@@ -5,78 +5,46 @@
 //! is built into these stages. Verifiers returned by local construction must
 //! be authenticated before use elsewhere; a prover-supplied key is not trusted.
 mod codec;
+pub(in crate::pipeline) mod construct;
+pub(in crate::pipeline) mod statement;
+use statement::Statement;
 mod fixed;
-mod root;
+pub(in crate::pipeline) mod root;
 mod setup;
 #[cfg(test)]
 mod tests;
+pub(in crate::pipeline) mod verification;
 mod wrap;
+pub use verification::RecursiveVerifier;
 
 pub use fixed::FixedRoot;
 pub use root::prepare_root;
 pub use setup::setup;
-pub use wrap::{
-  RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
-};
+pub use wrap::{RecursiveProof, RecursiveStage, prepare_recursive};
 
-use crate::foreign::{GoldilocksCircuit, KzgCircuitExt};
 use crate::fri::{self, VerifierKey};
 use crate::kzg::{KzgConfig, Scalar, Srs, VerifierParams};
-use multi_stark::config::ProofConfig;
-use multi_stark::lookup::LookupValues;
-use multi_stark::plonkish::{Assignment, Circuit, MultiStarkCircuit};
-use multi_stark::prover::{Proof, Stage1};
-use multi_stark::system::{ProverKey, System, SystemWitness};
-use multi_stark::traits::{Algebra, Field, Pcs};
+use multi_stark::plonkish::{Assignment, Circuit};
+use multi_stark::prover::Proof;
+use multi_stark::system::{System, SystemWitness};
+#[cfg(test)]
+use multi_stark::traits::Algebra;
+use multi_stark::traits::Field;
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
-use p3_matrix::Matrix;
 use std::sync::Arc;
 
-use super::Result;
-
-// System::new asserts these conditions. Check caller-selected parameters
-// before committing matrices so an unsupported configuration is an error.
-fn validate_config<SC: ProofConfig>(
-  config: &SC,
-  definitions: &[multi_stark::system::CircuitInputs<
-    multi_stark::config::Val<SC>,
-  >],
-) -> Result<()> {
-  let params = multi_stark::system::extension_params::<SC>();
-  for definition in definitions {
-    let graph = definition
-      .compile_graph(&params)
-      .map_err(|e| format!("compression circuit: {e:?}"))?;
-    let degree =
-      graph.max_constraint_degree.max(multi_stark::lookup::logup_max_degree(
-        &graph,
-        definition.lookup_group_size,
-      )) as usize;
-    let quotient = (degree.max(2) - 1).next_power_of_two();
-    if quotient > config.max_quotient_degree() {
-      return Err(format!("compression circuit requires quotient degree {quotient}; increase the PCS degree budget").into());
-    }
-    if let Some(fixed) = &definition.preprocessed {
-      let height = fixed.height();
-      if !height.is_power_of_two()
-        || height.ilog2() as usize > config.max_log_degree()
-        || height.ilog2() as usize + quotient.ilog2() as usize
-          > config.max_log_quotient_domain()
-      {
-        return Err("compression trace exceeds the PCS domain".into());
-      }
-    }
-  }
-  Ok(())
-}
+use super::{
+  Result,
+  prover::{self, validate_config},
+};
 
 /// A checked circuit and its witness, ready for lowering and proving.
 /// Keeping preparation separate lets callers inspect costs and choose an SRS
 /// and partition height before allocating prover data.
 pub struct Prepared<F: Field> {
-  circuit: Circuit<F>,
-  assignment: Assignment<F>,
+  pub(in crate::pipeline) circuit: Circuit<F>,
+  pub(in crate::pipeline) assignment: Assignment<F>,
 }
 
 impl<F: Field> Prepared<F> {
@@ -89,72 +57,13 @@ impl<F: Field> Prepared<F> {
   }
 }
 
-/// The lowering's complete claim template, including all activation anchors.
-/// Only public-value cells may be replaced during verification.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Statement<F> {
-  template: Vec<Vec<F>>,
-  locations: Vec<(usize, usize)>,
-}
-
-impl<F: Field> Statement<F> {
-  fn from_lowered(
-    circuit: &MultiStarkCircuit<F>,
-    count: usize,
-  ) -> Result<Self> {
-    let template = circuit.claims(&vec![F::ZERO; count])?;
-    // MultiStarkCircuit::claims places the anchor first, then public cells.
-    // Obtain every other claim (partition/hash activation) from the lowering.
-    let locations: Vec<_> = (1..=count).map(|i| (i, 3)).collect();
-    if template.len() <= count
-      || template[..=count].iter().any(|row| row.len() != 4)
-    {
-      return Err("unsupported lowering claim schema".into());
-    }
-    Ok(Self { template, locations })
-  }
-
-  fn claims(&self, public: &[F]) -> Result<Vec<Vec<F>>> {
-    if public.len() != self.locations.len() {
-      return Err("unexpected public statement length".into());
-    }
-    let mut claims = self.template.clone();
-    for (&(row, col), &value) in self.locations.iter().zip(public) {
-      claims[row][col] = value;
-    }
-    Ok(claims)
-  }
-}
-
 /// Trusted verifier for the first, FRI-compressed stage.
 pub struct FriVerifier {
-  key: VerifierKey,
-  statement: Statement<Val>,
+  pub(in crate::pipeline) key: VerifierKey,
+  pub(in crate::pipeline) statement: Statement<Val>,
 }
 
 impl FriVerifier {
-  fn schema(&self) -> fri::Statement<fri::StatementSlot> {
-    let mut schema = fri::Statement {
-      claims: self
-        .statement
-        .template
-        .iter()
-        .map(|row| {
-          row
-            .iter()
-            .copied()
-            .map(fri::StatementSlot::Constant)
-            .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>(),
-      messages: vec![],
-    };
-    for &(row, col) in &self.statement.locations {
-      schema.claims[row][col] = fri::StatementSlot::Public;
-    }
-    schema
-  }
-
   pub fn verify(
     &self,
     proof: &Proof<GoldilocksBlake3Config>,
@@ -188,28 +97,31 @@ impl Prepared<Val> {
       },
       config.fri_parameters(),
     )?;
-    let compiled = self
-      .circuit
-      .lower_to_multi_stark_with_max_height(Val::ONE, max_height)?;
+    let compiled = construct::lower_fri(self.circuit, max_height)?;
     let statement = Statement::from_lowered(
       &compiled,
       self.assignment.public_values().len(),
     )?;
     let claims = statement.claims(self.assignment.public_values())?;
-    let definitions = compiled.circuit_inputs();
+    let trace_span = tracing::info_span!("compression/trace").entered();
+    let definitions = construct::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
     let traces = compiled.traces(&self.assignment)?;
+    drop(trace_span);
     drop(compiled);
     drop(self.assignment);
-    let (system, key) = System::new(config, definitions);
+    let (system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new(config, definitions));
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let proof = system.prove_multiple_claims(
-      &key,
-      &refs,
-      SystemWitness::from_stage_1(traces, &system),
-    );
-    system
-      .verify_multiple_claims(&refs, &proof)
+    let proof = tracing::info_span!("compression/prove").in_scope(|| {
+      system.prove_multiple_claims(
+        &key,
+        &refs,
+        SystemWitness::from_stage_1(traces, &system),
+      )
+    });
+    tracing::info_span!("compression/verify")
+      .in_scope(|| system.verify_multiple_claims(&refs, &proof))
       .map_err(|e| format!("new FRI proof: {e:?}"))?;
     Ok((FriVerifier { key: VerifierKey::new(system), statement }, proof))
   }
@@ -225,30 +137,22 @@ pub fn prepare_kzg(
 ) -> Result<Prepared<Scalar>> {
   verifier.verify(proof, expected)?;
   let claims = verifier.statement.claims(expected)?;
-  let profile = fri::ProofProfile {
-    envelope: fri::Envelope::Ordinary,
-    active: proof.active.clone(),
-    log_degrees: proof.log_degrees.clone(),
-    claim_lengths: claims.iter().map(Vec::len).collect(),
-    message_lengths: vec![],
-    max_field_retries: fri::DEFAULT_FIELD_RETRIES,
-  };
+  let profile = construct::fri_profile(&verifier.key, &claims)?;
+  if proof.active != profile.active || proof.log_degrees != profile.log_degrees
+  {
+    return Err("compressed proof profile differs from the key".into());
+  }
   let plan = fri::VerifierPlan::validate(&verifier.key, profile, limits)?;
-  let schema = verifier.schema();
-  let (circuit, inputs) = plan.build(schema, Default::default())?;
-  let expanded = plan
-    .expand_witness(fri::ProofEnvelope::Ordinary { proof, claims: &claims })?;
-  let mut witness = circuit.witness();
-  inputs.assign_statement(
-    &mut witness,
-    &fri::Statement { claims, messages: vec![] },
+  let source =
+    construct::FriConstruction::build(&plan, verifier.statement.schema())?
+      .assign(&plan, proof, claims)?;
+  let foreign = construct::translate(&source.circuit);
+  drop(source.circuit);
+  let assignment = construct::assign_foreign(
+    &foreign.inputs,
+    &foreign.circuit,
+    &source.assignment,
   )?;
-  expanded.assign_proof(&mut witness, &inputs)?;
-  let assignment = witness.generate()?;
-  let foreign = GoldilocksCircuit::new_preallocated(&circuit);
-  let mut witness = foreign.circuit.witness();
-  foreign.assign(&assignment, &mut witness)?;
-  let assignment = witness.generate()?;
   Ok(Prepared { circuit: foreign.circuit, assignment })
 }
 
@@ -258,29 +162,57 @@ pub struct KzgVerifier {
   system: System<KzgConfig>,
   params: VerifierParams,
   statement: Statement<Scalar>,
+  codec: crate::kzg::compact::FixedProofCodec,
 }
 
 impl KzgVerifier {
-  fn codec(&self) -> Result<crate::kzg::compact::FixedProofCodec> {
-    let logs = self
-      .system
+  pub(in crate::pipeline) fn new(
+    system: System<KzgConfig>,
+    statement: Statement<Scalar>,
+  ) -> Result<Self> {
+    use multi_stark::config::ProofConfig;
+    let params = system.config.pcs().verifier_params().clone();
+    statement.validate()?;
+    let commitment =
+      system.preprocessed_commit.as_ref().ok_or("missing fixed commitment")?;
+    if system.circuits.is_empty()
+      || commitment.0.len() != system.circuits.len()
+      || system
+        .preprocessed_indices
+        .iter()
+        .copied()
+        .ne((0..system.circuits.len()).map(Some))
+    {
+      return Err("invalid fixed commitment dimensions".into());
+    }
+    for (i, c) in system.circuits.iter().enumerate() {
+      crate::circuit_metadata::validate_circuit(c, 1)?;
+      if c.preprocessed.is_some()
+        || c.preprocessed_width == 0
+        || !c.preprocessed_height.is_power_of_two()
+        || c.preprocessed_height > params.max_trace_len()
+        || c.quotient_degree() > 2
+        || commitment.0[i].len() != c.preprocessed_width
+      {
+        return Err("invalid KZG compression circuit metadata".into());
+      }
+    }
+    let logs = system
       .circuits
       .iter()
-      .map(|c| {
-        u8::try_from(c.preprocessed_height.ilog2())
-          .expect("validated trace height")
-      })
-      .collect::<Vec<_>>();
-    Ok(crate::kzg::compact::FixedProofCodec::new(&self.system, &logs)?)
+      .map(|c| u8::try_from(c.preprocessed_height.ilog2()))
+      .collect::<std::result::Result<Vec<_>, _>>()?;
+    let codec = crate::kzg::compact::FixedProofCodec::new(&system, &logs)?;
+    Ok(Self { system, params, statement, codec })
   }
 
   /// Fixed-shape transport under this trusted key; encoding is not verification.
   pub fn encode_proof(&self, proof: &Proof<KzgConfig>) -> Result<Vec<u8>> {
-    Ok(self.codec()?.encode(proof)?)
+    Ok(self.codec.encode(proof)?)
   }
 
   pub fn verify_bytes(&self, bytes: &[u8], expected: &[Scalar]) -> Result<()> {
-    self.verify(&self.codec()?.decode(bytes)?, expected)
+    self.verify(&self.codec.decode(bytes)?, expected)
   }
 
   pub fn verify(
@@ -323,83 +255,41 @@ impl Prepared<Scalar> {
         "partition height must be a power of two within the SRS range".into(),
       );
     }
-    let compiled = self
-      .circuit
-      .lower_to_multi_stark_sharded(Scalar::ONE, max_height)?
-      .merge_table_traces(max_height)?;
-    let statement = Statement::from_lowered(
-      &compiled,
-      self.assignment.public_values().len(),
-    )?;
-    let claims = statement.claims(self.assignment.public_values())?;
-    let params = VerifierParams::from_srs(&srs);
-    let config =
-      KzgConfig::new(srs, 2).with_streaming_lookups().with_streaming_quotient();
-    // Commit one partition at a time. Lookup traces are reconstructed from
-    // committed columns, so neither fixed evaluations nor expanded lookup
-    // messages need to remain resident alongside all prover coefficients.
-    let source = compiled.trace_shards(&self.assignment)?;
-    let count = compiled.num_circuits();
-    let mut circuits = Vec::with_capacity(count);
-    let mut fixed = Vec::with_capacity(count);
-    let mut main = Vec::with_capacity(count);
-    let mut logs = Vec::with_capacity(count);
-    let mut lookups = Vec::with_capacity(count);
-    for i in 0..count {
-      let definition = compiled
-        .kzg_circuit_input(i, params.max_trace_len(), 2)?
-        .ok_or("missing compression circuit")?;
-      validate_config(&config, std::slice::from_ref(&definition))?;
-      let (mut local, key) =
-        System::new_without_preprocessed(config.clone(), [definition]);
-      let circuit = local.circuits.remove(0);
-      fixed.push(key.preprocessed_data.ok_or("missing fixed columns")?);
-      let trace = source.trace(i)?;
-      let height = trace.height();
-      logs.push(height.ilog2() as usize);
-      lookups.push(LookupValues::shape_only(
-        height,
-        &circuit.graph.lookups.iter().map(|l| l.args.len()).collect::<Vec<_>>(),
-      ));
-      let (_, data) = config
-        .pcs()
-        .commit(vec![(config.pcs().natural_domain_for_degree(height), trace)]);
-      main.push(data);
-      circuits.push(circuit);
+    let compiled =
+      construct::lower_first(self.circuit, max_height, max_height)?;
+    let height = construct::max_height(&compiled)?;
+    if height > srs.max_len() {
+      return Err("compression trace exceeds the SRS range".into());
     }
-    drop(compiled);
-    drop(self.assignment);
-    let (fixed_commitment, fixed_data) =
-      crate::kzg::pcs::KzgProverData::concatenate(fixed);
-    let (stage_1_trace_commit, stage_1_trace_data) =
-      crate::kzg::pcs::KzgProverData::concatenate(main);
-    let mut system = System {
+    let config = KzgConfig::with_max_trace_len(srs, height, 2)
+      .with_streaming_lookups()
+      .with_streaming_quotient();
+    prove_lowered(
+      construct::Lowered { compiled, assignment: self.assignment },
       config,
-      circuits,
-      preprocessed_commit: Some(fixed_commitment),
-      preprocessed_indices: (0..count).map(Some).collect(),
-    };
-    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let proof = system.prove_committed(
-      &ProverKey { preprocessed_data: Some(fixed_data) },
-      &refs,
-      Stage1 {
-        active: vec![true; count],
-        active_indices: (0..count).collect(),
-        log_degrees: logs,
-        stage_1_trace_commit,
-        stage_1_trace_data,
-        lookups,
-      },
-    );
-    system
-      .verify_multiple_claims(&refs, &proof)
-      .map_err(|e| format!("new KZG proof: {e:?}"))?;
-    system.config = KzgConfig::verifier_only(params.clone(), 2);
-    Ok((KzgVerifier { system, params, statement }, proof))
+    )
   }
 }
 
-fn scalar_statement(expected: &[Val]) -> Vec<Scalar> {
+pub(in crate::pipeline) fn scalar_statement(expected: &[Val]) -> Vec<Scalar> {
   expected.iter().map(|v| Scalar::from_u64(v.as_canonical_u64())).collect()
+}
+
+fn prove_lowered(
+  lowered: construct::Lowered,
+  config: KzgConfig,
+) -> Result<(KzgVerifier, Proof<KzgConfig>)> {
+  use multi_stark::config::ProofConfig;
+  let statement = Statement::from_lowered(
+    &lowered.compiled,
+    lowered.assignment.public_values().len(),
+  )?;
+  let claims = statement.claims(lowered.assignment.public_values())?;
+  let params = config.pcs().verifier_params().clone();
+  let transcript = config.transcript_kind();
+  let committed = lowered.commit(config, None, 0)?;
+  let prover::Proved { mut system, proof, .. } = committed.prove(&claims)?;
+  system.config =
+    KzgConfig::verifier_only(params, 2).with_transcript(transcript);
+  Ok((KzgVerifier::new(system, statement)?, proof))
 }

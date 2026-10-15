@@ -177,29 +177,6 @@ pub(super) fn reclaimable(index: usize) -> usize {
   caches()[index].lock().unwrap().bytes()
 }
 
-pub(super) fn resident_bytes(index: usize) -> (usize, usize) {
-  let cache = caches()[index].lock().unwrap();
-  (
-    cache.point_bytes(),
-    cache.workspace.as_ref().map_or(0, |workspace| workspace.bytes),
-  )
-}
-
-/// Exclusive device ownership excludes every cached native pointer's readers.
-pub(super) fn release_all(device: &Device<'_>) -> (usize, usize) {
-  let mut cache = caches()[device.index].lock().unwrap();
-  let released = (
-    cache.point_bytes(),
-    cache.workspace.as_ref().map_or(0, |workspace| workspace.bytes),
-  );
-  while !cache.entries.is_empty() {
-    let index = cache.entries.len() - 1;
-    cache.evict(device, index);
-  }
-  cache.drop_workspace(device);
-  released
-}
-
 /// The caller owns the only operation lease; no cached native handle can be
 /// in use.
 pub(super) fn prepare_budget(device: &Device<'_>, required: usize) -> bool {

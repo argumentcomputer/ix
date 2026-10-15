@@ -19,7 +19,11 @@ fn unsupported_fri_profiles_fail_before_proving() {
         },
       )
     };
-    assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());
+    if cfg!(feature = "cuda") && (cap != 0 || arity > 1) {
+      assert!(std::panic::catch_unwind(config).is_err());
+    } else {
+      assert!(arithmetic(Val::ONE, 2).prove_fri(config(), 32).is_err());
+    }
   }
 }
 
@@ -46,7 +50,7 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
     let prepared = arithmetic(value, 2);
     let config = || {
       GoldilocksBlake3Config::new(
-        CommitmentParameters { log_blowup: 1, cap_height: 0 },
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
         FriParameters {
           log_final_poly_len: 0,
           max_log_arity: 1,
@@ -149,5 +153,37 @@ fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
   }
   let srs = Arc::new(Srs::unsafe_dev_setup(8, b"too-small"));
   assert!(arithmetic(Scalar::ONE, 2).prove_kzg(srs, 16).is_err());
+  Ok(())
+}
+
+#[test]
+fn kzg_table_merging_respects_the_callers_height_bound() -> Result<()> {
+  fn tables() -> Prepared<Scalar> {
+    let mut builder = CircuitBuilder::new();
+    let x = builder.public_input("x");
+    for name in ["first", "second"] {
+      let table = builder.fixed_table(
+        name,
+        (0..64).map(|i| vec![Scalar::from_u64(i)]).collect(),
+      );
+      builder.lookup(table, &[x]);
+    }
+    let circuit = builder.finish();
+    let mut witness = circuit.witness();
+    witness.set(x, Scalar::from_u8(7)).unwrap();
+    let assignment = witness.generate().unwrap();
+    Prepared { circuit, assignment }
+  }
+
+  let srs = Arc::new(Srs::unsafe_dev_setup(256, b"bounded-table-merge"));
+  assert!(tables().prove_kzg(srs.clone(), 64).is_err());
+  assert!(setup::kzg(tables().circuit, srs.clone(), 64).is_err());
+  let local = setup::kzg(tables().circuit, srs.clone(), 128)?;
+  let (verifier, proof) = tables().prove_kzg(srs, 128)?;
+  assert_eq!(local.to_bytes()?, verifier.to_bytes()?);
+  assert!(
+    verifier.system.circuits.iter().all(|c| c.preprocessed_height <= 128)
+  );
+  verifier.verify(&proof, &[Scalar::from_u8(7)])?;
   Ok(())
 }

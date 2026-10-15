@@ -7,9 +7,10 @@ mod saved;
 #[cfg(feature = "cuda")]
 pub(super) const DEFAULT_CUDA_RESIDENT_BYTES: usize = 8 << 30;
 
-pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-  let args = crate::pipeline::setup::take_development_flag(args);
-  let args = &args[..];
+pub(super) fn run(
+  args: &[String],
+  config: &super::WorkerConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
   if args
     .first()
     .is_some_and(|s| matches!(s.as_str(), "native-verify" | "stage-and-prove"))
@@ -25,9 +26,10 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         std::path::Path::new(&args[1]),
         &dir.join("circuit-report.json"),
         Some(dir),
+        config,
       );
     }
-    return saved::check(std::path::Path::new(&args[1]), dir, None);
+    return saved::check(std::path::Path::new(&args[1]), dir, None, config);
   }
   Err(
     "usage: ix-compression-worker wrap <stage-and-prove|native-verify> ..."
@@ -55,4 +57,4 @@ fn spawn_memory_monitor() {
 
 pub(super) use outer::verify_saved as verify;
 
-pub(super) use outer::VerifierProfile;
+pub(super) use outer::{PreparedVerifierProfile, VerifierProfile};

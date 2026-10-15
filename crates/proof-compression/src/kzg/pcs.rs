@@ -223,16 +223,6 @@ pub struct KzgProverData {
 }
 
 impl KzgProverData {
-  /// Detach device coefficients while retaining the host key and commitment.
-  /// Later GPU operations may hydrate the same immutable coefficients again.
-  /// Drop all other request data before releasing the backend's idle memory.
-  pub fn release_device_residency(&mut self) {
-    #[cfg(feature = "cuda")]
-    for matrix in &mut self.matrices {
-      drop(matrix.resident.take());
-    }
-  }
-
   #[cfg(all(test, feature = "cuda"))]
   pub(super) fn coefficient_fixture(
     domain: Radix2Coset,
@@ -410,44 +400,6 @@ pub enum KzgError {
   PairingCheckFailed,
   /// A commitment or witness point is off the curve or outside the subgroup.
   InvalidPoint,
-}
-
-/// Device memory at a synchronized idle boundary. Current and default pool
-/// counters refer to the same pages when `current_pool_is_default` is true.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct KzgDeviceMemorySnapshot {
-  pub driver_free_bytes: u64,
-  pub total_bytes: u64,
-  pub current_pool_reserved_bytes: u64,
-  pub current_pool_used_bytes: u64,
-  pub default_pool_reserved_bytes: u64,
-  pub default_pool_used_bytes: u64,
-  pub current_pool_is_default: bool,
-  /// Includes reserved coefficient capacity of operations waiting for a lease.
-  pub resident_coefficient_bytes: usize,
-  pub srs_point_bytes: usize,
-  pub msm_workspace_bytes: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct KzgDeviceMemoryRelease {
-  pub device: i32,
-  pub before: KzgDeviceMemorySnapshot,
-  pub after: KzgDeviceMemorySnapshot,
-  pub released_srs_point_bytes: usize,
-  pub released_msm_workspace_bytes: usize,
-}
-
-/// CPU execution and a CUDA backend with no initialized devices have no
-/// device reports. `quiesced` confirms an actual synchronized release on
-/// every selected device; live NTT tables, contexts, and other owners'
-/// allocations remain valid.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct KzgIdleMemoryRelease {
-  pub cuda_enabled: bool,
-  pub initialized: bool,
-  pub quiesced: bool,
-  pub devices: Vec<KzgDeviceMemoryRelease>,
 }
 
 /// See the module docs.
@@ -631,22 +583,6 @@ impl KzgPcs {
       srs_owner: None,
       verifier,
       max_quotient_degree,
-    }
-  }
-
-  /// Evict process-wide KZG SRS caches and trim unused CUDA pool pages
-  /// without resetting devices. Release retained prover-data residency and
-  /// drop request temporaries first. Callers must stop submitting work to
-  /// keep devices idle after this method returns; concurrent submissions
-  /// wait for its leases.
-  pub fn release_idle_device_memory() -> KzgIdleMemoryRelease {
-    #[cfg(feature = "cuda")]
-    {
-      cuda::release_idle_device_memory()
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-      KzgIdleMemoryRelease::default()
     }
   }
 
@@ -1554,41 +1490,6 @@ mod tests {
     data.write_checkpoint(&mut bytes).unwrap();
     let loaded = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
     assert_eq!(loaded.matrices[0].constant_columns(), [true, false]);
-  }
-
-  #[test]
-  fn releasing_device_residency_preserves_host_checkpoint() {
-    let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(8, b"release-host-key")), 4);
-    let (_, mut data) = pcs.commit(vec![(
-      pcs.natural_domain_for_degree(8),
-      RowMajorMatrix::new((0..16).map(Scalar::from_u64).collect(), 2),
-    )]);
-    #[cfg(feature = "cuda")]
-    for matrix in &data.matrices {
-      let _ = matrix.resident.set(vec![None; matrix.width()]);
-    }
-    let mut expected = Vec::new();
-    data.write_checkpoint(&mut expected).unwrap();
-    for _ in 0..2 {
-      data.release_device_residency();
-      #[cfg(feature = "cuda")]
-      assert!(
-        data.matrices.iter().all(|matrix| matrix.resident.get().is_none())
-      );
-      let mut actual = Vec::new();
-      data.write_checkpoint(&mut actual).unwrap();
-      assert_eq!(actual, expected);
-    }
-  }
-
-  #[cfg(not(feature = "cuda"))]
-  #[test]
-  fn idle_memory_release_without_cuda_is_explicit_noop() {
-    assert_eq!(
-      KzgPcs::release_idle_device_memory(),
-      KzgIdleMemoryRelease::default()
-    );
   }
 
   #[test]

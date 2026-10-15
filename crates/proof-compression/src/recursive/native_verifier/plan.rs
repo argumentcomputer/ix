@@ -244,9 +244,12 @@ impl<'a> Plan<'a> {
     Ok(Built {
       circuit,
       inputs: request.inputs,
+      #[cfg(test)]
       points: request.points,
       pairing_outputs: bindings.pairing_outputs,
       pairing_keys: bindings.pairing_keys,
+      msm_terms: bindings.msm_terms,
+      #[cfg(test)]
       terms: bindings.terms,
     })
   }

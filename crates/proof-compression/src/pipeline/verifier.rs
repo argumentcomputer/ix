@@ -1,7 +1,12 @@
 //! Verifier profiles authenticated by the application release. A packet
 //! names its profile; the profile pins the aggregation program its proofs
 //! attest, so the statement for a claim follows without the proving backend.
-use super::{Result, setup::SetupClass, statement, wrap::VerifierProfile};
+use super::{
+  Result,
+  setup::SetupClass,
+  statement,
+  wrap::{PreparedVerifierProfile, VerifierProfile},
+};
 use std::sync::OnceLock;
 
 struct BundledVerifier {
@@ -12,7 +17,7 @@ struct BundledVerifier {
   statement_prefix: [u64; 10],
   setup: SetupClass,
   bytes: &'static [u8],
-  decoded: OnceLock<std::result::Result<VerifierProfile, String>>,
+  decoded: OnceLock<std::result::Result<PreparedVerifierProfile, String>>,
 }
 
 const AGGREGATE_PREFIX: [u64; 10] = [
@@ -40,7 +45,7 @@ static VERIFIERS: [BundledVerifier; 2] = [
 ];
 
 impl BundledVerifier {
-  fn profile(&self) -> Result<&VerifierProfile> {
+  fn profile(&self) -> Result<&PreparedVerifierProfile> {
     self
       .decoded
       .get_or_init(|| {
@@ -55,7 +60,7 @@ impl BundledVerifier {
         if blake3::Hash::from_bytes(profile.id()).to_hex().as_str() != self.id {
           return Err("bundled compression verifier metadata differs".into());
         }
-        Ok(profile)
+        profile.prepare().map_err(|error| error.to_string())
       })
       .as_ref()
       .map_err(|error| error.clone().into())

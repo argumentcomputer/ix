@@ -93,13 +93,8 @@ pub(crate) fn from_scalars(values: &[Scalar]) -> Result<Statement> {
 /// The statement carried by a stage's claim rows: rows `1..=18` hold one
 /// word each in their last column, behind the zero anchor of row `0`.
 pub(crate) fn from_rows(claims: &[Vec<Scalar>]) -> Result<Statement> {
-  let rows =
-    claims.get(1..=WORDS).ok_or("claim rows do not carry a statement")?;
-  let values: Vec<_> = rows
-    .iter()
-    .map(|row| row.last().copied().ok_or("empty claim row"))
-    .collect::<std::result::Result<_, _>>()?;
-  from_scalars(&values)
+  let schema = super::stages::statement::Statement::from_claims(claims, WORDS)?;
+  from_scalars(&schema.public_values(claims)?)
 }
 
 /// A statement for `claim` behind the given backend and entrypoint words.

@@ -1,33 +1,36 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
+use super::super::stages::{
+  construct::{self, Lowered},
+  statement::Statement as StageStatement,
+  verification,
+};
 use super::{
   super::Result as PipelineResult,
   super::{
+    fixed_cache, prover,
     setup::{SetupClass, SetupSource},
     statement::{self, Statement},
     storage,
-    support::kzg_fixed_cache as fixed_cache,
   },
 };
 use crate::{
-  foreign::KzgCircuitExt,
   kzg::{
     KzgCommitment, KzgConfig, Scalar, TranscriptKind, compact::FixedProofCodec,
   },
   recursive::native_verifier::Built,
 };
 use multi_stark::{
-  plonkish::{Assignment, MultiStarkCircuit, TraceShards},
+  plonkish::{Assignment, MultiStarkCircuit},
   traits::Field,
 };
-use p3_matrix::Matrix;
 use std::{fs, path::Path};
 
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
 const OUTER_PROFILE_VERSION: u32 = 5;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged profile covers exactly its own height.
-pub(super) const MAX_TRACE_LEN: usize = 1 << 27;
+pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Pairings {
@@ -36,13 +39,14 @@ struct Pairings {
 
 pub(crate) fn stage(
   built: Built,
-  assignment: &Assignment<Scalar>,
+  assignment: Assignment<Scalar>,
   dir: &Path,
   profile: &[u8],
   statement: &Statement,
+  config: &super::super::WorkerConfig,
 ) -> storage::Result<()> {
-  Frontend::new(built.circuit, &built.pairing_keys, profile, MAX_TRACE_LEN)?
-    .stage(assignment, dir, statement)
+  let frontend = Frontend::from_built(built, profile)?;
+  frontend.stage(assignment, dir, statement, config)
 }
 
 /// A recursive circuit lowered into one computation trace and one merged
@@ -54,6 +58,10 @@ pub(crate) struct Frontend {
 }
 
 impl Frontend {
+  fn from_built(built: Built, profile: &[u8]) -> storage::Result<Self> {
+    Self::new(built.circuit, &built.pairing_keys, profile, MAX_TRACE_LEN)
+  }
+
   pub(crate) fn new(
     circuit: multi_stark::plonkish::Circuit<Scalar>,
     keys: &[ark_bls12_381::G2Affine],
@@ -64,23 +72,9 @@ impl Frontend {
     if keys.len() != 2 {
       return Err("invalid recursive pairing profile".into());
     }
-    let height = circuit.multi_stark_layout()?.main_height;
-    if height > max_height {
-      return Err(
-        "recursive computation exceeds its single-trace height cap".into(),
-      );
-    }
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
-    eprintln!(
-      "Lowering recursive circuit into one {height}-row computation trace"
-    );
-    let compiled = circuit
-      .lower_to_multi_stark_sharded(Scalar::from_u8(94), height)?
-      .merge_table_traces(height)?;
-    if compiled.num_circuits() != 2 || compiled.main_heights() != [height] {
-      return Err("expected one computation trace and one merged table".into());
-    }
+    let compiled = construct::lower_recursive(circuit, max_height)?;
     Ok(Self {
       compiled,
       pairings: Pairings { keys: encoded },
@@ -92,10 +86,11 @@ impl Frontend {
   /// Fixed preprocessing comes from the cache when it already holds this
   /// profile and is published to it after the proof verifies.
   pub(crate) fn stage(
-    &self,
-    assignment: &Assignment<Scalar>,
+    self,
+    assignment: Assignment<Scalar>,
     dir: &Path,
     statement: &Statement,
+    config: &super::super::WorkerConfig,
   ) -> storage::Result<()> {
     if assignment.public_values().len() != 18 + 2 * 2
       || assignment.public_values()[..18]
@@ -109,19 +104,16 @@ impl Frontend {
     }
     let start = std::time::Instant::now();
     let height = self.compiled.main_height();
-    let setup = SetupSource::for_stage(
-      OUTER_SEED,
-      height,
-      crate::pipeline::setup::development_permitted(),
-    )?
-    .with_transcript(TranscriptKind::Keccak256);
+    let setup = config
+      .setup
+      .for_stage(OUTER_SEED, height)?
+      .with_transcript(TranscriptKind::Keccak256);
     let setup_id = setup.identity(height, 2)?;
-    let traces = self.compiled.trace_shards(assignment)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
     storage::save(&dir.join("pairings.bin"), &self.pairings)?;
     let cache_profile = [self.profile.as_slice(), &setup_id].concat();
-    let cache = fixed_cache::FixedCache::for_stage(dir, &cache_profile)?;
+    let cache = config.fixed_cache(dir, &cache_profile)?;
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       &self.compiled,
@@ -131,7 +123,12 @@ impl Frontend {
     storage::save(&dir.join("manifest.bin"), &manifest)?;
     fs::write(dir.join("SECURITY.txt"), setup.security_description())?;
     eprintln!("Recursive staging complete: {:?}", start.elapsed());
-    prove(dir, &traces, &cache)?;
+    prove(
+      dir,
+      Lowered { compiled: self.compiled, assignment },
+      &cache,
+      &setup,
+    )?;
     eprintln!("Recursive stage-and-prove complete: {:?}", start.elapsed());
     Ok(())
   }
@@ -165,81 +162,52 @@ fn decode_pairing_keys(
 }
 
 fn pairing_bytes(publics: &[Scalar]) -> storage::Result<Vec<u8>> {
-  let mut bytes = vec![];
-  for value in publics {
-    let full: Vec<_> = value
-      .canonical_limbs_le()
-      .into_iter()
-      .flat_map(u64::to_le_bytes)
-      .collect();
-    if full[24..].iter().any(|&v| v != 0) {
-      return Err("noncanonical packed point".into());
-    }
-    bytes.extend_from_slice(&full[..24]);
-  }
-  Ok(bytes)
+  verification::pack_pairings(publics)
 }
 fn check_pairings(
   bytes: &[u8],
   keys: &[ark_bls12_381::G2Affine],
 ) -> storage::Result<()> {
-  use ark_ec::pairing::Pairing;
-  use ark_ff::Zero;
-  use ark_serialize::CanonicalDeserialize;
-  if bytes.len() != keys.len() * 48 || keys.len() != 2 {
-    return Err("pairing point count".into());
+  verification::Pairings {
+    keys: keys.try_into().map_err(|_keys| "pairing point count")?,
   }
-  let points = bytes
-    .as_chunks::<48>()
-    .0
-    .iter()
-    .map(|bytes| {
-      ark_bls12_381::G1Affine::deserialize_compressed(bytes.as_slice())
-    })
-    .collect::<Result<Vec<_>, _>>()?;
-  if !ark_bls12_381::Bls12_381::multi_pairing(points, keys.iter().copied())
-    .is_zero()
-  {
-    return Err("external opening pairing equation failed".into());
-  }
-  Ok(())
+  .verify_bytes(bytes)
 }
+fn packet_body<'a>(
+  packet: &'a [u8],
+  profile: &[u8; 32],
+  expected: &Statement,
+) -> storage::Result<&'a [u8]> {
+  let offset = 32 + statement::WORDS * 8;
+  if packet.len() < offset + 96 || packet[..32] != *profile {
+    return Err("packet profile mismatch".into());
+  }
+  for (bytes, &word) in
+    packet[32..offset].as_chunks::<8>().0.iter().zip(expected)
+  {
+    if u64::from_le_bytes(*bytes) != word {
+      return Err("packet statement differs from the claim's".into());
+    }
+  }
+  Ok(&packet[offset..])
+}
+
+#[cfg(test)]
 fn packet_claims(
   packet: &[u8],
   profile: &[u8; 32],
   pairing_count: usize,
   expected: &Statement,
 ) -> storage::Result<(Vec<Vec<Scalar>>, usize)> {
-  use multi_stark::traits::Algebra;
-  let offset = 32 + 18 * 8 + pairing_count * 48;
-  if packet.len() < offset || packet[..32] != *profile {
-    return Err("packet profile mismatch".into());
+  if pairing_count != 2 {
+    return Err("pairing point count".into());
   }
-  let mut publics = vec![];
-  for (bytes, &expected) in
-    packet[32..32 + 18 * 8].as_chunks::<8>().0.iter().zip(expected)
-  {
-    let word = u64::from_le_bytes(*bytes);
-    if word != expected {
-      return Err("packet statement differs from the claim's".into());
-    }
-    publics.push(Scalar::from_u64(word));
-  }
-  for bytes in packet[32 + 18 * 8..offset].as_chunks::<24>().0.iter() {
-    let mut limbs = [0u64; 4];
-    for (i, chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
-      limbs[i] = u64::from_le_bytes(*chunk);
-    }
-    publics.push(Scalar::from_limbs_le(limbs));
-  }
-  let claims = std::iter::once(Scalar::ZERO)
-    .chain(publics)
-    .enumerate()
-    .map(|(i, value)| {
-      vec![Scalar::from_u8(94), Scalar::ONE, Scalar::from_usize(i), value]
-    })
-    .collect();
-  Ok((claims, offset))
+  let body = packet_body(packet, profile, expected)?;
+  let mut public: Vec<_> =
+    expected.iter().copied().map(Scalar::from_u64).collect();
+  public.extend(verification::unpack_pairings(&body[..96])?);
+  let claims = StageStatement::recursive(public.len()).claims(&public)?;
+  Ok((claims, 32 + statement::WORDS * 8 + 96))
 }
 fn verify_packet(
   system: &multi_stark::system::System<KzgConfig>,
@@ -249,38 +217,29 @@ fn verify_packet(
   keys: &[ark_bls12_381::G2Affine],
   expected: &Statement,
 ) -> storage::Result<()> {
-  let (claims, offset) = packet_claims(packet, profile, keys.len(), expected)?;
-  let proof = codec.decode(&packet[offset..])?;
-  system
-    .verify_multiple_claims(
-      &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
-      &proof,
-    )
-    .map_err(|e| format!("outer KZG proof: {e:?}"))?;
-  check_pairings(&packet[32 + 18 * 8..offset], keys)
+  let body = packet_body(packet, profile, expected)?;
+  let pairings = verification::Pairings {
+    keys: keys.try_into().map_err(|_keys| "pairing point count")?,
+  };
+  verification::verify_recursive_bytes(
+    system,
+    codec,
+    &StageStatement::recursive(22),
+    &pairings,
+    body,
+    &expected.iter().copied().map(Scalar::from_u64).collect::<Vec<_>>(),
+  )
 }
 
 fn staged_publics(
   claims: &[Vec<Scalar>],
   pairing_count: usize,
 ) -> storage::Result<Vec<Scalar>> {
-  use multi_stark::traits::Algebra;
-  let expected = pairing_count
+  let count = pairing_count
     .checked_mul(2)
-    .and_then(|n| n.checked_add(19))
+    .and_then(|n| n.checked_add(18))
     .ok_or("public count overflow")?;
-  if claims.len() != expected
-    || claims.iter().enumerate().any(|(i, row)| {
-      row.len() != 4
-        || row[0] != Scalar::from_u8(94)
-        || row[1] != Scalar::ONE
-        || row[2] != Scalar::from_usize(i)
-    })
-    || claims[0][3] != Scalar::ZERO
-  {
-    return Err("wrong recursive public profile".into());
-  }
-  Ok(claims[1..].iter().map(|row| row[3]).collect())
+  StageStatement::recursive(count).public_values(claims)
 }
 
 /// Commit the fixed and witness traces from memory, prove, verify the
@@ -289,22 +248,12 @@ fn staged_publics(
 /// cache; witness columns never touch disk.
 fn prove(
   dir: &Path,
-  traces: &TraceShards<'_, Scalar>,
+  lowered: Lowered,
   cache: &fixed_cache::FixedCache,
+  setup: &SetupSource,
 ) -> storage::Result<()> {
-  use crate::kzg::pcs::KzgProverData;
-  use multi_stark::{
-    config::ProofConfig,
-    lookup::LookupValues,
-    prover::Stage1,
-    system::{Circuit, CircuitInputs, ProverKey, System},
-    traits::Pcs,
-  };
+  use multi_stark::config::ProofConfig;
   use std::time::Instant;
-  let _ = tracing_subscriber::fmt()
-    .with_ansi(false)
-    .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
-    .try_init();
   let start = Instant::now();
   let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
   if manifest.heights.len() != 2
@@ -321,7 +270,7 @@ fn prove(
   }
   let count = manifest.heights.len();
   let height = manifest.heights[0];
-  let compiled = traces.compiled();
+  let compiled = &lowered.compiled;
   if compiled.num_circuits() != count
     || compiled.main_heights() != [height]
     || (0..count).any(|i| {
@@ -341,12 +290,6 @@ fn prove(
   let out = dir.join("kzg");
   fs::create_dir_all(&out)?;
   eprintln!("Preparing KZG parameters for 2^{} rows", height.ilog2());
-  let setup = SetupSource::for_stage(
-    OUTER_SEED,
-    height,
-    crate::pipeline::setup::development_permitted(),
-  )?
-  .with_transcript(TranscriptKind::Keccak256);
   setup.check_binding(dir, height, 2)?;
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let setup_id = setup.identity(height, 2)?;
@@ -358,117 +301,9 @@ fn prove(
     .with_streaming_quotient();
   let srs_config_load_seconds = config_started.elapsed().as_secs_f64();
   eprintln!("Outer KZG parameters ready: {:?}", start.elapsed());
-  let mut circuits = vec![];
-  let mut commits = vec![];
-  let mut fixed_parts = vec![];
-  let mut main_parts = vec![];
-  for i in 0..count {
-    let meta = out.join(format!("setup-{i}.bin"));
-    let fixed_path = out.join(format!("fixed-{i}.bin"));
-    let (circuit, commit): (Circuit<Scalar>, KzgCommitment) = if meta.exists()
-      && fixed_path.exists()
-    {
-      fixed_parts.push(super::super::first::read_checkpoint(&fixed_path)?);
-      storage::load(&meta)?
-    } else {
-      let definition: CircuitInputs<Scalar> = compiled
-        .kzg_circuit_input(i, height, 2)?
-        .ok_or("missing compiled circuit")?;
-      if definition.main_width != manifest.widths[i]
-        || definition.preprocessed.as_ref().is_none_or(|fixed| {
-          fixed.width() == 0 || fixed.height() != manifest.heights[i]
-        })
-      {
-        return Err(
-          "fixed trace dimensions differ from the staged manifest".into(),
-        );
-      }
-      eprintln!("Committing recursive fixed trace {i}: {:?}", start.elapsed());
-      let (mut local, key) =
-        System::new_without_preprocessed(config.clone(), [definition]);
-      let mut circuit = local.circuits.remove(0);
-      circuit.preprocessed = None;
-      let data = key.preprocessed_data.unwrap();
-      super::super::first::write_checkpoint(&fixed_path, &data)?;
-      fixed_parts.push(if cfg!(feature = "cuda") {
-        data
-      } else {
-        drop(data);
-        super::super::first::read_checkpoint(&fixed_path)?
-      });
-      let pair = (circuit, local.preprocessed_commit.unwrap());
-      storage::save(&meta, &pair)?;
-      pair
-    };
-    if circuit.preprocessed_height != manifest.heights[i]
-      || circuit.main_width != manifest.widths[i]
-    {
-      return Err("setup shape mismatch".into());
-    }
-    circuits.push(circuit);
-    commits.push(commit);
-    let main = traces.trace(i)?;
-    if main.width() != manifest.widths[i]
-      || main.height() != manifest.heights[i]
-    {
-      return Err(
-        "generated trace dimensions differ from the staged manifest".into(),
-      );
-    }
-    eprintln!("Committing recursive main trace {i}: {:?}", start.elapsed());
-    let (_, data) = config.pcs().commit(vec![(
-      config.pcs().natural_domain_for_degree(manifest.heights[i]),
-      main,
-    )]);
-    main_parts.push(data);
-    eprintln!("Prepared recursive trace {i}: {:?}", start.elapsed());
-  }
-  let mut fixed_commit = KzgCommitment(vec![]);
-  for mut commit in commits {
-    fixed_commit.0.append(&mut commit.0);
-  }
-  let system = System {
-    config,
-    circuits,
-    preprocessed_commit: Some(fixed_commit),
-    preprocessed_indices: (0..count).map(Some).collect(),
-  };
-  let logs: Vec<_> =
-    manifest.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
-  let codec = FixedProofCodec::new(&system, &logs)?;
-  let refs: Vec<_> = manifest.claims.iter().map(Vec::as_slice).collect();
-  let (commit, fixed) = KzgProverData::concatenate(fixed_parts);
-  assert_eq!(Some(commit), system.preprocessed_commit);
-  let (commit, main) = KzgProverData::concatenate(main_parts);
-  let lookups = system
-    .circuits
-    .iter()
-    .zip(&manifest.heights)
-    .map(|(c, &h)| {
-      LookupValues::shape_only(
-        h,
-        &c.graph.lookups.iter().map(|l| l.args.len()).collect::<Vec<_>>(),
-      )
-    })
-    .collect();
-  let stage = Stage1 {
-    active: vec![true; count],
-    active_indices: (0..count).collect(),
-    log_degrees: logs.iter().map(|&v| usize::from(v)).collect(),
-    stage_1_trace_commit: commit,
-    stage_1_trace_data: main,
-    lookups,
-  };
-  eprintln!("Proving recursive KZG wrapper: {:?}", start.elapsed());
-  let proof = system.prove_committed(
-    &ProverKey { preprocessed_data: Some(fixed) },
-    &refs,
-    stage,
-  );
-  system
-    .verify_multiple_claims(&refs, &proof)
-    .map_err(|e| format!("new outer proof: {e:?}"))?;
-  let bytes = codec.encode(&proof)?;
+  let prover::Proved { system, codec, bytes, .. } =
+    lowered.commit(config, Some(&out), 0)?.prove(&manifest.claims)?;
+  let output_span = tracing::info_span!("compression/write_output").entered();
   let verifier = VerifierProfile {
     version: OUTER_PROFILE_VERSION,
     heights: [manifest.heights[0], manifest.heights[1]],
@@ -492,7 +327,9 @@ fn prove(
     );
   }
   let verify_start = Instant::now();
-  verify_packet(&system, &codec, &packet, &profile, &keys, &statement)?;
+  tracing::info_span!("compression/verify_packet").in_scope(|| {
+    verify_packet(&system, &codec, &packet, &profile, &keys, &statement)
+  })?;
   let verify_seconds = verify_start.elapsed().as_secs_f64();
   let encoded =
     bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
@@ -529,6 +366,7 @@ fn prove(
     serde_json::to_vec_pretty(&report)?,
   )?;
   println!("{}", serde_json::to_string_pretty(&report)?);
+  drop(output_span);
   cache.publish(dir)?;
   Ok(())
 }
@@ -560,8 +398,7 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 impl VerifierProfile {
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
     let profile: Self = decode(bytes)?;
-    profile.system()?;
-    profile.keys()?;
+    profile.prepare()?;
     Ok(profile)
   }
 
@@ -611,18 +448,12 @@ impl VerifierProfile {
     Ok(())
   }
 
-  fn transcript_kind(&self) -> storage::Result<TranscriptKind> {
-    match self.version {
-      4 => Ok(TranscriptKind::Blake3),
-      5 => Ok(TranscriptKind::Keccak256),
-      _ => Err("unsupported recursive verifier profile".into()),
-    }
-  }
-
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
-    let kind = self.transcript_kind()?;
+    if self.version != OUTER_PROFILE_VERSION {
+      return Err("unsupported recursive verifier profile".into());
+    }
     if self
       .heights
       .iter()
@@ -649,10 +480,23 @@ impl VerifierProfile {
       fixed.0.append(&mut commit.0);
     }
     Ok(System {
-      config: KzgConfig::verifier_only(params, 2).with_transcript(kind),
+      config: KzgConfig::verifier_only(params, 2)
+        .with_transcript(TranscriptKind::Keccak256),
       circuits,
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
+    })
+  }
+
+  pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifierProfile> {
+    Ok(PreparedVerifierProfile {
+      id: self.id(),
+      verifier: super::super::stages::RecursiveVerifier::from_parts(
+        self.system()?,
+        StageStatement::recursive(22),
+        &self.keys()?,
+        18,
+      )?,
     })
   }
 
@@ -661,13 +505,26 @@ impl VerifierProfile {
     packet: &[u8],
     expected: &Statement,
   ) -> PipelineResult<()> {
-    let keys = self.keys()?;
-    packet_claims(packet, &self.id(), keys.len(), expected)?;
-    let system = self.system()?;
-    let logs: Vec<_> =
-      self.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
-    let codec = FixedProofCodec::new(&system, &logs)?;
-    verify_packet(&system, &codec, packet, &self.id(), &keys, expected)
+    self.prepare()?.verify(packet, expected)
+  }
+}
+
+pub(crate) struct PreparedVerifierProfile {
+  id: [u8; 32],
+  verifier: super::super::stages::RecursiveVerifier,
+}
+
+impl PreparedVerifierProfile {
+  pub(crate) fn verify(
+    &self,
+    packet: &[u8],
+    expected: &Statement,
+  ) -> PipelineResult<()> {
+    let body = packet_body(packet, &self.id, expected)?;
+    self.verifier.verify_scalar_bytes(
+      body,
+      &expected.iter().copied().map(Scalar::from_u64).collect::<Vec<_>>(),
+    )
   }
 }
 
@@ -697,7 +554,7 @@ pub(crate) fn verify_saved(
 mod tests {
   use super::super::super::init_claim;
   use super::*;
-  use crate::kzg::Srs;
+  use crate::{foreign::KzgCircuitExt, kzg::Srs};
   use ark_ec::CurveGroup;
   use ark_serialize::CanonicalSerialize;
   use multi_stark::{
@@ -706,6 +563,43 @@ mod tests {
     traits::Algebra,
   };
   use std::sync::Arc;
+
+  #[test]
+  fn bundled_and_public_recursive_verifiers_share_transport_validation()
+  -> storage::Result<()> {
+    let wire = VerifierProfile::from_bytes(include_bytes!(
+      "../../../profiles/aggregate-filecoin-v5.bin"
+    ))?;
+    let prepared = wire.prepare()?;
+    let public = super::super::super::stages::RecursiveVerifier::from_bytes(
+      &prepared.verifier.to_bytes()?,
+    )?;
+    let packet = include_bytes!(
+      "../../../tests/fixtures/aggregate-kzg/filecoin-v5-packet.bin"
+    );
+    let words = init_claim::INIT_PUBLIC_WORDS;
+    let expected = words.map(Scalar::from_u64);
+    prepared.verify(packet, &words)?;
+    public.verify_scalar_bytes(&packet[32 + 18 * 8..], &expected)?;
+    let mut wrong = expected;
+    wrong[0] += Scalar::ONE;
+    assert!(
+      public.verify_scalar_bytes(&packet[32 + 18 * 8..], &wrong).is_err()
+    );
+    let mut corrupt = packet.to_vec();
+    let last = corrupt.len() - 1;
+    corrupt[last] ^= 1;
+    assert!(prepared.verify(&corrupt, &words).is_err());
+    assert!(
+      public.verify_scalar_bytes(&corrupt[32 + 18 * 8..], &expected).is_err()
+    );
+    assert!(
+      public
+        .verify_scalar_bytes(&packet[32 + 18 * 8..packet.len() - 1], &expected)
+        .is_err()
+    );
+    Ok(())
+  }
 
   #[test]
   fn filecoin_bundle_requires_filecoin_inner_pairing_anchors() {
@@ -896,28 +790,30 @@ mod tests {
   #[test]
   fn fused_profiles_prove_and_portable_verifiers_round_trip()
   -> storage::Result<()> {
-    crate::pipeline::support::kzg_setup::permit_development();
     let dir = std::env::temp_dir()
       .join(format!("outer-staged-{}-v5", std::process::id()));
     fs::create_dir(&dir)?;
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
     let claims = init_packet_claims(&inner);
-    let mut b = CircuitBuilder::new();
-    let table =
-      b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
-    let one = b.constant(Scalar::ONE);
-    b.lookup(table, &[one]);
-    for claim in &claims[1..] {
-      let value = b.constant(claim[3]);
-      b.expose_public(value);
-    }
-    let compiled = b
-      .finish()
-      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
-      .merge_table_traces(128)?;
-    let assignment = compiled.witness().generate()?;
-    let traces = compiled.trace_shards(&assignment)?;
+    let make = || -> storage::Result<Lowered> {
+      let mut b = CircuitBuilder::new();
+      let table =
+        b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+      let one = b.constant(Scalar::ONE);
+      b.lookup(table, &[one]);
+      for claim in &claims[1..] {
+        let value = b.constant(claim[3]);
+        b.expose_public(value);
+      }
+      let compiled = b
+        .finish()
+        .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+        .merge_table_traces(128)?;
+      let assignment = compiled.witness().generate()?;
+      Ok(Lowered { compiled, assignment })
+    };
+    let Lowered { compiled, assignment } = make()?;
     let height = compiled.main_height();
     let first = dir.join("first");
     let cache_root = dir.join("cache");
@@ -926,7 +822,9 @@ mod tests {
     let manifest: storage::Manifest =
       storage::load(&first.join("manifest.bin"))?;
     assert_eq!(manifest.claims, claims);
-    prove(&first, &traces, &cache)?;
+    let setup = SetupSource::development(OUTER_SEED, height - 1)?
+      .with_transcript(TranscriptKind::Keccak256);
+    prove(&first, Lowered { compiled, assignment }, &cache, &setup)?;
     assert!(first.join("kzg/fixed-0.bin").exists());
     assert!(!first.join("kzg/main-0.bin").exists());
     let packet = fs::read(first.join("kzg/packet.bin"))?;
@@ -943,10 +841,11 @@ mod tests {
     // A second run of the profile restores the fixed preprocessing from
     // the cache and produces the same packet.
     let second = dir.join("second");
+    let Lowered { compiled, assignment } = make()?;
     let cache =
       stage_fixture(&second, &cache_root, &compiled, &assignment, &keys)?;
     assert!(second.join("kzg/fixed-0.bin").exists());
-    prove(&second, &traces, &cache)?;
+    prove(&second, Lowered { compiled, assignment }, &cache, &setup)?;
     assert_eq!(packet, fs::read(second.join("kzg/packet.bin"))?);
     for (row, col) in [(0, 3), (1, 0), (1, 1), (1, 2)] {
       let mut bad = claims.clone();
@@ -965,62 +864,19 @@ mod tests {
       TranscriptKind::Keccak256
     );
 
-    let mut legacy: VerifierProfile = decode(&portable)?;
-    legacy.version = 4;
-    assert_eq!(
-      legacy.system()?.config.transcript_kind(),
-      TranscriptKind::Blake3
-    );
-    assert_ne!(legacy.id(), profile.id());
-    let legacy_config = SetupSource::development(OUTER_SEED, height - 1)?
-      .config(height, 2, false)?;
-    let (legacy_system, legacy_key) =
-      System::new(legacy_config, compiled.kzg_circuit_inputs(height, 2)?);
-    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let legacy_proof = legacy_system.prove_multiple_claims(
-      &legacy_key,
-      &refs,
-      SystemWitness::from_stage_1(
-        compiled.traces(&assignment)?,
-        &legacy_system,
-      ),
-    );
-    let logs: Vec<_> = manifest
-      .heights
-      .iter()
-      .map(|h| u8::try_from(h.ilog2()).unwrap())
-      .collect();
-    let legacy_proof =
-      FixedProofCodec::new(&legacy_system, &logs)?.encode(&legacy_proof)?;
-    let offset = 32 + 18 * 8 + 2 * 48;
-    let mut legacy_packet = legacy.id().to_vec();
-    legacy_packet.extend_from_slice(&packet[32..offset]);
-    legacy_packet.extend_from_slice(&legacy_proof);
-    assert_eq!(legacy_packet.len(), packet.len());
-    let legacy_bytes =
-      bincode::serde::encode_to_vec(&legacy, bincode::config::standard())?;
-    VerifierProfile::from_bytes(&legacy_bytes)?
-      .verify(&legacy_packet, &init_claim::INIT_PUBLIC_WORDS)?;
-
-    let mut downgraded = packet.clone();
-    downgraded[..32].copy_from_slice(&legacy.id());
-    assert!(
-      legacy.verify(&downgraded, &init_claim::INIT_PUBLIC_WORDS).is_err()
-    );
-    let mut upgraded = legacy_packet.clone();
-    upgraded[..32].copy_from_slice(&profile.id());
-    assert!(profile.verify(&upgraded, &init_claim::INIT_PUBLIC_WORDS).is_err());
-
-    let mut unsupported: VerifierProfile = decode(&portable)?;
-    unsupported.version = 6;
-    let unsupported =
-      bincode::serde::encode_to_vec(&unsupported, bincode::config::standard())?;
-    assert!(VerifierProfile::from_bytes(&unsupported).is_err());
+    for version in [0, 4, 6] {
+      let mut unsupported: VerifierProfile = decode(&portable)?;
+      unsupported.version = version;
+      let unsupported = bincode::serde::encode_to_vec(
+        &unsupported,
+        bincode::config::standard(),
+      )?;
+      assert!(VerifierProfile::from_bytes(&unsupported).is_err());
+    }
 
     // Verify using only the portable object after deleting the SRS and all checkpoints.
     fs::remove_dir_all(&dir)?;
     profile.verify(&packet, &init_claim::INIT_PUBLIC_WORDS)?;
-    legacy.verify(&legacy_packet, &init_claim::INIT_PUBLIC_WORDS)?;
     let mut wrong_range: VerifierProfile = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());
@@ -1029,7 +885,6 @@ mod tests {
 
   #[test]
   fn fused_recursive_traces_prove_and_report() -> storage::Result<()> {
-    crate::pipeline::support::kzg_setup::permit_development();
     let inner = Srs::unsafe_dev_setup(8, b"fused-recursive-inner");
     let claims = init_packet_claims(&inner);
     let make = |private| -> storage::Result<(Built, Assignment<Scalar>)> {
@@ -1058,6 +913,7 @@ mod tests {
           points: vec![],
           pairing_outputs: vec![],
           pairing_keys: vec![inner.g2, inner.tau_g2],
+          msm_terms: vec![],
           terms: vec![],
         },
         assignment,
@@ -1073,10 +929,11 @@ mod tests {
       let (built, assignment) = make(private)?;
       stage(
         built,
-        &assignment,
+        assignment,
         &dir,
         b"recursive-fixture",
         &init_claim::INIT_PUBLIC_WORDS,
+        &crate::pipeline::WorkerConfig::development(),
       )?;
       let report: serde_json::Value =
         serde_json::from_slice(&fs::read(dir.join("kzg/prove-report.json"))?)?;
@@ -1109,8 +966,6 @@ mod tests {
   #[ignore = "eight-minute CPU outer proof over an identity-commitment wrapper"]
   fn constant_column_first_stage_proof_wraps_proves_and_verifies()
   -> storage::Result<()> {
-    crate::pipeline::support::kzg_setup::permit_development();
-    crate::pipeline::support::kzg_setup::permit_development();
     use crate::recursive::native_verifier::Plan;
     use multi_stark::{expr::Expr, lookup::Lookup, system::CircuitInputs};
     use p3_matrix::dense::RowMajorMatrix;
@@ -1187,16 +1042,17 @@ mod tests {
       super::super::saved::layout(),
     )?;
     let built = plan.build(&proof, &claims)?;
-    let (_, assignment) = built.check_and_assign()?;
+    let assignment = built.check()?;
     let dir = std::env::temp_dir()
       .join(format!("kzg-recursive-constant-{}", std::process::id()));
     fs::create_dir(&dir)?;
     stage(
       built,
-      &assignment,
+      assignment,
       &dir,
       &plan.identity(),
       &init_claim::INIT_PUBLIC_WORDS,
+      &crate::pipeline::WorkerConfig::development(),
     )?;
     let packet = fs::read(dir.join("kzg/packet.bin"))?;
     verify_saved(&dir, &packet, None)?;
