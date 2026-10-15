@@ -420,7 +420,16 @@ Ix.Cert.HashAgreement →
 -- `etaCtor` sentinel) and `recursor` (no key spells a recursor the checker
 -- reads).
 -- Step 5b: `letE` carries a fourth field, its `LetMeta`, which a renaming keeps.
-/-- info: @Ix.Cert.Rename.expr.eq_def : ∀ {md : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md) (x : Ix.Kernel.Expr md),
+-- The renaming now takes a mode to another (`σ : Key md → Key md'`), so a
+-- recursor rule's firing mode, an inductive's capabilities and a projection
+-- table are renamed field by field (`Rename.recRuleFire`, `Rename.indCaps`,
+-- `Rename.projTable`), and the lemma is stated for `σ = Key.map f` from Source
+-- keys to Ixon keys with `f` injective on the input's ids (`keyIds`,
+-- `InputId`, `RenamingHyp`, IXC-PLAN §12). `Pinned`, `DerivedFrom`, `Built` and
+-- `reservedBasisNames_pinned` went with the old hypotheses: `Key.map` fixes
+-- the role keys and commutes with derived shapes by construction.
+/-- info: @Ix.Cert.Rename.expr.eq_def : ∀ {md md' : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md')
+  (x : Ix.Kernel.Expr md),
   Ix.Cert.Rename.expr σ x =
     match x with
     | Ix.Kernel.Expr.bvar i => Ix.Kernel.Expr.bvar i
@@ -436,28 +445,50 @@ Ix.Cert.HashAgreement →
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Rename.expr.eq_def
 
-/-- info: def Ix.Cert.Rename.constantVal : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.ConstantVal md → Ix.Kernel.ConstantVal md :=
-fun {md} σ cv => { name := σ cv.name, levelParams := cv.levelParams, type := Ix.Cert.Rename.expr σ cv.type } -/
+/-- info: def Ix.Cert.Rename.constantVal : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.ConstantVal md → Ix.Kernel.ConstantVal md' :=
+fun {md md'} σ cv => { name := σ cv.name, levelParams := cv.levelParams, type := Ix.Cert.Rename.expr σ cv.type } -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.constantVal
 
-/-- info: def Ix.Cert.Rename.recRule : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.RecRule md → Ix.Kernel.RecRule md :=
-fun {md} σ r =>
-  { ctor := σ r.ctor, nfields := r.nfields, ctorParams := r.ctorParams,
-    fire :=
-      match r.fire with
-      | Ix.Kernel.RecRuleFire.nested lvls pins =>
-        Ix.Kernel.RecRuleFire.nested lvls (List.map (Ix.Cert.Rename.expr σ) pins)
-      | f => f,
+/-- info: def Ix.Cert.Rename.recRuleFire : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.RecRuleFire md → Ix.Kernel.RecRuleFire md' :=
+fun {md md'} σ x =>
+  match x with
+  | Ix.Kernel.RecRuleFire.inert => Ix.Kernel.RecRuleFire.inert
+  | Ix.Kernel.RecRuleFire.plain => Ix.Kernel.RecRuleFire.plain
+  | Ix.Kernel.RecRuleFire.nested lvls pins => Ix.Kernel.RecRuleFire.nested lvls (List.map (Ix.Cert.Rename.expr σ) pins) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Rename.recRuleFire
+
+/-- info: def Ix.Cert.Rename.recRule : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.RecRule md → Ix.Kernel.RecRule md' :=
+fun {md md'} σ r =>
+  { ctor := σ r.ctor, nfields := r.nfields, ctorParams := r.ctorParams, fire := Ix.Cert.Rename.recRuleFire σ r.fire,
     rhs := Ix.Cert.Rename.expr σ r.rhs, k := r.k, eta := r.eta, paramsBlind := r.paramsBlind } -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.recRule
 
-/-- info: def Ix.Cert.Rename.constantInfo : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.ConstantInfo md → Ix.Kernel.ConstantInfo md :=
-fun {md} σ x =>
+/-- info: def Ix.Cert.Rename.indCaps : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.IndCaps md → Ix.Kernel.IndCaps md' :=
+fun {md md'} σ c =>
+  { eta := c.eta, etaCtor := Option.map σ c.etaCtor, etaParams := c.etaParams, etaFields := c.etaFields,
+    unitlike := c.unitlike, unitParams := c.unitParams, ruleK := c.ruleK, sortZ := c.sortZ } -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Rename.indCaps
+
+/-- info: def Ix.Cert.Rename.projTable : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.ProjTable md → Ix.Kernel.ProjTable md' :=
+fun {md md'} σ t =>
+  { structName := σ t.structName, levelParams := t.levelParams, numParams := t.numParams, ctor := σ t.ctor,
+    numFields := t.numFields, structSort := t.structSort, bodies := Array.map (Ix.Cert.Rename.expr σ) t.bodies,
+    guards := t.guards, off := t.off } -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Rename.projTable
+
+/-- info: def Ix.Cert.Rename.constantInfo : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.ConstantInfo md → Ix.Kernel.ConstantInfo md' :=
+fun {md md'} σ x =>
   match x with
   | Ix.Kernel.ConstantInfo.axiomInfo v => Ix.Kernel.ConstantInfo.axiomInfo (Ix.Cert.Rename.constantVal σ v)
   | Ix.Kernel.ConstantInfo.defnInfo v e h =>
@@ -465,24 +496,18 @@ fun {md} σ x =>
   | Ix.Kernel.ConstantInfo.thmInfo v e =>
     Ix.Kernel.ConstantInfo.thmInfo (Ix.Cert.Rename.constantVal σ v) (Ix.Cert.Rename.expr σ e)
   | Ix.Kernel.ConstantInfo.indInfo v caps =>
-    Ix.Kernel.ConstantInfo.indInfo (Ix.Cert.Rename.constantVal σ v)
-      { eta := caps.eta, etaCtor := Option.map σ caps.etaCtor, etaParams := caps.etaParams, etaFields := caps.etaFields,
-        unitlike := caps.unitlike, unitParams := caps.unitParams, ruleK := caps.ruleK, sortZ := caps.sortZ }
+    Ix.Kernel.ConstantInfo.indInfo (Ix.Cert.Rename.constantVal σ v) (Ix.Cert.Rename.indCaps σ caps)
   | Ix.Kernel.ConstantInfo.ctorInfo v nP nF => Ix.Kernel.ConstantInfo.ctorInfo (Ix.Cert.Rename.constantVal σ v) nP nF
   | Ix.Kernel.ConstantInfo.recInfo v major pre rules =>
     Ix.Kernel.ConstantInfo.recInfo (Ix.Cert.Rename.constantVal σ v) major pre
       (List.map (Ix.Cert.Rename.recRule σ) rules)
-  | Ix.Kernel.ConstantInfo.projInfo tbl =>
-    Ix.Kernel.ConstantInfo.projInfo
-      { structName := σ tbl.structName, levelParams := tbl.levelParams, numParams := tbl.numParams, ctor := σ tbl.ctor,
-        numFields := tbl.numFields, structSort := tbl.structSort,
-        bodies := Array.map (Ix.Cert.Rename.expr σ) tbl.bodies, guards := tbl.guards, off := tbl.off } -/
+  | Ix.Kernel.ConstantInfo.projInfo tbl => Ix.Kernel.ConstantInfo.projInfo (Ix.Cert.Rename.projTable σ tbl) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.constantInfo
 
-/-- info: def Ix.Cert.Rename.declaration : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.Declaration md → Ix.Kernel.Declaration md :=
-fun {md} σ x =>
+/-- info: def Ix.Cert.Rename.declaration : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.Declaration md → Ix.Kernel.Declaration md' :=
+fun {md md'} σ x =>
   match x with
   | Ix.Kernel.Declaration.axiomDecl v => Ix.Kernel.Declaration.axiomDecl (Ix.Cert.Rename.constantVal σ v)
   | Ix.Kernel.Declaration.defnDecl v e h =>
@@ -498,9 +523,9 @@ fun {md} σ x =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.declaration
 
-/-- info: def Ix.Cert.Rename.evidences : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.Evidences md → Ix.Kernel.Evidences md :=
-fun {md} σ ev =>
+/-- info: def Ix.Cert.Rename.evidences : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.Evidences md → Ix.Kernel.Evidences md' :=
+fun {md md'} σ ev =>
   List.map
     (fun x =>
       match x with
@@ -509,20 +534,20 @@ fun {md} σ ev =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.evidences
 
-/-- info: def Ix.Cert.Rename.evidence : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) →
+/-- info: def Ix.Cert.Rename.evidence : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') →
     Ix.Kernel.Evidence (Ix.Kernel.Key md × Ix.Kernel.Expr md) →
-      Ix.Kernel.Evidence (Ix.Kernel.Key md × Ix.Kernel.Expr md) :=
-fun {md} σ x =>
+      Ix.Kernel.Evidence (Ix.Kernel.Key md' × Ix.Kernel.Expr md') :=
+fun {md md'} σ x =>
   match x with
   | Ix.Kernel.Evidence.defeq => Ix.Kernel.Evidence.defeq
   | Ix.Kernel.Evidence.proof (k, v) => Ix.Kernel.Evidence.proof (σ k, Ix.Cert.Rename.expr σ v) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.evidence
 
-/-- info: def Ix.Cert.Rename.env : {md : Ix.Kernel.Mode} →
-  (Ix.Kernel.Key md → Ix.Kernel.Key md) → Ix.Kernel.Env md → Ix.Kernel.Env md :=
-fun {md} σ e => { consts := List.map (Ix.Cert.Rename.constantInfo σ) e.consts } -/
+/-- info: def Ix.Cert.Rename.env : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.Env md → Ix.Kernel.Env md' :=
+fun {md md'} σ e => { consts := List.map (Ix.Cert.Rename.constantInfo σ) e.consts } -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Rename.env
 
@@ -604,51 +629,25 @@ fun {md} ev ds n => (∃ d, d ∈ ds ∧ n ∈ Ix.Cert.Keys.declaration d) ∨ n
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.InputKey
 
-/-- info: def Ix.Cert.Pinned : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → Prop :=
-fun {md} n => ∃ r, Ix.Kernel.roleKey r = n -/
+/-- info: def Ix.Cert.keyIds : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → List md.Id :=
+fun {md} x => Ix.Kernel.Key.brecOn x Ix.Cert.keyIds._f -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.Pinned
+#print Ix.Cert.keyIds
 
-/-- info: inductive Ix.Cert.DerivedFrom : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → Ix.Kernel.Key md → Prop
-number of parameters: 2
-constructors:
-Ix.Cert.DerivedFrom.aux : ∀ {md : Ix.Kernel.Mode} {k : Ix.Kernel.Key md} (d : Ix.Kernel.Derived),
-  Ix.Cert.DerivedFrom k (k.aux d)
-Ix.Cert.DerivedFrom.ext : ∀ {md : Ix.Kernel.Mode} {k n : Ix.Kernel.Key md} (d : Ix.Kernel.Derived),
-  Ix.Cert.DerivedFrom k n → Ix.Cert.DerivedFrom k (n.aux d) -/
+/-- info: def Ix.Cert.InputId : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Evidences md → Array (Ix.Kernel.Declaration md) → md.Id → Prop :=
+fun {md} ev ds i => ∃ k, Ix.Cert.InputKey ev ds k ∧ i ∈ Ix.Cert.keyIds k -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.DerivedFrom
+#print Ix.Cert.InputId
 
-/-- info: def Ix.Cert.Built : {md : Ix.Kernel.Mode} →
-  Ix.Kernel.Evidences md → Array (Ix.Kernel.Declaration md) → Ix.Kernel.Key md → Prop :=
-fun {md} ev ds n => ∃ k, (Ix.Cert.InputKey ev ds k ∨ Ix.Cert.Pinned k) ∧ (n = k ∨ Ix.Cert.DerivedFrom k n) -/
+/-- info: def Ix.Kernel.Key.map : {md md' : Ix.Kernel.Mode} → (md.Id → md'.Id) → Ix.Kernel.Key md → Ix.Kernel.Key md' :=
+fun {md md'} f x => Ix.Kernel.Key.brecOn x (Ix.Kernel.Key.map._f f) -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.Built
+#print Ix.Kernel.Key.map
 
-/-- info: structure Ix.Cert.RenamingHyp {md : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md)
-  (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md)) : Prop
-number of parameters: 4
-fields:
-  Ix.Cert.RenamingHyp.pinned : ∀ (n : Ix.Kernel.Key md), Ix.Cert.Pinned n → σ n = n
-  Ix.Cert.RenamingHyp.fresh : ∀ (k : Ix.Kernel.Key md),
-      Ix.Cert.InputKey ev ds k → ¬Ix.Cert.Pinned k → ¬Ix.Cert.Pinned (σ k)
-  Ix.Cert.RenamingHyp.aux : ∀ (k : Ix.Kernel.Key md) (d : Ix.Kernel.Derived),
-      ¬Ix.Cert.InputKey ev ds (k.aux d) → σ (k.aux d) = (σ k).aux d
-  Ix.Cert.RenamingHyp.shapes : ∀ (k : Ix.Kernel.Key md),
-      Ix.Cert.InputKey ev ds k → (σ k).isProjFnShape = k.isProjFnShape ∧ (σ k).isModelSuffix = k.isModelSuffix
-  Ix.Cert.RenamingHyp.injective : ∀ (a b : Ix.Kernel.Key md),
-      Ix.Cert.Built ev ds a → Ix.Cert.Built ev ds b → σ a = σ b → a = b
-constructor:
-  Ix.Cert.RenamingHyp.mk {md : Ix.Kernel.Mode} {σ : Ix.Kernel.Key md → Ix.Kernel.Key md} {ev : Ix.Kernel.Evidences md}
-    {ds : Array (Ix.Kernel.Declaration md)} (pinned : ∀ (n : Ix.Kernel.Key md), Ix.Cert.Pinned n → σ n = n)
-    (fresh : ∀ (k : Ix.Kernel.Key md), Ix.Cert.InputKey ev ds k → ¬Ix.Cert.Pinned k → ¬Ix.Cert.Pinned (σ k))
-    (aux :
-      ∀ (k : Ix.Kernel.Key md) (d : Ix.Kernel.Derived), ¬Ix.Cert.InputKey ev ds (k.aux d) → σ (k.aux d) = (σ k).aux d)
-    (shapes :
-      ∀ (k : Ix.Kernel.Key md),
-        Ix.Cert.InputKey ev ds k → (σ k).isProjFnShape = k.isProjFnShape ∧ (σ k).isModelSuffix = k.isModelSuffix)
-    (injective : ∀ (a b : Ix.Kernel.Key md), Ix.Cert.Built ev ds a → Ix.Cert.Built ev ds b → σ a = σ b → a = b) :
-    Ix.Cert.RenamingHyp σ ev ds -/
+/-- info: def Ix.Cert.RenamingHyp : (Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) →
+  Ix.Kernel.Evidences Ix.Kernel.Mode.source → Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source) → Prop :=
+fun f ev ds => ∀ (i j : Ix.Kernel.Mode.source.Id), Ix.Cert.InputId ev ds i → Ix.Cert.InputId ev ds j → f i = f j → i = j -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RenamingHyp
 
@@ -680,13 +679,13 @@ fun {md} x =>
 #print Ix.Cert.verdict
 
 /-- info: def Ix.Cert.RenamingLemma : Prop :=
-∀ {md : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md) (ev : Ix.Kernel.Evidences md)
-  (ds : Array (Ix.Kernel.Declaration md)),
-  Ix.Cert.RenamingHyp σ ev ds →
+∀ (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) (ev : Ix.Kernel.Evidences Ix.Kernel.Mode.source)
+  (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source)),
+  Ix.Cert.RenamingHyp f ev ds →
     Ix.Cert.verdict
-        (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified (Ix.Cert.Rename.evidences σ ev)
-          (Array.map (Ix.Cert.Rename.declaration σ) ds)) =
-      Except.map (Ix.Cert.Rename.env σ)
+        (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified (Ix.Cert.Rename.evidences (Ix.Kernel.Key.map f) ev)
+          (Array.map (Ix.Cert.Rename.declaration (Ix.Kernel.Key.map f)) ds)) =
+      Except.map (Ix.Cert.Rename.env (Ix.Kernel.Key.map f))
         (Ix.Cert.verdict (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds)) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RenamingLemma
@@ -778,11 +777,6 @@ fun env =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Commutes.alias
 
-/-- info: @Ix.Cert.reservedBasisNames_pinned : ∀ {md : Ix.Kernel.Mode} (n : Ix.Kernel.Key md),
-  n ∈ Ix.Kernel.reservedBasisNames → Ix.Cert.Pinned n -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.reservedBasisNames_pinned
-
 /-! ## Axioms -/
 
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -808,10 +802,6 @@ fun env =>
 /-- info: 'Ix.Cert.Commutes.alias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Commutes.alias
-
-/-- info: 'Ix.Cert.reservedBasisNames_pinned' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.Cert.reservedBasisNames_pinned
 
 /-- info: 'Ix.Cert.SourceAccepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

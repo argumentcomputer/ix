@@ -384,6 +384,17 @@ instance : LawfulBEq (Key md) where
   eq_of_beq h := of_decide_eq_true h
   rfl := by simp [BEq.beq, Key.beq]
 
+/-! ## Renaming -/
+
+/-- **A renaming of input keys** (IXC-PLAN §12): `.id i` becomes `.id (f i)`, a
+role key is fixed, and a derived key is renamed through its base. The bridge
+from Source to Ixon renames by `Key.map f` with `f` a Lean name's compiled
+address (`Ix.Cert.RenamingLemma`). -/
+def Key.map {md md' : Mode} (f : md.Id → md'.Id) : Key md → Key md'
+  | .id i => .id (f i)
+  | .role r => .role r
+  | .aux k d => .aux (k.map f) d
+
 /-! ## Rendering -/
 
 /-- **A key's spelling**: an input key's id as `Mode.idName` shows it,
