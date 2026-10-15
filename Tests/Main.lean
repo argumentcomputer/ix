@@ -413,8 +413,31 @@ def main (args : List String) : IO UInt32 := do
   -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!
-    IO.println s!"Loaded environment with {env.constants.toList.length} constants"
-    let failures := tmpDecodeConstMap env.constants.toList
+    let all := env.constants.toList
+    IO.println s!"Loaded environment with {all.length} constants"
+    -- Source binder annotations are the subject of the `source-contract`
+    -- suite, whose modules (`Tests.Ix.SourceContract.*`) declare annotated
+    -- fixtures; the Rust compiler's Phase 1 refuses them for the whole input.
+    -- Those modules are left out of this roundtrip, and an annotated constant
+    -- of any other module fails the suite rather than being dropped.
+    let sourceContract := `Tests.Ix.SourceContract
+    let moduleNames := env.allImportedModuleNames
+    let inSourceContract (n : Lean.Name) : Bool :=
+      match env.getModuleIdxFor? n with
+      | some i => match moduleNames[i]? with
+        | some m => sourceContract.isPrefixOf m
+        | none => false
+      | none => false
+    let consts := all.filter fun (n, _) => !inSourceContract n
+    let annotated := consts.filter fun (_, c) => Ix.Compile.sourceHasAnnotations c
+    unless annotated.isEmpty do
+      IO.eprintln s!"[rust-compile] FAILED: {annotated.length} constant(s) outside \
+        {sourceContract}.* carry source binder annotations: \
+        {(annotated.take 10).map (·.1)}"
+      return 1
+    IO.println s!"[rust-compile] left out the {all.length - consts.length} constants of \
+      {sourceContract}.*"
+    let failures := tmpDecodeConstMap consts
     if failures != 0 then
       IO.eprintln s!"[rust-compile] FAILED: {failures} compile/decompile roundtrip failure(s)"
       return 1
