@@ -339,7 +339,9 @@ skipped goes to `step`, which threads the step state `κ` and returns the
 record's failure, if any (`Checker.stepRecord` for the per-record check;
 `CheckIxePool` installs in one pass and replays in another). `before` and
 `after` run around each step (the watchdog's hooks); `onRead` sees every
-reading (the persistent read cache records them). -/
+reading (the persistent read cache records them); `spell` spells the keys of
+a checker failure's reason (`kernel-check-ixe` passes the `.meta` renderer,
+`Reader.spellWith`, over the `.ixe`'s display table). -/
 def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option RecordView)
     (read : σ → Address → Except ReadError (Read .anon)) (commit : σ → Address → Read .anon → σ) (init : σ)
     (step : κ → Address → Read .anon → κ × Option (Ix.Kernel.CheckError .anon)) (start : κ)
@@ -347,7 +349,8 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → LoopOutcome κ → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ()) :
+    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ())
+    (spell : Ix.Kernel.Key .anon → String := toString) :
     IO (LoopOutcome κ) := do
   let mut out : LoopOutcome κ := { checker := default }
   -- the reading state and the step state live in references of the loop's
@@ -415,7 +418,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
             out := { out with counts := out.counts.insert "accept" (out.counts.getD "accept" 0 + 1) }
             emit row
         | some e =>
-          let (outcome, reason) := checkOutcome e
+          let (outcome, reason) := checkOutcome e spell
           for row in rowsFor outcome reason micros readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1) }

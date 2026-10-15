@@ -141,7 +141,8 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
     (addresses : Array Address) (skip : Std.HashSet String) (slots : Array Slot)
     (emit : Row → IO Unit) (log : String → IO Unit)
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ()) :
+    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ())
+    (spell : Ix.Kernel.Key .anon → String := toString) :
     IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict
@@ -208,6 +209,7 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
     names addresses skip
     (emit := fun row => emit { row with micros := rowMicros row,
                                         readMicros := (times.getD row.address (0, 0)).2 })
+    (spell := spell)
   return (out.counts, out.reasons)
 
 end Benchmarks.Kernel.CheckIxePool

@@ -695,6 +695,33 @@ structure Display where
   levelNames : List Ix.Kernel.Name := []
   deriving Repr, Inhabited, DecidableEq
 
+/-! ### Rendering per mode (IXC-PLAN §7, step 6)
+
+A failure names constants by their keys (`CheckError md`), and a renderer
+spells them. `.anon` spells a key as `Key.toName` does (an address as `#` and
+its first twelve hexadecimal digits), `.source` as its Lean name (the same
+function), and `.meta` by the display table the meta reader builds from the
+`.ixe`'s metadata (`spellWith`). Renderers run outside the checker. -/
+
+/-- **A display table**: what the metadata says of each key it names, with
+the record address the key is read at. -/
+abbrev DisplayTable (md : Mode) := Std.HashMap (CName md) (Display × Address)
+
+/-- **The `.meta` renderer**: a key the table knows spells as its Lean names
+(every name of an alias fiber, `a | b`) and the first eight hexadecimal
+digits of its address, `Nat.add@a1b2c3d4`; a derived key as its base's
+spelling with its shape's suffix (`Nat.add@a1b2c3d4._model`); any other key
+as `Key.toName` spells it. -/
+def spellWith (table : DisplayTable md) (k : CName md) : String :=
+  match table[k]? with
+  | some (d, a) =>
+    if d.names.isEmpty then toString k
+    else " | ".intercalate (d.names.map toString) ++ "@" ++ (hexOfBytes a.hash).take 8
+  | none =>
+    match k with
+    | .aux b d => spellWith table b ++ "." ++ toString (d.spell .anonymous)
+    | _ => toString k
+
 /-- The result of reading one record: its declarations in fold order (the
 modeller's generated records first), and what the reader's state learns
 from it. The state is updated only by `State.commit`, after the record:

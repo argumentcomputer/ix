@@ -4,6 +4,7 @@ import Benchmarks.Kernel.CheckIxeEntry
 import Benchmarks.Kernel.CheckIxeGuarded
 import Benchmarks.Kernel.CheckIxeReport
 import Benchmarks.Kernel.CheckIxePaired
+import Benchmarks.Kernel.CheckIxeMeta
 
 /-! Entry point of `kernel-check-ixe`, the certified checker's environment check:
 the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe` (its
@@ -20,7 +21,9 @@ the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe` (
 * `--report`, `--summary`: summaries of a run's rows
   (`Benchmarks.Kernel.CheckIxeReport`);
 * `--compare`, `--paired`: two row files compared, and paired runs of two
-  binaries (`Benchmarks.Kernel.CheckIxePaired`). -/
+  binaries (`Benchmarks.Kernel.CheckIxePaired`);
+* `--meta`: the erasure test, every record checked at `.anon` and at `.meta`
+  and the runs compared (`Benchmarks.Kernel.CheckIxeMeta`). -/
 
 def main : List String → IO UInt32
   | "--fold" :: args => Benchmarks.Kernel.CheckIxeFold.run args
@@ -30,4 +33,5 @@ def main : List String → IO UInt32
   | "--summary" :: args => Benchmarks.Kernel.CheckIxeReport.runSummary args
   | "--compare" :: args => Benchmarks.Kernel.CheckIxePaired.runCompare args
   | "--paired" :: args => Benchmarks.Kernel.CheckIxePaired.runPaired args
+  | "--meta" :: args => Benchmarks.Kernel.CheckIxeMeta.run args
   | args => Benchmarks.Kernel.CheckIxe.run args

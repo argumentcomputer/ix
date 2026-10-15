@@ -317,8 +317,14 @@ block-order check is.
 **Modes** (`IxC/Kernel/Key.lean`). The kernel's types (`Key`, `Expr`,
 `ConstantInfo`, `Declaration`, `Env` and what is built from them) take a
 `Mode`: `.anon` (Ixon: an input constant is identified by its address),
-`.meta` (the same, with display data; it has no reader yet) and `.source`
-(Lean through `CanonM`: an input constant is identified by its name).
+`.meta` (the same keys, with display data) and `.source` (Lean through
+`CanonM`: an input constant is identified by its name). `.meta`'s display is
+the reader's output's (`Reader.Read.display`: what the `.ixe`'s metadata says
+of the keys a record declares, its Lean names and level names), filled by the
+meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`); the checker's own types
+carry none, and no checker code reads a display field
+(`IxC/Kernel/Audit/Display.lean`). `.meta` never decides: it explains
+failures with names (IXC-PLAN §11).
 `Mode.Id md` is what identifies an input constant (an `Address` in `.anon`
 and `.meta`, a `Name` in `.source`), `Mode.D md α` the display data (`Unit`
 outside `.meta`), and `Mode.Certified` holds of the modes the theorems are
@@ -952,7 +958,15 @@ environment up front. `--jobs <n>` installs every record first and then runs
 the recorded checks on `n` worker threads
 (`Benchmarks/Kernel/CheckIxePool.lean`). All three write the same rows
 (`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
-its install plus its checks. Environment:
+its install plus its checks. A checker failure's reason is rendered by
+`.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
+the first eight hexadecimal digits of their addresses, `Nat.add@a1b2c3d4`
+(`Reader.spellWith`); the verdict is the `.anon` run's.
+`kernel-check-ixe --meta <input.ixe> <output.jsonl> [limit]` is the erasure
+test: every record read and checked at `.anon` and at `.meta` and the runs
+compared record by record (readings, outcome, fold position, failure with
+its keys mapped), failing on any difference (Init+Std: 97,906 records, no
+difference, about 220 s and 4 GB). Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one constant's check exceeds
