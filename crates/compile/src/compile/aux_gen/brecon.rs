@@ -3045,6 +3045,8 @@ fn build_minor_via_cases_sim(
 ///
 /// Used for Prop brecOn: the recursor type has `Level::param(u)` for large elimination,
 /// but brecOn specializes to Prop, so `u -> Level::zero()`.
+/// It descends into every subterm, `Proj` and `Mdata` included; the remaining
+/// cases are leaves without levels.
 fn subst_level_in_expr(
   expr: &LeanExpr,
   param: &Name,
@@ -3082,6 +3084,14 @@ fn subst_level_in_expr(
       subst_level_in_expr(b, param, replacement),
       *nd,
     ),
+    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
+      n.clone(),
+      i.clone(),
+      subst_level_in_expr(e, param, replacement),
+    ),
+    ExprData::Mdata(kvs, e, _) => {
+      LeanExpr::mdata(kvs.clone(), subst_level_in_expr(e, param, replacement))
+    },
     _ => expr.clone(),
   }
 }
@@ -3100,5 +3110,43 @@ fn subst_level(lvl: &Level, param: &Name, replacement: &Level) -> Level {
       subst_level(l2, param, replacement),
     ),
     _ => lvl.clone(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  /// The substitution reaches a level under a projection and under
+  /// metadata, as it does under every other node.
+  #[test]
+  fn subst_level_in_expr_descends_into_proj_and_mdata() {
+    let u = name("u");
+    let in_sort = LeanExpr::sort(Level::param(u.clone()));
+    let in_const = LeanExpr::cnst(name("c"), vec![Level::param(u.clone())]);
+    let zero_sort = LeanExpr::sort(Level::zero());
+    let zero_const = LeanExpr::cnst(name("c"), vec![Level::zero()]);
+    let proj = |e| LeanExpr::proj(name("S"), Nat::from(0u64), e);
+    let mdata = |e| LeanExpr::mdata(vec![], e);
+    let cases = [
+      (proj(in_sort.clone()), proj(zero_sort.clone())),
+      (mdata(in_const.clone()), mdata(zero_const.clone())),
+      (proj(mdata(in_sort)), proj(mdata(zero_sort))),
+      (
+        LeanExpr::app(mdata(in_const.clone()), proj(in_const)),
+        LeanExpr::app(mdata(zero_const.clone()), proj(zero_const)),
+      ),
+    ];
+    for (input, expected) in cases {
+      let out = subst_level_in_expr(&input, &u, &Level::zero());
+      assert_eq!(out, expected);
+    }
+    // Another parameter is left alone.
+    let other = proj(LeanExpr::sort(Level::param(name("v"))));
+    assert_eq!(subst_level_in_expr(&other, &u, &Level::zero()), other);
   }
 }

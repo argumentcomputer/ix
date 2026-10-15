@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.AuxGen.ExprUtils
+public import Ix.AuxGen.BRecOn
 
 /-!
 Hash-identity property tests for `Ix.AuxGen.ExprUtils` (the pure-Lean port
@@ -164,6 +165,28 @@ def levelTests : TestSeq :=
       substLevels (Expr.mkSort (Level.mkParam u)) #[u] #[Level.mkZero]
         == sort0 : Bool))
 
+/-- `substLevelInExpr` reaches a level under a projection and under metadata,
+    as it does under every other node (and as Rust `subst_level_in_expr`
+    does). -/
+def substLevelInExprTests : TestSeq :=
+  let u := nm "u"
+  let inSort := Expr.mkSort (Level.mkParam u)
+  let inConst := Expr.mkConst (nm "c") #[Level.mkParam u]
+  let zeroConst := Expr.mkConst (nm "c") #[Level.mkZero]
+  let proj (e : Expr) := Expr.mkProj (nm "S") 0 e
+  let mdata (e : Expr) := Expr.mkMData #[] e
+  let subst (e : Expr) := substLevelInExpr e u Level.mkZero
+  test "substLevelInExpr descends into proj"
+    (subst (proj inSort) == proj sort0)
+  ++ test "substLevelInExpr descends into mdata"
+    (subst (mdata inConst) == mdata zeroConst)
+  ++ test "substLevelInExpr descends through nested proj, mdata and app"
+    (subst (Expr.mkApp (mdata (proj inConst)) (proj (mdata inSort)))
+      == Expr.mkApp (mdata (proj zeroConst)) (proj (mdata sort0)))
+  ++ test "substLevelInExpr leaves another parameter alone"
+    (let other := proj (Expr.mkSort (Level.mkParam (nm "v")))
+     subst other == other)
+
 def restoreTests : TestSeq :=
   test "RestoreCtx renames aux recursor consts in application position"
     ((let ctx := RestoreCtx.new ∅ ∅
@@ -173,7 +196,7 @@ def restoreTests : TestSeq :=
 
 public def suite : List TestSeq :=
   [freshFVarTests, roundtripTests, substShiftTests, betaTests, miscTests,
-   levelTests, restoreTests]
+   levelTests, substLevelInExprTests, restoreTests]
 
 end Tests.AuxGen.ExprUtils
 

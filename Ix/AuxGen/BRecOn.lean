@@ -70,7 +70,7 @@ open Ix.CompileM (CompileM CompileError arrIdx)
     deliberate asymmetry: the `Succ` arm rebuilds with the SMART
     `mkLevelSucc` (distributes over Max) while `Max`/`Imax` use the RAW
     constructors — preserved exactly. -/
-partial def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
+def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
     : Level :=
   match lvl with
   | .param n _ => if n == param then replacement else lvl
@@ -90,9 +90,9 @@ partial def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
     `Level::param(u)` for large elimination, but brecOn specializes to
     Prop, so `u -> Level::zero()`.
 
-    NOTE: the Rust catch-all `_ => expr.clone()` does NOT descend into
-    `Proj`/`Mdata`/leaf nodes — preserved exactly. -/
-partial def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
+    It descends into every subterm, `proj` and `mdata` included, as the Rust
+    function does; the remaining cases are leaves without levels. -/
+def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
     : Expr :=
   match expr with
   | .sort lvl _ => Expr.mkSort (substLevelParam lvl param replacement)
@@ -111,6 +111,8 @@ partial def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
     Expr.mkLetE n (substLevelInExpr t param replacement)
       (substLevelInExpr v param replacement)
       (substLevelInExpr b param replacement) nd
+  | .proj n i e _ => Expr.mkProj n i (substLevelInExpr e param replacement)
+  | .mdata kvs e _ => Expr.mkMData kvs (substLevelInExpr e param replacement)
   | _ => expr
 
 /-! ## Eq/HEq application builders (brecon.rs:1284) -/

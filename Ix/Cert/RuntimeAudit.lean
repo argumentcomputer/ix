@@ -18,7 +18,10 @@ A proof about `compile` meets each of them as an opaque constant. Adding one,
 or removing one, changes the list below; the change that re-records it states
 why. The expression-table walks (`collectExprTables`, `preseedExprTables`) run
 as proved `csimp` replacements (`collectExprTables_eq_worklist`,
-`preseedExprTables_eq_worklist`) since they left the list.
+`preseedExprTables_eq_worklist`) since they left the list. AuxGen's
+`batchAbstract` (through `batchAbstractWith`), `inferImplicit`, `instantiate1At`,
+`substLevelInExpr` and `substLevelParam` left it when they became structurally
+recursive definitions.
 
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
@@ -33,7 +36,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Blake3.Rust.hasherUpdate,
  Ix.AuxGen.abstractFVar,
  Ix.AuxGen.auxSpecEq,
- Ix.AuxGen.batchAbstract,
  Ix.AuxGen.buildProofForRemaining,
  Ix.AuxGen.canonicalizeConstNames,
  Ix.AuxGen.collectLeanSourceNameHints,
@@ -49,8 +51,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.hasIndOcc,
  Ix.AuxGen.hasLooseBVarInExplicitDomain,
  Ix.AuxGen.hasOutOfSccConst,
- Ix.AuxGen.inferImplicit,
- Ix.AuxGen.instantiate1At,
  Ix.AuxGen.instantiateRevAt,
  Ix.AuxGen.isAlreadyNormalizedCheap,
  Ix.AuxGen.isNeverZero,
@@ -85,8 +85,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.stripPrefixComponents,
  Ix.AuxGen.substFVar,
  Ix.AuxGen.substLevel,
- Ix.AuxGen.substLevelInExpr,
- Ix.AuxGen.substLevelParam,
  Ix.AuxGen.substLevels,
  Ix.AuxGen.toKexprStatic,
  Ix.CompileM.buildCallSite,
