@@ -101,6 +101,12 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
           cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
+          # Profiles are embedded in the verifier; compression tests also read
+          # binary fixtures that Cargo's source filter does not retain.
+          compressionData = pkgs.lib.fileset.unions [
+            ./crates/proof-compression/profiles
+            ./crates/proof-compression/tests/fixtures
+          ];
           # The Rust tests `include_bytes!` the `.ixe` files under
           # `Tests/Fixtures`: environments serialized by Lean, read back to check
           # both sides agree on the format.
@@ -108,6 +114,7 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               cargoSource
+              compressionData
               ./Tests/Fixtures/ixon-v4
             ];
           };
@@ -151,6 +158,9 @@
               LEAN_SYSROOT = "${lean}";
               # bindgen needs libclang to parse C headers
               LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              # Same C standard the lakefile gives Cargo: Lean's bundled
+              # link-time glibc predates the C23 `__isoc23_*` redirects.
+              CFLAGS = "-std=gnu17";
 
               buildInputs =
                 [ ]
@@ -220,6 +230,7 @@
               ./IxC/lean-toolchain
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
+              compressionData
             ];
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
@@ -259,10 +270,12 @@
               mkdir -p .lake
               ln -sf ${lakePackageOverrides} .lake/package-overrides.json
             '';
-            # Symlink the Crane-built static lib to where Lake expects it
+            # Symlink the Crane-built static lib and the compression worker
+            # executable to where Lake expects Cargo to have left them
             postConfigure = ''
               mkdir -p target/release
               ln -s ${rustLib}/lib/libix_ffi.a target/release/
+              ln -s ${rustLib}/bin/ix-compression-worker target/release/
             '';
             buildInputs = [
               pkgs.gmp

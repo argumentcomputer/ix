@@ -49,6 +49,8 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 [features]
 default = []
 parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
+# The KZG prover's CUDA code is compiled into the ix-compression-worker
+# executable, not into the library the Lean executable links.
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
 test-ffi = []

@@ -25,15 +25,16 @@ everything else unchanged.
 Build on a GPU host:
 
 ```sh
-IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=120 CFLAGS=-std=gnu17 lake build ix
+IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=120 lake build ix
 ```
 
 `MULTI_STARK_CUDA_ARCHS` names the SM architecture (`120` is Blackwell,
-`80` the CI container's Ampere). `CFLAGS=-std=gnu17` is required with
-glibc 2.43 headers: in C23 mode mimalloc's `strtol` becomes
-`__isoc23_strtol`, which the sysroot of Lean's bundled `clang`/`ld.lld`
-does not provide, and the final link fails on `libix_ffi_net.a`. If `nvcc`
-is not on `PATH`, set `NVCC` or `CUDA_HOME`.
+`80` the CI container's Ampere). The lakefile compiles the C units Cargo
+builds as C17: with glibc 2.38 or newer headers in C23 mode, mimalloc's
+`strtol` would become `__isoc23_strtol`, which the link-time glibc of
+Lean's bundled toolchain does not provide, and the final link would fail on
+`libix_ffi_net.a`. No `CFLAGS` setting is needed. If `nvcc` is not on
+`PATH`, set `NVCC` or `CUDA_HOME`.
 
 A binary linked by the Nix Rust toolchain runs on Nix glibc, whose loader
 never searches `/usr/lib/x86_64-linux-gnu`; the statically linked CUDA
@@ -193,6 +194,11 @@ command, recorded with its identities. The script that produced the
 measurements below does only this: write the provenance, sample the
 devices, run the one command under the cap, and keep the exit status.
 
+Set `RUNS_DIR` to fast local storage with room for the lane and KZG
+caches. These caches write fsynced checkpoints, so storage throughput can
+limit the run. Preserve final proofs and any cache worth keeping before
+discarding an ephemeral volume.
+
 ```sh
 #!/bin/bash
 # run-lanes4.sh <label> [extra ix prove flags]
@@ -201,7 +207,7 @@ LABEL=$1; shift
 EXEC_JOBS=${EXEC_JOBS:-3}; MAX_RAM=${MAX_RAM:-230}; MEM_MAX=${MEM_MAX:-920G}
 IXE=${IXE:-mathlib.ixe}; IXES=${IXES:-mathlib.ixes}
 BIN=${BIN:-$HOME/repos/ix/.lake/build/bin/ix}
-OUT=runs/$LABEL; mkdir -p "$OUT/cache"
+OUT=${RUNS_DIR:-runs}/$LABEL; mkdir -p "$OUT/cache"
 [ -n "${RECORD_MAX_GIB:-}" ] && export AIUR_RECORD_MAX_BYTES=$((RECORD_MAX_GIB << 30))
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$OUT/cache

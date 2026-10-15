@@ -1,0 +1,46 @@
+{
+  "setup": "filecoin",
+  "known_trapdoor": false,
+  "profile_version": 5,
+  "first_stage_log_height": 24,
+  "profile_id": "d1c6951a06e9fc4712dcf1cb0e59bc4660719c93bef6dcf0e0b66487e0456081",
+  "verifier_blake3": "1d0632635c4e97fbc9cae36cff4c41061e3c1cb2ce216ea231f93af0c90d0d3d",
+  "packet_blake3": "318e61bdad0f34a9ad18bfda2b8d438e82e2b3fe101bc89a106114418630b02c",
+  "source_fri_verifier_blake3": "3bdb87f831a4258b16fe30c3c6b50e1e3220e0d76b15a03d75ea939a5bb4544f",
+  "source_fri_proof_blake3": "e3cdff6d87fc4289efaa2e172a9369d89831f8b130b958adffc1b15e95dc755d",
+  "source_fri_fixture": "tests/fixtures/init-fri",
+  "producer_ix_revision": "12487e6553a83a40e743a27b4d66ed99941079f2",
+  "producer_multi_stark_revision": "bf1077eba9bc895eba1f8e5ddb578d767eda280f",
+  "statement_prefix": [
+    0,
+    293,
+    3008464260,
+    3936129970,
+    1088962797,
+    1141056675,
+    2347219926,
+    1176003176,
+    683533119,
+    3085659920
+  ],
+  "scope": "Aggregate CheckEnv recursive circuit for the saved Init FRI verifier. The caller supplies the claim; its digest occupies the last eight public words.",
+  "root_verifier_blake3": "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc",
+  "claim": {
+    "kind": "CheckEnv",
+    "root": "f8912c57f41e1b38ebd63e53cf05b0775cff02b42185084a014c07b18d0e2b0c",
+    "assumptions": null,
+    "blake3": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80"
+  },
+  "claim_recovery": {
+    "import": "Init",
+    "lean_toolchain": "4.34.1",
+    "environment_root": "3a3b14ba432d397260d10436147314fe1de01614e7c3906dea2fa5b0623744dd",
+    "constants": 56810,
+    "partition": "ix shard --shards 16, default static min-cut and balance",
+    "structural_above": 4096,
+    "aggregate_proof_address": "779713f2027576d9f8bbbb5573e237a057e0bdc18b8599571feff20fcadb814f",
+    "aggregate_proof_source": "multi-stark sb/kzg:experiments/kzg-cuda-validation/resume-20261009/root-artifacts/root-proof.bin",
+    "aggregate_verification_passed": true
+  },
+  "compressed_proof_address": "a44bd7330d25ff2f5a36262bbe8bfeec1f615dce4aa9e22247ca4d18ddf5c542"
+}

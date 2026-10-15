@@ -1,0 +1,11 @@
+{
+  "setup": "development",
+  "known_trapdoor": true,
+  "profile_version": 5,
+  "first_stage_log_height": 24,
+  "profile_id": "9f95f0fcfc2163b0b1d95ed4f9e56f557c3a611d5f1c1b8ef6b59485bce8f16b",
+  "verifier_blake3": "65c5497e830433133b1ce6b8625d608a78a274a5615e7d7b8187a4a32dc1f7e2",
+  "root_verifier_blake3": "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc",
+  "packet_blake3": "d7a66397d7b9f5834a678a4f644cf6726f642b17e7f2aa369ef815bd648ff7a9",
+  "scope": "Aggregate CheckEnv recursive circuit; development parameters require --dev-srs."
+}

@@ -307,9 +307,11 @@ Benchmark jobs use exact `r8i` instance types; CI jobs request the
 `r7i+r8i+r7a+r8a` families so Spot has several pools to fill from. All use
 the `ubuntu26-full-x64` image with the default Spot policy. RunsOn can fall
 back to on-demand capacity and automatically retry interrupted jobs. There
-are no GPU benchmarks; future GPU benchmarks should use `spot=false`. The
-CUDA compile job runs its toolchain in an Ubuntu 26.04 container on a CPU
-runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
+are no GPU benchmarks; future GPU benchmarks should use `spot=false` and
+keep their run and cache directories on fast local storage, as
+[the GPU proving guide](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run)
+describes. The CUDA compile job runs its toolchain in an Ubuntu 26.04
+container on a CPU runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
 [CI and merge queue configuration](ci.md) for the required checks and retry
 behavior.
 The [instance sizes](https://aws.amazon.com/ec2/instance-types/memory-optimized/)
