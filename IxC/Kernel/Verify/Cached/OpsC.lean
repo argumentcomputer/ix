@@ -910,7 +910,7 @@ theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e 
     · rename_i hcut
       exact (hasLP_false (by simpa using hcut)).symm
     · dsimp only
-      rw [mkLam_eq, iht, ihb]
+      rw [mkLam_eq, iht, ihb, BinderMeta.substPWC_eq]
       rfl
   | forallE ty bd m iht ihb =>
     rw [Expr.instLevelParamsP.eq_def]
@@ -918,7 +918,7 @@ theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e 
     · rename_i hcut
       exact (hasLP_false (by simpa using hcut)).symm
     · dsimp only
-      rw [mkForallE_eq, iht, ihb]
+      rw [mkForallE_eq, iht, ihb, BinderMeta.substPWC_eq]
       rfl
   | letE ty val bd _ iht ihv ihb =>
     rw [Expr.instLevelParamsP.eq_def]

@@ -1646,10 +1646,12 @@ def isPropTypeI (r : CoreFnsI md) (_fe : FEnv md) (depth : Nat) (ty : Expr md) :
 domain, binder info. -/
 abbrev AnnotBinderEntry (md : Mode) := Expr md × BinderMeta
 
-/-- The cached twin of `annotBinderMeta`. -/
+/-- The cached twin of `annotBinderMeta`, writing through
+`BinderMeta.withPw` (a shared object where one exists, PERF P14;
+`annotBinderMetaI_eq`). -/
 def annotBinderMetaI (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
   match pw? with
-  | some pw => if pwWritten mb.pw then mb else { mb with pw }
+  | some pw => if pwWritten mb.pw then mb else mb.withPw pw
   | none => mb
 
 /-- Rebuild loop of the annotation binder-telescope loops: fold the
@@ -1832,7 +1834,7 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
         let pw ← if !pwWritten mb.pw then
             annotPwLamI r fe (depth + 1) body'
           else pure mb.pw
-        pure (Expr.lam ty' bAbs { mb with pw })
+        pure (Expr.lam ty' bAbs (mb.withPw pw))
     | .letE ty v b _ => do
       -- official `infer_let` check order (see the spec body): the
       -- annotation is a type, the value's inferred type matches it,

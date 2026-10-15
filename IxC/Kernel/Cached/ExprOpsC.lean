@@ -756,8 +756,25 @@ def abstractRangeC (e : @& (Expr md)) (d k : Nat) (c : Nat := 0) : Expr md :=
 
 /-! ## Level instantiation -/
 
+/-- A binder's metadata under a level substitution,
+`{ m with pw := Level.substPW ks us m.pw }` (`BinderMeta.substPWC_eq`),
+without a new object where none is needed (PERF P14): `m` itself when its
+datum has no parameter (`Level.substPW_eq_self`), `BinderMeta.withPw`
+otherwise. -/
+@[inline] def _root_.Ix.Kernel.BinderMeta.substPWC (ks : List LevelParam) (us : List Level)
+    (m : BinderMeta) : BinderMeta :=
+  if m.pw.hasParams then m.withPw (Level.substPW ks us m.pw) else m
+
+theorem _root_.Ix.Kernel.BinderMeta.substPWC_eq (ks : List LevelParam) (us : List Level)
+    (m : BinderMeta) : m.substPWC ks us = { m with pw := Level.substPW ks us m.pw } := by
+  unfold BinderMeta.substPWC
+  split
+  · exact BinderMeta.withPw_eq _ _
+  · next h => rw [Level.substPW_eq_self (Bool.not_eq_true _ ▸ h)]
+
 /-- The plain descent of `instLevelParams`: the reference of
 `instLevelParamsXP`. -/
+
 def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr md) : Expr md :=
   if !e.hasLP then e else
   match e with
@@ -767,10 +784,9 @@ def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr md) : Ex
   | .fvar idx ty .. => mkFVar idx (instLevelParamsP ks us ty)
   | .app f a .. => mkApp (instLevelParamsP ks us f) (instLevelParamsP ks us a)
   | .lam ty body m .. =>
-    mkLam (instLevelParamsP ks us ty) (instLevelParamsP ks us body) { m with pw := Level.substPW ks us m.pw }
+    mkLam (instLevelParamsP ks us ty) (instLevelParamsP ks us body) (m.substPWC ks us)
   | .forallE ty body m .. =>
-    mkForallE (instLevelParamsP ks us ty) (instLevelParamsP ks us body)
-      { m with pw := Level.substPW ks us m.pw }
+    mkForallE (instLevelParamsP ks us ty) (instLevelParamsP ks us body) (m.substPWC ks us)
   | .letE ty val body lmeta =>
     mkLetE (instLevelParamsP ks us ty) (instLevelParamsP ks us val)
       (instLevelParamsP ks us body) lmeta
@@ -814,12 +830,12 @@ def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
   | .lam ty body m .. =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLam ty' b' { m with pw := Level.substPW ks us m.pw },
+    Squash.mk (⟨mkLam ty' b' (m.substPWC ks us),
       by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hb, mkLam]⟩, memo)
   | .forallE ty body m .. =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkForallE ty' b' { m with pw := Level.substPW ks us m.pw },
+    Squash.mk (⟨mkForallE ty' b' (m.substPWC ks us),
       by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hb, mkForallE]⟩, memo)
   | .letE ty val body lmeta =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>

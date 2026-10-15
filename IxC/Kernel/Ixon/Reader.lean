@@ -116,7 +116,9 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   the datum) and keeps its Ixon contracts in `BinderMeta`: a `lam`'s
   binder contract as `contract` (its `result` is `shared`), an `all`'s input
   contract as `contract` and its result contract as `result`, and a `letE`'s
-  contract (`Ixon.LetContract`) as its `LetMeta`'s `contract`.
+  contract (`Ixon.LetContract`) as its `LetMeta`'s `contract`.  A binder with
+  the Lean fragment's contracts shares one metadata object
+  (`BinderMeta.ofContracts`, PERF P14).
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
@@ -595,10 +597,9 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
   | .nat i => do pure (.lit (.natVal (natural (← e.blobAt i))))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
   | .lam c t b => do
-    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) { pw := .never, contract := c })
+    pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts c .shared))
   | .all c r t b => do
-    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b)
-      { pw := .never, contract := c, result := r })
+    pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts c r))
   | .letE c t v b => do
     pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { contract := c })
   | .share i =>

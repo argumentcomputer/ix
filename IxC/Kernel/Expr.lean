@@ -129,6 +129,71 @@ structure BinderMeta where
 
 instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
 
+/-! ### Shared binder metadata (PERF P14)
+
+A `BinderMeta` is an object of its own, so building one per binder — in the
+reader, in the annotation pass, at each level instantiation — allocates one
+per binder. Nearly every binder of a Lean-compiled term has the Lean
+fragment's contracts and a parameter-free datum, so the builders below return
+one of two shared closed objects, or the metadata they were given, where the
+value is the same. Each is proved equal to the plain structure update it
+replaces. -/
+
+/-- The Lean fragment's binder metadata at the datum `never` (the reader's
+placeholder): one shared object. -/
+def BinderMeta.leanNever : BinderMeta := { pw := .never }
+
+/-- The Lean fragment's binder metadata at the datum `ifAllZero []` (the
+codomain sort is zero at every valuation): one shared object. -/
+def BinderMeta.leanAlways : BinderMeta := { pw := .ifAllZero [] }
+
+/-- An input binder's metadata, `{ pw := .never, contract := c, result := r }`:
+the shared `leanNever` for the Lean fragment's contracts
+(`BinderMeta.ofContracts_eq`). -/
+@[inline] def BinderMeta.ofContracts (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+    BinderMeta :=
+  if c = .many ∧ r = .shared then BinderMeta.leanNever
+  else { pw := .never, contract := c, result := r }
+
+theorem BinderMeta.ofContracts_eq (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+    BinderMeta.ofContracts c r = { pw := .never, contract := c, result := r } := by
+  unfold BinderMeta.ofContracts
+  split
+  · next h => obtain ⟨rfl, rfl⟩ := h; rfl
+  · rfl
+
+/-- `{ mb with pw }`, without a new object where an equal one exists: `mb`
+itself when both data are `never`, the shared `leanAlways` for a
+Lean-fragment binder whose new datum is `ifAllZero []`
+(`BinderMeta.withPw_eq`). -/
+@[inline] def BinderMeta.withPw (mb : BinderMeta) (pw : PropWhen) : BinderMeta :=
+  if pw.isNever && mb.pw.isNever then mb
+  else if !pw.hasParams && !pw.isNever && decide (mb.contract = .many) &&
+      decide (mb.result = .shared) then BinderMeta.leanAlways
+  else { mb with pw }
+
+theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
+    mb.withPw pw = { mb with pw } := by
+  obtain ⟨p, c, r⟩ := mb
+  unfold BinderMeta.withPw
+  split
+  · next h =>
+    simp only [Bool.and_eq_true, PropWhen.isNever_iff] at h
+    obtain ⟨rfl, rfl⟩ := h
+    rfl
+  · split
+    · next h =>
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
+        decide_eq_true_eq] at h
+      obtain ⟨⟨⟨hp, hn⟩, rfl⟩, rfl⟩ := h
+      cases pw with
+      | never => simp at hn
+      | ifAllZero ps =>
+        cases ps with
+        | nil => rfl
+        | cons q qs => simp at hp
+    · rfl
+
 /-- A binder's share of its node's hash: the hash of `pw`, mixed with the
 contracts' hashes unless they are the Lean fragment's. So the hash is a
 function of all of the binder's identity data, and a Lean-fragment binder

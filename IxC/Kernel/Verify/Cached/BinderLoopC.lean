@@ -885,7 +885,10 @@ theorem inferPisC_tail_sim (ih : SSimC mode env f)
 `denoteBM_annotBinderMeta` transport collapses to this equation). -/
 theorem annotBinderMetaI_eq (pw? : Option PropWhen) (mb : BinderMeta) :
     annotBinderMetaI pw? mb = annotBinderMeta pw? mb := by
-  cases pw? <;> rfl
+  cases pw? with
+  | none => rfl
+  | some pw =>
+    simp only [annotBinderMetaI, annotBinderMeta, BinderMeta.withPw_eq]
 
 theorem annotateBindersOutC_sim
     {mk : Expr md → Expr md → BinderMeta → Expr md}
