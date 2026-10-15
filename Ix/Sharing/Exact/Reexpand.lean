@@ -345,13 +345,13 @@ theorem lookup_sound (dag : Dag) (n : Node) (u : Nat)
 /-- A step of the fast re-expansion: a value with the pointer cache and the
 visit count, an error, or `stop` (a node is not in the DAG). -/
 inductive ReStep (α : Type) where
-  | ok (a : α) (cache : Std.HashMap USize Nat) (visits : Nat)
+  | ok (a : α) (cache : ExprCache Nat) (visits : Nat)
   | error (e : SharingError)
   | stop
 
 /-- `internNode` against the DAG's own interner. -/
 @[inline] def reIntern (limits : Limits) (dag : Dag) (ix : ReIndex) (n : Node)
-    (cache : Std.HashMap USize Nat) (visits : Nat) : ReStep Nat :=
+    (cache : ExprCache Nat) (visits : Nat) : ReStep Nat :=
   match ix.lookup dag n with
   | some id =>
     if dag.nodes.size > limits.maxNodes then .error (.resourceExhausted .nodes limits.maxNodes)
@@ -360,26 +360,26 @@ inductive ReStep (α : Type) where
 
 /-- Continue an ok step with `k`. -/
 @[inline] def ReStep.bind {α β : Type} (r : ReStep α)
-    (k : α → Std.HashMap USize Nat → Nat → ReStep β) : ReStep β :=
+    (k : α → ExprCache Nat → Nat → ReStep β) : ReStep β :=
   match r with
   | .ok a cache visits => k a cache visits
   | .error err => .error err
   | .stop => .stop
 
 /-- Record the ID of the expression at `ptr` in the pointer cache. -/
-@[inline] def reFinish (ptr : USize) (r : ReStep Nat) : ReStep Nat :=
+@[inline] def reFinish (ptr : ExprCache.Key) (r : ReStep Nat) : ReStep Nat :=
   r.bind fun id cache visits => .ok id (cache.insert ptr id) visits
 
 /-- `ingestExpr` against the DAG's own interner. -/
 def reIngestExpr (limits : Limits) (dag : Dag) (ix : ReIndex) (ctx : ShareCtx) (depth : Nat)
-    (e : Ixon.Expr) (cache : Std.HashMap USize Nat) (visits : Nat) : ReStep Nat :=
-  match cache.get? (exprPtr e) with
+    (e : Ixon.Expr) (cache : ExprCache Nat) (visits : Nat) : ReStep Nat :=
+  match cache.get? (exprKey e) with
   | some id => .ok id cache visits
   | none =>
     if depth > limits.maxDepth then .error (.resourceExhausted .depth limits.maxDepth) else
     match bump visits 1 limits.maxExprVisits .exprVisits with
     | .error err => .error err
-    | .ok visits => reFinish (exprPtr e) <| match e with
+    | .ok visits => reFinish (exprKey e) <| match e with
       | .sort i => reIntern limits dag ix ⟨.sort i, #[]⟩ cache visits
       | .var i => reIntern limits dag ix ⟨.var i, #[]⟩ cache visits
       | .ref r us => reIntern limits dag ix ⟨.ref r us, #[]⟩ cache visits
@@ -420,7 +420,7 @@ def ReSim {α : Type} (I0 : Interner) : ReStep α → Except SharingError (α ×
   | .error e, r => r = .error e
   | .stop, _ => True
 
-theorem reIntern_sim (limits : Limits) (dag : Dag) (n : Node) (cache : Std.HashMap USize Nat)
+theorem reIntern_sim (limits : Limits) (dag : Dag) (n : Node) (cache : ExprCache Nat)
     (visits : Nat) :
     ReSim (Interner.ofNodes dag.nodes) (reIntern limits dag (ReIndex.ofDag dag) n cache visits)
       ((internNode limits n).run
@@ -443,7 +443,7 @@ theorem reIntern_sim (limits : Limits) (dag : Dag) (n : Node) (cache : Std.HashM
 
 theorem ReSim.bind {α β : Type} {I0 : Interner} {r : ReStep α}
     {m : Except SharingError (α × IngestState)}
-    {k : α → Std.HashMap USize Nat → Nat → ReStep β}
+    {k : α → ExprCache Nat → Nat → ReStep β}
     {m' : α → IngestState → Except SharingError (β × IngestState)}
     (h : ReSim I0 r m)
     (hk : ∀ a c v, ReSim I0 (k a c v) (m' a { interner := I0, ptrCache := c, visits := v })) :
@@ -460,7 +460,7 @@ theorem ReSim.bind {α β : Type} {I0 : Interner} {r : ReStep α}
     rfl
   | stop => trivial
 
-theorem reFinish_sim {I0 : Interner} (ptr : USize) {r : ReStep Nat}
+theorem reFinish_sim {I0 : Interner} (ptr : ExprCache.Key) {r : ReStep Nat}
     {m : Except SharingError (Nat × IngestState)} (h : ReSim I0 r m) :
     ReSim I0 (reFinish ptr r)
       ((fun a => (a.1,
@@ -482,19 +482,19 @@ theorem reFinish_sim {I0 : Interner} (ptr : USize) {r : ReStep Nat}
 /-- The part of `ingestExpr` and `reIngestExpr` around the node itself: the
 pointer cache, the depth limit, the visit count, and recording the ID. -/
 theorem sim_prefix (limits : Limits) (dag : Dag) (depth : Nat) (e : Ixon.Expr)
-    (cache : Std.HashMap USize Nat) (visits : Nat) (fb : Nat → ReStep Nat) (mb : IngestM Nat)
+    (cache : ExprCache Nat) (visits : Nat) (fb : Nat → ReStep Nat) (mb : IngestM Nat)
     (hb : ∀ v, ReSim (Interner.ofNodes dag.nodes) (fb v)
       (mb.run { interner := Interner.ofNodes dag.nodes, ptrCache := cache, visits := v })) :
     ReSim (Interner.ofNodes dag.nodes)
-      (match cache.get? (exprPtr e) with
+      (match cache.get? (exprKey e) with
         | some id => .ok id cache visits
         | none =>
           if depth > limits.maxDepth then .error (.resourceExhausted .depth limits.maxDepth) else
           match bump visits 1 limits.maxExprVisits .exprVisits with
           | .error err => .error err
-          | .ok visits => reFinish (exprPtr e) (fb visits))
+          | .ok visits => reFinish (exprKey e) (fb visits))
       ((do
-        let ptr := exprPtr e
+        let ptr := exprKey e
         match (← get).ptrCache.get? ptr with
         | some id => return id
         | none =>
@@ -508,7 +508,7 @@ theorem sim_prefix (limits : Limits) (dag : Dag) (depth : Nat) (e : Ixon.Expr)
           return id : IngestM Nat).run
         { interner := Interner.ofNodes dag.nodes, ptrCache := cache, visits }) := by
   simp only [StateT.run_bind, StateT.run_get, pure_bind]
-  cases hc : cache.get? (exprPtr e) with
+  cases hc : cache.get? (exprKey e) with
   | some id => simp only [ReSim]; rfl
   | none =>
     by_cases hd : depth > limits.maxDepth
@@ -520,7 +520,7 @@ theorem sim_prefix (limits : Limits) (dag : Dag) (depth : Nat) (e : Ixon.Expr)
         simp [hbv, liftExcept]
         exact reFinish_sim _ (hb v)
 
-theorem share_sim (I0 : Interner) (ctx : ShareCtx) (j : UInt64) (cache : Std.HashMap USize Nat)
+theorem share_sim (I0 : Interner) (ctx : ShareCtx) (j : UInt64) (cache : ExprCache Nat)
     (visits : Nat) :
     ReSim I0 (match resolveShare ctx j with
         | .ok id => .ok id cache visits
@@ -532,7 +532,7 @@ theorem share_sim (I0 : Interner) (ctx : ShareCtx) (j : UInt64) (cache : Std.Has
 
 theorem ReSim.bind' {α β : Type} {I0 : Interner} {r : ReStep α}
     {m : Except SharingError (α × IngestState)}
-    {k : α → Std.HashMap USize Nat → Nat → ReStep β}
+    {k : α → ExprCache Nat → Nat → ReStep β}
     {m' : α × IngestState → Except SharingError (β × IngestState)}
     (h : ReSim I0 r m)
     (hk : ∀ a c v, ReSim I0 (k a c v) (m' (a, { interner := I0, ptrCache := c, visits := v }))) :
@@ -549,9 +549,9 @@ theorem ReSim.bind' {α β : Type} {I0 : Interner} {r : ReStep α}
     rfl
   | stop => trivial
 
-theorem reFinish_bind {α : Type} {I0 : Interner} (ptr : USize) {r : ReStep α}
+theorem reFinish_bind {α : Type} {I0 : Interner} (ptr : ExprCache.Key) {r : ReStep α}
     {m : Except SharingError (α × IngestState)}
-    {k : α → Std.HashMap USize Nat → Nat → ReStep Nat}
+    {k : α → ExprCache Nat → Nat → ReStep Nat}
     {m' : α × IngestState → Except SharingError (Nat × IngestState)}
     (h : ReSim I0 r m)
     (hk : ∀ a c v, ReSim I0 (reFinish ptr (k a c v))
@@ -563,7 +563,7 @@ theorem reFinish_bind {α : Type} {I0 : Interner} (ptr : USize) {r : ReStep α}
   exact ReSim.bind' h hk
 
 theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
-    ∀ (e : Ixon.Expr) (depth : Nat) (cache : Std.HashMap USize Nat) (visits : Nat),
+    ∀ (e : Ixon.Expr) (depth : Nat) (cache : ExprCache Nat) (visits : Nat),
       ReSim (Interner.ofNodes dag.nodes)
         (reIngestExpr limits dag (ReIndex.ofDag dag) ctx depth e cache visits)
         ((ingestExpr limits ctx depth e).run
@@ -581,7 +581,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprPtr (Ixon.Expr.prj t f v)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.prj t f v)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -598,7 +598,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprPtr (Ixon.Expr.app f a)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.app f a)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -616,7 +616,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprPtr (Ixon.Expr.lam bc ty body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.lam bc ty body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -634,7 +634,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprPtr (Ixon.Expr.all bc r ty body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.all bc r ty body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -652,7 +652,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprPtr (Ixon.Expr.letE lc ty v body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.letE lc ty v body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -677,7 +677,7 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
 
 /-- The entries `i, …, i + k - 1` of `ingestTable` (`allowShare`). -/
 def reIngestEntries (limits : Limits) (dag : Dag) (ix : ReIndex) (sharing : Array Ixon.Expr) :
-    Nat → Nat → Array Nat → Std.HashMap USize Nat → Nat → ReStep (Array Nat)
+    Nat → Nat → Array Nat → ExprCache Nat → Nat → ReStep (Array Nat)
   | 0, _, resolved, cache, visits => .ok resolved cache visits
   | k + 1, i, resolved, cache, visits =>
     let ctx : ShareCtx :=
@@ -688,7 +688,7 @@ def reIngestEntries (limits : Limits) (dag : Dag) (ix : ReIndex) (sharing : Arra
 /-- The roots `r, …, r + k - 1` of `ingestTable` (`allowShare`). -/
 def reIngestRoots (limits : Limits) (dag : Dag) (ix : ReIndex) (tableSize : Nat)
     (resolved : Array Nat) (roots : Array Ixon.Expr) :
-    Nat → Nat → Array Nat → Std.HashMap USize Nat → Nat → ReStep (Array Nat)
+    Nat → Nat → Array Nat → ExprCache Nat → Nat → ReStep (Array Nat)
   | 0, _, out, cache, visits => .ok out cache visits
   | k + 1, r, out, cache, visits =>
     let ctx : ShareCtx := { resolved, tableSize, entry := none, root := r, allowShare := true }
@@ -699,12 +699,12 @@ def reIngestRoots (limits : Limits) (dag : Dag) (ix : ReIndex) (tableSize : Nat)
 each expanded in the context `ctxOf a acc` and pushed onto the accumulator. -/
 theorem loop_sim (limits : Limits) (dag : Dag) (xs : Array Ixon.Expr)
     (ctxOf : Nat → Array Nat → ShareCtx)
-    (fast : Nat → Nat → Array Nat → Std.HashMap USize Nat → Nat → ReStep (Array Nat))
+    (fast : Nat → Nat → Array Nat → ExprCache Nat → Nat → ReStep (Array Nat))
     (hfast0 : ∀ i acc cache visits, fast 0 i acc cache visits = .ok acc cache visits)
     (hfast : ∀ k i acc cache visits, fast (k + 1) i acc cache visits =
       (reIngestExpr limits dag (ReIndex.ofDag dag) (ctxOf i acc) 0 xs[i]! cache visits).bind
         fun id cache visits => fast k (i + 1) (acc.push id) cache visits) :
-    ∀ (k i : Nat) (acc : Array Nat) (cache : Std.HashMap USize Nat) (visits : Nat)
+    ∀ (k i : Nat) (acc : Array Nat) (cache : ExprCache Nat) (visits : Nat)
       (l : List Nat) (_ : l = List.range' i k)
       (f : (a : Nat) → a ∈ l → Array Nat → IngestM (ForInStep (Array Nat))),
       (∀ a h acc, f a h acc = (ingestExpr limits (ctxOf a acc) 0 xs[a]! >>= fun id =>

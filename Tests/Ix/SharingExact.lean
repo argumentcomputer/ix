@@ -430,6 +430,48 @@ def representationTests (_ : Unit) : TestSeq :=
   group "representation independence" <|
     test "pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes, by the exact search and by the tiered construction (120 inputs)" ok
 
+def cacheTests (_ : Unit) : TestSeq :=
+  let empty : ExprCache Nat := {}
+  let key : ExprCache.Key := ⟨0, .var 3⟩
+  let cached := empty.insert key 17
+  let collision := cached.insert ⟨0, .var 4⟩ 29
+  let context : ShareCtx := { resolved := #[], tableSize := 0, entry := none, root := 0, allowShare := false }
+  let source : Ixon.Expr := .app (.var 3) (.var 4)
+  let poisoned : IngestState :=
+    { ptrCache := empty.insert ⟨(exprKey source).address, .sort 8⟩ 999 }
+  let ordinary := (ingestExpr {} context 0 source).run {}
+  let repaired := (ingestExpr {} context 0 source).run poisoned
+  let illegal : Ixon.Expr := .share 0
+  let illegalState : IngestState := { ptrCache := empty.insert ⟨(exprKey illegal).address, .var 0⟩ 17 }
+  let dag : Ixon.Expr := (List.range 36).foldl (fun e _ => .app e e) (.var 3)
+  group "checked expression cache" <|
+    test "an exact key retrieves its cached ID" (cached.get? key == some 17) ++
+    test "a colliding address with a different expression misses"
+      (cached.get? ⟨0, .var 4⟩ == none) ++
+    test "collision replacement cannot return the evicted expression's ID"
+      (collision.get? key == none && collision.get? ⟨0, .var 4⟩ == some 29) ++
+    test "equal expression structure can use the same candidate bucket"
+      ((empty.insert ⟨0, .app (.var 3) (.var 4)⟩ 17).get? ⟨0, source⟩ == some 17) ++
+    test "binder contracts are checked before accepting a hit"
+      ((empty.insert ⟨0, .lam .many P P⟩ 17).get? ⟨0, .lam .linear P P⟩ == none) ++
+    test "poisoning a pointer bucket cannot bypass actual ingestion"
+      (ordinary.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) ==
+        repaired.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) && repaired.isOk) ++
+    test "a colliding candidate cannot hide an illegal Share"
+      (isErr ((ingestExpr {} context 0 illegal).run illegalState) (· == .shareInExpandedInput 0 0)) ++
+    test "fast re-expansion rejects the same colliding candidate"
+      (match ordinary with
+       | .ok (id, state) =>
+         let target : Dag := ⟨state.interner.nodes⟩
+         match reIngestExpr {} target (ReIndex.ofDag target) context 0 source poisoned.ptrCache 0 with
+         | .ok actual _ _ => actual == id
+         | _ => false
+       | .error _ => false : Bool) ++
+    test "a 36-level shared DAG keeps linear ingestion work"
+      (match (ingestExpr {} context 0 dag).run {} with
+       | .ok (_, state) => state.interner.nodes.size == 37 && state.visits == 37
+       | .error _ => false : Bool)
+
 def expansionTests (_ : Unit) : TestSeq :=
   let chainTable (k : Nat) : Array Ixon.Expr :=
     #[.var 0] ++ (Array.range (k - 1)).map fun i => .app (.share i.toUInt64) (.var 0)
@@ -1191,6 +1233,7 @@ public def suite : List TestSeq := [
   deferred "Constant length decomposition" decompositionTests,
   deferred "structural IDs" structuralIdTests,
   deferred "representation independence" representationTests,
+  deferred "checked expression cache" cacheTests,
   deferred "bounded share expansion" expansionTests,
   deferred "root extraction and reassembly" rootApiTests,
   deferred "fixed-dictionary optimizer vs enumeration" dictionaryTests,

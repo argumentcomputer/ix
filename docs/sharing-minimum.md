@@ -941,7 +941,9 @@ length (every candidate in its checked mode, §12.18).
 
 Not machine-checked: phase-2 optimality for tables of more than 1,032 entries; any global
 minimum; and the step from the input expressions to the canonical DAG (`expand`, whose
-interner keys a cache by the `unsafe` pointer address `exprPtr`). No theorem states that this
+interner selects cache candidates by the `unsafe` pointer address `exprPtr` and reuses a
+candidate's ID only after checking equality with the source expression it retains, so a
+pointer collision costs a re-walk, never a wrong ID). No theorem states that this
 DAG denotes the input expressions, so the round trip to the input is proved only relative to
 the DAG; independence from pointer layout is tested, and idempotence is proved only under the
 hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).
