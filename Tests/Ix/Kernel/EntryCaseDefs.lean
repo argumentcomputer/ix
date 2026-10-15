@@ -128,6 +128,43 @@ inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
 partial def loop (n : Nat) : Nat := loop (n + 1)
 
+/- A mutual `partial` block of three (the typing tier): Lean adds the
+companions `ping._unsafe_rec`, `pong._unsafe_rec` and `pang._unsafe_rec` as one
+partial `mutualDefnDecl`. The bodies differ, so that the compiler keeps
+three members (alpha-equivalent members collapse into one). -/
+mutual
+partial def ping (n : Nat) : Nat := pong (n + 1)
+partial def pong (n : Nat) : Nat := pang (n + 2)
+partial def pang (n : Nat) : Nat := ping (n + 3)
+end
+
+/- `badFalse : False := badFalse`, a partial definition of `False`, which
+Lean's kernel accepts in partial mode (the elaborator would want `Inhabited
+False`, so it is added directly). The typing tier types it with itself
+opaque; the logical environment never holds it. -/
+open Lean in
+run_meta do
+  let n := `Tests.Ix.Kernel.EntryCaseDefs.badFalse
+  addDecl (.mutualDefnDecl [
+    { name := n, levelParams := [], type := mkConst ``False, value := mkConst n,
+      hints := .opaque, safety := .partial, all := [n] }])
+
+/- `deltaT : Sort 2 → Sort 2 := fun x => x` and `deltaUse : deltaT (Sort 1) :=
+Sort 0`, partial: Lean's kernel accepts `deltaUse` by unfolding `deltaT`
+(`is_delta` unfolds partial definitions); the typing tier keeps `deltaT`
+opaque, so it declines `deltaUse`. -/
+open Lean in
+run_meta do
+  let T := `Tests.Ix.Kernel.EntryCaseDefs.deltaT
+  let U := `Tests.Ix.Kernel.EntryCaseDefs.deltaUse
+  let s2 := mkSort (.succ .one)
+  addDecl (.mutualDefnDecl [
+    { name := T, levelParams := [], type := .forallE `x s2 s2 .default,
+      value := .lam `x s2 (.bvar 0) .default, hints := .opaque, safety := .partial, all := [T] }])
+  addDecl (.mutualDefnDecl [
+    { name := U, levelParams := [], type := mkApp (mkConst T) (mkSort .one),
+      value := mkSort .zero, hints := .opaque, safety := .partial, all := [U] }])
+
 /-- An equation between elements of a `Subtype` of a type in
 `Sort (imax (u+2) (imax (v+1) v))`, the shape of `RatFunc.liftOn_def` (an
 `irreducible_def` unfolding lemma). Lean elaborates `Subtype.{W}` and

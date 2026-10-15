@@ -127,7 +127,7 @@ does not certify it):
 | `.duplicate`, `.decode` | reject | the bytes are malformed |
 | `.mismatch` | reject | a key is not the hash of the bytes stored under it |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
-| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
+| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions (the tiered entry types the `partial` ones, "The typing tier"), unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
 | `.binding` | reject | the role table's section is not the hash of its bytes, not canonical, or not well formed |
 | `.prelude` | decline | a corrupted committed prelude |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
@@ -288,6 +288,67 @@ over them. `sorryAx` is tolerated as a declaration and installs nothing; any
 use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
+
+## The typing tier
+
+The logical fold gives what it accepts a model, so it declines every
+declaration that is not safe. The **typing tier** gives Lean's `partial`
+definitions (the `_unsafe_rec` companions) a second verdict, `typed`: *the
+declaration is well-typed, with every tier constant opaque, including itself
+and its own block*. It says nothing about meaning. The unsafe stage (unsafe
+definitions, opaques and axioms) is not built: those still decline.
+
+- **Data and fold** (`IxC/Kernel/Tier/{Basic,Check}.lean`). A tier constant
+  (`TierConst`) is a checked header stored as `axiomInfo`: it is never
+  unfolded. `checkTierC` checks the tier declarations in order at the index
+  of the accepted logical environment, with the logical fold's cached
+  functions and no change to them. A partial block is added as Lean's
+  `add_mutual` adds it: its shape (non-empty, distinct keys, equal universe
+  parameters, input keys only), its headers at the index before it, the
+  install, then its values at the extension (annotation, inference,
+  conversion against the header). A partial block sees the logical
+  environment and the partial constants before and in it, never an unsafe
+  one (Lean's lattice, by staging).
+- **The guarantee** (`IxC/Kernel/Verify/Tier.lean`). `checkTierC_typed`: at
+  the index of a well-formed environment `env`, an accept returns the index
+  of `env.extendOpaque ts` (the tier constants in front, as `axiomInfo`),
+  which is well formed; no tier constant is a constant of `env`; and every
+  tier constant is the install of its member's header at the environment of
+  the tier constants before its block, and is typed in its scope, the
+  extension by its block and the ones before it (`TypedIn`: its type is a
+  sort and its value annotates to a term whose type converts to it;
+  `Rules.Infer`, `Rules.Red`, `Rules.DefEq`).
+- **The fence.** A tier constant is never in the logical environment, and
+  the logical fold's accept is well formed, so every term it stores resolves
+  in it (`checkDecls_closed`): no accepted logical declaration names a tier
+  constant. The entries and the drivers also name the reason (`fence: …`).
+- **Refused relaxations** (fail closed). Lean's kernel unfolds partial and
+  unsafe definitions in conversion (`type_checker.cpp:555-563`); the tier
+  does not, so a declaration that types only by such an unfolding declines.
+  Unsafe inductives stay declined.
+- **Entries.** `Admission.checkBytesTiered` (and `checkConstantsTiered` over
+  decoded records, `Ixon.Authenticated.checkBytesTiered` at BLAKE3): the byte
+  stage over every record, then `checkConstantsWith` over the logical
+  records, unchanged, then the tier reader (the reader's member reader in a
+  context over all records, so keys agree; no projection rewrite, no hints)
+  and the tier fold. `Ix.LeanIngress.checkSourceTiered` is Source mode's.
+  Their theorems (`IxC/Kernel/Admission/TierTheorems.lean`,
+  `Ix/LeanIngress/Theorems.lean`) say the logical part is the existing
+  entry's accept, so every theorem above applies to it as stated, and the
+  tier part is `TypedIn`. Failures: `Admission.TierError` (and
+  `LeanIngress.TierSourceError`) keep the logical entry's errors apart; a
+  fence violation and every tier failure decline, and a malformed tier
+  record rejects. `checkBytes`, `checkConstantsWith` and `checkSource` are
+  unchanged and still decline every tier record: they are the entries
+  whose accept is model-backed in full.
+- **Rows.** The environment check (`kernel-check-ixe`, the per-record path
+  without `--jobs` or the read cache) and `kernel-source-ingress` defer the
+  tier records and check them after the logical walk, at its final index:
+  outcome `typed`, reason `partial`; a tier failure declines with reason
+  `tier (partial): <message>`; a logical record that names a tier record
+  declines with `fence: …`. `--report` and `--summary` count `typed`
+  separately, `--paired` flags a lost `typed` as a lost acceptance, and the
+  erasure test (`--meta`) runs the tier at both modes.
 
 ## Keys, roles and the prelude
 

@@ -330,6 +330,116 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
   return passed
 
+/-! ## The tiered entry
+
+`Ixon.Authenticated.checkBytesTiered` (the logical check, then the typing
+tier) on host-compiled records: a partial definition, a mutual partial block
+of three and a partial definition of `False` are typed, each seed's key among
+the tier constants and none in the logical environment; a partial definition
+that types only by unfolding another declines at the tier. Over decoded
+records (`Admission.checkConstantsTiered`, where an altered record keeps its
+key without failing authentication): a block that mixes safeties and a
+theorem with safety `partial` decline at the tier reader. `checkBytes`
+still declines a partial definition (`partial-definition` above). -/
+
+inductive TierExpected where
+  | typed
+  | fail (outcome : Ix.Kernel.Admission.Outcome)
+      (check : Input → Ix.Kernel.Admission.TierError → Bool)
+
+def TierExpected.label : TierExpected → String
+  | .typed => "typed"
+  | .fail .rejected _ => "reject"
+  | .fail .declined _ => "decline"
+
+structure TierCase where
+  label : String
+  seeds : List Lean.Name
+  expected : TierExpected
+  /-- an alteration of the decoded records; the case then runs over decoded
+  records (`checkConstantsTiered`) -/
+  alter : Option (Input → Except String (List (Address × Ixon.Constant))) := none
+
+/-- The decoded records with a compiled name's record replaced, under its key. -/
+def alterConstant (input : Input) (name : Lean.Name) (f : Ixon.Constant → Except String Ixon.Constant) :
+    Except String (List (Address × Ixon.Constant)) := do
+  let some a := input.named name | throw s!"{name} was not compiled"
+  let c ← match input.constants.find? (·.1 == a) with
+    | some (_, c) => pure c
+    | none => throw s!"{name} has no record of its own"
+  let o := owner a c
+  input.constants.mapM fun (b, c) => do if b == o then pure (b, ← f c) else pure (b, c)
+
+def tierCases : List TierCase := [
+  { label := "tier-partial-definition", seeds := [seed "loop._unsafe_rec"], expected := .typed },
+  { label := "tier-partial-block",
+    seeds := [seed "ping._unsafe_rec", seed "pong._unsafe_rec", seed "pang._unsafe_rec"],
+    expected := .typed },
+  { label := "tier-partial-false", seeds := [seed "badFalse"], expected := .typed },
+  { label := "tier-needs-delta", seeds := [seed "deltaUse"],
+    expected := .fail .declined fun input e => match e, keyOf input (seed "deltaUse") with
+      | .tier (.invalid m) p, some key => some p == positionOf input (seed "deltaUse") &&
+        Ix.Kernel.Msg.render toString m == s!"type mismatch in definition {key}"
+      | _, _ => false },
+  { label := "tier-mixed-safety-block", seeds := [seed "ping._unsafe_rec"],
+    expected := .fail .declined fun input e => match e with
+      | .read p (.declined m) => some p == positionOf input (seed "ping._unsafe_rec") &&
+        m == "tier: a partial block with a member of safety 'safe'"
+      | _ => false,
+    alter := some fun input => alterConstant input (seed "ping._unsafe_rec") fun c => match c.info with
+      | .muts ms => match ms[1]? with
+        | some (Ixon.MutConst.defn d) => pure { c with info := .muts (ms.set! 1 (.defn { d with safety := .safe })) }
+        | _ => throw "the block's second member is not a definition"
+      | _ => throw "the partial block is not a muts record" },
+  { label := "tier-partial-theorem", seeds := [seed "loop._unsafe_rec"],
+    expected := .fail .declined fun input e => match e with
+      | .read p (.declined m) => some p == positionOf input (seed "loop._unsafe_rec") &&
+        m == "tier: a theorem or an opaque with safety 'partial'"
+      | _ => false,
+    alter := some fun input => alterConstant input (seed "loop._unsafe_rec") fun c => match c.info with
+      | .defn d => pure { c with info := .defn { d with kind := .thm } }
+      | _ => throw "loop._unsafe_rec is not a definition record" } ]
+
+def runTier (leanEnv : Lean.Environment) (test : TierCase) : IO Bool := do
+  let started ← IO.monoMsNow
+  let input ← prepare leanEnv test.seeds
+  let result ← match test.alter with
+    | none =>
+      let submission := encode input
+      let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+      pure (Ixon.Authenticated.checkBytesTiered binding limits submission.records submission.blobs
+        input.hints.lookup)
+    | some alter =>
+      let constants ← IO.ofExcept (alter input)
+      let table ← IO.ofExcept defaultTable
+      let pre ← IO.ofExcept (preludeFor table)
+      pure (Ix.Kernel.Admission.checkConstantsTiered Address.blake3 table pre constants input.blobs
+        input.hints.lookup)
+  let (outcome, detail, passed) := match result, test.expected with
+    | .ok (env, ts), .typed =>
+      let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with
+        | some n => if ts.any (·.cv.name == n) && !env.consts.any (·.name == n) then none else some seed
+        | none => some seed
+      ("typed", if missing.isEmpty then s!"{ts.length} tier constants" else s!"not typed: {missing}",
+        missing.isEmpty)
+    | .ok _, .fail .. => ("typed", "", false)
+    | .error e, expected =>
+      let o := e.outcome
+      let label := match o with | .rejected => "reject" | .declined => "decline"
+      let ok := match expected with
+        | .typed => false
+        | .fail o' check => o == o' && check input e
+      (label, toString e, ok)
+  let ms := (← IO.monoMsNow) - started
+  IO.println (Lean.Json.mkObj [
+    ("case", Lean.toJson test.label), ("expected", Lean.toJson test.expected.label),
+    ("outcome", Lean.toJson outcome), ("detail", Lean.toJson detail),
+    ("passed", Lean.toJson passed), ("records", Lean.toJson input.constants.length), ("ms", Lean.toJson ms),
+    ("leanVersion", Lean.toJson Lean.versionString)]).compress
+  unless passed do
+    IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
+  return passed
+
 /-! ## The environment check's classification
 
 The environment check (`Benchmarks.Kernel.CheckIxeStep.checkLoop`) runs the same
@@ -425,7 +535,12 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  let total := cases.length + stepCases.length
+  for test in tierCases do
+    let passed ← try runTier leanEnv test catch e => do
+      IO.eprintln s!"{test.label}: harness error: {e}"
+      pure false
+    unless passed do failed := failed + 1
+  let total := cases.length + stepCases.length + tierCases.length
   IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 
