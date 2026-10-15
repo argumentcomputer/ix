@@ -47,6 +47,7 @@ import Tests.Ix.AuxGen.SurgeryTests
 import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
+import Tests.Ix.AuxGen.FlatBlockSource
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -182,6 +183,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   ("kernel-source-ingress", Tests.Ix.Kernel.SourceIngress.suite),
+  -- AuxGen M1: the canonical flat blocks in Source mode, σ, the alias collapse resolved
+  ("auxgen-flat-source", Tests.Ix.AuxGen.FlatBlockSource.suite),
   -- the certification statements on the same fixtures: compile parity, and
   -- the per-root hypotheses and conclusion
   ("cert-statement", Tests.Ix.Cert.Statement.suite),
