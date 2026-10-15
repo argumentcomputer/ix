@@ -40,6 +40,8 @@ public import Ix.Common
 public import Ix.CanonM
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
 public import Ix.DecompileM
 public import Ix.DecompileDriver
 public import Ix.DecompileRoundtrip
@@ -147,9 +149,14 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
     -- ground → condense → aux-aware parallel compile → serialize).
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
+    let opts ← match ← Ix.Cli.driverOptionsFromEnv with
+      | .ok opts => pure opts
+      | .error e =>
+        IO.eprintln s!"[validate-lean] error: {e}"
+        return 2
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileLeanConsts constList
-        (numWorkers := compileWorkers) with
+    match ← Ix.CompileM.compileLeanConstsValidated constList
+        (numWorkers := compileWorkers) (opts := opts) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")

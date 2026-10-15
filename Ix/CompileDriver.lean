@@ -39,7 +39,7 @@ public import Ix.Ground
 public import Ix.CompileM
 public import Ix.AuxGen.CompileAux
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Resource.Validate
+public import Ix.Resource.Addressed
 public section
 
 namespace Ix.CompileM
@@ -878,6 +878,24 @@ instance : Inhabited AuxWorkItem where
 instance : Inhabited AuxBlockOutcome where
   default := .failed "uninitialized"
 
+/-- The options of the Lean compile drivers. The drivers read no environment
+    variable and no `/proc` file: the CLI parses these (`ix compile-lean`:
+    `--sharing-limits` and `IX_SHARING_LIMITS`, `IX_LOG_BLOCKS`,
+    `IX_COMPILE_DBG`) and passes them in. -/
+structure DriverOptions where
+  /-- Resource limits of the canonical sharing construction. -/
+  sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits
+  /-- Phase timings, and the parallel driver's wave and progress traces. -/
+  dbg : Bool := false
+  /-- The parallel driver's per-block BEGIN/END trace, gated to the tail of
+      the run (snapshot above 600k constants), where the whole-Mathlib
+      memory spike lives: it names the block a worker is inside when memory
+      blows up. -/
+  logBlocks : Bool := false
+  /-- A memory reading for the traces, supplied by the caller (the CLI reads
+      the process's resident set size); `none` prints none. -/
+  memory : Option (IO String) := none
+
 /-- Parallel aux-aware environment compile. Same output as
     `compileEnvAux` (see the module docstring for the intra-wave
     order-independence argument).
@@ -887,15 +905,13 @@ instance : Inhabited AuxBlockOutcome where
     map; the first divergence aborts with the offending name. -/
 def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
+    (numWorkers : Nat := 32) (opts : DriverOptions := {})
     (nameByHash : Std.HashMap Address Name := {})
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   if let some msg := missingBlockRefs? blocks then return .error msg
   let totalBlocks := blocks.blocks.size
-  -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
-  let sharingLimits ← match ← compilerSharingLimitsFromEnv with
-    | .ok l => pure l
-    | .error e => return .error e
+  let sharingLimits := opts.sharingLimits
+  let dbg := opts.dbg
 
   if let .error e := validateInductiveFlags env then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
@@ -907,11 +923,12 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let resultChan ← Std.CloseableChannel.Sync.new
     (α := Name × Set Name × AuxBlockOutcome)
 
-  -- IX_LOG_BLOCKS=1: per-block BEGIN/END trace (with duration and RSS at
-  -- END), gated to the tail of the run (snapshot > 600k constants) where
-  -- the whole-Mathlib memory spike lives — identifies which block a
-  -- worker is inside when RSS blows up.
-  let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
+  -- Per-block BEGIN/END trace (`DriverOptions.logBlocks`), with the
+  -- duration and the caller's memory reading at END.
+  let logBlocks := opts.logBlocks
+  let memory : IO String := match opts.memory with
+    | some read => read
+    | none => pure "?"
   let worker (_workerId : Nat) : IO Unit := do
     while true do
       match ← workChan.recv with
@@ -925,12 +942,8 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         let outcome := auxBlockOutcome item.cenv item.lo item.all
         let t1 ← IO.monoMsNow
         if logThis then
-          let rssKb ← do
-            let st ← IO.FS.readFile "/proc/self/status"
-            pure <| (st.splitOn "\n").findSome? fun l =>
-              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
-          IO.println s!"  [block] END {item.lo.pretty} {t1 - t0}ms \
-rss{(rssKb.getD "?").trimAscii}"
+          let mem ← memory
+          IO.println s!"  [block] END {item.lo.pretty} {t1 - t0}ms rss {mem}"
           (← IO.getStdout).flush
         discard <| resultChan.send (item.lo, item.all, outcome)
 
@@ -1006,14 +1019,11 @@ blocks remaining but none ready"
 lean={named.addr} rust={rustAddr} (block {lo.pretty})"
         compiled := compiled + 1
         -- Memory attribution trace: which driver-retained structure is
-        -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
+        -- growing (`DriverOptions.dbg`).
         if dbg && compiled % 20000 == 0 then
-          let rssKb ← do
-            let st ← IO.FS.readFile "/proc/self/status"
-            pure <| (st.splitOn "\n").findSome? fun l =>
-              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+          let mem ← memory
           IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
-rss{(rssKb.getD "?").trimAscii} · consts {acc.cenv.constants.size} \
+rss {mem} · consts {acc.cenv.constants.size} \
 ({acc.cenv.totalBytes} B ser) · named {acc.cenv.nameToNamed.size} · \
 blobs {acc.cenv.blobs.size} · plans {acc.cenv.callSitePlans.size}\
 /{acc.cenv.brecOnCallSitePlans.size}/{acc.cenv.belowCallSitePlans.size} · \
@@ -1061,6 +1071,9 @@ structure LeanPipelineOut where
       pass. The whole-env canon map is never materialized; this is the
       phase-5 decompile oracle for `ix validate-lean`. -/
   digests : Std.HashMap Ix.Name UInt64 := {}
+  /-- The input carries semantic contracts: its output is emitted only after
+      the resource post-step (`Ix.CompileM.resourcePostStep`). -/
+  annotated : Bool := false
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -1090,8 +1103,7 @@ def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := d
 
 def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none)
+    (numWorkers : Nat := 32) (opts : DriverOptions := {})
     : IO (Except String LeanPipelineOut) := do
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
@@ -1100,9 +1112,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     match inspectSemanticSource source with
     | .error error => return .error error
     | .ok _ => pure ()
-  -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
-  -- attribution trace without threading a flag through callers.
-  let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
+  let dbg := opts.dbg
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow
     if dbg then
@@ -1211,7 +1221,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
-  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
+  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers opts
       nameByHash with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
@@ -1227,15 +1237,10 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       IO.println s!"  [compile-lean] {cenv.ungrounded.size} per-block compile failures"
       for (n, e) in cenv.ungrounded.toList.take 5 do
         IO.println s!"    failed: {n.pretty}: {e.take 200}"
-    -- Semantic emission is atomic: a failed source declaration must not
-    -- disappear into an otherwise successful partial artifact.
-    if annotated || resourceProfile.isSome then
-      if !ungrounded.isEmpty || !cenv.ungrounded.isEmpty then
-        return .error "resource compilation requires the complete requested closure"
-      match Ix.Resource.validate ixonEnv (resourceProfile.getD (Ix.Resource.standardProfile ixonEnv)) with
-      | .error error => return .error error
-      | .ok _ => pure ()
-    -- 6. Serialize only after the combined validation succeeds.
+    -- 6. Serialize. Resource validation is a post-step of the caller's
+    -- (`Ix.CompileM.resourcePostStep`, `Ix.CompileResource`): semantic
+    -- emission is atomic only through it, so an annotated input's output
+    -- is emitted only after it (`annotated`).
     match Ixon.serEnv ixonEnv with
     | .error e => return .error s!"serEnv failed: {e}"
     | .ok bytes =>
@@ -1246,30 +1251,30 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         cenv
         ungroundedCount := ungrounded.size
         blockCount := condensed.blocks.size
-        digests }
+        digests
+        annotated }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
-canonicalization, then validate resources and erased types before emission. -/
+canonicalization. Resources are validated by the caller's post-step
+(`Ix.CompileM.compileLeanInputValidated`). -/
 def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
-  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
+  compileDecoratedConsts constants rustRef numWorkers opts
 
 /-- Compile an isolated source list, extracting its checked occurrence records. -/
 def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
   let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
     | .ok input => pure input
     | .error error => return .error (toString error)
-  compileLeanInput input rustRef numWorkers dbg resourceProfile
+  compileLeanInput input rustRef numWorkers opts
 
 /-- Native compiler entrypoint with an explicitly committed resource profile. -/
 @[extern "rs_compile_env_to_ixon_profile"]

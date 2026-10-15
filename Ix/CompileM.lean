@@ -111,8 +111,8 @@ structure CompileEnv where
   nameByHash : Std.HashMap Address Name := {}
   /-- Resource limits of the canonical sharing construction
       (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
-      unless a driver sets the `IX_SHARING_LIMITS` override
-      (`compilerSharingLimitsFromEnv`). Limits decide only whether a block
+      unless a driver's options set others (`DriverOptions.sharingLimits`,
+      which the CLI parses from `IX_SHARING_LIMITS`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
 
@@ -2497,8 +2497,8 @@ def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
     `Ix.Sharing.Exact.Limits.withOverrides` (for example `states=2^44,depth=2^22`
     or `unbounded`). `ix compile --sharing-limits` and `ix compile-lean
     --sharing-limits` set it. `compilerSharingLimitsFromEnv` reads it, once per
-    run, in the Lean drivers `compileEnvParallelAux` and
-    `Ix.DecompileM.decompileEnvFullParallel`; Rust's `compiler_sharing_limits`
+    run: the CLI (`Ix.Cli.driverOptionsFromEnv`) for the Lean compile
+    drivers, and `Ix.DecompileM.decompileEnvFullParallel`; Rust's `compiler_sharing_limits`
     reads it once per compile or decompile entry point. -/
 def sharingLimitsEnvVar : String := "IX_SHARING_LIMITS"
 

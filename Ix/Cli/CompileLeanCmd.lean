@@ -24,6 +24,8 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
 public import Ix.Cli.ValidateCmd
 public import Ix.Cli.CompileCmd
 public section
@@ -56,6 +58,13 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if let some e ← applySharingLimitsFlag p then
     p.printError s!"error: {e}"
     return 2
+  -- The drivers' options: limits (`--sharing-limits` / `IX_SHARING_LIMITS`),
+  -- traces (`IX_LOG_BLOCKS`, `IX_COMPILE_DBG`); phase timings always on.
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv (dbg := true) with
+    | .ok opts => pure opts
+    | .error e =>
+      p.printError s!"error: {e}"
+      return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
@@ -65,8 +74,10 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let t0 ← IO.monoMsNow
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
-      (dbg := true) with
+  -- The compile, then the resource post-step (an input with semantic
+  -- contracts is emitted only if its resources validate).
+  match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers)
+      (opts := opts) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return 1

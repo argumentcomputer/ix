@@ -1,6 +1,7 @@
 module
 
 public import Ix.CompileDriver
+public import Ix.CompileResource
 
 public section
 
@@ -30,7 +31,7 @@ def get (label : String) (r : Except String α) : IO α :=
 
 def run : IO Unit := do
   let valid ← get "input" ((input).mapError toString)
-  let lean ← Ix.CompileM.compileLeanInput valid (numWorkers := 1) >>= get "Lean compiler"
+  let lean ← Ix.CompileM.compileLeanInputValidated valid (numWorkers := 1) >>= get "Lean compiler"
   let prepared ← get "preparation" valid.prepare
   let rust ← Ix.CompileM.rsCompileEnvFFI prepared
   let rust := rust.toEnv
@@ -49,7 +50,7 @@ def run : IO Unit := do
   unless malformedRejected do
     throw <| IO.userError "contract pipeline: malformed profile bytes accepted"
   let invalid ← get "invalid input" ((input .shared).mapError toString)
-  if (← Ix.CompileM.compileLeanInput invalid (numWorkers := 1)).toOption.isSome then
+  if (← Ix.CompileM.compileLeanInputValidated invalid (numWorkers := 1)).toOption.isSome then
     throw <| IO.userError "contract pipeline: pure compiler emitted an escaping local value"
   let prepared ← get "invalid preparation" invalid.prepare
   let rejected ← try

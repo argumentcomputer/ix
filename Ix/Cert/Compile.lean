@@ -30,9 +30,9 @@ What the IO pipeline does that this function does not:
   materialized, and passes the name-hash index (`CompileEnv.nameByHash`)
   that such an environment needs;
 * it schedules the driver in parallel waves (`compileEnvParallelAux`) and
-  reads the sharing limits from `IX_SHARING_LIMITS`;
-* for annotated sources or a resource profile it refuses a partial result
-  and validates resources;
+  takes the sharing limits from its options (`DriverOptions`);
+* it records the ground filter's constants as failures with their named
+  refusals (`Ix.GroundError.refusal`);
 * it serializes (`Ixon.serEnv`).
 
 `Tests.Ix.Cert.Statement` compares the serialized output of the two on the
