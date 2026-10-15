@@ -133,7 +133,7 @@ def sameResult : Except ExprError (List KExpr) → Except ExprError (List KExpr)
   | _, _ => false
 
 def lamDropped : Except ExprError (List KExpr) → Bool
-  | .ok [.lam (.const n []) (.bvar 0) m] => n == .str .anonymous "Nat" && m == { pw := .never }
+  | .ok [.lam (.const n []) (.bvar 0) m] => n == Ix.Kernel.roleKey .nat && m == { pw := .never }
   | _ => false
 
 def erasure : TestSeq :=
@@ -256,7 +256,7 @@ def evaluate : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   for (n, want) in expected do
-    match r.rowOf (Ix.Kernel.Name.ofLeanName n) with
+    match r.rowOf (Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)) with
     | none => errors := errors.push s!"{n}: no verdict"
     | some row =>
       lines := lines.push s!"{n}: {row.outcome} {row.reason}"

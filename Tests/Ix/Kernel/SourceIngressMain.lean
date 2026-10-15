@@ -70,16 +70,6 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"source-ingress: {modules}: {consts.size} Lean constants, {env.consts.size} \
     canonicalized, {blocks.blocks.size} components; load {t1 - t0} ms, canon {t2 - t1} ms, \
     condense {t3 - t2} ms"
-  -- the derived shapes the front door reserves (`Key.isProjFnShape`,
-  -- `Key.isModelSuffix`), among the input names: with none, those tests
-  -- decide no verdict on this input
-  let mut reserved : Array Ix.Kernel.Key := #[]
-  for (n, _) in env.consts do
-    let k := Ix.LeanIngress.ingressName n
-    if k.isProjFnShape || k.isModelSuffix then reserved := reserved.push k
-  IO.println s!"input names of a reserved derived shape: {reserved.size}"
-  for k in reserved.extract 0 20 do
-    IO.println s!"  {k}"
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let r ← run pre env blocks a.workers (progress := true)
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun

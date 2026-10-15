@@ -23,10 +23,11 @@ the faithfulness of the accepted environment to the Lean environment.
 
 ## Keys
 
-The kernel key is Lean's own name (`ingressName`). A role's key is its Lean
-name, so Source mode's role table is the identity (`sourceBinding`) and no
-`ix.<hex>` name occurs. A recursor keeps its Lean name, which is the name the checker's
-frontend derives (`T.rec`, `T.rec_j`). Level parameters are positions
+A constant's key is its role's key if Source mode's fixed table binds its Lean
+name to a role (`sourceBinding`: role `r` is the constant named `r.leanName`),
+and otherwise the input key of its Lean name (`ingressKey`), so no `ix.<hex>`
+name occurs. A recursor is keyed by its own Lean name (`T.rec`, `T.rec_j`),
+as any input constant. Level parameters are positions
 (`Numbering`): a constant's `i`-th Lean level parameter is `i`, except at a
 large eliminator, whose elimination level is the fresh position `n` after
 its block's `n` and whose other parameters are the block's, the shape
@@ -117,8 +118,8 @@ def Group.names : Group → Array Ix.Name
 /-- The name a group is reported under: its first constant's. -/
 def Group.name (g : Group) : CName :=
   match g.names[0]? with
-  | some n => ingressName n
-  | none => .anonymous
+  | some n => ingressKey n
+  | none => .id .anonymous
 
 /-- Whether `n` is `parent.s`. -/
 def isStrName (parent : Ix.Name) (s : String) : Ix.Name → Bool
@@ -371,7 +372,7 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
   let mut i := 0
   let mut tys : Array (CVal × Nat × Nat) := #[]
   for v in types do
-    tys := tys.push (⟨ingressName v.cnst.name, (own v.cnst).params, ks[i]!⟩, v.numParams,
+    tys := tys.push (⟨ingressKey v.cnst.name, (own v.cnst).params, ks[i]!⟩, v.numParams,
       v.numIndices)
     i := i + 1
   let mut cts : Array (CVal × Nat × Nat) := #[]
@@ -379,7 +380,7 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
   for cs in ctors do
     let mut names : List CName := []
     for c in cs do
-      let cv : CVal := ⟨ingressName c.cnst.name, (own c.cnst).params, ks[i]!⟩
+      let cv : CVal := ⟨ingressKey c.cnst.name, (own c.cnst).params, ks[i]!⟩
       i := i + 1
       unless nPd + c.numFields == Ix.Kernel.Reader.piTeleLen cv.type do
         throw (.malformed s!"constructor {cv.name} declares {c.numFields} fields at {nPd} parameters; \
@@ -389,11 +390,11 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
     ctorNames := ctorNames.push names
   let mut rs : Array (CVal × RecCounts × List Ix.Kernel.RecRule) := #[]
   for r in recs do
-    let cv : CVal := ⟨ingressName r.cnst.name, (ofRec r).params, ks[i]!⟩
+    let cv : CVal := ⟨ingressKey r.cnst.name, (ofRec r).params, ks[i]!⟩
     i := i + 1
     let mut rules : List Ix.Kernel.RecRule := []
     for rule in r.rules do
-      rules := rules ++ [Ix.Kernel.RecRule.mk (ingressName rule.ctor) rule.nfields 0 .inert ks[i]!
+      rules := rules ++ [Ix.Kernel.RecRule.mk (ingressKey rule.ctor) rule.nfields 0 .inert ks[i]!
         false false false]
       i := i + 1
     rs := rs.push (cv, ⟨r.numParams, r.numMotives, r.numMinors, r.numIndices, r.k⟩, rules)
@@ -414,7 +415,7 @@ def convertDefinitions (members : Array Ix.ConstantInfo) : Except ReadError Conv
   let own (ci : Ix.ConstantInfo) : Numbering := ⟨ci.getCnst.levelParams, false⟩
   let ks ← exprsOf (shapes.flatMap fun (ci, _, v) => #[(own ci, ci.getCnst.type), (own ci, v)])
   let ms : Array DefMember := shapes.zipIdx.map fun ((ci, (kind, safety, hint), _), j) =>
-    ⟨⟨ingressName ci.getCnst.name, (own ci).params, ks[2 * j]!⟩, ks[2 * j + 1]!, kind, safety,
+    ⟨⟨ingressKey ci.getCnst.name, (own ci).params, ks[2 * j]!⟩, ks[2 * j + 1]!, kind, safety,
       hint⟩
   if ms.size ≤ 1 then return .definitions ms
   let names := ms.map (·.cv.name)
@@ -434,11 +435,11 @@ def convert : Group → Except ReadError Converted
     if v.isUnsafe then throw (.declined "unsafe axiom")
     let σ : Numbering := ⟨v.cnst.levelParams, false⟩
     let ks ← exprsOf #[(σ, v.cnst.type)]
-    return .axiom ⟨ingressName v.cnst.name, σ.params, ks[0]!⟩
+    return .axiom ⟨ingressKey v.cnst.name, σ.params, ks[0]!⟩
   | .quot v => do
     let σ : Numbering := ⟨v.cnst.levelParams, false⟩
     let ks ← exprsOf #[(σ, v.cnst.type)]
-    return .quot (quotKindOf v.kind) ⟨ingressName v.cnst.name, σ.params, ks[0]!⟩
+    return .quot (quotKindOf v.kind) ⟨ingressKey v.cnst.name, σ.params, ks[0]!⟩
   | .invalid _ e => throw e
 
 /-! ## Lowering -/
@@ -497,13 +498,21 @@ def literalKinds (c : Converted) : Bool × Bool := Id.run do
     | _ => pure ()
   return (nat, str)
 
-/-- Whether an environment key is a checker name (`ingressName n = k`,
-decided without building the name). -/
-def nameIs : Ix.Name → CName → Bool
+/-- Whether an environment name spells a checker name (`ingressName n = m`),
+decided without building the name. -/
+def nameIsName : Ix.Name → Ix.Kernel.Name → Bool
   | .anonymous _, .anonymous => true
-  | .str p s _, .str q t => s == t && nameIs p q
-  | .num p i _, .num q j => i == j && nameIs p q
+  | .str p s _, .str q t => s == t && nameIsName p q
+  | .num p i _, .num q j => i == j && nameIsName p q
   | _, _ => false
+
+/-- Whether an environment name is a checker key (`ingressKey n = k`), decided
+without building the name: a role key by its role's Lean name, an input key
+by its name when no role has that name, and never a derived key. -/
+def nameIs (n : Ix.Name) : CName → Bool
+  | .id m => nameIsName n m && !Ix.Kernel.Role.byLeanName.contains m
+  | .role r => nameIsName n r.leanName
+  | .aux .. => false
 
 /-- What the order is computed from: the groups, their conversions, and for
 every group the groups it references (`hard`), the groups of the constants
@@ -672,9 +681,9 @@ def prepareSource (pre : Ix.Kernel.Reader.Prelude) (env : Ix.Environment)
 /-! ## Source mode's role table
 
 **The table is fixed**: every role is bound to the constant under its Lean
-name (`Role.leanName`). The ingress keeps Lean's names (`ingressName`), and a
-role's key is its Lean name (`roleKey`), so the binding is the identity and no
-renaming happens; a declaration under a role's name with another shape is
+name (`Role.leanName`). The ingress renames that constant to its role's key
+(`ingressKey`, through `Ix.Kernel.Key.ofName`), as the Ixon reader renames a
+bound address; a declaration under a role's name with another shape is
 rejected or declined by the fold, as for Ixon.
 
 **The evidence** is fixed too: the structural operations' `defeq` entries,
@@ -689,7 +698,7 @@ whose theorems are not in the environment, or do not close, gets no evidence,
 and declines. -/
 
 /-- Source mode's binding: role `r` is the constant named `r.leanName`. -/
-def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Key := r.leanName
+def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Name := r.leanName
 
 /-- **Source mode's evidence** over the prepared declarations, with the
 reason each well-founded operation without evidence has none. -/

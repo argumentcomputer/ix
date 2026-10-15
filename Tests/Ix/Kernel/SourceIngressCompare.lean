@@ -43,7 +43,7 @@ def ixonVerdicts (ixon : Ixon.Env) :
       | some source => owner named.addr source
       | none => named.addr
     match rows[named.addr]? <|> rows[root]? with
-    | some v => out := out.insert (Ix.LeanIngress.ingressName name) v
+    | some v => out := out.insert (Ix.LeanIngress.ingressKey name) v
     | none => pure ()
   return out
 

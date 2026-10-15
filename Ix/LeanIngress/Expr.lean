@@ -8,11 +8,12 @@ The term half of the Source-mode ingress (`Ix.LeanIngress`): an
 `Ix.Expr` (Lean's term as `Ix.CanonM` canonicalizes it) becomes an
 `Ix.Kernel.Expr` with nothing hashed and nothing rewritten.
 
-* **Names** are Lean's own: `Ix.Name` ↦ `Ix.Kernel.Name` component by
-  component, the hash fields dropped (`ingressName`). Constants keep their
-  Lean names, so the checker's pinned names (`Eq`, `Nat`, `Quot`, the literal
-  support, the `Nat` operations, the standard axioms) are met under the names
-  it pins.
+* **Keys** are Lean's names: `Ix.Name` ↦ `Ix.Kernel.Name` component by
+  component, the hash fields dropped (`ingressName`), and a constant's key is
+  the role Source mode's fixed binding gives that name, or else the input
+  key of the name (`ingressKey`). So the checker's role constants (`Eq`,
+  `Nat`, `Quot`, the literal support, the `Nat` operations, the standard
+  axioms) are met at their role keys.
 * **Levels** are Lean's levels, constructor by constructor; they are not
   canonicalized. A level parameter becomes its position `σ n` under the
   constant's numbering `σ` of its own level parameters
@@ -87,10 +88,17 @@ inductive ExprError where
   | contract (reason : String)
   deriving Repr, Inhabited, BEq
 
-def ingressName : Ix.Name → Ix.Kernel.Key
+/-- Lean's name as the checker's name, component by component, the hash
+fields dropped. -/
+def ingressName : Ix.Name → Ix.Kernel.Name
   | .anonymous _ => .anonymous
   | .str p s _ => .str (ingressName p) s
   | .num p n _ => .num (ingressName p) n
+
+/-- **A constant's key**: the role Source mode's fixed binding gives Lean's
+name (`Ix.Kernel.Key.ofName`: the role whose Lean name it is), otherwise the
+input key, the name itself. -/
+def ingressKey (n : Ix.Name) : Ix.Kernel.Key := Ix.Kernel.Key.ofName (ingressName n)
 
 instance : ToString ExprError where
   toString
@@ -137,7 +145,7 @@ def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KEx
   | .fvar n _ => throw (.fvar (ingressName n))
   | .mvar n _ => throw (.mvar (ingressName n))
   | .sort u _ => return .sort (← ingressLevel σ u)
-  | .const n us _ => return .const (ingressName n) (← us.toList.mapM (ingressLevel σ))
+  | .const n us _ => return .const (ingressKey n) (← us.toList.mapM (ingressLevel σ))
   | .app f a _ => return .app (← ingressExpr σ f) (← ingressExpr σ a)
   | .lam _ t b _ _ => return .lam (← ingressExpr σ t) (← ingressExpr σ b) { pw := .never }
   | .forallE _ t b _ _ => return .forallE (← ingressExpr σ t) (← ingressExpr σ b) { pw := .never }
@@ -146,7 +154,7 @@ def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KEx
   | .lit (.natVal n) _ => pure (.lit (.natVal n))
   | .lit (.strVal s) _ => pure (.lit (.strVal s))
   | .mdata d e _ => ingressMData d e (ingressExpr σ e)
-  | .proj n i e _ => return .proj (ingressName n) i (← ingressExpr σ e)
+  | .proj n i e _ => return .proj (ingressKey n) i (← ingressExpr σ e)
 
 /-- Metadata is read by `ingressMData`. -/
 theorem ingressExpr_mdata (σ : Ix.Name → LevelParam) (d : Array (Ix.Name × Ix.DataValue))
@@ -236,7 +244,7 @@ theorem ingressExpr_letE (n : Ix.Name) (t v b : Ix.Expr) (nd : Bool) (h : Addres
 
 theorem ingressExpr_proj (n : Ix.Name) (i : Nat) (b : Ix.Expr) (h : Address) :
     ingressExpr σ (.proj n i b h) =
-    (ingressExpr σ b >>= fun y => pure (.proj (ingressName n) i y)) := rfl
+    (ingressExpr σ b >>= fun y => pure (.proj (ingressKey n) i y)) := rfl
 
 /-- The DAG walk. A node is probed under its address; on a miss it is
 converted from its children's results (each child through the walk, so a
@@ -253,7 +261,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
         | .mvar n _ => Squash.mk ⟨throw (.mvar (ingressName n)), rfl, memo⟩
         | .sort u _ => Squash.mk ⟨(do return .sort (← ingressLevel σ u)), rfl, memo⟩
         | .const n us _ =>
-          Squash.mk ⟨(do return .const (ingressName n) (← us.toList.mapM (ingressLevel σ))), rfl,
+          Squash.mk ⟨(do return .const (ingressKey n) (← us.toList.mapM (ingressLevel σ))), rfl,
             memo⟩
         | .lit (.natVal n) _ => Squash.mk ⟨.ok (.lit (.natVal n)), rfl, memo⟩
         | .lit (.strVal s) _ => Squash.mk ⟨.ok (.lit (.strVal s)), rfl, memo⟩
@@ -323,7 +331,7 @@ def go (memo : Memo σ) (e : @& Ix.Expr) : Out σ e :=
             | .error err =>
               Squash.mk ⟨.error err, by rw [ingressExpr_proj, ← r.eq, hr]; rfl, r.memo⟩
             | .ok y =>
-              Squash.mk ⟨.ok (.proj (ingressName n) i y), by rw [ingressExpr_proj, ← r.eq, hr]; rfl,
+              Squash.mk ⟨.ok (.proj (ingressKey n) i y), by rw [ingressExpr_proj, ← r.eq, hr]; rfl,
                 r.memo⟩
       Squash.lift node fun r =>
         match hv : r.val with
@@ -387,3 +395,9 @@ end Shared
   exact (ingressExprsShared_eq σ es).symm
 
 end Ix.LeanIngress
+
+/-! Source mode's binding, checked: every role's Lean name keys that role, and
+the name map holds the roles' names and nothing else. -/
+
+#guard Ix.Kernel.Role.all.all fun r => Ix.Kernel.Key.ofName r.leanName == .role r
+#guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length

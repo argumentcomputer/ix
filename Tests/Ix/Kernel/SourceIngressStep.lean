@@ -104,7 +104,7 @@ def run (pre : Prelude) (env : Ix.Environment)
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
   let sched ← IO.lazyPure fun _ => scheduleOf g
   let t3 ← IO.monoMsNow
-  let names : Array (Array CName) := groups.map (·.names.map ingressName)
+  let names : Array (Array CName) := groups.map (·.names.map ingressKey)
   let mut rows : Array (Option Row) := Array.replicate groups.size none
   -- lowering, in order, from the prelude's state
   let mut st : State := pre.state
@@ -152,7 +152,7 @@ def run (pre : Prelude) (env : Ix.Environment)
           let root := failed.getD blocker blocker
           failed := failed.insert gi root
           rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
-            s!"{(names[root]!)[0]?.getD .anonymous}", 0⟩)
+            s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
           continue
     let s0 ← IO.monoNanosNow
     let (c', err) ← IO.lazyPure fun _ => checker.step ev d
@@ -167,7 +167,7 @@ def run (pre : Prelude) (env : Ix.Environment)
         rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, micros[gi]!⟩)
     | none =>
       if let some e := err then
-        IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD .anonymous} failed: {e}"
+        IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD (.id .anonymous)} failed: {e}"
   let t5 ← IO.monoMsNow
   let rows' := rows.zipIdx.map fun (r, gi) => r.getD
     ⟨gi, names[gi]!, kindOf groups[gi]!, "accept", "", micros[gi]!⟩

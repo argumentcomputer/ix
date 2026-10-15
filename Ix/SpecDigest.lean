@@ -62,10 +62,9 @@ def list {α : Type} (xs : List α) (f : α → EncM Unit) : EncM Unit := do
   for x in xs do f x
 
 /-- A role key, by the role's index; any other key is refused. -/
-def key (k : Key) : EncM Unit :=
-  match Role.ofLeanName? k with
-  | some r => nat (Role.all.idxOf r)
-  | none => throw s!"the specification mentions {k}, which is not a role key"
+def key : Key → EncM Unit
+  | .role r => nat (Role.all.idxOf r)
+  | k => throw s!"the specification mentions {k}, which is not a role key"
 
 def level : Level → EncM Unit
   | .zero => byte 0

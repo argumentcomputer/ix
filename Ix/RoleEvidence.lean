@@ -59,15 +59,16 @@ its specification. -/
 def defeqEvidence {K : Type} (r : Ix.Kernel.Role) : List (Ix.Kernel.Evidence K) :=
   (Ix.Kernel.natOpEquations 0 (Ix.Kernel.roleKey r)).map fun _ => .defeq
 
-def toLeanName : CName → Lean.Name
-  | .anonymous => .anonymous
-  | .str p s => .str (toLeanName p) s
-  | .num p n => .num (toLeanName p) n
+/-- A key's Lean name: its spelling (`Ix.Kernel.Key.toName`). -/
+def toLeanName (k : CName) : Lean.Name := go k.toName
+where
+  go : Ix.Kernel.Name → Lean.Name
+    | .anonymous => .anonymous
+    | .str p s => .str (go p) s
+    | .num p n => .num (go p) n
 
-def ofLeanName : Lean.Name → CName
-  | .anonymous => .anonymous
-  | .str p s => .str (ofLeanName p) s
-  | .num p n => .num (ofLeanName p) n
+/-- The key of a Lean name under Source mode's binding (`Ix.Kernel.Key.ofName`). -/
+def ofLeanName (n : Lean.Name) : CName := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
 
 /-! ## The declarations read so far, as the closure sees them -/
 

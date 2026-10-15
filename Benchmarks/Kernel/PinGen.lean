@@ -321,8 +321,8 @@ def run (args : List String) : IO UInt32 := do
     match certAt[t]? with
     | some a => match (resolve (cs.store[·]?) a) with
       | some ref => cs.cx.nameOf ref
-      | none => .anonymous
-    | none => .anonymous
+      | none => .id .anonymous
+    | none => .id .anonymous
   let mut evidence : Array (Role × Array (Ix.Kernel.Evidence Address)) :=
     Ix.RoleEvidence.defeqRoles.toArray.map fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)
   let mut evRecords : Array (Address × Ixon.Constant) := #[]

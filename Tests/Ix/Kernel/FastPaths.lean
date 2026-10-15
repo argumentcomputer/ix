@@ -117,7 +117,7 @@ def ixcVerdicts (compiled : Ix.CompileM.LeanPipelineOut) (names : List Lean.Name
   let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env
   let mut out : Verdicts := {}
   for n in names do
-    if let some (outcome, reason) := rows[Ix.LeanIngress.ingressName (Ix.Name.fromLeanName n)]? then
+    if let some (outcome, reason) := rows[Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName n)]? then
       out := out.insert n <| match outcome with
         | "accept" => .accept
         | "blocked" => .blocked reason

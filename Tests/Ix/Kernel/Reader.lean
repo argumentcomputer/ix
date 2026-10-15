@@ -105,11 +105,16 @@ def rebind (pairs : List (Ix.Kernel.Role × Address)) : Ix.Kernel.RoleTable :=
       | some (_, a') => (role, a')
       | none => (role, a) }
 
-/-- A name with a fixture's stand-in keys in place of its BLAKE3 keys. -/
+/-- A key with a fixture's stand-in keys in place of its BLAKE3 keys. -/
 def unrename (r : Rekeyed) : CName → CName
-  | .anonymous => .anonymous
-  | .str p s => .str (unrename r p) (((r.renamed.find? (toString ·.2 == s)).map (toString ·.1)).getD s)
-  | .num p n => .num (unrename r p) n
+  | .id n => .id (go n)
+  | .role ro => .role ro
+  | .aux k d => .aux (unrename r k) d
+where
+  go : Ix.Kernel.Name → Ix.Kernel.Name
+    | .anonymous => .anonymous
+    | .str p s => .str (go p) (((r.renamed.find? (toString ·.2 == s)).map (toString ·.1)).getD s)
+    | .num p n => .num (go p) n
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
     (table : Ix.Kernel.RoleTable := builtinTable) : Except Error Ix.Kernel.Env :=
@@ -629,7 +634,7 @@ def lTreeMotiveHeads : Option (List String) := do
   let (st, _) ← lTreeRead
   let b ← st.indBlocks[keyName (.member lTreeBlock 0)]?
   let t0 ← b.types.head?
-  let r0 ← b.recs.find? (·.cv.name == t0.cv.name.str "rec")
+  let r0 ← b.recs.find? (·.cv.name.toName == t0.cv.name.toName.str "rec")
   let (_, afterP) ← r0.cv.type.stripPis t0.nP
   let (motives, _) ← afterP.stripPis r0.nM
   let mems ← (Ix.Kernel.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types

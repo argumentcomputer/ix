@@ -25,12 +25,13 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 
 ## The reference translation
 
-* **Names.** A Lean constant's name is the reader's key of the reference its
-  record resolves to: `ix.<hex b>.i` for member `i` of record `b`,
-  `ix.<hex b>.i.c` for a constructor (`keyName`), or the role key (the
-  role's Lean name) where the default role table binds that reference. A recursor is named after what it
-  eliminates, by Lean's own convention: `T.rec` ↦ `⟦T⟧.rec`, `T.rec_j` ↦
-  `⟦T⟧.rec_j` with `T` the block's first member.
+* **Keys.** A Lean constant's key is the reader's key of the reference its
+  record resolves to: the input key `ix.<hex b>.i` for member `i` of record
+  `b`, `ix.<hex b>.i.c` for a constructor (`keyName`), or the role key where
+  the default role table binds that reference. A recursor the table does not
+  bind is keyed after what it eliminates, by Lean's own convention: `T.rec` ↦
+  `⟦T⟧.rec`, `T.rec_j` ↦ `⟦T⟧.rec_j` with `T` the block's first member, as
+  spellings of input keys.
 * **Level parameters.** Positional: a constant's are `0, …, n-1`, one per
   Lean level parameter (a constructor's are its inductive's). A recursor
   whose block has one level fewer is a large eliminator: its parameter `0`
@@ -59,7 +60,7 @@ closure of `Tests.Ix.Kernel.ReaderFidelityDefs`) and `kernel-reader-fidelity`
 ## What is compared
 
 1. **Per constant**, exact structural equality of the reader's entry and the
-   reference (the kernel's executed `Expr`, `Level` and `Name` equalities, field
+   reference (the kernel's executed `Expr`, `Level` and `Key` equalities, field
    by field), with the first difference located when there is one.
 2. **Names**: the reader's `Ctx.nameOf` of each constant's reference against
    the reference name.
@@ -252,11 +253,9 @@ where
 
 /-! ## The reference translation -/
 
-/-- A Lean name as a kernel name, component by component. -/
-def cname : Lean.Name → CName
-  | .anonymous => .anonymous
-  | .str p s => .str (cname p) s
-  | .num p n => .num (cname p) n
+/-- A Lean name's key under Source mode's binding: the role whose Lean name
+it is, otherwise the input key of the name. -/
+def cname (n : Lean.Name) : CName := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
 
 /-- What the reference reads: Lean's constants, the compiled environment's
 name ↦ reference map, and the role table's bindings. -/
@@ -272,6 +271,14 @@ def RefCx.memberName (cx : RefCx) (n : Lean.Name) : RefM CName := do
   let some r := cx.refOf n | throw s!"{n} was not compiled"
   pure (cx.roles.names.getD r (keyName r))
 
+/-- A recursor's reference key: its role's key where the table binds its own
+reference, otherwise the input key spelled after the member `p` it is named
+for (`⟦p⟧.s`). -/
+def RefCx.recName (cx : RefCx) (n p : Lean.Name) (s : String) : RefM CName := do
+  if let some r := cx.refOf n then
+    if let some k := cx.roles.names[r]? then return k
+  pure (.id ((← cx.memberName p).toName.str s))
+
 /-- A Lean constant's reference name (recursors by Lean's convention). -/
 def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM CName := do
   match cx.find n with
@@ -279,11 +286,11 @@ def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM CName := do
     match n with
     | .str p "rec" =>
       unless rv.all.contains p do throw s!"recursor {n} of no member of its block"
-      pure ((← cx.memberName p).str "rec")
+      cx.recName n p "rec"
     | .str p s =>
       unless s.startsWith "rec_" && rv.all.head? == some p do
         throw s!"recursor {n} has no recursor name"
-      pure ((← cx.memberName p).str s)
+      cx.recName n p s
     | _ => throw s!"recursor {n} has no recursor name"
   | _ => cx.memberName n
 
