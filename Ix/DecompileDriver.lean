@@ -653,7 +653,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   if needsRec || needsRecOn || needsCasesOn || needsBelow
       || needsBelowRec || needsBrecon then
     match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none maps
+        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none (.tc maps)
           none none) with
     | .ok ((recs, p), kctx') =>
       canonicalRecs := recs
@@ -867,7 +867,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
     if !belowClasses.isEmpty then
       match runK ctx st lo (fun maps =>
           Ix.AuxGen.generateCanonicalRecursorsWithOverlay belowClasses none
-            none maps) (view? := some belowEnv) with
+            none (.tc maps)) (view? := some belowEnv) with
       | .ok ((belowRecs, _), kctx') =>
         st := { st with kctx := kctx' }
         let belowRecMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})

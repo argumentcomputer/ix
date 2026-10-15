@@ -170,7 +170,7 @@ refusing to synthesize canonical-indexed _N names")
         let sourceOfCanonical := canonRepr
 
         let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
-          expanded (some sourceOfCanonical) maps
+          expanded (some sourceOfCanonical) (.tc maps)
 
         -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
         -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
@@ -233,7 +233,7 @@ refusing to synthesize canonical-indexed _N names")
               origToCanonMap (fun n => some (maps.resolve n)) : CompileM _)
           capturedPerm := some perm
           capturedNCanonicalAux := nCanon
-        generateCanonicalRecursorsWithOverlay sortedClasses none none maps
+        generateCanonicalRecursorsWithOverlay sortedClasses none none (.tc maps)
     else do
       -- Standard flat-block generation; disagreement flavors still need
       -- the perm for surgery/aliases (aux_gen.rs:500-548).
@@ -249,7 +249,7 @@ refusing to synthesize canonical-indexed _N names")
             (fun n => some (maps.resolve n)) : CompileM _)
         capturedPerm := some perm
         capturedNCanonicalAux := nCanon
-      generateCanonicalRecursorsWithOverlay sortedClasses none none maps
+      generateCanonicalRecursorsWithOverlay sortedClasses none none (.tc maps)
 
   -- Block membership is decided per FAMILY, never per name (aux_gen.rs
   -- `family_exported`). Each auxiliary kind (`.rec`, `.casesOn`, `.recOn`,

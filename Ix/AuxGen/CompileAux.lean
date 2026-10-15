@@ -615,7 +615,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     return ()
 
   let (recs, _) ← generateCanonicalRecursorsWithOverlay classes
-    (some overlay) none maps
+    (some overlay) none (.tc maps)
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
