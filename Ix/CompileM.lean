@@ -458,7 +458,7 @@ def compileAndInternUnivCanon (lvl : Level) : CompileM (UInt64 × Option UInt64)
   let cidx ← internUniv canon
   -- V3 tripwire (canonicity §10.6): the primary table must not grow
   -- after preseeding — a miss here would shift every virtual patch
-  -- index minted so far. Mirrors the Rust `debug_assert` in
+  -- index minted so far. Mirrors the Rust refusal in
   -- `compile_univ_idx`.
   if (← getBlockState).univsFinal && (← getBlockState).univs.size != sizeBefore then
     throw (.invalidMutualBlock
