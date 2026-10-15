@@ -63,7 +63,7 @@ public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError getBlockState modifyBlockState
+open Ix.CompileM (CompileM CompileError arrIdx getBlockState modifyBlockState
   getCompileEnv compileName withMutCtx preseedExprTables
   mutConstPreseedExprs compileMutConsts sortConsts buildBlockConstant)
 
@@ -197,6 +197,13 @@ def nameLastStr? : Name → Option String
 
 /-! ## compileAuxBlock (mutual.rs:46-414) -/
 
+/-- A7 (D8): the first element of a list, or the named error
+    (`internalIndexError`) in place of `head!`. -/
+private def listHead (xs : List α) (what : String) : CompileM α :=
+  match xs with
+  | x :: _ => pure x
+  | [] => Ix.CompileM.internalIndexError what 0 0
+
 /-- Body of `compile_aux_block_with_rename` (mutual.rs:111-413), run
     against already-cleared block caches (the wrapper handles the fresh
     `BlockCache` model). -/
@@ -253,12 +260,13 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
 
   -- Singleton non-inductive aux blocks: standalone `Defn`/`Recr`
   -- Constant instead of `Muts([one])` (mutual.rs:199-247).
-  if mutConsts.size == 1 && !(mutConsts[0]! matches .indc _) then
-    let info : Ixon.ConstantInfo :=
-      match mutConsts[0]! with
-      | .defn d => .defn d
-      | .recr r => .recr r
-      | .indc _ => unreachable!
+  -- A7 (D8): matched on the array itself (no `mutConsts[0]!`, no
+  -- `unreachable!`); the same blocks take the standalone path.
+  let single? : Option Ixon.ConstantInfo := match mutConsts with
+    | #[.defn d] => some (.defn d)
+    | #[.recr r] => some (.recr r)
+    | _ => none
+  if let some info := single? then
     -- `apply_sharing_to_{definition,recursor}_with_limits`
     -- (mutual.rs:208-218): `buildBlockConstant` shares the single
     -- representative's roots ([typ, value] / [typ, rule rhss…]).
@@ -269,7 +277,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
       auxStoreConst standaloneAddr constant
       -- Register every class member at the standalone address
       -- (mutual.rs:222-233).
-      for cnst in sortedClasses.head! do
+      for cnst in (← listHead sortedClasses "compileAuxBlockCore: first class") do
         let canonN := cnst.name
         let n := resolveName canonN
         let cm := (metaMap.get? canonN).getD .empty
@@ -346,7 +354,8 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
 
   -- Register the synthetic Muts named entry (mutual.rs:345-396). Rust
   -- `.expect`s the first class/member (invariant: aux_consts nonempty).
-  let firstNameCanonical := sortedClasses.head!.head!.name
+  let firstNameCanonical := (← listHead (← listHead sortedClasses
+    "compileAuxBlockCore: first class") "compileAuxBlockCore: first member").name
   let firstName := resolveName firstNameCanonical
   -- `muts_all` uses SOURCE names (after rename): kernel ingress resolves
   -- each class's primary name hash against the Named entries registered
@@ -811,12 +820,12 @@ for {perm.size} permutation entries")
           Array.replicate nCanon PERM_OUT_OF_SCC
         for (canonI, srcJ) in perm.zipIdx do
           if canonI < nCanon
-              && sourceOfCanonical[canonI]! == PERM_OUT_OF_SCC then
+              && sourceOfCanonical[canonI]? == some PERM_OUT_OF_SCC then
             sourceOfCanonical := sourceOfCanonical.set! canonI srcJ
         for (sourceJ, canonicalI) in sourceOfCanonical.zipIdx do
           if sourceJ != PERM_OUT_OF_SCC then
             let auxRecName :=
-              Name.mkStr originalAll[0]! s!"rec_{sourceJ + 1}"
+              Name.mkStr (← arrIdx originalAll 0 "generateAndCompileAuxRecursors: Lean all0") s!"rec_{sourceJ + 1}"
             nameToPos := nameToPos.insert auxRecName
               (UInt64.ofNat (nOriginalsInBlock + canonicalI))
     let keyMap := nameToPos
@@ -1012,7 +1021,8 @@ def compileMutualAuxTail (cs : Array MutConst)
         × Std.HashMap Name BRecOnCallSitePlan) := do
   -- Primary `Muts` named entry (compile.rs:3986-4013); registered on the
   -- aux path only — the no-aux promotion pass reuses these entries.
-  let firstName := sortedClasses.head!.head!.name
+  let firstName := (← listHead (← listHead sortedClasses
+    "compileMutualAuxTail: first class") "compileMutualAuxTail: first member").name
   let mutsAll : Array (Array Address) := sortedClasses.toArray.map fun cls =>
     cls.toArray.map fun c => c.name.getHash
   let mutsName := blockAddr.mutsName firstName
@@ -1058,7 +1068,7 @@ def compileMutualAuxTail (cs : Array MutConst)
     && (planClassNames.size < originalAll.size
       || (planClassNames.size == originalAll.size
         && (planClassNames.zip originalAll).any
-            (fun (cls, orig) => cls[0]! != orig)))
+            (fun (cls, orig) => cls[0]? != some orig)))
   let auxLayoutChanged : Bool := match auxLayout with
     | some layout =>
       -- Evaporated positions need their head-rewrite plans even when no
