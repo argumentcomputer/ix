@@ -50,6 +50,7 @@ import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Cert.Statement
@@ -383,6 +384,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Accelerated-vs-pure reduction differentials over that same real env
   -- (see Tests.Tc.AccelDiff and TcState.noAccel).
   ("tc-accel-diff", Tests.Tc.AccelDiff.run),
+  ("admission-hash-diff", Tests.Ix.Kernel.AdmissionHashDiff.run),
 ]
 
 def main (args : List String) : IO UInt32 := do
