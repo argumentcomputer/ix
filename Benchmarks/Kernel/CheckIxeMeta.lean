@@ -119,6 +119,15 @@ where
     | .ctorInfo cv nP nF => cvPrint cv ++ [nP.toUInt64, nF.toUInt64]
     | ci => cvPrint ci.toConstantVal
 
+/-- A tier declaration's declared keys. -/
+def tierKeys : Ix.Kernel.Tier.TierDecl md → List (CName md)
+  | .defs _ ms => ms.map (·.1.name)
+
+/-- A tier declaration's fingerprint up to its keys' mode (as `fingerprint`). -/
+def tierPrint : Ix.Kernel.Tier.TierDecl md → List UInt64
+  | .defs s ms => [if s == .part then 7 else 8] ++
+    ms.flatMap fun (cv, v) => fingerprint.cvPrint cv ++ [hash v]
+
 /-- Two failures are the same: the verdict and the message, keys included. -/
 def sameError (a b : Ix.Kernel.CheckError .meta) : Bool :=
   a.verdictPrefix == b.verdictPrefix && a.msg == b.msg
@@ -168,7 +177,7 @@ def run (args : List String) : IO UInt32 := do
       v.recs.map fun r => (⟨r, names.getD r #[], "recursor", outcome, reason, 0, 0⟩ : Row)
     for row in rows do
       counts.modify fun c => c.insert outcome (c.getD outcome 0 + 1)
-      if outcome != "accept" then failed.modify (·.insert row.address root)
+      if outcome != "accept" && outcome != "typed" then failed.modify (·.insert row.address root)
       handle.putStrLn row.json.compress
   let mut stA : State .anon := {}
   let mut stM : State .meta := {}
@@ -176,6 +185,9 @@ def run (args : List String) : IO UInt32 := do
   let mut cm : Checker .meta := {}
   let mut consumed : Std.HashSet Address := {}
   let mut displayed := 0
+  -- the tier records (`Admission.isTierInfo`), read at both modes and deferred
+  let mut deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl .anon ×
+    Ix.Kernel.Tier.TierDecl .meta × Array Address) := #[]
   let mut index := 0
   for address in addresses do
     index := index + 1
@@ -186,6 +198,29 @@ def run (args : List String) : IO UInt32 := do
     let some v := s.view address | continue
     let some source := s.store[address]? | continue
     for r in v.recs do consumed := consumed.insert r
+    if Ix.Kernel.Admission.isTierInfo source.info then
+      match readTierAt s.cx address source, readTierAt cxM address source with
+      | some (.ok dA), some (.ok dM) =>
+        unless tierKeys dA |>.map toMeta |> (· == tierKeys dM) do
+          diffs.modify (·.push s!"{address}: tier readings differ in their keys")
+        unless tierPrint dA == tierPrint dM do
+          diffs.modify (·.push s!"{address}: tier readings differ")
+        let deps := v.deps ()
+        let f ← failed.get
+        match deps.find? f.contains with
+        | some blocker =>
+          let root := f.getD blocker blocker
+          note address v "blocked" (toString root) root
+        | none => deferred := deferred.push (address, v, dA, dM, deps)
+      | some (.error eA), some (.error eM) =>
+        unless toString eA == toString eM do
+          diffs.modify (·.push s!"{address}: tier read errors differ: {eA} / {eM}")
+        let (outcome, reason) := readOutcome eA
+        note address v outcome reason address
+      | _, _ =>
+        diffs.modify (·.push s!"{address}: one mode reads the tier record, the other does not")
+        note address v "decline" "check-ixe --meta: the tier readings differ" address
+      continue
     let readA := readRecord s.cx stA address source
     let readM := (readRecord cxM stM address source).map (withDisplay display)
     match readA, readM with
@@ -232,10 +267,42 @@ def run (args : List String) : IO UInt32 := do
       diffs.modify (·.push s!"{address}: .meta reads, .anon does not: {eA}")
       let (outcome, reason) := readOutcome eA
       note address v outcome reason address
+  -- the typing tier at both modes, at each mode's checked index, in order
+  let feA ← IO.mkRef ca.fe
+  let feM ← IO.mkRef cm.fe
+  let mut typed := 0
+  for (address, v, dA, dM, deps) in deferred do
+    let f ← failed.get
+    match deps.find? f.contains with
+    | some blocker =>
+      let root := f.getD blocker blocker
+      note address v "blocked" (toString root) root
+    | none =>
+      let a₀ ← feA.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
+      let m₀ ← feM.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
+      let (a₁, eA) := stepTier a₀ dA
+      let (m₁, eM) := stepTier m₀ dM
+      feA.set a₁
+      feM.set m₁
+      let same := match eA, eM with
+        | none, none => true
+        | some a, some m => sameError (a.mapKeys toMeta) m
+        | _, _ => false
+      unless same do
+        diffs.modify (·.push s!"{address}: tier verdicts differ: .anon {eA.map toString}, \
+          .meta {eM.map toString}")
+      match eM with
+      | none =>
+        typed := typed + 1
+        note address v "typed" (tierSafety dM).word address
+      | some e =>
+        let (outcome, reason) := tierOutcome (tierSafety dM) e (spellWith display)
+        note address v outcome reason address
   handle.flush
   let diffs ← diffs.get
   IO.eprintln s!"check-ixe --meta: done in {(← IO.monoMsNow) - started} ms; {(← counts.get).toList}; \
-    {displayed} declared keys with display; fold positions .anon {ca.pos}, .meta {cm.pos}"
+    {displayed} declared keys with display; fold positions .anon {ca.pos}, .meta {cm.pos}; \
+    {deferred.size} tier records, {typed} typed at both modes"
   if diffs.isEmpty then
     IO.eprintln s!"check-ixe --meta: erasure: {addresses.size} records, .meta equals .anon on every \
       reading, outcome, position and failure"

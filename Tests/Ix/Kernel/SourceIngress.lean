@@ -20,7 +20,9 @@ evidence (`Ix.LeanIngress.sourceEvidence`: the certificate theorems of
 * group by group (`Tests.Ix.Kernel.SourceIngressStep`), where every fixture
   declaration must get its expected verdict;
 * all at once (`checkSource`), on the closure of the fixtures that are
-  expected to be accepted, which must be accepted;
+  expected to be accepted, which must be accepted; and the tiered check
+  (`checkSourceTiered`) on that closure with the partial companion
+  `spin._unsafe_rec`, which must accept it with the companion typed;
 * on hand-built terms: a free variable, a metavariable and a level
   metavariable are refused, `mdata` is erased, a binder carries the Lean
   fragment's contracts unless a contract frame (`ix.contract`) wraps it,
@@ -90,8 +92,10 @@ def expected : List (Lean.Name × String) := [
   -- the checker admits the standard axioms only
   (defs "fidelityAxiom", "decline"),
   (defs "levelMax", "accept"), (defs "levelImax", "accept"),
-  -- declined: a `partial` definition's compiled companion and an `unsafe` one
-  (defs "spin._unsafe_rec", "decline"), (defs "unsafeId", "decline"),
+  -- a `partial` definition's compiled companion is typed by the typing tier
+  -- (`checkSourceTiered`); an `unsafe` one is declined (the unsafe stage is
+  -- not built)
+  (defs "spin._unsafe_rec", "typed"), (defs "unsafeId", "decline"),
   -- `Nat.div` is a certified operation, accepted on the proof evidence of
   -- the certificate theorems the environment carries
   -- (`IxC.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
@@ -282,6 +286,18 @@ def evaluate : IO (Array String × Array String) := do
   | .ok kenv => lines := lines.push s!"checkSource: accepted, {kenv.consts.length} kernel constants \
       from {accEnv.consts.size} Lean constants"
   | .error e => errors := errors.push s!"checkSource on the accepted closure: {e}"
+  -- the tiered check: the accepted closure with the partial companion, whose
+  -- logical part is accepted and whose tier constant is typed
+  let tierEnv ← envOf leanEnv (acceptedSeeds.push (defs "spin._unsafe_rec"))
+  match checkSourceTiered tierEnv (condense tierEnv) with
+  | .ok (kenv, ts) =>
+    let spin := ingressKey (Ix.Name.fromLeanName (defs "spin._unsafe_rec"))
+    if ts.any (·.cv.name == spin) && !kenv.consts.any (·.name == spin) then
+      lines := lines.push s!"checkSourceTiered: accepted, {kenv.consts.length} kernel constants, \
+        {ts.length} typed"
+    else errors := errors.push s!"checkSourceTiered: {spin} is not typed apart from the logical \
+      environment ({ts.length} typed)"
+  | .error e => errors := errors.push s!"checkSourceTiered on the accepted closure and spin: {e}"
   return (errors, lines)
 
 def fixtures : TestSeq :=

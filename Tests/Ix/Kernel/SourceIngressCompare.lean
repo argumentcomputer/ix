@@ -32,7 +32,7 @@ def ixonVerdicts (ixon : Ixon.Env) :
   let rows ← IO.mkRef (Std.HashMap.emptyWithCapacity (α := Address) (β := String × String) 0)
   let names := reportNames ixon store
   let total := s.ordered.size
-  let _ ← checkLoop s (names.getD · #[]) s.ordered {}
+  let _ ← checkLoop s (names.getD · #[]) s.ordered {} (tier := true)
     (fun row => rows.modify (·.insert row.address (row.outcome, row.reason)))
     (progress := fun i _ => do
       if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")

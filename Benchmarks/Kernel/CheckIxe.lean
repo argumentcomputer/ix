@@ -215,6 +215,7 @@ def run (args : List String) : IO UInt32 := do
         (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
         (after := slot0.set none)
         (progress := fun i o => progress i o.counts) (onRead := onRead) (spell := spell)
+        (tier := if cacheDir.isNone then src.tierHook else none)
       pure (out.counts, out.reasons)
   -- a full-order live run records its readings and writes its plan, on the
   -- loop's own thread: readings handed to another thread would be marked

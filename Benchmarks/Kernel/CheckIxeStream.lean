@@ -131,9 +131,22 @@ bytes are dropped. -/
 def StreamState.commit (ss : StreamState) (address : Address) (rd : Read .anon) : StreamState :=
   { st := ss.st.commit rd, bytes := ss.bytes.erase address }
 
+/-- A tier record read in full by the tier reader (`none`: not a tier record).
+Its skeleton keeps its safety, so the test needs no decoding. -/
+def StreamState.tierRead (l : Loaded) (ss : StreamState) (address : Address) :
+    Option (Except ReadError (Ix.Kernel.Tier.TierDecl .anon)) := do
+  let sk ← l.setup.store[address]?
+  guard (Ix.Kernel.Admission.isTierInfo sk.info)
+  match ss.bytes[address]? with
+  | some b => match Ixon.deConstantAt b 0 with
+    | .ok source => readTierAt l.setup.cx address source
+    | .error e => some (.error (.malformed s!"record does not decode: {e}"))
+  | none => some (.error (.malformed "record is missing or was read already"))
+
 /-- A streaming load as a loop source. -/
 def Loaded.source (l : Loaded) : LoopSource StreamState :=
   { view := l.setup.view, read := StreamState.read l,
-    commit := StreamState.commit, init := StreamState.take l.windows }
+    commit := StreamState.commit, init := StreamState.take l.windows,
+    tier := some (StreamState.tierRead l) }
 
 end Benchmarks.Kernel.CheckIxeStream
