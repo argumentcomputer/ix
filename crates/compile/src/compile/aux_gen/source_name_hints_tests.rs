@@ -143,6 +143,21 @@ fn structural_ids_match_kernel_equality_and_include_conversion_depth() {
   let fvars = FxHashMap::from_iter([(name("x"), 0)]);
   let params = [name("u"), name("v")];
   let roots: Vec<_> = fixtures("A").into_iter().chain(fixtures("B")).collect();
+  // The bridge refuses an unregistered free variable and a metavariable (as
+  // the Lean bridge does); restoration only meets sources the bridge has
+  // already converted, so the content table is compared on the rest.
+  let (roots, refused): (Vec<_>, Vec<_>) = roots
+    .into_iter()
+    .partition(|e| to_kexpr_static(e, &fvars, 1, &params, &stt).is_ok());
+  assert_eq!(
+    refused,
+    [
+      LeanExpr::fvar(name("unregistered")),
+      LeanExpr::mvar(name("unresolved")),
+      LeanExpr::fvar(name("unregistered")),
+      LeanExpr::mvar(name("unresolved")),
+    ]
+  );
   let mut addresses = FxHashMap::default();
   for root in &roots {
     addresses.extend(capture_addresses(root, root, &stt));
@@ -154,7 +169,7 @@ fn structural_ids_match_kernel_equality_and_include_conversion_depth() {
   for depth in [1, 3] {
     for root in &roots {
       ids.push(table.content(root, depth));
-      kernel.push(to_kexpr_static(root, &fvars, depth, &params, &stt));
+      kernel.push(to_kexpr_static(root, &fvars, depth, &params, &stt).unwrap());
     }
   }
   for i in 0..ids.len() {
@@ -309,6 +324,21 @@ fn structural_hash_collisions_cannot_merge_distinct_terms() {
   let fvars = FxHashMap::from_iter([(name("x"), 0)]);
   let params = [name("u"), name("v")];
   let roots: Vec<_> = fixtures("A").into_iter().chain(fixtures("B")).collect();
+  // The bridge refuses an unregistered free variable and a metavariable (as
+  // the Lean bridge does); restoration only meets sources the bridge has
+  // already converted, so the content table is compared on the rest.
+  let (roots, refused): (Vec<_>, Vec<_>) = roots
+    .into_iter()
+    .partition(|e| to_kexpr_static(e, &fvars, 1, &params, &stt).is_ok());
+  assert_eq!(
+    refused,
+    [
+      LeanExpr::fvar(name("unregistered")),
+      LeanExpr::mvar(name("unresolved")),
+      LeanExpr::fvar(name("unregistered")),
+      LeanExpr::mvar(name("unresolved")),
+    ]
+  );
   let mut addresses = FxHashMap::default();
   for root in &roots {
     addresses.extend(capture_addresses(root, root, &stt));
@@ -319,7 +349,7 @@ fn structural_hash_collisions_cannot_merge_distinct_terms() {
   let ids: Vec<_> = roots.iter().map(|e| table.content(e, 1)).collect();
   let kernel: Vec<_> = roots
     .iter()
-    .map(|e| to_kexpr_static(e, &fvars, 1, &params, &stt))
+    .map(|e| to_kexpr_static(e, &fvars, 1, &params, &stt).unwrap())
     .collect();
   for i in 0..ids.len() {
     for j in 0..ids.len() {
