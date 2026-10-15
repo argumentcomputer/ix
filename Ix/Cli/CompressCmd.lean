@@ -52,7 +52,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "out" : String; "Empty output directory for the stage proofs; defaults to a new directory under ~/.ix/compression."
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
-    "dev-srs"; "Allow the known-trapdoor development setup when no Filecoin SRS cache is configured; results are not production-secure."
+    "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
   ARGS:
     proof : String; "Address of an aggregate Ixon.Proof in the ix store."
 ]

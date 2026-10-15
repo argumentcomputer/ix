@@ -9,8 +9,8 @@ namespace Ix.Cli.Compression
 @[extern "rs_compression_check_claim"]
 opaque checkClaim (claim statement : @& ByteArray) : IO Unit
 
-/-- Describe the setup a new run proves under: the configured Filecoin cache,
-or the development setup when `devSrs` allows it. Fails when neither applies. -/
+/-- Select development parameters when `devSrs` is set; otherwise require
+the configured Filecoin cache. -/
 @[extern "rs_compression_setup"]
 opaque describeSetup (devSrs : Bool) : IO String
 

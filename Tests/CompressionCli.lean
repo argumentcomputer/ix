@@ -13,13 +13,15 @@ private def putProof (home : System.FilePath) (bytes : ByteArray) : IO Address :
   IO.FS.writeBinFile (path / (hex.drop 6).toString) bytes
   return addr
 
-private def invoke (home : System.FilePath) (args : Array String) : IO IO.Process.Output := do
+private def invoke (home : System.FilePath) (args : Array String)
+    (filecoinCache : Option String := none) : IO IO.Process.Output := do
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   IO.Process.output { cmd := ix.toString, args, env := #[("HOME", some home.toString),
-    ("IX_KZG_FILECOIN_CACHE", none), ("IX_KZG_FILECOIN_MANIFEST", none)] }
+    ("IX_KZG_FILECOIN_CACHE", filecoinCache), ("IX_KZG_FILECOIN_MANIFEST", none)] }
 
-private def rejects (home : System.FilePath) (args : Array String) (message : String) : IO Unit := do
-  let out ← invoke home args
+private def rejects (home : System.FilePath) (args : Array String) (message : String)
+    (filecoinCache : Option String := none) : IO Unit := do
+  let out ← invoke home args filecoinCache
   unless out.exitCode != 0 && (out.stderr.splitOn message).length > 1 do
     throw <| IO.userError s!"expected rejection ({message}): {args}\n{out.stdout}\n{out.stderr}"
 
@@ -45,6 +47,9 @@ public def run : IO Unit := do
     unless !(← (home / "run").pathExists) do
       throw <| IO.userError "unsupported input created output"
     rejects home #["compress", toString addr, "--dev-srs"] "already compressed"
+    let missingCache := some (home / "missing-filecoin-cache").toString
+    rejects home #["compress", toString addr] "does not name a file" missingCache
+    rejects home #["compress", toString addr, "--dev-srs"] "already compressed" missingCache
     rejects home #["verify", toString addr] "unsupported compressed proof version"
     rejects home #["verify", toString addr, "--dev-srs"] "unsupported compressed proof version"
     let removed ← invoke home #["verifier", "import", "/missing"]
@@ -97,7 +102,36 @@ public def run : IO Unit := do
       let badAddr ← putProof home (Ixon.Proof.ser { wrapped with proof := bad })
       let result ← invoke home (args.set! 1 (toString badAddr))
       unless result.exitCode != 0 do throw <| IO.userError "modified compact proof accepted"
-    IO.println "compression CLI: compact proof, bundled verifier and claim binding passed"
+
+    let devPacket ← IO.FS.readBinFile (fixtures / "development-v5-packet.bin")
+    let devProof := tag ++ devPacket
+    let devWrapped : Ixon.Proof := { claim := expected, proof := devProof }
+    let devAddr ← putProof home (Ixon.Proof.ser devWrapped)
+    let devMetadata ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile
+      "crates/proof-compression/profiles/aggregate-development-v5.json"))
+    let expectedDevAddr ← IO.ofExcept (devMetadata.getObjValAs? String "compressed_proof_address")
+    unless toString devAddr == expectedDevAddr do
+      throw <| IO.userError "bundled development proof address differs from its metadata"
+    for aggregateFlag in [#[], #["--aggregate"]] do
+      let devArgs := #["verify", toString devAddr] ++ aggregateFlag
+      rejects home devArgs "--dev-srs"
+      let accepted ← invoke home (devArgs.push "--dev-srs")
+      unless accepted.exitCode == 0 && (accepted.stdout.splitOn "development proof").length > 1 do
+        throw <| IO.userError s!"development proof failed: {accepted.stdout} {accepted.stderr}"
+      unless (accepted.stdout.splitOn "aggregate backend setup").length == 1 do
+        throw <| IO.userError "development verification constructed the native backend"
+    let badDevClaim ← putProof home (Ixon.Proof.ser { devWrapped with claim })
+    rejects home #["verify", toString badDevClaim, "--dev-srs"] "packet statement differs"
+    let badDevPrefix ← putProof home (Ixon.Proof.ser
+      { devWrapped with proof := devProof.set! 40 ((devProof.get! 40) ^^^ 1) })
+    rejects home #["verify", toString badDevPrefix, "--dev-srs"] "packet statement differs"
+    for index in [8 + 32 + 18 * 8, devProof.size - 1] do
+      let bad ← putProof home (Ixon.Proof.ser
+        { devWrapped with proof := devProof.set! index ((devProof.get! index) ^^^ 1) })
+      let result ← invoke home #["verify", toString bad, "--dev-srs"]
+      unless result.exitCode != 0 do
+        throw <| IO.userError "development opt-in accepted a modified proof"
+    IO.println "compression CLI: bundled proofs, claim binding and development opt-in passed"
   finally
     IO.FS.removeDirAll home
 
