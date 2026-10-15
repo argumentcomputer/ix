@@ -53,6 +53,19 @@ def resolveAddrPure (cenv : CompileEnv) (name : Name) : Option Address :=
   | some a => some a
   | none => cenv.auxNameToAddr.get? name
 
+/-- The canonical key of a set of names: its earliest member in seed order
+    (`aliasPrecedes`), `dflt` for the empty set. The drivers name a block by
+    this key, never by the condensation's representative (the Tarjan root,
+    which depends on the graph's iteration order and so differs between a
+    closure compile, the whole compile and the Rust condensation) nor by the
+    first element of a `Set` in iteration order. -/
+def canonicalKey (dflt : Name) (names : Array Name) : Name :=
+  names.foldl (init := names[0]?.getD dflt) fun k n => if aliasPrecedes n k then n else k
+
+/-- `canonicalKey` of a block's member set. -/
+def blockKey (lo : Name) (all : Set Name) : Name :=
+  canonicalKey lo all.toArray
+
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
     singleton non-inductive constants take the plain single-constant
@@ -154,10 +167,16 @@ private inductive NoAuxPhase where
 def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     : Except CompileError (BlockResult × BlockState) := Id.run do
   let getConst (n : Name) : Option ConstantInfo := cenv.env.get? n
+  -- The members in canonical order (`aliasPrecedes`), not in `Set`
+  -- iteration order, so the first match below (`leanAll`, the phase) is a
+  -- function of the member set. On valid input every member gives the same
+  -- `.all` and the same phase family (the order note above), so the value is
+  -- the one the iteration order gave.
+  let members : Array Name := all.toArray.qsort aliasPrecedes
   -- Collect the Lean `.all` names from any constant in the SCC
   -- (compile.rs:3283-3299).
   let mut leanAll : Array Name := #[]
-  for n in all do
+  for n in members do
     match getConst n with
     | some (.inductInfo v) => leanAll := v.all; break
     | some (.recInfo v) => leanAll := v.all; break
@@ -166,7 +185,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     | _ => continue
   -- Determine phase from the first aux_gen constant (compile.rs:3302-3334).
   let mut phase? : Option NoAuxPhase := none
-  for n in all do
+  for n in members do
     if phase?.isSome then break
     if !cenv.auxGenExtraNames.contains n then continue
     match getConst n with
@@ -201,7 +220,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
         if let some (.recInfo _) := getConst n then
           filtered := filtered.insert n
   | .belowIndc =>
-    for n in all do
+    for n in members do
       match getConst n with
       | some (.inductInfo v) =>
         for a in v.all do
@@ -403,10 +422,12 @@ def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
               if !visited.contains depRep then
                 stack := stack.push (depRep, false)
   let mut acc := acc₀
-  for rep in order do
+  for rep₀ in order do
+    let some all := blocks.blocks.get? rep₀ | continue
+    -- The block is compiled under its canonical key.
+    let rep := blockKey rep₀ all
     if acc.cenv.auxNameToAddr.contains rep then
       continue
-    let some all := blocks.blocks.get? rep | continue
     match runBlockWithAux acc.cenv all rep with
     | .error e =>
       return .error s!"aux_gen prereq pre-compile failed for SCC \
@@ -435,7 +456,8 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   let (addrToNameMap, namesMap, nameBlobs) :=
     cenv.nameToNamed.fold (init := ({}, acc.blockNames, {}))
       fun (addrMap, namesMap, blobs) name named =>
-        let addrMap := addrMap.insert named.addr name
+        -- The canonical alias, not the last one the fold met.
+        let addrMap := insertCanonicalAlias addrMap named.addr name
         let (namesMap, blobs) :=
           Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
         (addrMap, namesMap, blobs)
@@ -551,10 +573,16 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
       reverseDeps := reverseDeps.alter depName fun
         | some arr => some (arr.push lo)
         | none => some #[lo]
-  let mut readyQueue : Array (Name × Set Name) := #[]
+  -- The ready blocks keyed by their canonical key (`blockKey`), the least
+  -- taken first: the fold's order is the least-key-first topological order
+  -- of the block graph, a function of the graph and the keys alone. It was
+  -- a stack filled in `HashMap` iteration order, so the order depended on
+  -- the condensation's representatives and the maps' histories. The output
+  -- does not depend on the order on valid input, so this changes no value.
+  let mut readyQueue : Std.TreeMap Name (Set Name) Ix.nameCompare := {}
   for (lo, (all, depCount)) in blockInfo do
     if depCount == 0 then
-      readyQueue := readyQueue.push (lo, all)
+      readyQueue := readyQueue.insert (blockKey lo all) all
 
   let mut blocksCompleted : Nat := 0
   let mut lastPct : Nat := 0
@@ -564,8 +592,9 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut released : Set Name := {}
 
   while !readyQueue.isEmpty do
-    let (lo, all) := readyQueue.back!
-    readyQueue := readyQueue.pop
+    -- `lo` is the block's canonical key from here on.
+    let some (lo, all) := readyQueue.minEntry? | break
+    readyQueue := readyQueue.erase lo
 
     if (resolveAddrPure acc.cenv lo).isSome then
       -- Promotion path (env.rs:566-708): the block was pre-compiled into
@@ -596,13 +625,16 @@ missing canonical aliases: {missing}"
           -- Cross-SCC compile of the unresolved subset (env.rs:617-651).
           let crossAll : Set Name :=
             unresolvedNames.foldl (fun s n => s.insert n) {}
-          match runBlockWithAux acc.cenv crossAll unresolvedNames[0]! with
+          -- The subset is named by its canonical key, not by its first name
+          -- in `Set` order.
+          let clo := canonicalKey lo unresolvedNames
+          match runBlockWithAux acc.cenv crossAll clo with
           | .error _ =>
             -- Rust logs and does NOT register failed names — dependents
             -- will get MissingConstant rather than broken data.
             pure ()
           | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-            acc := mergeCompiledBlock acc unresolvedNames[0]! result cache
+            acc := mergeCompiledBlock acc clo result cache
               plans brecPlans belowPlans
             for n in unresolvedNames do
               acc := { acc with
@@ -687,7 +719,7 @@ missing canonical aliases: {missing}"
             let newCount := depCount - 1
             blockInfo := blockInfo.insert dependentLo (depAll, newCount)
             if newCount == 0 then
-              readyQueue := readyQueue.push (dependentLo, depAll)
+              readyQueue := readyQueue.insert (blockKey dependentLo depAll) depAll
 
     blocksCompleted := blocksCompleted + 1
     if dbg then
@@ -764,10 +796,12 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       else
         let crossAll : Set Name :=
           unresolvedNames.foldl (fun s n => s.insert n) {}
-        match runBlockWithAux cenv crossAll unresolvedNames[0]! with
+        -- Named by its canonical key, as in the sequential driver.
+        let clo := canonicalKey lo unresolvedNames
+        match runBlockWithAux cenv crossAll clo with
         | .error _ => pure ()
         | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-          crossScc := some (unresolvedNames[0]!, result, cache,
+          crossScc := some (clo, result, cache,
             plans, brecPlans, belowPlans)
           crossNames := unresolvedNames
     let mut noAux := none
@@ -971,7 +1005,9 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     let snapshot := acc.cenv
     let mut ready : Array (Name × Set Name) := #[]
     for lo in remaining do
-      let all := blocks.blocks.get! lo
+      let some all := blocks.blocks.get? lo
+        | discard <| workChan.close
+          return .error s!"wave driver: block {lo.pretty} is not in the condensation"
       let deps := match blocks.blockRefs.get? lo with
         | some d => d
         | none => {}
@@ -992,8 +1028,10 @@ blocks remaining but none ready"
       let pct := (compiled * 100) / totalBlocks
       IO.println s!"  [Lean CompileAux] Wave {waveNum}: {ready.size} blocks ready, {pct}% ({compiled}/{totalBlocks})"
 
+    -- A worker compiles the block under its canonical key, never under the
+    -- condensation's representative (which stays the key of `remaining`).
     for (lo, all) in ready do
-      discard <| workChan.send { lo, all, cenv := snapshot }
+      discard <| workChan.send { lo := blockKey lo all, all, cenv := snapshot }
 
     for _ in [:ready.size] do
       match ← resultChan.recv with
