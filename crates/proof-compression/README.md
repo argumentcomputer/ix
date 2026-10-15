@@ -52,13 +52,13 @@ checks the cache against its built-in receipt and the pinned tau anchors. A
 | `tests/fixtures/filecoin-prefix-2p8.bin` | 25,342 bytes | BLAKE3 receipt `185c556e…a0507d`, `FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3` |
 
 Without a Filecoin cache, `--dev-srs` selects a **known-trapdoor development
-SRS**. Its proofs are **not production-secure**, and `ix verify` accepts them
-only with `--dev-srs`.
+SRS**. Its proofs are **not production-secure**. Compression checks each proof
+and writes its verifier artifact. The application bundles only the Filecoin
+profile listed below.
 
 ```sh
 unset IX_KZG_FILECOIN_CACHE IX_KZG_FILECOIN_MANIFEST
 ix compress ROOT_PROOF_ADDRESS --dev-srs --out "$IX_COMPRESSION_DATA/runs/dev-001"
-ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 ```
 
 Compression preserves the claim address and prints a new proof address.
@@ -83,7 +83,6 @@ accepted profile requires an application update. The bundled profiles are:
 | Profile | Setup | First-stage log-height |
 | --- | --- | --- |
 | `aggregate-filecoin-v5.bin` | Filecoin | 24 |
-| `init-development-v5.bin` | Development, requires `--dev-srs` | 24 |
 
 The adjacent JSON files record the setup, root key and artifact identities.
 The verifier catalog pins each profile and its aggregation-program prefix.

@@ -25,24 +25,14 @@ const AGGREGATE_PREFIX: [u64; 10] = [
   1176003176, 683533119, 3085659920,
 ];
 
-static VERIFIERS: [BundledVerifier; 2] = [
-  BundledVerifier {
-    id: "d1c6951a06e9fc4712dcf1cb0e59bc4660719c93bef6dcf0e0b66487e0456081",
-    digest: "1d0632635c4e97fbc9cae36cff4c41061e3c1cb2ce216ea231f93af0c90d0d3d",
-    statement_prefix: AGGREGATE_PREFIX,
-    setup: SetupClass::Filecoin,
-    bytes: include_bytes!("../../profiles/aggregate-filecoin-v5.bin"),
-    decoded: OnceLock::new(),
-  },
-  BundledVerifier {
-    id: "9f95f0fcfc2163b0b1d95ed4f9e56f557c3a611d5f1c1b8ef6b59485bce8f16b",
-    digest: "65c5497e830433133b1ce6b8625d608a78a274a5615e7d7b8187a4a32dc1f7e2",
-    statement_prefix: AGGREGATE_PREFIX,
-    setup: SetupClass::Development,
-    bytes: include_bytes!("../../profiles/init-development-v5.bin"),
-    decoded: OnceLock::new(),
-  },
-];
+static VERIFIERS: [BundledVerifier; 1] = [BundledVerifier {
+  id: "9df1e701e9ae98e5cec80b10489e298f4f625c1047f42dc0a2763a3ee70e647e",
+  digest: "25793564ff2d58536ec1055f0d3954cf7bba41cad88459834ea379b5a05ce42d",
+  statement_prefix: AGGREGATE_PREFIX,
+  setup: SetupClass::Filecoin,
+  bytes: include_bytes!("../../profiles/aggregate-filecoin-v5.bin"),
+  decoded: OnceLock::new(),
+}];
 
 impl BundledVerifier {
   fn profile(&self) -> Result<&PreparedVerifierProfile> {
@@ -103,9 +93,6 @@ mod tests {
     include_bytes!("../../tests/fixtures/aggregate-kzg/filecoin-v5-packet.bin");
   const CLAIM: &[u8] =
     include_bytes!("../../tests/fixtures/aggregate-kzg/filecoin-claim.bin");
-  const DEVELOPMENT_PACKET: &[u8] = include_bytes!(
-    "../../tests/fixtures/aggregate-kzg/development-v5-packet.bin"
-  );
 
   fn envelope(packet: &[u8]) -> Vec<u8> {
     [PROOF_TAG.as_slice(), packet].concat()
@@ -128,6 +115,30 @@ mod tests {
     for verifier in &VERIFIERS {
       verifier.profile().unwrap();
     }
+  }
+
+  #[test]
+  fn bundled_filecoin_metadata_matches_artifacts() {
+    let metadata: serde_json::Value = serde_json::from_str(include_str!(
+      "../../profiles/aggregate-filecoin-v5.json"
+    ))
+    .unwrap();
+    let id = PACKET[..32].try_into().unwrap();
+    let verifier = bundled(&id).unwrap();
+    assert_eq!(metadata["profile_id"], verifier.id);
+    assert_eq!(metadata["verifier_blake3"], verifier.digest);
+    assert_eq!(
+      metadata["packet_blake3"],
+      blake3::hash(PACKET).to_hex().as_str()
+    );
+    assert_eq!(
+      metadata["claim"]["blake3"],
+      blake3::hash(CLAIM).to_hex().as_str()
+    );
+    assert_eq!(
+      metadata["statement_prefix"],
+      serde_json::json!(verifier.statement_prefix)
+    );
   }
 
   #[test]
@@ -166,6 +177,7 @@ mod tests {
       let mut packet = PACKET.to_vec();
       packet[index] ^= 1;
       assert!(verify(&envelope(&packet), CLAIM, false).is_err());
+      assert!(verify(&envelope(&packet), CLAIM, true).is_err());
     }
     for end in [0, 31, 32, 32 + 18 * 8, PACKET.len() - 1] {
       assert!(verify(&envelope(&PACKET[..end]), CLAIM, false).is_err());
@@ -176,28 +188,5 @@ mod tests {
     let mut wrong_version = envelope(PACKET);
     wrong_version[7] ^= 1;
     assert!(verify(&wrong_version, CLAIM, false).is_err());
-  }
-
-  #[test]
-  fn development_profile_still_requires_explicit_opt_in() {
-    assert!(
-      verify(&envelope(DEVELOPMENT_PACKET), CLAIM, false)
-        .unwrap_err()
-        .to_string()
-        .contains("--dev-srs")
-    );
-    let verifier = VERIFIERS
-      .iter()
-      .find(|verifier| verifier.setup == SetupClass::Development)
-      .unwrap();
-    verifier
-      .profile()
-      .unwrap()
-      .verify(DEVELOPMENT_PACKET, &super::super::init_claim::INIT_PUBLIC_WORDS)
-      .unwrap();
-    assert_eq!(
-      verify(&envelope(DEVELOPMENT_PACKET), CLAIM, true).unwrap(),
-      SetupClass::Development
-    );
   }
 }
