@@ -252,30 +252,9 @@ def groupsOf (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Array Group 
 
 A group's terms are converted together (`ingressExprs`, one memo for the
 terms of the group's constants that number their level parameters alike),
-before any state is read; what the lowering reads is `Converted`. -/
-
-/-- How a constant's Lean level parameters `names` become the checker's
-positions: name `i` is position `i`, except at a large eliminator (`large`:
-a recursor with one level parameter more than its block's `n`), whose first
-name, the elimination level, is the fresh position `n` and whose name
-`i + 1` is the block's position `i`, as the Ixon reader numbers a recursor
-(`Reader.recLps`). A name that is not among `names` is the position
-`names.size`, which no parameter of the constant has. -/
-structure Numbering where
-  names : Array Ix.Name
-  large : Bool := false
-  deriving BEq
-
-/-- The position of a level-parameter name. -/
-def Numbering.pos (σ : Numbering) (n : Ix.Name) : Ix.Kernel.LevelParam :=
-  match σ.names.findIdx? (· == n) with
-  | none => σ.names.size
-  | some 0 => if σ.large then σ.names.size - 1 else 0
-  | some (i + 1) => if σ.large then i else i + 1
-
-/-- The constant's own level parameters, numbered. -/
-def Numbering.params (σ : Numbering) : List Ix.Kernel.LevelParam :=
-  σ.names.toList.map σ.pos
+before any state is read; what the lowering reads is `Converted`. A
+constant's level parameters are numbered by `Numbering`
+(`Ix.LeanIngress.Expr`). -/
 
 def hintOf : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
   | .opaque => .opaque
@@ -702,6 +681,12 @@ and declines. -/
 
 /-- Source mode's binding: role `r` is the constant named `r.leanName`. -/
 def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Name := r.leanName
+
+/-! Source mode's binding, checked: every role's Lean name keys that role, and
+the name map holds the roles' names and nothing else. -/
+
+#guard Ix.Kernel.Role.all.all fun r => (Ix.Kernel.Key.ofName r.leanName == .role r : Bool)
+#guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length
 
 /-- **Source mode's evidence** over the prepared declarations, with the
 reason each well-founded operation without evidence has none. -/

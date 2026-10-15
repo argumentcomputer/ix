@@ -1,12 +1,23 @@
-import Ix.Environment
-import IxC.Kernel.Expr
-import Ix.SemanticContract
+module
+
+public import Ix.Environment
+public import IxC.Kernel.Expr
+public import Ix.SemanticContract
+/- `withPtrEq` is `public` but not `@[expose]`; the memo probe (`probe`) reads
+that `withPtrEq a b k h` is definitionally `k ()`, as `IxC.Kernel.Expr` does.
+`import all` makes that body visible in this module only. -/
+import all Init.Util
 
 /-! # Lean's terms as the checker's terms
 
 The term half of the Source-mode ingress (`Ix.LeanIngress`): an
 `Ix.Expr` (Lean's term as `Ix.CanonM` canonicalizes it) becomes an
 `Ix.Kernel.Expr` with nothing hashed and nothing rewritten.
+
+It is a `module`, its API public and the specification's bodies exposed,
+so that other modules (the compiler's `Ix.AuxGen`) share the conversion
+instead of repeating it; the rest of the Source-mode ingress
+(`Ix.LeanIngress`: grouping, order, lowering) imports it.
 
 * **Keys** are Lean's names: `Ix.Name` ↦ `Ix.Kernel.Name` component by
   component, the hash fields dropped (`ingressName`), and a constant's key is
@@ -72,6 +83,8 @@ The trust is the compiler's substitution on these kernel-checked equations
 and the runtime's `withPtrAddr`/`withPtrEq`, as for the checker's own
 `beqMemo`. -/
 
+public section
+
 namespace Ix.LeanIngress
 
 open Ix.Kernel (LevelParam)
@@ -91,7 +104,7 @@ inductive ExprError where
 
 /-- Lean's name as the checker's name, component by component, the hash
 fields dropped. -/
-def ingressName : Ix.Name → Ix.Kernel.Name
+@[expose] def ingressName : Ix.Name → Ix.Kernel.Name
   | .anonymous _ => .anonymous
   | .str p s _ => .str (ingressName p) s
   | .num p n _ => .num (ingressName p) n
@@ -99,7 +112,7 @@ def ingressName : Ix.Name → Ix.Kernel.Name
 /-- **A constant's key**: the role Source mode's fixed binding gives Lean's
 name (`Ix.Kernel.Key.ofName`: the role whose Lean name it is), otherwise the
 input key, the name itself. -/
-def ingressKey (n : Ix.Name) : Ix.Kernel.Key .source := Ix.Kernel.Key.ofName (ingressName n)
+@[expose] def ingressKey (n : Ix.Name) : Ix.Kernel.Key .source := Ix.Kernel.Key.ofName (ingressName n)
 
 instance : ToString ExprError where
   toString
@@ -108,7 +121,30 @@ instance : ToString ExprError where
     | .levelMVar n => s!"level metavariable {n}"
     | .contract r => s!"contract frame: {r}"
 
-def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError KLevel
+/-- How a constant's Lean level parameters `names` become the checker's
+positions: name `i` is position `i`, except at a large eliminator (`large`:
+a recursor with one level parameter more than its block's `n`), whose first
+name, the elimination level, is the fresh position `n` and whose name
+`i + 1` is the block's position `i`, as the Ixon reader numbers a recursor
+(`Reader.recLps`). A name that is not among `names` is the position
+`names.size`, which no parameter of the constant has. -/
+structure Numbering where
+  names : Array Ix.Name
+  large : Bool := false
+  deriving BEq
+
+/-- The position of a level-parameter name. -/
+@[expose] def Numbering.pos (σ : Numbering) (n : Ix.Name) : Ix.Kernel.LevelParam :=
+  match σ.names.findIdx? (· == n) with
+  | none => σ.names.size
+  | some 0 => if σ.large then σ.names.size - 1 else 0
+  | some (i + 1) => if σ.large then i else i + 1
+
+/-- The constant's own level parameters, numbered. -/
+@[expose] def Numbering.params (σ : Numbering) : List Ix.Kernel.LevelParam :=
+  σ.names.toList.map σ.pos
+
+@[expose] def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError KLevel
   | .zero _ => pure .zero
   | .succ u _ => return .succ (← ingressLevel σ u)
   | .max u v _ => return .max (← ingressLevel σ u) (← ingressLevel σ v)
@@ -120,7 +156,7 @@ def ingressLevel (σ : Ix.Name → LevelParam) : Ix.Level → Except ExprError K
 binder `e` with `c` on it, where the compiler's `Contract.lower` puts it
 (`Ix.SemanticContract`): a `lam`'s or an `all`'s on its binder, a `letE`'s on
 its let contract (its binder contract and kind over the `nonDep` flag). -/
-def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
+@[expose] def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
     Except ExprError KExpr :=
   match c.kind, e, x with
   | .lam, .lam .., .lam t b m => pure (.lam t b { m with contract := c.binder })
@@ -134,7 +170,7 @@ def withContract (c : Ix.SemanticContract.Contract) (e : Ix.Expr) (x : KExpr) :
 a contract frame (`Ix.SemanticContract.hasMetadata`) puts its contract on
 `e`'s binder (`withContract`), as the compiler reads it; any other metadata
 is erased. -/
-def ingressMData (d : Array (Ix.Name × Ix.DataValue)) (e : Ix.Expr)
+@[expose] def ingressMData (d : Array (Ix.Name × Ix.DataValue)) (e : Ix.Expr)
     (x : Except ExprError KExpr) : Except ExprError KExpr :=
   if Ix.SemanticContract.hasMetadata d then do
     let c ← (Ix.SemanticContract.read d).mapError .contract
@@ -143,7 +179,7 @@ def ingressMData (d : Array (Ix.Name × Ix.DataValue)) (e : Ix.Expr)
 
 /-- **The term conversion** (the specification), under the constant's
 numbering `σ` of its level parameters. -/
-def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KExpr
+@[expose] def ingressExpr (σ : Ix.Name → LevelParam) : Ix.Expr → Except ExprError KExpr
   | .bvar i _ => pure (Ix.Kernel.Expr.mkBvar i)
   | .fvar n _ => throw (.fvar (ingressName n))
   | .mvar n _ => throw (.mvar (ingressName n))
@@ -172,7 +208,7 @@ theorem ingressExpr_mdata_plain (σ : Ix.Name → LevelParam) {d : Array (Ix.Nam
   simp [ingressExpr_mdata, ingressMData, hd]
 
 /-- The conversion of several terms. -/
-def ingressExprs (σ : Ix.Name → LevelParam) (es : List Ix.Expr) : Except ExprError (List KExpr) :=
+@[expose] def ingressExprs (σ : Ix.Name → LevelParam) (es : List Ix.Expr) : Except ExprError (List KExpr) :=
   es.mapM (ingressExpr σ)
 
 /-! ## The conversion on the DAG
@@ -399,9 +435,3 @@ end Shared
   exact (ingressExprsShared_eq σ es).symm
 
 end Ix.LeanIngress
-
-/-! Source mode's binding, checked: every role's Lean name keys that role, and
-the name map holds the roles' names and nothing else. -/
-
-#guard Ix.Kernel.Role.all.all fun r => (Ix.Kernel.Key.ofName r.leanName == .role r : Bool)
-#guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length
