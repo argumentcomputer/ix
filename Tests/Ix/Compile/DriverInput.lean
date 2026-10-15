@@ -8,8 +8,8 @@ that has no reference set is refused by both drivers
 (`Ix.CompileM.missingBlockRefs?`) instead of being scheduled as if it had no
 dependencies; a block is named by its least member and an address by its
 least alias (`canonicalKey`, `insertCanonicalAlias`), whatever the order.
-A cross-SCC subset whose compile fails is a failure of the compile in both
-drivers, recorded by name (`CompileEnv.ungrounded`), never dropped. -/
+A cross-SCC subset whose compile fails fails its block in both drivers,
+recorded by name (`CompileEnv.ungrounded`), never dropped. -/
 
 namespace Tests.Ix.Compile.DriverInput
 
@@ -43,12 +43,16 @@ private def least : Name := aliases.foldl (init := aliases.head!) fun k n =>
 /-! ### A failed cross-SCC subset
 
 The prerequisite pre-compile registers the block of the aux-gen seed `True`
-before the scheduler runs. A further block that shares a member with it
-(`resolved`) and adds a constant whose compile fails (`bad`, whose value is a
-constant the environment lacks) takes the promotion path: `bad` is the
-unresolved subset, compiled on its own, and its failure must be recorded by
-name. The condensation is crafted; on a real one the subset is the
-unresolved remainder of a block whose key an earlier block registered. -/
+(the inductive, with its constructor's projection) before the scheduler
+runs. A further block holds the constructor `True.intro`, which that
+pre-compile registered, and a constant whose compile fails (`bad`, whose value
+is a constant the environment lacks): it takes the promotion path, and `bad`
+is the unresolved subset, compiled on its own. Its failure fails the
+promotion of the whole block in both drivers (`finishAuxPromotion`): both
+members are recorded with it, by name, and neither is published; `True`'s
+own block is unaffected. The condensation is crafted; on a real one the
+subset is the unresolved remainder of a block whose key an earlier block
+registered. -/
 
 /-- `True`'s closure, canonicalized. -/
 private def trueEnv (leanEnv : Lean.Environment) : _root_.Ix.Environment :=
@@ -62,37 +66,42 @@ private def badConst (bad : Name) : _root_.Ix.ConstantInfo :=
       value := _root_.Ix.Expr.mkConst (Name.fromLeanName `DriverInput.absent) #[]
       hints := .opaque, safety := .safe, all := #[bad] }
 
-/-- `True`'s closure plus `bad`, and the condensation of the closure plus the
-block `{resolved, bad}`: `resolved` is a member of `True`'s block other than
-its key, and `bad` is chosen to follow it (`Ix.nameCompare`), so the new
-block's key is `resolved`, which the pre-compile registers. -/
+/-- `True`'s closure plus `bad`, and the condensation of the closure with
+`True.intro` moved out of `True`'s block into the block `{True.intro, bad}`,
+keyed by `True.intro` (`bad` is chosen to follow it, `Ix.nameCompare`). -/
 private def crossInput (leanEnv : Lean.Environment) :
-    Option (_root_.Ix.Environment × _root_.Ix.CondensedBlocks × Name × Name) := do
+    Option (_root_.Ix.Environment × _root_.Ix.CondensedBlocks × Name × Name × Name) := do
   let env := trueEnv leanEnv
   let blocks := _root_.Ix.CondenseM.run (_root_.Ix.GraphM.envSerial env)
-  let rep ← blocks.lowLinks.get? (Name.fromLeanName ``True)
+  let trueName := Name.fromLeanName ``True
+  let resolved := Name.fromLeanName ``True.intro
+  let rep ← blocks.lowLinks.get? trueName
   let members ← blocks.blocks.get? rep
-  let key := _root_.Ix.CompileM.blockKey rep members
-  let resolved ← members.toArray.find? (· != key)
+  guard (members.contains resolved)
   let bad ← (List.range 64).map (fun i => Name.fromLeanName (.num `DriverInput.bad i))
     |>.find? fun b => _root_.Ix.nameCompare resolved b == .lt
   let env := { env with consts := env.consts.insert bad (badConst bad) }
   let blocks := { blocks with
-    lowLinks := blocks.lowLinks.insert bad bad
-    blocks := blocks.blocks.insert bad (({} : _root_.Ix.Set Name).insert resolved |>.insert bad)
+    lowLinks := blocks.lowLinks.insert bad bad |>.insert resolved bad
+    blocks := blocks.blocks.insert rep (members.erase resolved)
+      |>.insert bad (({} : _root_.Ix.Set Name).insert resolved |>.insert bad)
     blockRefs := blocks.blockRefs.insert bad {} }
-  return (env, blocks, resolved, bad)
+  return (env, blocks, trueName, resolved, bad)
 
-/-- `none` when a driver's result records exactly `bad` as a failure and
-publishes `resolved`; otherwise what it did instead. -/
-private def crossVerdict (label : String) (resolved bad : Name)
+/-- `none` when a driver's result records exactly `resolved` and `bad` as
+failures, publishes neither, and publishes `owner`; otherwise what it did
+instead. -/
+private def crossVerdict (label : String) (owner resolved bad : Name)
     (result : Except String (Ixon.Env × Nat × _root_.Ix.CompileM.CompileEnv)) : Option String :=
   match result with
   | .error e => some s!"{label}: {e}"
   | .ok (ixe, _, cenv) =>
-    let failed := cenv.ungrounded.toList.map (·.1.pretty)
-    if failed != [bad.pretty] then some s!"{label}: failures {failed}, expected [{bad.pretty}]"
-    else if !ixe.named.contains resolved then some s!"{label}: {resolved.pretty} is not published"
+    let failed := (cenv.ungrounded.toArray.map (·.1.pretty)).qsort (· < ·) |>.toList
+    let expected := (#[resolved.pretty, bad.pretty].qsort (· < ·)).toList
+    if failed != expected then some s!"{label}: failures {failed}, expected {expected}"
+    else if ixe.named.contains resolved || ixe.named.contains bad then
+      some s!"{label}: a withdrawn member is published"
+    else if !ixe.named.contains owner then some s!"{label}: {owner.pretty} is not published"
     else none
 
 def suite : List TestSeq := [
@@ -121,13 +130,13 @@ def suite : List TestSeq := [
     return (ok, if ok then 1 else 0, 1,
 
       if ok then none else some "the parallel driver did not refuse the condensation")) .done,
-  .individualIO "a failed cross-SCC subset is a failure by name, in both drivers" none (do
+  .individualIO "a failed cross-SCC subset fails its block by name, in both drivers" none (do
     let leanEnv ← get_env!
-    let some (env, blocks, resolved, bad) := crossInput leanEnv
+    let some (env, blocks, owner, resolved, bad) := crossInput leanEnv
       | return (false, 0, 1, some "could not craft the cross-SCC input")
-    let seq := crossVerdict "sequential driver" resolved bad
+    let seq := crossVerdict "sequential driver" owner resolved bad
       (_root_.Ix.CompileM.compileEnvAux env blocks)
-    let par := crossVerdict "wave driver" resolved bad
+    let par := crossVerdict "wave driver" owner resolved bad
       (← _root_.Ix.CompileM.compileEnvParallelAux env blocks (numWorkers := 2))
     let errors := [seq, par].filterMap id
     let ok := errors.isEmpty

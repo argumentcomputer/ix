@@ -45,10 +45,11 @@ What the IO pipeline does that this function does not:
 filter removed, with its named refusal (`Ix.GroundError.refusal`, the text
 the IO pipeline and the Rust compiler record), and every constant of a block
 that failed to compile, with the driver's error (`CompileEnv.ungrounded`: the
-block's own failure, a cross-SCC subset's, or a dependent's
-`MissingConstant`). `compile` is its first component, so a failure leaves the
-result defined; `compileComplete` (the policy `requireComplete`) makes any
-failure an error instead.
+block's own failure, including a refused claim or payload and a failed
+promotion or cross-SCC subset, which withdraws the whole block, or a
+dependent's `MissingConstant`). `compile` is its first component, so a
+failure leaves the result defined; `compileComplete` (the policy
+`requireComplete`) makes any failure an error instead.
 
 `Tests.Ix.Cert.Statement` compares the serialized output of the two on the
 Source-mode fixtures (`cert-statement`) and on `Init`
