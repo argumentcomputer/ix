@@ -12,6 +12,9 @@ typedef int (*start_function)(main_function, int, char **, void (*)(void),
 typedef int (*memory_function)(int, size_t *, size_t *);
 typedef int (*fri_round_trip_function)(int, uint64_t *, uint32_t);
 typedef int (*host_copy_function)(int, void *, const void *, size_t);
+typedef int (*get_device_function)(int *);
+typedef int (*set_device_function)(int);
+typedef int (*synchronize_function)(void);
 
 static main_function original_main;
 
@@ -55,6 +58,15 @@ static int check_status(const char *operation, int status) {
 }
 
 static int check_fri(int device) {
+    get_device_function get_device =
+        (get_device_function)require_symbol("multi_stark_cuda_get_device");
+    set_device_function set_device =
+        (set_device_function)require_symbol("multi_stark_cuda_set_device");
+    synchronize_function synchronize =
+        (synchronize_function)require_symbol("multi_stark_cuda_synchronize");
+    int current = -1;
+    if (check_status("CUDA device selection", set_device(device)) ||
+        check_status("CUDA current device", get_device(&current)) || current != device) return 1;
     fri_round_trip_function round_trip =
         (fri_round_trip_function)require_symbol("multi_stark_sppark_borrowed_round_trip");
     host_copy_function copy =
@@ -62,6 +74,7 @@ static int check_fri(int device) {
     uint64_t values[4096];
     for (size_t i = 0; i < 4096; ++i) values[i] = 17 * i + 3;
     if (check_status("FRI borrowed NTT", round_trip(device, values, 12))) return 1;
+    if (check_status("CUDA synchronization", synchronize())) return 1;
     for (size_t i = 0; i < 4096; ++i) {
         if (values[i] != 17 * i + 3) {
             fputs("CUDA link smoke: FRI NTT round trip changed coefficients\n", stderr);
