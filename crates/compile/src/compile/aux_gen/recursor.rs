@@ -2402,26 +2402,32 @@ fn compute_is_large_and_k(
 
     let cls_addr = resolve_lean_name_addr(&cls_ind.cnst.name, n2a, aux_n2a);
     let cls_zid: KId<Meta> = KId::new(cls_addr, cls_ind.cnst.name.clone());
-    let cls_ty_z = lean_expr_to_zexpr_with_kenv(
-      &cls_ind.cnst.typ,
-      cls_lvl_params,
-      &mut kctx.kenv,
-      n2a,
-      aux_n2a,
-    );
+    let cls_ty_z = super::expr_utils::kernel_ingress(
+      &cls_ind.cnst.name,
+      lean_expr_to_zexpr_with_kenv(
+        &cls_ind.cnst.typ,
+        cls_lvl_params,
+        &mut kctx.kenv,
+        n2a,
+        aux_n2a,
+      ),
+    )?;
 
     // Convert constructors
     let mut cls_ctor_zids: Vec<KId<Meta>> = Vec::new();
     for ctor in &cls.ctors {
       let ctor_addr = resolve_lean_name_addr(&ctor.cnst.name, n2a, aux_n2a);
       let ctor_zid = KId::new(ctor_addr, ctor.cnst.name.clone());
-      let ctor_ty_z = lean_expr_to_zexpr_with_kenv(
-        &ctor.cnst.typ,
-        cls_lvl_params,
-        &mut kctx.kenv,
-        n2a,
-        aux_n2a,
-      );
+      let ctor_ty_z = super::expr_utils::kernel_ingress(
+        &ctor.cnst.name,
+        lean_expr_to_zexpr_with_kenv(
+          &ctor.cnst.typ,
+          cls_lvl_params,
+          &mut kctx.kenv,
+          n2a,
+          aux_n2a,
+        ),
+      )?;
       let ctor_fields = nat_to_u64(&ctor.num_fields);
       let ctor_params = nat_to_u64(&ctor.num_params);
 
@@ -2464,12 +2470,12 @@ fn compute_is_large_and_k(
     // (`Set`, local `abbrev`s, etc.). Load just those referenced constants
     // as real KEnv entries before asking the kernel to WHNF the target.
     let _ig_target_start = std::time::Instant::now();
-    ingress_target_type_deps(&cls_ind.cnst.typ, lean_env, stt, kctx);
+    ingress_target_type_deps(&cls_ind.cnst.typ, lean_env, stt, kctx)?;
     _ingress_total += _ig_target_start.elapsed();
 
     // Ingress field deps for this class
     let _ig_start = std::time::Instant::now();
-    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx);
+    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx)?;
     _ingress_total += _ig_start.elapsed();
 
     ind_infos.push((
@@ -2581,10 +2587,10 @@ fn ingress_target_type_deps(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   let mut queue = Vec::new();
   collect_const_refs(target_ty, &mut queue);
-  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx)
 }
 
 /// Walk field domains of constructors and ingress any referenced constants
@@ -2597,14 +2603,14 @@ fn ingress_field_deps(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   let mut queue: Vec<Name> = Vec::new();
 
   // Collect all Const references from constructor types.
   for ctor in &class.ctors {
     collect_const_refs(&ctor.cnst.typ, &mut queue);
   }
-  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx)
 }
 
 /// Drain a worklist of names through `ingress_aux_gen_dep`, deduplicated
@@ -2617,7 +2623,7 @@ fn drain_ingress_queue(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   use ix_kernel::id::KId;
   use ix_kernel::ingress::resolve_lean_name_addr;
   use ix_kernel::mode::Meta;
@@ -2633,11 +2639,16 @@ fn drain_ingress_queue(
     if !seen.insert(zid) {
       continue;
     }
-    if let Some(ci) = lean_env.get(&name) {
-      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue);
+    if let Some(ci) = lean_env.get(&name)
+      && let Err(e) =
+        ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue)
+    {
+      kctx.aux_ingress_seen = seen;
+      return Err(e);
     }
   }
   kctx.aux_ingress_seen = seen;
+  Ok(())
 }
 
 fn ingress_aux_gen_dep(
@@ -2647,15 +2658,15 @@ fn ingress_aux_gen_dep(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   queue: &mut Vec<Name>,
-) {
+) -> Result<(), CompileError> {
   match ci {
     ConstantInfo::DefnInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
       collect_const_refs(&v.value, queue);
     },
     ConstantInfo::InductInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
       for ctor_name in &v.ctors {
         if let Some(ConstantInfo::CtorInfo(ctor)) =
@@ -2666,30 +2677,31 @@ fn ingress_aux_gen_dep(
       }
     },
     ConstantInfo::CtorInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::AxiomInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::ThmInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::OpaqueInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::RecInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::QuotInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
   }
+  Ok(())
 }
 
 fn ingress_type_stub(
@@ -2698,7 +2710,7 @@ fn ingress_type_stub(
   level_params: &[Name],
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;
   use ix_kernel::ingress::{
@@ -2712,16 +2724,19 @@ fn ingress_type_stub(
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
   if kctx.kenv.contains_key(&zid) {
-    return;
+    return Ok(());
   }
 
-  let ty_z = lean_expr_to_zexpr_with_kenv(
-    typ,
-    level_params,
-    &mut kctx.kenv,
-    n2a,
-    aux_n2a,
-  );
+  let ty_z = super::expr_utils::kernel_ingress(
+    name,
+    lean_expr_to_zexpr_with_kenv(
+      typ,
+      level_params,
+      &mut kctx.kenv,
+      n2a,
+      aux_n2a,
+    ),
+  )?;
   let n_lvls = level_params.len() as u64;
   kctx.kenv.insert(
     zid,
@@ -2733,6 +2748,7 @@ fn ingress_type_stub(
       ty: ty_z,
     },
   );
+  Ok(())
 }
 
 /// Collect all constant names referenced in a LeanExpr.
@@ -4224,7 +4240,7 @@ mod tests {
       for (name, ci) in &entries {
         source.insert(name.clone(), ci.clone());
       }
-      let mut kenv = lean_ingress(&source);
+      let mut kenv = lean_ingress(&source).unwrap();
       let (block, _) =
         kenv.consts.iter().find(|(id, _)| &id.name == head).unwrap();
       let peers: Vec<_> = kenv.blocks[block]
@@ -4329,7 +4345,7 @@ mod tests {
     }
     source.insert(a_rec.clone(), right);
     source.insert(b_rec, left);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let error = TypeChecker::new(&mut kenv).check_const(&id).unwrap_err();
     assert!(error.to_string().contains("canonical-order mismatch"), "{error}");
@@ -4346,7 +4362,7 @@ mod tests {
     let ConstantInfo::RecInfo(rec) = &mut extra else { unreachable!() };
     rec.cnst.name = extra_name.clone();
     source.insert(extra_name.clone(), extra);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let KConst::Recr { block, .. } = &kenv.consts[&id] else { unreachable!() };
     assert!(kenv.blocks[block].iter().any(|id| id.name == extra_name));
@@ -4467,7 +4483,8 @@ mod tests {
     );
     crate::compile::aux_gen::expr_utils::ensure_in_kenv_of(
       &t, &env, &stt, &mut kctx,
-    );
+    )
+    .unwrap();
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
@@ -4486,7 +4503,8 @@ mod tests {
       &std::sync::Arc::new(env.clone()),
       &stt,
       &mut kctx,
-    );
+    )
+    .unwrap();
 
     let brecon = generate_brecon_constants(
       &classes, &recs, &below, &env, is_prop, &stt, &mut kctx,

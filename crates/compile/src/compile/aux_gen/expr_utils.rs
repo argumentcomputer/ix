@@ -1651,6 +1651,24 @@ pub fn ensure_prelude_in_kenv_of(
   }
 }
 
+/// The kernel crate's Lean ingress (`lean_expr_to_zexpr_*`) returns an error
+/// on an unknown universe parameter, a level or expression metavariable, a
+/// free variable, or a bound variable or projection index that does not fit
+/// a `u64`. The aux_gen loaders (`ensure_in_kenv_of*`,
+/// `populate_canon_kenv_with_below`, `ingress_type_stub`, and the class
+/// ingress of `compute_is_large_and_k`) turn it into a `CompileError` naming
+/// the constant being loaded, and return it to their callers. Those inputs
+/// used to panic with the same text, or take index 0; every input that
+/// converts gives the same kernel term as before.
+pub(crate) fn kernel_ingress<T>(
+  name: &Name,
+  r: Result<T, String>,
+) -> Result<T, ixon::CompileError> {
+  r.map_err(|e| ixon::CompileError::UnsupportedExpr {
+    desc: format!("aux kernel ingress of {}: {e}", name.pretty()),
+  })
+}
+
 /// Ingress a **single** Lean constant into the given kenv so the kernel
 /// type checker can resolve it during inference. Handles all constant
 /// types: inductives (with their constructors, via the parent→ctor
@@ -1696,7 +1714,7 @@ fn ensure_in_kenv_of_inner_env(
   kenv: &mut ix_kernel::env::KEnv<Meta>,
   replace_axio_stub: bool,
   stub_proof_values: bool,
-) {
+) -> Result<(), ixon::CompileError> {
   use ix_common::env::{ConstantInfo as LCI, DefinitionSafety};
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;
@@ -1714,29 +1732,32 @@ fn ensure_in_kenv_of_inner_env(
     // stubs; never overwrite already-real entries such as the current
     // canonical mutual block.
     if !replace_axio_stub || !matches!(existing, KConst::Axio { .. }) {
-      return; // Already loaded.
+      return Ok(()); // Already loaded.
     }
   }
 
-  let Some(ci) = lean_env.get(name).map(|e| e.cloned()) else { return };
+  let Some(ci) = lean_env.get(name).map(|e| e.cloned()) else { return Ok(()) };
   // Helper: convert a LeanExpr to KExpr with the given level param names,
   // using the KEnv's persistent ingress cache. Callers are top-level, so
   // we start with an empty binder-name stack.
   let to_z = |expr: &ix_common::env::Expr,
               lp: &[Name],
               kenv: &mut ix_kernel::env::KEnv<Meta>|
-   -> ix_kernel::expr::KExpr<Meta> {
+   -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
     let pn_h = param_names_hash(lp);
     let mut binder_names: Vec<Name> = Vec::new();
-    lean_expr_to_zexpr_cached(
-      expr,
-      lp,
-      &mut binder_names,
-      &mut kenv.intern,
-      n2a,
-      aux_n2a,
-      Some(&mut kenv.ingress_cache),
-      Some(&pn_h),
+    kernel_ingress(
+      name,
+      lean_expr_to_zexpr_cached(
+        expr,
+        lp,
+        &mut binder_names,
+        &mut kenv.intern,
+        n2a,
+        aux_n2a,
+        Some(&mut kenv.ingress_cache),
+        Some(&pn_h),
+      ),
     )
   };
 
@@ -1744,7 +1765,7 @@ fn ensure_in_kenv_of_inner_env(
     LCI::InductInfo(ind) => {
       let lp = &ind.cnst.level_params;
       let n_lvls = lp.len() as u64;
-      let ty_z = to_z(&ind.cnst.typ, lp, kenv);
+      let ty_z = to_z(&ind.cnst.typ, lp, kenv)?;
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
         if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name).as_deref() {
@@ -1752,7 +1773,7 @@ fn ensure_in_kenv_of_inner_env(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),
           );
-          let ty = to_z(&ctor.cnst.typ, lp, kenv);
+          let ty = to_z(&ctor.cnst.typ, lp, kenv)?;
           kenv.insert(
             ctor_zid.clone(),
             KConst::Ctor {
@@ -1789,8 +1810,8 @@ fn ensure_in_kenv_of_inner_env(
     },
     LCI::DefnInfo(d) => {
       let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
-      let val = to_z(&d.value, lp, kenv);
+      let ty = to_z(&d.cnst.typ, lp, kenv)?;
+      let val = to_z(&d.value, lp, kenv)?;
       kenv.insert(
         zid.clone(),
         KConst::Defn {
@@ -1809,7 +1830,7 @@ fn ensure_in_kenv_of_inner_env(
     },
     LCI::ThmInfo(d) => {
       let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
+      let ty = to_z(&d.cnst.typ, lp, kenv)?;
       // Prewarm callers stub the proof: theorem values are never
       // delta-unfolded by kernel TC (Prop defeq short-circuits on proof
       // irrelevance), so the aux_gen phases only ever read the TYPE —
@@ -1827,9 +1848,9 @@ fn ensure_in_kenv_of_inner_env(
             ty,
           },
         );
-        return;
+        return Ok(());
       }
-      let val = to_z(&d.value, lp, kenv);
+      let val = to_z(&d.value, lp, kenv)?;
       kenv.insert(
         zid.clone(),
         KConst::Defn {
@@ -1848,7 +1869,7 @@ fn ensure_in_kenv_of_inner_env(
     },
     LCI::OpaqueInfo(d) => {
       let lp = &d.cnst.level_params;
-      let ty = to_z(&d.cnst.typ, lp, kenv);
+      let ty = to_z(&d.cnst.typ, lp, kenv)?;
       // Same as the ThmInfo arm: opaque values are opaque to kernel
       // defeq by definition, so prewarm callers keep the type only.
       if stub_proof_values {
@@ -1862,9 +1883,9 @@ fn ensure_in_kenv_of_inner_env(
             ty,
           },
         );
-        return;
+        return Ok(());
       }
-      let val = to_z(&d.value, lp, kenv);
+      let val = to_z(&d.value, lp, kenv)?;
       kenv.insert(
         zid.clone(),
         KConst::Defn {
@@ -1883,7 +1904,7 @@ fn ensure_in_kenv_of_inner_env(
     },
     LCI::AxiomInfo(a) => {
       let lp = &a.cnst.level_params;
-      let ty = to_z(&a.cnst.typ, lp, kenv);
+      let ty = to_z(&a.cnst.typ, lp, kenv)?;
       kenv.insert(
         zid.clone(),
         KConst::Axio {
@@ -1897,7 +1918,7 @@ fn ensure_in_kenv_of_inner_env(
     },
     LCI::QuotInfo(q) => {
       let lp = &q.cnst.level_params;
-      let ty = to_z(&q.cnst.typ, lp, kenv);
+      let ty = to_z(&q.cnst.typ, lp, kenv)?;
       kenv.insert(
         zid.clone(),
         KConst::Quot {
@@ -1918,13 +1939,14 @@ fn ensure_in_kenv_of_inner_env(
         kenv,
         replace_axio_stub,
         stub_proof_values,
-      );
+      )?;
     },
     LCI::RecInfo(_) => {
       // Recursors are generated by the kernel, not ingressed from Lean.
       // They'll be created when check_inductive runs on the parent.
     },
   }
+  Ok(())
 }
 
 fn ensure_in_kenv_of_inner(
@@ -1933,7 +1955,7 @@ fn ensure_in_kenv_of_inner(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   replace_axio_stub: bool,
-) {
+) -> Result<(), ixon::CompileError> {
   ensure_in_kenv_of_inner_env(
     name,
     lean_env,
@@ -1941,7 +1963,7 @@ fn ensure_in_kenv_of_inner(
     &mut kctx.kenv,
     replace_axio_stub,
     false,
-  );
+  )
 }
 
 pub fn ensure_in_kenv_of(
@@ -1949,8 +1971,8 @@ pub fn ensure_in_kenv_of(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
-  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false);
+) -> Result<(), ixon::CompileError> {
+  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false)
 }
 
 /// [`ensure_in_kenv_of`] for bulk pre-warm walks (decompile Pass 2's
@@ -1965,8 +1987,8 @@ pub fn ensure_in_kenv_of_prewarm(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
-  ensure_in_kenv_of_inner_env(name, lean_env, stt, &mut kctx.kenv, false, true);
+) -> Result<(), ixon::CompileError> {
+  ensure_in_kenv_of_inner_env(name, lean_env, stt, &mut kctx.kenv, false, true)
 }
 
 /// Like [`ensure_in_kenv_of`], but upgrades an existing type-only `Axio`
@@ -1977,8 +1999,8 @@ pub fn ensure_full_in_kenv_of(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
-  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, true);
+) -> Result<(), ixon::CompileError> {
+  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, true)
 }
 
 fn ensure_full_in_tc_env(
@@ -1986,8 +2008,8 @@ fn ensure_full_in_tc_env(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kenv: &mut ix_kernel::env::KEnv<Meta>,
-) {
-  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true, false);
+) -> Result<(), ixon::CompileError> {
+  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true, false)
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).
@@ -1996,8 +2018,8 @@ pub fn ensure_in_kenv(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
-  ensure_in_kenv_of(name, lean_env, stt, kctx);
+) -> Result<(), ixon::CompileError> {
+  ensure_in_kenv_of(name, lean_env, stt, kctx)
 }
 
 // =========================================================================
@@ -2080,35 +2102,42 @@ impl<'a> TcScope<'a> {
     self.extra_locals -= decls.len();
   }
 
-  fn fault_in_direct_expr_consts(&mut self, expr: &LeanExpr) {
+  fn fault_in_direct_expr_consts(
+    &mut self,
+    expr: &LeanExpr,
+  ) -> Result<(), ixon::CompileError> {
     let mut refs = FxHashSet::default();
     collect_lean_const_refs(expr, &mut refs);
     for name in refs {
-      self.fault_in_name(&name);
+      self.fault_in_name(&name)?;
     }
+    Ok(())
   }
 
-  fn fault_in_name(&mut self, name: &Name) -> bool {
+  fn fault_in_name(&mut self, name: &Name) -> Result<bool, ixon::CompileError> {
     let Some(lean_env) = self.stt.lean_env.as_deref() else {
-      return false;
+      return Ok(false);
     };
-    ensure_full_in_tc_env(name, lean_env, self.stt, self.tc.env);
+    ensure_full_in_tc_env(name, lean_env, self.stt, self.tc.env)?;
     let addr = resolve_lean_name_addr(
       name,
       Some(&self.stt.name_to_addr),
       Some(&self.stt.aux_name_to_addr),
     );
-    self.addr_present(&addr)
+    Ok(self.addr_present(&addr))
   }
 
-  fn fault_in_addr(&mut self, addr: &Address) -> bool {
+  fn fault_in_addr(
+    &mut self,
+    addr: &Address,
+  ) -> Result<bool, ixon::CompileError> {
     if self.addr_present(addr) {
-      return true;
+      return Ok(true);
     }
     let Some(name) = self.name_for_addr(addr) else {
-      return false;
+      return Ok(false);
     };
-    self.fault_in_name(&name) && self.addr_present(addr)
+    Ok(self.fault_in_name(&name)? && self.addr_present(addr))
   }
 
   fn addr_present(&self, addr: &Address) -> bool {
@@ -2216,14 +2245,19 @@ impl<'a> TcScope<'a> {
 
     // Lazy on-demand ingress: load only constants demanded by this specific
     // aux_gen inference, then retry one missing upstream constant at a time.
-    self.fault_in_direct_expr_consts(ty);
+    self.fault_in_direct_expr_consts(ty)?;
     let mut faulted_addrs = FxHashSet::default();
     let inferred = loop {
       match self.tc.infer(&kexpr) {
         Ok(inferred) => break inferred,
         Err(ix_kernel::error::TcError::UnknownConst(addr))
-          if faulted_addrs.insert(addr.clone())
-            && self.fault_in_addr(&addr) => {},
+          if faulted_addrs.insert(addr.clone()) =>
+        {
+          if !self.fault_in_addr(&addr)? {
+            let e = ix_kernel::error::TcError::UnknownConst(addr);
+            return Err(self.get_level_error(ty, &kexpr, &e));
+          }
+        },
         Err(e) => return Err(self.get_level_error(ty, &kexpr, &e)),
       }
     };
@@ -2839,6 +2873,20 @@ fn to_kexpr_static(
   )
 }
 
+/// The kernel crate's level conversion for this bridge. The kernel returns
+/// an error on an unknown universe parameter or a level metavariable; this
+/// bridge (`to_kexpr_static` and the `TcScope` methods built on it) returns
+/// kernel syntax directly, so it keeps the panic it always had there, with
+/// the kernel's text. Threading a refusal through the bridge, as the Lean
+/// bridge refuses, belongs to the bridge-refusal work, not to the kernel's
+/// Lean ingress. No input that compiled before reaches this panic.
+fn bridge_level_or_panic(
+  lvl: &Level,
+  param_names: &[Name],
+) -> ix_kernel::level::KUniv<Meta> {
+  lean_level_to_kuniv(lvl, param_names).unwrap_or_else(|e| panic!("{e}"))
+}
+
 fn to_kexpr_cached(
   expr: &LeanExpr,
   fvar_levels: &FxHashMap<Name, usize>,
@@ -2870,13 +2918,13 @@ fn to_kexpr_cached(
     },
     ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
     ExprData::Sort(lvl, _) => {
-      KExpr::sort(lean_level_to_kuniv(lvl, param_names))
+      KExpr::sort(bridge_level_or_panic(lvl, param_names))
     },
     ExprData::Const(cname, us, _) => {
       let addr = resolve_lean_name_addr(cname, n2a, aux_n2a);
       let zid = KId::new(addr, cname.clone());
       let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, param_names)).collect();
+        us.iter().map(|u| bridge_level_or_panic(u, param_names)).collect();
       KExpr::cnst(zid, zus)
     },
     ExprData::App(f, a, _) => {

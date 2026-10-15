@@ -4636,7 +4636,14 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   // Direct Lean → kernel ingress. No compile, no Ixon.
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let kenv = lean_ingress(&rust_env_arc);
+  let kenv = match lean_ingress(&rust_env_arc) {
+    Ok(kenv) => kenv,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_roundtrip_no_compile: ingress failed {e}"
+      ));
+    },
+  };
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] ingress:     {:>8.1?} ({} consts)",
     t1.elapsed(),

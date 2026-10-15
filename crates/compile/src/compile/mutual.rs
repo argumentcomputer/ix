@@ -247,7 +247,7 @@ pub fn compile_aux_block_with_rename(
         lean_env.as_ref(),
         stt,
         kctx,
-      );
+      )?;
     }
     return Ok(());
   }
@@ -407,7 +407,7 @@ pub fn compile_aux_block_with_rename(
       lean_env.as_ref(),
       stt,
       kctx,
-    );
+    )?;
   }
 
   Ok(())
