@@ -1798,3 +1798,157 @@ constructor:
 /-- info: 'Ix.Cert.Canon.lower_eq_compileUnivS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.lower_eq_compileUnivS
+
+/-! ## Component theorems: the ordinary expression compiler reads back as its source
+
+`Ix.CompileM.compileExprNoSurgery` (the memo, then one step per constructor,
+by well-founded recursion on `sizeOf`) is proved by strong induction: from
+every state satisfying the expression invariant (`ExpressionState.Good`:
+the universe invariants, the reference index, the declaration prefix's
+binding view and the memo's meaning at CQ2.8's exact keys), every run keeps
+it and every earlier reading, and a successful run's value reads, through
+the certified reader, as a term `Related` to the source. Without call-site
+plans the production entry `compileExpr` is that compiler
+(`compileExpr_read`). The relation is Source mode's own reading up to keys
+and level values (`related_ingress_value`). Every lemma behind them is
+audited in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: inductive Ix.CompileCert.ExpressionState.Related : {md : Ix.Kernel.Mode} →
+  (Ix.Name → Ix.Kernel.Reader.CName md → Prop) →
+    (Ix.Level → Ix.Kernel.Level → Prop) → Ix.Expr → Ix.Kernel.Reader.CExpr md → Prop
+number of parameters: 3
+constructors:
+Ix.CompileCert.ExpressionState.Related.bvar : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} (index : Nat)
+  (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.bvar index hash) (Ix.Kernel.Expr.mkBvar index)
+Ix.CompileCert.ExpressionState.Related.sort : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {source : Ix.Level}
+  {level : Ix.Kernel.Level} (hash : Address),
+  levels source level →
+    Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.sort source hash) (Ix.Kernel.Expr.sort level)
+Ix.CompileCert.ExpressionState.Related.const : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {name : Ix.Name}
+  {key : Ix.Kernel.Reader.CName md} (hash : Address) (sources : Array Ix.Level) (targets : List Ix.Kernel.Level),
+  names name key →
+    List.Forall₂ levels sources.toList targets →
+      Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.const name sources hash)
+        (Ix.Kernel.Expr.const key targets)
+Ix.CompileCert.ExpressionState.Related.app : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {fn arg : Ix.Expr}
+  {targetFn targetArg : Ix.Kernel.Reader.CExpr md} (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels fn targetFn →
+    Ix.CompileCert.ExpressionState.Related names levels arg targetArg →
+      Ix.CompileCert.ExpressionState.Related names levels (fn.app arg hash) (Ix.Kernel.Expr.app targetFn targetArg)
+Ix.CompileCert.ExpressionState.Related.lam : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
+  {type body : Ix.Expr} {targetType targetBody : Ix.Kernel.Reader.CExpr md} (name : Ix.Name) (info : Lean.BinderInfo)
+  (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels type targetType →
+    Ix.CompileCert.ExpressionState.Related names levels body targetBody →
+      Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.lam name type body info hash)
+        (Ix.Kernel.Expr.lam targetType targetBody { pw := Ix.Kernel.PropWhen.never })
+Ix.CompileCert.ExpressionState.Related.all : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
+  {type body : Ix.Expr} {targetType targetBody : Ix.Kernel.Reader.CExpr md} (name : Ix.Name) (info : Lean.BinderInfo)
+  (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels type targetType →
+    Ix.CompileCert.ExpressionState.Related names levels body targetBody →
+      Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.forallE name type body info hash)
+        (Ix.Kernel.Expr.forallE targetType targetBody { pw := Ix.Kernel.PropWhen.never })
+Ix.CompileCert.ExpressionState.Related.letE : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
+  {type value body : Ix.Expr} {targetType targetValue targetBody : Ix.Kernel.Reader.CExpr md} (name : Ix.Name)
+  (nonDep : Bool) (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels type targetType →
+    Ix.CompileCert.ExpressionState.Related names levels value targetValue →
+      Ix.CompileCert.ExpressionState.Related names levels body targetBody →
+        Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.letE name type value body nonDep hash)
+          (Ix.Kernel.Expr.letE targetType targetValue targetBody { contract := Ixon.LetContract.lean nonDep })
+Ix.CompileCert.ExpressionState.Related.nat : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} (value : Nat)
+  (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.lit (Lean.Literal.natVal value) hash)
+    (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.natVal value))
+Ix.CompileCert.ExpressionState.Related.str : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} (value : String)
+  (hash : Address),
+  Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.lit (Lean.Literal.strVal value) hash)
+    (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.strVal value))
+Ix.CompileCert.ExpressionState.Related.proj : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {name : Ix.Name}
+  {key : Ix.Kernel.Reader.CName md} {value : Ix.Expr} {targetValue : Ix.Kernel.Reader.CExpr md} (field : Nat)
+  (hash : Address),
+  names name key →
+    Ix.CompileCert.ExpressionState.Related names levels value targetValue →
+      Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.proj name field value hash)
+        (Ix.Kernel.Expr.proj key field targetValue)
+Ix.CompileCert.ExpressionState.Related.mdata : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {source : Ix.Expr}
+  {target : Ix.Kernel.Reader.CExpr md} (data : Array (Ix.Name × Ix.DataValue)) (hash : Address),
+  Ix.SemanticContract.hasMetadata data = false →
+    Ix.CompileCert.ExpressionState.Related names levels source target →
+      Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.mdata data source hash) target
+Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} {source : Ix.Expr}
+  {target result : Ix.Kernel.Reader.CExpr md} (data : Array (Ix.Name × Ix.DataValue)) (hash : Address)
+  (c : Ix.SemanticContract.Contract),
+  Ix.SemanticContract.hasMetadata data = true →
+    Ix.SemanticContract.read data = Except.ok c →
+      Ix.CompileCert.ExpressionState.Related names levels source target →
+        Ix.CompileCert.ExpressionState.withContract c source target = some result →
+          Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.mdata data source hash) result -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.ExpressionState.Related
+
+/-- info: @Ix.CompileCert.ExpressionState.compileExpr_read : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
+          ∀ (source : Ix.Expr) (before : Ix.CompileM.BlockState),
+            Ix.CompileCert.ExpressionState.Good cx param self
+                (Ix.CompileCert.ExpressionState.Related names
+                  (Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param))
+                bindings before →
+              ∀ {value : Ixon.Expr × UInt64} {after : Ix.CompileM.BlockState},
+                Ix.CompileCert.rawRun (Ix.CompileM.compileExpr source) context before = (Except.ok value, after) →
+                  ∃ target,
+                    Ix.CompileCert.ExpressionState.Related names
+                        (Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param) source target ∧
+                      (Ix.CompileCert.ExpressionRead.blockReader cx param self after).read value.fst = Except.ok target -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ExpressionState.compileExpr_read
+
+/-- info: @Ix.CompileCert.ExpressionState.related_ingress_value : ∀ {md : Ix.Kernel.Mode}
+  {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {params : List Ix.Name} {σ : Ix.Name → Ix.Kernel.LevelParam}
+  {param : Nat → Ix.Kernel.LevelParam} {source : Ix.Expr} {target : Ix.Kernel.Reader.CExpr md},
+  Ix.CompileCert.ExpressionState.Related names (Ix.CompileCert.UniversePipeline.LevelMeaning params σ param) source
+      target →
+    ∃ converted,
+      Ix.LeanIngress.ingressExpr σ source = Except.ok converted ∧
+        Ix.CompileCert.ExpressionState.Matches
+          (fun key key' => ∃ name, key = Ix.LeanIngress.ingressKey name ∧ names name key')
+          (fun level level' =>
+            ∀ (φ ψ : Ix.Kernel.LevelParam → Nat),
+              (∀ (name : Ix.Name) (index : Nat),
+                  Ix.Compile.ExactKey.nameIndex name params = some index → φ (σ name) = ψ (param index)) →
+                Ix.Kernel.Level.eval φ level = Ix.Kernel.Level.eval ψ level')
+          converted target -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ExpressionState.related_ingress_value
+
+/-- info: 'Ix.CompileCert.ExpressionState.compileExprNoSurgery_scoped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ExpressionState.compileExprNoSurgery_scoped
+
+/-- info: 'Ix.CompileCert.ExpressionState.compileExpr_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ExpressionState.compileExpr_read
+
+/-- info: 'Ix.CompileCert.ExpressionState.related_ingress_value' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ExpressionState.related_ingress_value

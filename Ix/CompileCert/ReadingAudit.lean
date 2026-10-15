@@ -4,6 +4,8 @@ import Ix.CompileCert.Serializers
 import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
+import Ix.CompileCert.ExpressionCorrectness
+import Ix.CompileCert.ExpressionIngress
 
 /-! # Audit of the reading-chain proofs
 
@@ -17,9 +19,11 @@ interners (`Ix.CompileCert.Interning`), the checked blob writes
 (`Ix.CompileCert.Serializers`), the preseed's universe-wire guard
 (`Ix.CompileCert.PreseedValidation`), the primary tables' wire validity
 (`Ix.CompileCert.WireTables`), the raw universe compiler's exact lowering
-and its value (`Ix.CompileCert.UniverseMeaning`) and the universe pipeline
-(`Ix.CompileCert.UniversePipeline`). Each root must exist, occur once, and
-depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
+and its value (`Ix.CompileCert.UniverseMeaning`), the universe pipeline
+(`Ix.CompileCert.UniversePipeline`), and the ordinary expression compiler's
+core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
+`ExpressionCorrectness`, `ExpressionIngress`). Each root must exist, occur
+once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
 
@@ -130,6 +134,41 @@ def meaningRoots : Array Lean.Name :=
     `compileUniv_returns, `compileUniv_total,
     `compileUniv_total_eval].map (`Ix.CompileCert.UniverseMeaning ++ ·)
 
+/-- The ordinary expression compiler's core (CT-13): the state and its
+effects, one step per constructor, the spine's fold, the memo and the top
+induction, and the correspondence with Source mode's reading. -/
+def expressionRoots : Array Lean.Name :=
+  #[`lookupConstAddr_run, `lookupConstAddr_state, `lookupConstAddr_correct, `constsSatisfy_of_forall,
+    `internRef_frame, `natural_go, `natural_toBytes, `string_toBytes, `extends_trans, `checked_error,
+    `meaning_grows, `read_grows, `withoutExprMetadata_reader, `good_metadata, `checked_metadata,
+    `internRef_good, `good_namesBlobs, `storeBlob_good, `compileName_good, `compileKVMap_good,
+    `blockReader_blob, `blockReader_key, `compileLevel_good, `compileLevels_list_good, `compileLevels_good,
+    `bvar_step_eq, `sort_step_eq, `const_step_eq, `binder_step_eq, `let_step_eq, `nat_step_eq,
+    `string_step_eq, `projection_step_eq, `then_checked, `child_then_checked, `index_then_checked,
+    `allocFinish_checked, `bvar_step_checked, `finishSort_run, `sort_step_checked,
+    `finishLiteral_checked, `literal_checked, `nat_step_checked, `string_step_checked,
+    `finishReference_run, `finishReference_checked, `compileConstExprRaw_eq, `constBody_checked,
+    `const_step_checked, `finishBinder_checked, `binder_step_checked, `finishLet_checked,
+    `let_step_checked, `finishProjection_checked, `projection_step_checked, `bvar_step_refuses,
+    `projection_step_refuses, `read_lam, `read_all, `read_letE, `lowerContract_read,
+    `metadata_step_checked, `decomposeApps_go, `decomposeApps_app, `constsSatisfy_spine,
+    `forall₂_snoc, `spine_related, `app_step_eq, `appLoop_checked, `app_step_checked,
+    `cached_checked, `compileExprNoSurgery_scoped, `compileExprNoSurgery_checked,
+    `compileExprNoSurgery_read, `compileExpr_surgeryFree, `compileExpr_read, `initialState_good,
+    `compileExprNoSurgery_initial_read, `withContract_matches, `levels_ingress, `related_ingress,
+    `related_ingress_value].map (`Ix.CompileCert.ExpressionState ++ ·)
+
+/-- The expression compiler's definitions the expression proofs unfold, and
+Source mode's term conversion the correspondence is about. -/
+def expressionRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.compileExprNoSurgery, ``Ix.CompileM.compileExprNoSurgeryStep, ``Ix.CompileM.compileExpr,
+    ``Ix.CompileM.CompileEnv.surgeryFree, ``Ix.CompileM.compileConstExprRaw, ``Ix.CompileM.lookupConstAddr,
+    ``Ix.CompileM.allocArenaNode, ``Ix.CompileM.pushUnivPatch, ``Ix.CompileM.compileAndInternUnivCanon,
+    ``Ix.AuxGen.decomposeApps, ``Ix.AuxGen.decomposeApps.go, ``Ix.SemanticContract.hasMetadata,
+    ``Ix.SemanticContract.read, ``Ix.SemanticContract.Contract.lower, ``Ix.LeanIngress.ingressExpr,
+    ``Ix.LeanIngress.ingressMData, ``Ix.LeanIngress.withContract, ``Ix.LeanIngress.ingressLevel,
+    ``Ix.LeanIngress.ingressKey]
+
 /-- The production definitions the table, blob and serializer proofs unfold,
 and the reader functions the reading proofs unfold. -/
 def tableRuntime : Array Lean.Name :=
@@ -163,6 +202,8 @@ run_cmd do
   checkRoots (tag := "reading-audit") "wire tables" Ix.CompileCert.ReadingAudit.wireRoots
   checkRoots (tag := "reading-audit") "universe meaning" Ix.CompileCert.ReadingAudit.meaningRoots
   checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
+  checkRoots (tag := "reading-audit") "expression core" Ix.CompileCert.ReadingAudit.expressionRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
+  checkRuntime (tag := "reading-audit") "expression compiler" Ix.CompileCert.ReadingAudit.expressionRuntime
