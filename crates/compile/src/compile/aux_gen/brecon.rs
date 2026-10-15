@@ -1646,7 +1646,6 @@ fn build_type_brecon_eq_fvar(
   // gate via a `lean_env.get("Eq").is_some()` check.
   let _ = n_minors;
 
-  let _n_motives = motive_fvars.len();
   let major_fvar = &major_fvars[0];
 
   // --- Type ---

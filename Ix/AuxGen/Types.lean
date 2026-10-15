@@ -132,12 +132,8 @@ structure AuxPatchesOutput where
       SCC are `false`. Travels into `AuxLayout.evaporated`. Mirrors Rust
       `AuxPatchesOutput.evaporated`. -/
   evaporated : Option (Array Bool) := none
-  /-- Number of equivalence classes (primary members) in the canonical block. -/
-  nClasses : Nat := 0
-  /-- Number of canonical aux members (length of the hash-sorted aux section). -/
+  /-- Number of canonical aux members (length of the canonical aux section). -/
   nCanonicalAux : Nat := 0
-  /-- Number of source-walk aux positions (≥ `nCanonicalAux` under collapse). -/
-  nSourceAux : Nat := 0
   deriving Inhabited
 
 end Ix.AuxGen

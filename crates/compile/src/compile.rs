@@ -4418,7 +4418,6 @@ fn compile_const_inner_body(
   kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
-  let _cci_start = std::time::Instant::now();
   if let Some(cached) = stt.resolve_addr_aux(name, aux) {
     return Ok(cached);
   }
@@ -4435,16 +4434,6 @@ fn compile_const_inner_body(
     })?
     .clone();
   audit_constant_info_plan_heads(&cnst, stt)?;
-  let _cnst_kind = match &cnst {
-    LeanConstantInfo::DefnInfo(_) => "defn",
-    LeanConstantInfo::ThmInfo(_) => "thm",
-    LeanConstantInfo::InductInfo(_) => "indc",
-    LeanConstantInfo::RecInfo(_) => "rec",
-    LeanConstantInfo::CtorInfo(_) => "ctor",
-    LeanConstantInfo::AxiomInfo(_) => "axio",
-    LeanConstantInfo::OpaqueInfo(_) => "opaq",
-    LeanConstantInfo::QuotInfo(_) => "quot",
-  };
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
   // When `aux` is false (ephemeral compilation for metadata capture),
@@ -4457,7 +4446,6 @@ fn compile_const_inner_body(
     aux: bool,
   ) -> Result<(Address, ConstantMeta), CompileError> {
     let _t0 = std::time::Instant::now();
-    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     preseed_expr_tables(
       &[

@@ -161,25 +161,12 @@ pub struct AuxPatchesOutput {
   /// `perm` is; positions that are canonical here or owned by another
   /// SCC are `false`. Travels into `AuxLayout.evaporated`.
   pub evaporated: Option<Vec<bool>>,
-  /// Number of equivalence classes — i.e. primary (non-aux) members in the
-  /// canonical block. Reserved for callers that need to build
-  /// [`congruence::perm::PermCtx`] (see the `validate-aux` Phase 2 path in
-  /// `ffi/lean_env.rs`); the Phase 2 builder currently derives this from
-  /// the `all` slice directly, but keep the field exposed so future
-  /// callers don't have to duplicate the singleton-classes assumption.
-  #[allow(dead_code)]
-  pub n_classes: usize,
   /// Number of canonical aux members (== length of the hash-sorted aux
   /// section). Zero for blocks without nested inductives. Reserved for
   /// downstream diagnostics / metadata; not read by the current
   /// pipeline.
   #[allow(dead_code)]
   pub n_canonical_aux: usize,
-  /// Number of source-walk aux positions (== `perm.len()` when `perm` is
-  /// `Some`). Under alpha collapse this can exceed `n_canonical_aux`.
-  /// Reserved for diagnostics — same rationale as `n_canonical_aux`.
-  #[allow(dead_code)]
-  pub n_source_aux: usize,
 }
 
 /// Generate all canonical auxiliary patches for a collapsed inductive block.
@@ -212,9 +199,7 @@ pub fn generate_aux_patches(
       aliases,
       perm: None,
       evaporated: None,
-      n_classes: sorted_classes.len(),
       n_canonical_aux: 0,
-      n_source_aux: 0,
     });
   }
 
@@ -225,7 +210,6 @@ pub fn generate_aux_patches(
   // originals into canonical order before structural comparison.
   let mut captured_perm: Option<Vec<usize>> = None;
   let mut captured_n_canonical_aux: usize = 0;
-  let mut captured_n_source_aux: usize = 0;
 
   // NOTE: the historical `perm_rename_map` (canonical→source `_N`
   // rename, applied post-generation over `.below`/`.brecOn*` patch
@@ -320,7 +304,6 @@ pub fn generate_aux_patches(
       // Stash for caller (Phase 2 / Phase 6 / Phase 7b need it).
       captured_perm = Some(perm.clone());
       captured_n_canonical_aux = n_canon;
-      captured_n_source_aux = perm.len();
 
       // `canon_repr[canonical_i]` = min source_j mapping to this
       // canonical aux. Under alpha-collapse (n_source > n_canon)
@@ -497,7 +480,6 @@ pub fn generate_aux_patches(
         )?;
         captured_perm = Some(perm.clone());
         captured_n_canonical_aux = n_canon;
-        captured_n_source_aux = perm.len();
       }
       // No expand/restore recursor generation — fall through to standard path.
       recursor::generate_canonical_recursors_with_overlay(
@@ -548,7 +530,6 @@ pub fn generate_aux_patches(
       )?;
       captured_perm = Some(perm.clone());
       captured_n_canonical_aux = n_canon;
-      captured_n_source_aux = perm.len();
     }
     recursor::generate_canonical_recursors_with_overlay(
       sorted_classes,
@@ -724,7 +705,6 @@ pub fn generate_aux_patches(
   }
 
   // Phase 2: Generate .below constants (if originals exist).
-  let _p2_start = std::time::Instant::now();
   {
     // Guard: the family exists only by Lean's conditions
     // (`below_family_lean_exists`: a recursive block), so a coincidental
@@ -883,17 +863,17 @@ pub fn generate_aux_patches(
           }
         }
 
-        let _gen_label = sorted_classes
-          .first()
-          .and_then(|c| c.first())
-          .map(|n| n.pretty())
-          .unwrap_or_default();
         if *crate::compile::IX_TIMING
           && _below_elapsed.as_secs_f32() + _brecon_elapsed.as_secs_f32() > 0.3
         {
+          let gen_label = sorted_classes
+            .first()
+            .and_then(|c| c.first())
+            .map(|n| n.pretty())
+            .unwrap_or_default();
           eprintln!(
             "[gen_patches_detail] {:?} belowGen={:.2}s breconGen={:.2}s",
-            _gen_label,
+            gen_label,
             _below_elapsed.as_secs_f32(),
             _brecon_elapsed.as_secs_f32(),
           );
@@ -902,15 +882,15 @@ pub fn generate_aux_patches(
     }
   }
 
-  let _gen_label = sorted_classes
-    .first()
-    .and_then(|c| c.first())
-    .map(|n| n.pretty())
-    .unwrap_or_default();
   if *crate::compile::IX_TIMING && _p1_elapsed.as_secs_f32() > 0.5 {
+    let gen_label = sorted_classes
+      .first()
+      .and_then(|c| c.first())
+      .map(|n| n.pretty())
+      .unwrap_or_default();
     eprintln!(
       "[gen_patches] {:?} recGen={:.2}s patches={}",
-      _gen_label,
+      gen_label,
       _p1_elapsed.as_secs_f32(),
       patches.len(),
     );
@@ -1370,9 +1350,7 @@ pub fn generate_aux_patches(
     aliases,
     perm: captured_perm,
     evaporated,
-    n_classes,
     n_canonical_aux: captured_n_canonical_aux,
-    n_source_aux: captured_n_source_aux,
   })
 }
 

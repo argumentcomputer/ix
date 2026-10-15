@@ -1230,9 +1230,6 @@ def buildRecRules (di : Nat) (classes : Array FlatInfo)
   let nMinors : Nat := classes.foldl (init := 0) fun acc c => acc + c.ctors.size
   let pmm := nParams + nMotives + nMinors
 
-  -- (Rust extracts `_pmm_binders = collect_binders(rec_type, pmm)` here —
-  -- dead value, not reconstructed.)
-
   -- Param binder infos from the inductive type (for rule RHS lambdas).
   let paramBinderInfos : Array Lean.BinderInfo :=
     let indTy := substLevels classes[0]!.ind.cnst.type
