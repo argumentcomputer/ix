@@ -40,6 +40,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed={variable}");
   }
   if env::var_os("CARGO_FEATURE_CUDA").is_some() {
+    println!(
+      "cargo:rustc-link-arg-bin=ix-compression-worker=-Wl,-rpath,$ORIGIN/../lib"
+    );
     build_kzg_cuda();
   }
 }
@@ -149,9 +152,7 @@ fn cuda_compile_command(
 }
 
 fn link_cuda_runtime(nvcc: &std::ffi::OsStr) {
-  // CUDA is bundled into Rust staticlibs. Dynamic host dependencies must
-  // also be supplied by foreign final linkers; Lake isolates a static
-  // libstdc++ from the same nvcc host compiler in its native archive.
+  // The standalone worker links the BLS12-381 backend with its host runtime.
   println!("cargo:rustc-link-lib=static=cudart_static");
   for lib in ["dl", "rt", "pthread", "stdc++"] {
     println!("cargo:rustc-link-lib=dylib={lib}");
@@ -180,30 +181,14 @@ fn nvcc_path() -> std::ffi::OsString {
 
 /// `IX_KZG_CUDA_ARCHS` selects the SM architectures; `MULTI_STARK_CUDA_ARCHS`
 /// is honored as a fallback so one variable configures both CUDA backends of a
-/// Lake build. Without either, nvcc's supported portable set is used.
+/// Lake build. Without either, the installed GPU architectures are detected.
 fn cuda_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
   let supported = supported_architectures(nvcc);
   let configured = env::var("IX_KZG_CUDA_ARCHS")
     .or_else(|_| env::var("MULTI_STARK_CUDA_ARCHS"))
-    .ok();
-  let (configured, explicitly_configured) = match configured {
-    Some(value) => (value, true),
-    None => {
-      let preferred = ["70", "75", "80", "86", "89", "90", "100", "110", "120"];
-      let selected: Vec<_> = preferred
-        .into_iter()
-        .filter(|architecture| {
-          supported.iter().any(|item| item == architecture)
-        })
-        .collect();
-      let defaults = if selected.is_empty() {
-        detect_nvidia_architectures().unwrap_or_else(|| "80".to_owned())
-      } else {
-        selected.join(",")
-      };
-      (defaults, false)
-    },
-  };
+    .ok()
+    .or_else(detect_nvidia_architectures)
+    .expect("no NVIDIA GPU detected; set IX_KZG_CUDA_ARCHS or MULTI_STARK_CUDA_ARCHS for the target GPU");
   let architectures: Vec<_> = configured
     .split(',')
     .map(str::trim)
@@ -215,8 +200,7 @@ fn cuda_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
         "invalid CUDA architecture {architecture:?}; expected comma-separated numbers such as 80,90"
       );
       assert!(
-        !explicitly_configured
-          || supported.is_empty()
+        supported.is_empty()
           || supported.iter().any(|item| item == architecture),
         "nvcc does not support CUDA architecture sm_{architecture}"
       );

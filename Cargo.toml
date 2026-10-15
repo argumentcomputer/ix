@@ -122,3 +122,6 @@ unnecessary_wraps = "warn"
 unnested_or_patterns = "warn"
 type_complexity = "allow"
 too_many_arguments = "allow"
+
+[patch."https://github.com/argumentcomputer/multi-stark.git"]
+multi-stark = { path = "../multi-stark" }

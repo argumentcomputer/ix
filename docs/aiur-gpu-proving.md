@@ -25,16 +25,26 @@ everything else unchanged.
 Build on a GPU host:
 
 ```sh
-IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=120 lake build ix
+IX_CUDA_TRACE_CODEGEN=1 lake build ix
 ```
 
-`MULTI_STARK_CUDA_ARCHS` names the SM architecture (`120` is Blackwell,
-`80` the CI container's Ampere). The lakefile compiles the C units Cargo
-builds as C17: with glibc 2.38 or newer headers in C23 mode, mimalloc's
+The build detects the installed GPUs and compiles only their distinct SM
+architectures. Set `MULTI_STARK_CUDA_ARCHS` explicitly for cross builds or
+hosts without a GPU (`120` is Blackwell, `80` is the CI target).
+
+The lakefile compiles the C units Cargo builds as C17: with glibc 2.38 or newer headers in C23 mode, mimalloc's
 `strtol` would become `__isoc23_strtol`, which the link-time glibc of
 Lean's bundled toolchain does not provide, and the final link would fail on
 `libix_ffi_net.a`. No `CFLAGS` setting is needed. If `nvcc` is not on
 `PATH`, set `NVCC` or `CUDA_HOME`.
+
+CUDA-enabled Lean executables and the compression worker load `libmulti_stark_cuda.so` from `../lib` relative
+to the executable. Multi-stark builds this library
+with a private static GNU C++ runtime and unwinder; only the C interface
+is exported.
+Lean keeps its bundled libc++. When copying an executable out of the build
+tree, also copy `.lake/build/lib/libmulti_stark_cuda.so` into the matching `lib/`
+directory.
 
 A binary linked by the Nix Rust toolchain runs on Nix glibc, whose loader
 never searches `/usr/lib/x86_64-linux-gnu`; the statically linked CUDA

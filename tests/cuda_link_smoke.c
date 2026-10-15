@@ -27,6 +27,28 @@ static void *require_symbol(const char *name) {
     return symbol;
 }
 
+static int check_private_runtime(void *entry) {
+    Dl_info info;
+    if (!dladdr(entry, &info) || !info.dli_fname ||
+        !strstr(info.dli_fname, "/libmulti_stark_cuda.so")) {
+        fputs("CUDA link smoke: Goldilocks backend is not in libmulti_stark_cuda.so\n", stderr);
+        return 1;
+    }
+    void *backend = dlopen(info.dli_fname, RTLD_NOW | RTLD_NOLOAD);
+    if (!backend) {
+        fprintf(stderr, "CUDA link smoke: cannot open backend: %s\n", dlerror());
+        return 1;
+    }
+    /* C++ definitions must stay local even when the executable exports
+       Lean's own exception and typeinfo symbols. */
+    int leaked = dlsym(backend, "_ZNSt13runtime_errorC1EPKc") != NULL ||
+                 dlsym(backend, "__gxx_personality_v0") != NULL ||
+                 dlsym(backend, "_Unwind_RaiseException") != NULL;
+    dlclose(backend);
+    if (leaked) fputs("CUDA link smoke: backend exports its C++ runtime\n", stderr);
+    return leaked;
+}
+
 static int check_status(const char *operation, int status) {
     if (status) fprintf(stderr, "CUDA link smoke: %s returned %d\n", operation, status);
     return status != 0;
@@ -86,6 +108,7 @@ static int checked_main(int argc, char **argv, char **envp) {
         (fri_round_trip_function)require_symbol("multi_stark_sppark_borrowed_round_trip");
     host_copy_function copy =
         (host_copy_function)require_symbol("multi_stark_sppark_parallel_memcpy");
+    if (check_private_runtime((void *)round_trip)) return 91;
     /* Invalid arguments return cudaErrorInvalidValue before touching a GPU. */
     if (round_trip(-1, NULL, 0) != 1 || copy(-1, NULL, NULL, 1) != 1) {
         fputs("CUDA link smoke: invalid Goldilocks arguments were not rejected\n", stderr);
