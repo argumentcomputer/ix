@@ -40,14 +40,13 @@ fn lease_devices() -> Devices {
 #[test]
 fn device_leases_reject_reentrancy_and_release_on_unwind() {
   let devices = lease_devices();
-  for entry in 0..5 {
+  for entry in 0..4 {
     let result = std::panic::catch_unwind(|| {
       let _lease = devices.acquire_at(0);
       match entry {
         0 => drop(devices.acquire()),
         1 => drop(devices.acquire_at(1)),
-        2 => drop(devices.acquire_group(&[1])),
-        3 => drop(quotient::acquire_columns(&mut [], &[], 0)),
+        2 => drop(quotient::acquire_columns(&mut [], &[], 0)),
         _ => drop(devices.acquire_admitted(&[1], |_| true)),
       }
     });
@@ -55,12 +54,6 @@ fn device_leases_reject_reentrancy_and_release_on_unwind() {
     assert_eq!(DEVICE_LEASES.get(), 0);
     assert!(devices.busy.lock().unwrap().iter().all(|busy| !busy));
   }
-  let mut group = devices.acquire_group(&[0, 1]);
-  assert_eq!(DEVICE_LEASES.get(), 2);
-  drop(group.pop());
-  assert_eq!(DEVICE_LEASES.get(), 1);
-  drop(group);
-  assert_eq!(DEVICE_LEASES.get(), 0);
   drop(devices.acquire());
   assert!(devices.busy.lock().unwrap().iter().all(|busy| !busy));
 }

@@ -1,51 +1,15 @@
 //! FRI compression of an exported aggregate root proof.
-use crate::fri::Envelope;
+use super::stages::statement::decode_claims;
 use crate::fri::ImplementationOptions;
-use crate::fri::Message;
-use crate::fri::ProofEnvelope;
-use crate::fri::ProofProfile;
-use crate::fri::Statement;
-use crate::fri::StatementBinding;
-use crate::fri::StatementSlot;
 use crate::fri::VerifierKey;
 use crate::fri::VerifierLimits;
-use crate::fri::VerifierPlan;
 use multi_stark::batch::BatchProof;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
 use multi_stark::types::GoldilocksBlake3Config;
 use multi_stark::types::Val;
 use p3_blake3::Blake3;
-use p3_field::{PrimeCharacteristicRing, PrimeField64, TwoAdicField};
+use p3_field::TwoAdicField;
 use p3_symmetric::CryptographicHasher;
 use std::{fs, path::PathBuf, time::Instant};
-
-fn claims_from_bytes(bytes: &[u8]) -> Result<Vec<Vec<Val>>, String> {
-  let (words, remainder) = bytes.as_chunks::<8>();
-  if !remainder.is_empty() {
-    return Err("unaligned claims".into());
-  }
-  let mut words = words.iter();
-  let n = u64::from_le_bytes(*words.next().ok_or("missing claims count")?);
-  let mut claims = Vec::new();
-  for _ in 0..n {
-    let len = u64::from_le_bytes(*words.next().ok_or("missing claim length")?);
-    let mut claim = Vec::new();
-    for _ in 0..len {
-      let v = u64::from_le_bytes(*words.next().ok_or("missing claim value")?);
-      if v >= Val::ORDER_U64 {
-        return Err("noncanonical claim".into());
-      }
-      claim.push(Val::from_u64(v));
-    }
-    claims.push(claim);
-  }
-  if words.next().is_some() {
-    return Err("trailing claims".into());
-  }
-  Ok(claims)
-}
 
 /// Compiled worker features for deployment checks.
 fn print_capabilities() {
@@ -97,12 +61,7 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   }
   fs::create_dir_all(&out)?;
   spawn_memory_monitor();
-  let _ = tracing_subscriber::fmt()
-    .with_ansi(false)
-    .with_target(false)
-    .with_max_level(tracing::Level::INFO)
-    .with_writer(std::io::stderr)
-    .try_init();
+  let input_span = tracing::info_span!("compression/load_input").entered();
   let vk_bytes = fs::read(dir.join("root-vk.bin"))?;
   let native_key = aiur::vk_codec::AiurVerifyingKey::from_bytes(&vk_bytes)?;
   let system = native_key.system();
@@ -113,13 +72,14 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   if proof.to_bytes()? != bytes {
     return Err("noncanonical proof transport".into());
   }
-  let claims = claims_from_bytes(&fs::read(dir.join("root-claims.bin"))?)?;
+  let claims = decode_claims(&fs::read(dir.join("root-claims.bin"))?)?;
   if claims.len() != 1 || claims[0].len() != super::statement::WORDS {
     return Err("root claims must hold one statement of 18 words".into());
   }
+  drop(input_span);
   let start = Instant::now();
-  native_key
-    .verify(&claims[0], &proof)
+  tracing::info_span!("compression/verify_input")
+    .in_scope(|| native_key.verify(&claims[0], &proof))
     .map_err(|e| format!("Aiur policy: {e:?}"))?;
   println!(
     "Native Ix root batch verified in {:?}: {} bytes, {} circuits, {} shards",
@@ -144,159 +104,35 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     "Fixed messages (validated Aiur memory-closure policy): {}",
     proof.preamble.messages.len()
   );
-  let h = &proof.preamble.headers[0];
-  let verifier_key = VerifierKey::from_system(system);
-  let plan = VerifierPlan::validate(
-    &verifier_key,
-    ProofProfile {
-      envelope: Envelope::SingleBatch,
-      active: h.active.clone(),
-      log_degrees: h.log_degrees.clone(),
-      claim_lengths: claims.iter().map(Vec::len).collect(),
-      message_lengths: proof
-        .preamble
-        .messages
-        .iter()
-        .map(|m| m.args.len())
-        .collect(),
-      max_field_retries: 2,
-    },
-    VerifierLimits::default(),
-  )?;
-  let shape = plan.shape();
-  println!(
-    "Fixed shape: {} active circuits, max trace log {}, {} queries; batch messages are circuit constants",
-    shape.log_degrees.len(),
-    shape.log_trace,
-    shape.queries
-  );
-  let start = Instant::now();
-  let expanded = plan.expand_witness(ProofEnvelope::SingleBatch(&proof))?;
-  println!("Untrusted witness expansion: {:?}", start.elapsed());
   if mode == "--native-only" {
     return Ok(());
   }
-  let start = Instant::now();
-  let mut builder = CircuitBuilder::new();
+  let verifier_key = VerifierKey::from_system(system);
+  let plan = super::stages::root::RootPlan::new(
+    &verifier_key,
+    &proof,
+    VerifierLimits::default(),
+  )?;
   let compact = std::env::var_os("IX_ROOT_GENERIC_HASHES").is_none();
-  if compact {
-    builder.enable_compact_blake3();
-  }
-  println!("Compact BLAKE3: {compact}");
-  let claim_wires = claims
-    .iter()
-    .enumerate()
-    .map(|(i, claim)| {
-      (0..claim.len())
-        .map(|j| {
-          StatementBinding::Wire(
-            builder.public_input(format!("claim[{i}][{j}]")),
-          )
-        })
-        .collect()
-    })
-    .collect();
-  let inputs = plan.constrain(
-    &mut builder,
-    Statement {
-      claims: claim_wires,
-      messages: proof
-        .preamble
-        .messages
-        .iter()
-        .map(|m| Message {
-          args: m
-            .args
-            .iter()
-            .copied()
-            .map(StatementBinding::Constant)
-            .collect(),
-          multiplicity: StatementBinding::Constant(m.multiplicity),
-        })
-        .collect(),
-    },
-    ImplementationOptions { compact_blake3: compact },
-  )?;
-  let schema = Statement {
-    claims: claims
-      .iter()
-      .map(|c| vec![StatementSlot::Public; c.len()])
-      .collect(),
-    messages: proof
-      .preamble
-      .messages
-      .iter()
-      .map(|m| Message {
-        args: m.args.iter().copied().map(StatementSlot::Constant).collect(),
-        multiplicity: StatementSlot::Constant(m.multiplicity),
-      })
-      .collect(),
-  };
+  let options = ImplementationOptions { compact_blake3: compact };
   fs::write(out.join("inner-vk.bin"), verifier_key.to_bytes()?)?;
-  fs::write(out.join("plan-id.bin"), plan.identity(&schema)?)?;
-  let implementation =
-    concat!("ix-proof-compression/", env!("CARGO_PKG_VERSION"));
-  fs::write(
-    out.join("build-id.bin"),
-    plan.build_identity(
-      &schema,
-      ImplementationOptions { compact_blake3: compact },
-      implementation,
-      "plonkish-multi-stark/v1",
-      "max-height=16777216;lookup-group=3",
-    )?,
-  )?;
-  fs::write(
-    out.join("statement-schema.txt"),
-    format!(
-      "Public order: claims in order, then message arguments and multiplicity; constants omitted.\nProfile: {:?}\nSchema: {schema:?}\nImplementation: {implementation}\nCompact BLAKE3: {compact}\n",
-      plan.profile()
-    ),
-  )?;
-  let circuit = builder.finish();
-  println!("Circuit build: {:?}; {:?}", start.elapsed(), circuit.stats());
-  // Bound each computation domain, without changing the inner verifier.
+  fs::write(out.join("plan-id.bin"), plan.identity()?)?;
+  fs::write(out.join("build-id.bin"), plan.build_identity(options)?)?;
+  fs::write(out.join("statement-schema.txt"), plan.description())?;
+  let start = Instant::now();
+  let prepared = plan.prepare(&proof, &claims[0], options)?;
   let max_trace_height = 1usize << 24;
-  let layout = circuit.multi_stark_layout_with_max_height(max_trace_height)?;
-  println!("STARK layout: {layout:?}");
+  let layout =
+    prepared.circuit().multi_stark_layout_with_max_height(max_trace_height)?;
+  println!(
+    "Circuit preparation: {:?}; {:?}",
+    start.elapsed(),
+    prepared.circuit().stats()
+  );
   fs::write(
     out.join("circuit-cost.txt"),
-    format!("Stats: {:?}\nLayout: {layout:?}\n", circuit.stats()),
+    format!("Stats: {:?}\nLayout: {layout:?}\n", prepared.circuit().stats()),
   )?;
-  let start = Instant::now();
-  let mut witness = circuit.witness();
-  inputs.assign_statement(
-    &mut witness,
-    &Statement {
-      claims: claims.clone(),
-      messages: proof
-        .preamble
-        .messages
-        .iter()
-        .map(|m| Message { args: m.args.clone(), multiplicity: m.multiplicity })
-        .collect(),
-    },
-  )?;
-  expanded.assign_proof(&mut witness, &inputs)?;
-  let assignment = witness.generate()?;
-  let public: Vec<_> = claims.iter().flatten().copied().collect();
-  assert_eq!(assignment.public_values(), public);
-  for (bits, &expected) in
-    inputs.proof().query_bits.iter().zip(expanded.query_indices())
-  {
-    let actual: u64 = bits
-      .iter()
-      .enumerate()
-      .map(|(i, b)| {
-        assignment.value(b.value()).unwrap().as_canonical_u64() << i
-      })
-      .sum();
-    assert_eq!(actual, expected as u64);
-  }
-  println!(
-    "Full Plonkish witness/constraint check passed: {:?}; all query indices match native",
-    start.elapsed()
-  );
   fs::write(
     out.join("CHECKED"),
     "all constraints satisfied; expected claims and query indices matched\n",
@@ -334,75 +170,25 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 .into(),
         );
   }
-  drop(expanded);
   drop(proof);
-
-  drop(inputs);
   drop(plan);
   drop(verifier_key);
+  let public = prepared.public_values().to_vec();
   let start = Instant::now();
-  // Sharded lowering keeps integer copy links instead of materializing the
-  // dense fixed matrix and wires of the whole circuit; the layout, fixed
-  // columns and proof bytes are the same as the dense lowering's.
-  let compiled = circuit
-    .lower_to_multi_stark_sharded(Val::from_u8(107), max_trace_height)?;
-  println!("Lowering: {:?}", start.elapsed());
-  let outer_claims = compiled.claims(&public)?;
-  let mut wrong_public = public.clone();
-  wrong_public[0] += Val::ONE;
-  let wrong_claims = compiled.claims(&wrong_public)?;
-  let start = Instant::now();
-  let traces = compiled.traces(&assignment)?;
-  let mut definitions = compiled.circuit_inputs();
-  for d in &mut definitions {
-    d.lookup_group_size = 3;
-  }
-  println!("Trace construction: {:?}", start.elapsed());
-  drop(compiled);
-  drop(assignment);
-  // Use the root proof's commitment and FRI parameters.
-  let config = GoldilocksBlake3Config::new(cp, fp);
-  let start = Instant::now();
-  let (outer, key) = System::new(config, definitions);
-  println!("Outer setup: {:?}", start.elapsed());
-  let refs: Vec<_> = outer_claims.iter().map(Vec::as_slice).collect();
-  let start = Instant::now();
-  let outer_proof = outer.prove_multiple_claims(
-    &key,
-    &refs,
-    SystemWitness::from_stage_1(traces, &outer),
-  );
-  println!("Outer proving: {:?}", start.elapsed());
-  let start = Instant::now();
-  outer
-    .verify_multiple_claims(&refs, &outer_proof)
-    .map_err(|e| format!("outer verification: {e:?}"))?;
-  println!("Outer verification: {:?}", start.elapsed());
-  assert!(
-    outer
-      .verify_multiple_claims(
-        &wrong_claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
-        &outer_proof
-      )
-      .is_err()
-  );
+  let (verifier, outer_proof) = prepared
+    .prove_fri(GoldilocksBlake3Config::new(cp, fp), max_trace_height)?;
+  println!("FRI proving and verification: {:?}", start.elapsed());
+  let _output_span = tracing::info_span!("compression/write_output").entered();
   let bytes = outer_proof.to_bytes()?;
-  println!("Outer proof: {} bytes; altered public claim rejected", bytes.len());
+  println!("Outer proof: {} bytes", bytes.len());
   fs::write(out.join("outer-proof.bin"), bytes)?;
+  fs::write(out.join("outer-vk.bin"), verifier.key.to_bytes()?)?;
   fs::write(
-    out.join("outer-vk.bin"),
-    VerifierKey::from_system(&outer).to_bytes()?,
+    out.join("outer-claims.bin"),
+    super::stages::statement::encode_claims(
+      &verifier.statement.claims(&public)?,
+    ),
   )?;
-  fs::write(out.join("outer-claims.bin"), {
-    let mut bytes = (outer_claims.len() as u64).to_le_bytes().to_vec();
-    for claim in &outer_claims {
-      bytes.extend((claim.len() as u64).to_le_bytes());
-      for value in claim {
-        bytes.extend(value.as_canonical_u64().to_le_bytes());
-      }
-    }
-    bytes
-  })?;
   fs::write(
     out.join("statement-values.bin"),
     bincode::serde::encode_to_vec(&public, bincode::config::standard())?,

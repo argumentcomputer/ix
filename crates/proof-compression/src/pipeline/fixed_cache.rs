@@ -2,7 +2,7 @@
 //! openings. Entries are keyed by the executable digest and the stage
 //! profile, so a rebuilt binary never reuses another build's preprocessing.
 //! The root is `IX_KZG_FIXED_CACHE`, or `<stage>/kzg/fixed-cache`.
-use super::kzg_storage::{self as storage, Manifest, Result};
+use super::storage::{self, Manifest, Result};
 use serde::{Deserialize, Serialize};
 use std::{
   fs::{self, File},
@@ -54,17 +54,7 @@ fn file_digest(path: &Path) -> io::Result<[u8; 32]> {
   Ok(*hasher.finalize().as_bytes())
 }
 
-fn root(stage: &Path) -> PathBuf {
-  std::env::var_os("IX_KZG_FIXED_CACHE")
-    .map_or_else(|| stage.join("kzg/fixed-cache"), PathBuf::from)
-}
-
 impl FixedCache {
-  /// The cache entry of `profile` for a stage proving into `directory`.
-  pub(crate) fn for_stage(directory: &Path, profile: &[u8]) -> Result<Self> {
-    Self::from_profile(&root(directory), profile)
-  }
-
   /// The executable digest conservatively binds the compiler, lowering,
   /// dependency versions, SRS recipe, and all circuit implementation choices.
   pub(crate) fn from_profile(root: &Path, profile: &[u8]) -> Result<Self> {
@@ -84,6 +74,11 @@ impl FixedCache {
     }
   }
 
+  #[tracing::instrument(
+    level = "info",
+    skip_all,
+    name = "compression/cache_restore"
+  )]
   pub(crate) fn restore(&self, staged: &Path) -> Result<Option<Shape>> {
     let ready = self.directory.join("ready.bin");
     if !ready.try_exists()? {
@@ -119,6 +114,11 @@ impl FixedCache {
   /// Publish only after the proof using these parameters has verified.
   /// The cache directory must be trusted like the development SRS cache;
   /// metadata and field decoding detect truncation, not a malicious producer.
+  #[tracing::instrument(
+    level = "info",
+    skip_all,
+    name = "compression/cache_publish"
+  )]
   pub(crate) fn publish(&self, staged: &Path) -> Result<()> {
     if self.directory.join("ready.bin").try_exists()? {
       return Ok(());

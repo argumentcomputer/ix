@@ -2,9 +2,10 @@
 //! decoding a key supplied alongside a proof does not establish trust.
 use super::{FriVerifier, KzgVerifier, Result, Statement};
 use crate::fri::VerifierKey;
-use crate::kzg::{KzgCommitment, KzgConfig, Scalar, VerifierParams};
+use crate::kzg::{
+  KzgCommitment, KzgConfig, Scalar, TranscriptKind, VerifierParams,
+};
 use multi_stark::system::{Circuit, System};
-use multi_stark::traits::Field;
 use multi_stark::types::Val;
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -32,23 +33,6 @@ pub(super) fn decode<T: DeserializeOwned + Serialize>(
   Ok(value)
 }
 
-impl<F: Field> Statement<F> {
-  fn validate(&self) -> Result<()> {
-    let count = self.locations.len();
-    if self.template.len() <= count
-      || self.template[..=count].iter().any(|row| row.len() != 4)
-      || self.locations.iter().copied().ne((1..=count).map(|i| (i, 3)))
-      || self
-        .locations
-        .iter()
-        .any(|&(row, col)| self.template[row][col] != F::ZERO)
-    {
-      return Err("invalid compression statement schema".into());
-    }
-    Ok(())
-  }
-}
-
 impl FriVerifier {
   /// Encode the verifier, including its public statement schema. No prover
   /// matrices are included. Authenticate the complete encoding on transport.
@@ -70,9 +54,13 @@ impl KzgVerifier {
   /// the public statement schema. Proving powers and matrices are excluded.
   pub fn to_bytes(&self) -> Result<Vec<u8>> {
     encode(
-      b"IXKZGV01",
+      b"IXKZGV02",
       (
         self.params.to_bytes()?,
+        match self.system.config.transcript_kind() {
+          TranscriptKind::Blake3 => 0u8,
+          TranscriptKind::Keccak256 => 1u8,
+        },
         &self.system.circuits,
         &self.system.preprocessed_commit,
         &self.statement,
@@ -82,41 +70,34 @@ impl KzgVerifier {
 
   /// Decode an independently trusted verifier with a 64 MiB decoding budget.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-    let (params, circuits, preprocessing, statement): (
+    let (params, transcript, circuits, preprocessing, statement): (
       Vec<u8>,
+      u8,
       Vec<Circuit<Scalar>>,
       Option<KzgCommitment>,
       Statement<Scalar>,
-    ) = decode(b"IXKZGV01", bytes)?;
+    ) = if bytes.starts_with(b"IXKZGV01") {
+      let (params, circuits, preprocessing, statement) =
+        decode(b"IXKZGV01", bytes)?;
+      (params, 0, circuits, preprocessing, statement)
+    } else {
+      decode(b"IXKZGV02", bytes)?
+    };
     let params = VerifierParams::from_bytes(&params)?;
-    statement.validate()?;
-    let commitment =
-      preprocessing.as_ref().ok_or("missing fixed commitment")?;
-    if circuits.is_empty() || commitment.0.len() != circuits.len() {
-      return Err("invalid fixed commitment dimensions".into());
-    }
-    for (i, c) in circuits.iter().enumerate() {
-      crate::circuit_metadata::validate_circuit(c, 1)?;
-      if c.preprocessed.is_some()
-        || c.preprocessed_width == 0
-        || !c.preprocessed_height.is_power_of_two()
-        || c.preprocessed_height > params.max_trace_len()
-        || c.quotient_degree() > 2
-        || commitment.0[i].len() != c.preprocessed_width
-      {
-        return Err("invalid KZG compression circuit metadata".into());
-      }
-    }
+    let transcript = match transcript {
+      0 => TranscriptKind::Blake3,
+      1 => TranscriptKind::Keccak256,
+      _ => return Err("unsupported KZG transcript".into()),
+    };
     let indices = (0..circuits.len()).map(Some).collect();
-    Ok(Self {
-      system: System {
-        config: KzgConfig::verifier_only(params.clone(), 2),
+    Self::new(
+      System {
+        config: KzgConfig::verifier_only(params, 2).with_transcript(transcript),
         circuits,
         preprocessed_commit: preprocessing,
         preprocessed_indices: indices,
       },
-      params,
       statement,
-    })
+    )
   }
 }

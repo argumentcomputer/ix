@@ -90,18 +90,6 @@ struct FftJob {
   resident_output: *mut *mut c_void,
 }
 
-#[repr(C)]
-#[derive(Default)]
-struct NativeIdleMemory {
-  driver_free_bytes: u64,
-  total_bytes: u64,
-  current_pool_reserved_bytes: u64,
-  current_pool_used_bytes: u64,
-  default_pool_reserved_bytes: u64,
-  default_pool_used_bytes: u64,
-  current_pool_is_default: u64,
-}
-
 unsafe extern "C" {
   fn ix_kzg_range_push(name: *const std::ffi::c_char);
   fn ix_kzg_range_pop();
@@ -125,11 +113,6 @@ unsafe extern "C" {
   fn ix_kzg_devices(count: *mut i32) -> i32;
   fn ix_kzg_device_ordinal(index: i32, ordinal: *mut i32) -> i32;
   fn ix_kzg_memory(device: i32, free: *mut usize, total: *mut usize) -> i32;
-  fn ix_kzg_idle_memory(
-    device: i32,
-    trim: bool,
-    report: *mut NativeIdleMemory,
-  ) -> i32;
   fn ix_kzg_msm_create(
     device: i32,
     out: *mut *mut c_void,
@@ -369,21 +352,6 @@ impl Devices {
     None
   }
 
-  fn acquire_group(&self, indices: &[usize]) -> Vec<Device<'_>> {
-    Device::assert_unleased();
-    assert!(indices.iter().enumerate().all(|(i, &index)| {
-      index < self.ids.len() && !indices[..i].contains(&index)
-    }));
-    let mut busy = self.busy.lock().unwrap();
-    while indices.iter().any(|&index| busy[index]) {
-      busy = self.available.wait(busy).unwrap();
-    }
-    for &index in indices {
-      busy[index] = true;
-    }
-    indices.iter().map(|&index| Device::new(self, index)).collect()
-  }
-
   fn reserve(&self, bytes: usize) -> Option<Reservation> {
     let mut retained = self.resident_bytes.lock().unwrap();
     let index = (0..self.ids.len())
@@ -429,57 +397,6 @@ impl<'a> Device<'a> {
     );
     free.saturating_sub(total / 4)
   }
-
-  fn idle_memory(&self, trim: bool) -> super::pcs::KzgDeviceMemorySnapshot {
-    let mut memory = NativeIdleMemory::default();
-    check(
-      unsafe { ix_kzg_idle_memory(self.id(), trim, &mut memory) },
-      "idle memory release",
-    );
-    let (srs_point_bytes, msm_workspace_bytes) =
-      srs_cache::resident_bytes(self.index);
-    super::pcs::KzgDeviceMemorySnapshot {
-      driver_free_bytes: memory.driver_free_bytes,
-      total_bytes: memory.total_bytes,
-      current_pool_reserved_bytes: memory.current_pool_reserved_bytes,
-      current_pool_used_bytes: memory.current_pool_used_bytes,
-      default_pool_reserved_bytes: memory.default_pool_reserved_bytes,
-      default_pool_used_bytes: memory.default_pool_used_bytes,
-      current_pool_is_default: memory.current_pool_is_default != 0,
-      resident_coefficient_bytes: self.devices.resident_bytes.lock().unwrap()
-        [self.index],
-      srs_point_bytes,
-      msm_workspace_bytes,
-    }
-  }
-}
-
-pub(super) fn release_idle_device_memory() -> super::pcs::KzgIdleMemoryRelease {
-  let mut report = super::pcs::KzgIdleMemoryRelease {
-    cuda_enabled: true,
-    ..Default::default()
-  };
-  let Some(devices) = DEVICES.get() else {
-    return report;
-  };
-  let indices: Vec<_> = (0..devices.ids.len()).collect();
-  let leases = devices.acquire_group(&indices);
-  report.initialized = true;
-  for device in &leases {
-    let before = device.idle_memory(false);
-    let (released_srs_point_bytes, released_msm_workspace_bytes) =
-      srs_cache::release_all(device);
-    let after = device.idle_memory(true);
-    report.devices.push(super::pcs::KzgDeviceMemoryRelease {
-      device: device.id(),
-      before,
-      after,
-      released_srs_point_bytes,
-      released_msm_workspace_bytes,
-    });
-  }
-  report.quiesced = true;
-  report
 }
 
 impl Drop for Device<'_> {

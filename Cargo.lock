@@ -2112,6 +2112,7 @@ dependencies = [
  "tiny-keccak",
  "tracing",
  "tracing-subscriber",
+ "tracing-texray",
 ]
 
 [[package]]

@@ -62,6 +62,14 @@ public def run : IO Unit := do
     let out ← invoke home args
     unless out.exitCode == 0 && (out.stdout.splitOn "Filecoin").length > 1 do
       throw <| IO.userError s!"bundled Filecoin proof failed: {out.stdout} {out.stderr}"
+    let aggregateArgs := #["verify", "--aggregate", toString compressedAddr]
+    let aggregate ← invoke home aggregateArgs
+    unless aggregate.exitCode == 0 && (aggregate.stdout.splitOn "Filecoin").length > 1 do
+      throw <| IO.userError s!"bundled aggregate proof failed: {aggregate.stdout} {aggregate.stderr}"
+    unless (aggregate.stdout.splitOn "aggregate backend setup").length == 1 do
+      throw <| IO.userError "compressed aggregate verification constructed the native backend"
+    rejects home (aggregateArgs ++ #["--ixe", "Tests/Fixtures/ixon-v4/handoff/accepted.ixe"])
+      "does not match expected"
     unless !(← (home / ".ix/verifiers").pathExists) do
       throw <| IO.userError "verification created a filesystem verifier registry"
 

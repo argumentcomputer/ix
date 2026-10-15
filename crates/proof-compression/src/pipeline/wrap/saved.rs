@@ -1,16 +1,16 @@
 use super::super::{
-  setup::{FIRST_SEED, SetupClass, SetupSource},
+  setup::{BINDING_FILE, FIRST_SEED, SetupClass},
   statement,
-  support::kzg_setup::BINDING_FILE,
 };
 use crate::{
   kzg::{KzgCommitment, KzgConfig, Scalar, compact::FixedProofCodec},
-  recursive::native_verifier::{ClaimSchema, LayoutPolicy, Plan},
+  recursive::native_verifier::{ClaimSchema, Plan},
 };
+#[cfg(test)]
+use multi_stark::traits::Field;
 use multi_stark::{
   prover::Proof,
   system::{Circuit, System},
-  traits::Field,
 };
 use serde::de::DeserializeOwned;
 use std::{collections::BTreeMap, fs, path::Path, time::Instant};
@@ -48,16 +48,15 @@ fn load<T: DeserializeOwned>(
   Ok(result)
 }
 
-pub(super) fn layout() -> LayoutPolicy {
-  LayoutPolicy {
-    namespace: Scalar::from_u8(94),
-    max_computation_height: super::outer::MAX_TRACE_LEN,
-    max_table_height: super::outer::MAX_TRACE_LEN,
-  }
+#[cfg(test)]
+pub(super) fn layout() -> crate::recursive::native_verifier::LayoutPolicy {
+  super::super::stages::construct::recursive_layout()
 }
 
 pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
-  let public: Vec<_> = (1..=18).map(|i| (i, 3)).collect();
+  let public =
+    super::super::stages::statement::Statement::from_claims(claims, 18)?
+      .locations;
   Ok(ClaimSchema::from_claims(claims, &public)?)
 }
 
@@ -75,15 +74,19 @@ struct Input {
 
 impl Input {
   fn plan(&self) -> Result<Plan<'_>> {
-    Ok(Plan::new(
+    super::super::stages::construct::recursive_plan(
       &self.system,
       &self.logs,
       claim_schema(&self.claims)?,
-      layout(),
-    )?)
+    )
   }
 
-  fn load(dir: &Path) -> Result<Self> {
+  #[tracing::instrument(
+    level = "info",
+    skip_all,
+    name = "compression/load_input"
+  )]
+  fn load(dir: &Path, config: &super::super::WorkerConfig) -> Result<Self> {
     let start = Instant::now();
     let mut input_blake3 = BTreeMap::new();
     let manifest: Manifest = load(dir, "manifest.bin", &mut input_blake3)?;
@@ -113,11 +116,7 @@ impl Input {
     } else {
       dir.to_path_buf()
     };
-    let setup = SetupSource::for_stage(
-      FIRST_SEED,
-      height,
-      crate::pipeline::setup::development_permitted(),
-    )?;
+    let setup = config.setup.for_stage(FIRST_SEED, height)?;
     setup.check_binding(dir, height, 2)?;
     let setup_id = setup.identity(height, 2)?;
     if read_recorded(dir, BINDING_FILE, &mut input_blake3)? != setup_id {
@@ -150,8 +149,11 @@ impl Input {
       .iter()
       .map(|h| u8::try_from(h.ilog2()).unwrap())
       .collect();
-    let plan =
-      Plan::new(&system, &logs, claim_schema(&manifest.claims)?, layout())?;
+    let plan = super::super::stages::construct::recursive_plan(
+      &system,
+      &logs,
+      claim_schema(&manifest.claims)?,
+    )?;
     let proof_bytes =
       read_recorded(&proof_dir, "proof.compact.bin", &mut input_blake3)?;
     plan.validate_compact_len(proof_bytes.len())?;
@@ -184,33 +186,56 @@ pub(crate) fn check(
   dir: &Path,
   report: &Path,
   stage: Option<&Path>,
+  config: &super::super::WorkerConfig,
 ) -> Result<()> {
   let start = Instant::now();
-  let input = Input::load(dir)?;
+  let input = Input::load(dir, config)?;
   let build_start = Instant::now();
   let plan = input.plan()?;
   let fixed_profile = plan.identity();
-  let built = plan.build(&input.proof, &input.claims)?;
+  let built = tracing::info_span!("compression/build_circuit")
+    .in_scope(|| plan.build(&input.proof, &input.claims))?;
   let build_seconds = build_start.elapsed().as_secs_f64();
-  let (mut result, assignment) = built.check_and_assign()?;
-  result["input_proof_bytes"] = input.proof_bytes.len().into();
-  result["input_proof_blake3"] =
-    blake3::hash(&input.proof_bytes).to_hex().to_string().into();
-  result["input_blake3"] = serde_json::to_value(&input.input_blake3)?;
-  result["setup_id"] =
-    blake3::Hash::from_bytes(input.setup_identity).to_hex().to_string().into();
-  result["frontend_identity"] =
-    blake3::Hash::from_bytes(fixed_profile).to_hex().to_string().into();
-  result["load_and_native_verify_seconds"] = input.load_seconds.into();
-  result["build_seconds"] = build_seconds.into();
-  result["total_seconds"] = start.elapsed().as_secs_f64().into();
-  result["development_srs"] = input.development_srs.into();
-  result["scope"] = "Full saved first-stage KZG proof checked by recursive constraints and external pairings; no outer proof yet".into();
+  let witness_start = Instant::now();
+  let assignment =
+    tracing::info_span!("compression/witness").in_scope(|| built.assign())?;
+  let witness_seconds = witness_start.elapsed().as_secs_f64();
+  let stats = built.circuit.stats();
+  let result = serde_json::json!({
+    "gates": stats.gates,
+    "lookups": stats.lookups,
+    "values": stats.values,
+    "rows": stats.gates + stats.lookups + stats.publics + 1,
+    "public_values": stats.publics,
+    "pairing_points": built.pairing_keys.len(),
+    "msm_terms": built.msm_terms,
+    "witness_seconds": witness_seconds,
+    "circuit_satisfied": true,
+    "external_pairings_pass": true,
+    "outer_proof_generated": false,
+    "input_proof_bytes": input.proof_bytes.len(),
+    "input_proof_blake3": blake3::hash(&input.proof_bytes).to_hex().to_string(),
+    "input_blake3": input.input_blake3,
+    "setup_id": blake3::Hash::from_bytes(input.setup_identity).to_hex().to_string(),
+    "frontend_identity": blake3::Hash::from_bytes(fixed_profile).to_hex().to_string(),
+    "load_and_native_verify_seconds": input.load_seconds,
+    "build_seconds": build_seconds,
+    "total_seconds": start.elapsed().as_secs_f64(),
+    "development_srs": input.development_srs,
+    "scope": "Full saved first-stage KZG proof checked by recursive constraints and external pairings; no outer proof yet",
+  });
   fs::write(report, serde_json::to_vec_pretty(&result)?)?;
   println!("{}", serde_json::to_string_pretty(&result)?);
   if let Some(stage) = stage {
     let statement = statement::from_rows(&input.claims)?;
-    super::outer::stage(built, &assignment, stage, &fixed_profile, &statement)?;
+    super::outer::stage(
+      built,
+      assignment,
+      stage,
+      &fixed_profile,
+      &statement,
+      config,
+    )?;
   }
   Ok(())
 }
@@ -219,7 +244,9 @@ pub(crate) fn check(
 mod tests {
   use super::*;
   use crate::kzg::Srs;
+  use crate::recursive::native_verifier::LayoutPolicy;
   use crate::pipeline::init_claim;
+  use crate::pipeline::setup::SetupSource;
   use multi_stark::traits::Algebra;
   use multi_stark::{
     expr::Expr,
@@ -329,8 +356,15 @@ mod tests {
       .unwrap()
       .identity()
     );
-    second.claims[0][3] = Scalar::ONE;
+    for claim in &mut second.claims {
+      claim[0] += Scalar::ONE;
+    }
     assert_ne!(identity, second.plan().unwrap().identity());
+    for claim in &mut second.claims {
+      claim[0] -= Scalar::ONE;
+    }
+    second.claims[0][3] = Scalar::ONE;
+    assert!(second.plan().is_err());
     second.claims[0][3] = Scalar::ZERO;
     second.claims[18][3] = Scalar::from_limbs_le([0, 1, 0, 0]);
     assert!(second.plan().is_err());
@@ -338,7 +372,6 @@ mod tests {
 
   #[test]
   fn saved_loader_requires_binding_before_setup_metadata() -> Result<()> {
-    crate::pipeline::support::kzg_setup::permit_development();
     let root = std::env::temp_dir()
       .join(format!("ix-saved-binding-{}", std::process::id()));
     fs::create_dir(&root)?;
@@ -362,13 +395,19 @@ mod tests {
       bincode::serde::encode_to_vec(&manifest, bincode::config::standard())?,
     )?;
     fs::write(root.join("setup-0.bin"), [0xff])?;
-    let missing = Input::load(&root).err().unwrap();
+    let missing =
+      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+        .err()
+        .unwrap();
     assert_eq!(
       missing.downcast_ref::<std::io::Error>().unwrap().kind(),
       std::io::ErrorKind::NotFound
     );
     fs::write(root.join(BINDING_FILE), [0; 32])?;
-    let wrong = Input::load(&root).err().unwrap();
+    let wrong =
+      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+        .err()
+        .unwrap();
     assert!(wrong.to_string().contains("mismatch"));
     fs::remove_file(root.join(BINDING_FILE))?;
     fs::write(
@@ -376,7 +415,10 @@ mod tests {
       SetupSource::development(FIRST_SEED, (1 << 24) - 1)?
         .identity(1 << 24, 2)?,
     )?;
-    let malformed = Input::load(&root).err().unwrap();
+    let malformed =
+      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+        .err()
+        .unwrap();
     assert!(malformed.downcast_ref::<bincode::error::DecodeError>().is_some());
     fs::remove_dir_all(root)?;
     Ok(())

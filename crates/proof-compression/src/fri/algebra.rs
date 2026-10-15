@@ -265,10 +265,8 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     ],
   );
   let AlgebraicChallenges { beta, gamma, alpha, zeta } = inputs.challenges;
-  // TODO: constrain `zeta != 0`, which collapses the current-row and
-  // next-row opening points. Adding the constraint changes the circuit and
-  // so the recursive profile ids, so it must land together with a profile
-  // version bump and regenerated bundled profiles and packet fixtures.
+  // Zero collapses current-row and next-row opening points.
+  zeta.inverse(builder);
   let mut acc = zero;
   for claim in &inputs.claims {
     let mut fingerprint = zero;

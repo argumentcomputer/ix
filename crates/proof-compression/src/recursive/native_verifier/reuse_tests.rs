@@ -171,8 +171,8 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
     let candidate =
       Plan::new(&fixture.system, &[2], schema(claims), layout()).unwrap();
     assert_eq!(candidate.identity(), id);
-    let (_, assignment) = bindings
-      .check_and_assign(candidate.identity(), proof, claims, compiled.witness())
+    let assignment = bindings
+      .check(candidate.identity(), proof, claims, compiled.witness())
       .unwrap();
     let digest = assignment_digest(compiled.circuit(), &assignment);
     if index == 0 {
@@ -186,21 +186,15 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
     }
     let fresh = candidate.build(proof, claims).unwrap();
     assert_eq!(relation_digest(&fresh.circuit), relation);
-    let (_, fresh_assignment) = fresh.check_and_assign().unwrap();
+    let fresh_assignment = fresh.check().unwrap();
     assert_eq!(assignment.public_values(), fresh_assignment.public_values());
     assert_eq!(digest, assignment_digest(&fresh.circuit, &fresh_assignment));
   }
-  assert!(
-    bindings
-      .check_and_assign(id, &proof_a, &claims_b, compiled.witness())
-      .is_err()
-  );
+  assert!(bindings.check(id, &proof_a, &claims_b, compiled.witness()).is_err());
   let mut wrong = id;
   wrong[0] ^= 1;
   assert!(
-    bindings
-      .check_and_assign(wrong, &proof_a, &claims_a, compiled.witness())
-      .is_err()
+    bindings.check(wrong, &proof_a, &claims_a, compiled.witness()).is_err()
   );
 }
 

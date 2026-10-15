@@ -9,7 +9,9 @@ use crate::{
   },
 };
 use ark_bls12_381::{Bls12_381, G1Affine, G2Affine};
-use ark_ec::{CurveGroup, pairing::Pairing};
+#[cfg(test)]
+use ark_ec::CurveGroup;
+use ark_ec::pairing::Pairing;
 use ark_ff::Zero;
 use ark_serialize::CanonicalSerialize;
 use multi_stark::{
@@ -42,13 +44,16 @@ use shape::{MatrixShape, Round, Shape};
 type Commitment = Vec<Vec<usize>>;
 type Openings = Vec<Vec<Vec<Value>>>;
 
-/// A compiled circuit paired with one request's assignments and proof points.
+/// A compiled circuit paired with one request's assignments and pairing outputs.
 pub struct Built {
   pub circuit: Circuit<Scalar>,
   pub inputs: Vec<(Value, Scalar)>,
+  #[cfg(test)]
   pub points: Vec<G1Affine>,
   pub pairing_outputs: Vec<PointInput>,
   pub pairing_keys: Vec<G2Affine>,
+  pub msm_terms: Vec<usize>,
+  #[cfg(test)]
   pub terms: Vec<Vec<(usize, Value)>>,
 }
 
@@ -79,8 +84,6 @@ struct Construction {
 
 impl Construction {
   fn finish(self, plan: &Plan<'_>) -> Compiled {
-    #[cfg(test)]
-    let stats = self.context.b.stats();
     Compiled {
       circuit: self.context.b.finish(),
       bindings: Bindings {
@@ -91,9 +94,9 @@ impl Construction {
         points: self.context.points,
         pairing_outputs: self.pairing_outputs,
         pairing_keys: self.pairing_keys,
-        terms: self.terms,
+        msm_terms: self.terms.iter().map(Vec::len).collect(),
         #[cfg(test)]
-        stats,
+        terms: self.terms,
       },
     }
   }
@@ -671,38 +674,36 @@ fn construct(
 
 impl Built {
   #[cfg(test)]
-  pub fn check(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    self.check_and_assign().map(|(report, _)| report)
-  }
-
-  pub fn check_and_assign(
+  pub fn check(
     &self,
   ) -> Result<
-    (serde_json::Value, multi_stark::plonkish::Assignment<Scalar>),
+    multi_stark::plonkish::Assignment<Scalar>,
+    Box<dyn std::error::Error>,
+  > {
+    let assignment = self.assign()?;
+    bindings::check_msm_outputs(
+      &assignment,
+      &self.points,
+      &self.pairing_outputs,
+      &self.terms,
+    )?;
+    Ok(assignment)
+  }
+
+  /// Generate a constraint-checked witness and verify its deferred opening pairing.
+  pub fn assign(
+    &self,
+  ) -> Result<
+    multi_stark::plonkish::Assignment<Scalar>,
     Box<dyn std::error::Error>,
   > {
     let mut w = self.circuit.witness();
     for &(v, n) in &self.inputs {
       w.set(v, n)?;
     }
-    let start = std::time::Instant::now();
     let a = w.generate()?;
-    eprintln!("Complete circuit witness checked: {:?}", start.elapsed());
-    bindings::check_outputs(
-      &a,
-      &self.points,
-      &self.pairing_outputs,
-      &self.pairing_keys,
-      &self.terms,
-    )?;
-    Ok((
-      bindings::report(
-        self.circuit.stats(),
-        &self.terms,
-        start.elapsed().as_secs_f64(),
-      ),
-      a,
-    ))
+    bindings::check_pairings(&a, &self.pairing_outputs, &self.pairing_keys)?;
+    Ok(a)
   }
 }
 
@@ -750,7 +751,7 @@ mod tests {
     system.verify_multiple_claims(&[], &proof).unwrap();
     assert!(proof.opening_proof.0.iter().all(|p| p.infinity));
     let built = build(&system, &srs, &proof, &[], &[]).unwrap();
-    let (_, assignment) = built.check_and_assign().unwrap();
+    let assignment = built.check().unwrap();
     for point in &built.pairing_outputs {
       assert_eq!(
         assignment.value(point.infinity.value()).unwrap(),
@@ -849,7 +850,11 @@ mod tests {
       counted.msm_terms,
       built.terms.iter().map(Vec::len).collect::<Vec<_>>()
     );
-    eprintln!("{}", built.check().unwrap());
+    built.check().unwrap();
+    let key = built.pairing_keys[1];
+    built.pairing_keys[1] = (key * ark_bls12_381::Fr::from(2u8)).into_affine();
+    assert!(built.assign().is_err());
+    built.pairing_keys[1] = key;
     let public = built.circuit.public_values()[0];
     let slot = built.inputs.iter().position(|&(v, _)| v == public).unwrap();
     built.inputs[slot].1 += Scalar::ONE;

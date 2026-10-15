@@ -7,14 +7,15 @@ pub use stages::{
 };
 
 mod first;
+mod fixed_cache;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
+mod prover;
 mod root;
 mod setup;
 mod statement;
 mod storage;
-mod support;
 mod verifier;
 mod wrap;
 
@@ -31,9 +32,70 @@ pub fn command(stage: &str, args: &[String]) -> Result<()> {
   configure_backend(stage)?;
   match stage {
     "fri" => root::run(args),
-    "kzg" => first::run(args),
-    "wrap" => wrap::run(args),
+    "kzg" | "wrap" => {
+      let config = WorkerConfig::from_env(
+        stage,
+        args.iter().any(|arg| arg == "--dev-srs"),
+      )?;
+      let args: Vec<_> =
+        args.iter().filter(|arg| *arg != "--dev-srs").cloned().collect();
+      if stage == "kzg" {
+        first::run(&args, &config)
+      } else {
+        wrap::run(&args, &config)
+      }
+    },
     _ => Err("unknown compression stage".into()),
+  }
+}
+
+pub(crate) struct WorkerConfig {
+  setup: setup::SetupConfig,
+  fixed_cache_root: Option<PathBuf>,
+  prefetch_bytes: usize,
+}
+
+impl WorkerConfig {
+  fn from_env(stage: &str, allow_development: bool) -> Result<Self> {
+    let setup = setup::SetupConfig::from_env(allow_development)?;
+    let prefetch_gib = if stage == "kzg" {
+      match std::env::var("IX_KZG_PREFETCH_GIB") {
+        Ok(value) => value.parse::<usize>()?,
+        Err(std::env::VarError::NotPresent) => 32,
+        Err(error) => return Err(error.into()),
+      }
+    } else {
+      0
+    };
+    Ok(Self {
+      setup,
+      fixed_cache_root: std::env::var_os("IX_KZG_FIXED_CACHE")
+        .map(PathBuf::from),
+      prefetch_bytes: prefetch_gib
+        .checked_mul(1 << 30)
+        .ok_or("prefetch budget overflow")?,
+    })
+  }
+
+  fn fixed_cache(
+    &self,
+    stage: &Path,
+    profile: &[u8],
+  ) -> Result<fixed_cache::FixedCache> {
+    let root = self
+      .fixed_cache_root
+      .clone()
+      .unwrap_or_else(|| stage.join("kzg/fixed-cache"));
+    fixed_cache::FixedCache::from_profile(&root, profile)
+  }
+
+  #[cfg(test)]
+  const fn development() -> Self {
+    Self {
+      setup: setup::SetupConfig::Development { cache_directory: None },
+      fixed_cache_root: None,
+      prefetch_bytes: 0,
+    }
   }
 }
 
@@ -166,7 +228,7 @@ pub fn check_claim(
 
 /// Describe the setup a new run would prove under, or why none is allowed.
 pub fn setup_description(allow_development: bool) -> Result<&'static str> {
-  Ok(setup::SetupClass::configured(allow_development)?.description())
+  Ok(setup::SetupConfig::from_env(allow_development)?.class().description())
 }
 
 /// Verify a compressed proof of `claim` with the profile bundled under the
@@ -225,7 +287,7 @@ pub fn compress(
   }
   // Child stages re-read the same environment; the policy is enforced once
   // here so an unconfigured run fails before any checkpoint is written.
-  setup::SetupClass::configured(allow_development)?;
+  setup::SetupConfig::from_env(allow_development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
       "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"

@@ -59,13 +59,14 @@ pub(crate) struct Bindings {
   pub(super) points: Vec<PointBinding>,
   pub(super) pairing_outputs: Vec<PointInput>,
   pub(super) pairing_keys: Vec<G2Affine>,
-  pub(super) terms: Vec<Vec<(usize, Value)>>,
+  pub(super) msm_terms: Vec<usize>,
   #[cfg(test)]
-  pub(super) stats: CircuitStats,
+  pub(super) terms: Vec<Vec<(usize, Value)>>,
 }
 
 pub(super) struct RequestInputs {
   pub(super) inputs: Vec<(Value, Scalar)>,
+  #[cfg(test)]
   pub(super) points: Vec<G1Affine>,
 }
 
@@ -82,6 +83,7 @@ impl Bindings {
     self.shape.validate(proof)?;
     self.claims.validate(claims)?;
     let mut inputs = Vec::new();
+    #[cfg(test)]
     let mut points = Vec::with_capacity(self.points.len());
     for binding in &self.points {
       let value = binding.source.value(proof);
@@ -93,6 +95,7 @@ impl Bindings {
       if !matches!(binding.source, PointSource::Fixed(_)) {
         inputs.extend(binding.point.inputs(value));
       }
+      #[cfg(test)]
       points.push(value);
     }
     inputs.extend(
@@ -101,24 +104,26 @@ impl Bindings {
         .iter()
         .map(|(handle, source)| (*handle, source.value(proof, claims))),
     );
-    Ok(RequestInputs { inputs, points })
+    Ok(RequestInputs {
+      inputs,
+      #[cfg(test)]
+      points,
+    })
   }
 
   /// Assign one request to a circuit compiled once for its profile.
   #[cfg(test)]
-  pub(crate) fn check_and_assign(
+  pub(crate) fn check(
     &self,
     candidate_id: [u8; 32],
     proof: &Proof<KzgConfig>,
     claims: &[Vec<Scalar>],
     mut witness: Witness<'_, Scalar>,
-  ) -> Result<(serde_json::Value, Assignment<Scalar>), Box<dyn std::error::Error>>
-  {
+  ) -> Result<Assignment<Scalar>, Box<dyn std::error::Error>> {
     let request = self.request_inputs(candidate_id, proof, claims)?;
     for (handle, value) in request.inputs {
       witness.set(handle, value)?;
     }
-    let start = std::time::Instant::now();
     let assignment = witness.generate()?;
     let expected = self.claims.public_values(claims);
     if assignment.public_values().get(..expected.len())
@@ -129,29 +134,23 @@ impl Bindings {
           .into(),
       );
     }
-    check_outputs(
+    check_pairings(&assignment, &self.pairing_outputs, &self.pairing_keys)?;
+    check_msm_outputs(
       &assignment,
       &request.points,
       &self.pairing_outputs,
-      &self.pairing_keys,
       &self.terms,
     )?;
-    Ok((
-      report(self.stats, &self.terms, start.elapsed().as_secs_f64()),
-      assignment,
-    ))
+    Ok(assignment)
   }
 }
 
-pub(super) fn check_outputs(
+fn pairing_points(
   assignment: &Assignment<Scalar>,
-  points: &[G1Affine],
   pairing_outputs: &[PointInput],
-  pairing_keys: &[G2Affine],
-  terms: &[Vec<(usize, Value)>],
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Vec<G1Affine>, Box<dyn std::error::Error>> {
   let mut outputs = vec![];
-  for (point, terms) in pairing_outputs.iter().zip(terms) {
+  for point in pairing_outputs {
     let x = crate::recursive::native_field::fq_value(
       &point.point.x.0.map(|v| assignment.value(v).unwrap()),
     );
@@ -166,16 +165,21 @@ pub(super) fn check_outputs(
     } else {
       G1Affine::new_unchecked(x, y)
     };
-    let expected = terms
-      .iter()
-      .map(|&(id, scalar)| points[id] * assignment.value(scalar).unwrap().0)
-      .sum::<ark_bls12_381::G1Projective>()
-      .into_affine();
-    if point != expected {
-      return Err("MSM differs from native computation".into());
+    if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve()
+    {
+      return Err("invalid recursive pairing output".into());
     }
     outputs.push(point);
   }
+  Ok(outputs)
+}
+
+pub(super) fn check_pairings(
+  assignment: &Assignment<Scalar>,
+  pairing_outputs: &[PointInput],
+  pairing_keys: &[G2Affine],
+) -> Result<(), Box<dyn std::error::Error>> {
+  let outputs = pairing_points(assignment, pairing_outputs)?;
   if outputs.len() != 2
     || pairing_keys.len() != 2
     || !Bls12_381::multi_pairing(outputs, pairing_keys.iter().copied())
@@ -186,16 +190,24 @@ pub(super) fn check_outputs(
   Ok(())
 }
 
-pub(super) fn report(
-  stats: CircuitStats,
+#[cfg(test)]
+pub(super) fn check_msm_outputs(
+  assignment: &Assignment<Scalar>,
+  points: &[G1Affine],
+  pairing_outputs: &[PointInput],
   terms: &[Vec<(usize, Value)>],
-  seconds: f64,
-) -> serde_json::Value {
-  serde_json::json!({
-    "gates":stats.gates,"lookups":stats.lookups,"values":stats.values,
-    "rows":stats.gates+stats.lookups+stats.publics+1,"public_values":stats.publics,
-    "pairing_points":terms.len(),"msm_terms":terms.iter().map(Vec::len).collect::<Vec<_>>(),
-    "witness_seconds":seconds,"circuit_satisfied":true,"external_pairings_pass":true,
-    "outer_proof_generated":false
-  })
+) -> Result<(), Box<dyn std::error::Error>> {
+  let outputs = pairing_points(assignment, pairing_outputs)?;
+  assert_eq!(outputs.len(), terms.len());
+  for (point, terms) in outputs.iter().zip(terms) {
+    let expected = terms
+      .iter()
+      .map(|&(id, scalar)| points[id] * assignment.value(scalar).unwrap().0)
+      .sum::<ark_bls12_381::G1Projective>()
+      .into_affine();
+    if *point != expected {
+      return Err("MSM differs from native computation".into());
+    }
+  }
+  Ok(())
 }
