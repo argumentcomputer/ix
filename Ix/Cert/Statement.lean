@@ -43,13 +43,14 @@ Statements (`def … : Prop`) and the theorems proved now:
   compiled environment, read through `reading`, is one of the source's
   (`Commutes`). Stated, not proved;
 * `CompileCovers`: the compiler publishes an input constant exactly when its
-  report does not list it as failed. Stated, not proved; under it,
+  report does not list it as failed. Proved (`compileCovers`), by
+  construction: `compileReport` checks it and fails otherwise (CQ2.27). So
   `CompileCorrect` is equivalent to the same statement hypothesised on the
-  artifact publishing the closure (`CompileCorrect.published`,
-  `CompileCorrect.of_published`);
+  artifact publishing the closure (`compileCorrect_iff_published`);
 * `CompileAuthentic`: every record and blob `compile` returns is stored under
-  the pure BLAKE3 hash of its bytes. Stated, not proved; its definitional
-  steps are (`blockAddr_mk'`, `storedRecord_authentic`);
+  the pure BLAKE3 hash of its bytes. Proved (`compileAuthentic`), by
+  construction: `compileReport` re-hashes them with the admission hash and
+  fails on a mismatch (CQ2.27);
 * `ClosureCorrect`: the computed closure is the closure. Proved
   (`closureCorrect`, in `Ix.Cert.Closure`);
 * `RenamingLemma`: the fold commutes with renaming a Source run's keys to
@@ -294,11 +295,6 @@ instance : LawfulHashable Ix.Name where
     show hash a.getHash = hash b.getHash
     rw [name_beq_iff.mp h]
 
-/-- The compile reports `n` as failed: the ground filter removed it, or its
-block failed to compile. -/
-def Failures.failed (failures : Failures) (n : Ix.Name) : Bool :=
-  failures.ungrounded.contains n || failures.blocks.contains n
-
 /-- **No constant of `sub` failed** in the compile that reported
 `failures`. Decidable (`NoFailure.instDecidable`). -/
 def NoFailure (failures : Failures) (sub : Ix.Environment) : Prop :=
@@ -339,11 +335,11 @@ filter records what it removes; the driver records every member of a block
 that failed, including a refused claim or payload and a withdrawn promotion
 (CQ2.3, CQ2.4, CQ2.6); and the readiness rule (CQ2.6) fails a block whose
 dependency failed instead of leaving it unscheduled. A failed block publishes
-nothing (CQ2.4b, CQ2.6). Stated, not proved: it is an invariant of the
-driver's loop (`Ix.CompileM.compileEnvAux`). Checked on the fixtures
-(`cert-statement`) and on `Init` (`cert-compile-parity-init`). Under it,
-`NoFailure` and `Published` agree on every closure
-(`CompileCorrect.published`, `CompileCorrect.of_published`). -/
+nothing (CQ2.4b, CQ2.6). Proved (`compileCovers`): `compileReport` checks it
+on its own result and fails otherwise (`checkReport`, CQ2.27), so it holds by
+construction, whatever the driver's loop does. So `NoFailure` and
+`Published` agree on every closure (`CompileCorrect.published`,
+`CompileCorrect.of_published`, `compileCorrect_iff_published`). -/
 def CompileCovers : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures),
     compileReport env = .ok (ixe, failures) → ∀ n ci, env.consts.get? n = some ci →
@@ -417,10 +413,11 @@ output is stored under `Address.blake3Pure` of its stored bytes, and so is
 every blob. The compiler computes every content address (record, projection,
 blob) with `Address.admissionHash`, which is `Address.blake3Pure` in the logic
 (`Address.admissionHash_eq`) and runs as the Rust BLAKE3, so this is a
-property of `compile`, not an assumption that the two BLAKE3s agree. Its
-definitional steps are proved (`blockAddr_mk'`, `storedRecord_authentic`);
-that every storing site goes through them is an invariant of the driver's
-loop, stated here and checked on the fixtures (`cert-statement`). -/
+property of `compile`, not an assumption that the two BLAKE3s agree. Proved
+(`compileAuthentic`): `compileReport` re-hashes every record and blob of its
+result with the admission hash and fails on any mismatch (`checkReport`,
+CQ2.27), so it holds by construction. Its definitional steps
+(`blockAddr_mk'`, `storedRecord_authentic`) say why the check passes. -/
 def CompileAuthentic : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env), compile env = .ok ixe →
     (∀ a lc, ixe.consts.get? a = some lc → a = Address.blake3Pure lc.rawBytes) ∧
@@ -461,9 +458,10 @@ the source (`IxonCommutes`).
 
 This is partial correctness. A closure that Source rejects or declines, a
 compile that fails, and a closure with a failed constant are outside the
-statement. Under `CompileCovers` it is the statement hypothesised on
-`Published` instead of `NoFailure` (`CompileCorrect.published`,
-`CompileCorrect.of_published`). -/
+statement. Under `CompileCovers`, which is proved (`compileCovers`), it is
+the statement hypothesised on `Published` instead of `NoFailure`
+(`CompileCorrect.published`, `CompileCorrect.of_published`,
+`compileCorrect_iff_published`). -/
 def CompileCorrect : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
     (ixe : Ixon.Env) (failures : Failures),
@@ -516,6 +514,89 @@ theorem CompileCorrect.of_published (hcov : CompileCovers)
   have hp : Published ixe sub := fun n ci hn =>
     (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mpr (hf n ci hn)
   exact ⟨hp, h env roots sub envS ixe hs (compile_eq_ok.mpr ⟨failures, hr⟩) hp⟩
+
+/-! ### Coverage and authenticity, by construction (CQ2.27)
+
+`compileReport` checks its own result (`checkReport`) and fails on any
+inconsistency, so both properties follow from the checks alone, with no
+invariant of the driver's loop. -/
+
+/-- `compileReport` succeeds only through its checks: its result is
+`compileUnchecked`'s, and passes `checkReport`. -/
+theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
+    (h : compileReport env = .ok out) :
+    compileUnchecked env = .ok out ∧ checkReport env out = .ok () := by
+  have e : compileReport env = Except.bind (compileUnchecked env)
+      (fun o => Except.bind (checkReport env o) fun _ => Except.ok o) := rfl
+  rw [e] at h
+  revert h
+  cases compileUnchecked env with
+  | error err => intro h; cases h
+  | ok o =>
+    intro h
+    change Except.bind (checkReport env o) (fun _ => Except.ok o) = Except.ok out at h
+    revert h
+    cases hc : checkReport env o with
+    | error err => intro h; cases h
+    | ok u =>
+      intro h
+      cases u
+      have ho : o = out := Except.ok.inj h
+      subst ho
+      exact ⟨rfl, hc⟩
+
+/-- `checkReport` passes exactly when nothing is uncovered and nothing is
+unauthentic. -/
+theorem checkReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
+    (h : checkReport env out = .ok ()) :
+    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] := by
+  unfold checkReport at h
+  revert h
+  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> simp
+
+/-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
+constant exactly when it does not report it as failed. -/
+theorem compileCovers : CompileCovers := by
+  intro env ixe failures h n ci hn
+  have hcov : uncovered env ixe failures = [] := (checkReport_ok (compileReport_ok h).2).1
+  have hk : env.consts.keys.contains n = true := by
+    rw [Std.HashMap.contains_keys, Std.HashMap.contains_eq_isSome_getElem?]
+    exact Option.isSome_iff_exists.mpr ⟨ci, hn⟩
+  obtain ⟨k, hk, hnk⟩ := List.contains_iff_exists_mem_beq.mp hk
+  have hne : (ixe.named.contains k == failures.failed k) = false := by
+    have := List.filter_eq_nil_iff.mp hcov k hk
+    simpa using this
+  rw [← failures.failed_congr hnk, ← Std.HashMap.contains_congr (m := ixe.named) hnk] at hne
+  have hpub : (∃ named, ixe.named.get? n = some named) ↔ ixe.named.contains n = true := by
+    rw [Std.HashMap.contains_eq_isSome_getElem?, Option.isSome_iff_exists]
+    rfl
+  rw [hpub]
+  revert hne
+  cases ixe.named.contains n <;> cases failures.failed n <;> simp
+
+/-- **Authenticity, proved** (CQ2.27): every record and blob `compile`
+returns is stored under the pure BLAKE3 hash of its bytes. -/
+theorem compileAuthentic : CompileAuthentic := by
+  intro env ixe hc
+  obtain ⟨failures, h⟩ := compile_eq_ok.mp hc
+  have hu : unauthentic ixe = [] := (checkReport_ok (compileReport_ok h).2).2
+  unfold unauthentic at hu
+  obtain ⟨hr, hb⟩ := List.append_eq_nil_iff.mp hu
+  rw [List.map_eq_nil_iff, List.filter_eq_nil_iff] at hr hb
+  refine ⟨fun a lc hlc => ?_, fun a bytes hblob => ?_⟩
+  · have := hr (a, lc) (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hlc)
+    simpa [Address.admissionHash_eq] using this
+  · have := hb (a, bytes) (Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hblob)
+    simpa [Address.admissionHash_eq] using this
+
+/-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
+(proved): with coverage proved, the statement hypothesised on `NoFailure`
+and the one hypothesised on `Published` are equivalent. -/
+theorem compileCorrect_iff_published : CompileCorrect.{w} ↔
+    ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
+      (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe →
+      Published ixe sub → IxonCommutes.{w} ixe sub envS :=
+  ⟨CompileCorrect.published compileCovers, CompileCorrect.of_published compileCovers⟩
 
 /-! ## The theorems that hold now -/
 

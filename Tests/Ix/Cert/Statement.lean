@@ -15,7 +15,9 @@ import Tests.Ix.SourceContract.SyntaxFixture
   Every record and blob of `Ix.Cert.compile`'s output is at pure BLAKE3 of
   its bytes (`Ix.Cert.CompileAuthentic`), and every input constant is
   published exactly when the report does not list it as failed
-  (`Ix.Cert.CompileCovers`).
+  (`Ix.Cert.CompileCovers`). Both are proved now, from `compileReport`'s own
+  checks (`Ix.Cert.checkReport`, CQ2.27); the checks are timed on the
+  compile's result and must refuse six tampered copies of it.
   `cert-compile-parity-init` (ignored) does the same on `Init`.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
@@ -78,6 +80,48 @@ def coverage (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failure
     | false, true => (pub, failed + 1, both, neither)
     | false, false => (pub, failed, both, neither.push n)
 
+/-- `compileReport`'s own checks (`Ix.Cert.checkReport`, CQ2.27): timed on
+the compile's result, which they must pass, and run on tampered copies of
+it, each of which they must refuse. -/
+def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
+    (failures : Ix.Cert.Failures) : IO (Array String × Array String) := do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let t0 ← IO.monoMsNow
+  let ok? ← IO.lazyPure fun _ => Ix.Cert.checkReport env (ixe, failures)
+  let t1 ← IO.monoMsNow
+  match ok? with
+  | .ok () => lines := lines.push s!"{label}: checkReport passes on the compile's result \
+      ({t1 - t0} ms: {env.consts.size} input constants, {ixe.consts.size} records, \
+      {ixe.blobs.size} blobs)"
+  | .error e => errors := errors.push s!"{label}: checkReport refuses the compile's own result: {e}"
+  let some n := env.consts.keys.find? (ixe.named.contains ·)
+    | return (errors.push s!"{label}: no input constant is published", lines)
+  let (a₁, lc₁, lc₂) ← match ixe.consts.toList with
+    | (a₁, lc₁) :: (_, lc₂) :: _ => pure (a₁, lc₁, lc₂)
+    | _ => return (errors.push s!"{label}: fewer than two records", lines)
+  let some (b, bytes) := ixe.blobs.toList.head?
+    | return (errors.push s!"{label}: no blob", lines)
+  let tampered : List (String × Ixon.Env × Ix.Cert.Failures) := [
+    ("a published input constant dropped from `named`",
+      { ixe with named := ixe.named.erase n }, failures),
+    ("a published input constant also listed as failed", ixe,
+      { failures with blocks := failures.blocks.insert n "tampered" }),
+    ("a published input constant also listed as ungrounded", ixe,
+      { failures with ungrounded := failures.ungrounded.insert n "tampered" }),
+    ("a record's bytes replaced by another record's",
+      { ixe with consts := ixe.consts.insert a₁ lc₂ }, failures),
+    ("a record moved to another address",
+      { ixe with consts := (ixe.consts.erase a₁).insert b lc₁ }, failures),
+    ("a blob's bytes changed", { ixe with blobs := ixe.blobs.insert b (bytes.push 0) }, failures)]
+  let mut refused := 0
+  for (what, ixe', failures') in tampered do
+    match Ix.Cert.checkReport env (ixe', failures') with
+    | .ok () => errors := errors.push s!"{label}: checkReport accepts a tampered report: {what}"
+    | .error _ => refused := refused + 1
+  lines := lines.push s!"{label}: checkReport refuses {refused} of {tampered.length} tampered reports"
+  return (errors, lines)
+
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
 `consts`: errors, and lines for the report. `compile` is `compileReport`'s
 first component (`Ix.Cert.compile_eq_ok`); the report's failures are checked
@@ -122,6 +166,10 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
     errors := errors.push s!"{label}: CompileAuthentic: {badRecords.size} records and \
       {badBlobs.size} blobs are not at pure BLAKE3 of their bytes: \
       {(badRecords ++ badBlobs).toList.take 5}"
+  -- `compileReport`'s own checks (CQ2.27)
+  let (checkErrors, checkLines) ← checkReportCases label env ixe failures
+  errors := errors ++ checkErrors
+  lines := lines ++ checkLines
   -- the IO pipeline
   let t3 ← IO.monoMsNow
   match ← Ix.CompileM.compileLeanConsts consts (numWorkers := workers) with

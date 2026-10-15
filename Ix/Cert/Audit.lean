@@ -396,6 +396,9 @@ fun τ envS envA =>
 -- verbatim. `CompileCovers` (every input constant is published exactly when it
 -- did not fail) is stated, and under it the new and the former statement imply
 -- each other (`CompileCorrect.published`, `CompileCorrect.of_published`).
+-- CQ2.27: `CompileCovers` and `CompileAuthentic` are proved
+-- (`compileCovers`, `compileAuthentic`), from `compileReport`'s own checks;
+-- their statements are unchanged.
 /-- info: def Ix.Cert.Failures.failed : Ix.Cert.Failures → Ix.Name → Bool :=
 fun failures n => failures.ungrounded.contains n || failures.blocks.contains n -/
 #guard_msgs (whitespace := lax) in
@@ -809,7 +812,16 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Failures
 
-/-- info: def Ix.Cert.compileReport : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
+-- CQ2.27 (owner, 2026-10-15): `compileReport` checks its own result and
+-- fails, with no artifact, on any inconsistency. The former body of
+-- `compileReport` is `compileUnchecked`, verbatim; `compileReport` runs it,
+-- then `checkReport`: coverage (`uncovered`: every input constant published
+-- or listed as failed, exactly one of the two) and authenticity
+-- (`unauthentic`: every record and blob at `Address.admissionHash` of its
+-- stored bytes). On a consistent run the result is `compileUnchecked`'s, so
+-- the bytes do not change. `Failures.failed` moved here from
+-- `Ix.Cert.Statement`, unchanged, because the check reads it.
+/-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
@@ -820,6 +832,56 @@ fun env =>
       have ungrounded :=
         Std.HashMap.fold (fun m n e => m.insert n (e.refusal (Std.HashMap.contains split.snd))) ∅ split.snd;
       pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.compileUnchecked
+
+/-- info: def Ix.Cert.uncovered : Ix.Environment → Ixon.Env → Ix.Cert.Failures → List Ix.Name :=
+fun env ixe failures => List.filter (fun n => ixe.named.contains n == failures.failed n) env.consts.keys -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.uncovered
+
+/-- info: def Ix.Cert.unauthentic : Ixon.Env → List Address :=
+fun ixe =>
+  List.map (fun x => x.fst)
+      (List.filter
+        (fun x =>
+          match x with
+          | (a, lc) => a != Address.admissionHash lc.rawBytes)
+        ixe.consts.toList) ++
+    List.map (fun x => x.fst)
+      (List.filter
+        (fun x =>
+          match x with
+          | (a, bytes) => a != Address.admissionHash bytes)
+        ixe.blobs.toList) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.unauthentic
+
+/-- info: def Ix.Cert.checkReport : Ix.Environment → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
+fun env out =>
+  match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
+  | [], [] => Except.ok ()
+  | n :: rest, x =>
+    Except.error
+      (toString "compileReport: coverage check failed: " ++ toString (rest.length + 1) ++
+                toString " input constant(s) are published and listed as failed, or neither; first: " ++
+              toString n.pretty ++
+            toString " (" ++
+          toString (if out.snd.failed n = true then "published and failed" else "neither published nor failed") ++
+        toString ")")
+  | [], a :: rest =>
+    Except.error
+      (toString "compileReport: authenticity check failed: " ++ toString (rest.length + 1) ++
+          toString " record(s) or blob(s) are not stored at the admission hash of their bytes; first: " ++
+        toString a) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.checkReport
+
+/-- info: def Ix.Cert.compileReport : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
+fun env => do
+  let out ← Ix.Cert.compileUnchecked env
+  Ix.Cert.checkReport env out
+  pure out -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compileReport
 
@@ -929,6 +991,35 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.noFailure_iff
 
+-- CQ2.27: coverage and authenticity, by construction.
+/-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
+  Ix.Cert.compileReport env = Except.ok out →
+    Ix.Cert.compileUnchecked env = Except.ok out ∧ Ix.Cert.checkReport env out = Except.ok () -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileReport_ok
+
+/-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
+  Ix.Cert.checkReport env out = Except.ok () →
+    Ix.Cert.uncovered env out.fst out.snd = [] ∧ Ix.Cert.unauthentic out.fst = [] -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.checkReport_ok
+
+/-- info: Ix.Cert.compileCovers : Ix.Cert.CompileCovers -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileCovers
+
+/-- info: Ix.Cert.compileAuthentic : Ix.Cert.CompileAuthentic -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileAuthentic
+
+/-- info: Ix.Cert.compileCorrect_iff_published : Ix.Cert.CompileCorrect ↔
+  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
+    (ixe : Ixon.Env),
+    Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+      Ix.Cert.compile env = Except.ok ixe → Ix.Cert.Published ixe sub → Ix.Cert.IxonCommutes ixe sub envS -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.compileCorrect_iff_published
+
 /-! ## Axioms -/
 
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -995,6 +1086,26 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.CompileCovers
 
+/-- info: 'Ix.Cert.compileReport_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.compileReport_ok
+
+/-- info: 'Ix.Cert.checkReport_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.checkReport_ok
+
+/-- info: 'Ix.Cert.compileCovers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.compileCovers
+
+/-- info: 'Ix.Cert.compileAuthentic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.compileAuthentic
+
+/-- info: 'Ix.Cert.compileCorrect_iff_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.compileCorrect_iff_published
+
 /-- info: 'Ix.Cert.SourceAccepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.SourceAccepts
@@ -1030,6 +1141,10 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.compile' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.compile
+
+/-- info: 'Ix.Cert.compileReport' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.compileReport
 
 /-- info: 'Ix.Cert.CompileCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
