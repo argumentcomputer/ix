@@ -1,6 +1,7 @@
 import Ix.Cert.Statement
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
+import Ix.Cert.Canon
 
 /-! # The certification statements, frozen
 
@@ -1068,3 +1069,317 @@ parameters. Every lemma behind them is audited in
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.CanonUnivCache.canonUnivCached_correct
+
+/-! ## The `CanonM` correspondence (`Ix.Cert.Canon`)
+
+What ties the shared `Ix.Environment` to Lean's: the cache-free
+specification of `Ix.CanonM` (`nameS`, `levelS`, `exprS`, `constS`), the
+direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
+`leanPos`), and the cache-free universe compiler (`compileUnivS`).
+`CanonMCorrect` and `CanonChunkCorrect` (C1) are **stated, not proved**:
+they are unprovable for today's `Ix.CanonM`, whose cache hits are not
+confirmed and whose `canonSyntax` is `partial` (CQ2.26). `UnivMeaningS` is
+stated. The proved theorems are at the three standard axioms or fewer. -/
+
+/-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
+  Ix.Cert.Canon.nameS x =
+    match x with
+    | Lean.Name.anonymous => Ix.Name.mkAnon
+    | p.str s => (Ix.Cert.Canon.nameS p).mkStr s
+    | p.num n => (Ix.Cert.Canon.nameS p).mkNat n -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.nameS.eq_def
+
+/-- info: Ix.Cert.Canon.levelS.eq_def : ∀ (x : Lean.Level),
+  Ix.Cert.Canon.levelS x =
+    match x with
+    | Lean.Level.zero => Ix.Level.mkZero
+    | u.succ => (Ix.Cert.Canon.levelS u).mkSucc
+    | u.max v => (Ix.Cert.Canon.levelS u).mkMax (Ix.Cert.Canon.levelS v)
+    | u.imax v => (Ix.Cert.Canon.levelS u).mkIMax (Ix.Cert.Canon.levelS v)
+    | Lean.Level.param n => Ix.Level.mkParam (Ix.Cert.Canon.nameS n)
+    | Lean.Level.mvar m => Ix.Level.mkMvar (Ix.Cert.Canon.nameS m.name) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.levelS.eq_def
+
+/-- info: Ix.Cert.Canon.exprS.eq_def : ∀ (x : Lean.Expr),
+  Ix.Cert.Canon.exprS x =
+    match x with
+    | Lean.Expr.bvar i => Ix.Expr.mkBVar i
+    | Lean.Expr.fvar x => Ix.Expr.mkFVar (Ix.Cert.Canon.nameS x.name)
+    | Lean.Expr.mvar x => Ix.Expr.mkMVar (Ix.Cert.Canon.nameS x.name)
+    | Lean.Expr.sort u => Ix.Expr.mkSort (Ix.Cert.Canon.levelS u)
+    | Lean.Expr.const n us => Ix.Expr.mkConst (Ix.Cert.Canon.nameS n) (List.map Ix.Cert.Canon.levelS us).toArray
+    | f.app a => (Ix.Cert.Canon.exprS f).mkApp (Ix.Cert.Canon.exprS a)
+    | Lean.Expr.lam n t b bi => Ix.Expr.mkLam (Ix.Cert.Canon.nameS n) (Ix.Cert.Canon.exprS t) (Ix.Cert.Canon.exprS b) bi
+    | Lean.Expr.forallE n t b bi =>
+      Ix.Expr.mkForallE (Ix.Cert.Canon.nameS n) (Ix.Cert.Canon.exprS t) (Ix.Cert.Canon.exprS b) bi
+    | Lean.Expr.letE n t v b nd =>
+      Ix.Expr.mkLetE (Ix.Cert.Canon.nameS n) (Ix.Cert.Canon.exprS t) (Ix.Cert.Canon.exprS v) (Ix.Cert.Canon.exprS b) nd
+    | Lean.Expr.lit l => Ix.Expr.mkLit l
+    | Lean.Expr.mdata d e => Ix.Expr.mkMData (Ix.Cert.Canon.mdataS d) (Ix.Cert.Canon.exprS e)
+    | Lean.Expr.proj s i e => Ix.Expr.mkProj (Ix.Cert.Canon.nameS s) i (Ix.Cert.Canon.exprS e) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.exprS.eq_def
+
+/-- info: def Ix.Cert.Canon.constS : Lean.ConstantInfo → Ix.ConstantInfo :=
+fun x =>
+  match x with
+  | Lean.ConstantInfo.axiomInfo v =>
+    Ix.ConstantInfo.axiomInfo { cnst := Ix.Cert.Canon.constValS v.toConstantVal, isUnsafe := v.isUnsafe }
+  | Lean.ConstantInfo.defnInfo v =>
+    Ix.ConstantInfo.defnInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, value := Ix.Cert.Canon.exprS v.value, hints := v.hints,
+        safety := v.safety, all := (List.map Ix.Cert.Canon.nameS v.all).toArray }
+  | Lean.ConstantInfo.thmInfo v =>
+    Ix.ConstantInfo.thmInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, value := Ix.Cert.Canon.exprS v.value,
+        all := (List.map Ix.Cert.Canon.nameS v.all).toArray }
+  | Lean.ConstantInfo.opaqueInfo v =>
+    Ix.ConstantInfo.opaqueInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, value := Ix.Cert.Canon.exprS v.value, isUnsafe := v.isUnsafe,
+        all := (List.map Ix.Cert.Canon.nameS v.all).toArray }
+  | Lean.ConstantInfo.quotInfo v =>
+    Ix.ConstantInfo.quotInfo { cnst := Ix.Cert.Canon.constValS v.toConstantVal, kind := v.kind }
+  | Lean.ConstantInfo.inductInfo v =>
+    Ix.ConstantInfo.inductInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, numParams := v.numParams, numIndices := v.numIndices,
+        all := (List.map Ix.Cert.Canon.nameS v.all).toArray, ctors := (List.map Ix.Cert.Canon.nameS v.ctors).toArray,
+        numNested := v.numNested, isRec := v.isRec, isUnsafe := v.isUnsafe, isReflexive := v.isReflexive }
+  | Lean.ConstantInfo.ctorInfo v =>
+    Ix.ConstantInfo.ctorInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, induct := Ix.Cert.Canon.nameS v.induct, cidx := v.cidx,
+        numParams := v.numParams, numFields := v.numFields, isUnsafe := v.isUnsafe }
+  | Lean.ConstantInfo.recInfo v =>
+    Ix.ConstantInfo.recInfo
+      { cnst := Ix.Cert.Canon.constValS v.toConstantVal, all := (List.map Ix.Cert.Canon.nameS v.all).toArray,
+        numParams := v.numParams, numIndices := v.numIndices, numMotives := v.numMotives, numMinors := v.numMinors,
+        rules :=
+          (List.map
+              (fun r => { ctor := Ix.Cert.Canon.nameS r.ctor, nfields := r.nfields, rhs := Ix.Cert.Canon.exprS r.rhs })
+              v.rules).toArray,
+        k := v.k, isUnsafe := v.isUnsafe } -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.constS
+
+/-- info: inductive Ix.Cert.Canon.Reachable : Ix.CanonM.CanonState → Prop
+number of parameters: 0
+constructors:
+Ix.Cert.Canon.Reachable.empty : Ix.Cert.Canon.Reachable { }
+Ix.Cert.Canon.Reachable.name : ∀ {s : Ix.CanonM.CanonState} (n : Lean.Name),
+  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonName n) s).run.snd
+Ix.Cert.Canon.Reachable.level : ∀ {s : Ix.CanonM.CanonState} (l : Lean.Level),
+  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonLevel l) s).run.snd
+Ix.Cert.Canon.Reachable.expr : ∀ {s : Ix.CanonM.CanonState} (e : Lean.Expr),
+  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonExpr e) s).run.snd
+Ix.Cert.Canon.Reachable.const : ∀ {s : Ix.CanonM.CanonState} (c : Lean.ConstantInfo),
+  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonConst c) s).run.snd -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.Reachable
+
+/-- info: def Ix.Cert.Canon.CanonMCorrect : Prop :=
+∀ (s : Ix.CanonM.CanonState),
+  Ix.Cert.Canon.Reachable s →
+    (∀ (n : Lean.Name), (StateT.run (Ix.CanonM.canonName n) s).run.fst = Ix.Cert.Canon.nameS n) ∧
+      (∀ (l : Lean.Level), (StateT.run (Ix.CanonM.canonLevel l) s).run.fst = Ix.Cert.Canon.levelS l) ∧
+        (∀ (e : Lean.Expr), (StateT.run (Ix.CanonM.canonExpr e) s).run.fst = Ix.Cert.Canon.exprS e) ∧
+          ∀ (c : Lean.ConstantInfo), (StateT.run (Ix.CanonM.canonConst c) s).run.fst = Ix.Cert.Canon.constS c -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.CanonMCorrect
+
+/-- info: def Ix.Cert.Canon.CanonChunkCorrect : Prop :=
+∀ (chunk : Array (Lean.Name × Lean.ConstantInfo)),
+  Ix.CanonM.canonChunk chunk =
+    Array.map
+      (fun x =>
+        match x with
+        | (n, c) => (Ix.Cert.Canon.nameS n, Ix.Cert.Canon.constS c))
+      chunk -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.CanonChunkCorrect
+
+/-- info: Ix.Cert.Canon.leanName.eq_def : ∀ (x : Lean.Name),
+  Ix.Cert.Canon.leanName x =
+    match x with
+    | Lean.Name.anonymous => Ix.Kernel.Name.anonymous
+    | p.str s => (Ix.Cert.Canon.leanName p).str s
+    | p.num n => (Ix.Cert.Canon.leanName p).num n -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.leanName.eq_def
+
+/-- info: Ix.Cert.Canon.leanLevel.eq_def : ∀ (σ : Lean.Name → Ix.Kernel.LevelParam) (x : Lean.Level),
+  Ix.Cert.Canon.leanLevel σ x =
+    match x with
+    | Lean.Level.zero => pure Ix.Kernel.Level.zero
+    | u.succ => do
+      let __do_lift ← Ix.Cert.Canon.leanLevel σ u
+      pure (Ix.Kernel.Level.succ __do_lift)
+    | u.max v => do
+      let __do_lift ← Ix.Cert.Canon.leanLevel σ u
+      let __do_lift_1 ← Ix.Cert.Canon.leanLevel σ v
+      pure (Ix.Kernel.Level.max __do_lift __do_lift_1)
+    | u.imax v => do
+      let __do_lift ← Ix.Cert.Canon.leanLevel σ u
+      let __do_lift_1 ← Ix.Cert.Canon.leanLevel σ v
+      pure (Ix.Kernel.Level.imax __do_lift __do_lift_1)
+    | Lean.Level.param n => pure (Ix.Kernel.Level.param (σ n))
+    | Lean.Level.mvar m => throw (Ix.LeanIngress.ExprError.levelMVar (Ix.Cert.Canon.leanName m.name)) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.leanLevel.eq_def
+
+/-- info: Ix.Cert.Canon.leanExpr.eq_def : ∀ (σ : Lean.Name → Ix.Kernel.LevelParam) (x : Lean.Expr),
+  Ix.Cert.Canon.leanExpr σ x =
+    match x with
+    | Lean.Expr.bvar i => pure (Ix.Kernel.Expr.mkBvar i)
+    | Lean.Expr.fvar x => throw (Ix.LeanIngress.ExprError.fvar (Ix.Cert.Canon.leanName x.name))
+    | Lean.Expr.mvar x => throw (Ix.LeanIngress.ExprError.mvar (Ix.Cert.Canon.leanName x.name))
+    | Lean.Expr.sort u => do
+      let __do_lift ← Ix.Cert.Canon.leanLevel σ u
+      pure (Ix.Kernel.Expr.sort __do_lift)
+    | Lean.Expr.const n us => do
+      let __do_lift ← List.mapM (Ix.Cert.Canon.leanLevel σ) us
+      pure (Ix.Kernel.Expr.const (Ix.Cert.Canon.leanKey n) __do_lift)
+    | f.app a => do
+      let __do_lift ← Ix.Cert.Canon.leanExpr σ f
+      let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ a
+      pure (Ix.Kernel.Expr.app __do_lift __do_lift_1)
+    | Lean.Expr.lam binderName t b binderInfo => do
+      let __do_lift ← Ix.Cert.Canon.leanExpr σ t
+      let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ b
+      pure (Ix.Kernel.Expr.lam __do_lift __do_lift_1 { pw := Ix.Kernel.PropWhen.never })
+    | Lean.Expr.forallE binderName t b binderInfo => do
+      let __do_lift ← Ix.Cert.Canon.leanExpr σ t
+      let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ b
+      pure (Ix.Kernel.Expr.forallE __do_lift __do_lift_1 { pw := Ix.Kernel.PropWhen.never })
+    | Lean.Expr.letE declName t v b nd => do
+      let __do_lift ← Ix.Cert.Canon.leanExpr σ t
+      let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ v
+      let __do_lift_2 ← Ix.Cert.Canon.leanExpr σ b
+      pure (Ix.Kernel.Expr.letE __do_lift __do_lift_1 __do_lift_2 { contract := Ixon.LetContract.lean nd })
+    | Lean.Expr.lit (Lean.Literal.natVal n) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.natVal n))
+    | Lean.Expr.lit (Lean.Literal.strVal s) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.strVal s))
+    | Lean.Expr.mdata d e => Ix.Cert.Canon.leanMData d e (Ix.Cert.Canon.leanExpr σ e)
+    | Lean.Expr.proj s i e => do
+      let __do_lift ← Ix.Cert.Canon.leanExpr σ e
+      pure (Ix.Kernel.Expr.proj (Ix.Cert.Canon.leanKey s) i __do_lift) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.leanExpr.eq_def
+
+/-- info: def Ix.Cert.Canon.leanPos : Array Lean.Name → Bool → Lean.Name → Ix.Kernel.LevelParam :=
+fun names large n =>
+  match Array.findIdx? (fun x => x == n) names with
+  | none => names.size
+  | some 0 => if large = true then names.size - 1 else 0
+  | some i.succ => if large = true then i else i + 1 -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.leanPos
+
+/-- info: def Ix.Cert.Canon.HashEqAgrees : Array Lean.Name → Prop :=
+fun names =>
+  ∀ (m : Lean.Name), m ∈ names → ∀ (n : Lean.Name), (Ix.Cert.Canon.nameS m == Ix.Cert.Canon.nameS n) = (m == n) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.HashEqAgrees
+
+/-- info: Ix.Cert.Canon.compileUnivS.eq_def : ∀ (ctx : List Ix.Name) (x : Ix.Level),
+  Ix.Cert.Canon.compileUnivS ctx x =
+    match x with
+    | Ix.Level.zero hash => some Ixon.Univ.zero
+    | l.succ hash => Option.map Ixon.Univ.succ (Ix.Cert.Canon.compileUnivS ctx l)
+    | l.max r hash => do
+      let __do_lift ← Ix.Cert.Canon.compileUnivS ctx l
+      let __do_lift_1 ← Ix.Cert.Canon.compileUnivS ctx r
+      pure (__do_lift.max __do_lift_1)
+    | l.imax r hash => do
+      let __do_lift ← Ix.Cert.Canon.compileUnivS ctx l
+      let __do_lift_1 ← Ix.Cert.Canon.compileUnivS ctx r
+      pure (__do_lift.imax __do_lift_1)
+    | Ix.Level.param n hash => Option.map (fun i => Ixon.Univ.var i.toUInt64) (List.idxOf? n ctx)
+    | Ix.Level.mvar n hash => none -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.compileUnivS.eq_def
+
+/-- info: def Ix.Cert.Canon.UnivMeaningS : Prop :=
+∀ (ctx : Array Ix.Name),
+  ctx.size < UInt64.size →
+    ∀ (l : Ix.Level) (u : Ixon.Univ) (k : Ix.LeanIngress.KLevel) (φ : Ix.Kernel.LevelParam → Nat),
+      Ix.Cert.Canon.compileUnivS ctx.toList l = some u →
+        Ix.LeanIngress.ingressLevel { names := ctx }.pos l = Except.ok k →
+          Ix.CompileCert.univEval (fun i => φ i.toNat) u = Ix.Kernel.Level.eval φ k -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.UnivMeaningS
+
+/-- info: def Ix.Cert.Canon.UniverseBridge : Prop :=
+∀ (ps : Array Lean.Name),
+  ps.size < UInt64.size →
+    Ix.Cert.Canon.HashEqAgrees ps →
+      ∀ (l : Lean.Level) (u : Ixon.Univ) (k : Ix.LeanIngress.KLevel) (φ : Ix.Kernel.LevelParam → Nat),
+        Ix.Cert.Canon.compileUnivS (Array.map Ix.Cert.Canon.nameS ps).toList (Ix.Cert.Canon.levelS l) = some u →
+          Ix.Cert.Canon.leanLevel (Ix.Cert.Canon.leanPos ps false) l = Except.ok k →
+            Ix.Kernel.Level.eval φ (Ix.Kernel.Reader.convUniv id (Ixon.canonUniv u)) = Ix.Kernel.Level.eval φ k -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Canon.UniverseBridge
+
+/-- info: Ix.Cert.Canon.ingressName_nameS (n : Lean.Name) :
+  Ix.LeanIngress.ingressName (Ix.Cert.Canon.nameS n) = Ix.Cert.Canon.leanName n -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.ingressName_nameS
+
+/-- info: Ix.Cert.Canon.ingressLevel_levelS (σ : Ix.Name → Ix.Kernel.LevelParam) (l : Lean.Level) :
+  Ix.LeanIngress.ingressLevel σ (Ix.Cert.Canon.levelS l) = Ix.Cert.Canon.leanLevel (σ ∘ Ix.Cert.Canon.nameS) l -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.ingressLevel_levelS
+
+/-- info: Ix.Cert.Canon.ingressExpr_exprS (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Lean.Expr) :
+  Ix.LeanIngress.ingressExpr σ (Ix.Cert.Canon.exprS e) = Ix.Cert.Canon.leanExpr (σ ∘ Ix.Cert.Canon.nameS) e -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.ingressExpr_exprS
+
+/-- info: Ix.Cert.Canon.ingressExpr_canonExpr (hc : Ix.Cert.Canon.CanonMCorrect) {s : Ix.CanonM.CanonState}
+  (hs : Ix.Cert.Canon.Reachable s) (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Lean.Expr) :
+  Ix.LeanIngress.ingressExpr σ (StateT.run (Ix.CanonM.canonExpr e) s).run.fst =
+    Ix.Cert.Canon.leanExpr (σ ∘ Ix.Cert.Canon.nameS) e -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.ingressExpr_canonExpr
+
+/-- info: Ix.Cert.Canon.numbering_nameS (names : Array Lean.Name) (large : Bool) (h : Ix.Cert.Canon.HashEqAgrees names)
+  (n : Lean.Name) :
+  { names := Array.map Ix.Cert.Canon.nameS names, large := large }.pos (Ix.Cert.Canon.nameS n) =
+    Ix.Cert.Canon.leanPos names large n -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.numbering_nameS
+
+/-- info: Ix.Cert.Canon.universe_bridge (hmean : Ix.Cert.Canon.UnivMeaningS) : Ix.Cert.Canon.UniverseBridge -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.universe_bridge
+
+/-- info: 'Ix.Cert.Canon.ingressName_nameS' depends on axioms: [propext, Classical.choice] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.ingressName_nameS
+
+/-- info: 'Ix.Cert.Canon.ingressLevel_levelS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.ingressLevel_levelS
+
+/-- info: 'Ix.Cert.Canon.ingressExpr_exprS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.ingressExpr_exprS
+
+/-- info: 'Ix.Cert.Canon.ingressExpr_canonExpr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.ingressExpr_canonExpr
+
+/-- info: 'Ix.Cert.Canon.numbering_nameS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.numbering_nameS
+
+/-- info: 'Ix.Cert.Canon.universe_bridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.universe_bridge
+
+/-- info: 'Ix.Cert.Canon.CanonMCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.CanonMCorrect
+
+/-- info: 'Ix.Cert.Canon.UniverseBridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.UniverseBridge
