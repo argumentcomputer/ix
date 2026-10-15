@@ -1,141 +1,268 @@
 # Proof compression
 
-This crate provides the compression stages for an aggregated Ix certificate:
-root Aiur proof → recursive FRI proof → KZG proof → recursive KZG proof.
-The root may aggregate any number of certificate shards, and its Aiur proof
-may itself contain multiple trace shards.
+Compress an aggregate `CheckEnv` root proof through FRI → KZG → recursive
+KZG. The statement the compressed proof exposes is the root's public claim
+row, derived from the aggregation backend as `ix verify --aggregate` derives
+it and bound to the claim by its packed digest; nothing in the pipeline or
+its caches depends on which environment was proved.
 
-Configure compression locally, then provide only the proof address:
+The KZG stages prove under the Filecoin phase-one powers of tau when
+`IX_KZG_FILECOIN_CACHE` names a prefix cache produced by the authenticated
+import in `kzg::srs::filecoin` (`examples/kzg_filecoin_import.rs` drives it
+from the 72 GiB `challenge_19`). The cache is pinned by the manifest receipt
+its import printed: the receipt of the complete `2^27` cache is built in, and
+`IX_KZG_FILECOIN_MANIFEST` names the receipt of a cache with another prefix.
+The recursive stage needs the `2^27` prefix, about 12 GiB.
+
+The provisioned parameters live in the S3 bucket
+`argument-kzg-params-063002298335-us-east-1-an` in `us-east-1`, under their
+file names: the `2^27` prover cache `filecoin-prefix-2p27.bin` and the
+complete 72 GiB `challenge_19` it was imported from. Fetch the cache onto
+fast local storage (see [Disk placement](#disk-placement)) and point
+the pipeline at it; `challenge_19` is only needed to re-run the import.
 
 ```sh
-ix compression setup --srs /path/to/trusted.srs
-ix compress ROOT_ADDRESS
-ix verify COMPRESSED_ADDRESS
+IX_COMPRESSION_DATA=/path/to/fast-storage/ix-compression
+mkdir -p "$IX_COMPRESSION_DATA"
+aws s3 cp s3://argument-kzg-params-063002298335-us-east-1-an/filecoin-prefix-2p27.bin \
+  "$IX_COMPRESSION_DATA/filecoin-prefix-2p27.bin"
+IX_KZG_FILECOIN_CACHE="$IX_COMPRESSION_DATA/filecoin-prefix-2p27.bin" \
+  ix compress ROOT_PROOF_ADDRESS --out "$IX_COMPRESSION_DATA/run"
+ix verify COMPRESSED_PROOF_ADDRESS
 ```
 
-Both prover and verifier run setup independently with the same SRS, aggregate
-backend, and bounds. Setup constructs a fixed circuit and its verification key;
-it takes no certificate, proof, or imported compression key. The SRS is the
-public KZG setup material, not a compression key supplied by a prover.
+Neither download needs to be trusted: the importer checks the
+source against the ceremony's published BLAKE2b-512 digest, and loading
+checks the cache against its built-in receipt and the pinned tau anchors. A
+256-power cache from the same import is checked in at
+`tests/fixtures/filecoin-prefix-2p8.bin` for tests of the real format.
 
-`compress` accepts a root produced by `ix aggregate` with the current default
-aggregate parameters. It verifies the root, recursively wraps it through the
-aggregate program, and pads that execution to the configured layout. It then
-runs all three compression stages and verifies the final proof with the locally
-generated key before writing it to the Ix store. The certificate claim is
-preserved. The new address goes to stdout and progress to stderr.
+| Artifact | Size | Pin |
+| --- | ---: | --- |
+| `challenge_19` | 77,309,411,488 bytes | BLAKE2b-512 `5a26015b…4df76b`, `FILECOIN_CHALLENGE_19_BLAKE2B` |
+| `filecoin-prefix-2p27.bin` | 12,884,919,006 bytes | BLAKE3 receipt `14423860…37f10a`, `FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3` |
+| `tests/fixtures/filecoin-prefix-2p8.bin` | 25,342 bytes | BLAKE3 receipt `185c556e…a0507d`, `FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3` |
 
-The fixed layout has one Aiur trace shard, all circuits active, and one memory
-closure pair per statically declared memory width. Function and memory tables
-have `2^root-log-height` rows (default 20, supported 1–26); byte tables retain
-their fixed heights. Every execution table must fit its bound, including the
-recursive verification of the input root. Memory interval ends are private,
-range-constrained inputs. Oversized executions are rejected; increasing the
-bound requires a new setup on both sides. The number of original certificate
-shards is not fixed, but the work to verify their aggregate proof must fit.
-These bounds describe the normalized execution, not the input proof's size.
+Without a Filecoin cache, `--dev-srs` selects a **known-trapdoor development
+SRS**. Its proofs are **not production-secure**, and `ix verify` accepts them
+only with `--dev-srs`.
 
-Local configurations live in `~/.ix/compression/<configuration-id>/`, separate
-from the proof store. Override the directory with `IX_COMPRESSION_HOME`.
-Each configuration contains `settings.json` and `verifier.bin`; `default` selects
-the configuration used for proving. The compressed proof contains only a
-version, configuration ID, and proof bytes. Verification selects an already
-configured local key, never a key from the prover. Unknown configurations fail
-with a setup error. Existing configurations remain available after another
-setup becomes active. Treat this directory as trusted local configuration.
+```sh
+ix compress ROOT_PROOF_ADDRESS --dev-srs
+ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
+```
 
-Setup stores the absolute SRS path for proving; verification needs only the
-local verifier and settings, so the SRS file is not required for verification.
-Repeated setup with the same parameters reuses the existing verifier.
-For development only, use `--dev-srs` instead of `--srs FILE`; this generates
-known-trapdoor parameters and stores `development.srs` locally. Such proofs
-are not production-secure.
+Compression preserves the claim address and prints a new proof address.
+It runs the three stages in sequence, each as a child process, into an empty
+directory, `~/.ix/compression/PROOF_ADDRESS/HEIGHT` unless `--out DIR` names
+one. Each stage writes its proof and verifying metadata; a rerun starts over.
+Fixed preprocessing and development SRS files are cached across runs under
+`~/.ix/compression/cache`. Use `--log-height 25` for fewer partitions
+(default: 24) and `--root-vk PATH` for a trusted root key instead of the
+current aggregate key. Full proving needs hundreds of GiB of RAM.
 
-`--log-height` on setup sets the maximum KZG partition log-height
-(16–26, default 24); the SRS must cover it. The FRI stage uses the aggregate
-backend's query and proof-of-work parameters, blowup four, and partition
-height `2^20`. Setup and proving can require substantial time and memory;
-partition height is not a total memory limit. There is no automatic resume.
-The aggregate environment audit remains available with
-`ix verify --aggregate --ixe ENV [--ixes MANIFEST] COMPRESSED_ADDRESS`.
+Verification uses the profiles compiled into the application from `profiles/`.
+`ix verify` selects a profile by the packet's ID and derives the expected
+statement from that profile's pinned aggregation-program prefix and the hash
+of the caller's serialized claim. It checks the compact proof and both
+pairing obligations without a verifier file, registry, proving SRS or GPU.
 
-The SRS format is provided by `Srs::write` / `Srs::from_reader`: `IXKZGS01`,
-a little-endian u32 log-length, `2^log-length` G1 powers, G2 and tau-G2, then
-log-length + 1 degree keys, all in Ark's compressed point encoding. Import
-checks subgroups and consistency; establish the SRS provenance independently.
+External verifier imports are not supported, and local files under
+`~/.ix/verifiers` have no effect. Unknown profile IDs are rejected; adding an
+accepted profile requires an application update. The bundled profiles are:
 
-The stages are library functions:
+| Profile | Setup | First-stage log-height |
+| --- | --- | --- |
+| `aggregate-filecoin-v5.bin` | Filecoin | 24 |
+| `init-development-v5.bin` | Development, requires `--dev-srs` | 24 |
 
-- `pipeline::FixedRoot` builds the fixed normalized-root verifier, and
-  `pipeline::setup` derives the complete verification key without a witness.
-  `FixedRoot::prepare` accepts only proofs matching that layout and policy.
-- `pipeline::prepare_root` is the general, variable-layout API. It takes a trusted aggregate verifier key, the root
-  proof, and the expected outer call claim reconstructed by the host. It
-  checks Aiur's batch policy and builds a circuit verifying all trace shards.
-- `Prepared::prove_fri` proves that circuit with caller-selected FRI parameters
-  and a partition-height limit.
-- `pipeline::prepare_kzg` constrains verification of the FRI proof and translates
-  Goldilocks arithmetic to the BLS12-381 scalar field. `Prepared::prove_kzg`
-  proves it with caller-supplied KZG parameters and a partition-height limit.
-- `pipeline::prepare_recursive` builds the KZG verifier circuit.
-  `RecursiveStage::prove` produces the final proof and pairing operands.
-  `RecursiveVerifier::verify` checks the independently supplied expected claim,
-  the outer proof, degree bounds, and both external pairing equations.
+The adjacent JSON files record the setup, root key and artifact identities.
+The verifier catalog pins each profile and its aggregation-program prefix.
+The public claim is supplied by the caller rather than copied from the packet, so a bundled profile verifies
+any aggregate root proved by the same recursive circuit. `ix compress` derives
+the statement from the aggregation backend instead and fails if a bundled
+profile pins a different program than the build it runs in, so a stale
+bundle is caught where the backend is available.
 
-Every stage preserves the public statement. Activation claims are generated
-by the lowering; no certificate digest, entrypoint index, partition count,
-exact proof size, or measured table layout is hardcoded. Preparation and
-proving are separate so callers can inspect the circuit and plan resources.
-Verification objects retain verification parameters, not proving SRS powers.
-KZG and recursive verifiers provide compact proof encoding and byte-level
-verification; the expected certificate claim is supplied separately.
+Compression does not require a profile to be bundled before proving. It
+constructs its circuit, verifies its output and writes `final-kzg/verifier.bin`
+as an output of the run. That file can be reviewed and bundled in a later
+application release; generating it does not register it for verification.
 
-Verifier keys must be trusted independently of proof data. Keys produced by
-local circuit construction can be used directly. Each stage verifier provides
-`to_bytes` and `from_bytes` for versioned, verifier-only transport, including
-its statement schema and public parameters. Authenticate the complete encoding
-before loading it; accepting a key supplied alongside a proof does not establish
-which certificate relation was proved. Decoders reject malformed metadata,
-noncanonical encodings, and trailing bytes.
+The packet carries the 18-word public claim, a profile ID, two compressed G1
+opening-pairing operands and the compact `KQP4` KZG proof. Generic Serde
+serialization of complete KZG proofs is unsupported; callers use
+`FixedProofCodec` with the expected profile. Internal commitment metadata
+retains its canonical encoding and checks nested counts before allocating.
 
-The stages do not manage an ix store, verifier registry, subprocesses, or
-checkpoint files. KZG proving commits partitions separately and reconstructs
-lookup traces from committed columns. The logical circuit, assignment and
-prover coefficients remain resident; partition height is not a total memory
-limit. The backend also exposes coefficient-checkpoint APIs for application
-integration.
+Every setup declares its complete public polynomial degree. Loading a shorter
+proving prefix or only verifier anchors preserves that degree and the setup
+identity. The Filecoin identity derives from the ceremony digest and its
+`2^28 - 2` public degree, so every prefix cache of it binds the same
+checkpoints and verifier profiles. Development identities derive from the
+seed and declared degree; the trapdoor remains known.
 
-KZG parameters must have trusted provenance and pass `Srs::validate` before
-use. `Srs::unsafe_dev_setup` is a deterministic test helper with a known
-trapdoor; its proofs are not production-secure. No pipeline stage generates
-an SRS implicitly. FRI parameters and resource limits are also chosen by the
-caller. The circuit verifier currently supports Goldilocks with quadratic
-challenges, cap-height zero, binary FRI, a constant final polynomial, active
-preprocessed tables, and a bounded field-sampling retry budget. Unsupported
-profiles fail during preparation.
+## Final proof transcript
 
-`fri` contains the constrained transcript, algebra, Merkle and FRI verifier;
-`foreign` translates field arithmetic; `kzg` implements the commitment backend;
-`recursive` constrains KZG verification and exposes pairing operands.
+New recursive KZG proofs use Keccak-256 in portable verifier profile v5.
+The FRI proof, first KZG proof and the recursive circuit's verification of
+that first proof retain BLAKE3. The compact proof layout and SRS are unchanged.
+The profile version selects the transcript without trying alternatives;
+application verification also requires that exact profile to be bundled.
+Setup bindings include the transcript choice. Metadata checksums and profile
+identities remain BLAKE3.
 
-Run generated fixtures, arithmetic comparisons, adversarial verification,
-statement-binding, and streaming tests with:
+The Keccak transcript starts with a zero 32-byte state. For counters 0, 1 and
+2 it computes Keccak-256 over
+`"multi-stark/kzg/keccak256/v1" || counter:u8 || state:bytes32 || observations`.
+The first two digests concatenate into a 512-bit **big-endian** integer reduced
+modulo the BLS12-381 scalar field; the third digest becomes the next state.
+All three hashes use the old state, then the observation buffer is cleared.
+Observations keep the existing canonical field/point and vector encodings.
+The parameter seed has its own Keccak protocol domain and binds the same
+public setup anchors and degree limits as the BLAKE3 configuration.
+
+This profile makes a custom Ethereum verifier's transcript use native Keccak;
+it does not change the proof into a standard PLONK format or implement a
+Solidity verifier.
+
+## GPU proving
+
+The `cuda` feature compiles the KZG kernels with nvcc and runs
+interpolation, commitments, coset evaluation, lookup and quotient
+construction and opening divisions on NVIDIA GPUs. It needs the CUDA
+toolkit at build time and a visible GPU at runtime; a CPU-only build
+neither compiles sppark nor links CUDA.
+
+```sh
+IX_CUDA=1 MULTI_STARK_CUDA_ARCHS=120 lake build ix
+cargo test --release -p ix-proof-compression --features cuda
+```
+
+`IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
+prover and the KZG backend here; there is no separate switch. The KZG
+backend is compiled only into `ix-compression-worker`, the stage executable
+built beside `ix`, so the Lean executable links neither it nor its CUDA
+runtime.
+
+`IX_NO_PAR=1` builds without the `parallel` feature, and
+`IX_CUDA_TRACE_CODEGEN=1` adds the generated CUDA trace kernels described in
+[the GPU proving guide](../../docs/aiur-gpu-proving.md), implying `cuda`.
+
+CUDA Lake builds require Python 3, GNU binutils, and the host compiler's
+static `libstdc++.a`. Lake bundles the native CUDA objects with a private
+copy of that runtime, including exception metadata, so it cannot collide
+with Lean's libc++/libc++abi. Only the native C entry points remain public.
+The executable links the host compiler's C library family and therefore
+requires a compatible glibc on deployment hosts. `NVCC`,
+`CUDA_HOME`/`CUDA_PATH`, and nvcc's host-compiler overrides apply to runtime
+discovery as well as kernel compilation. CPU builds skip this packaging.
+
+With the feature compiled, every proving operation above the size
+thresholds in the prover runs on the devices and a rejected memory
+admission is an error; tune the residency limit or chunk size below rather
+than expecting a host fallback. A CUDA build keeps every committed column
+in memory; a CPU build serves the fixed columns from their cache files and
+produces identical proof bytes. The worker installs its settings from the
+environment before the first proving operation:
+
+| Variable | Values | Default |
+| --- | --- | --- |
+| `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
+| `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | first stage: up to half the device memory; recursive stage: `8` |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
+| `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
+
+With several devices selected, each runs one native operation at a time
+and the work spreads by job: partitions prove concurrently, FFT queues and
+MSM chunks split across the devices, and resident coefficients are retained
+on whichever device has the most room. A lookup, quotient or constraint
+pass runs whole on one device that admits its working set, preferring the
+device holding most of its resident columns and uploading the others from
+the host; the first free admitted device is taken rather than waiting for
+the preferred one. Devices never exchange data directly, so there is no
+peer access to configure. The pipeline selects device `0` by default;
+set `IX_KZG_CUDA_DEVICES` to use additional devices.
+
+`IX_KZG_CUDA_ARCHS` selects the SM architectures at build time and falls
+back to `MULTI_STARK_CUDA_ARCHS`, so one variable configures both CUDA
+backends of a Lake build. Defaults include SM70 and SM75 when the CUDA
+toolkit supports them. Device discovery admits only GPUs compatible with a
+compiled kernel image; an architecture excluded by the toolkit or an explicit
+selection is rejected before proving. The feature-compiled test suite
+needs a GPU host; device unit tests are marked ignored and run with
+`--ignored`. CPU/GPU proof-byte parity is checked by comparing the two builds' outputs.
+
+### Disk placement
+
+Use fast local storage for stage output and fixed-preprocessing caches.
+Cache files are large and fsynced before publication, so storage throughput
+can limit proving. Select the output with `--out` and cache locations with
+the variables below. Keep final proofs and verifier artifacts on durable
+storage when using an ephemeral volume for working data.
+
+## Stage entries and caches
+
+`ix compress` invokes `ix-compression-worker <stage> <args>` for each stage.
+The worker must be installed beside `ix`, or named by `IX_COMPRESSION_WORKER`.
+Maintainers can invoke a stage directly when diagnosing a saved input:
+
+```sh
+ix-compression-worker fri root/ fri/ --prove-outer
+ix-compression-worker kzg run fri/ first-kzg/ 24
+ix-compression-worker wrap stage-and-prove first-kzg/ final-kzg/
+```
+
+The KZG stages generate traces directly into commitment and proving. The
+first stage also accepts `kzg serve <responses.jsonl> [log-height]` to reuse
+a prepared frontend across requests on stdin. Every KZG stage requires
+`--dev-srs` when no Filecoin cache is configured.
+
+`ix compress` sets the fixed-preprocessing and development SRS cache
+directories under `~/.ix/compression/cache` unless the environment already
+names them. Direct stage invocations use the defaults below.
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `IX_KZG_FIXED_CACHE` | directory of fixed-preprocessing checkpoints, bound to the executable digest, plan and setup identity | `<stage>/kzg/fixed-cache` |
+| `IX_KZG_FILECOIN_CACHE` | receipt-pinned Filecoin prefix cache; selects the Filecoin setup for every stage | unset: development setup, requiring `--dev-srs` |
+| `IX_KZG_FILECOIN_MANIFEST` | BLAKE3 manifest receipt of that cache | the built-in receipt of the complete `2^27` cache |
+| `IX_KZG_SRS_CACHE` | directory holding block-checksummed development SRS files shared across stages | unset: regenerated per stage |
+| `IX_KZG_PREFETCH_GIB` | bound on the next partition's witness generated while the current one is committed | `32` |
+| `IX_ROOT_GENERIC_HASHES` | set to build the FRI stage's circuit with generic rather than compact BLAKE3; `ix compress` rejects it | unset |
+
+## Code and tests
+
+The library also exposes `pipeline::prepare_root` for aggregate roots with
+multiple Aiur trace shards, `FixedRoot` for a bounded normalized root, and
+`pipeline::setup` to construct a verifier from trusted parameters without a
+proof witness. `Prepared::prove_fri`, `prepare_kzg`, `Prepared::prove_kzg` and
+`prepare_recursive` compose the stages with caller-selected bounds and SRS.
+These APIs return verifier-only metadata and keep the expected claim separate
+from the proof. They do not register a verifier in the application's bundled
+catalog. The CLI uses the worker and trusted profiles described above.
+
+`fri` constrains FRI verification, `foreign` translates Goldilocks arithmetic
+into scalar-field constraints, `kzg` implements the commitment backend, and
+`recursive` constrains KZG verification with public pairing operands.
+`pipeline` runs the stages through the Plonkish API, exposed by
+`ix-compression-worker`.
 
 ```sh
 cargo test --release -p ix-proof-compression
+lake build ix compression-cli-tests
+.lake/build/bin/compression-cli-tests
 ```
 
-The complete-chain integration test uses a synthetic root relation with a
-fixed layout, independently derives its key before constructing any proof,
-runs all compression stages, and checks key equality and final verification
-against the expected and a changed statement. Separate tests cover roots with
-multiple Aiur trace shards. The synthetic relation is not the production Ix
-aggregate program.
-It uses development parameters and low FRI query counts to exercise the
-algorithms; these are not production security settings. Run this expensive
-test explicitly:
+The lakefile compiles Cargo's C units as C17 so they stay compatible with
+Lean's bundled libc on hosts whose C compiler defaults to C23, and tracks
+that flag and the embedded profile bytes when deciding whether to rebuild
+the Rust archive.
 
-```sh
-cargo test --release -p ix-proof-compression --test pipeline_root \
-  complete_compression_chain -- --ignored --nocapture
-```
+Tests cover small proving, tampering, CLI validation and proof identity.
+The saved Init FRI fixture checks native verification and verifier planning.
+The CLI test verifies the checked-in Filecoin packet in a fresh home without a proving SRS
+or verifier import, rejects modified claims and profile IDs, and confirms
+that a local verifier registry cannot override the application's profiles.

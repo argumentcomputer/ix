@@ -250,8 +250,8 @@ impl FixedRoot {
 
 #[cfg(test)]
 mod tests {
+  use super::super::setup;
   use super::*;
-  use crate::pipeline::setup;
   use multi_stark::{
     batch::ShardInput,
     expr::Expr,

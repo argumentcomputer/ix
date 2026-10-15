@@ -92,10 +92,7 @@ impl KzgVerifier {
     statement.validate()?;
     let commitment =
       preprocessing.as_ref().ok_or("missing fixed commitment")?;
-    if circuits.is_empty()
-      || commitment.0.len() != circuits.len()
-      || commitment.1.len() != circuits.len()
-    {
+    if circuits.is_empty() || commitment.0.len() != circuits.len() {
       return Err("invalid fixed commitment dimensions".into());
     }
     for (i, c) in circuits.iter().enumerate() {
@@ -103,15 +100,9 @@ impl KzgVerifier {
       if c.preprocessed.is_some()
         || c.preprocessed_width == 0
         || !c.preprocessed_height.is_power_of_two()
-        || c.preprocessed_height > params.max_len()
+        || c.preprocessed_height > params.max_trace_len()
         || c.quotient_degree() > 2
         || commitment.0[i].len() != c.preprocessed_width
-        || commitment.1[i].len()
-          != if c.preprocessed_height < params.max_len() {
-            c.preprocessed_width
-          } else {
-            0
-          }
       {
         return Err("invalid KZG compression circuit metadata".into());
       }

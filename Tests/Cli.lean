@@ -1,7 +1,7 @@
 module
 
 public import Ix.Ixon
-public import Ix.Cli.Compression
+public import Tests.CompressionCli
 
 /- Integration tests for the Ix CLI -/
 
@@ -165,57 +165,12 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
-/-- Compression CLI contracts use generated inputs and temporary directories;
-    no external certificates, setup files, or expensive proving is required. -/
-public def Tests.Cli.testCompression : IO Unit := do
-  let ix ← IO.FS.realPath ".lake/build/bin/ix"
-  let dir ← IO.FS.createTempDir
-  let run := fun args => IO.Process.output {
-    cmd := ix.toString, args, env := #[("IX_COMPRESSION_HOME", some dir.toString)] }
-  let reject := fun args message => do
-    let result ← run args
-    unless result.exitCode != 0 && (result.stderr.splitOn message).length > 1 do
-      throw <| IO.userError s!"unexpected compression CLI result: {result.stdout}\n{result.stderr}"
-  try
-    for args in [#["compress", "--help"], #["verify", "--help"],
-        #["compression", "setup", "--help"]] do
-      let help ← run args
-      unless help.exitCode == 0 do
-        throw <| IO.userError s!"compression help failed: {help.stderr}"
-    let args := #["compression", "setup"]
-    reject args "specify exactly one"
-    reject (args ++ #["--dev-srs", "--srs", "missing"]) "specify exactly one"
-    for flag in ["--root-log-height", "--log-height"] do
-      for value in ["0", "27", "4294967296"] do
-        reject (args ++ #["--dev-srs", flag, value]) "must be"
-    reject (args ++ #["--srs", (dir / "missing").toString]) "SRS file does not exist"
-    reject #["compress", "invalid-address"] "expected a 64-character proof address"
-    -- Exercise the Lean/Rust boundary, including the Array G argument.
-    let rejected ← try
-      Ix.Cli.Compression.verify ByteArray.empty ByteArray.empty #[1, 2] dir.toString
-      pure false
-    catch _ => pure true
-    unless rejected do throw <| IO.userError "compression FFI accepted an invalid proof"
-    -- A structurally valid envelope cannot supply a verifier or select an
-    -- unconfigured local key.
-    let envelope := "IXCMP002".toUTF8 ++ ByteArray.mk (Array.replicate 33 0)
-    let rejected ← try
-      Ix.Cli.Compression.verify ByteArray.empty envelope #[1, 2] dir.toString
-      pure false
-    catch _ => pure true
-    unless rejected do throw <| IO.userError "compression FFI accepted an unknown configuration"
-    unless (← dir.readDir).isEmpty do
-      throw <| IO.userError "invalid compression inputs created local configuration files"
-    IO.println "compression CLI: setup validation and proof-only FFI rejection checks passed"
-  finally
-    IO.FS.removeDirAll dir
-
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
+  Tests.CompressionCli.run
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
   Tests.Cli.testCompileSharingLimits
-  Tests.Cli.testCompression
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

@@ -1,404 +1,307 @@
-//! Compression stages for aggregated Ix certificates.
-//!
-//! The caller supplies the trusted aggregate key, expected outer claim and
-//! proving parameters. No certificate, filesystem layout or development SRS
-//! is built into these stages. Verifiers returned by local construction must
-//! be authenticated before use elsewhere; a prover-supplied key is not trusted.
-mod codec;
-mod fixed;
-mod root;
-mod setup;
-#[cfg(test)]
-mod tests;
-mod wrap;
-
-pub use fixed::FixedRoot;
-pub use root::prepare_root;
-pub use setup::setup;
-pub use wrap::{
-  RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
+//! Compression and verification of aggregate root proofs.
+mod stages;
+pub use stages::{
+  FixedRoot, FriVerifier, KzgVerifier, Prepared, RecursiveProof,
+  RecursiveStage, RecursiveVerifier, prepare_kzg, prepare_recursive,
+  prepare_root, setup,
 };
 
-use crate::foreign::{GoldilocksCircuit, KzgCircuitExt};
-use crate::fri::{self, VerifierKey};
-use crate::kzg::{KzgConfig, Scalar, Srs, VerifierParams};
-use multi_stark::config::ProofConfig;
-use multi_stark::lookup::LookupValues;
-use multi_stark::plonkish::{Assignment, Circuit, MultiStarkCircuit};
-use multi_stark::prover::{Proof, Stage1};
-use multi_stark::system::{ProverKey, System, SystemWitness};
-use multi_stark::traits::{Algebra, Field, Pcs};
-use multi_stark::types::{GoldilocksBlake3Config, Val};
-use p3_field::PrimeField64;
-use p3_matrix::Matrix;
-use std::sync::Arc;
+mod first;
+#[cfg(test)]
+mod init_claim;
+mod init_fri;
+mod root;
+mod setup;
+mod statement;
+mod storage;
+mod support;
+mod verifier;
+mod wrap;
 
+use std::{
+  fs,
+  path::{Path, PathBuf},
+  process::{Command, Stdio},
+};
+
+pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x04";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-// System::new asserts these conditions. Check caller-selected parameters
-// before committing matrices so an unsupported configuration is an error.
-fn validate_config<SC: ProofConfig>(
-  config: &SC,
-  definitions: &[multi_stark::system::CircuitInputs<
-    multi_stark::config::Val<SC>,
-  >],
-) -> Result<()> {
-  let params = multi_stark::system::extension_params::<SC>();
-  for definition in definitions {
-    let graph = definition
-      .compile_graph(&params)
-      .map_err(|e| format!("compression circuit: {e:?}"))?;
-    let degree =
-      graph.max_constraint_degree.max(multi_stark::lookup::logup_max_degree(
-        &graph,
-        definition.lookup_group_size,
-      )) as usize;
-    let quotient = (degree.max(2) - 1).next_power_of_two();
-    if quotient > config.max_quotient_degree() {
-      return Err(format!("compression circuit requires quotient degree {quotient}; increase the PCS degree budget").into());
+pub fn command(stage: &str, args: &[String]) -> Result<()> {
+  configure_backend(stage)?;
+  match stage {
+    "fri" => root::run(args),
+    "kzg" => first::run(args),
+    "wrap" => wrap::run(args),
+    _ => Err("unknown compression stage".into()),
+  }
+}
+
+/// Install the KZG CUDA backend settings from the environment before the
+/// first proving operation. Settings already installed in this process are
+/// kept. The recursive stage caps device residency unless the environment
+/// sets it, so its constraint passes can be admitted beside the resident
+/// columns.
+///
+/// The pipeline proves on one device unless the environment selects more.
+#[cfg(feature = "cuda")]
+fn configure_backend(stage: &str) -> Result<()> {
+  use crate::kzg::cuda::{PassMode, Settings};
+  let var = |name: &str| std::env::var(name).ok();
+  let devices = match var("IX_KZG_CUDA_DEVICES") {
+    Some(list) => list
+      .split(',')
+      .map(|id| id.trim().parse())
+      .collect::<std::result::Result<Vec<i32>, _>>()
+      .map_err(|_error| "IX_KZG_CUDA_DEVICES must list CUDA ordinals")?,
+    None => vec![0],
+  };
+  let mut settings = Settings { devices: Some(devices), ..Settings::default() };
+  if let Some(value) = var("IX_KZG_MSM_CHUNK_POINTS") {
+    settings.msm_chunk_points = value
+      .parse()
+      .ok()
+      .filter(|points| (1..=1 << 28).contains(points))
+      .ok_or("IX_KZG_MSM_CHUNK_POINTS must be in 1..=2^28")?;
+  }
+  if let Some(value) = var("IX_KZG_CUDA_RESIDENT_GIB") {
+    settings.resident_limit_bytes = Some(
+      value
+        .parse::<usize>()
+        .ok()
+        .and_then(|gib| gib.checked_mul(1 << 30))
+        .ok_or("IX_KZG_CUDA_RESIDENT_GIB must be a whole number of GiB")?,
+    );
+  } else if stage == "wrap" {
+    settings.resident_limit_bytes = Some(wrap::DEFAULT_CUDA_RESIDENT_BYTES);
+  }
+  let switch = |name: &str, on: &str, off: &str| -> Result<Option<bool>> {
+    match var(name).as_deref() {
+      None => Ok(None),
+      Some(value) if value == on => Ok(Some(true)),
+      Some(value) if value == off => Ok(Some(false)),
+      Some(other) => {
+        Err(format!("{name} must be {on} or {off}, not {other}").into())
+      },
     }
-    if let Some(fixed) = &definition.preprocessed {
-      let height = fixed.height();
-      if !height.is_power_of_two()
-        || height.ilog2() as usize > config.max_log_degree()
-        || height.ilog2() as usize + quotient.ilog2() as usize
-          > config.max_log_quotient_domain()
-      {
-        return Err("compression trace exceeds the PCS domain".into());
-      }
-    }
+  };
+  if let Some(value) = switch("IX_KZG_CUDA_SRS_CACHE", "1", "0")? {
+    settings.srs_cache = value;
+  }
+  settings.passes = match var("IX_KZG_CUDA_PASSES").as_deref() {
+    None | Some("1") => PassMode::Fallback,
+    Some("0") => PassMode::Off,
+    Some("force") => PassMode::Force,
+    Some(other) => {
+      return Err(
+        format!("IX_KZG_CUDA_PASSES must be 0, 1 or force, not {other}").into(),
+      );
+    },
+  };
+  crate::kzg::cuda::configure(settings);
+  Ok(())
+}
+
+#[cfg(not(feature = "cuda"))]
+#[allow(clippy::unnecessary_wraps)]
+fn configure_backend(_stage: &str) -> Result<()> {
+  Ok(())
+}
+
+/// The stage worker executable installed beside `ix`.
+pub const WORKER_EXECUTABLE: &str = "ix-compression-worker";
+
+/// The stage worker: `IX_COMPRESSION_WORKER` when set, otherwise the
+/// executable of that name beside the running one. Stages run there rather
+/// than in this process so the Lean executable links no KZG proving code or
+/// its CUDA runtime.
+fn worker_executable() -> Result<PathBuf> {
+  if let Some(path) = std::env::var_os("IX_COMPRESSION_WORKER") {
+    return Ok(PathBuf::from(path));
+  }
+  let current = std::env::current_exe()?;
+  let sibling = current.with_file_name(WORKER_EXECUTABLE);
+  if sibling.is_file() {
+    return Ok(sibling);
+  }
+  Err(
+    format!(
+      "{WORKER_EXECUTABLE} not found beside {}; build it with the ix \
+       executable or name it in IX_COMPRESSION_WORKER",
+      current.display()
+    )
+    .into(),
+  )
+}
+
+fn child(stage: &str, args: &[&str], caches: &Caches) -> Result<()> {
+  let status = Command::new(worker_executable()?)
+    .arg(stage)
+    .args(args)
+    .env("IX_KZG_FIXED_CACHE", &caches.fixed)
+    .env("IX_KZG_SRS_CACHE", &caches.development_srs)
+    .stdout(Stdio::from(std::io::stderr()))
+    .stderr(Stdio::inherit())
+    .status()?;
+  if !status.success() {
+    return Err(
+      format!("compression {stage} failed ({status}); checkpoints retained")
+        .into(),
+    );
   }
   Ok(())
 }
 
-/// A checked circuit and its witness, ready for lowering and proving.
-/// Keeping preparation separate lets callers inspect costs and choose an SRS
-/// and partition height before allocating prover data.
-pub struct Prepared<F: Field> {
-  circuit: Circuit<F>,
-  assignment: Assignment<F>,
+/// The statement a compressed proof of `claim` exposes, as the caller
+/// derived it from its aggregation backend, checked to end in the packed
+/// digest of the claim itself.
+pub fn check_claim(
+  claim: &[u8],
+  statement: &[u8],
+) -> Result<statement::Statement> {
+  let words = statement::from_claims_bytes(statement)?;
+  statement::bind_claim(claim, &words)?;
+  Ok(words)
 }
 
-impl<F: Field> Prepared<F> {
-  pub fn circuit(&self) -> &Circuit<F> {
-    &self.circuit
-  }
-
-  pub fn public_values(&self) -> &[F] {
-    self.assignment.public_values()
-  }
+/// Describe the setup a new run would prove under, or why none is allowed.
+pub fn setup_description(allow_development: bool) -> Result<&'static str> {
+  Ok(setup::SetupClass::configured(allow_development)?.description())
 }
 
-/// The lowering's complete claim template, including all activation anchors.
-/// Only public-value cells may be replaced during verification.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Statement<F> {
-  template: Vec<Vec<F>>,
-  locations: Vec<(usize, usize)>,
+/// Verify a compressed proof of `claim` with the profile bundled under the
+/// packet's id, needing neither the proving backend nor any file.
+pub fn verify(
+  proof: &[u8],
+  claim: &[u8],
+  allow_development: bool,
+) -> Result<setup::SetupClass> {
+  let packet = proof
+    .strip_prefix(PROOF_TAG)
+    .ok_or("unsupported compressed proof version")?;
+  verifier::verify(packet, claim, allow_development)
 }
 
-impl<F: Field> Statement<F> {
-  fn from_lowered(
-    circuit: &MultiStarkCircuit<F>,
-    count: usize,
-  ) -> Result<Self> {
-    let template = circuit.claims(&vec![F::ZERO; count])?;
-    // MultiStarkCircuit::claims places the anchor first, then public cells.
-    // Obtain every other claim (partition/hash activation) from the lowering.
-    let locations: Vec<_> = (1..=count).map(|i| (i, 3)).collect();
-    if template.len() <= count
-      || template[..=count].iter().any(|row| row.len() != 4)
-    {
-      return Err("unsupported lowering claim schema".into());
-    }
-    Ok(Self { template, locations })
-  }
-
-  fn claims(&self, public: &[F]) -> Result<Vec<Vec<F>>> {
-    if public.len() != self.locations.len() {
-      return Err("unexpected public statement length".into());
-    }
-    let mut claims = self.template.clone();
-    for (&(row, col), &value) in self.locations.iter().zip(public) {
-      claims[row][col] = value;
-    }
-    Ok(claims)
-  }
+/// Cross-run caches the stages share: fixed preprocessing keyed by the
+/// executable and profile, and development SRS files. Variables already set
+/// in the environment take precedence over the directory given to `compress`.
+struct Caches {
+  fixed: PathBuf,
+  development_srs: PathBuf,
 }
 
-/// Trusted verifier for the first, FRI-compressed stage.
-pub struct FriVerifier {
-  key: VerifierKey,
-  statement: Statement<Val>,
-}
-
-impl FriVerifier {
-  fn schema(&self) -> fri::Statement<fri::StatementSlot> {
-    let mut schema = fri::Statement {
-      claims: self
-        .statement
-        .template
-        .iter()
-        .map(|row| {
-          row
-            .iter()
-            .copied()
-            .map(fri::StatementSlot::Constant)
-            .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>(),
-      messages: vec![],
+impl Caches {
+  fn under(root: &Path) -> Self {
+    let named = |name: &str, default: &str| {
+      std::env::var_os(name).map_or_else(|| root.join(default), PathBuf::from)
     };
-    for &(row, col) in &self.statement.locations {
-      schema.claims[row][col] = fri::StatementSlot::Public;
+    Self {
+      fixed: named("IX_KZG_FIXED_CACHE", "fixed-preprocessing"),
+      development_srs: named("IX_KZG_SRS_CACHE", "development-srs"),
     }
-    schema
-  }
-
-  pub fn verify(
-    &self,
-    proof: &Proof<GoldilocksBlake3Config>,
-    expected: &[Val],
-  ) -> Result<()> {
-    let claims = self.statement.claims(expected)?;
-    self
-      .key
-      .system()
-      .verify_multiple_claims(
-        &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
-        proof,
-      )
-      .map_err(|e| format!("FRI compression proof: {e:?}"))?;
-    Ok(())
   }
 }
 
-impl Prepared<Val> {
-  /// Prove the root-verifier circuit using caller-selected FRI parameters.
-  pub fn prove_fri(
-    self,
-    config: GoldilocksBlake3Config,
-    max_height: usize,
-  ) -> Result<(FriVerifier, Proof<GoldilocksBlake3Config>)> {
-    use multi_stark::config::StarkGenericConfig;
-    fri::validate_parameters(
-      multi_stark::types::CommitmentParameters {
-        log_blowup: config.log_blowup(),
-        cap_height: config.cap_height(),
-      },
-      config.fri_parameters(),
-    )?;
-    let compiled = self
-      .circuit
-      .lower_to_multi_stark_with_max_height(Val::ONE, max_height)?;
-    let statement = Statement::from_lowered(
-      &compiled,
-      self.assignment.public_values().len(),
-    )?;
-    let claims = statement.claims(self.assignment.public_values())?;
-    let definitions = compiled.circuit_inputs();
-    validate_config(&config, &definitions)?;
-    let traces = compiled.traces(&self.assignment)?;
-    drop(compiled);
-    drop(self.assignment);
-    let (system, key) = System::new(config, definitions);
-    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let proof = system.prove_multiple_claims(
-      &key,
-      &refs,
-      SystemWitness::from_stage_1(traces, &system),
+/// Run the three stages into an empty `out` directory, each as a child
+/// process so every heavy phase releases its memory and device state before
+/// the next starts. Only each stage's proof and verifying metadata are
+/// written; a rerun starts over, reusing the caches under `cache_root`.
+pub fn compress(
+  vk: &[u8],
+  proof: &[u8],
+  claim: &[u8],
+  statement: &[u8],
+  out: &Path,
+  cache_root: &Path,
+  allow_development: bool,
+  log_height: u32,
+) -> Result<Vec<u8>> {
+  let words = check_claim(claim, statement)?;
+  if !matches!(log_height, 24 | 25) {
+    return Err(
+      "--log-height must be 24 or 25 for the supported recursive profiles"
+        .into(),
     );
-    system
-      .verify_multiple_claims(&refs, &proof)
-      .map_err(|e| format!("new FRI proof: {e:?}"))?;
-    Ok((FriVerifier { key: VerifierKey::new(system), statement }, proof))
   }
-}
-
-/// Prepare a FRI verifier over the BLS12-381 scalar field. The statement and
-/// all activation anchors come from the trusted previous stage's verifier.
-pub fn prepare_kzg(
-  verifier: &FriVerifier,
-  proof: &Proof<GoldilocksBlake3Config>,
-  expected: &[Val],
-  limits: fri::VerifierLimits,
-) -> Result<Prepared<Scalar>> {
-  verifier.verify(proof, expected)?;
-  let claims = verifier.statement.claims(expected)?;
-  let profile = fri::ProofProfile {
-    envelope: fri::Envelope::Ordinary,
-    active: proof.active.clone(),
-    log_degrees: proof.log_degrees.clone(),
-    claim_lengths: claims.iter().map(Vec::len).collect(),
-    message_lengths: vec![],
-    max_field_retries: fri::DEFAULT_FIELD_RETRIES,
+  // Child stages re-read the same environment; the policy is enforced once
+  // here so an unconfigured run fails before any checkpoint is written.
+  setup::SetupClass::configured(allow_development)?;
+  if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
+    return Err(
+      "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
+        .into(),
+    );
+  }
+  fs::create_dir_all(out)?;
+  if fs::read_dir(out)?.next().is_some() {
+    return Err(
+      "output directory must be empty; use a new --out directory".into(),
+    );
+  }
+  let caches = Caches::under(cache_root);
+  let root = out.join("root");
+  fs::create_dir_all(&root)?;
+  fs::write(root.join("root-vk.bin"), vk)?;
+  fs::write(root.join("root-proof.bin"), proof)?;
+  fs::write(root.join("root-claims.bin"), statement::to_claims_bytes(&words))?;
+  let fri = out.join("fri");
+  let first = out.join("first-kzg");
+  let final_dir = out.join("final-kzg");
+  let path = |p: &Path| -> Result<String> {
+    Ok(p.to_str().ok_or("non-UTF8 output path")?.to_owned())
   };
-  let plan = fri::VerifierPlan::validate(&verifier.key, profile, limits)?;
-  let schema = verifier.schema();
-  let (circuit, inputs) = plan.build(schema, Default::default())?;
-  let expanded = plan
-    .expand_witness(fri::ProofEnvelope::Ordinary { proof, claims: &claims })?;
-  let mut witness = circuit.witness();
-  inputs.assign_statement(
-    &mut witness,
-    &fri::Statement { claims, messages: vec![] },
-  )?;
-  expanded.assign_proof(&mut witness, &inputs)?;
-  let assignment = witness.generate()?;
-  let foreign = GoldilocksCircuit::new_preallocated(&circuit);
-  let mut witness = foreign.circuit.witness();
-  foreign.assign(&assignment, &mut witness)?;
-  let assignment = witness.generate()?;
-  Ok(Prepared { circuit: foreign.circuit, assignment })
-}
-
-/// Trusted verifier for a scalar-field compression stage. It retains only
-/// verification parameters, never the SRS proving powers or fixed matrices.
-pub struct KzgVerifier {
-  system: System<KzgConfig>,
-  params: VerifierParams,
-  statement: Statement<Scalar>,
-}
-
-impl KzgVerifier {
-  fn codec(&self) -> Result<crate::kzg::compact::FixedProofCodec> {
-    let logs = self
-      .system
-      .circuits
-      .iter()
-      .map(|c| {
-        u8::try_from(c.preprocessed_height.ilog2())
-          .expect("validated trace height")
-      })
-      .collect::<Vec<_>>();
-    Ok(crate::kzg::compact::FixedProofCodec::new(&self.system, &logs)?)
-  }
-
-  /// Fixed-shape transport under this trusted key; encoding is not verification.
-  pub fn encode_proof(&self, proof: &Proof<KzgConfig>) -> Result<Vec<u8>> {
-    Ok(self.codec()?.encode(proof)?)
-  }
-
-  pub fn verify_bytes(&self, bytes: &[u8], expected: &[Scalar]) -> Result<()> {
-    self.verify(&self.codec()?.decode(bytes)?, expected)
-  }
-
-  pub fn verify(
-    &self,
-    proof: &Proof<KzgConfig>,
-    expected: &[Scalar],
-  ) -> Result<()> {
-    let claims = self.statement.claims(expected)?;
-    self
-      .system
-      .verify_multiple_claims(
-        &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
-        proof,
-      )
-      .map_err(|e| format!("KZG compression proof: {e:?}"))?;
-    Ok(())
-  }
-}
-
-impl Prepared<Scalar> {
-  /// Parameters must have trusted provenance and pass Srs::validate before
-  /// use. Partitioning is bounded by both max_height and the supplied SRS.
-  pub fn prove_kzg(
-    self,
-    srs: Arc<Srs>,
-    max_height: usize,
-  ) -> Result<(KzgVerifier, Proof<KzgConfig>)> {
-    if srs.max_len() < 2
-      || !srs.max_len().is_power_of_two()
-      || srs.degree_keys.len() != srs.max_len().ilog2() as usize + 1
-    {
-      return Err("invalid SRS shape".into());
+  let (root_s, fri_s, first_s, final_s) =
+    (path(&root)?, path(&fri)?, path(&first)?, path(&final_dir)?);
+  // Each KZG worker re-reads the environment and decides its own setup;
+  // the permission to use development parameters travels as its flag.
+  let kzg = |stage, args: &[&str]| {
+    let mut args = args.to_vec();
+    if allow_development {
+      args.push("--dev-srs");
     }
-    if max_height < 2
-      || !max_height.is_power_of_two()
-      || max_height > srs.max_len()
-    {
-      return Err(
-        "partition height must be a power of two within the SRS range".into(),
-      );
-    }
-    let compiled = self
-      .circuit
-      .lower_to_multi_stark_sharded(Scalar::ONE, max_height)?
-      .merge_table_traces(max_height)?;
-    let statement = Statement::from_lowered(
-      &compiled,
-      self.assignment.public_values().len(),
-    )?;
-    let claims = statement.claims(self.assignment.public_values())?;
-    let params = VerifierParams::from_srs(&srs);
-    let config =
-      KzgConfig::new(srs, 2).with_streaming_lookups().with_streaming_quotient();
-    // Commit one partition at a time. Lookup traces are reconstructed from
-    // committed columns, so neither fixed evaluations nor expanded lookup
-    // messages need to remain resident alongside all prover coefficients.
-    let source = compiled.trace_shards(&self.assignment)?;
-    let count = compiled.num_circuits();
-    let mut circuits = Vec::with_capacity(count);
-    let mut fixed = Vec::with_capacity(count);
-    let mut main = Vec::with_capacity(count);
-    let mut logs = Vec::with_capacity(count);
-    let mut lookups = Vec::with_capacity(count);
-    for i in 0..count {
-      let definition = compiled
-        .kzg_circuit_input(i, params.max_len(), 2)?
-        .ok_or("missing compression circuit")?;
-      validate_config(&config, std::slice::from_ref(&definition))?;
-      let (mut local, key) =
-        System::new_without_preprocessed(config.clone(), [definition]);
-      let circuit = local.circuits.remove(0);
-      fixed.push(key.preprocessed_data.ok_or("missing fixed columns")?);
-      let trace = source.trace(i)?;
-      let height = trace.height();
-      logs.push(height.ilog2() as usize);
-      lookups.push(LookupValues::shape_only(
-        height,
-        &circuit.graph.lookups.iter().map(|l| l.args.len()).collect::<Vec<_>>(),
-      ));
-      let (_, data) = config
-        .pcs()
-        .commit(vec![(config.pcs().natural_domain_for_degree(height), trace)]);
-      main.push(data);
-      circuits.push(circuit);
-    }
-    drop(compiled);
-    drop(self.assignment);
-    let (fixed_commitment, fixed_data) =
-      crate::kzg::pcs::KzgProverData::concatenate(fixed);
-    let (stage_1_trace_commit, stage_1_trace_data) =
-      crate::kzg::pcs::KzgProverData::concatenate(main);
-    let mut system = System {
-      config,
-      circuits,
-      preprocessed_commit: Some(fixed_commitment),
-      preprocessed_indices: (0..count).map(Some).collect(),
-    };
-    let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let proof = system.prove_committed(
-      &ProverKey { preprocessed_data: Some(fixed_data) },
-      &refs,
-      Stage1 {
-        active: vec![true; count],
-        active_indices: (0..count).collect(),
-        log_degrees: logs,
-        stage_1_trace_commit,
-        stage_1_trace_data,
-        lookups,
-      },
+    child(stage, &args, &caches)
+  };
+  child("fri", &[&root_s, &fri_s, "--prove-outer"], &caches)?;
+  let height = log_height.to_string();
+  kzg("kzg", &["run", &fri_s, &first_s, &height])?;
+  kzg("wrap", &["stage-and-prove", &first_s, &final_s])?;
+  let mut result = PROOF_TAG.to_vec();
+  result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
+  let packet = &result[PROOF_TAG.len()..];
+  wrap::verify(&final_dir, packet, Some(&words))?;
+  // A bundled profile pins the aggregation program its proofs attest; the
+  // backend this run proved under must be that program, or the bundle is
+  // stale and verification elsewhere would accept the wrong statement.
+  if let Some(prefix) = verifier::bundled_prefix(packet[..32].try_into()?)
+    && *prefix != words[..10]
+  {
+    return Err(
+      "the bundled verifier profile pins a different aggregation program \
+       than this build's backend; update the bundle"
+        .into(),
     );
-    system
-      .verify_multiple_claims(&refs, &proof)
-      .map_err(|e| format!("new KZG proof: {e:?}"))?;
-    system.config = KzgConfig::verifier_only(params.clone(), 2);
-    Ok((KzgVerifier { system, params, statement }, proof))
   }
+  Ok(result)
 }
 
-fn scalar_statement(expected: &[Val]) -> Vec<Scalar> {
-  expected.iter().map(|v| Scalar::from_u64(v.as_canonical_u64())).collect()
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn unsupported_claim_is_rejected_before_io() {
+    assert!(
+      compress(
+        b"",
+        b"",
+        b"wrong",
+        &statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"wrong")),
+        Path::new("/does-not-exist"),
+        Path::new("/does-not-exist"),
+        true,
+        24
+      )
+      .is_err()
+    );
+    assert!(verify(PROOF_TAG, b"wrong", true).is_err());
+  }
 }

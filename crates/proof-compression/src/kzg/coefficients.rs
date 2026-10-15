@@ -26,6 +26,15 @@ impl From<Vec<Fr>> for Column {
 }
 
 impl Column {
+  /// Host coefficients of a resident column; disk-backed columns return
+  /// `None` and are read through [`Self::visit`] or [`Self::load`].
+  pub(super) fn resident(&self) -> Option<&[Fr]> {
+    match self {
+      Self::Resident { values, range } => Some(&values[range.clone()]),
+      Self::Disk { .. } => None,
+    }
+  }
+
   pub(super) fn len(&self) -> usize {
     match self {
       Self::Resident { range, .. } => range.len(),

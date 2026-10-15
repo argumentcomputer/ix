@@ -26,31 +26,33 @@ use p3_matrix::Matrix;
 
 const P: u64 = <Val as PrimeField64>::ORDER_U64;
 
+mod interval;
+mod quotient;
+
 pub trait KzgCircuitExt {
   fn kzg_circuit_inputs(
     &self,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError>;
   fn kzg_circuit_input(
     &self,
     index: usize,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError>;
 }
 impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
   /// Minimize KZG commitment/evaluation bytes by choosing lookup groups per
-  /// trace, within the supplied quotient budget. Include the actual SRS length
-  /// because smaller traces also need shifted degree commitments.
+  /// trace, within the supplied trace cap and quotient budget.
   fn kzg_circuit_inputs(
     &self,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError> {
     let mut inputs = self.circuit_inputs();
     for input in &mut inputs {
-      tune_kzg_input(input, srs_len, quotient_budget)?;
+      tune_kzg_input(input, max_trace_len, quotient_budget)?;
     }
     Ok(inputs)
   }
@@ -59,20 +61,20 @@ impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
   fn kzg_circuit_input(
     &self,
     index: usize,
-    srs_len: usize,
+    max_trace_len: usize,
     quotient_budget: usize,
   ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError> {
     let Some(mut input) = self.circuit_input(index) else {
       return Ok(None);
     };
-    tune_kzg_input(&mut input, srs_len, quotient_budget)?;
+    tune_kzg_input(&mut input, max_trace_len, quotient_budget)?;
     Ok(Some(input))
   }
 }
 
 fn tune_kzg_input(
   input: &mut CircuitInputs<Scalar>,
-  srs_len: usize,
+  max_trace_len: usize,
   quotient_budget: usize,
 ) -> Result<(), LoweringError> {
   use multi_stark::graph::ExtensionParams;
@@ -80,7 +82,7 @@ fn tune_kzg_input(
   use multi_stark::lookup::logup_max_degree;
   use multi_stark::lookup::stage2_width;
   let fixed = input.preprocessed.as_ref().expect("lowering has fixed columns");
-  if fixed.height() > srs_len {
+  if fixed.height() > max_trace_len {
     return Err(LoweringError::InvalidTraceHeight);
   }
   let graph = input
@@ -90,7 +92,7 @@ fn tune_kzg_input(
       karatsuba: false,
     })
     .expect("valid lowering");
-  let commitment_bytes = if fixed.height() == srs_len { 48 } else { 96 };
+  let commitment_bytes = 48;
   let best = (1..=MAX_LOOKUP_GROUP)
     .filter_map(|group| {
       let degree = graph
@@ -121,6 +123,15 @@ pub struct GoldilocksInputs {
   source_owner: CircuitId,
   wires: Vec<Value>,
   is_input: Vec<bool>,
+  scheduled: bool,
+}
+
+impl GoldilocksInputs {
+  /// Whether the translated circuit accepted a parallel witness schedule.
+  /// False for counting builders, serial translations and expanded hashes.
+  pub fn scheduled(&self) -> bool {
+    self.scheduled
+  }
 }
 
 fn signed(value: Val) -> i128 {
@@ -144,6 +155,7 @@ fn integer(value: Scalar) -> BigInt {
   BigInt::from_biguint(Sign::Plus, BigUint::from_bytes_le(&bytes))
 }
 
+#[cfg(test)]
 fn interval(coefficients: [i128; 5], bounds: [u64; 3]) -> (BigInt, BigInt) {
   let [a, b, c] = bounds.map(BigInt::from);
   let maxima = [&a * &b, a, b, c];
@@ -327,15 +339,35 @@ fn range(
     b.assert_bool(value);
     return;
   }
-  let count = bits.div_ceil(16);
-  let mut terms = Vec::with_capacity(count);
+  match bits.div_ceil(16) {
+    1 => range_limbs::<1>(b, table, value),
+    2 => range_limbs::<2>(b, table, value),
+    3 => range_limbs::<3>(b, table, value),
+    4 => range_limbs::<4>(b, table, value),
+    5 => range_limbs::<5>(b, table, value),
+    6 => range_limbs::<6>(b, table, value),
+    7 => range_limbs::<7>(b, table, value),
+    8 => range_limbs::<8>(b, table, value),
+    9 => range_limbs::<9>(b, table, value),
+    _ => panic!("Goldilocks range exceeds quotient bound"),
+  }
+}
+
+fn range_limbs<const N: usize>(
+  b: &mut CircuitBuilder<Scalar>,
+  table: Table,
+  value: Value,
+) {
+  let limbs = b.hint_many_pure::<N>("integer limbs", &[value], |v| {
+    let words = v[0].canonical_limbs_le();
+    Ok(std::array::from_fn(|i| {
+      Scalar::from_u64((words[i / 4] >> (16 * (i % 4))) & 0xffff)
+    }))
+  });
+  let mut terms = Vec::with_capacity(N);
   let radix = Scalar::from_u32(1 << 16);
   let mut coefficient = Scalar::ONE;
-  for i in 0..count {
-    let limb = b.hint("integer limb", &[value], move |v| {
-      let limbs = v[0].canonical_limbs_le();
-      Ok(Scalar::from_u64((limbs[i / 4] >> (16 * (i % 4))) & 0xffff))
-    });
+  for limb in limbs {
     b.lookup(table, &[limb]);
     terms.push((coefficient, limb));
     coefficient *= radix;
@@ -344,11 +376,30 @@ fn range(
   b.assert_equal(value, packed);
 }
 
+/// The builder's zero test on a pure hint, so the translation stays eligible
+/// for a parallel witness schedule. Returns a constrained bit, including at
+/// zero.
+fn is_zero(b: &mut CircuitBuilder<Scalar>, value: Value) -> Value {
+  let inverse = b.hint_pure("zero-test inverse", &[value], |values| {
+    Ok(values[0].try_inverse().unwrap_or(Scalar::ZERO))
+  });
+  let product = b.mul(value, inverse);
+  let one = b.constant(Scalar::ONE);
+  let result = b.sub(one, product);
+  b.assert_bool(result);
+  let zero = b.constant(Scalar::ZERO);
+  b.constrain_gate(
+    [value, result, zero],
+    [Scalar::ONE, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO],
+  );
+  result
+}
+
 fn canonical(b: &mut CircuitBuilder<Scalar>, table: Table, value: Value) {
-  let hi = b.hint("Goldilocks high word", &[value], |v| {
+  let hi = b.hint_pure("Goldilocks high word", &[value], |v| {
     Ok(Scalar::from_u64(v[0].canonical_low_u64() >> 32))
   });
-  let lo = b.hint("Goldilocks low word", &[value], |v| {
+  let lo = b.hint_pure("Goldilocks low word", &[value], |v| {
     Ok(Scalar::from_u32(
       u32::try_from(v[0].canonical_low_u64() & u64::from(u32::MAX)).unwrap(),
     ))
@@ -364,8 +415,8 @@ fn canonical(b: &mut CircuitBuilder<Scalar>, table: Table, value: Value) {
     [Scalar::ONE, Scalar::ZERO],
     -Scalar::from_u32(u32::MAX),
   );
-  let max_hi = b.is_zero(delta);
-  let invalid = b.mul(max_hi.value(), lo);
+  let max_hi = is_zero(b, delta);
+  let invalid = b.mul(max_hi, lo);
   let zero = b.constant(Scalar::ZERO);
   b.assert_equal(invalid, zero);
 }
@@ -416,6 +467,49 @@ impl GoldilocksCircuit {
     b: &mut CircuitBuilder<Scalar>,
     expand_hashes: bool,
   ) -> GoldilocksInputs {
+    Self::translate_with_chunk_size(source, b, expand_hashes, 1 << 16)
+  }
+
+  pub(super) fn translate_with_chunk_size(
+    source: &Circuit<Val>,
+    b: &mut CircuitBuilder<Scalar>,
+    expand_hashes: bool,
+    chunk_size: usize,
+  ) -> GoldilocksInputs {
+    Self::translate_inner(source, b, expand_hashes, chunk_size, |b, index| {
+      b.input_indexed("goldilocks", index)
+    })
+  }
+
+  #[cfg(test)]
+  fn translate_with_inputs(
+    source: &Circuit<Val>,
+    b: &mut CircuitBuilder<Scalar>,
+    expand_hashes: bool,
+    input: impl FnMut(&mut CircuitBuilder<Scalar>, usize) -> Value,
+  ) -> GoldilocksInputs {
+    Self::translate_inner(source, b, expand_hashes, 0, input)
+  }
+
+  fn translate_inner(
+    source: &Circuit<Val>,
+    b: &mut CircuitBuilder<Scalar>,
+    expand_hashes: bool,
+    chunk_size: usize,
+    mut input: impl FnMut(&mut CircuitBuilder<Scalar>, usize) -> Value,
+  ) -> GoldilocksInputs {
+    let mut chunks =
+      (cfg!(feature = "parallel") && chunk_size > 0 && !expand_hashes)
+        .then(Vec::new);
+    let record_chunk =
+      |b: &CircuitBuilder<Scalar>, chunks: &mut Option<Vec<usize>>| {
+        if let Some(ends) = chunks {
+          let end = b.stats().values;
+          if end - ends.last().copied().unwrap_or(0) >= chunk_size {
+            ends.push(end);
+          }
+        }
+      };
     let range_table = b.fixed_table(
       "u16",
       (0..=u16::MAX).map(|v| vec![Scalar::from_u16(v)]).collect(),
@@ -492,13 +586,14 @@ impl GoldilocksCircuit {
             integer_gates[gate_index] = true;
           }
         }
-        let value = b.input(format!("goldilocks[{i}]"));
+        let value = input(b, i);
         if !checked[i] {
           canonical(b, range_table, value);
         }
         wires.push(value);
         inputs.push(true);
       }
+      record_chunk(b, &mut chunks);
     }
     let tables: Vec<_> = source
       .tables()
@@ -552,11 +647,33 @@ impl GoldilocksCircuit {
     }
     for (gate, integer) in source.gates().iter().zip(integer_gates) {
       constrain_gate(b, range_table, gate, &wires, &bounds, integer);
+      record_chunk(b, &mut chunks);
     }
     for value in source.public_values() {
       b.expose_public(wires[value.index()]);
     }
-    GoldilocksInputs { source_owner: source.id(), wires, is_input: inputs }
+    let mut scheduled = false;
+    if let Some(mut ends) = chunks {
+      if ends.last() != Some(&b.stats().values) {
+        ends.push(b.stats().values);
+      }
+      let chunk_count = ends.len();
+      let started = std::time::Instant::now();
+      let certified = b.try_parallel_witness_prefix(ends);
+      tracing::info!(
+        chunks = chunk_count,
+        certified,
+        certificate_seconds = started.elapsed().as_secs_f64(),
+        "Goldilocks witness schedule checked"
+      );
+      scheduled = certified;
+    }
+    GoldilocksInputs {
+      source_owner: source.id(),
+      wires,
+      is_input: inputs,
+      scheduled,
+    }
   }
 
   pub fn assign(
@@ -603,31 +720,18 @@ fn constrain_gate(
     b.constrain_gate(values, coefficients.map(signed_scalar));
     return;
   }
-  let (low, high) =
-    interval(coefficients, gate.wires.map(|v| bounds[v.index()]));
-  let p = BigInt::from(P);
-  if low > -&p && high < p {
-    b.constrain_gate(values, coefficients.map(|c| scalar(&BigInt::from(c))));
+  let interval::GatePlan::Quotient { offset, bits } = interval::GatePlan::new(
+    coefficients,
+    gate.wires.map(|v| bounds[v.index()]),
+  ) else {
+    b.constrain_gate(values, coefficients.map(signed_scalar));
     return;
-  }
-  let shift =
-    if low < BigInt::from(0) { (-low + &p - 1) / &p } else { BigInt::from(0) };
-  let offset = &shift * &p;
-  let max_q = (high + &offset) / &p;
-  let bits = usize::try_from(max_q.bits()).expect("quotient fits usize");
-  assert!(bits <= 130, "Goldilocks gate quotient bound");
-  let hint_offset = offset.clone();
-  let quotient = b.hint("Goldilocks quotient", &values, move |v| {
-    let [a, c, d] = [integer(v[0]), integer(v[1]), integer(v[2])];
-    let [qm, qa, qb, qc, k] = coefficients;
-    let sum = qm * &a * &c + qa * a + qb * c + qc * d + k + &hint_offset;
-    if &sum % P != BigInt::from(0) {
-      return Err("invalid Goldilocks gate".into());
-    }
-    Ok(scalar(&(sum / P)))
-  });
+  };
+  let hint = quotient::QuotientHint::from_limbs(coefficients, offset);
+  let quotient =
+    b.hint_pure("Goldilocks quotient", &values, move |v| hint.evaluate(v));
   range(b, table, quotient, bits);
-  let [qm, qa, qb, qc, k] = coefficients.map(|c| scalar(&BigInt::from(c)));
+  let [qm, qa, qb, qc, k] = coefficients.map(signed_scalar);
   let product = b.mul(values[0], values[1]);
   let residual = b.linear_combination(
     &[
@@ -637,11 +741,27 @@ fn constrain_gate(
       (qc, values[2]),
       (-Scalar::from_u64(P), quotient),
     ],
-    k + scalar(&offset),
+    k + Scalar::from_limbs_le(offset.0),
   );
   let zero = b.constant(Scalar::ZERO);
   b.assert_equal(residual, zero);
 }
+
+#[cfg(test)]
+#[path = "foreign/tests/independent_witness.rs"]
+mod independent_witness_tests;
+#[cfg(test)]
+#[path = "foreign/tests/indexed_names.rs"]
+mod indexed_names_tests;
+#[cfg(test)]
+#[path = "foreign/tests/translation_intervals.rs"]
+mod interval_tests;
+#[cfg(test)]
+#[path = "foreign/tests/quotient_hints.rs"]
+mod quotient_tests;
+#[cfg(test)]
+#[path = "foreign/tests/range_hints.rs"]
+mod range_tests;
 
 #[cfg(test)]
 mod tests {

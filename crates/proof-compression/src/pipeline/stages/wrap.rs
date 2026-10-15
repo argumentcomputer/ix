@@ -64,6 +64,27 @@ impl Pairings {
   }
 }
 
+fn build_recursive(
+  verifier: &KzgVerifier,
+  proof: &Proof<KzgConfig>,
+  claims: &[Vec<Scalar>],
+) -> Result<native_verifier::Built> {
+  let plan = native_verifier::Plan::new(
+    &verifier.system,
+    &proof.log_degrees,
+    native_verifier::ClaimSchema::from_claims(
+      claims,
+      &verifier.statement.locations,
+    )?,
+    native_verifier::LayoutPolicy {
+      namespace: Scalar::ONE,
+      max_computation_height: 1 << 28,
+      max_table_height: 1 << 28,
+    },
+  )?;
+  Ok(plan.build(proof, claims)?)
+}
+
 pub struct RecursiveStage {
   prepared: Prepared<Scalar>,
   pairings: Pairings,
@@ -80,18 +101,9 @@ pub fn prepare_recursive(
   let public = scalar_statement(expected);
   verifier.verify(proof, &public)?;
   let claims = verifier.statement.claims(&public)?;
-  let built = native_verifier::build(
-    &verifier.system,
-    &verifier.params,
-    proof,
-    &claims,
-    &verifier.statement.locations,
-  )?;
-  let assignment = built.assign()?;
-  let pairings = Pairings {
-    degree_count: built.degree_output_count,
-    keys: built.pairing_keys,
-  };
+  let built = build_recursive(verifier, proof, &claims)?;
+  let (_, assignment) = built.check_and_assign()?;
+  let pairings = Pairings { degree_count: 0, keys: built.pairing_keys };
   pairings.verify(&assignment.public_values()[public.len()..])?;
   Ok(RecursiveStage {
     prepared: Prepared { circuit: built.circuit, assignment },
@@ -138,20 +150,11 @@ pub(super) fn setup_recursive(
   let claim_len = verifier.statement.locations.len();
   let claims = verifier.statement.claims(&vec![Scalar::ZERO; claim_len])?;
   let template = verifier.codec()?.template();
-  let built = native_verifier::build(
-    &verifier.system,
-    &verifier.params,
-    &template,
-    &claims,
-    &verifier.statement.locations,
-  )?;
+  let built = build_recursive(verifier, &template, &claims)?;
   let outer = super::setup::kzg(built.circuit, srs, height)?;
   Ok(RecursiveVerifier {
     verifier: outer,
-    pairings: Pairings {
-      degree_count: built.degree_output_count,
-      keys: built.pairing_keys,
-    },
+    pairings: Pairings { degree_count: 0, keys: built.pairing_keys },
     claim_len,
   })
 }

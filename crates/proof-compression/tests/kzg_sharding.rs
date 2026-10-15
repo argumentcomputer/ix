@@ -60,7 +60,33 @@ fn regenerated_kzg_shards_preserve_global_copy_constraints() {
     Retention::Retain,
     |shard| SystemWitness::from_stage_1(shards.traces(shard).unwrap(), &system),
   );
-  assert_eq!(retained.to_bytes().unwrap(), proof.to_bytes().unwrap());
+  system.verify_batch(&retained).unwrap();
+  assert!(retained.preamble.headers == proof.preamble.headers);
+  assert_eq!(retained.preamble.messages.len(), proof.preamble.messages.len());
+  for (left, right) in
+    retained.preamble.messages.iter().zip(&proof.preamble.messages)
+  {
+    assert_eq!(left.args, right.args);
+    assert_eq!(left.multiplicity, right.multiplicity);
+  }
+  assert_eq!(retained.proofs.len(), proof.proofs.len());
+  for (left, right) in retained.proofs.iter().zip(&proof.proofs) {
+    assert!(left.active == right.active);
+    assert!(left.commitments.stage_1_trace == right.commitments.stage_1_trace);
+    assert!(left.commitments.stage_2_trace == right.commitments.stage_2_trace);
+    assert!(
+      left.commitments.quotient_chunks == right.commitments.quotient_chunks
+    );
+    assert!(left.intermediate_accumulators == right.intermediate_accumulators);
+    assert!(left.log_degrees == right.log_degrees);
+    assert!(left.opening_proof == right.opening_proof);
+    assert!(left.quotient_opened_values == right.quotient_opened_values);
+    assert!(
+      left.preprocessed_opened_values == right.preprocessed_opened_values
+    );
+    assert!(left.stage_1_opened_values == right.stage_1_opened_values);
+    assert!(left.stage_2_opened_values == right.stage_2_opened_values);
+  }
 
   let forged = system.prove_batch_with(
     &key,
