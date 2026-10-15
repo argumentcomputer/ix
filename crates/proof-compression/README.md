@@ -22,14 +22,22 @@ fast local storage (see [Disk placement](#disk-placement)) and point
 the pipeline at it; `challenge_19` is only needed to re-run the import.
 
 ```sh
-IX_COMPRESSION_DATA=/path/to/fast-storage/ix-compression
-mkdir -p "$IX_COMPRESSION_DATA"
+IX_COMPRESSION_DATA=/path/to/local-nvme/ix-compression
+mkdir -p "$IX_COMPRESSION_DATA/parameters" "$IX_COMPRESSION_DATA/runs"
+export IX_KZG_FILECOIN_CACHE="$IX_COMPRESSION_DATA/parameters/filecoin-prefix-2p27.bin"
+export IX_KZG_FIXED_CACHE="$IX_COMPRESSION_DATA/cache/fixed-preprocessing"
+export IX_KZG_SRS_CACHE="$IX_COMPRESSION_DATA/cache/development-srs"
 aws s3 cp s3://argument-kzg-params-063002298335-us-east-1-an/filecoin-prefix-2p27.bin \
-  "$IX_COMPRESSION_DATA/filecoin-prefix-2p27.bin"
-IX_KZG_FILECOIN_CACHE="$IX_COMPRESSION_DATA/filecoin-prefix-2p27.bin" \
-  ix compress ROOT_PROOF_ADDRESS --out "$IX_COMPRESSION_DATA/run"
+  "$IX_KZG_FILECOIN_CACHE"
+ix compress ROOT_PROOF_ADDRESS --out "$IX_COMPRESSION_DATA/runs/run-001"
 ix verify COMPRESSED_PROOF_ADDRESS
 ```
+
+Choose an existing local NVMe mount for `IX_COMPRESSION_DATA`; these commands
+create directories on its filesystem. `--out` changes the run directory only.
+The explicit cache variables keep preprocessing off the default home volume.
+`IX_KZG_SRS_CACHE` is used only for development parameters. See
+[KZG benchmarking](#kzg-benchmarking) for cold/warm runs and timing boundaries.
 
 Neither download needs to be trusted: the importer checks the
 source against the ceremony's published BLAKE2b-512 digest, and loading
@@ -48,7 +56,8 @@ SRS**. Its proofs are **not production-secure**, and `ix verify` accepts them
 only with `--dev-srs`.
 
 ```sh
-ix compress ROOT_PROOF_ADDRESS --dev-srs
+unset IX_KZG_FILECOIN_CACHE IX_KZG_FILECOIN_MANIFEST
+ix compress ROOT_PROOF_ADDRESS --dev-srs --out "$IX_COMPRESSION_DATA/runs/dev-001"
 ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 ```
 
@@ -140,23 +149,18 @@ cargo test --release -p ix-proof-compression --features cuda
 ```
 
 `IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
-prover and the KZG backend here; there is no separate switch. The KZG
-backend is compiled only into `ix-compression-worker`, the stage executable
-built beside `ix`, so the Lean executable links neither it nor its CUDA
-runtime.
+prover and the KZG backend here; there is no separate switch. KZG-specific
+kernels are compiled into `ix-compression-worker`, the stage executable
+built beside `ix`. Both executables use multi-stark's shared CUDA backend.
 
 `IX_NO_PAR=1` builds without the `parallel` feature, and
 `IX_CUDA_TRACE_CODEGEN=1` adds the generated CUDA trace kernels described in
 [the GPU proving guide](../../docs/aiur-gpu-proving.md), implying `cuda`.
 
-CUDA Lake builds require Python 3, GNU binutils, and the host compiler's
-static `libstdc++.a`. Lake bundles the native CUDA objects with a private
-copy of that runtime, including exception metadata, so it cannot collide
-with Lean's libc++/libc++abi. Only the native C entry points remain public.
-The executable links the host compiler's C library family and therefore
-requires a compatible glibc on deployment hosts. `NVCC`,
-`CUDA_HOME`/`CUDA_PATH`, and nvcc's host-compiler overrides apply to runtime
-discovery as well as kernel compilation. CPU builds skip this packaging.
+See [the GPU proving guide](../../docs/aiur-gpu-proving.md) for shared CUDA
+backend packaging and host-toolchain requirements. When deploying the worker,
+copy `.lake/build/lib/libmulti_stark_cuda.so` into `../lib` relative to its
+executable, as for the CUDA-enabled Lean binaries.
 
 With the feature compiled, every proving operation above the size
 thresholds in the prover runs on the devices and a rejected memory
@@ -188,24 +192,91 @@ set `IX_KZG_CUDA_DEVICES` to use additional devices.
 
 `IX_KZG_CUDA_ARCHS` selects the SM architectures at build time and falls
 back to `MULTI_STARK_CUDA_ARCHS`, so one variable configures both CUDA
-backends of a Lake build. Defaults include SM70 and SM75 when the CUDA
-toolkit supports them. Device discovery admits only GPUs compatible with a
-compiled kernel image; an architecture excluded by the toolkit or an explicit
-selection is rejected before proving. The feature-compiled test suite
+backends of a Lake build. Without either variable, the build detects the
+installed GPUs; set explicit targets for headless CI or cross builds.
+Device discovery admits only GPUs compatible with a compiled kernel image;
+an architecture excluded by the toolkit or an explicit selection is rejected
+before proving. The feature-compiled test suite
 needs a GPU host; device unit tests are marked ignored and run with
 `--ignored`. CPU/GPU proof-byte parity is checked by comparing the two builds' outputs.
 
-### Disk placement
+### Profiling
 
-Use fast local storage for stage output and fixed-preprocessing caches.
-Cache files are large and fsynced before publication, so storage throughput
-can limit proving. Select the output with `--out` and cache locations with
-the variables below. Keep final proofs and verifier artifacts on durable
-storage when using an ephemeral volume for working data.
+The global `IX_TEXRAY=1` switch enables TeXRay for proving, aggregation,
+compression, and the Typecheck benchmark. On `ix compress` or a direct
+worker invocation it reports coarse phase timings and RSS summaries on
+stderr. Each worker installs TeXRay before loading inputs and examines a `compression/fri`,
+`compression/kzg`, or `compression/wrap` root. The tree covers circuit
+construction, witness generation, lowering, setup, preprocessing caches,
+commitments, proving, verification, and output. The inherited `stark/*`
+lookup, quotient, and opening phases are included; `stark/fri_open` also
+names KZG openings in the generic prover. Prefetched trace generation can
+overlap commitment, so child durations should not be summed as wall time.
+
+`IX_KZG_CUDA_PROFILE=1` independently enables fine-grained NVTX ranges and
+per-device transfer/kernel timings. Use both switches to relate whole-stage
+costs to CUDA execution; GPU operation detail stays out of the TeXRay tree.
+
+## Disk placement
+
+The recorded GPU runs used local NVMe. Other filesystems are supported, but
+parameter loading, checkpoint writes, integrity scans, and cache publication
+are part of proving wall time. Put stage output and fixed preprocessing on
+the **same filesystem** so cache publication and restoration can hard-link
+the files. Across filesystems the implementation copies them, adding I/O and
+duplicate storage even if both filesystems are on NVMe.
+
+| Data | Location | Storage behavior |
+| --- | --- | --- |
+| Filecoin parameters | `IX_KZG_FILECOIN_CACHE` | Each KZG worker reads and authenticates its required prefix from the provisioned file. |
+| Fixed coefficients and circuit metadata | `<out>/first-kzg/kzg/` and `<out>/final-kzg/kzg/`; reused through `IX_KZG_FIXED_CACHE` | Cold runs write and sync checkpoints, then hash and publish them after proof verification. Warm runs hash the cached files before linking or copying them into the new run. |
+| Development parameters | `IX_KZG_SRS_CACHE` | Generated and cached on a miss; loaded and checked on reuse. Unused with Filecoin. |
+| Stage proofs, claims, verifier metadata, and reports | `--out` | Retained between worker processes and after the run. |
+| Stored `Ixon.Proof` containing the final proof and claim | `~/.ix/store` | Written by `ix compress`; `--out` does not relocate the store. |
+
+CUDA proving retains committed coefficients in host RAM and selected columns
+in VRAM. Witness columns stay in memory. Fixed checkpoints are still written
+on a cold run; a warm CUDA worker loads them into RAM after the cache integrity
+scan. CPU workers instead index fixed checkpoints and stream their columns
+during proving. OS page-cache hits can reduce physical reads, so a warm
+preprocessing cache does not imply zero storage work.
+
+### Capacity and retention
+
+The 12 GiB Filecoin file is only one part of the footprint. Fixed checkpoint
+payloads use 32 bytes per coefficient:
+
+```text
+fixed coefficient bytes = 32 × sum(preprocessed_width × trace_height)
+```
+
+For the bundled v5 recursive profiles, the computation trace has 15 fixed
+columns at `2^27` rows and the table trace has four at `2^17` rows. Their
+combined coefficient payload is **60.015625 GiB**, excluding checkpoint
+metadata. Together with the Filecoin file, this already exceeds 72 GiB before
+first-stage preprocessing, intermediate artifacts, and filesystem headroom.
+This is a calculation from those profiles, not a measured disk high-water mark
+for the current code. First-stage size depends on the layout; record the
+actual checkpoint sizes when provisioning a new profile.
+
+On one filesystem, cache entries and run checkpoints share storage through
+hard links. Deleting one directory does not free those bytes while another
+link remains. Cache keys include the worker executable digest, plan, and setup;
+a changed executable creates a new cache lineage. There is no automatic
+eviction of old runs or cache entries. Retire them explicitly once no worker
+uses them. Use `df -h` on the selected mount to check available space.
+
+Before discarding ephemeral storage, preserve the stored proof with its claim
+and `final-kzg/verifier.bin` on durable storage. Keep intermediate proofs and
+caches when they are useful for later runs. The 72 GiB `challenge_19` source
+is needed only for parameter import; normal proving uses the prefix cache.
 
 ## Stage entries and caches
 
 `ix compress` invokes `ix-compression-worker <stage> <args>` for each stage.
+Each invocation runs one stage and exits, releasing its host memory and
+CUDA state. The separate executable keeps the KZG CUDA runtime outside
+Lean's process. Reuse between invocations comes from the disk caches below.
 The worker must be installed beside `ix`, or named by `IX_COMPRESSION_WORKER`.
 Maintainers can invoke a stage directly when diagnosing a saved input:
 
@@ -215,10 +286,8 @@ ix-compression-worker kzg run fri/ first-kzg/ 24
 ix-compression-worker wrap stage-and-prove first-kzg/ final-kzg/
 ```
 
-The KZG stages generate traces directly into commitment and proving. The
-first stage also accepts `kzg serve <responses.jsonl> [log-height]` to reuse
-a prepared frontend across requests on stdin. Every KZG stage requires
-`--dev-srs` when no Filecoin cache is configured.
+The KZG stages generate traces directly into commitment and proving.
+Every KZG stage requires `--dev-srs` when no Filecoin cache is configured.
 
 `ix compress` sets the fixed-preprocessing and development SRS cache
 directories under `~/.ix/compression/cache` unless the environment already
@@ -232,6 +301,104 @@ names them. Direct stage invocations use the defaults below.
 | `IX_KZG_SRS_CACHE` | directory holding block-checksummed development SRS files shared across stages | unset: regenerated per stage |
 | `IX_KZG_PREFETCH_GIB` | bound on the next partition's witness generated while the current one is committed | `32` |
 | `IX_ROOT_GENERIC_HASHES` | set to build the FRI stage's circuit with generic rather than compact BLAKE3; `ix compress` rejects it | unset |
+
+## KZG benchmarking
+
+State the input boundary with every timing:
+
+| Scope | Command boundary | Included work |
+| --- | --- | --- |
+| Aggregate root → compressed packet | Whole `ix compress` process | Backend setup, root-to-FRI compression, both KZG workers, verification, cache publication, and final store write. Initial proving and aggregation are excluded. |
+| Saved compressed FRI → KZG packet | Both sequential KZG worker processes | First KZG stage and recursive KZG stage, including parameter loading, verification, output, and cache publication. Root-to-FRI compression is excluded. |
+
+Use whole-process wall time for either scope. Internal
+`kzg/prove-report.json.total_seconds` starts inside the proving phase and is
+captured before fixed-cache publication; it excludes some preparation and
+storage work. `IX_TEXRAY=1` provides the phase breakdown described under
+[Profiling](#profiling). Do not sum overlapping child spans.
+
+For a Filecoin cold/warm pair, use the NVMe layout and provisioned parameters
+from the quickstart. `IX_FRI_INPUT` must contain `outer-vk.bin`,
+`outer-proof.bin`, and `outer-claims.bin` from the saved FRI stage. Keep the
+input, binary, features, setup, and runtime settings identical between runs:
+
+```sh
+set -eu
+IX_FRI_INPUT=/path/to/saved-fri
+IX_KZG_WORKER=.lake/build/bin/ix-compression-worker
+IX_KZG_BENCH=$(mktemp -d "$IX_COMPRESSION_DATA/runs/kzg-bench.XXXXXX")
+export IX_KZG_FIXED_CACHE="$IX_KZG_BENCH/fixed-preprocessing"
+: "${IX_KZG_FILECOIN_CACHE:?set the provisioned Filecoin cache path}"
+sha256sum "$IX_KZG_WORKER" "$IX_FRI_INPUT/outer-vk.bin" \
+  "$IX_FRI_INPUT/outer-proof.bin" "$IX_FRI_INPUT/outer-claims.bin" \
+  > "$IX_KZG_BENCH/inputs.sha256"
+findmnt -T "$IX_KZG_BENCH" > "$IX_KZG_BENCH/storage.txt"
+df -h "$IX_KZG_BENCH" >> "$IX_KZG_BENCH/storage.txt"
+for mode in cold warm; do
+  run="$IX_KZG_BENCH/$mode"
+  mkdir -p "$run"
+  /usr/bin/time -v -o "$run/first-kzg.time" \
+    "$IX_KZG_WORKER" kzg run "$IX_FRI_INPUT" "$run/first-kzg" 24 \
+    > "$run/first-kzg.log" 2>&1
+  /usr/bin/time -v -o "$run/recursive-kzg.time" \
+    "$IX_KZG_WORKER" wrap stage-and-prove "$run/first-kzg" "$run/final-kzg" \
+    > "$run/recursive-kzg.log" 2>&1
+done
+```
+
+The first run populates the initially empty fixed cache; the second reuses it
+with fresh output directories and fresh worker processes. Sum the two elapsed
+worker times for each saved-FRI-to-packet result. Parameter download and import
+happen before timing. For development runs, report the development SRS cache
+state separately: generating parameters changes the measured workload.
+
+Record the revisions, hardware and driver, environment settings, parameter
+receipt, filesystem/device placement, checkpoint sizes, and each process's
+exit status alongside these logs. Report OS page-cache state separately from
+preprocessing-cache state; if uncontrolled, say so. Rebuilding the worker
+between the pair invalidates preprocessing reuse. For full compression from
+an aggregate root, time `ix compress` with a fresh `--out` directory and the
+same explicit cache placement instead.
+
+### Recorded Init KZG run
+
+One cold/warm pair used a saved compressed Init FRI proof, Filecoin parameters,
+one RTX PRO 6000 Blackwell with 96 GB VRAM, 32 vCPUs, 256 GiB RAM, and local
+NVMe. Cold means empty fixed preprocessing; warm means reused preprocessing.
+Both used fresh worker processes and already-provisioned parameters. OS caches
+were uncontrolled. This is a historical result for the saved Init artifacts;
+rerun after changing binaries or profiles.
+
+| Stage | Cold | Warm |
+| --- | ---: | ---: |
+| Compressed FRI → KZG | 300.33 s | 189.93 s |
+| Recursive KZG | 171.51 s | 119.11 s |
+| **Total** | **471.87 s** | **309.04 s** |
+
+The recorded scope includes SRS loading/authentication and verification, and
+excludes builds, parameter download, initial aggregation, and root-to-FRI
+compression. No SRS generation was performed. Warm was **1.53× faster**;
+both runs produced identical **2,181-byte packets**. Verification including
+pairings took **6.67 ms**, excluding loading and startup; peak host RSS was
+**236.51 GiB**. The record does not give a total disk high-water mark or a
+comparison against another storage device.
+
+## Shared stage construction
+
+The public stage API and the worker use the same production circuit builders,
+statement schemas, lowering namespaces, and recursive Keccak transcript.
+The file adapters load artifacts, select setup and cache locations, and report
+results. Multi-shard roots and the normalized `FixedRoot` remain supported;
+`setup` constructs its verifier without a proof or witness.
+
+KZG commitment consumes the lowered circuit and assignment before proving.
+The remaining phase owns committed columns and verifier metadata, allowing
+frontend memory to be released before lookup and quotient allocation.
+Bundled and library recursive verification share validation and pairing checks.
+A bundled profile retains its prepared system, pairing keys and compact codec.
+
+The library's `IXKZGV02` key encoding binds the transcript explicitly.
+The bundled v5 profile and packet encodings are unchanged.
 
 ## Code and tests
 
