@@ -1116,15 +1116,15 @@ fn build_type_brecon_fvar(
   //
   // Compute the levels here while the index decls are still pushed into
   // the live `rtc` scope so `get_level` resolves any FVar references to
-  // earlier indices/params correctly. Then pop them back to the state the
-  // existing code below expects.
+  // earlier indices/params correctly. The following equality construction
+  // opens its own fresh scope; these existing locals need no duplicate frame.
   let index_sort_levels: Vec<Level> = {
-    rtc.push_locals(&index_decls);
+    // Indices, major and F-binders remain live from minor construction.
+    // Re-pushing indices would duplicate their free-variable identities.
     let mut out = Vec::with_capacity(index_decls.len());
     for d in &index_decls {
       out.push(rtc.get_level(&d.domain)?);
     }
-    rtc.pop_locals(&index_decls);
     out
   };
   let eq_result = build_type_brecon_eq_fvar(
@@ -1255,15 +1255,20 @@ fn build_type_minor_premise_fvar(
         rtc,
       )?;
       let (ih_fv_name, ih_fv) = fresh_fvar("tmih", fi);
-      lambda_decls.push(LocalDecl {
+      let lambda_decl = LocalDecl {
         fvar_name: ih_fv_name,
         binder_name: decl.binder_name.clone(),
         domain: pprod_dom,
         info: decl.info.clone(),
-      });
+      };
+      rtc.push_locals(std::slice::from_ref(&lambda_decl));
+      lambda_decls.push(lambda_decl);
       lambda_fvars.push(ih_fv.clone());
       prod_entries.push((ih_fv, lambda_decls.len() - 1));
     } else {
+      // Later IH domains can mention this ordinary field. Install the
+      // telescope prefix before inferring those domains, not after them.
+      rtc.push_locals(std::slice::from_ref(&decl));
       lambda_decls.push(decl);
       lambda_fvars.push(fvar);
     }
@@ -1272,10 +1277,8 @@ fn build_type_minor_premise_fvar(
   // Build PProdN.mk of prod entries (right-fold of VALUES, not types).
   //
   // Lean's mkPProdMk (PProdN.lean:44-53) infers universe levels from the
-  // types via getLevel. We use the TcScope to do the same. Push the lambda
-  // decls (with replaced IH domains) into the TC so FVars resolve correctly.
-
-  rtc.push_locals(&lambda_decls);
+  // types via getLevel. The lambda declarations, with replaced IH domains,
+  // are already in scope.
 
   let (b, b_type) = if prod_entries.is_empty() {
     // PUnit.{rlvl} : Sort rlvl

@@ -1109,19 +1109,23 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
         paramFvars motiveFvars belowNames recUnivs rtc
       rtc := rtc'
       let (ihFvName, ihFv) := freshFVar "tmih" fi
-      lambdaDecls := lambdaDecls.push
+      let lambdaDecl : LocalDecl :=
         { fvarName := ihFvName, binderName := decl.binderName,
           domain := pprodDom, info := decl.info }
+      lambdaDecls := lambdaDecls.push lambdaDecl
+      rtc ← rtc.pushLocals #[lambdaDecl]
       lambdaFvars := lambdaFvars.push ihFv
       prodEntries := prodEntries.push (ihFv, lambdaDecls.size - 1)
     else
       lambdaDecls := lambdaDecls.push decl
       lambdaFvars := lambdaFvars.push fvar
+      -- Later IH domains can mention this ordinary field. Install the
+      -- telescope prefix before inferring those domains, not after them.
+      rtc ← rtc.pushLocals #[decl]
 
   -- PProdN.mk of prod entries (right-fold of VALUES). Lean's mkPProdMk
   -- (PProdN.lean:44-53) infers universe levels via getLevel — push the
-  -- lambda decls (with replaced IH domains) so FVars resolve.
-  rtc ← rtc.pushLocals lambdaDecls
+  -- lambda decls (with replaced IH domains) are already in scope.
 
   let (b, bType) ←
     if prodEntries.isEmpty then
@@ -1433,15 +1437,12 @@ TcScope::get_level on major domain returned {e}. This typically means \
       pure #[]
   -- Per-index sort levels — Lean's `mkEq` calls `getLevel idx_type` per
   -- index (indexed inductives may have index types at any universe).
-  -- Compute while the index decls are pushed into the live `rtc` scope.
+  -- Indices, major and F-binders are still live from minor construction.
+  -- Re-pushing indexDecls here would duplicate their free-variable identities.
   let indexSortLevels : Array Level ← do
-    rtc ← rtc.pushLocals indexDecls
     let mut out : Array Level := #[]
     for d in indexDecls do
       out := out.push (← rtc.getLevel d.domain)
-    -- The restored scope is dead — `rtc` is not read past this point — but
-    -- the pop still has to run to balance the TC-side local context.
-    _ ← rtc.popLocals indexDecls
     pure out
   let eqResult ← buildTypeBreconEqFvar ci targetIndName breconName goName
     recUnivs paramFvars motiveFvars motiveDecls indexFvars indexDecls
