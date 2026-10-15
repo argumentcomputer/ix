@@ -69,34 +69,7 @@ def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
     ensureInKenvOf rep maps
 
   -- Insert canonical .below definitions/inductives.
-  for bc in belowConsts do
-    match bc with
-    | .defn d =>
-      let addr := maps.resolve d.name
-      let zid : MKId := ⟨addr, d.name⟩
-      let tyZ ← leanExprToKexpr d.typ d.levelParams maps
-      let valZ ← leanExprToKexpr d.value d.levelParams maps
-      -- Rust: KConst::Defn { kind: Definition, safety: Safe,
-      -- hints: Abbrev, lean_all: vec![], block: zid }.
-      kenvInsert zid (.defn d.name d.levelParams .defn .safe .abbrev
-        (UInt64.ofNat d.levelParams.size) tyZ valZ #[] zid)
-    | .indc i =>
-      let addr := maps.resolve i.name
-      let zid : MKId := ⟨addr, i.name⟩
-      let tyZ ← leanExprToKexpr i.typ i.levelParams maps
-      let mut ctorZids : Array MKId := #[]
-      for ctor in i.ctors do
-        let ctorAddr := maps.resolve ctor.name
-        let ctorZid : MKId := ⟨ctorAddr, ctor.name⟩
-        let ctorTyZ ← leanExprToKexpr ctor.typ i.levelParams maps
-        kenvInsert ctorZid (.ctor ctor.name i.levelParams false
-          (UInt64.ofNat i.levelParams.size) zid
-          (UInt64.ofNat ctorZids.size) (UInt64.ofNat ctor.nParams)
-          (UInt64.ofNat ctor.nFields) ctorTyZ)
-        ctorZids := ctorZids.push ctorZid
-      kenvInsert zid (.indc i.name i.levelParams
-        (UInt64.ofNat i.levelParams.size) (UInt64.ofNat i.nParams)
-        (UInt64.ofNat i.nIndices) false zid 0 tyZ ctorZids #[])
+  tcAdmitBelow belowConsts maps
 
 /-- Alias-target lookup for original-order `_N` aux aliases. Mirrors the
     Rust `find_target` closure in `generate_aux_patches`

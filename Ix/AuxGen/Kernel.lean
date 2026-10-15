@@ -954,4 +954,286 @@ def inferLean (scope : TcScopeSt) (e : Expr) : KBridgeM (Option Expr) := do
 
 end TcScopeSt
 
+/-! ## The elimination decision and its ingress (recursor.rs:2311)
+
+The kernel half of Rust `compute_is_large_and_k` and the dependency
+ingress it needs, moved here from `Ix.AuxGen.Recursor` (AuxGen M0.2) so that
+the generators reach the kernel only through the bridge; the C1 fix and K
+stay in `Recursor.computeIsLargeAndK`. Also the kenv body of
+`populateCanonKenvWithBelow` (`tcAdmitBelow`, from `Ix.AuxGen.Patches`).
+
+NOTE (Rust recursor.rs:1976-1985): the old syntactic
+`elim_only_at_universe_zero` fallback trio was removed upstream — a TC
+failure here surfaces as a hard error, never a silent fallback. -/
+
+/-- Mirrors Rust `collect_const_refs` (recursor.rs:2694).
+
+    Collect all constant names referenced in an expression, appended onto
+    `out` (a work queue, NOT a set — dedup happens at the consumer's
+    `seen`). Explicit stack, matching the Rust traversal order, with a
+    digest-keyed visited set so structurally shared subterms are walked
+    once (DAG cost, not unshared-tree cost). -/
+def collectConstRefs (expr : Expr) (out : Array Name) : Array Name := Id.run do
+  let mut out := out
+  let mut visited : Std.HashSet Address := {}
+  let mut stack : Array Expr := #[expr]
+  repeat
+    if let some e := stack.back? then
+      stack := stack.pop
+      if visited.contains e.getHash then
+        continue
+      visited := visited.insert e.getHash
+      match e with
+      | .const n _ _ => out := out.push n
+      | .app f a _ =>
+        stack := stack.push f
+        stack := stack.push a
+      | .forallE _ d b _ _ | .lam _ d b _ _ =>
+        stack := stack.push d
+        stack := stack.push b
+      | .letE _ t v b _ _ =>
+        stack := stack.push t
+        stack := stack.push v
+        stack := stack.push b
+      | .proj name _ e' _ =>
+        out := out.push name
+        stack := stack.push e'
+      | .mdata _ e' _ =>
+        stack := stack.push e'
+      | _ => pure ()
+    else
+      break
+  return out
+
+/-- Mirrors Rust `ingress_type_stub` (recursor.rs:2649).
+
+    Insert a type-only `KConst.axio` stub for `name` into the bridge kenv
+    (skipped when an entry already exists under the resolved address). -/
+def ingressTypeStub (name : Name) (typ : Expr) (levelParams : Array Name)
+    (maps : AddrMaps) : KBridgeM Unit := do
+  let addr := maps.resolve name
+  let zid : MKId := ⟨addr, name⟩
+  if (← kenvGet? zid).isSome then
+    return
+  let tyZ ← leanExprToKexpr typ levelParams maps
+  let nLvls := UInt64.ofNat levelParams.size
+  kenvInsert zid (.axio name levelParams false nLvls tyZ)
+
+/-- Mirrors Rust `ingress_aux_gen_dep` (recursor.rs:2597).
+
+    Ingress one dependency with the right fidelity: definitions /
+    inductives / ctors as full entries (`ensureFullInKenvOf`), everything
+    else as type stubs. New const refs discovered in the entry's types
+    are appended to the returned queue (Rust `&mut Vec<Name>`). -/
+def ingressAuxGenDep (name : Name) (ci : ConstantInfo) (maps : AddrMaps)
+    (queue : Array Name) : KBridgeM (Array Name) := do
+  match ci with
+  | .defnInfo v => do
+    ensureFullInKenvOf name maps
+    let queue := collectConstRefs v.cnst.type queue
+    return collectConstRefs v.value queue
+  | .inductInfo v => do
+    ensureFullInKenvOf name maps
+    let mut queue := collectConstRefs v.cnst.type queue
+    for ctorName in v.ctors do
+      if let some (.ctorInfo ctor) ← lookupConst? ctorName then
+        queue := collectConstRefs ctor.cnst.type queue
+    return queue
+  | .ctorInfo v => do
+    ensureFullInKenvOf name maps
+    return collectConstRefs v.cnst.type queue
+  | .axiomInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .thmInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .opaqueInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .recInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .quotInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+
+/-- Mirrors Rust `drain_ingress_queue` (recursor.rs).
+
+    Drain a worklist of names through `ingressAuxGenDep`, deduplicated
+    against the kenv-lifetime `auxIngressSeen` (resolved-id-keyed — see
+    the `AuxKernelCtx` field docs) instead of a per-call set: the
+    dispatch is deterministic per constant kind, so a seen id is already
+    at final kenv fidelity and re-expanding its closure would be pure
+    cost. -/
+def drainIngressQueue (queue₀ : Array Name) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  let mut queue := queue₀
+  repeat
+    let some name := queue.back? | break
+    queue := queue.pop
+    let zid : MKId := ⟨maps.resolve name, name⟩
+    if (← get).auxIngressSeen.contains zid then
+      continue
+    modify fun kctx =>
+      { kctx with auxIngressSeen := kctx.auxIngressSeen.insert zid }
+    if let some ci ← lookupConst? name then
+      queue ← ingressAuxGenDep name ci maps queue
+  return ()
+
+/-- Mirrors Rust `ingress_target_type_deps` (recursor.rs:2548).
+
+    Ingress constants referenced by an inductive target type with enough
+    fidelity for WHNF (target aliases like `Set α := α → Prop` must
+    unfold). -/
+def ingressTargetTypeDeps (targetTy : Expr) (maps : AddrMaps) :
+    KBridgeM Unit :=
+  drainIngressQueue (collectConstRefs targetTy #[]) maps
+
+/-- Mirrors Rust `ingress_field_deps` (recursor.rs:2572).
+
+    Walk field domains of the class's constructors and ingress referenced
+    constants into the bridge kenv so `infer`/WHNF can look them up
+    (reducible definitions as real `Defn` entries — recursive occurrences
+    hidden under aliases like `constType (I α) (I α)` are missed
+    otherwise). -/
+def ingressFieldDeps (ctors : Array ConstructorVal) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  let mut queue : Array Name := #[]
+  for ctor in ctors do
+    queue := collectConstRefs ctor.cnst.type queue
+  drainIngressQueue queue maps
+
+/-- The kernel's elimination decision for a block's original classes. -/
+structure ElimDecision where
+  /-- Large elimination: Lean's `elim_only_at_universe_zero`, negated. -/
+  isLarge : Bool
+  /-- The WHNF-peeled result sort is semantically zero. -/
+  isProp : Bool
+  deriving BEq, Inhabited, Repr
+
+/-- The kernel half of Rust `compute_is_large_and_k` (recursor.rs:2328),
+    over the block's ORIGINAL classes (inductive with constructors):
+    - ephemeral `KConst.indc`/`KConst.ctor` entries for all of them go into
+      the bridge kenv (provisional addresses), so the kernel sees the full
+      mutual block and can apply the "mutual Prop → small" rule;
+    - `getResultSortLevel` WHNF-peels params+indices (crucial for
+      reducible-alias targets like `Set σ := σ → Prop`);
+    - `isLargeEliminator` decides; no override (A0, WB-B8): Lean's kernel
+      gives large elimination when the result level is provably never zero
+      and otherwise applies the Prop restrictions, which is exactly
+      `isLargeEliminator`. A former override forced large elimination
+      whenever the level was not semantically zero, so a `Sort u` inductive
+      (reachable through `addDecl`) got a large recursor both kernels
+      reject.
+    It runs on a fresh `TcState` over the persistent kenv (Rust
+    `TypeChecker::new(&mut kctx.kenv)`). TC failures are hard
+    `invalidMutualBlock` refusals (no syntactic fallback). The C1 fix and
+    K stay with the caller (`Recursor.computeIsLargeAndK`). -/
+def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
+    (nParams : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
+  let mut indInfos : Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr) := #[]
+
+  -- The first class's block KId is the shared block reference.
+  let (firstInd, _) ← Ix.CompileM.arrIdx originals 0 "computeIsLargeAndK: first class"
+  let blockAddr := maps.resolve firstInd.cnst.name
+  let blockZid : MKId := ⟨blockAddr, firstInd.cnst.name⟩
+
+  for ci in [0:originals.size] do
+    let (clsInd, clsCtors) ← Ix.CompileM.arrIdx originals ci "computeIsLargeAndK: class"
+    let clsLvlParams := clsInd.cnst.levelParams
+    let clsNLvls := UInt64.ofNat clsLvlParams.size
+    let clsNIndices := UInt64.ofNat clsInd.numIndices
+
+    let clsAddr := maps.resolve clsInd.cnst.name
+    let clsZid : MKId := ⟨clsAddr, clsInd.cnst.name⟩
+    let clsTyZ ← leanExprToKexpr clsInd.cnst.type clsLvlParams maps
+
+    -- Convert constructors.
+    let mut clsCtorZids : Array MKId := #[]
+    for ctor in clsCtors do
+      let ctorAddr := maps.resolve ctor.cnst.name
+      let ctorZid : MKId := ⟨ctorAddr, ctor.cnst.name⟩
+      let ctorTyZ ← leanExprToKexpr ctor.cnst.type clsLvlParams maps
+      let ctorFields := UInt64.ofNat ctor.numFields
+      let ctorParams := UInt64.ofNat ctor.numParams
+      kenvInsert ctorZid (.ctor ctor.cnst.name clsLvlParams ctor.isUnsafe
+        clsNLvls clsZid (UInt64.ofNat clsCtorZids.size) ctorParams ctorFields
+        ctorTyZ)
+      clsCtorZids := clsCtorZids.push ctorZid
+
+    -- Insert inductive.
+    kenvInsert clsZid (.indc clsInd.cnst.name clsLvlParams clsNLvls
+      (UInt64.ofNat nParams) clsNIndices clsInd.isUnsafe blockZid
+      (UInt64.ofNat ci) clsTyZ clsCtorZids #[])
+
+    -- Target types may hide their final Sort behind reducible aliases.
+    ingressTargetTypeDeps clsInd.cnst.type maps
+    -- Ingress field deps for this class.
+    ingressFieldDeps clsCtors maps
+
+    indInfos := indInfos.push
+      (clsZid, UInt64.ofNat nParams, clsNIndices, clsCtorZids, clsTyZ)
+
+  let (_, _, firstNIndices, _, firstTyZ) ←
+    Ix.CompileM.arrIdx indInfos 0 "computeIsLargeAndK: first class info"
+
+  -- Fresh TypeChecker over the persistent kenv (Rust
+  -- `TypeChecker::new(&mut kctx.kenv)`).
+  modify fun kctx => { kctx with
+    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims }
+
+  let block := firstInd.cnst.name.pretty
+  -- WHNF-reduced result sort level via the kernel.
+  let resultKuniv ←
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.getResultSortLevel firstTyZ
+          (nParams + firstNIndices.toNat))) with
+    | .ok u => pure u
+    | .error e => throwBridge (.kernel (.resultSort block) (toString e))
+
+  let isLarge ←
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
+    | .ok b => pure b
+    | .error e => throwBridge (.kernel (.largeElim block) (toString e))
+
+  -- Prop determination from the WHNF-reduced kernel-derived level.
+  return { isLarge, isProp := resultKuniv.isSemanticZero }
+
+/-- Mirrors the kenv body of Rust `populate_canon_kenv_with_below`
+    (aux_gen.rs:1017): insert the canonical `.below` definitions and
+    inductives (with constructors) into the bridge kenv under their
+    provisional addresses, overwriting what is there. -/
+def tcAdmitBelow (belowConsts : Array BelowConstant) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  for bc in belowConsts do
+    match bc with
+    | .defn d =>
+      let addr := maps.resolve d.name
+      let zid : MKId := ⟨addr, d.name⟩
+      let tyZ ← leanExprToKexpr d.typ d.levelParams maps
+      let valZ ← leanExprToKexpr d.value d.levelParams maps
+      -- Rust: KConst::Defn { kind: Definition, safety: Safe,
+      -- hints: Abbrev, lean_all: vec![], block: zid }.
+      kenvInsert zid (.defn d.name d.levelParams .defn .safe .abbrev
+        (UInt64.ofNat d.levelParams.size) tyZ valZ #[] zid)
+    | .indc i =>
+      let addr := maps.resolve i.name
+      let zid : MKId := ⟨addr, i.name⟩
+      let tyZ ← leanExprToKexpr i.typ i.levelParams maps
+      let mut ctorZids : Array MKId := #[]
+      for ctor in i.ctors do
+        let ctorAddr := maps.resolve ctor.name
+        let ctorZid : MKId := ⟨ctorAddr, ctor.name⟩
+        let ctorTyZ ← leanExprToKexpr ctor.typ i.levelParams maps
+        kenvInsert ctorZid (.ctor ctor.name i.levelParams false
+          (UInt64.ofNat i.levelParams.size) zid
+          (UInt64.ofNat ctorZids.size) (UInt64.ofNat ctor.nParams)
+          (UInt64.ofNat ctor.nFields) ctorTyZ)
+        ctorZids := ctorZids.push ctorZid
+      kenvInsert zid (.indc i.name i.levelParams
+        (UInt64.ofNat i.levelParams.size) (UInt64.ofNat i.nParams)
+        (UInt64.ofNat i.nIndices) false zid 0 tyZ ctorZids #[])
+
 end Ix.AuxGen
