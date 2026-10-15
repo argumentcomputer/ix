@@ -26,6 +26,7 @@ import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
+import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -139,6 +140,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("compile-driver-input", Tests.Ix.Compile.DriverInput.suite),
   ("local-blob", Tests.Ix.Compile.LocalBlob.suite),
   ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
+  ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("aiur-trace-plan", [AiurTests.TracePlan.tests]),

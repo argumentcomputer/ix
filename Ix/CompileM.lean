@@ -1947,66 +1947,127 @@ def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
     | .mvar .. => throw (.unsupportedExpr "metavariable")
 termination_by e _ => e
 
-/-- Stack-safe runtime implementation of `collectExprTables`. Its stack push
-    order implements exactly the preorder of `collectExprTablesStructural`. -/
-private unsafe def collectExprTablesImpl (top : Expr) (ctxKey : Address)
-    (acc : ExprTableCollection) : CompileM ExprTableCollection := do
-  let mutCtx := (← getBlockEnv).mutCtx
-  let mut (refs, univs, seen) := acc
-  let mut stack : Array Expr := #[top]
-  while !stack.isEmpty do
-    let some e := stack.back? | break
-    stack := stack.pop
-    let key := (e.getHash, ctxKey)
-    if seen.contains key then continue
-    seen := seen.insert key ()
-    match e with
-    | .bvar .. => pure ()
-    | .sort lvl _ =>
-      univs := univs.push (← compileUniv lvl)
-    | .const name lvls _ =>
-      for lvl in lvls do
-        univs := univs.push (← compileUniv lvl)
-      if (mutCtx.get? name).isNone then
-        refs := refs.push (← lookupConstAddr name)
-    | .app func arg _ =>
-      stack := stack.push arg |>.push func
-    | .lam _ ty body _ _ =>
-      stack := stack.push body |>.push ty
-    | .forallE _ ty body _ _ =>
-      stack := stack.push body |>.push ty
-    | .letE _ ty val body _ _ =>
-      stack := stack.push body |>.push val |>.push ty
+namespace TableWorklist
+
+/-- Used only in erased termination proofs, never as a runtime traversal of
+the expression tree. In particular, shared inputs need no size prepass. -/
+noncomputable def weight : List Expr → Nat
+  | [] => 0
+  | expr :: rest => sizeOf expr + weight rest
+
+theorem expr_size_pos (expr : Expr) : 0 < sizeOf expr := by
+  cases expr <;> simp <;> omega
+
+/-- Total tail-recursive preorder over a worklist, the runtime collector of
+`collectExprTables` (`collectExprTables_eq_worklist`): the same digest/context
+visited keys as `collectExprTablesStructural` and every monadic effect,
+including effects before an error. -/
+def collect (context : Address) (mutualContext : MutCtx)
+    (work : List Expr) (acc : ExprTableCollection) : CompileM ExprTableCollection := do
+  match work with
+  | [] => return acc
+  | expr :: rest =>
+    let (refs, univs, seen) := acc
+    let key := (expr.getHash, context)
+    if seen.contains key then return ← collect context mutualContext rest acc
+    let seen := seen.insert key ()
+    match expr with
+    | .bvar .. => collect context mutualContext rest (refs, univs, seen)
+    | .sort level _ =>
+      let univ ← compileUniv level
+      collect context mutualContext rest (refs, univs.push univ, seen)
+    | .const name levels _ =>
+      let univs ← levels.foldlM (fun univs level => do
+        let univ ← compileUniv level
+        pure (univs.push univ)) univs
+      if (mutualContext.get? name).isNone then
+        let address ← lookupConstAddr name
+        collect context mutualContext rest (refs.push address, univs, seen)
+      else collect context mutualContext rest (refs, univs, seen)
+    | .app fn arg _ => collect context mutualContext (fn :: arg :: rest) (refs, univs, seen)
+    | .lam _ type body _ _ | .forallE _ type body _ _ =>
+      collect context mutualContext (type :: body :: rest) (refs, univs, seen)
+    | .letE _ type value body _ _ =>
+      collect context mutualContext (type :: value :: body :: rest) (refs, univs, seen)
     | .lit (.natVal n) _ =>
-      let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr ← storeBlob bytes
-      refs := refs.push addr
-    | .lit (.strVal s) _ =>
-      let bytes := s.toUTF8
-      let addr ← storeBlob bytes
-      refs := refs.push addr
-    | .proj typeName _ struct _ =>
-      refs := refs.push (← lookupConstAddr typeName)
-      stack := stack.push struct
-    | .mdata _ inner _ =>
-      stack := stack.push inner
+      let address ← storeBlob (ByteArray.mk (Nat.toBytesLE n))
+      collect context mutualContext rest (refs.push address, univs, seen)
+    | .lit (.strVal text) _ =>
+      let address ← storeBlob text.toUTF8
+      collect context mutualContext rest (refs.push address, univs, seen)
+    | .proj name _ struct _ =>
+      let address ← lookupConstAddr name
+      collect context mutualContext (struct :: rest) (refs.push address, univs, seen)
+    | .mdata _ inner _ => collect context mutualContext (inner :: rest) (refs, univs, seen)
     | .fvar .. => throw (.unsupportedExpr "free variable")
     | .mvar .. => throw (.unsupportedExpr "metavariable")
-  pure (refs, univs, seen)
+termination_by weight work
+decreasing_by
+  all_goals simp only [weight]
+  all_goals first
+    | exact Nat.lt_add_of_pos_left (expr_size_pos _)
+    | simp_wf; omega
+
+theorem levels_fold (levels : List Level) (univs : Array Ixon.Univ) :
+    levels.foldlM (fun univs level => do
+      let univ ← compileUniv level
+      pure (univs.push univ)) univs = collectExprTableUnivs levels univs := by
+  induction levels generalizing univs with
+  | nil => rfl
+  | cons level levels ih =>
+    simp only [List.foldlM_cons, collectExprTableUnivs, bind_assoc, pure_bind, ih]
+
+theorem collect_cons (context : Address) (mutualContext : MutCtx)
+    (expr : Expr) (rest : List Expr) (acc : ExprTableCollection) :
+    collect context mutualContext (expr :: rest) acc = (do
+      let acc ← collectExprTablesStructural context mutualContext expr acc
+      collect context mutualContext rest acc) := by
+  induction expr generalizing rest acc
+  all_goals try cases ‹Lean.Literal›
+  all_goals
+    rcases acc with ⟨refs, univs, seen⟩
+    rw [collect, collectExprTablesStructural]
+    dsimp only
+    split <;> try simp_all only [pure_bind, bind_assoc]
+  all_goals first
+    | rfl
+    | simp only [← Array.foldlM_toList, levels_fold]
+  all_goals split <;> simp_all only [pure_bind, bind_assoc]
+
+theorem collect_singleton (context : Address) (mutualContext : MutCtx)
+    (expr : Expr) (acc : ExprTableCollection) :
+    collect context mutualContext [expr] acc =
+      collectExprTablesStructural context mutualContext expr acc := by
+  rw [collect_cons]
+  simp only [collect, bind_pure]
+
+end TableWorklist
 
 /-- Walk one expression collecting refs and univs for preseeding.
     Mirrors Rust `collect_expr_tables` (compile.rs:490), deduped by
     `(expr hash, univ-param-context key)`; nat/str literal blobs are stored as
     a side effect (their addresses join the refs), and universes are compiled
     through the shared `univCache`. The kernel sees the structurally recursive
-    semantics, while generated code uses the equivalent iterative stack walk.
-    Must run under the expression's own `univCtx` (Rust passes `univ_params`
-    explicitly). -/
-@[implemented_by collectExprTablesImpl]
+    semantics, while compiled code runs the proved-equal worklist walk
+    (`collectExprTables_eq_worklist`). Must run under the expression's own
+    `univCtx` (Rust passes `univ_params` explicitly). -/
 def collectExprTables (top : Expr) (ctxKey : Address)
     (acc : ExprTableCollection) : CompileM ExprTableCollection := do
   let mutCtx := (← getBlockEnv).mutCtx
   collectExprTablesStructural ctxKey mutCtx top acc
+
+/-- `collectExprTables` by the total worklist walk (`TableWorklist.collect`). -/
+def collectExprTablesWorklist (top : Expr) (ctxKey : Address)
+    (acc : ExprTableCollection) : CompileM ExprTableCollection := do
+  let mutCtx := (← getBlockEnv).mutCtx
+  TableWorklist.collect ctxKey mutCtx [top] acc
+
+/-- Register the checked runtime equation before compiling any production
+preseed caller. The equality covers arbitrary contexts, states and caches. -/
+@[csimp] theorem collectExprTables_eq_worklist :
+    @collectExprTables = @collectExprTablesWorklist := by
+  funext top context acc
+  simp only [collectExprTables, collectExprTablesWorklist, TableWorklist.collect_singleton]
 
 /-- Collect a list of roots, resetting the context-sensitive universe cache
     before each root exactly as production `withUnivCtx` requires. -/
@@ -2051,44 +2112,8 @@ def internPreseedUnivs : List (ByteArray × Ixon.Univ) →
     every singleton path in `compileConstantInfo` and the mutual path in
     `compileMutualBlock`.
 
-    The public body composes total recursive phases for refinement proofs;
-    generated code uses the equivalent loop-based implementation below. -/
-private unsafe def preseedExprTablesImpl
-    (exprs : Array (Expr × List Name)) : CompileM Unit := do
-  let mut refs : Array Address := #[]
-  let mut univs : Array Ixon.Univ := #[]
-  let mut seen : Std.HashMap (Address × Address) Unit := {}
-  for (e, params) in exprs do
-    let (r, u, s) ←
-      withUnivCtx params (collectExprTables e (univParamsKey params) (refs, univs, seen))
-    refs := r
-    univs := u
-    seen := s
-  -- Refs: sort by address bytes, dedup, intern in order.
-  let sortedRefs := refs.qsort fun a b => a.cmpBytes b == .lt
-  let mut prevRef : Option Address := none
-  for a in sortedRefs do
-    if prevRef != some a then
-      discard <| internRef a
-      prevRef := some a
-  -- Univs: canonicalize (§10.6 — the primary table holds only
-  -- `canonUniv`-fixed forms; the on-the-fly `compileAndInternUnivCanon`
-  -- then always finds the preseeded canonical entry), sort by
-  -- serialized key, dedup by key, intern in order (`put_univ` is
-  -- injective, so key equality is univ equality).
-  let mut canonUnivs : Array Ixon.Univ := Array.mkEmpty univs.size
-  for u in univs do
-    canonUnivs := canonUnivs.push (← canonUnivCached u)
-  let keyed := canonUnivs.map fun u => (univSortKey u, u)
-  let sortedUnivs := keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
-  let mut prevKey : Option ByteArray := none
-  for (k, u) in sortedUnivs do
-    if prevKey != some k then
-      discard <| internUniv u
-      prevKey := some k
-  modifyBlockState fun st => { st with univsFinal := true }
-
-@[implemented_by preseedExprTablesImpl]
+    The public body composes total recursive phases. The checked `csimp`
+    equation below supplies the array-fold implementation to compiled callers. -/
 def preseedExprTables (exprs : Array (Expr × List Name)) : CompileM Unit := do
   let (refs, univs, _) ←
     collectPreseedExprs exprs.toList (#[], #[], {})
@@ -2101,6 +2126,88 @@ def preseedExprTables (exprs : Array (Expr × List Name)) : CompileM Unit := do
     keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
   internPreseedUnivs sortedUnivs.toList none
   modifyBlockState fun st => { st with univsFinal := true }
+
+namespace TableWorklist
+
+theorem roots_fold (roots : List (Expr × List Name)) (acc : ExprTableCollection) :
+    roots.foldlM (fun acc root => withUnivCtx root.2
+      (collectExprTables root.1 (univParamsKey root.2) acc)) acc =
+        collectPreseedExprs roots acc := by
+  induction roots generalizing acc with
+  | nil => rfl
+  | cons root rest ih =>
+    rcases root with ⟨expr, params⟩
+    simp only [List.foldlM_cons, collectPreseedExprs, ih]
+
+def refsStep (previous : Option Address) (address : Address) : CompileM (Option Address) := do
+  if previous != some address then discard <| internRef address
+  pure (some address)
+
+theorem refs_fold (refs : List Address) (previous : Option Address) :
+    (do let _ ← refs.foldlM refsStep previous; pure ()) = internPreseedRefs refs previous := by
+  induction refs generalizing previous with
+  | nil => rfl
+  | cons address rest ih =>
+    simp only [List.foldlM_cons, refsStep, internPreseedRefs, bind_assoc, ih]
+    split <;> simp_all only [pure_bind, bind_assoc]
+
+theorem canon_fold (univs : List Ixon.Univ) (acc : Array Ixon.Univ) :
+    univs.foldlM (fun acc univ => do
+      let canon ← canonUnivCached univ
+      pure (acc.push canon)) acc = canonPreseedUnivs univs acc := by
+  induction univs generalizing acc with
+  | nil => rfl
+  | cons univ rest ih =>
+    simp only [List.foldlM_cons, canonPreseedUnivs, bind_assoc, pure_bind, ih]
+
+def univsStep (previous : Option ByteArray) (entry : ByteArray × Ixon.Univ) :
+    CompileM (Option ByteArray) := do
+  if previous != some entry.1 then discard <| internUniv entry.2
+  pure (some entry.1)
+
+theorem univs_fold (univs : List (ByteArray × Ixon.Univ)) (previous : Option ByteArray) :
+    (do let _ ← univs.foldlM univsStep previous; pure ()) = internPreseedUnivs univs previous := by
+  induction univs generalizing previous with
+  | nil => rfl
+  | cons entry rest ih =>
+    rcases entry with ⟨key, univ⟩
+    simp only [List.foldlM_cons, univsStep, internPreseedUnivs, bind_assoc, ih]
+    split <;> simp_all only [pure_bind, bind_assoc]
+
+/-- `preseedExprTables` by array folds, the runtime implementation
+(`preseedExprTables_eq_worklist`). -/
+def preseed (exprs : Array (Expr × List Name)) : CompileM Unit := do
+  let (refs, univs, _) ← exprs.foldlM (fun acc root => withUnivCtx root.2
+    (collectExprTables root.1 (univParamsKey root.2) acc)) (#[], #[], {})
+  let sortedRefs := refs.qsort fun a b => a.cmpBytes b == .lt
+  discard <| sortedRefs.foldlM refsStep none
+  let canonUnivs ← univs.foldlM (fun acc univ => do
+    let canon ← canonUnivCached univ
+    pure (acc.push canon)) (Array.mkEmpty univs.size)
+  let keyed := canonUnivs.map fun univ => (univSortKey univ, univ)
+  let sortedUnivs := keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
+  discard <| sortedUnivs.foldlM univsStep none
+  modifyBlockState fun state => { state with univsFinal := true }
+
+theorem preseed_eq (exprs : Array (Expr × List Name)) :
+    preseed exprs = preseedExprTables exprs := by
+  unfold preseed preseedExprTables
+  simp only [← Array.foldlM_toList, roots_fold, canon_fold]
+  congr 1
+  funext acc
+  rcases acc with ⟨refs, univs, seen⟩
+  dsimp only
+  simp only [← refs_fold, ← univs_fold, discard, map_const, Function.comp_apply,
+    map_eq_pure_bind, bind_assoc, pure_bind]
+
+end TableWorklist
+
+/-- This substitution is installed in the production module before the
+singleton and mutual writers are compiled, not in a later proof-only import. -/
+@[csimp] theorem preseedExprTables_eq_worklist :
+    @preseedExprTables = @TableWorklist.preseed := by
+  funext exprs
+  exact (TableWorklist.preseed_eq exprs).symm
 
 /-- Source expressions of a recursor in production compilation order. -/
 def recursorSourceExprs (recursorVal : RecursorVal) : List Expr :=

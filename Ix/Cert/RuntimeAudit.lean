@@ -10,15 +10,15 @@ beyond `Init` and `Std`: the runtime audit
 modules admitted, each only when its theorem depends on the standard axioms
 alone, and nothing else. It reports every other replacement it reaches:
 * the Rust BLAKE3 primitives and `UInt64.toLEBytes` (`@[extern]`);
-* the `unsafe` implementations of the expression-table walks
-  (`collectExprTables`, `preseedExprTables`);
 * the `partial` definitions of the ground filter, AuxGen, the surgical
   expression compiler, the name and expression printers and the
   name-component walk.
 
 A proof about `compile` meets each of them as an opaque constant. Adding one,
 or removing one, changes the list below; the change that re-records it states
-why.
+why. The expression-table walks (`collectExprTables`, `preseedExprTables`) run
+as proved `csimp` replacements (`collectExprTables_eq_worklist`,
+`preseedExprTables_eq_worklist`) since they left the list.
 
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
@@ -99,8 +99,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Name.pretty,
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
- _private.Ix.CompileM.0.Ix.CompileM.collectExprTablesImpl,
- _private.Ix.CompileM.0.Ix.CompileM.preseedExprTablesImpl,
  _private.Ix.Environment.0.Address.mutsName.go,
  _private.Ix.Environment.0.Ix.Expr.hashSyntax,
  Ix.AuxGen.RestoreCtx.replaceWalk,
