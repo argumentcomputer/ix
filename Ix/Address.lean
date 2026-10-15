@@ -11,15 +11,14 @@ public section
 Certified code imports `Ix.Address.Core` (no hashing) or `Ix.Address.Pure`
 (`Address.blake3Pure`, the pure Lean implementation) instead.
 
-The hashing constructors of `Ix` finalize their BLAKE3 hashers with
+Every BLAKE3 digest of `Ix`, `Address.blake3`'s included, is finalized by
 `Address.ofHasher`, which passes the package's length bound
 (`length < 2 ^ System.Platform.numBits`) explicitly, proved by cases on the
-word size (`Address.digestLen_lt_wordBound`). The default argument of the
-package's `finalizeWithLength` proves that bound `by native_decide`, whose
-auxiliary axiom would otherwise enter the axioms of every function that
-hashes and of every theorem whose statement mentions one. The calls, and so
-the digests, are the package's. `Address.blake3` itself still calls the
-package's `hash`. -/
+word size (`Address.digestLen_lt_wordBound`). The package's `hash` and the
+default argument of its `finalizeWithLength` prove that bound
+`by native_decide`, whose auxiliary axiom would otherwise enter the axioms of
+every function that hashes and of every theorem whose statement mentions one.
+The calls, and so the digests, are the package's. -/
 
 deriving instance Lean.ToExpr for ByteArray
 deriving instance Lean.ToExpr for Address
@@ -40,8 +39,11 @@ the package's `finalizeWithLength` with length 32 (the call
 def Address.ofHasher (h : Blake3.Rust.Hasher) : Address :=
   ⟨(Blake3.Rust.Hasher.finalizeWithLength h 32 Address.digestLen_lt_wordBound).val⟩
 
-/-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
-def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.Rust.hash x).val⟩
+/-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`: `init`,
+`update`, then the finalization, the calls of `Blake3.Rust.hash`, finalized by
+`Address.ofHasher`. -/
+def Address.blake3 (x: ByteArray) : Address :=
+  Address.ofHasher ((Blake3.Rust.Hasher.init ()).update x)
 
 instance : Inhabited Address where
   default := Address.blake3 ⟨#[]⟩

@@ -7,16 +7,15 @@ statement reads; `#check` freezes the proved theorems; `#print axioms`
 freezes their axioms, which are the three standard ones. A change to any of
 them fails the build.
 
-The compiler's own axioms are frozen too. `Ix.Cert.compile` reaches one
-`native_decide` axiom, the length bound of the Rust BLAKE3 wrapper's `hash`
-(through `Address.blake3`). Every other hashing constructor it reaches
-(`Ix.Name`, `Ix.Level`, `Ix.Expr`, `Ix.Tc`) finalizes through
-`Address.ofHasher`, which passes that bound explicitly. `Ix.Cert.blocksOf`
-reaches only the three standard ones: its condensation is total
-(`Ix.CompileCert.Canon.condensation_isSome`, frozen with it) and reads no
-`Inhabited Ix.Name` default. Every statement about `compile` inherits the
-remaining axiom; the proved theorems still quantify over the grouping
-function instead of naming `blocksOf`.
+The compiler's own axioms are frozen too: `Ix.Cert.compile`,
+`Ix.Cert.blocksOf` and `Ix.Cert.CompileCorrect` reach only the three
+standard ones. Every BLAKE3 digest they reach (`Address.blake3`, and the
+`Ix.Name`, `Ix.Level`, `Ix.Expr` and `Ix.Tc` hashing constructors) is
+finalized by `Address.ofHasher`, which passes the package's length bound
+explicitly instead of proving it `by native_decide`; `blocksOf`'s
+condensation is total (`Ix.CompileCert.Canon.condensation_isSome`, frozen
+with it) and reads no `Inhabited Ix.Name` default. The proved theorems still
+quantify over the grouping function instead of naming `blocksOf`.
 
 Step 5b (the kernel's types indexed by a `Mode`) re-froze the statements
 with the modes made explicit and nothing else changed: Source mode installs
@@ -835,16 +834,10 @@ fun env =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.Canon.condensation_isSome
 
-/-- info: 'Ix.Cert.compile' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'Ix.Cert.compile' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.compile
 
-/-- info: 'Ix.Cert.CompileCorrect' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'Ix.Cert.CompileCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.CompileCorrect
