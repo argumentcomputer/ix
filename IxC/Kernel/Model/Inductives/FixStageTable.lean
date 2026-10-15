@@ -76,7 +76,7 @@ FUNCTION family free (it stores a table, never `T.proj.i`), so the
 block's η claim is vacuous below and at the table's environment. -/
 theorem fixTableFamFree {p : NativeParts md} {ctorsA : List (ConstantVal md × Nat)}
     {sortss : List (List Level)} {env₃ env₂ : Env md}
-    (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss env₃ = .ok env₂)
+    (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss env₃ = .ok env₂)
     (hlenA : ctorsA.length = p.ctors.length) (hlenS : sortss.length = p.ctors.length)
     (hnFc : ∀ cA c, ctorsA = [cA] → p.ctors = [c] → cA.2 = c.2)
     (hU : (Ix.Kernel.nativeCaps p).unitlike = false) :
@@ -149,7 +149,7 @@ Part A): `stageTable` against the one-constructor fibre. -/
 theorem stageFixTable (mp : EnvModelM V μ env)
     {p : NativeParts md} {cvTa cvCa : ConstantVal md} {nF : Nat} {sorts : List Level}
     {envOut : Env md} {caps : IndCaps md}
-    (hTbl : Ix.Kernel.checkStructProjTable (m := Ix.Kernel.CheckM) p.cvT.name cvCa.name
+    (hTbl : Ix.Kernel.checkStructProjTable (m := Ix.Kernel.CheckM md) p.cvT.name cvCa.name
       p.cvT.levelParams p.nP nF p.resSort
       (Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts) 1 cvCa env = .ok envOut)
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
@@ -514,7 +514,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
     {rhss : List (Expr md)}
     (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
-    (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss
+    (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
         (Ix.Kernel.sumRules envC.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: envC.consts⟩ = .ok env₂)

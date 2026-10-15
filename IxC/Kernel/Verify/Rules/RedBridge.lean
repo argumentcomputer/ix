@@ -287,7 +287,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge env fuel)
 (`whnfStep_inv`: `whnfCore`, then acceleration or δ into `k`, or the
 fixpoint). -/
 theorem whnfStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
-    {d : Nat} {k : Expr md → CheckM (Expr md)}
+    {d : Nat} {k : Expr md → CheckM md (Expr md)}
     (hk : ∀ {e e' : Expr md}, k e = .ok e' → Red env d e e')
     {e e' : Expr md}
     (h : whnfStep (pureFns .verified env fuel) env d k e = .ok e') :

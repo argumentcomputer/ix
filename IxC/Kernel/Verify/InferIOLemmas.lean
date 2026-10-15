@@ -405,7 +405,7 @@ theorem inferTypeCoreIO_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
       · rw [if_neg hf] at h
         exact absurd h (by
           simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind])
-    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError (Expr md)) = .ok t := by
+    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except (CheckError md) (Expr md)) = .ok t := by
       by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
       · rw [if_pos hp, if_pos (hg hp)] at h
         exact h

@@ -42,7 +42,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel.Cached
 
-theorem throwC_bind_eq {α β : Type} (e : CheckError)
+theorem throwC_bind_eq {α β : Type} (e : CheckError md)
     (f : α → (CheckCM md) β) : ((throw e : (CheckCM md) α) >>= f) = throw e := rfl
 
 
@@ -138,7 +138,7 @@ theorem checkStructProjTableS_run {T C : Key md} {lps : List LevelParam} {nP nF 
     (h : checkStructProjTableF (m := CheckCM md) .plain T C lps nP nF rs guards off cvCa
       (mkFEnv env) s₀ = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧ EnvWF fe'.env ∧
-    ∃ F, (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM (Env md)).val F
+    ∃ F, (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM md (Env md)).val F
       = .ok fe'.env := by
   rw [checkStructProjTableF_pushC] at h
   obtain ⟨e₁, s₁, hstep, h⟩ := bindC_ok h
@@ -146,7 +146,7 @@ theorem checkStructProjTableS_run {T C : Key md} {lps : List LevelParam} {nP nF 
   subst hfe
   -- the pure stage in the cached monad: state unchanged, the value the
   -- `CheckM` instantiation's
-  have hrun : s₀ = s₁ ∧ checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
+  have hrun : s₀ = s₁ ∧ checkStructProjTable (m := CheckM md) T C lps nP nF rs guards off cvCa env
       = .ok e₁ := by
     unfold checkStructProjTable at hstep ⊢
     cases hb : structProjBodies T nP nF cvCa.type with
@@ -186,7 +186,7 @@ theorem checkNativeTableS_run {p : NativeParts md} {ctorsA : List (ConstantVal m
     (h : checkNativeTableF (m := CheckCM md) .plain p ctorsA sortss (mkFEnv env) s₀
       = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧ EnvWF fe'.env ∧
-    ∃ F, (checkNativeTable (m := FueledM) p ctorsA sortss env).val F = .ok fe'.env := by
+    ∃ F, (checkNativeTable (m := FueledM md) p ctorsA sortss env).val F = .ok fe'.env := by
   match ctorsA, sortss with
   | [cA], [sorts] =>
     simp only [checkNativeTableF] at h
@@ -224,7 +224,7 @@ theorem classifyFixKindsC_ok {T : Key md} {lps : List LevelParam} {nP nIdx : Nat
     {ctorsA : List (ConstantVal md × Nat)} {s₀ s' : CState md}
     {kinds : List (List RecFieldKind)}
     (h : classifyFixKinds (m := CheckCM md) T lps nP nIdx ctorsA s₀ = .ok (kinds, s')) :
-    s' = s₀ ∧ classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA = .ok kinds := by
+    s' = s₀ ∧ classifyFixKinds (m := CheckM md) T lps nP nIdx ctorsA = .ok kinds := by
   unfold classifyFixKinds at h ⊢
   obtain ⟨ks, s₁, hu, h⟩ := bindC_ok h
   cases hk : ctorsA.mapM (recCtorKinds T lps nP nIdx) with
@@ -407,7 +407,7 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
   have g₃ : checkNativeRec (fueledOps mode G) (consSumCtors p.nP ctorsA env₁)
       p cvTa ctorsA = .ok (cvRa, rhss) := by
     rw [← checkNativeRec_datF]; exact FueledM.up hle₃ hF₃
-  have g₆ : checkNativeTable (m := CheckM) p ctorsA sortss
+  have g₆ : checkNativeTable (m := CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
         (sumRules (consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: (consSumCtors p.nP ctorsA env₁).consts⟩ = .ok feOut.env := by
@@ -609,14 +609,14 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
         next err herr => exact nomatch (hF₁p'.symm.trans herr)
         next v hok =>
         obtain rfl : fe₂.env = v := by
-          have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
+          have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
             hF₁p'.symm.trans hok
           injection hv
         split
         next err herr => exact nomatch (hF₂p.symm.trans herr)
         next v hok =>
         obtain rfl : fe₃.env = v := by
-          have hv : (Except.ok fe₃.env : Except CheckError (Env md)) = .ok v :=
+          have hv : (Except.ok fe₃.env : Except (CheckError md) (Env md)) = .ok v :=
             hF₂p.symm.trans hok
           injection hv
         rw [if_pos hctorRes, if_pos hguard, if_neg hsl]
@@ -667,14 +667,14 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       next err herr => exact nomatch (hF₁p'.symm.trans herr)
       next v hok =>
       obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
+        have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
           hF₁p'.symm.trans hok
         injection hv
       split
       next err herr => exact nomatch (hF₂p.symm.trans herr)
       next v hok =>
       obtain rfl : fe₃.env = v := by
-        have hv : (Except.ok fe₃.env : Except CheckError (Env md)) = .ok v :=
+        have hv : (Except.ok fe₃.env : Except (CheckError md) (Env md)) = .ok v :=
           hF₂p.symm.trans hok
         injection hv
       rw [if_pos hctorRes, if_pos hguard, if_pos hsl]
@@ -711,7 +711,7 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       next err herr => exact nomatch (hF₁p'.symm.trans herr)
       next v hok =>
       obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
+        have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
           hF₁p'.symm.trans hok
         injection hv
       exact hF₂p
@@ -735,7 +735,7 @@ theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env
   -- the two drivers: `hok` is the branch both take
   show CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
     ∃ F, (match basisPinHit block with
-      | some kind => checkBasisDecl (m := CheckM) env kind
+      | some kind => checkBasisDecl (m := CheckM md) env kind
       | none =>
         if indParamsOk nP block = true then
           (match nativeParts? nP block with

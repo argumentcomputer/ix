@@ -17,13 +17,13 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- `q` succeeds wherever `p` succeeds, with the same value. -/
-@[expose] def MRefines {α : Type} (p q : CheckM α) : Prop :=
+@[expose] def MRefines {α : Type} (p q : CheckM md α) : Prop :=
   ∀ v, p = .ok v → q = .ok v
 
-theorem MRefines.rfl {α : Type} {p : CheckM α} : MRefines p p := fun _ h => h
+theorem MRefines.rfl {α : Type} {p : CheckM md α} : MRefines p p := fun _ h => h
 
 /-- Success refinement as a monad relation. -/
-@[expose] def refinesRel : MonadRel CheckM CheckM where
+@[expose] def refinesRel : MonadRel (md := md) (CheckM md) (CheckM md) where
   R := MRefines
   pure_rel _ := MRefines.rfl
   bind_rel {α β x₁ x₂ f₁ f₂} hx hf := by
@@ -40,12 +40,12 @@ theorem MRefines.rfl {α : Type} {p : CheckM α} : MRefines p p := fun _ h => h
   throw_rel _ := fun _ h => nomatch h
 
 /-- Componentwise refinement between two pure records. -/
-abbrev FnsRefines (r₁ r₂ : (CoreFns md) CheckM) : Prop :=
+abbrev FnsRefines (r₁ r₂ : (CoreFns md) (CheckM md)) : Prop :=
   FnsRel refinesRel r₁ r₂
 
 section Mono
 
-variable {r₁ r₂ : (CoreFns md) CheckM} {env : Env md}
+variable {r₁ r₂ : (CoreFns md) (CheckM md)} {env : Env md}
 
 /-! Per-body monotonicity, extracted from the pair instantiation. -/
 

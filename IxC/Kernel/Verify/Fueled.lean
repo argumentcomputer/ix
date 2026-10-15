@@ -28,13 +28,13 @@ call site unifies `mi := mode`. -/
 variable {mi : CheckMode}
 
 /-- Monotone fuel-indexed families of pure computations. -/
-@[expose] def FueledM (α : Type) : Type :=
-  {p : Nat → CheckM α //
+@[expose] def FueledM (md : Mode) (α : Type) : Type :=
+  {p : Nat → CheckM md α //
     ∀ {f f' : Nat} {v : α}, f ≤ f' → p f = .ok v → p f' = .ok v}
 
 namespace FueledM
 
-instance : Monad FueledM where
+instance : Monad (FueledM md) where
   pure a := ⟨fun _ => pure a, fun _ h => h⟩
   bind x f :=
     ⟨fun F => x.val F >>= fun a => (f a).val F, by
@@ -49,23 +49,23 @@ instance : Monad FueledM where
         dsimp only [Except.bind]
         exact (f a).property hle h⟩
 
-instance : MonadExceptOf CheckError FueledM where
+instance : MonadExceptOf (CheckError md) (FueledM md) where
   throw e := ⟨fun _ => throw e, fun _ h => nomatch h⟩
   tryCatch _ _ :=
     ⟨fun _ => throw (.internal "tryCatch unsupported"), fun _ h => nomatch h⟩
 
-@[simp] theorem atF_bind {α β : Type} (x : FueledM α) (f : α → FueledM β)
+@[simp] theorem atF_bind {α β : Type} (x : FueledM md α) (f : α → FueledM md β)
     (F : Nat) :
     (x >>= f).val F = x.val F >>= fun a => (f a).val F := rfl
 
 @[simp] theorem atF_pure {α : Type} (a : α) (F : Nat) :
-    (pure a : FueledM α).val F = pure a := rfl
+    (pure a : FueledM md α).val F = pure a := rfl
 
-@[simp] theorem atF_throw {α : Type} (e : CheckError) (F : Nat) :
-    (throw e : FueledM α).val F = throw e := rfl
+@[simp] theorem atF_throw {α : Type} (e : CheckError md) (F : Nat) :
+    (throw e : FueledM md α).val F = throw e := rfl
 
 @[simp] theorem atF_ite {α : Type} {c : Prop} [Decidable c]
-    (x y : FueledM α) (F : Nat) :
+    (x y : FueledM md α) (F : Nat) :
     (if c then x else y).val F = if c then x.val F else y.val F := by
   by_cases hc : c <;> simp [hc]
 
@@ -73,7 +73,7 @@ end FueledM
 
 /-- The fueled record: each entry is the family of its fueled runs,
 monotone by `Mono.lean`. -/
-@[expose] def fueledFns (mode : CheckMode) (env : Env md) : (CoreFns md) FueledM where
+@[expose] def fueledFns (mode : CheckMode) (env : Env md) : (CoreFns md) (FueledM md) where
   whnfCore d e := ⟨fun F => whnfCore mode env F d e, fun hle h => whnfCore_mono hle h⟩
   whnf d e := ⟨fun F => whnf mode env F d e, fun hle h => whnf_mono hle h⟩
   infer d e := ⟨fun F => inferTypeCore mode env F d e,
@@ -90,7 +90,7 @@ section AtF
 variable {env : Env md}
 
 theorem liftFueled_atF {α : Type} (what : String) (o : Option α) (F : Nat) :
-    (liftFueled what o : FueledM α).val F = liftFueled what o := by
+    (liftFueled what o : FueledM md α).val F = liftFueled what o := by
   cases o <;> rfl
 
 theorem iotaCerts_atF (d : Nat) (lic : Bool) (F : Nat) :
@@ -105,7 +105,7 @@ theorem iotaCerts_atF (d : Nat) (lic : Bool) (F : Nat) :
         let ta ← (fueledFns mode env).inferIO d arg
         if ← (fueledFns mode env).defeq d ta ty then
           iotaCerts (fueledFns mode env) env d lic (body.instantiate1 arg) rest
-        else pure false : FueledM Bool)).val F = (if lic && mb.pw.isNever then
+        else pure false : FueledM md Bool)).val F = (if lic && mb.pw.isNever then
         iotaCerts (pureFns mode env F) env d lic (body.instantiate1 arg) rest
       else do
         let ta ← (pureFns mode env F).inferIO d arg
@@ -140,7 +140,7 @@ theorem defEqList_atF (d : Nat) (F : Nat) :
     show ((do
         if ← (fueledFns mode env).defeq d a b then
           defEqList (fueledFns mode env) env d as bs
-        else pure false : FueledM Bool)).val F = (do
+        else pure false : FueledM md Bool)).val F = (do
         if ← (pureFns mode env F).defeq d a b then
           defEqList (pureFns mode env F) env d as bs
         else pure false)
@@ -510,8 +510,8 @@ theorem whnfCoreBody_atF (d : Nat) (e : Expr md) (F : Nat) :
   unfold whnfCoreBody
   atF_tac4
 
-theorem whnfStep_atF (d : Nat) (k : Expr md → FueledM (Expr md))
-    (kF : Expr md → CheckM (Expr md)) (hk : ∀ e, (k e).val F = kF e) (e : Expr md) :
+theorem whnfStep_atF (d : Nat) (k : Expr md → FueledM md (Expr md))
+    (kF : Expr md → CheckM md (Expr md)) (hk : ∀ e, (k e).val F = kF e) (e : Expr md) :
     (whnfStep (fueledFns mode env) env d k e).val F =
       whnfStep (pureFns mode env F) env d kF e := by
   unfold whnfStep
@@ -546,8 +546,8 @@ theorem inferBodyIO_atF (d : Nat) (e : Expr md) (F : Nat) :
   -- field `ensureSort` reads) untouched, so the plain lemma closes them
   all_goals exact ensureSort_atF _ _ _
 
-theorem defeqStep_atF (d : Nat) (k : Bool → Expr md → Expr md → FueledM Bool)
-    (kF : Bool → Expr md → Expr md → CheckM Bool)
+theorem defeqStep_atF (d : Nat) (k : Bool → Expr md → Expr md → FueledM md Bool)
+    (kF : Bool → Expr md → Expr md → CheckM md Bool)
     (hk : ∀ pi a b, (k pi a b).val F = kF pi a b) (pi : Bool) (a b : Expr md) :
     (defeqStep mode (fueledFns mode env) env d k pi a b).val F =
       defeqStep mode (pureFns mode env F) env d kF pi a b := by

@@ -731,8 +731,8 @@ Ix.Cert.ErrorKind.internal : Ix.Cert.ErrorKind -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ErrorKind
 
-/-- info: def Ix.Cert.ErrorKind.of : Ix.Kernel.CheckError → Ix.Cert.ErrorKind :=
-fun x =>
+/-- info: def Ix.Cert.ErrorKind.of : {md : Ix.Kernel.Mode} → Ix.Kernel.CheckError md → Ix.Cert.ErrorKind :=
+fun {md} x =>
   match x with
   | Ix.Kernel.CheckError.notImplemented what => Ix.Cert.ErrorKind.notImplemented
   | Ix.Kernel.CheckError.invalid msg => Ix.Cert.ErrorKind.invalid
@@ -741,7 +741,7 @@ fun x =>
 #print Ix.Cert.ErrorKind.of
 
 /-- info: def Ix.Cert.verdict : {md : Ix.Kernel.Mode} →
-  Except (Ix.Kernel.CheckError × Nat) (Ix.Kernel.Env md) → Except (Ix.Cert.ErrorKind × Nat) (Ix.Kernel.Env md) :=
+  Except (Ix.Kernel.CheckError md × Nat) (Ix.Kernel.Env md) → Except (Ix.Cert.ErrorKind × Nat) (Ix.Kernel.Env md) :=
 fun {md} x =>
   match x with
   | Except.ok e => Except.ok e

@@ -115,7 +115,7 @@ theorem domsMatchAuxA_eq (g : Nat → Expr md → Expr md)
   simp only [domsMatchAuxA, domsMatchAux, List.getElem?_toArray]
 
 section
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 theorem checkStructDomsAtFA_eq (ops : (CheckerOps md) m) (fe : FEnv md)
     (off : Nat) (fvs doms : List (Expr md)) :

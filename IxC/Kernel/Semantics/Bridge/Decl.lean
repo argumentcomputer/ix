@@ -48,7 +48,7 @@ instead of the relational `NatEqsR` below (whose `DefEq` only has
 collapse-currency soundness). -/
 theorem natEqsRun_of_certs {μ : CheckMode} {F : Nat} {env : Env md} :
     ∀ (eqs : List (Expr md × Expr md)),
-      certifyNatEqs (m := CheckM) (fueledOps μ F) env eqs = .ok true →
+      certifyNatEqs (m := CheckM md) (fueledOps μ F) env eqs = .ok true →
       NatEqsRun μ F env eqs := by
   intro eqs
   induction eqs with
@@ -82,7 +82,7 @@ over `installBasisDecl_inv`. -/
 /-- **The pinned-block fold, inverted** into `BasisInstallRun`. -/
 theorem foldlM_installBasisDecl_invR :
     ∀ (l : List (ConstantInfo md)) {env env₁ : Env md},
-      l.foldlM (installBasisDecl (m := CheckM)) env = .ok env₁ →
+      l.foldlM (installBasisDecl (m := CheckM md)) env = .ok env₁ →
       BasisInstallRun env l env₁
   | [], env, env₁, h => by
     simp only [List.foldlM, pure, Except.pure, Except.ok.injEq] at h
@@ -90,7 +90,7 @@ theorem foldlM_installBasisDecl_invR :
   | ci :: l, env, env₁, h => by
     simp only [List.foldlM, Bind.bind, Except.bind] at h
     revert h
-    cases hi : installBasisDecl (m := CheckM) env ci with
+    cases hi : installBasisDecl (m := CheckM md) env ci with
     | error e => intro h; exact nomatch h
     | ok env' =>
       intro h
@@ -104,7 +104,7 @@ since task #293 three arms share that body: the fold's own
 `basisDecl` kind, a stream block `basisPinHit` recognises, and the
 first quotient record `quotPinHit` recognises. -/
 theorem declBasisRunOf {env env₂ : Env md} {kind : BasisKind}
-    (h : checkBasisDecl (m := CheckM) env kind = .ok env₂) :
+    (h : checkBasisDecl (m := CheckM md) env kind = .ok env₂) :
     DeclBasisRun env kind env₂ := by
   simp only [checkBasisDecl, Bind.bind, Except.bind] at h
   by_cases hk : kind = .quotK

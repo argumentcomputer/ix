@@ -43,7 +43,7 @@ variable {mi : CheckMode}
 
 open Expr
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- The continuation of `whnfCoreBody`'s app case after the function
 part's head normalization: beta with the possibly-Prop certificate on
@@ -291,8 +291,8 @@ section AtF
 
 variable {env : Env md}
 
-theorem appStep_atF (d : Nat) (k : Expr md → FueledM (Expr md))
-    (kF : Expr md → CheckM (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e)
+theorem appStep_atF (d : Nat) (k : Expr md → FueledM md (Expr md))
+    (kF : Expr md → CheckM md (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e)
     (w a : Expr md) :
     (appStep mode (fueledFns mode env) env d k w a).val F
       = appStep mode (pureFns mode env F) env d kF w a := by
@@ -301,8 +301,8 @@ theorem appStep_atF (d : Nat) (k : Expr md → FueledM (Expr md))
 
 mutual
 
-theorem whnfApp_atF (d : Nat) (k : Expr md → FueledM (Expr md))
-    (kF : Expr md → CheckM (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e) :
+theorem whnfApp_atF (d : Nat) (k : Expr md → FueledM md (Expr md))
+    (kF : Expr md → CheckM md (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e) :
     ∀ (xs : List (Expr md)) (v : Expr md),
       (whnfApp mode (fueledFns mode env) env d k v xs).val F
         = whnfApp mode (pureFns mode env F) env d kF v xs
@@ -351,8 +351,8 @@ decreasing_by
     | (apply Prod.Lex.left; simp; done)
     | (apply Prod.Lex.right' <;> simp)
 
-theorem betaPeel_atF (d : Nat) (k : Expr md → FueledM (Expr md))
-    (kF : Expr md → CheckM (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e) :
+theorem betaPeel_atF (d : Nat) (k : Expr md → FueledM md (Expr md))
+    (kF : Expr md → CheckM md (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e) :
     ∀ (xs : List (Expr md)) (t : Expr md) (acc : List (Expr md)),
       (betaPeel mode (fueledFns mode env) env d k t acc xs).val F
         = betaPeel mode (pureFns mode env F) env d kF t acc xs
@@ -393,8 +393,8 @@ decreasing_by
 
 end
 
-theorem whnfCoreStepM_atF (d : Nat) (k : Expr md → FueledM (Expr md))
-    (kF : Expr md → CheckM (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e)
+theorem whnfCoreStepM_atF (d : Nat) (k : Expr md → FueledM md (Expr md))
+    (kF : Expr md → CheckM md (Expr md)) (F : Nat) (hk : ∀ e, (k e).val F = kF e)
     (e : Expr md) :
     (whnfCoreStepM mode (fueledFns mode env) env d k e).val F
       = whnfCoreStepM mode (pureFns mode env F) env d kF e := by
@@ -420,7 +420,7 @@ theorem whnfCoreLoopM_atF (d : Nat) :
 /-- Fuel monotonicity of the loop (via `whnfApp_atF` and the `FueledM`
 bundle). -/
 theorem whnfApp_mono {d : Nat} {xs : List (Expr md)} {v : Expr md} {F F' : Nat}
-    (k : Expr md → FueledM (Expr md)) (kF kF' : Expr md → CheckM (Expr md))
+    (k : Expr md → FueledM md (Expr md)) (kF kF' : Expr md → CheckM md (Expr md))
     (hkF : ∀ e, (k e).val F = kF e) (hkF' : ∀ e, (k e).val F' = kF' e)
     (hle : F ≤ F') {res : Expr md}
     (h : whnfApp mode (pureFns mode env F) env d kF v xs = .ok res) :
@@ -431,7 +431,7 @@ theorem whnfApp_mono {d : Nat} {xs : List (Expr md)} {v : Expr md} {F F' : Nat}
 
 theorem betaPeel_mono {d : Nat} {xs acc : List (Expr md)} {t : Expr md}
     {F F' : Nat}
-    (k : Expr md → FueledM (Expr md)) (kF kF' : Expr md → CheckM (Expr md))
+    (k : Expr md → FueledM md (Expr md)) (kF kF' : Expr md → CheckM md (Expr md))
     (hkF : ∀ e, (k e).val F = kF e) (hkF' : ∀ e, (k e).val F' = kF' e)
     (hle : F ≤ F') {res : Expr md}
     (h : betaPeel mode (pureFns mode env F) env d kF t acc xs = .ok res) :
@@ -441,7 +441,7 @@ theorem betaPeel_mono {d : Nat} {xs acc : List (Expr md)} {t : Expr md}
   exact (betaPeel mode (fueledFns mode env) env d k t acc xs).property hle h
 
 theorem appStep_mono {d : Nat} {w a : Expr md} {F F' : Nat}
-    (k : Expr md → FueledM (Expr md)) (kF kF' : Expr md → CheckM (Expr md))
+    (k : Expr md → FueledM md (Expr md)) (kF kF' : Expr md → CheckM md (Expr md))
     (hkF : ∀ e, (k e).val F = kF e) (hkF' : ∀ e, (k e).val F' = kF' e)
     (hle : F ≤ F') {res : Expr md}
     (h : appStep mode (pureFns mode env F) env d kF w a = .ok res) :
@@ -498,8 +498,8 @@ section Snoc
 
 variable {env : Env md}
 
-private theorem bind_ok {α β : Type} {x : Except CheckError α}
-    {f : α → Except CheckError β} {b : β}
+private theorem bind_ok {α β : Type} {x : Except (CheckError md) α}
+    {f : α → Except (CheckError md) β} {b : β}
     (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
   cases hx : x with
   | error e =>
@@ -540,7 +540,7 @@ theorem instList_single (body : Expr md) (a : Expr md) :
 
 /-- `appStep` on a stuck application chain with a non-constant head:
 one more stuck application. -/
-private theorem appStep_stuck (F d : Nat) (kF : Expr md → CheckM (Expr md))
+private theorem appStep_stuck (F d : Nat) (kF : Expr md → CheckM md (Expr md))
     {w : Expr md} (a : Expr md)
     (hnl : ∀ ty body mb, w ≠ Expr.lam ty body mb)
     (hnc : ∀ c us, w.getAppFn ≠ Expr.const c us) :
@@ -558,8 +558,8 @@ private theorem appStep_stuck (F d : Nat) (kF : Expr md → CheckM (Expr md))
     rfl
 
 private theorem ok_bind {α β : Type} (a : α)
-    (f : α → Except CheckError β) :
-    ((Except.ok a : Except CheckError α) >>= f) = f a := rfl
+    (f : α → Except (CheckError md) β) :
+    ((Except.ok a : Except (CheckError md) α) >>= f) = f a := rfl
 
 mutual
 
@@ -918,13 +918,13 @@ chain on its own step budget while the specification stays
 chained. -/
 
 /-- The soundness hypothesis carried by a loop continuation. -/
-def KSound (mode : CheckMode) (env : Env md) (d : Nat) (k : Expr md → FueledM (Expr md)) : Prop :=
+def KSound (mode : CheckMode) (env : Env md) (d : Nat) (k : Expr md → FueledM md (Expr md)) : Prop :=
   ∀ (G : Nat) (e v : Expr md), (k e).val G = .ok v →
     ∃ M, whnfCore mode env M d e = .ok v
 
 mutual
 
-theorem whnfApp_ksound {d : Nat} (k : Expr md → FueledM (Expr md))
+theorem whnfApp_ksound {d : Nat} (k : Expr md → FueledM md (Expr md))
     (hks : KSound mode env d k) :
     ∀ (xs : List (Expr md)) (v res : Expr md) (F : Nat),
       whnfApp mode (pureFns mode env F) env d (fun e => (k e).val F) v xs
@@ -1014,7 +1014,7 @@ decreasing_by
     | (apply Prod.Lex.left; simp; done)
     | (apply Prod.Lex.right' <;> simp)
 
-theorem betaPeel_ksound {d : Nat} (k : Expr md → FueledM (Expr md))
+theorem betaPeel_ksound {d : Nat} (k : Expr md → FueledM md (Expr md))
     (hks : KSound mode env d k) :
     ∀ (xs : List (Expr md)) (t : Expr md) (acc : List (Expr md)) (res : Expr md)
       (F : Nat),
@@ -1092,7 +1092,7 @@ end
 
 /-- One loop *step* whose continuation is sound is reproduced by the
 chained specification body `whnfCoreBody` at some knot fuel. -/
-theorem whnfCoreStepM_sound {d : Nat} (k : Expr md → FueledM (Expr md))
+theorem whnfCoreStepM_sound {d : Nat} (k : Expr md → FueledM md (Expr md))
     (hks : KSound mode env d k) {e res : Expr md} (F : Nat)
     (H : whnfCoreStepM mode (pureFns mode env F) env d (fun x => (k x).val F) e
       = .ok res) :
@@ -1615,7 +1615,7 @@ monadic branches rather than `unless` sugar); the shapes are
 definitionally the body's, which is what keeps
 `inferBodyIO_app_pure` an `rfl`. -/
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- The io continuation of the application clause: the licence wraps
 the certificate, the computed type is the telescope step's, verbatim.

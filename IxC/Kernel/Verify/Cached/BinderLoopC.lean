@@ -119,7 +119,7 @@ theorem inferLamsOutC_sim {d : Nat} :
       {cur : Expr md} {curx : Expr md} {prevPw : PropWhen} {s₀ : CState md},
       CSOK mode env s₀ → RelILStk stk stkx → RelC cur curx →
       SimC mode env s₀ RelDC (inferLamsOutI mode d stk j cur prevPw)
-        (inferLamsOut (m := FueledM) mode d stkx j curx prevPw) := by
+        (inferLamsOut (m := FueledM md) mode d stkx j curx prevPw) := by
   intro stk
   induction stk with
   | nil =>
@@ -148,7 +148,7 @@ theorem inferLamsOutC_sim {d : Nat} :
           if mode.verifiedChecks && !(mb.pw == prevPw) then
             throw (.notImplemented
               "sort-annotation mismatch (lam-cod-chain)")
-          inferLamsOut (m := FueledM) mode d rx (j - 1)
+          inferLamsOut (m := FueledM md) mode d rx (j - 1)
             (Expr.forallE (tyox.abstractRange d j) curx mb) mb.pw)
       split
       · exact SimC.throw_bind
@@ -363,7 +363,7 @@ theorem inferPisOutC_sim :
       pv = Level.zeronessOf v →
       SimC mode env s₀ (fun (iv : Level) (ivx : Level) => iv = ivx)
         (inferPisOutI mode stk v pv)
-        (inferPisOut (m := FueledM) mode stkx lv) := by
+        (inferPisOut (m := FueledM md) mode stkx lv) := by
   intro stk
   induction stk with
   | nil =>
@@ -393,7 +393,7 @@ theorem inferPisOutC_sim :
           if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
             throw (.notImplemented
               "sort-annotation mismatch (forall-cod)")
-          inferPisOut (m := FueledM) mode rx (.imax u v))
+          inferPisOut (m := FueledM md) mode rx (.imax u v))
       dsimp only
       split
       · exact SimC.throw_bind
@@ -549,7 +549,7 @@ theorem inferLamTail_atF {env : Env md} (d : Nat)
           unless Level.zeronessOf vb == mbx.pw do
             throw (.notImplemented
               "sort-annotation mismatch (lam-cod-leaf)")
-      pure (Expr.forallE tyx (bt.abstract1 d) mbx)) : FueledM (Expr md)).val F
+      pure (Expr.forallE tyx (bt.abstract1 d) mbx)) : FueledM md (Expr md)).val F
     = (inferTypeCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx))
         >>= fun bt => (do
           if mode.verifiedChecks then
@@ -763,7 +763,7 @@ private theorem inferPiTail_atF {env : Env md} (d : Nat)
       if mode.verifiedChecks then
         unless Level.zeronessOf v == pw do
           throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-      pure (Expr.sort (.imax lu v))) : FueledM (Expr md)).val F
+      pure (Expr.sort (.imax lu v))) : FueledM md (Expr md)).val F
     = (inferTypeCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx))
         >>= fun bt => ensureSortCore mode env F (d + 1) bt >>= fun v =>
         (do
@@ -901,7 +901,7 @@ theorem annotateBindersOutC_sim
       {s₀ : CState md},
       CSOK mode env s₀ → RelAStk d stk stkx j → RelC cur curx →
       SimC mode env s₀ RelDC (annotateBindersOutI mk d pw? stk j cur)
-        (annotateBindersOut (m := FueledM) mkX d pw? stkx j curx) := by
+        (annotateBindersOut (m := FueledM md) mkX d pw? stkx j curx) := by
   intro stk
   induction stk with
   | nil =>
@@ -925,7 +925,7 @@ theorem annotateBindersOutC_sim
           annotateBindersOutI mk d
             (pw?.map fun _ => (annotBinderMetaI pw? bi).pw)
             rest (j - 1) node)
-        (annotateBindersOut (m := FueledM) mkX d
+        (annotateBindersOut (m := FueledM md) mkX d
           (pw?.map fun _ => (annotBinderMeta pw? bi).pw) rx (j - 1)
           (mkX (tyx'.abstractRange d j) curx (annotBinderMeta pw? bi)))
       -- task #161 P5: both folds thread the datum just written; the
@@ -1253,7 +1253,7 @@ private theorem annPiTail_atF {env : Env md} (d : Nat)
         annotPwPi (fueledFns mode env) env (d + 1) body' >>= fun pw =>
           pure (Expr.forallE tyx' (body'.abstract1 d) { mx with pw })
       else pure (Expr.forallE tyx' (body'.abstract1 d) { mx with pw := mx.pw }))
-      : FueledM (Expr md)).val F
+      : FueledM md (Expr md)).val F
     = (annotateCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx'))
         >>= fun body' =>
         if !pwWritten mx.pw then
@@ -1358,7 +1358,7 @@ private theorem annLamTail_atF {env : Env md} (d : Nat)
         annotPwLam (fueledFns mode env) env (d + 1) body' >>= fun pw =>
           pure (Expr.lam tyx' (body'.abstract1 d) { mx with pw })
       else pure (Expr.lam tyx' (body'.abstract1 d) { mx with pw := mx.pw }))
-      : FueledM (Expr md)).val F
+      : FueledM md (Expr md)).val F
     = (annotateCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx'))
         >>= fun body' =>
         if !pwWritten mx.pw then

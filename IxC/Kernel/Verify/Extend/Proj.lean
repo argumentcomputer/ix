@@ -28,7 +28,7 @@ open Expr
 /-- Invert stage 1 of `checkProjFn` (the stored-constant lookups). -/
 theorem checkProjLookups_inv {env' : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal md}
-    (h : (checkProjLookups env' T ctorName lps nP nF i : CheckM _) =
+    (h : (checkProjLookups env' T ctorName lps nP nF i : CheckM md _) =
       .ok (cvj, mcv)) :
     ∃ mval hmmcv,
       env'.find? ctorName = some (.ctorInfo cvj nP nF) ∧
@@ -92,7 +92,7 @@ theorem checkProjLookups_inv {env' : Env md} {T ctorName : Key md}
 /-- Invert stage 2 of `checkProjFn` (the public projection type). -/
 theorem checkProjTy_inv {env' : Env md} {T ctorName : Key md} {lps : List LevelParam}
     {mty pty : Expr md} {nP nF : Nat}
-    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM _) =
+    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM md _) =
       .ok pty) :
     pty = mty.renameConsts (projBack T ctorName nF) ∧
     pty.renameConsts (projFwd T ctorName nF) = mty ∧
@@ -495,7 +495,7 @@ theorem checkProjIota_inv {env' : Env md} {T ctorName : Key md}
 
 /-- Invert a successful `checkProjShape` run. -/
 theorem checkProjShape_inv {pty cty : Expr md} {nP nF : Nat} {u : Unit}
-    (h : (checkProjShape pty cty nP nF : CheckM Unit) = .ok u) :
+    (h : (checkProjShape pty cty nP nF : CheckM md Unit) = .ok u) :
     ∃ abinders arest cbindersR cbody,
       pty.stripPis nP = some (abinders, arest) ∧
       cty.stripPis (nP + nF) = some (cbindersR, cbody) ∧
@@ -539,11 +539,11 @@ theorem checkProjFn_inv {env' env₁ : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {nP nF i : Nat}
     (h : checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok env₁) :
     ∃ cvj mcv,
-      (checkProjLookups env' T ctorName lps nP nF i : CheckM _) =
+      (checkProjLookups env' T ctorName lps nP nF i : CheckM md _) =
         .ok (cvj, mcv) ∧
-      ∃ pty, (checkProjTy env' T ctorName lps mcv.type nP nF : CheckM _) =
+      ∃ pty, (checkProjTy env' T ctorName lps mcv.type nP nF : CheckM md _) =
         .ok pty ∧
-      (∃ u : Unit, (checkProjShape pty cvj.type nP nF : CheckM _)
+      (∃ u : Unit, (checkProjShape pty cvj.type nP nF : CheckM md _)
         = .ok u) ∧
       i < nF ∧
       ∃ rhsA, checkProjRule (fueledOps mode F) env' pty cvj lps nP nF i =
@@ -555,18 +555,18 @@ theorem checkProjFn_inv {env' env₁ : Env md} {T ctorName : Key md}
         :: env'.consts⟩ := by
   simp only [checkProjFn, fueledOps_annotate, fueledOps_inferType, fueledOps_isDefEq,
     fueledOps_ensureSort, fueledOps_whnf, Bind.bind, Except.bind] at h
-  cases hlk : (checkProjLookups env' T ctorName lps nP nF i : CheckM _) with
+  cases hlk : (checkProjLookups env' T ctorName lps nP nF i : CheckM md _) with
   | error e => rw [hlk] at h; exact nomatch h
   | ok pr => ?_
   rw [hlk] at h
   obtain ⟨cvj, mcv⟩ := pr
   try dsimp only at h
-  cases hty : (checkProjTy env' T ctorName lps mcv.type nP nF : CheckM _) with
+  cases hty : (checkProjTy env' T ctorName lps mcv.type nP nF : CheckM md _) with
   | error e => rw [hty] at h; exact nomatch h
   | ok pty => ?_
   rw [hty] at h
   try dsimp only at h
-  cases hshape : (checkProjShape pty cvj.type nP nF : CheckM Unit) with
+  cases hshape : (checkProjShape pty cvj.type nP nF : CheckM md Unit) with
   | error e => rw [hshape] at h; exact nomatch h
   | ok u0 => ?_
   rw [hshape] at h

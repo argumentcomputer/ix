@@ -159,7 +159,7 @@ def instCCapC : Nat := 32000000
 
 /-- The cached checker's monad: the per-declaration memo state over
 `CheckM`. -/
-abbrev CheckCM (md : Mode) := StateT (CState md) CheckM
+abbrev CheckCM (md : Mode) := StateT (CState md) (CheckM md)
 
 /-- Peel fuel of the binder-telescope loops.  A constant beyond any
 real binder chain; the fuel is *semantically transparent*: on

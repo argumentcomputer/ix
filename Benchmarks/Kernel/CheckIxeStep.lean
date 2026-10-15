@@ -48,7 +48,7 @@ instance : Inhabited (Checker md) := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
 def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md) :
-    Checker md × Option Ix.Kernel.CheckError :=
+    Checker md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
   match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
@@ -60,7 +60,7 @@ def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.D
 
 /-- One record's declarations, in order; the first failure ends it. -/
 def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
-    (ds : Array (Ix.Kernel.Declaration md)) : Checker md × Option Ix.Kernel.CheckError := Id.run do
+    (ds : Array (Ix.Kernel.Declaration md)) : Checker md × Option (Ix.Kernel.CheckError md) := Id.run do
   let mut c := c
   for d in ds do
     let (c', e) := c.step ev d
@@ -68,10 +68,14 @@ def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
     if e.isSome then return (c, e)
   return (c, none)
 
-def checkOutcome : Ix.Kernel.CheckError → String × String
-  | .invalid m => ("reject", m)
-  | .notImplemented m => ("decline", m)
-  | .internal m => ("decline", s!"internal: {m}")
+/-- A checker failure's outcome and reason, its keys spelled by `spell` (by
+default as `Key.toName` spells them, the `.anon` and `.source` spelling). -/
+def checkOutcome (e : Ix.Kernel.CheckError md) (spell : Ix.Kernel.Key md → String := toString) :
+    String × String :=
+  match e with
+  | .invalid m => ("reject", Ix.Kernel.Msg.render spell m)
+  | .notImplemented m => ("decline", Ix.Kernel.Msg.render spell m)
+  | .internal m => ("decline", s!"internal: {Ix.Kernel.Msg.render spell m}")
 
 def readOutcome : ReadError → String × String
   | .malformed m => ("reject", s!"reader: {m}")
@@ -324,7 +328,7 @@ def Setup.view (s : Setup) (address : Address) : Option RecordView := do
 /-- The per-record step as the check loop's step: install and check the
 record's declarations (`Checker.steps`). -/
 def Checker.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Checker .anon) (_ : Address) (rd : Read .anon) :
-    Checker .anon × Option Ix.Kernel.CheckError :=
+    Checker .anon × Option (Ix.Kernel.CheckError .anon) :=
   c.steps ev rd.decls
 
 /-- Check `addresses` in order, continuing past failures; each row is passed
@@ -338,7 +342,7 @@ record's failure, if any (`Checker.stepRecord` for the per-record check;
 reading (the persistent read cache records them). -/
 def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option RecordView)
     (read : σ → Address → Except ReadError (Read .anon)) (commit : σ → Address → Read .anon → σ) (init : σ)
-    (step : κ → Address → Read .anon → κ × Option Ix.Kernel.CheckError) (start : κ)
+    (step : κ → Address → Read .anon → κ × Option (Ix.Kernel.CheckError .anon)) (start : κ)
     (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())

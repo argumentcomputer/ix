@@ -26,26 +26,26 @@ variable {mode : CheckMode}
 monadic operations the bodies use. -/
 structure MonadRel (M₁ M₂ : Type → Type)
     [Monad M₁] [Monad M₂]
-    [MonadExceptOf CheckError M₁] [MonadExceptOf CheckError M₂] where
+    [MonadExcept (CheckError md) M₁] [MonadExcept (CheckError md) M₂] where
   R : ∀ {α : Type}, M₁ α → M₂ α → Prop
   pure_rel : ∀ {α : Type} (a : α), R (pure a) (pure a)
   bind_rel : ∀ {α β : Type} {x₁ : M₁ α} {x₂ : M₂ α}
     {f₁ : α → M₁ β} {f₂ : α → M₂ β},
     R x₁ x₂ → (∀ a, R (f₁ a) (f₂ a)) → R (x₁ >>= f₁) (x₂ >>= f₂)
-  throw_rel : ∀ {α : Type} (e : CheckError),
+  throw_rel : ∀ {α : Type} (e : CheckError md),
     R (throw e : M₁ α) (throw e : M₂ α)
 
 variable {M₁ M₂ : Type → Type}
   [Monad M₁] [Monad M₂]
-  [MonadExceptOf CheckError M₁] [MonadExceptOf CheckError M₂]
+  [MonadExcept (CheckError md) M₁] [MonadExcept (CheckError md) M₂]
 
 /-- Pairs of computations related by `rel`. -/
-@[expose] def PairM (rel : MonadRel M₁ M₂) (α : Type) : Type :=
+@[expose] def PairM (rel : MonadRel (md := md) M₁ M₂) (α : Type) : Type :=
   {pq : M₁ α × M₂ α // rel.R pq.1 pq.2}
 
 namespace PairM
 
-variable {rel : MonadRel M₁ M₂}
+variable {rel : MonadRel (md := md) M₁ M₂}
 
 instance : Monad (PairM rel) where
   pure a := ⟨(pure a, pure a), rel.pure_rel a⟩
@@ -53,7 +53,7 @@ instance : Monad (PairM rel) where
     ⟨(x.val.1 >>= fun a => (f a).val.1, x.val.2 >>= fun a => (f a).val.2),
       rel.bind_rel x.property (fun a => (f a).property)⟩
 
-instance : MonadExceptOf CheckError (PairM rel) where
+instance : MonadExceptOf (CheckError md) (PairM rel) where
   throw e := ⟨(throw e, throw e), rel.throw_rel e⟩
   -- the bodies never catch; a related stub keeps the instance total
   tryCatch _ _ :=
@@ -75,10 +75,10 @@ instance : MonadExceptOf CheckError (PairM rel) where
 @[simp] theorem snd_pure {α : Type} (a : α) :
     (pure a : PairM rel α).val.2 = pure a := rfl
 
-@[simp] theorem fst_throw {α : Type} (e : CheckError) :
+@[simp] theorem fst_throw {α : Type} (e : CheckError md) :
     (throw e : PairM rel α).val.1 = throw e := rfl
 
-@[simp] theorem snd_throw {α : Type} (e : CheckError) :
+@[simp] theorem snd_throw {α : Type} (e : CheckError md) :
     (throw e : PairM rel α).val.2 = throw e := rfl
 
 @[simp] theorem fst_ite {α : Type} {c : Prop} [Decidable c]
@@ -95,7 +95,7 @@ end PairM
 
 /-- Componentwise relatedness of two core records.  (Task #172 B4: the
 io slot joins as the sixth component.) -/
-@[expose] def FnsRel (rel : MonadRel M₁ M₂) (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂) :
+@[expose] def FnsRel (rel : MonadRel (md := md) M₁ M₂) (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂) :
     Prop :=
   (∀ d e, rel.R (r₁.whnfCore d e) (r₂.whnfCore d e)) ∧
   (∀ d e, rel.R (r₁.whnf d e) (r₂.whnf d e)) ∧
@@ -106,13 +106,13 @@ io slot joins as the sixth component.) -/
 
 /-- Relatedness transports along the io-grade view: the view only
 permutes fields. -/
-theorem FnsRel.ioView {rel : MonadRel M₁ M₂} {r₁ : (CoreFns md) M₁}
+theorem FnsRel.ioView {rel : MonadRel (md := md) M₁ M₂} {r₁ : (CoreFns md) M₁}
     {r₂ : (CoreFns md) M₂} (h : FnsRel rel r₁ r₂) :
     FnsRel rel r₁.ioView r₂.ioView :=
   ⟨h.1, h.2.1, h.2.2.2.2.2, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩
 
 /-- The paired record. -/
-def pairFns {rel : MonadRel M₁ M₂} (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂)
+def pairFns {rel : MonadRel (md := md) M₁ M₂} (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂)
     (h : FnsRel rel r₁ r₂) : (CoreFns md) (PairM rel) where
   whnfCore d e := ⟨(r₁.whnfCore d e, r₂.whnfCore d e), h.1 d e⟩
   whnf d e := ⟨(r₁.whnf d e, r₂.whnf d e), h.2.1 d e⟩
@@ -123,7 +123,7 @@ def pairFns {rel : MonadRel M₁ M₂} (r₁ : (CoreFns md) M₁) (r₂ : (CoreF
 
 section Commute
 
-variable {rel : MonadRel M₁ M₂} {r₁ : (CoreFns md) M₁} {r₂ : (CoreFns md) M₂}
+variable {rel : MonadRel (md := md) M₁ M₂} {r₁ : (CoreFns md) M₁} {r₂ : (CoreFns md) M₂}
   {h : FnsRel rel r₁ r₂} {env : Env md}
 
 theorem iotaCerts_fst (d : Nat) (lic : Bool) :

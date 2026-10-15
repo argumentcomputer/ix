@@ -120,7 +120,7 @@ theorem stripPis_not_hasFvar :
       · exact hf.1
       · exact hrest b hb
 
-theorem atF_bind_ok {α β : Type} {x : FueledM α} {g : α → FueledM β}
+theorem atF_bind_ok {α β : Type} {x : FueledM md α} {g : α → FueledM md β}
     {F : Nat} {v : β} (h : (x >>= g).val F = .ok v) :
     ∃ a, x.val F = .ok a ∧ (g a).val F = .ok v := by
   rw [FueledM.atF_bind] at h
@@ -135,9 +135,9 @@ theorem atF_bind_ok {α β : Type} {x : FueledM α} {g : α → FueledM β}
     simp only [Bind.bind, Except.bind] at h
     exact ⟨a, rfl, h⟩
 
-theorem atF_throw_bind {α β : Type} {e : CheckError}
-    {g : α → FueledM β} {F : Nat} {v : β}
-    (h : ((throw e : FueledM α) >>= g).val F = .ok v) : False := by
+theorem atF_throw_bind {α β : Type} {e : CheckError md}
+    {g : α → FueledM md β} {F : Nat} {v : β}
+    (h : ((throw e : FueledM md α) >>= g).val F = .ok v) : False := by
   rw [FueledM.atF_bind] at h
   simp only [throw, throwThe, MonadExceptOf.throw, Bind.bind,
     Except.bind] at h
@@ -292,7 +292,7 @@ theorem checkThmVal_wfimp {env : Env md} (henv : EnvWF env)
   obtain ⟨ok₁, hok, h⟩ := atF_bind_ok h
   rw [liftFueled_atF] at hok
   show ((liftFueled "level comparison" (u.isEquiv .zero) :
-    CheckM Bool) >>= _) = _
+    CheckM md Bool) >>= _) = _
   rw [hok]
   simp only [Bind.bind, Except.bind]
   by_cases h0 : ok₁ = true
@@ -644,14 +644,14 @@ theorem fvarTypeD_WScoped {d : Nat} {e : Expr md} (h : WScoped d e) :
   | lit l => exact h
   | proj s k e => exact h
 
-theorem unwrapOr_atF_ok {α : Type} {o : Option α} {err : CheckError}
+theorem unwrapOr_atF_ok {α : Type} {o : Option α} {err : CheckError md}
     {F : Nat} {a : α}
-    (h : (unwrapOr o err : FueledM α).val F = .ok a) : o = some a := by
+    (h : (unwrapOr o err : FueledM md α).val F = .ok a) : o = some a := by
   cases o with
   | none => exact nomatch h
   | some b =>
     have hb : b = a := by
-      have h' : (Except.ok b : Except CheckError α) = .ok a := h
+      have h' : (Except.ok b : Except (CheckError md) α) = .ok a := h
       exact Except.ok.inj h'
     rw [hb]
 
@@ -861,7 +861,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM md _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -876,7 +876,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨fvs, tbody⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (rP + cnF) cvt.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -927,7 +927,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   have hcinst' := unwrapOr_atF_ok hcinst
   show ((unwrapOr (Expr.instPisAt (fvs.take cnP ++
     fvs.drop rP) (cvj.type.renameConsts f)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -967,7 +967,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨rdoms, rrest⟩ := q3
   have hrinst' := unwrapOr_atF_ok hrinst
   show ((unwrapOr (Expr.instPisAt (fvs.take rP)
-    (tyA.renameConsts f)) _ : CheckM _) >>= _) = _
+    (tyA.renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hrinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -990,7 +990,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨fvsP, restP⟩ := q4
   have hopenP' := unwrapOr_atF_ok hopenP
   show ((unwrapOr (openPisAtFvars rP tyA 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1002,7 +1002,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨cdomsP, crestP⟩ := q5
   have hcinstP' := unwrapOr_atF_ok hcinstP
   show ((unwrapOr (Expr.instPisAt (fvsP.take cnP) cvj.type) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinstP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1024,7 +1024,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨xFvsP, crest2⟩ := q6
   have hopenX' := unwrapOr_atF_ok hopenX
   show ((unwrapOr (openPisAtFvars cnF crestP rP) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenX']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1040,7 +1040,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨ldoms, lrest⟩ := q7
   have hlinst' := unwrapOr_atF_ok hlinst
   show ((unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hlinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1127,7 +1127,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM md _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1142,7 +1142,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨fvs, tbody⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (rP + cnF) cvt.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1190,7 +1190,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨bs8, cbody8⟩ := q8
   have hstrip8' := unwrapOr_atF_ok hstrip8
   show ((unwrapOr (cvj.type.stripPis (cnP + cnF)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hstrip8']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1212,7 +1212,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
     (pins.map (fun p => Expr.instSpine (fvs.take rP) (rP - 1)
       (p.renameConsts f)) ++ fvs.drop rP)
     ((cvj.type.instantiateLevelParams cvj.levelParams
-      lvls).renameConsts f)) _ : CheckM _) >>= _) = _
+      lvls).renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hcinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1258,7 +1258,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨rdoms, rrest⟩ := q3
   have hrinst' := unwrapOr_atF_ok hrinst
   show ((unwrapOr (Expr.instPisAt (fvs.take rP)
-    (tyA.renameConsts f)) _ : CheckM _) >>= _) = _
+    (tyA.renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hrinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1281,7 +1281,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨fvsP, restP⟩ := q4
   have hopenP' := unwrapOr_atF_ok hopenP
   show ((unwrapOr (openPisAtFvars rP tyA 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1306,7 +1306,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   show ((unwrapOr (Expr.instPisAt
     (pins.map (fun p => Expr.instSpine (fvsP.take rP) (rP - 1) p))
     (cvj.type.instantiateLevelParams cvj.levelParams lvls)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinstP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1336,7 +1336,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨xFvsP, crest2⟩ := q6
   have hopenX' := unwrapOr_atF_ok hopenX
   show ((unwrapOr (openPisAtFvars cnF crestP rP) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenX']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1356,7 +1356,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   obtain ⟨ldoms, lrest⟩ := q7
   have hlinst' := unwrapOr_atF_ok hlinst
   show ((unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hlinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1710,7 +1710,7 @@ theorem checkProjRule_wfimp {env' : Env md} (henv' : EnvWF env')
 theorem checkProjLookups_ctor {env' : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal md}
     (h : (checkProjLookups env' T ctorName lps nP nF i :
-      CheckM (ConstantVal md × ConstantVal md)) = .ok (cvj, mcv)) :
+      CheckM md (ConstantVal md × ConstantVal md)) = .ok (cvj, mcv)) :
     ∃ cnP cnF, env'.find? ctorName = some (.ctorInfo cvj cnP cnF) := by
   unfold checkProjLookups at h
   revert h
@@ -1761,7 +1761,7 @@ theorem checkProjLookups_ctor {env' : Env md} {T ctorName : Key md}
 /-- Well-formedness of a successfully checked projection type. -/
 theorem checkProjTy_wf {env' : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {mty pty : Expr md} {nP nF : Nat}
-    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM (Expr md)) =
+    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM md (Expr md)) =
       .ok pty) :
     pty.hasFvar = false ∧ pty.looseBVarsBounded 0 = true := by
   unfold checkProjTy at h
@@ -1918,7 +1918,7 @@ theorem checkProjIota_wfimp {env' : Env md} (henv' : EnvWF env')
   obtain ⟨fvsO, sbodyO⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (nP + nF) tcv.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   have hcvtF : tcv.type.hasFvar = false :=
@@ -1940,18 +1940,18 @@ theorem checkProjFn_wfimp {env' : Env md} (henv' : EnvWF env')
   obtain ⟨⟨cvj, mcv⟩, hlk, h⟩ := atF_bind_ok h
   rw [checkProjLookups_datF] at hlk
   show ((checkProjLookups env' T ctorName lps nP nF i :
-    CheckM (ConstantVal md × ConstantVal md)) >>= _) = _
+    CheckM md (ConstantVal md × ConstantVal md)) >>= _) = _
   rw [hlk]
   simp only [Bind.bind, Except.bind]
   obtain ⟨pty, hty, h⟩ := atF_bind_ok h
   rw [checkProjTy_datF] at hty
   show ((checkProjTy env' T ctorName lps mcv.type nP nF :
-    CheckM (Expr md)) >>= _) = _
+    CheckM md (Expr md)) >>= _) = _
   rw [hty]
   simp only [Bind.bind, Except.bind]
   obtain ⟨u0, hshape, h⟩ := atF_bind_ok h
   rw [checkProjShape_datF] at hshape
-  show ((checkProjShape pty cvj.type nP nF : CheckM Unit) >>= _) = _
+  show ((checkProjShape pty cvj.type nP nF : CheckM md Unit) >>= _) = _
   rw [hshape]
   simp only [Bind.bind, Except.bind]
   dsimp only [] at h ⊢
@@ -2028,8 +2028,8 @@ theorem wscopedB_substConst0 {n : Key md} {r : Expr md}
 
 /-! ## The div/mod pin gate, `wfOpsM mode` runs to pure runs -/
 
-theorem atF_throw {α : Type} {e : CheckError} {F : Nat} {v : α}
-    (h : ((throw e : FueledM α)).val F = .ok v) : False := by
+theorem atF_throw {α : Type} {e : CheckError md} {F : Nat} {v : α}
+    (h : ((throw e : FueledM md α)).val F = .ok v) : False := by
   simp only [throw, throwThe, MonadExceptOf.throw] at h
   exact nomatch h
 
@@ -2244,12 +2244,12 @@ theorem checkStructDomsAt_wfimp {env : Env md} (henv : EnvWF env)
     unfold checkStructDomsAt at h ⊢
     obtain ⟨a, ha, h⟩ := atF_bind_ok h
     have ha' := unwrapOr_atF_ok ha
-    show ((unwrapOr fvs[j]? _ : CheckM _) >>= _) = _
+    show ((unwrapOr fvs[j]? _ : CheckM md _) >>= _) = _
     rw [ha']
     simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
     obtain ⟨b, hb, h⟩ := atF_bind_ok h
     have hb' := unwrapOr_atF_ok hb
-    show ((unwrapOr doms[j]? _ : CheckM _) >>= _) = _
+    show ((unwrapOr doms[j]? _ : CheckM md _) >>= _) = _
     rw [hb']
     simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
     rw [wfOpsM_isDefEq henv (hc j a ha').to_wscopedB
@@ -2365,9 +2365,9 @@ ops-free, task #175 S1). -/
 theorem checkStructProjTable_wfimp {T C : Key md} {lps : List LevelParam}
     {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
     {env v : Env md} {F : Nat}
-    (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM (Env md)).val F
+    (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM md (Env md)).val F
       = Except.ok v) :
-    (checkStructProjTable T C lps nP nF rs guards off cvCa env : CheckM (Env md))
+    (checkStructProjTable T C lps nP nF rs guards off cvCa env : CheckM md (Env md))
       = Except.ok v := by
   rw [checkStructProjTable_datF] at h
   exact h

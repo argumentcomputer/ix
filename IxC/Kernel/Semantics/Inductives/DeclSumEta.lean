@@ -67,7 +67,7 @@ theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Key md} :
 structure-like block, nothing otherwise. -/
 theorem checkNativeTable_etaClosed {p : Ix.Kernel.NativeParts md}
     {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)} {env env₂ : Env md}
-    (h : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss env = .ok env₂)
+    (h : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss env = .ok env₂)
     (hE : EtaFamiliesClosed env) : EtaFamiliesClosed env₂ := by
   unfold Ix.Kernel.checkNativeTable at h
   split at h

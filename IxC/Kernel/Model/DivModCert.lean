@@ -2040,7 +2040,7 @@ theorem divMod_install {F : Nat} (mp : EnvModelM V μ env)
       (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env md) c
       = true)
     {prs : List (Expr md)}
-    (hcerts : Ix.Kernel.checkDivModCerts (m := Ix.Kernel.CheckM)
+    (hcerts : Ix.Kernel.checkDivModCerts (m := Ix.Kernel.CheckM md)
       (Ix.Kernel.fueledOps μ F) env c value'
       (Ix.Kernel.divModCertStmts c) prs
       = .ok true)

@@ -97,7 +97,7 @@ inductive Error where
   /-- the committed prelude does not load (a corrupted file) -/
   | prelude (reason : String)
   | read (position : Nat) (error : ReadError)
-  | kernel (error : Ix.Kernel.CheckError) (position : Nat)
+  | kernel (error : Ix.Kernel.CheckError .anon) (position : Nat)
 
 instance : ToString Error where
   toString

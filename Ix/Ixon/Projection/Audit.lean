@@ -88,10 +88,13 @@ and 111 inherited externs, by the entry's change; the IxC performance series
 change (`IxC/Kernel/Audit/Roots.lean`: the memo state reset, the shared
 binder metadata, the codec's TagN twins with their two ruled csimps, which
 the projection writer and reader also call, and phase B on tasks with
-`Init`'s `Task.spawn` and `Task.get`). -/
+`Init`'s `Task.spawn` and `Task.get`). Step 6's structured errors moved it from 5592 and 115
+inherited externs, by the entry's change (`IxC/Kernel/Audit/Roots.lean`: the
+fold no longer spells keys or prints terms, and a fixed message is a one-part
+list, two more closed objects per message site). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5592 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ixon.Projection.checkBytes]: 5810 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

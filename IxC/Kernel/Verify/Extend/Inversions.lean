@@ -39,8 +39,8 @@ theorem fueledOps_whnf (F : Nat) (env : Env md) (d : Nat) (e : Expr md) :
 /-- The pure lane's variant-fallback combinator (task #273): the
 continuation is handed `none` whatever the outcome — the outcome is
 diagnostic text the executable's lane delivers. -/
-theorem fueledOps_orElse (F : Nat) (x : CheckM Bool)
-    (k : Option CheckError → CheckM Unit) :
+theorem fueledOps_orElse (F : Nat) (x : CheckM md Bool)
+    (k : Option (CheckError md) → CheckM md Unit) :
     ((fueledOps (md := md)) mode F).orElse x k =
       match x with | .ok true => pure () | _ => k none := rfl
 
@@ -140,7 +140,7 @@ theorem Except.bind_ok {ε α β : Type _} {x : Except ε α}
 /-- One pinned basis install, inverted (relocated from the TT lane,
 task #148 T6: both lanes' basis-block bridges invert the same fold). -/
 theorem installBasisDecl_inv {env env₁ : Env md} {ci : ConstantInfo md}
-    (h : installBasisDecl (m := CheckM) env ci = .ok env₁) :
+    (h : installBasisDecl (m := CheckM md) env ci = .ok env₁) :
     env.find? ci.name = none ∧ env₁ = ⟨ci :: env.consts⟩ := by
   unfold installBasisDecl at h
   revert h

@@ -69,7 +69,7 @@ variable {ev : Evidences md}
 
 /-! ## The kit: final-value reasoning for `CheckCM`
 
-`CheckCM = StateT CState (Except CheckError)`.  The floor reads only
+`CheckCM = StateT CState (Except (CheckError md))`.  The floor reads only
 the *returned* environment, never the state, so the whole monadic
 discipline it needs is: "`P` holds of every value this action can
 return".  The bind rule then carries **no** hypothesis on the bound
@@ -90,7 +90,7 @@ theorem Yields.pure {α : Type} {a : α} {P : α → Prop} (h : P a) :
   simp only [Pure.pure, StateT.pure, Except.pure] at hr
   cases hr; exact h
 
-theorem Yields.ofThrow {α : Type} {e : CheckError} {P : α → Prop} :
+theorem Yields.ofThrow {α : Type} {e : CheckError md} {P : α → Prop} :
     Yields (throw e : (CheckCM md) α) P := by
   intro s a s' hr; cases hr
 
@@ -127,7 +127,7 @@ theorem Yields.letFun {α β : Type} {v : β} {f : β → (CheckCM md) α}
 
 /-- A guard's failure branch, closed without descending into the join
 point it calls (which is what keeps the walk linear). -/
-theorem Yields.ofThrowBind {α β : Type} {e : CheckError} {f : α → (CheckCM md) β}
+theorem Yields.ofThrowBind {α β : Type} {e : CheckError md} {f : α → (CheckCM md) β}
     {P : β → Prop} : Yields ((throw e : (CheckCM md) α) >>= f) P := by
   intro s b s' hr; cases hr
 

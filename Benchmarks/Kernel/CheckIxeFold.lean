@@ -88,7 +88,7 @@ def percentile (xs : Array Nat) (p : Nat) : Nat :=
 /-- Phase B over `pend`, one record at a time, each timed with the release
 of its memo state. -/
 def phaseB (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon)) :
-    IO (Array Nat × Option (Ix.Kernel.CheckError × Nat)) := do
+    IO (Array Nat × Option (Ix.Kernel.CheckError .anon × Nat)) := do
   let mut times : Array Nat := Array.mkEmpty pend.size
   for pc in pend do
     let t0 ← IO.monoNanosNow

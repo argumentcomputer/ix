@@ -17,7 +17,7 @@ namespace Ix.Kernel
 
 section Mirrors
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- `nativeOpenedOk` through the index. -/
 def nativeOpenedOkF (w : StructWalkers md) (fe₀ : FEnv md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)

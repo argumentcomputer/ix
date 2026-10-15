@@ -324,7 +324,7 @@ install-computed rule fields (`ctorParams` off the stored constructor,
 `fire` off `Expr.recRulePlain`) and the rules' right-hand sides over
 the environment extended with the recursor itself. -/
 def annotateInfo (env : Ix.Kernel.Env .anon) (ci : Ix.Kernel.ConstantInfo .anon) :
-    Ix.Kernel.CheckM (Ix.Kernel.ConstantInfo .anon) := do
+    Ix.Kernel.CheckM .anon (Ix.Kernel.ConstantInfo .anon) := do
   let cv := ci.toConstantVal
   let ty' ← Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 cv.type
   let cv' : Ix.Kernel.ConstantVal .anon := { cv with type := ty' }
@@ -353,7 +353,7 @@ def annotateInfo (env : Ix.Kernel.Env .anon) (ci : Ix.Kernel.ConstantInfo .anon)
 
 /-- Annotate one raw `ConstantVal` pin's type over `env`. -/
 def annotateVal (env : Ix.Kernel.Env .anon) (cv : Ix.Kernel.ConstantVal .anon) :
-    Ix.Kernel.CheckM (Ix.Kernel.ConstantVal .anon) := do
+    Ix.Kernel.CheckM .anon (Ix.Kernel.ConstantVal .anon) := do
   let ty' ← Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 cv.type
   return { cv with type := ty' }
 

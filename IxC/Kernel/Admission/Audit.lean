@@ -81,12 +81,16 @@ fewer), the shared binder metadata (P14, 5 more), the codec's TagN twins
 (P3, 8 more: `getTagNFast`, `putTagNFast` and the copies at widths 0, 2 and 4,
 the ruled csimps 21 to 23, the references they replace still reached, csimp
 4 to 6) and phase B on tasks (P2, 12 more, with `Init`'s `Task.spawn` and
-`Task.get` the two new inherited externs). -/
+`Task.get` the two new inherited externs). Step 6's structured errors
+moved it from 5567 and 115 inherited externs by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`): the fold no longer prints terms (two string
+externs fewer), and every fixed message of the fold is a one-part list (two
+more closed objects per message site). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5567 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5785 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -258,8 +262,23 @@ Step 4 removed nine: the eight string-scanning primitives of the retired
 Nat-operation pin decoder (`builtinNatOpPins`) and
 `String.Slice.Pattern.Internal.memcmpStr`, the retired pin table's
 derived-shape check (`Reader.derivedShape`, through `String.startsWith`). No
-further unsafe primitive. -/
-/-- info: Additional certified-entry externs: [Array.pop, ByteArray.mk]
+further unsafe primitive. Step 6's structured errors took the fold's spelling
+of keys and numbers out (`IxC/Kernel/Audit/Roots.lean`), so seven `Init`
+externs the fold used to share with the entry now show here: the string
+primitives `String.Internal.next`, `extract`, `posOf`, `offsetOfPos`,
+`length` and `pushn`, and `UInt32.decEq`, with which the entry parses the
+committed default table and prelude (`addressOfHex`, `bytesOfHex`,
+`natOfHex`) and spells the loader's messages. The entry reaches no new
+extern: its inherited externs went from 115 to 113. -/
+/-- info: Additional certified-entry externs: [Array.pop,
+ String.Internal.next,
+ String.Internal.extract,
+ String.Internal.posOf,
+ String.Internal.offsetOfPos,
+ String.Internal.length,
+ String.Internal.pushn,
+ ByteArray.mk,
+ UInt32.decEq]
 ---
 info: Additional certified-entry unsafe: [] -/
 #guard_msgs (whitespace := lax) in

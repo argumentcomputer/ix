@@ -446,28 +446,28 @@ cons-extended environment). -/
 
 section Mirrors
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- `checkConstantVal` through the index. -/
 def checkConstantValF (ops : (CheckerOps md) m) (fe : FEnv md)
     (cv : ConstantVal md) : m (ConstantVal md) := do
   if (fe.find? cv.name).isSome then
-    throw (.invalid s!"duplicate declaration {cv.name}")
+    throw (.invalid msg!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
-    throw (.invalid s!"reserved basis name {cv.name}")
+    throw (.invalid msg!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
-    throw (.invalid s!"reserved projection name {cv.name}")
+    throw (.invalid msg!"reserved projection name {cv.name}")
   unless LevelParam.nodup cv.levelParams do
-    throw (.invalid s!"duplicate universe parameters in {cv.name}")
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
   unless cv.type.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in type of {cv.name}")
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
   if cv.type.hasFvar then
-    throw (.invalid s!"unexpected free variable in type of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate fe.env 0 cv.type
   unless type.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in type of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolveF fe do
-    throw (unresolvedConstsError s!"type of {cv.name}" type)
+    throw (unresolvedConstsError msg!"type of {cv.name}" type)
   let stype ← ops.inferType fe.env 0 type
   let _u ← ops.ensureSort fe.env 0 stype
   pure { cv with type := type }
@@ -479,17 +479,16 @@ def checkMemberValF (ops : (CheckerOps md) m) (blockNames : List (Key md))
     if blockNames.contains n then auxKey n .model else n
   let cvA ← checkConstantValF ops fe cv
   if cvA.name.isModelSuffix then
-    throw (.invalid s!"model-shaped member name {cvA.name}")
+    throw (.invalid msg!"model-shaped member name {cvA.name}")
   let some (.defnInfo cvm _mval _) := fe.find? (auxKey cvA.name .model)
-    | throw (.notImplemented s!"no install route for inductive block \
+    | throw (.notImplemented msg!"no install route for inductive block \
         {blockNames.headD cvA.name}: no direct route recognises it and no \
         model for {cvA.name} was generated")
   unless cvm.levelParams = cvA.levelParams do
-    throw (.notImplemented s!"model level parameters mismatch for {cvA.name}")
+    throw (.notImplemented msg!"model level parameters mismatch for {cvA.name}")
   unless cvA.type.renameConsts f == cvm.type do
     throw (.notImplemented
-      s!"model type mismatch for {cvA.name}\n  member (renamed): \
-        {reprStr (cvA.type.renameConsts f)}\n  model: {reprStr cvm.type}")
+      msg!"model type mismatch for {cvA.name}")
   pure cvA
 
 /-- `checkIotaThm` through the index. -/
@@ -499,64 +498,64 @@ def checkIotaThmF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     (cnP cnF : Nat) (rhsA : Expr md) : m Unit := do
     let cvt ← unwrapOr
         (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
-        (.notImplemented s!"missing iota theorem for {cvName}")
+        (.notImplemented msg!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
-      throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
+      throw (.notImplemented msg!"iota theorem level mismatch for {cvName}")
     let depth := rP + cnF
     let (fvs, tbody) ← unwrapOr (openPisAtFvars depth cvt.type 0)
-      (.notImplemented s!"iota statement shape mismatch for {cvName}")
+      (.notImplemented msg!"iota statement shape mismatch for {cvName}")
     let targs := tbody.getAppArgs
     unless isEqHead tbody.getAppFn do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     unless targs.length = 3 do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     let lhsS := targs.getD 1 (.bvar 0)
     let rhsS := targs.getD 2 (.bvar 0)
     let xFvs := fvs.drop rP
     let largs := lhsS.getAppArgs
     unless lhsS.getAppFn == Expr.const (f cvName) (lps.map .param) do
-      throw (.notImplemented s!"iota statement head mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement head mismatch for {cvName}")
     unless largs.length = mI + 1 do
-      throw (.notImplemented s!"iota statement arity mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement arity mismatch for {cvName}")
     unless largs.take rP == fvs.take rP do
-      throw (.notImplemented s!"iota statement prefix mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement prefix mismatch for {cvName}")
     let major := largs.getLastD (.bvar 0)
     unless major == Expr.mkAppN
         (.const (f r.ctor) (cvj.levelParams.map .param))
         (fvs.take cnP ++ xFvs) do
-      throw (.notImplemented s!"iota statement major mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     unless (cvj.type.stripPis (cnP + cnF)).isSome do
-      throw (.notImplemented s!"iota constructor telescope for {cvName}")
+      throw (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f))
-        (.notImplemented s!"iota constructor telescope for {cvName}")
+        (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless cres.getAppArgs.length = cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor indices for {cvName}")
+      throw (.notImplemented msg!"iota constructor indices for {cvName}")
     checkDefEqList ops feSelf.env depth ((largs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP)
     checkDefEqList ops feSelf.env depth (xFvs.map Expr.fvarTypeD)
       (cdoms.drop cnP)
     let (rdoms, _) ← unwrapOr
         (Expr.instPisAt (fvs.take rP) (tyA.renameConsts f))
-        (.notImplemented s!"iota recursor telescope for {cvName}")
+        (.notImplemented msg!"iota recursor telescope for {cvName}")
     checkDefEqList ops feSelf.env depth
       ((fvs.take rP).map Expr.fvarTypeD) rdoms
     let (fvsP, _) ← unwrapOr (openPisAtFvars rP tyA 0)
-      (.notImplemented s!"iota recursor telescope for {cvName}")
+      (.notImplemented msg!"iota recursor telescope for {cvName}")
     let (cdomsP, crestP) ← unwrapOr
       (Expr.instPisAt (fvsP.take cnP) cvj.type)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     checkDefEqList ops feSelf.env depth
       ((fvsP.take cnP).map Expr.fvarTypeD) cdomsP
     let (xFvsP, _) ← unwrapOr (openPisAtFvars cnF crestP rP)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (ldoms, _) ← unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA)
-      (.notImplemented s!"rule shape mismatch for {cvName}")
+      (.notImplemented msg!"rule shape mismatch for {cvName}")
     checkDefEqList ops feSelf.env depth ((fvsP ++ xFvsP).map Expr.fvarTypeD)
       ldoms
     let rhsApplied := Expr.mkAppN (rhsA.renameConsts f) fvs
     unless ← ops.isDefEq feSelf.env depth rhsS rhsApplied do
-      throw (.notImplemented s!"iota statement mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement mismatch for {cvName}")
     checkIotaSidesTy mode ops feSelf.env depth (targs.getD 0 (.bvar 0)) lhsS
       rhsS (eqHeadLevel tbody.getAppFn) cvName
 
@@ -596,17 +595,17 @@ def checkIotaThmNF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     | some (lvls, pins) => do
     let cvt ← unwrapOr
         (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
-        (.notImplemented s!"missing iota theorem for {cvName}")
+        (.notImplemented msg!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
-      throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
+      throw (.notImplemented msg!"iota theorem level mismatch for {cvName}")
     let depth := rP + cnF
     let (fvs, tbody) ← unwrapOr (openPisAtFvars depth cvt.type 0)
-      (.notImplemented s!"iota statement shape mismatch for {cvName}")
+      (.notImplemented msg!"iota statement shape mismatch for {cvName}")
     let targs := tbody.getAppArgs
     unless isEqHead tbody.getAppFn do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     unless targs.length = 3 do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     let lhsS := targs.getD 1 (.bvar 0)
     let rhsS := targs.getD 2 (.bvar 0)
     let xFvs := fvs.drop rP
@@ -614,60 +613,60 @@ def checkIotaThmNF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
       Expr.instSpine (fvs.take rP) (rP - 1) (p.renameConsts f)
     let largs := lhsS.getAppArgs
     unless lhsS.getAppFn == Expr.const (f cvName) (lps.map .param) do
-      throw (.notImplemented s!"iota statement head mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement head mismatch for {cvName}")
     unless largs.length = mI + 1 do
-      throw (.notImplemented s!"iota statement arity mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement arity mismatch for {cvName}")
     unless largs.take rP == fvs.take rP do
-      throw (.notImplemented s!"iota statement prefix mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement prefix mismatch for {cvName}")
     let major := largs.getLastD (.bvar 0)
     -- up to display-only binder names, like `checkIotaThmN` (the pins
     -- may contain binders; the artifact contract fixes statements only
     -- up to `Expr.eqv`)
     unless major == (Expr.mkAppN (.const (f r.ctor) lvls)
         (pinsF ++ xFvs)) do
-      throw (.notImplemented s!"iota statement major mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     let (_, cbody0) ← unwrapOr (cvj.type.stripPis (cnP + cnF))
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless (match cbody0.getAppFn with
         | .const _ _ => true
         | _ => false) do
-      throw (.notImplemented s!"iota constructor residual head for {cvName}")
+      throw (.notImplemented msg!"iota constructor residual head for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (pinsF ++ xFvs)
           ((cvj.type.instantiateLevelParams cvj.levelParams
             lvls).renameConsts f))
-        (.notImplemented s!"iota constructor telescope for {cvName}")
+        (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless cres.getAppArgs.length = cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor indices for {cvName}")
+      throw (.notImplemented msg!"iota constructor indices for {cvName}")
     checkDefEqList ops feSelf.env depth ((largs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP)
     checkDefEqList ops feSelf.env depth (xFvs.map Expr.fvarTypeD)
       (cdoms.drop cnP)
     let (rdoms, _) ← unwrapOr
         (Expr.instPisAt (fvs.take rP) (tyA.renameConsts f))
-        (.notImplemented s!"iota recursor telescope for {cvName}")
+        (.notImplemented msg!"iota recursor telescope for {cvName}")
     checkDefEqList ops feSelf.env depth
       ((fvs.take rP).map Expr.fvarTypeD) rdoms
     let (fvsP, _) ← unwrapOr (openPisAtFvars rP tyA 0)
-      (.notImplemented s!"iota recursor telescope for {cvName}")
+      (.notImplemented msg!"iota recursor telescope for {cvName}")
     let pinsP := pins.map fun p =>
       Expr.instSpine (fvsP.take rP) (rP - 1) p
     checkAnnotList ops feSelf.env depth pinsP
     let (cdomsP, crestP) ← unwrapOr (Expr.instPisAt pinsP
         (cvj.type.instantiateLevelParams cvj.levelParams lvls))
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     checkTypedList ops feSelf.env depth pinsP cdomsP
     let (xFvsP, crest2P) ← unwrapOr (openPisAtFvars cnF crestP rP)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless crest2P.getAppArgs.length == cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor arity for {cvName}")
+      throw (.notImplemented msg!"iota constructor arity for {cvName}")
     let (ldoms, _) ← unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA)
-      (.notImplemented s!"rule shape mismatch for {cvName}")
+      (.notImplemented msg!"rule shape mismatch for {cvName}")
     checkDefEqList ops feSelf.env depth ((fvsP ++ xFvsP).map Expr.fvarTypeD)
       ldoms
     let rhsApplied := Expr.mkAppN (rhsA.renameConsts f) fvs
     unless ← ops.isDefEq feSelf.env depth rhsS rhsApplied do
-      throw (.notImplemented s!"iota statement mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement mismatch for {cvName}")
     checkIotaSidesTy mode ops feSelf.env depth (targs.getD 0 (.bvar 0)) lhsS
       rhsS (eqHeadLevel tbody.getAppFn) cvName
     pure (.nested lvls pins)
@@ -677,20 +676,20 @@ def checkIotaRuleF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
     (mI rP j : Nat) (r : RecRule md) : m (RecRule md) := do
     let some (.ctorInfo cvj cnP cnF) := fe'.find? r.ctor
-      | throw (.invalid s!"iota rule constructor {r.ctor} not stored")
+      | throw (.invalid msg!"iota rule constructor {r.ctor} not stored")
     unless r.nfields = cnF do
       throw (.invalid "rule field count mismatch")
     unless r.rhs.looseBVarsBounded 0 do
-      throw (.invalid s!"loose bound variable in rule of {cvName}")
+      throw (.invalid msg!"loose bound variable in rule of {cvName}")
     if r.rhs.hasFvar then
-      throw (.invalid s!"free variable in rule of {cvName}")
+      throw (.invalid msg!"free variable in rule of {cvName}")
     let rhsA ← ops.annotate feSelf.env 0 r.rhs
     unless rhsA.allLevelParamsDefined lps do
-      throw (.invalid s!"undeclared universe parameter in rule of {cvName}")
+      throw (.invalid msg!"undeclared universe parameter in rule of {cvName}")
     unless rhsA.constsResolveF feSelf do
-      throw (unresolvedConstsError s!"rule of {cvName}" rhsA)
+      throw (unresolvedConstsError msg!"rule of {cvName}" rhsA)
     unless (rhsA.stripLams (rP + cnF)).isSome do
-      throw (.notImplemented s!"rule shape mismatch for {cvName}")
+      throw (.notImplemented msg!"rule shape mismatch for {cvName}")
     let _rhsTy ← ops.inferType feSelf.env 0 rhsA
     let fire ← if Expr.recRulePlain tyA mI rP cnP then do
         checkIotaThmF mode ops fe' feSelf f cvName lps tyA mI rP j r
@@ -827,23 +826,23 @@ def checkProjIotaF (ops : (CheckerOps md) m) (fe : FEnv md)
 def checkDefnValF (ops : (CheckerOps md) m) (fe : FEnv md) (cv : ConstantVal md)
     (value : Expr md) (hint : ReducibilityHint) : m (FEnv md) := do
   unless value.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in value of {cv.name}")
+    throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let value ← ops.annotate fe.env 0 value
   unless value.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in value of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless value.constsResolveF fe do
-    throw (unresolvedConstsError s!"value of {cv.name}" value)
+    throw (unresolvedConstsError msg!"value of {cv.name}" value)
   let vtype ← ops.inferType fe.env 0 value
   unless ← ops.isDefEq fe.env 0 vtype cv.type do
-    throw (.invalid s!"type mismatch in definition {cv.name}")
+    throw (.invalid msg!"type mismatch in definition {cv.name}")
   pure (fe.push (.defnInfo cv value hint))
 
 /-- `installBasisDecl` through the index, returning the pushed index. -/
 def installBasisDeclF (fe : FEnv md) (ci : ConstantInfo md) : m (FEnv md) := do
   unless (fe.find? ci.name).isNone do
-    throw (.invalid s!"duplicate declaration {ci.name}")
+    throw (.invalid msg!"duplicate declaration {ci.name}")
   pure (fe.push ci)
 
 /-- `checkDivModCerts` through the index. -/
@@ -874,13 +873,13 @@ def checkDivModEvidenceF (ops : (CheckerOps md) m) (ev : Evidences md)
         if divModCertsGuardF proofs fe c value' && evidenceLocal fe.find? c value' proofs then
           ops.orElse (checkDivModCertsF ops fe c value' (divModCertStmts c) proofs) fun r =>
             throw (.notImplemented (divModEvidenceReason c r))
-        else throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: certificate \
+        else throw (.notImplemented msg!"unsupported Nat.div/mod evidence ({c}: certificate \
           ground constants absent or outside the dependency closure)")
-      | none => throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: no proof \
+      | none => throw (.notImplemented msg!"unsupported Nat.div/mod evidence ({c}: no proof \
           evidence, one per certificate statement)")
-    | _ => throw (.internal s!"Nat.div/mod operation not stored ({c})")
+    | _ => throw (.internal msg!"Nat.div/mod operation not stored ({c})")
   else throw (.notImplemented
-    s!"unsupported Nat.div/mod environment ({c})")
+    msg!"unsupported Nat.div/mod environment ({c})")
 
 /-- `checkReduceIdentity` through the index. -/
 def checkReduceIdentityF (ops : (CheckerOps md) m) (fe fe2 : FEnv md) (c : Key md)
@@ -891,9 +890,9 @@ def checkReduceIdentityF (ops : (CheckerOps md) m) (fe fe2 : FEnv md) (c : Key m
     let ok ← ops.isDefEq fe.env 1 (.app valA x) x
     if ok then pure ()
     else throw (.notImplemented
-      s!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
+      msg!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
   else throw (.notImplemented
-    s!"unsupported compiler-trust opaque declaration ({c})")
+    msg!"unsupported compiler-trust opaque declaration ({c})")
 
 end Mirrors
 

@@ -359,7 +359,7 @@ value is `P`-related to the value of a successful fueled run.  The
 port of `SimAt` minus the arena extension and minus the state in the
 value relation. -/
 @[expose] def SimC (mode : CheckMode) (env : Env md) (s₀ : CState md) {β α : Type}
-    (P : β → α → Prop) (c : (CheckCM md) β) (p : FueledM α) : Prop :=
+    (P : β → α → Prop) (c : (CheckCM md) β) (p : FueledM md α) : Prop :=
   ∀ v' s', c s₀ = .ok (v', s') →
     CSOK mode env s' ∧ ∃ v, P v' v ∧ ∃ F, p.val F = .ok v
 
@@ -397,7 +397,7 @@ protected theorem pure {β α : Type} {P : β → α → Prop}
   exact ⟨hs, a, h, 0, rfl⟩
 
 protected theorem throw {β α : Type} {P : β → α → Prop}
-    {e : CheckError} {p : FueledM α} :
+    {e : CheckError md} {p : FueledM md α} :
     SimC mode env s₀ P (throw e) p := by
   intro v' s' hr
   exact nomatch hr
@@ -407,7 +407,7 @@ intermediate state (with the invariant and the value relation). -/
 protected theorem bind {β β' α α' : Type}
     {P : β → α → Prop} {Q : β' → α' → Prop}
     {c : (CheckCM md) β} {k : β → (CheckCM md) β'}
-    {p : FueledM α} {q : α → FueledM α'}
+    {p : FueledM md α} {q : α → FueledM md α'}
     (hx : SimC mode env s₀ P c p)
     (hf : ∀ s₁ b a, CSOK mode env s₁ → P b a →
       SimC mode env s₁ Q (k b) (q a)) :
@@ -432,7 +432,7 @@ protected theorem bind {β β' α α' : Type}
 /-- Left bind: a twin-only effect before the simulated remainder. -/
 protected theorem bind_left {β β' α : Type}
     {Q : β → Prop} {P : β' → α → Prop}
-    {c : (CheckCM md) β} {k : β → (CheckCM md) β'} {p : FueledM α}
+    {c : (CheckCM md) β} {k : β → (CheckCM md) β'} {p : FueledM md α}
     (hx : CEff mode env s₀ Q c)
     (hf : ∀ s₁ b, CSOK mode env s₁ → Q b → SimC mode env s₁ P (k b) p) :
     SimC mode env s₀ P (c >>= k) p := by
@@ -450,7 +450,7 @@ protected theorem bind_left {β β' α : Type}
 /-- Peel a pure value bound on the twin side. -/
 protected theorem bind_pure_left {β β' α : Type}
     {P : β' → α → Prop} {c : β} {k : β → (CheckCM md) β'}
-    {p : FueledM α}
+    {p : FueledM md α}
     (h : SimC mode env s₀ P (k c) p) :
     SimC mode env s₀ P (pure c >>= k) p := by
   intro v' s' hr
@@ -461,7 +461,7 @@ protected theorem bind_pure_left {β β' α : Type}
 /-- Peel a pure value bound on the fueled side. -/
 protected theorem bind_pure_right {β α α' : Type}
     {P : β → α' → Prop} {c : (CheckCM md) β} {a : α}
-    {k : α → FueledM α'}
+    {k : α → FueledM md α'}
     (h : SimC mode env s₀ P c (k a)) :
     SimC mode env s₀ P c (pure a >>= k) := by
   intro v' s' hr
@@ -470,8 +470,8 @@ protected theorem bind_pure_right {β α α' : Type}
 
 /-- A twin-side `throw` composed with anything never succeeds. -/
 protected theorem throw_bind {β β' α : Type}
-    {P : β' → α → Prop} {er : CheckError}
-    {k : β → (CheckCM md) β'} {p : FueledM α} :
+    {P : β' → α → Prop} {er : CheckError md}
+    {k : β → (CheckCM md) β'} {p : FueledM md α} :
     SimC mode env s₀ P ((throw er : (CheckCM md) β) >>= k) p := by
   intro v' s' hr
   exact nomatch hr
@@ -480,7 +480,7 @@ protected theorem throw_bind {β β' α : Type}
 (Task #198: the port of the retired `withStore` peel — the cached
 checker's syntactic reads are plain `pure`s.) -/
 protected theorem pureB {β α γ : Type} {P : β → α → Prop}
-    {x : γ} {k : γ → (CheckCM md) β} {p : FueledM α}
+    {x : γ} {k : γ → (CheckCM md) β} {p : FueledM md α}
     (h : SimC mode env s₀ P (k x) p) :
     SimC mode env s₀ P ((pure x : (CheckCM md) γ) >>= k) p := by
   intro v' s' hr
@@ -493,7 +493,7 @@ continuation may consume the existence of a successful pure run. -/
 protected theorem bindR {β β' α α' : Type}
     {P : β → α → Prop} {Q : β' → α' → Prop}
     {c : (CheckCM md) β} {k : β → (CheckCM md) β'}
-    {p : FueledM α} {q : α → FueledM α'}
+    {p : FueledM md α} {q : α → FueledM md α'}
     (hx : SimC mode env s₀ P c p)
     (hf : ∀ s₁ b a, CSOK mode env s₁ → P b a → (∃ F, p.val F = .ok a) →
       SimC mode env s₁ Q (k b) (q a)) :
@@ -517,7 +517,7 @@ protected theorem bindR {β β' α α' : Type}
 
 /-- Strengthen the value relation using the fueled run's success. -/
 protected theorem wp {β α : Type} {P Q : β → α → Prop}
-    {c : (CheckCM md) β} {p : FueledM α}
+    {c : (CheckCM md) β} {p : FueledM md α}
     (h : SimC mode env s₀ P c p)
     (himp : ∀ v' v, P v' v → (∃ F, p.val F = .ok v) → Q v' v) :
     SimC mode env s₀ Q c p := by
@@ -528,7 +528,7 @@ protected theorem wp {β α : Type} {P Q : β → α → Prop}
 /-- Weaken the fueled side: any computation whose successful values
 subsume `p`'s (at some fuel) can replace it. -/
 protected theorem wr {β α : Type} {P : β → α → Prop}
-    {c : (CheckCM md) β} {p q : FueledM α}
+    {c : (CheckCM md) β} {p q : FueledM md α}
     (h : SimC mode env s₀ P c p)
     (himp : ∀ (v : α) (F : Nat), p.val F = .ok v → ∃ F', q.val F' = .ok v) :
     SimC mode env s₀ P c q := by
@@ -539,7 +539,7 @@ protected theorem wr {β α : Type} {P : β → α → Prop}
 
 /-- Weaken the value relation. -/
 protected theorem mono {β α : Type} {P Q : β → α → Prop}
-    {c : (CheckCM md) β} {p : FueledM α}
+    {c : (CheckCM md) β} {p : FueledM md α}
     (hPQ : ∀ b a, P b a → Q b a) (h : SimC mode env s₀ P c p) :
     SimC mode env s₀ Q c p := by
   intro v' s' hr
@@ -566,7 +566,7 @@ protected theorem pure {β : Type} {Q : β → Prop} {b : β}
   obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ hr
   exact ⟨hs, h⟩
 
-protected theorem throw {β : Type} {Q : β → Prop} {e : CheckError} :
+protected theorem throw {β : Type} {Q : β → Prop} {e : CheckError md} :
     CEff mode env s₀ Q (throw e) := by
   intro v' s' hr
   exact nomatch hr

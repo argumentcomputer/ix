@@ -49,7 +49,7 @@ structure Installer where
   pos : Nat := 0
   pend : Array (Ix.Kernel.Cached.PendingCheck .anon) := #[]
   owners : Array Address := #[]
-  installErrors : Std.HashMap Address Ix.Kernel.CheckError := {}
+  installErrors : Std.HashMap Address (Ix.Kernel.CheckError .anon) := {}
 
 instance : Inhabited Installer := ⟨{}⟩
 
@@ -61,7 +61,7 @@ def installDecls (ev : Ix.Kernel.Evidences .anon) :
     Nat → Ix.Kernel.FEnv .anon → Array (Ix.Kernel.Cached.PendingCheck .anon) → Ix.Kernel.Cached.CState .anon →
       List (Ix.Kernel.Declaration .anon) →
       Nat × Ix.Kernel.FEnv .anon × Array (Ix.Kernel.Cached.PendingCheck .anon) × Ix.Kernel.Cached.CState .anon ×
-        Option Ix.Kernel.CheckError
+        Option (Ix.Kernel.CheckError .anon)
   | pos, fe, pend, cs, [] => (pos, fe, pend, cs, none)
   | pos, fe, pend, cs, d :: rest =>
     let before := fe.env
@@ -72,7 +72,7 @@ def installDecls (ev : Ix.Kernel.Evidences .anon) :
 
 /-- Phase A's step: install a record's declarations, recording their checks. -/
 def Installer.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Installer) (address : Address)
-    (rd : Read .anon) : Installer × Option Ix.Kernel.CheckError :=
+    (rd : Read .anon) : Installer × Option (Ix.Kernel.CheckError .anon) :=
   let ⟨fe, cs, pos, pend, owners, installErrors⟩ := c
   let (pos, fe, recorded, cs, err) := installDecls ev pos fe #[] cs rd.decls.toList
   let owners := owners ++ Array.replicate recorded.size address
@@ -90,7 +90,7 @@ abbrev Slot := IO.Ref (Option (Address × Nat))
 /-- Recorded check `k` against its prefix view, from a fresh memo state:
 its failure, if any, and its time. -/
 def checkOne (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon)) (k : Nat) :
-    IO (Option Ix.Kernel.CheckError × Nat) := do
+    IO (Option (Ix.Kernel.CheckError .anon) × Nat) := do
   let t0 ← IO.monoNanosNow
   let r ← IO.lazyPure fun _ => match pend[k]? with
     | some pc => match Ix.Kernel.Cached.checkPending .verified fe pc {} with
@@ -103,8 +103,8 @@ def checkOne (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.Pending
 checks, with its watchdog slot set while it checks. -/
 def worker (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
     (owners : Array Address) (next : IO.Ref Nat) (slot : Slot) :
-    (fuel : Nat) → Array (Nat × Option Ix.Kernel.CheckError × Nat) →
-      IO (Array (Nat × Option Ix.Kernel.CheckError × Nat))
+    (fuel : Nat) → Array (Nat × Option (Ix.Kernel.CheckError .anon) × Nat) →
+      IO (Array (Nat × Option (Ix.Kernel.CheckError .anon) × Nat))
   | 0, acc => pure acc
   | fuel + 1, acc => do
     let k ← next.modifyGet fun a => (a, a + 1)
@@ -119,12 +119,12 @@ def worker (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCh
 if any, and its time, in check order. -/
 def pool (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
     (owners : Array Address) (slots : Array Slot) :
-    IO (Array (Option Ix.Kernel.CheckError × Nat)) := do
+    IO (Array (Option (Ix.Kernel.CheckError .anon) × Nat)) := do
   let next ← IO.mkRef 0
   let mut tasks := #[]
   for slot in slots do
     tasks := tasks.push (← IO.asTask (prio := .dedicated) (worker fe pend owners next slot (pend.size + 1) #[]))
-  let mut table : Array (Option Ix.Kernel.CheckError × Nat) :=
+  let mut table : Array (Option (Ix.Kernel.CheckError .anon) × Nat) :=
     Array.replicate pend.size (some (.internal "check phase: check never ran"), 0)
   for t in tasks do
     for (k, r, micros) in ← IO.ofExcept (← IO.wait t) do
@@ -183,7 +183,7 @@ def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (name
     {failures} failed"
   -- the verdicts: a record's first failed check (in install order), else its
   -- install failure; and its checks' time
-  let mut verdicts : Std.HashMap Address Ix.Kernel.CheckError := {}
+  let mut verdicts : Std.HashMap Address (Ix.Kernel.CheckError .anon) := {}
   let mut checkMicros : Std.HashMap Address Nat := {}
   for ((r, micros), k) in table.zipIdx do
     let some a := owners[k]? | continue

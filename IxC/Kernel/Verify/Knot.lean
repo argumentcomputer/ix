@@ -150,7 +150,7 @@ theorem inferTypeIO_off (hg : mode.betaGate = false) (env : Env md)
 
 /-- `inferBodyIO` reads exactly three fields of its record (`whnf`,
 `infer`, `defeq`); two records agreeing there run it identically. -/
-theorem inferBodyIO_congr {r₁ r₂ : (CoreFns md) CheckM} {env : Env md}
+theorem inferBodyIO_congr {r₁ r₂ : (CoreFns md) (CheckM md)} {env : Env md}
     (hw : r₁.whnf = r₂.whnf) (hi : r₁.infer = r₂.infer)
     (hd : r₁.defeq = r₂.defeq) (d : Nat) (e : Expr md) :
     inferBodyIO mode r₁ env d e = inferBodyIO mode r₂ env d e := by
@@ -220,69 +220,69 @@ level up calls them with `pureFns mode env fuel`, so their facts appear in
 inversions at the same fuel as the entry-point facts. -/
 
 abbrev iotaRecFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
-    CheckM (Option (Expr md)) := iotaRec mode (pureFns mode env fuel) env
+    CheckM md (Option (Expr md)) := iotaRec mode (pureFns mode env fuel) env
 
 abbrev iotaCertsFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Expr md →
-    List (Expr md) → CheckM Bool := iotaCerts (pureFns mode env fuel) env
+    List (Expr md) → CheckM md Bool := iotaCerts (pureFns mode env fuel) env
 
 abbrev iotaIndexOkFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Nat → Nat → Nat →
-    (Expr md) → List (Expr md) → List (Expr md) → CheckM Bool := iotaIndexOk (pureFns mode env fuel) env
+    (Expr md) → List (Expr md) → List (Expr md) → CheckM md Bool := iotaIndexOk (pureFns mode env fuel) env
 
 abbrev defEqListFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → List (Expr md) →
-    List (Expr md) → CheckM Bool := defEqList (pureFns mode env fuel) env
+    List (Expr md) → CheckM md Bool := defEqList (pureFns mode env fuel) env
 
 abbrev proofIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := proofIrrel (pureFns mode env fuel) env
+    CheckM md Bool := proofIrrel (pureFns mode env fuel) env
 
 abbrev propIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := propIrrel (pureFns mode env fuel) env
+    CheckM md Bool := propIrrel (pureFns mode env fuel) env
 
 abbrev stuckIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := stuckIrrel mode (pureFns mode env fuel) env
+    CheckM md Bool := stuckIrrel mode (pureFns mode env fuel) env
 
 abbrev structEtaCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := structEtaCert mode (pureFns mode env fuel) env
+    CheckM md Bool := structEtaCert mode (pureFns mode env fuel) env
 
 abbrev structEtaCertWithFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    (Expr md) → CheckM Bool := structEtaCertWith mode (pureFns mode env fuel) env
+    (Expr md) → CheckM md Bool := structEtaCertWith mode (pureFns mode env fuel) env
 
 abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env md) (fuel : Nat) (d : Nat) (T : Key md)
     (us' : List Level) (targs : List (Expr md)) (b : Expr md) (lpsT : List LevelParam) :
-    List Nat → CheckM Bool :=
+    List Nat → CheckM md Bool :=
   structEtaProjCerts (pureFns mode env fuel) env d T us' targs b lpsT
 
 abbrev structUnitCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := structUnitCert (pureFns mode env fuel) env
+    CheckM md Bool := structUnitCert (pureFns mode env fuel) env
 
 abbrev etaCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) (d : Nat)
-    (ty body : Expr md) (mb : BinderMeta) (b : Expr md) : CheckM Bool :=
+    (ty body : Expr md) (mb : BinderMeta) (b : Expr md) : CheckM md Bool :=
   etaCert mode (pureFns mode env fuel) env d ty body mb b
 
 abbrev majorToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Key md →
-    List (RecRule md) → Expr md → CheckM (Expr md) := majorToCtor mode (pureFns mode env fuel) env
+    List (RecRule md) → Expr md → CheckM md (Expr md) := majorToCtor mode (pureFns mode env fuel) env
 
 abbrev litMajorToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
-    CheckM (Expr md) := litMajorToCtor (pureFns mode env fuel) env
+    CheckM md (Expr md) := litMajorToCtor (pureFns mode env fuel) env
 
 abbrev prepareMajorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Key md →
-    List (RecRule md) → Expr md → CheckM (Expr md) := prepareMajor mode (pureFns mode env fuel) env
+    List (RecRule md) → Expr md → CheckM md (Expr md) := prepareMajor mode (pureFns mode env fuel) env
 
 abbrev projLitToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
-    CheckM (Expr md) := projLitToCtor (pureFns mode env fuel) env
+    CheckM md (Expr md) := projLitToCtor (pureFns mode env fuel) env
 
 abbrev projCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Key md →
-    List Level → List (Expr md) → CheckM Bool := projCert (pureFns mode env fuel) env
+    List Level → List (Expr md) → CheckM md Bool := projCert (pureFns mode env fuel) env
 abbrev projCertAtFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Bool → Key md →
-    List Level → List (Expr md) → CheckM Bool := projCertAt (pureFns mode env fuel) env
+    List Level → List (Expr md) → CheckM md Bool := projCertAt (pureFns mode env fuel) env
 
 abbrev reduceNatFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
-    CheckM (Option (Expr md)) := reduceNat (pureFns mode env fuel) env
+    CheckM md (Option (Expr md)) := reduceNat (pureFns mode env fuel) env
 
 abbrev boolTrueShortcutFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
-    CheckM Bool := boolTrueShortcut (pureFns mode env fuel)
+    CheckM md Bool := boolTrueShortcut (pureFns mode env fuel)
 
 abbrev defeqSpineFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
-    CheckM Bool := defeqSpine (pureFns mode env fuel) env
+    CheckM md Bool := defeqSpine (pureFns mode env fuel) env
 
 /-! Folding rewrites: record-applied helper spellings into their fueled
 `P` names (used right after unfolding a body in an inversion proof). -/

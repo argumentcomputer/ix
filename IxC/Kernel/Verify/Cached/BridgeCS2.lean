@@ -39,9 +39,9 @@ variable {env : Env md} {s₀ : CState md}
 
 /-- `unwrapOr` as a `SimC`, remembering the unwrapped value. -/
 protected theorem SimC.unwrapOr' {α : Type} {o : Option α}
-    {err : CheckError} (hs : CSOK mode env s₀) :
+    {err : CheckError md} (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v = w ∧ o = some v)
-      (unwrapOr o err : (CheckCM md) α) (unwrapOr o err : FueledM α) := by
+      (unwrapOr o err : (CheckCM md) α) (unwrapOr o err : FueledM md α) := by
   cases o with
   | none => exact SimC.throw
   | some a => exact SimC.pure hs ⟨rfl, rfl⟩
@@ -804,7 +804,7 @@ theorem checkProjLookupsS_sim {env' : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {nP nF i : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjLookups env' T ctorName lps nP nF i : (CheckCM md) _)
-      (checkProjLookups env' T ctorName lps nP nF i : FueledM _) := by
+      (checkProjLookups env' T ctorName lps nP nF i : FueledM md _) := by
   unfold checkProjLookups
   match h1 : env'.find? ctorName with
   | none => exact SimC.throw
@@ -848,7 +848,7 @@ theorem checkProjTyS_sim {env' : Env md} {T ctorName : Key md}
     {lps : List LevelParam} {mty : Expr md} {nP nF : Nat} (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjTy env' T ctorName lps mty nP nF : (CheckCM md) _)
-      (checkProjTy env' T ctorName lps mty nP nF : FueledM _) := by
+      (checkProjTy env' T ctorName lps mty nP nF : FueledM md _) := by
   unfold checkProjTy
   dsimp only
   by_cases h1 : ((mty.renameConsts (projBack T ctorName nF)).renameConsts
@@ -877,7 +877,7 @@ theorem checkProjShapeS_sim {pty cty : Expr md} {nP nF : Nat}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkProjShape pty cty nP nF : (CheckCM md) _)
-      (checkProjShape pty cty nP nF : FueledM _) := by
+      (checkProjShape pty cty nP nF : FueledM md _) := by
   unfold checkProjShape
   match h1 : pty.stripPis nP with
   | none => exact SimC.throw

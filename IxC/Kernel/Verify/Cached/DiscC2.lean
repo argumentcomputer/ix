@@ -353,7 +353,7 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
             if (m₁.contract == m₂.contract) = true then
               if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
                 (throw (.notImplemented "sort-annotation mismatch (eta)")
-                  : FueledM Unit) >>= fun _ => pure true
+                  : FueledM md Unit) >>= fun _ => pure true
               else pure true
             else pure false
           else pure false

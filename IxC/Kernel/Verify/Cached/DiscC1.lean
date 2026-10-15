@@ -833,7 +833,7 @@ theorem reduceNatC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
                 (fueledFns mode env).whnf d b >>= fun w₂ =>
                 match rawNatLit? w₂ with
                 | some _ => throw (.notImplemented
-                    s!"native Nat computation on literals ({cv})")
+                    msg!"native Nat computation on literals ({cv})")
                 | none => pure none
               | none => pure none
             else pure none) from rfl]

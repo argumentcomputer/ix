@@ -280,17 +280,17 @@ def cases : List Case := [
       | _ => false },
   { label := "axiom", seeds := [seed "someAxiom"],
     expected := .fail .declined "checker" fun input e => match e, keyOf input (seed "someAxiom") with
-      | .kernel (.notImplemented m) _, some key => m == s!"non-standard axiom ({key})"
+      | .kernel (.notImplemented m) _, some key => Ix.Kernel.Msg.render toString m == s!"non-standard axiom ({key})"
       | _, _ => false },
   -- an equation at the wrong universe level, installed in Lean unchecked
   { label := "wrong-universe-level", seeds := [seed "levelWrong"],
     expected := .fail .declined "checker" fun _ e => match e with
-      | .kernel (.invalid m) _ => m == "application type mismatch"
+      | .kernel (.invalid m) _ => Ix.Kernel.Msg.render toString m == "application type mismatch"
       | _ => false },
   -- `bad_thm` declares its name at the root
   { label := "false-theorem", seeds := [`falseThm],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `falseThm with
-      | .kernel (.invalid m) _, some key => m == s!"type mismatch in theorem {key}"
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
 def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩

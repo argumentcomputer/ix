@@ -27,8 +27,8 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- A thrown step never succeeds. -/
-private theorem structThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem structThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The shape walk's closers: every non-surviving goal holds a
@@ -42,8 +42,8 @@ local macro_rules
             (by simpa [bind, Except.bind] using ‹_›)))
 
 /-- A successful `unwrapOr` names its option. -/
-theorem unwrapOr_ok {α : Type} {x : Option α} {e : CheckError} {a : α}
-    (h : (unwrapOr x e : CheckM α) = .ok a) : x = some a := by
+theorem unwrapOr_ok {α : Type} {x : Option α} {e : CheckError md} {a : α}
+    (h : (unwrapOr x e : CheckM md α) = .ok a) : x = some a := by
   cases x with
   | none => exact absurd h (by simp [unwrapOr, throw, throwThe, MonadExceptOf.throw])
   | some b =>
@@ -121,7 +121,7 @@ is the table consed. -/
 theorem checkStructProjTable_inv {env envOut : Env md} {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {rs : Level} {guards : List Level}
     {cvCa : ConstantVal md}
-    (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
+    (h : checkStructProjTable (m := CheckM md) T C lps nP nF rs guards off cvCa env
       = .ok envOut) :
     ∃ bodies : Array (Expr md),
       structProjBodies T nP nF cvCa.type = some bodies ∧
@@ -151,7 +151,7 @@ the closed `Sort 1`, and the bodies' scoping is the stage's own guard. -/
 theorem direct_table_wf {env envOut : Env md} (henv : EnvWF env)
     {T C : Key md} {lps : List LevelParam} {nP nF : Nat} {rs : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
-    (h : checkStructProjTable (m := CheckM) T C lps nP nF rs guards off cvCa env
+    (h : checkStructProjTable (m := CheckM md) T C lps nP nF rs guards off cvCa env
       = .ok envOut) :
     EnvWF envOut := by
   obtain ⟨bodies, -, ⟨hsize, hall⟩, -, -, rfl⟩ := checkStructProjTable_inv h

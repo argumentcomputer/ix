@@ -20,7 +20,7 @@ variable (mode : CheckMode)
 
 section Mirrors
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-! ### The direct simple-structure path, through the index -/
 

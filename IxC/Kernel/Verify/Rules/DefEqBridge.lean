@@ -52,7 +52,7 @@ variable {env : Env md} {fuel : Nat}
 /-- One `defeqStep` under a bridged continuation. -/
 theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {k : Bool → Expr md → Expr md → CheckM Bool}
+    {d : Nat} {k : Bool → Expr md → Expr md → CheckM md Bool}
     (hk : ∀ {pi : Bool} {a b : Expr md}, k pi a b = .ok true → DefEq env d a b)
     {pi : Bool} {a b : Expr md}
     (h : defeqStep .verified (pureFns .verified env fuel) env d k pi a b = .ok true) :

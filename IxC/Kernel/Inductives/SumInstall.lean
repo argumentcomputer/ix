@@ -40,7 +40,7 @@ and crossed).  The index-threaded twins are
 
 namespace Ix.Kernel
 
-variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type -> Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- **Official's telescope loop** (`check_inductive_types`,
 `inductive.cpp`; task #195): peel `n` Π binders off `e`, reducing the

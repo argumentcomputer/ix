@@ -45,8 +45,8 @@ open Expr
 
 /-- Relate two `CheckM` binds: scrutinees related by a value map,
 continuations pointwise by a result map. -/
-private theorem bind_rel {α α' β β' : Type} {x : CheckM α} {x' : CheckM α'}
-    {g : α → CheckM β} {g' : α' → CheckM β'} (σx : α → α') (σ : β → β')
+private theorem bind_rel {α α' β β' : Type} {x : CheckM md α} {x' : CheckM md α'}
+    {g : α → CheckM md β} {g' : α' → CheckM md β'} (σx : α → α') (σ : β → β')
     (hx : x' = x.map σx)
     (hg : ∀ a, x = .ok a → g' (σx a) = (g a).map σ) :
     x' >>= g' = (x >>= g).map σ := by
@@ -56,8 +56,8 @@ private theorem bind_rel {α α' β β' : Type} {x : CheckM α} {x' : CheckM α'
   | ok a => exact hg a rfl
 
 /-- `bind_rel` with an unchanged scrutinee. -/
-private theorem bind_rel_eq {α β β' : Type} {x x' : CheckM α}
-    {g : α → CheckM β} {g' : α → CheckM β'} (σ : β → β')
+private theorem bind_rel_eq {α β β' : Type} {x x' : CheckM md α}
+    {g : α → CheckM md β} {g' : α → CheckM md β'} (σ : β → β')
     (hx : x' = x)
     (hg : ∀ a, x = .ok a → g' a = (g a).map σ) :
     x' >>= g' = (x >>= g).map σ := by
@@ -68,8 +68,8 @@ private theorem bind_rel_eq {α β β' : Type} {x x' : CheckM α}
 
 /-- Relate two `CheckM` binds with equal results (the `Bool`-valued
 claims): scrutinees related by a value map, continuations equal. -/
-private theorem bind_congr {α α' β : Type} {x : CheckM α} {x' : CheckM α'}
-    {g : α → CheckM β} {g' : α' → CheckM β} (σx : α → α')
+private theorem bind_congr {α α' β : Type} {x : CheckM md α} {x' : CheckM md α'}
+    {g : α → CheckM md β} {g' : α' → CheckM md β} (σx : α → α')
     (hx : x' = x.map σx)
     (hg : ∀ a, x = .ok a → g' (σx a) = g a) :
     x' >>= g' = x >>= g := by
@@ -79,8 +79,8 @@ private theorem bind_congr {α α' β : Type} {x : CheckM α} {x' : CheckM α'}
   | ok a => exact hg a rfl
 
 /-- `bind_congr` with an unchanged scrutinee. -/
-private theorem bind_congr_eq {α β : Type} {x x' : CheckM α}
-    {g g' : α → CheckM β}
+private theorem bind_congr_eq {α β : Type} {x x' : CheckM md α}
+    {g g' : α → CheckM md β}
     (hx : x' = x)
     (hg : ∀ a, x = .ok a → g' a = g a) :
     x' >>= g' = x >>= g := by
@@ -91,11 +91,11 @@ private theorem bind_congr_eq {α β : Type} {x x' : CheckM α}
 
 @[local simp]
 private theorem map_ok {α β : Type} (σ : α → β) (a : α) :
-    (Except.ok a : CheckM α).map σ = .ok (σ a) := rfl
+    (Except.ok a : CheckM md α).map σ = .ok (σ a) := rfl
 
 @[local simp]
-private theorem map_error {α β : Type} (σ : α → β) (e : CheckError) :
-    (Except.error e : CheckM α).map σ = .error e := rfl
+private theorem map_error {α β : Type} (σ : α → β) (e : CheckError md) :
+    (Except.error e : CheckM md α).map σ = .error e := rfl
 
 /-- Congruence for `if` with a common condition. -/
 private theorem ite_congr' {α : Sort _} {c : Prop} [Decidable c]
@@ -107,7 +107,7 @@ private theorem ite_congr' {α : Sort _} {c : Prop} [Decidable c]
 
 /-- Congruence for `if` with a common condition, under a result map. -/
 private theorem ite_rel {β β' : Type} {c : Prop} [Decidable c]
-    {x' y' : CheckM β'} {x y : CheckM β} (σ : β → β')
+    {x' y' : CheckM md β'} {x y : CheckM md β} (σ : β → β')
     (hx : c → x' = x.map σ) (hy : ¬ c → y' = y.map σ) :
     (if c then x' else y') = (if c then x else y).map σ := by
   split
@@ -532,7 +532,7 @@ private theorem reduceNatIf_shift (henv : EnvWF env)
     (if g then reduceNat (pureFns mode env fuel) env (d + 1) (shiftFrom p e)
       else pure none) =
       (if g then reduceNat (pureFns mode env fuel) env d e
-        else (pure none : CheckM (Option (Expr md)))).map
+        else (pure none : CheckM md (Option (Expr md)))).map
         (Option.map (shiftFrom p)) := by
   cases g
   · rfl
@@ -540,7 +540,7 @@ private theorem reduceNatIf_shift (henv : EnvWF env)
 
 /-- A `some` result of the guarded fold always comes from `reduceNat`
 itself (the pruned branch returns `none`). -/
-private theorem reduceNatIf_some {g : Bool} {x : CheckM (Option (Expr md))}
+private theorem reduceNatIf_some {g : Bool} {x : CheckM md (Option (Expr md))}
     {a : Expr md} (h : (if g then x else pure none) = .ok (some a)) :
     x = .ok (some a) := by
   cases g
@@ -576,14 +576,14 @@ private theorem iotaCerts_shift (henv : EnvWF env)
             iotaCerts (pureFns mode env fuel) env (d + 1) lic
               ((shiftFrom p body).instantiate1 (shiftFrom p arg))
               (rest.map (shiftFrom p))
-          else pure false : CheckM Bool)) =
+          else pure false : CheckM md Bool)) =
         (if lic && mb.pw.isNever then
           iotaCerts (pureFns mode env fuel) env d lic (body.instantiate1 arg) rest
         else (do
           let ta ← (pureFns mode env fuel).inferIO d arg
           if ← (pureFns mode env fuel).defeq d ta ty' then
             iotaCerts (pureFns mode env fuel) env d lic (body.instantiate1 arg) rest
-          else pure false : CheckM Bool))
+          else pure false : CheckM md Bool))
       have hrest := ihrest (WScoped.instantiate1_gen hwarg 0 hwty'.2) hwrest
       rw [shiftFrom_instantiate1_gen] at hrest
       by_cases hg : (lic && mb.pw.isNever) = true
@@ -655,7 +655,7 @@ private theorem defEqList_shift (_henv : EnvWF env)
               (shiftFrom p b) then
             defEqList (pureFns mode env fuel) env (d + 1)
               (as.map (shiftFrom p)) (bs.map (shiftFrom p))
-          else pure false : CheckM Bool)) = _
+          else pure false : CheckM md Bool)) = _
       refine bind_congr_eq (ih.defeq hpd hwa hwb) ?_
       intro bb _
       refine ite_congr' (fun _ => ?_) (fun _ => rfl)
@@ -1381,7 +1381,7 @@ private theorem litMajorToCtor_shift (_henv : EnvWF env)
     rw [show (litMajorToCtor (pureFns mode env fuel) env d (.fvar idx ty)) =
       pure (.fvar idx ty) from rfl]
     rw [show (Except.map (shiftFrom p) (pure (Expr.fvar idx ty)) :
-        CheckM (Expr md)) = pure (shiftFrom p (.fvar idx ty)) from rfl]
+        CheckM md (Expr md)) = pure (shiftFrom p (.fvar idx ty)) from rfl]
     rw [shiftFrom_fvar]
   | .app f a, _ => by
     show pure (litToCtorIfNat env (shiftFrom p (.app f a))) = _
@@ -1429,7 +1429,7 @@ private theorem projLitToCtor_shift (_henv : EnvWF env)
     rw [show (projLitToCtor (pureFns mode env fuel) env d (.fvar idx ty)) =
       pure (.fvar idx ty) from rfl]
     rw [show (Except.map (shiftFrom p) (pure (Expr.fvar idx ty)) :
-        CheckM (Expr md)) = pure (shiftFrom p (.fvar idx ty)) from rfl]
+        CheckM md (Expr md)) = pure (shiftFrom p (.fvar idx ty)) from rfl]
     rw [shiftFrom_fvar]
   | .app f a, _ => rfl
   | .lam ty body bi, _ => rfl

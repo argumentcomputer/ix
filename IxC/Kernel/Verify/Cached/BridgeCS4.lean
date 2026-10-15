@@ -64,7 +64,7 @@ theorem pureC_ok {α : Type} {a : α} {s₀ : CState md} {v : α} {s' : CState m
   exact h
 
 /-- Compose fueled runs at the joined fuel. -/
-theorem atF_bind_intro {α β : Type} {x : FueledM α} {g : α → FueledM β}
+theorem atF_bind_intro {α β : Type} {x : FueledM md α} {g : α → FueledM md β}
     {F₁ F₂ : Nat} {a : α} {v : β} (hx : x.val F₁ = .ok a)
     (hg : (g a).val F₂ = .ok v) :
     (x >>= g).val (max F₁ F₂) = .ok v := by
@@ -73,7 +73,7 @@ theorem atF_bind_intro {α β : Type} {x : FueledM α} {g : α → FueledM β}
   exact (g a).property (Nat.le_max_right F₁ F₂) hg
 
 /-- Upgrade a fueled run (subject inferred from the hypothesis). -/
-theorem FueledM.up {α : Type} {x : FueledM α} {F F' : Nat} {v : α}
+theorem FueledM.up {α : Type} {x : FueledM md α} {F F' : Nat} {v : α}
     (hle : F ≤ F') (h : x.val F = .ok v) : x.val F' = .ok v :=
   x.property hle h
 
@@ -364,7 +364,7 @@ private theorem constWF_le' {envA envB : Env md}
     exact ⟨p1, p2, Expr.constsResolve_le hle p3, p4⟩
 
 /-- A `CheckCM` throw composed with anything never succeeds. -/
-theorem throwC_bind_ok {α β : Type} {e : CheckError} {k : α → (CheckCM md) β}
+theorem throwC_bind_ok {α β : Type} {e : CheckError md} {k : α → (CheckCM md) β}
     {s₀ : CState md} {v : β} {s' : CState md}
     (h : ((throw e : (CheckCM md) α) >>= k) s₀ = .ok (v, s')) : False := by
   exact nomatch h
@@ -443,13 +443,13 @@ private theorem iotaFold_datF {env₂ envSelf : Env md} {f : Key md → Key md}
     rw [checkIotaRules_datF] at hir
     show ((checkIotaRules mode (fueledOps mode F) env₂ envSelf f c.1.name
       c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2 >>= _ :
-        CheckM (Env md)) >>= _) = _
+        CheckM md (Env md)) >>= _) = _
     rw [hir]
     simp only [Bind.bind, Except.bind]
     have hstep' : (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' ::
         acc.consts⟩ : Env md) = e₁ := by
       have hst : (Except.ok (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' ::
-          acc.consts⟩ : Env md) : Except CheckError (Env md)) = .ok e₁ := hstep
+          acc.consts⟩ : Env md) : Except (CheckError md) (Env md)) = .ok e₁ := hstep
       exact Except.ok.inj hst
     simp only [pure, Except.pure]
     rw [hstep']
@@ -522,7 +522,7 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
         (fun n => if blockNames.contains n then auxKey n .model else n)
         c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
       pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
-      env₂ : FueledM (Env md)).property (Nat.le_max_right F₁ F₂) hF₂
+      env₂ : FueledM md (Env md)).property (Nat.le_max_right F₁ F₂) hF₂
   have hprovPM : provisionRecs (fueledOps mode (max F₁ F₂)) blockNames env₂
       recs = .ok (feSelf.env, checked) := by
     rw [← provisionRecs_datF]; exact hF₁M
@@ -623,12 +623,12 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
   rw [if_pos hi] at h
   obtain ⟨rhsA, s₃, hrule, h⟩ := bindC_ok h
   have hTYc0 : (checkProjTy env T ctorName lps mcv.type nP nF :
-      CheckM _) = .ok pty := by
+      CheckM md _) = .ok pty := by
     rw [← checkProjTy_datF (F := F₀')]
     exact hFty
   obtain ⟨hptyf, hptyb⟩ := checkProjTy_wf hTYc0
   have hLKc0 : (checkProjLookups env T ctorName lps nP nF i :
-      CheckM _) = .ok (cvj, mcv) := by
+      CheckM md _) = .ok (cvj, mcv) := by
     rw [← checkProjLookups_datF (F := F₀)]
     exact hFlk
   obtain ⟨cnP0, cnF0, hctorE⟩ := checkProjLookups_ctor hLKc0
@@ -644,14 +644,14 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
   subst hfe
   -- the ops-free stages, `CheckM`-level
   have hLKc : (checkProjLookups env T ctorName lps nP nF i :
-      CheckM _) = .ok (cvj, mcv) := by
+      CheckM md _) = .ok (cvj, mcv) := by
     rw [← checkProjLookups_datF (F := F₀)]
     exact hFlk
   have hTYc : (checkProjTy env T ctorName lps mcv.type nP nF :
-      CheckM _) = .ok pty := by
+      CheckM md _) = .ok pty := by
     rw [← checkProjTy_datF (F := F₀')]
     exact hFty
-  have hSHc : (checkProjShape pty cvj.type nP nF : CheckM Unit)
+  have hSHc : (checkProjShape pty cvj.type nP nF : CheckM md Unit)
       = .ok u0 := by
     rw [← checkProjShape_datF (F := F₀'')]
     exact hFshape
@@ -673,14 +673,14 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
         [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env md) := by
     unfold checkProjFn
     show ((checkProjLookups env T ctorName lps nP nF i :
-      CheckM _) >>= _) = _
+      CheckM md _) >>= _) = _
     rw [hLKc]
     simp only [Bind.bind, Except.bind]
     show ((checkProjTy env T ctorName lps mcv.type nP nF :
-      CheckM _) >>= _) = _
+      CheckM md _) >>= _) = _
     rw [hTYc]
     simp only [Bind.bind, Except.bind]
-    show ((checkProjShape pty cvj.type nP nF : CheckM Unit) >>= _) = _
+    show ((checkProjShape pty cvj.type nP nF : CheckM md Unit) >>= _) = _
     rw [hSHc]
     simp only [Bind.bind, Except.bind]
     try dsimp only

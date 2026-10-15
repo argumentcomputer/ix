@@ -163,7 +163,7 @@ theorem nestedRuleShapeF_eq (env' envS : Env md) (cvName : Key md)
 
 section Monadic
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 theorem checkConstantValF_eq (ops : (CheckerOps md) m) (env : Env md)
     (cv : ConstantVal md) :
@@ -313,7 +313,7 @@ theorem checkSumCtorsF_eq (ops : (CheckerOps md) m) (env₀ env : Env md) (T : K
     simp only [checkSumCtorsF, checkSumCtors, checkSumCtorF_eq,
       checkSumCtorsF_eq ops env₀ env T lps nP nIdx resSort isProp large cvTa cs]
 
-omit [MonadExceptOf CheckError m] in
+omit [MonadExcept (CheckError md) m] in
 theorem checkDivModCertsF_eq (ops : (CheckerOps md) m) (env : Env md) (c : Key md)
     (annVal : Expr md) :
     ∀ (stmts : List (List (Expr md) × Expr md)) (proofs : List (Expr md)),
@@ -368,7 +368,7 @@ theorem consSumCtorsF_mkFEnv (nP : Nat) :
 
 section FixMirrors
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 theorem nativeOpenedOkF_eq (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
     (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) :

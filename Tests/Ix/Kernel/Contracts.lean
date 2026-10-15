@@ -186,7 +186,7 @@ def preludeWithEq (f : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon) : Array (I
 def foldOutcome (ds : Array (Ix.Kernel.Declaration .anon)) : Option String :=
   match Ix.Kernel.Cached.checkDecls .verified [] ds with
   | .ok _ => none
-  | .error (.invalid msg, _) => some msg
+  | .error (.invalid msg, _) => some (Ix.Kernel.Msg.render toString msg)
   | .error _ => some "other"
 
 -- the prelude as it is installs every basis block

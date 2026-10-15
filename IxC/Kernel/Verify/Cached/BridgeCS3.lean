@@ -403,7 +403,7 @@ theorem checkNativeRulesS_sim {envR : Env md} {rlps : List LevelParam} {T : Key 
       SimC mode env s₀ RelVC
         (checkNativeRules (m := CheckCM md) envR rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j)
-        (checkNativeRules (m := FueledM) envR rlps T lps elim large nP nIdx tty ctors
+        (checkNativeRules (m := FueledM md) envR rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j)
   | 0, _, s₀, hs => SimC.pure hs rfl
   | k + 1, j, s₀, hs => by

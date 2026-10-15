@@ -24,8 +24,8 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- A thrown step never succeeds. -/
-private theorem fixThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem fixThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The generated rules loop: `k` rules for constructors `j, j+1, …`,
@@ -34,7 +34,7 @@ theorem checkNativeRules_inv {envR : Env md} {rlps : List LevelParam} {T : Key m
     {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr md}
     {ctors : List (Key md × Nat × Expr md × List Nat)} {recC : Key md} {rlvls : List Level} :
     ∀ {k j : Nat} {rhss : List (Expr md)},
-      checkNativeRules (m := CheckM) envR rlps T lps elim large nP nIdx tty ctors recC
+      checkNativeRules (m := CheckM md) envR rlps T lps elim large nP nIdx tty ctors recC
         rlvls k j = .ok rhss →
       rhss.length = k ∧
       ∀ i, i < k → ∃ rhs, rhss[i]? = some rhs ∧
@@ -130,7 +130,7 @@ theorem checkNativeRec_shape {env : Env md} {p : NativeParts md}
       inferTypeCore mode env F 0 recTy = .ok sty ∧
       ensureSortCore mode env F 0 sty = .ok u ∧
       isDefEqCore mode env F 0 cvRi.type recTy = .ok true ∧
-      checkNativeRules (m := CheckM)
+      checkNativeRules (m := CheckM md)
         ⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ p.majorIdx p.rulePrefix []
           :: env.consts⟩
         p.cvR.levelParams p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
@@ -198,7 +198,7 @@ recogniser's syntactic reading of the stored constructors, with no
 non-positive and no unmodeled occurrence. -/
 theorem classifyFixKinds_inv {T : Key md} {lps : List LevelParam} {nP nIdx : Nat}
     {ctorsA : List (ConstantVal md × Nat)} {kinds : List (List RecFieldKind)}
-    (h : classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA = .ok kinds) :
+    (h : classifyFixKinds (m := CheckM md) T lps nP nIdx ctorsA = .ok kinds) :
     ctorsA.mapM (recCtorKinds T lps nP nIdx) = some kinds ∧
     kinds.any (fun ks => ks.any (· == .negative)) = false ∧
     kinds.any (fun ks => ks.any (· == .unsupported)) = false ∧
@@ -235,7 +235,7 @@ theorem checkNativePass_inv {env : Env md} {p₀ : NativeParts md} {isRec : Bool
         (p₀.complete p₁).cvT.levelParams (p₀.complete p₁).nP (p₀.complete p₁).nIdx
         (p₀.complete p₁).resSort (p₀.complete p₁).isProp (p₀.complete p₁).large q.cvTa
         (p₀.complete p₁).ctors = .ok (q.ctorsA, q.sortss) ∧
-      classifyFixKinds (m := CheckM) (p₀.complete p₁).cvT.name (p₀.complete p₁).cvT.levelParams
+      classifyFixKinds (m := CheckM md) (p₀.complete p₁).cvT.name (p₀.complete p₁).cvT.levelParams
         (p₀.complete p₁).nP (p₀.complete p₁).nIdx q.ctorsA = .ok kinds ∧
       q.p = (p₀.complete p₁).withKinds kinds ∧
       b = (nativeCaps q.p == nativeCapsAt p₁ isRec) := by

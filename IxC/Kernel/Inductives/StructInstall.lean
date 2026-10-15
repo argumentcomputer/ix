@@ -17,7 +17,7 @@ are `IxC/Kernel/Inductives/StructInstallF.lean`.
 
 namespace Ix.Kernel
 
-variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type -> Type} [Monad m] [MonadExcept (CheckError md) m]
 variable (mode : CheckMode)
 
 /-! ## The structure-shaped block's reference checks

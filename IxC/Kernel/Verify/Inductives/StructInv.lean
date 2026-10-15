@@ -22,8 +22,8 @@ namespace Ix.Kernel
 
 variable {mode : CheckMode}
 
-private theorem dThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem dThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 local syntax "close_throw" : tactic

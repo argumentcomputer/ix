@@ -98,7 +98,7 @@ output re-associated: `ReduceIdentityRun` is exactly the inversion,
 without the identity's `DefEq` transport. -/
 theorem reduceIdentityRun_of {env env' : Env md} {μ : CheckMode} {F : Nat}
     {c : Key md} {value : Expr md}
-    (h : checkReduceIdentity (m := CheckM) (fueledOps μ F) env env' c value
+    (h : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env env' c value
       = .ok ()) :
     ReduceIdentityRun μ F env env' c value := by
   obtain ⟨hstored, helem, valA, hva, hp2⟩ := checkReduceIdentity_inv h
@@ -110,7 +110,7 @@ closure condition, which nothing downstream reads, is dropped). -/
 theorem divModCertRun_of {env env' : Env md} {μ : CheckMode} {F : Nat}
     {c : Key md} {cv0 : ConstantVal md} {v : Expr md} {hint0 : ReducibilityHint}
     (hstore : env'.find? c = some (.defnInfo cv0 v hint0))
-    (h : checkDivModEvidence (m := CheckM) (fueledOps μ F) ev env env' c
+    (h : checkDivModEvidence (m := CheckM md) (fueledOps μ F) ev env env' c
       = .ok ()) :
     DivModCertRun μ F env env' c v := by
   obtain ⟨henv, cv', value', hint', hfind, proofs, -, hcertsG, -, hcerts⟩ :=
@@ -318,7 +318,7 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     valueFrontRun_of hlbv hivf' hannv hvp hvr hvt hde, ?_, ?_⟩
   · by_cases hro : reduceOpNames.contains cv.name = true
     · rw [if_pos hro] at h
-      cases hrpin : checkReduceIdentity (m := CheckM) (fueledOps μ F) env
+      cases hrpin : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env
           ⟨.axiomInfo { cv with type := type } :: env.consts⟩ cv.name
           value with
       | error e => rw [hrpin] at h; exact nomatch h
@@ -331,7 +331,7 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
       exact h.symm
   · intro hro
     rw [if_pos hro] at h
-    cases hrpin : checkReduceIdentity (m := CheckM) (fueledOps μ F) env
+    cases hrpin : checkReduceIdentity (m := CheckM md) (fueledOps μ F) env
         ⟨.axiomInfo { cv with type := type } :: env.consts⟩ cv.name
         value with
     | error e => rw [hrpin] at h; exact nomatch h
@@ -406,12 +406,12 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
         (natOpDeps cv.name).all (natOpStoredOk
           ⟨ConstantInfo.defnInfo { cv with type := type } value' hint ::
             env.consts⟩) = true ∧
-        certifyNatEqs (m := CheckM) (fueledOps μ F) env
+        certifyNatEqs (m := CheckM md) (fueledOps μ F) env
           ((natOpEquations 0 cv.name).map fun eq =>
             (Expr.substConst0 cv.name value' eq.1,
              Expr.substConst0 cv.name value' eq.2)) = .ok true) ∧
       (natDivModNames.contains cv.name = true →
-        checkDivModEvidence (m := CheckM) (fueledOps μ F) ev env
+        checkDivModEvidence (m := CheckM md) (fueledOps μ F) ev env
           ⟨ConstantInfo.defnInfo { cv with type := type } value' hint ::
             env.consts⟩ cv.name = .ok ()) := by
     by_cases hno : natOpNames.contains cv.name = true
@@ -430,7 +430,7 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
       · rw [if_pos hg] at h
         rw [hfind2] at h
         dsimp only at h
-        cases hcert : certifyNatEqs (m := CheckM) (fueledOps μ F) env
+        cases hcert : certifyNatEqs (m := CheckM md) (fueledOps μ F) env
             ((natOpEquations 0 cv.name).map fun eq =>
               (Expr.substConst0 cv.name value' eq.1,
                Expr.substConst0 cv.name value' eq.2)) with
@@ -447,7 +447,7 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
         obtain ⟨hg1, hg2⟩ := Bool.and_eq_true _ _ |>.mp hg
         by_cases hdn : natDivModNames.contains cv.name = true
         · rw [if_pos hdn] at h
-          cases hpin : checkDivModEvidence (m := CheckM) (fueledOps μ F) ev env
+          cases hpin : checkDivModEvidence (m := CheckM md) (fueledOps μ F) ev env
               ⟨ConstantInfo.defnInfo { cv with type := type } value'
                 hint :: env.consts⟩ cv.name with
           | error e => rw [hpin] at h; exact nomatch h
@@ -466,7 +466,7 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     · rw [if_neg hno] at h
       by_cases hdn : natDivModNames.contains cv.name = true
       · rw [if_pos hdn] at h
-        cases hpin : checkDivModEvidence (m := CheckM) (fueledOps μ F) ev env
+        cases hpin : checkDivModEvidence (m := CheckM md) (fueledOps μ F) ev env
             ⟨ConstantInfo.defnInfo { cv with type := type } value'
               hint :: env.consts⟩ cv.name with
         | error e => rw [hpin] at h; exact nomatch h

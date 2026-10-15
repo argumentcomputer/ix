@@ -811,7 +811,7 @@ def eqTable : Ix.Kernel.RoleTable :=
   rebind [(.eq, address 88), (.eqRefl, address 87), (.eqRec, address 90)]
 
 #guard match run ownEq (table := eqTable) with
-  | .error (.kernel (.invalid msg) _) => msg.startsWith "reserved basis name"
+  | .error (.kernel (.invalid msg) _) => (Ix.Kernel.Msg.render toString msg).startsWith "reserved basis name"
   | _ => false
 
 /-- `fun n m => n` pinned as `Nat.add` is not certified, so not accepted under

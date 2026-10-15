@@ -127,7 +127,7 @@ theorem isBoolTrue_iff {e : Expr md} : e.isBoolTrue = true ↔ e = .const boolTr
 /-- **The inversion of `defeqStep`** (`Core.lean:1460-1700`): the
 prefix's three exits and, under the two `whnfCore` reducts, the nine
 ways the step can end. -/
-theorem defeqStep_inv {d : Nat} {k : Bool → Expr md → Expr md → CheckM Bool}
+theorem defeqStep_inv {d : Nat} {k : Bool → Expr md → Expr md → CheckM md Bool}
     {pi : Bool} {a b : Expr md}
     (h : defeqStep .verified (pureFns .verified env fuel) env d k pi a b
       = .ok true) :
@@ -475,10 +475,10 @@ theorem defeqStep_inv {d : Nat} {k : Bool → Expr md → Expr md → CheckM Boo
         | some a₂ =>
           rw [hua] at h
           exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨a₂, rfl, h⟩))))
-      · have hboth : ∀ {x : CheckM Bool},
+      · have hboth : ∀ {x : CheckM md Bool},
             (match unfoldDefinition env a', unfoldDefinition env b' with
               | some a₂, some b₂ => k false a₂ b₂
-              | _, _ => (pure false : CheckM Bool)) = .ok true →
+              | _, _ => (pure false : CheckM md Bool)) = .ok true →
             (∃ a₂ b₂, unfoldDefinition env a' = some a₂ ∧
               unfoldDefinition env b' = some b₂ ∧ k false a₂ b₂ = .ok true) := by
           intro x hbb2

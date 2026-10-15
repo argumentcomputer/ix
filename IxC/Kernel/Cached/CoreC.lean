@@ -143,7 +143,7 @@ def reduceNatI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
               let w₂ ← r.whnf depth b
               match ← pure (rawNatLitC? w₂) with
               | some _ => throw (.notImplemented
-                  s!"native Nat computation on literals ({cn})")
+                  msg!"native Nat computation on literals ({cn})")
               | none => pure none
             | none => pure none
           else pure none
@@ -1308,10 +1308,10 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
       | none => throw (unknownConstError nm)
       | some ci =>
         unless !ci.isTowerEntry do
-          throw (.invalid s!"projection table entry used as a constant {nm}")
+          throw (.invalid msg!"projection table entry used as a constant {nm}")
         let cv := ci.toConstantVal
         unless us.length = cv.levelParams.length do
-          throw (.invalid s!"incorrect number of universe levels for {nm}")
+          throw (.invalid msg!"incorrect number of universe levels for {nm}")
         constTyAtM fe n nm us
     | .lit (.natVal _) => do
       if natLitSupportedF fe then do

@@ -54,7 +54,7 @@ to generate anyway.  The index-threaded twins are
 
 namespace Ix.Kernel
 
-variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type -> Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- The capabilities a block on the fixpoint route earns (task #210
 Part A): at a STRUCTURE-LIKE block — one constructor, no index, and NO

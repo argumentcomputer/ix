@@ -85,7 +85,7 @@ calls it.  Consequently
 
 namespace Ix.Kernel
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 variable (mode : CheckMode)
 
 /-- **The io knot** (the leaf lane).  `whnfCore`/`whnf`/`defeq`/
@@ -120,13 +120,13 @@ def coreKnotIO (env : Env md) : Nat → (CoreFns md) m
 
 /-- The io core, tied at `CheckM`: the specification the
 `InferClaimIO` family is stated at. -/
-def pureFnsIO (env : Env md) : Nat → (CoreFns md) CheckM :=
+def pureFnsIO (env : Env md) : Nat → (CoreFns md) (CheckM md) :=
   coreKnotIO mode env
 
 /-- Infer-only (io-grade) type inference, fueled — the io lane's single
 entry point. -/
 def inferTypeCoreIO (env : Env md) (fuel depth : Nat) (e : Expr md) :
-    CheckM (Expr md) :=
+    CheckM md (Expr md) :=
   (pureFnsIO mode env fuel).infer depth e
 
 end Ix.Kernel

@@ -20,13 +20,13 @@ Verification: `Ix.Kernel.Verify.*` (inversions and claims) and
 
 namespace Ix.Kernel
 
-variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type -> Type} [Monad m] [MonadExcept (CheckError md) m]
 variable (mode : CheckMode)
 
 /-- Install one pinned basis declaration (duplicate-checked). -/
 def installBasisDecl (env : Env md) (ci : ConstantInfo md) : m (Env md) := do
   unless (env.find? ci.name).isNone do
-    throw (.invalid s!"duplicate declaration {ci.name}")
+    throw (.invalid msg!"duplicate declaration {ci.name}")
   pure (⟨ci :: env.consts⟩ : Env md)
 
 /-- Check a `def` declaration's value against its checked constant.
@@ -36,17 +36,17 @@ it needs checking. -/
 def checkDefnVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
     (value : Expr md) (hint : ReducibilityHint) : m (Env md) := do
   unless value.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in value of {cv.name}")
+    throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let value ← ops.annotate env 0 value
   unless value.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in value of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless value.constsResolve env do
-    throw (unresolvedConstsError s!"value of {cv.name}" value)
+    throw (unresolvedConstsError msg!"value of {cv.name}" value)
   let vtype ← ops.inferType env 0 value
   unless ← ops.isDefEq env 0 vtype cv.type do
-    throw (.invalid s!"type mismatch in definition {cv.name}")
+    throw (.invalid msg!"type mismatch in definition {cv.name}")
   pure ⟨.defnInfo cv value hint :: env.consts⟩
 
 /-- Check a `theorem` declaration's value against its checked constant
@@ -66,19 +66,19 @@ def checkThmVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
   let stype ← ops.inferType env 0 cv.type
   let u ← ops.ensureSort env 0 stype
   unless (← liftFueled "level comparison" (Level.isEquiv u .zero)) do
-    throw (.invalid s!"type of theorem {cv.name} is not a proposition")
+    throw (.invalid msg!"type of theorem {cv.name} is not a proposition")
   unless value.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in value of {cv.name}")
+    throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let jv ← ops.annotate env 0 value
   unless jv.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in value of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless jv.constsResolve env do
-    throw (unresolvedConstsError s!"value of {cv.name}" jv)
+    throw (unresolvedConstsError msg!"value of {cv.name}" jv)
   let vtype ← ops.inferType env 0 jv
   unless ← ops.isDefEq env 0 vtype cv.type do
-    throw (.invalid s!"type mismatch in theorem {cv.name}")
+    throw (.invalid msg!"type mismatch in theorem {cv.name}")
   pure ⟨.thmInfo cv value :: env.consts⟩
 
 /-- Check an `opaque` declaration's value against its checked
@@ -93,17 +93,17 @@ stuck; the task-#95 honest limit relies on that stuckness). -/
 def checkOpaqueVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
     (value : Expr md) : m (Env md) := do
   unless value.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in value of {cv.name}")
+    throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let value ← ops.annotate env 0 value
   unless value.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in value of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless value.constsResolve env do
-    throw (unresolvedConstsError s!"value of {cv.name}" value)
+    throw (unresolvedConstsError msg!"value of {cv.name}" value)
   let vtype ← ops.inferType env 0 value
   unless ← ops.isDefEq env 0 vtype cv.type do
-    throw (.invalid s!"type mismatch in opaque {cv.name}")
+    throw (.invalid msg!"type mismatch in opaque {cv.name}")
   pure ⟨.axiomInfo cv :: env.consts⟩
 /-- Certify a list of recurrence equations by definitional equality
 (at depth 2: the equations' variables are `fvar 0`/`fvar 1`). -/
@@ -194,9 +194,9 @@ def divModCertsGuard (proofs : List (Expr md)) (env : Env md) (c : Key md)
 /-- What a certificate check failed on, for the decline message.  The
 pure instantiations always report the `none` text (see
 `CheckerOps.orElse`); the executable reports the error. -/
-def divModEvidenceReason (c : Key md) : Option CheckError → String
-  | none => s!"unsupported Nat.div/mod evidence ({c}: a certificate did not check)"
-  | some e => s!"unsupported Nat.div/mod evidence ({c}: {e})"
+def divModEvidenceReason (c : Key md) : Option (CheckError md) → Msg md
+  | none => msg!"unsupported Nat.div/mod evidence ({c}: a certificate did not check)"
+  | some e => msg!"unsupported Nat.div/mod evidence ({c}: {e})"
 
 /-- **The well-founded operations' install gate**, run after the ordinary
 definition check (`env2` is the already-extended environment, `env`
@@ -225,13 +225,13 @@ def checkDivModEvidence (ops : (CheckerOps md) m) (ev : Evidences md)
         if divModCertsGuard proofs env c value' && evidenceLocal env.find? c value' proofs then
           ops.orElse (checkDivModCerts ops env c value' (divModCertStmts c) proofs) fun r =>
             throw (.notImplemented (divModEvidenceReason c r))
-        else throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: certificate \
+        else throw (.notImplemented msg!"unsupported Nat.div/mod evidence ({c}: certificate \
           ground constants absent or outside the dependency closure)")
-      | none => throw (.notImplemented s!"unsupported Nat.div/mod evidence ({c}: no proof \
+      | none => throw (.notImplemented msg!"unsupported Nat.div/mod evidence ({c}: no proof \
           evidence, one per certificate statement)")
-    | _ => throw (.internal s!"Nat.div/mod operation not stored ({c})")
+    | _ => throw (.internal msg!"Nat.div/mod operation not stored ({c})")
   else throw (.notImplemented
-    s!"unsupported Nat.div/mod environment ({c})")
+    msg!"unsupported Nat.div/mod environment ({c})")
 
 /-- **The `Lean.reduceNat`/`Lean.reduceBool` install gate** (their
 specification is `identity`), run after the ordinary opaque check (`env2`
@@ -258,9 +258,9 @@ def checkReduceIdentity (ops : (CheckerOps md) m) (env env2 : Env md) (c : Key m
     let ok ← ops.isDefEq env 1 (.app valA x) x
     if ok then pure ()
     else throw (.notImplemented
-      s!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
+      msg!"unsupported compiler-trust opaque ({c}: the value is not the identity)")
   else throw (.notImplemented
-    s!"unsupported compiler-trust opaque declaration ({c})")
+    msg!"unsupported compiler-trust opaque declaration ({c})")
 
 /-- **Install the pinned (pre-annotated) basis block.**  The three
 records that install one — the fold's own `basisDecl` kind, a stream
@@ -298,11 +298,11 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     if natOpNames.contains cv.name then
       unless evidenceDefeqOk ev cv.name do
         throw (.notImplemented
-          s!"unsupported structural Nat operation evidence ({cv.name})")
+          msg!"unsupported structural Nat operation evidence ({cv.name})")
       unless natOpGuard env2 cv.name &&
           (natOpDeps cv.name).all (natOpStoredOk env2) do
         throw (.notImplemented
-          s!"nonstandard structural Nat operation environment ({cv.name})")
+          msg!"nonstandard structural Nat operation environment ({cv.name})")
       match env2.find? cv.name with
       | some (.defnInfo _ value' _) =>
         let ok ← certifyNatEqs ops env
@@ -311,8 +311,8 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
              Expr.substConst0 cv.name value' eq.2))
         unless ok do
           throw (.notImplemented
-            s!"nonstandard structural Nat operation ({cv.name})")
-      | _ => throw (.internal s!"structural Nat operation not stored ({cv.name})")
+            msg!"nonstandard structural Nat operation ({cv.name})")
+      | _ => throw (.internal msg!"structural Nat operation not stored ({cv.name})")
     -- Well-founded `Nat` operations (`Nat.div`, `Nat.mod`, …): their
     -- evidence is one `.proof` entry per certificate statement of their
     -- `ops` specification, and the proofs' `Nat.ble`-guarded
@@ -388,7 +388,7 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
         if trustCompilerOk env cvA then
           pure ⟨.axiomInfo cvA :: env.consts⟩
         else throw (.notImplemented
-          s!"unsupported Lean.trustCompiler shape ({cv.name})")
+          msg!"unsupported Lean.trustCompiler shape ({cv.name})")
       else if cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName then
         -- The pinned `ofReduce*` axioms (task #95): over the pinned
         -- `Eq` basis, the element inductive and the identity-certified
@@ -397,13 +397,13 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
         if ofReduceAxOk env cvA then
           pure ⟨.axiomInfo cvA :: env.consts⟩
         else throw (.notImplemented
-          s!"unsupported compiler-trust axiom environment ({cv.name})")
+          msg!"unsupported compiler-trust axiom environment ({cv.name})")
       else if cvA.name = propextName ∨ cvA.name = choiceName then
-        throw (.notImplemented s!"standard axiom shape mismatch ({cv.name})")
+        throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
       else if cvA.name = sorryAxName then
         pure env
       else
-        throw (.notImplemented s!"non-standard axiom ({cv.name})")
+        throw (.notImplemented msg!"non-standard axiom ({cv.name})")
   | .basisDecl kind => checkBasisDecl env kind
   | .indDecl block nP =>
     -- **THE PINNED BASIS BLOCKS** (task #293).  A stream's `Nat` block

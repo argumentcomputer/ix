@@ -60,7 +60,7 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 door and the model-counterpart lookups, no carrier. -/
 theorem memberValRun_of {env' : Env md} {μ : CheckMode} {F : Nat}
     {blockNames : List (Key md)} {cv cvA : ConstantVal md}
-    (h : checkMemberVal (m := CheckM) (fueledOps μ F) blockNames env' cv
+    (h : checkMemberVal (m := CheckM md) (fueledOps μ F) blockNames env' cv
       = .ok cvA) :
     MemberValRun μ F env' blockNames cv cvA := by
   simp only [checkMemberVal, Bind.bind, Except.bind] at h
@@ -111,7 +111,7 @@ theorem indMembersRunRS
     {μ : CheckMode} {F : Nat}
     {blockNames : List (Key md)} {caps : IndCaps md} :
     ∀ (members : List (ConstantInfo md)) {env env₂ : Env md},
-      members.foldlM (checkIndMember (m := CheckM) (fueledOps μ F)
+      members.foldlM (checkIndMember (m := CheckM md) (fueledOps μ F)
         blockNames caps) env = .ok env₂ →
       IndMembersRun μ F blockNames caps env members env₂ := by
   intro members
@@ -124,7 +124,7 @@ theorem indMembersRunRS
     intro env env₂ h
     simp only [List.foldlM, Bind.bind, Except.bind, checkIndMember] at h
     revert h
-    cases hmv0 : checkMemberVal (m := CheckM) (fueledOps μ F) blockNames
+    cases hmv0 : checkMemberVal (m := CheckM md) (fueledOps μ F) blockNames
         env ci.toConstantVal with
     | error e => intro h; exact nomatch h
     | ok cvA =>
@@ -145,7 +145,7 @@ theorem provisionRecsRunRS
     {μ : CheckMode} {F : Nat} {blockNames : List (Key md)} :
     ∀ (recs : List (ConstantInfo md)) {envAcc envSelf : Env md}
       {checked : List (ConstantVal md × Nat × Nat × List (RecRule md))},
-      provisionRecs (m := CheckM) (fueledOps μ F) blockNames envAcc recs
+      provisionRecs (m := CheckM md) (fueledOps μ F) blockNames envAcc recs
         = .ok (envSelf, checked) →
       ProvisionRecsRun μ F blockNames envAcc recs envSelf checked := by
   intro recs
@@ -162,14 +162,14 @@ theorem provisionRecsRunRS
     | recInfo cv mI rP rules =>
       simp only [provisionRecs, Bind.bind, Except.bind] at h
       revert h
-      cases hmv0 : checkMemberVal (m := CheckM) (fueledOps μ F)
+      cases hmv0 : checkMemberVal (m := CheckM md) (fueledOps μ F)
           blockNames envAcc (ConstantInfo.recInfo cv mI rP
             rules).toConstantVal with
       | error e => intro h; exact nomatch h
       | ok cvA =>
         intro h
         dsimp only at h
-        cases hrest : provisionRecs (m := CheckM) (fueledOps μ F)
+        cases hrest : provisionRecs (m := CheckM md) (fueledOps μ F)
             blockNames ⟨.recInfo cvA mI rP [] :: envAcc.consts⟩
             rest with
         | error e => rw [hrest] at h; exact nomatch h
@@ -349,7 +349,7 @@ else. -/
 theorem indRecsRunRS
     {μ : CheckMode} {F : Nat} {blockNames : List (Key md)} :
     ∀ (recs : List (ConstantInfo md)) {env₂ env₃ : Env md},
-      checkIndRecs (m := CheckM) μ (fueledOps μ F) blockNames env₂ recs
+      checkIndRecs (m := CheckM md) μ (fueledOps μ F) blockNames env₂ recs
         = .ok env₃ →
       IndRecsRun μ F blockNames env₂ recs env₃ := by
   intro recs env₂ env₃ h
@@ -370,7 +370,7 @@ theorem indRecsRunRS
   intro h
   try dsimp only at h
   revert h
-  cases hprovE : provisionRecs (m := CheckM) (fueledOps μ F)
+  cases hprovE : provisionRecs (m := CheckM md) (fueledOps μ F)
       blockNames env₂ recs with
   | error e => intro h; exact nomatch h
   | ok p => ?_
@@ -389,7 +389,7 @@ where
       ∀ (checked : List (ConstantVal md × Nat × Nat × List (RecRule md)))
         {acc env₃ : Env md},
         checked.foldlM (fun (acc : Env md) c => do
-          let rules' ← checkIotaRules (m := CheckM) μ (fueledOps μ F)
+          let rules' ← checkIotaRules (m := CheckM md) μ (fueledOps μ F)
             envBase envSelf
             (fun n => if blockNames.contains n then auxKey n .model else n)
             c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
@@ -407,7 +407,7 @@ where
       intro acc env₃ h
       simp only [List.foldlM, Bind.bind, Except.bind] at h
       revert h
-      cases hr : checkIotaRules (m := CheckM) μ (fueledOps μ F) envBase
+      cases hr : checkIotaRules (m := CheckM md) μ (fueledOps μ F) envBase
           envSelf
           (fun n => if blockNames.contains n then auxKey n .model else n)
           c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2 with
@@ -477,7 +477,7 @@ the cons — which the run record does not need. -/
 theorem projInstallRunRS {μ : CheckMode} {F : Nat} {T ctorName : Key md}
     {lps : List LevelParam} {nP nF : Nat} :
     ∀ (fields : List Nat) {env' env₄ : Env md},
-      fields.foldlM (installProjFnStep (m := CheckM) μ (fueledOps μ F)
+      fields.foldlM (installProjFnStep (m := CheckM md) μ (fueledOps μ F)
         T ctorName lps nP nF) env' = .ok env₄ →
       ProjInstallRun μ F T ctorName lps nP nF env' fields env₄ := by
   intro fields
@@ -490,7 +490,7 @@ theorem projInstallRunRS {μ : CheckMode} {F : Nat} {T ctorName : Key md}
     intro env' env₄ h
     simp only [List.foldlM, Bind.bind, Except.bind] at h
     revert h
-    cases hstep : installProjFnStep (m := CheckM) μ (fueledOps μ F) T
+    cases hstep : installProjFnStep (m := CheckM md) μ (fueledOps μ F) T
         ctorName lps nP nF env' i with
     | error e => intro h; exact nomatch h
     | ok env'' => ?_
@@ -530,7 +530,7 @@ with it the run record's last conjunct.) -/
 theorem declIndRun_of
     {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {block : List (ConstantInfo md)}
-    (h : checkModeled (m := CheckM) μ (fueledOps μ F) env block
+    (h : checkModeled (m := CheckM md) μ (fueledOps μ F) env block
       = .ok env₂) :
     DeclIndRun μ F env block env₂ := by
   simp only [checkModeled, Bind.bind, Except.bind, pure,

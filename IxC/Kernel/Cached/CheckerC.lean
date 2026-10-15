@@ -110,7 +110,7 @@ def checkIndMemberS (blockNames : List (Key md)) (caps : IndCaps md)
   match ci with
   | .indInfo _ _ => pure (fe.push (.indInfo cvA caps))
   | .ctorInfo _ nP nF => pure (fe.push (.ctorInfo cvA nP nF))
-  | _ => throw (.invalid s!"non-inductive member {cvA.name} in block")
+  | _ => throw (.invalid msg!"non-inductive member {cvA.name} in block")
 
 /-- Phase 0 of the recursor group (mirrors `provisionRecs`). -/
 def provisionRecsS (blockNames : List (Key md)) :

@@ -63,7 +63,7 @@ variable {env : Env md} {s₀ : CState md}
 /-- Generic unary shared-runner simulation: convert in, run the
 simulated knot entry, convert back. -/
 theorem opE_sim {pick : CoreFnsI md → Nat → Expr md → (CheckCM md) (Expr md)}
-    {pf : FueledM (Expr md)} {d : Nat} {e : Expr md}
+    {pf : FueledM md (Expr md)} {d : Nat} {e : Expr md}
     (hsim : ∀ {s₁ : CState md} {i : Expr md}, CSOK mode env s₁ →
       RelC i e →
       SimC mode env s₁ (RelEC d)

@@ -50,12 +50,12 @@ structure CheckerOps (md : Mode) (m : Type → Type) where
   `Unit` result is what makes the combinator fuel-monotone: an attempt
   that fails at one fuel and succeeds at a larger one changes which
   branch ran, not whether the whole succeeded. -/
-  orElse : m Bool → (Option CheckError → m Unit) → m Unit
+  orElse : m Bool → (Option (CheckError md) → m Unit) → m Unit
 
 variable (mode : CheckMode)
 
 /-- The pure instantiation, at an arbitrary fuel. -/
-def fueledOps (F : Nat) : (CheckerOps md) CheckM where
+def fueledOps (F : Nat) : (CheckerOps md) (CheckM md) where
   annotate env d e := annotateCore mode env F d e
   inferType env d e := inferTypeCore mode env F d e
   isDefEq env d a b := isDefEqCore mode env F d a b
@@ -66,7 +66,7 @@ def fueledOps (F : Nat) : (CheckerOps md) CheckM where
     | _ => k none
 
 /-- The pure instantiation, at the standard fuel. -/
-def pureOps : (CheckerOps md) CheckM := fueledOps mode checkFuel
+def pureOps : (CheckerOps md) (CheckM md) := fueledOps mode checkFuel
 
 /-- **The verdict at a term whose constants do not all resolve.**
 
@@ -85,12 +85,12 @@ unchanged.  `where_` names the slot, e.g. `"type of Foo"`.
 does not unfold here.  The companion `unknownConstError`
 (`IxC/Kernel/Core.lean`) decides the same question inside
 inference, which the annotation pass reaches before this guard runs. -/
-def unresolvedConstsError (where_ : String) (e : Expr md) : CheckError :=
+def unresolvedConstsError (where_ : Msg md) (e : Expr md) : CheckError md :=
   if e.mentionsConst sorryAxName then
-    .notImplemented s!"use of the sorryAx axiom in {where_}"
-  else .invalid s!"unknown constant in {where_}"
+    .notImplemented msg!"use of the sorryAx axiom in {where_}"
+  else .invalid msg!"unknown constant in {where_}"
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- Checks common to all declarations: fresh name, well-formed universe
 parameters, and a type that is a type and mentions only declared
@@ -98,22 +98,22 @@ parameters.  Returns the constant with its type **annotated**
 (`annotate`); the guards run on the annotated type. -/
 def checkConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) : m (ConstantVal md) := do
   if (env.find? cv.name).isSome then
-    throw (.invalid s!"duplicate declaration {cv.name}")
+    throw (.invalid msg!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
-    throw (.invalid s!"reserved basis name {cv.name}")
+    throw (.invalid msg!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
-    throw (.invalid s!"reserved projection name {cv.name}")
+    throw (.invalid msg!"reserved projection name {cv.name}")
   unless LevelParam.nodup cv.levelParams do
-    throw (.invalid s!"duplicate universe parameters in {cv.name}")
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
   unless cv.type.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in type of {cv.name}")
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
   if cv.type.hasFvar then
-    throw (.invalid s!"unexpected free variable in type of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate env 0 cv.type
   unless type.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in type of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolve env do
-    throw (unresolvedConstsError s!"type of {cv.name}" type)
+    throw (unresolvedConstsError msg!"type of {cv.name}" type)
   let stype ← ops.inferType env 0 type
   let _u ← ops.ensureSort env 0 stype
   pure { cv with type := type }
@@ -233,7 +233,7 @@ def checkDefEqList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
 /-- Unwrap an optional value or fail with the given error (the
 `Option`-shaped checks below stay bind-shaped for the verification
 batteries). -/
-def unwrapOr {α : Type} (o : Option α) (err : CheckError) : m α :=
+def unwrapOr {α : Type} (o : Option α) (err : CheckError md) : m α :=
   match o with
   | some a => pure a
   | none => throw err

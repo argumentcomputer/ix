@@ -39,15 +39,34 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3446 compiled functions with 92 inherited externs, with the
-computed-field overrides of `Level`, `Expr`, `Name` and `Key` and 20 proved
+reaches 3352 compiled functions with 67 inherited externs, with the
+computed-field overrides of `Level`, `Expr` and `Key` and 20 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2134, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5570 with
-115 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
+TagN writer twin; the entry (the four `publicOperations`) reaches 5788 with
+113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
-default table and prelude, and the codec's two TagN twins. The IxC
+default table and prelude, and the codec's two TagN twins. Step 6's
+structured errors (`CheckError md`: a message is prose and keys, `Msg md`, and
+the checker never spells a key) moved them from 3446 and 5570, and the
+fold's and the entry's inherited externs from 92 and 115; the reader is
+unchanged:
+* the fold: 130 fewer functions and 36 more closed terms. Key rendering
+  (`Key.toName`, `Mode.idName`, `Derived.spell`, `Role.leanName`'s 121 closed
+  terms, `Name.toString` and `Name`'s three computed-field overrides, which
+  the fold no longer reaches: unsafe 24 to 21, ruled computed_field 20 to
+  17), the `Repr` of terms two messages printed (`reprStr`, `Std.Format`),
+  and the 25 string and printing externs they used (`String.append`,
+  `String.extract`, `ByteArray.get!`, `UInt8` shifts, `USize.repr`, ...)
+  went; a fixed message is now a one-part list (`[.text s]`), two more
+  closed objects per message site;
+* the entry: 39 fewer functions and 257 more closed terms. The reader still
+  spells keys in its own `ReadError` messages and the in-model generator's,
+  so the key rendering stays reachable there; the term printing and two
+  string externs (`String.Internal.foldl`, `String.Internal.isEmpty`) went,
+  and every message site of the fold adds its two closed objects.
+The IxC
 performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127 and
 5552, and the fold's and the entry's inherited externs from 90 and 113 to 92
 and 115:
@@ -407,7 +426,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3446 compiled functions; inherited externs 92, implemented_by 0, unsafe 24, csimp 4; ruled computed_field 20, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3352 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -419,7 +438,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5570 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5788 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

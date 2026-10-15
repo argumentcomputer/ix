@@ -50,6 +50,61 @@ moves can name them without importing the bodies.
 
 namespace Ix.Kernel
 
+/-! ## Failure messages (IXC-PLAN §7, step 6) -/
+
+/-- **A part of a failure's message**: fixed prose, the key of a constant
+the failure is about, or a number. Keys stay keys: the mode's renderer
+spells them (`Msg.render`). -/
+inductive MsgPart (md : Mode) where
+  | text (s : String)
+  | key (k : Key md)
+  | nat (n : Nat)
+  deriving DecidableEq, Repr
+
+/-- **A failure's message**: its parts, in order. -/
+abbrev Msg (md : Mode) := List (MsgPart md)
+
+/-- The message of fixed prose. -/
+instance : Coe String (Msg md) := ⟨fun s => [.text s]⟩
+
+/-- What a `msg!` interpolation turns a value into. -/
+class ToMsg (md : Mode) (α : Type) where
+  toMsg : α → Msg md
+
+instance : ToMsg md String := ⟨fun s => [.text s]⟩
+instance : ToMsg md (Key md) := ⟨fun k => [.key k]⟩
+instance : ToMsg md Nat := ⟨fun n => [.nat n]⟩
+instance : ToMsg md (Msg md) := ⟨id⟩
+
+/-- **`msg!"…{k}…"`**: a message from an interpolated string, as `s!` builds
+a string; a key interpolates as a key part, a number as a number part, a
+string as prose. -/
+syntax:max "msg!" interpolatedStr(term) : term
+
+macro_rules
+  | `(msg! $interpStr) => do
+    interpStr.expandInterpolatedStr (← `(Ix.Kernel.Msg _)) (← `(Ix.Kernel.ToMsg.toMsg))
+
+/-- A message part with its key spelled by `spell`. -/
+def MsgPart.render (spell : Key md → String) : MsgPart md → String
+  | .text s => s
+  | .key k => spell k
+  | .nat n => toString n
+
+/-- A message with its keys spelled by `spell`. -/
+def Msg.render (spell : Key md → String) (m : Msg md) : String :=
+  String.join (m.map (MsgPart.render spell))
+
+/-- A message part with its key renamed. -/
+def MsgPart.mapKeys (σ : Key md → Key md') : MsgPart md → MsgPart md'
+  | .text s => .text s
+  | .key k => .key (σ k)
+  | .nat n => .nat n
+
+/-- A message with its keys renamed. -/
+def Msg.mapKeys (σ : Key md → Key md') (m : Msg md) : Msg md' :=
+  m.map (MsgPart.mapKeys σ)
+
 /-- **The verdict of a failure, everywhere in the binary** — the one
 error type the whole accept path reports (task #295): the kernel's
 steps, the fold, and the frontend's parse and prelude alike.  The
@@ -64,20 +119,56 @@ as in the size guard, which refuses the input before reading it) and
 the record's position in the list the fold folds
 (`Ix.Kernel.Cached.checkDecls`).  The two are in the same type because
 the driver chains the steps, and the main corollary states that chain
-(`IxC/Kernel/MainTheorem.lean`). -/
-inductive CheckError where
-  | notImplemented (what : String)
-  | invalid (msg : String)
-  | internal (msg : String)
+(`IxC/Kernel/MainTheorem.lean`).
+
+**Structured** (IXC-PLAN §7, step 6): a failure's message is a `Msg md`,
+fixed prose around the keys it is about (`MsgPart`), and the checker never
+spells a key. Each mode's renderer does (`CheckError.render`: `.anon` short
+hexadecimal, `.meta` names with their address, `.source` Lean names), and a
+renaming maps the keys (`CheckError.mapKeys`). No control flow reads a
+message. -/
+inductive CheckError (md : Mode) where
+  | notImplemented (what : Msg md)
+  | invalid (msg : Msg md)
+  | internal (msg : Msg md)
   deriving Repr
 
-instance : ToString CheckError where
-  toString
-    | .notImplemented what => s!"not implemented yet: {what}"
-    | .invalid msg => s!"invalid: {msg}"
-    | .internal msg => s!"internal error: {msg}"
+namespace CheckError
 
-abbrev CheckM := Except CheckError
+/-- A failure's message, without its verdict. -/
+def msg : CheckError md → Msg md
+  | .notImplemented m | .invalid m | .internal m => m
+
+/-- The verdict's prefix, as a message spells it. -/
+def verdictPrefix : CheckError md → String
+  | .notImplemented _ => "not implemented yet: "
+  | .invalid _ => "invalid: "
+  | .internal _ => "internal error: "
+
+/-- **The renderer**: the verdict's prefix and the message, with each key
+spelled by `spell` (the mode's spelling: `Key.toName` for `.anon` and
+`.source`, the display table's for `.meta`). -/
+def render (spell : Key md → String) (e : CheckError md) : String :=
+  e.verdictPrefix ++ e.msg.render spell
+
+/-- **Renaming the keys of a failure** (IXC-PLAN §12: the renaming lemma maps
+errors): the verdict and the prose stay. -/
+def mapKeys (σ : Key md → Key md') : CheckError md → CheckError md'
+  | .notImplemented m => .notImplemented (Msg.mapKeys σ m)
+  | .invalid m => .invalid (Msg.mapKeys σ m)
+  | .internal m => .internal (Msg.mapKeys σ m)
+
+end CheckError
+
+/-- The default rendering: keys as `Key.toName` spells them, as every message
+read before step 6. -/
+instance : ToString (CheckError md) := ⟨CheckError.render (fun k => toString k)⟩
+
+/-- A failure inside a message (an evidence check's): its verdict's prefix and
+its message, as the default rendering spells it. -/
+instance : ToMsg md (CheckError md) := ⟨fun e => .text e.verdictPrefix :: e.msg⟩
+
+abbrev CheckM (md : Mode) := Except (CheckError md)
 
 /-- **The verdict at a constant the environment does not know.**
 
@@ -97,9 +188,9 @@ so a `sorryAx` in a domain reaches inference first.  Its companion
 `unresolvedConstsError` (`IxC/Kernel/CheckerBase.lean`) decides
 the same question at the guard, for the `sorryAx` occurrences
 inference never reaches. -/
-def unknownConstError (n : Key md) : CheckError :=
+def unknownConstError (n : Key md) : CheckError md :=
   if n = sorryAxName then .notImplemented "use of the sorryAx axiom"
-  else .invalid s!"unknown constant {n}"
+  else .invalid msg!"unknown constant {n}"
 
 /-- The record of mutually recursive core entry points.  `whnfCore`
 computes a head normal form without delta; `whnf` is the full reduction
@@ -137,9 +228,18 @@ passes `infer_only` down) without a textual twin. -/
 def CoreFns.ioView {m : Type → Type u} (r : (CoreFns md) m) : (CoreFns md) m :=
   { r with infer := r.inferIO }
 
+/-- Lift a fuel-style partial result; `none` is an internal error. Its
+arguments do not name the mode, so it takes the error class in the form whose
+error type the monad determines (`MonadExcept`, an `outParam`): a call site's
+mode is its monad's. -/
+def liftFueled {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
+    (what : String) : Option α → m α
+  | some a => pure a
+  | none => throw (.internal msg!"fuel exhausted: {what}")
+
 section Bodies
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /- The three-mode setting (task #147): definitions below that mention
 `mode` take it as their first explicit argument (after the monad
@@ -147,11 +247,6 @@ instances).  Only the seven TT-lane check sites branch on it, through
 `CheckMode.ttChecks`; at `.ttModel` the checker is exactly the pre-#147
 one, at `.verified` (the default) the seven checks are skipped. -/
 variable (mode : CheckMode)
-
-/-- Lift a fuel-style partial result; `none` is an internal error. -/
-def liftFueled (what : String) : Option α → m α
-  | some a => pure a
-  | none => throw (.internal s!"fuel exhausted: {what}")
 
 /-- Literal acceleration (the official kernel's `reduceNat`, run in the
 `whnf` loop *before* delta-unfolding): pack `Nat.succ` applied to a
@@ -201,7 +296,7 @@ def reduceNat (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
       | some _ =>
         match rawNatLit? (← r.whnf depth b) with
         | some _ => throw (.notImplemented
-            s!"native Nat computation on literals ({c})")
+            msg!"native Nat computation on literals ({c})")
         | none => pure none
       | none => pure none
     else pure none
@@ -1137,10 +1232,10 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
         -- a projection table is not a term (task #175 W4c): `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
-          throw (.invalid s!"projection table entry used as a constant {n}")
+          throw (.invalid msg!"projection table entry used as a constant {n}")
         let cv := ci.toConstantVal
         unless us.length = cv.levelParams.length do
-          throw (.invalid s!"incorrect number of universe levels for {n}")
+          throw (.invalid msg!"incorrect number of universe levels for {n}")
         pure (cv.type.instantiateLevelParams cv.levelParams us)
     | .lit (.natVal _) => do
       if natLitSupported env then pure (.const natName [])
@@ -1310,10 +1405,10 @@ def inferBodyIO (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Exp
         -- a projection table is not a term (task #175 W4c): `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
-          throw (.invalid s!"projection table entry used as a constant {n}")
+          throw (.invalid msg!"projection table entry used as a constant {n}")
         let cv := ci.toConstantVal
         unless us.length = cv.levelParams.length do
-          throw (.invalid s!"incorrect number of universe levels for {n}")
+          throw (.invalid msg!"incorrect number of universe levels for {n}")
         pure (cv.type.instantiateLevelParams cv.levelParams us)
     | .lit (.natVal _) => do
       if natLitSupported env then pure (.const natName [])
@@ -1934,7 +2029,7 @@ are the bodies applied to the record one fuel level down.  Fuel is
 next level is constructed lazily, inside each entry point's closure
 (constant work per call; an eager tower would cost `fuel` allocations
 per instantiation). -/
-def coreKnot {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+def coreKnot {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
     (mode : CheckMode) (env : Env md)
     (wrap : (CoreFns md) m → (CoreFns md) m) : Nat → (CoreFns md) m
   | 0 =>

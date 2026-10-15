@@ -155,7 +155,7 @@ iteration on `whnfLoop`'s own budget, so this is stated about the
 continuation-parameterized body; `whnfLoop … (n+1)` *is*
 `whnfStep … (whnfLoop … n)`, so consumers apply it after `cases` on
 the budget and use the budget induction hypothesis for `k`. -/
-theorem whnfStep_inv {env : Env md} {fuel d : Nat} {k : Expr md → CheckM (Expr md)}
+theorem whnfStep_inv {env : Env md} {fuel d : Nat} {k : Expr md → CheckM md (Expr md)}
     {e e' : Expr md}
     (h : whnfStep (pureFns mode env fuel) env d k e = .ok e') :
     ∃ e₁, whnfCore mode env fuel d e = .ok e₁ ∧
@@ -2179,7 +2179,7 @@ theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
   simp only [↓reduceIte] at h
   -- the per-slot certificates: skipped at a tower family (task #175 S1)
   have hpcOf : ∀ r₂, (if towerSlotsAll env T caps.etaFields = true then
-        (Except.ok true : Except CheckError Bool)
+        (Except.ok true : Except (CheckError md) Bool)
       else structEtaProjCertsFueled mode env fuel d T us' wtb.getAppArgs b
         cvT.levelParams (List.range caps.etaFields)) = .ok r₂ →
       r₂ = true →
@@ -2190,7 +2190,7 @@ theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
     rw [if_neg (by simp [htow])] at hr
     rw [← hr2]; exact hr
   cases hpc0 : (if towerSlotsAll env T caps.etaFields = true then
-        (Except.ok true : Except CheckError Bool)
+        (Except.ok true : Except (CheckError md) Bool)
       else structEtaProjCertsFueled mode env fuel d T us' wtb.getAppArgs b
         cvT.levelParams (List.range caps.etaFields)) with
   | error e => rw [hpc0] at h; exact nomatch h
@@ -2503,7 +2503,7 @@ theorem inferTypeCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : 
       · rw [if_neg hf] at h
         exact absurd h (by
           simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind])
-    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError (Expr md)) = .ok t := by
+    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except (CheckError md) (Expr md)) = .ok t := by
       by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
       · rw [if_pos hp, if_pos (hg hp)] at h
         exact h

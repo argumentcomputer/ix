@@ -223,9 +223,9 @@ continuation (`hk`, for whatever outcome the cached lane delivered).
 The common fuel is the larger of the attempt's and the
 continuation's. -/
 theorem SimC.orElse {s₀ : CState md} (hs : CSOK mode env s₀)
-    {x : (CheckCM md) Bool} {x' : FueledM Bool}
-    {k : Option CheckError → (CheckCM md) Unit}
-    {k' : Option CheckError → FueledM Unit}
+    {x : (CheckCM md) Bool} {x' : FueledM md Bool}
+    {k : Option (CheckError md) → (CheckCM md) Unit}
+    {k' : Option (CheckError md) → FueledM md Unit}
     (hx : SimC mode env s₀ RelVC x x')
     (hk : ∀ r (s₁ : CState md), CSOK mode env s₁ →
       SimC mode env s₁ RelVC (k r) (k' none)) :
@@ -307,7 +307,7 @@ theorem checkDivModEvidenceS_sim (hμ : mode.verifiedChecks = true) (henv : EnvW
 theorem installBasisDeclS_sim {env' : Env md} {ci : ConstantInfo md}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC (installBasisDecl env' ci : (CheckCM md) (Env md))
-      (installBasisDecl env' ci : FueledM (Env md)) := by
+      (installBasisDecl env' ci : FueledM md (Env md)) := by
   unfold installBasisDecl
   by_cases h1 : (env'.find? ci.name).isNone = true
   · simp only [if_pos h1]
@@ -321,7 +321,7 @@ theorem installBasisFoldS_sim :
       CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (cis.foldlM installBasisDecl env' : (CheckCM md) (Env md))
-        (cis.foldlM installBasisDecl env' : FueledM (Env md))
+        (cis.foldlM installBasisDecl env' : FueledM md (Env md))
   | [], env', s₀, hs => SimC.pure hs rfl
   | ci :: cis, env', s₀, hs => by
     simp only [List.foldlM]

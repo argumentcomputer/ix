@@ -47,7 +47,7 @@ variable {mode : CheckMode}
 
 open Expr
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-! ## The pure mirrors -/
 
@@ -195,7 +195,7 @@ Since 2026-09-06 the write is UNGATED (both modes annotate), so the
 `none` alternative — "no datum" — is unreachable and the invariant says
 so.  Written as a `def` by pattern match so that consumers never face a
 dependent `match` motive. -/
-def AnnotPwOk (x : CheckM PropWhen) : Option PropWhen → Prop
+def AnnotPwOk (x : CheckM md PropWhen) : Option PropWhen → Prop
   | some pw => x = .ok pw
   | none => False
 
@@ -526,16 +526,16 @@ theorem ensureSortCore_eq (env : Env md) (F d : Nat) (e : Expr md) :
          | .sort u => pure u
          | _ => throw (.invalid "expected a sort")) := rfl
 
-theorem bind_okB {α β : Type} {x : Except CheckError α}
-    {g : α → Except CheckError β} {res : β}
+theorem bind_okB {α β : Type} {x : Except (CheckError md) α}
+    {g : α → Except (CheckError md) β} {res : β}
     (h : (x >>= g) = .ok res) : ∃ a, x = .ok a ∧ g a = .ok res := by
   cases x with
   | error e => exact nomatch h
   | ok a => exact ⟨a, rfl, h⟩
 
 theorem okB_bind {α β : Type} (a : α)
-    {g : α → Except CheckError β} :
-    ((Except.ok a : Except CheckError α) >>= g) = g a := rfl
+    {g : α → Except (CheckError md) β} :
+    ((Except.ok a : Except (CheckError md) α) >>= g) = g a := rfl
 
 /-- `whnf` is the identity on sorts (two fuel steps in). -/
 theorem whnf_sort (env : Env md) (F d : Nat) (u : Level) :
@@ -559,8 +559,8 @@ variable {env : Env md}
 theorem inferLamsOut_atF (d : Nat) :
     ∀ (stk : List (InferLamEntryX md)) (j : Nat) (cur : Expr md)
       (prevPw : PropWhen) (F : Nat),
-      (inferLamsOut (m := FueledM) mode d stk j cur prevPw).val F
-        = inferLamsOut (m := CheckM) mode d stk j cur prevPw
+      (inferLamsOut (m := FueledM md) mode d stk j cur prevPw).val F
+        = inferLamsOut (m := CheckM md) mode d stk j cur prevPw
   | [], _, _, _, _ => rfl
   | (_tyo, mb) :: rest, j, _cur, prevPw, F => by
     unfold inferLamsOut
@@ -635,8 +635,8 @@ theorem inferLams_atF (d : Nat) :
 
 theorem inferPisOut_atF :
     ∀ (stk : List (Level × PropWhen)) (v : Level) (F : Nat),
-      (inferPisOut (m := FueledM) mode stk v).val F
-        = inferPisOut (m := CheckM) mode stk v
+      (inferPisOut (m := FueledM md) mode stk v).val F
+        = inferPisOut (m := CheckM md) mode stk v
   | [], _, _ => rfl
   | (u, pw) :: rest, v, F => by
     unfold inferPisOut
@@ -694,8 +694,8 @@ theorem annotateBindersOut_atF (mk : Expr md → Expr md → BinderMeta → Expr
     (d : Nat) :
     ∀ (pw? : Option PropWhen) (stk : List (AnnotBinderEntryX md)) (j : Nat)
       (cur : Expr md) (F : Nat),
-      (annotateBindersOut (m := FueledM) mk d pw? stk j cur).val F
-        = annotateBindersOut (m := CheckM) mk d pw? stk j cur
+      (annotateBindersOut (m := FueledM md) mk d pw? stk j cur).val F
+        = annotateBindersOut (m := CheckM md) mk d pw? stk j cur
   | _, [], _, _, _ => rfl
   | _pw?, (_ty', _mb) :: rest, j, _cur, F =>
     annotateBindersOut_atF mk d _ rest (j - 1) _ F
@@ -785,9 +785,9 @@ theorem inferLamsOut_wrap {d : Nat} :
     ∀ (stk : List (InferLamEntryX md)) (j : Nat) (bt : Expr md)
       (prevPw : PropWhen),
       stk.length = j + 1 →
-      inferLamsOut (m := CheckM) mode d stk j
+      inferLamsOut (m := CheckM md) mode d stk j
           (bt.abstractRange d (j + 1)) prevPw
-        = inferLamsWrap (m := CheckM) mode d stk j bt prevPw := by
+        = inferLamsWrap (m := CheckM md) mode d stk j bt prevPw := by
   intro stk
   induction stk with
   | nil => intro j bt prevPw hlen; exact nomatch hlen
@@ -800,10 +800,10 @@ theorem inferLamsOut_wrap {d : Nat} :
     · simp only [if_pos hg]
       rfl
     simp only [if_neg hg]
-    show inferLamsOut (m := CheckM) mode d rest (j - 1)
+    show inferLamsOut (m := CheckM md) mode d rest (j - 1)
         (Expr.forallE (tyo.abstractRange d j)
           (bt.abstractRange d (j + 1)) mb) mb.pw
-      = inferLamsWrap (m := CheckM) mode d rest (j - 1)
+      = inferLamsWrap (m := CheckM md) mode d rest (j - 1)
           (Expr.forallE tyo (bt.abstract1 (d + j)) mb) mb.pw
     cases rest with
     | nil =>
@@ -839,7 +839,7 @@ theorem inferLamsLeaf_sound {d : Nat} {t : Expr md}
     (hlen : stk.length = k)
     (hrun : inferLamsLeaf mode (pureFns mode env F) d t k fvs stk = .ok res) :
     ∃ F', (inferTypeCore mode env F' (d + k) (t.instantiateList fvs) >>=
-      fun bt => inferLamsTail (m := CheckM) mode (pureFns mode env F')
+      fun bt => inferLamsTail (m := CheckM md) mode (pureFns mode env F')
         env d t k stk bt) = .ok res := by
   unfold inferLamsLeaf at hrun
   obtain ⟨bt, hbt, hrun⟩ := bind_okB hrun
@@ -849,9 +849,9 @@ theorem inferLamsLeaf_sound {d : Nat} {t : Expr md}
   unfold inferLamsTail
   -- the guard, and the check it guards, are the leaf's own
   have hout : ∀ {res' : Expr md} {prevPw : PropWhen},
-      inferLamsOut (m := CheckM) mode d stk (k - 1)
+      inferLamsOut (m := CheckM md) mode d stk (k - 1)
           (bt.abstractRange d k) prevPw = .ok res' →
-        inferLamsWrap (m := CheckM) mode d stk (k - 1) bt prevPw
+        inferLamsWrap (m := CheckM md) mode d stk (k - 1) bt prevPw
           = .ok res' := by
     intro res' prevPw h
     cases stk with
@@ -921,7 +921,7 @@ theorem inferLams_sound {d : Nat} :
       (∀ x ∈ fvs, ∃ i ty, x = Expr.fvar i ty) →
       inferLams mode (pureFns mode env F) d fuel t k fvs stk = .ok res →
       ∃ F', (inferTypeCore mode env F' (d + k) (t.instantiateList fvs) >>=
-        fun bt => inferLamsTail (m := CheckM) mode (pureFns mode env F')
+        fun bt => inferLamsTail (m := CheckM md) mode (pureFns mode env F')
           env d t k stk bt) = .ok res := by
   intro fuel
   induction fuel with
@@ -1088,7 +1088,7 @@ theorem inferPisWrap_sort {d : Nat} :
     ∀ (stk : List (Level × PropWhen)) (j : Nat) (v : Level) {F : Nat},
       2 ≤ F →
       inferPisWrap mode (pureFns mode env F) env d stk j (.sort v)
-        = (inferPisOut (m := CheckM) mode stk v).map Expr.sort := by
+        = (inferPisOut (m := CheckM md) mode stk v).map Expr.sort := by
   intro stk
   induction stk with
   | nil => intro j v F hF; rfl
@@ -1317,11 +1317,11 @@ theorem annotateBindersOut_wrap
       = mk (ty.abstractRange d k c) (b.abstractRange d k (c + 1)) bi)
     {d : Nat}
     (rdOf : Expr md → Option PropWhen)
-    (pwf : Nat → Expr md → CheckM PropWhen)
+    (pwf : Nat → Expr md → CheckM md PropWhen)
     (hmkRd : ∀ ty b mb, rdOf (mk ty b mb) = some mb.pw)
     (hpwf_read : ∀ (D : Nat) (e : Expr md) (p : PropWhen),
       rdOf e = some p → pwf D e = pure p)
-    (wrap : List (AnnotBinderEntryX md) → Nat → Expr md → CheckM (Expr md))
+    (wrap : List (AnnotBinderEntryX md) → Nat → Expr md → CheckM md (Expr md))
     (hwrap_nil : ∀ j bt, wrap [] j bt = pure bt)
     (hwrap_cons : ∀ ty' mb rest j bt,
       wrap ((ty', mb) :: rest) j bt
@@ -1334,7 +1334,7 @@ theorem annotateBindersOut_wrap
       (pw? : Option PropWhen),
       stk.length = j + 1 →
       AnnotPwOk (pwf (d + j + 1) bt) pw? →
-      annotateBindersOut (m := CheckM) mk d pw? stk j
+      annotateBindersOut (m := CheckM md) mk d pw? stk j
           (bt.abstractRange d (j + 1))
         = wrap stk j bt := by
   intro stk
@@ -1364,7 +1364,7 @@ theorem annotateBindersOut_wrap
           simp only [hw, Bool.not_false, if_true, ↓reduceIte, hpw, okB_bind]
     obtain ⟨q, hqf, hqm⟩ := hq
     rw [hqf]
-    show annotateBindersOut (m := CheckM) mk d
+    show annotateBindersOut (m := CheckM md) mk d
         (pw?.map fun _ => (annotBinderMeta pw? mb).pw)
         rest (j - 1)
         (mk (ty'.abstractRange d j) (bt.abstractRange d (j + 1))
@@ -1376,7 +1376,7 @@ theorem annotateBindersOut_wrap
       obtain rfl : j = 0 := by simpa using hlen
       rw [hwrap_nil]
       show (pure (mk (ty'.abstractRange d 0)
-          (bt.abstractRange d (0 + 1)) { mb with pw := q }) : CheckM (Expr md))
+          (bt.abstractRange d (0 + 1)) { mb with pw := q }) : CheckM md (Expr md))
         = pure (mk ty' (bt.abstract1 (d + 0)) { mb with pw := q })
       rw [abstractRange_zero, abstractRange_succ, abstractRange_zero]
     | cons e' rest' =>
@@ -1408,11 +1408,11 @@ theorem annotateBindersOut_wrap
 /-! ### The write's fuel monotonicity and the leaf bridge (task #161 P5) -/
 
 
-theorem annotatePisWrap_nil (r : (CoreFns md) CheckM) (env : Env md) (d j : Nat)
+theorem annotatePisWrap_nil (r : (CoreFns md) (CheckM md)) (env : Env md) (d j : Nat)
     (bt : Expr md) :
     annotatePisWrap r env d [] j bt = pure bt := by rfl
 
-theorem annotatePisWrap_cons (r : (CoreFns md) CheckM) (env : Env md) (d : Nat)
+theorem annotatePisWrap_cons (r : (CoreFns md) (CheckM md)) (env : Env md) (d : Nat)
     (ty' : Expr md) (mb : BinderMeta)
     (rest : List (AnnotBinderEntryX md)) (j : Nat) (bt : Expr md) :
     annotatePisWrap r env d ((ty', mb) :: rest) j bt
@@ -1425,11 +1425,11 @@ theorem annotatePisWrap_cons (r : (CoreFns md) CheckM) (env : Env md) (d : Nat)
   simp only [annotatePisWrap]
   split <;> rfl
 
-theorem annotateLamsWrap_nil (r : (CoreFns md) CheckM) (env : Env md) (d j : Nat)
+theorem annotateLamsWrap_nil (r : (CoreFns md) (CheckM md)) (env : Env md) (d j : Nat)
     (bt : Expr md) :
     annotateLamsWrap r env d [] j bt = pure bt := by rfl
 
-theorem annotateLamsWrap_cons (r : (CoreFns md) CheckM) (env : Env md) (d : Nat)
+theorem annotateLamsWrap_cons (r : (CoreFns md) (CheckM md)) (env : Env md) (d : Nat)
     (ty' : Expr md) (mb : BinderMeta)
     (rest : List (AnnotBinderEntryX md)) (j : Nat) (bt : Expr md) :
     annotateLamsWrap r env d ((ty', mb) :: rest) j bt
@@ -1502,9 +1502,9 @@ per-level writes). -/
 theorem annotatePisWrap_mono {env : Env md} {F F' : Nat} (hle : F ≤ F')
     {d : Nat} :
     ∀ (stk : List (AnnotBinderEntryX md)) (j : Nat) (bt res : Expr md),
-      annotatePisWrap (m := CheckM) (pureFns mode env F) env d stk j bt
+      annotatePisWrap (m := CheckM md) (pureFns mode env F) env d stk j bt
         = .ok res →
-      annotatePisWrap (m := CheckM) (pureFns mode env F') env d stk j bt
+      annotatePisWrap (m := CheckM md) (pureFns mode env F') env d stk j bt
         = .ok res
   | [], _, _, _, h => h
   | (ty', mb) :: rest, j, bt, res, h => by
@@ -1522,9 +1522,9 @@ theorem annotatePisWrap_mono {env : Env md} {F F' : Nat} (hle : F ≤ F')
 theorem annotateLamsWrap_mono {env : Env md} {F F' : Nat} (hle : F ≤ F')
     {d : Nat} :
     ∀ (stk : List (AnnotBinderEntryX md)) (j : Nat) (bt res : Expr md),
-      annotateLamsWrap (m := CheckM) (pureFns mode env F) env d stk j bt
+      annotateLamsWrap (m := CheckM md) (pureFns mode env F) env d stk j bt
         = .ok res →
-      annotateLamsWrap (m := CheckM) (pureFns mode env F') env d stk j bt
+      annotateLamsWrap (m := CheckM md) (pureFns mode env F') env d stk j bt
         = .ok res
   | [], _, _, _, h => h
   | (ty', mb) :: rest, j, bt, res, h => by
@@ -1550,7 +1550,7 @@ theorem annotatePisPw_inv {env : Env md} {F d k : Nat}
   | ok pw =>
     intro h
     simp only [okB_bind, pure, Except.pure, Except.ok.injEq] at h
-    exact (h ▸ (rfl : (Except.ok pw : CheckM PropWhen) = .ok pw))
+    exact (h ▸ (rfl : (Except.ok pw : CheckM md PropWhen) = .ok pw))
 
 /-- The λ twin of `annotatePisPw_inv`. -/
 theorem annotateLamsPw_inv {env : Env md} {F d k : Nat}
@@ -1564,7 +1564,7 @@ theorem annotateLamsPw_inv {env : Env md} {F d k : Nat}
   | ok pw =>
     intro h
     simp only [okB_bind, pure, Except.pure, Except.ok.injEq] at h
-    exact (h ▸ (rfl : (Except.ok pw : CheckM PropWhen) = .ok pw))
+    exact (h ▸ (rfl : (Except.ok pw : CheckM md PropWhen) = .ok pw))
 
 /-- Leaf-phase soundness for the annotate ∀-loop. -/
 theorem annotatePisLeaf_sound {d : Nat} {t : Expr md}
@@ -1573,7 +1573,7 @@ theorem annotatePisLeaf_sound {d : Nat} {t : Expr md}
     (hlen : stk.length = k)
     (hrun : annotatePisLeaf (pureFns mode env F) env d t k fvs stk = .ok res) :
     ∃ F', (annotateCore mode env F' (d + k) (t.instantiateList fvs) >>=
-      fun leaf' => annotatePisWrap (m := CheckM) (pureFns mode env F')
+      fun leaf' => annotatePisWrap (m := CheckM md) (pureFns mode env F')
         env d stk (k - 1) leaf')
         = .ok res := by
   unfold annotatePisLeaf at hrun
@@ -1597,7 +1597,7 @@ theorem annotatePisLeaf_sound {d : Nat} {t : Expr md}
       (fun D e => annotPwPi (pureFns mode env F) env D e)
       (fun ty b mb => rfl)
       (fun D e p hp => by unfold annotPwPi; rw [hp])
-      (annotatePisWrap (m := CheckM) (pureFns mode env F) env d)
+      (annotatePisWrap (m := CheckM md) (pureFns mode env F) env d)
       (fun j bt => rfl)
       (fun ty' mb rest j bt => annotatePisWrap_cons _ _ _ _ _ _ _ _)
       (e :: rest) (k - 1) leaf' pw?
@@ -1615,7 +1615,7 @@ theorem annotatePis_sound {d : Nat} :
       stk.length = k →
       annotatePis (pureFns mode env F) env d fuel t k fvs stk = .ok res →
       ∃ F', (annotateCore mode env F' (d + k) (t.instantiateList fvs) >>=
-        fun leaf' => annotatePisWrap (m := CheckM) (pureFns mode env F')
+        fun leaf' => annotatePisWrap (m := CheckM md) (pureFns mode env F')
           env d stk (k - 1) leaf')
           = .ok res := by
   intro fuel
@@ -1675,7 +1675,7 @@ theorem annotateLamsLeaf_sound {d : Nat} {t : Expr md}
     (hlen : stk.length = k)
     (hrun : annotateLamsLeaf (pureFns mode env F) env d t k fvs stk = .ok res) :
     ∃ F', (annotateCore mode env F' (d + k) (t.instantiateList fvs) >>=
-      fun leaf' => annotateLamsWrap (m := CheckM) (pureFns mode env F')
+      fun leaf' => annotateLamsWrap (m := CheckM md) (pureFns mode env F')
         env d stk (k - 1) leaf')
         = .ok res := by
   unfold annotateLamsLeaf at hrun
@@ -1699,7 +1699,7 @@ theorem annotateLamsLeaf_sound {d : Nat} {t : Expr md}
       (fun D e => annotPwLam (pureFns mode env F) env D e)
       (fun ty b mb => rfl)
       (fun D e p hp => by unfold annotPwLam; rw [hp])
-      (annotateLamsWrap (m := CheckM) (pureFns mode env F) env d)
+      (annotateLamsWrap (m := CheckM md) (pureFns mode env F) env d)
       (fun j bt => rfl)
       (fun ty' mb rest j bt => annotateLamsWrap_cons _ _ _ _ _ _ _ _)
       (e :: rest) (k - 1) leaf' pw?
@@ -1717,7 +1717,7 @@ theorem annotateLams_sound {d : Nat} :
       stk.length = k →
       annotateLams (pureFns mode env F) env d fuel t k fvs stk = .ok res →
       ∃ F', (annotateCore mode env F' (d + k) (t.instantiateList fvs) >>=
-        fun leaf' => annotateLamsWrap (m := CheckM) (pureFns mode env F')
+        fun leaf' => annotateLamsWrap (m := CheckM md) (pureFns mode env F')
           env d stk (k - 1) leaf')
           = .ok res := by
   intro fuel

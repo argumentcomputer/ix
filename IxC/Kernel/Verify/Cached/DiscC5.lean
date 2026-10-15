@@ -115,7 +115,7 @@ unfoldings are materialized only here, inside the branch that consumes
 them). -/
 private theorem defeqBothC (_ih : SSimC mode env f) (henv : EnvWF env)
     {d : Nat} {kI : Bool → Expr md → Expr md → (CheckCM md) Bool}
-    {kM : Bool → Expr md → Expr md → FueledM Bool}
+    {kM : Bool → Expr md → Expr md → FueledM md Bool}
     (hk : ∀ (pi : Bool) {s : CState md} {p q : Expr md} {x y : Expr md},
       CSOK mode env s → RelC p x → RelC q y →
       Expr.WScoped d x → Expr.WScoped d y →
@@ -164,7 +164,7 @@ private theorem defeqBothC (_ih : SSimC mode env f) (henv : EnvWF env)
 
 theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
     {d : Nat} {kI : Bool → Expr md → Expr md → (CheckCM md) Bool}
-    {kM : Bool → Expr md → Expr md → FueledM Bool}
+    {kM : Bool → Expr md → Expr md → FueledM md Bool}
     (hk : ∀ (pi : Bool) {s : CState md} {p q : Expr md} {x y : Expr md},
       CSOK mode env s → RelC p x → RelC q y →
       Expr.WScoped d x → Expr.WScoped d y →

@@ -130,7 +130,7 @@ def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env md)
   divModEnvGuard env₂ c = true ∧
   ∃ proofs : List (Expr md),
     divModCertsGuard proofs env c value' = true ∧
-    checkDivModCerts (m := CheckM) (fueledOps μ F) env c value'
+    checkDivModCerts (m := CheckM md) (fueledOps μ F) env c value'
       (divModCertStmts c) proofs = .ok true
 
 /-- **A compiler-trust opaque's install, run half**: the storage guards,

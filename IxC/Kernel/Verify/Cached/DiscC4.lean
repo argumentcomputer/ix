@@ -90,7 +90,7 @@ private theorem iotaArityOk_guard {mi : CheckMode} {r : CoreFnsI md}
   · rw [if_neg h, iotaRecI_of_arityOk_false (Bool.not_eq_true _ |>.mp h)]
 
 private theorem whnfCoreStepM_unfold (env : Env md) (d : Nat)
-    (kM : Expr md → FueledM (Expr md)) (e : Expr md) :
+    (kM : Expr md → FueledM md (Expr md)) (e : Expr md) :
     whnfCoreStepM mode (fueledFns mode env) env d kM e =
     (match e with
     | .sort u => pure (.sort u)
@@ -132,7 +132,7 @@ mutual
 
 /-- The bulk-beta argument loop simulates its pure mirror. -/
 theorem whnfAppC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM (Expr md)}
+    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM md (Expr md)}
     (hk : ∀ {s : CState md} {i : Expr md} {ex : Expr md}, CSOK mode env s →
       RelC i ex → Expr.WScoped d ex →
       SimC mode env s (RelEC d) (kI i) (kM ex)) :
@@ -270,7 +270,7 @@ theorem whnfAppC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
 
 /-- The iota arm of the loop simulates its mirror. -/
 theorem whnfAppIotaC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM (Expr md)}
+    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM md (Expr md)}
     (hk : ∀ {s : CState md} {i : Expr md} {ex : Expr md}, CSOK mode env s →
       RelC i ex → Expr.WScoped d ex →
       SimC mode env s (RelEC d) (kI i) (kM ex))
@@ -325,7 +325,7 @@ theorem whnfAppIotaC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
 
 /-- The peel loop simulates its pure mirror. -/
 theorem betaPeelC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM (Expr md)}
+    {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM md (Expr md)}
     (hk : ∀ {s : CState md} {i : Expr md} {ex : Expr md}, CSOK mode env s →
       RelC i ex → Expr.WScoped d ex →
       SimC mode env s (RelEC d) (kI i) (kM ex)) :
@@ -516,7 +516,7 @@ theorem betaPeelC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f)
 end
 
 theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM (Expr md)}
+    {d : Nat} {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM md (Expr md)}
     (hk : ∀ {s : CState md} {i : Expr md} {ex : Expr md}, CSOK mode env s →
       RelC i ex → Expr.WScoped d ex →
       SimC mode env s (RelEC d) (kI i) (kM ex))
@@ -719,7 +719,7 @@ section Walks2
 variable {env : Env md} {f : Nat}
 
 private theorem whnfStep_unfold (env : Env md) (d : Nat)
-    (kM : Expr md → FueledM (Expr md)) (e : Expr md) :
+    (kM : Expr md → FueledM md (Expr md)) (e : Expr md) :
     whnfStep (fueledFns mode env) env d kM e =
     ((fueledFns mode env).whnfCore d e >>= fun e₁ =>
       reduceNat (fueledFns mode env) env d e₁ >>= fun o =>
@@ -733,7 +733,7 @@ private theorem whnfStep_unfold (env : Env md) (d : Nat)
 /-- One iteration of the reduction loop simulates its specification
 (task #106; the continuation is abstract, as in the body). -/
 theorem whnfStepC_sim (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM (Expr md)}
+    {d : Nat} {kI : Expr md → (CheckCM md) (Expr md)} {kM : Expr md → FueledM md (Expr md)}
     (hk : ∀ {s : CState md} {j : Expr md} {ey : Expr md}, CSOK mode env s →
       RelC j ey → Expr.WScoped d ey →
       SimC mode env s (RelEC d) (kI j) (kM ey))
@@ -2063,7 +2063,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
           rw [htargs]
           have hres : SimC mode env s₂' (RelEC d)
               (pure (entry.typeAtI us (Expr.getAppArgs te) pe))
-              (pure (entry.typeAt us (Expr.getAppArgs te) pe) : FueledM (Expr md)) :=
+              (pure (entry.typeAt us (Expr.getAppArgs te) pe) : FueledM md (Expr md)) :=
             SimC.pure hs₂ ⟨ProjEntry.typeAtI_eq entry us _ pe,
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1
@@ -2282,7 +2282,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
             let bAbs ← abstract1M bt d
             pure (Expr.forallE t bAbs m)) : (CheckCM md) (Expr md))
           ((pure (Expr.forallE t (Expr.abstract1 bt d) m) :
-            FueledM (Expr md))) := by
+            FueledM md (Expr md))) := by
       intro s₆ hs₆
       refine SimC.bind_left (abstract1M_eff hs₆ rfl)
         (fun s₇ bAbs hs₇ hQ => ?_)
@@ -2378,7 +2378,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
           rw [htargs]
           have hres : SimC mode env s₂' (RelEC d)
               (pure (entry.typeAtI us (Expr.getAppArgs te) pe))
-              (pure (entry.typeAt us (Expr.getAppArgs te) pe) : FueledM (Expr md)) :=
+              (pure (entry.typeAt us (Expr.getAppArgs te) pe) : FueledM md (Expr md)) :=
             SimC.pure hs₂ ⟨ProjEntry.typeAtI_eq entry us _ pe,
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1

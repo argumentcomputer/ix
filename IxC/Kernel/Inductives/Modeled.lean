@@ -25,7 +25,7 @@ consumes it for `checkDecl`'s `indDecl` arm.  Verification:
 
 namespace Ix.Kernel
 
-variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type -> Type} [Monad m] [MonadExcept (CheckError md) m]
 variable (mode : CheckMode)
 
 /-- Certify that both sides of a modeled iota equation inhabit the
@@ -41,16 +41,16 @@ def checkIotaSidesTy (ops : (CheckerOps md) m) (envSelf : Env md) (depth : Nat)
     (alphaS lhsS rhsS : Expr md) (ℓA : Level) (cvName : Key md) : m Unit := do
   let tl ← ops.inferType envSelf depth lhsS
   unless ← ops.isDefEq envSelf depth tl alphaS do
-    throw (.notImplemented s!"iota statement lhs type for {cvName}")
+    throw (.notImplemented msg!"iota statement lhs type for {cvName}")
   let tr ← ops.inferType envSelf depth rhsS
   unless ← ops.isDefEq envSelf depth tr alphaS do
-    throw (.notImplemented s!"iota statement rhs type for {cvName}")
+    throw (.notImplemented msg!"iota statement rhs type for {cvName}")
   -- TT-lane check (task #147): the slot-sort certification (task
   -- #146) is skipped unless `mode.ttChecks`.
   if mode.ttChecks then
     let tα ← ops.inferType envSelf depth alphaS
     unless ← ops.isDefEq envSelf depth tα (.sort ℓA) do
-      throw (.notImplemented s!"iota statement type slot sort for {cvName}")
+      throw (.notImplemented msg!"iota statement type slot sort for {cvName}")
 
 /-- Check a *canonical* recursor rule's `iota_j` theorem,
 *semantically*: the stored theorem's telescope is opened at free
@@ -71,19 +71,19 @@ def checkIotaThm (ops : (CheckerOps md) m) (env' envSelf : Env md)
     (cnP cnF : Nat) (rhsA : Expr md) : m Unit := do
     let cvt ← unwrapOr
         (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
-        (.notImplemented s!"missing iota theorem for {cvName}")
+        (.notImplemented msg!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
-      throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
+      throw (.notImplemented msg!"iota theorem level mismatch for {cvName}")
     -- open the theorem's telescope: params, motives, minors, fields
     let depth := rP + cnF
     let (fvs, tbody) ← unwrapOr (openPisAtFvars depth cvt.type 0)
-      (.notImplemented s!"iota statement shape mismatch for {cvName}")
+      (.notImplemented msg!"iota statement shape mismatch for {cvName}")
     -- the body is an equation (at one level, like the pinned `Eq`)
     let targs := tbody.getAppArgs
     unless isEqHead tbody.getAppFn do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     unless targs.length = 3 do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     let lhsS := targs.getD 1 (.bvar 0)
     let rhsS := targs.getD 2 (.bvar 0)
     -- the equation's left side: structurally the renamed recursor
@@ -94,25 +94,25 @@ def checkIotaThm (ops : (CheckerOps md) m) (env' envSelf : Env md)
     let xFvs := fvs.drop rP
     let largs := lhsS.getAppArgs
     unless lhsS.getAppFn == Expr.const (f cvName) (lps.map .param) do
-      throw (.notImplemented s!"iota statement head mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement head mismatch for {cvName}")
     unless largs.length = mI + 1 do
-      throw (.notImplemented s!"iota statement arity mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement arity mismatch for {cvName}")
     unless largs.take rP == fvs.take rP do
-      throw (.notImplemented s!"iota statement prefix mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement prefix mismatch for {cvName}")
     let major := largs.getLastD (.bvar 0)
     unless major == Expr.mkAppN
         (.const (f r.ctor) (cvj.levelParams.map .param))
         (fvs.take cnP ++ xFvs) do
-      throw (.notImplemented s!"iota statement major mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     -- the constructor's telescope (renamed), instantiated at the
     -- major's arguments: field domains and the canonical index tuple
     unless (cvj.type.stripPis (cnP + cnF)).isSome do
-      throw (.notImplemented s!"iota constructor telescope for {cvName}")
+      throw (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f))
-        (.notImplemented s!"iota constructor telescope for {cvName}")
+        (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless cres.getAppArgs.length = cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor indices for {cvName}")
+      throw (.notImplemented msg!"iota constructor indices for {cvName}")
     checkDefEqList ops envSelf depth ((largs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP)
     checkDefEqList ops envSelf depth (xFvs.map Expr.fvarTypeD)
@@ -120,31 +120,31 @@ def checkIotaThm (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- the statement's prefix domains are the recursor's (renamed)
     let (rdoms, _) ← unwrapOr
         (Expr.instPisAt (fvs.take rP) (tyA.renameConsts f))
-        (.notImplemented s!"iota recursor telescope for {cvName}")
+        (.notImplemented msg!"iota recursor telescope for {cvName}")
     checkDefEqList ops envSelf depth
       ((fvs.take rP).map Expr.fvarTypeD) rdoms
     -- the rule's λ-domains are the public recursor prefix and
     -- constructor field domains (the fold fact's value spines fit
     -- the public telescopes; these equalities let them fit the λs)
     let (fvsP, _) ← unwrapOr (openPisAtFvars rP tyA 0)
-      (.notImplemented s!"iota recursor telescope for {cvName}")
+      (.notImplemented msg!"iota recursor telescope for {cvName}")
     let (cdomsP, crestP) ← unwrapOr
       (Expr.instPisAt (fvsP.take cnP) cvj.type)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     -- the constructor's parameter domains are the recursor's (the
     -- λ-tower's parameter values fit both telescopes)
     checkDefEqList ops envSelf depth
       ((fvsP.take cnP).map Expr.fvarTypeD) cdomsP
     let (xFvsP, _) ← unwrapOr (openPisAtFvars cnF crestP rP)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (ldoms, _) ← unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA)
-      (.notImplemented s!"rule shape mismatch for {cvName}")
+      (.notImplemented msg!"rule shape mismatch for {cvName}")
     checkDefEqList ops envSelf depth ((fvsP ++ xFvsP).map Expr.fvarTypeD)
       ldoms
     -- the right side: definitionally the rule's applied rhs
     let rhsApplied := Expr.mkAppN (rhsA.renameConsts f) fvs
     unless ← ops.isDefEq envSelf depth rhsS rhsApplied do
-      throw (.notImplemented s!"iota statement mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement mismatch for {cvName}")
     checkIotaSidesTy mode ops envSelf depth (targs.getD 0 (.bvar 0)) lhsS
       rhsS (eqHeadLevel tbody.getAppFn) cvName
 
@@ -214,18 +214,18 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     | some (lvls, pins) => do
     let cvt ← unwrapOr
         (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
-        (.notImplemented s!"missing iota theorem for {cvName}")
+        (.notImplemented msg!"missing iota theorem for {cvName}")
     unless cvt.levelParams = lps do
-      throw (.notImplemented s!"iota theorem level mismatch for {cvName}")
+      throw (.notImplemented msg!"iota theorem level mismatch for {cvName}")
     -- open the theorem's telescope: params, motives, minors, fields
     let depth := rP + cnF
     let (fvs, tbody) ← unwrapOr (openPisAtFvars depth cvt.type 0)
-      (.notImplemented s!"iota statement shape mismatch for {cvName}")
+      (.notImplemented msg!"iota statement shape mismatch for {cvName}")
     let targs := tbody.getAppArgs
     unless isEqHead tbody.getAppFn do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     unless targs.length = 3 do
-      throw (.notImplemented s!"iota statement not an equation for {cvName}")
+      throw (.notImplemented msg!"iota statement not an equation for {cvName}")
     let lhsS := targs.getD 1 (.bvar 0)
     let rhsS := targs.getD 2 (.bvar 0)
     -- the equation's left side: structurally the renamed recursor
@@ -238,11 +238,11 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
       Expr.instSpine (fvs.take rP) (rP - 1) (p.renameConsts f)
     let largs := lhsS.getAppArgs
     unless lhsS.getAppFn == Expr.const (f cvName) (lps.map .param) do
-      throw (.notImplemented s!"iota statement head mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement head mismatch for {cvName}")
     unless largs.length = mI + 1 do
-      throw (.notImplemented s!"iota statement arity mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement arity mismatch for {cvName}")
     unless largs.take rP == fvs.take rP do
-      throw (.notImplemented s!"iota statement prefix mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement prefix mismatch for {cvName}")
     let major := largs.getLastD (.bvar 0)
     -- structural up to display-only binder names: the stored pins may
     -- contain binders (dependent nested occurrences), and the artifact
@@ -251,7 +251,7 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- differ from the recursor type's in binder names only
     unless major == (Expr.mkAppN (.const (f r.ctor) lvls)
         (pinsF ++ xFvs)) do
-      throw (.notImplemented s!"iota statement major mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     -- the constructor's telescope at the stored level instantiations
     -- (renamed), instantiated at the major's arguments: field domains
     -- and the canonical index tuple.  The residual head must be a
@@ -259,18 +259,18 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- both residual walks argument-wise over it, and a variable head
     -- could be captured by a pin instantiation.
     let (_, cbody0) ← unwrapOr (cvj.type.stripPis (cnP + cnF))
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless (match cbody0.getAppFn with
         | .const _ _ => true
         | _ => false) do
-      throw (.notImplemented s!"iota constructor residual head for {cvName}")
+      throw (.notImplemented msg!"iota constructor residual head for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (pinsF ++ xFvs)
           ((cvj.type.instantiateLevelParams cvj.levelParams
             lvls).renameConsts f))
-        (.notImplemented s!"iota constructor telescope for {cvName}")
+        (.notImplemented msg!"iota constructor telescope for {cvName}")
     unless cres.getAppArgs.length = cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor indices for {cvName}")
+      throw (.notImplemented msg!"iota constructor indices for {cvName}")
     checkDefEqList ops envSelf depth ((largs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP)
     checkDefEqList ops envSelf depth (xFvs.map Expr.fvarTypeD)
@@ -278,13 +278,13 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- the statement's prefix domains are the recursor's (renamed)
     let (rdoms, _) ← unwrapOr
         (Expr.instPisAt (fvs.take rP) (tyA.renameConsts f))
-        (.notImplemented s!"iota recursor telescope for {cvName}")
+        (.notImplemented msg!"iota recursor telescope for {cvName}")
     checkDefEqList ops envSelf depth
       ((fvs.take rP).map Expr.fvarTypeD) rdoms
     -- the rule's λ-domains are the public recursor prefix and the
     -- constructor's field domains at the public instantiations
     let (fvsP, _) ← unwrapOr (openPisAtFvars rP tyA 0)
-      (.notImplemented s!"iota recursor telescope for {cvName}")
+      (.notImplemented msg!"iota recursor telescope for {cvName}")
     let pinsP := pins.map fun p =>
       Expr.instSpine (fvsP.take rP) (rP - 1) p
     -- the instantiated pins are fixed points of the annotation pass
@@ -294,24 +294,24 @@ def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     checkAnnotList ops envSelf depth pinsP
     let (cdomsP, crestP) ← unwrapOr (Expr.instPisAt pinsP
         (cvj.type.instantiateLevelParams cvj.levelParams lvls))
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     -- the stored parameter instantiations inhabit the constructor's
     -- parameter domains (the λ-tower's parameter values fit them)
     checkTypedList ops envSelf depth pinsP cdomsP
     let (xFvsP, crest2P) ← unwrapOr (openPisAtFvars cnF crestP rP)
-      (.notImplemented s!"iota constructor telescope for {cvName}")
+      (.notImplemented msg!"iota constructor telescope for {cvName}")
     -- the auxiliary constructor's residual applies the family to its
     -- parameters and the canonical index tuple (empty at `mI = rP`)
     unless crest2P.getAppArgs.length == cnP + (mI - rP) do
-      throw (.notImplemented s!"iota constructor arity for {cvName}")
+      throw (.notImplemented msg!"iota constructor arity for {cvName}")
     let (ldoms, _) ← unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA)
-      (.notImplemented s!"rule shape mismatch for {cvName}")
+      (.notImplemented msg!"rule shape mismatch for {cvName}")
     checkDefEqList ops envSelf depth ((fvsP ++ xFvsP).map Expr.fvarTypeD)
       ldoms
     -- the right side: definitionally the rule's applied rhs
     let rhsApplied := Expr.mkAppN (rhsA.renameConsts f) fvs
     unless ← ops.isDefEq envSelf depth rhsS rhsApplied do
-      throw (.notImplemented s!"iota statement mismatch for {cvName}")
+      throw (.notImplemented msg!"iota statement mismatch for {cvName}")
     checkIotaSidesTy mode ops envSelf depth (targs.getD 0 (.bvar 0)) lhsS
       rhsS (eqHeadLevel tbody.getAppFn) cvName
     pure (.nested lvls pins)
@@ -326,22 +326,22 @@ def checkIotaRule (ops : (CheckerOps md) m) (env' envSelf : Env md)
     (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
     (mI rP j : Nat) (r : RecRule md) : m (RecRule md) := do
     let some (.ctorInfo cvj cnP cnF) := env'.find? r.ctor
-      | throw (.invalid s!"iota rule constructor {r.ctor} not stored")
+      | throw (.invalid msg!"iota rule constructor {r.ctor} not stored")
     unless r.nfields = cnF do
       throw (.invalid "rule field count mismatch")
     unless r.rhs.looseBVarsBounded 0 do
-      throw (.invalid s!"loose bound variable in rule of {cvName}")
+      throw (.invalid msg!"loose bound variable in rule of {cvName}")
     if r.rhs.hasFvar then
-      throw (.invalid s!"free variable in rule of {cvName}")
+      throw (.invalid msg!"free variable in rule of {cvName}")
     let rhsA ← ops.annotate envSelf 0 r.rhs
     unless rhsA.allLevelParamsDefined lps do
-      throw (.invalid s!"undeclared universe parameter in rule of {cvName}")
+      throw (.invalid msg!"undeclared universe parameter in rule of {cvName}")
     unless rhsA.constsResolve envSelf do
-      throw (unresolvedConstsError s!"rule of {cvName}" rhsA)
+      throw (unresolvedConstsError msg!"rule of {cvName}" rhsA)
     -- the rule's rhs must be a λ-telescope over the recursor prefix
     -- and the constructor fields (so it can be applied positionally)
     unless (rhsA.stripLams (rP + cnF)).isSome do
-      throw (.notImplemented s!"rule shape mismatch for {cvName}")
+      throw (.notImplemented msg!"rule shape mismatch for {cvName}")
     -- infer the rule's type: soundness interprets the (λ-tower)
     -- right-hand side through this inference
     let _rhsTy ← ops.inferType envSelf 0 rhsA
@@ -386,18 +386,17 @@ def checkMemberVal (ops : (CheckerOps md) m) (blockNames : List (Key md))
   -- a member may not itself be shaped like a model companion, so the
   -- block renaming can never map onto a member
   if cvA.name.isModelSuffix then
-    throw (.invalid s!"model-shaped member name {cvA.name}")
+    throw (.invalid msg!"model-shaped member name {cvA.name}")
   -- the model counterpart
   let some (.defnInfo cvm _mval _) := env'.find? (auxKey cvA.name .model)
-    | throw (.notImplemented s!"no install route for inductive block \
+    | throw (.notImplemented msg!"no install route for inductive block \
         {blockNames.headD cvA.name}: no direct route recognises it and no \
         model for {cvA.name} was generated")
   unless cvm.levelParams = cvA.levelParams do
-    throw (.notImplemented s!"model level parameters mismatch for {cvA.name}")
+    throw (.notImplemented msg!"model level parameters mismatch for {cvA.name}")
   unless cvA.type.renameConsts f == cvm.type do
     throw (.notImplemented
-      s!"model type mismatch for {cvA.name}\n  member (renamed): \
-        {reprStr (cvA.type.renameConsts f)}\n  model: {reprStr cvm.type}")
+      msg!"model type mismatch for {cvA.name}")
   pure cvA
 
 /-- Check and install one non-recursor member of a modeled inductive
@@ -411,7 +410,7 @@ def checkIndMember (ops : (CheckerOps md) m) (blockNames : List (Key md))
   match ci with
   | .indInfo _ _ => pure (⟨.indInfo cvA caps :: env'.consts⟩ : Env md)
   | .ctorInfo _ nP nF => pure ⟨.ctorInfo cvA nP nF :: env'.consts⟩
-  | _ => throw (.invalid s!"non-inductive member {cvA.name} in block")
+  | _ => throw (.invalid msg!"non-inductive member {cvA.name} in block")
 
 /-- Phase 0 of the recursor group: check each recursor's constant and
 provision it *rule-less* on top of the previous ones.  Returns the

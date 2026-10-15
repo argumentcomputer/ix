@@ -15,7 +15,7 @@ namespace Ix.Kernel
 
 section Mirrors
 
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- `checkSumTele` through the index (task #195): the whnf loop
 runs at the index's environment through the shared operations, the

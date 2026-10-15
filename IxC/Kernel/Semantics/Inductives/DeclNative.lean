@@ -48,13 +48,13 @@ def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env md)
     -- the former's run completes the record with the sort it read
     -- (task #195; task #210 Part B: this route too); every later stage
     -- runs on the completed record `p` — the sort and the kinds
-    checkSumInd (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀.toInductiveShape
+    checkSumInd (m := Ix.Kernel.CheckM md) (fueledOps μ F) env p₀.toInductiveShape
       (fun p₁ => nativeCapsAt p₁ isRec) = .ok (env₁, cvTa, p₁) ∧
     p = (p₀.complete p₁).withKinds kinds ∧
-    checkSumCtors (m := Ix.Kernel.CheckM) (fueledOps μ F) env₁ env₁ p.cvT.name
+    checkSumCtors (m := Ix.Kernel.CheckM md) (fueledOps μ F) env₁ env₁ p.cvT.name
       p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large cvTa p.ctors
       = .ok (ctorsA, sortss) ∧
-    classifyFixKinds (m := Ix.Kernel.CheckM) p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA
+    classifyFixKinds (m := Ix.Kernel.CheckM md) p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA
       = .ok kinds ∧
     -- the record the block owes is the one the former carries
     nativeCaps p = nativeCapsAt p₁ isRec ∧
@@ -63,15 +63,15 @@ def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env md)
     -- case, task #202 Stage A2)
     (p.large = true → p.resSort.isNeverZero = true ∨ p.ctors.length < 2) ∧
     openPisAtFvars (p.nP + p.nIdx) cvTa.type 0 = some (tfvs, trest) ∧
-    Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM) (fueledOps μ F) env₁ true false p.resSort
+    Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM md) (fueledOps μ F) env₁ true false p.resSort
       p.nP (tfvs.drop p.nP) [] p.nIdx = .ok isorts ∧
     nativeFieldsOk env p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA p.kinds = true ∧
     nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP p.ctors.length
       ctorsA p.kinds p.rhss p.cvR.type = true ∧
-    checkNativeRec (m := Ix.Kernel.CheckM) (fueledOps μ F) (consSumCtors p.nP ctorsA env₁)
+    checkNativeRec (m := Ix.Kernel.CheckM md) (fueledOps μ F) (consSumCtors p.nP ctorsA env₁)
       p cvTa ctorsA = .ok (cvRa, rhss) ∧
     -- the projection table at a structure-like block (task #210 Part A)
-    checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss
+    checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
         (sumRules (consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: (consSumCtors p.nP ctorsA env₁).consts⟩ = .ok env₂
@@ -80,20 +80,20 @@ def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env md)
 one `cases` per bind, the guards by cases. -/
 theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {q : (NativePass md) (Env md)}
-    (h : checkNativeTail (m := Ix.Kernel.CheckM) (fueledOps μ F) env q = .ok env₂) :
+    (h : checkNativeTail (m := Ix.Kernel.CheckM md) (fueledOps μ F) env q = .ok env₂) :
     ∃ (cvRa : ConstantVal md) (rhss : List (Expr md)) (tfvs : List (Expr md)) (trest : Expr md)
       (isorts : List Level),
       (q.p.large = true → q.p.resSort.isNeverZero = true ∨ q.p.ctors.length < 2) ∧
       openPisAtFvars (q.p.nP + q.p.nIdx) q.cvTa.type 0 = some (tfvs, trest) ∧
-      Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM) (fueledOps μ F) q.env₁ true false
+      Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM md) (fueledOps μ F) q.env₁ true false
         q.p.resSort q.p.nP (tfvs.drop q.p.nP) [] q.p.nIdx = .ok isorts ∧
       nativeFieldsOk env q.p.cvT.name q.p.cvT.levelParams q.p.nP q.p.nIdx q.ctorsA q.p.kinds
         = true ∧
       nativeRulesOk q.p.cvR.name (q.p.cvR.levelParams.map .param) .never q.p.nP
         q.p.ctors.length q.ctorsA q.p.kinds q.p.rhss q.p.cvR.type = true ∧
-      checkNativeRec (m := Ix.Kernel.CheckM) (fueledOps μ F) (consSumCtors q.p.nP q.ctorsA q.env₁)
+      checkNativeRec (m := Ix.Kernel.CheckM md) (fueledOps μ F) (consSumCtors q.p.nP q.ctorsA q.env₁)
         q.p q.cvTa q.ctorsA = .ok (cvRa, rhss) ∧
-      checkNativeTable (m := Ix.Kernel.CheckM) q.p q.ctorsA q.sortss
+      checkNativeTable (m := Ix.Kernel.CheckM md) q.p q.ctorsA q.sortss
         ⟨.recInfo cvRa q.p.majorIdx q.p.rulePrefix
           (sumRules (consSumCtors q.p.nP q.ctorsA q.env₁).find? cvRa.name q.p.nP q.p.majorIdx
             q.p.rulePrefix cvRa.type q.ctorsA rhss)
@@ -121,7 +121,7 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
   obtain ⟨tfvs, trest⟩ := tq
   rw [htq] at h
   simp only [unwrapOr, pure, Except.pure] at h
-  cases hsorts : Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM) (fueledOps μ F) q.env₁
+  cases hsorts : Ix.Kernel.checkStructFieldSortsI (m := Ix.Kernel.CheckM md) (fueledOps μ F) q.env₁
       true false q.p.resSort q.p.nP (tfvs.drop q.p.nP) [] q.p.nIdx with
   | error e => rw [hsorts] at h; exact nomatch h
   | ok isorts =>
@@ -141,7 +141,7 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
   rw [if_pos hr] at h
   try simp only [bind, Except.bind] at h
-  cases hRec : checkNativeRec (m := Ix.Kernel.CheckM) (fueledOps μ F)
+  cases hRec : checkNativeRec (m := Ix.Kernel.CheckM md) (fueledOps μ F)
       (consSumCtors q.p.nP q.ctorsA q.env₁) q.p q.cvTa q.ctorsA with
   | error e => rw [hRec] at h; exact nomatch h
   | ok r₃ =>
@@ -155,8 +155,8 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
 theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {p₀ : NativeParts md} {isRec : Bool} {q : (NativePass md) (Env md)}
     (hnd : (p₀.ctors.map (·.1.name)).Nodup)
-    (hP : checkNativePass (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀ isRec = .ok (q, true))
-    (h : checkNativeTail (m := Ix.Kernel.CheckM) (fueledOps μ F) env q = .ok env₂) :
+    (hP : checkNativePass (m := Ix.Kernel.CheckM md) (fueledOps μ F) env p₀ isRec = .ok (q, true))
+    (h : checkNativeTail (m := Ix.Kernel.CheckM md) (fueledOps μ F) env q = .ok env₂) :
     DeclNativeRun μ F env p₀ env₂ := by
   obtain ⟨p₁, kinds, hInd, hCtors, hK, hp, hb⟩ := Ix.Kernel.checkNativePass_inv hP
   obtain ⟨cvRa, rhss, tfvs, trest, isorts, helim, htq, hsorts, hk, hr, hRec, hTbl⟩ :=
@@ -171,7 +171,7 @@ theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env md}
 where the reading overshot — and the install after it. -/
 theorem declNativeRun_of {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {p₀ : NativeParts md}
-    (h : checkNative (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀ = .ok env₂) :
+    (h : checkNative (m := Ix.Kernel.CheckM md) (fueledOps μ F) env p₀ = .ok env₂) :
     DeclNativeRun μ F env p₀ env₂ := by
   rw [checkNative] at h
   simp only [bind, Except.bind] at h
@@ -182,7 +182,7 @@ theorem declNativeRun_of {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
   rw [if_pos hnd] at h
   try simp only [bind, Except.bind] at h
-  cases hP : checkNativePass (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀ (nativeRawRec p₀) with
+  cases hP : checkNativePass (m := Ix.Kernel.CheckM md) (fueledOps μ F) env p₀ (nativeRawRec p₀) with
   | error e => rw [hP] at h; exact nomatch h
   | ok r =>
   obtain ⟨q, settled⟩ := r
@@ -192,7 +192,7 @@ theorem declNativeRun_of {μ : CheckMode} {F : Nat} {env env₂ : Env md}
   | true => exact declNativeRun_of_pass hnd hP (by simpa using h)
   | false =>
   simp only [Bool.false_eq_true, ↓reduceIte] at h
-  cases hP₂ : checkNativePass (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀
+  cases hP₂ : checkNativePass (m := Ix.Kernel.CheckM md) (fueledOps μ F) env p₀
       (nativeIsRec q.p.kinds) with
   | error e => rw [hP₂] at h; exact nomatch h
   | ok r₂ =>

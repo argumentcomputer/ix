@@ -356,8 +356,11 @@ key ahead (`Reader.Keys.byAddress`), so every occurrence of an address reads
 one key object. A key prints per mode (`Key.toName`): an address as `#` and
 its first twelve hexadecimal digits, a name as itself, `.role r` as
 `r.leanName`, `.aux k d` as `k`'s spelling with `d`'s suffix
-(`Derived.spell`). Only messages and the front ends' name maps read that
-spelling; the fold never does. Level parameters are positions (`LevelParam := Nat`): a
+(`Derived.spell`). Only the renderers, the reader's messages and the front ends'
+name maps read that spelling; the fold never does: a checker failure is a
+`CheckError md`, a verdict and a message of prose and keys (`Msg md`), which
+a renderer spells (`CheckError.render`) and a renaming maps
+(`CheckError.mapKeys`). Level parameters are positions (`LevelParam := Nat`): a
 constant's are `0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]`
 after its block's `n`, the shape by which the checker recognises it
 (`Reader.recLps`). A recursor is keyed by its own record (a `recr`'s or an
@@ -597,13 +600,27 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3446 | 92 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3352 | 67 |
 | reader `readRecords`, `readStream` | 2134 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5570 | 115 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5567 | 115 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5592 | 115 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5726 | 116 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5745 | 119 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5788 | 113 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5785 | 113 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5810 | 113 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5944 | 114 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5963 | 117 |
+
+IxC step 6's structured errors (`CheckError md`: prose and keys, rendered
+outside the checker) moved them from 3446, 5570, 5567, 5592, 5726 and 5745,
+and the externs from 92, 115, 115, 115, 116 and 119; the reader's 2134 is
+unchanged:
+- the fold no longer spells keys or prints terms: `Key.toName`,
+  `Derived.spell`, `Role.leanName`'s 121 closed terms, `Name`'s computed-field
+  overrides, `Repr`/`Std.Format` and 25 string and printing externs left it
+  (130 functions fewer), and every fixed message is a one-part list (two more
+  closed objects per message site, 36 more closed terms);
+- the entry and everything above it: the term printing and two string externs
+  left, the fold's message sites add their closed objects (257 more closed
+  terms), and the key rendering stays, reached from the reader's own
+  `ReadError` messages.
 
 The IxC performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127,
 5552, 5549, 5574, 5708 and 5727, and the externs of all but the reader by two:

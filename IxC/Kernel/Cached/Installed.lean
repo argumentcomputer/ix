@@ -95,22 +95,22 @@ the annotation of the type — `installConstantVal`'s cached twin. -/
 def annotConstantValC (fe : FEnv md) (cv : ConstantVal md) :
     (CheckCM md) (ConstantVal md × Expr md) := do
   if (fe.find? cv.name).isSome then
-    throw (.invalid s!"duplicate declaration {cv.name}")
+    throw (.invalid msg!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
-    throw (.invalid s!"reserved basis name {cv.name}")
+    throw (.invalid msg!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
-    throw (.invalid s!"reserved projection name {cv.name}")
+    throw (.invalid msg!"reserved projection name {cv.name}")
   unless LevelParam.nodup cv.levelParams do
-    throw (.invalid s!"duplicate universe parameters in {cv.name}")
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
   unless Expr.looseBVarsBounded 0 cv.type do
-    throw (.invalid s!"loose bound variable in type of {cv.name}")
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
   if Expr.hasFvar cv.type then
-    throw (.invalid s!"unexpected free variable in type of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let jty ← (coreKnotI mode fe checkFuel).annotate 0 cv.type
   unless Expr.allLevelParamsDefinedC cv.levelParams jty do
-    throw (.invalid s!"undeclared universe parameter in type of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless constsResolveFC fe jty do
-    throw (unresolvedConstsError s!"type of {cv.name}" jty)
+    throw (unresolvedConstsError msg!"type of {cv.name}" jty)
   pure (⟨cv.name, cv.levelParams, jty⟩, jty)
 
 /-- The value half of `checkDefnValC`/`checkThmValC`/`checkOpaqueValC`
@@ -119,14 +119,14 @@ cached twin. -/
 def annotValC (fe : FEnv md) (cvA : ConstantVal md) (value : Expr md) :
     (CheckCM md) (Expr md) := do
   unless Expr.looseBVarsBounded 0 value do
-    throw (.invalid s!"loose bound variable in value of {cvA.name}")
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cvA.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
   let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
   unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
-    throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
-    throw (unresolvedConstsError s!"value of {cvA.name}" jv)
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
   pure jv
 
 /-- Phase A's install of a separable value declaration: from the empty
@@ -186,7 +186,7 @@ accumulator is `(i, fe, pend)`, and a failing step reports the
 that failed. -/
 def annotDeclStep (ev : Evidences md)
     (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) :
-    StateT (CState md) (Except (CheckError × Nat)) (Nat × FEnv md × Array (PendingCheck md)) :=
+    StateT (CState md) (Except (CheckError md × Nat)) (Nat × FEnv md × Array (PendingCheck md)) :=
   fun s =>
     match annotStepC mode ev p.1 p.2.1 p.2.2 pd s with
     | .ok ((fe', pend'), s') => .ok ((p.1 + 1, fe', pend'), s')
@@ -284,14 +284,14 @@ def checkPending (fe : FEnv md) (pc : PendingCheck md) : (CheckCM md) Unit := do
   let u ← opSIxC mode fe 0 jsty
   let jv ← if pc.vg.kind = .thm then do
       unless (← liftFueled "level comparison" (Level.isEquiv u .zero)) do
-        throw (.invalid s!"type of theorem {pc.vg.cvA.name} is not a proposition")
+        throw (.invalid msg!"type of theorem {pc.vg.cvA.name} is not a proposition")
       -- a theorem's value arrives raw: its guards and annotation run
       -- here, at the view (`annotValC` — `installValue`'s twin)
       annotValC mode fe pc.vg.cvA pc.vg.jv
     else pure pc.vg.jv
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt pc.vg.cvA.type do
-    throw (.invalid s!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}")
+    throw (.invalid msg!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}")
 
 /-- **In a properly installed environment, record `i` has been
 checked**: its check against the prefix view, from a fresh memo state,
@@ -384,7 +384,7 @@ record in fold order.  Nothing here is `IO`. -/
 its fold position. -/
 def checkRecord {ev : Evidences md} {ds : List (Declaration md)}
     (e : InstalledEnv mode ev ds) (k : Nat)
-    (hk : k < e.pend.size) : Except (CheckError × Nat) (PLift (GroupChecked mode e k)) :=
+    (hk : k < e.pend.size) : Except (CheckError md × Nat) (PLift (GroupChecked mode e k)) :=
   match h : checkPending mode e.fe e.pend[k] {} with
   | .ok ((), _) => .ok ⟨groupChecked_of_run mode e hk h⟩
   | .error err => .error (err, e.pend[k].pos)
@@ -399,7 +399,7 @@ abbrev CheckedRecord {ev : Evidences md} {ds : List (Declaration md)}
 tagged with the record's fold position. -/
 abbrev RecordResult {ev : Evidences md} {ds : List (Declaration md)}
     (e : InstalledEnv mode ev ds) : Type :=
-  Except (CheckError × Nat) (CheckedRecord mode e)
+  Except (CheckError md × Nat) (CheckedRecord mode e)
 
 /-- Record `k`'s check as a worker's result. -/
 def checkRecordResult {ev : Evidences md} {ds : List (Declaration md)}
@@ -420,16 +420,16 @@ def collectChecks {ev : Evidences md} {ds : List (Declaration md)}
     (e : InstalledEnv mode ev ds)
     (tab : Array (Option (RecordResult mode e))) :
     (j : Nat) → (∀ i, i < j → GroupChecked mode e i) →
-      Except (CheckError × Nat) (PLift (∀ i, GroupChecked mode e i))
+      Except (CheckError md × Nat) (PLift (∀ i, GroupChecked mode e i))
   | j, acc =>
     if hj : j < e.pend.size then
       match tab[j]? with
       | some (some (.ok ⟨k, hk⟩)) =>
         if h : k = j then
           collectChecks e tab (j + 1) (groupChecked_extend mode acc (h ▸ hk))
-        else .error (.internal s!"check phase: slot {j} holds record {k}", e.pend[j].pos)
+        else .error (.internal msg!"check phase: slot {j} holds record {k}", e.pend[j].pos)
       | some (some (.error err)) => .error err
-      | _ => .error (.internal s!"check phase: record {j} was never checked", e.pend[j].pos)
+      | _ => .error (.internal msg!"check phase: record {j} was never checked", e.pend[j].pos)
     else
       .ok ⟨groupChecked_all mode
         (fun i hi => acc i (Nat.lt_of_lt_of_le hi (Nat.le_of_not_lt hj)))⟩
@@ -449,7 +449,7 @@ module holding them would enter every capstone's proof closure. -/
 
 /-- Phase B as a pure walk: every record checked from a fresh memo
 state, a failure tagged with the record's fold position. -/
-def checkPendingList (fe : FEnv md) : List (PendingCheck md) → Except (CheckError × Nat) Unit
+def checkPendingList (fe : FEnv md) : List (PendingCheck md) → Except (CheckError md × Nat) Unit
   | [] => .ok ()
   | pc :: rest =>
     match checkPending mode fe pc {} with
@@ -507,7 +507,7 @@ def awaitInOrder {ε : Type} : List (Task (Except ε Unit)) → Except ε Unit
 /-- **Phase B on tasks**: the records in chunks, each chunk's walk on a
 task of its own, the verdicts read back in record order. -/
 def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md)) :
-    Except (CheckError × Nat) Unit :=
+    Except (CheckError md × Nat) Unit :=
   awaitInOrder ((chunksOf (phaseBChunk - 1) pend.toList).map fun l =>
     Task.spawn fun _ => checkPendingList mode fe l)
 
@@ -565,7 +565,7 @@ position in the fold, in the frontend's half of the same error type
 the input's LINE number (`IxC/Kernel/Frontend/Export.lean`). -/
 def checkDecls (mode : CheckMode) (ev : Evidences md)
     (ds : Array (Declaration md)) :
-    Except (CheckError × Nat) (Env md) := do
+    Except (CheckError md × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
   checkPendingTasks mode p.2.1 p.2.2
   pure p.2.1.env

@@ -41,7 +41,7 @@ name (task #175 S1). -/
 theorem checkStructProjTable_shape {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal md} {env env' : Env md}
-    (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
+    (h : checkStructProjTable (m := Ix.Kernel.CheckM md) T C lps nP nF
       resSort guards off cvCa env = .ok env') :
     ∃ tbl : Ix.Kernel.ProjTable md, env.find? (projTableName T) = none ∧
       tbl.structName = T ∧ env' = ⟨.projInfo tbl :: env.consts⟩ := by
@@ -55,7 +55,7 @@ table. -/
 theorem checkStructProjTable_etaClosed {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal md} {env env₂ : Env md}
-    (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
+    (h : checkStructProjTable (m := Ix.Kernel.CheckM md) T C lps nP nF
       resSort guards off cvCa env = .ok env₂)
     (hE : EtaFamiliesClosed env) : EtaFamiliesClosed env₂ := by
   obtain ⟨tbl, hfresh, hsn, rfl⟩ := checkStructProjTable_shape h

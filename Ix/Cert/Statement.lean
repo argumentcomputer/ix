@@ -860,13 +860,13 @@ inductive ErrorKind where
   | internal
   deriving DecidableEq, Repr
 
-def ErrorKind.of : Ix.Kernel.CheckError → ErrorKind
+def ErrorKind.of : Ix.Kernel.CheckError md → ErrorKind
   | .notImplemented _ => .notImplemented
   | .invalid _ => .invalid
   | .internal _ => .internal
 
 /-- A fold's verdict up to error messages. -/
-def verdict : Except (Ix.Kernel.CheckError × Nat) (Env md) → Except (ErrorKind × Nat) (Env md)
+def verdict : Except (Ix.Kernel.CheckError md × Nat) (Env md) → Except (ErrorKind × Nat) (Env md)
   | .ok e => .ok e
   | .error (e, i) => .error (ErrorKind.of e, i)
 

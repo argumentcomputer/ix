@@ -184,7 +184,7 @@ theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv :
       ((coreKnotI μ (mkFEnv env) checkFuel).infer 0 jv >>= fun jvt =>
         (coreKnotI μ (mkFEnv env) checkFuel).defeq 0 jvt pc.vg.cvA.type >>= fun b =>
           if b = true then pure () else
-            throw (.invalid s!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}")) s₄
+            throw (.invalid msg!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}")) s₄
         = .ok ((), s') →
       CSOKF s' ∧ ∃ F jvt, inferTypeCore μ env F 0 jv = .ok jvt ∧
         isDefEqCore μ env F 0 jvt pc.vg.cvA.type = .ok true := by

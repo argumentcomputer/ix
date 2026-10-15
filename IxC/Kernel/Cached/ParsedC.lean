@@ -58,22 +58,22 @@ DAG and the cached operations on its nodes. -/
 def checkConstantValC (fe : FEnv md) (cv : ConstantVal md) :
     (CheckCM md) (ConstantVal md × Expr md) := do
   if (fe.find? cv.name).isSome then
-    throw (.invalid s!"duplicate declaration {cv.name}")
+    throw (.invalid msg!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
-    throw (.invalid s!"reserved basis name {cv.name}")
+    throw (.invalid msg!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
-    throw (.invalid s!"reserved projection name {cv.name}")
+    throw (.invalid msg!"reserved projection name {cv.name}")
   unless LevelParam.nodup cv.levelParams do
-    throw (.invalid s!"duplicate universe parameters in {cv.name}")
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
   unless Expr.looseBVarsBounded 0 cv.type do
-    throw (.invalid s!"loose bound variable in type of {cv.name}")
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
   if Expr.hasFvar cv.type then
-    throw (.invalid s!"unexpected free variable in type of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let jty ← (coreKnotI mode fe checkFuel).annotate 0 cv.type
   unless Expr.allLevelParamsDefinedC cv.levelParams jty do
-    throw (.invalid s!"undeclared universe parameter in type of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless constsResolveFC fe jty do
-    throw (unresolvedConstsError s!"type of {cv.name}" jty)
+    throw (unresolvedConstsError msg!"type of {cv.name}" jty)
   let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
   let _u ← opSIxC mode fe 0 jsty
   let tyE := jty
@@ -83,18 +83,18 @@ def checkConstantValC (fe : FEnv md) (cv : ConstantVal md) :
 def checkDefnValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     (value : Expr md) (hint : ReducibilityHint) : (CheckCM md) (FEnv md) := do
   unless Expr.looseBVarsBounded 0 value do
-    throw (.invalid s!"loose bound variable in value of {cvA.name}")
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cvA.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
   let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
   unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
-    throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
-    throw (unresolvedConstsError s!"value of {cvA.name}" jv)
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
   let vE := jv
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
-    throw (.invalid s!"type mismatch in definition {cvA.name}")
+    throw (.invalid msg!"type mismatch in definition {cvA.name}")
   pure (fe.push (.defnInfo cvA vE hint))
 
 /-- `checkThmValP` over `Expr`. -/
@@ -103,19 +103,19 @@ def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
   let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
   let ul ← opSIxC mode fe 0 jsty
   unless (← liftFueled "level comparison" (Level.isEquiv ul .zero)) do
-    throw (.invalid s!"type of theorem {cvA.name} is not a proposition")
+    throw (.invalid msg!"type of theorem {cvA.name} is not a proposition")
   unless Expr.looseBVarsBounded 0 value do
-    throw (.invalid s!"loose bound variable in value of {cvA.name}")
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cvA.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
   let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
   unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
-    throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
-    throw (unresolvedConstsError s!"value of {cvA.name}" jv)
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
-    throw (.invalid s!"type mismatch in theorem {cvA.name}")
+    throw (.invalid msg!"type mismatch in theorem {cvA.name}")
   -- stored by statement: the record's own value, unread (opaque)
   pure (fe.push (.thmInfo cvA value))
 
@@ -123,17 +123,17 @@ def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
 def checkOpaqueValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     (value : Expr md) : (CheckCM md) (FEnv md) := do
   unless Expr.looseBVarsBounded 0 value do
-    throw (.invalid s!"loose bound variable in value of {cvA.name}")
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cvA.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
   let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
   unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
-    throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
-    throw (unresolvedConstsError s!"value of {cvA.name}" jv)
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
-    throw (.invalid s!"type mismatch in opaque {cvA.name}")
+    throw (.invalid msg!"type mismatch in opaque {cvA.name}")
   pure (fe.push (.axiomInfo cvA))
 
 /-- `checkBasisDecl`'s cached twin: the body the three records that
@@ -158,11 +158,11 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
       if natOpNames.contains cvA.name then
         unless evidenceDefeqOk ev cvA.name do
           throw (.notImplemented
-            s!"unsupported structural Nat operation evidence ({cvA.name})")
+            msg!"unsupported structural Nat operation evidence ({cvA.name})")
         unless natOpGuardF fe2 cvA.name &&
             (natOpDeps cvA.name).all (natOpStoredOkF fe2) do
           throw (.notImplemented
-            s!"nonstandard structural Nat operation environment ({cvA.name})")
+            msg!"nonstandard structural Nat operation environment ({cvA.name})")
         match fe2.find? cvA.name with
         | some (.defnInfo _ value' _) =>
           let ok ← certifyNatEqs (sharedOpsC mode fe) fe.env
@@ -171,9 +171,9 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
                Expr.substConst0 cvA.name value' eq.2))
           unless ok do
             throw (.notImplemented
-              s!"nonstandard structural Nat operation ({cvA.name})")
+              msg!"nonstandard structural Nat operation ({cvA.name})")
         | _ => throw (.internal
-            s!"structural Nat operation not stored ({cvA.name})")
+            msg!"structural Nat operation not stored ({cvA.name})")
       if natDivModNames.contains cvA.name then
         checkDivModEvidenceF (sharedOpsC mode fe) ev fe fe2 cvA.name
       pure fe2
@@ -212,18 +212,18 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
         if trustCompilerOkF fe cvA then
           pure (fe.push (.axiomInfo cvA))
         else throw (.notImplemented
-          s!"unsupported Lean.trustCompiler shape ({cv.name})")
+          msg!"unsupported Lean.trustCompiler shape ({cv.name})")
       else if cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName then
         if ofReduceAxOkF fe cvA then
           pure (fe.push (.axiomInfo cvA))
         else throw (.notImplemented
-          s!"unsupported compiler-trust axiom environment ({cv.name})")
+          msg!"unsupported compiler-trust axiom environment ({cv.name})")
       else if cvA.name = propextName ∨ cvA.name = choiceName then
-        throw (.notImplemented s!"standard axiom shape mismatch ({cv.name})")
+        throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
       else if cvA.name = sorryAxName then
         pure fe
       else
-        throw (.notImplemented s!"non-standard axiom ({cv.name})")
+        throw (.notImplemented msg!"non-standard axiom ({cv.name})")
   | .basisDecl kind => checkBasisDeclC fe kind
   | .indDecl block nP =>
     -- **THE PINNED BASIS BLOCKS** (`checkDecl`'s twin, task #293): the

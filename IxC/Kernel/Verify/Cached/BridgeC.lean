@@ -60,7 +60,7 @@ section WalksP
 
 variable {env : Env md} {s₀ : CState md}
 
-private theorem fueledM_bind_pure' {α : Type} (x : FueledM α) :
+private theorem fueledM_bind_pure' {α : Type} (x : FueledM md α) :
     x >>= pure = x := by
   refine Subtype.ext (funext fun F => ?_)
   show x.val F >>= pure = x.val F
@@ -346,7 +346,7 @@ three of `checkDeclC`'s arms share this body). -/
 theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
     SimC mode env s₀ (fun v w => v.env = w ∧ v = mkFEnv v.env)
       (checkBasisDeclC (mkFEnv env) kind)
-      (checkBasisDecl (m := FueledM) env kind) := by
+      (checkBasisDecl (m := FueledM md) env kind) := by
   show SimC mode env s₀ _ (do
       if kind = .quotK then
         unless (mkFEnv env).find? eqName = some eqA do
@@ -363,7 +363,7 @@ theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
     by_cases he : env.find? eqName = some eqA
     · simp only [if_pos he]
       rw [← fueledM_bind_pure'
-        (kind.declsA.foldlM installBasisDecl env : FueledM (Env md))]
+        (kind.declsA.foldlM installBasisDecl env : FueledM md (Env md))]
       refine SimC.bind (installBasisFoldS_sim _ env hs)
         (fun s₁ e e' hs₁ hP => ?_)
       obtain rfl : e = e' := hP
@@ -372,7 +372,7 @@ theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
       exact SimC.throw_bind
   · simp only [if_neg hq]
     rw [← fueledM_bind_pure'
-      (kind.declsA.foldlM installBasisDecl env : FueledM (Env md))]
+      (kind.declsA.foldlM installBasisDecl env : FueledM md (Env md))]
     refine SimC.bind (installBasisFoldS_sim _ env hs)
       (fun s₁ e e' hs₁ hP => ?_)
     obtain rfl : e = e' := hP

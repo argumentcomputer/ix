@@ -59,29 +59,29 @@ structure ValueGroup (md : Mode) where
   jv : Expr md
 
 variable (mode : CheckMode)
-variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- `checkConstantVal` minus its inference: the syntactic guards and
 the annotation of the type. -/
 def installConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) :
     m (ConstantVal md) := do
   if (env.find? cv.name).isSome then
-    throw (.invalid s!"duplicate declaration {cv.name}")
+    throw (.invalid msg!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
-    throw (.invalid s!"reserved basis name {cv.name}")
+    throw (.invalid msg!"reserved basis name {cv.name}")
   if cv.name.isProjFnShape then
-    throw (.invalid s!"reserved projection name {cv.name}")
+    throw (.invalid msg!"reserved projection name {cv.name}")
   unless LevelParam.nodup cv.levelParams do
-    throw (.invalid s!"duplicate universe parameters in {cv.name}")
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
   unless cv.type.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in type of {cv.name}")
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
   if cv.type.hasFvar then
-    throw (.invalid s!"unexpected free variable in type of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate env 0 cv.type
   unless type.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in type of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolve env do
-    throw (unresolvedConstsError s!"type of {cv.name}" type)
+    throw (unresolvedConstsError msg!"type of {cv.name}" type)
   pure { cv with type := type }
 
 /-- The value half of `check{Defn,Thm,Opaque}Val` minus its inference:
@@ -89,14 +89,14 @@ the guards and the annotation of the value. -/
 def installValue (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
     (value : Expr md) : m (Expr md) := do
   unless value.looseBVarsBounded 0 do
-    throw (.invalid s!"loose bound variable in value of {cv.name}")
+    throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
-    throw (.invalid s!"unexpected free variable in value of {cv.name}")
+    throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let value ← ops.annotate env 0 value
   unless value.allLevelParamsDefined cv.levelParams do
-    throw (.invalid s!"undeclared universe parameter in value of {cv.name}")
+    throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless value.constsResolve env do
-    throw (unresolvedConstsError s!"value of {cv.name}" value)
+    throw (unresolvedConstsError msg!"value of {cv.name}" value)
   pure value
 
 /-- **The check half of a value declaration**, at the environment the
@@ -111,11 +111,11 @@ def checkValueGroup (ops : (CheckerOps md) m) (env : Env md) (g : ValueGroup md)
   let u ← ops.ensureSort env 0 stype
   let jv ← if g.kind = .thm then do
       unless (← liftFueled "level comparison" (Level.isEquiv u .zero)) do
-        throw (.invalid s!"type of theorem {g.cvA.name} is not a proposition")
+        throw (.invalid msg!"type of theorem {g.cvA.name} is not a proposition")
       installValue ops env g.cvA g.jv
     else pure g.jv
   let vtype ← ops.inferType env 0 jv
   unless ← ops.isDefEq env 0 vtype g.cvA.type do
-    throw (.invalid s!"type mismatch in {g.kind.word} {g.cvA.name}")
+    throw (.invalid msg!"type mismatch in {g.kind.word} {g.cvA.name}")
 
 end Ix.Kernel

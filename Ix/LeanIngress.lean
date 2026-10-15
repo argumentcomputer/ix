@@ -666,7 +666,7 @@ inductive SourceError where
   | ingress (error : IngressError)
   /-- the committed prelude does not load (a corrupted file) -/
   | prelude (reason : String)
-  | kernel (error : Ix.Kernel.CheckError) (position : Nat)
+  | kernel (error : Ix.Kernel.CheckError .source) (position : Nat)
 
 instance : ToString SourceError where
   toString
