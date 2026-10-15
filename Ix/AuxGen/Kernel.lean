@@ -37,6 +37,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
+public import Ix.AuxGen.KernelError
 public section
 
 namespace Ix.AuxGen
@@ -95,7 +96,8 @@ def AddrMaps.ofCompileEnv (cenv : Ix.CompileM.CompileEnv)
 /-- `Ix.Level → KUniv .meta` with positional params. Missing parameters
     and metavariables are explicit bridge errors. Note the
     SMART `mkMax`/`mkIMax` (Rust `KUniv::max/imax` normalize). -/
-partial def leanLevelToKuniv (lvl : Level) (paramNames : Array Name) : Except String MKUniv := do
+partial def leanLevelToKuniv (lvl : Level) (paramNames : Array Name) :
+    Except AuxKernelError MKUniv := do
   match lvl with
   | .zero _ => return Ix.Tc.KUniv.mkZero
   | .succ l _ => return Ix.Tc.KUniv.mkSucc (← leanLevelToKuniv l paramNames)
@@ -108,15 +110,13 @@ partial def leanLevelToKuniv (lvl : Level) (paramNames : Array Name) : Except St
   | .param name _ =>
     match paramNames.findIdx? (· == name) with
     | some idx => return Ix.Tc.KUniv.mkParam idx.toUInt64 name
-    | none =>
-      throw s!"unknown level param `{name.pretty}` not found in param_names \
-{paramNames.toList.map (·.pretty)}"
-  | .mvar _ _ => throw "leanLevelToKuniv: level metavariable"
+    | none => throw (.unknownLevelParam name paramNames)
+  | .mvar _ _ => throw .levelMVar
 
 /-- `KUniv .meta → Ix.Level` via positional param names, RAW max/imax
     constructors (no smart simplification). Invalid indices are explicit
     errors, never invented source universe names. -/
-partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Except String Level := do
+partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Except AuxKernelError Level := do
   match u with
   | .zero _ => return Level.mkZero
   | .succ inner _ => return Level.mkSucc (← kunivToLevel inner paramNames)
@@ -127,7 +127,7 @@ partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Except String 
   | .param idx _ _ =>
     match paramNames[idx.toNat]? with
     | some name => return Level.mkParam name
-    | none => throw s!"kunivToLevel: universe parameter index {idx.toNat} out of range"
+    | none => throw (.levelParamIndex idx.toNat)
 
 /-! ## Bridge state -/
 
@@ -163,11 +163,16 @@ def AuxKernelCtx.new : AuxKernelCtx :=
 /-- Bridge monad: aux kernel state over CompileM. -/
 abbrev KBridgeM := StateT AuxKernelCtx CompileM
 
+/-- A bridge refusal crosses the compiler boundary as the compiler error it
+    renders to (`AuxKernelError.toCompileError`). -/
+def throwBridge (e : AuxKernelError) : KBridgeM α :=
+  throw e.toCompileError
+
 /-- Pure conversion errors cross the compiler boundary as named refusals. -/
-def liftBridgeResult (result : Except String α) : KBridgeM α :=
+def liftBridgeResult (result : Except AuxKernelError α) : KBridgeM α :=
   match result with
   | .ok value => pure value
-  | .error message => throw (.unsupportedExpr s!"aux kernel bridge: {message}")
+  | .error e => throwBridge e
 
 /-- Record an explicit bridge input name under the address used at ingress. -/
 def rememberSourceName (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
@@ -258,9 +263,7 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
 
   let raw ← match cur with
     | .bvar idx _ =>
-      if idx ≥ UInt64.size then
-        throw (.unsupportedExpr
-          s!"aux kernel bridge: bound variable index {idx} exceeds u64 in closed ingress")
+      if idx ≥ UInt64.size then throwBridge (.closedBVarIndex idx)
       let name := Id.run do
         if h : idx < binderNames.size then
           return binderNames[binderNames.size - 1 - idx]'(by omega)
@@ -296,9 +299,7 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
         (binderNames.push binderName) pnHash maps
       pure (Ix.Tc.KExpr.mkLet binderName tk vk bk nd mdataLayers)
     | .proj pname idx s _ =>
-      if idx ≥ UInt64.size then
-        throw (.unsupportedExpr
-          s!"aux kernel bridge: projection index {idx} of {pname.pretty} exceeds u64 in closed ingress")
+      if idx ≥ UInt64.size then throwBridge (.closedProjIndex pname idx)
       rememberSourceName pname maps
       let zid : MKId := ⟨maps.resolve pname, pname⟩
       let sk ← leanExprToKexprCached s paramNames binderNames pnHash maps
@@ -308,12 +309,9 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
       pure (Ix.Tc.KExpr.mkNat n (bridgeNatBlob n) mdataLayers)
     | .lit (.strVal s) _ =>
       pure (Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8) mdataLayers)
-    | .fvar name _ =>
-      throw (.unsupportedExpr s!"aux kernel bridge: free variable {name.pretty} in closed ingress")
-    | .mvar _ _ =>
-      throw (.unsupportedExpr "aux kernel bridge: expression metavariable in closed ingress")
-    | .mdata .. =>
-      throw (.unsupportedExpr "aux kernel bridge: metadata stripping left an outer metadata layer")
+    | .fvar name _ => throwBridge (.closedFVar name)
+    | .mvar _ _ => throwBridge .closedMVar
+    | .mdata .. => throwBridge .outerMData
 
   let result ← internK raw
   modify fun kctx =>
@@ -487,16 +485,17 @@ def ensureInKenvOfPrewarm (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
     — no interning, no cache. Mirrors Rust `to_kexpr_static`
     (expr_utils.rs:3153). -/
 partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
-    (ctxDepth : Nat) (paramNames : Array Name) (maps : AddrMaps) : Except String MKExpr := do
+    (ctxDepth : Nat) (paramNames : Array Name) (maps : AddrMaps) :
+    Except AuxKernelError MKExpr := do
   match e with
   | .fvar fname _ =>
     match fvarLevels.get? fname with
     | some level =>
-      if level >= ctxDepth then throw s!"toKexprStatic: free variable {fname.pretty} outside context depth {ctxDepth}"
+      if level >= ctxDepth then throw (.fvarOutsideDepth fname ctxDepth)
       return Ix.Tc.KExpr.mkVar (UInt64.ofNat (ctxDepth - level - 1)) .mkAnon
-    | none => throw s!"toKexprStatic: unknown free variable {fname.pretty}"
+    | none => throw (.unknownFVar fname)
   | .bvar idx _ =>
-    if idx ≥ UInt64.size then throw s!"toKexprStatic: bound variable index {idx} exceeds u64"
+    if idx ≥ UInt64.size then throw (.openBVarIndex idx)
     return Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) .mkAnon
   | .sort lvl _ => return Ix.Tc.KExpr.mkSort (← leanLevelToKuniv lvl paramNames)
   | .const cname us _ =>
@@ -519,8 +518,7 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
       (← toKexprStatic val fvarLevels ctxDepth paramNames maps)
       (← toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps) nd
   | .proj pname idx s _ =>
-    if idx ≥ UInt64.size then
-      throw s!"toKexprStatic: projection index {idx} of {pname.pretty} exceeds u64"
+    if idx ≥ UInt64.size then throw (.openProjIndex pname idx)
     let zid : MKId := ⟨maps.resolve pname, pname⟩
     return Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx)
       (← toKexprStatic s fvarLevels ctxDepth paramNames maps)
@@ -531,7 +529,7 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
     return Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8)
   | .mdata _ inner _ =>
     toKexprStatic inner fvarLevels ctxDepth paramNames maps
-  | .mvar _ _ => throw "toKexprStatic: expression metavariable"
+  | .mvar _ _ => throw .openMVar
 
 /-- `KExpr .meta → Ix.Expr` reconstructing FVars from de-Bruijn `Var`s:
     indices below `localDepth` stay BVars; above, level =
@@ -540,12 +538,12 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
     outermost-first. Mirrors Rust `kexpr_to_lean` (expr_utils.rs:2671). -/
 partial def kexprToLean (e : MKExpr) (outerDepth : Nat)
     (fvarLevels : Std.HashMap Name Nat) (localDepth : Nat)
-    (paramNames : Array Name) : Except String Expr := do
-  let lookupFvar (level : Nat) : Except String Name :=
+    (paramNames : Array Name) : Except AuxKernelError Expr := do
+  let lookupFvar (level : Nat) : Except AuxKernelError Name :=
     match fvarLevels.toList.filter (fun (_, lvl) => lvl == level) with
     | [(name, _)] => .ok name
-    | [] => .error s!"kexprToLean: missing free variable at outer level {level}"
-    | _ => .error s!"kexprToLean: duplicate free variable identities at outer level {level}"
+    | [] => .error (.missingFVarAt level)
+    | _ => .error (.duplicateFVarAt level)
 
   let inner ← match e with
     | .var i _ _ =>
@@ -555,13 +553,13 @@ partial def kexprToLean (e : MKExpr) (outerDepth : Nat)
       else
         let fvarIdxFromTop := i - localDepth
         if fvarIdxFromTop + 1 > outerDepth then
-          throw "kexprToLean: Var index out of range of outer context"
+          throw .varOutOfRange
         else
           let level := outerDepth - fvarIdxFromTop - 1
           let name ← lookupFvar level
           pure (Expr.mkFVar name)
     | .fvar id _ _ =>
-      throw s!"kexprToLean: leaked kernel free variable {id.id.toNat}"
+      throw (.leakedKernelFVar id.id.toNat)
     | .sort u _ => pure <| Expr.mkSort (← kunivToLevel u paramNames)
     | .const kid us _ =>
       pure <| Expr.mkConst kid.name (← us.mapM (kunivToLevel · paramNames))
@@ -604,7 +602,7 @@ def sameResolvedNameAddr (a b : Name) (maps : AddrMaps) : Bool :=
 partial def collectLeanSourceNameHints (source : Expr)
     (fvarLevels : Std.HashMap Name Nat) (depth : Nat)
     (paramNames : Array Name) (maps : AddrMaps)
-    (out : Std.HashMap Address Expr) : Except String (Std.HashMap Address Expr) := do
+    (out : Std.HashMap Address Expr) : Except AuxKernelError (Std.HashMap Address Expr) := do
   let mut out := out
   if sourceNameHintCandidate source && !exprHasBVar source then
     let key := (← toKexprStatic source fvarLevels depth paramNames maps).addr
@@ -632,7 +630,7 @@ partial def collectLeanSourceNameHints (source : Expr)
 partial def restoreLeanSourceNameHints (generated : Expr)
     (fvarLevels : Std.HashMap Name Nat) (depth : Nat)
     (paramNames : Array Name) (maps : AddrMaps)
-    (hints : Std.HashMap Address Expr) : Except String Expr := do
+    (hints : Std.HashMap Address Expr) : Except AuxKernelError Expr := do
   if sourceNameHintCandidate generated && !exprHasBVar generated then
     let key := (← toKexprStatic generated fvarLevels depth paramNames maps).addr
     if let some source := hints.get? key then
@@ -729,12 +727,12 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
   let mut seenParams : Std.HashSet Name := {}
   for name in paramNames do
     if seenParams.contains name then
-      throw (.unsupportedExpr s!"aux kernel bridge: duplicate universe parameter '{name}'")
+      throwBridge (.duplicateLevelParam name)
     seenParams := seenParams.insert name
   let mut fvarLevels : Std.HashMap Name Nat := {}
   for (decl, i) in outerFvarCtx.zipIdx do
     if fvarLevels.contains decl.fvarName then
-      throw (.unsupportedExpr s!"aux kernel bridge: duplicate outer free variable '{decl.fvarName}'")
+      throwBridge (.duplicateOuterFVar decl.fvarName)
     fvarLevels := fvarLevels.insert decl.fvarName i
   -- Fresh TC portions, persistent env (caches live in KEnv).
   modify fun kctx => { kctx with tcState :=
@@ -753,12 +751,12 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
 def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
   if (← get).tcState.ctx.size != scope.depth then
-    throw (.unsupportedExpr "aux kernel bridge: stale scope depth before pushLocals")
+    throwBridge (.staleDepth "pushLocals")
   let mut scope := scope
   let depth0 := scope.depth
   for (decl, i) in decls.zipIdx do
     if scope.fvarLevels.contains decl.fvarName then
-      throw (.unsupportedExpr s!"aux kernel bridge: duplicate pushed free variable '{decl.fvarName}'")
+      throwBridge (.duplicatePushedFVar decl.fvarName)
     scope := { scope with
       fvarLevels := scope.fvarLevels.insert decl.fvarName (depth0 + i) }
     rememberSourceExpr decl.domain scope.maps
@@ -771,12 +769,12 @@ def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
 def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
   if (← get).tcState.ctx.size != scope.depth then
-    throw (.unsupportedExpr "aux kernel bridge: stale scope depth before popLocals")
+    throwBridge (.staleDepth "popLocals")
   if decls.size > scope.extraLocals then
-    throw (.unsupportedExpr "aux kernel bridge: popLocals exceeds pushed local count")
+    throwBridge .popExceedsPushed
   for (decl, i) in decls.zipIdx do
     if scope.fvarLevels[decl.fvarName]? != some (scope.depth - decls.size + i) then
-      throw (.unsupportedExpr s!"aux kernel bridge: popLocals is not LIFO at '{decl.fvarName}'")
+      throwBridge (.popNotLifo decl.fvarName)
   let mut scope := scope
   for decl in decls.reverse do
     discard <| runTc Ix.Tc.TcM.popLocal
@@ -799,7 +797,7 @@ fixed point. An ambient compiled alias is never a substitute. Mirrors Rust
 `fault_in_addr`. -/
 def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := do
   if ((← get).sourceNames.getD addr {}).isEmpty then
-    throw (.unsupportedExpr s!"bridge fault: no forward source provenance for {addr}")
+    throwBridge (.noProvenance addr)
   let mut visited : Std.HashSet Name := {}
   let mut loaded := false
   repeat
@@ -810,7 +808,7 @@ def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := do
       visited := visited.insert name
       if (← kenvGet? ⟨addr, name⟩).isSome then continue
       if scope.maps.resolve name != addr then
-        throw (.unsupportedExpr s!"bridge fault: source address changed for {name.pretty}")
+        throwBridge (.provenanceChanged name)
       if ← scope.faultInName name then loaded := true
   return loaded
 
@@ -832,7 +830,7 @@ partial def isNotZeroLevel : Level → Bool
     level args, simplifying with `levelMax`/Lean's `mk_imax` rules.
     Mirrors Rust `kuniv_to_level_with_const_levels` (expr_utils.rs:2524). -/
 partial def kunivToLevelWithConstLevels (scope : TcScopeSt) (u : MKUniv)
-    (constLevels : Array Level) : Except String Level := do
+    (constLevels : Array Level) : Except AuxKernelError Level := do
   match u with
   | .zero _ => return Level.mkZero
   | .succ inner _ =>
@@ -853,7 +851,7 @@ partial def kunivToLevelWithConstLevels (scope : TcScopeSt) (u : MKUniv)
   | .param idx _ _ =>
     match constLevels[idx.toNat]? with
     | some l => return l
-    | none => throw s!"kunivToLevelWithConstLevels: constant universe argument index {idx.toNat} out of range"
+    | none => throw (.constLevelArgIndex idx.toNat)
 
 /-- Fast path for `getLevel`: fully-applied constant whose stored kernel
     type telescopes to `Sort l` — read `l` directly with level-param
@@ -894,23 +892,16 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
       if !faultedAddrs.contains addr then
         faultedAddrs := faultedAddrs.insert addr
         if !(← scope.faultInAddr addr) then
-          throw (.unsupportedExpr
-            s!"TcScope::get_level: tc.infer failed: unknown constant \
-{(toString addr).take 12}")
+          throwBridge (.kernel (.inferUnknownConst addr) "")
       else
-        throw (.unsupportedExpr
-          s!"TcScope::get_level: tc.infer failed: unknown constant \
-{(toString addr).take 12}")
-    | .error e =>
-      throw (.unsupportedExpr
-        s!"TcScope::get_level: tc.infer failed: {e}")
+        throwBridge (.kernel (.inferUnknownConst addr) "")
+    | .error e => throwBridge (.kernel .infer (toString e))
   let some inferred := inferred?
-    | throw (.unsupportedExpr "aux kernel bridge: inference retry exited without a result")
+    | throwBridge (.internal "inference retry exited without a result")
 
   let ku ← match ← runTc (Ix.Tc.TcM.ensureSort inferred) with
     | .ok u => pure u
-    | .error e =>
-      throw (.unsupportedExpr s!"TcScope::get_level: ensure_sort failed: {e}")
+    | .error e => throwBridge (.kernel .ensureSort (toString e))
   let raw ← liftBridgeResult (kunivToLevel ku scope.paramNames)
   -- Mirror Lean's `inferForallType`: normalize forall-typed levels only.
   if ty matches .forallE .. then
