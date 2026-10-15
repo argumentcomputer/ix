@@ -133,6 +133,12 @@ jobs:
               rust-decompile validate-aux aux-gen-diff decompile-diff
               aux-gen-closure canon-closure-aux aux-cert
               compile-ind-flags compile-claim-conflict compile-claim-order
+          - name: Lake ignored tests (compiler closures)
+            kind: lake
+            test_args: >-
+              --ignored
+              compiler-selected-closure-e2e compile-closure-whole
+              checker-support-regression pack-units
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile
