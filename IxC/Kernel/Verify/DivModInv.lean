@@ -27,22 +27,22 @@ half of that module (the frame's `EqSideOk` machinery and
 namespace Ix.Kernel
 
 variable {mode : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
-variable {env : Env}
+variable {env : Env md}
 
 /-- Pairwise facts over the certificate statement/proof lists. -/
-inductive CertRuns (P : (List Expr × Expr) → Expr → Prop) :
-    List (List Expr × Expr) → List Expr → Prop
+inductive CertRuns (P : (List (Expr md) × Expr md) → Expr md → Prop) :
+    List (List (Expr md) × Expr md) → List (Expr md) → Prop
   | nil : CertRuns P [] []
-  | cons {st : List Expr × Expr} {proof : Expr}
-      {srest : List (List Expr × Expr)} {prest : List Expr} :
+  | cons {st : List (Expr md) × Expr md} {proof : Expr md}
+      {srest : List (List (Expr md) × Expr md)} {prest : List (Expr md)} :
       P st proof → CertRuns P srest prest →
       CertRuns P (st :: srest) (proof :: prest)
 
 /-- The per-certificate content of a successful run. -/
-@[expose] def CertRunFacts (mode : CheckMode) (env : Env) (F : Nat) (c : Key) (annVal : Expr)
-    (st : List Expr × Expr) (proof : Expr) : Prop :=
+@[expose] def CertRunFacts (mode : CheckMode) (env : Env md) (F : Nat) (c : Key md) (annVal : Expr md)
+    (st : List (Expr md) × Expr md) (proof : Expr md) : Prop :=
   divModCertGuard env c annVal st.1 st.2 proof = true ∧
   ∃ appliedA tp,
     annotateCore mode env F 4 (divModCertApplied
@@ -52,9 +52,9 @@ inductive CertRuns (P : (List Expr × Expr) → Expr → Prop) :
     isDefEqCore mode env F 4 tp (Expr.substConst0 c annVal st.2) = .ok true
 
 /-- Unpack a successful `checkDivModCerts` run, per certificate. -/
-theorem checkDivModCerts_inv {env : Env} {F : Nat} {c : Key}
-    {annVal : Expr} :
-    ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
+theorem checkDivModCerts_inv {env : Env md} {F : Nat} {c : Key md}
+    {annVal : Expr md} :
+    ∀ {stmts : List (List (Expr md) × Expr md)} {proofs : List (Expr md)},
       checkDivModCerts (fueledOps mode F) env c annVal stmts proofs = .ok true →
       CertRuns (CertRunFacts mode env F c annVal) stmts proofs
   | [], [], _ => CertRuns.nil
@@ -96,7 +96,7 @@ theorem checkDivModCerts_inv {env : Env} {F : Nat} {c : Key}
                 (checkDivModCerts_inv h)
 
 /-- `natOpStoredOk`, split. -/
-theorem natOpStoredOk_tyPinned {n : Key}
+theorem natOpStoredOk_tyPinned {n : Key md}
     (h : natOpStoredOk env n = true) :
     ∃ cv v hint, env.find? n = some (.defnInfo cv v hint) ∧
       natOpTyPinned env n cv.type = true := by
@@ -113,7 +113,7 @@ theorem natOpStoredOk_tyPinned {n : Key}
 the stored definition, and the operation's evidence — one proof per
 certificate statement, past the syntactic guards and the closure
 condition, with its certificates checked. -/
-theorem checkDivModEvidence_inv {env env2 : Env} {F : Nat} {c : Key} {u : Unit}
+theorem checkDivModEvidence_inv {env env2 : Env md} {F : Nat} {c : Key md} {u : Unit}
     (h : checkDivModEvidence (fueledOps mode F) ev env env2 c = .ok u) :
     divModEnvGuard env2 c = true ∧
     ∃ cv' value' hint',
@@ -166,7 +166,7 @@ theorem checkDivModEvidence_inv {env env2 : Env} {F : Nat} {c : Key} {u : Unit}
 /-- The pin names are distinct from every constant the install path
 transports (the `Nat`/`Bool` pins, the pinned equality, and the
 already-certified dependencies). -/
-theorem natDivModNames_ne_env {c : Key} (hc : c ∈ natDivModNames) :
+theorem natDivModNames_ne_env {c : Key md} (hc : c ∈ natDivModNames) :
     c ≠ natName ∧ c ≠ natZeroName ∧ c ≠ natSuccName ∧ c ≠ boolName ∧
     c ≠ boolTrueName ∧ c ≠ boolFalseName ∧ c ≠ eqName ∧
     c ≠ natBleName ∧ c ≠ natSubName ∧ c ≠ natPredName ∧
@@ -174,11 +174,11 @@ theorem natDivModNames_ne_env {c : Key} (hc : c ∈ natDivModNames) :
   simp only [natDivModNames, List.mem_cons, List.not_mem_nil,
     or_false] at hc
   rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    exact ⟨by decide, by decide, by decide, by decide, by decide,
-      by decide, by decide, by decide, by decide, by decide, by decide⟩
+    exact ⟨by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide),
+      by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide), by (cases md <;> decide)⟩
 
 /-- `divModEnvGuard`, split into facts. -/
-theorem divModEnvGuard_inv {env2 : Env} {c : Key}
+theorem divModEnvGuard_inv {env2 : Env md} {c : Key md}
     (h : divModEnvGuard env2 c = true) :
     natOpGuard env2 c = true ∧
     (natOpDeps c).all (natOpStoredOk env2) = true ∧

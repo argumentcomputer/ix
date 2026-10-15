@@ -44,11 +44,11 @@ open Ix.Kernel.Model (EnvModelM no_constant_of_Empty no_constant_of_False)
 
 universe w
 variable {V : Type w} [SetTheory V] {μ : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-- **Acceptance**: what the fold accepts carries the model. -/
 theorem checkDecls_sound (hμ : μ.verifiedChecks = true)
-    {ds : Array Declaration} {env' : Env}
+    {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDecls μ ev ds = .ok env') :
     Nonempty (EnvModelM V μ env') := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked μ h
@@ -59,7 +59,7 @@ validating mode, never accepts a stream in which some stored constant
 has type `Empty`.  Hypotheses are input-level only. -/
 theorem no_proof_of_Empty_cached (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true)
-    {ds : Array Declaration} {env' : Env}
+    {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDecls μ ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const emptyName [] → False := by
@@ -71,7 +71,7 @@ the pinned `False` block — no hypothesis about how the stream declared
 `False`.  The step the main corollary rests on is this at `.verified`. -/
 theorem no_proof_of_False_cached (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true)
-    {ds : Array Declaration} {env' : Env}
+    {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDecls μ ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const falseName [] → False := by

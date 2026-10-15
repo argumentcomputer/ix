@@ -315,7 +315,7 @@ open Ix.Kernel.Reader (preludeFor)
 
 theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
     (limits : Admission.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env .anon) :
     checkBytes hash binding maxProjections limits records blobs hint = .ok env ↔
       Admission.preflight limits records blobs = .ok () ∧
       Admission.uniqueKeys records blobs = .ok () ∧
@@ -344,7 +344,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
             simp [checkBytes, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
               Except.bind]
           | ok output =>
-            cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
+            cases checked : Admission.checkConstantsAt (md := .anon) hash binding output blobs hint <;>
               simp [checkBytes, flight, unique, authentic, decoded, expanded, checked, Except.mapError,
                 bind, Except.bind]
 
@@ -352,7 +352,7 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
 the certified checker on the expanded records. -/
 theorem checkBytes_ok_iff (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
     (limits : Admission.Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env .anon) :
     checkBytes hash binding maxProjections limits records blobs hint = .ok env ↔
       Admission.WithinBatch limits records blobs ∧
       Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧ ∃ input output,
@@ -391,7 +391,7 @@ theorem checkBytes_reading {hash : ByteArray → Address} {binding : Admission.B
     {maxProjections : Nat}
     {limits : Admission.Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytes hash binding maxProjections limits records blobs hint = .ok env) :
     Admission.UniqueKeys records blobs ∧ Admission.Authentic hash records blobs ∧
     ∃ input output, Admission.RecordsRead limits records input ∧
@@ -413,7 +413,7 @@ theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Admission
     {maxProjections : Nat}
     {limits : Admission.Limits}
     {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytes hash binding maxProjections limits records blobs hint = .ok env) :
     Admission.Authentic hash records blobs ∧ ∃ output, Admission.Hashed hash output ∧
       Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
@@ -425,7 +425,7 @@ theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Admission
 theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytes hash binding maxProjections limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h
@@ -435,7 +435,7 @@ theorem checkBytes_has_model (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteAr
 theorem checkBytes_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {binding : Admission.Binding} {maxProjections : Nat}
     {limits : Admission.Limits} {records : Admission.Records} {blobs : Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytes hash binding maxProjections limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, installed⟩ := checkBytes_reading h

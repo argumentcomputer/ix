@@ -116,7 +116,7 @@ def Group.names : Group → Array Ix.Name
   | .invalid ns _ => ns
 
 /-- The name a group is reported under: its first constant's. -/
-def Group.name (g : Group) : CName :=
+def Group.name (g : Group) : CName .source :=
   match g.names[0]? with
   | some n => ingressKey n
   | none => .id .anonymous
@@ -311,8 +311,8 @@ def definitionValue : Ix.ConstantInfo → Option Ix.Expr
 /-- A definition member, converted: its header and value, kind, safety and
 hint. -/
 structure DefMember where
-  cv : CVal
-  value : CExpr
+  cv : CVal .source
+  value : CExpr .source
   kind : Ix.DefKind
   safety : Ix.DefinitionSafety
   hint : Ix.Kernel.ReducibilityHint
@@ -320,22 +320,22 @@ structure DefMember where
 
 /-- A group's terms converted: what the lowering reads. -/
 inductive Converted where
-  | inductive (rb : BlockRead)
+  | inductive (rb : BlockRead .source)
   /-- definition members, in the order they are lowered -/
   | definitions (members : Array DefMember)
-  | axiom (cv : CVal)
-  | quot (kind : Ix.Kernel.QuotKind) (cv : CVal)
+  | axiom (cv : CVal .source)
+  | quot (kind : Ix.Kernel.QuotKind) (cv : CVal .source)
 
 /-- The conversion of terms, each under its constant's numbering: a run of
 consecutive terms under one numbering is converted together (one memo). A
 term conversion failure is a malformed group. -/
-def exprsOf (items : Array (Numbering × Ix.Expr)) : Except ReadError (Array CExpr) := do
-  let flush (σ : Numbering) (es : Array Ix.Expr) (out : Array CExpr) :
-      Except ReadError (Array CExpr) :=
+def exprsOf (items : Array (Numbering × Ix.Expr)) : Except ReadError (Array (CExpr .source)) := do
+  let flush (σ : Numbering) (es : Array Ix.Expr) (out : Array (CExpr .source)) :
+      Except ReadError (Array (CExpr .source)) :=
     match ingressExprs σ.pos es.toList with
     | .ok ks => .ok (out ++ ks.toArray)
     | .error e => .error (.malformed s!"source term: {e}")
-  let mut out : Array CExpr := Array.mkEmpty items.size
+  let mut out : Array (CExpr .source) := Array.mkEmpty items.size
   let mut run : Option (Numbering × Array Ix.Expr) := none
   for (σ, e) in items do
     match run with
@@ -370,17 +370,17 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
       recs.flatMap fun r => #[(ofRec r, r.cnst.type)] ++ r.rules.map ((ofRec r, ·.rhs))
   let ks ← exprsOf items
   let mut i := 0
-  let mut tys : Array (CVal × Nat × Nat) := #[]
+  let mut tys : Array (CVal .source × Nat × Nat) := #[]
   for v in types do
     tys := tys.push (⟨ingressKey v.cnst.name, (own v.cnst).params, ks[i]!⟩, v.numParams,
       v.numIndices)
     i := i + 1
-  let mut cts : Array (CVal × Nat × Nat) := #[]
-  let mut ctorNames : Array (List CName) := #[]
+  let mut cts : Array (CVal .source × Nat × Nat) := #[]
+  let mut ctorNames : Array (List (CName .source)) := #[]
   for cs in ctors do
-    let mut names : List CName := []
+    let mut names : List (CName .source) := []
     for c in cs do
-      let cv : CVal := ⟨ingressKey c.cnst.name, (own c.cnst).params, ks[i]!⟩
+      let cv : CVal .source := ⟨ingressKey c.cnst.name, (own c.cnst).params, ks[i]!⟩
       i := i + 1
       unless nPd + c.numFields == Ix.Kernel.Reader.piTeleLen cv.type do
         throw (.malformed s!"constructor {cv.name} declares {c.numFields} fields at {nPd} parameters; \
@@ -388,11 +388,11 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
       cts := cts.push (cv, c.numParams, c.numFields)
       names := names ++ [cv.name]
     ctorNames := ctorNames.push names
-  let mut rs : Array (CVal × RecCounts × List Ix.Kernel.RecRule) := #[]
+  let mut rs : Array (CVal .source × RecCounts × List (Ix.Kernel.RecRule .source)) := #[]
   for r in recs do
-    let cv : CVal := ⟨ingressKey r.cnst.name, (ofRec r).params, ks[i]!⟩
+    let cv : CVal .source := ⟨ingressKey r.cnst.name, (ofRec r).params, ks[i]!⟩
     i := i + 1
-    let mut rules : List Ix.Kernel.RecRule := []
+    let mut rules : List (Ix.Kernel.RecRule .source) := []
     for rule in r.rules do
       rules := rules ++ [Ix.Kernel.RecRule.mk (ingressKey rule.ctor) rule.nfields 0 .inert ks[i]!
         false false false]
@@ -446,18 +446,18 @@ def convert : Group → Except ReadError Converted
 
 /-- A converted group's declarations, through the reader's back half: the
 state is read, not changed (`State.commit` applies what the group taught). -/
-def lower (st : State) : Converted → Ix.Kernel.Reader.ReadM Read
+def lower (st : State .source) : Converted → Ix.Kernel.Reader.ReadM (Read .source)
   | .inductive rb => Ix.Kernel.Reader.lowerInductive st rb
   | .definitions #[m] => do
     let (decl, rw) ← Ix.Kernel.Reader.lowerDefinition (some m.hint) st (st.heights.getD · 0)
       m.cv m.value m.kind m.safety
     pure { decls := #[decl], projRewrites := if rw then 1 else 0 }
   | .definitions ms => do
-    let mut blockHeights : Std.HashMap CName Nat := {}
-    let mut out : Array CDecl := #[]
+    let mut blockHeights : Std.HashMap (CName .source) Nat := {}
+    let mut out : Array (CDecl .source) := #[]
     let mut rewrites := 0
     for m in ms do
-      let heights : CName → Nat := fun n => blockHeights.getD n (st.heights.getD n 0)
+      let heights : CName .source → Nat := fun n => blockHeights.getD n (st.heights.getD n 0)
       let (decl, rw) ← Ix.Kernel.Reader.lowerDefinition (some m.hint) st heights m.cv m.value
         m.kind m.safety
       if let .defnDecl cv _ h := decl then
@@ -473,13 +473,13 @@ def lower (st : State) : Converted → Ix.Kernel.Reader.ReadM Read
 /-- Whether a converted group's terms contain a `Nat` literal and a `String`
 literal: `(nat, str)`. Every term is walked once on its DAG. -/
 def literalKinds (c : Converted) : Bool × Bool := Id.run do
-  let exprs : Array CExpr := match c with
+  let exprs : Array (CExpr .source) := match c with
     | .inductive rb =>
       rb.types.map (·.1.type) ++ rb.ctors.map (·.1.type) ++
         rb.recs.flatMap fun (cv, _, rules) => #[cv.type] ++ rules.toArray.map (·.rhs)
     | .definitions ms => ms.flatMap fun m => #[m.cv.type, m.value]
     | .axiom cv | .quot _ cv => #[cv.type]
-  let mut seen : Std.HashSet CExpr := {}
+  let mut seen : Std.HashSet (CExpr .source) := {}
   let mut todo := exprs
   let mut nat := false
   let mut str := false
@@ -509,7 +509,7 @@ def nameIsName : Ix.Name → Ix.Kernel.Name → Bool
 /-- Whether an environment name is a checker key (`ingressKey n = k`), decided
 without building the name: a role key by its role's Lean name, an input key
 by its name when no role has that name, and never a derived key. -/
-def nameIs (n : Ix.Name) : CName → Bool
+def nameIs (n : Ix.Name) : CName .source → Bool
   | .id m => nameIsName n m && !Ix.Kernel.Role.byLeanName.contains m
   | .role r => nameIsName n r.leanName
   | .aux .. => false
@@ -531,7 +531,7 @@ def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
     (converted : Array (Except ReadError Converted)) : Graph := Id.run do
   let supportNames := Ix.Kernel.Reader.strLitSupportNames
   let mut groupOf : Ix.Map Ix.Name Nat := {}
-  let mut supportOf : Std.HashMap CName Nat := {}
+  let mut supportOf : Std.HashMap (CName .source) Nat := {}
   for (g, i) in groups.zipIdx do
     for n in g.names do
       groupOf := groupOf.insert n i
@@ -556,7 +556,7 @@ def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
             bad := some (.malformed s!"references {ingressName r}, which is not in the environment")
     hard := hard.push (ds.toArray.qsort (· < ·))
     unplaced := unplaced.push bad
-  let support (names : List CName) : Array Nat :=
+  let support (names : List (CName .source)) : Array Nat :=
     names.foldl (fun acc n => match supportOf[n]? with
       | some j => if acc.contains j then acc else acc.push j
       | none => acc) #[]
@@ -621,7 +621,7 @@ def scheduleOf (g : Graph) : Array (Nat × Except ReadError Converted) := Id.run
 /-- A refusal: the group it happened at (its first constant's name and its
 position in the order) and the reader's error. -/
 structure IngressError where
-  name : CName
+  name : CName .source
   position : Nat
   error : ReadError
 
@@ -636,10 +636,10 @@ def graph (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Graph :=
 
 /-- Lower the scheduled groups of `g` from `st`, threading the reader's
 state. -/
-def lowerAll (st : State) (g : Graph) (scheduled : Array (Nat × Except ReadError Converted)) :
-    Except IngressError (State × Array CDecl) := do
+def lowerAll (st : State .source) (g : Graph) (scheduled : Array (Nat × Except ReadError Converted)) :
+    Except IngressError (State .source × Array (CDecl .source)) := do
   let mut st := st
-  let mut out : Array CDecl := #[]
+  let mut out : Array (CDecl .source) := #[]
   for ((gi, c), i) in scheduled.zipIdx do
     let fail (e : ReadError) : IngressError := ⟨g.groups[gi]!.name, i, e⟩
     let c ← c.mapError fail
@@ -651,8 +651,8 @@ def lowerAll (st : State) (g : Graph) (scheduled : Array (Nat × Except ReadErro
 /-- **The Source-mode ingress**: the declarations of an environment under its
 condensation, in dependency order, lowered through the reader's back half
 from the reader state `st` (the fold's input before `preparePrelude`). -/
-def leanIngress (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (st : State := {}) :
-    Except IngressError (Array CDecl) := do
+def leanIngress (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (st : State .source := {}) :
+    Except IngressError (Array (CDecl .source)) := do
   let g := graph env blocks
   return (← lowerAll st g (scheduleOf g)).2
 
@@ -673,8 +673,8 @@ instance : ToString SourceError where
 
 /-- The fold's input: the ingress from the prelude's reader state, prepared by
 `Frontend.preparePrelude` with the prelude's declarations. -/
-def prepareSource (pre : Ix.Kernel.Reader.Prelude) (env : Ix.Environment)
-    (blocks : Ix.CondensedBlocks) : Except SourceError (Array CDecl) := do
+def prepareSource (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) := do
   let decls ← (leanIngress env blocks pre.state).mapError .ingress
   pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
@@ -702,11 +702,11 @@ def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Name := r.leanName
 
 /-- **Source mode's evidence** over the prepared declarations, with the
 reason each well-founded operation without evidence has none. -/
-def sourceEvidenceReport (decls : Array CDecl) : Ix.Kernel.Evidences × List String := Id.run do
-  let uni : Ix.RoleEvidence.Universe := decls.foldl Ix.RoleEvidence.Universe.add {}
+def sourceEvidenceReport (decls : Array (CDecl .source)) : Ix.Kernel.Evidences .source × List String := Id.run do
+  let uni : Ix.RoleEvidence.Universe .source := decls.foldl Ix.RoleEvidence.Universe.add {}
   let lookMap := Ix.RoleEvidence.lookupOf decls
-  let look : CName → Option Ix.Kernel.ConstantInfo := (lookMap[·]?)
-  let mut ev : Ix.Kernel.Evidences :=
+  let look : CName .source → Option (Ix.Kernel.ConstantInfo .source) := (lookMap[·]?)
+  let mut ev : Ix.Kernel.Evidences .source :=
     Ix.RoleEvidence.defeqRoles.map fun r => (r, Ix.RoleEvidence.defeqEvidence r)
   let mut why : List String := []
   for (r, _) in Ix.RoleEvidence.certTheorems do
@@ -716,11 +716,11 @@ def sourceEvidenceReport (decls : Array CDecl) : Ix.Kernel.Evidences × List Str
   return (ev, why)
 
 /-- **Source mode's evidence** over the prepared declarations. -/
-def sourceEvidence (decls : Array CDecl) : Ix.Kernel.Evidences := (sourceEvidenceReport decls).1
+def sourceEvidence (decls : Array (CDecl .source)) : Ix.Kernel.Evidences .source := (sourceEvidenceReport decls).1
 
 /-- The Source-mode check over an explicit prelude and evidence. -/
-def checkSourceWith (pre : Ix.Kernel.Reader.Prelude) (ev : Ix.Kernel.Evidences)
-    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except SourceError Ix.Kernel.Env := do
+def checkSourceWith (pre : Ix.Kernel.Reader.Prelude .source) (ev : Ix.Kernel.Evidences .source)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) := do
   let decls ← prepareSource pre env blocks
   (Ix.Kernel.Cached.checkDecls .verified ev decls).mapError fun (e, i) => .kernel e i
 
@@ -728,15 +728,15 @@ def checkSourceWith (pre : Ix.Kernel.Reader.Prelude) (ev : Ix.Kernel.Evidences)
 (the Ixon reader's, whose constants carry Lean's names), then the verified
 fold at Source mode's evidence (`sourceEvidence`: the certificate theorems the
 environment carries, closed). -/
-def checkSourceUsing (prelude : Except String Ix.Kernel.Reader.Prelude) (env : Ix.Environment)
-    (blocks : Ix.CondensedBlocks) : Except SourceError Ix.Kernel.Env := do
+def checkSourceUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source)) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) := do
   let pre ← prelude.mapError .prelude
   let decls ← prepareSource pre env blocks
   (Ix.Kernel.Cached.checkDecls .verified (sourceEvidence decls) decls).mapError
     fun (e, i) => .kernel e i
 
 def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
-    Except SourceError Ix.Kernel.Env :=
+    Except SourceError (Ix.Kernel.Env .source) :=
   checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
 
 end Ix.LeanIngress

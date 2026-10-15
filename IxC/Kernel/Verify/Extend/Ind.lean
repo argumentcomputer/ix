@@ -27,9 +27,9 @@ open Expr
 
 /-- A successful fold's members were all fresh at their own step, hence
 already fresh at any earlier point. -/
-theorem checkIndMember_fold_names {blockNames : List Key}
-    {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndMember_fold_names {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
     ∀ ci ∈ rest, env'.find? ci.name = none
   | [], _, _, _, ci, hci => nomatch hci
@@ -47,7 +47,7 @@ theorem checkIndMember_fold_names {blockNames : List Key}
     rcases hci with rfl | hci
     · exact hfind0
     · have hnone₁ := checkIndMember_fold_names rest env₁ env₂ h ci hci
-      have henv₁ : ∃ ci₁, env₁ = (⟨ci₁ :: env'.consts⟩ : Env) := by
+      have henv₁ : ∃ ci₁, env₁ = (⟨ci₁ :: env'.consts⟩ : Env md) := by
         rcases hkind with ⟨-, rfl⟩ | ⟨cv, nP, nF, -, rfl⟩
         · exact ⟨_, rfl⟩
         · exact ⟨_, rfl⟩
@@ -59,9 +59,9 @@ theorem checkIndMember_fold_names {blockNames : List Key}
 
 /-- Members installed by the fold never carry a model-shaped name
 (`checkMemberVal` rejects them). -/
-theorem checkIndFold_modelfree {blockNames : List Key}
-    {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_modelfree {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
     ∀ ci ∈ rest, ci.name.isModelSuffix = false
   | [], _, _, _, ci, hci => nomatch hci
@@ -86,9 +86,9 @@ theorem checkIndFold_modelfree {blockNames : List Key}
 
 /-- Members installed by the fold never carry a
 projection-function-shaped name. -/
-theorem checkIndFold_projshape {blockNames : List Key}
-    {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_projshape {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
     ∀ ci ∈ rest, ci.name.isProjFnShape = false
   | [], _, _, _, ci, hci => nomatch hci
@@ -110,12 +110,12 @@ theorem checkIndFold_projshape {blockNames : List Key}
 
 /-- The member fold adds only block-named inductive-former or
 constructor constants. -/
-theorem checkIndFold_find_new {blockNames : List Key}
-    {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_find_new {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     (∀ ci ∈ rest, blockNames.contains ci.name = true) →
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
-    ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
+    ∀ (n : Key md) (ci : ConstantInfo md), env₂.find? n = some ci →
     env'.find? n = some ci ∨
       (blockNames.contains n = true ∧
         ((∃ cv, ci = .indInfo cv caps) ∨
@@ -164,8 +164,8 @@ theorem checkIndFold_find_new {blockNames : List Key}
 
 /-- Every successfully folded member is an inductive former or a
 constructor. -/
-theorem checkIndFold_kinds {blockNames : List Key} {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_kinds {blockNames : List (Key md)} {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
     ∀ ci ∈ rest, (∃ cv caps', ci = .indInfo cv caps') ∨
       ∃ cv nP nF, ci = .ctorInfo cv nP nF
@@ -189,11 +189,11 @@ theorem checkIndFold_kinds {blockNames : List Key} {caps : IndCaps} :
 
 /-- The member fold preserves stored lookups exactly (every install is
 fresh). -/
-theorem checkIndFold_find_preserved {blockNames : List Key}
-    {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_find_preserved {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' = .ok env₂ →
-    ∀ (n : Key) (ci : ConstantInfo), env'.find? n = some ci →
+    ∀ (n : Key md) (ci : ConstantInfo md), env'.find? n = some ci →
     env₂.find? n = some ci
   | [], _, _, h, n, ci, hf => by
     simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
@@ -213,7 +213,7 @@ theorem checkIndFold_find_preserved {blockNames : List Key}
     have hfindA : env'.find? cvA.name = none := by
       rw [show cvA.name = ci₀.name from by rw [hcvA]; rfl]
       exact hfind0
-    have henv₁ : ∃ ci₁ : ConstantInfo, ci₁.name = cvA.name ∧
+    have henv₁ : ∃ ci₁ : ConstantInfo md, ci₁.name = cvA.name ∧
         env₁ = ⟨ci₁ :: env'.consts⟩ := by
       rcases hkind with ⟨-, rfl⟩ | ⟨cv, nP, nF, -, rfl⟩
       · exact ⟨_, rfl, rfl⟩
@@ -228,8 +228,8 @@ theorem checkIndFold_find_preserved {blockNames : List Key}
 their capability constructor is stored at the record's arities.  The
 block-fold form of the threaded `EtaFamiliesClosed` (which cannot hold
 for a former whose constructor is still pending). -/
-@[expose] def EtaFamiliesClosedO (blockNames : List Key) (env : Env) : Prop :=
-  ∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
+@[expose] def EtaFamiliesClosedO (blockNames : List (Key md)) (env : Env md) : Prop :=
+  ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     reservedBasisNames.contains T = false →
     blockNames.contains T = false →
@@ -237,16 +237,16 @@ for a former whose constructor is still pending). -/
       env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
 /-- Stored block formers carry exactly the fold's capability record. -/
-def BlockCapsPinned (blockNames : List Key) (caps : IndCaps)
-    (env : Env) : Prop :=
-  ∀ (n : Key) (cvS : ConstantVal) (capsS : IndCaps),
+def BlockCapsPinned (blockNames : List (Key md)) (caps : IndCaps md)
+    (env : Env md) : Prop :=
+  ∀ (n : Key md) (cvS : ConstantVal md) (capsS : IndCaps md),
     blockNames.contains n = true →
     env.find? n = some (.indInfo cvS capsS) → capsS = caps
 
 /-- The outside-families invariant steps at any fresh *block* install:
 a block name is never an outside former's name. -/
-theorem EtaFamiliesClosedO.cons {blockNames : List Key} {env : Env}
-    {c₀ : ConstantInfo} (h : EtaFamiliesClosedO blockNames env)
+theorem EtaFamiliesClosedO.cons {blockNames : List (Key md)} {env : Env md}
+    {c₀ : ConstantInfo md} (h : EtaFamiliesClosedO blockNames env)
     (hfresh : env.find? c₀.name = none)
     (hbn : blockNames.contains c₀.name = true) :
     EtaFamiliesClosedO blockNames ⟨c₀ :: env.consts⟩ := by
@@ -263,8 +263,8 @@ theorem EtaFamiliesClosedO.cons {blockNames : List Key} {env : Env}
 
 /-- The member fold only extends the environment: stored lookups stay
 stored. -/
-theorem checkIndFold_mono {blockNames : List Key} {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_mono {blockNames : List (Key md)} {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' =
       .ok env₂ →
     ∀ n, (env'.find? n).isSome = true → (env₂.find? n).isSome = true
@@ -281,7 +281,7 @@ theorem checkIndFold_mono {blockNames : List Key} {caps : IndCaps} :
     rw [hstep] at h
     obtain ⟨cvA, cvm, mval, hmcvm, hccv, -, -, -, -, hkind⟩ :=
       checkIndMember_inv hstep
-    have henv₁ : ∃ ci₁ : ConstantInfo, env₁ = ⟨ci₁ :: env'.consts⟩ := by
+    have henv₁ : ∃ ci₁ : ConstantInfo md, env₁ = ⟨ci₁ :: env'.consts⟩ := by
       rcases hkind with ⟨-, rfl⟩ | ⟨cv, nP, nF, -, rfl⟩
       · exact ⟨_, rfl⟩
       · exact ⟨_, rfl⟩
@@ -295,8 +295,8 @@ theorem checkIndFold_mono {blockNames : List Key} {caps : IndCaps} :
       exact hn
 
 /-- After the member fold every folded member is stored. -/
-theorem checkIndFold_stored {blockNames : List Key} {caps : IndCaps} :
-    ∀ (rest : List ConstantInfo) (env' env₂ : Env),
+theorem checkIndFold_stored {blockNames : List (Key md)} {caps : IndCaps md} :
+    ∀ (rest : List (ConstantInfo md)) (env' env₂ : Env md),
     rest.foldlM (checkIndMember (fueledOps mode F) blockNames caps) env' =
       .ok env₂ →
     ∀ ci ∈ rest, (env₂.find? ci.name).isSome = true
@@ -314,7 +314,7 @@ theorem checkIndFold_stored {blockNames : List Key} {caps : IndCaps} :
     obtain ⟨-, -, -, -, -, -, tyA, stype, u, -, -, -, -, -, hcvA⟩ :=
       checkConstantVal_inv hccv
     have hnameA : cvA.name = ci₀.name := by rw [hcvA]; rfl
-    have henv₁ : ∃ ci₁ : ConstantInfo, ci₁.name = cvA.name ∧
+    have henv₁ : ∃ ci₁ : ConstantInfo md, ci₁.name = cvA.name ∧
         env₁ = ⟨ci₁ :: env'.consts⟩ := by
       rcases hkind with ⟨-, rfl⟩ | ⟨cv, nP, nF, -, rfl⟩
       · exact ⟨_, rfl, rfl⟩

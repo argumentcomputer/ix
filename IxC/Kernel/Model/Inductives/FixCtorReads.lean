@@ -29,13 +29,13 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## Instantiation at variables and the argument spine -/
 
 /-- Substituting a variable maps an application's arguments. -/
-theorem Expr.getAppArgs_instantiate1_fvar {i : Nat} {t : Expr} :
-    ∀ (e : Expr) (k : Nat),
+theorem Expr.getAppArgs_instantiate1_fvar {i : Nat} {t : Expr md} :
+    ∀ (e : Expr md) (k : Nat),
       (e.instantiate1 (.fvar i t) k).getAppArgs
         = e.getAppArgs.map (fun a => a.instantiate1 (.fvar i t) k) := by
   intro e
@@ -54,8 +54,8 @@ theorem Expr.getAppArgs_instantiate1_fvar {i : Nat} {t : Expr} :
 
 /-- Instantiation at variables maps an application's arguments. -/
 theorem Expr.getAppArgs_instSeq_fvars :
-    ∀ (as : List Expr) (t : Nat) (e : Expr),
-      (∀ a ∈ as, ∃ (i : Nat) (ty : Expr), a = Expr.fvar i ty) →
+    ∀ (as : List (Expr md)) (t : Nat) (e : Expr md),
+      (∀ a ∈ as, ∃ (i : Nat) (ty : Expr md), a = Expr.fvar i ty) →
       (Expr.instSeq as t e).getAppArgs = e.getAppArgs.map (Expr.instSeq as t)
   | [], _, e, _ => by simp [Expr.instSeq]
   | a :: as, t, e, hfv => by
@@ -73,7 +73,7 @@ constructor `j` on. -/
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
     (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
     (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
-    List (ConstantVal × Nat) → Nat → List CtorDatumR
+    List (ConstantVal md × Nat) → Nat → List (CtorDatumR md)
   | [], _ => []
   | c :: cs, j =>
     (c.1.name, c.2, dsF j ψ, esF j ψ, Ix.Kernel.recIdxOf (ksF j), eissF j ψ, tssF j ψ) ::
@@ -84,7 +84,7 @@ theorem fixCtorDataList_length (dsF : Nat → (LevelParam → Nat) → List (Nat
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
     (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
     (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
-    ∀ (cs : List (ConstantVal × Nat)) (j : Nat),
+    ∀ (cs : List (ConstantVal md × Nat)) (j : Nat),
       (fixCtorDataList dsF esF ksF eissF tssF ψ cs j).length = cs.length
   | [], _ => rfl
   | _ :: cs, j => by
@@ -95,7 +95,7 @@ theorem fixCtorDataList_getElem? (dsF : Nat → (LevelParam → Nat) → List (N
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
     (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
     (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ψ : LevelParam → Nat) :
-    ∀ (cs : List (ConstantVal × Nat)) (j i : Nat),
+    ∀ (cs : List (ConstantVal md × Nat)) (j i : Nat),
       (fixCtorDataList dsF esF ksF eissF tssF ψ cs j)[i]?
         = (cs[i]?).map fun c =>
             (c.1.name, c.2, dsF (j + i) ψ, esF (j + i) ψ, Ix.Kernel.recIdxOf (ksF (j + i)),
@@ -110,14 +110,14 @@ theorem fixCtorDataList_getElem? (dsF : Nat → (LevelParam → Nat) → List (N
     rw [show j + 1 + i = j + (i + 1) from by omega]
 
 /-- The per-constructor facts of a recursive block at a position. -/
-@[expose] def FixCtorFactsAt {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Key) (lps : List LevelParam)
-    (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
+@[expose] def FixCtorFactsAt {env : Env md} (m : EnvModel V env) (env₀ : Env md) (T : Key md) (lps : List LevelParam)
+    (nP nIdx : Nat) (resSort : Level) (isProp large : Bool) (idxF : Nat → List (Expr md))
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
-    (ksF : Nat → List RecFieldKind) (fvsPF xFvsF : Nat → List Expr) (xrestF : Nat → Expr)
+    (ksF : Nat → List RecFieldKind) (fvsPF xFvsF : Nat → List (Expr md)) (xrestF : Nat → Expr md)
     (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
     (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm)))
-    (j : Nat) (cA : ConstantVal × Nat) : Prop :=
+    (j : Nat) (cA : ConstantVal md × Nat) : Prop :=
   env.find? cA.1.name = some (.ctorInfo cA.1 nP cA.2) ∧
   cA.1.levelParams = lps ∧
   FixCtorDataI m env₀ T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF j) (dsF j) (esF j)
@@ -138,11 +138,11 @@ theorem recIdxOf_pairwise (ks : List RecFieldKind) : (Ix.Kernel.recIdxOf ks).Pai
   (List.pairwise_lt_range).filter _
 
 /-- A positional characterisation of the reading premises. -/
-theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
+theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
     {nP nIdx : Nat} :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)},
       ctors.length = cds.length →
-      (∀ (i : Nat) (c : Key × Nat × Expr × List Nat) (cd : CtorDatumR),
+      (∀ (i : Nat) (c : Key md × Nat × Expr md × List Nat) (cd : CtorDatumR md),
         ctors[i]? = some c → cds[i]? = some cd → CtorReadR m ψ T lps nP nIdx c cd) →
       CtorReadsR m ψ T lps nP nIdx ctors cds
   | [], [], _, _ => .nil
@@ -153,14 +153,14 @@ theorem CtorReadsR.of_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T
       fun i c' cd' hc hcd => h (i + 1) c' cd' (by simpa using hc) (by simpa using hcd))
 
 /-- **The reading premises from the constructor facts.** -/
-theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : List LevelParam}
-    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxF : Nat → List Expr}
+theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env md} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxF : Nat → List (Expr md)}
     {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
     {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
     {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} (ψ : LevelParam → Nat)
-    {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
+    {ctorsA : List (ConstantVal md × Nat)} {kinds : List (List RecFieldKind)}
     (hlenK : kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
@@ -202,7 +202,7 @@ theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : Li
       rw [List.getElem?_append_right (by rw [hD.pLen]; omega), hD.pLen, Nat.add_sub_cancel_left]
       exact hx
     have hfvL : ∀ (i' : Nat), ∀ a ∈ (fvsPF i ++ xFvsF i).take (nP + i'),
-        ∃ (k : Nat) (ty : Expr), a = Expr.fvar k ty := by
+        ∃ (k : Nat) (ty : Expr md), a = Expr.fvar k ty := by
       intro i' a ha
       obtain ⟨q, hq⟩ := List.getElem?_of_mem (List.mem_of_mem_take ha)
       obtain ⟨ty, rfl⟩ := hidxAll q a hq
@@ -287,7 +287,7 @@ theorem fixCtorReadsR_of {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : Li
       · obtain ⟨afvs, body, hop, -, -, -, -, hlenA, -, -, -⟩ := hD.opened.reflF i' x hx hk
         have hbody := openPisAtFvars_instSeq (x.fvarTypeD.piBinders).1.length hop
           (Expr.stripPis_piBinders x.fvarTypeD)
-        have hfvA : ∀ a ∈ afvs, ∃ (k : Nat) (ty : Expr), a = Expr.fvar k ty := by
+        have hfvA : ∀ a ∈ afvs, ∃ (k : Nat) (ty : Expr md), a = Expr.fvar k ty := by
           intro a ha
           obtain ⟨q, hq⟩ := List.getElem?_of_mem ha
           obtain ⟨ty, rfl⟩ := (opening_vars_at hop).2.1 q a hq

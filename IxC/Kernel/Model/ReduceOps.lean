@@ -82,25 +82,25 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The one-entry element context -/
 
 /-- The element type's leaf at an assignment (the reduce operations'
 element inductives — `Nat`, `Bool` — are stored level-free, so the
 spelling is the plain assignment). -/
-def elemA {env : Env} (m : EnvModel V env) (c : Key)
+def elemA {env : Env md} (m : EnvModel V env) (c : Key md)
     (ψ : LevelParam → Nat) : AnnotTerm :=
   m.acval (Ix.Kernel.reduceElemName c) ψ
 
 /-- The certificate's context: one slot, the element type. -/
-def elemCtx {env : Env} (m : EnvModel V env) (c : Key)
+def elemCtx {env : Env md} (m : EnvModel V env) (c : Key md)
     (ψ : LevelParam → Nat) : List AnnotTerm :=
   [elemA m c ψ]
 
 /-- One element member satisfies the one-variable context (the leaf
 reading collapses by closedness). -/
-theorem sat_elemCtx (m : EnvModel V env) {c : Key} {ψ : LevelParam → Nat}
+theorem sat_elemCtx (m : EnvModel V env) {c : Key md} {ψ : LevelParam → Nat}
     {ρ : Nat → V} {x : V} (hx : x ∈ˢ interp V ρ (elemA m c ψ)) :
     Sat V (elemCtx m c ψ) (cons x ρ) := by
   intro i Aa hi
@@ -116,7 +116,7 @@ theorem sat_elemCtx (m : EnvModel V env) {c : Key} {ψ : LevelParam → Nat}
 /-- The element type expression is the element inductive's bare
 constant (`Verify/OfReducePin.lean`'s `ofReduce_elemTy` at the
 *operation*'s index rather than the axiom's). -/
-theorem reduceElemTy_constS (c : Key) :
+theorem reduceElemTy_constS (c : Key md) :
     Ix.Kernel.reduceElemTy c = .const (Ix.Kernel.reduceElemName c) [] := by
   unfold Ix.Kernel.reduceElemTy Ix.Kernel.reduceElemName
   split <;> simp [Ix.Kernel.natName, Ix.Kernel.boolName]
@@ -125,7 +125,7 @@ theorem reduceElemTy_constS (c : Key) :
 erasures.**  The domain and the codomain are the *same* bare constant,
 and both erasures fix a `.const`, so the pin leaves exactly the binder
 name and the binder meta free — and neither is ever read below. -/
-theorem reduceOp_shapeS {c : Key} {type' : Expr}
+theorem reduceOp_shapeS {c : Key md} {type' : Expr md}
     (hc : c ∈ Ix.Kernel.reduceOpNames)
     (h : type'.erasePw
       = (Ix.Kernel.reduceOpCvA c).type.erasePw) :
@@ -160,7 +160,7 @@ theorem reduceOp_shapeS {c : Key} {type' : Expr}
 /-- The certificate variable's leaf list: one leaf at index `0`, whose
 annotation is the element type (a bare constant, so the hereditary
 recursion stops there). -/
-theorem reduceCertVar_fvarLeaves (c : Key) :
+theorem reduceCertVar_fvarLeaves (c : Key md) :
     (Ix.Kernel.reduceCertVar c).fvarLeaves
       = [(0, Ix.Kernel.reduceElemTy c)] := by
   have hE := reduceElemTy_constS c
@@ -176,7 +176,7 @@ the module docstring for the route and for why no regime bit is ever
 read. -/
 theorem reduceOps_install (hμ : μ.verifiedChecks = true)
     (mp : EnvModelM V μ env) {F : Nat}
-    {cv : ConstantVal} {value type' value' : Expr}
+    {cv : ConstantVal md} {value type' value' : Expr md}
     {A Ta : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? cv.name = none)
     (hvf' : value'.hasFvar = false)

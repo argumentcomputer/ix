@@ -30,7 +30,7 @@ namespace Ix.Kernel.Expr
 the way (callers start at the default `d = 0`).  `v` must be closed with
 respect to bound variables (an `fvar`, a constant, …); it is not shifted.
 Loose `bvar`s above `d` are lowered by one. -/
-def instantiate1 (e : Expr) (v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1 (e : Expr md) (v : Expr md) (d : Nat := 0) : Expr md :=
   match e with
   | .bvar i => if i = d then v else if i > d then .bvar (i - 1) else .bvar i
   | .fvar idx ty => .fvar idx ty
@@ -58,14 +58,14 @@ the cursor* (`instantiate1`'s answer depends on both) and dropped after
 each call, since it also depends on `v`. -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def Inst1MemoInv (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = instantiate1 k.1 v k.2
+def Inst1MemoInv (v : Expr md) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = instantiate1 k.1 v k.2
 
-theorem Inst1MemoInv.empty {v : Expr} : Inst1MemoInv v {} := by
+theorem Inst1MemoInv.empty {v : Expr md} : Inst1MemoInv v {} := by
   intro k r h; simp at h
 
-theorem Inst1MemoInv.insert {v : Expr} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : Inst1MemoInv v memo) {e : Expr} {d : Nat} {r : Expr}
+theorem Inst1MemoInv.insert {v : Expr md} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : Inst1MemoInv v memo) {e : Expr md} {d : Nat} {r : Expr md}
     (heq : r = instantiate1 e v d) :
     Inst1MemoInv v (memo.insert (e, d) r) := by
   intro k r' hk
@@ -78,8 +78,8 @@ theorem Inst1MemoInv.insert {v : Expr} {memo : Std.HashMap (Expr × Nat) Expr}
   · exact hm k r' hk
 
 /-- Memoized `instantiate1`. -/
-def instantiate1Go (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (d : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def instantiate1Go (v : Expr md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (d : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   match e with
   | .bvar i => (if i = d then v else if i > d then .bvar (i - 1) else .bvar i, memo)
   | .fvar idx ty => (.fvar idx ty, memo)
@@ -90,7 +90,7 @@ def instantiate1Go (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, d)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app f a =>
           let (f', memo) := instantiate1Go v memo f d
@@ -116,8 +116,8 @@ def instantiate1Go (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
       (r, memo.insert (e, d) r)
 
 /-- **The memoized walk is `instantiate1`.** -/
-theorem instantiate1Go_spec {v : Expr} :
-    ∀ (e : Expr) (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+theorem instantiate1Go_spec {v : Expr md} :
+    ∀ (e : Expr md) (d : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       Inst1MemoInv v memo →
       (instantiate1Go v memo e d).1 = instantiate1 e v d ∧
         Inst1MemoInv v (instantiate1Go v memo e d).2 := by
@@ -180,12 +180,12 @@ theorem instantiate1Go_spec {v : Expr} :
       exact h2.insert (by simp [instantiate1, h1])
 
 /-- The executed `instantiate1` (one memoized DAG walk). -/
-def instantiate1Fast (e v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1Fast (e v : Expr md) (d : Nat := 0) : Expr md :=
   (instantiate1Go v {} e d).1
 
 @[csimp] theorem instantiate1_eq_instantiate1Fast :
     @instantiate1 = @instantiate1Fast := by
-  funext e v d
+  funext md e v d
   exact (instantiate1Go_spec e d {} Inst1MemoInv.empty).1.symm
 
 /-- Bulk instantiation (task #50): substitute the replacement list `vs`
@@ -208,7 +208,7 @@ entries (`vs.take i` — the substitutions the fold applies after
 inserting `vs[i]`).  On `bvar`-closed replacements (every checker call
 site) that recursion is the identity, and the cost is a single
 traversal of `e` instead of `vs.length` traversals. -/
-def instantiateList (e : Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
+def instantiateList (e : Expr md) (vs : List (Expr md)) (d : Nat := 0) : Expr md :=
   match e with
   | .bvar j =>
     if j < d then .bvar j
@@ -245,14 +245,14 @@ fixed; the `bvar` case (the recursion into a replacement, the identity
 at every checker site) is the pure function's. -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def InstLMemoInv (vs : List Expr) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = instantiateList k.1 vs k.2
+def InstLMemoInv (vs : List (Expr md)) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = instantiateList k.1 vs k.2
 
-theorem InstLMemoInv.empty {vs : List Expr} : InstLMemoInv vs {} := by
+theorem InstLMemoInv.empty {vs : List (Expr md)} : InstLMemoInv vs {} := by
   intro k r h; simp at h
 
-theorem InstLMemoInv.insert {vs : List Expr} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : InstLMemoInv vs memo) {e : Expr} {d : Nat} {r : Expr}
+theorem InstLMemoInv.insert {vs : List (Expr md)} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : InstLMemoInv vs memo) {e : Expr md} {d : Nat} {r : Expr md}
     (heq : r = instantiateList e vs d) :
     InstLMemoInv vs (memo.insert (e, d) r) := by
   intro k r' hk
@@ -265,8 +265,8 @@ theorem InstLMemoInv.insert {vs : List Expr} {memo : Std.HashMap (Expr × Nat) E
   · exact hm k r' hk
 
 /-- Memoized `instantiateList`. -/
-def instantiateListGo (vs : List Expr) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (d : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def instantiateListGo (vs : List (Expr md)) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (d : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   match e with
   | .bvar j => (instantiateList (.bvar j) vs d, memo)
   | .fvar idx ty => (.fvar idx ty, memo)
@@ -277,7 +277,7 @@ def instantiateListGo (vs : List Expr) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, d)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app f a =>
           let (f', memo) := instantiateListGo vs memo f d
@@ -303,8 +303,8 @@ def instantiateListGo (vs : List Expr) (memo : Std.HashMap (Expr × Nat) Expr)
       (r, memo.insert (e, d) r)
 
 /-- **The memoized walk is `instantiateList`.** -/
-theorem instantiateListGo_spec {vs : List Expr} :
-    ∀ (e : Expr) (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+theorem instantiateListGo_spec {vs : List (Expr md)} :
+    ∀ (e : Expr md) (d : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       InstLMemoInv vs memo →
       (instantiateListGo vs memo e d).1 = instantiateList e vs d ∧
         InstLMemoInv vs (instantiateListGo vs memo e d).2 := by
@@ -369,12 +369,12 @@ theorem instantiateListGo_spec {vs : List Expr} :
       exact h2.insert (by rw [instantiateList]; simp [h1])
 
 /-- The executed `instantiateList` (one memoized DAG walk). -/
-def instantiateListFast (e : Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
+def instantiateListFast (e : Expr md) (vs : List (Expr md)) (d : Nat := 0) : Expr md :=
   (instantiateListGo vs {} e d).1
 
 @[csimp] theorem instantiateList_eq_instantiateListFast :
     @instantiateList = @instantiateListFast := by
-  funext e vs d
+  funext md e vs d
   exact (instantiateListGo_spec e d {} InstLMemoInv.empty).1.symm
 
 /-- Bump every loose bound variable `≥ cutoff` by `amount`.  Used to
@@ -383,7 +383,7 @@ fields) into a recursor-rule telescope (parameters, motive, minors,
 then prior fields): parameter references must skip the extra motive
 and minor binders, and by the zeta expansion's substitution to carry
 open let-values under binders. -/
-def liftLooseBVars (amount : Nat) : (cutoff : Nat) → Expr → Expr
+def liftLooseBVars (amount : Nat) : (cutoff : Nat) → Expr md → Expr md
   | c, .bvar i => if i ≥ c then .bvar (i + amount) else .bvar i
   | _, .fvar i ty => .fvar i ty
   | _, .sort u => .sort u
@@ -408,14 +408,14 @@ arrangement as `instantiate1` above; keyed by the node and the cutoff,
 dropped after each call (the answer depends on `amount`). -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def LiftMemoInv (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = liftLooseBVars amount k.2 k.1
+def LiftMemoInv (amount : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = liftLooseBVars amount k.2 k.1
 
-theorem LiftMemoInv.empty {amount : Nat} : LiftMemoInv amount {} := by
+theorem LiftMemoInv.empty {amount : Nat} : (LiftMemoInv (md := md)) amount {} := by
   intro k r h; simp at h
 
-theorem LiftMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : LiftMemoInv amount memo) {e : Expr} {c : Nat} {r : Expr}
+theorem LiftMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : LiftMemoInv amount memo) {e : Expr md} {c : Nat} {r : Expr md}
     (heq : r = liftLooseBVars amount c e) :
     LiftMemoInv amount (memo.insert (e, c) r) := by
   intro k r' hk
@@ -428,8 +428,8 @@ theorem LiftMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr × Nat) Expr
   · exact hm k r' hk
 
 /-- Memoized `liftLooseBVars`. -/
-def liftLooseBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (c : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def liftLooseBVarsGo (amount : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (c : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   match e with
   | .bvar i => (if i ≥ c then .bvar (i + amount) else .bvar i, memo)
   | .fvar i ty => (.fvar i ty, memo)
@@ -440,7 +440,7 @@ def liftLooseBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, c)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app a b =>
           let (a', memo) := liftLooseBVarsGo amount memo a c
@@ -467,7 +467,7 @@ def liftLooseBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
 
 /-- **The memoized walk is `liftLooseBVars`.** -/
 theorem liftLooseBVarsGo_spec {amount : Nat} :
-    ∀ (e : Expr) (c : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+    ∀ (e : Expr md) (c : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       LiftMemoInv amount memo →
       (liftLooseBVarsGo amount memo e c).1 = liftLooseBVars amount c e ∧
         LiftMemoInv amount (liftLooseBVarsGo amount memo e c).2 := by
@@ -530,12 +530,12 @@ theorem liftLooseBVarsGo_spec {amount : Nat} :
       exact h2.insert (by simp [liftLooseBVars, h1])
 
 /-- The executed `liftLooseBVars` (one memoized DAG walk). -/
-def liftLooseBVarsFast (amount c : Nat) (e : Expr) : Expr :=
+def liftLooseBVarsFast (amount c : Nat) (e : Expr md) : Expr md :=
   (liftLooseBVarsGo amount {} e c).1
 
 @[csimp] theorem liftLooseBVars_eq_liftLooseBVarsFast :
     @liftLooseBVars = @liftLooseBVarsFast := by
-  funext amount c e
+  funext md amount c e
   exact (liftLooseBVarsGo_spec e c {} LiftMemoInv.empty).1.symm
 
 /-! ### `resetMeta` (task #210 Part D)
@@ -549,7 +549,7 @@ telescopes and index expressions — while the stream's carries the
 placeholder everywhere.  The pure walk is the spec; the executed one is
 memoized by `@[csimp]` (the `mentionsConst` arrangement). -/
 
-def resetMeta : Expr → Expr
+def resetMeta : Expr md → Expr md
   | .app f a => .app (resetMeta f) (resetMeta a)
   | .lam ty b bm => .lam (resetMeta ty) (resetMeta b) { bm with pw := .never }
   | .forallE ty b bm => .forallE (resetMeta ty) (resetMeta b) { bm with pw := .never }
@@ -559,14 +559,14 @@ def resetMeta : Expr → Expr
   | e => e
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def ResetMemoInv (memo : Std.HashMap Expr Expr) : Prop :=
-  ∀ (k r : Expr), memo[k]? = some r → r = resetMeta k
+def ResetMemoInv (memo : Std.HashMap (Expr md) (Expr md)) : Prop :=
+  ∀ (k r : Expr md), memo[k]? = some r → r = resetMeta k
 
-theorem ResetMemoInv.empty : ResetMemoInv {} := by
+theorem ResetMemoInv.empty : (ResetMemoInv (md := md)) {} := by
   intro k r h; simp at h
 
-theorem ResetMemoInv.insert {memo : Std.HashMap Expr Expr} (hm : ResetMemoInv memo)
-    {e r : Expr} (heq : r = resetMeta e) : ResetMemoInv (memo.insert e r) := by
+theorem ResetMemoInv.insert {memo : Std.HashMap (Expr md) (Expr md)} (hm : ResetMemoInv memo)
+    {e r : Expr md} (heq : r = resetMeta e) : ResetMemoInv (memo.insert e r) := by
   intro k r' hk
   rw [Std.HashMap.getElem?_insert] at hk
   split at hk
@@ -577,7 +577,7 @@ theorem ResetMemoInv.insert {memo : Std.HashMap Expr Expr} (hm : ResetMemoInv me
   · exact hm k r' hk
 
 /-- Memoized `resetMeta`. -/
-def resetMetaGo (memo : Std.HashMap Expr Expr) : Expr → Expr × Std.HashMap Expr Expr
+def resetMetaGo (memo : Std.HashMap (Expr md) (Expr md)) : Expr md → Expr md × Std.HashMap (Expr md) (Expr md)
   | .bvar i => (.bvar i, memo)
   | .sort u => (.sort u, memo)
   | .const n us => (.const n us, memo)
@@ -586,7 +586,7 @@ def resetMetaGo (memo : Std.HashMap Expr Expr) : Expr → Expr × Std.HashMap Ex
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap Expr Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md) (Expr md) :=
         match e with
         | .fvar i ty =>
           let (t, memo) := resetMetaGo memo ty
@@ -616,7 +616,7 @@ def resetMetaGo (memo : Std.HashMap Expr Expr) : Expr → Expr × Std.HashMap Ex
 
 /-- **The memoized walk is `resetMeta`.** -/
 theorem resetMetaGo_spec :
-    ∀ (e : Expr) (memo : Std.HashMap Expr Expr), ResetMemoInv memo →
+    ∀ (e : Expr md) (memo : Std.HashMap (Expr md) (Expr md)), ResetMemoInv memo →
       (resetMetaGo memo e).1 = resetMeta e ∧ ResetMemoInv (resetMetaGo memo e).2 := by
   intro e
   induction e with
@@ -685,10 +685,10 @@ theorem resetMetaGo_spec :
       exact h2.insert (by simp [resetMeta, h1])
 
 /-- The executed `resetMeta` (one memoized DAG walk). -/
-def resetMetaFast (e : Expr) : Expr := (resetMetaGo {} e).1
+def resetMetaFast (e : Expr md) : Expr md := (resetMetaGo {} e).1
 
 @[csimp] theorem resetMeta_eq_resetMetaFast : @resetMeta = @resetMetaFast := by
-  funext e
+  funext md e
   exact (resetMetaGo_spec e {} ResetMemoInv.empty).1.symm
 
 /-- Lower every loose bound variable `≥ cutoff + amount` by `amount`
@@ -699,7 +699,7 @@ recursor's constructor-parameter instantiations out of the
 major-premise domain (an `mI`-binder context) into the rule-prefix
 context (`rP` binders): `p = (p.lowerBVars (mI - rP) 0).liftLooseBVars
 (mI - rP) 0` holds exactly when `p` mentions no index variable. -/
-def lowerBVars (amount : Nat) : (cutoff : Nat) → Expr → Expr
+def lowerBVars (amount : Nat) : (cutoff : Nat) → Expr md → Expr md
   | c, .bvar i => if i ≥ c + amount then .bvar (i - amount) else .bvar i
   | _, .fvar i ty => .fvar i ty
   | _, .sort u => .sort u
@@ -719,7 +719,7 @@ def lowerBVars (amount : Nat) : (cutoff : Nat) → Expr → Expr
 binders crossed on the way — the general capture-avoiding substitution
 for an open `v` (unlike `instantiate1`, which requires `v` to be
 `bvar`-closed).  Let-values are open terms. -/
-def instantiate1Lift (e : Expr) (v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1Lift (e : Expr md) (v : Expr md) (d : Nat := 0) : Expr md :=
   match e with
   | .bvar i =>
     if i = d then Expr.liftLooseBVars d 0 v
@@ -740,7 +740,7 @@ def instantiate1Lift (e : Expr) (v : Expr) (d : Nat := 0) : Expr :=
 
 /-- Node count with `fvar` counted as a leaf (its annotated type ignored).
 Termination measure for recursion into instantiated binder bodies. -/
-def sizeB : Expr → Nat
+def sizeB : Expr md → Nat
   | .bvar _ | .fvar .. | .sort _ | .const .. | .lit _ => 1
   | .app f a => sizeB f + sizeB a + 1
   | .lam ty body _ | .forallE ty body _ => sizeB ty + sizeB body + 1
@@ -748,8 +748,8 @@ def sizeB : Expr → Nat
   | .proj _ _ e => sizeB e + 1
 
 /-- Instantiating with a size-1 replacement preserves `sizeB`. -/
-theorem sizeB_instantiate1 (v : Expr) (hv : sizeB v = 1) :
-    ∀ (e : Expr) (d : Nat), sizeB (instantiate1 e v d) = sizeB e := by
+theorem sizeB_instantiate1 (v : Expr md) (hv : sizeB v = 1) :
+    ∀ (e : Expr md) (d : Nat), sizeB (instantiate1 e v d) = sizeB e := by
   intro e
   induction e <;> intro d <;> simp [instantiate1, sizeB, *]
   case bvar i =>
@@ -761,7 +761,7 @@ theorem sizeB_instantiate1 (v : Expr) (hv : sizeB v = 1) :
 `k` under binders — the inverse of `instantiate1` with a fresh variable
 (`fvar` type annotations are not descended into; a well-scoped term has no
 `fvar d` inside another variable's annotation). -/
-def abstract1 (e : Expr) (d : Nat) (k : Nat := 0) : Expr :=
+def abstract1 (e : Expr md) (d : Nat) (k : Nat := 0) : Expr md :=
   match e with
   | .bvar i => .bvar i
   | .fvar idx ty => if idx = d then .bvar k else .fvar idx ty
@@ -788,7 +788,7 @@ is by construction the *fold* of `abstract1`, innermost binder first:
 (`abstractRange_succ`, `IxC/Kernel/Verify/Abstract.lean`) — so the nested
 per-binder `abstract1` chain of a telescope rebuild equals one
 `abstractRange` pass per binder domain and one over the leaf. -/
-def abstractRange (e : Expr) (d k : Nat) (c : Nat := 0) : Expr :=
+def abstractRange (e : Expr md) (d k : Nat) (c : Nat := 0) : Expr md :=
   match e with
   | .bvar i => .bvar i
   | .fvar idx ty =>
@@ -810,7 +810,7 @@ def abstractRange (e : Expr) (d k : Nat) (c : Nat := 0) : Expr :=
 /-- Full node count, including `fvar` type annotations.  Termination
 measure for predicates that recurse into annotations (but never into
 instantiated bodies). -/
-def sizeF : Expr → Nat
+def sizeF : Expr md → Nat
   | .bvar _ | .sort _ | .const .. | .lit _ => 1
   | .fvar _ ty => sizeF ty + 1
   | .app f a => sizeF f + sizeF a + 1
@@ -820,7 +820,7 @@ def sizeF : Expr → Nat
 
 /-- All reachable `fvar` leaves, including (hereditarily) those inside
 their type annotations. -/
-def fvarLeaves : Expr → List (Nat × Expr)
+def fvarLeaves : Expr md → List (Nat × Expr md)
   | .fvar idx ty => (idx, ty) :: fvarLeaves ty
   | .app f a => fvarLeaves f ++ fvarLeaves a
   | .lam ty b _ | .forallE ty b _ => fvarLeaves ty ++ fvarLeaves b
@@ -846,7 +846,7 @@ scope guards on checker-fabricated terms in `IxC/Kernel/Core.lean`
 eliminations went with task #175 wiring W5), each O(small
 fabricated term) once per fabrication.  TODO(cleanup, task #26):
 interning should cache the fvar range per node, making those O(1). -/
-def wscopedB : (d : Nat) → Expr → Bool
+def wscopedB : (d : Nat) → Expr md → Bool
   | d, .fvar idx ty => idx < d && wscopedB idx ty
   | d, .app f a => wscopedB d f && wscopedB d a
   | d, .lam ty body _ => wscopedB d ty && wscopedB d body
@@ -865,7 +865,7 @@ decreasing_by all_goals first
 The pure walk is the specification; the executed function is the
 `O(1)` loose-bvar field read (`looseBVarsBoundedFast`, `@[csimp]`
 below, task #210 Part B). -/
-def looseBVarsBounded (k : Nat) : Expr → Bool
+def looseBVarsBounded (k : Nat) : Expr md → Bool
   | .bvar i => i < k
   | .fvar _ _ => true
   | .sort _ | .const _ _ | .lit _ => true
@@ -880,7 +880,7 @@ def looseBVarsBounded (k : Nat) : Expr → Bool
 #152) fires once per λ *chain* — at the innermost binder, whose body
 is not itself a λ — because that is the granularity the interned
 binder-telescope loop (task #72) can reproduce. -/
-def isLam : Expr → Bool
+def isLam : Expr md → Bool
   | .lam .. => true
   | _ => false
 
@@ -889,7 +889,7 @@ head reading the task-#161 chain rule consumes (an outer λ's codomain
 prop-ness is its body-λ's own annotation).  Total, so the walks
 commute with it structurally (`lamPw_instantiateList_fvars`,
 `lamPw_shiftFrom` in `IxC/Kernel/Verify`). -/
-def lamPw : Expr → Option PropWhen
+def lamPw : Expr md → Option PropWhen
   | .lam _ _ mbI => some mbI.pw
   | _ => none
 
@@ -897,14 +897,14 @@ def lamPw : Expr → Option PropWhen
 node.  Task #161 P5 repair — `annotPwPi` reads it to realise the
 telescope collapse (`zeronessOf (imax u v) = zeronessOf v`) as a chain
 rule, exactly as `annotPwLam` reads `lamPw`. -/
-def forallPw : Expr → Option PropWhen
+def forallPw : Expr md → Option PropWhen
   | .forallE _ _ mbI => some mbI.pw
   | _ => none
 
 /-- Does the expression contain any free variable (`fvar`)?  Input
 declarations must be `fvar`-free; the checker introduces `fvar`s only
 internally when opening binders. -/
-def hasFvar : Expr → Bool
+def hasFvar : Expr md → Bool
   | .bvar _ | .sort _ | .const .. | .lit _ => false
   | .fvar .. => true
   | .app f a => hasFvar f || hasFvar a
@@ -913,17 +913,17 @@ def hasFvar : Expr → Bool
   | .proj _ _ e => hasFvar e
 
 /-- The head of an application spine. -/
-def getAppFn : Expr → Expr
+def getAppFn : Expr md → Expr md
   | .app f _ => getAppFn f
   | e => e
 
 /-- The arguments of an application spine, outermost last. -/
-def getAppArgs : Expr → List Expr
+def getAppArgs : Expr md → List (Expr md)
   | .app f a => getAppArgs f ++ [a]
   | _ => []
 
 /-- Apply to a list of arguments. -/
-def mkAppN (f : Expr) : List Expr → Expr
+def mkAppN (f : Expr md) : List (Expr md) → Expr md
   | [] => f
   | a :: as => mkAppN (.app f a) as
 
@@ -931,7 +931,7 @@ def mkAppN (f : Expr) : List Expr → Expr
 annotations and `proj` type names); levels and binders untouched.  Used
 to compare a modeled inductive's members against their `_model`
 counterparts. -/
-def renameConsts (f : Key → Key) : Expr → Expr
+def renameConsts (f : Key md → Key md) : Expr md → Expr md
   | .bvar i => .bvar i
   | .fvar i ty => .fvar i (renameConsts f ty)
   | .sort u => .sort u
@@ -980,14 +980,14 @@ the modeled install, once per member type, never from a hot
 small-term path — measured on `init-full` at the task's gate. -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def RenameMemoInv (f : Key → Key) (memo : Std.HashMap Expr Expr) : Prop :=
+def RenameMemoInv (f : Key md → Key md) (memo : Std.HashMap (Expr md) (Expr md)) : Prop :=
   ∀ k v, memo[k]? = some v → v = renameConsts f k
 
-theorem RenameMemoInv.empty {f : Key → Key} : RenameMemoInv f {} := by
+theorem RenameMemoInv.empty {f : Key md → Key md} : RenameMemoInv f {} := by
   intro k v h; simp at h
 
-theorem RenameMemoInv.insert {f : Key → Key} {memo : Std.HashMap Expr Expr}
-    (hm : RenameMemoInv f memo) {e r : Expr} (heq : r = renameConsts f e) :
+theorem RenameMemoInv.insert {f : Key md → Key md} {memo : Std.HashMap (Expr md) (Expr md)}
+    (hm : RenameMemoInv f memo) {e r : Expr md} (heq : r = renameConsts f e) :
     RenameMemoInv f (memo.insert e r) := by
   intro k v hk
   rw [Std.HashMap.getElem?_insert] at hk
@@ -999,8 +999,8 @@ theorem RenameMemoInv.insert {f : Key → Key} {memo : Std.HashMap Expr Expr}
   · exact hm k v hk
 
 /-- Memoized `renameConsts`. -/
-def renameConstsGo (f : Key → Key) (memo : Std.HashMap Expr Expr) :
-    Expr → Expr × Std.HashMap Expr Expr
+def renameConstsGo (f : Key md → Key md) (memo : Std.HashMap (Expr md) (Expr md)) :
+    (Expr md) → Expr md × Std.HashMap (Expr md) (Expr md)
   | e@(.bvar _) => (e, memo)
   | e@(.sort _) => (e, memo)
   | e@(.lit _) => (e, memo)
@@ -1009,7 +1009,7 @@ def renameConstsGo (f : Key → Key) (memo : Std.HashMap Expr Expr) :
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap Expr Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md) (Expr md) :=
         match e with
         | .fvar i ty =>
           let (t, memo) := renameConstsGo f memo ty
@@ -1038,8 +1038,8 @@ def renameConstsGo (f : Key → Key) (memo : Std.HashMap Expr Expr) :
       (r, memo.insert e r)
 
 /-- **The memoized walk is `renameConsts`.** -/
-theorem renameConstsGo_spec {f : Key → Key} :
-    ∀ (e : Expr) {memo : Std.HashMap Expr Expr}, RenameMemoInv f memo →
+theorem renameConstsGo_spec {f : Key md → Key md} :
+    ∀ (e : Expr md) {memo : Std.HashMap (Expr md) (Expr md)}, RenameMemoInv f memo →
       (renameConstsGo f memo e).1 = renameConsts f e ∧
         RenameMemoInv f (renameConstsGo f memo e).2 := by
   intro e
@@ -1109,17 +1109,17 @@ theorem renameConstsGo_spec {f : Key → Key} :
       exact h2.insert (by simp [renameConsts, h1])
 
 /-- The executed `renameConsts` (one memoized DAG walk). -/
-def renameConstsFast (f : Key → Key) (e : Expr) : Expr :=
+def renameConstsFast (f : Key md → Key md) (e : Expr md) : Expr md :=
   (renameConstsGo f {} e).1
 
 @[csimp] theorem renameConsts_eq_renameConstsFast :
     @renameConsts = @renameConstsFast := by
-  funext f e
+  funext md f e
   exact (renameConstsGo_spec e RenameMemoInv.empty).1.symm
 
 /-- Strip `k` leading lambdas: the binder list (outermost first) and
 the body. -/
-def stripLams : Nat → Expr → Option (List (Expr × BinderMeta) × Expr)
+def stripLams : Nat → Expr md → Option (List (Expr md × BinderMeta) × Expr md)
   | 0, e => some ([], e)
   | k + 1, .lam ty b m =>
     (stripLams k b).map fun (bs, e) => ((ty, m) :: bs, e)
@@ -1127,7 +1127,7 @@ def stripLams : Nat → Expr → Option (List (Expr × BinderMeta) × Expr)
 
 /-- Strip `k` leading `∀`s: the binder list (outermost first) and the
 body. -/
-def stripPis : Nat → Expr → Option (List (Expr × BinderMeta) × Expr)
+def stripPis : Nat → Expr md → Option (List (Expr md × BinderMeta) × Expr md)
   | 0, e => some ([], e)
   | k + 1, .forallE ty b m =>
     (stripPis k b).map fun (bs, e) => ((ty, m) :: bs, e)
@@ -1135,12 +1135,12 @@ def stripPis : Nat → Expr → Option (List (Expr × BinderMeta) × Expr)
 
 /-- The body of a syntactic `∀`-telescope (the expression itself when
 it is not a `∀`). -/
-def piResult : Expr → Expr
+def piResult : Expr md → Expr md
   | .forallE _ b _ => piResult b
   | e => e
 
 /-- Instantiate a `∀`-telescope with arguments, in order. -/
-def instPis : Expr → List Expr → Option Expr
+def instPis : Expr md → List (Expr md) → Option (Expr md)
   | e, [] => some e
   | .forallE _ body _, a :: as => instPis (body.instantiate1 a) as
   | _, _ :: _ => none
@@ -1148,7 +1148,7 @@ def instPis : Expr → List Expr → Option Expr
 /-- Instantiate the leading `∀`-binders at the given arguments,
 returning each binder's (progressively instantiated) domain together
 with the fully instantiated residual. -/
-def instPisAt : List Expr → Expr → Option (List Expr × Expr)
+def instPisAt : List (Expr md) → Expr md → Option (List (Expr md) × Expr md)
   | [], e => some ([], e)
   | a :: as, .forallE dom body _ =>
     (instPisAt as (body.instantiate1 a)).map fun (ds, rest) =>
@@ -1156,7 +1156,7 @@ def instPisAt : List Expr → Expr → Option (List Expr × Expr)
   | _ :: _, _ => none
 
 /-- `instPisAt` for `λ`-binders. -/
-def instLamsAt : List Expr → Expr → Option (List Expr × Expr)
+def instLamsAt : List (Expr md) → Expr md → Option (List (Expr md) × Expr md)
   | [], e => some ([], e)
   | a :: as, .lam dom body _ =>
     (instLamsAt as (body.instantiate1 a)).map fun (ds, rest) =>
@@ -1182,7 +1182,7 @@ spec — so the equality is unconditional. -/
 innermost binder first.  Computes
 `instPisAt args (e.instantiateList acc)` whenever `e` raw-strips
 `args.length` `∀`-binders (`instPisAtFGo_sound`), `none` otherwise. -/
-def instPisAtFGo (acc : List Expr) : List Expr → Expr → Option (List Expr × Expr)
+def instPisAtFGo (acc : List (Expr md)) : List (Expr md) → Expr md → Option (List (Expr md) × Expr md)
   | [], e => some ([], e.instantiateList acc)
   | a :: as, .forallE dom body _ =>
     (instPisAtFGo (a :: acc) as body).map fun (ds, rest) =>
@@ -1190,13 +1190,13 @@ def instPisAtFGo (acc : List Expr) : List Expr → Expr → Option (List Expr ×
   | _ :: _, _ => none
 
 /-- One-pass `instPisAt` (equal to it: `instPisAtF_eq`). -/
-def instPisAtF (args : List Expr) (e : Expr) : Option (List Expr × Expr) :=
+def instPisAtF (args : List (Expr md)) (e : Expr md) : Option (List (Expr md) × Expr md) :=
   match instPisAtFGo [] args e with
   | some r => some r
   | none => instPisAt args e
 
 /-- Core of `instLamsAtF` (the `λ` counterpart of `instPisAtFGo`). -/
-def instLamsAtFGo (acc : List Expr) : List Expr → Expr → Option (List Expr × Expr)
+def instLamsAtFGo (acc : List (Expr md)) : List (Expr md) → Expr md → Option (List (Expr md) × Expr md)
   | [], e => some ([], e.instantiateList acc)
   | a :: as, .lam dom body _ =>
     (instLamsAtFGo (a :: acc) as body).map fun (ds, rest) =>
@@ -1204,7 +1204,7 @@ def instLamsAtFGo (acc : List Expr) : List Expr → Expr → Option (List Expr �
   | _ :: _, _ => none
 
 /-- One-pass `instLamsAt` (equal to it: `instLamsAtF_eq`). -/
-def instLamsAtF (args : List Expr) (e : Expr) : Option (List Expr × Expr) :=
+def instLamsAtF (args : List (Expr md)) (e : Expr md) : Option (List (Expr md) × Expr md) :=
   match instLamsAtFGo [] args e with
   | some r => some r
   | none => instLamsAt args e
@@ -1212,7 +1212,7 @@ def instLamsAtF (args : List Expr) (e : Expr) : Option (List Expr × Expr) :=
 /-- The type annotation of a free-variable leaf (the expression itself
 otherwise; used to read the domains off an opened telescope's
 variables). -/
-def fvarTypeD : Expr → Expr
+def fvarTypeD : Expr md → Expr md
   | .fvar _ ty => ty
   | e => e
 
@@ -1222,7 +1222,7 @@ effect of peeling a `t + 1`-binder telescope at the spine; the
 verification's `instSeq`).  Used to evaluate a nested-auxiliary rule's
 stored constructor-parameter instantiations at the recursor's actual
 arguments. -/
-def instSpine : List Expr → Nat → Expr → Expr
+def instSpine : List (Expr md) → Nat → Expr md → Expr md
   | [], _, e => e
   | a :: as, t, e => instSpine as (t - 1) (e.instantiate1 a t)
 
@@ -1235,7 +1235,7 @@ stored `.nested` when the certification against the model's `iota_j`
 theorem succeeds (see `checkIotaThmN`) and `.inert` otherwise —
 `iotaRec` never fires an inert rule, so it carries no fold
 obligation. -/
-def recRulePlain (recTy : Expr) (mI rP cnP : Nat) : Bool :=
+def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) : Bool :=
   decide (cnP ≤ rP) && decide (rP ≤ mI) &&
   match recTy.stripPis mI with
   | some (_, .forallE dom _ _) =>
@@ -1254,7 +1254,7 @@ it** — audited: `CheckerS.checkProjRule` and `CheckerBase`'s projection
 rule builder feed `ops.annotate` (DESIGN.md, task #161,
 manufacture-site audit row 9; the third consumer, `annotateProjRec`,
 went with task #175 wiring W5). -/
-def pisToLams : Nat → Expr → Expr → Option Expr
+def pisToLams : Nat → Expr md → Expr md → Option (Expr md)
   | 0, _, body => some body
   | k + 1, .forallE ty rest _, body =>
     (pisToLams k rest body).map fun b => .lam ty b { pw := .never }
@@ -1262,19 +1262,19 @@ def pisToLams : Nat → Expr → Expr → Option Expr
 
 /-- Replace the body under the first `k` `∀`-binders (binder domains and
 names kept, codomain-sort annotations reset — the caller annotates). -/
-def replacePiBody : Nat → Expr → Expr → Option Expr
+def replacePiBody : Nat → Expr md → Expr md → Option (Expr md)
   | 0, _, b => some b
   | k + 1, .forallE ty rest m, b =>
     (replacePiBody k rest b).map fun r => .forallE ty r m
   | _ + 1, _, _ => none
 
 /-- The length of the leading `∀`-telescope. -/
-def piArity : Expr → Nat
+def piArity : Expr md → Nat
   | .forallE _ b _ => piArity b + 1
   | _ => 0
 
 /-- The result sort at the end of a `∀`-telescope. -/
-def resultSort : Expr → Option Level
+def resultSort : Expr md → Option Level
   | .forallE _ b _ => resultSort b
   | .sort u => some u
   | _ => none
@@ -1294,7 +1294,7 @@ interned removal; the cached engine's field facts
 
 /-- The least `k` with `looseBVarsBounded k` (the spec function of the
 eager `bvarBs` entries). -/
-def _root_.Ix.Kernel.Expr.bvarBound : Expr → Nat
+def _root_.Ix.Kernel.Expr.bvarBound : Expr md → Nat
   | .bvar i => i + 1
   | .fvar _ _ | .sort _ | .const _ _ | .lit _ => 0
   | .app f a => max f.bvarBound a.bvarBound
@@ -1305,7 +1305,7 @@ def _root_.Ix.Kernel.Expr.bvarBound : Expr → Nat
   | .proj _ _ e => e.bvarBound
 
 /-- `bvarBound` is exact for `looseBVarsBounded`. -/
-theorem looseBVarsBounded_iff {x : Expr} :
+theorem looseBVarsBounded_iff {x : Expr md} :
     ∀ {k : Nat}, x.looseBVarsBounded k = true ↔ x.bvarBound ≤ k := by
   induction x <;> intro k <;>
     (try simp [Expr.looseBVarsBounded, Expr.bvarBound, Nat.max_le, *]) <;>
@@ -1314,7 +1314,7 @@ theorem looseBVarsBounded_iff {x : Expr} :
 /-- The least `d` with `fvarsBelow d` (the spec function of the eager
 `fvarBs` entries; `fvar` type annotations are not descended, matching
 `fvarsBelow` and the abstraction traversals). -/
-def _root_.Ix.Kernel.Expr.fvarRange : Expr → Nat
+def _root_.Ix.Kernel.Expr.fvarRange : Expr md → Nat
   | .fvar idx _ => idx + 1
   | .bvar _ | .sort _ | .const _ _ | .lit _ => 0
   | .app f a => max f.fvarRange a.fvarRange
@@ -1325,14 +1325,14 @@ def _root_.Ix.Kernel.Expr.fvarRange : Expr → Nat
   | .proj _ _ e => e.fvarRange
 
 /-- A term is fvar-free iff its range is zero. -/
-theorem hasFvar_eq_false_iff {x : Expr} :
+theorem hasFvar_eq_false_iff {x : Expr md} :
     x.hasFvar = false ↔ x.fvarRange = 0 := by
   induction x <;>
     simp_all [Expr.hasFvar, Expr.fvarRange, Nat.max_eq_zero_iff,
       and_assoc]
 
 /-- A term has a reachable fvar leaf iff its range is nonzero. -/
-theorem fvarRange_bne_zero {x : Expr} : (x.fvarRange != 0) = x.hasFvar := by
+theorem fvarRange_bne_zero {x : Expr md} : (x.fvarRange != 0) = x.hasFvar := by
   cases hh : x.hasFvar with
   | false => simp [hasFvar_eq_false_iff.mp hh]
   | true =>
@@ -1368,12 +1368,12 @@ unfolded tree — the standing "no unmemoized traversals in executable
 paths" rule applies to the saturated branch too. -/
 
 /-- Memoized `bvarBound` (the saturated branch's exact recomputation). -/
-def bvarBoundGo (memo : Std.HashMap Expr Nat) (e : Expr) :
-    Nat × Std.HashMap Expr Nat :=
+def bvarBoundGo (memo : Std.HashMap (Expr md) Nat) (e : Expr md) :
+    Nat × Std.HashMap (Expr md) Nat :=
   match memo[e]? with
   | some r => (r, memo)
   | none =>
-    let (r, memo) : Nat × Std.HashMap Expr Nat :=
+    let (r, memo) : Nat × Std.HashMap (Expr md) Nat :=
       match e with
       | .bvar i => (i + 1, memo)
       | .fvar _ _ | .sort _ | .const _ _ | .lit _ => (0, memo)
@@ -1394,16 +1394,16 @@ def bvarBoundGo (memo : Std.HashMap Expr Nat) (e : Expr) :
     (r, memo.insert e r)
 
 @[inherit_doc bvarBoundGo]
-def bvarBoundMemo (e : Expr) : Nat := (bvarBoundGo {} e).1
+def bvarBoundMemo (e : Expr md) : Nat := (bvarBoundGo {} e).1
 
 /-- Memoized `fvarRange` (the saturated branch's exact
 recomputation). -/
-def fvarRangeGo (memo : Std.HashMap Expr Nat) (e : Expr) :
-    Nat × Std.HashMap Expr Nat :=
+def fvarRangeGo (memo : Std.HashMap (Expr md) Nat) (e : Expr md) :
+    Nat × Std.HashMap (Expr md) Nat :=
   match memo[e]? with
   | some r => (r, memo)
   | none =>
-    let (r, memo) : Nat × Std.HashMap Expr Nat :=
+    let (r, memo) : Nat × Std.HashMap (Expr md) Nat :=
       match e with
       | .fvar idx _ => (idx + 1, memo)
       | .bvar _ | .sort _ | .const _ _ | .lit _ => (0, memo)
@@ -1424,19 +1424,19 @@ def fvarRangeGo (memo : Std.HashMap Expr Nat) (e : Expr) :
     (r, memo.insert e r)
 
 @[inherit_doc fvarRangeGo]
-def fvarRangeMemo (e : Expr) : Nat := (fvarRangeGo {} e).1
+def fvarRangeMemo (e : Expr md) : Nat := (fvarRangeGo {} e).1
 
 /-- **The loose-bvar bound the checker reads**: the packed field, or —
 on the saturated branch alone — the exact memoized recomputation.
 Equal to `Expr.bvarBound` unconditionally (`bvarB_eq`). -/
-@[inline] def bvarB (e : Expr) : Nat :=
+@[inline] def bvarB (e : Expr md) : Nat :=
   let r := e.bvarBRaw
   if r == satRange then bvarBoundMemo e else r
 
 /-- **The fvar range the checker reads**: the packed field, or — on the
 saturated branch alone — the exact memoized recomputation.  Equal to
 `Expr.fvarRange` unconditionally (`fvarB_eq`). -/
-@[inline] def fvarB (e : Expr) : Nat :=
+@[inline] def fvarB (e : Expr md) : Nat :=
   let r := e.fvarBRaw
   if r == satRange then fvarRangeMemo e else r
 
@@ -1453,7 +1453,7 @@ specs. -/
 
 /-- The packed loose-bvar field is `bvarBound` wherever it did not
 saturate. -/
-theorem bvarBRaw_exact : ∀ e : Expr, e.bvarBRaw < satRange →
+theorem bvarBRaw_exact : ∀ e : Expr md, e.bvarBRaw < satRange →
     e.bvarBRaw = bvarBound e := by
   intro e
   induction e with
@@ -1494,14 +1494,14 @@ theorem bvarBRaw_exact : ∀ e : Expr, e.bvarBRaw < satRange →
     rw [ih h, bvarBound]
 
 /-- The `bvarBound` walk's memo invariant. -/
-def MemoBInv (memo : Std.HashMap Expr Nat) : Prop :=
-  ∀ (e : Expr) (r : Nat), memo[e]? = some r → r = bvarBound e
+def MemoBInv (memo : Std.HashMap (Expr md) Nat) : Prop :=
+  ∀ (e : Expr md) (r : Nat), memo[e]? = some r → r = bvarBound e
 
-theorem MemoBInv.empty : MemoBInv {} := by
+theorem MemoBInv.empty : (MemoBInv (md := md)) {} := by
   intro e r h; simp at h
 
-theorem MemoBInv.insert {memo : Std.HashMap Expr Nat} (hm : MemoBInv memo)
-    {e : Expr} {r : Nat} (heq : r = bvarBound e) :
+theorem MemoBInv.insert {memo : Std.HashMap (Expr md) Nat} (hm : MemoBInv memo)
+    {e : Expr md} {r : Nat} (heq : r = bvarBound e) :
     MemoBInv (memo.insert e r) := by
   intro e' r' hk
   rw [Std.HashMap.getElem?_insert] at hk
@@ -1513,7 +1513,7 @@ theorem MemoBInv.insert {memo : Std.HashMap Expr Nat} (hm : MemoBInv memo)
   · exact hm e' r' hk
 
 /-- **The memoized `bvarBound` walk agrees with `bvarBound`.** -/
-theorem bvarBoundGo_spec : ∀ (e : Expr) {memo : Std.HashMap Expr Nat},
+theorem bvarBoundGo_spec : ∀ (e : Expr md) {memo : Std.HashMap (Expr md) Nat},
     MemoBInv memo →
       (bvarBoundGo memo e).1 = bvarBound e ∧
         MemoBInv (bvarBoundGo memo e).2 := by
@@ -1569,12 +1569,12 @@ theorem bvarBoundGo_spec : ∀ (e : Expr) {memo : Std.HashMap Expr Nat},
       simp [h1, bvarBound]
 
 @[inherit_doc bvarBoundGo_spec]
-theorem bvarBoundMemo_eq (e : Expr) :
+theorem bvarBoundMemo_eq (e : Expr md) :
     bvarBoundMemo e = bvarBound e :=
   (bvarBoundGo_spec e MemoBInv.empty).1
 
 /-- The `bvarB` field is `bvarBound`. -/
-theorem bvarB_eq : ∀ e : Expr, e.bvarB = bvarBound e := by
+theorem bvarB_eq : ∀ e : Expr md, e.bvarB = bvarBound e := by
   intro e
   show (if e.bvarBRaw == satRange then bvarBoundMemo e
     else e.bvarBRaw) = _
@@ -1587,7 +1587,7 @@ theorem bvarB_eq : ∀ e : Expr, e.bvarB = bvarBound e := by
 
 /-- The packed fvar-range field is `fvarRange` wherever it did not
 saturate. -/
-theorem fvarBRaw_exact : ∀ e : Expr, e.fvarBRaw < satRange →
+theorem fvarBRaw_exact : ∀ e : Expr md, e.fvarBRaw < satRange →
     e.fvarBRaw = fvarRange e := by
   intro e
   induction e with
@@ -1615,14 +1615,14 @@ theorem fvarBRaw_exact : ∀ e : Expr, e.fvarBRaw < satRange →
     rw [ih h, fvarRange]
 
 /-- The `fvarRange` walk's memo invariant. -/
-def MemoFInv (memo : Std.HashMap Expr Nat) : Prop :=
-  ∀ (e : Expr) (r : Nat), memo[e]? = some r → r = fvarRange e
+def MemoFInv (memo : Std.HashMap (Expr md) Nat) : Prop :=
+  ∀ (e : Expr md) (r : Nat), memo[e]? = some r → r = fvarRange e
 
-theorem MemoFInv.empty : MemoFInv {} := by
+theorem MemoFInv.empty : (MemoFInv (md := md)) {} := by
   intro e r h; simp at h
 
-theorem MemoFInv.insert {memo : Std.HashMap Expr Nat} (hm : MemoFInv memo)
-    {e : Expr} {r : Nat} (heq : r = fvarRange e) :
+theorem MemoFInv.insert {memo : Std.HashMap (Expr md) Nat} (hm : MemoFInv memo)
+    {e : Expr md} {r : Nat} (heq : r = fvarRange e) :
     MemoFInv (memo.insert e r) := by
   intro e' r' hk
   rw [Std.HashMap.getElem?_insert] at hk
@@ -1634,7 +1634,7 @@ theorem MemoFInv.insert {memo : Std.HashMap Expr Nat} (hm : MemoFInv memo)
   · exact hm e' r' hk
 
 /-- **The memoized `fvarRange` walk agrees with `fvarRange`.** -/
-theorem fvarRangeGo_spec : ∀ (e : Expr) {memo : Std.HashMap Expr Nat},
+theorem fvarRangeGo_spec : ∀ (e : Expr md) {memo : Std.HashMap (Expr md) Nat},
     MemoFInv memo →
       (fvarRangeGo memo e).1 = fvarRange e ∧
         MemoFInv (fvarRangeGo memo e).2 := by
@@ -1690,12 +1690,12 @@ theorem fvarRangeGo_spec : ∀ (e : Expr) {memo : Std.HashMap Expr Nat},
       simp [h1, fvarRange]
 
 @[inherit_doc fvarRangeGo_spec]
-theorem fvarRangeMemo_eq (e : Expr) :
+theorem fvarRangeMemo_eq (e : Expr md) :
     fvarRangeMemo e = fvarRange e :=
   (fvarRangeGo_spec e MemoFInv.empty).1
 
 /-- The `fvarB` field is `fvarRange`. -/
-theorem fvarB_eq : ∀ e : Expr, e.fvarB = fvarRange e := by
+theorem fvarB_eq : ∀ e : Expr md, e.fvarB = fvarRange e := by
   intro e
   show (if e.fvarBRaw == satRange then fvarRangeMemo e
     else e.fvarBRaw) = _
@@ -1707,20 +1707,20 @@ theorem fvarB_eq : ∀ e : Expr, e.fvarB = fvarRange e := by
     exact fvarBRaw_exact e (by simp [satRange] at *; omega)
 
 /-- The executed `hasFvar`: the fvar-range field read. -/
-def hasFvarFast (e : Expr) : Bool := e.fvarB != 0
+def hasFvarFast (e : Expr md) : Bool := e.fvarB != 0
 
 @[csimp] theorem hasFvar_eq_hasFvarFast : @hasFvar = @hasFvarFast := by
-  funext e
+  funext md e
   unfold hasFvarFast
   rw [fvarB_eq]
   exact fvarRange_bne_zero.symm
 
 /-- The executed `looseBVarsBounded`: the loose-bvar field read. -/
-def looseBVarsBoundedFast (k : Nat) (e : Expr) : Bool := decide (e.bvarB ≤ k)
+def looseBVarsBoundedFast (k : Nat) (e : Expr md) : Bool := decide (e.bvarB ≤ k)
 
 @[csimp] theorem looseBVarsBounded_eq_looseBVarsBoundedFast :
     @looseBVarsBounded = @looseBVarsBoundedFast := by
-  funext k e
+  funext md k e
   unfold looseBVarsBoundedFast
   rw [bvarB_eq]
   by_cases h : e.bvarBound ≤ k
@@ -1763,20 +1763,20 @@ per path.  So the walk below is BOTH: the `O(1)` cutoff first, then
 
 /-- Abstraction at or above the fvar range is the identity. -/
 theorem abstract1_of_fvarRange_le :
-    ∀ (e : Expr) (d k : Nat), e.fvarRange ≤ d → abstract1 e d k = e := by
+    ∀ (e : Expr md) (d k : Nat), e.fvarRange ≤ d → abstract1 e d k = e := by
   intro e
   induction e <;> intro d k h <;>
     simp_all [abstract1, Expr.fvarRange, Nat.max_le] <;> omega
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def Abs1MemoInv (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = abstract1 k.1 d k.2
+def Abs1MemoInv (d : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = abstract1 k.1 d k.2
 
-theorem Abs1MemoInv.empty {d : Nat} : Abs1MemoInv d {} := by
+theorem Abs1MemoInv.empty {d : Nat} : (Abs1MemoInv (md := md)) d {} := by
   intro k r h; simp at h
 
-theorem Abs1MemoInv.insert {d : Nat} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : Abs1MemoInv d memo) {e : Expr} {k : Nat} {r : Expr}
+theorem Abs1MemoInv.insert {d : Nat} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : Abs1MemoInv d memo) {e : Expr md} {k : Nat} {r : Expr md}
     (heq : r = abstract1 e d k) :
     Abs1MemoInv d (memo.insert (e, k) r) := by
   intro key r' hk
@@ -1796,8 +1796,8 @@ fvar being abstracted passes the cutoff at every node and was rebuilt
 once per path).  The memo is keyed by the node and the binder cursor
 `k` (the abstraction target `bvar k` moves under binders) and dropped
 after each call, since it also depends on `d`. -/
-def abstract1Go (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (k : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def abstract1Go (d : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (k : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   if e.fvarB ≤ d then (e, memo) else
   match e with
   | .bvar i => (.bvar i, memo)
@@ -1809,7 +1809,7 @@ def abstract1Go (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, k)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app f a =>
           let (f', memo) := abstract1Go d memo f k
@@ -1836,7 +1836,7 @@ def abstract1Go (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
 
 /-- **The memoized walk is `abstract1`.** -/
 theorem abstract1Go_spec {d : Nat} :
-    ∀ (e : Expr) (k : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+    ∀ (e : Expr md) (k : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       Abs1MemoInv d memo →
       (abstract1Go d memo e k).1 = abstract1 e d k ∧
         Abs1MemoInv d (abstract1Go d memo e k).2 := by
@@ -1927,12 +1927,12 @@ theorem abstract1Go_spec {d : Nat} :
         exact h2.insert (by simp [abstract1, h1])
 
 @[inherit_doc abstract1Go]
-def abstract1Fast (e : Expr) (d : Nat) (k : Nat := 0) : Expr :=
+def abstract1Fast (e : Expr md) (d : Nat) (k : Nat := 0) : Expr md :=
   (abstract1Go d {} e k).1
 
 @[csimp] theorem abstract1_eq_abstract1Fast :
     @abstract1 = @abstract1Fast := by
-  funext e d k
+  funext md e d k
   exact (abstract1Go_spec e k {} Abs1MemoInv.empty).1.symm
 
 /-! ### `lowerBVars` reads the loose-bvar bound, and memoizes
@@ -1957,7 +1957,7 @@ reach a shared node. -/
 /-- Lowering a term whose loose variables all sit below the window is
 the identity. -/
 theorem lowerBVars_of_bvarBound_le :
-    ∀ (e : Expr) (amount c : Nat), e.bvarBound ≤ c + amount →
+    ∀ (e : Expr md) (amount c : Nat), e.bvarBound ≤ c + amount →
       lowerBVars amount c e = e := by
   intro e
   induction e with
@@ -1992,14 +1992,14 @@ theorem lowerBVars_of_bvarBound_le :
     rw [lowerBVars, ih amount c h]
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def LowerMemoInv (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = lowerBVars amount k.2 k.1
+def LowerMemoInv (amount : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = lowerBVars amount k.2 k.1
 
-theorem LowerMemoInv.empty {amount : Nat} : LowerMemoInv amount {} := by
+theorem LowerMemoInv.empty {amount : Nat} : (LowerMemoInv (md := md)) amount {} := by
   intro k r h; simp at h
 
-theorem LowerMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : LowerMemoInv amount memo) {e : Expr} {c : Nat} {r : Expr}
+theorem LowerMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : LowerMemoInv amount memo) {e : Expr md} {c : Nat} {r : Expr md}
     (heq : r = lowerBVars amount c e) :
     LowerMemoInv amount (memo.insert (e, c) r) := by
   intro key r' hk
@@ -2012,8 +2012,8 @@ theorem LowerMemoInv.insert {amount : Nat} {memo : Std.HashMap (Expr × Nat) Exp
   · exact hm key r' hk
 
 @[inherit_doc lowerBVars_of_bvarBound_le]
-def lowerBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (c : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def lowerBVarsGo (amount : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (c : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   if e.bvarB ≤ c + amount then (e, memo) else
   match e with
   | .bvar i => (if i ≥ c + amount then .bvar (i - amount) else .bvar i, memo)
@@ -2025,7 +2025,7 @@ def lowerBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, c)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app f a =>
           let (f', memo) := lowerBVarsGo amount memo f c
@@ -2052,7 +2052,7 @@ def lowerBVarsGo (amount : Nat) (memo : Std.HashMap (Expr × Nat) Expr)
 
 /-- **The memoized walk is `lowerBVars`.** -/
 theorem lowerBVarsGo_spec {amount : Nat} :
-    ∀ (e : Expr) (c : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+    ∀ (e : Expr md) (c : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       LowerMemoInv amount memo →
       (lowerBVarsGo amount memo e c).1 = lowerBVars amount c e ∧
         LowerMemoInv amount (lowerBVarsGo amount memo e c).2 := by
@@ -2144,12 +2144,12 @@ theorem lowerBVarsGo_spec {amount : Nat} :
         exact h2.insert (by simp [lowerBVars, h1])
 
 @[inherit_doc lowerBVarsGo]
-def lowerBVarsFast (amount : Nat) (c : Nat) (e : Expr) : Expr :=
+def lowerBVarsFast (amount : Nat) (c : Nat) (e : Expr md) : Expr md :=
   (lowerBVarsGo amount {} e c).1
 
 @[csimp] theorem lowerBVars_eq_lowerBVarsFast :
     @lowerBVars = @lowerBVarsFast := by
-  funext amount c e
+  funext md amount c e
   exact (lowerBVarsGo_spec e c {} LowerMemoInv.empty).1.symm
 
 /-! ### `instantiate1Lift` reads the loose-bvar bound, and memoizes
@@ -2167,7 +2167,7 @@ under binders — behind it. -/
 /-- Substituting for a variable no loose variable reaches is the
 identity. -/
 theorem instantiate1Lift_of_bvarBound_le :
-    ∀ (e : Expr) (v : Expr) (d : Nat), e.bvarBound ≤ d →
+    ∀ (e : Expr md) (v : Expr md) (d : Nat), e.bvarBound ≤ d →
       instantiate1Lift e v d = e := by
   intro e
   induction e with
@@ -2202,14 +2202,14 @@ theorem instantiate1Lift_of_bvarBound_le :
     rw [instantiate1Lift, ih v d h]
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def Inst1LMemoInv (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr) : Prop :=
-  ∀ (k : Expr × Nat) (r : Expr), memo[k]? = some r → r = instantiate1Lift k.1 v k.2
+def Inst1LMemoInv (v : Expr md) (memo : Std.HashMap (Expr md × Nat) (Expr md)) : Prop :=
+  ∀ (k : Expr md × Nat) (r : Expr md), memo[k]? = some r → r = instantiate1Lift k.1 v k.2
 
-theorem Inst1LMemoInv.empty {v : Expr} : Inst1LMemoInv v {} := by
+theorem Inst1LMemoInv.empty {v : Expr md} : Inst1LMemoInv v {} := by
   intro k r h; simp at h
 
-theorem Inst1LMemoInv.insert {v : Expr} {memo : Std.HashMap (Expr × Nat) Expr}
-    (hm : Inst1LMemoInv v memo) {e : Expr} {d : Nat} {r : Expr}
+theorem Inst1LMemoInv.insert {v : Expr md} {memo : Std.HashMap (Expr md × Nat) (Expr md)}
+    (hm : Inst1LMemoInv v memo) {e : Expr md} {d : Nat} {r : Expr md}
     (heq : r = instantiate1Lift e v d) :
     Inst1LMemoInv v (memo.insert (e, d) r) := by
   intro key r' hk
@@ -2222,8 +2222,8 @@ theorem Inst1LMemoInv.insert {v : Expr} {memo : Std.HashMap (Expr × Nat) Expr}
   · exact hm key r' hk
 
 @[inherit_doc instantiate1Lift_of_bvarBound_le]
-def instantiate1LiftGo (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
-    (e : Expr) (d : Nat) : Expr × Std.HashMap (Expr × Nat) Expr :=
+def instantiate1LiftGo (v : Expr md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (e : Expr md) (d : Nat) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   if e.bvarB ≤ d then (e, memo) else
   match e with
   | .bvar i =>
@@ -2237,7 +2237,7 @@ def instantiate1LiftGo (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
     match memo[(e, d)]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
         match e with
         | .app f a =>
           let (f', memo) := instantiate1LiftGo v memo f d
@@ -2263,8 +2263,8 @@ def instantiate1LiftGo (v : Expr) (memo : Std.HashMap (Expr × Nat) Expr)
       (r, memo.insert (e, d) r)
 
 /-- **The memoized walk is `instantiate1Lift`.** -/
-theorem instantiate1LiftGo_spec {v : Expr} :
-    ∀ (e : Expr) (d : Nat) (memo : Std.HashMap (Expr × Nat) Expr),
+theorem instantiate1LiftGo_spec {v : Expr md} :
+    ∀ (e : Expr md) (d : Nat) (memo : Std.HashMap (Expr md × Nat) (Expr md)),
       Inst1LMemoInv v memo →
       (instantiate1LiftGo v memo e d).1 = instantiate1Lift e v d ∧
         Inst1LMemoInv v (instantiate1LiftGo v memo e d).2 := by
@@ -2356,12 +2356,12 @@ theorem instantiate1LiftGo_spec {v : Expr} :
         exact h2.insert (by simp [instantiate1Lift, h1])
 
 @[inherit_doc instantiate1LiftGo]
-def instantiate1LiftFast (e : Expr) (v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1LiftFast (e : Expr md) (v : Expr md) (d : Nat := 0) : Expr md :=
   (instantiate1LiftGo v {} e d).1
 
 @[csimp] theorem instantiate1Lift_eq_instantiate1LiftFast :
     @instantiate1Lift = @instantiate1LiftFast := by
-  funext e v d
+  funext md e v d
   exact (instantiate1LiftGo_spec e d {} Inst1LMemoInv.empty).1.symm
 
 /-- Instantiate the leading `∀`-binders at *open* arguments, returning
@@ -2374,7 +2374,7 @@ It sits BELOW the `@[csimp]` equation above deliberately: a `csimp`
 replacement reaches the code generated for declarations elaborated
 after it, so a caller written earlier in this file would compile
 against the unguarded walk. -/
-def instPisAtLift : List Expr → Expr → Option Expr
+def instPisAtLift : List (Expr md) → Expr md → Option (Expr md)
   | [], e => some e
   | a :: as, .forallE _ body _ => instPisAtLift as (body.instantiate1Lift a)
   | _ :: _, _ => none
@@ -2386,7 +2386,7 @@ def instPisAtLift : List Expr → Expr → Option Expr
 entries against the stored constant they cache: the entry was created
 from the very object stored in the environment, so the pointer test
 succeeds without walking either expression. -/
-@[inline] def exprPtrBEq (a b : Expr) : Bool :=
+@[inline] def exprPtrBEq (a b : Expr md) : Bool :=
   withPtrEq a b (fun _ => a == b) (fun h => by subst h; simp)
 
 /-! ## Level-parameter occurrence, and the substitution shortcuts
@@ -2424,7 +2424,7 @@ function of the eager `eparamBs` entries; `fvar` type annotations
 included, matching `Expr.instantiateLevelParams`; binder prop-ness
 data included since task #161 — `instantiateLevelParams` substitutes
 into them, so the shortcut must see their parameters). -/
-def _root_.Ix.Kernel.Expr.hasLevelParam : Expr → Bool
+def _root_.Ix.Kernel.Expr.hasLevelParam : Expr md → Bool
   | .bvar _ | .lit _ => false
   | .sort u => u.hasParam
   | .const _ us => us.any Level.hasParam
@@ -2463,7 +2463,7 @@ theorem _root_.Ix.Kernel.PropWhen.paramsDefined_of_not_hasParams
 /-- Level-parameter instantiation is the identity on level-param-free
 expressions. -/
 theorem _root_.Ix.Kernel.Expr.instantiateLevelParams_eq_self
-    {ks : List LevelParam} {us : List Level} {x : Expr}
+    {ks : List LevelParam} {us : List Level} {x : Expr md}
     (h : x.hasLevelParam = false) :
     x.instantiateLevelParams ks us = x := by
   induction x with
@@ -2538,20 +2538,20 @@ theorem Expr.levelsHaveParam_eq : ∀ us : List Level,
     simp [levelsHaveParam, List.any_cons, Expr.levelHasParam_eq, ih]
 
 /-- The `hasLP` field is `Expr.hasLevelParam`. -/
-theorem Expr.hasLP_eq : ∀ e : Expr, e.hasLP = e.hasLevelParam := by
+theorem Expr.hasLP_eq : ∀ e : Expr md, e.hasLP = e.hasLevelParam := by
   intro e
   induction e <;>
     simp_all [Expr.hasLevelParam, Expr.levelHasParam_eq, Expr.levelsHaveParam_eq]
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def ILPMemoInv (ks : List LevelParam) (us : List Level) (memo : Std.HashMap Expr Expr) : Prop :=
-  ∀ (k : Expr) (r : Expr), memo[k]? = some r → r = k.instantiateLevelParams ks us
+def ILPMemoInv (ks : List LevelParam) (us : List Level) (memo : Std.HashMap (Expr md) (Expr md)) : Prop :=
+  ∀ (k : Expr md) (r : Expr md), memo[k]? = some r → r = k.instantiateLevelParams ks us
 
-theorem ILPMemoInv.empty {ks : List LevelParam} {us : List Level} : ILPMemoInv ks us {} := by
+theorem ILPMemoInv.empty {ks : List LevelParam} {us : List Level} : (ILPMemoInv (md := md)) ks us {} := by
   intro k r h; simp at h
 
 theorem ILPMemoInv.insert {ks : List LevelParam} {us : List Level}
-    {memo : Std.HashMap Expr Expr} (hm : ILPMemoInv ks us memo) {e r : Expr}
+    {memo : Std.HashMap (Expr md) (Expr md)} (hm : ILPMemoInv ks us memo) {e r : Expr md}
     (heq : r = e.instantiateLevelParams ks us) :
     ILPMemoInv ks us (memo.insert e r) := by
   intro k r' hk
@@ -2565,7 +2565,7 @@ theorem ILPMemoInv.insert {ks : List LevelParam} {us : List Level}
 
 @[inherit_doc Expr.hasLP_eq]
 def Expr.instLPGo (ks : List LevelParam) (us : List Level)
-    (memo : Std.HashMap Expr Expr) (e : Expr) : Expr × Std.HashMap Expr Expr :=
+    (memo : Std.HashMap (Expr md) (Expr md)) (e : Expr md) : Expr md × Std.HashMap (Expr md) (Expr md) :=
   if !e.hasLP then (e, memo) else
   match e with
   | .bvar i => (.bvar i, memo)
@@ -2576,7 +2576,7 @@ def Expr.instLPGo (ks : List LevelParam) (us : List Level)
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap Expr Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md) (Expr md) :=
         match e with
         | .fvar idx ty =>
           let (t, memo) := instLPGo ks us memo ty
@@ -2606,7 +2606,7 @@ def Expr.instLPGo (ks : List LevelParam) (us : List Level)
 
 /-- **The memoized walk is `instantiateLevelParams`.** -/
 theorem Expr.instLPGo_spec {ks : List LevelParam} {us : List Level} :
-    ∀ (e : Expr) (memo : Std.HashMap Expr Expr), ILPMemoInv ks us memo →
+    ∀ (e : Expr md) (memo : Std.HashMap (Expr md) (Expr md)), ILPMemoInv ks us memo →
       (instLPGo ks us memo e).1 = e.instantiateLevelParams ks us ∧
         ILPMemoInv ks us (instLPGo ks us memo e).2 := by
   intro e
@@ -2718,18 +2718,18 @@ theorem Expr.instLPGo_spec {ks : List LevelParam} {us : List Level} :
         exact h2.insert (by simp [Expr.instantiateLevelParams, h1])
 
 @[inherit_doc Expr.instLPGo]
-def Expr.instLPFast (ks : List LevelParam) (us : List Level) (e : Expr) : Expr :=
+def Expr.instLPFast (ks : List LevelParam) (us : List Level) (e : Expr md) : Expr md :=
   (Expr.instLPGo ks us {} e).1
 
 @[csimp] theorem Expr.instantiateLevelParams_eq_instLPFast :
     @Expr.instantiateLevelParams = @Expr.instLPFast := by
-  funext ks us e
+  funext md ks us e
   exact (instLPGo_spec e {} ILPMemoInv.empty).1.symm
 
 /-- Level-parameter definedness is trivial on level-param-free
 expressions. -/
 theorem _root_.Ix.Kernel.Expr.allLevelParamsDefined_of_not_hasLevelParam
-    {params : List LevelParam} {x : Expr} (h : x.hasLevelParam = false) :
+    {params : List LevelParam} {x : Expr md} (h : x.hasLevelParam = false) :
     x.allLevelParamsDefined params = true := by
   induction x with
   | lam ty body m iht ihb =>

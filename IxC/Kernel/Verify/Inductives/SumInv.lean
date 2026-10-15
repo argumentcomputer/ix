@@ -47,7 +47,7 @@ local macro_rules
 the opened-residual guard perform, read back as a spine: the residual
 is the head applied to the pinned parameter prefix followed by exactly
 `nIdx` index expressions. -/
-theorem residual_shape {e f : Expr} {ps : List Expr} {nP nIdx : Nat}
+theorem residual_shape {e f : Expr md} {ps : List (Expr md)} {nP nIdx : Nat}
     (hfn : e.getAppFn = f) (htake : e.getAppArgs.take nP = ps)
     (hlen : e.getAppArgs.length = nP + nIdx) :
     ∃ es, e = Expr.mkAppN f (ps ++ es) ∧ es.length = nIdx := by
@@ -63,8 +63,8 @@ strips to the sort), or the whnf'd telescope was checked from scratch
 as the former's type at the block's name and level parameters — the
 run of `checkConstantVal` is all the later stages consume, whichever
 branch produced it. -/
-theorem checkSumTele_shape {env : Env} {cv : ConstantVal} {n : Nat}
-    {cvTa₀ cvTa : ConstantVal} {s : Level} {F : Nat}
+theorem checkSumTele_shape {env : Env md} {cv : ConstantVal md} {n : Nat}
+    {cvTa₀ cvTa : ConstantVal md} {s : Level} {F : Nat}
     (h : checkSumTele (fueledOps mode F) env cv n cvTa₀ = .ok (cvTa, s)) :
     (cvTa = cvTa₀ ∧ ∃ bs, cvTa₀.type.stripPis n = some (bs, .sort s)) ∨
     ∃ ty, checkConstantVal (fueledOps mode F) env { cv with type := ty } = .ok cvTa := by
@@ -82,10 +82,10 @@ theorem checkSumTele_shape {env : Env} {cv : ConstantVal} {n : Nat}
     obtain ⟨rfl, rfl⟩ := h
     exact Or.inr ⟨_, hccv⟩
 
-theorem checkSumInd_shape {env envI : Env} {p p' : InductiveShape}
-    {cvTa : ConstantVal} {F : Nat} {capsOf : InductiveShape → IndCaps}
+theorem checkSumInd_shape {env envI : Env md} {p p' : InductiveShape md}
+    {cvTa : ConstantVal md} {F : Nat} {capsOf : InductiveShape md → IndCaps md}
     (h : checkSumInd (fueledOps mode F) env p capsOf = .ok (envI, cvTa, p')) :
-    ∃ (cvT : ConstantVal) (s : Level),
+    ∃ (cvT : ConstantVal md) (s : Level),
       cvT.name = p.cvT.name ∧ cvT.levelParams = p.cvT.levelParams ∧
       checkConstantVal (fueledOps mode F) env cvT = .ok cvTa ∧
       p' = p.withSort s ∧
@@ -121,8 +121,8 @@ the official universe bound (`isProp = false`) or — at a large
 eliminator on a `Prop` family — the subsingleton-elimination criterion:
 the field is a proposition OR one of the residual's index expressions
 (`checkStructFieldSorts_inv` widened). -/
-theorem checkStructFieldSortsI_inv {env : Env} {isProp large : Bool}
-    {s : Level} {nP F : Nat} {fvs idxArgs : List Expr} :
+theorem checkStructFieldSortsI_inv {env : Env md} {isProp large : Bool}
+    {s : Level} {nP F : Nat} {fvs idxArgs : List (Expr md)} :
     ∀ {j : Nat} {sorts : List Level},
       checkStructFieldSortsI (fueledOps mode F) env isProp large s nP fvs idxArgs j
         = .ok sorts →
@@ -218,7 +218,7 @@ theorem checkStructFieldSortsI_inv {env : Env} {isProp large : Bool}
 or a from-scratch check of the rebuilt constant — in both cases some
 constant with the declared name and level parameters (task #210 Part
 D). -/
-theorem normCtorVal_inv {env : Env} {T : Key} {nP nF : Nat} {cvC cvCa₀ cvCa : ConstantVal}
+theorem normCtorVal_inv {env : Env md} {T : Key md} {nP nF : Nat} {cvC cvCa₀ cvCa : ConstantVal md}
     {F : Nat} (h₀ : checkConstantVal (fueledOps mode F) env cvC = .ok cvCa₀)
     (h : normCtorVal (fueledOps mode F) env T nP nF cvC cvCa₀ = .ok cvCa) :
     ∃ ty', checkConstantVal (fueledOps mode F) env { cvC with type := ty' } = .ok cvCa := by
@@ -238,8 +238,8 @@ theorem normCtorVal_inv {env : Env} {T : Key} {nP nF : Nat} {cvC cvCa₀ cvCa : 
     exact ⟨cvC.type, h₀⟩
   · exact ⟨_, h⟩
 
-theorem checkSumCtor_shape {env₀ env : Env} {T : Key} {lps : List LevelParam}
-    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
+theorem checkSumCtor_shape {env₀ env : Env md} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
       cvC nF cvTa = .ok (cvCa, sorts)) :
@@ -247,8 +247,8 @@ theorem checkSumCtor_shape {env₀ env : Env} {T : Key} {lps : List LevelParam}
     (∃ cbs es, cvCa.type.stripPis (nP + nF)
       = some (cbs, Expr.mkAppN (.const T (lps.map .param)) (structPsAt nF nP ++ es)) ∧
       es.length = nIdx) ∧
-    ∃ (fvsP : List Expr) (crest : Expr) (tfvs : List Expr) (trest : Expr)
-      (xFvs : List Expr) (idxArgs : List Expr),
+    ∃ (fvsP : List (Expr md)) (crest : Expr md) (tfvs : List (Expr md)) (trest : Expr md)
+      (xFvs : List (Expr md)) (idxArgs : List (Expr md)),
       openPisAtFvars nP cvCa.type 0 = some (fvsP, crest) ∧
       openPisAtFvars nP cvTa.type 0 = some (tfvs, trest) ∧
       checkStructDomsAt (fueledOps mode F) env 0 fvsP
@@ -314,13 +314,13 @@ theorem checkSumCtor_shape {env₀ env : Env} {T : Key} {lps : List LevelParam}
 
 /-- All constructors, positionally: the annotated list is as long as
 the input and every entry is its constructor's run. -/
-theorem checkSumCtors_inv {env₀ env : Env} {T : Key} {lps : List LevelParam}
-    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvTa : ConstantVal} {F : Nat} :
-    ∀ {cs ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)},
+theorem checkSumCtors_inv {env₀ env : Env md} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvTa : ConstantVal md} {F : Nat} :
+    ∀ {cs ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)},
       checkSumCtors (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
         cvTa cs = .ok (ctorsA, sortss) →
       ctorsA.length = cs.length ∧ sortss.length = cs.length ∧
-      ∀ (j : Nat) (c cA : ConstantVal × Nat), cs[j]? = some c → ctorsA[j]? = some cA →
+      ∀ (j : Nat) (c cA : ConstantVal md × Nat), cs[j]? = some c → ctorsA[j]? = some cA →
         cA.2 = c.2 ∧
         ∃ sorts, sortss[j]? = some sorts ∧
         checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large

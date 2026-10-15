@@ -26,7 +26,7 @@ open Expr
 /-- The sibling-availability data `BasisBlocks` preservation needs when
 extending by one (fresh) constant: if the constant is a recursor-kind
 record, the members of its block are already stored. -/
-def SibFinds (env : Env) (c₀ : ConstantInfo) : Prop :=
+def SibFinds (env : Env md) (c₀ : ConstantInfo md) : Prop :=
   ∀ cv mI rP rules, c₀ = .recInfo cv mI rP rules →
     (c₀.name = eqRecName →
       env.find? eqName = some eqA ∧ env.find? eqReflName = some eqReflA) ∧
@@ -38,11 +38,11 @@ def SibFinds (env : Env) (c₀ : ConstantInfo) : Prop :=
       env.find? punitName = some punitA ∧
       env.find? punitUnitName = some punitUnitA)
 
-theorem BasisBlocks.cons {env : Env} {c₀ : ConstantInfo}
+theorem BasisBlocks.cons {env : Env md} {c₀ : ConstantInfo md}
     (hb : BasisBlocks env) (hfind' : env.find? c₀.name = none)
     (hsib : SibFinds env c₀) :
-    BasisBlocks (⟨c₀ :: env.consts⟩ : Env) := by
-  have keep : ∀ {s : Key} {X : ConstantInfo}, env.find? s = some X →
+    BasisBlocks (⟨c₀ :: env.consts⟩ : Env md) := by
+  have keep : ∀ {s : Key md} {X : ConstantInfo md}, env.find? s = some X →
       Env.find? ⟨c₀ :: env.consts⟩ s = some X := by
     intro s X hs
     rw [Env.find?_cons_of_isSome hfind' (by rw [hs]; rfl)]
@@ -85,7 +85,7 @@ theorem BasisBlocks.cons {env : Env} {c₀ : ConstantInfo}
 /-- `RecCtorsStored` is preserved by a fresh extension, given the
 stored-constructor facts for the new member (vacuous unless it is a
 recursor). -/
-theorem RecCtorsStored.cons {env : Env} {c₀ : ConstantInfo}
+theorem RecCtorsStored.cons {env : Env md} {c₀ : ConstantInfo md}
     (hold : RecCtorsStored env) (hfresh : env.find? c₀.name = none)
     (hnew : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
@@ -93,10 +93,10 @@ theorem RecCtorsStored.cons {env : Env} {c₀ : ConstantInfo}
           env.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF)) ∧
         (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true → recRuleEtaOf env.find? c₀.name r.ctor = true)) :
-    RecCtorsStored (⟨c₀ :: env.consts⟩ : Env) := by
-  have hkeep : ∀ (m : Key) (ci : ConstantInfo),
+    RecCtorsStored (⟨c₀ :: env.consts⟩ : Env md) := by
+  have hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
-      env.find? m = some ci → (⟨c₀ :: env.consts⟩ : Env).find? m = some ci := by
+      env.find? m = some ci → (⟨c₀ :: env.consts⟩ : Env md).find? m = some ci := by
     intro m ci _ hf
     rw [Env.find?_cons_of_isSome hfresh (by rw [hf]; rfl)]
     exact hf
@@ -107,13 +107,13 @@ theorem RecCtorsStored.cons {env : Env} {c₀ : ConstantInfo}
     obtain hceq := Option.some.inj hfp
     obtain ⟨⟨cvj, cnP, cnF, hf⟩, hk, he⟩ := hnew _ _ _ _ hceq r hr
     exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-        (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hf⟩,
+        (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf⟩,
       fun hb => recRuleKOf_mono hkeep (hk hb),
       fun hb => recRuleEtaOf_mono hkeep (hn ▸ he hb)⟩
   · next hn =>
     obtain ⟨⟨cvj, cnP, cnF, hf⟩, hk, he⟩ := hold n cv mI rP rules hfp r hr
     exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-        (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hf⟩,
+        (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf⟩,
       fun hb => recRuleKOf_mono hkeep (hk hb),
       fun hb => recRuleEtaOf_mono hkeep (he hb)⟩
 

@@ -27,8 +27,8 @@ open Ix.Kernel.Term
 /-- Which reserved names carry recursor-shaped pinned declarations.
 The `pinnedInfoT` counterpart of `IxC/Kernel/Verify/EnvPreds.lean`'s
 `pinnedInfo_ctorInfo_cases`, and proved the same way. -/
-theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
-    {mI rP : Nat} {rules : List RecRule}
+theorem pinnedInfoT_recInfo_cases {n : Key md} {cv : ConstantVal md}
+    {mI rP : Nat} {rules : List (RecRule md)}
     (h : pinnedInfo n = .recInfo cv mI rP rules) :
     n = eqRecName ∨ n = natRecName ∨
     n = punitRecName ∨
@@ -96,14 +96,14 @@ theorem pinnedInfoT_recInfo_cases {n : Key} {cv : ConstantVal}
 
 /-- **Only `PUnit` passes the unit-like test**: the test compares the head
 with `punitName`, and the pin identifies the stored former. -/
-theorem unitLike_eq_punit {env : Env} {cval : TConstVal}
-    (hbp : BasisPinnedTT env cval) {e : Expr}
+theorem unitLike_eq_punit {env : Env md} {cval : TConstVal md}
+    (hbp : BasisPinnedTT env cval) {e : Expr md}
     (h : isUnitLikeTy env e = true) :
     ∃ us, e = .const punitName us ∧
       env.find? punitName = some punitA := by
   obtain ⟨us, cvi, capsi, -, -, -, -, rfl, hfc, -, -, -⟩ := isUnitLikeTy_inv h
   have hp : ConstantInfo.indInfo cvi capsi = pinnedInfo punitName :=
-    (hbp _ _ hfc (by decide)).1
+    (hbp _ _ hfc (by (cases md <;> decide))).1
   rw [show pinnedInfo punitName = punitA from rfl] at hp
   exact ⟨us, rfl, hp ▸ hfc⟩
 

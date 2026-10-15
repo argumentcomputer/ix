@@ -65,11 +65,11 @@ open Ix.Kernel.Expr
 
 variable {mode : CheckMode}
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Erasure-only result relation for the loop walks (the port of
 `RelD`: the state-free residue of the denotation leg). -/
-abbrev RelDC : Expr → Expr → Prop := RelC
+abbrev RelDC : Expr md → Expr md → Prop := RelC
 
 /-- Pushing on the accumulator array conses on its reversed read
 (task #97: the loops keep the opened fvars innermost-**last**; the
@@ -91,11 +91,11 @@ theorem toListRev_empty {α} :
 /-- Pointwise relation of `inferLamsI` stack entries (the port of
 `DenILE`: binder metas are trees here, so their leg is an
 equation). -/
-def RelILE : InferLamEntry → InferLamEntryX → Prop
+def RelILE : InferLamEntry md → InferLamEntryX md → Prop
   | (tyo, mb), (tyox, mbx) =>
     RelC tyo tyox ∧ mb = mbx
 
-def RelILStk : List InferLamEntry → List InferLamEntryX → Prop
+def RelILStk : List (InferLamEntry md) → List (InferLamEntryX md) → Prop
   | [], [] => True
   | e :: r, ex :: rx => RelILE e ex ∧ RelILStk r rx
   | _, _ => False
@@ -105,7 +105,7 @@ the head entry's binder level (each entry's annotated domain is
 well-scoped at its own level, for the out-phase inferences) — the port
 of `DenAStk`. -/
 def RelAStk (d : Nat) :
-    List AnnotBinderEntry → List AnnotBinderEntryX → Nat → Prop
+    List (AnnotBinderEntry md) → List (AnnotBinderEntryX md) → Nat → Prop
   | [], [], _ => True
   | (ty', bi) :: r, (tyx', bix) :: rx, j =>
     (bi = bix ∧ RelC ty' tyx' ∧ Expr.WScoped (d + j) tyx') ∧
@@ -115,8 +115,8 @@ def RelAStk (d : Nat) :
 /-! ## The infer-λ loop walks -/
 
 theorem inferLamsOutC_sim {d : Nat} :
-    ∀ {stk : List InferLamEntry} {stkx : List InferLamEntryX} {j : Nat}
-      {cur : Expr} {curx : Expr} {prevPw : PropWhen} {s₀ : CState},
+    ∀ {stk : List (InferLamEntry md)} {stkx : List (InferLamEntryX md)} {j : Nat}
+      {cur : Expr md} {curx : Expr md} {prevPw : PropWhen} {s₀ : CState md},
       CSOK mode env s₀ → RelILStk stk stkx → RelC cur curx →
       SimC mode env s₀ RelDC (inferLamsOutI mode d stk j cur prevPw)
         (inferLamsOut (m := FueledM) mode d stkx j curx prevPw) := by
@@ -166,8 +166,8 @@ theorem inferLamsOutC_sim {d : Nat} :
       exact ihOut hs₄ hrest hQnode'
 
 theorem inferLamsLeafC_sim (ih : SSimC mode env f) {d : Nat}
-    {t : Expr} {tx : Expr} {k : Nat} {fvs : Array Expr} {ws : List Expr}
-    {stk : List InferLamEntry} {stkx : List InferLamEntryX} {s₀ : CState}
+    {t : Expr md} {tx : Expr md} {k : Nat} {fvs : Array (Expr md)} {ws : List (Expr md)}
+    {stk : List (InferLamEntry md)} {stkx : List (InferLamEntryX md)} {s₀ : CState md}
     (hs : CSOK mode env s₀) (ht : RelC t tx)
     (hfvs : RelCL fvs.toList.reverse ws) (hstk : RelILStk stk stkx)
     (hw : Expr.WScoped (d + k) (tx.instantiateList ws)) :
@@ -262,10 +262,10 @@ theorem inferLamsLeafC_sim (ih : SSimC mode env f) {d : Nat}
     all_goals exact SimC.throw
 
 theorem inferLamsC_sim (ih : SSimC mode env f) {d : Nat} :
-    ∀ (fuel : Nat) {t : Expr} {tx : Expr} {k : Nat}
-      {fvs : Array Expr} {ws : List Expr}
-      {stk : List InferLamEntry} {stkx : List InferLamEntryX}
-      {s₀ : CState},
+    ∀ (fuel : Nat) {t : Expr md} {tx : Expr md} {k : Nat}
+      {fvs : Array (Expr md)} {ws : List (Expr md)}
+      {stk : List (InferLamEntry md)} {stkx : List (InferLamEntryX md)}
+      {s₀ : CState md},
       CSOK mode env s₀ → RelC t tx →
       RelCL fvs.toList.reverse ws → RelILStk stk stkx →
       Expr.WScoped (d + k) (tx.instantiateList ws) →
@@ -340,7 +340,7 @@ theorem inferLamsC_sim (ih : SSimC mode env f) {d : Nat} :
       all_goals exact SimC.throw
     all_goals
       dsimp only
-      rw [inferLams_succ_ne_lam _ (fun _ _ _ h => Expr.noConfusion h)]
+      rw [inferLams_succ_ne_lam _ (fun _ _ _ h => Expr.noConfusion rfl (heq_of_eq h))]
       exact inferLamsLeafC_sim ih hs ht' hfvs hstk hw
 
 /-! ## The infer-∀ loop walks (task #100 stage 6: the ∀-rule infers
@@ -358,7 +358,7 @@ datum (`zeronessOf (imax u v) = zeronessOf v`), where the mirror
 recomputes it at every node; `hpv` is the threading invariant. -/
 theorem inferPisOutC_sim :
     ∀ {stk : List (Level × PropWhen)} {stkx : List (Level × PropWhen)}
-      {v : Level} {lv : Level} {pv : PropWhen} {s₀ : CState},
+      {v : Level} {lv : Level} {pv : PropWhen} {s₀ : CState md},
       CSOK mode env s₀ → RelLStk stk stkx → v = lv →
       pv = Level.zeronessOf v →
       SimC mode env s₀ (fun (iv : Level) (ivx : Level) => iv = ivx)
@@ -403,9 +403,9 @@ theorem inferPisOutC_sim :
       exact ih (stkx := rx) (lv := .imax u v) hs₁ hrest rfl rfl
 
 theorem inferPisLeafC_sim (ih : SSimC mode env f) {d : Nat}
-    {t : Expr} {tx : Expr} {k : Nat} {fvs : Array Expr} {ws : List Expr}
+    {t : Expr md} {tx : Expr md} {k : Nat} {fvs : Array (Expr md)} {ws : List (Expr md)}
     {stk : List (Level × PropWhen)} {stkx : List (Level × PropWhen)}
-    {s₀ : CState}
+    {s₀ : CState md}
     (hs : CSOK mode env s₀) (ht : RelC t tx)
     (hfvs : RelCL fvs.toList.reverse ws) (hstk : RelLStk stk stkx)
     (hw : Expr.WScoped (d + k) (tx.instantiateList ws)) :
@@ -434,10 +434,10 @@ theorem inferPisLeafC_sim (ih : SSimC mode env f) {d : Nat}
   all_goals exact SimC.throw
 
 theorem inferPisC_sim (ih : SSimC mode env f) {d : Nat} :
-    ∀ (fuel : Nat) {t : Expr} {tx : Expr} {k : Nat}
-      {fvs : Array Expr} {ws : List Expr}
+    ∀ (fuel : Nat) {t : Expr md} {tx : Expr md} {k : Nat}
+      {fvs : Array (Expr md)} {ws : List (Expr md)}
       {stk : List (Level × PropWhen)} {stkx : List (Level × PropWhen)}
-      {s₀ : CState},
+      {s₀ : CState md},
       CSOK mode env s₀ → RelC t tx →
       RelCL fvs.toList.reverse ws → RelLStk stk stkx →
       Expr.WScoped (d + k) (tx.instantiateList ws) →
@@ -515,7 +515,7 @@ theorem inferPisC_sim (ih : SSimC mode env f) {d : Nat} :
       all_goals exact SimC.throw
     all_goals
       dsimp only
-      rw [inferPis_succ_ne_pi _ (fun _ _ _ h => Expr.noConfusion h)]
+      rw [inferPis_succ_ne_pi _ (fun _ _ _ h => Expr.noConfusion rfl (heq_of_eq h))]
       exact inferPisLeafC_sim ih hs ht' hfvs hstk hw
 
 /-! ## Tail compositions: the infer loops against the chained bodies'
@@ -532,8 +532,8 @@ matcher only when it is visible — a private one is not, so the two later
 proofs re-generate `…match_1` under their OWN names and `rw` then fails to
 find the pattern (the terms print identically; only the matcher constant
 differs). -/
-theorem inferLamTail_atF {env : Env} (d : Nat)
-    (tyx bodyx : Expr) (mbx : BinderMeta) (F : Nat) :
+theorem inferLamTail_atF {env : Env md} (d : Nat)
+    (tyx bodyx : Expr md) (mbx : BinderMeta) (F : Nat) :
     ((do
       let bt ← (fueledFns mode env).infer (d + 1)
         (bodyx.instantiate1 (.fvar d tyx))
@@ -549,7 +549,7 @@ theorem inferLamTail_atF {env : Env} (d : Nat)
           unless Level.zeronessOf vb == mbx.pw do
             throw (.notImplemented
               "sort-annotation mismatch (lam-cod-leaf)")
-      pure (Expr.forallE tyx (bt.abstract1 d) mbx)) : FueledM Expr).val F
+      pure (Expr.forallE tyx (bt.abstract1 d) mbx)) : FueledM (Expr md)).val F
     = (inferTypeCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx))
         >>= fun bt => (do
           if mode.verifiedChecks then
@@ -593,8 +593,8 @@ theorem inferLamTail_atF {env : Env} (d : Nat)
 stage 6: the tail is a pure rebuild — the λ-annotation re-check died
 with the stored annotations). -/
 theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
-    {d fuel : Nat} {b t fv : Expr} {bodyx tyx : Expr}
-    {mbpw : PropWhen} {mbc : Ixon.BinderContract} {mbr : Ixon.ValueContract} {s₀ : CState}
+    {d fuel : Nat} {b t fv : Expr md} {bodyx tyx : Expr md}
+    {mbpw : PropWhen} {mbc : Ixon.BinderContract} {mbr : Ixon.ValueContract} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbody : RelC b bodyx)
     (hty : RelC t tyx)
@@ -754,8 +754,8 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
       exact ⟨hwty, Ix.Kernel.WScoped.abstract1 0 hwbt⟩ :
       Expr.WScoped d (Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr⟩))
 
-private theorem inferPiTail_atF {env : Env} (d : Nat)
-    (tyx bodyx : Expr) (lu : Level) (pw : PropWhen) (F : Nat) :
+private theorem inferPiTail_atF {env : Env md} (d : Nat)
+    (tyx bodyx : Expr md) (lu : Level) (pw : PropWhen) (F : Nat) :
     ((do
       let v ← ensureSort (fueledFns mode env) env (d + 1)
         (← (fueledFns mode env).infer (d + 1)
@@ -763,7 +763,7 @@ private theorem inferPiTail_atF {env : Env} (d : Nat)
       if mode.verifiedChecks then
         unless Level.zeronessOf v == pw do
           throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-      pure (Expr.sort (.imax lu v))) : FueledM Expr).val F
+      pure (Expr.sort (.imax lu v))) : FueledM (Expr md)).val F
     = (inferTypeCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx))
         >>= fun bt => ensureSortCore mode env F (d + 1) bt >>= fun v =>
         (do
@@ -788,8 +788,8 @@ private theorem inferPiTail_atF {env : Env} (d : Nat)
 /-- The ∀-inference loop against `inferBody`'s own ∀-tail (task #100
 stage 6: the codomain sort is inferred, not read off an annotation). -/
 theorem inferPisC_tail_sim (ih : SSimC mode env f)
-    {d fuel : Nat} {b fv : Expr} {bodyx tyx : Expr}
-    {u : Level} {lu : Level} {pw : PropWhen} {s₀ : CState}
+    {d fuel : Nat} {b fv : Expr md} {bodyx tyx : Expr md}
+    {u : Level} {lu : Level} {pw : PropWhen} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbody : RelC b bodyx)
     (hlu : u = lu)
@@ -888,14 +888,14 @@ theorem annotBinderMetaI_eq (pw? : Option PropWhen) (mb : BinderMeta) :
   cases pw? <;> rfl
 
 theorem annotateBindersOutC_sim
-    {mk : Expr → Expr → BinderMeta → Expr}
-    {mkX : Expr → Expr → BinderMeta → Expr}
-    (hmk : ∀ (ty : Expr) (tyx : Expr) (b : Expr) (bx : Expr)
+    {mk : Expr md → Expr md → BinderMeta → Expr md}
+    {mkX : Expr md → Expr md → BinderMeta → Expr md}
+    (hmk : ∀ (ty : Expr md) (tyx : Expr md) (b : Expr md) (bx : Expr md)
       (mi : BinderMeta), RelC ty tyx → RelC b bx →
         mk ty b mi = mkX tyx bx mi) {d : Nat} :
-    ∀ {stk : List AnnotBinderEntry} {stkx : List AnnotBinderEntryX}
-      {j : Nat} {pw? : Option PropWhen} {cur : Expr} {curx : Expr}
-      {s₀ : CState},
+    ∀ {stk : List (AnnotBinderEntry md)} {stkx : List (AnnotBinderEntryX md)}
+      {j : Nat} {pw? : Option PropWhen} {cur : Expr md} {curx : Expr md}
+      {s₀ : CState md},
       CSOK mode env s₀ → RelAStk d stk stkx j → RelC cur curx →
       SimC mode env s₀ RelDC (annotateBindersOutI mk d pw? stk j cur)
         (annotateBindersOut (m := FueledM) mkX d pw? stkx j curx) := by
@@ -943,7 +943,7 @@ theorem annotateBindersOutC_sim
 /-- A bare pure read against a pure fueled result (the write's last
 step: `Level.zeronessOf` on the sort level). -/
 private theorem simC_pure_pure {β α : Type}
-    {P : β → α → Prop} {b : β} {a : α} {s₀ : CState}
+    {P : β → α → Prop} {b : β} {a : α} {s₀ : CState md}
     (hs : CSOK mode env s₀) (h : P b a) :
     SimC mode env s₀ P (pure b) (pure a) :=
   SimC.pure hs h
@@ -953,7 +953,7 @@ annotated body's head first — a ∀ body hands on its own datum (the
 chain rule) — and only otherwise pay the one inference the telescope's
 collapse needs. -/
 theorem annotPwPiC_sim (ih : SSimC mode env f) {d : Nat}
-    {body' : Expr} {body'x : Expr} {s₀ : CState}
+    {body' : Expr md} {body'x : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hl : RelC body' body'x)
     (hw : Expr.WScoped d body'x) :
     SimC mode env s₀ (fun (v : PropWhen) (vx : PropWhen) => v = vx)
@@ -977,7 +977,7 @@ theorem annotPwPiC_sim (ih : SSimC mode env f) {d : Nat}
 
 /-- The λ twin of `annotPwPiC_sim`. -/
 theorem annotPwLamC_sim (ih : SSimC mode env f) {d : Nat}
-    {body' : Expr} {body'x : Expr} {s₀ : CState}
+    {body' : Expr md} {body'x : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hl : RelC body' body'x)
     (hw : Expr.WScoped d body'x) :
     SimC mode env s₀ (fun (v : PropWhen) (vx : PropWhen) => v = vx)
@@ -1004,7 +1004,7 @@ theorem annotPwLamC_sim (ih : SSimC mode env f) {d : Nat}
 
 /-- The write the telescope loops use (ungated, both modes). -/
 theorem annotatePisPwC_sim (ih : SSimC mode env f) {d k : Nat}
-    {leaf' : Expr} {leafx : Expr} {s₀ : CState}
+    {leaf' : Expr md} {leafx : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hl : RelC leaf' leafx)
     (hw : Expr.WScoped (d + k) leafx) :
     SimC mode env s₀
@@ -1021,7 +1021,7 @@ theorem annotatePisPwC_sim (ih : SSimC mode env f) {d k : Nat}
 
 /-- The λ twin of `annotatePisPwC_sim`. -/
 theorem annotateLamsPwC_sim (ih : SSimC mode env f) {d k : Nat}
-    {leaf' : Expr} {leafx : Expr} {s₀ : CState}
+    {leaf' : Expr md} {leafx : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hl : RelC leaf' leafx)
     (hw : Expr.WScoped (d + k) leafx) :
     SimC mode env s₀
@@ -1035,9 +1035,9 @@ theorem annotateLamsPwC_sim (ih : SSimC mode env f) {d k : Nat}
   exact SimC.pure hs₁ rfl
 
 theorem annotatePisLeafC_sim (ih : SSimC mode env f) {d : Nat}
-    {t : Expr} {tx : Expr} {k : Nat} {fvs : Array Expr} {ws : List Expr}
-    {stk : List AnnotBinderEntry} {stkx : List AnnotBinderEntryX}
-    {s₀ : CState}
+    {t : Expr md} {tx : Expr md} {k : Nat} {fvs : Array (Expr md)} {ws : List (Expr md)}
+    {stk : List (AnnotBinderEntry md)} {stkx : List (AnnotBinderEntryX md)}
+    {s₀ : CState md}
     (hs : CSOK mode env s₀) (ht : RelC t tx)
     (hfvs : RelCL fvs.toList.reverse ws) (hstk : RelAStk d stk stkx (k - 1))
     (hw : Expr.WScoped (d + k) (tx.instantiateList ws)) :
@@ -1062,10 +1062,10 @@ theorem annotatePisLeafC_sim (ih : SSimC mode env f) {d : Nat}
     rw [hty, hb]
 
 theorem annotatePisC_sim (ih : SSimC mode env f) {d : Nat} :
-    ∀ (fuel : Nat) {t : Expr} {tx : Expr} {k : Nat}
-      {fvs : Array Expr} {ws : List Expr}
-      {stk : List AnnotBinderEntry} {stkx : List AnnotBinderEntryX}
-      {s₀ : CState},
+    ∀ (fuel : Nat) {t : Expr md} {tx : Expr md} {k : Nat}
+      {fvs : Array (Expr md)} {ws : List (Expr md)}
+      {stk : List (AnnotBinderEntry md)} {stkx : List (AnnotBinderEntryX md)}
+      {s₀ : CState md},
       CSOK mode env s₀ → RelC t tx →
       RelCL fvs.toList.reverse ws → RelAStk d stk stkx (k - 1) →
       Expr.WScoped (d + k) (tx.instantiateList ws) →
@@ -1130,15 +1130,15 @@ theorem annotatePisC_sim (ih : SSimC mode env f) {d : Nat} :
         hwopen
     all_goals
       dsimp only
-      rw [annotatePis_succ_ne_pi _ (fun _ _ _ h => Expr.noConfusion h)]
+      rw [annotatePis_succ_ne_pi _ (fun _ _ _ h => Expr.noConfusion rfl (heq_of_eq h))]
       exact annotatePisLeafC_sim ih hs ht' hfvs hstk hw
 
 /-! ## The λ-annotation loop walks -/
 
 theorem annotateLamsLeafC_sim (ih : SSimC mode env f) {d : Nat}
-    {t : Expr} {tx : Expr} {k : Nat} {fvs : Array Expr} {ws : List Expr}
-    {stk : List AnnotBinderEntry} {stkx : List AnnotBinderEntryX}
-    {s₀ : CState}
+    {t : Expr md} {tx : Expr md} {k : Nat} {fvs : Array (Expr md)} {ws : List (Expr md)}
+    {stk : List (AnnotBinderEntry md)} {stkx : List (AnnotBinderEntryX md)}
+    {s₀ : CState md}
     (hs : CSOK mode env s₀) (ht : RelC t tx)
     (hfvs : RelCL fvs.toList.reverse ws) (hstk : RelAStk d stk stkx (k - 1))
     (hw : Expr.WScoped (d + k) (tx.instantiateList ws)) :
@@ -1163,10 +1163,10 @@ theorem annotateLamsLeafC_sim (ih : SSimC mode env f) {d : Nat}
     rw [hty, hb]
 
 theorem annotateLamsC_sim (ih : SSimC mode env f) {d : Nat} :
-    ∀ (fuel : Nat) {t : Expr} {tx : Expr} {k : Nat}
-      {fvs : Array Expr} {ws : List Expr}
-      {stk : List AnnotBinderEntry} {stkx : List AnnotBinderEntryX}
-      {s₀ : CState},
+    ∀ (fuel : Nat) {t : Expr md} {tx : Expr md} {k : Nat}
+      {fvs : Array (Expr md)} {ws : List (Expr md)}
+      {stk : List (AnnotBinderEntry md)} {stkx : List (AnnotBinderEntryX md)}
+      {s₀ : CState md},
       CSOK mode env s₀ → RelC t tx →
       RelCL fvs.toList.reverse ws → RelAStk d stk stkx (k - 1) →
       Expr.WScoped (d + k) (tx.instantiateList ws) →
@@ -1231,7 +1231,7 @@ theorem annotateLamsC_sim (ih : SSimC mode env f) {d : Nat} :
         hwopen
     all_goals
       dsimp only
-      rw [annotateLams_succ_ne_lam _ (fun _ _ _ h => Expr.noConfusion h)]
+      rw [annotateLams_succ_ne_lam _ (fun _ _ _ h => Expr.noConfusion rfl (heq_of_eq h))]
       exact annotateLamsLeafC_sim ih hs ht' hfvs hstk hw
 
 /-! ## Tail compositions: the annotation loops against the chained
@@ -1241,8 +1241,8 @@ As with the infer tails, the two `*_atF` normalizations are pure
 comparand-side lemmas, byte-identical copies of `BinderLoopI`'s private
 originals (the cached tier does not import the interned walks). -/
 
-private theorem annPiTail_atF {env : Env} (d : Nat)
-    (tyx' bodyx : Expr) (mx : BinderMeta) (F : Nat) :
+private theorem annPiTail_atF {env : Env md} (d : Nat)
+    (tyx' bodyx : Expr md) (mx : BinderMeta) (F : Nat) :
     ((do
       let body' ← (fueledFns mode env).annotate (d + 1)
         (bodyx.instantiate1 (.fvar d tyx'))
@@ -1250,7 +1250,7 @@ private theorem annPiTail_atF {env : Env} (d : Nat)
         annotPwPi (fueledFns mode env) env (d + 1) body' >>= fun pw =>
           pure (Expr.forallE tyx' (body'.abstract1 d) { mx with pw })
       else pure (Expr.forallE tyx' (body'.abstract1 d) { mx with pw := mx.pw }))
-      : FueledM Expr).val F
+      : FueledM (Expr md)).val F
     = (annotateCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx'))
         >>= fun body' =>
         if !pwWritten mx.pw then
@@ -1270,8 +1270,8 @@ private theorem annPiTail_atF {env : Env} (d : Nat)
 /-- The ∀-annotation loop against `annotateBody`'s own ∀-tail (pure
 post-erasure: the pass computes nothing at binders). -/
 theorem annotatePisC_tail_sim (ih : SSimC mode env f) {d fuel : Nat}
-    {b ty' fv : Expr} {bodyx tyx' : Expr}
-    {mi mx : BinderMeta} {s₀ : CState}
+    {b ty' fv : Expr md} {bodyx tyx' : Expr md}
+    {mi mx : BinderMeta} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbm : mi = mx)
     (hbody : RelC b bodyx)
@@ -1346,8 +1346,8 @@ theorem annotatePisC_tail_sim (ih : SSimC mode env f) {d fuel : Nat}
       injection hF with hres
       exact hres ▸ hnode mx.pw
 
-private theorem annLamTail_atF {env : Env} (d : Nat)
-    (tyx' bodyx : Expr) (mx : BinderMeta) (F : Nat) :
+private theorem annLamTail_atF {env : Env md} (d : Nat)
+    (tyx' bodyx : Expr md) (mx : BinderMeta) (F : Nat) :
     ((do
       let body' ← (fueledFns mode env).annotate (d + 1)
         (bodyx.instantiate1 (.fvar d tyx'))
@@ -1355,7 +1355,7 @@ private theorem annLamTail_atF {env : Env} (d : Nat)
         annotPwLam (fueledFns mode env) env (d + 1) body' >>= fun pw =>
           pure (Expr.lam tyx' (body'.abstract1 d) { mx with pw })
       else pure (Expr.lam tyx' (body'.abstract1 d) { mx with pw := mx.pw }))
-      : FueledM Expr).val F
+      : FueledM (Expr md)).val F
     = (annotateCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx'))
         >>= fun body' =>
         if !pwWritten mx.pw then
@@ -1374,8 +1374,8 @@ private theorem annLamTail_atF {env : Env} (d : Nat)
 
 /-- The λ-annotation loop against `annotateBody`'s own λ-tail. -/
 theorem annotateLamsC_tail_sim (ih : SSimC mode env f) {d fuel : Nat}
-    {b ty' fv : Expr} {bodyx tyx' : Expr}
-    {mi mx : BinderMeta} {s₀ : CState}
+    {b ty' fv : Expr md} {bodyx tyx' : Expr md}
+    {mi mx : BinderMeta} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbm : mi = mx)
     (hbody : RelC b bodyx)

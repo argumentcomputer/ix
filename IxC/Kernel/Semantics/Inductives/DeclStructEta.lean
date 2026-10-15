@@ -38,12 +38,12 @@ open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
 
 /-- The table stage's run: the tower table consed at a fresh table
 name (task #175 S1). -/
-theorem checkStructProjTable_shape {T C : Key}
+theorem checkStructProjTable_shape {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
-    {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env' : Env}
+    {guards : List Level} {off : Nat} {cvCa : ConstantVal md} {env env' : Env md}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
       resSort guards off cvCa env = .ok env') :
-    ∃ tbl : Ix.Kernel.ProjTable, env.find? (projTableName T) = none ∧
+    ∃ tbl : Ix.Kernel.ProjTable md, env.find? (projTableName T) = none ∧
       tbl.structName = T ∧ env' = ⟨.projInfo tbl :: env.consts⟩ := by
   obtain ⟨bodies, -, -, -, hfresh, rfl⟩ := Ix.Kernel.checkStructProjTable_inv h
   exact ⟨_, hfresh, rfl, rfl⟩
@@ -52,9 +52,9 @@ theorem checkStructProjTable_shape {T C : Key}
 
 /-- The table stage keeps the η-families closed: a fresh cons of a
 table. -/
-theorem checkStructProjTable_etaClosed {T C : Key}
+theorem checkStructProjTable_etaClosed {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
-    {guards : List Level} {off : Nat} {cvCa : ConstantVal} {env env₂ : Env}
+    {guards : List Level} {off : Nat} {cvCa : ConstantVal md} {env env₂ : Env md}
     (h : checkStructProjTable (m := Ix.Kernel.CheckM) T C lps nP nF
       resSort guards off cvCa env = .ok env₂)
     (hE : EtaFamiliesClosed env) : EtaFamiliesClosed env₂ := by

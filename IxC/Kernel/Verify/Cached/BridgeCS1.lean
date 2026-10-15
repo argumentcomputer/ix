@@ -32,15 +32,15 @@ open Ix.Kernel
 open Ix.Kernel.Expr
 
 variable {mode : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 section Walks1
 
-variable {env : Env} {s₀ : CState}
+variable {env : Env md} {s₀ : CState md}
 
 /-- `checkConstantVal` at the cached shared operations simulates the
 fueled instantiation; the returned constant's type is well-scoped. -/
-theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cv : ConstantVal}
+theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cv : ConstantVal md}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v = w ∧ Expr.WScoped 0 v.type)
       (checkConstantVal (sharedOpsC mode (mkFEnv env)) env cv)
@@ -96,8 +96,8 @@ theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
 
 /-- `checkReduceIdentity` at the cached shared operations. -/
 theorem checkReduceIdentityS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
-    {env2 : Env} {c : Key}
-    {value : Expr} (hvf : value.hasFvar = false)
+    {env2 : Env md} {c : Key md}
+    {value : Expr md} (hvf : value.hasFvar = false)
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkReduceIdentity (sharedOpsC mode (mkFEnv env)) env env2 c value)
@@ -133,9 +133,9 @@ theorem checkReduceIdentityS_sim (hμ : mode.verifiedChecks = true) (henv : EnvW
 
 /-- `certifyNatEqs` at the cached shared operations. -/
 theorem certifyNatEqsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) :
-    ∀ {eqs : List (Expr × Expr)},
+    ∀ {eqs : List (Expr md × Expr md)},
       (∀ eq ∈ eqs, (eq.1.wscopedB 2 = true) ∧ (eq.2.wscopedB 2 = true)) →
-      ∀ {s₀ : CState}, CSOK mode env s₀ →
+      ∀ {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (certifyNatEqs (sharedOpsC mode (mkFEnv env)) env eqs)
         (certifyNatEqs (fueledOpsM mode) env eqs)
@@ -158,12 +158,12 @@ theorem certifyNatEqsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
       exact SimC.pure hs₁ rfl
 
 /-- `checkDivModCerts` at the cached shared operations. -/
-theorem checkDivModCertsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {c : Key}
-    {annVal : Expr} (hvf : annVal.hasFvar = false) :
-    ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
+theorem checkDivModCertsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {c : Key md}
+    {annVal : Expr md} (hvf : annVal.hasFvar = false) :
+    ∀ {stmts : List (List (Expr md) × Expr md)} {proofs : List (Expr md)},
       (∀ st ∈ stmts, (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧
         st.2.wscopedB 4 = true) →
-      ∀ {s₀ : CState}, CSOK mode env s₀ →
+      ∀ {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (checkDivModCerts (sharedOpsC mode (mkFEnv env)) env c annVal
           stmts proofs)
@@ -222,15 +222,15 @@ left, well-formed by `hx`, or after an error on the pre-attempt state
 continuation (`hk`, for whatever outcome the cached lane delivered).
 The common fuel is the larger of the attempt's and the
 continuation's. -/
-theorem SimC.orElse {s₀ : CState} (hs : CSOK mode env s₀)
-    {x : CheckCM Bool} {x' : FueledM Bool}
-    {k : Option CheckError → CheckCM Unit}
+theorem SimC.orElse {s₀ : CState md} (hs : CSOK mode env s₀)
+    {x : (CheckCM md) Bool} {x' : FueledM Bool}
+    {k : Option CheckError → (CheckCM md) Unit}
     {k' : Option CheckError → FueledM Unit}
     (hx : SimC mode env s₀ RelVC x x')
-    (hk : ∀ r (s₁ : CState), CSOK mode env s₁ →
+    (hk : ∀ r (s₁ : CState md), CSOK mode env s₁ →
       SimC mode env s₁ RelVC (k r) (k' none)) :
     SimC mode env s₀ RelVC ((sharedOpsC mode (mkFEnv env)).orElse x k)
-      ((fueledOpsM mode).orElse x' k') := by
+      (((fueledOpsM (md := md)) mode).orElse x' k') := by
   intro v' s' h
   dsimp only [sharedOpsC] at h
   revert h
@@ -267,7 +267,7 @@ theorem SimC.orElse {s₀ : CState} (hs : CSOK mode env s₀)
 pure, the certificate check simulates, and both lanes' continuations
 throw. -/
 theorem checkDivModEvidenceS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
-    {env2 : Env} {c : Key}
+    {env2 : Env md} {c : Key md}
     (hc : c ∈ natDivModNames)
     (hv'f : ∀ cv' v' h', env2.find? c = some (.defnInfo cv' v' h') →
       v'.hasFvar = false)
@@ -304,10 +304,10 @@ theorem checkDivModEvidenceS_sim (hμ : mode.verifiedChecks = true) (henv : EnvW
           (fun _ _ _ => SimC.throw)
 
 /-- `installBasisDecl` (operation-free) as a `SimC`. -/
-theorem installBasisDeclS_sim {env' : Env} {ci : ConstantInfo}
+theorem installBasisDeclS_sim {env' : Env md} {ci : ConstantInfo md}
     (hs : CSOK mode env s₀) :
-    SimC mode env s₀ RelVC (installBasisDecl env' ci : CheckCM Env)
-      (installBasisDecl env' ci : FueledM Env) := by
+    SimC mode env s₀ RelVC (installBasisDecl env' ci : (CheckCM md) (Env md))
+      (installBasisDecl env' ci : FueledM (Env md)) := by
   unfold installBasisDecl
   by_cases h1 : (env'.find? ci.name).isNone = true
   · simp only [if_pos h1]
@@ -317,11 +317,11 @@ theorem installBasisDeclS_sim {env' : Env} {ci : ConstantInfo}
 
 /-- The basis-install fold as a `SimC`. -/
 theorem installBasisFoldS_sim :
-    ∀ (cis : List ConstantInfo) (env' : Env) {s₀ : CState},
+    ∀ (cis : List (ConstantInfo md)) (env' : Env md) {s₀ : CState md},
       CSOK mode env s₀ →
       SimC mode env s₀ RelVC
-        (cis.foldlM installBasisDecl env' : CheckCM Env)
-        (cis.foldlM installBasisDecl env' : FueledM Env)
+        (cis.foldlM installBasisDecl env' : (CheckCM md) (Env md))
+        (cis.foldlM installBasisDecl env' : FueledM (Env md))
   | [], env', s₀, hs => SimC.pure hs rfl
   | ci :: cis, env', s₀, hs => by
     simp only [List.foldlM]

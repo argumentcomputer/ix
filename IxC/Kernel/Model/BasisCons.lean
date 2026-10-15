@@ -84,7 +84,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The P basis leaves are pinned FOR FREE
 
@@ -107,7 +107,7 @@ the basis tier's structural crux, and this is its P half. -/
 pin.**  From `EnvS.basis_pinned` and `acval_erase`, by injectivity of
 `erase` at a constant head. -/
 theorem acval_basis_pinned {m : EnvModel V env}
-    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key md} {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
     {c : Ix.Kernel.Term.BConst} {us : List Nat} {ψ : LevelParam → Nat}
     (hd : Ix.Kernel.Verify.pinnedStructT n ψ
@@ -135,11 +135,11 @@ heads (`Kernel/Basis/PSigma.lean:326`), a kind that is neither
 the reserved-name route.  Between the two lemmas every basis cons is
 covered. -/
 theorem basis_declsA_reserved (kind : Ix.Kernel.BasisKind) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .projInfo _ => true
        | _ => Ix.Kernel.reservedBasisNames.contains ci.name) = true := by
-  cases kind <;> decide
+  cases kind <;> cases md <;> decide
 
 /-- **`nat_heads` at a cons that is none of the three literal
 heads.**  The guard reads `natName`, `natZeroName` and `natSuccName`
@@ -149,7 +149,7 @@ their obligation here, and so would any inductive-kind cons.  (The
 `Nat` block itself is where the guard *becomes* true; it supplies
 `nat_heads` bespoke, and no back-transfer exists.) -/
 theorem natHeads_cons_offNat (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
     (hnS : c₀.name ≠ natSuccName)
     (m2 : EnvModel V ⟨c₀ :: env.consts⟩)
@@ -158,8 +158,8 @@ theorem natHeads_cons_offNat (mp : EnvModelM V μ env)
   intro hg ρ
   rw [hacval]
   -- the three lookups are the prefix's, so the guard reflects
-  have hfind : ∀ p : Key, c₀.name ≠ p →
-      (⟨c₀ :: env.consts⟩ : Env).find? p = env.find? p := by
+  have hfind : ∀ p : Key md, c₀.name ≠ p →
+      (⟨c₀ :: env.consts⟩ : Env md).find? p = env.find? p := by
     intro p hp
     show List.find? _ (c₀ :: env.consts) = _
     rw [List.find?_cons_of_neg (by simpa using hp)]
@@ -190,11 +190,11 @@ from the name rather than from the kind: the law's own
 `EtaFamilyStored`'s name-only conjunct separates the capability
 constructor, and `projFnName_ne_reserved` separates every projection
 slot. -/
-theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Key}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo md} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)
     (hresT : Ix.Kernel.reservedBasisNames.contains T = false)
-    (hf : (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps))
+    (hf : (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     env.find? T = some (.indInfo cvT caps) ∧
       Ix.Kernel.EtaFamilyStored env T caps ∧
@@ -209,8 +209,8 @@ theorem etaFamilyStored_descend_reserved {c₀ : ConstantInfo} {T : Key}
     hnC' (Option.some.inj (hC.symm.trans h))
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name :=
     fun _ _ => projFnName_ne_reserved hres₀
-  have hdown : ∀ n : Key, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
   refine ⟨by rwa [hdown _ hnT] at hf, ⟨C, hC, hCres, ⟨cvC, ?_⟩, ?_⟩,
@@ -229,7 +229,7 @@ stored family can be completed here and the law's leaves are all
 prefix leaves. -/
 theorem capsOk_cons_basis (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hres₀ : Ix.Kernel.reservedBasisNames.contains c₀.name = true)

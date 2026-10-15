@@ -52,7 +52,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {φ : LevelParam → Nat}
 variable {m : EnvModel V env}
 
 /-! ## The level crossing — `Model/Annot/BitLevels.lean`, imported
@@ -66,7 +66,7 @@ and there is ONE copy, under that file's own names. -/
 
 /-! ## The two `Nat` constructor readings and the literal expansions -/
 
-theorem denoteMetaNatZeroConst {acval : Key → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMetaNatZeroConst {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) {d : Nat} :
     denoteMeta acval env φ d (.const Ix.Kernel.natZeroName [])
       = some (acval Ix.Kernel.natZeroName (Level.substFn φ [] [])) := by
@@ -85,7 +85,7 @@ theorem denoteMetaNatZeroConst {acval : Key → (LevelParam → Nat) → AnnotTe
       | _ => simp [Ix.Kernel.natZeroOk] at h2
     rw [denoteMeta_const hf (by simp [hlp]), hlp]
 
-theorem denoteMetaNatSuccConst {acval : Key → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMetaNatSuccConst {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) {d : Nat} :
     denoteMeta acval env φ d (.const Ix.Kernel.natSuccName [])
       = some (acval Ix.Kernel.natSuccName (Level.substFn φ [] [])) := by
@@ -106,7 +106,7 @@ theorem denoteMetaNatSuccConst {acval : Key → (LevelParam → Nat) → AnnotTe
 
 /-- `denoteMeta` is blind to the `Nat`-literal constructor expansion. -/
 theorem denoteMeta_natLitToConstructor
-    {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.natLitSupported env = true) (d n : Nat) :
     denoteMeta acval env φ d (Ix.Kernel.natLitToConstructor n)
       = denoteMeta acval env φ d (.lit (.natVal n)) := by
@@ -121,14 +121,14 @@ theorem denoteMeta_natLitToConstructor
     rfl
 
 theorem denoteMetaConstNolevels
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} {c : Key}
-    {ci : Ix.Kernel.ConstantInfo} (hf : env.find? c = some ci)
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {c : Key md}
+    {ci : Ix.Kernel.ConstantInfo md} (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = []) (d : Nat) :
     denoteMeta acval env φ d (.const c [])
       = some (acval c (Level.substFn φ [] [])) := by
   rw [denoteMeta_const hf (by simp [hlp]), hlp]
 
-theorem denoteMetaNilTerm {acval : Key → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMetaNilTerm {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     denoteMeta acval env φ d
         (.app (.const Ix.Kernel.listNilName [.zero])
@@ -146,7 +146,7 @@ theorem denoteMetaNilTerm {acval : Key → (LevelParam → Nat) → AnnotTerm}
     denoteMetaConstNolevels hfC hlpC d, hlpa]
   rfl
 
-theorem denoteMetaConsTerm {acval : Key → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMetaConsTerm {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     denoteMeta acval env φ d
         (.app (.const Ix.Kernel.listConsName [.zero])
@@ -165,7 +165,7 @@ theorem denoteMetaConsTerm {acval : Key → (LevelParam → Nat) → AnnotTerm}
   rfl
 
 theorem denoteMetaStrLitList
-    {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) :
     ∀ cs : List Char,
       denoteMeta acval env φ d (Ix.Kernel.strLitList cs)
@@ -198,7 +198,7 @@ theorem denoteMetaStrLitList
 
 /-- `denoteMeta` is blind to the string-literal constructor expansion. -/
 theorem denoteMeta_strLitToConstructor
-    {acval : Key → (LevelParam → Nat) → AnnotTerm}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     (hg : Ix.Kernel.strLitSupported env = true) (d : Nat) (s : String) :
     denoteMeta acval env φ d (Ix.Kernel.strLitToConstructor s)
       = denoteMeta acval env φ d (.lit (.strVal s)) := by
@@ -212,9 +212,9 @@ theorem denoteMeta_strLitToConstructor
 /-! ## The application congruence at the reading -/
 
 /-- The frame of a closed atom. -/
-theorem frame_atom {d : Nat} {e : Expr} (h : e.fvarLeaves = [])
+theorem frame_atom {d : Nat} {e : Expr md} (h : e.fvarLeaves = [])
     (hw : Expr.WScoped d e) (hb : e.looseBVarsBounded 0 = true) :
-    Frame d e ∧ ∀ (x : Expr), LeavesSub e x :=
+    Frame d e ∧ ∀ (x : Expr md), LeavesSub e x :=
   ⟨⟨hw, hb, fun l hl => by rw [h] at hl; exact nomatch hl⟩,
    fun _ l hl => by rw [h] at hl; exact nomatch hl⟩
 
@@ -473,7 +473,7 @@ theorem hoist_spine {Δa : List AnnotTerm} :
       · exact hrest x hx'
 
 /-- The frame conditions of every argument of a spine (`frame_spine`). -/
-theorem frame_spine {d : Nat} {Δa : List AnnotTerm} {a : Expr}
+theorem frame_spine {d : Nat} {Δa : List AnnotTerm} {a : Expr md}
     (hf : Frame d a) (hC : CtxOk m φ d Δa a) :
     ∀ x ∈ a.getAppArgs, Frame d x ∧ CtxOk m φ d Δa x := fun x hx =>
   ⟨⟨hf.1.getAppArgs x hx, Ix.Kernel.looseBVarsBounded_getAppArgs hf.2.1 x hx,
@@ -484,8 +484,8 @@ theorem frame_spine {d : Nat} {Δa : List AnnotTerm} {a : Expr}
 the entry's two READINGS are `Model/Annot/BitLemmas.lean`'s) -/
 
 /-- A stored tower entry's body telescope is closed. -/
-theorem towerEntry_tele_closed (hwf : Ix.Kernel.EnvWF env) {T : Key} {i : Nat}
-    {entry : ProjEntry} (hfe : env.findProj? T i = some entry)
+theorem towerEntry_tele_closed (hwf : Ix.Kernel.EnvWF env) {T : Key md} {i : Nat}
+    {entry : ProjEntry md} (hfe : env.findProj? T i = some entry)
     (us : List Level) :
     (Ix.Kernel.projTele (entry.numParams + 1)
       (entry.body.instantiateLevelParams entry.levelParams us)).hasFvar = false ∧
@@ -498,8 +498,8 @@ theorem towerEntry_tele_closed (hwf : Ix.Kernel.EnvWF env) {T : Key} {i : Nat}
     Ix.Kernel.projEntry_body_looseBVars hwf hfe us⟩
 
 /-- **The body telescope's reading is depth-free.** -/
-theorem towerEntry_tele_at_depth {m : EnvModel V env} {T : Key} {i : Nat}
-    {entry : ProjEntry} (hfe : env.findProj? T i = some entry)
+theorem towerEntry_tele_at_depth {m : EnvModel V env} {T : Key md} {i : Nat}
+    {entry : ProjEntry md} (hfe : env.findProj? T i = some entry)
     {us : List Level} {Ta : AnnotTerm}
     (hTa : denoteMeta m.acval env φ 0
       (Ix.Kernel.projTele (entry.numParams + 1)
@@ -543,8 +543,8 @@ theorem PiChain.inst : ∀ {n : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : Nat),
 
 /-- **A syntactic ∀-telescope reads to a ∀-chain**
 (`piChain_of_stripPis`). -/
-theorem piChain_of_stripPis {acval : Key → (LevelParam → Nat) → AnnotTerm} :
-    ∀ (n : Nat) {d : Nat} {e : Expr} {ea : AnnotTerm},
+theorem piChain_of_stripPis {acval : Key md → (LevelParam → Nat) → AnnotTerm} :
+    ∀ (n : Nat) {d : Nat} {e : Expr md} {ea : AnnotTerm},
       (e.stripPis n).isSome = true →
       denoteMeta acval env φ d e = some ea → PiChain n ea := by
   intro n
@@ -633,7 +633,7 @@ theorem teleFit_of_teleFitPA {ρ : Nat → V} :
 /-- The instantiated form of `AcvalDefnInst`, by the level crossing
 (`acvalDefnInst_subst`, `Steps/Whnf.lean:277`). -/
 theorem denoteMetaDefnInst {m : EnvModel V env} (hdi : AcvalDefnInst m)
-    (φ : LevelParam → Nat) {cv : ConstantVal} {value : Expr} {us : List Level}
+    (φ : LevelParam → Nat) {cv : ConstantVal md} {value : Expr md} {us : List Level}
     (hmem : ∃ hint : Ix.Kernel.ReducibilityHint,
       ConstantInfo.defnInfo cv value hint ∈ env.consts) :
     denoteMeta m.acval env φ 0
@@ -644,8 +644,8 @@ theorem denoteMetaDefnInst {m : EnvModel V env} (hdi : AcvalDefnInst m)
 
 /-- `delta_core` (`Steps/Whnf.lean:289`), transplanted. -/
 private theorem deltaCore (m : EnvModel V env)
-    {d : Nat} {e : Expr} {n : Key} {us : List Level}
-    {ci : ConstantInfo} {cv : ConstantVal} {value : Expr}
+    {d : Nat} {e : Expr md} {n : Key md} {us : List Level}
+    {ci : ConstantInfo md} {cv : ConstantVal md} {value : Expr md}
     {ea : AnnotTerm}
     (hfn : e.getAppFn = .const n us)
     (hfind : env.find? n = some ci)
@@ -681,7 +681,7 @@ private theorem deltaCore (m : EnvModel V env)
 `Steps/Whnf.lean:329`): the unfolding has the subject's own
 annotation. -/
 theorem denoteMeta_unfoldDefinition {m : EnvModel V env} (hdi : AcvalDefnInst m)
-    {d : Nat} {e e' : Expr} {ea : AnnotTerm}
+    {d : Nat} {e e' : Expr md} {ea : AnnotTerm}
     (hud : Ix.Kernel.unfoldDefinition env e = some e')
     (hea : denoteMeta m.acval env φ d e = some ea) :
     denoteMeta m.acval env φ d e' = some ea := by

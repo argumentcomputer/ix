@@ -95,7 +95,7 @@ end PairM
 
 /-- Componentwise relatedness of two core records.  (Task #172 B4: the
 io slot joins as the sixth component.) -/
-@[expose] def FnsRel (rel : MonadRel M₁ M₂) (r₁ : CoreFns M₁) (r₂ : CoreFns M₂) :
+@[expose] def FnsRel (rel : MonadRel M₁ M₂) (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂) :
     Prop :=
   (∀ d e, rel.R (r₁.whnfCore d e) (r₂.whnfCore d e)) ∧
   (∀ d e, rel.R (r₁.whnf d e) (r₂.whnf d e)) ∧
@@ -106,14 +106,14 @@ io slot joins as the sixth component.) -/
 
 /-- Relatedness transports along the io-grade view: the view only
 permutes fields. -/
-theorem FnsRel.ioView {rel : MonadRel M₁ M₂} {r₁ : CoreFns M₁}
-    {r₂ : CoreFns M₂} (h : FnsRel rel r₁ r₂) :
+theorem FnsRel.ioView {rel : MonadRel M₁ M₂} {r₁ : (CoreFns md) M₁}
+    {r₂ : (CoreFns md) M₂} (h : FnsRel rel r₁ r₂) :
     FnsRel rel r₁.ioView r₂.ioView :=
   ⟨h.1, h.2.1, h.2.2.2.2.2, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩
 
 /-- The paired record. -/
-def pairFns {rel : MonadRel M₁ M₂} (r₁ : CoreFns M₁) (r₂ : CoreFns M₂)
-    (h : FnsRel rel r₁ r₂) : CoreFns (PairM rel) where
+def pairFns {rel : MonadRel M₁ M₂} (r₁ : (CoreFns md) M₁) (r₂ : (CoreFns md) M₂)
+    (h : FnsRel rel r₁ r₂) : (CoreFns md) (PairM rel) where
   whnfCore d e := ⟨(r₁.whnfCore d e, r₂.whnfCore d e), h.1 d e⟩
   whnf d e := ⟨(r₁.whnf d e, r₂.whnf d e), h.2.1 d e⟩
   infer d e := ⟨(r₁.infer d e, r₂.infer d e), h.2.2.1 d e⟩
@@ -123,11 +123,11 @@ def pairFns {rel : MonadRel M₁ M₂} (r₁ : CoreFns M₁) (r₂ : CoreFns M�
 
 section Commute
 
-variable {rel : MonadRel M₁ M₂} {r₁ : CoreFns M₁} {r₂ : CoreFns M₂}
-  {h : FnsRel rel r₁ r₂} {env : Env}
+variable {rel : MonadRel M₁ M₂} {r₁ : (CoreFns md) M₁} {r₂ : (CoreFns md) M₂}
+  {h : FnsRel rel r₁ r₂} {env : Env md}
 
 theorem iotaCerts_fst (d : Nat) (lic : Bool) :
-    ∀ (ty : Expr) (args : List Expr),
+    ∀ (ty : Expr md) (args : List (Expr md)),
       (iotaCerts (pairFns r₁ r₂ h) env d lic ty args).val.1 =
         iotaCerts r₁ env d lic ty args
   | _, [] => rfl
@@ -165,7 +165,7 @@ theorem iotaCerts_fst (d : Nat) (lic : Bool) :
   | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem iotaCerts_snd (d : Nat) (lic : Bool) :
-    ∀ (ty : Expr) (args : List Expr),
+    ∀ (ty : Expr md) (args : List (Expr md)),
       (iotaCerts (pairFns r₁ r₂ h) env d lic ty args).val.2 =
         iotaCerts r₂ env d lic ty args
   | _, [] => rfl
@@ -203,7 +203,7 @@ theorem iotaCerts_snd (d : Nat) (lic : Bool) :
   | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem defEqList_fst (d : Nat) :
-    ∀ (as bs : List Expr),
+    ∀ (as bs : List (Expr md)),
       (defEqList (pairFns r₁ r₂ h) env d as bs).val.1 =
         defEqList r₁ env d as bs
   | [], [] => rfl
@@ -227,7 +227,7 @@ theorem defEqList_fst (d : Nat) :
   | _ :: _, [] => rfl
 
 theorem defEqList_snd (d : Nat) :
-    ∀ (as bs : List Expr),
+    ∀ (as bs : List (Expr md)),
       (defEqList (pairFns r₁ r₂ h) env d as bs).val.2 =
         defEqList r₂ env d as bs
   | [], [] => rfl
@@ -250,8 +250,8 @@ theorem defEqList_snd (d : Nat) :
   | [], _ :: _ => rfl
   | _ :: _, [] => rfl
 
-theorem iotaIndexOk_fst (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr)
-    (margs idx : List Expr) :
+theorem iotaIndexOk_fst (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr md)
+    (margs idx : List (Expr md)) :
     (iotaIndexOk (pairFns r₁ r₂ h) env d mI rP cnP tyCtor margs idx).val.1 =
       iotaIndexOk r₁ env d mI rP cnP tyCtor margs idx := by
   by_cases hmr : mI = rP
@@ -261,8 +261,8 @@ theorem iotaIndexOk_fst (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr)
     | none => rfl
     | some residual => exact defEqList_fst d _ _
 
-theorem iotaIndexOk_snd (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr)
-    (margs idx : List Expr) :
+theorem iotaIndexOk_snd (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr md)
+    (margs idx : List (Expr md)) :
     (iotaIndexOk (pairFns r₁ r₂ h) env d mI rP cnP tyCtor margs idx).val.2 =
       iotaIndexOk r₂ env d mI rP cnP tyCtor margs idx := by
   by_cases hmr : mI = rP
@@ -272,7 +272,7 @@ theorem iotaIndexOk_snd (d : Nat) (mI rP cnP : Nat) (tyCtor : Expr)
     | none => rfl
     | some residual => exact defEqList_snd d _ _
 
-theorem defeqSpine_fst (d : Nat) (a b : Expr) :
+theorem defeqSpine_fst (d : Nat) (a b : Expr md) :
     (defeqSpine (pairFns r₁ r₂ h) env d a b).val.1 =
       defeqSpine r₁ env d a b := by
   unfold defeqSpine
@@ -283,7 +283,7 @@ theorem defeqSpine_fst (d : Nat) (a b : Expr) :
     | (dsimp only [])
     | split)
 
-theorem defeqSpine_snd (d : Nat) (a b : Expr) :
+theorem defeqSpine_snd (d : Nat) (a b : Expr md) :
     (defeqSpine (pairFns r₁ r₂ h) env d a b).val.2 =
       defeqSpine r₂ env d a b := by
   unfold defeqSpine
@@ -294,8 +294,8 @@ theorem defeqSpine_snd (d : Nat) (a b : Expr) :
     | (dsimp only [])
     | split)
 
-theorem structEtaProjCerts_fst (d : Nat) (T : Key) (us' : List Level)
-    (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
+theorem structEtaProjCerts_fst (d : Nat) (T : Key md) (us' : List Level)
+    (targs : List (Expr md)) (b : Expr md) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
         idxs).val.1 =
@@ -349,8 +349,8 @@ theorem structEtaProjCerts_fst (d : Nat) (T : Key) (us' : List Level)
       | indInfo cv caps => rfl
       | ctorInfo cv nP nF => rfl
 
-theorem structEtaProjCerts_snd (d : Nat) (T : Key) (us' : List Level)
-    (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
+theorem structEtaProjCerts_snd (d : Nat) (T : Key md) (us' : List Level)
+    (targs : List (Expr md)) (b : Expr md) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (pairFns r₁ r₂ h) env d T us' targs b lpsT
         idxs).val.2 =
@@ -448,104 +448,104 @@ macro "snd_tac" : tactic =>
     snd_step <;> snd_step <;> snd_step <;> snd_step <;>
     snd_step <;> snd_step <;> snd_step)
 
-theorem reduceNat_fst_proj (d : Nat) (e : Expr) :
+theorem reduceNat_fst_proj (d : Nat) (e : Expr md) :
     (reduceNat (pairFns r₁ r₂ h) env d e).val.1 =
       reduceNat r₁ env d e := by
   unfold reduceNat
   fst_tac
 
-theorem reduceNat_snd_proj (d : Nat) (e : Expr) :
+theorem reduceNat_snd_proj (d : Nat) (e : Expr md) :
     (reduceNat (pairFns r₁ r₂ h) env d e).val.2 =
       reduceNat r₂ env d e := by
   unfold reduceNat
   snd_tac
 
-theorem boolTrueShortcut_fst_proj (d : Nat) (e : Expr) :
+theorem boolTrueShortcut_fst_proj (d : Nat) (e : Expr md) :
     (boolTrueShortcut (pairFns r₁ r₂ h) d e).val.1 =
       boolTrueShortcut r₁ d e := by
   unfold boolTrueShortcut
   fst_tac
 
-theorem boolTrueShortcut_snd_proj (d : Nat) (e : Expr) :
+theorem boolTrueShortcut_snd_proj (d : Nat) (e : Expr md) :
     (boolTrueShortcut (pairFns r₁ r₂ h) d e).val.2 =
       boolTrueShortcut r₂ d e := by
   unfold boolTrueShortcut
   snd_tac
 
-theorem ensureSort_fst_proj (d : Nat) (e : Expr) :
+theorem ensureSort_fst_proj (d : Nat) (e : Expr md) :
     (ensureSort (pairFns r₁ r₂ h) env d e).val.1 =
       ensureSort r₁ env d e := by
   unfold ensureSort
   fst_tac
 
-theorem ensureSort_snd_proj (d : Nat) (e : Expr) :
+theorem ensureSort_snd_proj (d : Nat) (e : Expr md) :
     (ensureSort (pairFns r₁ r₂ h) env d e).val.2 =
       ensureSort r₂ env d e := by
   unfold ensureSort
   snd_tac
 
-theorem proofIrrel_fst_proj (d : Nat) (a b : Expr) :
+theorem proofIrrel_fst_proj (d : Nat) (a b : Expr md) :
     (proofIrrel (pairFns r₁ r₂ h) env d a b).val.1 =
       proofIrrel r₁ env d a b := by
   unfold proofIrrel
   fst_tac
 
-theorem proofIrrel_snd_proj (d : Nat) (a b : Expr) :
+theorem proofIrrel_snd_proj (d : Nat) (a b : Expr md) :
     (proofIrrel (pairFns r₁ r₂ h) env d a b).val.2 =
       proofIrrel r₂ env d a b := by
   unfold proofIrrel
   snd_tac
 
-theorem propIrrel_fst_proj (d : Nat) (a b : Expr) :
+theorem propIrrel_fst_proj (d : Nat) (a b : Expr md) :
     (propIrrel (pairFns r₁ r₂ h) env d a b).val.1 =
       propIrrel r₁ env d a b := by
   unfold propIrrel
   fst_tac
 
-theorem propIrrel_snd_proj (d : Nat) (a b : Expr) :
+theorem propIrrel_snd_proj (d : Nat) (a b : Expr md) :
     (propIrrel (pairFns r₁ r₂ h) env d a b).val.2 =
       propIrrel r₂ env d a b := by
   unfold propIrrel
   snd_tac
 
-theorem structEtaCertWith_fst_proj (d : Nat) (a b wtb : Expr) :
+theorem structEtaCertWith_fst_proj (d : Nat) (a b wtb : Expr md) :
     (structEtaCertWith mode (pairFns r₁ r₂ h) env d a b wtb).val.1 =
       structEtaCertWith mode r₁ env d a b wtb := by
   unfold structEtaCertWith
   fst_tac
 
-theorem structEtaCertWith_snd_proj (d : Nat) (a b wtb : Expr) :
+theorem structEtaCertWith_snd_proj (d : Nat) (a b wtb : Expr md) :
     (structEtaCertWith mode (pairFns r₁ r₂ h) env d a b wtb).val.2 =
       structEtaCertWith mode r₂ env d a b wtb := by
   unfold structEtaCertWith
   snd_tac
 
-theorem structUnitCert_fst_proj (d : Nat) (a b : Expr) :
+theorem structUnitCert_fst_proj (d : Nat) (a b : Expr md) :
     (structUnitCert (pairFns r₁ r₂ h) env d a b).val.1 =
       structUnitCert r₁ env d a b := by
   unfold structUnitCert
   fst_tac
 
-theorem structUnitCert_snd_proj (d : Nat) (a b : Expr) :
+theorem structUnitCert_snd_proj (d : Nat) (a b : Expr md) :
     (structUnitCert (pairFns r₁ r₂ h) env d a b).val.2 =
       structUnitCert r₂ env d a b := by
   unfold structUnitCert
   snd_tac
 
-theorem etaCert_fst_proj (d : Nat) (ty body : Expr) (mb : BinderMeta) (b : Expr) :
+theorem etaCert_fst_proj (d : Nat) (ty body : Expr md) (mb : BinderMeta) (b : Expr md) :
     (etaCert mode (pairFns r₁ r₂ h) env d ty body mb b).val.1 =
       etaCert mode r₁ env d ty body mb b := by
   unfold etaCert
   fst_tac
 
-theorem etaCert_snd_proj (d : Nat) (ty body : Expr) (mb : BinderMeta) (b : Expr) :
+theorem etaCert_snd_proj (d : Nat) (ty body : Expr md) (mb : BinderMeta) (b : Expr md) :
     (etaCert mode (pairFns r₁ r₂ h) env d ty body mb b).val.2 =
       etaCert mode r₂ env d ty body mb b := by
   unfold etaCert
   snd_tac
 
-theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) :
+theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) :
     (projCert (pairFns r₁ r₂ h) env d lic c us args).val.1 =
       projCert r₁ env d lic c us args := by
   unfold projCert
@@ -553,8 +553,8 @@ theorem projCert_fst_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
   · exact iotaCerts_fst d lic _ _
   · rfl
 
-theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) :
+theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) :
     (projCert (pairFns r₁ r₂ h) env d lic c us args).val.2 =
       projCert r₂ env d lic c us args := by
   unfold projCert
@@ -562,8 +562,8 @@ theorem projCert_snd_proj (d : Nat) (lic : Bool) (c : Key) (us : List Level)
   · exact iotaCerts_snd d lic _ _
   · rfl
 
-theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) :
+theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) :
     (projCertAt (pairFns r₁ r₂ h) env d v lic c us args).val.1 =
       projCertAt r₁ env d v lic c us args := by
   unfold projCertAt
@@ -571,8 +571,8 @@ theorem projCertAt_fst_proj (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
   · exact projCert_fst_proj d lic c us args
   · rfl
 
-theorem projCertAt_snd_proj (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) :
+theorem projCertAt_snd_proj (d : Nat) (v lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) :
     (projCertAt (pairFns r₁ r₂ h) env d v lic c us args).val.2 =
       projCertAt r₂ env d v lic c us args := by
   unfold projCertAt
@@ -636,13 +636,13 @@ macro "snd_tac2" : tactic =>
     snd_step2 <;> snd_step2 <;> snd_step2 <;> snd_step2 <;>
     snd_step2 <;> snd_step2 <;> snd_step2)
 
-theorem structEtaCert_fst_proj (d : Nat) (a b : Expr) :
+theorem structEtaCert_fst_proj (d : Nat) (a b : Expr md) :
     (structEtaCert mode (pairFns r₁ r₂ h) env d a b).val.1 =
       structEtaCert mode r₁ env d a b := by
   unfold structEtaCert
   fst_tac2
 
-theorem structEtaCert_snd_proj (d : Nat) (a b : Expr) :
+theorem structEtaCert_snd_proj (d : Nat) (a b : Expr md) :
     (structEtaCert mode (pairFns r₁ r₂ h) env d a b).val.2 =
       structEtaCert mode r₂ env d a b := by
   unfold structEtaCert
@@ -653,7 +653,7 @@ theorem structEtaCert_snd_proj (d : Nat) (a b : Expr) :
 -- tower), so the outer casing is peeled by hand and the macro closes
 -- each rescue branch separately.
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
+theorem majorToCtor_fst_proj (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md) :
     (majorToCtor mode (pairFns r₁ r₂ h) env d c rules e).val.1 =
       majorToCtor mode r₁ env d c rules e := by
   unfold majorToCtor
@@ -693,7 +693,7 @@ theorem majorToCtor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Exp
     rfl
 
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
+theorem majorToCtor_snd_proj (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md) :
     (majorToCtor mode (pairFns r₁ r₂ h) env d c rules e).val.2 =
       majorToCtor mode r₂ env d c rules e := by
   unfold majorToCtor
@@ -732,19 +732,19 @@ theorem majorToCtor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Exp
     rw [if_neg hA, if_neg hA]
     rfl
 
-theorem litMajorToCtor_fst_proj (d : Nat) (e : Expr) :
+theorem litMajorToCtor_fst_proj (d : Nat) (e : Expr md) :
     (litMajorToCtor (pairFns r₁ r₂ h) env d e).val.1 =
       litMajorToCtor r₁ env d e := by
   unfold litMajorToCtor
   fst_tac2
 
-theorem litMajorToCtor_snd_proj (d : Nat) (e : Expr) :
+theorem litMajorToCtor_snd_proj (d : Nat) (e : Expr md) :
     (litMajorToCtor (pairFns r₁ r₂ h) env d e).val.2 =
       litMajorToCtor r₂ env d e := by
   unfold litMajorToCtor
   snd_tac2
 
-theorem prepareMajor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
+theorem prepareMajor_fst_proj (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md) :
     (prepareMajor mode (pairFns r₁ r₂ h) env d c rules e).val.1 =
       prepareMajor mode r₁ env d c rules e := by
   unfold prepareMajor
@@ -755,7 +755,7 @@ theorem prepareMajor_fst_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Ex
     | ((rw [PairM.fst_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])))
 
-theorem prepareMajor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) :
+theorem prepareMajor_snd_proj (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md) :
     (prepareMajor mode (pairFns r₁ r₂ h) env d c rules e).val.2 =
       prepareMajor mode r₂ env d c rules e := by
   unfold prepareMajor
@@ -766,13 +766,13 @@ theorem prepareMajor_snd_proj (d : Nat) (c : Key) (rules : List RecRule) (e : Ex
     | ((rw [PairM.snd_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])))
 
-theorem projLitToCtor_fst_proj (d : Nat) (e : Expr) :
+theorem projLitToCtor_fst_proj (d : Nat) (e : Expr md) :
     (projLitToCtor (pairFns r₁ r₂ h) env d e).val.1 =
       projLitToCtor r₁ env d e := by
   unfold projLitToCtor
   fst_tac2
 
-theorem projLitToCtor_snd_proj (d : Nat) (e : Expr) :
+theorem projLitToCtor_snd_proj (d : Nat) (e : Expr md) :
     (projLitToCtor (pairFns r₁ r₂ h) env d e).val.2 =
       projLitToCtor r₂ env d e := by
   unfold projLitToCtor
@@ -842,25 +842,25 @@ macro "snd_tac3" : tactic =>
     snd_step3 <;> snd_step3 <;> snd_step3 <;> snd_step3 <;>
     snd_step3 <;> snd_step3 <;> snd_step3)
 
-theorem stuckIrrel_fst_proj (d : Nat) (a b : Expr) :
+theorem stuckIrrel_fst_proj (d : Nat) (a b : Expr md) :
     (stuckIrrel mode (pairFns r₁ r₂ h) env d a b).val.1 =
       stuckIrrel mode r₁ env d a b := by
   unfold stuckIrrel
   fst_tac3
 
-theorem stuckIrrel_snd_proj (d : Nat) (a b : Expr) :
+theorem stuckIrrel_snd_proj (d : Nat) (a b : Expr md) :
     (stuckIrrel mode (pairFns r₁ r₂ h) env d a b).val.2 =
       stuckIrrel mode r₂ env d a b := by
   unfold stuckIrrel
   snd_tac3
 
-theorem iotaRec_fst_proj (d : Nat) (e : Expr) :
+theorem iotaRec_fst_proj (d : Nat) (e : Expr md) :
     (iotaRec mode (pairFns r₁ r₂ h) env d e).val.1 =
       iotaRec mode r₁ env d e := by
   unfold iotaRec
   fst_tac3
 
-theorem iotaRec_snd_proj (d : Nat) (e : Expr) :
+theorem iotaRec_snd_proj (d : Nat) (e : Expr md) :
     (iotaRec mode (pairFns r₁ r₂ h) env d e).val.2 =
       iotaRec mode r₂ env d e := by
   unfold iotaRec
@@ -972,13 +972,13 @@ macro "snd_tac4" : tactic =>
     snd_step4 <;> snd_step4 <;> snd_step4 <;> snd_step4 <;>
     snd_step4 <;> snd_step4 <;> snd_step4)
 
-theorem whnfCoreBody_fst_proj (d : Nat) (e : Expr) :
+theorem whnfCoreBody_fst_proj (d : Nat) (e : Expr md) :
     (whnfCoreBody mode (pairFns r₁ r₂ h) env d e).val.1 =
       whnfCoreBody mode r₁ env d e := by
   unfold whnfCoreBody
   fst_tac4
 
-theorem whnfCoreBody_snd_proj (d : Nat) (e : Expr) :
+theorem whnfCoreBody_snd_proj (d : Nat) (e : Expr md) :
     (whnfCoreBody mode (pairFns r₁ r₂ h) env d e).val.2 =
       whnfCoreBody mode r₂ env d e := by
   unfold whnfCoreBody
@@ -989,51 +989,51 @@ parameterized over their continuation exactly as over the record, so
 each gets one projection lemma with a continuation hypothesis and the
 loop lemma is a plain induction on the step budget. -/
 
-theorem whnfStep_fst_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₁ : Expr → M₁ Expr) (hk : ∀ e, (k e).val.1 = k₁ e) (e : Expr) :
+theorem whnfStep_fst_proj (d : Nat) (k : Expr md → PairM rel (Expr md))
+    (k₁ : Expr md → M₁ (Expr md)) (hk : ∀ e, (k e).val.1 = k₁ e) (e : Expr md) :
     (whnfStep (pairFns r₁ r₂ h) env d k e).val.1 =
       whnfStep r₁ env d k₁ e := by
   unfold whnfStep
   fst_tac4k hk
 
-theorem whnfStep_snd_proj (d : Nat) (k : Expr → PairM rel Expr)
-    (k₂ : Expr → M₂ Expr) (hk : ∀ e, (k e).val.2 = k₂ e) (e : Expr) :
+theorem whnfStep_snd_proj (d : Nat) (k : Expr md → PairM rel (Expr md))
+    (k₂ : Expr md → M₂ (Expr md)) (hk : ∀ e, (k e).val.2 = k₂ e) (e : Expr md) :
     (whnfStep (pairFns r₁ r₂ h) env d k e).val.2 =
       whnfStep r₂ env d k₂ e := by
   unfold whnfStep
   snd_tac4k hk
 
 theorem whnfLoop_fst_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
+    ∀ (n : Nat) (e : Expr md),
       (whnfLoop (pairFns r₁ r₂ h) env d n e).val.1 = whnfLoop r₁ env d n e
   | 0, _ => rfl
   | n + 1, e =>
     whnfStep_fst_proj d _ _ (fun e' => whnfLoop_fst_proj d n e') e
 
 theorem whnfLoop_snd_proj (d : Nat) :
-    ∀ (n : Nat) (e : Expr),
+    ∀ (n : Nat) (e : Expr md),
       (whnfLoop (pairFns r₁ r₂ h) env d n e).val.2 = whnfLoop r₂ env d n e
   | 0, _ => rfl
   | n + 1, e =>
     whnfStep_snd_proj d _ _ (fun e' => whnfLoop_snd_proj d n e') e
 
-theorem whnfBody_fst_proj (d : Nat) (e : Expr) :
+theorem whnfBody_fst_proj (d : Nat) (e : Expr md) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.1 =
       whnfBody r₁ env d e :=
   whnfLoop_fst_proj d whnfLoopFuel e
 
-theorem whnfBody_snd_proj (d : Nat) (e : Expr) :
+theorem whnfBody_snd_proj (d : Nat) (e : Expr md) :
     (whnfBody (pairFns r₁ r₂ h) env d e).val.2 =
       whnfBody r₂ env d e :=
   whnfLoop_snd_proj d whnfLoopFuel e
 
-theorem inferBody_fst_proj (d : Nat) (e : Expr) :
+theorem inferBody_fst_proj (d : Nat) (e : Expr md) :
     (inferBody mode (pairFns r₁ r₂ h) env d e).val.1 =
       inferBody mode r₁ env d e := by
   unfold inferBody
   fst_tac4
 
-theorem inferBody_snd_proj (d : Nat) (e : Expr) :
+theorem inferBody_snd_proj (d : Nat) (e : Expr md) :
     (inferBody mode (pairFns r₁ r₂ h) env d e).val.2 =
       inferBody mode r₂ env d e := by
   unfold inferBody
@@ -1044,36 +1044,36 @@ more.  The pairing of the io-grade views is definitionally the io-grade
 view of the pairing on the fields the body reads, so the walks go
 through the plain `pairFns` of the viewed records. -/
 
-theorem inferBodyIO_fst_proj (d : Nat) (e : Expr) :
+theorem inferBodyIO_fst_proj (d : Nat) (e : Expr md) :
     (inferBodyIO mode (pairFns r₁ r₂ h) env d e).val.1 =
       inferBodyIO mode r₁ env d e := by
   unfold inferBodyIO
   fst_tac4
 
-theorem inferBodyIO_snd_proj (d : Nat) (e : Expr) :
+theorem inferBodyIO_snd_proj (d : Nat) (e : Expr md) :
     (inferBodyIO mode (pairFns r₁ r₂ h) env d e).val.2 =
       inferBodyIO mode r₂ env d e := by
   unfold inferBodyIO
   snd_tac4
 
-theorem defeqStep_fst_proj (d : Nat) (k : Bool → Expr → Expr → PairM rel Bool)
-    (k₁ : Bool → Expr → Expr → M₁ Bool)
-    (hk : ∀ pi a b, (k pi a b).val.1 = k₁ pi a b) (pi : Bool) (a b : Expr) :
+theorem defeqStep_fst_proj (d : Nat) (k : Bool → Expr md → Expr md → PairM rel Bool)
+    (k₁ : Bool → Expr md → Expr md → M₁ Bool)
+    (hk : ∀ pi a b, (k pi a b).val.1 = k₁ pi a b) (pi : Bool) (a b : Expr md) :
     (defeqStep mode (pairFns r₁ r₂ h) env d k pi a b).val.1 =
       defeqStep mode r₁ env d k₁ pi a b := by
   unfold defeqStep
   fst_tac4k hk
 
-theorem defeqStep_snd_proj (d : Nat) (k : Bool → Expr → Expr → PairM rel Bool)
-    (k₂ : Bool → Expr → Expr → M₂ Bool)
-    (hk : ∀ pi a b, (k pi a b).val.2 = k₂ pi a b) (pi : Bool) (a b : Expr) :
+theorem defeqStep_snd_proj (d : Nat) (k : Bool → Expr md → Expr md → PairM rel Bool)
+    (k₂ : Bool → Expr md → Expr md → M₂ Bool)
+    (hk : ∀ pi a b, (k pi a b).val.2 = k₂ pi a b) (pi : Bool) (a b : Expr md) :
     (defeqStep mode (pairFns r₁ r₂ h) env d k pi a b).val.2 =
       defeqStep mode r₂ env d k₂ pi a b := by
   unfold defeqStep
   snd_tac4k hk
 
 theorem defeqLoop_fst_proj (d : Nat) :
-    ∀ (n : Nat) (pi : Bool) (a b : Expr),
+    ∀ (n : Nat) (pi : Bool) (a b : Expr md),
       (defeqLoop mode (pairFns r₁ r₂ h) env d n pi a b).val.1 =
         defeqLoop mode r₁ env d n pi a b
   | 0, _, _, _ => rfl
@@ -1082,7 +1082,7 @@ theorem defeqLoop_fst_proj (d : Nat) :
       pi a b
 
 theorem defeqLoop_snd_proj (d : Nat) :
-    ∀ (n : Nat) (pi : Bool) (a b : Expr),
+    ∀ (n : Nat) (pi : Bool) (a b : Expr md),
       (defeqLoop mode (pairFns r₁ r₂ h) env d n pi a b).val.2 =
         defeqLoop mode r₂ env d n pi a b
   | 0, _, _, _ => rfl
@@ -1090,12 +1090,12 @@ theorem defeqLoop_snd_proj (d : Nat) :
     defeqStep_snd_proj d _ _ (fun pi' x y => defeqLoop_snd_proj d n pi' x y)
       pi a b
 
-theorem defeqBody_fst_proj (d : Nat) (a b : Expr) :
+theorem defeqBody_fst_proj (d : Nat) (a b : Expr md) :
     (defeqBody mode (pairFns r₁ r₂ h) env d a b).val.1 =
       defeqBody mode r₁ env d a b :=
   defeqLoop_fst_proj d defeqLoopFuel true a b
 
-theorem defeqBody_snd_proj (d : Nat) (a b : Expr) :
+theorem defeqBody_snd_proj (d : Nat) (a b : Expr md) :
     (defeqBody mode (pairFns r₁ r₂ h) env d a b).val.2 =
       defeqBody mode r₂ env d a b :=
   defeqLoop_snd_proj d defeqLoopFuel true a b
@@ -1106,13 +1106,13 @@ theorem defeqBody_snd_proj (d : Nat) (a b : Expr) :
 -- `ensureSort`).  Unfolding them alongside `annotateBody` puts their
 -- binds in front of the level-4 rewrites — no new lemma is needed, the
 -- calls are exactly the kind the `letE`/`proj` clauses already make.
-theorem annotateBody_fst_proj (d : Nat) (e : Expr) :
+theorem annotateBody_fst_proj (d : Nat) (e : Expr md) :
     (annotateBody (pairFns r₁ r₂ h) env d e).val.1 =
       annotateBody r₁ env d e := by
   unfold annotateBody annotPwPi annotPwLam
   fst_tac4
 
-theorem annotateBody_snd_proj (d : Nat) (e : Expr) :
+theorem annotateBody_snd_proj (d : Nat) (e : Expr md) :
     (annotateBody (pairFns r₁ r₂ h) env d e).val.2 =
       annotateBody r₂ env d e := by
   unfold annotateBody annotPwPi annotPwLam

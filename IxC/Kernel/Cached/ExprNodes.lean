@@ -103,27 +103,27 @@ constructor.  The names survive because they are the term the whole
 cached tier and its verification are written in; each is `@[inline]`,
 so nothing is added at runtime. -/
 
-@[inline] def mkFVar (idx : Nat) (ty : Expr) : Expr :=
+@[inline] def mkFVar (idx : Nat) (ty : Expr md) : Expr md :=
   .fvar idx ty
 
-@[inline] def mkSort (u : Level) : Expr := .sort u
+@[inline] def mkSort (u : Level) : Expr md := .sort u
 
-@[inline] def mkConst (n : Key) (us : List Level) : Expr := .const n us
+@[inline] def mkConst (n : Key md) (us : List Level) : Expr md := .const n us
 
-@[inline] def mkApp (f a : Expr) : Expr := .app f a
+@[inline] def mkApp (f a : Expr md) : Expr md := .app f a
 
-@[inline] def mkLam (ty body : Expr) (m : BinderMeta) : Expr :=
+@[inline] def mkLam (ty body : Expr md) (m : BinderMeta) : Expr md :=
   .lam ty body m
 
-@[inline] def mkForallE (ty body : Expr) (m : BinderMeta) :
-    Expr := .forallE ty body m
+@[inline] def mkForallE (ty body : Expr md) (m : BinderMeta) :
+    (Expr md) := .forallE ty body m
 
-@[inline] def mkLetE (ty val body : Expr) (l : LetMeta) : Expr :=
+@[inline] def mkLetE (ty val body : Expr md) (l : LetMeta) : Expr md :=
   .letE ty val body l
 
-@[inline] def mkLit (l : Literal) : Expr := .lit l
+@[inline] def mkLit (l : Literal) : Expr md := .lit l
 
-@[inline] def mkProj (s : Key) (i : Nat) (e : Expr) : Expr := .proj s i e
+@[inline] def mkProj (s : Key md) (i : Nat) (e : Expr md) : Expr md := .proj s i e
 
 /-! ## Equality, hashing and the trust census
 
@@ -159,28 +159,28 @@ the erasure's "smart constructor erases to the plain constructor"
 lemmas (`mkApp_eq` &c.); with one type they are the constructors'
 own equations, and the tier still rewrites with them. -/
 
-@[simp] theorem mkFVar_eq (idx : Nat) (ty : Expr) :
+@[simp] theorem mkFVar_eq (idx : Nat) (ty : Expr md) :
     mkFVar idx ty = .fvar idx ty := rfl
 
-@[simp] theorem mkSort_eq (u : Level) : mkSort u = .sort u := rfl
+@[simp] theorem mkSort_eq (u : Level) : (mkSort (md := md)) u = .sort u := rfl
 
-@[simp] theorem mkConst_eq (n : Key) (us : List Level) :
+@[simp] theorem mkConst_eq (n : Key md) (us : List Level) :
     mkConst n us = .const n us := rfl
 
-@[simp] theorem mkApp_eq (f a : Expr) : mkApp f a = .app f a := rfl
+@[simp] theorem mkApp_eq (f a : Expr md) : mkApp f a = .app f a := rfl
 
-@[simp] theorem mkLam_eq (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem mkLam_eq (ty b : Expr md) (m : BinderMeta) :
     mkLam ty b m = .lam ty b m := rfl
 
-@[simp] theorem mkForallE_eq (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem mkForallE_eq (ty b : Expr md) (m : BinderMeta) :
     mkForallE ty b m = .forallE ty b m := rfl
 
-@[simp] theorem mkLetE_eq (ty v b : Expr) (l : LetMeta) :
+@[simp] theorem mkLetE_eq (ty v b : Expr md) (l : LetMeta) :
     mkLetE ty v b l = .letE ty v b l := rfl
 
-@[simp] theorem mkLit_eq (l : Literal) : mkLit l = .lit l := rfl
+@[simp] theorem mkLit_eq (l : Literal) : (mkLit (md := md)) l = .lit l := rfl
 
-@[simp] theorem mkProj_eq (s : Key) (i : Nat) (e : Expr) :
+@[simp] theorem mkProj_eq (s : Key md) (i : Nat) (e : Expr md) :
     mkProj s i e = .proj s i e := rfl
 
 end Ix.Kernel.Expr

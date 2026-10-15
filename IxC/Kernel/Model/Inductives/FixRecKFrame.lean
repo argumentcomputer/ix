@@ -32,7 +32,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## The minor premise, read -/
 
@@ -40,7 +40,7 @@ variable {V : Type w} [SetTheory V] {env : Env}
 readings and the constructor at the block's variables — reads to
 `concI` at a fitting field spine over the block (`o` binders: the
 motive and the minors before it). -/
-theorem interp_minorConcAV {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key}
+theorem interp_minorConcAV {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key md}
     {nP nF w j o : Nat} {ρp : Nat → V} {M : V} {ms : List V} (hms : ms.length + 1 = o)
     {ds : List (Nat × Nat × AnnotTerm)} (hlenDs : ds.length = nP + nF) {Es : List AnnotTerm}
     {Fss : List (List AnnotTerm)}
@@ -107,7 +107,7 @@ theorem interp_minorConcAV {m : EnvModel V env} {ψ : LevelParam → Nat} {C : K
 /-- **A recursive minor premise reads to the ih-extended minor space**:
 at the frame of the `j` earlier minors over the motive over the
 parameter frame. -/
-theorem interp_minorAVAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key}
+theorem interp_minorAVAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key md}
     {nP nF ℓ w b j : Nat} (hbz : ℓ = 0 ↔ b = 0) {ρp : Nat → V} {M : V} {ms : List V}
     (hlenM : ms.length = j) {ds : List (Nat × Nat × AnnotTerm)} (hlenDs : ds.length = nP + nF)
     {Es : List AnnotTerm} {Fss : List (List AnnotTerm)} {rss : List (List Bool)}
@@ -170,7 +170,7 @@ theorem interp_minorAVAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Ke
 /-- **The family at an index spine, from the leaf**: at any frame over
 the parameter frame, the carrier applied to the parameter variables
 and an index spine is the family's fibre at the spine's tuple. -/
-theorem fixFamAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {nP nIdx w u : Nat}
+theorem fixFamAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {nP nIdx w u : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
     {Fss₀ Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     {ρp : Nat → V} (hsatP : Sat V ((pps.map (·.2.2)).reverse) ρp)
@@ -213,7 +213,7 @@ theorem fixFamAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {nP
 
 /-- **The major's domain at a K-frame** reads to the carrier's fibre at
 the frame's index tuple. -/
-theorem interp_majorAVAt {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {nP nIdx n w u : Nat}
+theorem interp_majorAVAt {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {nP nIdx n w u : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
     {Fss₀ Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     {ρp : Nat → V} (hsatP : Sat V ((pps.map (·.2.2)).reverse) ρp)
@@ -249,7 +249,7 @@ theorem piTele_zero_mem_univZero {B : List V → V} :
 the motive in its reading, the minors in their ih-extended readings and
 a fitting index tuple, `FixKI₀` holds and the major's domain reads to
 the carrier's fibre at the tuple. -/
-theorem fixKFrame_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
+theorem fixKFrame_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {elimL : Level}
     {nP nIdx n ℓ w u : Nat} (hℓ : elimL.eval ψ = ℓ)
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
     {Fss₀ Fss Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}

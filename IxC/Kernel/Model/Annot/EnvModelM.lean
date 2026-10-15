@@ -68,14 +68,14 @@ variable (V : Type w) [SetTheory V]
 
 /-- **The P-tier environment invariant, at one mode** (see the module
 docstring). -/
-structure EnvModelM (μ : CheckMode) (env : Env) where
+structure EnvModelM (μ : CheckMode) (env : Env md) where
   /-- the denoteAnnot-free environment carrier, contained (batch 8: the
   P fold stores `denoteMeta`-numeraled leaves, so it can never supply the
   denoteAnnot-currency fields `EnvModelUM` carries — and the P surface reads
   none of them) -/
   base2 : EnvModel V env
   /-- every leaf is bit-valid (`acval_wellDenoted`'s `AnnotValid` half) -/
-  acval_validV : ∀ (n : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+  acval_validV : ∀ (n : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
     AnnotValid V ρ (base2.acval n ψ)
   /-- every stored type reads, at every ground assignment -/
   type_reads : ∀ c ∈ env.consts, ∀ ψ : LevelParam → Nat,
@@ -145,7 +145,7 @@ structure EnvModelM (μ : CheckMode) (env : Env) where
 namespace EnvModelM
 
 variable {V}
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-- The leaf bit-validity residue, read off the field. -/
 theorem acvalValid (m : EnvModelM V μ env) : AcvalValid m.base2 :=
@@ -202,7 +202,7 @@ Wall C step (e)) — `EnvS.toEnvFacts`'s P-side twin, and the last thing
 Nothing of the collapsed model is consulted, and the P lane's
 `checkDeclR_ofEnvRE` runs on this. -/
 def toEnvFacts {V : Type w} [SetTheory V] {μ : CheckMode}
-    {env : Env} (m : EnvModelM V μ env) : Ix.Kernel.Semantics.EnvFacts env where
+    {env : Env md} (m : EnvModelM V μ env) : Ix.Kernel.Semantics.EnvFacts env where
   cval := m.base2.cvalE
   cval_closed := m.base2.cval_closed
   wf := m.base2.wf
@@ -236,7 +236,7 @@ field is vacuous — no constants, guards false, and the empty leaf
 `.const .empty [0]` is bit-valid because a constant leaf carries no
 binder. -/
 @[expose] noncomputable def EnvModelM.empty (V : Type w) [SetTheory V]
-    (μ : CheckMode) : EnvModelM V μ Env.empty where
+    (μ : CheckMode) : EnvModelM (md := md) V μ Env.empty where
   base2 := EnvModel.empty
   acval_validV := fun _ _ _ => by
     show AnnotValid V _ (.const .empty [0])
@@ -277,7 +277,7 @@ binder. -/
 /-! ## The `Nat`-op guard law -/
 
 section
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- **The install fold's `Nat`-op invariant, in the form the literal
 tier reads it** (task #161 de-gating item B3, harvest site 37 / list
@@ -289,7 +289,7 @@ is carried by `NatOps`/`DivMod`, whose statement is exactly "stored
 as a `defnInfo` → guard ∧ the recurrences".  So the tier reads the
 guard off the environment, and nothing about the shapes changes.
 (from `Model/Steps/Nat.lean`, task #305 closing) -/
-@[expose] def NatOpGuardLaw (env : Env) : Prop :=
+@[expose] def NatOpGuardLaw (env : Env md) : Prop :=
   ∀ c, (c ∈ Ix.Kernel.natOpNames ∨ c ∈ Ix.Kernel.natDivModNames) →
     Ix.Kernel.natOpStored env c = true → Ix.Kernel.natOpGuard env c = true
 

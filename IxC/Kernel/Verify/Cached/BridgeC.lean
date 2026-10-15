@@ -48,7 +48,7 @@ open Ix.Kernel
 open Ix.Kernel.Expr
 
 variable {mode : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## The declaration
 
@@ -59,7 +59,7 @@ cached driver and the pure checker are given the SAME record, and the
 per-branch `RelC` premises the relation carried are `rfl`. -/
 section WalksP
 
-variable {env : Env} {s₀ : CState}
+variable {env : Env md} {s₀ : CState md}
 
 private theorem fueledM_bind_pure' {α : Type} (x : FueledM α) :
     x >>= pure = x := by
@@ -71,7 +71,7 @@ private theorem fueledM_bind_pure' {α : Type} (x : FueledM α) :
 
 /-- `Expr.hasFvar` is `Expr.hasFvar` of the erasure (the store-shaped
 `hasFvar_spec'` at the unit store). -/
-theorem hasFvar_spec {e : Expr} {ex : Expr}
+theorem hasFvar_spec {e : Expr md} {ex : Expr md}
     (h : e = ex) : e.hasFvar = ex.hasFvar :=
   hasFvar_spec' h
 
@@ -79,7 +79,7 @@ theorem hasFvar_spec {e : Expr} {ex : Expr}
 
 /-- Parsed `ensureSort` simulates the fueled family.  No level
 readback: the cached currency's levels are already trees. -/
-theorem opSIxC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {d : Nat} {i : Expr} {e : Expr}
+theorem opSIxC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {d : Nat} {i : Expr md} {e : Expr md}
     (hs : CSOK mode env s₀) (hden : RelC i e) (hw : Expr.WScoped d e) :
     SimC mode env s₀ RelVC (opSIxC mode (mkFEnv env) d i)
       ((fueledOpsM mode).ensureSort env d e) := by
@@ -96,8 +96,8 @@ theorem opSIxC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {d : Na
 fueled families on the erased header: the returned constant is the
 fueled result, its type well-scoped, and the returned `Expr` is
 related to it. -/
-theorem checkConstantValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvp : ConstantVal}
-    {tyE : Expr} (hs : CSOK mode env s₀) (hden : RelC cvp.type tyE) :
+theorem checkConstantValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvp : ConstantVal md}
+    {tyE : Expr md} (hs : CSOK mode env s₀) (hden : RelC cvp.type tyE) :
     SimC mode env s₀ (fun v w => v.1 = w ∧ v.1.name = cvp.name ∧
         Expr.WScoped 0 v.1.type ∧ RelC v.2 v.1.type)
       (checkConstantValC mode (mkFEnv env) cvp)
@@ -161,8 +161,8 @@ theorem checkConstantValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
 /-- `checkDefnValC` simulates the generic `checkDefnVal`: the pushed
 index is `mkFEnv` of the fueled environment, whose head stores the
 annotated (fvar-free) value. -/
-theorem checkDefnValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal}
-    {jty : Expr} {value : Expr} {ve : Expr} {hint : ReducibilityHint}
+theorem checkDefnValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal md}
+    {jty : Expr md} {value : Expr md} {ve : Expr md} {hint : ReducibilityHint}
     (htf : Expr.WScoped 0 cvA.type) (hjty : RelC jty cvA.type)
     (hdenv : RelC value ve) (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v.env = w ∧ v = mkFEnv v.env ∧
@@ -227,8 +227,8 @@ theorem checkDefnValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
     exact Expr.not_hasFvar_of_fvarsBelow_zero hwv.fvarsBelow
 
 /-- `checkThmValC` simulates the generic `checkThmVal`. -/
-theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal}
-    {jty : Expr} {value : Expr} {ve : Expr}
+theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal md}
+    {jty : Expr md} {value : Expr md} {ve : Expr md}
     (htf : Expr.WScoped 0 cvA.type) (hjty : RelC jty cvA.type)
     (hdenv : RelC value ve) (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v.env = w ∧ v = mkFEnv v.env)
@@ -296,8 +296,8 @@ theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
     exact SimC.pure hs₆ ⟨rfl, push_mkFEnv env _⟩
 
 /-- `checkOpaqueValC` simulates the generic `checkOpaqueVal`. -/
-theorem checkOpaqueValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal}
-    {jty : Expr} {value : Expr} {ve : Expr}
+theorem checkOpaqueValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {cvA : ConstantVal md}
+    {jty : Expr md} {value : Expr md} {ve : Expr md}
     (htf : Expr.WScoped 0 cvA.type) (hjty : RelC jty cvA.type)
     (hdenv : RelC value ve) (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => (v.env = w ∧ v = mkFEnv v.env) ∧
@@ -365,7 +365,7 @@ theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
           throw (.notImplemented
             "quotient basis requires the pinned Eq basis")
       kind.declsA.foldlM installBasisDeclF (mkFEnv env) :
-      CheckCM FEnv) _
+      (CheckCM md) (FEnv md)) _
   unfold checkBasisDecl
   dsimp only
   rw [installBasisFoldF_pushC]
@@ -375,7 +375,7 @@ theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
     by_cases he : env.find? eqName = some eqA
     · simp only [if_pos he]
       rw [← fueledM_bind_pure'
-        (kind.declsA.foldlM installBasisDecl env : FueledM Env)]
+        (kind.declsA.foldlM installBasisDecl env : FueledM (Env md))]
       refine SimC.bind (installBasisFoldS_sim _ env hs)
         (fun s₁ e e' hs₁ hP => ?_)
       obtain rfl : e = e' := hP
@@ -384,7 +384,7 @@ theorem checkBasisDeclC_sim (hs : CSOK mode env s₀) (kind : BasisKind) :
       exact SimC.throw_bind
   · simp only [if_neg hq]
     rw [← fueledM_bind_pure'
-      (kind.declsA.foldlM installBasisDecl env : FueledM Env)]
+      (kind.declsA.foldlM installBasisDecl env : FueledM (Env md))]
     refine SimC.bind (installBasisFoldS_sim _ env hs)
       (fun s₁ e e' hs₁ hP => ?_)
     obtain rfl : e = e' := hP
@@ -396,7 +396,7 @@ on the related declaration.  (There is no bracket in the cached driver
 — `checkDeclC` *is* the plain path — so this is the mirror of
 `checkDeclSPPlain_sim`.) -/
 theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs : CSOK mode env s₀)
-    {pd : Declaration}
+    {pd : Declaration md}
     (hnotind : ∀ block nP, pd ≠ .indDecl block nP) :
     SimC mode env s₀ (fun v w => v.env = w ∧ v = mkFEnv v.env)
       (checkDeclC mode ev (mkFEnv env) pd)
@@ -609,8 +609,8 @@ residue state is reproduced by the pure fueled checker on the same
 declaration, and the residue threads to the next step.  The cached
 driver has no bracket and no index-range check, so the step is `flushC`
 followed by `checkDeclC`. -/
-theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env) {pd : Declaration}
-    {s₀ : CState} (hres : CSOKF s₀) {fe' : FEnv} {s' : CState}
+theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env) {pd : Declaration md}
+    {s₀ : CState md} (hres : CSOKF s₀) {fe' : FEnv md} {s' : CState md}
     (h : checkDeclStepC mode ev (mkFEnv env) pd s₀ = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
     ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
@@ -663,12 +663,12 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
         exact ⟨hres', hfe, F, hF⟩
       · rw [if_neg hok] at hd
         exact nomatch hd
-  | defnDecl cv value hint => exact main (fun _ _ h => Declaration.noConfusion h)
-  | thmDecl cv value => exact main (fun _ _ h => Declaration.noConfusion h)
-  | opaqueDecl cv value => exact main (fun _ _ h => Declaration.noConfusion h)
-  | axiomDecl cv => exact main (fun _ _ h => Declaration.noConfusion h)
-  | basisDecl kind => exact main (fun _ _ h => Declaration.noConfusion h)
-  | quotDecl k cv => exact main (fun _ _ h => Declaration.noConfusion h)
+  | defnDecl cv value hint => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
+  | thmDecl cv value => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
+  | opaqueDecl cv value => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
+  | axiomDecl cv => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
+  | basisDecl kind => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
+  | quotDecl k cv => exact main (fun _ _ h => Declaration.noConfusion rfl (heq_of_eq h))
 
 end WalksP
 

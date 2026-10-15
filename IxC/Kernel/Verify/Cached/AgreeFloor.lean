@@ -65,7 +65,7 @@ namespace Ix.Kernel.Cached
 
 open Ix.Kernel
 
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## The kit: final-value reasoning for `CheckCM`
 
@@ -77,27 +77,27 @@ action — which is what makes the long `do` blocks of the drivers
 collapse to their final `pure`. -/
 
 /-- `P` holds of every value the action can return. -/
-@[expose] def Yields {α : Type} (m : CheckCM α) (P : α → Prop) : Prop :=
+@[expose] def Yields {α : Type} (m : (CheckCM md) α) (P : α → Prop) : Prop :=
   ∀ s a s', m s = .ok (a, s') → P a
 
-theorem Yields.mono {α : Type} {m : CheckCM α} {P Q : α → Prop}
+theorem Yields.mono {α : Type} {m : (CheckCM md) α} {P Q : α → Prop}
     (h : Yields m P) (hPQ : ∀ a, P a → Q a) : Yields m Q :=
   fun s a s' hr => hPQ a (h s a s' hr)
 
 theorem Yields.pure {α : Type} {a : α} {P : α → Prop} (h : P a) :
-    Yields (Pure.pure (f := CheckCM) a) P := by
+    Yields (Pure.pure (f := CheckCM md) a) P := by
   intro s b s' hr
   simp only [Pure.pure, StateT.pure, Except.pure] at hr
   cases hr; exact h
 
 theorem Yields.ofThrow {α : Type} {e : CheckError} {P : α → Prop} :
-    Yields (throw e : CheckCM α) P := by
+    Yields (throw e : (CheckCM md) α) P := by
   intro s a s' hr; cases hr
 
 /-- The bind rule that carries **no** hypothesis on the bound action:
 the property is about the returned value only, so the long guard
 chains of the drivers collapse to their final `pure`. -/
-theorem Yields.bind {α β : Type} {m : CheckCM α} {f : α → CheckCM β}
+theorem Yields.bind {α β : Type} {m : (CheckCM md) α} {f : α → (CheckCM md) β}
     {P : β → Prop} (h : ∀ a, Yields (f a) P) : Yields (m >>= f) P := by
   intro s b s' hr
   have hs : (m >>= f) s = (m s).bind (fun v => f v.1 v.2) := rfl
@@ -108,7 +108,7 @@ theorem Yields.bind {α β : Type} {m : CheckCM α} {f : α → CheckCM β}
     exact h v.1 v.2 b s' hr
 
 /-- The bind rule that *uses* the bound action's own rule. -/
-theorem Yields.bind' {α β : Type} {m : CheckCM α} {f : α → CheckCM β}
+theorem Yields.bind' {α β : Type} {m : (CheckCM md) α} {f : α → (CheckCM md) β}
     {Q : α → Prop} {P : β → Prop} (hm : Yields m Q)
     (h : ∀ a, Q a → Yields (f a) P) : Yields (m >>= f) P := by
   intro s b s' hr
@@ -122,29 +122,29 @@ theorem Yields.bind' {α β : Type} {m : CheckCM α} {f : α → CheckCM β}
 /-- Do-notation elaborates its guards through *join points*
 (`have __do_jp := …`), so the clause walker needs the `letFun` rule to
 step past them. -/
-theorem Yields.letFun {α β : Type} {v : β} {f : β → CheckCM α}
+theorem Yields.letFun {α β : Type} {v : β} {f : β → (CheckCM md) α}
     {P : α → Prop} (h : Yields (f v) P) : Yields (letFun v f) P := h
 
 /-- A guard's failure branch, closed without descending into the join
 point it calls (which is what keeps the walk linear). -/
-theorem Yields.ofThrowBind {α β : Type} {e : CheckError} {f : α → CheckCM β}
-    {P : β → Prop} : Yields ((throw e : CheckCM α) >>= f) P := by
+theorem Yields.ofThrowBind {α β : Type} {e : CheckError} {f : α → (CheckCM md) β}
+    {P : β → Prop} : Yields ((throw e : (CheckCM md) α) >>= f) P := by
   intro s b s' hr; cases hr
 
 /-- A `Decidable` case analysis left behind when a guard's `ite` has
 already been delta-expanded (`split` normalises it that way). -/
 theorem Yields.ofDecRec {α : Type} {c : Prop} {d : Decidable c}
-    {a : ¬c → CheckCM α} {b : c → CheckCM α} {P : α → Prop}
+    {a : ¬c → (CheckCM md) α} {b : c → (CheckCM md) α} {P : α → Prop}
     (ha : ∀ h, Yields (a h) P) (hb : ∀ h, Yields (b h) P) :
-    Yields (Decidable.rec (motive := fun _ => CheckCM α) a b d) P := by
+    Yields (Decidable.rec (motive := fun _ => (CheckCM md) α) a b d) P := by
   cases d with
   | isFalse h => exact ha h
   | isTrue h => exact hb h
 
 theorem Yields.ofDecCases {α : Type} {c : Prop} {d : Decidable c}
-    {a : ¬c → CheckCM α} {b : c → CheckCM α} {P : α → Prop}
+    {a : ¬c → (CheckCM md) α} {b : c → (CheckCM md) α} {P : α → Prop}
     (ha : ∀ h, Yields (a h) P) (hb : ∀ h, Yields (b h) P) :
-    Yields (Decidable.casesOn (motive := fun _ => CheckCM α) d a b) P := by
+    Yields (Decidable.casesOn (motive := fun _ => (CheckCM md) α) d a b) P := by
   cases d with
   | isFalse h => exact ha h
   | isTrue h => exact hb h
@@ -191,7 +191,7 @@ step takes `R b c` to `R b' (g c a)`, the fold takes it to
 the *specification* accumulator `c` is a pure function of the stream,
 which is exactly how the two drivers are compared. -/
 theorem Yields.foldlM_rel {α β γ : Type} {R : β → γ → Prop}
-    {f : β → α → CheckCM β} {g : γ → α → γ}
+    {f : β → α → (CheckCM md) β} {g : γ → α → γ}
     (hf : ∀ b a c, R b c → Yields (f b a) (fun b' => R b' (g c a))) :
     ∀ (l : List α) (b : β) (c : γ), R b c →
       Yields (l.foldlM f b) (fun b' => R b' (l.foldl g c))
@@ -213,23 +213,23 @@ class-1/2/3 divergent data, and forgetting them is what keeps the floor
 free of core reasoning. -/
 
 /-- The install skeleton of a constant. -/
-inductive InstallSkel where
-  | ax   (n : Key)
-  | defn (n : Key)
-  | thm  (n : Key)
-  | ind  (n : Key)
-  | ctor (n : Key) (numParams numFields : Nat)
-  | recr (n : Key) (majorIdx rulePrefix : Nat) (ctors : List Key)
-  | proj (n : Key)
+inductive InstallSkel (md : Mode) where
+  | ax   (n : Key md)
+  | defn (n : Key md)
+  | thm  (n : Key md)
+  | ind  (n : Key md)
+  | ctor (n : Key md) (numParams numFields : Nat)
+  | recr (n : Key md) (majorIdx rulePrefix : Nat) (ctors : List (Key md))
+  | proj (n : Key md)
   deriving DecidableEq, Repr, Inhabited
 
 /-- The declared name of a skeleton. -/
-def skelName : InstallSkel → Key
+def skelName : InstallSkel md → Key md
   | .ax n | .defn n | .thm n | .ind n => n
   | .ctor n _ _ | .recr n _ _ _ | .proj n => n
 
 /-- The skeleton of an installed constant. -/
-def ciSkel : ConstantInfo → InstallSkel
+def ciSkel : ConstantInfo md → InstallSkel md
   | .axiomInfo cv => .ax cv.name
   | .defnInfo cv _ _ => .defn cv.name
   | .thmInfo cv _ => .thm cv.name
@@ -238,18 +238,18 @@ def ciSkel : ConstantInfo → InstallSkel
   | .recInfo cv mI rP rules => .recr cv.name mI rP (rules.map (·.ctor))
   | .projInfo tbl => .proj (projTableName tbl.structName)
 
-@[simp] theorem skelName_ciSkel (ci : ConstantInfo) :
+@[simp] theorem skelName_ciSkel (ci : ConstantInfo md) :
     skelName (ciSkel ci) = ci.name := by
   cases ci <;> rfl
 
 /-- The skeleton list of an environment (newest first, as `consts`). -/
-def envSkels (env : Env) : List InstallSkel := env.consts.map ciSkel
+def envSkels (env : Env md) : List (InstallSkel md) := env.consts.map ciSkel
 
 /-- Lookup at the skeleton level. -/
-def skFind? (sk : List InstallSkel) (n : Key) : Option InstallSkel :=
+def skFind? (sk : List (InstallSkel md)) (n : Key md) : Option (InstallSkel md) :=
   sk.find? (fun s => skelName s == n)
 
-theorem skFind?_map (l : List ConstantInfo) (n : Key) :
+theorem skFind?_map (l : List (ConstantInfo md)) (n : Key md) :
     (l.find? (fun c => c.name == n)).map ciSkel = skFind? (l.map ciSkel) n := by
   simp only [skFind?, List.find?_map, Function.comp_def, skelName_ciSkel]
 
@@ -261,32 +261,32 @@ so it is always `mkFEnv` of an environment — and then `FEnv.find?`
 index guards into skeleton-level guards. -/
 
 /-- The index is `mkFEnv` of an environment. -/
-def Canon (fe : FEnv) : Prop := ∃ env, fe = mkFEnv env
+def Canon (fe : FEnv md) : Prop := ∃ env, fe = mkFEnv env
 
-theorem canon_push {fe : FEnv} (h : Canon fe) (ci : ConstantInfo) :
+theorem canon_push {fe : FEnv md} (h : Canon fe) (ci : ConstantInfo md) :
     Canon (fe.push ci) := by
   obtain ⟨env, rfl⟩ := h
   exact ⟨⟨ci :: env.consts⟩, rfl⟩
 
-theorem canon_find? {fe : FEnv} (h : Canon fe) (n : Key) :
+theorem canon_find? {fe : FEnv md} (h : Canon fe) (n : Key md) :
     fe.find? n = fe.env.find? n := by
   obtain ⟨env, rfl⟩ := h
   exact mkFEnv_find? env n
 
-theorem canon_empty : Canon (mkFEnv Env.empty) := ⟨_, rfl⟩
+theorem canon_empty : (Canon (md := md)) (mkFEnv Env.empty) := ⟨_, rfl⟩
 
 /-- The floor's induction hypothesis: a canonical index whose
 environment has the given skeleton list. -/
-def SkelIs (fe : FEnv) (sk : List InstallSkel) : Prop :=
+def SkelIs (fe : FEnv md) (sk : List (InstallSkel md)) : Prop :=
   Canon fe ∧ envSkels fe.env = sk
 
-theorem SkelIs.find? {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (n : Key) : (fe.find? n).map ciSkel = skFind? sk n := by
+theorem SkelIs.find? {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (n : Key md) : (fe.find? n).map ciSkel = skFind? sk n := by
   rw [canon_find? h.1 n, ← h.2]
   exact skFind?_map _ n
 
-theorem SkelIs.push {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (ci : ConstantInfo) : SkelIs (fe.push ci) (ciSkel ci :: sk) :=
+theorem SkelIs.push {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (ci : ConstantInfo md) : SkelIs (fe.push ci) (ciSkel ci :: sk) :=
   ⟨canon_push h.1 ci, by
     show (ci :: fe.env.consts).map ciSkel = _
     rw [List.map_cons]
@@ -294,8 +294,8 @@ theorem SkelIs.push {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
 
 /-- Skeleton inversion at a recursor (the one place a driver guard
 reads more than a name). -/
-theorem recr_of_ciSkel {ci : ConstantInfo} {n : Key} {mI rP : Nat}
-    {cs : List Key} (h : ciSkel ci = .recr n mI rP cs) :
+theorem recr_of_ciSkel {ci : ConstantInfo md} {n : Key md} {mI rP : Nat}
+    {cs : List (Key md)} (h : ciSkel ci = .recr n mI rP cs) :
     ∃ cv rules, ci = .recInfo cv mI rP rules ∧ cv.name = n ∧
       rules.map (·.ctor) = cs := by
   cases ci <;> simp only [ciSkel] at h <;> cases h <;>
@@ -310,28 +310,28 @@ makes junk vacuous. -/
 
 /-- The skeleton `checkIndMemberS`/`checkIndMemberT` installs (junk off
 the two accepted member kinds — that branch throws). -/
-def indMemberSkel : ConstantInfo → InstallSkel
+def indMemberSkel : ConstantInfo md → InstallSkel md
   | .indInfo cv _ => .ind cv.name
   | .ctorInfo cv nP nF => .ctor cv.name nP nF
   | ci => .ax ci.name
 
 /-- The skeleton the recursor group installs for one member (junk off
 `.recInfo` — `provisionRecs*` throws there). -/
-def recMemberSkel : ConstantInfo → InstallSkel
+def recMemberSkel : ConstantInfo md → InstallSkel md
   | .recInfo cv mI rP rules => .recr cv.name mI rP (rules.map (·.ctor))
   | ci => .ax ci.name
 
 /-- The member fold's specification step. -/
-def indMemberSkels (sk : List InstallSkel) (ci : ConstantInfo) :
-    List InstallSkel := indMemberSkel ci :: sk
+def indMemberSkels (sk : List (InstallSkel md)) (ci : ConstantInfo md) :
+    List (InstallSkel md) := indMemberSkel ci :: sk
 
 /-- The recursor group's specification step. -/
-def recMemberSkels (sk : List InstallSkel) (ci : ConstantInfo) :
-    List InstallSkel := recMemberSkel ci :: sk
+def recMemberSkels (sk : List (InstallSkel md)) (ci : ConstantInfo md) :
+    List (InstallSkel md) := recMemberSkel ci :: sk
 
 /-- `installProjFnStep*`'s specification: the model lookup decides. -/
-def projFnStepSkels (T ctorName : Key) (nP : Nat)
-    (sk : List InstallSkel) (i : Nat) : List InstallSkel :=
+def projFnStepSkels (T ctorName : Key md) (nP : Nat)
+    (sk : List (InstallSkel md)) (i : Nat) : List (InstallSkel md) :=
   if (skFind? sk (projModelName T i)).isSome then
     .recr (projFnName T i) nP nP [ctorName] :: sk
   else sk
@@ -344,28 +344,28 @@ aim at.  Each is definitionally the driver's lambda, so the bridge is
 `exact`. -/
 
 /-- The inductive-type-former members of a block. -/
-def isIndCI : ConstantInfo → Bool
+def isIndCI : ConstantInfo md → Bool
   | .indInfo _ _ => true
   | _ => false
 
 /-- The constructor members of a block. -/
-def isCtorCI : ConstantInfo → Bool
+def isCtorCI : ConstantInfo md → Bool
   | .ctorInfo _ _ _ => true
   | _ => false
 
 /-- The recursor members of a block. -/
-def isRecCI : ConstantInfo → Bool
+def isRecCI : ConstantInfo md → Bool
   | .recInfo _ _ _ _ => true
   | _ => false
 
 /-- The non-recursor members of a block. -/
-def isNonRecCI : ConstantInfo → Bool
+def isNonRecCI : ConstantInfo md → Bool
   | .recInfo _ _ _ _ => false
   | _ => true
 
 /-- The modeled inductive-block clause's specification. -/
-def indDeclSkelsModeled (block : List ConstantInfo) (sk : List InstallSkel) :
-    List InstallSkel :=
+def indDeclSkelsModeled (block : List (ConstantInfo md)) (sk : List (InstallSkel md)) :
+    List (InstallSkel md) :=
   let base := (block.filter isRecCI).foldl recMemberSkels
     ((block.filter isNonRecCI).foldl indMemberSkels sk)
   match block.filter isIndCI, block.filter isCtorCI with
@@ -387,7 +387,7 @@ Nothing a core computes enters. -/
 
 /-- `Expr.constsResolve` at the skeleton level (lookups through
 `skFind?`). -/
-def constsResolveSk (sk : List InstallSkel) : Expr → Bool
+def constsResolveSk (sk : List (InstallSkel md)) : Expr md → Bool
   | .bvar _ => true
   | .sort _ => true
   | .lit (.natVal _) =>
@@ -408,12 +408,12 @@ def constsResolveSk (sk : List InstallSkel) : Expr → Bool
     constsResolveSk sk ty && constsResolveSk sk val && constsResolveSk sk body
   | .proj s _ e => (skFind? sk s).isSome && constsResolveSk sk e
 
-theorem SkelIs.isSome' {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (n : Key) : (fe.find? n).isSome = (skFind? sk n).isSome := by
+theorem SkelIs.isSome' {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (n : Key md) : (fe.find? n).isSome = (skFind? sk n).isSome := by
   rw [← h.find? n, Option.isSome_map]
 
-theorem constsResolveF_skel {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) : ∀ e : Expr, Expr.constsResolveF fe e = constsResolveSk sk e := by
+theorem constsResolveF_skel {fe : FEnv md} {sk : List (InstallSkel md)}
+    (h : SkelIs fe sk) : ∀ e : Expr md, Expr.constsResolveF fe e = constsResolveSk sk e := by
   intro e
   induction e with
   | bvar _ => rfl
@@ -442,15 +442,15 @@ per constructor). -/
 
 /-- The constructors' conses at the skeleton level (the first
 constructor deepest, as `consSumCtors`). -/
-def sumCtorSkels (nP : Nat) (cs : List (Key × Nat)) (sk : List InstallSkel) :
-    List InstallSkel :=
+def sumCtorSkels (nP : Nat) (cs : List (Key md × Nat)) (sk : List (InstallSkel md)) :
+    List (InstallSkel md) :=
   cs.foldl (fun acc c => .ctor c.1 nP c.2 :: acc) sk
 
 /-- The direct sum install's skeleton: the former, every constructor in
 declaration order, then the generated recursor with one rule per
 constructor. -/
-def sumSkels (p : InductiveShape) (sk : List InstallSkel) :
-    List InstallSkel :=
+def sumSkels (p : InductiveShape md) (sk : List (InstallSkel md)) :
+    List (InstallSkel md) :=
   .recr p.cvR.name p.majorIdx p.rulePrefix (p.ctors.map (·.1.name)) ::
     sumCtorSkels p.nP (p.ctors.map fun c => (c.1.name, c.2))
       (.ind p.cvT.name :: sk)
@@ -458,7 +458,7 @@ def sumSkels (p : InductiveShape) (sk : List InstallSkel) :
 /-- The fixpoint route's skeleton (task #210 Part A): the sum's, with
 the projection table on top at a structure-like block (one
 constructor, no index). -/
-def nativeSkels (p : NativeParts) (sk : List InstallSkel) : List InstallSkel :=
+def nativeSkels (p : NativeParts md) (sk : List (InstallSkel md)) : List (InstallSkel md) :=
   if p.ctors.length == 1 && p.nIdx == 0 then
     .proj (projTableName p.cvT.name) :: sumSkels p.toInductiveShape sk
   else sumSkels p.toInductiveShape sk
@@ -467,14 +467,14 @@ def nativeSkels (p : NativeParts) (sk : List InstallSkel) : List InstallSkel :=
 (task #188; the sum's skeleton with the table at a structure-like
 block), then the modeled block.  The RECOGNISER decides, and nothing
 else (task #219), so the skeleton list needs no environment at all. -/
-def indDeclSkels (nP : Nat) (block : List ConstantInfo) (sk : List InstallSkel) :
-    List InstallSkel :=
+def indDeclSkels (nP : Nat) (block : List (ConstantInfo md)) (sk : List (InstallSkel md)) :
+    List (InstallSkel md) :=
   match nativeParts? nP block with
   | some p => nativeSkels p sk
   | none => indDeclSkelsModeled block sk
 
 /-- The skeletons one declaration installs. -/
-def declCSkels : Declaration → List InstallSkel → List InstallSkel
+def declCSkels : Declaration md → List (InstallSkel md) → List (InstallSkel md)
   | .defnDecl cv _ _, sk => .defn cv.name :: sk
   | .thmDecl cv _, sk => .thm cv.name :: sk
   | .opaqueDecl cv _, sk => .ax cv.name :: sk
@@ -505,15 +505,15 @@ def declCSkels : Declaration → List InstallSkel → List InstallSkel
 take the engine as a `CheckerOps` record).  Their skeleton facts are
 proved once. -/
 
-theorem checkConstantValF_name (ops : CheckerOps CheckCM) (fe : FEnv)
-    (cv : ConstantVal) :
+theorem checkConstantValF_name (ops : (CheckerOps md) (CheckCM md)) (fe : FEnv md)
+    (cv : ConstantVal md) :
     Yields (checkConstantValF ops fe cv) (fun cvA => cvA.name = cv.name) := by
   unfold checkConstantValF
   yields
   all_goals (apply Yields.pure; rfl)
 
-theorem checkMemberValF_name (ops : CheckerOps CheckCM)
-    (blockNames : List Key) (fe : FEnv) (cv : ConstantVal) :
+theorem checkMemberValF_name (ops : (CheckerOps md) (CheckCM md))
+    (blockNames : List (Key md)) (fe : FEnv md) (cv : ConstantVal md) :
     Yields (checkMemberValF ops blockNames fe cv)
       (fun cvA => cvA.name = cv.name) := by
   unfold checkMemberValF
@@ -521,19 +521,19 @@ theorem checkMemberValF_name (ops : CheckerOps CheckCM)
   yields
   all_goals (apply Yields.pure; exact hcvA)
 
-theorem checkIotaRuleF_ctor (mode : CheckMode) (ops : CheckerOps CheckCM)
-    (fe' feSelf : FEnv) (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule) :
+theorem checkIotaRuleF_ctor (mode : CheckMode) (ops : (CheckerOps md) (CheckCM md))
+    (fe' feSelf : FEnv md) (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP j : Nat) (r : RecRule md) :
     Yields (checkIotaRuleF mode ops fe' feSelf f cvName lps tyA mI rP j r)
       (fun r' => r'.ctor = r.ctor) := by
   unfold checkIotaRuleF
   yields
   all_goals (apply Yields.pure; rfl)
 
-theorem checkIotaRulesF_ctors (mode : CheckMode) (ops : CheckerOps CheckCM)
-    (fe' feSelf : FEnv) (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP : Nat) :
-    ∀ (j : Nat) (rules : List RecRule),
+theorem checkIotaRulesF_ctors (mode : CheckMode) (ops : (CheckerOps md) (CheckCM md))
+    (fe' feSelf : FEnv md) (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP : Nat) :
+    ∀ (j : Nat) (rules : List (RecRule md)),
       Yields (checkIotaRulesF mode ops fe' feSelf f cvName lps tyA mI rP j rules)
         (fun rules' => rules'.map (·.ctor) = rules.map (·.ctor))
   | _, [] => by
@@ -550,41 +550,41 @@ theorem checkIotaRulesF_ctors (mode : CheckMode) (ops : CheckerOps CheckCM)
       apply Yields.pure
       simp [hr', hrest']
 
-theorem installBasisDeclF_skels {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) (ci : ConstantInfo) :
-    Yields (installBasisDeclF (m := CheckCM) fe ci)
+theorem installBasisDeclF_skels {fe : FEnv md} {sk : List (InstallSkel md)}
+    (h : SkelIs fe sk) (ci : ConstantInfo md) :
+    Yields (installBasisDeclF (m := CheckCM md) fe ci)
       (fun fe' => SkelIs fe' (ciSkel ci :: sk)) := by
   unfold installBasisDeclF
   yields
   all_goals (apply Yields.pure; exact h.push ci)
 
-theorem SkelIs.isNone {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (n : Key) : (skFind? sk n).isNone = (fe.find? n).isNone := by
+theorem SkelIs.isNone {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (n : Key md) : (skFind? sk n).isNone = (fe.find? n).isNone := by
   rw [← h.find? n]; cases fe.find? n <;> rfl
 
-theorem SkelIs.isSome {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (n : Key) : (skFind? sk n).isSome = (fe.find? n).isSome := by
+theorem SkelIs.isSome {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (n : Key md) : (skFind? sk n).isSome = (fe.find? n).isSome := by
   rw [← h.find? n]; cases fe.find? n <;> rfl
 
 /-! ## The cached certified driver's install stages -/
 
-theorem checkConstantValC_name (mode : CheckMode) (fe : FEnv)
-    (cv : ConstantVal) :
+theorem checkConstantValC_name (mode : CheckMode) (fe : FEnv md)
+    (cv : ConstantVal md) :
     Yields (checkConstantValC mode fe cv) (fun p => p.1.name = cv.name) := by
   unfold checkConstantValC
   yields
   all_goals (apply Yields.pure; rfl)
 
-theorem annotConstantValC_fresh (mode : CheckMode) (fe : FEnv)
-    (cv : ConstantVal) :
+theorem annotConstantValC_fresh (mode : CheckMode) (fe : FEnv md)
+    (cv : ConstantVal md) :
     Yields (annotConstantValC mode fe cv)
       (fun p => p.1.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold annotConstantValC
   yields
   all_goals exact Yields.pure ⟨rfl, Option.not_isSome_iff_eq_none.mp (by assumption)⟩
 
-theorem annotValueC_fresh (mode : CheckMode) (fe : FEnv) (cv : ConstantVal)
-    (value : Expr) (record : Bool) :
+theorem annotValueC_fresh (mode : CheckMode) (fe : FEnv md) (cv : ConstantVal md)
+    (value : Expr md) (record : Bool) :
     Yields (annotValueC mode fe cv value record)
       (fun r => r.1.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold annotValueC
@@ -594,36 +594,36 @@ theorem annotValueC_fresh (mode : CheckMode) (fe : FEnv) (cv : ConstantVal)
   ybind
   exact Yields.pure hp
 
-theorem checkDefnValC_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (cvA : ConstantVal)
-    (jty value : Expr) (hint : ReducibilityHint) :
+theorem checkDefnValC_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (cvA : ConstantVal md)
+    (jty value : Expr md) (hint : ReducibilityHint) :
     Yields (checkDefnValC mode fe cvA jty value hint)
       (fun fe' => SkelIs fe' (.defn cvA.name :: sk)) := by
   unfold checkDefnValC
   yields
   all_goals (apply Yields.pure; exact h.push _)
 
-theorem checkThmValC_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (cvA : ConstantVal)
-    (jty value : Expr) :
+theorem checkThmValC_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (cvA : ConstantVal md)
+    (jty value : Expr md) :
     Yields (checkThmValC mode fe cvA jty value)
       (fun fe' => SkelIs fe' (.thm cvA.name :: sk)) := by
   unfold checkThmValC
   yields
   all_goals (apply Yields.pure; exact h.push _)
 
-theorem checkOpaqueValC_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (cvA : ConstantVal)
-    (jty value : Expr) :
+theorem checkOpaqueValC_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (cvA : ConstantVal md)
+    (jty value : Expr md) :
     Yields (checkOpaqueValC mode fe cvA jty value)
       (fun fe' => SkelIs fe' (.ax cvA.name :: sk)) := by
   unfold checkOpaqueValC
   yields
   all_goals (apply Yields.pure; exact h.push _)
 
-theorem checkIndMemberS_skels (mode : CheckMode) (blockNames : List Key)
-    (caps : IndCaps) {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (ci : ConstantInfo) :
+theorem checkIndMemberS_skels (mode : CheckMode) (blockNames : List (Key md))
+    (caps : IndCaps md) {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (ci : ConstantInfo md) :
     Yields (checkIndMemberS mode blockNames caps fe ci)
       (fun fe' => SkelIs fe' (indMemberSkel ci :: sk)) := by
   unfold checkIndMemberS
@@ -643,11 +643,11 @@ theorem checkIndMemberS_skels (mode : CheckMode) (blockNames : List Key)
   | _ => exact Yields.ofThrow
 
 /-- The skeleton a provisioned recursor triple installs. -/
-def provSkel (c : ConstantVal × Nat × Nat × List RecRule) : InstallSkel :=
+def provSkel (c : ConstantVal md × Nat × Nat × List (RecRule md)) : InstallSkel md :=
   .recr c.1.name c.2.1 c.2.2.1 (c.2.2.2.map (·.ctor))
 
-theorem provisionRecsS_spec (mode : CheckMode) (blockNames : List Key) :
-    ∀ (recs : List ConstantInfo) (feAcc : FEnv),
+theorem provisionRecsS_spec (mode : CheckMode) (blockNames : List (Key md)) :
+    ∀ (recs : List (ConstantInfo md)) (feAcc : FEnv md),
       Yields (provisionRecsS mode blockNames feAcc recs)
         (fun p => p.2.map provSkel = recs.map recMemberSkel) := by
   intro recs
@@ -677,19 +677,19 @@ theorem foldl_cons_map {α β : Type} (f : α → β) :
   | a :: l, b => by
       simp [foldl_cons_map f l]
 
-theorem foldl_recMemberSkels (recs : List ConstantInfo)
-    (sk : List InstallSkel) :
+theorem foldl_recMemberSkels (recs : List (ConstantInfo md))
+    (sk : List (InstallSkel md)) :
     recs.foldl recMemberSkels sk = (recs.map recMemberSkel).reverse ++ sk :=
   foldl_cons_map recMemberSkel recs sk
 
-theorem foldl_indMemberSkels (nonrecs : List ConstantInfo)
-    (sk : List InstallSkel) :
+theorem foldl_indMemberSkels (nonrecs : List (ConstantInfo md))
+    (sk : List (InstallSkel md)) :
     nonrecs.foldl indMemberSkels sk = (nonrecs.map indMemberSkel).reverse ++ sk :=
   foldl_cons_map indMemberSkel nonrecs sk
 
-theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List Key)
-    {fe₂ : FEnv} {sk : List InstallSkel} (h : SkelIs fe₂ sk)
-    (recs : List ConstantInfo) :
+theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List (Key md))
+    {fe₂ : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe₂ sk)
+    (recs : List (ConstantInfo md)) :
     Yields (checkIndRecsS mode blockNames fe₂ recs)
       (fun fe' => SkelIs fe' (recs.foldl recMemberSkels sk)) := by
   unfold checkIndRecsS
@@ -704,8 +704,8 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List Key)
         (provisionRecsS_spec mode blockNames recs fe₂) fun q hq => ?_
       obtain ⟨feSelf, checked⟩ := q
       ybind
-      have hstep : ∀ (acc : FEnv) (c : ConstantVal × Nat × Nat × List RecRule)
-          (sk' : List InstallSkel), SkelIs acc sk' →
+      have hstep : ∀ (acc : FEnv md) (c : ConstantVal md × Nat × Nat × List (RecRule md))
+          (sk' : List (InstallSkel md)), SkelIs acc sk' →
           Yields (do
             let rules' ← checkIotaRulesF mode (sharedOpsC mode feSelf) fe₂ feSelf
               (fun n => if blockNames.contains n then auxKey n .model else n)
@@ -729,8 +729,8 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List Key)
       exact hfe'
     · exact Yields.ofThrowBind
 
-theorem checkProjFnS_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (T ctorName : Key)
+theorem checkProjFnS_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (T ctorName : Key md)
     (lps : List LevelParam) (nP nF i : Nat) :
     Yields (checkProjFnS mode fe T ctorName lps nP nF i)
       (fun fe' => SkelIs fe' (.recr (projFnName T i) nP nP [ctorName] :: sk)) := by
@@ -738,8 +738,8 @@ theorem checkProjFnS_skels (mode : CheckMode) {fe : FEnv}
   yields
   all_goals (apply Yields.pure; exact h.push _)
 
-theorem installProjFnStepS_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (T ctorName : Key)
+theorem installProjFnStepS_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (T ctorName : Key md)
     (lps : List LevelParam) (nP nF i : Nat) :
     Yields (installProjFnStepS mode T ctorName lps nP nF fe i)
       (fun fe' => SkelIs fe' (projFnStepSkels T ctorName nP sk i)) := by
@@ -756,10 +756,10 @@ Every stage's install decision is the block's own or a freshness
 check; the stored constants' names are the block's (`checkConstantValF`
 keeps the name). -/
 
-theorem checkStructProjTableF_skels {w : StructWalkers} {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) (T C : Key) (lps : List LevelParam) (nP nF : Nat)
-    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) :
-    Yields (checkStructProjTableF (m := CheckCM) w T C lps nP nF resSort guards
+theorem checkStructProjTableF_skels {w : StructWalkers md} {fe : FEnv md} {sk : List (InstallSkel md)}
+    (h : SkelIs fe sk) (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
+    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) :
+    Yields (checkStructProjTableF (m := CheckCM md) w T C lps nP nF resSort guards
         off cvCa fe)
       (fun fe' => SkelIs fe' (.proj (projTableName T) :: sk)) := by
   unfold checkStructProjTableF
@@ -768,9 +768,9 @@ theorem checkStructProjTableF_skels {w : StructWalkers} {fe : FEnv} {sk : List I
 
 /-- The members-then-recursors phase, shared by both arms of
 `checkIndDeclSF`'s block match. -/
-theorem indBase_skels (mode : CheckMode) (blockNames : List Key)
-    (caps : IndCaps) {fe : FEnv} {sk : List InstallSkel} (h : SkelIs fe sk)
-    (nonrecs recs : List ConstantInfo) :
+theorem indBase_skels (mode : CheckMode) (blockNames : List (Key md))
+    (caps : IndCaps md) {fe : FEnv md} {sk : List (InstallSkel md)} (h : SkelIs fe sk)
+    (nonrecs recs : List (ConstantInfo md)) :
     Yields (do
         let fe₂ ← nonrecs.foldlM (checkIndMemberS mode blockNames caps) fe
         checkIndRecsS mode blockNames fe₂ recs)
@@ -782,8 +782,8 @@ theorem indBase_skels (mode : CheckMode) (blockNames : List Key)
       nonrecs fe sk h) fun fe₂ h₂ => ?_
   exact checkIndRecsS_skels mode blockNames h₂ recs
 
-theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (block : List ConstantInfo) :
+theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (block : List (ConstantInfo md)) :
     Yields (checkIndDeclSF mode fe block)
       (fun fe' => SkelIs fe' (indDeclSkelsModeled block sk)) := by
   unfold checkIndDeclSF indDeclSkelsModeled
@@ -840,8 +840,8 @@ the rule-name list the skeleton records is the block's own. -/
 /-- The former's telescope stage keeps the block's name (task #195):
 the checked constant is the input or a re-check at the block's own
 header. -/
-theorem checkSumTeleF_name (ops : CheckerOps CheckCM) (fe : FEnv)
-    (cv : ConstantVal) (n : Nat) (cvTa₀ : ConstantVal) :
+theorem checkSumTeleF_name (ops : (CheckerOps md) (CheckCM md)) (fe : FEnv md)
+    (cv : ConstantVal md) (n : Nat) (cvTa₀ : ConstantVal md) :
     Yields (checkSumTeleF ops fe cv n cvTa₀)
       (fun r => r.1.name = cvTa₀.name ∨ r.1.name = cv.name) := by
   unfold checkSumTeleF
@@ -851,9 +851,9 @@ theorem checkSumTeleF_name (ops : CheckerOps CheckCM) (fe : FEnv)
     refine Yields.bind' (checkConstantValF_name ops fe _) fun cvTa hn => ?_
     exact Yields.pure (Or.inr hn)
 
-theorem checkSumIndF_skels {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) (ops : CheckerOps CheckCM) (p : InductiveShape)
-    (capsOf : InductiveShape → IndCaps) :
+theorem checkSumIndF_skels {fe : FEnv md} {sk : List (InstallSkel md)}
+    (h : SkelIs fe sk) (ops : (CheckerOps md) (CheckCM md)) (p : InductiveShape md)
+    (capsOf : InductiveShape md → IndCaps md) :
     Yields (checkSumIndF ops fe p capsOf)
       (fun r => SkelIs r.1 (.ind p.cvT.name :: sk) ∧ ∃ s, r.2.2 = p.withSort s) := by
   unfold checkSumIndF
@@ -872,8 +872,8 @@ theorem checkSumIndF_skels {fe : FEnv} {sk : List InstallSkel}
 
 /-- The normalisation stores a constant of the declared name (task
 #210 Part D). -/
-theorem normCtorValF_name (ops : CheckerOps CheckCM) (fe : FEnv) (T : Key) (nP nF : Nat)
-    (cvC cvCa : ConstantVal) (hn : cvCa.name = cvC.name) :
+theorem normCtorValF_name (ops : (CheckerOps md) (CheckCM md)) (fe : FEnv md) (T : Key md) (nP nF : Nat)
+    (cvC cvCa : ConstantVal md) (hn : cvCa.name = cvC.name) :
     Yields (normCtorValF ops fe T nP nF cvC cvCa) (fun r => r.name = cvC.name) := by
   unfold normCtorValF
   yields
@@ -882,9 +882,9 @@ theorem normCtorValF_name (ops : CheckerOps CheckCM) (fe : FEnv) (T : Key) (nP n
     | (apply Yields.pure; exact hn)
     | exact Yields.mono (checkConstantValF_name ops fe _) (fun _ h => h)
 
-theorem checkSumCtorF_name (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
-    (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
+theorem checkSumCtorF_name (ops : (CheckerOps md) (CheckCM md)) (fe₀ fe : FEnv md)
+    (T : Key md) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (cvC : ConstantVal md) (nF : Nat) (cvTa : ConstantVal md) :
     Yields (checkSumCtorF ops fe₀ fe T lps nP nIdx rs isProp large cvC nF cvTa)
       (fun r => r.1.name = cvC.name) := by
   unfold checkSumCtorF
@@ -895,10 +895,10 @@ theorem checkSumCtorF_name (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
 
 /-- The constructor list's names and field counts are the block's, and
 the field-sort lists come one per constructor (task #210 Part A). -/
-theorem checkSumCtorsF_names (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
-    (cvTa : ConstantVal) :
-    ∀ (cs : List (ConstantVal × Nat)),
+theorem checkSumCtorsF_names (ops : (CheckerOps md) (CheckCM md)) (fe₀ fe : FEnv md)
+    (T : Key md) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (cvTa : ConstantVal md) :
+    ∀ (cs : List (ConstantVal md × Nat)),
       Yields (checkSumCtorsF ops fe₀ fe T lps nP nIdx rs isProp large cvTa cs)
         (fun r => r.1.map (fun c => (c.1.name, c.2))
           = cs.map (fun c => (c.1.name, c.2)) ∧ r.2.length = cs.length)
@@ -916,7 +916,7 @@ theorem checkSumCtorsF_names (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
 
 /-- The constructors' conses at the skeleton level. -/
 theorem consSumCtorsF_skels (nP : Nat) :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {fe : FEnv} {sk : List InstallSkel},
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {fe : FEnv md} {sk : List (InstallSkel md)},
       SkelIs fe sk →
       SkelIs (consSumCtorsF nP ctorsA fe)
         (sumCtorSkels nP (ctorsA.map fun c => (c.1.name, c.2)) sk)
@@ -927,9 +927,9 @@ theorem consSumCtorsF_skels (nP : Nat) :
     simpa [consSumCtorsF, sumCtorSkels, ciSkel] using hstep
 
 /-- The stored rules are one per constructor, in constructor order. -/
-theorem sumRules_map_ctor (find? : Key → Option ConstantInfo)
-    (recName : Key) (nP mI rP : Nat) (recTy : Expr) :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr},
+theorem sumRules_map_ctor (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (nP mI rP : Nat) (recTy : Expr md) :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)},
       rhss.length = ctorsA.length →
       (sumRules find? recName nP mI rP recTy ctorsA rhss).map (·.ctor)
         = ctorsA.map (·.1.name)
@@ -947,17 +947,17 @@ theorem sumRules_map_ctor (find? : Key → Option ConstantInfo)
 when the kinds are one list per constructor (a local twin of
 `Ix.Kernel.nativeCtors4_length`, `IxC/Kernel/Verify/Inductives/FixWF.lean`: this
 floor imports no direct-route verification). -/
-private theorem nativeCtors4_length' {ctorsA : List (ConstantVal × Nat)}
+private theorem nativeCtors4_length' {ctorsA : List (ConstantVal md × Nat)}
     {kinds : List (List RecFieldKind)} (h : ctorsA.length = kinds.length) :
     (nativeCtors4 ctorsA kinds).length = ctorsA.length := by
   simp [nativeCtors4, List.length_zipWith, h]
 
-theorem checkNativeRulesF_len {w : StructWalkers} (fe : FEnv)
-    (rlps : List LevelParam) (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Key × Nat × Expr × List Nat))
-    (recC : Key) (rlvls : List Level) :
+theorem checkNativeRulesF_len {w : StructWalkers md} (fe : FEnv md)
+    (rlps : List LevelParam) (T : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat))
+    (recC : Key md) (rlvls : List Level) :
     ∀ (k j : Nat),
-      Yields (checkNativeRulesF (m := CheckCM) w fe rlps T lps elim large nP nIdx tty ctors
+      Yields (checkNativeRulesF (m := CheckCM md) w fe rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j)
         (fun rhss => rhss.length = k)
   | 0, _ => Yields.pure rfl
@@ -974,9 +974,9 @@ theorem checkNativeRulesF_len {w : StructWalkers} (fe : FEnv)
 
 /-- The recursor stage stores the generated recursor at the stream's
 name, with one rule per generator entry. -/
-theorem checkNativeRecF_yields (ops : CheckerOps CheckCM) {w : StructWalkers} (fe : FEnv)
-    (p : NativeParts) (cvTa : ConstantVal)
-    (ctorsA : List (ConstantVal × Nat)) :
+theorem checkNativeRecF_yields (ops : (CheckerOps md) (CheckCM md)) {w : StructWalkers md} (fe : FEnv md)
+    (p : NativeParts md) (cvTa : ConstantVal md)
+    (ctorsA : List (ConstantVal md × Nat)) :
     Yields (checkNativeRecF ops w fe p cvTa ctorsA)
       (fun r => r.1.name = p.cvR.name ∧
         r.2.length = (nativeCtors4 ctorsA p.kinds).length) := by
@@ -1014,11 +1014,11 @@ theorem checkNativeRecF_yields (ops : CheckerOps CheckCM) {w : StructWalkers} (f
 otherwise — decided by the block's constructor count and index count,
 since the annotated constructor list and the sort lists are one per
 constructor. -/
-theorem checkNativeTableF_skels {w : StructWalkers} {fe : FEnv} {sk : List InstallSkel}
-    (h : SkelIs fe sk) (p : NativeParts) (ctorsA : List (ConstantVal × Nat))
+theorem checkNativeTableF_skels {w : StructWalkers md} {fe : FEnv md} {sk : List (InstallSkel md)}
+    (h : SkelIs fe sk) (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
     (sortss : List (List Level)) (hlen : ctorsA.length = p.ctors.length)
     (hlenS : sortss.length = p.ctors.length) :
-    Yields (checkNativeTableF (m := CheckCM) w p ctorsA sortss fe)
+    Yields (checkNativeTableF (m := CheckCM md) w p ctorsA sortss fe)
       (fun fe' => SkelIs fe' (if p.ctors.length == 1 && p.nIdx == 0 then
         .proj (projTableName p.cvT.name) :: sk else sk)) := by
   match ctorsA, sortss, hlen, hlenS with
@@ -1047,8 +1047,8 @@ theorem checkNativeTableF_skels {w : StructWalkers} {fe : FEnv} {sk : List Insta
 
 /-- One pass (task #268): the former's skeleton, the record's shape
 (the sort read), the constructors by name and field count. -/
-theorem checkNativePassS_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (p : NativeParts) (isRec : Bool) :
+theorem checkNativePassS_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (p : NativeParts md) (isRec : Bool) :
     Yields (checkNativePassS mode fe p isRec)
       (fun r => SkelIs r.1.env₁ (.ind r.1.p.cvT.name :: sk) ∧
         (∃ s, r.1.p.toInductiveShape = p.toInductiveShape.withSort s) ∧
@@ -1072,8 +1072,8 @@ theorem checkNativePassS_skels (mode : CheckMode) {fe : FEnv}
 
 /-- The install after the pass: the sum's skeleton with the table at a
 structure-like block. -/
-theorem checkNativeTailS_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} {q : NativePass FEnv}
+theorem checkNativeTailS_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} {q : (NativePass md) (FEnv md)}
     (h₁ : SkelIs q.env₁ (.ind q.p.cvT.name :: sk))
     (hns : q.ctorsA.map (fun c => (c.1.name, c.2)) = q.p.ctors.map (fun c => (c.1.name, c.2)))
     (hlenS : q.sortss.length = q.p.ctors.length) :
@@ -1138,8 +1138,8 @@ theorem checkNativeTailS_skels (mode : CheckMode) {fe : FEnv}
 
 /-- The completed record's skeleton is the recognised one's: the sort
 the former read is not in it. -/
-theorem nativeSkels_withSort {p q : NativeParts} {s : Level}
-    (hq : q.toInductiveShape = p.toInductiveShape.withSort s) (sk : List InstallSkel) :
+theorem nativeSkels_withSort {p q : NativeParts md} {s : Level}
+    (hq : q.toInductiveShape = p.toInductiveShape.withSort s) (sk : List (InstallSkel md)) :
     nativeSkels q sk = nativeSkels p sk := by
   have hc : q.ctors = p.ctors := by
     show q.toInductiveShape.ctors = p.toInductiveShape.ctors
@@ -1154,8 +1154,8 @@ theorem nativeSkels_withSort {p q : NativeParts} {s : Level}
   rw [hc, hi, hT, hq]
   simp [sumSkels]
 
-theorem checkNativeS_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (p : NativeParts) :
+theorem checkNativeS_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (p : NativeParts md) :
     Yields (checkNativeS mode fe p)
       (fun fe' => SkelIs fe' (nativeSkels p sk)) := by
   unfold checkNativeS
@@ -1201,35 +1201,35 @@ none of the pinned axiom guards can fire on it — so at `.axiomDecl` the
 *push-or-not* decision is a function of the header name alone, in both
 drivers. -/
 
-theorem tolerated_not_std (fe : FEnv) (cvA : ConstantVal)
+theorem tolerated_not_std (fe : FEnv md) (cvA : ConstantVal md)
     (ht : cvA.name = sorryAxName) :
     stdAxiomOkF fe cvA = false := by
-  rw [stdAxiomOkF, if_neg, if_neg] <;> rw [ht] <;> decide
+  rw [stdAxiomOkF, if_neg, if_neg] <;> rw [ht] <;> (cases md <;> decide)
 
-theorem tolerated_ne_trust {n : Key}
+theorem tolerated_ne_trust {n : Key md}
     (ht : n = sorryAxName) : n ≠ trustCompilerName := by
-  rw [ht]; decide
+  rw [ht]; (cases md <;> decide)
 
-theorem tolerated_ne_ofReduce {n : Key}
+theorem tolerated_ne_ofReduce {n : Key md}
     (ht : n = sorryAxName) :
     ¬(n = ofReduceNatName ∨ n = ofReduceBoolName) := by
-  rw [ht]; decide
+  rw [ht]; (cases md <;> decide)
 
-theorem tolerated_ne_std {n : Key}
+theorem tolerated_ne_std {n : Key md}
     (ht : n = sorryAxName) :
     ¬(n = propextName ∨ n = choiceName) := by
-  rw [ht]; decide
+  rw [ht]; (cases md <;> decide)
 
 /-! ### The cached certified declaration clause -/
 
 /-- The pinned-block install's skeleton reading, shared by the three
 arms that install one (task #293). -/
-theorem checkBasisDeclC_skels {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (kind : BasisKind) :
+theorem checkBasisDeclC_skels {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (kind : BasisKind) :
     Yields (checkBasisDeclC fe kind)
       (fun fe' => SkelIs fe'
         (kind.declsA.foldl (fun acc ci => ciSkel ci :: acc) sk)) := by
-  have hfold : ∀ (fe' : FEnv) (sk' : List InstallSkel), SkelIs fe' sk' →
+  have hfold : ∀ (fe' : FEnv md) (sk' : List (InstallSkel md)), SkelIs fe' sk' →
       Yields (kind.declsA.foldlM installBasisDeclF fe')
         (fun x => SkelIs x
           (kind.declsA.foldl (fun acc ci => ciSkel ci :: acc) sk')) :=
@@ -1241,8 +1241,8 @@ theorem checkBasisDeclC_skels {fe : FEnv}
   yields
   all_goals exact hfold fe sk h
 
-theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (pd : Declaration) :
+theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (pd : Declaration md) :
     Yields (checkDeclC mode ev fe pd)
       (fun fe' => SkelIs fe' (declCSkels pd sk)) := by
   unfold checkDeclC declCSkels
@@ -1335,8 +1335,8 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv}
         | some p => exact checkNativeS_skels mode h p
       · exact Yields.ofThrow
 
-theorem checkDeclStepC_skels (mode : CheckMode) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (pd : Declaration) :
+theorem checkDeclStepC_skels (mode : CheckMode) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (pd : Declaration md) :
     Yields (checkDeclStepC mode ev fe pd)
       (fun fe' => SkelIs fe' (declCSkels pd sk)) := by
   unfold checkDeclStepC
@@ -1359,11 +1359,11 @@ trusted config's purpose is to reject less, and the recorded
 trusted-mode divergences are decline/accept divergences, untouched
 here. -/
 
-theorem skelIs_empty : SkelIs (mkFEnv Env.empty) [] := ⟨⟨_, rfl⟩, rfl⟩
+theorem skelIs_empty : (SkelIs (md := md)) (mkFEnv Env.empty) [] := ⟨⟨_, rfl⟩, rfl⟩
 
 /-- The declaration-stream specification: the skeletons a stream
 installs, newest first. -/
-def streamSkels (ds : List Declaration) : List InstallSkel :=
+def streamSkels (ds : List (Declaration md)) : List (InstallSkel md) :=
   ds.foldl (fun sk pd => declCSkels pd sk) []
 
 /-! ### The direct-parse entry points (task #171's route) -/
@@ -1371,11 +1371,11 @@ def streamSkels (ds : List Declaration) : List InstallSkel :=
 /-- Phase A's step body installs the declaration's skeletons: the value
 kinds push the one constant the fold's value checkers push, everything
 else runs `checkDeclStepC`. -/
-theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv}
-    {sk : List InstallSkel} (h : SkelIs fe sk) (pend : Array PendingCheck) (pd : Declaration) :
+theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv md}
+    {sk : List (InstallSkel md)} (h : SkelIs fe sk) (pend : Array (PendingCheck md)) (pd : Declaration md) :
     Yields (annotStepC mode ev i fe pend pd) (fun r => SkelIs r.1 (declCSkels pd sk)) := by
   have hord : ∀ pd', Yields (do pure (← checkDeclStepC mode ev fe pd', pend) :
-      CheckCM (FEnv × Array PendingCheck)) (fun r => SkelIs r.1 (declCSkels pd' sk)) :=
+      (CheckCM md) (FEnv md × Array (PendingCheck md))) (fun r => SkelIs r.1 (declCSkels pd' sk)) :=
     fun pd' => Yields.bind' (checkDeclStepC_skels mode h pd') fun fe' h' => Yields.pure h'
   unfold annotStepC
   cases pd with
@@ -1412,10 +1412,10 @@ theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv}
   | indDecl block nP => exact hord _
 
 /-- Phase A's accepting run installs the stream's skeletons. -/
-theorem installRun_skels (mode : CheckMode) {ds : List Declaration}
-    {p : Nat × FEnv × Array PendingCheck} {s : CState}
-    {q : Nat × FEnv × Array PendingCheck} {s' : CState}
-    (h : InstallRun mode ev ds p s q s') {sk : List InstallSkel} (hp : SkelIs p.2.1 sk) :
+theorem installRun_skels (mode : CheckMode) {ds : List (Declaration md)}
+    {p : Nat × FEnv md × Array (PendingCheck md)} {s : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
+    (h : InstallRun mode ev ds p s q s') {sk : List (InstallSkel md)} (hp : SkelIs p.2.1 sk) :
     SkelIs q.2.1 (ds.foldl (fun sk pd => declCSkels pd sk) sk) := by
   induction h generalizing sk with
   | nil p s => exact hp
@@ -1426,8 +1426,8 @@ theorem installRun_skels (mode : CheckMode) {ds : List Declaration}
 
 /-- **The skeleton spec, at every mode.**  This is the floor's whole
 content since the twin's retirement: one fold, one proof. -/
-theorem checkDecls_skels {mode : CheckMode} {ds : Array Declaration}
-    {env : Env} (h : checkDecls mode ev ds = .ok env) :
+theorem checkDecls_skels {mode : CheckMode} {ds : Array (Declaration md)}
+    {env : Env md} (h : checkDecls mode ev ds = .ok env) :
     envSkels env = streamSkels ds.toList := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
   obtain ⟨n, s, r⟩ := fc.1.run
@@ -1439,16 +1439,16 @@ two modes — in particular the trusted (`.trusted`) and the verified
 two installed environments carry the same install skeletons.  Stated
 for any two modes: the old two-driver statement is the instance
 `.trusted` / `.verified` (`trusted_agrees_skels_shipped`). -/
-theorem trusted_agrees_skels_D {μP μT : CheckMode} {ds : Array Declaration}
-    {envP envN : Env}
+theorem trusted_agrees_skels_D {μP μT : CheckMode} {ds : Array (Declaration md)}
+    {envP envN : Env md}
     (hP : checkDecls μP ev ds = .ok envP)
     (hN : checkDecls μT ev ds = .ok envN) :
     envSkels envN = envSkels envP :=
   (checkDecls_skels hN).trans (checkDecls_skels hP).symm
 
 /-- The census's sentence: the accepted declaration **names** agree. -/
-theorem trusted_agrees_names_D {μP μT : CheckMode} {ds : Array Declaration}
-    {envP envN : Env}
+theorem trusted_agrees_names_D {μP μT : CheckMode} {ds : Array (Declaration md)}
+    {envP envN : Env md}
     (hP : checkDecls μP ev ds = .ok envP)
     (hN : checkDecls μT ev ds = .ok envN) :
     envN.consts.map ConstantInfo.name = envP.consts.map ConstantInfo.name := by
@@ -1456,8 +1456,8 @@ theorem trusted_agrees_names_D {μP μT : CheckMode} {ds : Array Declaration}
   simpa [envSkels, List.map_map, Function.comp_def] using h
 
 /-- … and so do the accepted declaration **counts**. -/
-theorem trusted_agrees_count_D {μP μT : CheckMode} {ds : Array Declaration}
-    {envP envN : Env}
+theorem trusted_agrees_count_D {μP μT : CheckMode} {ds : Array (Declaration md)}
+    {envP envN : Env md}
     (hP : checkDecls μP ev ds = .ok envP)
     (hN : checkDecls μT ev ds = .ok envN) :
     envN.consts.length = envP.consts.length := by
@@ -1466,7 +1466,7 @@ theorem trusted_agrees_count_D {μP μT : CheckMode} {ds : Array Declaration}
 
 /-- The shipped pair, spelled out: `--trusted` and `--verified` agree on
 the install skeletons whenever both accept. -/
-theorem trusted_agrees_skels_shipped {ds : Array Declaration} {envP envT : Env}
+theorem trusted_agrees_skels_shipped {ds : Array (Declaration md)} {envP envT : Env md}
     (hP : checkDecls .verified ev ds = .ok envP)
     (hT : checkDecls .trusted ev ds = .ok envT) :
     envSkels envT = envSkels envP :=

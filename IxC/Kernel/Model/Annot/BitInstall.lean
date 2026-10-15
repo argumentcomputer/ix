@@ -41,7 +41,7 @@ open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (CheckMode Env Expr Key Level PropWhen
   natLitSupported strLitSupported)
 
-variable {env : Env} {φ : LevelParam → Nat}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## `denoteMeta` reads only what the environment stores -/
 
@@ -53,9 +53,9 @@ valuations agreeing on the stored names denote every term alike.
 Stated as an equation rather than an implication: the two runs are
 `none` together as well, which is what a *fresh* install needs. -/
 theorem denoteMeta_acval_congr
-    {acval₁ acval₂ : Key → (LevelParam → Nat) → AnnotTerm}
+    {acval₁ acval₂ : Key md → (LevelParam → Nat) → AnnotTerm}
     (hag : ∀ n, (env.find? n).isSome = true → acval₁ n = acval₂ n) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denoteMeta acval₁ env φ d e = denoteMeta acval₂ env φ d e := by
   intro d e
   induction d, e using denoteMeta.induct (env := env) with
@@ -122,9 +122,9 @@ theorem denoteMeta_acval_congr
 annotated leaf moves no denotation in the environment it was checked
 in. -/
 theorem denoteMeta_acvalWith_fresh
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} {n : Key}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {n : Key md}
     {A : (LevelParam → Nat) → AnnotTerm} (hfresh : env.find? n = none)
-    (d : Nat) (e : Expr) :
+    (d : Nat) (e : Expr md) :
     denoteMeta (acvalWith acval n A) env φ d e
       = denoteMeta acval env φ d e := by
   refine denoteMeta_acval_congr (fun c hc => ?_) d e
@@ -139,8 +139,8 @@ successes at *different fuels* through `denote2_fuelMono`; `denoteMeta`
 takes no fuel, so the two runs are the same run and the reconciliation
 is `Option.some.inj`.  Kept at the mirror name because the consumers
 of the original invoke it at exactly this instance. -/
-theorem denoteMeta_agree_same {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {ψ : LevelParam → Nat} {value : Expr} {ra ra' : AnnotTerm}
+theorem denoteMeta_agree_same {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {value : Expr md} {ra ra' : AnnotTerm}
     (h : denoteMeta acval env ψ 0 value = some ra)
     (h' : denoteMeta acval env ψ 0 value = some ra') : ra = ra' :=
   Option.some.inj (h.symm.trans h')
@@ -152,9 +152,9 @@ move to another head — for whatever reason: the same term, an
 unfolding, a different term with the same validated annotation — then
 so does the whole application's, unchanged.  `denote2_mkAppN_swap`
 without the fuel move. -/
-theorem denoteMeta_mkAppN_swap {acval : Key → (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_mkAppN_swap {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     {d : Nat} :
-    ∀ (as : List Expr) {f g : Expr} {ea : AnnotTerm},
+    ∀ (as : List (Expr md)) {f g : Expr md} {ea : AnnotTerm},
       (∀ fa : AnnotTerm, denoteMeta acval env φ d f = some fa →
         denoteMeta acval env φ d g = some fa) →
       denoteMeta acval env φ d (Expr.mkAppN f as) = some ea →

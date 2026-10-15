@@ -27,7 +27,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveSha
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 omit [SetTheory V] in
 theorem frameIdx_eq_reverse_map (n : Nat) (σ : Nat → V) :
@@ -40,7 +40,7 @@ theorem frameIdx_eq_reverse_map (n : Nat) (σ : Nat → V) :
 
 /-- **The fixed-point leaf's two hereditary premises**, from the
 former's data and the base facts at the parameter frame. -/
-theorem fixLeafWalks {m : EnvModel V env} {cvT : ConstantVal} {nP nIdx : Nat}
+theorem fixLeafWalks {m : EnvModel V env} {cvT : ConstantVal md} {nP nIdx : Nat}
     {resSort : Level} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvT (nP + nIdx) resSort pps)
     {u : (LevelParam → Nat) → Nat} {rss : List (List Bool)}
@@ -136,7 +136,7 @@ theorem fixLeafWalks {m : EnvModel V env} {cvT : ConstantVal} {nP nIdx : Nat}
 data. -/
 theorem stageFixFormer (mp : EnvModelM V μ env)
     (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
-    {F : Nat} {p : InductiveShape} {cvT cvTa : ConstantVal}
+    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
     -- the former's `checkConstantVal` run at the block's header (as at
     -- `stageSumFormer`)
     (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
@@ -168,7 +168,7 @@ theorem stageFixFormer (mp : EnvModelM V μ env)
           rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)))
     -- the block's capability record and its laws at the cons (task #210
     -- Part A)
-    (caps : IndCaps)
+    (caps : IndCaps md)
     -- the record's arities, from the install's telescope pin
     (hicw : Ix.Kernel.IndCapsWF (.indInfo cvTa caps))
     (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvTa caps :: env.consts⟩,

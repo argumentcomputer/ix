@@ -31,8 +31,8 @@ open Expr
 instantiated at the parameters and the extras and then at the
 fields: the motive extra applied to the constructor at the
 variables. -/
-theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Key}
-    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr}
+theorem instSeq_minorBody_at (tfvs extras xFvs : List (Expr md)) {C : Key md}
+    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr md}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hclE : ∀ a ∈ extras, a.looseBVarsBounded 0 = true)
@@ -82,7 +82,7 @@ theorem instSeq_minorBody_at (tfvs extras xFvs : List Expr) {C : Key}
 
 namespace Expr
 
-variable {T : Key} {i : Nat}
+variable {T : Key md} {i : Nat}
 
 end Expr
 
@@ -116,11 +116,11 @@ theorem Level.isNeverZero_sound (φ : LevelParam → Nat) :
 /-! ## The stored rules, positionally -/
 
 /-- A stored rule is constructor `j`'s rule at right-hand side `j`. -/
-theorem sumRules_getElem? {find? : Key → Option ConstantInfo}
-    {recName : Key} {nP mI rP : Nat} {recTy : Expr} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
+theorem sumRules_getElem? {find? : Key md → Option (ConstantInfo md)}
+    {recName : Key md} {nP mI rP : Nat} {recTy : Expr md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)} {r : RecRule md},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →
-      ∃ (j : Nat) (cA : ConstantVal × Nat) (rhs : Expr),
+      ∃ (j : Nat) (cA : ConstantVal md × Nat) (rhs : Expr md),
         ctorsA[j]? = some cA ∧ rhss[j]? = some rhs ∧
         r = recRuleBits find? recName
           { ctor := cA.1.name, nfields := cA.2, ctorParams := nP,
@@ -146,7 +146,7 @@ above them; lifting `rest.length` at cutoff `c` and instantiating the
 prefix and the rest above the innermost `c` is instantiating the
 prefix alone (`instSeq_liftLooseBVars_prefix` at `c = 0`). -/
 theorem instSeq_liftLooseBVars_mid :
-    ∀ (pre rest : List Expr) {q : Expr} {c : Nat},
+    ∀ (pre rest : List (Expr md)) {q : Expr md} {c : Nat},
       (∀ a ∈ pre, a.looseBVarsBounded 0 = true) →
       q.looseBVarsBounded (pre.length + c) = true →
       instSeq (pre ++ rest) (pre.length + rest.length + c - 1)
@@ -187,8 +187,8 @@ theorem instSeq_liftLooseBVars_mid :
 at the parameters, the extras and the fields: the motive extra at the
 index expressions (instantiated at the parameters and the fields
 alone) and the constructor at the variables. -/
-theorem instSeq_minorBodyI_at (tfvs extras xFvs : List Expr) {C : Key}
-    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr} {es : List Expr}
+theorem instSeq_minorBodyI_at (tfvs extras xFvs : List (Expr md)) {C : Key md}
+    {lps : List LevelParam} {nP nF : Nat} {mfv : Expr md} {es : List (Expr md)}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hclE : ∀ a ∈ extras, a.looseBVarsBounded 0 = true)

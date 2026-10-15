@@ -30,7 +30,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-- **The single-constructor fold at no index**: the family at a
 fitting parameter spine is the one-constructor fibre of the tagged
@@ -78,8 +78,8 @@ theorem chainsRealI_zero {μ : V} {u w : Nat} {ρp : Nat → V} {rss : List (Lis
 
 /-- **Unit-likeness at the dummy former's leaf**: the family with no
 constructor chain is empty, so the law is vacuous. -/
-theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     {w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hleaf : ∀ ψ, m.acval T ψ = sumTyAV (w ψ) (pps ψ) [])
     (hread : ∀ ψ, denoteMeta m.acval env ψ 0 cvT.type
@@ -109,8 +109,8 @@ theorem fixEmptyUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key
 /-- **Unit-likeness at the fixpoint leaf of a fieldless one-constructor
 block**: the fibre is the one tagged empty tuple (the point at a
 squash instance). -/
-theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     {u w : (LevelParam → Nat) → Nat} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
     {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -153,8 +153,8 @@ theorem fixFibreUnitLaw {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key
 tagged empty tuple, and the constructor along the parameters is that
 tuple (the point at a squash instance) — the fabricated η spine at no
 field is the constructor at the parameters. -/
-theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem fixFibreEtaLaw0 {m : EnvModel V env} {φ' : LevelParam → Nat} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     {u w : (LevelParam → Nat) → Nat} {pps ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {rss : List (List Bool)} {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
     {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}

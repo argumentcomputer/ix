@@ -89,7 +89,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The lever
 
@@ -142,9 +142,9 @@ and the binder metas free — the same mechanical inversion
 `AxiomBitsP`'s `propext_shapeS` runs, at three longer shapes. -/
 
 /-- The stored `Iff` former's shape. -/
-theorem iff_shapeS {ty : Expr}
+theorem iff_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = iffA.toConstantVal.type.erasePw) :
+      = (iffA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁ m₂, ty = .forallE (.sort .zero)
       (.forallE (.sort .zero) (.sort .zero) m₂) m₁ := by
   simp only [iffA, ConstantInfo.toConstantVal, Expr.erasePw] at h
@@ -156,9 +156,9 @@ theorem iff_shapeS {ty : Expr}
   exact ⟨m₁, m₂, rfl⟩
 
 /-- The stored `Iff.intro`'s shape. -/
-theorem iffIntro_shapeS {ty : Expr}
+theorem iffIntro_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = iffIntroA.toConstantVal.type.erasePw) :
+      = (iffIntroA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁ m₂ m₃ m₄ m₅ m₆,
       ty = .forallE (.sort .zero)
         (.forallE (.sort .zero)
@@ -189,9 +189,9 @@ theorem iffIntro_shapeS {ty : Expr}
 /-- The stored `Iff.rec`'s shape.  Five telescope binders and four
 nested ones; the motive's codomain `Sort u` is what
 `pi_sort_bit_ne_zero` later fires on. -/
-theorem iffRec_shapeS {ty : Expr}
+theorem iffRec_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = iffRecA.toConstantVal.type.erasePw) :
+      = (iffRecA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁ m₂ m₃ m₄ m₅ mt mmp mr mmpr ma,
       ty = .forallE (.sort .zero)
         (.forallE (.sort .zero)
@@ -266,10 +266,10 @@ conditions read off `type_wellDenotedV`, never off a bit. -/
 
 /-- The stored `Iff`, applied to two propositions, is a proposition. -/
 theorem iffVal_app₂_memP (mp : EnvModelM V μ env)
-    {cvI : ConstantVal} {caps : Ix.Kernel.IndCaps}
+    {cvI : ConstantVal md} {caps : Ix.Kernel.IndCaps md}
     (hfI : env.find? iffName = some (.indInfo cvI caps))
     (htyI : cvI.type.erasePw
-      = iffA.toConstantVal.type.erasePw)
+      = (iffA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A B : V}
     (hA : A ∈ˢ (univ 0 : V)) (hB : B ∈ˢ (univ 0 : V)) :
     SetTheory.app (SetTheory.app
@@ -331,15 +331,15 @@ is then free: this instantiates at `ψ0 uN = 0`, where `eqv A B ∈ˢ
 univ 0` is `eqv_mem_univ` outright and the ENDGAME B seal's `univ_mono`
 residue does not arise. -/
 theorem iff_forces_eq (mp : EnvModelM V μ env)
-    {cvI : ConstantVal} {caps : Ix.Kernel.IndCaps} {cvIi cvIr : ConstantVal}
-    {mI rP : Nat} {rules : List Ix.Kernel.RecRule}
+    {cvI : ConstantVal md} {caps : Ix.Kernel.IndCaps md} {cvIi cvIr : ConstantVal md}
+    {mI rP : Nat} {rules : List (Ix.Kernel.RecRule md)}
     (hfI : env.find? iffName = some (.indInfo cvI caps))
     (hlpI : cvI.levelParams = [])
     (hfIi : env.find? iffIntroName = some (.ctorInfo cvIi 2 2))
     (hlpIi : cvIi.levelParams = [])
     (hfIr : env.find? iffRecName = some (.recInfo cvIr mI rP rules))
     (htyIr : cvIr.type.erasePw
-      = iffRecA.toConstantVal.type.erasePw)
+      = (iffRecA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A B w : V}
     (hA : A ∈ˢ (univ 0 : V)) (hB : B ∈ˢ (univ 0 : V))
     (hw : w ∈ˢ SetTheory.app (SetTheory.app
@@ -483,8 +483,8 @@ value is `eq_law`'s (the field, at the pin's own level instantiation
 
 /-- **`propext` inhabits its stored type's reading.** -/
 theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {cvA : ConstantVal} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
-    (hn : cvA.name = propextName) {F d : Nat} {stype : Expr}
+    {cvA : ConstantVal md} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
+    (hn : cvA.name = propextName) {F d : Nat} {stype : Expr md}
     (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
     (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
@@ -502,7 +502,7 @@ theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   rw [hsh] at hrun hta
   obtain ⟨hb₁, hb₂, hb₃⟩ := propext_bits hμ hEq hrun ψ
   -- the `Eq` former's one level parameter is pinned to `1`
-  have heqψ : Level.substFn ψ eqA.toConstantVal.levelParams
+  have heqψ : Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
       [Level.zero.succ] uN = 1 := rfl
   have hI : ∀ e, denoteMeta mp.base2.acval env ψ e (.const iffName [])
       = some (mp.base2.acval iffName ψ) :=
@@ -512,7 +512,7 @@ theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   have hQ : ∀ e, denoteMeta mp.base2.acval env ψ e
       (.const eqName [Level.zero.succ])
       = some (mp.base2.acval eqName (Level.substFn ψ
-          eqA.toConstantVal.levelParams [Level.zero.succ])) :=
+          (eqA (md := md)).toConstantVal.levelParams [Level.zero.succ])) :=
     fun e => denoteMeta_const hEq rfl
   -- the stored type's reading, at the bits the run fixes
   have hden : denoteMeta mp.base2.acval env ψ 0
@@ -526,7 +526,7 @@ theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
           (.pi 0 0
             (.app (.app (mp.base2.acval iffName ψ) (.bvar 1)) (.bvar 0))
             (.app (.app (.app (mp.base2.acval eqName
-                (Level.substFn ψ eqA.toConstantVal.levelParams
+                (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
                   [Level.zero.succ])) (.sort 0)) (.bvar 2))
               (.bvar 1))))) := by
     simp [denoteMeta_forallE, denoteMeta_sort, denoteMeta_app, denoteMeta_fvar,
@@ -563,9 +563,9 @@ by `pi_sort_bit_ne_zero`, this time at the codomain `Prop`, where the
 refuted consequent is `univZero ∈ˢ univZero`. -/
 
 /-- The stored `Nonempty` former's shape. -/
-theorem nonempty_shapeS {ty : Expr}
+theorem nonempty_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = nonemptyA.toConstantVal.type.erasePw) :
+      = (nonemptyA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁, ty = .forallE (.sort (.param uN)) (.sort .zero) m₁ := by
   simp only [nonemptyA, ConstantInfo.toConstantVal, Expr.erasePw] at h
   obtain ⟨t₁, b₁, m₁, rfl, ht₁, hb₁⟩ := erasePwNames_forallE_invS h
@@ -574,9 +574,9 @@ theorem nonempty_shapeS {ty : Expr}
   exact ⟨m₁, rfl⟩
 
 /-- The stored `Nonempty.intro`'s shape. -/
-theorem nonemptyIntro_shapeS {ty : Expr}
+theorem nonemptyIntro_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = nonemptyIntroA.toConstantVal.type.erasePw) :
+      = (nonemptyIntroA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁ m₂, ty = .forallE (.sort (.param uN))
       (.forallE (.bvar 0)
         (.app (.const nonemptyName [.param uN]) (.bvar 1)) m₂) m₁ := by
@@ -591,9 +591,9 @@ theorem nonemptyIntro_shapeS {ty : Expr}
   exact ⟨m₁, m₂, rfl⟩
 
 /-- The stored `Nonempty.rec`'s shape. -/
-theorem nonemptyRec_shapeS {ty : Expr}
+theorem nonemptyRec_shapeS {ty : Expr md}
     (h : ty.erasePw
-      = nonemptyRecA.toConstantVal.type.erasePw) :
+      = (nonemptyRecA (md := md)).toConstantVal.type.erasePw) :
     ∃ m₁ m₂ m₃ m₄ mt mv,
       ty = .forallE (.sort (.param uN))
         (.forallE
@@ -641,8 +641,8 @@ theorem nonemptyRec_shapeS {ty : Expr}
 
 /-- A member of the `Nonempty` family, referenced at its own level
 parameter, reads to its leaf at the plain assignment. -/
-theorem denoteMeta_selfParam_constS {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {ψ : LevelParam → Nat} {d : Nat} {n : Key} {ci : ConstantInfo}
+theorem denoteMeta_selfParam_constS {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {d : Nat} {n : Key md} {ci : ConstantInfo md}
     (hf : env.find? n = some ci)
     (hlp : ci.toConstantVal.levelParams = [uN]) :
     denoteMeta acval env ψ d (.const n [.param uN]) = some (acval n ψ) := by
@@ -655,10 +655,10 @@ theorem denoteMeta_selfParam_constS {acval : Key → (LevelParam → Nat) → An
 
 /-- The interpreted `Nonempty A` is a truth value. -/
 theorem nonemptyVal_app_mem (mp : EnvModelM V μ env)
-    {cvN : ConstantVal} {capsN : Ix.Kernel.IndCaps}
+    {cvN : ConstantVal md} {capsN : Ix.Kernel.IndCaps md}
     (hfN : env.find? nonemptyName = some (.indInfo cvN capsN))
     (htyN : cvN.type.erasePw
-      = nonemptyA.toConstantVal.type.erasePw)
+      = (nonemptyA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
     SetTheory.app (interp V ρ (mp.base2.acval nonemptyName ψ)) A
       ∈ˢ (univ 0 : V) := by
@@ -677,12 +677,12 @@ theorem nonemptyVal_app_mem (mp : EnvModelM V μ env)
 
 /-- The interpreted `Nonempty.intro A a` inhabits `Nonempty A`. -/
 theorem nonemptyIntroVal_app₂_memP (mp : EnvModelM V μ env)
-    {cvN : ConstantVal} {capsN : Ix.Kernel.IndCaps} {cvNi : ConstantVal}
+    {cvN : ConstantVal md} {capsN : Ix.Kernel.IndCaps md} {cvNi : ConstantVal md}
     (hfN : env.find? nonemptyName = some (.indInfo cvN capsN))
-    (hlpN : cvN.levelParams = nonemptyA.toConstantVal.levelParams)
+    (hlpN : cvN.levelParams = (nonemptyA (md := md)).toConstantVal.levelParams)
     (hfNi : env.find? nonemptyIntroName = some (.ctorInfo cvNi 1 1))
     (htyNi : cvNi.type.erasePw
-      = nonemptyIntroA.toConstantVal.type.erasePw)
+      = (nonemptyIntroA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A a : V} (hA : A ∈ˢ univ (ψ uN))
     (ha : a ∈ˢ A) :
     SetTheory.app (SetTheory.app
@@ -728,18 +728,18 @@ by restructuring, because `Nonempty.rec`'s minor binds a plain element
 of `α`.  The motive space's regime is `pi_sort_bit_ne_zero`'s, at the
 codomain `Prop`. -/
 theorem nonemptyVal_forces (mp : EnvModelM V μ env)
-    {cvN : ConstantVal} {capsN : Ix.Kernel.IndCaps}
-    {cvNi cvNr : ConstantVal} {mI rP : Nat}
-    {rulesN : List Ix.Kernel.RecRule}
+    {cvN : ConstantVal md} {capsN : Ix.Kernel.IndCaps md}
+    {cvNi cvNr : ConstantVal md} {mI rP : Nat}
+    {rulesN : List (Ix.Kernel.RecRule md)}
     (hfN : env.find? nonemptyName = some (.indInfo cvN capsN))
-    (hlpN : cvN.levelParams = nonemptyA.toConstantVal.levelParams)
+    (hlpN : cvN.levelParams = (nonemptyA (md := md)).toConstantVal.levelParams)
     (hfNi : env.find? nonemptyIntroName = some (.ctorInfo cvNi 1 1))
     (hlpNi : cvNi.levelParams
-      = nonemptyIntroA.toConstantVal.levelParams)
+      = (nonemptyIntroA (md := md)).toConstantVal.levelParams)
     (hfNr : env.find? nonemptyRecName
       = some (.recInfo cvNr mI rP rulesN))
     (htyNr : cvNr.type.erasePw
-      = nonemptyRecA.toConstantVal.type.erasePw)
+      = (nonemptyRecA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A h : V} (hA : A ∈ˢ univ (ψ uN))
     (hh : h ∈ˢ SetTheory.app
       (interp V ρ (mp.base2.acval nonemptyName ψ)) A) :
@@ -836,22 +836,22 @@ theorem nonemptyVal_forces (mp : EnvModelM V μ env)
 stored `Nonempty A` are propositions with the same inhabitation, hence
 the same set. -/
 theorem dneg_eq_nonempty (mp : EnvModelM V μ env)
-    {cvN : ConstantVal} {capsN : Ix.Kernel.IndCaps}
-    {cvNi cvNr : ConstantVal} {mI rP : Nat}
-    {rulesN : List Ix.Kernel.RecRule}
+    {cvN : ConstantVal md} {capsN : Ix.Kernel.IndCaps md}
+    {cvNi cvNr : ConstantVal md} {mI rP : Nat}
+    {rulesN : List (Ix.Kernel.RecRule md)}
     (hfN : env.find? nonemptyName = some (.indInfo cvN capsN))
-    (hlpN : cvN.levelParams = nonemptyA.toConstantVal.levelParams)
+    (hlpN : cvN.levelParams = (nonemptyA (md := md)).toConstantVal.levelParams)
     (htyN : cvN.type.erasePw
-      = nonemptyA.toConstantVal.type.erasePw)
+      = (nonemptyA (md := md)).toConstantVal.type.erasePw)
     (hfNi : env.find? nonemptyIntroName = some (.ctorInfo cvNi 1 1))
     (hlpNi : cvNi.levelParams
-      = nonemptyIntroA.toConstantVal.levelParams)
+      = (nonemptyIntroA (md := md)).toConstantVal.levelParams)
     (htyNi : cvNi.type.erasePw
-      = nonemptyIntroA.toConstantVal.type.erasePw)
+      = (nonemptyIntroA (md := md)).toConstantVal.type.erasePw)
     (hfNr : env.find? nonemptyRecName
       = some (.recInfo cvNr mI rP rulesN))
     (htyNr : cvNr.type.erasePw
-      = nonemptyRecA.toConstantVal.type.erasePw)
+      = (nonemptyRecA (md := md)).toConstantVal.type.erasePw)
     (ψ : LevelParam → Nat) (ρ : Nat → V) {A : V} (hA : A ∈ˢ univ (ψ uN)) :
     dnegSpace V A
       = SetTheory.app (interp V ρ (mp.base2.acval nonemptyName ψ)) A := by
@@ -877,8 +877,8 @@ and `lamR_mem_zero_agree` crosses each.  `dneg_eq_nonempty` identifies
 the witness's double-negation domain with the checker's stored
 `Nonempty`. -/
 theorem choice_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {cvA : ConstantVal} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
-    (hn : cvA.name = choiceName) {F d : Nat} {stype : Expr}
+    {cvA : ConstantVal md} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
+    (hn : cvA.name = choiceName) {F d : Nat} {stype : Expr md}
     (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
     (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)

@@ -58,7 +58,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The tower's body, graded top-down -/
 
@@ -187,35 +187,35 @@ theorem teleFitPA_nonempty {ρ : Nat → V} :
 /-- **What the firing stage needs of the environment** (`EqFormerKeyV`
 at the reading): the pinned `Eq` former's leaf is closed, and inhabits
 its own type's reading, graded. -/
-def EqFormerKey {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
+def EqFormerKey {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
   ∀ us : List Level,
-    us.length = eqA.toConstantVal.levelParams.length →
+    us.length = (eqA (md := md)).toConstantVal.levelParams.length →
     ∀ T : AnnotTerm,
       denoteMeta m.acval env φ 0
-        (eqA.toConstantVal.type.instantiateLevelParams
-          eqA.toConstantVal.levelParams us) = some T →
+        ((eqA (md := md)).toConstantVal.type.instantiateLevelParams
+          (eqA (md := md)).toConstantVal.levelParams us) = some T →
       ∀ ρ : Nat → V,
         interp V ρ (m.acval eqName
-            (Level.substFn φ eqA.toConstantVal.levelParams us))
+            (Level.substFn φ (eqA (md := md)).toConstantVal.levelParams us))
           ∈ˢ interp V ρ T ∧ WellDenotedV V ρ T
 
 /-- A stored `Eq` gives the firing key — the two `EnvModelM` type fields
 at the pinned constant. -/
-theorem eqFormerKey {env : Env} (mp : EnvModelM V μ env)
+theorem eqFormerKey {env : Env md} (mp : EnvModelM V μ env)
     (heqfE : env.find? eqName = some eqA) :
     EqFormerKey mp.base2 φ := by
   intro us _hlen T hT ρ
   have hmem := Ix.Kernel.Semantics.Env.find?_mem heqfE
   have hname := Ix.Kernel.Semantics.Env.find?_name heqfE
   have hT' : denoteMeta mp.base2.acval env
-      (Level.substFn φ eqA.toConstantVal.levelParams us) 0
-      eqA.toConstantVal.type = some T := by
+      (Level.substFn φ (eqA (md := md)).toConstantVal.levelParams us) 0
+      (eqA (md := md)).toConstantVal.type = some T := by
     rw [← denotePInstLevels]
     exact hT
   refine ⟨?_, mp.type_wellDenotedV eqA hmem _ T hT' ρ⟩
   have h := mp.mem_type eqA hmem
-    (Level.substFn φ eqA.toConstantVal.levelParams us) T hT' ρ
+    (Level.substFn φ (eqA (md := md)).toConstantVal.levelParams us) T hT' ρ
   rwa [hname] at h
 
 /-! ## The firing stage -/
@@ -240,7 +240,7 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
     (htowerS : PiTeleAV K Tstmt Γs Rbody)
     (hstmtAnnot : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
     (hstmtInhab : ∀ σ : Nat → V, ∃ pv : V, pv ∈ˢ interp V σ Tstmt)
-    {tbody : Expr} {ℓA : Level} {αS lhsS rhsS : Expr}
+    {tbody : Expr md} {ℓA : Level} {αS lhsS rhsS : Expr md}
     (hRbody : denoteMeta m.acval env ψ' K tbody = some Rbody)
     (htbody : tbody
       = Expr.mkAppN (.const eqName [ℓA]) [αS, lhsS, rhsS])
@@ -279,10 +279,10 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
           | nil => exact ⟨_, _, _, rfl, hα, hL, hR⟩
   -- the head is the stored `Eq`'s annotated valuation
   have hvEq' : vEq = m.acval eqName
-      (Level.substFn ψ' eqA.toConstantVal.levelParams [ℓA]) := by
+      (Level.substFn ψ' (eqA (md := md)).toConstantVal.levelParams [ℓA]) := by
     rw [denoteMeta_const heqfE
       (show ([ℓA] : List Level).length
-        = eqA.toConstantVal.levelParams.length from rfl)] at hvEq
+        = (eqA (md := md)).toConstantVal.levelParams.length from rfl)] at hvEq
     exact (Option.some.inj hvEq).symm
   -- the statement body, graded at the fired chain (top-down)
   have hokBody : WellDenotedV V (chain V ρ zs)
@@ -291,18 +291,18 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
   -- the pinned `Eq` type's reading at the stored level
   have hbit : pwBit ψ' Ix.Kernel.PropWhen.never = 1 := rfl
   have hTden : denoteMeta m.acval env ψ' 0
-      (eqA.toConstantVal.type.instantiateLevelParams
-        eqA.toConstantVal.levelParams [ℓA])
+      ((eqA (md := md)).toConstantVal.type.instantiateLevelParams
+        (eqA (md := md)).toConstantVal.levelParams [ℓA])
       = some (.pi 0 1 (.sort (ℓA.eval ψ'))
           (.pi 0 1 (.bvar 0) (.pi 0 1 (.bvar 1) (.sort 0)))) := by
-    have hinst : eqA.toConstantVal.type.instantiateLevelParams
-        eqA.toConstantVal.levelParams [ℓA]
+    have hinst : (eqA (md := md)).toConstantVal.type.instantiateLevelParams
+        (eqA (md := md)).toConstantVal.levelParams [ℓA]
         = .forallE (.sort ℓA)
             (.forallE (.bvar 0)
               (.forallE (.bvar 1)
                 (.sort .zero) { pw := .never })
               { pw := .never }) { pw := .never } := rfl
-    have hb1 : (Expr.forallE (.bvar 0)
+    have hb1 : ((Expr.forallE (md := md)) (.bvar 0)
         (.forallE (.bvar 1)
           (.sort .zero) { pw := .never }) { pw := .never }).instantiate1
         (.fvar 0 (.sort ℓA))
@@ -312,7 +312,7 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
               (.fvar 0 (.sort ℓA))
               (.sort .zero) { pw := .never })
             { pw := .never } := rfl
-    have hb2 : (Expr.forallE
+    have hb2 : ((Expr.forallE (md := md))
         (.fvar 0 (.sort ℓA))
         (.sort .zero) { pw := .never }).instantiate1
         (.fvar 1
@@ -320,7 +320,7 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
         = .forallE
             (.fvar 0 (.sort ℓA))
             (.sort .zero) { pw := .never } := rfl
-    have hb3 : (Expr.sort .zero).instantiate1
+    have hb3 : ((Expr.sort (md := md)) .zero).instantiate1
         (.fvar 2
           (.fvar 0 (.sort ℓA)))
         = .sort .zero := rfl
@@ -366,7 +366,7 @@ theorem fire {m : EnvModel V env} {ψ' : LevelParam → Nat}
     rw [hvEq']
     exact m.acval_closed _ _
   have hlaw := (heqlaw heqfE
-    (Level.substFn ψ' eqA.toConstantVal.levelParams [ℓA])).1
+    (Level.substFn ψ' (eqA (md := md)).toConstantVal.levelParams [ℓA])).1
   have hresid : interp V ρ
       (Ix.Kernel.Model.AnnotTerm.instSeq zs (K - 1)
         (AnnotTerm.mkAppN vEq [vα, vL, vR]))
@@ -403,7 +403,7 @@ the P tier reads the two runs `IotaRuns` records straight through
 one. -/
 theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hinfer : InferClaim μ m ψ' F) (hclaims : DefEqClaim μ m ψ' F)
-    {d : Nat} {Δa : List AnnotTerm} {αS lhsS rhsS : Expr}
+    {d : Nat} {Δa : List AnnotTerm} {αS lhsS rhsS : Expr md}
     (hctxα : CtxOk m ψ' d Δa αS)
     (hctxL : CtxOk m ψ' d Δa lhsS)
     (hctxR : CtxOk m ψ' d Δa rhsS)
@@ -419,7 +419,7 @@ theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hvR : denoteMeta m.acval env ψ' d rhsS = some vR)
     -- the slot's own grading (the statement body's, descended)
     (hokα : ∀ ρ : Nat → V, Sat V Δa ρ → WellDenotedV V ρ vα)
-    {tl tr : Expr}
+    {tl tr : Expr md}
     (hInfL : inferTypeCore μ env F d lhsS = .ok tl)
     (hDeqL : isDefEqCore μ env F d tl αS = .ok true)
     (hInfR : inferTypeCore μ env F d rhsS = .ok tr)

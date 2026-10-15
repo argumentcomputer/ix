@@ -19,19 +19,19 @@ namespace Ix.Kernel
 open BasisDSL
 
 /-- `Empty : Type`. -/
-def emptyRaw : ConstantInfo :=
+def emptyRaw : ConstantInfo md :=
   .indInfo ⟨emptyName, [], type1⟩ {}
 
 /-- `Empty.rec.{u} (motive : Empty → Sort u) (t : Empty) : motive t`.
 The exporter emits the motive as an *explicit* binder here (there is
 no major premise to infer it from). -/
-def emptyRecRaw : ConstantInfo :=
+def emptyRecRaw : ConstantInfo md :=
   .recInfo ⟨emptyRecName, [uN],
     pi "motive" (pi "t" (cnst emptyName) (srt u)) <|
     pi "t" (cnst emptyName) (.app (bv 1) (bv 0))⟩
     1 1 []
 
 /-- The pinned `Empty` basis block, in install order. -/
-def emptyBasis : List ConstantInfo := [emptyRaw, emptyRecRaw]
+def emptyBasis : List (ConstantInfo md) := [emptyRaw, emptyRecRaw]
 
 end Ix.Kernel

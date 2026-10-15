@@ -35,13 +35,13 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
   {φ : LevelParam → Nat}
 
 mutual
 
 theorem red_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {e e' : Expr}, Red env d e e' → RedSem m φ d e e'
+    ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → RedSem m φ d e e'
   | _, _, _, .refl => Red.refl_sound
   | _, _, _, .trans h₁ h₂ =>
     Red.trans_sound (red_sound hin h₁) (red_sound hin h₂)
@@ -85,7 +85,7 @@ theorem red_sound (hin : RulesInputs V m φ) :
       (defeq_sound hin hpi)
 
 theorem defeq_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {a b : Expr}, DefEq env d a b → DefEqSem m φ d a b
+    ∀ {d : Nat} {a b : Expr md}, DefEq env d a b → DefEqSem m φ d a b
   | _, _, _, .refl => DefEq.refl_sound
   | _, _, _, .symm h => DefEq.symm_sound (defeq_sound hin h)
   | _, _, _, .redL hr h => DefEq.redL_sound (red_sound hin hr) (defeq_sound hin h)
@@ -124,7 +124,7 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
       (defeq_sound hin hd) (certs_sound hin hcerts)
 
 theorem infer_sound (hin : RulesInputs V m φ) :
-    ∀ {g : Grade} {d : Nat} {e t : Expr}, Infer env g d e t → InferSem m φ g d e t
+    ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferSem m φ g d e t
   | _, _, _, _, .sort => Infer.sort_sound
   | _, _, _, _, .fvar h => Infer.fvar_sound h
   | _, _, _, _, .const hf htower hus => Infer.const_sound hin hf htower hus
@@ -149,7 +149,7 @@ theorem infer_sound (hin : RulesInputs V m φ) :
       hlen hus hprop
 
 theorem certs_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {lic : Bool} {ty : Expr} {args : List Expr},
+    ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
       Certs env d lic ty args → CertsSem m φ d lic ty args
   | _, _, _, _, .nil => Certs.nil_sound
   | _, _, _, _, .skip hlic hnev hrest =>
@@ -159,14 +159,14 @@ theorem certs_sound (hin : RulesInputs V m φ) :
       (certs_sound hin hrest)
 
 theorem defEqList_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {as bs : List Expr},
+    ∀ {d : Nat} {as bs : List (Expr md)},
       DefEqList env d as bs → DefEqListSem m φ d as bs
   | _, _, _, .nil => DefEqList.nil_sound
   | _, _, _, .cons h hs =>
     DefEqList.cons_sound (defeq_sound hin h) (defEqList_sound hin hs)
 
 theorem etaProjCerts_sound (hin : RulesInputs V m φ) :
-    ∀ {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
+    ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs →
       EtaProjCertsSem m φ d T us' targs b lpsT idxs

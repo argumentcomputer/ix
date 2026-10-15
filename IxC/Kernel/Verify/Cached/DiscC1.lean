@@ -31,43 +31,43 @@ every cached entry point simulates the corresponding fueled family on
 well-scoped inputs.  Declared here so the per-body walks can
 take it as their induction hypothesis; the knot batch proves it at
 every fuel. -/
-structure SSimC (mode : CheckMode) (env : Env) (f : Nat) : Prop where
-  whnfCore : ∀ {s₀ : CState} {d : Nat} {i : Expr} {e : Expr},
+structure SSimC (mode : CheckMode) (env : Env md) (f : Nat) : Prop where
+  whnfCore : ∀ {s₀ : CState md} {d : Nat} {i : Expr md} {e : Expr md},
     CSOK mode env s₀ → RelC i e → Expr.WScoped d e →
     SimC mode env s₀ (RelEC d)
       ((coreKnotI mode (mkFEnv env) f).whnfCore d i)
       ((fueledFns mode env).whnfCore d e)
-  whnf : ∀ {s₀ : CState} {d : Nat} {i : Expr} {e : Expr},
+  whnf : ∀ {s₀ : CState md} {d : Nat} {i : Expr md} {e : Expr md},
     CSOK mode env s₀ → RelC i e → Expr.WScoped d e →
     SimC mode env s₀ (RelEC d)
       ((coreKnotI mode (mkFEnv env) f).whnf d i)
       ((fueledFns mode env).whnf d e)
-  infer : ∀ {s₀ : CState} {d : Nat} {i : Expr} {e : Expr},
+  infer : ∀ {s₀ : CState md} {d : Nat} {i : Expr md} {e : Expr md},
     CSOK mode env s₀ → RelC i e → Expr.WScoped d e →
     SimC mode env s₀ (RelEC d)
       ((coreKnotI mode (mkFEnv env) f).infer d i)
       ((fueledFns mode env).infer d e)
-  defeq : ∀ {s₀ : CState} {d : Nat} {i j : Expr} {a b : Expr},
+  defeq : ∀ {s₀ : CState md} {d : Nat} {i j : Expr md} {a b : Expr md},
     CSOK mode env s₀ → RelC i a → RelC j b →
     Expr.WScoped d a → Expr.WScoped d b →
     SimC mode env s₀ RelVC
       ((coreKnotI mode (mkFEnv env) f).defeq d i j)
       ((fueledFns mode env).defeq d a b)
-  annotate : ∀ {s₀ : CState} {d : Nat} {i : Expr} {e : Expr},
+  annotate : ∀ {s₀ : CState md} {d : Nat} {i : Expr md} {e : Expr md},
     CSOK mode env s₀ → RelC i e → Expr.WScoped d e →
     SimC mode env s₀ (RelEC d)
       ((coreKnotI mode (mkFEnv env) f).annotate d i)
       ((fueledFns mode env).annotate d e)
   /-- the io slot (task #172 B4): the memoized knot's `inferIO` entry
   simulates the fueled io-slot family -/
-  inferIO : ∀ {s₀ : CState} {d : Nat} {i : Expr} {e : Expr},
+  inferIO : ∀ {s₀ : CState md} {d : Nat} {i : Expr md} {e : Expr md},
     CSOK mode env s₀ → RelC i e → Expr.WScoped d e →
     SimC mode env s₀ (RelEC d)
       ((coreKnotI mode (mkFEnv env) f).inferIO d i)
       ((fueledFns mode env).inferIO d e)
 
 /-- The base case: fuel `0` throws everywhere. -/
-theorem ssimC_zero (env : Env) : SSimC mode env 0 :=
+theorem ssimC_zero (env : Env md) : SSimC mode env 0 :=
   { whnfCore := fun _ _ _ => SimC.throw
     whnf := fun _ _ _ => SimC.throw
     infer := fun _ _ _ => SimC.throw
@@ -77,13 +77,13 @@ theorem ssimC_zero (env : Env) : SSimC mode env 0 :=
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `defEqListI_sim`: the pairwise definitional-equality
 helper simulates its fueled original on related, well-scoped lists. -/
 theorem defEqListC_sim (ih : SSimC mode env f) {d : Nat} :
-    ∀ {args : List Expr} {xs : List Expr} {brgs : List Expr}
-      {ys : List Expr} {s₀ : CState}, CSOK mode env s₀ →
+    ∀ {args : List (Expr md)} {xs : List (Expr md)} {brgs : List (Expr md)}
+      {ys : List (Expr md)} {s₀ : CState md}, CSOK mode env s₀ →
       RelCL args xs → RelCL brgs ys →
       (∀ x ∈ xs, Expr.WScoped d x) → (∀ y ∈ ys, Expr.WScoped d y) →
       SimC mode env s₀ RelVC
@@ -129,8 +129,8 @@ theorem defEqListC_sim (ih : SSimC mode env f) {d : Nat} :
 /-- Port of `iotaCertsIAux_sim`: the bulk-accumulating iota-certificate
 loop simulates its fueled original. -/
 theorem iotaCertsCAux_sim (ih : SSimC mode env f) {d : Nat} {lic : Bool} :
-    ∀ {args : List Expr} {xs : List Expr} {acc : List Expr}
-      {ws : List Expr} {ty : Expr} {tyx : Expr} {s₀ : CState},
+    ∀ {args : List (Expr md)} {xs : List (Expr md)} {acc : List (Expr md)}
+      {ws : List (Expr md)} {ty : Expr md} {tyx : Expr md} {s₀ : CState md},
       CSOK mode env s₀ →
       RelC ty tyx → RelCL acc ws →
       Expr.WScoped d (tyx.instantiateList ws) →
@@ -282,8 +282,8 @@ decreasing_by
 
 /-- Port of `iotaCertsI_sim`. -/
 theorem iotaCertsC_sim (ih : SSimC mode env f) {d : Nat} {lic : Bool} :
-    ∀ {args : List Expr} {xs : List Expr} {ty : Expr} {tyx : Expr}
-      {s₀ : CState}, CSOK mode env s₀ →
+    ∀ {args : List (Expr md)} {xs : List (Expr md)} {ty : Expr md} {tyx : Expr md}
+      {s₀ : CState md}, CSOK mode env s₀ →
       RelC ty tyx → Expr.WScoped d tyx →
       RelCL args xs → (∀ x ∈ xs, Expr.WScoped d x) →
       SimC mode env s₀ RelVC
@@ -299,11 +299,11 @@ end Walks
 
 section Walks2
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `ensureSortI_sim`. -/
-theorem ensureSortC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem ensureSortC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {e : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i e) (hw : Expr.WScoped d e) :
     SimC mode env s₀ RelVC (ensureSortI (coreKnotI mode (mkFEnv env) f) d i)
       (ensureSort (fueledFns mode env) env d e) := by
@@ -334,8 +334,8 @@ theorem ensureSortC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
 
 /-- Port of `litToCtorIfNatI_eff`: the cached twin computes the spec's
 `litToCtorIfNat`. -/
-theorem litToCtorIfNatC_eff {s₀ : CState} (hs : CSOK mode env s₀)
-    {i : Expr} {e : Expr} (hden : RelC i e) :
+theorem litToCtorIfNatC_eff {s₀ : CState md} (hs : CSOK mode env s₀)
+    {i : Expr md} {e : Expr md} (hden : RelC i e) :
     CEff mode env s₀ (fun r => RelC r (litToCtorIfNat env e))
       (litToCtorIfNatI (mkFEnv env) i) := by
   show CEff mode env s₀ _ (
@@ -383,8 +383,8 @@ theorem litToCtorIfNatC_eff {s₀ : CState} (hs : CSOK mode env s₀)
 
 /-- Port of `unfoldDefinitionI_eff`: the cached twin computes the
 spec's pure `unfoldDefinition`. -/
-theorem unfoldDefinitionC_eff {s₀ : CState} (hs : CSOK mode env s₀)
-    {i : Expr} {e : Expr} (hden : RelC i e) :
+theorem unfoldDefinitionC_eff {s₀ : CState md} (hs : CSOK mode env s₀)
+    {i : Expr md} {e : Expr md} (hden : RelC i e) :
     CEff mode env s₀ (fun o => OptEr o (unfoldDefinition env e))
       (unfoldDefinitionI (mkFEnv env) i) := by
   show CEff mode env s₀ _
@@ -492,11 +492,11 @@ end Walks2
 
 section Walks3
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- A twin-only effect against a pure fueled value. -/
-theorem SimC.of_eff {s₀ : CState} {β α : Type} {Q : β → Prop}
-    {P : β → α → Prop} {c : CheckCM β}
+theorem SimC.of_eff {s₀ : CState md} {β α : Type} {Q : β → Prop}
+    {P : β → α → Prop} {c : (CheckCM md) β}
     (h : CEff mode env s₀ Q c) (a : α) (hPa : ∀ b, Q b → P b a) :
     SimC mode env s₀ P c (pure a) := by
   intro v' s' hr
@@ -504,8 +504,8 @@ theorem SimC.of_eff {s₀ : CState} {β α : Type} {Q : β → Prop}
   exact ⟨hs', a, hPa v' hQ, 0, rfl⟩
 
 /-- Port of `litMajorToCtorI_sim`. -/
-theorem litMajorToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem litMajorToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {e : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i e) (hw : Expr.WScoped d e) :
     SimC mode env s₀ (RelEC d)
       (litMajorToCtorI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i)
@@ -564,8 +564,8 @@ theorem litMajorToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
       (fun b hQ => ⟨hQ, litToCtorIfNat_WScoped hw⟩)
 
 /-- Port of `projLitToCtorI_sim`. -/
-theorem projLitToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem projLitToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {e : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i e) (hw : Expr.WScoped d e) :
     SimC mode env s₀ (RelEC d)
       (projLitToCtorI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i)
@@ -603,8 +603,8 @@ theorem projLitToCtorC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
   | proj sn jj e' => exact SimC.pure hs ⟨hden, hw⟩
 
 /-- Port of `defeqSpineI_sim`. -/
-theorem defeqSpineC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
-    {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem defeqSpineC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr md}
+    {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -739,16 +739,16 @@ end Walks3
 
 section Walks4
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
-private theorem relOC_some_lit {r : Expr} {n : Nat} {d : Nat}
+private theorem relOC_some_lit {r : Expr md} {n : Nat} {d : Nat}
     (h : RelC r (.lit (.natVal n))) :
     RelOC d (some r) (some (.lit (.natVal n))) :=
   ⟨h, by simp [Expr.WScoped]⟩
 
 /-- Port of `reduceNatI_sim`. -/
-theorem reduceNatC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem reduceNatC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {e : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i e) (hw : Expr.WScoped d e) :
     SimC mode env s₀ (RelOC d)
       (reduceNatI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i)
@@ -923,8 +923,8 @@ theorem reduceNatC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
 /-- `reduceNatC_sim` under the defeq-side fvar guard (the guard is the
 same `Bool` on both sides after the `hasFvarI` read is peeled, so the
 pruned branch is `pure none` twinned). -/
-theorem reduceNatIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {e : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem reduceNatIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {e : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i e) (hw : Expr.WScoped d e) (g : Bool) :
     SimC mode env s₀ (RelOC d)
       (if g then reduceNatI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i

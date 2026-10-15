@@ -33,12 +33,12 @@ open Ix.Kernel
 
 /-- Is the block one this modeller is for: mutual (several types) or
 nested (`numNested > 0`)? -/
-def wants (b : BlockRec) : Bool :=
+def wants (b : BlockRec md) : Bool :=
   b.types.length > 1 || b.types.any (·.numNested > 0)
 
 /-- Generate the model records of a block, in stream order, or the
 reason the block is declined. -/
-def generate (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) :=
+def generate (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration md)) :=
   if b.types.any (·.numNested > 0) then
     genNested ctx b
   else

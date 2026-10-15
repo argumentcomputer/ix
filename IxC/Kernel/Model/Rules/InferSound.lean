@@ -40,7 +40,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
   {φ : LevelParam → Nat}
 
 /-! ## The grade kit
@@ -51,14 +51,14 @@ subject's grading where the consumption motive takes it.  A leaf rule
 its lemma is proved once at `InferSemFull` and dispatched. -/
 
 /-- Establishment implies consumption: drop the concluded grading. -/
-theorem InferSemFull.toIO {d : Nat} {e t : Expr}
+theorem InferSemFull.toIO {d : Nat} {e t : Expr md}
     (h : InferSemFull m φ d e t) : InferSemIO m φ d e t := by
   intro hf Δa ea hC hea _
   obtain ⟨hft, hsub, ta, hta, -, hgt, hmem⟩ := h hf hC hea
   exact ⟨hft, hsub, ta, hta, hgt, hmem⟩
 
 /-- A rule that establishes is sound at either grade. -/
-theorem InferSemFull.toSem {g : Grade} {d : Nat} {e t : Expr}
+theorem InferSemFull.toSem {g : Grade} {d : Nat} {e t : Expr md}
     (h : InferSemFull m φ d e t) : InferSem m φ g d e t := by
   cases g with
   | full => exact h
@@ -71,7 +71,7 @@ premise at `.io`, a conclusion at `.full`.  Reading a premise
 derivation's motive through this lemma, and building the conclusion's
 through `InferSem.of_uniform`, is what lets one argument serve both
 grades. -/
-theorem InferSem.apply {g : Grade} {d : Nat} {e t : Expr}
+theorem InferSem.apply {g : Grade} {d : Nat} {e t : Expr md}
     (h : InferSem m φ g d e t) (hfe : Frame d e) {Δa : List AnnotTerm}
     {ea : AnnotTerm} (hC : CtxOk m φ d Δa e)
     (hea : denoteMeta m.acval env φ d e = some ea)
@@ -89,7 +89,7 @@ theorem InferSem.apply {g : Grade} {d : Nat} {e t : Expr}
 
 /-- `InferSem.apply`'s converse: the uniform statement builds the
 motive at either grade. -/
-theorem InferSem.of_uniform {g : Grade} {d : Nat} {e t : Expr}
+theorem InferSem.of_uniform {g : Grade} {d : Nat} {e t : Expr md}
     (h : ∀ {Δa : List AnnotTerm} {ea : AnnotTerm}, Frame d e →
       CtxOk m φ d Δa e → denoteMeta m.acval env φ d e = some ea →
       (g = .io → Graded V Δa ea) →
@@ -114,7 +114,7 @@ reduces to `.sort u` reads into the universe — and is graded, which at
 the io grade is the premise and at the full grade the first motive's
 conclusion.  The totality factor the run version routes
 (`InferReads`) is the existence form of `InferSem`. -/
-theorem sortSem_of {g : Grade} {d : Nat} {e s : Expr} {u : Level}
+theorem sortSem_of {g : Grade} {d : Nat} {e s : Expr md} {u : Level}
     (hs : InferSem m φ g d e s) (hu : RedSem m φ d s (.sort u))
     (hfe : Frame d e) {Δa : List AnnotTerm} {ea : AnnotTerm}
     (hC : CtxOk m φ d Δa e)
@@ -149,7 +149,7 @@ theorem Infer.sort_sound {g : Grade} {d : Nat} {u : Level} :
   exact (sound_sort V ρ (u.eval φ)).2
 
 /-- `infer_fvar_claim(IO)`: `CtxOk`'s leaf package. -/
-theorem Infer.fvar_sound {g : Grade} {d idx : Nat} {ty : Expr} (h : idx < d) :
+theorem Infer.fvar_sound {g : Grade} {d idx : Nat} {ty : Expr md} (h : idx < d) :
     InferSem m φ g d (.fvar idx ty) ty := by
   refine InferSemFull.toSem ?_
   intro hf Δa ea hC hea
@@ -171,7 +171,7 @@ theorem Infer.fvar_sound {g : Grade} {d idx : Nat} {ty : Expr} (h : idx < d) :
 
 /-- `infer_const_claim(IO)`: `ConstType` + `AcvalValid`. -/
 theorem Infer.const_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
-    {n : Key} {us : List Level} {ci : Ix.Kernel.ConstantInfo}
+    {n : Key md} {us : List Level} {ci : Ix.Kernel.ConstantInfo md}
     (hf : env.find? n = some ci) (htower : ci.isTowerEntry = false)
     (hus : us.length = ci.toConstantVal.levelParams.length) :
     InferSem m φ g d (.const n us)
@@ -267,7 +267,7 @@ theorem Infer.strLit_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
 /-- `infer_forallE_claim(IO)` (`Steps/Infer.lean:254`, `InferIO.lean:339`):
 the two sort facts (`sortSemAt_of_claims`'s content) and the bit law. -/
 theorem Infer.forallE_sound {g : Grade} {d : Nat}
-    {ty body s bs : Expr} {u v : Level} {mb : BinderMeta}
+    {ty body s bs : Expr md} {u v : Level} {mb : BinderMeta}
     (hs : InferSem m φ g d ty s) (hu : RedSem m φ d s (.sort u))
     (hbs : InferSem m φ g (d + 1) (body.instantiate1 (.fvar d ty)) bs)
     (hv : RedSem m φ (d + 1) bs (.sort v))
@@ -278,7 +278,7 @@ theorem Infer.forallE_sound {g : Grade} {d : Nat}
       CtxOk m φ d Δa (.forallE ty body mb) →
       denoteMeta m.acval env φ d (.forallE ty body mb) = some ea →
       (g = .io → Graded V Δa ea) →
-      Frame d (.sort (.imax u v)) ∧
+      Frame (md := md) d (.sort (.imax u v)) ∧
         LeavesSub (.sort (.imax u v)) (.forallE ty body mb) ∧
         ∃ ta, denoteMeta m.acval env φ d (.sort (.imax u v)) = some ta ∧
           Graded V Δa ea ∧ Graded V Δa ta ∧
@@ -357,7 +357,7 @@ theorem Infer.forallE_sound {g : Grade} {d : Nat}
 the fibre regime fact from the leaf sort run or, at a chain node, from
 the copied annotation (`piR_zero_mem_univZero`). -/
 theorem Infer.lam_sound {g : Grade} {d : Nat}
-    {ty body s bt btt : Expr} {u v : Level} {mb : BinderMeta}
+    {ty body s bt btt : Expr md} {u v : Level} {mb : BinderMeta}
     (hs : g = .full → InferSemFull m φ d ty s)
     (hu : g = .full → RedSem m φ d s (.sort u))
     (hbt : InferSem m φ g (d + 1) (body.instantiate1 (.fvar d ty)) bt)
@@ -513,7 +513,7 @@ theorem Infer.lam_sound {g : Grade} {d : Nat}
 /-- `infer_app_claim` / `infer_app_claimIO`'s kept arm
 (`Steps/Infer.lean:842`, `InferIO.lean:609`). -/
 theorem Infer.app_sound {g : Grade} {d : Nat}
-    {f a tf ty body ta : Expr} {mt : BinderMeta}
+    {f a tf ty body ta : Expr md} {mt : BinderMeta}
     (htf : InferSem m φ g d f tf) (hw : RedSem m φ d tf (.forallE ty body mt))
     (hta : InferSem m φ g d a ta) (hd : DefEqSem m φ d ta ty) :
     InferSem m φ g d (.app f a) (body.instantiate1 a) := by
@@ -623,7 +623,7 @@ membership from the subject's own hereditary app slot,
 `io_domain_transfer` + `piR_dom_unique` at a bit pinned positive by
 `pwBit_ne_zero_of_isNever`. -/
 theorem Infer.appSkip_sound {d : Nat}
-    {f a tf ty body : Expr} {mt : BinderMeta}
+    {f a tf ty body : Expr md} {mt : BinderMeta}
     (htf : InferSemIO m φ d f tf) (hw : RedSem m φ d tf (.forallE ty body mt))
     (hnev : mt.pw.isNever = true) :
     InferSemIO m φ d (.app f a) (body.instantiate1 a) := by
@@ -709,8 +709,8 @@ theorem Infer.appSkip_sound {d : Nat}
 /-- `inferProjStep_of_claims` / `inferProjStepIO_of_claims`
 (`Steps/ProjRows.lean:71`, `:160`): the tower law's typing clause. -/
 theorem Infer.proj_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
-    {sn : Key} {i : Nat} {pe tpe te : Expr} {us : List Level}
-    {entry : ProjEntry}
+    {sn : Key md} {i : Nat} {pe tpe te : Expr md} {us : List Level}
+    {entry : ProjEntry md}
     (htpe : InferSem m φ g d pe tpe) (hte : RedSem m φ d tpe te)
     (hhead : te.getAppFn = .const sn us)
     (hent : env.findProj? sn i = some entry)

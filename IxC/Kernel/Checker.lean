@@ -24,17 +24,17 @@ variable {m : Type -> Type} [Monad m] [MonadExceptOf CheckError m]
 variable (mode : CheckMode)
 
 /-- Install one pinned basis declaration (duplicate-checked). -/
-def installBasisDecl (env : Env) (ci : ConstantInfo) : m Env := do
+def installBasisDecl (env : Env md) (ci : ConstantInfo md) : m (Env md) := do
   unless (env.find? ci.name).isNone do
     throw (.invalid s!"duplicate declaration {ci.name}")
-  pure (⟨ci :: env.consts⟩ : Env)
+  pure (⟨ci :: env.consts⟩ : Env md)
 
 /-- Check a `def` declaration's value against its checked constant.
 The reducibility hint is stored untouched: it steers only the lazy
 delta unfolding order in `isDefEq`, never a verdict, so nothing about
 it needs checking. -/
-def checkDefnVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
-    (value : Expr) (hint : ReducibilityHint) : m Env := do
+def checkDefnVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
+    (value : Expr md) (hint : ReducibilityHint) : m (Env md) := do
   unless value.looseBVarsBounded 0 do
     throw (.invalid s!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
@@ -60,8 +60,8 @@ discarded, exactly as an opaque's is.  This is what lets the driver
 install a theorem before its value is looked at at all (phase A pushes
 the record's constant; phase B annotates and checks the value,
 `IxC/Kernel/Cached/Installed.lean`). -/
-def checkThmVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
-    (value : Expr) : m Env := do
+def checkThmVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
+    (value : Expr md) : m (Env md) := do
   -- the type of a theorem must be a proposition
   let stype ← ops.inferType env 0 cv.type
   let u ← ops.ensureSort env 0 stype
@@ -90,8 +90,8 @@ opaque (unlike theorems, task #66), so storing the value in an
 unfoldable kind would be a reduction-strategy superset (it would
 e.g. compute `Lean.reduceBool b` where the reference kernels are
 stuck; the task-#95 honest limit relies on that stuckness). -/
-def checkOpaqueVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
-    (value : Expr) : m Env := do
+def checkOpaqueVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
+    (value : Expr md) : m (Env md) := do
   unless value.looseBVarsBounded 0 do
     throw (.invalid s!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
@@ -107,8 +107,8 @@ def checkOpaqueVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
   pure ⟨.axiomInfo cv :: env.consts⟩
 /-- Certify a list of recurrence equations by definitional equality
 (at depth 2: the equations' variables are `fvar 0`/`fvar 1`). -/
-def certifyNatEqs (ops : CheckerOps m) (env : Env) :
-    List (Expr × Expr) → m Bool
+def certifyNatEqs (ops : (CheckerOps md) m) (env : Env md) :
+    List (Expr md × Expr md) → m Bool
   | [] => pure true
   | eq :: rest => do
     if ← ops.isDefEq env 2 eq.1 eq.2 then
@@ -119,8 +119,8 @@ def certifyNatEqs (ops : CheckerOps m) (env : Env) :
 (`x`, `y`, then one `fvar` per hypothesis, carrying the hypothesis
 *type* as its `fvar` annotation — the checker's implicit local
 context). -/
-def divModCertApplied (proofS : Expr) (hyps : List Expr) : Expr :=
-  let base : Expr :=
+def divModCertApplied (proofS : Expr md) (hyps : List (Expr md)) : Expr md :=
+  let base : Expr md :=
     .app (.app proofS (.fvar 0 (.const natName [])))
       (.fvar 1 (.const natName []))
   match hyps with
@@ -133,8 +133,8 @@ def divModCertApplied (proofS : Expr) (hyps : List Expr) : Expr :=
 /-- The syntactic guards of one certificate check: the substituted
 proof is closed, level-monomorphic and resolving, and the substituted
 statement components resolve. -/
-def divModCertGuard (env : Env) (c : Key) (annVal : Expr)
-    (hyps : List Expr) (eqE proof : Expr) : Bool :=
+def divModCertGuard (env : Env md) (c : Key md) (annVal : Expr md)
+    (hyps : List (Expr md)) (eqE proof : Expr md) : Bool :=
   (Expr.substConstAll c annVal proof).looseBVarsBounded 0 &&
   !(Expr.substConstAll c annVal proof).hasFvar &&
   (Expr.substConstAll c annVal proof).allLevelParamsDefined [] &&
@@ -153,8 +153,8 @@ justify it) is applied to free variables typed by the open statement,
 its type inferred, and compared against the characteristic equation.
 This checks each certificate exactly like a theorem declaration over an
 opened telescope — nothing is installed. -/
-def checkDivModCerts (ops : CheckerOps m) (env : Env) (c : Key)
-    (annVal : Expr) : List (List Expr × Expr) → List Expr → m Bool
+def checkDivModCerts (ops : (CheckerOps md) m) (env : Env md) (c : Key md)
+    (annVal : Expr md) : List (List (Expr md) × Expr md) → List (Expr md) → m Bool
   | [], [] => pure true
   | (hyps, eqE) :: srest, proof :: prest => do
     if divModCertGuard env c annVal hyps eqE proof then
@@ -174,7 +174,7 @@ pinned `Eq` basis (the certificate statements are equations in the
 pinned equality), and the `Bool` constructors stored at the type
 `Bool` itself (the guards' `true`/`false` must inhabit the `Bool` value
 semantically). -/
-def divModEnvGuard (env2 : Env) (c : Key) : Bool :=
+def divModEnvGuard (env2 : Env md) (c : Key md) : Bool :=
   natOpGuard env2 c && (natOpDeps c).all (natOpStoredOk env2) &&
   env2.find? eqName == some eqA &&
   (match env2.find? boolTrueName with
@@ -186,15 +186,15 @@ def divModEnvGuard (env2 : Env) (c : Key) : Bool :=
 
 /-- All certificates' syntactic guards at once, over the evidence's proof
 terms, one per statement of `divModCertStmts`. -/
-def divModCertsGuard (proofs : List Expr) (env : Env) (c : Key)
-    (annVal : Expr) : Bool :=
+def divModCertsGuard (proofs : List (Expr md)) (env : Env md) (c : Key md)
+    (annVal : Expr md) : Bool :=
   ((divModCertStmts c).zip proofs).all
     (fun p => divModCertGuard env c annVal p.1.1 p.1.2 p.2)
 
 /-- What a certificate check failed on, for the decline message.  The
 pure instantiations always report the `none` text (see
 `CheckerOps.orElse`); the executable reports the error. -/
-def divModEvidenceReason (c : Key) : Option CheckError → String
+def divModEvidenceReason (c : Key md) : Option CheckError → String
   | none => s!"unsupported Nat.div/mod evidence ({c}: a certificate did not check)"
   | some e => s!"unsupported Nat.div/mod evidence ({c}: {e})"
 
@@ -215,8 +215,8 @@ certificate runs, not where the proofs came from
 (`IxC/Kernel/Model/DivModCert.lean`).  A certificate that is ill-typed
 against this stream throws inside the check; `CheckerOps.orElse` turns
 that into this decline, as it does a `false`. -/
-def checkDivModEvidence (ops : CheckerOps m) (ev : Evidences)
-    (env env2 : Env) (c : Key) : m Unit := do
+def checkDivModEvidence (ops : (CheckerOps md) m) (ev : Evidences md)
+    (env env2 : Env md) (c : Key md) : m Unit := do
   if divModEnvGuard env2 c then
     match env2.find? c with
     | some (.defnInfo _ value' _) =>
@@ -250,8 +250,8 @@ carries no value):
 There is no comparison with a toolchain's defining expression any more
 (the pin `fun b => b` and `checkReducePin` are retired): the certificate
 is the specification, and a value that is not the identity declines. -/
-def checkReduceIdentity (ops : CheckerOps m) (env env2 : Env) (c : Key)
-    (value : Expr) : m Unit := do
+def checkReduceIdentity (ops : (CheckerOps md) m) (env env2 : Env md) (c : Key md)
+    (value : Expr md) : m Unit := do
   if reduceStoredOk env2 c && reduceElemOk env c then do
     let valA ← ops.annotate env 0 value
     let x := reduceCertVar c
@@ -268,15 +268,15 @@ block `basisPinHit` recognises and a quotient record `quotPinHit`
 recognises — share this body, so what is proved of one is proved of
 all three.  The quotient block's types mention the pinned equality
 former. -/
-def checkBasisDecl (env : Env) (kind : BasisKind) : m Env := do
+def checkBasisDecl (env : Env md) (kind : BasisKind) : m (Env md) := do
   if kind = .quotK then
     unless env.find? eqName = some eqA do
       throw (.notImplemented "quotient basis requires the pinned Eq basis")
   kind.declsA.foldlM installBasisDecl env
 
 /-- Check a single declaration, extending the environment on success. -/
-def checkDecl (ops : CheckerOps m) (ev : Evidences) (env : Env)
-    (d : Declaration) : m Env := do
+def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
+    (d : Declaration md) : m (Env md) := do
   match d with
   | .defnDecl cv value hint => do
     let cv ← checkConstantVal ops env cv
@@ -469,8 +469,8 @@ def checkDecl (ops : CheckerOps m) (ev : Evidences) (env : Env)
 
 /-- Check a list of declarations in order, starting from the empty
 environment. -/
-def checkDeclsPure (ops : CheckerOps m) (ev : Evidences)
-    (ds : List Declaration) : m Env :=
+def checkDeclsPure (ops : (CheckerOps md) m) (ev : Evidences md)
+    (ds : List (Declaration md)) : m (Env md) :=
   ds.foldlM (checkDecl mode ops ev) Env.empty
 
 end Ix.Kernel

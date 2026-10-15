@@ -68,30 +68,30 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-- A non-reserved name differs from every reserved one.  The
 inductive tier's workhorse: `ConstantValR`'s second conjunct is the
 hypothesis, and the four names the mechanical rows read
 (`Nat`/`Nat.zero`/`Nat.succ`/`Eq`) are all reserved. -/
-theorem ne_of_notReserved {n m : Key}
+theorem ne_of_notReserved {n m : Key md}
     (h : Ix.Kernel.reservedBasisNames.contains n = false)
     (hm : Ix.Kernel.reservedBasisNames.contains m = true) : n ≠ m := by
   intro hh
   rw [hh, hm] at h
   exact nomatch h
 
-theorem reserved_natName : Ix.Kernel.reservedBasisNames.contains natName = true := by
-  decide
+theorem reserved_natName : Ix.Kernel.reservedBasisNames.contains (natName (md := md)) = true := by
+  (cases md <;> decide)
 
 theorem reserved_natZeroName :
-    Ix.Kernel.reservedBasisNames.contains natZeroName = true := by decide
+    Ix.Kernel.reservedBasisNames.contains (natZeroName (md := md)) = true := by (cases md <;> decide)
 
 theorem reserved_natSuccName :
-    Ix.Kernel.reservedBasisNames.contains natSuccName = true := by decide
+    Ix.Kernel.reservedBasisNames.contains (natSuccName (md := md)) = true := by (cases md <;> decide)
 
-theorem reserved_eqName : Ix.Kernel.reservedBasisNames.contains eqName = true := by
-  decide
+theorem reserved_eqName : Ix.Kernel.reservedBasisNames.contains (eqName (md := md)) = true := by
+  (cases md <;> decide)
 
 
 /-- **The P step at an inductive-tier cons.**  Six of
@@ -100,7 +100,7 @@ the *name* (non-reserved) and the *kind* (never a value kind, never an
 axiom); `caps_ok` and `rec_rules` stay open, because those are the two
 rows an inductive block genuinely establishes. -/
 theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     -- the name: `ConstantValR`'s second conjunct at a member,
     -- `projFnName_ne_reserved` at a projection slot
@@ -176,7 +176,7 @@ vacuously: the cons is not a recursor at all, and `EnvS.rec_ctors`
 carries the rest (ENDGAME D §3a).  `caps_ok` remains the member's one
 open row — the block's former *is* a family head. -/
 theorem declStep_preserves_of_ind_member_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false)
     (hknd : (∃ cv caps, c₀ = .indInfo cv caps) ∨
@@ -222,7 +222,7 @@ theorem declStep_preserves_of_ind_member_cons (mp : EnvModelM V μ env)
 projection functions, both stored as `recInfo`.  Only `caps_ok` and
 `rec_rules` stay open; both are the install's to establish. -/
 theorem declStep_preserves_of_ind_rec_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false)
     (hknd : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)

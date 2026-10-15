@@ -29,13 +29,13 @@ open Ix.Kernel
 /-! ### The direct installers' walkers (task #214) -/
 
 /-- `Expr.instPisAtLift` at the memoised substitution. -/
-def instPisAtLiftC : List Expr → Expr → Option Expr
+def instPisAtLiftC : List (Expr md) → Expr md → Option (Expr md)
   | [], e => some e
   | a :: as, .forallE _ body _ => instPisAtLiftC as (Expr.instantiate1LiftC body a)
   | _ :: _, _ => none
 
 /-- `structProjBodiesGo` at the memoised substitution. -/
-def structProjBodiesGoC (T : Key) : Nat → Nat → Expr → Option (List Expr)
+def structProjBodiesGoC (T : Key md) : Nat → Nat → Expr md → Option (List (Expr md))
   | 0, _, _ => some []
   | k + 1, i, .forallE fdom body _ =>
     (structProjBodiesGoC T k (i + 1) (Expr.instantiate1LiftC body (structProjArgP T i))).map
@@ -44,7 +44,7 @@ def structProjBodiesGoC (T : Key) : Nat → Nat → Expr → Option (List Expr)
 
 /-- `structProjBodies` at the memoised substitution
 (`structProjBodiesC_eq`). -/
-def structProjBodiesC (T : Key) (nP nF : Nat) (cty : Expr) : Option (Array Expr) :=
+def structProjBodiesC (T : Key md) (nP nF : Nat) (cty : Expr md) : Option (Array (Expr md)) :=
   match instPisAtLiftC (structProjPs nP) cty with
   | some r => (structProjBodiesGoC T nF 0 r).map List.toArray
   | none => none
@@ -53,7 +53,7 @@ def structProjBodiesC (T : Key) (nP nF : Nat) (cty : Expr) : Option (Array Expr)
 gate (`constsResolveFC`, verified at `constsResolveFC_spec`) and the
 memoised projection-body builder; equal to `StructWalkers.plain`
 (`structWalkersC_eq_plain`). -/
-def structWalkersC : StructWalkers := ⟨constsResolveFC, structProjBodiesC⟩
+def structWalkersC : StructWalkers md := ⟨constsResolveFC, structProjBodiesC⟩
 
 variable (mode : CheckMode)
 
@@ -66,21 +66,21 @@ on `init-prelude` / `app-lam`, which is where that batch's win came
 from. -/
 
 /-- Shared-state unary entry point: run the cached knot. -/
-def opE (fe : FEnv) (pick : CoreFnsI → Nat → Expr → CheckCM Expr)
-    (d : Nat) (e : Expr) : CheckCM Expr := do
+def opE (fe : FEnv md) (pick : CoreFnsI md → Nat → Expr md → (CheckCM md) (Expr md))
+    (d : Nat) (e : Expr md) : (CheckCM md) (Expr md) := do
   pick (coreKnotI mode fe checkFuel) d e
 
 /-- Shared-state definitional-equality entry point. -/
-def opB (fe : FEnv) (d : Nat) (a b : Expr) : CheckCM Bool :=
+def opB (fe : FEnv md) (d : Nat) (a b : Expr md) : (CheckCM md) Bool :=
   (coreKnotI mode fe checkFuel).defeq d a b
 
 /-- Shared-state sort-ensuring entry point. -/
-def opS (fe : FEnv) (d : Nat) (e : Expr) : CheckCM Level :=
+def opS (fe : FEnv md) (d : Nat) (e : Expr md) : (CheckCM md) Level :=
   ensureSortI (coreKnotI mode fe checkFuel) d e
 
 /-- The per-declaration shared operations at a fixed environment
 index. -/
-def sharedOpsC (fe : FEnv) : CheckerOps CheckCM where
+def sharedOpsC (fe : FEnv md) : (CheckerOps md) (CheckCM md) where
   annotate _ d e := opE mode fe (·.annotate) d e
   inferType _ d e := opE mode fe (·.infer) d e
   isDefEq _ d a b := opB mode fe d a b
@@ -103,8 +103,8 @@ transitions, `FEnv.push` maintaining the index, and *every*
 environment lookup routed through the index (task #63). -/
 
 /-- One non-recursor member (mirrors `checkIndMember`). -/
-def checkIndMemberS (blockNames : List Key) (caps : IndCaps)
-    (fe : FEnv) (ci : ConstantInfo) : CheckCM FEnv := do
+def checkIndMemberS (blockNames : List (Key md)) (caps : IndCaps md)
+    (fe : FEnv md) (ci : ConstantInfo md) : (CheckCM md) (FEnv md) := do
   flushC
   let cvA ← checkMemberValF (sharedOpsC mode fe) blockNames fe ci.toConstantVal
   match ci with
@@ -113,9 +113,9 @@ def checkIndMemberS (blockNames : List Key) (caps : IndCaps)
   | _ => throw (.invalid s!"non-inductive member {cvA.name} in block")
 
 /-- Phase 0 of the recursor group (mirrors `provisionRecs`). -/
-def provisionRecsS (blockNames : List Key) :
-    FEnv → List ConstantInfo →
-    CheckCM (FEnv × List (ConstantVal × Nat × Nat × List RecRule))
+def provisionRecsS (blockNames : List (Key md)) :
+    (FEnv md) → List (ConstantInfo md) →
+    (CheckCM md) (FEnv md × List (ConstantVal md × Nat × Nat × List (RecRule md)))
   | feAcc, [] => pure (feAcc, [])
   | feAcc, ci :: rest =>
     match ci with
@@ -133,18 +133,18 @@ run at `envSelf` — one flush entering the phase, none inside the fold
 (the fold's accumulator environments are never passed to the
 operations).  The ruled recursors are installed on the `env₂` snapshot
 of the index. -/
-def checkIndRecsS (blockNames : List Key) (fe₂ : FEnv)
-    (recs : List ConstantInfo) : CheckCM FEnv := do
+def checkIndRecsS (blockNames : List (Key md)) (fe₂ : FEnv md)
+    (recs : List (ConstantInfo md)) : (CheckCM md) (FEnv md) := do
   if recs.isEmpty then
     pure fe₂
   else do
-    let f : Key → Key := fun n =>
+    let f : Key md → Key md := fun n =>
       if blockNames.contains n then auxKey n .model else n
     unless fe₂.find? eqName = some eqA do
       throw (.notImplemented "modeled recursor requires the pinned Eq basis")
     let (feSelf, checked) ← provisionRecsS mode blockNames fe₂ recs
     flushC
-    checked.foldlM (fun (acc : FEnv) c => do
+    checked.foldlM (fun (acc : FEnv md) c => do
         let rules' ← checkIotaRulesF mode (sharedOpsC mode feSelf) fe₂ feSelf
           f c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
         pure (acc.push (.recInfo c.1 c.2.1 c.2.2.1 rules')))
@@ -152,12 +152,12 @@ def checkIndRecsS (blockNames : List Key) (fe₂ : FEnv)
 
 /-- The public projection function for field `i` (mirrors
 `checkProjFn`; the single-environment stages are the generic ones). -/
-def checkProjFnS (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
-    (nP nF i : Nat) : CheckCM FEnv := do
-  let (cvj, mcv) ← checkProjLookupsF (m := CheckCM) fe T ctorName lps
+def checkProjFnS (fe : FEnv md) (T ctorName : Key md) (lps : List LevelParam)
+    (nP nF i : Nat) : (CheckCM md) (FEnv md) := do
+  let (cvj, mcv) ← checkProjLookupsF (m := CheckCM md) fe T ctorName lps
     nP nF i
-  let pty ← checkProjTyF (m := CheckCM) fe T ctorName lps mcv.type nP nF
-  checkProjShape (m := CheckCM) pty cvj.type nP nF
+  let pty ← checkProjTyF (m := CheckCM md) fe T ctorName lps mcv.type nP nF
+  checkProjShape (m := CheckCM md) pty cvj.type nP nF
   unless i < nF do
     throw (.invalid "projection index out of range")
   let rhsA ← checkProjRuleF (sharedOpsC mode fe) fe pty cvj lps nP nF i
@@ -167,8 +167,8 @@ def checkProjFnS (fe : FEnv) (T ctorName : Key) (lps : List LevelParam)
 
 /-- One projection-function install step (mirrors `installProjFnStep`;
 the artifact lookup goes through the index). -/
-def installProjFnStepS (T ctorName : Key) (lps : List LevelParam)
-    (nP nF : Nat) (fe : FEnv) (i : Nat) : CheckCM FEnv := do
+def installProjFnStepS (T ctorName : Key md) (lps : List LevelParam)
+    (nP nF : Nat) (fe : FEnv md) (i : Nat) : (CheckCM md) (FEnv md) := do
   if (fe.find? (projModelName T i)).isSome then do
     flushC
     checkProjFnS mode fe T ctorName lps nP nF i
@@ -176,22 +176,22 @@ def installProjFnStepS (T ctorName : Key) (lps : List LevelParam)
 
 /-- `checkNativePass` through the index (task #268): one flush per
 environment transition. -/
-def checkNativePassS (fe : FEnv) (p₀ : NativeParts) (isRec : Bool) :
-    CheckCM (NativePass FEnv × Bool) := do
+def checkNativePassS (fe : FEnv md) (p₀ : NativeParts md) (isRec : Bool) :
+    (CheckCM md) ((NativePass md) (FEnv md) × Bool) := do
   let (fe₁, cvTa, p₁) ← checkSumIndF (sharedOpsC mode fe) fe p₀.toInductiveShape
     (fun p₁ => nativeCapsAt p₁ isRec)
   let pC := p₀.complete p₁
   flushC
   let (ctorsA, sortss) ← checkSumCtorsF (sharedOpsC mode fe₁) fe₁ fe₁ pC.cvT.name
     pC.cvT.levelParams pC.nP pC.nIdx pC.resSort pC.isProp pC.large cvTa pC.ctors
-  let kinds ← classifyFixKinds (m := CheckCM) pC.cvT.name pC.cvT.levelParams pC.nP pC.nIdx
+  let kinds ← classifyFixKinds (m := CheckCM md) pC.cvT.name pC.cvT.levelParams pC.nP pC.nIdx
     ctorsA
   let p := pC.withKinds kinds
   pure (⟨fe₁, cvTa, p, ctorsA, sortss⟩, nativeCaps p == nativeCapsAt p₁ isRec)
 
 /-- `checkNativeTail` through the index: one flush entering the
 recursor's environment. -/
-def checkNativeTailS (fe : FEnv) (q : NativePass FEnv) : CheckCM FEnv := do
+def checkNativeTailS (fe : FEnv md) (q : (NativePass md) (FEnv md)) : (CheckCM md) (FEnv md) := do
   let p := q.p
   if p.large && !p.resSort.isNeverZero && decide (2 ≤ p.ctors.length) then
     throw (.invalid "direct rec: large eliminator on a multi-constructor inductive \
@@ -210,14 +210,14 @@ def checkNativeTailS (fe : FEnv) (q : NativePass FEnv) : CheckCM FEnv := do
   flushC
   let (cvRa, rhss) ← checkNativeRecF (sharedOpsC mode fe₂) structWalkersC fe₂ p q.cvTa q.ctorsA
   -- the projection table at a structure-like block (task #210 Part A)
-  checkNativeTableF (m := CheckCM) structWalkersC p q.ctorsA q.sortss (fe₂.push (.recInfo cvRa
+  checkNativeTableF (m := CheckCM md) structWalkersC p q.ctorsA q.sortss (fe₂.push (.recInfo cvRa
     p.majorIdx p.rulePrefix (sumRules fe₂.find? cvRa.name p.nP p.majorIdx p.rulePrefix
       cvRa.type q.ctorsA rhss)))
 
 /-- `checkNative` through the index (task #188): the pass at the
 syntactic `is_rec` reading, again at the classified verdict where the
 reading overshot (task #268), and the install after it. -/
-def checkNativeS (fe : FEnv) (p₀ : NativeParts) : CheckCM FEnv := do
+def checkNativeS (fe : FEnv md) (p₀ : NativeParts md) : (CheckCM md) (FEnv md) := do
   unless (p₀.ctors.map (·.1.name)).Nodup do
     throw (.invalid "direct rec: duplicate constructor")
   flushC
@@ -232,8 +232,8 @@ def checkNativeS (fe : FEnv) (p₀ : NativeParts) : CheckCM FEnv := do
 
 /-- The modeled inductive block (mirrors `checkModeled`), returning
 the extended index. -/
-def checkIndDeclSF (fe : FEnv) (block : List ConstantInfo) :
-    CheckCM FEnv := do
+def checkIndDeclSF (fe : FEnv md) (block : List (ConstantInfo md)) :
+    (CheckCM md) (FEnv md) := do
   let recs := block.filter (fun ci => match ci with
     | .recInfo _ _ _ _ => true | _ => false)
   let nonrecs := block.filter (fun ci => match ci with

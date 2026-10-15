@@ -67,7 +67,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## `Empty` -/
 
@@ -75,10 +75,10 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [1]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_emptyA_type
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
-    denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 emptyA.toConstantVal.type
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 (emptyA (md := md)).toConstantVal.type
       = some (BConst.typeAV .empty [1]) := by
-  rw [show emptyA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,
+  rw [show (emptyA (md := md)).toConstantVal.type = Expr.sort (.succ .zero) from rfl,
     denoteMeta_sort]
   rfl
 
@@ -90,9 +90,9 @@ theorem extendEmpty (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun _ => AnnotTerm.const .empty [1]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyA.name ψ
@@ -172,28 +172,28 @@ theorem denoteMeta_emptyRecA_type {m : EnvModel V env}
     {A : (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat)
     (hE : env.find? emptyName = some emptyA) :
     denoteMeta (acvalWith m.acval emptyRecA.name A)
-        ⟨emptyRecA :: env.consts⟩ ψ 0 emptyRecA.toConstantVal.type
+        ⟨emptyRecA :: env.consts⟩ ψ 0 (emptyRecA (md := md)).toConstantVal.type
       = some (.pi 0 (pwBit ψ (.ifAllZero [uN]))
           (.pi 0 (pwBit ψ .never) (.const .empty [1]) (.sort (ψ uN)))
           (.pi 0 (pwBit ψ (.ifAllZero [uN])) (.const .empty [1])
             (.app (.bvar 1) (.bvar 0)))) := by
-  have hpd : Ix.Kernel.Verify.pinnedStructT emptyName ψ
+  have hpd : (Ix.Kernel.Verify.pinnedStructT (md := md)) emptyName ψ
       = some (Term.const .empty [1]) := by
     simp +decide [Ix.Kernel.Verify.pinnedStructT]
   have hleaf : acvalWith m.acval emptyRecA.name A emptyName ψ
       = AnnotTerm.const .empty [1] := by
-    rw [acvalWith_ne (by decide)]
-    exact acval_basis_pinned hE (by decide) hpd
+    rw [acvalWith_ne (by (cases md <;> decide))]
+    exact acval_basis_pinned hE (by (cases md <;> decide)) hpd
   have hEc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval emptyRecA.name A)
           ⟨emptyRecA :: env.consts⟩ ψ d (.const emptyName [])
         = some (AnnotTerm.const .empty [1]) := by
     intro d
-    have hf : (⟨emptyRecA :: env.consts⟩ : Env).find? emptyName
+    have hf : (⟨emptyRecA :: env.consts⟩ : Env md).find? emptyName
         = some emptyA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE
     rw [denoteMeta_levelless_const hf (by rfl), hleaf]
-  rw [show emptyRecA.toConstantVal.type
+  rw [show (emptyRecA (md := md)).toConstantVal.type
       = Expr.forallE
           (Expr.forallE (.const emptyName [])
             (.sort (.param uN)) { pw := .never })
@@ -234,9 +234,9 @@ theorem extendEmptyRec (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .emptyRec [1, ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => by injection h with _ _ _ h4; exact h4 ▸ rfl)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyRecA.name ψ
@@ -272,7 +272,7 @@ it.  `BasisInstallRun` is a right-nested `∧` chain, so the walk is an
 
 /-- **The `Empty` block, installed at the P tier.**  `BasisStepPB`'s
 `emptyK` branch. -/
-theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
+theorem declBasisPB_emptyK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env Ix.Kernel.BasisKind.emptyK.declsA env₂) :
     Nonempty (EnvModelM V μ env₂) := by
   rw [show Ix.Kernel.BasisKind.emptyK.declsA = [emptyA, emptyRecA] from rfl]
@@ -288,12 +288,12 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
   obtain ⟨mp1⟩ := extendEmpty mp hf1 hwf1
-  have hE : (⟨emptyA :: env.consts⟩ : Env).find? emptyName
+  have hE : (⟨emptyA :: env.consts⟩ : Env md).find? emptyName
       = some emptyA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
-  have hf2 : (⟨emptyA :: env.consts⟩ : Env).find? emptyRecA.name
+  have hf2 : (⟨emptyA :: env.consts⟩ : Env md).find? emptyRecA.name
       = none := Option.isNone_iff_eq_none.mp h2
   have hwf2 : EnvWF ⟨emptyRecA :: emptyA :: env.consts⟩ := by
     refine EnvWF.cons hwf1 ⟨rfl, rfl, ?_, rfl,
@@ -306,9 +306,9 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
-    show Expr.constsResolve _ emptyRecA.toConstantVal.type = true
-    simp only [show emptyRecA.toConstantVal.type
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
+    show Expr.constsResolve _ (emptyRecA (md := md)).toConstantVal.type = true
+    simp only [show (emptyRecA (md := md)).toConstantVal.type
         = Expr.forallE
             (Expr.forallE (.const emptyName [])
               (.sort (.param uN)) { pw := .never })
@@ -317,9 +317,9 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
               { pw := .ifAllZero [uN] })
             { pw := .ifAllZero [uN] } from rfl,
       Expr.constsResolve, Bool.and_eq_true, Option.isSome_iff_exists]
-    have hf : (⟨emptyRecA :: emptyA :: env.consts⟩ : Env).find?
+    have hf : (⟨emptyRecA :: emptyA :: env.consts⟩ : Env md).find?
         emptyName = some emptyA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]
       exact hE
     rw [hf]
     simp
@@ -351,12 +351,12 @@ the `.plain` conjunct and the fold contract. -/
 /-- **Every stored basis recursor rule fires `.plain`.**  Computed, not
 argued — and it is the *annotated* pin that governs. -/
 theorem basis_rec_rules_plain (kind : Ix.Kernel.BasisKind) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .recInfo _ _ _ rules =>
          rules.all fun rl => Ix.Kernel.RecRule.fire rl == .plain
        | _ => true) = true := by
-  cases kind <;> decide
+  cases kind <;> (cases md <;> decide)
 
 /-- **`Empty.rec` and `False.rec` are the only basis recursors with no
 rules** — the sole rows `declStep_preserves_of_basis_cons`'s `hnotrec` premise
@@ -364,13 +364,13 @@ can discharge, and the reason this file's block (and its `False` twin,
 `BasisFalseP.lean`, task #181) are the ones that close this way. -/
 theorem basis_rec_rules_nonempty (kind : Ix.Kernel.BasisKind)
     (hk : kind ≠ .emptyK) (hk' : kind ≠ .falseK) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .recInfo _ _ _ rules => !rules.isEmpty
        | _ => true) = true := by
   cases kind
   case emptyK => exact absurd rfl hk
   case falseK => exact absurd rfl hk'
-  all_goals decide
+  all_goals (cases md <;> decide)
 
 end Ix.Kernel.Model

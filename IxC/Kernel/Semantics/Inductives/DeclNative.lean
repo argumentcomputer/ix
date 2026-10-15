@@ -37,13 +37,13 @@ install settled on (task #268) is the one recorded: the former at the
 record at some `is_rec` verdict, the constructors at its environment,
 the kinds classified on THOSE constructors, and the classified record
 equal to the one the former carries. -/
-def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env)
-    (p₀ : NativeParts) (env₂ : Env) : Prop :=
+def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (p₀ : NativeParts md) (env₂ : Env md) : Prop :=
   (p₀.ctors.map (·.1.name)).Nodup ∧
-  ∃ (isRec : Bool) (env₁ : Env) (cvTa : ConstantVal) (p₁ : InductiveShape) (p : NativeParts)
-    (ctorsA : List (ConstantVal × Nat)) (sortss : List (List Level))
+  ∃ (isRec : Bool) (env₁ : Env md) (cvTa : ConstantVal md) (p₁ : InductiveShape md) (p : NativeParts md)
+    (ctorsA : List (ConstantVal md × Nat)) (sortss : List (List Level))
     (kinds : List (List RecFieldKind))
-    (cvRa : ConstantVal) (rhss : List Expr) (tfvs : List Expr) (trest : Expr)
+    (cvRa : ConstantVal md) (rhss : List (Expr md)) (tfvs : List (Expr md)) (trest : Expr md)
     (isorts : List Level),
     -- the former's run completes the record with the sort it read
     -- (task #195; task #210 Part B: this route too); every later stage
@@ -78,10 +78,10 @@ def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env)
 
 /-- The install after the pass, inverted: the monad-shape argument,
 one `cases` per bind, the guards by cases. -/
-theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env}
-    {q : NativePass Env}
+theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {q : (NativePass md) (Env md)}
     (h : checkNativeTail (m := Ix.Kernel.CheckM) (fueledOps μ F) env q = .ok env₂) :
-    ∃ (cvRa : ConstantVal) (rhss : List Expr) (tfvs : List Expr) (trest : Expr)
+    ∃ (cvRa : ConstantVal md) (rhss : List (Expr md)) (tfvs : List (Expr md)) (trest : Expr md)
       (isorts : List Level),
       (q.p.large = true → q.p.resSort.isNeverZero = true ∨ q.p.ctors.length < 2) ∧
       openPisAtFvars (q.p.nP + q.p.nIdx) q.cvTa.type 0 = some (tfvs, trest) ∧
@@ -152,8 +152,8 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env}
   exact ⟨cvRa, rhss, tfvs, trest, isorts, helim, rfl, hsorts, hk, hr, rfl, h⟩
 
 /-- A settled pass with the install after it is a run. -/
-theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env}
-    {p₀ : NativeParts} {isRec : Bool} {q : NativePass Env}
+theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {p₀ : NativeParts md} {isRec : Bool} {q : (NativePass md) (Env md)}
     (hnd : (p₀.ctors.map (·.1.name)).Nodup)
     (hP : checkNativePass (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀ isRec = .ok (q, true))
     (h : checkNativeTail (m := Ix.Kernel.CheckM) (fueledOps μ F) env q = .ok env₂) :
@@ -169,8 +169,8 @@ theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env}
 
 /-- The bridge inversion: the settled pass — the first, or the second
 where the reading overshot — and the install after it. -/
-theorem declNativeRun_of {μ : CheckMode} {F : Nat} {env env₂ : Env}
-    {p₀ : NativeParts}
+theorem declNativeRun_of {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {p₀ : NativeParts md}
     (h : checkNative (m := Ix.Kernel.CheckM) (fueledOps μ F) env p₀ = .ok env₂) :
     DeclNativeRun μ F env p₀ env₂ := by
   rw [checkNative] at h
@@ -212,8 +212,8 @@ ROUTE, task #210 Part B). -/
 
 /-- The `.indDecl` dispatch at the run level (the recogniser alone
 since task #219). -/
-def DeclIndRunDispatch (μ : CheckMode) (F : Nat) (env : Env)
-    (block : List ConstantInfo) (nP : Nat) (env₂ : Env) : Prop :=
+def DeclIndRunDispatch (μ : CheckMode) (F : Nat) (env : Env md)
+    (block : List (ConstantInfo md)) (nP : Nat) (env₂ : Env md) : Prop :=
   match Ix.Kernel.nativeParts? nP block with
   | some p => DeclNativeRun μ F env p env₂
   | none => DeclIndRun μ F env block env₂

@@ -45,35 +45,35 @@ open Ix.Kernel (Env Expr Key BinderMeta)
 
 universe w
 
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 set_option maxHeartbeats 3200000 in
 /-- **The field domain, crossed, at the reading** (`zipFieldTermEq`). -/
 theorem zipFieldTermEq
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
-    {rP cnP cnF : Nat} {fvs : List Expr}
-    {ctyR : Expr} (hCwR : ctyR.hasFvar = false)
+    {rP cnP cnF : Nat} {fvs : List (Expr md)}
+    {ctyR : Expr md} (hCwR : ctyR.hasFvar = false)
     (hCbR : ctyR.looseBVarsBounded 0 = true)
     {TVj : AnnotTerm}
     (hTVjK : denoteMeta acval env φ (rP + cnF) ctyR = some TVj)
     (hTVjcl : ∀ k : Nat, TVj.liftN 1 k = TVj)
     {Γj : List AnnotTerm} {Rj : AnnotTerm}
     (htowerJ : PiTeleAV (cnP + cnF) TVj Γj Rj)
-    {sp : List Expr} (hsplen : sp.length = cnP + cnF)
-    (hspLeaf : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)
+    (hspLeaf : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∀ l ∈ x.fvarLeaves,
         Expr.fvar l.1 l.2 ∈ fvs ∧ l.1 < rP + (q + 1 - cnP))
-    (hspScope : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hspScope : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true)
-    {cdoms : List Expr} {cres : Expr}
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     {zs : List AnnotTerm} (hzslen : zs.length = rP + cnF)
     {mix : List AnnotTerm} (hmixlen : mix.length = cnP + cnF)
-    (hmixsp : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hmixsp : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∃ w0, denoteMeta acval env φ (rP + cnF) x = some w0 ∧
         mix[q]? = some (AnnotTerm.instSeq zs (rP + cnF - 1) w0))
     {j : Nat} (hj : j < cnF) :
@@ -88,7 +88,7 @@ theorem zipFieldTermEq
             (Γj.getD (cnP + cnF - 1 - (cnP + j)) default) := by
   have hΓjlen : Γj.length = cnP + cnF := htowerJ.length
   -- the scattered spine's per-element facts
-  have hspFacts : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+  have hspFacts : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       (∃ w, denoteMeta acval env φ (rP + cnF) x = some w) ∧
         Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true := by
     intro q x hx
@@ -117,7 +117,7 @@ theorem zipFieldTermEq
         exact nomatch hdr
       · rw [hrec] at hdr
         have hdr' : (some (domJ :: ds', rs') :
-            Option (List Expr × Expr))
+            Option (List (Expr md) × Expr md))
             = some (cdoms.drop (cnP + j), cres) := hdr
         injection hdr' with hdr''
         have h1 : domJ :: ds' = cdoms.drop (cnP + j) :=
@@ -181,7 +181,7 @@ theorem zipFieldTermEq
     refine Expr.fvarsBelow_of_fvarLeaves fun l hl => ?_
     rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hCwR] at hl
     exact nomatch hl
-  have hspTake : ∀ (q : Nat) (x : Expr),
+  have hspTake : ∀ (q : Nat) (x : Expr md),
       (sp.take (cnP + j))[q]? = some x → sp[q]? = some x ∧ q < cnP + j := by
     intro q x hx
     have hqm : q < cnP + j := by
@@ -231,7 +231,7 @@ theorem zipFieldTermEq
       (Γj.drop (cnP + cnF - (cnP + j))) mid' := by
     rw [hlenTake, instSeqAV_eq_self_of_closed hTVjcl]
     exact hpre
-  have hwsCond : ∀ (q : Nat) (x : Expr),
+  have hwsCond : ∀ (q : Nat) (x : Expr md),
       (sp.take (cnP + j))[q]? = some x →
       ∃ w0, denoteMeta acval env φ (rP + cnF) x = some w0 ∧
         (mix.take (cnP + j))[q]? = some

@@ -18,8 +18,8 @@ that variable equals opening with the term directly.
 namespace Ix.Kernel.Expr
 
 /-- Instantiation is a no-op on terms without matching loose bvars. -/
-theorem instantiate1_eq_self {v : Expr} :
-    ∀ {e : Expr} {k : Nat}, looseBVarsBounded k e = true → e.instantiate1 v k = e := by
+theorem instantiate1_eq_self {v : Expr md} :
+    ∀ {e : Expr md} {k : Nat}, looseBVarsBounded k e = true → e.instantiate1 v k = e := by
   intro e
   induction e with
   | bvar i =>
@@ -34,10 +34,10 @@ theorem instantiate1_eq_self {v : Expr} :
 
 /-- Two closed instantiations commute (the outer index below the
 inner). -/
-theorem instantiate1_instantiate1 {a b : Expr}
+theorem instantiate1_instantiate1 {a b : Expr md}
     (hba : a.looseBVarsBounded 0 = true)
     (hbb : b.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) (j k : Nat), j ≤ k →
+    ∀ (e : Expr md) (j k : Nat), j ≤ k →
       (e.instantiate1 a (k + 1)).instantiate1 b j =
         (e.instantiate1 b j).instantiate1 a k := by
   intro e
@@ -79,8 +79,8 @@ theorem instantiate1_instantiate1 {a b : Expr}
 /-- A stripped telescope's body stays loose-bvar-bounded by the strip
 depth. -/
 theorem stripPis_body_bounded :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr} {j : Nat},
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md} {j : Nat},
       e.stripPis k = some (bs, body) → e.looseBVarsBounded j = true →
       body.looseBVarsBounded (j + k) = true := by
   intro k
@@ -104,8 +104,8 @@ theorem stripPis_body_bounded :
       exact this
 
 /-- Instantiation preserves a `∀`-telescope's arity. -/
-theorem stripPis_instantiate1_isSome {v : Expr} :
-    ∀ (k : Nat) {e : Expr} (j : Nat), (e.stripPis k).isSome →
+theorem stripPis_instantiate1_isSome {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} (j : Nat), (e.stripPis k).isSome →
       ((e.instantiate1 v j).stripPis k).isSome := by
   intro k
   induction k with
@@ -119,7 +119,7 @@ theorem stripPis_instantiate1_isSome {v : Expr} :
 
 /-- Structural equality up to `fvar` names and annotations and binder
 names — exactly what the interpretation never reads. -/
-@[expose] def ErasedEq : Expr → Expr → Prop
+@[expose] def ErasedEq : Expr md → Expr md → Prop
   | .bvar i, .bvar j => i = j
   | .fvar i _, .fvar j _ => i = j
   | .sort u, .sort v => u = v
@@ -135,17 +135,17 @@ names — exactly what the interpretation never reads. -/
   | .proj s i e, .proj s' i' e' => s = s' ∧ i = i' ∧ ErasedEq e e'
   | _, _ => False
 
-theorem ErasedEq.rfl : ∀ (e : Expr), ErasedEq e e := by
+theorem ErasedEq.rfl : ∀ (e : Expr md), ErasedEq e e := by
   intro e
   induction e <;> simp_all [ErasedEq]
 
 /-- Equal terms are `ErasedEq` (the shape the `==` comparisons of the
 kernel hand their consumers, `eq_of_beq` first). -/
-theorem ErasedEq.of_eq {a b : Expr} (h : a = b) : ErasedEq a b :=
+theorem ErasedEq.of_eq {a b : Expr md} (h : a = b) : ErasedEq a b :=
   h ▸ ErasedEq.rfl a
 
 theorem ErasedEq.instantiate1 :
-    ∀ {e e' v v' : Expr} {k : Nat}, ErasedEq e e' → ErasedEq v v' →
+    ∀ {e e' v v' : Expr md} {k : Nat}, ErasedEq e e' → ErasedEq v v' →
       ErasedEq (e.instantiate1 v k) (e'.instantiate1 v' k) := by
   intro e
   induction e with
@@ -202,15 +202,15 @@ theorem ErasedEq.instantiate1 :
 
 /-- The first `k` binder domains of a λ-tower and a `∀`-telescope agree
 syntactically. -/
-def LamPiDomsEq : Nat → Expr → Expr → Prop
+def LamPiDomsEq : Nat → Expr md → Expr md → Prop
   | 0, _, _ => True
   | k + 1, .lam d₁ b₁ _, .forallE d₂ b₂ _ => d₁ = d₂ ∧ LamPiDomsEq k b₁ b₂
   | _ + 1, _, _ => False
 
 /-- Domain agreement survives instantiation (same argument on both
 sides). -/
-theorem LamPiDomsEq.instantiate1 {v : Expr} :
-    ∀ (k : Nat) {e₁ e₂ : Expr} (j : Nat), LamPiDomsEq k e₁ e₂ →
+theorem LamPiDomsEq.instantiate1 {v : Expr md} :
+    ∀ (k : Nat) {e₁ e₂ : Expr md} (j : Nat), LamPiDomsEq k e₁ e₂ →
       LamPiDomsEq k (e₁.instantiate1 v j) (e₂.instantiate1 v j) := by
   intro k
   induction k with
@@ -223,7 +223,7 @@ theorem LamPiDomsEq.instantiate1 {v : Expr} :
 
 /-- Lifting a bvar-closed expression is the identity. -/
 theorem liftLooseBVars_eq_self {k : Nat} :
-    ∀ {e : Expr} {c : Nat}, e.looseBVarsBounded c = true →
+    ∀ {e : Expr md} {c : Nat}, e.looseBVarsBounded c = true →
       e.liftLooseBVars k c = e := by
   intro e
   induction e with
@@ -237,15 +237,15 @@ theorem liftLooseBVars_eq_self {k : Nat} :
     simp_all [looseBVarsBounded, liftLooseBVars]
 
 /-- A zero lift is the identity. -/
-theorem liftLooseBVars_zero : ∀ (e : Expr) (c : Nat),
+theorem liftLooseBVars_zero : ∀ (e : Expr md) (c : Nat),
     e.liftLooseBVars 0 c = e := by
   intro e
   induction e <;> intro c <;> simp_all [liftLooseBVars]
 
 /-- Instantiating any freshly inserted slot of a lift eats one lift
 level: the lifted expression never references the inserted range. -/
-theorem instantiate1_liftLooseBVars {v : Expr} :
-    ∀ {e : Expr} {k c j : Nat}, c ≤ j → j ≤ c + k →
+theorem instantiate1_liftLooseBVars {v : Expr md} :
+    ∀ {e : Expr md} {k c j : Nat}, c ≤ j → j ≤ c + k →
       (e.liftLooseBVars (k + 1) c).instantiate1 v j =
         e.liftLooseBVars k c := by
   intro e
@@ -285,9 +285,9 @@ theorem instantiate1_liftLooseBVars {v : Expr} :
     simp only [liftLooseBVars, instantiate1, ih hcj hjk]
 
 /-- Instantiation below the lift's cutoff commutes with the lift. -/
-theorem liftLooseBVars_instantiate1 {v : Expr}
+theorem liftLooseBVars_instantiate1 {v : Expr md}
     (hbv : v.looseBVarsBounded 0 = true) :
-    ∀ {e : Expr} {k c j : Nat}, j ≥ c →
+    ∀ {e : Expr md} {k c j : Nat}, j ≥ c →
       (e.liftLooseBVars k c).instantiate1 v (j + k) =
         (e.instantiate1 v j).liftLooseBVars k c := by
   intro e
@@ -346,13 +346,13 @@ theorem liftLooseBVars_instantiate1 {v : Expr}
 /-- Instantiation distributes over a `∀`-telescope's decomposition:
 each domain is instantiated at its depth-shifted index, the body at
 the telescope's arity. -/
-theorem stripPis_instantiate1_eq {v : Expr} :
-    ∀ (k : Nat) {e : Expr} {bs bs' : List (Expr × BinderMeta)}
-      {body body' : Expr} (j : Nat),
+theorem stripPis_instantiate1_eq {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} {bs bs' : List (Expr md × BinderMeta)}
+      {body body' : Expr md} (j : Nat),
       e.stripPis k = some (bs, body) →
       (e.instantiate1 v j).stripPis k = some (bs', body') →
       body' = body.instantiate1 v (j + k) ∧
-      ∀ (i : Nat) (b b' : Expr × BinderMeta),
+      ∀ (i : Nat) (b b' : Expr md × BinderMeta),
         bs[i]? = some b → bs'[i]? = some b' →
         b'.1 = b.1.instantiate1 v (j + i) := by
   intro k
@@ -398,8 +398,8 @@ theorem stripPis_instantiate1_eq {v : Expr} :
         omega
 
 /-- Instantiation distributes over an application spine. -/
-theorem mkAppN_instantiate1 {v : Expr} :
-    ∀ (args : List Expr) (h : Expr) (k : Nat),
+theorem mkAppN_instantiate1 {v : Expr md} :
+    ∀ (args : List (Expr md)) (h : Expr md) (k : Nat),
       (Expr.mkAppN h args).instantiate1 v k =
         Expr.mkAppN (h.instantiate1 v k) (args.map (·.instantiate1 v k)) := by
   intro args
@@ -412,7 +412,7 @@ theorem mkAppN_instantiate1 {v : Expr} :
     rfl
 
 /-- Erasure-equality is transitive. -/
-theorem ErasedEq.symm : ∀ {e₁ e₂ : Expr}, ErasedEq e₁ e₂ → ErasedEq e₂ e₁
+theorem ErasedEq.symm : ∀ {e₁ e₂ : Expr md}, ErasedEq e₁ e₂ → ErasedEq e₂ e₁
   | .bvar _, .bvar _, h => Eq.symm h
   | .fvar _ _, .fvar _ _, h => Eq.symm h
   | .sort _, .sort _, h => Eq.symm h
@@ -431,7 +431,7 @@ theorem ErasedEq.symm : ∀ {e₁ e₂ : Expr}, ErasedEq e₁ e₂ → ErasedEq 
 /-- Split a `∀`-telescope decomposition at a prefix length: the
 residual of the prefix strips the remaining binders. -/
 theorem ErasedEq.trans :
-    ∀ {e₁ e₂ e₃ : Expr}, ErasedEq e₁ e₂ → ErasedEq e₂ e₃ → ErasedEq e₁ e₃ := by
+    ∀ {e₁ e₂ e₃ : Expr md}, ErasedEq e₁ e₂ → ErasedEq e₂ e₃ → ErasedEq e₁ e₃ := by
   intro e₁
   induction e₁ with
   | bvar i =>
@@ -542,12 +542,12 @@ theorem ErasedEq.trans :
 `ErasedEq` pair comes from a strip of the other, with pointwise-erased
 domains, equal binder metadata, and erased bodies. -/
 theorem ErasedEq.stripPis_inv :
-    ∀ (k : Nat) {e₁ e₂ : Expr} {bs₂ : List (Expr × BinderMeta)}
-      {body₂ : Expr},
+    ∀ (k : Nat) {e₁ e₂ : Expr md} {bs₂ : List (Expr md × BinderMeta)}
+      {body₂ : Expr md},
       ErasedEq e₁ e₂ → e₂.stripPis k = some (bs₂, body₂) →
       ∃ bs₁ body₁, e₁.stripPis k = some (bs₁, body₁) ∧
         bs₁.length = bs₂.length ∧
-        (∀ (i : Nat) (b₁ b₂' : Expr × BinderMeta),
+        (∀ (i : Nat) (b₁ b₂' : Expr md × BinderMeta),
           bs₁[i]? = some b₁ → bs₂[i]? = some b₂' →
           ErasedEq b₁.1 b₂'.1 ∧ b₁.2 = b₂'.2) ∧
         ErasedEq body₁ body₂ := by
@@ -592,14 +592,14 @@ theorem ErasedEq.stripPis_inv :
 
 /-- Instantiate a sequence of arguments at descending indices (the
 per-domain effect of peeling a telescope). -/
-@[expose] def instSeq : List Expr → Nat → Expr → Expr
+@[expose] def instSeq : List (Expr md) → Nat → Expr md → Expr md
   | [], _, e => e
   | a :: as, t, e => instSeq as (t - 1) (e.instantiate1 a t)
 
 /-- `instSeq` congruence under erasure (arguments erased to
 themselves). -/
 theorem instSeq_erasedEq :
-    ∀ (args : List Expr) (t : Nat) {X Y : Expr}, ErasedEq X Y →
+    ∀ (args : List (Expr md)) (t : Nat) {X Y : Expr md}, ErasedEq X Y →
       ErasedEq (instSeq args t X) (instSeq args t Y) := by
   intro args
   induction args with
@@ -612,9 +612,9 @@ theorem instSeq_erasedEq :
 (pairwise erased-equal, e.g. the same-index free variables of two
 frames). -/
 theorem instSeq_erasedEq_args :
-    ∀ (args₁ args₂ : List Expr) (t : Nat) {X Y : Expr},
+    ∀ (args₁ args₂ : List (Expr md)) (t : Nat) {X Y : Expr md},
       ErasedEq X Y →
-      (∀ (k : Nat) (a₁ a₂ : Expr), args₁[k]? = some a₁ →
+      (∀ (k : Nat) (a₁ a₂ : Expr md), args₁[k]? = some a₁ →
         args₂[k]? = some a₂ → ErasedEq a₁ a₂) →
       args₁.length = args₂.length →
       ErasedEq (instSeq args₁ t X) (instSeq args₂ t Y)
@@ -631,7 +631,7 @@ theorem instSeq_erasedEq_args :
 /-- Instantiations strictly above a lift's inserted range drop past
 it. -/
 theorem instSeq_liftLooseBVars {kL c : Nat} :
-    ∀ (args : List Expr) (t : Nat) {e : Expr},
+    ∀ (args : List (Expr md)) (t : Nat) {e : Expr md},
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
       t + 1 ≥ args.length + c + kL →
       instSeq args t (e.liftLooseBVars kL c) =
@@ -657,7 +657,7 @@ theorem instSeq_liftLooseBVars {kL c : Nat} :
 /-- Instantiating every inserted slot of a lift, top down, restores the
 original expression. -/
 theorem instSeq_lift_eat {c : Nat} :
-    ∀ (extras : List Expr) {e : Expr},
+    ∀ (extras : List (Expr md)) {e : Expr md},
       instSeq extras (c + extras.length - 1)
         (e.liftLooseBVars extras.length c) = e := by
   intro extras
@@ -674,8 +674,8 @@ theorem instSeq_lift_eat {c : Nat} :
 
 /-- A successful telescope decomposition has exactly `k` binders. -/
 theorem stripPis_length :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr}, e.stripPis k = some (bs, body) → bs.length = k := by
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md}, e.stripPis k = some (bs, body) → bs.length = k := by
   intro k
   induction k with
   | zero =>
@@ -701,7 +701,7 @@ theorem stripPis_length :
 
 /-- An instantiation sequence splits along list append. -/
 theorem instSeq_append :
-    ∀ (as bs : List Expr) (t : Nat) (X : Expr),
+    ∀ (as bs : List (Expr md)) (t : Nat) (X : Expr md),
       instSeq (as ++ bs) t X = instSeq bs (t - as.length) (instSeq as t X) := by
   intro as
   induction as with
@@ -717,9 +717,9 @@ theorem instSeq_append :
 /-- Pull an instantiation at the top index out of a closed-argument
 sequence: the remaining substitutions shift its slot down by their
 count. -/
-theorem instSeq_instantiate1_out {b : Expr}
+theorem instSeq_instantiate1_out {b : Expr md}
     (hbb : b.looseBVarsBounded 0 = true) :
-    ∀ (args : List Expr) (t : Nat) (e : Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (e : Expr md),
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
       args.length ≤ t →
       instSeq args (t - 1) (e.instantiate1 b t) =
@@ -751,7 +751,7 @@ theorem instSeq_instantiate1_out {b : Expr}
 /-- Instantiating a middle segment of closed arguments through a lift
 of its width collapses the lift: the parameters land above, the fields
 below, and the middle slots eat the inserted range. -/
-theorem instSeq_mid_collapse (A B C : List Expr) {X : Expr}
+theorem instSeq_mid_collapse (A B C : List (Expr md)) {X : Expr md}
     (hA : ∀ a ∈ A, a.looseBVarsBounded 0 = true) :
     instSeq (A ++ B ++ C) (A.length + B.length + C.length - 1)
       (X.liftLooseBVars B.length C.length) =
@@ -770,7 +770,7 @@ theorem instSeq_mid_collapse (A B C : List Expr) {X : Expr}
   omega
 
 /-- A spine head is never an application. -/
-theorem getAppFn_not_app : ∀ (e f a : Expr), e.getAppFn ≠ .app f a := by
+theorem getAppFn_not_app : ∀ (e f a : Expr md), e.getAppFn ≠ .app f a := by
   intro e
   induction e with
   | app g b ihg ihb => intro f a; exact ihg f a
@@ -778,7 +778,7 @@ theorem getAppFn_not_app : ∀ (e f a : Expr), e.getAppFn ≠ .app f a := by
 
 /-- An instantiation sequence is a no-op on bvar-closed expressions. -/
 theorem instSeq_eq_self :
-    ∀ (args : List Expr) (t : Nat) {e : Expr},
+    ∀ (args : List (Expr md)) (t : Nat) {e : Expr md},
       e.looseBVarsBounded 0 = true → instSeq args t e = e := by
   intro args
   induction args with
@@ -796,7 +796,7 @@ nested rule's stored pin (rule-prefix context, lifted past the index
 binders into the major-domain context) evaluates at the recursor's
 full argument spine to its evaluation at the leading arguments. -/
 theorem instSeq_liftLooseBVars_prefix :
-    ∀ (pre rest : List Expr) {q : Expr},
+    ∀ (pre rest : List (Expr md)) {q : Expr md},
       (∀ a ∈ pre, a.looseBVarsBounded 0 = true) →
       q.looseBVarsBounded pre.length = true →
       instSeq (pre ++ rest) (pre.length + rest.length - 1)
@@ -831,7 +831,7 @@ theorem instSeq_liftLooseBVars_prefix :
 
 /-- An instantiation sequence distributes over an application spine. -/
 theorem instSeq_mkAppN :
-    ∀ (args : List Expr) (t : Nat) (h : Expr) (xs : List Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (h : Expr md) (xs : List (Expr md)),
       instSeq args t (Expr.mkAppN h xs) =
         Expr.mkAppN (instSeq args t h) (xs.map (instSeq args t ·)) := by
   intro args
@@ -848,7 +848,7 @@ theorem instSeq_mkAppN :
 /-- Resolving a bound variable through an instantiation sequence of
 closed arguments: the variable becomes its slot's argument. -/
 theorem instSeq_bvar :
-    ∀ (args : List Expr) (t j : Nat),
+    ∀ (args : List (Expr md)) (t j : Nat),
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
       j ≤ t → t - j < args.length →
       args[t - j]? = some (instSeq args t (.bvar j)) := by
@@ -885,8 +885,8 @@ substitution lemma for `instantiate1Lift`. -/
 
 /-- Instantiating a bvar-closed expression is the identity, also for
 the capture-avoiding substitution. -/
-theorem instantiate1Lift_eq_self {v : Expr} :
-    ∀ {e : Expr} {k : Nat}, looseBVarsBounded k e = true →
+theorem instantiate1Lift_eq_self {v : Expr md} :
+    ∀ {e : Expr md} {k : Nat}, looseBVarsBounded k e = true →
       e.instantiate1Lift v k = e := by
   intro e
   induction e with
@@ -899,9 +899,9 @@ theorem instantiate1Lift_eq_self {v : Expr} :
 
 /-- At a bvar-closed argument the capture-avoiding substitution is the
 plain one: there is nothing to lift. -/
-theorem instantiate1Lift_eq_instantiate1 {v : Expr}
+theorem instantiate1Lift_eq_instantiate1 {v : Expr md}
     (hbv : v.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) (k : Nat), e.instantiate1Lift v k = e.instantiate1 v k := by
+    ∀ (e : Expr md) (k : Nat), e.instantiate1Lift v k = e.instantiate1 v k := by
   intro e
   induction e with
   | bvar i =>
@@ -917,9 +917,9 @@ theorem instantiate1Lift_eq_instantiate1 {v : Expr}
 the ambient variable `k + u` by a *closed* term commutes with the
 capture-avoiding substitution at `k`: the inserted copy's own ambient
 variable is instantiated instead. -/
-theorem instantiate1Lift_instantiate1 {a s : Expr}
+theorem instantiate1Lift_instantiate1 {a s : Expr md}
     (hs : s.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) (k u : Nat),
+    ∀ (e : Expr md) (k u : Nat),
       (e.instantiate1Lift a k).instantiate1 s (k + u) =
         (e.instantiate1 s (k + 1 + u)).instantiate1Lift
           (a.instantiate1 s u) k := by
@@ -1009,10 +1009,10 @@ theorem instantiate1Lift_instantiate1 {a s : Expr}
 capture-avoiding substitution followed by the ambient spine is the
 plain substitution at the already-instantiated argument. -/
 theorem instSeq_instantiate1Lift :
-    ∀ (sp : List Expr) (t : Nat),
+    ∀ (sp : List (Expr md)) (t : Nat),
       (∀ s ∈ sp, s.looseBVarsBounded 0 = true) → sp.length = t + 1 →
-      ∀ {a : Expr}, a.looseBVarsBounded (t + 1) = true →
-      ∀ (e : Expr) (k : Nat),
+      ∀ {a : Expr md}, a.looseBVarsBounded (t + 1) = true →
+      ∀ (e : Expr md) (k : Nat),
         instSeq sp (k + t) (e.instantiate1Lift a k) =
           (instSeq sp (k + t + 1) e).instantiate1 (instSeq sp t a) k := by
   intro sp
@@ -1051,17 +1051,17 @@ theorem instSeq_instantiate1Lift :
 effect of peeling a telescope at **open** arguments
 (`Expr.instPisAtLift`, which is what a projection's generated type is
 built with). -/
-def instSeqLift : List Expr → Nat → Expr → Expr
+def instSeqLift : List (Expr md) → Nat → Expr md → Expr md
   | [], _, e => e
   | a :: as, t, e => instSeqLift as (t - 1) (e.instantiate1Lift a t)
 
 /-- **The collapse.**  A closed instantiation of the ambient variables
 turns the capture-avoiding sequence into the plain one at the
 already-instantiated arguments. -/
-theorem instSeq_instSeqLift (sp : List Expr) (t : Nat)
+theorem instSeq_instSeqLift (sp : List (Expr md)) (t : Nat)
     (hsp : ∀ s ∈ sp, s.looseBVarsBounded 0 = true) (hlen : sp.length = t + 1) :
-    ∀ (args : List Expr), (∀ a ∈ args, a.looseBVarsBounded (t + 1) = true) →
-      ∀ (e : Expr),
+    ∀ (args : List (Expr md)), (∀ a ∈ args, a.looseBVarsBounded (t + 1) = true) →
+      ∀ (e : Expr md),
         instSeq sp t (instSeqLift args (args.length - 1) e) =
           instSeq (args.map (fun a => instSeq sp t a)) (args.length - 1)
             (instSeq sp (args.length + t) e) := by
@@ -1090,7 +1090,7 @@ theorem instSeq_instSeqLift (sp : List Expr) (t : Nat)
 /-- Peel `instSeqLift` through a `∀`-binder (the shift index stays in
 step with the remaining arguments), exactly as `instSeq_forallE`. -/
 theorem instSeqLift_forallE :
-    ∀ (args : List Expr) (t : Nat) (d b : Expr)
+    ∀ (args : List (Expr md)) (t : Nat) (d b : Expr md)
       (m : BinderMeta), args.length ≤ t + 1 →
       instSeqLift args t (.forallE d b m) =
         .forallE (instSeqLift args t d) (instSeqLift args (t + 1) b) m := by
@@ -1117,13 +1117,13 @@ theorem instSeqLift_forallE :
       rw [ht]
 
 /-- `stripPis` commutes with the capture-avoiding substitution. -/
-theorem stripPis_instantiate1Lift_full {v : Expr} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr} (j : Nat),
+theorem stripPis_instantiate1Lift_full {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md} (j : Nat),
       e.stripPis k = some (bs, body) →
       ∃ bs', (e.instantiate1Lift v j).stripPis k =
           some (bs', body.instantiate1Lift v (j + k)) ∧
-        ∀ (i : Nat) (b : Expr × BinderMeta), bs[i]? = some b →
+        ∀ (i : Nat) (b : Expr md × BinderMeta), bs[i]? = some b →
           bs'[i]? = some (b.1.instantiate1Lift v (j + i), b.2) := by
   intro k
   induction k with
@@ -1163,9 +1163,9 @@ theorem stripPis_instantiate1Lift_full {v : Expr} :
 /-- The head binder of a partial capture-avoiding `∀`-instantiation
 walk, characterized by the raw telescope's binder list. -/
 theorem instPisAtLift_head :
-    ∀ (args : List Expr) {e : Expr} {rest : Expr} {mrem : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr}
-      {b : Expr × BinderMeta},
+    ∀ (args : List (Expr md)) {e : Expr md} {rest : Expr md} {mrem : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md}
+      {b : Expr md × BinderMeta},
       Expr.instPisAtLift args e = some rest →
       e.stripPis (args.length + (mrem + 1)) = some (bs, body) →
       bs[args.length]? = some b →
@@ -1218,8 +1218,8 @@ theorem instPisAtLift_head :
 
 /-- A successful λ-tower decomposition has exactly `k` binders. -/
 theorem stripLams_length :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr}, e.stripLams k = some (bs, body) → bs.length = k := by
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md}, e.stripLams k = some (bs, body) → bs.length = k := by
   intro k
   induction k with
   | zero =>
@@ -1244,8 +1244,8 @@ theorem stripLams_length :
         simp [this]
 
 /-- Instantiation preserves a λ-tower's arity. -/
-theorem stripLams_instantiate1_isSome {v : Expr} :
-    ∀ (k : Nat) {e : Expr} (j : Nat), (e.stripLams k).isSome →
+theorem stripLams_instantiate1_isSome {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} (j : Nat), (e.stripLams k).isSome →
       ((e.instantiate1 v j).stripLams k).isSome := by
   intro k
   induction k with
@@ -1258,13 +1258,13 @@ theorem stripLams_instantiate1_isSome {v : Expr} :
       exact ih (j + 1) h
 
 /-- Instantiation distributes over a λ-tower's decomposition. -/
-theorem stripLams_instantiate1_eq {v : Expr} :
-    ∀ (k : Nat) {e : Expr} {bs bs' : List (Expr × BinderMeta)}
-      {body body' : Expr} (j : Nat),
+theorem stripLams_instantiate1_eq {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} {bs bs' : List (Expr md × BinderMeta)}
+      {body body' : Expr md} (j : Nat),
       e.stripLams k = some (bs, body) →
       (e.instantiate1 v j).stripLams k = some (bs', body') →
       body' = body.instantiate1 v (j + k) ∧
-      ∀ (i : Nat) (b b' : Expr × BinderMeta),
+      ∀ (i : Nat) (b b' : Expr md × BinderMeta),
         bs[i]? = some b → bs'[i]? = some b' →
         b'.1 = b.1.instantiate1 v (j + i) := by
   intro k
@@ -1312,8 +1312,8 @@ theorem stripLams_instantiate1_eq {v : Expr} :
 /-- Substituting a *free variable* cannot create λ-binders: a λ-tower
 of the instantiated term certifies one of the term itself. -/
 theorem stripLams_instantiate1_fvar_isSome_rev {i : Nat}
-    {t : Expr} :
-    ∀ (k : Nat) (e : Expr) (j : Nat),
+    {t : Expr md} :
+    ∀ (k : Nat) (e : Expr md) (j : Nat),
       ((e.instantiate1 (.fvar i t) j).stripLams k).isSome = true →
       (e.stripLams k).isSome = true := by
   intro k
@@ -1342,7 +1342,7 @@ theorem stripLams_instantiate1_fvar_isSome_rev {i : Nat}
 /-- Peel `instSeq` through a `∀`-binder (the shift index stays in step
 with the remaining arguments). -/
 theorem instSeq_forallE :
-    ∀ (args : List Expr) (t : Nat) (d b : Expr)
+    ∀ (args : List (Expr md)) (t : Nat) (d b : Expr md)
       (m : BinderMeta), args.length ≤ t + 1 →
       instSeq args t (.forallE d b m) =
         .forallE (instSeq args t d) (instSeq args (t + 1) b) m := by
@@ -1369,7 +1369,7 @@ theorem instSeq_forallE :
 
 /-- An instantiation sequence distributes over a single application. -/
 theorem instSeq_app :
-    ∀ (args : List Expr) (t : Nat) (f a : Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (f a : Expr md),
       instSeq args t (.app f a) =
         .app (instSeq args t f) (instSeq args t a) := by
   intro args
@@ -1384,8 +1384,8 @@ theorem instSeq_app :
     rfl
 
 /-- Instantiating with a scoped term keeps reachable-`fvar` bounds. -/
-theorem fvarsBelow_instantiate1_gen {d : Nat} {a : Expr} (ha : fvarsBelow d a) :
-    ∀ {e : Expr} (k : Nat), fvarsBelow d e → fvarsBelow d (e.instantiate1 a k) := by
+theorem fvarsBelow_instantiate1_gen {d : Nat} {a : Expr md} (ha : fvarsBelow d a) :
+    ∀ {e : Expr md} (k : Nat), fvarsBelow d e → fvarsBelow d (e.instantiate1 a k) := by
   intro e
   induction e <;> intro k hb <;> simp_all [instantiate1, fvarsBelow]
   case bvar i =>
@@ -1395,7 +1395,7 @@ theorem fvarsBelow_instantiate1_gen {d : Nat} {a : Expr} (ha : fvarsBelow d a) :
 
 
 /-- Replace `fvar p` by `a`, lowering higher `fvar` indices. -/
-@[expose] def substFvarAt (p : Nat) (a : Expr) : Expr → Expr
+@[expose] def substFvarAt (p : Nat) (a : Expr md) : Expr md → Expr md
   | .bvar i => .bvar i
   | .fvar idx ty =>
     if idx = p then a
@@ -1412,9 +1412,9 @@ theorem fvarsBelow_instantiate1_gen {d : Nat} {a : Expr} (ha : fvarsBelow d a) :
   | .proj s i e => .proj s i (substFvarAt p a e)
 
 /-- Substitution commutes with opening a binder at a higher index. -/
-theorem substFvarAt_instantiate1 {p d : Nat} (hpd : p ≤ d) {ty a : Expr}
+theorem substFvarAt_instantiate1 {p d : Nat} (hpd : p ≤ d) {ty a : Expr md}
     (hba : a.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) (k : Nat),
+    ∀ (e : Expr md) (k : Nat),
       substFvarAt p a (e.instantiate1 (.fvar (d + 1) ty) k) =
         (substFvarAt p a e).instantiate1 (.fvar d (substFvarAt p a ty)) k := by
   intro e
@@ -1442,8 +1442,8 @@ theorem substFvarAt_instantiate1 {p d : Nat} (hpd : p ≤ d) {ty a : Expr}
 
 /-- The beta bridge: opening with a fresh variable, then substituting it,
 equals opening with the term directly. -/
-theorem substFvarAt_instantiate1_self {d : Nat} {ty a : Expr} :
-    ∀ (e : Expr) (k : Nat), fvarsBelow d e →
+theorem substFvarAt_instantiate1_self {d : Nat} {ty a : Expr md} :
+    ∀ (e : Expr md) (k : Nat), fvarsBelow d e →
       substFvarAt d a (e.instantiate1 (.fvar d ty) k) = e.instantiate1 a k := by
   intro e
   induction e with
@@ -1471,24 +1471,24 @@ type's computation walks it once per node.  Unfolding the definition
 leaves a decidable `if` at each `bvar`; these equations let `simp` take
 the step without ever producing one. -/
 
-@[simp] theorem instantiate1_bvar (i : Nat) (v : Expr) (d : Nat) :
+@[simp] theorem instantiate1_bvar (i : Nat) (v : Expr md) (d : Nat) :
     (Expr.bvar i).instantiate1 v d =
       if i = d then v else if i > d then .bvar (i - 1) else .bvar i := rfl
-@[simp] theorem instantiate1_const (n : Key) (us : List Level)
-    (v : Expr) (d : Nat) : (Expr.const n us).instantiate1 v d = .const n us :=
+@[simp] theorem instantiate1_const (n : Key md) (us : List Level)
+    (v : Expr md) (d : Nat) : (Expr.const n us).instantiate1 v d = .const n us :=
   rfl
-@[simp] theorem instantiate1_sort (u : Level) (v : Expr) (d : Nat) :
+@[simp] theorem instantiate1_sort (u : Level) (v : Expr md) (d : Nat) :
     (Expr.sort u).instantiate1 v d = .sort u := rfl
-@[simp] theorem instantiate1_fvar (i : Nat) (ty v : Expr)
+@[simp] theorem instantiate1_fvar (i : Nat) (ty v : Expr md)
     (d : Nat) : (Expr.fvar i ty).instantiate1 v d = .fvar i ty := rfl
-@[simp] theorem instantiate1_app (f a v : Expr) (d : Nat) :
+@[simp] theorem instantiate1_app (f a v : Expr md) (d : Nat) :
     (Expr.app f a).instantiate1 v d
       = .app (f.instantiate1 v d) (a.instantiate1 v d) := rfl
-@[simp] theorem instantiate1_forallE (ty body v : Expr)
+@[simp] theorem instantiate1_forallE (ty body v : Expr md)
     (bi : BinderMeta) (d : Nat) :
     (Expr.forallE ty body bi).instantiate1 v d
       = .forallE (ty.instantiate1 v d) (body.instantiate1 v (d + 1)) bi := rfl
-@[simp] theorem instantiate1_lam (ty body v : Expr)
+@[simp] theorem instantiate1_lam (ty body v : Expr md)
     (bi : BinderMeta) (d : Nat) :
     (Expr.lam ty body bi).instantiate1 v d
       = .lam (ty.instantiate1 v d) (body.instantiate1 v (d + 1)) bi := rfl

@@ -22,7 +22,7 @@ open Ix.Kernel.Term
 `Expr.erasePw`, so the pin-shape inversions must see through it).
 This is a *head* inversion: `erasePw` never changes a node's
 constructor. -/
-theorem erasePw_sort_inv {e : Expr} {u : Level}
+theorem erasePw_sort_inv {e : Expr md} {u : Level}
     (h : e.erasePw = .sort u) : e = .sort u := by
   cases e <;> simp only [Expr.erasePw] at h <;> first
     | exact h
@@ -35,7 +35,7 @@ every fact below is stated once and discharged by `rcases` on the two
 possibilities. -/
 
 /-- The element type expression of an `ofReduce*` axiom's operation. -/
-theorem ofReduce_elemTy {n : Key} :
+theorem ofReduce_elemTy {n : Key md} :
     reduceElemTy (ofReduceOp n)
       = .const (reduceElemName (ofReduceOp n)) [] := by
   unfold reduceElemTy reduceElemName
@@ -43,7 +43,7 @@ theorem ofReduce_elemTy {n : Key} :
 
 /-- The pinned type of an `ofReduce*` axiom, in the uniform spelling
 its two instances share. -/
-theorem ofReducePin_type {n : Key}
+theorem ofReducePin_type {n : Key md}
     (hn : n = ofReduceNatName ∨ n = ofReduceBoolName) :
     (ofReducePinA n).type =
       .forallE
@@ -62,7 +62,7 @@ theorem ofReducePin_type {n : Key}
   rcases hn with rfl | rfl <;> rfl
 
 /-- The pinned type of the operation itself. -/
-theorem reduceOpCv_type {n : Key}
+theorem reduceOpCv_type {n : Key md}
     (hn : n = ofReduceNatName ∨ n = ofReduceBoolName) :
     (reduceOpCvA (ofReduceOp n)).type =
       .forallE
@@ -71,7 +71,7 @@ theorem reduceOpCv_type {n : Key}
   rcases hn with rfl | rfl <;> rfl
 
 /-- The element inductive's pinned type is `Sort 1`. -/
-theorem reduceElem_sort {env : Env} {c : Key}
+theorem reduceElem_sort {env : Env md} {c : Key md}
     (h : reduceElemOk env c = true) :
     ∃ ci, env.find? (reduceElemName c) = some ci ∧
       ci.toConstantVal.levelParams = [] ∧
@@ -101,7 +101,7 @@ theorem reduceElem_sort {env : Env} {c : Key}
       | _ => exact nomatch h
 
 /-- Name and level-parameter components of a `matchesPin` hit. -/
-theorem matchesPin_invT {cv pin : ConstantVal}
+theorem matchesPin_invT {cv pin : ConstantVal md}
     (h : ConstantVal.matchesPin cv pin = true) :
     cv.name = pin.name ∧ cv.levelParams = pin.levelParams := by
   simp only [ConstantVal.matchesPin, Bool.and_eq_true,

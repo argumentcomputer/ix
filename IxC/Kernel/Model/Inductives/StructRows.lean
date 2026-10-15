@@ -26,12 +26,12 @@ open Ix.Kernel.Semantics (AnnotTerm)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The claims at one fuel -/
 
 /-- The claims a P carrier answers at fuel `F` and assignment `φ`. -/
-structure ClaimsAt (μ : CheckMode) {env : Env} (m : EnvModel V env)
+structure ClaimsAt (μ : CheckMode) {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) (F : Nat) : Prop where
   whnf : WhnfClaim μ m φ F
   defeq : DefEqClaim μ m φ F
@@ -53,7 +53,7 @@ variable {m : EnvModel V env} {F : Nat}
 
 /-- An inference run at a context: the type reads, both readings are
 graded, and the subject inhabits the type. -/
-theorem inferRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr}
+theorem inferRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr md}
     {Δ : List AnnotTerm} {ea : AnnotTerm}
     (hi : inferTypeCore μ env F d e = .ok t)
     (hws : Expr.WScoped d e) (hb : e.looseBVarsBounded 0 = true)
@@ -69,7 +69,7 @@ theorem inferRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr}
 
 /-- An inference run whose type is a sort: the subject is graded and
 lands in that universe. -/
-theorem sortRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr} {u : Level}
+theorem sortRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr md} {u : Level}
     {Δ : List AnnotTerm} {ea : AnnotTerm}
     (hi : inferTypeCore μ env F d e = .ok t)
     (hens : ensureSortCore μ env F d t = .ok u)
@@ -82,7 +82,7 @@ theorem sortRow (hc : ClaimsAt μ m φ F) {d : Nat} {e t : Expr} {u : Level}
 
 /-- A definitional-equality run at a context: the readings interpret
 alike. -/
-theorem defEqRow (hc : ClaimsAt μ m φ F) {d : Nat} {a b : Expr}
+theorem defEqRow (hc : ClaimsAt μ m φ F) {d : Nat} {a b : Expr md}
     {Δ : List AnnotTerm} {aa ba : AnnotTerm}
     (h : Ix.Kernel.isDefEqCore μ env F d a b = .ok true)
     (hwa : Expr.WScoped d a) (hba : a.looseBVarsBounded 0 = true)
@@ -103,15 +103,15 @@ end ClaimsAt
 
 /-- **The opened type record**: a closed, bounded type with a graded
 reading, opened at its own variables. -/
-structure Opened {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (k : Nat) (e : Expr) (fvs : List Expr) (o : Expr)
+structure Opened {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (k : Nat) (e : Expr md) (fvs : List (Expr md)) (o : Expr md)
     (Γ : List AnnotTerm) (R : AnnotTerm) : Prop where
   /-- the context has one entry per binder -/
   len : Γ.length = k
   /-- the opened body reads to the core at depth `k` -/
   body : denoteMeta m.acval env φ k o = some R
   /-- each variable's annotation reads to its entry at its own depth -/
-  doms : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+  doms : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
     denoteMeta m.acval env φ i (Expr.fvarTypeD x)
       = some (Γ.getD (k - 1 - i) default)
   /-- the entries are graded under the earlier ones -/
@@ -121,7 +121,7 @@ structure Opened {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
   okR : ∀ ρ : Nat → V, Sat V Γ ρ → WellDenotedV V ρ R
   /-- the variables are indexed by position, annotated at their own
   depth by bounded, leaf-bounded terms over the earlier variables -/
-  var : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+  var : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
     (∃ ty, x = Expr.fvar i ty) ∧
     Expr.WScoped i (Expr.fvarTypeD x) ∧
     (Expr.fvarTypeD x).looseBVarsBounded 0 = true ∧
@@ -133,14 +133,14 @@ structure Opened {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
     ∀ l ∈ o.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs
   /-- any term over the variables correlates with the context at its
   depth -/
-  ctx : ∀ {i : Nat}, i ≤ k → ∀ {x : Expr}, Expr.WScoped i x →
+  ctx : ∀ {i : Nat}, i ≤ k → ∀ {x : Expr md}, Expr.WScoped i x →
     (∀ l ∈ x.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs) →
     CtxOk m φ i (Γ.drop (k - i)) x
 
 /-- The opened type record, from the opening, the closedness and the
 reading's grading. -/
-theorem opened_of {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
-    {k : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
+theorem opened_of {env : Env md} {m : EnvModel V env} {φ : LevelParam → Nat}
+    {k : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md}
     (hop : openPisAtFvars k e 0 = some (fvs, o)) (hcl : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true)
     {T : AnnotTerm} (hT : denoteMeta m.acval env φ 0 e = some T)

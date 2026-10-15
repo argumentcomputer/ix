@@ -110,20 +110,20 @@ context equation supplied rather than derived.  See the module
 docstring: `CtxOk`'s per-leaf obligation is semantic, so a frame whose
 openers are only *defeq* to the context's entries correlates just as
 well as one whose openers are them. -/
-theorem ctxOk_of_walked_openers {env : Env} {m : EnvModel V env}
+theorem ctxOk_of_walked_openers {env : Env md} {m : EnvModel V env}
     {φ : LevelParam → Nat}
-    {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
+    {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
-    (hshape : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hws : ∀ x ∈ fvs, Expr.WScoped k x)
-    (hwalk : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hwalk : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ tya, denoteMeta m.acval env φ k (Expr.fvarTypeD x) = some tya ∧
         (∀ ρ : Nat → V, Sat V Δa ρ →
           interp V ρ tya
             = interp V (fun j => ρ (j + (k - 1 - i) + 1)) (Aa i)) ∧
         (∀ ρ : Nat → V, Sat V Δa ρ → WellDenotedV V ρ tya))
-    {e : Expr} {n : Nat}
+    {e : Expr md} {n : Nat}
     (hleaf : ∀ l ∈ e.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs)
     (hltE : ∀ l ∈ e.fvarLeaves, l.1 < n)
     (hent : ∀ i, i < n → Δa[k - 1 - i]? = some (Aa i)) :

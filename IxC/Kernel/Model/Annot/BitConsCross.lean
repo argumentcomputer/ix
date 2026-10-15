@@ -39,59 +39,59 @@ open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecRule)
 
 /-- No stored piece of the environment mentions the slot `(T, i)`. -/
-structure NoProjEnv (env : Env) (T : Key) (i : Nat) : Prop where
+structure NoProjEnv (env : Env md) (T : Key md) (i : Nat) : Prop where
   type : ∀ c ∈ env.consts, Expr.NoProjAt T i c.toConstantVal.type
-  defn : ∀ (cv : ConstantVal) (v : Expr) (hint : Ix.Kernel.ReducibilityHint),
+  defn : ∀ (cv : ConstantVal md) (v : Expr md) (hint : Ix.Kernel.ReducibilityHint),
     ConstantInfo.defnInfo cv v hint ∈ env.consts → Expr.NoProjAt T i v
-  rule : ∀ (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+  rule : ∀ (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
     ConstantInfo.recInfo cv mI rP rules ∈ env.consts →
     ∀ r ∈ rules, Expr.NoProjAt T i (RecRule.rhs r) ∧
       ∀ lvls pins, RecRule.fire r = .nested lvls pins →
         ∀ pin ∈ pins, Expr.NoProjAt T i pin
   /-- a stored projection table's bodies (task #175 S1: the tower laws
   read them) -/
-  table : ∀ (tbl : Ix.Kernel.ProjTable), ConstantInfo.projInfo tbl ∈ env.consts →
+  table : ∀ (tbl : Ix.Kernel.ProjTable md), ConstantInfo.projInfo tbl ∈ env.consts →
     ∀ j, j < tbl.numFields → Expr.NoProjAt T i (tbl.bodies.getD j default)
 
 /-- The head's crossing condition: a table head's slots (every field
 of the structure, task #175 S1) are mentioned by no stored piece. -/
-@[expose] def ConsCrossEnv (env : Env) (c₀ : ConstantInfo) : Prop :=
-  ∀ tbl : Ix.Kernel.ProjTable, c₀ = .projInfo tbl →
+@[expose] def ConsCrossEnv (env : Env md) (c₀ : ConstantInfo md) : Prop :=
+  ∀ tbl : Ix.Kernel.ProjTable md, c₀ = .projInfo tbl →
     ∀ i : Nat, NoProjEnv env tbl.structName i
 
 /-- A non-table head crosses vacuously. -/
-theorem ConsCrossEnv.ofNtc {env : Env} {c₀ : ConstantInfo}
+theorem ConsCrossEnv.ofNtc {env : Env md} {c₀ : ConstantInfo md}
     (hntc : ∀ tbl, c₀ ≠ .projInfo tbl) :
     ConsCrossEnv env c₀ := fun tbl heq => absurd heq (hntc tbl)
 
 /-- The per-subject condition: the head's slots, if a table's, are not
 mentioned. -/
-@[expose] def ConsCrossAt (c₀ : ConstantInfo) (e : Expr) : Prop :=
-  ∀ tbl : Ix.Kernel.ProjTable, c₀ = .projInfo tbl →
+@[expose] def ConsCrossAt (c₀ : ConstantInfo md) (e : Expr md) : Prop :=
+  ∀ tbl : Ix.Kernel.ProjTable md, c₀ = .projInfo tbl →
     ∀ i : Nat, Expr.NoProjAt tbl.structName i e
 
-theorem ConsCrossAt.ofNtc {c₀ : ConstantInfo} {e : Expr}
+theorem ConsCrossAt.ofNtc {c₀ : ConstantInfo md} {e : Expr md}
     (hntc : ∀ tbl, c₀ ≠ .projInfo tbl) :
     ConsCrossAt c₀ e := fun tbl heq => absurd heq (hntc tbl)
 
-theorem ConsCrossAt.instantiateLevelParams {c₀ : ConstantInfo} {e : Expr}
+theorem ConsCrossAt.instantiateLevelParams {c₀ : ConstantInfo md} {e : Expr md}
     (h : ConsCrossAt c₀ e) (ks : List LevelParam) (us : List Level) :
     ConsCrossAt c₀ (e.instantiateLevelParams ks us) := fun tbl heq i =>
   Expr.NoProjAt.instantiateLevelParams ks us e (h tbl heq i)
 
-theorem ConsCrossAt.instantiate1 {c₀ : ConstantInfo} {e v : Expr}
+theorem ConsCrossAt.instantiate1 {c₀ : ConstantInfo md} {e v : Expr md}
     (h : ConsCrossAt c₀ e) (hv : ConsCrossAt c₀ v) (d : Nat) :
     ConsCrossAt c₀ (e.instantiate1 v d) := fun tbl heq i =>
   Expr.NoProjAt.instantiate1 (hv tbl heq i) e d (h tbl heq i)
 
-theorem ConsCrossAt.sort {c₀ : ConstantInfo} (u : Level) :
+theorem ConsCrossAt.sort {c₀ : ConstantInfo md} (u : Level) :
     ConsCrossAt c₀ (.sort u) := fun _ _ _ => by simp
 
-theorem ConsCrossAt.fvar_sort {c₀ : ConstantInfo} (idx : Nat)
+theorem ConsCrossAt.fvar_sort {c₀ : ConstantInfo md} (idx : Nat)
     (u : Level) : ConsCrossAt c₀ (.fvar idx (.sort u)) :=
   fun _ _ _ => by simp
 
-theorem ConsCrossAt.openRev {c₀ : ConstantInfo} {e : Expr}
+theorem ConsCrossAt.openRev {c₀ : ConstantInfo md} {e : Expr md}
     (h : ConsCrossAt c₀ e) (d : Nat) :
     ∀ n : Nat, ConsCrossAt c₀ (Ix.Kernel.Verify.openRev d n e)
   | 0 => h
@@ -101,53 +101,53 @@ theorem ConsCrossAt.openRev {c₀ : ConstantInfo} {e : Expr}
 
 /-! ## The stored pieces -/
 
-theorem ConsCrossEnv.type {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {c : ConstantInfo} (hc : c ∈ env.consts) :
+theorem ConsCrossEnv.type {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {c : ConstantInfo md} (hc : c ∈ env.consts) :
     ConsCrossAt c₀ c.toConstantVal.type := fun tbl heq i =>
   (h tbl heq i).type c hc
 
-theorem ConsCrossEnv.typeOf {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {n : Key} {c : ConstantInfo}
+theorem ConsCrossEnv.typeOf {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {n : Key md} {c : ConstantInfo md}
     (hf : env.find? n = some c) : ConsCrossAt c₀ c.toConstantVal.type :=
   h.type (Ix.Kernel.Semantics.Env.find?_mem hf)
 
-theorem ConsCrossEnv.defn {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {cv : ConstantVal} {v : Expr}
+theorem ConsCrossEnv.defn {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {cv : ConstantVal md} {v : Expr md}
     {hint : Ix.Kernel.ReducibilityHint}
     (hc : ConstantInfo.defnInfo cv v hint ∈ env.consts) :
     ConsCrossAt c₀ v := fun tbl heq i =>
   (h tbl heq i).defn cv v hint hc
 
 /-- A stored table's body at a field (task #175 S1). -/
-theorem ConsCrossEnv.body {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {n : Key} {tbl : Ix.Kernel.ProjTable}
+theorem ConsCrossEnv.body {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {n : Key md} {tbl : Ix.Kernel.ProjTable md}
     (hf : env.find? n = some (.projInfo tbl)) {j : Nat} (hj : j < tbl.numFields) :
     ConsCrossAt c₀ (tbl.entry j).body := fun tbl' heq i =>
   (h tbl' heq i).table tbl (Ix.Kernel.Semantics.Env.find?_mem hf) j hj
 
-theorem ConsCrossEnv.ruleRhs {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {cv : ConstantVal} {mI rP : Nat}
-    {rules : List RecRule}
+theorem ConsCrossEnv.ruleRhs {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {cv : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)}
     (hc : ConstantInfo.recInfo cv mI rP rules ∈ env.consts)
-    {r : RecRule} (hr : r ∈ rules) : ConsCrossAt c₀ (RecRule.rhs r) :=
+    {r : RecRule md} (hr : r ∈ rules) : ConsCrossAt c₀ (RecRule.rhs r) :=
   fun tbl heq i => ((h tbl heq i).rule cv mI rP rules hc r hr).1
 
-theorem ConsCrossEnv.rulePin {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {cv : ConstantVal} {mI rP : Nat}
-    {rules : List RecRule}
+theorem ConsCrossEnv.rulePin {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {cv : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)}
     (hc : ConstantInfo.recInfo cv mI rP rules ∈ env.consts)
-    {r : RecRule} (hr : r ∈ rules) {lvls : List Level} {pins : List Expr}
-    (hn : RecRule.fire r = .nested lvls pins) {pin : Expr}
+    {r : RecRule md} (hr : r ∈ rules) {lvls : List Level} {pins : List (Expr md)}
+    (hn : RecRule.fire r = .nested lvls pins) {pin : Expr md}
     (hp : pin ∈ pins) : ConsCrossAt c₀ pin :=
   fun tbl heq i =>
     ((h tbl heq i).rule cv mI rP rules hc r hr).2 lvls pins hn pin hp
 
 /-- The pin at an index (`getD`), whether in range or the default. -/
-theorem ConsCrossEnv.rulePinD {env : Env} {c₀ : ConstantInfo}
-    (h : ConsCrossEnv env c₀) {cv : ConstantVal} {mI rP : Nat}
-    {rules : List RecRule}
+theorem ConsCrossEnv.rulePinD {env : Env md} {c₀ : ConstantInfo md}
+    (h : ConsCrossEnv env c₀) {cv : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)}
     (hc : ConstantInfo.recInfo cv mI rP rules ∈ env.consts)
-    {r : RecRule} (hr : r ∈ rules) {lvls : List Level} {pins : List Expr}
+    {r : RecRule md} (hr : r ∈ rules) {lvls : List Level} {pins : List (Expr md)}
     (hn : RecRule.fire r = .nested lvls pins) (i : Nat) :
     ConsCrossAt c₀ (pins.getD i default) := by
   by_cases hi : i < pins.length

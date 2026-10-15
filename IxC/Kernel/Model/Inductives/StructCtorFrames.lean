@@ -27,14 +27,14 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
 /-- An opened type whose reading is a known peel: the opened record
 at the peel's reversed domains. -/
-theorem opened_of_peel {m : EnvModel V env} {k : Nat} {e : Expr}
-    {fvs : List Expr} {o : Expr} {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm}
+theorem opened_of_peel {m : EnvModel V env} {k : Nat} {e : Expr md}
+    {fvs : List (Expr md)} {o : Expr md} {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm}
     (hop : openPisAtFvars k e 0 = some (fvs, o)) (hcl : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true)
     (hread : denoteMeta m.acval env φ 0 e = some (mkPisAV pps b))

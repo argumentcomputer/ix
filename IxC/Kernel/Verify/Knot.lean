@@ -32,37 +32,37 @@ theorem whnfLoopFuel_succ : ∃ n, whnfLoopFuel = n + 1 :=
   ⟨99999, by unfold whnfLoopFuel; rfl⟩
 
 
-@[simp] theorem pureFns_whnfCore (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFns_whnfCore (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env (f + 1)).whnfCore d e =
       whnfCoreBody mode (pureFns mode env f) env d e := rfl
 
-@[simp] theorem pureFns_whnf (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFns_whnf (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env (f + 1)).whnf d e = whnfBody (pureFns mode env f) env d e := rfl
 
-@[simp] theorem pureFns_infer (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFns_infer (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env (f + 1)).infer d e = inferBody mode (pureFns mode env f) env d e := rfl
 
-@[simp] theorem pureFns_defeq (env : Env) (f d : Nat) (a b : Expr) :
+@[simp] theorem pureFns_defeq (env : Env md) (f d : Nat) (a b : Expr md) :
     (pureFns mode env (f + 1)).defeq d a b =
       defeqBody mode (pureFns mode env f) env d a b := rfl
 
-@[simp] theorem pureFns_annotate (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFns_annotate (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env (f + 1)).annotate d e =
       annotateBody (pureFns mode env f) env d e := rfl
 
-theorem whnfCore_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem whnfCore_succ (env : Env md) (f d : Nat) (e : Expr md) :
     whnfCore mode env (f + 1) d e = whnfCoreBody mode (pureFns mode env f) env d e := rfl
 
-theorem whnf_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem whnf_succ (env : Env md) (f d : Nat) (e : Expr md) :
     whnf mode env (f + 1) d e = whnfBody (pureFns mode env f) env d e := rfl
 
-theorem inferTypeCore_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem inferTypeCore_succ (env : Env md) (f d : Nat) (e : Expr md) :
     inferTypeCore mode env (f + 1) d e = inferBody mode (pureFns mode env f) env d e := rfl
 
-theorem isDefEqCore_succ (env : Env) (f d : Nat) (a b : Expr) :
+theorem isDefEqCore_succ (env : Env md) (f d : Nat) (a b : Expr md) :
     isDefEqCore mode env (f + 1) d a b = defeqBody mode (pureFns mode env f) env d a b := rfl
 
-theorem annotateCore_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem annotateCore_succ (env : Env md) (f d : Nat) (e : Expr md) :
     annotateCore mode env (f + 1) d e = annotateBody (pureFns mode env f) env d e := rfl
 
 /-! ## The io lane (task #161 stage 2)
@@ -72,38 +72,38 @@ fields are the full knot's at the same fuel, so the equations below
 fold them straight back to the full spellings and the io claims family
 consumes the sealed four unchanged. -/
 
-@[simp] theorem pureFnsIO_whnfCore (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFnsIO_whnfCore (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFnsIO mode env f).whnfCore d e = whnfCore mode env f d e := by
   cases f <;> rfl
 
-@[simp] theorem pureFnsIO_whnf (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFnsIO_whnf (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFnsIO mode env f).whnf d e = whnf mode env f d e := by
   cases f <;> rfl
 
-@[simp] theorem pureFnsIO_defeq (env : Env) (f d : Nat) (a b : Expr) :
+@[simp] theorem pureFnsIO_defeq (env : Env md) (f d : Nat) (a b : Expr md) :
     (pureFnsIO mode env f).defeq d a b = isDefEqCore mode env f d a b := by
   cases f <;> rfl
 
-@[simp] theorem pureFnsIO_annotate (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFnsIO_annotate (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFnsIO mode env f).annotate d e = annotateCore mode env f d e := by
   cases f <;> rfl
 
-theorem ensureSortIO_def (env : Env) (f d : Nat) (e : Expr) :
+theorem ensureSortIO_def (env : Env md) (f d : Nat) (e : Expr md) :
     ensureSort (pureFnsIO mode env f) env d e = ensureSortCore mode env f d e := by
   cases f <;> rfl
 
-@[simp] theorem pureFnsIO_infer (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFnsIO_infer (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFnsIO mode env (f + 1)).infer d e =
       inferBodyIO mode (pureFnsIO mode env f) env d e := rfl
 
-theorem inferTypeCoreIO_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem inferTypeCoreIO_succ (env : Env md) (f d : Nat) (e : Expr md) :
     inferTypeCoreIO mode env (f + 1) d e =
       inferBodyIO mode (pureFnsIO mode env f) env d e := rfl
 
-theorem inferIO_def (env : Env) (f d : Nat) (e : Expr) :
+theorem inferIO_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFnsIO mode env f).infer d e = inferTypeCoreIO mode env f d e := rfl
 
-theorem inferTypeCoreIO_zero (env : Env) (d : Nat) (e : Expr) :
+theorem inferTypeCoreIO_zero (env : Env md) (d : Nat) (e : Expr md) :
     inferTypeCoreIO mode env 0 d e =
       throw (.internal "fuel exhausted: infer") := rfl
 
@@ -117,22 +117,22 @@ are stated at (`inferTypeIO_on`).  Between them every internal-infer
 inversion below can expose `inferTypeIO` runs and let each tower
 collapse them to its own lane. -/
 
-@[simp] theorem pureFns_inferIO (env : Env) (f d : Nat) (e : Expr) :
+@[simp] theorem pureFns_inferIO (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env (f + 1)).inferIO d e =
       if mode.betaGate then
         inferBodyIO mode (CoreFns.ioView (pureFns mode env f)) env d e
       else inferBody mode (pureFns mode env f) env d e := rfl
 
-theorem inferTypeIO_succ (env : Env) (f d : Nat) (e : Expr) :
+theorem inferTypeIO_succ (env : Env md) (f d : Nat) (e : Expr md) :
     inferTypeIO mode env (f + 1) d e =
       if mode.betaGate then
         inferBodyIO mode (CoreFns.ioView (pureFns mode env f)) env d e
       else inferBody mode (pureFns mode env f) env d e := rfl
 
-theorem inferTypeIO_def (env : Env) (f d : Nat) (e : Expr) :
+theorem inferTypeIO_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env f).inferIO d e = inferTypeIO mode env f d e := rfl
 
-theorem inferTypeIO_zero (env : Env) (d : Nat) (e : Expr) :
+theorem inferTypeIO_zero (env : Env md) (d : Nat) (e : Expr md) :
     inferTypeIO mode env 0 d e =
       throw (.internal "fuel exhausted: infer") := rfl
 
@@ -141,8 +141,8 @@ io slot is full inference, definitionally after one rewrite — the
 task-#170 R clause as a theorem.  This is what keeps every R-tower
 statement verbatim: an inversion exposing an `inferTypeIO` run hands
 the R side an `inferTypeCore` run through this equation. -/
-theorem inferTypeIO_off (hg : mode.betaGate = false) (env : Env)
-    (f d : Nat) (e : Expr) :
+theorem inferTypeIO_off (hg : mode.betaGate = false) (env : Env md)
+    (f d : Nat) (e : Expr md) :
     inferTypeIO mode env f d e = inferTypeCore mode env f d e := by
   cases f with
   | zero => rfl
@@ -150,9 +150,9 @@ theorem inferTypeIO_off (hg : mode.betaGate = false) (env : Env)
 
 /-- `inferBodyIO` reads exactly three fields of its record (`whnf`,
 `infer`, `defeq`); two records agreeing there run it identically. -/
-theorem inferBodyIO_congr {r₁ r₂ : CoreFns CheckM} {env : Env}
+theorem inferBodyIO_congr {r₁ r₂ : (CoreFns md) CheckM} {env : Env md}
     (hw : r₁.whnf = r₂.whnf) (hi : r₁.infer = r₂.infer)
-    (hd : r₁.defeq = r₂.defeq) (d : Nat) (e : Expr) :
+    (hd : r₁.defeq = r₂.defeq) (d : Nat) (e : Expr md) :
     inferBodyIO mode r₁ env d e = inferBodyIO mode r₂ env d e := by
   cases r₁; cases r₂
   dsimp only at hw hi hd
@@ -164,8 +164,8 @@ io slot runs the leaf-lane `inferTypeCoreIO` — the io claims' stated
 subject — level for level.  (The two ties differ only in which record
 carries the io recursion: `CoreFns.ioView` of the knot versus the leaf
 knot; `inferBodyIO_congr` plus this induction identifies them.) -/
-theorem inferTypeIO_on (hg : mode.betaGate = true) (env : Env) :
-    ∀ (f d : Nat) (e : Expr),
+theorem inferTypeIO_on (hg : mode.betaGate = true) (env : Env md) :
+    ∀ (f d : Nat) (e : Expr md),
       inferTypeIO mode env f d e = inferTypeCoreIO mode env f d e
   | 0, _, _ => rfl
   | f + 1, d, e => by
@@ -180,154 +180,154 @@ theorem inferTypeIO_on (hg : mode.betaGate = true) (env : Env) :
       (funext fun d' => funext fun a => funext fun b =>
         (pureFnsIO_defeq env f d' a b).symm) d e
 
-theorem whnfCore_def (env : Env) (f d : Nat) (e : Expr) :
+theorem whnfCore_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env f).whnfCore d e = whnfCore mode env f d e := rfl
 
-theorem whnf_def (env : Env) (f d : Nat) (e : Expr) :
+theorem whnf_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env f).whnf d e = whnf mode env f d e := rfl
 
-theorem infer_def (env : Env) (f d : Nat) (e : Expr) :
+theorem infer_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env f).infer d e = inferTypeCore mode env f d e := rfl
 
-theorem defeq_def (env : Env) (f d : Nat) (a b : Expr) :
+theorem defeq_def (env : Env md) (f d : Nat) (a b : Expr md) :
     (pureFns mode env f).defeq d a b = isDefEqCore mode env f d a b := rfl
 
-theorem annotate_def (env : Env) (f d : Nat) (e : Expr) :
+theorem annotate_def (env : Env md) (f d : Nat) (e : Expr md) :
     (pureFns mode env f).annotate d e = annotateCore mode env f d e := rfl
 
 /-- Fuel-zero spellings throw. -/
-theorem whnfCore_zero (env : Env) (d : Nat) (e : Expr) :
+theorem whnfCore_zero (env : Env md) (d : Nat) (e : Expr md) :
     whnfCore mode env 0 d e = throw (.internal "fuel exhausted: whnfCore") := rfl
 
-theorem whnf_zero (env : Env) (d : Nat) (e : Expr) :
+theorem whnf_zero (env : Env md) (d : Nat) (e : Expr md) :
     whnf mode env 0 d e = throw (.internal "fuel exhausted: whnf") := rfl
 
-theorem inferTypeCore_zero (env : Env) (d : Nat) (e : Expr) :
+theorem inferTypeCore_zero (env : Env md) (d : Nat) (e : Expr md) :
     inferTypeCore mode env 0 d e = throw (.internal "fuel exhausted: infer") := rfl
 
-theorem isDefEqCore_zero (env : Env) (d : Nat) (a b : Expr) :
+theorem isDefEqCore_zero (env : Env md) (d : Nat) (a b : Expr md) :
     isDefEqCore mode env 0 d a b = throw (.internal "fuel exhausted: defeq") := rfl
 
-theorem annotateCore_zero (env : Env) (d : Nat) (e : Expr) :
+theorem annotateCore_zero (env : Env md) (d : Nat) (e : Expr md) :
     annotateCore mode env 0 d e =
       throw (.internal "fuel exhausted: annotate") := rfl
 
-theorem ensureSort_def (env : Env) (f d : Nat) (e : Expr) :
+theorem ensureSort_def (env : Env md) (f d : Nat) (e : Expr md) :
     ensureSort (pureFns mode env f) env d e = ensureSortCore mode env f d e := rfl
 
 /-! Fueled spellings for the record-parameterized helpers: the body one
 level up calls them with `pureFns mode env fuel`, so their facts appear in
 inversions at the same fuel as the entry-point facts. -/
 
-abbrev iotaRecFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
-    CheckM (Option Expr) := iotaRec mode (pureFns mode env fuel) env
+abbrev iotaRecFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
+    CheckM (Option (Expr md)) := iotaRec mode (pureFns mode env fuel) env
 
-abbrev iotaCertsFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Expr →
-    List Expr → CheckM Bool := iotaCerts (pureFns mode env fuel) env
+abbrev iotaCertsFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Expr md →
+    List (Expr md) → CheckM Bool := iotaCerts (pureFns mode env fuel) env
 
-abbrev iotaIndexOkFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Nat → Nat → Nat →
-    Expr → List Expr → List Expr → CheckM Bool := iotaIndexOk (pureFns mode env fuel) env
+abbrev iotaIndexOkFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Nat → Nat → Nat →
+    (Expr md) → List (Expr md) → List (Expr md) → CheckM Bool := iotaIndexOk (pureFns mode env fuel) env
 
-abbrev defEqListFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → List Expr →
-    List Expr → CheckM Bool := defEqList (pureFns mode env fuel) env
+abbrev defEqListFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → List (Expr md) →
+    List (Expr md) → CheckM Bool := defEqList (pureFns mode env fuel) env
 
-abbrev proofIrrelFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev proofIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := proofIrrel (pureFns mode env fuel) env
 
-abbrev propIrrelFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev propIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := propIrrel (pureFns mode env fuel) env
 
-abbrev stuckIrrelFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev stuckIrrelFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := stuckIrrel mode (pureFns mode env fuel) env
 
-abbrev structEtaCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev structEtaCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := structEtaCert mode (pureFns mode env fuel) env
 
-abbrev structEtaCertWithFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
-    Expr → CheckM Bool := structEtaCertWith mode (pureFns mode env fuel) env
+abbrev structEtaCertWithFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
+    (Expr md) → CheckM Bool := structEtaCertWith mode (pureFns mode env fuel) env
 
-abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat) (T : Key)
-    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
+abbrev structEtaProjCertsFueled (mode : CheckMode) (env : Env md) (fuel : Nat) (d : Nat) (T : Key md)
+    (us' : List Level) (targs : List (Expr md)) (b : Expr md) (lpsT : List LevelParam) :
     List Nat → CheckM Bool :=
   structEtaProjCerts (pureFns mode env fuel) env d T us' targs b lpsT
 
-abbrev structUnitCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev structUnitCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := structUnitCert (pureFns mode env fuel) env
 
-abbrev etaCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) (d : Nat)
-    (ty body : Expr) (mb : BinderMeta) (b : Expr) : CheckM Bool :=
+abbrev etaCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) (d : Nat)
+    (ty body : Expr md) (mb : BinderMeta) (b : Expr md) : CheckM Bool :=
   etaCert mode (pureFns mode env fuel) env d ty body mb b
 
-abbrev majorToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Key →
-    List RecRule → Expr → CheckM Expr := majorToCtor mode (pureFns mode env fuel) env
+abbrev majorToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Key md →
+    List (RecRule md) → Expr md → CheckM (Expr md) := majorToCtor mode (pureFns mode env fuel) env
 
-abbrev litMajorToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
-    CheckM Expr := litMajorToCtor (pureFns mode env fuel) env
+abbrev litMajorToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
+    CheckM (Expr md) := litMajorToCtor (pureFns mode env fuel) env
 
-abbrev prepareMajorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Key →
-    List RecRule → Expr → CheckM Expr := prepareMajor mode (pureFns mode env fuel) env
+abbrev prepareMajorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Key md →
+    List (RecRule md) → Expr md → CheckM (Expr md) := prepareMajor mode (pureFns mode env fuel) env
 
-abbrev projLitToCtorFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
-    CheckM Expr := projLitToCtor (pureFns mode env fuel) env
+abbrev projLitToCtorFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
+    CheckM (Expr md) := projLitToCtor (pureFns mode env fuel) env
 
-abbrev projCertFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Key →
-    List Level → List Expr → CheckM Bool := projCert (pureFns mode env fuel) env
-abbrev projCertAtFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Bool → Bool → Key →
-    List Level → List Expr → CheckM Bool := projCertAt (pureFns mode env fuel) env
+abbrev projCertFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Key md →
+    List Level → List (Expr md) → CheckM Bool := projCert (pureFns mode env fuel) env
+abbrev projCertAtFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Bool → Bool → Key md →
+    List Level → List (Expr md) → CheckM Bool := projCertAt (pureFns mode env fuel) env
 
-abbrev reduceNatFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
-    CheckM (Option Expr) := reduceNat (pureFns mode env fuel) env
+abbrev reduceNatFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
+    CheckM (Option (Expr md)) := reduceNat (pureFns mode env fuel) env
 
-abbrev boolTrueShortcutFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr →
+abbrev boolTrueShortcutFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md →
     CheckM Bool := boolTrueShortcut (pureFns mode env fuel)
 
-abbrev defeqSpineFueled (mode : CheckMode) (env : Env) (fuel : Nat) : Nat → Expr → Expr →
+abbrev defeqSpineFueled (mode : CheckMode) (env : Env md) (fuel : Nat) : Nat → Expr md → Expr md →
     CheckM Bool := defeqSpine (pureFns mode env fuel) env
 
 /-! Folding rewrites: record-applied helper spellings into their fueled
 `P` names (used right after unfolding a body in an inversion proof). -/
 
-theorem iotaRec_fold (env : Env) (fuel : Nat) :
+theorem iotaRec_fold (env : Env md) (fuel : Nat) :
     iotaRec mode (pureFns mode env fuel) env = iotaRecFueled mode env fuel := rfl
-theorem iotaCerts_fold (env : Env) (fuel : Nat) :
+theorem iotaCerts_fold (env : Env md) (fuel : Nat) :
     iotaCerts (pureFns mode env fuel) env = iotaCertsFueled mode env fuel := rfl
-theorem iotaIndexOk_fold (env : Env) (fuel : Nat) :
+theorem iotaIndexOk_fold (env : Env md) (fuel : Nat) :
     iotaIndexOk (pureFns mode env fuel) env = iotaIndexOkFueled mode env fuel := rfl
-theorem defEqList_fold (env : Env) (fuel : Nat) :
+theorem defEqList_fold (env : Env md) (fuel : Nat) :
     defEqList (pureFns mode env fuel) env = defEqListFueled mode env fuel := rfl
-theorem proofIrrel_fold (env : Env) (fuel : Nat) :
+theorem proofIrrel_fold (env : Env md) (fuel : Nat) :
     proofIrrel (pureFns mode env fuel) env = proofIrrelFueled mode env fuel := rfl
-theorem propIrrel_fold (env : Env) (fuel : Nat) :
+theorem propIrrel_fold (env : Env md) (fuel : Nat) :
     propIrrel (pureFns mode env fuel) env = propIrrelFueled mode env fuel := rfl
-theorem stuckIrrel_fold (env : Env) (fuel : Nat) :
+theorem stuckIrrel_fold (env : Env md) (fuel : Nat) :
     stuckIrrel mode (pureFns mode env fuel) env = stuckIrrelFueled mode env fuel := rfl
-theorem structEtaCert_fold (env : Env) (fuel : Nat) :
+theorem structEtaCert_fold (env : Env md) (fuel : Nat) :
     structEtaCert mode (pureFns mode env fuel) env = structEtaCertFueled mode env fuel := rfl
-theorem structEtaCertWith_fold (env : Env) (fuel : Nat) :
+theorem structEtaCertWith_fold (env : Env md) (fuel : Nat) :
     structEtaCertWith mode (pureFns mode env fuel) env =
       structEtaCertWithFueled mode env fuel := rfl
-theorem structEtaProjCerts_fold (env : Env) (fuel : Nat) :
+theorem structEtaProjCerts_fold (env : Env md) (fuel : Nat) :
     structEtaProjCerts (pureFns mode env fuel) env =
       structEtaProjCertsFueled mode env fuel := rfl
-theorem structUnitCert_fold (env : Env) (fuel : Nat) :
+theorem structUnitCert_fold (env : Env md) (fuel : Nat) :
     structUnitCert (pureFns mode env fuel) env = structUnitCertFueled mode env fuel := rfl
-theorem etaCert_fold (env : Env) (fuel : Nat) :
+theorem etaCert_fold (env : Env md) (fuel : Nat) :
     etaCert mode (pureFns mode env fuel) env = etaCertFueled mode env fuel := rfl
-theorem majorToCtor_fold (env : Env) (fuel : Nat) :
+theorem majorToCtor_fold (env : Env md) (fuel : Nat) :
     majorToCtor mode (pureFns mode env fuel) env = majorToCtorFueled mode env fuel := rfl
-theorem litMajorToCtor_fold (env : Env) (fuel : Nat) :
+theorem litMajorToCtor_fold (env : Env md) (fuel : Nat) :
     litMajorToCtor (pureFns mode env fuel) env = litMajorToCtorFueled mode env fuel := rfl
-theorem prepareMajor_fold (env : Env) (fuel : Nat) :
+theorem prepareMajor_fold (env : Env md) (fuel : Nat) :
     prepareMajor mode (pureFns mode env fuel) env = prepareMajorFueled mode env fuel := rfl
-theorem projLitToCtor_fold (env : Env) (fuel : Nat) :
+theorem projLitToCtor_fold (env : Env md) (fuel : Nat) :
     projLitToCtor (pureFns mode env fuel) env = projLitToCtorFueled mode env fuel := rfl
-theorem projCertAt_fold (env : Env) (fuel : Nat) :
+theorem projCertAt_fold (env : Env md) (fuel : Nat) :
     projCertAt (pureFns mode env fuel) env = projCertAtFueled mode env fuel := rfl
-theorem reduceNat_fold (env : Env) (fuel : Nat) :
+theorem reduceNat_fold (env : Env md) (fuel : Nat) :
     reduceNat (pureFns mode env fuel) env = reduceNatFueled mode env fuel := rfl
-theorem boolTrueShortcut_fold (env : Env) (fuel : Nat) :
+theorem boolTrueShortcut_fold (env : Env md) (fuel : Nat) :
     boolTrueShortcut (pureFns mode env fuel) = boolTrueShortcutFueled mode env fuel := rfl
-theorem defeqSpine_fold (env : Env) (fuel : Nat) :
+theorem defeqSpine_fold (env : Env md) (fuel : Nat) :
     defeqSpine (pureFns mode env fuel) env = defeqSpineFueled mode env fuel := rfl
 
 end Ix.Kernel

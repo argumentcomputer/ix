@@ -49,14 +49,14 @@ open Ix.Kernel
 variable (mode : CheckMode)
 
 /-- Parsed `ensureSort` (no per-call conversion). -/
-def opSIxC (fe : FEnv) (d : Nat) (i : Expr) : CheckCM Level :=
+def opSIxC (fe : FEnv md) (d : Nat) (i : Expr md) : (CheckCM md) Level :=
   ensureSortI (coreKnotI mode fe checkFuel) d i
 
 /-- `checkConstantVal` on a parsed declaration: the checks of
 `checkConstantValF` with the syntactic passes memoized on the `Expr`
 DAG and the cached operations on its nodes. -/
-def checkConstantValC (fe : FEnv) (cv : ConstantVal) :
-    CheckCM (ConstantVal × Expr) := do
+def checkConstantValC (fe : FEnv md) (cv : ConstantVal md) :
+    (CheckCM md) (ConstantVal md × Expr md) := do
   if (fe.find? cv.name).isSome then
     throw (.invalid s!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
@@ -80,8 +80,8 @@ def checkConstantValC (fe : FEnv) (cv : ConstantVal) :
   pure (⟨cv.name, cv.levelParams, tyE⟩, jty)
 
 /-- `checkDefnValP` over `Expr`. -/
-def checkDefnValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
-    (value : Expr) (hint : ReducibilityHint) : CheckCM FEnv := do
+def checkDefnValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) (hint : ReducibilityHint) : (CheckCM md) (FEnv md) := do
   unless Expr.looseBVarsBounded 0 value do
     throw (.invalid s!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
@@ -99,8 +99,8 @@ def checkDefnValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
   pure (fe.push (.defnInfo cvA vE hint))
 
 /-- `checkThmValP` over `Expr`. -/
-def checkThmValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
-    (value : Expr) : CheckCM FEnv := do
+def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) : (CheckCM md) (FEnv md) := do
   let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
   let ul ← opSIxC mode fe 0 jsty
   unless (← liftFueled "level comparison" (Level.isEquiv ul .zero)) do
@@ -122,8 +122,8 @@ def checkThmValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
   pure (fe.push (.thmInfo cvA value))
 
 /-- `checkOpaqueValP` over `Expr`. -/
-def checkOpaqueValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
-    (value : Expr) : CheckCM FEnv := do
+def checkOpaqueValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) : (CheckCM md) (FEnv md) := do
   unless Expr.looseBVarsBounded 0 value do
     throw (.invalid s!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
@@ -141,7 +141,7 @@ def checkOpaqueValC (fe : FEnv) (cvA : ConstantVal) (jty : Expr)
 
 /-- `checkBasisDecl`'s cached twin: the body the three records that
 install a pinned basis block share (task #293). -/
-def checkBasisDeclC (fe : FEnv) (kind : BasisKind) : CheckCM FEnv := do
+def checkBasisDeclC (fe : FEnv md) (kind : BasisKind) : (CheckCM md) (FEnv md) := do
   if kind = .quotK then
     unless fe.find? eqName = some eqA do
       throw (.notImplemented "quotient basis requires the pinned Eq basis")
@@ -151,8 +151,8 @@ def checkBasisDeclC (fe : FEnv) (kind : BasisKind) : CheckCM FEnv := do
 branch; inductive and basis blocks reuse the `Expr`-level drivers).
 `ev` is the role table's evidence the operations' install gates read,
 threaded from the fold. -/
-def checkDeclC (ev : Evidences) (fe : FEnv) (pd : Declaration) :
-    CheckCM FEnv :=
+def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
+    (CheckCM md) (FEnv md) :=
   match pd with
   | .defnDecl cv value hint => do
     let (cvA, jty) ← checkConstantValC mode fe cv
@@ -269,7 +269,7 @@ def msSecs (ms : Nat) : String := s!"{ms / 1000}.{(ms % 1000) / 100}"
 
 /-- A parsed declaration's display label (`Main.declCName`, shared with
 the driver's progress callback so the two can never drift). -/
-def declCLabel : Declaration → String
+def declCLabel : Declaration md → String
   | .defnDecl cv _ _ => s!"def {cv.name}"
   | .thmDecl cv _ => s!"theorem {cv.name}"
   | .opaqueDecl cv _ => s!"opaque {cv.name}"
@@ -279,8 +279,8 @@ def declCLabel : Declaration → String
   | .quotDecl _ cv => s!"quot {cv.name}"
 
 /-- One step of the converted-declaration fold: flush, then check. -/
-def checkDeclStepC (ev : Evidences) (fe : FEnv) (pd : Declaration) :
-    CheckCM FEnv := do
+def checkDeclStepC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
+    (CheckCM md) (FEnv md) := do
   flushC
   checkDeclC mode ev fe pd
 

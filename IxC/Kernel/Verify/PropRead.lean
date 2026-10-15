@@ -26,13 +26,13 @@ namespace Ix.Kernel
 open Expr
 
 theorem Expr.numArgs_shiftFrom {p : Nat} :
-    ∀ (e : Expr), (shiftFrom p e).numArgs = e.numArgs := by
+    ∀ (e : Expr md), (shiftFrom p e).numArgs = e.numArgs := by
   intro e
   induction e <;> simp_all [shiftFrom, numArgs]
   case fvar => split <;> rfl
 
 theorem residualPW_peelNeverPis_shiftFrom {p : Nat} :
-    ∀ (k : Nat) (e : Expr),
+    ∀ (k : Nat) (e : Expr md),
       residualPW ((shiftFrom p e).peelNeverPis k) =
         residualPW (e.peelNeverPis k) := by
   intro k
@@ -51,16 +51,16 @@ theorem residualPW_peelNeverPis_shiftFrom {p : Nat} :
       · exact ih b
       · rfl
 
-theorem headTypePW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (h : Expr) (n : Nat) :
+theorem headTypePW_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (h : Expr md) (n : Nat) :
     headTypePW find? (shiftFrom p h) n = headTypePW find? h n := by
   cases h <;> try rfl
   case fvar =>
     simp only [shiftFrom]
     split <;> simp only [headTypePW, residualPW_peelNeverPis_shiftFrom]
 
-theorem typeSortPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (T : Expr) :
+theorem typeSortPW_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (T : Expr md) :
     typeSortPW find? (shiftFrom p T) = typeSortPW find? T := by
   cases T <;> try rfl
   case fvar =>
@@ -73,8 +73,8 @@ theorem typeSortPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
     simp only [shiftFrom] at h1 h2 ⊢
     simp only [typeSortPW, h1, h2, headTypePW_shiftFrom]
 
-theorem headProofPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (h : Expr) :
+theorem headProofPW_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (h : Expr md) :
     headProofPW find? (shiftFrom p h) = headProofPW find? h := by
   cases h <;> try rfl
   case fvar =>
@@ -83,26 +83,26 @@ theorem headProofPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
 
 /-- `proofPW` through the total `lamPw` reader (the shape the walks
 rewrite). -/
-theorem proofPW_eq (find? : Key → Option ConstantInfo) (a : Expr) :
+theorem proofPW_eq (find? : Key md → Option (ConstantInfo md)) (a : Expr md) :
     proofPW find? a =
       match a.lamPw with
       | some pw => some pw
       | none => headProofPW find? a.getAppFn := by
   cases a <;> rfl
 
-theorem proofPW_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (a : Expr) :
+theorem proofPW_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (a : Expr md) :
     proofPW find? (shiftFrom p a) = proofPW find? a := by
   rw [proofPW_eq, proofPW_eq, lamPw_shiftFrom, getAppFn_shiftFrom,
     headProofPW_shiftFrom]
 
-theorem notProofFast_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (a : Expr) :
+theorem notProofFast_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (a : Expr md) :
     notProofFast find? (shiftFrom p a) = notProofFast find? a := by
   simp only [notProofFast, proofPW_shiftFrom]
 
-theorem isProofFast_shiftFrom (find? : Key → Option ConstantInfo) {p : Nat}
-    (a : Expr) :
+theorem isProofFast_shiftFrom (find? : Key md → Option (ConstantInfo md)) {p : Nat}
+    (a : Expr md) :
     isProofFast find? (shiftFrom p a) = isProofFast find? a := by
   simp only [isProofFast, proofPW_shiftFrom]
 
@@ -112,19 +112,19 @@ The "yes" arm's licence (`IxC/Kernel/Model/Steps/IrrelFast.lean`) consumes
 the readers through these: each `some` verdict is one of finitely many
 head shapes with the datum spelled out. -/
 
-theorem Expr.numArgs_eq_length : ∀ (e : Expr), e.numArgs = e.getAppArgs.length := by
+theorem Expr.numArgs_eq_length : ∀ (e : Expr md), e.numArgs = e.getAppArgs.length := by
   intro e
   induction e <;> simp_all [numArgs, getAppArgs]
 
-theorem Expr.lamPw_some_inv {a : Expr} {pw : PropWhen} (h : a.lamPw = some pw) :
+theorem Expr.lamPw_some_inv {a : Expr md} {pw : PropWhen} (h : a.lamPw = some pw) :
     ∃ ty bd mb, a = .lam ty bd mb ∧ pw = mb.pw := by
   cases a <;> simp only [lamPw, reduceCtorEq, Option.some.injEq] at h
   exact ⟨_, _, _, rfl, h.symm⟩
 
-theorem Expr.peelNeverPis_zero_inv {T R : Expr} (h : T.peelNeverPis 0 = some R) :
+theorem Expr.peelNeverPis_zero_inv {T R : Expr md} (h : T.peelNeverPis 0 = some R) :
     T = R := Option.some.inj h
 
-theorem Expr.peelNeverPis_succ_inv {k : Nat} {T R : Expr}
+theorem Expr.peelNeverPis_succ_inv {k : Nat} {T R : Expr md}
     (h : T.peelNeverPis (k + 1) = some R) :
     ∃ ty b m, T = .forallE ty b m ∧ m.pw.isNever = true ∧
       b.peelNeverPis k = some R := by
@@ -136,8 +136,8 @@ theorem Expr.peelNeverPis_succ_inv {k : Nat} {T R : Expr}
 
 /-- Peeling commutes with term instantiation at any offset: the
 binders and their data are untouched, a `Sort` residual stays. -/
-theorem Expr.peelNeverPis_instantiate1 : ∀ (k : Nat) {T : Expr} {u : Level}
-    (v : Expr) (off : Nat), T.peelNeverPis k = some (.sort u) →
+theorem Expr.peelNeverPis_instantiate1 : ∀ (k : Nat) {T : Expr md} {u : Level}
+    (v : Expr md) (off : Nat), T.peelNeverPis k = some (.sort u) →
     (T.instantiate1 v off).peelNeverPis k = some (.sort u) := by
   intro k
   induction k with
@@ -153,7 +153,7 @@ theorem Expr.peelNeverPis_instantiate1 : ∀ (k : Nat) {T : Expr} {u : Level}
 
 /-- Peeling commutes with level instantiation: a `.never` datum
 instantiates to `.never`, a `Sort` residual to its instance. -/
-theorem Expr.peelNeverPis_instantiateLevelParams : ∀ (k : Nat) {T : Expr}
+theorem Expr.peelNeverPis_instantiateLevelParams : ∀ (k : Nat) {T : Expr md}
     {u : Level} (ks : List LevelParam) (vs : List Level),
     T.peelNeverPis k = some (.sort u) →
     (T.instantiateLevelParams ks vs).peelNeverPis k =
@@ -178,7 +178,7 @@ theorem Expr.peelNeverPis_instantiateLevelParams : ∀ (k : Nat) {T : Expr}
 
 /-- A successful peel is a successful `stripPis` with the same
 residual. -/
-theorem Expr.stripPis_of_peelNeverPis : ∀ (k : Nat) {T R : Expr},
+theorem Expr.stripPis_of_peelNeverPis : ∀ (k : Nat) {T R : Expr md},
     T.peelNeverPis k = some R → ∃ bs, T.stripPis k = some (bs, R) := by
   intro k
   induction k with
@@ -192,12 +192,12 @@ theorem Expr.stripPis_of_peelNeverPis : ∀ (k : Nat) {T R : Expr},
     obtain ⟨bs, hbs⟩ := ih hb
     exact ⟨(ty, m) :: bs, by simp [stripPis, hbs]⟩
 
-theorem Expr.hasFvar_of_getAppFn_fvar : ∀ {e : Expr} {idx : Nat}
-    {ty : Expr}, e.getAppFn = .fvar idx ty → e.hasFvar = true := by
+theorem Expr.hasFvar_of_getAppFn_fvar : ∀ {e : Expr md} {idx : Nat}
+    {ty : Expr md}, e.getAppFn = .fvar idx ty → e.hasFvar = true := by
   intro e
   induction e <;> intro idx ty h <;> simp_all [getAppFn, hasFvar]
 
-theorem residualPW_some_inv {o : Option Expr} {pw : PropWhen}
+theorem residualPW_some_inv {o : Option (Expr md)} {pw : PropWhen}
     (h : residualPW o = some pw) :
     ∃ u, o = some (.sort u) ∧ pw = Level.zeronessOf u := by
   match o, h with
@@ -208,7 +208,7 @@ theorem residualPW_some_inv {o : Option Expr} {pw : PropWhen}
   | some (.letE _ _ _ _), h | some (.lit _), h | some (.proj _ _ _), h =>
     exact nomatch h
 
-theorem headTypePW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
+theorem headTypePW_some_inv (find? : Key md → Option (ConstantInfo md)) {hd : Expr md}
     {k : Nat} {pw : PropWhen} (h : headTypePW find? hd k = some pw) :
     (∃ I us ci u, hd = .const I us ∧ find? I = some ci ∧
         ci.isTowerEntry = false ∧
@@ -244,7 +244,7 @@ theorem headTypePW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
 
 /-- `typeSortPW` through the two special cases (the shape the
 inversion rewrites). -/
-theorem typeSortPW_eq (find? : Key → Option ConstantInfo) (T : Expr) :
+theorem typeSortPW_eq (find? : Key md → Option (ConstantInfo md)) (T : Expr md) :
     typeSortPW find? T =
       match T with
       | .forallE _ _ m => some m.pw
@@ -252,7 +252,7 @@ theorem typeSortPW_eq (find? : Key → Option ConstantInfo) (T : Expr) :
       | T => headTypePW find? T.getAppFn T.getAppArgs.length := by
   cases T <;> simp [typeSortPW, Expr.numArgs_eq_length]
 
-theorem typeSortPW_some_inv (find? : Key → Option ConstantInfo) {T : Expr}
+theorem typeSortPW_some_inv (find? : Key md → Option (ConstantInfo md)) {T : Expr md}
     {pw : PropWhen} (h : typeSortPW find? T = some pw) :
     (∃ A B mb, T = .forallE A B mb ∧ pw = mb.pw) ∨
     pw = .never ∨
@@ -277,7 +277,7 @@ theorem typeSortPW_some_inv (find? : Key → Option ConstantInfo) {T : Expr}
     · exact Or.inr (Or.inr (Or.inl ⟨I, us, ci, u, hfn, hf, hnt, hlen, hpeel, rfl⟩))
     · exact Or.inr (Or.inr (Or.inr ⟨idx, ty, u, hfn, hpeel, rfl⟩))
 
-theorem headProofPW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
+theorem headProofPW_some_inv (find? : Key md → Option (ConstantInfo md)) {hd : Expr md}
     {pw : PropWhen} (h : headProofPW find? hd = some pw) :
     (∃ c us ci, hd = .const c us ∧ find? c = some ci ∧
         ci.isTowerEntry = false ∧
@@ -308,7 +308,7 @@ theorem headProofPW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}
   case fvar idx ty => exact Or.inr (Or.inl ⟨idx, ty, rfl, h⟩)
   all_goals exact Or.inr (Or.inr h.symm)
 
-theorem proofPW_some_inv (find? : Key → Option ConstantInfo) {a : Expr}
+theorem proofPW_some_inv (find? : Key md → Option (ConstantInfo md)) {a : Expr md}
     {pw : PropWhen} (h : proofPW find? a = some pw) :
     (∃ ty bd mb, a = .lam ty bd mb ∧ pw = mb.pw) ∨
     (a.lamPw = none ∧ headProofPW find? a.getAppFn = some pw) := by
@@ -320,7 +320,7 @@ theorem proofPW_some_inv (find? : Key → Option ConstantInfo) {a : Expr}
     exact Or.inl ⟨ty, bd, mb, rfl, (Option.some.inj h).symm⟩
   | none => rw [hl] at h; exact Or.inr ⟨rfl, h⟩
 
-theorem isProofFast_inv (find? : Key → Option ConstantInfo) {a : Expr}
+theorem isProofFast_inv (find? : Key md → Option (ConstantInfo md)) {a : Expr md}
     (h : isProofFast find? a = true) :
     ∃ pw, proofPW find? a = some pw ∧ pw.isProp = true := by
   unfold isProofFast at h

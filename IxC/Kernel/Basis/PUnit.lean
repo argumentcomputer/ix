@@ -22,23 +22,23 @@ namespace Ix.Kernel
 open BasisDSL
 
 /-- `PUnit.{u} : Sort u`. -/
-def punitRaw : ConstantInfo :=
+def punitRaw : ConstantInfo md :=
   .indInfo ⟨punitName, [uN], srt u⟩
     { eta := true, etaCtor := some punitUnitName,
       etaParams := 0, etaFields := 0, unitlike := true,
       sortZ := .ifAllZero [uN] }
 
 /-- `PUnit.unit.{u} : PUnit.{u}`. -/
-def punitUnitRaw : ConstantInfo :=
+def punitUnitRaw : ConstantInfo md :=
   .ctorInfo ⟨punitUnitName, [uN], cnst punitName [u]⟩ 0 0
 
 /-- The motive of `PUnit.rec`: `∀ (t : PUnit.{u}), Sort u_1`. -/
-def punitRecMotive : Expr :=
+def punitRecMotive : Expr md :=
   pi "t" (cnst punitName [u]) (srt u1)
 
 /-- `PUnit.rec.{u_1, u} {motive : PUnit.{u} → Sort u_1}
 (unit : motive PUnit.unit) (t : PUnit.{u}) : motive t`. -/
-def punitRecRaw : ConstantInfo :=
+def punitRecRaw : ConstantInfo md :=
   .recInfo ⟨punitRecName, [u1N, uN],
     piI "motive" punitRecMotive <|
     pi "unit" (.app (bv 0) (cnst punitUnitName [u])) <|
@@ -50,6 +50,6 @@ def punitRecRaw : ConstantInfo :=
       bv 0]
 
 /-- The pinned `PUnit` basis block, in install order. -/
-def punitBasis : List ConstantInfo := [punitRaw, punitUnitRaw, punitRecRaw]
+def punitBasis : List (ConstantInfo md) := [punitRaw, punitUnitRaw, punitRecRaw]
 
 end Ix.Kernel

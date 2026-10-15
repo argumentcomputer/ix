@@ -35,12 +35,12 @@ namespace Ix.Kernel.Expr
 /-! ## Spines -/
 
 /-- Prepend the spine arguments of `e` to `acc` (outermost last). -/
-def getAppArgsAccC : Expr → List Expr → List Expr
+def getAppArgsAccC : Expr md → List (Expr md) → List (Expr md)
   | .app f a .., acc => getAppArgsAccC f (a :: acc)
   | _, acc => acc
 
 /-- The arguments of an application spine, outermost last. -/
-@[inline] def getAppArgsC (e : Expr) : List Expr := getAppArgsAccC e []
+@[inline] def getAppArgsC (e : Expr md) : List (Expr md) := getAppArgsAccC e []
 
 /-! ## The substitution walks (tasks #314, #316, #317)
 
@@ -121,19 +121,19 @@ already relies on both, in `Expr.beqGoX` and `Name.beq`), and
 justification `tests/trust-surface.sh` points at. -/
 
 /-- The nodes a memo entry can save a descent of. -/
-@[inline] def isCompound : Expr → Bool
+@[inline] def isCompound : Expr md → Bool
   | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. => true
   | _ => false
 
 /-- The term of a walk's result (the quotient lifts: the term is fixed
 by its subtype). -/
-@[inline] def resTerm {c : Expr} {M : Type} (s : Squash ({ r : Expr // r = c } × M)) : Expr :=
+@[inline] def resTerm {c : Expr md} {M : Type} (s : Squash ({ r : (Expr md) // r = c } × M)) : Expr md :=
   Quotient.lift (fun p => p.1.1) (fun p q _ => by rw [p.1.2, q.1.2]) s
 
 /-- What the term of a walk's result is: the value its subtype names.
 Whatever the exclusivity reads and the addresses were along the
 way. -/
-theorem resTerm_eq {c : Expr} {M : Type} (s : Squash ({ r : Expr // r = c } × M)) :
+theorem resTerm_eq {c : Expr md} {M : Type} (s : Squash ({ r : (Expr md) // r = c } × M)) :
     resTerm s = c := by
   induction s using Quotient.ind with
   | _ p => exact p.1.2
@@ -181,17 +181,17 @@ tables never rely on the key: an entry validates itself. -/
 
 /-- A memo entry: the node it was made for, its rebuild, the cursor,
 and the proof — the entry is its own invariant. -/
-structure PEnt (s : Expr → Nat → Expr) where
-  node : Expr
-  val : Expr
+structure PEnt (s : Expr md → Nat → Expr md) where
+  node : Expr md
+  val : Expr md
   depth : Nat
   eq : val = s node depth
 
 /-- A validated hit: the cursor compares equal and the stored node IS
 the current one (by pointer at runtime — `Expr.ptrDec` — structurally
 in the model); then the entry's proof is the walk's. -/
-@[inline] def PEnt.hit {s : Expr → Nat → Expr} {β : Sort u} (p : PEnt s) (e : Expr) (c : Nat)
-    (k : { r : Expr // r = s e c } → β) (miss : Unit → β) : β :=
+@[inline] def PEnt.hit {s : Expr md → Nat → Expr md} {β : Sort u} (p : PEnt s) (e : Expr md) (c : Nat)
+    (k : { r : (Expr md) // r = s e c } → β) (miss : Unit → β) : β :=
   if hd : p.depth = c then
     match Expr.ptrDec p.node e with
     | isTrue hn => k ⟨p.val, by rw [p.eq, hn, hd]⟩
@@ -209,20 +209,20 @@ instance : Hashable PKey := ⟨fun k => hash64 (UInt64.ofNat k.val)⟩
 
 /-- The hash-map table: the incumbent's `Std.HashMap`, keyed by the
 packed address instead of the structural pair. -/
-abbrev HTab (s : Expr → Nat → Expr) := Std.HashMap PKey (PEnt s)
+abbrev HTab (s : Expr md → Nat → Expr md) := Std.HashMap PKey (PEnt s)
 
 /-- The pointer-keyed memo: absent until the first shared compound
 node. -/
-abbrev MemoXP (s : Expr → Nat → Expr) := Option (HTab s)
+abbrev MemoXP (s : Expr md → Nat → Expr md) := Option (HTab s)
 
 /-- A pointer-keyed walk's result: the term, fixed by its proof,
 beside the memo. -/
-abbrev ResXP (s : Expr → Nat → Expr) (e : Expr) (c : Nat) :=
-  { r : Expr // r = s e c } × MemoXP s
+abbrev ResXP (s : Expr md → Nat → Expr md) (e : Expr md) (c : Nat) :=
+  { r : (Expr md) // r = s e c } × MemoXP s
 
 /-- The record: the entry under its packed key, in the table or in a
 fresh one. -/
-@[inline] def MemoXP.insert {s : Expr → Nat → Expr} (memo : MemoXP s) (key : Nat)
+@[inline] def MemoXP.insert {s : Expr md → Nat → Expr md} (memo : MemoXP s) (key : Nat)
     (p : PEnt s) : MemoXP s :=
   match memo with
   | none => some (({} : HTab s).insert ⟨key⟩ p)
@@ -232,7 +232,7 @@ fresh one. -/
 read, the probe, the validated hit — else the descent and the record
 under the key read BEFORE the descent (the result is a `Squash`, so
 the address is unobservable: `withAddr`). -/
-@[inline] def MemoXP.shared {s : Expr → Nat → Expr} (memo : MemoXP s) (e : Expr) (c : Nat)
+@[inline] def MemoXP.shared {s : Expr md → Nat → Expr md} (memo : MemoXP s) (e : Expr md) (c : Nat)
     (rec : Unit → Squash (ResXP s e c)) : Squash (ResXP s e c) :=
   withAddr e fun addr =>
   let key := pkey addr c
@@ -249,11 +249,11 @@ the address is unobservable: `withAddr`). -/
 
 /-- The cursor-free instance (`instLevelParams`): the cursored memo at
 cursor `0`. -/
-abbrev MemoXP0 (s : Expr → Expr) := MemoXP (fun e _ => s e)
+abbrev MemoXP0 (s : Expr md → Expr md) := MemoXP (fun e _ => s e)
 
-abbrev ResXP0 (s : Expr → Expr) (e : Expr) := { r : Expr // r = s e } × MemoXP0 s
+abbrev ResXP0 (s : Expr md → Expr md) (e : Expr md) := { r : (Expr md) // r = s e } × MemoXP0 s
 
-@[inline] def MemoXP0.shared {s : Expr → Expr} (memo : MemoXP0 s) (e : Expr)
+@[inline] def MemoXP0.shared {s : Expr md → Expr md} (memo : MemoXP0 s) (e : Expr md)
     (rec : Unit → Squash (ResXP0 s e)) : Squash (ResXP0 s e) :=
   MemoXP.shared (s := fun e _ => s e) memo e 0 rec
 
@@ -271,7 +271,7 @@ unchanged).  `instantiate1LiftC_spec`
 
 /-- The plain descent of `instantiate1LiftC`: the reference
 `instantiate1LiftXP` carries its own proof against. -/
-def instantiate1LiftP (v : Expr) (e : Expr) (d : Nat) : Expr :=
+def instantiate1LiftP (v : Expr md) (e : Expr md) (d : Nat) : Expr md :=
   if e.bvarB ≤ d then e else
   match e with
   | .bvar i .. =>
@@ -287,13 +287,13 @@ def instantiate1LiftP (v : Expr) (e : Expr) (d : Nat) : Expr :=
       (instantiate1LiftP v body (d + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (instantiate1LiftP v sub d)
 
-theorem instantiate1LiftP_cut {v e : Expr} {d : Nat} (h : e.bvarB ≤ d) :
+theorem instantiate1LiftP_cut {v e : Expr md} {d : Nat} (h : e.bvarB ≤ d) :
     instantiate1LiftP v e d = e := by
   rw [instantiate1LiftP.eq_def]; simp [h]
 
 /-- The child step of `instantiate1LiftXP`: the cutoff, the compound
 test, the exclusivity read. -/
-@[inline] def enterLiftP (v : @& Expr) (e : @& Expr) (d : Nat)
+@[inline] def enterLiftP (v : @& (Expr md)) (e : @& (Expr md)) (d : Nat)
     (memo : MemoXP (instantiate1LiftP v))
     (rec : (hcut : ¬ e.bvarB ≤ d) → Squash (ResXP (instantiate1LiftP v) e d)) :
     Squash (ResXP (instantiate1LiftP v) e d) :=
@@ -303,7 +303,7 @@ test, the exclusivity read. -/
     if excl then rec hcut else memo.shared e d fun _ => rec hcut
 
 /-- The walk of `instantiate1LiftC`. -/
-def instantiate1LiftXP (v : @& Expr) (memo : MemoXP (instantiate1LiftP v)) (e : @& Expr)
+def instantiate1LiftXP (v : @& (Expr md)) (memo : MemoXP (instantiate1LiftP v)) (e : @& (Expr md))
     (d : Nat) (hcut : ¬ e.bvarB ≤ d) : Squash (ResXP (instantiate1LiftP v) e d) :=
   match e with
   | .bvar i .. =>
@@ -336,14 +336,14 @@ def instantiate1LiftXP (v : @& Expr) (memo : MemoXP (instantiate1LiftP v)) (e : 
     Squash.mk (⟨mkProj sn i s', by rw [instantiate1LiftP]; simp [hcut, hs, mkProj]⟩, memo)
 
 /-- The cached `Expr.instantiate1Lift`: the cutoff, then the walk. -/
-def instantiate1LiftC (e : @& Expr) (v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1LiftC (e : @& (Expr md)) (v : Expr md) (d : Nat := 0) : Expr md :=
   if hcut : e.bvarB ≤ d then e else
   resTerm (instantiate1LiftXP v none e d hcut)
 
 /-- The plain descent of `instantiate1C`: the reference the walk is
 verified against (`instantiate1P_spec`, `Verify/Cached/OpsC.lean`, is
 the equation to `Expr.instantiate1`). -/
-def instantiate1P (v : Expr) (e : Expr) (d : Nat) : Expr :=
+def instantiate1P (v : Expr md) (e : Expr md) (d : Nat) : Expr md :=
   if e.bvarB ≤ d then e else
   match e with
   | .bvar i .. => if i = d then v else if i > d then Expr.mkBvar (i - 1) else e
@@ -356,13 +356,13 @@ def instantiate1P (v : Expr) (e : Expr) (d : Nat) : Expr :=
     mkLetE (instantiate1P v ty d) (instantiate1P v val d) (instantiate1P v body (d + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (instantiate1P v sub d)
 
-theorem instantiate1P_cut {v e : Expr} {d : Nat} (h : e.bvarB ≤ d) :
+theorem instantiate1P_cut {v e : Expr md} {d : Nat} (h : e.bvarB ≤ d) :
     instantiate1P v e d = e := by
   rw [instantiate1P.eq_def]; simp [h]
 
 /-- The child step of `instantiate1XP`: the cutoff, the compound test,
 the exclusivity read. -/
-@[inline] def enter1P (v : @& Expr) (e : @& Expr) (d : Nat) (memo : MemoXP (instantiate1P v))
+@[inline] def enter1P (v : @& (Expr md)) (e : @& (Expr md)) (d : Nat) (memo : MemoXP (instantiate1P v))
     (rec : (hcut : ¬ e.bvarB ≤ d) → Squash (ResXP (instantiate1P v) e d)) :
     Squash (ResXP (instantiate1P v) e d) :=
   if hcut : e.bvarB ≤ d then Squash.mk (⟨e, (instantiate1P_cut hcut).symm⟩, memo)
@@ -372,7 +372,7 @@ the exclusivity read. -/
 
 /-- The walk of `instantiate1C` (the node is past the cutoff: the
 wrapper and `enter1P` test it). -/
-def instantiate1XP (v : @& Expr) (memo : MemoXP (instantiate1P v)) (e : @& Expr) (d : Nat)
+def instantiate1XP (v : @& (Expr md)) (memo : MemoXP (instantiate1P v)) (e : @& (Expr md)) (d : Nat)
     (hcut : ¬ e.bvarB ≤ d) : Squash (ResXP (instantiate1P v) e d) :=
   match e with
   | .bvar i .. =>
@@ -404,13 +404,13 @@ def instantiate1XP (v : @& Expr) (memo : MemoXP (instantiate1P v)) (e : @& Expr)
     Squash.mk (⟨mkProj sn i s', by rw [instantiate1P]; simp [hcut, hs, mkProj]⟩, memo)
 
 /-- The cached `Expr.instantiate1`: the cutoff, then the walk. -/
-def instantiate1C (e : @& Expr) (v : Expr) (d : Nat := 0) : Expr :=
+def instantiate1C (e : @& (Expr md)) (v : Expr md) (d : Nat := 0) : Expr md :=
   if hcut : e.bvarB ≤ d then e else
   resTerm (instantiate1XP v none e d hcut)
 
 /-- The plain descent of `instantiateListC`: the reference
 `instantiateListXP` carries its own proof against. -/
-def instantiateListP (vs : Array Expr) (e : Expr) (k : Nat) (d : Nat) : Expr :=
+def instantiateListP (vs : Array (Expr md)) (e : Expr md) (k : Nat) (d : Nat) : Expr md :=
   if k = 0 then e
   else if e.bvarB ≤ d then e
   else
@@ -438,12 +438,12 @@ decreasing_by
     | (apply Prod.Lex.left; omega)
     | (apply Prod.Lex.right; simp +arith +decide)
 
-theorem instantiateListP_cut {vs : Array Expr} {e : Expr} {k d : Nat} (h : e.bvarB ≤ d) :
+theorem instantiateListP_cut {vs : Array (Expr md)} {e : Expr md} {k d : Nat} (h : e.bvarB ≤ d) :
     instantiateListP vs e k d = e := by
   rw [instantiateListP.eq_def]; simp [h]
 
 /-- (Task #316, the pointer-keyed twin.) The child step of `instantiateListXP` (`k` is the parent's live prefix). -/
-@[inline] def enterListP (vs : @& Array Expr) (e : @& Expr) (k d : Nat)
+@[inline] def enterListP (vs : @& Array (Expr md)) (e : @& (Expr md)) (k d : Nat)
     (memo : MemoXP (fun e d => instantiateListP vs e k d))
     (rec : (hcut : ¬ e.bvarB ≤ d) → Squash (ResXP (fun e d => instantiateListP vs e k d) e d)) :
     Squash (ResXP (fun e d => instantiateListP vs e k d) e d) :=
@@ -455,8 +455,8 @@ theorem instantiateListP_cut {vs : Array Expr} {e : Expr} {k d : Nat} (h : e.bva
 /-- The walk of the bulk instantiation.  The `bvar` arm's re-entry at
 a replacement runs under a FRESH memo: it is the one place the live
 prefix `k` shrinks, and `k` is not part of the key. -/
-def instantiateListXP (vs : @& Array Expr) (k : Nat) (memo : MemoXP (fun e d => instantiateListP vs e k d))
-    (e : @& Expr) (d : Nat) (hk : ¬ k = 0) (hcut : ¬ e.bvarB ≤ d) :
+def instantiateListXP (vs : @& Array (Expr md)) (k : Nat) (memo : MemoXP (fun e d => instantiateListP vs e k d))
+    (e : @& (Expr md)) (d : Nat) (hk : ¬ k = 0) (hcut : ¬ e.bvarB ≤ d) :
     Squash (ResXP (fun e d => instantiateListP vs e k d) e d) :=
   match e with
   | .bvar i .. =>
@@ -504,7 +504,7 @@ decreasing_by
     | (apply Prod.Lex.right; simp +arith +decide)
 
 /-- The cached `Expr.instantiateList` (bulk): the cutoff, then the walk. -/
-def instantiateListC (e : @& Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
+def instantiateListC (e : @& (Expr md)) (vs : List (Expr md)) (d : Nat := 0) : Expr md :=
   match vs with
   | [] => e
   | v :: vs' =>
@@ -514,7 +514,7 @@ def instantiateListC (e : @& Expr) (vs : List Expr) (d : Nat := 0) : Expr :=
 
 /-- The plain descent of `instantiateRev` (as `instantiateListP` on
 the reversed array): the reference of `instantiateRevXP`. -/
-def instantiateRevP (vs : Array Expr) (e : Expr) (k : Nat) (d : Nat) : Expr :=
+def instantiateRevP (vs : Array (Expr md)) (e : Expr md) (k : Nat) (d : Nat) : Expr md :=
   if k = 0 then e
   else if e.bvarB ≤ d then e
   else
@@ -542,12 +542,12 @@ decreasing_by
     | (apply Prod.Lex.left; omega)
     | (apply Prod.Lex.right; simp +arith +decide)
 
-theorem instantiateRevP_cut {vs : Array Expr} {e : Expr} {k d : Nat} (h : e.bvarB ≤ d) :
+theorem instantiateRevP_cut {vs : Array (Expr md)} {e : Expr md} {k d : Nat} (h : e.bvarB ≤ d) :
     instantiateRevP vs e k d = e := by
   rw [instantiateRevP.eq_def]; simp [h]
 
 /-- (Task #316, the pointer-keyed twin.) The child step of `instantiateRevXP` (`k` is the parent's live prefix). -/
-@[inline] def enterRevP (vs : @& Array Expr) (e : @& Expr) (k d : Nat)
+@[inline] def enterRevP (vs : @& Array (Expr md)) (e : @& (Expr md)) (k d : Nat)
     (memo : MemoXP (fun e d => instantiateRevP vs e k d))
     (rec : (hcut : ¬ e.bvarB ≤ d) → Squash (ResXP (fun e d => instantiateRevP vs e k d) e d)) :
     Squash (ResXP (fun e d => instantiateRevP vs e k d) e d) :=
@@ -560,8 +560,8 @@ theorem instantiateRevP_cut {vs : Array Expr} {e : Expr} {k d : Nat} (h : e.bvar
 `bvar` arm's re-entry at a replacement runs under a FRESH memo: it is
 the one place the live prefix `k` shrinks, and `k` is not part of the
 key. -/
-def instantiateRevXP (vs : @& Array Expr) (k : Nat) (memo : MemoXP (fun e d => instantiateRevP vs e k d))
-    (e : @& Expr) (d : Nat) (hk : ¬ k = 0) (hcut : ¬ e.bvarB ≤ d) :
+def instantiateRevXP (vs : @& Array (Expr md)) (k : Nat) (memo : MemoXP (fun e d => instantiateRevP vs e k d))
+    (e : @& (Expr md)) (d : Nat) (hk : ¬ k = 0) (hcut : ¬ e.bvarB ≤ d) :
     Squash (ResXP (fun e d => instantiateRevP vs e k d) e d) :=
   match e with
   | .bvar i .. =>
@@ -610,7 +610,7 @@ decreasing_by
 
 /-- Bulk instantiation on a reversed accumulator array: the cutoffs,
 then the walk. -/
-def instantiateRev (e : @& Expr) (vs : Array Expr) (d : Nat := 0) : Expr :=
+def instantiateRev (e : @& (Expr md)) (vs : Array (Expr md)) (d : Nat := 0) : Expr md :=
   if hk : vs.size = 0 then e
   else if hcut : e.bvarB ≤ d then e
   else resTerm (instantiateRevXP vs vs.size none e d hk hcut)
@@ -619,7 +619,7 @@ def instantiateRev (e : @& Expr) (vs : Array Expr) (d : Nat := 0) : Expr :=
 
 /-- The plain descent of `abstract1C`: the reference of
 `abstract1XP`. -/
-def abstract1P (d : Nat) (e : Expr) (k : Nat) : Expr :=
+def abstract1P (d : Nat) (e : Expr md) (k : Nat) : Expr md :=
   if e.fvarB ≤ d then e else
   match e with
   | .fvar idx .. => if idx = d then Expr.mkBvar k else e
@@ -631,12 +631,12 @@ def abstract1P (d : Nat) (e : Expr) (k : Nat) : Expr :=
     mkLetE (abstract1P d ty k) (abstract1P d val k) (abstract1P d body (k + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (abstract1P d sub k)
 
-theorem abstract1P_cut {d : Nat} {e : Expr} {k : Nat} (h : e.fvarB ≤ d) :
+theorem abstract1P_cut {d : Nat} {e : Expr md} {k : Nat} (h : e.fvarB ≤ d) :
     abstract1P d e k = e := by
   rw [abstract1P.eq_def]; simp [h]
 
 /-- (Task #316.) The child step of `abstract1XP`: the pointer-keyed twin of `enterAbs1`. -/
-@[inline] def enterAbs1P (d : Nat) (e : @& Expr) (k : Nat) (memo : MemoXP (abstract1P d))
+@[inline] def enterAbs1P (d : Nat) (e : @& (Expr md)) (k : Nat) (memo : (MemoXP (md := md)) (abstract1P d))
     (rec : (hcut : ¬ e.fvarB ≤ d) → Squash (ResXP (abstract1P d) e k)) :
     Squash (ResXP (abstract1P d) e k) :=
   if hcut : e.fvarB ≤ d then Squash.mk (⟨e, (abstract1P_cut hcut).symm⟩, memo)
@@ -645,7 +645,7 @@ theorem abstract1P_cut {d : Nat} {e : Expr} {k : Nat} (h : e.fvarB ≤ d) :
     if excl then rec hcut else memo.shared e k fun _ => rec hcut
 
 /-- The walk of `abstract1C`. -/
-def abstract1XP (d : Nat) (memo : MemoXP (abstract1P d)) (e : @& Expr) (k : Nat)
+def abstract1XP (d : Nat) (memo : (MemoXP (md := md)) (abstract1P d)) (e : @& (Expr md)) (k : Nat)
     (hcut : ¬ e.fvarB ≤ d) : Squash (ResXP (abstract1P d) e k) :=
   match e with
   | .fvar idx ty .. =>
@@ -677,13 +677,13 @@ def abstract1XP (d : Nat) (memo : MemoXP (abstract1P d)) (e : @& Expr) (k : Nat)
     Squash.mk (⟨mkProj sn i s', by rw [abstract1P]; simp [hcut, hs, mkProj]⟩, memo)
 
 /-- The cached `Expr.abstract1`: the cutoff, then the walk. -/
-def abstract1C (e : @& Expr) (d : Nat) (k : Nat := 0) : Expr :=
+def abstract1C (e : @& (Expr md)) (d : Nat) (k : Nat := 0) : Expr md :=
   if hcut : e.fvarB ≤ d then e else
   resTerm (abstract1XP d none e k hcut)
 
 /-- The plain descent of `abstractRangeC`: the reference of
 `abstractRangeXP`. -/
-def abstractRangeP (d k : Nat) (e : Expr) (c : Nat) : Expr :=
+def abstractRangeP (d k : Nat) (e : Expr md) (c : Nat) : Expr md :=
   if e.fvarB ≤ d then e else
   match e with
   | .fvar idx .. =>
@@ -699,12 +699,12 @@ def abstractRangeP (d k : Nat) (e : Expr) (c : Nat) : Expr :=
       (abstractRangeP d k body (c + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (abstractRangeP d k sub c)
 
-theorem abstractRangeP_cut {d k : Nat} {e : Expr} {c : Nat} (h : e.fvarB ≤ d) :
+theorem abstractRangeP_cut {d k : Nat} {e : Expr md} {c : Nat} (h : e.fvarB ≤ d) :
     abstractRangeP d k e c = e := by
   rw [abstractRangeP.eq_def]; simp [h]
 
 /-- (Task #316.) The child step of `abstractRangeXP`: the pointer-keyed twin of `enterAbsR`. -/
-@[inline] def enterAbsRP (d k : Nat) (e : @& Expr) (c : Nat) (memo : MemoXP (abstractRangeP d k))
+@[inline] def enterAbsRP (d k : Nat) (e : @& (Expr md)) (c : Nat) (memo : (MemoXP (md := md)) (abstractRangeP d k))
     (rec : (hcut : ¬ e.fvarB ≤ d) → Squash (ResXP (abstractRangeP d k) e c)) :
     Squash (ResXP (abstractRangeP d k) e c) :=
   if hcut : e.fvarB ≤ d then Squash.mk (⟨e, (abstractRangeP_cut hcut).symm⟩, memo)
@@ -713,7 +713,7 @@ theorem abstractRangeP_cut {d k : Nat} {e : Expr} {c : Nat} (h : e.fvarB ≤ d) 
     if excl then rec hcut else memo.shared e c fun _ => rec hcut
 
 /-- The walk of `abstractRangeC`. -/
-def abstractRangeXP (d k : Nat) (memo : MemoXP (abstractRangeP d k)) (e : @& Expr) (c : Nat)
+def abstractRangeXP (d k : Nat) (memo : (MemoXP (md := md)) (abstractRangeP d k)) (e : @& (Expr md)) (c : Nat)
     (hcut : ¬ e.fvarB ≤ d) : Squash (ResXP (abstractRangeP d k) e c) :=
   match e with
   | .fvar idx ty .. =>
@@ -747,7 +747,7 @@ def abstractRangeXP (d k : Nat) (memo : MemoXP (abstractRangeP d k)) (e : @& Exp
 
 /-- The cached `Expr.abstractRange` (`k = 0` is the identity and skips
 the traversal, as in the arena): the cutoff, then the walk. -/
-def abstractRangeC (e : @& Expr) (d k : Nat) (c : Nat := 0) : Expr :=
+def abstractRangeC (e : @& (Expr md)) (d k : Nat) (c : Nat := 0) : Expr md :=
   match k with
   | 0 => e
   | _ + 1 =>
@@ -758,7 +758,7 @@ def abstractRangeC (e : @& Expr) (d k : Nat) (c : Nat := 0) : Expr :=
 
 /-- The plain descent of `instLevelParams`: the reference of
 `instLevelParamsXP`. -/
-def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr) : Expr :=
+def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr md) : Expr md :=
   if !e.hasLP then e else
   match e with
   | .bvar .. | .lit .. => e
@@ -776,7 +776,7 @@ def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr) : Expr 
       (instLevelParamsP ks us body) lmeta
   | .proj s i sub .. => mkProj s i (instLevelParamsP ks us sub)
 
-theorem instLevelParamsP_cut {ks : List LevelParam} {us : List Level} {e : Expr}
+theorem instLevelParamsP_cut {ks : List LevelParam} {us : List Level} {e : Expr md}
     (h : (!e.hasLP) = true) : instLevelParamsP ks us e = e := by
   rw [instLevelParamsP.eq_def]; simp [h]
 
@@ -784,8 +784,8 @@ theorem instLevelParamsP_cut {ks : List LevelParam} {us : List Level} {e : Expr}
 exclusivity read on EVERY node past it — there is no compound test
 here, since a `const` with level parameters is a `Level.subst` per
 occurrence and worth recording. -/
-@[inline] def enterLPP (ks : @& List LevelParam) (us : @& List Level) (e : @& Expr)
-    (memo : MemoXP0 (instLevelParamsP ks us))
+@[inline] def enterLPP (ks : @& List LevelParam) (us : @& List Level) (e : @& (Expr md))
+    (memo : (MemoXP0 (md := md)) (instLevelParamsP ks us))
     (rec : (hcut : ¬ (!e.hasLP) = true) → Squash (ResXP0 (instLevelParamsP ks us) e)) :
     Squash (ResXP0 (instLevelParamsP ks us) e) :=
   if hcut : (!e.hasLP) = true then Squash.mk (⟨e, (instLevelParamsP_cut hcut).symm⟩, memo)
@@ -794,7 +794,7 @@ occurrence and worth recording. -/
 
 /-- The walk of `instLevelParams`. -/
 def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
-    (memo : MemoXP0 (instLevelParamsP ks us)) (e : @& Expr) (hcut : ¬ (!e.hasLP) = true) :
+    (memo : (MemoXP0 (md := md)) (instLevelParamsP ks us)) (e : @& (Expr md)) (hcut : ¬ (!e.hasLP) = true) :
     Squash (ResXP0 (instLevelParamsP ks us) e) :=
   match e with
   | .bvar i .. => Squash.mk (⟨.bvar i, by rw [instLevelParamsP.eq_def, if_neg hcut]⟩, memo)
@@ -832,7 +832,7 @@ def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
 
 /-- The cached `Expr.instantiateLevelParams`: the cutoff, then the
 walk. -/
-def instLevelParams (ks : List LevelParam) (us : List Level) (e : @& Expr) : Expr :=
+def instLevelParams (ks : List LevelParam) (us : List Level) (e : @& (Expr md)) : Expr md :=
   if hcut : (!e.hasLP) = true then e else
   resTerm (instLevelParamsXP ks us none e hcut)
 
@@ -852,8 +852,8 @@ carrier (`(Classical.choice …).ColimitCocone.0.Cocone.0.CommRingCat.0`)
 the copies nest, and at `AlgebraicGeometry.isAffine_of_isAffineOpen_basicOpen`
 (subject tree 3.9 · 10⁸ nodes on a 3 106-node DAG) the copy alone is
 the out-of-memory — DESIGN.md "The affine frontier". -/
-def _root_.Ix.Kernel.ProjEntry.typeAtI (entry : ProjEntry) (us : List Level)
-    (targs : List Expr) (pe : Expr) : Expr :=
+def _root_.Ix.Kernel.ProjEntry.typeAtI (entry : ProjEntry md) (us : List Level)
+    (targs : List (Expr md)) (pe : Expr md) : Expr md :=
   instantiateListC (instLevelParams entry.levelParams us entry.body)
     (pe :: targs.reverse)
 
@@ -905,15 +905,15 @@ why. -/
 /-- The nodes a `Bool` memo entry can save a descent of: the compound
 nodes, and `fvar` — every walk of this section descends into the
 ANNOTATION, so the cached fvar range does not decide an `fvar` node. -/
-@[inline] def isCompoundF : Expr → Bool
+@[inline] def isCompoundF : Expr md → Bool
   | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. | .fvar .. => true
   | _ => false
 
 /-- A `Bool` memo entry: the node it was decided for, the cursor, the
 decision, and the proof — the entry is its own invariant (`PEnt` with
 `Bool` in place of the rebuilt term). -/
-structure BEnt (s : Expr → Nat → Bool) where
-  node : Expr
+structure BEnt (s : Expr md → Nat → Bool) where
+  node : Expr md
   depth : Nat
   val : Bool
   eq : val = s node depth
@@ -921,7 +921,7 @@ structure BEnt (s : Expr → Nat → Bool) where
 /-- A validated hit: the cursor compares equal and the stored node IS
 the current one (by pointer at runtime — `Expr.ptrDec` — structurally
 in the model); then the entry's proof is the walk's. -/
-@[inline] def BEnt.hit {s : Expr → Nat → Bool} {β : Sort u} (p : BEnt s) (e : Expr) (c : Nat)
+@[inline] def BEnt.hit {s : Expr md → Nat → Bool} {β : Sort u} (p : BEnt s) (e : Expr md) (c : Nat)
     (k : { r : Bool // r = s e c } → β) (miss : Unit → β) : β :=
   if hd : p.depth = c then
     match Expr.ptrDec p.node e with
@@ -931,20 +931,20 @@ in the model); then the entry's proof is the walk's. -/
 
 /-- The `Bool` table: the packed address-and-cursor key under the
 mixing hash of `PKey`. -/
-abbrev BTab (s : Expr → Nat → Bool) := Std.HashMap PKey (BEnt s)
+abbrev BTab (s : Expr md → Nat → Bool) := Std.HashMap PKey (BEnt s)
 
 /-- The pointer-keyed `Bool` memo: absent until the first shared
 compound node. -/
-abbrev MemoB (s : Expr → Nat → Bool) := Option (BTab s)
+abbrev MemoB (s : Expr md → Nat → Bool) := Option (BTab s)
 
 /-- A `Bool` walk's result: the decision, fixed by its proof, beside
 the memo. -/
-abbrev ResB (s : Expr → Nat → Bool) (e : Expr) (c : Nat) :=
+abbrev ResB (s : Expr md → Nat → Bool) (e : Expr md) (c : Nat) :=
   { r : Bool // r = s e c } × MemoB s
 
 /-- The record: the entry under its packed key, in the table or in a
 fresh one. -/
-@[inline] def MemoB.insert {s : Expr → Nat → Bool} (memo : MemoB s) (key : Nat)
+@[inline] def MemoB.insert {s : Expr md → Nat → Bool} (memo : MemoB s) (key : Nat)
     (p : BEnt s) : MemoB s :=
   match memo with
   | none => some (({} : BTab s).insert ⟨key⟩ p)
@@ -954,7 +954,7 @@ fresh one. -/
 address read, the probe, the validated hit — else the descent and the
 record under the key read BEFORE the descent (`MemoXP.shared`
 verbatim, with `BEnt` for `PEnt`). -/
-@[inline] def MemoB.shared {s : Expr → Nat → Bool} (memo : MemoB s) (e : Expr) (c : Nat)
+@[inline] def MemoB.shared {s : Expr md → Nat → Bool} (memo : MemoB s) (e : Expr md) (c : Nat)
     (rec : Unit → Squash (ResB s e c)) : Squash (ResB s e c) :=
   withAddr e fun addr =>
   let key := pkey addr c
@@ -971,11 +971,11 @@ verbatim, with `BEnt` for `PEnt`). -/
 
 /-- The cursor-free instance: the cursored `Bool` memo at cursor
 `0`. -/
-abbrev MemoB0 (s : Expr → Bool) := MemoB (fun e _ => s e)
+abbrev MemoB0 (s : Expr md → Bool) := MemoB (fun e _ => s e)
 
-abbrev ResB0 (s : Expr → Bool) (e : Expr) := { r : Bool // r = s e } × MemoB0 s
+abbrev ResB0 (s : Expr md → Bool) (e : Expr md) := { r : Bool // r = s e } × MemoB0 s
 
-@[inline] def MemoB0.shared {s : Expr → Bool} (memo : MemoB0 s) (e : Expr)
+@[inline] def MemoB0.shared {s : Expr md → Bool} (memo : MemoB0 s) (e : Expr md)
     (rec : Unit → Squash (ResB0 s e)) : Squash (ResB0 s e) :=
   MemoB.shared (s := fun e _ => s e) memo e 0 rec
 
@@ -1000,7 +1000,7 @@ is the equation to `Expr.wscopedB`).  The cursor is the node's second
 argument, as it is for the substitution walks — it CHANGES at `fvar`,
 where the annotation is entered at the variable's own index, so the
 memo key must carry it. -/
-def wscopedBP (e : Expr) (d : Nat) : Bool :=
+def wscopedBP (e : Expr md) (d : Nat) : Bool :=
   if e.fvarB == 0 then true else
   match e with
   | .bvar .. | .sort .. | .const .. | .lit .. => true
@@ -1010,13 +1010,13 @@ def wscopedBP (e : Expr) (d : Nat) : Bool :=
   | .letE ty val body _ => wscopedBP ty d && wscopedBP val d && wscopedBP body d
   | .proj _ _ sub .. => wscopedBP sub d
 
-theorem wscopedBP_cut {e : Expr} {d : Nat} (h : (e.fvarB == 0) = true) :
+theorem wscopedBP_cut {e : Expr md} {d : Nat} (h : (e.fvarB == 0) = true) :
     wscopedBP e d = true := by
   rw [wscopedBP.eq_def]; simp [h]
 
 /-- The child step of `wscopedBXP`: the cutoff, the compound test, the
 exclusivity read. -/
-@[inline] def enterWSP (e : @& Expr) (d : Nat) (memo : MemoB wscopedBP)
+@[inline] def enterWSP (e : @& (Expr md)) (d : Nat) (memo : (MemoB (md := md)) wscopedBP)
     (rec : (hcut : (e.fvarB == 0) = false) → Squash (ResB wscopedBP e d)) :
     Squash (ResB wscopedBP e d) :=
   match hcut : e.fvarB == 0 with
@@ -1028,7 +1028,7 @@ exclusivity read. -/
 
 /-- The walk of `wscopedBC` (the node is past the cutoff: the wrapper
 and `enterWSP` test it). -/
-def wscopedBXP (memo : MemoB wscopedBP) (e : @& Expr) (d : Nat)
+def wscopedBXP (memo : (MemoB (md := md)) wscopedBP) (e : @& (Expr md)) (d : Nat)
     (hcut : (e.fvarB == 0) = false) : Squash (ResB wscopedBP e d) :=
   match e with
   | .bvar .. => Squash.mk (⟨true, by rw [wscopedBP]; simp [hcut]⟩, memo)
@@ -1089,7 +1089,7 @@ def wscopedBXP (memo : MemoB wscopedBP) (e : @& Expr) (d : Nat)
 
 /-- The cached `Expr.wscopedB d` (one memoized DAG walk): the cutoff,
 then the walk. -/
-def wscopedBC (d : Nat) (e : Expr) : Bool :=
+def wscopedBC (d : Nat) (e : Expr md) : Bool :=
   match hcut : e.fvarB == 0 with
   | true => true
   | false => resBool (wscopedBXP none e d hcut)
@@ -1127,9 +1127,9 @@ set, i.e. the table the entry was meant to replace.  So the
 accumulator is the algorithm here, and the accumulator is what cannot
 be carried in a type.  DESIGN.md, task #319, records this as the one
 permitted exception and the open question behind it. -/
-def fvarLeavesGoC (acc : List (Nat × Expr))
-    (seen : Std.HashMap Expr Unit) (e : Expr) :
-    List (Nat × Expr) × Std.HashMap Expr Unit :=
+def fvarLeavesGoC (acc : List (Nat × Expr md))
+    (seen : Std.HashMap (Expr md) Unit) (e : Expr md) :
+    List (Nat × Expr md) × Std.HashMap (Expr md) Unit :=
   if e.fvarB == 0 then (acc, seen) else
   match seen[e]? with
   | some _ => (acc, seen)
@@ -1151,12 +1151,12 @@ def fvarLeavesGoC (acc : List (Nat × Expr))
     | .proj _ _ sub .. => fvarLeavesGoC acc seen sub
 
 /-- The reachable `fvar` leaves (hereditarily through annotations). -/
-def fvarLeavesC (e : Expr) : List (Nat × Expr) :=
+def fvarLeavesC (e : Expr md) : List (Nat × Expr md) :=
   (fvarLeavesGoC [] {} e).1
 
 /-- Is `(idx, ty)` in the base leaf list?  Compares the annotation
 with `Expr.beq` (pointer-first). -/
-def leafMem : List (Nat × Expr) → Nat → Expr → Bool
+def leafMem : List (Nat × Expr md) → Nat → Expr md → Bool
   | [], _, _ => false
   | (i, t) :: rest, idx, ty =>
     (i == idx && t == ty) || leafMem rest idx ty
@@ -1166,7 +1166,7 @@ is verified against (`leavesSubP_spec`,
 `IxC/Kernel/Verify/Cached/GuardsC.lean`, is the equation to the
 `Expr`-level leaf-subset boolean).  `leafMem` is the membership
 test (task #86). -/
-def leavesSubP (bl : List (Nat × Expr)) (e : Expr) : Bool :=
+def leavesSubP (bl : List (Nat × Expr md)) (e : Expr md) : Bool :=
   if e.fvarB == 0 then true else
   match e with
   | .bvar .. | .sort .. | .const .. | .lit .. => true
@@ -1177,13 +1177,13 @@ def leavesSubP (bl : List (Nat × Expr)) (e : Expr) : Bool :=
     leavesSubP bl ty && leavesSubP bl val && leavesSubP bl body
   | .proj _ _ sub .. => leavesSubP bl sub
 
-theorem leavesSubP_cut {bl : List (Nat × Expr)} {e : Expr} (h : (e.fvarB == 0) = true) :
+theorem leavesSubP_cut {bl : List (Nat × Expr md)} {e : Expr md} (h : (e.fvarB == 0) = true) :
     leavesSubP bl e = true := by
   rw [leavesSubP.eq_def]; simp [h]
 
 /-- The child step of `leavesSubXP`: the cutoff, the compound test,
 the exclusivity read. -/
-@[inline] def enterLSub (bl : @& List (Nat × Expr)) (e : @& Expr)
+@[inline] def enterLSub (bl : @& List (Nat × Expr md)) (e : @& (Expr md))
     (memo : MemoB0 (leavesSubP bl))
     (rec : (hcut : (e.fvarB == 0) = false) → Squash (ResB0 (leavesSubP bl) e)) :
     Squash (ResB0 (leavesSubP bl) e) :=
@@ -1196,8 +1196,8 @@ the exclusivity read. -/
 
 /-- The leaf-subset walk (the node is past the cutoff: `leavesSubC`
 and `enterLSub` test it). -/
-def leavesSubXP (bl : @& List (Nat × Expr)) (memo : MemoB0 (leavesSubP bl))
-    (e : @& Expr) (hcut : (e.fvarB == 0) = false) : Squash (ResB0 (leavesSubP bl) e) :=
+def leavesSubXP (bl : @& List (Nat × Expr md)) (memo : MemoB0 (leavesSubP bl))
+    (e : @& (Expr md)) (hcut : (e.fvarB == 0) = false) : Squash (ResB0 (leavesSubP bl) e) :=
   match e with
   | .bvar .. => Squash.mk (⟨true, by rw [leavesSubP]; simp [hcut]⟩, memo)
   | .sort .. => Squash.mk (⟨true, by rw [leavesSubP]; simp [hcut]⟩, memo)
@@ -1256,7 +1256,7 @@ def leavesSubXP (bl : @& List (Nat × Expr)) (memo : MemoB0 (leavesSubP bl))
     Squash.mk (⟨rs, by rw [leavesSubP]; simp [hcut, ← hs]⟩, memo)
 
 /-- The cached leaf-subset test: the cutoff, then the walk. -/
-def leavesSubC (bl : List (Nat × Expr)) (e : Expr) : Bool :=
+def leavesSubC (bl : List (Nat × Expr md)) (e : Expr md) : Bool :=
   match hcut : e.fvarB == 0 with
   | true => true
   | false => resBool (leavesSubXP bl none e hcut)
@@ -1264,19 +1264,19 @@ def leavesSubC (bl : List (Nat × Expr)) (e : Expr) : Bool :=
 /-- The fabrication leaf guard: every `fvar` leaf of `fab` is one of
 `base` (short-circuits on `fvar`-free fabrications, `O(1)` off the
 cached range). -/
-def leafGuard (fab base : Expr) : Bool :=
+def leafGuard (fab base : Expr md) : Bool :=
   !fab.hasFvar || leavesSubC (fvarLeavesC base) fab
 
 /-! ## Telescope operations -/
 
 /-- The `instantiate1C` chain of `Expr.instSpine`. -/
-def instSpineChainC : List Expr → Nat → Expr → Expr
+def instSpineChainC : List (Expr md) → Nat → Expr md → Expr md
   | [], _, e => e
   | a :: as, t, e => instSpineChainC as (t - 1) (instantiate1C e a t)
 
 /-- The cached `Expr.instSpine` (bulk when the spine spans the
 telescope context, the chain otherwise). -/
-def instSpineC (args : List Expr) (t : Nat) (e : Expr) : Expr :=
+def instSpineC (args : List (Expr md)) (t : Nat) (e : Expr md) : Expr md :=
   if args.length = t + 1 then instantiateListC e args.reverse 0
   else instSpineChainC args t e
 
@@ -1286,7 +1286,7 @@ Not structural: the `bvar` arm re-enters on the same argument list with
 the accumulator flushed.  Measure `(as.length, acc.length)` — the
 `forallE` arm consumes an argument, the `bvar` arm keeps the arguments
 and empties a nonempty accumulator. -/
-def piResidualAcc : List Expr → Expr → List Expr → Option Expr
+def piResidualAcc : List (Expr md) → Expr md → List (Expr md) → Option (Expr md)
   | acc, e, [] => some (instantiateListC e acc 0)
   | acc, e, a :: as =>
     match e with
@@ -1303,7 +1303,7 @@ decreasing_by
     | (apply Prod.Lex.left; simp +arith +decide)
 
 @[inherit_doc piResidualAcc]
-def piResidual (e : Expr) (args : List Expr) : Option Expr :=
+def piResidual (e : Expr md) (args : List (Expr md)) : Option (Expr md) :=
   piResidualAcc [] e args
 
 /-! ## Level-parameter definedness (the parsed-index driver's guard) -/
@@ -1313,7 +1313,7 @@ walk is verified against (`allLevelParamsDefinedP_spec`,
 `IxC/Kernel/Verify/Cached/GuardsC.lean`, is the equation to
 `Expr.allLevelParamsDefined`).  The cutoff: a node without a level
 parameter is `true` without traversal. -/
-def allLevelParamsDefinedP (params : List LevelParam) (e : Expr) : Bool :=
+def allLevelParamsDefinedP (params : List LevelParam) (e : Expr md) : Bool :=
   if e.hasLP then
     match e with
     | .bvar .. | .lit .. => true
@@ -1331,14 +1331,14 @@ def allLevelParamsDefinedP (params : List LevelParam) (e : Expr) : Bool :=
     | .proj _ _ sub .. => allLevelParamsDefinedP params sub
   else true
 
-theorem allLevelParamsDefinedP_cut {params : List LevelParam} {e : Expr}
+theorem allLevelParamsDefinedP_cut {params : List LevelParam} {e : Expr md}
     (h : ¬ e.hasLP = true) : allLevelParamsDefinedP params e = true := by
   rw [allLevelParamsDefinedP.eq_def]; simp [h]
 
 /-- The child step of `allLevelParamsDefinedXP`: the cutoff, the
 compound test, the exclusivity read. -/
-@[inline] def enterLPD (params : @& List LevelParam) (e : @& Expr)
-    (memo : MemoB0 (allLevelParamsDefinedP params))
+@[inline] def enterLPD (params : @& List LevelParam) (e : @& (Expr md))
+    (memo : (MemoB0 (md := md)) (allLevelParamsDefinedP params))
     (rec : (hcut : e.hasLP = true) →
       Squash (ResB0 (allLevelParamsDefinedP params) e)) :
     Squash (ResB0 (allLevelParamsDefinedP params) e) :=
@@ -1351,7 +1351,7 @@ compound test, the exclusivity read. -/
 /-- The walk of `allLevelParamsDefinedC` (the node is past the
 cutoff: the wrapper and `enterLPD` test it). -/
 def allLevelParamsDefinedXP (params : @& List LevelParam)
-    (memo : MemoB0 (allLevelParamsDefinedP params)) (e : @& Expr)
+    (memo : (MemoB0 (md := md)) (allLevelParamsDefinedP params)) (e : @& (Expr md))
     (hcut : e.hasLP = true) :
     Squash (ResB0 (allLevelParamsDefinedP params) e) :=
   match e with
@@ -1422,7 +1422,7 @@ def allLevelParamsDefinedXP (params : @& List LevelParam)
 
 /-- The cached `Expr.allLevelParamsDefined params` (one memoized DAG
 walk): the cutoff, then the walk. -/
-def allLevelParamsDefinedC (params : List LevelParam) (e : Expr) : Bool :=
+def allLevelParamsDefinedC (params : List LevelParam) (e : Expr md) : Bool :=
   if hcut : e.hasLP = true then resBool (allLevelParamsDefinedXP params none e hcut)
   else true
 

@@ -53,7 +53,7 @@ install from the recorded `isDefEqCore` runs (`NatEqsRun`) through
 numeral-transport inductions (`Sound/NatOps`' shape at `interp`),
 which close the literal rows `NatSuccRow`/`NatOpRow` of
 `Model/Rules/Inputs.lean` (`Model/NatStep.lean`). -/
-@[expose] def NatOps {V : Type w} [SetTheory V] {env : Env}
+@[expose] def NatOps {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
   ∀ c ∈ Ix.Kernel.natOpNames, ∀ cv v hint,
     env.find? c = some (.defnInfo cv v hint) →
@@ -79,7 +79,7 @@ install from the recorded certificate runs (`DivModPinR`'s
 the run-certificate route again (`Interp/DivMod.lean`) — and
 preserved across every other fresh cons.  Consumed by the WF-op
 numeral transports (`Sound/NatOpsWf`' shape at `interp`). -/
-@[expose] def DivMod {V : Type w} [SetTheory V] {env : Env}
+@[expose] def DivMod {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
   ∀ c ∈ Ix.Kernel.natDivModNames, ∀ cv v hint,
     env.find? c = some (.defnInfo cv v hint) →
@@ -105,7 +105,7 @@ invisible to every other `EnvModelM` field, and the erasure factoring
 that would import the v1 law is refuted at exactly the λ-nodes this
 tower is made of (the literal-tier seal II finding 1).  See the task
 #161 LITERAL TIER seal III record. -/
-@[expose] def EqLaw {V : Type w} [SetTheory V] {env : Env}
+@[expose] def EqLaw {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) : Prop :=
   env.find? eqName = some eqA →
   ∀ ψ : LevelParam → Nat,
@@ -154,9 +154,9 @@ fresh cons (the law mentions two stored leaves, so it crosses).
 **Consumer**: the `ofReduceNat`/`ofReduceBool` axiom branch
 (`Interp/AxiomReduceP.lean`), whose innermost membership obligation
 is exactly `op a = a`. -/
-@[expose] def ReduceOps {V : Type w} [SetTheory V] {env : Env}
+@[expose] def ReduceOps {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) : Prop :=
-  ∀ c ∈ Ix.Kernel.reduceOpNames, ∀ cv : ConstantVal,
+  ∀ c ∈ Ix.Kernel.reduceOpNames, ∀ cv : ConstantVal md,
     env.find? c = some (.axiomInfo cv) →
     ConstantVal.matchesPin cv (Ix.Kernel.reduceOpCvA c) = true →
     (env.find? (Ix.Kernel.reduceElemName c)).isSome = true ∧
@@ -240,24 +240,24 @@ end
 applied to the type arguments and the stuck member
 (`projSpinesV`'s value level). -/
 @[expose] noncomputable def projSpines {V : Type w} [SetTheory V]
-    (val : Key → V) (T : Key) (ts : List V) (b : V) (nF : Nat) :
+    (val : Key md → V) (T : Key md) (ts : List V) (b : V) (nF : Nat) :
     List V :=
   (List.range nF).map fun j =>
     (ts ++ [b]).foldl SetTheory.app (val (projFnName T j))
 
 /-- The fabricated η spine's values (`etaFabArgsV`'s value level). -/
 @[expose] noncomputable def etaFabArgsV {V : Type w} [SetTheory V]
-    (val : Key → V) (T : Key) (ts : List V) (b : V) (nF : Nat) :
+    (val : Key md → V) (T : Key md) (ts : List V) (b : V) (nF : Nat) :
     List V :=
   ts ++ projSpines val T ts b nF
 
 /-- **The fired structural-η law of an η-capable stored family**
 (`EtaLawV`'s mirror; see the note above for the shape), through the
 record's constructor `C`. -/
-@[expose] def EtaLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key)
-    (cvT : ConstantVal) (caps : IndCaps) : Prop :=
-  ∀ C : Key, caps.etaCtor = some C →
+@[expose] def EtaLaw {V : Type w} [SetTheory V] {env : Env md}
+    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key md)
+    (cvT : ConstantVal md) (caps : IndCaps md) : Prop :=
+  ∀ C : Key md, caps.etaCtor = some C →
   ∀ us : List Level, us.length = cvT.levelParams.length →
   ∃ TVa : AnnotTerm,
     denoteMeta m.acval env φ' 0
@@ -279,9 +279,9 @@ record's constructor `C`. -/
 
 /-- **The fired unit-like law of a unit-like stored family**
 (`UnitLawV`'s mirror). -/
-@[expose] def UnitLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key)
-    (cvT : ConstantVal) (caps : IndCaps) : Prop :=
+@[expose] def UnitLaw {V : Type w} [SetTheory V] {env : Env md}
+    (m : EnvModel V env) (φ' : LevelParam → Nat) (T : Key md)
+    (cvT : ConstantVal md) (caps : IndCaps md) : Prop :=
   ∀ us : List Level, us.length = cvT.levelParams.length →
   ∃ TVa : AnnotTerm,
     denoteMeta m.acval env φ' 0
@@ -300,9 +300,9 @@ record's constructor `C`. -/
 /-- **The stored families' capability laws at `interp`**
 (`CapsOkV`'s mirror, keyed identically; established at the inductive
 install — `IndStepPB`'s bill). -/
-@[expose] def CapsOk {V : Type w} [SetTheory V] {env : Env}
+@[expose] def CapsOk {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) : Prop :=
-  (∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
+  (∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
     Ix.Kernel.EtaFamilyStored env T caps →
@@ -315,7 +315,7 @@ install — `IndStepPB`'s bill). -/
   -- the premise is false and the law vacuous), and the deletion was
   -- ratified — it strengthens the field, consumers and the
   -- `IndStepPB` establishment unchanged.
-  (∀ (T : Key) (cvT : ConstantVal) (caps : IndCaps),
+  (∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
     ∀ φ' : LevelParam → Nat, UnitLaw m φ' T cvT caps)
@@ -435,9 +435,9 @@ all at the ambient environment. -/
 /-- **One rule's fired modeled-iota contract at `interp`**
 (`RecRuleLaw`; `RecRuleLawV`'s mirror — see the note above for
 every deviation). -/
-@[expose] def RecRuleLaw {V : Type w} [SetTheory V] {env : Env}
+@[expose] def RecRuleLaw {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat)
-    (n : Key) (cv : ConstantVal) (mI rP : Nat) (rl : RecRule) :
+    (n : Key md) (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) :
     Prop :=
   rP ≤ mI ∧
   ∀ us : List Level, us.length = cv.levelParams.length →
@@ -474,7 +474,7 @@ every deviation). -/
             TeleFitPA V ρ TVa zs restR →
             WellDenotedV V ρ
               (Ix.Kernel.Model.AnnotTerm.instRevChain zs vpa)) ∧
-      ∀ (cvj : ConstantVal) (cnP cnF : Nat),
+      ∀ (cvj : ConstantVal md) (cnP cnF : Nat),
         env.find? (RecRule.ctor rl) = some (.ctorInfo cvj cnP cnF) →
       ∀ (usj : List Level) (ρ : Nat → V) (xs ys : List AnnotTerm)
         (TVa TVja restR restC : AnnotTerm),
@@ -531,10 +531,10 @@ every deviation). -/
 
 /-- The fired modeled-iota contract, keyed on every stored recursor
 (`RecRulesV`'s mirror). -/
-@[expose] def RecRules {V : Type w} [SetTheory V] {env : Env}
+@[expose] def RecRules {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
-  ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
-    (rules : List RecRule),
+  ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+    (rules : List (RecRule md)),
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
       RecRuleLaw m φ n cv mI rP rl
@@ -598,10 +598,10 @@ the η certificate's `.proj T j b` fabrication (`etaProjs`).  Keyed on
 the entry so that the direct install alone answers it (the modeled
 route stores no tower entries); the η row reads it through slot `0` of
 an all-tower family. -/
-@[expose] def TowerEtaLaw {V : Type w} [SetTheory V] {env : Env}
-    (m : EnvModel V env) (φ : LevelParam → Nat) (T : Key)
-    (entry : ProjEntry) : Prop :=
-  ∀ (cvT : ConstantVal) (capsT : IndCaps),
+@[expose] def TowerEtaLaw {V : Type w} [SetTheory V] {env : Env md}
+    (m : EnvModel V env) (φ : LevelParam → Nat) (T : Key md)
+    (entry : ProjEntry md) : Prop :=
+  ∀ (cvT : ConstantVal md) (capsT : IndCaps md),
     env.find? T = some (.indInfo cvT capsT) →
     ∀ us : List Level, us.length = entry.levelParams.length →
     ∃ TVa : AnnotTerm,
@@ -625,7 +625,7 @@ field of a `Prop`-declared structure has no projection law (its value
 is not the point).  Consumers discharge it from the kernel's syntactic
 guard (`inferTypeCore`'s tower branch, `ProjEntry.fireOk`) through
 `towerGuardAt_of`. -/
-@[expose] def TowerGuardAt (φ : LevelParam → Nat) (entry : ProjEntry) (us : List Level) :
+@[expose] def TowerGuardAt (φ : LevelParam → Nat) (entry : ProjEntry md) (us : List Level) :
     Prop :=
   Level.eval (Level.substFn φ entry.levelParams us) entry.structSort = 0 →
     Level.eval (Level.substFn φ entry.levelParams us) entry.fieldSort = 0
@@ -634,13 +634,13 @@ guard (`inferTypeCore`'s tower branch, `ProjEntry.fireOk`) through
 by its result sort at every valuation (the field sorts are checked
 `≤` the result sort, `checkStructFieldSorts`), so the guard holds
 wherever the structure happens to be a proposition. -/
-@[expose] def TowerO5 (entry : ProjEntry) : Prop :=
+@[expose] def TowerO5 (entry : ProjEntry md) : Prop :=
   (Level.isEquiv entry.structSort .zero == some true) = false →
     ∀ ψ : LevelParam → Nat,
       Level.eval ψ entry.structSort = 0 → Level.eval ψ entry.fieldSort = 0
 
 /-- The guard at a valuation, from the kernel's syntactic guard and O5. -/
-theorem towerGuardAt_of {entry : ProjEntry} {us : List Level} {φ : LevelParam → Nat}
+theorem towerGuardAt_of {entry : ProjEntry md} {us : List Level} {φ : LevelParam → Nat}
     (hO5 : TowerO5 entry)
     (hg : (Level.isEquiv entry.structSort .zero == some true) = true →
       (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
@@ -662,7 +662,7 @@ does.  (Until W6 the fire was gated on the structure's sort being
 provably nonzero, `TowerStructPos`, and the iota law was stated in the
 graph regime only; the squash regime is now licensed by the certified
 spine's fit, see `TowerEntryLaw`'s clause (B).) -/
-theorem towerGuardAt_of_fireOk {entry : ProjEntry} {us : List Level}
+theorem towerGuardAt_of_fireOk {entry : ProjEntry md} {us : List Level}
     {φ : LevelParam → Nat} (hO5 : TowerO5 entry)
     (hfire : entry.fireOk us = true) : TowerGuardAt φ entry us := by
   unfold ProjEntry.fireOk at hfire
@@ -685,12 +685,12 @@ of `projTele (nP + 1) body` — the body under `nP + 1` dummy binders
 parameters and the subject is exactly the checker's one
 `instantiateList` (`ProjEntry.typeAt`, `instPisAt_typeAt`).  The
 dummy binders carry the reading only; the law never reads them. -/
-@[expose] def TowerEntryLaw {V : Type w} [SetTheory V] {env : Env}
+@[expose] def TowerEntryLaw {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat)
-    (T : Key) (i : Nat) (entry : ProjEntry) : Prop :=
+    (T : Key md) (i : Nat) (entry : ProjEntry md) : Prop :=
   entry.structName = T ∧ entry.idx = i ∧
   i < entry.numFields ∧
-  (∃ (cvT : ConstantVal) (capsT : IndCaps),
+  (∃ (cvT : ConstantVal md) (capsT : IndCaps md),
     env.find? T = some (.indInfo cvT capsT) ∧
     cvT.levelParams = entry.levelParams ∧
     -- the η record, IF the family claims η (task #210 Part A: a
@@ -703,7 +703,7 @@ dummy binders carry the reading only; the law never reads them. -/
       capsT.etaParams = entry.numParams ∧
       capsT.etaFields = entry.numFields)) ∧
   TowerO5 entry ∧
-  ∃ cvC : ConstantVal,
+  ∃ cvC : ConstantVal md,
     env.find? entry.ctor
       = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
     cvC.levelParams = entry.levelParams ∧
@@ -754,9 +754,9 @@ dummy binders carry the reading only; the law never reads them. -/
 /-- **The tower projection law, keyed on every stored entry**
 (`RecRules`'s sibling).  Task #175 tower-flag: every stored table is
 a real one, so the law is uniform — no flag premise. -/
-@[expose] def TowerOk {V : Type w} [SetTheory V] {env : Env}
+@[expose] def TowerOk {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=
-  ∀ (T : Key) (i : Nat) (entry : ProjEntry),
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md),
     env.findProj? T i = some entry →
     TowerEntryLaw m φ T i entry
 
@@ -770,15 +770,15 @@ at the install tier — a stored type's annotations went through the
 checker's own front door, which is establishment — and folded into the
 environment structure there (with the owed `EnvWF` records, if the
 seal's invariants state them naturally). -/
-@[expose] def AcvalValid {env : Env} (m : EnvModel V env) : Prop :=
-  ∀ (n : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+@[expose] def AcvalValid {env : Env md} (m : EnvModel V env) : Prop :=
+  ∀ (n : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
     AnnotValid V ρ (m.acval n ψ)
 
 /-- **The `const` clause's residue, P currency** (`ConstType2C`
 transposed: no fuel, `WellDenotedV` conclusion). -/
-@[expose] def ConstType {env : Env} (m : EnvModel V env)
+@[expose] def ConstType {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) : Prop :=
-  ∀ (d : Nat) (n : Key) (ci : Ix.Kernel.ConstantInfo) (us : List Level),
+  ∀ (d : Nat) (n : Key md) (ci : Ix.Kernel.ConstantInfo md) (us : List Level),
     env.find? n = some ci → ci.isTowerEntry = false →
     us.length = ci.toConstantVal.levelParams.length →
     ∃ ta,
@@ -795,7 +795,7 @@ transposed: no fuel, `WellDenotedV` conclusion). -/
 (`Steps/InferQ.lean`'s `NatHeads2`, body for body): the zero's
 membership and the successor's, at the annotated valuation's own
 `Nat` leaf. -/
-@[expose] def NatHeads {env : Env} (m : EnvModel V env)
+@[expose] def NatHeads {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) : Prop :=
   Ix.Kernel.natLitSupported env = true →
   ∀ ρ : Nat → V,
@@ -818,8 +818,8 @@ Routed.  The install tier discharges it; `acvalDefnInst_noParams`
 (`Steps/Whnf.lean`) is the canonical tier's evidence that the shape is
 inhabited well beyond vacuity, and the P shape asks for *less* than
 that one (no `us`, no instantiation). -/
-@[expose] def AcvalDefnInst {env : Env} (m : EnvModel V env) : Prop :=
-  ∀ (ψ : LevelParam → Nat) (cv : ConstantVal) (value : Expr),
+@[expose] def AcvalDefnInst {env : Env md} (m : EnvModel V env) : Prop :=
+  ∀ (ψ : LevelParam → Nat) (cv : ConstantVal md) (value : Expr md),
     (∃ hint : ReducibilityHint,
       ConstantInfo.defnInfo cv value hint ∈ env.consts) →
     denoteMeta m.acval env ψ 0 value = some (m.acval cv.name ψ)

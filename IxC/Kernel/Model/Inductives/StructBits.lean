@@ -39,21 +39,21 @@ open Ix.Kernel.SetModel
 open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta inferTypeCore ensureSortCore whnf openPisAtFvars)
 
-variable {mode : CheckMode}
+variable {md : Ix.Kernel.Mode} {mode : CheckMode}
 
 /-! ## Leaf clauses of the inference, inverted -/
 
-theorem whnf_sort_eq {env : Env} {F d : Nat} {u : Level} {e' : Expr}
+theorem whnf_sort_eq {env : Env md} {F d : Nat} {u : Level} {e' : Expr md}
     (h : whnf mode env F d (.sort u) = .ok e') : e' = .sort u := by
   have h1 := Ix.Kernel.whnf_mono (Nat.le_add_right F 2) h
   rw [Ix.Kernel.whnf_sort] at h1
   exact (Except.ok.inj h1).symm
 
-theorem ensureSortCore_sort_eq {env : Env} {F d : Nat} {u v : Level}
+theorem ensureSortCore_sort_eq {env : Env md} {F d : Nat} {u v : Level}
     (h : ensureSortCore mode env F d (.sort u) = .ok v) : v = u :=
   Expr.sort.inj (whnf_sort_eq (Ix.Kernel.ensureSortCore_inv h))
 
-theorem inferTypeCore_sort_inv {env : Env} {F d : Nat} {u : Level} {t : Expr}
+theorem inferTypeCore_sort_inv {env : Env md} {F d : Nat} {u : Level} {t : Expr md}
     (h : inferTypeCore mode env F d (.sort u) = .ok t) :
     t = .sort (.succ u) := by
   match F, h with
@@ -64,8 +64,8 @@ theorem inferTypeCore_sort_inv {env : Env} {F d : Nat} {u : Level} {t : Expr}
     exact (Except.ok.inj h).symm
 
 /-- A run on an application spine carries a run on its head. -/
-theorem inferTypeCore_mkAppN_fn_inv {env : Env} {F d : Nat} :
-    ∀ (as : List Expr) {f t : Expr},
+theorem inferTypeCore_mkAppN_fn_inv {env : Env md} {F d : Nat} :
+    ∀ (as : List (Expr md)) {f t : Expr md},
       inferTypeCore mode env F d (Expr.mkAppN f as) = .ok t →
       ∃ tf, inferTypeCore mode env F d f = .ok tf
   | [], _, t, h => ⟨t, h⟩
@@ -78,9 +78,9 @@ theorem inferTypeCore_mkAppN_fn_inv {env : Env} {F d : Nat} :
 Π-telescope of the spine's length ending in `Sort s` types at
 `Sort s` — the sort carries no bound variables, so the per-argument
 instantiations leave it alone. -/
-theorem inferTypeCore_mkAppN_sort {env : Env} {F d : Nat} :
-    ∀ (as : List Expr) {f ty : Expr} {bs : List (Expr × BinderMeta)}
-      {s : Level} {t : Expr},
+theorem inferTypeCore_mkAppN_sort {env : Env md} {F d : Nat} :
+    ∀ (as : List (Expr md)) {f ty : Expr md} {bs : List (Expr md × BinderMeta)}
+      {s : Level} {t : Expr md},
       inferTypeCore mode env F d f = .ok ty →
       ty.stripPis as.length = some (bs, .sort s) →
       inferTypeCore mode env F d (Expr.mkAppN f as) = .ok t →
@@ -119,7 +119,7 @@ theorem inferTypeCore_mkAppN_sort {env : Env} {F d : Nat} :
 
 /-- The first `n` binders of `e`, opened from depth `d` with the
 inference's own `fvar`s, each codomain bit zero exactly when `z`. -/
-def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr → Prop
+def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr md → Prop
   | 0, _, _ => True
   | n + 1, d, .forallE dom body mb =>
     (pwBit φ mb.pw = 0 ↔ z) ∧
@@ -137,13 +137,13 @@ theorem eval_imax_eq_zero_iff (φ : LevelParam → Nat) (l r : Level) :
 bits of an inferred type are exact against the innermost opened
 body's inferred sort, and the whole type's sort is zero exactly when
 that one is (`imax`'s zero-ness is its right argument's). -/
-theorem piBits_of_infer {env : Env} (hver : mode.verifiedChecks = true) :
-    ∀ (n : Nat) {F d : Nat} {e t : Expr} {v₀ : Level} {fvs : List Expr}
-      {opened : Expr},
+theorem piBits_of_infer {env : Env md} (hver : mode.verifiedChecks = true) :
+    ∀ (n : Nat) {F d : Nat} {e t : Expr md} {v₀ : Level} {fvs : List (Expr md)}
+      {opened : Expr md},
       openPisAtFvars n e d = some (fvs, opened) →
       inferTypeCore mode env F d e = .ok t →
       ensureSortCore mode env F d t = .ok v₀ →
-      ∃ (F' : Nat) (tb : Expr) (vb : Level),
+      ∃ (F' : Nat) (tb : Expr md) (vb : Level),
         inferTypeCore mode env F' (d + n) opened = .ok tb ∧
         ensureSortCore mode env F' (d + n) tb = .ok vb ∧
         (∀ φ, Level.eval φ v₀ = 0 ↔ Level.eval φ vb = 0) ∧
@@ -187,9 +187,9 @@ theorem piBits_of_infer {env : Env} (hver : mode.verifiedChecks = true) :
 
 /-- The reading's Π-peel carries the syntactic bits: `denoteMeta` opens
 with the same `fvar`s. -/
-theorem stripPisAV_bits {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
+theorem stripPisAV_bits {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
     {φ : LevelParam → Nat} {z : Prop} :
-    ∀ (n : Nat) {d : Nat} {e : Expr} {ea : AnnotTerm}
+    ∀ (n : Nat) {d : Nat} {e : Expr md} {ea : AnnotTerm}
       {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm},
       PiBitsOpen φ z n d e → denoteMeta acval env φ d e = some ea →
       stripPisAV n ea = some (pps, b) →
@@ -218,7 +218,7 @@ theorem stripPisAV_bits {acval : Key → (LevelParam → Nat) → AnnotTerm} {en
 /-! ## `openPisAtFvars` bookkeeping -/
 
 theorem openPisAtFvars_length :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md},
       openPisAtFvars n e d = some (fvs, o) → fvs.length = n
   | 0, e, d, fvs, o, h => by
     simp only [openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at h
@@ -238,8 +238,8 @@ theorem openPisAtFvars_length :
 
 /-- Two consecutive openings are one. -/
 theorem openPisAtFvars_add :
-    ∀ (n : Nat) {m : Nat} {e : Expr} {d : Nat} {fvs fvs' : List Expr}
-      {o o' : Expr},
+    ∀ (n : Nat) {m : Nat} {e : Expr md} {d : Nat} {fvs fvs' : List (Expr md)}
+      {o o' : Expr md},
       openPisAtFvars n e d = some (fvs, o) →
       openPisAtFvars m o (d + n) = some (fvs', o') →
       openPisAtFvars (n + m) e d = some (fvs ++ fvs', o')
@@ -269,7 +269,7 @@ theorem openPisAtFvars_add :
 /-- Opening a telescope whose stripped body is a sort reaches that
 sort (sorts carry no bound variables). -/
 theorem openPisAtFvars_of_stripPis_sort :
-    ∀ (n : Nat) {e : Expr} (d : Nat) {bs : List (Expr × BinderMeta)}
+    ∀ (n : Nat) {e : Expr md} (d : Nat) {bs : List (Expr md × BinderMeta)}
       {s : Level},
       e.stripPis n = some (bs, .sort s) →
       ∃ fvs, openPisAtFvars n e d = some (fvs, .sort s)

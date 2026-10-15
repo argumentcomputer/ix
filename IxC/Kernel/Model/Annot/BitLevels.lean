@@ -45,7 +45,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ### The literal-support slot lemmas, transposed to the core
 
@@ -55,8 +55,8 @@ variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
 `EnvModel` (batch 8 — the canonical file stays untouched). -/
 
 /-- A parameter-free slot is valued independently of the assignment. -/
-theorem acval_isEmpty (m : EnvModel V env) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
+theorem acval_isEmpty (m : EnvModel V env) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (ψ₁ ψ₂ : LevelParam → Nat) : m.acval n ψ₁ = m.acval n ψ₂ := by
   refine m.acval_params n ci hf ψ₁ ψ₂ fun p hpm => ?_
@@ -66,8 +66,8 @@ theorem acval_isEmpty (m : EnvModel V env) {n : Key}
 
 /-- A one-parameter slot substituted at `Level.zero` is valued
 independently of the assignment. -/
-theorem acval_oneParam (m : EnvModel V env) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
+theorem acval_oneParam (m : EnvModel V env) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
     (ψ₁ ψ₂ : LevelParam → Nat) :
     m.acval n (Level.substFn ψ₁ ci.toConstantVal.levelParams [.zero])
@@ -84,8 +84,8 @@ theorem acval_oneParam (m : EnvModel V env) {n : Key}
   · simp [hlen]
 
 /-- The scalar literal-support slots, read off their shape guards. -/
-theorem acval_scalar (m : EnvModel V env) (nm : Key)
-    (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
+theorem acval_scalar (m : EnvModel V env) (nm : Key md)
+    (f : Option (ConstantInfo md) → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.isEmpty = true)
@@ -97,8 +97,8 @@ theorem acval_scalar (m : EnvModel V env) (nm : Key)
     exact acval_isEmpty m hx (hshape ci hfok) _ _
 
 /-- The two one-parameter literal-support slots. -/
-theorem acval_one (m : EnvModel V env) (nm : Key)
-    (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
+theorem acval_one (m : EnvModel V env) (nm : Key md)
+    (f : Option (ConstantInfo md) → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.length = 1)
@@ -145,7 +145,7 @@ composed valuation `Level.substFn φ ks us`.  The binder step is
 walk. -/
 theorem denotePInstLevels (m : EnvModel V env)
     (φ : LevelParam → Nat) (ks : List LevelParam) (us : List Level) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denoteMeta m.acval env φ d (e.instantiateLevelParams ks us)
         = denoteMeta m.acval env (Level.substFn φ ks us) d e := by
   intro d e
@@ -264,7 +264,7 @@ which is exactly why task #161 folded the datum's footprint into
 theorem denoteMeta_params_ext (m : EnvModel V env)
     {ps : List LevelParam} {φ₁ φ₂ : LevelParam → Nat}
     (hφ : ∀ p ∈ ps, φ₁ p = φ₂ p) :
-    ∀ (d : Nat) (e : Expr), e.allLevelParamsDefined ps = true →
+    ∀ (d : Nat) (e : Expr md), e.allLevelParamsDefined ps = true →
       denoteMeta m.acval env φ₁ d e = denoteMeta m.acval env φ₂ d e := by
   intro d e
   induction d, e using denoteMeta.induct (env := env) with

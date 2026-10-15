@@ -59,8 +59,8 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 /-- `MemberValR`'s run/guard half: the member's front door
 (`ConstantValRun`) and the model-counterpart pins, which were always
 pure stored-data lookups. -/
-def MemberValRun (μ : CheckMode) (F : Nat) (env' : Env)
-    (blockNames : List Key) (cv : ConstantVal) (cvA : ConstantVal) :
+def MemberValRun (μ : CheckMode) (F : Nat) (env' : Env md)
+    (blockNames : List (Key md)) (cv : ConstantVal md) (cvA : ConstantVal md) :
     Prop :=
   ∃ type',
     ConstantValRun μ F env' cv type' ∧
@@ -81,8 +81,8 @@ and the front door is the only thing that reads it.  With the front
 door's derivation struck, the fold is a plain walk over the running
 *environment*. -/
 def IndMembersRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Key) (caps : IndCaps) :
-    Env → List ConstantInfo → Env → Prop
+    (blockNames : List (Key md)) (caps : IndCaps md) :
+    (Env md) → List (ConstantInfo md) → Env md → Prop
   | env', [], env₂ => env₂ = env'
   | env', ci :: rest, env₂ =>
     ∃ cvA, MemberValRun μ F env' blockNames ci.toConstantVal cvA ∧
@@ -97,9 +97,9 @@ def IndMembersRun (μ : CheckMode) (F : Nat)
 
 /-- `ProvisionRecsR`'s run/guard half. -/
 def ProvisionRecsRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Key) :
-    Env → List ConstantInfo →
-    Env → List (ConstantVal × Nat × Nat × List RecRule) → Prop
+    (blockNames : List (Key md)) :
+    (Env md) → List (ConstantInfo md) →
+    (Env md) → List (ConstantVal md × Nat × Nat × List (RecRule md)) → Prop
   | envAcc, [], envSelf, checked =>
     envSelf = envAcc ∧ checked = []
   | envAcc, ci :: rest, envSelf, checked =>
@@ -116,10 +116,10 @@ def ProvisionRecsRun (μ : CheckMode) (F : Nat)
 parameter-domain comparison's recorded run (`DefEqListOk`), and
 `IotaRuns` — the six walk rows' checker verdicts.  What is struck is
 the `∀ φ` parameter-domain walk and `IotaWalksR` itself. -/
-def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
-    (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr) : Prop :=
+def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP j : Nat) (r : RecRule md)
+    (cvj : ConstantVal md) (cnP cnF : Nat) (rhsA : Expr md) : Prop :=
   ∃ cvt fvs tbody,
     env'.findCV? (auxKey (auxKey cvName .model) (.iota j)) = some cvt ∧
     cvt.levelParams = lps ∧
@@ -164,11 +164,11 @@ def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 generalized major pin, the `checkAnnotList` fixed points, the arity
 pin), the pins' recorded typing run (`TypedListOk`), and `IotaRuns`.
 Struck: the `∀ φ` `TypedListW` walk and `IotaWalksR`. -/
-def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r : RecRule)
-    (cvj : ConstantVal) (cnP cnF : Nat) (rhsA : Expr)
-    (lvls : List Level) (pins : List Expr) : Prop :=
+def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP j : Nat) (r : RecRule md)
+    (cvj : ConstantVal md) (cnP cnF : Nat) (rhsA : Expr md)
+    (lvls : List Level) (pins : List (Expr md)) : Prop :=
   nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
     = some (lvls, pins) ∧
   ∃ cvt fvs tbody,
@@ -227,9 +227,9 @@ def IotaThmNRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 /-- `IotaRuleR`'s run/guard half: the rhs guards, the annotate output,
 the λ-telescope shape and the fire-mode dispatch, with the rhs front
 door's derivation struck and its recorded `inferTypeCore` run kept. -/
-def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP j : Nat) (r r' : RecRule) :
+def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP j : Nat) (r r' : RecRule md) :
     Prop :=
   ∃ cvj cnP cnF rhsA,
     env'.find? r.ctor = some (.ctorInfo cvj cnP cnF) ∧
@@ -257,10 +257,10 @@ def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
                cvj cnP cnF rhsA lvls pins))))
 
 /-- `IotaRulesR`'s run/guard half. -/
-def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key)
-    (lps : List LevelParam) (tyA : Expr) (mI rP : Nat) :
-    Nat → List RecRule → List RecRule → Prop
+def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md)
+    (lps : List LevelParam) (tyA : Expr md) (mI rP : Nat) :
+    Nat → List (RecRule md) → List (RecRule md) → Prop
   | _, [], out => out = []
   | j, r :: rest, out =>
     ∃ r' rest',
@@ -271,8 +271,8 @@ def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env)
 
 /-- `IndRecsR`'s run/guard half. -/
 def IndRecsRun (μ : CheckMode) (F : Nat)
-    (blockNames : List Key) (env₂ : Env)
-    (recs : List ConstantInfo) (env₃ : Env) : Prop :=
+    (blockNames : List (Key md)) (env₂ : Env md)
+    (recs : List (ConstantInfo md)) (env₃ : Env md) : Prop :=
   (recs = [] ∧ env₃ = env₂) ∨
   (recs ≠ [] ∧
    env₂.find? eqName = some eqA ∧
@@ -281,10 +281,10 @@ def IndRecsRun (μ : CheckMode) (F : Nat)
      IndRecsFoldRun μ F blockNames env₂ envSelf env₂ checked env₃)
 where
   /-- The install fold over the provisioned group, run half. -/
-  IndRecsFoldRun (μ : CheckMode) (F : Nat) (blockNames : List Key)
-      (envBase envSelf : Env) :
-      Env → List (ConstantVal × Nat × Nat × List RecRule) →
-      Env → Prop
+  IndRecsFoldRun (μ : CheckMode) (F : Nat) (blockNames : List (Key md))
+      (envBase envSelf : Env md) :
+      (Env md) → List (ConstantVal md × Nat × Nat × List (RecRule md)) →
+      (Env md) → Prop
     | acc, [], out => out = acc
     | acc, c :: rest, out =>
       ∃ rules',
@@ -301,9 +301,9 @@ where
 with the rule's front-door derivation and the `proj_i.iota` sides
 pack's `∀ φ` walk struck (their recorded runs — the `inferTypeCore`
 verdict and `checkIotaSidesTy`'s literal pair — stay). -/
-def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
-    (T ctorName : Key) (lps : List LevelParam) (nP nF i : Nat)
-    (env'' : Env) : Prop :=
+def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env md)
+    (T ctorName : Key md) (lps : List LevelParam) (nP nF i : Nat)
+    (env'' : Env md) : Prop :=
   ∃ cvj mcv mval mhint pty rhsA,
     env'.find? ctorName = some (.ctorInfo cvj nP nF) ∧
     env'.find? (projModelName T i) = some (.defnInfo mcv mval mhint) ∧
@@ -330,7 +330,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
       rhsA.constsResolve env' = true ∧
       (∃ rbinders,
         rhsA.stripLams (nP + nF) = some (rbinders, .bvar (nF - 1 - i)) ∧
-        ∀ (i0 : Nat) (b b' : Expr × BinderMeta), i0 < nP + nF →
+        ∀ (i0 : Nat) (b b' : Expr md × BinderMeta), i0 < nP + nF →
           rbinders[i0]? = some b → cbinders[i0]? = some b' →
           b.1 = b'.1) ∧
       (∃ t', inferTypeCore μ env' F 0 rhsA = .ok t') ∧
@@ -338,8 +338,8 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
         env'.find? (auxKey (projModelName T i) .projIota)
           = some (.thmInfo tcv tval) ∧
         tcv.levelParams = lps ∧
-        (∃ (sbinders : List (Expr × BinderMeta)) (ℓA : Level)
-            (tySlot : Expr),
+        (∃ (sbinders : List (Expr md × BinderMeta)) (ℓA : Level)
+            (tySlot : Expr md),
           tcv.type.stripPis (nP + nF) = some (sbinders,
             .app (.app (.app (.const eqName [ℓA]) tySlot)
               (Expr.mkAppN (.const (projModelName T i)
@@ -354,7 +354,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
                     ((List.range nF).map fun k =>
                       Expr.bvar (nF - 1 - k)))])))
               (.bvar (nF - 1 - i))) ∧
-          ∀ (i0 : Nat) (b b' : Expr × BinderMeta), i0 < nP + nF →
+          ∀ (i0 : Nat) (b b' : Expr md × BinderMeta), i0 < nP + nF →
             sbinders[i0]? = some b → cbinders[i0]? = some b' →
             b.1 = b'.1.renameConsts (projFwd T ctorName nF)) ∧
         ∃ fvsI sbodyO,
@@ -374,8 +374,8 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env)
 for the projection function (`cvalWith … (projModelName T i)`) was the
 `ProjFnR` front door's, so it goes with it. -/
 def ProjInstallRun (μ : CheckMode) (F : Nat)
-    (T ctorName : Key) (lps : List LevelParam) (nP nF : Nat) :
-    Env → List Nat → Env → Prop
+    (T ctorName : Key md) (lps : List LevelParam) (nP nF : Nat) :
+    (Env md) → List Nat → Env md → Prop
   | env', [], env₄ => env₄ = env'
   | env', i :: rest, env₄ =>
     ∃ env'',
@@ -398,8 +398,8 @@ throughout.
 
 (Task #175 tower-flag: the elimination-template pass is gone — the
 modeled route installs no projection table at all.) -/
-def DeclIndRun (μ : CheckMode) (F : Nat) (env : Env)
-    (block : List ConstantInfo) (env₂ : Env) : Prop :=
+def DeclIndRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (block : List (ConstantInfo md)) (env₂ : Env md) : Prop :=
   let recs := block.filter (fun ci => match ci with
     | .recInfo _ _ _ _ => true | _ => false)
   let nonrecs := block.filter (fun ci => match ci with

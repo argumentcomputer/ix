@@ -53,18 +53,18 @@ an opaque (the install half annotated it and stored it), RAW for a
 theorem (the install half never looked at it: a theorem is stored by
 its statement, and the check half annotates the value itself,
 `checkValueGroup`). -/
-structure ValueGroup where
+structure ValueGroup (md : Mode) where
   kind : ValueKind
-  cvA : ConstantVal
-  jv : Expr
+  cvA : ConstantVal md
+  jv : Expr md
 
 variable (mode : CheckMode)
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
 /-- `checkConstantVal` minus its inference: the syntactic guards and
 the annotation of the type. -/
-def installConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal) :
-    m ConstantVal := do
+def installConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) :
+    m (ConstantVal md) := do
   if (env.find? cv.name).isSome then
     throw (.invalid s!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
@@ -86,8 +86,8 @@ def installConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal) :
 
 /-- The value half of `check{Defn,Thm,Opaque}Val` minus its inference:
 the guards and the annotation of the value. -/
-def installValue (ops : CheckerOps m) (env : Env) (cv : ConstantVal)
-    (value : Expr) : m Expr := do
+def installValue (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
+    (value : Expr md) : m (Expr md) := do
   unless value.looseBVarsBounded 0 do
     throw (.invalid s!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
@@ -106,7 +106,7 @@ is-a-proposition test, for a theorem the value's guards and annotation
 the value's type against the declared one — the inference and
 conversion calls of `checkConstantVal` and `check{Defn,Thm,Opaque}Val`,
 in their order, with their messages. -/
-def checkValueGroup (ops : CheckerOps m) (env : Env) (g : ValueGroup) : m Unit := do
+def checkValueGroup (ops : (CheckerOps md) m) (env : Env md) (g : ValueGroup md) : m Unit := do
   let stype ← ops.inferType env 0 g.cvA.type
   let u ← ops.ensureSort env 0 stype
   let jv ← if g.kind = .thm then do

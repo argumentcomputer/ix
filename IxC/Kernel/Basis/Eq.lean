@@ -20,7 +20,7 @@ namespace Ix.Kernel
 open BasisDSL
 
 /-- `Eq.{u} {α : Sort u} : α → α → Prop`. -/
-def eqRaw : ConstantInfo :=
+def eqRaw : ConstantInfo md :=
   .indInfo ⟨eqName, [uN],
     piI "α" (srt u) <|
     pi "a" (bv 0) <|
@@ -28,7 +28,7 @@ def eqRaw : ConstantInfo :=
     { ruleK := true }
 
 /-- `Eq.refl.{u} {α : Sort u} (a : α) : Eq α a a`. -/
-def eqReflRaw : ConstantInfo :=
+def eqReflRaw : ConstantInfo md :=
   .ctorInfo ⟨eqReflName, [uN],
     piI "α" (srt u) <|
     pi "a" (bv 0) <|
@@ -37,13 +37,13 @@ def eqReflRaw : ConstantInfo :=
 
 /-- The motive of `Eq.rec`: `∀ (b : α) (t : Eq α a b), Sort u_1`, in
 the `α`/`a` binder context (`α` is `#1`, `a` is `#0` at its head). -/
-def eqRecMotive : Expr :=
+def eqRecMotive : Expr md :=
   pi "b" (bv 1) <|
   pi "t" (ap3 (cnst eqName [u]) (bv 2) (bv 1) (bv 0)) (srt u1)
 
 /-- `Eq.rec.{u_1, u} {α : Sort u} {a : α} {motive : ∀ b, Eq α a b → Sort u_1}
 (refl : motive a (Eq.refl α a)) {b : α} (t : Eq α a b) : motive b t`. -/
-def eqRecRaw : ConstantInfo :=
+def eqRecRaw : ConstantInfo md :=
   .recInfo ⟨eqRecName, [u1N, uN],
     piI "α" (srt u) <|
     piI "a" (bv 0) <|
@@ -61,6 +61,6 @@ def eqRecRaw : ConstantInfo :=
       bv 0]
 
 /-- The pinned `Eq` basis block, in install order. -/
-def eqBasis : List ConstantInfo := [eqRaw, eqReflRaw, eqRecRaw]
+def eqBasis : List (ConstantInfo md) := [eqRaw, eqReflRaw, eqRecRaw]
 
 end Ix.Kernel

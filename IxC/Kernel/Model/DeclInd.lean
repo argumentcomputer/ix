@@ -44,8 +44,8 @@ set_option maxHeartbeats 3200000 in
 /-- **The modeled-inductive block install, P tier.**  The v1 carriers
 are taken from the v1 phases (`indRecsS` at the group), which the
 install runs anyway; the P phases carry the annotated invariants. -/
-theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
-    {block : List ConstantInfo} (mp : EnvModelM V μ env)
+theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} (mp : EnvModelM V μ env)
     (hE : Ix.Kernel.EtaFamiliesClosed env)
     (h : DeclIndRun μ F env block env₂) :
     Nonempty (EnvModelM V μ env₂) := by
@@ -66,7 +66,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     fun ci hci => hbnAll ci (List.mem_filter.mp hci).1
   have hEC0 : Ix.Kernel.EtaFamiliesClosedO (block.map (·.name)) env :=
     fun T cvT caps hf hcape hres _ => hE T cvT caps hf hcape hres
-  have hnostore : ∀ {caps : IndCaps} {envM envR : Env},
+  have hnostore : ∀ {caps : IndCaps md} {envM envR : Env md},
       IndMembersRun μ F (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
@@ -74,7 +74,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => true | _ => false)) envR →
       ∀ n, (block.map (·.name)).contains n = true →
-        ∀ ci : ConstantInfo, env.find? n = some ci → False := by
+        ∀ ci : ConstantInfo md, env.find? n = some ci → False := by
     intro caps envM envR hmem hrecs n hn ci hf
     have hmm : n ∈ block.map (·.name) := by simpa using hn
     obtain ⟨ci₀, hci₀, rfl⟩ := List.mem_map.mp hmm
@@ -85,7 +85,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     · have hup := indMembersRun_mono _ hmem _ _ hf
       rw [indRecsRun_fresh hrecs ci₀ hci₀] at hup
       exact nomatch hup
-  have hI0gen : ∀ {caps : IndCaps} {envM envR : Env},
+  have hI0gen : ∀ {caps : IndCaps md} {envM envR : Env md},
       IndMembersRun μ F (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
@@ -96,7 +96,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     fun hmem hrecs n hn ci hf =>
       absurd (hnostore hmem hrecs n hn ci hf) (fun h => h)
   -- the annotated half, vacuous at the base for the same reason
-  have hIA0gen : ∀ {caps : IndCaps} {envM envR : Env},
+  have hIA0gen : ∀ {caps : IndCaps md} {envM envR : Env md},
       IndMembersRun μ F (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
@@ -106,7 +106,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       BlockAcvalInstalled (block.map (·.name)) env mp.base2.acval :=
     fun hmem hrecs n hn ci hf =>
       absurd (hnostore hmem hrecs n hn ci hf) (fun h => h)
-  have hallGen : ∀ {caps : IndCaps} {envM : Env},
+  have hallGen : ∀ {caps : IndCaps md} {envM : Env md},
       IndMembersRun μ F (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
@@ -125,13 +125,13 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     ⟨-, envM, hmem, hrecs⟩
   · -- the single-constructor arm
     obtain ⟨envM, envR, hmem, hrecs, -, hprojFresh, hproj⟩ := harm
-    have hmemFil : ∀ {p : ConstantInfo → Bool} {x : ConstantInfo},
+    have hmemFil : ∀ {p : ConstantInfo md → Bool} {x : ConstantInfo md},
         block.filter p = [x] → x ∈ block := by
       intro p x hfil
       have hx : x ∈ block.filter p := by
         rw [hfil]; exact List.mem_singleton_self _
       exact (List.mem_filter.mp hx).1
-    have hsingle : ∀ {p : ConstantInfo → Bool} {x y : ConstantInfo},
+    have hsingle : ∀ {p : ConstantInfo md → Bool} {x y : ConstantInfo md},
         block.filter p = [x] → y ∈ block → p y = true → y = x := by
       intro p x y hfil hy hpy
       have hx : y ∈ block.filter p := List.mem_filter.mpr ⟨hy, hpy⟩
@@ -165,7 +165,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     -- carrier-building `indRecsCoreR` used to report — an equation, no
     -- "not a recursor" side condition — so the ind tier's P summit no
     -- longer runs a second, model-free *install* for it.
-    have hkeepR : ∀ (n : Key) (ci : ConstantInfo),
+    have hkeepR : ∀ (n : Key md) (ci : ConstantInfo md),
         env.find? n = some ci → envR.find? n = some ci :=
       fun n ci hf => indRecsRun_keep hrecs n ci
         (indMembersRun_mono _ hmem n ci hf)
@@ -205,7 +205,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁
         hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs
     -- the stored former, identified (v1's argument, verbatim)
-    have hidR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
+    have hidR : ∀ (cvT' : ConstantVal md) (capsT' : IndCaps md),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →
         cvT'.levelParams = cvT.levelParams ∧
         capsT' = indBlockCaps μ env cvT cvC nP nF := by
@@ -254,7 +254,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         rcases hf : envR.find? (projFnName cvT.name j) with _ | ci
         · rw [hf] at hs; exact nomatch hs
         · rw [hf] at hnone; exact nomatch hnone
-    have hpinsR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
+    have hpinsR : ∀ (cvT' : ConstantVal md) (capsT' : IndCaps md),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →
         Ix.Kernel.EtaPins μ envR cvT.name cvT'.levelParams capsT' := by
       intro cvT' capsT' hf
@@ -262,7 +262,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       rw [hlps']
       exact Ix.Kernel.EtaPins.transport etaPins_of_indBlockCaps
         (fun n ci hf' _ => hkeepR n ci hf')
-    have hCblockR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
+    have hCblockR : ∀ (cvT' : ConstantVal md) (capsT' : IndCaps md),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →
         capsT'.eta = true →
         (∀ C, capsT'.etaCtor = some C → (block.map (·.name)).contains C = true) := by
@@ -270,7 +270,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       obtain ⟨-, rfl⟩ := hidR cvT' capsT' hf
       obtain rfl : cvC.name = C := Option.some.inj hC
       exact hCblockN
-    have hFieldsR : ∀ (cvT' : ConstantVal) (capsT' : IndCaps),
+    have hFieldsR : ∀ (cvT' : ConstantVal md) (capsT' : IndCaps md),
         envR.find? cvT.name = some (.indInfo cvT' capsT') →
         capsT'.eta = true → capsT'.etaFields = nF := by
       intro cvT' capsT' hf _
@@ -288,7 +288,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
       indMembersPM memberEtaLaw memberUnitLaw _ mp hbnNon
         (fun cv caps₂ _ => ⟨etaPins_empty,
-          ⟨fun h => absurd h (by decide), fun h => absurd h (by decide)⟩⟩)
+          ⟨fun h => absurd h (by (cases md <;> decide)), fun h => absurd h (by (cases md <;> decide))⟩⟩)
         hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     obtain ⟨mp₂, -, -⟩ :=
       indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁

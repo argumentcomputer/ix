@@ -54,7 +54,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-- The install lemmas below expose the extended carrier's leaf (the
 `Eq` block's chain reads it: its constants' types mention each other
@@ -76,7 +76,7 @@ theorem bitAgree_wellDenotedV {e e' : AnnotTerm} (h : e.BitAgree e')
 eleven premises are discharged here; what remains is the tower and its
 type's reading. -/
 theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     -- a basis cons is never a value kind
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
@@ -162,7 +162,7 @@ any carrier whose base and `acval` are the extension's — so a caller
 never has to spell `declStep_preserves_of_cons`'s anonymous-constructor
 carrier. -/
 theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
@@ -221,7 +221,7 @@ side condition is `eqName ≠ c₀.name`, and at this cons the constant
 supplies it from its own tower (`eqLaw_of_tower`).  Seven of the
 eight rows still collapse. -/
 theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnN : c₀.name ≠ natName) (hnZ : c₀.name ≠ natZeroName)
@@ -280,7 +280,7 @@ block needs this: its first three conses *are* the three names
 every one of them, and `Nat.rec` owes a `rec_rules` row besides.  Five
 rows still collapse. -/
 theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnEq : eqName ≠ c₀.name)

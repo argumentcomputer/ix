@@ -47,16 +47,16 @@ parameters and the two literal guards** — `denote_env_ext`'s twin.  An
 equation, so a law's `denoteMeta` *hypotheses* and *conclusions* both move
 across it for free, which is what makes the fired-form fields
 transportable at all. -/
-theorem denoteMeta_env_ext {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {env₁ env₂ : Env} {φ : LevelParam → Nat}
+theorem denoteMeta_env_ext {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {env₁ env₂ : Env md} {φ : LevelParam → Nat}
     (henvLev : ∀ n,
       (env₁.find? n).map (fun ci => ci.toConstantVal.levelParams) =
       (env₂.find? n).map (fun ci => ci.toConstantVal.levelParams))
     (hnat : Ix.Kernel.natLitSupported env₁ = Ix.Kernel.natLitSupported env₂)
     (hstr : Ix.Kernel.strLitSupported env₁ = Ix.Kernel.strLitSupported env₂)
-    (hproj : ∀ (sn : Key) (i : Nat),
+    (hproj : ∀ (sn : Key md) (i : Nat),
       env₁.findProj? sn i = env₂.findProj? sn i) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denoteMeta acval env₁ φ d e = denoteMeta acval env₂ φ d e := by
   intro d e
   induction d, e using denoteMeta.induct (env := env₁) with
@@ -128,9 +128,9 @@ theorem denoteMeta_env_ext {acval : Key → (LevelParam → Nat) → AnnotTerm}
       | strVal s => exact absurd rfl (hstr' s)
 
 /-- The reading crosses a swap congruence. -/
-theorem denoteMeta_swap {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {env₀ env₃ : Env} (hcg : Ix.Kernel.SwapCongr env₀ env₃)
-    (φ : LevelParam → Nat) (d : Nat) (e : Expr) :
+theorem denoteMeta_swap {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {env₀ env₃ : Env md} (hcg : Ix.Kernel.SwapCongr env₀ env₃)
+    (φ : LevelParam → Nat) (d : Nat) (e : Expr md) :
     denoteMeta acval env₀ φ d e = denoteMeta acval env₃ φ d e :=
   denoteMeta_env_ext hcg.levelsEq hcg.natEq hcg.strEq hcg.projEq d e
 
@@ -140,14 +140,14 @@ theorem denoteMeta_swap {acval : Key → (LevelParam → Nat) → AnnotTerm}
 constructor's lookup, so it crosses the rule-list swap**
 (`RecRuleLawV.swapS`'s twin).  Both carriers have the *same* `acval`;
 the statement mentions the environment nowhere else. -/
-theorem RecRuleLaw.swapP {env₀ env₃ : Env}
+theorem RecRuleLaw.swapP {env₀ env₃ : Env md}
     (hcg : Ix.Kernel.SwapCongr env₀ env₃)
     {m₀ : EnvModel V env₀} {m₃ : EnvModel V env₃}
     (hac : m₃.acval = m₀.acval)
-    {φ : LevelParam → Nat} {n : Key} {cv : ConstantVal} {mI rP : Nat}
-    {rl : RecRule} (h : RecRuleLaw m₀ φ n cv mI rP rl) :
+    {φ : LevelParam → Nat} {n : Key md} {cv : ConstantVal md} {mI rP : Nat}
+    {rl : RecRule md} (h : RecRuleLaw m₀ φ n cv mI rP rl) :
     RecRuleLaw m₃ φ n cv mI rP rl := by
-  have hde : ∀ (d : Nat) (e : Expr),
+  have hde : ∀ (d : Nat) (e : Expr md),
       denoteMeta m₀.acval env₀ φ d e = denoteMeta m₀.acval env₃ φ d e :=
     fun d e => denoteMeta_swap hcg φ d e
   unfold RecRuleLaw at h ⊢
@@ -184,7 +184,7 @@ set_option maxHeartbeats 3200000 in
 provisional (rule-less) environment transports to the environment
 carrying the checked rule lists, with the *same* annotated
 valuation. -/
-theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
+theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
     (mp : EnvModelM V μ env₀)
     (hsw : Ix.Kernel.SwapShList env₀.consts env₃.consts)
     -- the four syntactic environment facts at the swapped
@@ -201,12 +201,12 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
       mp₃.base2.cvalE = mp.base2.cvalE := by
   have hcg : Ix.Kernel.SwapCongr env₀ env₃ := Ix.Kernel.SwapShList.congr hsw
   have hcorr := Ix.Kernel.swapSh_find?_corr hsw
-  have hde : ∀ (ψ : LevelParam → Nat) (d : Nat) (e : Expr),
+  have hde : ∀ (ψ : LevelParam → Nat) (d : Nat) (e : Expr md),
       denoteMeta mp.base2.acval env₀ ψ d e
         = denoteMeta mp.base2.acval env₃ ψ d e :=
     fun ψ d e => denoteMeta_swap hcg ψ d e
   -- an unchanged lookup, either way
-  have hsame : ∀ (n : Key) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ env₀.find? n = some ci) :=
     fun n ci hnr =>
@@ -290,7 +290,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
   · -- `nat_ops`
     intro φ c hc cv value hint hf
     obtain ⟨hgu, hlaw⟩ := mp.nat_ops φ c hc cv value hint
-      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf)
+      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf)
     refine ⟨by rw [← hcg.guardEq]; exact hgu, ?_⟩
     intro eq heq
     obtain ⟨L, R, hL, hR, hval⟩ := hlaw eq heq
@@ -299,22 +299,22 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
   · -- `div_mod`
     intro φ c hc cv value hint hf
     obtain ⟨hgu, hlaw⟩ := mp.div_mod φ c hc cv value hint
-      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf)
+      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf)
     exact ⟨by rw [← hcg.guardEq]; exact hgu, hlaw⟩
   · -- `eq_law`: `Eq` is stored as an `indInfo`, so it is never swapped
     intro hf
     exact mp.eq_law
       ((hsame eqName eqA
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf)
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf)
   · -- `caps_ok`
     obtain ⟨he, hu⟩ := mp.caps_ok
-    have hfam : ∀ (T : Key) (caps : IndCaps),
+    have hfam : ∀ (T : Key md) (caps : IndCaps md),
         Ix.Kernel.EtaFamilyStored env₃ T caps →
         Ix.Kernel.EtaFamilyStored env₀ T caps := by
       intro T caps hst
       obtain ⟨C, hCe, h1, ⟨cvC, cnP, cnF, hC⟩, h3⟩ := hst
       refine ⟨C, hCe, h1, ⟨cvC, cnP, cnF, (hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hC⟩, ?_⟩
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hC⟩, ?_⟩
       intro j hj
       obtain ⟨cv, mI, rP, rules, hfj⟩ := h3 j hj
       rcases hcorr (Ix.Kernel.projFnName T j) with heq |
@@ -325,19 +325,19 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
     · intro T cvT caps hf hcap hres hfamS φ' C hC us hus
       obtain ⟨TVa, hTVa, hokT, hlaw⟩ :=
         he T cvT caps ((hsame _ _
-          (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf) hcap
+          (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) hcap
           hres (hfam T caps hfamS) φ' C hC us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hokT, hlaw⟩
     · intro T cvT caps hf hcap hres φ' us hus
       obtain ⟨TVa, hTVa, hokT, hlaw⟩ :=
         hu T cvT caps ((hsame _ _
-          (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf) hcap
+          (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) hcap
           hres φ' us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hokT, hlaw⟩
   · -- `reduce_ops`
     intro c hc cv hf hpin
     obtain ⟨hs, hlaw⟩ := mp.reduce_ops c hc cv
-      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf)
+      ((hsame _ _ (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf)
       hpin
     exact ⟨by rw [← hcg.isSomeEq]; exact hs, hlaw⟩
   · -- `tower_ok` (task #175 wiring W5): a table entry, a former and a
@@ -347,14 +347,14 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
     have hfP : env₀.findProj? T i = some entry := by
       obtain ⟨tbl, h3, hi, rfl⟩ := Ix.Kernel.Env.findProj?_some hf
       have h0 := (hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp h3
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp h3
       exact Ix.Kernel.Env.findProj?_of_table h0 hi
     obtain ⟨hsn, hidx, hlt, ⟨cvT, capsT, hfT, hlpsT⟩, hO5, cvC, hfC, hlpsC,
       hlaw, hetaL⟩ := mp.tower_ok φ T i entry hfP
     refine ⟨hsn, hidx, hlt, ⟨cvT, capsT, (hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mpr hfT, hlpsT⟩,
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mpr hfT, hlpsT⟩,
       hO5, cvC, (hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mpr hfC, hlpsC,
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mpr hfC, hlpsC,
       fun us hus => ?_, ?_⟩
     · obtain ⟨⟨Ta, hTa, hA⟩, ⟨TCa, hTCa, hB⟩⟩ := hlaw us hus
       exact ⟨⟨Ta, by rw [← hde]; exact hTa, hA⟩,
@@ -363,7 +363,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env}
       -- by the swap, and the reading is `hde`
       intro cvT' capsT' hfT' us hus
       obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL cvT' capsT' ((hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hfT') us hus
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hfT') us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hok, hlaw'⟩
 
 end Ix.Kernel.Model

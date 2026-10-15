@@ -57,10 +57,10 @@ def defeqRoles : List Ix.Kernel.Role :=
 /-- The `defeq` evidence of a structural operation, one entry per equation of
 its specification. -/
 def defeqEvidence {K : Type} (r : Ix.Kernel.Role) : List (Ix.Kernel.Evidence K) :=
-  (Ix.Kernel.natOpEquations 0 (Ix.Kernel.roleKey r)).map fun _ => .defeq
+  (Ix.Kernel.natOpEquations (md := .anon) 0 (Ix.Kernel.roleKey r)).map fun _ => .defeq
 
 /-- A key's Lean name: its spelling (`Ix.Kernel.Key.toName`). -/
-def toLeanName (k : CName) : Lean.Name := go k.toName
+def toLeanName (k : CName md) : Lean.Name := go k.toName
 where
   go : Ix.Kernel.Name → Lean.Name
     | .anonymous => .anonymous
@@ -68,18 +68,18 @@ where
     | .num p n => .num (go p) n
 
 /-- The key of a Lean name under Source mode's binding (`Ix.Kernel.Key.ofName`). -/
-def ofLeanName (n : Lean.Name) : CName := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
+def ofLeanName (n : Lean.Name) : CName md := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
 
 /-! ## The declarations read so far, as the closure sees them -/
 
 /-- What the inliner needs about the declarations read: the values of the
 definitions, theorems and opaques (with their level parameters), and the
 parameter counts of the constructors. -/
-structure Universe where
-  values : Std.HashMap CName (List LevelParam × CExpr) := {}
-  ctorParams : Std.HashMap CName Nat := {}
+structure Universe (md : Ix.Kernel.Mode) where
+  values : Std.HashMap (CName md) (List LevelParam × CExpr md) := {}
+  ctorParams : Std.HashMap (CName md) Nat := {}
 
-def Universe.add (u : Universe) (d : CDecl) : Universe :=
+def Universe.add (u : Universe md) (d : CDecl md) : Universe md :=
   match d with
   | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
     { u with values := u.values.insert cv.name (cv.levelParams, v) }
@@ -90,7 +90,7 @@ def Universe.add (u : Universe) (d : CDecl) : Universe :=
 
 /-- The constants a declaration installs, as the fold stores them (raw:
 before annotation; an opaque as an axiom, without its value). -/
-def declInfos (d : CDecl) : List Ix.Kernel.ConstantInfo :=
+def declInfos (d : CDecl md) : List (Ix.Kernel.ConstantInfo md) :=
   match d with
   | .axiomDecl cv => [.axiomInfo cv]
   | .defnDecl cv v hint => [.defnInfo cv v hint]
@@ -101,24 +101,24 @@ def declInfos (d : CDecl) : List Ix.Kernel.ConstantInfo :=
   | .quotDecl _ cv => [.axiomInfo cv]
 
 /-- A lookup over the declarations read so far. -/
-def lookupOf (decls : Array CDecl) : Std.HashMap CName Ix.Kernel.ConstantInfo :=
+def lookupOf (decls : Array (CDecl md)) : Std.HashMap (CName md) (Ix.Kernel.ConstantInfo md) :=
   decls.foldl (fun m d => (declInfos d).foldl (fun m ci => m.insert ci.name ci) m) {}
 
 /-- **What a proof of operation `op` may mention**: the dependency closure of
 `op`'s value and of its dependencies' roles (`Ix.Kernel.evidenceLocal`'s), and
 `op` itself (its self-references, which the fold replaces by the value). -/
-def allowedFor (look : CName → Option Ix.Kernel.ConstantInfo) (op : CName) (opValue : CExpr) :
-    Std.HashSet CName :=
+def allowedFor (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (op : CName md) (opValue : CExpr md) :
+    Std.HashSet (CName md) :=
   (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
     (opValue.constKeys.toList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
 
 /-! ## Expression surgery (memoized over the DAG) -/
 
-abbrev Memo := Std.HashMap CExpr CExpr
+abbrev Memo (md : Ix.Kernel.Mode) := Std.HashMap (CExpr md) (CExpr md)
 
 /-- The level parameters `ks` instantiated by `us`. -/
-partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr) :
-    StateM Memo CExpr := do
+partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr md) :
+    StateM (Memo md) (CExpr md) := do
   if !e.hasLP then return e
   if let some r := (← get)[e]? then return r
   let r ← match e with
@@ -135,19 +135,19 @@ partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr) :
   modify (·.insert e r)
   return r
 
-def instLevels (ks : List LevelParam) (us : List CLevel) (e : CExpr) : CExpr :=
+def instLevels (ks : List LevelParam) (us : List CLevel) (e : CExpr md) : CExpr md :=
   if ks.isEmpty then e else (instLevelsGo ks us e |>.run {}).1
 
 /-- No loose `bvar` at or above `d`. -/
-def closedAbove (e : CExpr) (d : Nat) : Bool :=
+def closedAbove (e : CExpr md) (d : Nat) : Bool :=
   e.bvarBRaw < Ix.Kernel.satRange && e.bvarBRaw ≤ d
 
 /-- `e` with loose `bvar (d + k)` replaced by `vs[n - 1 - k]` (lifted past the
 `d` binders crossed) for `k < n = vs.size`, and the loose `bvar`s above
 lowered by `n`: Lean's `instantiate` of the reversed `vs`, so `vs[n - 1]` is
 `bvar 0`. -/
-partial def instGo (vs : Array CExpr) (d : Nat) (e : CExpr) :
-    StateM (Std.HashMap (CExpr × Nat) CExpr) CExpr := do
+partial def instGo (vs : Array (CExpr md)) (d : Nat) (e : CExpr md) :
+    StateM (Std.HashMap (CExpr md × Nat) (CExpr md)) (CExpr md) := do
   if closedAbove e d then return e
   if let some r := (← get)[(e, d)]? then return r
   let n := vs.size
@@ -167,17 +167,17 @@ partial def instGo (vs : Array CExpr) (d : Nat) (e : CExpr) :
   modify (·.insert (e, d) r)
   return r
 
-def instantiate (e : CExpr) (vs : Array CExpr) : CExpr :=
+def instantiate (e : CExpr md) (vs : Array (CExpr md)) : CExpr md :=
   if vs.isEmpty then e else (instGo vs 0 e |>.run {}).1
 
 /-- The number of leading `fun` binders of `f`, at most `k`, and the body
 under them. -/
-def peelLams : Nat → CExpr → Nat × CExpr
+def peelLams : Nat → CExpr md → Nat × CExpr md
   | k + 1, .lam _ b _ => let (m, body) := peelLams k b; (m + 1, body)
   | _, e => (0, e)
 
 /-- `f args`, beta-reduced at the head. -/
-def betaApp (f : CExpr) (args : Array CExpr) : CExpr :=
+def betaApp (f : CExpr md) (args : Array (CExpr md)) : CExpr md :=
   let (m, body) := peelLams args.size f
   let head := if m == 0 then f else instantiate body (args.extract 0 m)
   (args.extract m args.size).foldl .app head
@@ -185,9 +185,9 @@ def betaApp (f : CExpr) (args : Array CExpr) : CExpr :=
 /-- One pass: every constant `inline` selects that has a value is replaced by
 it (levels instantiated, beta-reduced against its arguments), and the result
 is visited again (upstream's `unfoldStep` under `Core.transform`). -/
-partial def unfoldGo (u : Universe) (inline : CName → Bool) (e : CExpr) : StateM Memo CExpr := do
+partial def unfoldGo (u : Universe md) (inline : CName md → Bool) (e : CExpr md) : StateM (Memo md) (CExpr md) := do
   if let some r := (← get)[e]? then return r
-  let unfolded : Option CExpr := match e.getAppFn with
+  let unfolded : Option (CExpr md) := match e.getAppFn with
     | .const c us =>
       if inline c then
         match u.values[c]? with
@@ -211,7 +211,7 @@ partial def unfoldGo (u : Universe) (inline : CName → Bool) (e : CExpr) : Stat
   return r
 
 /-- A projection of a constructor application: its field. -/
-def projOfCtor (u : Universe) (i : Nat) (x : CExpr) : Option CExpr :=
+def projOfCtor (u : Universe md) (i : Nat) (x : CExpr md) : Option (CExpr md) :=
   match x.getAppFn with
   | .const c _ => do
     let nP ← u.ctorParams[c]?
@@ -222,9 +222,9 @@ def projOfCtor (u : Universe) (i : Nat) (x : CExpr) : Option CExpr :=
 /-- One pass of beta, `let` (zeta) and projection-of-constructor reduction
 (upstream's `simpStep`, and the zeta-expansion of its `toConLeche`), each
 result visited again. -/
-partial def simpGo (u : Universe) (e : CExpr) : StateM Memo CExpr := do
+partial def simpGo (u : Universe md) (e : CExpr md) : StateM (Memo md) (CExpr md) := do
   if let some r := (← get)[e]? then return r
-  let reduced : Option CExpr := match e with
+  let reduced : Option (CExpr md) := match e with
     | .letE _ v b _ => some (instantiate b #[v])
     | .proj _ i x => projOfCtor u i x
     | .app .. =>
@@ -246,7 +246,7 @@ partial def simpGo (u : Universe) (e : CExpr) : StateM Memo CExpr := do
 /-- **A proof closed over `allowed`** (upstream's `inlineCertClosure`):
 unfold and simplify to a fixpoint, then require every remaining constant to
 be allowed. -/
-def closeProof (u : Universe) (allowed : CName → Bool) (e : CExpr) : Except String CExpr := do
+def closeProof (u : Universe md) (allowed : CName md → Bool) (e : CExpr md) : Except String (CExpr md) := do
   let mut e := e
   let mut done := false
   for _ in [0:1000] do
@@ -266,13 +266,13 @@ def closeProof (u : Universe) (allowed : CName → Bool) (e : CExpr) : Except St
 /-! ## Evidence from declarations -/
 
 /-- The value of the definition `name` among `decls`. -/
-def valueOf (decls : Array CDecl) (name : CName) : Option CExpr :=
+def valueOf (decls : Array (CDecl md)) (name : CName md) : Option (CExpr md) :=
   decls.findSome? fun
     | .defnDecl cv v _ => if cv.name == name then some v else none
     | _ => none
 
 /-- The value of the theorem `name` among `decls`. -/
-def theoremOf (decls : Array CDecl) (name : CName) : Option CExpr :=
+def theoremOf (decls : Array (CDecl md)) (name : CName md) : Option (CExpr md) :=
   decls.findSome? fun
     | .thmDecl cv v => if cv.name == name then some v else none
     | _ => none
@@ -280,9 +280,9 @@ def theoremOf (decls : Array CDecl) (name : CName) : Option CExpr :=
 /-- **One well-founded operation's proof evidence, from declarations**: its
 certificate theorems (`certTheorems`, under `key`'s naming), each closed over
 the operation's dependency closure. -/
-def closedProofs (decls : Array CDecl) (uni : Universe)
-    (look : CName → Option Ix.Kernel.ConstantInfo) (key : Lean.Name → CName)
-    (r : Ix.Kernel.Role) : Except String (List (CName × CExpr)) := do
+def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
+    (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (key : Lean.Name → CName md)
+    (r : Ix.Kernel.Role) : Except String (List (CName md × CExpr md)) := do
   let op := Ix.Kernel.roleKey r
   let some opValue := valueOf decls op | throw s!"{op} is not a definition here"
   let allowed := allowedFor look op opValue

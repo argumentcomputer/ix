@@ -132,9 +132,9 @@ closure does not reach the main theorem (`Ix.Kernel.MainTheorem`). -/
 /-- Every accept of the entry, at any hash, role table and prelude, is an
 accept of the verified fold on the prepared declarations, at the evidence
 the reader resolved. -/
-theorem checkBytesWith_checkDecls {hash : ByteArray → Address} {binding : Binding} {pre : Prelude}
+theorem checkBytesWith_checkDecls {hash : ByteArray → Address} {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∃ ev decls, prepareWith hash binding pre limits records blobs hint = .ok (ev, decls) ∧
       Ix.Kernel.Cached.checkDecls .verified ev decls = .ok env := by
@@ -153,9 +153,9 @@ theorem checkBytesWith_checkDecls {hash : ByteArray → Address} {binding : Bind
 /-- **Model existence for the Ixon entry** (any hash, role table and
 prelude). -/
 theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
-    {binding : Binding} {pre : Prelude}
+    {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨ev, decls, _, hc⟩ := checkBytesWith_checkDecls h
@@ -163,10 +163,10 @@ theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : By
 
 /-- `checkBytesUsing` is `checkBytesWith` at the prelude its source gives the
 admitted table. -/
-theorem checkBytesUsing_with {prelude : Ix.Kernel.RoleTable → Except String Prelude}
+theorem checkBytesUsing_with {prelude : Ix.Kernel.RoleTable → Except String (Prelude md)}
     {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesUsing prelude hash binding limits records blobs hint = .ok env) :
     ∃ t pre, admitBinding hash binding = .ok t ∧ prelude t = .ok pre ∧
       checkBytesWith hash binding pre limits records blobs hint = .ok env := by
@@ -184,7 +184,7 @@ theorem checkBytesUsing_with {prelude : Ix.Kernel.RoleTable → Except String Pr
 admitted table. -/
 theorem checkBytes_with {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∃ t pre, admitBinding hash binding = .ok t ∧ preludeFor t = .ok pre ∧
       checkBytesWith hash binding pre limits records blobs hint = .ok env :=
@@ -194,7 +194,7 @@ theorem checkBytes_with {hash : ByteArray → Address} {binding : Binding} {limi
 accepts, at any hash and any role table, has a model in every set theory. -/
 theorem checkBytes_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {binding : Binding} {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, hw⟩ := checkBytes_with h
@@ -209,7 +209,7 @@ the entry (`Ix.Kernel.Admission`). -/
 `authenticate`), the role table's admission (`admitBinding`), decoding
 (`decodeRecords`), and then the check of the decoded records under the
 admitted table. -/
-theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pre : Prelude)
+theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pre : Prelude md)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     checkBytesWith hash binding pre limits records blobs hint = (do
@@ -241,10 +241,10 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
 
 /-- `checkConstantsUsing` is `checkConstantsWith` at the prelude its source
 gives the table. -/
-theorem checkConstantsUsing_with {prelude : Ix.Kernel.RoleTable → Except String Prelude}
+theorem checkConstantsUsing_with {prelude : Ix.Kernel.RoleTable → Except String (Prelude md)}
     {t : Ix.Kernel.RoleTable} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkConstantsUsing prelude t constants blobs hint = .ok env) :
     ∃ pre, prelude t = .ok pre ∧ checkConstantsWith t pre constants blobs hint = .ok env := by
   unfold checkConstantsUsing at h
@@ -258,7 +258,7 @@ theorem checkConstantsUsing_with {prelude : Ix.Kernel.RoleTable → Except Strin
 under the table. -/
 theorem checkConstants_with {t : Ix.Kernel.RoleTable} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkConstants t constants blobs hint = .ok env) :
     ∃ pre, preludeFor t = .ok pre ∧ checkConstantsWith t pre constants blobs hint = .ok env :=
   checkConstantsUsing_with h
@@ -266,10 +266,10 @@ theorem checkConstants_with {t : Ix.Kernel.RoleTable} {constants : List (Address
 /-- An accepted reading of decoded records is a record-by-record reading
 from the prelude's state, and the evidence is the table's, resolved against
 the reading's final state. -/
-theorem readStream_spec {t : Ix.Kernel.RoleTable} {pre : Prelude}
+theorem readStream_spec {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {ev : Ix.Kernel.Evidences} {decls : Array Ix.Kernel.Declaration}
+    {ev : Ix.Kernel.Evidences md} {decls : Array (Ix.Kernel.Declaration md)}
     (h : readStream t pre constants blobs hint = .ok (ev, decls)) :
     ∃ st', StreamRead (streamContext t pre constants blobs hint) pre.state constants st' decls ∧
       ev = evidenceOf (streamContext t pre constants blobs hint) st' t := by
@@ -286,10 +286,10 @@ theorem readStream_spec {t : Ix.Kernel.RoleTable} {pre : Prelude}
 
 /-- An accepted reading of decoded records has no two records under one
 address (the reader's own check, `readRecords_nodup`). -/
-theorem readStream_nodup {t : Ix.Kernel.RoleTable} {pre : Prelude}
+theorem readStream_nodup {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {ev : Ix.Kernel.Evidences} {decls : Array Ix.Kernel.Declaration}
+    {ev : Ix.Kernel.Evidences md} {decls : Array (Ix.Kernel.Declaration md)}
     (h : readStream t pre constants blobs hint = .ok (ev, decls)) :
     (constants.map Prod.fst).Nodup := by
   unfold readStream at h
@@ -311,18 +311,18 @@ the front), at the table's evidence resolved against that reading
 (`evidenceOf`). No two of the records share an address (`keys`, the reader's
 check). `Installed.skels`: the environment has exactly the install skeletons
 of that array. -/
-structure Installed (t : Ix.Kernel.RoleTable) (pre : Prelude)
+structure Installed (t : Ix.Kernel.RoleTable) (pre : Prelude md)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env) : Prop where
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env md) : Prop where
   reading : ∃ decls st', StreamRead (streamContext t pre constants blobs hint) pre.state constants st' decls ∧
     Ix.Kernel.Cached.checkDecls .verified (evidenceOf (streamContext t pre constants blobs hint) st' t)
       (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok env
   keys : (constants.map Prod.fst).Nodup
 
-theorem checkConstantsWith_installed {t : Ix.Kernel.RoleTable} {pre : Prelude}
+theorem checkConstantsWith_installed {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkConstantsWith t pre constants blobs hint = .ok env) :
+    {env : Ix.Kernel.Env md} (h : checkConstantsWith t pre constants blobs hint = .ok env) :
     Installed t pre constants blobs hint env := by
   unfold checkConstantsWith at h
   cases hr : readStream t pre constants blobs hint with
@@ -342,9 +342,9 @@ theorem checkConstantsWith_installed {t : Ix.Kernel.RoleTable} {pre : Prelude}
 accepted array (`Ix.Kernel.Cached.checkDecls_skels`): the same constants,
 in the same order, with the same names, kinds, constructor arities and
 recursor rule constructors. -/
-theorem Installed.skels {t : Ix.Kernel.RoleTable} {pre : Prelude}
+theorem Installed.skels {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : Installed t pre constants blobs hint env) :
     ∃ decls st', StreamRead (streamContext t pre constants blobs hint) pre.state constants st' decls ∧
       Ix.Kernel.Cached.envSkels env =
@@ -359,9 +359,9 @@ reading or projection rewrite), its declaration is in the array the fold
 accepted, and the declaration is installed under its name with its kind
 (for every declaration but a quotient record's, `sorryAx` and
 `Quot.sound`, whose skeletons are the basis blocks'; `declSkel`). -/
-theorem Installed.singleton {t : Ix.Kernel.RoleTable} {pre : Prelude}
+theorem Installed.singleton {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : Installed t pre constants blobs hint env) {owner : Address} {c : Ixon.Constant}
     (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
     ∃ st decl ev ds, SingletonRead (streamContext t pre constants blobs hint) st owner c decl ∧
@@ -375,9 +375,9 @@ theorem Installed.singleton {t : Ix.Kernel.RoleTable} {pre : Prelude}
 /-! ## Model existence and no proof of `False` -/
 
 theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
-    {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {pre : Prelude md} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : Installed t pre constants blobs hint env) :
+    {env : Ix.Kernel.Env md} (h : Installed t pre constants blobs hint env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
   exact Ix.Kernel.model_exists V _ _ env hc
@@ -386,9 +386,9 @@ theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.
 the constant (the counterpart of Ix's `Realizes.bodyValue` for
 definitions). -/
 theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
-    {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {pre : Prelude md} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : Installed t pre constants blobs hint env) :
+    {env : Ix.Kernel.Env md} (h : Installed t pre constants blobs hint env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
@@ -398,9 +398,9 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.
 type (`Ix.Kernel.Cached.no_proof_of_False_cached`); the statement does not
 depend on the table. -/
 theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
-    {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {pre : Prelude md} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : Installed t pre constants blobs hint env) :
+    {env : Ix.Kernel.Env md} (h : Installed t pre constants blobs hint env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨decls, _, _, hc⟩ := h.reading
   exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
@@ -409,9 +409,9 @@ theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix
 `False`'s role key: `Ix.Kernel.no_False_theorem_accepted` at the record's
 reading. -/
 theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
-    {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {pre : Prelude md} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : Installed t pre constants blobs hint env)
+    {env : Ix.Kernel.Env md} (h : Installed t pre constants blobs hint env)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext t pre constants blobs hint) owner c d).read d.typ =
@@ -441,9 +441,9 @@ records read exactly and canonically as `constants` (`RecordsRead`, unique
 by `RecordsRead.deterministic`), each under `hash` of its canonical encoding
 (`Hashed`), and the check of those records under the table installed what
 they describe (`Installed`). -/
-theorem checkBytesWith_reading {hash : ByteArray → Address} {binding : Binding} {pre : Prelude}
+theorem checkBytesWith_reading {hash : ByteArray → Address} {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧ Authentic hash records blobs ∧
       ∃ t constants, BindingAdmitted hash binding t ∧ RecordsRead limits records constants ∧
@@ -475,9 +475,9 @@ theorem checkBytesWith_reading {hash : ByteArray → Address} {binding : Binding
 /-- **The role table**: accepted bytes came with an admitted table — its
 section stored under `hash` of its bytes, the canonical encoding of a
 well-formed table. -/
-theorem checkBytesWith_binding {hash : ByteArray → Address} {binding : Binding} {pre : Prelude}
+theorem checkBytesWith_binding {hash : ByteArray → Address} {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∃ t, BindingAdmitted hash binding t := by
   obtain ⟨_, _, _, t, _, hb, _⟩ := checkBytesWith_reading h
@@ -486,9 +486,9 @@ theorem checkBytesWith_binding {hash : ByteArray → Address} {binding : Binding
 /-- **Authentication**: every record and every blob of accepted bytes is
 stored under `hash` of its supplied bytes, and so is the role table's
 section. -/
-theorem checkBytesWith_authentic {hash : ByteArray → Address} {binding : Binding} {pre : Prelude}
+theorem checkBytesWith_authentic {hash : ByteArray → Address} {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     Authentic hash records blobs ∧ hash binding.bytes = binding.address := by
   obtain ⟨_, _, ha, _, _, hb, _⟩ := checkBytesWith_reading h
@@ -496,9 +496,9 @@ theorem checkBytesWith_authentic {hash : ByteArray → Address} {binding : Bindi
 
 /-- The byte limits bound the whole decoded representation, including
 expanded universes, while retaining the exact reading and installation. -/
-theorem checkBytesWith_resources {hash : ByteArray → Address} {binding : Binding} {pre : Prelude}
+theorem checkBytesWith_resources {hash : ByteArray → Address} {binding : Binding} {pre : Prelude md}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∃ t constants, RecordsRead limits records constants ∧
       Installed t pre constants blobs hint env ∧
@@ -511,9 +511,9 @@ theorem checkBytesWith_resources {hash : ByteArray → Address} {binding : Bindi
 
 theorem checkBytesWith_has_model_values (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding}
-    {pre : Prelude} {limits : Limits} {records : Records}
+    {pre : Prelude md} {limits : Limits} {records : Records}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
+    {env : Ix.Kernel.Env md} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨_, _, _, _, _, _, _, _, installed⟩ := checkBytesWith_reading h
@@ -522,9 +522,9 @@ theorem checkBytesWith_has_model_values (V : Type u) [Ix.Kernel.SetTheory V]
 /-- **No proof of `False`**, at `False`'s role key, for every role table. -/
 theorem checkBytesWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding}
-    {pre : Prelude} {limits : Limits} {records : Records}
+    {pre : Prelude md} {limits : Limits} {records : Records}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
+    {env : Ix.Kernel.Env md} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, _, _, _, _, _, _, installed⟩ := checkBytesWith_reading h
   exact installed.no_proof_of_False V
@@ -533,9 +533,9 @@ theorem checkBytesWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
 accepted bytes has a type that reads as `False`'s role key. -/
 theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding}
-    {pre : Prelude} {limits : Limits} {records : Records}
+    {pre : Prelude md} {limits : Limits} {records : Records}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env)
+    {env : Ix.Kernel.Env md} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env)
     {t : Ix.Kernel.RoleTable} (ht : admitBinding hash binding = .ok t)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -566,9 +566,9 @@ accepted. Under a table that binds `False` the reader names its constant so
 (`Ctx.nameOf_of_role`). -/
 theorem checkBytesWith_no_False_reference (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding}
-    {pre : Prelude} {limits : Limits} {records : Records}
+    {pre : Prelude md} {limits : Limits} {records : Records}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env)
+    {env : Ix.Kernel.Env md} (h : checkBytesWith hash binding pre limits records blobs hint = .ok env)
     {t : Ix.Kernel.RoleTable} (ht : admitBinding hash binding = .ok t)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -592,7 +592,7 @@ the checker installed what the records describe (`Installed`), behind the
 committed prelude read under the table. -/
 theorem checkBytes_reading {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∃ t pre, admitBinding hash binding = .ok t ∧ preludeFor t = .ok pre ∧
       WithinBatch limits records blobs ∧ UniqueKeys records blobs ∧ Authentic hash records blobs ∧
@@ -612,7 +612,7 @@ stored under `hash` of its supplied bytes, and so is the role table's
 section. -/
 theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     Authentic hash records blobs ∧ hash binding.bytes = binding.address := by
   obtain ⟨_, _, _, _, hw⟩ := checkBytes_with h
@@ -621,7 +621,7 @@ theorem checkBytes_authentic {hash : ByteArray → Address} {binding : Binding} 
 /-- **The role table.** Accepted bytes came with an admitted role table. -/
 theorem checkBytes_binding {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∃ t, BindingAdmitted hash binding t := by
   obtain ⟨_, _, _, _, hw⟩ := checkBytes_with h
@@ -630,7 +630,7 @@ theorem checkBytes_binding {hash : ByteArray → Address} {binding : Binding} {l
 /-- **Resources.** The byte limits bound the whole decoded representation. -/
 theorem checkBytes_resources {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∃ constants, RecordsRead limits records constants ∧
       resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes := by
@@ -643,7 +643,7 @@ that every stored definition's value denotes the constant. -/
 theorem checkBytes_has_model_values (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
@@ -655,7 +655,7 @@ of an accepted environment has `False`'s role key as its type. -/
 theorem checkBytes_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, _, _, hw⟩ := checkBytes_with h
@@ -666,9 +666,9 @@ accepted bytes has a type that reads as `False`'s role key. -/
 theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
     {hash : ByteArray → Address} {binding : Binding} {limits : Limits}
     {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkBytes hash binding limits records blobs hint = .ok env)
-    {t : Ix.Kernel.RoleTable} {pre : Prelude}
+    {t : Ix.Kernel.RoleTable} {pre : Prelude md}
     (ht : admitBinding hash binding = .ok t) (hpre : preludeFor t = .ok pre)
     {constants : List (Address × Ixon.Constant)} (reading : RecordsRead limits records constants)
     {owner : Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -683,15 +683,15 @@ theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
 /-! ## Decoded records -/
 
 theorem checkConstantsWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
-    {pre : Prelude} {constants : List (Address × Ixon.Constant)}
+    {pre : Prelude md} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env} (h : checkConstantsWith t pre constants blobs hint = .ok env) :
+    {env : Ix.Kernel.Env md} (h : checkConstantsWith t pre constants blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   (checkConstantsWith_installed h).has_model V
 
 theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V] {t : Ix.Kernel.RoleTable}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkConstants t constants blobs hint = .ok env) : Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
@@ -709,7 +709,7 @@ universe w
 the prelude read under it. -/
 theorem checkConstantsAt_with {hash : ByteArray → Address} {binding : Binding}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkConstantsAt hash binding constants blobs hint = .ok env) :
     ∃ t pre, BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
       checkConstantsWith t pre constants blobs hint = .ok env := by
@@ -723,7 +723,7 @@ theorem checkConstantsAt_with {hash : ByteArray → Address} {binding : Binding}
 
 theorem checkConstantsAt_has_model (V : Type w) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {binding : Binding} {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (h : checkConstantsAt hash binding constants blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, hw⟩ := checkConstantsAt_with h

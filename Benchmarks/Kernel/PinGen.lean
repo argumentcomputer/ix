@@ -93,9 +93,9 @@ def hash (bytes : ByteArray) : Address := Address.admissionHash bytes
 /-- Read `addresses` in order, threading the reader state as the environment check does,
 and return each record's declarations, with the records that do not read. -/
 def readOrdered (s : Setup) (addresses : Array Address) :
-    Std.HashMap Address (Array CDecl) × Array (Address × ReadError) := Id.run do
-  let mut st : State := {}
-  let mut out : Std.HashMap Address (Array CDecl) := {}
+    Std.HashMap Address (Array (CDecl .anon)) × Array (Address × ReadError) := Id.run do
+  let mut st : State .anon := {}
+  let mut out : Std.HashMap Address (Array (CDecl .anon)) := {}
   let mut errors : Array (Address × ReadError) := #[]
   for a in addresses do
     let some c := s.store[a]? | continue
@@ -115,7 +115,7 @@ structure Egress where
   univs : Array Ixon.Univ := #[]
   univIdx : Std.HashMap Ixon.Univ Nat := {}
   sharing : Array Ixon.Expr := #[]
-  shareIdx : Std.HashMap CExpr Nat := {}
+  shareIdx : Std.HashMap (CExpr .anon) Nat := {}
   blobs : Array (Address × ByteArray) := #[]
 
 abbrev EgressM := StateT Egress (Except String)
@@ -158,7 +158,7 @@ def blobOf (bytes : ByteArray) : EgressM UInt64 := do
 
 /-- How often each node occurs in `e`'s DAG (each parent edge counted once
 per distinct parent). -/
-partial def countUses (e : CExpr) : StateM (Std.HashMap CExpr Nat) Unit := do
+partial def countUses (e : CExpr .anon) : StateM (Std.HashMap (CExpr .anon) Nat) Unit := do
   let seen := (← get)[e]?
   modify fun m => m.insert e (seen.getD 0 + 1)
   if seen.isSome then return
@@ -173,8 +173,8 @@ partial def countUses (e : CExpr) : StateM (Std.HashMap CExpr Nat) Unit := do
 /-- An expression as an Ixon expression under the writer's tables: every
 node used more than once (and not a leaf) becomes a sharing entry, written
 after the entries it uses. `addrOf` names a constant's record. -/
-partial def egress (uses : Std.HashMap CExpr Nat) (addrOf : CName → Option Address)
-    (e : CExpr) : EgressM Ixon.Expr := do
+partial def egress (uses : Std.HashMap (CExpr .anon) Nat) (addrOf : CName .anon → Option Address)
+    (e : CExpr .anon) : EgressM Ixon.Expr := do
   let leaf := match e with
     | .bvar _ | .sort _ | .const .. | .lit _ => true
     | _ => false
@@ -208,7 +208,7 @@ where
 
 /-- **A theorem record** with statement `type` and proof `value`: level
 monomorphic, safe, its constants named through `addrOf`. -/
-def theoremRecord (addrOf : CName → Option Address) (type value : CExpr) :
+def theoremRecord (addrOf : CName .anon → Option Address) (type value : CExpr .anon) :
     Except String (Ixon.Constant × Array (Address × ByteArray)) := do
   let uses := ((countUses type *> countUses value).run {}).2
   let ((typ, val), eg) ← (do
@@ -240,7 +240,7 @@ def run (args : List String) : IO UInt32 := do
   let mut refOfRole : Std.HashMap Role (ConstRef Address) := {}
   let mut roleOfRef : Std.HashMap (ConstRef Address) Role := {}
   for r in Role.all do
-    let n := Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey r)
+    let n := Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r)
     let some named := env.named[Ix.Name.fromLeanName n]? | fail s!"no constant named {n}"
     let some c := store[named.addr]? | fail s!"{n}: no record at {named.addr}"
     let some ref := resolveSource lookup named.addr c | fail s!"{n}: {named.addr} does not resolve"
@@ -283,7 +283,7 @@ def run (args : List String) : IO UInt32 := do
       certStore := certStore.insert a c
       added := added + 1
   for (r, _) in Ix.RoleEvidence.certTheorems do
-    let lean := Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey r))
+    let lean := Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .anon) r))
     let some named := certEnv.named[lean]? | fail s!"{certInput} has no {repr r}"
     let some initNamed := env.named[lean]? | fail s!"the Init has no {repr r}"
     unless named.addr == initNamed.addr do
@@ -304,20 +304,20 @@ def run (args : List String) : IO UInt32 := do
   let (decls, readErrors) := readOrdered cs order
   unless readErrors.isEmpty do
     fail s!"records that do not read: {readErrors.toList.map fun (a, e) => (toString a, toString e)}"
-  let allDecls : Array CDecl := order.foldl (fun acc a => acc ++ decls.getD a #[]) #[]
-  let uni : Ix.RoleEvidence.Universe := allDecls.foldl Ix.RoleEvidence.Universe.add {}
+  let allDecls : Array (CDecl .anon) := order.foldl (fun acc a => acc ++ decls.getD a #[]) #[]
+  let uni : Ix.RoleEvidence.Universe .anon := allDecls.foldl Ix.RoleEvidence.Universe.add {}
   let lookMap := Ix.RoleEvidence.lookupOf allDecls
-  let look : CName → Option Ix.Kernel.ConstantInfo := (lookMap[·]?)
+  let look : CName .anon → Option (Ix.Kernel.ConstantInfo .anon) := (lookMap[·]?)
   IO.eprintln s!"pin-gen: evidence: the certificates' compile adds {added} records; {order.size} \
     records read, {uni.values.size} values"
   -- every record's address by the reader's name for it
-  let mut addrOfName : Std.HashMap CName Address := {}
+  let mut addrOfName : Std.HashMap (CName .anon) Address := {}
   for (a, c) in cs.store.toList do
     if let some ref := resolveSource (cs.store[·]?) a c then
       let n := cs.cx.nameOf ref
       unless addrOfName.contains n do addrOfName := addrOfName.insert n a
   for (r, a) in bound do addrOfName := addrOfName.insert (Ix.Kernel.roleKey r) a
-  let keyOf (t : Lean.Name) : CName :=
+  let keyOf (t : Lean.Name) : CName .anon :=
     match certAt[t]? with
     | some a => match (resolve (cs.store[·]?) a) with
       | some ref => cs.cx.nameOf ref
@@ -327,7 +327,7 @@ def run (args : List String) : IO UInt32 := do
     Ix.RoleEvidence.defeqRoles.toArray.map fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)
   let mut evRecords : Array (Address × Ixon.Constant) := #[]
   let mut evBlobs : Array (Address × ByteArray) := #[]
-  let mut closed : Std.HashMap Address CExpr := {}
+  let mut closed : Std.HashMap Address (CExpr .anon) := {}
   for (r, thms) in Ix.RoleEvidence.certTheorems do
     let proofs ← match Ix.RoleEvidence.closedProofs allDecls uni look keyOf r with
       | .ok ps => pure ps

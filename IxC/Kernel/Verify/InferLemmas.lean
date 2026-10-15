@@ -30,7 +30,7 @@ variable {mode : CheckMode}
 
 open Expr
 
-theorem find?_mem {env : Env} {n : Key} {ci : ConstantInfo}
+theorem find?_mem {env : Env md} {n : Key md} {ci : ConstantInfo md}
     (h : env.find? n = some ci) : ci ∈ env.consts :=
   List.mem_of_find?_eq_some h
 
@@ -53,7 +53,7 @@ Consumers that *consume* the certificate use `whnf_app_inv_ungated`
 below and owe a `mode.betaGate = false` hypothesis: they are the R
 lane, whose `Red.beta` needs the argument's domain membership and has
 no annotation to read it off. -/
-theorem whnf_app_inv {env : Env} {fuel d : Nat} {f a e' : Expr}
+theorem whnf_app_inv {env : Env md} {fuel d : Nat} {f a e' : Expr md}
     (h : whnfCore mode env (fuel + 1) d (.app f a) = .ok e') :
     ∃ f', whnfCore mode env fuel d f = .ok f' ∧
       ((∃ ty body m, f' = .lam ty body m ∧
@@ -126,7 +126,7 @@ theorem whnf_app_inv {env : Env} {fuel d : Nat} {f a e' : Expr}
 /-- `whnf_app_inv` at a mode whose β gate is off — the **pre-gate
 letter**, verbatim: the beta disjunct carries the certificate itself.
 The dead-branch collapse (`betaGateTest_off`) is the whole proof. -/
-theorem whnf_app_inv_ungated {env : Env} {fuel d : Nat} {f a e' : Expr}
+theorem whnf_app_inv_ungated {env : Env md} {fuel d : Nat} {f a e' : Expr md}
     (hg : mode.betaGate = false)
     (h : whnfCore mode env (fuel + 1) d (.app f a) = .ok e') :
     ∃ f', whnfCore mode env fuel d f = .ok f' ∧
@@ -155,8 +155,8 @@ iteration on `whnfLoop`'s own budget, so this is stated about the
 continuation-parameterized body; `whnfLoop … (n+1)` *is*
 `whnfStep … (whnfLoop … n)`, so consumers apply it after `cases` on
 the budget and use the budget induction hypothesis for `k`. -/
-theorem whnfStep_inv {env : Env} {fuel d : Nat} {k : Expr → CheckM Expr}
-    {e e' : Expr}
+theorem whnfStep_inv {env : Env md} {fuel d : Nat} {k : Expr md → CheckM (Expr md)}
+    {e e' : Expr md}
     (h : whnfStep (pureFns mode env fuel) env d k e = .ok e') :
     ∃ e₁, whnfCore mode env fuel d e = .ok e₁ ∧
       ((∃ e₂, reduceNatFueled mode env fuel d e₁ = .ok (some e₂) ∧
@@ -201,8 +201,8 @@ every λ node, in the shape the checker computes it (infer, then whnf
 to a sort — `IxC/Kernel/SetR/Annot/Pass.lean`'s `HasSort` unfolded along
 the bridge).  At `.trusted` — the trusted lane, which does not
 run the check — it is vacuous. -/
-theorem inferTypeCore_lam_inv {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem inferTypeCore_lam_inv {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCore mode env (fuel + 1) d (.lam ty body m) = .ok t) :
     ∃ tty u bt,
       inferTypeCore mode env fuel d ty = .ok tty ∧
@@ -312,8 +312,8 @@ own: the codomain check the λ clause ran (chain or leaf) *is* the
 validation of the copied datum, and the `denoteMeta` readings of the λ
 and of its inferred type dispatch on the same regime numeral
 `pwBit φ m.pw` by their clause equations. -/
-theorem infer_lam_meta_copy {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem infer_lam_meta_copy {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCore mode env (fuel + 1) d (.lam ty body m) = .ok t) :
     ∃ bt, t = .forallE ty bt m := by
   obtain ⟨tty, u, bt, -, -, -, -, -, ht⟩ := inferTypeCore_lam_inv h
@@ -323,7 +323,7 @@ theorem infer_lam_meta_copy {env : Env} {fuel d : Nat}
 de-gating: the per-argument re-check runs unconditionally — the former
 possibly-Prop gate of task #49 is unsound-to-model under the
 domain-relative collapse). -/
-theorem inferTypeCore_app_inv {env : Env} {fuel d : Nat} {f a t : Expr}
+theorem inferTypeCore_app_inv {env : Env md} {fuel d : Nat} {f a t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.app f a) = .ok t) :
     ∃ tf ty' body' m', inferTypeCore mode env fuel d f = .ok tf ∧
       whnf mode env fuel d tf = .ok (.forallE ty' body' m') ∧
@@ -373,8 +373,8 @@ theorem inferTypeCore_app_inv {env : Env} {fuel d : Nat} {f a t : Expr}
 /-- Inversion for the ∀-rule of `inferTypeCore` (task #100 stage 6:
 the codomain sort is inferred from the opened body — the stored
 annotation is not read). -/
-theorem inferTypeCore_forall_inv {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem inferTypeCore_forall_inv {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCore mode env (fuel + 1) d (.forallE ty body m) = .ok t) :
     ∃ tty u bt v, inferTypeCore mode env fuel d ty = .ok tty ∧
       whnf mode env fuel d tty = .ok (.sort u) ∧
@@ -431,7 +431,7 @@ theorem inferTypeCore_forall_inv {env : Env} {fuel d : Nat}
     simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- Inversion for `ensureSortCore`: the subject whnfs to the sort. -/
-theorem ensureSortCore_inv {env : Env} {fuel d : Nat} {t : Expr} {u : Level}
+theorem ensureSortCore_inv {env : Env md} {fuel d : Nat} {t : Expr md} {u : Level}
     (h : ensureSortCore mode env fuel d t = .ok u) :
     whnf mode env fuel d t = .ok (.sort u) := by
   unfold ensureSortCore ensureSort at h
@@ -452,7 +452,7 @@ theorem ensureSortCore_inv {env : Env} {fuel d : Nat} {t : Expr} {u : Level}
 
 /-- The spine head of a well-scoped expression is well-scoped. -/
 theorem Expr.WScoped.getAppFn {d : Nat} :
-    ∀ {e : Expr}, WScoped d e → WScoped d e.getAppFn := by
+    ∀ {e : Expr md}, WScoped d e → WScoped d e.getAppFn := by
   intro e
   induction e with
   | app f a ihf _ =>
@@ -467,8 +467,8 @@ arm is a positive `.internal` error, not the official `infer_let`
 triple, which lives in `annotateBody` and returns the ζ reduct
 (task #217).  So an accepting inference run never meets a `letE` node,
 and every `letE` case downstream is vacuous. -/
-theorem inferTypeCore_letE_inv {env : Env} {fuel d : Nat}
-    {ty v b t : Expr}
+theorem inferTypeCore_letE_inv {env : Env md} {fuel d : Nat}
+    {ty v b t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.letE ty v b lmeta) = .ok t) :
     False := by
   rw [inferTypeCore_succ] at h
@@ -477,8 +477,8 @@ theorem inferTypeCore_letE_inv {env : Env} {fuel d : Nat}
 /-- The ζ arm of `whnfCore` is **unreachable** (task #241), for the same
 reason: it is a positive `.internal` error, because reduction only ever
 sees let-free expressions. -/
-theorem whnfCore_letE_inv {env : Env} {fuel d : Nat}
-    {ty v b e' : Expr}
+theorem whnfCore_letE_inv {env : Env md} {fuel d : Nat}
+    {ty v b e' : Expr md}
     (h : whnfCore mode env (fuel + 1) d (.letE ty v b lmeta) = .ok e') :
     False := by
   rw [whnfCore_succ] at h
@@ -493,8 +493,8 @@ rather than at `fuel + 1`, by lifting the one-level forms through
 is what this module is for, and the model tier's projection case
 consumes them from here. -/
 
-theorem whnf_forallE_eq {env : Env} {fuel d : Nat}
-    {t b e' : Expr} {mb : BinderMeta}
+theorem whnf_forallE_eq {env : Env md} {fuel d : Nat}
+    {t b e' : Expr md} {mb : BinderMeta}
     (h : whnf mode env fuel d (.forallE t b mb) = .ok e') :
     e' = .forallE t b mb := by
   have h1 := whnf_mono (Nat.le_add_right fuel 2) h
@@ -510,8 +510,8 @@ theorem whnf_forallE_eq {env : Env} {fuel d : Nat}
   rw [h1] at h2
   exact Except.ok.inj h2
 
-theorem inferTypeCore_app_inv' {env : Env} {fuel d : Nat}
-    {f a t : Expr} (h : inferTypeCore mode env fuel d (.app f a) = .ok t) :
+theorem inferTypeCore_app_inv' {env : Env md} {fuel d : Nat}
+    {f a t : Expr md} (h : inferTypeCore mode env fuel d (.app f a) = .ok t) :
     ∃ tf ty' body' m', inferTypeCore mode env fuel d f = .ok tf ∧
       whnf mode env fuel d tf = .ok (.forallE ty' body' m') ∧
       t = body'.instantiate1 a ∧
@@ -527,8 +527,8 @@ theorem inferTypeCore_app_inv' {env : Env} {fuel d : Nat}
       inferTypeCore_mono (Nat.le_succ _) h4,
       isDefEqCore_mono (Nat.le_succ _) h5⟩
 
-theorem inferTypeCore_const_inv {env : Env} {fuel d : Nat}
-    {n : Key} {us : List Level} {t : Expr}
+theorem inferTypeCore_const_inv {env : Env md} {fuel d : Nat}
+    {n : Key md} {us : List Level} {t : Expr md}
     (h : inferTypeCore mode env fuel d (.const n us) = .ok t) :
     ∃ ci, env.find? n = some ci ∧ ci.isTowerEntry = false ∧
       t = ci.toConstantVal.type.instantiateLevelParams
@@ -575,7 +575,7 @@ theorem getD_mem {α : Type _} {l : List α} {i : Nat} {dflt : α} (h : i < l.le
       exact List.mem_cons_of_mem _ (ih (by simpa using h))
 
 theorem Expr.WScoped.getAppArgs {d : Nat} :
-    ∀ {e : Expr}, WScoped d e → ∀ x ∈ e.getAppArgs, WScoped d x := by
+    ∀ {e : Expr md}, WScoped d e → ∀ x ∈ e.getAppArgs, WScoped d x := by
   intro e
   induction e with
   | app f a ihf iha =>
@@ -587,7 +587,7 @@ theorem Expr.WScoped.getAppArgs {d : Nat} :
     · exact hw.2
   | _ => intro hw x hx; simp [Expr.getAppArgs] at hx
 
-theorem Expr.WScoped.mkAppN {d : Nat} : ∀ {xs : List Expr} {f : Expr},
+theorem Expr.WScoped.mkAppN {d : Nat} : ∀ {xs : List (Expr md)} {f : Expr md},
     WScoped d f → (∀ x ∈ xs, WScoped d x) → WScoped d (Expr.mkAppN f xs) := by
   intro xs
   induction xs with
@@ -600,7 +600,7 @@ theorem Expr.WScoped.mkAppN {d : Nat} : ∀ {xs : List Expr} {f : Expr},
     exact ⟨hf, hxs x List.mem_cons_self⟩
 
 theorem looseBVarsBounded_getAppFn {k : Nat} :
-    ∀ {e : Expr}, e.looseBVarsBounded k = true →
+    ∀ {e : Expr md}, e.looseBVarsBounded k = true →
       e.getAppFn.looseBVarsBounded k = true := by
   intro e
   induction e with
@@ -611,7 +611,7 @@ theorem looseBVarsBounded_getAppFn {k : Nat} :
   | _ => intro hb; exact hb
 
 theorem looseBVarsBounded_getAppArgs {k : Nat} :
-    ∀ {e : Expr}, e.looseBVarsBounded k = true →
+    ∀ {e : Expr md}, e.looseBVarsBounded k = true →
       ∀ x ∈ e.getAppArgs, x.looseBVarsBounded k = true := by
   intro e
   induction e with
@@ -625,7 +625,7 @@ theorem looseBVarsBounded_getAppArgs {k : Nat} :
   | _ => intro hb x hx; simp [Expr.getAppArgs] at hx
 
 theorem hasFvar_getAppArgs :
-    ∀ {e : Expr}, e.hasFvar = false →
+    ∀ {e : Expr md}, e.hasFvar = false →
       ∀ x ∈ e.getAppArgs, x.hasFvar = false := by
   intro e
   induction e with
@@ -638,14 +638,14 @@ theorem hasFvar_getAppArgs :
     · exact hb.2
   | _ => intro hb x hx; simp [Expr.getAppArgs] at hx
 
-theorem Expr.mkAppN_append_one (f : Expr) (l : List Expr) (a : Expr) :
+theorem Expr.mkAppN_append_one (f : Expr md) (l : List (Expr md)) (a : Expr md) :
     Expr.mkAppN f (l ++ [a]) = .app (Expr.mkAppN f l) a := by
   induction l generalizing f with
   | nil => rfl
   | cons x xs ih => simp only [List.cons_append, Expr.mkAppN]; exact ih _
 
 /-- An expression is its spine head applied to its spine arguments. -/
-theorem Expr.mkAppN_getApp : ∀ (e : Expr), Expr.mkAppN e.getAppFn e.getAppArgs = e := by
+theorem Expr.mkAppN_getApp : ∀ (e : Expr md), Expr.mkAppN e.getAppFn e.getAppArgs = e := by
   intro e
   induction e with
   | app f a ih _ =>
@@ -655,7 +655,7 @@ theorem Expr.mkAppN_getApp : ∀ (e : Expr), Expr.mkAppN e.getAppFn e.getAppArgs
   | _ => rfl
 
 /-- The spine head of an application chain is the base's spine head. -/
-theorem Expr.getAppFn_mkAppN : ∀ (args : List Expr) (f : Expr),
+theorem Expr.getAppFn_mkAppN : ∀ (args : List (Expr md)) (f : Expr md),
     (Expr.mkAppN f args).getAppFn = f.getAppFn
   | [], _ => rfl
   | a :: as, f => by
@@ -664,7 +664,7 @@ theorem Expr.getAppFn_mkAppN : ∀ (args : List Expr) (f : Expr),
     rfl
 
 /-- The spine arguments of an application chain extend the base's. -/
-theorem Expr.getAppArgs_mkAppN : ∀ (args : List Expr) (f : Expr),
+theorem Expr.getAppArgs_mkAppN : ∀ (args : List (Expr md)) (f : Expr md),
     (Expr.mkAppN f args).getAppArgs = f.getAppArgs ++ args
   | [], _ => by simp [Expr.mkAppN]
   | a :: as, f => by
@@ -677,7 +677,7 @@ the string-literal expansion step (`projLitToCtorFueled`), then either the
 input itself (a stuck projection keeps its scrutinee as it was, official
 `whnf_core`: `reduce_proj` fails and the input is returned) or a firing
 table entry. -/
-theorem whnf_proj_inv {env : Env} {fuel d : Nat} {sn : Key} {i : Nat} {e e' : Expr}
+theorem whnf_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : Nat} {e e' : Expr md}
     (h : whnfCore mode env (fuel + 1) d (.proj sn i e) = .ok e') :
     ∃ e₂ e₃, whnf mode env fuel d e = .ok e₂ ∧
       projLitToCtorFueled mode env fuel d e₂ = .ok e₃ ∧
@@ -748,8 +748,8 @@ theorem whnf_proj_inv {env : Env} {fuel d : Nat} {sn : Key} {i : Nat} {e e' : Ex
 
 /-- At the verified mode the fire's gate runs the certificate
 (`projCertAt`; parity mirrors official, 2026-09-06). -/
-theorem projCertAtFueled_verified {env : Env} {fuel d : Nat} {lic : Bool} {c : Key}
-    {us : List Level} {args : List Expr} (hv : mode.verifiedChecks = true)
+theorem projCertAtFueled_verified {env : Env md} {fuel d : Nat} {lic : Bool} {c : Key md}
+    {us : List Level} {args : List (Expr md)} (hv : mode.verifiedChecks = true)
     (h : projCertAtFueled mode env fuel d mode.verifiedChecks lic c us args = .ok true) :
     projCertFueled mode env fuel d lic c us args = .ok true := by
   simp only [projCertAtFueled, projCertAt, hv, ↓reduceIte] at h
@@ -758,8 +758,8 @@ theorem projCertAtFueled_verified {env : Env} {fuel d : Nat} {lic : Bool} {c : K
 /-- Inversion for a successful projection certification (task #175 W6):
 the head is a stored constructor and the spine is certified against
 its type at the redex's levels (`iotaCerts`). -/
-theorem projCert_inv {env : Env} {fuel d : Nat} {lic : Bool} {c : Key}
-    {us : List Level} {args : List Expr}
+theorem projCert_inv {env : Env md} {fuel d : Nat} {lic : Bool} {c : Key md}
+    {us : List Level} {args : List (Expr md)}
     (h : projCertFueled mode env fuel d lic c us args = .ok true) :
     ∃ cvC nP nF, env.find? c = some (.ctorInfo cvC nP nF) ∧
       iotaCertsFueled mode env fuel d lic
@@ -779,14 +779,14 @@ each step preserves is carried from the raw major to the prepared one
 whichever order ran.  Every consumer of the chain (scoping, bound
 variables, leaves, the P tier's readings and gradings) is an instance,
 so none of them names the order. -/
-theorem prepareMajorFueled_ind {env : Env} {fuel d : Nat} {recName : Key}
-    {rules : List RecRule} {a m : Expr}
+theorem prepareMajorFueled_ind {env : Env md} {fuel d : Nat} {recName : Key md}
+    {rules : List (RecRule md)} {a m : Expr md}
     (h : prepareMajorFueled mode env fuel d recName rules a = .ok m)
-    (P : Expr → Prop)
-    (hwhnf : ∀ {e e' : Expr}, whnf mode env fuel d e = .ok e' → P e → P e')
-    (hlit : ∀ {e e' : Expr},
+    (P : Expr md → Prop)
+    (hwhnf : ∀ {e e' : Expr md}, whnf mode env fuel d e = .ok e' → P e → P e')
+    (hlit : ∀ {e e' : Expr md},
       litMajorToCtorFueled mode env fuel d e = .ok e' → P e → P e')
-    (hmaj : ∀ {e e' : Expr},
+    (hmaj : ∀ {e e' : Expr md},
       majorToCtorFueled mode env fuel d recName rules e = .ok e' → P e → P e')
     (ha : P a) : P m := by
   dsimp only [prepareMajorFueled] at h
@@ -819,7 +819,7 @@ theorem prepareMajorFueled_ind {env : Env} {fuel d : Nat} {recName : Key}
         exact hmaj h (hlit h₂ (hwhnf h₁ ha))
 
 /-- Inversion of a successful iota step. -/
-theorem iotaRec_inv {env : Env} {fuel d : Nat} {e eout : Expr}
+theorem iotaRec_inv {env : Env md} {fuel d : Nat} {e eout : Expr md}
     (h : iotaRecFueled mode env fuel d e = .ok (some eout)) :
     ∃ c us cv mI rP rules major cj usj cvj cnP cnF r,
       e.getAppFn = .const c us ∧
@@ -1004,8 +1004,8 @@ theorem iotaRec_inv {env : Env} {fuel d : Nat} {e eout : Expr}
 /-- Inversion of the canonical-index comparison where the recursor has
 indices: the constructor telescope's residual exists and its index
 arguments compare equal to the recursor's. -/
-theorem iotaIndexOk_inv {env : Env} {fuel d mI rP cnP : Nat} {tyCtor : Expr}
-    {margs idx : List Expr}
+theorem iotaIndexOk_inv {env : Env md} {fuel d mI rP cnP : Nat} {tyCtor : Expr md}
+    {margs idx : List (Expr md)}
     (h : iotaIndexOkFueled mode env fuel d mI rP cnP tyCtor margs idx = .ok true)
     (hne : mI ≠ rP) :
     ∃ residual, piResidual tyCtor margs = some residual ∧
@@ -1023,7 +1023,7 @@ test**: at a capability record whose `sortZ` is the family's own
 route computes it from), reading the datum at a use's levels gives
 exactly the walk `piResultNeverZero` would have made down that type. -/
 theorem capsNeverZero_eq {lps : List LevelParam} {us : List Level}
-    {caps : IndCaps} {e : Expr} (h : caps.sortZ = piResultZ e) :
+    {caps : IndCaps md} {e : Expr md} (h : caps.sortZ = piResultZ e) :
     capsNeverZero lps us caps = piResultNeverZero lps us e := by
   unfold capsNeverZero piResultNeverZero
   rw [h]
@@ -1041,8 +1041,8 @@ K branch certified by proof irrelevance, in the structure-eta branch by
 the structure-eta certificate (or, at zero fields, by proof
 irrelevance), in the `And` branch by proof irrelevance again — and its
 scoping was checked syntactically (the scope guard). -/
-theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
-    {rules : List RecRule} {major major' : Expr}
+theorem majorToCtor_inv {env : Env md} {fuel d : Nat} {recName : Key md}
+    {rules : List (RecRule md)} {major major' : Expr md}
     (h : majorToCtorFueled mode env fuel d recName rules major = .ok major') :
     major' = major ∨
     (major'.wscopedB d = true ∧ major'.looseBVarsBounded 0 = true ∧
@@ -1582,8 +1582,8 @@ theorem majorToCtor_inv {env : Env} {fuel d : Nat} {recName : Key}
         Or.inl hse⟩)⟩
 
 /-- Inversion of one pairwise-defeq step. -/
-theorem defEqList_step_inv {env : Env} {fuel d : Nat} {a b : Expr}
-    {as bs : List Expr}
+theorem defEqList_step_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
+    {as bs : List (Expr md)}
     (h : defEqListFueled mode env fuel d (a :: as) (b :: bs) = .ok true) :
     isDefEqCore mode env fuel d a b = .ok true ∧
     defEqListFueled mode env fuel d as bs = .ok true := by
@@ -1604,7 +1604,7 @@ theorem defEqList_step_inv {env : Env} {fuel d : Nat} {a b : Expr}
 /-- Inversion of the lazy delta same-head spine congruence: both sides
 are applications of the same constant, at pointwise-equivalent levels,
 with pairwise definitionally equal spines of equal length. -/
-theorem defeqSpine_inv {env : Env} {fuel d : Nat} {a b : Expr}
+theorem defeqSpine_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
     (h : defeqSpineFueled mode env fuel d a b = .ok true) :
     ∃ n us us', a.getAppFn = .const n us ∧ b.getAppFn = .const n us' ∧
       a.getAppArgs.length = b.getAppArgs.length ∧
@@ -1644,9 +1644,9 @@ theorem defeqSpine_inv {env : Env} {fuel d : Nat} {a b : Expr}
 /-- Inversion of one certification step, at a licensed walk: either the
 ι-slot licence fired (the binder's datum is `.never` and the walk went
 on without a run) or the certificate ran. -/
-theorem iotaCerts_step_inv_gate {env : Env} {fuel d : Nat} {lic : Bool}
-    {ty body : Expr} {m : BinderMeta} {arg : Expr}
-    {rest : List Expr}
+theorem iotaCerts_step_inv_gate {env : Env md} {fuel d : Nat} {lic : Bool}
+    {ty body : Expr md} {m : BinderMeta} {arg : Expr md}
+    {rest : List (Expr md)}
     (h : iotaCertsFueled mode env fuel d lic (.forallE ty body m) (arg :: rest) =
       .ok true) :
     ((lic && m.pw.isNever) = true ∧
@@ -1680,8 +1680,8 @@ theorem iotaCerts_step_inv_gate {env : Env} {fuel d : Nat} {lic : Bool}
 
 /-- Inversion of one certification step at an unlicensed walk (the
 rescue's synthetic certifications): the certificate ran. -/
-theorem iotaCerts_step_inv {env : Env} {fuel d : Nat}
-    {ty body : Expr} {m : BinderMeta} {arg : Expr} {rest : List Expr}
+theorem iotaCerts_step_inv {env : Env md} {fuel d : Nat}
+    {ty body : Expr md} {m : BinderMeta} {arg : Expr md} {rest : List (Expr md)}
     (h : iotaCertsFueled mode env fuel d false (.forallE ty body m) (arg :: rest) =
       .ok true) :
     ∃ ta, inferTypeIO mode env fuel d arg = .ok ta ∧
@@ -1694,7 +1694,7 @@ theorem iotaCerts_step_inv {env : Env} {fuel d : Nat}
 /-- Inversion of the unit-type check (task #161 item C1: the test is the
 pinned-name one): the head is `PUnit`, stored as an inductive, and its
 recursor `PUnit.rec` is stored with no indices and one zero-field rule. -/
-theorem isUnitLikeTy_inv {env : Env} {e : Expr}
+theorem isUnitLikeTy_inv {env : Env md} {e : Expr md}
     (h : isUnitLikeTy env e = true) :
     ∃ us cvi capsi cvr mI rP r, e = .const punitName us ∧
       env.find? punitName = some (.indInfo cvi capsi) ∧
@@ -1740,7 +1740,7 @@ head-symbol readers say "proof" — or both types' sorts are `Prop` by
 the slow branch.  The fast "not a proof" arm only ever answers
 `false`, so it contributes nothing here.  Ungated since 2026-09-06:
 the arms run in both modes, so no mode conjunct survives. -/
-theorem propIrrel_inv {env : Env} {fuel d : Nat} {a b : Expr}
+theorem propIrrel_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
     (h : propIrrelFueled mode env fuel d a b = .ok true) :
     (isProofFast env.find? a = true ∧ isProofFast env.find? b = true) ∨
     ∃ ta sta uT tb stb vT,
@@ -1835,7 +1835,7 @@ theorem propIrrel_inv {env : Env} {fuel d : Nat} {a b : Expr}
 /-- Inversion of a successful proof-irrelevance certification: either
 both sides' types whnf to the basis unit type, or both types' sorts are
 `Prop`. -/
-theorem proofIrrel_inv {env : Env} {fuel d : Nat} {a b : Expr}
+theorem proofIrrel_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
     (h : proofIrrelFueled mode env fuel d a b = .ok true) :
     ∃ ta wta,
       inferTypeIO mode env fuel d a = .ok ta ∧
@@ -1952,9 +1952,9 @@ theorem proofIrrel_inv {env : Env} {fuel d : Nat} {a b : Expr}
     exact Or.inr ⟨sta, uT, tb, stb, vT, rfl, hwta, heq1, rfl, hstb, hwtb, heq2⟩
 
 /-- `towerSlotsAll`, slot by slot. -/
-theorem towerSlotsAll_slot {env : Env} {T : Key} {nF : Nat}
+theorem towerSlotsAll_slot {env : Env md} {T : Key md} {nF : Nat}
     (h : towerSlotsAll env T nF = true) :
-    ∀ j, j < nF → ∃ e : ProjEntry, env.findProj? T j = some e := by
+    ∀ j, j < nF → ∃ e : ProjEntry md, env.findProj? T j = some e := by
   intro j hj
   have := List.all_eq_true.mp h j (List.mem_range.mpr hj)
   revert this
@@ -1965,9 +1965,9 @@ theorem towerSlotsAll_slot {env : Env} {T : Key} {nF : Nat}
 /-- `andRescueSlots`, unpacked: both of `And`'s slots are stored tower
 entries naming the rule's constructor at the major's parameter count,
 two fields, firing at `ust`. -/
-theorem andRescueSlots_inv {env : Env} {ctor : Key} {nP : Nat} {ust : List Level}
+theorem andRescueSlots_inv {env : Env md} {ctor : Key md} {nP : Nat} {ust : List Level}
     (h : andRescueSlots env ctor nP ust = true) :
-    ∀ j, j < 2 → ∃ e : ProjEntry, env.findProj? andName j = some e ∧
+    ∀ j, j < 2 → ∃ e : ProjEntry md, env.findProj? andName j = some e ∧
       e.ctor = ctor ∧ e.numParams = nP ∧ e.numFields = 2 ∧ e.fireOk ust = true := by
   intro j hj
   have := List.all_eq_true.mp h j (List.mem_range.mpr hj)
@@ -1980,7 +1980,7 @@ theorem andRescueSlots_inv {env : Env} {ctor : Key} {nP : Nat} {ust : List Level
     exact ⟨e, rfl, hb.1.1.1, hb.1.1.2, hb.1.2, hb.2⟩
 
 /-- `recSlotsAll`, slot by slot. -/
-theorem recSlotsAll_slot {env : Env} {T : Key} {nF : Nat}
+theorem recSlotsAll_slot {env : Env md} {T : Key md} {nF : Nat}
     (h : recSlotsAll env T nF = true) :
     ∀ j, j < nF → ∃ cv mI rP rules,
       env.find? (projFnName T j) = some (.recInfo cv mI rP rules) := by
@@ -1995,12 +1995,12 @@ theorem recSlotsAll_slot {env : Env} {T : Key} {nF : Nat}
     | _ => intro h; exact nomatch h
 
 /-- Invert the per-projection telescope certificates. -/
-theorem structEtaProjCerts_inv {env : Env} {fuel d : Nat} {T : Key}
-    {us' : List Level} {targs : List Expr} {b : Expr} {lpsT : List LevelParam} :
+theorem structEtaProjCerts_inv {env : Env md} {fuel d : Nat} {T : Key md}
+    {us' : List Level} {targs : List (Expr md)} {b : Expr md} {lpsT : List LevelParam} :
     ∀ (idxs : List Nat),
       structEtaProjCertsFueled mode env fuel d T us' targs b lpsT idxs = .ok true →
       ∀ i ∈ idxs,
-        (∃ (cvp : ConstantVal) (mIp rPp : Nat) (rulesp : List RecRule),
+        (∃ (cvp : ConstantVal md) (mIp rPp : Nat) (rulesp : List (RecRule md)),
           env.find? (projFnName T i) =
             some (.recInfo cvp mIp rPp rulesp) ∧
           cvp.levelParams = lpsT ∧
@@ -2047,11 +2047,11 @@ theorem structEtaProjCerts_inv {env : Env} {fuel d : Nat} {T : Key}
 
 set_option maxHeartbeats 3200000 in
 /-- Inversion of a successful structural eta certification. -/
-theorem structEtaCertWith_inv {env : Env} {fuel d : Nat} {a b wtb : Expr}
+theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
     (h : structEtaCertWithFueled mode env fuel d a b wtb = .ok true) :
-    ∃ (c : Key) (us : List Level) (cvc : ConstantVal) (cnP cnF : Nat)
-      (T : Key) (us' : List Level)
-      (cvT : ConstantVal) (caps : IndCaps),
+    ∃ (c : Key md) (us : List Level) (cvc : ConstantVal md) (cnP cnF : Nat)
+      (T : Key md) (us' : List Level)
+      (cvT : ConstantVal md) (caps : IndCaps md),
       a.getAppFn = .const c us ∧
       env.find? c = some (.ctorInfo cvc cnP cnF) ∧
       a.getAppArgs.length = cnP + cnF ∧
@@ -2247,7 +2247,7 @@ theorem structEtaCertWith_inv {env : Env} {fuel d : Nat} {a b wtb : Expr}
 /-- Inversion of the structure-eta certificate through its type
 reduction: the stuck side's type is inferred and reduced, and the
 `With` form of the certificate ran on the result. -/
-theorem structEtaCert_inv {env : Env} {fuel d : Nat} {a b : Expr}
+theorem structEtaCert_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
     (h : structEtaCertFueled mode env fuel d a b = .ok true) :
     ∃ tb wtb, inferTypeIO mode env fuel d b = .ok tb ∧
       whnf mode env fuel d tb = .ok wtb ∧
@@ -2271,10 +2271,10 @@ theorem structEtaCert_inv {env : Env} {fuel d : Nat} {a b : Expr}
   exact ⟨tb, wtb, rfl, hwtb, h⟩
 
 /-- Inversion of a successful unit-likeness certification. -/
-theorem structUnitCert_inv {env : Env} {fuel d : Nat} {a b : Expr}
+theorem structUnitCert_inv {env : Env md} {fuel d : Nat} {a b : Expr md}
     (h : structUnitCertFueled mode env fuel d a b = .ok true) :
-    ∃ (ta wta : Expr) (T : Key) (us' : List Level)
-      (cvT : ConstantVal) (caps : IndCaps) (tb wtb : Expr),
+    ∃ (ta wta : Expr md) (T : Key md) (us' : List Level)
+      (cvT : ConstantVal md) (caps : IndCaps md) (tb wtb : Expr md),
       inferTypeIO mode env fuel d a = .ok ta ∧
       whnf mode env fuel d ta = .ok wta ∧
       wta.getAppFn = .const T us' ∧
@@ -2360,7 +2360,7 @@ theorem structUnitCert_inv {env : Env} {fuel d : Nat} {a b : Expr}
     he1, he2, he3, he4, rfl, hwtb, hde, h⟩
 
 /-- Inversion of a successful eta certification. -/
-theorem etaCert_inv {env : Env} {fuel d : Nat} {ty₁ body₁ b : Expr}
+theorem etaCert_inv {env : Env md} {fuel d : Nat} {ty₁ body₁ b : Expr md}
     {m₁ : BinderMeta}
     (h : etaCertFueled mode env fuel d ty₁ body₁ m₁ b = .ok true) :
     ∃ tb ty₂ fb m₂,
@@ -2431,8 +2431,8 @@ theorem etaCert_inv {env : Env} {fuel d : Nat} {ty₁ body₁ b : Expr}
 type whnfs to a type application whose head has a native
 projection-table entry, and the result is the entry type's residual
 along the arguments and the subject. -/
-theorem inferTypeCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key} {i : Nat}
-    {e t : Expr}
+theorem inferTypeCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : Nat}
+    {e t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.proj sn i e) = .ok t) :
     ∃ tpe te T us entry,
       inferTypeCore mode env fuel d e = .ok tpe ∧
@@ -2503,7 +2503,7 @@ theorem inferTypeCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key} {i : Nat}
       · rw [if_neg hf] at h
         exact absurd h (by
           simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind])
-    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError Expr) = .ok t := by
+    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError (Expr md)) = .ok t := by
       by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
       · rw [if_pos hp, if_pos (hg hp)] at h
         exact h
@@ -2522,8 +2522,8 @@ can reach it.) -/
 
 /-- A stored constant's type has no fvars (`ConstWF`), after any level
 instantiation — the projection certificate's telescope (task #175 W6). -/
-theorem const_ty_hasFvar {env : Env} (henv : EnvWF env) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci) (us : List Level) :
+theorem const_ty_hasFvar {env : Env md} (henv : EnvWF env) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci) (us : List Level) :
     (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams
       us).hasFvar = false := by
   have hwf := henv _ (List.mem_of_find?_eq_some hf)
@@ -2533,8 +2533,8 @@ theorem const_ty_hasFvar {env : Env} (henv : EnvWF env) {n : Key}
 /-- A stored projection entry's body is well-formed (`EnvWF`'s table
 clause at the view, task #175 S1): fvar-free, level-defined,
 resolving, scoped at the parameters and the subject. -/
-theorem projEntry_body_wf {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry) :
+theorem projEntry_body_wf {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry) :
     entry.body.hasFvar = false ∧
     entry.body.allLevelParamsDefined entry.levelParams = true ∧
     entry.body.constsResolve env = true ∧
@@ -2549,8 +2549,8 @@ theorem projEntry_body_wf {env : Env} (henv : EnvWF env) {T : Key}
   exact this
 
 /-- The level-instantiated body has no fvars. -/
-theorem projEntry_body_hasFvar {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry)
+theorem projEntry_body_hasFvar {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry)
     (us : List Level) :
     (entry.body.instantiateLevelParams entry.levelParams us).hasFvar = false := by
   rw [Expr.hasFvar_instantiateLevelParams]
@@ -2558,8 +2558,8 @@ theorem projEntry_body_hasFvar {env : Env} (henv : EnvWF env) {T : Key}
 
 /-- The level-instantiated body is scoped at the parameters and the
 subject. -/
-theorem projEntry_body_looseBVars {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry)
+theorem projEntry_body_looseBVars {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry)
     (us : List Level) :
     (entry.body.instantiateLevelParams entry.levelParams us).looseBVarsBounded
       (entry.numParams + 1) = true := by
@@ -2570,8 +2570,8 @@ theorem projEntry_body_looseBVars {env : Env} (henv : EnvWF env) {T : Key}
 (task #175 S1): `ProjEntry.typeAt`'s single `instantiateList` is the
 telescope instantiation `instSpine` along the arguments and the
 subject, outermost first. -/
-theorem ProjEntry.typeAt_eq_instSpine (entry : ProjEntry) (us : List Level)
-    {targs : List Expr} (hlen : targs.length = entry.numParams) (pe : Expr) :
+theorem ProjEntry.typeAt_eq_instSpine (entry : ProjEntry md) (us : List Level)
+    {targs : List (Expr md)} (hlen : targs.length = entry.numParams) (pe : Expr md) :
     entry.typeAt us targs pe
       = Expr.instSpine (targs ++ [pe]) entry.numParams
           (entry.body.instantiateLevelParams entry.levelParams us) := by
@@ -2581,10 +2581,10 @@ theorem ProjEntry.typeAt_eq_instSpine (entry : ProjEntry) (us : List Level)
 
 /-- The projection's type commutes with the shift: the body is
 fvar-free, so the shift passes to the spine and the subject. -/
-theorem ProjEntry.typeAt_shiftFrom {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry)
-    (us : List Level) {p : Nat} {targs : List Expr}
-    (hlen : targs.length = entry.numParams) (pe : Expr) :
+theorem ProjEntry.typeAt_shiftFrom {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry)
+    (us : List Level) {p : Nat} {targs : List (Expr md)}
+    (hlen : targs.length = entry.numParams) (pe : Expr md) :
     Expr.shiftFrom p (entry.typeAt us targs pe)
       = entry.typeAt us (targs.map (Expr.shiftFrom p)) (Expr.shiftFrom p pe) := by
   rw [ProjEntry.typeAt_eq_instSpine entry us hlen pe,
@@ -2594,10 +2594,10 @@ theorem ProjEntry.typeAt_shiftFrom {env : Env} (henv : EnvWF env) {T : Key}
   rfl
 
 /-- The projection's type is scoped wherever its arguments are. -/
-theorem projEntry_typeAt_WScoped {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry)
-    (us : List Level) {d : Nat} {targs : List Expr}
-    (hlen : targs.length = entry.numParams) {pe : Expr}
+theorem projEntry_typeAt_WScoped {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry)
+    (us : List Level) {d : Nat} {targs : List (Expr md)}
+    (hlen : targs.length = entry.numParams) {pe : Expr md}
     (hargs : ∀ a ∈ targs, WScoped d a) (hpe : WScoped d pe) :
     WScoped d (entry.typeAt us targs pe) := by
   rw [ProjEntry.typeAt_eq_instSpine entry us hlen pe]
@@ -2608,10 +2608,10 @@ theorem projEntry_typeAt_WScoped {env : Env} (henv : EnvWF env) {T : Key}
   · rw [List.mem_singleton] at ha; subst ha; exact hpe
 
 /-- The projection's type is bvar-closed at bvar-closed arguments. -/
-theorem projEntry_typeAt_looseBVars {env : Env} (henv : EnvWF env) {T : Key}
-    {i : Nat} {entry : ProjEntry} (hf : env.findProj? T i = some entry)
-    (us : List Level) {targs : List Expr}
-    (hlen : targs.length = entry.numParams) {pe : Expr}
+theorem projEntry_typeAt_looseBVars {env : Env md} (henv : EnvWF env) {T : Key md}
+    {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry)
+    (us : List Level) {targs : List (Expr md)}
+    (hlen : targs.length = entry.numParams) {pe : Expr md}
     (hargs : ∀ a ∈ targs, a.looseBVarsBounded 0 = true)
     (hpe : pe.looseBVarsBounded 0 = true) :
     (entry.typeAt us targs pe).looseBVarsBounded 0 = true := by
@@ -2630,7 +2630,7 @@ theorem projEntry_typeAt_looseBVars {env : Env} (henv : EnvWF env) {T : Key}
 /-- Instantiating a `∀`-telescope at scoped arguments produces scoped
 domains and a scoped residual. -/
 theorem instPisAt_WScoped {d : Nat} :
-    ∀ (args : List Expr) (ty : Expr) {doms : List Expr} {res : Expr},
+    ∀ (args : List (Expr md)) (ty : Expr md) {doms : List (Expr md)} {res : Expr md},
       Expr.instPisAt args ty = some (doms, res) → WScoped d ty →
       (∀ a ∈ args, WScoped d a) →
       (∀ x ∈ doms, WScoped d x) ∧ WScoped d res
@@ -2667,7 +2667,7 @@ theorem instPisAt_WScoped {d : Nat} :
 /-- Peeling a `∀`-telescope along bounded arguments keeps the residual
 bvar-closed. -/
 theorem instPisAt_looseBVars :
-    ∀ (args : List Expr) (ty : Expr) {doms : List Expr} {res : Expr},
+    ∀ (args : List (Expr md)) (ty : Expr md) {doms : List (Expr md)} {res : Expr md},
       Expr.instPisAt args ty = some (doms, res) →
       ty.looseBVarsBounded 0 = true →
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
@@ -2701,13 +2701,13 @@ theorem instPisAt_looseBVars :
 
 /-- The constructor form of a literal is closed. -/
 theorem natLitToConstructor_WScoped (n : Nat) {d : Nat} :
-    WScoped d (natLitToConstructor n) := by
+    (WScoped (md := md)) d (natLitToConstructor n) := by
   cases n <;> simp [natLitToConstructor, WScoped]
 
 /-- Inversion of the literal-major conversion: either the one-layer
 `Nat` conversion applied, or the major was a supported string literal
 and the result is the reduced constructor form. -/
-theorem litMajorToCtorFueled_inv {env : Env} {fuel d : Nat} {e e₁ : Expr}
+theorem litMajorToCtorFueled_inv {env : Env md} {fuel d : Nat} {e e₁ : Expr md}
     (h : litMajorToCtorFueled mode env fuel d e = .ok e₁) :
     e₁ = litToCtorIfNat env e ∨
     ∃ s, e = .lit (.strVal s) ∧ strLitSupported env = true ∧
@@ -2736,7 +2736,7 @@ theorem litMajorToCtorFueled_inv {env : Env} {fuel d : Nat} {e e₁ : Expr}
 /-- Inversion of the projection-scrutinee literal conversion: either the
 identity, or the scrutinee was a supported string literal and the
 result is the reduced constructor form. -/
-theorem projLitToCtorFueled_inv {env : Env} {fuel d : Nat} {e e₁ : Expr}
+theorem projLitToCtorFueled_inv {env : Env md} {fuel d : Nat} {e e₁ : Expr md}
     (h : projLitToCtorFueled mode env fuel d e = .ok e₁) :
     e₁ = e ∨
     ∃ s, e = .lit (.strVal s) ∧ strLitSupported env = true ∧
@@ -2763,7 +2763,7 @@ theorem projLitToCtorFueled_inv {env : Env} {fuel d : Nat} {e e₁ : Expr}
     exact Or.inl h.symm
 
 /-- The literal-major conversion preserves well-scopedness. -/
-theorem litToCtorIfNat_WScoped {env : Env} {d : Nat} {e : Expr}
+theorem litToCtorIfNat_WScoped {env : Env md} {d : Nat} {e : Expr md}
     (hw : WScoped d e) : WScoped d (litToCtorIfNat env e) := by
   match e with
   | .lit (.natVal n) =>
@@ -2777,7 +2777,7 @@ theorem litToCtorIfNat_WScoped {env : Env} {d : Nat} {e : Expr}
     exact hw
 
 /-- The fast-path reducts are closed atoms. -/
-theorem natOpResult_shape {c : Key} {a b : Nat} {e₂ : Expr}
+theorem natOpResult_shape {c : Key md} {a b : Nat} {e₂ : Expr md}
     (h : natOpResult c a b = some e₂) :
     (∃ n, e₂ = .lit (.natVal n)) ∨ (∃ bn, e₂ = .const bn []) := by
   unfold natOpResult at h
@@ -2852,7 +2852,7 @@ constructors.  The strengthening of `natOpResult_shape` that a bridge
 needs in order to *denote* the reduct: `natOpGuard` pins exactly
 `boolTrueName`/`boolFalseName` (and only for `beq`/`ble`/div-mod), so
 knowing "some constant" is not enough. -/
-theorem natOpResult_atom {c : Key} {a b : Nat} {e₂ : Expr}
+theorem natOpResult_atom {c : Key md} {a b : Nat} {e₂ : Expr md}
     (h : natOpResult c a b = some e₂) :
     (∃ n, e₂ = .lit (.natVal n)) ∨
       ((c = natBeqName ∨ c = natBleName) ∧
@@ -2920,7 +2920,7 @@ theorem natOpResult_atom {c : Key} {a b : Nat} {e₂ : Expr}
 
 /-- Literal acceleration produces closed atoms: a literal or a
 `Bool`-constant head. -/
-theorem reduceNat_inv {env : Env} {fuel d : Nat} {e e₂ : Expr}
+theorem reduceNat_inv {env : Env md} {fuel d : Nat} {e e₂ : Expr md}
     (h : reduceNatFueled mode env fuel d e = .ok (some e₂)) :
     (∃ n, e₂ = .lit (.natVal n)) ∨ (∃ bn, e₂ = .const bn []) := by
   dsimp only [reduceNatFueled] at h
@@ -3030,8 +3030,8 @@ theorem reduceNat_inv {env : Env} {fuel d : Nat} {e e₂ : Expr}
 
 /-- Unfolding a definition at the head preserves well-scopedness (the
 stored value is closed by environment well-formedness). -/
-theorem unfoldDefinition_WScoped {env : Env} (henv : EnvWF env)
-    {d : Nat} {e e₂ : Expr}
+theorem unfoldDefinition_WScoped {env : Env md} (henv : EnvWF env)
+    {d : Nat} {e e₂ : Expr md}
     (h : unfoldDefinition env e = some e₂) (hw : WScoped d e) :
     WScoped d e₂ := by
   unfold unfoldDefinition at h
@@ -3073,11 +3073,11 @@ set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop preserve
 well-scopedness. -/
-theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
+theorem whnfPres_WScoped {env : Env md} (henv : EnvWF env) :
     ∀ (fuel : Nat),
-      (∀ {d : Nat} {e e' : Expr}, whnfCore mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnfCore mode env fuel d e = .ok e' →
         WScoped d e → WScoped d e') ∧
-      (∀ {d : Nat} {e e' : Expr}, whnf mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnf mode env fuel d e = .ok e' →
         WScoped d e → WScoped d e')
   | 0 => ⟨(fun {_ _ _} h _ => nomatch h), (fun {_ _ _} h _ => nomatch h)⟩
   | fuel + 1 => by
@@ -3181,7 +3181,7 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
       -- step budget (task #106), so this is an induction on that
       -- budget at the *same* knot fuel; `ihCore` covers the per-step
       -- head normalization.
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
+      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr md},
           whnfLoop (pureFns mode env fuel) env d n e = .ok e' →
           WScoped d e → WScoped d e' := by
         intro n
@@ -3200,21 +3200,21 @@ theorem whnfPres_WScoped {env : Env} (henv : EnvWF env) :
       exact hloop whnfLoopFuel h hw
 
 /-- Head normalization preserves well-scopedness. -/
-theorem whnfCore_WScoped {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnfCore_WScoped {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnfCore mode env fuel d e = .ok e') (hw : WScoped d e) : WScoped d e' :=
   (whnfPres_WScoped henv fuel).1 h hw
 
 /-- The reduction loop preserves well-scopedness. -/
-theorem whnf_WScoped {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnf_WScoped {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnf mode env fuel d e = .ok e' ) (hw : WScoped d e) : WScoped d e' :=
   (whnfPres_WScoped henv fuel).2 h hw
 
 /-- The major chain preserves well-scopedness (an instance of
 `prepareMajorFueled_ind`). -/
-theorem prepareMajorFueled_WScoped {env : Env} (henv : EnvWF env)
-    {fuel d : Nat} {recName : Key} {rules : List RecRule} {a m : Expr}
+theorem prepareMajorFueled_WScoped {env : Env md} (henv : EnvWF env)
+    {fuel d : Nat} {recName : Key md} {rules : List (RecRule md)} {a m : Expr md}
     (h : prepareMajorFueled mode env fuel d recName rules a = .ok m)
     (hw : WScoped d a) : WScoped d m :=
   prepareMajorFueled_ind h (WScoped d)

@@ -52,18 +52,18 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 rule list the caller installs.  (Moved to the base at task #161 S7 —
 `SetR/Install/ProjInstallS.lean` was its only home and both lanes'
 conses now name it.) -/
-abbrev projEntry (T : Key) (lps : List LevelParam) (pty : Expr)
-    (nP i : Nat) (rules : List RecRule) : ConstantInfo :=
+abbrev projEntry (T : Key md) (lps : List LevelParam) (pty : Expr md)
+    (nP i : Nat) (rules : List (RecRule md)) : ConstantInfo md :=
   .recInfo ⟨projFnName T i, lps, pty⟩ nP nP rules
 
 /-- **The `EnvFacts` cons at a projection-function entry** — Wall B's
 front door.  Parameterised by the rule list exactly as `projConsS` is,
 because the projection bottom fires *below* the cons. -/
-theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
-    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
-    {rules : List RecRule}
-    {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
-    {pty : Expr}
+theorem EnvFacts.consProjFn {env' : Env md} (m : EnvFacts env')
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {rules : List (RecRule md)}
+    {mcv : ConstantVal md} {mval : Expr md} {mhint : ReducibilityHint}
+    {pty : Expr md}
     (hfm : env'.find? (projModelName T i)
       = some (.defnInfo mcv mval mhint))
     (hmlps : mcv.levelParams = lps)
@@ -98,7 +98,7 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
     rw [hcval₀, cvalWith_ne hn]
   have hi : Installs env' m.cval cval₀ (projEntry T lps pty nP i rules) :=
     Installs.of_fresh hfresh0
-      (fun _ heq => ConstantInfo.noConfusion heq) hag
+      (fun _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq)) hag
   have hselfA : ∀ ψ : LevelParam → Nat,
       cval₀ (projFnName T i) ψ = m.cval (projModelName T i) ψ := by
     intro ψ
@@ -123,8 +123,8 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
       eq_of_beq hround]
     exact ht
   -- the two lookup shapes in the extended store
-  have hdown : ∀ (n : Key) (ci : ConstantInfo),
-      (⟨projEntry T lps pty nP i rules :: env'.consts⟩ : Env).find? n
+  have hdown : ∀ (n : Key md) (ci : ConstantInfo md),
+      (⟨projEntry T lps pty nP i rules :: env'.consts⟩ : Env md).find? n
         = some ci →
       (n = projFnName T i ∧ ci = projEntry T lps pty nP i rules) ∨
         (n ≠ projFnName T i ∧ env'.find? n = some ci) := by
@@ -158,9 +158,9 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
   · -- `EnvWF` at the extension
     refine EnvWF.cons m.wf ⟨hptyf, hptylp,
       Expr.constsResolve_mono hptyres, hptyb,
-      (fun cv2 v2 h2 heq => ConstantInfo.noConfusion heq), ?_,
-      (fun tbl heq => ConstantInfo.noConfusion heq),
-      (fun cv2 caps heq => ConstantInfo.noConfusion heq)⟩
+      (fun cv2 v2 h2 heq => ConstantInfo.noConfusion rfl (heq_of_eq heq)), ?_,
+      (fun tbl heq => ConstantInfo.noConfusion rfl (heq_of_eq heq)),
+      (fun cv2 caps heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
     intro cv2 mI2 rP2 rules2 heq r hr
     injection heq with h1 _ _ h4
     rw [← h4] at hr
@@ -217,7 +217,7 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
     · exact m.rec_params_le n cv mI rP rules₂ hf' r hr hfire
   · -- the projection table: the head is a recursor, not an entry
     exact ProjOkT.cons m.proj_ok hfresh0
-      (fun entry heq => ConstantInfo.noConfusion heq)
+      (fun entry heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
   · -- the `Nat`-op guard: the head is not a definition
     intro c hmem hst
     obtain ⟨cv, v, hh, hf⟩ := natOpStored_inv hst
@@ -231,13 +231,13 @@ theorem EnvFacts.consProjFn {env' : Env} (m : EnvFacts env')
 stored rule's constructor.  Both lanes' conses need them — the R lane
 inside `projConsS`, the P lane at `projCons` — and neither is
 semantic. -/
-theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env}
-    {T ctorName : Key} {lps : List LevelParam}
+theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
+    {T ctorName : Key md} {lps : List LevelParam}
     {nP nF i : Nat}
     (hwfE : EnvWF env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁) :
     EnvWF env₁ ∧
-      ∀ (cvR : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+      ∀ (cvR : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
         (env₁.consts.headD default) = .recInfo cvR mI rP rules →
         ∀ r ∈ rules, ∃ cvj cnP cnF,
           env'.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF) := by
@@ -266,9 +266,9 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env}
   refine ⟨?_, ?_⟩
   · refine EnvWF.cons hwfE ⟨hptyf, hptylp,
       Expr.constsResolve_mono hptyres, hptyb,
-      (fun cv2 v2 h2 heq => ConstantInfo.noConfusion heq), ?_,
-      (fun tbl heq => ConstantInfo.noConfusion heq),
-      (fun cv2 caps heq => ConstantInfo.noConfusion heq)⟩
+      (fun cv2 v2 h2 heq => ConstantInfo.noConfusion rfl (heq_of_eq heq)), ?_,
+      (fun tbl heq => ConstantInfo.noConfusion rfl (heq_of_eq heq)),
+      (fun cv2 caps heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
     intro cv2 mI2 rP2 rules2 heq r hr
     injection heq with h1 _ _ h4
     rw [← h4] at hr
@@ -292,7 +292,7 @@ projection conses read them and neither reading is semantic. -/
 /-- The model projection's own name is a `projFwd` fixed point: it is
 not the family, not the constructor (their stored *kinds* differ), and
 not shaped like a public projection. -/
-theorem projFwd_model_self {T ctorName : Key} {nF i : Nat}
+theorem projFwd_model_self {T ctorName : Key md} {nF i : Nat}
     (hC : projModelName T i ≠ ctorName) :
     projFwd T ctorName nF (projModelName T i) = projModelName T i := by
   unfold projFwd

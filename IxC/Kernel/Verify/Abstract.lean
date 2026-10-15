@@ -30,7 +30,7 @@ variable {mode : CheckMode}
 open Expr
 
 /-- Every reachable `fvar` leaf with index `d` is exactly `fvar d ty`. -/
-@[expose] def Expr.fvarConsistent (d : Nat) (ty : Expr) : Expr → Prop
+@[expose] def Expr.fvarConsistent (d : Nat) (ty : Expr md) : Expr md → Prop
   | .fvar idx ty' => idx = d → ty' = ty
   | .app f a => fvarConsistent d ty f ∧ fvarConsistent d ty a
   | .lam t b _ | .forallE t b _ => fvarConsistent d ty t ∧ fvarConsistent d ty b
@@ -39,8 +39,8 @@ open Expr
   | _ => True
 
 /-- Closing then re-opening a binder body is the identity. -/
-theorem abstract1_instantiate1 {d : Nat} {ty : Expr} :
-    ∀ (e : Expr) (k : Nat), fvarConsistent d ty e → e.looseBVarsBounded k = true →
+theorem abstract1_instantiate1 {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md) (k : Nat), fvarConsistent d ty e → e.looseBVarsBounded k = true →
       (e.abstract1 d k).instantiate1 (.fvar d ty) k = e := by
   intro e
   induction e <;> intro k hc hb <;>
@@ -57,7 +57,7 @@ theorem abstract1_instantiate1 {d : Nat} {ty : Expr} :
 
 /-- Abstracting away the top variable lowers the scope bound. -/
 theorem WScoped.abstract1 {d : Nat} :
-    ∀ {e : Expr} (k : Nat), WScoped (d + 1) e → WScoped d (e.abstract1 d k) := by
+    ∀ {e : Expr md} (k : Nat), WScoped (d + 1) e → WScoped d (e.abstract1 d k) := by
   intro e
   induction e <;> intro k hw <;>
     simp_all [Expr.abstract1, WScoped]
@@ -68,9 +68,9 @@ theorem WScoped.abstract1 {d : Nat} :
       exact ⟨by omega, hw.2⟩
 
 /-- Consistency at `d` survives abstracting a *different* index. -/
-theorem fvarConsistent_abstract1 {d d' : Nat} {ty : Expr}
+theorem fvarConsistent_abstract1 {d d' : Nat} {ty : Expr md}
     (hne : d ≠ d') :
-    ∀ (e : Expr) (k : Nat), fvarConsistent d ty e →
+    ∀ (e : Expr md) (k : Nat), fvarConsistent d ty e →
       fvarConsistent d ty (e.abstract1 d' k) := by
   intro e
   induction e <;> intro k hc <;>
@@ -81,8 +81,8 @@ theorem fvarConsistent_abstract1 {d d' : Nat} {ty : Expr}
     · simpa [Expr.fvarConsistent] using hc
 
 /-- Opening lowers the loose-bvar bound by one. -/
-theorem looseBVarsBounded_instantiate1 {d : Nat} {ty : Expr} :
-    ∀ (e : Expr) (k : Nat), e.looseBVarsBounded (k + 1) = true →
+theorem looseBVarsBounded_instantiate1 {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md) (k : Nat), e.looseBVarsBounded (k + 1) = true →
       (e.instantiate1 (.fvar d ty) k).looseBVarsBounded k = true := by
   intro e
   induction e <;> intro k hb <;>
@@ -94,7 +94,7 @@ theorem looseBVarsBounded_instantiate1 {d : Nat} {ty : Expr} :
 
 /-- Abstracting raises the loose-bvar bound by one. -/
 theorem looseBVarsBounded_abstract1 {d : Nat} :
-    ∀ (e : Expr) (k : Nat), e.looseBVarsBounded k = true →
+    ∀ (e : Expr md) (k : Nat), e.looseBVarsBounded k = true →
       (e.abstract1 d k).looseBVarsBounded (k + 1) = true := by
   intro e
   induction e <;> intro k hb <;>
@@ -110,8 +110,8 @@ typed the node (which stays, with the display name normalized to the
 type's head).  Task #175 wiring W5: the elimination fallbacks are
 gone, so this is the only accepting arm; task #175 tower-flag: every
 stored table is one, so the entry's existence is the whole test. -/
-theorem annotateCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
-    {i : Nat} {e e' : Expr}
+theorem annotateCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
+    {i : Nat} {e e' : Expr md}
     (h : annotateCore mode env (fuel + 1) d (.proj sn i e) = .ok e') :
     ∃ e₂ tt te, annotateCore mode env fuel d e = .ok e₂ ∧
       inferTypeIO mode env fuel d e₂ = .ok tt ∧ whnf mode env fuel d tt = .ok te ∧
@@ -170,7 +170,7 @@ theorem annotateCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
 
 /-- Inversion for `annotate` on applications: the two annotated subterms
 are reassembled, and the application-rule check ran successfully. -/
-theorem annotateCore_app_inv {env : Env} {fuel d : Nat} {f a e' : Expr}
+theorem annotateCore_app_inv {env : Env md} {fuel d : Nat} {f a e' : Expr md}
     (h : annotateCore mode env (fuel + 1) d (.app f a) = .ok e') :
     ∃ f' a', annotateCore mode env fuel d f = .ok f' ∧
       annotateCore mode env fuel d a = .ok a' ∧
@@ -199,8 +199,8 @@ back into the clause — `ensure_sort_core(infer(ty'))`, `infer(v')`,
 `inferBody`'s own `.letE` arm therefore never sees the node.  The four
 extra conjuncts are back with it; consumers that do not need them
 discard them with `-`. -/
-theorem annotateCore_letE_inv {env : Env} {fuel d : Nat}
-    {ty v b e' : Expr} {l : LetMeta}
+theorem annotateCore_letE_inv {env : Env md} {fuel d : Nat}
+    {ty v b e' : Expr md} {l : LetMeta}
     (h : annotateCore mode env (fuel + 1) d (.letE ty v b l) = .ok e') :
     ∃ ty' v', annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel d v = .ok v' ∧
@@ -260,8 +260,8 @@ battery) read it off the rebuilt node instead. -/
 /-- Inversion for `annotate` on ∀-binders: the domain and the opened
 body are annotated and the node is rebuilt, carrying *some* prop-ness
 datum (the P5 write at the verified modes, the input datum otherwise). -/
-theorem annotateCore_forallE_inv {env : Env} {fuel d : Nat}
-    {ty body e' : Expr} {m : BinderMeta}
+theorem annotateCore_forallE_inv {env : Env md} {fuel d : Nat}
+    {ty body e' : Expr md} {m : BinderMeta}
     (h : annotateCore mode env (fuel + 1) d (.forallE ty body m) = .ok e') :
     ∃ ty' body' pw, annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel (d + 1)
@@ -292,8 +292,8 @@ theorem annotateCore_forallE_inv {env : Env} {fuel d : Nat}
     exact ⟨ty', body', m.pw, rfl, hbody, h.symm⟩
 
 /-- Inversion for `annotate` on λ-binders (the ∀ twin; `annotPwLam`). -/
-theorem annotateCore_lam_inv {env : Env} {fuel d : Nat}
-    {ty body e' : Expr} {m : BinderMeta}
+theorem annotateCore_lam_inv {env : Env md} {fuel d : Nat}
+    {ty body e' : Expr md} {m : BinderMeta}
     (h : annotateCore mode env (fuel + 1) d (.lam ty body m) = .ok e') :
     ∃ ty' body' pw, annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel (d + 1)
@@ -323,8 +323,8 @@ theorem annotateCore_lam_inv {env : Env} {fuel d : Nat}
     simp only [pure, Except.pure, Except.ok.injEq] at h
     exact ⟨ty', body', m.pw, rfl, hbody, h.symm⟩
 
-theorem annotateCore_WScoped {env : Env} :
-    ∀ (fuel : Nat) (e : Expr) {d : Nat} {e' : Expr},
+theorem annotateCore_WScoped {env : Env md} :
+    ∀ (fuel : Nat) (e : Expr md) {d : Nat} {e' : Expr md},
       annotateCore mode env fuel d e = .ok e' → WScoped d e → WScoped d e'
   | 0, _, _, _, h, _ => by simp [annotateCore_zero, throw, throwThe,
       MonadExceptOf.throw] at h
@@ -410,8 +410,8 @@ theorem annotateCore_WScoped {env : Env} :
     exact annotateCore_WScoped fuel _ hb
       (WScoped.instantiate1_gen hw.2.1 0 hw.2.2)
 
-theorem annotateCore_looseBVars {env : Env} :
-    ∀ (fuel : Nat) (e : Expr) {d : Nat} {e' : Expr},
+theorem annotateCore_looseBVars {env : Env md} :
+    ∀ (fuel : Nat) (e : Expr md) {d : Nat} {e' : Expr md},
       annotateCore mode env fuel d e = .ok e' → e.looseBVarsBounded 0 = true →
       e'.looseBVarsBounded 0 = true
   | 0, _, _, _, h, _ => by simp [annotateCore_zero, throw, throwThe,
@@ -507,7 +507,7 @@ captures exactly what `FvarsOk` can see, so `FvarsOk` transports across it.
 
 /-- Same constructor skeleton and identical `fvar`/`bvar` leaves;
 binder metadata may differ. -/
-def Expr.LeafEquiv : Expr → Expr → Prop
+def Expr.LeafEquiv : Expr md → Expr md → Prop
   | .bvar i, .bvar j => i = j
   | .fvar idx ty, .fvar idx' ty' => idx = idx' ∧ ty = ty'
   | .sort _, .sort _ => True
@@ -521,7 +521,7 @@ def Expr.LeafEquiv : Expr → Expr → Prop
   | .proj _ _ e, .proj _ _ e' => LeafEquiv e e'
   | _, _ => False
 
-theorem Expr.LeafEquiv.refl : ∀ (e : Expr), Expr.LeafEquiv e e := by
+theorem Expr.LeafEquiv.refl : ∀ (e : Expr md), Expr.LeafEquiv e e := by
   intro e
   induction e <;> simp_all [Expr.LeafEquiv]
 

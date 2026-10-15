@@ -57,8 +57,8 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The reading's telescope -/
 
@@ -90,8 +90,8 @@ theorem PiTeleAV.succ_inv {k : Nat} {T : AnnotTerm} {Γ : List AnnotTerm}
 `stripPis_denoteTele`'s transpose, move for move. -/
 
 theorem stripPis_denotePTele :
-    ∀ (k : Nat) {e : Expr} {j : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr}
+    ∀ (k : Nat) {e : Expr md} {j : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md}
       {E : AnnotTerm},
       e.stripPis k = some (bs, body) →
       denoteMeta acval env φ j e = some E →
@@ -99,7 +99,7 @@ theorem stripPis_denotePTele :
         PiTeleAV k E Γ C ∧ Γ.length = k ∧
         denoteMeta acval env φ (j + k)
           (Expr.instSeq (openFvars j k) (k - 1) body) = some C ∧
-        ∀ (i0 : Nat) (b : Expr × BinderMeta), bs[i0]? = some b →
+        ∀ (i0 : Nat) (b : Expr md × BinderMeta), bs[i0]? = some b →
           denoteMeta acval env φ (j + i0)
             (Expr.instSeq (openFvars j i0) (i0 - 1) b.1) =
             some (Γ.getD (k - 1 - i0) default) := by

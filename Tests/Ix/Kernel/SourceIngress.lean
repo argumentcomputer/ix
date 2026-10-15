@@ -233,7 +233,7 @@ def sharedDag (n : Nat) : Ix.Expr := Id.run do
   for _ in [0:n] do e := Ix.Expr.mkApp e e
   return e
 
-def treeSize : Ix.Kernel.Expr → Nat
+def treeSize : Ix.Kernel.Expr .source → Nat
   | .app f a => treeSize f + treeSize a + 1
   | _ => 1
 

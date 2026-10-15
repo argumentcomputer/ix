@@ -46,8 +46,8 @@ open Ix.Kernel (CheckMode Env Expr Key Level inferTypeCore whnf
 
 /-- The sort of `e`'s **type**, as the checker computes it: infer,
 whnf to a sort, evaluate the ground level. -/
-def sortOfE (mode : CheckMode) (env : Env) (φ : LevelParam → Nat)
-    (fuel d : Nat) (e : Expr) : Option Nat :=
+def sortOfE (mode : CheckMode) (env : Env md) (φ : LevelParam → Nat)
+    (fuel d : Nat) (e : Expr md) : Option Nat :=
   match (inferTypeCore mode env fuel d e).toOption with
   | none => none
   | some t =>
@@ -57,8 +57,8 @@ def sortOfE (mode : CheckMode) (env : Env) (φ : LevelParam → Nat)
 
 /-- The λ-body's codomain sort: the sort of the body's *type* — the
 #152 chain fact, computed per node. -/
-def lamSortE (mode : CheckMode) (env : Env) (φ : LevelParam → Nat)
-    (fuel d : Nat) (body : Expr) : Option Nat :=
+def lamSortE (mode : CheckMode) (env : Env md) (φ : LevelParam → Nat)
+    (fuel d : Nat) (body : Expr md) : Option Nat :=
   match (inferTypeCore mode env fuel d body).toOption with
   | none => none
   | some bt => sortOfE mode env φ fuel d bt
@@ -89,9 +89,9 @@ computed by the checker's own functions and every constant leaf drawn
 from the canonical annotated valuation.  Clause for clause the
 `denote` recursion (`IxC/Kernel/Verify/Denote.lean`), so the two erase
 pointwise (`denoteAnnot_erase`). -/
-def denoteAnnot (mode : CheckMode) (acval : Key → (LevelParam → Nat) → AnnotTerm)
-    (env : Env) (φ : LevelParam → Nat) (fuel : Nat) :
-    (d : Nat) → Expr → Option AnnotTerm
+def denoteAnnot (mode : CheckMode) (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+    (env : Env md) (φ : LevelParam → Nat) (fuel : Nat) :
+    (d : Nat) → Expr md → Option AnnotTerm
   | _, .sort u => some (.sort (u.eval φ))
   | d, .fvar idx _ => some (.bvar (d - 1 - idx))
   | _, .const n us =>
@@ -190,10 +190,10 @@ theorem charListAV_erase {nilA consA ofNatA za sa : AnnotTerm}
 the denotation, exactly (no ζ slack — `denoteAnnot`'s `letE` clause is
 structural). -/
 theorem denoteAnnot_erase {mode : CheckMode}
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
-    {env : Env} {φ : LevelParam → Nat} {fuel : Nat}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal md}
+    {env : Env md} {φ : LevelParam → Nat} {fuel : Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ) :
-    ∀ (d : Nat) (e : Expr) {ea : AnnotTerm},
+    ∀ (d : Nat) (e : Expr md) {ea : AnnotTerm},
       denoteAnnot mode acval env φ fuel d e = some ea →
       denote cval env φ d e = some ea.erase := by
   intro d e

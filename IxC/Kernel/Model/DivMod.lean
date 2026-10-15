@@ -41,7 +41,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The names a clause block reads -/
 
@@ -50,7 +50,7 @@ and its two constructors, the two `Bool` constructors, the guard's
 `Nat.ble`, the operation itself, and its recurrence dependencies.
 (`natBleName` is in `natOpDeps c` for every WF-recursive `c`, but it is
 listed here too so the congruence's users need not know that.) -/
-def dmValNames (c : Key) : List Key :=
+def dmValNames (c : Key md) : List (Key md) :=
   Ix.Kernel.natName :: Ix.Kernel.boolTrueName :: Ix.Kernel.boolFalseName ::
     Ix.Kernel.natZeroName :: Ix.Kernel.natSuccName :: Ix.Kernel.natBleName ::
     c :: Ix.Kernel.natOpDeps c
@@ -63,7 +63,7 @@ set_option linter.unusedSimpArgs false in
 /-- **The clauses read the valuation only at `dmValNames`.**  Proved
 per operation: with `c` concrete the `if`-chain reduces to one branch,
 and that branch's heads are exactly the ones supplied. -/
-theorem divModClausesV_congr {val val' : Key → V} {c : Key} {x y : V}
+theorem divModClausesV_congr {val val' : Key md → V} {c : Key md} {x y : V}
     (hc : c ∈ Ix.Kernel.natDivModNames)
     (h : ∀ n ∈ dmValNames c, val n = val' n) :
     DivModClausesV V val c x y ↔ DivModClausesV V val' c x y := by
@@ -79,46 +79,46 @@ theorem divModClausesV_congr {val val' : Key → V} {c : Key} {x y : V}
       from by
     simpa [Ix.Kernel.natDivModNames] using hc) with
     rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-  · have hc' := h Ix.Kernel.natDivName (by decide)
-    have hSub := h Ix.Kernel.natSubName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub]
-  · have hc' := h Ix.Kernel.natModName (by decide)
-    have hSub := h Ix.Kernel.natSubName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub]
-  · have hc' := h Ix.Kernel.natGcdName (by decide)
-    have hMod := h Ix.Kernel.natModName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hMod]
-  · have hc' := h Ix.Kernel.natLandName (by decide)
-    have hAdd := h Ix.Kernel.natAddName (by decide)
-    have hMul := h Ix.Kernel.natMulName (by decide)
-    have hDiv := h Ix.Kernel.natDivName (by decide)
-    have hMod := h Ix.Kernel.natModName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
+  · have hc' := h Ix.Kernel.natDivName (by (cases md <;> decide))
+    have hSub := h Ix.Kernel.natSubName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub]
+  · have hc' := h Ix.Kernel.natModName (by (cases md <;> decide))
+    have hSub := h Ix.Kernel.natSubName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub]
+  · have hc' := h Ix.Kernel.natGcdName (by (cases md <;> decide))
+    have hMod := h Ix.Kernel.natModName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hMod]
+  · have hc' := h Ix.Kernel.natLandName (by (cases md <;> decide))
+    have hAdd := h Ix.Kernel.natAddName (by (cases md <;> decide))
+    have hMul := h Ix.Kernel.natMulName (by (cases md <;> decide))
+    have hDiv := h Ix.Kernel.natDivName (by (cases md <;> decide))
+    have hMod := h Ix.Kernel.natModName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
       hMul, hDiv, hMod]
-  · have hc' := h Ix.Kernel.natLorName (by decide)
-    have hAdd := h Ix.Kernel.natAddName (by decide)
-    have hSub := h Ix.Kernel.natSubName (by decide)
-    have hMul := h Ix.Kernel.natMulName (by decide)
-    have hDiv := h Ix.Kernel.natDivName (by decide)
-    have hMod := h Ix.Kernel.natModName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
+  · have hc' := h Ix.Kernel.natLorName (by (cases md <;> decide))
+    have hAdd := h Ix.Kernel.natAddName (by (cases md <;> decide))
+    have hSub := h Ix.Kernel.natSubName (by (cases md <;> decide))
+    have hMul := h Ix.Kernel.natMulName (by (cases md <;> decide))
+    have hDiv := h Ix.Kernel.natDivName (by (cases md <;> decide))
+    have hMod := h Ix.Kernel.natModName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
       hSub, hMul, hDiv, hMod]
-  · have hc' := h Ix.Kernel.natXorName (by decide)
-    have hAdd := h Ix.Kernel.natAddName (by decide)
-    have hMul := h Ix.Kernel.natMulName (by decide)
-    have hDiv := h Ix.Kernel.natDivName (by decide)
-    have hMod := h Ix.Kernel.natModName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
+  · have hc' := h Ix.Kernel.natXorName (by (cases md <;> decide))
+    have hAdd := h Ix.Kernel.natAddName (by (cases md <;> decide))
+    have hMul := h Ix.Kernel.natMulName (by (cases md <;> decide))
+    have hDiv := h Ix.Kernel.natDivName (by (cases md <;> decide))
+    have hMod := h Ix.Kernel.natModName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hAdd,
       hMul, hDiv, hMod]
-  · have hc' := h Ix.Kernel.natShiftLeftName (by decide)
-    have hSub := h Ix.Kernel.natSubName (by decide)
-    have hMul := h Ix.Kernel.natMulName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub,
+  · have hc' := h Ix.Kernel.natShiftLeftName (by (cases md <;> decide))
+    have hSub := h Ix.Kernel.natSubName (by (cases md <;> decide))
+    have hMul := h Ix.Kernel.natMulName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub,
       hMul]
-  · have hc' := h Ix.Kernel.natShiftRightName (by decide)
-    have hSub := h Ix.Kernel.natSubName (by decide)
-    have hDiv := h Ix.Kernel.natDivName (by decide)
-    simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub,
+  · have hc' := h Ix.Kernel.natShiftRightName (by (cases md <;> decide))
+    have hSub := h Ix.Kernel.natSubName (by (cases md <;> decide))
+    have hDiv := h Ix.Kernel.natDivName (by (cases md <;> decide))
+    cases md <;> simp +decide only [DivModClausesV, if_false, if_true, hT, hF, hZ, hS, hB, hc', hSub,
       hDiv]
 
 /-! ## Every mentioned head is stored -/
@@ -128,7 +128,7 @@ inversion supplies the numeral heads (`natLitSupported`), the
 dependencies, and — because a WF-recursive name is in the `Bool`
 branch of the guard — the two `Bool` constructors; the operation
 itself is stored by hypothesis. -/
-theorem dmValNames_stored {c : Key} (hc : c ∈ Ix.Kernel.natDivModNames)
+theorem dmValNames_stored {c : Key md} (hc : c ∈ Ix.Kernel.natDivModNames)
     (hg : natOpGuard env c = true) (hcs : (env.find? c).isSome = true) :
     ∀ n ∈ dmValNames c, (env.find? n).isSome = true := by
   obtain ⟨hs, hdeps, hbool⟩ := Ix.Kernel.natOpGuard_inv hg
@@ -143,7 +143,7 @@ theorem dmValNames_stored {c : Key} (hc : c ∈ Ix.Kernel.natDivModNames)
         c = Ix.Kernel.natShiftLeftName ∨ c = Ix.Kernel.natShiftRightName
         from by
       simpa [Ix.Kernel.natDivModNames] using hc) with
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (cases md <;> decide)
   intro n hn
   simp only [dmValNames, List.mem_cons] at hn
   rcases hn with rfl | rfl | rfl | rfl | rfl | rfl | rfl | hn
@@ -167,15 +167,15 @@ extension: the guard by `natOpGuard_cons`, the clauses by
 move. -/
 theorem divMod_entry_cons {m : EnvModel V env} {φ : LevelParam → Nat}
     (hprev : DivMod m φ)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
-    {c : Key} (hcN : c ∈ Ix.Kernel.natDivModNames) (hne : c ≠ c₀.name)
-    {cv' : ConstantVal} {v' : Expr} {hint' : ReducibilityHint}
-    (hf₂ : (⟨c₀ :: env.consts⟩ : Env).find? c
+    {c : Key md} (hcN : c ∈ Ix.Kernel.natDivModNames) (hne : c ≠ c₀.name)
+    {cv' : ConstantVal md} {v' : Expr md} {hint' : ReducibilityHint}
+    (hf₂ : (⟨c₀ :: env.consts⟩ : Env md).find? c
       = some (.defnInfo cv' v' hint')) :
-    natOpGuard (⟨c₀ :: env.consts⟩ : Env) c = true ∧
+    natOpGuard (⟨c₀ :: env.consts⟩ : Env md) c = true ∧
     ∀ (ρ : Nat → V) (x y : V),
       x ∈ˢ interp V ρ (m₂.acval Ix.Kernel.natName φ) →
       y ∈ˢ interp V ρ (m₂.acval Ix.Kernel.natName φ) →
@@ -209,7 +209,7 @@ theorem divMod_entry_cons {m : EnvModel V env} {φ : LevelParam → Nat}
 except a WF operation's own install discharges its obligation here. -/
 theorem divMod_cons_fresh {m : EnvModel V env} {φ : LevelParam → Nat}
     (hprev : DivMod m φ)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv v hint, c₀ ≠ .defnInfo cv v hint) ∨
       c₀.name ∉ Ix.Kernel.natDivModNames)
@@ -237,7 +237,7 @@ the cons *is* `Eq`, which is the basis install's own case and is
 excluded by the premise's shape there.) -/
 theorem eqLaw_cons_fresh {m : EnvModel V env}
     (hprev : EqLaw m)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hne : eqName ≠ c₀.name)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -258,7 +258,7 @@ needed: `Eq`'s pin is an `indInfo`, so a `defn`/`thm`/`axiom`/`opaque`
 cons named `Eq` makes the law's own premise false. -/
 theorem eqLaw_cons_valueKind {m : EnvModel V env}
     (hprev : EqLaw m)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -289,15 +289,15 @@ standard/`trustCompiler`/`ofReduce*` family, none of which is a reduce
 operation). -/
 theorem reduceOps_entry_cons {m : EnvModel V env}
     (hprev : ReduceOps m)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A)
-    {c : Key} (hcN : c ∈ Ix.Kernel.reduceOpNames) (hne : c ≠ c₀.name)
-    {cv : ConstantVal}
-    (hf₂ : (⟨c₀ :: env.consts⟩ : Env).find? c = some (.axiomInfo cv))
+    {c : Key md} (hcN : c ∈ Ix.Kernel.reduceOpNames) (hne : c ≠ c₀.name)
+    {cv : ConstantVal md}
+    (hf₂ : (⟨c₀ :: env.consts⟩ : Env md).find? c = some (.axiomInfo cv))
     (hpin : ConstantVal.matchesPin cv (Ix.Kernel.reduceOpCvA c) = true) :
-    ((⟨c₀ :: env.consts⟩ : Env).find?
+    ((⟨c₀ :: env.consts⟩ : Env md).find?
         (Ix.Kernel.reduceElemName c)).isSome = true ∧
       ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (x : V),
         x ∈ˢ interp V ρ (m₂.acval (Ix.Kernel.reduceElemName c) ψ) →
@@ -335,7 +335,7 @@ standard/`trustCompiler`/`ofReduce*` family, none of which is a reduce
 operation). -/
 theorem reduceOps_cons_fresh {m : EnvModel V env}
     (hprev : ReduceOps m)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hnothead : (∀ cv, c₀ ≠ .axiomInfo cv) ∨
       c₀.name ∉ Ix.Kernel.reduceOpNames)

@@ -44,7 +44,7 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The field walk's gradings and equalities, by position** —
@@ -55,31 +55,31 @@ theorem fieldGradeFire {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {rP cnP cnF : Nat}
     -- the statement frame
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped (rP + cnF) x)
     (hleafClosed : ∀ l, (∃ x ∈ fvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvs)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Tstmt : AnnotTerm} {Γs : List AnnotTerm} {Rbody : AnnotTerm}
     (htowerS : PiTeleAV (rP + cnF) Tstmt Γs Rbody)
     (hokTst : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default))
     -- the constructor's run at the statement frame
-    {ctyR : Expr} (hCwR : ctyR.hasFvar = false)
+    {ctyR : Expr md} (hCwR : ctyR.hasFvar = false)
     (hCbR : ctyR.looseBVarsBounded 0 = true)
     {TVj : AnnotTerm}
     (hTVjK : denoteMeta m.acval env φ (rP + cnF) ctyR = some TVj)
     (hokTVj : ∀ σ : Nat → V, WellDenotedV V σ TVj)
-    {sp : List Expr} (hsplen : sp.length = cnP + cnF)
-    (hspScope : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)
+    (hspScope : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true)
     (hspFld : ∀ j, j < cnF → sp[cnP + j]? = fvs[rP + j]?)
-    {cdoms : List Expr} {cres : Expr}
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     -- the field domains' scope and leaves (`zipFieldTermEq`'s first
     -- two conjuncts, which the zipper computes anyway)

@@ -34,7 +34,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The small numerals, unfolded -/
 
@@ -83,7 +83,7 @@ theorem divModClauses_gcd {x y : V}
       SetTheory.app (SetTheory.app
         (interp V ρ (m.acval Ix.Kernel.natGcdName φ)) x) y = y) := by
   rw [natLit_one]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 /-- `Nat.shiftLeft`'s two clauses. -/
 theorem divModClauses_shiftLeft {x y : V}
@@ -110,7 +110,7 @@ theorem divModClauses_shiftLeft {x y : V}
       SetTheory.app (SetTheory.app
         (interp V ρ (m.acval Ix.Kernel.natShiftLeftName φ)) x) y = x) := by
   rw [natLit_one, natLit_two]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 /-- `Nat.shiftRight`'s two clauses. -/
 theorem divModClauses_shiftRight {x y : V}
@@ -138,7 +138,7 @@ theorem divModClauses_shiftRight {x y : V}
         (interp V ρ (m.acval Ix.Kernel.natShiftRightName φ)) x) y
         = x) := by
   rw [natLit_one, natLit_two]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 /-- `Nat.land`'s two clauses. -/
 theorem divModClauses_land {x y : V}
@@ -179,7 +179,7 @@ theorem divModClauses_land {x y : V}
         (interp V ρ (m.acval Ix.Kernel.natLandName φ)) x) y
         = interp V ρ (m.acval Ix.Kernel.natZeroName φ)) := by
   rw [natLit_one, natLit_two]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 /-- `Nat.lor`'s two clauses. -/
 theorem divModClauses_lor {x y : V}
@@ -229,7 +229,7 @@ theorem divModClauses_lor {x y : V}
       SetTheory.app (SetTheory.app
         (interp V ρ (m.acval Ix.Kernel.natLorName φ)) x) y = y) := by
   rw [natLit_one, natLit_two]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 /-- `Nat.xor`'s two clauses. -/
 theorem divModClauses_xor {x y : V}
@@ -272,7 +272,7 @@ theorem divModClauses_xor {x y : V}
       SetTheory.app (SetTheory.app
         (interp V ρ (m.acval Ix.Kernel.natXorName φ)) x) y = y) := by
   rw [natLit_one, natLit_two]
-  simpa +decide only [DivModClausesV, if_false, if_true] using h
+  cases md <;> simpa +decide only [DivModClausesV, if_false, if_true] using h
 
 end Unpack
 
@@ -283,9 +283,9 @@ variable {m : EnvModel V env}
 /-- The common induction for `Nat.div` and `Nat.mod` (they share their
 guards and their step argument) — `natOpV_divmod`'s mirror. -/
 theorem natOpV_divmod (hops : NatOps m φ) (hnh : NatHeads m φ)
-    (hval : AcvalValid m) (hdm : DivMod m φ) {c : Key}
+    (hval : AcvalValid m) (hdm : DivMod m φ) {c : Key md}
     (hc : c = Ix.Kernel.natDivName ∨ c = Ix.Kernel.natModName)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? c = some (.defnInfo cv v hint)) (ρ : Nat → V) :
     ∀ a b : Nat,
       SetTheory.app (SetTheory.app (interp V ρ (m.acval c φ))
@@ -294,12 +294,12 @@ theorem natOpV_divmod (hops : NatOps m φ) (hnh : NatHeads m φ)
       = interp V ρ (natLit m φ
           (if c = Ix.Kernel.natDivName then a / b else a % b)) := by
   have hcmem : c ∈ Ix.Kernel.natDivModNames := by
-    rcases hc with rfl | rfl <;> decide
+    rcases hc with rfl | rfl <;> (cases md <;> decide)
   obtain ⟨hg, hclauses⟩ := hdm c hcmem cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   have hdepmem : Ix.Kernel.natSubName ∈ Ix.Kernel.natOpDeps c ∧
       Ix.Kernel.natBleName ∈ Ix.Kernel.natOpDeps c := by
-    rcases hc with rfl | rfl <;> exact ⟨by decide, by decide⟩
+    rcases hc with rfl | rfl <;> exact ⟨by (cases md <;> decide), by (cases md <;> decide)⟩
   obtain ⟨cvsu, vsu, hsu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName hdepmem.1
   obtain ⟨cvbl, vbl, hbl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName hdepmem.2
   intro a b
@@ -325,7 +325,7 @@ theorem natOpV_divmod (hops : NatOps m φ) (hnh : NatHeads m φ)
       rcases hc with rfl | rfl
       · rw [if_pos rfl, if_pos rfl, Nat.div_zero]
         rfl
-      · rw [if_neg (by decide), if_neg (by decide), Nat.mod_zero]
+      · rw [if_neg (by (cases md <;> decide)), if_neg (by (cases md <;> decide)), Nat.mod_zero]
     · by_cases hba : b ≤ a
       · have h1 : SetTheory.app (SetTheory.app
             (interp V ρ (m.acval Ix.Kernel.natBleName φ))
@@ -378,7 +378,7 @@ theorem natOpV_divmod (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.div` on literal values. -/
 theorem natOpV_div (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natDivName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -394,7 +394,7 @@ theorem natOpV_div (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.mod` on literal values. -/
 theorem natOpV_mod (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natModName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -405,12 +405,12 @@ theorem natOpV_mod (hops : NatOps m φ) (hnh : NatHeads m φ)
       = interp V ρ (natLit m φ (a % b)) := by
   intro a b
   have h := natOpV_divmod hops hnh hval hdm (Or.inr rfl) hf ρ a b
-  rwa [if_neg (by decide)] at h
+  rwa [if_neg (by (cases md <;> decide))] at h
 
 /-- `Nat.gcd` on literal values. -/
 theorem natOpV_gcd (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natGcdName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -419,10 +419,10 @@ theorem natOpV_gcd (hops : NatOps m φ) (hnh : NatHeads m φ)
           (interp V ρ (natLit m φ a)))
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.gcd a b)) := by
-  obtain ⟨hg, hclauses⟩ := hdm Ix.Kernel.natGcdName (by decide) cv v hint hf
+  obtain ⟨hg, hclauses⟩ := hdm Ix.Kernel.natGcdName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by (cases md <;> decide))
   intro a b
   induction a using Nat.strongRecOn generalizing b with
   | ind a ih =>
@@ -442,7 +442,7 @@ theorem natOpV_gcd (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.shiftLeft` on literal values. -/
 theorem natOpV_shiftLeft (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natShiftLeftName
       = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
@@ -453,11 +453,11 @@ theorem natOpV_shiftLeft (hops : NatOps m φ) (hnh : NatHeads m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.shiftLeft a b)) := by
   obtain ⟨hg, hclauses⟩ :=
-    hdm Ix.Kernel.natShiftLeftName (by decide) cv v hint hf
+    hdm Ix.Kernel.natShiftLeftName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by decide)
-  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by (cases md <;> decide))
+  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by (cases md <;> decide))
   intro a b
   induction b using Nat.strongRecOn generalizing a with
   | ind b ih =>
@@ -482,7 +482,7 @@ theorem natOpV_shiftLeft (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.shiftRight` on literal values. -/
 theorem natOpV_shiftRight (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natShiftRightName
       = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
@@ -493,11 +493,11 @@ theorem natOpV_shiftRight (hops : NatOps m φ) (hnh : NatHeads m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.shiftRight a b)) := by
   obtain ⟨hg, hclauses⟩ :=
-    hdm Ix.Kernel.natShiftRightName (by decide) cv v hint hf
+    hdm Ix.Kernel.natShiftRightName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by decide)
-  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by (cases md <;> decide))
+  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by (cases md <;> decide))
   intro a b
   induction b using Nat.strongRecOn generalizing a with
   | ind b ih =>
@@ -522,7 +522,7 @@ theorem natOpV_shiftRight (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.land` on literal values. -/
 theorem natOpV_land (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natLandName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -532,13 +532,13 @@ theorem natOpV_land (hops : NatOps m φ) (hnh : NatHeads m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.land a b)) := by
   obtain ⟨hg, hclauses⟩ :=
-    hdm Ix.Kernel.natLandName (by decide) cv v hint hf
+    hdm Ix.Kernel.natLandName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by decide)
-  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by decide)
-  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by decide)
-  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by (cases md <;> decide))
+  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by (cases md <;> decide))
+  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by (cases md <;> decide))
+  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by (cases md <;> decide))
   intro a b
   induction a using Nat.strongRecOn generalizing b with
   | ind a ih =>
@@ -570,7 +570,7 @@ theorem natOpV_land (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.lor` on literal values. -/
 theorem natOpV_lor (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natLorName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -580,14 +580,14 @@ theorem natOpV_lor (hops : NatOps m φ) (hnh : NatHeads m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.lor a b)) := by
   obtain ⟨hg, hclauses⟩ :=
-    hdm Ix.Kernel.natLorName (by decide) cv v hint hf
+    hdm Ix.Kernel.natLorName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by decide)
-  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by decide)
-  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by decide)
-  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by decide)
-  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by (cases md <;> decide))
+  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by (cases md <;> decide))
+  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by (cases md <;> decide))
+  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by (cases md <;> decide))
+  obtain ⟨cvsu, vsu, hisu, hfsu, -⟩ := hdeps Ix.Kernel.natSubName (by (cases md <;> decide))
   intro a b
   induction a using Nat.strongRecOn generalizing b with
   | ind a ih =>
@@ -621,7 +621,7 @@ theorem natOpV_lor (hops : NatOps m φ) (hnh : NatHeads m φ)
 /-- `Nat.xor` on literal values. -/
 theorem natOpV_xor (hops : NatOps m φ) (hnh : NatHeads m φ)
     (hval : AcvalValid m) (hdm : DivMod m φ)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natXorName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -631,13 +631,13 @@ theorem natOpV_xor (hops : NatOps m φ) (hnh : NatHeads m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (Nat.xor a b)) := by
   obtain ⟨hg, hclauses⟩ :=
-    hdm Ix.Kernel.natXorName (by decide) cv v hint hf
+    hdm Ix.Kernel.natXorName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by decide)
-  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by decide)
-  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by decide)
-  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by decide)
-  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by decide)
+  obtain ⟨cvbl, vbl, hibl, hfbl, -⟩ := hdeps Ix.Kernel.natBleName (by (cases md <;> decide))
+  obtain ⟨cvad, vad, hiad, hfad, -⟩ := hdeps Ix.Kernel.natAddName (by (cases md <;> decide))
+  obtain ⟨cvmu, vmu, himu, hfmu, -⟩ := hdeps Ix.Kernel.natMulName (by (cases md <;> decide))
+  obtain ⟨cvdi, vdi, hidi, hfdi, -⟩ := hdeps Ix.Kernel.natDivName (by (cases md <;> decide))
+  obtain ⟨cvmo, vmo, himo, hfmo, -⟩ := hdeps Ix.Kernel.natModName (by (cases md <;> decide))
   intro a b
   induction a using Nat.strongRecOn generalizing b with
   | ind a ih =>

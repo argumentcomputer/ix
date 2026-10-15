@@ -55,9 +55,9 @@ twin).  The bottom fires at the *base* environment under
 `Rn := projModelName T i`; `projCons` then stores the entry, and
 `acvalWith_self` makes the base law's head the installed constant's
 leaf. -/
-theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
-    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
-    {blockNames : List Key} (mp : EnvModelM V μ env')
+theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {blockNames : List (Key md)} (mp : EnvModelM V μ env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' mp.base2.cvalE)
     (hinvA : ProjPhaseAcval T ctorName nF env' mp.base2.acval)
@@ -164,7 +164,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     rw [hlargsE]
     simp
   -- the domain pin, at the pruned renaming
-  have hdomsSCp : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+  have hdomsSCp : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < nP + nF → sbinders[i0]? = some b → cbinders[i0]? = some b' →
       b.1 = b'.1.renameConsts (fun n =>
         if (env'.find? n).isSome = true then
@@ -325,7 +325,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     refine ⟨Ra, ?_, hokRa, ?_, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _ (hcbRhs us) hRaden
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _ (hcbRhs us) hRaden
     · -- the `.nested` pin conjunct: the rule is `.plain`
       intro lvls pins hn
       rw [hplainFire] at hn
@@ -355,7 +355,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
       refine Option.some.inj (Eq.trans ?_ hTVa)
       rw [hac]
       exact (denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _ (hcbPty us)
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _ (hcbPty us)
         hTVa').symm
     obtain ⟨TVja', hTVja', -, -⟩ :=
       mp.constType 0 ctorName _ usj hctor rfl (by exact husjlen)
@@ -363,7 +363,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
       refine Option.some.inj (Eq.trans ?_ hTVja)
       rw [hac]
       exact (denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _
         (constsBound_instType mp.base2.wf
           (Env.find?_mem hctor) usj) hTVja').symm
     -- the two leaves the conclusion mentions
@@ -409,13 +409,13 @@ The skip branch is a no-op; the block-level premises are re-established
 at each step exactly as in v1 (`EtaPins.step` plus "a projection name
 is never a block name"). -/
 theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
-    {T ctorName : Key} {lps : List LevelParam} {nP nF : Nat}
-    {blockNames : List Key}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF : Nat}
+    {blockNames : List (Key md)}
     (hTblock : blockNames.contains T = true)
     (hbshape : ∀ n, blockNames.contains n = true →
       n.isProjFnShape = false) :
-    ∀ (fields : List Nat) {env' : Env} (mp : EnvModelM V μ env')
-      {env₄ : Env},
+    ∀ (fields : List Nat) {env' : Env md} (mp : EnvModelM V μ env')
+      {env₄ : Env md},
       ProjInstallRun μ F T ctorName lps nP nF env' fields env₄ →
       ProjPhaseInvS T ctorName nF env' mp.base2.cvalE →
       ProjPhaseAcval T ctorName nF env' mp.base2.acval →
@@ -457,7 +457,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
       intro hh
       rw [hh, hfresh] at hTf
       exact nomatch hTf
-    have hdown : ∀ (cvT : ConstantVal) (capsT : IndCaps),
+    have hdown : ∀ (cvT : ConstantVal md) (capsT : IndCaps md),
         env''.find? T = some (.indInfo cvT capsT) →
         env'.find? T = some (.indInfo cvT capsT) := by
       intro cvT capsT hf

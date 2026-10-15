@@ -20,8 +20,8 @@ section Mirrors
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
 /-- `nativeOpenedOk` through the index. -/
-def nativeOpenedOkF (w : StructWalkers) (fe₀ : FEnv) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (cty : Expr) (nF : Nat) (ks : List RecFieldKind) : Bool :=
+def nativeOpenedOkF (w : StructWalkers md) (fe₀ : FEnv md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with
   | some (fvsP, crest) =>
     match openPisAtFvars nF crest nP with
@@ -59,8 +59,8 @@ def nativeOpenedOkF (w : StructWalkers) (fe₀ : FEnv) (T : Key) (lps : List Lev
   | none => false
 
 /-- `nativeFieldsOk` through the index. -/
-def nativeFieldsOkF (w : StructWalkers) (fe₀ : FEnv) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
+def nativeFieldsOkF (w : StructWalkers md) (fe₀ : FEnv md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (ctorsA : List (ConstantVal md × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
   ctorsA.length == kinds.length &&
   (List.range ctorsA.length).all fun j =>
     match ctorsA[j]?, kinds[j]? with
@@ -69,10 +69,10 @@ def nativeFieldsOkF (w : StructWalkers) (fe₀ : FEnv) (T : Key) (lps : List Lev
     | _, _ => false
 
 /-- `checkNativeRules` through the index. -/
-def checkNativeRulesF (w : StructWalkers) (feR : FEnv) (rlps : List LevelParam) (T : Key) (lps : List LevelParam)
-    (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
-    (ctors : List (Key × Nat × Expr × List Nat)) (recC : Key) (rlvls : List Level) :
-    Nat → Nat → m (List Expr)
+def checkNativeRulesF (w : StructWalkers md) (feR : FEnv md) (rlps : List LevelParam) (T : Key md) (lps : List LevelParam)
+    (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr md)
+    (ctors : List (Key md × Nat × Expr md × List Nat)) (recC : Key md) (rlvls : List Level) :
+    Nat → Nat → m (List (Expr md))
   | 0, _ => pure []
   | k + 1, j => do
     let rhs ← unwrapOr (structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j)
@@ -85,9 +85,9 @@ def checkNativeRulesF (w : StructWalkers) (feR : FEnv) (rlps : List LevelParam) 
     pure (rhs :: rest)
 
 /-- `checkNativeRec` through the index. -/
-def checkNativeRecF (ops : CheckerOps m) (w : StructWalkers) (fe : FEnv) (p : NativeParts)
-    (cvTa : ConstantVal) (ctorsA : List (ConstantVal × Nat)) :
-    m (ConstantVal × List Expr) := do
+def checkNativeRecF (ops : (CheckerOps md) m) (w : StructWalkers md) (fe : FEnv md) (p : NativeParts md)
+    (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) :
+    m (ConstantVal md × List (Expr md)) := do
   -- the recursor pin (task #220), as in `checkNativeRec`
   unless nativeRecLpsOk p.toInductiveShape do
     throw (.invalid "direct rec: the recursor's level parameters are not the generated ones")
@@ -106,15 +106,15 @@ def checkNativeRecF (ops : CheckerOps m) (w : StructWalkers) (fe : FEnv) (p : Na
   let _u ← ops.ensureSort fe.env 0 sty
   unless ← ops.isDefEq fe.env 0 cvRi.type recTy do
     throw (.invalid "direct rec: recursor type is not the generated one")
-  let cvRa : ConstantVal := ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
+  let cvRa : ConstantVal md := ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
   let feR := fe.push (.recInfo cvRa p.majorIdx p.rulePrefix [])
   let rhss ← checkNativeRulesF w feR p.cvR.levelParams T lps p.elim p.large p.nP p.nIdx
     cvTa.type ctors p.cvR.name (p.cvR.levelParams.map .param) ctors.length 0
   pure (cvRa, rhss)
 
 /-- `checkNativeTable` through the index (task #210 Part A). -/
-def checkNativeTableF (w : StructWalkers) (p : NativeParts) (ctorsA : List (ConstantVal × Nat))
-    (sortss : List (List Level)) (fe : FEnv) : m FEnv :=
+def checkNativeTableF (w : StructWalkers md) (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
+    (sortss : List (List Level)) (fe : FEnv md) : m (FEnv md) :=
   match ctorsA, sortss with
   | [cA], [sorts] =>
     if p.nIdx == 0 then

@@ -40,8 +40,8 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## Bits reset -/
 
@@ -75,7 +75,7 @@ theorem mem_rebit {b : Nat} {ds : List (Nat × Nat × AnnotTerm)} {d : Nat × Na
 /-- **The `∀`-walk's reading**: the telescope's own domain readings,
 bits reset, over the body at the opening's variables. -/
 theorem denoteMeta_replacePisPw {pw : PropWhen} :
-    ∀ (k : Nat) {d : Nat} {e b r : Expr} {fvs : List Expr} {o : Expr} {ea : AnnotTerm}
+    ∀ (k : Nat) {d : Nat} {e b r : Expr md} {fvs : List (Expr md)} {o : Expr md} {ea : AnnotTerm}
       {pds : List (Nat × Nat × AnnotTerm)} {R : AnnotTerm},
       Expr.replacePisPw pw k e b = some r →
       openPisAtFvars k e d = some (fvs, o) →
@@ -128,7 +128,7 @@ theorem denoteMeta_replacePisPw {pw : PropWhen} :
 domain readings with bit `pw`, over the body at the opening's
 variables. -/
 theorem denoteMeta_pisToLamsPw {pw : PropWhen} :
-    ∀ (k : Nat) {d : Nat} {e b r : Expr} {fvs : List Expr} {o : Expr} {ea : AnnotTerm}
+    ∀ (k : Nat) {d : Nat} {e b r : Expr md} {fvs : List (Expr md)} {o : Expr md} {ea : AnnotTerm}
       {pds : List (Nat × Nat × AnnotTerm)} {R : AnnotTerm},
       Expr.pisToLamsPw pw k e b = some r →
       openPisAtFvars k e d = some (fvs, o) →
@@ -181,7 +181,7 @@ theorem denoteMeta_pisToLamsPw {pw : PropWhen} :
 
 /-- A closed-argument instantiation sequence keeps a telescope's strip. -/
 theorem instSeq_stripPis_isSome :
-    ∀ (sp : List Expr) (t : Nat) {e : Expr} {n : Nat},
+    ∀ (sp : List (Expr md)) (t : Nat) {e : Expr md} {n : Nat},
       (e.stripPis n).isSome = true → ((Expr.instSeq sp t e).stripPis n).isSome = true
   | [], _, _, _, h => h
   | a :: sp, t, _, n, h =>
@@ -189,7 +189,7 @@ theorem instSeq_stripPis_isSome :
 
 /-- The tail of a longer strip strips the remainder. -/
 theorem stripPis_isSome_drop :
-    ∀ (k : Nat) {m : Nat} {e : Expr} {bs : List (Expr × BinderMeta)} {mid : Expr},
+    ∀ (k : Nat) {m : Nat} {e : Expr md} {bs : List (Expr md × BinderMeta)} {mid : Expr md},
       (e.stripPis (k + m)).isSome = true → e.stripPis k = some (bs, mid) →
       (mid.stripPis m).isSome = true
   | 0, m, e, bs, mid, h, hs => by
@@ -215,18 +215,18 @@ theorem stripPis_isSome_drop :
 
 /-- An instantiation sequence's index is immaterial at the empty
 sequence. -/
-theorem instSeq_idx_congr {sp : List Expr} {t t' : Nat} (e : Expr)
+theorem instSeq_idx_congr {sp : List (Expr md)} {t t' : Nat} (e : Expr md)
     (h : sp = [] ∨ t = t') : Expr.instSeq sp t e = Expr.instSeq sp t' e := by
   rcases h with rfl | rfl <;> rfl
 
 /-- The variables of an opening at depth `0` are closed and indexed by
 position, scoped one above their index. -/
-theorem opening_vars {n : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
+theorem opening_vars {n : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md}
     (hop : openPisAtFvars n e 0 = some (fvs, o)) (hcl : e.hasFvar = false) :
     fvs.length = n ∧
-    (∀ (k : Nat) (x : Expr), fvs[k]? = some x → ∃ ty, x = Expr.fvar k ty) ∧
+    (∀ (k : Nat) (x : Expr md), fvs[k]? = some x → ∃ ty, x = Expr.fvar k ty) ∧
     (∀ a ∈ fvs, a.looseBVarsBounded 0 = true) ∧
-    (∀ (i : Nat) (a : Expr), fvs[i]? = some a → Expr.WScoped (0 + i + 1) a) := by
+    (∀ (i : Nat) (a : Expr md), fvs[i]? = some a → Expr.WScoped (0 + i + 1) a) := by
   have hidx := openPisAtFvars_index n e 0 hop
   refine ⟨openPisAtFvars_length n hop, fun k x hx => by
     obtain ⟨ty, h⟩ := hidx k x hx
@@ -244,10 +244,10 @@ theorem opening_vars {n : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
 
 /-- The variables of an opening at any depth: one per binder, indexed
 by position from the depth, closed. -/
-theorem opening_vars_at {n d : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
+theorem opening_vars_at {n d : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md}
     (hop : openPisAtFvars n e d = some (fvs, o)) :
     fvs.length = n ∧
-    (∀ (k : Nat) (x : Expr), fvs[k]? = some x → ∃ ty, x = Expr.fvar (d + k) ty) ∧
+    (∀ (k : Nat) (x : Expr md), fvs[k]? = some x → ∃ ty, x = Expr.fvar (d + k) ty) ∧
     (∀ a ∈ fvs, a.looseBVarsBounded 0 = true) :=
   ⟨openPisAtFvars_length n hop, openPisAtFvars_index n e d hop, fun a ha => by
     obtain ⟨q, hq⟩ := List.getElem?_of_mem ha
@@ -264,24 +264,24 @@ theorem opening_vars_at {n d : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
 
 /-- The constructor's field telescope at the parameter variables: its
 reading at depth `nP`, its scoping, and its strip. -/
-theorem ctorResidual {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat} {cty : Expr}
+theorem ctorResidual {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat} {cty : Expr md}
     (hCf : cty.hasFvar = false)
     {ds : List (Nat × Nat × AnnotTerm)} {bodyC : AnnotTerm}
     (hCread : denoteMeta m.acval env ψ 0 cty = some (mkPisAV ds bodyC))
     (hlenD : ds.length = nP + nF)
-    {cbs : List (Expr × BinderMeta)} {crest0 : Expr}
+    {cbs : List (Expr md × BinderMeta)} {crest0 : Expr md}
     (hsC : cty.stripPis nP = some (cbs, crest0))
     (hstripC : (cty.stripPis (nP + nF)).isSome = true)
-    {tfvs : List Expr} (hlenT : tfvs.length = nP)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
+    {tfvs : List (Expr md)} (hlenT : tfvs.length = nP)
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hspW : ∀ (i : Nat) (a : Expr md), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
     denoteMeta m.acval env ψ nP (Expr.instSeq tfvs (nP - 1) crest0)
         = some (mkPisAV (ds.drop nP) bodyC) ∧
       Expr.WScoped nP (Expr.instSeq tfvs (nP - 1) crest0) ∧
       ((Expr.instSeq tfvs (nP - 1) crest0).stripPis nF).isSome = true := by
   obtain ⟨cdoms, hci⟩ := Ix.Kernel.instPisAt_of_stripPis tfvs (by rw [hlenT]; exact hsC)
   rw [hlenT] at hci
-  have hidxT' : ∀ (q : Nat) (x : Expr), tfvs[q]? = some x → ∃ t, x = Expr.fvar (0 + q) t :=
+  have hidxT' : ∀ (q : Nat) (x : Expr md), tfvs[q]? = some x → ∃ t, x = Expr.fvar (0 + q) t :=
     fun q x hx => by
       obtain ⟨t, h⟩ := hidxT q x hx
       exact ⟨t, by rw [h, Nat.zero_add]⟩
@@ -296,7 +296,7 @@ theorem ctorResidual {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat
 /-- The reading of the constructor's residual, one under (the motive):
 the field data lifted once. -/
 theorem ctorResidual_read_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF : Nat}
-    {crest : Expr} {ds : List (Nat × Nat × AnnotTerm)} {bodyC : AnnotTerm}
+    {crest : Expr md} {ds : List (Nat × Nat × AnnotTerm)} {bodyC : AnnotTerm}
     (hread : denoteMeta m.acval env ψ nP crest = some (mkPisAV (ds.drop nP) bodyC))
     (hw : Expr.WScoped nP crest) (hlenD : ds.length = nP + nF) (e : Nat) :
     denoteMeta m.acval env ψ (nP + e) crest

@@ -173,12 +173,12 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
   .error (.motiveOrder owner 0 (some 1))
 /-- The ordered entry at BLAKE3 on records already under their keys. -/
 def checkAt (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :
-    Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
+    Except Ixon.BlockOrder.CheckError (Ix.Kernel.Env .anon) :=
   Ixon.Authenticated.checkBytesBlockOrder Tests.Ix.Kernel.Projection.blake3Binding 16 ByteAdmission.limits orderLimits (Projection.encode input) []
 
 /-- The ordered entry at BLAKE3 on a fixture re-keyed under BLAKE3. -/
 def checkRekeyed (input : List (Address × Ixon.Constant)) (orderLimits : Limits := {}) :
-    Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
+    Except Ixon.BlockOrder.CheckError (Ix.Kernel.Env .anon) :=
   checkAt (Tests.Ix.Kernel.Authentic.rekey Projection.spec input).records orderLimits
 
 -- through the bytes: the motive-ordered block passes the order stage (and the
@@ -221,7 +221,7 @@ def byteAccepts : Bool := (checkAt Projection.separatedInput).isOk
 #guard (Error.admission (.mismatch .blobs 0 owner)).outcome == .rejected
 #guard (Error.admission (.limit .totalBytes)).outcome == .declined
 
-example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (h : checkAt Projection.separatedInput = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesBlockOrder_has_model V h
 

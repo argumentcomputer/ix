@@ -41,19 +41,19 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo)
 
 universe w
 
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- **The renaming condition at the reading** (`RenameOkT`): every
 renamed constant resolves with the same level parameters, unresolved
 names stay unresolved, and the *annotated* valuation agrees on the
 renaming. -/
-@[expose] def RenameOk (acval : Key → (LevelParam → Nat) → AnnotTerm) (env : Env)
-    (f : Key → Key) : Prop :=
+@[expose] def RenameOk (acval : Key md → (LevelParam → Nat) → AnnotTerm) (env : Env md)
+    (f : Key md → Key md) : Prop :=
   (∀ n ci, env.find? n = some ci → ∃ ci', env.find? (f n) = some ci' ∧
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
-  (∀ (n : Key) (ψ : LevelParam → Nat), acval (f n) ψ = acval n ψ)
+  (∀ (n : Key md) (ψ : LevelParam → Nat), acval (f n) ψ = acval n ψ)
   -- (the W3 tower-freeness conjunct is gone with W5's `renameConsts`
   -- fix — see `RenameOkT`)
 
@@ -62,9 +62,9 @@ Clause for clause; the `fvar`, `lit` and `proj` clauses are the cheap
 ones for the same reason as in v1 — the reading never consults an
 `fvar`'s annotation or a `proj`'s structure name, and `renameConsts`
 does not descend into literals. -/
-theorem denoteMeta_renameConsts {f : Key → Key}
+theorem denoteMeta_renameConsts {f : Key md → Key md}
     (hro : RenameOk acval env f) :
-    ∀ (e : Expr) (d : Nat),
+    ∀ (e : Expr md) (d : Nat),
       denoteMeta acval env φ d (e.renameConsts f) = denoteMeta acval env φ d e
   | .bvar _, _ => by simp [Expr.renameConsts]
   | .sort _, _ => by simp [Expr.renameConsts]
@@ -112,8 +112,8 @@ theorem denoteMeta_renameConsts {f : Key → Key}
     | (simp [Expr.sizeB])
 
 /-- **Renamed-equal expressions read equally** (`RenEqT.denote`). -/
-theorem RenEqT.denoteMeta {f : Key → Key} (hro : RenameOk acval env f)
-    {e₁ e₂ : Expr} (h : RenEqT f e₁ e₂) (d : Nat) :
+theorem RenEqT.denoteMeta {f : Key md → Key md} (hro : RenameOk acval env f)
+    {e₁ e₂ : Expr md} (h : RenEqT f e₁ e₂) (d : Nat) :
     denoteMeta acval env φ d e₂ = denoteMeta acval env φ d e₁ := by
   rw [← denoteMeta_erasedEq h d]
   exact denoteMeta_renameConsts hro e₁ d
@@ -130,7 +130,7 @@ model's — which is what the annotated invariant stores in place of v1's
 `hnames` is the same premise v1 takes and for the same reason: a block
 name that is *not yet stored* would have its model looked up as if it
 were, and the second conjunct would be false. -/
-theorem blockRenameOk {blockNames : List Key} {cval : TConstVal}
+theorem blockRenameOk {blockNames : List (Key md)} {cval : TConstVal md}
     (hIS : BlockInstalledTT blockNames env cval)
     (hIA : BlockAcvalInstalled blockNames env acval)
     (hnames : ∀ n, blockNames.contains n = true →

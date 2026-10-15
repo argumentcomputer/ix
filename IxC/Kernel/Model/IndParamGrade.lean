@@ -50,7 +50,7 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The parameter walk's gradings and memberships, by position.**
@@ -63,26 +63,26 @@ theorem paramGradeFire {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {K rP cnP : Nat} (hcnP : cnP ≤ rP) (hrPK : rP ≤ K)
     -- the public (recursor) frame
-    {fvsP : List Expr} (hfvsPlen : fvsP.length = rP)
-    (hshapeP : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
+    (hshapeP : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvsP : ∀ x ∈ fvsP, Expr.WScoped rP x)
     (hleafClosedP : ∀ l, (∃ x ∈ fvsP, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvsP)
-    (hlbFvsP : ∀ (i : Nat) (ty : Expr),
+    (hlbFvsP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvsP → ty.looseBVarsBounded 0 = true)
     {TV : AnnotTerm} {ΓP : List AnnotTerm} {RP : AnnotTerm}
     (htowerP : PiTeleAV rP TV ΓP RP)
     (hokTV : ∀ σ : Nat → V, WellDenotedV V σ TV)
-    (hdomsP0 : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    (hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
     -- the constructor type, read at the ambient depth
-    {ctyP : Expr} (hCw : ctyP.hasFvar = false)
+    {ctyP : Expr md} (hCw : ctyP.hasFvar = false)
     (hCb : ctyP.looseBVarsBounded 0 = true)
     {TVjP : AnnotTerm} (hTVjP : denoteMeta m.acval env φ K ctyP = some TVjP)
     (hokTVjP : ∀ σ : Nat → V, WellDenotedV V σ TVjP)
-    {cdomsP : List Expr} {crestP : Expr}
+    {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt (fvsP.take cnP) ctyP
       = some (cdomsP, crestP))
     -- the recorded run (the second widening's first row)
@@ -149,7 +149,7 @@ theorem paramGradeFire {m : EnvModel V env} {F : Nat}
           omega]
       exact hsatm
   -- the spine's per-index scope and leaves
-  have hspScope : ∀ (i₀ : Nat) (x : Expr), (fvsP.take cnP)[i₀]? = some x →
+  have hspScope : ∀ (i₀ : Nat) (x : Expr md), (fvsP.take cnP)[i₀]? = some x →
       Expr.WScoped K x ∧ x.looseBVarsBounded 0 = true := by
     intro i₀ x hx
     have hi₀ : i₀ < cnP := by

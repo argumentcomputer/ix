@@ -80,7 +80,7 @@ def encode (cs : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Records 
   cs.map fun (a, c) => (a, Ixon.serConstant c)
 
 def builtinTable : Ix.Kernel.RoleTable := match defaultTable with | .ok t => t | .error _ => default
-def builtinPre : Prelude := match builtinPrelude with | .ok p => p | .error _ => default
+def builtinPre : Prelude .anon := match builtinPrelude with | .ok p => p | .error _ => default
 
 /-- The admission hash: BLAKE3 (the Rust backend executes it). -/
 def hash : ByteArray → Address := Address.admissionHash
@@ -106,7 +106,7 @@ def rebind (pairs : List (Ix.Kernel.Role × Address)) : Ix.Kernel.RoleTable :=
       | none => (role, a) }
 
 /-- A key with a fixture's stand-in keys in place of its BLAKE3 keys. -/
-def unrename (r : Rekeyed) : CName → CName
+def unrename (r : Rekeyed) : CName .anon → CName .anon
   | .id n => .id (go n)
   | .role ro => .role ro
   | .aux k d => .aux (unrename r k) d
@@ -117,7 +117,7 @@ where
     | .num p n => .num (go p) n
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
-    (table : Ix.Kernel.RoleTable := builtinTable) : Except Error Ix.Kernel.Env :=
+    (table : Ix.Kernel.RoleTable := builtinTable) : Except Error (Ix.Kernel.Env .anon) :=
   let r := rekeyed cs blobs
   checkBytesWith hash (bindingOf (renameTable r table)) builtinPre limits r.encoded r.blobs
 
@@ -131,7 +131,7 @@ def namesOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × Byt
   | .ok env => env.consts.map fun c => toString (unrename (rekeyed cs blobs) c.name)
   | .error _ => []
 
-def keyString (r : ConstRef Address) : String := toString (keyName r)
+def keyString (r : ConstRef Address) : String := toString (keyName (md := .anon) r)
 
 /-- The address the default table binds a role to (a prelude record). -/
 def bound (r : Ix.Kernel.Role) : Address := (builtinTable.addressOf? r).getD (address 0)
@@ -150,7 +150,7 @@ def quotLift := bound .quotLift
 
 /-! ## The prelude and the tables -/
 
-#guard defaultTable.isOk && builtinPrelude.isOk && defaultBinding.isOk
+#guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
 -- the default table: every role bound, well formed, its section canonical and
 -- committed under its BLAKE3 hash
 #guard builtinTable.bound.size == 64 && builtinTable.check.isOk
@@ -161,8 +161,8 @@ def quotLift := bound .quotLift
 -- its evidence: one entry per equation of each of the fifteen operations, of
 -- the kind the equation fixes (a proof for each well-founded operation's)
 #guard builtinTable.evidence.size == 15 && builtinTable.evidence.all fun (r, es) =>
-  es.size == (Ix.Kernel.Role.spec r).evidenceKinds.length &&
-    (es.toList.zip (Ix.Kernel.Role.spec r).evidenceKinds).all fun (e, k) => e.isDefeqKind k
+  es.size == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length &&
+    (es.toList.zip (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds).all fun (e, k) => e.isDefeqKind k
 -- over the prelude alone, the structural operations' evidence resolves and
 -- the well-founded operations' does not: their theorems reference the
 -- operations, whose records only a stream supplies
@@ -170,8 +170,8 @@ def quotLift := bound .quotLift
   let ev := evidenceOf (contextOf builtinTable #[] [] (builtinPre.records ++ builtinPre.evidence) builtinPre.blobs)
     builtinPre.state builtinTable
   ev.length == 15 && ev.all fun (r, es) =>
-    if (Ix.Kernel.Role.spec r).evidenceKinds.all id then
-      es.length == (Ix.Kernel.Role.spec r).evidenceKinds.length
+    if (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.all id then
+      es.length == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length
     else es.isEmpty
 #guard (builtinPre.ix.decls.toList.map (fun d => toString <$> Ix.Kernel.Frontend.preludeKey d)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
@@ -470,7 +470,7 @@ def stringTable : Ix.Kernel.RoleTable :=
 
 /-- The role keys a table binds over fixture records backed by the prelude. -/
 def namesUnder (t : Ix.Kernel.RoleTable) (cs : List (Address × Ixon.Constant)) :
-    Std.HashMap (ConstRef Address) CName :=
+    Std.HashMap (ConstRef Address) (CName .anon) :=
   (bindingsOf (storeOf cs.toArray (storeOf builtinPre.records)) t).names
 
 #guard accepts strings strBlobs stringTable
@@ -623,7 +623,7 @@ def lTreeBlock : Address := (addressOfHex "504ca8ca533da7dfb6b77d5d692f44e5e3080
 def lNodeBlock : Address := (addressOfHex "0e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc9461381").getD (address 0)
 
 /-- The reader's state and declarations after the stream. -/
-def lTreeRead : Option (State × Array Ix.Kernel.Declaration) := do
+def lTreeRead : Option (State .anon × Array (Ix.Kernel.Declaration .anon)) := do
   let constants ← (Ix.Kernel.Admission.decodeRecords limits lTreeStream).toOption
   let cx := streamContext builtinTable builtinPre constants [] (fun _ => none)
   (readRecords cx builtinPre.state constants.toArray).toOption
@@ -632,7 +632,7 @@ def lTreeRead : Option (State × Array Ix.Kernel.Declaration) := do
 modeller reads them. -/
 def lTreeMotiveHeads : Option (List String) := do
   let (st, _) ← lTreeRead
-  let b ← st.indBlocks[keyName (.member lTreeBlock 0)]?
+  let b ← st.indBlocks[keyName (md := .anon) (.member lTreeBlock 0)]?
   let t0 ← b.types.head?
   let r0 ← b.recs.find? (·.cv.name.toName == t0.cv.name.toName.str "rec")
   let (_, afterP) ← r0.cv.type.stripPis t0.nP
@@ -648,7 +648,7 @@ def lTreeNames : List String :=
     | .indDecl block _ => block.map (toString ·.toConstantVal.name)
     | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .axiomDecl cv | .quotDecl _ cv =>
       [toString cv.name]
-    | .basisDecl k => k.decls.map (toString ·.toConstantVal.name)
+    | .basisDecl k => (k.decls (md := .anon)).map (toString ·.toConstantVal.name)
   | none => []
 
 #guard lTreeStream.length == lTreeRecords.length && lTreeRecords.length == 19
@@ -817,7 +817,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
   return c
 
 #guard
-  let cx := contextOf builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
+  let cx := contextOf (md := .anon) builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
   toString (cx.nameOf (.member (address 92) 0)) == keyString (.member (address 92) 0) &&
     toString (cx.nameOf (.member (address 92) 0)) != "Nat"
 
@@ -825,7 +825,7 @@ def natBlockRecord : Ixon.Constant := Id.run do
 -- record's reference is in the table, under `keyName`'s spelling, and a
 -- pinned one is not.
 #guard
-  let cx := contextOf builtinTable #[(address 93, idNat)] [] builtinPre.records
+  let cx := contextOf (md := .anon) builtinTable #[(address 93, idNat)] [] builtinPre.records
   let natRef := boundRef .nat
   cx.keys.map.contains (.member (address 93) 0) &&
     toString (cx.nameOf (.member (address 93) 0)) == keyString (.member (address 93) 0) &&
@@ -921,7 +921,7 @@ formed (`admitBinding`), before it reads any record. -/
 
 /-! ## The key encoding is injective -/
 
-example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_injective h
+example {r s : ConstRef Address} (h : keyName (md := .anon) r = keyName s) : r = s := keyName_injective h
 
 /-- info: 'Ix.Kernel.Reader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms keyName_injective
@@ -929,11 +929,11 @@ example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_
 /-! ## Model existence -/
 
 example (V : Type) [Ix.Kernel.SetTheory V] {binding : Binding} {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : checkBytes hash binding limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
-example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (h : run strings strBlobs stringTable = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytesWith_has_model V h
 

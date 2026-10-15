@@ -31,7 +31,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The applied reduct, graded at the frame's own openers** — the
@@ -57,29 +57,29 @@ magnitude more there.  A stage lemma is the fix that scales — its
 context is its premise set. -/
 theorem annotOpeners {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {K : Nat}
     -- the statement frame and its tower
-    {fvs : List Expr} (hfvslen : fvs.length = K)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = K)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped K x)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Γs : List AnnotTerm} (hΓslen : Γs.length = K)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (Γs.getD (K - 1 - i) default))
     (hΔaent : ∀ i, i < K →
       Γs[K - 1 - i]? = some (Γs.getD (K - 1 - i) default))
     -- the public λ-frame (`annotTransport`'s own premises)
-    {pfvs : List Expr} (hPlen : pfvs.length = K)
-    (hPshape : ∀ (i : Nat) (x : Expr), pfvs[i]? = some x →
+    {pfvs : List (Expr md)} (hPlen : pfvs.length = K)
+    (hPshape : ∀ (i : Nat) (x : Expr md), pfvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hPws : ∀ x ∈ pfvs, Expr.WScoped K x)
     (hPleafClosed : ∀ l, (∃ x ∈ pfvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ pfvs)
-    (hlbP : ∀ (i : Nat) (ty : Expr),
+    (hlbP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ pfvs → ty.looseBVarsBounded 0 = true)
     (hIdent : ∀ i, i < K → ∃ Bi : AnnotTerm,
       denoteMeta m.acval env φ K
@@ -89,11 +89,11 @@ theorem annotOpeners {m : EnvModel V env} {F : Nat}
           interp V (fun j => ρ' (j + (K - i)))
               (Γs.getD (K - 1 - i) default) = interp V ρ' Bi)
     -- the rule's right-hand side and its λ-tower run
-    {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
+    {rhsA : Expr md} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     {Ra : AnnotTerm} (hRa : denoteMeta m.acval env φ 0 rhsA = some Ra)
     (hokRa : ∀ σ : Nat → V, WellDenotedV V σ Ra)
-    {ldomsL : List Expr} {lrest2 : Expr}
+    {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt pfvs rhsA = some (ldomsL, lrest2))
     (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL) :
     ∀ σ : Nat → V, Sat V Γs σ → ∀ ba : AnnotTerm,

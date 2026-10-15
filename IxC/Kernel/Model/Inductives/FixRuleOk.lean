@@ -30,17 +30,17 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## The block split of a rule spine -/
 
 /-- **The block split** of a spine fitting the recursor's binder data
 below the indices: the parameters, the motive (in its reading), the
 minors (in their ih-extended readings). -/
-theorem fixBlock_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
+theorem fixBlock_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {elimL : Level}
     {nP nIdx n ℓ w b : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP)
-    {cds : List CtorDatumR} (hn : cds.length = n)
+    {cds : List (CtorDatumR md)} (hn : cds.length = n)
     {Fss Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     (hminor : ∀ ρp : Nat → V, Sat V ((pps.map (·.2.2)).reverse) ρp →
       ∀ j cd, cds[j]? = some cd → ∀ (M : V) (ms : List V), ms.length = j →
@@ -358,11 +358,11 @@ theorem ihAppAV_facts {ℓ w u s nP nF nIdx n j i : Nat} {rds : List (Nat × Nat
 
 set_option maxHeartbeats 6400000 in
 /-- **The rule's right-hand side is `WellDenotedV`** at every frame. -/
-theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
+theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {elimL : Level}
     {nP nIdx n ℓ w u s b : Nat} (hℓ : elimL.eval ψ = ℓ)
     (hb : pwBit ψ (Level.zeronessOf elimL) = b) (hbz : ℓ = 0 ↔ b = 0)
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
-    {cds : List CtorDatumR} (hn : cds.length = n)
+    {cds : List (CtorDatumR md)} (hn : cds.length = n)
     {Fss₀ Fss Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     (hlenFs : Fss.length = n) (hlenEs : Ess.length = n)
     (hEs : ∀ j, j < n → (Ess.getD j []).length = nIdx)
@@ -410,7 +410,7 @@ theorem fixRuleOk {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elim
       srcOfEs (Ess.getD j []) (Fss.getD j []).length i = none →
       ∀ fs : List V, SpineFit ρp ((Fss.getD j []).take i) fs →
         interp V (consList fs ρp) ((Fss.getD j []).getD i default) ∈ˢ (univZero : V))
-    {j : Nat} {C : Key} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
+    {j : Nat} {C : Key md} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
     {recIdxJ : List Nat} {EissJ : List (List AnnotTerm)} {tlsJ : List (List (Nat × Nat × AnnotTerm))}
     (hcd : cds[j]? = some (C, nF, ds, Es, recIdxJ, EissJ, tlsJ))
     (hlenDs : ds.length = nP + nF) (hFsj : Fss[j]? = some ((ds.drop nP).map (·.2.2)))

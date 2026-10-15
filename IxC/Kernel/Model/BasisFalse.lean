@@ -41,7 +41,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## `Empty` -/
 
@@ -49,10 +49,10 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [0]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_falseA_type
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
-    denoteMeta acval ⟨falseA :: env.consts⟩ ψ 0 falseA.toConstantVal.type
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    denoteMeta acval ⟨falseA :: env.consts⟩ ψ 0 (falseA (md := md)).toConstantVal.type
       = some (BConst.typeAV .empty [0]) := by
-  rw [show falseA.toConstantVal.type = Expr.sort .zero from rfl,
+  rw [show (falseA (md := md)).toConstantVal.type = Expr.sort .zero from rfl,
     denoteMeta_sort]
   rfl
 
@@ -64,9 +64,9 @@ theorem extendFalse (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun _ => AnnotTerm.const .empty [0]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT falseA.name ψ
@@ -101,28 +101,28 @@ theorem denoteMeta_falseRecA_type {m : EnvModel V env}
     {A : (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat)
     (hE : env.find? falseName = some falseA) :
     denoteMeta (acvalWith m.acval falseRecA.name A)
-        ⟨falseRecA :: env.consts⟩ ψ 0 falseRecA.toConstantVal.type
+        ⟨falseRecA :: env.consts⟩ ψ 0 (falseRecA (md := md)).toConstantVal.type
       = some (.pi 0 (pwBit ψ (.ifAllZero [uN]))
           (.pi 0 (pwBit ψ .never) (.const .empty [0]) (.sort (ψ uN)))
           (.pi 0 (pwBit ψ (.ifAllZero [uN])) (.const .empty [0])
             (.app (.bvar 1) (.bvar 0)))) := by
-  have hpd : Ix.Kernel.Verify.pinnedStructT falseName ψ
+  have hpd : (Ix.Kernel.Verify.pinnedStructT (md := md)) falseName ψ
       = some (Term.const .empty [0]) := by
     simp +decide [Ix.Kernel.Verify.pinnedStructT]
   have hleaf : acvalWith m.acval falseRecA.name A falseName ψ
       = AnnotTerm.const .empty [0] := by
-    rw [acvalWith_ne (by decide)]
-    exact acval_basis_pinned hE (by decide) hpd
+    rw [acvalWith_ne (by (cases md <;> decide))]
+    exact acval_basis_pinned hE (by (cases md <;> decide)) hpd
   have hEc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval falseRecA.name A)
           ⟨falseRecA :: env.consts⟩ ψ d (.const falseName [])
         = some (AnnotTerm.const .empty [0]) := by
     intro d
-    have hf : (⟨falseRecA :: env.consts⟩ : Env).find? falseName
+    have hf : (⟨falseRecA :: env.consts⟩ : Env md).find? falseName
         = some falseA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE
     rw [denoteMeta_levelless_const hf (by rfl), hleaf]
-  rw [show falseRecA.toConstantVal.type
+  rw [show (falseRecA (md := md)).toConstantVal.type
       = Expr.forallE
           (Expr.forallE (.const falseName [])
             (.sort (.param uN)) { pw := .never })
@@ -163,9 +163,9 @@ theorem extendFalseRec (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .emptyRec [0, ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => by injection h with _ _ _ h4; exact h4 ▸ rfl)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT falseRecA.name ψ
@@ -201,7 +201,7 @@ it.  `BasisInstallRun` is a right-nested `∧` chain, so the walk is an
 
 /-- **The `False` block, installed at the P tier.**  `BasisStepPB`'s
 `falseK` branch. -/
-theorem declBasisPB_falseK {env₂ : Env} (mp : EnvModelM V μ env)
+theorem declBasisPB_falseK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env Ix.Kernel.BasisKind.falseK.declsA env₂) :
     Nonempty (EnvModelM V μ env₂) := by
   rw [show Ix.Kernel.BasisKind.falseK.declsA = [falseA, falseRecA] from rfl]
@@ -217,12 +217,12 @@ theorem declBasisPB_falseK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
   obtain ⟨mp1⟩ := extendFalse mp hf1 hwf1
-  have hE : (⟨falseA :: env.consts⟩ : Env).find? falseName
+  have hE : (⟨falseA :: env.consts⟩ : Env md).find? falseName
       = some falseA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
-  have hf2 : (⟨falseA :: env.consts⟩ : Env).find? falseRecA.name
+  have hf2 : (⟨falseA :: env.consts⟩ : Env md).find? falseRecA.name
       = none := Option.isNone_iff_eq_none.mp h2
   have hwf2 : EnvWF ⟨falseRecA :: falseA :: env.consts⟩ := by
     refine EnvWF.cons hwf1 ⟨rfl, rfl, ?_, rfl,
@@ -235,9 +235,9 @@ theorem declBasisPB_falseK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
-    show Expr.constsResolve _ falseRecA.toConstantVal.type = true
-    simp only [show falseRecA.toConstantVal.type
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
+    show Expr.constsResolve _ (falseRecA (md := md)).toConstantVal.type = true
+    simp only [show (falseRecA (md := md)).toConstantVal.type
         = Expr.forallE
             (Expr.forallE (.const falseName [])
               (.sort (.param uN)) { pw := .never })
@@ -246,9 +246,9 @@ theorem declBasisPB_falseK {env₂ : Env} (mp : EnvModelM V μ env)
               { pw := .ifAllZero [uN] })
             { pw := .ifAllZero [uN] } from rfl,
       Expr.constsResolve, Bool.and_eq_true, Option.isSome_iff_exists]
-    have hf : (⟨falseRecA :: falseA :: env.consts⟩ : Env).find?
+    have hf : (⟨falseRecA :: falseA :: env.consts⟩ : Env md).find?
         falseName = some falseA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]
       exact hE
     rw [hf]
     simp

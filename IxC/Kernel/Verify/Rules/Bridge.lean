@@ -18,11 +18,11 @@ is everything it consumes: the branch carries no `sorry`.
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env}
+variable {env : Env md}
 
 /-- **The bridge**: an accepting run of any of the five entry points
 of the `.verified` pure knot, at any fuel, yields a derivation. -/
-theorem bridge (env : Env) :
+theorem bridge (env : Env md) :
     ∀ fuel : Nat,
       WhnfCoreBridge env fuel ∧ WhnfBridge env fuel ∧ DefEqBridge env fuel ∧
         InferBridge env fuel ∧ InferIOBridge env fuel := by
@@ -37,23 +37,23 @@ theorem bridge (env : Env) :
       defeq_bridge_succ hwc hw hd hio, infer_bridge_succ hw hd hi hio,
       inferIO_bridge_succ hw hd hio⟩
 
-theorem whnfCore_bridge {fuel d : Nat} {e e' : Expr}
+theorem whnfCore_bridge {fuel d : Nat} {e e' : Expr md}
     (h : whnfCore .verified env fuel d e = .ok e') : Red env d e e' :=
   (bridge env fuel).1 h
 
-theorem whnf_bridge {fuel d : Nat} {e e' : Expr}
+theorem whnf_bridge {fuel d : Nat} {e e' : Expr md}
     (h : whnf .verified env fuel d e = .ok e') : Red env d e e' :=
   (bridge env fuel).2.1 h
 
-theorem isDefEqCore_bridge {fuel d : Nat} {a b : Expr}
+theorem isDefEqCore_bridge {fuel d : Nat} {a b : Expr md}
     (h : isDefEqCore .verified env fuel d a b = .ok true) : DefEq env d a b :=
   (bridge env fuel).2.2.1 h
 
-theorem inferTypeCore_bridge {fuel d : Nat} {e t : Expr}
+theorem inferTypeCore_bridge {fuel d : Nat} {e t : Expr md}
     (h : inferTypeCore .verified env fuel d e = .ok t) : Infer env .full d e t :=
   (bridge env fuel).2.2.2.1 h
 
-theorem inferTypeCoreIO_bridge {fuel d : Nat} {e t : Expr}
+theorem inferTypeCoreIO_bridge {fuel d : Nat} {e t : Expr md}
     (h : inferTypeCoreIO .verified env fuel d e = .ok t) : Infer env .io d e t :=
   (bridge env fuel).2.2.2.2 h
 

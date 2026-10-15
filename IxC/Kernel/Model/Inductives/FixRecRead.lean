@@ -40,16 +40,16 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Reading through an inserted block of variables -/
 
 /-- **`denoteMeta_shiftFrom`, iterated**: inserting `o` fresh variable
 slots at index `p` lifts the reading by `o` at the cut `d - p`. -/
-theorem denoteMeta_shiftFromN {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
+theorem denoteMeta_shiftFromN {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat), (acval n ψ).liftN 1 k = acval n ψ)
     {p : Nat} :
-    ∀ (o : Nat) {e : Expr} {d : Nat}, p ≤ d → Expr.WScoped d e →
+    ∀ (o : Nat) {e : Expr md} {d : Nat}, p ≤ d → Expr.WScoped d e →
       denoteMeta acval env φ (d + o) (Expr.shiftFromN p o e)
         = (denoteMeta acval env φ d e).map (AnnotTerm.liftN o · (d - p))
   | 0, e, d, _, _ => by
@@ -74,11 +74,11 @@ variables `0 … A.length - 1`; `B` opens it at the same variables with
 those at or above `p` moved `o` slots up.  The reading moves with
 them: it is lifted by `o` at the cut `d - p`. -/
 theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : LevelParam → Nat} {p o d t : Nat}
-    {e : Expr} (hef : e.hasFvar = false)
-    {A B : List Expr} (hlen : A.length = B.length) (hpd : p ≤ d)
-    (hAw : ∀ (k : Nat) (x : Expr), A[k]? = some x → Expr.WScoped d x)
-    (hAB : ∀ (k : Nat) (a b : Expr), A[k]? = some a → B[k]? = some b →
-      ∃ (ia : Nat) (tya tyb : Expr),
+    {e : Expr md} (hef : e.hasFvar = false)
+    {A B : List (Expr md)} (hlen : A.length = B.length) (hpd : p ≤ d)
+    (hAw : ∀ (k : Nat) (x : Expr md), A[k]? = some x → Expr.WScoped d x)
+    (hAB : ∀ (k : Nat) (a b : Expr md), A[k]? = some a → B[k]? = some b →
+      ∃ (ia : Nat) (tya tyb : Expr md),
         a = Expr.fvar ia tya ∧ b = Expr.fvar (if ia < p then ia else ia + o) tyb)
     {E : AnnotTerm}
     (hE : denoteMeta m.acval env ψ d (Expr.instSeq A t e) = some E) :
@@ -111,11 +111,11 @@ theorem denoteMeta_instSeq_shift {m : EnvModel V env} {ψ : LevelParam → Nat} 
 /-! ## Spine bookkeeping -/
 
 /-- A read spine, re-read entry by entry at another frame. -/
-theorem DenoteMetaSpine.map_map {acval : Key → (LevelParam → Nat) → AnnotTerm} {d d' : Nat}
-    {f g : Expr → Expr} {h : AnnotTerm → AnnotTerm} :
-    ∀ {as : List Expr} {vs : List AnnotTerm},
+theorem DenoteMetaSpine.map_map {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d d' : Nat}
+    {f g : Expr md → Expr md} {h : AnnotTerm → AnnotTerm} :
+    ∀ {as : List (Expr md)} {vs : List AnnotTerm},
       DenoteMetaSpine acval env φ d (as.map f) vs →
-      (∀ (a : Expr) (v : AnnotTerm), a ∈ as → denoteMeta acval env φ d (f a) = some v →
+      (∀ (a : Expr md) (v : AnnotTerm), a ∈ as → denoteMeta acval env φ d (f a) = some v →
         denoteMeta acval env φ d' (g a) = some (h v)) →
       DenoteMetaSpine acval env φ d' (as.map g) (vs.map h)
   | [], vs, hsp, _ => by
@@ -129,8 +129,8 @@ theorem DenoteMetaSpine.map_map {acval : Key → (LevelParam → Nat) → AnnotT
         (DenoteMetaSpine.map_map htl fun x v hx hv => hfg x v (List.mem_cons_of_mem _ hx) hv)
 
 /-- A pointwise-read mapped spine. -/
-theorem DenoteMetaSpine.of_map {α : Type} {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat}
-    {f : α → Expr} {g : α → AnnotTerm} :
+theorem DenoteMetaSpine.of_map {α : Type} {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat}
+    {f : α → Expr md} {g : α → AnnotTerm} :
     ∀ (l : List α), (∀ a ∈ l, denoteMeta acval env φ d (f a) = some (g a)) →
       DenoteMetaSpine acval env φ d (l.map f) (l.map g)
   | [], _ => .nil
@@ -142,10 +142,10 @@ theorem DenoteMetaSpine.of_map {α : Type} {acval : Key → (LevelParam → Nat)
 
 /-- Two frames of the same variables read an expression the same: the
 variables' annotations do not matter (`denoteMeta_erasedEq`). -/
-theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : LevelParam → Nat} {d t : Nat} {e : Expr}
-    {L L' : List Expr} (hlen : L.length = L'.length)
-    (hidx : ∀ (k : Nat) (a b : Expr), L[k]? = some a → L'[k]? = some b →
-      ∃ (q : Nat) (ty ty' : Expr), a = Expr.fvar q ty ∧ b = Expr.fvar q ty') :
+theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : LevelParam → Nat} {d t : Nat} {e : Expr md}
+    {L L' : List (Expr md)} (hlen : L.length = L'.length)
+    (hidx : ∀ (k : Nat) (a b : Expr md), L[k]? = some a → L'[k]? = some b →
+      ∃ (q : Nat) (ty ty' : Expr md), a = Expr.fvar q ty ∧ b = Expr.fvar q ty') :
     denoteMeta m.acval env ψ d (Expr.instSeq L t e)
       = denoteMeta m.acval env ψ d (Expr.instSeq L' t e) := by
   refine denoteMeta_erasedEq (Expr.instSeq_erasedEq_args L L' t (Expr.ErasedEq.rfl e) ?_ hlen) d
@@ -154,9 +154,9 @@ theorem denoteMeta_instSeq_congr {m : EnvModel V env} {ψ : LevelParam → Nat} 
   exact Eq.refl _
 
 /-- A frame of the variables `0 … D-1` is the canonical opening. -/
-theorem denoteMeta_instSeq_canon {m : EnvModel V env} {ψ : LevelParam → Nat} {d t D : Nat} {e : Expr}
-    {L : List Expr} (hlen : L.length = D)
-    (hidx : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) :
+theorem denoteMeta_instSeq_canon {m : EnvModel V env} {ψ : LevelParam → Nat} {d t D : Nat} {e : Expr md}
+    {L : List (Expr md)} (hlen : L.length = D)
+    (hidx : ∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) :
     denoteMeta m.acval env ψ d (Expr.instSeq L t e)
       = denoteMeta m.acval env ψ d (Expr.instSeq (openFvars 0 D) t e) := by
   refine denoteMeta_instSeq_congr (by simp [hlen]) ?_
@@ -171,7 +171,7 @@ theorem denoteMeta_instSeq_canon {m : EnvModel V env} {ψ : LevelParam → Nat} 
 
 /-- A canonical opening's variables are scoped. -/
 theorem openFvars_WScoped {base k d : Nat} (h : base + k ≤ d) :
-    ∀ (q : Nat) (x : Expr), (openFvars base k)[q]? = some x → Expr.WScoped d x := by
+    ∀ (q : Nat) (x : Expr md), (openFvars base k)[q]? = some x → Expr.WScoped d x := by
   intro q x hq
   have hqk : q < k := by
     rcases Nat.lt_or_ge q k with h' | h'
@@ -187,9 +187,9 @@ theorem openFvars_WScoped {base k d : Nat} (h : base + k ≤ d) :
 
 /-- A Π-tower's binders and body inherit its closedness and its
 loose-bvar bound (each binder under the earlier ones). -/
-theorem Expr.piBinders_props : ∀ (e : Expr) (c : Nat), e.hasFvar = false →
+theorem Expr.piBinders_props : ∀ (e : Expr md) (c : Nat), e.hasFvar = false →
     e.looseBVarsBounded c = true →
-    (∀ (k : Nat) (b : Expr × BinderMeta), (e.piBinders).1[k]? = some b →
+    (∀ (k : Nat) (b : Expr md × BinderMeta), (e.piBinders).1[k]? = some b →
         b.1.hasFvar = false ∧ b.1.looseBVarsBounded (c + k) = true) ∧
       (e.piBinders).2.hasFvar = false ∧
       (e.piBinders).2.looseBVarsBounded (c + (e.piBinders).1.length) = true
@@ -226,10 +226,10 @@ theorem Expr.piBinders_props : ∀ (e : Expr) (c : Nat), e.hasFvar = false →
 inherit the constructor type's closedness and their frames' loose-bvar
 bounds (the telescope's binder `k` under the `k` earlier ones, the
 index expressions under the whole telescope). -/
-theorem structFieldTele_props {cty : Expr} {nP nF i : Nat}
+theorem structFieldTele_props {cty : Expr md} {nP nF i : Nat}
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (hi : i < nF) :
-    (∀ (k : Nat) (b : Expr × BinderMeta),
+    (∀ (k : Nat) (b : Expr md × BinderMeta),
         (Ix.Kernel.structFieldTeleOf cty nP nF i)[k]? = some b →
         b.1.hasFvar = false ∧ b.1.looseBVarsBounded (nP + i + k) = true) ∧
       ∀ e ∈ Ix.Kernel.structFieldIdxOf cty nP nF i,
@@ -265,7 +265,7 @@ theorem structFieldTele_props {cty : Expr} {nP nF i : Nat}
 /-- **`structIdxAt`, instantiated at the recursor's frame under the
 field's own telescope** — `Ix.Kernel.instSeq_structIdxAt` with the
 telescope's `j` openers below the frame (task #202). -/
-theorem instSeq_structIdxAtM (P X F I A : List Expr) {nP o nF l i j : Nat} {e : Expr}
+theorem instSeq_structIdxAtM (P X F I A : List (Expr md)) {nP o nF l i j : Nat} {e : Expr md}
     (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF) (hI : I.length = l)
     (hA : A.length = j)
     (hclP : ∀ a ∈ P, a.looseBVarsBounded 0 = true)
@@ -338,14 +338,14 @@ the frame `p⃗ x⃗ f⃗ ih⃗ a⃗` reads it at the same variables with the fi
 `o` slots higher and `nF - i + l` binders below — the telescope's own
 openers staying innermost — which is `ihIdxAtM`. -/
 theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o l i j : Nat}
-    {e : Expr} {E : AnnotTerm} (hef : e.hasFvar = false)
+    {e : Expr md} {E : AnnotTerm} (hef : e.hasFvar = false)
     (heb : e.looseBVarsBounded (nP + i + j) = true) (hi : i ≤ nF)
-    {S : List Expr} (hS : S.length = nP + i)
-    (hidxS : ∀ (k : Nat) (x : Expr), S[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    {P X F I : List Expr} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
+    {S : List (Expr md)} (hS : S.length = nP + i)
+    (hidxS : ∀ (k : Nat) (x : Expr md), S[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    {P X F I : List (Expr md)} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
     (hI : I.length = l)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty)
     (hE : denoteMeta m.acval env ψ (nP + i + j)
       (Expr.instSeq (S ++ openFvars (nP + i) j) (nP + i + j - 1) e) = some E) :
@@ -362,7 +362,7 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
     obtain ⟨ty, rfl⟩ := hidxF q a hq
     rfl
   -- the source frame, canonically
-  have hidxSA : ∀ (k : Nat) (x : Expr), (S ++ openFvars (nP + i) j)[k]? = some x →
+  have hidxSA : ∀ (k : Nat) (x : Expr md), (S ++ openFvars (nP + i) j)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
     intro k x hx
     by_cases hk : k < nP + i
@@ -380,9 +380,9 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
   have hlenSA : (S ++ openFvars (nP + i) j).length = nP + i + j := by
     rw [List.length_append, hS, openFvars_length]
   rw [denoteMeta_instSeq_canon hlenSA hidxSA] at hE
-  have hlenA : (openFvars 0 (nP + i) ++ openFvars (nP + nF + l) j).length = nP + i + j := by
+  have hlenA : ((openFvars (md := md)) 0 (nP + i) ++ openFvars (nP + nF + l) j).length = nP + i + j := by
     rw [List.length_append, openFvars_length, openFvars_length]
-  have hlenB : (openFvars 0 nP ++ openFvars (nP + o) i ++ openFvars (nP + o + nF + l) j).length
+  have hlenB : ((openFvars (md := md)) 0 nP ++ openFvars (nP + o) i ++ openFvars (nP + o + nF + l) j).length
       = nP + i + j := by
     rw [List.length_append, List.length_append, openFvars_length, openFvars_length,
       openFvars_length]
@@ -392,9 +392,9 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
   have hlenTgt : (P ++ F.take i ++ openFvars (nP + o + nF + l) j).length = nP + i + j := by
     rw [List.length_append, hlenPF, openFvars_length]
   -- the fields and the hypotheses, inserted between the field's frame and its telescope
-  have hcorr1 : ∀ (k : Nat) (a b : Expr), (openFvars 0 (nP + i + j))[k]? = some a →
+  have hcorr1 : ∀ (k : Nat) (a b : Expr md), (openFvars 0 (nP + i + j))[k]? = some a →
       (openFvars 0 (nP + i) ++ openFvars (nP + nF + l) j)[k]? = some b →
-      ∃ (ia : Nat) (tya tyb : Expr),
+      ∃ (ia : Nat) (tya tyb : Expr md),
         a = Expr.fvar ia tya ∧
           b = Expr.fvar (if ia < nP + i then ia else ia + (nF - i + l)) tyb := by
     intro k a b ha hb
@@ -426,10 +426,10 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
   rw [show nP + i + j + (nF - i + l) = nP + nF + l + j from by omega,
     show nP + i + j - (nP + i) = j from by omega] at hshift1
   -- the extras, inserted between the parameters and the fields
-  have hcorr2 : ∀ (k : Nat) (a b : Expr),
+  have hcorr2 : ∀ (k : Nat) (a b : Expr md),
       (openFvars 0 (nP + i) ++ openFvars (nP + nF + l) j)[k]? = some a →
       (openFvars 0 nP ++ openFvars (nP + o) i ++ openFvars (nP + o + nF + l) j)[k]? = some b →
-      ∃ (ia : Nat) (tya tyb : Expr),
+      ∃ (ia : Nat) (tya tyb : Expr md),
         a = Expr.fvar ia tya ∧ b = Expr.fvar (if ia < nP then ia else ia + o) tyb := by
     intro k a b ha hb
     have hka : k < nP + i + j := by
@@ -468,7 +468,7 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
       rw [if_neg (show ¬ nP + nF + l + (k - (nP + i)) < nP from by omega)]
       congr 1
       omega
-  have hAw2 : ∀ (k : Nat) (x : Expr),
+  have hAw2 : ∀ (k : Nat) (x : Expr md),
       (openFvars 0 (nP + i) ++ openFvars (nP + nF + l) j)[k]? = some x →
       Expr.WScoped (nP + nF + l + j) x := by
     intro k x hx
@@ -490,10 +490,10 @@ theorem denoteMeta_ihIdxAtM {m : EnvModel V env} {ψ : LevelParam → Nat} {nP n
   rw [show nP + nF + l + j + o = nP + o + nF + l + j from by omega,
     show nP + nF + l + j - nP = nF + l + j from by omega] at hshift2
   -- the frame, spelled at the recursor's own variables
-  have hcorr3 : ∀ (k : Nat) (a b : Expr),
+  have hcorr3 : ∀ (k : Nat) (a b : Expr md),
       (P ++ F.take i ++ openFvars (nP + o + nF + l) j)[k]? = some a →
       (openFvars 0 nP ++ openFvars (nP + o) i ++ openFvars (nP + o + nF + l) j)[k]? = some b →
-      ∃ (q : Nat) (ty ty' : Expr), a = Expr.fvar q ty ∧ b = Expr.fvar q ty' := by
+      ∃ (q : Nat) (ty ty' : Expr md), a = Expr.fvar q ty ∧ b = Expr.fvar q ty' := by
     intro k a b ha hb
     have hka : k < nP + i + j := by
       rcases Nat.lt_or_ge k (nP + i + j) with h | h
@@ -539,19 +539,19 @@ set_option maxHeartbeats 1600000 in
 /-- **A recursive field's index expressions at the recursor's frame**,
 spine-wise. -/
 theorem denoteMetaSpine_ihIdx {m : EnvModel V env} {ψ : LevelParam → Nat}
-    {nP nF o l i j : Nat} {cty : Expr} {Eis : List AnnotTerm}
+    {nP nF o l i j : Nat} {cty : Expr md} {Eis : List AnnotTerm}
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (hi : i < nF)
     (hj : j = (Ix.Kernel.structFieldTeleOf cty nP nF i).length)
-    {S : List Expr} (hS : S.length = nP + i)
-    (hidxS : ∀ (k : Nat) (x : Expr), S[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    {S : List (Expr md)} (hS : S.length = nP + i)
+    (hidxS : ∀ (k : Nat) (x : Expr md), S[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (heis : DenoteMetaSpine m.acval env ψ (nP + i + j)
       ((Ix.Kernel.structFieldIdxOf cty nP nF i).map
         (Expr.instSeq (S ++ openFvars (nP + i) j) (nP + i + j - 1))) Eis)
-    {P X F I : List Expr}
+    {P X F I : List (Expr md)}
     (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF) (hI : I.length = l)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty) :
     DenoteMetaSpine m.acval env ψ (nP + o + nF + l + j)
       ((Ix.Kernel.structFieldIdxOf cty nP nF i).map
@@ -567,15 +567,15 @@ theorem denoteMetaSpine_ihIdx {m : EnvModel V env} {ψ : LevelParam → Nat}
 /-! ## The recursor's frame, variable by variable -/
 
 /-- The frame `p⃗ x⃗ f⃗ ih⃗` is opened at the variables `0 … ` in order. -/
-theorem frameIdx {P X F I : List Expr} {nP o nF : Nat}
+theorem frameIdx {P X F I : List (Expr md)} {nP o nF : Nat}
     (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty)
-    (hidxI : ∀ (k : Nat) (x : Expr), I[k]? = some x →
+    (hidxI : ∀ (k : Nat) (x : Expr md), I[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + nF + k) ty) :
-    ∀ (k : Nat) (x : Expr), (P ++ X ++ F ++ I)[k]? = some x →
+    ∀ (k : Nat) (x : Expr md), (P ++ X ++ F ++ I)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
   intro k x hx
   by_cases h1 : k < nP + o + nF
@@ -600,7 +600,7 @@ theorem frameIdx {P X F I : List Expr} {nP o nF : Nat}
 /-! ## Telescopes, read binderwise -/
 
 /-- `structTeleAt` keeps the telescope's length. -/
-theorem structTeleAt_length (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr × BinderMeta)) :
+theorem structTeleAt_length (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr md × BinderMeta)) :
     (Ix.Kernel.structTeleAt nF o i l pw tele).length = tele.length := by
   unfold Ix.Kernel.structTeleAt
   rw [List.length_map, List.length_range]
@@ -608,8 +608,8 @@ theorem structTeleAt_length (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr 
 /-- `structTeleAt`'s binder `k`: the telescope's own, its domain moved
 to the `ih` binder's frame, its datum the elimination regime's (task
 #202 A2). -/
-theorem structTeleAt_getElem? {nF o i l k : Nat} {pw : PropWhen} {tele : List (Expr × BinderMeta)}
-    {b : Expr × BinderMeta} (hb : tele[k]? = some b) :
+theorem structTeleAt_getElem? {nF o i l k : Nat} {pw : PropWhen} {tele : List (Expr md × BinderMeta)}
+    {b : Expr md × BinderMeta} (hb : tele[k]? = some b) :
     (Ix.Kernel.structTeleAt nF o i l pw tele)[k]?
       = some (Ix.Kernel.structIdxAt nF o i l k b.1, { pw }) := by
   have hk : k < tele.length := (List.getElem?_eq_some_iff.mp hb).1
@@ -637,10 +637,10 @@ theorem ihTeleAtGo_getElem? (nF o i l : Nat) :
 
 /-- The telescope's openers, re-associated: its first opener is the
 frame's last variable. -/
-theorem denoteMeta_frame_cons {m : EnvModel V env} {ψ : LevelParam → Nat} {L : List Expr} {D : Nat}
+theorem denoteMeta_frame_cons {m : EnvModel V env} {ψ : LevelParam → Nat} {L : List (Expr md)} {D : Nat}
     (hL : L.length = D)
-    (hidxL : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (ty₀ : Expr) (k t dd : Nat) (e : Expr) :
+    (hidxL : ∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (ty₀ : Expr md) (k t dd : Nat) (e : Expr md) :
     denoteMeta m.acval env ψ dd
         (Expr.instSeq (L ++ [Expr.fvar D ty₀] ++ openFvars (D + 1) k) t e)
       = denoteMeta m.acval env ψ dd (Expr.instSeq (L ++ openFvars D (k + 1)) t e) := by
@@ -685,11 +685,11 @@ set_option maxHeartbeats 1600000 in
 /-- **A Π-tower over a frame reads to the Π-tower of the readings**:
 binder `k` read under the `k` earlier openers, the body under all. -/
 theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : LevelParam → Nat} :
-    ∀ (tele : List (Expr × BinderMeta)) (tl : List (Nat × Nat × AnnotTerm)) (body : Expr)
-      (B : AnnotTerm) (L : List Expr) (D : Nat), L.length = D →
-      (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
+    ∀ (tele : List (Expr md × BinderMeta)) (tl : List (Nat × Nat × AnnotTerm)) (body : Expr md)
+      (B : AnnotTerm) (L : List (Expr md)) (D : Nat), L.length = D →
+      (∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
       tl.length = tele.length →
-      (∀ (k : Nat) (b : Expr × BinderMeta) (p : Nat × Nat × AnnotTerm),
+      (∀ (k : Nat) (b : Expr md × BinderMeta) (p : Nat × Nat × AnnotTerm),
         tele[k]? = some b → tl[k]? = some p →
         p.1 = 0 ∧ p.2.1 = pwBit ψ b.2.pw ∧
           denoteMeta m.acval env ψ (D + k)
@@ -716,7 +716,7 @@ theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : LevelParam → Nat
         omega
     have hlenL' : (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)]).length = D + 1 := by
       rw [List.length_append, hL, List.length_singleton]
-    have hidxL' : ∀ (k : Nat) (x : Expr),
+    have hidxL' : ∀ (k : Nat) (x : Expr md),
         (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)])[k]? = some x →
         ∃ ty', x = Expr.fvar k ty' := by
       intro k x hx
@@ -766,11 +766,11 @@ theorem denoteMeta_instSeq_mkPisOf {m : EnvModel V env} {ψ : LevelParam → Nat
 set_option maxHeartbeats 1600000 in
 /-- **A λ-tower over a frame reads to the λ-tower of the readings.** -/
 theorem denoteMeta_instSeq_mkLamsOf {m : EnvModel V env} {ψ : LevelParam → Nat} :
-    ∀ (tele : List (Expr × BinderMeta)) (tl : List (Nat × AnnotTerm)) (body : Expr)
-      (B : AnnotTerm) (L : List Expr) (D : Nat), L.length = D →
-      (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
+    ∀ (tele : List (Expr md × BinderMeta)) (tl : List (Nat × AnnotTerm)) (body : Expr md)
+      (B : AnnotTerm) (L : List (Expr md)) (D : Nat), L.length = D →
+      (∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
       tl.length = tele.length →
-      (∀ (k : Nat) (b : Expr × BinderMeta) (p : Nat × AnnotTerm),
+      (∀ (k : Nat) (b : Expr md × BinderMeta) (p : Nat × AnnotTerm),
         tele[k]? = some b → tl[k]? = some p →
         p.1 = pwBit ψ b.2.pw ∧
           denoteMeta m.acval env ψ (D + k)
@@ -797,7 +797,7 @@ theorem denoteMeta_instSeq_mkLamsOf {m : EnvModel V env} {ψ : LevelParam → Na
         omega
     have hlenL' : (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)]).length = D + 1 := by
       rw [List.length_append, hL, List.length_singleton]
-    have hidxL' : ∀ (k : Nat) (x : Expr),
+    have hidxL' : ∀ (k : Nat) (x : Expr md),
         (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)])[k]? = some x →
         ∃ ty', x = Expr.fvar k ty' := by
       intro k x hx
@@ -848,13 +848,13 @@ set_option maxHeartbeats 1600000 in
 /-- **A Π-tower over a frame, read**: the reading is the Π-tower of
 the binders' readings over the body's. -/
 theorem denoteMeta_instSeq_mkPisOf_inv {m : EnvModel V env} {ψ : LevelParam → Nat} :
-    ∀ (tele : List (Expr × BinderMeta)) (body : Expr) (L : List Expr) (D : Nat)
+    ∀ (tele : List (Expr md × BinderMeta)) (body : Expr md) (L : List (Expr md)) (D : Nat)
       (ea : AnnotTerm), L.length = D →
-      (∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
+      (∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty) →
       denoteMeta m.acval env ψ D (Expr.instSeq L (D - 1) (Expr.mkPisOf tele body)) = some ea →
       ∃ (tl : List (Nat × Nat × AnnotTerm)) (B : AnnotTerm),
         ea = mkPisAV tl B ∧ tl.length = tele.length ∧
-        (∀ (k : Nat) (b : Expr × BinderMeta) (p : Nat × Nat × AnnotTerm),
+        (∀ (k : Nat) (b : Expr md × BinderMeta) (p : Nat × Nat × AnnotTerm),
           tele[k]? = some b → tl[k]? = some p →
           p.1 = 0 ∧ p.2.1 = pwBit ψ b.2.pw ∧
             denoteMeta m.acval env ψ (D + k)
@@ -882,7 +882,7 @@ theorem denoteMeta_instSeq_mkPisOf_inv {m : EnvModel V env} {ψ : LevelParam →
     obtain ⟨ta, ba, hta, hba, rfl⟩ := denoteMeta_forallE_inv hread
     have hlenL' : (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)]).length = D + 1 := by
       rw [List.length_append, hL, List.length_singleton]
-    have hidxL' : ∀ (k : Nat) (x : Expr),
+    have hidxL' : ∀ (k : Nat) (x : Expr md),
         (L ++ [Expr.fvar D (Expr.instSeq L (D - 1) ty)])[k]? = some x →
         ∃ ty', x = Expr.fvar k ty' := by
       intro k x hx
@@ -940,10 +940,10 @@ entries — bits included — and its domain's index expressions, read
 under the whole telescope, are the field's readings (task #202; a
 finitary field: the telescope is empty and this is the old
 `eisRead`). -/
-@[expose] def FieldReadAt {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP nF i : Nat) (cty : Expr)
-    (fvs0 : List Expr) (tl : List (Nat × Nat × AnnotTerm)) (Eis : List AnnotTerm) : Prop :=
+@[expose] def FieldReadAt {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP nF i : Nat) (cty : Expr md)
+    (fvs0 : List (Expr md)) (tl : List (Nat × Nat × AnnotTerm)) (Eis : List AnnotTerm) : Prop :=
   tl.length = (Ix.Kernel.structFieldTeleOf cty nP nF i).length ∧
-  (∀ (k : Nat) (b : Expr × BinderMeta) (p : Nat × Nat × AnnotTerm),
+  (∀ (k : Nat) (b : Expr md × BinderMeta) (p : Nat × Nat × AnnotTerm),
     (Ix.Kernel.structFieldTeleOf cty nP nF i)[k]? = some b → tl[k]? = some p →
     p.1 = 0 ∧ p.2.1 = pwBit ψ b.2.pw ∧
       denoteMeta m.acval env ψ (nP + i + k)
@@ -962,10 +962,10 @@ parameters and the field's index readings (`recEntry`); peeling the
 tower at the raw binder's own `∀`-binders (`teleLen`) gives the
 telescope binderwise, and inverting the body's application spine
 (`fieldArity`) the index expressions. -/
-theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
-    {nP nIdx : Nat} {c : Key × Nat × Expr × List Nat} {cd : CtorDatumR}
+theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {c : Key md × Nat × Expr md × List Nat} {cd : CtorDatumR md}
     (hc : CtorReadR m ψ T lps nP nIdx c cd) {i : Nat} (hi : i ∈ c.2.2.2)
-    {fvs0 : List Expr} {crest : Expr}
+    {fvs0 : List (Expr md)} {crest : Expr md}
     (hop0 : openPisAtFvars (nP + c.2.1) c.2.2.1 0 = some (fvs0, crest)) :
     FieldReadAt m ψ nP c.2.1 i c.2.2.1 fvs0 (cd.2.2.2.2.2.2.getD i [])
       (cd.2.2.2.2.2.1.getD i []) := by
@@ -991,7 +991,7 @@ theorem fieldReadAt_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} 
   have hS : (fvs0.take (nP + i)).length = nP + i := by
     rw [List.length_take, hlen0]
     omega
-  have hidxS : ∀ (k : Nat) (y : Expr), (fvs0.take (nP + i))[k]? = some y →
+  have hidxS : ∀ (k : Nat) (y : Expr md), (fvs0.take (nP + i))[k]? = some y →
       ∃ ty, y = Expr.fvar k ty := by
     intro k y hy
     have hk : k < nP + i := by
@@ -1045,19 +1045,19 @@ position `l`, instantiated at the recursor's frame, reads to
 at each binder), then the motive at the field's index readings and the
 field applied to the telescope's own variables. -/
 theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o l i : Nat} {pw : PropWhen}
-    {cty : Expr}
-    {fvs0 : List Expr} {crest : Expr} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
+    {cty : Expr md}
+    {fvs0 : List (Expr md)} {crest : Expr md} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (hi : i < nF) (ho : 0 < o)
     (hfr : FieldReadAt m ψ nP nF i cty fvs0 tl Eis)
-    {P X F I : List Expr} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
+    {P X F I : List (Expr md)} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
     (hI : I.length = l)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty)
-    (hidxI : ∀ (k : Nat) (x : Expr), I[k]? = some x →
+    (hidxI : ∀ (k : Nat) (x : Expr md), I[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + nF + k) ty) :
     denoteMeta m.acval env ψ (nP + o + nF + l)
         (Expr.instSeq (P ++ X ++ F ++ I) (nP + o + nF + l - 1)
@@ -1073,7 +1073,7 @@ theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o
   have hS : (fvs0.take (nP + i)).length = nP + i := by
     rw [List.length_take, hlen0]
     omega
-  have hidxS : ∀ (k : Nat) (x : Expr), (fvs0.take (nP + i))[k]? = some x →
+  have hidxS : ∀ (k : Nat) (x : Expr md), (fvs0.take (nP + i))[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
     intro k x hx
     have hk : k < nP + i := by
@@ -1092,7 +1092,7 @@ theorem denoteMeta_ihDom {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o
       (Ix.Kernel.structFieldTeleOf cty nP nF i).length).length
       = nP + o + nF + l + (Ix.Kernel.structFieldTeleOf cty nP nF i).length := by
     rw [List.length_append, hlenL, openFvars_length]
-  have hidxLA : ∀ (k : Nat) (x : Expr),
+  have hidxLA : ∀ (k : Nat) (x : Expr md),
       (P ++ X ++ F ++ I ++ openFvars (nP + o + nF + l)
         (Ix.Kernel.structFieldTeleOf cty nP nF i).length)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
@@ -1181,24 +1181,24 @@ set_option maxHeartbeats 1600000 in
 /-- **The `ih` binders' `∀`-tower** reads to `ihPisAV`, the body read
 under all of them. -/
 theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o : Nat} {pw : PropWhen}
-    {cty : Expr} {Eiss : List (List AnnotTerm)} {tls : List (List (Nat × Nat × AnnotTerm))}
-    {fvs0 : List Expr} {crest : Expr}
+    {cty : Expr md} {Eiss : List (List AnnotTerm)} {tls : List (List (Nat × Nat × AnnotTerm))}
+    {fvs0 : List (Expr md)} {crest : Expr md}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (ho : 0 < o)
-    {P X F : List Expr} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    {P X F : List (Expr md)} (hP : P.length = nP) (hX : X.length = o) (hF : F.length = nF)
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty) :
-    ∀ (is : List Nat) (l : Nat) (body : Expr) (I : List Expr),
+    ∀ (is : List Nat) (l : Nat) (body : Expr md) (I : List (Expr md)),
       (∀ i ∈ is, i < nF) →
       (∀ i ∈ is, FieldReadAt m ψ nP nF i cty fvs0 (tls.getD i []) (Eiss.getD i [])) →
       I.length = l →
-      (∀ (k : Nat) (x : Expr), I[k]? = some x →
+      (∀ (k : Nat) (x : Expr md), I[k]? = some x →
         ∃ ty, x = Expr.fvar (nP + o + nF + k) ty) →
-      ∃ I' : List Expr, I'.length = l + is.length ∧
-        (∀ (k : Nat) (x : Expr), I'[k]? = some x →
+      ∃ I' : List (Expr md), I'.length = l + is.length ∧
+        (∀ (k : Nat) (x : Expr md), I'[k]? = some x →
           ∃ ty, x = Expr.fvar (nP + o + nF + k) ty) ∧
         denoteMeta m.acval env ψ (nP + o + nF + l)
             (Expr.instSeq (P ++ X ++ F ++ I) (nP + o + nF + l - 1)
@@ -1222,7 +1222,7 @@ theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o
       rw [List.length_append, List.length_append, List.length_append, hP, hX, hF, hlenI]
     have hdom := denoteMeta_ihDom (pw := pw) hop0 hCf hCb hstripC hiF ho (heis i List.mem_cons_self) hP hX hF
       hlenI hidxP hidxX hidxF hidxI
-    have hann : ∀ (ann rest : Expr) (dd : Nat),
+    have hann : ∀ (ann rest : Expr md) (dd : Nat),
         denoteMeta m.acval env ψ dd
             (rest.instantiate1
               (Expr.fvar (nP + o + nF + l) ann) 0)
@@ -1239,14 +1239,14 @@ theorem denoteMeta_ihPis {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF o
       show nP + o + nF + l - 1 + 1 = nP + o + nF + l from by omega,
       denoteMeta_forallE, hdom, hann]
     generalize hfv : Expr.fvar (nP + o + nF + l) (Expr.sort Level.zero) = ifv
-    have hY : ∀ rest : Expr,
+    have hY : ∀ rest : Expr md,
         (Expr.instSeq (P ++ X ++ F ++ I) (nP + o + nF + l) rest).instantiate1 ifv 0
           = Expr.instSeq (P ++ X ++ F ++ (I ++ [ifv])) (nP + o + nF + l) rest := by
       intro rest
       rw [show P ++ X ++ F ++ (I ++ [ifv]) = (P ++ X ++ F ++ I) ++ [ifv] from by simp,
         Expr.instSeq_append (P ++ X ++ F ++ I) [ifv], hlenL, Nat.sub_self]
       rfl
-    have hidxI' : ∀ (k : Nat) (x : Expr), (I ++ [ifv])[k]? = some x →
+    have hidxI' : ∀ (k : Nat) (x : Expr md), (I ++ [ifv])[k]? = some x →
         ∃ ty, x = Expr.fvar (nP + o + nF + k) ty := by
       intro k x hx
       by_cases hk : k < I.length
@@ -1285,13 +1285,13 @@ reads the same at every deeper frame, up to the lift: the variables'
 annotations do not matter (`denoteMeta_erasedEq`), so `denoteMeta_lift`
 applies at the canonical opening. -/
 theorem denoteMeta_instSeq_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {d d' t : Nat}
-    {e : Expr} (hef : e.hasFvar = false) {L : List Expr}
-    (hidxL : ∀ (k : Nat) (x : Expr), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    {e : Expr md} (hef : e.hasFvar = false) {L : List (Expr md)}
+    (hidxL : ∀ (k : Nat) (x : Expr md), L[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (hlenL : L.length ≤ d) (hdd : d ≤ d') {E : AnnotTerm}
     (hE : denoteMeta m.acval env ψ d (Expr.instSeq L t e) = some E) :
     denoteMeta m.acval env ψ d' (Expr.instSeq L t e) = some (E.liftN (d' - d) 0) := by
-  obtain ⟨L₀, hlen₀, hidx₀⟩ : ∃ L₀ : List Expr, L₀.length = L.length ∧
-      ∀ (k : Nat) (x : Expr), L₀[k]? = some x →
+  obtain ⟨L₀, hlen₀, hidx₀⟩ : ∃ L₀ : List (Expr md), L₀.length = L.length ∧
+      ∀ (k : Nat) (x : Expr md), L₀[k]? = some x →
         x = Expr.fvar k (.sort .zero) := by
     refine ⟨(List.range L.length).map fun k => Expr.fvar k (.sort .zero),
       by simp, ?_⟩
@@ -1332,16 +1332,16 @@ parameters and the `o` extras, reads to `minorAVAtR`: the sum route's
 reading (`denoteP_minorAt`) with the `ih` binders (`denoteMeta_ihPis`)
 between the fields and the conclusion, which is therefore read one
 frame lower and lifted (`denoteMeta_instSeq_lift`). -/
-theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C : Key} {lps : List LevelParam}
-    {ciT ci : ConstantInfo} (hfT : env.find? T = some ciT)
+theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C : Key md} {lps : List LevelParam}
+    {ciT ci : ConstantInfo md} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
     (hfC : env.find? C = some ci) (hlpsC : ci.toConstantVal.levelParams = lps)
-    {nP nF nIdx : Nat} {pw : PropWhen} {cty mty : Expr} {extras : List Expr}
+    {nP nF nIdx : Nat} {pw : PropWhen} {cty mty : Expr md} {extras : List (Expr md)}
     {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
     (hmin : Ix.Kernel.structMinorTyR C lps nP nF extras.length pw cty recIdx = some mty)
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
-    (hresid : ∃ (cbs : List (Expr × BinderMeta)) (es : List Expr),
+    (hresid : ∃ (cbs : List (Expr md × BinderMeta)) (es : List (Expr md)),
       cty.stripPis (nP + nF)
         = some (cbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt nF nP ++ es)) ∧
       es.length = nIdx)
@@ -1350,14 +1350,14 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C 
       = some (mkPisAV ds (AnnotTerm.mkAppN (m.acval T ψ) (paramBvars nP nF ++ Es))))
     (hlenD : ds.length = nP + nF) (hlenE : Es.length = nIdx)
     (hrecBnd : ∀ i ∈ recIdx, i < nF)
-    (hfr : ∀ i ∈ recIdx, ∀ (fvs : List Expr) (rest : Expr),
+    (hfr : ∀ i ∈ recIdx, ∀ (fvs : List (Expr md)) (rest : Expr md),
       openPisAtFvars (nP + nF) cty 0 = some (fvs, rest) →
       FieldReadAt m ψ nP nF i cty fvs (tls.getD i []) (Eiss.getD i []))
-    {tfvs : List Expr} (hlenT : tfvs.length = nP)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a)
+    {tfvs : List (Expr md)} (hlenT : tfvs.length = nP)
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hspW : ∀ (i : Nat) (a : Expr md), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a)
     (ho : 0 < extras.length)
-    (hidxE : ∀ (k : Nat) (x : Expr), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) :
+    (hidxE : ∀ (k : Nat) (x : Expr md), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) :
     denoteMeta m.acval env ψ (nP + extras.length)
         (Expr.instSeq (tfvs ++ extras) (nP + extras.length - 1) mty)
       = some (minorAVAtR m C ψ nP nF (pwBit ψ pw) extras.length ds Es recIdx tls Eiss) := by
@@ -1416,7 +1416,7 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C 
   obtain ⟨tyM, rfl⟩ := hidxE 0 mfv hhead
   rw [Nat.add_zero] at hhead
   -- the frame, as one instantiation sequence
-  have hcomb : ∀ Y : Expr,
+  have hcomb : ∀ Y : Expr md,
       Expr.instSeq xFvs (nF - 1)
           (Expr.instSeq (tfvs ++ extras) (nP + extras.length - 1 + nF) Y)
         = Expr.instSeq (tfvs ++ extras ++ xFvs) (nP + extras.length + nF - 1) Y := by
@@ -1426,9 +1426,9 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C 
       show nP + extras.length + nF - 1 - (nP + extras.length) = nF - 1 from by omega,
       show nP + extras.length + nF - 1 = nP + extras.length - 1 + nF from by omega]
   rw [hcomb] at hminor
-  have hidx3 : ∀ (k : Nat) (x : Expr), (tfvs ++ extras ++ xFvs)[k]? = some x →
+  have hidx3 : ∀ (k : Nat) (x : Expr md), (tfvs ++ extras ++ xFvs)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
-    have h := frameIdx (I := ([] : List Expr)) hlenT rfl hlenX hidxT hidxE hidxX
+    have h := frameIdx (I := ([] : List (Expr md))) hlenT rfl hlenX hidxT hidxE hidxX
       (by intro k x hx; simp at hx)
     simpa using h
   have hcl3 : ∀ a ∈ tfvs ++ extras ++ xFvs, a.looseBVarsBounded 0 = true := fun a ha => by
@@ -1538,20 +1538,20 @@ theorem denoteMeta_minorAtR {m : EnvModel V env} {ψ : LevelParam → Nat} {T C 
 set_option maxHeartbeats 1600000 in
 /-- **The `∀`-telescope of recursive minors** reads to the Π-tower over
 `fixMinorsData`, the body read under the motive and all minors. -/
-theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
-    {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
+theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {ciT : ConstantInfo md} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
-      {body mins : Expr} {extras : List Expr},
+    {nP nIdx : Nat} {pw : PropWhen} {tfvs : List (Expr md)} (hlenT : tfvs.length = nP)
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hspW : ∀ (i : Nat) (a : Expr md), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)}
+      {body mins : Expr md} {extras : List (Expr md)},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       Ix.Kernel.structMinorsPisR lps nP pw ctors extras.length body = some mins →
       0 < extras.length →
-      (∀ (k : Nat) (x : Expr), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) →
-      ∃ extras' : List Expr, extras'.length = ctors.length + extras.length ∧
-        (∀ (k : Nat) (x : Expr), extras'[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) ∧
+      (∀ (k : Nat) (x : Expr md), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) →
+      ∃ extras' : List (Expr md), extras'.length = ctors.length + extras.length ∧
+        (∀ (k : Nat) (x : Expr md), extras'[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) ∧
         denoteMeta m.acval env ψ (nP + extras.length)
             (Expr.instSeq (tfvs ++ extras) (nP + extras.length - 1) mins)
           = (denoteMeta m.acval env ψ (nP + extras.length + ctors.length)
@@ -1590,7 +1590,7 @@ theorem denoteMeta_minorsPisR {m : EnvModel V env} {ψ : LevelParam → Nat} {T 
         List.length_append, List.length_singleton,
         show nP + (extras.length + 1) - 1 = nP + extras.length from by omega, Nat.sub_self]
       rfl
-    have hidxE' : ∀ (k : Nat) (x : Expr), (extras ++ [mkfv])[k]? = some x →
+    have hidxE' : ∀ (k : Nat) (x : Expr md), (extras ++ [mkfv])[k]? = some x →
         ∃ ty, x = Expr.fvar (nP + k) ty := by
       intro k x hx
       by_cases hk : k < extras.length
@@ -1626,20 +1626,20 @@ set_option maxHeartbeats 1600000 in
 /-- **The `λ`-telescope of recursive minors** reads to the λ-tower over
 `fixMinorsData`'s domains, the body read under the motive and all
 minors. -/
-theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
-    {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
+theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {ciT : ConstantInfo md} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {nP nIdx : Nat} {pw : PropWhen} {tfvs : List Expr} (hlenT : tfvs.length = nP)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
-      {body mins : Expr} {extras : List Expr},
+    {nP nIdx : Nat} {pw : PropWhen} {tfvs : List (Expr md)} (hlenT : tfvs.length = nP)
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hspW : ∀ (i : Nat) (a : Expr md), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)}
+      {body mins : Expr md} {extras : List (Expr md)},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       Ix.Kernel.structMinorsLamsR lps nP pw ctors extras.length body = some mins →
       0 < extras.length →
-      (∀ (k : Nat) (x : Expr), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) →
-      ∃ extras' : List Expr, extras'.length = ctors.length + extras.length ∧
-        (∀ (k : Nat) (x : Expr), extras'[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) ∧
+      (∀ (k : Nat) (x : Expr md), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) →
+      ∃ extras' : List (Expr md), extras'.length = ctors.length + extras.length ∧
+        (∀ (k : Nat) (x : Expr md), extras'[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty) ∧
         denoteMeta m.acval env ψ (nP + extras.length)
             (Expr.instSeq (tfvs ++ extras) (nP + extras.length - 1) mins)
           = (denoteMeta m.acval env ψ (nP + extras.length + ctors.length)
@@ -1679,7 +1679,7 @@ theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T
         List.length_append, List.length_singleton,
         show nP + (extras.length + 1) - 1 = nP + extras.length from by omega, Nat.sub_self]
       rfl
-    have hidxE' : ∀ (k : Nat) (x : Expr), (extras ++ [mkfv])[k]? = some x →
+    have hidxE' : ∀ (k : Nat) (x : Expr md), (extras ++ [mkfv])[k]? = some x →
         ∃ ty, x = Expr.fvar (nP + k) ty := by
       intro k x hx
       by_cases hk : k < extras.length
@@ -1716,16 +1716,16 @@ theorem denoteMeta_minorsLamsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T
 set_option maxHeartbeats 3200000 in
 /-- **The generated recursive recursor type reads to the Π-tower over
 `fixRecDataAV`** with the core `motive ı⃗ t`. -/
-theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
-    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {ciT : ConstantInfo}
+theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {ciT : ConstantInfo md}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
-    {tty recTy : Expr}
+    {tty recTy : Expr md}
     (hgen : Ix.Kernel.structRecTyR T lps elim large nP nIdx tty ctors = some recTy)
     (hTf : tty.hasFvar = false) (hTb : tty.looseBVarsBounded 0 = true)
     (hstripT : (tty.stripPis (nP + nIdx)).isSome = true)
-    {tfvs : List Expr} {trest : Expr} (hopT : openPisAtFvars nP tty 0 = some (tfvs, trest))
+    {tfvs : List (Expr md)} {trest : Expr md} (hopT : openPisAtFvars nP tty 0 = some (tfvs, trest))
     {ppsAll : List (Nat × Nat × AnnotTerm)} {w : Nat}
     (hTread : denoteMeta m.acval env ψ 0 tty = some (mkPisAV ppsAll (.sort w)))
     (hlenP : ppsAll.length = nP + nIdx) :
@@ -1761,7 +1761,7 @@ theorem denoteMeta_structRecTyR {m : EnvModel V env} {ψ : LevelParam → Nat} {
       = Expr.instSeq (tfvs ++ [mfv]) nP minors := by
     rw [Expr.instSeq_append, hlenT, Nat.sub_self]
     rfl
-  have hidxE : ∀ (k : Nat) (x : Expr), [mfv][k]? = some x →
+  have hidxE : ∀ (k : Nat) (x : Expr md), [mfv][k]? = some x →
       ∃ ty, x = Expr.fvar (nP + k) ty := by
     intro k x hx
     cases k with
@@ -1928,17 +1928,17 @@ telescope as a λ-tower (`denoteMeta_ihIdxAtM` at each binder), then the
 recursor's leaf at the block's variables, the field's index readings
 and the field applied to the telescope's own variables. -/
 theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n i : Nat} {pw : PropWhen}
-    {cty : Expr} {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {cty : Expr md} {recC : Key md} {rlps : List LevelParam} {ciR : ConstantInfo md}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
-    {fvs0 : List Expr} {crest : Expr} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
+    {fvs0 : List (Expr md)} {crest : Expr md} {tl : List (Nat × Nat × AnnotTerm)} {Eis : List AnnotTerm}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest))
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true) (hi : i < nF)
     (hfr : FieldReadAt m ψ nP nF i cty fvs0 tl Eis)
-    {P X F : List Expr} (hP : P.length = nP) (hX : X.length = n + 1) (hF : F.length = nF)
-    (hidxP : ∀ (k : Nat) (x : Expr), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
-    (hidxF : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+    {P X F : List (Expr md)} (hP : P.length = nP) (hX : X.length = n + 1) (hF : F.length = nF)
+    (hidxP : ∀ (k : Nat) (x : Expr md), P[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), X[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
+    (hidxF : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + (n + 1) + k) ty) :
     denoteMeta m.acval env ψ (nP + 1 + n + nF)
         (Expr.instSeq (P ++ X ++ F) (nP + n + nF)
@@ -1950,7 +1950,7 @@ theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n
   have hS : (fvs0.take (nP + i)).length = nP + i := by
     rw [List.length_take, hlen0]
     omega
-  have hidxS : ∀ (k : Nat) (x : Expr), (fvs0.take (nP + i))[k]? = some x →
+  have hidxS : ∀ (k : Nat) (x : Expr md), (fvs0.take (nP + i))[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
     intro k x hx
     have hk : k < nP + i := by
@@ -1964,9 +1964,9 @@ theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n
   have hlenL : (P ++ X ++ F).length = nP + 1 + n + nF := by
     rw [List.length_append, List.length_append, hP, hX, hF]
     omega
-  have hLidx : ∀ (k : Nat) (x : Expr), (P ++ X ++ F)[k]? = some x →
+  have hLidx : ∀ (k : Nat) (x : Expr md), (P ++ X ++ F)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
-    have h := frameIdx (I := ([] : List Expr)) hP hX hF hidxP hidxX hidxF
+    have h := frameIdx (I := ([] : List (Expr md))) hP hX hF hidxP hidxX hidxF
       (by intro k x hx; simp at hx)
     simpa using h
   -- the frame under the telescope's openers
@@ -1974,7 +1974,7 @@ theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n
       (Ix.Kernel.structFieldTeleOf cty nP nF i).length).length
       = nP + 1 + n + nF + (Ix.Kernel.structFieldTeleOf cty nP nF i).length := by
     rw [List.length_append, hlenL, openFvars_length]
-  have hidxLA : ∀ (k : Nat) (x : Expr),
+  have hidxLA : ∀ (k : Nat) (x : Expr md),
       (P ++ X ++ F ++ openFvars (nP + 1 + n + nF)
         (Ix.Kernel.structFieldTeleOf cty nP nF i).length)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
@@ -2013,12 +2013,12 @@ theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n
     rw [hy, denoteMeta_fvar,
       show nP + 1 + n + nF + (Ix.Kernel.structFieldTeleOf cty nP nF i).length - 1 -
         (nP + 1 + n + nF + (Ix.Kernel.structFieldTeleOf cty nP nF i).length - 1 - q) = q from by omega]
-  have hidxF' : ∀ (k : Nat) (x : Expr), F[k]? = some x →
+  have hidxF' : ∀ (k : Nat) (x : Expr md), F[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + (n + 1) + k) ty := hidxF
   -- the frame, as the `ih` lemmas spell it
-  have hframe : ∀ (k : Nat) (t dd : Nat) (e : Expr),
+  have hframe : ∀ (k : Nat) (t dd : Nat) (e : Expr md),
       denoteMeta m.acval env ψ dd
-          (Expr.instSeq (P ++ X ++ F ++ ([] : List Expr) ++
+          (Expr.instSeq (P ++ X ++ F ++ ([] : List (Expr md)) ++
             openFvars (nP + (n + 1) + nF + 0) k) t e)
         = denoteMeta m.acval env ψ dd
             (Expr.instSeq (P ++ X ++ F ++ openFvars (nP + 1 + n + nF) k) t e) := by
@@ -2048,12 +2048,12 @@ theorem denoteMeta_ihApp {m : EnvModel V env} {ψ : LevelParam → Nat} {nP nF n
     refine ⟨rfl, ?_⟩
     rw [← hframe k (nP + 1 + n + nF + k - 1) (nP + 1 + n + nF + k),
       show nP + 1 + n + nF + k = nP + (n + 1) + nF + 0 + k from by omega]
-    exact denoteMeta_ihIdxAtM (o := n + 1) (l := 0) (I := ([] : List Expr)) hef heb
+    exact denoteMeta_ihIdxAtM (o := n + 1) (l := 0) (I := ([] : List (Expr md))) hef heb
       (Nat.le_of_lt hi) hS hidxS hP hX hF rfl hidxP hidxF' h3
   · -- the recursor's leaf at the block's variables, the readings and the field
     rw [structTeleAt_length nF (n + 1) i 0 pw (Ix.Kernel.structFieldTeleOf cty nP nF i)]
     have hspI := denoteMetaSpine_ihIdx (m := m) (ψ := ψ) (o := n + 1) (l := 0)
-      (I := ([] : List Expr)) hCf hCb hstripC hi rfl hS hidxS
+      (I := ([] : List (Expr md))) hCf hCb hstripC hi rfl hS hidxS
       (by rw [hlenTl] at hspSrc; exact hspSrc) hP hX hF rfl hidxP hidxF'
     rw [List.append_nil, show nP + (n + 1) + nF + 0 = nP + 1 + n + nF from by omega] at hspI
     have hfieldApp : denoteMeta m.acval env ψ
@@ -2174,21 +2174,21 @@ set_option maxHeartbeats 3200000 in
 variables and the inductive hypotheses, read at the full frame under
 the motive and `n` minors. -/
 theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw : PropWhen}
-    {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {recC : Key md} {rlps : List LevelParam} {ciR : ConstantInfo md}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
-    {nP nF n j : Nat} {cty : Expr} {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
+    {nP nF n j : Nat} {cty : Expr md} {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
-    {fvs0 : List Expr} {crest00 : Expr}
+    {fvs0 : List (Expr md)} {crest00 : Expr md}
     (hop0 : openPisAtFvars (nP + nF) cty 0 = some (fvs0, crest00))
     (hCf : cty.hasFvar = false) (hCb : cty.looseBVarsBounded 0 = true)
     (hstripC : (cty.stripPis (nP + nF)).isSome = true)
     (hrecBnd : ∀ i ∈ recIdx, i < nF)
     (hfr : ∀ i ∈ recIdx, FieldReadAt m ψ nP nF i cty fvs0 (tls.getD i []) (Eiss.getD i []))
-    {tfvs extras xFvs : List Expr}
+    {tfvs extras xFvs : List (Expr md)}
     (hlenT : tfvs.length = nP) (hlenE : extras.length = n + 1) (hlenX : xFvs.length = nF)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxE : ∀ (k : Nat) (x : Expr), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), xFvs[k]? = some x →
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxE : ∀ (k : Nat) (x : Expr md), extras[k]? = some x → ∃ ty, x = Expr.fvar (nP + k) ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), xFvs[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + 1 + n + k) ty)
     (hj : j < n) :
     denoteMeta m.acval env ψ (nP + 1 + n + nF)
@@ -2196,7 +2196,7 @@ theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw 
           (Ix.Kernel.structRuleBodyR recC (rlps.map .param) pw nP n nF j recIdx
             (Ix.Kernel.structFieldTeleOf cty nP nF) (Ix.Kernel.structFieldIdxOf cty nP nF))))
       = some (fixRuleCoreAV (pwBit ψ pw) (m.acval recC ψ) nP nF n j recIdx tls Eiss) := by
-  have hidxX' : ∀ (k : Nat) (x : Expr), xFvs[k]? = some x →
+  have hidxX' : ∀ (k : Nat) (x : Expr md), xFvs[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + (n + 1) + k) ty := by
     intro k x hx
     obtain ⟨ty, hy⟩ := hidxX k x hx
@@ -2210,15 +2210,15 @@ theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw 
     obtain ⟨ty, rfl⟩ := hidxE q a hq
     rfl
   have hlenTE : (tfvs ++ extras).length = nP + (n + 1) := by simp [hlenT, hlenE]
-  have hcombR : ∀ Y : Expr,
+  have hcombR : ∀ Y : Expr md,
       Expr.instSeq xFvs (nF - 1) (Expr.instSeq (tfvs ++ extras) (nP + n + nF) Y)
         = Expr.instSeq (tfvs ++ extras ++ xFvs) (nP + n + nF) Y := by
     intro Y
     rw [Expr.instSeq_append (tfvs ++ extras) xFvs, hlenTE,
       show nP + n + nF - (nP + (n + 1)) = nF - 1 from by omega]
-  have hLidx : ∀ (k : Nat) (x : Expr), (tfvs ++ extras ++ xFvs)[k]? = some x →
+  have hLidx : ∀ (k : Nat) (x : Expr md), (tfvs ++ extras ++ xFvs)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
-    have h := frameIdx (I := ([] : List Expr)) hlenT hlenE hlenX hidxT hidxE hidxX'
+    have h := frameIdx (I := ([] : List (Expr md))) hlenT hlenE hlenX hidxT hidxE hidxX'
       (by intro k x hx; simp at hx)
     simpa using h
   have hclL : ∀ a ∈ tfvs ++ extras ++ xFvs, a.looseBVarsBounded 0 = true := fun a ha => by
@@ -2293,23 +2293,23 @@ theorem denoteMeta_ruleCoreR {m : EnvModel V env} {ψ : LevelParam → Nat} {pw 
 set_option maxHeartbeats 3200000 in
 /-- **Rule `j` reads to the λ-tower over `fixRuleDataAV`** at
 constructor `j`'s data, with the core `minor_j f⃗ ih⃗`. -/
-theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
-    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx j : Nat} {ciT : ConstantInfo}
+theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx j : Nat} {ciT : ConstantInfo md}
     (hfT : env.find? T = some ciT) (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR}
+    {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)}
     (hcr : CtorReadsR m ψ T lps nP nIdx ctors cds)
-    {recC : Key} {rlps : List LevelParam} {ciR : ConstantInfo}
+    {recC : Key md} {rlps : List LevelParam} {ciR : ConstantInfo md}
     (hfR : env.find? recC = some ciR) (hlpsR : ciR.toConstantVal.levelParams = rlps)
-    {tty rhs : Expr}
+    {tty rhs : Expr md}
     (hgen : Ix.Kernel.structRecRhsR T lps elim large nP nIdx tty ctors recC (rlps.map .param) j
       = some rhs)
     (hTf : tty.hasFvar = false)
     (hstripT : (tty.stripPis (nP + nIdx)).isSome = true)
-    {tfvs : List Expr} {trest : Expr} (hopT : openPisAtFvars nP tty 0 = some (tfvs, trest))
+    {tfvs : List (Expr md)} {trest : Expr md} (hopT : openPisAtFvars nP tty 0 = some (tfvs, trest))
     {ppsAll : List (Nat × Nat × AnnotTerm)} {w : Nat}
     (hTread : denoteMeta m.acval env ψ 0 tty = some (mkPisAV ppsAll (.sort w)))
     (hlenP : ppsAll.length = nP + nIdx)
-    {C : Key} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
+    {C : Key md} {nF : Nat} {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
     {recIdx : List Nat} {Eiss : List (List AnnotTerm)}
     {tls : List (List (Nat × Nat × AnnotTerm))}
     (hjd : cds[j]? = some (C, nF, ds, Es, recIdx, Eiss, tls)) :
@@ -2358,7 +2358,7 @@ theorem denoteMeta_structRecRhsR {m : EnvModel V env} {ψ : LevelParam → Nat} 
       = Expr.instSeq (tfvs ++ [mfv]) nP minors := by
     rw [Expr.instSeq_append, hlenT, Nat.sub_self]
     rfl
-  have hidxE : ∀ (k : Nat) (x : Expr), [mfv][k]? = some x →
+  have hidxE : ∀ (k : Nat) (x : Expr md), [mfv][k]? = some x →
       ∃ ty, x = Expr.fvar (nP + k) ty := by
     intro k x hx
     cases k with

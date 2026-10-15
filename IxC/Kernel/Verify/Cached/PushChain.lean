@@ -33,43 +33,43 @@ namespace Ix.Kernel.Cached
 
 open Ix.Kernel
 
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## Fresh chains -/
 
 /-- `fe'` extends `env` by a chain of pushes, each of a name fresh at the
 environment it was pushed onto: `fe'` is canonical, `env.consts` is a
 suffix of its constants, and name uniqueness carries over. -/
-@[expose] def PushChain (env : Env) (fe' : FEnv) : Prop :=
+@[expose] def PushChain (env : Env md) (fe' : FEnv md) : Prop :=
   fe' = mkFEnv fe'.env ∧ (∃ new, fe'.env.consts = new ++ env.consts) ∧
   (NodupNames env → NodupNames fe'.env)
 
-theorem PushChain.refl (env : Env) : PushChain env (mkFEnv env) :=
+theorem PushChain.refl (env : Env md) : PushChain env (mkFEnv env) :=
   ⟨rfl, ⟨[], rfl⟩, id⟩
 
-theorem PushChain.canon {env : Env} {fe : FEnv} (h : PushChain env fe) :
+theorem PushChain.canon {env : Env md} {fe : FEnv md} (h : PushChain env fe) :
     fe = mkFEnv fe.env := h.1
 
 /-- A canonical index is a chain from its own environment. -/
-theorem PushChain.self {fe : FEnv} (h : fe = mkFEnv fe.env) : PushChain fe.env fe :=
+theorem PushChain.self {fe : FEnv md} (h : fe = mkFEnv fe.env) : PushChain fe.env fe :=
   ⟨h, ⟨[], rfl⟩, id⟩
 
-theorem PushChain.find? {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (n : Key) : fe.find? n = fe.env.find? n := by
+theorem PushChain.find? {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    (n : Key md) : fe.find? n = fe.env.find? n := by
   have h1 := h.1
   calc fe.find? n = (mkFEnv fe.env).find? n := by rw [← h1]
     _ = fe.env.find? n := mkFEnv_find? _ n
 
 /-- A lookup that fails names no stored constant. -/
-theorem Env.find?_none_notin {env : Env} {n : Key} (h : env.find? n = none) :
+theorem Env.find?_none_notin {env : Env md} {n : Key md} (h : env.find? n = none) :
     n ∉ env.consts.map (·.name) := by
   intro hmem
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hmem
   unfold Env.find? at h
   exact (List.find?_eq_none.mp h) c hc (beq_self_eq_true _)
 
-theorem PushChain.push {env : Env} {fe : FEnv} (h : PushChain env fe)
-    {ci : ConstantInfo} (hfresh : fe.find? ci.name = none) :
+theorem PushChain.push {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    {ci : ConstantInfo md} (hfresh : fe.find? ci.name = none) :
     PushChain env (fe.push ci) := by
   obtain ⟨hc, ⟨new, hnew⟩, hnd⟩ := h
   refine ⟨?_, ⟨ci :: new, ?_⟩, ?_⟩
@@ -85,7 +85,7 @@ theorem PushChain.push {env : Env} {fe : FEnv} (h : PushChain env fe)
     rw [PushChain.find? ⟨hc, ⟨new, hnew⟩, hnd⟩] at hfresh
     exact Env.find?_none_notin hfresh
 
-theorem PushChain.trans {env : Env} {fe₁ fe₂ : FEnv} (h₁ : PushChain env fe₁)
+theorem PushChain.trans {env : Env md} {fe₁ fe₂ : FEnv md} (h₁ : PushChain env fe₁)
     (h₂ : PushChain fe₁.env fe₂) : PushChain env fe₂ := by
   obtain ⟨hc₁, ⟨new₁, hnew₁⟩, hnd₁⟩ := h₁
   obtain ⟨hc₂, ⟨new₂, hnew₂⟩, hnd₂⟩ := h₂
@@ -94,15 +94,15 @@ theorem PushChain.trans {env : Env} {fe₁ fe₂ : FEnv} (h₁ : PushChain env f
 
 /-- A list of names, pairwise distinct and all fresh at `env`: pushing
 constants of these names in this order is a fresh chain. -/
-def FreshNames (env : Env) (ns : List Key) : Prop :=
+def FreshNames (env : Env md) (ns : List (Key md)) : Prop :=
   ns.Nodup ∧ ∀ n ∈ ns, env.find? n = none
 
-theorem FreshNames.nil (env : Env) : FreshNames env [] :=
+theorem FreshNames.nil (env : Env md) : FreshNames env [] :=
   ⟨List.nodup_nil, fun _ h => nomatch h⟩
 
 /-- After pushing the head's constant, the tail is fresh at the
 extended environment. -/
-theorem FreshNames.step {env : Env} {c : ConstantInfo} {ns : List Key}
+theorem FreshNames.step {env : Env md} {c : ConstantInfo md} {ns : List (Key md)}
     (h : FreshNames env (c.name :: ns)) : FreshNames ⟨c :: env.consts⟩ ns := by
   obtain ⟨hnd, hfr⟩ := h
   rw [List.nodup_cons] at hnd
@@ -112,7 +112,7 @@ theorem FreshNames.step {env : Env} {c : ConstantInfo} {ns : List Key}
 
 /-- Freshness at the extended environment, with the head fresh at the
 base, is freshness of the whole list at the base. -/
-theorem FreshNames.cons_of {env : Env} {c : ConstantInfo} {ns : List Key}
+theorem FreshNames.cons_of {env : Env md} {c : ConstantInfo md} {ns : List (Key md)}
     (hc : env.find? c.name = none) (h : FreshNames ⟨c :: env.consts⟩ ns) :
     FreshNames env (c.name :: ns) := by
   obtain ⟨hnd, hfr⟩ := h
@@ -131,16 +131,16 @@ theorem FreshNames.cons_of {env : Env} {c : ConstantInfo} {ns : List Key}
 
 /-! ## The generic stage helpers keep the name and record the guard -/
 
-theorem checkConstantValF_fresh (ops : CheckerOps CheckCM) (fe : FEnv)
-    (cv : ConstantVal) :
+theorem checkConstantValF_fresh (ops : (CheckerOps md) (CheckCM md)) (fe : FEnv md)
+    (cv : ConstantVal md) :
     Yields (checkConstantValF ops fe cv)
       (fun cvA => cvA.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold checkConstantValF
   yields
   all_goals exact Yields.pure ⟨rfl, Option.not_isSome_iff_eq_none.mp (by assumption)⟩
 
-theorem checkMemberValF_fresh (ops : CheckerOps CheckCM)
-    (blockNames : List Key) (fe : FEnv) (cv : ConstantVal) :
+theorem checkMemberValF_fresh (ops : (CheckerOps md) (CheckCM md))
+    (blockNames : List (Key md)) (fe : FEnv md) (cv : ConstantVal md) :
     Yields (checkMemberValF ops blockNames fe cv)
       (fun cvA => cvA.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold checkMemberValF
@@ -148,8 +148,8 @@ theorem checkMemberValF_fresh (ops : CheckerOps CheckCM)
   yields
   all_goals (apply Yields.pure; exact hcvA)
 
-theorem checkConstantValC_fresh (mode : CheckMode) (fe : FEnv)
-    (cv : ConstantVal) :
+theorem checkConstantValC_fresh (mode : CheckMode) (fe : FEnv md)
+    (cv : ConstantVal md) :
     Yields (checkConstantValC mode fe cv)
       (fun p => p.1.name = cv.name ∧ fe.find? cv.name = none) := by
   unfold checkConstantValC
@@ -158,27 +158,27 @@ theorem checkConstantValC_fresh (mode : CheckMode) (fe : FEnv)
 
 /-! ## The value kinds -/
 
-theorem checkDefnValC_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) {cvA : ConstantVal} (hfr : fe.find? cvA.name = none)
-    (jty value : Expr) (hint : ReducibilityHint) :
+theorem checkDefnValC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) {cvA : ConstantVal md} (hfr : fe.find? cvA.name = none)
+    (jty value : Expr md) (hint : ReducibilityHint) :
     Yields (checkDefnValC mode fe cvA jty value hint)
       (fun fe' => PushChain env fe') := by
   unfold checkDefnValC
   yields
   all_goals (apply Yields.pure; exact h.push hfr)
 
-theorem checkThmValC_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) {cvA : ConstantVal} (hfr : fe.find? cvA.name = none)
-    (jty value : Expr) :
+theorem checkThmValC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) {cvA : ConstantVal md} (hfr : fe.find? cvA.name = none)
+    (jty value : Expr md) :
     Yields (checkThmValC mode fe cvA jty value)
       (fun fe' => PushChain env fe') := by
   unfold checkThmValC
   yields
   all_goals (apply Yields.pure; exact h.push hfr)
 
-theorem checkOpaqueValC_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) {cvA : ConstantVal} (hfr : fe.find? cvA.name = none)
-    (jty value : Expr) :
+theorem checkOpaqueValC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) {cvA : ConstantVal md} (hfr : fe.find? cvA.name = none)
+    (jty value : Expr md) :
     Yields (checkOpaqueValC mode fe cvA jty value)
       (fun fe' => PushChain env fe') := by
   unfold checkOpaqueValC
@@ -187,9 +187,9 @@ theorem checkOpaqueValC_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-! ## The modeled route -/
 
-theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List Key)
-    (caps : IndCaps) {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (ci : ConstantInfo) :
+theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List (Key md))
+    (caps : IndCaps md) {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    (ci : ConstantInfo md) :
     Yields (checkIndMemberS mode blockNames caps fe ci)
       (fun fe' => PushChain env fe') := by
   unfold checkIndMemberS
@@ -209,8 +209,8 @@ theorem checkIndMemberS_push (mode : CheckMode) (blockNames : List Key)
     rw [hn]; exact hfr
   | _ => exact Yields.ofThrow
 
-theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List Key) :
-    ∀ (recs : List ConstantInfo) {env : Env} (feAcc : FEnv),
+theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List (Key md)) :
+    ∀ (recs : List (ConstantInfo md)) {env : Env md} (feAcc : FEnv md),
       PushChain env feAcc →
       Yields (provisionRecsS mode blockNames feAcc recs)
         (fun p => FreshNames feAcc.env (p.2.map (·.1.name)))
@@ -239,12 +239,12 @@ theorem provisionRecsS_fresh (mode : CheckMode) (blockNames : List Key) :
 
 /-- The recursor group's install fold: the provisioned names are pushed
 in order onto the group's base index. -/
-theorem recFold_push (mode : CheckMode) (blockNames : List Key)
-    (fe₂ feSelf : FEnv) (f : Key → Key) :
-    ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule)) {env : Env}
-      (acc : FEnv), PushChain env acc →
+theorem recFold_push (mode : CheckMode) (blockNames : List (Key md))
+    (fe₂ feSelf : FEnv md) (f : Key md → Key md) :
+    ∀ (checked : List (ConstantVal md × Nat × Nat × List (RecRule md))) {env : Env md}
+      (acc : FEnv md), PushChain env acc →
       FreshNames acc.env (checked.map (·.1.name)) →
-      Yields (checked.foldlM (fun (acc : FEnv) c => do
+      Yields (checked.foldlM (fun (acc : FEnv md) c => do
           let rules' ← checkIotaRulesF mode (sharedOpsC mode feSelf) fe₂ feSelf
             f c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
           pure (acc.push (.recInfo c.1 c.2.1 c.2.2.1 rules'))) acc)
@@ -264,9 +264,9 @@ theorem recFold_push (mode : CheckMode) (blockNames : List Key)
     exact recFold_push mode blockNames fe₂ feSelf f cs _ (h.push hfr)
       (FreshNames.step (c := .recInfo c.1 c.2.1 c.2.2.1 rules') hf)
 
-theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Key)
-    {env : Env} {fe₂ : FEnv} (h : PushChain env fe₂)
-    (recs : List ConstantInfo) :
+theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List (Key md))
+    {env : Env md} {fe₂ : FEnv md} (h : PushChain env fe₂)
+    (recs : List (ConstantInfo md)) :
     Yields (checkIndRecsS mode blockNames fe₂ recs)
       (fun fe' => PushChain env fe') := by
   unfold checkIndRecsS
@@ -281,16 +281,16 @@ theorem checkIndRecsS_push (mode : CheckMode) (blockNames : List Key)
       exact recFold_push mode blockNames fe₂ feSelf _ checked fe₂ h hq
     · exact Yields.ofThrowBind
 
-theorem checkProjLookupsF_fresh (fe : FEnv) (T ctorName : Key)
+theorem checkProjLookupsF_fresh (fe : FEnv md) (T ctorName : Key md)
     (lps : List LevelParam) (nP nF i : Nat) :
-    Yields (checkProjLookupsF (m := CheckCM) fe T ctorName lps nP nF i)
+    Yields (checkProjLookupsF (m := CheckCM md) fe T ctorName lps nP nF i)
       (fun _ => fe.find? (projFnName T i) = none) := by
   unfold checkProjLookupsF
   yields
   all_goals (apply Yields.pure; exact Option.isNone_iff_eq_none.mp (by assumption))
 
-theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Key) (lps : List LevelParam)
+theorem checkProjFnS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (T ctorName : Key md) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (checkProjFnS mode fe T ctorName lps nP nF i)
       (fun fe' => PushChain env fe') := by
@@ -300,8 +300,8 @@ theorem checkProjFnS_push (mode : CheckMode) {env : Env} {fe : FEnv}
   yields
   all_goals (apply Yields.pure; exact h.push hfr)
 
-theorem installProjFnStepS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T ctorName : Key) (lps : List LevelParam)
+theorem installProjFnStepS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (T ctorName : Key md) (lps : List LevelParam)
     (nP nF i : Nat) :
     Yields (installProjFnStepS mode T ctorName lps nP nF fe i)
       (fun fe' => PushChain env fe') := by
@@ -313,9 +313,9 @@ theorem installProjFnStepS_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-- The members-then-recursors phase, shared by both arms of
 `checkIndDeclSF`'s block match. -/
-theorem indBase_push (mode : CheckMode) (blockNames : List Key)
-    (caps : IndCaps) {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (nonrecs recs : List ConstantInfo) :
+theorem indBase_push (mode : CheckMode) (blockNames : List (Key md))
+    (caps : IndCaps md) {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    (nonrecs recs : List (ConstantInfo md)) :
     Yields (do
         let fe₂ ← nonrecs.foldlM (checkIndMemberS mode blockNames caps) fe
         checkIndRecsS mode blockNames fe₂ recs)
@@ -327,8 +327,8 @@ theorem indBase_push (mode : CheckMode) (blockNames : List Key)
       nonrecs fe () h) fun fe₂ h₂ => ?_
   exact checkIndRecsS_push mode blockNames h₂ recs
 
-theorem checkIndDeclSF_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (block : List ConstantInfo) :
+theorem checkIndDeclSF_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (block : List (ConstantInfo md)) :
     Yields (checkIndDeclSF mode fe block)
       (fun fe' => PushChain env fe') := by
   unfold checkIndDeclSF
@@ -362,9 +362,9 @@ theorem checkIndDeclSF_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-! ## The fixpoint route -/
 
-theorem checkSumIndF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (ops : CheckerOps CheckCM) (p : InductiveShape)
-    (capsOf : InductiveShape → IndCaps) :
+theorem checkSumIndF_push {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    (ops : (CheckerOps md) (CheckCM md)) (p : InductiveShape md)
+    (capsOf : InductiveShape md → IndCaps md) :
     Yields (checkSumIndF ops fe p capsOf)
       (fun r => PushChain env r.1 ∧ ∃ s, r.2.2 = p.withSort s) := by
   unfold checkSumIndF
@@ -382,9 +382,9 @@ theorem checkSumIndF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
      show fe.find? cvTa.name = none
      rw [hn']; exact hfr)
 
-theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
-    (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) :
+theorem checkSumCtorF_fresh (ops : (CheckerOps md) (CheckCM md)) (fe₀ fe : FEnv md)
+    (T : Key md) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (cvC : ConstantVal md) (nF : Nat) (cvTa : ConstantVal md) :
     Yields (checkSumCtorF ops fe₀ fe T lps nP nIdx rs isProp large cvC nF cvTa)
       (fun r => r.1.name = cvC.name ∧ fe.find? cvC.name = none) := by
   unfold checkSumCtorF
@@ -394,10 +394,10 @@ theorem checkSumCtorF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
   yields
   all_goals (apply Yields.pure; exact ⟨hn, hfr⟩)
 
-theorem checkSumCtorsF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
-    (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
-    (cvTa : ConstantVal) :
-    ∀ (cs : List (ConstantVal × Nat)),
+theorem checkSumCtorsF_fresh (ops : (CheckerOps md) (CheckCM md)) (fe₀ fe : FEnv md)
+    (T : Key md) (lps : List LevelParam) (nP nIdx : Nat) (rs : Level) (isProp large : Bool)
+    (cvTa : ConstantVal md) :
+    ∀ (cs : List (ConstantVal md × Nat)),
       Yields (checkSumCtorsF ops fe₀ fe T lps nP nIdx rs isProp large cvTa cs)
         (fun r => r.1.map (·.1.name) = cs.map (·.1.name) ∧
           ∀ c ∈ r.1, fe.find? c.1.name = none)
@@ -423,7 +423,7 @@ theorem checkSumCtorsF_fresh (ops : CheckerOps CheckCM) (fe₀ fe : FEnv)
 
 /-- The constructors' conses: a fresh chain from the former's index. -/
 theorem consSumCtorsF_push (nP : Nat) :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env} {fe : FEnv},
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env : Env md} {fe : FEnv md},
       PushChain env fe → FreshNames fe.env (ctorsA.map (·.1.name)) →
       PushChain env (consSumCtorsF nP ctorsA fe)
   | [], _, _, h, _ => h
@@ -434,9 +434,9 @@ theorem consSumCtorsF_push (nP : Nat) :
     exact consSumCtorsF_push nP (ctorsA := cs) (h.push hfr)
       (FreshNames.step (c := .ctorInfo c.1 nP c.2) hf)
 
-theorem checkNativeRecF_fresh (ops : CheckerOps CheckCM) {w : StructWalkers}
-    (fe : FEnv) (p : NativeParts) (cvTa : ConstantVal)
-    (ctorsA : List (ConstantVal × Nat)) :
+theorem checkNativeRecF_fresh (ops : (CheckerOps md) (CheckCM md)) {w : StructWalkers md}
+    (fe : FEnv md) (p : NativeParts md) (cvTa : ConstantVal md)
+    (ctorsA : List (ConstantVal md × Nat)) :
     Yields (checkNativeRecF ops w fe p cvTa ctorsA)
       (fun r => r.1.name = p.cvR.name ∧ fe.find? p.cvR.name = none) := by
   unfold checkNativeRecF
@@ -450,20 +450,20 @@ theorem checkNativeRecF_fresh (ops : CheckerOps CheckCM) {w : StructWalkers}
   yields
   all_goals (apply Yields.pure; exact ⟨rfl, hcv.2⟩)
 
-theorem checkStructProjTableF_push {w : StructWalkers} {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (T C : Key) (lps : List LevelParam) (nP nF : Nat)
-    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) :
-    Yields (checkStructProjTableF (m := CheckCM) w T C lps nP nF resSort guards
+theorem checkStructProjTableF_push {w : StructWalkers md} {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
+    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) :
+    Yields (checkStructProjTableF (m := CheckCM md) w T C lps nP nF resSort guards
         off cvCa fe)
       (fun fe' => PushChain env fe') := by
   unfold checkStructProjTableF
   yields
   all_goals exact Yields.pure (h.push (Option.isNone_iff_eq_none.mp (by assumption)))
 
-theorem checkNativeTableF_push {w : StructWalkers} {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (p : NativeParts) (ctorsA : List (ConstantVal × Nat))
+theorem checkNativeTableF_push {w : StructWalkers md} {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
     (sortss : List (List Level)) :
-    Yields (checkNativeTableF (m := CheckCM) w p ctorsA sortss fe)
+    Yields (checkNativeTableF (m := CheckCM md) w p ctorsA sortss fe)
       (fun fe' => PushChain env fe') := by
   unfold checkNativeTableF
   split
@@ -474,8 +474,8 @@ theorem checkNativeTableF_push {w : StructWalkers} {env : Env} {fe : FEnv}
 
 /-- One pass (task #268): the former's cons keeps the chain, the
 constructors are the block's by name and fresh at its environment. -/
-theorem checkNativePassS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (p : NativeParts) (isRec : Bool) :
+theorem checkNativePassS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (p : NativeParts md) (isRec : Bool) :
     Yields (checkNativePassS mode fe p isRec)
       (fun r => PushChain env r.1.env₁ ∧ r.1.p.ctors = p.ctors ∧
         r.1.ctorsA.map (·.1.name) = r.1.p.ctors.map (·.1.name) ∧
@@ -500,8 +500,8 @@ theorem checkNativePassS_push (mode : CheckMode) {env : Env} {fe : FEnv}
     simp [NativeParts.withKinds, NativeParts.complete, InductiveShape.withSort]
 
 /-- The install after the pass keeps the chain. -/
-theorem checkNativeTailS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    {q : NativePass FEnv} (h₁ : PushChain env q.env₁)
+theorem checkNativeTailS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    {q : (NativePass md) (FEnv md)} (h₁ : PushChain env q.env₁)
     (hnd : (q.p.ctors.map (·.1.name)).Nodup)
     (hns : q.ctorsA.map (·.1.name) = q.p.ctors.map (·.1.name))
     (hfrs : ∀ c ∈ q.ctorsA, q.env₁.find? c.1.name = none) :
@@ -543,8 +543,8 @@ theorem checkNativeTailS_push (mode : CheckMode) {env : Env} {fe : FEnv}
         rw [hnR]; exact hfrR)
   exact checkNativeTableF_push hpush q.p q.ctorsA q.sortss
 
-theorem checkNativeS_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (p : NativeParts) :
+theorem checkNativeS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (p : NativeParts md) :
     Yields (checkNativeS mode fe p) (fun fe' => PushChain env fe') := by
   unfold checkNativeS
   -- the front guard: the distinct constructor names
@@ -578,9 +578,9 @@ theorem checkNativeS_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-! ## The declaration clause and the two drivers' steps -/
 
-theorem installBasisDeclF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
-    (ci : ConstantInfo) :
-    Yields (installBasisDeclF (m := CheckCM) fe ci)
+theorem installBasisDeclF_push {env : Env md} {fe : FEnv md} (h : PushChain env fe)
+    (ci : ConstantInfo md) :
+    Yields (installBasisDeclF (m := CheckCM md) fe ci)
       (fun fe' => PushChain env fe') := by
   unfold installBasisDeclF
   yields
@@ -588,10 +588,10 @@ theorem installBasisDeclF_push {env : Env} {fe : FEnv} (h : PushChain env fe)
 
 /-- The pinned-block install pushes onto the chain (task #293: three of
 `checkDeclC`'s arms share this body). -/
-theorem checkBasisDeclC_push {env : Env} {fe : FEnv}
+theorem checkBasisDeclC_push {env : Env md} {fe : FEnv md}
     (h : PushChain env fe) (kind : BasisKind) :
     Yields (checkBasisDeclC fe kind) (fun fe' => PushChain env fe') := by
-  have hfold : ∀ (fe' : FEnv), PushChain env fe' →
+  have hfold : ∀ (fe' : FEnv md), PushChain env fe' →
       Yields (kind.declsA.foldlM installBasisDeclF fe')
         (fun x => PushChain env x) :=
     fun fe' h' =>
@@ -603,8 +603,8 @@ theorem checkBasisDeclC_push {env : Env} {fe : FEnv}
   yields
   all_goals exact hfold fe h
 
-theorem checkDeclC_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (pd : Declaration) :
+theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (pd : Declaration md) :
     Yields (checkDeclC mode ev fe pd) (fun fe' => PushChain env fe') := by
   unfold checkDeclC
   cases pd with
@@ -691,8 +691,8 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env} {fe : FEnv}
         | some p => exact checkNativeS_push mode h p
       · exact Yields.ofThrow
 
-theorem checkDeclStepC_push (mode : CheckMode) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (pd : Declaration) :
+theorem checkDeclStepC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (pd : Declaration md) :
     Yields (checkDeclStepC mode ev fe pd) (fun fe' => PushChain env fe') := by
   unfold checkDeclStepC
   ybind
@@ -700,12 +700,12 @@ theorem checkDeclStepC_push (mode : CheckMode) {env : Env} {fe : FEnv}
 
 /-- Phase A's step body: a fresh chain, and the pending records grow
 by at most the one it may push. -/
-theorem annotStepC_push (mode : CheckMode) (i : Nat) {env : Env} {fe : FEnv}
-    (h : PushChain env fe) (pend : Array PendingCheck) (pd : Declaration) :
+theorem annotStepC_push (mode : CheckMode) (i : Nat) {env : Env md} {fe : FEnv md}
+    (h : PushChain env fe) (pend : Array (PendingCheck md)) (pd : Declaration md) :
     Yields (annotStepC mode ev i fe pend pd)
       (fun r => PushChain env r.1 ∧ ∃ new, r.2.toList = pend.toList ++ new) := by
   have hord : ∀ pd', Yields (do pure (← checkDeclStepC mode ev fe pd', pend) :
-      CheckCM (FEnv × Array PendingCheck))
+      (CheckCM md) (FEnv md × Array (PendingCheck md)))
       (fun r => PushChain env r.1 ∧ ∃ new, r.2.toList = pend.toList ++ new) :=
     fun pd' => Yields.bind' (checkDeclStepC_push mode h pd') fun fe' h' =>
       Yields.pure ⟨h', [], by simp⟩
@@ -746,9 +746,9 @@ theorem annotStepC_push (mode : CheckMode) (i : Nat) {env : Env} {fe : FEnv}
 /-- **Phase A is a fresh chain**: from a canonical index, an accepting
 run returns a canonical index whose constants extend the start by
 fresh names, and the pending records extend the start's. -/
-theorem installRun_trace (mode : CheckMode) {ds : List Declaration} {env : Env}
-    {p : Nat × FEnv × Array PendingCheck} {s : CState}
-    {q : Nat × FEnv × Array PendingCheck} {s' : CState}
+theorem installRun_trace (mode : CheckMode) {ds : List (Declaration md)} {env : Env md}
+    {p : Nat × FEnv md × Array (PendingCheck md)} {s : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
     (h : InstallRun mode ev ds p s q s') (hp : PushChain env p.2.1) :
     PushChain env q.2.1 ∧ ∃ new, q.2.2.toList = p.2.2.toList ++ new := by
   induction h with

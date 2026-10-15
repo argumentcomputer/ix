@@ -76,24 +76,24 @@ the official `inductive.cpp`):
 namespace Ix.Kernel
 
 /-- The pieces of a recognised direct sum block. -/
-structure InductiveShape where
+structure InductiveShape (md : Mode) where
   /-- the type former -/
-  cvT : ConstantVal
+  cvT : ConstantVal md
   /-- the constructors in declaration order, each with its field count -/
-  ctors : List (ConstantVal × Nat)
+  ctors : List (ConstantVal md × Nat)
   /-- parameter count -/
   nP : Nat
   /-- index count (task #175 indexed; `0` at a plain sum) -/
   nIdx : Nat
   /-- the recursor -/
-  cvR : ConstantVal
+  cvR : ConstantVal md
   /-- the recursor's fresh elimination level parameter (`large` only;
   `0` for a small eliminator) -/
   elim : LevelParam
   /-- the result sort -/
   resSort : Level
   /-- the rules' right-hand sides as exported, in constructor order -/
-  rhss : List Expr
+  rhss : List (Expr md)
   /-- large eliminator (a fresh elimination level parameter in front) -/
   large : Bool
   /-- the result sort is provably `Prop` -/
@@ -102,8 +102,8 @@ structure InductiveShape where
 
 /-- The block's members after the type former: the constructors, then
 the closing recursor. -/
-def sumSplit : List ConstantInfo →
-    Option (List (ConstantVal × Nat × Nat) × ConstantVal × Nat × Nat × List RecRule)
+def sumSplit : List (ConstantInfo md) →
+    Option (List (ConstantVal md × Nat × Nat) × ConstantVal md × Nat × Nat × List (RecRule md))
   | [.recInfo cvR mI rP rules] => some ([], cvR, mI, rP, rules)
   | .ctorInfo cvC nP nF :: rest =>
     (sumSplit rest).map fun q => ((cvC, nP, nF) :: q.1, q.2)
@@ -115,21 +115,21 @@ declared one, or official's whnf'd one — and every later stage runs
 on this record.  `isProp` is recomputed so that the recogniser's
 invariant `isProp = (isEquiv resSort zero == some true)` holds by
 definition. -/
-def InductiveShape.withSort (p : InductiveShape) (s : Level) : InductiveShape :=
+def InductiveShape.withSort (p : InductiveShape md) (s : Level) : InductiveShape md :=
   { p with resSort := s, isProp := Level.isEquiv s .zero == some true }
 
-@[simp] theorem InductiveShape.withSort_cvT (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_cvT (p : InductiveShape md) (s : Level) :
     (p.withSort s).cvT = p.cvT := rfl
-@[simp] theorem InductiveShape.withSort_ctors (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_ctors (p : InductiveShape md) (s : Level) :
     (p.withSort s).ctors = p.ctors := rfl
-@[simp] theorem InductiveShape.withSort_nP (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_nP (p : InductiveShape md) (s : Level) :
     (p.withSort s).nP = p.nP := rfl
-@[simp] theorem InductiveShape.withSort_nIdx (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_nIdx (p : InductiveShape md) (s : Level) :
     (p.withSort s).nIdx = p.nIdx := rfl
 /-- Completing a record that already carries its own sort (with the
 `isProp` flag the recogniser pinned) changes nothing (task #188: the
 recursive route's recogniser reads the telescope syntactically). -/
-theorem InductiveShape.withSort_self (p : InductiveShape)
+theorem InductiveShape.withSort_self (p : InductiveShape md)
     (h : p.isProp = (Level.isEquiv p.resSort .zero == some true)) :
     p.withSort p.resSort = p := by
   cases p with
@@ -137,17 +137,17 @@ theorem InductiveShape.withSort_self (p : InductiveShape)
     simp only [InductiveShape.withSort]
     simp only at h
     rw [← h]
-@[simp] theorem InductiveShape.withSort_cvR (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_cvR (p : InductiveShape md) (s : Level) :
     (p.withSort s).cvR = p.cvR := rfl
-@[simp] theorem InductiveShape.withSort_elim (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_elim (p : InductiveShape md) (s : Level) :
     (p.withSort s).elim = p.elim := rfl
-@[simp] theorem InductiveShape.withSort_resSort (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_resSort (p : InductiveShape md) (s : Level) :
     (p.withSort s).resSort = s := rfl
-@[simp] theorem InductiveShape.withSort_rhss (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_rhss (p : InductiveShape md) (s : Level) :
     (p.withSort s).rhss = p.rhss := rfl
-@[simp] theorem InductiveShape.withSort_large (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_large (p : InductiveShape md) (s : Level) :
     (p.withSort s).large = p.large := rfl
-@[simp] theorem InductiveShape.withSort_isProp (p : InductiveShape) (s : Level) :
+@[simp] theorem InductiveShape.withSort_isProp (p : InductiveShape md) (s : Level) :
     (p.withSort s).isProp = (Level.isEquiv s .zero == some true) := rfl
 
 end Ix.Kernel

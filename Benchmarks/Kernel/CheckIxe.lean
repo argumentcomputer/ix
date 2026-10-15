@@ -105,7 +105,7 @@ where
 
 /-- The order of a run: the setup's, or with `CHECK_IXE_ROOTS` the closure of
 those constants, resolved through the environment's names. -/
-def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude)
+def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude .anon)
     (roots : Option String) : IO (Array Address) := do
   let some list := roots | return s.ordered
   let mut starts : Array Address := pre.records.map (·.1)
@@ -138,7 +138,7 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
         IO.Process.exit 3
 
 /-- The setup line of a live run. -/
-def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude) : String :=
+def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude .anon) : String :=
   s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {roles} roles bound, \
     {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, {hints} hints"
 
@@ -190,9 +190,9 @@ def run (args : List String) : IO UInt32 := do
     | some n => a.extract 0 (min n a.size)
     | none => a
   -- the loop over a source: the per-record check, or with `--jobs` the pool
-  let check {σ : Type} (ev : Ix.Kernel.Evidences) (src : LoopSource σ) (names : Address → Array String)
+  let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
       (addresses : Array Address)
-      (onRead : Address → Except ReadError Read → Nat → IO Unit) : IO Counts := do
+      (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit) : IO Counts := do
     let total := addresses.size
     let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
       if i % 1000 == 0 then
@@ -214,7 +214,7 @@ def run (args : List String) : IO UInt32 := do
   let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
       (addresses : Array Address) : IO Counts := do
-    let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
+    let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
     let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
     if let some (path, ixe) := cache then

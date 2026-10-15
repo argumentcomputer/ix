@@ -136,9 +136,9 @@ dual of `Expr.instSeq_instantiate1_out`). -/
 The dual of `Expr.instSeq_instantiate1_out`, and the fact that lets a
 residual's *own* binders be opened by `denote` after the telescope's
 have been opened by `instSeq`. -/
-theorem instSeq_instantiate1_in {b : Expr}
+theorem instSeq_instantiate1_in {b : Expr md}
     (hbb : b.looseBVarsBounded 0 = true) :
-    ∀ (args : List Expr) (t : Nat) {e : Expr},
+    ∀ (args : List (Expr md)) (t : Nat) {e : Expr md},
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
       args.length ≤ t →
       (Expr.instSeq args t e).instantiate1 b 0 =
@@ -180,8 +180,8 @@ false, since `(.bvar 0).instantiate1 v 0 = v` may be a `∀` while
 `.bvar 0` is not.  Sibling of `stripLams_instantiate1_fvar_isSome_rev`,
 and the checker only ever opens at variables. -/
 theorem stripPis_instantiate1_fvar_isSome_rev {i : Nat}
-    {ty : Expr} :
-    ∀ (k : Nat) {e : Expr} (j : Nat),
+    {ty : Expr md} :
+    ∀ (k : Nat) {e : Expr md} (j : Nat),
       ((e.instantiate1 (.fvar i ty) j).stripPis k).isSome = true →
       (e.stripPis k).isSome = true := by
   intro k
@@ -205,7 +205,7 @@ opening.**  `openPisAtFvars` succeeding gives the `stripPis` the fold
 machinery wants, an opened body `ErasedEq` to the canonical one, and
 the opening variables at their expected indices. -/
 theorem openPisAtFvars_stripPis :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars k e d = some (fvs, body) →
       ∃ bs body₀, e.stripPis k = some (bs, body₀) ∧
         fvs.length = k ∧
@@ -264,8 +264,8 @@ openers — *exactly*, annotations included (the ErasedEq form is
 `openPisAtFvars_stripPis`; the pinned-spine transfers need
 equality). -/
 theorem openPisAtFvars_instSeq :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr}
-      {bs : List (Expr × BinderMeta)} {body₀ : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md}
+      {bs : List (Expr md × BinderMeta)} {body₀ : Expr md},
       openPisAtFvars k e d = some (fvs, body) →
       e.stripPis k = some (bs, body₀) →
       body = Expr.instSeq fvs (k - 1) body₀ := by
@@ -350,10 +350,10 @@ set_option maxHeartbeats 3200000 in
 /-- **The pinned projection statement, opened.**  `checkProjIota` pins
 the strip-form body; the bottom consumes the opened form; the pinned
 spine computes through `Expr.instSeq` at the openers. -/
-theorem projStmtParts {sty : Expr} {nP nF i : Nat}
-    {fvsO : List Expr} {sbodyO : Expr}
-    {sbinders : List (Expr × BinderMeta)}
-    {tySlot : Expr} {ℓA : Level} {Pm Cm : Key}
+theorem projStmtParts {sty : Expr md} {nP nF i : Nat}
+    {fvsO : List (Expr md)} {sbodyO : Expr md}
+    {sbinders : List (Expr md × BinderMeta)}
+    {tySlot : Expr md} {ℓA : Level} {Pm Cm : Key md}
     {lpsE cusE : List Level}
     (hilt : i < nF)
     (_hSb : sty.looseBVarsBounded 0 = true)

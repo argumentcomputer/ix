@@ -34,7 +34,7 @@ def check : IO (Nat × Array String) := do
   let ordered := closure s.store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ roots)
   -- a live run, recording its readings
   let liveRows ← IO.mkRef (#[] : Array Row)
-  let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
+  let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
   let _ ← checkLoop s (names.getD · #[]) ordered {} (emit := fun r => liveRows.modify (·.push r))
     (onRead := fun a r _ => readings.modify (·.push (a, r)))
   -- the plan, written and mapped back

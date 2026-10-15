@@ -25,7 +25,7 @@ open Tests.Ix.Kernel.Reader
 namespace Tests.Ix.Kernel.CertifiedEntry
 
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
+    Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) :=
   let r := rekeyed cs blobs
   Ixon.Authenticated.checkBytes builtinBinding limits r.encoded r.blobs
 
@@ -185,19 +185,19 @@ def twoAgain : Ix.Kernel.Admission.Records := omitted ++ (omitted.filter (·.1 =
 
 /-! ## The public theorems, applied -/
 
-example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes builtinBinding limits (rekeyed definitions).encoded [] = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytes_has_model V h
 
 example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes builtinBinding limits records blobs = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False :=
   Ixon.Authenticated.checkBytes_no_proof_of_False V h
 
 example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes builtinBinding limits records blobs = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint, Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
@@ -207,7 +207,7 @@ example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Record
 stored under the BLAKE3 hash of its bytes, and so is the role table's
 binding section. -/
 example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes binding limits records blobs = .ok env) :
     ((∀ entry ∈ records, entry.1 = Address.blake3Pure entry.2) ∧
       ∀ entry ∈ blobs, entry.1 = Address.blake3Pure entry.2) ∧
@@ -217,7 +217,7 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
 /-- Fidelity at a record: each accepted singleton record's declaration is
 installed under its name with its kind. -/
 example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes binding limits records blobs = .ok env) :
     ∃ t pre constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
       ∀ owner c, (owner, c) ∈ constants → isSingleton c.info = true →
@@ -236,7 +236,7 @@ bytes share an address, and no two of the decoded records the reader read
 (`Installed.keys`), each of which is stored under the BLAKE3 hash of its
 canonical encoding. -/
 example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytes binding limits records blobs = .ok env) :
     (records.map Prod.fst).Nodup ∧ (blobs.map Prod.fst).Nodup ∧
       ∃ t pre constants, Ix.Kernel.Admission.RecordsRead limits records constants ∧
@@ -248,17 +248,17 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
   exact ⟨keys.1, keys.2, t, pre, constants, reading, installed, installed.keys, hashed⟩
 
 example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesProjection_has_model V h
 
 example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesBlockOrder_has_model V h
 
-example : Function.Injective keyName := fun _ _ h => keyName_injective h
+example : Function.Injective (keyName (md := .anon)) := fun _ _ h => keyName_injective h
 
 end Tests.Ix.Kernel.CertifiedEntry

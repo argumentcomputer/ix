@@ -57,7 +57,7 @@ universe w
 
 variable {V : Type w} [SetTheory V]
 variable {μ : CheckMode}
-variable {ev : Ix.Kernel.Evidences}
+variable {ev : Ix.Kernel.Evidences md}
 
 /-- The axiom kind's whole step — **no longer routed** (ENDGAME D):
 `axiomStepPB_of` below discharges it.  The definition is kept because
@@ -68,8 +68,8 @@ def AxiomStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
   -- (`DeclAxiomRun`), which names no valuation — so the carrier `_mp`
   -- no longer appears in the premise's *type*.  It stays as the
   -- invariant the four branches consume.
-  ∀ {F : Nat} {env : Env} (_mp : EnvModelM V μ env)
-    {cv : ConstantVal} {env₂ : Env},
+  ∀ {F : Nat} {env : Env md} (_mp : EnvModelM V μ env)
+    {cv : ConstantVal md} {env₂ : Env md},
     DeclAxiomRun μ F env cv env₂ →
     Nonempty (EnvModelM V μ env₂)
 
@@ -79,7 +79,7 @@ C), `Lean.trustCompiler` (`axiomTrustCompiler`, ENDGAME A part 2),
 `ofReduceNat`/`ofReduceBool` (`axiomOfReduce`, ENDGAME D, on the new
 `ReduceOps` field), and the tolerated skip (`axiomSkip`, which stores
 nothing). -/
-theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : AxiomStepPB V μ := by
+theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : (AxiomStepPB (md := md)) V μ := by
   intro _F _env mp _cv _env₂ hR
   -- the `Quot.sound` arm (task #293) installs nothing
   rcases hR with ⟨-, rfl⟩ | hR
@@ -94,8 +94,8 @@ theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : AxiomStepPB V μ := by
 
 /-- The basis kind's whole step, routed (basis tier). -/
 def BasisStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
-  ∀ {env : Env}, EnvModelM V μ env →
-    ∀ {kind : Ix.Kernel.BasisKind} {env₂ : Env},
+  ∀ {env : Env md}, EnvModelM V μ env →
+    ∀ {kind : Ix.Kernel.BasisKind} {env₂ : Env md},
       DeclBasisRun env kind env₂ →
       Nonempty (EnvModelM V μ env₂)
 
@@ -104,7 +104,7 @@ at task #181): all pinned basis blocks install at the P tier.  Exactly `declBasi
 dispatch shape, and — as there — `quotK` is the one branch whose
 `DeclBasisRun` guard is not vacuous: it needs `Eq` in the prefix, which
 is what the block's `Eq` bridge consumes. -/
-theorem basisStepPB_of : BasisStepPB V μ := by
+theorem basisStepPB_of : (BasisStepPB (md := md)) V μ := by
   intro env mp kind env₂ h
   obtain ⟨hEq, hchain⟩ := h
   cases kind with
@@ -130,8 +130,8 @@ def IndStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
   -- premise mentions: since S11b the ind premise is the **run**
   -- record, which names no valuation, so `_mp` appears only in the
   -- conclusion's shape ("a carrier here gives a carrier there").
-  ∀ {F : Nat} {env : Env} (_mp : EnvModelM V μ env)
-    {block : List ConstantInfo} {env₂ : Env},
+  ∀ {F : Nat} {env : Env md} (_mp : EnvModelM V μ env)
+    {block : List (ConstantInfo md)} {env₂ : Env md},
     Ix.Kernel.EtaFamiliesClosed env →
     DeclIndRun μ F env block env₂ →
     Nonempty (EnvModelM V μ env₂)
@@ -140,13 +140,13 @@ def IndStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
 (`declInd`, `Interp/DeclIndP.lean`): the member fold, the recursor
 group (provision/fire/swap) and the projection functions, all three at
 the reading. -/
-theorem indStepPB_of (hμ : μ.verifiedChecks = true) : IndStepPB V μ := by
+theorem indStepPB_of (hμ : μ.verifiedChecks = true) : (IndStepPB (md := md)) V μ := by
   intro _F _env mp _block _env₂ hE h
   exact declInd hμ mp hE h
 
 /-- **The P fold invariant**: the P environment invariant plus the
 η-family closure (the v1 fold's second half, reused verbatim). -/
-@[expose] def EnvModelOk (V : Type w) [SetTheory V] (μ : CheckMode) (env : Env) :
+@[expose] def EnvModelOk (V : Type w) [SetTheory V] (μ : CheckMode) (env : Env md) :
     Prop :=
   Nonempty (EnvModelM V μ env) ∧ EtaFamiliesClosed env
 
@@ -162,7 +162,7 @@ non-`ind` kinds have run-only bridges (`checkDeclRun_of`,
 `SetBase/Bridge/DeclRun.lean`) and the `ind` kind arrives through
 `DeclRun`'s `Ind` parameter — so this step consumes exactly what it
 reads, and no step below changed a line. -/
-theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env} {d : Declaration}
+theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md} {d : Declaration md}
     (mp : EnvModelM V μ env) (hE : EtaFamiliesClosed env)
     (hrun : DeclRun μ F (Ix.Kernel.Semantics.DeclIndRunDispatch μ F env)
       env d env₂) :
@@ -223,7 +223,7 @@ theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env�
 
 /-- **The P fold**: `foldlM_R`'s recursion at the P invariant. -/
 theorem foldPM (hμ : μ.verifiedChecks = true) {F : Nat} :
-    ∀ (ds : List Declaration) (env : Env) {env' : Env},
+    ∀ (ds : List (Declaration md)) (env : Env md) {env' : Env md},
       EnvModelOk V μ env →
       ds.foldlM (checkDecl μ (fueledOps μ F) ev) env = .ok env' →
       EnvModelOk V μ env'
@@ -252,7 +252,7 @@ theorem foldPM (hμ : μ.verifiedChecks = true) {F : Nat} :
 on the tier bundles; the final form replaces them with the tiers'
 theorems). -/
 theorem checkDeclsPure_sound_of (hμ : μ.verifiedChecks = true) {F : Nat}
-    {ds : List Declaration} {env' : Env}
+    {ds : List (Declaration md)} {env' : Env md}
     (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     Nonempty (EnvModelM V μ env') :=
   (foldPM hμ ds Env.empty
@@ -264,9 +264,9 @@ the frozen final statement's hypotheses plus the named tier
 bundles. -/
 theorem no_proof_of_Empty_pure_of (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
-    {ds : List Declaration} {env' : Env}
+    {ds : List (Declaration md)} {env' : Env md}
     (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env')
-    (c : ConstantInfo) (hc : c ∈ env'.consts)
+    (c : ConstantInfo md) (hc : c ∈ env'.consts)
     (hty : c.toConstantVal.type = .const emptyName []) : False := by
   obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) hμ h
   exact no_constant_of_Empty mp c hc hty
@@ -290,7 +290,7 @@ argument (project rule: consistency proofs stay parametric in the
 `SetTheory` interface), not a hypothesis about the input. -/
 theorem no_proof_of_Empty_pure (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
-    {ds : List Declaration} {env' : Env}
+    {ds : List (Declaration md)} {env' : Env md}
     (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const emptyName [] → False :=
@@ -307,7 +307,7 @@ declared `False`.  Hypotheses are input-level only: the validating
 mode, the accepted run, the stored constant, its type. -/
 theorem no_proof_of_False_pure (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
-    {ds : List Declaration} {env' : Env}
+    {ds : List (Declaration md)} {env' : Env md}
     (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const falseName [] → False := by

@@ -47,25 +47,25 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The frame splitters -/
 
-theorem Frame.app_fn {d : Nat} {f x : Expr} (h : Frame d (.app f x)) :
+theorem Frame.app_fn {d : Nat} {f x : Expr md} (h : Frame d (.app f x)) :
     Frame d f := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
   simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
   exact ⟨hw.1, hb.1, fun l hl => hL l (by simp [Expr.fvarLeaves, hl])⟩
 
-theorem Frame.app_arg {d : Nat} {f x : Expr} (h : Frame d (.app f x)) :
+theorem Frame.app_arg {d : Nat} {f x : Expr md} (h : Frame d (.app f x)) :
     Frame d x := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
   simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
   exact ⟨hw.2, hb.2, fun l hl => hL l (by simp [Expr.fvarLeaves, hl])⟩
 
-theorem Frame.proj_arg {d : Nat} {s : Key} {i : Nat} {e : Expr}
+theorem Frame.proj_arg {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
     (h : Frame d (.proj s i e)) : Frame d e := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
@@ -74,7 +74,7 @@ theorem Frame.proj_arg {d : Nat} {s : Key} {i : Nat} {e : Expr}
 
 /-- The opened body's frame, at an arbitrary (well-framed) domain —
 `binder_congr`'s `hLo₁`/`hLo₂` plus its two scoping arguments. -/
-theorem Frame.open_body {d : Nat} {ty' bd : Expr} (hty' : Frame d ty')
+theorem Frame.open_body {d : Nat} {ty' bd : Expr md} (hty' : Frame d ty')
     (hwb : Expr.WScoped d bd) (hbb : bd.looseBVarsBounded 1 = true)
     (hLb : Expr.LeavesBounded bd) :
     Frame (d + 1) (bd.instantiate1 (.fvar d ty')) := by
@@ -88,14 +88,14 @@ theorem Frame.open_body {d : Nat} {ty' bd : Expr} (hty' : Frame d ty')
     · exact hty'.2.1
     · exact hty'.2.2 l h3
 
-theorem Frame.forallE_ty {d : Nat} {ty bd : Expr} {mb : Ix.Kernel.BinderMeta}
+theorem Frame.forallE_ty {d : Nat} {ty bd : Expr md} {mb : Ix.Kernel.BinderMeta}
     (h : Frame d (.forallE ty bd mb)) : Frame d ty := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
   simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
   exact ⟨hw.1, hb.1, fun l hl => hL l (by simp [Expr.fvarLeaves, hl])⟩
 
-theorem Frame.forallE_open {d : Nat} {ty bd ty' : Expr}
+theorem Frame.forallE_open {d : Nat} {ty bd ty' : Expr md}
     {mb : Ix.Kernel.BinderMeta} (h : Frame d (.forallE ty bd mb))
     (hty' : Frame d ty') :
     Frame (d + 1) (bd.instantiate1 (.fvar d ty')) := by
@@ -105,14 +105,14 @@ theorem Frame.forallE_open {d : Nat} {ty bd ty' : Expr}
   exact Frame.open_body hty' hw.2 hb.2
     (fun l hl => hL l (by simp [Expr.fvarLeaves, hl]))
 
-theorem Frame.lam_ty {d : Nat} {ty bd : Expr} {mb : Ix.Kernel.BinderMeta}
+theorem Frame.lam_ty {d : Nat} {ty bd : Expr md} {mb : Ix.Kernel.BinderMeta}
     (h : Frame d (.lam ty bd mb)) : Frame d ty := by
   obtain ⟨hw, hb, hL⟩ := h
   simp only [Expr.WScoped] at hw
   simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
   exact ⟨hw.1, hb.1, fun l hl => hL l (by simp [Expr.fvarLeaves, hl])⟩
 
-theorem Frame.lam_open {d : Nat} {ty bd ty' : Expr}
+theorem Frame.lam_open {d : Nat} {ty bd ty' : Expr md}
     {mb : Ix.Kernel.BinderMeta} (h : Frame d (.lam ty bd mb))
     (hty' : Frame d ty') :
     Frame (d + 1) (bd.instantiate1 (.fvar d ty')) := by
@@ -122,7 +122,7 @@ theorem Frame.lam_open {d : Nat} {ty bd ty' : Expr}
   exact Frame.open_body hty' hw.2 hb.2
     (fun l hl => hL l (by simp [Expr.fvarLeaves, hl]))
 
-theorem Frame.of_not_hasFvar {d : Nat} {e : Expr} (hf : e.hasFvar = false)
+theorem Frame.of_not_hasFvar {d : Nat} {e : Expr md} (hf : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true) : Frame d e :=
   ⟨Expr.WScoped.of_not_hasFvar hf, hb, Expr.LeavesBounded.of_not_hasFvar hf⟩
 
@@ -179,8 +179,8 @@ theorem Graded.head_congr {Δa : List AnnotTerm} {A B e : AnnotTerm}
     (h : Graded V (B :: Δa) e) : Graded V (A :: Δa) e :=
   fun ρ hρ => h ρ (Sat.head_congr heq hρ)
 
-theorem denoteMeta_open_rename {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {d : Nat} {bd ty ty' : Expr} {ba : AnnotTerm}
+theorem denoteMeta_open_rename {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {d : Nat} {bd ty ty' : Expr md} {ba : AnnotTerm}
     (h : denoteMeta acval env φ (d + 1) (bd.instantiate1 (.fvar d ty))
       = some ba) :
     denoteMeta acval env φ (d + 1) (bd.instantiate1 (.fvar d ty'))
@@ -194,7 +194,7 @@ theorem denoteMeta_open_rename {acval : Key → (LevelParam → Nat) → AnnotTe
 /-- The same constant at level-equivalent instantiations has one
 validated reading. -/
 theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
-    {d : Nat} {n : Key} {us us' : List Level} {aa ba : AnnotTerm}
+    {d : Nat} {n : Key md} {us us' : List Level} {aa ba : AnnotTerm}
     (hlev : Level.isEquivList us us' = some true)
     (hda : denoteMeta m.acval env φ d (.const n us) = some aa)
     (hdb : denoteMeta m.acval env φ d (.const n us') = some ba) :
@@ -226,7 +226,7 @@ theorem Graded.projAV {Δa : List AnnotTerm} {i : Nat} {e : AnnotTerm}
 /-- A stored declaration's instantiated type: read at every depth,
 graded, inhabited, and framed (closed, so the frames are free). -/
 theorem constType_pkg {m : EnvModel V env} (hct : ConstType m φ)
-    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key md} {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hnt : ci.isTowerEntry = false) {us : List Level}
     (hlen : us.length = ci.toConstantVal.levelParams.length) :
     ∃ ta : AnnotTerm,
@@ -364,8 +364,8 @@ theorem NeverChain.inst : ∀ {n u : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : N
 
 /-- **A `.never`-peeled telescope reads to a chain**: each binder's bit
 is nonzero (`pwBit_ne_zero_of_isNever`), the residual sort evaluates. -/
-theorem neverChain_of_peel {acval : Key → (LevelParam → Nat) → AnnotTerm} :
-    ∀ (n : Nat) {d : Nat} {T : Expr} {u : Level} {ta : AnnotTerm},
+theorem neverChain_of_peel {acval : Key md → (LevelParam → Nat) → AnnotTerm} :
+    ∀ (n : Nat) {d : Nat} {T : Expr md} {u : Level} {ta : AnnotTerm},
       T.peelNeverPis n = some (.sort u) →
       denoteMeta acval env φ d T = some ta →
       NeverChain n (Level.eval φ u) ta := by
@@ -427,7 +427,7 @@ theorem spine_mem_univ_of_neverChain {ρ : Nat → V} :
 `univ 0` once the head's type reads to a chain of `b⃗`'s length ending
 in `Sort 0`, the head inhabits it, and both readings are graded. -/
 theorem mem_univ_zero_of_spine {m : EnvModel V env}
-    {ρ : Nat → V} {d : Nat} {T hd : Expr} {Ta fa taH : AnnotTerm}
+    {ρ : Nat → V} {d : Nat} {T hd : Expr md} {Ta fa taH : AnnotTerm}
     (hfn : T.getAppFn = hd)
     (hTa : denoteMeta m.acval env φ d T = some Ta)
     (hfa : denoteMeta m.acval env φ d hd = some fa)
@@ -448,8 +448,8 @@ levels) lands in `univ 0`: `ConstType` supplies `I`'s membership in
 its instantiated stored type and that type's grading; the chain is
 read off the stored syntax at the composed valuation. -/
 theorem typeFormer_mem_univ_zero {m : EnvModel V env}
-    (hct : ConstType m φ) {ρ : Nat → V} {d : Nat} {T : Expr}
-    {I : Key} {us : List Level} {ci : ConstantInfo} {u : Level} {Ta : AnnotTerm}
+    (hct : ConstType m φ) {ρ : Nat → V} {d : Nat} {T : Expr md}
+    {I : Key md} {us : List Level} {ci : ConstantInfo md} {u : Level} {Ta : AnnotTerm}
     (hfn : T.getAppFn = .const I us) (hfI : env.find? I = some ci)
     (hnt : ci.isTowerEntry = false)
     (hlen : us.length = ci.toConstantVal.levelParams.length)
@@ -469,27 +469,27 @@ theorem typeFormer_mem_univ_zero {m : EnvModel V env}
 /-! ## 3. The kernel-shaped licence -/
 
 /-- A leaf of a spine's head is a leaf of the spine. -/
-theorem mem_fvarLeaves_mkAppN : ∀ (as : List Expr) (f : Expr)
-    (l : Nat × Expr), l ∈ f.fvarLeaves →
+theorem mem_fvarLeaves_mkAppN : ∀ (as : List (Expr md)) (f : Expr md)
+    (l : Nat × Expr md), l ∈ f.fvarLeaves →
     l ∈ (Expr.mkAppN f as).fvarLeaves
   | [], _, _, h => h
   | a :: as, f, l, h =>
     mem_fvarLeaves_mkAppN as (.app f a) l (by simp [Expr.fvarLeaves, h])
 
 /-- A leaf of a term's head is a leaf of the term. -/
-theorem mem_fvarLeaves_of_getAppFn' {a hd : Expr} {l : Nat × Expr}
+theorem mem_fvarLeaves_of_getAppFn' {a hd : Expr md} {l : Nat × Expr md}
     (h : a.getAppFn = hd) (hl : l ∈ hd.fvarLeaves) : l ∈ a.fvarLeaves := by
   rw [← Ix.Kernel.Expr.mkAppN_getApp a, h]
   exact mem_fvarLeaves_mkAppN _ _ _ hl
 
 /-- The leaf of a term's head fvar is a leaf of the term. -/
-theorem mem_fvarLeaves_of_getAppFn {a ty : Expr} {idx : Nat}
+theorem mem_fvarLeaves_of_getAppFn {a ty : Expr md} {idx : Nat}
     (h : a.getAppFn = .fvar idx ty) : (idx, ty) ∈ a.fvarLeaves :=
   mem_fvarLeaves_of_getAppFn' h (by simp [Expr.fvarLeaves])
 
 /-- The leaves of an fvar's type are leaves of the fvar. -/
-theorem mem_fvarLeaves_of_ty {ty : Expr} {idx : Nat}
-    {l : Nat × Expr} (h : l ∈ ty.fvarLeaves) :
+theorem mem_fvarLeaves_of_ty {ty : Expr md} {idx : Nat}
+    {l : Nat × Expr md} (h : l ∈ ty.fvarLeaves) :
     l ∈ (Expr.fvar idx ty).fvarLeaves := by
   simp [Expr.fvarLeaves, h]
 
@@ -498,7 +498,7 @@ head-symbol case split of `isProofFast`, each case closed by the
 squash-regime licence (a ∀-typed head, a λ) or the one graph-regime
 step (a type-former-typed head). -/
 theorem prf_of_isProofFast {m : EnvModel V env} (hct : ConstType m φ)
-    {d : Nat} {a : Expr} {Δa : List AnnotTerm} {aa : AnnotTerm}
+    {d : Nat} {a : Expr md} {Δa : List AnnotTerm} {aa : AnnotTerm}
     (h : isProofFast env.find? a = true)
     (hCa : CtxOk m φ d Δa a)
     (hda : denoteMeta m.acval env φ d a = some aa)
@@ -624,8 +624,8 @@ definitions are `@[expose]`d, so the clause is available by `rfl`
 here, in this tier's own module, and the proof term names nothing
 outside it. -/
 
-theorem etaProjs_eq (T : Key) (us : List Level) (targs : List Expr)
-    (b : Expr) (nF : Nat) :
+theorem etaProjs_eq (T : Key md) (us : List Level) (targs : List (Expr md))
+    (b : Expr md) (nF : Nat) :
     Ix.Kernel.etaProjs env T us targs b nF =
       if Ix.Kernel.towerSlotsAll env T nF then
         (List.range nF).map fun j => Expr.proj T j b
@@ -637,7 +637,7 @@ theorem etaProjs_eq (T : Key) (us : List Level) (targs : List Expr)
 /-- The fabricated η spine's values, unfolded here for the same reason
 (`etaFabArgsV`/`projSpines` are `EnvModelM`'s; `rfl` beats naming
 their equation lemmas here too). -/
-theorem etaFabArgsV_eq (val : Key → V) (T : Key) (ts : List V) (b : V)
+theorem etaFabArgsV_eq (val : Key md → V) (T : Key md) (ts : List V) (b : V)
     (nF : Nat) :
     etaFabArgsV val T ts b nF =
       ts ++ (List.range nF).map
@@ -653,7 +653,7 @@ frames — which the run lemmas `inferTypeIO_WScoped`/`_looseBVars`/
 
 /-- A term whose type's type reduces to a zero-equivalent sort
 interprets to `pt`. -/
-theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr}
+theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr md}
     {u : Level} {Δa : List AnnotTerm} {aa : AnnotTerm}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
     (hu : RedSem m φ d tta (.sort u))
@@ -678,7 +678,7 @@ theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr}
 /-- A term whose type reduces to a unit-like type interprets to `pt`:
 `isUnitLikeTy` accepts only the pinned `PUnit`, whose `interp` is
 `unitSet = {pt}`. -/
-theorem unit_side_pt' {m : EnvModel V env} {d : Nat} {a ta wta : Expr}
+theorem unit_side_pt' {m : EnvModel V env} {d : Nat} {a ta wta : Expr md}
     {Δa : List AnnotTerm} {aa : AnnotTerm}
     (hta : InferSemIO m φ d a ta) (hwta : RedSem m φ d ta wta)
     (hu : Ix.Kernel.isUnitLikeTy env wta = true)
@@ -697,18 +697,18 @@ theorem unit_side_pt' {m : EnvModel V env} {d : Nat} {a ta wta : Expr}
   case isFalse => exact nomatch hwtaa
   case isTrue hlen =>
   obtain rfl : wtaa = m.acval Ix.Kernel.punitName
-      (Level.substFn φ Ix.Kernel.punitA.toConstantVal.levelParams us) :=
+      (Level.substFn φ (Ix.Kernel.punitA (md := md)).toConstantVal.levelParams us) :=
     (Option.some.inj hwtaa).symm
   have hpin : m.cvalE Ix.Kernel.punitName
-      (Level.substFn φ Ix.Kernel.punitA.toConstantVal.levelParams us)
+      (Level.substFn φ (Ix.Kernel.punitA (md := md)).toConstantVal.levelParams us)
       = Ix.Kernel.Term.punitT
-        (Level.substFn φ Ix.Kernel.punitA.toConstantVal.levelParams us
+        (Level.substFn φ (Ix.Kernel.punitA (md := md)).toConstantVal.levelParams us
           Ix.Kernel.uN) :=
-    (m.basis_pinned Ix.Kernel.punitName _ hfind (by decide)).2 _ _ rfl
+    (m.basis_pinned Ix.Kernel.punitName _ hfind (by (cases md <;> decide))).2 _ _ rfl
   have hleaf : m.acval Ix.Kernel.punitName
-      (Level.substFn φ Ix.Kernel.punitA.toConstantVal.levelParams us)
+      (Level.substFn φ (Ix.Kernel.punitA (md := md)).toConstantVal.levelParams us)
       = .const .punit
-        [Level.substFn φ Ix.Kernel.punitA.toConstantVal.levelParams us
+        [Level.substFn φ (Ix.Kernel.punitA (md := md)).toConstantVal.levelParams us
           Ix.Kernel.uN] :=
     erase_eq_const (by rw [m.acval_erase, hpin]; rfl)
   have hmem := hmemA ρ hρ

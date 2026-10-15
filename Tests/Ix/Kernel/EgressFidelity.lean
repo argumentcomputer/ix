@@ -186,7 +186,7 @@ def projections (store : RecordStore) (blobs : List (Address × ByteArray)) : Pr
 /-! ## 2. Re-reading and the installed environment -/
 
 /-- A constant's kind as installed. -/
-def infoKind : Ix.Kernel.ConstantInfo → String
+def infoKind : Ix.Kernel.ConstantInfo .anon → String
   | .axiomInfo .. => "axiom" | .defnInfo .. => "definition" | .thmInfo .. => "theorem"
   | .indInfo .. => "inductive" | .ctorInfo .. => "constructor" | .recInfo .. => "recursor"
   | .projInfo .. => "projection table"
@@ -200,7 +200,7 @@ def layoutKinds : Ix.Kernel.Egress.ProjectionLayout → List String
 
 /-- Two installed environments agree: the same constants in the same order,
 of the same kinds, with equal types (the kernel's executed equality). -/
-def envDiff (a b : Ix.Kernel.Env) : Option String :=
+def envDiff (a b : Ix.Kernel.Env .anon) : Option String :=
   if a.consts.length != b.consts.length then
     some s!"{a.consts.length} constants vs {b.consts.length}"
   else (a.consts.zip b.consts).zipIdx.findSome? fun ((x, y), i) =>
@@ -212,7 +212,7 @@ def envDiff (a b : Ix.Kernel.Env) : Option String :=
     else none
 
 /-- The reader's declarations, as entries, compared one by one. -/
-def declsDiff (a b : Array Ix.Kernel.Declaration) : Option String :=
+def declsDiff (a b : Array (Ix.Kernel.Declaration .anon)) : Option String :=
   let xs := a.flatMap entriesOf
   let ys := b.flatMap entriesOf
   if a.size != b.size || xs.size != ys.size then some s!"{a.size} declarations vs {b.size}"
@@ -281,7 +281,7 @@ def entries (input : Input) (primaries : Array Address) : IO EntryReport := do
     report := { report with problems := report.problems.push s!"block-order entry: {e}" }
   -- each projection record names an installed constant of its kind
   let cx := Ix.Kernel.Admission.streamContext table pre compiled blobs hints.lookup
-  let installed : Std.HashMap CName String := env₁.consts.foldl
+  let installed : Std.HashMap (CName .anon) String := env₁.consts.foldl
     (fun m ci => m.insert ci.toConstantVal.name (infoKind ci)) {}
   for (k, p) in projs do
     match Ix.Kernel.Egress.readProjection p with

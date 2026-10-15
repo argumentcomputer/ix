@@ -25,7 +25,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The frame values (from the retired `StructRecLawFitsP`, task #175 S2) -/
 

@@ -37,7 +37,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo
 
 /-- Every constant the expression mentions is bound in `env₀`
 (hereditarily through annotations, like the leaf machinery). -/
-def ConstsBound (env₀ : Env) : Expr → Prop
+def ConstsBound (env₀ : Env md) : Expr md → Prop
   | .const n _ => (env₀.find? n).isSome = true
   | .app f a => ConstsBound env₀ f ∧ ConstsBound env₀ a
   | .lam ty b _ => ConstsBound env₀ ty ∧ ConstsBound env₀ b
@@ -58,62 +58,62 @@ decreasing_by all_goals first
 as a premise and never took it apart.  These are the clause equations
 and the one closure fact `denoteAnnot`'s binder cases need. -/
 
-@[simp] theorem constsBound_const {env₀ : Env} {n : Key}
+@[simp] theorem constsBound_const {env₀ : Env md} {n : Key md}
     {us : List Level} :
     ConstsBound env₀ (.const n us) ↔ (env₀.find? n).isSome = true := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_app {env₀ : Env} {f a : Expr} :
+@[simp] theorem constsBound_app {env₀ : Env md} {f a : Expr md} :
     ConstsBound env₀ (.app f a) ↔
       ConstsBound env₀ f ∧ ConstsBound env₀ a := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_lam {env₀ : Env} {ty b : Expr}
+@[simp] theorem constsBound_lam {env₀ : Env md} {ty b : Expr md}
     {m : Ix.Kernel.BinderMeta} :
     ConstsBound env₀ (.lam ty b m) ↔
       ConstsBound env₀ ty ∧ ConstsBound env₀ b := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_forallE {env₀ : Env}
-    {ty b : Expr} {m : Ix.Kernel.BinderMeta} :
+@[simp] theorem constsBound_forallE {env₀ : Env md}
+    {ty b : Expr md} {m : Ix.Kernel.BinderMeta} :
     ConstsBound env₀ (.forallE ty b m) ↔
       ConstsBound env₀ ty ∧ ConstsBound env₀ b := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_letE {env₀ : Env}
-    {t v b : Expr} :
+@[simp] theorem constsBound_letE {env₀ : Env md}
+    {t v b : Expr md} :
     ConstsBound env₀ (.letE t v b lmeta) ↔
       ConstsBound env₀ t ∧ ConstsBound env₀ v ∧ ConstsBound env₀ b := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_proj {env₀ : Env} {s : Key} {i : Nat}
-    {e : Expr} :
+@[simp] theorem constsBound_proj {env₀ : Env md} {s : Key md} {i : Nat}
+    {e : Expr md} :
     ConstsBound env₀ (.proj s i e) ↔ ConstsBound env₀ e := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_fvar {env₀ : Env} {idx : Nat}
-    {ty : Expr} :
+@[simp] theorem constsBound_fvar {env₀ : Env md} {idx : Nat}
+    {ty : Expr md} :
     ConstsBound env₀ (.fvar idx ty) ↔ ConstsBound env₀ ty := by
   rw [ConstsBound]
 
-@[simp] theorem constsBound_sort {env₀ : Env} {u : Level} :
+@[simp] theorem constsBound_sort {env₀ : Env md} {u : Level} :
     ConstsBound env₀ (.sort u) := by rw [ConstsBound] <;> simp
 
-@[simp] theorem constsBound_bvar {env₀ : Env} {i : Nat} :
+@[simp] theorem constsBound_bvar {env₀ : Env md} {i : Nat} :
     ConstsBound env₀ (.bvar i) := by rw [ConstsBound] <;> simp
 
 /-- **The literal case is the catch-all.**  Stated, rather than left
 implicit, because it is the whole of finding 2: the premise of
 `Denote2EnvExtend` says *nothing* about a literal, while `denoteAnnot`'s
 literal clauses are gated on an environment-global guard. -/
-@[simp] theorem constsBound_lit {env₀ : Env} {l : Ix.Kernel.Literal} :
+@[simp] theorem constsBound_lit {env₀ : Env md} {l : Ix.Kernel.Literal} :
     ConstsBound env₀ (.lit l) := by rw [ConstsBound] <;> simp
 
 /-- Instantiation preserves prefix-boundness: every constant leaf of
 the result comes from the body or from the substituted term. -/
-theorem ConstsBound.instantiate1 {env₀ : Env} {v : Expr}
+theorem ConstsBound.instantiate1 {env₀ : Env md} {v : Expr md}
     (hv : ConstsBound env₀ v) :
-    ∀ (e : Expr) (d : Nat), ConstsBound env₀ e →
+    ∀ (e : Expr md) (d : Nat), ConstsBound env₀ e →
       ConstsBound env₀ (e.instantiate1 v d) := by
   intro e
   induction e with
@@ -154,7 +154,7 @@ theorem ConstsBound.instantiate1 {env₀ : Env} {v : Expr}
     exact ihe d h
 
 /-- The string guard pins `List.nil` and `List.cons` in the store. -/
-theorem strLitSupported_listNames {env₀ : Env}
+theorem strLitSupported_listNames {env₀ : Env md}
     (h : strLitSupported env₀ = true) :
     (env₀.find? listNilName).isSome = true ∧
       (env₀.find? listConsName).isSome = true := by
@@ -177,17 +177,17 @@ them. -/
 /-- The extension is conservative on the prefix: every stored lookup
 survives verbatim (no shadowing — duplicate installs are
 rejected). -/
-def FindPreserved (env₀ env : Env) : Prop :=
-  ∀ {n : Key} {ci : Ix.Kernel.ConstantInfo},
+def FindPreserved (env₀ env : Env md) : Prop :=
+  ∀ {n : Key md} {ci : Ix.Kernel.ConstantInfo md},
     env₀.find? n = some ci → env.find? n = some ci
 
-def LitGuardsAgree (env₀ env : Env) : Prop :=
+def LitGuardsAgree (env₀ env : Env md) : Prop :=
   natLitSupported env₀ = natLitSupported env ∧
   strLitSupported env₀ = strLitSupported env
 
 /-- A stored lookup's level parameters do not move. -/
-theorem levelParamsAt_congr {env₀ env : Env}
-    (hF : FindPreserved env₀ env) {n : Key}
+theorem levelParamsAt_congr {env₀ env : Env md}
+    (hF : FindPreserved env₀ env) {n : Key md}
     (h : (env₀.find? n).isSome = true) :
     levelParamsAt env₀ n = levelParamsAt env n := by
   cases hf : env₀.find? n with
@@ -205,8 +205,8 @@ the checker's decidable `constsResolve` and from `EnvWF` to
 /-- `constsResolve` is the decidable form of `ConstsBound`, and
 strictly stronger: it additionally pins the literal-support block and
 a projection's structure name. -/
-theorem constsBound_of_constsResolve {env₀ : Env} :
-    ∀ e : Expr,
+theorem constsBound_of_constsResolve {env₀ : Env md} :
+    ∀ e : Expr md,
       Expr.constsResolve env₀ e = true → ConstsBound env₀ e := by
   intro e
   induction e with
@@ -246,7 +246,7 @@ theorem constsBound_of_constsResolve {env₀ : Env} :
 Every stored type and every stored `def` body is prefix-bound,
 because `ConstWF` says it resolves (a theorem's stored value has no
 clause: it is never read). -/
-theorem envWF_constsBound {env : Env} (hwf : EnvWF env) :
+theorem envWF_constsBound {env : Env md} (hwf : EnvWF env) :
     ∀ c ∈ env.consts,
       ConstsBound env c.toConstantVal.type ∧
       (∀ cv value hint, c = .defnInfo cv value hint →

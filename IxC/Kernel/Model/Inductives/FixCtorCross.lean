@@ -25,12 +25,12 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 omit [SetTheory V] in
 /-- Boundness is monotone along a cons. -/
-theorem ConstsBound.cons {c : ConstantInfo} :
-    ∀ (e : Expr), ConstsBound env e → ConstsBound ⟨c :: env.consts⟩ e
+theorem ConstsBound.cons {c : ConstantInfo md} :
+    ∀ (e : Expr md), ConstsBound env e → ConstsBound ⟨c :: env.consts⟩ e
   | .const n us, h => by
     rw [constsBound_const] at h ⊢
     rw [Ix.Kernel.Env.find?_cons]
@@ -61,17 +61,17 @@ theorem ConstsBound.cons {c : ConstantInfo} :
 
 /-- **The recursive constructor data cross a cons** whose head is not
 the block's former. -/
-theorem FixCtorDataI.cross {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : List LevelParam}
-    {cvC : ConstantVal} {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool}
-    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+theorem FixCtorDataI.cross {m : EnvModel V env} {env₀ : Env md} {T : Key md} {lps : List LevelParam}
+    {cvC : ConstantVal md} {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool}
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
     {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (h : FixCtorDataI m env₀ T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs ks fvsP
       xFvs xrest Eiss tss)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
-    (hat : ∀ e : Expr, ConsCrossAt c₀ e) (hcb : ConstsBound env cvC.type)
+    (hat : ∀ e : Expr md, ConsCrossAt c₀ e) (hcb : ConstsBound env cvC.type)
     (hcbI : ∀ e ∈ idxArgs, ConstsBound env e)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -83,7 +83,7 @@ theorem FixCtorDataI.cross {m : EnvModel V env} {env₀ : Env} {T : Key} {lps : 
   have hopAll : openPisAtFvars (nP + nF) cvC.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopX)
   obtain ⟨hfvs, -⟩ := openPisAtFvars_constsBound (nP + nF) hcb hopAll
-  have hxcb : ∀ (i : Nat) (x : Expr), xFvs[i]? = some x → ConstsBound env x.fvarTypeD := by
+  have hxcb : ∀ (i : Nat) (x : Expr md), xFvs[i]? = some x → ConstsBound env x.fvarTypeD := by
     intro i x hx
     have hb := hfvs x (List.mem_append_right _ (List.mem_of_getElem? hx))
     obtain ⟨ty, rfl⟩ := h.xIdx i x hx

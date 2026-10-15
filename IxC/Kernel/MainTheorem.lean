@@ -56,7 +56,7 @@ consistency does not depend on the evidence the install gates are
 handed (none included: then every stream that declares a certified
 `Nat` operation declines). -/
 theorem model_exists (V : Type w) [SetTheory V]
-    (ev : Evidences) (ds : Array Declaration) (env : Env)
+    (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
     (accepted : checkDecls .verified ev ds = .ok env) :
     Nonempty (Model V env) := by
   obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted

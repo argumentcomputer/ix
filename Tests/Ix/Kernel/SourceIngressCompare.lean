@@ -21,7 +21,7 @@ open Benchmarks.Kernel.CheckIxeStep
 /-- The verdicts of the Ixon environment check of `ixon`, by Lean name (the
 checker's spelling of it). -/
 def ixonVerdicts (ixon : Ixon.Env) :
-    IO (Std.HashMap CName (String × String)) := do
+    IO (Std.HashMap (CName .source) (String × String)) := do
   let mut store : RecordStore := {}
   for (address, lazy) in ixon.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
@@ -37,7 +37,7 @@ def ixonVerdicts (ixon : Ixon.Env) :
     (progress := fun i _ => do
       if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")
   let rows ← rows.get
-  let mut out : Std.HashMap CName (String × String) := {}
+  let mut out : Std.HashMap (CName .source) (String × String) := {}
   for (name, named) in ixon.named.toList do
     let root := match store[named.addr]? with
       | some source => owner named.addr source
@@ -51,12 +51,12 @@ def ixonVerdicts (ixon : Ixon.Env) :
 differing constants with both reasons. -/
 structure Comparison where
   pairs : Std.HashMap (String × String) Nat := {}
-  differing : Array (CName × String × String × String × String) := #[]
+  differing : Array (CName .source × String × String × String × String) := #[]
   /-- Source constants with no Ixon verdict -/
   unmatched : Nat := 0
 
 def compare (rows : Array Tests.Ix.Kernel.SourceIngressStep.Row)
-    (ixon : Std.HashMap CName (String × String)) : Comparison := Id.run do
+    (ixon : Std.HashMap (CName .source) (String × String)) : Comparison := Id.run do
   let mut c : Comparison := {}
   for row in rows do
     for n in row.names do

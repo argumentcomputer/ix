@@ -22,7 +22,7 @@ variable {mode : CheckMode}
 
 /-- The generators' constructor list is one entry per constructor
 when the kinds are one list per constructor. -/
-theorem nativeCtors4_length {ctorsA : List (ConstantVal × Nat)}
+theorem nativeCtors4_length {ctorsA : List (ConstantVal md × Nat)}
     {kinds : List (List RecFieldKind)} (h : ctorsA.length = kinds.length) :
     (nativeCtors4 ctorsA kinds).length = ctorsA.length := by
   simp [nativeCtors4, List.length_zipWith, h]
@@ -30,8 +30,8 @@ theorem nativeCtors4_length {ctorsA : List (ConstantVal × Nat)}
 /-- The recursor stage's stored pieces, as its own guards checked
 them; the rules resolve at the environment holding the recursor's
 (rule-less) cons. -/
-theorem checkNativeRec_facts {env : Env} {p : NativeParts}
-    {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {F : Nat}
+theorem checkNativeRec_facts {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)} {F : Nat}
     (h : checkNativeRec (fueledOps mode F) env p cvTa ctorsA = .ok (cvRa, rhss)) :
     cvRa.name = p.cvR.name ∧ cvRa.levelParams = p.cvR.levelParams ∧
     (cvRa.type.hasFvar = false ∧
@@ -57,7 +57,7 @@ theorem checkNativeRec_facts {env : Env} {p : NativeParts}
   exact ⟨hfv', hlp', hres', hbv'⟩
 
 /-- Two conses of the same name find the same names. -/
-theorem find?_isSome_cons_same {c c' : ConstantInfo} {env : Env} (hn : c.name = c'.name) :
+theorem find?_isSome_cons_same {c c' : ConstantInfo md} {env : Env md} (hn : c.name = c'.name) :
     ∀ n, (Env.find? ⟨c :: env.consts⟩ n).isSome = true →
       (Env.find? ⟨c' :: env.consts⟩ n).isSome = true := by
   intro n h
@@ -67,9 +67,9 @@ theorem find?_isSome_cons_same {c c' : ConstantInfo} {env : Env} (hn : c.name = 
 
 /-- Stage 3 at the run level: the recursor cons with its rules is
 well-formed. -/
-theorem direct_fix_rec_wf {env : Env} (henv : EnvWF env)
-    {p : NativeParts} {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
-    {rhss : List Expr} {F : Nat}
+theorem direct_fix_rec_wf {env : Env md} (henv : EnvWF env)
+    {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} {F : Nat}
     (h : checkNativeRec (fueledOps mode F) env p cvTa ctorsA = .ok (cvRa, rhss)) :
     EnvWF ⟨.recInfo cvRa p.majorIdx p.rulePrefix
       (sumRules env.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss) :: env.consts⟩ := by
@@ -93,10 +93,10 @@ theorem direct_fix_rec_wf {env : Env} (henv : EnvWF env)
 /-- The field-kinds guard, per constructor: the kind list has one
 entry per field and the opened form passes the guard at the pre-block
 environment. -/
-theorem nativeFieldsOk_inv {env₀ : Env} {T : Key} {lps : List LevelParam} {nP nIdx : Nat}
-    {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
+theorem nativeFieldsOk_inv {env₀ : Env md} {T : Key md} {lps : List LevelParam} {nP nIdx : Nat}
+    {ctorsA : List (ConstantVal md × Nat)} {kinds : List (List RecFieldKind)}
     (h : nativeFieldsOk env₀ T lps nP nIdx ctorsA kinds = true)
-    {j : Nat} {cA : ConstantVal × Nat} (hj : ctorsA[j]? = some cA) :
+    {j : Nat} {cA : ConstantVal md × Nat} (hj : ctorsA[j]? = some cA) :
     ∃ ks, kinds[j]? = some ks ∧ ks.length = cA.2 ∧
       nativeOpenedOk env₀ T lps nP nIdx cA.1.type cA.2 ks = true := by
   simp only [nativeFieldsOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at h
@@ -115,7 +115,7 @@ theorem nativeFieldsOk_inv {env₀ : Env} {T : Key} {lps : List LevelParam} {nP 
 /-- **The fixpoint route's capability record names the parameter count
 as its arity**: what `direct_sum_ind_wf` needs of `capsOf`
 to establish `IndCapsWF` at the former's cons. -/
-theorem nativeCapsAt_arity (p : InductiveShape) (isRec : Bool) :
+theorem nativeCapsAt_arity (p : InductiveShape md) (isRec : Bool) :
     ((nativeCapsAt p isRec).unitlike = true → (nativeCapsAt p isRec).unitParams = p.nP) ∧
     ((nativeCapsAt p isRec).eta = true → (nativeCapsAt p isRec).etaParams = p.nP) := by
   unfold nativeCapsAt
@@ -124,7 +124,7 @@ theorem nativeCapsAt_arity (p : InductiveShape) (isRec : Bool) :
   · exact ⟨(fun h => nomatch h), (fun h => nomatch h)⟩
 
 /-- `nativeCapsAt_arity` at the classified verdict. -/
-theorem nativeCaps_arity (p : NativeParts) :
+theorem nativeCaps_arity (p : NativeParts md) :
     ((nativeCaps p).unitlike = true → (nativeCaps p).unitParams = p.nP) ∧
     ((nativeCaps p).eta = true → (nativeCaps p).etaParams = p.nP) :=
   nativeCapsAt_arity p.toInductiveShape (nativeIsRec p.kinds)

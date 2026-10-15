@@ -101,10 +101,16 @@ private def qList (ty : Lean.Expr) (xs : List Lean.Expr) : Lean.Expr :=
 
 private def levelParamTy : Lean.Expr := mkConst ``Ix.Kernel.LevelParam
 private def levelTy : Lean.Expr := mkConst ``Ix.Kernel.Level
-private def exprTy : Lean.Expr := mkConst ``Ix.Kernel.Expr
-private def recRuleTy : Lean.Expr := mkConst ``Ix.Kernel.RecRule
-private def constantInfoTy : Lean.Expr := mkConst ``Ix.Kernel.ConstantInfo
-private def constantValTy : Lean.Expr := mkConst ``Ix.Kernel.ConstantVal
+/-- The kernel types at the mode `mdE` (a `Lean.Expr` of type `Mode`). -/
+private def exprTy (mdE : Lean.Expr) : Lean.Expr := mkApp (mkConst ``Ix.Kernel.Expr) mdE
+private def keyTy (mdE : Lean.Expr) : Lean.Expr := mkApp (mkConst ``Ix.Kernel.Key) mdE
+private def recRuleTy (mdE : Lean.Expr) : Lean.Expr := mkApp (mkConst ``Ix.Kernel.RecRule) mdE
+private def constantInfoTy (mdE : Lean.Expr) : Lean.Expr :=
+  mkApp (mkConst ``Ix.Kernel.ConstantInfo) mdE
+private def constantValTy (mdE : Lean.Expr) : Lean.Expr :=
+  mkApp (mkConst ``Ix.Kernel.ConstantVal) mdE
+private def modeTy : Lean.Expr := mkConst ``Ix.Kernel.Mode
+private def anonE : Lean.Expr := mkConst ``Ix.Kernel.Mode.anon
 
 /-- A role's constructor (`Role` derives `Repr` with the constructor's full
 name). -/
@@ -141,12 +147,12 @@ private def qName : Ix.Kernel.Name → Lean.Expr
   | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (qName p) (mkStrLit s)
   | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (qName p) (mkRawNatLit i)
 
-/-- A key: a role key as `roleKey`, a derived key as `auxKey`, an input key
-by its name. -/
-private def qKey : Ix.Kernel.Key → Lean.Expr
-  | .id n => mkApp (mkConst ``Ix.Kernel.Key.id) (qName n)
-  | .role r => mkApp (mkConst ``Ix.Kernel.roleKey) (qRole r)
-  | .aux k d => mkApp2 (mkConst ``Ix.Kernel.auxKey) (qKey k) (qDerived d)
+/-- A key at mode `mdE`: a role key as `roleKey`, a derived key as `auxKey`,
+an input key by its id. -/
+private def qKey (mdE : Lean.Expr) : Ix.Kernel.Key .anon → Lean.Expr
+  | .id n => mkApp2 (mkConst ``Ix.Kernel.Key.id) mdE (qName n)
+  | .role r => mkApp2 (mkConst ``Ix.Kernel.roleKey) mdE (qRole r)
+  | .aux k d => mkApp3 (mkConst ``Ix.Kernel.auxKey) mdE (qKey mdE k) (qDerived d)
 
 private def qLevelParams (ps : List Ix.Kernel.LevelParam) : Lean.Expr :=
   qList levelParamTy (ps.map mkRawNatLit)
@@ -208,46 +214,47 @@ private def qLiteral : Ix.Kernel.Literal → Lean.Expr
   | .natVal n => mkApp (mkConst ``Ix.Kernel.Literal.natVal) (mkRawNatLit n)
   | .strVal s => mkApp (mkConst ``Ix.Kernel.Literal.strVal) (mkStrLit s)
 
-private def qExpr : Ix.Kernel.Expr → Lean.Expr
-  | .bvar i => mkApp (mkConst ``Ix.Kernel.Expr.bvar) (mkRawNatLit i)
-  | .fvar i ty => mkApp2 (mkConst ``Ix.Kernel.Expr.fvar) (mkRawNatLit i) (qExpr ty)
-  | .sort u => mkApp (mkConst ``Ix.Kernel.Expr.sort) (qLevel u)
-  | .const n us => mkApp2 (mkConst ``Ix.Kernel.Expr.const) (qKey n) (qLevels us)
-  | .app f a => mkApp2 (mkConst ``Ix.Kernel.Expr.app) (qExpr f) (qExpr a)
+private def qExpr (mdE : Lean.Expr) : Ix.Kernel.Expr .anon → Lean.Expr
+  | .bvar i => mkApp2 (mkConst ``Ix.Kernel.Expr.bvar) mdE (mkRawNatLit i)
+  | .fvar i ty => mkApp3 (mkConst ``Ix.Kernel.Expr.fvar) mdE (mkRawNatLit i) (qExpr mdE ty)
+  | .sort u => mkApp2 (mkConst ``Ix.Kernel.Expr.sort) mdE (qLevel u)
+  | .const n us => mkApp3 (mkConst ``Ix.Kernel.Expr.const) mdE (qKey mdE n) (qLevels us)
+  | .app f a => mkApp3 (mkConst ``Ix.Kernel.Expr.app) mdE (qExpr mdE f) (qExpr mdE a)
   | .lam ty b m =>
-    mkApp3 (mkConst ``Ix.Kernel.Expr.lam) (qExpr ty) (qExpr b) (qBinderMeta m)
+    mkApp4 (mkConst ``Ix.Kernel.Expr.lam) mdE (qExpr mdE ty) (qExpr mdE b) (qBinderMeta m)
   | .forallE ty b m =>
-    mkApp3 (mkConst ``Ix.Kernel.Expr.forallE) (qExpr ty) (qExpr b) (qBinderMeta m)
+    mkApp4 (mkConst ``Ix.Kernel.Expr.forallE) mdE (qExpr mdE ty) (qExpr mdE b) (qBinderMeta m)
   | .letE ty v b l =>
-    mkApp4 (mkConst ``Ix.Kernel.Expr.letE) (qExpr ty) (qExpr v) (qExpr b) (qLetMeta l)
-  | .lit l => mkApp (mkConst ``Ix.Kernel.Expr.lit) (qLiteral l)
+    mkApp5 (mkConst ``Ix.Kernel.Expr.letE) mdE (qExpr mdE ty) (qExpr mdE v) (qExpr mdE b)
+      (qLetMeta l)
+  | .lit l => mkApp2 (mkConst ``Ix.Kernel.Expr.lit) mdE (qLiteral l)
   | .proj s i e =>
-    mkApp3 (mkConst ``Ix.Kernel.Expr.proj) (qKey s) (mkRawNatLit i) (qExpr e)
+    mkApp4 (mkConst ``Ix.Kernel.Expr.proj) mdE (qKey mdE s) (mkRawNatLit i) (qExpr mdE e)
 
-private def qConstantVal (cv : Ix.Kernel.ConstantVal) : Lean.Expr :=
-  mkApp3 (mkConst ``Ix.Kernel.ConstantVal.mk) (qKey cv.name)
-    (qLevelParams cv.levelParams) (qExpr cv.type)
+private def qConstantVal (mdE : Lean.Expr) (cv : Ix.Kernel.ConstantVal .anon) : Lean.Expr :=
+  mkApp4 (mkConst ``Ix.Kernel.ConstantVal.mk) mdE (qKey mdE cv.name)
+    (qLevelParams cv.levelParams) (qExpr mdE cv.type)
 
-private def qRecRuleFire : Ix.Kernel.RecRuleFire → Lean.Expr
-  | .inert => mkConst ``Ix.Kernel.RecRuleFire.inert
-  | .plain => mkConst ``Ix.Kernel.RecRuleFire.plain
+private def qRecRuleFire (mdE : Lean.Expr) : Ix.Kernel.RecRuleFire .anon → Lean.Expr
+  | .inert => mkApp (mkConst ``Ix.Kernel.RecRuleFire.inert) mdE
+  | .plain => mkApp (mkConst ``Ix.Kernel.RecRuleFire.plain) mdE
   | .nested lvls pins =>
-    mkApp2 (mkConst ``Ix.Kernel.RecRuleFire.nested) (qLevels lvls)
-      (qList exprTy (pins.map qExpr))
+    mkApp3 (mkConst ``Ix.Kernel.RecRuleFire.nested) mdE (qLevels lvls)
+      (qList (exprTy mdE) (pins.map (qExpr mdE)))
 
-private def qRecRule (r : Ix.Kernel.RecRule) : Lean.Expr :=
+private def qRecRule (mdE : Lean.Expr) (r : Ix.Kernel.RecRule .anon) : Lean.Expr :=
   mkAppN (mkConst ``Ix.Kernel.RecRule.mk)
-    #[qKey r.ctor, mkRawNatLit r.nfields, mkRawNatLit r.ctorParams,
-      qRecRuleFire r.fire, qExpr r.rhs, qBool r.k, qBool r.eta,
+    #[mdE, qKey mdE r.ctor, mkRawNatLit r.nfields, mkRawNatLit r.ctorParams,
+      qRecRuleFire mdE r.fire, qExpr mdE r.rhs, qBool r.k, qBool r.eta,
       qBool r.paramsBlind]
 
-private def qOptionKey : Option Ix.Kernel.Key → Lean.Expr
-  | some k => mkApp2 (mkConst ``Option.some [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key) (qKey k)
-  | none => mkApp (mkConst ``Option.none [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key)
+private def qOptionKey (mdE : Lean.Expr) : Option (Ix.Kernel.Key .anon) → Lean.Expr
+  | some k => mkApp2 (mkConst ``Option.some [Lean.Level.zero]) (keyTy mdE) (qKey mdE k)
+  | none => mkApp (mkConst ``Option.none [Lean.Level.zero]) (keyTy mdE)
 
-private def qIndCaps (c : Ix.Kernel.IndCaps) : Lean.Expr :=
+private def qIndCaps (mdE : Lean.Expr) (c : Ix.Kernel.IndCaps .anon) : Lean.Expr :=
   mkAppN (mkConst ``Ix.Kernel.IndCaps.mk)
-    #[qBool c.eta, qOptionKey c.etaCtor, mkRawNatLit c.etaParams,
+    #[mdE, qBool c.eta, qOptionKey mdE c.etaCtor, mkRawNatLit c.etaParams,
       mkRawNatLit c.etaFields, qBool c.unitlike, mkRawNatLit c.unitParams,
       qBool c.ruleK, qPropWhen c.sortZ]
 
@@ -256,22 +263,25 @@ private def qReducibilityHint : Ix.Kernel.ReducibilityHint → Lean.Expr
   | .«abbrev» => mkConst ``Ix.Kernel.ReducibilityHint.«abbrev»
   | .regular h => mkApp (mkConst ``Ix.Kernel.ReducibilityHint.regular) (mkRawNatLit h)
 
-private def qConstantInfo : Ix.Kernel.ConstantInfo → CoreM Lean.Expr
-  | .axiomInfo cv => pure (mkApp (mkConst ``Ix.Kernel.ConstantInfo.axiomInfo) (qConstantVal cv))
+private def qConstantInfo (mdE : Lean.Expr) : Ix.Kernel.ConstantInfo .anon → CoreM Lean.Expr
+  | .axiomInfo cv =>
+    pure (mkApp2 (mkConst ``Ix.Kernel.ConstantInfo.axiomInfo) mdE (qConstantVal mdE cv))
   | .defnInfo cv v h =>
-    pure (mkApp3 (mkConst ``Ix.Kernel.ConstantInfo.defnInfo) (qConstantVal cv)
-      (qExpr v) (qReducibilityHint h))
+    pure (mkApp4 (mkConst ``Ix.Kernel.ConstantInfo.defnInfo) mdE (qConstantVal mdE cv)
+      (qExpr mdE v) (qReducibilityHint h))
   | .thmInfo cv v =>
-    pure (mkApp2 (mkConst ``Ix.Kernel.ConstantInfo.thmInfo) (qConstantVal cv) (qExpr v))
+    pure (mkApp3 (mkConst ``Ix.Kernel.ConstantInfo.thmInfo) mdE (qConstantVal mdE cv)
+      (qExpr mdE v))
   | .indInfo cv caps =>
-    pure (mkApp2 (mkConst ``Ix.Kernel.ConstantInfo.indInfo) (qConstantVal cv) (qIndCaps caps))
+    pure (mkApp3 (mkConst ``Ix.Kernel.ConstantInfo.indInfo) mdE (qConstantVal mdE cv)
+      (qIndCaps mdE caps))
   | .ctorInfo cv nP nF =>
-    pure (mkApp3 (mkConst ``Ix.Kernel.ConstantInfo.ctorInfo) (qConstantVal cv)
+    pure (mkApp4 (mkConst ``Ix.Kernel.ConstantInfo.ctorInfo) mdE (qConstantVal mdE cv)
       (mkRawNatLit nP) (mkRawNatLit nF))
   | .recInfo cv mI rP rules =>
     pure (mkAppN (mkConst ``Ix.Kernel.ConstantInfo.recInfo)
-      #[qConstantVal cv, mkRawNatLit mI, mkRawNatLit rP,
-        qList recRuleTy (rules.map qRecRule)])
+      #[mdE, qConstantVal mdE cv, mkRawNatLit mI, mkRawNatLit rP,
+        qList (recRuleTy mdE) (rules.map (qRecRule mdE))])
   | .projInfo _ =>
     throwError "#annotate_basis: a projection table is not a pinnable declaration"
 
@@ -282,11 +292,11 @@ install does: the type first, then — for a recursor — the
 install-computed rule fields (`ctorParams` off the stored constructor,
 `fire` off `Expr.recRulePlain`) and the rules' right-hand sides over
 the environment extended with the recursor itself. -/
-def annotateInfo (env : Ix.Kernel.Env) (ci : Ix.Kernel.ConstantInfo) :
-    Ix.Kernel.CheckM Ix.Kernel.ConstantInfo := do
+def annotateInfo (env : Ix.Kernel.Env .anon) (ci : Ix.Kernel.ConstantInfo .anon) :
+    Ix.Kernel.CheckM (Ix.Kernel.ConstantInfo .anon) := do
   let cv := ci.toConstantVal
   let ty' ← Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 cv.type
-  let cv' : Ix.Kernel.ConstantVal := { cv with type := ty' }
+  let cv' : Ix.Kernel.ConstantVal .anon := { cv with type := ty' }
   match ci with
   | .indInfo _ caps => return .indInfo cv' caps
   | .ctorInfo _ nP nF => return .ctorInfo cv' nP nF
@@ -303,16 +313,16 @@ def annotateInfo (env : Ix.Kernel.Env) (ci : Ix.Kernel.ConstantInfo) :
         { r with ctorParams := cnP,
                  fire := if Ix.Kernel.Expr.recRulePlain ty' mI rP cnP then .plain else .inert,
                  paramsBlind := true }
-    let envSelf : Ix.Kernel.Env := ⟨.recInfo cv' mI rP rules :: env.consts⟩
-    let mut out : List Ix.Kernel.RecRule := []
+    let envSelf : Ix.Kernel.Env .anon := ⟨.recInfo cv' mI rP rules :: env.consts⟩
+    let mut out : List (Ix.Kernel.RecRule .anon) := []
     for r in rules do
       let rhs' ← Ix.Kernel.annotateCore .verified envSelf Ix.Kernel.checkFuel 0 r.rhs
       out := out ++ [{ r with rhs := rhs' }]
     return .recInfo cv' mI rP out
 
 /-- Annotate one raw `ConstantVal` pin's type over `env`. -/
-def annotateVal (env : Ix.Kernel.Env) (cv : Ix.Kernel.ConstantVal) :
-    Ix.Kernel.CheckM Ix.Kernel.ConstantVal := do
+def annotateVal (env : Ix.Kernel.Env .anon) (cv : Ix.Kernel.ConstantVal .anon) :
+    Ix.Kernel.CheckM (Ix.Kernel.ConstantVal .anon) := do
   let ty' ← Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 cv.type
   return { cv with type := ty' }
 
@@ -322,35 +332,38 @@ def annotateVal (env : Ix.Kernel.Env) (cv : Ix.Kernel.ConstantVal) :
 standard `@[implemented_by]` pairing (their own bodies are never run —
 `implemented_by` replaces the compiled code). -/
 
-private unsafe def evalInfoUnsafe (stx : Syntax) : TermElabM Ix.Kernel.ConstantInfo :=
-  Term.evalTerm Ix.Kernel.ConstantInfo constantInfoTy stx
+private unsafe def evalInfoUnsafe (stx : Syntax) : TermElabM (Ix.Kernel.ConstantInfo .anon) :=
+  Term.evalTerm (Ix.Kernel.ConstantInfo .anon) (constantInfoTy anonE) stx
 
 @[implemented_by evalInfoUnsafe]
-private def evalInfo (_stx : Syntax) : TermElabM Ix.Kernel.ConstantInfo :=
+private def evalInfo (_stx : Syntax) : TermElabM (Ix.Kernel.ConstantInfo .anon) :=
   throwError "unreachable"
 
-private unsafe def evalValUnsafe (stx : Syntax) : TermElabM Ix.Kernel.ConstantVal :=
-  Term.evalTerm Ix.Kernel.ConstantVal constantValTy stx
+private unsafe def evalValUnsafe (stx : Syntax) : TermElabM (Ix.Kernel.ConstantVal .anon) :=
+  Term.evalTerm (Ix.Kernel.ConstantVal .anon) (constantValTy anonE) stx
 
 @[implemented_by evalValUnsafe]
-private def evalVal (_stx : Syntax) : TermElabM Ix.Kernel.ConstantVal :=
+private def evalVal (_stx : Syntax) : TermElabM (Ix.Kernel.ConstantVal .anon) :=
   throwError "unreachable"
 
-private unsafe def evalEnvUnsafe (stx : Syntax) : TermElabM (List Ix.Kernel.ConstantInfo) :=
-  Term.evalTerm (List Ix.Kernel.ConstantInfo)
-    (mkApp (mkConst ``List [Lean.Level.zero]) constantInfoTy) stx
+private unsafe def evalEnvUnsafe (stx : Syntax) : TermElabM (List (Ix.Kernel.ConstantInfo .anon)) :=
+  Term.evalTerm (List (Ix.Kernel.ConstantInfo .anon))
+    (mkApp (mkConst ``List [Lean.Level.zero]) (constantInfoTy anonE)) stx
 
 @[implemented_by evalEnvUnsafe]
-private def evalEnv (_stx : Syntax) : TermElabM (List Ix.Kernel.ConstantInfo) :=
+private def evalEnv (_stx : Syntax) : TermElabM (List (Ix.Kernel.ConstantInfo .anon)) :=
   throwError "unreachable"
 
 /-! ## Splicing -/
 
-/-- Define `declName : ty := value` (kernel-checked, then compiled),
-with the reducibility hint an ordinary `def` of the same body would
-get. -/
-private def splice (declName : Lean.Name) (ty value : Lean.Expr) :
+/-- Define `declName : ∀ {md : Mode}, ty md := fun {md} => value` (kernel-checked,
+then compiled), with the reducibility hint an ordinary `def` of the same body
+would get. `value` mentions the mode as the loose bound variable `#0`: a pin
+is closed over role keys, so the same term serves every mode. -/
+private def splice (declName : Lean.Name) (ty : Lean.Expr → Lean.Expr) (value : Lean.Expr) :
     TermElabM Unit := do
+  let ty := Lean.mkForall `md .implicit modeTy (ty (.bvar 0))
+  let value := Lean.mkLambda `md .implicit modeTy value
   let hints : Lean.ReducibilityHints := .regular (getMaxHeight (← getEnv) value + 1)
   let decl : Lean.Declaration := .defnDecl
     (← mkDefinitionValInferringUnsafe declName [] ty value hints)
@@ -384,7 +397,7 @@ syntax (name := annotatePinsCmd)
 @[command_elab annotateBasisCmd]
 def elabAnnotateBasis : CommandElab := fun stx => do
   let entries := stx[3].getArgs
-  let mut consts : List Ix.Kernel.ConstantInfo ←
+  let mut consts : List (Ix.Kernel.ConstantInfo .anon) ←
     liftTermElabM (evalEnv stx[2])
   for e in entries do
     let id := e[1]
@@ -397,13 +410,13 @@ def elabAnnotateBasis : CommandElab := fun stx => do
         throwErrorAt rawStx
           "#annotate_basis: annotating {id.getId} failed: {toString err}"
     liftTermElabM do
-      splice ((← getCurrNamespace) ++ id.getId) constantInfoTy (← qConstantInfo ci)
+      splice ((← getCurrNamespace) ++ id.getId) constantInfoTy (← qConstantInfo (.bvar 0) ci)
     consts := ci :: consts
 
 @[command_elab annotatePinsCmd]
 def elabAnnotatePins : CommandElab := fun stx => do
   let entries := stx[3].getArgs
-  let consts : List Ix.Kernel.ConstantInfo ← liftTermElabM (evalEnv stx[2])
+  let consts : List (Ix.Kernel.ConstantInfo .anon) ← liftTermElabM (evalEnv stx[2])
   for e in entries do
     let id := e[1]
     let rawStx := e[3]
@@ -415,7 +428,7 @@ def elabAnnotatePins : CommandElab := fun stx => do
         throwErrorAt rawStx
           "#annotate_pins: annotating {id.getId} failed: {toString err}"
     liftTermElabM do
-      splice ((← getCurrNamespace) ++ id.getId) constantValTy (qConstantVal cv)
+      splice ((← getCurrNamespace) ++ id.getId) constantValTy (qConstantVal (.bvar 0) cv)
 
 end Ix.Kernel.BasisGen
 

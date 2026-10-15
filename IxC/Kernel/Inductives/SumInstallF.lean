@@ -20,8 +20,8 @@ variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 /-- `checkSumTele` through the index (task #195): the whnf loop
 runs at the index's environment through the shared operations, the
 re-check of the closed telescope is `checkConstantValF`. -/
-def checkSumTeleF (ops : CheckerOps m) (fe : FEnv) (cv : ConstantVal) (n : Nat)
-    (cvTa₀ : ConstantVal) : m (ConstantVal × Level) :=
+def checkSumTeleF (ops : (CheckerOps md) m) (fe : FEnv md) (cv : ConstantVal md) (n : Nat)
+    (cvTa₀ : ConstantVal md) : m (ConstantVal md × Level) :=
   match cvTa₀.type.stripPis n with
   | some (_, .sort s) => pure (cvTa₀, s)
   | _ => do
@@ -30,9 +30,9 @@ def checkSumTeleF (ops : CheckerOps m) (fe : FEnv) (cv : ConstantVal) (n : Nat)
     pure (cvTa, s)
 
 /-- `checkSumInd` through the index. -/
-def checkSumIndF (ops : CheckerOps m) (fe : FEnv) (p : InductiveShape)
-    (capsOf : InductiveShape → IndCaps) :
-    m (FEnv × ConstantVal × InductiveShape) := do
+def checkSumIndF (ops : (CheckerOps md) m) (fe : FEnv md) (p : InductiveShape md)
+    (capsOf : InductiveShape md → IndCaps md) :
+    m (FEnv md × ConstantVal md × InductiveShape md) := do
   let cvTa₀ ← checkConstantValF ops fe p.cvT
   let (cvTa, s) ← checkSumTeleF ops fe p.cvT (p.nP + p.nIdx) cvTa₀
   let (_, tbody) ← unwrapOr (cvTa.type.stripPis (p.nP + p.nIdx))
@@ -43,8 +43,8 @@ def checkSumIndF (ops : CheckerOps m) (fe : FEnv) (p : InductiveShape)
   pure (fe.push (.indInfo cvTa (capsOf p')), cvTa, p')
 
 /-- `checkStructFieldSortsI` through the index. -/
-def checkStructFieldSortsIF (ops : CheckerOps m) (fe : FEnv) (isProp large : Bool)
-    (s : Level) (nP : Nat) (fvs idxArgs : List Expr) : Nat → m (List Level)
+def checkStructFieldSortsIF (ops : (CheckerOps md) m) (fe : FEnv md) (isProp large : Bool)
+    (s : Level) (nP : Nat) (fvs idxArgs : List (Expr md)) : Nat → m (List Level)
   | 0 => pure []
   | j + 1 => do
     let fv ← unwrapOr fvs[j]? (.internal "direct sum: field index")
@@ -63,8 +63,8 @@ def checkStructFieldSortsIF (ops : CheckerOps m) (fe : FEnv) (isProp large : Boo
 /-- `checkStructFieldSortsIF` over an array of field variables (the
 callers convert once).  Equal to it at `List.toArray`:
 `checkStructFieldSortsIFA_eq`. -/
-def checkStructFieldSortsIFA (ops : CheckerOps m) (fe : FEnv) (isProp large : Bool)
-    (s : Level) (nP : Nat) (fvs : Array Expr) (idxArgs : List Expr) : Nat → m (List Level)
+def checkStructFieldSortsIFA (ops : (CheckerOps md) m) (fe : FEnv md) (isProp large : Bool)
+    (s : Level) (nP : Nat) (fvs : Array (Expr md)) (idxArgs : List (Expr md)) : Nat → m (List Level)
   | 0 => pure []
   | j + 1 => do
     let fv ← unwrapOr fvs[j]? (.internal "direct sum: field index")
@@ -82,22 +82,22 @@ def checkStructFieldSortsIFA (ops : CheckerOps m) (fe : FEnv) (isProp large : Bo
 
 /-- `normCtorVal` through the index (the whnf walk at `fe.env`, the
 re-check through `checkConstantValF`). -/
-def normCtorValF (ops : CheckerOps m) (fe : FEnv) (T : Key) (nP nF : Nat)
-    (cvC cvCa : ConstantVal) : m ConstantVal := do
+def normCtorValF (ops : (CheckerOps md) m) (fe : FEnv md) (T : Key md) (nP nF : Nat)
+    (cvC cvCa : ConstantVal md) : m (ConstantVal md) := do
   let (cbs, _) ← unwrapOr (cvCa.type.stripPis nP)
     (.notImplemented "direct sum: constructor telescope")
   let (fvsP, crest) ← unwrapOr (openPisAtFvars nP cvCa.type 0)
     (.notImplemented "direct sum: constructor telescope")
-  let pbs := List.zipWith (fun (x : Expr) (b : Expr × BinderMeta) => (x.fvarTypeD, b.2)) fvsP cbs
+  let pbs := List.zipWith (fun (x : Expr md) (b : Expr md × BinderMeta) => (x.fvarTypeD, b.2)) fvsP cbs
   let (fbs, resid) ← normFieldDoms ops fe.env T nP nF crest
   let ty' := closeTelescope (pbs ++ fbs) 0 resid
   if ty' == cvCa.type then pure cvCa
   else checkConstantValF ops fe { cvC with type := ty' }
 
 /-- `checkSumCtor` through the index. -/
-def checkSumCtorF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Key)
+def checkSumCtorF (ops : (CheckerOps md) m) (fe₀ fe : FEnv md) (T : Key md)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
-    (cvC : ConstantVal) (nF : Nat) (cvTa : ConstantVal) : m (ConstantVal × List Level) := do
+    (cvC : ConstantVal md) (nF : Nat) (cvTa : ConstantVal md) : m (ConstantVal md × List Level) := do
   let cvCa₀ ← checkConstantValF ops fe cvC
   let cvCa ← normCtorValF ops fe T nP nF cvC cvCa₀
   let (_, cbody) ← unwrapOr (cvCa.type.stripPis (nP + nF))
@@ -128,10 +128,10 @@ def checkSumCtorF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Key)
   pure (cvCa, sorts)
 
 /-- `checkSumCtors` through the index. -/
-def checkSumCtorsF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Key)
+def checkSumCtorsF (ops : (CheckerOps md) m) (fe₀ fe : FEnv md) (T : Key md)
     (lps : List LevelParam) (nP nIdx : Nat) (resSort : Level) (isProp large : Bool)
-    (cvTa : ConstantVal) :
-    List (ConstantVal × Nat) → m (List (ConstantVal × Nat) × List (List Level))
+    (cvTa : ConstantVal md) :
+    List (ConstantVal md × Nat) → m (List (ConstantVal md × Nat) × List (List Level))
   | [] => pure ([], [])
   | c :: cs => do
     let (cvCa, sorts) ← checkSumCtorF ops fe₀ fe T lps nP nIdx resSort isProp large c.1 c.2
@@ -140,7 +140,7 @@ def checkSumCtorsF (ops : CheckerOps m) (fe₀ fe : FEnv) (T : Key)
     pure ((cvCa, c.2) :: rest, sorts :: srest)
 
 /-- `consSumCtors` through the index. -/
-def consSumCtorsF (nP : Nat) : List (ConstantVal × Nat) → FEnv → FEnv
+def consSumCtorsF (nP : Nat) : List (ConstantVal md × Nat) → FEnv md → FEnv md
   | [], fe => fe
   | c :: cs, fe => consSumCtorsF nP cs (fe.push (.ctorInfo c.1 nP c.2))
 

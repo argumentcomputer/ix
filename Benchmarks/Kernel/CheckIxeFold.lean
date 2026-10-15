@@ -44,7 +44,7 @@ open Benchmarks.Kernel.CheckIxeStep
 /-- The records the environment check would accept or check (in check order), and
 every recursor and projection record of their blocks. -/
 def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.run do
-  let mut st : State := {}
+  let mut st : State .anon := {}
   let mut failed : Std.HashSet Address := {}
   let mut consumed : Std.HashSet Address := {}
   let mut out : Array (Address × Ixon.Constant) := #[]
@@ -77,7 +77,7 @@ def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.
   projs := projs.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
   return (out ++ projs, dropped)
 
-def kindWord : Ix.Kernel.Cached.PendingCheck → String
+def kindWord : Ix.Kernel.Cached.PendingCheck .anon → String
   | pc => pc.vg.kind.word
 
 def percentile (xs : Array Nat) (p : Nat) : Nat :=
@@ -87,7 +87,7 @@ def percentile (xs : Array Nat) (p : Nat) : Nat :=
 
 /-- Phase B over `pend`, one record at a time, each timed with the release
 of its memo state. -/
-def phaseB (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck) :
+def phaseB (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon)) :
     IO (Array Nat × Option (Ix.Kernel.CheckError × Nat)) := do
   let mut times : Array Nat := Array.mkEmpty pend.size
   for pc in pend do
@@ -149,7 +149,7 @@ def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit
   let t1 ← IO.monoNanosNow
   let names ← IO.lazyPure fun _ => resolved.foldl (fun n r => n + (s.cx.nameOf r).hashData.toNat % 2) 0
   let t2 ← IO.monoNanosNow
-  let keys ← IO.lazyPure fun _ => resolved.foldl (fun n r => n + (keyName r).hashData.toNat % 2) 0
+  let keys ← IO.lazyPure fun _ => resolved.foldl (fun n r => n + (keyName (md := .anon) r).hashData.toNat % 2) 0
   let t3 ← IO.monoNanosNow
   IO.eprintln s!"stats: resolve over {resolved.size} table entries {(t1 - t0) / 1000000} ms; \
     nameOf {(t2 - t1) / 1000000} ms; keyName {(t3 - t2) / 1000000} ms ({names + keys} odd)"

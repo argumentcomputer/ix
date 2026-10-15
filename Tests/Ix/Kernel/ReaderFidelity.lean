@@ -118,14 +118,14 @@ namespace Tests.Ix.Kernel.ReaderFidelity
 /-- A constant as the reader emits it (one of a declaration's constants),
 and as the reference translates it. -/
 inductive Entry where
-  | axiom (cv : CVal)
-  | defn (cv : CVal) (value : CExpr) (hint : Ix.Kernel.ReducibilityHint)
-  | thm (cv : CVal) (value : CExpr)
-  | opaque (cv : CVal) (value : CExpr)
-  | quot (kind : Ix.Kernel.QuotKind) (cv : CVal)
-  | induct (cv : CVal) (numParams : Nat)
-  | ctor (cv : CVal) (numParams numFields : Nat)
-  | recr (cv : CVal) (majorIdx rulePrefix : Nat) (rules : List Ix.Kernel.RecRule)
+  | axiom (cv : CVal .anon)
+  | defn (cv : CVal .anon) (value : CExpr .anon) (hint : Ix.Kernel.ReducibilityHint)
+  | thm (cv : CVal .anon) (value : CExpr .anon)
+  | opaque (cv : CVal .anon) (value : CExpr .anon)
+  | quot (kind : Ix.Kernel.QuotKind) (cv : CVal .anon)
+  | induct (cv : CVal .anon) (numParams : Nat)
+  | ctor (cv : CVal .anon) (numParams numFields : Nat)
+  | recr (cv : CVal .anon) (majorIdx rulePrefix : Nat) (rules : List (Ix.Kernel.RecRule .anon))
   deriving Inhabited
 
 /-! Equality is decided field by field with the kernel's executed equalities
@@ -133,15 +133,15 @@ inductive Entry where
 descent), not with the derived `DecidableEq`, whose structural descent does
 not see sharing and is exponential on the DAGs that both sides build. -/
 
-def CVal.beq (a b : CVal) : Bool :=
+def CVal.beq (a b : CVal .anon) : Bool :=
   a.name == b.name && a.levelParams == b.levelParams && a.type == b.type
 
-def RecRule.beq (a b : Ix.Kernel.RecRule) : Bool :=
+def RecRule.beq (a b : Ix.Kernel.RecRule .anon) : Bool :=
   a.ctor == b.ctor && a.nfields == b.nfields && a.ctorParams == b.ctorParams &&
     decide (a.fire = b.fire) && a.rhs == b.rhs && a.k == b.k && a.eta == b.eta &&
     a.paramsBlind == b.paramsBlind
 
-def RecRule.listBeq : List Ix.Kernel.RecRule → List Ix.Kernel.RecRule → Bool
+def RecRule.listBeq : List (Ix.Kernel.RecRule .anon) → List (Ix.Kernel.RecRule .anon) → Bool
   | [], [] => true
   | a :: as, b :: bs => RecRule.beq a b && RecRule.listBeq as bs
   | _, _ => false
@@ -158,11 +158,11 @@ def Entry.beq : Entry → Entry → Bool
 
 instance : BEq Entry := ⟨Entry.beq⟩
 
-def Entry.cv : Entry → CVal
+def Entry.cv : Entry → CVal .anon
   | .axiom cv | .defn cv .. | .thm cv _ | .opaque cv _ | .quot _ cv | .induct cv _
   | .ctor cv .. | .recr cv .. => cv
 
-def Entry.name (e : Entry) : CName := e.cv.name
+def Entry.name (e : Entry) : CName .anon := e.cv.name
 
 def Entry.kind : Entry → String
   | .axiom .. => "axiom" | .defn .. => "definition" | .thm .. => "theorem"
@@ -170,7 +170,7 @@ def Entry.kind : Entry → String
   | .ctor .. => "constructor" | .recr .. => "recursor"
 
 /-- The constants of a reader declaration. -/
-def entriesOf : CDecl → Array Entry
+def entriesOf : CDecl .anon → Array Entry
   | .axiomDecl cv => #[.axiom cv]
   | .defnDecl cv v h => #[.defn cv v h]
   | .thmDecl cv v => #[.thm cv v]
@@ -188,7 +188,7 @@ def entriesOf : CDecl → Array Entry
 def levelStr (l : CLevel) : String := (reprStr l).take 120 |>.toString
 
 /-- The first position where two expressions differ, with both sides. -/
-partial def exprDiff (path : String) (a b : CExpr) : Option String :=
+partial def exprDiff (path : String) (a b : CExpr .anon) : Option String :=
   if a == b then none else
   match a, b with
   | .app f x, .app g y => (exprDiff s!"{path}.fn" f g).orElse fun _ => exprDiff s!"{path}.arg" x y
@@ -211,13 +211,13 @@ partial def exprDiff (path : String) (a b : CExpr) : Option String :=
   | .sort u, .sort w => some s!"{path}: sort {levelStr u} vs sort {levelStr w}"
   | _, _ => some s!"{path}: {(reprStr a).take 160} vs {(reprStr b).take 160}"
 
-def cvDiff (a b : CVal) : Option String :=
+def cvDiff (a b : CVal .anon) : Option String :=
   if a.name != b.name then some s!"name {a.name} vs {b.name}"
   else if a.levelParams != b.levelParams then
     some s!"level parameters {a.levelParams} vs {b.levelParams}"
   else exprDiff "type" a.type b.type
 
-def ruleDiff (i : Nat) (a b : Ix.Kernel.RecRule) : Option String :=
+def ruleDiff (i : Nat) (a b : Ix.Kernel.RecRule .anon) : Option String :=
   if a.ctor != b.ctor then some s!"rule {i}: constructor {a.ctor} vs {b.ctor}"
   else if a.nfields != b.nfields then some s!"rule {i}: {a.nfields} fields vs {b.nfields}"
   else if a.rhs != b.rhs then exprDiff s!"rule {i} rhs" a.rhs b.rhs
@@ -256,32 +256,32 @@ where
 
 /-- A Lean name's key under Source mode's binding: the role whose Lean name
 it is, otherwise the input key of the name. -/
-def cname (n : Lean.Name) : CName := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
+def cname (n : Lean.Name) : CName .anon := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
 
 /-- What the reference reads: Lean's constants, the compiled environment's
 name ↦ reference map, and the role table's bindings. -/
 structure RefCx where
   find : Lean.Name → Option Lean.ConstantInfo
   refOf : Lean.Name → Option (ConstRef Address)
-  roles : Bindings
+  roles : Bindings .anon
 
 abbrev RefM := Except String
 
 /-- A non-recursor constant's reference name. -/
-def RefCx.memberName (cx : RefCx) (n : Lean.Name) : RefM CName := do
+def RefCx.memberName (cx : RefCx) (n : Lean.Name) : RefM (CName .anon) := do
   let some r := cx.refOf n | throw s!"{n} was not compiled"
   pure (cx.roles.names.getD r (keyName r))
 
 /-- A recursor's reference key: its role's key where the table binds its own
 reference, otherwise the input key spelled after the member `p` it is named
 for (`⟦p⟧.s`). -/
-def RefCx.recName (cx : RefCx) (n p : Lean.Name) (s : String) : RefM CName := do
+def RefCx.recName (cx : RefCx) (n p : Lean.Name) (s : String) : RefM (CName .anon) := do
   if let some r := cx.refOf n then
     if let some k := cx.roles.names[r]? then return k
   pure (.id ((← cx.memberName p).toName.str s))
 
 /-- A Lean constant's reference name (recursors by Lean's convention). -/
-def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM CName := do
+def RefCx.name (cx : RefCx) (n : Lean.Name) : RefM (CName .anon) := do
   match cx.find n with
   | some (.recInfo rv) =>
     match n with
@@ -351,9 +351,9 @@ term as a tree. On `denote_blastDivSubtractShift_q` (6,716 objects, more than
 10⁸ tree nodes) that took minutes per probe. The constant's objects outlive
 its translation, so an address names one object for the memo's lifetime. -/
 structure TrState where
-  names : Std.HashMap Lean.Name CName := {}
+  names : Std.HashMap Lean.Name (CName .anon) := {}
   levels : Std.HashMap Lean.Level CLevel := {}
-  exprs : Std.HashMap USize CExpr := {}
+  exprs : Std.HashMap USize (CExpr .anon) := {}
 
 /-- Errors do not discard the state: the memo is threaded uniquely (a
 `StateT` over `Except` would keep the state before a failing translation
@@ -369,7 +369,7 @@ structure TrCx where
   params : List Lean.Name
   lps : List LevelParam
 
-def trName (cx : TrCx) (n : Lean.Name) : TrM CName := do
+def trName (cx : TrCx) (n : Lean.Name) : TrM (CName .anon) := do
   if let some c ← modifyGet (fun s => (s.names[n]?, s)) then return c
   let c ← liftRef (cx.ref.name n)
   modify fun s => { s with names := s.names.insert n c }
@@ -384,7 +384,7 @@ def trLevel (cx : TrCx) (l : Lean.Level) : TrM CLevel := do
 
 def never : Ix.Kernel.BinderMeta := { pw := .never }
 
-partial def trExpr (cx : TrCx) (e : Lean.Expr) : TrM CExpr := do
+partial def trExpr (cx : TrCx) (e : Lean.Expr) : TrM (CExpr .anon) := do
   let p := _root_.Ix.CanonM.leanExprPtr e
   if let some c ← modifyGet (fun s => (s.exprs[p]?, s)) then return c
   let c ← match e with
@@ -435,7 +435,7 @@ def reference (rcx : RefCx) (n : Lean.Name) (ci : Lean.ConstantInfo) : TrM Entry
   -- is translated once
   let ci := ShareCommon.shareCommon' ci
   modify fun s => { s with levels := {}, exprs := {} }
-  let cv : CVal := ⟨← trName cx n, lps, ← trExpr cx ci.type⟩
+  let cv : CVal .anon := ⟨← trName cx n, lps, ← trExpr cx ci.type⟩
   match ci with
   | .axiomInfo _ => pure (.axiom cv)
   | .defnInfo v => pure (.defn cv (← trExpr cx v.value) (hintOf v.hints))
@@ -492,7 +492,7 @@ structure Report where
   recursors regenerated), not Lean's -/
   reorderedBlocks : Array Lean.Name := #[]
   /-- reader constants no Lean constant translates to -/
-  unmatched : Array CName := #[]
+  unmatched : Array (CName .anon) := #[]
   /-- names, shape data and pin-table checks: problems found -/
   problems : Array String := #[]
   /-- unexplained differences, with the Lean name -/
@@ -621,7 +621,7 @@ def closure (env : Lean.Environment) (seeds : Array Lean.Name) :
 
 /-- The role table's agreement with Lean: a bound role's key is the Lean
 name of a constant compiled at the reference its address resolves to. -/
-def bindingProblems (roles : Bindings)
+def bindingProblems (roles : Bindings .anon)
     (byRef : Std.HashMap (ConstRef Address) (Array Lean.Name)) : Array String := Id.run do
   let mut out := #[]
   for (r, n) in roles.names.toList do
@@ -636,7 +636,7 @@ structure Cx where
   input : Input
   rcx : RefCx
   named : Std.HashMap Lean.Name Ixon.Named
-  byName : Std.HashMap CName (Array Lean.Name)
+  byName : Std.HashMap (CName .anon) (Array Lean.Name)
   /-- record owners whose metadata names constants outside the Lean
   environment (the compiled source's own declarations) -/
   foreign : Std.HashSet Address
@@ -662,7 +662,7 @@ def weakAgree (a e : Entry) : Bool :=
 
 /-- The verdict on one Lean constant against the reader's entry, at the
 reader's state before the record. -/
-def judge (cx : Cx) (st : State) (n : Lean.Name) (actual : Entry) (expected : RefM Entry) : Verdict :=
+def judge (cx : Cx) (st : State .anon) (n : Lean.Name) (actual : Entry) (expected : RefM Entry) : Verdict :=
   match expected with
   | .error e => .unexplained s!"reference: {e}"
   | .ok expected =>
@@ -703,8 +703,8 @@ def judge (cx : Cx) (st : State) (n : Lean.Name) (actual : Entry) (expected : Re
 /-- Compare one record's reading: every constant it emits (not the
 modeller's generated ones) against each Lean constant that translates to its
 name, and the shape data it hands the modeller against Lean's. -/
-def compareRecord (cx : Cx) (st : State) (address : Address) (rd : Read)
-    (acc : Report × TrState × Std.HashSet CName) : Report × TrState × Std.HashSet CName := Id.run do
+def compareRecord (cx : Cx) (st : State .anon) (address : Address) (rd : Read .anon)
+    (acc : Report × TrState × Std.HashSet (CName .anon)) : Report × TrState × Std.HashSet (CName .anon) := Id.run do
   let (report0, tr0, seen0) := acc
   let mut report := report0
   let mut tr := tr0
@@ -794,7 +794,7 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
   let rcx : RefCx := { find := input.lean, refOf := (refs[·]?), roles := s.cx.roles }
   let mut report : Report := {}
   -- reference names, the inverse map, and the reader's own names
-  let mut byName : Std.HashMap CName (Array Lean.Name) := {}
+  let mut byName : Std.HashMap (CName .anon) (Array Lean.Name) := {}
   let mut byRef : Std.HashMap (ConstRef Address) (Array Lean.Name) := {}
   for n in input.names do
     let some r := refs[n]? | continue
@@ -823,8 +823,8 @@ def run (input : Input) (limit : Option Nat := none) (keep : Lean.Name → Bool 
     | some rs => Benchmarks.Kernel.CheckIxeStep.closure store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rs)
     | none => s.ordered
   let ordered := match limit with | some k => base.extract 0 k | none => base
-  let mut st : State := {}
-  let mut acc : Report × TrState × Std.HashSet CName := (report, {}, {})
+  let mut st : State .anon := {}
+  let mut acc : Report × TrState × Std.HashSet (CName .anon) := (report, {}, {})
   let mut readNs := 0
   let mut failed : Std.HashMap Address String := {}
   for address in ordered do

@@ -242,7 +242,7 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let some cx := Ix.Cert.admissionContext binding limits ixe order.toList
     | return (errors.push "no admission context", lines)
   let mut read := 0
-  let mut unread : Array Ix.Kernel.Key := #[]
+  let mut unread : Array (Ix.Kernel.Key .source) := #[]
   let mut bad : Array String := #[]
   for c in envS.consts do
     match Ix.Cert.reading ixe cx c with
@@ -258,7 +258,7 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     | some t => bad := bad.push s!"{c.name} reads as {repr t}"
   for b in bad.toList.take 5 do errors := errors.push s!"reading: {b}"
   -- every constant of the closure is read
-  let subNames : Std.HashSet Ix.Kernel.Key :=
+  let subNames : Std.HashSet (Ix.Kernel.Key .source) :=
     sub.consts.fold (fun s n _ => s.insert (Ix.LeanIngress.ingressKey n)) {}
   let unreadOwn := unread.filter subNames.contains
   unless unreadOwn.isEmpty do
@@ -282,7 +282,7 @@ def contractSeeds : Array Lean.Name := #[`linear, `unique, `erased, `dependent, 
 abbrev Contracts := List (Ixon.BinderContract × Ixon.ValueContract)
 
 /-- The contracts of a term's binders, in preorder. -/
-def contractsOf : Ix.Kernel.Expr → Contracts
+def contractsOf : Ix.Kernel.Expr md → Contracts
   | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contractsOf t ++ contractsOf b)
   | .app f a => contractsOf f ++ contractsOf a
   | .letE t v b _ => contractsOf t ++ contractsOf v ++ contractsOf b
@@ -290,7 +290,7 @@ def contractsOf : Ix.Kernel.Expr → Contracts
   | _ => []
 
 /-- An installed constant's type's and value's binder contracts. -/
-def installedContracts : Ix.Kernel.ConstantInfo → Contracts × Contracts
+def installedContracts : Ix.Kernel.ConstantInfo md → Contracts × Contracts
   | .defnInfo cv v _ => (contractsOf cv.type, contractsOf v)
   | .thmInfo cv v => (contractsOf cv.type, contractsOf v)
   | ci => (contractsOf ci.toConstantVal.type, [])

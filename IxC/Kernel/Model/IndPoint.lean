@@ -58,33 +58,33 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 12800000 in
 /-- **The point stage, at the reading** (`pointS`). -/
 theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hclaims : DefEqClaim μ m ψ' F)
     {lps : List LevelParam}
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
-    {Rn : Key}
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
+    {Rn : Key md}
     {rP cnP cnF mI : Nat} {xs ys zs : List AnnotTerm} {ρ : Nat → V}
     (hzs : zs = xs.take rP ++ ys.drop cnP)
     (hrPmI : rP ≤ mI) (hlenX : xs.length = mI)
     (hlenY : ys.length = cnP + cnF)
-    {ctor : Key} {cvj : ConstantVal} {usj : List Level}
-    {ciRm : ConstantInfo} (hfRnE : env.find? (f Rn) = some ciRm)
+    {ctor : Key md} {cvj : ConstantVal md} {usj : List Level}
+    {ciRm : ConstantInfo md} (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
     -- the statement frame
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped (rP + cnF) x)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Tstmt : AnnotTerm} {Γs : List AnnotTerm} {Rbody : AnnotTerm}
     (htowerS : PiTeleAV (rP + cnF) Tstmt Γs Rbody)
     (hokTst : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env ψ' i (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default))
     -- the ambient context, and the fired chain in it
@@ -93,7 +93,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
       Δa[rP + cnF - 1 - i]? = some (Γs.getD (rP + cnF - 1 - i) default))
     (hsat : Sat V Δa (chain V ρ zs))
     -- the statement's left-hand side
-    {lhsS : Expr} {vL : AnnotTerm}
+    {lhsS : Expr md} {vL : AnnotTerm}
     (hvL : denoteMeta m.acval env ψ' (rP + cnF) lhsS = some vL)
     (hwsLhs : Expr.WScoped (rP + cnF) lhsS)
     (hbLhs : lhsS.looseBVarsBounded 0 = true)
@@ -101,7 +101,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hlhead : lhsS.getAppFn = Expr.const (f Rn) (lps.map .param))
     (hlarity : lhsS.getAppArgs.length = mI + 1)
     (hlpre : lhsS.getAppArgs.take rP = fvs.take rP)
-    {ctorHead : Expr} {sp : List Expr}
+    {ctorHead : Expr md} {sp : List (Expr md)}
     (hmaj : Expr.ErasedEq (lhsS.getAppArgs.getLastD (.bvar 0))
       (Expr.mkAppN ctorHead sp))
     (hctorHead : denoteMeta m.acval env ψ' (rP + cnF) ctorHead
@@ -110,7 +110,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
       Expr.fvar l.1 l.2 ∈ fvs)
     (hltLhs : ∀ l ∈ lhsS.fvarLeaves, l.1 < rP + cnF)
     -- the constructor's type and run at the statement frame
-    {ctyR : Expr} (hCwR : ctyR.hasFvar = false)
+    {ctyR : Expr md} (hCwR : ctyR.hasFvar = false)
     (hCbR : ctyR.looseBVarsBounded 0 = true)
     {TVj : AnnotTerm}
     (hTVjK : denoteMeta m.acval env ψ' (rP + cnF) ctyR = some TVj)
@@ -119,17 +119,17 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     {Γj : List AnnotTerm} {Rj : AnnotTerm}
     (htowerJ : PiTeleAV (cnP + cnF) TVj Γj Rj)
     (hsplen : sp.length = cnP + cnF)
-    (hspLeaf : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hspLeaf : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∀ l ∈ x.fvarLeaves,
         Expr.fvar l.1 l.2 ∈ fvs ∧ l.1 < rP + (q + 1 - cnP))
-    (hspScope : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hspScope : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true)
-    {cdoms : List Expr} {cres : Expr}
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     (hclen : cres.getAppArgs.length = cnP + (mI - rP))
     -- the run's spine memberships (the zipper's induction, at its top)
     (hspMem : ∀ σ : Nat → V, Sat V Δa σ →
-      ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+      ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
         ∃ w, denoteMeta m.acval env ψ' (rP + cnF) x = some w ∧
           WellDenotedV V σ w ∧
           ∀ dw, denoteMeta m.acval env ψ' (rP + cnF)
@@ -143,7 +143,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
       ((lhsS.getAppArgs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP))
     {mix : List AnnotTerm} (hmixlen : mix.length = cnP + cnF)
-    (hmixsp : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hmixsp : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∃ w0, denoteMeta m.acval env ψ' (rP + cnF) x = some w0 ∧
         mix[q]? = some (AnnotTerm.instSeq zs (rP + cnF - 1) w0))
     (hmixVal : ∀ q, q < cnP + cnF →
@@ -180,7 +180,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     rw [show rP + cnF - 1 - (rP + cnF - 1 - q) = q from by omega] at h
     exact h
   -- shared scattered-spine facts
-  have hspFacts : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+  have hspFacts : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       (∃ w, denoteMeta m.acval env ψ' (rP + cnF) x = some w) ∧
         Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true := by
     intro q x hx
@@ -190,7 +190,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     refine Expr.fvarsBelow_of_fvarLeaves fun l hl => ?_
     rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hCwR] at hl
     exact nomatch hl
-  have hfvsLt : ∀ l : Nat × Expr,
+  have hfvsLt : ∀ l : Nat × Expr md,
       Expr.fvar l.1 l.2 ∈ fvs → l.1 < rP + cnF := by
     intro l hl
     obtain ⟨q, hq⟩ := List.getElem?_of_mem hl
@@ -224,7 +224,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
       _ hcinst hspScope hfbCty hCbR hTVjK (hokTVj _) (hspMem σ hσ)
       vCres hvCres
   -- the head of the statement's lhs is the recursor's leaf
-  have hconstDen : ∀ (c : Key) (ci : ConstantInfo) (ks : List LevelParam),
+  have hconstDen : ∀ (c : Key md) (ci : ConstantInfo md) (ks : List LevelParam),
       env.find? c = some ci → ci.toConstantVal.levelParams = ks →
       denoteMeta m.acval env ψ' (rP + cnF) (.const c (ks.map .param))
         = some (m.acval c ψ') := by

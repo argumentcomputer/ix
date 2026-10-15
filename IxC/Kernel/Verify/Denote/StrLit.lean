@@ -36,8 +36,8 @@ theorem substFn_nil (φ : LevelParam → Nat) : Level.substFn φ [] [] = φ := b
 
 /-- A stored constant with no level parameters denotes to its valuation
 at the ambient assignment. -/
-theorem denote_const_nolevelsV {env : Env} {cval : TConstVal}
-    (φ : LevelParam → Nat) {c : Key} {ci : ConstantInfo}
+theorem denote_const_nolevelsV {env : Env md} {cval : TConstVal md}
+    (φ : LevelParam → Nat) {c : Key md} {ci : ConstantInfo md}
     (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = []) (d : Nat) :
     denote cval env φ d (.const c []) = some (cval c φ) := by
@@ -53,7 +53,7 @@ and would move to `IxC/Kernel/Verify/*` with the rest of the stranded
 guard machinery. -/
 
 /-- `Char : Type`. -/
-theorem char_shape {env : Env} (hg : strLitSupported env = true) :
+theorem char_shape {env : Env md} (hg : strLitSupported env = true) :
     ∃ ci, env.find? charName = some ci ∧
       ci.toConstantVal.levelParams = [] ∧
       ci.toConstantVal.type = .sort (.succ .zero) := by
@@ -67,7 +67,7 @@ theorem char_shape {env : Env} (hg : strLitSupported env = true) :
     exact ⟨ci, rfl, by simpa [List.isEmpty_iff] using h6.1, h6.2⟩
 
 /-- `Char.ofNat : Nat → Char`. -/
-theorem charOfNat_shape {env : Env} (hg : strLitSupported env = true) :
+theorem charOfNat_shape {env : Env md} (hg : strLitSupported env = true) :
     ∃ ci mb, env.find? charOfNatName = some ci ∧
       ci.toConstantVal.levelParams = [] ∧
       ci.toConstantVal.type =
@@ -88,7 +88,7 @@ theorem charOfNat_shape {env : Env} (hg : strLitSupported env = true) :
     · exact nomatch hty
 
 /-- `String.ofList : List.{0} Char → String`. -/
-theorem stringOfList_shape {env : Env} (hg : strLitSupported env = true) :
+theorem stringOfList_shape {env : Env md} (hg : strLitSupported env = true) :
     ∃ ci mb, env.find? stringOfListName = some ci ∧
       ci.toConstantVal.levelParams = [] ∧
       ci.toConstantVal.type =
@@ -119,7 +119,7 @@ and the one the stored type is denoted at differ only away from the
 constant's own parameters, so the valuation cannot tell them apart. -/
 
 /-- `List.nil.{p} : ∀ (α : Sort (p+1)), List.{p} α`. -/
-theorem listNil_shape {env : Env} (hg : strLitSupported env = true) :
+theorem listNil_shape {env : Env md} (hg : strLitSupported env = true) :
     ∃ ci p mb, env.find? listNilName = some ci ∧
       ci.toConstantVal.levelParams = [p] ∧
       ci.toConstantVal.type =
@@ -144,7 +144,7 @@ theorem listNil_shape {env : Env} (hg : strLitSupported env = true) :
 
 /-- `List.cons.{p} : ∀ (α : Sort (p+1)) (_ : α) (_ : List.{p} α),
 List.{p} α`. -/
-theorem listCons_shape {env : Env} (hg : strLitSupported env = true) :
+theorem listCons_shape {env : Env md} (hg : strLitSupported env = true) :
     ∃ ci p mb₁ mb₂ mb₃, env.find? listConsName = some ci ∧
       ci.toConstantVal.levelParams = [p] ∧
       ci.toConstantVal.type =
@@ -176,7 +176,7 @@ theorem listCons_shape {env : Env} (hg : strLitSupported env = true) :
 any valuation that reads only its constants' own level parameters. -/
 
 /-- `List.nil.{0} Char`, denoted. -/
-theorem denote_nilTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
+theorem denote_nilTermV {env : Env md} {cval : TConstVal md} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     denote cval env φ d
         (.app (.const listNilName [.zero]) (.const charName []))
@@ -193,7 +193,7 @@ theorem denote_nilTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
     denote_const_nolevelsV φ hfC hlpC d]
 
 /-- `List.cons.{0} Char`, denoted. -/
-theorem denote_consTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
+theorem denote_consTermV {env : Env md} {cval : TConstVal md} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     denote cval env φ d
         (.app (.const listConsName [.zero]) (.const charName []))
@@ -210,7 +210,7 @@ theorem denote_consTermV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat
     denote_const_nolevelsV φ hfC hlpC d]
 
 /-- **The character-list expression denotes to `charListT`.** -/
-theorem denote_strLitListV {env : Env} {cval : TConstVal} (φ : LevelParam → Nat)
+theorem denote_strLitListV {env : Env md} {cval : TConstVal md} (φ : LevelParam → Nat)
     (hg : strLitSupported env = true) (d : Nat) :
     ∀ cs : List Char,
       denote cval env φ d (strLitList cs) = some (charListT
@@ -245,7 +245,7 @@ theorem denote_strLitListV {env : Env} {cval : TConstVal} (φ : LevelParam → N
 /-- **A string literal's constructor form denotes to the literal.**
 The fact R7/R16 (`Red.strLitCtor`) and `defeqStep`'s two string
 expansions all consume. -/
-theorem denote_strLitToConstructorV {env : Env} {cval : TConstVal}
+theorem denote_strLitToConstructorV {env : Env md} {cval : TConstVal md}
     (φ : LevelParam → Nat) (hg : strLitSupported env = true) (d : Nat)
     (s : String) :
     denote cval env φ d (strLitToConstructor s)

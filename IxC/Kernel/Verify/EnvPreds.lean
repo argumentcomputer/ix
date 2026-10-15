@@ -31,7 +31,7 @@ open Name
 @[expose] def vN : LevelParam := 1
 
 /-- Is this constant-info one of the basis kinds? -/
-@[expose] def ConstantInfo.isBasis : ConstantInfo → Bool
+@[expose] def ConstantInfo.isBasis : ConstantInfo md → Bool
   | .indInfo _ _ | .ctorInfo _ _ _ | .recInfo _ _ _ _ => true
   | _ => false
 
@@ -39,7 +39,7 @@ open Name
 the other members of its block are stored (pinned) too.  This holds
 because blocks install as a unit with the recursor last; iota soundness
 uses it to resolve the constants a rule right-hand side mentions. -/
-@[expose] def BasisBlocks (env : Env) : Prop :=
+@[expose] def BasisBlocks (env : Env md) : Prop :=
   (∀ cv mI rP rules,
     env.find? eqRecName = some (.recInfo cv mI rP rules) →
     env.find? eqName = some eqA ∧ env.find? eqReflName = some eqReflA) ∧
@@ -61,7 +61,7 @@ bits are decided once, at the block's install (`recRuleBits`); this is
 what lets `majorToCtor` read them instead of re-deriving the
 cross-constant conditions — the capabilities and, at the η bit, the
 constructor's level parameters — at every recursor application. -/
-@[expose] def RecCtorsStored (env : Env) : Prop :=
+@[expose] def RecCtorsStored (env : Env md) : Prop :=
   ∀ n cv mI rP rules,
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ r ∈ rules,
@@ -70,17 +70,17 @@ constructor's level parameters — at every recursor application. -/
       (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
       (r.eta = true → recRuleEtaOf env.find? n r.ctor = true)
 
-theorem RecCtorsStored.empty : RecCtorsStored Env.empty := by
+theorem RecCtorsStored.empty : (RecCtorsStored (md := md)) Env.empty := by
   intro n cv mI rP rules h
   simp [Env.find?, Env.empty] at h
 
 /-- **What a set K bit says about the store**: the rule's constructor
 is stored with no fields, its result type is headed by a stored
 inductive, and that inductive carries the K capability. -/
-theorem recRuleKOf_inv {f : Key → Option ConstantInfo} {ctor : Key}
+theorem recRuleKOf_inv {f : Key md → Option (ConstantInfo md)} {ctor : Key md}
     (h : recRuleKOf f ctor = true) :
-    ∃ (cvj : ConstantVal) (cnP : Nat) (T : Key) (us : List Level)
-      (cvT : ConstantVal) (caps : IndCaps),
+    ∃ (cvj : ConstantVal md) (cnP : Nat) (T : Key md) (us : List Level)
+      (cvT : ConstantVal md) (caps : IndCaps md),
       f ctor = some (.ctorInfo cvj cnP 0) ∧
       (cvj.type.piResult).getAppFn = .const T us ∧
       f T = some (.indInfo cvT caps) ∧ caps.ruleK = true := by
@@ -110,9 +110,9 @@ theorem recRuleKOf_inv {f : Key → Option ConstantInfo} {ctor : Key}
         exact ⟨cvj, cnP, T, us, cvT, caps, by rw [h.2], hpr, hfT, h.1⟩
 
 /-- The K bit, from the store. -/
-theorem recRuleKOf_of {f : Key → Option ConstantInfo} {ctor : Key}
-    {cvj : ConstantVal} {cnP : Nat} {T : Key} {us : List Level}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem recRuleKOf_of {f : Key md → Option (ConstantInfo md)} {ctor : Key md}
+    {cvj : ConstantVal md} {cnP : Nat} {T : Key md} {us : List Level}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (h1 : f ctor = some (.ctorInfo cvj cnP 0))
     (h2 : (cvj.type.piResult).getAppFn = .const T us)
     (h3 : f T = some (.indInfo cvT caps)) (h4 : caps.ruleK = true) :
@@ -126,10 +126,10 @@ constructor is stored, its result type is headed by a stored
 inductive, that inductive is η-capable through this very constructor,
 the constructor carries the inductive's own level parameters, and the
 recursor is not a projection function. -/
-theorem recRuleEtaOf_inv {f : Key → Option ConstantInfo}
-    {recName ctor : Key} (h : recRuleEtaOf f recName ctor = true) :
-    ∃ (cvj : ConstantVal) (cnP cnF : Nat) (T : Key) (us : List Level)
-      (cvT : ConstantVal) (caps : IndCaps),
+theorem recRuleEtaOf_inv {f : Key md → Option (ConstantInfo md)}
+    {recName ctor : Key md} (h : recRuleEtaOf f recName ctor = true) :
+    ∃ (cvj : ConstantVal md) (cnP cnF : Nat) (T : Key md) (us : List Level)
+      (cvT : ConstantVal md) (caps : IndCaps md),
       f ctor = some (.ctorInfo cvj cnP cnF) ∧
       (cvj.type.piResult).getAppFn = .const T us ∧
       f T = some (.indInfo cvT caps) ∧ caps.eta = true ∧
@@ -163,9 +163,9 @@ theorem recRuleEtaOf_inv {f : Key → Option ConstantInfo}
           h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 /-- The η-rescue bit, from the store. -/
-theorem recRuleEtaOf_of {f : Key → Option ConstantInfo}
-    {recName ctor : Key} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
-    {us : List Level} {cvT : ConstantVal} {caps : IndCaps}
+theorem recRuleEtaOf_of {f : Key md → Option (ConstantInfo md)}
+    {recName ctor : Key md} {cvj : ConstantVal md} {cnP cnF : Nat} {T : Key md}
+    {us : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (h1 : f ctor = some (.ctorInfo cvj cnP cnF))
     (h2 : (cvj.type.piResult).getAppFn = .const T us)
     (h3 : f T = some (.indInfo cvT caps)) (h4 : caps.eta = true)
@@ -179,20 +179,20 @@ theorem recRuleEtaOf_of {f : Key → Option ConstantInfo}
 /-- The K bit's verdict survives any change of store that keeps the
 non-recursor lookups (a fresh cons, the `_model` swap): it reads a
 constructor and an inductive only. -/
-theorem recRuleKOf_mono {f g : Key → Option ConstantInfo} {ctor : Key}
-    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
+theorem recRuleKOf_mono {f g : Key md → Option (ConstantInfo md)} {ctor : Key md}
+    (hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       f n = some ci → g n = some ci)
     (h : recRuleKOf f ctor = true) : recRuleKOf g ctor = true := by
   obtain ⟨cvj, cnP, T, us, cvT, caps, h1, h2, h3, h4⟩ := recRuleKOf_inv h
   exact recRuleKOf_of
-    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) h1) h2
-    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) h3) h4
+    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) h1) h2
+    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) h3) h4
 
 /-- The η-rescue bit's verdict, likewise. -/
-theorem recRuleEtaOf_mono {f g : Key → Option ConstantInfo}
-    {recName ctor : Key}
-    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
+theorem recRuleEtaOf_mono {f g : Key md → Option (ConstantInfo md)}
+    {recName ctor : Key md}
+    (hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       f n = some ci → g n = some ci)
     (h : recRuleEtaOf f recName ctor = true) :
@@ -200,8 +200,8 @@ theorem recRuleEtaOf_mono {f g : Key → Option ConstantInfo}
   obtain ⟨cvj, cnP, cnF, T, us, cvT, caps, h1, h2, h3, h4, h5, h6, h7⟩ :=
     recRuleEtaOf_inv h
   exact recRuleEtaOf_of
-    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) h1) h2
-    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) h3) h4 h5 h6 h7
+    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) h1) h2
+    (hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) h3) h4 h5 h6 h7
 
 /-- **The rescue bits, read back at a use.**  At a stored recursor
 whose (single) rule's constructor and inductive have been looked up,
@@ -211,10 +211,10 @@ the η bit into "the inductive is η-capable through this very
 constructor, which carries the inductive's own level parameters".
 These are the cross-constant conditions `majorToCtor` used to
 re-derive at every recursor application. -/
-theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
-    {recName : Key} {cv : ConstantVal} {mI rP : Nat} {rules : List RecRule}
-    {rl : RecRule} {cvj : ConstantVal} {cnP cnF : Nat} {T : Key}
-    {us₀ : List Level} {cvT : ConstantVal} {caps : IndCaps}
+theorem recCtors_bits {env : Env md} (hctors : RecCtorsStored env)
+    {recName : Key md} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
+    {rl : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat} {T : Key md}
+    {us₀ : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (hfrec : env.find? recName = some (.recInfo cv mI rP rules))
     (hmem : rl ∈ rules)
     (hfcj : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF))
@@ -248,8 +248,8 @@ theorem recCtors_bits {env : Env} (hctors : RecCtorsStored env)
 
 /-- Both bits at a rule the install stamped (`recRuleBits`) are the
 lookup's own verdict, by construction. -/
-theorem recRuleBits_head {find? : Key → Option ConstantInfo}
-    {recName : Key} {rl : RecRule} :
+theorem recRuleBits_head {find? : Key md → Option (ConstantInfo md)}
+    {recName : Key md} {rl : RecRule md} :
     ((recRuleBits find? recName rl).k = true →
       recRuleKOf find? (recRuleBits find? recName rl).ctor = true) ∧
     ((recRuleBits find? recName rl).eta = true →
@@ -266,28 +266,28 @@ the index is in range; the former is stored as an inductive and the
 constructor as a constructor at the entry's own arities and level
 parameters.  (Task #175 S1: the entry carries a *body*, not a type;
 the bodies' scoping is `EnvWF`'s table clause.) -/
-@[expose] def TowerHead (env : Env) (entry : ProjEntry) : Prop :=
+@[expose] def TowerHead (env : Env md) (entry : ProjEntry md) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
   entry.idx < entry.numFields ∧
-  (∃ (cvT : ConstantVal) (caps : IndCaps),
+  (∃ (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? entry.structName = some (.indInfo cvT caps) ∧
     cvT.levelParams = entry.levelParams) ∧
-  (∃ cvC : ConstantVal,
+  (∃ cvC : ConstantVal md,
     env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
     cvC.levelParams = entry.levelParams ∧
     (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true)
 
 /-- The head data survives any extension that keeps the two lookups. -/
-theorem TowerHead.mono {env env' : Env} {entry : ProjEntry}
-    (hkeep : ∀ (n : Key) (ci : ConstantInfo),
+theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
+    (hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
   obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
   exact ⟨h2, h4, h5,
-    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hT, hlT⟩,
-    ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion hh) hC, hlC, hstrip⟩⟩
+    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT⟩,
+    ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩⟩
 
 /-- **The projection-table discipline**: every stored table carries,
 at each of its fields, the syntactic head data (`TowerHead`).
@@ -300,20 +300,20 @@ native non-tower entry to one of the two `PSigma'` pair entries; the
 pin is retired with the pinned pair, and task #175 tower-flag retired
 the table-kind flag itself — the modeled route installs no table, so
 the discipline is uniform over every stored one. -/
-@[expose] def ProjOkT (env : Env) : Prop :=
+@[expose] def ProjOkT (env : Env md) : Prop :=
   ∀ n tbl, env.find? n = some (.projInfo tbl) →
     ∀ i, i < tbl.numFields → TowerHead env (tbl.entry i)
 
-theorem ProjOkT.empty : ProjOkT Env.empty := by
+theorem ProjOkT.empty : (ProjOkT (md := md)) Env.empty := by
   intro n tbl h; simp [Env.find?, Env.empty] at h
 
 /-- A projection table is not a role's constant. -/
-theorem projTableName_ne_roleKey (T : Key) (r : Role) : projTableName T ≠ roleKey r :=
+theorem projTableName_ne_roleKey (T : Key md) (r : Role) : projTableName T ≠ roleKey r :=
   auxKey_ne_roleKey T .projTable r
 
 /-- A constant stored under a name that is no structure's projection table
 is not a tower table. -/
-theorem isTowerEntry_false_of_find? {env : Env} {n : Key} {c : ConstantInfo}
+theorem isTowerEntry_false_of_find? {env : Env md} {n : Key md} {c : ConstantInfo md}
     (hf : env.find? n = some c) (hn : ∀ T, n ≠ projTableName T) :
     c.isTowerEntry = false := by
   cases c with
@@ -326,19 +326,19 @@ theorem isTowerEntry_false_of_find? {env : Env} {n : Key} {c : ConstantInfo}
   | _ => rfl
 
 /-- The discipline at a lookup: a stored entry's head data. -/
-theorem ProjOkT.towerHead {env : Env} (h : ProjOkT env)
-    {sn : Key} {i : Nat} {entry : ProjEntry}
+theorem ProjOkT.towerHead {env : Env md} (h : ProjOkT env)
+    {sn : Key md} {i : Nat} {entry : ProjEntry md}
     (hf : env.findProj? sn i = some entry) :
     TowerHead env entry := by
   obtain ⟨tbl, hf', hi, rfl⟩ := Env.findProj?_some hf
   exact h _ _ hf' i hi
 
-theorem BasisBlocks.empty : BasisBlocks Env.empty := by
+theorem BasisBlocks.empty : (BasisBlocks (md := md)) Env.empty := by
   refine ⟨?_, ?_, ?_⟩ <;>
     (intro cv mI rP rules h; simp [Env.find?, Env.empty] at h)
 
 /-- The pinned (annotated) declaration of one basis constant. -/
-@[expose] def pinnedInfo (n : Key) : ConstantInfo :=
+@[expose] def pinnedInfo (n : Key md) : ConstantInfo md :=
   if n = eqName then eqA
   else if n = eqReflName then eqReflA
   else if n = eqRecName then eqRecA
@@ -361,7 +361,7 @@ theorem BasisBlocks.empty : BasisBlocks Env.empty := by
   else .axiomInfo ⟨n, [], .sort .zero⟩
 
 /-- Which names carry constructor-shaped pinned declarations. -/
-theorem pinnedInfo_ctorInfo_cases {n : Key} {cv : ConstantVal} {nP nF : Nat}
+theorem pinnedInfo_ctorInfo_cases {n : Key md} {cv : ConstantVal md} {nP nF : Nat}
     (h : pinnedInfo n = .ctorInfo cv nP nF) :
     n = eqReflName ∨ n = natZeroName ∨ n = natSuccName ∨
     n = punitUnitName ∨ n = quotMkName := by

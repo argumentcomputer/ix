@@ -42,7 +42,7 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The `WellDenotedV` splitters (`Steps/InferIO.lean:75`, `:123`, `:142`)
 
@@ -279,14 +279,14 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
   have hlpAtC : levelParamsAt env Ix.Kernel.listConsName
       = ciC.toConstantVal.levelParams := by rw [levelParamsAt, hfC]
   -- every leaf is closed, graded and bit-valid
-  have hleafC : ∀ (n : Key) (ψ : LevelParam → Nat) (σ : Nat → V),
+  have hleafC : ∀ (n : Key md) (ψ : LevelParam → Nat) (σ : Nat → V),
       interp V σ (m.acval n ψ) = interp V ρ (m.acval n ψ) := fun n ψ σ =>
     interp_closed V (by rw [m.acval_erase]; exact m.cval_closed n ψ) σ ρ
-  have hleafOk : ∀ (n : Key) (ψ : LevelParam → Nat) (σ : Nat → V),
+  have hleafOk : ∀ (n : Key md) (ψ : LevelParam → Nat) (σ : Nat → V),
       WellDenotedV V σ (m.acval n ψ) := fun n ψ σ =>
     ⟨m.acval_wellDenoted _ _ σ, hval _ _ σ⟩
   -- the stored types' rows, from the `const` residue
-  have head : ∀ (n : Key) (ci : ConstantInfo) (us : List Level)
+  have head : ∀ (n : Key md) (ci : ConstantInfo md) (us : List Level)
       (ta : AnnotTerm), env.find? n = some ci → ci.isTowerEntry = false →
       us.length = ci.toConstantVal.levelParams.length →
       denoteMeta m.acval env φ 0
@@ -561,12 +561,12 @@ the type's reading** — `teleFitPA_residual` without the fit: the two
 walks step in lockstep (`body.instantiate1 a` against `B.inst a`), and
 the per-step content is `denoteMeta_beta`, once. -/
 theorem denoteMeta_instPisAt_peel
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {d : Nat} :
-    ∀ (args : List Expr) {ty rest : Expr} {ds : List Expr} {Ta : AnnotTerm}
+    ∀ (args : List (Expr md)) {ty rest : Expr md} {ds : List (Expr md)} {Ta : AnnotTerm}
       {vs : List AnnotTerm},
       Expr.instPisAt args ty = some (ds, rest) →
       Expr.WScoped d ty →
@@ -620,13 +620,13 @@ theorem denoteMeta_instPisAt_peel
 (task #175 S1): `ProjEntry.typeAt` is the `instPisAt` peel of the body
 telescope along the arguments and the subject, so its reading is the
 syntactic peel of the telescope's reading along the readings. -/
-theorem denoteMeta_typeAt_peel {m : EnvModel V env} {T : Key} {i : Nat}
-    {entry : ProjEntry} (hfe : env.findProj? T i = some entry)
+theorem denoteMeta_typeAt_peel {m : EnvModel V env} {T : Key md} {i : Nat}
+    {entry : ProjEntry md} (hfe : env.findProj? T i = some entry)
     {us : List Level} {Ta : AnnotTerm} {d : Nat}
     (hTa : denoteMeta m.acval env φ 0
       (Ix.Kernel.projTele (entry.numParams + 1)
         (entry.body.instantiateLevelParams entry.levelParams us)) = some Ta)
-    {targs : List Expr} {pe : Expr} (hlen : targs.length = entry.numParams)
+    {targs : List (Expr md)} {pe : Expr md} (hlen : targs.length = entry.numParams)
     (hframes : ∀ a ∈ targs ++ [pe], Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true)
     {vs : List AnnotTerm}
     (hsp : DenoteMetaSpine m.acval env φ d (targs ++ [pe]) vs) :

@@ -30,9 +30,9 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
-theorem projFnName_isProjFnShape (T : Key) (j : Nat) :
+theorem projFnName_isProjFnShape (T : Key md) (j : Nat) :
     (projFnName T j).isProjFnShape = true := isProjFnShape_auxKey_projFn T j
 
 /-- **The block's own capability laws at a carrier** (task #210 Part
@@ -42,8 +42,8 @@ stored complete, the unit law where it claims unit-likeness.  A stage
 takes it as a hypothesis about the carrier it builds; the assembly
 discharges it from the leaves (or vacuously: `capsLawsAt_of_none`,
 `capsLawsAt_vacuous`). -/
-@[expose] def CapsLawsAt {env : Env} (m : EnvModel V env) (T : Key) (cvT : ConstantVal)
-    (caps : IndCaps) : Prop :=
+@[expose] def CapsLawsAt {env : Env md} (m : EnvModel V env) (T : Key md) (cvT : ConstantVal md)
+    (caps : IndCaps md) : Prop :=
   (caps.eta = true → Ix.Kernel.EtaFamilyStored env T caps →
     ∀ φ' : LevelParam → Nat, EtaLaw m φ' T cvT caps) ∧
   (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m φ' T cvT caps)
@@ -52,8 +52,8 @@ discharges it from the leaves (or vacuously: `capsLawsAt_of_none`,
 owes nothing while its projection-function family is free: the η
 half's premise `EtaFamilyStored` stores a projection function at every
 field, and the first slot is fresh. -/
-theorem capsLawsAt_vacuous {env : Env} (m : EnvModel V env) {T : Key} {cvT : ConstantVal}
-    {caps : IndCaps} (hU : caps.unitlike = false)
+theorem capsLawsAt_vacuous {env : Env md} (m : EnvModel V env) {T : Key md} {cvT : ConstantVal md}
+    {caps : IndCaps md} (hU : caps.unitlike = false)
     (hE : caps.eta = true → 0 < caps.etaFields ∧ env.find? (projFnName T 0) = none) :
     CapsLawsAt m T cvT caps := by
   refine ⟨fun he hfam => ?_, fun hu => absurd (hU.symm.trans hu) Bool.false_ne_true⟩
@@ -70,13 +70,13 @@ inductive at all; every other stored family's capability constructor
 is stored in the prefix (`hother`); the block's own family's laws at
 the extension are supplied (`hTlaws`). -/
 theorem capsOk_cons_native (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T : Key}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} {T : Key md}
     (hfresh : env.find? c₀.name = none)
     (hcross : ConsCrossEnv env c₀)
     (hpshape : c₀.name.isProjFnShape = false)
     (hkind : (∃ cvT caps, c₀ = .indInfo cvT caps ∧ c₀.name = T) ∨
       ∀ cv caps, c₀ ≠ .indInfo cv caps)
-    (hother : ∀ (T' : Key) (cvT' : ConstantVal) (caps' : IndCaps),
+    (hother : ∀ (T' : Key md) (cvT' : ConstantVal md) (caps' : IndCaps md),
       env.find? T' = some (.indInfo cvT' caps') → T' ≠ T →
       Ix.Kernel.reservedBasisNames.contains T' = false →
       caps'.eta = true →
@@ -84,20 +84,20 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
         env.find? C = some (.ctorInfo cvC' caps'.etaParams caps'.etaFields))
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
-    (hTlaws : ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
+    (hTlaws : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps) →
       Ix.Kernel.reservedBasisNames.contains T = false →
       (caps.eta = true → Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
         ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps) ∧
       (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' T cvT caps)) :
     CapsOk m₂ := by
   -- a stored family other than the block's is a prefix lookup
-  have hdown : ∀ n : Key, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  have hneT : ∀ (T' : Key) (cvT' : ConstantVal) (caps' : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T' = some (.indInfo cvT' caps') →
+  have hneT : ∀ (T' : Key md) (cvT' : ConstantVal md) (caps' : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T' = some (.indInfo cvT' caps') →
       T' ≠ T → T' ≠ c₀.name := by
     intro T' cvT' caps' hf hne hh
     rcases hkind with ⟨cvT₀, caps₀, rfl, hname⟩ | hnotind

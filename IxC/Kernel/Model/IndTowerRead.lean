@@ -44,8 +44,8 @@ open Ix.Kernel (Env Expr Key BinderMeta)
 
 universe w
 
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The opened `∀` telescope -/
 
@@ -54,14 +54,14 @@ telescope whose reading succeeds yields the `.pi` tower's context, the
 opened body's reading, and each opener's annotation read *at its own
 depth* to its tower entry. -/
 theorem openPisAtFvars_denotePTele :
-    ∀ (k : Nat) {e : Expr} {j : Nat} {fvs : List Expr} {body : Expr}
+    ∀ (k : Nat) {e : Expr md} {j : Nat} {fvs : List (Expr md)} {body : Expr md}
       {T : AnnotTerm},
       openPisAtFvars k e j = some (fvs, body) →
       denoteMeta acval env φ j e = some T →
       ∃ (Γ : List AnnotTerm) (R : AnnotTerm),
         PiTeleAV k T Γ R ∧
         denoteMeta acval env φ (j + k) body = some R ∧
-        ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+        ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
           denoteMeta acval env φ (j + i) (Expr.fvarTypeD x)
             = some (Γ.getD (k - 1 - i) default) := by
   intro k
@@ -162,16 +162,16 @@ their own depths, and whose core is the residual's reading.  The
 reading consults neither an opener's name nor its annotation, so any
 same-index opener spine produces the same tower. -/
 theorem instLamsAt_denotePTele :
-    ∀ (sp : List Expr) {e : Expr} {j : Nat} {ds : List Expr}
-      {rest : Expr} {Va : AnnotTerm},
+    ∀ (sp : List (Expr md)) {e : Expr md} {j : Nat} {ds : List (Expr md)}
+      {rest : Expr md} {Va : AnnotTerm},
       Expr.instLamsAt sp e = some (ds, rest) →
-      (∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      (∀ (i : Nat) (x : Expr md), sp[i]? = some x →
         ∃ ty, x = Expr.fvar (j + i) ty) →
       denoteMeta acval env φ j e = some Va →
       ∃ (Γ : List AnnotTerm) (C : AnnotTerm),
         LamTele sp.length Va Γ C ∧ Γ.length = sp.length ∧
         denoteMeta acval env φ (j + sp.length) rest = some C ∧
-        ∀ (i0 : Nat) (x : Expr), ds[i0]? = some x →
+        ∀ (i0 : Nat) (x : Expr md), ds[i0]? = some x →
           denoteMeta acval env φ (j + i0) x
             = some (Γ.getD (sp.length - 1 - i0) default) := by
   intro sp
@@ -212,7 +212,7 @@ theorem instLamsAt_denotePTele :
           (show Ix.Kernel.Expr.ErasedEq (.fvar (j + 0) tyA)
             (.fvar j dom) from by constructor)) (j + 1)]
         exact hB
-      have hshape' : ∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      have hshape' : ∀ (i : Nat) (x : Expr md), sp[i]? = some x →
           ∃ ty', x = Expr.fvar (j + 1 + i) ty' := by
         intro i x hx
         obtain ⟨ty', hx'⟩ := hshape (i + 1) x (by simpa using hx)

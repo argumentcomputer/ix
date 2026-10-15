@@ -29,7 +29,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
+variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Renaming constants -/
 
@@ -37,11 +37,11 @@ variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
 denotation: every renamed constant resolves with the same level
 parameters, unresolved names stay unresolved, and the valuation agrees
 on the renaming.  Transpose of `RenameOk`. -/
-@[expose] def RenameOkT (cval : TConstVal) (env : Env) (f : Key → Key) : Prop :=
+@[expose] def RenameOkT (cval : TConstVal md) (env : Env md) (f : Key md → Key md) : Prop :=
   (∀ n ci, env.find? n = some ci → ∃ ci', env.find? (f n) = some ci' ∧
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
-  (∀ (n : Key) (ψ : LevelParam → Nat), cval (f n) ψ = cval n ψ)
+  (∀ (n : Key md) (ψ : LevelParam → Nat), cval (f n) ψ = cval n ψ)
   -- (task #175 wiring W3 added a fourth, tower-freeness conjunct here
   -- because the branched `.proj` reading consulted the table at both
   -- the source and the image name; W5 fixed the struct name under
@@ -52,8 +52,8 @@ denotation.  Transpose of `interp_renameConsts`, clause for clause;
 the `fvar`, `lit` and `proj` clauses are *cheaper* than the model's for
 the reason recorded in `IxC/Kernel/Verify/Denote.lean` — `denote` never
 reads an `fvar`'s annotation or a `proj`'s structure name. -/
-theorem denote_renameConsts {f : Key → Key} (hro : RenameOkT cval env f) :
-    ∀ (e : Expr) (d : Nat),
+theorem denote_renameConsts {f : Key md → Key md} (hro : RenameOkT cval env f) :
+    ∀ (e : Expr md) (d : Nat),
       denote cval env φ d (e.renameConsts f) = denote cval env φ d e
   | .bvar _, _ => by simp [Expr.renameConsts]
   | .sort _, _ => by simp [Expr.renameConsts]
@@ -107,19 +107,19 @@ checked theorem in an equation. -/
 
 /-- Related by constant renaming, modulo the positions the denotation
 never reads. -/
-@[expose] def RenEqT (f : Key → Key) (e₁ e₂ : Expr) : Prop :=
+@[expose] def RenEqT (f : Key md → Key md) (e₁ e₂ : Expr md) : Prop :=
   Expr.ErasedEq (e₁.renameConsts f) e₂
 
 /-- Renamed-equal expressions denote equally. -/
-theorem RenEqT.denote {f : Key → Key} (hro : RenameOkT cval env f)
-    {e₁ e₂ : Expr} (h : RenEqT f e₁ e₂) (d : Nat) :
+theorem RenEqT.denote {f : Key md → Key md} (hro : RenameOkT cval env f)
+    {e₁ e₂ : Expr md} (h : RenEqT f e₁ e₂) (d : Nat) :
     denote cval env φ d e₂ = denote cval env φ d e₁ := by
   rw [← denote_erasedEq h d]
   exact denote_renameConsts hro e₁ d
 
 /-- Renamed-equality survives instantiating both sides with related
 arguments. -/
-theorem RenEqT.instantiate1 {f : Key → Key} {e₁ e₂ a₁ a₂ : Expr} {k : Nat}
+theorem RenEqT.instantiate1 {f : Key md → Key md} {e₁ e₂ a₁ a₂ : Expr md} {k : Nat}
     (he : RenEqT f e₁ e₂) (ha : RenEqT f a₁ a₂) :
     RenEqT f (e₁.instantiate1 a₁ k) (e₂.instantiate1 a₂ k) := by
   unfold RenEqT
@@ -130,14 +130,14 @@ theorem RenEqT.instantiate1 {f : Key → Key} {e₁ e₂ a₁ a₂ : Expr} {k : 
 their binders were called and whatever they were annotated with:
 `renameConsts` reaches only the annotation, and erasure compares only
 the index.  This is what lets one alignment step open *both* sides. -/
-theorem RenEqT.fvar {f : Key → Key} {i : Nat}
-    {ty ty' : Expr} : RenEqT f (.fvar i ty) (.fvar i ty') := by
+theorem RenEqT.fvar {f : Key md → Key md} {i : Nat}
+    {ty ty' : Expr md} : RenEqT f (.fvar i ty) (.fvar i ty') := by
   show Expr.ErasedEq (.fvar i (ty.renameConsts f)) (.fvar i ty')
   rfl
 
 /-- The first `k` domains of two `∀`-telescopes are related by the
 renaming; their residuals are unconstrained. -/
-def PiDomsRenEqT (f : Key → Key) : Nat → Expr → Expr → Prop
+def PiDomsRenEqT (f : Key md → Key md) : Nat → Expr md → Expr md → Prop
   | 0, _, _ => True
   | k + 1, .forallE d₁ b₁ _, e₂ =>
     ∃ d₂ b₂ m₂, e₂ = .forallE d₂ b₂ m₂ ∧ RenEqT f d₁ d₂ ∧
@@ -146,9 +146,9 @@ def PiDomsRenEqT (f : Key → Key) : Nat → Expr → Expr → Prop
 
 /-- Domain relatedness survives instantiating both sides with related
 arguments. -/
-theorem PiDomsRenEqT.instantiate1 {f : Key → Key} {a₁ a₂ : Expr}
+theorem PiDomsRenEqT.instantiate1 {f : Key md → Key md} {a₁ a₂ : Expr md}
     (ha : RenEqT f a₁ a₂) :
-    ∀ (k : Nat) {e₁ e₂ : Expr} (j : Nat), PiDomsRenEqT f k e₁ e₂ →
+    ∀ (k : Nat) {e₁ e₂ : Expr md} (j : Nat), PiDomsRenEqT f k e₁ e₂ →
       PiDomsRenEqT f k (e₁.instantiate1 a₁ j) (e₂.instantiate1 a₂ j) := by
   intro k
   induction k with
@@ -162,12 +162,12 @@ theorem PiDomsRenEqT.instantiate1 {f : Key → Key} {a₁ a₂ : Expr}
         RenEqT.instantiate1 hd ha, ih (j + 1) hb⟩
 
 /-- Pointwise domain relatedness assembles the prefix relation. -/
-theorem PiDomsRenEqT.of_pointwise {f : Key → Key} :
-    ∀ (k : Nat) {e₁ e₂ : Expr}
-      {bs₁ bs₂ : List (Expr × BinderMeta)} {body₁ body₂ : Expr},
+theorem PiDomsRenEqT.of_pointwise {f : Key md → Key md} :
+    ∀ (k : Nat) {e₁ e₂ : Expr md}
+      {bs₁ bs₂ : List (Expr md × BinderMeta)} {body₁ body₂ : Expr md},
       e₁.stripPis k = some (bs₁, body₁) →
       e₂.stripPis k = some (bs₂, body₂) →
-      (∀ (i : Nat) (b₁ b₂ : Expr × BinderMeta),
+      (∀ (i : Nat) (b₁ b₂ : Expr md × BinderMeta),
         bs₁[i]? = some b₁ → bs₂[i]? = some b₂ → RenEqT f b₁.1 b₂.1) →
       PiDomsRenEqT f k e₁ e₂ := by
   intro k
@@ -204,13 +204,13 @@ constant from acquiring a denotation; an expression every constant of
 which resolves never reaches it.  That is what lets a block's own
 renaming be used at a *member* environment, where the block's later
 members are not stored yet (task #148 T6). -/
-theorem denote_renameConsts_resolve {f : Key → Key}
+theorem denote_renameConsts_resolve {f : Key md → Key md}
     (hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? (f n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams)
-    (hval : ∀ (n : Key) (ci : ConstantInfo), env.find? n = some ci →
+    (hval : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
       ∀ ψ : LevelParam → Nat, cval (f n) ψ = cval n ψ) :
-    ∀ (e : Expr) (d : Nat), e.constsResolve env = true →
+    ∀ (e : Expr md) (d : Nat), e.constsResolve env = true →
       denote cval env φ d (e.renameConsts f) = denote cval env φ d e
   | .bvar _, _, _ => by simp [Expr.renameConsts]
   | .sort _, _, _ => by simp [Expr.renameConsts]

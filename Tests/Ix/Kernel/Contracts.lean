@@ -39,7 +39,7 @@ namespace Tests.Ix.Kernel.Contracts
 
 /-- The certified entry at BLAKE3 on a fixture under its BLAKE3 keys. -/
 def check (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) :
-    Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
+    Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) :=
   let r := rekeyed cs blobs
   Ixon.Authenticated.checkBytes builtinBinding limits r.encoded r.blobs
 
@@ -49,7 +49,7 @@ def outcomeOf (cs : List (Address × Ixon.Constant)) : Option Ix.Kernel.Admissio
   | .error e => some e.outcome
 
 /-- The installed constant of the stand-in record `a`'s member `0`. -/
-def installed (cs : List (Address × Ixon.Constant)) (a : Address) : Option Ix.Kernel.ConstantInfo :=
+def installed (cs : List (Address × Ixon.Constant)) (a : Address) : Option (Ix.Kernel.ConstantInfo .anon) :=
   match check cs with
   | .ok env => env.find? (keyName (.member ((rekeyed cs).rename a) 0))
   | .error _ => none
@@ -60,7 +60,7 @@ def idNatWith (c : Ixon.BinderContract) (r : Ixon.ValueContract) (c' : Ixon.Bind
   defn .defn (.all c r (ref 0) (ref 0)) (.lam c' (ref 0) (var 0)) [nat]
 
 /-- The contracts of a term's binders, in preorder. -/
-def contracts : Ix.Kernel.Expr → List (Ixon.BinderContract × Ixon.ValueContract)
+def contracts : Ix.Kernel.Expr .anon → List (Ixon.BinderContract × Ixon.ValueContract)
   | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contracts t ++ contracts b)
   | .app f a => contracts f ++ contracts a
   | .letE t v b _ => contracts t ++ contracts v ++ contracts b
@@ -68,7 +68,7 @@ def contracts : Ix.Kernel.Expr → List (Ixon.BinderContract × Ixon.ValueContra
   | _ => []
 
 /-- An installed definition's type and value contracts. -/
-def defnContracts : Option Ix.Kernel.ConstantInfo →
+def defnContracts : Option (Ix.Kernel.ConstantInfo .anon) →
     Option (List (Ixon.BinderContract × Ixon.ValueContract) ×
       List (Ixon.BinderContract × Ixon.ValueContract))
   | some (.defnInfo cv value _) => some (contracts cv.type, contracts value)
@@ -164,27 +164,27 @@ def falseLamEq (c : Ixon.BinderContract) : Ixon.Constant :=
 /-! ## Pinned shapes compare binder contracts -/
 
 /-- The first binder of a term with input contract `c`. -/
-def withFirstContract (c : Ixon.BinderContract) : Ix.Kernel.Expr → Ix.Kernel.Expr
+def withFirstContract (c : Ixon.BinderContract) : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon
   | .forallE t b m => .forallE t b { m with contract := c }
   | .lam t b m => .lam t b { m with contract := c }
   | e => e
 
 /-- The first binder of a term with the datum `pw`. -/
-def withFirstPw (pw : Ix.Kernel.PropWhen) : Ix.Kernel.Expr → Ix.Kernel.Expr
+def withFirstPw (pw : Ix.Kernel.PropWhen) : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon
   | .forallE t b m => .forallE t b { m with pw }
   | .lam t b m => .lam t b { m with pw }
   | e => e
 
 /-- The prelude's declarations with the type of the basis `Eq`'s type
 former rewritten by `f`. -/
-def preludeWithEq (f : Ix.Kernel.Expr → Ix.Kernel.Expr) : Array Ix.Kernel.Declaration :=
+def preludeWithEq (f : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon) : Array (Ix.Kernel.Declaration .anon) :=
   builtinPre.ix.decls.map fun
     | .indDecl (.indInfo cv caps :: rest) nP =>
       if toString cv.name == "Eq" then .indDecl (.indInfo { cv with type := f cv.type } caps :: rest) nP
       else .indDecl (.indInfo cv caps :: rest) nP
     | d => d
 
-def foldOutcome (ds : Array Ix.Kernel.Declaration) : Option String :=
+def foldOutcome (ds : Array (Ix.Kernel.Declaration .anon)) : Option String :=
   match Ix.Kernel.Cached.checkDecls .verified [] ds with
   | .ok _ => none
   | .error (.invalid msg, _) => some msg
@@ -202,9 +202,9 @@ def foldOutcome (ds : Array Ix.Kernel.Declaration) : Option String :=
 #guard foldOutcome (preludeWithEq (withFirstPw (.ifAllZero []))) == none
 
 -- `matchesPin` compares contracts and forgives `pw`
-#guard Ix.Kernel.ConstantVal.matchesPin Ix.Kernel.propextA Ix.Kernel.propextA
+#guard Ix.Kernel.ConstantVal.matchesPin (md := .anon) Ix.Kernel.propextA Ix.Kernel.propextA
 #guard !Ix.Kernel.ConstantVal.matchesPin
-  { Ix.Kernel.propextA with type := withFirstContract .linear Ix.Kernel.propextA.type } Ix.Kernel.propextA
+  { Ix.Kernel.propextA (md := .anon) with type := withFirstContract .linear Ix.Kernel.propextA.type } Ix.Kernel.propextA
 #guard Ix.Kernel.ConstantVal.matchesPin
   { Ix.Kernel.propextA with type := withFirstPw (.ifAllZero []) Ix.Kernel.propextA.type } Ix.Kernel.propextA
 

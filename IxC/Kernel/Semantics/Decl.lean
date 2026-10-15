@@ -48,13 +48,13 @@ through `DefEqClaim` — the run-certificate move — because the
 relational `NatEqsR` above concludes a `DefEq` whose soundness lives
 at the collapse currency only (`Interp/Steps/Nat.lean`'s wall
 record). -/
-def NatEqsRun (μ : CheckMode) (F : Nat) (env : Env)
-    (eqs : List (Expr × Expr)) : Prop :=
+def NatEqsRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (eqs : List (Expr md × Expr md)) : Prop :=
   ∀ eq ∈ eqs, isDefEqCore μ env F 2 eq.1 eq.2 = .ok true
 
 /-- The pinned basis-block install (`checkDecl`'s basis branch): the
 quot-requires-`Eq` guard and the freshness-checked fold. -/
-def BasisInstallRun (env : Env) : List ConstantInfo → Env → Prop
+def BasisInstallRun (env : Env md) : List (ConstantInfo md) → Env md → Prop
   | [], env₂ => env₂ = env
   | ci :: rest, env₂ =>
     (env.find? ci.name).isNone = true ∧
@@ -63,14 +63,14 @@ def BasisInstallRun (env : Env) : List ConstantInfo → Env → Prop
 /-- A pinned basis block (design §1.5, `basis` row): side conditions
 only — the pinned declarations are pre-annotated, and their semantic
 content is `EnvS`'s basis fields (T5), not per-install premises. -/
-def DeclBasisRun (env : Env) (kind : BasisKind) (env₂ : Env) : Prop :=
+def DeclBasisRun (env : Env md) (kind : BasisKind) (env₂ : Env md) : Prop :=
   (kind = .quotK → env.find? eqName = some eqA) ∧
   BasisInstallRun env kind.declsA env₂
 
 /-- The valuation a modeled block member takes at its install: the
 model artifact's.  The block folds thread it (finding 5's resolution,
 option 3 — see the `IndMembersR` docstring). -/
-def cvalModeled (cval : TConstVal) (n : Key) : TConstVal :=
+def cvalModeled (cval : TConstVal md) (n : Key md) : TConstVal md :=
   cvalWith cval n (fun ψ => cval (auxKey n .model) ψ)
 
 /-- **The walks' recorded runs** (task #161 ind tier, the H1 exposure
@@ -84,9 +84,9 @@ tier's establishment consumes these through the claims
 derivation → run is false for a fuel-bounded checker — the part-3
 wall's two countermodels); the derivation walks stay for the v1
 installs. -/
-def IotaRuns (μ : CheckMode) (F : Nat) (envSelf : Env) (depth : Nat)
-    (idxL idxR domL domR preL preR lamL lamR : List Expr)
-    (rhsS rhsApplied alphaS lhsS : Expr) : Prop :=
+def IotaRuns (μ : CheckMode) (F : Nat) (envSelf : Env md) (depth : Nat)
+    (idxL idxR domL domR preL preR lamL lamR : List (Expr md))
+    (rhsS rhsApplied alphaS lhsS : Expr md) : Prop :=
   DefEqListOk μ F envSelf depth idxL idxR ∧
   DefEqListOk μ F envSelf depth domL domR ∧
   DefEqListOk μ F envSelf depth preL preR ∧

@@ -26,10 +26,10 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
+variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
 /-- The reverse opening's leaves sit below the opened depth. -/
-theorem openRev_fvarsBelow {e : Expr} {d : Nat}
+theorem openRev_fvarsBelow {e : Expr md} {d : Nat}
     (hfb : Expr.fvarsBelow d e) :
     ∀ n, Expr.fvarsBelow (d + n) (openRev d n e) := by
   intro n
@@ -44,9 +44,9 @@ theorem openRev_fvarsBelow {e : Expr} {d : Nat}
     simp [Expr.fvarsBelow]
 
 /-- Instantiation strips one loose level at any cut below the bound. -/
-private theorem bounded_instantiate1_le {a : Expr}
+private theorem bounded_instantiate1_le {a : Expr md}
     (hba : a.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) (k m : Nat), k ≤ m →
+    ∀ (e : Expr md) (k m : Nat), k ≤ m →
       e.looseBVarsBounded (m + 1) = true →
       (e.instantiate1 a k).looseBVarsBounded m = true := by
   intro e
@@ -93,7 +93,7 @@ private theorem bounded_instantiate1_le {a : Expr}
     exact ih k m hkm hb
 
 /-- The reverse opening consumes the loose variables. -/
-theorem openRev_bounded {e : Expr} {d : Nat} :
+theorem openRev_bounded {e : Expr md} {d : Nat} :
     ∀ n m, e.looseBVarsBounded (n + m) = true →
       (openRev d n e).looseBVarsBounded m = true := by
   intro n
@@ -116,10 +116,10 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
+variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
 /-- The reverse opening is well-scoped at the opened depth. -/
-theorem openRev_WScoped {e : Expr} {d : Nat}
+theorem openRev_WScoped {e : Expr md} {d : Nat}
     (hws : Expr.WScoped d e) :
     ∀ n, Expr.WScoped (d + n) (openRev d n e) := by
   intro n
@@ -135,7 +135,7 @@ theorem openRev_WScoped {e : Expr} {d : Nat}
 
 /-- The reverse opening of a constant-frame subject shifts with its
 base. -/
-theorem openRev_shiftFrom {e : Expr} (hnf : e.hasFvar = false) :
+theorem openRev_shiftFrom {e : Expr md} (hnf : e.hasFvar = false) :
     ∀ (d n : Nat), (openRev d n e).shiftFrom 0 = openRev (d + 1) n e := by
   intro d n
   induction n with
@@ -154,7 +154,7 @@ theorem openRev_shiftFrom {e : Expr} (hnf : e.hasFvar = false) :
 /-- **The base-independence of the opened denote**: a constant-frame
 subject's reverse opening denotes the same term at every base. -/
 theorem denote_openRev_base (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} (hnf : e.hasFvar = false) {n : Nat}
+    {e : Expr md} (hnf : e.hasFvar = false) {n : Nat}
     (hb : e.looseBVarsBounded n = true) :
     ∀ d : Nat, denote cval env φ (d + n) (openRev d n e) =
       denote cval env φ n (openRev 0 n e) := by
@@ -186,7 +186,7 @@ theorem denote_openRev_base (hcl : ∀ n ψ, Term.Closed (cval n ψ))
 /-- **Real-argument instantiation, read through the reverse
 opening.** -/
 theorem denote_openRev (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
-    ∀ (as : List Expr) {e : Expr} {d : Nat},
+    ∀ (as : List (Expr md)) {e : Expr md} {d : Nat},
       (∀ a ∈ as, Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true ∧
         Expr.fvarsBelow d a) →
       Expr.fvarsBelow d e → e.looseBVarsBounded as.length = true →
@@ -254,7 +254,7 @@ theorem denote_openRev (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
 annotations are `.sort .zero`, fixed points of the substitution. -/
 theorem openRev_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
-    ∀ (d n : Nat) (e : Expr),
+    ∀ (d n : Nat) (e : Expr md),
       openRev d n (e.instantiateLevelParams ks us)
         = (openRev d n e).instantiateLevelParams ks us := by
   intro d n
@@ -274,8 +274,8 @@ theorem openRev_instantiateLevelParams (ks : List LevelParam)
 
 /-- The reverse opening commutes with constant renaming (the opener
 annotations mention no constants). -/
-theorem openRev_renameConsts (f : Key → Key) :
-    ∀ (d n : Nat) (e : Expr),
+theorem openRev_renameConsts (f : Key md → Key md) :
+    ∀ (d n : Nat) (e : Expr md),
       openRev d n (e.renameConsts f)
         = (openRev d n e).renameConsts f := by
   intro d n
@@ -295,7 +295,7 @@ theorem openRev_renameConsts (f : Key → Key) :
 
 /-- A bound on every leaf index bounds the free variables. -/
 theorem Expr.fvarsBelow_of_fvarLeaves :
-    ∀ {e : Expr} {n : Nat},
+    ∀ {e : Expr md} {n : Nat},
       (∀ l ∈ e.fvarLeaves, l.1 < n) → Expr.fvarsBelow n e := by
   intro e
   induction e <;> intro n h <;>

@@ -53,8 +53,8 @@ open Ix.Kernel (Env Expr Key)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The `.pi` split, in the P currency -/
 
@@ -93,19 +93,19 @@ would ask it for the equalities it has not proved yet.  The proof
 never needed more: descending past the head spends exactly the head's
 membership, so the bound `i₀ < i` is the induction's own. -/
 theorem instPisAt_doms_graded {ρ' : Nat → V}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat} {T : AnnotTerm} (i : Nat),
-      (∀ (i₀ : Nat) (x : Expr), i₀ ≤ i → sp[i₀]? = some x →
+      (∀ (i₀ : Nat) (x : Expr md), i₀ ≤ i → sp[i₀]? = some x →
         Expr.WScoped D x ∧ x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
       denoteMeta acval env φ D ty = some T →
       WellDenotedV V ρ' T →
-      (∀ (i₀ : Nat) (x : Expr), i₀ < i → sp[i₀]? = some x →
+      (∀ (i₀ : Nat) (x : Expr md), i₀ < i → sp[i₀]? = some x →
         ∃ w, denoteMeta acval env φ D x = some w ∧ WellDenotedV V ρ' w ∧
           ∀ dw, denoteMeta acval env φ D (ds.getD i₀ default) = some dw →
             interp V ρ' w ∈ˢ interp V ρ' dw) →
@@ -185,19 +185,19 @@ this lemma has already earned them all (task #161, ind tier part 5 —
 the point stage's index walk compares the residual's own
 arguments). -/
 theorem instPisAt_res_graded {ρ' : Nat → V}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat} {T : AnnotTerm},
-      (∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      (∀ (i : Nat) (x : Expr md), sp[i]? = some x →
         Expr.WScoped D x ∧ x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
       denoteMeta acval env φ D ty = some T →
       WellDenotedV V ρ' T →
-      (∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      (∀ (i : Nat) (x : Expr md), sp[i]? = some x →
         ∃ w, denoteMeta acval env φ D x = some w ∧ WellDenotedV V ρ' w ∧
           ∀ dw, denoteMeta acval env φ D (ds.getD i default) = some dw →
             interp V ρ' w ∈ˢ interp V ρ' dw) →

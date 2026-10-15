@@ -118,13 +118,13 @@ def expected : List (Lean.Name × Verdict) := [
 def always : Ix.Kernel.BinderMeta := { pw := .ifAllZero [] }
 
 /-- The first binder's annotation set to `always`. -/
-def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+def tamperPw : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lam t b _ => some (.lam t b always)
   | .forallE t b _ => some (.forallE t b always)
   | _ => none
 
 /-- A natural-number literal bumped. -/
-partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+partial def tamperLit : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lit (.natVal n) => some (.lit (.natVal (n + 1)))
   | .app f a => ((tamperLit a).map (.app f ·)).orElse fun _ => (tamperLit f).map (.app · a)
   | .lam t b m => (tamperLit b).map (.lam t · m)

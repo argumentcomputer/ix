@@ -26,7 +26,7 @@ open Expr in
 /-- `instPisAt` residual leaves come from the telescope or the
 arguments (task #175 wiring W2c: the tower-entry residual's leaves). -/
 theorem instPisAt_fvarLeaves :
-    ∀ (args : List Expr) (ty : Expr) {doms : List Expr} {res : Expr},
+    ∀ (args : List (Expr md)) (ty : Expr md) {doms : List (Expr md)} {res : Expr md},
       Expr.instPisAt args ty = some (doms, res) →
       ∀ l, l ∈ res.fvarLeaves →
         l ∈ ty.fvarLeaves ∨ ∃ a ∈ args, l ∈ a.fvarLeaves
@@ -62,7 +62,7 @@ open Expr in
 well-scopedness. -/
 
 theorem piResidual_WScoped {d : Nat} :
-    ∀ {as : List Expr} {t res : Expr}, piResidual t as = some res →
+    ∀ {as : List (Expr md)} {t res : Expr md}, piResidual t as = some res →
       WScoped d t → (∀ x ∈ as, WScoped d x) → WScoped d res
   | [], t, res, h, hw, _ => by
     simp only [piResidual, Option.some.injEq] at h
@@ -81,7 +81,7 @@ open Expr in
 /-- Peeling only introduces the telescope's and the arguments'
 leaves. -/
 theorem piResidual_fvarLeaves :
-    ∀ {as : List Expr} {t res : Expr}, piResidual t as = some res →
+    ∀ {as : List (Expr md)} {t res : Expr md}, piResidual t as = some res →
       ∀ l ∈ res.fvarLeaves,
         l ∈ t.fvarLeaves ∨ ∃ x ∈ as, l ∈ x.fvarLeaves
   | [], t, res, h, l, hl => by
@@ -101,7 +101,7 @@ open Expr in
 /-- Peeling a bounded telescope along bounded arguments stays
 bounded. -/
 theorem piResidual_looseBVars :
-    ∀ {as : List Expr} {t res : Expr}, piResidual t as = some res →
+    ∀ {as : List (Expr md)} {t res : Expr md}, piResidual t as = some res →
       t.looseBVarsBounded 0 = true →
       (∀ x ∈ as, x.looseBVarsBounded 0 = true) →
       res.looseBVarsBounded 0 = true
@@ -124,15 +124,15 @@ theorem piResidual_looseBVars :
 open Expr
 
 /-- Every leaf annotation is bvar-closed. -/
-@[expose] def Expr.LeavesBounded (e : Expr) : Prop :=
+@[expose] def Expr.LeavesBounded (e : Expr md) : Prop :=
   ∀ l ∈ e.fvarLeaves, Expr.looseBVarsBounded 0 l.2 = true
 
 /-- The per-index leaf condition backing `fvarConsistent`. -/
-@[expose] def Expr.LeafCond (d : Nat) (ty : Expr) (e : Expr) : Prop :=
+@[expose] def Expr.LeafCond (d : Nat) (ty : Expr md) (e : Expr md) : Prop :=
   ∀ l ∈ e.fvarLeaves, l.1 = d → l.2 = ty
 
-theorem Expr.fvarConsistent_of_leafCond {d : Nat} {ty : Expr} :
-    ∀ (e : Expr), Expr.LeafCond d ty e → fvarConsistent d ty e := by
+theorem Expr.fvarConsistent_of_leafCond {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md), Expr.LeafCond d ty e → fvarConsistent d ty e := by
   intro e
   induction e with
   | fvar idx ty' ih =>
@@ -164,7 +164,7 @@ theorem Expr.fvarConsistent_of_leafCond {d : Nat} {ty : Expr} :
 
 /-- Abstraction removes exactly the index-`d` leaves (for scoped terms). -/
 theorem Expr.fvarLeaves_abstract1_ne {D : Nat} :
-    ∀ (e : Expr) (k : Nat), WScoped (D + 1) e →
+    ∀ (e : Expr md) (k : Nat), WScoped (D + 1) e →
       ∀ l ∈ (e.abstract1 D k).fvarLeaves, l ∈ e.fvarLeaves ∧ l.1 ≠ D := by
   intro e
   induction e with
@@ -228,14 +228,14 @@ theorem Expr.fvarLeaves_abstract1_ne {D : Nat} :
   | const n us => intro k _ l hl; simp [abstract1, fvarLeaves] at hl
   | lit ll => intro k _ l hl; simp [abstract1, fvarLeaves] at hl
 
-theorem Expr.LeavesBounded.of_not_hasFvar {e : Expr} (h : e.hasFvar = false) :
+theorem Expr.LeavesBounded.of_not_hasFvar {e : Expr md} (h : e.hasFvar = false) :
     Expr.LeavesBounded e := by
   intro l hl
   rw [fvarLeaves_eq_nil_of_not_hasFvar h] at hl
   cases hl
 
 theorem fvarLeaves_getAppFn :
-    ∀ {e : Expr}, ∀ l ∈ e.getAppFn.fvarLeaves, l ∈ e.fvarLeaves := by
+    ∀ {e : Expr md}, ∀ l ∈ e.getAppFn.fvarLeaves, l ∈ e.fvarLeaves := by
   intro e
   induction e with
   | app f a ihf _ =>
@@ -245,7 +245,7 @@ theorem fvarLeaves_getAppFn :
   | _ => intro l hl; exact hl
 
 theorem fvarLeaves_getAppArgs :
-    ∀ {e x : Expr}, x ∈ e.getAppArgs → ∀ l ∈ x.fvarLeaves, l ∈ e.fvarLeaves := by
+    ∀ {e x : Expr md}, x ∈ e.getAppArgs → ∀ l ∈ x.fvarLeaves, l ∈ e.fvarLeaves := by
   intro e
   induction e with
   | app f a ihf iha =>
@@ -257,7 +257,7 @@ theorem fvarLeaves_getAppArgs :
     · exact Or.inr hl
   | _ => intro x hx; simp [getAppArgs] at hx
 
-theorem looseBVarsBounded_mkAppN {k : Nat} : ∀ {xs : List Expr} {f : Expr},
+theorem looseBVarsBounded_mkAppN {k : Nat} : ∀ {xs : List (Expr md)} {f : Expr md},
     f.looseBVarsBounded k = true → (∀ x ∈ xs, x.looseBVarsBounded k = true) →
     (Expr.mkAppN f xs).looseBVarsBounded k = true := by
   intro xs
@@ -270,8 +270,8 @@ theorem looseBVarsBounded_mkAppN {k : Nat} : ∀ {xs : List Expr} {f : Expr},
     simp only [looseBVarsBounded, Bool.and_eq_true]
     exact ⟨hf, hxs x List.mem_cons_self⟩
 
-theorem fvarLeaves_mkAppN : ∀ {xs : List Expr} {f : Expr}
-    {l : Nat × Expr},
+theorem fvarLeaves_mkAppN : ∀ {xs : List (Expr md)} {f : Expr md}
+    {l : Nat × Expr md},
     l ∈ (Expr.mkAppN f xs).fvarLeaves →
     l ∈ f.fvarLeaves ∨ ∃ x, x ∈ xs ∧ l ∈ x.fvarLeaves := by
   intro xs
@@ -291,16 +291,16 @@ theorem fvarLeaves_mkAppN : ∀ {xs : List Expr} {f : Expr}
 
 /-- The constructor form of a literal has no leaves. -/
 theorem natLitToConstructor_fvarLeaves (n : Nat) :
-    (natLitToConstructor n).fvarLeaves = [] := by
+    ((natLitToConstructor (md := md)) n).fvarLeaves = [] := by
   cases n <;> simp [natLitToConstructor, Expr.fvarLeaves]
 
 /-- The constructor form of a literal has no loose bvars. -/
 theorem natLitToConstructor_looseBVars (n : Nat) {k : Nat} :
-    (natLitToConstructor n).looseBVarsBounded k = true := by
+    ((natLitToConstructor (md := md)) n).looseBVarsBounded k = true := by
   cases n <;> simp [natLitToConstructor, Expr.looseBVarsBounded]
 
 /-- The literal-major conversion only shrinks the leaf closure. -/
-theorem litToCtorIfNat_fvarLeaves {env : Env} {e : Expr} :
+theorem litToCtorIfNat_fvarLeaves {env : Env md} {e : Expr md} :
     ∀ l ∈ (litToCtorIfNat env e).fvarLeaves, l ∈ e.fvarLeaves := by
   intro l hl
   match e, hl with
@@ -316,7 +316,7 @@ theorem litToCtorIfNat_fvarLeaves {env : Env} {e : Expr} :
   | .letE _ _ _ _, hl | .proj _ _ _, hl => exact hl
 
 /-- The literal-major conversion preserves the bvar bound. -/
-theorem litToCtorIfNat_looseBVars {env : Env} {e : Expr} {k : Nat}
+theorem litToCtorIfNat_looseBVars {env : Env md} {e : Expr md} {k : Nat}
     (hb : e.looseBVarsBounded k = true) :
     (litToCtorIfNat env e).looseBVarsBounded k = true := by
   match e with
@@ -332,8 +332,8 @@ theorem litToCtorIfNat_looseBVars {env : Env} {e : Expr} {k : Nat}
 
 /-- Unfolding a definition at the head only shrinks the leaf
 closure. -/
-theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
-    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂) :
+theorem unfoldDefinition_fvarLeaves {env : Env md} (henv : EnvWF env)
+    {e e₂ : Expr md} (h : unfoldDefinition env e = some e₂) :
     ∀ l ∈ e₂.fvarLeaves, l ∈ e.fvarLeaves := by
   unfold unfoldDefinition at h
   revert h
@@ -372,8 +372,8 @@ theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
   · intro h; exact nomatch h
 
 /-- Unfolding a definition at the head preserves the bvar bound. -/
-theorem unfoldDefinition_looseBVars {env : Env} (henv : EnvWF env)
-    {e e₂ : Expr} (h : unfoldDefinition env e = some e₂)
+theorem unfoldDefinition_looseBVars {env : Env md} (henv : EnvWF env)
+    {e e₂ : Expr md} (h : unfoldDefinition env e = some e₂)
     (hb : e.looseBVarsBounded 0 = true) :
     e₂.looseBVarsBounded 0 = true := by
   unfold unfoldDefinition at h
@@ -415,11 +415,11 @@ set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop only shrink the leaf
 closure. -/
-theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
+theorem whnfPres_fvarLeaves {env : Env md} (henv : EnvWF env) :
     ∀ (fuel : Nat),
-      (∀ {d : Nat} {e e' : Expr}, whnfCore mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnfCore mode env fuel d e = .ok e' →
         ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves) ∧
-      (∀ {d : Nat} {e e' : Expr}, whnf mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnf mode env fuel d e = .ok e' →
         ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves)
   | 0 => ⟨(fun {_ _ _} h => nomatch h), (fun {_ _ _} h => nomatch h)⟩
   | fuel + 1 => by
@@ -542,7 +542,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
           exact ihLoop he l (hsub₃ l
             (fvarLeaves_getAppArgs (getD_mem (by omega)) l hl2))
     · -- whnf loop: induction on the loop's own step budget (task #106)
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
+      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr md},
           whnfLoop (pureFns mode env fuel) env d n e = .ok e' →
           ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves := by
         intro n
@@ -565,11 +565,11 @@ set_option maxRecDepth 2048 in
 set_option maxHeartbeats 1600000 in
 /-- Head normalization and the reduction loop preserve the bvar
 bound. -/
-theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
+theorem whnfPres_looseBVars {env : Env md} (henv : EnvWF env) :
     ∀ (fuel : Nat),
-      (∀ {d : Nat} {e e' : Expr}, whnfCore mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnfCore mode env fuel d e = .ok e' →
         e.looseBVarsBounded 0 = true → e'.looseBVarsBounded 0 = true) ∧
-      (∀ {d : Nat} {e e' : Expr}, whnf mode env fuel d e = .ok e' →
+      (∀ {d : Nat} {e e' : Expr md}, whnf mode env fuel d e = .ok e' →
         e.looseBVarsBounded 0 = true → e'.looseBVarsBounded 0 = true)
   | 0 => ⟨(fun {_ _ _} h _ => nomatch h), (fun {_ _ _} h _ => nomatch h)⟩
   | fuel + 1 => by
@@ -670,7 +670,7 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
         · exact ihCore hred
             (looseBVarsBounded_getAppArgs hbe₃ _ (getD_mem (by omega)))
     · -- whnf loop: induction on the loop's own step budget (task #106)
-      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr},
+      have hloop : ∀ (n : Nat) {d : Nat} {e e' : Expr md},
           whnfLoop (pureFns mode env fuel) env d n e = .ok e' →
           e.looseBVarsBounded 0 = true → e'.looseBVarsBounded 0 = true := by
         intro n
@@ -689,37 +689,37 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
       exact hloop whnfLoopFuel h hb
 
 /-- Head normalization only shrinks the leaf closure. -/
-theorem whnfCore_fvarLeaves {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnfCore_fvarLeaves {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnfCore mode env fuel d e = .ok e') :
     ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves :=
   (whnfPres_fvarLeaves henv fuel).1 h
 
 /-- The reduction loop only shrinks the leaf closure. -/
-theorem whnf_fvarLeaves {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnf_fvarLeaves {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnf mode env fuel d e = .ok e') :
     ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves :=
   (whnfPres_fvarLeaves henv fuel).2 h
 
 /-- Head normalization preserves the bvar bound. -/
-theorem whnfCore_looseBVars {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnfCore_looseBVars {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnfCore mode env fuel d e = .ok e')
     (hb : e.looseBVarsBounded 0 = true) : e'.looseBVarsBounded 0 = true :=
   (whnfPres_looseBVars henv fuel).1 h hb
 
 /-- The reduction loop preserves the bvar bound. -/
-theorem whnf_looseBVars {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e e' : Expr}
+theorem whnf_looseBVars {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e e' : Expr md}
     (h : whnf mode env fuel d e = .ok e')
     (hb : e.looseBVarsBounded 0 = true) : e'.looseBVarsBounded 0 = true :=
   (whnfPres_looseBVars henv fuel).2 h hb
 
 /-! ## Preservation through `inferTypeCore` -/
 
-theorem inferTypeCore_WScoped {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCore_WScoped {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCore mode env fuel d e = .ok t → WScoped d e → WScoped d t
   | 0, d, e, t, h, _ => nomatch h
   | fuel + 1, d, e, t, h, hw => by
@@ -827,8 +827,8 @@ theorem inferTypeCore_WScoped {env : Env} (henv : EnvWF env) :
     | letE t' v' b' _ =>
       exact (inferTypeCore_letE_inv h).elim
 
-theorem inferTypeCore_fvarLeaves {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCore_fvarLeaves {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCore mode env fuel d e = .ok t → WScoped d e →
       ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
   | 0, d, e, t, h, _ => nomatch h
@@ -964,8 +964,8 @@ theorem inferTypeCore_fvarLeaves {env : Env} (henv : EnvWF env) :
     | letE t' v' b' _ =>
       exact (inferTypeCore_letE_inv h).elim
 
-theorem inferTypeCore_looseBVars {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCore_looseBVars {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCore mode env fuel d e = .ok t → WScoped d e →
       e.looseBVarsBounded 0 = true → Expr.LeavesBounded e →
       t.looseBVarsBounded 0 = true

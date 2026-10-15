@@ -69,17 +69,17 @@ universe w
 
 /-- Extend a canonical annotated valuation at one name — the `acval`
 mirror of `cvalWith`. -/
-def acvalWith (acval : Key → (LevelParam → Nat) → AnnotTerm) (n : Key)
-    (A : (LevelParam → Nat) → AnnotTerm) : Key → (LevelParam → Nat) → AnnotTerm :=
+def acvalWith (acval : Key md → (LevelParam → Nat) → AnnotTerm) (n : Key md)
+    (A : (LevelParam → Nat) → AnnotTerm) : Key md → (LevelParam → Nat) → AnnotTerm :=
   fun c ψ => if c = n then A ψ else acval c ψ
 
-theorem acvalWith_ne {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {n : Key} {A : (LevelParam → Nat) → AnnotTerm} {c : Key} (h : c ≠ n) :
+theorem acvalWith_ne {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {n : Key md} {A : (LevelParam → Nat) → AnnotTerm} {c : Key md} (h : c ≠ n) :
     acvalWith acval n A c = acval c := by
   funext ψ; simp [acvalWith, h]
 
-theorem acvalWith_self {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {n : Key} {A : (LevelParam → Nat) → AnnotTerm} :
+theorem acvalWith_self {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {n : Key md} {A : (LevelParam → Nat) → AnnotTerm} :
     acvalWith acval n A n = A := by
   funext ψ; simp [acvalWith]
 
@@ -95,10 +95,10 @@ Stated as an equation rather than an implication: the two runs are
 annotation may not exist, and the statement must not silently assume
 one does). -/
 theorem denoteAnnot_acval_congr {mode : CheckMode}
-    {acval₁ acval₂ : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
+    {acval₁ acval₂ : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
     {φ : LevelParam → Nat} {fuel : Nat}
     (hag : ∀ n, (env.find? n).isSome = true → acval₁ n = acval₂ n) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denoteAnnot mode acval₁ env φ fuel d e
         = denoteAnnot mode acval₂ env φ fuel d e := by
   intro d e
@@ -170,12 +170,12 @@ install-fixed object with no `denoteAnnot` and no `interp` in them (the
 a case split on the updated name and nothing else. -/
 
 /-- `acval_closed` extends. -/
-theorem acvalWith_closed {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {n : Key} {A : (LevelParam → Nat) → AnnotTerm}
-    (h : ∀ (m : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem acvalWith_closed {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {n : Key md} {A : (LevelParam → Nat) → AnnotTerm}
+    (h : ∀ (m : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval m ψ).liftN 1 k = acval m ψ)
     (hA : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ) :
-    ∀ (m : Key) (ψ : LevelParam → Nat) (k : Nat),
+    ∀ (m : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acvalWith acval n A m ψ).liftN 1 k
         = acvalWith acval n A m ψ := by
   intro m ψ k
@@ -192,10 +192,10 @@ old ones plus the installed one, and the new leaf answers for itself.
 Note the environment moves here, unlike in the two above — the field
 is indexed by `env.find?`.  Freshness is **not** needed: the `cons`
 shadows, so the installed entry answers first either way. -/
-theorem acvalWith_params {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {env : Env} {c₀ : Ix.Kernel.ConstantInfo}
+theorem acvalWith_params {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {env : Env md} {c₀ : Ix.Kernel.ConstantInfo md}
     {A : (LevelParam → Nat) → AnnotTerm}
-    (h : ∀ (m : Key) (ci : Ix.Kernel.ConstantInfo),
+    (h : ∀ (m : Key md) (ci : Ix.Kernel.ConstantInfo md),
       env.find? m = some ci →
       ∀ ψ₁ ψ₂ : LevelParam → Nat,
         (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
@@ -203,8 +203,8 @@ theorem acvalWith_params {acval : Key → (LevelParam → Nat) → AnnotTerm}
     (hA : ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ c₀.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       A ψ₁ = A ψ₂) :
-    ∀ (m : Key) (ci : Ix.Kernel.ConstantInfo),
-      (⟨c₀ :: env.consts⟩ : Env).find? m = some ci →
+    ∀ (m : Key md) (ci : Ix.Kernel.ConstantInfo md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? m = some ci →
       ∀ ψ₁ ψ₂ : LevelParam → Nat,
         (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
         acvalWith acval c₀.name A m ψ₁
@@ -236,12 +236,12 @@ split. -/
 
 /-- `acval_wellDenoted` extends. -/
 theorem acvalWith_wellDenoted {V : Type w} [SetTheory V]
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} {n : Key}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {n : Key md}
     {A : (LevelParam → Nat) → AnnotTerm}
-    (h : ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+    (h : ∀ (m : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenoted V ρ (acval m ψ))
     (hA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ)) :
-    ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+    ∀ (m : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenoted V ρ (acvalWith acval n A m ψ) := by
   intro m ψ ρ
   by_cases hm : m = n

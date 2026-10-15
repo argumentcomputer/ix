@@ -31,17 +31,17 @@ open Ix.Kernel (Env Expr Key Level PropWhen
 /-- **The monotone crossing, tower-slot refined**: a successful prefix
 reading of a subject with no `.proj T i` node is reproduced at an
 extension whose only new tower slot is `(T, i)`. -/
-theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
-    {T : Key}
+theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+    {T : Key md}
     (hF : FindPreserved env₀ env) (hG : LitGuardsMono env₀ env)
-    (hproj : ∀ (sn : Key) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+    (hproj : ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn j = none → env.findProj? sn j = some entry →
       sn = T) :
-    ∀ (d : Nat) (e : Expr), ConstsBound env₀ e → (∀ j, Expr.NoProjAt T j e) →
+    ∀ (d : Nat) (e : Expr md), ConstsBound env₀ e → (∀ j, Expr.NoProjAt T j e) →
       ∀ {ea : AnnotTerm}, denoteMeta acval env₀ φ d e = some ea →
         denoteMeta acval env φ d e = some ea := by
-  have hmono : ∀ (sn : Key) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn j = some entry →
       env.findProj? sn j = some entry := by
     intro sn j entry h
@@ -158,8 +158,8 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
 
 /-- A table cons adds exactly its own structure's slots: any lookup
 new at the extension is the head's (task #175 S1). -/
-theorem findProj?_cons_tower {env : Env} {tbl₀ : Ix.Kernel.ProjTable} :
-    ∀ (sn : Key) (j : Nat) (entry : Ix.Kernel.ProjEntry),
+theorem findProj?_cons_tower {env : Env md} {tbl₀ : Ix.Kernel.ProjTable md} :
+    ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env.findProj? sn j = none →
       Env.findProj? ⟨.projInfo tbl₀ :: env.consts⟩ sn j = some entry →
       sn = tbl₀.structName := by

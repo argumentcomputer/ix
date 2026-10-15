@@ -50,7 +50,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-! ## The pinned telescope, inverted -/
 
@@ -60,7 +60,7 @@ spine are binder-free, so the pin fixes the whole shape and leaves
 exactly the three binder names and the three binder metas free —
 which is precisely the freedom the bit lemma below removes
 (`propext_shapeS`'s pattern at a longer spine). -/
-theorem ofReduce_shapeS {n : Key} {type' : Expr}
+theorem ofReduce_shapeS {n : Key md} {type' : Expr md}
     (hn : n = Ix.Kernel.ofReduceNatName ∨ n = Ix.Kernel.ofReduceBoolName)
     (h : type'.erasePw
       = (Ix.Kernel.ofReducePinA n).type.erasePw) :
@@ -118,8 +118,8 @@ element type is the spine's type argument, and the peel never reads
 it, so nothing about the stored `Nat`/`Bool` enters. -/
 theorem ofReduce_bits (hμ : μ.verifiedChecks = true)
     (hEq : env.find? eqName = some eqA)
-    {E c : Key} {m₁ m₂ m₃ : BinderMeta}
-    {d : Nat} {stype : Expr}
+    {E c : Key md} {m₁ m₂ m₃ : BinderMeta}
+    {d : Nat} {stype : Expr md}
     (hrun : inferTypeCore μ env F d
       (.forallE (.const E [])
         (.forallE (.const E [])
@@ -163,7 +163,7 @@ theorem ofReduce_bits (hμ : μ.verifiedChecks = true)
 
 /-- `ofReduceAxOk`'s four conjuncts, in the forms the membership reads
 (the v1 key's own unpacking, one file over). -/
-theorem ofReduce_gatesS {cvA : ConstantVal}
+theorem ofReduce_gatesS {cvA : ConstantVal md}
     (hok : Ix.Kernel.ofReduceAxOk env cvA = true) :
     env.find? eqName = some eqA ∧
     Ix.Kernel.reduceElemOk env (Ix.Kernel.ofReduceOp cvA.name) = true ∧
@@ -197,10 +197,10 @@ product is a truth value); the innermost fibre is where `ReduceOps`
 pays: the hypothesis spine's value is `eqv (op x) y`, the conclusion's
 is `eqv x y`, and the field says those are the same set. -/
 theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {cvA : ConstantVal} (hok : Ix.Kernel.ofReduceAxOk env cvA = true)
+    {cvA : ConstantVal md} (hok : Ix.Kernel.ofReduceAxOk env cvA = true)
     (hor : cvA.name = Ix.Kernel.ofReduceNatName ∨
       cvA.name = Ix.Kernel.ofReduceBoolName)
-    {d : Nat} {stype : Expr}
+    {d : Nat} {stype : Expr md}
     (hrun : inferTypeCore μ env F d cvA.type = .ok stype)
     (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
@@ -213,12 +213,12 @@ theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       (Ix.Kernel.ofReduceOp cvA.name)).levelParams = [] from by
     unfold Ix.Kernel.reduceOpCvA; split <;> rfl] at hlpR
   have hmemOp : Ix.Kernel.ofReduceOp cvA.name ∈ Ix.Kernel.reduceOpNames := by
-    unfold Ix.Kernel.ofReduceOp; split <;> decide
+    unfold Ix.Kernel.ofReduceOp; split <;> (cases md <;> decide)
   obtain ⟨m₁, m₂, m₃, hsh⟩ := ofReduce_shapeS hor hApinT
   rw [hsh] at hrun hta
   obtain ⟨hb₁, hb₂, hb₃⟩ := ofReduce_bits hμ hEq hrun ψ
   -- the `Eq` former's one level parameter is pinned to `1`
-  have heqψ : Level.substFn ψ eqA.toConstantVal.levelParams
+  have heqψ : Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
       [Level.zero.succ] uN = 1 := rfl
   have hEd : ∀ e, denoteMeta mp.base2.acval env ψ e
       (.const (Ix.Kernel.reduceElemName (Ix.Kernel.ofReduceOp cvA.name)) [])
@@ -234,7 +234,7 @@ theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   have hQd : ∀ e, denoteMeta mp.base2.acval env ψ e
       (.const eqName [Level.zero.succ])
       = some (mp.base2.acval eqName (Level.substFn ψ
-          eqA.toConstantVal.levelParams [Level.zero.succ])) :=
+          (eqA (md := md)).toConstantVal.levelParams [Level.zero.succ])) :=
     fun e => denoteMeta_const hEq rfl
   -- the stored type's reading, at the bits the run fixes
   have hden : denoteMeta mp.base2.acval env ψ 0
@@ -261,14 +261,14 @@ theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
               (Ix.Kernel.ofReduceOp cvA.name)) ψ)
             (.pi 0 0
               (.app (.app (.app (mp.base2.acval eqName
-                    (Level.substFn ψ eqA.toConstantVal.levelParams
+                    (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
                       [Level.zero.succ]))
                   (mp.base2.acval (Ix.Kernel.reduceElemName
                     (Ix.Kernel.ofReduceOp cvA.name)) ψ))
                 (.app (mp.base2.acval (Ix.Kernel.ofReduceOp cvA.name) ψ)
                   (.bvar 1))) (.bvar 0))
               (.app (.app (.app (mp.base2.acval eqName
-                    (Level.substFn ψ eqA.toConstantVal.levelParams
+                    (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
                       [Level.zero.succ]))
                   (mp.base2.acval (Ix.Kernel.reduceElemName
                     (Ix.Kernel.ofReduceOp cvA.name)) ψ))
@@ -289,10 +289,10 @@ theorem ofReduce_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     fun ρ' => acval_interp_closedC mp.base2 _ ψ ρ' ρ
   have hclQ : ∀ ρ' : Nat → V,
       interp V ρ' (mp.base2.acval eqName
-          (Level.substFn ψ eqA.toConstantVal.levelParams
+          (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
             [Level.zero.succ]))
         = interp V ρ (mp.base2.acval eqName
-          (Level.substFn ψ eqA.toConstantVal.levelParams
+          (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
             [Level.zero.succ])) :=
     fun ρ' => acval_interp_closedC mp.base2 _ _ ρ' ρ
   -- the element type inhabits `Sort 1`
@@ -328,7 +328,7 @@ canonical proof — the same witness the v1 key installs
 or a `simp` on a leaf clause and the whole content is the
 membership. -/
 theorem axiomOfReduce (hμ : μ.verifiedChecks = true)
-    (mp : EnvModelM V μ env) {cv : ConstantVal} {type' : Expr}
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
     (hcv : ConstantValRun μ F env cv type')
     (hor : cv.name = Ix.Kernel.ofReduceNatName ∨
       cv.name = Ix.Kernel.ofReduceBoolName)
@@ -355,7 +355,7 @@ theorem axiomOfReduce (hμ : μ.verifiedChecks = true)
     (A := fun _ => AnnotTerm.prf) (fun _ => trivial)
     (fun _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => by simp)
     (fun _ _ => by simp) ?_
-    (by rcases hor with h | h <;> rw [h] <;> decide)
+    (by rcases hor with h | h <;> rw [h] <;> (cases md <;> decide))
   intro ψ ta hta ρ
   exact ofReduce_mem hμ mp hok hor hst ψ ta hta ρ
 

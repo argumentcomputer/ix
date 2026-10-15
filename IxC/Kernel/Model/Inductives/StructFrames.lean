@@ -30,13 +30,13 @@ open Ix.Kernel.Semantics (AnnotTerm)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Small kit -/
 
 /-- A reading at depth `d` of a term scoped at `d` mentions no variable
 at or above `d`. -/
-theorem bvarsBelow_of_reading {m : EnvModel V env} {d : Nat} {e : Expr}
+theorem bvarsBelow_of_reading {m : EnvModel V env} {d : Nat} {e : Expr md}
     (hw : Expr.WScoped d e) (hb : e.looseBVarsBounded 0 = true)
     {ea : AnnotTerm} (h : denoteMeta m.acval env φ d e = some ea) :
     Term.bvarsBelow d ea.erase :=
@@ -57,7 +57,7 @@ former's have the same satisfying valuations, and below `nP` the
 `i`-th entries interpret alike under the constructor's context. -/
 theorem paramFrames {m : EnvModel V env} {F : Nat}
     (hc : ClaimsAt μ m φ F) {nP nF : Nat}
-    {tty cty : Expr} {tfvs cfvs : List Expr} {trest crest : Expr}
+    {tty cty : Expr md} {tfvs cfvs : List (Expr md)} {trest crest : Expr md}
     {Γt Γc : List AnnotTerm} {Rt Rc : AnnotTerm}
     (hT : Opened m φ nP tty tfvs trest Γt Rt)
     (hC : Opened m φ (nP + nF) cty cfvs crest Γc Rc)

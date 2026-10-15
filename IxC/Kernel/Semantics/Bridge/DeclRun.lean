@@ -53,7 +53,7 @@ namespace Ix.Kernel.Semantics
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## The shared front doors, run half -/
 
@@ -61,8 +61,8 @@ variable {ev : Evidences}
 relation-free half of `constantValR_of`: the same inversion, the same
 two closedness facts beside it, and `ConstantValRun` instead of
 `ConstantValR`.  No `EnvFacts`, no valuation, no `checkBridge`. -/
-theorem constantValRun_of {env : Env} {μ : CheckMode} {F : Nat}
-    {cv cv' : ConstantVal}
+theorem constantValRun_of {env : Env md} {μ : CheckMode} {F : Nat}
+    {cv cv' : ConstantVal md}
     (h : checkConstantVal (fueledOps μ F) env cv = .ok cv') :
     ∃ type', cv' = { cv with type := type' } ∧
       type'.hasFvar = false ∧ type'.looseBVarsBounded 0 = true ∧
@@ -79,8 +79,8 @@ theorem constantValRun_of {env : Env} {μ : CheckMode} {F : Nat}
 very destructuring (task #161 P4 H1) — so the run bridge is the
 packing, and the `m`/`checkBridge` half of `valueFrontR_of` is what
 does not happen here. -/
-theorem valueFrontRun_of {env : Env} {μ : CheckMode} {F : Nat}
-    {cv : ConstantVal} {value type' value' vtype : Expr}
+theorem valueFrontRun_of {env : Env md} {μ : CheckMode} {F : Nat}
+    {cv : ConstantVal md} {value type' value' vtype : Expr md}
     (hlbv : value.looseBVarsBounded 0 = true)
     (hivf : value.hasFvar = false)
     (hannv : annotateCore μ env F 0 value = .ok value')
@@ -96,8 +96,8 @@ theorem valueFrontRun_of {env : Env} {μ : CheckMode} {F : Nat}
 /-- **`checkReduceIdentity`, run half.**  `checkReduceIdentity_inv`'s
 output re-associated: `ReduceIdentityRun` is exactly the inversion,
 without the identity's `DefEq` transport. -/
-theorem reduceIdentityRun_of {env env' : Env} {μ : CheckMode} {F : Nat}
-    {c : Key} {value : Expr}
+theorem reduceIdentityRun_of {env env' : Env md} {μ : CheckMode} {F : Nat}
+    {c : Key md} {value : Expr md}
     (h : checkReduceIdentity (m := CheckM) (fueledOps μ F) env env' c value
       = .ok ()) :
     ReduceIdentityRun μ F env env' c value := by
@@ -107,8 +107,8 @@ theorem reduceIdentityRun_of {env env' : Env} {μ : CheckMode} {F : Nat}
 /-- **`checkDivModEvidence`, run half**: the environment guard, and the
 evidence's proofs with their guards and checked certificates (the
 closure condition, which nothing downstream reads, is dropped). -/
-theorem divModCertRun_of {env env' : Env} {μ : CheckMode} {F : Nat}
-    {c : Key} {cv0 : ConstantVal} {v : Expr} {hint0 : ReducibilityHint}
+theorem divModCertRun_of {env env' : Env md} {μ : CheckMode} {F : Nat}
+    {c : Key md} {cv0 : ConstantVal md} {v : Expr md} {hint0 : ReducibilityHint}
     (hstore : env'.find? c = some (.defnInfo cv0 v hint0))
     (h : checkDivModEvidence (m := CheckM) (fueledOps μ F) ev env env' c
       = .ok ()) :
@@ -129,8 +129,8 @@ point where those build a derivation.  The S10 bill priced them as
 are: the same case analysis, stopping at the run record. -/
 
 /-- **`thmDecl`, run half.** -/
-theorem declThmRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
-    {cv : ConstantVal} {value : Expr}
+theorem declThmRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
+    {cv : ConstantVal md} {value : Expr md}
     (h : checkDecl μ (fueledOps μ F) ev env (.thmDecl cv value)
       = .ok env₂) :
     DeclThmRun μ F env cv value env₂ := by
@@ -201,8 +201,8 @@ theorem declThmRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
 /-- **`axiomDecl`, run half.**  Nothing but stored-data guards happens
 past the front door here, so this is `declAxiomR`'s script with its one
 `constantValR_of` call swapped for the run inversion. -/
-theorem declAxiomRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
-    {cv : ConstantVal}
+theorem declAxiomRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
+    {cv : ConstantVal md}
     (h : checkDecl μ (fueledOps μ F) ev env (.axiomDecl cv) = .ok env₂) :
     DeclAxiomRun μ F env cv env₂ := by
   simp only [checkDecl, Bind.bind, Except.bind] at h
@@ -268,8 +268,8 @@ theorem declAxiomRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
 
 /-- **`opaqueDecl`, run half**, with the compiler-trust pin's run
 inversion in place of the pin bridge. -/
-theorem declOpaqueRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
-    {cv : ConstantVal} {value : Expr}
+theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
+    {cv : ConstantVal md} {value : Expr md}
     (h : checkDecl μ (fueledOps μ F) ev env (.opaqueDecl cv value)
       = .ok env₂) :
     DeclOpaqueRun μ F env cv value env₂ := by
@@ -346,8 +346,8 @@ inversions (`natEqsRun_of_certs`, `divModCertRun_of`) in place of the
 evidence bridges.  The `key` block — the dispatch on the two guards — is
 `declDefnR`'s verbatim: it is pure control flow and names nothing
 semantic. -/
-theorem declDefnRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
-    {cv : ConstantVal} {value : Expr} {hint : ReducibilityHint}
+theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
+    {cv : ConstantVal md} {value : Expr md} {hint : ReducibilityHint}
     (h : checkDecl μ (fueledOps μ F) ev env (.defnDecl cv value hint)
       = .ok env₂) :
     DeclDefnRun μ F env cv value hint env₂ := by
@@ -394,7 +394,7 @@ theorem declDefnRun_of {env env₂ : Env} {μ : CheckMode} {F : Nat}
   simp only [Bool.false_eq_true, ↓reduceIte] at h
   -- the environment the two pin blocks run against, and its own lookup
   have hfind2 : (⟨ConstantInfo.defnInfo { cv with type := type } value'
-        hint :: env.consts⟩ : Env).find? cv.name
+        hint :: env.consts⟩ : Env md).find? cv.name
       = some (.defnInfo { cv with type := type } value' hint) := by
     rw [Env.find?_cons]; exact if_pos rfl
   -- **the dispatch, once**: the stored environment and the two packs
@@ -505,12 +505,12 @@ relation-free `Ind` gets a relation-free run record, and a caller that
 supplies `declIndRR` (today's, until S11b) has exactly **one** door.
 `tests/proofdeps.sh` ev both readings. -/
 theorem checkDeclRun_of {μ : CheckMode} {F : Nat}
-    {Ind : List ConstantInfo → Nat → Env → Prop} {env env₂ : Env}
-    (hind : ∀ {block : List ConstantInfo} {nP : Nat},
+    {Ind : List (ConstantInfo md) → Nat → Env md → Prop} {env env₂ : Env md}
+    (hind : ∀ {block : List (ConstantInfo md)} {nP : Nat},
       basisPinHit block = none →
       checkDecl μ (fueledOps μ F) ev env (.indDecl block nP) = .ok env₂ →
       Ind block nP env₂)
-    {d : Declaration}
+    {d : Declaration md}
     (h : checkDecl μ (fueledOps μ F) ev env d = .ok env₂) :
     DeclRun μ F Ind env d env₂ := by
   cases d with

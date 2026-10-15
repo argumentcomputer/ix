@@ -53,7 +53,7 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## One comparison -/
 
@@ -70,18 +70,18 @@ no derivation — the claims conclude the semantic equality directly
 predicted for `annotPFrameEqS`). -/
 theorem defEqAt_of_run {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
+    {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
-    (hshape : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hws : ∀ x ∈ fvs, Expr.WScoped k x)
-    (hdoms : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdoms : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x) = some (Aa i))
     {n : Nat}
     (hent : ∀ i, i < n → Δa[k - 1 - i]? = some (Aa i))
     (hokA : ∀ i, i < n → ∀ ρ : Nat → V, Sat V Δa ρ →
       WellDenotedV V (fun j => ρ (j + (k - 1 - i) + 1)) (Aa i))
-    {a b : Expr}
+    {a b : Expr md}
     (hrun : isDefEqCore μ env F k a b = .ok true)
     (hwa : Expr.WScoped k a) (hba : a.looseBVarsBounded 0 = true)
     (hLa : Expr.LeavesBounded a)
@@ -115,8 +115,8 @@ index. -/
 
 /-- The run at one index of a recorded comparison list. -/
 theorem defEqListOk_getElem {F : Nat} {d : Nat} :
-    ∀ {as bs : List Expr}, DefEqListOk μ F env d as bs →
-      ∀ (i : Nat) (a b : Expr), as[i]? = some a → bs[i]? = some b →
+    ∀ {as bs : List (Expr md)}, DefEqListOk μ F env d as bs →
+      ∀ (i : Nat) (a b : Expr md), as[i]? = some a → bs[i]? = some b →
         isDefEqCore μ env F d a b = .ok true := by
   intro as
   induction as with
@@ -138,7 +138,7 @@ theorem defEqListOk_getElem {F : Nat} {d : Nat} :
 /-- The run at one index, in `getD` form — the shape the stages read
 their comparison lists in (v1's `DefEqListW` is consumed the same
 way). -/
-theorem defEqListOk_getD {F : Nat} {d : Nat} {as bs : List Expr}
+theorem defEqListOk_getD {F : Nat} {d : Nat} {as bs : List (Expr md)}
     (h : DefEqListOk μ F env d as bs) (i : Nat) (hi : i < as.length) :
     isDefEqCore μ env F d (as.getD i default) (bs.getD i default)
       = .ok true := by
@@ -156,18 +156,18 @@ theorem defEqListOk_getD {F : Nat} {d : Nat} {as bs : List Expr}
 what this adds is the frame's context and the claims. -/
 theorem defEqListFueled_of_runs {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
+    {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
-    (hshape : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hws : ∀ x ∈ fvs, Expr.WScoped k x)
-    (hdoms : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdoms : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x) = some (Aa i))
     {n : Nat}
     (hent : ∀ i, i < n → Δa[k - 1 - i]? = some (Aa i))
     (hokA : ∀ i, i < n → ∀ ρ : Nat → V, Sat V Δa ρ →
       WellDenotedV V (fun j => ρ (j + (k - 1 - i) + 1)) (Aa i))
-    {as bs : List Expr} (hruns : DefEqListOk μ F env k as bs)
+    {as bs : List (Expr md)} (hruns : DefEqListOk μ F env k as bs)
     (i : Nat) (hi : i < as.length)
     (hwa : Expr.WScoped k (as.getD i default))
     (hba : (as.getD i default).looseBVarsBounded 0 = true)

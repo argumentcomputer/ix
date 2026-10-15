@@ -55,7 +55,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-! ## `Eq`-slot rigidity, second use -/
 
@@ -73,8 +73,8 @@ theorem eqThird_mem (mp : EnvModelM V μ env)
     (hl : interp V σ la ∈ˢ interp V σ Sa) :
     interp V σ ra ∈ˢ interp V σ Sa := by
   obtain ⟨ea, hea, -, hmem⟩ := mp.acval_memType heqfE χ
-  rw [show (eqA : ConstantInfo).toConstantVal.type
-      = eqA.toConstantVal.type from rfl, denoteMeta_eqA_type_gen] at hea
+  rw [show (eqA : ConstantInfo md).toConstantVal.type
+      = (eqA (md := md)).toConstantVal.type from rfl, denoteMeta_eqA_type_gen] at hea
   obtain rfl : ea = eqTy χ := (Option.some.inj hea).symm
   have hpin : interp V σ (mp.base2.acval eqName χ)
       ∈ˢ piR 1 (univ (χ uN) : V)
@@ -108,7 +108,7 @@ theorem eqThird_mem (mp : EnvModelM V μ env)
 set_option maxHeartbeats 3200000 in
 /-- **The member cons's η key, P tier** — `etaLawKeyS`'s transpose, and
 the campaign's first `EtaLaw` producer. -/
-theorem memberEtaLaw : MemberEtaLaw V := by
+theorem memberEtaLaw : (MemberEtaLaw (md := md)) V := by
   intro μ F blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
     hntc T cvT caps hfT hcape hnresT hp h0 hbT hbC hfam m₂ hac φ' C hC
   -- `MemberValR`'s data
@@ -250,7 +250,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
         from by omega] at h1
     exact Option.some.inj h1
   -- ===== the opened slot, read and evaluated =====
-  have hKle : ∀ (K : Key) (ci : ConstantInfo),
+  have hKle : ∀ (K : Key md) (ci : ConstantInfo md),
       env.find? K = some ci →
       ci.toConstantVal.levelParams = cvT.levelParams →
       ∀ d : Nat, caps.etaParams ≤ d →
@@ -261,7 +261,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
           ((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q)))) :=
     fun K ci hf hlps d hd => denoteMeta_openSpine hf hlps _ d hd
-  have hspineVal : ∀ (K : Key) (d : Nat) (σ : Nat → V),
+  have hspineVal : ∀ (K : Key md) (d : Nat) (σ : Nat → V),
       (∀ q, q < ts.length →
         σ (d - 1 - (0 + q)) = consN ts ρ (ts.length - 1 - q)) →
       interp V σ (AnnotTerm.mkAppN (mp.base2.acval K ψ)
@@ -309,7 +309,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
   simp only [List.range_zero, List.map_nil, List.append_nil] at hsbody
   have hCs : Cs = .app (.app (.app
       (mp.base2.acval eqName
-        (Level.substFn ψ eqA.toConstantVal.levelParams [ℓA]))
+        (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams [ℓA]))
       (AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))))
@@ -326,13 +326,13 @@ theorem memberEtaLaw : MemberEtaLaw V := by
       (caps.etaParams + 1) caps.etaParams (by omega) (by omega),
       instSeq_openSpine _ _ caps.etaParams (caps.etaParams + 1)
         caps.etaParams (by omega) (by omega)] at h
-    have hb0 : Expr.instSeq (openFvars 0 (caps.etaParams + 1))
-        caps.etaParams (Expr.bvar 0)
-        = Expr.fvar caps.etaParams (.sort .zero) := by
-      have hhit := Expr.instSeq_bvar (openFvars 0 (caps.etaParams + 1))
+    have hb0 : (Expr.instSeq (md := md)) (openFvars 0 (caps.etaParams + 1))
+        caps.etaParams ((Expr.bvar (md := md)) 0)
+        = (Expr.fvar (md := md)) caps.etaParams (.sort .zero) := by
+      have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (caps.etaParams + 1))
         caps.etaParams 0 (openFvars_bounded 0 (caps.etaParams + 1))
         (by omega) (by rw [openFvars_length]; omega)
-      rw [openFvars_getElem? (d := 0) (k := caps.etaParams + 1)
+      rw [openFvars_getElem? (md := md) (d := 0) (k := caps.etaParams + 1)
         (i := caps.etaParams - 0) (by omega),
         show (0 : Nat) + (caps.etaParams - 0) = caps.etaParams from by
           omega] at hhit
@@ -356,7 +356,7 @@ theorem memberEtaLaw : MemberEtaLaw V := by
     have h := teleFit_wellDenotedV_residual (ts ++ [x]) hteleFull (hokua ρ)
       hfitFull
     rwa [hconsApp] at h
-  have hSval : ∀ K : Key, interp V (cons x (consN ts ρ))
+  have hSval : ∀ K : Key md, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))

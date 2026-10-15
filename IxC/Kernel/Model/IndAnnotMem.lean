@@ -45,44 +45,44 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The per-position annotation identification, at the reading**
 (`annotPFrameEqS`): the public frame's opener annotations read to the
 statement tower's slots, and are graded. -/
 theorem annotPFrameEq {m : EnvModel V env}
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {rP cnP cnF : Nat}
     {Γs : List AnnotTerm}
     -- the public frame: the recursor prefix and the constructor fields
-    {tyA : Expr} {fvsPl : List Expr} {restP : Expr}
+    {tyA : Expr md} {fvsPl : List (Expr md)} {restP : Expr md}
     (hopenP : openPisAtFvars rP tyA 0 = some (fvsPl, restP))
     {ΓP : List AnnotTerm}
-    (hdomsP0 : ∀ (i : Nat) (x : Expr), fvsPl[i]? = some x →
+    (hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsPl[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
-    {cvjty cvjR : Expr} (hrenCvj : RenEqT f cvjty cvjR)
-    {psP psR : List Expr}
+    {cvjty cvjR : Expr md} (hrenCvj : RenEqT f cvjty cvjR)
+    {psP psR : List (Expr md)}
     (hpsPlen : psP.length = cnP) (hpsRlen : psR.length = cnP)
-    (hpsRen : ∀ (i : Nat) (a a' : Expr), psP[i]? = some a →
+    (hpsRen : ∀ (i : Nat) (a a' : Expr md), psP[i]? = some a →
       psR[i]? = some a' → RenEqT f a a')
-    {cdomsP : List Expr} {crestP : Expr}
+    {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt psP cvjty = some (cdomsP, crestP))
-    {xFvsP : List Expr} {ldoms : Expr}
+    {xFvsP : List (Expr md)} {ldoms : Expr md}
     (hopenXP : openPisAtFvars cnF crestP rP = some (xFvsP, ldoms))
     (hwsX : ∀ x ∈ xFvsP, Expr.WScoped (rP + cnF) x)
     (hwsPl : ∀ x ∈ fvsPl, Expr.WScoped rP x)
     {Γx : List AnnotTerm}
-    (hdomsX0 : ∀ (i : Nat) (x : Expr), xFvsP[i]? = some x →
+    (hdomsX0 : ∀ (i : Nat) (x : Expr md), xFvsP[i]? = some x →
       denoteMeta m.acval env φ (rP + i) (Expr.fvarTypeD x)
         = some (Γx.getD (cnF - 1 - i) default))
     -- the statement frame's runs
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    {cdoms : List Expr} {cres : Expr}
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt (psR ++ fvs.drop rP) cvjR
       = some (cdoms, cres))
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     -- the two ladders, fired at the ambient context
     {Δa : List AnnotTerm}
@@ -123,7 +123,7 @@ theorem annotPFrameEq {m : EnvModel V env}
     have h := instPisAt_length _ hcinstP
     rw [hpsPlen] at h
     exact h
-  have hargs : ∀ (i : Nat) (a a' : Expr), (psP ++ xFvsP)[i]? = some a →
+  have hargs : ∀ (i : Nat) (a a' : Expr md), (psP ++ xFvsP)[i]? = some a →
       (psR ++ fvs.drop rP)[i]? = some a' → RenEqT f a a' := by
     intro i a a' ha ha'
     rcases Nat.lt_or_ge i cnP with hi | hi
@@ -258,13 +258,13 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {K : Nat}
     -- the public frame
-    {pfvs : List Expr} (hPlen : pfvs.length = K)
-    (hPshape : ∀ (i : Nat) (x : Expr), pfvs[i]? = some x →
+    {pfvs : List (Expr md)} (hPlen : pfvs.length = K)
+    (hPshape : ∀ (i : Nat) (x : Expr md), pfvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hPws : ∀ x ∈ pfvs, Expr.WScoped K x)
     (hPleafClosed : ∀ l, (∃ x ∈ pfvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ pfvs)
-    (hlbP : ∀ (i : Nat) (ty : Expr),
+    (hlbP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ pfvs → ty.looseBVarsBounded 0 = true)
     -- the statement tower and the ambient context
     {Γs : List AnnotTerm} {Δa : List AnnotTerm} (hΔalen : Δa.length = K)
@@ -279,13 +279,13 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
           interp V (fun j => ρ' (j + (K - i)))
               (Γs.getD (K - 1 - i) default) = interp V ρ' Bi)
     -- the rule's right-hand side and its λ-tower
-    {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
+    {rhsA : Expr md} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     {Ra : AnnotTerm} (hokRa : ∀ σ : Nat → V, WellDenotedV V σ Ra)
-    {ldomsL : List Expr} {lrest2 : Expr}
+    {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt pfvs rhsA = some (ldomsL, lrest2))
     {Γlam : List AnnotTerm} {C : AnnotTerm} (htowerLam : LamTele K Ra Γlam C)
-    (hdomsLam : ∀ (i : Nat) (x : Expr), ldomsL[i]? = some x →
+    (hdomsLam : ∀ (i : Nat) (x : Expr md), ldomsL[i]? = some x →
       denoteMeta m.acval env φ i x = some (Γlam.getD (K - 1 - i) default))
     -- the recorded lam walk
     (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL) :
@@ -299,7 +299,7 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
   have hldlen : ldomsL.length = K := by
     rw [instLamsAt_length _ hinstLam, hPlen]
   -- the frame's own bounds
-  have hPlt : ∀ l : Nat × Expr,
+  have hPlt : ∀ l : Nat × Expr md,
       Expr.fvar l.1 l.2 ∈ pfvs → l.1 < K := by
     intro l hl
     have hw := hPws _ hl
@@ -311,7 +311,7 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
     obtain ⟨ty, rfl⟩ := hPshape q a hq
     rfl
   -- the walk datum `ctxOk_of_walked_openers` reads
-  have hwalk : ∀ (i : Nat) (x : Expr), pfvs[i]? = some x →
+  have hwalk : ∀ (i : Nat) (x : Expr md), pfvs[i]? = some x →
       ∃ tya, denoteMeta m.acval env φ K (Expr.fvarTypeD x) = some tya ∧
         (∀ ρ : Nat → V, Sat V Δa ρ →
           interp V ρ tya

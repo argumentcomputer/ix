@@ -46,7 +46,7 @@ open Ix.Kernel
 /-! ## The environment-index guards -/
 
 /-- `isUnitLikeTy` through the index, on a (whnf'd) `Expr`. -/
-def isUnitLikeTyC (fe : FEnv) (e : Expr) : Bool :=
+def isUnitLikeTyC (fe : FEnv md) (e : Expr md) : Bool :=
   match e with
   | .const cn _ .. =>
     -- task #161 item C1: the pinned-name test (see `isUnitLikeTy`)
@@ -60,7 +60,7 @@ def isUnitLikeTyC (fe : FEnv) (e : Expr) : Bool :=
   | _ => false
 
 /-- `isCtorApp` through the index. -/
-def isCtorAppC (fe : FEnv) (e : Expr) : Bool :=
+def isCtorAppC (fe : FEnv md) (e : Expr md) : Bool :=
   match Expr.getAppFn e with
   | .const cn _ .. =>
     match fe.find? cn with
@@ -69,7 +69,7 @@ def isCtorAppC (fe : FEnv) (e : Expr) : Bool :=
   | _ => false
 
 /-- `headHint` through the index. -/
-def headHintC (fe : FEnv) (e : Expr) : ReducibilityHint :=
+def headHintC (fe : FEnv md) (e : Expr md) : ReducibilityHint :=
   match Expr.getAppFn e with
   | .const nm _ .. =>
     match fe.find? nm with
@@ -78,7 +78,7 @@ def headHintC (fe : FEnv) (e : Expr) : ReducibilityHint :=
   | _ => .opaque
 
 /-- `unfoldableHead` through the index (the lazy-delta decision). -/
-def unfoldableHeadC (fe : FEnv) (e : Expr) : Bool :=
+def unfoldableHeadC (fe : FEnv md) (e : Expr md) : Bool :=
   match Expr.getAppFn e with
   | .const nm us .. =>
     match fe.find? nm with
@@ -87,7 +87,7 @@ def unfoldableHeadC (fe : FEnv) (e : Expr) : Bool :=
   | _ => false
 
 /-- The cached `sameConstHeads`. -/
-def sameConstHeadsC (a b : Expr) : Bool :=
+def sameConstHeadsC (a b : Expr md) : Bool :=
   match a, b with
   | .app f₁ _ .., .app f₂ _ .. =>
     match Expr.getAppFn f₁, Expr.getAppFn f₂ with
@@ -96,14 +96,14 @@ def sameConstHeadsC (a b : Expr) : Bool :=
   | _, _ => false
 
 /-- `rawNatLit?` on an `Expr`. -/
-def rawNatLitC? (e : Expr) : Option Nat :=
+def rawNatLitC? (e : Expr md) : Option Nat :=
   match e with
   | .lit (.natVal n) .. => some n
   | .const c [] .. => if c == natZeroName then some 0 else none
   | _ => none
 
 /-- Twin of `etaCtorShape` (the audit's D13 gate; `Expr = Expr`). -/
-def etaCtorShapeC (fe : FEnv) (e : Expr) : Bool :=
+def etaCtorShapeC (fe : FEnv md) (e : Expr md) : Bool :=
   match Expr.getAppFn e with
   | .const c _ =>
     match fe.find? c with
@@ -119,23 +119,23 @@ each tagged with the very `Expr` object it came from.  A use validates
 the tag by pointer equality (`Expr.exprPtrBEq`, reused), so the
 conversion of a stored constant is paid once per declaration instead
 of once per delta step. -/
-structure CConstE where
-  tyE : Expr
-  ty : Expr
-  val : Option (Expr × Expr) := none
+structure CConstE (md : Mode) where
+  tyE : Expr md
+  ty : Expr md
+  val : Option (Expr md × Expr md) := none
 
 /-- Per-declaration state: the converted-constant cache, the memo
 caches for the five entry points, the lazy caches for
 level-instantiated stored constants, the level-operation memos, and
 the persistent bulk-instantiation memo (task #145). -/
-structure CState where
-  ienv : Std.HashMap Key CConstE := {}
-  constTyAt : Std.HashMap (Key × List Level) Expr := {}
-  constValAt : Std.HashMap (Key × List Level) Expr := {}
-  ruleRhsAt : Std.HashMap (Key × Key × List Level) Expr := {}
-  whnfCoreC : Std.HashMap Expr Expr := {}
-  whnfC : Std.HashMap Expr Expr := {}
-  inferC : Std.HashMap Expr Expr := {}
+structure CState (md : Mode) where
+  ienv : Std.HashMap (Key md) (CConstE md) := {}
+  constTyAt : Std.HashMap (Key md × List Level) (Expr md) := {}
+  constValAt : Std.HashMap (Key md × List Level) (Expr md) := {}
+  ruleRhsAt : Std.HashMap (Key md × Key md × List Level) (Expr md) := {}
+  whnfCoreC : Std.HashMap (Expr md) (Expr md) := {}
+  whnfC : Std.HashMap (Expr md) (Expr md) := {}
+  inferC : Std.HashMap (Expr md) (Expr md) := {}
   /-- **The io-grade inference memo** (task #170 / #172 B4): results of
   the knot's `inferIO` slot at `mode.ioGate` (both modes), kept apart
   from `inferC` per the task-#170 memo
@@ -147,15 +147,15 @@ structure CState where
   layout: the C++ kernel keys its infer cache by `infer_only`.  At
   `ioGate = false` (no mode any more) the slot shares `inferC` and
   this map stays empty. -/
-  inferIOC : Std.HashMap Expr Expr := {}
-  defeqC : Std.HashMap (Expr × Expr) Bool := {}
-  annotC : Std.HashMap Expr Expr := {}
+  inferIOC : Std.HashMap (Expr md) (Expr md) := {}
+  defeqC : Std.HashMap (Expr md × Expr md) Bool := {}
+  annotC : Std.HashMap (Expr md) (Expr md) := {}
   lsimpC : Std.HashMap Level Level := {}
   lnzC : Std.HashMap Level Bool := {}
   eqvC : Std.HashMap (Level × Level) Bool := {}
-  instC : Std.HashMap (Expr × List Expr × Nat) Expr := {}
+  instC : Std.HashMap (Expr md × List (Expr md) × Nat) (Expr md) := {}
 
-instance : Inhabited CState := ⟨{}⟩
+instance : Inhabited (CState md) := ⟨{}⟩
 
 /-- Entry bound for the persistent bulk-instantiation memo (the
 `instCCap` of the retired interned checker, reused unchanged). -/
@@ -163,7 +163,7 @@ def instCCapC : Nat := 32000000
 
 /-- The cached checker's monad: the per-declaration memo state over
 `CheckM`. -/
-abbrev CheckCM := StateT CState CheckM
+abbrev CheckCM (md : Mode) := StateT (CState md) CheckM
 
 /-- Peel fuel of the binder-telescope loops.  A constant beyond any
 real binder chain; the fuel is *semantically transparent*: on
@@ -171,21 +171,21 @@ exhaustion the leaf phase hands the residual chain back to the knot,
 which is exactly the chained specification's next step. -/
 def peelFuel : Nat := 16777216
 
-@[inline] def peelFuelM : CheckCM Nat := pure peelFuel
+@[inline] def peelFuelM : (CheckCM md) Nat := pure peelFuel
 
 /-- The per-node loose-bvar bound — an `O(1)` field read. -/
-@[inline] def bvarBoundM (e : Expr) : CheckCM Nat := pure e.bvarB
+@[inline] def bvarBoundM (e : Expr md) : (CheckCM md) Nat := pure e.bvarB
 
 /-! ## Syntactic operations (the `*M` wrappers) -/
 
 /-- `Expr.instantiate1`; the identity — the same node, by reference —
 when the target has no loose bvar at or above the cursor. -/
-@[inline] def inst1M (e v : Expr) (d : Nat := 0) : CheckCM Expr :=
+@[inline] def inst1M (e v : Expr md) (d : Nat := 0) : (CheckCM md) (Expr md) :=
   pure (Expr.instantiate1C e v d)
 
 /-- Bulk instantiation with the persistent result memo (task #145),
 keyed by the whole argument tuple. -/
-def instListM (e : Expr) (vs : List Expr) (d : Nat := 0) : CheckCM Expr :=
+def instListM (e : Expr md) (vs : List (Expr md)) (d : Nat := 0) : (CheckCM md) (Expr md) :=
   modifyGet fun s =>
     if e.bvarB ≤ d then (e, s)
     else
@@ -200,29 +200,29 @@ def instListM (e : Expr) (vs : List Expr) (d : Nat := 0) : CheckCM Expr :=
 
 /-- Bulk instantiation on a reversed accumulator array (deliberately
 not memoized). -/
-@[inline] def instListRevM (e : Expr) (vs : Array Expr) (d : Nat := 0) :
-    CheckCM Expr :=
+@[inline] def instListRevM (e : Expr md) (vs : Array (Expr md)) (d : Nat := 0) :
+    (CheckCM md) (Expr md) :=
   pure (Expr.instantiateRev e vs d)
 
-@[inline] def abstract1M (e : Expr) (d : Nat) : CheckCM Expr :=
+@[inline] def abstract1M (e : Expr md) (d : Nat) : (CheckCM md) (Expr md) :=
   pure (Expr.abstract1C e d)
 
-@[inline] def abstractRangeM (e : Expr) (d k : Nat) : CheckCM Expr :=
+@[inline] def abstractRangeM (e : Expr md) (d k : Nat) : (CheckCM md) (Expr md) :=
   pure (Expr.abstractRangeC e d k)
 
-@[inline] def mkAppNM (f : Expr) (args : List Expr) : CheckCM Expr :=
+@[inline] def mkAppNM (f : Expr md) (args : List (Expr md)) : (CheckCM md) (Expr md) :=
   pure (Expr.mkAppN f args)
 
-@[inline] def instSpineM (args : List Expr) (t : Nat) (e : Expr) :
-    CheckCM Expr :=
+@[inline] def instSpineM (args : List (Expr md)) (t : Nat) (e : Expr md) :
+    (CheckCM md) (Expr md) :=
   pure (Expr.instSpineC args t e)
 
-@[inline] def piResidualM (e : Expr) (args : List Expr) :
-    CheckCM (Option Expr) :=
+@[inline] def piResidualM (e : Expr md) (args : List (Expr md)) :
+    (CheckCM md) (Option (Expr md)) :=
   pure (Expr.piResidual e args)
 
 @[inline] def instLevelParamsM (ks : List LevelParam) (us : List Level)
-    (e : Expr) : CheckCM Expr :=
+    (e : Expr md) : (CheckCM md) (Expr md) :=
   pure (Expr.instLevelParams ks us e)
 
 /-! ## Level operations
@@ -233,11 +233,11 @@ paid.  The *results* are cached (`lsimpC`, `lnzC`, `eqvC`), so a
 decided comparison is never recomputed. -/
 
 @[inline] def substLevelTreesM (ks : List LevelParam) (us : List Level)
-    (ls : List Level) : CheckCM (List Level) :=
+    (ls : List Level) : (CheckCM md) (List Level) :=
   pure (ls.map (Level.subst ks us))
 
 /-- `Level.simplify`, persistently memoized. -/
-def simplifyLM (u : Level) : CheckCM Level :=
+def simplifyLM (u : Level) : (CheckCM md) Level :=
   modifyGet fun s =>
     match s.lsimpC[u]? with
     | some r => (r, s)
@@ -248,7 +248,7 @@ def simplifyLM (u : Level) : CheckCM Level :=
       (r, { s with lsimpC := mp.insert u r })
 
 /-- `Level.isNonZero`, persistently memoized. -/
-def isNonZeroLM (u : Level) : CheckCM Bool :=
+def isNonZeroLM (u : Level) : (CheckCM md) Bool :=
   modifyGet fun s =>
     match s.lnzC[u]? with
     | some r => (r, s)
@@ -267,7 +267,7 @@ the overwhelming majority: the parser hands one object per stream
 level index — cost one pointer compare instead of a
 `(Level × Level)`-keyed memo probe.  It writes no cache entry, so the
 `CSOK.eqv` invariant is untouched. -/
-def isEquivLM (l r : Level) : CheckCM (Option Bool) :=
+def isEquivLM (l r : Level) : (CheckCM md) (Option Bool) :=
   if l == r then pure (some true) else
   modifyGet fun s =>
     match s.eqvC[(l, r)]? with
@@ -298,7 +298,7 @@ def isEquivLM (l r : Level) : CheckCM (Option Bool) :=
         | none => (none, { s with lsimpC := mp, eqvC := ec })
 
 /-- Pointwise `isEquivLM`. -/
-def isEquivListLM : List Level → List Level → CheckCM (Option Bool)
+def isEquivListLM : List Level → List Level → (CheckCM md) (Option Bool)
   | [], [] => pure (some true)
   | l :: ls, r :: rs => do
     match ← isEquivLM l r with
@@ -311,8 +311,8 @@ def isEquivListLM : List Level → List Level → CheckCM (Option Bool)
 
 /-- The `Expr` of a stored constant's type: the cached entry when its
 `Expr` tag validates by pointer equality, else a fresh conversion. -/
-def storedTyIdxM (n : Key) (ty : Expr) : CheckCM Expr := do
-  let ent? : Option CConstE ← modifyGet fun s => (s.ienv[n]?, s)
+def storedTyIdxM (n : Key md) (ty : Expr md) : (CheckCM md) (Expr md) := do
+  let ent? : Option (CConstE md) ← modifyGet fun s => (s.ienv[n]?, s)
   match ent? with
   | some ent =>
     if Expr.exprPtrBEq ent.tyE ty then pure ent.ty
@@ -321,8 +321,8 @@ def storedTyIdxM (n : Key) (ty : Expr) : CheckCM Expr := do
 
 /-- The `Expr` of a stored definition/theorem value (see
 `storedTyIdxM`). -/
-def storedValIdxM (n : Key) (v : Expr) : CheckCM Expr := do
-  let ent? : Option CConstE ← modifyGet fun s => (s.ienv[n]?, s)
+def storedValIdxM (n : Key md) (v : Expr md) : (CheckCM md) (Expr md) := do
+  let ent? : Option (CConstE md) ← modifyGet fun s => (s.ienv[n]?, s)
   match ent? with
   | some ⟨_, _, some (vE, vi)⟩ =>
     if Expr.exprPtrBEq vE v then pure vi
@@ -330,8 +330,8 @@ def storedValIdxM (n : Key) (v : Expr) : CheckCM Expr := do
   | _ => pure v
 
 /-- The level-instantiated *type* of the stored constant `n`. -/
-def constTyAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
-    CheckCM Expr := do
+def constTyAtM (fe : FEnv md) (_nI : Key md) (n : Key md) (us : List Level) :
+    (CheckCM md) (Expr md) := do
   let hit? ← modifyGet fun s => (s.constTyAt[(n, us)]?, s)
   match hit? with
   | some i => pure i
@@ -349,8 +349,8 @@ def constTyAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
     | none => throw (.internal "constTyAtM: unknown constant")
 
 /-- The level-instantiated *value* of the stored definition `n`. -/
-def constValAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
-    CheckCM Expr := do
+def constValAtM (fe : FEnv md) (_nI : Key md) (n : Key md) (us : List Level) :
+    (CheckCM md) (Expr md) := do
   let hit? ← modifyGet fun s => (s.constValAt[(n, us)]?, s)
   match hit? with
   | some i => pure i
@@ -368,8 +368,8 @@ def constValAtM (fe : FEnv) (_nI : Key) (n : Key) (us : List Level) :
 
 /-- The level-instantiated right-hand side of the rule for constructor
 `j` of the stored recursor `c`. -/
-def ruleRhsAtM (fe : FEnv) (_cI _jI : Key) (c j : Key) (us : List Level) :
-    CheckCM Expr := do
+def ruleRhsAtM (fe : FEnv md) (_cI _jI : Key md) (c j : Key md) (us : List Level) :
+    (CheckCM md) (Expr md) := do
   let hit? ← modifyGet fun s => (s.ruleRhsAt[(c, j, us)]?, s)
   match hit? with
   | some i => pure i
@@ -391,13 +391,13 @@ def ruleRhsAtM (fe : FEnv) (_cI _jI : Key) (c j : Key) (us : List Level) :
 The environment-independent components — the converted-constant cache
 `ienv` (self-certified by its `Expr` tags) and the level-operation
 memos — survive. -/
-def CState.flushed (s : CState) : CState :=
+def CState.flushed (s : CState md) : CState md :=
   { s with
       constTyAt := {}, constValAt := {}, ruleRhsAt := {},
       whnfCoreC := {}, whnfC := {}, inferC := {}, inferIOC := {},
       defeqC := {}, annotC := {}, instC := {} }
 
-def flushC : CheckCM Unit := modify (·.flushed)
+def flushC : (CheckCM md) Unit := modify (·.flushed)
 
 
 /-! ## The parsed-index driver's syntactic guards
@@ -423,7 +423,7 @@ compound node (`fvar` included: its annotation is descended) that
 verified against (`constsResolveFP_spec`,
 `IxC/Kernel/Verify/Cached/GuardsC.lean`, is the equation to
 `Expr.constsResolveF`). -/
-def constsResolveFP (fe : FEnv) (e : Expr) : Bool :=
+def constsResolveFP (fe : FEnv md) (e : Expr md) : Bool :=
   match e with
   | .bvar .. | .sort .. => true
   | .lit (.natVal _) .. =>
@@ -447,7 +447,7 @@ def constsResolveFP (fe : FEnv) (e : Expr) : Bool :=
 
 /-- The child step of `constsResolveFXP`: the compound test, then the
 exclusivity read (there is no cutoff). -/
-@[inline] def enterCRF (fe : @& FEnv) (e : @& Expr)
+@[inline] def enterCRF (fe : @& (FEnv md)) (e : @& (Expr md))
     (memo : Expr.MemoB0 (constsResolveFP fe))
     (rec : Unit → Squash (Expr.ResB0 (constsResolveFP fe) e)) :
     Squash (Expr.ResB0 (constsResolveFP fe) e) :=
@@ -456,8 +456,8 @@ exclusivity read (there is no cutoff). -/
     if excl then rec () else memo.shared e fun _ => rec ()
 
 /-- The walk of `constsResolveFC`. -/
-def constsResolveFXP (fe : @& FEnv) (memo : Expr.MemoB0 (constsResolveFP fe))
-    (e : @& Expr) : Squash (Expr.ResB0 (constsResolveFP fe) e) :=
+def constsResolveFXP (fe : @& (FEnv md)) (memo : Expr.MemoB0 (constsResolveFP fe))
+    (e : @& (Expr md)) : Squash (Expr.ResB0 (constsResolveFP fe) e) :=
   match e with
   | .bvar .. | .sort .. => Squash.mk (⟨true, by rw [constsResolveFP]⟩, memo)
   | .lit (.natVal _) .. =>
@@ -515,14 +515,14 @@ def constsResolveFXP (fe : @& FEnv) (memo : Expr.MemoB0 (constsResolveFP fe))
       Squash.mk (⟨false, by rw [constsResolveFP]; simp [hfind]⟩, memo)
 
 /-- The cached `Expr.constsResolveF fe` (one memoized DAG walk). -/
-def constsResolveFC (fe : FEnv) (e : Expr) : Bool :=
+def constsResolveFC (fe : FEnv md) (e : Expr md) : Bool :=
   Expr.resBool (constsResolveFXP fe none e)
 
 /-- Record an accepted constant's converted type/value, tagged with the
 very `Expr` objects pushed into the environment (the counterpart of
 `recordIConst`). -/
-def recordCConst (n : Key) (tyE : Expr) (ty : Expr)
-    (val : Option (Expr × Expr)) : CheckCM Unit :=
+def recordCConst (n : Key md) (tyE : Expr md) (ty : Expr md)
+    (val : Option (Expr md × Expr md)) : (CheckCM md) Unit :=
   modify fun s =>
     let m := s.ienv
     let s := { s with ienv := {} }

@@ -57,13 +57,13 @@ insensitivity, denotability of stored types, and the two unfolding
 equations (which are what make delta steps invisible — design §7.2).
 
 Every field is V-free and mode-independent. -/
-structure EnvFacts (env : Env) where
+structure EnvFacts (env : Env md) where
   /-- The type-theory term of each constant (the same `TConstVal` the
   denotation and `EnvTT` use). -/
-  cval : TConstVal
+  cval : TConstVal md
   /-- Every constant denotes to a closed term.  Consumed by every
   lifting step (`denote_weaken_top`, `denote_lift`) and by M1. -/
-  cval_closed : ∀ (n : Key) (ψ : LevelParam → Nat), Term.Closed (cval n ψ)
+  cval_closed : ∀ (n : Key md) (ψ : LevelParam → Nat), Term.Closed (cval n ψ)
   /-- Stored declarations are syntactically well-formed.  Consumed by
   the frame-condition lemmas of `IxC/Kernel/Verify/*`. -/
   wf : EnvWF env
@@ -143,14 +143,14 @@ they were declared in `SetR/EnvS.lean` only because that is where
 — names unchanged. -/
 
 /-- A `find?` hit names the stored constant. -/
-theorem Env.find?_name {env : Env} {n : Key} {ci : ConstantInfo}
+theorem Env.find?_name {env : Env md} {n : Key md} {ci : ConstantInfo md}
     (h : env.find? n = some ci) : ci.name = n := by
   unfold Ix.Kernel.Env.find? at h
   have := List.find?_some h
   simpa using this
 
 /-- A `find?` hit is a stored constant. -/
-theorem Env.find?_mem {env : Env} {n : Key} {ci : ConstantInfo}
+theorem Env.find?_mem {env : Env md} {n : Key md} {ci : ConstantInfo md}
     (h : env.find? n = some ci) : ci ∈ env.consts := by
   unfold Ix.Kernel.Env.find? at h
   exact List.mem_of_find?_eq_some h

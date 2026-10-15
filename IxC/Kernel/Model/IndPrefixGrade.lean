@@ -51,7 +51,7 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The prefix walk's gradings and equalities, by position.**  See
@@ -61,35 +61,35 @@ theorem prefixGradeFire {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {rP cnF : Nat}
     -- the statement frame
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped (rP + cnF) x)
     (hleafClosed : ∀ l, (∃ x ∈ fvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvs)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Tstmt : AnnotTerm} {Γs : List AnnotTerm} {Rbody : AnnotTerm}
     (htowerS : PiTeleAV (rP + cnF) Tstmt Γs Rbody)
     (hokTst : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default))
     -- the public (recursor) frame
-    {fvsP : List Expr} (hfvsPlen : fvsP.length = rP)
-    (hshapeP : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
+    (hshapeP : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     {TV : AnnotTerm} {ΓP : List AnnotTerm} {RP : AnnotTerm}
     (htowerP : PiTeleAV rP TV ΓP RP)
     (hokTV : ∀ σ : Nat → V, WellDenotedV V σ TV)
-    (hdomsP0 : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    (hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
     -- the renamed recursor run and its identification
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
-    {tyAR : Expr} (htyRw : tyAR.hasFvar = false)
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
+    {tyAR : Expr md} (htyRw : tyAR.hasFvar = false)
     (htyRb : tyAR.looseBVarsBounded 0 = true)
-    {rdoms : List Expr} {rrest : Expr}
+    {rdoms : List (Expr md)} {rrest : Expr md}
     (hrinst : Expr.instPisAt (fvs.take rP) tyAR = some (rdoms, rrest))
     (hrenP : ∀ n, n < rP →
       RenEqT f ((fvsP.map Expr.fvarTypeD).getD n default)

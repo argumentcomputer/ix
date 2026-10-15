@@ -24,13 +24,13 @@ variable {mode : CheckMode}
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- The hoisted `Prop`-branch test (task #168): the fast arm is the
 same pure read on both sides (`mkFEnv_find?_fun`); the slow branch is
 `proofIrrelC_sim`'s `Prop` branch. -/
-theorem propIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
-    {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem propIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr md}
+    {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -136,14 +136,14 @@ theorem propIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
     | proj s i e => exact SimC.pure hs₄ rfl
 
 /-- `Expr.isBoolTrue` transported along the value equation. -/
-theorem isBoolTrue_spec' {e : Expr} {ex : Expr}
+theorem isBoolTrue_spec' {e : Expr md} {ex : Expr md}
     (h : e = ex) : Expr.isBoolTrue e = ex.isBoolTrue := by
   rw [h]
 
 /-- The eq-true shortcut (the audit's E2) simulates its specification:
 one `whnf`, then the store read of the head test. -/
-theorem boolTrueShortcutC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {a : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem boolTrueShortcutC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {a : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i a) (hw : Expr.WScoped d a) :
     SimC mode env s₀ RelVC
       (boolTrueShortcutI (coreKnotI mode (mkFEnv env) f) d i)
@@ -155,8 +155,8 @@ theorem boolTrueShortcutC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
   exact SimC.pure hs₁ rfl
 
 /-- `boolTrueShortcutC_sim` under its guard. -/
-theorem boolTrueShortcutIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
-    {a : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem boolTrueShortcutIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
+    {a : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i a) (hw : Expr.WScoped d a) (g : Bool) :
     SimC mode env s₀ RelVC
       (if g then boolTrueShortcutI (coreKnotI mode (mkFEnv env) f) d i
@@ -168,8 +168,8 @@ theorem boolTrueShortcutIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr}
 
 /-- `propIrrelC_sim` under the once-per-entry gate (the audit's D3):
 the pruned branch is `pure false` twinned. -/
-theorem propIrrelIfC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
-    {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem propIrrelIfC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr md}
+    {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) (g : Bool) :
     SimC mode env s₀ RelVC
@@ -182,8 +182,8 @@ theorem propIrrelIfC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
   · exact propIrrelC_sim ih hs hdena hdenb hwa hwb
 
 /-- Port of `proofIrrelI_sim`. -/
-theorem proofIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
-    {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+theorem proofIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr md}
+    {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -301,15 +301,15 @@ end Walks
 
 section Walks2
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `etaCertI_sim`.  The binder-meta bridge collapses: the
 cached representation stores `BinderMeta`s directly, so `hbm₁` is an
 identity and the spec side reads the very arguments the twin is
 given. -/
 theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
-    {ty₁ body₁ b : Expr} {ty₁x body₁x bx : Expr} {m₁ : BinderMeta}
-    {s₀ : CState} (hs : CSOK mode env s₀)
+    {ty₁ body₁ b : Expr md} {ty₁x body₁x bx : Expr md} {m₁ : BinderMeta}
+    {s₀ : CState md} (hs : CSOK mode env s₀)
     (hty : RelC ty₁ ty₁x) (hbody : RelC body₁ body₁x) (hb : RelC b bx)
     (hwty : Expr.WScoped d ty₁x) (hwbody : Expr.WScoped d body₁x)
     (hwb : Expr.WScoped d bx) :
@@ -334,7 +334,7 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
             if (m₁.contract == m₂.contract) = true then
               if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
                 (throw (.notImplemented "sort-annotation mismatch (eta)")
-                  : CheckCM Unit) >>= fun _ => pure true
+                  : (CheckCM md) Unit) >>= fun _ => pure true
               else pure true
             else pure false
           else pure false
@@ -431,8 +431,8 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
 
 /-- Indexed readout of a related list (the `DenL.getD` transposition:
 the erasure is a `List.map`, so the default travels with it). -/
-theorem RelCL.getD {dflt : Expr} {dfltx : Expr} (hd : RelC dflt dfltx) :
-    ∀ (n : Nat) {l : List Expr} {xs : List Expr}, RelCL l xs →
+theorem RelCL.getD {dflt : Expr md} {dfltx : Expr md} (hd : RelC dflt dfltx) :
+    ∀ (n : Nat) {l : List (Expr md)} {xs : List (Expr md)}, RelCL l xs →
       RelC (l.getD n dflt) (xs.getD n dfltx)
   | _, [], xs, h => by rw [h.nil_inv]; exact hd
   | 0, a :: as, xs, h => by
@@ -446,8 +446,8 @@ theorem RelCL.getD {dflt : Expr} {dfltx : Expr} (hd : RelC dflt dfltx) :
 the constructor's stored type — `constTyAtM` reads it, `iotaCertsC_sim`
 walks it). -/
 theorem projCertC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {lic : Bool} {c : Key} {us : List Level} {args : List Expr} {xs : List Expr}
-    {s₀ : CState} (hs : CSOK mode env s₀)
+    {lic : Bool} {c : Key md} {us : List Level} {args : List (Expr md)} {xs : List (Expr md)}
+    {s₀ : CState md} (hs : CSOK mode env s₀)
     (hargs : RelCL args xs) (hw : ∀ x ∈ xs, Expr.WScoped d x) :
     SimC mode env s₀ RelVC
       (projCertI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d lic c us args)
@@ -486,8 +486,8 @@ theorem projCertC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
 /-- `projCertC_sim` at the mode's gate (`projCertAt`; parity mirrors
 official, 2026-09-06). -/
 theorem projCertAtC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
-    {v lic : Bool} {c : Key} {us : List Level} {args : List Expr} {xs : List Expr}
-    {s₀ : CState} (hs : CSOK mode env s₀)
+    {v lic : Bool} {c : Key md} {us : List Level} {args : List (Expr md)} {xs : List (Expr md)}
+    {s₀ : CState md} (hs : CSOK mode env s₀)
     (hargs : RelCL args xs) (hw : ∀ x ∈ xs, Expr.WScoped d x) :
     SimC mode env s₀ RelVC
       (projCertAtI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d v lic c us args)
@@ -499,7 +499,7 @@ theorem projCertAtC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
 
 /-- Port of `structUnitCertI_sim`. -/
 theorem structUnitCertC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {i j : Expr} {a b : Expr} {s₀ : CState}
+    {d : Nat} {i j : Expr md} {a b : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -630,19 +630,19 @@ end Walks2
 
 section Walks3
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 end Walks3
 
 section Walks4
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `projAppsFnI_eff`: the cached projection-function spine
 denotes the spec's mapped list. -/
-theorem projAppsFnC_eff (T : Key) (us' : List Level) :
-    ∀ (l : List Nat) {s₀ : CState}, CSOK mode env s₀ →
-      ∀ {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr},
+theorem projAppsFnC_eff (T : Key md) (us' : List Level) :
+    ∀ (l : List Nat) {s₀ : CState md}, CSOK mode env s₀ →
+      ∀ {targs : List (Expr md)} {xs : List (Expr md)} {b : Expr md} {xb : Expr md},
       RelCL targs xs → RelC b xb →
       CEff mode env s₀ (fun rs => RelCL rs
           (l.map fun i => Expr.mkAppN (.const (projFnName T i) us')
@@ -670,9 +670,9 @@ theorem projAppsFnC_eff (T : Key) (us' : List Level) :
     exact CEff.pure hs₃ (RelCL.cons hQr hQrs)
 
 /-- The cached `.proj` spine (the tower spelling, task #175 W4c). -/
-theorem projNodesC_eff (T : Key) :
-    ∀ (l : List Nat) {s₀ : CState}, CSOK mode env s₀ →
-      ∀ {b : Expr} {xb : Expr}, RelC b xb →
+theorem projNodesC_eff (T : Key md) :
+    ∀ (l : List Nat) {s₀ : CState md}, CSOK mode env s₀ →
+      ∀ {b : Expr md} {xb : Expr md}, RelC b xb →
       CEff mode env s₀ (fun rs => RelCL rs (l.map fun i => Expr.proj T i xb))
         (projNodesI T b l)
   | [], s₀, hs, b, xb, hb => by
@@ -690,12 +690,12 @@ theorem projNodesC_eff (T : Key) :
     exact CEff.pure hs₂ (RelCL.cons hQr hQrs)
 
 /-- The index's slot tests are the spec's (`mkFEnv`). -/
-theorem towerSlotsAllF_mkFEnv (env : Env) (T : Key) (n : Nat) :
+theorem towerSlotsAllF_mkFEnv (env : Env md) (T : Key md) (n : Nat) :
     (mkFEnv env).towerSlotsAllF T n = towerSlotsAll env T n := by
   simp only [FEnv.towerSlotsAllF, towerSlotsAll, mkFEnv_findProj?]
   all_goals rfl
 
-theorem recSlotsAllF_mkFEnv (env : Env) (T : Key) (n : Nat) :
+theorem recSlotsAllF_mkFEnv (env : Env md) (T : Key md) (n : Nat) :
     (mkFEnv env).recSlotsAllF T n = recSlotsAll env T n := by
   simp only [FEnv.recSlotsAllF, recSlotsAll, mkFEnv_find?]
   all_goals first
@@ -708,9 +708,9 @@ theorem recSlotsAllF_mkFEnv (env : Env) (T : Key) (n : Nat) :
 
 /-- Port of `projAppsI_eff`: the cached fabricated-projection spine
 denotes `etaProjs` (task #175 W4c: by entry kind). -/
-theorem projAppsC_eff (T : Key) (us' : List Level) (nF : Nat)
-    {s₀ : CState} (hs : CSOK mode env s₀)
-    {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr}
+theorem projAppsC_eff (T : Key md) (us' : List Level) (nF : Nat)
+    {s₀ : CState md} (hs : CSOK mode env s₀)
+    {targs : List (Expr md)} {xs : List (Expr md)} {b : Expr md} {xb : Expr md}
     (htargs : RelCL targs xs) (hb : RelC b xb) :
     CEff mode env s₀ (fun rs => RelCL rs (etaProjs env T us' xs xb nF))
       (projAppsI (mkFEnv env) T T us' targs b nF) := by
@@ -722,9 +722,9 @@ theorem projAppsC_eff (T : Key) (us' : List Level) (nF : Nat)
 
 /-- Port of `structEtaProjCertsI_sim`. -/
 theorem structEtaProjCertsC_sim (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} (TI : Key) (T : Key) (us' : List Level) (lpsT : List LevelParam) :
-    ∀ (idxs : List Nat) {s₀ : CState}, CSOK mode env s₀ →
-      ∀ {targs : List Expr} {xs : List Expr} {b : Expr} {xb : Expr},
+    {d : Nat} (TI : Key md) (T : Key md) (us' : List Level) (lpsT : List LevelParam) :
+    ∀ (idxs : List Nat) {s₀ : CState md}, CSOK mode env s₀ →
+      ∀ {targs : List (Expr md)} {xs : List (Expr md)} {b : Expr md} {xb : Expr md},
       RelCL targs xs → RelC b xb →
       (∀ x ∈ xs, Expr.WScoped d x) → Expr.WScoped d xb →
       SimC mode env s₀ RelVC
@@ -778,19 +778,19 @@ theorem structEtaProjCertsC_sim (ih : SSimC mode env f) (henv : EnvWF env)
       | ctorInfo cv nP nF => exact SimC.pure hs rfl
 
 /-- Prefix of a related list. -/
-theorem RelCL.take {l : List Expr} {xs : List Expr} (h : RelCL l xs)
+theorem RelCL.take {l : List (Expr md)} {xs : List (Expr md)} (h : RelCL l xs)
     (k : Nat) : RelCL (l.take k) (xs.take k) := by
   show _ = _
   rw [show l = xs from h]
 
 /-- Suffix of a related list. -/
-theorem RelCL.drop {l : List Expr} {xs : List Expr} (h : RelCL l xs)
+theorem RelCL.drop {l : List (Expr md)} {xs : List (Expr md)} (h : RelCL l xs)
     (k : Nat) : RelCL (l.drop k) (xs.drop k) := by
   show _ = _
   rw [show l = xs from h]
 
-private theorem structEtaCertWithC_unfold (env : Env) (d : Nat)
-    (a b wtb : Expr) :
+private theorem structEtaCertWithC_unfold (env : Env md) (d : Nat)
+    (a b wtb : Expr md) :
     structEtaCertWith mode (fueledFns mode env) env d a b wtb =
     (match a.getAppFn with
     | .const c us =>
@@ -850,7 +850,7 @@ private theorem structEtaCertWithC_unfold (env : Env) (d : Nat)
 
 /-- Port of `structEtaCertWithI_sim`. -/
 theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {i j w : Expr} {a b wtb : Expr} {s₀ : CState}
+    {d : Nat} {i j w : Expr md} {a b wtb : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b) (hdenw : RelC w wtb)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b)
@@ -1134,7 +1134,7 @@ theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mo
 
 /-- Port of `structEtaCertI_sim`. -/
 theorem structEtaCertC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {i j : Expr} {a b : Expr} {s₀ : CState}
+    {d : Nat} {i j : Expr md} {a b : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -1170,7 +1170,7 @@ theorem structEtaCertC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode e
 
 /-- Port of `stuckIrrelI_sim`. -/
 theorem stuckIrrelC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {i j : Expr} {a b : Expr} {s₀ : CState}
+    {d : Nat} {i j : Expr md} {a b : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀) (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC

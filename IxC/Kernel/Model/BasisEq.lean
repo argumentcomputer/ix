@@ -47,7 +47,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 section Eq
 
@@ -116,8 +116,8 @@ def eqReflTy (ψ : LevelParam → Nat) : AnnotTerm :=
 
 /-- **`Eq`'s type reading.** -/
 theorem denoteMeta_eqA_type
-    {acval : Key → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
-    denoteMeta acval ⟨eqA :: env.consts⟩ ψ 0 eqA.toConstantVal.type
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    denoteMeta acval ⟨eqA :: env.consts⟩ ψ 0 (eqA (md := md)).toConstantVal.type
       = some (eqTy ψ) := by
   simp [eqA, ConstantInfo.toConstantVal, denoteMeta_forallE, denoteMeta_sort,
     denoteMeta_fvar, Expr.instantiate1, eqTy, pwBit_never, Level.eval, uN]
@@ -147,12 +147,12 @@ theorem eqTy_interp (ψ : LevelParam → Nat) (ρ : Nat → V) :
 /-- **`Eq.refl`'s type reading.**  Stated at *any* extension whose
 cons is not `Eq`, because `Eq.rec`'s row reads it as its fired
 constructor's telescope. -/
-theorem denoteMeta_eqReflTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
+theorem denoteMeta_eqReflTy {c₀ : ConstantInfo md} (ψ : LevelParam → Nat)
     (hne : ¬ c₀.name = eqName)
     (hE : env.find? eqName = some eqA)
     (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ) :
     denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ 0
-        eqReflA.toConstantVal.type
+        (eqReflA (md := md)).toConstantVal.type
       = some (eqReflTy ψ) := by
   have hEc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d
@@ -162,7 +162,7 @@ theorem denoteMeta_eqReflTy {c₀ : ConstantInfo} (ψ : LevelParam → Nat)
       show ([Level.param uN] : List Level)
         = List.map Level.param [uN] from rfl,
       Level.substFn_param_self ψ [uN], hEv]
-  rw [show eqReflA.toConstantVal.type
+  rw [show (eqReflA (md := md)).toConstantVal.type
       = Expr.forallE (.sort (.param uN))
           (Expr.forallE (.bvar 0)
             (.app (.app (.app (.const eqName [.param uN]) (.bvar 1))
@@ -218,8 +218,8 @@ theorem extendEq (mp : EnvModelM V μ env)
         = acvalWith mp.base2.acval eqA.name eqValAV := by
   refine declStep_preserves_of_basis_cons_eqrow mp (A := eqValAV) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide)
-    (fun _ _ _ _ h => nomatch h) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
+    (fun _ _ _ _ h => nomatch h) (by (cases md <;> decide))
     (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqValAV_erase ψ]; exact eqValT_closed ψ)
@@ -260,12 +260,12 @@ theorem extendEqRefl (mp : EnvModelM V μ env)
         = acvalWith mp.base2.acval eqReflA.name eqReflValAV := by
   have hty := fun ψ =>
     denoteMeta_eqReflTy (m := mp.base2) (A := eqReflValAV) (c₀ := eqReflA)
-      ψ (by decide) hE hEv
+      ψ (by (cases md <;> decide)) hE hEv
   refine declStep_preserves_of_basis_cons mp (A := eqReflValAV) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide))) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqReflValAV_erase ψ]; exact eqReflValT_closed ψ)
       rfl
@@ -644,7 +644,7 @@ theorem denoteMeta_eqRecA_type (ψ : LevelParam → Nat)
     (hEv : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ)
     (hRv : ∀ ψ : LevelParam → Nat, m.acval eqReflName ψ = eqReflValAV ψ) :
     denoteMeta (acvalWith m.acval eqRecA.name A)
-        ⟨eqRecA :: env.consts⟩ ψ 0 eqRecA.toConstantVal.type
+        ⟨eqRecA :: env.consts⟩ ψ 0 (eqRecA (md := md)).toConstantVal.type
       = some (eqRecTy (pwBit ψ (.ifAllZero [u1N])) ψ) := by
   have hEc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval eqRecA.name A)
@@ -652,7 +652,7 @@ theorem denoteMeta_eqRecA_type (ψ : LevelParam → Nat)
         = some (eqValAV ψ) := by
     intro d
     rw [denoteMeta_eqLeaf (m := m) (A := A) ψ (Level.param uN)
-        (by decide) hE d,
+        (by (cases md <;> decide)) hE d,
       show ([Level.param uN] : List Level)
         = List.map Level.param [uN] from rfl,
       Level.substFn_param_self ψ [uN], hEv]
@@ -661,15 +661,15 @@ theorem denoteMeta_eqRecA_type (ψ : LevelParam → Nat)
         ⟨eqRecA :: env.consts⟩ ψ d (.const eqReflName [.param uN])
         = some (eqReflValAV ψ) := by
     intro d
-    have hf' : (⟨eqRecA :: env.consts⟩ : Env).find? eqReflName
+    have hf' : (⟨eqRecA :: env.consts⟩ : Env md).find? eqReflName
         = some eqReflA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hR
-    rw [denoteMeta_const hf' (by rfl), acvalWith_ne (by decide),
-      show Level.substFn ψ eqReflA.toConstantVal.levelParams
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hR
+    rw [denoteMeta_const hf' (by rfl), acvalWith_ne (by (cases md <;> decide)),
+      show Level.substFn ψ (eqReflA (md := md)).toConstantVal.levelParams
         [Level.param uN] = Level.substFn ψ [uN]
           (List.map Level.param [uN]) from rfl,
       Level.substFn_param_self ψ [uN], hRv]
-  rw [show eqRecA.toConstantVal.type
+  rw [show (eqRecA (md := md)).toConstantVal.type
       = Expr.forallE (.sort (.param uN))
           (Expr.forallE (.bvar 0)
             (Expr.forallE
@@ -714,7 +714,7 @@ theorem denoteMeta_eqRec_rhs (ψ : LevelParam → Nat)
         = some (eqValAV ψ) := by
     intro d
     rw [denoteMeta_eqLeaf (m := m) (A := A) ψ (Level.param uN)
-        (by decide) hE d,
+        (by (cases md <;> decide)) hE d,
       show ([Level.param uN] : List Level)
         = List.map Level.param [uN] from rfl,
       Level.substFn_param_self ψ [uN], hEv]
@@ -723,11 +723,11 @@ theorem denoteMeta_eqRec_rhs (ψ : LevelParam → Nat)
         ⟨eqRecA :: env.consts⟩ ψ d (.const eqReflName [.param uN])
         = some (eqReflValAV ψ) := by
     intro d
-    have hf' : (⟨eqRecA :: env.consts⟩ : Env).find? eqReflName
+    have hf' : (⟨eqRecA :: env.consts⟩ : Env md).find? eqReflName
         = some eqReflA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hR
-    rw [denoteMeta_const hf' (by rfl), acvalWith_ne (by decide),
-      show Level.substFn ψ eqReflA.toConstantVal.levelParams
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hR
+    rw [denoteMeta_const hf' (by rfl), acvalWith_ne (by (cases md <;> decide)),
+      show Level.substFn ψ (eqReflA (md := md)).toConstantVal.levelParams
         [Level.param uN] = Level.substFn ψ [uN]
           (List.map Level.param [uN]) from rfl,
       Level.substFn_param_self ψ [uN], hRv]
@@ -918,17 +918,17 @@ theorem eqRecLaw {m : EnvModel V env}
     (hRv : ∀ ψ : LevelParam → Nat, m.acval eqReflName ψ = eqReflValAV ψ)
     (hac : m₂.acval = acvalWith m.acval eqRecA.name eqRecValAV)
     (φ : LevelParam → Nat) :
-    RecRuleLaw m₂ φ eqRecA.name eqRecA.toConstantVal 5 4
+    RecRuleLaw m₂ φ eqRecA.name (eqRecA (md := md)).toConstantVal 5 4
       eqRecRule := by
   refine ⟨by decide, fun us hus => ?_⟩
   obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
-      ψ = Level.substFn φ eqRecA.toConstantVal.levelParams us :=
+      ψ = Level.substFn φ (eqRecA (md := md)).toConstantVal.levelParams us :=
     ⟨_, rfl⟩
   have hz : pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [u1N]) = 0 ↔ ψ u1N = 0 :=
     pwBit_ifAllZero_single ψ u1N
   have hRa : denoteMeta m₂.acval ⟨eqRecA :: env.consts⟩ φ 0
       (eqRecRule.rhs.instantiateLevelParams
-        eqRecA.toConstantVal.levelParams us)
+        (eqRecA (md := md)).toConstantVal.levelParams us)
       = some (eqRecRa (pwBit ψ (.ifAllZero [u1N])) ψ) := by
     rw [denoteMeta_instLevels (acvalParamsAt_of_core m₂) φ, hac, hψ,
       denoteMeta_eqRec_rhs (m := m) _ hE hR hEv hRv]
@@ -937,12 +937,12 @@ theorem eqRecLaw {m : EnvModel V env}
     exact nomatch h
   intro cvj cnP cnF hfj usj ρ xs ys TVa TVja restR restC hxs hys husj
     hlev _ hnested hpin hTVa hTVja hfitR hfitC
-  have hR' : (⟨eqRecA :: env.consts⟩ : Env).find? eqReflName
+  have hR' : (⟨eqRecA :: env.consts⟩ : Env md).find? eqReflName
       = some eqReflA := by
-    rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hR
+    rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hR
   rw [show RecRule.ctor eqRecRule = eqReflName from rfl, hR'] at hfj
   obtain ⟨rfl, rfl, rfl⟩ :
-      cvj = eqReflA.toConstantVal ∧ cnP = 2 ∧ cnF = 0 := by
+      cvj = (eqReflA (md := md)).toConstantVal ∧ cnP = 2 ∧ cnF = 0 := by
     injection Option.some.inj hfj with a1 a2 a3
     exact ⟨a1.symm, a2.symm, a3.symm⟩
   obtain ⟨x1, x2, x3, x4, x5, rfl⟩ :
@@ -952,27 +952,27 @@ theorem eqRecLaw {m : EnvModel V env}
   obtain ⟨y1, y2, rfl⟩ : ∃ p q, ys = [p, q] := by
     match ys, hys with
     | [p, q], _ => exact ⟨p, q, rfl⟩
-  have hulev : Level.substFn φ eqReflA.toConstantVal.levelParams usj uN
+  have hulev : Level.substFn φ (eqReflA (md := md)).toConstantVal.levelParams usj uN
       = ψ uN := by
     rw [congrFun hlev uN, hψ]
-    show Level.eval φ (Level.subst eqRecA.toConstantVal.levelParams
+    show Level.eval φ (Level.subst (eqRecA (md := md)).toConstantVal.levelParams
       us (.param uN)) = _
     rw [Level.subst, Level.eval_subst_go]
   have hTyRead : denoteMeta m₂.acval ⟨eqRecA :: env.consts⟩ φ 0
-      (eqRecA.toConstantVal.type.instantiateLevelParams
-        eqRecA.toConstantVal.levelParams us)
+      ((eqRecA (md := md)).toConstantVal.type.instantiateLevelParams
+        (eqRecA (md := md)).toConstantVal.levelParams us)
       = some (eqRecTy (pwBit ψ (.ifAllZero [u1N])) ψ) := by
     rw [denoteMeta_instLevels (acvalParamsAt_of_core m₂) φ, hac, hψ,
       denoteMeta_eqRecA_type (m := m) _ hE hR hEv hRv]
   obtain rfl : TVa = _ :=
     (Option.some.inj (hTyRead.symm.trans hTVa)).symm
   have hCtorRead : denoteMeta m₂.acval ⟨eqRecA :: env.consts⟩ φ 0
-      (eqReflA.toConstantVal.type.instantiateLevelParams
-        eqReflA.toConstantVal.levelParams usj)
+      ((eqReflA (md := md)).toConstantVal.type.instantiateLevelParams
+        (eqReflA (md := md)).toConstantVal.levelParams usj)
       = some (eqReflTy
-          (Level.substFn φ eqReflA.toConstantVal.levelParams usj)) := by
+          (Level.substFn φ (eqReflA (md := md)).toConstantVal.levelParams usj)) := by
     rw [denoteMeta_instLevels (acvalParamsAt_of_core m₂) φ, hac,
-      denoteMeta_eqReflTy (m := m) _ (by decide) hE hEv]
+      denoteMeta_eqReflTy (m := m) _ (by (cases md <;> decide)) hE hEv]
   obtain rfl : TVja = _ :=
     (Option.some.inj (hCtorRead.symm.trans hTVja)).symm
   rw [eqRecTy] at hfitR
@@ -1006,14 +1006,14 @@ theorem eqRecLaw {m : EnvModel V env}
   rw [interp_inst0] at g2
   simp only [interp_bvar, cons] at g2
   have hrecL : m₂.acval eqRecA.name
-      (Level.substFn φ eqRecA.toConstantVal.levelParams us)
+      (Level.substFn φ (eqRecA (md := md)).toConstantVal.levelParams us)
       = eqRecValAV ψ := by
     rw [hac, acvalWith_self, hψ]
   have hctorL : m₂.acval eqReflName
-      (Level.substFn φ eqReflA.toConstantVal.levelParams usj)
+      (Level.substFn φ (eqReflA (md := md)).toConstantVal.levelParams usj)
       = eqReflValAV
-        (Level.substFn φ eqReflA.toConstantVal.levelParams usj) := by
-    rw [hac, acvalWith_ne (by decide), hRv]
+        (Level.substFn φ (eqReflA (md := md)).toConstantVal.levelParams usj) := by
+    rw [hac, acvalWith_ne (by (cases md <;> decide)), hRv]
   simp only [show RecRule.ctor eqRecRule = eqReflName from rfl,
     AnnotTerm.mkAppN_cons, AnnotTerm.mkAppN_nil, interp_app, hctorL,
     eqReflValAV_interp, app_pt] at f6
@@ -1178,8 +1178,8 @@ theorem extendEqRec (mp : EnvModelM V μ env)
     fun ψ => pwBit_ifAllZero_single ψ u1N
   refine declStep_preserves_of_basis_rec_cons mp (A := eqRecValAV) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
-    (by decide) (Or.inl (fun _ h => nomatch h))
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
+    (by (cases md <;> decide)) (Or.inl (fun _ h => nomatch h))
     (ConsHead.ofBasis hwf
       (fun ψ => by rw [eqRecValAV_erase ψ]; exact eqRecValT_closed ψ)
       rfl
@@ -1227,7 +1227,7 @@ theorem extendEqRec (mp : EnvModelM V μ env)
 /-- **The `Eq` block, installed at the P tier.**  `BasisStepPB`'s
 `eqK` branch — the block whose chain reads its own earlier leaves, and
 so the one that consumes the install's exposed `acval`. -/
-theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
+theorem declBasisPB_eqK {env₁ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env
       Ix.Kernel.BasisKind.eqK.declsA env₁) :
     Nonempty (EnvModelM V μ env₁) := by
@@ -1243,15 +1243,15 @@ theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
   obtain ⟨mp1, hac1⟩ := extendEq mp hf1 hwf1
   have hEv1 : ∀ ψ : LevelParam → Nat, mp1.base2.acval eqName ψ
       = eqValAV ψ := by
     intro ψ
     rw [hac1, show eqName = eqA.name from rfl, acvalWith_self]
-  have hE1 : (⟨eqA :: env.consts⟩ : Env).find? eqName = some eqA := by
+  have hE1 : (⟨eqA :: env.consts⟩ : Env md).find? eqName = some eqA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
-  have hf2 : (⟨eqA :: env.consts⟩ : Env).find? eqReflA.name = none :=
+  have hf2 : (⟨eqA :: env.consts⟩ : Env md).find? eqReflA.name = none :=
     Option.isNone_iff_eq_none.mp h2
   have hwf2 : EnvWF ⟨eqReflA :: eqA :: env.consts⟩ := by
     refine EnvWF.cons hwf1 ⟨rfl, rfl, ?_, rfl,
@@ -1260,12 +1260,12 @@ theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
-    show Expr.constsResolve _ eqReflA.toConstantVal.type = true
-    have hf : (⟨eqReflA :: eqA :: env.consts⟩ : Env).find? eqName
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
+    show Expr.constsResolve _ (eqReflA (md := md)).toConstantVal.type = true
+    have hf : (⟨eqReflA :: eqA :: env.consts⟩ : Env md).find? eqName
         = some eqA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE1
-    rw [show eqReflA.toConstantVal.type
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE1
+    rw [show (eqReflA (md := md)).toConstantVal.type
         = Expr.forallE (.sort (.param uN))
             (Expr.forallE (.bvar 0)
               (.app (.app (.app (.const eqName [.param uN]) (.bvar 1))
@@ -1274,39 +1274,39 @@ theorem declBasisPB_eqK {env₁ : Env} (mp : EnvModelM V μ env)
             { pw := .ifAllZero [] } from rfl]
     simp [Expr.constsResolve, hf]
   obtain ⟨mp2, hac2⟩ := extendEqRefl mp1 hE1 hEv1 hf2 hwf2
-  have hE2 : (⟨eqReflA :: eqA :: env.consts⟩ : Env).find? eqName
+  have hE2 : (⟨eqReflA :: eqA :: env.consts⟩ : Env md).find? eqName
       = some eqA := by
-    rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE1
-  have hR2 : (⟨eqReflA :: eqA :: env.consts⟩ : Env).find? eqReflName
+    rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE1
+  have hR2 : (⟨eqReflA :: eqA :: env.consts⟩ : Env md).find? eqReflName
       = some eqReflA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
   have hEv2 : ∀ ψ : LevelParam → Nat, mp2.base2.acval eqName ψ
       = eqValAV ψ := by
     intro ψ
-    rw [hac2, acvalWith_ne (by decide)]
+    rw [hac2, acvalWith_ne (by (cases md <;> decide))]
     exact hEv1 ψ
   have hRv2 : ∀ ψ : LevelParam → Nat, mp2.base2.acval eqReflName ψ
       = eqReflValAV ψ := by
     intro ψ
     rw [hac2, show eqReflName = eqReflA.name from rfl, acvalWith_self]
-  have hf3 : (⟨eqReflA :: eqA :: env.consts⟩ : Env).find?
+  have hf3 : (⟨eqReflA :: eqA :: env.consts⟩ : Env md).find?
       eqRecA.name = none := Option.isNone_iff_eq_none.mp h3
   have hwf3 : EnvWF ⟨eqRecA :: eqReflA :: eqA :: env.consts⟩ := by
-    have hfE : (⟨eqRecA :: eqReflA :: eqA :: env.consts⟩ : Env).find?
+    have hfE : (⟨eqRecA :: eqReflA :: eqA :: env.consts⟩ : Env md).find?
         eqName = some eqA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE2
-    have hfR : (⟨eqRecA :: eqReflA :: eqA :: env.consts⟩ : Env).find?
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE2
+    have hfR : (⟨eqRecA :: eqReflA :: eqA :: env.consts⟩ : Env md).find?
         eqReflName = some eqReflA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hR2
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hR2
     refine EnvWF.cons hwf2 ⟨rfl, rfl, ?_, rfl,
       (fun _ _ _ heq => nomatch heq), ?_,
       (fun _ heq => nomatch heq),
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
-    · show Expr.constsResolve _ eqRecA.toConstantVal.type = true
-      rw [show eqRecA.toConstantVal.type
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
+    · show Expr.constsResolve _ (eqRecA (md := md)).toConstantVal.type = true
+      rw [show (eqRecA (md := md)).toConstantVal.type
           = Expr.forallE (.sort (.param uN))
               (Expr.forallE (.bvar 0)
                 (Expr.forallE

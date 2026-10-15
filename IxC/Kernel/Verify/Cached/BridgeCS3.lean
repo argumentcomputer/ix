@@ -36,15 +36,15 @@ variable {mode : CheckMode}
 
 section Walks3
 
-variable {env : Env} {s₀ : CState}
+variable {env : Env md} {s₀ : CState md}
 
 /-- The per-frame binder-domain pins at the shared operations. -/
 theorem checkStructDomsAtS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {off : Nat}
-    {fvs doms : List Expr}
-    (hc : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs doms : List (Expr md)}
+    (hc : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       WScoped (off + i) (Expr.fvarTypeD x))
-    (ht : ∀ (i : Nat) (x : Expr), doms[i]? = some x → WScoped (off + i) x) :
-    ∀ {j : Nat} {s₀ : CState}, CSOK mode env s₀ →
+    (ht : ∀ (i : Nat) (x : Expr md), doms[i]? = some x → WScoped (off + i) x) :
+    ∀ {j : Nat} {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (checkStructDomsAt (sharedOpsC mode (mkFEnv env)) env off fvs doms j)
         (checkStructDomsAt (fueledOpsM mode) env off fvs doms j)
@@ -80,10 +80,10 @@ Task #175 indexed: the stages carry `nIdx` and the field-sort walk is
 (task #175 indexed: the large-eliminator escape admits a field that is
 one of the residual's index expressions). -/
 theorem checkStructFieldSortsIS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {isProp large : Bool}
-    {s : Level} {nP : Nat} {fvs idxArgs : List Expr}
-    (hfvs : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {s : Level} {nP : Nat} {fvs idxArgs : List (Expr md)}
+    (hfvs : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       WScoped (nP + i) (Expr.fvarTypeD x)) :
-    ∀ {j : Nat} {s₀ : CState}, CSOK mode env s₀ →
+    ∀ {j : Nat} {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (checkStructFieldSortsI (sharedOpsC mode (mkFEnv env)) env isProp large
           s nP fvs idxArgs j)
@@ -136,7 +136,7 @@ theorem checkStructFieldSortsIS_sim (hμ : mode.verifiedChecks = true) (henv : E
 every `whnf` is the shared one, on a well-scoped input at its depth
 (the opened body is well-scoped one deeper). -/
 theorem whnfTelescopeS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) :
-    ∀ {i n : Nat} {e : Expr} {s₀ : CState}, CSOK mode env s₀ → WScoped i e →
+    ∀ {i n : Nat} {e : Expr md} {s₀ : CState md}, CSOK mode env s₀ → WScoped i e →
       SimC mode env s₀ RelVC
         (whnfTelescope (sharedOpsC mode (mkFEnv env)) env i n e)
         (whnfTelescope (fueledOpsM mode) env i n e)
@@ -165,7 +165,7 @@ theorem whnfTelescopeS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
 /-- The former's telescope stage (task #195) at the shared operations:
 the checked constant's type is well-scoped either way. -/
 theorem checkSumTeleS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
-    {cv : ConstantVal} {n : Nat} {cvTa₀ : ConstantVal}
+    {cv : ConstantVal md} {n : Nat} {cvTa₀ : ConstantVal md}
     (hs : CSOK mode env s₀) (hTw : WScoped 0 cvTa₀.type) :
     SimC mode env s₀ (fun v w => v = w ∧ WScoped 0 (Prod.fst v).type)
       (checkSumTele (sharedOpsC mode (mkFEnv env)) env cv n cvTa₀)
@@ -181,8 +181,8 @@ theorem checkSumTeleS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
 
 /-- Stage 1 (the type former) of the sum route at the shared
 operations. -/
-theorem checkSumIndS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {p : InductiveShape}
-    {capsOf : InductiveShape → IndCaps} (hs : CSOK mode env s₀) :
+theorem checkSumIndS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {p : InductiveShape md}
+    {capsOf : InductiveShape md → IndCaps md} (hs : CSOK mode env s₀) :
     SimC mode env s₀ (fun v w => v = w ∧ WScoped 0 (Prod.fst (Prod.snd v)).type)
       (checkSumInd (sharedOpsC mode (mkFEnv env)) env p capsOf)
       (checkSumInd (fueledOpsM mode) env p capsOf) := by
@@ -207,8 +207,8 @@ theorem checkSumIndS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
 /-- Official's positivity walk (task #210 Part D) at the shared
 operations: every `whnf` is the shared one, on a well-scoped input at
 its depth. -/
-theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key) :
-    ∀ {fuel d : Nat} {e : Expr} {s₀ : CState}, CSOK mode env s₀ → WScoped d e →
+theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key md) :
+    ∀ {fuel d : Nat} {e : Expr md} {s₀ : CState md}, CSOK mode env s₀ → WScoped d e →
       SimC mode env s₀ RelVC
         (normPosDom (sharedOpsC mode (mkFEnv env)) env T d fuel e)
         (normPosDom (fueledOpsM mode) env T d fuel e)
@@ -235,8 +235,8 @@ theorem normPosDomS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T
           exact SimC.pure hs₂ rfl
       · exact SimC.pure hs₁ rfl
 
-theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key) :
-    ∀ {n i : Nat} {e : Expr} {s₀ : CState}, CSOK mode env s₀ → WScoped i e →
+theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (T : Key md) :
+    ∀ {n i : Nat} {e : Expr md} {s₀ : CState md}, CSOK mode env s₀ → WScoped i e →
       SimC mode env s₀ RelVC
         (normFieldDoms (sharedOpsC mode (mkFEnv env)) env T i n e)
         (normFieldDoms (fueledOpsM mode) env T i n e)
@@ -259,8 +259,8 @@ theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
       simp only [normFieldDoms]
       exact SimC.throw
 
-theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {T : Key}
-    {nP nF : Nat} {cvC cvCa : ConstantVal} (hs : CSOK mode env s₀)
+theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {T : Key md}
+    {nP nF : Nat} {cvC cvCa : ConstantVal md} (hs : CSOK mode env s₀)
     (hCw : WScoped 0 cvCa.type) :
     SimC mode env s₀ (fun v w => v = w ∧ WScoped 0 v.type)
       (normCtorVal (sharedOpsC mode (mkFEnv env)) env T nP nF cvC cvCa)
@@ -286,9 +286,9 @@ theorem normCtorValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
 
 /-- Stage 2 (one constructor, the constructor and its field count
 explicit) at the shared operations. -/
-theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Key}
+theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env md} {T : Key md}
     {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level} {isProp large : Bool}
-    {cvC : ConstantVal} {nF : Nat} {cvTa : ConstantVal}
+    {cvC : ConstantVal md} {nF : Nat} {cvTa : ConstantVal md}
     (hTf : cvTa.type.hasFvar = false) (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkSumCtor (sharedOpsC mode (mkFEnv env)) env₀ env T lps nP
@@ -342,7 +342,7 @@ theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
   obtain ⟨xFvs, cresid⟩ := xq
   dsimp only
   obtain ⟨hxW, -⟩ := openPisAtFvars_WScoped nF crest nP hox hcrW
-  have hxPos : ∀ (i : Nat) (x : Expr), xFvs[i]? = some x →
+  have hxPos : ∀ (i : Nat) (x : Expr md), xFvs[i]? = some x →
       WScoped (nP + i) (Expr.fvarTypeD x) := by
     intro i x hx
     obtain ⟨ty, rfl⟩ := openPisAtFvars_index nF crest nP hox i x hx
@@ -367,10 +367,10 @@ theorem checkSumCtorS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
 /-- Stage 2, the whole constructor list: every constructor is checked
 at the *same* environment (the one holding the type former alone), so
 the walk is a plain induction on the list. -/
-theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env} {T : Key}
+theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {env₀ : Env md} {T : Key md}
     {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level} {isProp large : Bool}
-    {cvTa : ConstantVal} (hTf : cvTa.type.hasFvar = false) :
-    ∀ {cs : List (ConstantVal × Nat)} {s₀ : CState}, CSOK mode env s₀ →
+    {cvTa : ConstantVal md} (hTf : cvTa.type.hasFvar = false) :
+    ∀ {cs : List (ConstantVal md × Nat)} {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
         (checkSumCtors (sharedOpsC mode (mkFEnv env)) env₀ env T lps
           nP nIdx resSort isProp large cvTa cs)
@@ -396,12 +396,12 @@ theorem checkSumCtorsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
 /-- The generated rules loop of the recursive route: no operation is
 called (a rule mentions the recursor and is not inferred), so the walk
 is the identity on a pure program. -/
-theorem checkNativeRulesS_sim {envR : Env} {rlps : List LevelParam} {T : Key}
-    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr}
-    {ctors : List (Key × Nat × Expr × List Nat)} {recC : Key} {rlvls : List Level} :
-    ∀ {k j : Nat} {s₀ : CState}, CSOK mode env s₀ →
+theorem checkNativeRulesS_sim {envR : Env md} {rlps : List LevelParam} {T : Key md}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr md}
+    {ctors : List (Key md × Nat × Expr md × List Nat)} {recC : Key md} {rlvls : List Level} :
+    ∀ {k j : Nat} {s₀ : CState md}, CSOK mode env s₀ →
       SimC mode env s₀ RelVC
-        (checkNativeRules (m := CheckCM) envR rlps T lps elim large nP nIdx tty ctors
+        (checkNativeRules (m := CheckCM md) envR rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j)
         (checkNativeRules (m := FueledM) envR rlps T lps elim large nP nIdx tty ctors
           recC rlvls k j)
@@ -423,7 +423,7 @@ theorem checkNativeRulesS_sim {envR : Env} {rlps : List LevelParam} {T : Key}
 /-- Stage 3 (the recursor with the inductive hypotheses, generated and
 compared) of the recursive route at the shared operations. -/
 theorem checkNativeRecS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
-    {p : NativeParts} {cvTa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
+    {p : NativeParts md} {cvTa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
       (checkNativeRec (sharedOpsC mode (mkFEnv env)) env p cvTa ctorsA)

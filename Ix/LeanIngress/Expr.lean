@@ -78,7 +78,7 @@ open Ix.Kernel (LevelParam)
 
 abbrev KName := Ix.Kernel.Name
 abbrev KLevel := Ix.Kernel.Level
-abbrev KExpr := Ix.Kernel.Expr
+abbrev KExpr := Ix.Kernel.Expr .source
 
 /-- A term the checker has no syntax for, or a contract frame the compiler
 does not lower. -/
@@ -99,7 +99,7 @@ def ingressName : Ix.Name → Ix.Kernel.Name
 /-- **A constant's key**: the role Source mode's fixed binding gives Lean's
 name (`Ix.Kernel.Key.ofName`: the role whose Lean name it is), otherwise the
 input key, the name itself. -/
-def ingressKey (n : Ix.Name) : Ix.Kernel.Key := Ix.Kernel.Key.ofName (ingressName n)
+def ingressKey (n : Ix.Name) : Ix.Kernel.Key .source := Ix.Kernel.Key.ofName (ingressName n)
 
 instance : ToString ExprError where
   toString
@@ -403,5 +403,5 @@ end Ix.LeanIngress
 /-! Source mode's binding, checked: every role's Lean name keys that role, and
 the name map holds the roles' names and nothing else. -/
 
-#guard Ix.Kernel.Role.all.all fun r => Ix.Kernel.Key.ofName r.leanName == .role r
+#guard Ix.Kernel.Role.all.all fun r => Ix.Kernel.Key.ofName (md := .source) r.leanName == .role r
 #guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length

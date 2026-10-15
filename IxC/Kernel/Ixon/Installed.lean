@@ -26,7 +26,7 @@ open Ix.Kernel Ix.Kernel.Cached
 own name; `none` for the declarations whose skeletons depend on the block
 (`basisDecl`, `quotDecl`, `indDecl`) and for the two axioms that install
 nothing of their own. -/
-def declSkel : Declaration → Option InstallSkel
+def declSkel : Declaration md → Option (InstallSkel md)
   | .defnDecl cv _ _ => some (.defn cv.name)
   | .thmDecl cv _ => some (.thm cv.name)
   | .opaqueDecl cv _ => some (.ax cv.name)
@@ -44,14 +44,14 @@ private theorem consFold_suffix {α β : Type} (f : β → α) (l : List β) (ac
     acc <:+ l.foldl (fun acc y => f y :: acc) acc :=
   foldl_suffix (fun acc y => cons_suffix (f y) acc) l acc
 
-private theorem projFnStepSkels_suffix (T c : Key) (nP : Nat) (sk : List InstallSkel) (i : Nat) :
+private theorem projFnStepSkels_suffix (T c : Key md) (nP : Nat) (sk : List (InstallSkel md)) (i : Nat) :
     sk <:+ projFnStepSkels T c nP sk i := by
   unfold projFnStepSkels
   split
   · exact cons_suffix _ _
   · exact List.suffix_refl _
 
-private theorem indDeclSkelsModeled_suffix (block : List ConstantInfo) (sk : List InstallSkel) :
+private theorem indDeclSkelsModeled_suffix (block : List (ConstantInfo md)) (sk : List (InstallSkel md)) :
     sk <:+ indDeclSkelsModeled block sk := by
   have hbase : sk <:+ (block.filter isRecCI).foldl recMemberSkels
       ((block.filter isNonRecCI).foldl indMemberSkels sk) :=
@@ -64,7 +64,7 @@ private theorem indDeclSkelsModeled_suffix (block : List ConstantInfo) (sk : Lis
     · exact hbase
   · exact hbase
 
-private theorem nativeSkels_suffix (p : NativeParts) (sk : List InstallSkel) : sk <:+ nativeSkels p sk := by
+private theorem nativeSkels_suffix (p : NativeParts md) (sk : List (InstallSkel md)) : sk <:+ nativeSkels p sk := by
   have hsum : sk <:+ sumSkels p.toInductiveShape sk := by
     unfold sumSkels sumCtorSkels
     exact ((cons_suffix _ sk).trans (consFold_suffix _ _ _)).trans (cons_suffix _ _)
@@ -74,7 +74,7 @@ private theorem nativeSkels_suffix (p : NativeParts) (sk : List InstallSkel) : s
   · exact hsum
 
 /-- A declaration only adds skeletons: the ones already installed stay. -/
-theorem declCSkels_suffix (pd : Declaration) (sk : List InstallSkel) : sk <:+ declCSkels pd sk := by
+theorem declCSkels_suffix (pd : Declaration md) (sk : List (InstallSkel md)) : sk <:+ declCSkels pd sk := by
   cases pd with
   | defnDecl cv _ _ => exact cons_suffix _ _
   | thmDecl cv _ => exact cons_suffix _ _
@@ -100,8 +100,8 @@ theorem declCSkels_suffix (pd : Declaration) (sk : List InstallSkel) : sk <:+ de
       · exact indDeclSkelsModeled_suffix _ _
 
 /-- A declaration's own skeleton is among those it installs. -/
-theorem declSkel_mem {pd : Declaration} {s : InstallSkel} (h : declSkel pd = some s)
-    (sk : List InstallSkel) : s ∈ declCSkels pd sk := by
+theorem declSkel_mem {pd : Declaration md} {s : InstallSkel md} (h : declSkel pd = some s)
+    (sk : List (InstallSkel md)) : s ∈ declCSkels pd sk := by
   cases pd with
   | defnDecl cv _ _ => cases h; exact List.mem_cons_self
   | thmDecl cv _ => cases h; exact List.mem_cons_self
@@ -119,8 +119,8 @@ theorem declSkel_mem {pd : Declaration} {s : InstallSkel} (h : declSkel pd = som
 
 /-- Every declaration of a stream contributes its skeleton to the stream's
 skeletons. -/
-theorem streamSkels_mem {ds : List Declaration} {d : Declaration} (hd : d ∈ ds)
-    {s : InstallSkel} (hs : declSkel d = some s) : s ∈ streamSkels ds := by
+theorem streamSkels_mem {ds : List (Declaration md)} {d : Declaration md} (hd : d ∈ ds)
+    {s : InstallSkel md} (hs : declSkel d = some s) : s ∈ streamSkels ds := by
   obtain ⟨l₁, l₂, rfl⟩ := List.append_of_mem hd
   unfold streamSkels
   rw [List.foldl_append, List.foldl_cons]
@@ -130,9 +130,9 @@ theorem streamSkels_mem {ds : List Declaration} {d : Declaration} (hd : d ∈ ds
 axiom declaration of an accepted array is installed under its name, as a
 constant of its kind (a definition as a definition, a theorem as a theorem,
 an opaque or an axiom as an axiom); `sorryAx` and `Quot.sound` excepted. -/
-theorem checkDecls_installs {ev : Evidences} {mode : CheckMode} {ds : Array Declaration}
-    {env : Env} (h : checkDecls mode ev ds = .ok env) {d : Declaration} (hd : d ∈ ds)
-    {s : InstallSkel} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by
+theorem checkDecls_installs {ev : Evidences md} {mode : CheckMode} {ds : Array (Declaration md)}
+    {env : Env md} (h : checkDecls mode ev ds = .ok env) {d : Declaration md} (hd : d ∈ ds)
+    {s : InstallSkel md} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by
   have hm : s ∈ envSkels env := by
     rw [checkDecls_skels h]
     exact streamSkels_mem (Array.mem_toList_iff.mpr hd) hs

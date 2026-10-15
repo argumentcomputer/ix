@@ -23,7 +23,7 @@ open Expr
 
 /-- `Expr.instSpine` is the verification's `instSeq`. -/
 theorem Expr.instSpine_eq_instSeq :
-    ∀ (args : List Expr) (t : Nat) (e : Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (e : Expr md),
       Expr.instSpine args t e = instSeq args t e
   | [], _, _ => rfl
   | _ :: as, t, _e => Expr.instSpine_eq_instSeq as (t - 1) _
@@ -31,7 +31,7 @@ theorem Expr.instSpine_eq_instSeq :
 /-- `shiftFrom` commutes with `instSpine` (arguments shifted
 pointwise). -/
 theorem shiftFrom_instSpine {p : Nat} :
-    ∀ (args : List Expr) (t : Nat) (e : Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (e : Expr md),
       shiftFrom p (Expr.instSpine args t e) =
         Expr.instSpine (args.map (shiftFrom p)) t (shiftFrom p e)
   | [], _, _ => rfl
@@ -43,7 +43,7 @@ theorem shiftFrom_instSpine {p : Nat} :
 /-- `instSpine` keeps terms well-scoped: a closed (fvar-free) base
 instantiated at well-scoped arguments is well-scoped. -/
 theorem instSpine_WScoped {d : Nat} :
-    ∀ {args : List Expr} (t : Nat) {e : Expr}, WScoped d e →
+    ∀ {args : List (Expr md)} (t : Nat) {e : Expr md}, WScoped d e →
       (∀ a ∈ args, WScoped d a) →
       WScoped d (Expr.instSpine args t e)
   | [], _, _, he, _ => he
@@ -56,7 +56,7 @@ theorem instSpine_WScoped {d : Nat} :
 base: a term bounded by `args.length` binders instantiated at the
 whole spine is bvar-closed. -/
 theorem instSpine_closed :
-    ∀ {args : List Expr} {e : Expr},
+    ∀ {args : List (Expr md)} {e : Expr md},
       (∀ a ∈ args, a.looseBVarsBounded 0 = true) →
       e.looseBVarsBounded args.length = true →
       (Expr.instSpine args (args.length - 1) e).looseBVarsBounded 0
@@ -80,7 +80,7 @@ theorem instSpine_closed :
 /-- The fvar leaves of an `instSpine` come from the base or the
 arguments. -/
 theorem fvarLeaves_instSpine :
-    ∀ {args : List Expr} (t : Nat) {e : Expr} {l},
+    ∀ {args : List (Expr md)} (t : Nat) {e : Expr md} {l},
       l ∈ (Expr.instSpine args t e).fvarLeaves →
       l ∈ e.fvarLeaves ∨ ∃ a ∈ args, l ∈ a.fvarLeaves
   | [], _, _, _, hl => Or.inl hl
@@ -94,9 +94,9 @@ theorem fvarLeaves_instSpine :
 /-- Resolution survives substitution by an arbitrary resolving term
 (the fvar-annotation-specific `constsResolve_instantiate1`
 generalized). -/
-theorem Expr.constsResolve_instantiate1_gen {env : Env} {v : Expr}
+theorem Expr.constsResolve_instantiate1_gen {env : Env md} {v : Expr md}
     (hv : v.constsResolve env = true) :
-    ∀ {e : Expr} (k : Nat), e.constsResolve env = true →
+    ∀ {e : Expr md} (k : Nat), e.constsResolve env = true →
       (e.instantiate1 v k).constsResolve env = true := by
   intro e
   induction e <;> intro k h <;>
@@ -107,8 +107,8 @@ theorem Expr.constsResolve_instantiate1_gen {env : Env} {v : Expr}
     · split <;> simp [Expr.constsResolve]
 
 /-- Resolution survives `instSpine` (base and arguments resolving). -/
-theorem instSpine_constsResolve {env : Env} :
-    ∀ {args : List Expr} (t : Nat) {e : Expr},
+theorem instSpine_constsResolve {env : Env md} :
+    ∀ {args : List (Expr md)} (t : Nat) {e : Expr md},
       e.constsResolve env = true →
       (∀ a ∈ args, a.constsResolve env = true) →
       (Expr.instSpine args t e).constsResolve env = true
@@ -123,8 +123,8 @@ theorem instSpine_constsResolve {env : Env} :
 
 /-- The level comparand of a rule does not depend on the argument
 spine. -/
-theorem recFireComparands_fst_congr (rl : RecRule) (lps : List LevelParam)
-    (us : List Level) (cvjLps : List LevelParam) (args args' : List Expr)
+theorem recFireComparands_fst_congr (rl : RecRule md) (lps : List LevelParam)
+    (us : List Level) (cvjLps : List LevelParam) (args args' : List (Expr md))
     (mI : Nat) :
     (recFireComparands rl lps us cvjLps args mI).1 =
       (recFireComparands rl lps us cvjLps args' mI).1 := by
@@ -132,9 +132,9 @@ theorem recFireComparands_fst_congr (rl : RecRule) (lps : List LevelParam)
 
 /-- The parameter comparand commutes with `shiftFrom` on the argument
 spine (the stored instantiations of a nested rule are fvar-free). -/
-theorem recFireComparands_snd_shift {p : Nat} (rl : RecRule)
+theorem recFireComparands_snd_shift {p : Nat} (rl : RecRule md)
     (lps : List LevelParam) (us : List Level) (cvjLps : List LevelParam)
-    (args : List Expr) (mI : Nat)
+    (args : List (Expr md)) (mI : Nat)
     (hpins : ∀ lvls pins, rl.fire = .nested lvls pins →
       ∀ pin ∈ pins, pin.hasFvar = false) :
     (recFireComparands rl lps us cvjLps
@@ -162,9 +162,9 @@ theorem recFireComparands_snd_shift {p : Nat} (rl : RecRule)
 /-- The parameter comparand's entries are well-scoped at the ambient
 depth (arguments well-scoped; a nested rule's stored instantiations
 fvar-free). -/
-theorem recFireComparands_snd_WScoped {d : Nat} (rl : RecRule)
+theorem recFireComparands_snd_WScoped {d : Nat} (rl : RecRule md)
     (lps : List LevelParam) (us : List Level) (cvjLps : List LevelParam)
-    (args : List Expr) (mI : Nat)
+    (args : List (Expr md)) (mI : Nat)
     (hargs : ∀ a ∈ args, WScoped d a)
     (hpins : ∀ lvls pins, rl.fire = .nested lvls pins →
       ∀ pin ∈ pins, pin.hasFvar = false) :
@@ -195,7 +195,7 @@ install layer needs: the projection bottom constructs its
 constructor/recursor `instPisAt` runs from the checker's `stripPis`
 pins rather than from a stored run. -/
 theorem instPisAt_isSome_of_stripPis :
-    ∀ (args : List Expr) {e : Expr},
+    ∀ (args : List (Expr md)) {e : Expr md},
       (e.stripPis args.length).isSome = true →
       (Expr.instPisAt args e).isSome = true
   | [], e, _ => by simp [Expr.instPisAt]
@@ -219,22 +219,22 @@ either lane (relocated verbatim from
 
 /-- A canonical rule's constructor parameters are among the recursor's
 prefix. -/
-theorem recRulePlain_leT {recTy : Expr} {mI rP cnP : Nat}
+theorem recRulePlain_leT {recTy : Expr md} {mI rP cnP : Nat}
     (h : Expr.recRulePlain recTy mI rP cnP = true) :
     cnP ≤ rP := by
   rw [Expr.recRulePlain, Bool.and_eq_true, Bool.and_eq_true] at h
   exact of_decide_eq_true h.1.1
 
 /-- A canonical rule's prefix fits under the major's position. -/
-theorem recRulePlain_le_mIT {recTy : Expr} {mI rP cnP : Nat}
+theorem recRulePlain_le_mIT {recTy : Expr md} {mI rP cnP : Nat}
     (h : Expr.recRulePlain recTy mI rP cnP = true) :
     rP ≤ mI := by
   rw [Expr.recRulePlain, Bool.and_eq_true, Bool.and_eq_true] at h
   exact of_decide_eq_true h.1.2
 
 /-- The fire comparand levels of a plain rule. -/
-theorem recFireComparands_plain {rl : RecRule} {lps : List LevelParam}
-    {us : List Level} {cvjLps : List LevelParam} {args : List Expr} {rP : Nat}
+theorem recFireComparands_plain {rl : RecRule md} {lps : List LevelParam}
+    {us : List Level} {cvjLps : List LevelParam} {args : List (Expr md)} {rP : Nat}
     (h : RecRule.fire rl = .plain) :
     (recFireComparands rl lps us cvjLps args rP).1 =
       cvjLps.map fun p => Level.subst lps us (.param p) := by
@@ -242,9 +242,9 @@ theorem recFireComparands_plain {rl : RecRule} {lps : List LevelParam}
   rw [h]
 
 /-- The fire comparand levels of a nested rule. -/
-theorem recFireComparands_nested {rl : RecRule} {lps : List LevelParam}
-    {us : List Level} {cvjLps : List LevelParam} {args : List Expr} {rP : Nat}
-    {lvls : List Level} {pins : List Expr}
+theorem recFireComparands_nested {rl : RecRule md} {lps : List LevelParam}
+    {us : List Level} {cvjLps : List LevelParam} {args : List (Expr md)} {rP : Nat}
+    {lvls : List Level} {pins : List (Expr md)}
     (h : RecRule.fire rl = .nested lvls pins) :
     (recFireComparands rl lps us cvjLps args rP).1 =
       lvls.map (Level.subst lps us) := by
@@ -261,7 +261,7 @@ declarations of that module the cached discipline
 
 /-- A list of well-scoped expressions has a well-scoped `getD`. -/
 theorem wscoped_getD {d : Nat} :
-    ∀ {l : List Expr}, (∀ x ∈ l, WScoped d x) → ∀ (n : Nat),
+    ∀ {l : List (Expr md)}, (∀ x ∈ l, WScoped d x) → ∀ (n : Nat),
       WScoped d (l.getD n (.bvar 0)) := by
   intro l
   induction l with
@@ -276,7 +276,7 @@ theorem wscoped_getD {d : Nat} :
 
 /-- A level-instantiated `fvar`-free expression (e.g. a stored type or
 rule right-hand side) is well-scoped at any depth. -/
-theorem wscoped_instLevels_of_not_hasFvar {e : Expr}
+theorem wscoped_instLevels_of_not_hasFvar {e : Expr md}
     (h : e.hasFvar = false) (ps : List LevelParam) (us : List Level) {d : Nat} :
     WScoped d (e.instantiateLevelParams ps us) :=
   WScoped.of_not_hasFvar (by rw [hasFvar_instantiateLevelParams]; exact h)

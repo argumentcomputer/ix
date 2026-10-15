@@ -50,15 +50,15 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env}
+variable {env : Env md}
 
 /-! ## The valuation-leaf side, off a bare `acval_params` -/
 
 /-- A leaf reads only its own level parameters — `EnvModel.acval_params`
 as a standalone predicate, so the crossing does not need a carrier. -/
-def AcvalParamsAt (env : Env)
-    (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
-  ∀ (n : Key) (ci : ConstantInfo), env.find? n = some ci →
+def AcvalParamsAt (env : Env md)
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm) : Prop :=
+  ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
     ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       acval n ψ₁ = acval n ψ₂
@@ -67,12 +67,12 @@ def AcvalParamsAt (env : Env)
 theorem acvalParamsAt_of_core (m : EnvModel V env) :
     AcvalParamsAt env m.acval := m.acval_params
 
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- A stored slot with no level parameters is valued independently of
 the assignment (`acval_isEmpty`, off the bare hypothesis). -/
-theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
+theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (ψ₁ ψ₂ : LevelParam → Nat) : acval n ψ₁ = acval n ψ₂ := by
   refine hp n ci hf ψ₁ ψ₂ fun p hpm => ?_
@@ -82,8 +82,8 @@ theorem acvalAt_isEmpty (hp : AcvalParamsAt env acval) {n : Key}
 
 /-- A one-parameter slot substituted at `Level.zero` is valued
 independently of the assignment (`acval_oneParam`). -/
-theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
+theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1)
     (ψ₁ ψ₂ : LevelParam → Nat) :
     acval n (Level.substFn ψ₁ ci.toConstantVal.levelParams [.zero])
@@ -100,8 +100,8 @@ theorem acvalAt_oneParam (hp : AcvalParamsAt env acval) {n : Key}
   · simp [hlen]
 
 /-- The scalar literal-support slots, read off their shape guards. -/
-theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Key)
-    (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
+theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Key md)
+    (f : Option (ConstantInfo md) → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.isEmpty = true)
@@ -113,8 +113,8 @@ theorem acvalAt_scalar (hp : AcvalParamsAt env acval) (nm : Key)
     exact acvalAt_isEmpty hp hx (hshape ci hfok) _ _
 
 /-- The two one-parameter literal-support slots. -/
-theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Key)
-    (f : Option ConstantInfo → Bool) (hfok : f (env.find? nm) = true)
+theorem acvalAt_one (hp : AcvalParamsAt env acval) (nm : Key md)
+    (f : Option (ConstantInfo md) → Bool) (hfok : f (env.find? nm) = true)
     (hnone : f none = false)
     (hshape : ∀ ci, f (some ci) = true →
       ci.toConstantVal.levelParams.length = 1)
@@ -164,7 +164,7 @@ clause, with `pwBit_substPW` at the binders (its docstring's named
 consumer) and `AcvalParamsAt` where v1 has `ValParams`. -/
 theorem denoteMeta_instLevels (hp : AcvalParamsAt env acval)
     {ks : List LevelParam} {us : List Level} (φ : LevelParam → Nat) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denoteMeta acval env φ d (e.instantiateLevelParams ks us)
         = denoteMeta acval env (Level.substFn φ ks us) d e := by
   intro d e

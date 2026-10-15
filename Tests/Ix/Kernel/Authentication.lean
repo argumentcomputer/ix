@@ -140,7 +140,7 @@ def preludeEntries : List (Option Address × Option ByteArray) :=
   | (some a, some b) => a == Address.blake3Pure b && a == Address.blake3 b
   | _ => false
 -- the prelude the entry loads holds exactly those records, decoded canonically
-#guard match builtinPrelude with
+#guard match builtinPrelude (md := .anon) with
   | .ok pre => pre.records.size == RoleData.prelude.size &&
     pre.evidence.size == RoleData.evidence.size &&
     (pre.records ++ pre.evidence).all fun (a, c) =>
@@ -149,13 +149,13 @@ def preludeEntries : List (Option Address × Option ByteArray) :=
 
 /-! ## The theorems, applied -/
 
-example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytesProjection builtinBinding 16 limits records blobs = .ok env) :
     ∃ output, (∀ entry ∈ output, entry.1 = Address.blake3Pure (Ixon.serConstant entry.2)) ∧
       Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure builtinBinding output blobs = .ok env :=
   (Ixon.Authenticated.checkBytesProjection_authentic h).2
 
-example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
+example {records : Ix.Kernel.Admission.Records} {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytesBlockOrder builtinBinding 16 limits {} records blobs = .ok env) :
     ∀ entry ∈ blobs, entry.1 = Address.blake3Pure entry.2 :=
   (Ixon.Authenticated.checkBytesBlockOrder_authentic h).1.2

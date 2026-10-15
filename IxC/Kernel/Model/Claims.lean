@@ -68,9 +68,9 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- Head normalisation, dual success, P currency. -/
-@[expose] def WhnfCoreClaim (μ : CheckMode) {env : Env} (m : EnvModel V env)
+@[expose] def WhnfCoreClaim (μ : CheckMode) {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e e' : Expr} {Δa : List AnnotTerm},
+  ∀ {d : Nat} {e e' : Expr md} {Δa : List AnnotTerm},
     whnfCore μ env fuel d e = .ok e' →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
     Expr.LeavesBounded e →
@@ -84,9 +84,9 @@ variable {V : Type w} [SetTheory V]
           interp V ρ ea = interp V ρ ea'
 
 /-- The reduction loop, dual success, P currency. -/
-@[expose] def WhnfClaim (μ : CheckMode) {env : Env} (m : EnvModel V env)
+@[expose] def WhnfClaim (μ : CheckMode) {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e e' : Expr} {Δa : List AnnotTerm},
+  ∀ {d : Nat} {e e' : Expr md} {Δa : List AnnotTerm},
     whnf μ env fuel d e = .ok e' →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
     Expr.LeavesBounded e →
@@ -100,9 +100,9 @@ variable {V : Type w} [SetTheory V]
           interp V ρ ea = interp V ρ ea'
 
 /-- Definitional equality, P currency. -/
-@[expose] def DefEqClaim (μ : CheckMode) {env : Env} (m : EnvModel V env)
+@[expose] def DefEqClaim (μ : CheckMode) {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {a b : Expr} {Δa : List AnnotTerm},
+  ∀ {d : Nat} {a b : Expr md} {Δa : List AnnotTerm},
     Ix.Kernel.isDefEqCore μ env fuel d a b = .ok true →
     Expr.WScoped d a → a.looseBVarsBounded 0 = true →
     Expr.LeavesBounded a →
@@ -120,9 +120,9 @@ variable {V : Type w} [SetTheory V]
 
 /-- Inference, dual success, P currency: the subject's and the
 type's truthfulness — bit validity included — are *conclusions*. -/
-@[expose] def InferClaim (μ : CheckMode) {env : Env} (m : EnvModel V env)
+@[expose] def InferClaim (μ : CheckMode) {env : Env md} (m : EnvModel V env)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e t : Expr} {Δa : List AnnotTerm},
+  ∀ {d : Nat} {e t : Expr md} {Δa : List AnnotTerm},
     inferTypeCore μ env fuel d e = .ok t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
     Expr.LeavesBounded e →
@@ -137,7 +137,7 @@ type's truthfulness — bit validity included — are *conclusions*. -/
 
 /-- The P-generation step. -/
 @[expose] def CheckStep (μ : CheckMode) (V : Type w) [SetTheory V] : Prop :=
-  ∀ (env : Env) (m : EnvModel V env) (φ : LevelParam → Nat) (fuel : Nat),
+  ∀ {md : Mode} (env : Env md) (m : EnvModel V env) (φ : LevelParam → Nat) (fuel : Nat),
     WhnfCoreClaim μ m φ fuel → WhnfClaim μ m φ fuel →
     DefEqClaim μ m φ fuel → InferClaim μ m φ fuel →
     WhnfCoreClaim μ m φ (fuel + 1) ∧ WhnfClaim μ m φ (fuel + 1) ∧
@@ -145,7 +145,7 @@ type's truthfulness — bit validity included — are *conclusions*. -/
 
 /-- The P-generation induction: generic in the step, zero case from
 the checker's own zero-fuel throws (currency-independent). -/
-theorem checkSound {μ : CheckMode} {env : Env}
+theorem checkSound {μ : CheckMode} {env : Env md}
     (hstep : CheckStep μ V) (m : EnvModel V env) (φ : LevelParam → Nat) :
     ∀ fuel : Nat,
       WhnfCoreClaim μ m φ fuel ∧ WhnfClaim μ m φ fuel ∧

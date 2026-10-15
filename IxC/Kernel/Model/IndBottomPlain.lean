@@ -42,15 +42,15 @@ variable {V : Type w} [SetTheory V]
 
 set_option maxHeartbeats 25600000 in
 /-- **The plain bottom, at the reading** (`indBottomPlainS`). -/
-theorem indBottomPlain {μ : CheckMode} {env : Env}
+theorem indBottomPlain {μ : CheckMode} {env : Env md}
     (mp : EnvModelM V μ env) {F : Nat}
     (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
     (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     -- the totality residue (routed: `inferReads_of` at the caller)
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
-    {f : Key → Key} (hroT : RenameOk mp.base2.acval env f)
+    {f : Key md → Key md} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
-    {Rn : Key} {lps : List LevelParam} {tyA : Expr} {mI rP : Nat}
+    {Rn : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP : Nat}
     (htyw : tyA.hasFvar = false)
     (htyb : tyA.looseBVarsBounded 0 = true)
     -- the public recursor type's reading is graded (the install's
@@ -59,33 +59,33 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     (htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval env ψ 0 tyA = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta)
-    {ciRm : ConstantInfo}
+    {ciRm : ConstantInfo md}
     (hfRnE : env.find? (f Rn) = some ciRm)
     (hRmlps : ciRm.toConstantVal.levelParams = lps)
-    {ctor : Key} {cvj : ConstantVal} {cnP cnF : Nat}
+    {ctor : Key md} {cvj : ConstantVal md} {cnP cnF : Nat}
     (hctorE : env.find? ctor = some (.ctorInfo cvj cnP cnF))
-    {ciCm : ConstantInfo}
+    {ciCm : ConstantInfo md}
     (hfCmE : env.find? (f ctor) = some ciCm)
     (hCmlps : ciCm.toConstantVal.levelParams = cvj.levelParams)
     (hCw : cvj.type.hasFvar = false)
     (hCb : cvj.type.looseBVarsBounded 0 = true)
     (hClp : cvj.type.allLevelParamsDefined cvj.levelParams = true)
     (hrPmI : rP ≤ mI) (hplainLe : cnP ≤ rP)
-    {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
+    {rhsA : Expr md} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     -- the rule rhs's front door, at the reading
     (hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval env ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta)
-    {stmtTy : Expr} (hSw : stmtTy.hasFvar = false)
+    {stmtTy : Expr md} (hSw : stmtTy.hasFvar = false)
     (hSb : stmtTy.looseBVarsBounded 0 = true)
     -- the statement's front doors, at the reading
     (hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env ψ 0 stmtTy = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta)
-    {fvs : List Expr} {tbody : Expr} {ℓA : Level} {αS lhsS rhsS : Expr}
+    {fvs : List (Expr md)} {tbody : Expr md} {ℓA : Level} {αS lhsS rhsS : Expr md}
     (hopen : openPisAtFvars (rP + cnF) stmtTy 0 = some (fvs, tbody))
     (hheadEq : tbody.getAppFn = .const eqName [ℓA])
     (hargs3 : tbody.getAppArgs = [αS, lhsS, rhsS])
@@ -96,21 +96,21 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       Expr.mkAppN (.const (f ctor) (cvj.levelParams.map .param))
         (fvs.take cnP ++ fvs.drop rP))
     (hCstrips : (cvj.type.stripPis (cnP + cnF)).isSome = true)
-    {cdoms : List Expr} {cres : Expr}
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt (fvs.take cnP ++ fvs.drop rP)
       (cvj.type.renameConsts f) = some (cdoms, cres))
     (hclen : cres.getAppArgs.length = cnP + (mI - rP))
-    {rdoms : List Expr} {rrest : Expr}
+    {rdoms : List (Expr md)} {rrest : Expr md}
     (hrinst : Expr.instPisAt (fvs.take rP) (tyA.renameConsts f)
       = some (rdoms, rrest))
-    {fvsP : List Expr} {restP : Expr}
+    {fvsP : List (Expr md)} {restP : Expr md}
     (hopenP : openPisAtFvars rP tyA 0 = some (fvsP, restP))
-    {cdomsP : List Expr} {crestP : Expr}
+    {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt (fvsP.take cnP) cvj.type
       = some (cdomsP, crestP))
-    {xFvsP : List Expr} {ldoms : Expr}
+    {xFvsP : List (Expr md)} {ldoms : Expr md}
     (hopenXP : openPisAtFvars cnF crestP rP = some (xFvsP, ldoms))
-    {ldomsL : List Expr} {lrest2 : Expr}
+    {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt (fvsP ++ xFvsP) rhsA
       = some (ldomsL, lrest2))
     -- the recorded runs (`IotaRuns`, plus the second widening's row)
@@ -185,7 +185,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       (φ := Level.substFn φ lps us) (rP + cnF) hopen hTstden
   have hΓslen : Γs.length = rP + cnF := htowerS.length
   have hfvslen : fvs.length = rP + cnF := openPisAtFvars_length _ hopen
-  have hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+  have hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty := by
     intro i x hx
     obtain ⟨ty, hx'⟩ := openPisAtFvars_index _ _ _ hopen i x hx
@@ -201,7 +201,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     obtain ⟨q, hq⟩ := List.getElem?_of_mem hx
     obtain ⟨ty, rfl⟩ := hshapeS q x hq
     rfl
-  have hlbFvs : ∀ (i : Nat) (ty : Expr),
+  have hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true :=
     fun i ty hmem =>
       (openPisAtFvars_bounded (rP + cnF) hopen hSb).2 _ hmem
@@ -220,7 +220,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     · rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hSw] at h0
       exact nomatch h0
     · exact h0
-  have hfvsLt : ∀ l : Nat × Expr,
+  have hfvsLt : ∀ l : Nat × Expr md,
       Expr.fvar l.1 l.2 ∈ fvs → l.1 < rP + cnF := by
     intro l hl
     obtain ⟨q, hq⟩ := List.getElem?_of_mem hl
@@ -229,7 +229,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     injection heq with h1 _
     rw [h1, ← hfvslen]
     exact hql
-  have hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+  have hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta mp.base2.acval env (Level.substFn φ lps us) i
           (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default) := by
@@ -260,12 +260,12 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     openPisAtFvars_denotePTele (acval := mp.base2.acval) (env := env)
       (φ := Level.substFn φ lps us) rP hopenP hTV0
   have hfvsPlen : fvsP.length = rP := openPisAtFvars_length _ hopenP
-  have hshapeP : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+  have hshapeP : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty := by
     intro i x hx
     obtain ⟨ty, hx'⟩ := openPisAtFvars_index _ _ _ hopenP i x hx
     exact ⟨ty, by simpa using hx'⟩
-  have hdomsP0 : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+  have hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       denoteMeta mp.base2.acval env (Level.substFn φ lps us) i
           (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default) := by
@@ -278,7 +278,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     intro x hx
     have h := hwsP.1 x hx
     rwa [Nat.zero_add] at h
-  have hlbFvsP : ∀ (i : Nat) (ty : Expr),
+  have hlbFvsP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvsP → ty.looseBVarsBounded 0 = true :=
     fun i ty hmem =>
       (openPisAtFvars_bounded rP hopenP htyb).2 _ hmem
@@ -446,7 +446,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
   have hsplen : (fvs.take cnP ++ fvs.drop rP).length = cnP + cnF := by
     rw [List.length_append, List.length_take, List.length_drop, hfvslen]
     omega
-  have hspIdx : ∀ (q : Nat) (x : Expr),
+  have hspIdx : ∀ (q : Nat) (x : Expr md),
       (fvs.take cnP ++ fvs.drop rP)[q]? = some x →
       ∃ ty, x = Expr.fvar
           (if q < cnP then q else rP + (q - cnP)) ty ∧
@@ -473,7 +473,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       obtain ⟨ty, rfl⟩ := hshapeS (rP + (q - cnP)) x hx
       exact ⟨ty, by rw [if_neg hqc], List.mem_of_getElem? hx,
         by rw [if_neg hqc]; omega⟩
-  have hspLeaf : ∀ (q : Nat) (x : Expr),
+  have hspLeaf : ∀ (q : Nat) (x : Expr md),
       (fvs.take cnP ++ fvs.drop rP)[q]? = some x →
       ∀ l ∈ x.fvarLeaves,
         Expr.fvar l.1 l.2 ∈ fvs ∧ l.1 < rP + (q + 1 - cnP) := by
@@ -492,7 +492,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       refine ⟨hleafClosed l ⟨_, hmem, ?_⟩, by omega⟩
       rw [Expr.fvarLeaves]
       exact List.mem_cons_of_mem _ hl'
-  have hspScope : ∀ (q : Nat) (x : Expr),
+  have hspScope : ∀ (q : Nat) (x : Expr md),
       (fvs.take cnP ++ fvs.drop rP)[q]? = some x →
       Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true := by
     intro q x hx
@@ -533,7 +533,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
       List.length_take, hlenX, show min rP mI = rP from by omega,
       List.getElem?_drop, show rP + j - rP = j from by omega]
     rfl
-  have hmixsp : ∀ (q : Nat) (x : Expr),
+  have hmixsp : ∀ (q : Nat) (x : Expr md),
       (fvs.take cnP ++ fvs.drop rP)[q]? = some x →
       ∃ w0, denoteMeta mp.base2.acval env (Level.substFn φ lps us)
             (rP + cnF) x = some w0 ∧
@@ -654,7 +654,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     rwa [Nat.zero_add] at h
   have hbBody : tbody.looseBVarsBounded 0 = true :=
     (openPisAtFvars_bounded (rP + cnF) hopen hSb).1
-  have hargLeaf : ∀ e : Expr, e ∈ tbody.getAppArgs →
+  have hargLeaf : ∀ e : Expr md, e ∈ tbody.getAppArgs →
       (∀ l ∈ e.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs) ∧
       (∀ l ∈ e.fvarLeaves, l.1 < rP + cnF) := by
     intro e hmem
@@ -696,7 +696,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     rw [show rP + cnF - (rP + cnF) = 0 from by omega,
       List.replicate_zero, List.nil_append, List.drop_zero]
     exact hσ
-  have hctxOf : ∀ e : Expr,
+  have hctxOf : ∀ e : Expr md,
       (∀ l ∈ e.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs) →
       (∀ l ∈ e.fvarLeaves, l.1 < rP + cnF) →
       CtxOk mp.base2 (Level.substFn φ lps us) (rP + cnF) Γs e :=
@@ -784,7 +784,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     (hctxOf tl hleafTl hltTl) (hctxOf tr hleafTr hltTr)
     hwsTl hbTl hLTl hwsTr hbTr hLTr
   -- ===== the transport's frame data =====
-  have hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+  have hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (mp.base2.acval n ψ).inst y k = mp.base2.acval n ψ :=
     fun n ψ y k =>
       AVExprSubst.inst_eq_self_of_closed (mp.base2.acval_closed n ψ) y k
@@ -799,7 +799,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     rw [List.length_take, hfvsPlen]; omega
   have hpsRlen : (fvs.take cnP).length = cnP := by
     rw [List.length_take, hfvslen]; omega
-  have hpsRen : ∀ (i : Nat) (a a' : Expr), (fvsP.take cnP)[i]? = some a →
+  have hpsRen : ∀ (i : Nat) (a a' : Expr md), (fvsP.take cnP)[i]? = some a →
       (fvs.take cnP)[i]? = some a' → RenEqT f a a' := by
     intro i a a' ha ha'
     have hi : i < cnP := by
@@ -812,7 +812,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
     obtain ⟨ty, rfl⟩ := hshapeP i a ha
     obtain ⟨ty', rfl⟩ := hshapeS i a' ha'
     exact RenEqT.fvar
-  have hpsPfacts : ∀ (j : Nat) (x : Expr), (fvsP.take cnP)[j]? = some x →
+  have hpsPfacts : ∀ (j : Nat) (x : Expr md), (fvsP.take cnP)[j]? = some x →
       (∃ w, denoteMeta mp.base2.acval env (Level.substFn φ lps us) rP x
         = some w) ∧ Expr.WScoped rP x ∧ x.looseBVarsBounded 0 = true := by
     intro j x hx
@@ -870,7 +870,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
   have hxlen : xFvsP.length = cnF := openPisAtFvars_length _ hopenXP
   have hPlen : (fvsP ++ xFvsP).length = rP + cnF := by
     rw [List.length_append, hfvsPlen, hxlen]
-  have hPshape : ∀ (i : Nat) (x : Expr), (fvsP ++ xFvsP)[i]? = some x →
+  have hPshape : ∀ (i : Nat) (x : Expr md), (fvsP ++ xFvsP)[i]? = some x →
       ∃ ty, x = Expr.fvar i ty := by
     intro i x hx
     rcases Nat.lt_or_ge i rP with hi | hi
@@ -893,7 +893,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
   have hbCrestP : crestP.looseBVarsBounded 0 = true :=
     (instPisAt_bounded (fvsP.take cnP) hcinstP hCb
       (fun a ha => hbFvsP a (List.mem_of_mem_take ha))).2
-  have hlbP : ∀ (i : Nat) (ty : Expr),
+  have hlbP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvsP ++ xFvsP → ty.looseBVarsBounded 0 = true := by
     intro i ty hmem
     rcases List.mem_append.mp hmem with h' | h'
@@ -1082,7 +1082,7 @@ theorem indBottomPlain {μ : CheckMode} {env : Env}
         = Level.substFn φ lps us from
         funext fun _ => Level.substFn_map_param, hroT.2.2, hctorLev]
   have hspMem : ∀ σ : Nat → V, Sat V Γs σ →
-      ∀ (q : Nat) (x : Expr),
+      ∀ (q : Nat) (x : Expr md),
         (fvs.take cnP ++ fvs.drop rP)[q]? = some x →
         ∃ w, denoteMeta mp.base2.acval env (Level.substFn φ lps us)
               (rP + cnF) x = some w ∧ WellDenotedV V σ w ∧

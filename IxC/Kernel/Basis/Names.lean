@@ -13,66 +13,66 @@ The reserved names of the pinned basis blocks (see `Ix.Kernel.Basis`).
 namespace Ix.Kernel
 
 /-- The name of the basis equality type. -/
-def eqName : Key := roleKey .eq
+abbrev eqName : Key md := roleKey .eq
 
 /-- The name of the basis equality constructor. -/
-def eqReflName : Key := roleKey .eqRefl
+abbrev eqReflName : Key md := roleKey .eqRefl
 
 /-- The name of the basis equality recursor. -/
-def eqRecName : Key := roleKey .eqRec
+abbrev eqRecName : Key md := roleKey .eqRec
 
 /-- The name of the basis unit type. -/
-def punitName : Key := roleKey .punit
+abbrev punitName : Key md := roleKey .punit
 
 /-- The name of the basis unit type's recursor.  A top-level constant
 so the unit-like head test (`isUnitLikeTy`, task #161 item C1) does not
 rebuild it on every proof-irrelevance attempt. -/
-def punitRecName : Key := roleKey .punitRec
+abbrev punitRecName : Key md := roleKey .punitRec
 
 /-- The name `Nat`. -/
-def natName : Key := roleKey .nat
+abbrev natName : Key md := roleKey .nat
 
 /-- The name `Nat.zero`. -/
-def natZeroName : Key := roleKey .natZero
+abbrev natZeroName : Key md := roleKey .natZero
 
 /-- The name `Nat.succ`. -/
-def natSuccName : Key := roleKey .natSucc
+abbrev natSuccName : Key md := roleKey .natSucc
 
 /-- The name `Nat.rec`. -/
-def natRecName : Key := roleKey .natRec
+abbrev natRecName : Key md := roleKey .natRec
 
 /-- The name of the basis unit constructor. -/
-def punitUnitName : Key := roleKey .punitUnit
+abbrev punitUnitName : Key md := roleKey .punitUnit
 
 /-- The name of the basis empty type. -/
-def emptyName : Key := roleKey .empty
+abbrev emptyName : Key md := roleKey .empty
 
 /-- The name `Empty.rec`. -/
-def emptyRecName : Key := roleKey .emptyRec
+abbrev emptyRecName : Key md := roleKey .emptyRec
 
 /-- The name of the pinned `False` basis type (task #181): the
 zero-constructor `Prop`, pinned like `Empty` so that the consistency
 corollary about `False` needs no hypothesis about how a stream declares
 it. -/
-def falseName : Key := roleKey .false
+abbrev falseName : Key md := roleKey .false
 
 /-- The name `False.rec`. -/
-def falseRecName : Key := roleKey .falseRec
+abbrev falseRecName : Key md := roleKey .falseRec
 
 /-- The name of the basis quotient type. -/
-def quotName : Key := roleKey .quot
+abbrev quotName : Key md := roleKey .quot
 
 /-- The name of the basis quotient constructor. -/
-def quotMkName : Key := roleKey .quotMk
+abbrev quotMkName : Key md := roleKey .quotMk
 
 /-- The name of the basis quotient lift eliminator. -/
-def quotLiftName : Key := roleKey .quotLift
+abbrev quotLiftName : Key md := roleKey .quotLift
 
 /-- The name of the basis quotient induction eliminator. -/
-def quotIndName : Key := roleKey .quotInd
+abbrev quotIndName : Key md := roleKey .quotInd
 
 /-- The name of the basis quotient soundness axiom. -/
-def quotSoundName : Key := roleKey .quotSound
+abbrev quotSoundName : Key md := roleKey .quotSound
 
 /-! The names of the string-literal support constants (see
 `strLitSupported` in `Ix.Kernel.Core`).  These are *not* basis
@@ -82,22 +82,22 @@ pinned only so that a string literal knows what it unfolds to
 (`strLitToConstructor`), exactly like the `Nat` literal names above. -/
 
 /-- The name `String`. -/
-def stringName : Key := roleKey .string
+abbrev stringName : Key md := roleKey .string
 
 /-- The name `String.ofList`. -/
-def stringOfListName : Key := roleKey .stringOfList
+abbrev stringOfListName : Key md := roleKey .stringOfList
 
 /-- The name `List`. -/
-def listName : Key := roleKey .list
+abbrev listName : Key md := roleKey .list
 
 /-- The name `List.nil`. -/
-def listNilName : Key := roleKey .listNil
+abbrev listNilName : Key md := roleKey .listNil
 
 /-- The name `List.cons`. -/
-def listConsName : Key := roleKey .listCons
+abbrev listConsName : Key md := roleKey .listCons
 
 /-- The name `Char`. -/
-def charName : Key := roleKey .char
+abbrev charName : Key md := roleKey .char
 
 /-- The name `And`: the one propositional structure whose recursor is
 rescued on a stuck proof (`majorToCtor`'s `And` branch,
@@ -105,19 +105,19 @@ rescued on a stuck proof (`majorToCtor`'s `And` branch,
 (`pins/<toolchain>.prelude.ndjson`, installed first in every fold; a
 stream's own `And` is dropped as an identical copy or declines the
 stream), so the name always denotes the toolchain's `And`. -/
-def andName : Key := roleKey .and
+abbrev andName : Key md := roleKey .and
 
 /-- The name `And.intro`. -/
-def andIntroName : Key := roleKey .andIntro
+abbrev andIntroName : Key md := roleKey .andIntro
 
 /-- The name `Char.ofNat`. -/
-def charOfNatName : Key := roleKey .charOfNat
+abbrev charOfNatName : Key md := roleKey .charOfNat
 
 /-- Names reserved for the pinned basis blocks; no other declaration
 may use them.  `PSigma'` is not among them (task #175 W6): the
 modelled basis's tight pair installs through the direct
 simple-structure path as an ordinary two-field structure. -/
-def reservedBasisNames : List Key :=
+def reservedBasisNames : List (Key md) :=
   [eqName, eqReflName, eqRecName,
    natName, natZeroName, natSuccName, natRecName,
    punitName, punitUnitName, punitRecName,
@@ -126,7 +126,7 @@ def reservedBasisNames : List Key :=
    quotName, quotMkName, quotLiftName, quotIndName, quotSoundName]
 
 /-- A derived key is not reserved. -/
-theorem reservedBasisNames_contains_auxKey (k : Key) (d : Derived) :
+theorem reservedBasisNames_contains_auxKey (k : Key md) (d : Derived) :
     reservedBasisNames.contains (auxKey k d) = false := by
   simp [reservedBasisNames, eqName, eqReflName, eqRecName, natName, natZeroName, natSuccName,
     natRecName, punitName, punitUnitName, punitRecName, emptyName, emptyRecName, falseName,
@@ -146,6 +146,6 @@ here, at the bottom of the kernel, because the decline is decided
 where a constant fails to resolve — inside the inference body. -/
 
 /-- The name `sorryAx`. -/
-def sorryAxName : Key := roleKey .sorryAx
+abbrev sorryAxName : Key md := roleKey .sorryAx
 
 end Ix.Kernel

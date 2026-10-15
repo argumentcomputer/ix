@@ -30,7 +30,7 @@ call's own `.ok true`, which is what a fuel induction consumes.
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env} {fuel : Nat}
+variable {env : Env md} {fuel : Nat}
 
 /-- **The stuck tree's exits** (`defeqStep`, `Core.lean:1580-1700`, the
 `match a', b'` that runs once neither head unfolds).  `fallback` is the
@@ -38,9 +38,9 @@ exit of every arm whose shape guard fails: they all call `stuckIrrel`
 on the *same* pair, so one constructor stands for all of them.  The
 other sixteen are the certificates the arms run, each at the shapes its
 pattern pinned. -/
-inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop where
+inductive DefeqStuckExit (env : Env md) (fuel d : Nat) : Expr md → Expr md → Prop where
   /-- Every non-firing arm's fallback. -/
-  | fallback {a b : Expr} :
+  | fallback {a b : Expr md} :
       stuckIrrelFueled .verified env fuel d a b = .ok true →
       DefeqStuckExit env fuel d a b
   /-- `Core.lean:1581`: two sorts. -/
@@ -54,47 +54,47 @@ inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop whe
   /-- `:1589-1591`: the mirror. -/
   | natZeroR : DefeqStuckExit env fuel d (.const natZeroName []) (.lit (.natVal 0))
   /-- `:1592-1597`: a packed successor against `Nat.succ x`. -/
-  | natSuccL {n : Nat} {x : Expr} :
+  | natSuccL {n : Nat} {x : Expr md} :
       isDefEqCore .verified env fuel d (.lit (.natVal n)) x = .ok true →
       DefeqStuckExit env fuel d (.lit (.natVal (n + 1)))
         (.app (.const natSuccName []) x)
   /-- `:1598-1603`: the mirror (the checker's argument order). -/
-  | natSuccR {n : Nat} {x : Expr} :
+  | natSuccR {n : Nat} {x : Expr md} :
       isDefEqCore .verified env fuel d x (.lit (.natVal n)) = .ok true →
       DefeqStuckExit env fuel d (.app (.const natSuccName []) x)
         (.lit (.natVal (n + 1)))
   /-- `:1610-1613`: a string literal against a `String.ofList` application. -/
-  | strLitL {s : String} {x : Expr} :
+  | strLitL {s : String} {x : Expr md} :
       strLitSupported env = true →
       isDefEqCore .verified env fuel d (strLitToConstructor s)
         (.app (.const stringOfListName []) x) = .ok true →
       DefeqStuckExit env fuel d (.lit (.strVal s))
         (.app (.const stringOfListName []) x)
   /-- `:1614-1617`: the mirror. -/
-  | strLitR {s : String} {x : Expr} :
+  | strLitR {s : String} {x : Expr md} :
       strLitSupported env = true →
       isDefEqCore .verified env fuel d (.app (.const stringOfListName []) x)
         (strLitToConstructor s) = .ok true →
       DefeqStuckExit env fuel d (.app (.const stringOfListName []) x)
         (.lit (.strVal s))
   /-- `:1618-1620`: two free variables of the same index. -/
-  | fvar {i : Nat} {ty₁ ty₂ : Expr} :
+  | fvar {i : Nat} {ty₁ ty₂ : Expr md} :
       DefeqStuckExit env fuel d (.fvar i ty₁) (.fvar i ty₂)
   /-- `:1621-1626`: the same constant at equivalent levels. -/
-  | const {n : Key} {us us' : List Level} :
+  | const {n : Key md} {us us' : List Level} :
       Level.isEquivList us us' = some true →
       DefeqStuckExit env fuel d (.const n us) (.const n us')
   /-- `:1627-1643`: ∀-congruence, the bodies opened at the RIGHT domain,
   the annotations equal (the `.verified` validation), the input contracts
   equal. -/
-  | forallE {ty₁ bd₁ ty₂ bd₂ : Expr} {m₁ m₂ : BinderMeta} :
+  | forallE {ty₁ bd₁ ty₂ bd₂ : Expr md} {m₁ m₂ : BinderMeta} :
       isDefEqCore .verified env fuel d ty₁ ty₂ = .ok true →
       isDefEqCore .verified env fuel (d + 1) (bd₁.instantiate1 (.fvar d ty₂))
         (bd₂.instantiate1 (.fvar d ty₂)) = .ok true →
       m₁.pw = m₂.pw → m₁.contract = m₂.contract →
       DefeqStuckExit env fuel d (.forallE ty₁ bd₁ m₁) (.forallE ty₂ bd₂ m₂)
   /-- `:1644-1651`: λ-congruence, likewise. -/
-  | lam {ty₁ bd₁ ty₂ bd₂ : Expr} {m₁ m₂ : BinderMeta} :
+  | lam {ty₁ bd₁ ty₂ bd₂ : Expr md} {m₁ m₂ : BinderMeta} :
       isDefEqCore .verified env fuel d ty₁ ty₂ = .ok true →
       isDefEqCore .verified env fuel (d + 1) (bd₁.instantiate1 (.fvar d ty₂))
         (bd₂.instantiate1 (.fvar d ty₂)) = .ok true →
@@ -102,33 +102,33 @@ inductive DefeqStuckExit (env : Env) (fuel d : Nat) : Expr → Expr → Prop whe
       DefeqStuckExit env fuel d (.lam ty₁ bd₁ m₁) (.lam ty₂ bd₂ m₂)
   /-- `:1652-1678`: the stuck spine congruence (the equal-length guard is
   `defEqList`'s own). -/
-  | spine {a b : Expr} :
+  | spine {a b : Expr md} :
       isDefEqCore .verified env fuel d a.getAppFn b.getAppFn = .ok true →
       defEqListFueled .verified env fuel d a.getAppArgs b.getAppArgs = .ok true →
       DefeqStuckExit env fuel d a b
   /-- `:1679-1689`: the stuck projection congruence, same table slot. -/
-  | proj {sn : Key} {i : Nat} {e₁ e₂ : Expr} :
+  | proj {sn : Key md} {i : Nat} {e₁ e₂ : Expr md} :
       isDefEqCore .verified env fuel d e₁ e₂ = .ok true →
       DefeqStuckExit env fuel d (.proj sn i e₁) (.proj sn i e₂)
   /-- `:1690-1692`: a one-sided λ on the left — η. -/
-  | etaL {ty bd : Expr} {mb : BinderMeta} {b : Expr} :
+  | etaL {ty bd : Expr md} {mb : BinderMeta} {b : Expr md} :
       etaCertFueled .verified env fuel d ty bd mb b = .ok true →
       DefeqStuckExit env fuel d (.lam ty bd mb) b
   /-- `:1693-1696`: a one-sided λ on the right. -/
-  | etaR {ty bd : Expr} {mb : BinderMeta} {a : Expr} :
+  | etaR {ty bd : Expr md} {mb : BinderMeta} {a : Expr md} :
       etaCertFueled .verified env fuel d ty bd mb a = .ok true →
       DefeqStuckExit env fuel d a (.lam ty bd mb)
 
 /-- `Expr.isBoolTrue` reads exactly the constant `Bool.true`
 (`Model/Steps/DefEq.lean:510`'s private twin). -/
-theorem isBoolTrue_iff {e : Expr} : e.isBoolTrue = true ↔ e = .const boolTrueName [] := by
+theorem isBoolTrue_iff {e : Expr md} : e.isBoolTrue = true ↔ e = .const boolTrueName [] := by
   cases e <;> (try cases ‹List Level›) <;> simp [Expr.isBoolTrue]
 
 /-- **The inversion of `defeqStep`** (`Core.lean:1460-1700`): the
 prefix's three exits and, under the two `whnfCore` reducts, the nine
 ways the step can end. -/
-theorem defeqStep_inv {d : Nat} {k : Bool → Expr → Expr → CheckM Bool}
-    {pi : Bool} {a b : Expr}
+theorem defeqStep_inv {d : Nat} {k : Bool → Expr md → Expr md → CheckM Bool}
+    {pi : Bool} {a b : Expr md}
     (h : defeqStep .verified (pureFns .verified env fuel) env d k pi a b
       = .ok true) :
     a = b ∨

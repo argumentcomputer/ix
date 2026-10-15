@@ -59,22 +59,22 @@ open BasisDSL
 /-! ## Specifications -/
 
 /-- One role's specification (IXC-PLAN §8.1). -/
-inductive Spec where
+inductive Spec (md : Mode) where
   /-- The exact declarations, up to `ConstantInfo.canon` (a basis block; every
   member of the block has the same specification). -/
-  | block (decls : List ConstantInfo)
+  | block (decls : List (ConstantInfo md))
   /-- An exact type, up to binder data and level-parameter names. -/
-  | anchor (levels : Nat) (type : Expr)
+  | anchor (levels : Nat) (type : Expr md)
   /-- The type and the characterizing equations: per equation its hypotheses,
   left and right sides, over `fvar 0`, `fvar 1` (the hypotheses are `fvar 2`,
   `fvar 3` in the certificate's telescope); the operation's self-reference is
   `.const (roleKey r) []`. -/
-  | ops (type : Expr) (eqs : List (List Expr × Expr × Expr))
+  | ops (type : Expr md) (eqs : List (List (Expr md) × Expr md × Expr md))
   /-- An axiom of the given type; `none` is an inert axiom (`sorryAx`): it is
   tolerated as a declaration, installs nothing, and any use declines. -/
-  | axiom (levels : Nat) (type : Option Expr)
+  | axiom (levels : Nat) (type : Option (Expr md))
   /-- An opaque whose value is the identity, `value x ≡ x`, at this type. -/
-  | identity (type : Expr)
+  | identity (type : Expr md)
   deriving Repr, Inhabited
 
 /-- The specification kinds, for summaries and the table's checks. -/
@@ -82,7 +82,7 @@ inductive SpecKind where
   | block | anchor | ops | axiom | identity
   deriving DecidableEq, Repr, Inhabited
 
-def Spec.kind : Spec → SpecKind
+def Spec.kind : Spec md → SpecKind
   | .block _ => .block
   | .anchor .. => .anchor
   | .ops .. => .ops
@@ -92,7 +92,7 @@ def Spec.kind : Spec → SpecKind
 /-- The evidence an operation's equations take, in order: `true` for an
 unconditional equation (definitional equality), `false` for a conditional one
 (a proof). Every other kind takes none. -/
-def Spec.evidenceKinds : Spec → List Bool
+def Spec.evidenceKinds : Spec md → List Bool
   | .ops _ eqs => eqs.map (·.1.isEmpty)
   | _ => []
 
@@ -119,10 +119,10 @@ proof entry carrying the theorem's key and its proof term (a theorem's value,
 resolved by the front end). Soundness holds for every value
 (`Ix.Kernel.model_exists`): the evidence decides which operations' fast
 paths are enabled, nothing else. -/
-abbrev Evidences := List (Role × List (Evidence (Key × Expr)))
+abbrev Evidences (md : Mode) := List (Role × List (Evidence (Key md × Expr md)))
 
 /-- The evidence of role `r` (none when the role has no entry). -/
-def Evidences.of (ev : Evidences) (r : Role) : List (Evidence (Key × Expr)) :=
+def Evidences.of (ev : Evidences md) (r : Role) : List (Evidence (Key md × Expr md)) :=
   match ev.find? (·.1 == r) with
   | some (_, es) => es
   | none => []
@@ -141,31 +141,31 @@ self-reference is `.const c []`, substituted with the stored annotated
 value before checking (all statement components are application
 spines, so `Expr.substConst0` applies). These are the equations of the
 operations' `ops` specifications (`Role.spec`). -/
-def divModCertStmts (c : Key) : List (List Expr × Expr) :=
-  let natTy : Expr := .const natName []
-  let x : Expr := .fvar 0 natTy
-  let y : Expr := .fvar 1 natTy
-  let one : Expr := .app (.const natSuccName []) (.const natZeroName [])
-  let ble2 : Expr → Expr → Expr := fun a b =>
+def divModCertStmts (c : Key md) : List (List (Expr md) × Expr md) :=
+  let natTy : Expr md := .const natName []
+  let x : Expr md := .fvar 0 natTy
+  let y : Expr md := .fvar 1 natTy
+  let one : Expr md := .app (.const natSuccName []) (.const natZeroName [])
+  let ble2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natBleName []) a) b
-  let eqB : Expr → Expr → Expr := fun a b =>
+  let eqB : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.app (.const eqName [.succ .zero]) (.const boolName [])) a) b
-  let eqN : Expr → Expr → Expr := fun a b =>
+  let eqN : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.app (.const eqName [.succ .zero]) natTy) a) b
-  let op2 : Expr → Expr → Expr := fun a b => .app (.app (.const c []) a) b
-  let sub2 : Expr → Expr → Expr := fun a b =>
+  let op2 : Expr md → Expr md → Expr md := fun a b => .app (.app (.const c []) a) b
+  let sub2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natSubName []) a) b
-  let bT : Expr := .const boolTrueName []
-  let bF : Expr := .const boolFalseName []
-  let z : Expr := .const natZeroName []
-  let two : Expr := .app (.const natSuccName []) one
-  let mod2 : Expr → Expr → Expr := fun a b =>
+  let bT : Expr md := .const boolTrueName []
+  let bF : Expr md := .const boolFalseName []
+  let z : Expr md := .const natZeroName []
+  let two : Expr md := .app (.const natSuccName []) one
+  let mod2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natModName []) a) b
-  let div2 : Expr → Expr → Expr := fun a b =>
+  let div2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natDivName []) a) b
-  let add2 : Expr → Expr → Expr := fun a b =>
+  let add2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natAddName []) a) b
-  let mul2 : Expr → Expr → Expr := fun a b =>
+  let mul2 : Expr md → Expr md → Expr md := fun a b =>
     .app (.app (.const natMulName []) a) b
   if c = natGcdName then
     -- `gcd`: `1 ≤ x → gcd x y = gcd (y % x) x`, `x = 0 → gcd x y = y`
@@ -202,21 +202,21 @@ def divModCertStmts (c : Key) : List (List Expr × Expr) :=
         (mod2 (add2 (mod2 x two) (mod2 y two)) two))),
      ([eqB (ble2 one x) bF], eqN (op2 x y) y)]
   else
-  let recRhs : Expr :=
+  let recRhs : Expr md :=
     if c = natDivName then .app (.const natSuccName []) (op2 (sub2 x y) y)
     else op2 (sub2 x y) y
-  let baseRhs : Expr := if c = natDivName then .const natZeroName [] else x
+  let baseRhs : Expr md := if c = natDivName then .const natZeroName [] else x
   [([eqB (ble2 y x) bT, eqB (ble2 one y) bT], eqN (op2 x y) recRhs),
    ([eqB (ble2 y x) bF], eqN (op2 x y) baseRhs),
    ([eqB (ble2 one y) bF], eqN (op2 x y) baseRhs)]
 
 /-- The sides of a certificate statement `Eq Nat lhs rhs`. -/
-def eqSides : Expr → Expr × Expr
+def eqSides : Expr md → Expr md × Expr md
   | .app (.app (.app (.const _ _) _) a) b => (a, b)
   | e => (e, e)
 
 /-- A certificate statement `Eq Nat lhs rhs` from its sides. -/
-def eqNatOf (a b : Expr) : Expr :=
+def eqNatOf (a b : Expr md) : Expr md :=
   .app (.app (.app (.const eqName [.succ .zero]) (.const natName [])) a) b
 
 /-! ## The specification terms that have no other home
@@ -226,45 +226,45 @@ check exactly these shapes), the operations' types (`natOpTyPinned`), and the
 anchors of the four roles today's checker does not validate. -/
 
 /-- `List.{u} : Type u → Type u`. -/
-def listSpecTy : Expr := piA (srt (.succ u)) (srt (.succ u))
+def listSpecTy : Expr md := piA (srt (.succ u)) (srt (.succ u))
 
 /-- `List.nil.{u} : (α : Type u) → List.{u} α`. -/
-def listNilSpecTy : Expr := pi "α" (srt (.succ u)) (.app (cnst listName [u]) (bv 0))
+def listNilSpecTy : Expr md := pi "α" (srt (.succ u)) (.app (cnst listName [u]) (bv 0))
 
 /-- `List.cons.{u} : (α : Type u) → α → List.{u} α → List.{u} α`. -/
-def listConsSpecTy : Expr :=
+def listConsSpecTy : Expr md :=
   pi "α" (srt (.succ u)) <|
   pi "head" (bv 0) <|
   pi "tail" (.app (cnst listName [u]) (bv 1)) <|
   .app (cnst listName [u]) (bv 2)
 
 /-- `Char.ofNat : Nat → Char`. -/
-def charOfNatSpecTy : Expr := pi "n" (cnst natName) (cnst charName)
+def charOfNatSpecTy : Expr md := pi "n" (cnst natName) (cnst charName)
 
 /-- `String.ofList : List.{0} Char → String`. -/
-def stringOfListSpecTy : Expr :=
+def stringOfListSpecTy : Expr md :=
   pi "data" (.app (cnst listName [.zero]) (cnst charName)) (cnst stringName)
 
 /-- `Bool.rec.{u} {motive : Bool → Sort u} (false : motive false)
 (true : motive true) (t : Bool) : motive t`. -/
-def boolRecSpecTy : Expr :=
+def boolRecSpecTy : Expr md :=
   piI "motive" (pi "t" (cnst boolName) (srt u)) <|
   pi "false" (.app (bv 0) (cnst boolFalseName)) <|
   pi "true" (.app (bv 1) (cnst boolTrueName)) <|
   pi "t" (cnst boolName) (.app (bv 3) (bv 0))
 
 /-- `And (a b : Prop) : Prop`. -/
-def andSpecTy : Expr := pi "a" prop <| pi "b" prop prop
+def andSpecTy : Expr md := pi "a" prop <| pi "b" prop prop
 
 /-- `And.intro {a b : Prop} (left : a) (right : b) : And a b`. -/
-def andIntroSpecTy : Expr :=
+def andIntroSpecTy : Expr md :=
   piI "a" prop <| piI "b" prop <| pi "left" (bv 1) <| pi "right" (bv 1) <|
   ap2 (cnst andName) (bv 3) (bv 2)
 
 /-- `And.rec.{u} {a b : Prop} {motive : And a b → Sort u}
 (intro : (left : a) → (right : b) → motive (And.intro left right))
 (t : And a b) : motive t`. -/
-def andRecSpecTy : Expr :=
+def andRecSpecTy : Expr md :=
   piI "a" prop <|
   piI "b" prop <|
   piI "motive" (pi "t" (ap2 (cnst andName) (bv 1) (bv 0)) (srt u)) <|
@@ -274,28 +274,28 @@ def andRecSpecTy : Expr :=
   pi "t" (ap2 (cnst andName) (bv 3) (bv 2)) (.app (bv 2) (bv 0))
 
 /-- `Nat → Nat`. -/
-def natUnSpecTy : Expr := pi "n" (cnst natName) (cnst natName)
+def natUnSpecTy : Expr md := pi "n" (cnst natName) (cnst natName)
 
 /-- `Nat → Nat → Nat`. -/
-def natBinSpecTy : Expr := pi "n" (cnst natName) <| pi "m" (cnst natName) (cnst natName)
+def natBinSpecTy : Expr md := pi "n" (cnst natName) <| pi "m" (cnst natName) (cnst natName)
 
 /-- `Nat → Nat → Bool`. -/
-def natCmpSpecTy : Expr := pi "n" (cnst natName) <| pi "m" (cnst natName) (cnst boolName)
+def natCmpSpecTy : Expr md := pi "n" (cnst natName) <| pi "m" (cnst natName) (cnst boolName)
 
 /-- An `ops` specification from the structural recurrences (`natOpEquations`,
 unconditional) at the variables `fvar 0`, `fvar 1`. -/
-def natOpsSpec (ty : Expr) (c : Key) : Spec :=
+def natOpsSpec (ty : Expr md) (c : Key md) : Spec md :=
   .ops ty ((natOpEquations 0 c).map fun (l, r) => ([], l, r))
 
 /-- An `ops` specification from the certificate statements
 (`divModCertStmts`, conditional). -/
-def divModSpec (c : Key) : Spec :=
+def divModSpec (c : Key md) : Spec md :=
   .ops natBinSpecTy ((divModCertStmts c).map fun (hs, e) => (hs, (eqSides e).1, (eqSides e).2))
 
 /-! ## The specification of every role -/
 
 /-- **The specification set.** -/
-def Role.spec : Role → Spec
+def Role.spec : Role → Spec md
   | .nat | .natZero | .natSucc | .natRec => .block natBasis
   | .eq | .eqRefl | .eqRec => .block eqBasis
   | .punit | .punitUnit | .punitRec => .block punitBasis
@@ -406,7 +406,7 @@ def specVersion : Nat := 1
 /-! ## The evidence of an operation, as the fold reads it -/
 
 /-- The operation role at a key (the certified `Nat` operations). -/
-def opRole? (c : Key) : Option Role :=
+def opRole? (c : Key md) : Option Role :=
   if c = natPredName then some .natPred
   else if c = natAddName then some .natAdd
   else if c = natSubName then some .natSub
@@ -426,7 +426,7 @@ def opRole? (c : Key) : Option Role :=
 
 /-- **A structural operation's evidence is in order**: one `.defeq` entry per
 recurrence equation (`natOpEquations`), and nothing else. -/
-def evidenceDefeqOk (ev : Evidences) (c : Key) : Bool :=
+def evidenceDefeqOk (ev : Evidences md) (c : Key md) : Bool :=
   match opRole? c with
   | some r =>
     let es := ev.of r
@@ -436,7 +436,7 @@ def evidenceDefeqOk (ev : Evidences) (c : Key) : Bool :=
 /-- **A well-founded operation's proof terms**: one `.proof` entry per
 certificate statement (`divModCertStmts`), their proof terms in order; `none`
 when the evidence has another shape. -/
-def evidenceProofs (ev : Evidences) (c : Key) : Option (List Expr) :=
+def evidenceProofs (ev : Evidences md) (c : Key md) : Option (List (Expr md)) :=
   match opRole? c with
   | some r =>
     let es := ev.of r
@@ -471,16 +471,16 @@ bound only makes them total). -/
 def walkFuel : Nat := 1 <<< 40
 
 /-- The keys a `Nat` literal references implicitly. -/
-def litNatKeys : List Key := [natName, natZeroName, natSuccName]
+def litNatKeys : List (Key md) := [natName, natZeroName, natSuccName]
 
 /-- The keys a `String` literal references implicitly. -/
-def litStrKeys : List Key :=
+def litStrKeys : List (Key md) :=
   litNatKeys ++ [stringName, stringOfListName, listName, listNilName, listConsName, charName,
     charOfNatName]
 
 /-- The keys the expressions of `todo` reference, added to `acc`: a walk over
 their distinct subterms (`seen`), each visited once. -/
-def constKeysGo : Nat → List Expr → Std.HashSet Expr → Std.HashSet Key → Std.HashSet Key
+def constKeysGo : Nat → List (Expr md) → Std.HashSet (Expr md) → Std.HashSet (Key md) → Std.HashSet (Key md)
   | 0, _, _, acc => acc
   | _, [], _, acc => acc
   | n + 1, e :: todo, seen, acc =>
@@ -500,10 +500,10 @@ def constKeysGo : Nat → List Expr → Std.HashSet Expr → Std.HashSet Key →
       | _ => constKeysGo n todo seen acc
 
 /-- The keys an expression references. -/
-def Expr.constKeys (e : Expr) : Std.HashSet Key := constKeysGo walkFuel [e] {} {}
+def Expr.constKeys (e : Expr md) : Std.HashSet (Key md) := constKeysGo walkFuel [e] {} {}
 
 /-- The expressions of a stored constant the closure follows. -/
-def ConstantInfo.refExprs : ConstantInfo → List Expr
+def ConstantInfo.refExprs : ConstantInfo md → List (Expr md)
   | .axiomInfo cv => [cv.type]
   | .defnInfo cv v _ => [cv.type, v]
   | .thmInfo cv v => [cv.type, v]
@@ -518,15 +518,15 @@ def ConstantInfo.refExprs : ConstantInfo → List Expr
 /-- The keys of a stored constant the closure follows besides its
 expressions': a structure's η constructor, a recursor's rule constructors, a
 projection table's structure and constructor. -/
-def ConstantInfo.refKeys : ConstantInfo → List Key
+def ConstantInfo.refKeys : ConstantInfo md → List (Key md)
   | .indInfo _ caps => caps.etaCtor.toList
   | .recInfo _ _ _ rules => rules.map (·.ctor)
   | .projInfo tbl => [tbl.structName, tbl.ctor]
   | _ => []
 
 /-- The keys reachable from `todo` through the constants `look` finds. -/
-def refClosureGo (look : Key → Option ConstantInfo) :
-    Nat → List Key → Std.HashSet Key → Std.HashSet Key
+def refClosureGo (look : Key md → Option (ConstantInfo md)) :
+    Nat → List (Key md) → Std.HashSet (Key md) → Std.HashSet (Key md)
   | 0, _, seen => seen
   | _, [], seen => seen
   | n + 1, k :: todo, seen =>
@@ -541,7 +541,7 @@ def refClosureGo (look : Key → Option ConstantInfo) :
 
 /-- The roots of an operation's evidence closure besides its value: its
 dependencies' roles, with their blocks. -/
-def evidenceDepKeys (c : Key) : List Key :=
+def evidenceDepKeys (c : Key md) : List (Key md) :=
   match opRole? c with
   | some r => (r.deps.flatMap Role.block).map roleKey
   | none => []
@@ -550,21 +550,21 @@ def evidenceDepKeys (c : Key) : List Key :=
 `annVal`: every constant of every proof, with `c`'s self-references replaced
 by `annVal`, is in the dependency closure of `annVal` and of `c`'s
 dependencies (`evidenceDepKeys`), through `look`. -/
-def evidenceLocal (look : Key → Option ConstantInfo) (c : Key) (annVal : Expr)
-    (proofs : List Expr) : Bool :=
+def evidenceLocal (look : Key md → Option (ConstantInfo md)) (c : Key md) (annVal : Expr md)
+    (proofs : List (Expr md)) : Bool :=
   let cl := refClosureGo look walkFuel (annVal.constKeys.toList ++ evidenceDepKeys c) {}
   proofs.all fun p => (Expr.substConstAll c annVal p).constKeys.toList.all cl.contains
 
 /-! ## Facts -/
 
-theorem Role.spec_nat : Role.spec .nat = .block (BasisKind.decls .natK) := rfl
-theorem Role.spec_eq : Role.spec .eq = .block (BasisKind.decls .eqK) := rfl
-theorem Role.spec_punit : Role.spec .punit = .block (BasisKind.decls .punitK) := rfl
-theorem Role.spec_empty : Role.spec .empty = .block (BasisKind.decls .emptyK) := rfl
-theorem Role.spec_false : Role.spec .false = .block (BasisKind.decls .falseK) := rfl
-theorem Role.spec_quot : Role.spec .quot = .block (BasisKind.decls .quotK) := rfl
-theorem Role.spec_propext : Role.spec .propext = .axiom 0 (some propextRaw.type) := rfl
-theorem Role.spec_choice : Role.spec .choice = .axiom 1 (some choiceRaw.type) := rfl
+theorem Role.spec_nat : (Role.spec (md := md)) .nat = .block (BasisKind.decls .natK) := rfl
+theorem Role.spec_eq : (Role.spec (md := md)) .eq = .block (BasisKind.decls .eqK) := rfl
+theorem Role.spec_punit : (Role.spec (md := md)) .punit = .block (BasisKind.decls .punitK) := rfl
+theorem Role.spec_empty : (Role.spec (md := md)) .empty = .block (BasisKind.decls .emptyK) := rfl
+theorem Role.spec_false : (Role.spec (md := md)) .false = .block (BasisKind.decls .falseK) := rfl
+theorem Role.spec_quot : (Role.spec (md := md)) .quot = .block (BasisKind.decls .quotK) := rfl
+theorem Role.spec_propext : (Role.spec (md := md)) .propext = .axiom 0 (some propextRaw.type) := rfl
+theorem Role.spec_choice : (Role.spec (md := md)) .choice = .axiom 1 (some choiceRaw.type) := rfl
 
 /-- Every role's block contains it. -/
 theorem Role.mem_block (r : Role) : r ∈ r.block := by cases r <;> decide
@@ -576,25 +576,25 @@ theorem Role.block_block (r : Role) : ∀ s ∈ r.block, s.block = r.block := by
 /-- The operations, and only they, take evidence: one entry per equation, a
 definitional one exactly for an unconditional equation. -/
 theorem Role.evidenceKinds_natAdd :
-    (Role.spec .natAdd).evidenceKinds = [Bool.true, Bool.true] := by decide
+    ((Role.spec (md := md)) .natAdd).evidenceKinds = [Bool.true, Bool.true] := by (cases md <;> decide)
 
 theorem Role.evidenceKinds_natDiv :
-    (Role.spec .natDiv).evidenceKinds = [Bool.false, Bool.false, Bool.false] := by decide
+    ((Role.spec (md := md)) .natDiv).evidenceKinds = [Bool.false, Bool.false, Bool.false] := by (cases md <;> decide)
 
 /-- Every operation role is found at its key. -/
 theorem opRole?_roleKey (r : Role)
-    (h : (Role.spec r).kind = .ops) : opRole? (roleKey r) = some r := by
-  cases r <;> first | rfl | (exact absurd h (by decide))
+    (h : ((Role.spec (md := md)) r).kind = .ops) : (opRole? (md := md)) (roleKey r) = some r := by
+  cases r <;> first | rfl | (exact absurd h (by (cases md <;> decide)))
 
 /-- The certificate statements are the `ops` specifications' equations: the
 spec's sides rebuild each statement. -/
-theorem divModSpec_stmts (c : Key)
+theorem divModSpec_stmts (c : Key md)
     (hc : c ∈ [natDivName, natModName, natGcdName, natLandName, natLorName, natXorName,
       natShiftLeftName, natShiftRightName]) :
     (match divModSpec c with
      | .ops _ eqs => eqs.map fun (hs, l, r) => (hs, eqNatOf l r)
      | _ => []) = divModCertStmts c := by
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
-  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (cases md <;> decide)
 
 end Ix.Kernel

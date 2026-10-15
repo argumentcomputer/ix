@@ -32,7 +32,7 @@ whose `infer` is the lane at `fuel` (`inferIO_def`).
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env} {fuel : Nat}
+variable {env : Env md} {fuel : Nat}
 
 /-! ## The leaf clauses' inversions
 
@@ -47,7 +47,7 @@ twins.  Each is one `simp only [inferBody, …]` deep. -/
 variable {mode : CheckMode}
 
 /-- The `.sort` clause: the successor sort, no run. -/
-theorem inferTypeCore_sort_inv {d : Nat} {u : Level} {t : Expr}
+theorem inferTypeCore_sort_inv {d : Nat} {u : Level} {t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.sort u) = .ok t) :
     t = .sort (.succ u) := by
   rw [inferTypeCore_succ] at h
@@ -55,7 +55,7 @@ theorem inferTypeCore_sort_inv {d : Nat} {u : Level} {t : Expr}
   exact h.symm
 
 /-- The `.fvar` clause: the scope guard and the stored annotation. -/
-theorem inferTypeCore_fvar_inv {d idx : Nat} {ty t : Expr}
+theorem inferTypeCore_fvar_inv {d idx : Nat} {ty t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.fvar idx ty) = .ok t) :
     idx < d ∧ t = ty := by
   rw [inferTypeCore_succ] at h
@@ -68,7 +68,7 @@ theorem inferTypeCore_fvar_inv {d idx : Nat} {ty t : Expr}
     simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The `.bvar` clause throws. -/
-theorem inferTypeCore_bvar_inv {d i : Nat} {t : Expr}
+theorem inferTypeCore_bvar_inv {d i : Nat} {t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.bvar i) = .ok t) : False := by
   rw [inferTypeCore_succ] at h
   simp [inferBody, throw, throwThe, MonadExceptOf.throw] at h
@@ -77,8 +77,8 @@ theorem inferTypeCore_bvar_inv {d i : Nat} {t : Expr}
 guard, the level arity and the instantiated type
 (`inferTypeCore_const_inv` drops the arity — it is consumed inside its
 own `split`; `Model/Steps/Accepted.lean:70`'s `_inv_len` recovers it). -/
-theorem inferTypeCore_const_inv_full {d : Nat} {n : Key} {us : List Level}
-    {t : Expr} (h : inferTypeCore mode env (fuel + 1) d (.const n us) = .ok t) :
+theorem inferTypeCore_const_inv_full {d : Nat} {n : Key md} {us : List Level}
+    {t : Expr md} (h : inferTypeCore mode env (fuel + 1) d (.const n us) = .ok t) :
     ∃ ci, env.find? n = some ci ∧ ci.isTowerEntry = false ∧
       us.length = ci.toConstantVal.levelParams.length ∧
       t = ci.toConstantVal.type.instantiateLevelParams
@@ -103,7 +103,7 @@ theorem inferTypeCore_const_inv_full {d : Nat} {n : Key} {us : List Level}
       simp [hte, throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The `Nat`-literal clause: the support guard and `Nat`. -/
-theorem inferTypeCore_natLit_inv' {d k : Nat} {t : Expr}
+theorem inferTypeCore_natLit_inv' {d k : Nat} {t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.lit (.natVal k)) = .ok t) :
     natLitSupported env = true ∧ t = .const natName [] := by
   rw [inferTypeCore_succ] at h
@@ -116,7 +116,7 @@ theorem inferTypeCore_natLit_inv' {d k : Nat} {t : Expr}
     simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The string-literal clause: the support guard and `String`. -/
-theorem inferTypeCore_strLit_inv' {d : Nat} {s : String} {t : Expr}
+theorem inferTypeCore_strLit_inv' {d : Nat} {s : String} {t : Expr md}
     (h : inferTypeCore mode env (fuel + 1) d (.lit (.strVal s)) = .ok t) :
     strLitSupported env = true ∧ t = .const stringName [] := by
   rw [inferTypeCore_succ] at h
@@ -129,14 +129,14 @@ theorem inferTypeCore_strLit_inv' {d : Nat} {s : String} {t : Expr}
     simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The io lane's `.bvar` clause throws too. -/
-theorem inferTypeCoreIO_bvar_inv {d i : Nat} {t : Expr}
+theorem inferTypeCoreIO_bvar_inv {d i : Nat} {t : Expr md}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.bvar i) = .ok t) : False := by
   rw [inferTypeCoreIO_succ] at h
   simp [inferBodyIO, throw, throwThe, MonadExceptOf.throw] at h
 
 /-- `lamPw` is `none` exactly off a λ — the shape the rule's chain
 premises are stated at, against the checker's `isLam` guard. -/
-theorem lamPw_eq_none_iff {e : Expr} : e.lamPw = none ↔ e.isLam = false := by
+theorem lamPw_eq_none_iff {e : Expr md} : e.lamPw = none ↔ e.isLam = false := by
   cases e <;> simp [Expr.lamPw, Expr.isLam]
 
 /-- **`inferTypeCore` at `fuel + 1`**, full grade. -/

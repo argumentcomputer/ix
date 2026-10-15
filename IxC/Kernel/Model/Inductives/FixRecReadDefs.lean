@@ -30,7 +30,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## The ih binders -/
 
@@ -57,7 +57,7 @@ telescopes re-bit to the elimination bit `b`, task #202 A2). -/
 constructor's field data lifted `o` under (bits reset to `b`), the ih
 binders, the motive at the constructor's index readings and spine
 lifted above the ih binders. -/
-@[expose] def minorAVAtR {env : Env} (m : EnvModel V env) (C : Key) (ψ : LevelParam → Nat) (nP nF b o : Nat)
+@[expose] def minorAVAtR {env : Env md} (m : EnvModel V env) (C : Key md) (ψ : LevelParam → Nat) (nP nF b o : Nat)
     (ds : List (Nat × Nat × AnnotTerm)) (Es : List AnnotTerm) (recIdx : List Nat)
     (tls : List (List (Nat × Nat × AnnotTerm))) (Eiss : List (List AnnotTerm)) : AnnotTerm :=
   mkPisAV (rebit b (liftDoms o 0 (ds.drop nP)))
@@ -71,24 +71,24 @@ lifted above the ih binders. -/
 index readings, recursive positions, per-field index-expression
 readings, per-field telescopes (empty at a finitary field; task
 #202). -/
-abbrev CtorDatumR :=
-  Key × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm × List Nat × List (List AnnotTerm) ×
+abbrev CtorDatumR (md : Mode) :=
+  (Key md) × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm × List Nat × List (List AnnotTerm) ×
     List (List (Nat × Nat × AnnotTerm))
 
 /-- The minor entries, one per constructor datum, from offset `o`. -/
-@[expose] def fixMinorsData {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP b : Nat) :
-    List CtorDatumR → Nat → List (Nat × Nat × AnnotTerm)
+@[expose] def fixMinorsData {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) (nP b : Nat) :
+    List (CtorDatumR md) → Nat → List (Nat × Nat × AnnotTerm)
   | [], _ => []
   | (C, nF, ds, Es, recIdx, Eiss, tls) :: cs, o =>
     (0, b, minorAVAtR m C ψ nP nF b o ds Es recIdx tls Eiss) :: fixMinorsData m ψ nP b cs (o + 1)
 
 theorem fixMinorsData_length {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
-    ∀ (cds : List CtorDatumR) (o : Nat), (fixMinorsData m ψ nP b cds o).length = cds.length
+    ∀ (cds : List (CtorDatumR md)) (o : Nat), (fixMinorsData m ψ nP b cds o).length = cds.length
   | [], _ => rfl
   | (_, _, _, _, _, _, _) :: cs, o => by simp [fixMinorsData, fixMinorsData_length cs (o + 1)]
 
 theorem mem_fixMinorsData {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
-    ∀ {cds : List CtorDatumR} {o : Nat} {d : Nat × Nat × AnnotTerm},
+    ∀ {cds : List (CtorDatumR md)} {o : Nat} {d : Nat × Nat × AnnotTerm},
       d ∈ fixMinorsData m ψ nP b cds o → d.2.1 = b
   | [], _, _, h => nomatch h
   | (_, _, _, _, _, _, _) :: cs, o, d, h => by
@@ -98,7 +98,7 @@ theorem mem_fixMinorsData {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b :
     · exact mem_fixMinorsData h
 
 theorem fixMinorsData_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {nP b : Nat} :
-    ∀ (cds : List CtorDatumR) (o j : Nat),
+    ∀ (cds : List (CtorDatumR md)) (o j : Nat),
       (fixMinorsData m ψ nP b cds o)[j]?
         = (cds[j]?).map fun cd => (0, b, minorAVAtR m cd.1 ψ nP cd.2.1 b (o + j) cd.2.2.1 cd.2.2.2.1
             cd.2.2.2.2.1 cd.2.2.2.2.2.2 cd.2.2.2.2.2.1)
@@ -114,17 +114,17 @@ theorem fixMinorsData_getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {n
 /-- **The generated recursive recursor type's binder data**: parameters,
 motive, minors (with the ih binders), the index telescope lifted under
 the motive and the minors, major. -/
-@[expose] def fixRecDataAV {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat)
+@[expose] def fixRecDataAV {env : Env md} (m : EnvModel V env) (T : Key md) (ψ : LevelParam → Nat)
     (nP nIdx : Nat) (ℓ : Level) (pps ips : List (Nat × Nat × AnnotTerm))
-    (cds : List CtorDatumR) : List (Nat × Nat × AnnotTerm) :=
+    (cds : List (CtorDatumR md)) : List (Nat × Nat × AnnotTerm) :=
   rebit (pwBit ψ (Level.zeronessOf ℓ)) pps ++
     [(0, pwBit ψ (Level.zeronessOf ℓ), motiveAVI m T ψ nP nIdx ℓ ips)] ++
     fixMinorsData m ψ nP (pwBit ψ (Level.zeronessOf ℓ)) cds 1 ++
     rebit (pwBit ψ (Level.zeronessOf ℓ)) (liftDoms (cds.length + 1) 0 ips) ++
     [(0, pwBit ψ (Level.zeronessOf ℓ), majorAVAt m T ψ nP nIdx cds.length)]
 
-theorem mem_fixRecDataAV {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat} {nP nIdx : Nat}
-    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
+theorem mem_fixRecDataAV {m : EnvModel V env} {T : Key md} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List (CtorDatumR md)}
     {d : Nat × Nat × AnnotTerm}
     (hd : d ∈ fixRecDataAV m T ψ nP nIdx ℓ pps ips cds) : d.2.1 = pwBit ψ (Level.zeronessOf ℓ) := by
   simp only [fixRecDataAV, List.mem_append, List.mem_singleton] at hd
@@ -135,8 +135,8 @@ theorem mem_fixRecDataAV {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat
   · exact mem_rebit h
   · rfl
 
-theorem fixRecDataAV_length {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat} {nP nIdx : Nat}
-    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
+theorem fixRecDataAV_length {m : EnvModel V env} {T : Key md} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List (CtorDatumR md)}
     (hp : pps.length = nP) (hi : ips.length = nIdx) :
     (fixRecDataAV m T ψ nP nIdx ℓ pps ips cds).length = nP + cds.length + nIdx + 2 := by
   simp only [fixRecDataAV, List.length_append, rebit_length, hp, hi, List.length_singleton,
@@ -183,9 +183,9 @@ elimination bit `b`, task #202 A2). -/
 /-- **Rule `j`'s binder data** at a recursive block: the recursor's
 parameter, motive and minor entries, then constructor `j`'s field data
 lifted `n + 1` under. -/
-@[expose] def fixRuleDataAV {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat)
+@[expose] def fixRuleDataAV {env : Env md} (m : EnvModel V env) (T : Key md) (ψ : LevelParam → Nat)
     (nP nIdx : Nat) (ℓ : Level) (pps ips : List (Nat × Nat × AnnotTerm))
-    (cds : List CtorDatumR) (ds : List (Nat × Nat × AnnotTerm)) :
+    (cds : List (CtorDatumR md)) (ds : List (Nat × Nat × AnnotTerm)) :
     List (Nat × AnnotTerm) :=
   (rebit (pwBit ψ (Level.zeronessOf ℓ)) pps ++
     [(0, pwBit ψ (Level.zeronessOf ℓ), motiveAVI m T ψ nP nIdx ℓ ips)] ++
@@ -194,8 +194,8 @@ lifted `n + 1` under. -/
     fun d : Nat × Nat × AnnotTerm => (d.2.1, d.2.2)
 
 /-- Every rule binder carries the elimination level's bit. -/
-theorem mem_fixRuleDataAV {m : EnvModel V env} {T : Key} {ψ : LevelParam → Nat} {nP nIdx : Nat}
-    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
+theorem mem_fixRuleDataAV {m : EnvModel V env} {T : Key md} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List (CtorDatumR md)}
     {ds : List (Nat × Nat × AnnotTerm)} {d : Nat × AnnotTerm}
     (hd : d ∈ fixRuleDataAV m T ψ nP nIdx ℓ pps ips cds ds) :
     d.1 = pwBit ψ (Level.zeronessOf ℓ) := by
@@ -215,15 +215,15 @@ and its datum `(C, nF, ds, Es, recIdx, Eiss)`: the sum route's
 field's index expressions at the field's own depth (`Eiss.getD i`, as
 many as the indices) with the field's entry the family at the
 parameter variables and those readings. -/
-structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Key)
-    (lps : List LevelParam) (nP nIdx : Nat) (c : Key × Nat × Expr × List Nat) (cd : CtorDatumR) :
+structure CtorReadR {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Key md)
+    (lps : List LevelParam) (nP nIdx : Nat) (c : Key md × Nat × Expr md × List Nat) (cd : CtorDatumR md) :
     Prop where
   name : cd.1 = c.1
   nF : cd.2.1 = c.2.1
-  find : ∃ ci : ConstantInfo, env.find? c.1 = some ci ∧ ci.toConstantVal.levelParams = lps
+  find : ∃ ci : ConstantInfo md, env.find? c.1 = some ci ∧ ci.toConstantVal.levelParams = lps
   hasFvar : c.2.2.1.hasFvar = false
   bounded : c.2.2.1.looseBVarsBounded 0 = true
-  resid : ∃ (cbs : List (Expr × BinderMeta)) (es : List Expr),
+  resid : ∃ (cbs : List (Expr md × BinderMeta)) (es : List (Expr md)),
     c.2.2.1.stripPis (nP + c.2.1)
       = some (cbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt c.2.1 nP ++ es)) ∧
     es.length = nIdx
@@ -245,7 +245,7 @@ structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (
   /-- a recursive field's domain, at the field's own depth `nP + i`
   with the parameters and the earlier fields as variables (an opening
   of the constructor's telescope), reads to its entry -/
-  fieldRead : ∀ i ∈ c.2.2.2, ∀ (fvs : List Expr) (o : Expr),
+  fieldRead : ∀ i ∈ c.2.2.2, ∀ (fvs : List (Expr md)) (o : Expr md),
     openPisAtFvars (nP + c.2.1) c.2.2.1 0 = some (fvs, o) →
     ∀ x, fvs[nP + i]? = some x →
       denoteMeta m.acval env ψ (nP + i) x.fvarTypeD = some (cd.2.2.1.getD (nP + i) default).2.2
@@ -254,7 +254,7 @@ structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (
   expressions `structFieldIdxOf` (task #202: without the arity the
   field's readings cannot be separated from the family's leaf, which
   may itself be an application) -/
-  fieldArity : ∀ i ∈ c.2.2.2, ∀ (cbs : List (Expr × BinderMeta)) (body : Expr),
+  fieldArity : ∀ i ∈ c.2.2.2, ∀ (cbs : List (Expr md × BinderMeta)) (body : Expr md),
     c.2.2.1.stripPis (nP + c.2.1) = some (cbs, body) →
     (((cbs.getD (nP + i) default).1.piBinders).2.getAppArgs).length = nP + nIdx
   /-- a recursive field's entry: the Π-tower over its telescope of the
@@ -268,16 +268,16 @@ structure CtorReadR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (
               cd.2.2.2.2.2.1.getD i []))
 
 /-- The constructors' reading premises, positionally. -/
-inductive CtorReadsR {env : Env} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Key)
+inductive CtorReadsR {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) (T : Key md)
     (lps : List LevelParam) (nP nIdx : Nat) :
-    List (Key × Nat × Expr × List Nat) → List CtorDatumR → Prop
+    List (Key md × Nat × Expr md × List Nat) → List (CtorDatumR md) → Prop
   | nil : CtorReadsR m ψ T lps nP nIdx [] []
   | cons {c cd cs cds} : CtorReadR m ψ T lps nP nIdx c cd → CtorReadsR m ψ T lps nP nIdx cs cds →
       CtorReadsR m ψ T lps nP nIdx (c :: cs) (cd :: cds)
 
-theorem CtorReadsR.length_eq {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
+theorem CtorReadsR.length_eq {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
     {nP nIdx : Nat} :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)},
       CtorReadsR m ψ T lps nP nIdx ctors cds → cds.length = ctors.length
   | _, _, .nil => rfl
   | _, _, .cons _ h => by simp [CtorReadsR.length_eq h]
@@ -290,11 +290,11 @@ elementary laws — the round trip, its stability under the frame's
 instantiation (whose arguments are free variables), and the openers'
 count. -/
 
-@[simp] theorem Expr.piBinders_forallE (ty b : Expr) (mt : BinderMeta) :
+@[simp] theorem Expr.piBinders_forallE (ty b : Expr md) (mt : BinderMeta) :
     (Expr.forallE ty b mt).piBinders = ((ty, mt) :: (b.piBinders).1, (b.piBinders).2) := rfl
 
 /-- **A Π-tower is its own binders over its own body.** -/
-theorem Expr.mkPisOf_piBinders : ∀ e : Expr, Expr.mkPisOf (e.piBinders).1 (e.piBinders).2 = e
+theorem Expr.mkPisOf_piBinders : ∀ e : Expr md, Expr.mkPisOf (e.piBinders).1 (e.piBinders).2 = e
   | .forallE ty b mt => by
     rw [Expr.piBinders_forallE]
     show Expr.forallE ty (Expr.mkPisOf (b.piBinders).1 (b.piBinders).2) mt = _
@@ -304,7 +304,7 @@ theorem Expr.mkPisOf_piBinders : ∀ e : Expr, Expr.mkPisOf (e.piBinders).1 (e.p
 
 /-- Substituting a free variable moves a Π-tower's body but not its
 binder count. -/
-theorem Expr.piBinders_instantiate1_fvar {i : Nat} {tya : Expr} (e : Expr) :
+theorem Expr.piBinders_instantiate1_fvar {i : Nat} {tya : Expr md} (e : Expr md) :
     ∀ k : Nat,
       ((e.instantiate1 (.fvar i tya) k).piBinders).1.length = (e.piBinders).1.length ∧
       ((e.instantiate1 (.fvar i tya) k).piBinders).2
@@ -336,8 +336,8 @@ theorem Expr.piBinders_instantiate1_fvar {i : Nat} {tya : Expr} (e : Expr) :
 /-- The frame's instantiation moves a Π-tower's body but not its
 binder count (the frame's entries are free variables). -/
 theorem Expr.piBinders_instSeq :
-    ∀ (L : List Expr) (t : Nat) (e : Expr),
-      (∀ a ∈ L, ∃ (i : Nat) (ty : Expr), a = Expr.fvar i ty) →
+    ∀ (L : List (Expr md)) (t : Nat) (e : Expr md),
+      (∀ a ∈ L, ∃ (i : Nat) (ty : Expr md), a = Expr.fvar i ty) →
       L.length ≤ t + 1 →
       ((Expr.instSeq L t e).piBinders).1.length = (e.piBinders).1.length ∧
       ((Expr.instSeq L t e).piBinders).2
@@ -346,7 +346,7 @@ theorem Expr.piBinders_instSeq :
   | a :: L, t, e, hfv, hlen => by
     obtain ⟨i, tya, rfl⟩ := hfv a List.mem_cons_self
     obtain ⟨hl1, hb1⟩ := Expr.piBinders_instantiate1_fvar (i := i) (tya := tya) e t
-    have hfv' : ∀ x ∈ L, ∃ (i : Nat) (ty : Expr), x = Expr.fvar i ty :=
+    have hfv' : ∀ x ∈ L, ∃ (i : Nat) (ty : Expr md), x = Expr.fvar i ty :=
       fun x hx => hfv x (List.mem_cons_of_mem _ hx)
     have hlen' : L.length ≤ t - 1 + 1 := by
       simp only [List.length_cons] at hlen
@@ -369,7 +369,7 @@ theorem Expr.piBinders_instSeq :
     · rw [show t - 1 + (e.piBinders).1.length = t + (e.piBinders).1.length - 1 from by omega]
 
 /-- A Π-tower strips exactly its own binders. -/
-theorem Expr.stripPis_piBinders : ∀ e : Expr, e.stripPis (e.piBinders).1.length = some e.piBinders
+theorem Expr.stripPis_piBinders : ∀ e : Expr md, e.stripPis (e.piBinders).1.length = some e.piBinders
   | .forallE ty b mt => by
     rw [Expr.piBinders_forallE]
     simp only [List.length_cons, Expr.stripPis]
@@ -379,13 +379,13 @@ theorem Expr.stripPis_piBinders : ∀ e : Expr, e.stripPis (e.piBinders).1.lengt
   | .proj .. => rfl
 
 /-- A binder-free Π-tower is its own body. -/
-theorem Expr.piBinders_nil_body : ∀ {e : Expr}, (e.piBinders).1 = [] → (e.piBinders).2 = e
+theorem Expr.piBinders_nil_body : ∀ {e : Expr md}, (e.piBinders).1 = [] → (e.piBinders).2 = e
   | .forallE _ _ _, h => by rw [Expr.piBinders_forallE] at h; exact nomatch h
   | .bvar _, _ | .fvar .., _ | .sort _, _ | .const .., _ | .app .., _ | .lam .., _
   | .letE .., _ | .lit _, _ | .proj .., _ => rfl
 
 /-- An application spine has no leading `∀`. -/
-theorem Expr.piBinders_nil_of_getAppFn_const {e : Expr} {c : Key} {us : List Level}
+theorem Expr.piBinders_nil_of_getAppFn_const {e : Expr md} {c : Key md} {us : List Level}
     (h : e.getAppFn = .const c us) : (e.piBinders).1 = [] := by
   match e with
   | .forallE _ _ _ => exact nomatch h
@@ -395,11 +395,11 @@ theorem Expr.piBinders_nil_of_getAppFn_const {e : Expr} {c : Key} {us : List Lev
 /-- **An opened variable's type is its binder's domain instantiated at
 the earlier variables.** -/
 theorem openPisAtFvars_fvarTypeD :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr}
-      {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md},
       openPisAtFvars n e d = some (fvs, o) →
       e.stripPis n = some (bs, body) →
-      ∀ (i : Nat) (b : Expr × BinderMeta) (x : Expr),
+      ∀ (i : Nat) (b : Expr md × BinderMeta) (x : Expr md),
         bs[i]? = some b → fvs[i]? = some x →
         x.fvarTypeD = Expr.instSeq (fvs.take i) (i - 1) b.1
   | 0, e, d, fvs, o, bs, body, hop, hst, i, b, x, hb, _ => by
@@ -434,11 +434,11 @@ theorem openPisAtFvars_fvarTypeD :
           rfl
       · exact nomatch hop
 
-theorem CtorReadsR.getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
+theorem CtorReadsR.getElem? {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
     {nP nIdx : Nat} :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
-      ∀ {i : Nat} {c : Key × Nat × Expr × List Nat}, ctors[i]? = some c →
+      ∀ {i : Nat} {c : Key md × Nat × Expr md × List Nat}, ctors[i]? = some c →
         ∃ cd, cds[i]? = some cd ∧ CtorReadR m ψ T lps nP nIdx c cd
   | _, _, .nil, _, _, h => by simp at h
   | _, _, .cons hr htl, i, c, h => by

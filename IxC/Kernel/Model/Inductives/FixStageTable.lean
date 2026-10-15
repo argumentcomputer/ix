@@ -41,7 +41,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveSha
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## Small facts -/
 
@@ -59,7 +59,7 @@ theorem rChains_single_nil (Fs : List AnnotTerm) :
   simp [rChains, rChain, idxEqsAt, liftFields_zero]
 
 /-- The capability record at a structure-like block, spelled out. -/
-theorem _root_.Ix.Kernel.nativeCaps_single {p : NativeParts} {c : ConstantVal × Nat}
+theorem _root_.Ix.Kernel.nativeCaps_single {p : NativeParts md} {c : ConstantVal md × Nat}
     (h : p.ctors = [c]) :
     Ix.Kernel.nativeCaps p =
       { eta := p.nIdx == 0 && !p.isProp &&
@@ -74,8 +74,8 @@ theorem _root_.Ix.Kernel.nativeCaps_single {p : NativeParts} {c : ConstantVal ×
 /-- At a structure-like block the table stage keeps the projection
 FUNCTION family free (it stores a table, never `T.proj.i`), so the
 block's η claim is vacuous below and at the table's environment. -/
-theorem fixTableFamFree {p : NativeParts} {ctorsA : List (ConstantVal × Nat)}
-    {sortss : List (List Level)} {env₃ env₂ : Env}
+theorem fixTableFamFree {p : NativeParts md} {ctorsA : List (ConstantVal md × Nat)}
+    {sortss : List (List Level)} {env₃ env₂ : Env md}
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss env₃ = .ok env₂)
     (hlenA : ctorsA.length = p.ctors.length) (hlenS : sortss.length = p.ctors.length)
     (hnFc : ∀ cA c, ctorsA = [cA] → p.ctors = [c] → cA.2 = c.2)
@@ -107,8 +107,8 @@ theorem fixTableFamFree {p : NativeParts} {ctorsA : List (ConstantVal × Nat)}
 /-- The block's capability laws are vacuous (task #210 Part A): the
 constructor has a field, so the block is never unit-like; its η claim
 is premised on the projection-function family being stored. -/
-theorem fixCapsLawsAt_vacuous {env' : Env} (m' : EnvModel V env') {p : NativeParts}
-    {cvTa : ConstantVal}
+theorem fixCapsLawsAt_vacuous {env' : Env md} (m' : EnvModel V env') {p : NativeParts md}
+    {cvTa : ConstantVal md}
     (hU : (Ix.Kernel.nativeCaps p).unitlike = false)
     (hfr : (Ix.Kernel.nativeCaps p).eta = true →
       env'.find? (projFnName p.cvT.name 0) = none) :
@@ -129,8 +129,8 @@ theorem fixCapsLawsAt_vacuous {env' : Env} (m' : EnvModel V env') {p : NativePar
   · exact nomatch he'
 
 /-- `NoProjEnv` across the constructors' conses. -/
-theorem noProjEnv_consSumCtors {T : Key} {i nP : Nat} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env₀ : Env},
+theorem noProjEnv_consSumCtors {T : Key md} {i nP : Nat} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env₀ : Env md},
       NoProjEnv env₀ T i → (∀ cA ∈ ctorsA, Expr.NoProjAt T i cA.1.type) →
       NoProjEnv (Ix.Kernel.consSumCtors nP ctorsA env₀) T i
   | [], _, h, _ => h
@@ -147,8 +147,8 @@ set_option maxHeartbeats 3200000 in
 /-- **The P step at the fixpoint route's projection table** (task #210
 Part A): `stageTable` against the one-constructor fibre. -/
 theorem stageFixTable (mp : EnvModelM V μ env)
-    {p : NativeParts} {cvTa cvCa : ConstantVal} {nF : Nat} {sorts : List Level}
-    {envOut : Env} {caps : IndCaps}
+    {p : NativeParts md} {cvTa cvCa : ConstantVal md} {nF : Nat} {sorts : List Level}
+    {envOut : Env md} {caps : IndCaps md}
     (hTbl : Ix.Kernel.checkStructProjTable (m := Ix.Kernel.CheckM) p.cvT.name cvCa.name
       p.cvT.levelParams p.nP nF p.resSort
       (Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts) 1 cvCa env = .ok envOut)
@@ -205,7 +205,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     Nonempty (EnvModelM V μ envOut) := by
   have hwf' : Ix.Kernel.EnvWF envOut := Ix.Kernel.direct_table_wf mp.base2.wf hTbl
   obtain ⟨bodies, hbodies, -, -, hfresh, rfl⟩ := Ix.Kernel.checkStructProjTable_inv hTbl
-  let tbl : ProjTable := ⟨p.cvT.name, p.cvT.levelParams, p.nP, cvCa.name, nF, p.resSort,
+  let tbl : ProjTable md := ⟨p.cvT.name, p.cvT.levelParams, p.nP, cvCa.name, nF, p.resSort,
     bodies, Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts, 1⟩
   -- the field-chain facts, in the frames' spelling
   have hbound : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -327,18 +327,18 @@ theorem stageFixTable (mp : EnvModelM V μ env)
   have hcbC : ConstsBound env cvCa.type :=
     constsBound_of_constsResolve _ (mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfC)).2.2.1
   -- the lookups at the extension
-  have hfT₂ : (⟨.projInfo tbl :: env.consts⟩ : Env).find? p.cvT.name
+  have hfT₂ : (⟨.projInfo tbl :: env.consts⟩ : Env md).find? p.cvT.name
       = some (.indInfo cvTa caps) := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hneT h.symm)]
     exact hfT
-  have hfC₂ : (⟨.projInfo tbl :: env.consts⟩ : Env).find? cvCa.name
+  have hfC₂ : (⟨.projInfo tbl :: env.consts⟩ : Env md).find? cvCa.name
       = some (.ctorInfo cvCa p.nP nF) := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hneC h.symm)]
     exact hfC
-  have hfTbl₂ : (⟨.projInfo tbl :: env.consts⟩ : Env).find? (projTableName p.cvT.name)
+  have hfTbl₂ : (⟨.projInfo tbl :: env.consts⟩ : Env md).find? (projTableName p.cvT.name)
       = some (.projInfo tbl) := Ix.Kernel.Env.find?_cons_self _ _
   have hprev₂ : ∀ j, j < nF →
-      ∃ entry, (⟨.projInfo tbl :: env.consts⟩ : Env).findProj? p.cvT.name j
+      ∃ entry, (⟨.projInfo tbl :: env.consts⟩ : Env md).findProj? p.cvT.name j
         = some entry :=
     fun j hj => ⟨tbl.entry j, Ix.Kernel.Env.findProj?_of_table hfTbl₂ hj⟩
   -- the head data at every field
@@ -509,9 +509,9 @@ set_option maxHeartbeats 3200000 in
 /-- **The table stage of a direct recursive install** (task #210 Part
 A): at a structure-like block the P carrier survives the table's cons
 (`stageFixTable`); at any other block the stage conses nothing. -/
-theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativeParts}
-    {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)}
-    {rhss : List Expr}
+theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {rhss : List (Expr md)}
     (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
     (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
     (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss
@@ -523,9 +523,9 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
         (Ix.Kernel.sumRules envC.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: envC.consts⟩)
     {sAV : (LevelParam → Nat) → Nat} {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
-    {idxF : Nat → List Expr} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
     {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
     {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hac₃ : mp₃.base2.acval = acvalWith mpC.base2.acval cvRa.name
@@ -537,10 +537,10 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hTshape : p.cvT.name.isProjFnShape = false)
     (hwfEnv : Ix.Kernel.EnvWF env)
     (hlenA : ctorsA.length = p.ctors.length)
-    (hnFc : ∀ (j : Nat) (cA c : ConstantVal × Nat), ctorsA[j]? = some cA → p.ctors[j]? = some c →
+    (hnFc : ∀ (j : Nat) (cA c : ConstantVal md × Nat), ctorsA[j]? = some cA → p.ctors[j]? = some c →
       cA.2 = c.2)
-    (hrunOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      ∃ c : ConstantVal × Nat, p.ctors[j]? = some c ∧
+    (hrunOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      ∃ c : ConstantVal md × Nat, p.ctors[j]? = some c ∧
       cA.1.name = c.1.name ∧ cA.1.levelParams = p.cvT.levelParams ∧
       env₁.find? cA.1.name = none ∧
       cA.1.type.constsResolve env₁ = true ∧
@@ -554,7 +554,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
     (hFD_C : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    (hcf_C : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+    (hcf_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       FixCtorFactsAt mpC.base2 env p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF j cA)
     {uAV : (LevelParam → Nat) → Nat} {fssZ : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -566,7 +566,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
     (hleafC : ∀ j cA, ctorsA[j]? = some cA → ∀ ψ, mpC.base2.acval cA.1.name ψ
       = sumMkAV (p.resSort.eval ψ) j (dsF j ψ) (((dsF j ψ).drop p.nP).map (·.2.2))
           (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))))
-    (hframes : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+    (hframes : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
           Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ) ∧
@@ -577,7 +577,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
           (∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
             (∀ E ∈ esF j ψ, WellDenotedV V (consList bs ρ) E) ∧
             SpineFit ρ (((ppsAll ψ).drop p.nP).map (·.2.2)) (idxValsAt ρ (esF j ψ) bs))))
-    (hsortsOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+    (hsortsOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
       (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
       (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -649,12 +649,12 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env} {p : NativePart
       -- the lookups at the recursor's environment
       have hfT₃ : (⟨.recInfo cvRa p.majorIdx p.rulePrefix
           (Ix.Kernel.sumRules envC.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type [cA] rhss)
-          :: envC.consts⟩ : Env).find? p.cvT.name
+          :: envC.consts⟩ : Env md).find? p.cvT.name
           = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)) :=
         Ix.Kernel.Env.find?_cons_of_fresh hRfresh hfT_C
       have hfC₃ : (⟨.recInfo cvRa p.majorIdx p.rulePrefix
           (Ix.Kernel.sumRules envC.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type [cA] rhss)
-          :: envC.consts⟩ : Env).find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) :=
+          :: envC.consts⟩ : Env md).find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) :=
         Ix.Kernel.Env.find?_cons_of_fresh hRfresh hfC_C
       -- the constructor type's shape
       obtain ⟨⟨_, hccvC⟩, ⟨cbs, es, hstrip, -⟩, -⟩ := Ix.Kernel.checkSumCtor_shape hCtor

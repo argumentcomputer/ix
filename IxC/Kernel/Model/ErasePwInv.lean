@@ -27,7 +27,7 @@ open Ix.Kernel (Expr Key Level BinderMeta)
 
 /-- `erasePw` inversion at a `∀`: the head is a `∀`, and
 its meta is exactly what the comparison forgives. -/
-theorem erasePwNames_forallE_invS {e : Expr} {ty b : Expr}
+theorem erasePwNames_forallE_invS {e : Expr md} {ty b : Expr md}
     {m : BinderMeta}
     (h : e.erasePw = .forallE ty b m) :
     ∃ ty' b' m', e = .forallE ty' b' m' ∧
@@ -39,14 +39,14 @@ theorem erasePwNames_forallE_invS {e : Expr} {ty b : Expr}
   | _ => simp only [Expr.erasePw] at h; exact nomatch h
 
 /-- `erasePw` inversion at a sort (the erasure fixes it). -/
-theorem erasePwNames_sort_invS {e : Expr} {u : Level}
+theorem erasePwNames_sort_invS {e : Expr md} {u : Level}
     (h : e.erasePw = .sort u) : e = .sort u := by
   cases e with
   | sort u' => simp only [Expr.erasePw] at h; rw [h]
   | _ => simp only [Expr.erasePw] at h; exact nomatch h
 
 /-- `erasePw` inversion at an application. -/
-theorem erasePwNames_app_invS {e : Expr} {f a : Expr}
+theorem erasePwNames_app_invS {e : Expr md} {f a : Expr md}
     (h : e.erasePw = .app f a) :
     ∃ f' a', e = .app f' a' ∧ f'.erasePw = f ∧
       a'.erasePw = a := by
@@ -58,12 +58,12 @@ theorem erasePwNames_app_invS {e : Expr} {f a : Expr}
 
 /-- `erasePw` inversion at a constant (`Install/Axiom.lean`'s head
 inversion). -/
-theorem erasePwNames_const_invS {e : Expr} {n : Key} {us : List Level}
+theorem erasePwNames_const_invS {e : Expr md} {n : Key md} {us : List Level}
     (h : e.erasePw = .const n us) : e = .const n us :=
   erasePw_const_invS h
 
 /-- `erasePw` inversion at a bound variable. -/
-theorem erasePwNames_bvar_invS {e : Expr} {i : Nat}
+theorem erasePwNames_bvar_invS {e : Expr md} {i : Nat}
     (h : e.erasePw = .bvar i) : e = .bvar i := by
   cases e with
   | bvar i' => simp only [Expr.erasePw] at h; rw [h]

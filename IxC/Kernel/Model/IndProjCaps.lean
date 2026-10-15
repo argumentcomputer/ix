@@ -56,17 +56,17 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-- **The projection cons's η split** (`memberEtaSplit`'s twin at a
 `recInfo` head, V-free).  Either the family descends untouched — with
 the three disequalities the transport needs — or the cons completes
 it, at the cons's own former and field index. -/
-theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Key} {i : Nat}
+theorem projEtaSplit {c₀ : ConstantInfo md} {T₀ : Key md} {i : Nat}
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
-    {T : Key} {cvT : ConstantVal} {caps : IndCaps}
-    (hfT : (⟨c₀ :: env.consts⟩ : Env).find? T
+    {T : Key md} {cvT : ConstantVal md} {caps : IndCaps md}
+    (hfT : (⟨c₀ :: env.consts⟩ : Env md).find? T
       = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     (env.find? T = some (.indInfo cvT caps) ∧
@@ -75,8 +75,8 @@ theorem projEtaSplit {c₀ : ConstantInfo} {T₀ : Key} {i : Nat}
         ∀ j, j < caps.etaFields → Ix.Kernel.projFnName T j ≠ c₀.name) ∨
       (T = T₀ ∧ i < caps.etaFields) := by
   obtain ⟨cvr, mIr, rPr, rulesr, hc₀eq⟩ := hc₀rec
-  have hdown : ∀ n : Key, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
   -- the former is not the cons: the cons is a `recInfo`
@@ -125,15 +125,15 @@ descends by kind at once, and — post-repair — the unit half carries no
 family premise to re-establish. -/
 theorem capsOk_cons_proj (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key} {i : Nat}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key md} {i : Nat}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     -- the one live row: the family this cons completes
-    (hcomplete : ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T₀ = some (.indInfo cvT caps) →
+    (hcomplete : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T₀ = some (.indInfo cvT caps) →
       caps.eta = true → i < caps.etaFields →
       Ix.Kernel.reservedBasisNames.contains T₀ = false →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T₀ caps →

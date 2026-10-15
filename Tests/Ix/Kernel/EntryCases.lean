@@ -80,7 +80,7 @@ structure Input where
   hints : Hints
   /-- the reader's context over the compiled records and the prelude (for
   the names of installed seeds) -/
-  cx : Ctx
+  cx : Ctx .anon
   /-- the seeds' addresses -/
   seeds : List (Lean.Name × Address)
   /-- every compiled name's address -/
@@ -175,7 +175,7 @@ def truncated (bytes : ByteArray) : ByteArray := bytes.extract 0 (bytes.size - 1
 
 /-- The reader's name of a compiled singleton record. -/
 def keyOf (input : Input) (name : Lean.Name) : Option String :=
-  (input.named name).map fun a => toString (keyName (.member a 0))
+  (input.named name).map fun a => toString (keyName (md := .anon) (.member a 0))
 
 def cases : List Case := [
   -- accepted
@@ -296,7 +296,7 @@ def cases : List Case := [
 def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
 
 /-- The names the seeds are installed under. -/
-def seedNames (input : Input) : List (Lean.Name × Option CName) :=
+def seedNames (input : Input) : List (Lean.Name × Option (CName .anon)) :=
   input.seeds.map fun (n, a) => (n, (resolve input.cx.store a).map input.cx.nameOf)
 
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
@@ -404,7 +404,7 @@ def main (args : List String) : IO UInt32 := do
     let some test := cases.find? (·.label == label)
       | IO.eprintln s!"no case {label}"; return 2
     let input ← prepare leanEnv test.seeds
-    let pre ← IO.ofExcept builtinPrelude
+    let pre ← IO.ofExcept (builtinPrelude (md := .anon))
     let submission ← IO.ofExcept (test.alter input)
     let own := submission.records.filter fun (a, _) => !pre.records.any (·.1 == a)
     IO.println (recordsSource { submission with records := own })

@@ -41,12 +41,12 @@ variable {m : Type → Type}
 /-! ## The core record and its helper twins -/
 
 /-- The record of mutually recursive cached entry points. -/
-structure CoreFnsI where
-  whnfCore : Nat → Expr → CheckCM Expr
-  whnf : Nat → Expr → CheckCM Expr
-  infer : Nat → Expr → CheckCM Expr
-  defeq : Nat → Expr → Expr → CheckCM Bool
-  annotate : Nat → Expr → CheckCM Expr
+structure CoreFnsI (md : Mode) where
+  whnfCore : Nat → Expr md → (CheckCM md) (Expr md)
+  whnf : Nat → Expr md → (CheckCM md) (Expr md)
+  infer : Nat → Expr md → (CheckCM md) (Expr md)
+  defeq : Nat → Expr md → Expr md → (CheckCM md) Bool
+  annotate : Nat → Expr md → (CheckCM md) (Expr md)
   /-- Type inference at the **infer-only grade** (task #170 / #172 B4)
   — the twin of `CoreFns.inferIO` (`IxC/Kernel/Core.lean`): what
   every internal inference call site runs.  The knot selects the
@@ -55,18 +55,18 @@ structure CoreFnsI where
   2026-09-06 — the io skip is a licence, not certification-only work
   — and the full `infer` only at `ioGate = false`, which no mode
   spells any more (the retired R core). -/
-  inferIO : Nat → Expr → CheckCM Expr
+  inferIO : Nat → Expr md → (CheckCM md) (Expr md)
 
 /-- The io-grade view (twin of `CoreFns.ioView`): the record whose
 full-grade `infer` slot is the io slot, so a body written against
 `r.infer` recurses at the io grade when handed `r.ioView`. -/
-def CoreFnsI.ioView (r : CoreFnsI) : CoreFnsI :=
+def CoreFnsI.ioView (r : CoreFnsI md) : CoreFnsI md :=
   { r with infer := r.inferIO }
 
 /-- Twin of `unfoldDefinition` (monadic: the unfolded value is read
 through the `(name, levels)` cache).  Like the spec, a theorem never
 unfolds. -/
-def unfoldDefinitionI (fe : FEnv) (e : Expr) : CheckCM (Option Expr) := do
+def unfoldDefinitionI (fe : FEnv md) (e : Expr md) : (CheckCM md) (Option (Expr md)) := do
   match Expr.getAppFn e with
   | .const n us => do
     let nm ← pure n
@@ -82,7 +82,7 @@ def unfoldDefinitionI (fe : FEnv) (e : Expr) : CheckCM (Option Expr) := do
   | _ => pure none
 
 /-- Twin of `litToCtorIfNat`. -/
-def litToCtorIfNatI (fe : FEnv) (e : Expr) : CheckCM Expr := do
+def litToCtorIfNatI (fe : FEnv md) (e : Expr md) : (CheckCM md) (Expr md) := do
   match e with
   | .lit (.natVal n) =>
     if natLitSupportedF fe then pure (natLitToConstructor n)
@@ -90,8 +90,8 @@ def litToCtorIfNatI (fe : FEnv) (e : Expr) : CheckCM Expr := do
   | _ => pure e
 
 /-- Twin of `reduceNat`. -/
-def reduceNatI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
-    CheckCM (Option Expr) := do
+def reduceNatI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
+    (CheckCM md) (Option (Expr md)) := do
   match e with
   | .app f₁ b =>
     match f₁ with
@@ -165,8 +165,8 @@ accumulator as if certified.  The datum read is the level-instantiated
 one (the telescope was instantiated at the recursor's levels by
 `constTyAtM`), which is where `Nat.rec.{u}`'s `.ifAllZero [u]` major
 binder becomes `.never` at `u := succ _`. -/
-def iotaCertsIAux (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool) :
-    Expr → List Expr → List Expr → CheckCM Bool
+def iotaCertsIAux (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (lic : Bool) :
+    (Expr md) → List (Expr md) → List (Expr md) → (CheckCM md) Bool
   | _, _, [] => pure true
   | ty, acc, arg :: rest => do
     match ty with
@@ -194,13 +194,13 @@ decreasing_by
 
 /-- Twin of `iotaCerts` (certify a spine against a recursor telescope);
 the bulk-instantiating accumulator loop at the empty accumulator. -/
-def iotaCertsI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool)
-    (ty : Expr) (args : List Expr) : CheckCM Bool :=
+def iotaCertsI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (lic : Bool)
+    (ty : Expr md) (args : List (Expr md)) : (CheckCM md) Bool :=
   iotaCertsIAux r fe depth lic ty [] args
 
 /-- Twin of `defEqList`. -/
-def defEqListI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    List Expr → List Expr → CheckCM Bool
+def defEqListI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → (CheckCM md) Bool
   | [], [] => pure true
   | a :: as, b :: bs => do
     if ← r.defeq depth a b then
@@ -210,8 +210,8 @@ def defEqListI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
 
 /-- Twin of `iotaIndexOk` (the canonical-index comparison, only where
 the recursor has indices). -/
-def iotaIndexOkI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (mI rP cnP : Nat)
-    (tyCtor : Expr) (margs idx : List Expr) : CheckCM Bool :=
+def iotaIndexOkI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (mI rP cnP : Nat)
+    (tyCtor : Expr md) (margs idx : List (Expr md)) : (CheckCM md) Bool :=
   if mI = rP then pure true
   else do
     match ← piResidualM tyCtor margs with
@@ -221,8 +221,8 @@ def iotaIndexOkI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (mI rP cnP : Nat)
     | none => pure false
 
 /-- Twin of `defeqSpine`. -/
-def defeqSpineI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def defeqSpineI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   match Expr.getAppFn a with
   | .const n us =>
     match Expr.getAppFn b with
@@ -238,8 +238,8 @@ def defeqSpineI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
   | _ => pure false
 
 /-- Twin of `proofIrrel`. -/
-def proofIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def proofIrrelI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   let ta ← r.inferIO depth a
   let wta ← r.whnf depth ta
   if ← pure (isUnitLikeTyC fe wta) then do
@@ -296,40 +296,40 @@ spec bodies carry no such wrapper. -/
 
 /-- Run the certificate `c` when the mode runs the certificate
 families; otherwise it is `true` without running. -/
-@[inline] def certAtI (mode : CheckMode) (c : CheckCM Bool) : CheckCM Bool :=
+@[inline] def certAtI (mode : CheckMode) (c : (CheckCM md) Bool) : (CheckCM md) Bool :=
   if mode.certs then c else pure true
 
 /-- `certAtI` with a *verdict-relevant* exception: `keep = true` runs
 the check at every mode (the twin's judgement at ι's parameter
 comparison — nested-rule comparands and projection-function rules
 compare in both modes, ordinary plain rules only when certifying). -/
-@[inline] def certUnlessI (mode : CheckMode) (keep : Bool) (c : CheckCM Bool) :
-    CheckCM Bool :=
+@[inline] def certUnlessI (mode : CheckMode) (keep : Bool) (c : (CheckCM md) Bool) :
+    (CheckCM md) Bool :=
   if mode.certs || keep then c else pure true
 
 /-- At a mode running the certificate families the wrapper is the
 certificate — the simulation tower's blindness to the switch, under
 its `hμ`. -/
 @[simp] theorem certAtI_of_verifiedChecks {mode : CheckMode}
-    (hμ : mode.verifiedChecks = true) (c : CheckCM Bool) :
+    (hμ : mode.verifiedChecks = true) (c : (CheckCM md) Bool) :
     certAtI mode c = c := by
   cases mode <;> simp_all [certAtI, CheckMode.certs, CheckMode.verifiedChecks]
 @[simp] theorem certUnlessI_of_verifiedChecks {mode : CheckMode}
-    (hμ : mode.verifiedChecks = true) (keep : Bool) (c : CheckCM Bool) :
+    (hμ : mode.verifiedChecks = true) (keep : Bool) (c : (CheckCM md) Bool) :
     certUnlessI mode keep c = c := by
   cases mode <;> simp_all [certUnlessI, CheckMode.certs, CheckMode.verifiedChecks]
 /-- … and at the two modes the wrapper is the certificate or the
 constant `true`, by `rfl`. -/
-@[simp] theorem certAtI_verified (c : CheckCM Bool) :
+@[simp] theorem certAtI_verified (c : (CheckCM md) Bool) :
     certAtI .verified c = c := rfl
-@[simp] theorem certAtI_trusted (c : CheckCM Bool) :
+@[simp] theorem certAtI_trusted (c : (CheckCM md) Bool) :
     certAtI .trusted c = pure true := rfl
 
 /-- Twin of `propIrrel` (task #168): the hoisted `Prop`-branch test
 with both head-symbol arms.  Ungated since 2026-09-06 — the readers
 run in both modes, so this body takes no `CheckMode` at all. -/
-def propIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def propIrrelI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   if notProofFast fe.find? a || notProofFast fe.find? b then
     pure false
   else if isProofFast fe.find? a && isProofFast fe.find? b then
@@ -356,8 +356,8 @@ def propIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
 /-- The projection-application spine
 `[proj_0 targs b, …]` (structural recursion; the spec side is a pure
 `List.map`). -/
-def projAppsFnI (T : Key) (us' : List Level) (targs : List Expr)
-    (b : Expr) : List Nat → CheckCM (List Expr)
+def projAppsFnI (T : Key md) (us' : List Level) (targs : List (Expr md))
+    (b : Expr md) : List Nat → (CheckCM md) (List (Expr md))
   | [] => pure []
   | i :: rest => do
     let pf ← pure (projFnName T i)
@@ -368,7 +368,7 @@ def projAppsFnI (T : Key) (us' : List Level) (targs : List Expr)
 
 /-- The `.proj T i b` spine (the tower spelling, task #175
 W4c). -/
-def projNodesI (T : Key) (b : Expr) : List Nat → CheckCM (List Expr)
+def projNodesI (T : Key md) (b : Expr md) : List Nat → (CheckCM md) (List (Expr md))
   | [] => pure []
   | i :: rest => do
     let r ← pure (Expr.proj T i b)
@@ -378,18 +378,18 @@ def projNodesI (T : Key) (b : Expr) : List Nat → CheckCM (List Expr)
 /-- Twin of `etaProjs`: the tower spelling at an all-tower slot family
 (`towerSlotsAll` through the index), the projection-function spelling
 otherwise. -/
-def projAppsI (fe : FEnv) (Tn T : Key) (us' : List Level)
-    (targs : List Expr) (b : Expr) (nF : Nat) :
-    CheckCM (List Expr) :=
+def projAppsI (fe : FEnv md) (Tn T : Key md) (us' : List Level)
+    (targs : List (Expr md)) (b : Expr md) (nF : Nat) :
+    (CheckCM md) (List (Expr md)) :=
   if fe.towerSlotsAllF Tn nF then
     projNodesI T b (List.range nF)
   else projAppsFnI T us' targs b (List.range nF)
 
 /-- Twin of `structEtaProjCerts`. -/
-def structEtaProjCertsI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (TI : Key) (T : Key) (us' : List Level) (targs : List Expr)
-    (b : Expr)
-    (lpsT : List LevelParam) : List Nat → CheckCM Bool
+def structEtaProjCertsI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (TI : Key md) (T : Key md) (us' : List Level) (targs : List (Expr md))
+    (b : Expr md)
+    (lpsT : List LevelParam) : List Nat → (CheckCM md) Bool
   | [] => pure true
   | i :: rest => do
     match fe.find? (projFnName T i) with
@@ -405,8 +405,8 @@ def structEtaProjCertsI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
     | _ => pure false
 
 /-- Twin of `structEtaCertWith`. -/
-def structEtaCertWithI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (a b wtb : Expr) : CheckCM Bool := do
+def structEtaCertWithI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (a b wtb : Expr md) : (CheckCM md) Bool := do
   match Expr.getAppFn a with
   | .const c us => do
     let cn ← pure c
@@ -473,8 +473,8 @@ def structEtaCertWithI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
   | _ => pure false
 
 /-- Twin of `structEtaCert`. -/
-def structEtaCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def structEtaCertI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   -- the constructor-shape gate first (D13), as in the spec
   let sh ← pure (etaCtorShapeC fe a)
   if sh then
@@ -484,8 +484,8 @@ def structEtaCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
   else pure false
 
 /-- Twin of `structUnitCert`. -/
-def structUnitCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def structUnitCertI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   let ta ← r.inferIO depth a
   let wta ← r.whnf depth ta
   match Expr.getAppFn wta with
@@ -513,9 +513,9 @@ def structUnitCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
 
 /-- Twin of `etaCert` (the λ's pieces come pre-destructured, as in the
 spec). -/
-def etaCertI (r : CoreFnsI) (_fe : FEnv) (depth : Nat)
-    (ty₁ body₁ : Expr) (m₁ : BinderMeta) (b : Expr) :
-    CheckCM Bool := do
+def etaCertI (r : CoreFnsI md) (_fe : FEnv md) (depth : Nat)
+    (ty₁ body₁ : Expr md) (m₁ : BinderMeta) (b : Expr md) :
+    (CheckCM md) Bool := do
   let tb ← r.inferIO depth b
   let wtb ← r.whnf depth tb
   match wtb with
@@ -535,17 +535,17 @@ def etaCertI (r : CoreFnsI) (_fe : FEnv) (depth : Nat)
   | _ => pure false
 
 /-- Twin of `stuckIrrel`. -/
-def stuckIrrelI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (a b : Expr) :
-    CheckCM Bool := do
+def stuckIrrelI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
+    (CheckCM md) Bool := do
   if ← structEtaCertI mode r fe depth a b then pure true
   else if ← structEtaCertI mode r fe depth b a then pure true
   else if ← structUnitCertI mode r fe depth a b then pure true
   else proofIrrelI r fe depth a b
 
 /-- Twin of `majorToCtor`. -/
-def majorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (_recName : Key) (rules : List RecRule) (major : Expr) :
-    CheckCM Expr := do
+def majorToCtorI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (_recName : Key md) (rules : List (RecRule md)) (major : Expr md) :
+    (CheckCM md) (Expr md) := do
   if ← pure (isCtorAppC fe major) then pure major else
   match rules with
   | [rl] =>
@@ -672,8 +672,8 @@ def majorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
   | _ => pure major
 
 /-- Twin of `litMajorToCtor`. -/
-def litMajorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
-    CheckCM Expr := do
+def litMajorToCtorI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
+    (CheckCM md) (Expr md) := do
   match e with
   | .lit (.strVal s) =>
     if strLitSupportedF fe then do
@@ -683,8 +683,8 @@ def litMajorToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
   | _ => litToCtorIfNatI fe e
 
 /-- Twin of `projLitToCtor`. -/
-def projLitToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
-    CheckCM Expr := do
+def projLitToCtorI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
+    (CheckCM md) (Expr md) := do
   match e with
   | .lit (.strVal s) =>
     if strLitSupportedF fe then do
@@ -697,9 +697,9 @@ def projLitToCtorI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
 order (K rescue on the raw major, then whnf and the literal
 conversion; elsewhere whnf, literal, eta).  The K flag is the single
 rule's stored bit, as in the spec (`recRuleK`). -/
-def prepareMajorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (recName : Key) (rules : List RecRule) (major : Expr) :
-    CheckCM Expr := do
+def prepareMajorI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (recName : Key md) (rules : List (RecRule md)) (major : Expr md) :
+    (CheckCM md) (Expr md) := do
   if recRuleK rules then do
     let majorK ← majorToCtorI mode r fe depth recName rules major
     let major₀ ← r.whnf depth majorK
@@ -711,8 +711,8 @@ def prepareMajorI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
 
 /-- The nested-rule pin instantiations (structural recursion;
 the spec side is `(recFireComparands …).2`'s `List.map`). -/
-def pinArgsI (lps : List LevelParam) (us : List Level) (args : List Expr)
-    (t : Nat) : List Expr → CheckCM (List Expr)
+def pinArgsI (lps : List LevelParam) (us : List Level) (args : List (Expr md))
+    (t : Nat) : List (Expr md) → (CheckCM md) (List (Expr md))
   | [] => pure []
   | p :: ps => do
     let praw ← pure p
@@ -723,7 +723,7 @@ def pinArgsI (lps : List LevelParam) (us : List Level) (args : List Expr)
 
 /-- The length of an application spine, without building its argument
 list. -/
-def iotaNumArgs : Expr → Nat → Nat
+def iotaNumArgs : Expr md → Nat → Nat
   | .app f _, n => iotaNumArgs f (n + 1)
   | _, n => n
 
@@ -733,7 +733,7 @@ arguments with the recursor's own number of levels
 (`iotaRecI_of_arityOk_false`).  The whnf spine loop asks this before
 every ι attempt, which is allocation-free where the ι step's own guard
 would first materialise the argument list. -/
-def iotaArityOk (fe : FEnv) (e : Expr) : Bool :=
+def iotaArityOk (fe : FEnv md) (e : Expr md) : Bool :=
   match Expr.getAppFn e with
   | .const c us =>
     match fe.find? c with
@@ -743,8 +743,8 @@ def iotaArityOk (fe : FEnv) (e : Expr) : Bool :=
   | _ => false
 
 /-- Twin of `iotaRec`. -/
-def iotaRecI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
-    CheckCM (Option Expr) := do
+def iotaRecI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
+    (CheckCM md) (Option (Expr md)) := do
   match Expr.getAppFn e with
   | .const c us => do
     let cn ← pure c
@@ -779,7 +779,7 @@ def iotaRecI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
                   | _ =>
                     substLevelTreesM cv.levelParams us
                       (cvj.levelParams.map Level.param)
-                let cmpArgs : List Expr ←
+                let cmpArgs : List (Expr md) ←
                   match rl.fire with
                   | .nested _ pins =>
                     pinArgsI cv.levelParams us (args.take rP) (rP - 1) pins
@@ -840,8 +840,8 @@ def iotaRecI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (e : Expr) :
   | _ => pure none
 
 /-- Twin of `projCert`. -/
-def projCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool)
-    (c : Key) (us : List Level) (args : List Expr) : CheckCM Bool := do
+def projCertI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (lic : Bool)
+    (c : Key md) (us : List Level) (args : List (Expr md)) : (CheckCM md) Bool := do
   let cn ← pure c
   match fe.find? cn with
   | some (.ctorInfo _ _ _) => do
@@ -850,8 +850,8 @@ def projCertI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (lic : Bool)
   | _ => pure false
 
 /-- Twin of `projCertAt`. -/
-def projCertAtI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (verified lic : Bool)
-    (c : Key) (us : List Level) (args : List Expr) : CheckCM Bool :=
+def projCertAtI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (verified lic : Bool)
+    (c : Key md) (us : List Level) (args : List (Expr md)) : (CheckCM md) Bool :=
   if verified then projCertI r fe depth lic c us args else pure true
 
 mutual
@@ -866,9 +866,9 @@ replaced by one bulk substitution per peeled group
 (`IxC/Kernel/Verify/BetaSpine.lean` proves the identification).  The
 head-normalization loop's continuation `k` is threaded through
 (task #106). -/
-def whnfAppI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (k : Expr → CheckCM Expr) :
-    Expr → List Expr → CheckCM Expr
+def whnfAppI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    (Expr md) → List (Expr md) → (CheckCM md) (Expr md)
   | v, [] => pure v
   | v, a :: rest => do
     match v with
@@ -906,9 +906,9 @@ after the binders consumed so far, `acc` their arguments (innermost
 first).  Each binder's argument certificate (unconditional since the
 task-#100 de-gating) substitutes only the *domain*; the body is
 substituted once, when peeling stops. -/
-def betaPeelI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (k : Expr → CheckCM Expr) :
-    Expr → List Expr → List Expr → CheckCM Expr
+def betaPeelI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    (Expr md) → List (Expr md) → List (Expr md) → (CheckCM md) (Expr md)
   | t, acc, [] => do
     let e' ← instListM t acc
     k e'
@@ -949,8 +949,8 @@ term's depth); every *reduction* step is iteration, so a chain no
 longer charges the shared recursion-depth budget one unit per step
 (task #106 — that is what made the `Nat.brecOn` grind of
 `Std.Time…toDays._proof_1` exhaust `checkFuel`). -/
-def whnfCoreStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (k : Expr → CheckCM Expr) (e : Expr) : CheckCM Expr := do
+def whnfCoreStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) : (CheckCM md) (Expr md) := do
     match e with
     | .sort _ | .fvar .. | .forallE ..
     | .lam .. | .const .. | .lit _ => pure e
@@ -1000,15 +1000,15 @@ def whnfCoreStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
 
 /-- Twin of `whnfCoreLoop`: iterate `whnfCoreStepI` on its own step
 budget. -/
-def whnfCoreLoopI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    Nat → Expr → CheckCM Expr
+def whnfCoreLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Expr md → (CheckCM md) (Expr md)
   | 0, _ => throw (.internal "fuel exhausted: whnfCore loop")
   | n + 1, e =>
     whnfCoreStepI mode r fe depth (whnfCoreLoopI r fe depth n) e
 
 /-- Twin of `whnfCoreBody`: the head-normalization loop at its own step
 budget. -/
-def whnfCoreBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def whnfCoreBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun depth e => whnfCoreLoopI mode r fe depth whnfCoreLoopFuel e
 
 /-- Application-inference spine loop (task #50): walk the raw
@@ -1018,8 +1018,8 @@ substituted once per peeled group.  A non-syntactic telescope step
 substitutes and normalizes, exactly like the chained `inferBody`
 recursion (`IxC/Kernel/Verify/BetaSpine.lean` proves the
 identification). -/
-def inferSpineI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    Expr → Array Expr → List Expr → CheckCM Expr
+def inferSpineI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    (Expr md) → Array (Expr md) → List (Expr md) → (CheckCM md) (Expr md)
   | ty, acc, [] => instListRevM ty acc
   | ty, acc, a :: rest => do
     match ty with
@@ -1069,8 +1069,8 @@ only `pwBit_ne_zero_of_isNever`.
 above — and at `.trusted` it is `true`: the per-argument
 certificate at an internal inference is a certificate family
 (official's `infer_only` runs none), skipped wholesale. -/
-def inferSpineIOI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    Expr → Array Expr → List Expr → CheckCM Expr
+def inferSpineIOI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    (Expr md) → Array (Expr md) → List (Expr md) → (CheckCM md) (Expr md)
   | ty, acc, [] => instListRevM ty acc
   | ty, acc, a :: rest => do
     match ty with
@@ -1094,8 +1094,8 @@ def inferSpineIOI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
       | _ => throw (.invalid "function expected")
 
 /-- Twin of `whnfStep`. -/
-def whnfStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (k : Expr → CheckCM Expr) (e : Expr) : CheckCM Expr := do
+def whnfStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) : (CheckCM md) (Expr md) := do
   let e₁ ← r.whnfCore depth e
   match ← reduceNatI r fe depth e₁ with
   | some e₂ => k e₂
@@ -1105,17 +1105,17 @@ def whnfStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
     | none => pure e₁
 
 /-- Twin of `whnfLoop`. -/
-def whnfLoopI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    Nat → Expr → CheckCM Expr
+def whnfLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Expr md → (CheckCM md) (Expr md)
   | 0, _ => throw (.internal "fuel exhausted: whnf loop")
   | n + 1, e => whnfStepI r fe depth (whnfLoopI r fe depth n) e
 
 /-- Twin of `whnfBody`. -/
-def whnfBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def whnfBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun depth e => whnfLoopI r fe depth whnfLoopFuel e
 
 /-- Twin of `ensureSort` (returns the level; no readback needed). -/
-def ensureSortI (r : CoreFnsI) (depth : Nat) (e : Expr) : CheckCM Level := do
+def ensureSortI (r : CoreFnsI md) (depth : Nat) (e : Expr md) : (CheckCM md) Level := do
   let w ← r.whnf depth e
   match w with
   | .sort u => pure u
@@ -1140,7 +1140,7 @@ chained spec's next step. -/
 
 /-- Stack entry of `inferLamsI`: binder name, opened domain and binder
 meta. -/
-abbrev InferLamEntry := Expr × BinderMeta
+abbrev InferLamEntry (md : Mode) := Expr md × BinderMeta
 
 /-- Rebuild loop of `inferLamsI`: fold the stack (innermost binder
 first, `j` its binder level relative to the ambient depth `d`).  The
@@ -1149,7 +1149,7 @@ value-determined by the peel phase's domain sorts and the leaf phase's
 body-type sort and cannot fail (task #100 stage 6: the per-level
 λ-annotation re-check is gone with the stored annotations). -/
 def inferLamsOutI (d : Nat) :
-    List InferLamEntry → Nat → Expr → PropWhen → CheckCM Expr
+    List (InferLamEntry md) → Nat → Expr md → PropWhen → (CheckCM md) (Expr md)
   | [], _j, cur, _prevPw => pure cur
   | (tyo, mb) :: rest, j, cur, prevPw => do
     -- Task #161, the chain rule (see `inferBody`'s `.lam` clause): a
@@ -1170,8 +1170,8 @@ sort-checked here — the spec's codomain check (`inferBody`'s `.lam`
 clause), which fires at the innermost binder of a λ-chain, i.e.
 exactly when the peel stops on a non-λ residual.  The guard is the
 same one the spec uses, on the same term. -/
-def inferLamsLeafI (r : CoreFnsI) (d : Nat) (t : Expr) (k : Nat)
-    (fvs : Array Expr) (stk : List InferLamEntry) : CheckCM Expr := do
+def inferLamsLeafI (r : CoreFnsI md) (d : Nat) (t : Expr md) (k : Nat)
+    (fvs : Array (Expr md)) (stk : List (InferLamEntry md)) : (CheckCM md) (Expr md) := do
   let ob ← instListRevM t fvs
   let bt ← r.infer (d + k) ob
   match t with
@@ -1213,8 +1213,8 @@ def inferLamsLeafI (r : CoreFnsI) (d : Nat) (t : Expr) (k : Nat)
 domain to be a type on the way in.  `k` counts the opened binders
 (`≥ 1`: the caller peels the first binder inline), `fvs` their free
 variables innermost-first. -/
-def inferLamsI (r : CoreFnsI) (d : Nat) :
-    Nat → Expr → Nat → Array Expr → List InferLamEntry → CheckCM Expr
+def inferLamsI (r : CoreFnsI md) (d : Nat) :
+    Nat → Expr md → Nat → Array (Expr md) → List (InferLamEntry md) → (CheckCM md) (Expr md)
   | fuel + 1, t, k, fvs, stk => do
     match t with
     | .lam ty body mb => do
@@ -1244,7 +1244,7 @@ datum — the chain the annotation loop already folds
 growing right spine: `O(k²)` in the telescope depth `k`, and it was
 90 % of the check phase on a ∀ chain of 40 000 binders. -/
 def inferPisOutI : List (Level × PropWhen) → Level → PropWhen →
-    CheckCM Level
+    (CheckCM md) Level
   | [], v, _pv => pure v
   | (u, pw) :: rest, v, pv => do
     -- Task #161: validate the node's prop-ness annotation against its
@@ -1258,8 +1258,8 @@ def inferPisOutI : List (Level × PropWhen) → Level → PropWhen →
 
 /-- Leaf phase of `inferPisI`: bulk-open the residual body, infer its
 sort, then fold the domain sorts outward. -/
-def inferPisLeafI (r : CoreFnsI) (d : Nat) (t : Expr) (k : Nat)
-    (fvs : Array Expr) (stk : List (Level × PropWhen)) : CheckCM Expr := do
+def inferPisLeafI (r : CoreFnsI md) (d : Nat) (t : Expr md) (k : Nat)
+    (fvs : Array (Expr md)) (stk : List (Level × PropWhen)) : (CheckCM md) (Expr md) := do
   let ob ← instListRevM t fvs
   let bt ← r.infer (d + k) ob
   let wbt ← r.whnf (d + k) bt
@@ -1274,9 +1274,9 @@ its codomain sort — the stored annotation is not read): peel the raw
 ∀-chain, checking each opened domain to be a type on the way in and
 accumulating its sort, infer the bulk-opened leaf's sort once, and
 fold `imax` outward. -/
-def inferPisI (r : CoreFnsI) (d : Nat) :
-    Nat → Expr → Nat → Array Expr → List (Level × PropWhen) →
-      CheckCM Expr
+def inferPisI (r : CoreFnsI md) (d : Nat) :
+    Nat → Expr md → Nat → Array (Expr md) → List (Level × PropWhen) →
+      (CheckCM md) (Expr md)
   | fuel + 1, t, k, fvs, stk => do
     match t with
     | .forallE ty body mb => do
@@ -1293,7 +1293,7 @@ def inferPisI (r : CoreFnsI) (d : Nat) :
   | 0, t, k, fvs, stk => inferPisLeafI mode r d t k fvs stk
 
 /-- Twin of `inferBody`. -/
-def inferBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun depth e => do
     match e with
     | .sort u => do
@@ -1399,7 +1399,7 @@ clone to drift: the two bodies differ in one clause by construction.
 Recursion grade is the record's: the knot ties this body to
 `CoreFnsI.ioView`, so `r.infer` here is the io slot one level down —
 the grade propagates exactly as official's `infer_only` does. -/
-def inferBodyIOI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def inferBodyIOI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun depth e => do
     match e with
     | .app _ _ => do
@@ -1451,14 +1451,14 @@ def inferBodyIOI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
     | _ => inferBodyI mode r fe depth e
 
 /-- Twin of `boolTrueShortcut`. -/
-def boolTrueShortcutI (r : CoreFnsI) (depth : Nat) (a : Expr) : CheckCM Bool := do
+def boolTrueShortcutI (r : CoreFnsI md) (depth : Nat) (a : Expr md) : (CheckCM md) Bool := do
   let w ← r.whnf depth a
   pure (Expr.isBoolTrue w)
 
 /-- Twin of `defeqStep`. -/
-def defeqStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
-    (k : Bool → Expr → Expr → CheckCM Bool) (pi : Bool) (a b : Expr) :
-    CheckCM Bool := do
+def defeqStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Bool → Expr md → Expr md → (CheckCM md) Bool) (pi : Bool) (a b : Expr md) :
+    (CheckCM md) Bool := do
     if a == b then pure true else
     -- the eq-true shortcut (E2), as in the spec
     let bt ← pure (Expr.isBoolTrue b)
@@ -1620,19 +1620,19 @@ def defeqStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
     | _, _ => stuckIrrelI mode r fe depth a' b'
 
 /-- Twin of `defeqLoop`. -/
-def defeqLoopI (r : CoreFnsI) (fe : FEnv) (depth : Nat) :
-    Nat → Bool → Expr → Expr → CheckCM Bool
+def defeqLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Bool → Expr md → Expr md → (CheckCM md) Bool
   | 0, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
   | fl + 1, pi, a, b =>
     defeqStepI mode r fe depth (defeqLoopI r fe depth fl) pi a b
 
 /-- Twin of `defeqBody`. -/
-def defeqBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → Expr → CheckCM Bool :=
+def defeqBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → Expr md → (CheckCM md) Bool :=
   fun depth a b => defeqLoopI mode r fe depth defeqLoopFuel true a b
 
 /-- Twin of `isPropType`. -/
-def isPropTypeI (r : CoreFnsI) (_fe : FEnv) (depth : Nat) (ty : Expr) :
-    CheckCM Bool := do
+def isPropTypeI (r : CoreFnsI md) (_fe : FEnv md) (depth : Nat) (ty : Expr md) :
+    (CheckCM md) Bool := do
   let ty' ← r.annotate depth ty
   let tty ← r.inferIO depth ty'
   let s ← ensureSortI r depth tty
@@ -1644,7 +1644,7 @@ def isPropTypeI (r : CoreFnsI) (_fe : FEnv) (depth : Nat) (ty : Expr) :
 
 /-- Stack entry of the annotation loops: binder name, annotated opened
 domain, binder info. -/
-abbrev AnnotBinderEntry := Expr × BinderMeta
+abbrev AnnotBinderEntry (md : Mode) := Expr md × BinderMeta
 
 /-- The cached twin of `annotBinderMeta`. -/
 def annotBinderMetaI (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
@@ -1664,9 +1664,9 @@ computation, in the leaf phase, and every node above reads).  `none` =
 no write (unverified mode).  A node whose input datum is a real
 annotation (`pwWritten`) is left alone — validation judges it, and it
 is that datum that travels on. -/
-def annotateBindersOutI (mk : Expr → Expr → BinderMeta → Expr)
+def annotateBindersOutI (mk : Expr md → Expr md → BinderMeta → Expr md)
     (d : Nat) (pw? : Option PropWhen) :
-    List AnnotBinderEntry → Nat → Expr → CheckCM Expr
+    List (AnnotBinderEntry md) → Nat → Expr md → (CheckCM md) (Expr md)
   | [], _j, cur => pure cur
   | (ty', mb) :: rest, j, cur => do
     let tyAbs ← abstractRangeM ty' d j
@@ -1685,8 +1685,8 @@ def annotateBindersOutI (mk : Expr → Expr → BinderMeta → Expr)
 codomain sort's zero-ness — shared by every node of the telescope
 because `zeronessOf (imax u v) = zeronessOf v`.  A ∀ residual (the
 fuel path) supplies its own already-written datum instead, exactly as `annotPwPi` reads it. -/
-def annotPwPiI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (body' : Expr) :
-    CheckCM PropWhen := do
+def annotPwPiI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (body' : Expr md) :
+    (CheckCM md) PropWhen := do
   -- task #168 stage 2: the head-symbol reader first (it subsumes the
   -- chain read), as in the spec
   match typeSortPW fe.find? body' with
@@ -1702,15 +1702,15 @@ licences consume it); only *validating* it is certification-only work,
 so the trusted mode annotates exactly as the verified mode does.  The
 `Option` shape is kept — `annotBinderMetaI` still leaves an
 already-written annotation alone. -/
-def annotatePisPwI (r : CoreFnsI) (fe : FEnv) (d k : Nat) (leaf' : Expr) :
-    CheckCM (Option PropWhen) := do
+def annotatePisPwI (r : CoreFnsI md) (fe : FEnv md) (d k : Nat) (leaf' : Expr md) :
+    (CheckCM md) (Option PropWhen) := do
   let p ← annotPwPiI r fe (d + k) leaf'
   pure (some p)
 
 /-- Leaf phase of `annotatePisI`: bulk-open and annotate the residual
 body, then rebuild outward. -/
-def annotatePisLeafI (r : CoreFnsI) (fe : FEnv) (d : Nat) (t : Expr) (k : Nat)
-    (fvs : Array Expr) (stk : List AnnotBinderEntry) : CheckCM Expr := do
+def annotatePisLeafI (r : CoreFnsI md) (fe : FEnv md) (d : Nat) (t : Expr md) (k : Nat)
+    (fvs : Array (Expr md)) (stk : List (AnnotBinderEntry md)) : (CheckCM md) (Expr md) := do
   let to ← instListRevM t fvs
   let leaf' ← r.annotate (d + k) to
   let pw? ← annotatePisPwI r fe d k leaf'
@@ -1722,8 +1722,8 @@ def annotatePisLeafI (r : CoreFnsI) (fe : FEnv) (d : Nat) (t : Expr) (k : Nat)
 case): peel the raw ∀-chain, annotating each opened domain on the way
 in.  `k ≥ 1` counts the opened binders (first binder peeled inline by
 the caller), `fvs` their free variables innermost-first. -/
-def annotatePisI (r : CoreFnsI) (fe : FEnv) (d : Nat) :
-    Nat → Expr → Nat → Array Expr → List AnnotBinderEntry → CheckCM Expr
+def annotatePisI (r : CoreFnsI md) (fe : FEnv md) (d : Nat) :
+    Nat → Expr md → Nat → Array (Expr md) → List (AnnotBinderEntry md) → (CheckCM md) (Expr md)
   | fuel + 1, t, k, fvs, stk => do
     match t with
     | .forallE ty body mb => do
@@ -1739,8 +1739,8 @@ def annotatePisI (r : CoreFnsI) (fe : FEnv) (d : Nat) :
 the innermost body's TYPE; every λ node of the chain shares it (the
 `(lam-cod-chain)` rule).  A λ residual supplies its own already-written
 datum, exactly as `inferLamsLeafI` reads it. -/
-def annotPwLamI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (body' : Expr) :
-    CheckCM PropWhen := do
+def annotPwLamI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (body' : Expr md) :
+    (CheckCM md) PropWhen := do
   -- task #168 stage 2: the reader first, as in the spec
   match proofPW fe.find? body' with
   | some pw => pure pw
@@ -1751,15 +1751,15 @@ def annotPwLamI (r : CoreFnsI) (fe : FEnv) (depth : Nat) (body' : Expr) :
     pure (Level.zeronessOf vb)
 
 /-- The λ twin of `annotatePisPwI`, ungated with it. -/
-def annotateLamsPwI (r : CoreFnsI) (fe : FEnv) (d k : Nat) (leaf' : Expr) :
-    CheckCM (Option PropWhen) := do
+def annotateLamsPwI (r : CoreFnsI md) (fe : FEnv md) (d k : Nat) (leaf' : Expr md) :
+    (CheckCM md) (Option PropWhen) := do
   let p ← annotPwLamI r fe (d + k) leaf'
   pure (some p)
 
 /-- Leaf phase of `annotateLamsI` (as `annotatePisLeafI`, rebuilding
 λ-nodes). -/
-def annotateLamsLeafI (r : CoreFnsI) (fe : FEnv) (d : Nat) (t : Expr) (k : Nat)
-    (fvs : Array Expr) (stk : List AnnotBinderEntry) : CheckCM Expr := do
+def annotateLamsLeafI (r : CoreFnsI md) (fe : FEnv md) (d : Nat) (t : Expr md) (k : Nat)
+    (fvs : Array (Expr md)) (stk : List (AnnotBinderEntry md)) : (CheckCM md) (Expr md) := do
   let to ← instListRevM t fvs
   let leaf' ← r.annotate (d + k) to
   let pw? ← annotateLamsPwI r fe d k leaf'
@@ -1769,8 +1769,8 @@ def annotateLamsLeafI (r : CoreFnsI) (fe : FEnv) (d : Nat) (t : Expr) (k : Nat)
 
 /-- λ-telescope annotation loop (task #72; `annotateBodyI`'s lam
 case). -/
-def annotateLamsI (r : CoreFnsI) (fe : FEnv) (d : Nat) :
-    Nat → Expr → Nat → Array Expr → List AnnotBinderEntry → CheckCM Expr
+def annotateLamsI (r : CoreFnsI md) (fe : FEnv md) (d : Nat) :
+    Nat → Expr md → Nat → Array (Expr md) → List (AnnotBinderEntry md) → (CheckCM md) (Expr md)
   | fuel + 1, t, k, fvs, stk => do
     match t with
     | .lam ty body mb => do
@@ -1783,7 +1783,7 @@ def annotateLamsI (r : CoreFnsI) (fe : FEnv) (d : Nat) :
   | 0, t, k, fvs, stk => annotateLamsLeafI r fe d t k fvs stk
 
 /-- Twin of `annotateBody`. -/
-def annotateBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun depth e => do
     match e with
     | .bvar _ => pure e
@@ -1880,9 +1880,9 @@ def annotateBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
 inlining the getter/setter lambdas beta-reduce away and the memo probe
 compiles into the record field's own closure.  A compiler attribute
 only — the term the proofs unfold is unchanged. -/
-@[inline] def memoEI (get' : CState → Std.HashMap Expr Expr)
-    (set' : CState → Std.HashMap Expr Expr → CState)
-    (f : Nat → Expr → CheckCM Expr) : Nat → Expr → CheckCM Expr :=
+@[inline] def memoEI (get' : CState md → Std.HashMap (Expr md) (Expr md))
+    (set' : CState md → Std.HashMap (Expr md) (Expr md) → CState md)
+    (f : Nat → Expr md → (CheckCM md) (Expr md)) : Nat → Expr md → (CheckCM md) (Expr md) :=
   fun d e => do
     match (get' (← get))[e]? with
     | some r => pure r
@@ -1896,8 +1896,8 @@ only — the term the proofs unfold is unchanged. -/
 
 /-- Memoize the definitional-equality entry point under the
 index pair (`@[inline]` as `memoEI`). -/
-@[inline] def memoBI (f : Nat → Expr → Expr → CheckCM Bool) :
-    Nat → Expr → Expr → CheckCM Bool :=
+@[inline] def memoBI (f : Nat → Expr md → Expr md → (CheckCM md) Bool) :
+    Nat → Expr md → Expr md → (CheckCM md) Bool :=
   fun d a b => do
     match (← get).defeqC[(a, b)]? with
     | some r => pure r
@@ -1919,7 +1919,7 @@ is the verified core the capstones are stated about, and
 function at the other mode.  The mode-parametric simulation tower
 (`IxC/Kernel/Verify/Cached/*`) is stated at `coreKnotI mode` under
 `hμ : mode.verifiedChecks = true`. -/
-def coreKnotI (fe : FEnv) : Nat → CoreFnsI
+def coreKnotI (fe : FEnv md) : Nat → CoreFnsI md
   | 0 =>
     { whnfCore := fun _ _ => throw (.internal "fuel exhausted: whnfCore")
       whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
@@ -1949,7 +1949,7 @@ def coreKnotI (fe : FEnv) : Nat → CoreFnsI
     -- cache-missing call) and that is the smaller number by 5×.
     -- `Thunk.get ⟨f⟩` is `f ()` by structure eta, so this is the same
     -- term: no proof in `IxC/Kernel/Verify/Cached/*` moved.
-    let prev : Unit → CoreFnsI := fun _ => coreKnotI fe fuel
+    let prev : Unit → CoreFnsI md := fun _ => coreKnotI fe fuel
     -- task #172 B2 / #185: the template's parameter is the mode, an
     -- enum passed down once per *driver* — nothing is built per knot
     -- level or per call (at B2 a record allocation at every
@@ -2037,27 +2037,27 @@ definitionally. -/
 /-- **The P core's head-normalization body.**  Flag-free by
 construction; the one surviving branch reads the validated annotation
 datum. -/
-def whnfCoreBodyPC (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def whnfCoreBodyPC (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   whnfCoreBodyI .verified r fe
 
 /-- **The P core's inference body.**  Flag-free:
 `CheckMode.verifiedChecks .verified` is `true`, so the λ-codomain sort
 check and the chain-rule annotation agreement are unconditional. -/
-def inferBodyPC (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def inferBodyPC (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   inferBodyI .verified r fe
 
 /-- **The P core's conversion body.**  Flag-free: the ∀/λ `pw`
 agreement checks are unconditional. -/
-def defeqBodyPC (r : CoreFnsI) (fe : FEnv) :
-    Nat → Expr → Expr → CheckCM Bool :=
+def defeqBodyPC (r : CoreFnsI md) (fe : FEnv md) :
+    Nat → Expr md → Expr md → (CheckCM md) Bool :=
   defeqBodyI .verified r fe
 
 /-- **The P core's annotation pass.**  Flag-free: the two `pw` writes
 are unconditional.  (Annotation stays its own pass in every core — the
 user's concession; what the template removes is the *flag*, not the
 pass.) -/
-def annotateBodyPC (r : CoreFnsI) (fe : FEnv) :
-    Nat → Expr → CheckCM Expr :=
+def annotateBodyPC (r : CoreFnsI md) (fe : FEnv md) :
+    Nat → Expr md → (CheckCM md) (Expr md) :=
   annotateBodyI r fe
 
 /-! ### The trusted core — the same bodies at `.trusted`
@@ -2075,22 +2075,22 @@ certificate, the ι telescope certificates and index comparison, the
 η/unit/K-rescue certificates and the projection certificate family
 are all off (`CheckMode.certs .trusted`, `CheckMode.verifiedChecks
 .trusted`); every guard and comparison official performs runs. -/
-def whnfCoreBodyTC (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def whnfCoreBodyTC (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   whnfCoreBodyI .trusted r fe
 
 /-- **The trusted core's inference body**: the λ-codomain sort check
 and the ∀/λ annotation validations are off; its io grade
 (`inferBodyIOI .trusted`, the knot's `inferIO` slot) runs no
 per-argument certificate at all (`ioSkip_trusted`). -/
-def inferBodyTC (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
+def inferBodyTC (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
   inferBodyI .trusted r fe
 
 /-- **The trusted core's conversion body**: the ∀/λ `pw` agreement
 checks (and `etaCertI`'s) are off, and so are the structure-η,
 unit-like and K-rescue certificate families reached through
 `stuckIrrelI`/`whnfCore`. -/
-def defeqBodyTC (r : CoreFnsI) (fe : FEnv) :
-    Nat → Expr → Expr → CheckCM Bool :=
+def defeqBodyTC (r : CoreFnsI md) (fe : FEnv md) :
+    Nat → Expr md → Expr md → (CheckCM md) Bool :=
   defeqBodyI .trusted r fe
 
 end Ix.Kernel.Cached

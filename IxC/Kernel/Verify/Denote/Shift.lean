@@ -58,7 +58,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
+variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
 /-- Lifts at cut `0` compose by addition. -/
 theorem liftN_liftN : ∀ (v : Term) (m n k : Nat),
@@ -146,7 +146,7 @@ The `cval` closedness hypothesis is what lets the `.const` and literal
 clauses go through: a constant's term must not move when the context
 around it grows (`IxC/Kernel/Verify/Denote/VClosed.lean`). -/
 theorem denote_shiftFrom (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {p : Nat} :
-    ∀ (e : Expr) (d : Nat), p ≤ d → Expr.fvarsBelow d e →
+    ∀ (e : Expr md) (d : Nat), p ≤ d → Expr.fvarsBelow d e →
       denote cval env φ (d + 1) (e.shiftFrom p) =
         (denote cval env φ d e).map (Term.liftN 1 · (d - p))
   | .bvar i, d, hpd, hfb => by simp [Expr.shiftFrom]
@@ -251,7 +251,7 @@ decreasing_by
 it by one.  The transpose of `interp_weaken_top`, and the step
 `denote_lift`'s induction takes. -/
 theorem denote_weaken_top (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {d : Nat} {e : Expr} (hfb : Expr.fvarsBelow d e) :
+    {d : Nat} {e : Expr md} (hfb : Expr.fvarsBelow d e) :
     denote cval env φ (d + 1) e =
       (denote cval env φ d e).map (Term.liftN 1 · 0) := by
   have h := denote_shiftFrom (env := env) (φ := φ) hcl e d (Nat.le_refl d) hfb
@@ -263,7 +263,7 @@ gets a literal equation (its valuation absorbs the depth), the bridge
 gets a lift; see the module docstring for why that deviation is forced
 rather than chosen. -/
 theorem denote_lift (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {p : Nat} {e : Expr} (hfb : Expr.fvarsBelow p e) :
+    {p : Nat} {e : Expr md} (hfb : Expr.fvarsBelow p e) :
     ∀ D : Nat, p ≤ D →
       denote cval env φ D e =
         (denote cval env φ p e).map (Term.liftN (D - p) · 0) := by
@@ -309,7 +309,7 @@ is a closed `Expr` and its denotation has to be a closed `Term` for
 the environment invariant's typing to survive `denote_lift`. -/
 
 theorem denote_bvarsBelow (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
-    ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
+    ∀ (d : Nat) (e : Expr md), Expr.WScoped d e →
       e.looseBVarsBounded 0 = true →
       ∀ {v : Term}, denote cval env φ d e = some v →
         Term.bvarsBelow d v := by
@@ -429,7 +429,7 @@ theorem denote_bvarsBelow (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
 
 /-- A closed expression denotes to a closed term. -/
 theorem denote_closed (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} {v : Term} (hnf : e.hasFvar = false)
+    {e : Expr md} {v : Term} (hnf : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true)
     (h : denoteClosed cval env φ e = some v) : Term.Closed v :=
   denote_bvarsBelow hcl 0 e (Expr.WScoped.of_not_hasFvar hnf) hb h
@@ -440,7 +440,7 @@ none, so the whole `denote_weaken_top` chain collapses.  Consumed
 wherever a *stored declaration's* type has to be denoted in an open
 context — the environment states its typing at depth `0`. -/
 theorem denote_depth_closed (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} (hnf : e.hasFvar = false)
+    {e : Expr md} (hnf : e.hasFvar = false)
     (hb : e.looseBVarsBounded 0 = true) :
     ∀ d : Nat, denote cval env φ d e = denoteClosed cval env φ e := by
   intro d

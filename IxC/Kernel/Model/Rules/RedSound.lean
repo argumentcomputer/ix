@@ -32,14 +32,14 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
   {φ : LevelParam → Nat}
 
-theorem Red.refl_sound {d : Nat} {e : Expr} : RedSem m φ d e e := by
+theorem Red.refl_sound {d : Nat} {e : Expr md} : RedSem m φ d e e := by
   intro hf Δa ea _ hea hg
   exact ⟨hf, fun _ hl => hl, ea, hea, hg, fun _ _ => rfl⟩
 
-theorem Red.trans_sound {d : Nat} {e₁ e₂ e₃ : Expr}
+theorem Red.trans_sound {d : Nat} {e₁ e₂ e₃ : Expr md}
     (h₁ : RedSem m φ d e₁ e₂) (h₂ : RedSem m φ d e₂ e₃) :
     RedSem m φ d e₁ e₃ := by
   intro hf Δa ea hC hea hg
@@ -51,7 +51,7 @@ theorem Red.trans_sound {d : Nat} {e₁ e₂ e₃ : Expr}
 
 /-- `whnfCore_app_claim`'s head-reduction half (`Steps/Whnf.lean:509`)
 + `frame_appFn` (`Stuck.lean:206`). -/
-theorem Red.appFn_sound {d : Nat} {f f' a : Expr}
+theorem Red.appFn_sound {d : Nat} {f f' a : Expr md}
     (hf : RedSem m φ d f f') : RedSem m φ d (.app f a) (.app f' a) := by
   intro hf Δa ea hC hea hg
   obtain ⟨hws, hb, hLb⟩ := hf
@@ -102,8 +102,8 @@ theorem Red.appFn_sound {d : Nat} {f f' a : Expr}
 
 /-- The `.proj` clause's scrutinee reduction (`projStep_of_claims`'s
 stuck branch, `Steps/ProjRows.lean:278`; `WellDenotedV_projAV_congr`). -/
-theorem Red.projArg_sound {d : Nat} {sn : Key}
-    {i : Nat} {e e' : Expr} (he : RedSem m φ d e e') :
+theorem Red.projArg_sound {d : Nat} {sn : Key md}
+    {i : Nat} {e e' : Expr md} (he : RedSem m φ d e e') :
     RedSem m φ d (.proj sn i e) (.proj sn i e') := by
   intro hf Δa ea hC hea hg
   obtain ⟨hws, hb, hLb⟩ := hf
@@ -157,7 +157,7 @@ theorem Red.projArg_sound {d : Nat} {sn : Key}
 
 /-- The β redex's syntactic side, shared by the gated and the certified
 rule: the reduct's frame, its leaf inclusion and its reading. -/
-theorem beta_syntax {d : Nat} {ty body a : Expr} {mb : Ix.Kernel.BinderMeta}
+theorem beta_syntax {d : Nat} {ty body a : Expr md} {mb : Ix.Kernel.BinderMeta}
     {ba aa : AnnotTerm}
     (hws : Expr.WScoped d (.app (.lam ty body mb) a))
     (hb : (Expr.app (.lam ty body mb) a).looseBVarsBounded 0 = true)
@@ -184,7 +184,7 @@ theorem beta_syntax {d : Nat} {ty body a : Expr} {mb : Ix.Kernel.BinderMeta}
 
 /-- `WellDenotedV_beta_gate` (`Steps/Gate.lean:80`) + `denoteMeta_beta`. -/
 theorem Red.betaGate_sound {d : Nat}
-    {ty body a : Expr} {mb : BinderMeta} (hnev : mb.pw.isNever = true) :
+    {ty body a : Expr md} {mb : BinderMeta} (hnev : mb.pw.isNever = true) :
     RedSem m φ d (.app (.lam ty body mb) a) (body.instantiate1 a) := by
   intro hf Δa ea hC hea hg
   obtain ⟨hws, hb, hLb⟩ := hf
@@ -202,7 +202,7 @@ theorem Red.betaGate_sound {d : Nat}
 /-- `WellDenotedV_beta_pos` / `WellDenotedV_beta_zero` with the
 certificate's membership (`betaCert_of_claims`, `Steps/Whnf.lean:424`). -/
 theorem Red.beta_sound {d : Nat}
-    {ty body a ta : Expr} {mb : BinderMeta}
+    {ty body a ta : Expr md} {mb : BinderMeta}
     (hta : InferSemIO m φ d a ta) (hd : DefEqSem m φ d ta ty) :
     RedSem m φ d (.app (.lam ty body mb) a) (body.instantiate1 a) := by
   intro hf Δa ea hC hea hg
@@ -244,7 +244,7 @@ theorem Red.beta_sound {d : Nat}
 
 /-- The δ identity (`delta_of`, `Steps/Whnf.lean:329`: the same
 annotation reads the unfolding) + `unfoldDefinition_WScoped`. -/
-theorem Red.delta_sound (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr}
+theorem Red.delta_sound (hin : RulesInputs V m φ) {d : Nat} {e e' : Expr md}
     (h : Ix.Kernel.unfoldDefinition env e = some e') : RedSem m φ d e e' := by
   intro hf Δa ea _ hea hg
   refine ⟨⟨Ix.Kernel.unfoldDefinition_WScoped m.wf h hf.1,
@@ -282,7 +282,7 @@ theorem Red.strLit_sound {d : Nat} {s : String}
   · rw [denoteMeta_strLitToConstructor h]; exact hea
 
 /-- The successor row at the reduced argument (`NatSuccRow`). -/
-theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr}
+theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md}
     {n : Nat} (hsup : Ix.Kernel.natLitSupported env = true)
     (hw : RedSem m φ d a w) (hn : Ix.Kernel.rawNatLit? w = some n) :
     RedSem m φ d (.app (.const natSuccName []) a) (.lit (.natVal (n + 1))) := by
@@ -306,7 +306,7 @@ theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr}
   have hgsw : Graded V Δa (.app fa wa) := fun σ hσ =>
     appCongrV rfl (heqw σ hσ) (hokf σ hσ) (hgw σ hσ) (hg σ hσ)
   obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_succ hsup hn hsw hgsw
-  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := .lit (.natVal (n + 1)))
+  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.natVal (n + 1)) : Expr md))
     (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
     (by simp [Expr.looseBVarsBounded])
   refine ⟨hfr, hsubr _, ra, hra, hgra, fun σ hσ => ?_⟩
@@ -314,8 +314,8 @@ theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr}
   exact heqra σ hσ
 
 /-- The binary row at the reduced arguments (`NatOpRow`). -/
-theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Key}
-    {a wa b wb r : Expr} {n₁ n₂ : Nat}
+theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Key md}
+    {a wa b wb r : Expr md} {n₁ n₂ : Nat}
     (hc : c ∈ natBinOpNames) (hst : Ix.Kernel.natOpStored env c = true)
     (hwa : RedSem m φ d a wa) (hn₁ : Ix.Kernel.rawNatLit? wa = some n₁)
     (hwb : RedSem m φ d b wb) (hn₂ : Ix.Kernel.rawNatLit? wb = some n₂)
@@ -345,7 +345,7 @@ theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Key}
       (appCongrV rfl (heqa σ hσ) (hgca σ hσ) (hgwaA σ hσ) (hgga σ hσ))
       (hgwbA σ hσ) (hg σ hσ)
   obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_op hc hst hn₁ hn₂ hr hsw hgsw
-  obtain ⟨hfr, hsubr⟩ : Frame d r ∧ ∀ (x : Expr), LeavesSub r x := by
+  obtain ⟨hfr, hsubr⟩ : Frame d r ∧ ∀ (x : Expr md), LeavesSub r x := by
     rcases Ix.Kernel.natOpResult_shape hr with ⟨k, rfl⟩ | ⟨bn, rfl⟩
     · exact frame_atom (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
         (by simp [Expr.looseBVarsBounded])
@@ -357,8 +357,8 @@ theorem Red.natOp_sound (hin : RulesInputs V m φ) {d : Nat} {c : Key}
 
 /-- The tower law's iota clause at a certified spine (`projStep_of_claims`'s
 firing branch, `Steps/ProjRows.lean:278`; `teleFit_of_teleFitPA`). -/
-theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key} {i : Nat}
-    {e : Expr} {entry : ProjEntry} {us : List Level} {cvC : ConstantVal}
+theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : Nat}
+    {e : Expr md} {entry : ProjEntry md} {us : List Level} {cvC : ConstantVal md}
     {nP nF : Nat}
     (hent : env.findProj? sn i = some entry)
     (hhead : e.getAppFn = .const entry.ctor us)

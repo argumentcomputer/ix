@@ -37,11 +37,12 @@ end Ixon.Authenticated.Audit
 -- (`IxC/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
 -- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
--- `csimp` or `partial` constant among them).
+-- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
+-- the generic entries' change.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5752 compiled functions; inherited externs 115, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
+ Address.admissionHash]: 5764 compiled functions; inherited externs 115, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -80,7 +81,7 @@ fun x => Address.blake3Pure x -/
     Ix.Kernel.Admission.Records →
       Ix.Kernel.Ingress.Blobs →
         (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
-          Except Ix.Kernel.Admission.Error Ix.Kernel.Env :=
+          Except Ix.Kernel.Admission.Error (Ix.Kernel.Env Ix.Kernel.Mode.anon) :=
 fun binding limits records blobs hint =>
   Ix.Kernel.Admission.checkBytes Address.admissionHash binding limits records blobs hint -/
 #guard_msgs (whitespace := lax) in
@@ -92,7 +93,7 @@ fun binding limits records blobs hint =>
       Ix.Kernel.Admission.Records →
         Ix.Kernel.Ingress.Blobs →
           (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
-            Except Ixon.Projection.CheckError Ix.Kernel.Env :=
+            Except Ixon.Projection.CheckError (Ix.Kernel.Env Ix.Kernel.Mode.anon) :=
 fun binding maxProjections limits records blobs hint =>
   Ixon.Projection.checkBytes Address.admissionHash binding maxProjections limits records blobs hint -/
 #guard_msgs (whitespace := lax) in
@@ -105,7 +106,7 @@ fun binding maxProjections limits records blobs hint =>
         Ix.Kernel.Admission.Records →
           Ix.Kernel.Ingress.Blobs →
             (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
-              Except Ixon.BlockOrder.CheckError Ix.Kernel.Env :=
+              Except Ixon.BlockOrder.CheckError (Ix.Kernel.Env Ix.Kernel.Mode.anon) :=
 fun binding maxProjections limits orderLimits records blobs hint =>
   Ixon.BlockOrder.checkBytes Address.admissionHash binding maxProjections limits orderLimits records blobs hint -/
 #guard_msgs (whitespace := lax) in
@@ -136,7 +137,7 @@ fun binding maxProjections limits orderLimits records blobs hint =>
 
 /-- info: @Ixon.Authenticated.checkBytes_authentic : ∀ {binding : Ix.Kernel.Admission.Binding}
   {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ixon.Authenticated.checkBytes binding limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.Authentic Address.blake3Pure records blobs ∧ Address.blake3Pure binding.bytes = binding.address -/
 #guard_msgs (whitespace := lax) in
@@ -145,7 +146,7 @@ fun binding maxProjections limits orderLimits records blobs hint =>
 /-- info: Ixon.Authenticated.checkBytes_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
   {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
   {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ixon.Authenticated.checkBytes binding limits records blobs hint = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Authenticated.checkBytes_has_model
@@ -153,16 +154,16 @@ fun binding maxProjections limits orderLimits records blobs hint =>
 /-- info: Ixon.Authenticated.checkBytes_no_proof_of_False : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
   {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
   {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ixon.Authenticated.checkBytes binding limits records blobs hint = Except.ok env →
-    ∀ (ci : Ix.Kernel.ConstantInfo),
+    ∀ (ci : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.anon),
       ci ∈ env.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const (Ix.Kernel.roleKey Ix.Kernel.Role.false) [] → False -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Authenticated.checkBytes_no_proof_of_False
 
 /-- info: @Ixon.Authenticated.checkBytesProjection_authentic : ∀ {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat}
   {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
-  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env},
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ixon.Authenticated.checkBytesProjection binding maxProjections limits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.Authentic Address.blake3Pure records blobs ∧
       ∃ output,
@@ -174,7 +175,7 @@ fun binding maxProjections limits orderLimits records blobs hint =>
 /-- info: @Ixon.Authenticated.checkBytesBlockOrder_authentic : ∀ {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat}
   {limits : Ix.Kernel.Admission.Limits} {orderLimits : Ixon.BlockOrder.Limits} {records : Ix.Kernel.Admission.Records}
   {blobs : Ix.Kernel.Ingress.Blobs} {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-  {env : Ix.Kernel.Env},
+  {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
   Ixon.Authenticated.checkBytesBlockOrder binding maxProjections limits orderLimits records blobs hint = Except.ok env →
     Ix.Kernel.Admission.Authentic Address.blake3Pure records blobs ∧
       ∃ output,

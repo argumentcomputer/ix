@@ -259,42 +259,83 @@ def Derived.spell (n : Name) : Derived → Name
   | .packUnpackAll => n.str "packUnpack"
   | .implRec => n.str "rec"
 
+/-! ## Modes -/
+
+/-- **The checker's modes** (IXC-PLAN §3): what identifies an input constant,
+and what display data a term carries.
+* `anon`: Ixon, anonymous: identity by address, no names;
+* `meta`: Ixon with its metadata: identity by address, names for display;
+* `source`: Lean through `CanonM`, unhashed: identity by Lean name.
+
+The checker is generic in the mode. Its theorems hold in every mode while no
+term carries display data (`Mode.D` is used from step 6 on); they are stated
+at `.anon` (the Ixon entry) and `.source` (the Lean ingress). -/
+inductive Mode where
+  | anon | «meta» | source
+  deriving DecidableEq, Repr, Inhabited, Hashable
+
+namespace Mode
+
+/-- What identifies an input constant. -/
+@[reducible] def Id (_ : Mode) : Type := Name
+
+/-- Display data: present only in `.meta`, and never read by the checker. -/
+@[reducible] def D : Mode → Type → Type
+  | .meta, α => α
+  | .anon, _ | .source, _ => Unit
+
+/-- The modes the theorems are stated at: no display data. -/
+class Certified (md : Mode) : Prop where
+  noDisplay : ∀ α, md.D α = Unit
+
+instance : Certified .anon := ⟨fun _ => rfl⟩
+instance : Certified .source := ⟨fun _ => rfl⟩
+
+/-- An input id's share of its key's hash. -/
+@[inline] def idHash {md : Mode} (i : md.Id) : UInt64 := Name.hashData i
+
+/-- An input id's spelling, for display. -/
+@[inline] def idName {md : Mode} (i : md.Id) : Name := i
+
+end Mode
+
 /-! ## Keys -/
 
 /-- **What identifies a constant.**
-* `id n`: an input constant, by its identifier;
+* `id i`: an input constant, by its identifier (`md.Id`);
 * `role r`: the constant bound to role `r` (the front ends rename a bound
   constant to its role);
 * `aux k d`: the constant of shape `d` that the checker or the front ends'
-  shared back half generates from `k`. No input is ever `aux`.
-
-The hash is cached, as `Name`'s is: an input key hashes as its name, a role
-key and a derived key mix their role's or shape's hash. -/
-inductive Key where
-  | id (n : Name)
+  shared back half generates from `k`. No input is ever `aux`. -/
+inductive Key (md : Mode) where
+  | id (i : md.Id)
   | role (r : Role)
-  | aux (base : Key) (d : Derived)
+  | aux (base : Key md) (d : Derived)
 with
-  /-- The cached hash of a key. -/
-  @[computed_field] hashData : Key → UInt64
-    | .id n => n.hashData
-    | .role r => mixHash 1741 (hash r)
-    | .aux k d => mixHash k.hashData (hash d)
-deriving DecidableEq, Inhabited
+  /-- The cached hash of a key: an input key's is its id's
+  (`Mode.idHash`), a role key and a derived key mix their role's or shape's
+  hash. -/
+  @[computed_field] hashData : (md : Mode) → Key md → UInt64
+    | _, .id i => Mode.idHash i
+    | _, .role r => mixHash 1741 (hash r)
+    | _, .aux k d => mixHash k.hashData (hash d)
+deriving DecidableEq
+
+instance : Inhabited (Key md) := ⟨.role default⟩
 
 /-- Hashing a key is an `O(1)` field read. -/
-instance : Hashable Key := ⟨Key.hashData⟩
+instance : Hashable (Key md) := ⟨Key.hashData md⟩
 
 /-- Key equality in `Name`'s shape: **pointer**, then the **cached hash**,
 then the structural comparison. The implementation of `Key.beq`;
 `Key.beqPtr_eq` proves both guards redundant. -/
-@[inline] def Key.beqPtr (a b : Key) : Bool :=
+@[inline] def Key.beqPtr (a b : Key md) : Bool :=
   withPtrEq a b (fun _ => a.hashData == b.hashData && decide (a = b))
     (fun h => by subst h; simp)
 
 /-- Both guards are redundant: `withPtrEq a b k h` is *defined* as `k ()`,
 and `hashData` is a function of the value. -/
-theorem Key.beqPtr_eq (a b : Key) : Key.beqPtr a b = decide (a = b) := by
+theorem Key.beqPtr_eq (a b : Key md) : Key.beqPtr a b = decide (a = b) := by
   show (a.hashData == b.hashData && decide (a = b)) = decide (a = b)
   by_cases h : a = b
   · subst h; simp
@@ -304,17 +345,17 @@ theorem Key.beqPtr_eq (a b : Key) : Key.beqPtr a b = decide (a = b) := by
 kernel, `by decide` and `#guard` see structural equality, with `beqPtr`
 substituted by the compiler on the `@[csimp]` equation below (as
 `Name.beq_eq_beqPtr`). -/
-def Key.beq (a b : Key) : Bool := decide (a = b)
+def Key.beq (a b : Key md) : Bool := decide (a = b)
 
 /-- The `Key` twin of `Name.beq_eq_beqPtr`: `@[csimp]`, not
 `@[implemented_by]`, on a kernel-checked equality. -/
 @[csimp] theorem Key.beq_eq_beqPtr : @Key.beq = @Key.beqPtr := by
-  funext a b; exact (Key.beqPtr_eq a b).symm
+  funext md a b; exact (Key.beqPtr_eq a b).symm
 
-instance : BEq Key := ⟨Key.beq⟩
+instance : BEq (Key md) := ⟨Key.beq⟩
 
 /-- `Key.beq` is lawful: it *is* `decide (· = ·)`. -/
-instance : LawfulBEq Key where
+instance : LawfulBEq (Key md) where
   eq_of_beq h := of_decide_eq_true h
   rfl := by simp [BEq.beq, Key.beq]
 
@@ -323,15 +364,15 @@ instance : LawfulBEq Key where
 /-- **A key's spelling**: the name it had while keys were names. `.id n` is
 `n`, `.role r` is `r.leanName`, `.aux k d` is `k`'s spelling with `d`'s
 suffix. For messages, rows and the front ends' name maps only. -/
-def Key.toName : Key → Name
-  | .id n => n
+def Key.toName : Key md → Name
+  | .id i => Mode.idName i
   | .role r => r.leanName
   | .aux k d => d.spell k.toName
 
-instance : ToString Key := ⟨fun k => k.toName.toString⟩
+instance : ToString (Key md) := ⟨fun k => k.toName.toString⟩
 
 /-- A key prints as its spelling's `Repr`, as it did while keys were names. -/
-instance : Repr Key := ⟨fun k prec => reprPrec k.toName prec⟩
+instance : Repr (Key md) := ⟨fun k prec => reprPrec k.toName prec⟩
 
 /-! ## Source mode's naming -/
 
@@ -342,7 +383,7 @@ def Role.byLeanName : Std.HashMap Name Role :=
 /-- **The key of the constant Lean names `n`**, under Source mode's fixed
 binding: the role whose Lean name `n` is, otherwise the input key `n`. For
 the front ends and their tests; the checker never reads a key's name. -/
-def Key.ofName (n : Name) : Key :=
+def Key.ofName (n : Name) : Key md :=
   match Role.byLeanName[n]? with
   | some r => .role r
   | none => .id n
@@ -350,49 +391,49 @@ def Key.ofName (n : Name) : Key :=
 /-! ## Role and derived keys -/
 
 /-- **The key of a role's constant.** -/
-@[inline] def roleKey (r : Role) : Key := .role r
+@[reducible, inline] def roleKey (r : Role) : Key md := .role r
 
 /-- **The key of a generated constant**: shape `d` at base `k`. -/
-@[inline] def auxKey (k : Key) (d : Derived) : Key := .aux k d
+@[inline] def auxKey (k : Key md) (d : Derived) : Key md := .aux k d
 
 /-- Role keys are distinct exactly when their roles are. -/
-@[simp] theorem roleKey_inj {r s : Role} : roleKey r = roleKey s ↔ r = s := by
+@[simp] theorem roleKey_inj {r s : Role} : (roleKey r : Key md) = roleKey s ↔ r = s := by
   simp [roleKey]
 
-theorem roleKey_ne {r s : Role} (h : r ≠ s) : roleKey r ≠ roleKey s :=
+theorem roleKey_ne {r s : Role} (h : r ≠ s) : (roleKey r : Key md) ≠ roleKey s :=
   fun e => h (roleKey_inj.mp e)
 
 /-- A role key is not an input key. -/
-@[simp] theorem roleKey_ne_id (r : Role) (n : Name) : roleKey r ≠ .id n := nofun
+@[simp] theorem roleKey_ne_id (r : Role) (n : md.Id) : (roleKey r : Key md) ≠ .id n := nofun
 
 /-- A derived key is larger than its base. -/
-theorem sizeOf_lt_auxKey (k : Key) (d : Derived) : sizeOf k < sizeOf (auxKey k d) := by
+theorem sizeOf_lt_auxKey (k : Key md) (d : Derived) : sizeOf k < sizeOf (auxKey k d) := by
   simp [auxKey]; omega
 
 /-- A derived key is not its base. -/
-theorem auxKey_ne_self (k : Key) (d : Derived) : auxKey k d ≠ k := fun h =>
+theorem auxKey_ne_self (k : Key md) (d : Derived) : auxKey k d ≠ k := fun h =>
   absurd (h ▸ sizeOf_lt_auxKey k d) (Nat.lt_irrefl _)
 
 /-- A key derived twice is not its base. -/
-theorem auxKey_auxKey_ne_self (k : Key) (d d' : Derived) : auxKey (auxKey k d) d' ≠ k :=
+theorem auxKey_auxKey_ne_self (k : Key md) (d d' : Derived) : auxKey (auxKey k d) d' ≠ k :=
   fun h => absurd (h ▸ Nat.lt_trans (sizeOf_lt_auxKey k d) (sizeOf_lt_auxKey _ d'))
     (Nat.lt_irrefl _)
 
 /-- **`auxKey` is injective in its base.** -/
-@[simp] theorem auxKey_inj {k k' : Key} {d : Derived} : auxKey k d = auxKey k' d ↔ k = k' := by
+@[simp] theorem auxKey_inj {k k' : Key md} {d : Derived} : auxKey k d = auxKey k' d ↔ k = k' := by
   simp [auxKey]
 
 /-- **`auxKey` is injective in its base and its shape together.** -/
-theorem auxKey_inj₂ {k k' : Key} {d d' : Derived} (h : auxKey k d = auxKey k' d') :
+theorem auxKey_inj₂ {k k' : Key md} {d d' : Derived} (h : auxKey k d = auxKey k' d') :
     k = k' ∧ d = d' := by
   simpa [auxKey] using h
 
 /-- **Distinct shapes at one base are distinct keys.** -/
-theorem auxKey_derived_eq {k : Key} {d d' : Derived} (h : auxKey k d = auxKey k d') : d = d' :=
+theorem auxKey_derived_eq {k : Key md} {d d' : Derived} (h : auxKey k d = auxKey k d') : d = d' :=
   (auxKey_inj₂ h).2
 
 /-- **Different shapes are different keys**, at any bases. -/
-theorem auxKey_ne_auxKey {k k' : Key} {d d' : Derived} (hne : d ≠ d') :
+theorem auxKey_ne_auxKey {k k' : Key md} {d d' : Derived} (hne : d ≠ d') :
     auxKey k d ≠ auxKey k' d' := fun h => hne (auxKey_inj₂ h).2
 
 /-- The shapes whose spelling ends in a number: a member's constructor, a
@@ -402,16 +443,16 @@ def Derived.endsNum : Derived → Bool
   | _ => false
 
 /-- **Shapes of different ends are different keys**, at any bases. -/
-theorem auxKey_ne_of_endsNum {k k' : Key} {d d' : Derived} (h : d.endsNum ≠ d'.endsNum) :
+theorem auxKey_ne_of_endsNum {k k' : Key md} {d d' : Derived} (h : d.endsNum ≠ d'.endsNum) :
     auxKey k d ≠ auxKey k' d' :=
   auxKey_ne_auxKey fun e => h (e ▸ rfl)
 
 /-- **A derived key is not a role key.** -/
-@[simp] theorem auxKey_ne_roleKey (k : Key) (d : Derived) (r : Role) : auxKey k d ≠ roleKey r :=
+@[simp] theorem auxKey_ne_roleKey (k : Key md) (d : Derived) (r : Role) : auxKey k d ≠ roleKey r :=
   nofun
 
 /-- **A derived key is not an input key.** -/
-@[simp] theorem auxKey_ne_id (k : Key) (d : Derived) (n : Name) : auxKey k d ≠ .id n := nofun
+@[simp] theorem auxKey_ne_id (k : Key md) (d : Derived) (n : md.Id) : auxKey k d ≠ .id n := nofun
 
 /-! ## Views of derived shapes
 
@@ -421,64 +462,64 @@ input key (`.id`, `.role`) has a derived shape. -/
 namespace Key
 
 /-- Is `k` a model companion, `auxKey _ .model`? -/
-def isModelSuffix : Key → Bool
+def isModelSuffix : Key md → Bool
   | .aux _ .model => true
   | _ => false
 
 /-- Is `k` an installed projection function `auxKey _ (.projFn i)` or a
 projection table `auxKey _ .projTable`? Both shapes are reserved for the
 checker's own installs. -/
-def isProjFnShape : Key → Bool
+def isProjFnShape : Key md → Bool
   | .aux _ (.projFn _) => true
   | .aux _ .projTable => true
   | _ => false
 
 /-- Is `k` a projection's constructor-reduction theorem, `auxKey _ .projIota`? -/
-def isProjIota : Key → Bool
+def isProjIota : Key md → Bool
   | .aux _ .projIota => true
   | _ => false
 
-@[simp] theorem isModelSuffix_id (n : Name) : (Key.id n).isModelSuffix = false := rfl
-@[simp] theorem isModelSuffix_role (r : Role) : (Key.role r).isModelSuffix = false := rfl
-@[simp] theorem isProjFnShape_id (n : Name) : (Key.id n).isProjFnShape = false := rfl
-@[simp] theorem isProjFnShape_role (r : Role) : (Key.role r).isProjFnShape = false := rfl
+@[simp] theorem isModelSuffix_id (n : md.Id) : (Key.id (md := md) n).isModelSuffix = false := rfl
+@[simp] theorem isModelSuffix_role (r : Role) : (Key.role (md := md) r).isModelSuffix = false := rfl
+@[simp] theorem isProjFnShape_id (n : md.Id) : (Key.id (md := md) n).isProjFnShape = false := rfl
+@[simp] theorem isProjFnShape_role (r : Role) : (Key.role (md := md) r).isProjFnShape = false := rfl
 
 end Key
 
-theorem isModelSuffix_iff {k : Key} : k.isModelSuffix = true ↔ ∃ b, k = auxKey b .model := by
+theorem isModelSuffix_iff {k : Key md} : k.isModelSuffix = true ↔ ∃ b, k = auxKey b .model := by
   constructor
   · intro h
     match k, h with
     | .aux b .model, _ => exact ⟨b, rfl⟩
   · rintro ⟨b, rfl⟩; rfl
 
-theorem isModelSuffix_auxKey (k : Key) (d : Derived) :
+theorem isModelSuffix_auxKey (k : Key md) (d : Derived) :
     (auxKey k d).isModelSuffix = (d == .model) := by
   cases d <;> rfl
 
-@[simp] theorem isProjFnShape_auxKey_projFn (k : Key) (i : Nat) :
+@[simp] theorem isProjFnShape_auxKey_projFn (k : Key md) (i : Nat) :
     (auxKey k (.projFn i)).isProjFnShape = true := rfl
 
-@[simp] theorem isProjFnShape_auxKey_projTable (k : Key) :
+@[simp] theorem isProjFnShape_auxKey_projTable (k : Key md) :
     (auxKey k .projTable).isProjFnShape = true := rfl
 
 /-- A derived key has the projection shape exactly at the projection shapes. -/
-theorem isProjFnShape_auxKey (k : Key) (d : Derived) :
+theorem isProjFnShape_auxKey (k : Key md) (d : Derived) :
     (auxKey k d).isProjFnShape = (d matches .projFn _ | .projTable) := by
   cases d <;> rfl
 
-theorem isProjIota_auxKey (k : Key) (d : Derived) :
+theorem isProjIota_auxKey (k : Key md) (d : Derived) :
     (auxKey k d).isProjIota = (d == .projIota) := by
   cases d <;> rfl
 
 /-- A model companion is not a key of another shape. -/
-theorem auxKey_model_ne {n m : Key} (hm : m.isModelSuffix = false) : auxKey n .model ≠ m := by
+theorem auxKey_model_ne {n m : Key md} (hm : m.isModelSuffix = false) : auxKey n .model ≠ m := by
   intro h
   subst h
   exact absurd hm (by rw [isModelSuffix_auxKey]; decide)
 
 /-- A projection function is not a key of another shape. -/
-theorem auxKey_projFn_ne {T n : Key} {j : Nat} (h : n.isProjFnShape = false) :
+theorem auxKey_projFn_ne {T n : Key md} {j : Nat} (h : n.isProjFnShape = false) :
     auxKey T (.projFn j) ≠ n := by
   intro he
   subst he

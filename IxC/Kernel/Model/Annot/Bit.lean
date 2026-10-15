@@ -150,9 +150,9 @@ theorem pwBit_substPW (φ : LevelParam → Nat) (ks : List LevelParam)
 binder numeral read off the term's own meta (`pwBit φ m.pw`) — no
 checker runs, no fuel, no mode.  See the module docstring for the
 `pi` `u`-slot convention. -/
-@[expose] def denoteMeta (acval : Key → (LevelParam → Nat) → AnnotTerm)
-    (env : Env) (φ : LevelParam → Nat) :
-    (d : Nat) → Expr → Option AnnotTerm
+@[expose] def denoteMeta (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+    (env : Env md) (φ : LevelParam → Nat) :
+    (d : Nat) → Expr md → Option AnnotTerm
   | _, .sort u => some (.sort (u.eval φ))
   | d, .fvar idx _ => some (.bvar (d - 1 - idx))
   | _, .const n us =>
@@ -228,10 +228,10 @@ the denotation does not. -/
 
 /-- The validated-annotation reading is an annotation of the
 denotation, exactly. -/
-theorem denoteMeta_erase {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
+theorem denoteMeta_erase {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ) :
-    ∀ (d : Nat) (e : Expr) {ea : AnnotTerm},
+    ∀ (d : Nat) (e : Expr md) {ea : AnnotTerm},
       denoteMeta acval env φ d e = some ea →
       denote cval env φ d e = some ea.erase := by
   intro d e

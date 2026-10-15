@@ -46,21 +46,21 @@ namespace Ix.Kernel.Cached
 
 open Ix.Kernel
 
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## The annotation of a bare constant is the constant -/
 
 /-- The annotation pass's `.const` arm: a bare constant annotates to
 itself. -/
-theorem annotateBodyI_const (r : CoreFnsI) (fe : FEnv) (d : Nat) (n : Key)
+theorem annotateBodyI_const (r : CoreFnsI md) (fe : FEnv md) (d : Nat) (n : Key md)
     (ls : List Level) :
     annotateBodyI r fe d (.const n ls) = pure (.const n ls) := rfl
 
 /-- With the annotation memo missing the key, the memoized entry point
 returns what the body returns: a bare constant annotates to itself. -/
-theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv} {f d : Nat}
-    {n : Key} {ls : List Level} {s₀ s' : CState} {j : Expr}
-    (hmiss : s₀.annotC[(Expr.const n ls : Expr)]? = none)
+theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv md} {f d : Nat}
+    {n : Key md} {ls : List Level} {s₀ s' : CState md} {j : Expr md}
+    (hmiss : s₀.annotC[(Expr.const n ls : Expr md)]? = none)
     (h : (coreKnotI mode fe (f + 1)).annotate d (.const n ls) s₀ = .ok (j, s')) :
     j = .const n ls := by
   rw [show (coreKnotI mode fe (f + 1)).annotate d (Expr.const n ls) =
@@ -75,7 +75,7 @@ theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv} {f d : Nat}
   exact h.1.symm
 
 /-- The annotation memo of a flushed state is empty. -/
-theorem flushed_annotC_none (s : CState) (e : Expr) :
+theorem flushed_annotC_none (s : CState md) (e : Expr md) :
     (s.flushed).annotC[e]? = none := by
   simp only [CState.flushed]
   simp
@@ -84,9 +84,9 @@ theorem flushed_annotC_none (s : CState) (e : Expr) :
 
 /-- Phase A's header install, at a flushed state, returns the header
 with the declared type unchanged when that type is a bare constant. -/
-theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
-    {cv cvA : ConstantVal} {jty : Expr} {n : Key} {ls : List Level}
-    {s₀ s' : CState} (hty : cv.type = .const n ls)
+theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
+    {cv cvA : ConstantVal md} {jty : Expr md} {n : Key md} {ls : List Level}
+    {s₀ s' : CState md} (hty : cv.type = .const n ls)
     (h : annotConstantValC mode fe cv s₀.flushed = .ok ((cvA, jty), s')) :
     cvA = ⟨cv.name, cv.levelParams, .const n ls⟩ := by
   unfold annotConstantValC at h
@@ -127,10 +127,10 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
 
 /-- Phase A's step at a `thmDecl` record with a bare declared type:
 the constant it pushes is a `.thmInfo` of that very type. -/
-theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
-    {pend : Array PendingCheck} {cv : ConstantVal} {value : Expr}
-    {n : Key} {ls : List Level} {s₀ s' : CState}
-    {fe' : FEnv} {pend' : Array PendingCheck} (hty : cv.type = .const n ls)
+theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv md}
+    {pend : Array (PendingCheck md)} {cv : ConstantVal md} {value : Expr md}
+    {n : Key md} {ls : List Level} {s₀ s' : CState md}
+    {fe' : FEnv md} {pend' : Array (PendingCheck md)} (hty : cv.type = .const n ls)
     (h : annotStepC mode ev i fe pend (.thmDecl cv value) s₀ = .ok ((fe', pend'), s')) :
     fe'.env.consts =
       ConstantInfo.thmInfo ⟨cv.name, cv.levelParams, .const n ls⟩ value ::
@@ -138,7 +138,7 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
   unfold annotStepC at h
   simp only [] at h
   obtain ⟨_, s₁, hfl, h⟩ := bindC_ok h
-  rw [show (flushC : CheckCM Unit) s₀ = .ok ((), s₀.flushed) from rfl] at hfl
+  rw [show (flushC : (CheckCM md) Unit) s₀ = .ok ((), s₀.flushed) from rfl] at hfl
   have hs₁ : s₀.flushed = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
   subst hs₁
   obtain ⟨p, s₂, hcv, h⟩ := bindC_ok h
@@ -154,10 +154,10 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
 /-- **A theorem record of the stream is stored**: if phase A accepts a
 list of records containing a `thmDecl` whose declared type is a bare
 constant, the environment it returns holds a constant of that type. -/
-theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
-    {cv : ConstantVal} {value : Expr} {n : Key} {ls : List Level}
+theorem installRun_thmDecl_const {mode : CheckMode} {ds : List (Declaration md)}
+    {cv : ConstantVal md} {value : Expr md} {n : Key md} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
-    {p q : Nat × FEnv × Array PendingCheck} {s s' : CState}
+    {p q : Nat × FEnv md × Array (PendingCheck md)} {s s' : CState md}
     (h : InstallRun mode ev ds p s q s') (hcanon : p.2.1 = mkFEnv p.2.1.env) :
     ∃ c ∈ q.2.1.env.consts, c.toConstantVal.type = .const n ls := by
   induction h with
@@ -180,8 +180,8 @@ theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
 /-- **The main corollary's ingredient at the stream**: an accepted stream
 that declares a theorem of a bare constant type leaves a constant of
 that type in the environment. -/
-theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array Declaration} {env : Env}
-    {cv : ConstantVal} {value : Expr} {n : Key} {ls : List Level}
+theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array (Declaration md)} {env : Env md}
+    {cv : ConstantVal md} {value : Expr md} {n : Key md} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
     (h : checkDecls mode ev ds = .ok env) :
     ∃ c ∈ env.consts, c.toConstantVal.type = .const n ls := by
@@ -205,7 +205,7 @@ set, which the constant would have to be a member of
 (`no_proof_of_False_cached`).  The main corollary
 (`no_False_declaration`, `IxC/Kernel/MainTheorem.lean`) rests on this. -/
 theorem no_False_theorem_accepted (V : Type w) [SetTheory V]
-    (ds : Array Declaration) (cv : ConstantVal) (v : Expr)
+    (ds : Array (Declaration md)) (cv : ConstantVal md) (v : Expr md)
     (hmem : Declaration.thmDecl cv v ∈ ds) (hty : cv.type = .const falseName []) :
     ∀ env, Cached.checkDecls .verified ev ds ≠ .ok env := by
   intro env accepted

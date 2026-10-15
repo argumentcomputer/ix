@@ -47,12 +47,12 @@ variable {μ : CheckMode}
 block name (`BlockInstalledTT.fresh_cons`'s annotated half).  The
 `_model` side is free: the head's name is `projFnName T i`, a derived key
 of another shape than `auxKey n .model` (`auxKey_ne_of_endsNum`). -/
-theorem blockAcvalInstalled_fresh_cons {blockNames : List Key}
-    {env : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+theorem blockAcvalInstalled_fresh_cons {blockNames : List (Key md)}
+    {env : Env md} {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hIA : BlockAcvalInstalled blockNames env acval)
     (hnotb : blockNames.contains c₀.name = false)
-    (hstrNe : ∀ n : Key, c₀.name ≠ auxKey n .model) :
+    (hstrNe : ∀ n : Key md, c₀.name ≠ auxKey n .model) :
     BlockAcvalInstalled blockNames ⟨c₀ :: env.consts⟩
       (acvalWith acval c₀.name A) := by
   intro n hbn ci hf ψ
@@ -67,12 +67,12 @@ theorem blockAcvalInstalled_fresh_cons {blockNames : List Key}
 
 set_option maxHeartbeats 1600000 in
 /-- **The projection entry installs, P tier** (`projConsS`). -/
-theorem projCons {env' : Env} (mp : EnvModelM V μ env')
-    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
-    {rules : List RecRule} {blockNames : List Key}
-    {mcv : ConstantVal} {mval : Expr} {mhint : ReducibilityHint}
-    {pty : Expr}
-    {c₀ : ConstantInfo} (hc₀ : c₀ = projEntry T lps pty nP i rules)
+theorem projCons {env' : Env md} (mp : EnvModelM V μ env')
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {rules : List (RecRule md)} {blockNames : List (Key md)}
+    {mcv : ConstantVal md} {mval : Expr md} {mhint : ReducibilityHint}
+    {pty : Expr md}
+    {c₀ : ConstantInfo md} (hc₀ : c₀ = projEntry T lps pty nP i rules)
     (hfm : env'.find? (projModelName T i)
       = some (.defnInfo mcv mval mhint))
     (hmlps : mcv.levelParams = lps)
@@ -98,8 +98,8 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     -- the head's own obligations (task #161 S7: `projFn_head`
     -- supplies both from `ProjFnR` alone)
     (hwf : EnvWF ⟨c₀ :: env'.consts⟩)
-    (hctorsHead : ∀ (cvR : ConstantVal) (mI rP : Nat)
-      (rules₀ : List RecRule), c₀ = .recInfo cvR mI rP rules₀ →
+    (hctorsHead : ∀ (cvR : ConstantVal md) (mI rP : Nat)
+      (rules₀ : List (RecRule md)), c₀ = .recInfo cvR mI rP rules₀ →
       ∀ r ∈ rules₀,
         (∃ cvj cnP cnF,
           env'.find? (Ix.Kernel.RecRule.ctor r)
@@ -130,7 +130,7 @@ theorem projCons {env' : Env} (mp : EnvModelM V μ env')
     rw [hname]; exact hfreshP
   have hnotb₀ : blockNames.contains c₀.name = false := by
     rw [hname]; exact hnotb
-  have hstrNe₀ : ∀ n : Key, c₀.name ≠ auxKey n .model := by
+  have hstrNe₀ : ∀ n : Key md, c₀.name ≠ auxKey n .model := by
     rw [hname]; exact fun n => Ix.Kernel.auxKey_ne_of_endsNum (by simp [Derived.endsNum])
   have hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false := by
     rw [hname]; exact Ix.Kernel.reservedBasisNames_not_projFn _ _

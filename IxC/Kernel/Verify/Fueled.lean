@@ -73,7 +73,7 @@ end FueledM
 
 /-- The fueled record: each entry is the family of its fueled runs,
 monotone by `Mono.lean`. -/
-@[expose] def fueledFns (mode : CheckMode) (env : Env) : CoreFns FueledM where
+@[expose] def fueledFns (mode : CheckMode) (env : Env md) : (CoreFns md) FueledM where
   whnfCore d e := ⟨fun F => whnfCore mode env F d e, fun hle h => whnfCore_mono hle h⟩
   whnf d e := ⟨fun F => whnf mode env F d e, fun hle h => whnf_mono hle h⟩
   infer d e := ⟨fun F => inferTypeCore mode env F d e,
@@ -87,14 +87,14 @@ monotone by `Mono.lean`. -/
 
 section AtF
 
-variable {env : Env}
+variable {env : Env md}
 
 theorem liftFueled_atF {α : Type} (what : String) (o : Option α) (F : Nat) :
     (liftFueled what o : FueledM α).val F = liftFueled what o := by
   cases o <;> rfl
 
 theorem iotaCerts_atF (d : Nat) (lic : Bool) (F : Nat) :
-    ∀ (ty : Expr) (args : List Expr),
+    ∀ (ty : Expr md) (args : List (Expr md)),
       (iotaCerts (fueledFns mode env) env d lic ty args).val F =
         iotaCerts (pureFns mode env F) env d lic ty args
   | _, [] => rfl
@@ -132,7 +132,7 @@ theorem iotaCerts_atF (d : Nat) (lic : Bool) (F : Nat) :
   | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem defEqList_atF (d : Nat) (F : Nat) :
-    ∀ (as bs : List Expr),
+    ∀ (as bs : List (Expr md)),
       (defEqList (fueledFns mode env) env d as bs).val F =
         defEqList (pureFns mode env F) env d as bs
   | [], [] => rfl
@@ -155,8 +155,8 @@ theorem defEqList_atF (d : Nat) (F : Nat) :
   | [], _ :: _ => rfl
   | _ :: _, [] => rfl
 
-theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Key)
-    (us' : List Level) (targs : List Expr) (b : Expr) (lpsT : List LevelParam) :
+theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Key md)
+    (us' : List Level) (targs : List (Expr md)) (b : Expr md) (lpsT : List LevelParam) :
     ∀ (idxs : List Nat),
       (structEtaProjCerts (fueledFns mode env) env d T us' targs b lpsT
         idxs).val F =
@@ -187,7 +187,7 @@ theorem structEtaProjCerts_atF (d : Nat) (F : Nat) (T : Key)
       | indInfo cv caps => rfl
       | ctorInfo cv nP nF => rfl
 
-theorem defeqSpine_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem defeqSpine_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (defeqSpine (fueledFns mode env) env d a b).val F =
       defeqSpine (pureFns mode env F) env d a b := by
   unfold defeqSpine
@@ -198,8 +198,8 @@ theorem defeqSpine_atF (d : Nat) (a b : Expr) (F : Nat) :
     | (dsimp only [])
     | split)
 
-theorem iotaIndexOk_atF (d : Nat) (F : Nat) (mI rP cnP : Nat) (tyCtor : Expr)
-    (margs idx : List Expr) :
+theorem iotaIndexOk_atF (d : Nat) (F : Nat) (mI rP cnP : Nat) (tyCtor : Expr md)
+    (margs idx : List (Expr md)) :
     (iotaIndexOk (fueledFns mode env) env d mI rP cnP tyCtor margs idx).val F =
       iotaIndexOk (pureFns mode env F) env d mI rP cnP tyCtor margs idx := by
   by_cases hmr : mI = rP
@@ -227,19 +227,19 @@ macro "atF_tac" : tactic =>
     atF_step <;> atF_step <;> atF_step <;> atF_step <;>
     atF_step <;> atF_step <;> atF_step)
 
-theorem reduceNat_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem reduceNat_atF (d : Nat) (e : Expr md) (F : Nat) :
     (reduceNat (fueledFns mode env) env d e).val F =
       reduceNat (pureFns mode env F) env d e := by
   unfold reduceNat
   atF_tac
 
-theorem boolTrueShortcut_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem boolTrueShortcut_atF (d : Nat) (e : Expr md) (F : Nat) :
     (boolTrueShortcut (fueledFns mode env) d e).val F =
       boolTrueShortcut (pureFns mode env F) d e := by
   unfold boolTrueShortcut
   atF_tac
 
-theorem ensureSort_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem ensureSort_atF (d : Nat) (e : Expr md) (F : Nat) :
     (ensureSort (fueledFns mode env) env d e).val F =
       ensureSort (pureFns mode env F) env d e := by
   unfold ensureSort
@@ -247,50 +247,50 @@ theorem ensureSort_atF (d : Nat) (e : Expr) (F : Nat) :
 
 /-- Task #161 P5: the ∀/λ writes at a fixed fuel.  Both are the chain
 read, or `infer`/`ensureSort` calls the cascade already knows. -/
-theorem annotPwPi_atF {env : Env} (d : Nat) (e : Expr) (F : Nat) :
+theorem annotPwPi_atF {env : Env md} (d : Nat) (e : Expr md) (F : Nat) :
     (annotPwPi (fueledFns mode env) env d e).val F =
       annotPwPi (pureFns mode env F) env d e := by
   unfold annotPwPi
   atF_tac <;> exact ensureSort_atF _ _ _
 
-theorem annotPwLam_atF {env : Env} (d : Nat) (e : Expr) (F : Nat) :
+theorem annotPwLam_atF {env : Env md} (d : Nat) (e : Expr md) (F : Nat) :
     (annotPwLam (fueledFns mode env) env d e).val F =
       annotPwLam (pureFns mode env F) env d e := by
   unfold annotPwLam
   atF_tac <;> exact ensureSort_atF _ _ _
 
-theorem proofIrrel_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem proofIrrel_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (proofIrrel (fueledFns mode env) env d a b).val F =
       proofIrrel (pureFns mode env F) env d a b := by
   unfold proofIrrel
   atF_tac
 
-theorem propIrrel_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem propIrrel_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (propIrrel (fueledFns mode env) env d a b).val F =
       propIrrel (pureFns mode env F) env d a b := by
   unfold propIrrel
   atF_tac
 
-theorem structEtaCertWith_atF (d : Nat) (a b wtb : Expr) (F : Nat) :
+theorem structEtaCertWith_atF (d : Nat) (a b wtb : Expr md) (F : Nat) :
     (structEtaCertWith mi (fueledFns mode env) env d a b wtb).val F =
       structEtaCertWith mi (pureFns mode env F) env d a b wtb := by
   unfold structEtaCertWith
   atF_tac
 
-theorem structUnitCert_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem structUnitCert_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (structUnitCert (fueledFns mode env) env d a b).val F =
       structUnitCert (pureFns mode env F) env d a b := by
   unfold structUnitCert
   atF_tac
 
-theorem etaCert_atF (d : Nat) (ty body : Expr) (mb : BinderMeta) (b : Expr) (F : Nat) :
+theorem etaCert_atF (d : Nat) (ty body : Expr md) (mb : BinderMeta) (b : Expr md) (F : Nat) :
     (etaCert mi (fueledFns mode env) env d ty body mb b).val F =
       etaCert mi (pureFns mode env F) env d ty body mb b := by
   unfold etaCert
   atF_tac
 
-theorem projCert_atF (d : Nat) (lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) (F : Nat) :
+theorem projCert_atF (d : Nat) (lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) (F : Nat) :
     (projCert (fueledFns mode env) env d lic c us args).val F =
       projCert (pureFns mode env F) env d lic c us args := by
   unfold projCert
@@ -298,8 +298,8 @@ theorem projCert_atF (d : Nat) (lic : Bool) (c : Key) (us : List Level)
   · exact iotaCerts_atF d lic F _ _
   · rfl
 
-theorem projCertAt_atF (d : Nat) (v lic : Bool) (c : Key) (us : List Level)
-    (args : List Expr) (F : Nat) :
+theorem projCertAt_atF (d : Nat) (v lic : Bool) (c : Key md) (us : List Level)
+    (args : List (Expr md)) (F : Nat) :
     (projCertAt (fueledFns mode env) env d v lic c us args).val F =
       projCertAt (pureFns mode env F) env d v lic c us args := by
   unfold projCertAt
@@ -335,7 +335,7 @@ macro "atF_tac2" : tactic =>
     atF_step2 <;> atF_step2 <;> atF_step2 <;> atF_step2 <;>
     atF_step2 <;> atF_step2 <;> atF_step2)
 
-theorem structEtaCert_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem structEtaCert_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (structEtaCert mi (fueledFns mode env) env d a b).val F =
       structEtaCert mi (pureFns mode env F) env d a b := by
   unfold structEtaCert
@@ -344,7 +344,7 @@ theorem structEtaCert_atF (d : Nat) (a b : Expr) (F : Nat) :
 -- Outer casing peeled by hand (as in `IxC/Kernel/Verify/PairM.lean`): the
 -- body outgrew the split-driven macro.
 set_option maxHeartbeats 800000 in
-theorem majorToCtor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) (F : Nat) :
+theorem majorToCtor_atF (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md) (F : Nat) :
     (majorToCtor mi (fueledFns mode env) env d c rules e).val F =
       majorToCtor mi (pureFns mode env F) env d c rules e := by
   unfold majorToCtor
@@ -383,13 +383,13 @@ theorem majorToCtor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr) (F
     rw [if_neg hA, if_neg hA]
     rfl
 
-theorem litMajorToCtor_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem litMajorToCtor_atF (d : Nat) (e : Expr md) (F : Nat) :
     (litMajorToCtor (fueledFns mode env) env d e).val F =
       litMajorToCtor (pureFns mode env F) env d e := by
   unfold litMajorToCtor
   atF_tac2
 
-theorem prepareMajor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr)
+theorem prepareMajor_atF (d : Nat) (c : Key md) (rules : List (RecRule md)) (e : Expr md)
     (F : Nat) :
     (prepareMajor mi (fueledFns mode env) env d c rules e).val F =
       prepareMajor mi (pureFns mode env F) env d c rules e := by
@@ -401,7 +401,7 @@ theorem prepareMajor_atF (d : Nat) (c : Key) (rules : List RecRule) (e : Expr)
     | ((rw [FueledM.atF_bind]; congr 1 <;> try rfl) <;> try funext _)
     | (dsimp only [])))
 
-theorem projLitToCtor_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem projLitToCtor_atF (d : Nat) (e : Expr md) (F : Nat) :
     (projLitToCtor (fueledFns mode env) env d e).val F =
       projLitToCtor (pureFns mode env F) env d e := by
   unfold projLitToCtor
@@ -439,13 +439,13 @@ macro "atF_tac3" : tactic =>
     atF_step3 <;> atF_step3 <;> atF_step3 <;> atF_step3 <;>
     atF_step3 <;> atF_step3 <;> atF_step3)
 
-theorem stuckIrrel_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem stuckIrrel_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (stuckIrrel mi (fueledFns mode env) env d a b).val F =
       stuckIrrel mi (pureFns mode env F) env d a b := by
   unfold stuckIrrel
   atF_tac3
 
-theorem iotaRec_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem iotaRec_atF (d : Nat) (e : Expr md) (F : Nat) :
     (iotaRec mi (fueledFns mode env) env d e).val F =
       iotaRec mi (pureFns mode env F) env d e := by
   unfold iotaRec
@@ -504,32 +504,32 @@ macro "atF_tac4" : tactic =>
     atF_step4 <;> atF_step4 <;> atF_step4 <;> atF_step4 <;>
     atF_step4 <;> atF_step4 <;> atF_step4)
 
-theorem whnfCoreBody_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem whnfCoreBody_atF (d : Nat) (e : Expr md) (F : Nat) :
     (whnfCoreBody mode (fueledFns mode env) env d e).val F =
       whnfCoreBody mode (pureFns mode env F) env d e := by
   unfold whnfCoreBody
   atF_tac4
 
-theorem whnfStep_atF (d : Nat) (k : Expr → FueledM Expr)
-    (kF : Expr → CheckM Expr) (hk : ∀ e, (k e).val F = kF e) (e : Expr) :
+theorem whnfStep_atF (d : Nat) (k : Expr md → FueledM (Expr md))
+    (kF : Expr md → CheckM (Expr md)) (hk : ∀ e, (k e).val F = kF e) (e : Expr md) :
     (whnfStep (fueledFns mode env) env d k e).val F =
       whnfStep (pureFns mode env F) env d kF e := by
   unfold whnfStep
   atF_tac4k hk
 
 theorem whnfLoop_atF (d : Nat) (F : Nat) :
-    ∀ (n : Nat) (e : Expr),
+    ∀ (n : Nat) (e : Expr md),
       (whnfLoop (fueledFns mode env) env d n e).val F =
         whnfLoop (pureFns mode env F) env d n e
   | 0, _ => rfl
   | n + 1, e => whnfStep_atF d _ _ (fun e' => whnfLoop_atF d F n e') e
 
-theorem whnfBody_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem whnfBody_atF (d : Nat) (e : Expr md) (F : Nat) :
     (whnfBody (fueledFns mode env) env d e).val F =
       whnfBody (pureFns mode env F) env d e :=
   whnfLoop_atF d F whnfLoopFuel e
 
-theorem inferBody_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem inferBody_atF (d : Nat) (e : Expr md) (F : Nat) :
     (inferBody mode (fueledFns mode env) env d e).val F =
       inferBody mode (pureFns mode env F) env d e := by
   unfold inferBody
@@ -537,7 +537,7 @@ theorem inferBody_atF (d : Nat) (e : Expr) (F : Nat) :
 
 /-- The io inference body over the io-grade views (task #172 B4): the
 same walk, the slot's family in the recursion sites. -/
-theorem inferBodyIO_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem inferBodyIO_atF (d : Nat) (e : Expr md) (F : Nat) :
     (inferBodyIO mode (CoreFns.ioView (fueledFns mode env)) env d e).val F =
       inferBodyIO mode (CoreFns.ioView (pureFns mode env F)) env d e := by
   unfold inferBodyIO CoreFns.ioView
@@ -546,28 +546,28 @@ theorem inferBodyIO_atF (d : Nat) (e : Expr) (F : Nat) :
   -- field `ensureSort` reads) untouched, so the plain lemma closes them
   all_goals exact ensureSort_atF _ _ _
 
-theorem defeqStep_atF (d : Nat) (k : Bool → Expr → Expr → FueledM Bool)
-    (kF : Bool → Expr → Expr → CheckM Bool)
-    (hk : ∀ pi a b, (k pi a b).val F = kF pi a b) (pi : Bool) (a b : Expr) :
+theorem defeqStep_atF (d : Nat) (k : Bool → Expr md → Expr md → FueledM Bool)
+    (kF : Bool → Expr md → Expr md → CheckM Bool)
+    (hk : ∀ pi a b, (k pi a b).val F = kF pi a b) (pi : Bool) (a b : Expr md) :
     (defeqStep mode (fueledFns mode env) env d k pi a b).val F =
       defeqStep mode (pureFns mode env F) env d kF pi a b := by
   unfold defeqStep
   atF_tac4k hk
 
 theorem defeqLoop_atF (d : Nat) (F : Nat) :
-    ∀ (n : Nat) (pi : Bool) (a b : Expr),
+    ∀ (n : Nat) (pi : Bool) (a b : Expr md),
       (defeqLoop mode (fueledFns mode env) env d n pi a b).val F =
         defeqLoop mode (pureFns mode env F) env d n pi a b
   | 0, _, _, _ => rfl
   | n + 1, pi, a, b =>
     defeqStep_atF d _ _ (fun pi' x y => defeqLoop_atF d F n pi' x y) pi a b
 
-theorem defeqBody_atF (d : Nat) (a b : Expr) (F : Nat) :
+theorem defeqBody_atF (d : Nat) (a b : Expr md) (F : Nat) :
     (defeqBody mode (fueledFns mode env) env d a b).val F =
       defeqBody mode (pureFns mode env F) env d a b :=
   defeqLoop_atF d F defeqLoopFuel true a b
 
-theorem annotateBody_atF (d : Nat) (e : Expr) (F : Nat) :
+theorem annotateBody_atF (d : Nat) (e : Expr md) (F : Nat) :
     (annotateBody (fueledFns mode env) env d e).val F =
       annotateBody (pureFns mode env F) env d e := by
   -- task #161 P5: `annotPwPi`/`annotPwLam` unfold alongside the body,

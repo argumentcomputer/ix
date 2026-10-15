@@ -44,10 +44,10 @@ open Benchmarks.Kernel.CheckIxeStep
 fold position (as `Checker`'s), every recorded check with the record it
 belongs to, and the records whose install failed. -/
 structure Installer where
-  fe : Ix.Kernel.FEnv := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  cs : Ix.Kernel.Cached.CState := {}
+  fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  cs : Ix.Kernel.Cached.CState .anon := {}
   pos : Nat := 0
-  pend : Array Ix.Kernel.Cached.PendingCheck := #[]
+  pend : Array (Ix.Kernel.Cached.PendingCheck .anon) := #[]
   owners : Array Address := #[]
   installErrors : Std.HashMap Address Ix.Kernel.CheckError := {}
 
@@ -57,10 +57,10 @@ instance : Inhabited Installer := ⟨{}⟩
 recorded checks; the first failure ends it, rolled back as `Checker.step`
 rolls back (the index rebuilt from the constants before the declaration,
 the memo state reset), with the checks the declarations before it recorded. -/
-def installDecls (ev : Ix.Kernel.Evidences) :
-    Nat → Ix.Kernel.FEnv → Array Ix.Kernel.Cached.PendingCheck → Ix.Kernel.Cached.CState →
-      List Ix.Kernel.Declaration →
-      Nat × Ix.Kernel.FEnv × Array Ix.Kernel.Cached.PendingCheck × Ix.Kernel.Cached.CState ×
+def installDecls (ev : Ix.Kernel.Evidences .anon) :
+    Nat → Ix.Kernel.FEnv .anon → Array (Ix.Kernel.Cached.PendingCheck .anon) → Ix.Kernel.Cached.CState .anon →
+      List (Ix.Kernel.Declaration .anon) →
+      Nat × Ix.Kernel.FEnv .anon × Array (Ix.Kernel.Cached.PendingCheck .anon) × Ix.Kernel.Cached.CState .anon ×
         Option Ix.Kernel.CheckError
   | pos, fe, pend, cs, [] => (pos, fe, pend, cs, none)
   | pos, fe, pend, cs, d :: rest =>
@@ -71,8 +71,8 @@ def installDecls (ev : Ix.Kernel.Evidences) :
     | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, {}, some e)
 
 /-- Phase A's step: install a record's declarations, recording their checks. -/
-def Installer.stepRecord (ev : Ix.Kernel.Evidences) (c : Installer) (address : Address)
-    (rd : Read) : Installer × Option Ix.Kernel.CheckError :=
+def Installer.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Installer) (address : Address)
+    (rd : Read .anon) : Installer × Option Ix.Kernel.CheckError :=
   let ⟨fe, cs, pos, pend, owners, installErrors⟩ := c
   let (pos, fe, recorded, cs, err) := installDecls ev pos fe #[] cs rd.decls.toList
   let owners := owners ++ Array.replicate recorded.size address
@@ -89,7 +89,7 @@ abbrev Slot := IO.Ref (Option (Address × Nat))
 
 /-- Recorded check `k` against its prefix view, from a fresh memo state:
 its failure, if any, and its time. -/
-def checkOne (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck) (k : Nat) :
+def checkOne (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon)) (k : Nat) :
     IO (Option Ix.Kernel.CheckError × Nat) := do
   let t0 ← IO.monoNanosNow
   let r ← IO.lazyPure fun _ => match pend[k]? with
@@ -101,7 +101,7 @@ def checkOne (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck) 
 
 /-- A worker: claim one check at a time off `next` until it is past the
 checks, with its watchdog slot set while it checks. -/
-def worker (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck)
+def worker (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
     (owners : Array Address) (next : IO.Ref Nat) (slot : Slot) :
     (fuel : Nat) → Array (Nat × Option Ix.Kernel.CheckError × Nat) →
       IO (Array (Nat × Option Ix.Kernel.CheckError × Nat))
@@ -117,7 +117,7 @@ def worker (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck)
 
 /-- Phase B on one dedicated worker thread per slot: every check's failure,
 if any, and its time, in check order. -/
-def pool (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck)
+def pool (fe : Ix.Kernel.FEnv .anon) (pend : Array (Ix.Kernel.Cached.PendingCheck .anon))
     (owners : Array Address) (slots : Array Slot) :
     IO (Array (Option Ix.Kernel.CheckError × Nat)) := do
   let next ← IO.mkRef 0
@@ -137,11 +137,11 @@ def pool (fe : Ix.Kernel.FEnv) (pend : Array Ix.Kernel.Cached.PendingCheck)
 slot (`slots`, the watchdog's; at least one). Rows go to `emit`, in the
 per-record check's order; stage lines go to `log`. Returns the outcome and
 first-cause counts. -/
-def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences) (names : Address → Array String)
+def run {σ : Type} (src : LoopSource σ) (ev : Ix.Kernel.Evidences .anon) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String) (slots : Array Slot)
     (emit : Row → IO Unit) (log : String → IO Unit)
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
+    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict

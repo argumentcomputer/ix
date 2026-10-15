@@ -36,14 +36,14 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal BinderMeta PropWhen)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Syntactic bookkeeping -/
 
 /-- A closed instantiation sequence commutes with a strip. -/
 theorem stripPis_instSeq :
-    ∀ (sp : List Expr) (t : Nat) {e : Expr} {n : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (sp : List (Expr md)) (t : Nat) {e : Expr md} {n : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md},
       sp.length ≤ t + 1 →
       e.stripPis n = some (bs, body) →
       ∃ bs', (Expr.instSeq sp t e).stripPis n = some (bs', Expr.instSeq sp (t + n) body)
@@ -63,12 +63,12 @@ theorem stripPis_instSeq :
       omega
 
 theorem structPsAt_zero (n : Nat) :
-    Ix.Kernel.structPsAt 0 n = (List.range n).map fun k => Expr.bvar (n - 1 - k) := by
+    (Ix.Kernel.structPsAt (md := md)) 0 n = (List.range n).map fun k => Expr.bvar (n - 1 - k) := by
   simp [Ix.Kernel.structPsAt]
 
 /-- The index variables' spine one under (the major), instantiated at
 the index variables. -/
-theorem map_instSeq_structPsAt_one (ifvs : List Expr) (nIdx : Nat)
+theorem map_instSeq_structPsAt_one (ifvs : List (Expr md)) (nIdx : Nat)
     (hcl : ∀ a ∈ ifvs, a.looseBVarsBounded 0 = true) (hlen : ifvs.length = nIdx) :
     (Ix.Kernel.structPsAt 1 nIdx).map (Expr.instSeq ifvs nIdx) = ifvs := by
   apply List.ext_getElem
@@ -81,7 +81,7 @@ theorem map_instSeq_structPsAt_one (ifvs : List Expr) (nIdx : Nat)
     exact (Option.some.inj this).symm
 
 /-- A closed spine is fixed by an instantiation sequence. -/
-theorem map_instSeq_closed (sp : List Expr) (t : Nat) {xs : List Expr}
+theorem map_instSeq_closed (sp : List (Expr md)) (t : Nat) {xs : List (Expr md)}
     (hcl : ∀ a ∈ xs, a.looseBVarsBounded 0 = true) :
     xs.map (Expr.instSeq sp t) = xs := by
   apply List.ext_getElem (by simp)
@@ -90,8 +90,8 @@ theorem map_instSeq_closed (sp : List Expr) (t : Nat) {xs : List Expr}
   exact Expr.instSeq_eq_self _ _ (hcl _ (List.getElem_mem h2))
 
 /-- A closed spine is fixed by an instantiation. -/
-theorem map_instantiate1_closed {xs : List Expr} (hcl : ∀ a ∈ xs, a.looseBVarsBounded 0 = true)
-    (v : Expr) (k : Nat) : xs.map (·.instantiate1 v k) = xs := by
+theorem map_instantiate1_closed {xs : List (Expr md)} (hcl : ∀ a ∈ xs, a.looseBVarsBounded 0 = true)
+    (v : Expr md) (k : Nat) : xs.map (·.instantiate1 v k) = xs := by
   apply List.ext_getElem (by simp)
   intro i h1 h2
   simp only [List.getElem_map]
@@ -134,8 +134,8 @@ theorem liftN_eq_self_of_one {e : AnnotTerm} (h : ∀ k, AnnotTerm.liftN 1 e k =
     rw [show n + 1 = 1 + n from by omega, ← AnnotTerm.liftN_liftN e 1 n k,
       liftN_eq_self_of_one h n k, h k]
 
-theorem DenoteMetaSpine.append_inv {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
-    ∀ {as bs : List Expr} {vs : List AnnotTerm},
+theorem DenoteMetaSpine.append_inv {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+    ∀ {as bs : List (Expr md)} {vs : List AnnotTerm},
       DenoteMetaSpine acval env φ d (as ++ bs) vs →
       ∃ vs₁ vs₂, vs = vs₁ ++ vs₂ ∧
         DenoteMetaSpine acval env φ d as vs₁ ∧ DenoteMetaSpine acval env φ d bs vs₂
@@ -147,8 +147,8 @@ theorem DenoteMetaSpine.append_inv {acval : Key → (LevelParam → Nat) → Ann
       obtain ⟨vs₁, vs₂, rfl, h1, h2⟩ := DenoteMetaSpine.append_inv htl
       exact ⟨_ :: vs₁, vs₂, rfl, .cons ha h1, h2⟩
 
-theorem DenoteMetaSpine.unique {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
-    ∀ {as : List Expr} {vs vs' : List AnnotTerm},
+theorem DenoteMetaSpine.unique {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+    ∀ {as : List (Expr md)} {vs vs' : List AnnotTerm},
       DenoteMetaSpine acval env φ d as vs → DenoteMetaSpine acval env φ d as vs' → vs = vs'
   | [], _, _, .nil, .nil => rfl
   | _ :: _, _, _, .cons ha h, .cons ha' h' => by
@@ -158,7 +158,7 @@ theorem DenoteMetaSpine.unique {acval : Key → (LevelParam → Nat) → AnnotTe
 
 /-- The motive's domain reading `∀ ı⃗ (t : T p⃗ ı⃗), Sort ℓ` at the
 parameters' frame, over the former's index data `ips`. -/
-@[expose] def motiveAVI {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat) (nP nIdx : Nat)
+@[expose] def motiveAVI {env : Env md} (m : EnvModel V env) (T : Key md) (ψ : LevelParam → Nat) (nP nIdx : Nat)
     (ℓ : Level) (ips : List (Nat × Nat × AnnotTerm)) : AnnotTerm :=
   mkPisAV (rebit (pwBit ψ PropWhen.never) ips)
     (.pi 0 (pwBit ψ PropWhen.never)
@@ -168,12 +168,12 @@ parameters' frame, over the former's index data `ips`. -/
 /-- The major premise's domain reading under the motive, `n` minors
 and the index variables: the family at the parameters and the index
 variables. -/
-@[expose] def majorAVAt {env : Env} (m : EnvModel V env) (T : Key) (ψ : LevelParam → Nat) (nP nIdx n : Nat) :
+@[expose] def majorAVAt {env : Env md} (m : EnvModel V env) (T : Key md) (ψ : LevelParam → Nat) (nP nIdx n : Nat) :
     AnnotTerm :=
   AnnotTerm.mkAppN (m.acval T ψ) (paramBvarsAt nP (nP + 1 + n + nIdx) ++ fieldBvars nIdx)
 
 /-- A constructor datum: name, field count, field data, index readings. -/
-abbrev CtorDatum := Key × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm
+abbrev CtorDatum (md : Mode) := Key md × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTerm
 
 /-! ## The per-constructor reading premise -/
 
@@ -182,13 +182,13 @@ abbrev CtorDatum := Key × Nat × List (Nat × Nat × AnnotTerm) × List AnnotTe
 /-- A constant at the parameter variables and `nF` more variables
 above `o` extras reads to its leaf at the parameter and field
 variables. -/
-theorem denoteMeta_famSpine_at {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key}
-    {lps : List LevelParam} {ci : ConstantInfo} (hfC : env.find? C = some ci)
+theorem denoteMeta_famSpine_at {m : EnvModel V env} {ψ : LevelParam → Nat} {C : Key md}
+    {lps : List LevelParam} {ci : ConstantInfo md} (hfC : env.find? C = some ci)
     (hlpsC : ci.toConstantVal.levelParams = lps)
-    {nP nF o : Nat} {tfvs xFvs : List Expr}
+    {nP nF o : Nat} {tfvs xFvs : List (Expr md)}
     (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hidxX : ∀ (k : Nat) (x : Expr), xFvs[k]? = some x →
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hidxX : ∀ (k : Nat) (x : Expr md), xFvs[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty) :
     denoteMeta m.acval env ψ (nP + o + nF) (Expr.mkAppN (.const C (lps.map .param)) (tfvs ++ xFvs))
       = some (AnnotTerm.mkAppN (m.acval C ψ) (paramBvarsAt nP (nP + o + nF) ++ fieldBvars nF)) := by
@@ -227,16 +227,16 @@ Under `o` extras and the field variables, the residual's index
 expressions read to the constructor's own index readings lifted `o`
 above the fields: the opened residual `T p⃗ e⃗` reads to the lifted
 constructor body, whose spine is inverted. -/
-theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key}
-    {lps : List LevelParam} {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
+theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md}
+    {lps : List LevelParam} {ciT : ConstantInfo md} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {nP nF nIdx o : Nat} {crest0 : Expr} {fbs : List (Expr × BinderMeta)} {es : List Expr}
+    {nP nF nIdx o : Nat} {crest0 : Expr md} {fbs : List (Expr md × BinderMeta)} {es : List (Expr md)}
     (hsF : crest0.stripPis nF
       = some (fbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt nF nP ++ es)))
     {ds : List (Nat × Nat × AnnotTerm)} {Es : List AnnotTerm}
-    {tfvs xFvs : List Expr} (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
+    {tfvs xFvs : List (Expr md)} (hlenT : tfvs.length = nP) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
-    (hidxX : ∀ (k : Nat) (x : Expr), xFvs[k]? = some x →
+    (hidxX : ∀ (k : Nat) (x : Expr md), xFvs[k]? = some x →
       ∃ ty, x = Expr.fvar (nP + o + k) ty)
     (hcreadO : denoteMeta m.acval env ψ (nP + o) (Expr.instSeq tfvs (nP - 1) crest0)
       = some (mkPisAV (liftDoms o 0 (ds.drop nP))
@@ -306,20 +306,20 @@ theorem denoteMetaSpine_idxArgs_lift {m : EnvModel V env} {ψ : LevelParam → N
 
 /-- **The motive's type**, instantiated at the parameters, reads to
 `motiveAVI` over the former's index data. -/
-theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {lps : List LevelParam}
-    {ciT : ConstantInfo} (hfT : env.find? T = some ciT)
+theorem denoteMeta_motiveI {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {ciT : ConstantInfo md} (hfT : env.find? T = some ciT)
     (hlpsT : ciT.toConstantVal.levelParams = lps)
-    {nP nIdx : Nat} {ℓ : Level} {tty itele motiveTy : Expr}
-    {tbs : List (Expr × BinderMeta)}
+    {nP nIdx : Nat} {ℓ : Level} {tty itele motiveTy : Expr md}
+    {tbs : List (Expr md × BinderMeta)}
     (hsT : tty.stripPis nP = some (tbs, itele))
     (hmot : Ix.Kernel.structMotiveTyI T lps nP nIdx ℓ itele = some motiveTy)
     (hTf : tty.hasFvar = false) (hstripT : (tty.stripPis (nP + nIdx)).isSome = true)
     {ppsAll : List (Nat × Nat × AnnotTerm)} {w : Nat}
     (hTread : denoteMeta m.acval env ψ 0 tty = some (mkPisAV ppsAll (.sort w)))
     (hlenP : ppsAll.length = nP + nIdx)
-    {tfvs : List Expr} (hlenT : tfvs.length = nP)
-    (hidxT : ∀ (k : Nat) (x : Expr), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
-    (hspW : ∀ (i : Nat) (a : Expr), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
+    {tfvs : List (Expr md)} (hlenT : tfvs.length = nP)
+    (hidxT : ∀ (k : Nat) (x : Expr md), tfvs[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+    (hspW : ∀ (i : Nat) (a : Expr md), tfvs[i]? = some a → Expr.WScoped (0 + i + 1) a) :
     denoteMeta m.acval env ψ nP (Expr.instSeq tfvs (nP - 1) motiveTy)
       = some (motiveAVI m T ψ nP nIdx ℓ (ppsAll.drop nP)) := by
   have hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true := fun a ha => by

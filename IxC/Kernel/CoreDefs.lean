@@ -40,10 +40,10 @@ namespace Ix.Kernel
 
 /-- The model-side name of field `i`'s projection for `T`
 (the documented public interface of a `_model` family). -/
-def projModelName (T : Key) (i : Nat) : Key := auxKey (auxKey T .model) (.projModel i)
+def projModelName (T : Key md) (i : Nat) : Key md := auxKey (auxKey T .model) (.projModel i)
 
 /-- Is the expression headed by a stored constructor? -/
-def isCtorApp (env : Env) (e : Expr) : Bool :=
+def isCtorApp (env : Env md) (e : Expr md) : Bool :=
   match e.getAppFn with
   | .const c _ =>
     match env.find? c with
@@ -55,7 +55,7 @@ def isCtorApp (env : Env) (e : Expr) : Bool :=
 Used for the K capability (an inductive *proposition*) and to guard the
 structure-eta rescue (the official kernel does not eta-rescue
 propositional structures). -/
-def piResultIsProp (e : Expr) : Bool :=
+def piResultIsProp (e : Expr md) : Bool :=
   match e.piResult with
   | .sort u => Level.isEquiv u .zero == some true
   | _ => false
@@ -65,7 +65,7 @@ def piResultIsProp (e : Expr) : Bool :=
 family's result sort as a predicate on its level parameters.  A type
 whose telescope does not end in a sort gets `ifAllZero []` — "zero at
 every valuation" — which no rescue passes. -/
-def piResultZ (e : Expr) : PropWhen :=
+def piResultZ (e : Expr md) : PropWhen :=
   match e.piResult with
   | .sort u => Level.zeronessOf u
   | _ => .ifAllZero []
@@ -74,7 +74,7 @@ def piResultZ (e : Expr) : PropWhen :=
 the given levels, provably nonzero (official `is_never_zero`)?  The
 **specification** of `capsNeverZero`: the walk down the family's type
 that the stored datum replaces. -/
-def piResultNeverZero (lps : List LevelParam) (us : List Level) (e : Expr) :
+def piResultNeverZero (lps : List LevelParam) (us : List Level) (e : Expr md) :
     Bool :=
   match e.piResult with
   | .sort u => (Level.subst lps us u).isNeverZero
@@ -89,7 +89,7 @@ parameter `u` itself does not).  Read off the stored datum: the
 instantiated datum is unsatisfiable exactly where the instantiated
 sort is never zero (`capsNeverZero_eq`,
 `IxC/Kernel/Verify/InferLemmas.lean`). -/
-def capsNeverZero (lps : List LevelParam) (us : List Level) (caps : IndCaps) :
+def capsNeverZero (lps : List LevelParam) (us : List Level) (caps : IndCaps md) :
     Bool :=
   (Level.substPW lps us caps.sortZ).isNever
 
@@ -120,7 +120,7 @@ installed `PUnit` (or has installed it at the wrong shape) still fails
 the test.  Only the *other* reserved heads are decided by the pin
 rather than by a lookup — which is what `unitLike_eq_punit` licenses.
 -/
-def isUnitLikeTy (env : Env) : Expr → Bool
+def isUnitLikeTy (env : Env md) : Expr md → Bool
   | .const c _ =>
     c == punitName &&
     (match env.find? punitName with
@@ -141,7 +141,7 @@ become opaque to the kernel: `is_delta` stops unfolding them).  The
 one known input whose typing needs a theorem to unfold, the arena's
 `subject-reduction-redex`, is rejected (an accept-subset of the
 reference kernels until that PR lands). -/
-def unfoldDefinition (env : Env) (e : Expr) : Option Expr :=
+def unfoldDefinition (env : Env md) (e : Expr md) : Option (Expr md) :=
   match e.getAppFn with
   | .const n us =>
     match env.find? n with
@@ -160,7 +160,7 @@ delta step takes; the unfolding itself is materialized only inside the
 branch that consumes it (`unfoldDefinition`), never in both slots of a
 match scrutinee.  By construction
 `unfoldableHead env e = (unfoldDefinition env e).isSome`. -/
-def unfoldableHead (env : Env) (e : Expr) : Bool :=
+def unfoldableHead (env : Env md) (e : Expr md) : Bool :=
   match e.getAppFn with
   | .const n us =>
     match env.find? n with
@@ -171,7 +171,7 @@ def unfoldableHead (env : Env) (e : Expr) : Bool :=
 /-- The reducibility hint of the constant at the head of `e` (`opaque`
 when the head is not a stored definition — a theorem included, which
 never unfolds). -/
-def headHint (env : Env) (e : Expr) : ReducibilityHint :=
+def headHint (env : Env md) (e : Expr md) : ReducibilityHint :=
   match e.getAppFn with
   | .const n _ =>
     match env.find? n with
@@ -183,7 +183,7 @@ def headHint (env : Env) (e : Expr) : ReducibilityHint :=
 same-head short-circuit: try level and spine congruence before
 unfolding both sides)?  Mirrors the official kernel's
 `try_eq_const_app`: both sides must actually be applications. -/
-def sameConstHeads : Expr → Expr → Bool
+def sameConstHeads : Expr md → Expr md → Bool
   | .app f₁ _, .app f₂ _ =>
     match f₁.getAppFn, f₂.getAppFn with
     | .const n₁ _, .const n₂ _ => n₁ == n₂
@@ -193,26 +193,26 @@ def sameConstHeads : Expr → Expr → Bool
 /-- The constructor form of a `Nat` literal, one layer:
 `n + 1` becomes `Nat.succ (lit n)`, `0` becomes `Nat.zero` (the
 official kernel's `natLitToConstructor`, used on recursor majors). -/
-def natLitToConstructor (n : Nat) : Expr :=
+def natLitToConstructor (n : Nat) : Expr md :=
   match n with
   | 0 => .const natZeroName []
   | k + 1 => .app (.const natSuccName []) (.lit (.natVal k))
 
 /-- The stored `Nat` declaration has the expected shape. -/
-def natIndOk : Option ConstantInfo → Bool
+def natIndOk : Option (ConstantInfo md) → Bool
   | some (.indInfo cv _) =>
     cv.levelParams.isEmpty && cv.type == .sort (.succ .zero)
   | _ => false
 
 /-- The stored `Nat.zero` declaration has the expected shape. -/
-def natZeroOk : Option ConstantInfo → Bool
+def natZeroOk : Option (ConstantInfo md) → Bool
   | some (.ctorInfo cv _ _) =>
     cv.levelParams.isEmpty && cv.type == .const natName []
   | _ => false
 
 /-- The stored `Nat.succ` declaration has the expected (annotated)
 shape. -/
-def natSuccOk : Option ConstantInfo → Bool
+def natSuccOk : Option (ConstantInfo md) → Bool
   | some (.ctorInfo cv _ _) =>
     cv.levelParams.isEmpty &&
     (match cv.type with
@@ -227,7 +227,7 @@ parameters and (annotated) types.  Every literal code path is guarded
 on this — the model interprets a literal by iterating the `Nat.succ`
 value on the `Nat.zero` value, and the soundness proofs read the
 declaration shapes off this guard. -/
-def natLitSupported (env : Env) : Bool :=
+def natLitSupported (env : Env md) : Bool :=
   natIndOk (env.find? natName) && natZeroOk (env.find? natZeroName) &&
     natSuccOk (env.find? natSuccName)
 
@@ -236,7 +236,7 @@ annotations) resolve in `env`?  A `Nat` literal implicitly references
 the `Nat` basis constants (and a `String` literal additionally the
 string-support constants).  Checked once per declaration; keeps the
 environment well-formedness invariant syntactic. -/
-def Expr.constsResolve (env : Env) : Expr → Bool
+def Expr.constsResolve (env : Env md) : Expr md → Bool
   | .bvar _ | .sort _ => true
   | .lit (.natVal _) =>
     (env.find? natName).isSome && (env.find? natZeroName).isSome &&
@@ -260,14 +260,14 @@ def Expr.constsResolve (env : Env) : Expr → Bool
 
 /-- Convert a `Nat`-literal major premise to constructor form, one
 layer; anything else passes through. -/
-def litToCtorIfNat (env : Env) : Expr → Expr
+def litToCtorIfNat (env : Env md) : Expr md → Expr md
   | .lit (.natVal n) =>
     if natLitSupported env then natLitToConstructor n else .lit (.natVal n)
   | e => e
 
 /-- A `Nat` literal reading of a whnf'd expression: literals and the
 `Nat.zero` constant (the official kernel's `rawNatLitExt?`). -/
-def rawNatLit? : Expr → Option Nat
+def rawNatLit? : Expr md → Option Nat
   | .lit (.natVal n) => some n
   | .const c [] => if c = natZeroName then some 0 else none
   | _ => none
@@ -289,7 +289,7 @@ detected unsupported feature — annotation *declines* (exit 2). -/
 Char)))` — the official kernel's `strLitToConstructor`, spelling as in
 lean4lean (`Expr.strLitToConstructor`) and nanoda
 (`str_lit_to_constructor`). -/
-def strLitToConstructor (s : String) : Expr :=
+def strLitToConstructor (s : String) : Expr md :=
   .app (.const stringOfListName []) <|
     s.toList.foldr
       (init := .app (.const listNilName [.zero]) (.const charName []))
@@ -299,7 +299,7 @@ def strLitToConstructor (s : String) : Expr :=
 
 /-- The stored `String` declaration has the expected shape
 (`String : Type`, no level parameters; any constant kind). -/
-def stringTyOk : Option ConstantInfo → Bool
+def stringTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     ci.toConstantVal.levelParams.isEmpty &&
       ci.toConstantVal.type == .sort (.succ .zero)
@@ -307,7 +307,7 @@ def stringTyOk : Option ConstantInfo → Bool
 
 /-- The stored `Char` declaration has the expected shape (`Char : Type`,
 no level parameters). -/
-def charTyOk : Option ConstantInfo → Bool
+def charTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     ci.toConstantVal.levelParams.isEmpty &&
       ci.toConstantVal.type == .sort (.succ .zero)
@@ -315,7 +315,7 @@ def charTyOk : Option ConstantInfo → Bool
 
 /-- The stored `List` declaration has the expected (annotated) shape
 `List.{p} : Type p → Type p`. -/
-def listTyOk : Option ConstantInfo → Bool
+def listTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     match ci.toConstantVal.levelParams with
     | [p] =>
@@ -328,7 +328,7 @@ def listTyOk : Option ConstantInfo → Bool
 
 /-- The stored `List.nil` declaration has the expected (annotated) shape
 `List.nil.{p} : ∀ (α : Type p), List.{p} α`. -/
-def listNilTyOk : Option ConstantInfo → Bool
+def listNilTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     match ci.toConstantVal.levelParams with
     | [p] =>
@@ -343,7 +343,7 @@ def listNilTyOk : Option ConstantInfo → Bool
 `List.cons.{p} : ∀ (α : Type p) (head : α) (tail : List.{p} α),
 List.{p} α` (with the codomain-sort annotations the annotation pass
 produces on that type). -/
-def listConsTyOk : Option ConstantInfo → Bool
+def listConsTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     match ci.toConstantVal.levelParams with
     | [p] =>
@@ -360,7 +360,7 @@ def listConsTyOk : Option ConstantInfo → Bool
 
 /-- The stored `Char.ofNat` declaration has the expected (annotated)
 shape `Char.ofNat : Nat → Char`. -/
-def charOfNatTyOk : Option ConstantInfo → Bool
+def charOfNatTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     ci.toConstantVal.levelParams.isEmpty &&
       (match ci.toConstantVal.type with
@@ -371,7 +371,7 @@ def charOfNatTyOk : Option ConstantInfo → Bool
 
 /-- The stored `String.ofList` declaration has the expected (annotated)
 shape `String.ofList : List.{0} Char → String`. -/
-def stringOfListTyOk : Option ConstantInfo → Bool
+def stringOfListTyOk : Option (ConstantInfo md) → Bool
   | some ci =>
     ci.toConstantVal.levelParams.isEmpty &&
       (match ci.toConstantVal.type with
@@ -391,7 +391,7 @@ declaration shapes off this guard.  (The reference kernels only check
 *existence* of `Char.ofNat` and `String.ofList`; the type pins are what
 makes the interpretation well-defined, in the spirit of the `Nat`
 literal guard.) -/
-def strLitSupported (env : Env) : Bool :=
+def strLitSupported (env : Env md) : Bool :=
   natLitSupported env &&
     stringTyOk (env.find? stringName) &&
     stringOfListTyOk (env.find? stringOfListName) &&
@@ -429,29 +429,29 @@ which meta-level induction over the literal yields the computed
 value.  WF-recursive operations (`div`, `mod`, `gcd`) and string
 literals are deferred. -/
 
-def natPredName : Key := roleKey .natPred
-def natAddName : Key := roleKey .natAdd
-def natSubName : Key := roleKey .natSub
-def natMulName : Key := roleKey .natMul
-def natPowName : Key := roleKey .natPow
-def natBeqName : Key := roleKey .natBeq
-def natBleName : Key := roleKey .natBle
-def natDivName : Key := roleKey .natDiv
-def natModName : Key := roleKey .natMod
-def natGcdName : Key := roleKey .natGcd
-def natLandName : Key := roleKey .natLand
-def natLorName : Key := roleKey .natLor
-def natXorName : Key := roleKey .natXor
-def natShiftLeftName : Key := roleKey .natShiftLeft
-def natShiftRightName : Key := roleKey .natShiftRight
-def boolName : Key := roleKey .bool
-def boolTrueName : Key := roleKey .boolTrue
-def boolFalseName : Key := roleKey .boolFalse
+abbrev natPredName : Key md := roleKey .natPred
+abbrev natAddName : Key md := roleKey .natAdd
+abbrev natSubName : Key md := roleKey .natSub
+abbrev natMulName : Key md := roleKey .natMul
+abbrev natPowName : Key md := roleKey .natPow
+abbrev natBeqName : Key md := roleKey .natBeq
+abbrev natBleName : Key md := roleKey .natBle
+abbrev natDivName : Key md := roleKey .natDiv
+abbrev natModName : Key md := roleKey .natMod
+abbrev natGcdName : Key md := roleKey .natGcd
+abbrev natLandName : Key md := roleKey .natLand
+abbrev natLorName : Key md := roleKey .natLor
+abbrev natXorName : Key md := roleKey .natXor
+abbrev natShiftLeftName : Key md := roleKey .natShiftLeft
+abbrev natShiftRightName : Key md := roleKey .natShiftRight
+abbrev boolName : Key md := roleKey .bool
+abbrev boolTrueName : Key md := roleKey .boolTrue
+abbrev boolFalseName : Key md := roleKey .boolFalse
 
 /-- Is `e` the constant `Bool.true` — the official kernel's
 `is_constant(e, Bool.true)` (`type_checker.cpp:1097`): the name, no
 universe levels. -/
-def Expr.isBoolTrue : Expr → Bool
+def Expr.isBoolTrue : Expr md → Bool
   | .const c [] => c == boolTrueName
   | _ => false
 
@@ -462,7 +462,7 @@ def Expr.isBoolTrue : Expr → Bool
 additionally gated on `!quickPair`; the arms themselves are the
 structural ones further down (values are `whnfCore`-inert, so nothing
 else happens in between). -/
-def Expr.quickPair : Expr → Expr → Bool
+def Expr.quickPair : Expr md → Expr md → Bool
   | .sort _, .sort _ => true
   | .lit _, .lit _ => true
   | .forallE .., .forallE .. => true
@@ -475,7 +475,7 @@ here without one — it has no fast path (official's `reduce_nat` folds
 nothing unary but `Nat.succ`), but `Nat.sub`'s recurrence
 `sub x (succ y) = pred (sub x y)` names it, so its own recurrences
 must be certified for `sub`'s literal fold to be sound. -/
-def natOpNames : List Key :=
+def natOpNames : List (Key md) :=
   [natPredName, natAddName, natSubName, natMulName, natPowName,
    natBeqName, natBleName]
 
@@ -491,12 +491,12 @@ the family started with `Nat.div`/`Nat.mod` and now covers every
 pin-certified WF-recursive kernel-accelerated `Nat` operation —
 `Nat.log2` left the list when its fast path did, official folding no
 unary operation but `Nat.succ`.) -/
-def natDivModNames : List Key :=
+def natDivModNames : List (Key md) :=
   [natDivName, natModName, natGcdName, natLandName, natLorName,
    natXorName, natShiftLeftName, natShiftRightName]
 
 /-- The operations (transitively) involved in `c`'s recurrences. -/
-def natOpDeps (c : Key) : List Key :=
+def natOpDeps (c : Key md) : List (Key md) :=
   if c = natPredName then [natPredName]
   else if c = natAddName then [natAddName]
   else if c = natSubName then [natPredName, natSubName]
@@ -523,17 +523,17 @@ def natOpDeps (c : Key) : List Key :=
 /-- The defining recurrence equations of a structural-Nat operation,
 over constructor forms with free variables `d`, `d + 1` (binder-free,
 so the equation sides carry no annotations). -/
-def natOpEquations (d : Nat) (c : Key) : List (Expr × Expr) :=
-  let natTy : Expr := .const natName []
-  let x : Expr := .fvar d natTy
-  let y : Expr := .fvar (d + 1) natTy
-  let z : Expr := .const natZeroName []
-  let s : Expr → Expr := (.app (.const natSuccName []) ·)
-  let ap1 : Key → Expr → Expr := fun n a => .app (.const n []) a
-  let ap2 : Key → Expr → Expr → Expr := fun n a b =>
+def natOpEquations (d : Nat) (c : Key md) : List (Expr md × Expr md) :=
+  let natTy : Expr md := .const natName []
+  let x : Expr md := .fvar d natTy
+  let y : Expr md := .fvar (d + 1) natTy
+  let z : Expr md := .const natZeroName []
+  let s : Expr md → Expr md := (.app (.const natSuccName []) ·)
+  let ap1 : Key md → Expr md → Expr md := fun n a => .app (.const n []) a
+  let ap2 : Key md → Expr md → Expr md → Expr md := fun n a b =>
     .app (.app (.const n []) a) b
-  let bT : Expr := .const boolTrueName []
-  let bF : Expr := .const boolFalseName []
+  let bT : Expr md := .const boolTrueName []
+  let bF : Expr md := .const boolFalseName []
   if c = natPredName then
     [(ap1 c z, z), (ap1 c (s x), x)]
   else if c = natAddName then
@@ -553,7 +553,7 @@ def natOpEquations (d : Nat) (c : Key) : List (Expr × Expr) :=
 
 /-- The reduct of op `c` on literal arguments (`pred` ignores the
 second slot). -/
-def natOpResult (c : Key) (a b : Nat) : Option Expr :=
+def natOpResult (c : Key md) (a b : Nat) : Option (Expr md) :=
   if c = natPredName then some (.lit (.natVal (a - 1)))
   else if c = natAddName then some (.lit (.natVal (a + b)))
   else if c = natSubName then some (.lit (.natVal (a - b)))
@@ -583,7 +583,7 @@ def natOpResult (c : Key) (a b : Nat) : Option Expr :=
 dependency stored as a definition, and (for the `Bool`-valued ops and
 the `ble`-guarded `div`/`mod`, whose semantic clauses mention the
 `Bool` constructor values) the `Bool` constructors stored. -/
-def natOpGuard (env : Env) (c : Key) : Bool :=
+def natOpGuard (env : Env md) (c : Key md) : Bool :=
   natLitSupported env &&
   (natOpDeps c).all (fun n => match env.find? n with
     | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
@@ -605,14 +605,14 @@ already declined at install); such a *literal application* is then
 positively declined (arena exit 2) rather than ground unary through
 the fuel recursion.  Declaring the functions themselves is
 unaffected: only the reduction path declines. -/
-def natOpWfNames : List Key :=
+def natOpWfNames : List (Key md) :=
   [natDivName, natModName, natGcdName, natLandName, natLorName,
    natXorName, natShiftLeftName, natShiftRightName]
 
 /-- Substitute the level-monomorphic constant `n` by `r` through an
 application spine (the certification equations' self-references; the
 equation sides are binder-free, so only `app` recurses). -/
-def Expr.substConst0 (n : Key) (r : Expr) : Expr → Expr
+def Expr.substConst0 (n : Key md) (r : Expr md) : Expr md → Expr md
   | .const c us => if c = n ∧ us = [] then r else .const c us
   | .app f a => .app (Expr.substConst0 n r f) (Expr.substConst0 n r a)
   | e => e
@@ -622,7 +622,7 @@ def Expr.substConst0 (n : Key) (r : Expr) : Expr → Expr
 statements' and proofs' references to the pinned operation; `r` being
 closed, no lifting is needed).  `fvar` annotations are not entered:
 the substitution runs on closed input terms only. -/
-def Expr.substConstAll (n : Key) (r : Expr) : Expr → Expr
+def Expr.substConstAll (n : Key md) (r : Expr md) : Expr md → Expr md
   | .const c us => if c = n ∧ us = [] then r else .const c us
   | .app f a => .app (Expr.substConstAll n r f) (Expr.substConstAll n r a)
   | .lam ty b mb =>
@@ -638,7 +638,7 @@ def Expr.substConstAll (n : Key) (r : Expr) : Expr → Expr
 /-- The pinned codomain of a structural-Nat operation: `Bool` (itself
 stored level-monomorphically at type `Sort 1`) for the comparisons,
 `Nat` otherwise. -/
-def natOpCod (env : Env) (c : Key) (e : Expr) : Bool :=
+def natOpCod (env : Env md) (c : Key md) (e : Expr md) : Bool :=
   if c = natBeqName || c = natBleName then
     e == .const boolName [] &&
     (match env.find? boolName with
@@ -651,7 +651,7 @@ def natOpCod (env : Env) (c : Key) (e : Expr) : Bool :=
 `Nat → Nat` for the unary `pred`, `Nat → Nat → Nat` for the arithmetic
 operations, `Nat → Nat → Bool` for the comparisons.  The model reads
 the operations' function-space memberships off this shape. -/
-def natOpTyPinned (env : Env) (c : Key) (ty : Expr) : Bool :=
+def natOpTyPinned (env : Env md) (c : Key md) (ty : Expr md) : Bool :=
   if c = natPredName then
     match ty with
     | .forallE dom body _mb =>
@@ -666,7 +666,7 @@ def natOpTyPinned (env : Env) (c : Key) (ty : Expr) : Bool :=
 
 /-- Op `n` is stored as a level-monomorphic definition with the pinned
 type. -/
-def natOpStoredOk (env : Env) (n : Key) : Bool :=
+def natOpStoredOk (env : Env md) (n : Key md) : Bool :=
   match env.find? n with
   | some (.defnInfo cv _ _) =>
     cv.levelParams.isEmpty && natOpTyPinned env n cv.type
@@ -692,14 +692,14 @@ stores one of these names without `natOpGuard env₂ c` (Checker.lean's
 `.defnDecl` clause).  The converse is by computation — `c ∈ natOpDeps
 c` for all sixteen — so on every environment the checker builds the two
 tests agree, and the cheap one is a single `find?`. -/
-def natOpStored (env : Env) (c : Key) : Bool :=
+def natOpStored (env : Env md) (c : Key md) : Bool :=
   match env.find? c with
   | some (.defnInfo _ _ _) => true
   | _ => false
 
 /-- Peel a `∀`-telescope along an argument list (the residual type of
 a fully applied telescope). -/
-def piResidual : Expr → List Expr → Option Expr
+def piResidual : Expr md → List (Expr md) → Option (Expr md)
   | e, [] => some e
   | .forallE _ b _, a :: as => piResidual (b.instantiate1 a) as
   | _, _ :: _ => none
@@ -708,14 +708,14 @@ def piResidual : Expr → List Expr → Option Expr
 `T`'s projection table exist and cover them?  (Task #175 tower-flag:
 a stored table always carries bodies, so "the entry exists" is the
 whole test.) -/
-def towerSlotsAll (env : Env) (T : Key) (nF : Nat) : Bool :=
+def towerSlotsAll (env : Env md) (T : Key md) (nF : Nat) : Bool :=
   (List.range nF).all fun j => (env.findProj? T j).isSome
 
 /-- Are all `nF` projection slots of `T` recursor-backed projection
 functions (the modeled path's)?  With `towerSlotsAll` the eta
 certificate's slot discipline: a family's slots are all of one kind,
 so the fabricated spine and the per-slot certificates agree. -/
-def recSlotsAll (env : Env) (T : Key) (nF : Nat) : Bool :=
+def recSlotsAll (env : Env md) (T : Key md) (nF : Nat) : Bool :=
   (List.range nF).all fun j =>
     match env.find? (projFnName T j) with
     | some (.recInfo _ _ _ _) => true
@@ -725,8 +725,8 @@ def recSlotsAll (env : Env) (T : Key) (nF : Nat) : Bool :=
 W4c): `.proj T j b` nodes when every slot has a table entry (the
 direct install's structures — the node is what the table types and
 reduces), else the modeled path's projection-function applications. -/
-def etaProjs (env : Env) (T : Key) (us : List Level) (targs : List Expr)
-    (b : Expr) (nF : Nat) : List Expr :=
+def etaProjs (env : Env md) (T : Key md) (us : List Level) (targs : List (Expr md))
+    (b : Expr md) (nF : Nat) : List (Expr md) :=
   if towerSlotsAll env T nF then
     (List.range nF).map fun j => Expr.proj T j b
   else
@@ -738,7 +738,7 @@ inferring anything (`type_checker.cpp:824-829`): the candidate's head is
 a stored constructor applied to exactly its parameters and fields.
 (`structEtaCertWith` re-reads the same head; this is the gate that
 keeps the inferences behind it.) -/
-def etaCtorShape (env : Env) (a : Expr) : Bool :=
+def etaCtorShape (env : Env md) (a : Expr md) : Bool :=
   match a.getAppFn with
   | .const c _ =>
     match env.find? c with
@@ -751,16 +751,16 @@ arguments followed by the installed projection functions applied to
 the stuck major.  Shared between the fabrication and its
 synthetic-spine certificate in `majorToCtor`; a named helper keeps the
 walked proof goals small. -/
-def etaFabArgs (T : Key) (ust : List Level) (targs : List Expr)
-    (major : Expr) (nF : Nat) : List Expr :=
+def etaFabArgs (T : Key md) (ust : List Level) (targs : List (Expr md))
+    (major : Expr md) (nF : Nat) : List (Expr md) :=
   targs ++ (List.range nF).map fun j =>
     Expr.mkAppN (.const (projFnName T j) ust) (targs ++ [major])
 
 /-- `etaFabArgs` at the entry kind (task #175 W4c): the projections
 are `etaProjs`' — `.proj` nodes at an all-tower slot family, the
 modeled spelling otherwise. -/
-def etaFabArgsE (env : Env) (T : Key) (ust : List Level)
-    (targs : List Expr) (major : Expr) (nF : Nat) : List Expr :=
+def etaFabArgsE (env : Env md) (T : Key md) (ust : List Level)
+    (targs : List (Expr md)) (major : Expr md) (nF : Nat) : List (Expr md) :=
   targs ++ etaProjs env T ust targs major nF
 
 /-- **The tower-fire guard** (task #175 W4c/O4, restated at W6):
@@ -786,7 +786,7 @@ so of the projected field directly (`TowerEntryLaw`'s iota clause,
 `IxC/Kernel/Model/Annot/EnvModelM.lean`).  Ungated rules on a data field of a
 `Prop`-declared structure stay out: such a node is not even typed
 (`inferBody`'s guard). -/
-def ProjEntry.fireOk (entry : ProjEntry) (us : List Level) : Bool :=
+def ProjEntry.fireOk (entry : ProjEntry md) (us : List Level) : Bool :=
   !(Level.isEquiv entry.structSort .zero == some true) ||
     (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
       == some true)
@@ -798,8 +798,8 @@ major's parameter count, and their `Prop` guards pass at the levels
 `.proj And j h` node is typed by the tower infer branch).  The gate of
 `majorToCtor`'s `And` branch; abstracted over the lookup so the
 indexed twin (`FEnv.andRescueSlotsF`) shares the body. -/
-def andRescueSlotsOf (findProj? : Key → Nat → Option ProjEntry)
-    (ctor : Key) (nP : Nat) (ust : List Level) : Bool :=
+def andRescueSlotsOf (findProj? : Key md → Nat → Option (ProjEntry md))
+    (ctor : Key md) (nP : Nat) (ust : List Level) : Bool :=
   (List.range 2).all fun j =>
     match findProj? andName j with
     | some e => e.ctor == ctor && e.numParams == nP && e.numFields == 2 &&
@@ -807,7 +807,7 @@ def andRescueSlotsOf (findProj? : Key → Nat → Option ProjEntry)
     | none => false
 
 /-- `andRescueSlotsOf` at the plain environment. -/
-def andRescueSlots (env : Env) (ctor : Key) (nP : Nat) (ust : List Level) : Bool :=
+def andRescueSlots (env : Env md) (ctor : Key md) (nP : Nat) (ust : List Level) : Bool :=
   andRescueSlotsOf env.findProj? ctor nP ust
 
 /-- **The K bit at install** (`RecRule.k`): the rule's constructor has
@@ -816,7 +816,7 @@ inductive proposition).  Together with the recursor's rule list being
 a singleton — which the reader `recRuleK` and `majorToCtor` match on
 — this is the official kernel's `recursor_val::is_k()`.  Abstracted
 over the lookup so the interned twin (`FEnv.find?`) shares the body. -/
-def recRuleKOf (find? : Key → Option ConstantInfo) (ctor : Key) : Bool :=
+def recRuleKOf (find? : Key md → Option (ConstantInfo md)) (ctor : Key md) : Bool :=
   match find? ctor with
   | some (.ctorInfo cvj _ cnF) =>
     match (cvj.type.piResult).getAppFn with
@@ -841,7 +841,7 @@ constructor at the former's level parameters (the fixpoint route's
 recogniser pins `c.1.levelParams == lps`, the modeled route grants η
 only at `cvC.levelParams = cvT.levelParams`, and the pinned `PUnit`
 block is literal), so the conjunct holds wherever the rest does. -/
-def recRuleEtaOf (find? : Key → Option ConstantInfo) (recName ctor : Key) :
+def recRuleEtaOf (find? : Key md → Option (ConstantInfo md)) (recName ctor : Key md) :
     Bool :=
   match find? ctor with
   | some (.ctorInfo cvj _ _) =>
@@ -862,45 +862,45 @@ rules, the modeled route's checked rules, the projection functions):
 the reduction then reads `RecRule.k`/`RecRule.eta` and re-derives
 nothing, and the environment invariant `RecCtorsStored` records that a
 set bit is the lookup's own verdict. -/
-def recRuleBits (find? : Key → Option ConstantInfo) (recName : Key)
-    (rl : RecRule) : RecRule :=
+def recRuleBits (find? : Key md → Option (ConstantInfo md)) (recName : Key md)
+    (rl : RecRule md) : RecRule md :=
   { rl with k := recRuleKOf find? rl.ctor,
             eta := recRuleEtaOf find? recName rl.ctor }
 
-@[simp] theorem recRuleBits_ctor (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).ctor
+@[simp] theorem recRuleBits_ctor (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).ctor
       = rl.ctor := rfl
 
-@[simp] theorem recRuleBits_rhs (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).rhs
+@[simp] theorem recRuleBits_rhs (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).rhs
       = rl.rhs := rfl
 
-@[simp] theorem recRuleBits_nfields (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).nfields
+@[simp] theorem recRuleBits_nfields (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).nfields
       = rl.nfields := rfl
 
-@[simp] theorem recRuleBits_ctorParams (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) :
+@[simp] theorem recRuleBits_ctorParams (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) :
     (recRuleBits find? recName rl).ctorParams = rl.ctorParams := rfl
 
-@[simp] theorem recRuleBits_fire (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).fire
+@[simp] theorem recRuleBits_fire (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).fire
       = rl.fire := rfl
 
-@[simp] theorem recRuleBits_k (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).k
+@[simp] theorem recRuleBits_k (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).k
       = recRuleKOf find? rl.ctor := rfl
 
-@[simp] theorem recRuleBits_paramsBlind (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) :
+@[simp] theorem recRuleBits_paramsBlind (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) :
     (recRuleBits find? recName rl).paramsBlind = rl.paramsBlind := rfl
 
-@[simp] theorem recRuleBits_eta (find? : Key → Option ConstantInfo)
-    (recName : Key) (rl : RecRule) : (recRuleBits find? recName rl).eta
+@[simp] theorem recRuleBits_eta (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rl : RecRule md) : (recRuleBits find? recName rl).eta
       = recRuleEtaOf find? recName rl.ctor := rfl
 
-@[simp] theorem map_ctor_recRuleBits (find? : Key → Option ConstantInfo)
-    (recName : Key) (rs : List RecRule) :
+@[simp] theorem map_ctor_recRuleBits (find? : Key md → Option (ConstantInfo md))
+    (recName : Key md) (rs : List (RecRule md)) :
     (rs.map (recRuleBits find? recName)).map (·.ctor) = rs.map (·.ctor) := by
   simp [List.map_map, Function.comp_def]
 
@@ -911,34 +911,34 @@ the generated right-hand side, with the two rescue bits stamped by
 rescue would loop — but the stamping is uniform, so the environment
 invariant reads the same way at every route).  The parameter
 comparison stays: the rule's law reads it. -/
-def projFnRule (find? : Key → Option ConstantInfo) (T ctorName : Key)
-    (pty : Expr) (nP nF i : Nat) (rhsA : Expr) : RecRule :=
+def projFnRule (find? : Key md → Option (ConstantInfo md)) (T ctorName : Key md)
+    (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) : RecRule md :=
   recRuleBits find? (projFnName T i)
     { ctor := ctorName, nfields := nF, ctorParams := nP,
       fire := if Expr.recRulePlain pty nP nP nP then .plain else .inert,
       rhs := rhsA, paramsBlind := false }
 
-@[simp] theorem projFnRule_ctor (find? : Key → Option ConstantInfo)
-    (T ctorName : Key) (pty : Expr) (nP nF i : Nat) (rhsA : Expr) :
+@[simp] theorem projFnRule_ctor (find? : Key md → Option (ConstantInfo md))
+    (T ctorName : Key md) (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) :
     (projFnRule find? T ctorName pty nP nF i rhsA).ctor = ctorName := rfl
 
-@[simp] theorem projFnRule_rhs (find? : Key → Option ConstantInfo)
-    (T ctorName : Key) (pty : Expr) (nP nF i : Nat) (rhsA : Expr) :
+@[simp] theorem projFnRule_rhs (find? : Key md → Option (ConstantInfo md))
+    (T ctorName : Key md) (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) :
     (projFnRule find? T ctorName pty nP nF i rhsA).rhs = rhsA := rfl
 
-@[simp] theorem projFnRule_nfields (find? : Key → Option ConstantInfo)
-    (T ctorName : Key) (pty : Expr) (nP nF i : Nat) (rhsA : Expr) :
+@[simp] theorem projFnRule_nfields (find? : Key md → Option (ConstantInfo md))
+    (T ctorName : Key md) (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) :
     (projFnRule find? T ctorName pty nP nF i rhsA).nfields = nF := rfl
 
-@[simp] theorem projFnRule_ctorParams (find? : Key → Option ConstantInfo)
-    (T ctorName : Key) (pty : Expr) (nP nF i : Nat) (rhsA : Expr) :
+@[simp] theorem projFnRule_ctorParams (find? : Key md → Option (ConstantInfo md))
+    (T ctorName : Key md) (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) :
     (projFnRule find? T ctorName pty nP nF i rhsA).ctorParams = nP := rfl
 
 /-- Is a recursor K-flagged?  The stored bit of its single rule
 (`RecRule.k`, computed at the block's install by `recRuleKOf`); the
 official kernel reads `recursor_val::is_k()` here in just the same
 way. -/
-def recRuleK (rules : List RecRule) : Bool :=
+def recRuleK (rules : List (RecRule md)) : Bool :=
   match rules with
   | [rl] => rl.k
   | _ => false
@@ -953,9 +953,9 @@ major-domain instantiations, at the recursor's level instantiation and
 spine (the stored pins live in the `rP`-binder prefix context — index
 arguments never occur in them, by the shape certification).
 (Junk for `.inert` rules — `iotaRec` declines before reading it.) -/
-def recFireComparands (rl : RecRule) (lps : List LevelParam)
-    (us : List Level) (cvjLps : List LevelParam) (args : List Expr)
-    (rP : Nat) : List Level × List Expr :=
+def recFireComparands (rl : RecRule md) (lps : List LevelParam)
+    (us : List Level) (cvjLps : List LevelParam) (args : List (Expr md))
+    (rP : Nat) : List Level × List (Expr md) :=
   match rl.fire with
   | .nested lvls pins =>
     (lvls.map (Level.subst lps us),
@@ -971,8 +971,8 @@ level-instantiated at the subject type's levels, with the subject
 type's arguments and the subject substituted for its `numParams + 1`
 loose variables in ONE traversal (`instantiateList`: `bvar 0` is the
 subject, `bvar (numParams - k)` parameter `k`). -/
-def ProjEntry.typeAt (entry : ProjEntry) (us : List Level) (targs : List Expr)
-    (pe : Expr) : Expr :=
+def ProjEntry.typeAt (entry : ProjEntry md) (us : List Level) (targs : List (Expr md))
+    (pe : Expr md) : Expr md :=
   (entry.body.instantiateLevelParams entry.levelParams us).instantiateList
     (pe :: targs.reverse)
 

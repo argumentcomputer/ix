@@ -19,13 +19,13 @@ open Ix.Kernel
 /-- One role's line: kind, levels or equations, evidence kinds (`d` for
 `defeq`, `p` for proof), block and dependencies. -/
 def roleLine (r : Role) : String :=
-  let shape := match r.spec with
+  let shape := match (r.spec (md := .anon)) with
     | .block decls => s!"block {decls.length}"
     | .anchor levels _ => s!"anchor {levels}"
     | .ops _ eqs => s!"ops {eqs.length}"
     | .axiom levels type => s!"axiom {levels}{if type.isNone then " inert" else ""}"
     | .identity _ => "identity"
-  let ev := String.ofList (r.spec.evidenceKinds.map fun b => if b then 'd' else 'p')
+  let ev := String.ofList ((r.spec (md := .anon)).evidenceKinds.map fun b => if b then 'd' else 'p')
   let names (rs : List Role) := ",".intercalate (rs.map fun s => s!"{s.idx}")
   s!"{r.idx} {r.leanName}: {shape}{if ev.isEmpty then "" else " " ++ ev} block [{names r.block}] \
     deps [{names r.deps}]"

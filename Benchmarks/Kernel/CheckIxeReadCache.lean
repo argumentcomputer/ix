@@ -50,7 +50,7 @@ structure PlanRecord where
   kind : String
   recs : Array Address
   deps : Array Address
-  reading : Except ReadError Read
+  reading : Except ReadError (Read .anon)
   deriving Inhabited
 
 /-- An environment-check run's plan: the setup line's counts, the report names, and the
@@ -62,7 +62,7 @@ structure Plan where
   names : Array (Address × Array String)
   records : Array PlanRecord
   /-- the default table's evidence, resolved (the fold's input) -/
-  evidence : Ix.Kernel.Evidences := []
+  evidence : Ix.Kernel.Evidences .anon := []
   deriving Inhabited
 
 /-! ## Keys -/
@@ -111,7 +111,7 @@ def planPath (dir : System.FilePath) (ixeBytes : ByteArray) : System.FilePath ×
 /-- The plan of a finished environment-check run: its readings (in order) with each
 record's view in the setup. -/
 def ofRun (s : Setup) (ixe header : String) (names : Std.HashMap Address (Array String))
-    (readings : Array (Address × Except ReadError Read)) : Plan := Id.run do
+    (readings : Array (Address × Except ReadError (Read .anon))) : Plan := Id.run do
   let mut records : Array PlanRecord := Array.mkEmpty readings.size
   let mut nameRows : Array (Address × Array String) := #[]
   for (address, reading) in readings do

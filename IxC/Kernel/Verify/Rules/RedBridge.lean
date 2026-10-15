@@ -28,12 +28,12 @@ case analysis), `litMajorToCtorFueled_inv`, `projLitToCtorFueled_inv`,
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env} {fuel : Nat}
+variable {env : Env md} {fuel : Nat}
 
 /-- `reduceNat` ⇒ `Red.natSucc` / `Red.natOp` (the two accelerated
 shapes; the WF-names safety net throws or answers `none`). -/
 theorem reduceNat_bridge (hw : WhnfBridge env fuel)
-    {d : Nat} {e e₂ : Expr}
+    {d : Nat} {e e₂ : Expr md}
     (h : reduceNatFueled .verified env fuel d e = .ok (some e₂)) :
     Red env d e e₂ := by
   match e, h with
@@ -62,7 +62,7 @@ theorem reduceNat_bridge (hw : WhnfBridge env fuel)
       obtain ⟨hnames, hstored⟩ := hcond
       have hmem : c ∈ natBinOpNames := by
         rcases hnames with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-          rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+          rfl | rfl | rfl | rfl | rfl | rfl <;> (cases md <;> decide)
       cases hwa : whnf .verified env fuel d a with
       | error err => rw [hwa] at h; exact nomatch h
       | ok a0 =>
@@ -137,7 +137,7 @@ theorem reduceNat_bridge (hw : WhnfBridge env fuel)
 /-- `litMajorToCtor` ⇒ `Red.litToCtorIfNat` or `Red.strLitWhnf`
 (`litMajorToCtorFueled_inv`). -/
 theorem litMajorToCtor_bridge (hw : WhnfBridge env fuel)
-    {d : Nat} {e e₁ : Expr}
+    {d : Nat} {e e₁ : Expr md}
     (h : litMajorToCtorFueled .verified env fuel d e = .ok e₁) :
     Red env d e e₁ := by
   rcases litMajorToCtorFueled_inv h with rfl | ⟨s, rfl, hsup, hwh⟩
@@ -147,7 +147,7 @@ theorem litMajorToCtor_bridge (hw : WhnfBridge env fuel)
 /-- `projLitToCtor` ⇒ `Red.refl` or `Red.strLitWhnf`
 (`projLitToCtorFueled_inv`). -/
 theorem projLitToCtor_bridge (hw : WhnfBridge env fuel)
-    {d : Nat} {e e₁ : Expr}
+    {d : Nat} {e e₁ : Expr md}
     (h : projLitToCtorFueled .verified env fuel d e = .ok e₁) :
     Red env d e e₁ := by
   rcases projLitToCtorFueled_inv h with rfl | ⟨s, rfl, hsup, hwh⟩
@@ -158,7 +158,7 @@ theorem projLitToCtor_bridge (hw : WhnfBridge env fuel)
 licensed `Certs` walk (`projCertAtFueled_verified`, `projCert_inv`,
 `iotaCerts_bridge`). -/
 theorem projCertAt_bridge (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {c : Key} {us : List Level} {args : List Expr}
+    {d : Nat} {c : Key md} {us : List Level} {args : List (Expr md)}
     (h : projCertAtFueled .verified env fuel d true true c us args = .ok true) :
     ∃ cvC nP nF, env.find? c = some (.ctorInfo cvC nP nF) ∧
       Certs env d true (cvC.type.instantiateLevelParams cvC.levelParams us) args := by
@@ -180,7 +180,7 @@ caller must: `iotaRec_inv` hands it over at the one site that runs the
 chain (through `prepareMajor_bridge`, which passes it through). -/
 theorem majorToCtor_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {recName : Key} {rules : List RecRule} {major major' : Expr}
+    {d : Nat} {recName : Key md} {rules : List (RecRule md)} {major major' : Expr md}
     (hrec : ∃ cv mI rP, env.find? recName = some (.recInfo cv mI rP rules))
     (h : majorToCtorFueled .verified env fuel d recName rules major = .ok major') :
     Red env d major major' := by
@@ -215,7 +215,7 @@ motive `Red env d a ·`: each of the three steps is a `Red.trans`).
 `hrec` is `majorToCtor_bridge`'s, passed through. -/
 theorem prepareMajor_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {recName : Key} {rules : List RecRule} {a m : Expr}
+    {d : Nat} {recName : Key md} {rules : List (RecRule md)} {a m : Expr md}
     (hrec : ∃ cv mI rP, env.find? recName = some (.recInfo cv mI rP rules))
     (h : prepareMajorFueled .verified env fuel d recName rules a = .ok m) :
     Red env d a m :=
@@ -229,7 +229,7 @@ theorem prepareMajor_bridge (hw : WhnfBridge env fuel)
 `defEqList_bridge`, `iotaCerts_bridge` twice, `iotaIndexOk_inv`). -/
 theorem iotaRec_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {e e'' : Expr}
+    {d : Nat} {e e'' : Expr md}
     (h : iotaRecFueled .verified env fuel d e = .ok (some e'')) :
     Red env d e e'' := by
   obtain ⟨c, us, cv, mI, rP, rules, major, cj, usj, cvj, cnP, cnF, rl,
@@ -287,9 +287,9 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge env fuel)
 (`whnfStep_inv`: `whnfCore`, then acceleration or δ into `k`, or the
 fixpoint). -/
 theorem whnfStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
-    {d : Nat} {k : Expr → CheckM Expr}
-    (hk : ∀ {e e' : Expr}, k e = .ok e' → Red env d e e')
-    {e e' : Expr}
+    {d : Nat} {k : Expr md → CheckM (Expr md)}
+    (hk : ∀ {e e' : Expr md}, k e = .ok e' → Red env d e e')
+    {e e' : Expr md}
     (h : whnfStep (pureFns .verified env fuel) env d k e = .ok e') :
     Red env d e e' := by
   obtain ⟨e₁, hwc₁, hrest⟩ := whnfStep_inv h
@@ -301,7 +301,7 @@ theorem whnfStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fue
 
 /-- The loop at every budget. -/
 theorem whnfLoop_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
-    {d : Nat} : ∀ (n : Nat) {e e' : Expr},
+    {d : Nat} : ∀ (n : Nat) {e e' : Expr md},
       whnfLoop (pureFns .verified env fuel) env d n e = .ok e' →
       Red env d e e'
   | 0, _, _, h => by

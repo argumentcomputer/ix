@@ -128,8 +128,8 @@ noncomputable def field : Nat → V → V
 
 /-- `Denotes cval env φ ρ e v`: the term `e` denotes the set `v`.  See
 the module docstring. -/
-inductive Denotes (cval : Key → (LevelParam → Nat) → V) (env : Env) (φ : LevelParam → Nat) :
-    (BVarIdx → V) → Expr → V → Prop
+inductive Denotes (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ : LevelParam → Nat) :
+    (BVarIdx → V) → Expr md → V → Prop
   /-- a bound variable denotes what the environment assigns it -/
   | bvar {ρ : BVarIdx → V} {i : BVarIdx} :
       Denotes cval env φ ρ (.bvar i) (ρ i)
@@ -138,20 +138,20 @@ inductive Denotes (cval : Key → (LevelParam → Nat) → V) (env : Env) (φ : 
       Denotes cval env φ ρ (.sort u) (univ (Level.eval φ u))
   /-- a stored constant, used at as many levels as it has parameters,
   denotes its `cval` at the assignment those levels induce -/
-  | const {ρ : BVarIdx → V} {n : Key} {us : List Level} {ci : ConstantInfo}
+  | const {ρ : BVarIdx → V} {n : Key md} {us : List Level} {ci : ConstantInfo md}
       (hf : env.find? n = some ci)
       (hlen : us.length = ci.toConstantVal.levelParams.length) :
       Denotes cval env φ ρ (.const n us)
         (cval n (Level.substFn φ ci.toConstantVal.levelParams us))
   /-- an application denotes the value of the function's graph at the
   argument -/
-  | app {ρ : BVarIdx → V} {f a : Expr} {F X : V}
+  | app {ρ : BVarIdx → V} {f a : Expr md} {F X : V}
       (hf : Denotes cval env φ ρ f F) (ha : Denotes cval env φ ρ a X) :
       Denotes cval env φ ρ (.app f a) (app F X)
   /-- a `λ` denotes the graph of its body over its domain, or the
   canonical proof in regime `0` — which it may be read in only if the
   body really denotes a proof (`pt`) on the domain -/
-  | lam {ρ : BVarIdx → V} {ty body : Expr} {m : BinderMeta} {A : V} {F : V → V}
+  | lam {ρ : BVarIdx → V} {ty body : Expr md} {m : BinderMeta} {A : V} {F : V → V}
       (hA : Denotes cval env φ ρ ty A)
       (hF : ∀ x, x ∈ˢ A → Denotes cval env φ (push x ρ) body (F x))
       (hP : regime φ m.pw = 0 → ∀ x, x ∈ˢ A → F x = pt) :
@@ -159,22 +159,22 @@ inductive Denotes (cval : Key → (LevelParam → Nat) → V) (env : Env) (φ : 
   /-- a `∀` denotes the set of dependent function graphs over its
   domain, or a truth value in regime `0` — which it may be read in only
   if the body really denotes a truth value on the domain -/
-  | pi {ρ : BVarIdx → V} {ty body : Expr} {m : BinderMeta} {A : V} {B : V → V}
+  | pi {ρ : BVarIdx → V} {ty body : Expr md} {m : BinderMeta} {A : V} {B : V → V}
       (hA : Denotes cval env φ ρ ty A)
       (hB : ∀ x, x ∈ˢ A → Denotes cval env φ (push x ρ) body (B x))
       (hP : regime φ m.pw = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0) :
       Denotes cval env φ ρ (.forallE ty body m) (piR (regime φ m.pw) A B)
   /-- a projection at a stored table reads the field's position in the
   pair chain -/
-  | proj_table {ρ : BVarIdx → V} {T : Key} {i : Nat} {e : Expr} {entry : ProjEntry} {P : V}
+  | proj_table {ρ : BVarIdx → V} {T : Key md} {i : Nat} {e : Expr md} {entry : ProjEntry md} {P : V}
       (ht : env.findProj? T i = some entry) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T i e) (field (i + entry.off) P)
   /-- field `0` of a bare pair -/
-  | proj_fst {ρ : BVarIdx → V} {T : Key} {e : Expr} {P : V}
+  | proj_fst {ρ : BVarIdx → V} {T : Key md} {e : Expr md} {P : V}
       (ht : env.findProj? T 0 = none) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T 0 e) (sfst P)
   /-- field `1` of a bare pair -/
-  | proj_snd {ρ : BVarIdx → V} {T : Key} {e : Expr} {P : V}
+  | proj_snd {ρ : BVarIdx → V} {T : Key md} {e : Expr md} {P : V}
       (ht : env.findProj? T 1 = none) (he : Denotes cval env φ ρ e P) :
       Denotes cval env φ ρ (.proj T 1 e) (ssnd P)
   /-- a `Nat` literal denotes what its constructor form denotes -/
@@ -192,8 +192,8 @@ overlap are separated by whether the environment holds a projection
 table — so the relation is a partial function, and `∃ T, Denotes … T ∧ …`
 in `Model.mem` below is a statement about *the* denotation. -/
 theorem Denotes_functional {V : Type w} [SetTheory V]
-    {cval : Key → (LevelParam → Nat) → V} {env : Env} {φ : LevelParam → Nat}
-    {ρ : BVarIdx → V} {e : Expr} {v w : V}
+    {cval : Key md → (LevelParam → Nat) → V} {env : Env md} {φ : LevelParam → Nat}
+    {ρ : BVarIdx → V} {e : Expr md} {v w : V}
     (hv : Denotes cval env φ ρ e v) (hw : Denotes cval env φ ρ e w) :
     v = w := by
   induction hv generalizing w with
@@ -264,9 +264,9 @@ what `Eq A a b` denotes, which by `eq_equality` is `eqv ⟦a⟧ ⟦b⟧`; and
 `eqv x y` is inhabited only when `x = y` (`SetTheory.mem_eqv`).  So the
 two sides of every accepted equation denote the same set.  Types are
 the whole statement; values are the checker's business. -/
-structure Model (V : Type w) [SetTheory V] (env : Env) where
+structure Model (V : Type w) [SetTheory V] (env : Env md) where
   /-- the set a constant denotes, per level assignment -/
-  cval : Key → (LevelParam → Nat) → V
+  cval : Key md → (LevelParam → Nat) → V
   /-- every stored constant is a member of what its type denotes, at
   every level assignment (and every variable environment — the type
   is closed) -/

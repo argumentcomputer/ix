@@ -78,8 +78,8 @@ theorem Sat_drop {Δ : List AnnotTerm} {ρ : Nat → V} (h : Sat V Δ ρ)
 /-- **Context transfer**: a correspondence survives replacing the
 context by one with the same satisfying valuations whose entries
 interpret alike under them. -/
-theorem CtxOk.transfer {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
-    {d : Nat} {Δ₁ Δ₂ : List AnnotTerm} {b : Expr}
+theorem CtxOk.transfer {env : Env md} {m : EnvModel V env} {φ : LevelParam → Nat}
+    {d : Nat} {Δ₁ Δ₂ : List AnnotTerm} {b : Expr md}
     (h : CtxOk m φ d Δ₁ b) (hlen : Δ₂.length = d)
     (hsat : ∀ ρ : Nat → V, Sat V Δ₂ ρ → Sat V Δ₁ ρ)
     (hent : ∀ (p : Nat) (A₁ A₂ : AnnotTerm), Δ₁[p]? = some A₁ →
@@ -156,16 +156,16 @@ theorem piTeleAV_graded :
 `i ≤ k` over the opening's variables correlates with the reading's
 context at that depth (`Γ.drop (k - i)` — the earlier domains,
 innermost first). -/
-theorem ctxOk_opened {env : Env} {m : EnvModel V env} {φ : LevelParam → Nat}
-    {k : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
+theorem ctxOk_opened {env : Env md} {m : EnvModel V env} {φ : LevelParam → Nat}
+    {k : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md}
     (hop : openPisAtFvars k e 0 = some (fvs, o)) (hcl : e.hasFvar = false)
     {Γ : List AnnotTerm} (hΓ : Γ.length = k)
-    (hdoms : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdoms : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (Γ.getD (k - 1 - i) default))
     (hokΓ : ∀ i, i < k → ∀ ρ : Nat → V, Sat V (Γ.drop (k - i)) ρ →
       WellDenotedV V ρ (Γ.getD (k - 1 - i) default))
-    {i : Nat} (hik : i ≤ k) {x : Expr} (hwx : Expr.WScoped i x)
+    {i : Nat} (hik : i ≤ k) {x : Expr md} (hwx : Expr.WScoped i x)
     (hleaf : ∀ l ∈ x.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs) :
     CtxOk m φ i (Γ.drop (k - i)) x := by
   have hidx := openPisAtFvars_index k e 0 hop

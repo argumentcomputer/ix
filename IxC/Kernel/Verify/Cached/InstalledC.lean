@@ -53,7 +53,7 @@ open Ix.Kernel Ix.Kernel.Semantics Ix.Kernel.Model
 
 universe w
 variable {V : Type w} [SetTheory V] {μ : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## The two-phase driver: phase A's install halves -/
 
@@ -61,8 +61,8 @@ variable {ev : Evidences}
 invariant state at `mkFEnv env`, a successful run returns the header
 with its annotated type, well scoped, and `installConstantVal` succeeds
 on it at some fuel. -/
-theorem annotConstantValC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {cv cvA : ConstantVal} {jty : Expr} {s₀ s' : CState} (hs : CSOK μ env s₀)
+theorem annotConstantValC_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {cv cvA : ConstantVal md} {jty : Expr md} {s₀ s' : CState md} (hs : CSOK μ env s₀)
     (h : annotConstantValC μ (mkFEnv env) cv s₀ = .ok ((cvA, jty), s')) :
     CSOK μ env s' ∧ cvA = { cv with type := jty } ∧ Expr.WScoped 0 jty ∧
     ∃ F, installConstantVal (fueledOps μ F) env cv = .ok cvA := by
@@ -107,8 +107,8 @@ theorem annotConstantValC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv
     (by simpa using h2) (by simpa using h3) h4 h5 (by simpa using h6) hF h7 h8
 
 /-- Phase A's value install simulates the pure install half. -/
-theorem annotValC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {cvA : ConstantVal} {jty value jv : Expr} {record : Bool} {s₀ s' : CState}
+theorem annotValC_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {cvA : ConstantVal md} {jty value jv : Expr md} {record : Bool} {s₀ s' : CState md}
     (hjty : jty = cvA.type) (hs : CSOK μ env s₀)
     (h : annotValC μ (mkFEnv env) cvA jty value record s₀ = .ok (jv, s')) :
     CSOK μ env s' ∧ Expr.WScoped 0 jv ∧
@@ -149,7 +149,7 @@ theorem annotValC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : EnvWF
 `constsResolveFC`), so it is congruent in the index: phase B's
 annotation of a theorem's value at the prefix view is the annotation
 at the environment the view names. -/
-theorem annotValC_congr {fe₁ fe₂ : FEnv} (hfe : fe₁.find? = fe₂.find?) :
+theorem annotValC_congr {fe₁ fe₂ : FEnv md} (hfe : fe₁.find? = fe₂.find?) :
     annotValC μ fe₁ = annotValC μ fe₂ := by
   funext cvA jty value record
   unfold annotValC
@@ -162,12 +162,12 @@ simulation is stated about.  A theorem's value arrives RAW and is
 annotated here (`annotValC` at the view, `annotValC_congr`), so the
 well-scopedness premise on the value is asked only of the other two
 kinds. -/
-theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {feFinal : FEnv} {pc : PendingCheck}
+theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {feFinal : FEnv md} {pc : PendingCheck md}
     (hfind : ∀ n, (feFinal.restrictTo pc.vis).find? n = env.find? n)
     (hwty : Expr.WScoped 0 pc.vg.cvA.type)
     (hwv : pc.vg.kind ≠ .thm → Expr.WScoped 0 pc.vg.jv)
-    {s₀ s' : CState} (hres : CSOKF s₀)
+    {s₀ s' : CState md} (hres : CSOKF s₀)
     (h : checkPending μ feFinal pc s₀ = .ok ((), s')) :
     CSOKF s' ∧ ∃ F, checkValueGroup (fueledOps μ F) env pc.vg = .ok () := by
   have hfe : (feFinal.restrictTo pc.vis).find? = (mkFEnv env).find? :=
@@ -186,7 +186,7 @@ theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : En
   obtain ⟨hs₃, u', rfl, F₂, hF₂⟩ := opSIxC_sim hμ henv hs₂ rfl hwsty u s₃ hsort
   -- the value's typing, after the theorem test (and a theorem's value
   -- install)
-  have tail : ∀ {s₄ : CState} (jv : Expr), CSOK μ env s₄ → Expr.WScoped 0 jv →
+  have tail : ∀ {s₄ : CState md} (jv : Expr md), CSOK μ env s₄ → Expr.WScoped 0 jv →
       ((coreKnotI μ (mkFEnv env) checkFuel).infer 0 jv >>= fun jvt =>
         (coreKnotI μ (mkFEnv env) checkFuel).defeq 0 jvt pc.vg.cvA.type >>= fun b =>
           if b = true then pure () else
@@ -250,8 +250,8 @@ theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : En
 
 /-- Phase A's value install, run: the two halves at a common fuel, the
 annotated terms well scoped, the residue kept. -/
-theorem annotValueC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {cv cvA : ConstantVal} {value jty jv : Expr} {record : Bool} {s₀ s' : CState}
+theorem annotValueC_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {cv cvA : ConstantVal md} {value jty jv : Expr md} {record : Bool} {s₀ s' : CState md}
     (hres : CSOKF s₀)
     (h : annotValueC μ (mkFEnv env) cv value record s₀ = .ok ((cvA, jty, jv), s')) :
     CSOKF s' ∧ cvA = { cv with type := jty } ∧ Expr.WScoped 0 jty ∧ Expr.WScoped 0 jv ∧
@@ -276,9 +276,9 @@ theorem annotValueC_run (hμ : μ.verifiedChecks = true) {env : Env} (henv : Env
 /-- The lookup at the prefix view of a canonical, name-unique index whose
 environment extends `env` by exactly the constants above `env`'s
 length is `env`'s lookup. -/
-theorem restrictTo_find?_of_extends {feFinal : FEnv} {env : Env}
+theorem restrictTo_find?_of_extends {feFinal : FEnv md} {env : Env md}
     (hcanon : feFinal = mkFEnv feFinal.env) (hnd : NodupNames feFinal.env)
-    {new : List ConstantInfo} (hext : feFinal.env.consts = new ++ env.consts) (n : Key) :
+    {new : List (ConstantInfo md)} (hext : feFinal.env.consts = new ++ env.consts) (n : Key md) :
     (feFinal.restrictTo env.consts.length).find? n = env.find? n := by
   have h1 : (feFinal.restrictTo env.consts.length).find? n
       = ((mkFEnv feFinal.env).restrictTo env.consts.length).find? n := by
@@ -303,8 +303,8 @@ separable value declaration needs: phase A installs its header and
 records the value group, and the group's own check — run at the FINAL
 environment, from a fresh memo state — is what the model step consumes. -/
 theorem annotStepC_model (hμ : μ.verifiedChecks = true)
-    {i : Nat} {fe fe₁ : FEnv} {pend pend₁ : Array PendingCheck} {pd : Declaration}
-    {s s₁ : CState} {q : Nat × FEnv × Array PendingCheck} {new₁ : List PendingCheck}
+    {i : Nat} {fe fe₁ : FEnv md} {pend pend₁ : Array (PendingCheck md)} {pd : Declaration md}
+    {s s₁ : CState md} {q : Nat × FEnv md × Array (PendingCheck md)} {new₁ : List (PendingCheck md)}
     (hfe : fe = mkFEnv fe.env) (hfe₁ : fe₁ = mkFEnv fe₁.env)
     (hm : EnvModelOk V μ fe.env) (hresA : CSOKF s)
     (hstepC : annotStepC μ ev i fe pend pd s = .ok ((fe₁, pend₁), s₁))
@@ -317,7 +317,7 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
     obtain ⟨⟨mp⟩, hE⟩ := hm
     have henv : EnvWF fe.env := mp.toEnvFacts.wf
     -- the ordinary step: a declaration checked in full at its install
-    have ordinary : ∀ (pd' : Declaration),
+    have ordinary : ∀ (pd' : Declaration md),
         (checkDeclStepC μ ev fe pd' >>= fun fe' => pure (fe', pend)) s = .ok ((fe₁, pend₁), s₁) →
         EnvModelOk V μ fe₁.env ∧ CSOKF s₁ ∧
           ∃ F, checkDecl μ (fueledOps μ F) ev fe.env pd' = .ok fe₁.env := by
@@ -332,8 +332,8 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
           (Ix.Kernel.Semantics.checkDeclRun_ofEnvFactsE hF), hres₁, F, hF⟩
     -- a separable value declaration: phase A's install (its facts
     -- given), phase B's check at the prefix view
-    have value : ∀ (kind : ValueKind) (mk : ConstantVal → Expr → ConstantInfo)
-        (d : Declaration) (cvA : ConstantVal) (jv : Expr),
+    have value : ∀ (kind : ValueKind) (mk : ConstantVal md → Expr md → ConstantInfo md)
+        (d : Declaration md) (cvA : ConstantVal md) (jv : Expr md),
         pd = d →
         CSOKF s₁ →
         fe₁ = fe.push (mk cvA jv) →
@@ -347,7 +347,7 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
       intro kind mk d cvA jv hdrel hres₁ hfe₁' hpend₁' hwty hwv hsplit
       subst hfe₁' hpend₁'
       -- the record's check, from a fresh memo state
-      have hmem : (⟨⟨kind, cvA, jv⟩, i, fe.visibleBelow⟩ : PendingCheck) ∈ q.2.2.toList := by
+      have hmem : (⟨⟨kind, cvA, jv⟩, i, fe.visibleBelow⟩ : PendingCheck md) ∈ q.2.2.toList := by
         rw [hpend₁, Array.toList_push]
         exact List.mem_append_left _ (List.mem_append_right _ (List.mem_singleton.mpr rfl))
       obtain ⟨sB, hchk⟩ := hB _ hmem
@@ -453,9 +453,9 @@ core takes; the records' checks are consumed at the positions that
 produced them.)  A theorem's record holds its RAW value: phase A
 installed the header alone, and phase B's check — which annotates the
 value — is what the theorem's model step consumes. -/
-theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List Declaration}
-    {p : Nat × FEnv × Array PendingCheck} {s : CState}
-    {q : Nat × FEnv × Array PendingCheck} {s' : CState}
+theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
+    {p : Nat × FEnv md × Array (PendingCheck md)} {s : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
     (hrun : InstallRun μ ev ds p s q s') :
     p.2.1 = mkFEnv p.2.1.env → EnvModelOk V μ p.2.1.env → CSOKF s →
     NodupNames q.2.1.env →
@@ -482,7 +482,7 @@ theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List Declaration
 is a hypothesis because the walk threads the model for the
 well-formedness it needs; the conclusion is the model itself. -/
 theorem fullyChecked_sound (V : Type w) [SetTheory V] (hμ : μ.verifiedChecks = true)
-    {ds : List Declaration} (fc : FullyChecked μ ev ds) :
+    {ds : List (Declaration md)} (fc : FullyChecked μ ev ds) :
     Nonempty (EnvModelM V μ fc.env) := by
   obtain ⟨n, s, r⟩ := fc.1.run
   have hchain := installRun_trace μ r (PushChain.refl Env.empty)
@@ -495,7 +495,7 @@ a validating mode, holds no constant of type `False`.  The step the main
 corollary rests on (`IxC/Kernel/MainTheorem.lean`, about `checkDecls`) is
 this under `checkDecls_fullyChecked`. -/
 theorem no_proof_of_False_checked (V : Type w) [SetTheory V]
-    {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List Declaration}
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
     (fc : FullyChecked μ ev ds) :
     ∀ c ∈ fc.env.consts,
       c.toConstantVal.type = .const falseName [] → False := by
@@ -504,7 +504,7 @@ theorem no_proof_of_False_checked (V : Type w) [SetTheory V]
 
 /-- The same letter about the pinned `Empty`. -/
 theorem no_proof_of_Empty_checked (V : Type w) [SetTheory V]
-    {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List Declaration}
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
     (fc : FullyChecked μ ev ds) :
     ∀ c ∈ fc.env.consts,
       c.toConstantVal.type = .const emptyName [] → False := by

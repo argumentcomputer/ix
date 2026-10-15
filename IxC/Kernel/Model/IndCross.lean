@@ -44,20 +44,20 @@ open Ix.Kernel (Env Expr Key BinderMeta)
 
 universe w
 
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- **The residual of an `instPisAt` run reads** when the type and
 every spine element do (`instPisAt_fvar_denote_defined`). -/
 theorem instPisAt_denoteMeta_defined
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         (∃ w, denoteMeta acval env φ D x = some w) ∧ Expr.WScoped D x ∧
           x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
@@ -113,20 +113,20 @@ variables, read at the frame and instantiated along the frame's full
 value spine, is the walk of the (spine-instantiated) read tower at the
 values the openers map to. -/
 theorem instPisAt_denoteMeta_cross
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat} {vals : List AnnotTerm}, vals.length = D →
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         Expr.WScoped D x ∧ x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
       ∀ {T : AnnotTerm}, denoteMeta acval env φ D ty = some T →
       ∀ {vRs : AnnotTerm}, denoteMeta acval env φ D rs = some vRs →
       ∀ {ws : List AnnotTerm}, ws.length = sp.length →
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         ∃ w0, denoteMeta acval env φ D x = some w0 ∧
           ws[j]? = some (AnnotTerm.instSeq vals (D - 1) w0)) →
       ∀ {Γ : List AnnotTerm} {R : AnnotTerm},
@@ -244,7 +244,7 @@ and it is one induction. -/
 /-- **`WScoped` sharpens along the leaves**: the depth appears only in
 the leaf index bounds, so a scoped term is scoped at any bound its
 leaves respect. -/
-theorem WScoped_sharpen : ∀ {e : Expr} {d d' : Nat}, Expr.WScoped d e →
+theorem WScoped_sharpen : ∀ {e : Expr md} {d d' : Nat}, Expr.WScoped d e →
     (∀ l ∈ e.fvarLeaves, l.1 < d') → Expr.WScoped d' e := by
   intro e
   induction e with

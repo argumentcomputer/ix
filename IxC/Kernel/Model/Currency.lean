@@ -38,8 +38,8 @@ bit validity.  (from `Model/Claims.lean`, task #305 closing) -/
 — scope bound, leaf types annotate, their interpretations read the
 telescope, and they are `WellDenotedV` under every satisfying valuation.
 No fuel parameter.  (from `Model/Claims.lean`, task #305 closing) -/
-@[expose] def CtxOk {env : Env} (m : EnvModel V env)
-    (φ : LevelParam → Nat) (d : Nat) (Δa : List AnnotTerm) (e : Expr) : Prop :=
+@[expose] def CtxOk {env : Env md} (m : EnvModel V env)
+    (φ : LevelParam → Nat) (d : Nat) (Δa : List AnnotTerm) (e : Expr md) : Prop :=
   Δa.length = d ∧
   ∀ l ∈ e.fvarLeaves, l.1 < d ∧ Expr.fvarsBelow l.1 l.2 ∧
     ∃ tya Aa,

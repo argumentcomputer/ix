@@ -314,8 +314,19 @@ projection variant hashes the records it writes, which carry no table). A
 check of table canonicity, if wanted, belongs in a separate variant, as the
 block-order check is.
 
+**Modes** (`IxC/Kernel/Key.lean`). The kernel's types (`Key`, `Expr`,
+`ConstantInfo`, `Declaration`, `Env` and what is built from them) take a
+`Mode`: `.anon` (Ixon: an input constant is identified by its address),
+`.meta` (the same, with display data; it has no reader yet) and `.source`
+(Lean through `CanonM`: an input constant is identified by its name).
+`Mode.Id md` is what identifies an input constant (a name in every mode for
+now), `Mode.D md α` the display data (`Unit` outside `.meta`), and
+`Mode.Certified` holds of the modes the theorems are stated at (`.anon`,
+`.source`). The checker and its proofs are generic in the mode. Source mode
+installs an `Env .source`; the Ixon entries at BLAKE3 install an `Env .anon`.
+
 **Keys** (`IxC/Kernel/Key.lean`, `IxC/Kernel/Ixon/Reader.lean`). The kernel's
-environment is keyed by `Ix.Kernel.Key`, an inductive with a cached hash:
+environment is keyed by `Ix.Kernel.Key md`, an inductive with a cached hash:
 
 - `.id n`, an input constant. The reader encodes a reference
   `ConstRef Address` under the reserved root `ix`: `.member b i` is
@@ -569,13 +580,19 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3364 | 82 |
-| reader `readRecords`, `readStream` | 2066 | 79 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5566 | 111 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5563 | 111 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5598 | 111 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5733 | 112 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5752 | 115 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3412 | 82 |
+| reader `readRecords`, `readStream` | 2030 | 79 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5578 | 111 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5575 | 111 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5610 | 111 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5745 | 112 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5764 | 115 |
+
+Step 5b's mode index (the kernel's types take a `Mode`) moved them from 3364,
+2066, 5566, 5563, 5598, 5733 and 5752, externs unchanged: the pinned names and
+the basis declarations are generic in the mode, so their closed terms are
+hoisted where they are used rather than where they are defined, and `Key.id`'s
+override left the fold, which never builds an input key.
 
 Step 5b's walk change moved them from 3303, 2025, 5474, 5471, 5505, 5638 and
 5657, externs unchanged: the walk visits the source `f` of every

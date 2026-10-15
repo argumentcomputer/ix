@@ -40,7 +40,7 @@ open Ix.Kernel
 shape the array implementation computes.  Where no record declares
 `n`, `findIdx` is the length, `getElem?` is `none` and `eraseIdx`
 changes nothing. -/
-theorem pickSpec_eq (n : Option Key) : ∀ l : List Declaration,
+theorem pickSpec_eq (n : Option (Key md)) : ∀ l : List (Declaration md),
     pickSpec n l = (l[l.findIdx (declares n)]?, l.eraseIdx (l.findIdx (declares n)))
   | [] => rfl
   | d :: ds => by
@@ -53,7 +53,7 @@ theorem pickSpec_eq (n : Option Key) : ∀ l : List Declaration,
 
 /-- **The implementation is its specification**: the array pick is the
 list pick, on the array's records. -/
-theorem pick_toList (n : Option Key) (ds : Array Declaration) :
+theorem pick_toList (n : Option (Key md)) (ds : Array (Declaration md)) :
     ((pick n ds).1, (pick n ds).2.toList) = pickSpec n ds.toList := by
   rw [pickSpec_eq]
   cases ds
@@ -61,7 +61,7 @@ theorem pick_toList (n : Option Key) (ds : Array Declaration) :
 
 /-- What `pickSpec` removes and what it leaves is a permutation of what
 it was given. -/
-theorem pickSpec_perm (n : Option Key) : ∀ l : List Declaration,
+theorem pickSpec_perm (n : Option (Key md)) : ∀ l : List (Declaration md),
     ((pickSpec n l).1.toList ++ (pickSpec n l).2).Perm l
   | [] => by simp [pickSpec]
   | d :: ds => by
@@ -77,7 +77,7 @@ theorem pickSpec_perm (n : Option Key) : ∀ l : List Declaration,
 
 /-- **The implementation is its specification**: the array front-builder
 is `frontSpec`, its accumulator in front. -/
-theorem frontOf_toList : ∀ (ps : List Declaration) (acc ds : Array Declaration),
+theorem frontOf_toList : ∀ (ps : List (Declaration md)) (acc ds : Array (Declaration md)),
     (frontOf acc ps ds).1.toList = acc.toList ++ (frontSpec ps ds.toList).1 ∧
       (frontOf acc ps ds).2.toList = (frontSpec ps ds.toList).2
   | [], acc, ds => by simp [frontOf, frontSpec]
@@ -93,8 +93,8 @@ theorem frontOf_toList : ∀ (ps : List Declaration) (acc ds : Array Declaration
 
 /-- **The front is the prelude's declarations, and what it took it took
 from the stream.** -/
-theorem frontSpec_perm : ∀ (ps ds : List Declaration),
-    ∃ extra : List Declaration, (∀ d ∈ extra, d ∈ ps) ∧
+theorem frontSpec_perm : ∀ (ps ds : List (Declaration md)),
+    ∃ extra : List (Declaration md), (∀ d ∈ extra, d ∈ ps) ∧
       ((frontSpec ps ds).1 ++ (frontSpec ps ds).2).Perm (ds ++ extra)
   | [], ds => ⟨[], by simp, by simp [frontSpec]⟩
   | p :: ps, ds => by
@@ -126,7 +126,7 @@ theorem frontSpec_perm : ∀ (ps ds : List Declaration),
 /-! ## The ground hoist -/
 
 /-- The records of an array, read off by index, are the array. -/
-theorem range_map_getElem! (a : Array Declaration) :
+theorem range_map_getElem! (a : Array (Declaration md)) :
     (List.range a.size).map (fun k => a[k]!) = a.toList := by
   apply List.ext_getElem
   · simp
@@ -137,7 +137,7 @@ theorem range_map_getElem! (a : Array Declaration) :
 
 /-- **The reorder is a permutation.**  The sort is `List.mergeSort`
 exactly so that this line exists (`List.mergeSort_perm`). -/
-theorem applyHoist_perm (ds : Array Declaration) (target : Std.HashMap Nat Nat) :
+theorem applyHoist_perm (ds : Array (Declaration md)) (target : Std.HashMap Nat Nat) :
     (applyHoist ds target).1.toList.Perm ds.toList := by
   simp only [applyHoist]
   rw [← range_map_getElem! ds]
@@ -145,7 +145,7 @@ theorem applyHoist_perm (ds : Array Declaration) (target : Std.HashMap Nat Nat) 
 
 /-- **The hoist is a permutation**: it moves records, it never adds or
 drops one. -/
-theorem hoistNatOpGround_perm (ds : Array Declaration) :
+theorem hoistNatOpGround_perm (ds : Array (Declaration md)) :
     (hoistNatOpGround ds).1.toList.Perm ds.toList := by
   simp only [hoistNatOpGround]
   split
@@ -157,8 +157,8 @@ theorem hoistNatOpGround_perm (ds : Array Declaration) :
 /-- **THE SPEC** (maintainer, task #293): *"it is a permutation of the
 input plus additional declarations, but nothing missing"* — and the
 additional declarations are the built-in prelude's own records. -/
-theorem preparePrelude_perm (pre : PreludeIx) (ds : Array Declaration) :
-    ∃ extra : List Declaration, (∀ d ∈ extra, d ∈ pre.decls.toList) ∧
+theorem preparePrelude_perm (pre : PreludeIx md) (ds : Array (Declaration md)) :
+    ∃ extra : List (Declaration md), (∀ d ∈ extra, d ∈ pre.decls.toList) ∧
       (preparePrelude pre ds).toList.Perm (ds.toList ++ extra) := by
   obtain ⟨extra, hextra, hperm⟩ := frontSpec_perm pre.decls.toList ds.toList
   refine ⟨extra, hextra, ?_⟩
@@ -171,8 +171,8 @@ theorem preparePrelude_perm (pre : PreludeIx) (ds : Array Declaration) :
 /-- **The pass-through**: every record of the file is a record of the
 fold's input, unchanged.  This is what a statement about the FILE
 composes with. -/
-theorem mem_preparePrelude {pre : PreludeIx} {ds : Array Declaration}
-    {pd : Declaration} (h : pd ∈ ds) : pd ∈ preparePrelude pre ds := by
+theorem mem_preparePrelude {pre : PreludeIx md} {ds : Array (Declaration md)}
+    {pd : Declaration md} (h : pd ∈ ds) : pd ∈ preparePrelude pre ds := by
   obtain ⟨extra, -, hperm⟩ := preparePrelude_perm pre ds
   exact Array.mem_toList_iff.mp
     (hperm.mem_iff.mpr (List.mem_append_left _ (Array.mem_toList_iff.mpr h)))

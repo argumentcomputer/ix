@@ -453,7 +453,7 @@ verdict is input. -/
 def checkBytes (hash : ByteArray → Address) (binding : Admission.Binding) (maxProjections : Nat)
     (limits : Admission.Limits) (orderLimits : Limits) (records : Admission.Records) (blobs : Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except CheckError Ix.Kernel.Env := do
+    Except CheckError (Ix.Kernel.Env .anon) := do
   (Admission.preflight limits records blobs).mapError (fun error => .order (.admission error))
   (Admission.uniqueKeys records blobs).mapError (fun error => .order (.admission error))
   (Admission.authenticate hash records blobs).mapError (fun error => .order (.admission error))

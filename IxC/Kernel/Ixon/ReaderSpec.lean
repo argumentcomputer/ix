@@ -39,18 +39,18 @@ open Ix.Kernel (ConstRef)
 /-- The declarations `readRecords` produces, record by record: each record is
 read against the state the records before it left (`State.commit`), and the
 output is the records' declarations in order. -/
-inductive StreamRead (cx : Ctx) : State → List (Address × Ixon.Constant) → State → Array CDecl → Prop where
-  | nil {st : State} : StreamRead cx st [] st #[]
-  | cons {st st' : State} {a : Address} {c : Ixon.Constant} {r : Read}
-      {rest : List (Address × Ixon.Constant)} {out : Array CDecl}
+inductive StreamRead (cx : Ctx md) : State md → List (Address × Ixon.Constant) → State md → Array (CDecl md) → Prop where
+  | nil {st : State md} : StreamRead cx st [] st #[]
+  | cons {st st' : State md} {a : Address} {c : Ixon.Constant} {r : Read md}
+      {rest : List (Address × Ixon.Constant)} {out : Array (CDecl md)}
       (read : readRecord cx st a c = .ok r)
       (tail : StreamRead cx (st.commit r) rest st' out) :
       StreamRead cx st ((a, c) :: rest) st' (r.decls ++ out)
 
 /-- Every record of a stream reading was read, and its declarations are in
 the output. -/
-theorem StreamRead.mem {cx : Ctx} {st st' : State} {records : List (Address × Ixon.Constant)}
-    {out : Array CDecl} (h : StreamRead cx st records st' out) {a : Address} {c : Ixon.Constant}
+theorem StreamRead.mem {cx : Ctx md} {st st' : State md} {records : List (Address × Ixon.Constant)}
+    {out : Array (CDecl md)} (h : StreamRead cx st records st' out) {a : Address} {c : Ixon.Constant}
     (hm : (a, c) ∈ records) :
     ∃ st₀ r, readRecord cx st₀ a c = .ok r ∧ ∀ d ∈ r.decls, d ∈ out := by
   induction h with
@@ -63,9 +63,9 @@ theorem StreamRead.mem {cx : Ctx} {st st' : State} {records : List (Address × I
       exact ⟨st₀, r₀, h₀, fun d hd' => Array.mem_append_right _ (hd d hd')⟩
 
 /-- The loop of `readRecords`, over any body that reads one record per step. -/
-theorem forIn_streamRead {cx : Ctx}
-    {f : (Address × Ixon.Constant) × Nat → Std.HashSet Address × State × Array CDecl →
-      Except (ReadError × Nat) (ForInStep (Std.HashSet Address × State × Array CDecl))}
+theorem forIn_streamRead {cx : Ctx md}
+    {f : (Address × Ixon.Constant) × Nat → Std.HashSet Address × State md × Array (CDecl md) →
+      Except (ReadError × Nat) (ForInStep (Std.HashSet Address × State md × Array (CDecl md)))}
     (hf : ∀ x s res, f x s = .ok res → ∃ r, readRecord cx s.2.1 x.1.1 x.1.2 = .ok r ∧
         res = .yield (s.1.insert x.1.1, s.2.1.commit r, s.2.2 ++ r.decls)) :
     ∀ (l : List ((Address × Ixon.Constant) × Nat)) (s res), forIn l s f = .ok res →
@@ -99,8 +99,8 @@ private theorem bind_ok_pure {ε α β : Type _} {x : Except ε α} {g : α → 
 
 /-- **The stream reading.** An accepted `readRecords` is a record-by-record
 reading of the records, in their order. -/
-theorem readRecords_spec {cx : Ctx} {st st' : State} {records : Array (Address × Ixon.Constant)}
-    {out : Array CDecl} (h : readRecords cx st records = .ok (st', out)) :
+theorem readRecords_spec {cx : Ctx md} {st st' : State md} {records : Array (Address × Ixon.Constant)}
+    {out : Array (CDecl md)} (h : readRecords cx st records = .ok (st', out)) :
     StreamRead cx st records.toList st' out := by
   unfold readRecords at h
   dsimp only at h
@@ -155,8 +155,8 @@ theorem forIn_nodup {β : Type}
 
 /-- **No duplicate records.** An accepted `readRecords` ran over records
 with pairwise distinct addresses. -/
-theorem readRecords_nodup {cx : Ctx} {st st' : State} {records : Array (Address × Ixon.Constant)}
-    {out : Array CDecl} (h : readRecords cx st records = .ok (st', out)) :
+theorem readRecords_nodup {cx : Ctx md} {st st' : State md} {records : Array (Address × Ixon.Constant)}
+    {out : Array (CDecl md)} (h : readRecords cx st records = .ok (st', out)) :
     (records.toList.map Prod.fst).Nodup := by
   unfold readRecords at h
   dsimp only at h
@@ -188,14 +188,14 @@ def singletonLps (lvls : UInt64) : List LevelParam :=
 /-- The expression reader of a singleton definition record, as `readRecord`
 builds it: `recur 0` is the record itself, and universe variable `i` is the
 level parameter `i` (the definition's header does not enter). -/
-def definitionReader (cx : Ctx) (owner : Address) (c : Ixon.Constant) (_d : Ixon.Definition) :
-    MemberReader :=
+def definitionReader (cx : Ctx md) (owner : Address) (c : Ixon.Constant) (_d : Ixon.Definition) :
+    (MemberReader md) :=
   .mk' cx c id
     (fun i => if i == 0 then some (cx.nameOf (.member owner 0)) else none)
 
 /-- The expression reader of a singleton axiom or quotient record, as
 `readRecord` builds it (no `recur`). -/
-def headerReader (cx : Ctx) (c : Ixon.Constant) : MemberReader :=
+def headerReader (cx : Ctx md) (c : Ixon.Constant) : MemberReader md :=
   .mk' cx c id (fun _ => none)
 
 /-- The declaration a definition record's kind makes of its header `cv`, the
@@ -203,17 +203,17 @@ reading of its value `value`, and the projection rewrite's result
 `rewritten`: a definition and a theorem carry the rewritten value where the
 rewrite applies, an opaque the value as read. A definition's reducibility
 hint is the host's or the height rule's; it is not part of the reading. -/
-inductive DefinitionDecl (cv : CVal) (value : CExpr) (rewritten : Option CExpr) :
-    Ix.DefKind → CDecl → Prop where
+inductive DefinitionDecl (cv : CVal md) (value : CExpr md) (rewritten : Option (CExpr md)) :
+    Ix.DefKind → CDecl md → Prop where
   | defn (hint : Ix.Kernel.ReducibilityHint) :
       DefinitionDecl cv value rewritten .defn (.defnDecl cv (rewritten.getD value) hint)
   | thm : DefinitionDecl cv value rewritten .thm (.thmDecl cv (rewritten.getD value))
   | opaq : DefinitionDecl cv value rewritten .opaq (.opaqueDecl cv value)
 
 /-- What `readDefinition` makes of a definition member. -/
-theorem readDefinition_spec {cx : Ctx} {st : State} {heights : CName → Nat}
-    {ref : ConstRef Address} {lps : List LevelParam} {mr : MemberReader} {d : Ixon.Definition}
-    {decl : CDecl} {rw : Bool}
+theorem readDefinition_spec {cx : Ctx md} {st : State md} {heights : CName md → Nat}
+    {ref : ConstRef Address} {lps : List LevelParam} {mr : MemberReader md} {d : Ixon.Definition}
+    {decl : CDecl md} {rw : Bool}
     (h : readDefinition cx st heights ref lps mr d = .ok (decl, rw)) :
     ∃ ty value, mr.read d.typ = .ok ty ∧ mr.read d.value = .ok value ∧
       DefinitionDecl ⟨cx.nameOf ref, lps, ty⟩ value (projRewrite st ⟨cx.nameOf ref, lps, ty⟩ value)
@@ -253,9 +253,9 @@ and the reading of its type; a definition or theorem also carries the
 reading of its value (or its projection rewrite), an opaque its value as
 read. Unsafe axioms and unsafe or partial definitions are never read
 (they decline). -/
-inductive SingletonRead (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Constant) :
-    CDecl → Prop where
-  | defn {d : Ixon.Definition} {ty value : CExpr} {decl : CDecl}
+inductive SingletonRead (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant) :
+    (CDecl md) → Prop where
+  | defn {d : Ixon.Definition} {ty value : CExpr md} {decl : CDecl md}
       (info : c.info = .defn d)
       (type : (definitionReader cx owner c d).read d.typ = .ok ty)
       (body : (definitionReader cx owner c d).read d.value = .ok value)
@@ -263,12 +263,12 @@ inductive SingletonRead (cx : Ctx) (st : State) (owner : Address) (c : Ixon.Cons
         (projRewrite st ⟨cx.nameOf (.member owner 0), singletonLps d.lvls, ty⟩ value)
         d.kind decl) :
       SingletonRead cx st owner c decl
-  | axio {ax : Ixon.Axiom} {ty : CExpr}
+  | axio {ax : Ixon.Axiom} {ty : CExpr md}
       (info : c.info = .axio ax) (safe : ax.isUnsafe = false)
       (type : (headerReader cx c).read ax.typ = .ok ty) :
       SingletonRead cx st owner c
         (.axiomDecl ⟨cx.nameOf (.member owner 0), singletonLps ax.lvls, ty⟩)
-  | quot {q : Ixon.Quotient} {ty : CExpr}
+  | quot {q : Ixon.Quotient} {ty : CExpr md}
       (info : c.info = .quot q)
       (type : (headerReader cx c).read q.typ = .ok ty) :
       SingletonRead cx st owner c
@@ -280,8 +280,8 @@ def isSingleton : Ixon.ConstantInfo → Bool
   | _ => false
 
 /-- A singleton record contributes exactly its reading. -/
-theorem readRecord_singleton {cx : Ctx} {st : State} {owner : Address} {c : Ixon.Constant}
-    {r : Read} (hs : isSingleton c.info = true) (h : readRecord cx st owner c = .ok r) :
+theorem readRecord_singleton {cx : Ctx md} {st : State md} {owner : Address} {c : Ixon.Constant}
+    {r : Read md} (hs : isSingleton c.info = true) (h : readRecord cx st owner c = .ok r) :
     ∃ decl, SingletonRead cx st owner c decl ∧ r.decls = #[decl] := by
   unfold readRecord at h
   cases hc : c.info with
@@ -324,8 +324,8 @@ theorem readRecord_singleton {cx : Ctx} {st : State} {owner : Address} {c : Ixon
 
 /-- Every singleton record of an accepted stream is read, and its
 declaration is in the output. -/
-theorem StreamRead.singleton {cx : Ctx} {st st' : State} {records : List (Address × Ixon.Constant)}
-    {out : Array CDecl} (h : StreamRead cx st records st' out) {owner : Address}
+theorem StreamRead.singleton {cx : Ctx md} {st st' : State md} {records : List (Address × Ixon.Constant)}
+    {out : Array (CDecl md)} (h : StreamRead cx st records st' out) {owner : Address}
     {c : Ixon.Constant} (hm : (owner, c) ∈ records) (hs : isSingleton c.info = true) :
     ∃ st₀ decl, SingletonRead cx st₀ owner c decl ∧ decl ∈ out := by
   obtain ⟨st₀, r, hr, hd⟩ := h.mem hm
@@ -338,35 +338,35 @@ theorem StreamRead.singleton {cx : Ctx} {st st' : State} {records : List (Addres
 
 /-- A reference that is not an indexed recursor takes its role key where
 the role table binds it. -/
-theorem Ctx.nameOf_of_role {cx : Ctx} {r : ConstRef Address} {n : CName}
+theorem Ctx.nameOf_of_role {cx : Ctx md} {r : ConstRef Address} {n : CName md}
     (hrec : cx.index.recs[r]? = none) (hrole : cx.roles.names[r]? = some n) : cx.nameOf r = n := by
   simp [Ctx.nameOf, hrec, hrole]
 
 /-- A reference that is neither an indexed recursor nor bound to a role takes
 its address encoding. -/
-theorem Ctx.nameOf_of_unbound {cx : Ctx} {r : ConstRef Address}
+theorem Ctx.nameOf_of_unbound {cx : Ctx md} {r : ConstRef Address}
     (hrec : cx.index.recs[r]? = none) (hrole : cx.roles.names[r]? = none) :
     cx.nameOf r = keyName r := by
   simp [Ctx.nameOf, hrec, hrole, KeyNames.get_eq]
 
 /-- The reading of a bare reference with no universe arguments: the
 constant the reference resolves to, under its name. -/
-theorem MemberReader.read_ref {mr : MemberReader} {i : UInt64} {a : Address}
+theorem MemberReader.read_ref {mr : MemberReader md} {i : UInt64} {a : Address}
     {r : ConstRef Address} (href : mr.ecx.src.refs[i.toNat]? = some a)
     (hres : resolve mr.ecx.cx.store a = some r) :
     mr.read (.ref i #[]) = .ok (.const (mr.ecx.cx.nameOf r) []) := by
   simp [MemberReader.read, convExpr, ECx.refAt, ECx.levels, href, hres, bind, Except.bind,
     pure, Except.pure]
 
-@[simp] theorem MemberReader.mk'_ecx_cx (cx : Ctx) (src : Ixon.Constant)
+@[simp] theorem MemberReader.mk'_ecx_cx (cx : Ctx md) (src : Ixon.Constant)
     (param : Nat → LevelParam)
-    (self : Nat → Option CName) : (MemberReader.mk' cx src param self).ecx.cx = cx := by
+    (self : Nat → Option (CName md)) : (MemberReader.mk' cx src param self).ecx.cx = cx := by
   simp only [MemberReader.mk']
   rfl
 
-@[simp] theorem MemberReader.mk'_ecx_src (cx : Ctx) (src : Ixon.Constant)
+@[simp] theorem MemberReader.mk'_ecx_src (cx : Ctx md) (src : Ixon.Constant)
     (param : Nat → LevelParam)
-    (self : Nat → Option CName) : (MemberReader.mk' cx src param self).ecx.src = src := by
+    (self : Nat → Option (CName md)) : (MemberReader.mk' cx src param self).ecx.src = src := by
   simp only [MemberReader.mk']
   rfl
 

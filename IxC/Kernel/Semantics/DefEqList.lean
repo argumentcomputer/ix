@@ -19,11 +19,11 @@ Statements verbatim from their old home; the namespace is unchanged.
 -/
 
 namespace Ix.Kernel.Semantics
-variable {mode : CheckMode} {env : Env}
+variable {mode : CheckMode} {env : Env md}
 
 /-- The level comparand reads no arguments, in either fire branch. -/
-theorem recFireComparands_fst_nil (rl : RecRule) (lps : List LevelParam)
-    (us : List Level) (cvjLps : List LevelParam) (args : List Expr) (rP : Nat) :
+theorem recFireComparands_fst_nil (rl : RecRule md) (lps : List LevelParam)
+    (us : List Level) (cvjLps : List LevelParam) (args : List (Expr md)) (rP : Nat) :
     (recFireComparands rl lps us cvjLps args rP).1
       = (recFireComparands rl lps us cvjLps [] rP).1 := by
   unfold recFireComparands
@@ -32,8 +32,8 @@ theorem recFireComparands_fst_nil (rl : RecRule) (lps : List LevelParam)
 /-- A successful `defEqList`'s components — the form the nested pin
 premise needs, since only *one* index's comparand is known to denote
 (the rule hypothesises exactly that one). -/
-theorem defEqListFueled_get {env : Env} {fuel d : Nat} :
-    ∀ {as bs : List Expr}, defEqListFueled mode env fuel d as bs = .ok true →
+theorem defEqListFueled_get {env : Env md} {fuel d : Nat} :
+    ∀ {as bs : List (Expr md)}, defEqListFueled mode env fuel d as bs = .ok true →
       ∀ i, i < as.length →
         isDefEqCore mode env fuel d (as.getD i default) (bs.getD i default)
           = .ok true := by
@@ -51,8 +51,8 @@ theorem defEqListFueled_get {env : Env} {fuel d : Nat} :
       | j + 1 => simpa using ih htail j (by simpa using hi)
 
 /-- A successful `defEqList` relates lists of equal length. -/
-theorem defEqListFueled_length {env : Env} {fuel d : Nat} :
-    ∀ {as bs : List Expr}, defEqListFueled mode env fuel d as bs = .ok true →
+theorem defEqListFueled_length {env : Env md} {fuel d : Nat} :
+    ∀ {as bs : List (Expr md)}, defEqListFueled mode env fuel d as bs = .ok true →
       as.length = bs.length := by
   intro as
   induction as with

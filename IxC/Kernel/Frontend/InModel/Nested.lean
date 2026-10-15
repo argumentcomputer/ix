@@ -68,7 +68,7 @@ open Ix.Kernel
 
 /-- A member of the auxiliary family: a real member of the block or a
 mimic (a nested occurrence `I As`, the container at its pins). -/
-structure Mem where
+structure Mem (md : Mode) where
   /-- position among the motives -/
   tag : Nat
   /-- the block member (`some m`) or the mimic ordinal (`none`, see `j`) -/
@@ -76,33 +76,33 @@ structure Mem where
   /-- mimic ordinal (0-based; meaningful when `real? = none`) -/
   j : Nat
   /-- the carrier's head: `T_m` at a real member, the container `I` at a mimic -/
-  I : Key
+  I : Key md
   /-- the carrier's levels -/
   lv : List Level
   /-- the pins (the container's parameters), at the parameter frame;
   empty at a real member (whose parameters are the block's) -/
-  pins : List Expr
+  pins : List (Expr md)
   /-- the index count -/
   nIdx : Nat
   /-- the index telescope, at the parameter frame -/
-  idxBs : List Expr
+  idxBs : List (Expr md)
   deriving Repr, Inhabited
 
 /-- One constructor of the auxiliary family. -/
-structure ACtor where
+structure ACtor (md : Mode) where
   /-- the member it belongs to -/
   mem : Nat
   /-- the public constructor name (the container's at a mimic) and levels -/
-  cname : Key
+  cname : Key md
   clv : List Level
   /-- field count -/
   nF : Nat
   /-- the field binders, each at its own frame over the parameter frame -/
-  doms : List Expr
+  doms : List (Expr md)
   /-- per field: the member it recurses to, or `none` -/
   kinds : List (Option Nat)
   /-- the residual's index expressions, at the fields' frame -/
-  idx : List Expr
+  idx : List (Expr md)
   /-- the global minor index -/
   J : Nat
   /-- the rule index within the member's recursor -/
@@ -114,27 +114,27 @@ recursor family instantiated at the pins, in the container's motive
 order, with each member's recursor name; `lv`/`pins` are the
 container's levels and pins (shared by the group), `large` whether its
 recursors carry an elimination level. -/
-structure Group where
+structure Group (md : Mode) where
   tags : List Nat
-  recNames : List Key
+  recNames : List (Key md)
   lv : List Level
-  pins : List Expr
+  pins : List (Expr md)
   nPI : Nat
   large : Bool
   deriving Repr, Inhabited
 
 /-- The family read off the block. -/
-structure Family where
-  T : Key
+structure Family (md : Mode) where
+  T : Key md
   lps : List LevelParam
   nP : Nat
   /-- the parameter binders (from the first former) -/
-  pbs : List Expr
+  pbs : List (Expr md)
   u : Level
   /-- the real member count -/
   r : Nat
-  mems : List Mem
-  ctors : List ACtor
+  mems : List (Mem md)
+  ctors : List (ACtor md)
   large : Bool
   elim : LevelParam
   deriving Repr, Inhabited
@@ -143,7 +143,7 @@ structure Family where
 
 /-- Member `mem`'s carrier at `o` binders below the parameter frame,
 at index arguments `idx`; `rn` renames a real member to its model. -/
-def carrierAt (fam : Family) (mem : Mem) (o : Nat) (idx : List Expr) (model : Bool) : Expr :=
+def carrierAt (fam : Family md) (mem : Mem md) (o : Nat) (idx : List (Expr md)) (model : Bool) : Expr md :=
   match mem.real? with
   | some _ =>
     Expr.mkAppN (.const (if model then modelName mem.I else mem.I) mem.lv) (varsAt o fam.nP ++ idx)
@@ -154,14 +154,14 @@ def carrierAt (fam : Family) (mem : Mem) (o : Nat) (idx : List Expr) (model : Bo
     Expr.mkAppN (.const mem.I mem.lv) (pins ++ idx)
 
 /-- `aux p⃗ (tag.mem p⃗ idx)` at `o` binders below the parameter frame. -/
-def auxAt (fam : Family) (tag : Nat) (o : Nat) (idx : List Expr) : Expr :=
+def auxAt (fam : Family md) (tag : Nat) (o : Nat) (idx : List (Expr md)) : Expr md :=
   Expr.mkAppN (constP (auxName fam.T) fam.lps)
     (varsAt o fam.nP ++ [Expr.mkAppN (constP (tagCtorName fam.T tag) fam.lps) (varsAt o fam.nP ++ idx)])
 
 /-- Is `e`, at `o` binders below the parameter frame, a member's carrier
 at some index arguments?  Returns the member's tag and the index
 arguments. -/
-def matchCarrier (fam : Family) (o : Nat) (e : Expr) : Option (Nat × List Expr) :=
+def matchCarrier (fam : Family md) (o : Nat) (e : Expr md) : Option (Nat × List (Expr md)) :=
   match e.getAppFn with
   | .const x us =>
     let args := e.getAppArgs
@@ -192,8 +192,8 @@ the node alone), and dropped after each call.  No spec lemma, as in
 `InModel.mentionsAnyGo`: the modeller is untrusted and what it emits
 is checked at install.  Without the memo the rebuild runs once per
 path — `tests/e2e/tower_nested.ndjson`. -/
-partial def specAllGo (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
-    (o : Nat) (e : Expr) : Expr × Std.HashMap (Expr × Nat) Expr :=
+partial def specAllGo (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (o : Nat) (e : Expr md) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
   match matchCarrier fam o e with
   | some (tag, idx) =>
     let (idx', memo) := specAllGoList fam memo o idx
@@ -209,7 +209,7 @@ partial def specAllGo (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
       match memo[(e, o)]? with
       | some r => (r, memo)
       | none =>
-        let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+        let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
           match e with
           | .app f a =>
             let (f', memo) := specAllGo fam memo o f
@@ -235,8 +235,8 @@ partial def specAllGo (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
         (r, memo.insert (e, o) r)
 
 @[inherit_doc specAllGo]
-partial def specAllGoList (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
-    (o : Nat) : List Expr → List Expr × Std.HashMap (Expr × Nat) Expr
+partial def specAllGoList (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))
+    (o : Nat) : List (Expr md) → List (Expr md) × Std.HashMap (Expr md × Nat) (Expr md)
   | [] => ([], memo)
   | x :: xs =>
     let (y, memo) := specAllGo fam memo o x
@@ -246,24 +246,24 @@ partial def specAllGoList (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
 end
 
 @[inherit_doc specAllGo]
-def specAll (fam : Family) (o : Nat) (e : Expr) : Expr :=
+def specAll (fam : Family md) (o : Nat) (e : Expr md) : Expr md :=
   (specAllGo fam {} o e).1
 
 /-! ## Reading the family off the recursor -/
 
 /-- Strip every leading `∀`, returning binders and body. -/
-def stripAllPis (e : Expr) : List (Expr × BinderMeta) × Expr :=
+def stripAllPis (e : Expr md) : List (Expr md × BinderMeta) × Expr md :=
   match e with
   | .forallE d b m => let (bs, r) := stripAllPis b; ((d, m) :: bs, r)
   | e => ([], e)
 
 /-- Read the members off the motives of the first recursor's type
 (after the parameters): motive `m`'s domain `∀ ı⃗ (t : C), Sort ℓ`. -/
-def readMems (lps : List LevelParam) (nP : Nat) (types : List IndTypeRec)
-    (motives : List Expr) : Except String (List Mem) := do
+def readMems (lps : List LevelParam) (nP : Nat) (types : List (IndTypeRec md))
+    (motives : List (Expr md)) : Except String (List (Mem md)) := do
   let r := types.length
   let memberNames := types.map (·.cv.name)
-  let mut out : List Mem := []
+  let mut out : List (Mem md) := []
   for m in List.range motives.length do
     -- motive `m`'s domain sits under the `m` earlier motive binders,
     -- which it never mentions: lower it to the parameter frame
@@ -304,9 +304,9 @@ def readMems (lps : List LevelParam) (nP : Nat) (types : List IndTypeRec)
 
 /-- Read the constructors off the minors: minor `J`'s domain
 `∀ f⃗ ih⃗, motive_m e⃗ (C As f⃗)`, `nF` from the rules. -/
-def readCtors (fam : Family) (M : Nat) (minors : List Expr)
-    (nFOf : Key → Nat → Except String Nat) : Except String (List ACtor) := do
-  let mut out : List ACtor := []
+def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
+    (nFOf : Key md → Nat → Except String Nat) : Except String (List (ACtor md)) := do
+  let mut out : List (ACtor md) := []
   let mut perMem : List Nat := fam.mems.map fun _ => 0
   for J in List.range minors.length do
     let dom := minors.getD J default
@@ -326,7 +326,7 @@ def readCtors (fam : Family) (M : Nat) (minors : List Expr)
     -- and earlier minors sit between the parameters and the fields)
     -- (head-β-reduced: a container at a dependent pin `I α (fun _ => T α)`
     -- leaves `(fun _ => T α) k` in the kernel's minor)
-    let doms : List Expr := (List.range nF).map fun i =>
+    let doms : List (Expr md) := (List.range nF).map fun i =>
       let (d, _) := bs.getD i default
       betaHead (d.lowerBVars (M + J) i)
     -- the kinds, by the carrier match at each field's frame
@@ -352,17 +352,17 @@ def readCtors (fam : Family) (M : Nat) (minors : List Expr)
 /-! ## Emission helpers -/
 
 /-- `Eq.{ℓ} α a b`. -/
-def mkEq (ℓ : Level) (α a b : Expr) : Expr := Expr.mkAppN (.const eqName [ℓ]) [α, a, b]
+def mkEq (ℓ : Level) (α a b : Expr md) : Expr md := Expr.mkAppN (.const eqName [ℓ]) [α, a, b]
 
 /-- `Eq.refl.{ℓ} α a`. -/
-def mkRefl (ℓ : Level) (α a : Expr) : Expr := Expr.mkAppN (.const eqReflName [ℓ]) [α, a]
+def mkRefl (ℓ : Level) (α a : Expr md) : Expr md := Expr.mkAppN (.const eqReflName [ℓ]) [α, a]
 
 /-- `@Eq.rec.{ℓm, ℓα} α a motive refl b h`. -/
-def mkEqRec (ℓm ℓα : Level) (α a motive refl b h : Expr) : Expr :=
+def mkEqRec (ℓm ℓα : Level) (α a motive refl b h : Expr md) : Expr md :=
   Expr.mkAppN (.const eqRecName [ℓm, ℓα]) [α, a, motive, refl, b, h]
 
 /-- Lift every entry. -/
-def liftAll (n : Nat) (es : List Expr) : List Expr := es.map (·.liftLooseBVars n 0)
+def liftAll (n : Nat) (es : List (Expr md)) : List (Expr md) := es.map (·.liftLooseBVars n 0)
 
 /-- The congruence chain (Prop motives): given a spine builder `F`
 (closed over the current frame), argument lists `l⃗`, `r⃗` (equal at
@@ -372,11 +372,11 @@ unmoved positions), the moved positions with their equations
 `S'_{k-1}` from `S'_k` by `Eq.rec` on `e_k` (motive
 `λ z _, F l⃗ = F (r_1..r_{k-1}, z, l_{k+1}..)`).  `α`/`ℓα` are the
 spine's type and its sort. -/
-partial def congrChain (ℓα : Level) (α : Expr) (F : Nat → List Expr → Expr) (ls rs : List Expr)
-    (moved : List (Nat × Expr × Expr × Level)) : Expr :=
+partial def congrChain (ℓα : Level) (α : Expr md) (F : Nat → List (Expr md) → Expr md) (ls rs : List (Expr md))
+    (moved : List (Nat × Expr md × Expr md × Level)) : Expr md :=
   go 0
 where
-  go (k : Nat) : Expr :=
+  go (k : Nat) : Expr md :=
     match moved[k]? with
     | none => mkRefl ℓα α (F 0 ls)
     | some (pos, e, ty, ℓty) =>
@@ -385,9 +385,9 @@ where
       -- `o` binders below the chain's frame
       -- `S'_k`: the first `k` moved positions at `l`, the later ones at `r`
       -- (unmoved positions agree)
-      let mid : List Expr := (List.range ls.length).map fun i =>
+      let mid : List (Expr md) := (List.range ls.length).map fun i =>
         if (moved.drop k).any (·.1 == i) then rs.getD i default else ls.getD i default
-      let motive : Expr := .lam ty
+      let motive : Expr md := .lam ty
         (.lam
           (mkEq ℓty (ty.liftLooseBVars 1 0) ((ls.getD pos default).liftLooseBVars 1 0) (.bvar 0))
           (mkEq ℓα (α.liftLooseBVars 2 0)
@@ -400,7 +400,7 @@ where
 /-- The generic in-process rung: mutual, nested, both.  (The mutual rung
 of `Mutual.lean` is the special case without mimics; it stays as the
 B1/B2 landing.) -/
-def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := do
+def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration md)) := do
   let t0 :: _ := b.types | throw "empty block"
   let T := t0.cv.name
   let lps := t0.cv.levelParams
@@ -441,9 +441,9 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let large := large?.isSome
   let elim := large?.getD (freshLevelParam lps)
   let rlps := if large then elim :: lps else lps
-  let fam0 : Family := ⟨T, lps, nP, pbs, u, r, mems, [], large, elim⟩
+  let fam0 : Family md := ⟨T, lps, nP, pbs, u, r, mems, [], large, elim⟩
   -- the recursor of each member, by its motive position
-  let recOf : Mem → Except String IndRecRec := fun mem => do
+  let recOf : Mem md → Except String (IndRecRec md) := fun mem => do
     match b.recs[mem.tag]? with
     | some rr => pure rr
     | none => throw s!"no recursor at motive {mem.tag}"
@@ -454,7 +454,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     unless rr.cv.levelParams == rlps do throw s!"recursor {rr.cv.name}: eliminator shape differs"
   -- field counts: a real constructor's from the block, a mimic's from
   -- the member's recursor rules
-  let nFOf : Key → Nat → Except String Nat := fun cname mem => do
+  let nFOf : Key md → Nat → Except String Nat := fun cname mem => do
     let some memR := mems.find? (·.tag == mem) | throw "unreachable"
     match memR.real? with
     | some _ =>
@@ -467,7 +467,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       | some rule => pure rule.nfields
       | none => throw s!"no rule for {cname} in {rr.cv.name}"
   let ctors ← readCtors fam0 M (minorBs.map (·.1)) nFOf
-  let fam : Family := { fam0 with ctors := ctors }
+  let fam : Family md := { fam0 with ctors := ctors }
   unless ctors.length == n do throw "minor count"
   -- the real members' constructors must be the block's, in order
   for m in List.range r do
@@ -495,12 +495,12 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- twice.  A family that contains another is strictly larger, so the
   -- largest claim their members first; a group that would still share a
   -- member with an earlier one declines.
-  let familySize : Mem → Nat := fun mem =>
+  let familySize : Mem md → Nat := fun mem =>
     match ctx.blocks mem.I with
     | some cb => (cb.recs[0]?.map (·.nM)).getD 0
     | none => 0
   let mimics := (mems.filter (·.real?.isNone)).mergeSort fun a b => familySize b ≤ familySize a
-  let mut groups : List Group := []
+  let mut groups : List (Group md) := []
   for mem in mimics do
     if groups.any (·.tags.contains mem.tag) then continue
     let some cb := ctx.blocks mem.I | throw s!"container {mem.I}: no block record"
@@ -516,7 +516,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let some (motivesI, _) := afterPI.stripPis MI | throw s!"container {I1}: recursor motives"
     let memsI ← readMems lpsI nPI cb.types (motivesI.map (·.1))
     let mut tags : List Nat := []
-    let mut recNames : List Key := []
+    let mut recNames : List (Key md) := []
     for memI in memsI do
       -- the family member's carrier at the pins: instantiate the
       -- container's parameters (under the member's index binders)
@@ -540,13 +540,13 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     groups := groups ++ [⟨tags, recNames, mem.lv, mem.pins, nPI, large⟩]
   -- dependency order among the groups: a group needs another when a
   -- field of one of its constructors has a carrier outside the group
-  let groupOf : Nat → Option Group := fun t => groups.find? (·.tags.contains t)
-  let depsOfGroup : Group → List Nat := fun g =>
+  let groupOf : Nat → Option (Group md) := fun t => groups.find? (·.tags.contains t)
+  let depsOfGroup : Group md → List Nat := fun g =>
     (ctors.filter (fun c => g.tags.contains c.mem)).foldl (fun acc c =>
       acc ++ c.kinds.filterMap fun k => match k with
         | some t => if t ≥ r && !g.tags.contains t then some t else none
         | none => none) []
-  let mut order : List Group := []
+  let mut order : List (Group md) := []
   let mut pending := groups
   let mut progress := true
   while progress && !pending.isEmpty do
@@ -566,18 +566,18 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let rlvls : List Level := if large then ℓ :: lps.map .param else lps.map .param
   let elimTag := if large then elim else freshLevelParam lps
   let blockNames := (b.types.map (·.cv.name)) ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
-  let rnF : Key → Key := fun x => if blockNames.contains x then modelName x else x
-  let rn : Expr → Expr := Expr.renameConsts rnF
+  let rnF : Key md → Key md := fun x => if blockNames.contains x then modelName x else x
+  let rn : Expr md → Expr md := Expr.renameConsts rnF
   let tag := tagName T
   let aux := auxName T
-  let mut out : Array Declaration := #[]
-  let mut heights : List (Key × Nat) := []
-  let hOf : List (Key × Nat) → Key → Nat := fun hs x =>
+  let mut out : Array (Declaration md) := #[]
+  let mut heights : List (Key md × Nat) := []
+  let hOf : List (Key md × Nat) → Key md → Nat := fun hs x =>
     match hs.find? (·.1 == x) with
     | some (_, h) => h
     | none => ctx.heights x
-  let push := fun (o : Array Declaration) (hs : List (Key × Nat)) (nm : Key) (l : List LevelParam)
-      (ty v : Expr) =>
+  let push := fun (o : Array (Declaration md)) (hs : List (Key md × Nat)) (nm : Key md) (l : List LevelParam)
+      (ty v : Expr md) =>
     let h := hintFor (hOf hs) v
     (o.push (.defnDecl ⟨nm, l, ty⟩ v h), (nm, hintHeight h) :: hs)
   -- ---------------------------------------------------------------
@@ -591,7 +591,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         | throw s!"cannot bound the sort of index {j} of member {mem.tag} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
-  let tagCtors : List (Key × Nat × Expr × List Nat) ← mems.mapM fun mem => do
+  let tagCtors : List (Key md × Nat × Expr md × List Nat) ← mems.mapM fun mem => do
     let ty ← need "tag constructor type" (Expr.replacePiBody nP t0.cv.type
       (mkPis (mem.idxBs.map fun d => specAll fam 0 d)
         (Expr.mkAppN (constP tag lps) (varsAt mem.nIdx nP))))
@@ -609,7 +609,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- 2. the auxiliary family
   let auxTy ← need "aux type" (Expr.replacePiBody nP t0.cv.type
     (.forallE (Expr.mkAppN (constP tag lps) (varsAt 0 nP)) (.sort u) bm))
-  let auxCtors : List (Key × Nat × Expr × List Nat) ← ctors.mapM fun c => do
+  let auxCtors : List (Key md × Nat × Expr md × List Nat) ← ctors.mapM fun c => do
     let doms' := (List.range c.nF).map fun i =>
       specAll fam i (c.doms.getD i default)
     let ty ← need "aux constructor type" (Expr.replacePiBody nP t0.cv.type
@@ -629,24 +629,24 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     nP)
   -- ---------------------------------------------------------------
   -- shared builders
-  let auxCtorName' := fun (c : ACtor) => auxCtorName T c.mem c.jIn
+  let auxCtorName' := fun (c : ACtor md) => auxCtorName T c.mem c.jIn
   -- the spec'd field domains of a constructor at `o` extra binders
   -- below the parameter frame (field `i` sits `o + i` below)
-  let specDoms := fun (c : ACtor) (o : Nat) => (List.range c.nF).map fun i =>
+  let specDoms := fun (c : ACtor md) (o : Nat) => (List.range c.nF).map fun i =>
     specAll fam (o + i) ((c.doms.getD i default).liftLooseBVars o i)
   -- the model-side field domains (public spelling renamed)
-  let modelDoms := fun (c : ACtor) (o : Nat) => (List.range c.nF).map fun i =>
+  let modelDoms := fun (c : ACtor md) (o : Nat) => (List.range c.nF).map fun i =>
     rn ((c.doms.getD i default).liftLooseBVars o i)
   -- a field's index arguments off its domain, at `o'` below the
   -- field's own frame
-  let fieldIdx := fun (c : ACtor) (i : Nat) (o' : Nat) =>
+  let fieldIdx := fun (c : ACtor md) (i : Nat) (o' : Nat) =>
     ((matchCarrier fam i (c.doms.getD i default)).map (·.2)).getD [] |>.map (·.liftLooseBVars o' 0)
   -- `tag.rec p⃗ (λ i', ∀ s, aux p⃗ i' → Sort ℓs) branches i s` at frame
   -- `o` below the parameters, given the per-member branches (each a
   -- term at frame `o + 3`... no: branches are built by the caller at
   -- frame `o`, the motive λ adds binders itself)
-  let tagDispatch := fun (o : Nat) (ℓs : Level) (branches : List Expr) (i s : Expr) =>
-    let motTag : Expr := .lam
+  let tagDispatch := fun (o : Nat) (ℓs : Level) (branches : List (Expr md)) (i s : Expr md) =>
+    let motTag : Expr md := .lam
       (Expr.mkAppN (constP tag lps) (varsAt o nP))
       (.forallE
         (Expr.mkAppN (constP aux lps) (varsAt (o + 1) nP ++ [.bvar 0])) (.sort ℓs) bm) bm
@@ -654,7 +654,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       (varsAt o nP ++ [motTag] ++ branches ++ [i, s])
   -- the dispatching motive `λ i s, tag.rec … i s` at frame `o`, with
   -- the branches built at frame `o + 2`
-  let dispatchMotive := fun (o : Nat) (ℓs : Level) (branchesAt : Nat → List Expr) =>
+  let dispatchMotive := fun (o : Nat) (ℓs : Level) (branchesAt : Nat → List (Expr md)) =>
     Expr.lam (Expr.mkAppN (constP tag lps) (varsAt o nP))
       (.lam (Expr.mkAppN (constP aux lps) (varsAt (o + 1) nP ++ [.bvar 0]))
         (tagDispatch (o + 2) ℓs (branchesAt (o + 2)) (.bvar 1) (.bvar 0)) bm) bm
@@ -662,9 +662,9 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- frame `o + nIdx + 1`)
   -- (index binders of a member at frame `o`: the domains at their own
   -- frames, lifted past the `o` extras)
-  let idxBsAt := fun (mem : Mem) (o : Nat) => (List.range mem.nIdx).map fun j =>
+  let idxBsAt := fun (mem : Mem md) (o : Nat) => (List.range mem.nIdx).map fun j =>
     (specAll fam j (mem.idxBs.getD j default)).liftLooseBVars o j
-  let idxBsAtM := fun (mem : Mem) (o : Nat) => (List.range mem.nIdx).map fun j =>
+  let idxBsAtM := fun (mem : Mem md) (o : Nat) => (List.range mem.nIdx).map fun j =>
     (rn (mem.idxBs.getD j default)).liftLooseBVars o j
   let packName := fun (j : Nat) => auxKey (implKey T) (.pack j)
   let unpackName := fun (j : Nat) => auxKey (implKey T) (.unpack j)
@@ -675,13 +675,13 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let packUnpackAll := auxKey (implKey T) .packUnpackAll
   let recAll := auxKey (implKey T) .implRec
   -- `pack_j p⃗ idx x`, `unpack_j p⃗ idx s` … applications at frame `o`
-  let appImpl := fun (nm : Key) (o : Nat) (idx : List Expr) (args : List Expr) =>
+  let appImpl := fun (nm : Key md) (o : Nat) (idx : List (Expr md)) (args : List (Expr md)) =>
     Expr.mkAppN (constP nm lps) (varsAt o nP ++ idx ++ args)
   -- the model-side carrier of a member at frame `o`
-  let carrM := fun (mem : Mem) (o : Nat) (idx : List Expr) => carrierAt fam mem o idx true
+  let carrM := fun (mem : Mem md) (o : Nat) (idx : List (Expr md)) => carrierAt fam mem o idx true
   -- the ih positions of a constructor: the k-th recursive field is the k-th ih
-  let ihPos := fun (c : ACtor) (i : Nat) => ((List.range i).filter fun i' => (c.kinds.getD i' none).isSome).length
-  let nIhOf := fun (c : ACtor) => (c.kinds.filter (·.isSome)).length
+  let ihPos := fun (c : ACtor md) (i : Nat) => ((List.range i).filter fun i' => (c.kinds.getD i' none).isSome).length
+  let nIhOf := fun (c : ACtor md) => (c.kinds.filter (·.isSome)).length
   -- ---------------------------------------------------------------
   -- 2b. the member models `T_m._model := λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)` — the
   -- model-side carriers of the mimics mention them
@@ -811,7 +811,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let cpBs := pbs ++ idxBsAtM mem 0 ++
         [carrAt nI, carrAt (nI + 1),
          mkEq u (carrAt (nI + 2)) (.bvar 1) (.bvar 0)]
-      let packApp := fun (o : Nat) (x : Expr) => appImpl (packName j) o (varsAt (o - nI) nI) [x]
+      let packApp := fun (o : Nat) (x : Expr md) => appImpl (packName j) o (varsAt (o - nI) nI) [x]
       let cpTy := mkPis cpBs (mkEq u (auxAt fam t (nI + 3) (varsAt 3 nI)) (packApp (nI + 3) (.bvar 2)) (packApp (nI + 3) (.bvar 1)))
       let cpVal := mkLams cpBs
         (mkEqRec .zero u (carrAt (nI + 3)) (.bvar 2)
@@ -822,7 +822,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
           (.bvar 1) (.bvar 0))
       (out, heights) := push out heights (congrPackName j) lps cpTy cpVal
     -- `unpackPack_j` for every member, by its container recursor into Prop
-    let upStmtOf := fun (mem : Mem) (o : Nat) (idx : List Expr) (x : Expr) =>
+    let upStmtOf := fun (mem : Mem md) (o : Nat) (idx : List (Expr md)) (x : Expr md) =>
       mkEq u (carrM mem o idx) (appImpl (unpackName mem.j) o idx [appImpl (packName mem.j) o idx [x]]) x
     let upMotives := fun (o : Nat) => g.tags.map fun t =>
       let mem := mems.getD t default
@@ -842,7 +842,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         upStmtOf mem' (o + fo') (fieldIdx c i (fo' - i)) (.bvar (fo' - 1 - i))
       -- the spine's pins are the constructor's OWN container's (a group
       -- member's container differs from the group's head container)
-      let F := fun (o' : Nat) (args : List Expr) =>
+      let F := fun (o' : Nat) (args : List (Expr md)) =>
         Expr.mkAppN (.const c.cname c.clv)
           ((carrM memC (o + fo + o') []).getAppArgs.take memC.pins.length ++ args)
       let ls := (List.range c.nF).map fun i =>
@@ -911,7 +911,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let body := match (mems.getD c.mem default).real? with
       | some _ => mkRefl u (auxAt fam c.mem (o + fo) (c.idx.map (·.liftLooseBVars nIh 0))) self
       | none =>
-        let F := fun (o' : Nat) (args : List Expr) => Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (o + fo + o') nP ++ args)
+        let F := fun (o' : Nat) (args : List (Expr md)) => Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (o + fo + o') nP ++ args)
         let ls := (List.range c.nF).map fun i =>
           match c.kinds.getD i none with
           | some t' =>
@@ -1020,9 +1020,9 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         let packed := (List.range c.nF).filter fun i =>
           match c.kinds.getD i none with | some t' => t' ≥ r | none => false
         let idxC := c.idx.map (·.liftLooseBVars nIh 0)
-        let spineAt := fun (o' : Nat) (args : List Expr) =>
+        let spineAt := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (oP + fo + o') nP ++ args)
-        let motApp := fun (o' : Nat) (args : List Expr) =>
+        let motApp := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (motVar (o + fo + o') m) (liftAll o' idxC ++ [spineAt o' args])
         let packUnpackOf := fun (i : Nat) =>
           let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
@@ -1030,17 +1030,17 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
           (appImpl (packName mem'.j) (oP + fo) idx [appImpl (unpackName mem'.j) (oP + fo) idx [fieldVar i]],
            appImpl (packUnpackName mem'.j) (oP + fo) idx [fieldVar i],
            auxAt fam mem'.tag (oP + fo) idx)
-        let rec go (ks : List Nat) (done : List Nat) (acc : Expr) : Expr :=
+        let rec go (ks : List Nat) (done : List Nat) (acc : Expr md) : Expr md :=
           match ks with
           | [] => acc
           | k :: rest =>
             let (pu, prf, ty) := packUnpackOf k
-            let args := fun (o' : Nat) (z : Expr) => (List.range c.nF).map fun i =>
+            let args := fun (o' : Nat) (z : Expr md) => (List.range c.nF).map fun i =>
               if i == k then z
               else if done.contains i then (fieldVar i).liftLooseBVars o' 0
               else if packed.contains i then (packUnpackOf i).1.liftLooseBVars o' 0
               else (fieldVar i).liftLooseBVars o' 0
-            let motive : Expr := .lam ty
+            let motive : Expr md := .lam ty
               (.lam (mkEq u (ty.liftLooseBVars 1 0) (pu.liftLooseBVars 1 0) (.bvar 0))
                 (motApp 2 (args 2 (.bvar 1))) bm) bm
             go rest (done ++ [k]) (mkEqRec ℓ u ty pu motive acc (fieldVar k) prf)
@@ -1137,7 +1137,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
           -- `.fixed` (at `f_k, e_k`), `.gen d` (bound `z_k`/`h_k` at
           -- depth `d`: `z = bvar (d+1)`, `h = bvar d` relative to the
           -- current frame offset), or `.base` (at `u_k`, `Eq.refl`)
-          let stmtAt := fun (o' : Nat) (zs : Nat → Option Expr) (hs : Nat → Option Expr) =>
+          let stmtAt := fun (o' : Nat) (zs : Nat → Option (Expr md)) (hs : Nat → Option (Expr md)) =>
             -- zs/hs: for packed k, the generalised value/proof at frame o' (none = fixed at f/e)
             let zOf := fun (k : Nat) => (zs k).getD ((Expr.bvar (nF - 1 - k)).liftLooseBVars o' 0)
             let hOfk := fun (k : Nat) => (hs k).getD (eOf o' k)
@@ -1175,27 +1175,27 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
                  | none => none)
             let lhsG := match mem.real? with
               | some _ =>
-                let packOf := fun (o'' : Nat) (i : Nat) (x : Expr) =>
+                let packOf := fun (o'' : Nat) (i : Nat) (x : Expr md) =>
                   let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
                   let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll (o' + o'')
                   appImpl (packName mem'.j) (oP + o' + o'') idx [x]
-                let spineAt := fun (o'' : Nat) (args : List Expr) =>
+                let spineAt := fun (o'' : Nat) (args : List (Expr md)) =>
                   Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (oP + o' + o'') nP ++ args)
-                let motApp := fun (o'' : Nat) (args : List Expr) =>
+                let motApp := fun (o'' : Nat) (args : List (Expr md)) =>
                   Expr.mkAppN (motVar (nF + o' + o'') mem.tag) (liftAll o'' idxCG ++ [spineAt o'' args])
-                let rec goT (ks : List Nat) (done : List Nat) (acc : Expr) : Expr :=
+                let rec goT (ks : List Nat) (done : List Nat) (acc : Expr md) : Expr md :=
                   match ks with
                   | [] => acc
                   | k :: rest =>
                     let auxTyK := auxAt fam ((c.kinds.getD k none).getD 0) (oP + o')
                       (fieldIdx c k (nF - k) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o')
-                    let args := fun (o'' : Nat) (z : Expr) => (List.range nF).map fun i =>
+                    let args := fun (o'' : Nat) (z : Expr md) => (List.range nF).map fun i =>
                       if i == k then z
                       else if packed.contains i then
                         (if done.contains i then packOf o'' i ((zOf i).liftLooseBVars o'' 0)
                          else packOf o'' i ((uOf o' i).liftLooseBVars o'' 0))
                       else (Expr.bvar (nF - 1 - i)).liftLooseBVars (o' + o'') 0
-                    let motive : Expr := .lam auxTyK
+                    let motive : Expr md := .lam auxTyK
                       (.lam (mkEq u (auxTyK.liftLooseBVars 1 0) (packOf 1 k ((uOf o' k).liftLooseBVars 1 0)) (.bvar 0))
                         (motApp 2 (args 2 (.bvar 1))) bm) bm
                     let mem' := mems.getD ((c.kinds.getD k none).getD 0) default
@@ -1205,7 +1205,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
                 goT packed [] X
               | none =>
                 let pinsAt := fun (o'' : Nat) => (carrM mem (oP + o' + o'') []).getAppArgs.take mem.pins.length
-                let F := fun (o'' : Nat) (args : List Expr) => Expr.mkAppN (.const c.cname c.clv) (pinsAt o'' ++ args)
+                let F := fun (o'' : Nat) (args : List (Expr md)) => Expr.mkAppN (.const c.cname c.clv) (pinsAt o'' ++ args)
                 let ls := (List.range nF).map fun i => if packed.contains i then uOf o' i else (Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0
                 let rs := fieldsG
                 let moved := packed.map fun k => (k, hOfk k, carrOf o' k, u)
@@ -1218,7 +1218,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
                   X (F 0 rs) chain
             (αG, lhsG, rhsG)
           -- nest the generalisations: outermost over the first packed position
-          let rec nest (ks : List Nat) (o' : Nat) (zs : Nat → Option Expr) (hs : Nat → Option Expr) : Expr :=
+          let rec nest (ks : List Nat) (o' : Nat) (zs : Nat → Option (Expr md)) (hs : Nat → Option (Expr md)) : Expr md :=
             match ks with
             | [] =>
               let (αG, lhsG, _) := stmtAt o' zs hs
@@ -1229,7 +1229,7 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
               let zs' := fun (i : Nat) => if i == k then some (Expr.bvar 1) else (zs i).map (·.liftLooseBVars 2 0)
               let hs' := fun (i : Nat) => if i == k then some (Expr.bvar 0) else (hs i).map (·.liftLooseBVars 2 0)
               let (αM, lhsM, rhsM) := stmtAt (o' + 2) zs' hs'
-              let motive : Expr := .lam carr
+              let motive : Expr md := .lam carr
                 (.lam (mkEq u (carr.liftLooseBVars 1 0) ((uOf o' k).liftLooseBVars 1 0) (.bvar 0))
                   (mkEq ℓ αM lhsM rhsM) bm) bm
               -- the base: position k at `u_k`, `Eq.refl`
@@ -1241,10 +1241,10 @@ def genNested (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       out := out.push (.thmDecl ⟨iotaName rr.cv.name c.jIn, rlps, stmt⟩ proof)
   -- 10. projection artifacts of structure-like non-Prop real members
   -- (under a LARGE eliminator only: `Mutual.lean` step 7)
-  let genTypes : List (Key × List LevelParam × Expr) :=
+  let genTypes : List (Key md × List LevelParam × Expr md) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
-  let tbl' : ConstTable := fun x =>
+  let tbl' : ConstTable md := fun x =>
     match genTypes.find? (·.1 == x) with
     | some (_, l, ty) => some (l, ty)
     | none => ctx.tbl x

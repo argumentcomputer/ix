@@ -33,19 +33,19 @@ namespace Ix.Kernel.Verify
 variable {mode : CheckMode}
 
 /-- The pinned `Iff` family, extracted. -/
-theorem iff_shapes {env : Env} {cvA : ConstantVal}
+theorem iff_shapes {env : Env md} {cvA : ConstantVal md}
     (h : stdAxiomOk env cvA = true) (hp : cvA.name = propextName) :
     env.find? eqName = some eqA ∧
     (∃ cvI caps, env.find? iffName = some (.indInfo cvI caps) ∧
       cvI.levelParams = [] ∧
-      cvI.type.erasePw = iffA.toConstantVal.type.erasePw) ∧
+      cvI.type.erasePw = (iffA (md := md)).toConstantVal.type.erasePw) ∧
     (∃ cvIi, env.find? iffIntroName = some (.ctorInfo cvIi 2 2) ∧
       cvIi.levelParams = [] ∧
-      cvIi.type.erasePw = iffIntroA.toConstantVal.type.erasePw) ∧
+      cvIi.type.erasePw = (iffIntroA (md := md)).toConstantVal.type.erasePw) ∧
     (∃ cvIr mI rP rules,
       env.find? iffRecName = some (.recInfo cvIr mI rP rules) ∧
-      cvIr.levelParams = iffRecA.toConstantVal.levelParams ∧
-      cvIr.type.erasePw = iffRecA.toConstantVal.type.erasePw) ∧
+      cvIr.levelParams = (iffRecA (md := md)).toConstantVal.levelParams ∧
+      cvIr.type.erasePw = (iffRecA (md := md)).toConstantVal.type.erasePw) ∧
     ConstantVal.matchesPin cvA propextA = true := by
   rw [stdAxiomOk, if_pos hp] at h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
@@ -91,20 +91,20 @@ theorem iff_shapes {env : Env} {cvA : ConstantVal}
       | _ => exact nomatch hIr
 
 /-- The pinned `Nonempty` family, extracted. -/
-theorem nonempty_shapes {env : Env} {cvA : ConstantVal}
+theorem nonempty_shapes {env : Env md} {cvA : ConstantVal md}
     (h : stdAxiomOk env cvA = true) (hc : cvA.name = choiceName) :
     (∃ cvN caps, env.find? nonemptyName = some (.indInfo cvN caps) ∧
-      cvN.levelParams = nonemptyA.toConstantVal.levelParams ∧
-      cvN.type.erasePw = nonemptyA.toConstantVal.type.erasePw) ∧
+      cvN.levelParams = (nonemptyA (md := md)).toConstantVal.levelParams ∧
+      cvN.type.erasePw = (nonemptyA (md := md)).toConstantVal.type.erasePw) ∧
     (∃ cvNi, env.find? nonemptyIntroName = some (.ctorInfo cvNi 1 1) ∧
-      cvNi.levelParams = nonemptyIntroA.toConstantVal.levelParams ∧
-      cvNi.type.erasePw = nonemptyIntroA.toConstantVal.type.erasePw) ∧
+      cvNi.levelParams = (nonemptyIntroA (md := md)).toConstantVal.levelParams ∧
+      cvNi.type.erasePw = (nonemptyIntroA (md := md)).toConstantVal.type.erasePw) ∧
     (∃ cvNr mI rP rules,
       env.find? nonemptyRecName = some (.recInfo cvNr mI rP rules) ∧
-      cvNr.levelParams = nonemptyRecA.toConstantVal.levelParams ∧
-      cvNr.type.erasePw = nonemptyRecA.toConstantVal.type.erasePw) ∧
+      cvNr.levelParams = (nonemptyRecA (md := md)).toConstantVal.levelParams ∧
+      cvNr.type.erasePw = (nonemptyRecA (md := md)).toConstantVal.type.erasePw) ∧
     ConstantVal.matchesPin cvA choiceA = true := by
-  rw [stdAxiomOk, if_neg (by rw [hc]; decide), if_pos hc] at h
+  rw [stdAxiomOk, if_neg (by rw [hc]; (cases md <;> decide)), if_pos hc] at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨hN, hNi⟩, hNr⟩, hA⟩ := h
   refine ⟨?_, ?_, ?_, hA⟩

@@ -41,9 +41,9 @@ install-and-check path it is exactly `env.consts.length` and nothing is
 ever hidden (`mkFEnv_find?`); lowering it to `k` is the prefix view of
 the first `k` installed constants (`mkFEnv_find?_visibleBelow`,
 `IxC/Kernel/Verify/EnvBound.lean`). -/
-structure FEnv where
-  env : Env
-  idx : Std.HashMap Key (Nat × ConstantInfo)
+structure FEnv (md : Mode) where
+  env : Env md
+  idx : Std.HashMap (Key md) (Nat × ConstantInfo md)
   /-- Entries with counter `< visibleBelow` are visible; also the next
   counter `push` hands out. -/
   visibleBelow : Nat
@@ -53,7 +53,7 @@ inserted last and wins, exactly as `List.find?` takes the first match —
 so the agreement with `Env.find?` is unconditional (no freshness
 assumption).  The `Nat` component is the running counter, so the build
 stays linear (the tail's length is returned, not recomputed). -/
-def mkFEnvGo : List ConstantInfo → Nat × Std.HashMap Key (Nat × ConstantInfo)
+def mkFEnvGo : List (ConstantInfo md) → Nat × Std.HashMap (Key md) (Nat × ConstantInfo md)
   | [] => (0, ∅)
   | ci :: cs =>
     let p := mkFEnvGo cs
@@ -61,7 +61,7 @@ def mkFEnvGo : List ConstantInfo → Nat × Std.HashMap Key (Nat × ConstantInfo
 
 /-- Build the index of `env`, with nothing hidden (`visibleBelow` is the
 constant count). -/
-def mkFEnv (env : Env) : FEnv :=
+def mkFEnv (env : Env md) : FEnv md :=
   let p := mkFEnvGo env.consts
   ⟨env, p.2, p.1⟩
 
@@ -69,14 +69,14 @@ namespace FEnv
 
 /-- Indexed lookup, bounded by the visibility counter (`= Env.find?` for
 `mkFEnv`, which hides nothing). -/
-def find? (fe : FEnv) (n : Key) : Option ConstantInfo :=
+def find? (fe : FEnv md) (n : Key md) : Option (ConstantInfo md) :=
   match fe.idx[n]? with
   | some (c, ci) => if c < fe.visibleBelow then some ci else none
   | none => none
 
 /-- Restrict the view to the first `k` installed constants (task #108).
 `O(1)`: a field update on the single linearly-threaded index. -/
-def restrictTo (fe : FEnv) (k : Nat) : FEnv :=
+def restrictTo (fe : FEnv md) (k : Nat) : FEnv md :=
   { fe with visibleBelow := k }
 
 /-- The index of the cons-extended environment (`mkFEnv_push`:
@@ -84,26 +84,26 @@ def restrictTo (fe : FEnv) (k : Nat) : FEnv :=
 The new entry gets the next installation counter, and the visibility
 bound advances with it — so a push is visible to everything checked
 after it and to nothing checked before (task #108). -/
-def push (fe : FEnv) (ci : ConstantInfo) : FEnv :=
+def push (fe : FEnv md) (ci : ConstantInfo md) : FEnv md :=
   ⟨⟨ci :: fe.env.consts⟩, fe.idx.insert ci.name (fe.visibleBelow, ci),
    fe.visibleBelow + 1⟩
 
 /-- Indexed projection-table lookup (`= Env.findProj?` for `mkFEnv`). -/
-def findProj? (fe : FEnv) (T : Key) (i : Nat) : Option ProjEntry :=
+def findProj? (fe : FEnv md) (T : Key md) (i : Nat) : Option (ProjEntry md) :=
   match fe.find? (projTableName T) with
   | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none
   | _ => none
 
 /-- `towerSlotsAll` through the index. -/
-def towerSlotsAllF (fe : FEnv) (T : Key) (nF : Nat) : Bool :=
+def towerSlotsAllF (fe : FEnv md) (T : Key md) (nF : Nat) : Bool :=
   (List.range nF).all fun j => (fe.findProj? T j).isSome
 
 /-- `andRescueSlots` through the index. -/
-def andRescueSlotsF (fe : FEnv) (ctor : Key) (nP : Nat) (ust : List Level) : Bool :=
+def andRescueSlotsF (fe : FEnv md) (ctor : Key md) (nP : Nat) (ust : List Level) : Bool :=
   andRescueSlotsOf fe.findProj? ctor nP ust
 
 /-- `recSlotsAll` through the index. -/
-def recSlotsAllF (fe : FEnv) (T : Key) (nF : Nat) : Bool :=
+def recSlotsAllF (fe : FEnv md) (T : Key md) (nF : Nat) : Bool :=
   (List.range nF).all fun j =>
     match fe.find? (projFnName T j) with
     | some (.recInfo _ _ _ _) => true
@@ -114,12 +114,12 @@ end FEnv
 /-! ### Indexed guard twins (same result as the `Env` versions) -/
 
 /-- `natLitSupported` through the index. -/
-def natLitSupportedF (fe : FEnv) : Bool :=
+def natLitSupportedF (fe : FEnv md) : Bool :=
   natIndOk (fe.find? natName) && natZeroOk (fe.find? natZeroName) &&
     natSuccOk (fe.find? natSuccName)
 
 /-- `strLitSupported` through the index. -/
-def strLitSupportedF (fe : FEnv) : Bool :=
+def strLitSupportedF (fe : FEnv md) : Bool :=
   natLitSupportedF fe &&
     stringTyOk (fe.find? stringName) &&
     stringOfListTyOk (fe.find? stringOfListName) &&
@@ -130,7 +130,7 @@ def strLitSupportedF (fe : FEnv) : Bool :=
     charOfNatTyOk (fe.find? charOfNatName)
 
 /-- `natOpGuard` through the index. -/
-def natOpGuardF (fe : FEnv) (c : Key) : Bool :=
+def natOpGuardF (fe : FEnv md) (c : Key md) : Bool :=
   natLitSupportedF fe &&
   (natOpDeps c).all (fun n => match fe.find? n with
     | some (.defnInfo cv _ _) => cv.levelParams.isEmpty
@@ -145,7 +145,7 @@ def natOpGuardF (fe : FEnv) (c : Key) : Bool :=
    else true)
 
 /-- `natOpStored` through the index (task #161 item B3). -/
-def natOpStoredF (fe : FEnv) (c : Key) : Bool :=
+def natOpStoredF (fe : FEnv md) (c : Key md) : Bool :=
   match fe.find? c with
   | some (.defnInfo _ _ _) => true
   | _ => false

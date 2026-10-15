@@ -25,8 +25,8 @@ namespace Ix.Kernel
 
 open Expr in
 theorem instPisAtFGo_sound :
-    ∀ (args : List Expr) (e : Expr) (acc : List Expr)
-      {r : List Expr × Expr},
+    ∀ (args : List (Expr md)) (e : Expr md) (acc : List (Expr md))
+      {r : List (Expr md) × Expr md},
       instPisAtFGo acc args e = some r →
       instPisAt args (e.instantiateList acc) = some r
   | [], e, acc, r, h => by
@@ -40,7 +40,7 @@ theorem instPisAtFGo_sound :
     simp only [instantiateList, instPisAt, ih, Option.map_some]
 
 open Expr in
-theorem instPisAtF_eq (args : List Expr) (e : Expr) :
+theorem instPisAtF_eq (args : List (Expr md)) (e : Expr md) :
     instPisAtF args e = instPisAt args e := by
   unfold instPisAtF
   match h : instPisAtFGo [] args e with
@@ -52,8 +52,8 @@ theorem instPisAtF_eq (args : List Expr) (e : Expr) :
 
 open Expr in
 theorem instLamsAtFGo_sound :
-    ∀ (args : List Expr) (e : Expr) (acc : List Expr)
-      {r : List Expr × Expr},
+    ∀ (args : List (Expr md)) (e : Expr md) (acc : List (Expr md))
+      {r : List (Expr md) × Expr md},
       instLamsAtFGo acc args e = some r →
       instLamsAt args (e.instantiateList acc) = some r
   | [], e, acc, r, h => by
@@ -67,7 +67,7 @@ theorem instLamsAtFGo_sound :
     simp only [instantiateList, instLamsAt, ih, Option.map_some]
 
 open Expr in
-theorem instLamsAtF_eq (args : List Expr) (e : Expr) :
+theorem instLamsAtF_eq (args : List (Expr md)) (e : Expr md) :
     instLamsAtF args e = instLamsAt args e := by
   unfold instLamsAtF
   match h : instLamsAtFGo [] args e with
@@ -79,8 +79,8 @@ theorem instLamsAtF_eq (args : List Expr) (e : Expr) :
 
 open Expr in
 theorem openPisAtFvarsFGo_sound :
-    ∀ (n : Nat) (e : Expr) (i : Nat) (acc : List Expr)
-      {r : List Expr × Expr},
+    ∀ (n : Nat) (e : Expr md) (i : Nat) (acc : List (Expr md))
+      {r : List (Expr md) × Expr md},
       openPisAtFvarsFGo acc n e i = some r →
       openPisAtFvars n (e.instantiateList acc) i = some r
   | 0, e, i, acc, r, h => by
@@ -98,7 +98,7 @@ theorem openPisAtFvarsFGo_sound :
     case _ => exact nomatch h
 
 open Expr in
-theorem openPisAtFvarsF_eq (n : Nat) (e : Expr) (i : Nat) :
+theorem openPisAtFvarsF_eq (n : Nat) (e : Expr md) (i : Nat) :
     openPisAtFvarsF n e i = openPisAtFvars n e i := by
   unfold openPisAtFvarsF
   match h : openPisAtFvarsFGo [] n e i with
@@ -108,8 +108,8 @@ theorem openPisAtFvarsF_eq (n : Nat) (e : Expr) (i : Nat) :
     exact this.symm
   | none => rfl
 
-theorem domsMatchAuxA_eq (g : Nat → Expr → Expr)
-    (bs₁ bs₂ : List (Expr × BinderMeta)) (o₁ o₂ n : Nat) :
+theorem domsMatchAuxA_eq (g : Nat → Expr md → Expr md)
+    (bs₁ bs₂ : List (Expr md × BinderMeta)) (o₁ o₂ n : Nat) :
     domsMatchAuxA g bs₁.toArray bs₂.toArray o₁ o₂ n
       = domsMatchAux g bs₁ bs₂ o₁ o₂ n := by
   simp only [domsMatchAuxA, domsMatchAux, List.getElem?_toArray]
@@ -117,8 +117,8 @@ theorem domsMatchAuxA_eq (g : Nat → Expr → Expr)
 section
 variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 
-theorem checkStructDomsAtFA_eq (ops : CheckerOps m) (fe : FEnv)
-    (off : Nat) (fvs doms : List Expr) :
+theorem checkStructDomsAtFA_eq (ops : (CheckerOps md) m) (fe : FEnv md)
+    (off : Nat) (fvs doms : List (Expr md)) :
     ∀ j, checkStructDomsAtFA ops fe off fvs.toArray doms.toArray j
       = checkStructDomsAtF ops fe off fvs doms j
   | 0 => rfl
@@ -130,7 +130,7 @@ end
 
 open Expr in
 theorem instPisAtLift_append :
-    ∀ (xs ys : List Expr) (e : Expr),
+    ∀ (xs ys : List (Expr md)) (e : Expr md),
       instPisAtLift (xs ++ ys) e = (instPisAtLift xs e).bind (instPisAtLift ys)
   | [], ys, e => by simp only [List.nil_append, instPisAtLift, Option.bind_some]
   | x :: xs, ys, .forallE dom body bi => by

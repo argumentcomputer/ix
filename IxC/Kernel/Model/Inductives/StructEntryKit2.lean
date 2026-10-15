@@ -201,9 +201,9 @@ theorem entryProjAVs_length (off i : Nat) : (entryProjAVs off i).length = i := b
   simp [entryProjAVs]
 
 /-- The opened parameters read to `entryParamBvars` at depth `nP + 1`. -/
-theorem denoteMetaSpine_entryParams {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
-    {φ : LevelParam → Nat} {nP : Nat} {fvsP : List Expr}
-    (hidx : ∀ (k : Nat) (x : Expr), fvsP[k]? = some x → ∃ ty, x = Expr.fvar k ty)
+theorem denoteMetaSpine_entryParams {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {φ : LevelParam → Nat} {nP : Nat} {fvsP : List (Expr md)}
+    (hidx : ∀ (k : Nat) (x : Expr md), fvsP[k]? = some x → ∃ ty, x = Expr.fvar k ty)
     (hlen : fvsP.length = nP) :
     DenoteMetaSpine acval env φ (nP + 1) fvsP (entryParamBvars nP) := by
   have h := denoteMetaSpine_fvars (acval := acval) (env := env) (φ := φ) (nP + 1) fvsP 0
@@ -221,8 +221,8 @@ theorem denoteMetaSpine_entryParams {acval : Key → (LevelParam → Nat) → An
 
 /-- The earlier projections of the subject read to `entryProjAVs` at
 depth `nP + 1`, through the stored tower entries. -/
-theorem denoteMetaSpine_entryProjs {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
-    {φ : LevelParam → Nat} {nP off : Nat} {T : Key} {sdom : Expr}
+theorem denoteMetaSpine_entryProjs {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {φ : LevelParam → Nat} {nP off : Nat} {T : Key md} {sdom : Expr md}
     (hprev : ∀ j, j < i → ∃ entry, env.findProj? T j = some entry ∧ entry.off = off) :
     DenoteMetaSpine acval env φ (nP + 1)
       ((List.range i).map fun j => Expr.proj T j (.fvar nP sdom)) (entryProjAVs off i) := by

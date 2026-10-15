@@ -31,7 +31,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveSha
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
@@ -50,8 +50,8 @@ theorem frameIdx_consList {nIdx : Nat} {is : List V} (hlen : is.length = nIdx) (
 
 /-- **The constructor leaf's hereditary premises**: `MkPreS` along
 the parameters and `UnderTowerValid` along the whole frame. -/
-theorem ctorWalksGen {m : EnvModel V env} {T : Key} {lps : List LevelParam} {cvT cvC : ConstantVal}
-    {nP nF nIdx j : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List Expr}
+theorem ctorWalksGen {m : EnvModel V env} {T : Key md} {lps : List LevelParam} {cvT cvC : ConstantVal md}
+    {nP nF nIdx j : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List (Expr md)}
     {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
     {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -173,10 +173,10 @@ theorem ctorWalksGen {m : EnvModel V env} {T : Key} {lps : List LevelParam} {cvT
     rwa [consList_range_reverse] at this
 
 /-- **The P step at a sum-shaped constructor's cons**, for a given fibre fold. -/
-theorem stageCtorGen {T : Key}
+theorem stageCtorGen {T : Key md}
     (hE : Ix.Kernel.EtaFamiliesClosedExcept env T)
     {F : Nat} {lps : List LevelParam} {nP nF nIdx j : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
     (mp : EnvModelM V μ env)
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env₁ T lps nP nIdx resSort
@@ -188,7 +188,7 @@ theorem stageCtorGen {T : Key}
     (hfT : env.find? T = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = lps)
     (hlpsC : cvCa.levelParams = lps)
-    {idxArgs : List Expr}
+    {idxArgs : List (Expr md)}
     {ppsAll ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
     {Fss Ess : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -308,7 +308,7 @@ theorem stageCtorGen {T : Key}
     · intro T' cvT' caps' hf hne hres hcape
       exact hE T' cvT' caps' hf hne hcape hres
     · intro cvT caps' hf _
-      have hfT' : (⟨.ctorInfo cvCa nP nF :: env.consts⟩ : Env).find? T
+      have hfT' : (⟨.ctorInfo cvCa nP nF :: env.consts⟩ : Env md).find? T
           = some (.indInfo cvTa caps) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hTC h.symm)]
         exact hfT

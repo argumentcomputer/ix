@@ -23,12 +23,12 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- Stage 1 at the run level. -/
-theorem direct_sum_ind_wf {env env₁ : Env} (henv : EnvWF env)
-    {p p' : InductiveShape} {cvTa : ConstantVal} {F : Nat} {capsOf : InductiveShape → IndCaps}
+theorem direct_sum_ind_wf {env env₁ : Env md} (henv : EnvWF env)
+    {p p' : InductiveShape md} {cvTa : ConstantVal md} {F : Nat} {capsOf : InductiveShape md → IndCaps md}
     (h : checkSumInd (fueledOps mode F) env p capsOf = .ok (env₁, cvTa, p'))
     -- the capability record names the parameter count as
     -- its arity (both records do: `nativeCaps`, and the empty one)
-    (hcapsOf : ∀ q : InductiveShape,
+    (hcapsOf : ∀ q : InductiveShape md,
       ((capsOf q).unitlike = true → (capsOf q).unitParams = q.nP) ∧
       ((capsOf q).eta = true → (capsOf q).etaParams = q.nP)) :
     EnvWF env₁ ∧ cvTa.type.hasFvar = false := by
@@ -46,8 +46,8 @@ theorem direct_sum_ind_wf {env env₁ : Env} (henv : EnvWF env)
 
 /-- A constructor's run at the former's environment: its type is
 closed and bounded. -/
-theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Key} {lps : List LevelParam}
-    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal}
+theorem direct_sum_ctor_typeWF {env₀ env : Env md} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {resSort : Level} {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md}
     {nF : Nat} {F : Nat} {sorts : List Level}
     (h : checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx resSort isProp large
       cvC nF cvTa = .ok (cvCa, sorts)) :
@@ -58,8 +58,8 @@ theorem direct_sum_ctor_typeWF {env₀ env : Env} {T : Key} {lps : List LevelPar
 
 /-- A name fresh above the constructors' conses is fresh below them
 (task #210 Part A). -/
-theorem consSumCtors_find?_none {nP : Nat} {n : Key} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
+theorem consSumCtors_find?_none {nP : Nat} {n : Key md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env : Env md},
       (consSumCtors nP ctorsA env).find? n = none → env.find? n = none
   | [], _, h => h
   | c :: cs, env, h => by
@@ -74,7 +74,7 @@ theorem consSumCtors_find?_none {nP : Nat} {n : Key} :
 constructor's type resolves at the environment it is consed onto
 (resolution is monotone along the conses). -/
 theorem envWF_consSumCtors {nP : Nat} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env : Env md},
       EnvWF env →
       (∀ c ∈ ctorsA, c.1.type.hasFvar = false ∧
         c.1.type.allLevelParamsDefined c.1.levelParams = true ∧
@@ -93,9 +93,9 @@ theorem envWF_consSumCtors {nP : Nat} :
 
 /-- The stored rules carry the generated right-hand sides and are
 never `.nested`. -/
-theorem sumRules_mem {find? : Key → Option ConstantInfo} {recName : Key}
-    {nP mI rP : Nat} {recTy : Expr} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
+theorem sumRules_mem {find? : Key md → Option (ConstantInfo md)} {recName : Key md}
+    {nP mI rP : Nat} {recTy : Expr md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)} {r : RecRule md},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →
       r.rhs ∈ rhss ∧ ∀ lvls pins, r.fire ≠ .nested lvls pins
   | [], _, r, h => by simp [sumRules] at h
@@ -111,9 +111,9 @@ theorem sumRules_mem {find? : Key → Option ConstantInfo} {recName : Key}
 
 /-- Every stored rule of the fixpoint route carries the two rescue
 bits its own install-time lookup computes. -/
-theorem sumRules_bits {find? : Key → Option ConstantInfo} {recName : Key}
-    {nP mI rP : Nat} {recTy : Expr} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {r : RecRule},
+theorem sumRules_bits {find? : Key md → Option (ConstantInfo md)} {recName : Key md}
+    {nP mI rP : Nat} {recTy : Expr md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)} {r : RecRule md},
       r ∈ sumRules find? recName nP mI rP recTy ctorsA rhss →
       r.k = recRuleKOf find? r.ctor ∧
         r.eta = recRuleEtaOf find? recName r.ctor

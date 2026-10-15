@@ -30,15 +30,15 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
 /-- A spine of position-indexed variables reads to the frame's own
 `bvar`s. -/
-theorem denoteMetaSpine_indexed {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
-    ∀ (fvs : List Expr) (off : Nat),
-      (∀ (j : Nat) (x : Expr), fvs[j]? = some x →
+theorem denoteMetaSpine_indexed {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+    ∀ (fvs : List (Expr md)) (off : Nat),
+      (∀ (j : Nat) (x : Expr md), fvs[j]? = some x →
         ∃ ty, x = Expr.fvar (off + j) ty) →
       DenoteMetaSpine acval env φ d fvs
         ((List.range fvs.length).map fun j => AnnotTerm.bvar (d - 1 - (off + j)))

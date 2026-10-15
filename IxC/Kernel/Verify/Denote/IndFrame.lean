@@ -118,7 +118,7 @@ of the unopened expression or exactly one of the openers.  With the
 subject closed, the openers are a *leaf-closed* set: annotations
 mention only earlier openers, which are openers again. -/
 theorem openPisAtFvars_leaves :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars k e d = some (fvs, body) →
       ∀ l, (l ∈ body.fvarLeaves ∨ ∃ x ∈ fvs, l ∈ x.fvarLeaves) →
         l ∈ e.fvarLeaves ∨ Expr.fvar l.1 l.2 ∈ fvs := by
@@ -179,16 +179,16 @@ each opener's annotation denoted *at its own depth* to its tower
 entry.  (Consumers lift with `denote_lift`; the entry `Γ.getD (k-1-i)`
 is the `i`-th binder's domain as written, which is where a variable
 rule wants it.) -/
-theorem openPisAtFvars_denoteTele {cval : TConstVal} {env : Env}
+theorem openPisAtFvars_denoteTele {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} :
-    ∀ (k : Nat) {e : Expr} {j : Nat} {fvs : List Expr} {body : Expr}
+    ∀ (k : Nat) {e : Expr md} {j : Nat} {fvs : List (Expr md)} {body : Expr md}
       {T : Term},
       openPisAtFvars k e j = some (fvs, body) →
       denote cval env ψ j e = some T →
       ∃ (Γ : List Term) (R : Term),
         PiTele k T Γ R ∧
         denote cval env ψ (j + k) body = some R ∧
-        ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+        ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
           denote cval env ψ (j + i) (Expr.fvarTypeD x) =
             some (Γ.getD (k - 1 - i) default) := by
   intro k
@@ -332,7 +332,7 @@ theorem lamCtx_inst : ∀ (Γ : List Term) (C v : Term) (j : Nat),
 /-- The checker's opener, read as an `instPisAt` at its own variables:
 the returned domains are the opened annotations. -/
 theorem openPisAtFvars_instPisAt :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars k e d = some (fvs, body) →
       Expr.instPisAt fvs e = some (fvs.map Expr.fvarTypeD, body) := by
   intro k
@@ -361,16 +361,16 @@ theorem openPisAtFvars_instPisAt :
 
 /-- `instPisAt` outputs at `RenEqT`-related inputs are `RenEqT`-related,
 pointwise on the domains and on the residual. -/
-theorem instPisAt_renEq {f : Key → Key} :
-    ∀ (as as' : List Expr) {ty ty' : Expr} {ds ds' : List Expr}
-      {rs rs' : Expr},
+theorem instPisAt_renEq {f : Key md → Key md} :
+    ∀ (as as' : List (Expr md)) {ty ty' : Expr md} {ds ds' : List (Expr md)}
+      {rs rs' : Expr md},
       Expr.instPisAt as ty = some (ds, rs) →
       Expr.instPisAt as' ty' = some (ds', rs') →
       RenEqT f ty ty' →
-      (∀ (i : Nat) (a a' : Expr), as[i]? = some a → as'[i]? = some a' →
+      (∀ (i : Nat) (a a' : Expr md), as[i]? = some a → as'[i]? = some a' →
         RenEqT f a a') →
       as.length = as'.length →
-      (∀ (i : Nat) (x x' : Expr), ds[i]? = some x → ds'[i]? = some x' →
+      (∀ (i : Nat) (x x' : Expr md), ds[i]? = some x → ds'[i]? = some x' →
         RenEqT f x x') ∧ RenEqT f rs rs' := by
   intro as
   induction as with
@@ -432,7 +432,7 @@ theorem instPisAt_renEq {f : Key → Key} :
 domain or from the residual — is a leaf of the subject or of a spine
 entry. -/
 theorem instPisAt_leaves :
-    ∀ (as : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (as : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt as ty = some (ds, rs) →
       ∀ l, ((∃ x ∈ ds, l ∈ x.fvarLeaves) ∨ l ∈ rs.fvarLeaves) →
         l ∈ ty.fvarLeaves ∨ ∃ a ∈ as, l ∈ a.fvarLeaves := by
@@ -483,7 +483,7 @@ theorem instPisAt_leaves :
 /-- Opening keeps everything at loose-bvar level zero: the body and
 each opener's annotation. -/
 theorem openPisAtFvars_bounded :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars k e d = some (fvs, body) →
       e.looseBVarsBounded 0 = true →
       body.looseBVarsBounded 0 = true ∧
@@ -522,7 +522,7 @@ theorem openPisAtFvars_bounded :
 /-- `instPisAt`, truncated at a spine prefix: the first `n` domains and
 the telescope that remains. -/
 theorem instPisAt_take :
-    ∀ (sp : List Expr) (n : Nat) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) (n : Nat) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∃ mid, Expr.instPisAt (sp.take n) ty = some (ds.take n, mid) ∧
         Expr.instPisAt (sp.drop n) mid = some (ds.drop n, rs) := by
@@ -557,7 +557,7 @@ theorem instPisAt_take :
 
 /-- `instPisAt` keeps everything at loose-bvar level zero. -/
 theorem instPisAt_bounded :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ty.looseBVarsBounded 0 = true →
       (∀ a ∈ sp, a.looseBVarsBounded 0 = true) →
@@ -644,8 +644,8 @@ theorem Term.mkAppN_inj :
 inserted value is atomic, so no application node is created or
 absorbed. -/
 theorem Expr.getAppArgs_length_instantiate1_fvar {i : Nat}
-    {t : Expr} :
-    ∀ (e : Expr) (k : Nat),
+    {t : Expr md} :
+    ∀ (e : Expr md) (k : Nat),
       ((e.instantiate1 (.fvar i t) k).getAppArgs).length =
         e.getAppArgs.length := by
   intro e
@@ -664,8 +664,8 @@ theorem Expr.getAppArgs_length_instantiate1_fvar {i : Nat}
   | _ => intro k; first | rfl | (simp only [Expr.instantiate1]; rfl)
 
 /-- Renaming constants never changes an application's arity. -/
-theorem Expr.getAppArgs_length_renameConsts (f : Key → Key) :
-    ∀ (e : Expr),
+theorem Expr.getAppArgs_length_renameConsts (f : Key md → Key md) :
+    ∀ (e : Expr md),
       ((e.renameConsts f).getAppArgs).length = e.getAppArgs.length := by
   intro e
   induction e with
@@ -678,10 +678,10 @@ theorem Expr.getAppArgs_length_renameConsts (f : Key → Key) :
 /-- An `instPisAt` run at variables lands at the raw telescope
 residual's arity. -/
 theorem instPisAt_fvar_residual_arity :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       (∀ x ∈ sp, ∃ i t, x = Expr.fvar i t) →
-      ∀ {bs : List (Expr × BinderMeta)} {body : Expr},
+      ∀ {bs : List (Expr md × BinderMeta)} {body : Expr md},
         ty.stripPis sp.length = some (bs, body) →
         rs.getAppArgs.length = body.getAppArgs.length := by
   intro sp
@@ -691,7 +691,7 @@ theorem instPisAt_fvar_residual_arity :
     simp only [Expr.instPisAt, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
     have hstrip' : (some ([], ty) :
-        Option (List (Expr × BinderMeta) × Expr)) = some (bs, body) :=
+        Option (List (Expr md × BinderMeta) × Expr md)) = some (bs, body) :=
       hstrip
     simp only [Option.some.injEq, Prod.mk.injEq] at hstrip'
     rw [hstrip'.2]
@@ -727,9 +727,9 @@ theorem instPisAt_fvar_residual_arity :
 /-- Substituting under a constant-headed application never changes its
 arity (the head cannot be hit, so no application node is created or
 absorbed). -/
-theorem Expr.getAppArgs_length_instantiate1_const {c : Key}
-    {cus : List Level} {v : Expr} :
-    ∀ (e : Expr) (k : Nat), e.getAppFn = .const c cus →
+theorem Expr.getAppArgs_length_instantiate1_const {c : Key md}
+    {cus : List Level} {v : Expr md} :
+    ∀ (e : Expr md) (k : Nat), e.getAppFn = .const c cus →
       ((e.instantiate1 v k).getAppArgs).length = e.getAppArgs.length ∧
       (e.instantiate1 v k).getAppFn = .const c cus := by
   intro e
@@ -757,7 +757,7 @@ theorem Expr.getAppArgs_length_instantiate1_const {c : Key}
 /-- Level instantiation never changes an application's arity. -/
 theorem Expr.getAppArgs_length_instantiateLevelParams
     (ks : List LevelParam) (us : List Level) :
-    ∀ (e : Expr),
+    ∀ (e : Expr md),
       ((e.instantiateLevelParams ks us).getAppArgs).length =
         e.getAppArgs.length := by
   intro e
@@ -772,10 +772,10 @@ theorem Expr.getAppArgs_length_instantiateLevelParams
 /-- An `instPisAt` run over any spine lands at the raw telescope
 residual's arity, provided the residual is constant-headed (the
 nested runs' spines hold pin instantiations, not variables). -/
-theorem instPisAt_residual_arity_const {c : Key} {cus : List Level} :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+theorem instPisAt_residual_arity_const {c : Key md} {cus : List Level} :
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
-      ∀ {bs : List (Expr × BinderMeta)} {body : Expr},
+      ∀ {bs : List (Expr md × BinderMeta)} {body : Expr md},
         ty.stripPis sp.length = some (bs, body) →
         body.getAppFn = .const c cus →
         rs.getAppArgs.length = body.getAppArgs.length := by
@@ -786,7 +786,7 @@ theorem instPisAt_residual_arity_const {c : Key} {cus : List Level} :
     simp only [Expr.instPisAt, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
     have hstrip' : (some ([], ty) :
-        Option (List (Expr × BinderMeta) × Expr)) = some (bs, body) :=
+        Option (List (Expr md × BinderMeta) × Expr md)) = some (bs, body) :=
       hstrip
     simp only [Option.some.injEq, Prod.mk.injEq] at hstrip'
     rw [hstrip'.2]
@@ -821,8 +821,8 @@ theorem instPisAt_residual_arity_const {c : Key} {cus : List Level} :
         (Expr.getAppArgs_length_instantiate1_const _ _ hhead).1]
 
 /-- The application head under constant renaming. -/
-theorem Expr.getAppFn_renameConsts (f : Key → Key) :
-    ∀ (e : Expr),
+theorem Expr.getAppFn_renameConsts (f : Key md → Key md) :
+    ∀ (e : Expr md),
       (e.renameConsts f).getAppFn = (e.getAppFn).renameConsts f := by
   intro e
   induction e with
@@ -834,7 +834,7 @@ theorem Expr.getAppFn_renameConsts (f : Key → Key) :
 /-- The application head under level instantiation. -/
 theorem Expr.getAppFn_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
-    ∀ (e : Expr),
+    ∀ (e : Expr md),
       (e.instantiateLevelParams ks us).getAppFn =
         (e.getAppFn).instantiateLevelParams ks us := by
   intro e
@@ -845,8 +845,8 @@ theorem Expr.getAppFn_instantiateLevelParams (ks : List LevelParam)
   | _ => rfl
 
 /-- Renaming constants never changes loose-bvar levels. -/
-theorem Expr.looseBVarsBounded_renameConsts (f : Key → Key) :
-    ∀ (e : Expr) (k : Nat),
+theorem Expr.looseBVarsBounded_renameConsts (f : Key md → Key md) :
+    ∀ (e : Expr md) (k : Nat),
       Expr.looseBVarsBounded k (e.renameConsts f) =
         Expr.looseBVarsBounded k e := by
   intro e
@@ -855,7 +855,7 @@ theorem Expr.looseBVarsBounded_renameConsts (f : Key → Key) :
 
 /-- One domain per argument. -/
 theorem instPisAt_length :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) → ds.length = sp.length := by
   intro sp
   induction sp with
@@ -879,12 +879,12 @@ theorem instPisAt_length :
 /-- An `instPisAt` run at frame variables of a denoting subject has a
 denoting residual — the definedness half of
 `instPisAt_denote_cross`. -/
-theorem instPisAt_fvar_denote_defined {cval : TConstVal} {env : Env}
+theorem instPisAt_fvar_denote_defined {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         (∃ w, denote cval env ψ D x = some w) ∧ Expr.WScoped D x ∧
           x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
@@ -938,8 +938,8 @@ theorem instPisAt_fvar_denote_defined {cval : TConstVal} {env : Env}
 `proj` structure names, never `fvar` indices or `bvar`s (task #148,
 T6, prospective relocation — the TT lane's renamed walks want this
 too). -/
-theorem wscoped_renameConsts {f : Key → Key} :
-    ∀ (e : Expr) {d : Nat},
+theorem wscoped_renameConsts {f : Key md → Key md} :
+    ∀ (e : Expr md) {d : Nat},
       Expr.WScoped d e → Expr.WScoped d (e.renameConsts f) := by
   intro e
   induction e <;> intro d h <;>
@@ -947,8 +947,8 @@ theorem wscoped_renameConsts {f : Key → Key} :
 
 /-- Renaming rewrites each leaf's *annotation* and nothing else — the
 indices are untouched. -/
-theorem fvarLeaves_renameConstsE {f : Key → Key} :
-    ∀ (e : Expr), (e.renameConsts f).fvarLeaves
+theorem fvarLeaves_renameConstsE {f : Key md → Key md} :
+    ∀ (e : Expr md), (e.renameConsts f).fvarLeaves
       = e.fvarLeaves.map
         (fun l => (l.1, l.2.renameConsts f)) := by
   intro e
@@ -956,7 +956,7 @@ theorem fvarLeaves_renameConstsE {f : Key → Key} :
 
 /-- …so renaming preserves the leaf-annotation bound, by
 `looseBVarsBounded_renameConsts` at each leaf. -/
-theorem leavesBounded_renameConsts {f : Key → Key} (e : Expr)
+theorem leavesBounded_renameConsts {f : Key md → Key md} (e : Expr md)
     (h : Expr.LeavesBounded e) :
     Expr.LeavesBounded (e.renameConsts f) := by
   intro l hl
@@ -970,12 +970,12 @@ subject does — the list half of `instPisAt_fvar_denote_defined`, and
 what the `iota_j` statement walks need per element (task #148, T6:
 `DefEqAtW` asserts its two denotations exist, where `DefEqClaimsR`
 takes them as inputs). -/
-theorem instPisAt_denote_doms {cval : TConstVal} {env : Env}
+theorem instPisAt_denote_doms {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         (∃ w, denote cval env ψ D x = some w) ∧ Expr.WScoped D x ∧
           x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
@@ -1033,12 +1033,12 @@ spine do — `instPisAt_denote_doms`' other half.  `instPisAt_walk_pack`
 discards the residual component of every frame lemma it calls; the
 λ-row of `IotaWalksR` opens exactly that residual, so it needs the
 denotation too (task #148 T6). -/
-theorem instPisAt_denote_res {cval : TConstVal} {env : Env}
+theorem instPisAt_denote_res {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} (hcl : ∀ n ψ', Term.Closed (cval n ψ')) :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {D : Nat},
-      (∀ (j : Nat) (x : Expr), sp[j]? = some x →
+      (∀ (j : Nat) (x : Expr md), sp[j]? = some x →
         (∃ w, denote cval env ψ D x = some w) ∧ Expr.WScoped D x ∧
           x.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow D ty → ty.looseBVarsBounded 0 = true →
@@ -1091,7 +1091,7 @@ theorem instPisAt_denote_res {cval : TConstVal} {env : Env}
 mirror of `instPisAt_bounded`, which the λ-row's domain package
 needs and which no lane had yet. -/
 theorem instLamsAt_bounded :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instLamsAt sp ty = some (ds, rs) →
       ty.looseBVarsBounded 0 = true →
       (∀ a ∈ sp, a.looseBVarsBounded 0 = true) →
@@ -1137,12 +1137,12 @@ spine's first `i` entries substituted into it, so it is scoped at
 what lets each domain's denotation be *lifted* to a common walk depth
 (task #148 T6, `IotaWalksR`'s λ-row). -/
 theorem instLamsAt_index_WScoped :
-    ∀ (sp : List Expr) {d : Nat} {ty : Expr} {ds : List Expr}
-      {rs : Expr},
+    ∀ (sp : List (Expr md)) {d : Nat} {ty : Expr md} {ds : List (Expr md)}
+      {rs : Expr md},
       Expr.instLamsAt sp ty = some (ds, rs) → Expr.WScoped d ty →
-      (∀ (i : Nat) (a : Expr), sp[i]? = some a →
+      (∀ (i : Nat) (a : Expr md), sp[i]? = some a →
         Expr.WScoped (d + i + 1) a) →
-      ∀ (i : Nat) (x : Expr), ds[i]? = some x → Expr.WScoped (d + i) x
+      ∀ (i : Nat) (x : Expr md), ds[i]? = some x → Expr.WScoped (d + i) x
   | [], d, ty, ds, rs, h, _, _ => by
     simp only [Expr.instLamsAt, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
@@ -1201,9 +1201,9 @@ theorem PiTele.head : ∀ {k : Nat} {T : Term} {Γ : List Term} {R : Term},
       exact hp
 
 /-- A denoted spine, built pointwise. -/
-theorem DenoteSpine.of_getElem {cval : TConstVal} {env : Env}
+theorem DenoteSpine.of_getElem {cval : TConstVal md} {env : Env md}
     {φ : LevelParam → Nat} {d : Nat} :
-    ∀ {as : List Expr} {vs : List Term}, as.length = vs.length →
+    ∀ {as : List (Expr md)} {vs : List Term}, as.length = vs.length →
       (∀ (q : Nat), q < as.length →
         denote cval env φ d (as.getD q default) =
           some (vs.getD q default)) →
@@ -1232,17 +1232,17 @@ theorem DenoteSpine.of_getElem {cval : TConstVal} {env : Env}
 with the body and each raw domain denoted under the anonymous openers
 (`openFvars`) — annotations are denote-irrelevant, so any same-index
 opener family produces the same values. -/
-theorem stripLams_denoteTele {cval : TConstVal} {env : Env}
+theorem stripLams_denoteTele {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} :
-    ∀ (k : Nat) {e : Expr} {j : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr} {V : Term},
+    ∀ (k : Nat) {e : Expr md} {j : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md} {V : Term},
       e.stripLams k = some (bs, body) →
       denote cval env ψ j e = some V →
       ∃ (Γ : List Term) (C : Term),
         V = lamCtx Γ C ∧ Γ.length = k ∧
         denote cval env ψ (j + k)
           (Expr.instSeq (openFvars j k) (k - 1) body) = some C ∧
-        ∀ (i0 : Nat) (b : Expr × BinderMeta), bs[i0]? = some b →
+        ∀ (i0 : Nat) (b : Expr md × BinderMeta), bs[i0]? = some b →
           denote cval env ψ (j + i0)
             (Expr.instSeq (openFvars j i0) (i0 - 1) b.1) =
             some (Γ.getD (k - 1 - i0) default) := by
@@ -1423,17 +1423,17 @@ a denoting Π-tower is `PiTele` at its domains' values,
 with the body and each raw domain denoted under the anonymous openers
 (`openFvars`) — annotations are denote-irrelevant, so any same-index
 opener family produces the same values. -/
-theorem stripPis_denoteTele {cval : TConstVal} {env : Env}
+theorem stripPis_denoteTele {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} :
-    ∀ (k : Nat) {e : Expr} {j : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr} {V : Term},
+    ∀ (k : Nat) {e : Expr md} {j : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md} {V : Term},
       e.stripPis k = some (bs, body) →
       denote cval env ψ j e = some V →
       ∃ (Γ : List Term) (C : Term),
         PiTele k V Γ C ∧ Γ.length = k ∧
         denote cval env ψ (j + k)
           (Expr.instSeq (openFvars j k) (k - 1) body) = some C ∧
-        ∀ (i0 : Nat) (b : Expr × BinderMeta), bs[i0]? = some b →
+        ∀ (i0 : Nat) (b : Expr md × BinderMeta), bs[i0]? = some b →
           denote cval env ψ (j + i0)
             (Expr.instSeq (openFvars j i0) (i0 - 1) b.1) =
             some (Γ.getD (k - 1 - i0) default) := by
@@ -1560,13 +1560,13 @@ theorem stripPis_denoteTele {cval : TConstVal} {env : Env}
 /-- The projection rule's opened body denotes to the field's bound
 variable (sealed: the `instSeq`-of-`bvar` computation in a small
 context; DESIGN §22). -/
-theorem projBodyValue {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
+theorem projBodyValue {cval : TConstVal md} {env : Env md} {ψ : LevelParam → Nat}
     {cnP cnF i : Nat} (hilt : i < cnF) {Cβ : Term}
     (hCβden : denote cval env ψ (0 + (cnP + cnF))
       (Expr.instSeq (openFvars 0 (cnP + cnF)) (cnP + cnF - 1)
         (.bvar (cnF - 1 - i))) = some Cβ) :
     Cβ = .bvar (cnP + cnF - 1 - (cnP + i)) := by
-  have hhit := Expr.instSeq_bvar (openFvars 0 (cnP + cnF))
+  have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (cnP + cnF))
     (cnP + cnF - 1) (cnF - 1 - i)
     (openFvars_bounded 0 (cnP + cnF)) (by omega)
     (by rw [openFvars_length]; omega)
@@ -1586,22 +1586,22 @@ at their own depths have the same denoted context.  The denote-level
 form is what a *renamed* domain pin needs (the projection statement's
 telescope is the constructor's renamed, not equal to it — task #148,
 T5 c4); `towerCtxEq` is the syntactic corollary. -/
-theorem towerCtxEqD {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
+theorem towerCtxEqD {cval : TConstVal md} {env : Env md} {ψ : LevelParam → Nat}
     {k : Nat} {Γβ Γc : List Term}
-    {rbinders cbinders : List (Expr × BinderMeta)}
+    {rbinders cbinders : List (Expr md × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
     (hΓβlen : Γβ.length = k) (hΓclen : Γc.length = k)
-    (hβdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hβdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       rbinders[i0]? = some b →
       denote cval env ψ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γβ.getD (k - 1 - i0) default))
-    (hcdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hcdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       cbinders[i0]? = some b →
       denote cval env ψ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γc.getD (k - 1 - i0) default))
-    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < k → rbinders[i0]? = some b →
       cbinders[i0]? = some b' →
       denote cval env ψ (0 + i0)
@@ -1634,22 +1634,22 @@ theorem towerCtxEqD {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
 
 /-- Two canonically-opened towers with pointwise-equal raw domains
 have the same denoted context (sealed for the same reason). -/
-theorem towerCtxEq {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
+theorem towerCtxEq {cval : TConstVal md} {env : Env md} {ψ : LevelParam → Nat}
     {k : Nat} {Γβ Γc : List Term}
-    {rbinders cbinders : List (Expr × BinderMeta)}
+    {rbinders cbinders : List (Expr md × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
     (hΓβlen : Γβ.length = k) (hΓclen : Γc.length = k)
-    (hβdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hβdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       rbinders[i0]? = some b →
       denote cval env ψ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γβ.getD (k - 1 - i0) default))
-    (hcdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hcdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       cbinders[i0]? = some b →
       denote cval env ψ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γc.getD (k - 1 - i0) default))
-    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < k → rbinders[i0]? = some b →
       cbinders[i0]? = some b' → b.1 = b'.1) :
     Γβ = Γc :=
@@ -1668,11 +1668,11 @@ rewrites under `denote` terms.
 Relocated verbatim from `IxC/Kernel/TTVerify/DeclIndRecs.lean` (task #148,
 T5 stage 3b): the statement is about `denote` and a `TConstVal`, so
 both verified lanes' nested bottoms read it. -/
-theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : LevelParam → Nat}
-    {stmtTy : Expr} {K : Nat} {fvs : List Expr} {tbody : Expr}
-    {ℓA : Level} {αS lhsS rhsS : Expr} {fRn fCtor : Key}
-    {lpsE lvls : List Level} {mI : Nat} {spN : List Expr}
-    {ciCm : ConstantInfo} {Tstmt : Term}
+theorem nestedLvlsLength {cval : TConstVal md} {env₀ : Env md} {ψ : LevelParam → Nat}
+    {stmtTy : Expr md} {K : Nat} {fvs : List (Expr md)} {tbody : Expr md}
+    {ℓA : Level} {αS lhsS rhsS : Expr md} {fRn fCtor : Key md}
+    {lpsE lvls : List Level} {mI : Nat} {spN : List (Expr md)}
+    {ciCm : ConstantInfo md} {Tstmt : Term}
     (hTstmt : denote cval env₀ ψ 0 stmtTy = some Tstmt)
     (hopen : openPisAtFvars K stmtTy 0 = some (fvs, tbody))
     (hheadEq : tbody.getAppFn = .const eqName [ℓA])
@@ -1712,9 +1712,9 @@ theorem nestedLvlsLength {cval : TConstVal} {env₀ : Env} {ψ : LevelParam → 
 
 /-- The projection statement's right side denotes to the field's
 frame variable (sealed). -/
-theorem projRhsValue {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
-    {fvs : List Expr} {rP cnF i : Nat} {vR : Term}
-    (hshapeS : ∀ (i0 : Nat) (x : Expr), fvs[i0]? = some x →
+theorem projRhsValue {cval : TConstVal md} {env : Env md} {ψ : LevelParam → Nat}
+    {fvs : List (Expr md)} {rP cnF i : Nat} {vR : Term}
+    (hshapeS : ∀ (i0 : Nat) (x : Expr md), fvs[i0]? = some x →
       ∃ ty, x = Expr.fvar i0 ty)
     (hfvslen : fvs.length = rP + cnF) (hilt : i < cnF)
     (hRden : denote cval env ψ (rP + cnF) (fvs.getD (rP + i) default)
@@ -1731,7 +1731,7 @@ theorem projRhsValue {cval : TConstVal} {env : Env} {ψ : LevelParam → Nat}
 
 /-- `instLamsAt` returns one domain per argument. -/
 theorem instLamsAt_length :
-    ∀ (sp : List Expr) {e : Expr} {ds : List Expr} {rest : Expr},
+    ∀ (sp : List (Expr md)) {e : Expr md} {ds : List (Expr md)} {rest : Expr md},
       Expr.instLamsAt sp e = some (ds, rest) → ds.length = sp.length := by
   intro sp
   induction sp with
@@ -1757,8 +1757,8 @@ theorem instLamsAt_length :
 /-- Composition of two `instPisAt` runs: walking `as ++ bs` is walking
 `as`, then `bs` on the residual. -/
 theorem Expr.instPisAt_append :
-    ∀ (as : List Expr) {bs : List Expr} {ty : Expr} {ds ds2 : List Expr}
-      {rs rs2 : Expr},
+    ∀ (as : List (Expr md)) {bs : List (Expr md)} {ty : Expr md} {ds ds2 : List (Expr md)}
+      {rs rs2 : Expr md},
       Expr.instPisAt as ty = some (ds, rs) →
       Expr.instPisAt bs rs = some (ds2, rs2) →
       Expr.instPisAt (as ++ bs) ty = some (ds ++ ds2, rs2) := by
@@ -1791,18 +1791,18 @@ run's progressively-instantiated domains, denoted at their own depths,
 and whose core is the residual's denotation — `denote` reads neither an
 opener's name nor its annotation, so any same-index opener spine
 produces the same tower. -/
-theorem instLamsAt_denoteTele {cval : TConstVal} {env : Env}
+theorem instLamsAt_denoteTele {cval : TConstVal md} {env : Env md}
     {ψ : LevelParam → Nat} :
-    ∀ (sp : List Expr) {e : Expr} {j : Nat} {ds : List Expr}
-      {rest : Expr} {Vv : Term},
+    ∀ (sp : List (Expr md)) {e : Expr md} {j : Nat} {ds : List (Expr md)}
+      {rest : Expr md} {Vv : Term},
       Expr.instLamsAt sp e = some (ds, rest) →
-      (∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      (∀ (i : Nat) (x : Expr md), sp[i]? = some x →
         ∃ ty, x = Expr.fvar (j + i) ty) →
       denote cval env ψ j e = some Vv →
       ∃ (Γ : List Term) (C : Term),
         Vv = lamCtx Γ C ∧ Γ.length = sp.length ∧
         denote cval env ψ (j + sp.length) rest = some C ∧
-        ∀ (i0 : Nat) (x : Expr), ds[i0]? = some x →
+        ∀ (i0 : Nat) (x : Expr md), ds[i0]? = some x →
           denote cval env ψ (j + i0) x =
             some (Γ.getD (sp.length - 1 - i0) default) := by
   intro sp
@@ -1844,7 +1844,7 @@ theorem instLamsAt_denoteTele {cval : TConstVal} {env : Env}
           (show Expr.ErasedEq (.fvar (j + 0) tyA)
             (.fvar j dom) from by constructor)) (j + 1)]
         exact hB
-      have hshape' : ∀ (i : Nat) (x : Expr), sp[i]? = some x →
+      have hshape' : ∀ (i : Nat) (x : Expr md), sp[i]? = some x →
           ∃ ty', x = Expr.fvar (j + 1 + i) ty' := by
         intro i x hx
         obtain ⟨ty', hx'⟩ := hshape (i + 1) x (by simpa using hx)
@@ -1888,7 +1888,7 @@ theorem instLamsAt_denoteTele {cval : TConstVal} {env : Env}
 /-- Leaves of an `instLamsAt` run come from the telescope or the
 spine (the λ mirror of `instPisAt_leaves`). -/
 theorem instLamsAt_leaves :
-    ∀ (as : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (as : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instLamsAt as ty = some (ds, rs) →
       ∀ l, ((∃ x ∈ ds, l ∈ x.fvarLeaves) ∨ l ∈ rs.fvarLeaves) →
         l ∈ ty.fvarLeaves ∨ ∃ a ∈ as, l ∈ a.fvarLeaves := by
@@ -1936,7 +1936,7 @@ theorem instLamsAt_leaves :
 
 /-- The opener returns one variable per binder. -/
 theorem openPisAtFvars_length :
-    ∀ (k : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars k e d = some (fvs, body) → fvs.length = k := by
   intro k
   induction k with
@@ -1961,8 +1961,8 @@ theorem openPisAtFvars_length :
 
 
 /-- Constant renaming leaves the loose-bvar bound unchanged. -/
-theorem looseBVarsBounded_renameConsts {f : Key → Key} :
-    ∀ (e : Expr) (k : Nat),
+theorem looseBVarsBounded_renameConsts {f : Key md → Key md} :
+    ∀ (e : Expr md) (k : Nat),
       (e.renameConsts f).looseBVarsBounded k = e.looseBVarsBounded k := by
   intro e
   induction e <;> intro k <;>
@@ -1971,9 +1971,9 @@ theorem looseBVarsBounded_renameConsts {f : Key → Key} :
 
 /-- `stripPis` commutes with constant renaming (renaming touches no
 binder structure). -/
-theorem stripPis_renameConsts {f : Key → Key} :
-    ∀ (n : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr},
+theorem stripPis_renameConsts {f : Key md → Key md} :
+    ∀ (n : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md},
       e.stripPis n = some (bs, body) →
       (e.renameConsts f).stripPis n =
         some (bs.map (fun b => (b.1.renameConsts f, b.2)),
@@ -2003,8 +2003,8 @@ theorem stripPis_renameConsts {f : Key → Key} :
         rfl
 
 /-- Constant renaming keeps the application-spine arity. -/
-theorem getAppArgs_length_renameConsts {f : Key → Key} :
-    ∀ (e : Expr),
+theorem getAppArgs_length_renameConsts {f : Key md → Key md} :
+    ∀ (e : Expr md),
       (e.renameConsts f).getAppArgs.length = e.getAppArgs.length := by
   intro e
   induction e with

@@ -109,13 +109,13 @@ def encode (input : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Recor
 /-- The entry on records already under their keys. -/
 def checkAt (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
     (bounds : Ix.Kernel.Admission.Limits := ByteAdmission.limits) :
-    Except Ixon.Projection.CheckError Ix.Kernel.Env :=
+    Except Ixon.Projection.CheckError (Ix.Kernel.Env .anon) :=
   Ixon.Authenticated.checkBytesProjection blake3Binding limit bounds (encode input) []
 
 /-- The entry on a fixture re-keyed under BLAKE3. -/
 def check (input : List (Address × Ixon.Constant)) (limit : Nat := 16)
     (bounds : Ix.Kernel.Admission.Limits := ByteAdmission.limits) :
-    Except Ixon.Projection.CheckError Ix.Kernel.Env :=
+    Except Ixon.Projection.CheckError (Ix.Kernel.Env .anon) :=
   checkAt (rekey spec input).records limit bounds
 
 def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool :=
@@ -168,13 +168,13 @@ def wrongConstructorIndex : Ixon.Constant :=
   | .error e@(.checker _) => e.outcome == .rejected
   | _ => false
 
-example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (h : Ixon.Authenticated.checkBytesProjection blake3Binding 16 ByteAdmission.limits (encode separatedInput) [] = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   Ixon.Authenticated.checkBytesProjection_has_model V h
 
 example {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {maxProjections : Nat}
-    {records : Ix.Kernel.Admission.Records} {blobs : Ingress.Blobs} {env : Ix.Kernel.Env}
+    {records : Ix.Kernel.Admission.Records} {blobs : Ingress.Blobs} {env : Ix.Kernel.Env .anon}
     (h : Ixon.Projection.checkBytes hash binding maxProjections ByteAdmission.limits records blobs = .ok env) :
     ∃ output, (∀ entry ∈ output, entry.1 = hash (Ixon.serConstant entry.2)) ∧
       Ix.Kernel.Admission.checkConstantsAt hash binding output blobs = .ok env :=

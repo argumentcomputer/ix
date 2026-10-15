@@ -26,11 +26,11 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveSha
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- **The sum former leaf's two hereditary premises**, from the former's
 data and the chains' grading at the parameter frame. -/
-theorem formerWalksS {m : EnvModel V env} {cvT : ConstantVal} {nP : Nat}
+theorem formerWalksS {m : EnvModel V env} {cvT : ConstantVal md} {nP : Nat}
     {resSort : Level} {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData m cvT nP resSort pps)
     {Fss : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -76,7 +76,7 @@ theorem formerWalksS {m : EnvModel V env} {cvT : ConstantVal} {nP : Nat}
 chains. -/
 theorem stageSumFormer (mp : EnvModelM V μ env)
     (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
-    {F : Nat} {p : InductiveShape} {cvT cvTa : ConstantVal}
+    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
     -- the former's `checkConstantVal` run at the block's header — its
     -- declared type or its whnf'd telescope (task #195); the stage never
     -- asks which
@@ -94,7 +94,7 @@ theorem stageSumFormer (mp : EnvModelM V μ env)
     -- the block's capability record and its laws at the cons (task
     -- #210 Part A: `sumCaps` on the sum route, `nativeCaps` on
     -- the fixpoint route)
-    (caps : IndCaps)
+    (caps : IndCaps md)
     -- the record's arities, from the install's telescope pin
     (hicw : Ix.Kernel.IndCapsWF (.indInfo cvTa caps))
     (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvTa caps :: env.consts⟩,

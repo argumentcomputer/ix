@@ -34,8 +34,8 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (Env Expr Key Level PropWhen)
 
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- The `Nat`-literal spine is lift-invariant when its two heads are.
 A private local copy of `Dispatch.lean`'s helper of the same name,
@@ -77,9 +77,9 @@ the binder clause compares `denoteMeta (d+2) (body.instantiate1 (.fvar
 (d+1) …))` with `denoteMeta (d+1) (body.instantiate1 (.fvar d …))`, two
 genuinely different expressions related by `Expr.shiftFrom d`. -/
 theorem denoteMeta_shiftFrom
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ) {p : Nat} :
-    ∀ (e : Expr) (d : Nat), p ≤ d → Expr.WScoped d e →
+    ∀ (e : Expr md) (d : Nat), p ≤ d → Expr.WScoped d e →
       denoteMeta acval env φ (d + 1) (e.shiftFrom p) =
         (denoteMeta acval env φ d e).map (AnnotTerm.liftN 1 · (d - p))
   | .bvar i, d, _, _ => by
@@ -205,8 +205,8 @@ decreasing_by
 `d`-scoped term denoted at `d + 1` is its depth-`d` annotation,
 lifted.  `EnvWF` goes with the shift it is derived from. -/
 theorem denoteMeta_weaken_top
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
-      (acval n ψ).liftN 1 k = acval n ψ) {d : Nat} {e : Expr}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
+      (acval n ψ).liftN 1 k = acval n ψ) {d : Nat} {e : Expr md}
     (hw : Expr.WScoped d e) :
     denoteMeta acval env φ (d + 1) e
       = (denoteMeta acval env φ d e).map (AnnotTerm.liftN 1 · 0) := by

@@ -226,7 +226,7 @@ def LevelParam.nodup : List LevelParam → Bool
 
 /-- Substitute level parameters throughout an expression (sorts and
 constant level arguments). -/
-def Expr.instantiateLevelParams (ks : List LevelParam) (us : List Level) : Expr → Expr
+def Expr.instantiateLevelParams (ks : List LevelParam) (us : List Level) : Expr md → Expr md
   | .bvar i => .bvar i
   | .fvar idx ty => .fvar idx (ty.instantiateLevelParams ks us)
   | .sort u => .sort (Level.subst ks us u)
@@ -248,7 +248,7 @@ prop-ness data included (task #161): their parameters are level
 parameters of the term — `instantiateLevelParams` substitutes into
 them, and its composition law needs them covered exactly as it needs
 the levels'. -/
-def Expr.allLevelParamsDefined (params : List LevelParam) : Expr → Bool
+def Expr.allLevelParamsDefined (params : List LevelParam) : Expr md → Bool
   | .bvar _ => true
   | .fvar _ t => t.allLevelParamsDefined params
   | .sort u => u.allParamsDefined params
@@ -272,14 +272,14 @@ trust point, the pure walk stays the spec.  Keyed by the node, dropped
 after each call (the answer depends on `params`). -/
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def LPMemoInv (params : List LevelParam) (memo : Std.HashMap Expr Bool) : Prop :=
-  ∀ (k : Expr) (r : Bool), memo[k]? = some r → r = k.allLevelParamsDefined params
+def LPMemoInv (params : List LevelParam) (memo : Std.HashMap (Expr md) Bool) : Prop :=
+  ∀ (k : Expr md) (r : Bool), memo[k]? = some r → r = k.allLevelParamsDefined params
 
-theorem LPMemoInv.empty {params : List LevelParam} : LPMemoInv params {} := by
+theorem LPMemoInv.empty {params : List LevelParam} : (LPMemoInv (md := md)) params {} := by
   intro k r h; simp at h
 
-theorem LPMemoInv.insert {params : List LevelParam} {memo : Std.HashMap Expr Bool}
-    (hm : LPMemoInv params memo) {e : Expr} {r : Bool}
+theorem LPMemoInv.insert {params : List LevelParam} {memo : Std.HashMap (Expr md) Bool}
+    (hm : LPMemoInv params memo) {e : Expr md} {r : Bool}
     (heq : r = e.allLevelParamsDefined params) :
     LPMemoInv params (memo.insert e r) := by
   intro k r' hk
@@ -292,8 +292,8 @@ theorem LPMemoInv.insert {params : List LevelParam} {memo : Std.HashMap Expr Boo
   · exact hm k r' hk
 
 /-- Memoized `allLevelParamsDefined`. -/
-def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap Expr Bool) :
-    Expr → Bool × Std.HashMap Expr Bool
+def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap (Expr md) Bool) :
+    (Expr md) → Bool × Std.HashMap (Expr md) Bool
   | .bvar _ => (true, memo)
   | .sort u => (u.allParamsDefined params, memo)
   | .const _ us => (us.all (Level.allParamsDefined params), memo)
@@ -302,7 +302,7 @@ def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap 
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Bool × Std.HashMap Expr Bool :=
+      let (r, memo) : Bool × Std.HashMap (Expr md) Bool :=
         match e with
         | .fvar _ t => allLevelParamsDefinedGo params memo t
         | .app f a =>
@@ -328,7 +328,7 @@ def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap 
 
 /-- **The memoized walk is `allLevelParamsDefined`.** -/
 theorem Expr.allLevelParamsDefinedGo_spec {params : List LevelParam} :
-    ∀ (e : Expr) (memo : Std.HashMap Expr Bool), LPMemoInv params memo →
+    ∀ (e : Expr md) (memo : Std.HashMap (Expr md) Bool), LPMemoInv params memo →
       (allLevelParamsDefinedGo params memo e).1 = e.allLevelParamsDefined params ∧
         LPMemoInv params (allLevelParamsDefinedGo params memo e).2 := by
   intro e
@@ -398,12 +398,12 @@ theorem Expr.allLevelParamsDefinedGo_spec {params : List LevelParam} :
       exact h2.insert (by simp [allLevelParamsDefined, h1])
 
 /-- The executed `allLevelParamsDefined` (one memoized DAG walk). -/
-def Expr.allLevelParamsDefinedFast (params : List LevelParam) (e : Expr) : Bool :=
+def Expr.allLevelParamsDefinedFast (params : List LevelParam) (e : Expr md) : Bool :=
   (allLevelParamsDefinedGo params {} e).1
 
 @[csimp] theorem Expr.allLevelParamsDefined_eq_allLevelParamsDefinedFast :
     @Expr.allLevelParamsDefined = @Expr.allLevelParamsDefinedFast := by
-  funext params e
+  funext md params e
   exact (allLevelParamsDefinedGo_spec e {} LPMemoInv.empty).1.symm
 
 end Ix.Kernel

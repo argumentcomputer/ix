@@ -37,7 +37,7 @@ def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 /-- The entry's stages without authentication, at the default role table. -/
 def unauthenticated (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
-    Except Ix.Kernel.Admission.Error Ix.Kernel.Env := do
+    Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) := do
   let table ← defaultTable.mapError .prelude
   let pre ← (preludeFor table).mapError .prelude
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
@@ -45,7 +45,7 @@ def unauthenticated (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.I
   let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
   Ix.Kernel.Admission.checkConstantsWith table pre constants blobs hint
 
-def verdict : Except Ix.Kernel.Admission.Error Ix.Kernel.Env → String
+def verdict : Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"
   | .error e => s!"{repr e.outcome}: {e}"
 

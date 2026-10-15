@@ -22,12 +22,12 @@ model's declaration step consumes.
 
 namespace Ix.Kernel
 
-variable {μ : CheckMode} {F : Nat} {env : Env}
-variable {ev : Evidences}
+variable {μ : CheckMode} {F : Nat} {env : Env md}
+variable {ev : Evidences md}
 
 /-! ## The install half -/
 
-theorem installConstantVal_inv {cv cvA : ConstantVal}
+theorem installConstantVal_inv {cv cvA : ConstantVal md}
     (h : installConstantVal (fueledOps μ F) env cv = .ok cvA) :
     env.find? cv.name = none ∧
     reservedBasisNames.contains cv.name = false ∧
@@ -84,7 +84,7 @@ theorem installConstantVal_inv {cv cvA : ConstantVal}
   exact ⟨hfind0, by simpa using hres, hpshapeF, hnd, hlb,
     by simpa using hif, type, rfl, htp, htr, h.symm⟩
 
-theorem installConstantVal_of_facts {cv : ConstantVal} {type' : Expr}
+theorem installConstantVal_of_facts {cv : ConstantVal md} {type' : Expr md}
     (hfind : env.find? cv.name = none)
     (hres : reservedBasisNames.contains cv.name = false)
     (hshape : cv.name.isProjFnShape = false)
@@ -99,7 +99,7 @@ theorem installConstantVal_of_facts {cv : ConstantVal} {type' : Expr}
     Pure.pure, Except.pure, hfind, hres, hshape, hnd, hlb, hif, hann, htp, htr,
     Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
 
-theorem installValue_inv {cv : ConstantVal} {value jv : Expr}
+theorem installValue_inv {cv : ConstantVal md} {value jv : Expr md}
     (h : installValue (fueledOps μ F) env cv value = .ok jv) :
     value.looseBVarsBounded 0 = true ∧
     value.hasFvar = false ∧
@@ -129,7 +129,7 @@ theorem installValue_inv {cv : ConstantVal} {value jv : Expr}
   subst h
   exact ⟨hlb, by simpa using hif, rfl, hvp, hvr⟩
 
-theorem installValue_of_facts {cv : ConstantVal} {value jv : Expr}
+theorem installValue_of_facts {cv : ConstantVal md} {value jv : Expr md}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
@@ -141,7 +141,7 @@ theorem installValue_of_facts {cv : ConstantVal} {value jv : Expr}
 
 /-! ## The check half -/
 
-theorem checkValueGroup_inv {vg : ValueGroup}
+theorem checkValueGroup_inv {vg : ValueGroup md}
     (h : checkValueGroup (fueledOps μ F) env vg = .ok ()) :
     ∃ stype u,
       inferTypeCore μ env F 0 vg.cvA.type = .ok stype ∧
@@ -211,7 +211,7 @@ theorem checkValueGroup_inv {vg : ValueGroup}
     | true => exact ⟨stype, u, rfl, hsort, fun hk' => absurd hk' hk, vg.jv,
         fun hk' => absurd hk' hk, fun _ => rfl, vtype, hvt, hde⟩
 
-theorem checkValueGroup_of_facts {vg : ValueGroup} {jv stype vtype : Expr} {u : Level}
+theorem checkValueGroup_of_facts {vg : ValueGroup md} {jv stype vtype : Expr md} {u : Level}
     (hst : inferTypeCore μ env F 0 vg.cvA.type = .ok stype)
     (hsort : ensureSortCore μ env F 0 stype = .ok u)
     (hthm : vg.kind = .thm → Level.isEquiv u .zero = some true)
@@ -230,7 +230,7 @@ theorem checkValueGroup_of_facts {vg : ValueGroup} {jv stype vtype : Expr} {u : 
 
 /-! ## Fuel -/
 
-theorem installConstantVal_mono {F' : Nat} (hle : F ≤ F') {cv cvA : ConstantVal}
+theorem installConstantVal_mono {F' : Nat} (hle : F ≤ F') {cv cvA : ConstantVal md}
     (h : installConstantVal (fueledOps μ F) env cv = .ok cvA) :
     installConstantVal (fueledOps μ F') env cv = .ok cvA := by
   obtain ⟨hfind, hres, hshape, hnd, hlb, hif, type', hann, htp, htr, rfl⟩ :=
@@ -238,13 +238,13 @@ theorem installConstantVal_mono {F' : Nat} (hle : F ≤ F') {cv cvA : ConstantVa
   exact installConstantVal_of_facts hfind hres hshape hnd hlb hif
     (annotateCore_mono hle hann) htp htr
 
-theorem installValue_mono {F' : Nat} (hle : F ≤ F') {cv : ConstantVal} {value jv : Expr}
+theorem installValue_mono {F' : Nat} (hle : F ≤ F') {cv : ConstantVal md} {value jv : Expr md}
     (h : installValue (fueledOps μ F) env cv value = .ok jv) :
     installValue (fueledOps μ F') env cv value = .ok jv := by
   obtain ⟨hlb, hif, hann, hvp, hvr⟩ := installValue_inv h
   exact installValue_of_facts hlb hif (annotateCore_mono hle hann) hvp hvr
 
-theorem checkValueGroup_mono {F' : Nat} (hle : F ≤ F') {vg : ValueGroup}
+theorem checkValueGroup_mono {F' : Nat} (hle : F ≤ F') {vg : ValueGroup md}
     (h : checkValueGroup (fueledOps μ F) env vg = .ok ()) :
     checkValueGroup (fueledOps μ F') env vg = .ok () := by
   obtain ⟨stype, u, hst, hsort, hthm, jv, hiv, hjv', vtype, hvt, hde⟩ := checkValueGroup_inv h
@@ -254,7 +254,7 @@ theorem checkValueGroup_mono {F' : Nat} (hle : F ≤ F') {vg : ValueGroup}
 
 /-! ## `checkDecl` from the two halves -/
 
-theorem checkConstantVal_of_facts {cv : ConstantVal} {type' stype : Expr} {u : Level}
+theorem checkConstantVal_of_facts {cv : ConstantVal md} {type' stype : Expr md} {u : Level}
     (hfind : env.find? cv.name = none)
     (hres : reservedBasisNames.contains cv.name = false)
     (hshape : cv.name.isProjFnShape = false)
@@ -272,7 +272,7 @@ theorem checkConstantVal_of_facts {cv : ConstantVal} {type' stype : Expr} {u : L
     hshape, hnd, hlb, hif, hann, htp, htr, hst, hsort, Option.isSome_none,
     Bool.false_eq_true, ↓reduceIte]
 
-theorem checkDefnVal_of_facts {cv : ConstantVal} {value jv vtype : Expr}
+theorem checkDefnVal_of_facts {cv : ConstantVal md} {value jv vtype : Expr md}
     {hint : ReducibilityHint}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
@@ -286,7 +286,7 @@ theorem checkDefnVal_of_facts {cv : ConstantVal} {value jv vtype : Expr}
     Bind.bind, Except.bind, Pure.pure, Except.pure, hlb, hif, hann, hvp, hvr, hvt, hde,
     Bool.false_eq_true, ↓reduceIte]
 
-theorem checkThmVal_of_facts {cv : ConstantVal} {value jv vtype stype : Expr} {u : Level}
+theorem checkThmVal_of_facts {cv : ConstantVal md} {value jv vtype stype : Expr md} {u : Level}
     (hst : inferTypeCore μ env F 0 cv.type = .ok stype)
     (hsort : ensureSortCore μ env F 0 stype = .ok u)
     (heqv : Level.isEquiv u .zero = some true)
@@ -302,7 +302,7 @@ theorem checkThmVal_of_facts {cv : ConstantVal} {value jv vtype stype : Expr} {u
     fueledOps_ensureSort, liftFueled, Bind.bind, Except.bind, Pure.pure, Except.pure, hst,
     hsort, heqv, hlb, hif, hann, hvp, hvr, hvt, hde, Bool.false_eq_true, ↓reduceIte]
 
-theorem checkOpaqueVal_of_facts {cv : ConstantVal} {value jv vtype : Expr}
+theorem checkOpaqueVal_of_facts {cv : ConstantVal md} {value jv vtype : Expr md}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
@@ -316,8 +316,8 @@ theorem checkOpaqueVal_of_facts {cv : ConstantVal} {value jv vtype : Expr}
     Bool.false_eq_true, ↓reduceIte]
 
 /-- **A definition's two halves are `checkDecl`.** -/
-theorem checkDecl_of_split_defn {cv : ConstantVal} {value : Expr}
-    {hint : ReducibilityHint} {vg : ValueGroup}
+theorem checkDecl_of_split_defn {cv : ConstantVal md} {value : Expr md}
+    {hint : ReducibilityHint} {vg : ValueGroup md}
     (hnat : (natOpNames.contains cv.name || natDivModNames.contains cv.name) = false)
     (hk : vg.kind = .defn)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
@@ -341,7 +341,7 @@ theorem checkDecl_of_split_defn {cv : ConstantVal} {value : Expr}
 /-- **A theorem's two halves are `checkDecl`**: the header's install
 half, and the check half holding the RAW value (which it annotates
 itself). -/
-theorem checkDecl_of_split_thm {cv : ConstantVal} {value : Expr} {vg : ValueGroup}
+theorem checkDecl_of_split_thm {cv : ConstantVal md} {value : Expr md} {vg : ValueGroup md}
     (hk : vg.kind = .thm)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hjv : vg.jv = value)
@@ -361,7 +361,7 @@ theorem checkDecl_of_split_thm {cv : ConstantVal} {value : Expr} {vg : ValueGrou
   simp only [checkDecl, Bind.bind, Except.bind, hcc, htv]
 
 /-- **An opaque's two halves are `checkDecl`.** -/
-theorem checkDecl_of_split_opaque {cv : ConstantVal} {value : Expr} {vg : ValueGroup}
+theorem checkDecl_of_split_opaque {cv : ConstantVal md} {value : Expr md} {vg : ValueGroup md}
     (hred : reduceOpNames.contains cv.name = false)
     (hk : vg.kind = .opaque)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)

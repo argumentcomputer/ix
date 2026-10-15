@@ -121,29 +121,29 @@ def Error.ofBytes : ByteError → Error
 /-- The reader's context for decoded records under a role table and a
 prelude, as `readStream` builds it: the records' store backed by the
 prelude's records and its evidence records, and the recursor index of all. -/
-def streamContext (t : Ix.Kernel.RoleTable) (pre : Prelude)
+def streamContext (t : Ix.Kernel.RoleTable) (pre : Prelude md)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) : Ctx :=
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) : Ctx md :=
   contextOf t constants.toArray blobs (pre.records ++ pre.evidence) pre.blobs hint
 
 /-- The reading of decoded records under a role table: the prelude's state
 continues into the stream, and the prelude's records back the store. The
 result is the table's evidence resolved against the reading
 (`evidenceOf`), and the declarations. -/
-def readStream (t : Ix.Kernel.RoleTable) (pre : Prelude)
+def readStream (t : Ix.Kernel.RoleTable) (pre : Prelude md)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error (Ix.Kernel.Evidences × Array Ix.Kernel.Declaration) := do
+    Except Error (Ix.Kernel.Evidences md × Array (Ix.Kernel.Declaration md)) := do
   let cx := streamContext t pre constants blobs hint
   match readRecords cx pre.state constants.toArray with
   | .ok (st, decls) => pure (evidenceOf cx st t, decls)
   | .error (e, i) => throw (.read i e)
 
 /-- The evidence and the declarations the fold runs over, from the bytes. -/
-def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelude)
+def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelude md)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error (Ix.Kernel.Evidences × Array Ix.Kernel.Declaration) := do
+    Except Error (Ix.Kernel.Evidences md × Array (Ix.Kernel.Declaration md)) := do
   (preflight limits records blobs).mapError Error.ofBytes
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
@@ -153,10 +153,10 @@ def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelud
   pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
 /-- The entry over an explicit prelude (tests inject one). -/
-def checkBytesWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelude)
+def checkBytesWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelude md)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env := do
+    Except Error (Ix.Kernel.Env md) := do
   let (ev, decls) ← prepareWith hash binding pre limits records blobs hint
   (Ix.Kernel.Cached.checkDecls .verified ev decls).mapError
     fun (e, i) => .kernel e i
@@ -165,11 +165,11 @@ def checkBytesWith (hash : ByteArray → Address) (binding : Binding) (pre : Pre
 table is `prelude t` (`preludeFor`, the committed prelude, in `checkBytes`).
 The theorems are stated over it, so that no proof unfolds the committed
 prelude's data. -/
-def checkBytesUsing (prelude : Ix.Kernel.RoleTable → Except String Prelude)
+def checkBytesUsing (prelude : Ix.Kernel.RoleTable → Except String (Prelude md))
     (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
     (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env := do
+    Except Error (Ix.Kernel.Env md) := do
   let t ← (admitBinding hash binding).mapError .binding
   let pre ← (prelude t).mapError Error.prelude
   checkBytesWith hash binding pre limits records blobs hint
@@ -184,27 +184,27 @@ per-record decoding, behind the committed Ixon prelude read under that table.
 def checkBytes (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
     (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env :=
+    Except Error (Ix.Kernel.Env md) :=
   checkBytesUsing preludeFor hash binding limits records blobs hint
 
 /-- The verified fold over decoded records under an admitted role table: the
 reader, the prelude, the fold. `checkBytesWith` is byte admission followed by
 this (`checkBytesWith_eq`). Decoded records carry no bytes to authenticate: a
 caller that starts here vouches for its keys and its table. -/
-def checkConstantsWith (t : Ix.Kernel.RoleTable) (pre : Prelude)
+def checkConstantsWith (t : Ix.Kernel.RoleTable) (pre : Prelude md)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env := do
+    Except Error (Ix.Kernel.Env md) := do
   let (ev, decls) ← readStream t pre constants blobs hint
   (Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls)).mapError
     fun (e, i) => .kernel e i
 
 /-- `checkConstantsWith` under a role table, behind the prelude `prelude t`. -/
-def checkConstantsUsing (prelude : Ix.Kernel.RoleTable → Except String Prelude)
+def checkConstantsUsing (prelude : Ix.Kernel.RoleTable → Except String (Prelude md))
     (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env := do
+    Except Error (Ix.Kernel.Env md) := do
   let pre ← (prelude t).mapError Error.prelude
   checkConstantsWith t pre constants blobs hint
 
@@ -213,7 +213,7 @@ under it. -/
 def checkConstants (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env :=
+    Except Error (Ix.Kernel.Env md) :=
   checkConstantsUsing preludeFor t constants blobs hint
 
 /-- `checkConstants` under a role table's section: the table admitted
@@ -223,7 +223,7 @@ def checkConstants (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.
 def checkConstantsAt (hash : ByteArray → Address) (binding : Binding)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
-    Except Error Ix.Kernel.Env := do
+    Except Error (Ix.Kernel.Env md) := do
   let t ← (admitBinding hash binding).mapError .binding
   checkConstants t constants blobs hint
 

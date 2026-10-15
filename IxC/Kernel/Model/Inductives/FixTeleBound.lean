@@ -33,7 +33,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w'
 
-variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The domains' sorts along a Π-inference -/
 
@@ -42,12 +42,12 @@ omit [SetTheory V] in
 type, each binder's domain infers a sort at most the whole type's
 whenever the whole's is nonzero (`imax` is then `max`). -/
 theorem piDoms_of_infer {mode : CheckMode} :
-    ∀ (n : Nat) {F d : Nat} {e t : Expr} {v₀ : Level} {fvs : List Expr} {opened : Expr},
+    ∀ (n : Nat) {F d : Nat} {e t : Expr md} {v₀ : Level} {fvs : List (Expr md)} {opened : Expr md},
       Ix.Kernel.openPisAtFvars n e d = some (fvs, opened) →
       Ix.Kernel.inferTypeCore mode env F d e = .ok t →
       Ix.Kernel.ensureSortCore mode env F d t = .ok v₀ →
-      ∀ (k : Nat) (a : Expr), fvs[k]? = some a →
-        ∃ (F' : Nat) (t' : Expr) (u : Level),
+      ∀ (k : Nat) (a : Expr md), fvs[k]? = some a →
+        ∃ (F' : Nat) (t' : Expr md) (u : Level),
           Ix.Kernel.inferTypeCore mode env F' (d + k) a.fvarTypeD = .ok t' ∧
           Ix.Kernel.ensureSortCore mode env F' (d + k) t' = .ok u ∧
           ∀ φ, Level.eval φ v₀ ≠ 0 → Level.eval φ u ≤ Level.eval φ v₀
@@ -101,14 +101,14 @@ graded and lies in `univ w` — the sort claim at the context opened by
 the earlier binders. -/
 theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
     {w : Nat} :
-    ∀ (n : Nat) {d : Nat} {e : Expr} {fvs : List Expr} {o : Expr} {Δ : List AnnotTerm}
+    ∀ (n : Nat) {d : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md} {Δ : List AnnotTerm}
       {tl : List (Nat × Nat × AnnotTerm)},
       Ix.Kernel.openPisAtFvars n e d = some (fvs, o) → tl.length = n →
       CtxOk mp.base2 ψ d Δ e → Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       (∀ k a, fvs[k]? = some a →
         denoteMeta mp.base2.acval env ψ (d + k) a.fvarTypeD = some (tl.getD k default).2.2) →
-      (∀ k a, fvs[k]? = some a → ∃ (F : Nat) (t : Expr) (u : Level),
+      (∀ k a, fvs[k]? = some a → ∃ (F : Nat) (t : Expr md) (u : Level),
         Ix.Kernel.inferTypeCore μ env F (d + k) a.fvarTypeD = .ok t ∧
         Ix.Kernel.ensureSortCore μ env F (d + k) t = .ok u ∧ Level.eval ψ u ≤ w) →
       ∀ k, k < n → ∀ ρ : Nat → V, Sat V (((tl.take k).map (·.2.2)).reverse ++ Δ) ρ →
@@ -159,7 +159,7 @@ theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
             intro k a hk
             have := hread (k + 1) a (by simpa using hk)
             rwa [show d + (k + 1) = d + 1 + k from by omega] at this
-          have hinf' : ∀ k a, fvs'[k]? = some a → ∃ (F : Nat) (t : Expr) (u : Level),
+          have hinf' : ∀ k a, fvs'[k]? = some a → ∃ (F : Nat) (t : Expr md) (u : Level),
               Ix.Kernel.inferTypeCore μ env F (d + 1 + k) a.fvarTypeD = .ok t ∧
               Ix.Kernel.ensureSortCore μ env F (d + 1 + k) t = .ok u ∧ Level.eval ψ u ≤ w := by
             intro k a hk
@@ -185,15 +185,15 @@ next domain's reading lies in `univ w`.  The install's field-sort
 check bounds the field's Π-type's sort by the block's, hence (the
 family's sort being nonzero) every domain's. -/
 theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env}
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
-    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
     {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
@@ -299,7 +299,7 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
     have h2 := hD.tssBits ψ i d0 hmem
     exact hw (h2.mp (h1.mpr hvb))
   -- the domains' sorts
-  have hinfD : ∀ k a, afvs[k]? = some a → ∃ (F : Nat) (t : Expr) (u' : Level),
+  have hinfD : ∀ k a, afvs[k]? = some a → ∃ (F : Nat) (t : Expr md) (u' : Level),
       Ix.Kernel.inferTypeCore μ env F (nP + i + k) a.fvarTypeD = .ok t ∧
       Ix.Kernel.ensureSortCore μ env F (nP + i + k) t = .ok u' ∧ Level.eval ψ u' ≤ resSort.eval ψ := by
     intro k a hka

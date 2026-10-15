@@ -84,13 +84,13 @@ open Ix.Kernel
 declares them (`IxC/Kernel/Frontend/Prelude.lean`).  Dependency-correct
 by construction — it is an export of the toolchain's own environment —
 which is what makes it usable as the front of every prepared stream. -/
-structure PreludeIx where
-  decls : Array Declaration := #[]
+structure PreludeIx (md : Mode) where
+  decls : Array (Declaration md) := #[]
 
 /-- The name a prelude record is looked up by: the block's type former,
 the quotient constant, the axiom.  (`Declaration.names` lists every
 name a record declares; the first is the record's own handle.) -/
-def preludeKey (d : Declaration) : Option Key := d.names.head?
+def preludeKey (d : Declaration md) : Option (Key md) := d.names.head?
 
 /-! ## Pulling the stream's own copy out
 
@@ -107,10 +107,10 @@ does not declare it, nothing is erased".
 -/
 
 /-- The name-test a record is picked by (no record declares no name). -/
-def declares (n : Option Key) (d : Declaration) : Bool := n.any d.names.contains
+def declares (n : Option (Key md)) (d : Declaration md) : Bool := n.any d.names.contains
 
 /-- The first record declaring `n`, and the list without it. -/
-def pickSpec (n : Option Key) : List Declaration → Option Declaration × List Declaration
+def pickSpec (n : Option (Key md)) : List (Declaration md) → Option (Declaration md) × List (Declaration md)
   | [] => (none, [])
   | d :: ds =>
     if declares n d then (some d, ds)
@@ -119,7 +119,7 @@ def pickSpec (n : Option Key) : List Declaration → Option Declaration × List 
       (m, d :: ds')
 
 /-- `pickSpec` on the parse's array. -/
-def pick (n : Option Key) (ds : Array Declaration) : Option Declaration × Array Declaration :=
+def pick (n : Option (Key md)) (ds : Array (Declaration md)) : Option (Declaration md) × Array (Declaration md) :=
   let i := ds.findIdx (declares n)
   (ds[i]?, ds.eraseIdxIfInBounds i)
 
@@ -127,8 +127,8 @@ def pick (n : Option Key) (ds : Array Declaration) : Option Declaration × Array
 one the stream's own copy where the stream has one — and the rest of
 the stream, in the stream's order.  The front is pushed onto an
 accumulator, the rest is the stream with the picked records erased. -/
-def frontOf (acc : Array Declaration) :
-    List Declaration → Array Declaration → Array Declaration × Array Declaration
+def frontOf (acc : Array (Declaration md)) :
+    List (Declaration md) → Array (Declaration md) → Array (Declaration md) × Array (Declaration md)
   | [], ds => (acc, ds)
   | p :: ps, ds =>
     let (m, ds') := pick (preludeKey p) ds
@@ -136,7 +136,7 @@ def frontOf (acc : Array Declaration) :
 
 /-- `frontOf` over `pickSpec`: the specification the lemmas are stated
 over. -/
-def frontSpec : List Declaration → List Declaration → List Declaration × List Declaration
+def frontSpec : List (Declaration md) → List (Declaration md) → List (Declaration md) × List (Declaration md)
   | [], ds => ([], ds)
   | p :: ps, ds =>
     let (m, ds') := pickSpec (preludeKey p) ds
@@ -146,18 +146,18 @@ def frontSpec : List Declaration → List Declaration → List Declaration × Li
 /-! ## The prepared stream -/
 
 /-- The prepared stream and the driver's receipts. -/
-structure Prepared where
+structure Prepared (md : Mode) where
   /-- the prelude's declarations, then the rest of the stream -/
-  decls : Array Declaration
+  decls : Array (Declaration md)
   /-- how many prelude records the stream did not declare and this step
   synthesised -/
   synthesised : Nat := 0
   /-- the records moved ahead of a pinned `Nat` operation they ground
   (names, for the driver's receipt) -/
-  hoisted : Array Key := #[]
+  hoisted : Array (Key md) := #[]
 
 /-- **`preparePrelude`, with its receipts.** -/
-def prepareD (pre : PreludeIx) (ds : Array Declaration) : Prepared :=
+def prepareD (pre : PreludeIx md) (ds : Array (Declaration md)) : Prepared md :=
   let (front, rest) := frontOf #[] pre.decls.toList ds
   let (decls, hoisted) := hoistNatOpGround (front ++ rest)
   ⟨decls, decls.size - ds.size, hoisted⟩
@@ -168,7 +168,7 @@ them), the rest of the stream after them, every pinned `Nat`
 operation's stream-certified ground ahead of it.  Total, pure, and the
 fold's input — an array in and an array out, the shape the parse
 returns and the fold consumes. -/
-def preparePrelude (pre : PreludeIx) (ds : Array Declaration) : Array Declaration :=
+def preparePrelude (pre : PreludeIx md) (ds : Array (Declaration md)) : Array (Declaration md) :=
   (prepareD pre ds).decls
 
 end Ix.Kernel.Frontend

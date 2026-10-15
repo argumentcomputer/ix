@@ -30,15 +30,15 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel.Expr
 
-theorem instantiateList_nil : ∀ (e : Expr) (d : Nat),
+theorem instantiateList_nil : ∀ (e : Expr md) (d : Nat),
     e.instantiateList [] d = e := by
   intro e
   induction e <;> intro d <;> simp [instantiateList, *] <;> omega
 
 /-- Bulk instantiation at or above the loose-bvar bound is the
 identity (task #72's scope shortcut). -/
-theorem instantiateList_eq_self {vs : List Expr} :
-    ∀ {e : Expr} {d : Nat}, looseBVarsBounded d e = true →
+theorem instantiateList_eq_self {vs : List (Expr md)} :
+    ∀ {e : Expr md} {d : Nat}, looseBVarsBounded d e = true →
       e.instantiateList vs d = e := by
   intro e
   induction e with
@@ -52,7 +52,7 @@ theorem instantiateList_eq_self {vs : List Expr} :
     simp_all [looseBVarsBounded, instantiateList, Bool.and_eq_true]
 
 theorem instantiateList_cons :
-    ∀ (vs : List Expr) (e : Expr) (v : Expr) (d : Nat),
+    ∀ (vs : List (Expr md)) (e : Expr md) (v : Expr md) (d : Nat),
       e.instantiateList (v :: vs) d
         = (e.instantiateList vs (d + 1)).instantiate1 v d
   | vs, .bvar j, v, d => by
@@ -117,7 +117,7 @@ decreasing_by
     | (apply Prod.Lex.right; simp; omega)
 
 theorem instantiateList_append_one :
-    ∀ (vs : List Expr) (e v : Expr) (d : Nat),
+    ∀ (vs : List (Expr md)) (e v : Expr md) (d : Nat),
       e.instantiateList (vs ++ [v]) d
         = (e.instantiate1 v (d + vs.length)).instantiateList vs d
   | [], e, v, d => by
@@ -130,7 +130,7 @@ theorem instantiateList_append_one :
     omega
 
 theorem instSpine_eq_instantiateList :
-    ∀ (as : List Expr) (t : Nat) (e : Expr), as.length = t + 1 →
+    ∀ (as : List (Expr md)) (t : Nat) (e : Expr md), as.length = t + 1 →
       Expr.instSpine as t e = e.instantiateList as.reverse 0
   | a :: as, t, e, hlen => by
     rw [instSpine]

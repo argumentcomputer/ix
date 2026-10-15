@@ -60,7 +60,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The Empty pin, at the core carrier -/
 
@@ -73,7 +73,7 @@ The premise is stated in exactly the shape the census's §1.5 P-native
 carrier field takes (`∀ ψ, ∃ u, cvalE emptyName ψ = emptyT u`), so S7
 discharges it by projection when the field lands; until then the fold
 layer supplies it from its v1 residue. -/
-theorem acval_empty_pinnedC (m : EnvModel V env) {n : Key}
+theorem acval_empty_pinnedC (m : EnvModel V env) {n : Key md}
     (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
     (ψ : LevelParam → Nat) :
     ∃ u, m.acval n ψ = .const .empty [u] := by
@@ -83,7 +83,7 @@ theorem acval_empty_pinnedC (m : EnvModel V env) {n : Key}
 /-- …so its `interp` reading is the empty set, at every
 assignment.  Stated at any name whose leaf is an `emptyT` pin (task
 #181): `Empty`'s is `emptyT 1`, `False`'s is `emptyT 0`. -/
-theorem interp_acval_emptyC (m : EnvModel V env) {n : Key}
+theorem interp_acval_emptyC (m : EnvModel V env) {n : Key md}
     (hpin : ∀ ψ : LevelParam → Nat, ∃ u, m.cvalE n ψ = emptyT u)
     (ψ : LevelParam → Nat) (ρ : Nat → V) :
     interp V ρ (m.acval n ψ) = SetTheory.empty := by
@@ -98,11 +98,11 @@ a reserved constant whose direct pin is `emptyT u` — the membership is
 the leaf by the constant clause, and the leaf's `interp` value is the
 empty set by erasure injectivity plus `basis_pinnedL`.  The `Empty` and
 `False` capstones are its two instances. -/
-theorem no_constant_of_emptyPin (mp : EnvModelM V μ env) {n : Key} {u : Nat}
+theorem no_constant_of_emptyPin (mp : EnvModelM V μ env) {n : Key md} {u : Nat}
     (hres : Ix.Kernel.reservedBasisNames.contains n = true)
     (hpin : ∀ ψ : LevelParam → Nat,
       Ix.Kernel.Verify.pinnedStructT n ψ = some (emptyT u))
-    (c : ConstantInfo) (hc : c ∈ env.consts)
+    (c : ConstantInfo md) (hc : c ∈ env.consts)
     (hty : c.toConstantVal.type = .const n []) : False := by
   obtain ⟨ta, hta0⟩ := mp.type_reads c hc (fun _ => 0)
   have hta := hta0
@@ -133,14 +133,14 @@ invariant stores no constant of type `Empty` — the membership read
 entirely at the validated-annotation tier (`mem_type` over
 `denoteMeta`/`interp`). -/
 theorem no_constant_of_Empty (mp : EnvModelM V μ env)
-    (c : ConstantInfo) (hc : c ∈ env.consts)
+    (c : ConstantInfo md) (hc : c ∈ env.consts)
     (hty : c.toConstantVal.type = .const emptyName []) : False :=
   -- **the pin, discharged by the carrier itself** (task #161 S7):
   -- `Empty` is stored, so `basis_pinnedL` — the core's own field since
   -- S3 — gives the leaf its direct pin.  This is the S3 seal's
   -- prediction cashed: the premise dies with `EnvModelM.base`, it is
   -- not replaced.
-  no_constant_of_emptyPin mp (u := 1) (by decide)
+  no_constant_of_emptyPin mp (u := 1) (by (cases md <;> decide))
     (fun ψ => by simp +decide [Ix.Kernel.Verify.pinnedStructT, Ix.Kernel.Term.emptyT])
     c hc hty
 
@@ -149,9 +149,9 @@ environment carrying the P invariant stores no constant of type
 `False` — the pinned `False` block's leaf is `emptyT 0`, the empty set
 at `Prop`. -/
 theorem no_constant_of_False (mp : EnvModelM V μ env)
-    (c : ConstantInfo) (hc : c ∈ env.consts)
+    (c : ConstantInfo md) (hc : c ∈ env.consts)
     (hty : c.toConstantVal.type = .const falseName []) : False :=
-  no_constant_of_emptyPin mp (u := 0) (by decide)
+  no_constant_of_emptyPin mp (u := 0) (by (cases md <;> decide))
     (fun ψ => by simp +decide [Ix.Kernel.Verify.pinnedStructT, Ix.Kernel.Term.emptyT])
     c hc hty
 

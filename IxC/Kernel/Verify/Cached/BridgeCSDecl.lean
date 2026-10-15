@@ -43,37 +43,37 @@ set_option linter.unusedSimpArgs false
 namespace Ix.Kernel.Cached
 
 theorem throwC_bind_eq {α β : Type} (e : CheckError)
-    (f : α → CheckCM β) : ((throw e : CheckCM α) >>= f) = throw e := rfl
+    (f : α → (CheckCM md) β) : ((throw e : (CheckCM md) α) >>= f) = throw e := rfl
 
 
 open Ix.Kernel
 
 variable {mode : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-! ## `CheckCM` peels (the `CheckIM` helpers of
 `IxC/Kernel/Verify/CheckerF.lean` at the cached monad) -/
 
-theorem bindC_congr {α β : Type} {x : CheckCM α} {f g : α → CheckCM β}
+theorem bindC_congr {α β : Type} {x : (CheckCM md) α} {f g : α → (CheckCM md) β}
     (h : ∀ a, f a = g a) : x >>= f = x >>= g := by
   rw [funext h]
 
 theorem ite_bindC {α β : Type} (c : Prop) [Decidable c]
-    (a b : CheckCM α) (f : α → CheckCM β) :
+    (a b : (CheckCM md) α) (f : α → (CheckCM md) β) :
     ((if c then a else b) >>= f)
       = if c then a >>= f else b >>= f := by
   split <;> rfl
 
-theorem installBasisDeclF_pushC (env : Env) (ci : ConstantInfo) :
-    (installBasisDeclF (mkFEnv env) ci : CheckCM FEnv)
+theorem installBasisDeclF_pushC (env : Env md) (ci : ConstantInfo md) :
+    (installBasisDeclF (mkFEnv env) ci : (CheckCM md) (FEnv md))
       = installBasisDecl env ci >>= fun e => pure (mkFEnv e) := by
   unfold installBasisDeclF installBasisDecl
   simp only [mkFEnv_find?, push_mkFEnv, pure_bind, ite_bindC,
     throwC_bind_eq] <;> rfl
 
 theorem installBasisFoldF_pushC :
-    ∀ (l : List ConstantInfo) (env : Env),
-      (l.foldlM installBasisDeclF (mkFEnv env) : CheckCM FEnv)
+    ∀ (l : List (ConstantInfo md)) (env : Env md),
+      (l.foldlM installBasisDeclF (mkFEnv env) : (CheckCM md) (FEnv md))
         = l.foldlM installBasisDecl env >>= fun e => pure (mkFEnv e)
   | [], env => by
     simp only [List.foldlM_nil, pure_bind]
@@ -89,8 +89,8 @@ W4c: the cached run bridge restored) -/
 /-- The former's telescope stage through the index (task #195): the
 whnf loop reads the index's environment, the re-check is the indexed
 `checkConstantValF`. -/
-theorem checkSumTeleF_pushC (ops : CheckerOps CheckCM) (env : Env)
-    (cv : ConstantVal) (n : Nat) (cvTa₀ : ConstantVal) :
+theorem checkSumTeleF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
+    (cv : ConstantVal md) (n : Nat) (cvTa₀ : ConstantVal md) :
     checkSumTeleF ops (mkFEnv env) cv n cvTa₀
       = checkSumTele ops env cv n cvTa₀ := by
   unfold checkSumTeleF checkSumTele
@@ -102,8 +102,8 @@ theorem checkSumTeleF_pushC (ops : CheckerOps CheckCM) (env : Env)
 
 /-- The direct sum's type-former stage through the index (task #175
 sum-types). -/
-theorem checkSumIndF_pushC (ops : CheckerOps CheckCM) (env : Env)
-    (p : InductiveShape) (capsOf : InductiveShape → IndCaps) :
+theorem checkSumIndF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
+    (p : InductiveShape md) (capsOf : InductiveShape md → IndCaps md) :
     checkSumIndF ops (mkFEnv env) p capsOf
       = checkSumInd ops env p capsOf
           >>= fun q => pure (mkFEnv q.1, q.2) := by
@@ -112,11 +112,11 @@ theorem checkSumIndF_pushC (ops : CheckerOps CheckCM) (env : Env)
     pure_bind, ite_bindC, throwC_bind_eq] <;> rfl
 
 /-- The projection table through the index (task #175 S1). -/
-theorem checkStructProjTableF_pushC (T C : Key) (lps : List LevelParam)
-    (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal)
-    (env : Env) :
-    checkStructProjTableF (m := CheckCM) .plain T C lps nP nF rs guards off cvCa (mkFEnv env)
-      = checkStructProjTable (m := CheckCM) T C lps nP nF rs guards off cvCa env
+theorem checkStructProjTableF_pushC (T C : Key md) (lps : List LevelParam)
+    (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md)
+    (env : Env md) :
+    checkStructProjTableF (m := CheckCM md) .plain T C lps nP nF rs guards off cvCa (mkFEnv env)
+      = checkStructProjTable (m := CheckCM md) T C lps nP nF rs guards off cvCa env
           >>= fun e => pure (mkFEnv e) := by
   unfold checkStructProjTableF checkStructProjTable
   simp only [StructWalkers.plain, constsResolveF_eq, mkFEnv_find?, push_mkFEnv, bind_assoc,
@@ -131,14 +131,14 @@ projection route) -/
 /-- The projection-table stage of the cached driver, run-level (task
 #175 S1): operation-free, the state is unchanged, the environment is
 the pure stage's. -/
-theorem checkStructProjTableS_run {T C : Key} {lps : List LevelParam} {nP nF : Nat}
-    {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal}
-    (env : Env) {s₀ : CState} {fe' : FEnv} {s' : CState}
+theorem checkStructProjTableS_run {T C : Key md} {lps : List LevelParam} {nP nF : Nat}
+    {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
+    (env : Env md) {s₀ : CState md} {fe' : FEnv md} {s' : CState md}
     (henv : EnvWF env) (hwf : CSOKF s₀)
-    (h : checkStructProjTableF (m := CheckCM) .plain T C lps nP nF rs guards off cvCa
+    (h : checkStructProjTableF (m := CheckCM md) .plain T C lps nP nF rs guards off cvCa
       (mkFEnv env) s₀ = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧ EnvWF fe'.env ∧
-    ∃ F, (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM Env).val F
+    ∃ F, (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM (Env md)).val F
       = .ok fe'.env := by
   rw [checkStructProjTableF_pushC] at h
   obtain ⟨e₁, s₁, hstep, h⟩ := bindC_ok h
@@ -180,10 +180,10 @@ theorem checkStructProjTableS_run {T C : Key} {lps : List LevelParam} {nP nF : N
 driver, run-level (task #210 Part A): at a structure-like block the
 direct structure's table stage (`checkStructProjTableS_run`), else the
 environment unchanged. -/
-theorem checkNativeTableS_run {p : NativeParts} {ctorsA : List (ConstantVal × Nat)}
-    {sortss : List (List Level)} (env : Env) {s₀ : CState} {fe' : FEnv} {s' : CState}
+theorem checkNativeTableS_run {p : NativeParts md} {ctorsA : List (ConstantVal md × Nat)}
+    {sortss : List (List Level)} (env : Env md) {s₀ : CState md} {fe' : FEnv md} {s' : CState md}
     (henv : EnvWF env) (hwf : CSOKF s₀)
-    (h : checkNativeTableF (m := CheckCM) .plain p ctorsA sortss (mkFEnv env) s₀
+    (h : checkNativeTableF (m := CheckCM md) .plain p ctorsA sortss (mkFEnv env) s₀
       = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧ EnvWF fe'.env ∧
     ∃ F, (checkNativeTable (m := FueledM) p ctorsA sortss env).val F = .ok fe'.env := by
@@ -220,10 +220,10 @@ set_option maxHeartbeats 1600000 in
 /-- The kinds' classification is operation-free: in the cached monad it
 leaves the state alone and computes what the pure one does (task #210
 Part D). -/
-theorem classifyFixKindsC_ok {T : Key} {lps : List LevelParam} {nP nIdx : Nat}
-    {ctorsA : List (ConstantVal × Nat)} {s₀ s' : CState}
+theorem classifyFixKindsC_ok {T : Key md} {lps : List LevelParam} {nP nIdx : Nat}
+    {ctorsA : List (ConstantVal md × Nat)} {s₀ s' : CState md}
     {kinds : List (List RecFieldKind)}
-    (h : classifyFixKinds (m := CheckCM) T lps nP nIdx ctorsA s₀ = .ok (kinds, s')) :
+    (h : classifyFixKinds (m := CheckCM md) T lps nP nIdx ctorsA s₀ = .ok (kinds, s')) :
     s' = s₀ ∧ classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA = .ok kinds := by
   unfold classifyFixKinds at h ⊢
   obtain ⟨ks, s₁, hu, h⟩ := bindC_ok h
@@ -248,11 +248,11 @@ theorem classifyFixKindsC_ok {T : Key} {lps : List LevelParam} {nP nIdx : Nat}
 pure fueled `checkNativePass`: the former's environment is the index
 over the pure one, the memo state is sound at it, and the
 constructors' conses onto it are well-formed. -/
-theorem checkNativePassS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {p₀ : NativeParts} {isRec : Bool} {s₀ : CState} (hs : CSOK mode env s₀)
-    {q : NativePass FEnv} {b : Bool} {s' : CState}
+theorem checkNativePassS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {p₀ : NativeParts md} {isRec : Bool} {s₀ : CState md} (hs : CSOK mode env s₀)
+    {q : (NativePass md) (FEnv md)} {b : Bool} {s' : CState md}
     (h : checkNativePassS mode (mkFEnv env) p₀ isRec s₀ = .ok ((q, b), s')) :
-    ∃ env₁ : Env, q.env₁ = mkFEnv env₁ ∧ CSOK mode env₁ s' ∧ EnvWF env₁ ∧
+    ∃ env₁ : Env md, q.env₁ = mkFEnv env₁ ∧ CSOK mode env₁ s' ∧ EnvWF env₁ ∧
       q.cvTa.type.hasFvar = false ∧ EnvWF (consSumCtors q.p.nP q.ctorsA env₁) ∧
       ∃ F, (checkNativePass (fueledOpsM mode) env p₀ isRec).val F
         = .ok (⟨env₁, q.cvTa, q.p, q.ctorsA, q.sortss⟩, b) := by
@@ -326,11 +326,11 @@ theorem checkNativePassS_run (hμ : mode.verifiedChecks = true) {env : Env} (hen
 
 /-- The install after the pass at the cached driver is reproduced by
 the pure fueled `checkNativeTail`. -/
-theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : Env}
-    (henv₁ : EnvWF env₁) {cvTa : ConstantVal} {p : NativeParts}
-    {ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)}
+theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : Env md}
+    (henv₁ : EnvWF env₁) {cvTa : ConstantVal md} {p : NativeParts md}
+    {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     (hTf : cvTa.type.hasFvar = false) (henv₂ : EnvWF (consSumCtors p.nP ctorsA env₁))
-    {s₀ : CState} (hs : CSOK mode env₁ s₀) {feOut : FEnv} {s' : CState}
+    {s₀ : CState md} (hs : CSOK mode env₁ s₀) {feOut : FEnv md} {s' : CState md}
     (h : checkNativeTailS mode (mkFEnv env) ⟨mkFEnv env₁, cvTa, p, ctorsA, sortss⟩ s₀
       = .ok (feOut, s')) :
     CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
@@ -354,7 +354,7 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
   have hTw : Expr.WScoped 0 cvTa.type := Expr.WScoped.of_not_hasFvar hTf
   obtain ⟨htqW, -⟩ := openPisAtFvars_WScoped _ _ _ htq hTw
   have hidxT := openPisAtFvars_index _ _ _ htq
-  have hxPos : ∀ (i : Nat) (x : Expr), (tq.1.drop p.nP)[i]? = some x →
+  have hxPos : ∀ (i : Nat) (x : Expr md), (tq.1.drop p.nP)[i]? = some x →
       Expr.WScoped (p.nP + i) (Expr.fvarTypeD x) := by
     intro i x hx
     rw [List.getElem?_drop] at hx
@@ -430,9 +430,9 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
 the pure fueled `checkNative` (task #188): the pass at the syntactic
 reading, again at the classified verdict where it overshot (task
 #268), and the install after the settled one. -/
-theorem checkNativeS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {p₀ : NativeParts} {s₀ : CState} (hwf : CSOKF s₀)
-    {feOut : FEnv} {s' : CState}
+theorem checkNativeS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {p₀ : NativeParts md} {s₀ : CState md} (hwf : CSOKF s₀)
+    {feOut : FEnv md} {s' : CState md}
     (h : checkNativeS mode (mkFEnv env) p₀ s₀ = .ok (feOut, s')) :
     CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
     ∃ F, checkNative (fueledOps mode F) env p₀ = .ok feOut.env := by
@@ -514,9 +514,9 @@ theorem checkNativeS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
 
 /-- The inductive block at the cached driver is reproduced by the
 pure fueled `checkModeled`. -/
-theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {block : List ConstantInfo} {s₀ : CState} (hwf : CSOKF s₀)
-    {feOut : FEnv} {s' : CState}
+theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {block : List (ConstantInfo md)} {s₀ : CState md} (hwf : CSOKF s₀)
+    {feOut : FEnv md} {s' : CState md}
     (h : checkIndDeclSF mode (mkFEnv env) block s₀ = .ok (feOut, s')) :
     CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
     ∃ F, checkModeled mode (fueledOps mode F) env block = .ok feOut.env := by
@@ -592,11 +592,11 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
       case isTrue hgs =>
       split
       next cvT' c0' cvC' nP' nF' heq1' heq2' =>
-        have h12 : ([(.indInfo cvT c0 : ConstantInfo)]) =
-            [(.indInfo cvT' c0' : ConstantInfo)] :=
+        have h12 : ([(.indInfo cvT c0 : ConstantInfo md)]) =
+            [(.indInfo cvT' c0' : ConstantInfo md)] :=
           heq1.symm.trans heq1'
-        have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo)]) =
-            [(.ctorInfo cvC' nP' nF' : ConstantInfo)] :=
+        have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo md)]) =
+            [(.ctorInfo cvC' nP' nF' : ConstantInfo md)] :=
           heq2.symm.trans heq2'
         simp only [List.cons.injEq, and_true,
           ConstantInfo.indInfo.injEq, ConstantInfo.ctorInfo.injEq]
@@ -609,14 +609,14 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
         next err herr => exact nomatch (hF₁p'.symm.trans herr)
         next v hok =>
         obtain rfl : fe₂.env = v := by
-          have hv : (Except.ok fe₂.env : Except CheckError Env) = .ok v :=
+          have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
             hF₁p'.symm.trans hok
           injection hv
         split
         next err herr => exact nomatch (hF₂p.symm.trans herr)
         next v hok =>
         obtain rfl : fe₃.env = v := by
-          have hv : (Except.ok fe₃.env : Except CheckError Env) = .ok v :=
+          have hv : (Except.ok fe₃.env : Except CheckError (Env md)) = .ok v :=
             hF₂p.symm.trans hok
           injection hv
         rw [if_pos hctorRes, if_pos hguard, if_neg hsl]
@@ -650,11 +650,11 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
     case isTrue hgs =>
     split
     next cvT' c0' cvC' nP' nF' heq1' heq2' =>
-      have h12 : ([(.indInfo cvT c0 : ConstantInfo)]) =
-          [(.indInfo cvT' c0' : ConstantInfo)] :=
+      have h12 : ([(.indInfo cvT c0 : ConstantInfo md)]) =
+          [(.indInfo cvT' c0' : ConstantInfo md)] :=
         heq1.symm.trans heq1'
-      have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo)]) =
-          [(.ctorInfo cvC' nP' nF' : ConstantInfo)] :=
+      have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo md)]) =
+          [(.ctorInfo cvC' nP' nF' : ConstantInfo md)] :=
         heq2.symm.trans heq2'
       simp only [List.cons.injEq, and_true,
         ConstantInfo.indInfo.injEq, ConstantInfo.ctorInfo.injEq]
@@ -667,14 +667,14 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
       next err herr => exact nomatch (hF₁p'.symm.trans herr)
       next v hok =>
       obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except CheckError Env) = .ok v :=
+        have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
           hF₁p'.symm.trans hok
         injection hv
       split
       next err herr => exact nomatch (hF₂p.symm.trans herr)
       next v hok =>
       obtain rfl : fe₃.env = v := by
-        have hv : (Except.ok fe₃.env : Except CheckError Env) = .ok v :=
+        have hv : (Except.ok fe₃.env : Except CheckError (Env md)) = .ok v :=
           hF₂p.symm.trans hok
         injection hv
       rw [if_pos hctorRes, if_pos hguard, if_pos hsl]
@@ -686,7 +686,7 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
     obtain ⟨fe₂, s₂, hfold, h⟩ := bindC_ok h
     obtain ⟨hwf₂, hfe₂, henv₂, F₁, hF₁⟩ :=
       foldIndMemberS_run hμ _ env henv hwf
-        (fun _ _ _ _ _ => ⟨(fun h => absurd h (by decide)), (fun h => absurd h (by decide))⟩) hfold
+        (fun _ _ _ _ _ => ⟨(fun h => absurd h (by (cases md <;> decide))), (fun h => absurd h (by (cases md <;> decide)))⟩) hfold
     rw [hfe₂] at h
     obtain ⟨hwf₃, hfe₃, henv₃, F₂, hF₂⟩ :=
       checkIndRecsS_run hμ henv₂ hbnAll hwf₂ h
@@ -711,7 +711,7 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
       next err herr => exact nomatch (hF₁p'.symm.trans herr)
       next v hok =>
       obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except CheckError Env) = .ok v :=
+        have hv : (Except.ok fe₂.env : Except CheckError (Env md)) = .ok v :=
           hF₁p'.symm.trans hok
         injection hv
       exact hF₂p
@@ -719,11 +719,11 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv 
 /-- The inductive-block dispatch of the cached driver: a RECOGNISED
 block goes to `checkNativeS`, everything else to `checkIndDeclSF`,
 and either way the pure fueled `checkDecl` reproduces the run. -/
-theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {block : List ConstantInfo} {nP : Nat} (hpin : basisPinHit block = none)
+theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {block : List (ConstantInfo md)} {nP : Nat} (hpin : basisPinHit block = none)
     (hok : indParamsOk nP block = true)
-    {s₀ : CState} (hwf : CSOKF s₀)
-    {feOut : FEnv} {s' : CState}
+    {s₀ : CState md} (hwf : CSOKF s₀)
+    {feOut : FEnv md} {s' : CState md}
     (h : (match nativeParts? nP block with
           | some p => checkNativeS mode (mkFEnv env) p
           | none => checkIndDeclSF mode (mkFEnv env) block) s₀ =

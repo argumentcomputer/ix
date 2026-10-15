@@ -119,7 +119,7 @@ open Ix.Kernel.Term
 declarative type theory — level-polymorphically, each constant being a
 function of the level-parameter assignment.  The exact transpose of
 `Ix.Kernel.ConstVal V = Name → (LevelParam → Nat) → V`. -/
-abbrev TConstVal := Key → (LevelParam → Nat) → Term
+abbrev TConstVal (md : Mode) := Key md → (LevelParam → Nat) → Term
 
 /-- The term of a `Nat` literal: the `Nat.succ` valuation iterated on
 the `Nat.zero` valuation.  Transpose of `natLitVal`.
@@ -144,7 +144,7 @@ Transpose of `charListVal`. -/
 /-- The stored level-parameter list of a constant (`[]` when absent).
 Transpose of `Ix.Kernel.Env.levelParamsAt`; restated here because
 `IxC/Kernel/TTVerify/*` does not import the set model. -/
-@[expose] def levelParamsAt (env : Env) (n : Key) : List LevelParam :=
+@[expose] def levelParamsAt (env : Env md) (n : Key md) : List LevelParam :=
   match env.find? n with
   | some ci => ci.toConstantVal.levelParams
   | none => []
@@ -153,7 +153,7 @@ Transpose of `Ix.Kernel.Env.levelParamsAt`; restated here because
 form (`strLitToConstructor`), written out — each constant valued
 exactly as the `.const` clause values it on that form.  Transpose of
 `strLitVal`. -/
-@[expose] def strLitT (cval : TConstVal) (env : Env) (φ : LevelParam → Nat) (s : String) :
+@[expose] def strLitT (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat) (s : String) :
     Term :=
   .app (cval stringOfListName (Level.substFn φ [] []))
     (charListT
@@ -180,8 +180,8 @@ tier's carriers.  Depends only on the index. -/
 assignment `φ` and binder depth `d`.  See the module docstring, in
 particular for the absent free-variable valuation, for `letE`, and for
 the `.proj` clause. -/
-@[expose] def denote (cval : TConstVal) (env : Env) (φ : LevelParam → Nat) :
-    (d : Nat) → Expr → Option Term
+@[expose] def denote (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat) :
+    (d : Nat) → Expr md → Option Term
   | _, .sort u => some (.sort (u.eval φ))
   | d, .fvar idx _ => some (.bvar (d - 1 - idx))
   | _, .const n us =>
@@ -242,8 +242,8 @@ decreasing_by
 
 /-- Denotation of a closed expression (as they appear in declarations).
 Transpose of `interpClosed`. -/
-@[expose] def denoteClosed (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (e : Expr) : Option Term :=
+@[expose] def denoteClosed (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (e : Expr md) : Option Term :=
   denote cval env φ 0 e
 
 /-! ## Clause equations
@@ -252,18 +252,18 @@ Transpose of `interpClosed`. -/
 `interpExpr`), so its clauses are not definitional; these are the
 rewrite rules every consumer uses. -/
 
-@[simp] theorem denote_sort (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
+@[simp] theorem denote_sort (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
     (d : Nat) (u : Level) :
     denote cval env φ d (.sort u) = some (.sort (u.eval φ)) := by
   rw [denote]
 
-@[simp] theorem denote_fvar (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d idx : Nat) (ty : Expr) :
+@[simp] theorem denote_fvar (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d idx : Nat) (ty : Expr md) :
     denote cval env φ d (.fvar idx ty) = some (.bvar (d - 1 - idx)) := by
   rw [denote]
 
-theorem denote_const (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (n : Key) (us : List Level) :
+theorem denote_const (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (n : Key md) (us : List Level) :
     denote cval env φ d (.const n us) =
       match env.find? n with
       | some ci =>
@@ -273,16 +273,16 @@ theorem denote_const (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
       | none => none := by
   rw [denote]
 
-theorem denote_app (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (f a : Expr) :
+theorem denote_app (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (f a : Expr md) :
     denote cval env φ d (.app f a) =
       match denote cval env φ d f, denote cval env φ d a with
       | some vf, some va => some (.app vf va)
       | _, _ => none := by
   rw [denote]
 
-theorem denote_forallE (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (ty body : Expr) (m : BinderMeta) :
+theorem denote_forallE (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (ty body : Expr md) (m : BinderMeta) :
     denote cval env φ d (.forallE ty body m) =
       match denote cval env φ d ty with
       | none => none
@@ -292,8 +292,8 @@ theorem denote_forallE (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
         | some B => some (.pi A B) := by
   rw [denote]
 
-theorem denote_lam (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (ty body : Expr) (m : BinderMeta) :
+theorem denote_lam (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (ty body : Expr md) (m : BinderMeta) :
     denote cval env φ d (.lam ty body m) =
       match denote cval env φ d ty with
       | none => none
@@ -303,13 +303,13 @@ theorem denote_lam (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
         | some b => some (.lam A b) := by
   rw [denote]
 
-theorem denote_letE (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (ty val body : Expr) :
+theorem denote_letE (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (ty val body : Expr md) :
     denote cval env φ d (.letE ty val body lmeta) = none := by
   rw [denote]
 
-theorem denote_proj (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
-    (d : Nat) (T : Key) (i : Nat) (e : Expr) :
+theorem denote_proj (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
+    (d : Nat) (T : Key md) (i : Nat) (e : Expr md) :
     denote cval env φ d (.proj T i e) =
       match denote cval env φ d e with
       | none => none
@@ -319,11 +319,11 @@ theorem denote_proj (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
         | none => Term.projPair? i ve := by
   rw [denote]
 
-@[simp] theorem denote_bvar (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
+@[simp] theorem denote_bvar (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
     (d i : Nat) : denote cval env φ d (.bvar i) = none := by
   rw [denote] <;> simp
 
-theorem denote_natLit (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
+theorem denote_natLit (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
     (d n : Nat) :
     denote cval env φ d (.lit (.natVal n)) =
       (if natLitSupported env then
@@ -332,7 +332,7 @@ theorem denote_natLit (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
       else none) := by
   rw [denote]
 
-theorem denote_strLit (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
+theorem denote_strLit (cval : TConstVal md) (env : Env md) (φ : LevelParam → Nat)
     (d : Nat) (s : String) :
     denote cval env φ d (.lit (.strVal s)) =
       (if strLitSupported env then some (strLitT cval env φ s) else none) := by

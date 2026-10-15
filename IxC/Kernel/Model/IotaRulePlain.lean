@@ -58,24 +58,24 @@ variable {V : Type w} [SetTheory V]
 set_option maxHeartbeats 12800000 in
 /-- **One checked `.plain` rule's fired law, at the reading**
 (`iotaRuleS`'s canonical branch). -/
-theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
+theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
     (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
     (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
     (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
-    {blockNames : List Key} {f : Key → Key}
+    {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
       if blockNames.contains n then auxKey n .model else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     -- the rule kits are checked against the running accumulator (see
     -- `iotaRuleS`: a correspondence, not an inclusion)
-    (hup : ∀ (n : Key) (ci : ConstantInfo), env₂.find? n = some ci →
+    (hup : ∀ (n : Key md) (ci : ConstantInfo md), env₂.find? n = some ci →
       envSelf.find? n = some ci ∨
       ∃ cv mI' rP' rules rules',
         ci = .recInfo cv mI' rP' rules ∧
         envSelf.find? n = some (.recInfo cv mI' rP' rules'))
-    {cvA : ConstantVal} {mI rP j : Nat} {r r' : RecRule}
+    {cvA : ConstantVal md} {mI rP j : Nat} {r r' : RecRule md}
     (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
@@ -173,7 +173,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     exact ⟨Ra, ta, hRa, fun ρ =>
       ⟨hokRa ρ (Sat_nil V ρ), hmemRa ρ (Sat_nil V ρ)⟩⟩
   -- the constructor's identification at the law's own lookup
-  have hctorId : ∀ {cvj' : ConstantVal} {cnP' cnF' : Nat},
+  have hctorId : ∀ {cvj' : ConstantVal md} {cnP' cnF' : Nat},
       envSelf.find? (RecRule.ctor r')
         = some (.ctorInfo cvj' cnP' cnF') →
       cvj' = cvjK ∧ cnP' = cnPK ∧ cnF' = cnFK := by

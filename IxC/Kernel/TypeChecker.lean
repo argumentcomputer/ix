@@ -21,20 +21,20 @@ namespace Ix.Kernel
 variable (mode : CheckMode)
 
 /-- The pure core: the bodies tied at `CheckM`, fuel in the knot. -/
-def pureFns (env : Env) : Nat → CoreFns CheckM :=
+def pureFns (env : Env md) : Nat → (CoreFns md) CheckM :=
   coreKnot mode env id
 
 /-- Head normalization without delta (fueled). -/
-def whnfCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
+def whnfCore (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM (Expr md) :=
   (pureFns mode env fuel).whnfCore depth e
 
 /-- The full reduction loop (fueled). -/
-def whnf (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
+def whnf (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM (Expr md) :=
   (pureFns mode env fuel).whnf depth e
 
 /-- Full-grade type inference (fueled): the declaration front door's
 entry — official's `infer_type_core(e, infer_only = false)`. -/
-def inferTypeCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
+def inferTypeCore (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM (Expr md) :=
   (pureFns mode env fuel).infer depth e
 
 /-- Type inference at the io grade (fueled): the knot's `inferIO` slot
@@ -42,19 +42,19 @@ def inferTypeCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
 gate-off mode this **is** `inferTypeCore` (`inferTypeIO_off`,
 `Verify/Knot.lean`); at the gated mode it is the io lane
 (`inferTypeIO_on`). -/
-def inferTypeIO (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
+def inferTypeIO (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM (Expr md) :=
   (pureFns mode env fuel).inferIO depth e
 
 /-- Definitional equality (fueled). -/
-def isDefEqCore (env : Env) (fuel depth : Nat) (a b : Expr) : CheckM Bool :=
+def isDefEqCore (env : Env md) (fuel depth : Nat) (a b : Expr md) : CheckM Bool :=
   (pureFns mode env fuel).defeq depth a b
 
 /-- The annotation pass (fueled). -/
-def annotateCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Expr :=
+def annotateCore (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM (Expr md) :=
   (pureFns mode env fuel).annotate depth e
 
 /-- `ensureSort` over the pure knot (fueled). -/
-def ensureSortCore (env : Env) (fuel depth : Nat) (e : Expr) : CheckM Level :=
+def ensureSortCore (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM Level :=
   ensureSort (pureFns mode env fuel) env depth e
 
 end Ix.Kernel

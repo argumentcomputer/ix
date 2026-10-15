@@ -17,7 +17,7 @@ is the whole-spine `instPisAtLift`.
 
 namespace Ix.Kernel
 
-theorem structProjResidP_eq (T : Key) (nP : Nat) (cty : Expr) :
+theorem structProjResidP_eq (T : Key md) (nP : Nat) (cty : Expr md) :
     ∀ i, structProjResidP T nP cty i
       = Expr.instPisAtLift
           (structProjPs nP ++ (List.range i).map (structProjArgP T)) cty

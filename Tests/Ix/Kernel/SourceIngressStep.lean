@@ -64,7 +64,7 @@ def kindOf : Group → String
 /-- One group's verdict. -/
 structure Row where
   group : Nat
-  names : Array CName
+  names : Array (CName .source)
   kind : String
   /-- `accept`, `decline`, `reject` or `blocked` -/
   outcome : String
@@ -87,15 +87,15 @@ structure Run where
   times : Array (String × Nat)
   /-- Source mode's evidence (`Ix.LeanIngress.sourceEvidence`), and why each
   well-founded operation without evidence has none -/
-  evidence : Ix.Kernel.Evidences := []
+  evidence : Ix.Kernel.Evidences .source := []
   evidenceErrors : List String := []
 
 /-- **The run.** The evidence is Source mode's, from the prepared declarations
 (`Ix.LeanIngress.sourceEvidenceReport`): the environment's certificate theorems,
 closed, unless `evidence` is given. -/
-def run (pre : Prelude) (env : Ix.Environment)
+def run (pre : Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false)
-    (evidence : Option Ix.Kernel.Evidences := none) : IO Run := do
+    (evidence : Option (Ix.Kernel.Evidences .source) := none) : IO Run := do
   let t0 ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let t1 ← IO.monoMsNow
@@ -104,12 +104,12 @@ def run (pre : Prelude) (env : Ix.Environment)
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
   let sched ← IO.lazyPure fun _ => scheduleOf g
   let t3 ← IO.monoMsNow
-  let names : Array (Array CName) := groups.map (·.names.map ingressKey)
+  let names : Array (Array (CName .source)) := groups.map (·.names.map ingressKey)
   let mut rows : Array (Option Row) := Array.replicate groups.size none
   -- lowering, in order, from the prelude's state
-  let mut st : State := pre.state
-  let mut lowered : Array CDecl := #[]
-  let mut owner : Std.HashMap CName Nat := {}
+  let mut st : State .source := pre.state
+  let mut lowered : Array (CDecl .source) := #[]
+  let mut owner : Std.HashMap (CName .source) Nat := {}
   let mut generated := 0
   let mut rewrites := 0
   for (gi, c) in sched do
@@ -132,7 +132,7 @@ def run (pre : Prelude) (env : Ix.Environment)
     | none => IO.lazyPure fun _ => Ix.LeanIngress.sourceEvidenceReport prepared
   let t4e ← IO.monoMsNow
   -- the step check
-  let mut checker : Checker := {}
+  let mut checker : Checker .source := {}
   let mut failed : Std.HashMap Nat Nat := {}
   for i in [0:groups.size] do
     if rows[i]!.isSome then failed := failed.insert i i
@@ -197,7 +197,7 @@ def Run.counts (r : Run) : Counts := Id.run do
   return c
 
 /-- The row of the group that declares `n`. -/
-def Run.rowOf (r : Run) (n : CName) : Option Row :=
+def Run.rowOf (r : Run) (n : CName .source) : Option Row :=
   r.rows.find? (·.names.contains n)
 
 end Tests.Ix.Kernel.SourceIngressStep

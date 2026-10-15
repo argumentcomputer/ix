@@ -49,7 +49,7 @@ section PairKey
 
 variable {β : Type} [BEq β] [Hashable β] [EquivBEq β] [LawfulHashable β]
 
-instance : EquivBEq (Expr × β) where
+instance : EquivBEq (Expr md × β) where
   symm := by
     intro a b h
     simp only [BEq.beq, Bool.and_eq_true] at *
@@ -63,7 +63,7 @@ instance : EquivBEq (Expr × β) where
     simp only [BEq.beq, Bool.and_eq_true]
     exact ⟨beq_self _, BEq.refl _⟩
 
-instance : LawfulHashable (Expr × β) where
+instance : LawfulHashable (Expr md × β) where
   hash_eq := by
     intro a b h
     simp only [BEq.beq, Bool.and_eq_true] at h
@@ -75,7 +75,7 @@ instance : LawfulHashable (Expr × β) where
 omit [Hashable β] [EquivBEq β] [LawfulHashable β] in
 /-- The key components of a `BEq`-equal pair key: the `Expr` halves
 have equal erasures, the rest is honest equality. -/
-theorem pairKey_inv {a c : Expr} {b d : β} (h : ((a, b) == (c, d)) = true) :
+theorem pairKey_inv {a c : Expr md} {b d : β} (h : ((a, b) == (c, d)) = true) :
     a = c ∧ (b == d) = true := by
   simp only [BEq.beq, Bool.and_eq_true] at h
   exact ⟨beq_sound h.1, h.2⟩
@@ -90,14 +90,14 @@ expression) transposes to this. -/
 /-- An optional cached result agrees with the optional `Expr`-side
 result.  (Before task #172 B3b this also carried the field invariant
 of the value; the invariant is the compiler's now.) -/
-@[expose] def OptEr : Option Expr → Option Expr → Prop
+@[expose] def OptEr : Option (Expr md) → Option (Expr md) → Prop
   | none, none => True
   | some e, some x => e = x
   | _, _ => False
 
 /-! ## Spines -/
 
-theorem getAppArgsAccC_spec : ∀ (e : Expr) (acc : List Expr),
+theorem getAppArgsAccC_spec : ∀ (e : Expr md) (acc : List (Expr md)),
     (Expr.getAppArgsAccC e acc) = (Expr.getAppArgs e) ++ acc := by
   intro e
   induction e with
@@ -105,13 +105,13 @@ theorem getAppArgsAccC_spec : ∀ (e : Expr) (acc : List Expr),
     intro acc
     rw [show Expr.getAppArgsAccC (.app f a) acc
         = Expr.getAppArgsAccC f (a :: acc) from rfl, ihf,
-      show ((.app f a : Expr)).getAppArgs
+      show ((.app f a : Expr md)).getAppArgs
         = (Expr.getAppArgs f) ++ [a] from rfl,
       List.append_assoc]
     rfl
   | _ => intro acc; rfl
 
-theorem getAppArgsC_spec (e : Expr) :
+theorem getAppArgsC_spec (e : Expr md) :
     (Expr.getAppArgsC e) = (Expr.getAppArgs e) := by
   simpa [Expr.getAppArgsC] using getAppArgsAccC_spec e []
 
@@ -128,7 +128,7 @@ result through `Expr.resTerm_eq`. -/
 /-- **The plain descent computes `Expr.instantiate1`.**  It is the
 reference `instantiate1XP` carries its own proof against, so the
 wrapper reads through it. -/
-theorem instantiate1P_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
+theorem instantiate1P_spec {v : Expr md} : ∀ (e : Expr md) (d : Nat),
     Expr.instantiate1P v e d = Expr.instantiate1 e v d := by
   intro e
   induction e with
@@ -215,7 +215,7 @@ theorem instantiate1P_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
       rw [mkProj_eq, ih d]
       rfl
 
-theorem instantiate1C_spec {e v : Expr} {d : Nat} :
+theorem instantiate1C_spec {e v : Expr md} {d : Nat} :
       (Expr.instantiate1C e v d) = (Expr.instantiate1 e v d) := by
   rw [Expr.instantiate1C]
   split
@@ -229,33 +229,33 @@ theorem instantiate1C_spec {e v : Expr} {d : Nat} :
 /-! `Expr.instantiateList` is well founded, so it does not reduce
 definitionally: the per-constructor equations have to be named. -/
 
-private theorem instList_app (f a : Expr) (ws : List Expr) (d : Nat) :
+private theorem instList_app (f a : Expr md) (ws : List (Expr md)) (d : Nat) :
     (Expr.app f a).instantiateList ws d
       = .app (f.instantiateList ws d) (a.instantiateList ws d) := by
   rw [Expr.instantiateList]
 
-private theorem instList_lam (ty b : Expr) (m : BinderMeta)
-    (ws : List Expr) (d : Nat) :
+private theorem instList_lam (ty b : Expr md) (m : BinderMeta)
+    (ws : List (Expr md)) (d : Nat) :
     (Expr.lam ty b m).instantiateList ws d
       = .lam (ty.instantiateList ws d) (b.instantiateList ws (d + 1)) m := by
   rw [Expr.instantiateList]
 
-private theorem instList_forallE (ty b : Expr) (m : BinderMeta)
-    (ws : List Expr) (d : Nat) :
+private theorem instList_forallE (ty b : Expr md) (m : BinderMeta)
+    (ws : List (Expr md)) (d : Nat) :
     (Expr.forallE ty b m).instantiateList ws d
       = .forallE (ty.instantiateList ws d)
           (b.instantiateList ws (d + 1)) m := by
   rw [Expr.instantiateList]
 
-private theorem instList_letE (ty v b : Expr) (l : LetMeta) (ws : List Expr)
+private theorem instList_letE (ty v b : Expr md) (l : LetMeta) (ws : List (Expr md))
     (d : Nat) :
     (Expr.letE ty v b l).instantiateList ws d
       = .letE (ty.instantiateList ws d) (v.instantiateList ws d)
           (b.instantiateList ws (d + 1)) l := by
   rw [Expr.instantiateList]
 
-private theorem instList_proj (s : Key) (i : Nat) (e : Expr)
-    (ws : List Expr) (d : Nat) :
+private theorem instList_proj (s : Key md) (i : Nat) (e : Expr md)
+    (ws : List (Expr md)) (d : Nat) :
     (Expr.proj s i e).instantiateList ws d
       = .proj s i (e.instantiateList ws d) := by
   rw [Expr.instantiateList]
@@ -264,7 +264,7 @@ private theorem instList_proj (s : Key) (i : Nat) (e : Expr)
 `looseBVarsBounded` at every cursor, so bulk instantiation is the
 identity on them (`Expr.instantiateList` is well-founded, hence does
 not reduce definitionally — the equation has to be supplied). -/
-private theorem instList_leaf {e : Expr} {ws : List Expr} {d : Nat}
+private theorem instList_leaf {e : Expr md} {ws : List (Expr md)} {d : Nat}
     (h : (Expr.looseBVarsBounded d e) = true) :
     e = (Expr.instantiateList e ws d) :=
   (Expr.instantiateList_eq_self h).symm
@@ -273,8 +273,8 @@ private theorem instList_leaf {e : Expr} {ws : List Expr} {d : Nat}
 induction is strong on the live prefix `k` (the `bvar` arm re-enters
 at the replacement with a shorter prefix) and structural on the node
 inside it.  The reference of `instantiateListXP`. -/
-theorem instantiateListP_spec {vs : Array Expr} :
-    ∀ (k : Nat) (e : Expr), ∀ {d : Nat}, k ≤ vs.size →
+theorem instantiateListP_spec {vs : Array (Expr md)} :
+    ∀ (k : Nat) (e : Expr md), ∀ {d : Nat}, k ≤ vs.size →
       Expr.instantiateListP vs e k d
         = Expr.instantiateList e (vs.toList.take k) d := by
   intro k
@@ -445,14 +445,14 @@ theorem instantiateListP_spec {vs : Array Expr} :
       · dsimp only
         rw [instList_proj, mkProj_eq, ih (d := d) hk]
 
-theorem instantiateListC_spec {e : Expr} {vs : List Expr} {d : Nat} :
+theorem instantiateListC_spec {e : Expr md} {vs : List (Expr md)} {d : Nat} :
     (Expr.instantiateListC e vs d)
       = (Expr.instantiateList e vs d) := by
   cases vs with
   | nil => rw [Expr.instantiateListC]; simp [Expr.instantiateList_nil]
   | cons v vs' =>
     have harr : (v :: vs').toArray.toList = v :: vs' := rfl
-    have htail : ∀ x : Expr,
+    have htail : ∀ x : Expr md,
         x = (Expr.instantiateList e
               ((v :: vs').toArray.toList.take (v :: vs').toArray.size) d) →
         x = (Expr.instantiateList e (v :: vs') d) := by
@@ -472,7 +472,7 @@ theorem instantiateListC_spec {e : Expr} {vs : List Expr} {d : Nat} :
 
 /-! ## Telescope-context spine instantiation -/
 
-theorem instSpineChainC_spec : ∀ (args : List Expr) (t : Nat) (e : Expr),
+theorem instSpineChainC_spec : ∀ (args : List (Expr md)) (t : Nat) (e : Expr md),
     (Expr.instSpineChainC args t e) = Expr.instSpine args t e
   | [], _, _ => rfl
   | a :: as, t, e => by
@@ -482,7 +482,7 @@ theorem instSpineChainC_spec : ∀ (args : List Expr) (t : Nat) (e : Expr),
         = Expr.instSpineChainC as (t - 1) (Expr.instantiate1C e a t) from rfl, h4, h2]
     rfl
 
-theorem instSpineC_spec {args : List Expr} {t : Nat} {e : Expr} :
+theorem instSpineC_spec {args : List (Expr md)} {t : Nat} {e : Expr md} :
     (Expr.instSpineC args t e) = Expr.instSpine args t e := by
   rw [Expr.instSpineC]
   split
@@ -501,8 +501,8 @@ forward walk on the reversed array — proved pointwise, so every
 /-- The reversed plain descent is the forward one on the reversed
 array — `instantiateRevBC_eq` without the fuel, so every
 `instantiateList` fact transfers unchanged. -/
-theorem instantiateRevP_eq {vs : Array Expr} :
-    ∀ (k : Nat) (e : Expr) (d : Nat),
+theorem instantiateRevP_eq {vs : Array (Expr md)} :
+    ∀ (k : Nat) (e : Expr md) (d : Nat),
       Expr.instantiateRevP vs e k d
         = Expr.instantiateListP vs.reverse e k d := by
   intro k
@@ -516,7 +516,7 @@ theorem instantiateRevP_eq {vs : Array Expr} :
     by_cases hk0 : k = 0
     · simp only [if_pos hk0]
     rw [if_neg hk0, if_neg hk0]
-    by_cases hcut : (Expr.bvar i).bvarB ≤ d
+    by_cases hcut : ((Expr.bvar (md := md)) i).bvarB ≤ d
     · rw [if_pos hcut, if_pos hcut]
     rw [if_neg hcut, if_neg hcut]
     dsimp only
@@ -602,7 +602,7 @@ theorem instantiateRevP_eq {vs : Array Expr} :
     dsimp only
     rw [ih d]
 
-theorem instantiateRev_spec {e : Expr} {vs : Array Expr} {d : Nat}
+theorem instantiateRev_spec {e : Expr md} {vs : Array (Expr md)} {d : Nat}
     :
       (Expr.instantiateRev e vs d)
         = (Expr.instantiateList e (vs.toList.reverse) d) := by
@@ -621,7 +621,7 @@ theorem instantiateRev_spec {e : Expr} {vs : Array Expr} {d : Nat}
   · split
     · rename_i hcut
       exact (Expr.instantiateList_eq_self (bvarB_le hcut)).symm
-    · have htail : ∀ x : Expr,
+    · have htail : ∀ x : Expr md,
           x = (Expr.instantiateList e (vs.reverse.toList.take vs.size) d) →
           x = (Expr.instantiateList e vs.toList.reverse d) := by
         intro x hx
@@ -646,7 +646,7 @@ value is the same either way. -/
 /-- `Expr.abstract1` at or above a term's fvar range is the identity —
 the `abstract1` twin of `abstractRange_eq_self`, which `IxC/Kernel/Verify`
 has only for the bulk form. -/
-private theorem abstract1_eq_self : ∀ {e : Expr} {d k : Nat},
+private theorem abstract1_eq_self : ∀ {e : Expr md} {d k : Nat},
     Expr.fvarsBelow d e → e.abstract1 d k = e := by
   intro e
   induction e <;> intro d k hb <;>
@@ -655,7 +655,7 @@ private theorem abstract1_eq_self : ∀ {e : Expr} {d k : Nat},
 
 /-- **The plain descent computes `Expr.abstract1`**: the reference of
 `abstract1XP`. -/
-theorem abstract1P_spec {d : Nat} : ∀ (e : Expr) (k : Nat),
+theorem abstract1P_spec {d : Nat} : ∀ (e : Expr md) (k : Nat),
     Expr.abstract1P d e k = Expr.abstract1 e d k := by
   intro e
   induction e with
@@ -741,7 +741,7 @@ theorem abstract1P_spec {d : Nat} : ∀ (e : Expr) (k : Nat),
       rw [mkProj_eq, ih k]
       rfl
 
-theorem abstract1C_spec {e : Expr} {d k : Nat} :
+theorem abstract1C_spec {e : Expr md} {d k : Nat} :
       (Expr.abstract1C e d k) = (Expr.abstract1 e d k) := by
   rw [Expr.abstract1C]
   split
@@ -753,14 +753,14 @@ theorem abstract1C_spec {e : Expr} {d k : Nat} :
 /-! ### Bulk abstraction -/
 
 /-- Abstracting an empty range is the identity. -/
-private theorem abstractRange_zero : ∀ (e : Expr) (d c : Nat),
+private theorem abstractRange_zero : ∀ (e : Expr md) (d c : Nat),
     e.abstractRange d 0 c = e := by
   intro e
   induction e <;> intro d c <;> simp_all [Expr.abstractRange]
 
 /-- **The plain bulk descent computes `Expr.abstractRange`**: the
 reference of `abstractRangeXP`. -/
-theorem abstractRangeP_spec {d k : Nat} : ∀ (e : Expr) (c : Nat),
+theorem abstractRangeP_spec {d k : Nat} : ∀ (e : Expr md) (c : Nat),
     Expr.abstractRangeP d k e c = Expr.abstractRange e d k c := by
   intro e
   induction e with
@@ -846,7 +846,7 @@ theorem abstractRangeP_spec {d k : Nat} : ∀ (e : Expr) (c : Nat),
       rw [mkProj_eq, ih c]
       rfl
 
-theorem abstractRangeC_spec {e : Expr} {d k c : Nat} :
+theorem abstractRangeC_spec {e : Expr md} {d k c : Nat} :
       (Expr.abstractRangeC e d k c) = (Expr.abstractRange e d k c) := by
   cases k with
   | zero => exact (abstractRange_zero _ _ _).symm
@@ -862,7 +862,7 @@ theorem abstractRangeC_spec {e : Expr} {d k c : Nat} :
 
 /-- **The plain descent computes `Expr.instantiateLevelParams`**: the
 reference of `instLevelParamsXP`. -/
-theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e : Expr),
+theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e : Expr md),
     Expr.instLevelParamsP ks us e = e.instantiateLevelParams ks us := by
   intro e
   induction e with
@@ -937,7 +937,7 @@ theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e 
       rw [mkProj_eq, ih]
       rfl
 
-theorem instLevelParams_spec {ks : List LevelParam} {us : List Level} {e : Expr} :
+theorem instLevelParams_spec {ks : List LevelParam} {us : List Level} {e : Expr md} :
     (Expr.instLevelParams ks us e) = e.instantiateLevelParams ks us := by
   rw [instLevelParams]
   split
@@ -949,8 +949,8 @@ theorem instLevelParams_spec {ks : List LevelParam} {us : List Level} {e : Expr}
 /-- The executable projection-type instantiation is the spec's
 (`ProjEntry.typeAt`), value for value — the two memoized walks each
 equal their tree-walk spec. -/
-theorem _root_.Ix.Kernel.ProjEntry.typeAtI_eq (entry : ProjEntry) (us : List Level)
-    (targs : List Expr) (pe : Expr) :
+theorem _root_.Ix.Kernel.ProjEntry.typeAtI_eq (entry : ProjEntry md) (us : List Level)
+    (targs : List (Expr md)) (pe : Expr md) :
     entry.typeAtI us targs pe = entry.typeAt us targs pe := by
   unfold ProjEntry.typeAtI ProjEntry.typeAt
   rw [instantiateListC_spec, instLevelParams_spec]
@@ -962,60 +962,60 @@ theorem _root_.Ix.Kernel.ProjEntry.typeAtI_eq (entry : ProjEntry) (us : List Lev
 too. -/
 
 private theorem wscopedB_bvar (i d : Nat) :
-    (Expr.bvar i).wscopedB d = true := by rw [Expr.wscopedB]
+    ((Expr.bvar (md := md)) i).wscopedB d = true := by rw [Expr.wscopedB]
 
 private theorem wscopedB_sort (u : Level) (d : Nat) :
-    (Expr.sort u).wscopedB d = true := by rw [Expr.wscopedB]
+    ((Expr.sort (md := md)) u).wscopedB d = true := by rw [Expr.wscopedB]
 
-private theorem wscopedB_const (n : Key) (us : List Level) (d : Nat) :
+private theorem wscopedB_const (n : Key md) (us : List Level) (d : Nat) :
     (Expr.const n us).wscopedB d = true := by rw [Expr.wscopedB]
 
 private theorem wscopedB_lit (l : Literal) (d : Nat) :
-    (Expr.lit l).wscopedB d = true := by rw [Expr.wscopedB]
+    ((Expr.lit (md := md)) l).wscopedB d = true := by rw [Expr.wscopedB]
 
-private theorem wscopedB_fvar (idx : Nat) (ty : Expr) (d : Nat) :
+private theorem wscopedB_fvar (idx : Nat) (ty : Expr md) (d : Nat) :
     (Expr.fvar idx ty).wscopedB d
       = (decide (idx < d) && ty.wscopedB idx) := by rw [Expr.wscopedB]
 
-private theorem wscopedB_app (f a : Expr) (d : Nat) :
+private theorem wscopedB_app (f a : Expr md) (d : Nat) :
     (Expr.app f a).wscopedB d = (f.wscopedB d && a.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_lam (ty b : Expr) (m : BinderMeta)
+private theorem wscopedB_lam (ty b : Expr md) (m : BinderMeta)
     (d : Nat) :
     (Expr.lam ty b m).wscopedB d = (ty.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_forallE (ty b : Expr) (m : BinderMeta)
+private theorem wscopedB_forallE (ty b : Expr md) (m : BinderMeta)
     (d : Nat) :
     (Expr.forallE ty b m).wscopedB d = (ty.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_letE (ty v b : Expr) (l : LetMeta) (d : Nat) :
+private theorem wscopedB_letE (ty v b : Expr md) (l : LetMeta) (d : Nat) :
     (Expr.letE ty v b l).wscopedB d
       = (ty.wscopedB d && v.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_proj (s : Key) (i : Nat) (e : Expr) (d : Nat) :
+private theorem wscopedB_proj (s : Key md) (i : Nat) (e : Expr md) (d : Nat) :
     (Expr.proj s i e).wscopedB d = e.wscopedB d := by rw [Expr.wscopedB]
 
 /-- The clone's `fvarB == 0` shortcut: a node whose cached fvar range is
 zero has no `fvar` leaf at all (annotations only exist under `fvar`
 nodes), so it is well scoped at every cursor.  The arena twin has no
 such cutoff. -/
-private theorem wscopedB_of_fvarsBelow_zero : ∀ (e : Expr),
+private theorem wscopedB_of_fvarsBelow_zero : ∀ (e : Expr md),
     Expr.fvarsBelow 0 e → ∀ d, e.wscopedB d = true := by
   intro e
   induction e <;> intro hb d <;> simp_all [Expr.fvarsBelow, Expr.wscopedB]
 
 /-- The walk's cutoff, read as the specification: a node whose cached
 fvar range is zero is well scoped at every cursor. -/
-private theorem wscopedBP_cut_spec {e : Expr} {d : Nat} (h : (e.fvarB == 0) = true) :
+private theorem wscopedBP_cut_spec {e : Expr md} {d : Nat} (h : (e.fvarB == 0) = true) :
     true = Expr.wscopedB d e :=
   (wscopedB_of_fvarsBelow_zero _ (fvarB_le (Nat.le_of_eq (by simpa using h))) d).symm
 
 /-- **The plain descent is `Expr.wscopedB`.** -/
-theorem wscopedBP_spec : ∀ (e : Expr) (d : Nat),
+theorem wscopedBP_spec : ∀ (e : Expr md) (d : Nat),
     Expr.wscopedBP e d = Expr.wscopedB d e := by
   intro e
   induction e with
@@ -1064,7 +1064,7 @@ theorem wscopedBP_spec : ∀ (e : Expr) (d : Nat),
     · next h => exact wscopedBP_cut_spec h
     · simp only [wscopedB_proj, ihe]
 
-theorem wscopedBC_spec {d : Nat} {e : Expr} :
+theorem wscopedBC_spec {d : Nat} {e : Expr md} :
     Expr.wscopedBC d e = (Expr.wscopedB d e) := by
   rw [Expr.wscopedBC.eq_def]
   split
@@ -1079,7 +1079,7 @@ flushes a nonempty accumulator by one bulk instantiation and re-enters.
 The induction is the function's own measure `(as.length, acc.length)`. -/
 
 theorem piResidualAcc_spec :
-    ∀ (as acc : List Expr) (e : Expr),
+    ∀ (as acc : List (Expr md)) (e : Expr md),
       OptEr (Expr.piResidualAcc acc e as)
         (_root_.Ix.Kernel.piResidual
           ((Expr.instantiateList e acc)) as)
@@ -1166,7 +1166,7 @@ decreasing_by
   · apply Prod.Lex.right' <;> simp_all
   · apply Prod.Lex.left; simp
 
-theorem piResidual_spec {e : Expr} {args : List Expr} :
+theorem piResidual_spec {e : Expr md} {args : List (Expr md)} :
     OptEr (Expr.piResidual e args)
       (_root_.Ix.Kernel.piResidual e args) := by
   have h := piResidualAcc_spec args [] e
@@ -1181,7 +1181,7 @@ rebuilds exactly the substitution. -/
 
 /-- **The plain descent computes `Expr.instantiate1Lift`**: the
 reference of `instantiate1LiftXP`. -/
-theorem instantiate1LiftP_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
+theorem instantiate1LiftP_spec {v : Expr md} : ∀ (e : Expr md) (d : Nat),
     Expr.instantiate1LiftP v e d = Expr.instantiate1Lift e v d := by
   intro e
   induction e with
@@ -1269,7 +1269,7 @@ theorem instantiate1LiftP_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
       rfl
 
 /-- **`instantiate1Lift`'s twin computes `Expr.instantiate1Lift`.** -/
-theorem instantiate1LiftC_spec (e v : Expr) (d : Nat) :
+theorem instantiate1LiftC_spec (e v : Expr md) (d : Nat) :
     Expr.instantiate1LiftC e v d = Expr.instantiate1Lift e v d := by
   unfold Expr.instantiate1LiftC
   split

@@ -47,14 +47,14 @@ all under the `redBoth` of the two `whnfCore` reducts.
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env} {fuel : Nat}
+variable {env : Env md} {fuel : Nat}
 
 /-- One `defeqStep` under a bridged continuation. -/
 theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {k : Bool → Expr → Expr → CheckM Bool}
-    (hk : ∀ {pi : Bool} {a b : Expr}, k pi a b = .ok true → DefEq env d a b)
-    {pi : Bool} {a b : Expr}
+    {d : Nat} {k : Bool → Expr md → Expr md → CheckM Bool}
+    (hk : ∀ {pi : Bool} {a b : Expr md}, k pi a b = .ok true → DefEq env d a b)
+    {pi : Bool} {a b : Expr md}
     (h : defeqStep .verified (pureFns .verified env fuel) env d k pi a b = .ok true) :
     DefEq env d a b := by
   rcases defeqStep_inv h with rfl | ⟨rfl, hsc⟩ | ⟨a', b', hwa, hwb, hrest⟩
@@ -94,7 +94,7 @@ theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fu
 /-- The loop at every budget. -/
 theorem defeqLoop_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} : ∀ (n : Nat) {pi : Bool} {a b : Expr},
+    {d : Nat} : ∀ (n : Nat) {pi : Bool} {a b : Expr md},
       defeqLoop .verified (pureFns .verified env fuel) env d n pi a b = .ok true →
       DefEq env d a b
   | 0, _, _, _, h => by

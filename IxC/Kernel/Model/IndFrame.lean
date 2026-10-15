@@ -449,18 +449,18 @@ hypothesis is consulted, and `ctxOk_of_openers` never inspects `ρ`. -/
 transpose): a context whose entries at the touched indices are the
 frame's own-depth read annotations correlates with a kit expression;
 padding slots are never consulted. -/
-theorem ctxOk_of_openers {env : Env} {m : EnvModel V env}
+theorem ctxOk_of_openers {env : Env md} {m : EnvModel V env}
     {φ : LevelParam → Nat}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (m.acval n ψ).liftN 1 k = m.acval n ψ)
-    {k : Nat} {fvs : List Expr} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
+    {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
-    (hshape : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hws : ∀ x ∈ fvs, Expr.WScoped k x)
-    (hdoms : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdoms : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x) = some (Aa i))
-    {e : Expr} {n : Nat}
+    {e : Expr md} {n : Nat}
     (hleaf : ∀ l ∈ e.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs)
     (hltE : ∀ l ∈ e.fvarLeaves, l.1 < n)
     (hent : ∀ i, i < n → Δa[k - 1 - i]? = some (Aa i))

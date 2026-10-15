@@ -48,23 +48,23 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-- **The annotated half of `BlockInstalledTT`**: an installed block
 member's *leaf* is its model's.  The other three conjuncts of
 `BlockInstalledTT` are V-free environment facts and are consumed from
 the v1 predicate directly. -/
-@[expose] def BlockAcvalInstalled (blockNames : List Key) (env : Env)
-    (acval : Key → (LevelParam → Nat) → AnnotTerm) : Prop :=
-  ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo,
+@[expose] def BlockAcvalInstalled (blockNames : List (Key md)) (env : Env md)
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm) : Prop :=
+  ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo md,
     env.find? n = some ci →
     ∀ ψ : LevelParam → Nat, acval (auxKey n .model) ψ = acval n ψ
 
 /-- The P invariant's three type facts at a *stored* constant, keyed
 by `find?` rather than by membership (`EnvS.cval_memType`'s
 transpose). -/
-theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Key}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
+theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 ci.toConstantVal.type
         = some ta ∧
@@ -80,8 +80,8 @@ theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Key}
 /-- **The block member's key, P tier.**  The model artifact's leaf
 inhabits the checked member's type's reading, graded, at every
 assignment. -/
-theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
-    {cv cvA : ConstantVal}
+theorem memberKey (mp : EnvModelM V μ env) {blockNames : List (Key md)}
+    {cv cvA : ConstantVal md}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
@@ -107,7 +107,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Key}
       exact ⟨.defnInfo cvm' mval' hint', by rw [if_pos hb]; exact hfm',
         hlp'⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
-  have hval : ∀ (n : Key) (ci : ConstantInfo),
+  have hval : ∀ (n : Key md) (ci : ConstantInfo md),
       env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
         if blockNames.contains n then auxKey n .model else n) n) ψ'
@@ -145,15 +145,15 @@ obligations do and for v1's reason: at a single member's install the
 family's constructor and projections need not be stored yet, so the
 caller — the block fold, which knows the whole block is in — is the
 only place it can be discharged. -/
-theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
-    {cvA : ConstantVal}
+theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo md}
+    {cvA : ConstantVal md}
     (hkind : (∃ caps, c₀ = .indInfo cvA caps) ∨
       (∃ nP nF, c₀ = .ctorInfo cvA nP nF) ∨
       (∃ mI rP, c₀ = .recInfo cvA mI rP []))
     (hfresh : env.find? cvA.name = none)
     (hnres : Ix.Kernel.reservedBasisNames.contains cvA.name = false)
     -- the model artifact whose leaf the member takes
-    {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
+    {cvm : ConstantVal md} {mval : Expr md} {hint : ReducibilityHint}
     (hmE : env.find? (auxKey cvA.name .model)
       = some (.defnInfo cvm mval hint))
     (hmlps : cvm.levelParams = cvA.levelParams)

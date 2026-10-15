@@ -289,7 +289,7 @@ theorem eqValAV_app₃_okP (ψ : LevelParam → Nat) (ρ : Nat → V)
 
 /-- **`EqLaw` from the tower.**  Any environment carrier whose `Eq`
 leaf is the annotated tower satisfies the field. -/
-theorem eqLaw_of_tower {env : Ix.Kernel.Env} (m : EnvModel V env)
+theorem eqLaw_of_tower {env : Ix.Kernel.Env md} (m : EnvModel V env)
     (hleaf : ∀ ψ : LevelParam → Nat, m.acval eqName ψ = eqValAV ψ) :
     EqLaw m := by
   intro _hf ψ

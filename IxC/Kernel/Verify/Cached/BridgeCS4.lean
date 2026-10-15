@@ -45,8 +45,8 @@ variable {mode : CheckMode}
 /-! ## Run-level toolkit -/
 
 /-- Dissect a successful `CheckCM` bind. -/
-theorem bindC_ok {α β : Type} {x : CheckCM α} {k : α → CheckCM β}
-    {s₀ : CState} {v : β} {s' : CState}
+theorem bindC_ok {α β : Type} {x : (CheckCM md) α} {k : α → (CheckCM md) β}
+    {s₀ : CState md} {v : β} {s' : CState md}
     (h : (x >>= k) s₀ = .ok (v, s')) :
     ∃ a s₁, x s₀ = .ok (a, s₁) ∧ k a s₁ = .ok (v, s') := by
   simp only [Bind.bind, StateT.bind] at h
@@ -57,8 +57,8 @@ theorem bindC_ok {α β : Type} {x : CheckCM α} {k : α → CheckCM β}
     rw [hx] at h
     exact ⟨a, s₁, rfl, h⟩
 
-theorem pureC_ok {α : Type} {a : α} {s₀ : CState} {v : α} {s' : CState}
-    (h : (pure a : CheckCM α) s₀ = .ok (v, s')) : a = v ∧ s₀ = s' := by
+theorem pureC_ok {α : Type} {a : α} {s₀ : CState md} {v : α} {s' : CState md}
+    (h : (pure a : (CheckCM md) α) s₀ = .ok (v, s')) : a = v ∧ s₀ = s' := by
   simp only [pure, StateT.pure, Except.pure, Except.ok.injEq,
     Prod.mk.injEq] at h
   exact h
@@ -81,7 +81,7 @@ theorem FueledM.up {α : Type} {x : FueledM α} {F F' : Nat} {v : α}
 helpers, over the public inversions) -/
 
 /-- Introduction for `ConstWF` with the clause types spelled out. -/
-private theorem constWF_intro' {env : Env} {c : ConstantInfo}
+private theorem constWF_intro' {env : Env md} {c : ConstantInfo md}
     (h1 : c.toConstantVal.type.hasFvar = false)
     (h2 : c.toConstantVal.type.allLevelParamsDefined
       c.toConstantVal.levelParams = true)
@@ -114,20 +114,20 @@ private theorem constWF_intro' {env : Env} {c : ConstantInfo}
                   (fun i => Expr.bvar (mI - rP - 1 - i)))
     (h8 : ∀ tbl, c = .projInfo tbl →
       tbl.bodies.size = tbl.numFields ∧
-      ∀ (i : Nat) (b : Expr), tbl.bodies[i]? = some b →
+      ∀ (i : Nat) (b : Expr md), tbl.bodies[i]? = some b →
         b.hasFvar = false ∧
         b.allLevelParamsDefined tbl.levelParams = true ∧
         b.constsResolve env = true ∧
         b.looseBVarsBounded (tbl.numParams + 1) = true := by
         intro tbl h
-        exact ConstantInfo.noConfusion h)
+        exact ConstantInfo.noConfusion rfl (heq_of_eq h))
     (h9 : IndCapsWF c := by
         intro cv caps h
-        exact ConstantInfo.noConfusion h) :
+        exact ConstantInfo.noConfusion rfl (heq_of_eq h)) :
     ConstWF env c := ⟨h1, h2, h3, h4, h5, h6, h8, h9⟩
 
 /-- The four `ConstWF` type-slot facts of a checked constant. -/
-private theorem cvA_type_facts' {env : Env} {cv cvA : ConstantVal}
+private theorem cvA_type_facts' {env : Env md} {cv cvA : ConstantVal md}
     {F : Nat}
     (h : checkConstantVal (fueledOps mode F) env cv = .ok cvA) :
     cvA.type.hasFvar = false ∧
@@ -142,8 +142,8 @@ private theorem cvA_type_facts' {env : Env} {cv cvA : ConstantVal}
       (WScoped.of_not_hasFvar hitf)).fvarsBelow)
 
 /-- The provisioned (rule-less) recursor cons is well-formed. -/
-private theorem envWF_cons_provRec {env : Env} (henv : EnvWF env)
-    {cvA : ConstantVal} {mI rP F : Nat} {cv : ConstantVal}
+private theorem envWF_cons_provRec {env : Env md} (henv : EnvWF env)
+    {cvA : ConstantVal md} {mI rP F : Nat} {cv : ConstantVal md}
     (hccv : checkConstantVal (fueledOps mode F) env cv = .ok cvA) :
     EnvWF ⟨.recInfo cvA mI rP [] :: env.consts⟩ := by
   obtain ⟨htf, htp, htr, htb⟩ := cvA_type_facts' hccv
@@ -161,9 +161,9 @@ private theorem envWF_cons_provRec {env : Env} (henv : EnvWF env)
 stays canonical, the index invariant is maintained, the output
 environment is well-formed, and the step is reproduced by the fueled
 generic step. -/
-theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {caps : IndCaps}
-    {env : Env} (henv : EnvWF env) {ci : ConstantInfo} {fe' : FEnv}
-    {s₀ s' : CState} (hwf : CSOKF s₀)
+theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List (Key md)} {caps : IndCaps md}
+    {env : Env md} (henv : EnvWF env) {ci : ConstantInfo md} {fe' : FEnv md}
+    {s₀ s' : CState md} (hwf : CSOKF s₀)
     -- the block's capability pins at an inductive member (its stored
     -- type is the model's under the block renaming: `indCapsWF_of_pins`)
     (hpins : ∀ cv caps₀, ci = .indInfo cv caps₀ →
@@ -204,7 +204,7 @@ theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : Lis
         (Expr.constsResolve_mono htr) htb
         (fun _ _ _ heq => nomatch heq)
         (fun _ _ _ _ heq => nomatch heq)
-        (by intro tbl h; exact ConstantInfo.noConfusion h)
+        (by intro tbl h; exact ConstantInfo.noConfusion rfl (heq_of_eq h))
         hicwA)
     · unfold checkIndMember
       rw [FueledM.atF_bind, hFm]
@@ -229,9 +229,9 @@ theorem checkIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : Lis
   | recInfo cv mI rP rules => exact nomatch h
 
 /-- The member fold of the shared driver. -/
-theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {caps : IndCaps} :
-    ∀ (cis : List ConstantInfo) (env : Env) {s₀ : CState}
-      {fe' : FEnv} {s' : CState},
+theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List (Key md)} {caps : IndCaps md} :
+    ∀ (cis : List (ConstantInfo md)) (env : Env md) {s₀ : CState md}
+      {fe' : FEnv md} {s' : CState md},
       EnvWF env → CSOKF s₀ →
       -- the block's capability pins at every inductive member
       (∀ ci ∈ cis, ∀ cv caps₀, ci = .indInfo cv caps₀ →
@@ -278,10 +278,10 @@ theorem foldIndMemberS_run (hμ : mode.verifiedChecks = true) {blockNames : List
 /-! ## The recursor group -/
 
 /-- The provisioning fold of the shared driver. -/
-theorem provisionRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} :
-    ∀ (recs : List ConstantInfo) (env : Env) {s₀ : CState}
-      {p : FEnv × List (ConstantVal × Nat × Nat × List RecRule)}
-      {s' : CState},
+theorem provisionRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List (Key md)} :
+    ∀ (recs : List (ConstantInfo md)) (env : Env md) {s₀ : CState md}
+      {p : FEnv md × List (ConstantVal md × Nat × Nat × List (RecRule md))}
+      {s' : CState md},
       EnvWF env → CSOKF s₀ →
       provisionRecsS mode blockNames (mkFEnv env) recs s₀ = .ok (p, s') →
       CSOKF s' ∧ p.1 = mkFEnv p.1.env ∧
@@ -339,10 +339,10 @@ theorem provisionRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List
     rfl
 
 /-- Transport `ConstWF` along lookup-presence monotonicity. -/
-private theorem constWF_le' {envA envB : Env}
+private theorem constWF_le' {envA envB : Env md}
     (hle : ∀ n, (envA.find? n).isSome = true →
       (envB.find? n).isSome = true)
-    {c : ConstantInfo} (h : ConstWF envA c) : ConstWF envB c := by
+    {c : ConstantInfo md} (h : ConstWF envA c) : ConstWF envB c := by
   obtain ⟨h1, h2, h3, h4, h5, h6, h8, h9⟩ := h
   refine ⟨h1, h2, Expr.constsResolve_le hle h3, h4, ?_, ?_,
     fun tbl heq =>
@@ -364,20 +364,20 @@ private theorem constWF_le' {envA envB : Env}
     exact ⟨p1, p2, Expr.constsResolve_le hle p3, p4⟩
 
 /-- A `CheckCM` throw composed with anything never succeeds. -/
-theorem throwC_bind_ok {α β : Type} {e : CheckError} {k : α → CheckCM β}
-    {s₀ : CState} {v : β} {s' : CState}
-    (h : ((throw e : CheckCM α) >>= k) s₀ = .ok (v, s')) : False := by
+theorem throwC_bind_ok {α β : Type} {e : CheckError} {k : α → (CheckCM md) β}
+    {s₀ : CState md} {v : β} {s' : CState md}
+    (h : ((throw e : (CheckCM md) α) >>= k) s₀ = .ok (v, s')) : False := by
   exact nomatch h
 
 /-- The iota fold of the shared driver: all operations run at
 `envSelf`, one shared state across the whole fold. -/
-private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf : Env}
-    (henv₂ : EnvWF env₂) (henvS : EnvWF envSelf) {f : Key → Key} :
-    ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule))
-      (acc : FEnv) {s₀ : CState} {fe₃ : FEnv} {s' : CState},
+private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf : Env md}
+    (henv₂ : EnvWF env₂) (henvS : EnvWF envSelf) {f : Key md → Key md} :
+    ∀ (checked : List (ConstantVal md × Nat × Nat × List (RecRule md)))
+      (acc : FEnv md) {s₀ : CState md} {fe₃ : FEnv md} {s' : CState md},
       (∀ c ∈ checked, c.1.type.hasFvar = false) →
       CSOK mode envSelf s₀ →
-      (checked.foldlM (fun (acc : FEnv) (c : ConstantVal × Nat × Nat × List RecRule) => do
+      (checked.foldlM (fun (acc : FEnv md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
           let rules' ← checkIotaRules mode (sharedOpsC mode (mkFEnv envSelf)) env₂
             envSelf f c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1
             0 c.2.2.2
@@ -385,10 +385,10 @@ private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf
         .ok (fe₃, s') →
       CSOKF s' ∧
       (acc = mkFEnv acc.env → fe₃ = mkFEnv fe₃.env) ∧
-      ∃ F, (checked.foldlM (fun (acc : Env) (c : ConstantVal × Nat × Nat × List RecRule) => do
+      ∃ F, (checked.foldlM (fun (acc : Env md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
           let rules' ← checkIotaRules mode (fueledOpsM mode) env₂ envSelf f c.1.name
             c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
-          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
+          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
           acc.env).val F = .ok fe₃.env
   | [], acc, s₀, fe₃, s', _, hs, h => by
     obtain ⟨hfe, rfl⟩ := pureC_ok h
@@ -409,31 +409,31 @@ private theorem iotaFoldS_run (hμ : mode.verifiedChecks = true) {env₂ envSelf
       (fun c' hc' => htys c' (List.mem_cons_of_mem _ hc')) hs₂ h
     refine ⟨hwf', fun hacc => hfe' (by rw [hacc]; rfl), max F₁ F₂, ?_⟩
     rw [List.foldlM_cons]
-    have hF₂' : (rest.foldlM (fun (acc : Env) (c : ConstantVal × Nat × Nat × List RecRule) => do
+    have hF₂' : (rest.foldlM (fun (acc : Env md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
         let rules' ← checkIotaRules mode (fueledOpsM mode) env₂ envSelf f c.1.name
           c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
-        pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
+        pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
         (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.env.consts⟩ :
-          Env)).val F₂ = .ok fe₃.env := hF₂
+          (Env md))).val F₂ = .ok fe₃.env := hF₂
     refine atF_bind_intro (F₁ := F₁) (F₂ := F₂) ?_ hF₂'
     rw [FueledM.atF_bind, hF₁]
     rfl
 
 /-- Convert the constructed fueled iota fold to a pure fold at the
 same fuel. -/
-private theorem iotaFold_datF {env₂ envSelf : Env} {f : Key → Key}
+private theorem iotaFold_datF {env₂ envSelf : Env md} {f : Key md → Key md}
     {F : Nat} :
-    ∀ (checked : List (ConstantVal × Nat × Nat × List RecRule))
-      (acc : Env) {env₃ : Env},
-      (checked.foldlM (fun (acc : Env) (c : ConstantVal × Nat × Nat × List RecRule) => do
+    ∀ (checked : List (ConstantVal md × Nat × Nat × List (RecRule md)))
+      (acc : Env md) {env₃ : Env md},
+      (checked.foldlM (fun (acc : Env md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
           let rules' ← checkIotaRules mode (fueledOpsM mode) env₂ envSelf f c.1.name
             c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
-          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
+          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
           acc).val F = .ok env₃ →
-      checked.foldlM (fun (acc : Env) (c : ConstantVal × Nat × Nat × List RecRule) => do
+      checked.foldlM (fun (acc : Env md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
           let rules' ← checkIotaRules mode (fueledOps mode F) env₂ envSelf f
             c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
-          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
+          pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
           acc = .ok env₃
   | [], acc, env₃, h => h
   | c :: rest, acc, env₃, h => by
@@ -443,23 +443,23 @@ private theorem iotaFold_datF {env₂ envSelf : Env} {f : Key → Key}
     rw [checkIotaRules_datF] at hir
     show ((checkIotaRules mode (fueledOps mode F) env₂ envSelf f c.1.name
       c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2 >>= _ :
-        CheckM Env) >>= _) = _
+        CheckM (Env md)) >>= _) = _
     rw [hir]
     simp only [Bind.bind, Except.bind]
     have hstep' : (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' ::
-        acc.consts⟩ : Env) = e₁ := by
+        acc.consts⟩ : Env md) = e₁ := by
       have hst : (Except.ok (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' ::
-          acc.consts⟩ : Env) : Except CheckError Env) = .ok e₁ := hstep
+          acc.consts⟩ : Env md) : Except CheckError (Env md)) = .ok e₁ := hstep
       exact Except.ok.inj hst
     simp only [pure, Except.pure]
     rw [hstep']
     exact iotaFold_datF rest e₁ h
 
 /-- The recursor group of the shared driver. -/
-theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List Key} {env₂ : Env}
-    {recs : List ConstantInfo} (henv₂ : EnvWF env₂)
+theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List (Key md)} {env₂ : Env md}
+    {recs : List (ConstantInfo md)} (henv₂ : EnvWF env₂)
     (hbn : ∀ ci ∈ recs, blockNames.contains ci.name = true)
-    {s₀ : CState} (hwf : CSOKF s₀) {fe₃ : FEnv} {s' : CState}
+    {s₀ : CState md} (hwf : CSOKF s₀) {fe₃ : FEnv md} {s' : CState md}
     (h : checkIndRecsS mode blockNames (mkFEnv env₂) recs s₀ =
       .ok (fe₃, s')) :
     CSOKF s' ∧ fe₃ = mkFEnv fe₃.env ∧
@@ -516,13 +516,13 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
       (max F₁ F₂) = .ok (feSelf.env, checked) :=
     (provisionRecs (fueledOpsM mode) blockNames env₂ recs).property
       (Nat.le_max_left F₁ F₂) hF₁
-  have hF₂M := (checked.foldlM (fun (acc : Env)
-      (c : ConstantVal × Nat × Nat × List RecRule) => do
+  have hF₂M := (checked.foldlM (fun (acc : Env md)
+      (c : ConstantVal md × Nat × Nat × List (RecRule md)) => do
       let rules' ← checkIotaRules mode (fueledOpsM mode) env₂ feSelf.env
         (fun n => if blockNames.contains n then auxKey n .model else n)
         c.1.name c.1.levelParams c.1.type c.2.1 c.2.2.1 0 c.2.2.2
-      pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env))
-      env₂ : FueledM Env).property (Nat.le_max_right F₁ F₂) hF₂
+      pure (⟨.recInfo c.1 c.2.1 c.2.2.1 rules' :: acc.consts⟩ : Env md))
+      env₂ : FueledM (Env md)).property (Nat.le_max_right F₁ F₂) hF₂
   have hprovPM : provisionRecs (fueledOps mode (max F₁ F₂)) blockNames env₂
       recs = .ok (feSelf.env, checked) := by
     rw [← provisionRecs_datF]; exact hF₁M
@@ -592,9 +592,9 @@ theorem checkIndRecsS_run (hμ : mode.verifiedChecks = true) {blockNames : List 
 /-! ## The projection phases -/
 
 /-- The projection-function install (mirrors `checkProjFn`). -/
-theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
-    {s₀ : CState} (hs : CSOK mode env s₀) {fe' : FEnv} {s' : CState}
+theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {s₀ : CState md} (hs : CSOK mode env s₀) {fe' : FEnv md} {s' : CState md}
     (h : checkProjFnS mode (mkFEnv env) T ctorName lps nP nF i s₀ =
       .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
@@ -670,7 +670,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
       i).property hF₁₃ hFr
   have hFnp : checkProjFn mode (fueledOps mode F₃) env T ctorName lps nP nF i =
       .ok (⟨.recInfo ⟨projFnName T i, lps, pty⟩ nP nP
-        [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env) := by
+        [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env md) := by
     unfold checkProjFn
     show ((checkProjLookups env T ctorName lps nP nF i :
       CheckM _) >>= _) = _
@@ -696,7 +696,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
     rfl
   have hFn : (checkProjFn mode (fueledOpsM mode) env T ctorName lps nP nF
       i).val F₃ = .ok (⟨.recInfo ⟨projFnName T i, lps, pty⟩ nP nP
-        [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env) := by
+        [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env md) := by
     rw [checkProjFn_datF]
     exact hFnp
   rw [show FEnv.find? (mkFEnv env) = env.find? from mkFEnv_find?_fun env]
@@ -711,9 +711,9 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
   obtain ⟨raw, rb, cb, cbody, hraw, hrf, hrb, hann, halp, hrres, hrbv,
     hrfv, hsl, hsp, hdm, -⟩ := checkProjRule_inv hrule'
   show EnvWF (⟨.recInfo ⟨projFnName T i, lps, pty⟩ nP nP
-      [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env)
+      [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env md)
   rw [show (⟨.recInfo ⟨projFnName T i, lps, pty⟩ nP nP
-      [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env) =
+      [projFnRule env.find? T ctorName pty nP nF i rhsA] :: env.consts⟩ : Env md) =
     ⟨.recInfo ⟨projFnName T i, lps, pty'⟩ nP nP
       [projFnRule env.find? T ctorName pty' nP nF i rhsA'] :: env.consts⟩
     from by rw [hrecEq]]
@@ -731,9 +731,9 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : 
     simp [projFnRule, recRuleBits, hcond] at hf
 
 /-- One projection-function install step. -/
-theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (henv : EnvWF env)
-    {T ctorName : Key} {lps : List LevelParam} {nP nF i : Nat}
-    {s₀ : CState} (hwf : CSOKF s₀) {fe' : FEnv} {s' : CState}
+theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {s₀ : CState md} (hwf : CSOKF s₀) {fe' : FEnv md} {s' : CState md}
     (h : installProjFnStepS mode T ctorName lps nP nF (mkFEnv env) i s₀ =
       .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
@@ -764,10 +764,10 @@ theorem installProjFnStepS_run (hμ : mode.verifiedChecks = true) {env : Env} (h
     rfl
 
 /-- The artifact-phase fold. -/
-theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Key} {lps : List LevelParam}
+theorem foldProjFnS_run (hμ : mode.verifiedChecks = true) {T ctorName : Key md} {lps : List LevelParam}
     {nP nF : Nat} :
-    ∀ (idxs : List Nat) (env : Env) {s₀ : CState} {fe' : FEnv}
-      {s' : CState},
+    ∀ (idxs : List Nat) (env : Env md) {s₀ : CState md} {fe' : FEnv md}
+      {s' : CState md},
       EnvWF env → CSOKF s₀ →
       (idxs.foldlM (installProjFnStepS mode T ctorName lps nP nF)
         (mkFEnv env)) s₀ = .ok (fe', s') →

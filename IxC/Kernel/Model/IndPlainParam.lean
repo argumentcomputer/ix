@@ -43,7 +43,7 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The canonical rule's parameter positions, supplied** — exactly
@@ -52,23 +52,23 @@ theorem plainParamSupply {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {rP cnP cnF N : Nat} (hcnP : cnP ≤ rP) (hrPN : rP ≤ N)
     -- the statement frame
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     {Γs : List AnnotTerm} (hΓslen : Γs.length = rP + cnF)
     -- the public (recursor) frame and its tower
-    {fvsP : List Expr} (hfvsPlen : fvsP.length = rP)
-    (hshapeP : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
+    (hshapeP : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvsP : ∀ x ∈ fvsP, Expr.WScoped rP x)
     (hleafClosedP : ∀ l, (∃ x ∈ fvsP, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvsP)
-    (hlbFvsP : ∀ (i : Nat) (ty : Expr),
+    (hlbFvsP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvsP → ty.looseBVarsBounded 0 = true)
     {TV : AnnotTerm} {ΓP : List AnnotTerm} {RP : AnnotTerm}
     (htowerP : PiTeleAV rP TV ΓP RP)
     (hokTV : ∀ σ : Nat → V, WellDenotedV V σ TV)
-    (hdomsP0 : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    (hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
     -- the ambient (statement-frame) context
@@ -84,23 +84,23 @@ theorem plainParamSupply {m : EnvModel V env} {F : Nat}
           = interp V (fun j => ρ' (j + (rP + cnF - n)))
               (ΓP.getD (rP - 1 - n) default))
     -- the constructor type at the public frame, and its run there
-    {ctyP : Expr} (hCw : ctyP.hasFvar = false)
+    {ctyP : Expr md} (hCw : ctyP.hasFvar = false)
     (hCb : ctyP.looseBVarsBounded 0 = true)
     {TVjP : AnnotTerm}
     (hTVjP : denoteMeta m.acval env φ (rP + cnF) ctyP = some TVjP)
     (hokTVjP : ∀ σ : Nat → V, WellDenotedV V σ TVjP)
-    {cdomsP : List Expr} {crestP : Expr}
+    {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt (fvsP.take cnP) ctyP
       = some (cdomsP, crestP))
     (hdePars : DefEqListOk μ F env (rP + cnF)
       ((fvsP.take cnP).map Expr.fvarTypeD) cdomsP)
     -- the statement-frame run, whose parameter spine is the frame's
-    {sp : List Expr} (hsplen : sp.length = cnP + cnF)
+    {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)
     (hspPar : ∀ q, q < cnP → sp[q]? = fvs[q]?)
-    {ctyR : Expr} {cdoms : List Expr} {cres : Expr}
+    {ctyR : Expr md} {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     -- the renaming between the two runs' types
-    {f : Key → Key} (hro : RenameOk m.acval env f)
+    {f : Key md → Key md} (hro : RenameOk m.acval env f)
     (hrenCty : RenEqT f ctyP ctyR) :
     ∀ q, q < cnP → ∀ ρ' : Nat → V, Sat V Δa ρ' →
       ∃ w, denoteMeta m.acval env φ (rP + cnF) (sp.getD q default)
@@ -179,7 +179,7 @@ theorem plainParamSupply {m : EnvModel V env} {F : Nat}
       denoteMeta m.acval env φ (rP + cnF) (cdoms.getD q default)
         = denoteMeta m.acval env φ (rP + cnF) (cdomsP.getD q default) := by
     intro q hq
-    have hargs : ∀ (i : Nat) (a a' : Expr),
+    have hargs : ∀ (i : Nat) (a a' : Expr md),
         (fvsP.take cnP)[i]? = some a → (sp.take cnP)[i]? = some a' →
         RenEqT f a a' := by
       intro i a a' ha ha'

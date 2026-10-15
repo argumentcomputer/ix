@@ -23,7 +23,7 @@ namespace Ix.Kernel.Semantics
 
 open Ix.Kernel
 /-- `Nat.rec`'s two stored rules. -/
-def natRecZeroRule : RecRule :=
+def natRecZeroRule : RecRule md :=
   { ctor := natZeroName, nfields := 0, ctorParams := 0, fire := .plain,
     paramsBlind := true,
     rhs := Expr.lam
@@ -42,7 +42,7 @@ def natRecZeroRule : RecRule :=
         { pw := .ifAllZero [uN] })
       { pw := .ifAllZero [uN] } }
 
-def natRecSuccRule : RecRule :=
+def natRecSuccRule : RecRule md :=
   { ctor := natSuccName, nfields := 1, ctorParams := 0, fire := .plain,
     paramsBlind := true,
     rhs := Expr.lam
@@ -68,13 +68,13 @@ def natRecSuccRule : RecRule :=
       { pw := .ifAllZero [uN] } }
 
 theorem natRecA_eq :
-    natRecA = .recInfo natRecA.toConstantVal 3 3
-      [natRecZeroRule, natRecSuccRule] := by
+    (natRecA (md := md)) = .recInfo natRecA.toConstantVal 3 3
+      [(natRecZeroRule (md := md)), natRecSuccRule] := by
   show natRecA = _
   rfl
 
 /-- `Quot.ind`'s single stored rule. -/
-def quotIndRule : RecRule :=
+def quotIndRule : RecRule md :=
   { ctor := quotMkName, nfields := 1, ctorParams := 2, fire := .plain,
     paramsBlind := true,
     rhs := Expr.lam (.sort (.param uN))
@@ -102,7 +102,7 @@ def quotIndRule : RecRule :=
 
 
 /-- `Quot.lift`'s single stored rule. -/
-def quotLiftRule : RecRule :=
+def quotLiftRule : RecRule md :=
   { ctor := quotMkName, nfields := 1, ctorParams := 2, fire := .plain,
     paramsBlind := true,
     rhs := Expr.lam (.sort (.param uN))
@@ -134,7 +134,7 @@ def quotLiftRule : RecRule :=
 
 
 /-- `Eq.rec`'s single stored rule. -/
-def eqRecRule : RecRule :=
+def eqRecRule : RecRule md :=
   { ctor := eqReflName, nfields := 0, ctorParams := 2, fire := .plain,
     paramsBlind := true,
     k := true,
@@ -159,17 +159,17 @@ def eqRecRule : RecRule :=
 
 /-- The stored declaration, with its rule named. -/
 theorem quotIndA_eq :
-    quotIndA = .recInfo quotIndA.toConstantVal 4 4 [quotIndRule] := by rfl
+    (quotIndA (md := md)) = .recInfo quotIndA.toConstantVal 4 4 [quotIndRule] := by rfl
 
 
 theorem quotLiftA_eq :
-    quotLiftA = .recInfo quotLiftA.toConstantVal 5 5 [quotLiftRule] := by
+    (quotLiftA (md := md)) = .recInfo quotLiftA.toConstantVal 5 5 [quotLiftRule] := by
       rfl
 
 
 /-- The stored declaration, with its rule named. -/
 theorem eqRecA_eq :
-    eqRecA = .recInfo eqRecA.toConstantVal 5 4 [eqRecRule] := by rfl
+    (eqRecA (md := md)) = .recInfo eqRecA.toConstantVal 5 4 [eqRecRule] := by rfl
 
 
 end Ix.Kernel.Semantics

@@ -34,17 +34,17 @@ variable {mode : CheckMode}
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 end Walks
 
 section Walks3
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `annotateBodyI_sim`. -/
 theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
-    {d : Nat} {i : Expr} {ex : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {i : Expr md} {ex : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i ex) (hw : Expr.WScoped d ex) :
     SimC mode env s₀ (RelEC d)
       (annotateBodyI (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d i)
@@ -217,7 +217,7 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       -- task #161 P5: the single-binder write — the λ chain rule at a
       -- chain of length one, the same `annotPwLam` the spec clause runs.
       -- The rebuilt node is the same on both sides whatever the datum.
-      have hstep : ∀ (s' : CState) (pw : PropWhen), CSOK mode env s' →
+      have hstep : ∀ (s' : CState md) (pw : PropWhen), CSOK mode env s' →
           SimC mode env s' (RelEC d)
             (pure (Expr.lam ty' bAbs { m with pw }))
             (pure (Expr.lam ty' (body'x.abstract1 d)

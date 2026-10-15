@@ -55,8 +55,8 @@ open Ix.Kernel (Env Expr Key Level)
 
 universe w
 
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal}
-variable {env : Env} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal md}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## `instSeq` corollaries at bounded readings -/
 
@@ -188,7 +188,7 @@ theorem nestedChain {rP cnF : Nat} {xs : List AnnotTerm} (q : AnnotTerm)
 
 /-- A reading spine, built positionally (`DenoteSpine.of_getElem`). -/
 theorem DenoteMetaSpine.of_getD {d : Nat} :
-    ∀ (as : List Expr) (vs : List AnnotTerm), as.length = vs.length →
+    ∀ (as : List (Expr md)) (vs : List AnnotTerm), as.length = vs.length →
       (∀ q, q < as.length →
         denoteMeta acval env φ d (as.getD q default)
           = some (vs.getD q default)) →
@@ -226,19 +226,19 @@ same two laws run backwards: `Rules.denoteMeta_openRev` presents the
 instantiated reading as an `Option.map` of the `openRev` one, so the
 former being `some` forces the latter. -/
 theorem pinOpenRevReads
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
     {rP cnF : Nat}
-    {os : List Expr} (hoslen : os.length = rP)
-    (hshape : ∀ (i : Nat) (x : Expr), os[i]? = some x →
+    {os : List (Expr md)} (hoslen : os.length = rP)
+    (hshape : ∀ (i : Nat) (x : Expr md), os[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsOs : ∀ x ∈ os, Expr.WScoped (rP + cnF) x)
     (hbOs : ∀ x ∈ os, x.looseBVarsBounded 0 = true)
-    {p : Expr} (hpw : p.hasFvar = false)
+    {p : Expr md} (hpw : p.hasFvar = false)
     (hpb : p.looseBVarsBounded rP = true)
     {w0 : AnnotTerm}
     (hw0 : denoteMeta acval env φ (rP + cnF)
@@ -305,19 +305,19 @@ padding, `vals` the fired statement spine).  `nestedChain` was
 already generic in exactly this way; only `pinCross`'s own statement
 had baked the producer's instance in. -/
 theorem pinCross
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
     {rP cnF : Nat} (q : AnnotTerm)
-    {os : List Expr} (hoslen : os.length = rP)
-    (hshape : ∀ (i : Nat) (x : Expr), os[i]? = some x →
+    {os : List (Expr md)} (hoslen : os.length = rP)
+    (hshape : ∀ (i : Nat) (x : Expr md), os[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsOs : ∀ x ∈ os, Expr.WScoped (rP + cnF) x)
     (hbOs : ∀ x ∈ os, x.looseBVarsBounded 0 = true)
-    {p : Expr} (hpw : p.hasFvar = false)
+    {p : Expr md} (hpw : p.hasFvar = false)
     (hpb : p.looseBVarsBounded rP = true)
     {vpa : AnnotTerm}
     (hvpden : denoteMeta acval env φ rP (openRev 0 rP p) = some vpa)

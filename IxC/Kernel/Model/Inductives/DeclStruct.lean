@@ -38,7 +38,7 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 /-! ## Readings under two leaves -/
 
 /-- A name fresh at a cons is fresh below it. -/
-theorem find?_none_of_cons {c : ConstantInfo} {env : Env} {n : Key}
+theorem find?_none_of_cons {c : ConstantInfo md} {env : Env md} {n : Key md}
     (h : Env.find? ⟨c :: env.consts⟩ n = none) : env.find? n = none := by
   rw [Ix.Kernel.Env.find?_cons] at h
   split at h

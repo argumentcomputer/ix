@@ -26,26 +26,26 @@ open Expr
 declaration-checker inversions unfold through these (never through
 `fueledOps` itself, so record spellings in hypotheses keep matching). -/
 
-theorem fueledOps_annotate (F : Nat) (env : Env) (d : Nat) (e : Expr) :
+theorem fueledOps_annotate (F : Nat) (env : Env md) (d : Nat) (e : Expr md) :
     (fueledOps mode F).annotate env d e = annotateCore mode env F d e := rfl
-theorem fueledOps_inferType (F : Nat) (env : Env) (d : Nat) (e : Expr) :
+theorem fueledOps_inferType (F : Nat) (env : Env md) (d : Nat) (e : Expr md) :
     (fueledOps mode F).inferType env d e = inferTypeCore mode env F d e := rfl
-theorem fueledOps_isDefEq (F : Nat) (env : Env) (d : Nat) (a b : Expr) :
+theorem fueledOps_isDefEq (F : Nat) (env : Env md) (d : Nat) (a b : Expr md) :
     (fueledOps mode F).isDefEq env d a b = isDefEqCore mode env F d a b := rfl
-theorem fueledOps_ensureSort (F : Nat) (env : Env) (d : Nat) (e : Expr) :
+theorem fueledOps_ensureSort (F : Nat) (env : Env md) (d : Nat) (e : Expr md) :
     (fueledOps mode F).ensureSort env d e = ensureSortCore mode env F d e := rfl
-theorem fueledOps_whnf (F : Nat) (env : Env) (d : Nat) (e : Expr) :
+theorem fueledOps_whnf (F : Nat) (env : Env md) (d : Nat) (e : Expr md) :
     (fueledOps mode F).whnf env d e = Ix.Kernel.whnf mode env F d e := rfl
 /-- The pure lane's variant-fallback combinator (task #273): the
 continuation is handed `none` whatever the outcome — the outcome is
 diagnostic text the executable's lane delivers. -/
 theorem fueledOps_orElse (F : Nat) (x : CheckM Bool)
     (k : Option CheckError → CheckM Unit) :
-    (fueledOps mode F).orElse x k =
+    ((fueledOps (md := md)) mode F).orElse x k =
       match x with | .ok true => pure () | _ => k none := rfl
 
 /-- Inversion for `checkConstantVal`. -/
-theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
+theorem checkConstantVal_inv {env : Env md} {cv cv' : ConstantVal md}
     (h : checkConstantVal (fueledOps mode F) env cv = .ok cv') :
     env.find? cv.name = none ∧
     reservedBasisNames.contains cv.name = false ∧
@@ -115,14 +115,14 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
     type, stype, u, rfl, htp, htr, hst, hsort, h.symm⟩
 
 /-- No projection function is a reserved basis name. -/
-theorem reservedBasisNames_not_projFn (T : Key) (i : Nat) :
+theorem reservedBasisNames_not_projFn (T : Key md) (i : Nat) :
     reservedBasisNames.contains (projFnName T i) = false :=
   reservedBasisNames_contains_auxKey T (.projFn i)
 
-theorem domsMatchAux_inv {g : Nat → Expr → Expr}
-    {bs₁ bs₂ : List (Expr × BinderMeta)} {o₁ o₂ n : Nat}
+theorem domsMatchAux_inv {g : Nat → Expr md → Expr md}
+    {bs₁ bs₂ : List (Expr md × BinderMeta)} {o₁ o₂ n : Nat}
     (h : domsMatchAux g bs₁ bs₂ o₁ o₂ n = true)
-    {i : Nat} (hi : i < n) {b b' : Expr × BinderMeta}
+    {i : Nat} (hi : i < n) {b b' : Expr md × BinderMeta}
     (hb : bs₁[o₁ + i]? = some b) (hb' : bs₂[o₂ + i]? = some b') :
     b.1 = g i b'.1 := by
   have hone := List.all_eq_true.mp h i (List.mem_range.mpr hi)
@@ -139,7 +139,7 @@ theorem Except.bind_ok {ε α β : Type _} {x : Except ε α}
 
 /-- One pinned basis install, inverted (relocated from the TT lane,
 task #148 T6: both lanes' basis-block bridges invert the same fold). -/
-theorem installBasisDecl_inv {env env₁ : Env} {ci : ConstantInfo}
+theorem installBasisDecl_inv {env env₁ : Env md} {ci : ConstantInfo md}
     (h : installBasisDecl (m := CheckM) env ci = .ok env₁) :
     env.find? ci.name = none ∧ env₁ = ⟨ci :: env.consts⟩ := by
   unfold installBasisDecl at h

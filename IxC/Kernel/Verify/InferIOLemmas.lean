@@ -36,8 +36,8 @@ the only deltas are the lane of the two recursive inferences and the
 lane-folding rewrites.  The stored annotation is validated here exactly
 as in the full lane — the io grade narrows the application clause and
 nothing else. -/
-theorem inferTypeCoreIO_forall_inv {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem inferTypeCoreIO_forall_inv {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.forallE ty body m)
       = .ok t) :
     ∃ tty u bt v, inferTypeCoreIO mode env fuel d ty = .ok tty ∧
@@ -101,8 +101,8 @@ run packaged as its `ensureSortCore` spelling (consumers reach the
 whnf form through `ensureSortCore_inv`, as the ∀ clause does).  The
 validation block is verbatim: the io grade narrows the application
 clause and nothing else. -/
-theorem inferTypeCoreIO_lam_inv {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem inferTypeCoreIO_lam_inv {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.lam ty body m)
       = .ok t) :
     ∃ bt,
@@ -180,8 +180,8 @@ theorem inferTypeCoreIO_lam_inv {env : Env} {fuel d : Nat}
 /-- The λ→∀ meta copy at the io lane (`infer_lam_meta_copy`'s twin):
 the type the io lane returns for a λ is a `∀` carrying the λ's own
 binder meta — annotation included. -/
-theorem inferIO_lam_meta_copy {env : Env} {fuel d : Nat}
-    {ty body t : Expr} {m : BinderMeta}
+theorem inferIO_lam_meta_copy {env : Env md} {fuel d : Nat}
+    {ty body t : Expr md} {m : BinderMeta}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.lam ty body m)
       = .ok t) :
     ∃ bt, t = .forallE ty bt m := by
@@ -200,7 +200,7 @@ It went with the site's: the licensing theorem
 `pwBit_ne_zero_of_isNever`, i.e. the **datum**, and never the mode —
 so the conjunct was never a premise anything needed, and carrying it
 made the trusted mode run a certificate the verified mode skips. -/
-theorem inferTypeCoreIO_app_inv {env : Env} {fuel d : Nat} {f a t : Expr}
+theorem inferTypeCoreIO_app_inv {env : Env md} {fuel d : Nat} {f a t : Expr md}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.app f a) = .ok t) :
     ∃ tf ty' body' m', inferTypeCoreIO mode env fuel d f = .ok tf ∧
       whnf mode env fuel d tf = .ok (.forallE ty' body' m') ∧
@@ -261,7 +261,7 @@ theorem inferTypeCoreIO_app_inv {env : Env} {fuel d : Nat} {f a t : Expr}
 leaf knot's auxiliary slots are the full knot's (monotone by
 `pureFns_mono`), and both infer slots are `inferBodyIO` over the
 smaller leaf knot — `inferBodyIO_mono` closes the induction. -/
-theorem pureFnsIO_mono (env : Env) : ∀ {f f' : Nat}, f ≤ f' →
+theorem pureFnsIO_mono (env : Env md) : ∀ {f f' : Nat}, f ≤ f' →
     FnsRefines (pureFnsIO mode env f) (pureFnsIO mode env f')
   | 0, _, _ => by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -292,16 +292,16 @@ theorem pureFnsIO_mono (env : Env) : ∀ {f f' : Nat}, f ≤ f' →
       fun d e => ihfull.2.2.2.2.1 d e,
       fun d e => inferBodyIO_mono ih d e⟩
 
-theorem inferTypeCoreIO_mono {env : Env} {f f' : Nat} (hle : f ≤ f')
-    {d : Nat} {e r : Expr}
+theorem inferTypeCoreIO_mono {env : Env md} {f f' : Nat} (hle : f ≤ f')
+    {d : Nat} {e r : Expr md}
     (h : inferTypeCoreIO mode env f d e = .ok r) :
     inferTypeCoreIO mode env f' d e = .ok r :=
   (pureFnsIO_mono env hle).2.2.1 d e r h
 
 /-- `inferTypeCoreIO_app_inv` with all runs re-levelled to the outer
 fuel (`inferTypeCore_app_inv'`'s io twin). -/
-theorem inferTypeCoreIO_app_inv' {env : Env} {fuel d : Nat}
-    {f a t : Expr}
+theorem inferTypeCoreIO_app_inv' {env : Env md} {fuel d : Nat}
+    {f a t : Expr md}
     (h : inferTypeCoreIO mode env fuel d (.app f a) = .ok t) :
     ∃ tf ty' body' m', inferTypeCoreIO mode env fuel d f = .ok tf ∧
       whnf mode env fuel d tf = .ok (.forallE ty' body' m') ∧
@@ -324,8 +324,8 @@ theorem inferTypeCoreIO_app_inv' {env : Env} {fuel d : Nat}
 
 /-- The let-rule of the io lane is **unreachable** (task #241), like
 `inferTypeCore_letE_inv`'s: the arm is a positive `.internal` error. -/
-theorem inferTypeCoreIO_letE_inv {env : Env} {fuel d : Nat}
-    {ty v b t : Expr}
+theorem inferTypeCoreIO_letE_inv {env : Env md} {fuel d : Nat}
+    {ty v b t : Expr md}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.letE ty v b lmeta)
       = .ok t) :
     False := by
@@ -335,8 +335,8 @@ theorem inferTypeCoreIO_letE_inv {env : Env} {fuel d : Nat}
 /-- Inversion for the projection rule of the io lane
 (`inferTypeCore_proj_inv`'s twin: the scrutinee's inference at the io
 lane, the reduction at the full one). -/
-theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
-    {i : Nat} {e t : Expr}
+theorem inferTypeCoreIO_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
+    {i : Nat} {e t : Expr md}
     (h : inferTypeCoreIO mode env (fuel + 1) d (.proj sn i e) = .ok t) :
     ∃ tpe te T us entry,
       inferTypeCoreIO mode env fuel d e = .ok tpe ∧
@@ -405,7 +405,7 @@ theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
       · rw [if_neg hf] at h
         exact absurd h (by
           simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind])
-    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError Expr) = .ok t := by
+    have h' : (pure (entry.typeAt us te.getAppArgs e) : Except CheckError (Expr md)) = .ok t := by
       by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
       · rw [if_pos hp, if_pos (hg hp)] at h
         exact h
@@ -418,7 +418,7 @@ theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
 /-- **The literal clauses are lane-independent**: neither recurses, so
 the io run *is* the full run — the io twins of the two literal claims
 are the full claims applied across this equation. -/
-theorem inferTypeCoreIO_lit_eq {env : Env} {fuel d : Nat} {l : Literal} :
+theorem inferTypeCoreIO_lit_eq {env : Env md} {fuel d : Nat} {l : Literal} :
     inferTypeCoreIO mode env (fuel + 1) d (.lit l) =
       inferTypeCore mode env (fuel + 1) d (.lit l) := by
   rw [inferTypeCoreIO_succ, inferTypeCore_succ]
@@ -438,22 +438,22 @@ content of "the io grade narrows the application clause and nothing
 else" at the leaves. -/
 
 /-- `.sort` is lane-independent (no recursive run). -/
-theorem inferTypeCoreIO_sort_eq {env : Env} {fuel d : Nat} {u : Level} :
+theorem inferTypeCoreIO_sort_eq {env : Env md} {fuel d : Nat} {u : Level} :
     inferTypeCoreIO mode env (fuel + 1) d (.sort u) =
       inferTypeCore mode env (fuel + 1) d (.sort u) := by
   rw [inferTypeCoreIO_succ, inferTypeCore_succ]
   rfl
 
 /-- `.fvar` is lane-independent (the stored annotation, no run). -/
-theorem inferTypeCoreIO_fvar_eq {env : Env} {fuel d idx : Nat}
-    {ty : Expr} :
+theorem inferTypeCoreIO_fvar_eq {env : Env md} {fuel d idx : Nat}
+    {ty : Expr md} :
     inferTypeCoreIO mode env (fuel + 1) d (.fvar idx ty) =
       inferTypeCore mode env (fuel + 1) d (.fvar idx ty) := by
   rw [inferTypeCoreIO_succ, inferTypeCore_succ]
   rfl
 
 /-- `.const` is lane-independent (the stored type, no run). -/
-theorem inferTypeCoreIO_const_eq {env : Env} {fuel d : Nat} {n : Key}
+theorem inferTypeCoreIO_const_eq {env : Env md} {fuel d : Nat} {n : Key md}
     {us : List Level} :
     inferTypeCoreIO mode env (fuel + 1) d (.const n us) =
       inferTypeCore mode env (fuel + 1) d (.const n us) := by
@@ -471,8 +471,8 @@ discharges the retiring interned core's io simulation clause — that
 core's io slot deliberately stays at full grade (the interned
 short-bridge, DESIGN.md B4 seal). -/
 
-theorem inferTypeCoreIO_of_full {env : Env} :
-    ∀ {fuel d : Nat} {e t : Expr},
+theorem inferTypeCoreIO_of_full {env : Env md} :
+    ∀ {fuel d : Nat} {e t : Expr md},
       inferTypeCore mode env fuel d e = .ok t →
       inferTypeCoreIO mode env fuel d e = .ok t
   | 0, d, e, t, h => by
@@ -598,7 +598,7 @@ theorem inferTypeCoreIO_of_full {env : Env} :
 /-- The weakening at the knot's io slot: at any mode, a full-grade
 success is an io-slot success with the same value (gate-off: the slot
 IS the full lane; gate-on: `inferTypeCoreIO_of_full`). -/
-theorem inferTypeIO_of_full {env : Env} {fuel d : Nat} {e t : Expr}
+theorem inferTypeIO_of_full {env : Env md} {fuel d : Nat} {e t : Expr md}
     (h : inferTypeCore mode env fuel d e = .ok t) :
     inferTypeIO mode env fuel d e = .ok t := by
   cases hg : mode.betaGate with
@@ -608,7 +608,7 @@ theorem inferTypeIO_of_full {env : Env} {fuel d : Nat} {e t : Expr}
 /-- A slot success is a leaf-lane success: at the gated mode they are
 the same lane; at a gate-off mode the slot is the full lane and the
 weakening applies. -/
-theorem inferTypeCoreIO_of_slot {env : Env} {fuel d : Nat} {e t : Expr}
+theorem inferTypeCoreIO_of_slot {env : Env md} {fuel d : Nat} {e t : Expr md}
     (h : inferTypeIO mode env fuel d e = .ok t) :
     inferTypeCoreIO mode env fuel d e = .ok t := by
   cases hg : mode.betaGate with

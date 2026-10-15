@@ -27,8 +27,8 @@ variable {mode : CheckMode}
 
 open Expr
 
-theorem inferTypeCoreIO_WScoped {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCoreIO_WScoped {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCoreIO mode env fuel d e = .ok t → WScoped d e →
       WScoped d t
   | 0, d, e, t, h, _ => nomatch h
@@ -140,8 +140,8 @@ theorem inferTypeCoreIO_WScoped {env : Env} (henv : EnvWF env) :
     | letE t' v' b' _ =>
       exact (inferTypeCoreIO_letE_inv h).elim
 
-theorem inferTypeCoreIO_fvarLeaves {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCoreIO_fvarLeaves {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCoreIO mode env fuel d e = .ok t → WScoped d e →
       ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
   | 0, d, e, t, h, _ => nomatch h
@@ -280,8 +280,8 @@ theorem inferTypeCoreIO_fvarLeaves {env : Env} (henv : EnvWF env) :
     | letE t' v' b' _ =>
       exact (inferTypeCoreIO_letE_inv h).elim
 
-theorem inferTypeCoreIO_looseBVars {env : Env} (henv : EnvWF env) :
-    ∀ (fuel : Nat) {d : Nat} {e t : Expr},
+theorem inferTypeCoreIO_looseBVars {env : Env md} (henv : EnvWF env) :
+    ∀ (fuel : Nat) {d : Nat} {e t : Expr md},
       inferTypeCoreIO mode env fuel d e = .ok t → WScoped d e →
       e.looseBVarsBounded 0 = true → Expr.LeavesBounded e →
       t.looseBVarsBounded 0 = true
@@ -419,8 +419,8 @@ from whichever lane the mode selects — `inferTypeIO_off`/`_on` plus
 the full- and io-lane inductions above.  Stated once here so every
 walk that meets a converted call site consumes one name. -/
 
-theorem inferTypeIO_WScoped {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e t : Expr}
+theorem inferTypeIO_WScoped {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e t : Expr md}
     (h : inferTypeIO mode env fuel d e = .ok t) (hw : WScoped d e) :
     WScoped d t := by
   cases hg : mode.betaGate with
@@ -429,8 +429,8 @@ theorem inferTypeIO_WScoped {env : Env} (henv : EnvWF env)
   | true => rw [inferTypeIO_on hg] at h
             exact inferTypeCoreIO_WScoped henv fuel h hw
 
-theorem inferTypeIO_fvarLeaves {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e t : Expr}
+theorem inferTypeIO_fvarLeaves {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e t : Expr md}
     (h : inferTypeIO mode env fuel d e = .ok t) (hw : WScoped d e) :
     ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves := by
   cases hg : mode.betaGate with
@@ -439,8 +439,8 @@ theorem inferTypeIO_fvarLeaves {env : Env} (henv : EnvWF env)
   | true => rw [inferTypeIO_on hg] at h
             exact inferTypeCoreIO_fvarLeaves henv fuel h hw
 
-theorem inferTypeIO_looseBVars {env : Env} (henv : EnvWF env)
-    (fuel : Nat) {d : Nat} {e t : Expr}
+theorem inferTypeIO_looseBVars {env : Env md} (henv : EnvWF env)
+    (fuel : Nat) {d : Nat} {e t : Expr md}
     (h : inferTypeIO mode env fuel d e = .ok t) (hw : WScoped d e)
     (hb : e.looseBVarsBounded 0 = true) (hLb : Expr.LeavesBounded e) :
     t.looseBVarsBounded 0 = true := by

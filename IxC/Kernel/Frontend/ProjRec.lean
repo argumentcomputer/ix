@@ -82,22 +82,22 @@ namespace Ix.Kernel.Frontend
 
 /-- What the rewrite needs to know about one structure-like owner `T`
 of a parsed inductive block that the direct install does not serve. -/
-structure ProjRecOwner where
+structure ProjRecOwner (md : Mode) where
   /-- the type former -/
-  T : Key
+  T : Key md
   /-- the block's level parameters (the owner's, the constructor's,
   and the recursor's after its elimination level) -/
   lps : List LevelParam
   /-- parameter count -/
   nP : Nat
   /-- the single constructor -/
-  ctor : Key
+  ctor : Key md
   /-- its field count -/
   nF : Nat
   /-- the owner's recursor `T.rec`: name, level parameters, type -/
-  recName : Key
+  recName : Key md
   recLps : List LevelParam
-  recType : Expr
+  recType : Expr md
   /-- the recursor's motive and minor counts (the export's own) -/
   numMotives : Nat
   numMinors : Nat
@@ -107,18 +107,18 @@ structure ProjRecOwner where
 field `i` of `T`: `T._model.proj_i.iota` (emitted by the in-process
 modeller; the naming is the one `lean-inductive-models` used before
 task #207 dropped it). -/
-def projIotaName (T : Key) (i : Nat) : Key := auxKey (projModelName T i) .projIota
+def projIotaName (T : Key md) (i : Nat) : Key md := auxKey (projModelName T i) .projIota
 
 /-- The `Eq` level of an artifact iota statement `∀ …, @Eq.{ℓ} α a b`:
 the field's sort.  `none` on any other shape. -/
-def projIotaLevel (ty : Expr) : Option Level :=
+def projIotaLevel (ty : Expr md) : Option Level :=
   match (ty.piResult.getAppFn) with
   | .const n [l] => if n == eqName then some l else none
   | _ => none
 
 /-- Does the constant `n` occur in `e`?  (Not through fvar type
 annotations — parsed declarations are fvar-free.) -/
-def occursConst (n : Key) : Expr → Bool
+def occursConst (n : Key md) : Expr md → Bool
   | .const m _ => m == n
   | .app f a => occursConst n f || occursConst n a
   | .lam ty b _ => occursConst n ty || occursConst n b
@@ -141,7 +141,7 @@ depends on it, so the memoised walk is simply what that caller uses;
 the pure definition above stays as its specification. -/
 
 /-- Allocation-free descent on a node budget; `none` when it runs out. -/
-def occursConstB (n : Key) : Nat → Expr → Option Bool × Nat
+def occursConstB (n : Key md) : Nat → Expr md → Option Bool × Nat
   | fuel, .const m _ => (some (m == n), fuel)
   | fuel, .bvar _ => (some false, fuel)
   | fuel, .fvar _ _ => (some false, fuel)
@@ -171,8 +171,8 @@ def occursConstB (n : Key) : Nat → Expr → Option Bool × Nat
 
 /-- The memoised descent: the set holds the subterms already shown NOT
 to mention `n`. -/
-def occursConstGo (n : Key) (seen : Std.HashSet Expr) : Expr →
-    Bool × Std.HashSet Expr
+def occursConstGo (n : Key md) (seen : Std.HashSet (Expr md)) : Expr md →
+    Bool × Std.HashSet (Expr md)
   | .const m _ => (m == n, seen)
   | .bvar _ | .fvar .. | .sort _ | .lit _ => (false, seen)
   | e@(.app f a) =>
@@ -217,33 +217,33 @@ def occursConstGo (n : Key) (seen : Std.HashSet Expr) : Expr →
       | r => r
 
 /-- The executed `occursConst` (see above). -/
-def occursConstFast (n : Key) (e : Expr) : Bool :=
+def occursConstFast (n : Key md) (e : Expr md) : Bool :=
   match (occursConstB n 4096 e).1 with
   | some r => r
   | none => (occursConstGo n {} e).1
 
 /-- The body under every leading `λ` (the projection shape's
 pre-filter: the node under the value's binders). -/
-def lamBody : Expr → Expr
+def lamBody : Expr md → Expr md
   | .lam _ b _ => lamBody b
   | e => e
 
 /-- Strip every leading `∀`: the binder list (outermost first) and the
 body. -/
-def stripPisAll : Expr → List (Expr × BinderMeta) × Expr
+def stripPisAll : Expr md → List (Expr md × BinderMeta) × Expr md
   | .forallE ty b m =>
     let (bs, e) := stripPisAll b
     ((ty, m) :: bs, e)
   | e => ([], e)
 
 /-- Rebuild a `λ`-telescope over a binder list (outermost first). -/
-def mkLams (bs : List (Expr × BinderMeta)) (body : Expr) : Expr :=
+def mkLams (bs : List (Expr md × BinderMeta)) (body : Expr md) : Expr md :=
   bs.foldr (fun (ty, m) acc => .lam ty acc m) body
 
 /-- Instantiate the leading `∀`-binders at *open* arguments (the
 body-frame variables and the built motives/minors), one binder per
 argument, returning the residual telescope. -/
-def instPisOpen : Expr → List Expr → Option Expr
+def instPisOpen : Expr md → List (Expr md) → Option (Expr md)
   | e, [] => some e
   | .forallE _ body _, a :: as => instPisOpen (body.instantiate1Lift a) as
   | _, _ :: _ => none
@@ -251,8 +251,8 @@ def instPisOpen : Expr → List Expr → Option Expr
 /-- Peel `k` binders of a telescope, building one term per binder from
 its (progressively instantiated) domain, and instantiating the
 telescope with that term before the next binder is read. -/
-def buildBinders (mk : Expr → Option Expr) :
-    Nat → Expr → Option (List Expr × Expr)
+def buildBinders (mk : Expr md → Option (Expr md)) :
+    Nat → Expr md → Option (List (Expr md) × Expr md)
   | 0, e => some ([], e)
   | k + 1, .forallE dom body _ => do
     let t ← mk dom
@@ -263,7 +263,7 @@ def buildBinders (mk : Expr → Option Expr) :
 /-- Is `T` the head of the owner's own carrier: the motive domain
 `∀ (t : T p⃗), Sort ℓ` (exactly one binder) or the major-premise
 domain. -/
-def headIs (T : Key) (e : Expr) : Bool :=
+def headIs (T : Key md) (e : Expr md) : Bool :=
   match e.getAppFn with
   | .const n _ => n == T
   | _ => false
@@ -272,8 +272,8 @@ def headIs (T : Key) (e : Expr) : Bool :=
 value, `i` the projected field, `ℓ` the field's sort (from the
 artifact).  `none` = the value is not of the projection shape (the
 caller keeps the declaration unchanged). -/
-def projRecValue (o : ProjRecOwner) (ℓ : Level) (ty val : Expr) (i : Nat) :
-    Option Expr := do
+def projRecValue (o : ProjRecOwner md) (ℓ : Level) (ty val : Expr md) (i : Nat) :
+    Option (Expr md) := do
   let (lbs, body) ← val.stripLams (o.nP + 1)
   guard (body == .proj o.T i (.bvar 0))
   guard (i < o.nF)
@@ -289,7 +289,7 @@ def projRecValue (o : ProjRecOwner) (ℓ : Level) (ty val : Expr) (i : Nat) :
   -- references skip the new binder; its subject reference IS the new
   -- binder); every other one is the constant `PUnit.{ℓ}` over its
   -- telescope
-  let mkMotive : Expr → Option Expr := fun dom =>
+  let mkMotive : Expr md → Option (Expr md) := fun dom =>
     match stripPisAll dom with
     | ([(d, m)], .sort _) =>
       if headIs o.T d then some (.lam d (R.liftLooseBVars 1 1) m)
@@ -301,7 +301,7 @@ def projRecValue (o : ProjRecOwner) (ℓ : Level) (ty val : Expr) (i : Nat) :
   -- (fields first, then the inductive hypotheses); every other one
   -- returns `PUnit.unit.{ℓ}`.  The owner's minor is the one whose
   -- codomain applies a motive to the owner constructor
-  let mkMinor : Expr → Option Expr := fun dom =>
+  let mkMinor : Expr md → Option (Expr md) := fun dom =>
     let (bs, cod) := stripPisAll dom
     match cod.getAppArgs.getLast? with
     | some major =>
@@ -333,10 +333,10 @@ carries no elimination level parameter are left out.
 `types` are `(name, levelParams, type, numParams, numIndices, ctors,
 isRec)`, `ctors` `(name, numFields, type)`, `recs` `(name, levelParams,
 type, numMotives, numMinors)` — the export record's own data. -/
-def projRecOwners (block : List ConstantInfo)
-    (types : List (Key × List LevelParam × Expr × Nat × Nat × List Key × Bool))
-    (ctors : List (Key × Nat × Expr))
-    (recs : List (Key × List LevelParam × Expr × Nat × Nat)) : List ProjRecOwner :=
+def projRecOwners (block : List (ConstantInfo md))
+    (types : List (Key md × List LevelParam × Expr md × Nat × Nat × List (Key md) × Bool))
+    (ctors : List (Key md × Nat × Expr md))
+    (recs : List (Key md × List LevelParam × Expr md × Nat × Nat)) : List (ProjRecOwner md) :=
   let blockNames := types.map (·.1)
   -- a block name in a constructor's binder *domains* (its result names
   -- the owner by definition)

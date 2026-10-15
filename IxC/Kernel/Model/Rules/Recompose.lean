@@ -39,7 +39,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
   {φ : LevelParam → Nat}
 
 /-- **The P soundness at one environment — the five claims at every

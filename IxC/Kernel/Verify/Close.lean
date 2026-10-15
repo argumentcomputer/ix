@@ -23,7 +23,7 @@ namespace Ix.Kernel.Expr
 
 /-- Close the free variables below `d` as de Bruijn indices; `k` is the
 number of binders crossed. -/
-@[expose] def closeN (d : Nat) : Expr → (k : Nat := 0) → Expr
+@[expose] def closeN (d : Nat) : Expr md → (k : Nat := 0) → Expr md
   | .fvar idx _, k => .bvar (k + (d - 1 - idx))
   | .bvar i, _ => .bvar i
   | .sort u, _ => .sort u
@@ -36,7 +36,7 @@ number of binders crossed. -/
   | .proj s i e, k => .proj s i (closeN d e k)
 
 /-- A term without free variables is its own closure. -/
-theorem closeN_of_hasFvar : ∀ (e : Expr) (d k : Nat), e.hasFvar = false →
+theorem closeN_of_hasFvar : ∀ (e : Expr md) (d k : Nat), e.hasFvar = false →
     closeN d e k = e := by
   intro e
   induction e <;> intro d k h <;> simp_all [closeN, hasFvar]
@@ -45,8 +45,8 @@ theorem closeN_of_hasFvar : ∀ (e : Expr) (d k : Nat), e.hasFvar = false →
 `fvar d` and closing at depth `d + 1` is closing the body at depth `d`
 one binder in.  The body must be locally closed at its binder
 (`looseBVarsBounded (k + 1)`) and scoped below `d`. -/
-theorem closeN_instantiate1 {d : Nat} {ty : Expr} :
-    ∀ (e : Expr) (k : Nat), e.looseBVarsBounded (k + 1) = true →
+theorem closeN_instantiate1 {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md) (k : Nat), e.looseBVarsBounded (k + 1) = true →
       fvarsBelow d e →
       closeN (d + 1) (e.instantiate1 (.fvar d ty) k) k = closeN d e (k + 1) := by
   intro e

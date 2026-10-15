@@ -24,9 +24,9 @@ universe u
 /-- **The reading of an accepted Source-mode check**: the ingress succeeded
 from the prelude's reader state, and the fold accepted its declarations
 behind the prelude (`Frontend.preparePrelude`) at the evidence. -/
-theorem checkSourceWith_reading {pre : Ix.Kernel.Reader.Prelude}
-    {ev : Ix.Kernel.Evidences} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
-    {kenv : Ix.Kernel.Env} (h : checkSourceWith pre ev env blocks = .ok kenv) :
+theorem checkSourceWith_reading {pre : Ix.Kernel.Reader.Prelude .source}
+    {ev : Ix.Kernel.Evidences .source} {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {kenv : Ix.Kernel.Env .source} (h : checkSourceWith pre ev env blocks = .ok kenv) :
     ∃ decls, leanIngress env blocks pre.state = .ok decls ∧
       Ix.Kernel.Cached.checkDecls .verified ev
         (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok kenv := by
@@ -44,9 +44,9 @@ theorem checkSourceWith_reading {pre : Ix.Kernel.Reader.Prelude}
       exact ⟨decls, rfl, hc⟩
 
 /-- The reading of an accepted `checkSourceUsing`, at any prelude source. -/
-theorem checkSourceUsing_reading {prelude : Except String Ix.Kernel.Reader.Prelude}
+theorem checkSourceUsing_reading {prelude : Except String (Ix.Kernel.Reader.Prelude .source)}
     {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
-    {kenv : Ix.Kernel.Env} (h : checkSourceUsing prelude env blocks = .ok kenv) :
+    {kenv : Ix.Kernel.Env .source} (h : checkSourceUsing prelude env blocks = .ok kenv) :
     ∃ pre decls, prelude = .ok pre ∧
       leanIngress env blocks pre.state = .ok decls ∧
       Ix.Kernel.Cached.checkDecls .verified
@@ -73,7 +73,7 @@ theorem checkSourceUsing_reading {prelude : Except String Ix.Kernel.Reader.Prelu
 ingress's declarations behind it, and the fold's acceptance of them at
 Source mode's evidence over them. -/
 theorem checkSource_reading {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
-    {kenv : Ix.Kernel.Env} (h : checkSource env blocks = .ok kenv) :
+    {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
     ∃ pre decls, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
       leanIngress env blocks pre.state = .ok decls ∧
       Ix.Kernel.Cached.checkDecls .verified
@@ -84,15 +84,15 @@ theorem checkSource_reading {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
 /-- **Model existence** for the Source-mode check, at every prelude and
 evidence. -/
 theorem checkSourceWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
-    {pre : Ix.Kernel.Reader.Prelude} {ev : Ix.Kernel.Evidences} {env : Ix.Environment}
-    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env}
+    {pre : Ix.Kernel.Reader.Prelude .source} {ev : Ix.Kernel.Evidences .source} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
     (h : checkSourceWith pre ev env blocks = .ok kenv) : Nonempty (Ix.Kernel.Model V kenv) := by
   obtain ⟨_, _, hc⟩ := checkSourceWith_reading h
   exact Ix.Kernel.model_exists V ev _ kenv hc
 
 /-- **Model existence** for the Source-mode check. -/
 theorem checkSource_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
-    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env} (h : checkSource env blocks = .ok kenv) :
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
     Nonempty (Ix.Kernel.Model V kenv) := by
   obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
   exact Ix.Kernel.model_exists V _ _ kenv hc
@@ -100,8 +100,8 @@ theorem checkSource_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Env
 /-- **No proof of `False`** for the Source-mode check, at every prelude and
 evidence: no accepted constant has `False`'s role key as its type. -/
 theorem checkSourceWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
-    {pre : Ix.Kernel.Reader.Prelude} {ev : Ix.Kernel.Evidences} {env : Ix.Environment}
-    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env}
+    {pre : Ix.Kernel.Reader.Prelude .source} {ev : Ix.Kernel.Evidences .source} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
     (h : checkSourceWith pre ev env blocks = .ok kenv) :
     ∀ ci ∈ kenv.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, hc⟩ := checkSourceWith_reading h
@@ -109,7 +109,7 @@ theorem checkSourceWith_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
 
 /-- **No proof of `False`** for the Source-mode check. -/
 theorem checkSource_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
-    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env} (h : checkSource env blocks = .ok kenv) :
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
     ∀ ci ∈ kenv.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
   obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
   exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc

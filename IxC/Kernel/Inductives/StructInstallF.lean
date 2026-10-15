@@ -25,8 +25,8 @@ variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 /-! ### The direct simple-structure path, through the index -/
 
 /-- `checkStructDomsAt` through the index. -/
-def checkStructDomsAtF (ops : CheckerOps m) (fe : FEnv) (off : Nat)
-    (fvs doms : List Expr) : Nat → m Unit
+def checkStructDomsAtF (ops : (CheckerOps md) m) (fe : FEnv md) (off : Nat)
+    (fvs doms : List (Expr md)) : Nat → m Unit
   | 0 => pure ()
   | j + 1 => do
     let a ← unwrapOr fvs[j]? (.internal "direct structure: domain index")
@@ -37,8 +37,8 @@ def checkStructDomsAtF (ops : CheckerOps m) (fe : FEnv) (off : Nat)
 
 /-- `checkStructDomsAtF` over arrays (see `checkStructFieldUnivFA`).
 Equal to it at `List.toArray`: `checkStructDomsAtFA_eq`. -/
-def checkStructDomsAtFA (ops : CheckerOps m) (fe : FEnv) (off : Nat)
-    (fvs doms : Array Expr) : Nat → m Unit
+def checkStructDomsAtFA (ops : (CheckerOps md) m) (fe : FEnv md) (off : Nat)
+    (fvs doms : Array (Expr md)) : Nat → m Unit
   | 0 => pure ()
   | j + 1 => do
     let a ← unwrapOr fvs[j]? (.internal "direct structure: domain index")
@@ -60,20 +60,20 @@ for.  The cached driver supplies its memoised twins
 which the driver's record is equal (`structWalkersC_eq_plain`,
 `IxC/Kernel/Verify/Cached/WalkersC.lean`).  The pure installers never see
 this record. -/
-structure StructWalkers where
+structure StructWalkers (md : Mode) where
   /-- `Expr.constsResolveF` or its memoised twin -/
-  resolve : FEnv → Expr → Bool
+  resolve : FEnv md → Expr md → Bool
   /-- `structProjBodies` or its memoised twin -/
-  projBodies : Key → Nat → Nat → Expr → Option (Array Expr)
+  projBodies : Key md → Nat → Nat → Expr md → Option (Array (Expr md))
 
 /-- The plain walkers: the specification. -/
-def StructWalkers.plain : StructWalkers :=
+def StructWalkers.plain : StructWalkers md :=
   ⟨fun fe e => e.constsResolveF fe, structProjBodies⟩
 
 /-- `checkStructProjTable` through the index (task #175 S1). -/
-def checkStructProjTableF (w : StructWalkers) (T C : Key) (lps : List LevelParam) (nP nF : Nat)
-    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) (fe : FEnv) :
-    m FEnv := do
+def checkStructProjTableF (w : StructWalkers md) (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
+    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) (fe : FEnv md) :
+    m (FEnv md) := do
   let bodies ← unwrapOr (w.projBodies T nP nF cvCa.type)
     (.internal "direct structure: projection bodies")
   -- the bodies' scoping, validated once at insertion (the stage's own

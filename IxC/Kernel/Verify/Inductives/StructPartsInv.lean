@@ -27,7 +27,7 @@ namespace Ix.Kernel
 
 /-! ## The guard's spelling -/
 
-theorem structProjGuards_getD (cty : Expr) (nP nF : Nat) (sorts : List Level) {i : Nat}
+theorem structProjGuards_getD (cty : Expr md) (nP nF : Nat) (sorts : List Level) {i : Nat}
     (hi : i < nF) :
     (structProjGuards cty nP nF sorts).getD i .zero
       = (List.range i).foldl

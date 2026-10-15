@@ -25,10 +25,10 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
   {φ : LevelParam → Nat}
 
-theorem Certs.nil_sound {d : Nat} {lic : Bool} {T : Expr} :
+theorem Certs.nil_sound {d : Nat} {lic : Bool} {T : Expr md} :
     CertsSem m φ d lic T [] := by
   intro _ Δa Ta _ vs _ _ hgT _ hsp _ _
   cases hsp
@@ -40,8 +40,8 @@ licence's transfer or the certificate's run — so everything downstream
 (the residual's reading, its frame, its grading, the licence handed to
 the tail, and `TeleFitPA.cons`) is shared
 (`certs_telePA`/`certs_teleLic`'s common step). -/
-theorem certs_step {d : Nat} {lic : Bool} {ty body arg : Expr}
-    {mb : Ix.Kernel.BinderMeta} {rest : List Expr}
+theorem certs_step {d : Nat} {lic : Bool} {ty body arg : Expr md}
+    {mb : Ix.Kernel.BinderMeta} {rest : List (Expr md)}
     {Δa : List AnnotTerm} {doma bodya fa aa : AnnotTerm}
     {vs' : List AnnotTerm}
     (hrest : CertsSem m φ d lic (body.instantiate1 arg) rest)
@@ -112,7 +112,7 @@ theorem certs_step {d : Nat} {lic : Bool} {ty body arg : Expr}
 
 /-- The licensed slot: `iota_slot_transfer` (`Steps/IotaGate.lean:63`). -/
 theorem Certs.skip_sound {d : Nat} {lic : Bool}
-    {ty body arg : Expr} {mb : BinderMeta} {rest : List Expr}
+    {ty body arg : Expr md} {mb : BinderMeta} {rest : List (Expr md)}
     (hlic : lic = true) (hnev : mb.pw.isNever = true)
     (hrest : CertsSem m φ d lic (body.instantiate1 arg) rest) :
     CertsSem m φ d lic (.forallE ty body mb) (arg :: rest) := by
@@ -150,7 +150,7 @@ theorem Certs.skip_sound {d : Nat} {lic : Bool}
 
 /-- The certified slot: `certs_telePA`'s step (`Steps/IotaKit.lean:246`). -/
 theorem Certs.cert_sound {d : Nat} {lic : Bool}
-    {ty body arg ta : Expr} {mb : BinderMeta} {rest : List Expr}
+    {ty body arg ta : Expr md} {mb : BinderMeta} {rest : List (Expr md)}
     (hta : InferSemIO m φ d arg ta) (hd : DefEqSem m φ d ta ty)
     (hrest : CertsSem m φ d lic (body.instantiate1 arg) rest) :
     CertsSem m φ d lic (.forallE ty body mb) (arg :: rest) := by
@@ -193,7 +193,7 @@ theorem DefEqList.nil_sound {d : Nat} : DefEqListSem m φ d [] [] := by
   cases hsb
   rfl
 
-theorem DefEqList.cons_sound {d : Nat} {a b : Expr} {as bs : List Expr}
+theorem DefEqList.cons_sound {d : Nat} {a b : Expr md} {as bs : List (Expr md)}
     (h : DefEqSem m φ d a b) (hs : DefEqListSem m φ d as bs) :
     DefEqListSem m φ d (a :: as) (b :: bs) := by
   refine ⟨by simp [hs.1], ?_⟩
@@ -210,15 +210,15 @@ theorem DefEqList.cons_sound {d : Nat} {a b : Expr} {as bs : List Expr}
       (fun x hx => hga x (List.mem_cons_of_mem va hx))
       (fun x hx => hgb x (List.mem_cons_of_mem vb hx)) ρ hρ⟩
 
-theorem EtaProjCerts.nil_sound {d : Nat} {T : Key} {us' : List Level}
-    {targs : List Expr} {b : Expr} {lpsT : List LevelParam} :
+theorem EtaProjCerts.nil_sound {d : Nat} {T : Key md} {us' : List Level}
+    {targs : List (Expr md)} {b : Expr md} {lpsT : List LevelParam} :
     EtaProjCertsSem m φ d T us' targs b lpsT [] := by
   intro i hi
   exact nomatch hi
 
-theorem EtaProjCerts.cons_sound {d : Nat} {T : Key} {us' : List Level}
-    {targs : List Expr} {b : Expr} {lpsT : List LevelParam} {i : Nat}
-    {rest : List Nat} {cvp : ConstantVal} {mI rP : Nat} {rules : List RecRule}
+theorem EtaProjCerts.cons_sound {d : Nat} {T : Key md} {us' : List Level}
+    {targs : List (Expr md)} {b : Expr md} {lpsT : List LevelParam} {i : Nat}
+    {rest : List Nat} {cvp : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
     (hf : env.find? (projFnName T i) = some (.recInfo cvp mI rP rules))
     (hlps : cvp.levelParams = lpsT)
     (hstrip : (cvp.type.stripPis (targs.length + 1)).isSome = true)

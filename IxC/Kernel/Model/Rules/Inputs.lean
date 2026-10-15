@@ -51,9 +51,9 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 /-- **The successor packing's semantic row**: `Nat.succ w` at a literal
 reading of `w` interprets as the packed literal, which reads and is
 graded. -/
-@[expose] def NatSuccRow {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
+@[expose] def NatSuccRow {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
-  ∀ {d : Nat} {w : Expr} {n : Nat} {Δa : List AnnotTerm} {ea : AnnotTerm},
+  ∀ {d : Nat} {w : Expr md} {n : Nat} {Δa : List AnnotTerm} {ea : AnnotTerm},
     Ix.Kernel.natLitSupported env = true →
     Ix.Kernel.rawNatLit? w = some n →
     denoteMeta m.acval env φ d (.app (.const natSuccName []) w) = some ea →
@@ -65,9 +65,9 @@ graded. -/
 /-- **The binary acceleration's semantic row**: a stored operation on
 two literal readings interprets as `natOpResult`, which reads and is
 graded. -/
-@[expose] def NatOpRow {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
+@[expose] def NatOpRow {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat) :
     Prop :=
-  ∀ {d : Nat} {c : Key} {wa wb r : Expr} {n₁ n₂ : Nat} {Δa : List AnnotTerm}
+  ∀ {d : Nat} {c : Key md} {wa wb r : Expr md} {n₁ n₂ : Nat} {Δa : List AnnotTerm}
     {ea : AnnotTerm},
     c ∈ natBinOpNames → Ix.Kernel.natOpStored env c = true →
     Ix.Kernel.rawNatLit? wa = some n₁ → Ix.Kernel.rawNatLit? wb = some n₂ →
@@ -80,7 +80,7 @@ graded. -/
 
 /-- **The environment-level inputs of the rules soundness**, at one
 `(env, m, φ)`, sorted by discharging tier. -/
-structure RulesInputs (V : Type w) [SetTheory V] {env : Env}
+structure RulesInputs (V : Type w) [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop where
   /-- install tier: a stored constant's type row -/
   const_ty : ConstType m φ
@@ -107,7 +107,7 @@ arguments because `natSuccRow_of`/`natOpRow_of` (`Model/NatStep.lean`)
 sit above this file — `Model/Capstone.lean`'s `RulesInputs.ofSem`
 supplies them.  Replaces `TierInputsAt.ofEnvModelM` (task #305
 closing). -/
-theorem RulesInputs.ofEnvModelM {env : Env} {φ : LevelParam → Nat}
+theorem RulesInputs.ofEnvModelM {env : Env md} {φ : LevelParam → Nat}
     (mp : EnvModelM V μ env)
     (hsucc : NatSuccRow mp.base2 φ) (hop : NatOpRow mp.base2 φ) :
     RulesInputs V mp.base2 φ where

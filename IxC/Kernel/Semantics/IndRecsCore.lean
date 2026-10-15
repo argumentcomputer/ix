@@ -64,15 +64,15 @@ The two rule fields are hypotheses, exactly as `EnvS.swap` takes
 `RecRulesV` as one: they are what the group install proves (there from
 the iota bottoms, here from `RuleFacts`). -/
 
-def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
+def EnvFacts.swap {env₀ env₃ : Env md} (m₀ : EnvFacts env₀)
     (hsw : SwapShList env₀.consts env₃.consts)
     (hwf : EnvWF env₃)
-    (hle : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
-      (rules : List RecRule),
+    (hle : ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+      (rules : List (RecRule md)),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       ∀ r ∈ rules, RecRule.fire r ≠ .inert → rP ≤ mI)
-    (hrhs : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
-      (rules : List RecRule),
+    (hrhs : ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+      (rules : List (RecRule md)),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       ∀ r ∈ rules, RecRule.fire r ≠ .inert →
         ∀ (us : List Level) (ψ : LevelParam → Nat),
@@ -80,20 +80,20 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
           ∃ R, denoteClosed m₀.cval env₃ ψ
             (r.rhs.instantiateLevelParams cv.levelParams us) = some R) :
     EnvFacts env₃ := by
-  have hcorr : ∀ n : Key,
+  have hcorr : ∀ n : Key md,
       env₃.find? n = env₀.find? n ∨
       ∃ cv mI rP rules,
         env₀.find? n = some (.recInfo cv mI rP []) ∧
         env₃.find? n = some (.recInfo cv mI rP rules) ∧
         cv.name = n := swapSh_find?_corr hsw
   have hcg : SwapCongr env₀ env₃ := SwapShList.congr hsw
-  have hde : ∀ (φ : LevelParam → Nat) (d : Nat) (e : Expr),
+  have hde : ∀ (φ : LevelParam → Nat) (d : Nat) (e : Expr md),
       denote m₀.cval env₀ φ d e = denote m₀.cval env₃ φ d e :=
     fun _ => denote_env_ext hcg.levelsEq hcg.natEq hcg.strEq hcg.projEq
-  have hdeC : ∀ (φ : LevelParam → Nat) (e : Expr),
+  have hdeC : ∀ (φ : LevelParam → Nat) (e : Expr md),
       denoteClosed m₀.cval env₀ φ e = denoteClosed m₀.cval env₃ φ e :=
     fun φ e => hde φ 0 e
-  have hsame : ∀ (n : Key) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ env₀.find? n = some ci) :=
     fun n ci hnr =>
@@ -134,12 +134,12 @@ def EnvFacts.swap {env₀ env₃ : Env} (m₀ : EnvFacts env₀)
     intro n tbl hf i hi
     exact TowerHead.mono (fun n ci hnr hf' => (hsame n ci hnr).mpr hf')
       (m₀.proj_ok n tbl ((hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf) i hi)
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) i hi)
   · -- nat_op_guard: keyed on definitions, with the guard congruent
     intro c hmem hst
     obtain ⟨cv, v, hh, hf⟩ := natOpStored_inv hst
     have hf₀ : env₀.find? c = some (.defnInfo cv v hh) :=
-      hcg.findDown c _ hf (fun _ _ _ _ hcon => ConstantInfo.noConfusion hcon)
+      hcg.findDown c _ hf (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon))
     rw [← hcg.guardEq]
     exact m₀.nat_op_guard c hmem (by simp [natOpStored, hf₀])
 
@@ -155,35 +155,35 @@ one proof, off `RuleFacts` alone.
 
 /-- **The four syntactic environment facts survive the group swap.** -/
 
-theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
+theorem swapEnvFacts {envSelf env₃ : Env md} {cvalSelf : TConstVal md}
     (hwfS : EnvWF envSelf) (hctorsS : RecCtorsStored envSelf)
     (hbpS : BasisPinnedTT envSelf cvalSelf) (hprojS : ProjOkT envSelf)
     (hswR : SwapShList envSelf.consts env₃.consts)
     (hnresR : SwapNResS envSelf env₃)
     (hentR : ∀ c ∈ env₃.consts, c ∈ envSelf.consts ∨
-      ∃ (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+      ∃ (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
         c = .recInfo cv mI rP rules ∧
         ∀ rl ∈ rules, RuleFacts envSelf cvalSelf cv mI rP rl)
-    (hentF : ∀ (n : Key) (cv : ConstantVal) (mI rP : Nat)
-      (rules : List RecRule),
+    (hentF : ∀ (n : Key md) (cv : ConstantVal md) (mI rP : Nat)
+      (rules : List (RecRule md)),
       env₃.find? n = some (.recInfo cv mI rP rules) →
       envSelf.find? n = some (.recInfo cv mI rP rules) ∨
       ∀ rl ∈ rules, RuleFacts envSelf cvalSelf cv mI rP rl) :
     EnvWF env₃ ∧ RecCtorsStored env₃ ∧
       BasisPinnedTT env₃ cvalSelf ∧ ProjOkT env₃ := by
   have hcg : SwapCongr envSelf env₃ := SwapShList.congr hswR
-  have hcorr : ∀ n : Key,
+  have hcorr : ∀ n : Key md,
       env₃.find? n = envSelf.find? n ∨
       ∃ cv mI rP rules,
         envSelf.find? n = some (.recInfo cv mI rP []) ∧
         env₃.find? n = some (.recInfo cv mI rP rules) ∧
         cv.name = n := swapSh_find?_corr hswR
-  have hsame : ∀ (n : Key) (ci : ConstantInfo),
+  have hsame : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       (env₃.find? n = some ci ↔ envSelf.find? n = some ci) :=
     fun n ci hnr =>
       ⟨fun h => hcg.findDown n ci h hnr, fun h => hcg.findUp n ci h hnr⟩
-  have hres₃ : ∀ e : Expr, e.constsResolve envSelf = true →
+  have hres₃ : ∀ e : Expr md, e.constsResolve envSelf = true →
       e.constsResolve env₃ = true := by
     intro e he
     rw [← Expr.constsResolve_congr hcg.isSomeEq]
@@ -220,9 +220,9 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
           rfl
       rw [hcvt] at hSw hSlp hSres hSb
       refine ⟨hSw, hSlp, hres₃ _ hSres, hSb,
-        fun _ _ _ hcon => ConstantInfo.noConfusion hcon, ?_,
-        fun _ hcon => ConstantInfo.noConfusion hcon,
-        fun _ _ hcon => ConstantInfo.noConfusion hcon⟩
+        fun _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon), ?_,
+        fun _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon),
+        fun _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)⟩
       intro cv' mI' rP' rules' heq r hr
       obtain ⟨rfl, rfl, rfl, rfl⟩ := ConstantInfo.recInfo.inj heq
       obtain ⟨w1, w2, w3, w4, w5, -, -⟩ := hfacts r hr
@@ -235,7 +235,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
       exact ⟨p1, p2, hres₃ _ p3, p4⟩
   · -- `RecCtorsStored`
     intro n cv mI rP rules hf r hr
-    have hkeep : ∀ (m : Key) (ci : ConstantInfo),
+    have hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
         (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
         envSelf.find? m = some ci → env₃.find? m = some ci :=
       fun m ci hnr hfc => hcg.findUp m ci hfc hnr
@@ -243,7 +243,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
     · obtain ⟨⟨cvj, cnP, cnF, hfc⟩, hk, he⟩ :=
         hctorsS n cv mI rP rules hfS r hr
       exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-          (fun _ _ _ _ hcon => ConstantInfo.noConfusion hcon) hfc⟩,
+          (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)) hfc⟩,
         fun hb => recRuleKOf_mono hkeep (hk hb),
         fun hb => recRuleEtaOf_mono hkeep (he hb)⟩
     · obtain ⟨-, -, -, -, -, ⟨cvj, cnP, cnF, hfc⟩, -, hk, he⟩ := hfacts r hr
@@ -258,7 +258,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
           obtain ⟨rfl, -, -, -⟩ := ConstantInfo.recInfo.inj (Option.some.inj hf)
           exact hn'
       exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-          (fun _ _ _ _ hcon => ConstantInfo.noConfusion hcon) hfc⟩,
+          (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)) hfc⟩,
         fun hb => recRuleKOf_mono hkeep (hk hb),
         fun hb => recRuleEtaOf_mono hkeep (hnR ▸ he hb)⟩
   · -- `BasisPinnedTT`: a genuinely swapped entry is never reserved
@@ -277,7 +277,7 @@ theorem swapEnvFacts {envSelf env₃ : Env} {cvalSelf : TConstVal}
     intro n tbl hf i hi
     exact TowerHead.mono (fun n ci hnr hf' => (hsame n ci hnr).mpr hf')
       (hprojS n tbl ((hsame _ _
-        (fun _ _ _ _ h => ConstantInfo.noConfusion h)).mp hf) i hi)
+        (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) i hi)
 
 /-! ## The group phase, at the `EnvFacts` level -/
 

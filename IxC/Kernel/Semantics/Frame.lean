@@ -28,7 +28,7 @@ open Ix.Kernel (Expr Key)
 /-- The frame conditions of an opened binder, *without* the context —
 `frame_openR`'s first three components, which need no correspondence in
 either currency. -/
-theorem frame_open2 {d : Nat} {ty body : Expr}
+theorem frame_open2 {d : Nat} {ty body : Expr md}
     (hwty : Expr.WScoped d ty) (hbty : ty.looseBVarsBounded 0 = true)
     (hwb : Expr.WScoped d body)
     (hbb : body.looseBVarsBounded 1 = true)

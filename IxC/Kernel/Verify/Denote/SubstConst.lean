@@ -39,7 +39,7 @@ private theorem substFn_nil0 (φ : LevelParam → Nat) :
 
 /-- The fragment `Expr.substConst0` is faithful on: application spines
 over constants, sorts and free variables. -/
-@[expose] def shallowE : Expr → Bool
+@[expose] def shallowE : Expr md → Bool
   | .sort _ => true
   | .const _ _ => true
   | .fvar _ _ => true
@@ -50,14 +50,14 @@ over constants, sorts and free variables. -/
 shallow fragment, denoting in the *extended* environment under the
 extended valuation is denoting the *substituted* expression in the old
 one. -/
-theorem denote_substConst0 {env : Env} {cval : TConstVal}
-    (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {c₀ : ConstantInfo}
-    {c : Key} {v : Expr} {V : Term} (φ : LevelParam → Nat)
+theorem denote_substConst0 {env : Env md} {cval : TConstVal md}
+    (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {c₀ : ConstantInfo md}
+    {c : Key md} {v : Expr md} {V : Term} (φ : LevelParam → Nat)
     (hname : c₀.name = c) (hfresh : env.find? c = none)
     (hlp : c₀.toConstantVal.levelParams = [])
     (hv : denoteClosed cval env φ v = some V)
     (hvf : v.hasFvar = false) (hvb : v.looseBVarsBounded 0 = true) :
-    ∀ (d : Nat) (e : Expr), shallowE e = true →
+    ∀ (d : Nat) (e : Expr md), shallowE e = true →
       denote (cvalAt cval env c v) ⟨c₀ :: env.consts⟩ φ d e
         = denote cval env φ d (Expr.substConst0 c v e) := by
   intro d e

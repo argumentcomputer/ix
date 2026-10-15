@@ -152,7 +152,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-! ## The tolerated skip -/
 
@@ -176,7 +176,7 @@ annotated valuation, and the membership is that constant's own
 `mem_type`, whose type reads to the same `acval trueName ψ` the
 axiom's does. -/
 theorem axiomTrustCompiler (hμ : μ.verifiedChecks = true)
-    (mp : EnvModelM V μ env) {cv : ConstantVal} {type' : Expr}
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
     (hcv : ConstantValRun μ F env cv type')
     (hname : cv.name = Ix.Kernel.trustCompilerName)
     (hok : Ix.Kernel.trustCompilerOk env ⟨cv.name, cv.levelParams, type'⟩
@@ -232,7 +232,7 @@ theorem axiomTrustCompiler (hμ : μ.verifiedChecks = true)
     (fun ψ => mp.base2.cval_closedL _ ψ) ?_ ?_ ?_ ?_ ?_
     -- `trustCompiler` is not a compiler-trust *operation*: the pin
     -- fixes the name, and the two operations are installed as opaques
-    (by rw [hname]; decide)
+    (by rw [hname]; (cases md <;> decide))
   · -- `hAclosed`
     exact fun ψ k => mp.base2.acval_closed _ ψ k
   · -- `hAparams`: `True.intro` is level-monomorphic, so the premise is
@@ -267,7 +267,7 @@ one currency too coarse for a P leaf, generalized. -/
 own constant in both halves, so every syntactic obligation is `rfl` or
 a `const` clause, and the whole content is the membership. -/
 theorem axiomStd (hμ : μ.verifiedChecks = true)
-    (mp : EnvModelM V μ env) {cv : ConstantVal} {type' : Expr}
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
     (hcv : ConstantValRun μ F env cv type')
     (hok : Ix.Kernel.stdAxiomOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
@@ -292,7 +292,7 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
   · refine harvestAxiom (V := V) hμ mp hcv
       (A := fun _ => .const .propext []) (fun _ => trivial)
       (fun _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => by simp)
-      (fun _ _ => by simp) ?_ (by rw [hn]; decide)
+      (fun _ _ => by simp) ?_ (by rw [hn]; (cases md <;> decide))
     intro ψ ta hta ρ
     exact propext_mem hμ mp hok hn hst ψ ta hta ρ
   · by_cases hn2 : cv.name = choiceName
@@ -315,12 +315,12 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
           show AnnotTerm.const .choice [ψ₁ uN] = AnnotTerm.const .choice [ψ₂ uN]
           rw [huN ψ₁ ψ₂ hp])
         (fun _ _ => by simp) (fun _ _ => by simp) ?_
-        (by rw [hn2]; decide)
+        (by rw [hn2]; (cases md <;> decide))
       intro ψ ta hta ρ
       exact choice_mem hμ mp hok hn2 hst ψ ta hta ρ
     · exfalso
       unfold Ix.Kernel.stdAxiomOk at hok
-      rw [show (⟨cv.name, cv.levelParams, type'⟩ : ConstantVal).name
+      rw [show (⟨cv.name, cv.levelParams, type'⟩ : ConstantVal md).name
         = cv.name from rfl] at hok
       rw [if_neg hn, if_neg hn2] at hok
       exact nomatch hok

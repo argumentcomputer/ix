@@ -491,12 +491,12 @@ def check (t : RoleTable) : Except String Unit := do
   unless evRoles.Nodup do throw "a role has two evidence entries"
   for (r, es) in t.evidence do
     unless roles.contains r do throw s!"evidence for {repr r}, which is not bound"
-    let kinds := (Role.spec r).evidenceKinds
+    let kinds := ((Role.spec (md := .anon)) r).evidenceKinds
     if kinds.isEmpty then throw s!"evidence for {repr r}, which is not an operation"
     unless es.size == kinds.length && (es.toList.zip kinds).all (fun (e, k) => e.isDefeqKind k) do
       throw s!"the evidence of {repr r} does not match its equations"
   for r in roles do
-    unless (Role.spec r).evidenceKinds.isEmpty || evRoles.contains r do
+    unless ((Role.spec (md := .anon)) r).evidenceKinds.isEmpty || evRoles.contains r do
       throw s!"operation {repr r} is bound without evidence"
 
 /-- **A well-formed table** (`check`, decided). -/

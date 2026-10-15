@@ -98,7 +98,7 @@ def IsClosure (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environmen
 grouping is a function of the environment, never a free input: the
 compiler's is `blocksOf`. -/
 def SourceAccepts (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.Environment)
-    (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env) : Prop :=
+    (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source) : Prop :=
   IsClosure env roots sub ∧ Ix.LeanIngress.checkSource sub (condense sub) = .ok envS
 
 /-- The recursors of `env`, by the first member of the block they eliminate. -/
@@ -226,7 +226,7 @@ at BLAKE3 accepts the role table `binding` and the records of `order` with
 their stored bytes, the blobs they reference and the artifact's hints, and
 installs `envA`. `limits` are resource bounds only. -/
 def IxonAccepts (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop) (order : List Address)
-    (envA : Env) : Prop :=
+    (envA : Env .anon) : Prop :=
   ClosureOrder ixe S order ∧
     Ixon.Authenticated.checkBytes binding limits (recordsOf ixe order) (blobsOf ixe order)
       (hintsOf ixe) = .ok envA
@@ -253,8 +253,8 @@ inductive types (recursor rules, structure eta) and of the quotient (its
 computation rule), and level-parameter irrelevance. -/
 
 /-- A model of `env` in which every stored definition denotes its value. -/
-structure ValueModel (V : Type w) [SetTheory V] (env : Env) extends Model V env where
-  defn_value : ∀ (cv : Ix.Kernel.ConstantVal) (value : Ix.Kernel.Expr)
+structure ValueModel (V : Type w) [SetTheory V] (env : Env md) extends Model V env where
+  defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
       (hint : Ix.Kernel.ReducibilityHint), Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
     ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes cval env φ ρ value (cval cv.name φ)
 
@@ -262,14 +262,14 @@ structure ValueModel (V : Type w) [SetTheory V] (env : Env) extends Model V env 
 
 /-- The address the artifact publishes for the source key `k`: the entry of
 `Ixon.Env.named` whose name the ingress keys `k` (`Ix.LeanIngress.ingressKey`). -/
-def publishedAddress (ixe : Ixon.Env) (k : Ix.Kernel.Key) : Option Address :=
+def publishedAddress (ixe : Ixon.Env) (k : Ix.Kernel.Key .source) : Option Address :=
   (ixe.named.toList.find? fun (m, _) => Ix.LeanIngress.nameIs m k).map (·.2.addr)
 
 /-- The reader's context of an Ixon run: the one `Ixon.Authenticated.checkBytes`
 reads the decoded records against, under the admitted role table and its
 prelude (`Ix.Kernel.Admission.checkBytes_reading`). -/
 def admissionContext (binding : Binding) (limits : Limits) (ixe : Ixon.Env)
-    (order : List Address) : Option Ix.Kernel.Reader.Ctx := do
+    (order : List Address) : Option (Ix.Kernel.Reader.Ctx .anon) := do
   let t ← (Ix.Kernel.Admission.admitBinding Address.blake3Pure binding).toOption
   let pre ← (Ix.Kernel.Reader.preludeFor t).toOption
   let constants ← (Ix.Kernel.Admission.decodeRecords limits (recordsOf ixe order)).toOption
@@ -287,8 +287,8 @@ itself, and this is the one definition that changes.
 Several source names can share an address (α-equal constants, one record).
 They then read as the same constant, so a commuting source model gives them
 one value (`Commutes.alias`). -/
-def reading (ixe : Ixon.Env) (cx : Ix.Kernel.Reader.Ctx) (c : Ix.Kernel.ConstantInfo) :
-    Option Ix.Kernel.Expr := do
+def reading (ixe : Ixon.Env) (cx : Ix.Kernel.Reader.Ctx .anon) (c : Ix.Kernel.ConstantInfo .source) :
+    Option (Ix.Kernel.Expr .anon) := do
   let a ← publishedAddress ixe c.name
   let r ← Ix.Kernel.Reader.resolve cx.store a
   pure (.const (cx.nameOf r) (c.toConstantVal.levelParams.map .param))
@@ -300,7 +300,7 @@ read through `τ`, is a value model of the source environment `envS`: there
 is a value model of `envS` in which every source constant denotes what its
 reading denotes in the compiled model. So everything the source entails,
 including the value of each definition, holds of its compiled reading. -/
-def Commutes (τ : Ix.Kernel.ConstantInfo → Option Ix.Kernel.Expr) (envS envA : Env) : Prop :=
+def Commutes (τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon)) (envS : Env .source) (envA : Env .anon) : Prop :=
   ∀ (V : Type w) [SetTheory V] (M : ValueModel V envA), ∃ N : ValueModel V envS,
     ∀ c ∈ envS.consts, ∀ t, τ c = some t →
       ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval envA φ ρ t (N.cval c.name φ)
@@ -325,7 +325,7 @@ compile that fails, and constants the compile leaves out are outside the
 statement. -/
 def CompileCorrect : Prop :=
   HashAgreement →
-  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env)
+  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
     (ixe : Ixon.Env),
     SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe → Published ixe sub →
     ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
@@ -339,7 +339,7 @@ def CompileCorrect : Prop :=
 Source accepts has `False`'s role key as its type. -/
 def SourceConsistent : Prop :=
   ∀ (condense : Ix.Environment → Ix.CondensedBlocks) (V : Type w) [SetTheory V]
-    (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env),
+    (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source),
     SourceAccepts condense env roots sub envS →
       ∀ ci ∈ envS.consts, ci.toConstantVal.type = .const falseName [] → False
 
@@ -347,14 +347,14 @@ def SourceConsistent : Prop :=
 `False`'s role key as its type. -/
 def IxonConsistent : Prop :=
   ∀ (V : Type w) [SetTheory V] (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
-    (order : List Address) (envA : Env), IxonAccepts binding limits ixe S order envA →
+    (order : List Address) (envA : Env .anon), IxonAccepts binding limits ixe S order envA →
       ∀ ci ∈ envA.consts, ci.toConstantVal.type = .const falseName [] → False
 
 /-- **Authenticity**: every record Ixon accepts is stored under the pure
 BLAKE3 hash of its bytes, and so is every blob and the role table's section. -/
 def IxonAuthentic : Prop :=
   ∀ (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
-    (order : List Address) (envA : Env),
+    (order : List Address) (envA : Env .anon),
     IxonAccepts binding limits ixe S order envA →
       (∀ a ∈ order, ∀ lc, ixe.consts.get? a = some lc → a = Address.blake3Pure lc.rawBytes) ∧
         (∀ b ∈ blobsOf ixe order, b.1 = Address.blake3Pure b.2) ∧
@@ -364,14 +364,14 @@ def IxonAuthentic : Prop :=
 model. -/
 def SourceValueSound : Prop :=
   ∀ (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.Environment) (roots : List Ix.Name)
-    (sub : Ix.Environment) (envS : Env), SourceAccepts condense env roots sub envS →
+    (sub : Ix.Environment) (envS : Env .source), SourceAccepts condense env roots sub envS →
       ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envS)
 
 /-- **Ixon value soundness**: every environment Ixon accepts has a value
 model, under every role table, so `Commutes` is not vacuous. -/
 def IxonValueSound : Prop :=
   ∀ (binding : Binding) (limits : Limits) (ixe : Ixon.Env) (S : Address → Prop)
-    (order : List Address) (envA : Env),
+    (order : List Address) (envA : Env .anon),
     IxonAccepts binding limits ixe S order envA → ∀ (V : Type w) [SetTheory V], Nonempty (ValueModel V envA)
 
 theorem sourceConsistent : SourceConsistent.{w} := by
@@ -401,7 +401,7 @@ theorem ixonValueSound : IxonValueSound.{w} := by
 
 /-- **Aliases collapse.** Source constants that read as the same compiled
 term get one value in the commuting source model. -/
-theorem Commutes.alias {τ : Ix.Kernel.ConstantInfo → Option Ix.Kernel.Expr} {envS envA : Env}
+theorem Commutes.alias {τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon)} {envS : Env .source} {envA : Env .anon}
     (h : Commutes.{w} τ envS envA) (V : Type w) [SetTheory V] (M : ValueModel V envA) :
     ∃ N : ValueModel V envS,
       (∀ c ∈ envS.consts, ∀ t, τ c = some t →
@@ -422,9 +422,9 @@ because the real map from source names to compiled keys is not injective. -/
 
 namespace Rename
 
-variable (σ : Ix.Kernel.Key → Ix.Kernel.Key)
+variable (σ : Ix.Kernel.Key md → Ix.Kernel.Key md)
 
-def expr : Ix.Kernel.Expr → Ix.Kernel.Expr
+def expr : Ix.Kernel.Expr md → Ix.Kernel.Expr md
   | .bvar i => .bvar i
   | .fvar i t => .fvar i (expr t)
   | .sort u => .sort u
@@ -436,10 +436,10 @@ def expr : Ix.Kernel.Expr → Ix.Kernel.Expr
   | .lit l => .lit l
   | .proj n i e => .proj (σ n) i (expr e)
 
-def constantVal (cv : Ix.Kernel.ConstantVal) : Ix.Kernel.ConstantVal :=
+def constantVal (cv : Ix.Kernel.ConstantVal md) : Ix.Kernel.ConstantVal md :=
   { cv with name := σ cv.name, type := expr σ cv.type }
 
-def recRule (r : Ix.Kernel.RecRule) : Ix.Kernel.RecRule :=
+def recRule (r : Ix.Kernel.RecRule md) : Ix.Kernel.RecRule md :=
   { r with
     ctor := σ r.ctor
     rhs := expr σ r.rhs
@@ -447,7 +447,7 @@ def recRule (r : Ix.Kernel.RecRule) : Ix.Kernel.RecRule :=
       | .nested lvls pins => .nested lvls (pins.map (expr σ))
       | f => f }
 
-def constantInfo : Ix.Kernel.ConstantInfo → Ix.Kernel.ConstantInfo
+def constantInfo : Ix.Kernel.ConstantInfo md → Ix.Kernel.ConstantInfo md
   | .axiomInfo v => .axiomInfo (constantVal σ v)
   | .defnInfo v e h => .defnInfo (constantVal σ v) (expr σ e) h
   | .thmInfo v e => .thmInfo (constantVal σ v) (expr σ e)
@@ -459,7 +459,7 @@ def constantInfo : Ix.Kernel.ConstantInfo → Ix.Kernel.ConstantInfo
       ctor := σ tbl.ctor
       bodies := tbl.bodies.map (expr σ) }
 
-def declaration : Ix.Kernel.Declaration → Ix.Kernel.Declaration
+def declaration : Ix.Kernel.Declaration md → Ix.Kernel.Declaration md
   | .axiomDecl v => .axiomDecl (constantVal σ v)
   | .defnDecl v e h => .defnDecl (constantVal σ v) (expr σ e) h
   | .thmDecl v e => .thmDecl (constantVal σ v) (expr σ e)
@@ -469,16 +469,16 @@ def declaration : Ix.Kernel.Declaration → Ix.Kernel.Declaration
   | .quotDecl k v => .quotDecl k (constantVal σ v)
 
 /-- An evidence entry: a proof's theorem key and its proof term. -/
-def evidence : Ix.Kernel.Evidence (Ix.Kernel.Key × Ix.Kernel.Expr) →
-    Ix.Kernel.Evidence (Ix.Kernel.Key × Ix.Kernel.Expr)
+def evidence : Ix.Kernel.Evidence (Ix.Kernel.Key md × Ix.Kernel.Expr md) →
+    Ix.Kernel.Evidence (Ix.Kernel.Key md × Ix.Kernel.Expr md)
   | .defeq => .defeq
   | .proof (k, v) => .proof (σ k, expr σ v)
 
 /-- The fold's evidence: roles are fixed, their entries renamed. -/
-def evidences (ev : Ix.Kernel.Evidences) : Ix.Kernel.Evidences :=
+def evidences (ev : Ix.Kernel.Evidences md) : Ix.Kernel.Evidences md :=
   ev.map fun (r, es) => (r, es.map (evidence σ))
 
-def env (e : Env) : Env := ⟨e.consts.map (constantInfo σ)⟩
+def env (e : Env md) : Env md := ⟨e.consts.map (constantInfo σ)⟩
 
 end Rename
 
@@ -487,7 +487,7 @@ keys of a run. -/
 
 namespace Keys
 
-def expr : Ix.Kernel.Expr → List Ix.Kernel.Key
+def expr : Ix.Kernel.Expr md → List (Ix.Kernel.Key md)
   | .fvar _ t => expr t
   | .const n _ => [n]
   | .app f a => expr f ++ expr a
@@ -497,15 +497,15 @@ def expr : Ix.Kernel.Expr → List Ix.Kernel.Key
   | .proj n _ e => n :: expr e
   | _ => []
 
-def constantVal (cv : Ix.Kernel.ConstantVal) : List Ix.Kernel.Key :=
+def constantVal (cv : Ix.Kernel.ConstantVal md) : List (Ix.Kernel.Key md) :=
   cv.name :: expr cv.type
 
-def recRule (r : Ix.Kernel.RecRule) : List Ix.Kernel.Key :=
+def recRule (r : Ix.Kernel.RecRule md) : List (Ix.Kernel.Key md) :=
   r.ctor :: expr r.rhs ++ match r.fire with
     | .nested _ pins => pins.flatMap expr
     | _ => []
 
-def constantInfo : Ix.Kernel.ConstantInfo → List Ix.Kernel.Key
+def constantInfo : Ix.Kernel.ConstantInfo md → List (Ix.Kernel.Key md)
   | .axiomInfo v => constantVal v
   | .defnInfo v e _ => constantVal v ++ expr e
   | .thmInfo v e => constantVal v ++ expr e
@@ -514,7 +514,7 @@ def constantInfo : Ix.Kernel.ConstantInfo → List Ix.Kernel.Key
   | .recInfo v _ _ rules => constantVal v ++ rules.flatMap recRule
   | .projInfo tbl => tbl.structName :: tbl.ctor :: tbl.bodies.toList.flatMap expr
 
-def declaration : Ix.Kernel.Declaration → List Ix.Kernel.Key
+def declaration : Ix.Kernel.Declaration md → List (Ix.Kernel.Key md)
   | .axiomDecl v => constantVal v
   | .defnDecl v e _ => constantVal v ++ expr e
   | .thmDecl v e => constantVal v ++ expr e
@@ -523,7 +523,7 @@ def declaration : Ix.Kernel.Declaration → List Ix.Kernel.Key
   | .indDecl block _ => block.flatMap constantInfo
   | .quotDecl _ v => constantVal v
 
-def evidences (ev : Ix.Kernel.Evidences) : List Ix.Kernel.Key :=
+def evidences (ev : Ix.Kernel.Evidences md) : List (Ix.Kernel.Key md) :=
   ev.flatMap fun (_, es) => es.flatMap fun
     | .defeq => []
     | .proof (k, v) => k :: expr v
@@ -531,17 +531,17 @@ def evidences (ev : Ix.Kernel.Evidences) : List Ix.Kernel.Key :=
 end Keys
 
 /-- `n` is a key of the declarations `ds` or of the evidence `ev`. -/
-def InputKey (ev : Ix.Kernel.Evidences) (ds : Array Ix.Kernel.Declaration)
-    (n : Ix.Kernel.Key) : Prop :=
+def InputKey (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md))
+    (n : Ix.Kernel.Key md) : Prop :=
   (∃ d ∈ ds, n ∈ Keys.declaration d) ∨ n ∈ Keys.evidences ev
 
 /-- The checker's fixed keys: the role keys (every role's, bound or not: the
 specification set mentions them). The basis blocks' reserved keys are role
 keys (`reservedBasisNames_pinned`). -/
-def Pinned (n : Ix.Kernel.Key) : Prop :=
+def Pinned (n : Ix.Kernel.Key md) : Prop :=
   ∃ r : Ix.Kernel.Role, Ix.Kernel.roleKey r = n
 
-theorem reservedBasisNames_pinned : ∀ n ∈ Ix.Kernel.reservedBasisNames, Pinned n := by
+theorem reservedBasisNames_pinned : ∀ n ∈ (Ix.Kernel.reservedBasisNames (md := md)), Pinned n := by
   simp only [Ix.Kernel.reservedBasisNames, List.mem_cons, List.not_mem_nil, or_false]
   rintro n (rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
     rfl | rfl | rfl | rfl | rfl) <;> exact ⟨_, rfl⟩
@@ -549,14 +549,14 @@ theorem reservedBasisNames_pinned : ∀ n ∈ Ix.Kernel.reservedBasisNames, Pinn
 /-- `n` is `k` under one or more derived shapes: the shape of every key the
 checker derives from `k` (`auxKey k .model`, `auxKey k (.projFn i)`,
 `auxKey k .projTable`, the modeller's keys under `auxKey k .model`). -/
-inductive DerivedFrom (k : Ix.Kernel.Key) : Ix.Kernel.Key → Prop
+inductive DerivedFrom (k : Ix.Kernel.Key md) : Ix.Kernel.Key md → Prop
   | aux (d : Ix.Kernel.Derived) : DerivedFrom k (.aux k d)
-  | ext {n : Ix.Kernel.Key} (d : Ix.Kernel.Derived) : DerivedFrom k n → DerivedFrom k (.aux n d)
+  | ext {n : Ix.Kernel.Key md} (d : Ix.Kernel.Derived) : DerivedFrom k n → DerivedFrom k (.aux n d)
 
 /-- The keys a run can look up or install: the input keys, the pinned keys,
 and the keys derived from either. -/
-def Built (ev : Ix.Kernel.Evidences) (ds : Array Ix.Kernel.Declaration)
-    (n : Ix.Kernel.Key) : Prop :=
+def Built (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md))
+    (n : Ix.Kernel.Key md) : Prop :=
   ∃ k, (InputKey ev ds k ∨ Pinned k) ∧ (n = k ∨ DerivedFrom k n)
 
 /-- **The renaming lemma's hypotheses** on today's keys (SP3 §9, H1–H8).
@@ -569,8 +569,8 @@ no recursor spelling the checker reads (SP3 D1), so neither needs a
 hypothesis. Under `Key m` (IXC-PLAN step 5b) this reduces to `σ = Key.map f`
 with `f` injective on the input ids: roles are fixed and derived keys commute
 by construction. -/
-structure RenamingHyp (σ : Ix.Kernel.Key → Ix.Kernel.Key) (ev : Ix.Kernel.Evidences)
-    (ds : Array Ix.Kernel.Declaration) : Prop where
+structure RenamingHyp (σ : Ix.Kernel.Key md → Ix.Kernel.Key md) (ev : Ix.Kernel.Evidences md)
+    (ds : Array (Ix.Kernel.Declaration md)) : Prop where
   /-- the fixed keys are fixed -/
   pinned : ∀ n, Pinned n → σ n = n
   /-- no other input key is renamed to a fixed key -/
@@ -599,14 +599,14 @@ def ErrorKind.of : Ix.Kernel.CheckError → ErrorKind
   | .internal _ => .internal
 
 /-- A fold's verdict up to error messages. -/
-def verdict : Except (Ix.Kernel.CheckError × Nat) Env → Except (ErrorKind × Nat) Env
+def verdict : Except (Ix.Kernel.CheckError × Nat) (Env md) → Except (ErrorKind × Nat) (Env md)
   | .ok e => .ok e
   | .error (e, i) => .error (ErrorKind.of e, i)
 
 /-- **The renaming lemma.** Stated, not proved. -/
 def RenamingLemma : Prop :=
-  ∀ (σ : Ix.Kernel.Key → Ix.Kernel.Key) (ev : Ix.Kernel.Evidences)
-    (ds : Array Ix.Kernel.Declaration), RenamingHyp σ ev ds →
+  ∀ {md : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md) (ev : Ix.Kernel.Evidences md)
+    (ds : Array (Ix.Kernel.Declaration md)), RenamingHyp σ ev ds →
       verdict (Ix.Kernel.Cached.checkDecls .verified (Rename.evidences σ ev)
           (ds.map (Rename.declaration σ))) =
         (verdict (Ix.Kernel.Cached.checkDecls .verified ev ds)).map (Rename.env σ)

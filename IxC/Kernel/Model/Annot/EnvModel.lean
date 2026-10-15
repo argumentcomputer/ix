@@ -61,14 +61,14 @@ itself, from the shared model-free base — `EnvWF` (`Verify/EnvWF`),
 rather than stored: `cvalE = erase ∘ acval`, so `acval_erase` is
 `rfl`.  The census measured the whole borrowing at 458 sites and found
 every one of them syntactic; nothing of the collapsed model crosses. -/
-structure EnvModel (env : Env) where
+structure EnvModel (env : Env md) where
   /-- the shared, model-free environment well-formedness -/
   wf : EnvWF env
   /-- the annotated valuation -/
-  acval : Key → (LevelParam → Nat) → AnnotTerm
+  acval : Key md → (LevelParam → Nat) → AnnotTerm
   /-- every erased leaf is closed (`EnvS.cval_closed`, at `cvalE`);
   consumers read the `cvalE`-spelled `cval_closed` below -/
-  cval_closedL : ∀ (n : Key) (ψ : LevelParam → Nat),
+  cval_closedL : ∀ (n : Key md) (ψ : LevelParam → Nat),
     Term.Closed ((acval n ψ).erase)
   /-- the reserved basis constants are the pinned declarations, valued
   by their direct pins (V-free, shared with the TT lane); consumers
@@ -81,16 +81,16 @@ structure EnvModel (env : Env) where
   shared) -/
   rec_ctors : RecCtorsStored env
   /-- every leaf is closed, as a lifting equation -/
-  acval_closed : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+  acval_closed : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
     (acval n ψ).liftN 1 k = acval n ψ
   /-- a leaf reads only its own level parameters -/
-  acval_params : ∀ (n : Key) (ci : ConstantInfo),
+  acval_params : ∀ (n : Key md) (ci : ConstantInfo md),
     env.find? n = some ci →
     ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
       acval n ψ₁ = acval n ψ₂
   /-- every leaf is truthful -/
-  acval_wellDenoted : ∀ (n : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+  acval_wellDenoted : ∀ (n : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
     WellDenoted V ρ (acval n ψ)
 
 variable {V}
@@ -99,15 +99,15 @@ variable {V}
 measured at 135 sites (§1.2).  `AnnotTerm.erase` is a total syntactic
 function the carrier already owns, so no model content is
 transported. -/
-@[expose] def EnvModel.cvalE {env : Env} (m : EnvModel V env) : TConstVal :=
+@[expose] def EnvModel.cvalE {env : Env md} (m : EnvModel V env) : TConstVal md :=
   fun n ψ => (m.acval n ψ).erase
 
 /-- **`acval_erase` is now `rfl`** — it used to be the field tying the
 annotated valuation to the contained `EnvS`'s; with `cvalE` derived it
 is a definitional identity.  Kept under its old name because 81 P-lane
 sites consume it as a rewriting equation. -/
-theorem EnvModel.acval_erase {env : Env} (m : EnvModel V env) :
-    ∀ (n : Key) (ψ : LevelParam → Nat), (m.acval n ψ).erase = m.cvalE n ψ :=
+theorem EnvModel.acval_erase {env : Env md} (m : EnvModel V env) :
+    ∀ (n : Key md) (ψ : LevelParam → Nat), (m.acval n ψ).erase = m.cvalE n ψ :=
   fun _ _ => rfl
 
 /-- `cval_closedL` at the `cvalE` spelling — the form every consumer
@@ -115,13 +115,13 @@ reads (`EnvS.cval_closed`'s successor).  The field is stated at the
 literal erasure so that the carrier can be built without naming
 `cvalE`; the two are definitionally the same fact, and only the
 *spelling* matters to `rw`. -/
-theorem EnvModel.cval_closed {env : Env} (m : EnvModel V env) :
-    ∀ (n : Key) (ψ : LevelParam → Nat), Term.Closed (m.cvalE n ψ) :=
+theorem EnvModel.cval_closed {env : Env md} (m : EnvModel V env) :
+    ∀ (n : Key md) (ψ : LevelParam → Nat), Term.Closed (m.cvalE n ψ) :=
   m.cval_closedL
 
 /-- `basis_pinnedL` at the `cvalE` spelling (`EnvS.basis_pinned`'s
 successor). -/
-theorem EnvModel.basis_pinned {env : Env} (m : EnvModel V env) :
+theorem EnvModel.basis_pinned {env : Env md} (m : EnvModel V env) :
     BasisPinnedTT env m.cvalE :=
   m.basis_pinnedL
 
@@ -129,8 +129,8 @@ theorem EnvModel.basis_pinned {env : Env} (m : EnvModel V env) :
 model-free twin (task #161 S7, Wall C step (a)).  The fact is
 `basis_pinnedL`'s second component; the `EnvS` form existed only
 because the carrier used to borrow the field. -/
-theorem EnvModel.cvalE_pinned {env : Env} (m : EnvModel V env)
-    {n : Key} (hres : Ix.Kernel.reservedBasisNames.contains n = true)
+theorem EnvModel.cvalE_pinned {env : Env md} (m : EnvModel V env)
+    {n : Key md} (hres : Ix.Kernel.reservedBasisNames.contains n = true)
     (hst : (env.find? n).isSome = true) (ψ : LevelParam → Nat) {t : Term}
     (hpin : Ix.Kernel.Verify.pinnedStructT n ψ = some t) :
     m.cvalE n ψ = t := by
@@ -141,7 +141,7 @@ theorem EnvModel.cvalE_pinned {env : Env} (m : EnvModel V env)
 /-- The empty environment's core: the leaf is the bare `.const .empty
 [0]` at every name (`EnvModel.empty`'s valuation, one currency over), and
 every syntactic field is vacuous over `env.consts = []`. -/
-@[expose] def EnvModel.empty : EnvModel V Env.empty where
+@[expose] def EnvModel.empty : EnvModel (md := md) V Env.empty where
   wf := by intro c hc; cases hc
   acval := fun _ _ => .const .empty [0]
   cval_closedL := fun _ _ => trivial
@@ -161,7 +161,7 @@ and two valuations only, so it transposes verbatim. -/
 
 /-- **Residue 8, over the core**: the annotated valuation is
 level-insensitive (the `EnvModel` reading of `AcvalParams2`). -/
-@[expose] def AcvalParams {env : Env} (m : EnvModel V env) : Prop :=
+@[expose] def AcvalParams {env : Env md} (m : EnvModel V env) : Prop :=
   ∀ n ci, env.find? n = some ci →
     ∀ ψ₁ ψ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, ψ₁ p = ψ₂ p) →
@@ -169,7 +169,7 @@ level-insensitive (the `EnvModel` reading of `AcvalParams2`). -/
 
 /-- **Residue 8 is discharged over the core** — it is the
 `acval_params` field, exactly as in the canonical lane. -/
-theorem acvalParams {env : Env} (m : EnvModel V env) :
+theorem acvalParams {env : Env md} (m : EnvModel V env) :
     AcvalParams m :=
   m.acval_params
 

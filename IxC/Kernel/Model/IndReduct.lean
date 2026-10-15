@@ -36,12 +36,12 @@ open Ix.Kernel (CheckMode Env Expr Key Level isDefEqCore)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-- A spine every element of which reads, reads as a spine. -/
 theorem denoteMetaSpine_of_all {d : Nat} :
-    ∀ (as : List Expr),
+    ∀ (as : List (Expr md)),
       (∀ a ∈ as, ∃ v, denoteMeta acval env φ d a = some v) →
       ∃ vs, DenoteMetaSpine acval env φ d as vs := by
   intro as
@@ -55,7 +55,7 @@ theorem denoteMetaSpine_of_all {d : Nat} :
 
 /-- The forward direction of `denoteMeta_mkAppN_inv`. -/
 theorem denoteMeta_mkAppN_of {d : Nat} :
-    ∀ (as : List Expr) {e : Expr} {ea : AnnotTerm} {vs : List AnnotTerm},
+    ∀ (as : List (Expr md)) {e : Expr md} {ea : AnnotTerm} {vs : List AnnotTerm},
       denoteMeta acval env φ d e = some ea →
       DenoteMetaSpine acval env φ d as vs →
       denoteMeta acval env φ d (Expr.mkAppN e as)
@@ -79,31 +79,31 @@ set_option maxHeartbeats 3200000 in
 /-- **The reduct stage, at the reading** (`reductS`). -/
 theorem reduct {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hclaims : DefEqClaim μ m ψ' F)
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
-    {rP cnF : Nat} {fvs : List Expr}
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
+    {rP cnF : Nat} {fvs : List (Expr md)}
     (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped (rP + cnF) x)
     (hleafClosed : ∀ l, (∃ x ∈ fvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvs)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Tstmt : AnnotTerm} {Γs : List AnnotTerm} {Rbody : AnnotTerm}
     (htowerS : PiTeleAV (rP + cnF) Tstmt Γs Rbody)
     (hokTst : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env ψ' i (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default))
     {Δa : List AnnotTerm} (hΔalen : Δa.length = rP + cnF)
     (hΔaent : ∀ i, i < rP + cnF →
       Δa[rP + cnF - 1 - i]? = some (Γs.getD (rP + cnF - 1 - i) default))
     -- the rule's right-hand side, closed
-    {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
+    {rhsA : Expr md} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     {RV : AnnotTerm} (hRV : denoteMeta m.acval env ψ' 0 rhsA = some RV)
     -- the statement's right-hand side
-    {rhsS : Expr} {vR : AnnotTerm}
+    {rhsS : Expr md} {vR : AnnotTerm}
     (hvR : denoteMeta m.acval env ψ' (rP + cnF) rhsS = some vR)
     (hwsR : Expr.WScoped (rP + cnF) rhsS)
     (hbR : rhsS.looseBVarsBounded 0 = true)

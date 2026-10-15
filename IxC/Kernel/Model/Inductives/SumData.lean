@@ -39,7 +39,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps BinderMeta)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
@@ -126,9 +126,9 @@ theorem spineFit_of_wellDenoted_lams {u : Nat} (hu : u ≠ 0) {b : AnnotTerm} :
     simp only [List.length_cons, List.take_succ_cons, List.map_cons, SpineFit]
     exact ⟨ham, ih⟩
 
-theorem DenoteMetaSpine.getElem? {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
-    ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
-      ∀ {l : Nat} {a : Expr}, as[l]? = some a →
+theorem DenoteMetaSpine.getElem? {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat} :
+    ∀ {as : List (Expr md)} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
+      ∀ {l : Nat} {a : Expr md}, as[l]? = some a →
         ∃ v, vs[l]? = some v ∧ denoteMeta acval env φ d a = some v
   | _, _, .nil, _, _, h => by simp at h
   | _, _, .cons ha htl, l, a, h => by
@@ -142,10 +142,10 @@ theorem DenoteMetaSpine.getElem? {acval : Key → (LevelParam → Nat) → Annot
       exact DenoteMetaSpine.getElem? htl h
 
 /-- A read spine crosses a cons its terms do not mention. -/
-theorem DenoteMetaSpine.cons_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm} (hfresh : env.find? c₀.name = none)
-    (hat : ∀ e : Expr, ConsCrossAt c₀ e) {ψ : LevelParam → Nat} {d : Nat} :
-    ∀ {as : List Expr} {vs : List AnnotTerm}, (∀ a ∈ as, ConstsBound env a) →
+theorem DenoteMetaSpine.cons_mono {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} (hfresh : env.find? c₀.name = none)
+    (hat : ∀ e : Expr md, ConsCrossAt c₀ e) {ψ : LevelParam → Nat} {d : Nat} :
+    ∀ {as : List (Expr md)} {vs : List AnnotTerm}, (∀ a ∈ as, ConstsBound env a) →
       DenoteMetaSpine acval env ψ d as vs →
       DenoteMetaSpine (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d as vs
   | _, _, _, .nil => .nil
@@ -169,11 +169,11 @@ theorem consList_params_apply {nP : Nat} (ρ X : Nat → V) {i : Nat} (hi : i < 
 /-! ## The field sources -/
 
 /-- The first position of an expression in a list. -/
-def firstIdx (x : Expr) : List Expr → Option Nat
+def firstIdx (x : Expr md) : List (Expr md) → Option Nat
   | [] => none
   | a :: as => if a = x then some 0 else (firstIdx x as).map (· + 1)
 
-theorem firstIdx_some : ∀ {l : List Expr} {x : Expr} {i : Nat},
+theorem firstIdx_some : ∀ {l : List (Expr md)} {x : Expr md} {i : Nat},
     firstIdx x l = some i → l[i]? = some x
   | [], _, _, h => by simp [firstIdx] at h
   | a :: as, x, i, h => by
@@ -185,7 +185,7 @@ theorem firstIdx_some : ∀ {l : List Expr} {x : Expr} {i : Nat},
     · obtain ⟨i', hi', rfl⟩ := Option.map_eq_some_iff.mp h
       simpa using firstIdx_some hi'
 
-theorem firstIdx_of_mem : ∀ {l : List Expr} {x : Expr}, x ∈ l → ∃ i, firstIdx x l = some i
+theorem firstIdx_of_mem : ∀ {l : List (Expr md)} {x : Expr md}, x ∈ l → ∃ i, firstIdx x l = some i
   | [], _, h => nomatch h
   | a :: as, x, h => by
     simp only [firstIdx]
@@ -199,15 +199,15 @@ theorem firstIdx_of_mem : ∀ {l : List Expr} {x : Expr}, x ∈ l → ∃ i, fir
 /-- The sources of the fields: a field whose sort is `Prop` is a proof
 (`none`); otherwise the first index position the field variable
 occupies. -/
-def srcsOf (xFvs idxArgs : List Expr) (sorts : List Level) (nF : Nat) : List (Option Nat) :=
+def srcsOf (xFvs idxArgs : List (Expr md)) (sorts : List Level) (nF : Nat) : List (Option Nat) :=
   (List.range nF).map fun j =>
     if (Level.isEquiv (sorts.getD j .zero) .zero == some true) = true then none
     else firstIdx (xFvs.getD j default) idxArgs
 
-theorem srcsOf_length (xFvs idxArgs : List Expr) (sorts : List Level) (nF : Nat) :
+theorem srcsOf_length (xFvs idxArgs : List (Expr md)) (sorts : List Level) (nF : Nat) :
     (srcsOf xFvs idxArgs sorts nF).length = nF := by simp [srcsOf]
 
-theorem srcsOf_getElem? (xFvs idxArgs : List Expr) (sorts : List Level) (nF j : Nat) (hj : j < nF) :
+theorem srcsOf_getElem? (xFvs idxArgs : List (Expr md)) (sorts : List Level) (nF j : Nat) (hj : j < nF) :
     (srcsOf xFvs idxArgs sorts nF)[j]?
       = some (if (Level.isEquiv (sorts.getD j .zero) .zero == some true) = true then none
           else firstIdx (xFvs.getD j default) idxArgs) := by
@@ -270,7 +270,7 @@ theorem fieldsBoundSrc_of_frame {Γ : List AnnotTerm} {k nP nF : Nat} {srcs : Li
 
 /-- The family at the parameter variables and the index readings,
 read at the constructor's full frame. -/
-@[expose] def ctorBodyAVI {env : Env} (m : EnvModel V env) (T : Key) (nP nF : Nat)
+@[expose] def ctorBodyAVI {env : Env md} (m : EnvModel V env) (T : Key md) (nP nF : Nat)
     (ψ : LevelParam → Nat) (Es : List AnnotTerm) : AnnotTerm :=
   AnnotTerm.mkAppN (m.acval T ψ) (paramBvars nP nF ++ Es)
 
@@ -281,12 +281,12 @@ residual's index expressions `idxArgs` at the constructor's frame; the
 sources `srcs` name, per field, the index it literally is, and at a
 large-eliminating `Prop` family the other fields are
 propositional. -/
-structure CtorDataI {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam)
-    (cvC : ConstantVal) (nP nF nIdx : Nat) (resSort : Level) (isProp large : Bool)
-    (idxArgs : List Expr)
+structure CtorDataI {env : Env md} (m : EnvModel V env) (T : Key md) (lps : List LevelParam)
+    (cvC : ConstantVal md) (nP nF nIdx : Nat) (resSort : Level) (isProp large : Bool)
+    (idxArgs : List (Expr md))
     (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)) (Es : (LevelParam → Nat) → List AnnotTerm)
     (srcs : List (Option Nat)) : Prop where
-  resid : ∃ (cbs : List (Expr × BinderMeta)) (es : List Expr),
+  resid : ∃ (cbs : List (Expr md × BinderMeta)) (es : List (Expr md)),
     cvC.type.stripPis (nP + nF)
       = some (cbs, Expr.mkAppN (.const T (lps.map .param)) (Ix.Kernel.structPsAt nF nP ++ es)) ∧
     es.length = nIdx
@@ -314,14 +314,14 @@ structure CtorDataI {env : Env} (m : EnvModel V env) (T : Key) (lps : List Level
 
 /-- The data crosses a cons whose head is neither the former nor
 mentioned. -/
-theorem CtorDataI.cross {m : EnvModel V env} {T : Key} {lps : List LevelParam} {cvC : ConstantVal}
-    {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List Expr}
+theorem CtorDataI.cross {m : EnvModel V env} {T : Key md} {lps : List LevelParam} {cvC : ConstantVal md}
+    {nP nF nIdx : Nat} {resSort : Level} {isProp large : Bool} {idxArgs : List (Expr md)}
     {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es : (LevelParam → Nat) → List AnnotTerm}
     {srcs : List (Option Nat)}
     (h : CtorDataI m T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
-    (hat : ∀ e : Expr, ConsCrossAt c₀ e) (hcb : ConstsBound env cvC.type)
+    (hat : ∀ e : Expr md, ConsCrossAt c₀ e) (hcb : ConstsBound env cvC.type)
     (hcbI : ∀ e ∈ idxArgs, ConstsBound env e)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
@@ -340,10 +340,10 @@ theorem CtorDataI.cross {m : EnvModel V env} {T : Key} {lps : List LevelParam} {
 
 /-- A read spine of terms not mentioning a constant reads alike at
 either valuation of it. -/
-theorem DenoteMetaSpine.acvalWith_congr {acval : Key → (LevelParam → Nat) → AnnotTerm} {T' : Key}
-    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env} (hfresh : env₀.find? T' = none)
+theorem DenoteMetaSpine.acvalWith_congr {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T' : Key md}
+    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md} (hfresh : env₀.find? T' = none)
     {ψ : LevelParam → Nat} {d : Nat} :
-    ∀ {as : List Expr} {vs : List AnnotTerm}, (∀ e ∈ as, e.constsResolve env₀ = true) →
+    ∀ {as : List (Expr md)} {vs : List AnnotTerm}, (∀ e ∈ as, e.constsResolve env₀ = true) →
       DenoteMetaSpine (acvalWith acval T' A₁) env ψ d as vs →
       DenoteMetaSpine (acvalWith acval T' A₂) env ψ d as vs
   | _, _, _, .nil => .nil
@@ -356,12 +356,12 @@ theorem DenoteMetaSpine.acvalWith_congr {acval : Key → (LevelParam → Nat) �
 
 /-- The index readings of two data at the same residual agree across
 carriers that differ only at an unmentioned constant. -/
-theorem CtorDataI.Es_eq {env : Env} {acval : Key → (LevelParam → Nat) → AnnotTerm} {T T' : Key}
-    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env}
+theorem CtorDataI.Es_eq {env : Env md} {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T T' : Key md}
+    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T' A₁)
     (hac₂ : m₂.acval = acvalWith acval T' A₂) (hfresh : env₀.find? T' = none)
-    {lps : List LevelParam} {cvC : ConstantVal} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {idxArgs : List Expr}
+    {lps : List LevelParam} {cvC : ConstantVal md} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {idxArgs : List (Expr md)}
     {ds₁ ds₂ : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es₁ Es₂ : (LevelParam → Nat) → List AnnotTerm}
     {srcs₁ srcs₂ : List (Option Nat)}
     (h₁ : CtorDataI m₁ T lps cvC nP nF nIdx resSort isProp large idxArgs ds₁ Es₁ srcs₁)
@@ -377,19 +377,19 @@ theorem CtorDataI.Es_eq {env : Env} {acval : Key → (LevelParam → Nat) → An
 /-- The constructor's data, from its stage run at the environment
 holding the former. -/
 theorem sumCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ : Env} {caps : IndCaps}
-    {bs : List (Expr × Ix.Kernel.BinderMeta)}
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
+    {bs : List (Expr md × Ix.Kernel.BinderMeta)}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hfT : env.find? T = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = lps)
     (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort)) :
-    ∃ (idxArgs : List Expr) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
       (Es : (LevelParam → Nat) → List AnnotTerm) (srcs : List (Option Nat)),
       (∀ e ∈ idxArgs, e.constsResolve env₀ = true) ∧
-      (∃ (fvsP : List Expr) (crest : Expr) (xFvs : List Expr) (xrest : Expr),
+      (∃ (fvsP : List (Expr md)) (crest : Expr md) (xFvs : List (Expr md)) (xrest : Expr md),
         openPisAtFvars nP cvCa.type 0 = some (fvsP, crest) ∧
         openPisAtFvars nF crest nP = some (xFvs, xrest) ∧
         idxArgs = xrest.getAppArgs.drop nP) ∧
@@ -606,8 +606,8 @@ bit-valid, bounded when the family is not `Prop`, and the index
 expressions graded and fitting the former's index telescope at every
 fitting field spine. -/
 theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ : Env} {caps : IndCaps}
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
@@ -615,7 +615,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
-    {idxArgs : List Expr} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)}
     (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
     (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B) :

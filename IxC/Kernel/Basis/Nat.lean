@@ -19,33 +19,33 @@ namespace Ix.Kernel
 open BasisDSL
 
 /-- The type `Nat`, as a closed constant. -/
-def natT : Expr := cnst natName
+def natT : Expr md := cnst natName
 
 /-- `Nat : Type`. -/
-def natRaw : ConstantInfo :=
+def natRaw : ConstantInfo md :=
   .indInfo ⟨natName, [], type1⟩ {}
 
 /-- `Nat.zero : Nat`. -/
-def natZeroRaw : ConstantInfo :=
+def natZeroRaw : ConstantInfo md :=
   .ctorInfo ⟨natZeroName, [], natT⟩ 0 0
 
 /-- `Nat.succ (n : Nat) : Nat`. -/
-def natSuccRaw : ConstantInfo :=
+def natSuccRaw : ConstantInfo md :=
   .ctorInfo ⟨natSuccName, [], pi "n" natT natT⟩ 0 1
 
 /-- The motive of `Nat.rec`: `∀ (t : Nat), Sort u`. -/
-def natRecMotive : Expr := pi "t" natT (srt u)
+def natRecMotive : Expr md := pi "t" natT (srt u)
 
 /-- The successor minor premise of `Nat.rec`, in the `motive`/`zero`
 binder context: `∀ (n : Nat), motive n → motive (Nat.succ n)`. -/
-def natRecSucc : Expr :=
+def natRecSucc : Expr md :=
   pi "n" natT <|
   pi "n_ih" (.app (bv 2) (bv 0)) <|
   .app (bv 3) (.app (cnst natSuccName) (bv 1))
 
 /-- `Nat.rec.{u} {motive : Nat → Sort u} (zero : motive Nat.zero)
 (succ : ∀ n, motive n → motive n.succ) (t : Nat) : motive t`. -/
-def natRecRaw : ConstantInfo :=
+def natRecRaw : ConstantInfo md :=
   .recInfo ⟨natRecName, [uN],
     piI "motive" natRecMotive <|
     pi "zero" (.app (bv 0) (cnst natZeroName)) <|
@@ -65,6 +65,6 @@ def natRecRaw : ConstantInfo :=
       ap2 (bv 1) (bv 0) (ap4 (cnst natRecName [u]) (bv 3) (bv 2) (bv 1) (bv 0))]
 
 /-- The pinned `Nat` basis block, in install order. -/
-def natBasis : List ConstantInfo := [natRaw, natZeroRaw, natSuccRaw, natRecRaw]
+def natBasis : List (ConstantInfo md) := [natRaw, natZeroRaw, natSuccRaw, natRecRaw]
 
 end Ix.Kernel

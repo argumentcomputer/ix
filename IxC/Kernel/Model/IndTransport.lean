@@ -35,7 +35,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The truthfulness transport, at the reading** (`annotS`). -/
@@ -43,13 +43,13 @@ theorem annotTransport {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
     {K : Nat}
     -- the public frame
-    {pfvs : List Expr} (hPlen : pfvs.length = K)
-    (hPshape : ∀ (i : Nat) (x : Expr), pfvs[i]? = some x →
+    {pfvs : List (Expr md)} (hPlen : pfvs.length = K)
+    (hPshape : ∀ (i : Nat) (x : Expr md), pfvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hPws : ∀ x ∈ pfvs, Expr.WScoped K x)
     (hPleafClosed : ∀ l, (∃ x ∈ pfvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ pfvs)
-    (hlbP : ∀ (i : Nat) (ty : Expr),
+    (hlbP : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ pfvs → ty.looseBVarsBounded 0 = true)
     -- the statement tower and the ambient context
     {Γs : List AnnotTerm} {Δa : List AnnotTerm} (hΔalen : Δa.length = K)
@@ -64,11 +64,11 @@ theorem annotTransport {m : EnvModel V env} {F : Nat}
           interp V (fun j => ρ' (j + (K - i)))
               (Γs.getD (K - 1 - i) default) = interp V ρ' Bi)
     -- the rule's right-hand side and its λ-tower run
-    {rhsA : Expr} (hrhsw : rhsA.hasFvar = false)
+    {rhsA : Expr md} (hrhsw : rhsA.hasFvar = false)
     (hrhsb : rhsA.looseBVarsBounded 0 = true)
     {Ra : AnnotTerm} (hRa : denoteMeta m.acval env φ 0 rhsA = some Ra)
     (hokRa : ∀ σ : Nat → V, WellDenotedV V σ Ra)
-    {ldomsL : List Expr} {lrest2 : Expr}
+    {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt pfvs rhsA = some (ldomsL, lrest2))
     (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL)
     -- the fired spine
@@ -88,7 +88,7 @@ theorem annotTransport {m : EnvModel V env} {F : Nat}
         obtain ⟨ty, hx'⟩ := hPshape i x hx
         exact ⟨ty, by rw [hx', Nat.zero_add]⟩) hRa
   rw [hPlen] at htowerLam hΓlamLen
-  have hdomsLam : ∀ (i : Nat) (x : Expr), ldomsL[i]? = some x →
+  have hdomsLam : ∀ (i : Nat) (x : Expr md), ldomsL[i]? = some x →
       denoteMeta m.acval env φ i x = some (Γlam.getD (K - 1 - i) default) := by
     intro i x hx
     have h := hdoms i x hx

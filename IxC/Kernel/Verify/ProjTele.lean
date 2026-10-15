@@ -36,13 +36,13 @@ namespace Ix.Kernel
 open Expr
 
 /-- `k` closed `Sort 0` binders (bit `.never`) over `body`. -/
-@[expose] def projTele : Nat → Expr → Expr
+@[expose] def projTele : Nat → Expr md → Expr md
   | 0, body => body
   | k + 1, body =>
     .forallE (.sort .zero) (projTele k body) { pw := .never }
 
 theorem projTele_instantiate1 :
-    ∀ (k : Nat) (body a : Expr) (c : Nat),
+    ∀ (k : Nat) (body a : Expr md) (c : Nat),
       (projTele k body).instantiate1 a c = projTele k (body.instantiate1 a (c + k))
   | 0, body, a, c => by simp [projTele]
   | k + 1, body, a, c => by
@@ -54,7 +54,7 @@ theorem projTele_instantiate1 :
 body**: `instPisAt` along `k` arguments peels the `k` dummy binders
 and lands on `instSpine args (k - 1) body`. -/
 theorem instPisAt_projTele :
-    ∀ (args : List Expr) (body : Expr),
+    ∀ (args : List (Expr md)) (body : Expr md),
       Expr.instPisAt args (projTele args.length body)
         = some (List.replicate args.length (.sort .zero),
             Expr.instSpine args (args.length - 1) body)
@@ -65,12 +65,12 @@ theorem instPisAt_projTele :
       Nat.add_sub_cancel]
     rfl
 
-theorem projTele_hasFvar : ∀ (k : Nat) (body : Expr),
+theorem projTele_hasFvar : ∀ (k : Nat) (body : Expr md),
     (projTele k body).hasFvar = body.hasFvar
   | 0, _ => rfl
   | k + 1, body => by simp [projTele, Expr.hasFvar, projTele_hasFvar k body]
 
-theorem projTele_looseBVarsBounded : ∀ (k : Nat) (body : Expr) (c : Nat),
+theorem projTele_looseBVarsBounded : ∀ (k : Nat) (body : Expr md) (c : Nat),
     (projTele k body).looseBVarsBounded c = body.looseBVarsBounded (c + k)
   | 0, _, _ => rfl
   | k + 1, body, c => by
@@ -79,13 +79,13 @@ theorem projTele_looseBVarsBounded : ∀ (k : Nat) (body : Expr) (c : Nat),
     congr 1
     omega
 
-theorem projTele_constsResolve : ∀ (k : Nat) (body : Expr) (env : Env),
+theorem projTele_constsResolve : ∀ (k : Nat) (body : Expr md) (env : Env md),
     (projTele k body).constsResolve env = body.constsResolve env
   | 0, _, _ => rfl
   | k + 1, body, env => by
     simp [projTele, Expr.constsResolve, projTele_constsResolve k body env]
 
-theorem projTele_instantiateLevelParams : ∀ (k : Nat) (body : Expr)
+theorem projTele_instantiateLevelParams : ∀ (k : Nat) (body : Expr md)
     (ks : List LevelParam) (us : List Level),
     (projTele k body).instantiateLevelParams ks us
       = projTele k (body.instantiateLevelParams ks us)
@@ -96,16 +96,16 @@ theorem projTele_instantiateLevelParams : ∀ (k : Nat) (body : Expr)
     rfl
 
 /-- The telescope mentions no slot its body does not. -/
-theorem Expr.NoProjAt.projTele (T : Key) (i : Nat) :
-    ∀ (k : Nat) (body : Expr), Expr.NoProjAt T i body →
+theorem Expr.NoProjAt.projTele (T : Key md) (i : Nat) :
+    ∀ (k : Nat) (body : Expr md), Expr.NoProjAt T i body →
       Expr.NoProjAt T i (projTele k body)
   | 0, _, h => h
   | k + 1, body, h =>
     Expr.noProjAt_forallE.mpr ⟨Expr.noProjAt_sort, Expr.NoProjAt.projTele T i k body h⟩
 
-theorem projTele_stripPis : ∀ (k : Nat) (body : Expr),
+theorem projTele_stripPis : ∀ (k : Nat) (body : Expr md),
     (projTele k body).stripPis k
-      = some (List.replicate k ((.sort .zero : Expr), ({ pw := .never } : BinderMeta)), body)
+      = some (List.replicate k ((.sort .zero : Expr md), ({ pw := .never } : BinderMeta)), body)
   | 0, _ => rfl
   | k + 1, body => by
     simp [projTele, Expr.stripPis, projTele_stripPis k body, List.replicate_succ]
@@ -114,8 +114,8 @@ theorem projTele_stripPis : ∀ (k : Nat) (body : Expr),
 `ProjEntry.typeAt`'s single `instantiateList` is `instPisAt` of the
 telescope over the level-instantiated body along the subject type's
 arguments and the subject. -/
-theorem instPisAt_typeAt (entry : ProjEntry) (us : List Level)
-    {targs : List Expr} (hlen : targs.length = entry.numParams) (pe : Expr) :
+theorem instPisAt_typeAt (entry : ProjEntry md) (us : List Level)
+    {targs : List (Expr md)} (hlen : targs.length = entry.numParams) (pe : Expr md) :
     Expr.instPisAt (targs ++ [pe])
         (projTele (entry.numParams + 1)
           (entry.body.instantiateLevelParams entry.levelParams us))

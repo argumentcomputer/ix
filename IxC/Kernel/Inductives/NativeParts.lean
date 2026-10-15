@@ -80,7 +80,7 @@ up) followed by `nIdx` index expressions none of which mentions the
 block?  Official's `is_valid_ind_app` exactly: the head, the arity,
 the parameters (structurally) and `has_ind_occ` on every index
 argument (inductive.cpp, task #210 Part D). -/
-def recFamOk (T : Key) (lps : List LevelParam) (nP nIdx o : Nat) (e : Expr) : Bool :=
+def recFamOk (T : Key md) (lps : List LevelParam) (nP nIdx o : Nat) (e : Expr md) : Bool :=
   e.getAppFn == Expr.const T (lps.map .param) &&
   e.getAppArgs.length == nP + nIdx &&
   e.getAppArgs.take nP == structPsAt o nP &&
@@ -94,7 +94,7 @@ block's, with the wrong number of arguments, or whose INDEX expressions
 mention the block is the official "non valid occurrence" (`.negative`:
 `is_valid_ind_app` rejects all three); an application of another
 constant is a nested occurrence (`.unsupported`: the modeled path). -/
-def recPositivity (T : Key) (lps : List LevelParam) (nP nIdx o : Nat) : Expr → Nat → RecFieldKind
+def recPositivity (T : Key md) (lps : List LevelParam) (nP nIdx o : Nat) : Expr md → Nat → RecFieldKind
   | .forallE dom body _, k =>
     if dom.mentionsConst T then .negative else recPositivity T lps nP nIdx o body (k + 1)
   | e, k =>
@@ -112,7 +112,7 @@ def recPositivity (T : Key) (lps : List LevelParam) (nP nIdx o : Nat) : Expr →
 
 /-- The kind of a field whose domain is `dom`, `o` fields into the
 constructor's telescope. -/
-def recFieldKind (T : Key) (lps : List LevelParam) (nP nIdx o : Nat) (dom : Expr) : RecFieldKind :=
+def recFieldKind (T : Key md) (lps : List LevelParam) (nP nIdx o : Nat) (dom : Expr md) : RecFieldKind :=
   if dom.mentionsConst T then recPositivity T lps nP nIdx o dom 0 else .ordinary
 
 /-- The kinds of one constructor's fields, off its (raw or annotated)
@@ -131,7 +131,7 @@ invalid, and the residual's index expressions are `T`-free for the
 same reason (official's "invalid return type", the last conjunct
 below, `.negative`).  So the guard is the model's own invariant, never
 a verdict of its own. -/
-def recCtorKinds (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (c : ConstantVal × Nat) :
+def recCtorKinds (T : Key md) (lps : List LevelParam) (nP nIdx : Nat) (c : ConstantVal md × Nat) :
     Option (List RecFieldKind) :=
   match c.1.type.stripPis (nP + c.2) with
   | some (cbs, cbody) =>
@@ -147,7 +147,7 @@ def recCtorKinds (T : Key) (lps : List LevelParam) (nP nIdx : Nat) (c : Constant
 /-- All leading `∀` binders of an expression (outermost first) and
 the body — a recursive field's own telescope (`[]` at a finitary
 field, the `a⃗ : A⃗` of a reflexive one, task #202). -/
-def Expr.piBinders : Expr → List (Expr × BinderMeta) × Expr
+def Expr.piBinders : Expr md → List (Expr md × BinderMeta) × Expr md
   | .forallE ty b m =>
     let (bs, e) := piBinders b
     ((ty, m) :: bs, e)
@@ -155,7 +155,7 @@ def Expr.piBinders : Expr → List (Expr × BinderMeta) × Expr
 
 /-- Field `i`'s own telescope `a⃗ : A⃗` (at the field's frame: the
 parameters and the earlier fields), off the constructor's type. -/
-def structFieldTeleOf (cty : Expr) (nP nF i : Nat) : List (Expr × BinderMeta) :=
+def structFieldTeleOf (cty : Expr md) (nP nF i : Nat) : List (Expr md × BinderMeta) :=
   match cty.stripPis (nP + nF) with
   | some (cbs, _) => ((cbs.getD (nP + i) default).1.piBinders).1
   | none => []
@@ -163,7 +163,7 @@ def structFieldTeleOf (cty : Expr) (nP nF i : Nat) : List (Expr × BinderMeta) :
 /-- The index expressions of field `i`'s domain `Π a⃗, T p⃗ e⃗` (under
 the field's own telescope, at the field's frame), off the
 constructor's type; `[]` when the field is not of that shape. -/
-def structFieldIdxOf (cty : Expr) (nP nF i : Nat) : List Expr :=
+def structFieldIdxOf (cty : Expr md) (nP nF i : Nat) : List (Expr md) :=
   match cty.stripPis (nP + nF) with
   | some (cbs, _) => ((cbs.getD (nP + i) default).1.piBinders).2.getAppArgs.drop nP
   | none => []
@@ -176,7 +176,7 @@ def recIdxOf (ks : List RecFieldKind) : List Nat :=
 
 /-- The pieces of a recognised direct recursive block: the sum parts
 (with the family's index count) and the per-constructor field kinds. -/
-structure NativeParts extends InductiveShape where
+structure NativeParts (md : Mode) extends (InductiveShape md) where
   /-- per constructor, per field: its kind -/
   kinds : List (List RecFieldKind)
   /-- **the stream's recursor record passed the structural pin**
@@ -195,34 +195,34 @@ structure NativeParts extends InductiveShape where
 the sum parts the former's run returned (its result sort read through
 `whnf`, task #195) with the recogniser's field kinds.  A definition,
 not a literal, so that a proof's `dsimp` keeps it in one piece. -/
-def NativeParts.complete (p₀ : NativeParts) (p₁ : InductiveShape) : NativeParts :=
+def NativeParts.complete (p₀ : NativeParts md) (p₁ : InductiveShape md) : NativeParts md :=
   ⟨p₁, p₀.kinds, p₀.recPinned⟩
 
-@[simp] theorem NativeParts.complete_toInductiveShape (p₀ : NativeParts)
-    (p₁ : InductiveShape) : (p₀.complete p₁).toInductiveShape = p₁ := rfl
-@[simp] theorem NativeParts.complete_kinds (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_toInductiveShape (p₀ : NativeParts md)
+    (p₁ : InductiveShape md) : (p₀.complete p₁).toInductiveShape = p₁ := rfl
+@[simp] theorem NativeParts.complete_kinds (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).kinds = p₀.kinds := rfl
-@[simp] theorem NativeParts.complete_recPinned (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_recPinned (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).recPinned = p₀.recPinned := rfl
-@[simp] theorem NativeParts.complete_cvT (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_cvT (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).cvT = p₁.cvT := rfl
-@[simp] theorem NativeParts.complete_ctors (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_ctors (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).ctors = p₁.ctors := rfl
-@[simp] theorem NativeParts.complete_nP (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_nP (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).nP = p₁.nP := rfl
-@[simp] theorem NativeParts.complete_nIdx (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_nIdx (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).nIdx = p₁.nIdx := rfl
-@[simp] theorem NativeParts.complete_cvR (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_cvR (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).cvR = p₁.cvR := rfl
-@[simp] theorem NativeParts.complete_elim (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_elim (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).elim = p₁.elim := rfl
-@[simp] theorem NativeParts.complete_resSort (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_resSort (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).resSort = p₁.resSort := rfl
-@[simp] theorem NativeParts.complete_rhss (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_rhss (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).rhss = p₁.rhss := rfl
-@[simp] theorem NativeParts.complete_large (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_large (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).large = p₁.large := rfl
-@[simp] theorem NativeParts.complete_isProp (p₀ : NativeParts) (p₁ : InductiveShape) :
+@[simp] theorem NativeParts.complete_isProp (p₀ : NativeParts md) (p₁ : InductiveShape md) :
     (p₀.complete p₁).isProp = p₁.isProp := rfl
 
 /-! ## The generated recursor with inductive hypotheses -/
@@ -230,7 +230,7 @@ def NativeParts.complete (p₀ : NativeParts) (p₁ : InductiveShape) : NativePa
 /-- The parameter, motive and minor variables as seen from under the
 `nF` fields (and `e` further binders): the recursor's leading spine
 `p⃗ motive m⃗` at that frame. -/
-def structRecPrefixAt (nP n nF e : Nat) : List Expr :=
+def structRecPrefixAt (nP n nF e : Nat) : List (Expr md) :=
   structPsAt (e + nF + n + 1) nP ++ [Expr.bvar (e + nF + n)] ++
     (List.range n).map fun l => Expr.bvar (e + nF + n - 1 - l)
 
@@ -240,25 +240,25 @@ binders of the field's own telescope, spelled at the field's frame
 `l` further binders below them and `o` extras between the parameters
 and the fields: the earlier fields move by `nF - i + l`, the
 parameters by `o` more; the `m` telescope binders stay. -/
-def structIdxAt (nF o i l m : Nat) (e : Expr) : Expr :=
+def structIdxAt (nF o i l m : Nat) (e : Expr md) : Expr md :=
   (e.liftLooseBVars (nF - i + l) m).liftLooseBVars o (nF + l + m)
 
 /-- Field `i`'s own telescope moved as `structIdxAt` moves its
 expressions (binder `k` sits under `k` earlier telescope binders). -/
-def structTeleAt (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr × BinderMeta)) :
-    List (Expr × BinderMeta) :=
+def structTeleAt (nF o i l : Nat) (pw : PropWhen) (tele : List (Expr md × BinderMeta)) :
+    List (Expr md × BinderMeta) :=
   (List.range tele.length).map fun k =>
     let b := tele.getD k default
     (structIdxAt nF o i l k b.1, { pw })
 
 /-- The variables of an `m`-binder telescope, innermost last. -/
-def structTeleVars (m : Nat) : List Expr := (List.range m).map fun k => Expr.bvar (m - 1 - k)
+def structTeleVars (m : Nat) : List (Expr md) := (List.range m).map fun k => Expr.bvar (m - 1 - k)
 
 /-- `∀ tele, body` / `λ tele, body` over a binder list (outermost first). -/
-def Expr.mkPisOf : List (Expr × BinderMeta) → Expr → Expr
+def Expr.mkPisOf : List (Expr md × BinderMeta) → Expr md → Expr md
   | [], body => body
   | (ty, mt) :: bs, body => .forallE ty (mkPisOf bs body) mt
-def Expr.mkLamsOf : List (Expr × BinderMeta) → Expr → Expr
+def Expr.mkLamsOf : List (Expr md × BinderMeta) → Expr md → Expr md
   | [], body => body
   | (ty, mt) :: bs, body => .lam ty (mkLamsOf bs body) mt
 
@@ -268,8 +268,8 @@ of a rule body (the motive and the `n` minors are the extras):
 `λ a⃗, T.rec p⃗ motive m⃗ e⃗_i(a⃗) (f_i a⃗)` — at a finitary field the
 telescope is empty and this is the recursor at the prefix, the field's
 indices and the field. -/
-def structIhApp (recC : Key) (rlvls : List Level) (pw : PropWhen) (nP n nF i : Nat)
-    (tele : List (Expr × BinderMeta)) (idx : List Expr) : Expr :=
+def structIhApp (recC : Key md) (rlvls : List Level) (pw : PropWhen) (nP n nF i : Nat)
+    (tele : List (Expr md × BinderMeta)) (idx : List (Expr md)) : Expr md :=
   let m := tele.length
   Expr.mkLamsOf (structTeleAt nF (n + 1) i 0 pw tele)
     (Expr.mkAppN (.const recC rlvls)
@@ -280,9 +280,9 @@ def structIhApp (recC : Key) (rlvls : List Level) (pw : PropWhen) (nP n nF i : N
 `j` at the fields, then at the inductive hypotheses of the recursive
 fields (`structRuleBodyAt` with the `ih` arguments; `teleOf i` and
 `idxOf i` are field `i`'s telescope and index expressions). -/
-def structRuleBodyR (recC : Key) (rlvls : List Level) (pw : PropWhen) (nP n nF j : Nat)
+def structRuleBodyR (recC : Key md) (rlvls : List Level) (pw : PropWhen) (nP n nF j : Nat)
     (recIdx : List Nat)
-    (teleOf : Nat → List (Expr × BinderMeta)) (idxOf : Nat → List Expr) : Expr :=
+    (teleOf : Nat → List (Expr md × BinderMeta)) (idxOf : Nat → List (Expr md)) : Expr md :=
   Expr.mkAppN (.bvar (nF + n - 1 - j))
     (((List.range nF).map fun k => Expr.bvar (nF - 1 - k)) ++
       recIdx.map fun i => structIhApp recC rlvls pw nP n nF i (teleOf i) (idxOf i))
@@ -292,8 +292,8 @@ position (in order), `∀ a⃗, motive e⃗_i(a⃗) (f_i a⃗)` under the `l`
 earlier `ih` binders, the motive sitting `nF + o - 1` binders above the
 fields and the field's telescope and index expressions moved to that
 frame (a finitary field: `motive e⃗_i f_i`). -/
-def structIhPis (nF o : Nat) (pw : PropWhen) (teleOf : Nat → List (Expr × BinderMeta))
-    (idxOf : Nat → List Expr) : List Nat → Nat → Expr → Expr
+def structIhPis (nF o : Nat) (pw : PropWhen) (teleOf : Nat → List (Expr md × BinderMeta))
+    (idxOf : Nat → List (Expr md)) : List Nat → Nat → Expr md → Expr md
   | [], _, body => body
   | i :: is, l, body =>
     let m := (teleOf i).length
@@ -309,8 +309,8 @@ telescope lifted under the `o` extras, every binder's datum reset to
 the elimination datum, then the `ih` binders, ending in
 `motive e⃗ (C p⃗ f⃗)` — `structMinorTyI`'s conclusion — lifted above
 the `ih`s. -/
-def structMinorTyR (C : Key) (lps : List LevelParam) (nP nF o : Nat) (pw : PropWhen)
-    (cty : Expr) (recIdx : List Nat) : Option Expr :=
+def structMinorTyR (C : Key md) (lps : List LevelParam) (nP nF o : Nat) (pw : PropWhen)
+    (cty : Expr md) (recIdx : List Nat) : Option (Expr md) :=
   (cty.stripPis nP).bind fun q =>
   (q.2.stripPis nF).bind fun r =>
     Expr.replacePisPw pw nF (q.2.liftLooseBVars o 0)
@@ -322,7 +322,7 @@ def structMinorTyR (C : Key) (lps : List LevelParam) (nP nF o : Nat) (pw : PropW
 /-- The minor premises' `∀`-telescope at a recursive block, one per
 constructor `(C, nF, cty, recIdx)`. -/
 def structMinorsPisR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
-    List (Key × Nat × Expr × List Nat) → Nat → Expr → Option Expr
+    List (Key md × Nat × Expr md × List Nat) → Nat → Expr md → Option (Expr md)
   | [], _, body => some body
   | (C, nF, cty, recIdx) :: cs, o, body =>
     (structMinorTyR C lps nP nF o pw cty recIdx).bind fun mty =>
@@ -331,7 +331,7 @@ def structMinorsPisR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
 
 /-- The `λ` twin of `structMinorsPisR`. -/
 def structMinorsLamsR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
-    List (Key × Nat × Expr × List Nat) → Nat → Expr → Option Expr
+    List (Key md × Nat × Expr md × List Nat) → Nat → Expr md → Option (Expr md)
   | [], _, body => some body
   | (C, nF, cty, recIdx) :: cs, o, body =>
     (structMinorTyR C lps nP nF o pw cty recIdx).bind fun mty =>
@@ -346,8 +346,8 @@ def structMinorsLamsR (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :
 
 (`structRecTyI` with `ih` binders in the minors; `tty = ∀ p⃗ ı⃗, Sort w`
 is the annotated type former's type). -/
-def structRecTyR (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Key × Nat × Expr × List Nat)) : Option Expr :=
+def structRecTyR (T : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat)) : Option (Expr md) :=
   let ℓ := structElimLevel elim large
   let pw := Level.zeronessOf ℓ
   let n := ctors.length
@@ -365,9 +365,9 @@ def structRecTyR (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : 
 `λ p⃗ motive minor⃗ f⃗_j, minor_j f⃗_j (T.rec p⃗ motive minor⃗ e⃗_i f_i)…`
 (`structRecRhsI` with the inductive hypotheses; `recC`/`rlvls` are the
 recursor's name and its level parameters as levels). -/
-def structRecRhsR (T : Key) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Key × Nat × Expr × List Nat))
-    (recC : Key) (rlvls : List Level) (j : Nat) : Option Expr :=
+def structRecRhsR (T : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat))
+    (recC : Key md) (rlvls : List Level) (j : Nat) : Option (Expr md) :=
   let ℓ := structElimLevel elim large
   let pw := Level.zeronessOf ℓ
   let n := ctors.length
@@ -387,8 +387,8 @@ def structRecRhsR (T : Key) (lps : List LevelParam) (elim : LevelParam) (large :
 
 /-- The constructors zipped with their recursive positions, as the
 generators take them. -/
-def nativeCtors4 (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) :
-    List (Key × Nat × Expr × List Nat) :=
+def nativeCtors4 (ctorsA : List (ConstantVal md × Nat)) (kinds : List (List RecFieldKind)) :
+    List (Key md × Nat × Expr md × List Nat) :=
   List.zipWith (fun cA ks => (cA.1.name, cA.2, cA.1.type, recIdxOf ks)) ctorsA kinds
 
 /-- **The rule's `λ` prefix against the stream's own recursor type**
@@ -425,7 +425,7 @@ the recursor's minor and not off the constructor RECORD: at
 `Lean.SourceInfo.synthetic` the record's third field is
 `optParam Bool false` where the generated recursor — and the rule —
 has `Bool`. -/
-def nativeRulePrefixOk (recTy : Expr) (nP n j nF : Nat) (rhs : Expr) : Bool :=
+def nativeRulePrefixOk (recTy : Expr md) (nP n j nF : Nat) (rhs : Expr md) : Bool :=
   match rhs.stripLams (nP + 1 + n + nF), recTy.stripPis (nP + 1 + n) with
   | some (rbs, _), some (tbs, _) =>
     (List.range (nP + 1 + n)).all (fun i =>
@@ -457,9 +457,9 @@ comparison, on the bodies (the type is `isDefEq`'d at
 types, against the stream's own recursor type and constructor records
 (`nativeRulePrefixOk`, which says why the comparison is against the
 stream's own recursor type and not against the generated term). -/
-def nativeRulesOk (recC : Key) (rlvls : List Level) (pw : PropWhen) (nP n : Nat)
-    (cs : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) (rhss : List Expr)
-    (recTy : Expr) :
+def nativeRulesOk (recC : Key md) (rlvls : List Level) (pw : PropWhen) (nP n : Nat)
+    (cs : List (ConstantVal md × Nat)) (kinds : List (List RecFieldKind)) (rhss : List (Expr md))
+    (recTy : Expr md) :
     Bool :=
   rhss.length == n && kinds.length == n &&
   (List.range n).all fun j =>
@@ -514,7 +514,7 @@ cannot be counted here; the recursor record's own argument sums are
 the only reading available and are used as before, with the parameter
 count they imply cross-checked against the declared one.  A block of
 that shape with a broken recursor record still declines. -/
-def nativeCounts? (nPd : Nat) (cvT : ConstantVal) (cs : List (ConstantVal × Nat × Nat))
+def nativeCounts? (nPd : Nat) (cvT : ConstantVal md) (cs : List (ConstantVal md × Nat × Nat))
     (mI rP : Nat) : Option (Nat × Nat) :=
   match cvT.type.piBinders with
   | (bs, .sort _) => if nPd ≤ bs.length then some (nPd, bs.length - nPd) else none
@@ -534,7 +534,7 @@ equality, so a `false` here is a REJECT, thrown at the recursor stage
 (`checkNativeRec`); the recogniser only records it, so that the
 block's TYPE and CONSTRUCTORS are checked first and their own rejects
 come out with official's message. -/
-def nativeRecPinOk (p : InductiveShape) (block : List ConstantInfo) : Bool :=
+def nativeRecPinOk (p : InductiveShape md) (block : List (ConstantInfo md)) : Bool :=
   match block with
   | .indInfo _ _ :: rest =>
     match sumSplit rest with
@@ -555,7 +555,7 @@ The recogniser reads which of the two the record claims and records
 the verdict here; `checkNativeRec` throws on `false`, as official's
 replay rejects a recursor whose level parameters are not the generated
 ones. -/
-def nativeRecLpsOk (p : InductiveShape) : Bool :=
+def nativeRecLpsOk (p : InductiveShape md) : Bool :=
   if p.large then p.cvR.levelParams == p.elim :: p.cvT.levelParams
   else p.cvR.levelParams == p.cvT.levelParams
 
@@ -567,7 +567,7 @@ generated, and so belongs to the shape).  Nothing else of the recursor
 record is pinned here — see the section docstring; the rules' bodies
 are `nativeRulesOk`'s and their metadata `nativeRecPinOk`'s, both
 at the install. -/
-def nativeShape? (nPd : Nat) (block : List ConstantInfo) : Option InductiveShape :=
+def nativeShape? (nPd : Nat) (block : List (ConstantInfo md)) : Option (InductiveShape md) :=
   match block with
   | .indInfo cvT _ :: rest =>
     match sumSplit rest with
@@ -617,15 +617,15 @@ def nativeShape? (nPd : Nat) (block : List ConstantInfo) : Option InductiveShape
 the install classifies them on the constructors it stored — their
 field domains normalised by official's positivity walk
 (`normCtorVal`) — and every later stage runs on this record. -/
-def NativeParts.withKinds (p : NativeParts) (ks : List (List RecFieldKind)) :
-    NativeParts :=
+def NativeParts.withKinds (p : NativeParts md) (ks : List (List RecFieldKind)) :
+    (NativeParts md) :=
   { p with kinds := ks }
 
-@[simp] theorem NativeParts.withKinds_kinds (p : NativeParts)
+@[simp] theorem NativeParts.withKinds_kinds (p : NativeParts md)
     (ks : List (List RecFieldKind)) : (p.withKinds ks).kinds = ks := rfl
-@[simp] theorem NativeParts.withKinds_recPinned (p : NativeParts)
+@[simp] theorem NativeParts.withKinds_recPinned (p : NativeParts md)
     (ks : List (List RecFieldKind)) : (p.withKinds ks).recPinned = p.recPinned := rfl
-@[simp] theorem NativeParts.withKinds_toInductiveShape (p : NativeParts)
+@[simp] theorem NativeParts.withKinds_toInductiveShape (p : NativeParts md)
     (ks : List (List RecFieldKind)) : (p.withKinds ks).toInductiveShape = p.toInductiveShape := rfl
 
 /-- Recognise a direct block — ONE ROUTE (task #210): its SHAPE
@@ -648,7 +648,7 @@ not a condition of recognition (task #220): its structural pin travels
 with the record (`nativeRecPinOk`) and the install throws on it, so
 that a block whose recursor record is a stub is REJECTED by its own
 type and constructors rather than declined. -/
-def nativeParts? (nPd : Nat) (block : List ConstantInfo) : Option NativeParts :=
+def nativeParts? (nPd : Nat) (block : List (ConstantInfo md)) : Option (NativeParts md) :=
   (nativeShape? nPd block).map fun p => ⟨p, [], nativeRecPinOk p block⟩
 
 end Ix.Kernel

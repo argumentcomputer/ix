@@ -39,7 +39,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level whnf inferTypeCore)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat} {fuel : Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat} {fuel : Nat}
 
 -- The recomposition, re-exported under the names the fold has always
 -- used (`Model/Rules/Recompose.lean`): `checkSoundAtP5` is the five
@@ -62,9 +62,9 @@ mentions).  In the rules tier readability is the motive's existence
 form, whose premise IS the context, and every consumer held one
 (`LeafReads.of_ctxOk hC` at each call site, now just `hC`);
 `LeafReads` retires with the Steps tier (task #305 closing). -/
-@[expose] def InferReads {env : Env} (m : EnvModel V env) (μ : CheckMode)
+@[expose] def InferReads {env : Env md} (m : EnvModel V env) (μ : CheckMode)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e t : Expr} {Δa : List AnnotTerm} {ea : AnnotTerm},
+  ∀ {d : Nat} {e t : Expr md} {Δa : List AnnotTerm} {ea : AnnotTerm},
     inferTypeCore μ env fuel d e = .ok t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
     Expr.LeavesBounded e →
@@ -97,9 +97,9 @@ every use in the quarter is at the induction-bounded checker fuel,
 and `sortSemAt_of_claims` *derives* the fact from the claims one
 level down — another canonical-frontier residue dissolved.  The
 subject's scoping package is carried so the claims can be applied. -/
-@[expose] def SortSemAt {env : Env} (m : EnvModel V env) (μ : CheckMode)
+@[expose] def SortSemAt {env : Env md} (m : EnvModel V env) (μ : CheckMode)
     (φ : LevelParam → Nat) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e t : Expr} {u : Level} {Δa : List AnnotTerm}
+  ∀ {d : Nat} {e t : Expr md} {u : Level} {Δa : List AnnotTerm}
     {ea : AnnotTerm},
     CtxOk m φ d Δa e →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
@@ -111,7 +111,7 @@ subject's scoping package is carried so the claims can be applied. -/
       WellDenotedV V ρ ea ∧ interp V ρ ea ∈ˢ (univ (u.eval φ) : V)
 
 /-- `denoteMeta` at a sort (the `denote2_sortQ` mirror). -/
-theorem denoteMeta_sortQ {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat}
+theorem denoteMeta_sortQ {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {u : Level} :
     denoteMeta acval env φ d (.sort u) = some (.sort (u.eval φ)) := by
   rw [denoteMeta]
@@ -121,7 +121,7 @@ sort fact at `fuel` from the claims at `fuel` plus the one totality
 factor — infer the type (`hreads` says it reads), grade both readings
 (`ihi`), then walk the type to its sort (`ihw`) and the membership
 lands in the universe. -/
-theorem sortSemAt_of_claims {env : Env} {m : EnvModel V env}
+theorem sortSemAt_of_claims {env : Env md} {m : EnvModel V env}
     {fuel : Nat}
     (ihw : WhnfClaim μ m φ fuel) (ihi : InferClaim μ m φ fuel)
     (hreads : InferReads m μ φ fuel) :
@@ -187,7 +187,7 @@ there drops the arity equation (it is consumed inside its own
 equation the clause's second `throw` tests — which is precisely
 `denoteMeta`'s `.const` guard. -/
 theorem inferTypeCore_const_inv_len {fuel d : Nat}
-    {n : Key} {us : List Level} {t : Expr}
+    {n : Key md} {us : List Level} {t : Expr md}
     (h : inferTypeCore μ env fuel d (.const n us) = .ok t) :
     ∃ ci, env.find? n = some ci ∧
       us.length = ci.toConstantVal.levelParams.length := by
@@ -211,7 +211,7 @@ theorem inferTypeCore_const_inv_len {fuel d : Nat}
 
 /-- **The `Nat`-literal clause's guard, recorded** — `denoteMeta`'s own
 literal guard, verbatim. -/
-theorem inferTypeCore_natLit_inv {fuel d k : Nat} {t : Expr}
+theorem inferTypeCore_natLit_inv {fuel d k : Nat} {t : Expr md}
     (h : inferTypeCore μ env fuel d (.lit (.natVal k)) = .ok t) :
     Ix.Kernel.natLitSupported env = true := by
   match fuel, h with
@@ -225,7 +225,7 @@ theorem inferTypeCore_natLit_inv {fuel d k : Nat} {t : Expr}
       simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- **The string-literal clause's guard, recorded.** -/
-theorem inferTypeCore_strLit_inv {fuel d : Nat} {s : String} {t : Expr}
+theorem inferTypeCore_strLit_inv {fuel d : Nat} {s : String} {t : Expr md}
     (h : inferTypeCore μ env fuel d (.lit (.strVal s)) = .ok t) :
     Ix.Kernel.strLitSupported env = true := by
   match fuel, h with
@@ -242,7 +242,7 @@ theorem inferTypeCore_strLit_inv {fuel d : Nat} {s : String} {t : Expr}
 
 /-- The walk, with the fuel explicit (the induction's own shape). -/
 private theorem acceptedReads_aux (m : EnvModel V env) (φ : LevelParam → Nat) :
-    ∀ (F : Nat) {d : Nat} {e t : Expr},
+    ∀ (F : Nat) {d : Nat} {e t : Expr md},
       inferTypeCore μ env F d e = .ok t →
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
@@ -329,7 +329,7 @@ inference accepts, the validated-annotation reading reads.  See the
 module docstring for the guard table and for the vacuous `letE`
 clause. -/
 theorem acceptedReads_of (m : EnvModel V env) (φ : LevelParam → Nat)
-    {F d : Nat} {e t : Expr}
+    {F d : Nat} {e t : Expr md}
     (h : inferTypeCore μ env F d e = .ok t)
     (hws : Expr.WScoped d e) (hb : e.looseBVarsBounded 0 = true)
     (hL : Expr.LeavesBounded e) :

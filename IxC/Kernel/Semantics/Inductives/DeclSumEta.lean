@@ -28,8 +28,8 @@ open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
 /-- The constructors' conses keep the OTHER families closed (task
 #210 Part A: the block's own family may claim η before its constructor
 is stored). -/
-theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Key} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
+theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Key md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env : Env md},
       EtaFamiliesClosedExcept env T →
       (∀ c ∈ ctorsA, env.find? c.1.name = none) →
       (ctorsA.map (·.1.name)).Nodup →
@@ -53,8 +53,8 @@ theorem consSumCtors_etaClosedExcept {nP : Nat} {T : Key} :
 
 /-- A name none of the consed constructors carries looks up below the
 conses. -/
-theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Key} :
-    ∀ {ctorsA : List (ConstantVal × Nat)} {env : Env},
+theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Key md} :
+    ∀ {ctorsA : List (ConstantVal md × Nat)} {env : Env md},
       n ∉ ctorsA.map (·.1.name) → (consSumCtors nP ctorsA env).find? n = env.find? n
   | [], _, _ => rfl
   | c :: cs, env, hn => by
@@ -65,8 +65,8 @@ theorem consSumCtors_find?_of_not_mem {nP : Nat} {n : Key} :
 /-- The projection table stage of the fixpoint route keeps the
 η-families closed (task #210 Part A): the table's cons at a
 structure-like block, nothing otherwise. -/
-theorem checkNativeTable_etaClosed {p : Ix.Kernel.NativeParts}
-    {ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)} {env env₂ : Env}
+theorem checkNativeTable_etaClosed {p : Ix.Kernel.NativeParts md}
+    {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)} {env env₂ : Env md}
     (h : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM) p ctorsA sortss env = .ok env₂)
     (hE : EtaFamiliesClosed env) : EtaFamiliesClosed env₂ := by
   unfold Ix.Kernel.checkNativeTable at h
@@ -81,8 +81,8 @@ theorem checkNativeTable_etaClosed {p : Ix.Kernel.NativeParts}
 which its constructor's cons completes — the other families stay
 closed across the former's cons, `EtaFamiliesClosedExcept`, and the
 block's own family is closed once its constructor is stored). -/
-theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env}
-    {p₀ : Ix.Kernel.NativeParts} (hE : EtaFamiliesClosed env)
+theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {p₀ : Ix.Kernel.NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeRun μ F env p₀ env₂) : EtaFamiliesClosed env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
     hCtors, -, hcaps, -, -, -, -, -, hRec, hTbl⟩ := h
@@ -123,7 +123,7 @@ theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env}
         Ix.Kernel.checkConstantVal_inv hccv
       rw [hCeq]
   have hfreshC : ∀ c ∈ ctorsA,
-      (⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩ : Env).find?
+      (⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩ : Env md).find?
         c.1.name = none := by
     intro c hc
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hc
@@ -196,7 +196,7 @@ theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env}
 /-- The `.indDecl` run dispatch keeps the η-families closed, by the
 kernel's own case split. -/
 theorem declIndRunDispatchEtaClosed {μ : CheckMode} {F : Nat}
-    {env envI : Env} {block : List ConstantInfo} {nP : Nat}
+    {env envI : Env md} {block : List (ConstantInfo md)} {nP : Nat}
     (hE : EtaFamiliesClosed env)
     (h : DeclIndRunDispatch μ F env block nP envI) : EtaFamiliesClosed envI := by
   unfold DeclIndRunDispatch at h

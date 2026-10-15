@@ -77,7 +77,7 @@ both lanes. -/
 
 /-- The annotate outputs' syntactic facts, packaged: no fvars, bounded,
 from the annotate run and the input's own guards. -/
-theorem annotate_syntax {μ : CheckMode} {F : Nat} {env : Env} {e e' : Expr}
+theorem annotate_syntax {μ : CheckMode} {F : Nat} {env : Env md} {e e' : Expr md}
     (hann : annotateCore μ env F 0 e = .ok e')
     (hef : e.hasFvar = false) (heb : e.looseBVarsBounded 0 = true) :
     e'.hasFvar = false ∧ e'.looseBVarsBounded 0 = true :=
@@ -90,8 +90,8 @@ theorem annotate_syntax {μ : CheckMode} {F : Nat} {env : Env} {e e' : Expr}
 
 /-- `ConstantValR`'s run/guard half: everything but the trailing
 front-door derivation. -/
-def ConstantValRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (type' : Expr) : Prop :=
+def ConstantValRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (type' : Expr md) : Prop :=
   (env.find? cv.name).isNone = true ∧
   reservedBasisNames.contains cv.name = false ∧
   cv.name.isProjFnShape = false ∧
@@ -106,8 +106,8 @@ def ConstantValRun (μ : CheckMode) (F : Nat) (env : Env)
 
 /-- `ValueFrontR`'s run/guard half: everything but the trailing
 front-door derivation. -/
-def ValueFrontRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (value : Expr) (type' value' : Expr) : Prop :=
+def ValueFrontRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (value : Expr md) (type' value' : Expr md) : Prop :=
   value.looseBVarsBounded 0 = true ∧
   value.hasFvar = false ∧
   annotateCore μ env F 0 value = .ok value' ∧
@@ -125,10 +125,10 @@ the model's conversion (`divMod_install`, `IxC/Kernel/Model/DivModCert.lean`)
 is over an arbitrary proof list, because what it consumes is the
 certificates' verdict *in this environment* and not where the proofs came
 from — which is why the fold is sound at every role-table evidence. -/
-def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
-    (c : Key) (value' : Expr) : Prop :=
+def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env md)
+    (c : Key md) (value' : Expr md) : Prop :=
   divModEnvGuard env₂ c = true ∧
-  ∃ proofs : List Expr,
+  ∃ proofs : List (Expr md),
     divModCertsGuard proofs env c value' = true ∧
     checkDivModCerts (m := CheckM) (fueledOps μ F) env c value'
       (divModCertStmts c) proofs = .ok true
@@ -136,8 +136,8 @@ def DivModCertRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
 /-- **A compiler-trust opaque's install, run half**: the storage guards,
 the value's annotation and the recorded identity-certificate run, without
 the derivation the identity carries beside it. -/
-def ReduceIdentityRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
-    (c : Key) (value : Expr) : Prop :=
+def ReduceIdentityRun (μ : CheckMode) (F : Nat) (env env₂ : Env md)
+    (c : Key md) (value : Expr md) : Prop :=
   reduceStoredOk env₂ c = true ∧
   reduceElemOk env c = true ∧
   ∃ valA,
@@ -148,9 +148,9 @@ def ReduceIdentityRun (μ : CheckMode) (F : Nat) (env env₂ : Env)
 /-! ## The value kinds, run half -/
 
 /-- `DeclDefnR`'s run/guard half. -/
-def DeclDefnRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (value : Expr) (hint : ReducibilityHint)
-    (env₂ : Env) : Prop :=
+def DeclDefnRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint)
+    (env₂ : Env md) : Prop :=
   ∃ type' value',
     ConstantValRun μ F env cv type' ∧
     ValueFrontRun μ F env cv value type' value' ∧
@@ -167,8 +167,8 @@ def DeclDefnRun (μ : CheckMode) (F : Nat) (env : Env)
       DivModCertRun μ F env env₂ cv.name value')
 
 /-- `DeclThmR`'s run/guard half. -/
-def DeclThmRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (value : Expr) (env₂ : Env) : Prop :=
+def DeclThmRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (value : Expr md) (env₂ : Env md) : Prop :=
   ∃ type' value',
     ConstantValRun μ F env cv type' ∧
     (∃ stype u, inferTypeCore μ env F 0 type' = .ok stype ∧
@@ -181,8 +181,8 @@ def DeclThmRun (μ : CheckMode) (F : Nat) (env : Env)
       env.consts⟩
 
 /-- `DeclOpaqueR`'s run/guard half. -/
-def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (value : Expr) (env₂ : Env) : Prop :=
+def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (value : Expr md) (env₂ : Env md) : Prop :=
   ∃ type' value',
     ConstantValRun μ F env cv type' ∧
     ValueFrontRun μ F env cv value type' value' ∧
@@ -192,8 +192,8 @@ def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env)
 
 /-- `DeclAxiomR`'s run/guard half: the branch disjunction is pure
 stored-data guards and is carried verbatim. -/
-def DeclAxiomRun (μ : CheckMode) (F : Nat) (env : Env)
-    (cv : ConstantVal) (env₂ : Env) : Prop :=
+def DeclAxiomRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (env₂ : Env md) : Prop :=
   -- **`Quot.sound`** (task #293): the pinned quotient block's own
   -- record, compared with the pin BEFORE the common checks (its name is
   -- a reserved basis name) and installing nothing of its own — the
@@ -202,7 +202,7 @@ def DeclAxiomRun (μ : CheckMode) (F : Nat) (env : Env)
   (cv.name = quotSoundName ∧ env₂ = env) ∨
   ∃ type',
     ConstantValRun μ F env cv type' ∧
-    (let cvA : ConstantVal := ⟨cv.name, cv.levelParams, type'⟩
+    (let cvA : ConstantVal md := ⟨cv.name, cv.levelParams, type'⟩
      (stdAxiomOk env cvA = true ∧
         env₂ = ⟨.axiomInfo cvA :: env.consts⟩) ∨
      (cvA.name = trustCompilerName ∧ trustCompilerOk env cvA = true ∧
@@ -227,8 +227,8 @@ instantiation, not this text).
 `DeclBasisRun` is re-used verbatim: that kind's record was already guards
 only. -/
 def DeclRun (μ : CheckMode) (F : Nat)
-    (Ind : List ConstantInfo → Nat → Env → Prop) (env : Env) :
-    Declaration → Env → Prop
+    (Ind : List (ConstantInfo md) → Nat → Env md → Prop) (env : Env md) :
+    (Declaration md) → Env md → Prop
   | .defnDecl cv value hint, env₂ => DeclDefnRun μ F env cv value hint env₂
   | .thmDecl cv value, env₂ => DeclThmRun μ F env cv value env₂
   | .opaqueDecl cv value, env₂ => DeclOpaqueRun μ F env cv value env₂

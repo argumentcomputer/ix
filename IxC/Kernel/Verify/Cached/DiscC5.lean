@@ -31,12 +31,12 @@ variable {mode : CheckMode}
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Decided `Expr` equality decides expression equality on the field
 invariant — the port of `beq_transfer` (whose arena leg was
 `denoteT_inj`). -/
-private theorem beq_transferC {i j : Expr} {a b : Expr}
+private theorem beq_transferC {i j : Expr md} {a b : Expr md}
     (ha : RelC i a) (hb : RelC j b) : (i == j) = (a == b) := by
   obtain rfl := ha
   obtain rfl := hb
@@ -46,8 +46,8 @@ private theorem beq_transferC {i j : Expr} {a b : Expr}
 bridges of the interned original collapse (the cached representation
 stores `Name`s and `BinderMeta`s directly). -/
 private theorem defeqC_etaR_arm (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {a' b' t₂ b₂ : Expr} {a'x ty₂x body₂x : Expr}
-    {bm₂ : BinderMeta} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {a' b' t₂ b₂ : Expr md} {a'x ty₂x body₂x : Expr md}
+    {bm₂ : BinderMeta} {s₀ : CState md} (hs : CSOK mode env s₀)
     (haS : RelC a' a'x)
     (hty₂ : RelC t₂ ty₂x)
     (hbody₂ : RelC b₂ body₂x)
@@ -79,8 +79,8 @@ private theorem defeqC_etaR_arm (hμ : mode.verifiedChecks = true) (ih : SSimC m
 
 /-- The one-sided-λ (left) stuck arm. -/
 private theorem defeqC_etaL_arm (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {a' b' t₁ b₁ : Expr} {b'x ty₁x body₁x : Expr}
-    {bm₁ : BinderMeta} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {a' b' t₁ b₁ : Expr md} {b'x ty₁x body₁x : Expr md}
+    {bm₁ : BinderMeta} {s₀ : CState md} (hs : CSOK mode env s₀)
     (haS : RelC a' (.lam ty₁x body₁x bm₁))
     (hty₁ : RelC t₁ ty₁x)
     (hbody₁ : RelC b₁ body₁x)
@@ -114,13 +114,13 @@ private theorem defeqC_etaL_arm (hμ : mode.verifiedChecks = true) (ih : SSimC m
 unfoldings are materialized only here, inside the branch that consumes
 them). -/
 private theorem defeqBothC (_ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {kI : Bool → Expr → Expr → CheckCM Bool}
-    {kM : Bool → Expr → Expr → FueledM Bool}
-    (hk : ∀ (pi : Bool) {s : CState} {p q : Expr} {x y : Expr},
+    {d : Nat} {kI : Bool → Expr md → Expr md → (CheckCM md) Bool}
+    {kM : Bool → Expr md → Expr md → FueledM Bool}
+    (hk : ∀ (pi : Bool) {s : CState md} {p q : Expr md} {x y : Expr md},
       CSOK mode env s → RelC p x → RelC q y →
       Expr.WScoped d x → Expr.WScoped d y →
       SimC mode env s RelVC (kI pi p q) (kM pi x y))
-    {i j : Expr} {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {i j : Expr md} {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -163,14 +163,14 @@ private theorem defeqBothC (_ih : SSimC mode env f) (henv : EnvWF env)
             (unfoldDefinition_WScoped henv hub hwb)
 
 theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {kI : Bool → Expr → Expr → CheckCM Bool}
-    {kM : Bool → Expr → Expr → FueledM Bool}
-    (hk : ∀ (pi : Bool) {s : CState} {p q : Expr} {x y : Expr},
+    {d : Nat} {kI : Bool → Expr md → Expr md → (CheckCM md) Bool}
+    {kM : Bool → Expr md → Expr md → FueledM Bool}
+    (hk : ∀ (pi : Bool) {s : CState md} {p q : Expr md} {x y : Expr md},
       CSOK mode env s → RelC p x → RelC q y →
       Expr.WScoped d x → Expr.WScoped d y →
       SimC mode env s RelVC (kI pi p q) (kM pi x y))
     (pi : Bool)
-    {i j : Expr} {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {i j : Expr md} {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC
@@ -876,7 +876,7 @@ theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f
 /-- The lazy-delta *loop* simulates its specification, by induction on
 the shared step budget (task #106). -/
 theorem defeqLoopC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
-    ∀ (n : Nat) (pi : Bool) {i j : Expr} {a b : Expr} {s₀ : CState},
+    ∀ (n : Nat) (pi : Bool) {i j : Expr md} {a b : Expr md} {s₀ : CState md},
       CSOK mode env s₀ →
       RelC i a → RelC j b →
       Expr.WScoped d a → Expr.WScoped d b →
@@ -892,7 +892,7 @@ theorem defeqLoopC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f
       pi hs hda hdb hwa hwb
 
 theorem defeqBodyC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {i j : Expr} {a b : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {i j : Expr md} {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hdena : RelC i a) (hdenb : RelC j b)
     (hwa : Expr.WScoped d a) (hwb : Expr.WScoped d b) :
     SimC mode env s₀ RelVC

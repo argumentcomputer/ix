@@ -79,65 +79,65 @@ namespace Ix.Kernel.Frontend.InModel
 open Ix.Kernel
 
 /-- One inductive type of a parsed block, with the export's shape data. -/
-structure IndTypeRec where
-  cv : ConstantVal
+structure IndTypeRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nIdx : Nat
-  ctors : List Key
+  ctors : List (Key md)
   isRec : Bool
   isReflexive : Bool
   numNested : Nat
   deriving Repr, Inhabited
 
 /-- One constructor of a parsed block. -/
-structure IndCtorRec where
-  cv : ConstantVal
+structure IndCtorRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nF : Nat
   deriving Repr, Inhabited
 
 /-- One recursor of a parsed block (`numParams`, `numMotives`,
 `numMinors`, `numIndices` as exported). -/
-structure IndRecRec where
-  cv : ConstantVal
+structure IndRecRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nM : Nat
   nm : Nat
   nI : Nat
-  rules : List RecRule
+  rules : List (RecRule md)
   deriving Repr, Inhabited
 
 /-- A parsed inductive block. -/
-structure BlockRec where
-  types : List IndTypeRec
-  ctors : List IndCtorRec
-  recs : List IndRecRec
+structure BlockRec (md : Mode) where
+  types : List (IndTypeRec md)
+  ctors : List (IndCtorRec md)
+  recs : List (IndRecRec md)
   deriving Repr, Inhabited
 
 /-- What the generator reads besides the block: the declared types of
 the constants so far, and the definitional heights. -/
-structure Ctx where
-  tbl : ConstTable
-  heights : Key → Nat
+structure Ctx (md : Mode) where
+  tbl : ConstTable md
+  heights : Key md → Nat
   /-- the parsed inductive blocks so far, by member type name (the
   nested rung reads a container's shape off it) -/
-  blocks : Key → Option BlockRec := fun _ => none
+  blocks : Key md → Option (BlockRec md) := fun _ => none
 
 /-- A constructor of member `m`, classified: its record, its recursive
 field positions with the target member of each. -/
-structure MCtor where
+structure MCtor (md : Mode) where
   m : Nat
   /-- its position among member `m`'s constructors -/
   j : Nat
-  c : IndCtorRec
+  c : IndCtorRec md
   recFields : List (Nat × Nat)
   deriving Repr, Inhabited
 
 /-- Is `e` member `m'` of the block applied to the parameter variables
 (`o` binders below the parameter frame) and `nIdx_{m'}` index
 expressions?  Returns the member. -/
-def memberApp? (members : List (Key × Nat × Nat)) (lps : List LevelParam) (nP o : Nat)
-    (e : Expr) : Option Nat :=
+def memberApp? (members : List (Key md × Nat × Nat)) (lps : List LevelParam) (nP o : Nat)
+    (e : Expr md) : Option Nat :=
   match e.getAppFn with
   | .const x us =>
     match members.find? (·.1 == x) with
@@ -157,8 +157,8 @@ not this rung's (nested, non-positive).  `members` lists
 `(T, m, nIdx)`.  A recursive field is recorded by position and target
 member; its telescope is read off the constructor's type again where it
 is needed (`structFieldTeleOf`, the iota right-hand sides). -/
-def classifyCtor (members : List (Key × Nat × Nat)) (lps : List LevelParam) (nP : Nat)
-    (m j : Nat) (c : IndCtorRec) : Except String MCtor := do
+def classifyCtor (members : List (Key md × Nat × Nat)) (lps : List LevelParam) (nP : Nat)
+    (m j : Nat) (c : IndCtorRec md) : Except String (MCtor md) := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
     | throw s!"constructor {c.cv.name} is not a telescope"
@@ -189,7 +189,7 @@ def need (what : String) : Option α → Except String α
 /-- **The mutual rung** (B1 index-free, B2 indexed).  The records, in stream order:
 the tag block, the auxiliary block, the member/constructor/recursor
 models, the iota theorems, the projection artifacts. -/
-def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := do
+def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration md)) := do
   let t0 :: _ := b.types | throw "empty block"
   let T := t0.cv.name
   let lps := t0.cv.levelParams
@@ -213,11 +213,11 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     | some (_, .sort _) => pure ()
     | _ => throw s!"former {t.cv.name} is not a telescope ending in a sort"
   let memberNames := b.types.map (·.cv.name)
-  let members : List (Key × Nat × Nat) :=
+  let members : List (Key md × Nat × Nat) :=
     b.types.zipIdx.map fun (t, m) => (t.cv.name, m, t.nIdx)
   let nIdxOf : Nat → Nat := fun m => (b.types.getD m default).nIdx
   -- the constructors, per member, classified
-  let mut mctors : List MCtor := []
+  let mut mctors : List (MCtor md) := []
   for m in List.range k do
     let t := b.types.getD m default
     for (cn, j) in t.ctors.zipIdx do
@@ -233,7 +233,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   unless b.recs.length == k do throw "recursor count differs from member count"
   -- the member's recursor, by motive position: the front ends list a
   -- block's recursors in motive order, member `m`'s at `m`
-  let recOf : Nat → Except String IndRecRec := fun m => do
+  let recOf : Nat → Except String (IndRecRec md) := fun m => do
     match b.recs[m]? with
     | some r => pure r
     | none => throw s!"member {(b.types.getD m default).cv.name} has no recursor"
@@ -262,14 +262,14 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let elimTag := if large then elim else freshLevelParam lps
   -- the block renaming of the modeled install (types, constructors, recursors)
   let blockNames := memberNames ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
-  let rn : Expr → Expr := Expr.renameConsts fun x =>
+  let rn : Expr md → Expr md := Expr.renameConsts fun x =>
     if blockNames.contains x then modelName x else x
   let tag := tagName T
   let aux := auxName T
   let ps0 := varsAt 0 nP
-  let mut out : Array Declaration := #[]
-  let mut heights : List (Key × Nat) := []
-  let hOf : List (Key × Nat) → Key → Nat := fun hs x =>
+  let mut out : Array (Declaration md) := #[]
+  let mut heights : List (Key md × Nat) := []
+  let hOf : List (Key md × Nat) → Key md → Nat := fun hs x =>
     match hs.find? (·.1 == x) with
     | some (_, h) => h
     | none => ctx.heights x
@@ -289,7 +289,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         | throw s!"cannot bound the sort of index {j} of {t.cv.name} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
-  let tagCtors : List (Key × Nat × Expr × List Nat) ←
+  let tagCtors : List (Key md × Nat × Expr md × List Nat) ←
     (List.range k).mapM fun m => do
       let t := b.types.getD m default
       -- `tag.m : ∀ p⃗_1 ı⃗_m, tag p⃗` — the member's index telescope
@@ -315,7 +315,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- `aux.m.C : ∀ p⃗_1 f⃗', aux p⃗ (tag.m p⃗ e⃗)` — the constructor's
   -- telescope over the first member's parameter binders, every member
   -- occurrence rewritten to the auxiliary family
-  let auxCtors : List (Key × Nat × Expr × List Nat) ← mctors.mapM fun mc => do
+  let auxCtors : List (Key md × Nat × Expr md × List Nat) ← mctors.mapM fun mc => do
     let ty ← need "aux constructor type"
       (overFirstParams nP t0.cv.type (specFam T lps nP members mc.c.cv.type))
     pure (auxCtorName T mc.m mc.j, mc.c.nF, ty, mc.recFields.map (·.1))
@@ -361,13 +361,13 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let D := rP + nI + 1
     let e := nI + 1
     -- `Mot := λ (i : tag p⃗) (s : aux p⃗ i), tag.rec p⃗ (λ i', ∀ s, aux p⃗ i' → Sort ℓ) M⃗ i s`
-    let motTag : Expr := .lam
+    let motTag : Expr md := .lam
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e + 2) nP))
       (.forallE
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 3) nP ++ [.bvar 0])) (.sort ℓ) bm) bm
     let tagRecApp := Expr.mkAppN (.const (auxKey tag .recursor) (ℓ' :: lps.map .param))
       (varsAt (k + n + e + 2) nP ++ [motTag] ++ varsAt (n + e + 2) k ++ [.bvar 1, .bvar 0])
-    let mot : Expr := .lam
+    let mot : Expr md := .lam
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e) nP))
       (.lam
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 1) nP ++ [.bvar 0])) tagRecApp bm) bm
@@ -402,7 +402,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let ctorApp := Expr.mkAppN (constP (modelName mc.c.cv.name) lps) (varsAt (nF + k + n) nP ++ fields)
       -- the constructor's index expressions, at the statement frame
       let idxC := cresid.getAppArgs.drop nP
-      let α : Expr := Expr.mkAppN (.bvar (nF + n + k - 1 - m)) (idxC ++ [ctorApp])
+      let α : Expr md := Expr.mkAppN (.bvar (nF + n + k - 1 - m)) (idxC ++ [ctorApp])
       let lhs := Expr.mkAppN (.const (modelName r.cv.name) rlvls) (prefixVars ++ idxC ++ [ctorApp])
       let ihs ← mc.recFields.mapM fun (i, tgt) => do
           -- the recursive field's domain `∀ a⃗, T_tgt p⃗ e⃗(a⃗)`, lifted
@@ -432,10 +432,10 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- lost: official's `is_structure_like` is single-type, so a mutual
   -- member never carries `.proj`; the artifacts only feed the
   -- projection rewrite's levels.
-  let genTypes : List (Key × List LevelParam × Expr) :=
+  let genTypes : List (Key md × List LevelParam × Expr md) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
-  let tbl' : ConstTable := fun x =>
+  let tbl' : ConstTable md := fun x =>
     match genTypes.find? (·.1 == x) with
     | some (_, l, ty) => some (l, ty)
     | none => ctx.tbl x
@@ -448,7 +448,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let nF := mc.c.nF
       let cty := rn mc.c.cv.type
       let r ← recOf m
-      let owner : ProjRecOwner :=
+      let owner : ProjRecOwner md :=
         ⟨modelName t.cv.name, lps, nP, modelName mc.c.cv.name, nF, modelName r.cv.name,
          rlps, rn r.cv.type, k, n⟩
       let some (cbs, _) := cty.stripPis (nP + nF) | continue

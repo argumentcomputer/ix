@@ -40,8 +40,8 @@ telescope is opened at its **own** variables, neither side's
 annotations are borrowed from the other, which is what lets the model's
 walks carry their own frame conditions at every stage.  Walks from the
 last binder to the first, like `checkStructFieldUniv`. -/
-def checkStructDomsAt (ops : CheckerOps m) (env : Env) (off : Nat)
-    (fvs doms : List Expr) : Nat → m Unit
+def checkStructDomsAt (ops : (CheckerOps md) m) (env : Env md) (off : Nat)
+    (fvs doms : List (Expr md)) : Nat → m Unit
   | 0 => pure ()
   | j + 1 => do
     let a ← unwrapOr fvs[j]? (.internal "direct structure: domain index")
@@ -62,9 +62,9 @@ instantiation (a used-later data field of a `Prop` structure) simply
 fails that guard at every use (`invalid`, as official).  The body
 walk cannot fail on a constructor type `checkStructCtor` accepted
 (it peels exactly `nP + nF` binders), so its failure is internal. -/
-def checkStructProjTable (T C : Key) (lps : List LevelParam) (nP nF : Nat)
-    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal) (env : Env) :
-    m Env := do
+def checkStructProjTable (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
+    (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) (env : Env md) :
+    m (Env md) := do
   let bodies ← unwrapOr (structProjBodies T nP nF cvCa.type)
     (.internal "direct structure: projection bodies")
   -- the bodies' scoping, validated once at insertion (the stage's own

@@ -27,12 +27,12 @@ is written once against this record, monad-polymorphically, and
 instantiated with the pure knot (`fueledOps`/`pureOps`, the
 verification's subject) and, in `IxC/Kernel/Cached/CheckerC.lean`, with the
 memoized cached knot the binary executes. -/
-structure CheckerOps (m : Type → Type) where
-  annotate : Env → Nat → Expr → m Expr
-  inferType : Env → Nat → Expr → m Expr
-  isDefEq : Env → Nat → Expr → Expr → m Bool
-  ensureSort : Env → Nat → Expr → m Level
-  whnf : Env → Nat → Expr → m Expr
+structure CheckerOps (md : Mode) (m : Type → Type) where
+  annotate : Env md → Nat → Expr md → m (Expr md)
+  inferType : Env md → Nat → Expr md → m (Expr md)
+  isDefEq : Env md → Nat → Expr md → Expr md → m Bool
+  ensureSort : Env md → Nat → Expr md → m Level
+  whnf : Env md → Nat → Expr md → m (Expr md)
   /-- **The evidence-fallback combinator** (task #273).  Run the
   attempt; on `true` the whole is `pure ()`; on `false` OR ON AN ERROR
   the continuation runs.  The only place the checker recovers from a
@@ -55,7 +55,7 @@ structure CheckerOps (m : Type → Type) where
 variable (mode : CheckMode)
 
 /-- The pure instantiation, at an arbitrary fuel. -/
-def fueledOps (F : Nat) : CheckerOps CheckM where
+def fueledOps (F : Nat) : (CheckerOps md) CheckM where
   annotate env d e := annotateCore mode env F d e
   inferType env d e := inferTypeCore mode env F d e
   isDefEq env d a b := isDefEqCore mode env F d a b
@@ -66,7 +66,7 @@ def fueledOps (F : Nat) : CheckerOps CheckM where
     | _ => k none
 
 /-- The pure instantiation, at the standard fuel. -/
-def pureOps : CheckerOps CheckM := fueledOps mode checkFuel
+def pureOps : (CheckerOps md) CheckM := fueledOps mode checkFuel
 
 /-- **The verdict at a term whose constants do not all resolve.**
 
@@ -85,7 +85,7 @@ unchanged.  `where_` names the slot, e.g. `"type of Foo"`.
 does not unfold here.  The companion `unknownConstError`
 (`IxC/Kernel/Core.lean`) decides the same question inside
 inference, which the annotation pass reaches before this guard runs. -/
-def unresolvedConstsError (where_ : String) (e : Expr) : CheckError :=
+def unresolvedConstsError (where_ : String) (e : Expr md) : CheckError :=
   if e.mentionsConst sorryAxName then
     .notImplemented s!"use of the sorryAx axiom in {where_}"
   else .invalid s!"unknown constant in {where_}"
@@ -96,7 +96,7 @@ variable {m : Type → Type} [Monad m] [MonadExceptOf CheckError m]
 parameters, and a type that is a type and mentions only declared
 parameters.  Returns the constant with its type **annotated**
 (`annotate`); the guards run on the annotated type. -/
-def checkConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal) : m ConstantVal := do
+def checkConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) : m (ConstantVal md) := do
   if (env.find? cv.name).isSome then
     throw (.invalid s!"duplicate declaration {cv.name}")
   if reservedBasisNames.contains cv.name then
@@ -120,8 +120,8 @@ def checkConstantVal (ops : CheckerOps m) (env : Env) (cv : ConstantVal) : m Con
 
 /-- Compare binder domains at offsets `o₁`/`o₂` for `n` positions, the
 right side viewed through `g` (identity, lifting, or renaming). -/
-def domsMatchAux (g : Nat → Expr → Expr)
-    (bs₁ bs₂ : List (Expr × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
+def domsMatchAux (g : Nat → Expr md → Expr md)
+    (bs₁ bs₂ : List (Expr md × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
   (List.range n).all fun i =>
     match bs₁[o₁ + i]?, bs₂[o₂ + i]? with
     | some b₁, some b₂ => b₁.1 == g i b₂.1
@@ -130,10 +130,10 @@ def domsMatchAux (g : Nat → Expr → Expr)
 /-- Open the first `n` `∀`-binders at fresh free variables `0..n-1`
 (each fvar's type is the binder domain, instantiated with the earlier
 fvars).  Returns the fvars and the opened body. -/
-def openPisAtFvars : Nat → Expr → Nat → Option (List Expr × Expr)
+def openPisAtFvars : Nat → Expr md → Nat → Option (List (Expr md) × Expr md)
   | 0, e, _ => some ([], e)
   | n + 1, .forallE dom body _, i =>
-    let fv : Expr := .fvar i dom
+    let fv : Expr md := .fvar i dom
     match openPisAtFvars n (body.instantiate1 fv) (i + 1) with
     | some (fvs, e) => some (fv :: fvs, e)
     | none => none
@@ -143,8 +143,8 @@ def openPisAtFvars : Nat → Expr → Nat → Option (List Expr × Expr)
 `domsMatchAuxA_eq`) — positional list indexing is linear per access,
 which made the binder-domain comparison quadratic on wide
 telescopes. -/
-def domsMatchAuxA (g : Nat → Expr → Expr)
-    (bs₁ bs₂ : Array (Expr × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
+def domsMatchAuxA (g : Nat → Expr md → Expr md)
+    (bs₁ bs₂ : Array (Expr md × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
   (List.range n).all fun i =>
     match bs₁[o₁ + i]?, bs₂[o₂ + i]? with
     | some b₁, some b₂ => b₁.1 == g i b₂.1
@@ -156,11 +156,11 @@ innermost binder first.  Computes
 `n` `∀`-binders (`openPisAtFvarsFGo_sound`), `none` otherwise —
 one `instantiateList` pass per domain instead of one whole-telescope
 `instantiate1` pass per binder. -/
-def openPisAtFvarsFGo (acc : List Expr) :
-    Nat → Expr → Nat → Option (List Expr × Expr)
+def openPisAtFvarsFGo (acc : List (Expr md)) :
+    Nat → Expr md → Nat → Option (List (Expr md) × Expr md)
   | 0, e, _ => some ([], e.instantiateList acc)
   | n + 1, .forallE dom body _, i =>
-    let fv : Expr := .fvar i (dom.instantiateList acc)
+    let fv : Expr md := .fvar i (dom.instantiateList acc)
     match openPisAtFvarsFGo (fv :: acc) n body (i + 1) with
     | some (fvs, e) => some (fv :: fvs, e)
     | none => none
@@ -169,8 +169,8 @@ def openPisAtFvarsFGo (acc : List Expr) :
 /-- One-pass `openPisAtFvars` (equal to it: `openPisAtFvarsF_eq`; the
 fallback covers telescopes whose binders only appear after
 substitution). -/
-def openPisAtFvarsF (n : Nat) (e : Expr) (i : Nat) :
-    Option (List Expr × Expr) :=
+def openPisAtFvarsF (n : Nat) (e : Expr md) (i : Nat) :
+    Option (List (Expr md) × Expr md) :=
   match openPisAtFvarsFGo [] n e i with
   | some r => some r
   | none => openPisAtFvars n e i
@@ -179,8 +179,8 @@ def openPisAtFvarsF (n : Nat) (e : Expr) (i : Nat) :
 expected type (definitionally); throws on a length mismatch.  Used to
 pin a nested rule's stored parameter instantiations to the
 constructor's parameter domains. -/
-def checkTypedList (ops : CheckerOps m) (env : Env) (depth : Nat) :
-    List Expr → List Expr → m Unit
+def checkTypedList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → m Unit
   | [], [] => pure ()
   | a :: as, t :: ts => do
     let ty ← ops.inferType env depth a
@@ -196,8 +196,8 @@ parameter instantiations (opened at the rule-prefix variables): the
 soundness layer needs their annotation truthfulness at the canonical
 frame, and index premises between the prefix and the major put them
 out of reach of the recursor-type walk. -/
-def checkAnnotList (ops : CheckerOps m) (env : Env) (depth : Nat) :
-    List Expr → m Unit
+def checkAnnotList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → m Unit
   | [] => pure ()
   | a :: as => do
     let aA ← ops.annotate env depth a
@@ -206,7 +206,7 @@ def checkAnnotList (ops : CheckerOps m) (env : Env) (depth : Nat) :
     checkAnnotList ops env depth as
 
 /-- Is the expression the pinned equality former at one level? -/
-def isEqHead : Expr → Bool
+def isEqHead : Expr md → Bool
   | .const c [_ℓ] => c == eqName
   | _ => false
 
@@ -215,14 +215,14 @@ level, read off a head `isEqHead` has accepted (task #146: the iota
 statements' type slot is certified to inhabit *this* sort).  Off shape
 it is `.zero`, which `isEqHead` has already rejected wherever the
 result is used. -/
-def eqHeadLevel : Expr → Level
+def eqHeadLevel : Expr md → Level
   | .const _ [ℓ] => ℓ
   | _ => .zero
 
 /-- Pairwise definitional-equality check of two spines (throws on any
 mismatch, including a length difference). -/
-def checkDefEqList (ops : CheckerOps m) (env : Env) (depth : Nat) :
-    List Expr → List Expr → m Unit
+def checkDefEqList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → m Unit
   | [], [] => pure ()
   | a :: as, b :: bs => do
     unless ← ops.isDefEq env depth a b do
@@ -243,12 +243,12 @@ iota-certificate checks below consume only the stored constant's
 *type* (any stored constant witnesses its type's inhabitation in the
 model — `EnvModel.mem_type` is kind-agnostic), so no theorem-kind
 filter is imposed. -/
-def Env.findCV? (env : Env) (n : Key) : Option ConstantVal :=
+def Env.findCV? (env : Env md) (n : Key md) : Option (ConstantVal md) :=
   (env.find? n).map (·.toConstantVal)
 
 /-- The result sort of a syntactic pi telescope (the sort the type
 former's type ends in), if it ends in a sort at all. -/
-def piResultSort (e : Expr) : Option Level :=
+def piResultSort (e : Expr md) : Option Level :=
   match e.piResult with
   | .sort u => some u
   | _ => none
@@ -260,7 +260,7 @@ the family applied to exactly the parameters — the syntactic pins the
 rule's total λ-equality derivation folds over (task #58; completeness-
 safe: both telescopes spell the family's parameter types, and a
 structure constructor targets the family at its parameters). -/
-def checkProjShape (pty ctorTy : Expr) (nP nF : Nat) : m Unit := do
+def checkProjShape (pty ctorTy : Expr md) (nP nF : Nat) : m Unit := do
   let some (_abinders, _) := pty.stripPis nP
     | throw (.notImplemented "projection type telescope")
   let some (_, cbody) := ctorTy.stripPis (nP + nF)
@@ -273,8 +273,8 @@ def checkProjShape (pty ctorTy : Expr) (nP nF : Nat) : m Unit := do
 
 /-- Stage 3: the reduction rule — λ over the constructor telescope
 returning field `i`, annotated; its λ-domains stay the constructor's. -/
-def checkProjRule (ops : CheckerOps m) (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List LevelParam)
-    (nP nF i : Nat) : m Expr := do
+def checkProjRule (ops : (CheckerOps md) m) (env' : Env md) (pty : Expr md) (cvj : ConstantVal md) (lps : List LevelParam)
+    (nP nF i : Nat) : m (Expr md) := do
   let some rhs := Expr.pisToLams (nP + nF) cvj.type (.bvar (nF - 1 - i))
     | throw (.notImplemented "projection rule telescope")
   unless !rhs.hasFvar && rhs.looseBVarsBounded 0 do

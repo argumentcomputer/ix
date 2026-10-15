@@ -69,13 +69,13 @@ invariant, because each entry carries its own proof. -/
 
 /-- The walk's cutoff, read as the specification: a node without a
 level parameter has all of them defined. -/
-private theorem lpdP_cut_spec {ps : List LevelParam} {e : Expr} (h : ¬ e.hasLP = true) :
+private theorem lpdP_cut_spec {ps : List LevelParam} {e : Expr md} (h : ¬ e.hasLP = true) :
     true = Expr.allLevelParamsDefined ps e :=
   (Expr.allLevelParamsDefined_of_not_hasLevelParam (params := ps)
     (by rw [← hasLP_eq _]; simpa using h)).symm
 
 /-- **The plain descent is `Expr.allLevelParamsDefined`.** -/
-theorem allLevelParamsDefinedP_spec {ps : List LevelParam} : ∀ {e : Expr},
+theorem allLevelParamsDefinedP_spec {ps : List LevelParam} : ∀ {e : Expr md},
     Expr.allLevelParamsDefinedP ps e = Expr.allLevelParamsDefined ps e := by
   intro e
   induction e with
@@ -132,7 +132,7 @@ theorem allLevelParamsDefinedP_spec {ps : List LevelParam} : ∀ {e : Expr},
 
 /-- **`Expr.allLevelParamsDefined` is `Expr.allLevelParamsDefined` of
 the erasure.** -/
-theorem allLevelParamsDefinedC_spec {ps : List LevelParam} {e : Expr} :
+theorem allLevelParamsDefinedC_spec {ps : List LevelParam} {e : Expr md} :
     Expr.allLevelParamsDefinedC ps e = (Expr.allLevelParamsDefined ps e) := by
   rw [Expr.allLevelParamsDefinedC.eq_def]
   split
@@ -146,46 +146,46 @@ well-founded on `sizeF` rather than structural: its per-constructor
 equations have to be named before anything can rewrite with them. -/
 
 private theorem fvarLeaves_bvar (i : Nat) :
-    (Expr.bvar i).fvarLeaves = [] := by simp [Expr.fvarLeaves]
+    ((Expr.bvar (md := md)) i).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
 private theorem fvarLeaves_sort (u : Level) :
-    (Expr.sort u).fvarLeaves = [] := by simp [Expr.fvarLeaves]
+    ((Expr.sort (md := md)) u).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
-private theorem fvarLeaves_const (n : Key) (us : List Level) :
+private theorem fvarLeaves_const (n : Key md) (us : List Level) :
     (Expr.const n us).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
 private theorem fvarLeaves_lit (l : Literal) :
-    (Expr.lit l).fvarLeaves = [] := by simp [Expr.fvarLeaves]
+    ((Expr.lit (md := md)) l).fvarLeaves = [] := by simp [Expr.fvarLeaves]
 
-private theorem fvarLeaves_fvar (idx : Nat) (ty : Expr) :
+private theorem fvarLeaves_fvar (idx : Nat) (ty : Expr md) :
     (Expr.fvar idx ty).fvarLeaves = (idx, ty) :: ty.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_app (f a : Expr) :
+private theorem fvarLeaves_app (f a : Expr md) :
     (Expr.app f a).fvarLeaves = f.fvarLeaves ++ a.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_lam (ty b : Expr) (m : BinderMeta) :
+private theorem fvarLeaves_lam (ty b : Expr md) (m : BinderMeta) :
     (Expr.lam ty b m).fvarLeaves = ty.fvarLeaves ++ b.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_forallE (ty b : Expr) (m : BinderMeta) :
+private theorem fvarLeaves_forallE (ty b : Expr md) (m : BinderMeta) :
     (Expr.forallE ty b m).fvarLeaves = ty.fvarLeaves ++ b.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_letE (ty v b : Expr) :
+private theorem fvarLeaves_letE (ty v b : Expr md) :
     (Expr.letE ty v b lmeta).fvarLeaves
       = ty.fvarLeaves ++ v.fvarLeaves ++ b.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
-private theorem fvarLeaves_proj (s : Key) (i : Nat) (e : Expr) :
+private theorem fvarLeaves_proj (s : Key md) (i : Nat) (e : Expr md) :
     (Expr.proj s i e).fvarLeaves = e.fvarLeaves := by rw [Expr.fvarLeaves]
 
 /-- The clone's `fvarB == 0` shortcut on the leaf walks: a node whose
 cached fvar range is zero has no `fvar` node outside annotations at
 all, hence no reachable leaf (the counterpart of
 `fvarLeaves_eq_nil_of_not_hasFvar` at the *range* cutoff). -/
-private theorem fvarLeaves_nil_of_fvarsBelow_zero : ∀ (e : Expr),
+private theorem fvarLeaves_nil_of_fvarsBelow_zero : ∀ (e : Expr md),
     Expr.fvarsBelow 0 e → e.fvarLeaves = [] := by
   intro e
   induction e <;> intro hb <;>
@@ -195,14 +195,14 @@ private theorem fvarLeaves_nil_of_fvarsBelow_zero : ∀ (e : Expr),
 
 /-- Erasure of a cached leaf list (the counterpart of the arena's
 `leavesDen`; the annotation component goes through `eraseC`). -/
-@[expose] def leavesEr (xs : List (Nat × Expr)) : List (Nat × Expr) :=
+@[expose] def leavesEr (xs : List (Nat × Expr md)) : List (Nat × Expr md) :=
   xs.map fun l => (l.1, l.2)
 
-@[simp] theorem leavesEr_nil : leavesEr [] = [] := rfl
+@[simp] theorem leavesEr_nil : (leavesEr (md := md)) [] = [] := rfl
 
-@[simp] theorem leavesEr_cons (idx : Nat) (ty : Expr)
-    (xs : List (Nat × Expr)) :
-    leavesEr ((idx, ty) :: xs) = (idx, (ty : Expr)) :: leavesEr xs := rfl
+@[simp] theorem leavesEr_cons (idx : Nat) (ty : Expr md)
+    (xs : List (Nat × Expr md)) :
+    leavesEr ((idx, ty) :: xs) = (idx, (ty : Expr md)) :: leavesEr xs := rfl
 
 /-! ### The `seen`-set walk
 
@@ -219,20 +219,20 @@ condition is discharged by the constructor's own `sizeF`
 recurrence. -/
 
 /-- The leaf walk's `seen`-set invariant at a gray predicate `G`. -/
-@[expose] def SeenInv (G : Expr → Prop) (acc : List (Nat × Expr))
-    (seen : Std.HashMap Expr Unit) : Prop :=
-  ∀ (k : Expr) (u : Unit), seen[k]? = some u →
+@[expose] def SeenInv (G : Expr md → Prop) (acc : List (Nat × Expr md))
+    (seen : Std.HashMap (Expr md) Unit) : Prop :=
+  ∀ (k : Expr md) (u : Unit), seen[k]? = some u →
     (∀ l ∈ (Expr.fvarLeaves k), l ∈ leavesEr acc) ∨ G k
 
-theorem SeenInv.empty {G : Expr → Prop}
-    {acc : List (Nat × Expr)} : SeenInv G acc {} := by
+theorem SeenInv.empty {G : Expr md → Prop}
+    {acc : List (Nat × Expr md)} : SeenInv G acc {} := by
   intro k u h
   simp at h
 
 /-- Weakening: a bigger accumulator and a bigger gray predicate keep
 the invariant. -/
-theorem SeenInv.mono {G G' : Expr → Prop} {acc acc' : List (Nat × Expr)}
-    {seen : Std.HashMap Expr Unit} (h : SeenInv G acc seen)
+theorem SeenInv.mono {G G' : Expr md → Prop} {acc acc' : List (Nat × Expr md)}
+    {seen : Std.HashMap (Expr md) Unit} (h : SeenInv G acc seen)
     (hacc : ∀ l, l ∈ leavesEr acc → l ∈ leavesEr acc')
     (hG : ∀ y, G y → G' y) : SeenInv G' acc' seen := by
   intro k u hk
@@ -242,9 +242,9 @@ theorem SeenInv.mono {G G' : Expr → Prop} {acc acc' : List (Nat × Expr)}
 
 /-- Marking the node about to be descended into: it joins the gray
 predicate. -/
-theorem SeenInv.insertGray {G : Expr → Prop}
-    {acc : List (Nat × Expr)} {seen : Std.HashMap Expr Unit}
-    (h : SeenInv G acc seen) (e : Expr) :
+theorem SeenInv.insertGray {G : Expr md → Prop}
+    {acc : List (Nat × Expr md)} {seen : Std.HashMap (Expr md) Unit}
+    (h : SeenInv G acc seen) (e : Expr md) :
     SeenInv (fun y => G y ∨ y = e) acc (seen.insert e ()) := by
   intro k u hk
   rw [Std.HashMap.getElem?_insert] at hk
@@ -257,9 +257,9 @@ theorem SeenInv.insertGray {G : Expr → Prop}
 
 /-- …and, once the descent is finished and the node's leaves are in the
 accumulator, it leaves it again. -/
-theorem SeenInv.dropGray {G : Expr → Prop}
-    {acc : List (Nat × Expr)} {seen : Std.HashMap Expr Unit}
-    {e : Expr} (h : SeenInv (fun y => G y ∨ y = e) acc seen)
+theorem SeenInv.dropGray {G : Expr md → Prop}
+    {acc : List (Nat × Expr md)} {seen : Std.HashMap (Expr md) Unit}
+    {e : Expr md} (h : SeenInv (fun y => G y ∨ y = e) acc seen)
     (he : ∀ l ∈ (Expr.fvarLeaves e), l ∈ leavesEr acc) :
     SeenInv G acc seen := by
   intro k u hk
@@ -273,9 +273,9 @@ theorem SeenInv.dropGray {G : Expr → Prop}
 *set*: the `seen` dedup makes the list itself smaller than
 `Expr.fvarLeaves`), keeps every annotation field-correct, and restores
 the `seen` invariant at the caller's gray predicate. -/
-theorem fvarLeavesGoC_spec : ∀ {e : Expr},
-    ∀ {G : Expr → Prop} {acc : List (Nat × Expr)}
-      {seen : Std.HashMap Expr Unit},
+theorem fvarLeavesGoC_spec : ∀ {e : Expr md},
+    ∀ {G : Expr md → Prop} {acc : List (Nat × Expr md)}
+      {seen : Std.HashMap (Expr md) Unit},
       SeenInv G acc seen →
       (∀ y, G y → e.sizeF < y.sizeF) →
       (∀ l, l ∈ leavesEr (Expr.fvarLeavesGoC acc seen e).1 ↔
@@ -286,8 +286,8 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
   | bvar i =>
     intro G acc seen hseen hG
     rw [Expr.fvarLeavesGoC.eq_def]
-    have hnil : (Expr.fvarLeaves (Expr.bvar i)) = [] :=
-      fvarLeaves_bvar i
+    have hnil : ((Expr.fvarLeaves (md := md)) (Expr.bvar i)) = [] :=
+      (fvarLeaves_bvar (md := md)) i
     split
     · exact ⟨by simp [hnil], hseen⟩
     · split
@@ -298,8 +298,8 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
   | sort u =>
     intro G acc seen hseen hG
     rw [Expr.fvarLeavesGoC.eq_def]
-    have hnil : (Expr.fvarLeaves (Expr.sort u)) = [] :=
-      fvarLeaves_sort u
+    have hnil : ((Expr.fvarLeaves (md := md)) (Expr.sort u)) = [] :=
+      (fvarLeaves_sort (md := md)) u
     split
     · exact ⟨by simp [hnil], hseen⟩
     · split
@@ -322,8 +322,8 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
   | lit l =>
     intro G acc seen hseen hG
     rw [Expr.fvarLeavesGoC.eq_def]
-    have hnil : (Expr.fvarLeaves (Expr.lit l)) = [] :=
-      fvarLeaves_lit l
+    have hnil : (Expr.fvarLeaves (md := md) (Expr.lit l)) = [] :=
+      fvarLeaves_lit (md := md) l
     split
     · exact ⟨by simp [hnil], hseen⟩
     · split
@@ -624,14 +624,14 @@ subset walk needs of the base is exactly this pair of facts. -/
 
 /-- A cached base leaf list is a faithful stand-in for an `Expr`-side
 one: field-correct annotations, and the same *set* of erased leaves. -/
-@[expose] def LeafBase (bl : List (Nat × Expr))
-    (B' : List (Nat × Expr)) : Prop :=
+@[expose] def LeafBase (bl : List (Nat × Expr md))
+    (B' : List (Nat × Expr md)) : Prop :=
   ∀ l, l ∈ leavesEr bl ↔ l ∈ B'
 
 /-- `leafMem` decides membership in the erased list. -/
-theorem leafMem_iff : ∀ {bl : List (Nat × Expr)},
-    ∀ {idx : Nat} {ty : Expr},
-      (Expr.leafMem bl idx ty = true ↔ (idx, (ty : Expr)) ∈ leavesEr bl) := by
+theorem leafMem_iff : ∀ {bl : List (Nat × Expr md)},
+    ∀ {idx : Nat} {ty : Expr md},
+      (Expr.leafMem bl idx ty = true ↔ (idx, (ty : Expr md)) ∈ leavesEr bl) := by
   intro bl
   induction bl with
   | nil => intro idx ty; simp [Expr.leafMem]
@@ -648,16 +648,16 @@ theorem leafMem_iff : ∀ {bl : List (Nat × Expr)},
     grind
 
 /-- …hence agrees with the `Expr`-side `contains` on a `LeafBase`. -/
-theorem leafMem_spec {bl : List (Nat × Expr)}
-    {B' : List (Nat × Expr)} (h : LeafBase bl B')
-    {idx : Nat} {ty : Expr} :
-    Expr.leafMem bl idx ty = B'.contains (idx, (ty : Expr)) := by
+theorem leafMem_spec {bl : List (Nat × Expr md)}
+    {B' : List (Nat × Expr md)} (h : LeafBase bl B')
+    {idx : Nat} {ty : Expr md} :
+    Expr.leafMem bl idx ty = B'.contains (idx, (ty : Expr md)) := by
   rw [Bool.eq_iff_iff, List.contains_eq_mem, decide_eq_true_iff,
     leafMem_iff, h]
 
 /-- The base list built by the leaf walk *is* a `LeafBase` for the
 erasure's leaves. -/
-theorem fvarLeavesC_leafBase {base : Expr} :
+theorem fvarLeavesC_leafBase {base : Expr md} :
     LeafBase (Expr.fvarLeavesC base) (Expr.fvarLeaves base) := by
   obtain ⟨h2, -⟩ := fvarLeavesGoC_spec (e := base)
     (G := fun _ => False) (acc := []) (seen := {})
@@ -670,7 +670,7 @@ theorem fvarLeavesC_leafBase {base : Expr} :
 
 /-- The walk's cutoff, read as the specification: a node whose cached
 fvar range is zero has no leaf to check. -/
-private theorem leavesSubP_cut_spec {B' : List (Nat × Expr)} {e : Expr}
+private theorem leavesSubP_cut_spec {B' : List (Nat × Expr md)} {e : Expr md}
     (h : (e.fvarB == 0) = true) :
     true = ((Expr.fvarLeaves e).all fun l => B'.contains l) := by
   rw [fvarLeaves_nil_of_fvarsBelow_zero _
@@ -679,8 +679,8 @@ private theorem leavesSubP_cut_spec {B' : List (Nat × Expr)} {e : Expr}
 
 /-- **The plain descent decides the `Expr`-level leaf-subset
 boolean.** -/
-theorem leavesSubP_spec {bl : List (Nat × Expr)} {B' : List (Nat × Expr)}
-    (hbl : LeafBase bl B') : ∀ {e : Expr},
+theorem leavesSubP_spec {bl : List (Nat × Expr md)} {B' : List (Nat × Expr md)}
+    (hbl : LeafBase bl B') : ∀ {e : Expr md},
     Expr.leavesSubP bl e = ((Expr.fvarLeaves e).all fun l => B'.contains l) := by
   intro e
   induction e with
@@ -727,8 +727,8 @@ theorem leavesSubP_spec {bl : List (Nat × Expr)} {B' : List (Nat × Expr)}
 
 /-- **The cached leaf-subset test decides the `Expr`-level
 leaf-subset boolean.** -/
-private theorem leavesSubC_spec {bl : List (Nat × Expr)} {B' : List (Nat × Expr)}
-    (hbl : LeafBase bl B') {e : Expr} :
+private theorem leavesSubC_spec {bl : List (Nat × Expr md)} {B' : List (Nat × Expr md)}
+    (hbl : LeafBase bl B') {e : Expr md} :
     Expr.leavesSubC bl e = ((Expr.fvarLeaves e).all fun l => B'.contains l) := by
   rw [Expr.leavesSubC.eq_def]
   split
@@ -738,7 +738,7 @@ private theorem leavesSubC_spec {bl : List (Nat × Expr)} {B' : List (Nat × Exp
 /-- **The fabrication leaf guard agrees with the `Expr`-level
 leaf-subset boolean** — `leafGuard_spec'`'s right-hand side, verbatim,
 with the arena denotation replaced by the erasure. -/
-theorem leafGuard_spec {fab base : Expr} :
+theorem leafGuard_spec {fab base : Expr md} :
     Expr.leafGuard fab base
       = ((Expr.fvarLeaves fab).all
           fun l => (Expr.fvarLeaves base).contains l) := by
@@ -771,7 +771,7 @@ carries. -/
 open Expr in
 /-- The `Nat`-literal readout agrees with the spec's `rawNatLit?` on
 the erasure — a top-level match, so no invariant is needed. -/
-theorem rawNatLitC?_spec (e : Expr) :
+theorem rawNatLitC?_spec (e : Expr md) :
     rawNatLitC? e = rawNatLit? e := by
   cases e with
   | lit l => cases l <;> rfl
@@ -787,7 +787,7 @@ theorem rawNatLitC?_spec (e : Expr) :
 open Expr in
 /-- `rawNatLitC?_spec` transported along the value equation the
 simulation carries. -/
-theorem rawNatLitC?_spec' {w : Expr} {wx : Expr}
+theorem rawNatLitC?_spec' {w : Expr md} {wx : Expr md}
     (h : w = wx) : rawNatLitC? w = rawNatLit? wx := by
   rw [rawNatLitC?_spec, h]
 
@@ -795,7 +795,7 @@ open Expr in
 /-- The unit-like-type guard agrees with the spec's `isUnitLikeTy` on
 the erasure — again a top-level match on the whnf'd node, so no
 invariant is needed; only the `FEnv` index has to be resolved. -/
-theorem isUnitLikeTyC_spec {env : Env} (e : Expr) :
+theorem isUnitLikeTyC_spec {env : Env md} (e : Expr md) :
     isUnitLikeTyC (mkFEnv env) e = isUnitLikeTy env e := by
   cases e with
   | const cn us =>
@@ -812,7 +812,7 @@ theorem isUnitLikeTyC_spec {env : Env} (e : Expr) :
 
 open Expr in
 /-- `isUnitLikeTyC_spec` transported along the value equation. -/
-theorem isUnitLikeTyC_spec' {env : Env} {w : Expr} {wx : Expr}
+theorem isUnitLikeTyC_spec' {env : Env md} {w : Expr md} {wx : Expr md}
     (h : w = wx) :
     isUnitLikeTyC (mkFEnv env) w = isUnitLikeTy env wx := by
   rw [isUnitLikeTyC_spec, h]
@@ -821,7 +821,7 @@ open Expr in
 /-- The constructor-application guard agrees with the spec's
 `isCtorApp` on the erasure.  Unlike the two above it reads the
 *spine head*. -/
-theorem isCtorAppC_spec {env : Env} {e : Expr} :
+theorem isCtorAppC_spec {env : Env md} {e : Expr md} :
     isCtorAppC (mkFEnv env) e = isCtorApp env e := by
   show (match Expr.getAppFn e with
       | .const cn _ =>
@@ -841,19 +841,19 @@ theorem isCtorAppC_spec {env : Env} {e : Expr} :
 
 open Expr in
 /-- `isCtorAppC_spec` transported along the value equation. -/
-theorem isCtorAppC_spec' {env : Env} {e : Expr} {ex : Expr}
+theorem isCtorAppC_spec' {env : Env md} {e : Expr md} {ex : Expr md}
     (h : e = ex) :
     isCtorAppC (mkFEnv env) e = isCtorApp env ex := by
   rw [isCtorAppC_spec, h]
 
 /-- `Expr.quickPair` transported along the value equations. -/
-theorem quickPair_spec' {a b : Expr} {ax bx : Expr}
+theorem quickPair_spec' {a b : Expr md} {ax bx : Expr md}
     (ha : a = ax) (hb : b = bx) : Expr.quickPair a b = Expr.quickPair ax bx := by
   rw [ha, hb]
 
 /-- The eta constructor-shape gate agrees with the spec's `etaCtorShape`
 (`Expr = Expr`; only the environment lookup differs). -/
-theorem etaCtorShapeC_spec' {env : Env} {e : Expr} {ex : Expr}
+theorem etaCtorShapeC_spec' {env : Env md} {e : Expr md} {ex : Expr md}
     (h : e = ex) :
     etaCtorShapeC (mkFEnv env) e = etaCtorShape env ex := by
   subst h
@@ -869,7 +869,7 @@ open Expr in
 /-- The reducibility-hint readout agrees with the spec's `headHint` on
 the erasure — like `isCtorAppC_spec` it reads the *spine head*, so the
 node invariant is needed. -/
-theorem headHintC_spec {env : Env} {e : Expr} :
+theorem headHintC_spec {env : Env md} {e : Expr md} :
     headHintC (mkFEnv env) e = headHint env e := by
   show (match Expr.getAppFn e with
       | .const nm _ =>
@@ -889,7 +889,7 @@ theorem headHintC_spec {env : Env} {e : Expr} :
 
 open Expr in
 /-- `headHintC_spec` transported along the value equation. -/
-theorem headHintC_spec' {env : Env} {e : Expr} {ex : Expr}
+theorem headHintC_spec' {env : Env md} {e : Expr md} {ex : Expr md}
     (h : e = ex) :
     headHintC (mkFEnv env) e = headHint env ex := by
   rw [headHintC_spec, h]
@@ -897,7 +897,7 @@ theorem headHintC_spec' {env : Env} {e : Expr} {ex : Expr}
 open Expr in
 /-- The lazy-delta unfoldability decision agrees with the spec's
 `unfoldableHead` on the erasure (again a spine-head read). -/
-theorem unfoldableHeadC_spec {env : Env} {e : Expr} :
+theorem unfoldableHeadC_spec {env : Env md} {e : Expr md} :
     unfoldableHeadC (mkFEnv env) e = unfoldableHead env e := by
   show (match Expr.getAppFn e with
       | .const nm us =>
@@ -917,7 +917,7 @@ theorem unfoldableHeadC_spec {env : Env} {e : Expr} :
 
 open Expr in
 /-- `unfoldableHeadC_spec` transported along the value equation. -/
-theorem unfoldableHeadC_spec' {env : Env} {e : Expr} {ex : Expr}
+theorem unfoldableHeadC_spec' {env : Env md} {e : Expr md} {ex : Expr md}
     (h : e = ex) :
     unfoldableHeadC (mkFEnv env) e = unfoldableHead env ex := by
   rw [unfoldableHeadC_spec, h]
@@ -925,7 +925,7 @@ theorem unfoldableHeadC_spec' {env : Env} {e : Expr} {ex : Expr}
 /-- **The `And`-rescue gate through the index is the spec's gate**:
 both sides are `andRescueSlotsOf` at a lookup, and the index's lookup
 is `Env.findProj?` (`mkFEnv_findProj?`). -/
-theorem andRescueSlotsF_spec {env : Env} {ctor : Key} {nP : Nat}
+theorem andRescueSlotsF_spec {env : Env md} {ctor : Key md} {nP : Nat}
     {ust : List Level} :
     (mkFEnv env).andRescueSlotsF ctor nP ust = andRescueSlots env ctor nP ust := by
   unfold FEnv.andRescueSlotsF andRescueSlots
@@ -937,7 +937,7 @@ open Expr in
 /-- The same-constant-head short-circuit agrees with the spec's
 `sameConstHeads` on the erasures: both sides must be applications, and
 then the two *function parts'* spine heads are compared. -/
-theorem sameConstHeadsC_spec {a b : Expr} :
+theorem sameConstHeadsC_spec {a b : Expr md} :
     sameConstHeadsC a b = sameConstHeads a b := by
   cases a with
   | app f₁ a₁ =>
@@ -956,7 +956,7 @@ theorem sameConstHeadsC_spec {a b : Expr} :
 
 open Expr in
 /-- `sameConstHeadsC_spec` transported along the value equations. -/
-theorem sameConstHeadsC_spec' {a b : Expr} {xa xb : Expr}
+theorem sameConstHeadsC_spec' {a b : Expr md} {xa xb : Expr md}
     (h₁ : a = xa) (h₂ : b = xb) :
     sameConstHeadsC a b = sameConstHeads xa xb := by
   rw [sameConstHeadsC_spec, h₁, h₂]
@@ -964,27 +964,27 @@ theorem sameConstHeadsC_spec' {a b : Expr} {xa xb : Expr}
 open Expr in
 /-- The `O(1)` eager fvar-range field is exact (`fvarB_eq _`), so its
 non-zeroness is the spec's `Expr.hasFvar`. -/
-theorem hasFvar_spec' {e : Expr} {ex : Expr}
+theorem hasFvar_spec' {e : Expr md} {ex : Expr md}
     (h : e = ex) : Expr.hasFvar e = ex.hasFvar := by
   rw [h]
 
 open Expr in
 /-- `Expr.wscopedBC_spec` transported along the value equation. -/
-theorem wscopedB_spec' {d : Nat} {e : Expr} {ex : Expr}
+theorem wscopedB_spec' {d : Nat} {e : Expr md} {ex : Expr md}
     (h : e = ex) :
     Expr.wscopedBC d e = ex.wscopedB d := by
   rw [Expr.wscopedBC_spec, h]
 
 open Expr in
 /-- `Expr.looseBVarsBounded` transported along the value equation. -/
-theorem looseBVarsBounded_spec' {k : Nat} {e : Expr}
-    {ex : Expr} (h : e = ex) :
+theorem looseBVarsBounded_spec' {k : Nat} {e : Expr md}
+    {ex : Expr md} (h : e = ex) :
     Expr.looseBVarsBounded k e = ex.looseBVarsBounded k := by
   rw [h]
 
 open Expr in
 /-- `Expr.leafGuard_spec` transported along the value equations. -/
-theorem leafGuard_spec' {fab base : Expr} {fx bx : Expr}
+theorem leafGuard_spec' {fab base : Expr md} {fx bx : Expr md}
     (h₁ : fab = fx) (h₂ : base = bx) :
     Expr.leafGuard fab base
       = (fx.fvarLeaves.all fun l => bx.fvarLeaves.contains l) := by
@@ -1001,7 +1001,7 @@ The walk carries its own proof against the plain descent
 descent. -/
 
 /-- **The plain descent is `Expr.constsResolveF`.** -/
-theorem constsResolveFP_spec {fe : FEnv} : ∀ {e : Expr},
+theorem constsResolveFP_spec {fe : FEnv md} : ∀ {e : Expr md},
     constsResolveFP fe e = Expr.constsResolveF fe e := by
   intro e
   induction e with
@@ -1019,7 +1019,7 @@ theorem constsResolveFP_spec {fe : FEnv} : ∀ {e : Expr},
 
 open Expr in
 /-- **`constsResolveFC` is `Expr.constsResolveF` of the erasure.** -/
-theorem constsResolveFC_spec {fe : FEnv} {e : Expr} :
+theorem constsResolveFC_spec {fe : FEnv md} {e : Expr md} :
     constsResolveFC fe e = Expr.constsResolveF fe e := by
   rw [constsResolveFC.eq_def, Expr.resBool_eq]
   exact constsResolveFP_spec

@@ -42,17 +42,17 @@ open Ix.Kernel.Term
 freshness check, so this always holds of them; stating it as a relation
 keeps the lemma independent of *how* the extension arose, exactly as
 `EnvModel`'s transports are.) -/
-def EnvExtends (env₁ env₂ : Env) : Prop :=
+def EnvExtends (env₁ env₂ : Env md) : Prop :=
   ∀ n ci, env₁.find? n = some ci → env₂.find? n = some ci
 
-theorem EnvExtends.refl (env : Env) : EnvExtends env env := fun _ _ h => h
+theorem EnvExtends.refl (env : Env md) : EnvExtends env env := fun _ _ h => h
 
-theorem EnvExtends.trans {e₁ e₂ e₃ : Env} (h₁ : EnvExtends e₁ e₂)
+theorem EnvExtends.trans {e₁ e₂ e₃ : Env md} (h₁ : EnvExtends e₁ e₂)
     (h₂ : EnvExtends e₂ e₃) : EnvExtends e₁ e₃ :=
   fun n ci h => h₂ n ci (h₁ n ci h)
 
 /-- A cons-extension over a fresh name extends. -/
-theorem EnvExtends.cons {env : Env} {c₀ : ConstantInfo}
+theorem EnvExtends.cons {env : Env md} {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none) :
     EnvExtends env ⟨c₀ :: env.consts⟩ := by
   intro n ci h
@@ -65,23 +65,23 @@ theorem EnvExtends.cons {env : Env} {c₀ : ConstantInfo}
 
 /-- `findProj?` transports up an extension (a table is stored under a
 name; `hext` carries the lookup). -/
-theorem EnvExtends.findProj?_mono {env₁ env₂ : Env}
-    (hext : EnvExtends env₁ env₂) {sn : Key} {i : Nat}
-    {entry : ProjEntry} (h : env₁.findProj? sn i = some entry) :
+theorem EnvExtends.findProj?_mono {env₁ env₂ : Env md}
+    (hext : EnvExtends env₁ env₂) {sn : Key md} {i : Nat}
+    {entry : ProjEntry md} (h : env₁.findProj? sn i = some entry) :
     env₂.findProj? sn i = some entry := by
   obtain ⟨tbl, h0, hi, rfl⟩ := Env.findProj?_some h
   exact Env.findProj?_of_table (hext _ _ h0) hi
 
 /-- A fresh cons that is not a projection table cannot create a table
 lookup where none existed. -/
-theorem findProj?_cons_of_base_none {env : Env} {c₀ : ConstantInfo}
+theorem findProj?_cons_of_base_none {env : Env md} {c₀ : ConstantInfo md}
     (hntc : ∀ tbl, c₀ ≠ .projInfo tbl) :
-    ∀ (sn : Key) (i : Nat),
+    ∀ (sn : Key md) (i : Nat),
       env.findProj? sn i = none →
       Env.findProj? ⟨c₀ :: env.consts⟩ sn i = none := by
   intro sn i h0
   by_cases hn : c₀.name = projTableName sn
-  · have hf : (⟨c₀ :: env.consts⟩ : Env).find? (projTableName sn) = some c₀ := by
+  · have hf : (⟨c₀ :: env.consts⟩ : Env md).find? (projTableName sn) = some c₀ := by
       rw [Env.find?_cons, if_pos hn]
     unfold Env.findProj?
     rw [hf]
@@ -100,9 +100,9 @@ nothing else — that derivation is `natLitSupported_inv` +
 `IxC/Kernel/Verify/EnvGuards.lean`.  They are passed in rather than
 derived here so that the install sites, which have the freshness facts
 in hand, discharge them the cheap way. -/
-theorem denote_mono {cval : TConstVal} {env₁ env₂ : Env} {φ : LevelParam → Nat}
+theorem denote_mono {cval : TConstVal md} {env₁ env₂ : Env md} {φ : LevelParam → Nat}
     (hext : EnvExtends env₁ env₂)
-    (hproj : ∀ (sn : Key) (i : Nat),
+    (hproj : ∀ (sn : Key md) (i : Nat),
       env₁.findProj? sn i = none → env₂.findProj? sn i = none)
     (hnat : natLitSupported env₁ = true → natLitSupported env₂ = true)
     (hstr : strLitSupported env₁ = true → strLitSupported env₂ = true)
@@ -110,7 +110,7 @@ theorem denote_mono {cval : TConstVal} {env₁ env₂ : Env} {φ : LevelParam �
       levelParamsAt env₂ listNilName = levelParamsAt env₁ listNilName)
     (hlpCons : strLitSupported env₁ = true →
       levelParamsAt env₂ listConsName = levelParamsAt env₁ listConsName) :
-    ∀ (d : Nat) (e : Expr) {v : Term},
+    ∀ (d : Nat) (e : Expr md) {v : Term},
       denote cval env₁ φ d e = some v → denote cval env₂ φ d e = some v := by
   intro d e
   induction d, e using denote.induct (cval := cval) (env := env₁) (φ := φ) with
@@ -272,7 +272,7 @@ them from freshness directly. -/
 
 /-- Denotation reads the valuation only at names the environment
 resolves, so valuations agreeing there give equal denotations. -/
-theorem denote_cval_congr {cval₁ cval₂ : TConstVal} {env : Env}
+theorem denote_cval_congr {cval₁ cval₂ : TConstVal md} {env : Env md}
     {φ : LevelParam → Nat}
     (hag : ∀ n ci, env.find? n = some ci → cval₁ n = cval₂ n)
     (hnat : natLitSupported env = true →
@@ -288,7 +288,7 @@ theorem denote_cval_congr {cval₁ cval₂ : TConstVal} {env : Env}
     (hchar : strLitSupported env = true → cval₁ charName = cval₂ charName)
     (hofn : strLitSupported env = true →
       cval₁ charOfNatName = cval₂ charOfNatName) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denote cval₁ env φ d e = denote cval₂ env φ d e := by
   intro d e
   induction d, e using denote.induct (cval := cval₁) (env := env) (φ := φ) with
@@ -368,7 +368,7 @@ arguments each time.
 Kept as a *structure of equations* rather than folded into the
 "agrees away from the new name" hypothesis, because a basis install
 changes exactly these valuations — see `has_type_cons`. -/
-structure LitAgree (env : Env) (cval cval' : TConstVal) : Prop where
+structure LitAgree (env : Env md) (cval cval' : TConstVal md) : Prop where
   nat : natLitSupported env = true →
     cval natZeroName = cval' natZeroName
   succ : natLitSupported env = true →
@@ -390,11 +390,11 @@ pinned, not reserved).  The conditional form is what the consumer
 actually needs: `denote`'s literal clauses fire only under the guard,
 and under the guard every one of the seven is **stored**, hence not the
 fresh name. -/
-theorem LitAgree.of_fresh {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hfresh : env.find? c₀.name = none)
+theorem LitAgree.of_fresh {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hfresh : env.find? c₀.name = none)
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n) :
     LitAgree env cval cval' := by
-  have step : ∀ n : Key, (env.find? n).isSome = true →
+  have step : ∀ n : Key md, (env.find? n).isSome = true →
       cval n = cval' n := fun n hn =>
     hag n (fun hh => by rw [hh, hfresh] at hn; exact nomatch hn)
   refine ⟨fun hg => step _ ?_, fun hg => step _ ?_, fun hg => step _ ?_,
@@ -425,7 +425,7 @@ only needed to derive the guard from its consequences; the congruence
 needs just the lookups**, which is a cheaper thing to want. -/
 
 /-- The `Nat`-literal guard reads three slots. -/
-theorem natLitSupported_cons_of_ne {env : Env} {c₀ : ConstantInfo}
+theorem natLitSupported_cons_of_ne {env : Env md} {c₀ : ConstantInfo md}
     (h1 : c₀.name ≠ natName) (h2 : c₀.name ≠ natZeroName)
     (h3 : c₀.name ≠ natSuccName) :
     natLitSupported ⟨c₀ :: env.consts⟩ = natLitSupported env := by
@@ -434,7 +434,7 @@ theorem natLitSupported_cons_of_ne {env : Env} {c₀ : ConstantInfo}
     if_neg h1, if_neg h2, if_neg h3]
 
 /-- The `String`-literal guard reads the `Nat` slots and seven more. -/
-theorem strLitSupported_cons_of_ne {env : Env} {c₀ : ConstantInfo}
+theorem strLitSupported_cons_of_ne {env : Env md} {c₀ : ConstantInfo md}
     (h1 : c₀.name ≠ natName) (h2 : c₀.name ≠ natZeroName)
     (h3 : c₀.name ≠ natSuccName) (h4 : c₀.name ≠ stringName)
     (h5 : c₀.name ≠ stringOfListName) (h6 : c₀.name ≠ listName)
@@ -449,7 +449,7 @@ theorem strLitSupported_cons_of_ne {env : Env} {c₀ : ConstantInfo}
     if_neg h10]
 
 /-- The stored level parameters of a name other than the new one. -/
-theorem levelParamsAt_cons_of_ne {env : Env} {c₀ : ConstantInfo} {n : Key}
+theorem levelParamsAt_cons_of_ne {env : Env md} {c₀ : ConstantInfo md} {n : Key md}
     (h : c₀.name ≠ n) :
     levelParamsAt ⟨c₀ :: env.consts⟩ n = levelParamsAt env n := by
   unfold levelParamsAt
@@ -477,7 +477,7 @@ every slot the guard reads is stored in the *small* environment, and
 freshness then says the new constant is none of them. -/
 
 /-- A stored name is not the freshly installed one. -/
-theorem ne_of_isSome_fresh {env : Env} {c₀ : ConstantInfo} {n : Key}
+theorem ne_of_isSome_fresh {env : Env md} {c₀ : ConstantInfo md} {n : Key md}
     (hfresh : env.find? c₀.name = none) (h : (env.find? n).isSome = true) :
     c₀.name ≠ n := by
   intro he
@@ -486,12 +486,12 @@ theorem ne_of_isSome_fresh {env : Env} {c₀ : ConstantInfo} {n : Key}
 
 /-- Denotation is unchanged by a fresh install on expressions whose
 constants already resolve.  Transpose of `interp_mono`. -/
-theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
-    {c₀ : ConstantInfo} (hfresh : env.find? c₀.name = none)
+theorem denote_env_shrink {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
+    {c₀ : ConstantInfo md} (hfresh : env.find? c₀.name = none)
     (hntc : ∀ e', c₀ ≠ .projInfo e') :
-    ∀ (d : Nat) (e : Expr), e.constsResolve env = true →
+    ∀ (d : Nat) (e : Expr md), e.constsResolve env = true →
       denote cval ⟨c₀ :: env.consts⟩ φ d e = denote cval env φ d e := by
-  have hbranch : ∀ (sn : Key) (i : Nat) (ve : Term),
+  have hbranch : ∀ (sn : Key md) (i : Nat) (ve : Term),
       (match Env.findProj? ⟨c₀ :: env.consts⟩ sn i with
         | some entry => some (projNV (i + entry.off) ve)
         | none => Term.projPair? i ve)
@@ -641,8 +641,8 @@ theorem denote_env_shrink {cval : TConstVal} {env : Env} {φ : LevelParam → Na
 environment, changed valuation.  The shared core of every field's
 transport — `has_type_cons` above is this plus a valuation rewrite, and
 `defn_eq_cons` below is the same again. -/
-theorem denote_install {cval cval' : TConstVal} {env : Env} {φ : LevelParam → Nat}
-    {c₀ : ConstantInfo} {d : Nat} {e : Expr} {v : Term}
+theorem denote_install {cval cval' : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
+    {c₀ : ConstantInfo md} {d : Nat} {e : Expr md} {v : Term}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ e', c₀ ≠ .projInfo e')
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n)
@@ -687,7 +687,7 @@ discharge the `hguardN`/`hguardS` obligations of `denote_mono`,
 `denote_install` and `has_type_cons` at every ordinary install. -/
 
 /-- The `Nat`-literal guard is monotone under a fresh install. -/
-theorem natLitSupported_cons {env : Env} {c₀ : ConstantInfo}
+theorem natLitSupported_cons {env : Env md} {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none) (h : natLitSupported env = true) :
     natLitSupported ⟨c₀ :: env.consts⟩ = true := by
   simp only [natLitSupported, Bool.and_eq_true] at h ⊢
@@ -703,7 +703,7 @@ theorem natLitSupported_cons {env : Env} {c₀ : ConstantInfo}
   exact ⟨⟨h1, h2⟩, h3⟩
 
 /-- The `String`-literal guard is monotone under a fresh install. -/
-theorem strLitSupported_cons {env : Env} {c₀ : ConstantInfo}
+theorem strLitSupported_cons {env : Env md} {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none) (h : strLitSupported env = true) :
     strLitSupported ⟨c₀ :: env.consts⟩ = true := by
   simp only [strLitSupported, Bool.and_eq_true] at h ⊢
@@ -729,7 +729,7 @@ theorem strLitSupported_cons {env : Env} {c₀ : ConstantInfo}
   exact ⟨⟨⟨⟨⟨⟨⟨natLitSupported_cons hfresh h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩
 
 /-- The `Nat`-operation guard is monotone under a fresh install. -/
-theorem natOpGuard_cons {env : Env} {c₀ : ConstantInfo} {c : Key}
+theorem natOpGuard_cons {env : Env md} {c₀ : ConstantInfo md} {c : Key md}
     (hfresh : env.find? c₀.name = none) (h : natOpGuard env c = true) :
     natOpGuard ⟨c₀ :: env.consts⟩ c = true := by
   simp only [natOpGuard, Bool.and_eq_true] at h ⊢
@@ -770,8 +770,8 @@ that can change what a literal denotes. -/
 
 /-- The context of an ordinary install: `c₀` is fresh, the valuation
 moves only at `c₀.name`, and nothing a literal reads changes. -/
-structure Installs (env : Env) (cval cval' : TConstVal)
-    (c₀ : ConstantInfo) : Prop where
+structure Installs (env : Env md) (cval cval' : TConstVal md)
+    (c₀ : ConstantInfo md) : Prop where
   /-- The installed name is not already stored. -/
   fresh : env.find? c₀.name = none
   /-- The installed constant is not a projection table (task #175
@@ -802,13 +802,13 @@ cost.  Before §8.5's second pass it cost seven name disequalities and
 two level-parameter equations, and two of the disequalities were not
 even *true* in general: nothing in `checkConstantVal` forbids a `def`
 named `List.nil` (the string-support names are pinned, not reserved). -/
-theorem Installs.of_fresh {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hfresh : env.find? c₀.name = none)
+theorem Installs.of_fresh {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hfresh : env.find? c₀.name = none)
     (hntc : ∀ e', c₀ ≠ .projInfo e')
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n) :
     Installs env cval cval' c₀ := by
-  have step : ∀ n : Key, (env.find? n).isSome = true →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := fun n hn =>
+  have step : ∀ n : Key md, (env.find? n).isSome = true →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := fun n hn =>
     Env.find?_cons_of_isSome hfresh hn
   refine ⟨hfresh, hntc, hag, LitAgree.of_fresh hfresh hag, fun hg => ?_,
     fun hg => ?_⟩
@@ -824,9 +824,9 @@ theorem Installs.of_fresh {env : Env} {cval cval' : TConstVal}
 /-- A denotation survives an ordinary install.  The guard hypotheses of
 `denote_install` are discharged by monotonicity, so this form takes
 none. -/
-theorem Installs.denoteUp {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀)
-    {φ : LevelParam → Nat} {d : Nat} {e : Expr} {v : Term}
+theorem Installs.denoteUp {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀)
+    {φ : LevelParam → Nat} {d : Nat} {e : Expr md} {v : Term}
     (h : denote cval env φ d e = some v) :
     denote cval' ⟨c₀ :: env.consts⟩ φ d e = some v :=
   denote_install hi.fresh hi.ntc hi.ag hi.lit
@@ -834,8 +834,8 @@ theorem Installs.denoteUp {env : Env} {cval cval' : TConstVal}
     (strLitSupported_cons hi.fresh) hi.lpNil hi.lpCons h
 
 /-- A stored name is valued the same after an ordinary install. -/
-theorem Installs.agree {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Key}
+theorem Installs.agree {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀) {n : Key md}
     (h : (env.find? n).isSome = true) : cval n = cval' n :=
   hi.ag n (Ne.symm (ne_of_isSome_fresh hi.fresh h))
 
@@ -843,9 +843,9 @@ theorem Installs.agree {env : Env} {cval cval' : TConstVal}
 environment.  The two moves compose in one order only: shrink first
 (the expression resolves there), then change the valuation (the two
 agree on everything stored there, but not at the new constant). -/
-theorem Installs.denoteDown {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀)
-    {φ : LevelParam → Nat} {d : Nat} {e : Expr} {v : Term}
+theorem Installs.denoteDown {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀)
+    {φ : LevelParam → Nat} {d : Nat} {e : Expr md} {v : Term}
     (hres : e.constsResolve env = true)
     (h : denote cval' ⟨c₀ :: env.consts⟩ φ d e = some v) :
     denote cval env φ d e = some v := by
@@ -860,8 +860,8 @@ theorem Installs.denoteDown {env : Env} {cval cval' : TConstVal}
     hi.lit.cons hi.lit.char hi.lit.ofn d e]
 
 /-- Lookups of stored names are unchanged by an ordinary install. -/
-theorem Installs.find {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (hi : Installs env cval cval' c₀) {n : Key}
+theorem Installs.find {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀) {n : Key md}
     (h : (env.find? n).isSome = true) :
     Env.find? ⟨c₀ :: env.consts⟩ n = env.find? n :=
   Env.find?_cons_of_isSome hi.fresh h
@@ -876,8 +876,8 @@ moves they share — a denotation goes up, a stored name's valuation is
 unchanged, a stored name's lookup is unchanged. -/
 
 /-- The pinned basis valuations survive an install at another name. -/
-theorem BasisPinnedTT.cons {env : Env} {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (h : BasisPinnedTT env cval)
+theorem BasisPinnedTT.cons {env : Env md} {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (h : BasisPinnedTT env cval)
     (hi : Installs env cval cval' c₀)
     (hhead : reservedBasisNames.contains c₀.name = true →
       c₀ = pinnedInfo c₀.name ∧
@@ -898,14 +898,14 @@ theorem BasisPinnedTT.cons {env : Env} {cval cval' : TConstVal}
 /-- The projection-table discipline survives an install.  A head that
 is a table supplies its own head data (task #175 wiring W5); the
 stored tables' head data survives by freshness. -/
-theorem ProjOkT.cons {env : Env} {c₀ : ConstantInfo} (h : ProjOkT env)
+theorem ProjOkT.cons {env : Env md} {c₀ : ConstantInfo md} (h : ProjOkT env)
     (hfresh : env.find? c₀.name = none)
     (hheadTower : ∀ tbl, c₀ = .projInfo tbl →
       ∀ i, i < tbl.numFields → TowerHead ⟨c₀ :: env.consts⟩ (tbl.entry i)) :
     ProjOkT ⟨c₀ :: env.consts⟩ := by
-  have hkeep : ∀ (n : Key) (ci : ConstantInfo),
+  have hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
-      env.find? n = some ci → (⟨c₀ :: env.consts⟩ : Env).find? n = some ci := by
+      env.find? n = some ci → (⟨c₀ :: env.consts⟩ : Env md).find? n = some ci := by
     intro n ci _ hf
     rw [Env.find?_cons_of_isSome hfresh (by rw [hf]; rfl)]; exact hf
   intro n tbl hf i hi
@@ -918,7 +918,7 @@ theorem ProjOkT.cons {env : Env} {c₀ : ConstantInfo} (h : ProjOkT env)
 
 /-- Every name a clause set reads is valued the same after an install
 at a different name. -/
-theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Key}
+theorem divModNames_agree {env : Env md} {cval cval' : TConstVal md} {c : Key md}
     (hag : ∀ n, (env.find? n).isSome = true → cval n = cval' n)
     (hg : natOpGuard env c = true) :
     (∀ n ∈ natOpDeps c, cval n = cval' n) ∧
@@ -950,15 +950,15 @@ theorem divModNames_agree {env : Env} {cval cval' : TConstVal} {c : Key}
 
 
 /-- Extend a valuation at one name by an explicitly chosen term. -/
-@[expose] def cvalWith (cval : TConstVal) (n : Key) (V : (LevelParam → Nat) → Term) :
-    TConstVal := fun c ψ => if c = n then V ψ else cval c ψ
+@[expose] def cvalWith (cval : TConstVal md) (n : Key md) (V : (LevelParam → Nat) → Term) :
+    (TConstVal md) := fun c ψ => if c = n then V ψ else cval c ψ
 
-theorem cvalWith_ne {cval : TConstVal} {n : Key}
-    {V : (LevelParam → Nat) → Term} {c : Key} (h : c ≠ n) :
+theorem cvalWith_ne {cval : TConstVal md} {n : Key md}
+    {V : (LevelParam → Nat) → Term} {c : Key md} (h : c ≠ n) :
     cvalWith cval n V c = cval c := by
   funext ψ; simp [cvalWith, h]
 
-theorem cvalWith_self {cval : TConstVal} {n : Key}
+theorem cvalWith_self {cval : TConstVal md} {n : Key md}
     {V : (LevelParam → Nat) → Term} : cvalWith cval n V n = V := by
   funext ψ; simp [cvalWith]
 
@@ -971,17 +971,17 @@ function that could satisfy it.) -/
 
 /-- Extend a valuation at one name by a closed expression's
 denotation. -/
-def cvalAt (cval : TConstVal) (env : Env) (n : Key) (value : Expr) :
-    TConstVal := fun c ψ =>
+def cvalAt (cval : TConstVal md) (env : Env md) (n : Key md) (value : Expr md) :
+    (TConstVal md) := fun c ψ =>
   if c = n then (denoteClosed cval env ψ value).getD (cval c ψ)
   else cval c ψ
 
-theorem cvalAt_ne {cval : TConstVal} {env : Env} {n : Key} {value : Expr}
-    {c : Key} (h : c ≠ n) : cvalAt cval env n value c = cval c := by
+theorem cvalAt_ne {cval : TConstVal md} {env : Env md} {n : Key md} {value : Expr md}
+    {c : Key md} (h : c ≠ n) : cvalAt cval env n value c = cval c := by
   funext ψ; simp [cvalAt, h]
 
-theorem cvalAt_self {cval : TConstVal} {env : Env} {n : Key}
-    {value : Expr} {ψ : LevelParam → Nat} {v : Term}
+theorem cvalAt_self {cval : TConstVal md} {env : Env md} {n : Key md}
+    {value : Expr md} {ψ : LevelParam → Nat} {v : Term}
     (h : denoteClosed cval env ψ value = some v) :
     cvalAt cval env n value n ψ = v := by
   simp [cvalAt, h]

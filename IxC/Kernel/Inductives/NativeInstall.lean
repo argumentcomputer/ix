@@ -84,7 +84,7 @@ sum route's domain (never one constructor without an index) this is
 former is installed before the constructors are classified, so the
 install runs at the syntactic reading (`nativeRawRec`) and confirms
 it against the classification (`nativeCaps`). -/
-def nativeCapsAt (p : InductiveShape) (isRec : Bool) : IndCaps :=
+def nativeCapsAt (p : InductiveShape md) (isRec : Bool) : IndCaps md :=
   match p.ctors with
   | [c] =>
     { eta := p.nIdx == 0 && !p.isProp && !isRec
@@ -104,7 +104,7 @@ def nativeIsRec (kinds : List (List RecFieldKind)) : Bool :=
 
 /-- The block's capability record at its classified kinds
 (`nativeCapsAt` at `nativeIsRec`). -/
-def nativeCaps (p : NativeParts) : IndCaps :=
+def nativeCaps (p : NativeParts md) : IndCaps md :=
   nativeCapsAt p.toInductiveShape (nativeIsRec p.kinds)
 
 /-- **The syntactic reading of `is_rec`** (task #268): does the block
@@ -119,7 +119,7 @@ the capability record the first pass runs at; the pass's own
 classification confirms it (`checkNative`) or the block is passed
 again at the classified verdict.  Read only where the record depends
 on it — one constructor — as `nativeCapsAt` does. -/
-def nativeRawRec (p : NativeParts) : Bool :=
+def nativeRawRec (p : NativeParts md) : Bool :=
   match p.ctors with
   | [c] =>
     match c.1.type.stripPis (p.nP + c.2) with
@@ -130,15 +130,15 @@ def nativeRawRec (p : NativeParts) : Bool :=
 /-- The fixpoint route stores the family's own result-sort datum: the
 former's telescope ends in `Sort p.resSort`, so the record's `sortZ`
 is `piResultZ` of the type the install stores (`capsNeverZero_eq`). -/
-theorem nativeCaps_sortZ {p : NativeParts} {c : ConstantVal × Nat}
-    {e : Expr} (hc : p.ctors = [c]) (he : e.piResult = .sort p.resSort) :
+theorem nativeCaps_sortZ {p : NativeParts md} {c : ConstantVal md × Nat}
+    {e : Expr md} (hc : p.ctors = [c]) (he : e.piResult = .sort p.resSort) :
     (nativeCaps p).sortZ = piResultZ e := by
   unfold nativeCaps nativeCapsAt piResultZ
   rw [hc, he]
 
 /-- Does the variable `q` occur as a leaf of `e` (annotations
 included, as `fvarLeaves` walks them)? -/
-def Expr.mentionsFvar (q : Nat) (e : Expr) : Bool := e.fvarLeaves.any fun l => l.1 == q
+def Expr.mentionsFvar (q : Nat) (e : Expr md) : Bool := e.fvarLeaves.any fun l => l.1 == q
 
 /-! ### `mentionsFvar` memoizes
 
@@ -165,41 +165,41 @@ recursive field's variable occurs in any later field's domain, the
 answer is `false`, and nothing short-circuits. -/
 
 /-- `mentionsFvar` at an `fvar` leaf: the index, or its annotation. -/
-theorem Expr.mentionsFvar_fvar (q idx : Nat) (ty : Expr) :
+theorem Expr.mentionsFvar_fvar (q idx : Nat) (ty : Expr md) :
     (Expr.fvar idx ty).mentionsFvar q = ((idx == q) || ty.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
-theorem Expr.mentionsFvar_app (q : Nat) (f a : Expr) :
+theorem Expr.mentionsFvar_app (q : Nat) (f a : Expr md) :
     (Expr.app f a).mentionsFvar q = (f.mentionsFvar q || a.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
-theorem Expr.mentionsFvar_lam (q : Nat) (ty b : Expr) (m : BinderMeta) :
+theorem Expr.mentionsFvar_lam (q : Nat) (ty b : Expr md) (m : BinderMeta) :
     (Expr.lam ty b m).mentionsFvar q = (ty.mentionsFvar q || b.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
-theorem Expr.mentionsFvar_forallE (q : Nat) (ty b : Expr) (m : BinderMeta) :
+theorem Expr.mentionsFvar_forallE (q : Nat) (ty b : Expr md) (m : BinderMeta) :
     (Expr.forallE ty b m).mentionsFvar q
       = (ty.mentionsFvar q || b.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
-theorem Expr.mentionsFvar_letE (q : Nat) (t v b : Expr) :
+theorem Expr.mentionsFvar_letE (q : Nat) (t v b : Expr md) :
     (Expr.letE t v b lmeta).mentionsFvar q
       = (t.mentionsFvar q || v.mentionsFvar q || b.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves, Bool.or_assoc]
 
-theorem Expr.mentionsFvar_proj (q : Nat) (s : Key) (i : Nat) (e : Expr) :
+theorem Expr.mentionsFvar_proj (q : Nat) (s : Key md) (i : Nat) (e : Expr md) :
     (Expr.proj s i e).mentionsFvar q = e.mentionsFvar q := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
 /-- The memo's invariant: every recorded answer is the real one. -/
-def MentionsFvarMemoInv (q : Nat) (memo : Std.HashMap Expr Bool) : Prop :=
-  ∀ (e : Expr) (r : Bool), memo[e]? = some r → r = e.mentionsFvar q
+def MentionsFvarMemoInv (q : Nat) (memo : Std.HashMap (Expr md) Bool) : Prop :=
+  ∀ (e : Expr md) (r : Bool), memo[e]? = some r → r = e.mentionsFvar q
 
-theorem MentionsFvarMemoInv.empty {q : Nat} : MentionsFvarMemoInv q {} := by
+theorem MentionsFvarMemoInv.empty {q : Nat} : (MentionsFvarMemoInv (md := md)) q {} := by
   intro e r h; simp at h
 
-theorem MentionsFvarMemoInv.insert {q : Nat} {memo : Std.HashMap Expr Bool}
-    (hm : MentionsFvarMemoInv q memo) {e : Expr} {r : Bool}
+theorem MentionsFvarMemoInv.insert {q : Nat} {memo : Std.HashMap (Expr md) Bool}
+    (hm : MentionsFvarMemoInv q memo) {e : Expr md} {r : Bool}
     (heq : r = e.mentionsFvar q) :
     MentionsFvarMemoInv q (memo.insert e r) := by
   intro e' r' hk
@@ -214,13 +214,13 @@ theorem MentionsFvarMemoInv.insert {q : Nat} {memo : Std.HashMap Expr Bool}
 /-- Record one answer for `e` in the memo the walk hands back.
 Written with projections rather than a destructuring `let` so that the
 correctness proof can `split` the walk's own matches. -/
-@[inline] def Expr.mentionsFvarIns (e : Expr)
-    (r : Bool × Std.HashMap Expr Bool) : Bool × Std.HashMap Expr Bool :=
+@[inline] def Expr.mentionsFvarIns (e : Expr md)
+    (r : Bool × Std.HashMap (Expr md) Bool) : Bool × Std.HashMap (Expr md) Bool :=
   (r.1, r.2.insert e r.1)
 
 /-- Memoized `mentionsFvar`. -/
-def Expr.mentionsFvarGo (q : Nat) (memo : Std.HashMap Expr Bool) (e : Expr) :
-    Bool × Std.HashMap Expr Bool :=
+def Expr.mentionsFvarGo (q : Nat) (memo : Std.HashMap (Expr md) Bool) (e : Expr md) :
+    Bool × Std.HashMap (Expr md) Bool :=
   match e with
   | .bvar _ => (false, memo)
   | .sort _ => (false, memo)
@@ -258,7 +258,7 @@ def Expr.mentionsFvarGo (q : Nat) (memo : Std.HashMap Expr Bool) (e : Expr) :
 
 /-- **The memoized walk is `mentionsFvar`.** -/
 theorem Expr.mentionsFvarGo_spec (q : Nat) :
-    ∀ (e : Expr) (memo : Std.HashMap Expr Bool), MentionsFvarMemoInv q memo →
+    ∀ (e : Expr md) (memo : Std.HashMap (Expr md) Bool), MentionsFvarMemoInv q memo →
       (mentionsFvarGo q memo e).1 = e.mentionsFvar q ∧
         MentionsFvarMemoInv q (mentionsFvarGo q memo e).2 := by
   intro e
@@ -377,12 +377,12 @@ theorem Expr.mentionsFvarGo_spec (q : Nat) :
       exact ⟨by simp [mentionsFvar_proj, h1], h2.insert (by simp [mentionsFvar_proj, h1])⟩
 
 /-- The executed `mentionsFvar` (one memoized DAG walk). -/
-def Expr.mentionsFvarFast (q : Nat) (e : Expr) : Bool :=
+def Expr.mentionsFvarFast (q : Nat) (e : Expr md) : Bool :=
   (Expr.mentionsFvarGo q {} e).1
 
 @[csimp] theorem Expr.mentionsFvar_eq_mentionsFvarFast :
     @Expr.mentionsFvar = @Expr.mentionsFvarFast := by
-  funext q e
+  funext md q e
   exact (mentionsFvarGo_spec q e {} MentionsFvarMemoInv.empty).1.symm
 
 /-- The kinds the recogniser computed, re-checked on the annotated
@@ -394,8 +394,8 @@ resolving in `env₀`, and the variable occurs in no later field's
 domain nor in the residual (the model reads those at a frame whose
 recursive slots hold an arbitrary member of the family being defined);
 the residual's index expressions resolve in `env₀`. -/
-def nativeOpenedOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (cty : Expr) (nF : Nat) (ks : List RecFieldKind) : Bool :=
+def nativeOpenedOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (cty : Expr md) (nF : Nat) (ks : List RecFieldKind) : Bool :=
   match openPisAtFvars nP cty 0 with
   | some (fvsP, crest) =>
     match openPisAtFvars nF crest nP with
@@ -435,8 +435,8 @@ def nativeOpenedOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : N
 /-- The kinds, re-checked on every annotated constructor
 (`nativeOpenedOk`), one kind list per constructor, one kind per
 field. -/
-def nativeFieldsOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (ctorsA : List (ConstantVal × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
+def nativeFieldsOk (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (ctorsA : List (ConstantVal md × Nat)) (kinds : List (List RecFieldKind)) : Bool :=
   ctorsA.length == kinds.length &&
   (List.range ctorsA.length).all fun j =>
     match ctorsA[j]?, kinds[j]? with
@@ -447,10 +447,10 @@ def nativeFieldsOk (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx : N
 /-- The generated rules for constructors `j, j+1, …` (`k` of them),
 each scoped at the environment holding the recursor's constant
 (`envR`): a rule mentions the recursor and is not inferred. -/
-def checkNativeRules (envR : Env) (rlps : List LevelParam) (T : Key) (lps : List LevelParam)
-    (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
-    (ctors : List (Key × Nat × Expr × List Nat)) (recC : Key) (rlvls : List Level) :
-    Nat → Nat → m (List Expr)
+def checkNativeRules (envR : Env md) (rlps : List LevelParam) (T : Key md) (lps : List LevelParam)
+    (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr md)
+    (ctors : List (Key md × Nat × Expr md × List Nat)) (recC : Key md) (rlvls : List Level) :
+    Nat → Nat → m (List (Expr md))
   | 0, _ => pure []
   | k + 1, j => do
     let rhs ← unwrapOr (structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j)
@@ -466,9 +466,9 @@ def checkNativeRules (envR : Env) (rlps : List LevelParam) (T : Key) (lps : List
 type has the inductive-hypothesis binders in each minor
 (`structRecTyR`); the generated rules are scoped at the environment
 holding the recursor's constant. -/
-def checkNativeRec (ops : CheckerOps m) (env : Env) (p : NativeParts)
-    (cvTa : ConstantVal) (ctorsA : List (ConstantVal × Nat)) :
-    m (ConstantVal × List Expr) := do
+def checkNativeRec (ops : (CheckerOps md) m) (env : Env md) (p : NativeParts md)
+    (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) :
+    m (ConstantVal md × List (Expr md)) := do
   -- THE RECURSOR PIN (task #220), split off the type-and-constructor
   -- gate above and thrown here: official generates the recursor and its
   -- replay compares the exported record with the generated one
@@ -494,8 +494,8 @@ def checkNativeRec (ops : CheckerOps m) (env : Env) (p : NativeParts)
   -- the stream's recursor is the generated one
   unless ← ops.isDefEq env 0 cvRi.type recTy do
     throw (.invalid "direct rec: recursor type is not the generated one")
-  let cvRa : ConstantVal := ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
-  let envR : Env := ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩
+  let cvRa : ConstantVal md := ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
+  let envR : Env md := ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩
   let rhss ← checkNativeRules envR p.cvR.levelParams T lps p.elim p.large p.nP p.nIdx
     cvTa.type ctors p.cvR.name (p.cvR.levelParams.map .param) ctors.length 0
   pure (cvRa, rhss)
@@ -507,8 +507,8 @@ off the annotated constructor type, the guard levels from the
 constructors' stage's field sorts) at the TAGGED tower's projection
 offset `1` (`ProjTable.off`: the carrier's first pair component is
 the constructor tag); nothing at any other block. -/
-def checkNativeTable (p : NativeParts) (ctorsA : List (ConstantVal × Nat))
-    (sortss : List (List Level)) (env : Env) : m Env :=
+def checkNativeTable (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
+    (sortss : List (List Level)) (env : Env md) : m (Env md) :=
   match ctorsA, sortss with
   | [cA], [sorts] =>
     if p.nIdx == 0 then
@@ -523,15 +523,15 @@ install, `FEnv` at the cached driver's mirror): the former's
 environment, the annotated former, the record completed with the sort
 the former's run read and the kinds the pass classified, the
 annotated constructors and their fields' sorts. -/
-structure NativePass (E : Type) where
+structure NativePass (md : Mode) (E : Type) where
   /-- the environment holding the former, at the record the pass ran at -/
   env₁ : E
   /-- the annotated former -/
-  cvTa : ConstantVal
+  cvTa : ConstantVal md
   /-- the completed record: the sort read, the kinds classified -/
-  p : NativeParts
+  p : NativeParts md
   /-- the annotated (normalised) constructors -/
-  ctorsA : List (ConstantVal × Nat)
+  ctorsA : List (ConstantVal md × Nat)
   /-- the fields' sorts, one list per constructor -/
   sortss : List (List Level)
 
@@ -542,8 +542,8 @@ positivity walk (`normCtorVal`), so the syntactic classification
 is INVALID (official's "non positive occurrence", "non valid
 occurrence", "invalid return type"), a nested occurrence — the one
 positive occurrence the route does not model — a positive decline. -/
-def classifyFixKinds (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (ctorsA : List (ConstantVal × Nat)) : m (List (List RecFieldKind)) := do
+def classifyFixKinds (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (ctorsA : List (ConstantVal md × Nat)) : m (List (List RecFieldKind)) := do
   let kinds ← unwrapOr (ctorsA.mapM (recCtorKinds T lps nP nIdx))
     (.notImplemented "direct rec: constructor telescope")
   if kinds.any (fun ks => ks.any (· == .negative)) then
@@ -561,8 +561,8 @@ that same environment), the kinds classified on THOSE constructors
 component says whether the classification confirms the verdict the
 pass ran at: `nativeCaps p` is the record the block owes, and it is
 the one the former carries exactly then. -/
-def checkNativePass (ops : CheckerOps m) (env : Env) (p₀ : NativeParts) (isRec : Bool) :
-    m (NativePass Env × Bool) := do
+def checkNativePass (ops : (CheckerOps md) m) (env : Env md) (p₀ : NativeParts md) (isRec : Bool) :
+    m ((NativePass md) (Env md) × Bool) := do
   let (env₁, cvTa, p₁) ← checkSumInd ops env p₀.toInductiveShape
     (fun p₁ => nativeCapsAt p₁ isRec)
   let pC := p₀.complete p₁
@@ -577,7 +577,7 @@ restriction, the index binders' sorts, the kinds re-checked, the
 stream's rules against the generated ones, the constructors consed,
 the recursor with its rules, and — at a structure-like block — the
 projection table (`checkNativeTable`, task #210 Part A). -/
-def checkNativeTail (ops : CheckerOps m) (env : Env) (q : NativePass Env) : m Env := do
+def checkNativeTail (ops : (CheckerOps md) m) (env : Env md) (q : (NativePass md) (Env md)) : m (Env md) := do
   let p := q.p
   -- a large eliminator on a block whose sort may be `Prop`: two or more
   -- constructors is `.invalid` (official's `elim_only_at_universe_zero`);
@@ -613,7 +613,7 @@ def checkNativeTail (ops : CheckerOps m) (env : Env) (q : NativePass Env) : m En
 names, the pass over the former (with the block's capability record)
 and the constructors — again where the record's syntactic reading
 overshot — and the install after it (`checkNativeTail`). -/
-def checkNative (ops : CheckerOps m) (env : Env) (p₀ : NativeParts) : m Env := do
+def checkNative (ops : (CheckerOps md) m) (env : Env md) (p₀ : NativeParts md) : m (Env md) := do
   unless (p₀.ctors.map (·.1.name)).Nodup do
     throw (.invalid "direct rec: duplicate constructor")
   -- THE CAPABILITY RECORD'S VERDICT (task #268; before it, task #210

@@ -29,7 +29,7 @@ variable {V : Type w} [SetTheory V]
 /-! ## Openings at any depth -/
 
 theorem openPisAtFvars_of_stripPis_isSome :
-    ∀ (n : Nat) {e : Expr} (d : Nat), (Expr.stripPis n e).isSome = true →
+    ∀ (n : Nat) {e : Expr md} (d : Nat), (Expr.stripPis n e).isSome = true →
       ∃ fvs o, openPisAtFvars n e d = some (fvs, o)
   | 0, e, _, _ => ⟨[], e, rfl⟩
   | n + 1, e, d, h => by
@@ -47,9 +47,9 @@ theorem openPisAtFvars_of_stripPis_isSome :
 
 /-- Each opened variable's annotation is scoped at its own depth. -/
 theorem openPisAtFvars_typeWScoped :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md},
       openPisAtFvars n e d = some (fvs, o) → Expr.WScoped d e →
-      ∀ (i : Nat) (x : Expr), fvs[i]? = some x → Expr.WScoped (d + i) (Expr.fvarTypeD x)
+      ∀ (i : Nat) (x : Expr md), fvs[i]? = some x → Expr.WScoped (d + i) (Expr.fvarTypeD x)
   | 0, _, _, _, _, hop, _, i, x, hx => by
     simp only [openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, -⟩ := hop
@@ -85,9 +85,9 @@ theorem openPisAtFvars_typeWScoped :
 
 /-- An `instPisAt` residual is scoped at the spine's end. -/
 theorem instPisAt_res_WScoped :
-    ∀ (sp : List Expr) {d : Nat} {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {d : Nat} {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) → Expr.WScoped d ty →
-      (∀ (i : Nat) (a : Expr), sp[i]? = some a → Expr.WScoped (d + i + 1) a) →
+      (∀ (i : Nat) (a : Expr md), sp[i]? = some a → Expr.WScoped (d + i + 1) a) →
       Expr.WScoped (d + sp.length) rs
   | [], d, ty, ds, rs, h, hty, _ => by
     simp only [Expr.instPisAt, Option.some.injEq, Prod.mk.injEq] at h

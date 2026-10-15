@@ -38,16 +38,16 @@ open Ix.Kernel.Reader
 
 /-- The incremental checker state: the indexed environment, the memo
 state, and the fold position. -/
-structure Checker where
-  fe : Ix.Kernel.FEnv := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  cs : Ix.Kernel.Cached.CState := {}
+structure Checker (md : Ix.Kernel.Mode) where
+  fe : Ix.Kernel.FEnv md := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  cs : Ix.Kernel.Cached.CState md := {}
   pos : Nat := 0
 
-instance : Inhabited Checker := ⟨{}⟩
+instance : Inhabited (Checker md) := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
-def Checker.step (ev : Ix.Kernel.Evidences) (c : Checker) (d : Ix.Kernel.Declaration) :
-    Checker × Option Ix.Kernel.CheckError :=
+def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md) :
+    Checker md × Option Ix.Kernel.CheckError :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
   match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
@@ -58,8 +58,8 @@ def Checker.step (ev : Ix.Kernel.Evidences) (c : Checker) (d : Ix.Kernel.Declara
     | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos'⟩, some e)
 
 /-- One record's declarations, in order; the first failure ends it. -/
-def Checker.steps (ev : Ix.Kernel.Evidences) (c : Checker)
-    (ds : Array Ix.Kernel.Declaration) : Checker × Option Ix.Kernel.CheckError := Id.run do
+def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
+    (ds : Array (Ix.Kernel.Declaration md)) : Checker md × Option Ix.Kernel.CheckError := Id.run do
   let mut c := c
   for d in ds do
     let (c', e) := c.step ev d
@@ -158,14 +158,14 @@ def kindOf (source : Ixon.Constant) : String :=
   | _ => "projection"
 
 /-- The recursor records read with an inductive block. -/
-def recursorRecords (index : RecIndex) (block : Address) : Array Address :=
+def recursorRecords (index : RecIndex .anon) (block : Address) : Array Address :=
   ((index.blocks[block]?.map (·.recs)).getD #[]).foldl (fun acc r =>
     let a := r.block
     if a == block || acc.contains a then acc else acc.push a) #[]
 
 /-- The record owners a record depends on: its references' owners, its
 recursor records' references' owners, and the extra edges. -/
-def dependencies (store : RecordStore) (index : RecIndex) (extra : Std.HashMap Address (Array Address))
+def dependencies (store : RecordStore) (index : RecIndex .anon) (extra : Std.HashMap Address (Array Address))
     (address : Address) (source : Ixon.Constant) : Array Address := Std.HashSet.toArray <| Id.run do
   let recs := recursorRecords index address
   let mut out : Std.HashSet Address := {}
@@ -180,9 +180,9 @@ def dependencies (store : RecordStore) (index : RecIndex) (extra : Std.HashMap A
 /-- The certified `Nat` operations' certificate ground as extra edges
 (`Frontend/NatOpGround.lean`): an operation's record depends on the records
 of the operations its recurrences name. -/
-def groundEdges (roles : Std.HashMap (ConstRef Address) CName) : Std.HashMap Address (Array Address) :=
+def groundEdges (roles : Std.HashMap (ConstRef Address) (CName .anon)) : Std.HashMap Address (Array Address) :=
   Id.run do
-  let byName : Std.HashMap CName (ConstRef Address) := roles.fold (fun m r n => m.insert n r) {}
+  let byName : Std.HashMap (CName .anon) (ConstRef Address) := roles.fold (fun m r n => m.insert n r) {}
   let mut out : Std.HashMap Address (Array Address) := {}
   for (r, n) in roles.toList do
     if Ix.Kernel.natOpNames.contains n || Ix.Kernel.natDivModNames.contains n then
@@ -249,7 +249,7 @@ def statusKb (field : String) : IO Nat := do
 /-- What an environment-check run reads: the store, the reader context and the order. -/
 structure Setup where
   store : RecordStore
-  cx : Ctx
+  cx : Ctx .anon
   extra : Std.HashMap Address (Array Address)
   ordered : Array Address
   /-- the role table the setup reads under -/
@@ -257,7 +257,7 @@ structure Setup where
   /-- the table's evidence, resolved against the prelude's reading state
   (a theorem's value reads the same at every state: the projection rewrite
   applies only to projection functions) -/
-  evidence : Ix.Kernel.Evidences := []
+  evidence : Ix.Kernel.Evidences .anon := []
 
 /-- The store backed by the prelude's records, the reader context, and the
 order (the prelude's owners first). A store of record skeletons
@@ -265,7 +265,7 @@ order (the prelude's owners first). A store of record skeletons
 with the same literal kinds (`literalKinds`), from which the literal edges
 are computed instead of from the store. -/
 def setup (store : RecordStore) (blobs : Address → Option ByteArray)
-    (t : Ix.Kernel.RoleTable) (pre : Prelude)
+    (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
     (literals : Option (Array (Address × Ixon.Constant)) := none) : Setup := Id.run do
   let mut store := store
@@ -284,8 +284,8 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
   let look : Address → Option Ixon.Constant := fun a => store[a]? <|> evidence[a]?
   let roles := bindingsOf look t
   let index := buildIndex look roles.names records
-  let cx : Ctx := { store := look, blob := blobs', roles, index, hint,
-                    keys := keyNamesOf look roles.names records }
+  let cx : Ctx .anon :=
+    { store := look, blob := blobs', roles, index, hint, keys := keyNamesOf look roles.names records }
   let literalRecords := match literals with
     | some ls => ls ++ added
     | none => records
@@ -305,7 +305,7 @@ structure LoopOutcome (κ : Type) where
   failed : Std.HashMap Address Address := {}
 
 /-- The outcome of an environment-check run with the per-record step. -/
-abbrev Outcome := LoopOutcome Checker
+abbrev Outcome := LoopOutcome (Checker .anon)
 
 /-- What the check loop needs to know about a record besides its reading:
 its kind, the recursor records read with it, and the record owners it
@@ -323,8 +323,8 @@ def Setup.view (s : Setup) (address : Address) : Option RecordView := do
 
 /-- The per-record step as the check loop's step: install and check the
 record's declarations (`Checker.steps`). -/
-def Checker.stepRecord (ev : Ix.Kernel.Evidences) (c : Checker) (_ : Address) (rd : Read) :
-    Checker × Option Ix.Kernel.CheckError :=
+def Checker.stepRecord (ev : Ix.Kernel.Evidences .anon) (c : Checker .anon) (_ : Address) (rd : Read .anon) :
+    Checker .anon × Option Ix.Kernel.CheckError :=
   c.steps ev rd.decls
 
 /-- Check `addresses` in order, continuing past failures; each row is passed
@@ -337,13 +337,13 @@ record's failure, if any (`Checker.stepRecord` for the per-record check;
 `after` run around each step (the watchdog's hooks); `onRead` sees every
 reading (the persistent read cache records them). -/
 def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option RecordView)
-    (read : σ → Address → Except ReadError Read) (commit : σ → Address → Read → σ) (init : σ)
-    (step : κ → Address → Read → κ × Option Ix.Kernel.CheckError) (start : κ)
+    (read : σ → Address → Except ReadError (Read .anon)) (commit : σ → Address → Read .anon → σ) (init : σ)
+    (step : κ → Address → Read .anon → κ × Option Ix.Kernel.CheckError) (start : κ)
     (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → LoopOutcome κ → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
+    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO (LoopOutcome κ) := do
   let mut out : LoopOutcome κ := { checker := default }
   -- the reading state and the step state live in references of the loop's
@@ -420,7 +420,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
   return { out with checker := ← stepper.get }
 
 /-- A record of a check setup, read by the reader at the state `st`. -/
-def Setup.read (s : Setup) (st : State) (address : Address) : Except ReadError Read :=
+def Setup.read (s : Setup) (st : State .anon) (address : Address) : Except ReadError (Read .anon) :=
   match s.store[address]? with
   | some source => readRecord s.cx st address source
   | none => .error (.malformed "record is missing")
@@ -430,12 +430,12 @@ the reading state, whose initial value `init` builds on the loop's own
 thread. -/
 structure LoopSource (σ : Type) where
   view : Address → Option RecordView
-  read : σ → Address → Except ReadError Read
-  commit : σ → Address → Read → σ
+  read : σ → Address → Except ReadError (Read .anon)
+  commit : σ → Address → Read .anon → σ
   init : IO σ
 
 /-- A check setup as a loop source: every record read from the setup's store. -/
-def Setup.source (s : Setup) : LoopSource State :=
+def Setup.source (s : Setup) : LoopSource (State .anon) :=
   { view := s.view, read := s.read, commit := fun st _ rd => st.commit rd, init := pure {} }
 
 /-- `checkLoopWith` over a check setup with the per-record step: each record
@@ -444,7 +444,7 @@ def checkLoop (s : Setup) (names : Address → Array String)
     (addresses : Array Address) (skip : Std.HashSet String)
     (emit : Row → IO Unit) (before : Address → IO Unit := fun _ => pure ())
     (after : IO Unit := pure ()) (progress : Nat → Outcome → IO Unit := fun _ _ => pure ())
-    (onRead : Address → Except ReadError Read → Nat → IO Unit := fun _ _ _ => pure ()) :
+    (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit := fun _ _ _ => pure ()) :
     IO Outcome :=
   checkLoopWith s.view s.read (fun st _ rd => st.commit rd) {} (Checker.stepRecord s.evidence) {}
     names addresses skip emit before after progress onRead

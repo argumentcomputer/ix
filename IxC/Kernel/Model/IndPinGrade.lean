@@ -62,7 +62,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The padding element
 
@@ -222,20 +222,20 @@ the object the part-6 probe showed the certificate is actually about.
 
 The conclusion is `RecRuleLaw`'s repaired conjunct verbatim, at the
 chain the equality half names. -/
-theorem nestedPinGrade {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {cval : TConstVal}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem nestedPinGrade {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal md}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {rP cnF : Nat} {os : List Expr} (hoslen : os.length = rP)
-    (hshape : ∀ (i : Nat) (x : Expr), os[i]? = some x →
+    {rP cnF : Nat} {os : List (Expr md)} (hoslen : os.length = rP)
+    (hshape : ∀ (i : Nat) (x : Expr md), os[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsOs : ∀ x ∈ os, Expr.WScoped (rP + cnF) x)
     (hbOs : ∀ x ∈ os, x.looseBVarsBounded 0 = true)
-    {p : Expr} (hpw : p.hasFvar = false)
+    {p : Expr md} (hpw : p.hasFvar = false)
     (hpb : p.looseBVarsBounded rP = true)
     {vpa : AnnotTerm}
     (hvpden : denoteMeta acval env φ rP (openRev 0 rP p) = some vpa)

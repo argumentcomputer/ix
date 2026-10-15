@@ -195,7 +195,7 @@ theorem ShadowRel.snoc {nP : Nat} {ks : List RecFieldKind} {as as' : List V}
     exact ha hr
 
 omit [SetTheory V] in
-theorem mem_fvarLeaves_of_getAppArgs : ∀ (e a : Expr), a ∈ e.getAppArgs →
+theorem mem_fvarLeaves_of_getAppArgs : ∀ (e a : Expr md), a ∈ e.getAppArgs →
     ∀ l ∈ a.fvarLeaves, l ∈ e.fvarLeaves
   | .app f a', a, ha, l, hl => by
     simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at ha

@@ -32,27 +32,27 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveSha
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The chains of a data list -/
 
 /-- The field chains of the constructor data (at the parameter
 frame). -/
-@[expose] def fssOf (nP : Nat) (cds : List CtorDatum) : List (List AnnotTerm) :=
+@[expose] def fssOf (nP : Nat) (cds : List (CtorDatum md)) : List (List AnnotTerm) :=
   cds.map fun cd => (cd.2.2.1.drop nP).map (·.2.2)
 
 /-- The index readings of the constructor data. -/
-@[expose] def essOf (cds : List CtorDatum) : List (List AnnotTerm) :=
+@[expose] def essOf (cds : List (CtorDatum md)) : List (List AnnotTerm) :=
   cds.map fun cd => cd.2.2.2
 
-theorem fssOf_length (nP : Nat) (cds : List CtorDatum) : (fssOf nP cds).length = cds.length := by
+theorem fssOf_length (nP : Nat) (cds : List (CtorDatum md)) : (fssOf nP cds).length = cds.length := by
   simp [fssOf]
 
-theorem fssOf_getElem? (nP : Nat) (cds : List CtorDatum) (j : Nat) :
+theorem fssOf_getElem? (nP : Nat) (cds : List (CtorDatum md)) (j : Nat) :
     (fssOf nP cds)[j]? = cds[j]?.map fun cd => (cd.2.2.1.drop nP).map (·.2.2) := by
   simp [fssOf]
 
-theorem essOf_getElem? (cds : List CtorDatum) (j : Nat) :
+theorem essOf_getElem? (cds : List (CtorDatum md)) (j : Nat) :
     (essOf cds)[j]? = cds[j]?.map fun cd => cd.2.2.2 := by
   simp [essOf]
 

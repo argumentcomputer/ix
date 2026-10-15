@@ -184,10 +184,10 @@ licence reads the datum and nothing else, as the licence ruling of
   !mode.certs || pw.isNever
 
 /-- Data common to all constants: name, universe parameters, type. -/
-structure ConstantVal where
-  name : Key
+structure ConstantVal (md : Mode) where
+  name : Key md
   levelParams : List LevelParam
-  type : Expr
+  type : Expr md
   deriving DecidableEq, Repr, Inhabited
 
 /-- How a stored recursor rule may fire (install-computed; parse
@@ -230,10 +230,10 @@ forbids.  Only the tuple-tower route could fire uniformly (its values
 ignore parameters by construction); a route-keyed uniform fire is the
 option once that route owns recursive and multi-constructor families.
 Stake: ≤ 0.8 % of init-full instructions. -/
-inductive RecRuleFire where
+inductive RecRuleFire (md : Mode) where
   | inert
   | plain
-  | nested (lvls : List Level) (pins : List Expr)
+  | nested (lvls : List Level) (pins : List (Expr md))
   deriving DecidableEq, Repr, Inhabited
 
 /-- One iota rule of a recursor: applying the recursor (with its
@@ -246,8 +246,8 @@ bits `k`/`eta` and the parameter-comparison bit `paramsBlind` are
 capabilities, the recursor type and the installing route — input rules
 carry the parse placeholders `0`/`.inert`/`false`; reduction reads only
 the installed values, never re-deriving them per fire. -/
-structure RecRule where
-  ctor : Key
+structure RecRule (md : Mode) where
+  ctor : Key md
   nfields : Nat
   /-- The constructor's parameter count (install-computed; parse
   placeholder `0`). -/
@@ -255,8 +255,8 @@ structure RecRule where
   /-- The firing mode (install-computed, parse placeholder `.inert`):
   `.plain` for canonical rules (`Expr.recRulePlain`), `.nested` for
   certified nested-auxiliary rules, `.inert` otherwise. -/
-  fire : RecRuleFire
-  rhs : Expr
+  fire : RecRuleFire md
+  rhs : Expr md
   /-- **The K bit** (install-computed, parse placeholder `false`;
   official `recursor_val::is_k`): this rule is its recursor's only
   one, its constructor has no fields, and that constructor's
@@ -285,17 +285,17 @@ structure RecRule where
 `.plain` rule marked `paramsBlind` fires without them; a `.nested`
 rule's comparands are its stored pins and are compared at every
 route. -/
-def RecRule.compareParams (rl : RecRule) : Bool :=
+def RecRule.compareParams (rl : RecRule md) : Bool :=
   match rl.fire with
   | .plain => !rl.paramsBlind
   | _ => true
 
-theorem RecRule.compareParams_plain {rl : RecRule} (hf : rl.fire = .plain)
+theorem RecRule.compareParams_plain {rl : RecRule md} (hf : rl.fire = .plain)
     (hb : rl.paramsBlind = false) : rl.compareParams = true := by
   unfold RecRule.compareParams; rw [hf, hb]; rfl
 
-theorem RecRule.compareParams_nested {rl : RecRule} {lvls : List Level}
-    {pins : List Expr} (hf : rl.fire = .nested lvls pins) :
+theorem RecRule.compareParams_nested {rl : RecRule md} {lvls : List Level}
+    {pins : List (Expr md)} (hf : rl.fire = .nested lvls pins) :
     rl.compareParams = true := by
   unfold RecRule.compareParams; rw [hf]
 
@@ -349,12 +349,12 @@ install: structural eta for its (single-constructor) values, unit-like
 collapse (all inhabitants definitionally equal), and rule K for its
 recursor.  The pinned basis blocks carry pinned capabilities; modeled
 blocks earn them from checked `_model` theorems. -/
-structure IndCaps where
+structure IndCaps (md : Mode) where
   eta : Bool := false
   /-- The single constructor the eta law reconstructs through (meaningful
   only when `eta`; `none` at a block with another number of
   constructors). -/
-  etaCtor : Option Key := none
+  etaCtor : Option (Key md) := none
   /-- Its parameter count (meaningful only when `eta`). -/
   etaParams : Nat := 0
   /-- Its field count (meaningful only when `eta`). -/
@@ -399,20 +399,20 @@ a modeled one, and `findProj? = none` already says so at every
 `.proj` site.  So *every* stored table carries bodies, types its
 nodes and fires its rule, and the projection typing and iota laws
 hold uniformly over every entry of every stored table. -/
-structure ProjTable where
-  structName : Key
+structure ProjTable (md : Mode) where
+  structName : Key md
   /-- the parent type former's level parameters -/
   levelParams : List LevelParam
   /-- the parent's parameter count -/
   numParams : Nat
   /-- the single constructor (the structural rule's head) -/
-  ctor : Key
+  ctor : Key md
   /-- its field count -/
   numFields : Nat
   /-- the parent's result sort -/
   structSort : Level
   /-- per field, the projection's result-type body (see above) -/
-  bodies : Array Expr
+  bodies : Array (Expr md)
   /-- per field, **the projection's `Prop` guard level**: the
   projected field's sort joined with the sorts of the earlier fields
   that a later field's type uses — exactly the sorts the official
@@ -435,16 +435,16 @@ structure ProjTable where
 `ProjTable` (`ProjTable.entry`), what `Env.findProj? T i` returns:
 the table's data at field `idx`.  `body` is `bodies[idx]` and
 `fieldSort` is `guards[idx]`. -/
-structure ProjEntry where
-  structName : Key
+structure ProjEntry (md : Mode) where
+  structName : Key md
   idx : Nat
   levelParams : List LevelParam
   numParams : Nat
-  ctor : Key
+  ctor : Key md
   numFields : Nat
   /-- the projection's result-type body, scoped at `numParams + 1`
   (see `ProjTable.bodies`) -/
-  body : Expr
+  body : Expr md
   /-- the projection's `Prop` guard level (see `ProjTable.guards`) -/
   fieldSort : Level
   structSort : Level
@@ -454,27 +454,27 @@ structure ProjEntry where
 
 /-- The per-field view of a table at field `i` (meaningful for `i <
 numFields`). -/
-def ProjTable.entry (tbl : ProjTable) (i : Nat) : ProjEntry :=
+def ProjTable.entry (tbl : ProjTable md) (i : Nat) : ProjEntry md :=
   ⟨tbl.structName, i, tbl.levelParams, tbl.numParams, tbl.ctor, tbl.numFields,
     tbl.bodies.getD i default, tbl.guards.getD i .zero, tbl.structSort, tbl.off⟩
 
 /-- Information stored about an accepted constant. -/
-inductive ConstantInfo where
-  | axiomInfo (val : ConstantVal)
-  | defnInfo (val : ConstantVal) (value : Expr) (hint : ReducibilityHint)
-  | thmInfo (val : ConstantVal) (value : Expr)
+inductive ConstantInfo (md : Mode) where
+  | axiomInfo (val : ConstantVal md)
+  | defnInfo (val : ConstantVal md) (value : Expr md) (hint : ReducibilityHint)
+  | thmInfo (val : ConstantVal md) (value : Expr md)
   /-- An inductive type former (whnf-stuck) with its capabilities. -/
-  | indInfo (val : ConstantVal) (caps : IndCaps)
+  | indInfo (val : ConstantVal md) (caps : IndCaps md)
   /-- A basis constructor (whnf-stuck; the iota target). -/
-  | ctorInfo (val : ConstantVal) (numParams numFields : Nat)
+  | ctorInfo (val : ConstantVal md) (numParams numFields : Nat)
   /-- A basis recursor with its iota rules.  Only the two sums the
   firing path reads are stored: `majorIdx` (= numParams + numMotives +
   numMinors + numIndices, the major premise's argument position) and
   `rulePrefix` (= numParams + numMotives + numMinors, the length of the
   argument prefix a rule's rhs is applied to).  The individual counts
   are consumed at install time only and are not stored. -/
-  | recInfo (val : ConstantVal) (majorIdx rulePrefix : Nat)
-      (rules : List RecRule)
+  | recInfo (val : ConstantVal md) (majorIdx rulePrefix : Nat)
+      (rules : List (RecRule md))
   /-- A structure's projection table (see `ProjTable`), stored under
   the reserved name `projTableName tbl.structName` so lookups,
   freshness and environment extension are uniform with constants.  Its
@@ -483,7 +483,7 @@ inductive ConstantInfo where
   the environment well-formedness and model machinery cover the
   constant uniformly; the bodies' own well-formedness is `EnvWF`'s
   table clause. -/
-  | projInfo (tbl : ProjTable)
+  | projInfo (tbl : ProjTable md)
   deriving DecidableEq, Repr, Inhabited
 
 /-- **Which of the four quotient constants a `#QUOT` record declares**
@@ -505,10 +505,10 @@ def QuotKind.slot : QuotKind → Nat
   | .type => 0 | .ctor => 1 | .lift => 2 | .ind => 3 | .sound => 4
 
 /-- A declaration presented to the checker. -/
-inductive Declaration where
-  | axiomDecl (val : ConstantVal)
-  | defnDecl (val : ConstantVal) (value : Expr) (hint : ReducibilityHint)
-  | thmDecl (val : ConstantVal) (value : Expr)
+inductive Declaration (md : Mode) where
+  | axiomDecl (val : ConstantVal md)
+  | defnDecl (val : ConstantVal md) (value : Expr md) (hint : ReducibilityHint)
+  | thmDecl (val : ConstantVal md) (value : Expr md)
   /-- An `opaque` declaration: exactly a theorem check without the
   is-a-proposition requirement — the value is checked against the
   type as a realizability witness and then discarded (stored as an
@@ -517,7 +517,7 @@ inductive Declaration where
   same here — stored by its statement, never unfolded — where
   official still unfolds theorems until
   https://github.com/leanprover/lean4/pull/14896.) -/
-  | opaqueDecl (val : ConstantVal) (value : Expr)
+  | opaqueDecl (val : ConstantVal md) (value : Expr md)
   /-- **The fold's own record for "install the pinned basis block"**
   (task #293).  No frontend function produces one: the decoder emits
   the file's records, `preparePrelude` reorders them, and it is
@@ -542,7 +542,7 @@ inductive Declaration where
   the block's parameter count by both routes — before task #228 the
   count was read OFF the constructors, which agrees on every valid
   stream and cannot see a declaration that lies. -/
-  | indDecl (block : List ConstantInfo) (numParams : Nat)
+  | indDecl (block : List (ConstantInfo md)) (numParams : Nat)
   /-- **A quotient declaration record, as the file declares it** (task
   #293).  `lean4export` writes the quotient package as four records —
   one per constant, each tagged with its `kind` — and the decoder emits
@@ -557,14 +557,14 @@ inductive Declaration where
   to `basisDecl .quotK`, so `checkDecl`'s arm here is the mismatch —
   a positively detected unsupported feature, the decline the parser
   used to issue. -/
-  | quotDecl (kind : QuotKind) (val : ConstantVal)
+  | quotDecl (kind : QuotKind) (val : ConstantVal md)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Declaration
 
 /-- The name of a non-basis declaration (none at a basis block or an
 inductive block, which install several). -/
-def name : Declaration → Option Key
+def name : Declaration md → Option (Key md)
   | .axiomDecl v | .defnDecl v _ _ | .thmDecl v _ | .opaqueDecl v _ => some v.name
   | .quotDecl _ v => some v.name
   | .basisDecl _ | .indDecl _ _ => none
@@ -582,7 +582,7 @@ telescope loop (`check_inductive_types`, `inductive.cpp`) reduces the
 residual to weak head normal form before every binder; at a `.sort`
 residual that reduction is the identity and no further binder can
 appear, so `n` is exactly the number of binders official counts. -/
-def Expr.piSortTeleLen? : Expr → Option Nat
+def Expr.piSortTeleLen? : Expr md → Option Nat
   | .forallE _ body _ => (Expr.piSortTeleLen? body).map (· + 1)
   | .sort _ => some 0
   | _ => none
@@ -613,7 +613,7 @@ compares an inductive record against the generated `InductiveVal`
 (only constructors and recursors are postponed and compared), so a
 declared index count is not input official reads, and checking it
 would reject blocks official accepts. -/
-def indParamsOk (nP : Nat) (block : List ConstantInfo) : Bool :=
+def indParamsOk (nP : Nat) (block : List (ConstantInfo md)) : Bool :=
   block.all fun ci => match ci with
     | .indInfo cvT _ =>
       match cvT.type.piSortTeleLen? with
@@ -628,31 +628,31 @@ def indParamsOk (nP : Nat) (block : List ConstantInfo) : Bool :=
 identifiers; installs are duplicate-checked regardless).  Since task
 #175 S1 no table entry lives under this name: the direct install's
 table is one constant per structure, `projTableName`. -/
-def projFnName (T : Key) (i : Nat) : Key := auxKey T (.projFn i)
+def projFnName (T : Key md) (i : Nat) : Key md := auxKey T (.projFn i)
 
 /-- The reserved name of structure `T`'s projection table (task #175
 S1): one constant per structure, a `Nat` component keeping it out of
 the way of exported identifiers (the front door rejects the shape,
 `Key.isProjFnShape`), distinct from every `projFnName` name. -/
-def projTableName (T : Key) : Key := auxKey T .projTable
+def projTableName (T : Key md) : Key md := auxKey T .projTable
 
 namespace ConstantInfo
 
-def toConstantVal : ConstantInfo → ConstantVal
+def toConstantVal : ConstantInfo md → ConstantVal md
   | .axiomInfo v | .defnInfo v _ _ | .thmInfo v _ => v
   | .indInfo v _ | .ctorInfo v _ _ | .recInfo v _ _ _ => v
   | .projInfo tbl => ⟨projTableName tbl.structName, tbl.levelParams, .sort (.succ .zero)⟩
 
-def name (c : ConstantInfo) : Key := c.toConstantVal.name
+def name (c : ConstantInfo md) : Key md := c.toConstantVal.name
 
 /-- A projection table (task #175 W4c): a table, not a term — no
 `.const` node names it (`inferTypeCore` rejects one), so the model
 owes it no leaf. -/
-def isTowerEntry : ConstantInfo → Bool
+def isTowerEntry : ConstantInfo md → Bool
   | .projInfo _ => true
   | _ => false
 
-def type (c : ConstantInfo) : Expr := c.toConstantVal.type
+def type (c : ConstantInfo md) : Expr md := c.toConstantVal.type
 
 end ConstantInfo
 
@@ -665,7 +665,7 @@ A quotient record declares the one constant it carries — the other
 three constants of the pinned block are other records' — and a
 `basisDecl`, which no frontend function produces (it is the fold's own
 record for "install the pinned block"), declares the pin's. -/
-def names : Declaration → List Key
+def names : Declaration md → List (Key md)
   | .axiomDecl cv | .defnDecl cv .. | .thmDecl cv .. | .opaqueDecl cv .. => [cv.name]
   | .quotDecl _ cv => [cv.name]
   | .indDecl block _ => block.map (·.name)
@@ -676,22 +676,22 @@ end Declaration
 /-- The global environment: the list of constants accepted so far, newest
 first.  Names are unique (the checker rejects duplicates), so the order is
 irrelevant for lookup. -/
-structure Env where
-  consts : List ConstantInfo
+structure Env (md : Mode) where
+  consts : List (ConstantInfo md)
   deriving Repr, Inhabited
 
 namespace Env
 
 /-- The empty environment; the starting point of every checker run. -/
-def empty : Env := ⟨[]⟩
+def empty : Env md := ⟨[]⟩
 
-def find? (env : Env) (n : Key) : Option ConstantInfo :=
+def find? (env : Env md) (n : Key md) : Option (ConstantInfo md) :=
   env.consts.find? (·.name == n)
 
 /-- Look up the projection-table entry for field `i` of `T`: the
 structure's table (`projTableName T`), viewed at field `i` (task #175
 S1; `none` beyond the table's field count). -/
-def findProj? (env : Env) (T : Key) (i : Nat) : Option ProjEntry :=
+def findProj? (env : Env md) (T : Key md) (i : Nat) : Option (ProjEntry md) :=
   match env.find? (projTableName T) with
   | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none
   | _ => none
@@ -715,29 +715,29 @@ and a `Decidable` instance is a subsingleton, so substituting this one
 leaves every proof about the guard untouched. -/
 
 /-- Is this member a recursor record? -/
-def ConstantInfo.isRecInfo : ConstantInfo → Bool
+def ConstantInfo.isRecInfo : ConstantInfo md → Bool
   | .recInfo _ _ _ _ => true
   | _ => false
 
 /-- Do the recursors form a suffix of the block?  The tag pass. -/
-def recsFormSuffix : List ConstantInfo → Bool
+def recsFormSuffix : List (ConstantInfo md) → Bool
   | [] => true
   | ci :: rest =>
     if ci.isRecInfo then rest.all ConstantInfo.isRecInfo
     else recsFormSuffix rest
 
 /-- The block filters, in terms of the tag. -/
-theorem recsFilterNeg : (fun ci : ConstantInfo => match ci with
+theorem recsFilterNeg : (fun ci : (ConstantInfo md) => match ci with
     | .recInfo _ _ _ _ => false | _ => true) = fun ci => !ci.isRecInfo := by
   funext ci; cases ci <;> rfl
 
 @[inherit_doc recsFilterNeg]
-theorem recsFilterPos : (fun ci : ConstantInfo => match ci with
+theorem recsFilterPos : (fun ci : (ConstantInfo md) => match ci with
     | .recInfo _ _ _ _ => true | _ => false) = ConstantInfo.isRecInfo := by
   funext ci; cases ci <;> rfl
 
 /-- **The tag pass decides the partition equation**, on the tag. -/
-theorem recsFormSuffix_iff' : ∀ block : List ConstantInfo,
+theorem recsFormSuffix_iff' : ∀ block : List (ConstantInfo md),
     recsFormSuffix block = true ↔
       block = block.filter (fun ci => !ci.isRecInfo)
         ++ block.filter ConstantInfo.isRecInfo := by
@@ -776,7 +776,7 @@ theorem recsFormSuffix_iff' : ∀ block : List ConstantInfo,
       simp [ih]
 
 @[inherit_doc recsFormSuffix_iff']
-theorem recsFormSuffix_iff (block : List ConstantInfo) :
+theorem recsFormSuffix_iff (block : List (ConstantInfo md)) :
     recsFormSuffix block = true ↔
       block = block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)
@@ -786,7 +786,7 @@ theorem recsFormSuffix_iff (block : List ConstantInfo) :
   exact recsFormSuffix_iff' block
 
 /-- The substituted decision (`recsFormSuffix_iff`). -/
-instance blockRecSuffixDec (block : List ConstantInfo) :
+instance blockRecSuffixDec (block : List (ConstantInfo md)) :
     Decidable (block = block.filter (fun ci => match ci with
         | .recInfo _ _ _ _ => false | _ => true)
       ++ block.filter (fun ci => match ci with

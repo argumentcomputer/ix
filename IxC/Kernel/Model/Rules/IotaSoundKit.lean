@@ -50,7 +50,7 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The `DenoteMetaSpine` API
 
@@ -59,11 +59,11 @@ variable {V : Type w} [SetTheory V] {env : Env} {φ : LevelParam → Nat}
 
 namespace DenoteMetaSpine
 
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm} {d : Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat}
 
 /-- Every list of readable expressions has a reading spine. -/
 theorem exists_of_all :
-    ∀ (as : List Expr), (∀ x ∈ as, ∃ v, denoteMeta acval env φ d x = some v) →
+    ∀ (as : List (Expr md)), (∀ x ∈ as, ∃ v, denoteMeta acval env φ d x = some v) →
       ∃ vs, DenoteMetaSpine acval env φ d as vs := by
   intro as
   induction as with
@@ -100,7 +100,7 @@ theorem interp_mkAppN_congrK {ρ : Nat → V} :
       exact ih bs (by simp only [interp_app, hf, hall.1]) hall.2
 
 /-- The frame of an application built over framed parts. -/
-theorem frame_mkAppN {d : Nat} {f : Expr} {as : List Expr}
+theorem frame_mkAppN {d : Nat} {f : Expr md} {as : List (Expr md)}
     (hf : Frame d f) (has : ∀ x ∈ as, Frame d x) :
     Frame d (Expr.mkAppN f as) := by
   refine ⟨Ix.Kernel.Expr.WScoped.mkAppN hf.1 (fun y hy => (has y hy).1),
@@ -112,7 +112,7 @@ theorem frame_mkAppN {d : Nat} {f : Expr} {as : List Expr}
 
 /-- The leaves of an application are its parts' (`fvarLeaves_mkAppN`,
 packaged at `Motive.lean`'s `LeavesSub`). -/
-theorem leavesSub_mkAppN {f e : Expr} {as : List Expr}
+theorem leavesSub_mkAppN {f e : Expr md} {as : List (Expr md)}
     (hf : LeavesSub f e) (has : ∀ x ∈ as, LeavesSub x e) :
     LeavesSub (Expr.mkAppN f as) e := by
   intro l hl
@@ -121,7 +121,7 @@ theorem leavesSub_mkAppN {f e : Expr} {as : List Expr}
   · exact has y hy l hly
 
 /-- A closed expression has no leaves at all. -/
-theorem leavesSub_of_not_hasFvar {f e : Expr} (h : f.hasFvar = false) :
+theorem leavesSub_of_not_hasFvar {f e : Expr md} (h : f.hasFvar = false) :
     LeavesSub f e := by
   intro l hl
   rw [Ix.Kernel.Expr.fvarLeaves_eq_nil_of_not_hasFvar h] at hl
@@ -133,7 +133,7 @@ theorem leavesSub_of_not_hasFvar {f e : Expr} (h : f.hasFvar = false) :
 graded, inhabited, and closed (`constType_pkg`,
 `Model/Steps/IotaRows.lean:200`). -/
 theorem constTy_pkg {m : EnvModel V env} (hct : ConstType m φ)
-    {n : Key} {ci : Ix.Kernel.ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key md} {ci : Ix.Kernel.ConstantInfo md} (hf : env.find? n = some ci)
     (hnt : ci.isTowerEntry = false) {us : List Level}
     (hlen : us.length = ci.toConstantVal.levelParams.length) :
     ∃ ta : AnnotTerm,
@@ -164,7 +164,7 @@ theorem constTy_pkg {m : EnvModel V env} (hct : ConstType m φ)
 
 /-- A closed stored type is framed and in context at every depth. -/
 theorem frame_of_not_hasFvar {m : EnvModel V env} {d : Nat}
-    {Δa : List AnnotTerm} {e : Expr} (hnf : e.hasFvar = false)
+    {Δa : List AnnotTerm} {e : Expr md} (hnf : e.hasFvar = false)
     (hbd : e.looseBVarsBounded 0 = true) (hlen : Δa.length = d) :
     Frame d e ∧ CtxOk m φ d Δa e :=
   ⟨⟨Ix.Kernel.Expr.WScoped.of_not_hasFvar hnf, hbd,
@@ -176,8 +176,8 @@ theorem frame_of_not_hasFvar {m : EnvModel V env} {d : Nat}
 /-- A `.const` that reads was applied at the stored arity, and its
 reading is the leaf (`denoteMeta_const_arity`,
 `Model/Steps/IotaRows.lean:233`). -/
-theorem denoteMeta_const_arityK {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {d : Nat} {n : Key} {us : List Level} {ci : Ix.Kernel.ConstantInfo}
+theorem denoteMeta_const_arityK {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {d : Nat} {n : Key md} {us : List Level} {ci : Ix.Kernel.ConstantInfo md}
     {ea : AnnotTerm} (hf : env.find? n = some ci)
     (h : denoteMeta acval env φ d (.const n us) = some ea) :
     us.length = ci.toConstantVal.levelParams.length ∧
@@ -282,9 +282,9 @@ theorem wellDenotedV_mkAppN_snoc_congrK {ρ : Nat → V} {f a a' : AnnotTerm}
 /-- The fired rule's right-hand side reads at every depth
 (`recRhs_depth`, `Model/Steps/IotaRows.lean:296`). -/
 theorem recRhs_depthK {m : EnvModel V env}
-    {n : Key} {cv : ConstantVal} {mI rP : Nat}
-    {rules : List RecRule} (hf : env.find? n = some (.recInfo cv mI rP rules))
-    {rl : RecRule} (hmem : rl ∈ rules) {us : List Level} {Ra : AnnotTerm}
+    {n : Key md} {cv : ConstantVal md} {mI rP : Nat}
+    {rules : List (RecRule md)} (hf : env.find? n = some (.recInfo cv mI rP rules))
+    {rl : RecRule md} (hmem : rl ∈ rules) {us : List Level} {Ra : AnnotTerm}
     (hRa0 : denoteMeta m.acval env φ 0
       ((RecRule.rhs rl).instantiateLevelParams cv.levelParams us)
       = some Ra) :
@@ -313,7 +313,7 @@ theorem recRhs_depthK {m : EnvModel V env}
 `Model/Steps/IotaRows.lean:155`, at `Motive.lean`'s `Frame`). -/
 theorem piResidual_frameK {m : EnvModel V env} {d : Nat}
     {Δa : List AnnotTerm} :
-    ∀ {T : Expr} {args : List Expr} {rest : Expr},
+    ∀ {T : Expr md} {args : List (Expr md)} {rest : Expr md},
       Ix.Kernel.piResidual T args = some rest →
       Frame d T → CtxOk m φ d Δa T →
       (∀ x ∈ args, Frame d x ∧ CtxOk m φ d Δa x) →
@@ -354,13 +354,13 @@ theorem piResidual_frameK {m : EnvModel V env} {d : Nat}
 
 /-- **A `TeleFitPA` fit's residual is the reading of the checker's own
 `piResidual`** (`teleFitPA_residual`, `Model/Steps/IotaKit.lean:174`). -/
-theorem teleFitPA_residualK {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem teleFitPA_residualK {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {ρ : Nat → V} {d : Nat} :
-    ∀ (args : List Expr) {ty rest : Expr} {Ta restA : AnnotTerm}
+    ∀ (args : List (Expr md)) {ty rest : Expr md} {Ta restA : AnnotTerm}
       {vs : List AnnotTerm},
       Ix.Kernel.piResidual ty args = some rest →
       Expr.WScoped d ty →
@@ -421,13 +421,13 @@ depth. -/
 constant-frame subject's reverse opening reads to the same annotation at every base.  The lift the
 induction has to absorb is killed by `AnnotTerm.liftN_eq_self` at the
 erasure's bvar bound — `denoteMeta_closed`'s route, one depth up. -/
-theorem denoteMeta_openRev_base {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {cval : TConstVal}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem denoteMeta_openRev_base {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal md}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} (hnf : e.hasFvar = false) {n : Nat}
+    {e : Expr md} (hnf : e.hasFvar = false) {n : Nat}
     (hb : e.looseBVarsBounded n = true) :
     ∀ d : Nat, denoteMeta acval env φ (d + n) (openRev d n e)
       = denoteMeta acval env φ n (openRev 0 n e) := by
@@ -459,12 +459,12 @@ theorem denoteMeta_openRev_base {acval : Key → (LevelParam → Nat) → AnnotT
 
 /-- **Real-argument instantiation, read through the reverse opening**
 (`denote_openRev`'s mirror, `Model/Steps/IotaKit.lean:103`). -/
-theorem denoteMeta_openRev {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem denoteMeta_openRev {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ) :
-    ∀ (as : List Expr) {e : Expr} {d : Nat},
+    ∀ (as : List (Expr md)) {e : Expr md} {d : Nat},
       (∀ a ∈ as, Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow d e → e.looseBVarsBounded as.length = true →
       ∀ {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
@@ -526,13 +526,13 @@ theorem denoteMeta_openRev {acval : Key → (LevelParam → Nat) → AnnotTerm}
 /-- **The base-independence of the opened validated reading**, at the
 lane's own spelling — `denoteMeta_openRev_base` above, whose statement
 this is. -/
-theorem denoteMeta_openRev_baseK {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {cval : TConstVal}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+theorem denoteMeta_openRev_baseK {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {cval : TConstVal md}
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
     (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
     (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {e : Expr} (hnf : e.hasFvar = false) {n : Nat}
+    {e : Expr md} (hnf : e.hasFvar = false) {n : Nat}
     (hb : e.looseBVarsBounded n = true) :
     ∀ d : Nat, denoteMeta acval env φ (d + n) (openRev d n e)
       = denoteMeta acval env φ n (openRev 0 n e) :=
@@ -541,11 +541,11 @@ theorem denoteMeta_openRev_baseK {acval : Key → (LevelParam → Nat) → Annot
 /-- **Real-argument instantiation, read through the reverse opening**,
 at the lane's own spelling — `denoteMeta_openRev` above at `m.acval`. -/
 theorem denoteMeta_openRevK {m : EnvModel V env}
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (m.acval n ψ).liftN 1 k = m.acval n ψ)
-    (hainst : ∀ (n : Key) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (m.acval n ψ).inst y k = m.acval n ψ) :
-    ∀ (as : List Expr) {e : Expr} {d : Nat},
+    ∀ (as : List (Expr md)) {e : Expr md} {d : Nat},
       (∀ a ∈ as, Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true) →
       Expr.fvarsBelow d e → e.looseBVarsBounded as.length = true →
       ∀ {vs : List AnnotTerm}, DenoteMetaSpine m.acval env φ d as vs →

@@ -53,7 +53,7 @@ variable {V : Type w} [SetTheory V]
 
 /-- A subject's syntactic frame — the three scoping premises every
 claim carries. -/
-@[expose] def Frame (d : Nat) (e : Expr) : Prop :=
+@[expose] def Frame (d : Nat) (e : Expr md) : Prop :=
   Expr.WScoped d e ∧ e.looseBVarsBounded 0 = true ∧ Expr.LeavesBounded e
 
 /-- A reading is graded under every satisfying valuation. -/
@@ -62,14 +62,14 @@ claim carries. -/
   ∀ ρ : Nat → V, Sat V Δa ρ → WellDenotedV V ρ ea
 
 /-- No new free-variable leaf. -/
-@[expose] def LeavesSub (e' e : Expr) : Prop :=
+@[expose] def LeavesSub (e' e : Expr md) : Prop :=
   ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves
 
 /-- **`Red`'s motive**: a reduction of a framed, graded, readable
 subject preserves the frame, reads, is graded, and has the same
 interpretation. -/
-@[expose] def RedSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (e e' : Expr) : Prop :=
+@[expose] def RedSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (e e' : Expr md) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
     CtxOk m φ d Δa e →
@@ -81,8 +81,8 @@ interpretation. -/
         ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea = interp V ρ ea'
 
 /-- **`DefEq`'s motive**: `DefEqClaim`'s conclusion under its premises. -/
-@[expose] def DefEqSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (a b : Expr) : Prop :=
+@[expose] def DefEqSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (a b : Expr md) : Prop :=
   Frame d a → Frame d b →
   ∀ {Δa : List AnnotTerm} {aa ba : AnnotTerm},
     CtxOk m φ d Δa a → CtxOk m φ d Δa b →
@@ -93,8 +93,8 @@ interpretation. -/
 
 /-- **`Infer`'s motive at the full grade** — establishment: the
 subject's grading is a conclusion. -/
-@[expose] def InferSemFull {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (e t : Expr) : Prop :=
+@[expose] def InferSemFull {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (e t : Expr md) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
     CtxOk m φ d Δa e →
@@ -106,8 +106,8 @@ subject's grading is a conclusion. -/
 
 /-- **`Infer`'s motive at the io grade** — consumption: the subject's
 grading is a premise (`InferClaimIO`'s premise form). -/
-@[expose] def InferSemIO {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (e t : Expr) : Prop :=
+@[expose] def InferSemIO {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (e t : Expr md) : Prop :=
   Frame d e →
   ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
     CtxOk m φ d Δa e →
@@ -119,8 +119,8 @@ grading is a premise (`InferClaimIO`'s premise form). -/
         ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea ∈ˢ interp V ρ ta
 
 /-- The grade-dispatched inference motive. -/
-@[expose] def InferSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat) :
-    Grade → Nat → Expr → Expr → Prop
+@[expose] def InferSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat) :
+    Grade → Nat → Expr md → Expr md → Prop
   | .full, d, e, t => InferSemFull m φ d e t
   | .io, d, e, t => InferSemIO m φ d e t
 
@@ -130,8 +130,8 @@ reading, substitution-peeling (`certs_telePA` / `certs_teleLic`,
 walk the skipped slots are recovered from the spine's own grading and
 the head's membership (`iota_slot_transfer`), which are therefore
 premises exactly there. -/
-@[expose] def CertsSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (lic : Bool) (ty : Expr) (args : List Expr) : Prop :=
+@[expose] def CertsSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (lic : Bool) (ty : Expr md) (args : List (Expr md)) : Prop :=
   Frame d ty →
   ∀ {Δa : List AnnotTerm} {Ta fa : AnnotTerm} {vs : List AnnotTerm},
     CtxOk m φ d Δa ty →
@@ -153,8 +153,8 @@ with `defEqListFueled_length`).  The length is a conclusion of its own
 because the pointwise equality is only available once both lists have
 been handed over as read spines — and a consumer (`Red.iota_sound`'s
 `.nested` pin block) needs the length to BUILD the second spine. -/
-@[expose] def DefEqListSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (as bs : List Expr) : Prop :=
+@[expose] def DefEqListSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (as bs : List (Expr md)) : Prop :=
   as.length = bs.length ∧
   ∀ {Δa : List AnnotTerm} {asa bsa : List AnnotTerm},
     (∀ x ∈ as, Frame d x ∧ CtxOk m φ d Δa x) →
@@ -169,10 +169,10 @@ been handed over as read spines — and a consumer (`Red.iota_sound`'s
 /-- **`EtaProjCerts`' motive**: each certified field slot is a stored
 projection function whose telescope the type's arguments and the
 stuck side fit — `CertsSem` at every listed index. -/
-@[expose] def EtaProjCertsSem {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
-    (d : Nat) (T : Key) (us' : List Level) (targs : List Expr) (b : Expr)
+@[expose] def EtaProjCertsSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (T : Key md) (us' : List Level) (targs : List (Expr md)) (b : Expr md)
     (lpsT : List LevelParam) (idxs : List Nat) : Prop :=
-  ∀ i ∈ idxs, ∃ (cvp : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+  ∀ i ∈ idxs, ∃ (cvp : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
     env.find? (projFnName T i) = some (.recInfo cvp mI rP rules) ∧
     cvp.levelParams = lpsT ∧
     (cvp.type.stripPis (targs.length + 1)).isSome = true ∧

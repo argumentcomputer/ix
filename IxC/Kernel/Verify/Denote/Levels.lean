@@ -42,12 +42,12 @@ which no assignment can see. -/
 
 /-- A literal-support slot with an empty parameter list is valued
 independently of the assignment. -/
-private theorem cval_of_isEmpty {env : Env} {cval : TConstVal}
+private theorem cval_of_isEmpty {env : Env md} {cval : TConstVal md}
     (hp : ∀ n ci, env.find? n = some ci →
       ∀ φ₁ φ₂ : LevelParam → Nat,
         (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
         cval n φ₁ = cval n φ₂)
-    {n : Key} {ci : ConstantInfo} (hf : env.find? n = some ci)
+    {n : Key md} {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (he : ci.toConstantVal.levelParams.isEmpty = true)
     (φ₁ φ₂ : LevelParam → Nat) : cval n φ₁ = cval n φ₂ := by
   refine hp n ci hf φ₁ φ₂ ?_
@@ -58,14 +58,14 @@ private theorem cval_of_isEmpty {env : Env} {cval : TConstVal}
 
 /-- The abbreviation the two literal helpers and the main lemma share:
 a valuation reads a constant only at that constant's own parameters. -/
-abbrev ValParams (env : Env) (cval : TConstVal) : Prop :=
+abbrev ValParams (env : Env md) (cval : TConstVal md) : Prop :=
   ∀ n ci, env.find? n = some ci →
     ∀ φ₁ φ₂ : LevelParam → Nat,
       (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
       cval n φ₁ = cval n φ₂
 
 /-- A `Nat` literal's term does not depend on the level assignment. -/
-private theorem natLitT_params {env : Env} {cval : TConstVal}
+private theorem natLitT_params {env : Env md} {cval : TConstVal md}
     (hp : ValParams env cval) (hg : natLitSupported env = true)
     (φ₁ φ₂ : LevelParam → Nat) (n : Nat) :
     natLitT (cval natZeroName (Level.substFn φ₁ [] []))
@@ -103,8 +103,8 @@ private theorem natLitT_params {env : Env} {cval : TConstVal}
 /-- A one-parameter slot substituted at `Level.zero` is valued
 independently of the assignment: the substitution overrides the only
 parameter the valuation may read. -/
-private theorem cval_of_oneParam {env : Env} {cval : TConstVal}
-    (hp : ValParams env cval) {n : Key} {ci : ConstantInfo}
+private theorem cval_of_oneParam {env : Env md} {cval : TConstVal md}
+    (hp : ValParams env cval) {n : Key md} {ci : ConstantInfo md}
     (hf : env.find? n = some ci)
     (hlen : ci.toConstantVal.levelParams.length = 1) (φ₁ φ₂ : LevelParam → Nat) :
     cval n (Level.substFn φ₁ ci.toConstantVal.levelParams [.zero])
@@ -120,7 +120,7 @@ private theorem cval_of_oneParam {env : Env} {cval : TConstVal}
 
 /-- A `String` literal's term does not depend on the level assignment
 either. -/
-private theorem strLitT_params {env : Env} {cval : TConstVal}
+private theorem strLitT_params {env : Env md} {cval : TConstVal md}
     (hp : ValParams env cval) (hg : strLitSupported env = true)
     (φ₁ φ₂ : LevelParam → Nat) (s : String) :
     strLitT cval env φ₁ s = strLitT cval env φ₂ s := by
@@ -129,7 +129,7 @@ private theorem strLitT_params {env : Env} {cval : TConstVal}
   simp only [natLitSupported, Bool.and_eq_true] at h0
   obtain ⟨⟨-, hz⟩, hs⟩ := h0
   -- the five scalar slots
-  have scalar : ∀ (nm : Key) (f : Option ConstantInfo → Bool),
+  have scalar : ∀ (nm : Key md) (f : Option (ConstantInfo md) → Bool),
       f (env.find? nm) = true → f none = false →
       (∀ ci, f (some ci) = true → ci.toConstantVal.levelParams.isEmpty = true) →
       cval nm (Level.substFn φ₁ [] []) = cval nm (Level.substFn φ₂ [] []) := by
@@ -164,7 +164,7 @@ private theorem strLitT_params {env : Env} {cval : TConstVal}
             simpa [ConstantInfo.toConstantVal] using h.1
           | _ => simp [natSuccOk] at h)
   -- the two one-parameter slots
-  have oneParam : ∀ (nm : Key) (f : Option ConstantInfo → Bool),
+  have oneParam : ∀ (nm : Key md) (f : Option (ConstantInfo md) → Bool),
       f (env.find? nm) = true → f none = false →
       (∀ ci, f (some ci) = true →
         ci.toConstantVal.levelParams.length = 1) →
@@ -197,10 +197,10 @@ private theorem strLitT_params {env : Env} {cval : TConstVal}
 level parameters.**  Transpose of `interp_params_ext`.  This is what
 lets an install store `⟦value⟧` as the new constant's valuation and
 still satisfy `val_params`. -/
-theorem denote_params_ext {env : Env} {cval : TConstVal}
+theorem denote_params_ext {env : Env md} {cval : TConstVal md}
     (hp : ValParams env cval) {ps : List LevelParam} {φ₁ φ₂ : LevelParam → Nat}
     (hφ : ∀ p ∈ ps, φ₁ p = φ₂ p) :
-    ∀ (d : Nat) (e : Expr), e.allLevelParamsDefined ps = true →
+    ∀ (d : Nat) (e : Expr md), e.allLevelParamsDefined ps = true →
       denote cval env φ₁ d e = denote cval env φ₂ d e := by
   intro d e
   induction d, e using denote.induct (cval := cval) (env := env) (φ := φ₁) with
@@ -306,10 +306,10 @@ substituted *assignment*, and this is the bridge between the two.
 Its literal clauses are `natLitT_params` and `strLitT_params` applied
 at the two assignments — the guards carry them (§8.4), so no inversion
 lemma is needed here either. -/
-theorem denote_instLevels {env : Env} {cval : TConstVal}
+theorem denote_instLevels {env : Env md} {cval : TConstVal md}
     (hp : ValParams env cval) {ks : List LevelParam} {us : List Level}
     (φ : LevelParam → Nat) :
-    ∀ (d : Nat) (e : Expr),
+    ∀ (d : Nat) (e : Expr md),
       denote cval env φ d (e.instantiateLevelParams ks us) =
         denote cval env (Level.substFn φ ks us) d e := by
   intro d e

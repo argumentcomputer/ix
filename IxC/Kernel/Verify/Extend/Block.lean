@@ -31,8 +31,8 @@ parameters), its checked type is the companion's under the block
 renaming (up to display names), and it is *valued* by the companion.
 Transpose of `BlockInstalled`; the group-local public↔`_model`
 identification, discarded at the block's end. -/
-@[expose] def BlockInstalledTT (blockNames : List Key) (env' : Env)
-    (cval : TConstVal) : Prop :=
+@[expose] def BlockInstalledTT (blockNames : List (Key md)) (env' : Env md)
+    (cval : TConstVal md) : Prop :=
   ∀ n, blockNames.contains n = true → ∀ ci, env'.find? n = some ci →
     ∃ cvm mval hmcvm,
       env'.find? (auxKey n .model) = some (.defnInfo cvm mval hmcvm) ∧
@@ -44,9 +44,9 @@ identification, discarded at the block's end. -/
 
 /-- Installing one member valued by its model preserves the fold
 invariant.  Transpose of `BlockInstalled.step`. -/
-theorem BlockInstalledTT.step {blockNames : List Key} {env' : Env}
-    {cval cval₁ : TConstVal} {ci₁ : ConstantInfo} {cvm : ConstantVal}
-    {mval : Expr} {hmcvm : ReducibilityHint}
+theorem BlockInstalledTT.step {blockNames : List (Key md)} {env' : Env md}
+    {cval cval₁ : TConstVal md} {ci₁ : ConstantInfo md} {cvm : ConstantVal md}
+    {mval : Expr md} {hmcvm : ReducibilityHint}
     (hI : BlockInstalledTT blockNames env' cval)
     (hms : ci₁.name.isModelSuffix = false)
     (hfm : env'.find? (auxKey ci₁.name .model) =
@@ -84,8 +84,8 @@ theorem BlockInstalledTT.step {blockNames : List Key} {env' : Env}
 /-- Prepending a fresh non-member constant preserves the fold
 invariant (the projection-family phase's installs).  Transpose of
 `BlockInstalled.fresh_cons`. -/
-theorem BlockInstalledTT.fresh_cons {blockNames : List Key} {env' : Env}
-    {cval cval₁ : TConstVal} {c₀ : ConstantInfo}
+theorem BlockInstalledTT.fresh_cons {blockNames : List (Key md)} {env' : Env md}
+    {cval cval₁ : TConstVal md} {c₀ : ConstantInfo md}
     (hI : BlockInstalledTT blockNames env' cval)
     (hnotb : blockNames.contains c₀.name = false)
     (hfresh : env'.find? c₀.name = none)
@@ -116,8 +116,8 @@ theorem BlockInstalledTT.fresh_cons {blockNames : List Key} {env' : Env}
 /-- The semantically pruned block renaming is `RenameOkT` at any
 environment/valuation carrying the block invariant.  Transpose of
 `BlockInstalled.renameOk`. -/
-theorem BlockInstalledTT.renameOkT {blockNames : List Key} {env₁ : Env}
-    {cval₁ : TConstVal}
+theorem BlockInstalledTT.renameOkT {blockNames : List (Key md)} {env₁ : Env md}
+    {cval₁ : TConstVal md}
     (hI : BlockInstalledTT blockNames env₁ cval₁) :
     RenameOkT cval₁ env₁ (fun n => if (env₁.find? n).isSome = true then
       (if blockNames.contains n then auxKey n .model else n) else n) := by
@@ -149,7 +149,7 @@ theorem BlockInstalledTT.renameOkT {blockNames : List Key} {env₁ : Env}
 
 /-- Value one name by another's valuation — the modeled member's
 valuation is its `_model` companion's. -/
-def cvalAlias (cval : TConstVal) (n mn : Key) : TConstVal := fun c ψ =>
+def cvalAlias (cval : TConstVal md) (n mn : Key md) : TConstVal md := fun c ψ =>
   if c = n then cval mn ψ else cval c ψ
 
 

@@ -25,16 +25,16 @@ open BasisDSL
 
 /-- The relation argument's type in the `α` binder context:
 `α → α → Prop`. -/
-def quotRel : Expr := piA (bv 0) (piA (bv 1) prop)
+def quotRel : Expr md := piA (bv 0) (piA (bv 1) prop)
 
 /-- `Quot.{u} {α : Sort u} (r : α → α → Prop) : Sort u`. -/
-def quotRaw : ConstantInfo :=
+def quotRaw : ConstantInfo md :=
   .indInfo ⟨quotName, [uN],
     piI "α" (srt u) <|
     pi "r" quotRel (srt u)⟩ {}
 
 /-- `Quot.mk.{u} {α : Sort u} (r : α → α → Prop) (a : α) : Quot α r`. -/
-def quotMkRaw : ConstantInfo :=
+def quotMkRaw : ConstantInfo md :=
   .ctorInfo ⟨quotMkName, [uN],
     piI "α" (srt u) <|
     pi "r" quotRel <|
@@ -42,11 +42,11 @@ def quotMkRaw : ConstantInfo :=
     2 1
 
 /-- `Quot.lift`'s function slot, in the `α`/`r`/`β` context: `α → β`. -/
-def quotLiftF : Expr := pi "a" (bv 2) (bv 1)
+def quotLiftF : Expr md := pi "a" (bv 2) (bv 1)
 
 /-- `Quot.lift`'s coherence slot, in the `α`/`r`/`β`/`f` context:
 `∀ a b, r a b → f a = f b`. -/
-def quotLiftH : Expr :=
+def quotLiftH : Expr md :=
   pi "a" (bv 3) <|
   pi "b" (bv 4) <|
   pi "a" (ap2 (bv 4) (bv 1) (bv 0)) <|
@@ -54,7 +54,7 @@ def quotLiftH : Expr :=
 
 /-- `Quot.lift.{u, v} {α : Sort u} {r : α → α → Prop} {β : Sort v}
 (f : α → β) (h : ∀ a b, r a b → f a = f b) (q : Quot α r) : β`. -/
-def quotLiftRaw : ConstantInfo :=
+def quotLiftRaw : ConstantInfo md :=
   .recInfo ⟨quotLiftName, [uN, vN],
     piI "α" (srt u) <|
     piI "r" quotRel <|
@@ -73,18 +73,18 @@ def quotLiftRaw : ConstantInfo :=
 
 /-- `Quot.ind`'s motive slot, in the `α`/`r` context:
 `Quot α r → Prop`. -/
-def quotIndMotive : Expr :=
+def quotIndMotive : Expr md :=
   pi "a" (ap2 (cnst quotName [u]) (bv 1) (bv 0)) prop
 
 /-- `Quot.ind`'s minor premise, in the `α`/`r`/`β` context:
 `∀ a, β (Quot.mk α r a)`. -/
-def quotIndMk : Expr :=
+def quotIndMk : Expr md :=
   pi "a" (bv 2) <|
   .app (bv 1) (ap3 (cnst quotMkName [u]) (bv 3) (bv 2) (bv 0))
 
 /-- `Quot.ind.{u} {α : Sort u} {r : α → α → Prop} {β : Quot α r → Prop}
 (mk : ∀ a, β (Quot.mk α r a)) (q : Quot α r) : β q`. -/
-def quotIndRaw : ConstantInfo :=
+def quotIndRaw : ConstantInfo md :=
   .recInfo ⟨quotIndName, [uN],
     piI "α" (srt u) <|
     piI "r" quotRel <|
@@ -101,7 +101,7 @@ def quotIndRaw : ConstantInfo :=
 
 /-- `Quot.sound.{u} {α : Sort u} {r : α → α → Prop} {a b : α} :
 r a b → Quot.mk α r a = Quot.mk α r b`. -/
-def quotSoundRaw : ConstantInfo :=
+def quotSoundRaw : ConstantInfo md :=
   .axiomInfo ⟨quotSoundName, [uN],
     piI "α" (srt u) <|
     piI "r" quotRel <|
@@ -114,7 +114,7 @@ def quotSoundRaw : ConstantInfo :=
       (ap3 (cnst quotMkName [u]) (bv 4) (bv 3) (bv 1))⟩
 
 /-- The pinned `Quot` basis block, in install order. -/
-def quotBasis : List ConstantInfo :=
+def quotBasis : List (ConstantInfo md) :=
   [quotRaw, quotMkRaw, quotLiftRaw, quotIndRaw, quotSoundRaw]
 
 end Ix.Kernel

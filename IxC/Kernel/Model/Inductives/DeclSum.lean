@@ -36,8 +36,8 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 /-! ## Kit -/
 
 /-- Distinct names, positionally. -/
-theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
-    (hnd : (ctorsA.map (·.1.name)).Nodup) {i j : Nat} {cAi cAj : ConstantVal × Nat}
+theorem names_ne_of_nodup {ctorsA : List (ConstantVal md × Nat)}
+    (hnd : (ctorsA.map (·.1.name)).Nodup) {i j : Nat} {cAi cAj : ConstantVal md × Nat}
     (hi : ctorsA[i]? = some cAi) (hj : ctorsA[j]? = some cAj) (hne : i ≠ j) :
     cAi.1.name ≠ cAj.1.name := by
   have hil : i < ctorsA.length := (List.getElem?_eq_some_iff.mp hi).1
@@ -58,22 +58,22 @@ theorem names_ne_of_nodup {ctorsA : List (ConstantVal × Nat)}
 /-! ## The constructors' loop -/
 
 /-- The facts about the pending constructors at an environment. -/
-@[expose] def PendingAt {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
+@[expose] def PendingAt {env : Env md} (m : EnvModel V env) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (resSort : Level) (isProp large : Bool) (idxF : Nat → List (Expr md))
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
-    (ctorsA : List (ConstantVal × Nat)) (k : Nat) : Prop :=
+    (ctorsA : List (ConstantVal md × Nat)) (k : Nat) : Prop :=
   ∀ i cA, k ≤ i → ctorsA[i]? = some cA →
     env.find? cA.1.name = none ∧ cA.1.type.constsResolve env = true ∧
     (∀ e ∈ idxF i, e.constsResolve env = true) ∧
     CtorDataI m T lps cA.1 nP cA.2 nIdx resSort isProp large (idxF i) (dsF i) (esF i) (srcsF i)
 
 /-- The facts about the consed constructors at an environment. -/
-@[expose] def ConsedAt {env : Env} (m : EnvModel V env) (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (resSort : Level) (isProp large : Bool) (idxF : Nat → List Expr)
+@[expose] def ConsedAt {env : Env md} (m : EnvModel V env) (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (resSort : Level) (isProp large : Bool) (idxF : Nat → List (Expr md))
     (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
     (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (srcsF : Nat → List (Option Nat))
-    (ctorsA : List (ConstantVal × Nat)) (k : Nat) : Prop :=
+    (ctorsA : List (ConstantVal md × Nat)) (k : Nat) : Prop :=
   ∀ i cA, i < k → ctorsA[i]? = some cA →
     CtorFactsAt m T lps nP nIdx resSort isProp large idxF dsF esF srcsF i cA ∧
     (∀ e ∈ idxF i, e.constsResolve env = true) ∧

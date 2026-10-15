@@ -100,14 +100,14 @@ def evidenceBlobs : Except String (List (Address × ByteArray)) :=
 beside them (never read as declarations of their own), the blobs behind the
 stream's, its declarations, and the reader state after them (the stream's
 reading continues from it). -/
-structure Prelude where
+structure Prelude (md : Mode) where
   records : Array (Address × Ixon.Constant) := #[]
   evidence : Array (Address × Ixon.Constant) := #[]
   blobs : List (Address × ByteArray) := []
-  ix : Ix.Kernel.Frontend.PreludeIx := {}
-  state : State := {}
+  ix : Ix.Kernel.Frontend.PreludeIx md := {}
+  state : State md := {}
 
-instance : Inhabited Prelude := ⟨{}⟩
+instance : Inhabited (Prelude md) := ⟨{}⟩
 
 /-- The reader context of `records` under the role table `t`, with the
 fallback store `fallback` and fallback blobs `fallbackBlobs`: the bound
@@ -121,7 +121,7 @@ minutes that way; built once, they read in 14 s). -/
 def contextOf (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Constant))
     (blobs : List (Address × ByteArray)) (fallback : Array (Address × Ixon.Constant) := #[])
     (fallbackBlobs : List (Address × ByteArray) := [])
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) : Ctx :=
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) : Ctx md :=
   let m := recordMap records
   let fm := recordMap fallback
   let store : Store := fun a => m[a]? <|> (fm[a]? <|> none)
@@ -137,7 +137,7 @@ def contextOf (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Consta
 backing the store (the evidence). -/
 def readPrelude (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Constant))
     (extra : Array (Address × Ixon.Constant) := #[]) (extraBlobs : List (Address × ByteArray) := []) :
-    Except String Prelude := do
+    Except String (Prelude md) := do
   let cx := contextOf t records [] extra extraBlobs
   match readRecords cx {} records with
   | .ok (state, decls) => pure ⟨records, extra, extraBlobs, ⟨decls⟩, state⟩
@@ -145,13 +145,13 @@ def readPrelude (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Cons
 
 /-- The committed prelude, read under the role table `t`, with the default
 evidence backing the store. -/
-def preludeFor (t : Ix.Kernel.RoleTable) : Except String Prelude := do
+def preludeFor (t : Ix.Kernel.RoleTable) : Except String (Prelude md) := do
   readPrelude t (← preludeRecords) (← evidenceRecords) (← evidenceBlobs)
 
 /-- The committed prelude under the default table. A failure is a corrupted
 committed file; the entry reports it rather than running with an empty
 prelude. -/
-def builtinPrelude : Except String Prelude := do
+def builtinPrelude : Except String (Prelude md) := do
   preludeFor (← defaultTable)
 
 end Ix.Kernel.Reader

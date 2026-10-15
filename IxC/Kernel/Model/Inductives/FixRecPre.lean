@@ -27,7 +27,7 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env}
+variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## Walks -/
 
@@ -131,10 +131,10 @@ theorem consList_kframe (ps : List V) (M : V) (ms is : List V) (ρb : Nat → V)
 /-- **The K-frame split** of a spine fitting the recursor's binder
 data below the major: the parameters, the motive (in its reading),
 the minors (in their ih-extended readings) and a fitting index tuple. -/
-theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
+theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {elimL : Level}
     {nP nIdx n ℓ w b : Nat}
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
-    {cds : List CtorDatumR} (hn : cds.length = n)
+    {cds : List (CtorDatumR md)} (hn : cds.length = n)
     {Fss Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     (hminor : ∀ ρp : Nat → V, Sat V ((pps.map (·.2.2)).reverse) ρp →
       ∀ j cd, cds[j]? = some cd → ∀ (M : V) (ms : List V), ms.length = j →
@@ -193,12 +193,12 @@ theorem fixSpine_split {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} 
 
 set_option maxHeartbeats 3200000 in
 /-- **The recursor's premise from the readings.** -/
-theorem fixPre_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key} {elimL : Level}
+theorem fixPre_of {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {elimL : Level}
     {nP nIdx n ℓ w u s b : Nat} (hℓ : elimL.eval ψ = ℓ)
     (hb : pwBit ψ (Level.zeronessOf elimL) = b) (hbz : ℓ = 0 ↔ b = 0)
     (hs0 : s = 0 ↔ ℓ = 0)
     {pps ips : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx)
-    {cds : List CtorDatumR} (hn : cds.length = n)
+    {cds : List (CtorDatumR md)} (hn : cds.length = n)
     {Fss₀ Fss Ess : List (List AnnotTerm)} {rss : List (List Bool)} {tlss : List (List (List (Nat × Nat × AnnotTerm)))} {Eiss : List (List (List AnnotTerm))}
     (hlenFs : Fss.length = n) (hlenEs : Ess.length = n)
     (hEs : ∀ j, j < n → (Ess.getD j []).length = nIdx)

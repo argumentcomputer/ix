@@ -41,7 +41,7 @@ set_option maxHeartbeats 3200000
 namespace Ix.Kernel
 
 variable {mode : CheckMode}
-variable {ev : Evidences}
+variable {ev : Evidences md}
 
 /-- Success on the executable side is reproduced at some fuel. -/
 def bridgeRel : MonadRel FueledM CheckM where
@@ -68,7 +68,7 @@ def bridgeRel : MonadRel FueledM CheckM where
 /-- Componentwise relatedness of two operation records. -/
 def OpsRel {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
     [MonadExceptOf CheckError M₁] [MonadExceptOf CheckError M₂]
-    (rel : MonadRel M₁ M₂) (o₁ : CheckerOps M₁) (o₂ : CheckerOps M₂) :
+    (rel : MonadRel M₁ M₂) (o₁ : (CheckerOps md) M₁) (o₂ : (CheckerOps md) M₂) :
     Prop :=
   (∀ env d e, rel.R (o₁.annotate env d e) (o₂.annotate env d e)) ∧
   (∀ env d e, rel.R (o₁.inferType env d e) (o₂.inferType env d e)) ∧
@@ -83,8 +83,8 @@ def OpsRel {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
 /-- The paired operation record. -/
 def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
     [MonadExceptOf CheckError M₁] [MonadExceptOf CheckError M₂]
-    {rel : MonadRel M₁ M₂} (o₁ : CheckerOps M₁) (o₂ : CheckerOps M₂)
-    (h : OpsRel rel o₁ o₂) : CheckerOps (PairM rel) where
+    {rel : MonadRel M₁ M₂} (o₁ : (CheckerOps md) M₁) (o₂ : (CheckerOps md) M₂)
+    (h : OpsRel rel o₁ o₂) : (CheckerOps md) (PairM rel) where
   annotate env d e := ⟨(o₁.annotate env d e, o₂.annotate env d e), h.1 env d e⟩
   inferType env d e :=
     ⟨(o₁.inferType env d e, o₂.inferType env d e), h.2.1 env d e⟩
@@ -99,7 +99,7 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
       h.2.2.2.2.2 _ _ _ _ x.property (fun r => (k r).property)⟩
 
 /-- The fueled operations as monotone families. -/
-@[expose] def fueledOpsM (mode : CheckMode) : CheckerOps FueledM where
+@[expose] def fueledOpsM (mode : CheckMode) : (CheckerOps md) FueledM where
   annotate env d e :=
     ⟨fun F => annotateCore mode env F d e, fun hle h => annotateCore_mono hle h⟩
   inferType env d e :=
@@ -139,7 +139,7 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
 /-- `fueledOpsM`'s combinator at a fuel, by definition. -/
 @[simp] theorem fueledOpsM_orElse_atF (x : FueledM Bool)
     (k : Option CheckError → FueledM Unit) (F : Nat) :
-    ((fueledOpsM mode).orElse x k).val F =
+    (((fueledOpsM (md := md)) mode).orElse x k).val F =
       match x.val F with
       | .ok true => pure ()
       | _ => (k none).val F := rfl
@@ -149,7 +149,7 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
 statement for its consumers). -/
 theorem fueledOps_orElse' (F : Nat) (x : CheckM Bool)
     (k : Option CheckError → CheckM Unit) :
-    (fueledOps mode F).orElse x k =
+    ((fueledOps (md := md)) mode F).orElse x k =
       match x with | .ok true => pure () | _ => k none := rfl
 
 /-! ## The WF-conditional fueled comparand
@@ -179,7 +179,7 @@ own run, which is what made the entry-point bridges unconditional in
 the environment.  With that executable deleted the branch has no
 consumer — every surviving use of `wfOpsM` goes through the `if_pos`
 equations below — so it is a constant. -/
-noncomputable def wfOpsM (mode : CheckMode) : CheckerOps FueledM where
+noncomputable def wfOpsM (mode : CheckMode) : (CheckerOps md) FueledM where
   annotate env d e :=
     if EnvWF env ∧ e.wscopedB d = true then
       ⟨fun F => annotateCore mode env F d e, fun hle h => annotateCore_mono hle h⟩
@@ -208,35 +208,35 @@ noncomputable def wfOpsM (mode : CheckMode) : CheckerOps FueledM where
     else ⟨fun _ => throw (.internal "wfOpsM: precondition failed"),
       fun _ h => h⟩
   -- no precondition: the combinator runs no core body of its own
-  orElse x k := (fueledOpsM mode).orElse x k
+  orElse x k := ((fueledOpsM (md := md)) mode).orElse x k
 
 /-- Over a well-formed environment and a well-scoped argument `wfOpsM mode`
 *is* the fueled record. -/
-theorem wfOpsM_annotate {env : Env} (henv : EnvWF env) {d : Nat} {e : Expr}
+theorem wfOpsM_annotate {env : Env md} (henv : EnvWF env) {d : Nat} {e : Expr md}
     (hg : e.wscopedB d = true) :
     (wfOpsM mode).annotate env d e = (fueledOpsM mode).annotate env d e := by
   dsimp only [wfOpsM, fueledOpsM]
   exact if_pos ⟨henv, hg⟩
 
-theorem wfOpsM_inferType {env : Env} (henv : EnvWF env) {d : Nat} {e : Expr}
+theorem wfOpsM_inferType {env : Env md} (henv : EnvWF env) {d : Nat} {e : Expr md}
     (hg : e.wscopedB d = true) :
     (wfOpsM mode).inferType env d e = (fueledOpsM mode).inferType env d e := by
   dsimp only [wfOpsM, fueledOpsM]
   exact if_pos ⟨henv, hg⟩
 
-theorem wfOpsM_isDefEq {env : Env} (henv : EnvWF env) {d : Nat} {a b : Expr}
+theorem wfOpsM_isDefEq {env : Env md} (henv : EnvWF env) {d : Nat} {a b : Expr md}
     (hga : a.wscopedB d = true) (hgb : b.wscopedB d = true) :
     (wfOpsM mode).isDefEq env d a b = (fueledOpsM mode).isDefEq env d a b := by
   dsimp only [wfOpsM, fueledOpsM]
   exact if_pos ⟨henv, hga, hgb⟩
 
-theorem wfOpsM_ensureSort {env : Env} (henv : EnvWF env) {d : Nat} {e : Expr}
+theorem wfOpsM_ensureSort {env : Env md} (henv : EnvWF env) {d : Nat} {e : Expr md}
     (hg : e.wscopedB d = true) :
     (wfOpsM mode).ensureSort env d e = (fueledOpsM mode).ensureSort env d e := by
   dsimp only [wfOpsM, fueledOpsM]
   exact if_pos ⟨henv, hg⟩
 
-theorem wfOpsM_whnf {env : Env} (henv : EnvWF env) {d : Nat} {e : Expr}
+theorem wfOpsM_whnf {env : Env md} (henv : EnvWF env) {d : Nat} {e : Expr md}
     (hg : e.wscopedB d = true) :
     (wfOpsM mode).whnf env d e = (fueledOpsM mode).whnf env d e := by
   dsimp only [wfOpsM, fueledOpsM]
@@ -244,7 +244,7 @@ theorem wfOpsM_whnf {env : Env} (henv : EnvWF env) {d : Nat} {e : Expr}
 
 theorem wfOpsM_orElse (x : FueledM Bool)
     (k : Option CheckError → FueledM Unit) :
-    (wfOpsM mode).orElse x k = (fueledOpsM mode).orElse x k := by
+    ((wfOpsM (md := md)) mode).orElse x k = ((fueledOpsM (md := md)) mode).orElse x k := by
   dsimp only [wfOpsM]
 
 /-! ## The `atF` battery: fueled-family runs are fueled-ops runs -/
@@ -276,31 +276,31 @@ macro "datF_step_alt" : tactic =>
 macro "datF_tac" : tactic =>
   `(tactic| repeat' datF_step_alt)
 
-theorem checkConstantVal_datF (env : Env) (cv : ConstantVal) (F : Nat) :
+theorem checkConstantVal_datF (env : Env md) (cv : ConstantVal md) (F : Nat) :
     (checkConstantVal (fueledOpsM mode) env cv).val F =
       checkConstantVal (fueledOps mode F) env cv := by
   unfold checkConstantVal
   datF_tac
 
-theorem checkProjLookups_datF (env' : Env) (T ctorName : Key) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
+theorem checkProjLookups_datF (env' : Env md) (T ctorName : Key md) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjLookups env' T ctorName lps nP nF i : FueledM _).val F =
       (checkProjLookups env' T ctorName lps nP nF i : CheckM _) := by
   unfold checkProjLookups
   datF_tac
 
-theorem checkProjTy_datF (env' : Env) (T ctorName : Key) (lps : List LevelParam) (mty : Expr) (nP nF : Nat) (F : Nat) :
+theorem checkProjTy_datF (env' : Env md) (T ctorName : Key md) (lps : List LevelParam) (mty : Expr md) (nP nF : Nat) (F : Nat) :
     (checkProjTy env' T ctorName lps mty nP nF : FueledM _).val F =
       (checkProjTy env' T ctorName lps mty nP nF : CheckM _) := by
   unfold checkProjTy
   datF_tac
 
-theorem checkProjShape_datF (pty cty : Expr) (nP nF : Nat) (F : Nat) :
+theorem checkProjShape_datF (pty cty : Expr md) (nP nF : Nat) (F : Nat) :
     (checkProjShape pty cty nP nF : FueledM _).val F =
       checkProjShape (m := CheckM) pty cty nP nF := by
   unfold checkProjShape
   datF_tac
 
-theorem fueledOpsM_isDefEq_atF (env : Env) (d : Nat) (a b : Expr)
+theorem fueledOpsM_isDefEq_atF (env : Env md) (d : Nat) (a b : Expr md)
     (F : Nat) :
     ((fueledOpsM mode).isDefEq env d a b).val F =
       (fueledOps mode F).isDefEq env d a b := by rfl
@@ -310,8 +310,8 @@ theorem unwrapOr_atF {α : Type} (o : Option α) (e : CheckError)
     (unwrapOr o e : FueledM α).val F = (unwrapOr o e : CheckM α) := by
   cases o <;> rfl
 
-theorem checkDefEqList_datF (env : Env) (depth F : Nat) :
-    ∀ (as bs : List Expr),
+theorem checkDefEqList_datF (env : Env md) (depth F : Nat) :
+    ∀ (as bs : List (Expr md)),
       (checkDefEqList (fueledOpsM mode) env depth as bs).val F =
       checkDefEqList (fueledOps mode F) env depth as bs
   | [], [] => rfl
@@ -322,13 +322,13 @@ theorem checkDefEqList_datF (env : Env) (depth F : Nat) :
     simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
       fueledOpsM_isDefEq_atF, checkDefEqList_datF env depth F as bs]
 
-theorem fueledOpsM_inferType_atF (env : Env) (d : Nat) (a : Expr)
+theorem fueledOpsM_inferType_atF (env : Env md) (d : Nat) (a : Expr md)
     (F : Nat) :
     ((fueledOpsM mode).inferType env d a).val F =
       (fueledOps mode F).inferType env d a := by rfl
 
-theorem checkTypedList_datF (env : Env) (depth F : Nat) :
-    ∀ (as bs : List Expr),
+theorem checkTypedList_datF (env : Env md) (depth F : Nat) :
+    ∀ (as bs : List (Expr md)),
       (checkTypedList (fueledOpsM mode) env depth as bs).val F =
       checkTypedList (fueledOps mode F) env depth as bs
   | [], [] => rfl
@@ -340,13 +340,13 @@ theorem checkTypedList_datF (env : Env) (depth F : Nat) :
       FueledM.atF_ite, fueledOpsM_isDefEq_atF, fueledOpsM_inferType_atF,
       checkTypedList_datF env depth F as bs]
 
-theorem fueledOpsM_annotate_atF' (env : Env) (d : Nat) (a : Expr)
+theorem fueledOpsM_annotate_atF' (env : Env md) (d : Nat) (a : Expr md)
     (F : Nat) :
     ((fueledOpsM mode).annotate env d a).val F =
       (fueledOps mode F).annotate env d a := by rfl
 
-theorem checkAnnotList_datF (env : Env) (depth F : Nat) :
-    ∀ (as : List Expr),
+theorem checkAnnotList_datF (env : Env md) (depth F : Nat) :
+    ∀ (as : List (Expr md)),
       (checkAnnotList (fueledOpsM mode) env depth as).val F =
       checkAnnotList (fueledOps mode F) env depth as
   | [] => rfl
@@ -356,8 +356,8 @@ theorem checkAnnotList_datF (env : Env) (depth F : Nat) :
       FueledM.atF_ite, fueledOpsM_annotate_atF',
       checkAnnotList_datF env depth F as]
 
-theorem checkIotaSidesTy_datF (envSelf : Env) (depth : Nat)
-    (alphaS lhsS rhsS : Expr) (ℓA : Level) (cvName : Key) (F : Nat) :
+theorem checkIotaSidesTy_datF (envSelf : Env md) (depth : Nat)
+    (alphaS lhsS rhsS : Expr md) (ℓA : Level) (cvName : Key md) (F : Nat) :
     (checkIotaSidesTy mode (fueledOpsM mode) envSelf depth alphaS lhsS rhsS
       ℓA cvName).val F =
     checkIotaSidesTy mode (fueledOps mode F) envSelf depth alphaS lhsS rhsS
@@ -376,16 +376,16 @@ macro "datF_stepPI_alt" : tactic =>
     | (simp only []))
 
 
-theorem checkProjIota_datF (env' envSelf : Env) (T ctorName : Key) (lps : List LevelParam) (cvj : ConstantVal) (nP nF i : Nat) (F : Nat) :
+theorem checkProjIota_datF (env' envSelf : Env md) (T ctorName : Key md) (lps : List LevelParam) (cvj : ConstantVal md) (nP nF i : Nat) (F : Nat) :
     (checkProjIota mode (fueledOpsM mode) env' envSelf T ctorName lps cvj nP nF i).val F =
       checkProjIota mode (fueledOps mode F) env' envSelf T ctorName lps cvj nP nF i := by
   unfold checkProjIota
   repeat' datF_stepPI_alt
 
-theorem checkIotaThm_datF (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
-    (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
-    (cnP cnF : Nat) (rhsA : Expr) (F : Nat) :
+theorem checkIotaThm_datF (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
+    (mI rP j : Nat) (r : RecRule md) (cvj : ConstantVal md)
+    (cnP cnF : Nat) (rhsA : Expr md) (F : Nat) :
     (checkIotaThm mode (fueledOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r cvj cnP cnF rhsA).val F =
     checkIotaThm mode (fueledOps mode F) env' envSelf f cvName lps tyA mI rP
@@ -395,10 +395,10 @@ theorem checkIotaThm_datF (env' envSelf : Env)
     fueledOpsM_isDefEq_atF, fueledOpsM_inferType_atF, unwrapOr_atF,
     checkDefEqList_datF, checkTypedList_datF, checkIotaSidesTy_datF]
 
-theorem checkIotaThmN_datF (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
-    (mI rP j : Nat) (r : RecRule) (cvj : ConstantVal)
-    (cnP cnF : Nat) (rhsA : Expr) (F : Nat) :
+theorem checkIotaThmN_datF (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
+    (mI rP j : Nat) (r : RecRule md) (cvj : ConstantVal md)
+    (cnP cnF : Nat) (rhsA : Expr md) (F : Nat) :
     (checkIotaThmN mode (fueledOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r cvj cnP cnF rhsA).val F =
     checkIotaThmN mode (fueledOps mode F) env' envSelf f cvName lps tyA mI rP
@@ -412,9 +412,9 @@ theorem checkIotaThmN_datF (env' envSelf : Env)
       checkIotaSidesTy_datF]
 
 set_option maxHeartbeats 12800000 in
-theorem checkIotaRule_datF (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
-    (mI rP j : Nat) (r : RecRule) (F : Nat) :
+theorem checkIotaRule_datF (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
+    (mI rP j : Nat) (r : RecRule md) (F : Nat) :
     (checkIotaRule mode (fueledOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r).val F =
     checkIotaRule mode (fueledOps mode F) env' envSelf f cvName lps tyA
@@ -425,10 +425,10 @@ theorem checkIotaRule_datF (env' envSelf : Env)
   | rw [checkIotaThm_datF]
   | rw [checkIotaThmN_datF]
 
-theorem checkIotaRules_datF (env' envSelf : Env)
-    (f : Key → Key) (cvName : Key) (lps : List LevelParam) (tyA : Expr)
+theorem checkIotaRules_datF (env' envSelf : Env md)
+    (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
     (mI rP : Nat) (F : Nat) :
-    ∀ (j : Nat) (rules : List RecRule),
+    ∀ (j : Nat) (rules : List (RecRule md)),
       (checkIotaRules mode (fueledOpsM mode) env' envSelf f cvName lps tyA
         mI rP j rules).val F =
       checkIotaRules mode (fueledOps mode F) env' envSelf f cvName lps tyA
@@ -477,28 +477,28 @@ macro "datF_step2" : tactic => `(tactic| repeat datF_step2_alt)
 macro "datF_tac2" : tactic =>
   `(tactic| repeat' datF_step2_alt)
 
-theorem checkProjRule_datF (env' : Env) (pty : Expr) (cvj : ConstantVal) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
+theorem checkProjRule_datF (env' : Env md) (pty : Expr md) (cvj : ConstantVal md) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjRule (fueledOpsM mode) env' pty cvj lps nP nF i).val F =
       checkProjRule (fueledOps mode F) env' pty cvj lps nP nF i := by
   unfold checkProjRule
   datF_tac2 <;> datF_step2 <;> datF_step2
 
-theorem checkMemberVal_datF (blockNames : List Key)
-    (env' : Env) (cv : ConstantVal) (F : Nat) :
+theorem checkMemberVal_datF (blockNames : List (Key md))
+    (env' : Env md) (cv : ConstantVal md) (F : Nat) :
     (checkMemberVal (fueledOpsM mode) blockNames env' cv).val F =
       checkMemberVal (fueledOps mode F) blockNames env' cv := by
   unfold checkMemberVal
   datF_tac2
 
-theorem checkIndMember_datF (blockNames : List Key) (caps : IndCaps) (env' : Env) (ci : ConstantInfo) (F : Nat) :
+theorem checkIndMember_datF (blockNames : List (Key md)) (caps : IndCaps md) (env' : Env md) (ci : ConstantInfo md) (F : Nat) :
     (checkIndMember (fueledOpsM mode) blockNames caps env' ci).val F =
       checkIndMember (fueledOps mode F) blockNames caps env' ci := by
   unfold checkIndMember
   datF_tac2
   all_goals rw [checkMemberVal_datF]
 
-theorem provisionRecs_datF (blockNames : List Key) (F : Nat) :
-    ∀ (envAcc : Env) (recs : List ConstantInfo),
+theorem provisionRecs_datF (blockNames : List (Key md)) (F : Nat) :
+    ∀ (envAcc : Env md) (recs : List (ConstantInfo md)),
       (provisionRecs (fueledOpsM mode) blockNames envAcc recs).val F =
       provisionRecs (fueledOps mode F) blockNames envAcc recs
   | _, [] => rfl
@@ -510,8 +510,8 @@ theorem provisionRecs_datF (blockNames : List Key) (F : Nat) :
         | exact provisionRecs_datF blockNames F _ rest
         | rfl
 
-theorem checkIndRecs_datF (blockNames : List Key) (env₂ : Env)
-    (recs : List ConstantInfo) (F : Nat) :
+theorem checkIndRecs_datF (blockNames : List (Key md)) (env₂ : Env md)
+    (recs : List (ConstantInfo md)) (F : Nat) :
     (checkIndRecs mode (fueledOpsM mode) blockNames env₂ recs).val F =
       checkIndRecs mode (fueledOps mode F) blockNames env₂ recs := by
   unfold checkIndRecs
@@ -543,14 +543,14 @@ macro "datF_step3" : tactic => `(tactic| repeat datF_step3_alt)
 macro "datF_tac3" : tactic =>
   `(tactic| repeat' datF_step3_alt)
 
-theorem checkProjFn_datF (env' : Env) (T ctorName : Key) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
+theorem checkProjFn_datF (env' : Env md) (T ctorName : Key md) (lps : List LevelParam) (nP nF i : Nat) (F : Nat) :
     (checkProjFn mode (fueledOpsM mode) env' T ctorName lps nP nF i).val F =
       checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i := by
   unfold checkProjFn
   datF_tac3 <;> datF_step3 <;> datF_step3 <;> datF_step3
 
-theorem installProjFnStep_datF (T ctorName : Key)
-    (lps : List LevelParam) (nP nF : Nat) (e : Env) (i : Nat) (F : Nat) :
+theorem installProjFnStep_datF (T ctorName : Key md)
+    (lps : List LevelParam) (nP nF : Nat) (e : Env md) (i : Nat) (F : Nat) :
     (installProjFnStep mode (fueledOpsM mode) T ctorName lps nP nF e i).val F
       = installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF e i := by
   unfold installProjFnStep
@@ -558,7 +558,7 @@ theorem installProjFnStep_datF (T ctorName : Key)
   · exact checkProjFn_datF e T ctorName lps nP nF i F
   · rfl
 
-theorem installBasisDecl_datF (env : Env) (ci : ConstantInfo) (F : Nat) :
+theorem installBasisDecl_datF (env : Env md) (ci : ConstantInfo md) (F : Nat) :
     (installBasisDecl env ci : FueledM _).val F =
       (installBasisDecl env ci : CheckM _) := by
   unfold installBasisDecl
@@ -566,18 +566,18 @@ theorem installBasisDecl_datF (env : Env) (ci : ConstantInfo) (F : Nat) :
 
 /-! ### The direct simple-structure path, at fuel `F` -/
 
-theorem fueledOpsM_annotate_atF (env : Env) (d : Nat) (a : Expr)
+theorem fueledOpsM_annotate_atF (env : Env md) (d : Nat) (a : Expr md)
     (F : Nat) :
     ((fueledOpsM mode).annotate env d a).val F =
       (fueledOps mode F).annotate env d a := by rfl
 
-theorem fueledOpsM_ensureSort_atF (env : Env) (d : Nat) (a : Expr)
+theorem fueledOpsM_ensureSort_atF (env : Env md) (d : Nat) (a : Expr md)
     (F : Nat) :
     ((fueledOpsM mode).ensureSort env d a).val F =
       (fueledOps mode F).ensureSort env d a := by rfl
 
-theorem checkStructDomsAt_datF (env : Env) (off : Nat)
-    (fvs doms : List Expr) (F : Nat) :
+theorem checkStructDomsAt_datF (env : Env md) (off : Nat)
+    (fvs doms : List (Expr md)) (F : Nat) :
     ∀ j : Nat,
       (checkStructDomsAt (fueledOpsM mode) env off fvs doms j).val F =
         checkStructDomsAt (fueledOps mode F) env off fvs doms j
@@ -588,9 +588,9 @@ theorem checkStructDomsAt_datF (env : Env) (off : Nat)
       FueledM.atF_ite, fueledOpsM_isDefEq_atF, unwrapOr_atF,
       checkStructDomsAt_datF env off fvs doms F j]
 
-theorem checkStructProjTable_datF (T C : Key) (lps : List LevelParam)
-    (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal)
-    (env : Env) (F : Nat) :
+theorem checkStructProjTable_datF (T C : Key md) (lps : List LevelParam)
+    (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md)
+    (env : Env md) (F : Nat) :
     (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM _).val F =
       (checkStructProjTable T C lps nP nF rs guards off cvCa env : CheckM _) := by
   unfold checkStructProjTable
@@ -599,12 +599,12 @@ theorem checkStructProjTable_datF (T C : Key) (lps : List LevelParam)
 
 /-! ### The direct sum route (task #175 sum-types) -/
 
-theorem fueledOpsM_whnf_atF (env : Env) (d : Nat) (a : Expr) (F : Nat) :
+theorem fueledOpsM_whnf_atF (env : Env md) (d : Nat) (a : Expr md) (F : Nat) :
     ((fueledOpsM mode).whnf env d a).val F = (fueledOps mode F).whnf env d a := by rfl
 
 /-- Official's telescope loop (task #195) at fuel `F`. -/
-theorem whnfTelescope_datF (env : Env) (F : Nat) :
-    ∀ (i n : Nat) (e : Expr),
+theorem whnfTelescope_datF (env : Env md) (F : Nat) :
+    ∀ (i n : Nat) (e : Expr md),
       (whnfTelescope (fueledOpsM mode) env i n e).val F =
         whnfTelescope (fueledOps mode F) env i n e
   | i, 0, e => by
@@ -625,8 +625,8 @@ theorem whnfTelescope_datF (env : Env) (F : Nat) :
     · simp only [FueledM.atF_throw]
 
 /-- The former's telescope stage (task #195) at fuel `F`. -/
-theorem checkSumTele_datF (env : Env) (cv : ConstantVal) (n : Nat)
-    (cvTa₀ : ConstantVal) (F : Nat) :
+theorem checkSumTele_datF (env : Env md) (cv : ConstantVal md) (n : Nat)
+    (cvTa₀ : ConstantVal md) (F : Nat) :
     (checkSumTele (fueledOpsM mode) env cv n cvTa₀).val F =
       checkSumTele (fueledOps mode F) env cv n cvTa₀ := by
   unfold checkSumTele
@@ -638,8 +638,8 @@ theorem checkSumTele_datF (env : Env) (cv : ConstantVal) (n : Nat)
     cases body <;> simp only [FueledM.atF_bind, FueledM.atF_pure, whnfTelescope_datF,
       checkConstantVal_datF]
 
-theorem checkSumInd_datF (env : Env) (p : InductiveShape)
-    (capsOf : InductiveShape → IndCaps) (F : Nat) :
+theorem checkSumInd_datF (env : Env md) (p : InductiveShape md)
+    (capsOf : InductiveShape md → IndCaps md) (F : Nat) :
     (checkSumInd (fueledOpsM mode) env p capsOf).val F =
       checkSumInd (fueledOps mode F) env p capsOf := by
   unfold checkSumInd
@@ -647,8 +647,8 @@ theorem checkSumInd_datF (env : Env) (p : InductiveShape)
     FueledM.atF_ite, unwrapOr_atF, checkConstantVal_datF, checkSumTele_datF]
 
 /-- `checkStructFieldSortsI` (task #175 indexed) at fuel `F`. -/
-theorem checkStructFieldSortsI_datF (env : Env) (isProp large : Bool)
-    (s : Level) (nP : Nat) (fvs idxArgs : List Expr) (F : Nat) :
+theorem checkStructFieldSortsI_datF (env : Env md) (isProp large : Bool)
+    (s : Level) (nP : Nat) (fvs idxArgs : List (Expr md)) (F : Nat) :
     ∀ j : Nat,
       (checkStructFieldSortsI (fueledOpsM mode) env isProp large s nP fvs idxArgs
           j).val F =
@@ -663,8 +663,8 @@ theorem checkStructFieldSortsI_datF (env : Env) (isProp large : Bool)
 
 /-- Official's positivity walk as a normalisation (task #210 Part D)
 at fuel `F`. -/
-theorem normPosDom_datF (env : Env) (T : Key) (F : Nat) (fuel : Nat) :
-    ∀ (d : Nat) (e : Expr),
+theorem normPosDom_datF (env : Env md) (T : Key md) (F : Nat) (fuel : Nat) :
+    ∀ (d : Nat) (e : Expr md),
       (normPosDom (fueledOpsM mode) env T d fuel e).val F =
         normPosDom (fueledOps mode F) env T d fuel e := by
   induction fuel with
@@ -690,8 +690,8 @@ theorem normPosDom_datF (env : Env) (T : Key) (F : Nat) (fuel : Nat) :
             ih (d + 1) (body.instantiate1 (.fvar d dom))]
       · simp only [FueledM.atF_pure]
 
-theorem normFieldDoms_datF (env : Env) (T : Key) (F : Nat) (n : Nat) :
-    ∀ (i : Nat) (e : Expr),
+theorem normFieldDoms_datF (env : Env md) (T : Key md) (F : Nat) (n : Nat) :
+    ∀ (i : Nat) (e : Expr md),
       (normFieldDoms (fueledOpsM mode) env T i n e).val F =
         normFieldDoms (fueledOps mode F) env T i n e := by
   induction n with
@@ -712,7 +712,7 @@ theorem normFieldDoms_datF (env : Env) (T : Key) (F : Nat) (n : Nat) :
     | .lit _ | .proj _ _ _ =>
       simp only [normFieldDoms, FueledM.atF_throw]
 
-theorem normCtorVal_datF (env : Env) (T : Key) (nP nF : Nat) (cvC cvCa : ConstantVal)
+theorem normCtorVal_datF (env : Env md) (T : Key md) (nP nF : Nat) (cvC cvCa : ConstantVal md)
     (F : Nat) :
     (normCtorVal (fueledOpsM mode) env T nP nF cvC cvCa).val F =
       normCtorVal (fueledOps mode F) env T nP nF cvC cvCa := by
@@ -720,9 +720,9 @@ theorem normCtorVal_datF (env : Env) (T : Key) (nP nF : Nat) (cvC cvCa : Constan
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
     unwrapOr_atF, checkConstantVal_datF, normFieldDoms_datF]
 
-theorem checkSumCtor_datF (env₀ env : Env) (T : Key) (lps : List LevelParam)
-    (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvC : ConstantVal) (nF : Nat)
-    (cvTa : ConstantVal) (F : Nat) :
+theorem checkSumCtor_datF (env₀ env : Env md) (T : Key md) (lps : List LevelParam)
+    (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvC : ConstantVal md) (nF : Nat)
+    (cvTa : ConstantVal md) (F : Nat) :
     (checkSumCtor (fueledOpsM mode) env₀ env T lps nP nIdx rs isProp large
       cvC nF cvTa).val F =
       checkSumCtor (fueledOps mode F) env₀ env T lps nP nIdx rs isProp large
@@ -732,9 +732,9 @@ theorem checkSumCtor_datF (env₀ env : Env) (T : Key) (lps : List LevelParam)
     FueledM.atF_ite, unwrapOr_atF, checkConstantVal_datF, normCtorVal_datF,
     checkStructFieldSortsI_datF, checkStructDomsAt_datF]
 
-theorem checkSumCtors_datF (env₀ env : Env) (T : Key) (lps : List LevelParam)
-    (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvTa : ConstantVal) (F : Nat) :
-    ∀ cs : List (ConstantVal × Nat),
+theorem checkSumCtors_datF (env₀ env : Env md) (T : Key md) (lps : List LevelParam)
+    (nP nIdx : Nat) (rs : Level) (isProp large : Bool) (cvTa : ConstantVal md) (F : Nat) :
+    ∀ cs : List (ConstantVal md × Nat),
       (checkSumCtors (fueledOpsM mode) env₀ env T lps nP nIdx rs isProp large
         cvTa cs).val F =
         checkSumCtors (fueledOps mode F) env₀ env T lps nP nIdx rs isProp large
@@ -747,9 +747,9 @@ theorem checkSumCtors_datF (env₀ env : Env) (T : Key) (lps : List LevelParam)
 
 /-! ### The direct recursive install (task #188) -/
 
-theorem checkNativeRules_datF (envR : Env) (rlps : List LevelParam) (T : Key)
-    (lps : List LevelParam) (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr)
-    (ctors : List (Key × Nat × Expr × List Nat)) (recC : Key) (rlvls : List Level)
+theorem checkNativeRules_datF (envR : Env md) (rlps : List LevelParam) (T : Key md)
+    (lps : List LevelParam) (elim : LevelParam) (large : Bool) (nP nIdx : Nat) (tty : Expr md)
+    (ctors : List (Key md × Nat × Expr md × List Nat)) (recC : Key md) (rlvls : List Level)
     (F : Nat) :
     ∀ k j : Nat,
       (checkNativeRules (m := FueledM) envR rlps T lps elim large nP nIdx tty ctors
@@ -764,8 +764,8 @@ theorem checkNativeRules_datF (envR : Env) (rlps : List LevelParam) (T : Key)
       checkNativeRules_datF envR rlps T lps elim large nP nIdx tty ctors recC rlvls F k
         (j + 1)]
 
-theorem checkNativeRec_datF (env : Env) (p : NativeParts)
-    (cvTa : ConstantVal) (ctorsA : List (ConstantVal × Nat)) (F : Nat) :
+theorem checkNativeRec_datF (env : Env md) (p : NativeParts md)
+    (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) (F : Nat) :
     (checkNativeRec (fueledOpsM mode) env p cvTa ctorsA).val F =
       checkNativeRec (fueledOps mode F) env p cvTa ctorsA := by
   unfold checkNativeRec
@@ -776,8 +776,8 @@ theorem checkNativeRec_datF (env : Env) (p : NativeParts)
 
 /-- The projection table at a structure-like block (task #210 Part A)
 at fuel `F`: operation-free, so the fuel is irrelevant. -/
-theorem checkNativeTable_datF (p : NativeParts) (ctorsA : List (ConstantVal × Nat))
-    (sortss : List (List Level)) (env : Env) (F : Nat) :
+theorem checkNativeTable_datF (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
+    (sortss : List (List Level)) (env : Env md) (F : Nat) :
     (checkNativeTable (m := FueledM) p ctorsA sortss env).val F =
       checkNativeTable (m := CheckM) p ctorsA sortss env := by
   unfold checkNativeTable
@@ -789,22 +789,22 @@ theorem checkNativeTable_datF (p : NativeParts) (ctorsA : List (ConstantVal × N
 
 /-- The kinds' classification at fuel `F` (task #210 Part D):
 operation-free, so the fuel is irrelevant. -/
-theorem classifyFixKinds_datF (T : Key) (lps : List LevelParam) (nP nIdx : Nat)
-    (ctorsA : List (ConstantVal × Nat)) (F : Nat) :
+theorem classifyFixKinds_datF (T : Key md) (lps : List LevelParam) (nP nIdx : Nat)
+    (ctorsA : List (ConstantVal md × Nat)) (F : Nat) :
     (classifyFixKinds (m := FueledM) T lps nP nIdx ctorsA).val F =
       classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA := by
   unfold classifyFixKinds
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw, FueledM.atF_ite,
     unwrapOr_atF]
 
-theorem checkNativePass_datF (env : Env) (p : NativeParts) (isRec : Bool) (F : Nat) :
+theorem checkNativePass_datF (env : Env md) (p : NativeParts md) (isRec : Bool) (F : Nat) :
     (checkNativePass (fueledOpsM mode) env p isRec).val F =
       checkNativePass (fueledOps mode F) env p isRec := by
   unfold checkNativePass
   simp only [FueledM.atF_bind, FueledM.atF_pure, checkSumInd_datF, checkSumCtors_datF,
     classifyFixKinds_datF]
 
-theorem checkNativeTail_datF (env : Env) (q : NativePass Env) (F : Nat) :
+theorem checkNativeTail_datF (env : Env md) (q : (NativePass md) (Env md)) (F : Nat) :
     (checkNativeTail (fueledOpsM mode) env q).val F =
       checkNativeTail (fueledOps mode F) env q := by
   unfold checkNativeTail
@@ -812,7 +812,7 @@ theorem checkNativeTail_datF (env : Env) (q : NativePass Env) (F : Nat) :
     FueledM.atF_ite, checkNativeTable_datF, checkNativeRec_datF, unwrapOr_atF,
     checkStructFieldSortsI_datF]
 
-theorem checkNative_datF (env : Env) (p : NativeParts) (F : Nat) :
+theorem checkNative_datF (env : Env md) (p : NativeParts md) (F : Nat) :
     (checkNative (fueledOpsM mode) env p).val F =
       checkNative (fueledOps mode F) env p := by
   unfold checkNative
@@ -848,35 +848,35 @@ macro "datF_step4_alt" : tactic =>
 macro "datF_tac4" : tactic =>
   `(tactic| repeat' datF_step4_alt)
 
-theorem checkModeled_datF (env : Env) (block : List ConstantInfo) (F : Nat) :
+theorem checkModeled_datF (env : Env md) (block : List (ConstantInfo md)) (F : Nat) :
     (checkModeled mode (fueledOpsM mode) env block).val F =
       checkModeled mode (fueledOps mode F) env block := by
   unfold checkModeled
   datF_tac4
 
-theorem checkDefnVal_datF (env : Env) (cv : ConstantVal) (value : Expr)
+theorem checkDefnVal_datF (env : Env md) (cv : ConstantVal md) (value : Expr md)
     (hint : ReducibilityHint) (F : Nat) :
     (checkDefnVal (fueledOpsM mode) env cv value hint).val F =
       checkDefnVal (fueledOps mode F) env cv value hint := by
   unfold checkDefnVal
   datF_tac
 
-theorem checkThmVal_datF (env : Env) (cv : ConstantVal) (value : Expr)
+theorem checkThmVal_datF (env : Env md) (cv : ConstantVal md) (value : Expr md)
     (F : Nat) :
     (checkThmVal (fueledOpsM mode) env cv value).val F =
       checkThmVal (fueledOps mode F) env cv value := by
   unfold checkThmVal
   datF_tac
 
-theorem checkOpaqueVal_datF (env : Env) (cv : ConstantVal) (value : Expr)
+theorem checkOpaqueVal_datF (env : Env md) (cv : ConstantVal md) (value : Expr md)
     (F : Nat) :
     (checkOpaqueVal (fueledOpsM mode) env cv value).val F =
       checkOpaqueVal (fueledOps mode F) env cv value := by
   unfold checkOpaqueVal
   datF_tac
 
-theorem certifyNatEqs_datF (env : Env) (F : Nat) :
-    ∀ eqs : List (Expr × Expr),
+theorem certifyNatEqs_datF (env : Env md) (F : Nat) :
+    ∀ eqs : List (Expr md × Expr md),
       (certifyNatEqs (fueledOpsM mode) env eqs).val F =
         certifyNatEqs (fueledOps mode F) env eqs
   | [] => rfl
@@ -896,9 +896,9 @@ theorem certifyNatEqs_datF (env : Env) (F : Nat) :
     | true => exact certifyNatEqs_datF env F rest
     | false => rfl
 
-theorem checkDivModCerts_datF (env : Env) (c : Key) (annVal : Expr)
+theorem checkDivModCerts_datF (env : Env md) (c : Key md) (annVal : Expr md)
     (F : Nat) :
-    ∀ (stmts : List (List Expr × Expr)) (proofs : List Expr),
+    ∀ (stmts : List (List (Expr md) × Expr md)) (proofs : List (Expr md)),
       (checkDivModCerts (fueledOpsM mode) env c annVal stmts proofs).val F =
         checkDivModCerts (fueledOps mode F) env c annVal stmts proofs
   | [], [] => rfl
@@ -921,7 +921,7 @@ theorem checkDivModCerts_datF (env : Env) (c : Key) (annVal : Expr)
       | false => rfl
     · rfl
 
-theorem checkDivModEvidence_datF (env env2 : Env) (c : Key) (F : Nat) :
+theorem checkDivModEvidence_datF (env env2 : Env md) (c : Key md) (F : Nat) :
     (checkDivModEvidence (fueledOpsM mode) ev env env2 c).val F =
       checkDivModEvidence (fueledOps mode F) ev env env2 c := by
   unfold checkDivModEvidence
@@ -932,7 +932,7 @@ theorem checkDivModEvidence_datF (env env2 : Env) (c : Key) (F : Nat) :
     | rfl
     | (simp only [FueledM.atF_pure, FueledM.atF_throw]))
 
-theorem checkReduceIdentity_datF (env env2 : Env) (c : Key) (value : Expr)
+theorem checkReduceIdentity_datF (env env2 : Env md) (c : Key md) (value : Expr md)
     (F : Nat) :
     (checkReduceIdentity (fueledOpsM mode) env env2 c value).val F =
       checkReduceIdentity (fueledOps mode F) env env2 c value := by
@@ -945,7 +945,7 @@ theorem checkReduceIdentity_datF (env env2 : Env) (c : Key) (value : Expr)
 
 /-- The pinned-block install at a fuel datum.  Three of `checkDecl`'s
 arms share this body since task #293. -/
-theorem checkBasisDecl_datF (env : Env) (kind : BasisKind) (F : Nat) :
+theorem checkBasisDecl_datF (env : Env md) (kind : BasisKind) (F : Nat) :
     (checkBasisDecl (m := FueledM) env kind).val F =
       checkBasisDecl (m := CheckM) env kind := by
   unfold checkBasisDecl
@@ -964,7 +964,7 @@ theorem checkBasisDecl_datF (env : Env) (kind : BasisKind) (F : Nat) :
   · rw [if_neg hq, if_neg hq, foldlM_atF]
     simp only [installBasisDecl_datF]
 
-theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
+theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
     (checkDecl mode (fueledOpsM mode) ev env d).val F =
       checkDecl mode (fueledOps mode F) ev env d := by
   unfold checkDecl
@@ -1040,7 +1040,7 @@ theorem checkDecl_datF (env : Env) (d : Declaration) (F : Nat) :
         · exact checkModeled_datF env block F
       · rfl
 
-theorem checkDeclsPure_datF (ds : List Declaration) (F : Nat) :
+theorem checkDeclsPure_datF (ds : List (Declaration md)) (F : Nat) :
     (checkDeclsPure mode (fueledOpsM mode) ev ds).val F =
       checkDeclsPure mode (fueledOps mode F) ev ds := by
   unfold checkDeclsPure

@@ -29,13 +29,13 @@ and are inverted by hand as `Model/Steps/Stuck.lean`'s
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env} {fuel : Nat}
+variable {env : Env md} {fuel : Nat}
 
 /-- `iotaCerts` ⇒ `Certs` (`iotaCerts_step_inv_gate`; a licensed
 `.never` slot lands on `Certs.skip`, a certified one on `Certs.cert`
 through `inferTypeIO_bridge` and `hd`). -/
 theorem iotaCerts_bridge (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel) :
-    ∀ {d : Nat} {lic : Bool} {ty : Expr} {args : List Expr},
+    ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
       iotaCertsFueled .verified env fuel d lic ty args = .ok true →
       Certs env d lic ty args := by
   intro d lic ty args
@@ -56,7 +56,7 @@ theorem iotaCerts_bridge (hd : DefEqBridge env fuel) (hio : InferIOBridge env fu
 
 /-- `defEqList` ⇒ `DefEqList` (`defEqList_step_inv`). -/
 theorem defEqList_bridge (hd : DefEqBridge env fuel) :
-    ∀ {d : Nat} {as bs : List Expr},
+    ∀ {d : Nat} {as bs : List (Expr md)},
       defEqListFueled .verified env fuel d as bs = .ok true →
       DefEqList env d as bs := by
   intro d as
@@ -80,7 +80,7 @@ theorem defEqList_bridge (hd : DefEqBridge env fuel) :
 one `iotaCerts_bridge` per field). -/
 theorem structEtaProjCerts_bridge (hd : DefEqBridge env fuel)
     (hio : InferIOBridge env fuel) :
-    ∀ {d : Nat} {T : Key} {us' : List Level} {targs : List Expr} {b : Expr}
+    ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
       {lpsT : List LevelParam} {idxs : List Nat},
       structEtaProjCertsFueled .verified env fuel d T us' targs b lpsT idxs
         = .ok true →
@@ -99,7 +99,7 @@ theorem structEtaProjCerts_bridge (hd : DefEqBridge env fuel)
 /-- `proofIrrel` ⇒ `DefEq.unitLike` or `DefEq.proofIrrel`
 (`proofIrrel_inv`). -/
 theorem proofIrrel_bridge (hw : WhnfBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : proofIrrelFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   obtain ⟨ta, wta, hta, hwta, harm⟩ := proofIrrel_inv h
@@ -115,7 +115,7 @@ theorem proofIrrel_bridge (hw : WhnfBridge env fuel) (hio : InferIOBridge env fu
 /-- `propIrrel` ⇒ `DefEq.proofFast` or `DefEq.proofIrrel`
 (`propIrrel_inv`). -/
 theorem propIrrel_bridge (hw : WhnfBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : propIrrelFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   rcases propIrrel_inv h with ⟨hfa, hfb⟩ |
@@ -137,8 +137,8 @@ family's identity is the caller's (`hwfn`, `hfT`); the inversion's own
 is reconciled against it. -/
 theorem structEtaCertWith_projCerts_bridge (hd : DefEqBridge env fuel)
     (hio : InferIOBridge env fuel)
-    {d : Nat} {a b wtb : Expr} {T : Key} {us' : List Level}
-    {cvT : ConstantVal} {caps : IndCaps}
+    {d : Nat} {a b wtb : Expr md} {T : Key md} {us' : List Level}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (hwfn : wtb.getAppFn = .const T us')
     (hfT : env.find? T = some (.indInfo cvT caps))
     (h : structEtaCertWithFueled .verified env fuel d a b wtb = .ok true) :
@@ -161,7 +161,7 @@ caller's (`structEtaCert`'s own, or the η rescue's `tm`/`tmaj`), so
 they are hypotheses here. -/
 theorem structEtaCertWith_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b tb wtb : Expr}
+    {d : Nat} {a b tb wtb : Expr md}
     (htb : inferTypeIO .verified env fuel d b = .ok tb)
     (hwtb : whnf .verified env fuel d tb = .ok wtb)
     (h : structEtaCertWithFueled .verified env fuel d a b wtb = .ok true) :
@@ -180,7 +180,7 @@ theorem structEtaCertWith_bridge (hw : WhnfBridge env fuel)
 `structEtaCertWith_bridge`). -/
 theorem structEtaCert_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : structEtaCertFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   obtain ⟨tb, wtb, htb, hwtb, h'⟩ := structEtaCert_inv h
@@ -189,7 +189,7 @@ theorem structEtaCert_bridge (hw : WhnfBridge env fuel)
 /-- `structUnitCert` ⇒ `DefEq.structUnit` (`structUnitCert_inv`). -/
 theorem structUnitCert_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : structUnitCertFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   obtain ⟨ta, wta, T, us', cvT, caps, tb, wtb,
@@ -204,7 +204,7 @@ the inversion's `verifiedChecks = true →` conjunct at `rfl`, the input
 contracts' equality its last conjunct). -/
 theorem etaCert_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {ty body b : Expr} {mb : BinderMeta}
+    {d : Nat} {ty body b : Expr md} {mb : BinderMeta}
     (h : etaCertFueled .verified env fuel d ty body mb b = .ok true) :
     DefEq env d (.lam ty body mb) b := by
   obtain ⟨tb, ty₂, fb, m₂, htb, hwtb, hdty, hdbody, hpw, hc⟩ := etaCert_inv h
@@ -217,7 +217,7 @@ the second through `DefEq.structEtaR` —, `structUnitCert_bridge`,
 today; it is four `exceptBind_ok`s. -/
 theorem stuckIrrel_bridge (hw : WhnfBridge env fuel)
     (hd : DefEqBridge env fuel) (hio : InferIOBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : stuckIrrelFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   dsimp only [stuckIrrelFueled] at h
@@ -250,7 +250,7 @@ theorem stuckIrrel_bridge (hw : WhnfBridge env fuel)
 
 /-- `defeqSpine` ⇒ `DefEq.constSpine` (`defeqSpine_inv`). -/
 theorem defeqSpine_bridge (hd : DefEqBridge env fuel)
-    {d : Nat} {a b : Expr}
+    {d : Nat} {a b : Expr md}
     (h : defeqSpineFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   obtain ⟨n, us, us', ha, hb, -, hus, hl⟩ := defeqSpine_inv h
@@ -258,7 +258,7 @@ theorem defeqSpine_bridge (hd : DefEqBridge env fuel)
 
 /-- `boolTrueShortcut` ⇒ `DefEq.boolTrue`. -/
 theorem boolTrueShortcut_bridge (hw : WhnfBridge env fuel)
-    {d : Nat} {a : Expr}
+    {d : Nat} {a : Expr md}
     (h : boolTrueShortcutFueled .verified env fuel d a = .ok true) :
     DefEq env d a (.const boolTrueName []) := by
   dsimp only [boolTrueShortcutFueled] at h

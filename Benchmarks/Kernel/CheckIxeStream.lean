@@ -81,7 +81,7 @@ structure Loaded where
 
 /-- Load an `.ixe` for streaming: decode every record once for its skeleton
 and its literal kinds, and build the setup over the skeletons. -/
-def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude) : IO Loaded := do
+def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon) : IO Loaded := do
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
   let consts := env.consts
   let env := { env with consts := {} }
@@ -103,7 +103,7 @@ def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude) : IO 
 /-- The reading state of a streaming run: the reader's state, and the
 serialized bytes of every record of the `.ixe` not yet read. -/
 structure StreamState where
-  st : State := {}
+  st : State .anon := {}
   bytes : Std.HashMap Address ByteArray := {}
 
 /-- The initial reading state: every record's bytes, copied out of the
@@ -117,7 +117,7 @@ def StreamState.take (windows : IO.Ref (Std.HashMap Address Ixon.LazyConstant)) 
 
 /-- A record read in full: decoded from its bytes, or, for a prelude record
 the `.ixe` does not hold, the setup's. -/
-def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Except ReadError Read :=
+def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Except ReadError (Read .anon) :=
   match ss.bytes[address]? with
   | some b => match Ixon.deConstantAt b 0 with
     | .ok source => readRecord l.setup.cx ss.st address source
@@ -128,7 +128,7 @@ def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Excep
 
 /-- The state after a record: the reader's state learns from it, and its
 bytes are dropped. -/
-def StreamState.commit (ss : StreamState) (address : Address) (rd : Read) : StreamState :=
+def StreamState.commit (ss : StreamState) (address : Address) (rd : Read .anon) : StreamState :=
   { st := ss.st.commit rd, bytes := ss.bytes.erase address }
 
 /-- A streaming load as a loop source. -/

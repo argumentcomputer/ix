@@ -102,7 +102,7 @@ gate's kernel fixtures are phrased at, and the knot equations
 (`Verify/Knot.lean`) identify the executable slot with it at the
 gated mode.  Its own `inferIO` slot is the io body again — the io
 grade is idempotent (there is nothing below io to select). -/
-def coreKnotIO (env : Env) : Nat → CoreFns m
+def coreKnotIO (env : Env md) : Nat → (CoreFns md) m
   | 0 =>
     { whnfCore := fun _ _ => throw (.internal "fuel exhausted: whnfCore")
       whnf := fun _ _ => throw (.internal "fuel exhausted: whnf")
@@ -120,13 +120,13 @@ def coreKnotIO (env : Env) : Nat → CoreFns m
 
 /-- The io core, tied at `CheckM`: the specification the
 `InferClaimIO` family is stated at. -/
-def pureFnsIO (env : Env) : Nat → CoreFns CheckM :=
+def pureFnsIO (env : Env md) : Nat → (CoreFns md) CheckM :=
   coreKnotIO mode env
 
 /-- Infer-only (io-grade) type inference, fueled — the io lane's single
 entry point. -/
-def inferTypeCoreIO (env : Env) (fuel depth : Nat) (e : Expr) :
-    CheckM Expr :=
+def inferTypeCoreIO (env : Env md) (fuel depth : Nat) (e : Expr md) :
+    CheckM (Expr md) :=
   (pureFnsIO mode env fuel).infer depth e
 
 end Ix.Kernel

@@ -23,10 +23,10 @@ given `ω` strongly inaccessible cardinals. -/
 theorem checkBytes_has_ZFSet_model (h : OmegaInaccessibles.{u}) {hash : ByteArray → Address}
     {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (accepted : checkBytes hash binding limits records blobs hint = .ok env) :
-    Nonempty (@Ix.Kernel.Model ZFSet.{u} (zfSetTheoryOfCarneiro h) env) :=
-  @Ix.Kernel.Admission.checkBytes_has_model ZFSet.{u} (zfSetTheoryOfCarneiro h)
+    Nonempty (@Ix.Kernel.Model md ZFSet.{u} (zfSetTheoryOfCarneiro h) env) :=
+  @Ix.Kernel.Admission.checkBytes_has_model md ZFSet.{u} (zfSetTheoryOfCarneiro h)
     hash binding limits records blobs hint env accepted
 
 /-- **No accepted constant proves `False`**, given `ω` strongly
@@ -34,10 +34,10 @@ inaccessible cardinals. -/
 theorem checkBytes_no_proof_of_False (h : OmegaInaccessibles.{u}) {hash : ByteArray → Address}
     {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env}
+    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env md}
     (accepted : checkBytes hash binding limits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const Ix.Kernel.falseName [] → False :=
-  @Ix.Kernel.Admission.checkBytes_no_proof_of_False ZFSet.{u} (zfSetTheoryOfCarneiro h)
+  @Ix.Kernel.Admission.checkBytes_no_proof_of_False md ZFSet.{u} (zfSetTheoryOfCarneiro h)
     hash binding limits records blobs hint env accepted
 
 end IxSetTheoryModel

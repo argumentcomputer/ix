@@ -63,7 +63,7 @@ def list {α : Type} (xs : List α) (f : α → EncM Unit) : EncM Unit := do
   for x in xs do f x
 
 /-- A role key, by the role's index; any other key is refused. -/
-def key : Key → EncM Unit
+def key : Key md → EncM Unit
   | .role r => nat (Role.all.idxOf r)
   | k => throw s!"the specification mentions {k}, which is not a role key"
 
@@ -84,7 +84,7 @@ def binder (m : BinderMeta) : EncM Unit := do
   byte m.contract.toBits
   byte m.result.toBits
 
-def expr : Expr → EncM Unit
+def expr : Expr md → EncM Unit
   | .bvar i => do byte 0; nat i
   | .fvar i t => do byte 1; nat i; expr t
   | .sort u => do byte 2; level u
@@ -101,7 +101,7 @@ def expr : Expr → EncM Unit
   | .lit (.strVal s) => do byte 9; list s.toUTF8.toList byte
   | .proj s i e => do byte 10; key s; nat i; expr e
 
-def val (cv : ConstantVal) : EncM Unit := do
+def val (cv : ConstantVal md) : EncM Unit := do
   key cv.name
   list cv.levelParams nat
   expr cv.type
@@ -111,7 +111,7 @@ def hint : ReducibilityHint → EncM Unit
   | .abbrev => byte 1
   | .regular h => do byte 2; nat h
 
-def caps (c : IndCaps) : EncM Unit := do
+def caps (c : IndCaps md) : EncM Unit := do
   bool c.eta
   match c.etaCtor with
   | none => byte 0
@@ -123,12 +123,12 @@ def caps (c : IndCaps) : EncM Unit := do
   bool c.ruleK
   propWhen c.sortZ
 
-def fire : RecRuleFire → EncM Unit
+def fire : RecRuleFire md → EncM Unit
   | .inert => byte 0
   | .plain => byte 1
   | .nested lvls pins => do byte 2; list lvls level; list pins expr
 
-def rule (r : RecRule) : EncM Unit := do
+def rule (r : RecRule md) : EncM Unit := do
   key r.ctor
   nat r.nfields
   nat r.ctorParams
@@ -138,7 +138,7 @@ def rule (r : RecRule) : EncM Unit := do
   bool r.eta
   bool r.paramsBlind
 
-def encInfo : ConstantInfo → EncM Unit
+def encInfo : ConstantInfo md → EncM Unit
   | .axiomInfo cv => do byte 0; val cv
   | .defnInfo cv v h => do byte 1; val cv; expr v; hint h
   | .thmInfo cv v => do byte 2; val cv; expr v
@@ -147,7 +147,7 @@ def encInfo : ConstantInfo → EncM Unit
   | .recInfo cv m p rules => do byte 5; val cv; nat m; nat p; list rules rule
   | .projInfo _ => throw "a projection table in a specification"
 
-def spec : Spec → EncM Unit
+def spec : Spec md → EncM Unit
   | .block decls => do byte 0; list decls encInfo
   | .anchor levels type => do byte 1; nat levels; expr type
   | .ops type eqs => do
@@ -168,7 +168,7 @@ def specBytes : Except String ByteArray := do
     nat specVersion
     list Role.all fun r => do
       nat (Role.all.idxOf r)
-      spec r.spec
+      spec (r.spec (md := .anon))
       list r.block fun s => nat (Role.all.idxOf s)
       list r.deps fun s => nat (Role.all.idxOf s)
   let ((), bytes) ← act.run .empty

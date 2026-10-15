@@ -47,8 +47,8 @@ open Ix.Kernel (Env Expr Key BinderMeta)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
-variable {acval : Key → (LevelParam → Nat) → AnnotTerm}
+variable {env : Env md} {φ : LevelParam → Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm}
 
 /-! ## The read Π-tower is determined -/
 
@@ -82,8 +82,8 @@ domain read under the anonymous openers (`openFvars`) — the reading is
 blind to an opener's name and annotation, so any same-index opener
 family produces the same tower. -/
 theorem stripLams_denotePTele :
-    ∀ (k : Nat) {e : Expr} {j : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr}
+    ∀ (k : Nat) {e : Expr md} {j : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md}
       {E : AnnotTerm},
       e.stripLams k = some (bs, body) →
       denoteMeta acval env φ j e = some E →
@@ -91,7 +91,7 @@ theorem stripLams_denotePTele :
         LamTele k E Γ C ∧ Γ.length = k ∧
         denoteMeta acval env φ (j + k)
           (Expr.instSeq (openFvars j k) (k - 1) body) = some C ∧
-        ∀ (i0 : Nat) (b : Expr × BinderMeta), bs[i0]? = some b →
+        ∀ (i0 : Nat) (b : Expr md × BinderMeta), bs[i0]? = some b →
           denoteMeta acval env φ (j + i0)
             (Expr.instSeq (openFvars j i0) (i0 - 1) b.1) =
             some (Γ.getD (k - 1 - i0) default) := by
@@ -222,20 +222,20 @@ reading-level form is what a *renamed* domain pin needs — the
 projection statement's telescope is the constructor's renamed, not
 equal to it. -/
 theorem towerCtxEqDAV {k : Nat} {Γβ Γc : List AnnotTerm}
-    {rbinders cbinders : List (Expr × BinderMeta)}
+    {rbinders cbinders : List (Expr md × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
     (hΓβlen : Γβ.length = k) (hΓclen : Γc.length = k)
-    (hβdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hβdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       rbinders[i0]? = some b →
       denoteMeta acval env φ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γβ.getD (k - 1 - i0) default))
-    (hcdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hcdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       cbinders[i0]? = some b →
       denoteMeta acval env φ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γc.getD (k - 1 - i0) default))
-    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < k → rbinders[i0]? = some b →
       cbinders[i0]? = some b' →
       denoteMeta acval env φ (0 + i0)
@@ -269,20 +269,20 @@ theorem towerCtxEqDAV {k : Nat} {Γβ Γc : List AnnotTerm}
 /-- **Two canonically-opened towers with pointwise-equal raw domains
 have the same read context** (`towerCtxEq`). -/
 theorem towerCtxEqAV {k : Nat} {Γβ Γc : List AnnotTerm}
-    {rbinders cbinders : List (Expr × BinderMeta)}
+    {rbinders cbinders : List (Expr md × BinderMeta)}
     (hrblen : rbinders.length = k) (hcblen : cbinders.length = k)
     (hΓβlen : Γβ.length = k) (hΓclen : Γc.length = k)
-    (hβdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hβdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       rbinders[i0]? = some b →
       denoteMeta acval env φ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γβ.getD (k - 1 - i0) default))
-    (hcdoms : ∀ (i0 : Nat) (b : Expr × BinderMeta),
+    (hcdoms : ∀ (i0 : Nat) (b : Expr md × BinderMeta),
       cbinders[i0]? = some b →
       denoteMeta acval env φ (0 + i0)
         (Expr.instSeq (openFvars 0 i0) (i0 - 1) b.1) =
         some (Γc.getD (k - 1 - i0) default))
-    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+    (hrdomsEq : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < k → rbinders[i0]? = some b →
       cbinders[i0]? = some b' → b.1 = b'.1) :
     Γβ = Γc :=
@@ -298,11 +298,11 @@ theorem projBodyValueAV {cnP cnF i : Nat} (hilt : i < cnF) {Cβ : AnnotTerm}
       (Expr.instSeq (openFvars 0 (cnP + cnF)) (cnP + cnF - 1)
         (.bvar (cnF - 1 - i))) = some Cβ) :
     Cβ = .bvar (cnP + cnF - 1 - (cnP + i)) := by
-  have hhit := Expr.instSeq_bvar (openFvars 0 (cnP + cnF))
+  have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (cnP + cnF))
     (cnP + cnF - 1) (cnF - 1 - i)
     (openFvars_bounded 0 (cnP + cnF)) (by omega)
     (by rw [openFvars_length]; omega)
-  rw [openFvars_getElem? (d := 0) (k := cnP + cnF)
+  rw [openFvars_getElem? (md := md) (d := 0) (k := cnP + cnF)
     (i := cnP + cnF - 1 - (cnF - 1 - i)) (by omega)] at hhit
   rw [show cnP + cnF - 1 - (cnF - 1 - i) = cnP + i from by omega] at hhit
   have h2 := hCβden
@@ -312,8 +312,8 @@ theorem projBodyValueAV {cnP cnF i : Nat} (hilt : i < cnF) {Cβ : AnnotTerm}
 
 /-- **The projection statement's right side reads to the field's frame
 variable** (`projRhsValue`). -/
-theorem projRhsValueAV {fvs : List Expr} {rP cnF i : Nat} {vR : AnnotTerm}
-    (hshapeS : ∀ (i0 : Nat) (x : Expr), fvs[i0]? = some x →
+theorem projRhsValueAV {fvs : List (Expr md)} {rP cnF i : Nat} {vR : AnnotTerm}
+    (hshapeS : ∀ (i0 : Nat) (x : Expr md), fvs[i0]? = some x →
       ∃ ty, x = Expr.fvar i0 ty)
     (hfvslen : fvs.length = rP + cnF) (hilt : i < cnF)
     (hRden : denoteMeta acval env φ (rP + cnF)
@@ -341,10 +341,10 @@ tower's slots.**  No carrier equation is consumed: the only step that
 touches the spine is `denoteMeta_erasedEq`, and the reading is blind to an
 opener's name and annotation. -/
 theorem instPisAt_openerDoms :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {j : Nat} {T : AnnotTerm},
-        (∀ (q : Nat) (x : Expr), sp[q]? = some x →
+        (∀ (q : Nat) (x : Expr md), sp[q]? = some x →
           ∃ t, x = Expr.fvar (j + q) t) →
         denoteMeta acval env φ j ty = some T →
         ∀ {Γ : List AnnotTerm} {R : AnnotTerm}, PiTeleAV sp.length T Γ R →
@@ -411,7 +411,7 @@ theorem instPisAt_openerDoms :
                 (.fvar j dom) from by
               rw [Nat.add_zero]; constructor)) (j + 1)]
           exact hB
-        have hshape' : ∀ (q0 : Nat) (x : Expr), sp[q0]? = some x →
+        have hshape' : ∀ (q0 : Nat) (x : Expr md), sp[q0]? = some x →
             ∃ t, x = Expr.fvar (j + 1 + q0) t := by
           intro q0 x hx
           obtain ⟨t', hx'⟩ := hshape (q0 + 1) x (by simpa using hx)
@@ -434,22 +434,22 @@ position's reading is a `.bvar` and the run's `q`-th domain reads (at
 depth `q`) to the tower slot the frame's `Sat` already inhabits;
 `denoteMeta_lift` moves both to the frame depth. -/
 theorem projSpineMem
-    (hacl : ∀ (n : Key) (ψ : LevelParam → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    {K : Nat} {fvs : List Expr} (hfvslen : fvs.length = K)
-    (hshapeS : ∀ (q : Nat) (x : Expr), fvs[q]? = some x →
+    {K : Nat} {fvs : List (Expr md)} (hfvslen : fvs.length = K)
+    (hshapeS : ∀ (q : Nat) (x : Expr md), fvs[q]? = some x →
       ∃ ty, x = Expr.fvar q ty)
-    (hwsTy : ∀ (q : Nat) (ty : Expr),
+    (hwsTy : ∀ (q : Nat) (ty : Expr md),
       Expr.fvar q ty ∈ fvs → Expr.WScoped q ty)
-    {ctyR : Expr} (hCwR : ctyR.hasFvar = false)
-    {cdoms : List Expr} {cres : Expr}
+    {ctyR : Expr md} (hCwR : ctyR.hasFvar = false)
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt fvs ctyR = some (cdoms, cres))
     {Γs : List AnnotTerm} (hΓslen : Γs.length = K)
     (hdomsLow : ∀ q, q < K →
       denoteMeta acval env φ q (cdoms.getD q default)
         = some (Γs.getD (K - 1 - q) default)) :
     ∀ σ : Nat → V, Sat V Γs σ →
-      ∀ (q : Nat) (x : Expr), fvs[q]? = some x →
+      ∀ (q : Nat) (x : Expr md), fvs[q]? = some x →
         ∃ w, denoteMeta acval env φ K x = some w ∧ WellDenotedV V σ w ∧
           ∀ dw, denoteMeta acval env φ K (cdoms.getD q default) = some dw →
             interp V σ w ∈ˢ interp V σ dw := by

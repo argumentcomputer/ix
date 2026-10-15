@@ -46,52 +46,52 @@ open Ix.Kernel (CheckMode Env Expr Key isDefEqCore DefEqListOk)
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : LevelParam → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 6400000 in
 /-- **The zipper, at the reading** (`zipperS`): the fired statement
 spine satisfies and fits the checked statement's telescope. -/
 theorem zipper {m : EnvModel V env} {F : Nat}
     (hclaims : DefEqClaim μ m φ F)
-    {f : Key → Key} (hroT : RenameOk m.acval env f)
+    {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {rP cnP cnF mI : Nat} {xs ys : List AnnotTerm} {ρ : Nat → V}
     (hrPmI : rP ≤ mI) (hlenX : xs.length = mI)
     (hlenY : ys.length = cnP + cnF)
     -- the statement frame
-    {fvs : List Expr} (hfvslen : fvs.length = rP + cnF)
-    (hshapeS : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
+    (hshapeS : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     (hwsFvs : ∀ x ∈ fvs, Expr.WScoped (rP + cnF) x)
     (hleafClosed : ∀ l, (∃ x ∈ fvs, l ∈ x.fvarLeaves) →
       Expr.fvar l.1 l.2 ∈ fvs)
-    (hlbFvs : ∀ (i : Nat) (ty : Expr),
+    (hlbFvs : ∀ (i : Nat) (ty : Expr md),
       Expr.fvar i ty ∈ fvs → ty.looseBVarsBounded 0 = true)
     {Tstmt : AnnotTerm} {Γs : List AnnotTerm} {Rbody : AnnotTerm}
     (htowerS : PiTeleAV (rP + cnF) Tstmt Γs Rbody)
     (hokTst : ∀ σ : Nat → V, WellDenotedV V σ Tstmt)
-    (hdomsS0 : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+    (hdomsS0 : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (Γs.getD (rP + cnF - 1 - i) default))
     -- the public (recursor) frame
-    {fvsP : List Expr} (hfvsPlen : fvsP.length = rP)
-    (hshapeP : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
+    (hshapeP : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       ∃ ty, x = Expr.fvar i ty)
     {TV : AnnotTerm} {ΓP : List AnnotTerm} {RP : AnnotTerm}
     (htowerP : PiTeleAV rP TV ΓP RP)
     (hokTV : ∀ σ : Nat → V, WellDenotedV V σ TV)
-    (hdomsP0 : ∀ (i : Nat) (x : Expr), fvsP[i]? = some x →
+    (hdomsP0 : ∀ (i : Nat) (x : Expr md), fvsP[i]? = some x →
       denoteMeta m.acval env φ i (Expr.fvarTypeD x)
         = some (ΓP.getD (rP - 1 - i) default))
     -- the renamed recursor run and its identification
-    {tyAR : Expr} (htyRw : tyAR.hasFvar = false)
+    {tyAR : Expr md} (htyRw : tyAR.hasFvar = false)
     (htyRb : tyAR.looseBVarsBounded 0 = true)
-    {rdoms : List Expr} {rrest : Expr}
+    {rdoms : List (Expr md)} {rrest : Expr md}
     (hrinst : Expr.instPisAt (fvs.take rP) tyAR = some (rdoms, rrest))
     (hrenP : ∀ n, n < rP →
       RenEqT f ((fvsP.map Expr.fvarTypeD).getD n default)
         (rdoms.getD n default))
     -- the constructor's run at the statement frame
-    {ctyR : Expr} (hCwR : ctyR.hasFvar = false)
+    {ctyR : Expr md} (hCwR : ctyR.hasFvar = false)
     (hCbR : ctyR.looseBVarsBounded 0 = true)
     {TVj : AnnotTerm}
     (hTVjK : denoteMeta m.acval env φ (rP + cnF) ctyR = some TVj)
@@ -99,17 +99,17 @@ theorem zipper {m : EnvModel V env} {F : Nat}
     (hTVjcl : ∀ k : Nat, TVj.liftN 1 k = TVj)
     {Γj : List AnnotTerm} {Rj : AnnotTerm}
     (htowerJ : PiTeleAV (cnP + cnF) TVj Γj Rj)
-    {sp : List Expr} (hsplen : sp.length = cnP + cnF)
-    (hspLeaf : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)
+    (hspLeaf : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∀ l ∈ x.fvarLeaves,
         Expr.fvar l.1 l.2 ∈ fvs ∧ l.1 < rP + (q + 1 - cnP))
-    (hspScope : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hspScope : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       Expr.WScoped (rP + cnF) x ∧ x.looseBVarsBounded 0 = true)
     (hspFld : ∀ j, j < cnF → sp[cnP + j]? = fvs[rP + j]?)
-    {cdoms : List Expr} {cres : Expr}
+    {cdoms : List (Expr md)} {cres : Expr md}
     (hcinst : Expr.instPisAt sp ctyR = some (cdoms, cres))
     {mix : List AnnotTerm} (hmixlen : mix.length = cnP + cnF)
-    (hmixsp : ∀ (q : Nat) (x : Expr), sp[q]? = some x →
+    (hmixsp : ∀ (q : Nat) (x : Expr md), sp[q]? = some x →
       ∃ w0, denoteMeta m.acval env φ (rP + cnF) x = some w0 ∧
         mix[q]? = some (AnnotTerm.instSeq (xs.take rP ++ ys.drop cnP)
           (rP + cnF - 1) w0))

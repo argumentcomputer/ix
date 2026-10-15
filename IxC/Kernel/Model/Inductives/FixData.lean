@@ -34,13 +34,13 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The opened-form guard, positionally -/
 
 /-- `nativeOpenedOk`, read positionally. -/
-structure FixOpened (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx nF : Nat)
-    (ks : List RecFieldKind) (fvsP xFvs : List Expr) (xrest : Expr) : Prop where
+structure FixOpened (env₀ : Env md) (T : Key md) (lps : List LevelParam) (nP nIdx nF : Nat)
+    (ks : List RecFieldKind) (fvsP xFvs : List (Expr md)) (xrest : Expr md) : Prop where
   residRes : ∀ e ∈ xrest.getAppArgs.drop nP, e.constsResolve env₀ = true
   ord : ∀ i x, xFvs[i]? = some x → ks.getD i .ordinary = .ordinary →
     x.fvarTypeD.constsResolve env₀ = true
@@ -70,10 +70,10 @@ structure FixOpened (env₀ : Env) (T : Key) (lps : List LevelParam) (nP nIdx nF
   kinds : ∀ i, i < nF → ks.getD i .ordinary = .ordinary ∨ ks.getD i .ordinary = .recursive ∨
     ks.getD i .ordinary = .reflexive
 
-theorem fixOpened_of {env₀ : Env} {T : Key} {lps : List LevelParam} {nP nIdx : Nat} {cty : Expr}
+theorem fixOpened_of {env₀ : Env md} {T : Key md} {lps : List LevelParam} {nP nIdx : Nat} {cty : Expr md}
     {nF : Nat} {ks : List RecFieldKind}
     (h : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cty nF ks = true) :
-    ∃ (fvsP : List Expr) (crest : Expr) (xFvs : List Expr) (xrest : Expr),
+    ∃ (fvsP : List (Expr md)) (crest : Expr md) (xFvs : List (Expr md)) (xrest : Expr md),
       openPisAtFvars nP cty 0 = some (fvsP, crest) ∧
       openPisAtFvars nF crest nP = some (xFvs, xrest) ∧
       FixOpened env₀ T lps nP nIdx nF ks fvsP xFvs xrest := by
@@ -135,9 +135,9 @@ theorem fixOpened_of {env₀ : Env} {T : Key} {lps : List LevelParam} {nP nIdx :
 
 /-- The leading Π-entries of a Π-telescope's reading carry the reading's
 bits: domain bit `0`, codomain bit a `pwBit` (so at most `1`). -/
-theorem stripPisAV_denoteMeta_bits {acval : Key → (LevelParam → Nat) → AnnotTerm} {env : Env}
+theorem stripPisAV_denoteMeta_bits {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
     {φ : LevelParam → Nat} :
-    ∀ (n : Nat) {d : Nat} {e : Expr} {fvs : List Expr} {o : Expr} {ea : AnnotTerm}
+    ∀ (n : Nat) {d : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md} {ea : AnnotTerm}
       {pps : List (Nat × Nat × AnnotTerm)} {b : AnnotTerm},
       openPisAtFvars n e d = some (fvs, o) → denoteMeta acval env φ d e = some ea →
       stripPisAV n ea = some (pps, b) → ∀ p ∈ pps, p.1 = 0 ∧ p.2.1 ≤ 1
@@ -179,11 +179,11 @@ theorem stripPisAV_denoteMeta_bits {acval : Key → (LevelParam → Nat) → Ann
 
 /-- **A recursive constructor's data** at a carrier storing the former
 (see the module docstring). -/
-structure FixCtorDataI {env : Env} (m : EnvModel V env) (env₀ : Env) (T : Key)
-    (lps : List LevelParam) (cvC : ConstantVal) (nP nF nIdx : Nat) (resSort : Level)
-    (isProp large : Bool) (idxArgs : List Expr)
+structure FixCtorDataI {env : Env md} (m : EnvModel V env) (env₀ : Env md) (T : Key md)
+    (lps : List LevelParam) (cvC : ConstantVal md) (nP nF nIdx : Nat) (resSort : Level)
+    (isProp large : Bool) (idxArgs : List (Expr md))
     (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)) (Es : (LevelParam → Nat) → List AnnotTerm)
-    (srcs : List (Option Nat)) (ks : List RecFieldKind) (fvsP xFvs : List Expr) (xrest : Expr)
+    (srcs : List (Option Nat)) (ks : List RecFieldKind) (fvsP xFvs : List (Expr md)) (xrest : Expr md)
     (Eiss : (LevelParam → Nat) → List (List AnnotTerm))
     (tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) : Prop
     extends CtorDataI m T lps cvC nP nF nIdx resSort isProp large idxArgs ds Es srcs where
@@ -256,11 +256,11 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps
 
 universe w'
 
-variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- The parameter variables read to the parameter spine at depth `D`. -/
-theorem denoteMetaSpine_params {acval : Key → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
-    (D : Nat) {fvsP : List Expr} {nP : Nat} (hlen : fvsP.length = nP)
+theorem denoteMetaSpine_params {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
+    (D : Nat) {fvsP : List (Expr md)} {nP : Nat} (hlen : fvsP.length = nP)
     (hidx : ∀ k x, fvsP[k]? = some x → ∃ ty, x = Expr.fvar k ty) :
     DenoteMetaSpine acval env φ D fvsP (paramBvarsAt nP D) := by
   have := denoteMetaSpine_fvars (acval := acval) (env := env) (φ := φ) D fvsP 0
@@ -290,9 +290,9 @@ theorem bvarsBelow_mkPisAV_inv {k : Nat} :
 /-- **The recursive constructor's data**, from its stage run at the
 environment holding the former and the opened-form guard. -/
 theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
-    {bs : List (Expr × BinderMeta)} {ks : List RecFieldKind}
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
+    {bs : List (Expr md × BinderMeta)} {ks : List RecFieldKind}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
@@ -301,9 +301,9 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
     (hstripT : cvTa.type.stripPis (nP + nIdx) = some (bs, .sort resSort))
     (hks : ks.length = nF)
     (hopened : Ix.Kernel.nativeOpenedOk env₀ T lps nP nIdx cvCa.type nF ks = true) :
-    ∃ (idxArgs : List Expr) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    ∃ (idxArgs : List (Expr md)) (ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
       (Es : (LevelParam → Nat) → List AnnotTerm) (srcs : List (Option Nat))
-      (fvsP xFvs : List Expr) (xrest : Expr) (Eiss : (LevelParam → Nat) → List (List AnnotTerm))
+      (fvsP xFvs : List (Expr md)) (xrest : Expr md) (Eiss : (LevelParam → Nat) → List (List AnnotTerm))
       (tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))),
       FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs
         ks fvsP xFvs xrest Eiss tss := by
@@ -349,7 +349,7 @@ theorem fixCtorData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
     have hb := DomsBelow.getD_below (nP + i) (hCD.below ψ) (by rw [hCD.len ψ]; omega)
     rwa [Nat.zero_add] at hb
   -- the former at the parameter variables followed by the index expressions
-  have hfamRead : ∀ ψ (d : Nat) (body : Expr), body.getAppFn = Expr.const T (lps.map .param) →
+  have hfamRead : ∀ ψ (d : Nat) (body : Expr md), body.getAppFn = Expr.const T (lps.map .param) →
       body.getAppArgs.take nP = fvsP → body.getAppArgs.length = nP + nIdx →
       ∀ R, denoteMeta mp.base2.acval env ψ d body = some R →
       ∃ Eis : List AnnotTerm, Eis.length = nIdx ∧

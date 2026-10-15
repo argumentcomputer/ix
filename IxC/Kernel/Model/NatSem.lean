@@ -40,13 +40,13 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : LevelParam → Nat}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The numeral spine, and its facts -/
 
 /-- The numeral spine at an environment's `Nat` heads — exactly
 `denoteMeta`'s `.lit (.natVal n)` clause. -/
-@[expose] def natLit {env : Env} (m : EnvModel V env) (φ : LevelParam → Nat)
+@[expose] def natLit {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
     (n : Nat) : AnnotTerm :=
   natLitAV (m.acval Ix.Kernel.natZeroName φ)
     (m.acval Ix.Kernel.natSuccName φ) n
@@ -98,10 +98,10 @@ theorem natLit_mem (m : EnvModel V env) (hnh : NatHeads m φ)
 /-- One certified recurrence equation, read at value slots
 (`natEq_value`'s mirror over `NatOps`). -/
 theorem natEq_value (m : EnvModel V env) (hops : NatOps m φ)
-    {c : Key} (hc : c ∈ Ix.Kernel.natOpNames) {cv : ConstantVal}
-    {v : Expr} {hint : ReducibilityHint}
+    {c : Key md} (hc : c ∈ Ix.Kernel.natOpNames) {cv : ConstantVal md}
+    {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? c = some (.defnInfo cv v hint))
-    {eq : Expr × Expr} (heq : eq ∈ Ix.Kernel.natOpEquations 0 c)
+    {eq : Expr md × Expr md} (heq : eq ∈ Ix.Kernel.natOpEquations 0 c)
     {L R : AnnotTerm}
     (hdL : denoteMeta m.acval env φ 2 eq.1 = some L)
     (hdR : denoteMeta m.acval env φ 2 eq.2 = some R)
@@ -156,7 +156,7 @@ theorem natOpV_bin_of_clauses (m : EnvModel V env)
 /-- `Nat.add` on literal values (`natOpV_add`'s mirror). -/
 theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natAddName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -165,10 +165,10 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (natLit m φ a)))
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (a + b)) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natAddName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natAddName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natAddName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -198,13 +198,13 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = x := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natAddName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
         (.const Ix.Kernel.natZeroName []),
         .fvar 0 (.const Ix.Kernel.natName [])))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natAddName φ) (.bvar 1))
         (m.acval Ix.Kernel.natZeroName φ))
       (R := .bvar 1)
@@ -229,7 +229,7 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
           (SetTheory.app (SetTheory.app
             (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x) y) := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natAddName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
@@ -242,7 +242,7 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
               (.const Ix.Kernel.natName [])))
             (.fvar 1
               (.const Ix.Kernel.natName [])))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natAddName φ) (.bvar 1))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
       (R := .app (m.acval Ix.Kernel.natSuccName φ)
@@ -279,16 +279,16 @@ form, `mul` reads `add`'s, `pow` reads `mul`'s — each dependency's
 /-- `Nat.pred` on literal values (`natOpV_pred`'s mirror). -/
 theorem natOpV_pred (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natPredName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a : Nat,
       SetTheory.app (interp V ρ (m.acval Ix.Kernel.natPredName φ))
         (interp V ρ (natLit m φ a))
       = interp V ρ (natLit m φ (a - 1)) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natPredName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natPredName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvp, vp, hp, hfp, hlpp⟩ := hdeps Ix.Kernel.natPredName (by decide)
+  obtain ⟨cvp, vp, hp, hfp, hlpp⟩ := hdeps Ix.Kernel.natPredName (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKp : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -315,11 +315,11 @@ theorem natOpV_pred (m : EnvModel V env) (hops : NatOps m φ)
       (interp V ρ (m.acval Ix.Kernel.natPredName φ))
       (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = interp V ρ (m.acval Ix.Kernel.natZeroName φ) := by
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.const Ix.Kernel.natPredName [])
           (.const Ix.Kernel.natZeroName []),
         .const Ix.Kernel.natZeroName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (m.acval Ix.Kernel.natPredName φ)
         (m.acval Ix.Kernel.natZeroName φ))
       (R := m.acval Ix.Kernel.natZeroName φ)
@@ -336,13 +336,13 @@ theorem natOpV_pred (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (m.acval Ix.Kernel.natSuccName φ)) x)
       = x := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.const Ix.Kernel.natPredName [])
           (.app (.const Ix.Kernel.natSuccName [])
             (.fvar 0
               (.const Ix.Kernel.natName []))),
         .fvar 0 (.const Ix.Kernel.natName [])))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (m.acval Ix.Kernel.natPredName φ)
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 1)))
       (R := .bvar 1)
@@ -365,7 +365,7 @@ theorem natOpV_pred (m : EnvModel V env) (hops : NatOps m φ)
 /-- `Nat.sub` on literal values (`natOpV_sub`'s mirror). -/
 theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natSubName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -374,12 +374,12 @@ theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (natLit m φ a)))
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (a - b)) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natSubName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natSubName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natSubName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvp, vp, hpnt, hfp, hlpp⟩ := hdeps Ix.Kernel.natPredName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -414,13 +414,13 @@ theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = x := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natSubName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
         (.const Ix.Kernel.natZeroName []),
         .fvar 0 (.const Ix.Kernel.natName [])))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natSubName φ) (.bvar 1))
         (m.acval Ix.Kernel.natZeroName φ))
       (R := .bvar 1)
@@ -444,7 +444,7 @@ theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
           (SetTheory.app (SetTheory.app
             (interp V ρ (m.acval Ix.Kernel.natSubName φ)) x) y) := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natSubName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
@@ -457,7 +457,7 @@ theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
               (.const Ix.Kernel.natName [])))
             (.fvar 1
               (.const Ix.Kernel.natName [])))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natSubName φ) (.bvar 1))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
       (R := .app (m.acval Ix.Kernel.natPredName φ)
@@ -486,7 +486,7 @@ theorem natOpV_sub (m : EnvModel V env) (hops : NatOps m φ)
 /-- `Nat.mul` on literal values (`natOpV_mul`'s mirror). -/
 theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natMulName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -495,12 +495,12 @@ theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (natLit m φ a)))
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (a * b)) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natMulName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natMulName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natMulName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cva, va, hant, hfa, hlpa⟩ := hdeps Ix.Kernel.natAddName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -535,13 +535,13 @@ theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = interp V ρ (m.acval Ix.Kernel.natZeroName φ) := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natMulName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
         (.const Ix.Kernel.natZeroName []),
         .const Ix.Kernel.natZeroName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natMulName φ) (.bvar 1))
         (m.acval Ix.Kernel.natZeroName φ))
       (R := m.acval Ix.Kernel.natZeroName φ)
@@ -565,7 +565,7 @@ theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
           (SetTheory.app (SetTheory.app
             (interp V ρ (m.acval Ix.Kernel.natMulName φ)) x) y)) x := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natMulName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
@@ -580,7 +580,7 @@ theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
               (.const Ix.Kernel.natName []))))
           (.fvar 0
             (.const Ix.Kernel.natName []))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natMulName φ) (.bvar 1))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
       (R := .app (.app (m.acval Ix.Kernel.natAddName φ)
@@ -607,7 +607,7 @@ theorem natOpV_mul (m : EnvModel V env) (hops : NatOps m φ)
 /-- `Nat.pow` on literal values (`natOpV_pow`'s mirror). -/
 theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natPowName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -616,12 +616,12 @@ theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (natLit m φ a)))
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (a ^ b)) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natPowName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natPowName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natPowName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvm, vm, hmnt, hfm, hlpm⟩ := hdeps Ix.Kernel.natMulName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -658,14 +658,14 @@ theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (m.acval Ix.Kernel.natSuccName φ))
           (interp V ρ (m.acval Ix.Kernel.natZeroName φ)) := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natPowName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
         (.const Ix.Kernel.natZeroName []),
         .app (.const Ix.Kernel.natSuccName [])
           (.const Ix.Kernel.natZeroName [])))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natPowName φ) (.bvar 1))
         (m.acval Ix.Kernel.natZeroName φ))
       (R := .app (m.acval Ix.Kernel.natSuccName φ)
@@ -691,7 +691,7 @@ theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
           (SetTheory.app (SetTheory.app
             (interp V ρ (m.acval Ix.Kernel.natPowName φ)) x) y)) x := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natPowName [])
           (.fvar 0
             (.const Ix.Kernel.natName [])))
@@ -706,7 +706,7 @@ theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
               (.const Ix.Kernel.natName []))))
           (.fvar 0
             (.const Ix.Kernel.natName []))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natPowName φ) (.bvar 1))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
       (R := .app (.app (m.acval Ix.Kernel.natMulName φ)
@@ -733,7 +733,7 @@ theorem natOpV_pow (m : EnvModel V env) (hops : NatOps m φ)
 /-- `Nat.beq` on literal values (`natOpV_beq`'s mirror). -/
 theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natBeqName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -744,11 +744,11 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
       = interp V ρ (m.acval
           (if a = b then Ix.Kernel.boolTrueName else Ix.Kernel.boolFalseName)
           φ) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natBeqName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natBeqName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, hbool⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨⟨ciT, hfT, hlpT⟩, ⟨ciF, hfF, hlpF⟩⟩ := hbool (Or.inl rfl)
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natBeqName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -784,12 +784,12 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
       (interp V ρ (m.acval Ix.Kernel.natZeroName φ)))
       (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = interp V ρ (m.acval Ix.Kernel.boolTrueName φ) := by
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBeqName [])
           (.const Ix.Kernel.natZeroName []))
         (.const Ix.Kernel.natZeroName []),
         .const Ix.Kernel.boolTrueName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBeqName φ)
         (m.acval Ix.Kernel.natZeroName φ))
         (m.acval Ix.Kernel.natZeroName φ))
@@ -810,13 +810,13 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
           (interp V ρ (m.acval Ix.Kernel.natSuccName φ)) y)
       = interp V ρ (m.acval Ix.Kernel.boolFalseName φ) := by
     intro y hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBeqName [])
           (.const Ix.Kernel.natZeroName []))
         (.app (.const Ix.Kernel.natSuccName [])
           (.fvar 1 (.const Ix.Kernel.natName []))),
         .const Ix.Kernel.boolFalseName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBeqName φ)
         (m.acval Ix.Kernel.natZeroName φ))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
@@ -840,14 +840,14 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = interp V ρ (m.acval Ix.Kernel.boolFalseName φ) := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBeqName [])
           (.app (.const Ix.Kernel.natSuccName [])
             (.fvar 0
               (.const Ix.Kernel.natName []))))
         (.const Ix.Kernel.natZeroName []),
         .const Ix.Kernel.boolFalseName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBeqName φ)
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 1)))
         (m.acval Ix.Kernel.natZeroName φ))
@@ -874,7 +874,7 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
       = SetTheory.app (SetTheory.app
           (interp V ρ (m.acval Ix.Kernel.natBeqName φ)) x) y := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBeqName [])
           (.app (.const Ix.Kernel.natSuccName [])
             (.fvar 0
@@ -884,7 +884,7 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
         .app (.app (.const Ix.Kernel.natBeqName [])
           (.fvar 0 (.const Ix.Kernel.natName [])))
           (.fvar 1 (.const Ix.Kernel.natName []))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBeqName φ)
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 1)))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
@@ -927,7 +927,7 @@ theorem natOpV_beq (m : EnvModel V env) (hops : NatOps m φ)
 /-- `Nat.ble` on literal values (`natOpV_ble`'s mirror). -/
 theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
-    {cv : ConstantVal} {v : Expr} {hint : ReducibilityHint}
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natBleName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
     ∀ a b : Nat,
@@ -938,12 +938,12 @@ theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
       = interp V ρ (m.acval
           (if a ≤ b then Ix.Kernel.boolTrueName else Ix.Kernel.boolFalseName)
           φ) := by
-  obtain ⟨hg, -⟩ := hops Ix.Kernel.natBleName (by decide) cv v hint hf
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natBleName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, hbool⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨⟨ciT, hfT, hlpT⟩, ⟨ciF, hfF, hlpF⟩⟩ :=
     hbool (Or.inr (Or.inl rfl))
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natBleName
-    (by decide)
+    (by (cases md <;> decide))
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
     hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
   have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
@@ -980,12 +980,12 @@ theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))) y
       = interp V ρ (m.acval Ix.Kernel.boolTrueName φ) := by
     intro y hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBleName [])
           (.const Ix.Kernel.natZeroName []))
         (.fvar 1 (.const Ix.Kernel.natName [])),
         .const Ix.Kernel.boolTrueName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBleName φ)
         (m.acval Ix.Kernel.natZeroName φ)) (.bvar 0))
       (R := m.acval Ix.Kernel.boolTrueName φ)
@@ -1006,14 +1006,14 @@ theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
       = interp V ρ (m.acval Ix.Kernel.boolFalseName φ) := by
     intro x hx
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBleName [])
           (.app (.const Ix.Kernel.natSuccName [])
             (.fvar 0
               (.const Ix.Kernel.natName []))))
         (.const Ix.Kernel.natZeroName []),
         .const Ix.Kernel.boolFalseName []))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBleName φ)
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 1)))
         (m.acval Ix.Kernel.natZeroName φ))
@@ -1040,7 +1040,7 @@ theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
       = SetTheory.app (SetTheory.app
           (interp V ρ (m.acval Ix.Kernel.natBleName φ)) x) y := by
     intro x y hx hy
-    have h := natEq_value m hops (by decide) hf
+    have h := natEq_value m hops (by (cases md <;> decide)) hf
       (eq := (.app (.app (.const Ix.Kernel.natBleName [])
           (.app (.const Ix.Kernel.natSuccName [])
             (.fvar 0
@@ -1050,7 +1050,7 @@ theorem natOpV_ble (m : EnvModel V env) (hops : NatOps m φ)
         .app (.app (.const Ix.Kernel.natBleName [])
           (.fvar 0 (.const Ix.Kernel.natName [])))
           (.fvar 1 (.const Ix.Kernel.natName []))))
-      (by decide)
+      (by (cases md <;> decide))
       (L := .app (.app (m.acval Ix.Kernel.natBleName φ)
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 1)))
         (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))

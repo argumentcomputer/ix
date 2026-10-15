@@ -32,9 +32,9 @@ open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 variable {V : Type w} [SetTheory V]
 
 /-- A closed replacement moves no leaf. -/
-theorem fvarLeaves_substConst0 {n : Key} {r : Expr}
+theorem fvarLeaves_substConst0 {n : Key md} {r : Expr md}
     (hr : r.hasFvar = false) :
-    ∀ e : Expr, (Expr.substConst0 n r e).fvarLeaves = e.fvarLeaves
+    ∀ e : Expr md, (Expr.substConst0 n r e).fvarLeaves = e.fvarLeaves
   | .const c us => by
     simp only [Expr.substConst0]
     split
@@ -49,9 +49,9 @@ theorem fvarLeaves_substConst0 {n : Key} {r : Expr}
   | .forallE _ _ _ | .letE _ _ _ _ | .proj _ _ _ => rfl
 
 /-- A `looseBVars`-closed replacement keeps the bound. -/
-theorem looseBVarsBounded_substConst0 {n : Key} {r : Expr}
+theorem looseBVarsBounded_substConst0 {n : Key md} {r : Expr md}
     (hr : r.looseBVarsBounded 0 = true) :
-    ∀ (e : Expr) {k : Nat}, e.looseBVarsBounded k = true →
+    ∀ (e : Expr md) {k : Nat}, e.looseBVarsBounded k = true →
       (Expr.substConst0 n r e).looseBVarsBounded k = true
   | .const c us, k, he => by
     simp only [Expr.substConst0]
@@ -68,7 +68,7 @@ theorem looseBVarsBounded_substConst0 {n : Key} {r : Expr}
   | .letE _ _ _ _, _, he | .proj _ _ _, _, he => he
 
 /-- The binary pinned type, inverted. -/
-theorem natOpTyPinned_binaryE {env : Env} {n : Key} {ty : Expr}
+theorem natOpTyPinned_binaryE {env : Env md} {n : Key md} {ty : Expr md}
     (hn : ¬(n = natPredName))
     (h : natOpTyPinned env n ty = true) :
     ∃ mb mb2 cod, ty = .forallE (.const natName [])
@@ -91,7 +91,7 @@ theorem natOpTyPinned_binaryE {env : Env} {n : Key} {ty : Expr}
   | .forallE _ (.proj _ _ _) _ => intro h; exact nomatch h
 
 /-- The codomain is a stored, level-monomorphic constant. -/
-theorem natOpCod_stored {env : Env} {n : Key} {cod : Expr}
+theorem natOpCod_stored {env : Env md} {n : Key md} {cod : Expr md}
     (h : natOpCod env n cod = true) :
     (∃ ci, cod = .const boolName [] ∧
       env.find? boolName = some ci ∧
@@ -111,7 +111,7 @@ theorem natOpCod_stored {env : Env} {n : Key} {cod : Expr}
   · exact Or.inr (by simpa using h)
 
 /-- `Nat.ble`'s codomain is the stored `Bool`. -/
-theorem natOpCod_ble {env : Env} {cod : Expr}
+theorem natOpCod_ble {env : Env md} {cod : Expr md}
     (h : natOpCod env natBleName cod = true) :
     cod = Expr.const boolName [] ∧ ∃ ci,
       env.find? boolName = some ci ∧
@@ -119,7 +119,7 @@ theorem natOpCod_ble {env : Env} {cod : Expr}
       ci.toConstantVal.type = .sort (.succ .zero) := by
   unfold natOpCod at h
   rw [if_pos (show (decide (natBleName = natBeqName) ||
-    decide (natBleName = natBleName)) = true from by decide)] at h
+    decide (natBleName = natBleName)) = true from by (cases md <;> decide))] at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨rfl, h2⟩ := h
   revert h2
@@ -131,8 +131,8 @@ theorem natOpCod_ble {env : Env} {cod : Expr}
     exact ⟨rfl, ci, rfl, h2.1, h2.2⟩
 
 /-- Where a leaf of the two-hypothesis applied form can come from. -/
-theorem divModCertApplied_mem2 {p h1 h2 : Expr}
-    (hp : p.hasFvar = false) {l : Nat × Expr}
+theorem divModCertApplied_mem2 {p h1 h2 : Expr md}
+    (hp : p.hasFvar = false) {l : Nat × Expr md}
     (hl : l ∈ (divModCertApplied p [h1, h2]).fvarLeaves) :
     l = (0, Expr.const natName []) ∨
     l = (1, Expr.const natName []) ∨
@@ -150,8 +150,8 @@ theorem divModCertApplied_mem2 {p h1 h2 : Expr}
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h))))
 
 /-- Where a leaf of the one-hypothesis applied form can come from. -/
-theorem divModCertApplied_mem1 {p h1 : Expr}
-    (hp : p.hasFvar = false) {l : Nat × Expr}
+theorem divModCertApplied_mem1 {p h1 : Expr md}
+    (hp : p.hasFvar = false) {l : Nat × Expr md}
     (hl : l ∈ (divModCertApplied p [h1]).fvarLeaves) :
     l = (0, Expr.const natName []) ∨
     l = (1, Expr.const natName []) ∨
@@ -173,14 +173,14 @@ the (literal) statement, and it is all the depth-4 frame needs from
 it. -/
 
 /-- Is every leaf of `e` the frame's `x` or `y`, at `Nat`? -/
-def dmLeavesOk (e : Expr) : Bool :=
+def dmLeavesOk (e : Expr md) : Bool :=
   e.fvarLeaves.all (fun l =>
     (l.1 == 0 && l.2 == Expr.const natName []) ||
     (l.1 == 1 && l.2 == Expr.const natName []))
 
 /-- A leaf of a `dmLeavesOk` term, identified. -/
-theorem dmLeavesOk_mem {e : Expr} (h : dmLeavesOk e = true)
-    {l : Nat × Expr} (hl : l ∈ e.fvarLeaves) :
+theorem dmLeavesOk_mem {e : Expr md} (h : dmLeavesOk e = true)
+    {l : Nat × Expr md} (hl : l ∈ e.fvarLeaves) :
     l = (0, Expr.const natName []) ∨
     l = (1, Expr.const natName []) := by
   have hm := List.all_eq_true.mp h l hl
@@ -196,7 +196,7 @@ theorem dmLeavesOk_mem {e : Expr} (h : dmLeavesOk e = true)
       rw [h1, h2])
 
 /-- `dmLeavesOk` survives the operation substitution. -/
-theorem dmLeavesOk_substConst0 {c : Key} {value' e : Expr}
+theorem dmLeavesOk_substConst0 {c : Key md} {value' e : Expr md}
     (hvf : value'.hasFvar = false) (h : dmLeavesOk e = true) :
     dmLeavesOk (Expr.substConst0 c value' e) = true := by
   unfold dmLeavesOk at h ⊢
@@ -205,27 +205,27 @@ theorem dmLeavesOk_substConst0 {c : Key} {value' e : Expr}
 
 /-- A `dmLeavesOk` term is leaf-bounded: `Nat` has no loose bound
 variables. -/
-theorem dmLeavesOk_leavesBounded {e : Expr} (h : dmLeavesOk e = true) :
+theorem dmLeavesOk_leavesBounded {e : Expr md} (h : dmLeavesOk e = true) :
     Expr.LeavesBounded e := by
   intro l hl
   rcases dmLeavesOk_mem h hl with rfl | rfl <;> rfl
 
 /-- A frame variable is well-scoped at depth 4. -/
-theorem dmFvar_wscoped {i : Nat} {ty : Expr} (hi : i < 4)
+theorem dmFvar_wscoped {i : Nat} {ty : Expr md} (hi : i < 4)
     (hty : Expr.WScoped i ty) :
     Expr.WScoped 4 (Expr.fvar i ty) := by
   simp only [Expr.WScoped]
   exact ⟨hi, hty⟩
 
 /-- Scope composes over applications. -/
-theorem dmApp_wscoped {d : Nat} {f a : Expr} (hf : Expr.WScoped d f)
+theorem dmApp_wscoped {d : Nat} {f a : Expr md} (hf : Expr.WScoped d f)
     (ha : Expr.WScoped d a) : Expr.WScoped d (.app f a) := by
   simp only [Expr.WScoped]
   exact ⟨hf, ha⟩
 
 /-- The two-hypothesis applied form's scope and bound-variable
 facts. -/
-theorem dmApplied2_frame {p a b : Expr}
+theorem dmApplied2_frame {p a b : Expr md}
     (hpf : p.hasFvar = false) (hpb : p.looseBVarsBounded 0 = true)
     (hwa : Expr.WScoped 2 a) (hwb : Expr.WScoped 3 b) :
     Expr.WScoped 4 (divModCertApplied p [a, b]) ∧
@@ -243,7 +243,7 @@ theorem dmApplied2_frame {p a b : Expr}
 
 /-- The one-hypothesis applied form's scope and bound-variable
 facts. -/
-theorem dmApplied1_frame {p a : Expr}
+theorem dmApplied1_frame {p a : Expr md}
     (hpf : p.hasFvar = false) (hpb : p.looseBVarsBounded 0 = true)
     (hwa : Expr.WScoped 2 a) :
     Expr.WScoped 4 (divModCertApplied p [a]) ∧
@@ -260,29 +260,29 @@ theorem dmApplied1_frame {p a : Expr}
 
 /-- The grammar's value at a valuation of the heads. -/
 noncomputable def dmEvalV (W : Type w) [SetTheory W]
-    (val : Key → W) (x y : W) : Expr → W
+    (val : Key md → W) (x y : W) : Expr md → W
   | Expr.const n _ => val n
   | Expr.app f a =>
     SetTheory.app (dmEvalV W val x y f) (dmEvalV W val x y a)
   | Expr.fvar i _ => if i = 0 then x else y
   | _ => pt
 
-@[simp] theorem dmEvalV_const (val : Key → V) (x y : V) (n : Key)
+@[simp] theorem dmEvalV_const (val : Key md → V) (x y : V) (n : Key md)
     (us : List Level) : dmEvalV V val x y (Expr.const n us) = val n := rfl
 
-@[simp] theorem dmEvalV_app (val : Key → V) (x y : V) (f a : Expr) :
+@[simp] theorem dmEvalV_app (val : Key md → V) (x y : V) (f a : Expr md) :
     dmEvalV V val x y (Expr.app f a)
       = SetTheory.app (dmEvalV V val x y f) (dmEvalV V val x y a) := rfl
 
-@[simp] theorem dmEvalV_fvar (val : Key → V) (x y : V) (i : Nat)
-    (ty : Expr) :
+@[simp] theorem dmEvalV_fvar (val : Key md → V) (x y : V) (i : Nat)
+    (ty : Expr md) :
     dmEvalV V val x y (Expr.fvar i ty) = if i = 0 then x else y := rfl
 
 
 /-- The `ble`-guarded value-level clauses of a pin-certified
 WF-recursive operation, over a value valuation of the level-mono
 heads (`DivModClauses` transpose, verbatim — value-level). -/
-def DivModClausesV (V : Type w) [SetTheory V] (val : Key → V) (c : Key) (x y : V) : Prop :=
+def DivModClausesV (V : Type w) [SetTheory V] (val : Key md → V) (c : Key md) (x y : V) : Prop :=
   let vT := val boolTrueName
   let vF := val boolFalseName
   let one : V := SetTheory.app (val natSuccName) (val natZeroName)
@@ -339,7 +339,7 @@ def DivModClausesV (V : Type w) [SetTheory V] (val : Key → V) (c : Key) (x y :
 
 /-- For `c` one of `Nat.div`/`Nat.mod`, the clause dispatch collapses
 to the original three `ble`-guarded clauses. -/
-theorem divModClausesV_divmod {V : Type w} [SetTheory V] {val : Key → V} {c : Key} {x y : V}
+theorem divModClausesV_divmod {V : Type w} [SetTheory V] {val : Key md → V} {c : Key md} {x y : V}
     (hc : c = natDivName ∨ c = natModName)
     (h : DivModClausesV V val c x y) :
     (app (app (val natBleName) y) x = val boolTrueName →
@@ -359,7 +359,7 @@ theorem divModClausesV_divmod {V : Type w} [SetTheory V] {val : Key → V} {c : 
        val boolFalseName →
      app (app (val c) x) y =
        (if c = natDivName then val natZeroName else x)) := by
-  rcases hc with rfl | rfl <;>
+  rcases hc with rfl | rfl <;> cases md <;>
     simpa +decide only [DivModClausesV, if_false, if_true,
       reduceCtorEq, decide_true, decide_false] using h
 

@@ -48,7 +48,7 @@ namespace Ix.Kernel
   | quotSoundA := quotSoundRaw
 
 /-- The annotated constants of one basis block, in dependency order. -/
-def BasisKind.declsA : BasisKind → List ConstantInfo
+def BasisKind.declsA : BasisKind → List (ConstantInfo md)
   | .eqK => [eqA, eqReflA, eqRecA]
   | .natK => [natA, natZeroA, natSuccA, natRecA]
   | .punitK => [punitA, punitUnitA, punitRecA]

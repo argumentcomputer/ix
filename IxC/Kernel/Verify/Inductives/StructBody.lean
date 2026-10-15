@@ -35,13 +35,13 @@ open Expr
 /-! ## The plain peel's head (the `instantiate1` twin of
 `instPisAtLift_head`) -/
 
-theorem stripPis_instantiate1_full {v : Expr} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr} (j : Nat),
+theorem stripPis_instantiate1_full {v : Expr md} :
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md} (j : Nat),
       e.stripPis k = some (bs, body) →
       ∃ bs', (e.instantiate1 v j).stripPis k =
           some (bs', body.instantiate1 v (j + k)) ∧
-        ∀ (i : Nat) (b : Expr × BinderMeta), bs[i]? = some b →
+        ∀ (i : Nat) (b : Expr md × BinderMeta), bs[i]? = some b →
           bs'[i]? = some (b.1.instantiate1 v (j + i), b.2) := by
   intro k
   induction k with
@@ -81,9 +81,9 @@ theorem stripPis_instantiate1_full {v : Expr} :
 /-- The head binder of a partial plain `∀`-instantiation walk,
 characterized by the raw telescope's binder list. -/
 theorem instPisAt_head :
-    ∀ (args : List Expr) {e : Expr} {ds : List Expr} {rest : Expr} {mrem : Nat}
-      {bs : List (Expr × BinderMeta)} {body : Expr}
-      {b : Expr × BinderMeta},
+    ∀ (args : List (Expr md)) {e : Expr md} {ds : List (Expr md)} {rest : Expr md} {mrem : Nat}
+      {bs : List (Expr md × BinderMeta)} {body : Expr md}
+      {b : Expr md × BinderMeta},
       Expr.instPisAt args e = some (ds, rest) →
       e.stripPis (args.length + (mrem + 1)) = some (bs, body) →
       bs[args.length]? = some b →
@@ -140,7 +140,7 @@ theorem instPisAt_head :
 /-- An instantiation sequence whose every cut is at or above the
 subject's loose-variable bound is the identity. -/
 theorem instSeq_eq_self_of_bounded :
-    ∀ (args : List Expr) (t : Nat) {e : Expr} {k : Nat},
+    ∀ (args : List (Expr md)) (t : Nat) {e : Expr md} {k : Nat},
       e.looseBVarsBounded k = true → k + args.length ≤ t + 1 →
       instSeq args t e = e := by
   intro args
@@ -154,7 +154,7 @@ theorem instSeq_eq_self_of_bounded :
     exact ih (t - 1) hb (by simp only [List.length_cons] at hle; omega)
 
 theorem instSeq_proj :
-    ∀ (args : List Expr) (t : Nat) (s : Key) (j : Nat) (e : Expr),
+    ∀ (args : List (Expr md)) (t : Nat) (s : Key md) (j : Nat) (e : Expr md),
       instSeq args t (.proj s j e) = .proj s j (instSeq args t e)
   | [], _, _, _, _ => rfl
   | a :: as, t, s, j, e => by
@@ -165,10 +165,10 @@ theorem instSeq_proj :
 /-- A stripped telescope's binder domains are bounded at their own
 depth. -/
 theorem stripPis_binder_bounded :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr} {j : Nat},
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md} {j : Nat},
       e.stripPis k = some (bs, body) → e.looseBVarsBounded j = true →
-      ∀ (i : Nat) (b : Expr × BinderMeta), bs[i]? = some b →
+      ∀ (i : Nat) (b : Expr md × BinderMeta), bs[i]? = some b →
         b.1.looseBVarsBounded (j + i) = true := by
   intro k
   induction k with
@@ -198,8 +198,8 @@ theorem stripPis_binder_bounded :
 
 /-! ## The generator -/
 
-theorem structProjBodiesGo_spec (T : Key) :
-    ∀ (k i : Nat) (r : Expr) (bs : List Expr),
+theorem structProjBodiesGo_spec (T : Key md) :
+    ∀ (k i : Nat) (r : Expr md) (bs : List (Expr md)),
       structProjBodiesGo T k i r = some bs →
       bs.length = k ∧
       ∀ j, j < k → ∃ b' mb,
@@ -238,8 +238,8 @@ theorem structProjBodiesGo_spec (T : Key) :
 of the constructor telescope peeled at the loose parameters and the
 first `i` subject projections (`structProjResidP`), and there is one
 per field. -/
-theorem structProjBodies_spec {T : Key} {nP nF : Nat} {cty : Expr}
-    {bodies : Array Expr} (h : structProjBodies T nP nF cty = some bodies) :
+theorem structProjBodies_spec {T : Key md} {nP nF : Nat} {cty : Expr md}
+    {bodies : Array (Expr md)} (h : structProjBodies T nP nF cty = some bodies) :
     bodies.size = nF ∧
     ∀ i, i < nF → ∃ b' mb,
       structProjResidP T nP cty i
@@ -271,34 +271,34 @@ theorem structProjBodies_spec {T : Key} {nP nF : Nat} {cty : Expr}
 
 /-- The parameter variables, dummy-annotated (the reading ignores
 annotations). -/
-@[expose] def fvsD (nP : Nat) : List Expr :=
+@[expose] def fvsD (nP : Nat) : List (Expr md) :=
   (List.range nP).map fun k => Expr.fvar k (.sort .zero)
 
 /-- The subject variable. -/
-@[expose] def tfvD (nP : Nat) : Expr := Expr.fvar nP (.sort .zero)
+@[expose] def tfvD (nP : Nat) : Expr md := Expr.fvar nP (.sort .zero)
 
 /-- The earlier projections of the subject variable. -/
-@[expose] def projArgsD (T : Key) (i nP : Nat) : List Expr :=
+@[expose] def projArgsD (T : Key md) (i nP : Nat) : List (Expr md) :=
   (List.range i).map fun j => Expr.proj T j (tfvD nP)
 
-theorem fvsD_length (nP : Nat) : (fvsD nP).length = nP := by simp [fvsD]
+theorem fvsD_length (nP : Nat) : ((fvsD (md := md)) nP).length = nP := by simp [fvsD]
 
-theorem projArgsD_length (T : Key) (i nP : Nat) : (projArgsD T i nP).length = i := by
+theorem projArgsD_length (T : Key md) (i nP : Nat) : (projArgsD T i nP).length = i := by
   simp [projArgsD]
 
-theorem fvsD_closed (nP : Nat) : ∀ a ∈ fvsD nP ++ [tfvD nP], a.looseBVarsBounded 0 = true := by
+theorem fvsD_closed (nP : Nat) : ∀ a ∈ (fvsD (md := md)) nP ++ [tfvD nP], a.looseBVarsBounded 0 = true := by
   intro a ha
   rcases List.mem_append.mp ha with ha | ha
   · obtain ⟨k, -, rfl⟩ := List.mem_map.mp ha; rfl
   · rw [List.mem_singleton] at ha; subst ha; rfl
 
 theorem fvsD_getElem? (nP k : Nat) (hk : k < nP) :
-    (fvsD nP)[k]? = some (Expr.fvar k (.sort .zero)) := by
+    ((fvsD (md := md)) nP)[k]? = some (Expr.fvar k (.sort .zero)) := by
   simp [fvsD, List.getElem?_map, List.getElem?_range hk]
 
 /-- The loose parameter variables and projection substitutes are
 bounded at the parameters and the subject. -/
-theorem structProjArgs_bounded (T : Key) (nP i : Nat) :
+theorem structProjArgs_bounded (T : Key md) (nP i : Nat) :
     ∀ a ∈ structProjPs nP ++ (List.range i).map (structProjArgP T),
       a.looseBVarsBounded (nP + 1) = true := by
   intro a ha
@@ -313,15 +313,15 @@ theorem structProjArgs_bounded (T : Key) (nP i : Nat) :
 /-- Instantiating the loose parameter variables and projection
 substitutes at the variables gives the variables and their
 projections. -/
-theorem structProjArgs_instSeq (T : Key) (nP i : Nat) :
+theorem structProjArgs_instSeq (T : Key md) (nP i : Nat) :
     (structProjPs nP ++ (List.range i).map (structProjArgP T)).map
         (instSeq (fvsD nP ++ [tfvD nP]) nP)
       = fvsD nP ++ projArgsD T i nP := by
-  have hclosed := fvsD_closed nP
-  have hlen : (fvsD nP ++ [tfvD nP]).length = nP + 1 := by simp [fvsD_length]
+  have hclosed := (fvsD_closed (md := md)) nP
+  have hlen : ((fvsD (md := md)) nP ++ [tfvD nP]).length = nP + 1 := by simp [fvsD_length]
   -- the variable at each slot
   have hget : ∀ k, k < nP + 1 →
-      (fvsD nP ++ [tfvD nP])[k]? = some (Expr.fvar k (.sort .zero)) := by
+      (fvsD (md := md) nP ++ [tfvD nP])[k]? = some (Expr.fvar k (.sort .zero)) := by
     intro k hk
     rcases Nat.lt_or_ge k nP with hk' | hk'
     · rw [List.getElem?_append_left (by rw [fvsD_length]; exact hk')]
@@ -331,8 +331,8 @@ theorem structProjArgs_instSeq (T : Key) (nP i : Nat) :
         fvsD_length, Nat.sub_self]
       rfl
   have hbvar : ∀ j, j ≤ nP →
-      instSeq (fvsD nP ++ [tfvD nP]) nP (.bvar j)
-        = Expr.fvar (nP - j) (.sort .zero) := by
+      instSeq (md := md) (fvsD nP ++ [tfvD nP]) nP (.bvar j)
+        = Expr.fvar (md := md) (nP - j) (.sort .zero) := by
     intro j hj
     have := instSeq_bvar (fvsD nP ++ [tfvD nP]) nP j hclosed hj (by rw [hlen]; omega)
     rw [hget (nP - j) (by omega)] at this
@@ -363,11 +363,11 @@ subject variables (the reading's opening of `projTele`) is the head
 domain of the constructor telescope instantiated at the variables and
 the subject's earlier projections — the fvar-side peel the readings
 already know how to read. -/
-theorem structProjBody_open {T : Key} {nP nF : Nat} {cty : Expr}
-    {bodies : Array Expr} (h : structProjBodies T nP nF cty = some bodies)
+theorem structProjBody_open {T : Key md} {nP nF : Nat} {cty : Expr md}
+    {bodies : Array (Expr md)} (h : structProjBodies T nP nF cty = some bodies)
     (hstrip : (cty.stripPis (nP + nF)).isSome = true)
     (hcl : cty.looseBVarsBounded 0 = true) {i : Nat} (hi : i < nF) :
-    ∃ (cds : List Expr) (bodyC : Expr) (mb : BinderMeta),
+    ∃ (cds : List (Expr md)) (bodyC : Expr md) (mb : BinderMeta),
       Expr.instPisAt (fvsD nP ++ projArgsD T i nP) cty
         = some (cds, .forallE
             (Expr.instSpine (fvsD nP ++ [tfvD nP]) nP (bodies.getD i default)) bodyC mb) := by
@@ -409,7 +409,7 @@ theorem structProjBody_open {T : Key} {nP nF : Nat} {cty : Expr}
 /-! ## The `bvarB` cutoff of `hasLooseBVar` (task #214, P4) -/
 
 /-- A node bounded at or below `i` has no loose `bvar i`. -/
-theorem Expr.hasLooseBVar_eq_false_of_bound : ∀ (e : Expr) (i : Nat),
+theorem Expr.hasLooseBVar_eq_false_of_bound : ∀ (e : Expr md) (i : Nat),
     e.bvarBound ≤ i → e.hasLooseBVar i = false
   | .bvar j, i, h => by
     simp only [Expr.bvarBound] at h
@@ -444,7 +444,7 @@ theorem Expr.hasLooseBVar_eq_false_of_bound : ∀ (e : Expr) (i : Nat),
     exact hasLooseBVar_eq_false_of_bound e i h
 
 /-- **The cutoff walk is `hasLooseBVar`.** -/
-theorem Expr.hasLooseBVarB_eq : ∀ (i : Nat) (e : Expr), e.hasLooseBVarB i = e.hasLooseBVar i := by
+theorem Expr.hasLooseBVarB_eq : ∀ (i : Nat) (e : Expr md), e.hasLooseBVarB i = e.hasLooseBVar i := by
   intro i e
   induction e generalizing i with
   | bvar j =>

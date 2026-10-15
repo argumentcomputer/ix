@@ -38,8 +38,8 @@ variable {V : Type w} [SetTheory V]
 omit [SetTheory V] in
 /-- Instantiating a variable-free term above an index leaves the
 lower indices' occurrences alone. -/
-theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = false) :
-    ∀ (e : Expr) (i k : Nat), i < k →
+theorem hasLooseBVar_instantiate1_lt {v : Expr md} (hv : ∀ i, v.hasLooseBVar i = false) :
+    ∀ (e : Expr md) (i k : Nat), i < k →
       (e.instantiate1 v k).hasLooseBVar i = e.hasLooseBVar i := by
   intro e
   induction e with
@@ -82,7 +82,7 @@ theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = 
 omit [SetTheory V] in
 /-- Instantiating an absent variable introduces no leaf. -/
 theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
-    ∀ (e v : Expr) (k : Nat), e.hasLooseBVar k = false →
+    ∀ (e v : Expr md) (k : Nat), e.hasLooseBVar k = false →
       ∀ l, l ∈ (e.instantiate1 v k).fvarLeaves → l ∈ e.fvarLeaves := by
   intro e
   induction e with
@@ -132,7 +132,7 @@ theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
     exact ihe v k hk l hl
 
 omit [SetTheory V] in
-theorem fvar_hasLooseBVar (idx : Nat) (ty : Expr) (i : Nat) :
+theorem fvar_hasLooseBVar (idx : Nat) (ty : Expr md) (i : Nat) :
     (Expr.fvar idx ty).hasLooseBVar i = false := rfl
 
 omit [SetTheory V] in
@@ -140,8 +140,8 @@ omit [SetTheory V] in
 after binder `m` does not mention it, no later opener's annotation and
 not the opened body carries the `m`-th opener as a leaf. -/
 theorem openPisAtFvars_leaf_free :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr} (m : Nat)
-      {bs : List (Expr × BinderMeta)} {rest : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md} (m : Nat)
+      {bs : List (Expr md × BinderMeta)} {rest : Expr md},
       openPisAtFvars n e d = some (fvs, o) → m < n →
       e.stripPis (m + 1) = some (bs, rest) → rest.hasLooseBVar 0 = false →
       (∀ l ∈ e.fvarLeaves, l.1 ≠ d + m) →
@@ -243,8 +243,8 @@ theorem natLitAV_liftN {za sa : AnnotTerm} {k : Nat} (hz : za.liftN 1 k = za)
 without the `q`-th variable as a leaf reads, at depth `d`, as a
 reading lifted over index `d - 1 - q` — the slot that variable would
 read as. -/
-theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : LevelParam → Nat} :
-    ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
+theorem denoteMeta_liftN_of_leaf_free {env : Env md} (m : EnvModel V env) {φ : LevelParam → Nat} :
+    ∀ (d : Nat) (e : Expr md), Expr.WScoped d e →
       ∀ {q : Nat}, q < d → (∀ l ∈ e.fvarLeaves, l.1 ≠ q) →
       ∀ {ea : AnnotTerm}, denoteMeta m.acval env φ d e = some ea →
       ∃ X : AnnotTerm, ea = X.liftN 1 (d - 1 - q) := by

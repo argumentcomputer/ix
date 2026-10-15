@@ -47,10 +47,10 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-- A fresh cons preserves every stored lookup. -/
-theorem findPreserved_cons {c₀ : ConstantInfo}
+theorem findPreserved_cons {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none) :
     FindPreserved env ⟨c₀ :: env.consts⟩ := by
   intro n ci hf
@@ -66,12 +66,12 @@ theorem findPreserved_cons {c₀ : ConstantInfo}
 
 /-- The bit-validity combinator for a fresh leaf (`acvalWith_wellDenoted`'s
 `AnnotValid` twin). -/
-theorem acvalWith_validV {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {n : Key} {A : (LevelParam → Nat) → AnnotTerm}
-    (h : ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+theorem acvalWith_validV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {n : Key md} {A : (LevelParam → Nat) → AnnotTerm}
+    (h : ∀ (m : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (acval m ψ))
     (hA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), AnnotValid V ρ (A ψ)) :
-    ∀ (m : Key) (ψ : LevelParam → Nat) (ρ : Nat → V),
+    ∀ (m : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
       AnnotValid V ρ (acvalWith acval n A m ψ) := by
   intro m ψ ρ
   by_cases hm : m = n
@@ -83,12 +83,12 @@ survive the extension and ignore the fresh leaf — the composition of
 `denoteMeta_envExtend` (a theorem) and `denoteMeta_acvalWith_fresh`.  The
 harvest layer reads it directly; `declStep_preserves_of_cons` uses it for
 every old-constant field. -/
-theorem denoteMeta_cons_fresh {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_fresh {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
     (hlga : LitGuardsAgree env ⟨c₀ :: env.consts⟩)
-    (ψ : LevelParam → Nat) (d : Nat) (e : Expr) (hcb : ConstsBound env e) :
+    (ψ : LevelParam → Nat) (d : Nat) (e : Expr md) (hcb : ConstsBound env e) :
     denoteMeta (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d e
       = denoteMeta acval env ψ d e := by
   rw [← denoteMeta_envExtend (findPreserved_cons hfresh) hlga
@@ -102,11 +102,11 @@ equality form is refutable at support-completing installs — see
 extension and ignores the fresh leaf.  The only direction the step
 and the harvests use for their subjects, whose acceptance guaranteed
 prefix-supported literals. -/
-theorem denoteMeta_cons_fresh_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_fresh_mono {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
-    (ψ : LevelParam → Nat) (d : Nat) (e : Expr) (hcb : ConstsBound env e)
+    (ψ : LevelParam → Nat) (d : Nat) (e : Expr md) (hcb : ConstsBound env e)
     {ea : AnnotTerm} (h : denoteMeta acval env ψ d e = some ea) :
     denoteMeta (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d e
       = some ea :=
@@ -120,15 +120,15 @@ prefix reading of a subject the head's slot does not mention
 (`ConsCrossAt`) survives the cons — the fresh crossing at a non-table
 head, the table-slot refinement (`denoteMeta_envExtend_mono_at`) at a
 table one. -/
-theorem denoteMeta_cons_mono {acval : Key → (LevelParam → Nat) → AnnotTerm}
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+theorem denoteMeta_cons_mono {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
-    {e : Expr} (hat : ConsCrossAt c₀ e)
+    {e : Expr md} (hat : ConsCrossAt c₀ e)
     (ψ : LevelParam → Nat) (d : Nat) (hcb : ConstsBound env e)
     {ea : AnnotTerm} (h : denoteMeta acval env ψ d e = some ea) :
     denoteMeta (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d e
       = some ea := by
-  by_cases htw : ∃ tbl : Ix.Kernel.ProjTable, c₀ = .projInfo tbl
+  by_cases htw : ∃ tbl : Ix.Kernel.ProjTable md, c₀ = .projInfo tbl
   · obtain ⟨tbl, rfl⟩ := htw
     refine denoteMeta_envExtend_mono_at (findPreserved_cons hfresh)
       (litGuardsMono_cons hfresh)
@@ -143,8 +143,8 @@ theorem denoteMeta_cons_mono {acval : Key → (LevelParam → Nat) → AnnotTerm
 /-- The pinned-basis valuation survives any fresh cons that moves no
 other name (`BasisPinnedTT.cons` without the install record — its
 proof consults only freshness and agreement). -/
-theorem basisPinnedTT_consFresh {cval cval' : TConstVal}
-    {c₀ : ConstantInfo} (h : BasisPinnedTT env cval)
+theorem basisPinnedTT_consFresh {cval cval' : TConstVal md}
+    {c₀ : ConstantInfo md} (h : BasisPinnedTT env cval)
     (hfresh : env.find? c₀.name = none)
     (hag : ∀ n, n ≠ c₀.name → cval n = cval' n)
     (hhead : Ix.Kernel.reservedBasisNames.contains c₀.name = true →
@@ -177,7 +177,7 @@ step (b)): what `declStep_preserves_of_cons` used to read off the contained
 `EnvS`, stated at the new leaf.  Bundled because the wrapper stack
 between the step and its 40 call sites re-states it thirty-five
 times. -/
-structure ConsHead (env : Env) (c₀ : ConstantInfo)
+structure ConsHead (env : Env md) (c₀ : ConstantInfo md)
     (A : (LevelParam → Nat) → AnnotTerm) : Prop where
   /-- the extended store is syntactically well-formed -/
   wf : EnvWF ⟨c₀ :: env.consts⟩
@@ -211,7 +211,7 @@ structure ConsHead (env : Env) (c₀ : ConstantInfo)
 /-- **The head obligations of a basis cons**: the head is the pinned
 declaration, its leaf is the direct pin, it is not a projection-table
 entry, and (for a recursor) its rules' constructors are stored. -/
-theorem ConsHead.ofBasis {c₀ : ConstantInfo}
+theorem ConsHead.ofBasis {c₀ : ConstantInfo md}
     {A : (LevelParam → Nat) → AnnotTerm}
     (hwf : EnvWF ⟨c₀ :: env.consts⟩)
     (hvclosed : ∀ ψ : LevelParam → Nat, Term.Closed ((A ψ).erase))
@@ -234,7 +234,7 @@ theorem ConsHead.ofBasis {c₀ : ConstantInfo}
 
 /-- **The head obligations of an ordinary (non-reserved) cons**: the
 pin clause is vacuous. -/
-theorem ConsHead.ofFresh {c₀ : ConstantInfo}
+theorem ConsHead.ofFresh {c₀ : ConstantInfo md}
     {A : (LevelParam → Nat) → AnnotTerm}
     (hwf : EnvWF ⟨c₀ :: env.consts⟩)
     (hvclosed : ∀ ψ : LevelParam → Nat, Term.Closed ((A ψ).erase))
@@ -258,7 +258,7 @@ theorem ConsHead.ofFresh {c₀ : ConstantInfo}
 /-- **The de-based core at a fresh cons** — `coreOfBase`'s successor
 (task #161 S7).  Every field is the prefix's own, stepped by the
 head's obligation; nothing of the collapsed model is consulted. -/
-@[expose] def coreCons (m : EnvModel V env) {c₀ : ConstantInfo}
+@[expose] def coreCons (m : EnvModel V env) {c₀ : ConstantInfo md}
     (A : (LevelParam → Nat) → AnnotTerm)
     (hfresh : env.find? c₀.name = none)
     (hh : ConsHead env c₀ A)
@@ -296,7 +296,7 @@ head's obligation; nothing of the collapsed model is consulted. -/
 /-- **The P declaration step, cons shape** (see the module
 docstring). -/
 theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hh : ConsHead env c₀ A)
     (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
@@ -318,8 +318,8 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    (hvalReads : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal)
-      (value : Expr),
+    (hvalReads : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal md)
+      (value : Expr md),
       (∃ hint : ReducibilityHint,
         ConstantInfo.defnInfo cv value hint = c₀) →
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
@@ -351,14 +351,14 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
     exact h0 c hc (by simp [h])
   -- the P crossing, forward only: successful prefix readings of the
   -- stored pieces survive (the head's slot mentions none of them)
-  have hcompM : ∀ (ψ : LevelParam → Nat) (e : Expr), ConstsBound env e →
+  have hcompM : ∀ (ψ : LevelParam → Nat) (e : Expr md), ConstsBound env e →
       ConsCrossAt c₀ e →
       ∀ {ea : AnnotTerm}, denoteMeta mp.base2.acval env ψ 0 e = some ea →
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 e = some ea :=
     fun ψ e hcb hat {ea} h => denoteMeta_cons_mono hfresh hat ψ 0 hcb h
   -- the P fields, at the `acvalWith` spelling (defeq to the core's)
-  have htr : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env).consts, ∀ ψ : LevelParam → Nat,
+  have htr : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env md).consts, ∀ ψ : LevelParam → Nat,
       ∃ ta : AnnotTerm,
         denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c.toConstantVal.type = some ta := by
@@ -367,7 +367,7 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
     · subst h; exact htyReads ψ
     · obtain ⟨ta, hta⟩ := mp.type_reads c h ψ
       exact ⟨ta, hcompM ψ _ (hbound _ h).1 (hh.projTower.type h) hta⟩
-  have hto : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env).consts,
+  have hto : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env md).consts,
       ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c.toConstantVal.type = some ta →
@@ -381,7 +381,7 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
           ((hcompM ψ _ (hbound _ h).1 (hh.projTower.type h) hta').symm.trans
             hta)
       exact mp.type_wellDenotedV c h ψ ta' hta' ρ
-  have hmt : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env).consts,
+  have hmt : ∀ c ∈ (⟨c₀ :: env.consts⟩ : Env md).consts,
       ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c.toConstantVal.type = some ta →
@@ -401,10 +401,10 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
       rw [show acvalWith mp.base2.acval c₀.name A c.name
             = mp.base2.acval c.name from acvalWith_ne (hne _ h)]
       exact mp.mem_type c h ψ ta' hta' ρ
-  have hdr : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal) (value : Expr),
+  have hdr : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal md) (value : Expr md),
       (∃ hint : ReducibilityHint,
         ConstantInfo.defnInfo cv value hint
-          ∈ (⟨c₀ :: env.consts⟩ : Env).consts) →
+          ∈ (⟨c₀ :: env.consts⟩ : Env md).consts) →
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 value
         = some (acvalWith mp.base2.acval c₀.name A cv.name ψ) := by
@@ -444,7 +444,7 @@ theorem declStep_preserves_of_cons_guarded (mp : EnvModelM V μ env)
 (every caller but the tower-entry kit: a table entry's leaf owes no
 membership, `EnvModelM.mem_type`'s guard). -/
 theorem declStep_preserves_of_cons (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (LevelParam → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hh : ConsHead env c₀ A)
     (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
@@ -466,8 +466,8 @@ theorem declStep_preserves_of_cons (mp : EnvModelM V μ env)
       denoteMeta (acvalWith mp.base2.acval c₀.name A)
           ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta)
-    (hvalReads : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal)
-      (value : Expr),
+    (hvalReads : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal md)
+      (value : Expr md),
       (∃ hint : ReducibilityHint,
         ConstantInfo.defnInfo cv value hint = c₀) →
       denoteMeta (acvalWith mp.base2.acval c₀.name A)

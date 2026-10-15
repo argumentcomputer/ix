@@ -38,10 +38,10 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- The table name has the reserved shape. -/
-theorem projTableName_isProjFnShape (T : Key) :
+theorem projTableName_isProjFnShape (T : Key md) :
     (projTableName T).isProjFnShape = true := isProjFnShape_auxKey_projTable T
 
 end Ix.Kernel.Model

@@ -30,16 +30,16 @@ open Ix.Kernel.Rules
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {m : EnvModel V env}
+variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
   {φ : LevelParam → Nat}
 
-theorem DefEq.refl_sound {d : Nat} {a : Expr} : DefEqSem m φ d a a := by
+theorem DefEq.refl_sound {d : Nat} {a : Expr md} : DefEqSem m φ d a a := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   rw [haa] at hba
   cases hba
   rfl
 
-theorem DefEq.symm_sound {d : Nat} {a b : Expr} (h : DefEqSem m φ d a b) :
+theorem DefEq.symm_sound {d : Nat} {a b : Expr md} (h : DefEqSem m φ d a b) :
     DefEqSem m φ d b a := by
   intro hfb hfa Δa ba aa hCb hCa hba haa hgb hga ρ hρ
   exact (h hfa hfb hCa hCb haa hba hga hgb ρ hρ).symm
@@ -47,7 +47,7 @@ theorem DefEq.symm_sound {d : Nat} {a b : Expr} (h : DefEqSem m φ d a b) :
 /-- **The recursive-structure rule is sound**: the reduct reads, is
 graded and framed (`RedSem`), so the continuation's motive applies at
 it (`dq_whnfCore_package`'s content, `Steps/DefEq.lean:460`). -/
-theorem DefEq.redL_sound {d : Nat} {a a' b : Expr}
+theorem DefEq.redL_sound {d : Nat} {a a' b : Expr md}
     (ha : RedSem m φ d a a') (hb : DefEqSem m φ d a' b) :
     DefEqSem m φ d a b := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
@@ -66,7 +66,7 @@ theorem DefEq.sort_sound {d : Nat} {u v : Level}
   rw [Level.isEquiv_sound h φ]
 
 /-- The `fvar` arm: the reading ignores the annotation. -/
-theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr} :
+theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr md} :
     DefEqSem m φ d (.fvar i ty₁) (.fvar i ty₂) := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   rw [denoteMeta_fvar] at haa hba
@@ -76,7 +76,7 @@ theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr} :
 
 /-- `acval_const_congr` (`Steps/DefEq.lean:844`) with `AcvalParams`
 (`Model/Annot/EnvModel.lean:164`, `acvalParams m`). -/
-theorem DefEq.const_sound {d : Nat} {n : Key} {us us' : List Level}
+theorem DefEq.const_sound {d : Nat} {n : Key md} {us us' : List Level}
     (h : Level.isEquivList us us' = some true) :
     DefEqSem m φ d (.const n us) (.const n us') := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
@@ -95,7 +95,7 @@ theorem DefEq.natZero_sound {d : Nat} :
 
 /-- `denoteMetaNatSuccConst` (`Steps/DefEq.lean:119`): the packed
 successor reads as `succ` applied to the packed predecessor. -/
-theorem DefEq.natSucc_sound {d : Nat} {k : Nat} {x : Expr}
+theorem DefEq.natSucc_sound {d : Nat} {k : Nat} {x : Expr md}
     (h : DefEqSem m φ d (.lit (.natVal k)) x) :
     DefEqSem m φ d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x) := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
@@ -111,7 +111,7 @@ theorem DefEq.natSucc_sound {d : Nat} {k : Nat} {x : Expr}
 
 /-- `binder_congr` (`Steps/DefEq.lean:756`): equal domains, equal
 bodies opened at the right domain, equal bits (`piR_zero_agree`). -/
-theorem DefEq.forallE_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr}
+theorem DefEq.forallE_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr md}
     {m₁ m₂ : BinderMeta}
     (hty : DefEqSem m φ d ty₁ ty₂)
     (hbody : DefEqSem m φ (d + 1) (body₁.instantiate1 (.fvar d ty₂))
@@ -135,7 +135,7 @@ theorem DefEq.forallE_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr}
     (cons x ρ) (Sat_cons V hρ hx)
 
 /-- `binder_congr`, the λ half. -/
-theorem DefEq.lam_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr}
+theorem DefEq.lam_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr md}
     {m₁ m₂ : BinderMeta}
     (hty : DefEqSem m φ d ty₁ ty₂)
     (hbody : DefEqSem m φ (d + 1) (body₁.instantiate1 (.fvar d ty₂))
@@ -159,7 +159,7 @@ theorem DefEq.lam_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr}
     (cons x ρ) (Sat_cons V hρ hx)
 
 /-- Per-node congruence (`spine_congr`'s one step, `Steps/Stuck.lean:270`). -/
-theorem DefEq.app_sound {d : Nat} {f₁ a₁ f₂ a₂ : Expr}
+theorem DefEq.app_sound {d : Nat} {f₁ a₁ f₂ a₂ : Expr md}
     (hf : DefEqSem m φ d f₁ f₂) (ha : DefEqSem m φ d a₁ a₂) :
     DefEqSem m φ d (.app f₁ a₁) (.app f₂ a₂) := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
@@ -172,7 +172,7 @@ theorem DefEq.app_sound {d : Nat} {f₁ a₁ f₂ a₂ : Expr}
       (Graded.app hga).2 (Graded.app hgb).2 ρ hρ)
 
 /-- `interp_projAV_congr` (`Steps/ProjAVKit.lean:85`). -/
-theorem DefEq.proj_sound {d : Nat} {s : Key} {i : Nat} {e₁ e₂ : Expr}
+theorem DefEq.proj_sound {d : Nat} {s : Key md} {i : Nat} {e₁ e₂ : Expr md}
     (h : DefEqSem m φ d e₁ e₂) :
     DefEqSem m φ d (.proj s i e₁) (.proj s i e₂) := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
@@ -195,7 +195,7 @@ theorem DefEq.proj_sound {d : Nat} {s : Key} {i : Nat} {e₁ e₂ : Expr}
 /-- η (`etaCertStep_of_claims`, `Steps/Stuck.lean:576`: `lamR_eta`,
 regime-uniform). -/
 theorem DefEq.eta_sound {d : Nat}
-    {ty₁ body₁ b tb ty₂ B : Expr} {m₁ m₂ : BinderMeta}
+    {ty₁ body₁ b tb ty₂ B : Expr md} {m₁ m₂ : BinderMeta}
     (htb : InferSemIO m φ d b tb) (hwtb : RedSem m φ d tb (.forallE ty₂ B m₂))
     (hty : DefEqSem m φ d ty₂ ty₁)
     (hbody : DefEqSem m φ (d + 1) (body₁.instantiate1 (.fvar d ty₁))
@@ -300,7 +300,7 @@ theorem DefEq.eta_sound {d : Nat}
   exact lamR_eta (by rw [← hdom ρ hρ]; exact hmem ρ hρ)
 
 /-- `prf_of_isProofFast` twice (`Steps/IrrelFast.lean:303`). -/
-theorem DefEq.proofFast_sound (hin : RulesInputs V m φ) {d : Nat} {a b : Expr}
+theorem DefEq.proofFast_sound (hin : RulesInputs V m φ) {d : Nat} {a b : Expr md}
     (ha : Ix.Kernel.isProofFast env.find? a = true)
     (hb : Ix.Kernel.isProofFast env.find? b = true) :
     DefEqSem m φ d a b := by
@@ -311,7 +311,7 @@ theorem DefEq.proofFast_sound (hin : RulesInputs V m φ) {d : Nat} {a b : Expr}
 /-- `prop_side_pt` twice (`Steps/Irrel.lean:71`): a term whose type's
 sort is zero-equivalent interprets to the point. -/
 theorem DefEq.proofIrrel_sound {d : Nat}
-    {a ta tta b tb ttb : Expr} {u v : Level}
+    {a ta tta b tb ttb : Expr md} {u v : Level}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
     (hu : RedSem m φ d tta (.sort u)) (hu0 : Level.isEquiv u .zero = some true)
     (htb : InferSemIO m φ d b tb) (httb : InferSemIO m φ d tb ttb)
@@ -323,7 +323,7 @@ theorem DefEq.proofIrrel_sound {d : Nat}
 
 /-- `unit_side_pt` twice (`unitIrrelPQ_of_claims`, `Steps/Irrel.lean:179`). -/
 theorem DefEq.unitLike_sound {d : Nat}
-    {a ta wta b tb wtb : Expr}
+    {a ta wta b tb wtb : Expr md}
     (hta : InferSemIO m φ d a ta) (hwta : RedSem m φ d ta wta)
     (hua : Ix.Kernel.isUnitLikeTy env wta = true)
     (htb : InferSemIO m φ d b tb) (hwtb : RedSem m φ d tb wtb)
@@ -337,9 +337,9 @@ theorem DefEq.unitLike_sound {d : Nat}
 and `structEtaIrrel_of_claims`, `:897`): the stored η law at the
 certified type application. -/
 theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
-    {a b tb wtb : Expr} {c : Key} {us : List Level} {cvc : ConstantVal}
-    {cnP cnF : Nat} {T : Key} {us' : List Level} {cvT : ConstantVal}
-    {caps : IndCaps}
+    {a b tb wtb : Expr md} {c : Key md} {us : List Level} {cvc : ConstantVal md}
+    {cnP cnF : Nat} {T : Key md} {us' : List Level} {cvT : ConstantVal md}
+    {caps : IndCaps md}
     (htb : InferSemIO m φ d b tb) (hwtb : RedSem m φ d tb wtb)
     (hhead : a.getAppFn = .const c us)
     (hctor : env.find? c = some (.ctorInfo cvc cnP cnF))
@@ -498,7 +498,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
       (fun x hx => hoA x (List.mem_of_mem_take hx)) hoT ρ hρ
   rcases hkind with ⟨htow, h0⟩ | ⟨hrecs, htow0⟩
   · -- TOWER-BACKED SLOTS
-    have hslotE : ∀ j, j < caps.etaFields → ∃ entry : ProjEntry,
+    have hslotE : ∀ j, j < caps.etaFields → ∃ entry : ProjEntry md,
         env.findProj? T j = some entry ∧
         entry.levelParams = cvT.levelParams := by
       intro j hj
@@ -712,8 +712,8 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
 
 /-- Unit-like structure (`structUnitIrrel_of_claims`, `Steps/CapsRows.lean:944`). -/
 theorem DefEq.structUnit_sound (hin : RulesInputs V m φ) {d : Nat}
-    {a ta wta b tb wtb : Expr} {T : Key} {us' : List Level}
-    {cvT : ConstantVal} {caps : IndCaps}
+    {a ta wta b tb wtb : Expr md} {T : Key md} {us' : List Level}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (hta : InferSemIO m φ d a ta) (hwta : RedSem m φ d ta wta)
     (hthead : wta.getAppFn = .const T us')
     (hind : env.find? T = some (.indInfo cvT caps))

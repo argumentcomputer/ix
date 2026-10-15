@@ -36,10 +36,10 @@ open Expr
 /-! ## The recursive generators, unfolded -/
 
 /-- `structMinorTyR`, unfolded to its three steps. -/
-theorem structMinorTyR_unfold {C : Key} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
-    {cty mty : Expr} {recIdx : List Nat}
+theorem structMinorTyR_unfold {C : Key md} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
+    {cty mty : Expr md} {recIdx : List Nat}
     (h : structMinorTyR C lps nP nF o pw cty recIdx = some mty) :
-    ∃ (cbs fbs : List (Expr × BinderMeta)) (crest0 res : Expr),
+    ∃ (cbs fbs : List (Expr md × BinderMeta)) (crest0 res : Expr md),
       cty.stripPis nP = some (cbs, crest0) ∧
       crest0.stripPis nF = some (fbs, res) ∧
       Expr.replacePisPw pw nF (crest0.liftLooseBVars o 0)
@@ -54,9 +54,9 @@ theorem structMinorTyR_unfold {C : Key} {lps : List LevelParam} {nP nF o : Nat} 
   exact ⟨q.1, r.1, q.2, r.2, hq, hr, hmty⟩
 
 /-- The recursive minors' `∀`-telescope, one constructor peeled. -/
-theorem structMinorsPisR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Key}
-    {nF : Nat} {cty : Expr} {recIdx : List Nat} {cs : List (Key × Nat × Expr × List Nat)}
-    {o : Nat} {body mins : Expr}
+theorem structMinorsPisR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Key md}
+    {nF : Nat} {cty : Expr md} {recIdx : List Nat} {cs : List (Key md × Nat × Expr md × List Nat)}
+    {o : Nat} {body mins : Expr md}
     (h : structMinorsPisR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
     ∃ mty rest, structMinorTyR C lps nP nF o pw cty recIdx = some mty ∧
       structMinorsPisR lps nP pw cs (o + 1) body = some rest ∧
@@ -67,9 +67,9 @@ theorem structMinorsPisR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen}
   exact ⟨mty, rest, hmty, hrest, hmin.symm⟩
 
 /-- The recursive minors' `λ`-telescope, one constructor peeled. -/
-theorem structMinorsLamsR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Key}
-    {nF : Nat} {cty : Expr} {recIdx : List Nat} {cs : List (Key × Nat × Expr × List Nat)}
-    {o : Nat} {body mins : Expr}
+theorem structMinorsLamsR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {C : Key md}
+    {nF : Nat} {cty : Expr md} {recIdx : List Nat} {cs : List (Key md × Nat × Expr md × List Nat)}
+    {o : Nat} {body mins : Expr md}
     (h : structMinorsLamsR lps nP pw ((C, nF, cty, recIdx) :: cs) o body = some mins) :
     ∃ mty rest, structMinorTyR C lps nP nF o pw cty recIdx = some mty ∧
       structMinorsLamsR lps nP pw cs (o + 1) body = some rest ∧
@@ -81,22 +81,22 @@ theorem structMinorsLamsR_cons {lps : List LevelParam} {nP : Nat} {pw : PropWhen
 
 /-- The empty recursive `∀`-telescope is its body. -/
 theorem structMinorsPisR_nil {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {o : Nat}
-    {body mins : Expr} (h : structMinorsPisR lps nP pw [] o body = some mins) : mins = body := by
+    {body mins : Expr md} (h : structMinorsPisR lps nP pw [] o body = some mins) : mins = body := by
   simp only [structMinorsPisR, Option.some.injEq] at h
   exact h.symm
 
 /-- The empty recursive `λ`-telescope is its body. -/
 theorem structMinorsLamsR_nil {lps : List LevelParam} {nP : Nat} {pw : PropWhen} {o : Nat}
-    {body mins : Expr} (h : structMinorsLamsR lps nP pw [] o body = some mins) : mins = body := by
+    {body mins : Expr md} (h : structMinorsLamsR lps nP pw [] o body = some mins) : mins = body := by
   simp only [structMinorsLamsR, Option.some.injEq] at h
   exact h.symm
 
 /-- `structRecTyR`, unfolded to its five steps (`structRecTyI_unfold`
 with the recursive minors). -/
-theorem structRecTyR_unfold {T : Key} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
-    {nP nIdx : Nat} {tty recTy : Expr} {ctors : List (Key × Nat × Expr × List Nat)}
+theorem structRecTyR_unfold {T : Key md} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
+    {nP nIdx : Nat} {tty recTy : Expr md} {ctors : List (Key md × Nat × Expr md × List Nat)}
     (h : structRecTyR T lps elim large nP nIdx tty ctors = some recTy) :
-    ∃ (tbs : List (Expr × BinderMeta)) (itele motiveTy major minors : Expr),
+    ∃ (tbs : List (Expr md × BinderMeta)) (itele motiveTy major minors : Expr md),
       tty.stripPis nP = some (tbs, itele) ∧
       structMotiveTyI T lps nP nIdx (structElimLevel elim large) itele = some motiveTy ∧
       Expr.replacePisPw (Level.zeronessOf (structElimLevel elim large)) nIdx
@@ -115,13 +115,13 @@ theorem structRecTyR_unfold {T : Key} {lps : List LevelParam} {elim : LevelParam
   exact ⟨q.1, q.2, motiveTy, major, minors, hq, hmot, hmaj, hmin, hr⟩
 
 /-- `structRecRhsR` at rule `j`, unfolded. -/
-theorem structRecRhsR_unfold {T : Key} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
-    {nP nIdx : Nat} {tty rhs : Expr} {ctors : List (Key × Nat × Expr × List Nat)} {j : Nat}
-    {recC : Key} {rlvls : List Level}
+theorem structRecRhsR_unfold {T : Key md} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
+    {nP nIdx : Nat} {tty rhs : Expr md} {ctors : List (Key md × Nat × Expr md × List Nat)} {j : Nat}
+    {recC : Key md} {rlvls : List Level}
     (h : structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j = some rhs) :
-    ∃ (C : Key) (nF : Nat) (cty : Expr) (recIdx : List Nat)
-      (tbs cbs : List (Expr × BinderMeta))
-      (itele motiveTy crest0 inner minors : Expr),
+    ∃ (C : Key md) (nF : Nat) (cty : Expr md) (recIdx : List Nat)
+      (tbs cbs : List (Expr md × BinderMeta))
+      (itele motiveTy crest0 inner minors : Expr md),
       ctors[j]? = some (C, nF, cty, recIdx) ∧
       tty.stripPis nP = some (tbs, itele) ∧
       structMotiveTyI T lps nP nIdx (structElimLevel elim large) itele = some motiveTy ∧
@@ -151,7 +151,7 @@ theorem structRecRhsR_unfold {T : Key} {lps : List LevelParam} {elim : LevelPara
 
 /-- A lift raises the loose-bvar bound by the lift's amount. -/
 theorem Expr.looseBVarsBounded_liftLooseBVars (k : Nat) :
-    ∀ (e : Expr) {b c : Nat}, e.looseBVarsBounded b = true →
+    ∀ (e : Expr md) {b c : Nat}, e.looseBVarsBounded b = true →
       (e.liftLooseBVars k c).looseBVarsBounded (b + k) = true := by
   intro e
   induction e with
@@ -198,13 +198,13 @@ theorem Expr.looseBVarsBounded_liftLooseBVars (k : Nat) :
 
 /-- `Expr.shiftFrom p`, iterated `n` times: insert `n` fresh variable
 slots at index `p`. -/
-@[expose] def Expr.shiftFromN (p : Nat) : Nat → Expr → Expr
+@[expose] def Expr.shiftFromN (p : Nat) : Nat → Expr md → Expr md
   | 0, e => e
   | n + 1, e => Expr.shiftFrom p (Expr.shiftFromN p n e)
 
 /-- A term without free variables is fixed by the shift. -/
 theorem Expr.shiftFromN_eq_self_of_not_hasFvar {p : Nat} :
-    ∀ (n : Nat) {e : Expr}, e.hasFvar = false → Expr.shiftFromN p n e = e
+    ∀ (n : Nat) {e : Expr md}, e.hasFvar = false → Expr.shiftFromN p n e = e
   | 0, _, _ => rfl
   | n + 1, e, h => by
     show Expr.shiftFrom p (Expr.shiftFromN p n e) = e
@@ -212,8 +212,8 @@ theorem Expr.shiftFromN_eq_self_of_not_hasFvar {p : Nat} :
 
 /-- A shift bumps a free variable at or above the cut by one. -/
 theorem Expr.shiftFromN_fvar (p : Nat) :
-    ∀ (n idx : Nat) (ty : Expr),
-      ∃ (ty' : Expr),
+    ∀ (n idx : Nat) (ty : Expr md),
+      ∃ (ty' : Expr md),
         Expr.shiftFromN p n (Expr.fvar idx ty)
           = Expr.fvar (if idx < p then idx else idx + n) ty'
   | 0, idx, ty => ⟨ty, by
@@ -236,7 +236,7 @@ theorem Expr.shiftFromN_fvar (p : Nat) :
 
 /-- Well-scopedness survives a shift, one slot up. -/
 theorem Expr.WScoped_shiftFrom {p : Nat} :
-    ∀ {e : Expr} {d : Nat}, Expr.WScoped d e → Expr.WScoped (d + 1) (Expr.shiftFrom p e) := by
+    ∀ {e : Expr md} {d : Nat}, Expr.WScoped d e → Expr.WScoped (d + 1) (Expr.shiftFrom p e) := by
   intro e
   induction e with
   | bvar i => intro d _; simp [Expr.shiftFrom, Expr.WScoped]
@@ -280,7 +280,7 @@ theorem Expr.WScoped_shiftFrom {p : Nat} :
 
 /-- Well-scopedness survives an iterated shift, `n` slots up. -/
 theorem Expr.WScoped_shiftFromN {p : Nat} :
-    ∀ (n : Nat) {e : Expr} {d : Nat},
+    ∀ (n : Nat) {e : Expr md} {d : Nat},
       Expr.WScoped d e → Expr.WScoped (d + n) (Expr.shiftFromN p n e)
   | 0, _, _, hw => hw
   | n + 1, e, d, hw => by
@@ -290,7 +290,7 @@ theorem Expr.WScoped_shiftFromN {p : Nat} :
 
 /-- A shift commutes with an instantiation sequence. -/
 theorem Expr.shiftFrom_instSeq (p : Nat) :
-    ∀ (sp : List Expr) (t : Nat) (e : Expr),
+    ∀ (sp : List (Expr md)) (t : Nat) (e : Expr md),
       Expr.shiftFrom p (instSeq sp t e)
         = instSeq (sp.map (Expr.shiftFrom p)) t (Expr.shiftFrom p e)
   | [], _, _ => rfl
@@ -302,7 +302,7 @@ theorem Expr.shiftFrom_instSeq (p : Nat) :
 
 /-- An iterated shift commutes with an instantiation sequence. -/
 theorem Expr.shiftFromN_instSeq (p : Nat) :
-    ∀ (n : Nat) (sp : List Expr) (t : Nat) (e : Expr),
+    ∀ (n : Nat) (sp : List (Expr md)) (t : Nat) (e : Expr md),
       Expr.shiftFromN p n (instSeq sp t e)
         = instSeq (sp.map (Expr.shiftFromN p n)) t (Expr.shiftFromN p n e)
   | 0, sp, t, e => by simp [Expr.shiftFromN]
@@ -315,7 +315,7 @@ theorem Expr.shiftFromN_instSeq (p : Nat) :
 /-- Well-scopedness survives an instantiation sequence at well-scoped
 arguments. -/
 theorem Expr.instSeq_WScoped {d : Nat} :
-    ∀ (sp : List Expr) (t : Nat) {e : Expr},
+    ∀ (sp : List (Expr md)) (t : Nat) {e : Expr md},
       (∀ a ∈ sp, Expr.WScoped d a) → Expr.WScoped d e → Expr.WScoped d (instSeq sp t e)
   | [], _, _, _, he => he
   | a :: sp, t, _e, hsp, he =>
@@ -327,7 +327,7 @@ theorem Expr.instSeq_WScoped {d : Nat} :
 /-- The recursor's leading spine `p⃗ motive m⃗` in a rule body,
 instantiated at the frame's own variables: the parameter and the extra
 variables themselves. -/
-theorem map_instSeq_structRecPrefixAt (tfvs extras xFvs : List Expr) {nP n nF : Nat}
+theorem map_instSeq_structRecPrefixAt (tfvs extras xFvs : List (Expr md)) {nP n nF : Nat}
     (hlenT : tfvs.length = nP) (hlenE : extras.length = n + 1) (hlenX : xFvs.length = nF)
     (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hclE : ∀ a ∈ extras, a.looseBVarsBounded 0 = true) :
@@ -340,14 +340,14 @@ theorem map_instSeq_structRecPrefixAt (tfvs extras xFvs : List Expr) {nP n nF : 
     · exact hclT a h
     · exact hclE a h
   have hlen : (tfvs ++ extras).length = nP + n + 1 := by simp [hlenT, hlenE]; omega
-  have hlenR : (structRecPrefixAt nP n nF 0).length = nP + n + 1 := by
+  have hlenR : (structRecPrefixAt (md := md) nP n nF 0).length = nP + n + 1 := by
     simp [structRecPrefixAt, structPsAt]
     omega
-  have hlA : (structPsAt (0 + nF + n + 1) nP).length = nP := by simp [structPsAt]
-  have hlAB : (structPsAt (0 + nF + n + 1) nP ++ [Expr.bvar (0 + nF + n)]).length = nP + 1 := by
+  have hlA : ((structPsAt (md := md)) (0 + nF + n + 1) nP).length = nP := by simp [structPsAt]
+  have hlAB : ((structPsAt (md := md)) (0 + nF + n + 1) nP ++ [Expr.bvar (0 + nF + n)]).length = nP + 1 := by
     simp [structPsAt]
   have hget : ∀ k : Nat, k < nP + n + 1 →
-      (structRecPrefixAt nP n nF 0)[k]? = some (Expr.bvar (nP + n + nF - k)) := by
+      ((structRecPrefixAt (md := md)) nP n nF 0)[k]? = some (Expr.bvar (nP + n + nF - k)) := by
     intro k hk
     unfold structRecPrefixAt
     by_cases hkp : k < nP
@@ -402,9 +402,9 @@ namespace Ix.Kernel
 
 namespace Expr
 
-variable {T : Key} {i : Nat}
+variable {T : Key md} {i : Nat}
 
-theorem NoProjAt.getAppArgs : ∀ {e : Expr}, NoProjAt T i e → ∀ a ∈ e.getAppArgs, NoProjAt T i a
+theorem NoProjAt.getAppArgs : ∀ {e : Expr md}, NoProjAt T i e → ∀ a ∈ e.getAppArgs, NoProjAt T i a
   | .app f a, h, b, hb => by
     simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hb
     rw [noProjAt_app] at h
@@ -418,7 +418,7 @@ theorem NoProjAt.getAppArgs : ∀ {e : Expr}, NoProjAt T i e → ∀ a ∈ e.get
 /-- The binder domains of a stripped telescope carry no projection node
 of their body's telescope. -/
 theorem NoProjAt.stripPis_doms :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)} {body : Expr md},
       e.stripPis k = some (bs, body) → NoProjAt T i e → ∀ d ∈ bs, NoProjAt T i d.1
   | 0, e, bs, body, h, _ => by
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at h
@@ -442,7 +442,7 @@ theorem NoProjAt.stripPis_doms :
     | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
-theorem NoProjAt.piBinders : ∀ {e : Expr}, NoProjAt T i e →
+theorem NoProjAt.piBinders : ∀ {e : Expr md}, NoProjAt T i e →
     (∀ d ∈ (Expr.piBinders e).1, NoProjAt T i d.1) ∧ NoProjAt T i (Expr.piBinders e).2
   | .forallE ty b m, h => by
     rw [noProjAt_forallE] at h
@@ -456,7 +456,7 @@ theorem NoProjAt.piBinders : ∀ {e : Expr}, NoProjAt T i e →
   | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
     ⟨fun d hd => by simp [Expr.piBinders] at hd, h⟩
 
-theorem NoProjAt.mkPisOf : ∀ {bs : List (Expr × BinderMeta)} {b : Expr},
+theorem NoProjAt.mkPisOf : ∀ {bs : List (Expr md × BinderMeta)} {b : Expr md},
     (∀ d ∈ bs, NoProjAt T i d.1) → NoProjAt T i b → NoProjAt T i (Expr.mkPisOf bs b)
   | [], _, _, hb => hb
   | (ty, m) :: bs, b, hbs, hb => by
@@ -464,7 +464,7 @@ theorem NoProjAt.mkPisOf : ∀ {bs : List (Expr × BinderMeta)} {b : Expr},
     exact ⟨hbs _ List.mem_cons_self,
       NoProjAt.mkPisOf (fun d hd => hbs d (List.mem_cons_of_mem _ hd)) hb⟩
 
-theorem NoProjAt.mkLamsOf : ∀ {bs : List (Expr × BinderMeta)} {b : Expr},
+theorem NoProjAt.mkLamsOf : ∀ {bs : List (Expr md × BinderMeta)} {b : Expr md},
     (∀ d ∈ bs, NoProjAt T i d.1) → NoProjAt T i b → NoProjAt T i (Expr.mkLamsOf bs b)
   | [], _, _, hb => hb
   | (ty, m) :: bs, b, hbs, hb => by
@@ -477,12 +477,12 @@ theorem NoProjAt.structTeleVars (m : Nat) : ∀ a ∈ structTeleVars m, NoProjAt
   obtain ⟨k, -, rfl⟩ := List.mem_map.mp ha
   simp
 
-theorem NoProjAt.structIdxAt {nF o j l m : Nat} {e : Expr} (h : NoProjAt T i e) :
+theorem NoProjAt.structIdxAt {nF o j l m : Nat} {e : Expr md} (h : NoProjAt T i e) :
     NoProjAt T i (structIdxAt nF o j l m e) :=
   h.liftLooseBVars.liftLooseBVars
 
 theorem NoProjAt.structTeleAt {nF o j l : Nat} {pw : PropWhen}
-    {tele : List (Expr × BinderMeta)} (h : ∀ d ∈ tele, NoProjAt T i d.1) :
+    {tele : List (Expr md × BinderMeta)} (h : ∀ d ∈ tele, NoProjAt T i d.1) :
     ∀ d ∈ structTeleAt nF o j l pw tele, NoProjAt T i d.1 := by
   intro d hd
   obtain ⟨k, hk, rfl⟩ := List.mem_map.mp hd
@@ -491,7 +491,7 @@ theorem NoProjAt.structTeleAt {nF o j l : Nat} {pw : PropWhen}
   rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt]
   exact List.getElem_mem hlt
 
-theorem NoProjAt.structFieldTeleOf {cty : Expr} {nP nF j : Nat} (h : NoProjAt T i cty) :
+theorem NoProjAt.structFieldTeleOf {cty : Expr md} {nP nF j : Nat} (h : NoProjAt T i cty) :
     ∀ d ∈ structFieldTeleOf cty nP nF j, NoProjAt T i d.1 := by
   unfold Ix.Kernel.structFieldTeleOf
   cases hs : cty.stripPis (nP + nF) with
@@ -507,11 +507,11 @@ theorem NoProjAt.structFieldTeleOf {cty : Expr} {nP nF j : Nat} (h : NoProjAt T 
         exact List.getElem_mem hlt
       exact (NoProjAt.piBinders (hdoms _ hmem)).1 d hd
     · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)] at hd
-      have hdef : (Expr.piBinders (default : Expr × BinderMeta).1).1 = [] := rfl
+      have hdef : (Expr.piBinders (default : Expr md × BinderMeta).1).1 = [] := rfl
       rw [Option.getD_none, hdef] at hd
       exact absurd hd List.not_mem_nil
 
-theorem NoProjAt.structFieldIdxOf {cty : Expr} {nP nF j : Nat} (h : NoProjAt T i cty) :
+theorem NoProjAt.structFieldIdxOf {cty : Expr md} {nP nF j : Nat} (h : NoProjAt T i cty) :
     ∀ e ∈ structFieldIdxOf cty nP nF j, NoProjAt T i e := by
   unfold Ix.Kernel.structFieldIdxOf
   cases hs : cty.stripPis (nP + nF) with
@@ -527,7 +527,7 @@ theorem NoProjAt.structFieldIdxOf {cty : Expr} {nP nF j : Nat} (h : NoProjAt T i
         exact List.getElem_mem hlt
       exact NoProjAt.getAppArgs (NoProjAt.piBinders (hdoms _ hmem)).2 e (List.mem_of_mem_drop he)
     · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)] at he
-      have hdef : (Expr.piBinders (default : Expr × BinderMeta).1).2.getAppArgs = [] := rfl
+      have hdef : (Expr.piBinders (default : Expr md × BinderMeta).1).2.getAppArgs = [] := rfl
       rw [Option.getD_none, hdef, List.drop_nil] at he
       exact absurd he List.not_mem_nil
 
@@ -540,8 +540,8 @@ theorem NoProjAt.structRecPrefixAt (nP n nF e : Nat) :
   · simp
   · simp
 
-theorem NoProjAt.structIhApp {recC : Key} {rlvls : List Level} {pw : PropWhen}
-    {nP n nF j : Nat} {tele : List (Expr × BinderMeta)} {idx : List Expr}
+theorem NoProjAt.structIhApp {recC : Key md} {rlvls : List Level} {pw : PropWhen}
+    {nP n nF j : Nat} {tele : List (Expr md × BinderMeta)} {idx : List (Expr md)}
     (ht : ∀ d ∈ tele, NoProjAt T i d.1) (hidx : ∀ e ∈ idx, NoProjAt T i e) :
     NoProjAt T i (structIhApp recC rlvls pw nP n nF j tele idx) := by
   unfold Ix.Kernel.structIhApp
@@ -554,9 +554,9 @@ theorem NoProjAt.structIhApp {recC : Key} {rlvls : List Level} {pw : PropWhen}
   · exact NoProjAt.structIdxAt (hidx e he)
   · exact NoProjAt.mkAppN (by simp) (NoProjAt.structTeleVars _)
 
-theorem NoProjAt.structRuleBodyR {recC : Key} {rlvls : List Level} {pw : PropWhen}
-    {nP n nF j : Nat} {recIdx : List Nat} {teleOf : Nat → List (Expr × BinderMeta)}
-    {idxOf : Nat → List Expr}
+theorem NoProjAt.structRuleBodyR {recC : Key md} {rlvls : List Level} {pw : PropWhen}
+    {nP n nF j : Nat} {recIdx : List Nat} {teleOf : Nat → List (Expr md × BinderMeta)}
+    {idxOf : Nat → List (Expr md)}
     (ht : ∀ k, ∀ d ∈ teleOf k, NoProjAt T i d.1) (hidx : ∀ k, ∀ e ∈ idxOf k, NoProjAt T i e) :
     NoProjAt T i (structRuleBodyR recC rlvls pw nP n nF j recIdx teleOf idxOf) := by
   unfold Ix.Kernel.structRuleBodyR
@@ -567,10 +567,10 @@ theorem NoProjAt.structRuleBodyR {recC : Key} {rlvls : List Level} {pw : PropWhe
   · simp
   · exact NoProjAt.structIhApp (ht k) (hidx k)
 
-theorem NoProjAt.structIhPis {nF o : Nat} {pw : PropWhen} {teleOf : Nat → List (Expr × BinderMeta)}
-    {idxOf : Nat → List Expr}
+theorem NoProjAt.structIhPis {nF o : Nat} {pw : PropWhen} {teleOf : Nat → List (Expr md × BinderMeta)}
+    {idxOf : Nat → List (Expr md)}
     (ht : ∀ k, ∀ d ∈ teleOf k, NoProjAt T i d.1) (hidx : ∀ k, ∀ e ∈ idxOf k, NoProjAt T i e) :
-    ∀ {is : List Nat} {l : Nat} {body : Expr}, NoProjAt T i body →
+    ∀ {is : List Nat} {l : Nat} {body : Expr md}, NoProjAt T i body →
       NoProjAt T i (structIhPis nF o pw teleOf idxOf is l body)
   | [], _, _, hb => hb
   | k :: is, l, body, hb => by
@@ -583,8 +583,8 @@ theorem NoProjAt.structIhPis {nF o : Nat} {pw : PropWhen} {teleOf : Nat → List
     · exact NoProjAt.structIdxAt (hidx k e he)
     · exact NoProjAt.mkAppN (by simp) (NoProjAt.structTeleVars _)
 
-theorem NoProjAt.structMinorTyR {C : Key} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
-    {cty mty : Expr} {recIdx : List Nat} (h : structMinorTyR C lps nP nF o pw cty recIdx = some mty)
+theorem NoProjAt.structMinorTyR {C : Key md} {lps : List LevelParam} {nP nF o : Nat} {pw : PropWhen}
+    {cty mty : Expr md} {recIdx : List Nat} (h : structMinorTyR C lps nP nF o pw cty recIdx = some mty)
     (hC : NoProjAt T i cty) : NoProjAt T i mty := by
   obtain ⟨cbs, fbs, crest0, res, hs, hr, hm⟩ := structMinorTyR_unfold h
   have hcrest : NoProjAt T i crest0 := NoProjAt.stripPis nP hs hC
@@ -600,7 +600,7 @@ theorem NoProjAt.structMinorTyR {C : Key} {lps : List LevelParam} {nP nF o : Nat
   · exact NoProjAt.structCtorSpineAt _ _ _ _ _
 
 theorem NoProjAt.structMinorsPisR {lps : List LevelParam} {nP : Nat} {pw : PropWhen} :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {o : Nat} {body mins : Expr},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {o : Nat} {body mins : Expr md},
       structMinorsPisR lps nP pw ctors o body = some mins →
       (∀ c ∈ ctors, NoProjAt T i c.2.2.1) → NoProjAt T i body → NoProjAt T i mins
   | [], _, body, mins, h, _, hb => by rw [structMinorsPisR_nil h]; exact hb
@@ -611,7 +611,7 @@ theorem NoProjAt.structMinorsPisR {lps : List LevelParam} {nP : Nat} {pw : PropW
       NoProjAt.structMinorsPisR hrest (fun c hc => hcs c (List.mem_cons_of_mem _ hc)) hb⟩
 
 theorem NoProjAt.structMinorsLamsR {lps : List LevelParam} {nP : Nat} {pw : PropWhen} :
-    ∀ {ctors : List (Key × Nat × Expr × List Nat)} {o : Nat} {body mins : Expr},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {o : Nat} {body mins : Expr md},
       structMinorsLamsR lps nP pw ctors o body = some mins →
       (∀ c ∈ ctors, NoProjAt T i c.2.2.1) → NoProjAt T i body → NoProjAt T i mins
   | [], _, body, mins, h, _, hb => by rw [structMinorsLamsR_nil h]; exact hb
@@ -621,7 +621,7 @@ theorem NoProjAt.structMinorsLamsR {lps : List LevelParam} {nP : Nat} {pw : Prop
     exact ⟨NoProjAt.structMinorTyR hmty (hcs _ List.mem_cons_self),
       NoProjAt.structMinorsLamsR hrest (fun c hc => hcs c (List.mem_cons_of_mem _ hc)) hb⟩
 
-theorem NoProjAt.structFamI (T' : Key) (lps : List LevelParam) (nP nIdx e o : Nat) :
+theorem NoProjAt.structFamI (T' : Key md) (lps : List LevelParam) (nP nIdx e o : Nat) :
     NoProjAt T i (structFamI T' lps nP nIdx e o) := by
   unfold Ix.Kernel.structFamI
   refine NoProjAt.mkAppN (by simp) ?_
@@ -630,8 +630,8 @@ theorem NoProjAt.structFamI (T' : Key) (lps : List LevelParam) (nP nIdx e o : Na
   · exact NoProjAt.structPsAt _ _ a h
   · exact NoProjAt.structPsAt _ _ a h
 
-theorem NoProjAt.structMotiveTyI {T' : Key} {lps : List LevelParam} {nP nIdx : Nat} {ℓ : Level}
-    {itele mty : Expr} (h : structMotiveTyI T' lps nP nIdx ℓ itele = some mty)
+theorem NoProjAt.structMotiveTyI {T' : Key md} {lps : List LevelParam} {nP nIdx : Nat} {ℓ : Level}
+    {itele mty : Expr md} (h : structMotiveTyI T' lps nP nIdx ℓ itele = some mty)
     (hI : NoProjAt T i itele) : NoProjAt T i mty := by
   unfold Ix.Kernel.structMotiveTyI at h
   refine NoProjAt.replacePisPw nIdx h hI ?_
@@ -640,8 +640,8 @@ theorem NoProjAt.structMotiveTyI {T' : Key} {lps : List LevelParam} {nP nIdx : N
 
 /-- **The generated recursor type at a recursive block has no `.proj`
 node** the type former's and the constructors' types do not have. -/
-theorem NoProjAt.structRecTyR {T' : Key} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
-    {nP nIdx : Nat} {tty recTy : Expr} {ctors : List (Key × Nat × Expr × List Nat)}
+theorem NoProjAt.structRecTyR {T' : Key md} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
+    {nP nIdx : Nat} {tty recTy : Expr md} {ctors : List (Key md × Nat × Expr md × List Nat)}
     (h : structRecTyR T' lps elim large nP nIdx tty ctors = some recTy)
     (hT : NoProjAt T i tty) (hC : ∀ c ∈ ctors, NoProjAt T i c.2.2.1) : NoProjAt T i recTy := by
   obtain ⟨tbs, itele, motiveTy, major, minors, hs, hmot, hmaj, hmin, hr⟩ := structRecTyR_unfold h
@@ -659,9 +659,9 @@ theorem NoProjAt.structRecTyR {T' : Key} {lps : List LevelParam} {elim : LevelPa
 
 /-- **The generated rules at a recursive block have no `.proj` node**
 the type former's and the constructors' types do not have. -/
-theorem NoProjAt.structRecRhsR {T' : Key} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
-    {nP nIdx j : Nat} {tty rhs : Expr} {ctors : List (Key × Nat × Expr × List Nat)}
-    {recC : Key} {rlvls : List Level}
+theorem NoProjAt.structRecRhsR {T' : Key md} {lps : List LevelParam} {elim : LevelParam} {large : Bool}
+    {nP nIdx j : Nat} {tty rhs : Expr md} {ctors : List (Key md × Nat × Expr md × List Nat)}
+    {recC : Key md} {rlvls : List Level}
     (h : structRecRhsR T' lps elim large nP nIdx tty ctors recC rlvls j = some rhs)
     (hT : NoProjAt T i tty) (hC : ∀ c ∈ ctors, NoProjAt T i c.2.2.1) : NoProjAt T i rhs := by
   obtain ⟨C, nF, cty, recIdx, tbs, cbs, itele, motiveTy, crest0, inner, minors, hj, hs, hmot, hcs,
