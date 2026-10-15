@@ -69,7 +69,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
   let fe ← getFileEnvCore pathStr
-  let constList ← defaultConstList fe pathStr
+  let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
@@ -137,6 +137,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 

@@ -147,7 +147,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
           IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-          let closed := collectDeps leanEnv seeds
+          let closed := collectSelectedDeps leanEnv seeds
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
     IO.println s!"Total constants: {constList.length}"

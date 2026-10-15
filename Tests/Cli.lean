@@ -164,11 +164,48 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
+/-- `ix compile --local`: the file's own constants with their selected
+    closure. The output's named section holds the file's definition and its
+    inductive's recursor (the selected closure carries recursors) but not an
+    unrelated import-env constant; `--local` with `--consts` is refused
+    (exit 1) and writes nothing. -/
+private def Tests.Cli.testCompileLocal : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let dir ← IO.FS.createTempDir
+  let source := dir / "LocalScope.lean"
+  let output := dir / "local.ixe"
+  try
+    IO.FS.writeFile source
+      "inductive LocalTree where\n  | leaf\n  | node (l r : LocalTree)\n\
+def localSize : LocalTree → Nat\n  | .leaf => 1\n  | .node l r => localSize l + localSize r\n"
+    let args := #["compile", source.toString, "--no-build", "--local", "--out", output.toString]
+    let run ← IO.Process.output { cmd := ix.toString, args }
+    unless run.exitCode == 0 do
+      throw <| IO.userError s!"compile --local failed:\n{run.stdout}\n{run.stderr}"
+    let env ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile output))
+    let has (s : String) : Bool := env.named.toList.any fun (n, _) => n.pretty == s
+    for required in ["localSize", "LocalTree", "LocalTree.rec"] do
+      unless has required do
+        throw <| IO.userError s!"compile --local: the output lacks {required}"
+    if has "Nat.gcd" then
+      throw <| IO.userError "compile --local: the output holds the unrelated import Nat.gcd"
+    IO.FS.removeFile output
+    let both ← IO.Process.output
+      { cmd := ix.toString, args := args ++ #["--consts", "localSize"] }
+    if both.exitCode != 1 || (← output.pathExists) then
+      throw <| IO.userError s!"compile --local --consts: expected exit 1 and no output, \
+        got exit {both.exitCode}"
+    IO.println s!"compile --local: {env.named.size} named entries (own constants, recursor, \
+      no unrelated import); --local with --consts refused"
+  finally
+    IO.FS.removeDirAll dir
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
   Tests.Cli.testCompileSharingLimits
+  Tests.Cli.testCompileLocal
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0
