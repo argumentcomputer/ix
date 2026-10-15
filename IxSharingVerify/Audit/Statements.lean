@@ -345,6 +345,15 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Exact.SCtx.phiE_eq_fast,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
+    standardAxioms := noChoice },
+  -- The compiler's exact cache keys (CQ2.8, `Ix.Compile.ExactKey`): compiled
+  -- code compares expressions, levels and names pointer-first with a memo,
+  -- proved equal to `decide (a = b)` over the raw terms (`@[csimp]`).
+  { root := ``Ix.Compile.ExactKey.exprEq_eq_impl,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.levelEq_eq_impl,
+    standardAxioms := standard },
+  { root := ``Ix.Compile.ExactKey.nameEq_eq_impl,
     standardAxioms := noChoice }
 ]
 
