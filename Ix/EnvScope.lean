@@ -9,6 +9,11 @@
 -/
 module
 public import Ix.Meta
+-- The checker-support ground is derived from the kernel's role table
+-- (CQX.3): host → kernel is the layering fence's allowed direction
+-- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
+-- import closure into the `ix` binary.
+import IxC.Kernel.Roles
 
 public section
 
@@ -147,6 +152,36 @@ def unitMembers (consts : Lean.ConstMap) (idx : UnitIndex) (n : Lean.Name) : Lis
   let o := (unitAuxOwner? consts n).getD n
   (unitRoots consts o ++ (idx.getD (unitKey consts o) #[]).toList).filter consts.contains
 
+/-! ## Checker-support ground (CQX.3) -/
+
+/-- Kernel names (`Ix.Kernel.Name`) as Lean names. -/
+private def kernelNameToLean : Ix.Kernel.Name → Lean.Name
+  | .anonymous => .anonymous
+  | .str p s => .str (kernelNameToLean p) s
+  | .num p n => .num (kernelNameToLean p) n
+
+/-- Checker-support ground by Lean name: for a role-bound constant
+`r.leanName`, the constants of the roles its validation needs (`Role.deps
+r`) with their blocks (`Role.block`), the roots of the fold's evidence
+closure (`Ix.Kernel.evidenceDepKeys`), without `r` itself. Derived from
+`IxC/Kernel/Roles.lean`, not a copy: a superset of the old Nat-operation
+table (`997088e9`), and exactly what `RoleTable.wf` requires of a table
+that binds `r`. -/
+private def checkerSupportTable : Std.HashMap Lean.Name (List Lean.Name) :=
+  Ix.Kernel.Role.all.foldl (init := {}) fun m r =>
+    let deps := (r.deps.flatMap Ix.Kernel.Role.block).eraseDups.filter (· != r)
+    if deps.isEmpty then m
+    else m.insert (kernelNameToLean r.leanName) (deps.map (kernelNameToLean ·.leanName))
+
+/-- The checker-support ground of `n` that exists in `consts`: what the
+certified checker needs beside `n` to validate it when `n` is role-bound
+(a well-founded `Nat` operation's evidence mentions `Nat.mul`, which its
+value does not). Existing source records only: selection never
+synthesizes a constant, and the checker still validates every record it is
+given. -/
+def checkerSupportOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name :=
+  (checkerSupportTable.getD n []).filter consts.contains
+
 /-! ## The closure collector -/
 
 /-- The recursors Lean generated for inductive `n`: `n.rec` and the nested
@@ -172,11 +207,15 @@ structure ClosureOptions where
   /-- The whole logical unit of every declaration reached (`unitMembers`,
       §6.3). -/
   units : Bool := false
+  /-- The checker-support ground of every declaration reached
+      (`checkerSupportOf`): a closure handed to the certified checker must
+      carry it, or a role-bound operation is declined. -/
+  checkerSupport : Bool := false
   deriving Inhabited, BEq, Repr
 
 /-- The options of a selected compiler/checker input. -/
 def ClosureOptions.selected : ClosureOptions :=
-  { recursors := true, units := true }
+  { recursors := true, units := true, checkerSupport := true }
 
 /-- Collect the transitive closure of constants referenced by a set of seed
 names: the one closure collector (R01-17) behind `ix compile --consts`/
@@ -215,6 +254,8 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
         if opts.units then
           -- the whole logical unit of the declaration (§6.3)
           for r in unitMembers env.constants units n do refs := refs.insert r
+        if opts.checkerSupport then
+          for r in checkerSupportOf env.constants n do refs := refs.insert r
         match ci with
         -- A definition's `all` (its `mutual` siblings) is metadata the
         -- compiled entry names, and meta kernel ingress resolves each name
@@ -253,9 +294,9 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
   env.constants.toList.filter fun (n, _) => needed.contains n
 
 /-- The closure of a selected compiler/checker input: `collectDeps` with
-`ClosureOptions.selected`, so recursors and whole logical units close to the
-same fixed point as ordinary references, mutual `all` members and
-auxiliary-family siblings. -/
+`ClosureOptions.selected`, so recursors, whole logical units and
+checker-support ground close to the same fixed point as ordinary
+references, mutual `all` members and auxiliary-family siblings. -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
   collectDeps env seeds .selected
