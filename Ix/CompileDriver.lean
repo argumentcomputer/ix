@@ -1502,8 +1502,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let t0 ← IO.monoMsNow
   let constArr := consts.toArray
   -- 1a. Name pre-pass: canonical names only. Builds the lazy-lookup key
-  --     map (Ix name → pinned Lean constant), the reverse name-hash
-  --     view for `nameForAddr`, and the THIN ground-check env — ground
+  --     map (Ix name → pinned Lean constant), the name-hash view
+  --     (`CompileEnv.nameByHash`), and the THIN ground-check env — ground
   --     checks read only name-existence and is-it-a-ctor
   --     (`groundExpr`/`groundConst`), so two shared placeholder
   --     constants stand in for every value.

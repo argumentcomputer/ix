@@ -97,7 +97,19 @@ pub struct KernelCtx {
   /// the new id, exactly as the per-call sets healed it. Must be cleared
   /// together with `kenv` (the entries it vouches for die with it).
   pub aux_ingress_seen: FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
+  /// Forward source provenance (Lean `AuxKernelCtx.sourceNames`): every
+  /// source name the bridge's inputs referenced, by the address it was
+  /// ingressed at. All identities are kept: a Meta `KId` includes the name,
+  /// so another alias at the same address cannot stand in for a missing
+  /// one. `fault_in_addr` loads only from here, never from ambient compiled
+  /// aliases or a reverse scan. Fresh with the context and cleared with
+  /// `kenv`.
+  pub source_names: SourceNames,
 }
+
+/// Forward source provenance: ingress address → the source names
+/// referenced at it (see [`KernelCtx::source_names`]).
+pub type SourceNames = FxHashMap<Address, FxHashSet<Name>>;
 
 impl Default for KernelCtx {
   fn default() -> Self {
@@ -110,6 +122,7 @@ impl KernelCtx {
     KernelCtx {
       kenv: ix_kernel::env::KEnv::new(),
       aux_ingress_seen: FxHashSet::default(),
+      source_names: FxHashMap::default(),
     }
   }
 }

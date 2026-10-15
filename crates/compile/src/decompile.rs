@@ -6054,6 +6054,7 @@ pub fn decompile_env(
     if kenv_clear_entries.is_some_and(|limit| ingressed.len() > limit) {
       kctx.kenv.clear_releasing_memory();
       kctx.aux_ingress_seen.clear();
+      kctx.source_names.clear();
       ingressed.clear();
       kenv_clears += 1;
       expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);

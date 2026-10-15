@@ -1653,6 +1653,36 @@ pub(crate) fn kernel_ingress<T>(
   })
 }
 
+/// Record an explicit bridge input name under the address it is ingressed
+/// at (Lean `rememberSourceName`).
+pub(crate) fn remember_source_name(
+  source_names: &mut crate::compile::SourceNames,
+  name: &Name,
+  stt: &crate::compile::CompileState,
+) {
+  let addr = resolve_lean_name_addr(
+    name,
+    Some(&stt.name_to_addr),
+    Some(&stt.aux_name_to_addr),
+  );
+  source_names.entry(addr).or_default().insert(name.clone());
+}
+
+/// Record every constant and projection name an expression handed to the
+/// bridge references (Lean `rememberSourceExpr`, and the names Lean's
+/// closed ingress records at its `const`/`proj` nodes).
+pub(crate) fn remember_source_expr(
+  source_names: &mut crate::compile::SourceNames,
+  expr: &LeanExpr,
+  stt: &crate::compile::CompileState,
+) {
+  let mut refs = FxHashSet::default();
+  collect_lean_const_refs(expr, &mut refs);
+  for name in &refs {
+    remember_source_name(source_names, name, stt);
+  }
+}
+
 /// Ingress a **single** Lean constant into the given kenv so the kernel
 /// type checker can resolve it during inference. Handles all constant
 /// types: inductives (with their constructors, via the parent→ctor
@@ -1696,6 +1726,7 @@ fn ensure_in_kenv_of_inner_env(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kenv: &mut ix_kernel::env::KEnv<Meta>,
+  source_names: &mut crate::compile::SourceNames,
   replace_axio_stub: bool,
   stub_proof_values: bool,
 ) -> Result<(), ixon::CompileError> {
@@ -1707,6 +1738,10 @@ fn ensure_in_kenv_of_inner_env(
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
 
+  // Forward provenance, as Lean's `ensureInKenvOfInner` records it: the
+  // requested name, loaded or not, and below every name its converted
+  // terms reference.
+  remember_source_name(source_names, name, stt);
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
 
@@ -1724,26 +1759,28 @@ fn ensure_in_kenv_of_inner_env(
   // Helper: convert a LeanExpr to KExpr with the given level param names,
   // using the KEnv's persistent ingress cache. Callers are top-level, so
   // we start with an empty binder-name stack.
-  let to_z = |expr: &ix_common::env::Expr,
-              lp: &[Name],
-              kenv: &mut ix_kernel::env::KEnv<Meta>|
-   -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
-    let pn_h = param_names_hash(lp);
-    let mut binder_names: Vec<Name> = Vec::new();
-    kernel_ingress(
-      name,
-      lean_expr_to_zexpr_cached(
-        expr,
-        lp,
-        &mut binder_names,
-        &mut kenv.intern,
-        n2a,
-        aux_n2a,
-        Some(&mut kenv.ingress_cache),
-        Some(&pn_h),
-      ),
-    )
-  };
+  let mut to_z =
+    |expr: &ix_common::env::Expr,
+     lp: &[Name],
+     kenv: &mut ix_kernel::env::KEnv<Meta>|
+     -> Result<ix_kernel::expr::KExpr<Meta>, ixon::CompileError> {
+      remember_source_expr(source_names, expr, stt);
+      let pn_h = param_names_hash(lp);
+      let mut binder_names: Vec<Name> = Vec::new();
+      kernel_ingress(
+        name,
+        lean_expr_to_zexpr_cached(
+          expr,
+          lp,
+          &mut binder_names,
+          &mut kenv.intern,
+          n2a,
+          aux_n2a,
+          Some(&mut kenv.ingress_cache),
+          Some(&pn_h),
+        ),
+      )
+    };
 
   match &ci {
     LCI::InductInfo(ind) => {
@@ -1921,6 +1958,7 @@ fn ensure_in_kenv_of_inner_env(
         lean_env,
         stt,
         kenv,
+        source_names,
         replace_axio_stub,
         stub_proof_values,
       )?;
@@ -1945,6 +1983,7 @@ fn ensure_in_kenv_of_inner(
     lean_env,
     stt,
     &mut kctx.kenv,
+    &mut kctx.source_names,
     replace_axio_stub,
     false,
   )
@@ -1972,7 +2011,15 @@ pub fn ensure_in_kenv_of_prewarm(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(), ixon::CompileError> {
-  ensure_in_kenv_of_inner_env(name, lean_env, stt, &mut kctx.kenv, false, true)
+  ensure_in_kenv_of_inner_env(
+    name,
+    lean_env,
+    stt,
+    &mut kctx.kenv,
+    &mut kctx.source_names,
+    false,
+    true,
+  )
 }
 
 /// Like [`ensure_in_kenv_of`], but upgrades an existing type-only `Axio`
@@ -1992,8 +2039,17 @@ fn ensure_full_in_tc_env(
   lean_env: &ix_common::env::Env,
   stt: &crate::compile::CompileState,
   kenv: &mut ix_kernel::env::KEnv<Meta>,
+  source_names: &mut crate::compile::SourceNames,
 ) -> Result<(), ixon::CompileError> {
-  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true, false)
+  ensure_in_kenv_of_inner_env(
+    name,
+    lean_env,
+    stt,
+    kenv,
+    source_names,
+    true,
+    false,
+  )
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).
@@ -2021,6 +2077,9 @@ pub(super) struct TcScope<'a> {
   param_names: &'a [Name],
   stt: &'a crate::compile::CompileState,
   tc: ix_kernel::tc::TypeChecker<'a, Meta>,
+  /// The context's forward source provenance (`KernelCtx::source_names`),
+  /// borrowed beside `tc`'s kenv.
+  source_names: &'a mut crate::compile::SourceNames,
   /// How many extra locals are currently pushed above base_depth.
   extra_locals: usize,
 }
@@ -2056,11 +2115,15 @@ impl<'a> TcScope<'a> {
       }
     }
 
-    let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
+    let crate::compile::KernelCtx { kenv, source_names, .. } = kctx;
+    let mut tc = ix_kernel::tc::TypeChecker::new(kenv);
     tc.infer_only = true;
 
-    // Push outer FVar types once.
+    // Push outer FVar types once. Open terms bypass the closed-ingress
+    // recording, so their references are recorded here (Lean
+    // `rememberSourceExpr` in `TcScopeSt.new`).
     for (i, decl) in outer_fvar_ctx.iter().enumerate() {
+      remember_source_expr(source_names, &decl.domain, stt);
       let kty =
         to_kexpr_static(&decl.domain, &fvar_levels, i, param_names, stt)?;
       tc.push_local(kty);
@@ -2072,6 +2135,7 @@ impl<'a> TcScope<'a> {
       param_names,
       stt,
       tc,
+      source_names,
       extra_locals: 0,
     })
   }
@@ -2109,6 +2173,7 @@ impl<'a> TcScope<'a> {
         )))
       } else {
         self.fvar_levels.insert(decl.fvar_name.clone(), depth + i);
+        remember_source_expr(self.source_names, &decl.domain, self.stt);
         to_kexpr_static(
           &decl.domain,
           &self.fvar_levels,
@@ -2177,52 +2242,87 @@ impl<'a> TcScope<'a> {
     Ok(())
   }
 
+  /// Load `name` in full and report whether its own Meta `KId` is now in
+  /// the kenv (Lean `faultInName`; an alias at the same address does not
+  /// count).
   fn fault_in_name(&mut self, name: &Name) -> Result<bool, ixon::CompileError> {
     let Some(lean_env) = self.stt.lean_env.as_deref() else {
       return Ok(false);
     };
-    ensure_full_in_tc_env(name, lean_env, self.stt, self.tc.env)?;
+    ensure_full_in_tc_env(
+      name,
+      lean_env,
+      self.stt,
+      self.tc.env,
+      self.source_names,
+    )?;
     let addr = resolve_lean_name_addr(
       name,
       Some(&self.stt.name_to_addr),
       Some(&self.stt.aux_name_to_addr),
     );
-    Ok(self.addr_present(&addr))
+    Ok(self.tc.env.get(&ix_kernel::id::KId::new(addr, name.clone())).is_some())
   }
 
+  /// Fault in the source identities this context's inputs referenced at an
+  /// address the kernel reported unknown (Lean `faultInAddr`). The kernel's
+  /// `UnknownConst` carries only the address, while a Meta `KId` also holds
+  /// the name, so every recorded identity that is still missing is loaded,
+  /// in `Name: Ord` order (the hash order of Lean's `aliasPrecedes`), to a
+  /// fixed point: loading may record further aliases at the address. Never
+  /// an ambient compiled alias or a reverse scan (D-11c, R03-01): without
+  /// recorded provenance the fault is refused.
   fn fault_in_addr(
     &mut self,
     addr: &Address,
   ) -> Result<bool, ixon::CompileError> {
-    if self.addr_present(addr) {
-      return Ok(true);
+    if self.source_names.get(addr).is_none_or(FxHashSet::is_empty) {
+      return Err(ixon::CompileError::UnsupportedExpr {
+        desc: format!(
+          "bridge fault: no forward source provenance for {}",
+          addr.hex()
+        ),
+      });
     }
-    let Some(name) = self.name_for_addr(addr) else {
-      return Ok(false);
-    };
-    Ok(self.fault_in_name(&name)? && self.addr_present(addr))
-  }
-
-  fn addr_present(&self, addr: &Address) -> bool {
-    self.tc.env.consts.keys().any(|id| &id.addr == addr)
-  }
-
-  fn name_for_addr(&self, addr: &Address) -> Option<Name> {
-    for entry in self.stt.name_to_addr.iter() {
-      if entry.value() == addr {
-        return Some(entry.key().clone());
+    let mut visited: FxHashSet<Name> = FxHashSet::default();
+    let mut loaded = false;
+    loop {
+      let mut pending: Vec<Name> = self
+        .source_names
+        .get(addr)
+        .map(|names| {
+          names.iter().filter(|n| !visited.contains(*n)).cloned().collect()
+        })
+        .unwrap_or_default();
+      if pending.is_empty() {
+        break;
+      }
+      pending.sort();
+      for name in pending {
+        visited.insert(name.clone());
+        let id = ix_kernel::id::KId::new(addr.clone(), name.clone());
+        if self.tc.env.get(&id).is_some() {
+          continue;
+        }
+        let current = resolve_lean_name_addr(
+          &name,
+          Some(&self.stt.name_to_addr),
+          Some(&self.stt.aux_name_to_addr),
+        );
+        if &current != addr {
+          return Err(ixon::CompileError::UnsupportedExpr {
+            desc: format!(
+              "bridge fault: source address changed for {}",
+              name.pretty()
+            ),
+          });
+        }
+        if self.fault_in_name(&name)? {
+          loaded = true;
+        }
       }
     }
-    for entry in self.stt.aux_name_to_addr.iter() {
-      if entry.value() == addr {
-        return Some(entry.key().clone());
-      }
-    }
-    let lean_env = self.stt.lean_env.as_deref()?;
-    lean_env.keys().find_map(|name| {
-      let name_addr = Address::from_blake3_hash(*name.get_hash());
-      if &name_addr == addr { Some(name.clone()) } else { None }
-    })
+    Ok(loaded)
   }
 
   fn get_level_error(

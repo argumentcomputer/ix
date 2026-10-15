@@ -953,3 +953,145 @@ fn reduced_inductive_alias_retains_source_name_at_primitive_pin() {
     &member,
   );
 }
+
+// =========================================================================
+// Forward provenance (Lean `Tests.Ix.Compile.BridgeProvenance`)
+// =========================================================================
+
+/// Three axioms `Wanted`, `Second` and `Ambient`, all at one address, in the
+/// Lean environment and the compile state's name map.
+fn provenance_fixture() -> (CompileState, Address) {
+  use ix_common::env::{AxiomVal, ConstantVal};
+  let shared = Address::hash(b"bridge-provenance");
+  let mut stt = CompileState::new_empty();
+  let mut env = ix_common::env::Env::default();
+  for n in ["Wanted", "Second", "Ambient"] {
+    let nm = name(n);
+    env.insert(
+      nm.clone(),
+      ConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal {
+          name: nm.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::zero()),
+        },
+        is_unsafe: false,
+      }),
+    );
+    stt.name_to_addr.insert(nm, shared.clone());
+  }
+  stt.lean_env = Some(std::sync::Arc::new(env));
+  (stt, shared)
+}
+
+fn kenv_holds(
+  kctx: &crate::compile::KernelCtx,
+  addr: &Address,
+  n: &str,
+) -> bool {
+  kctx.kenv.get(&KId::new(addr.clone(), name(n))).is_some()
+}
+
+/// A loaded alias at the same address is not the missing Meta `KId`: the
+/// referenced identity is still faulted in.
+#[test]
+fn provenance_loaded_alias_cannot_mask_a_missing_identity() {
+  let (stt, shared) = provenance_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  kctx.kenv.insert(
+    KId::new(shared.clone(), name("Ambient")),
+    ix_kernel::constant::KConst::Axio {
+      name: name("Ambient"),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+    },
+  );
+  remember_source_expr(
+    &mut kctx.source_names,
+    &LeanExpr::cnst(name("Wanted"), vec![]),
+    &stt,
+  );
+  let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+  assert!(scope.fault_in_addr(&shared).unwrap());
+  drop(scope);
+  assert!(kenv_holds(&kctx, &shared, "Wanted"));
+  assert!(kenv_holds(&kctx, &shared, "Ambient"));
+}
+
+/// Every referenced alias is loaded, in either reference order; an
+/// unreferenced alias at the same address is not.
+#[test]
+fn provenance_loads_all_forward_aliases_without_ambient_ones() {
+  for order in [["Wanted", "Second"], ["Second", "Wanted"]] {
+    let (stt, shared) = provenance_fixture();
+    let mut kctx = crate::compile::KernelCtx::new();
+    for n in order {
+      remember_source_expr(
+        &mut kctx.source_names,
+        &LeanExpr::cnst(name(n), vec![]),
+        &stt,
+      );
+    }
+    let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+    assert!(scope.fault_in_addr(&shared).unwrap());
+    drop(scope);
+    assert!(kenv_holds(&kctx, &shared, "Wanted"));
+    assert!(kenv_holds(&kctx, &shared, "Second"));
+    assert!(!kenv_holds(&kctx, &shared, "Ambient"));
+  }
+}
+
+/// Without recorded provenance the fault is refused; ambient aliases (here
+/// all three names map to the address) never supply it.
+#[test]
+fn provenance_absent_is_refused() {
+  let (stt, shared) = provenance_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+  assert_refused(
+    scope.fault_in_addr(&shared),
+    &format!("bridge fault: no forward source provenance for {}", shared.hex()),
+  );
+  drop(scope);
+  assert!(!kenv_holds(&kctx, &shared, "Ambient"));
+}
+
+/// An open local domain records the identities it references.
+#[test]
+fn provenance_open_local_domains_are_recorded() {
+  let (stt, shared) = provenance_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  let decl = LocalDecl {
+    fvar_name: name("x"),
+    binder_name: name("x"),
+    domain: LeanExpr::cnst(name("Wanted"), vec![]),
+    info: BinderInfo::Default,
+  };
+  let mut scope =
+    TcScope::new(std::slice::from_ref(&decl), &[], &stt, &mut kctx).unwrap();
+  assert!(scope.fault_in_addr(&shared).unwrap());
+  drop(scope);
+  assert!(kenv_holds(&kctx, &shared, "Wanted"));
+  assert!(!kenv_holds(&kctx, &shared, "Ambient"));
+}
+
+/// A recorded identity whose source address has since changed is refused,
+/// not loaded at its new address.
+#[test]
+fn provenance_refuses_a_changed_source_address() {
+  let (stt, shared) = provenance_fixture();
+  let mut kctx = crate::compile::KernelCtx::new();
+  remember_source_expr(
+    &mut kctx.source_names,
+    &LeanExpr::cnst(name("Wanted"), vec![]),
+    &stt,
+  );
+  stt.name_to_addr.insert(name("Wanted"), Address::hash(b"moved"));
+  let mut scope = TcScope::new(&[], &[], &stt, &mut kctx).unwrap();
+  assert_refused(
+    scope.fault_in_addr(&shared),
+    "bridge fault: source address changed for Wanted",
+  );
+}

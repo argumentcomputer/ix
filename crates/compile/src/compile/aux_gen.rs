@@ -1446,6 +1446,10 @@ pub fn populate_canon_kenv_with_below(
       below::BelowConstant::Def(d) => {
         let addr = resolve_lean_name_addr(&d.name, n2a, aux_n2a);
         let zid = KId::new(addr, d.name.clone());
+        // Forward provenance of the converted terms (Lean records it in
+        // `leanExprToKexpr`).
+        expr_utils::remember_source_expr(&mut kctx.source_names, &d.typ, stt);
+        expr_utils::remember_source_expr(&mut kctx.source_names, &d.value, stt);
         let ty_z = expr_utils::kernel_ingress(
           &d.name,
           lean_expr_to_zexpr_with_kenv(
@@ -1485,6 +1489,7 @@ pub fn populate_canon_kenv_with_below(
       below::BelowConstant::Indc(i) => {
         let addr = resolve_lean_name_addr(&i.name, n2a, aux_n2a);
         let zid = KId::new(addr, i.name.clone());
+        expr_utils::remember_source_expr(&mut kctx.source_names, &i.typ, stt);
         let ty_z = expr_utils::kernel_ingress(
           &i.name,
           lean_expr_to_zexpr_with_kenv(
@@ -1499,6 +1504,11 @@ pub fn populate_canon_kenv_with_below(
         for ctor in &i.ctors {
           let ctor_addr = resolve_lean_name_addr(&ctor.name, n2a, aux_n2a);
           let ctor_zid = KId::new(ctor_addr, ctor.name.clone());
+          expr_utils::remember_source_expr(
+            &mut kctx.source_names,
+            &ctor.typ,
+            stt,
+          );
           let ctor_ty_z = expr_utils::kernel_ingress(
             &ctor.name,
             lean_expr_to_zexpr_with_kenv(

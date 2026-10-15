@@ -2403,6 +2403,13 @@ fn compute_is_large_and_k(
 
     let cls_addr = resolve_lean_name_addr(&cls_ind.cnst.name, n2a, aux_n2a);
     let cls_zid: KId<Meta> = KId::new(cls_addr, cls_ind.cnst.name.clone());
+    // Forward provenance of the converted terms (Lean records it in
+    // `leanExprToKexpr`).
+    super::expr_utils::remember_source_expr(
+      &mut kctx.source_names,
+      &cls_ind.cnst.typ,
+      stt,
+    );
     let cls_ty_z = super::expr_utils::kernel_ingress(
       &cls_ind.cnst.name,
       lean_expr_to_zexpr_with_kenv(
@@ -2419,6 +2426,11 @@ fn compute_is_large_and_k(
     for ctor in &cls.ctors {
       let ctor_addr = resolve_lean_name_addr(&ctor.cnst.name, n2a, aux_n2a);
       let ctor_zid = KId::new(ctor_addr, ctor.cnst.name.clone());
+      super::expr_utils::remember_source_expr(
+        &mut kctx.source_names,
+        &ctor.cnst.typ,
+        stt,
+      );
       let ctor_ty_z = super::expr_utils::kernel_ingress(
         &ctor.cnst.name,
         lean_expr_to_zexpr_with_kenv(
@@ -2728,6 +2740,7 @@ fn ingress_type_stub(
     return Ok(());
   }
 
+  super::expr_utils::remember_source_expr(&mut kctx.source_names, typ, stt);
   let ty_z = super::expr_utils::kernel_ingress(
     name,
     lean_expr_to_zexpr_with_kenv(

@@ -104,11 +104,10 @@ structure CompileEnv where
       SCC's canonical expansion — scheduler dependency order guarantees
       the entry exists before any dependent block compiles. -/
   blocks : Std.HashMap Name (Array (Array Name)) := {}
-  /-- Name-hash → name over the full INPUT constant set, for
-      `nameForAddr`'s reverse lookup when the streaming driver leaves
-      `env.consts` unmaterialized (its by-hash scan over `env.consts`
-      keys sees nothing there). Materialized-env callers leave this
-      empty and keep the scan. -/
+  /-- Name-hash → name over the full INPUT constant set, filled by the
+      streaming driver, which leaves `env.consts` unmaterialized; its size
+      bounds the source-claim walk (`checkAuxSourceClaim`). Materialized-env
+      callers leave this empty. -/
   nameByHash : Std.HashMap Address Name := {}
   /-- Resource limits of the canonical sharing construction
       (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
