@@ -1,4 +1,5 @@
 import Ix.Cert.Statement
+import Ix.CompileCert.UniverseAudit
 
 /-! # The certification statements, frozen
 
@@ -874,3 +875,20 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.CompileCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.CompileCorrect
+
+/-! ## Component theorems: universes
+
+The compiler canonicalizes every universe it stores (`Ixon.canonUniv`, through
+the block memo `Ix.CompileM.canonUnivCached`). Canonicalization preserves the
+value of a universe under every valuation, with no premise. Every lemma behind
+it is audited in `Ix.CompileCert.UniverseAudit`. -/
+
+/-- info: Ix.CompileCert.CanonUnivEmit.canonUniv_eval (ρ : UInt64 → Nat) (level : Ixon.Univ) :
+  Ix.CompileCert.univEval ρ (Ixon.canonUniv level) = Ix.CompileCert.univEval ρ level -/
+#guard_msgs (whitespace := lax) in
+#check Ix.CompileCert.CanonUnivEmit.canonUniv_eval
+
+/-- info: 'Ix.CompileCert.CanonUnivEmit.canonUniv_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.CanonUnivEmit.canonUniv_eval
+

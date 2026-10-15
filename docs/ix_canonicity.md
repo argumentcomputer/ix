@@ -1674,6 +1674,9 @@ languages:
   Tests: the witness family, every ≤8-node term (Rust) / ≤6-node term
   (Lean) over three parameters, and the kernel level comparison's
   biased random levels in both languages, with exact valuation sets.
+  Proved for the Lean `canonUniv`, for every universe and every
+  valuation, with no premise: `Ix.CompileCert.CanonUnivEmit.canonUniv_eval`
+  (`Ix/CompileCert/CanonUniv*.lean`, frozen in `Ix/Cert/Audit.lean`).
 - **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
   It holds wherever the normal forms involved carry no subsumption
   leftover (below), which covers every stored level of both environments;
