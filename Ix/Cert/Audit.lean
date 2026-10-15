@@ -695,7 +695,7 @@ fun {md} x =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RenamingLemma
 
-/-- info: def Ix.Cert.groundedRefs : Ix.Environment → Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+/-- info: def Ix.Cert.groundSplit : Ix.Environment → Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError :=
 fun env =>
   have outRefs := Ix.GraphM.envSerial env;
   have inRefs :=
@@ -710,16 +710,22 @@ fun env =>
           m refs)
       ∅ outRefs;
   have ungrounded := Ix.groundConsts env inRefs;
-  if Std.HashMap.isEmpty ungrounded = true then outRefs
+  if Std.HashMap.isEmpty ungrounded = true then (outRefs, ungrounded)
   else
-    Std.HashMap.fold
-      (fun m n refs =>
-        if Std.HashMap.contains ungrounded n = true then m
-        else
-          Std.HashMap.insert m n
-            (Std.HashSet.fold
-              (fun s r => if Std.HashMap.contains ungrounded r = true then s else Std.HashSet.insert s r) ∅ refs))
-      ∅ outRefs -/
+    (Std.HashMap.fold
+        (fun m n refs =>
+          if Std.HashMap.contains ungrounded n = true then m
+          else
+            Std.HashMap.insert m n
+              (Std.HashSet.fold
+                (fun s r => if Std.HashMap.contains ungrounded r = true then s else Std.HashSet.insert s r) ∅ refs))
+        ∅ outRefs,
+      ungrounded) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.groundSplit
+
+/-- info: def Ix.Cert.groundedRefs : Ix.Environment → Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+fun env => (Ix.Cert.groundSplit env).fst -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.groundedRefs
 
@@ -728,13 +734,34 @@ fun env => Ix.CondenseM.run (Ix.Cert.groundedRefs env) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.blocksOf
 
-/-- info: def Ix.Cert.compile : Ix.Environment → Except String Ixon.Env :=
+/-- info: structure Ix.Cert.Failures : Type
+number of parameters: 0
+fields:
+  Ix.Cert.Failures.ungrounded : Std.HashMap Ix.Name String :=
+    ∅
+  Ix.Cert.Failures.blocks : Std.HashMap Ix.Name String :=
+    ∅
+constructor:
+  Ix.Cert.Failures.mk (ungrounded blocks : Std.HashMap Ix.Name String) : Ix.Cert.Failures -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Failures
+
+/-- info: def Ix.Cert.compileReport : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
 fun env =>
   have env := { consts := env.consts };
+  have split := Ix.Cert.groundSplit env;
   do
-  let __x ← Ix.CompileM.compileEnvAux env (Ix.Cert.blocksOf env)
+  let __x ← Ix.CompileM.compileEnvAux env (Ix.CondenseM.run split.fst)
   match __x with
-    | (ixe, fst, snd) => pure ixe -/
+    | (ixe, fst, cenv) =>
+      have ungrounded :=
+        Std.HashMap.fold (fun m n e => m.insert n (e.refusal (Std.HashMap.contains split.snd))) ∅ split.snd;
+      pure (ixe, { ungrounded := ungrounded, blocks := cenv.ungrounded }) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.compileReport
+
+/-- info: def Ix.Cert.compile : Ix.Environment → Except String Ixon.Env :=
+fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.compile
 

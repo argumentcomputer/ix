@@ -38,9 +38,17 @@ What the IO pipeline does that this function does not:
   that such an environment needs;
 * it schedules the driver in parallel waves (`compileEnvParallelAux`) and
   takes the sharing limits from its options (`DriverOptions`);
-* it records the ground filter's constants as failures with their named
-  refusals (`Ix.GroundError.refusal`);
 * it serializes (`Ixon.serEnv`).
+
+**Failures.** The compile records what it leaves out instead of dropping it:
+`compileReport` returns, with the environment, every constant the ground
+filter removed, with its named refusal (`Ix.GroundError.refusal`, the text
+the IO pipeline and the Rust compiler record), and every constant of a block
+that failed to compile, with the driver's error (`CompileEnv.ungrounded`: the
+block's own failure, a cross-SCC subset's, or a dependent's
+`MissingConstant`). `compile` is its first component, so a failure leaves the
+result defined; `compileComplete` (the policy `requireComplete`) makes any
+failure an error instead.
 
 `Tests.Ix.Cert.Statement` compares the serialized output of the two on the
 Source-mode fixtures (`cert-statement`) and on `Init`
@@ -50,9 +58,12 @@ public section
 
 namespace Ix.Cert
 
-/-- The reference graph of `env` without its ungrounded constants, and
-without the edges into them. -/
-@[expose] def groundedRefs (env : Ix.Environment) : Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+/-- The reference graph of `env` without its ungrounded constants and
+without the edges into them, and the ungrounded constants themselves
+(`Ix.groundConsts`: the immediately ungrounded ones, spread through the
+reverse graph). -/
+@[expose] def groundSplit (env : Ix.Environment) :
+    Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError :=
   let outRefs := Ix.GraphM.envSerial env
   let inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := outRefs.fold (init := {}) fun m n refs =>
     refs.fold (init := m) fun m r =>
@@ -60,24 +71,73 @@ without the edges into them. -/
         | some s => some (s.insert n)
         | none => some (({} : Ix.Set Ix.Name).insert n)
   let ungrounded := Ix.groundConsts env inRefs
-  if ungrounded.isEmpty then outRefs
-  else outRefs.fold (init := {}) fun m n refs =>
+  if ungrounded.isEmpty then (outRefs, ungrounded)
+  else (outRefs.fold (init := {}) fun m n refs =>
     if ungrounded.contains n then m
     else m.insert n (refs.fold (init := {}) fun s r =>
-      if ungrounded.contains r then s else s.insert r)
+      if ungrounded.contains r then s else s.insert r), ungrounded)
+
+/-- The reference graph of `env` without its ungrounded constants, and
+without the edges into them. -/
+@[expose] def groundedRefs (env : Ix.Environment) : Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+  (groundSplit env).1
 
 /-- The compiler's declaration groups: the strongly connected components of
 the grounded reference graph. -/
 @[expose] def blocksOf (env : Ix.Environment) : Ix.CondensedBlocks :=
   Ix.CondenseM.run (groundedRefs env)
 
-/-- **The pure compiler.** A block that fails to compile is recorded in the
-driver's state and left out of the result, together with its dependents;
-the result is an error only when the driver itself fails. -/
-@[expose] def compile (env : Ix.Environment) : Except String Ixon.Env := do
+/-- What a compile left out, by name, with the reason. A name is in at most
+one of the two maps: the ground filter removes its constants before any
+block is compiled. -/
+structure Failures where
+  /-- The constants the ground filter removed, with their named refusals
+  (`Ix.GroundError.refusal`). -/
+  ungrounded : Std.HashMap Ix.Name String := {}
+  /-- The constants of the blocks that failed to compile, with the driver's
+  error (`Ix.CompileM.CompileEnv.ungrounded`). -/
+  blocks : Std.HashMap Ix.Name String := {}
+
+/-- Every failure in one map, as the IO pipeline records them
+(`Ix.CompileM.LeanPipelineOut.cenv`'s `ungrounded`). -/
+@[expose] def Failures.toMap (f : Failures) : Std.HashMap Ix.Name String :=
+  f.blocks.fold (init := f.ungrounded) fun m n e => if m.contains n then m else m.insert n e
+
+/-- Nothing failed. -/
+@[expose] def Failures.isEmpty (f : Failures) : Bool :=
+  f.ungrounded.isEmpty && f.blocks.isEmpty
+
+/-- **The pure compiler, with its failures.** A block that fails to compile
+is recorded, with its dependents, and left out of the environment; the
+result is an error only when the driver itself fails (a refused input, or
+a condensation it cannot schedule). -/
+@[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let env : Ix.Environment := { consts := env.consts }
-  let (ixe, _, _) ← Ix.CompileM.compileEnvAux env (blocksOf env)
-  pure ixe
+  let split := groundSplit env
+  let (ixe, _, cenv) ← Ix.CompileM.compileEnvAux env (Ix.CondenseM.run split.1)
+  let ungrounded := split.2.fold (init := {}) fun m n e =>
+    m.insert n (e.refusal split.2.contains)
+  pure (ixe, { ungrounded, blocks := cenv.ungrounded })
+
+/-- **The pure compiler.** `compileReport`'s environment: a block that fails
+to compile is left out of it, with its dependents (`compileReport` names
+them). -/
+@[expose] def compile (env : Ix.Environment) : Except String Ixon.Env :=
+  Prod.fst <$> compileReport env
+
+/-- The failure policy that makes every failure an error: the environment
+when nothing failed, otherwise an error naming the least failing constant
+(`Ix.nameCompare`), its reason, and the number of failures. -/
+@[expose] def requireComplete (out : Ixon.Env × Failures) : Except String Ixon.Env :=
+  let all := out.2.toMap
+  match (all.toArray.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt)[0]? with
+  | none => .ok out.1
+  | some (n, why) => .error s!"{all.size} constant(s) failed to compile; {n.pretty}: {why}"
+
+/-- `compileReport` under `requireComplete`: the compile fails if any
+constant fails. -/
+@[expose] def compileComplete (env : Ix.Environment) : Except String Ixon.Env :=
+  compileReport env >>= requireComplete
 
 end Ix.Cert
 
