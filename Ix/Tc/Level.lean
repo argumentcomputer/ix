@@ -114,7 +114,7 @@ def mkSucc (u : KUniv m) : KUniv m := Id.run do
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_USUCC]⟩
   h := h.update u.addr.hash
-  return .succ u ⟨(h.finalizeWithLength 32).val⟩
+  return .succ u (Address.ofHasher h)
 
 /-- Raw `max` node without simplification; used by `mkMax` after all
     simplification opportunities are exhausted. -/
@@ -123,7 +123,7 @@ def mkMaxRaw (a b : KUniv m) : KUniv m := Id.run do
   h := h.update ⟨#[Ix.TAG_UMAX]⟩
   h := h.update a.addr.hash
   h := h.update b.addr.hash
-  return .max a b ⟨(h.finalizeWithLength 32).val⟩
+  return .max a b (Address.ofHasher h)
 
 /-- Raw `imax` node without simplification; used by `mkIMax`. -/
 def mkIMaxRaw (a b : KUniv m) : KUniv m := Id.run do
@@ -131,7 +131,7 @@ def mkIMaxRaw (a b : KUniv m) : KUniv m := Id.run do
   h := h.update ⟨#[Ix.TAG_UIMAX]⟩
   h := h.update a.addr.hash
   h := h.update b.addr.hash
-  return .imax a b ⟨(h.finalizeWithLength 32).val⟩
+  return .imax a b (Address.ofHasher h)
 
 /-- `param idx`, hashed as `blake3 ([UPARAM] ++ idx.toLEBytes)` (8-byte LE).
     The name is display-only metadata and is NOT hashed. -/
@@ -139,7 +139,7 @@ def mkParam (idx : UInt64) (name : m.F Name) : KUniv m := Id.run do
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_UPARAM]⟩
   h := h.update idx.toLEBytes
-  return .param idx name ⟨(h.finalizeWithLength 32).val⟩
+  return .param idx name (Address.ofHasher h)
 
 /-- Construct `max a b` with Lean-style simplifications (matches Lean's
     `mk_max`, `kernel/level.cpp:81-103`, and Rust `KUniv::max`):

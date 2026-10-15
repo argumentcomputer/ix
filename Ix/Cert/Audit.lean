@@ -7,12 +7,15 @@ statement reads; `#check` freezes the proved theorems; `#print axioms`
 freezes their axioms, which are the three standard ones. A change to any of
 them fails the build.
 
-The compiler's own axioms are frozen too. `Ix.Cert.compile` reaches five
-`native_decide` axioms through `Ix.CompileM.compileEnvAux` (the Rust BLAKE3
-wrapper, `Ix.Name.mkStr` and three in `Ix.Tc`), and `Ix.Cert.blocksOf` one
-(through `Ix.Name`'s `Inhabited` instance, which hashes). Every statement
-about `compile` inherits them, so the proved theorems quantify over the
-grouping function instead of naming `blocksOf`. -/
+The compiler's own axioms are frozen too. `Ix.Cert.compile` and
+`Ix.Cert.blocksOf` reach one `native_decide` axiom, the length bound of the
+Rust BLAKE3 wrapper's `hash` (through `Address.blake3`; `blocksOf` through
+`Ix.Name`'s `Inhabited` instance, which hashes). Every other hashing
+constructor they reach (`Ix.Name`, `Ix.Level`, `Ix.Expr`, `Ix.Tc`) finalizes
+through `Address.ofHasher`, which passes that bound explicitly. Every
+statement about `compile` inherits the remaining axiom, so the proved
+theorems quantify over the grouping function instead of naming
+`blocksOf`. -/
 
 /-- info: def Ix.Cert.refsOf : Ix.ConstantInfo → Ix.Set Ix.Name :=
 fun ci => (Ix.GraphM.run { consts := ∅ } Ix.GraphState.init (Ix.graphConst ci)).fst -/
@@ -804,21 +807,13 @@ fun env =>
 /-- info: 'Ix.Cert.compile' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝,
- Ix.Name.mkStr._native.native_decide.ax_1✝,
- Ix.Tc.KExpr.mkVar._native.native_decide.ax_1✝,
- Ix.Tc.KUniv.mkSucc._native.native_decide.ax_1✝,
- Ix.Tc.TcM.ctxAddrForLbrUncached._native.native_decide.ax_3✝] -/
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.compile
 
 /-- info: 'Ix.Cert.CompileCorrect' depends on axioms: [propext,
  Classical.choice,
  Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝,
- Ix.Name.mkStr._native.native_decide.ax_1✝,
- Ix.Tc.KExpr.mkVar._native.native_decide.ax_1✝,
- Ix.Tc.KUniv.mkSucc._native.native_decide.ax_1✝,
- Ix.Tc.TcM.ctxAddrForLbrUncached._native.native_decide.ax_3✝] -/
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.CompileCorrect

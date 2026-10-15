@@ -1590,7 +1590,7 @@ def canonicalAuxOrder (aux : Array (FlatBlockMember m))
       h := h.update sp.addr.hash
     for u in member.occurrenceUs do
       h := h.update u.addr.hash
-    let auxAddr := Address.mk (h.finalizeWithLength 32).val
+    let auxAddr := Address.ofHasher h
     auxIds := auxIds.push ⟨auxAddr, Mode.field seedName⟩
     auxSeedNames := auxSeedNames.push seedName
   -- Monotone seed ranks in sorted-name order (Name Ord = hash bytes).
@@ -1654,7 +1654,7 @@ def canonicalAuxOrder (aux : Array (FlatBlockMember m))
       ch := ch.update "AUX_CTOR_VIEW".toUTF8
       ch := ch.update auxId.addr.hash
       ch := ch.update extCtorId.addr.hash
-      let auxCtorAddr := Address.mk (ch.finalizeWithLength 32).val
+      let auxCtorAddr := Address.ofHasher ch
       let auxCtorKid : KId m := ⟨auxCtorAddr, Mode.field .mkAnon⟩
       let auxCtor : KConst m := .ctor (Mode.field .mkAnon) Mode.F.mkDefault
         false blockUs.size.toUInt64 auxId ci.toUInt64 nBlockParams
@@ -1679,7 +1679,7 @@ def canonicalAuxOrder (aux : Array (FlatBlockMember m))
     let mut mh := Blake3.Rust.Hasher.init ()
     mh := mh.update "AUX_MARKER_VIEW".toUTF8
     mh := mh.update auxId.addr.hash
-    let markerAddr := Address.mk (mh.finalizeWithLength 32).val
+    let markerAddr := Address.ofHasher mh
     let markerKid : KId m := ⟨markerAddr, Mode.field .mkAnon⟩
     let markerCtor : KConst m := .ctor (Mode.field .mkAnon) Mode.F.mkDefault
       false blockUs.size.toUInt64 auxId auxCtorKids.size.toUInt64 nBlockParams
