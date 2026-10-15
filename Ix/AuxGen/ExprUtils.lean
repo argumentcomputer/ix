@@ -1069,14 +1069,20 @@ def sourceNameHintCandidate (expr : Expr) : Bool :=
 
     Collect every `Const` name and `Proj` type name in `expr` into `out`.
     Rust threads `&mut FxHashSet<Name>`; here the set is passed in and the
-    extended set returned. -/
+    extended set returned. Like Rust's walk it visits each subterm once by
+    its digest, so a DAG-shared term costs its DAG size, not its tree size;
+    the names, and the order they first enter `out`, are the tree walk's. -/
 def collectLeanConstRefs (expr : Expr) (out : Std.HashSet Name) : Std.HashSet Name :=
   Id.run do
     let mut out := out
+    let mut visited : Std.HashSet Address := {}
     let mut stack : Array Expr := #[expr]
     repeat
       if let some e := stack.back? then
         stack := stack.pop
+        if visited.contains e.getHash then
+          continue
+        visited := visited.insert e.getHash
         match e with
         | .const name _ _ =>
           out := out.insert name
