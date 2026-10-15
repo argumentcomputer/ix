@@ -80,7 +80,7 @@ pub fn compile_aux_block(
 /// index 0 (wrong semantic position under non-identity `perm`).
 ///
 /// The rename is applied at:
-///   * `stt.env.register_name`  — so lookups hit the source name
+///   * `stt.register_named`  — so lookups hit the source name
 ///   * `stt.aux_name_to_addr`   — so scheduler deps resolve source names
 ///   * `stt.aux_gen_extra_names`— so membership checks use source names
 ///   * `muts_all` name hashes   — so kernel ingress's `ingress_muts_block`
@@ -231,14 +231,12 @@ pub fn compile_aux_block_with_rename(
       let canon_n = cnst.name();
       let n = resolve_name(&canon_n);
       let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt
-        .env
-        .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
       stt.claim_aux_name(&n, &standalone_addr)?;
+      stt.register_named(n.clone(), Named::new(standalone_addr.clone(), meta));
       pending_names.push(n);
     }
     if !pending_names.is_empty() {
-      stt.aux_gen_pending.lock().unwrap().extend(pending_names);
+      crate::compile::block_txn::release_pending(stt, pending_names);
     }
     // Ingress all registered aux constants into the kernel environment.
     for cnst in aux_consts {
@@ -291,10 +289,8 @@ pub fn compile_aux_block_with_rename(
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
 
             // Constructor projections. Inductives don't typically get a
@@ -309,11 +305,11 @@ pub fn compile_aux_block_with_rename(
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
+              stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
+              stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
               pending_names.push(ctor.cnst.name.clone());
             }
           },
@@ -321,20 +317,16 @@ pub fn compile_aux_block_with_rename(
             let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
             let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_aux_name(&n, &proj_addr)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
           },
         }
@@ -384,7 +376,7 @@ pub fn compile_aux_block_with_rename(
   // block, and decompile resolves layout via the primary inductive's Muts
   // meta (see `compile.rs:3254` for the primary-block registration and
   // `decompile_block_aux_gen` for the lookup).
-  stt.env.register_name(
+  stt.register_named(
     muts_name,
     Named::new(
       block_addr.clone(),
@@ -397,7 +389,7 @@ pub fn compile_aux_block_with_rename(
 
   // Batch-push to pending queue (single lock acquisition).
   if !pending_names.is_empty() {
-    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
+    crate::compile::block_txn::release_pending(stt, pending_names);
   }
 
   // Ingress all registered aux constants into the kernel environment.
@@ -484,13 +476,13 @@ fn register_aux_aliases(
     alias_named.addr = target_addr.clone();
 
     compile_name(&source, stt);
-    stt.env.register_name(source.clone(), alias_named);
     stt.claim_aux_name(&source, &target_addr)?;
+    stt.register_named(source.clone(), alias_named);
     pending_names.push(source);
   }
 
   if !pending_names.is_empty() {
-    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
+    crate::compile::block_txn::release_pending(stt, pending_names);
   }
 
   Ok(())

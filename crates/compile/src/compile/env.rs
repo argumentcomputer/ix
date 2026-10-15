@@ -681,6 +681,8 @@ pub fn compile_env_with_profile(
                         unresolved_names.iter().cloned().collect();
                       let mut cache = BlockCache::default();
                       let cross_name = unresolved_names[0].clone();
+                      // a failed subset publishes nothing (`block_txn`)
+                      crate::compile::block_txn::start();
                       let res = run_compile_catching_panic(
                         &cross_name,
                         "compile_const(cross-SCC)",
@@ -695,6 +697,7 @@ pub fn compile_env_with_profile(
                           )
                         },
                       );
+                      crate::compile::block_txn::finish(stt_ref, res.is_err());
                       if let Err(e) = res {
                         eprintln!(
                           "[compile_env] cross-SCC compile failed for {}: {}",
@@ -795,6 +798,10 @@ pub fn compile_env_with_profile(
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
+                // a failed block publishes nothing (`block_txn`): its
+                // entries are logged and removed on failure, and the names
+                // it releases early wait for its end
+                crate::compile::block_txn::start();
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
@@ -809,6 +816,7 @@ pub fn compile_env_with_profile(
                     )
                   },
                 );
+                crate::compile::block_txn::finish(stt_ref, res.is_err());
                 if let Err(e) = res {
                   // Record the failure per-member and fall through. The
                   // scheduler keeps running so other constants can still

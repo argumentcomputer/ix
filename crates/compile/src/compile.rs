@@ -346,6 +346,7 @@ impl CompileState {
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
+        block_txn::log_aux(name);
       },
     }
     self.aux_gen_extra_names.insert(name.clone());
@@ -378,9 +379,19 @@ impl CompileState {
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
+        block_txn::log_compiled(name);
       },
     }
     Ok(())
+  }
+
+  /// Register `name`'s `Named` entry, logging it for the failed-block
+  /// rollback when the entry is new (`block_txn`).
+  pub fn register_named(&self, name: Name, named: Named) {
+    if !self.env.named.contains_key(&name) {
+      block_txn::log_named(&name);
+    }
+    self.env.register_name(name, named);
   }
 
   /// Look up a compiled constant's address by name.
@@ -466,8 +477,10 @@ impl CompileState {
       }
     }
 
-    if let Some(aux_addr) = self.aux_name_to_addr.get(name) {
-      self.name_to_addr.insert(name.clone(), aux_addr.clone());
+    if let Some(aux_addr) = self.aux_name_to_addr.get(name)
+      && self.name_to_addr.insert(name.clone(), aux_addr.clone()).is_none()
+    {
+      block_txn::log_compiled(name);
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
       entry.value_mut().set_original(orig_addr, orig_meta);
@@ -4423,9 +4436,10 @@ fn compile_const_inner_body(
     }
     if aux {
       stt.env.store_const(addr.clone(), constant);
-      stt
-        .env
-        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+      // Claim before registering: a refused claim leaves the owner's
+      // `Named` entry as it was.
+      stt.claim_compiled_name(name, &addr)?;
+      stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
@@ -4484,7 +4498,8 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.claim_compiled_name(name, &addr)?;
+        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
     },
@@ -4511,7 +4526,8 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.claim_compiled_name(name, &addr)?;
+        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
       addr
     },
@@ -4545,7 +4561,8 @@ fn compile_const_inner_body(
         let addr = Address::hash(&bytes);
         if aux {
           stt.env.store_const(addr.clone(), constant);
-          stt.env.register_name(
+          stt.claim_compiled_name(name, &addr)?;
+          stt.register_named(
             name.clone(),
             Named::new(addr.clone(), meta.clone()),
           );
@@ -4735,8 +4752,8 @@ fn compile_mutual(
           // `remove`, not `get().cloned()`: each name is consumed exactly
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
           stt.claim_compiled_name(&n, &addr)?;
+          stt.register_named(n.clone(), Named::new(addr.clone(), meta));
         }
       }
     } else {
@@ -4791,10 +4808,8 @@ fn compile_mutual(
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.claim_compiled_name(&n, &proj_addr)?;
+            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
           }
@@ -4810,11 +4825,11 @@ fn compile_mutual(
             let ctor_addr = Address::hash(&ctor_bytes);
             if aux {
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
+              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
+              stt.register_named(
                 ctor.cnst.name.clone(),
                 Named::new(ctor_addr.clone(), ctor_meta),
               );
-              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
             } else {
               stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
             }
@@ -4830,8 +4845,8 @@ fn compile_mutual(
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
-        stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.claim_compiled_name(&n, &proj_addr)?;
+        stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
       }
@@ -4868,7 +4883,7 @@ fn compile_mutual(
       .collect();
     let muts_name = block_addr.muts_name(&first_name);
     compile_name(&muts_name, stt);
-    stt.env.register_name(
+    stt.register_named(
       muts_name,
       Named::new(
         block_addr.clone(),
@@ -4949,7 +4964,7 @@ fn compile_mutual(
             .collect()
         })
         .collect();
-      stt.env.register_name(
+      stt.register_named(
         muts_name,
         Named::new(
           block_addr.clone(),
@@ -5076,7 +5091,13 @@ fn compile_mutual(
                   ),
                 });
               }
-              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
+              if stt
+                .brec_on_call_site_plans
+                .insert(key.clone(), new_plan.clone())
+                .is_none()
+              {
+                block_txn::log_brec_on_plan(&key);
+              }
             }
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
@@ -5128,9 +5149,21 @@ fn compile_mutual(
                   ),
                 });
               }
-              stt.below_call_site_plans.insert(member, new_plan.clone());
+              if stt
+                .below_call_site_plans
+                .insert(member.clone(), new_plan.clone())
+                .is_none()
+              {
+                block_txn::log_below_plan(&member);
+              }
             }
-            stt.below_call_site_plans.insert(below_name, new_plan);
+            if stt
+              .below_call_site_plans
+              .insert(below_name.clone(), new_plan)
+              .is_none()
+            {
+              block_txn::log_below_plan(&below_name);
+            }
           }
         }
         if stt
@@ -5146,7 +5179,9 @@ fn compile_mutual(
             ),
           });
         }
-        stt.call_site_plans.insert(name, plan);
+        if stt.call_site_plans.insert(name.clone(), plan).is_none() {
+          block_txn::log_plan(&name);
+        }
       }
     }
   }
@@ -5164,6 +5199,7 @@ fn compile_mutual(
 
 mod admission;
 pub mod aux_gen;
+pub mod block_txn;
 mod env;
 mod memory;
 pub mod mutual;
@@ -7925,5 +7961,64 @@ mod tests {
     assert_eq!(l.max_height, ExactSharingLimits::default().max_height);
     let err = compiler_sharing_limits_with(Some("bogus=1")).unwrap_err();
     assert!(err.starts_with("IX_SHARING_LIMITS: unknown sharing limit bogus"));
+  }
+
+  /// A block refused for a conflicting claim leaves the owner's `Named`
+  /// entry as it was (the claim comes before the registration, as the Lean
+  /// drivers merge a block's state only after its claims check), and its
+  /// rollback removes what it entered.
+  #[test]
+  fn refused_conflicting_claim_keeps_the_owner_named() {
+    use ix_common::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
+    };
+    let f = Name::str(Name::anon(), "f".to_string());
+    let g = Name::str(Name::anon(), "g".to_string());
+    let def = |n: &Name, other: &Name| {
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: n.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::succ(Level::zero())),
+        },
+        value: LeanExpr::cnst(other.clone(), vec![]),
+        hints: ReducibilityHints::Opaque,
+        safety: DefinitionSafety::Safe,
+        all: vec![f.clone(), g.clone()],
+      })
+    };
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(f.clone(), def(&f, &g));
+    lean_env.insert(g.clone(), def(&g, &f));
+    let lean_env = Arc::new(lean_env);
+    let stt = CompileState::default();
+    // `g` is owned by another block, with its original form promoted
+    let owner = Address::hash(b"owner");
+    let owner_original = Address::hash(b"owner-original");
+    let mut named = Named::new(owner.clone(), ConstantMeta::default());
+    named.set_original(owner_original.clone(), ConstantMeta::default());
+    stt.claim_compiled_name(&g, &owner).unwrap();
+    stt.register_named(g.clone(), named);
+    let all: NameSet = [f.clone(), g.clone()].into_iter().collect();
+    block_txn::start();
+    let err = compile_const(
+      &f,
+      &all,
+      &lean_env,
+      &mut BlockCache::default(),
+      &stt,
+      &mut KernelCtx::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    assert!(err.contains("conflicting claims for name 'g'"), "{err}");
+    let kept = stt.env.named.get(&g).map(|r| r.clone()).expect("owner named");
+    assert_eq!(kept.addr, owner);
+    assert_eq!(kept.original().map(|(a, _)| a), Some(owner_original));
+    assert_eq!(stt.name_to_addr.get(&g).map(|r| r.clone()), Some(owner));
+    assert!(!stt.env.named.contains_key(&f));
+    assert!(!stt.name_to_addr.contains_key(&f));
   }
 }
