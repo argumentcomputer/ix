@@ -1,6 +1,7 @@
 import Ix.Cert.Statement
 import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
+import Ix.CompileCert.ReadingAudit
 import Ix.Cert.Canon
 
 /-! # The certification statements, frozen

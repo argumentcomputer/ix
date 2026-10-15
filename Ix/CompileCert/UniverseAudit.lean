@@ -28,7 +28,8 @@ def standard : Array Lean.Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
 /-- Fail unless every root exists, occurs once, and has every axiom of its
 transitive closure in `standard`. Report the roots and their axioms. -/
-def checkRoots (label : String) (roots : Array Lean.Name) : CommandElabM Unit := do
+def checkRoots (label : String) (roots : Array Lean.Name) (tag : String := "universe-audit") :
+    CommandElabM Unit := do
   let env ← getEnv
   let mut seen : Lean.NameSet := {}
   let mut duplicates : Array Lean.Name := #[]
@@ -58,7 +59,7 @@ def checkRoots (label : String) (roots : Array Lean.Name) : CommandElabM Unit :=
   unless violations.isEmpty do
     throwError m!"{label}: roots depend on axioms outside {standard}:\n\
       {MessageData.joinSep violations.toList "\n"}"
-  logInfo m!"[universe-audit] {label}: {roots.size} roots; axioms used: {used.qsort Lean.Name.lt}"
+  logInfo m!"[{tag}] {label}: {roots.size} roots; axioms used: {used.qsort Lean.Name.lt}"
 
 /-- The structural equality of wire universes, which the memo proofs use. -/
 def evalRoots : Array Lean.Name :=
@@ -151,8 +152,8 @@ run_cmd Ix.CompileCert.UniverseAudit.checkRoots "memo" Ix.CompileCert.UniverseAu
 
 /-- The runtime definitions the proofs are about carry no compiled
 replacement and are safe. -/
-def Ix.CompileCert.UniverseAudit.checkRuntime (label : String) (names : Array Lean.Name) :
-    CommandElabM Unit := do
+def Ix.CompileCert.UniverseAudit.checkRuntime (label : String) (names : Array Lean.Name)
+    (tag : String := "universe-audit") : CommandElabM Unit := do
   let env ← getEnv
   let substitutions := (Lean.Compiler.CSimp.ext.getState env).map
   for name in names do
@@ -163,7 +164,7 @@ def Ix.CompileCert.UniverseAudit.checkRuntime (label : String) (names : Array Le
       | throwError m!"{label}: not a definition: {name}"
     unless definition.safety == .safe do
       throwError m!"{label}: not a safe definition: {name}"
-  logInfo m!"[universe-audit] {label}: {names.size} safe definitions, no runtime substitution"
+  logInfo m!"[{tag}] {label}: {names.size} safe definitions, no runtime substitution"
 
 /-- The canonicalizer's phases. -/
 def Ix.CompileCert.UniverseAudit.canonicalizer : Array Lean.Name :=
