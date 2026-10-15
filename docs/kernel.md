@@ -581,6 +581,7 @@ audits build in the root package, and the model audit builds in
 | `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
 | `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports (no hasher), closures, extern differences (none for reconstruction) and statements, and the projection writer's guards |
 | `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
+| `Ix/Cert/RuntimeAudit.lean` | the compiler's (`Ix.Cert.compile`) runtime closure: every foreign primitive, `unsafe` implementation and `partial` definition it reaches beyond `Init` and `Std`, frozen by name (its axioms are frozen in `Ix/Cert/Audit.lean`) |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
@@ -643,7 +644,7 @@ re-records it states why the closure or the statement moved.
 
 1. the strict `IxC` build with the core kernel and codec audits;
 2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
-   Authenticated}/Audit.lean`) and the kernel tests
+   Authenticated}/Audit.lean`, `Ix/Cert/RuntimeAudit.lean`) and the kernel tests
    (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Contracts,
    Projection, BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures

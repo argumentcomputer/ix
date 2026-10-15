@@ -17,6 +17,12 @@ condensation is total (`Ix.CompileCert.Canon.condensation_isSome`, frozen
 with it) and reads no `Inhabited Ix.Name` default. The proved theorems still
 quantify over the grouping function instead of naming `blocksOf`.
 
+`#print axioms` does not show what executes in place of the logic.
+`Ix.Cert.RuntimeAudit` freezes the runtime closure of `compile`: the
+project-level foreign primitives, `unsafe` implementations and `partial`
+definitions its compiled code reaches, which a proof about `compile` meets as
+opaque constants.
+
 Step 5b (the kernel's types indexed by a `Mode`) re-froze the statements
 with the modes made explicit and nothing else changed: Source mode installs
 an `Env .source`, Ixon mode an `Env .anon`, and the reading takes a source
