@@ -20,6 +20,7 @@ import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.IndFlags
 import Tests.Ix.Compile.ExpressionIndex
+import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -127,6 +128,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ground-unit", Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped
   ("expression-index", Tests.Ix.Compile.ExpressionIndex.suite),
+  -- the ordinary expression compiler's frame: spines, caching, failure effects, DAGs
+  ("expression-frame", Tests.Ix.Compile.ExpressionFrame.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("aiur-trace-plan", [AiurTests.TracePlan.tests]),

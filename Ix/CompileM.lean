@@ -737,37 +737,14 @@ def CompileEnv.surgeryFree (env : CompileEnv) : Bool :=
   env.callSitePlans.isEmpty && env.brecOnCallSitePlans.isEmpty &&
     env.belowCallSitePlans.isEmpty
 
-/-- Structural height used to fuel ordinary expression compilation. -/
-def exprCompileDepth : Expr → Nat
-  | .bvar .. | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => 1
-  | .app fn arg _ => max (exprCompileDepth fn) (exprCompileDepth arg) + 1
-  | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
-    max (exprCompileDepth ty) (exprCompileDepth body) + 1
-  | .letE _ ty val body _ _ =>
-    max (exprCompileDepth ty) (max (exprCompileDepth val)
-      (exprCompileDepth body)) + 1
-  | .mdata _ inner _ | .proj _ _ inner _ => exprCompileDepth inner + 1
-
-/-- Compile one flattened App spine using `compile` only for the head and
-    arguments.  Recursive partial-spine App nodes never pass through
-    `compile`, hence never gain expression-cache entries. -/
-def compileAppNoSurgery
-    (compile : Expr → CompileM (Ixon.Expr × UInt64)) :
-    Expr → CompileM (Ixon.Expr × UInt64)
-  | .app fn arg _ => do
-    let (f, fRoot) ← compileAppNoSurgery compile fn
-    let (a, aRoot) ← compile arg
-    let root ← allocArenaNode (.app fRoot aRoot)
-    pure (.app f a, root)
-  | head => compile head
-
 /-- One cache-miss step of ordinary expression compilation, parameterized by
-    the recursive compiler.  Factoring the constructor transition from cache
-    lookup/insertion keeps the executable behavior unchanged while exposing a
-    small kernel-visible proof boundary. -/
-def compileExprNoSurgeryStep
-    (compile : Expr → CompileM (Ixon.Expr × UInt64))
-    (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
+    the recursive compiler, which it calls only on strict source subterms of
+    `e` (the bound is its argument). Factoring the constructor transition
+    from cache lookup/insertion keeps the executable behavior unchanged while
+    exposing a small kernel-visible proof boundary. -/
+def compileExprNoSurgeryStep (e : Expr)
+    (compile : (x : Expr) → sizeOf x < sizeOf e → CompileM (Ixon.Expr × UInt64)) :
+    CompileM (Ixon.Expr × UInt64) :=
   match e with
     | .bvar idx _ => do
       let index ← checkedTableIndex "bound variable" idx
@@ -803,30 +780,45 @@ def compileExprNoSurgeryStep
         recordPatch root
         pure (.ref refIdx univIndices, root)
 
-    | .app .. => compileAppNoSurgery compile e
+    | .app fn arg hash => do
+      -- One flattened App spine: `compile` only for the head and the
+      -- arguments, so partial-spine App nodes are allocated but never
+      -- expression-cached (Rust `compile_expr`).
+      let parts := Ix.AuxGen.decomposeApps (.app fn arg hash)
+      let (h, hRoot) ← compile parts.1
+        (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)
+      let mut acc := h
+      let mut accRoot := hRoot
+      for hmem : x in parts.2 do
+        let (a, aRoot) ← compile x
+          (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash hmem)
+        let root ← allocArenaNode (.app accRoot aRoot)
+        acc := .app acc a
+        accRoot := root
+      pure (acc, accRoot)
 
     | .lam name ty body bi _ => do
       compileName name
       let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty
-      let (b, bodyRoot) ← compile body
+      let (t, tyRoot) ← compile ty (by simp; omega)
+      let (b, bodyRoot) ← compile body (by simp; omega)
       let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
       pure (.leanLam t b, root)
 
     | .forallE name ty body bi _ => do
       compileName name
       let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty
-      let (b, bodyRoot) ← compile body
+      let (t, tyRoot) ← compile ty (by simp; omega)
+      let (b, bodyRoot) ← compile body (by simp; omega)
       let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
       pure (.leanAll t b, root)
 
     | .letE name ty val body nonDep _ => do
       compileName name
       let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty
-      let (v, valRoot) ← compile val
-      let (b, bodyRoot) ← compile body
+      let (t, tyRoot) ← compile ty (by simp; omega)
+      let (v, valRoot) ← compile val (by simp; omega)
+      let (b, bodyRoot) ← compile body (by simp; omega)
       let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
       pure (.leanLet nonDep t v b, root)
 
@@ -854,7 +846,7 @@ def compileExprNoSurgeryStep
       let typeAddr ← lookupConstAddr typeName
       let typeRefIdx ← internRef typeAddr
       let structNameAddr := typeName.getHash
-      let (s, sRoot) ← compile struct
+      let (s, sRoot) ← compile struct (by simp; omega)
       let root ← allocArenaNode (.prj structNameAddr sRoot)
       pure (.prj typeRefIdx field s, root)
 
@@ -863,46 +855,36 @@ def compileExprNoSurgeryStep
         let contract ← match SemanticContract.read kvData with
           | .ok contract => pure contract
           | .error error => throw (.unsupportedExpr error)
-        let (value, root) ← compile inner
+        let (value, root) ← compile inner (by simp; omega)
         match contract.lower inner value with
         | .ok value => return (value, root)
         | .error error => throw (.unsupportedExpr error)
       let kvmap ← compileKVMap kvData
-      let (innerResult, innerRoot) ← compile inner
+      let (innerResult, innerRoot) ← compile inner (by simp; omega)
       let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
       pure (innerResult, root)
 
     | .fvar _ _ => throw (.unsupportedExpr "free variable")
     | .mvar _ _ => throw (.unsupportedExpr "metavariable")
 
-/-- Fuel-total implementation of the ordinary (no call-site surgery)
-    expression compiler.  The App arm deliberately flattens the complete
-    telescope before recurring, so inner partial-spine nodes are allocated
-    but not expression-cached, exactly as in the Rust compiler and the
-    surgery implementation's normal path.
-
-    Recursive calls consume one unit of fuel.  The public entry point uses
-    `exprCompileDepth e`; every recursively compiled head, argument, or
-    constructor child is a strict source subterm, so the exhaustion branch is
-    unreachable for that entry point. -/
-def compileExprNoSurgeryFuel : Nat → Expr → CompileM (Ixon.Expr × UInt64)
-  | 0, _ => throw (.invalidMutualBlock
-      "internal error: ordinary expression compiler exhausted structural fuel")
-  | fuel + 1, e => do
-    let state ← getBlockState
-    if let some cached := state.exprCache.get? e then
-      return cached
-
-    let (result, root) ← compileExprNoSurgeryStep
-      (compileExprNoSurgeryFuel fuel) e
-
-    modifyBlockState fun c =>
-      { c with exprCache := c.exprCache.insert e (result, root) }
-    pure (result, root)
-
-/-- Kernel-visible ordinary expression compiler. -/
-def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
-  compileExprNoSurgeryFuel (exprCompileDepth e) e
+/-- The ordinary (no call-site surgery) expression compiler: the cache, then
+    one step (`compileExprNoSurgeryStep`), whose recursive calls are on
+    strict source subterms. The App arm flattens the complete telescope
+    first, so inner partial-spine nodes are allocated but not
+    expression-cached, exactly as in the Rust compiler and the surgery
+    implementation's normal path. Total by well-founded recursion on
+    `sizeOf e`: no fuel, and no walk of the expression to size one (the
+    former fuel, `exprCompileDepth`, was an unmemoized tree walk, exponential
+    on a DAG-shared proof term). -/
+def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  let state ← getBlockState
+  if let some cached := state.exprCache.get? e then
+    return cached
+  let (result, root) ← compileExprNoSurgeryStep e fun x _h => compileExprNoSurgery x
+  modifyBlockState fun c =>
+    { c with exprCache := c.exprCache.insert e (result, root) }
+  pure (result, root)
+termination_by sizeOf e
 
 /-- Arity information for a source-visible head carrying non-identity
     call-site surgery. -/
