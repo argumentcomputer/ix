@@ -94,7 +94,7 @@ def controls : List (String × Bool) := Id.run do
       wideResult.isOk && wideState.univs == #[.zero] && wideState.univsFinal),
     ("seen keys retain universe parameter positions",
       positions.isOk && positionalState.univs == #[.var 0, .var 1] &&
-      positionalState.univCache.get? level == some (.var 1)),
+      positionalState.univCache.get? ⟨level, [v, u]⟩ == some (.var 1)),
     ("preorder error preserves completed blob writes", (match failure with
       | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
       failed.blockBlobs.get? literalAddress == some literalBytes &&
@@ -107,7 +107,7 @@ def controls : List (String × Bool) := Id.run do
       | .error _ => false),
     ("universe failure precedes missing reference lookup", (match levelFailure with
       | .error (.unsupportedExpr "level metavariable") => true | _ => false) &&
-      levelState.univCache.get? Level.mkZero == some .zero),
+      levelState.univCache.get? ⟨Level.mkZero, []⟩ == some .zero),
     ("checked indices accept zero and the last wire slot",
       zeroIndex.toOption == some 0 && lastIndex.toOption == some largest.toUInt64),
     ("checked indices reject overflow", resourceFailure tooLarge && resourceFailure largerStill),

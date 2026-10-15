@@ -1,9 +1,12 @@
-//! Exact keys for the compiled-expression cache. Stored digests index the
+//! Exact keys for compiled expressions and universes. Stored digests index the
 //! table; complete source equality confirms a hit. Pair memos keep comparisons
 //! of independently allocated expression and universe DAGs from becoming tree
 //! walks. This mirrors `Ix.Compile.ExactKey`.
 
-use ix_common::env::{Expr, ExprData, Level, LevelData, Name, NameData};
+use ix_common::{
+  address::Address,
+  env::{Expr, ExprData, Level, LevelData, Name, NameData},
+};
 use rustc_hash::FxHashSet;
 use std::{
   hash::{Hash, Hasher},
@@ -26,6 +29,43 @@ impl PartialEq for ExprKey {
 }
 
 impl Eq for ExprKey {}
+
+/// The source level and its complete positional parameter context. Context
+/// digests select candidates but never identify different name sequences.
+#[derive(Clone, Debug)]
+pub struct UnivKey {
+  level: Level,
+  params: Vec<Name>,
+  context_hash: Address,
+}
+
+impl UnivKey {
+  pub fn new(level: &Level, params: &[Name]) -> Self {
+    Self {
+      level: level.clone(),
+      params: params.to_vec(),
+      context_hash: super::univ_params_key(params),
+    }
+  }
+}
+
+impl Hash for UnivKey {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.level.hash(state);
+    self.context_hash.hash(state);
+  }
+}
+
+impl PartialEq for UnivKey {
+  fn eq(&self, other: &Self) -> bool {
+    self.context_hash == other.context_hash
+      && self.params.len() == other.params.len()
+      && self.params.iter().zip(&other.params).all(|(a, b)| same_name(a, b))
+      && same_level(&self.level, &other.level)
+  }
+}
+
+impl Eq for UnivKey {}
 
 fn same_name(mut a: &Name, mut b: &Name) -> bool {
   loop {
@@ -163,7 +203,7 @@ fn same_expr(a: &Expr, b: &Expr) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::compile::{BlockCache, CompileState, compile_expr};
+  use crate::compile::{BlockCache, CompileState, compile_expr, compile_univ};
   use crate::mutual::MutCtx;
   use bignat::Nat;
   use ix_common::env::{BinderInfo, DataValue, Literal};
@@ -273,5 +313,45 @@ mod tests {
     assert_eq!(cache.arena_roots.last(), Some(&0));
     assert!(compile_expr(&bad, &[], &ctx, &mut cache, &stt).is_err());
     assert_eq!(cache.exprs.len(), 2);
+  }
+
+  #[test]
+  fn universe_cache_distinguishes_equal_digest_contexts() {
+    let u = Name::str(Name::anon(), "u".into());
+    let v =
+      Name(Arc::new(NameData::Str(Name::anon(), "v".into(), *u.get_hash())));
+    let level = Level::param(u.clone());
+    let first_context = [u.clone(), v.clone()];
+    let second_context = [v, u];
+    let mut cache = BlockCache::default();
+    assert_eq!(
+      compile_univ(&level, &first_context, &mut cache).unwrap(),
+      ixon::univ::Univ::var(0)
+    );
+    let cold =
+      compile_univ(&level, &second_context, &mut BlockCache::default())
+        .unwrap();
+    assert_eq!(cold, ixon::univ::Univ::var(1));
+    let warm = compile_univ(&level, &second_context, &mut cache).unwrap();
+    assert_eq!(warm, cold);
+    assert_eq!(cache.univ_cache.len(), 2);
+  }
+
+  #[test]
+  fn universe_cache_keeps_equal_digest_levels_distinct() {
+    let zero = Level::zero();
+    let succ = Level(Arc::new(LevelData::Succ(zero.clone(), *zero.get_hash())));
+    let bad = Level(Arc::new(LevelData::Mvar(Name::anon(), *zero.get_hash())));
+    let mut cache = BlockCache::default();
+    assert_eq!(
+      compile_univ(&zero, &[], &mut cache).unwrap(),
+      ixon::univ::Univ::zero()
+    );
+    assert_eq!(
+      compile_univ(&succ, &[], &mut cache).unwrap(),
+      ixon::univ::Univ::succ(ixon::univ::Univ::zero())
+    );
+    assert!(compile_univ(&bad, &[], &mut cache).is_err());
+    assert_eq!(cache.univ_cache.len(), 2);
   }
 }

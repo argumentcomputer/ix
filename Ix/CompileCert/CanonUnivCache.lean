@@ -91,6 +91,7 @@ theorem compileUniv_frame (source : Ix.Level) : Preserves withoutUnivCache (comp
       | exact Preserves.read withoutUnivCache
       | refine Preserves.bind ?_ (fun _ => ?_)
       | apply Preserves.modify; intro before; simp only [withoutUnivCache, BlockState.cacheUniv]
+      | unfold checkedTableIndex
       | dsimp only
       | split
 
