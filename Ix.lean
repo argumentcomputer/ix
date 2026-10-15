@@ -8,7 +8,7 @@ public import Ix.IxonSyntax
 public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.GraphM
-public import Ix.Compile.Canon.Graph
+public import Ix.Compile.Canon
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM

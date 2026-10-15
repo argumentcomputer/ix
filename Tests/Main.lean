@@ -14,6 +14,8 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.Canon
+import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -148,6 +150,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
+  -- Pass 1's clique order: the pinned choice compares last
+  ("canon-clique", Tests.Ix.Compile.CanonClique.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
   ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.FlatBlock.suite ++ Tests.AuxGen.LevelEgress.suite),
@@ -402,6 +406,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  -- Pass 1 (Ix.Compile.Canon) against the compiler's CondenseM / sortConsts /
+  -- nested order on the same fixture corpus, the port fixes' neutrality, and
+  -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
+  ("canon-pass1", Tests.Ix.Compile.Canon.run env),
   ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).

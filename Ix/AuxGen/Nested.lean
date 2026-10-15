@@ -31,6 +31,7 @@ public import Ix.Mutual
 public import Ix.CompileM
 public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Canon.Nested
 public section
 
 namespace Ix.AuxGen
@@ -733,6 +734,30 @@ def expandNestedBlock (orderedOriginals : Array Name)
   Prod.fst <$> build.run init
 
 /-! ## Canonical structural sort of the aux section -/
+
+/-- The expansion as Pass 1 reads it (`Ix.Compile.Canon.Expanded`): the
+same members, constructors and names; member and constructor types are
+closed already and are copied; each occurrence in `auxToNested` has its
+block-parameter FVars abstracted to Pass 1's de Bruijn convention (parameter
+`i` of `n` is `bvar (n - 1 - i)` at depth 0). A conversion only: nothing is
+recomputed. -/
+def ExpandedBlock.toCanon (x : ExpandedBlock) : Ix.Compile.Canon.Expanded :=
+  let np := x.blockParamFvars.size
+  let fvarPos : Std.HashMap Name Nat :=
+    x.blockParamFvars.zipIdx.foldl (init := {}) fun m (fv, i) =>
+      match fv with
+      | .fvar n _ => m.insert n i
+      | _ => m
+  { types := x.types.map fun m =>
+      { name := m.name, sourceOwner := m.sourceOwner, typ := m.typ,
+        ctors := m.ctors.map fun c => { name := c.name, typ := c.typ, nFields := c.nFields },
+        nParams := m.nParams, nIndices := m.nIndices }
+    auxToNested := x.auxToNested.fold (init := {}) fun m k v =>
+      m.insert k (batchAbstract v fvarPos np 0)
+    auxCtorMap := x.auxCtorMap
+    nOriginals := x.nOriginals
+    levelParams := x.levelParams
+    nParams := np }
 
 /-- Reorder the aux tail of an `ExpandedBlock` structurally so the
     canonical order is independent of Lean's source-walk discovery order,
