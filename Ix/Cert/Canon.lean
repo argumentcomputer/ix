@@ -1,6 +1,7 @@
 import Ix.CanonM
 import Ix.LeanIngress
 import Ix.CompileCert.CanonUnivScope
+import Ix.CompileCert.UniverseMeaning
 
 /-! # The `CanonM` correspondence
 
@@ -39,8 +40,9 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    `Ix.CompileCert.CanonUnivScope.convCanon_eval` (`universe_bridge`) with
    `UnivMeaningS` (proved: `univMeaningS`), the pure half of CQ2.8's
    `UniverseMeaning`, about `compileUnivS`: the cache-free universe
-   compiler, which stands in for `compileUniv`. That `compileUniv` computes
-   it is CQ2.8's exact-key work.
+   compiler. `compileUniv` computes it wherever the context fits the wire and
+   its hash comparison agrees with name equality (`lower_eq_compileUnivS`,
+   with `Ix.CompileCert.UniverseMeaning.compileUniv_exact`, CQ2.8).
 -/
 
 namespace Ix.Cert.Canon
@@ -380,9 +382,12 @@ value. -/
 open Ix.CompileCert (univEval)
 
 /-- `Ix.CompileM.compileUniv` without its cache, under the context `ctx` of
-the constant's level-parameter names (positional, compared by `BEq Ix.Name`
-as `compileUniv` compares them). That `compileUniv` computes it, from a
-cache with exact keys, is CQ2.8's (`UniverseMeaning`/`UniverseExact`). -/
+the constant's level-parameter names (positional, compared by `BEq Ix.Name`,
+as `Ix.LeanIngress.Numbering.pos` compares them). Since CQ2.8 `compileUniv`
+compares names structurally and checks the wire bound
+(`Ix.CompileCert.UniverseMeaning.lower`); the two agree where the context fits
+the wire and its hash comparison agrees with name equality
+(`lower_eq_compileUnivS`). -/
 def compileUnivS (ctx : List Ix.Name) : Ix.Level → Option Ixon.Univ
   | .zero _ => some .zero
   | .succ l _ => (compileUnivS ctx l).map .succ
@@ -499,5 +504,61 @@ theorem univMeaningS : UnivMeaningS := by
 pure universe meaning discharged. Its only premises are the context bound
 and `HashEqAgrees` on the constant's level-parameter names. -/
 theorem universeBridge : UniverseBridge := universe_bridge univMeaningS
+
+/-! ### `compileUniv` computes the cache-free compile
+
+Since CQ2.8, `Ix.CompileM.compileUniv` computes the exact positional lowering
+`Ix.CompileCert.UniverseMeaning.lower` from every exact memo
+(`compileUniv_exact`): parameters at their first structural position, under
+the wire's `UInt64` bound. Where the context's hash comparison agrees with
+name equality and the context fits the wire, that is `compileUnivS`, so the
+universe bridge is about `compileUniv`'s own output. -/
+
+theorem findIdx_agree (ctx : List Ix.Name) (n : Ix.Name)
+    (agree : ∀ m ∈ ctx, (m == n) = Ix.Compile.ExactKey.nameEq m n) :
+    ctx.findIdx? (fun m => Ix.Compile.ExactKey.nameEq m n) = ctx.findIdx? (· == n) := by
+  induction ctx with
+  | nil => rfl
+  | cons a rest ih =>
+    rw [List.findIdx?_cons, List.findIdx?_cons, agree a (by simp),
+      ih (fun m member => agree m (by simp [member]))]
+
+/-- **The exact lowering is the cache-free compile** on a context that fits
+the wire and whose hash comparison agrees with name equality. -/
+theorem lower_eq_compileUnivS (ctx : List Ix.Name) (fits : ctx.length ≤ UInt64.size)
+    (agree : ∀ m ∈ ctx, ∀ n, (m == n) = Ix.Compile.ExactKey.nameEq m n) (l : Ix.Level) :
+    Ix.CompileCert.UniverseMeaning.lower ctx l = compileUnivS ctx l := by
+  induction l with
+  | zero h => rfl
+  | succ l h ih =>
+    show (Ix.CompileCert.UniverseMeaning.lower ctx l >>= fun u => pure (Ixon.Univ.succ u)) =
+      (compileUnivS ctx l).map .succ
+    rw [ih]
+    cases compileUnivS ctx l <;> rfl
+  | max l r h ihl ihr =>
+    show (Ix.CompileCert.UniverseMeaning.lower ctx l >>= fun u =>
+        Ix.CompileCert.UniverseMeaning.lower ctx r >>= fun v => pure (Ixon.Univ.max u v)) =
+      (compileUnivS ctx l >>= fun u => compileUnivS ctx r >>= fun v => pure (Ixon.Univ.max u v))
+    rw [ihl, ihr]
+  | imax l r h ihl ihr =>
+    show (Ix.CompileCert.UniverseMeaning.lower ctx l >>= fun u =>
+        Ix.CompileCert.UniverseMeaning.lower ctx r >>= fun v => pure (Ixon.Univ.imax u v)) =
+      (compileUnivS ctx l >>= fun u => compileUnivS ctx r >>= fun v => pure (Ixon.Univ.imax u v))
+    rw [ihl, ihr]
+  | param n h =>
+    have same : Ix.Compile.ExactKey.nameIndex n ctx = ctx.idxOf? n :=
+      findIdx_agree ctx n (fun m member => agree m member n)
+    show (Ix.Compile.ExactKey.nameIndex n ctx >>= fun index =>
+        if index < UInt64.size then some (Ixon.Univ.var index.toUInt64) else none) =
+      (ctx.idxOf? n).map fun i => Ixon.Univ.var i.toUInt64
+    rw [same]
+    cases found : ctx.idxOf? n with
+    | none => rfl
+    | some i =>
+      have inside : i < ctx.length := (List.findIdx?_eq_some_iff_getElem.mp found).1
+      have bounded : i < UInt64.size := Nat.lt_of_lt_of_le inside fits
+      show (if i < UInt64.size then some (Ixon.Univ.var i.toUInt64) else none) = some (.var i.toUInt64)
+      simp only [bounded, ↓reduceIte]
+  | mvar n h => rfl
 
 end Ix.Cert.Canon

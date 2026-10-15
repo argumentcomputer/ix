@@ -10,10 +10,12 @@ frame facts of the universe proofs; they hold for the compiler's actual
 functions, not copies.
 
 The run equations of every `CompileM` primitive, the bind inversions
-(`bind_ok`, `bind_success`), the frame combinators for maps and loops, and
-`Triple`, a success-only Hoare triple with one set of combinators, are the
-one run layer the reading proofs share, so that each invariant over
-`CompileM` is an instance of these instead of a copy of them. -/
+(`bind_ok`, `bind_success`), the frame combinators for maps and loops,
+`Triple` (a success-only Hoare triple), `Keeps` (an invariant kept on every
+outcome, with a success postcondition) and `Returns` (success from every
+state), each with one set of combinators, are the one run layer the reading
+proofs share, so that each invariant over `CompileM` is an instance of these
+instead of a copy of them. -/
 
 namespace Ix.CompileCert
 
@@ -352,5 +354,136 @@ theorem Triple.forIn_array {context : CompileEnv × BlockEnv} (inv : β → Bloc
     Triple context (inv initial) (forIn items initial body) inv := by
   rw [← Array.forIn_toList]
   exact Triple.forIn_list inv items.toList initial body step
+
+/-! ## Invariants kept on every outcome
+
+`Keeps context inv action post`: every run of `action` under `context` from
+a state satisfying `inv` ends in a state satisfying `inv`, failing runs
+included, and a successful run returns a value satisfying `post`. It is the
+shape of the memo invariants, which must survive errors (R07-03's shape (a)),
+with one set of combinators. -/
+
+def Keeps (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) (action : CompileM α)
+    (post : α → Prop) : Prop :=
+  ∀ before, inv before → inv (rawRun action context before).2 ∧
+    ∀ value, (rawRun action context before).1 = .ok value → post value
+
+theorem Keeps.pure {context : CompileEnv × BlockEnv} {inv : BlockState → Prop} {post : α → Prop}
+    {value : α} (good : post value) : Keeps context inv (pure value) post := by
+  intro before ready
+  exact ⟨ready, by intro result same; cases Except.ok.inj same; exact good⟩
+
+theorem Keeps.throw (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) (error : CompileError)
+    (post : α → Prop) : Keeps context inv (throw error : CompileM α) post := by
+  intro before ready
+  exact ⟨ready, by intro value bad; cases bad⟩
+
+theorem Keeps.bind {context : CompileEnv × BlockEnv} {inv : BlockState → Prop}
+    {action : CompileM α} {next : α → CompileM β} {post : α → Prop} {result : β → Prop}
+    (first : Keeps context inv action post)
+    (later : ∀ value, post value → Keeps context inv (next value) result) :
+    Keeps context inv (action >>= next) result := by
+  intro before ready
+  have checked := first before ready
+  rw [rawRun_bind]
+  cases ran : rawRun action context before with
+  | mk outcome after =>
+    rw [ran] at checked
+    cases outcome with
+    | error error => exact ⟨checked.1, by intro value bad; cases bad⟩
+    | ok value => exact later value (checked.2 value rfl) after checked.1
+
+/-- A failing action followed by anything keeps the invariant. -/
+theorem Keeps.throwBind (context : CompileEnv × BlockEnv) (inv : BlockState → Prop)
+    (error : CompileError) (next : α → CompileM β) (post : β → Prop) :
+    Keeps context inv ((MonadExceptOf.throw error) >>= next) post :=
+  Keeps.bind (Keeps.throw context inv error (fun _ => False)) (fun _ impossible => impossible.elim)
+
+theorem Keeps.consequence {context : CompileEnv × BlockEnv} {inv : BlockState → Prop}
+    {action : CompileM α} {post post' : α → Prop} (holds : Keeps context inv action post)
+    (weaker : ∀ value, post value → post' value) : Keeps context inv action post' := by
+  intro before ready
+  exact ⟨(holds before ready).1, fun value ran => weaker value ((holds before ready).2 value ran)⟩
+
+theorem Keeps.get (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) :
+    Keeps context inv getBlockState inv := by
+  intro before ready
+  exact ⟨ready, by intro result same; cases Except.ok.inj same; exact ready⟩
+
+theorem Keeps.readBlock (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) :
+    Keeps context inv getBlockEnv (fun value => value = context.2) := by
+  intro before ready
+  exact ⟨ready, by intro result same; exact (Except.ok.inj same).symm⟩
+
+theorem Keeps.readCompile (context : CompileEnv × BlockEnv) (inv : BlockState → Prop) :
+    Keeps context inv getCompileEnv (fun value => value = context.1) := by
+  intro before ready
+  exact ⟨ready, by intro result same; exact (Except.ok.inj same).symm⟩
+
+theorem Keeps.modify (context : CompileEnv × BlockEnv) {inv : BlockState → Prop}
+    (update : BlockState → BlockState) (keeps : ∀ state, inv state → inv (update state)) :
+    Keeps context inv (modifyBlockState update) (fun _ => True) := by
+  intro before ready
+  exact ⟨keeps before ready, fun _ _ => trivial⟩
+
+/-- An action that keeps a projection keeps every invariant read through it. -/
+theorem Keeps.of_preserves {projection : BlockState → γ} {action : CompileM α}
+    (framed : Preserves projection action) (context : CompileEnv × BlockEnv) (inv : γ → Prop) :
+    Keeps context (fun state => inv (projection state)) action (fun _ => True) := by
+  intro before ready
+  refine ⟨?_, fun _ _ => trivial⟩
+  show inv (projection (rawRun action context before).2)
+  rw [framed context before]
+  exact ready
+
+/-- The checked conversion of a source index to the wire. -/
+theorem Keeps.checkedIndex (context : CompileEnv × BlockEnv) (inv : BlockState → Prop)
+    (table : String) (index : Nat) :
+    Keeps context inv (checkedTableIndex table index)
+      (fun value => index < UInt64.size ∧ value = index.toUInt64) := by
+  unfold checkedTableIndex
+  split
+  · exact Keeps.pure ⟨by assumption, rfl⟩
+  · exact Keeps.throw context inv _ _
+
+/-! ## Success from every state
+
+`Returns context action`: every run of `action` under `context` succeeds,
+whatever the block state. -/
+
+def Returns (context : CompileEnv × BlockEnv) (action : CompileM α) : Prop :=
+  ∀ state, ∃ value, (rawRun action context state).1 = .ok value
+
+theorem Returns.pure (context : CompileEnv × BlockEnv) (value : α) : Returns context (pure value) := by
+  intro state; exact ⟨value, rfl⟩
+
+theorem Returns.bind {context : CompileEnv × BlockEnv} {action : CompileM α} {next : α → CompileM β}
+    (first : Returns context action) (later : ∀ value, Returns context (next value)) :
+    Returns context (action >>= next) := by
+  intro state
+  obtain ⟨value, ran⟩ := first state
+  rw [rawRun_bind]
+  cases result : rawRun action context state with
+  | mk outcome after =>
+    rw [result] at ran
+    cases ran
+    exact later value after
+
+theorem Returns.get (context : CompileEnv × BlockEnv) : Returns context getBlockState := by
+  intro state; exact ⟨state, rfl⟩
+
+theorem Returns.readBlock (context : CompileEnv × BlockEnv) : Returns context getBlockEnv := by
+  intro state; exact ⟨context.2, rfl⟩
+
+theorem Returns.modify (context : CompileEnv × BlockEnv) (update : BlockState → BlockState) :
+    Returns context (modifyBlockState update) := by
+  intro state; exact ⟨(), rfl⟩
+
+/-- A run that succeeds has its outcome and its final state. -/
+theorem Returns.run {context : CompileEnv × BlockEnv} {action : CompileM α}
+    (returns : Returns context action) (state : BlockState) :
+    ∃ value after, rawRun action context state = (.ok value, after) := by
+  obtain ⟨value, ran⟩ := returns state
+  exact ⟨value, (rawRun action context state).2, Prod.ext ran rfl⟩
 
 end Ix.CompileCert

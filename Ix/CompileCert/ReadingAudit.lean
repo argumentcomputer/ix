@@ -16,7 +16,8 @@ interners (`Ix.CompileCert.Interning`), the checked blob writes
 (`Ix.CompileCert.BlobWrites`), the metadata serializers' footprint
 (`Ix.CompileCert.Serializers`), the preseed's universe-wire guard
 (`Ix.CompileCert.PreseedValidation`), the primary tables' wire validity
-(`Ix.CompileCert.WireTables`) and the table half of the universe pipeline
+(`Ix.CompileCert.WireTables`), the raw universe compiler's exact lowering
+and its value (`Ix.CompileCert.UniverseMeaning`) and the universe pipeline
 (`Ix.CompileCert.UniversePipeline`). Each root must exist, occur once, and
 depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
@@ -38,7 +39,11 @@ def runRoots : Array Lean.Name :=
     `Preserves.forIn_list, `Preserves.forIn_array, `Preserves.of_ok,
     `Triple.pure, `Triple.throw, `Triple.bind, `Triple.consequence, `Triple.map, `Triple.get,
     `Triple.readBlock, `Triple.readCompile, `Triple.modify, `Triple.modifyGet,
-    `Triple.withBlockEnv, `Triple.forIn_list, `Triple.forIn_array].map (`Ix.CompileCert ++ ·)
+    `Triple.withBlockEnv, `Triple.forIn_list, `Triple.forIn_array,
+    `Keeps.pure, `Keeps.throw, `Keeps.bind, `Keeps.throwBind, `Keeps.consequence, `Keeps.get,
+    `Keeps.readBlock, `Keeps.readCompile, `Keeps.modify, `Keeps.of_preserves,
+    `Keeps.checkedIndex, `Returns.pure, `Returns.bind, `Returns.get, `Returns.readBlock,
+    `Returns.modify, `Returns.run].map (`Ix.CompileCert ++ ·)
 
 /-- The memo invariant. -/
 def cacheRoots : Array Lean.Name :=
@@ -109,7 +114,21 @@ def pipelineRoots : Array Lean.Name :=
     `finishSpelling_returns, `internCanonical_returns, `finishSpelling_frame,
     `internCanonical_frame, `canonUnivCached_frame, `canonicalTail_frame,
     `canonicalTail_correct, `canonicalTail_returns, `canonicalTail_read, `canonicalTail_reading,
-    `canonicalTail_cache_sound].map (`Ix.CompileCert.UniversePipeline ++ ·)
+    `canonicalTail_cache_sound,
+    `Sound.of_view, `sound_empty, `compileAndInternUnivCanon_correct, `levelMeaning_of_lower,
+    `compileAndInternUnivCanon_read, `compileAndInternUnivCanon_returns,
+    `compileAndInternUnivCanon_total_read, `compileAndInternUnivCanon_empty_read,
+    `compileAndInternUnivCanon_frame, `compileAndInternUnivCanon_reading,
+    `compileAndInternUnivCanon_cache_sound].map (`Ix.CompileCert.UniversePipeline ++ ·)
+
+/-- The raw universe compiler computes the exact positional lowering, which
+has the value Source mode reads. -/
+def meaningRoots : Array Lean.Name :=
+  #[`nameIndex_correct, `nameIndex_lt, `nameIndex_exists, `lower_occurs, `lower_eval, `lower_some,
+    `univCacheExact_empty, `univCacheExact_cacheUniv, `keeps_finish, `compileUniv_exact,
+    `compileUniv_value, `compileUniv_same, `compileUniv_eval, `returns_finish,
+    `compileUniv_returns, `compileUniv_total,
+    `compileUniv_total_eval].map (`Ix.CompileCert.UniverseMeaning ++ ·)
 
 /-- The production definitions the table, blob and serializer proofs unfold,
 and the reader functions the reading proofs unfold. -/
@@ -122,7 +141,8 @@ def tableRuntime : Array Lean.Name :=
     ``Ix.CompileM.compileName, ``Ix.CompileM.BlockState.compileNames, ``Ix.CompileM.compileNames,
     ``Ix.CompileM.serializeIxSubstring, ``Ix.CompileM.serializeIxSourceInfo,
     ``Ix.CompileM.serializeIxSyntaxPreresolved, ``Ix.CompileM.serializeIxSyntax,
-    ``Ix.CompileM.compileDataValue, ``Ix.CompileM.compileKVMap, ``Ix.CompileM.checkPreseedUnivs]
+    ``Ix.CompileM.compileDataValue, ``Ix.CompileM.compileKVMap, ``Ix.CompileM.checkPreseedUnivs,
+    ``Ix.CompileM.BlockState.cacheUniv, ``Ix.Compile.ExactKey.nameIndex, ``Ix.CompileM.compileUniv]
 
 def readerRuntime : Array Lean.Name :=
   #[``Ix.Kernel.Reader.convExpr, ``Ix.Kernel.Reader.MemberReader.mk',
@@ -141,6 +161,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "serializers" Ix.CompileCert.ReadingAudit.serializerRoots
   checkRoots (tag := "reading-audit") "preseed guard" Ix.CompileCert.ReadingAudit.preseedRoots
   checkRoots (tag := "reading-audit") "wire tables" Ix.CompileCert.ReadingAudit.wireRoots
+  checkRoots (tag := "reading-audit") "universe meaning" Ix.CompileCert.ReadingAudit.meaningRoots
   checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime

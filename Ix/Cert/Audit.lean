@@ -1641,3 +1641,160 @@ raw universe's (`canonicalTail_read`). -/
 /-- info: 'Ix.CompileCert.UniversePipeline.canonicalTail_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.UniversePipeline.canonicalTail_read
+
+/-! ## Component theorems: the raw universe compiler and the whole universe pipeline
+
+Since CQ2.8 the raw universe compiler's memo is keyed by the exact level and
+its parameter context. Every run keeps the memo exact, and a successful run
+returns the exact positional lowering of the source level
+(`Ix.CompileCert.UniverseMeaning.compileUniv_exact`), the specification
+`lower`, whose value is the value Source mode reads
+(`Ix.CompileCert.UniverseMeaning.lower_eval`, through
+`Ix.LeanIngress.ingressLevel`). So the certified reader reads the slot
+`compileAndInternUnivCanon` returns as a level that means the source level
+(`Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_read`), and
+scope, capacity and preseed coverage make the operation succeed
+(`compileAndInternUnivCanon_total_read`). Every lemma behind them is audited
+in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: Ix.CompileCert.UniverseMeaning.lower.eq_def : ∀ (params : List Ix.Name) (x : Ix.Level),
+  Ix.CompileCert.UniverseMeaning.lower params x =
+    match x with
+    | Ix.Level.zero hash => some Ixon.Univ.zero
+    | level.succ hash => do
+      let __do_lift ← Ix.CompileCert.UniverseMeaning.lower params level
+      pure __do_lift.succ
+    | left.max right hash => do
+      let __do_lift ← Ix.CompileCert.UniverseMeaning.lower params left
+      let __do_lift_1 ← Ix.CompileCert.UniverseMeaning.lower params right
+      pure (__do_lift.max __do_lift_1)
+    | left.imax right hash => do
+      let __do_lift ← Ix.CompileCert.UniverseMeaning.lower params left
+      let __do_lift_1 ← Ix.CompileCert.UniverseMeaning.lower params right
+      pure (__do_lift.imax __do_lift_1)
+    | Ix.Level.param name hash => do
+      let index ← Ix.Compile.ExactKey.nameIndex name params
+      if index < UInt64.size then some (Ixon.Univ.var index.toUInt64) else none
+    | Ix.Level.mvar n hash => none -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniverseMeaning.lower.eq_def
+
+/-- info: structure Ix.CompileCert.UniversePipeline.LevelMeaning (params : List Ix.Name) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (param : Nat → Ix.Kernel.LevelParam) (source : Ix.Level) (level : Ix.Kernel.Level) : Prop
+number of parameters: 5
+fields:
+  Ix.CompileCert.UniversePipeline.LevelMeaning.value : ∃ target,
+      Ix.LeanIngress.ingressLevel σ source = Except.ok target ∧
+        ∀ (φ ψ : Ix.Kernel.LevelParam → Nat),
+          (∀ (name : Ix.Name) (index : Nat),
+              Ix.Compile.ExactKey.nameIndex name params = some index → φ (σ name) = ψ (param index)) →
+            Ix.Kernel.Level.eval φ target = Ix.Kernel.Level.eval ψ level
+  Ix.CompileCert.UniversePipeline.LevelMeaning.defined : ∀ (allowed : List Ix.Kernel.LevelParam),
+      (∀ (index : Nat), index < params.length → param index ∈ allowed) →
+        Ix.Kernel.Level.allParamsDefined allowed level = true
+constructor:
+  Ix.CompileCert.UniversePipeline.LevelMeaning.mk {params : List Ix.Name} {σ : Ix.Name → Ix.Kernel.LevelParam}
+    {param : Nat → Ix.Kernel.LevelParam} {source : Ix.Level} {level : Ix.Kernel.Level}
+    (value :
+      ∃ target,
+        Ix.LeanIngress.ingressLevel σ source = Except.ok target ∧
+          ∀ (φ ψ : Ix.Kernel.LevelParam → Nat),
+            (∀ (name : Ix.Name) (index : Nat),
+                Ix.Compile.ExactKey.nameIndex name params = some index → φ (σ name) = ψ (param index)) →
+              Ix.Kernel.Level.eval φ target = Ix.Kernel.Level.eval ψ level)
+    (defined :
+      ∀ (allowed : List Ix.Kernel.LevelParam),
+        (∀ (index : Nat), index < params.length → param index ∈ allowed) →
+          Ix.Kernel.Level.allParamsDefined allowed level = true) :
+    Ix.CompileCert.UniversePipeline.LevelMeaning params σ param source level -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.UniversePipeline.LevelMeaning
+
+/-- info: Ix.CompileCert.UniverseMeaning.compileUniv_exact : ∀ (source : Ix.Level)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  Ix.CompileCert.Keeps context Ix.CompileCert.UniverseMeaning.UnivCacheExact (Ix.CompileM.compileUniv source)
+    fun value => Ix.CompileCert.UniverseMeaning.lower context.snd.univCtx source = some value -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniverseMeaning.compileUniv_exact
+
+/-- info: Ix.CompileCert.UniverseMeaning.lower_eval : ∀ (params : List Ix.Name) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  {source : Ix.Level} {value : Ixon.Univ},
+  Ix.CompileCert.UniverseMeaning.lower params source = some value →
+    ∃ level,
+      Ix.LeanIngress.ingressLevel σ source = Except.ok level ∧
+        ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : UInt64 → Nat),
+          (∀ (name : Ix.Name) (index : Nat),
+              Ix.Compile.ExactKey.nameIndex name params = some index →
+                index < UInt64.size → φ (σ name) = ρ index.toUInt64) →
+            Ix.Kernel.Level.eval φ level = Ix.CompileCert.univEval ρ value -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniverseMeaning.lower_eval
+
+/-- info: @Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_read : ∀ {md : Ix.Kernel.Mode} (source : Ix.Level)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (before : Ix.CompileM.BlockState),
+  Ix.CompileCert.UniversePipeline.Sound before →
+    ∀ {value : UInt64 × Option UInt64} {after : Ix.CompileM.BlockState},
+      Ix.CompileCert.rawRun (Ix.CompileM.compileAndInternUnivCanon source) context before = (Except.ok value, after) →
+        ∀ (reader : Ix.Kernel.Reader.Ctx md) (param : Nat → Ix.Kernel.LevelParam)
+          (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+          (σ : Ix.Name → Ix.Kernel.LevelParam),
+          Ix.CompileCert.UniversePipeline.Sound after ∧
+            ∃ level,
+              (Ix.CompileCert.ExpressionRead.blockReader reader param self after).ecx.level value.fst =
+                  Except.ok level ∧
+                Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param source level -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_read
+
+/-- info: @Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_total_read : ∀ {md : Ix.Kernel.Mode} (source : Ix.Level)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (before : Ix.CompileM.BlockState),
+  Ix.CompileCert.UniversePipeline.Sound before →
+    context.snd.univCtx.length ≤ UInt64.size →
+      Ix.CompileCert.UniverseMeaning.Scoped context.snd.univCtx source →
+        before.univs.size + before.metaUnivs.size + 1 < UInt64.size →
+          Ix.CompileCert.UniversePipeline.Preseeded context.snd.univCtx source before →
+            ∀ (reader : Ix.Kernel.Reader.Ctx md) (param : Nat → Ix.Kernel.LevelParam)
+              (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+              (σ : Ix.Name → Ix.Kernel.LevelParam),
+              ∃ value after level,
+                Ix.CompileCert.rawRun (Ix.CompileM.compileAndInternUnivCanon source) context before =
+                    (Except.ok value, after) ∧
+                  Ix.CompileCert.UniversePipeline.Sound after ∧
+                    (Ix.CompileCert.ExpressionRead.blockReader reader param self after).ecx.level value.fst =
+                        Except.ok level ∧
+                      Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param source level -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_total_read
+
+/-- info: 'Ix.CompileCert.UniverseMeaning.compileUniv_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.UniverseMeaning.compileUniv_exact
+
+/-- info: 'Ix.CompileCert.UniverseMeaning.lower_eval' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.UniverseMeaning.lower_eval
+
+/-- info: 'Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_read' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_read
+
+/-- info: 'Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_total_read' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_total_read
+
+-- The exact lowering is the Canon bridge's cache-free compile wherever the
+-- context fits the wire and its hash comparison agrees with name equality.
+/-- info: Ix.Cert.Canon.lower_eq_compileUnivS : ∀ (ctx : List Ix.Name),
+  ctx.length ≤ UInt64.size →
+    (∀ (m : Ix.Name), m ∈ ctx → ∀ (n : Ix.Name), (m == n) = Ix.Compile.ExactKey.nameEq m n) →
+      ∀ (l : Ix.Level), Ix.CompileCert.UniverseMeaning.lower ctx l = Ix.Cert.Canon.compileUnivS ctx l -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.lower_eq_compileUnivS
+
+/-- info: 'Ix.Cert.Canon.lower_eq_compileUnivS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.lower_eq_compileUnivS
