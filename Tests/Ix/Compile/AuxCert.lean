@@ -199,8 +199,13 @@ def fixtures : List Fixture := [
     expect := .xfail "WB-A2" "found no residual Pi binders" },
   { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"]
     expect := .xfail "BB-F6 (= WB-A2)" "found no residual Pi binders" },
+  -- BB-F8: `B.below` reads `A.below_1` from the other SCC (root failure).
+  -- Since the one readiness rule (CQ2.6) its dependents fail with it, so
+  -- `A.brecOn_1`'s head-rewrite failure ("source recursor has no
+  -- elimination level") is no longer reached; the bounded listing shows
+  -- `A.below`'s missing `A.below_1` (see the fixture's docstring).
   { stem := "F8_PropSplitNested", ns := ["A", "B", "PBox"]
-    expect := .xfail "BB-F8" "source recursor has no elimination level" },
+    expect := .xfail "BB-F8" "missing constant: A.below_1" },
   -- Reproducers Lean itself rejects (audit notes; kept so the record is
   -- complete): nothing reaches either compiler.
   { stem := "PropEvap", ns := ["PropEvap"]
