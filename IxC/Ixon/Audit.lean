@@ -22,6 +22,14 @@ def dataImports : Array Lean.Name :=
 
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `IxC.Ixon.Verify]
 
+/-- The codec's one ruled exception to the runtime audit: its two `@[csimp]`
+replacements, `getTagN_eq_fast` and `putTagN_eq_fast` (`IxC/Ixon/Codec.lean`,
+PERF P3), the TagN reader and writer at a fixed flag width with their powers
+folded, each admitted only with a theorem on the standard axioms. Compiled code
+calls `getTagNFast`/`putTagNFast`; every theorem is about `getTagN`/`putTagN`,
+which the two equations make the same functions. -/
+def rulings : Ix.Kernel.Audit.RuntimeRulings := { csimpModules := #[`IxC.Ixon.Codec] }
+
 end Ixon.Audit
 
 #guard_kernel_axioms Ixon.Verify.deUniv_serUniv [propext, Classical.choice, Quot.sound]
@@ -108,7 +116,7 @@ Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
 Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 351 compiled functions;
 inherited externs 53, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
-run_cmd Ix.Kernel.Audit.checkRuntime Ixon.Audit.operations #[`Init, `Std]
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 
 /-- info: Ixon.Verify.deUniv_serUniv : ∀ (u : Ixon.Univ),
   Ixon.Verify.UnivWireWF u → Ixon.deUniv (Ixon.serUniv u) = Except.ok u -/

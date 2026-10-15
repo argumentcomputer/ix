@@ -234,6 +234,10 @@ surface"). Each names exactly what it admits:
   `Expr` (`data`), `Name` (`hashData`) and `Key` (`hashData`);
 * project `@[csimp]` replacements in `Ix.Kernel`, each only with a theorem
   on the standard axioms;
+* the Ixon codec's two `@[csimp]` replacements (`IxC/Ixon/Codec.lean`):
+  `getTagN_eq_fast` and `putTagN_eq_fast`, the TagN reader and writer at a
+  fixed flag width with their powers folded (PERF P3), again each only with a
+  theorem on the standard axioms;
 * `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
   the pointer reads under them; and `isExclusiveUnsafe`, the reference-count
   read behind `withExclusive` (all `Init`, so already inherited);
@@ -249,7 +253,7 @@ No substitution is admitted on an assumption (`assumed` is empty): the
 kernel's closures take their content hash as a parameter. -/
 def runtimeRulings : RuntimeRulings where
   computedFieldTypes := #[`Ix.Kernel.Level, `Ix.Kernel.Expr, `Ix.Kernel.Name, `Ix.Kernel.Key]
-  csimpModules := #[`IxC.Kernel]
+  csimpModules := #[`IxC.Kernel, `IxC.Ixon.Codec]
   primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
   implementations := #[(`Ix.Kernel.withExclusive, `Ix.Kernel.withExclusiveUnsafe)]
