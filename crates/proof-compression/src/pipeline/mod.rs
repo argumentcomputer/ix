@@ -56,8 +56,8 @@ pub(crate) struct WorkerConfig {
 }
 
 impl WorkerConfig {
-  fn from_env(stage: &str, allow_development: bool) -> Result<Self> {
-    let setup = setup::SetupConfig::from_env(allow_development)?;
+  fn from_env(stage: &str, development: bool) -> Result<Self> {
+    let setup = setup::SetupConfig::from_env(development)?;
     let prefetch_gib = if stage == "kzg" {
       match std::env::var("IX_KZG_PREFETCH_GIB") {
         Ok(value) => value.parse::<usize>()?,
@@ -227,8 +227,8 @@ pub fn check_claim(
 }
 
 /// Describe the setup a new run would prove under, or why none is allowed.
-pub fn setup_description(allow_development: bool) -> Result<&'static str> {
-  Ok(setup::SetupConfig::from_env(allow_development)?.class().description())
+pub fn setup_description(development: bool) -> Result<&'static str> {
+  Ok(setup::SetupConfig::from_env(development)?.class().description())
 }
 
 /// Verify a compressed proof of `claim` with the profile bundled under the
@@ -275,7 +275,7 @@ pub fn compress(
   statement: &[u8],
   out: &Path,
   cache_root: &Path,
-  allow_development: bool,
+  development: bool,
   log_height: u32,
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, statement)?;
@@ -287,7 +287,7 @@ pub fn compress(
   }
   // Child stages re-read the same environment; the policy is enforced once
   // here so an unconfigured run fails before any checkpoint is written.
-  setup::SetupConfig::from_env(allow_development)?;
+  setup::SetupConfig::from_env(development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
       "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
@@ -314,11 +314,11 @@ pub fn compress(
   };
   let (root_s, fri_s, first_s, final_s) =
     (path(&root)?, path(&fri)?, path(&first)?, path(&final_dir)?);
-  // Each KZG worker re-reads the environment and decides its own setup;
-  // the permission to use development parameters travels as its flag.
+  // Each KZG worker selects its setup from the forwarded development flag
+  // and cache configuration.
   let kzg = |stage, args: &[&str]| {
     let mut args = args.to_vec();
-    if allow_development {
+    if development {
       args.push("--dev-srs");
     }
     child(stage, &args, &caches)

@@ -3,14 +3,14 @@
   "known_trapdoor": false,
   "profile_version": 5,
   "first_stage_log_height": 24,
-  "profile_id": "9df1e701e9ae98e5cec80b10489e298f4f625c1047f42dc0a2763a3ee70e647e",
-  "verifier_blake3": "25793564ff2d58536ec1055f0d3954cf7bba41cad88459834ea379b5a05ce42d",
-  "packet_blake3": "b83b8ca0758c908b69962908ff0a055d06db39af31943377ec444d8fa3096888",
-  "source_fri_verifier_blake3": "3bdb87f831a4258b16fe30c3c6b50e1e3220e0d76b15a03d75ea939a5bb4544f",
-  "source_fri_proof_blake3": "e3cdff6d87fc4289efaa2e172a9369d89831f8b130b958adffc1b15e95dc755d",
+  "profile_id": "4b033424efd56486ed972b04b773349149d9df6159d753e303f11aed89928302",
+  "verifier_blake3": "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
+  "packet_blake3": "80d136cbc7496a3436a2d9d291497025742a5573ffcd565a76bf1f21024c0b4c",
+  "source_fri_verifier_blake3": "5f7db8e94c52f404df1c2658d4c686b7e1ccb5d95b473d47c0efda96141f89cf",
+  "source_fri_proof_blake3": "c4c19524f0f633eccab88164cb1dd08e2fc877467ec7d0b45821f0c6791a11a6",
   "source_fri_fixture": "tests/fixtures/init-fri",
-  "producer_ix_revision": "294d6d2a8165a8ae10b301336d5e58f0be49465a",
-  "producer_multi_stark_revision": "5fd34b4ff6916923db6f63e772ecb1c747d4775a",
+  "producer_ix_revision": "45cb4b7a4120f1d44f94248369045c8be56431ff",
+  "producer_multi_stark_revision": "8b6c3fbdd8575bfeb818a32acf06509bac81ff3b",
   "statement_prefix": [
     0,
     293,
@@ -23,7 +23,7 @@
     683533119,
     3085659920
   ],
-  "scope": "Aggregate CheckEnv recursive circuit for the saved Init FRI verifier. The caller supplies the claim; its digest occupies the last eight public words.",
+  "scope": "Aggregate CheckEnv recursive circuit for the current CLI FRI verifier. The caller supplies the claim; its digest occupies the last eight public words.",
   "root_verifier_blake3": "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc",
   "claim": {
     "kind": "CheckEnv",
@@ -42,8 +42,6 @@
     "aggregate_proof_source": "multi-stark sb/kzg:experiments/kzg-cuda-validation/resume-20261009/root-artifacts/root-proof.bin",
     "aggregate_verification_passed": true
   },
-  "compressed_proof_address": "8f28cfadd9b477ad1baa16b050c1c14f6585f773862c60d7eef1c5ba8996bb1d",
-  "producer_ix_dirty": true,
-  "producer_multi_stark_dirty": true,
-  "producer_worker_sha256": "c6ae01b8c0422554726aacf4010bd47270b23c837e7a580b8d3f484e211a35c9"
+  "compressed_proof_address": "14cb1679032f43cba067ea52e9b8899e2e57f5a1cf8581bc4309dc07f30afa22",
+  "producer_worker_sha256": "ab7403a0f222b1098c51622614693c0e3ff7a243ec6cd3323a65bf7febcc5626"
 }

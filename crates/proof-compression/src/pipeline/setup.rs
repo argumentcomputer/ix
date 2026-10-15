@@ -88,7 +88,13 @@ pub(crate) enum SetupConfig {
 }
 
 impl SetupConfig {
-  pub(crate) fn from_env(allow_development: bool) -> storage::Result<Self> {
+  pub(crate) fn from_env(development: bool) -> storage::Result<Self> {
+    if development {
+      return Ok(Self::Development {
+        cache_directory: std::env::var_os("IX_KZG_SRS_CACHE")
+          .map(PathBuf::from),
+      });
+    }
     if let Some(cache) = std::env::var_os(FILECOIN_CACHE_VAR) {
       let cache = PathBuf::from(cache);
       if !cache.is_file() {
@@ -109,12 +115,7 @@ impl SetupConfig {
       };
       return Ok(Self::Filecoin { cache, manifest });
     }
-    if !allow_development {
-      return development_refused();
-    }
-    Ok(Self::Development {
-      cache_directory: std::env::var_os("IX_KZG_SRS_CACHE").map(PathBuf::from),
-    })
+    development_refused()
   }
 
   pub(crate) fn class(&self) -> SetupClass {
@@ -480,25 +481,22 @@ mod tests {
   }
 
   #[test]
-  fn development_setup_needs_permission_without_a_filecoin_cache()
-  -> storage::Result<()> {
-    if std::env::var_os(FILECOIN_CACHE_VAR).is_some() {
-      return Ok(());
-    }
-    assert_eq!(SetupConfig::from_env(true)?.class(), SetupClass::Development);
-    assert!(
-      SetupConfig::from_env(false)
-        .err()
-        .unwrap()
-        .to_string()
-        .contains("--dev-srs")
-    );
+  fn development_flag_selects_development_parameters() -> storage::Result<()> {
     let config = SetupConfig::from_env(true)?;
+    assert_eq!(config.class(), SetupClass::Development);
     assert_eq!(
       config.for_stage(FIRST_SEED, 64)?.identity(64, 2)?,
       SetupSource::development(FIRST_SEED, 63)?.identity(64, 2)?
     );
-    assert!(SetupConfig::from_env(false).is_err());
+    if std::env::var_os(FILECOIN_CACHE_VAR).is_none() {
+      assert!(
+        SetupConfig::from_env(false)
+          .err()
+          .unwrap()
+          .to_string()
+          .contains("--dev-srs")
+      );
+    }
     Ok(())
   }
 

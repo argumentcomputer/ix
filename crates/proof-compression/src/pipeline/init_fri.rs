@@ -65,7 +65,10 @@ mod tests {
       &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/init-fri"),
     )
     .unwrap();
-    assert_eq!(fixture.proof.to_bytes().unwrap().len(), 1_530_149);
+    assert_eq!(
+      fixture.public,
+      super::super::init_claim::INIT_PUBLIC_WORDS.map(Val::from_u64)
+    );
     for i in 0..fixture.public.len() {
       let mut wrong = fixture.claims.clone();
       wrong[i + 1][3] += Val::ONE;
