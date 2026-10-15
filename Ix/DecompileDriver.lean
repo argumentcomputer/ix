@@ -1330,18 +1330,16 @@ def decompileEnvFull (ixonEnv : Ixon.Env)
 /-- `decompileEnvFull` with the wave-parallel Pass 2
     (`decompileEnvPass2Parallel`). Same outputs — hash-identity is
     enforced by the whole-env decompile suites — with Pass-2 errors in
-    merge order rather than topo order. The recompiles run under the
-    compiler's sharing limits with the `IX_SHARING_LIMITS` override, read
-    once here (`Ix.CompileM.compilerSharingLimitsFromEnv`): an invalid
-    override fails the run before any work, as in Rust `rs_decompile_env`. -/
+    merge order rather than topo order. The recompiles run under
+    `sharingLimits`, the compiler's limits by default; the caller supplies
+    any override (the CLI from its `Ix.CompileM.DriverOptions`), as it does
+    for the compile drivers. -/
 def decompileEnvFullParallel (ixonEnv : Ixon.Env)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
+    (sharingLimits : Ix.Sharing.Exact.Limits := Ix.CompileM.compilerSharingLimits)
     : IO (Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String)
       × Pass2St) := do
-  let sharingLimits ← match ← Ix.CompileM.compilerSharingLimitsFromEnv with
-    | .ok l => pure l
-    | .error e => throw (IO.userError s!"decompileEnvFullParallel: {e}")
   -- `IX_DECOMPILE_WORKERS` overrides the worker count (memory/debug
   -- tuning); `0` selects the sequential Pass-2 driver.
   let numWorkers ← do

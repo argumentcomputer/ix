@@ -94,6 +94,13 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
+  -- The drivers' options (sharing limits, traces), read once for the compile
+  -- (phase 1) and the decompile (phase 5).
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv with
+    | .ok opts => pure opts
+    | .error e =>
+      IO.eprintln s!"[validate-lean] error: {e}"
+      return 2
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
   -- available) or read a pre-compiled `.ixe` (phases 2–3 only).
@@ -149,11 +156,6 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
     -- ground → condense → aux-aware parallel compile → serialize).
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
-    let opts ← match ← Ix.Cli.driverOptionsFromEnv with
-      | .ok opts => pure opts
-      | .error e =>
-        IO.eprintln s!"[validate-lean] error: {e}"
-        return 2
     let t0 ← IO.monoMsNow
     match ← Ix.CompileM.compileLeanConstsValidated constList
         (numWorkers := compileWorkers) (opts := opts) with
@@ -319,7 +321,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
-        (numWorkers := decompileWorkers)
+        (numWorkers := decompileWorkers) (sharingLimits := opts.sharingLimits)
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5

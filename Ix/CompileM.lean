@@ -2694,9 +2694,10 @@ def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
     `Ix.Sharing.Exact.Limits.withOverrides` (for example `states=2^44,depth=2^22`
     or `unbounded`). `ix compile --sharing-limits` and `ix compile-lean
     --sharing-limits` set it. `compilerSharingLimitsFromEnv` reads it, once per
-    run: the CLI (`Ix.Cli.driverOptionsFromEnv`) for the Lean compile
-    drivers, and `Ix.DecompileM.decompileEnvFullParallel`; Rust's `compiler_sharing_limits`
-    reads it once per compile or decompile entry point. -/
+    run: the CLI (`Ix.Cli.driverOptionsFromEnv`), which passes the limits to
+    the Lean compile drivers and to `Ix.DecompileM.decompileEnvFullParallel`;
+    no driver reads it. Rust's `compiler_sharing_limits` reads it once per
+    compile or decompile entry point. -/
 def sharingLimitsEnvVar : String := "IX_SHARING_LIMITS"
 
 /-- `compilerSharingLimits` with the `IX_SHARING_LIMITS` override applied, or
