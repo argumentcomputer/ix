@@ -297,43 +297,30 @@ structure CSOK (mode : CheckMode) (env : Env md) (s : CState md) : Prop where
     ∃ F, ∀ d, (Expr.wscopedB d a) = true → (Expr.wscopedB d b) = true →
       isDefEqCore mode env F d a b = .ok r
   lsimp : ∀ u v, s.lsimpC[u]? = some v → v = Level.simplify u
-  lnz : ∀ u b, s.lnzC[u]? = some b → b = Level.isNonZero u
   eqv : ∀ l r b, s.eqvC[(l, r)]? = some b → Level.isEquiv l r = some b
-  /-- The converted-constant cache is self-certifying: each entry's
-  cached term is `RelC`-related to the very `Expr` object it is tagged
-  with.  The clause never mentions `env`, so it survives every flush
-  and every environment transition. -/
-  ienv : ∀ (nm : Key md) (ent : CConstE md), s.ienv[nm]? = some ent →
-    RelC ent.ty ent.tyE ∧
-    ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
   instC : ∀ (k : Expr md) (vs : List (Expr md)) (d : Nat) (r : Expr md),
     s.instC[(k, vs, d)]? = some r →
       r = (Expr.instantiateList k vs d)
 
 /-- The environment-free residue: exactly the clauses `flushC`
-preserves — the level-operation memos and the self-certifying
-converted-constant cache.  (There is no arena clause: the port of
-`ISOKF` loses `wf` along with the arena.) -/
+preserves — the level-operation memos.  (There is no arena clause: the
+port of `ISOKF` loses `wf` along with the arena.) -/
 structure CSOKF (s : CState md) : Prop where
   lsimp : ∀ u v, s.lsimpC[u]? = some v → v = Level.simplify u
-  lnz : ∀ u b, s.lnzC[u]? = some b → b = Level.isNonZero u
   eqv : ∀ l r b, s.eqvC[(l, r)]? = some b → Level.isEquiv l r = some b
-  ienv : ∀ (nm : Key md) (ent : CConstE md), s.ienv[nm]? = some ent →
-    RelC ent.ty ent.tyE ∧
-    ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
 
 /-- Every invariant state carries the residue. -/
 theorem CSOK.residue {env : Env md} {s : CState md} (h : CSOK mode env s) :
-    CSOKF s := ⟨h.lsimp, h.lnz, h.eqv, h.ienv⟩
+    CSOKF s := ⟨h.lsimp, h.eqv⟩
 
 /-- The empty state satisfies the invariant for any environment. -/
 theorem CSOK.empty (env : Env md) : CSOK mode env ({} : CState md) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (intros; simp_all)
 
 /-- The empty state carries the residue. -/
 theorem CSOKF.empty : CSOKF ({} : CState md) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intros; simp_all)
+  refine ⟨?_, ?_⟩ <;> (intros; simp_all)
 
 /-! ## Flush
 
@@ -349,13 +336,21 @@ surviving components are the residue and the dropped caches' clauses
 are vacuous. -/
 theorem flushC_csok {env' : Env md} {s : CState md} (hs : CSOKF s) :
     CSOK mode env' s.flushed := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.lnz, hs.eqv,
-    hs.ienv, ?_⟩ <;> (intros; simp_all [CState.flushed])
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.eqv, ?_⟩ <;>
+    (intros; simp_all [CState.flushed])
 
 /-- Flushing preserves the residue (it touches none of its
 components). -/
 theorem CSOKF.flushed {s : CState md} (hs : CSOKF s) : CSOKF s.flushed :=
-  ⟨hs.lsimp, hs.lnz, hs.eqv, hs.ienv⟩
+  ⟨hs.lsimp, hs.eqv⟩
+
+/-! ## Reset
+
+`resetC` (the start of every step of the declaration fold, LOCALITY
+§6(a)) replaces the state by the empty one, where the invariant holds
+for any environment (`CSOK.empty`). -/
+
+theorem resetC_run (s : CState md) : resetC s = .ok ((), ({} : CState md)) := rfl
 
 /-! ## The simulation and effect relations -/
 

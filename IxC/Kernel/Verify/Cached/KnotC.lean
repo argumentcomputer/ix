@@ -54,7 +54,7 @@ theorem CSOK.insertWhnfCoreC {s : CState md} (hs : CSOK mode env s)
       whnfCore mode env F d i = .ok j) :
     CSOK mode env { s with whnfCoreC := s.whnfCoreC.insert i j } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, ?_, hs.whnfC, hs.inferC, hs.inferIOC,
-    hs.annotC, hs.defeqC, hs.lsimp, hs.lnz, hs.eqv, hs.ienv, hs.instC⟩
+    hs.annotC, hs.defeqC, hs.lsimp, hs.eqv, hs.instC⟩
   intro k v hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
@@ -72,7 +72,7 @@ theorem CSOK.insertWhnfC {s : CState md} (hs : CSOK mode env s)
       whnf mode env F d i = .ok j) :
     CSOK mode env { s with whnfC := s.whnfC.insert i j } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, ?_, hs.inferC, hs.inferIOC,
-    hs.annotC, hs.defeqC, hs.lsimp, hs.lnz, hs.eqv, hs.ienv, hs.instC⟩
+    hs.annotC, hs.defeqC, hs.lsimp, hs.eqv, hs.instC⟩
   intro k v hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
@@ -90,8 +90,7 @@ theorem CSOK.insertInferC {s : CState md} (hs : CSOK mode env s)
       inferTypeCore mode env F d i = .ok j) :
     CSOK mode env { s with inferC := s.inferC.insert i j } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC, ?_,
-    hs.inferIOC, hs.annotC, hs.defeqC, hs.lsimp, hs.lnz, hs.eqv, hs.ienv,
-    hs.instC⟩
+    hs.inferIOC, hs.annotC, hs.defeqC, hs.lsimp, hs.eqv, hs.instC⟩
   intro k v hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
@@ -111,8 +110,8 @@ theorem CSOK.insertInferIOC {s : CState md} (hs : CSOK mode env s)
       inferTypeIO mode env F d i = .ok j) :
     CSOK mode env { s with inferIOC := s.inferIOC.insert i j } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
-    hs.inferC, ?_, hs.annotC, hs.defeqC, hs.lsimp, hs.lnz, hs.eqv,
-    hs.ienv, hs.instC⟩
+    hs.inferC, ?_, hs.annotC, hs.defeqC, hs.lsimp, hs.eqv,
+    hs.instC⟩
   intro k v hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
@@ -130,8 +129,8 @@ theorem CSOK.insertAnnotC {s : CState md} (hs : CSOK mode env s)
       annotateCore mode env F d i = .ok j) :
     CSOK mode env { s with annotC := s.annotC.insert i j } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
-    hs.inferC, hs.inferIOC, ?_, hs.defeqC, hs.lsimp, hs.lnz, hs.eqv,
-    hs.ienv, hs.instC⟩
+    hs.inferC, hs.inferIOC, ?_, hs.defeqC, hs.lsimp, hs.eqv,
+    hs.instC⟩
   intro k v hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl
@@ -150,7 +149,7 @@ theorem CSOK.insertDefeqC {s : CState md} (hs : CSOK mode env s)
       isDefEqCore mode env F d i j = .ok r) :
     CSOK mode env { s with defeqC := s.defeqC.insert (i, j) r } := by
   refine ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
-    hs.inferC, hs.inferIOC, hs.annotC, ?_, hs.lsimp, hs.lnz, hs.eqv, hs.ienv, hs.instC⟩
+    hs.inferC, hs.inferIOC, hs.annotC, ?_, hs.lsimp, hs.eqv, hs.instC⟩
   intro a b r' hl
   simp only at hl
   rw [Std.HashMap.getElem?_insert] at hl

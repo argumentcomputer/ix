@@ -7,8 +7,8 @@ public import IxC.Kernel.Cached.CheckerC
 /-!
 # The parsed-declaration driver on the cached representation
 
-One `CState` for the whole stream, the environment-dependent caches
-flushed per declaration, declarations consumed as `Declaration` records
+One `CState` per declaration (every step starts from the empty state,
+`resetC`), declarations consumed as `Declaration` records
 straight from the direct parse (`IxC/Kernel/Frontend/ExportC.lean`, task
 #171 — no conversion detour).
 
@@ -92,7 +92,6 @@ def checkDefnValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
   unless constsResolveFC fe jv do
     throw (unresolvedConstsError s!"value of {cvA.name}" jv)
   let vE := jv
-  recordCConst cvA.name cvA.type jty (some (vE, jv))
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
     throw (.invalid s!"type mismatch in definition {cvA.name}")
@@ -114,7 +113,6 @@ def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
     throw (unresolvedConstsError s!"value of {cvA.name}" jv)
-  recordCConst cvA.name cvA.type jty none
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
     throw (.invalid s!"type mismatch in theorem {cvA.name}")
@@ -133,7 +131,6 @@ def checkOpaqueValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
     throw (unresolvedConstsError s!"value of {cvA.name}" jv)
-  recordCConst cvA.name cvA.type jty none
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
     throw (.invalid s!"type mismatch in opaque {cvA.name}")
@@ -208,19 +205,16 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
       else
         throw (.notImplemented "quotient soundness axiom mismatch"))
     else do
-      let (cvA, jty) ← checkConstantValC mode fe cv
-      if stdAxiomOkF fe cvA then do
-        recordCConst cvA.name cvA.type jty none
+      let (cvA, _) ← checkConstantValC mode fe cv
+      if stdAxiomOkF fe cvA then
         pure (fe.push (.axiomInfo cvA))
       else if cvA.name = trustCompilerName then
-        if trustCompilerOkF fe cvA then do
-          recordCConst cvA.name cvA.type jty none
+        if trustCompilerOkF fe cvA then
           pure (fe.push (.axiomInfo cvA))
         else throw (.notImplemented
           s!"unsupported Lean.trustCompiler shape ({cv.name})")
       else if cvA.name = ofReduceNatName ∨ cvA.name = ofReduceBoolName then
-        if ofReduceAxOkF fe cvA then do
-          recordCConst cvA.name cvA.type jty none
+        if ofReduceAxOkF fe cvA then
           pure (fe.push (.axiomInfo cvA))
         else throw (.notImplemented
           s!"unsupported compiler-trust axiom environment ({cv.name})")
@@ -278,10 +272,11 @@ def declCLabel : Declaration md → String
   | .basisDecl k => s!"basis block {repr k}"
   | .quotDecl _ cv => s!"quot {cv.name}"
 
-/-- One step of the converted-declaration fold: flush, then check. -/
+/-- One step of the converted-declaration fold: from the empty memo state
+(`resetC`, LOCALITY §6(a)), check. -/
 def checkDeclStepC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
     (CheckCM md) (FEnv md) := do
-  flushC
+  resetC
   checkDeclC mode ev fe pd
 
 end Ix.Kernel.Cached

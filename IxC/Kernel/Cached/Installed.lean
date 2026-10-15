@@ -31,8 +31,10 @@ declaration from CHECKING it:
   (`fe.visibleBelow`, task #108).  Every other kind — axioms,
   inductive and basis blocks, and the pinned `Nat`-operation and
   `reduce*` branches, whose checks are not separable from their
-  installs — takes the ordinary step `checkDeclStepC`.  An accepting
-  phase A over `ds` IS an `InstalledEnv mode ds`: the index, the
+  installs — takes the ordinary step `checkDeclStepC`.  Every step
+  starts from the empty memo state (`resetC`, LOCALITY §6(a)), so a step
+  reads nothing from the state it is given (`annotDeclStep_state_irrel`).
+  An accepting phase A over `ds` IS an `InstalledEnv mode ds`: the index, the
   records, and the chain of accepting steps (`InstallRun`) that produced
   them.
 * **Phase B** checks each record against the PREFIX VIEW
@@ -112,11 +114,10 @@ def annotConstantValC (fe : FEnv md) (cv : ConstantVal md) :
   pure (⟨cv.name, cv.levelParams, jty⟩, jty)
 
 /-- The value half of `checkDefnValC`/`checkThmValC`/`checkOpaqueValC`
-minus its inference: the guards, the annotation, and the
-converted-constant record (`record` is `false` for an opaque, whose
-value is a discarded witness) — `installValue`'s cached twin. -/
-def annotValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
-    (value : Expr md) (record : Bool) : (CheckCM md) (Expr md) := do
+minus its inference: the guards and the annotation — `installValue`'s
+cached twin. -/
+def annotValC (fe : FEnv md) (cvA : ConstantVal md) (value : Expr md) :
+    (CheckCM md) (Expr md) := do
   unless Expr.looseBVarsBounded 0 value do
     throw (.invalid s!"loose bound variable in value of {cvA.name}")
   if value.hasFvar then
@@ -126,18 +127,17 @@ def annotValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     throw (.invalid s!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
     throw (unresolvedConstsError s!"value of {cvA.name}" jv)
-  recordCConst cvA.name cvA.type jty (if record then some (jv, jv) else none)
   pure jv
 
-/-- Phase A's install of a separable value declaration: the
-per-declaration flush, then the header's and the value's install halves;
-returns the header with its annotated type, that type, and the
-annotated value. -/
-def annotValueC (fe : FEnv md) (cv : ConstantVal md) (value : Expr md) (record : Bool) :
+/-- Phase A's install of a separable value declaration: from the empty
+memo state (`resetC`, LOCALITY §6(a)), the header's and the value's
+install halves; returns the header with its annotated type, that type,
+and the annotated value. -/
+def annotValueC (fe : FEnv md) (cv : ConstantVal md) (value : Expr md) :
     (CheckCM md) (ConstantVal md × Expr md × Expr md) := do
-  flushC
+  resetC
   let (cvA, jty) ← annotConstantValC mode fe cv
-  let jv ← annotValC mode fe cvA jty value record
+  let jv ← annotValC mode fe cvA value
   pure (cvA, jty, jv)
 
 /-- Phase A's step body: annotate-and-install for the three value
@@ -152,7 +152,7 @@ def annotStepC (ev : Evidences md) (i : Nat) (fe : FEnv md)
     if natOpNames.contains cv.name || natDivModNames.contains cv.name then do
       pure (← checkDeclStepC mode ev fe (.defnDecl cv value hint), pend)
     else do
-      let r ← annotValueC mode fe cv value true
+      let r ← annotValueC mode fe cv value
       -- RC linearity: the counter is read BEFORE the push, so that
       -- `fe` reaches `push` unshared (read after it, the push copies
       -- the whole index at every install)
@@ -164,9 +164,8 @@ def annotStepC (ev : Evidences md) (i : Nat) (fe : FEnv md)
     -- only; the value is recorded raw and never touched here (phase B
     -- annotates it, `checkPending`), so phase A never enters a
     -- theorem's body
-    flushC
+    resetC
     let r ← annotConstantValC mode fe cv
-    recordCConst r.1.name r.1.type r.2 none
     let vis := fe.visibleBelow
     pure (fe.push (.thmInfo r.1 value),
       pend.push ⟨⟨.thm, r.1, value⟩, i, vis⟩)
@@ -174,7 +173,7 @@ def annotStepC (ev : Evidences md) (i : Nat) (fe : FEnv md)
     if reduceOpNames.contains cv.name then do
       pure (← checkDeclStepC mode ev fe (.opaqueDecl cv value), pend)
     else do
-      let r ← annotValueC mode fe cv value false
+      let r ← annotValueC mode fe cv value
       let vis := fe.visibleBelow
       pure (fe.push (.axiomInfo r.1),
         pend.push ⟨⟨.opaque, r.1, r.2.2⟩, i, vis⟩)
@@ -224,6 +223,28 @@ theorem annotDeclStep_ok {mode : CheckMode} {ev : Evidences md}
     obtain ⟨rfl, rfl⟩ := h
     exact ⟨fe', pend', rfl, rfl⟩
 
+/-- **Phase A's step body reads nothing from the memo state** (LOCALITY
+§6(a), §7): every branch of `annotStepC` starts with `resetC` — in
+`annotValueC`, in the theorem branch and in `checkDeclStepC` — so the
+step from any state is the step from the empty one. -/
+theorem annotStepC_state_irrel (ev : Evidences md) (i : Nat) (fe : FEnv md)
+    (pend : Array (PendingCheck md)) (pd : Declaration md) (s : CState md) :
+    annotStepC mode ev i fe pend pd s = annotStepC mode ev i fe pend pd {} := by
+  unfold annotStepC
+  cases pd <;> dsimp only
+  all_goals first
+    | rfl
+    | (split <;> rfl)
+
+/-- **A step of the fold reads nothing from the memo state**: the
+state-independence of a step that the locality lemmas start from
+(LOCALITY §7 (a)). -/
+theorem annotDeclStep_state_irrel (ev : Evidences md)
+    (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) (s : CState md) :
+    annotDeclStep mode ev p pd s = annotDeclStep mode ev p pd {} := by
+  unfold annotDeclStep
+  rw [annotStepC_state_irrel]
+
 /-- A run extends at its end by one accepting step: what a loop that
 carries the run of the records it has consumed uses at each step. -/
 theorem InstallRun.snoc {ev : Evidences md} {ds : List (Declaration md)}
@@ -266,7 +287,7 @@ def checkPending (fe : FEnv md) (pc : PendingCheck md) : (CheckCM md) Unit := do
         throw (.invalid s!"type of theorem {pc.vg.cvA.name} is not a proposition")
       -- a theorem's value arrives raw: its guards and annotation run
       -- here, at the view (`annotValC` — `installValue`'s twin)
-      annotValC mode fe pc.vg.cvA pc.vg.cvA.type pc.vg.jv false
+      annotValC mode fe pc.vg.cvA pc.vg.jv
     else pure pc.vg.jv
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt pc.vg.cvA.type do

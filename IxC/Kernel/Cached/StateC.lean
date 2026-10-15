@@ -8,11 +8,13 @@ public import IxC.Kernel.Cached.ExprOpsC
 /-!
 # The cached checker state and its operation wrappers
 
-The per-declaration state: the converted-constant cache, the memo
-caches for the five entry points, the level-operation memos and the
-persistent bulk-instantiation memo, with the linear-update discipline
-(detach a component from the state record before mutating it) each of
-them is written in.
+The per-declaration state: the memo caches for the five entry points,
+the lazy caches for level-instantiated stored constants, the
+level-operation memos and the bulk-instantiation memo, with the
+linear-update discipline (detach a component from the state record
+before mutating it) each of them is written in.  Every step of the
+declaration fold starts from the empty state (`resetC`; LOCALITY
+§6(a)), so nothing in it crosses a declaration.
 
 Task #198 removed the last of the arena's shape from this module: the
 unit `CStore` and its twenty forwarding "methods", and the `withStore`
@@ -113,23 +115,18 @@ def etaCtorShapeC (fe : FEnv md) (e : Expr md) : Bool :=
 
 /-! ## The state -/
 
-/-- One cached-environment entry: a stored constant's annotated type
-and (for definitions/theorems/opaques) value converted to `Expr`,
-each tagged with the very `Expr` object it came from.  A use validates
-the tag by pointer equality (`Expr.exprPtrBEq`, reused), so the
-conversion of a stored constant is paid once per declaration instead
-of once per delta step. -/
-structure CConstE (md : Mode) where
-  tyE : Expr md
-  ty : Expr md
-  val : Option (Expr md × Expr md) := none
+/-- Per-declaration state: the memo caches for the five entry points,
+the lazy caches for level-instantiated stored constants, the
+level-operation memos, and the bulk-instantiation memo (task #145).
+Each step of the declaration fold starts from the empty state
+(`resetC`), and phase B starts every record from it, so the state lives
+for one declaration.
 
-/-- Per-declaration state: the converted-constant cache, the memo
-caches for the five entry points, the lazy caches for
-level-instantiated stored constants, the level-operation memos, and
-the persistent bulk-instantiation memo (task #145). -/
+(LOCALITY §6(a), PERF P16: the converted-constant cache `ienv` and the
+never-filled `Level.isNonZero` memo `lnzC` were deleted with the reset.
+Every `ienv` entry mapped a constant to the very object it was given, so
+a hit returned what a miss returned.) -/
 structure CState (md : Mode) where
-  ienv : Std.HashMap (Key md) (CConstE md) := {}
   constTyAt : Std.HashMap (Key md × List Level) (Expr md) := {}
   constValAt : Std.HashMap (Key md × List Level) (Expr md) := {}
   ruleRhsAt : Std.HashMap (Key md × Key md × List Level) (Expr md) := {}
@@ -151,7 +148,6 @@ structure CState (md : Mode) where
   defeqC : Std.HashMap (Expr md × Expr md) Bool := {}
   annotC : Std.HashMap (Expr md) (Expr md) := {}
   lsimpC : Std.HashMap Level Level := {}
-  lnzC : Std.HashMap Level Bool := {}
   eqvC : Std.HashMap (Level × Level) Bool := {}
   instC : Std.HashMap (Expr md × List (Expr md) × Nat) (Expr md) := {}
 
@@ -229,34 +225,12 @@ not memoized). -/
 
 Levels are plain trees here (there is no level arena), so the level
 memos are keyed structurally — the one place a non-`O(1)` hash is
-paid.  The *results* are cached (`lsimpC`, `lnzC`, `eqvC`), so a
-decided comparison is never recomputed. -/
+paid.  The *results* are cached (`lsimpC`, `eqvC`), so a decided
+comparison is never recomputed within a declaration. -/
 
 @[inline] def substLevelTreesM (ks : List LevelParam) (us : List Level)
     (ls : List Level) : (CheckCM md) (List Level) :=
   pure (ls.map (Level.subst ks us))
-
-/-- `Level.simplify`, persistently memoized. -/
-def simplifyLM (u : Level) : (CheckCM md) Level :=
-  modifyGet fun s =>
-    match s.lsimpC[u]? with
-    | some r => (r, s)
-    | none =>
-      let mp := s.lsimpC
-      let s := { s with lsimpC := {} }
-      let r := Level.simplify u
-      (r, { s with lsimpC := mp.insert u r })
-
-/-- `Level.isNonZero`, persistently memoized. -/
-def isNonZeroLM (u : Level) : (CheckCM md) Bool :=
-  modifyGet fun s =>
-    match s.lnzC[u]? with
-    | some r => (r, s)
-    | none =>
-      let mp := s.lnzC
-      let s := { s with lnzC := {} }
-      let r := Level.isNonZero u
-      (r, { s with lnzC := mp.insert u r })
 
 /-- Level equivalence with a persistent result cache: simplify both
 sides, compare, then the `leqCore` cascade both ways.
@@ -307,27 +281,7 @@ def isEquivListLM : List Level → List Level → (CheckCM md) (Option Bool)
     | some true => isEquivListLM ls rs
   | _, _ => pure (some false)
 
-/-! ## Lazy stored-constant conversions -/
-
-/-- The `Expr` of a stored constant's type: the cached entry when its
-`Expr` tag validates by pointer equality, else a fresh conversion. -/
-def storedTyIdxM (n : Key md) (ty : Expr md) : (CheckCM md) (Expr md) := do
-  let ent? : Option (CConstE md) ← modifyGet fun s => (s.ienv[n]?, s)
-  match ent? with
-  | some ent =>
-    if Expr.exprPtrBEq ent.tyE ty then pure ent.ty
-    else pure ty
-  | none => pure ty
-
-/-- The `Expr` of a stored definition/theorem value (see
-`storedTyIdxM`). -/
-def storedValIdxM (n : Key md) (v : Expr md) : (CheckCM md) (Expr md) := do
-  let ent? : Option (CConstE md) ← modifyGet fun s => (s.ienv[n]?, s)
-  match ent? with
-  | some ⟨_, _, some (vE, vi)⟩ =>
-    if Expr.exprPtrBEq vE v then pure vi
-    else pure v
-  | _ => pure v
+/-! ## Lazy stored-constant instantiations -/
 
 /-- The level-instantiated *type* of the stored constant `n`. -/
 def constTyAtM (fe : FEnv md) (_nI : Key md) (n : Key md) (us : List Level) :
@@ -339,8 +293,7 @@ def constTyAtM (fe : FEnv md) (_nI : Key md) (n : Key md) (us : List Level) :
     match fe.find? n with
     | some ci =>
       let cv := ci.toConstantVal
-      let raw ← storedTyIdxM n cv.type
-      let i ← instLevelParamsM cv.levelParams us raw
+      let i ← instLevelParamsM cv.levelParams us cv.type
       modify fun s =>
         let mp := s.constTyAt
         let s := { s with constTyAt := ∅ }
@@ -357,8 +310,7 @@ def constValAtM (fe : FEnv md) (_nI : Key md) (n : Key md) (us : List Level) :
   | none =>
     match fe.find? n with
     | some (.defnInfo cv v _) =>
-      let raw ← storedValIdxM n v
-      let i ← instLevelParamsM cv.levelParams us raw
+      let i ← instLevelParamsM cv.levelParams us v
       modify fun s =>
         let mp := s.constValAt
         let s := { s with constValAt := ∅ }
@@ -387,10 +339,9 @@ def ruleRhsAtM (fe : FEnv md) (_cI _jI : Key md) (c j : Key md) (us : List Level
       | none => throw (.internal "ruleRhsAtM: no rule for constructor")
     | _ => throw (.internal "ruleRhsAtM: not a stored recursor")
 
-/-- Drop the environment-dependent caches (an environment transition).
-The environment-independent components — the converted-constant cache
-`ienv` (self-certified by its `Expr` tags) and the level-operation
-memos — survive. -/
+/-- Drop the environment-dependent caches (an environment transition
+inside a declaration).  The environment-independent components — the
+level-operation memos, whose entries are exact — survive. -/
 def CState.flushed (s : CState md) : CState md :=
   { s with
       constTyAt := {}, constValAt := {}, ruleRhsAt := {},
@@ -398,6 +349,13 @@ def CState.flushed (s : CState md) : CState md :=
       defeqC := {}, annotC := {}, instC := {} }
 
 def flushC : (CheckCM md) Unit := modify (·.flushed)
+
+/-- Start a declaration from the empty state (LOCALITY §6(a)): the step
+of the declaration fold then reads nothing from the state it is given
+(`annotDeclStep_state_irrel`), and phase A's results depend only on the
+declaration and the index.  The flushes inside a block (an environment
+transition) keep the level memos. -/
+def resetC : (CheckCM md) Unit := set ({} : CState md)
 
 
 /-! ## The parsed-index driver's syntactic guards
@@ -517,15 +475,5 @@ def constsResolveFXP (fe : @& (FEnv md)) (memo : Expr.MemoB0 (constsResolveFP fe
 /-- The cached `Expr.constsResolveF fe` (one memoized DAG walk). -/
 def constsResolveFC (fe : FEnv md) (e : Expr md) : Bool :=
   Expr.resBool (constsResolveFXP fe none e)
-
-/-- Record an accepted constant's converted type/value, tagged with the
-very `Expr` objects pushed into the environment (the counterpart of
-`recordIConst`). -/
-def recordCConst (n : Key md) (tyE : Expr md) (ty : Expr md)
-    (val : Option (Expr md × Expr md)) : (CheckCM md) Unit :=
-  modify fun s =>
-    let m := s.ienv
-    let s := { s with ienv := {} }
-    { s with ienv := m.insert n ⟨tyE, ty, val⟩ }
 
 end Ix.Kernel.Cached

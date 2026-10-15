@@ -31,9 +31,8 @@ tier flag (`hoff`) anywhere — plus the representation differences the
 * `opSIxC` has no level-readback wrapper (levels are already trees),
   so `opSIxC_sim` is `ensureSortC_sim` plus the `ensureSort_atF`
   rewrite;
-* `recordCConst`'s effect (`recordCConst_eff`,
-  `IxC/Kernel/Verify/Cached/SimCEff.lean`) takes `RelC` facts where
-  `recordIConst_eff` took `denoteT` facts at a flag-off state.
+* `recordIConst` has no counterpart: the cached checker keeps no
+  converted-constant cache (PERF P16; LOCALITY §6(a)).
 
 `Declaration` is now one type for both tiers (task #285), so the
 interned premise `denoteDeclP s₀.store pd = some d` has no counterpart
@@ -199,12 +198,7 @@ theorem checkDefnValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
     simp only [if_neg h4]
     exact SimC.throw_bind
   simp only [if_pos h4]
-  refine SimC.bind_left (recordCConst_eff hs₁ hjty
-      (fun vE' vi h => by
-        cases h
-        exact rfl))
-    (fun s₂' u hs₂' hQ' => ?_)
-  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₂' rfl hwv)
+  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₁ rfl hwv)
     (fun s₂ jvt wvt hs₂ hP₂ => ?_)
   obtain ⟨hjvt, hwvt⟩ := hP₂
   refine SimC.bind ((ssimC hμ env henv checkFuel).defeq hs₂ hjvt hjty hwvt htf)
@@ -278,10 +272,7 @@ theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
     simp only [if_neg h4]
     exact SimC.throw_bind
   simp only [if_pos h4]
-  refine SimC.bind_left (recordCConst_eff hs₄ hjty
-      (fun vE' vi h => nomatch h))
-    (fun s₅' u₀ hs₅' hQ' => ?_)
-  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₅' rfl hwv)
+  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₄ rfl hwv)
     (fun s₅ jvt wvt hs₅ hP₅ => ?_)
   obtain ⟨hjvt, hwvt⟩ := hP₅
   refine SimC.bind ((ssimC hμ env henv checkFuel).defeq hs₅ hjvt hjty hwvt htf)
@@ -333,10 +324,7 @@ theorem checkOpaqueValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
     simp only [if_neg h4]
     exact SimC.throw_bind
   simp only [if_pos h4]
-  refine SimC.bind_left (recordCConst_eff hs₁ hjty
-      (fun vE' vi h => nomatch h))
-    (fun s₁' u hs₁' hQ' => ?_)
-  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₁' rfl hwv)
+  refine SimC.bind ((ssimC hμ env henv checkFuel).infer hs₁ rfl hwv)
     (fun s₂ jvt wvt hs₂ hP₂ => ?_)
   obtain ⟨hjvt, hwvt⟩ := hP₂
   refine SimC.bind ((ssimC hμ env henv checkFuel).defeq hs₂ hjvt hjty hwvt htf)
@@ -429,24 +417,18 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr
-    obtain ⟨rfl, hname, hwty, hjty⟩ := hP
-    dsimp only at hjty ⊢
+    obtain ⟨rfl, hname, hwty, -⟩ := hP
+    dsimp only
     simp only [stdAxiomOkF_eq, trustCompilerOkF_eq, ofReduceAxOkF_eq]
     by_cases h1 : stdAxiomOk env cvR = true
     · simp only [if_pos h1]
-      refine SimC.bind_left (recordCConst_eff hs₁ hjty
-          (fun vE vi h => nomatch h))
-        (fun s₂ u hs₂ hQ => ?_)
-      exact SimC.pure hs₂ ⟨rfl, push_mkFEnv env _⟩
+      exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
     · simp only [if_neg h1]
       by_cases htc : cvR.name = trustCompilerName
       · simp only [if_pos htc]
         by_cases htok : trustCompilerOk env cvR = true
         · simp only [if_pos htok]
-          refine SimC.bind_left (recordCConst_eff hs₁ hjty
-              (fun vE vi h => nomatch h))
-            (fun s₂ u hs₂ hQ => ?_)
-          exact SimC.pure hs₂ ⟨rfl, push_mkFEnv env _⟩
+          exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
         · simp only [if_neg htok]
           exact SimC.throw
       · simp only [if_neg htc]
@@ -455,10 +437,7 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
         · simp only [if_pos hor]
           by_cases hoo : ofReduceAxOk env cvR = true
           · simp only [if_pos hoo]
-            refine SimC.bind_left (recordCConst_eff hs₁ hjty
-                (fun vE vi h => nomatch h))
-              (fun s₂ u hs₂ hQ => ?_)
-            exact SimC.pure hs₂ ⟨rfl, push_mkFEnv env _⟩
+            exact SimC.pure hs₁ ⟨rfl, push_mkFEnv env _⟩
           · simp only [if_neg hoo]
             exact SimC.throw
         · simp only [if_neg hor]
@@ -604,22 +583,22 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
       | recInfo cv' mI rP rules => exact SimC.throw_bind
       | projInfo _ => exact SimC.throw_bind
 
-/-- One step of the converted-declaration fold: a successful run from a
-residue state is reproduced by the pure fueled checker on the same
-declaration, and the residue threads to the next step.  The cached
-driver has no bracket and no index-range check, so the step is `flushC`
-followed by `checkDeclC`. -/
+/-- One step of the converted-declaration fold: a successful run from any
+state is reproduced by the pure fueled checker on the same declaration,
+and leaves the residue.  The cached driver has no bracket and no
+index-range check, so the step is `resetC` (LOCALITY §6(a)) followed by
+`checkDeclC`. -/
 theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env) {pd : Declaration md}
-    {s₀ : CState md} (hres : CSOKF s₀) {fe' : FEnv md} {s' : CState md}
+    {s₀ : CState md} {fe' : FEnv md} {s' : CState md}
     (h : checkDeclStepC mode ev (mkFEnv env) pd s₀ = .ok (fe', s')) :
     CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
     ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
   unfold checkDeclStepC at h
-  obtain ⟨u, s₁, hflush, h⟩ := bindC_ok h
-  rw [flushC_run] at hflush
-  injection hflush with hflush
-  obtain rfl : s₀.flushed = s₁ := congrArg Prod.snd hflush
-  have hcsok : CSOK mode env s₀.flushed := flushC_csok hres
+  obtain ⟨u, s₁, hreset, h⟩ := bindC_ok h
+  rw [resetC_run] at hreset
+  injection hreset with hreset
+  obtain rfl : ({} : CState md) = s₁ := congrArg Prod.snd hreset
+  have hcsok : CSOK mode env ({} : CState md) := CSOK.empty env
   have main : (∀ block nP, pd ≠ .indDecl block nP) →
       CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
       ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
@@ -643,7 +622,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
               | some p => checkNativeS mode (mkFEnv env) p
               | none => checkIndDeclSF mode (mkFEnv env) block)
           else throw (CheckError.invalid "number of parameters mismatch"))
-        s₀.flushed = .ok (fe', s') := h
+        ({} : CState md) = .ok (fe', s') := h
     cases hpin : basisPinHit block with
     | some kind =>
       rw [hpin] at hd
@@ -659,7 +638,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       by_cases hok : indParamsOk nP block = true
       · rw [if_pos hok] at hd
         obtain ⟨hres', hfe, F, hF⟩ :=
-          checkModeledOrNativeSF_run hμ henv hpin hok hres.flushed hd
+          checkModeledOrNativeSF_run hμ henv hpin hok CSOKF.empty hd
         exact ⟨hres', hfe, F, hF⟩
       · rw [if_neg hok] at hd
         exact nomatch hd

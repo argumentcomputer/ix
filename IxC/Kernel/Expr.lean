@@ -57,7 +57,7 @@ with
 deriving DecidableEq, Repr, Inhabited
 
 /-- Hashing a level is an `O(1)` field read (the memo maps keyed by
-`Level` — `lsimpC`, `lnzC`, `eqvC` — probe with this). -/
+`Level` — `lsimpC`, `eqvC` — probe with this). -/
 instance : Hashable Level := ⟨Level.hashData⟩
 
 /-- Level equality in the official kernel's shape (task #176 P2):

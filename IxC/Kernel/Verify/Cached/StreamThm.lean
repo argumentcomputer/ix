@@ -23,7 +23,7 @@ Three ingredients, one per step of the walk:
   annotates a declaration's type before storing it
   (`annotConstantValC`), and the annotation pass is memoized
   (`memoEI (·.annotC)`), so the returned type is the memo's entry on a
-  hit and `annotateBodyI`'s on a miss.  The step's own `flushC` empties
+  hit and `annotateBodyI`'s on a miss.  The step's own `resetC` empties
   the annotation memo immediately before the call, so the hit branch is
   unreachable and `annotateBodyI`'s `.const` arm — `pure e` — decides:
   `annotate_const`.
@@ -74,20 +74,19 @@ theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv md} {f d : Nat}
     Prod.mk.injEq] at h
   exact h.1.symm
 
-/-- The annotation memo of a flushed state is empty. -/
-theorem flushed_annotC_none (s : CState md) (e : Expr md) :
-    (s.flushed).annotC[e]? = none := by
-  simp only [CState.flushed]
+/-- The annotation memo of the empty state (`resetC`) is empty. -/
+theorem empty_annotC_none (e : Expr md) :
+    ({} : CState md).annotC[e]? = none := by
   simp
 
 /-! ## Phase A's header install keeps a bare declared type -/
 
-/-- Phase A's header install, at a flushed state, returns the header
+/-- Phase A's header install, at the empty state, returns the header
 with the declared type unchanged when that type is a bare constant. -/
 theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
     {cv cvA : ConstantVal md} {jty : Expr md} {n : Key md} {ls : List Level}
-    {s₀ s' : CState md} (hty : cv.type = .const n ls)
-    (h : annotConstantValC mode fe cv s₀.flushed = .ok ((cvA, jty), s')) :
+    {s' : CState md} (hty : cv.type = .const n ls)
+    (h : annotConstantValC mode fe cv ({} : CState md) = .ok ((cvA, jty), s')) :
     cvA = ⟨cv.name, cv.levelParams, .const n ls⟩ := by
   unfold annotConstantValC at h
   by_cases h1 : (fe.find? cv.name).isSome = true
@@ -111,7 +110,7 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
   obtain ⟨jA, s₁, hann, h⟩ := bindC_ok h
   rw [hty] at hann
   obtain rfl : jA = .const n ls :=
-    annotate_const_of_miss (f := checkFuel - 1) (flushed_annotC_none s₀ _)
+    annotate_const_of_miss (f := checkFuel - 1) (empty_annotC_none _)
       (by rw [show checkFuel - 1 + 1 = checkFuel from rfl]; exact hann)
   by_cases h7 : Expr.allLevelParamsDefinedC cv.levelParams (Expr.const n ls) = true
   case neg => rw [if_neg h7] at h; exact absurd h throwC_bind_ok
@@ -138,13 +137,12 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv md}
   unfold annotStepC at h
   simp only [] at h
   obtain ⟨_, s₁, hfl, h⟩ := bindC_ok h
-  rw [show (flushC : (CheckCM md) Unit) s₀ = .ok ((), s₀.flushed) from rfl] at hfl
-  have hs₁ : s₀.flushed = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
+  rw [resetC_run] at hfl
+  have hs₁ : ({} : CState md) = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
   subst hs₁
   obtain ⟨p, s₂, hcv, h⟩ := bindC_ok h
   obtain ⟨cvA, jty⟩ := p
   obtain rfl := annotConstantValC_const hty hcv
-  obtain ⟨_, s₃, _, h⟩ := bindC_ok h
   obtain ⟨hv, _⟩ := pureC_ok h
   obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ hv
   rfl
