@@ -39,11 +39,13 @@ end Ixon.Authenticated.Audit
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 -- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
 -- the generic entries' change; its address keys from 5764 and 115 inherited
--- externs, by the generic entries' change.
+-- externs, by the generic entries' change; the IxC performance series (PERF
+-- P16, P14, P3, P2) from 5727 and 117 inherited externs, by the generic
+-- entries' change (`IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5727 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
+ Address.admissionHash]: 5745 compiled functions; inherited externs 119, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

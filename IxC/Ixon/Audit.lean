@@ -110,11 +110,19 @@ The walk now visits the source `f` of each arity-reduced `f._redArg` it
 reaches (`Ix.Kernel.Audit.reducedAritySource?`), 12 more functions: the sources
 (`Ixon.getArray`, `Ixon.runGet`, `Ixon.runGetExact`,
 `Ixon.WireCheck.validArray`, `panic`, `outOfBounds` and Init's tail-recursive
-list helpers), with no extern, `unsafe` or `csimp` among them (339 before). -/
+list helpers), with no extern, `unsafe` or `csimp` among them (339 before).
+The TagN twins (PERF P3; `getTagN_eq_fast`, `putTagN_eq_fast`, ruled by
+`Ixon.Audit.rulings`) added 8 functions, `getTagNFast`, `putTagNFast` and the
+copies at the three widths, `getTagN0/2/4` and `putTagN0/2/4` (their inlined
+helpers leave no functions of their own), with no extern (351 before). The
+references `getTagN` and `putTagN` stay in the closure: the twins call them
+for a width other than 0, 2 and 4, so both replacements are reported where
+the walk reaches them (`csimp 2`) and where it reaches their targets (`ruled
+csimp 2`). -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 351 compiled functions;
-inherited externs 53, implemented_by 0, unsafe 2, csimp 0 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 359 compiled functions;
+inherited externs 53, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 

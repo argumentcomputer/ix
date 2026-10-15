@@ -39,15 +39,45 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3439 compiled functions, with the computed-field overrides of
-`Level`, `Expr`, `Name` and `Key` and 20 proved csimps; the Ixon reader
-(`readRecords` with `Admission.readStream`) reaches 2127, adding the
-in-model generator's 9 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5552 with 113 inherited externs, adding the
-byte stage (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`), the
-binding section's admission (`admitBinding`, `RoleTable.ofBytes`,
-`RoleTable.check`) and the committed default table and prelude. Step 5b's
-address keys (an `.anon` input key is the address its references use) moved
+reaches 3446 compiled functions with 92 inherited externs, with the
+computed-field overrides of `Level`, `Expr`, `Name` and `Key` and 20 proved
+csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
+2134, adding the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 5570 with
+115 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
+`authenticate`, `decodeRecords`), the binding section's admission
+(`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
+default table and prelude, and the codec's two TagN twins. The IxC
+performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127 and
+5552, and the fold's and the entry's inherited externs from 90 and 113 to 92
+and 115:
+* P16, the memo state reset at every step of the fold (LOCALITY §6(a)): 7
+  fewer in the fold and the entry. The converted-constant cache
+  (`recordCConst`, `storedTyIdxM`, `storedValIdxM`) and its map's
+  specialisations went; `resetC` and the empty state's closed terms came in;
+  the level memos' map specialisations are now named after `isEquivLM` (the
+  uncalled `simplifyLM` had named them).
+* P14, shared binder metadata: 2 more in the fold (`BinderMeta.leanAlways`
+  and its closed datum), 3 in the reader (`BinderMeta.leanNever` and two
+  closed terms), 5 in the entry.
+* P3, TagN without `Nat` powers: 4 more in the reader (`putTagNFast`,
+  `putTagN0`, `putTagN2`, `putTagN4`: the projection-record serializer's
+  writer), 8 in the entry (the reader's `getTagNFast`, `getTagN0/2/4` too).
+  The codec's two `@[csimp]` replacements (`putTagN_eq_fast`,
+  `getTagN_eq_fast`) are ruled (`runtimeRulings`): the reader's ruled csimps
+  go from 7 to 8 and the entry's from 21 to 23, and the references they
+  replace are still reached, from the twins' fallback for a width other
+  than 0, 2 and 4 (csimp 0 to 1 and 4 to 6).
+* P2, phase B of the fold on pure tasks: 12 more in the fold and the entry
+  (`checkPendingTasks`, `chunksOf`, `awaitInOrder`, their auxiliaries and the
+  task closure), among them the two new inherited externs, `Init`'s
+  `Task.spawn` (`lean_task_spawn`) and `Task.get` (`lean_task_get_own`). As
+  Lean functions they are `⟨fn ()⟩` and its field, so every theorem reads
+  the sequential walk (`checkPendingTasks_eq`); what execution adds is
+  Lean's runtime running a pure closure on another thread, the same
+  runtime every compiled closure already trusts. No `unsafe`,
+  `implemented_by`, `csimp` or `partial` constant came with them.
+Step 5b's address keys (an `.anon` input key is the address its references use) moved
 them from 3412, 2030 and 5578, and their inherited externs from 82, 79 and
 111 to 90, 89 and 113, all `Init`'s: the fold compares and hashes addresses
 (`ByteArray.decEq`, `ByteArray.get!`, `ByteArray.size`) and prints them in
@@ -347,9 +377,10 @@ elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
 the rulings they use: the fold reaches the kernel's computed-field
 overrides of `Level`, `Expr`, `Name` and `Key` (21) and 20 project csimps; the
-reader adds the in-model generator's 9 `partial` definitions; the entry
-adds the byte stage, the binding section's admission and the committed
-default table and prelude. -/
+reader adds the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin (a ruled csimp); the entry adds the byte stage, the binding
+section's admission, the committed default table and prelude and the codec's
+TagN reader twin. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
@@ -376,19 +407,19 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3439 compiled functions; inherited externs 90, implemented_by 0, unsafe 24, csimp 4; ruled computed_field 20, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3446 compiled functions; inherited externs 92, implemented_by 0, unsafe 24, csimp 4; ruled computed_field 20, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2127 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2134 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5552 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5570 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

@@ -44,10 +44,12 @@ contract's equality, hash and `Repr`; step 5b's walk change from 5638, by the
 sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 `csimp` or `partial` constant among them); step 5b's mode index from 5733, by
 the entry's change; its address keys from 5745 and 112 inherited
-externs, by the entry's change. -/
+externs, by the entry's change; the IxC performance series (PERF P16, P14,
+P3, P2) from 5708 and 114 inherited externs, by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5708 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5726 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

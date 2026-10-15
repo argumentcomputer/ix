@@ -509,9 +509,16 @@ and the digest stay. Soundness does not depend on the table.
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
 kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
-compiled code reaches (the entry's closure reaches 111 inherited externs,
+compiled code reaches (the entry's closure reaches 115 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
+Among them are Lean's task primitives `Task.spawn` and `Task.get`
+(`lean_task_spawn`, `lean_task_get_own`): the fold checks its deferred
+records in chunks on pure tasks (`checkPendingTasks`). As Lean functions they
+are the resolved task `⟨fn ()⟩` and its field, so the theorems read the
+sequential walk (`checkPendingTasks_eq`); execution trusts the runtime to run
+a pure closure on another thread, as it trusts it to run any closure. The
+runtime sizes the pool (`LEAN_NUM_THREADS`), and no size changes a verdict.
 Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
 lean4export parser. The entry and its variants hash only through their
 `hash` parameter.
@@ -536,6 +543,7 @@ Project-level execution constructs are admitted only as named by
 | --- | --- | --- |
 | `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
 | project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
+| the codec's TagN `@[csimp]` twins (`getTagN_eq_fast`, `putTagN_eq_fast`) | `IxC.Ixon.Codec` (also `Ixon.Audit.rulings`) | the reader and writer at a fixed flag width with their powers folded; each theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxC/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
@@ -589,13 +597,26 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3439 | 90 |
-| reader `readRecords`, `readStream` | 2127 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5552 | 113 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5549 | 113 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5574 | 113 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5708 | 114 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5727 | 117 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3446 | 92 |
+| reader `readRecords`, `readStream` | 2134 | 89 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5570 | 115 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5567 | 115 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5592 | 115 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5726 | 116 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5745 | 119 |
+
+The IxC performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127,
+5552, 5549, 5574, 5708 and 5727, and the externs of all but the reader by two:
+- the memo state reset at every step of the fold (P16): 7 fewer in the fold
+  and everything above it (the converted-constant cache `ienv` went);
+- shared binder metadata (P14): 2 more in the fold, 3 in the reader, 5 in the
+  entry (the shared objects and their closed terms);
+- the codec's TagN twins (P3): 4 more in the reader, 8 in the entry
+  (`getTagNFast`, `putTagNFast` and their copies at widths 0, 2 and 4), with
+  their two `@[csimp]` theorems ruled (`IxC.Ixon.Codec`); the codec's own
+  closure went from 351 to 359;
+- phase B on tasks (P2): 12 more in the fold and above it, among them the
+  `Init` externs `Task.spawn` and `Task.get` (see "Trust surface").
 
 Step 5b's address keys (an `.anon` input key is the address its references
 use) moved them from 3412, 2030, 5578, 5575, 5610, 5745 and 5764, and the

@@ -53,7 +53,9 @@ run_cmd Ix.Kernel.Audit.checkImports #[`IxC.Kernel.Admission.Theorems] Ix.Kernel
 
 /- Measured independently before freezing. The certified entry reaches the
 codec, with Ixon v4's TagN integer code (`Ixon.getTagN`, `getTagNWide`,
-`getTagN0Values`, `putTagN`, `tagNHeader`, `tagNEnd1..6`), the byte stage
+`getTagN0Values`, `putTagN`, `tagNHeader`, `tagNEnd1..6`, and the twins that
+compiled code calls, `getTagNFast`, `putTagNFast`, `getTagN0/2/4`,
+`putTagN0/2/4`), the byte stage
 (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`; the content hash
 is a parameter, so no hasher), the binding section's admission
 (`admitBinding`: `RoleTable.ofBytes`, `RoleTable.check`), the Ixon reader, the
@@ -72,12 +74,19 @@ equality, hash and `Repr` (`IxC/Kernel/Audit/Roots.lean`). Step 5b's walk change
 extern, `unsafe`, `csimp` or `partial` constant among them) moved it from 5471.
 Step 5b's mode index moved it from 5563 by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`), and its address keys from 5575 and 111
-inherited externs, by the entry's change. -/
+inherited externs, by the entry's change. The IxC performance series (PERF
+P16, P14, P3, P2) moved it from 5549 and 113 inherited externs by the entry's
+change (`IxC/Kernel/Audit/Roots.lean`): the memo state reset (P16, 7
+fewer), the shared binder metadata (P14, 5 more), the codec's TagN twins
+(P3, 8 more: `getTagNFast`, `putTagNFast` and the copies at widths 0, 2 and 4,
+the ruled csimps 21 to 23, the references they replace still reached, csimp
+4 to 6) and phase B on tasks (P2, 12 more, with `Init`'s `Task.spawn` and
+`Task.get` the two new inherited externs). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5549 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5567 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
