@@ -478,19 +478,21 @@ def failAuxPromotion (acc : DriverAcc) (all : Set Name) (msg : String) : DriverA
       defHints := acc.defHints.erase n }
   return { acc with pending := acc.pending.filter (!all.contains ·) }
 
-/-- The scheduler's promote-remaining pass over a pre-compiled block's
-    members (Rust env.rs, after the original-form compile). Every claim is
-    checked before any member is published: a member already in `nameToAddr`
-    with an aux claim at a different address fails the whole block
-    (`failAuxPromotion`, single ownership; the first conflict in canonical
-    member order names it). Otherwise each member not yet registered takes
-    its resolved address. Returns the members newly registered. -/
-def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name := Id.run do
+/-- The claim check of `promoteRemaining`, read-only: the first member, in
+    canonical member order, already in `nameToAddr` with an aux claim at a
+    different address. -/
+def remainingClaimConflict? (cenv : CompileEnv) (all : Set Name) : Option String := Id.run do
   for name in all.toArray.qsort aliasPrecedes do
-    if let some existing := acc.cenv.nameToAddr.get? name then
-      if let some claimed := acc.cenv.auxNameToAddr.get? name then
+    if let some existing := cenv.nameToAddr.get? name then
+      if let some claimed := cenv.auxNameToAddr.get? name then
         if claimed != existing then
-          return (failAuxPromotion acc all (toString (nameClaimConflict name existing claimed)), #[])
+          return some (toString (nameClaimConflict name existing claimed))
+  return none
+
+/-- The writes of `promoteRemaining`, after its check: each member not yet
+    registered takes its resolved address. Returns the members newly
+    registered. -/
+def promoteRemainingWrites (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name := Id.run do
   let mut acc := acc
   let mut newNames : Array Name := #[]
   for name in all do
@@ -502,6 +504,18 @@ def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Nam
           nameToAddr := acc.cenv.nameToAddr.insert name addr } }
         newNames := newNames.push name
   return (acc, newNames)
+
+/-- The scheduler's promote-remaining pass over a pre-compiled block's
+    members (Rust env.rs, after the original-form compile). Every claim is
+    checked before any member is published: a member already in `nameToAddr`
+    with an aux claim at a different address fails the whole block
+    (`failAuxPromotion`, single ownership; the first conflict in canonical
+    member order names it). Otherwise each member not yet registered takes
+    its resolved address. Returns the members newly registered. -/
+def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name :=
+  match remainingClaimConflict? acc.cenv all with
+  | some msg => (failAuxPromotion acc all msg, #[])
+  | none => promoteRemainingWrites acc all
 
 /-- Self-name address of a `ConstantMeta`, for the promote coherence
     check (Rust `promote_aux`, compile.rs:317-328). -/
@@ -515,6 +529,33 @@ def constMetaSelfName? (m : Ixon.ConstantMeta) : Option Address :=
   | .recr n .. => some n
   | _ => none
 
+/-- The checks of `promoteAuxDriver`, read-only: the meta self-name
+    coherence check and the claim (a name already compiled at another
+    address than its aux address is a conflict). -/
+def checkPromoteAux (cenv : CompileEnv) (name : Name) (origMeta : Ixon.ConstantMeta) :
+    Except CompileError Unit := do
+  if let some metaAddr := constMetaSelfName? origMeta then
+    if metaAddr != name.getHash then
+      throw (.invalidMutualBlock s!"promote_aux: name mismatch for \
+'{name.pretty}' — compile_name address is {name.getHash} but meta name \
+address is {metaAddr}")
+  if let some auxAddr := cenv.auxNameToAddr.get? name then
+    if let some existing := cenv.nameToAddr.get? name then
+      if existing != auxAddr then throw (nameClaimConflict name existing auxAddr)
+
+/-- The writes of `promoteAuxDriver`, after its checks: the aux address
+    into the resolution map, the original `(addr, meta)` into the existing
+    `Named` entry. -/
+def promoteAuxWrites (cenv : CompileEnv) (name : Name)
+    (origAddr : Address) (origMeta : Ixon.ConstantMeta) : CompileEnv := Id.run do
+  let mut cenv := cenv
+  if let some auxAddr := cenv.auxNameToAddr.get? name then
+    cenv := { cenv with nameToAddr := cenv.nameToAddr.insert name auxAddr }
+  if let some named := cenv.nameToNamed.get? name then
+    let named' := { named with original := some (origAddr, origMeta) }
+    cenv := { cenv with nameToNamed := cenv.nameToNamed.insert name named' }
+  return cenv
+
 /-- Promote an aux_gen-compiled name: copy its aux address into the
     resolution map and graft the ORIGINAL `(addr, meta)` into the
     existing (regenerated) `Named` entry. Mirrors
@@ -524,47 +565,54 @@ def constMetaSelfName? (m : Ixon.ConstantMeta) : Option Address :=
 def promoteAuxDriver (cenv : CompileEnv) (name : Name)
     (origAddr : Address) (origMeta : Ixon.ConstantMeta)
     : Except CompileError CompileEnv := do
-  if let some metaAddr := constMetaSelfName? origMeta then
-    if metaAddr != name.getHash then
-      throw (.invalidMutualBlock s!"promote_aux: name mismatch for \
-'{name.pretty}' — compile_name address is {name.getHash} but meta name \
-address is {metaAddr}")
-  let mut cenv := cenv
-  if let some auxAddr := cenv.auxNameToAddr.get? name then
-    if let some existing := cenv.nameToAddr.get? name then
-      if existing != auxAddr then throw (nameClaimConflict name existing auxAddr)
-    cenv := { cenv with nameToAddr := cenv.nameToAddr.insert name auxAddr }
-  if let some named := cenv.nameToNamed.get? name then
-    let named' := { named with original := some (origAddr, origMeta) }
-    cenv := { cenv with nameToNamed := cenv.nameToNamed.insert name named' }
-  pure cenv
+  checkPromoteAux cenv name origMeta
+  pure (promoteAuxWrites cenv name origAddr origMeta)
 
-/-- Stage the entire original-form promotion in pure state: each member's
-    original `(addr, meta)` (or the lone constant's), then the ephemeral
-    compile's blobs, name components and hints (Rust `store_string`,
-    `compile_name` and `def_hints` are unconditional; only constant and
-    `Named` stores are aux-gated). Its blobs must agree with the published
-    ones (`checkBlobContent`). On error the caller keeps none of these
-    writes, then withdraws the failed block's earlier auxiliary bindings.
-    Both driver paths use this same operation. -/
-def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
-    (result : BlockResult) (cache : BlockState) : Except CompileError DriverAcc := do
-  checkBlobContent acc.cenv cache
-  let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-    if result.projections.isEmpty then
-      #[(lo, result.blockAddr, result.blockMeta)]
-    else
-      result.projections.map fun (name, proj, constMeta) =>
-        (name, Address.admissionHash (Ixon.ser proj), constMeta)
+/-- The original-form promotion's members: each member's original
+    `(addr, meta)`, or the lone constant's. -/
+def originalPromotions (lo : Name) (result : BlockResult) :
+    Array (Name × Address × Ixon.ConstantMeta) :=
+  if result.projections.isEmpty then
+    #[(lo, result.blockAddr, result.blockMeta)]
+  else
+    result.projections.map fun (name, proj, constMeta) =>
+      (name, Address.admissionHash (Ixon.ser proj), constMeta)
+
+/-- The checks of the original-form promotion, read-only: its blobs agree
+    with the published ones (`checkBlobContent`), then each member's
+    `promoteAuxDriver` checks in member order. A member's write changes only
+    its own `nameToAddr` entry, to its aux address, so checking every member
+    against the state before the writes finds the same first error as
+    checking each after the writes of the members before it. -/
+def checkOriginalPromotion (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : Except CompileError Unit := do
+  checkBlobContent cenv cache
+  for (name, _, origMeta) in originalPromotions lo result do
+    checkPromoteAux cenv name origMeta
+
+/-- The writes of the original-form promotion, after its checks: each
+    member's `promoteAuxDriver` writes, then the ephemeral compile's blobs,
+    name components and hints (Rust `store_string`, `compile_name` and
+    `def_hints` are unconditional; only constant and `Named` stores are
+    aux-gated). -/
+def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : DriverAcc := Id.run do
   let mut acc := acc
-  for (name, origAddr, origMeta) in promotions do
-    let cenv ← promoteAuxDriver acc.cenv name origAddr origMeta
-    acc := { acc with cenv }
+  for (name, origAddr, origMeta) in originalPromotions lo result do
+    acc := { acc with cenv := promoteAuxWrites acc.cenv name origAddr origMeta }
   return { acc with
     cenv := { acc.cenv with
       blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs }
     blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+
+/-- The entire original-form promotion in pure state (`checkOriginalPromotion`,
+    then `promoteOriginalWrites`). On error the caller keeps none of these
+    writes, then withdraws the failed block's earlier auxiliary bindings. -/
+def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
+    (result : BlockResult) (cache : BlockState) : Except CompileError DriverAcc := do
+  checkOriginalPromotion acc.cenv lo result cache
+  pure (promoteOriginalWrites acc lo result cache)
 
 /-- Finish a source block's promotion atomically: the original-form
     promotion (`promoteOriginalBlock`), then the remaining claims
@@ -573,19 +621,30 @@ def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
     original metadata is discarded, even for members outside the scheduled
     block that the original-form compile visited, and the block is withdrawn
     (`failAuxPromotion`). Returns the members newly registered and whether
-    the block failed. -/
+    the block failed.
+
+    Every check reads the live state before anything is written, in the
+    order of the steps: the original-form promotion's, the remaining
+    claims' (which the original-form writes cannot change: they set a
+    member's `nameToAddr` to its aux claim), then the members' recorded
+    failures (which neither step writes). The writes then consume the
+    driver state uniquely; a withdrawal that kept the state alive across
+    the writes would copy every table they insert into, for every block. -/
 def finishAuxPromotion (acc : DriverAcc) (lo : Name) (all : Set Name)
     (original : Option (BlockResult × BlockState)) : DriverAcc × Array Name × Bool := Id.run do
-  let mut staged := acc
   if let some (result, cache) := original then
-    match promoteOriginalBlock staged lo result cache with
-    | .error e => return (failAuxPromotion acc all (toString e), #[], true)
-    | .ok next => staged := next
-  let (next, names) := promoteRemaining staged all
+    if let .error e := checkOriginalPromotion acc.cenv lo result cache then
+      return (failAuxPromotion acc all (toString e), #[], true)
+  if let some msg := remainingClaimConflict? acc.cenv all then
+    return (failAuxPromotion acc all msg, #[], true)
   for name in all.toArray.qsort aliasPrecedes do
-    if let some msg := next.cenv.ungrounded.get? name then
+    if let some msg := acc.cenv.ungrounded.get? name then
       return (failAuxPromotion acc all msg, #[], true)
-  return (next, names, false)
+  let acc := match original with
+    | some (result, cache) => promoteOriginalWrites acc lo result cache
+    | none => acc
+  let (acc, names) := promoteRemainingWrites acc all
+  return (acc, names, false)
 
 /-- The one readiness rule of both drivers: a source name (a member of a
     condensation block, `sourceOwned`) is ready only when its own block has
