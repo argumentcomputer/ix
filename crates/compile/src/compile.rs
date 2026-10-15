@@ -4000,6 +4000,14 @@ fn mut_const_kind(c: &MutConst) -> u8 {
 /// Compare two mutual constants with caching. Dispatches to the appropriate
 /// type-specific comparator (defn, indc, recr). Different-kind constants
 /// are ordered by kind tag.
+///
+/// The result is in the orientation of the call (`x` against `y`). The
+/// cache is keyed by the name pair in name order and stores the ordering in
+/// that key's orientation, as `compare_ctor` does, so a hit for the swapped
+/// pair is read back reversed. (Before, a fresh comparison with
+/// `x.name() > y.name()` was returned reversed and stored unreversed; the
+/// sorter only reached that case through `eq_const`, which reads equality
+/// alone, so no class or order depended on it.)
 pub fn compare_const(
   x: &MutConst,
   y: &MutConst,
@@ -4012,8 +4020,8 @@ pub fn compare_const(
   } else {
     ((y.name(), x.name()), true)
   };
-  if let Some(so) = cache.cmps.get(&key) {
-    return Ok(if reversed { so.reverse() } else { *so });
+  if let Some(stored) = cache.cmps.get(&key) {
+    return Ok(if reversed { stored.reverse() } else { *stored });
   }
   let so: SOrd = match (x, y) {
     (MutConst::Defn(x), MutConst::Defn(y)) => compare_defn(x, y, mut_ctx, stt)?,
@@ -4024,9 +4032,10 @@ pub fn compare_const(
     _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
   };
   if so.strong {
-    cache.cmps.insert(key, so.ordering);
+    let stored = if reversed { so.ordering.reverse() } else { so.ordering };
+    cache.cmps.insert(key, stored);
   }
-  Ok(if reversed { so.ordering.reverse() } else { so.ordering })
+  Ok(so.ordering)
 }
 
 /// Check if two mutual constants are structurally equal.
@@ -5310,6 +5319,9 @@ pub use env::{
 
 #[cfg(test)]
 mod c6_flags_tests;
+
+#[cfg(test)]
+mod compare_const_tests;
 
 #[cfg(test)]
 mod tests {
