@@ -48,6 +48,7 @@ import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
 import Tests.Ix.AuxGen.FlatBlockSource
+import Tests.Ix.AuxGen.FlatBlockInitStd
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -312,6 +313,8 @@ def primaryRunners : List (String × IO UInt32) := [
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aggregate-proof", Tests.Aggr.proofRoundTrip),
+  -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
+  ("auxgen-flat-initstd", Tests.Ix.AuxGen.FlatBlockInitStd.run),
   ("kernel-dependencies", do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
