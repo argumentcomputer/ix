@@ -2,21 +2,24 @@
   Ix.Compile.Canon: Pass 1 of the Lean compiler (canonical form of inductive
   blocks and definition cliques) as total pure functions.
 
-  The compiler calls only `Graph` so far: `Ix.CondenseM.run` (the split of
-  the whole reference graph) is `condensation`. The rest restates the
-  compiler's Step 1 as total functions:
-  * `sortClasses` (`Classes.lean`) with the comparator of `Order.lean`: the
-    classes and canonical order of a block (the compiler's
-    `Ix.CompileM.sortConsts`);
-  * `structuralAuxClasses` and `computePerm` (`Nested.lean`): the order of a
-    block's nested auxiliaries and the permutation of Lean's source
-    positions (`Ix.AuxGen.sortAuxByPartitionRefinement`, `computeAuxPerm`),
-    on `Ix.AuxGen.ExpandedBlock.toCanon`.
+  The compiler's Step 1 uses this package through thin adapters that only
+  convert data:
+  * `Ix.CondenseM.run` (the split of the whole reference graph) is
+    `condensation`, presented in the compiler's traversal order so that
+    block representatives and map iteration orders are kept;
+  * `Ix.CompileM.sortConsts` (classes and canonical order of every block,
+    primary and auxiliary) is `sortClasses Rules.compiler`, with external
+    addresses from `Ix.CompileM.constAddrLookup`;
+  * `Ix.AuxGen.sortAuxByPartitionRefinement` takes its order from
+    `structuralAuxClasses` and `Ix.AuxGen.computeAuxPerm` is `computePerm`,
+    both on `Ix.AuxGen.ExpandedBlock.toCanon`.
+  The compiler's nested expansion (`expandNestedBlock`, locally nameless)
+  and the evaporation probe (`positionClaimedBySpecScc`) are still its own.
 
-  `Rules.compiler` is the compiler's rules with the two port fixes
-  (`Order.lean`), which change no class and no order on Lean input;
-  `Rules.today` leaves them off. `Rules.phaseA` computes the Phase A
-  canonical form. `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the
+  `Rules.compiler` is the compiler's former rules with the two port fixes
+  (`Order.lean`), which change no class and no order on Lean input.
+  `Rules.phaseA` computes the Phase A canonical form; the compiler does not
+  run it yet. `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the
   compiler's path against these functions on the fixtures;
   `Tests/Ix/Compile/CanonClique.lean` (`canon-clique`) the clique order.
 

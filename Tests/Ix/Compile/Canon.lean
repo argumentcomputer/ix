@@ -7,7 +7,10 @@
   The compiler side is `Ix.CondenseM.run`, `Ix.CompileM.sortConsts` and
   `Ix.AuxGen.expandNestedBlock` → `sortAuxByPartitionRefinement` →
   `computeAuxPerm`, called in a `CompileEnv` seeded with the Rust compile of
-  the same closure (the `aux-gen-diff` harness's setup). Checked:
+  the same closure (the `aux-gen-diff` harness's setup). The compiler's
+  sorts and permutation are Pass 1's under `Rules.compiler`, so checks 2
+  and 3 check the adapters (`constAddrLookup`, `ExpandedBlock.toCanon`) and
+  that `Rules.compiler` sorts as `Rules.today`. Checked:
 
   1. the condensation (`Ix.CondenseM.run` over the closure's reference
      graph) has the components of Rust's condensation and of `sccsOf`, as

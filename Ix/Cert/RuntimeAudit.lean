@@ -21,7 +21,10 @@ as proved `csimp` replacements (`collectExprTables_eq_worklist`,
 `preseedExprTables_eq_worklist`) since they left the list. AuxGen's
 `batchAbstract` (through `batchAbstractWith`), `inferImplicit`, `instantiate1At`,
 `substLevelInExpr` and `substLevelParam` left it when they became structurally
-recursive definitions.
+recursive definitions. `hasOutOfSccConst` left it when the auxiliary
+permutation became Pass 1's total `Ix.Compile.Canon.computePerm`; the class
+refinement (`Ix.Compile.Canon.sortClasses`) that replaced the compiler's
+comparators adds nothing to it.
 
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
@@ -50,7 +53,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.hasDeeperStr,
  Ix.AuxGen.hasIndOcc,
  Ix.AuxGen.hasLooseBVarInExplicitDomain,
- Ix.AuxGen.hasOutOfSccConst,
  Ix.AuxGen.instantiateRevAt,
  Ix.AuxGen.isAlreadyNormalizedCheap,
  Ix.AuxGen.isNeverZero,
