@@ -110,16 +110,43 @@ private def constantValTy : Lean.Expr := mkConst ``Ix.Kernel.ConstantVal
 name). -/
 private def qRole (r : Ix.Kernel.Role) : Lean.Expr := mkConst (reprStr r).toName
 
-/-- A key: a role's Lean name as its `roleKey`, any other name structurally. -/
-private def qName (n : Ix.Kernel.Key) : Lean.Expr :=
-  match Ix.Kernel.Role.ofLeanName? n with
-  | some r => mkApp (mkConst ``Ix.Kernel.roleKey) (qRole r)
-  | none => go n
-where
-  go : Ix.Kernel.Name → Lean.Expr
-    | .anonymous => mkConst ``Ix.Kernel.Name.anonymous
-    | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (go p) (mkStrLit s)
-    | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (go p) (mkRawNatLit i)
+/-- A derived shape, constructor by constructor. -/
+private def qDerived : Ix.Kernel.Derived → Lean.Expr
+  | .model => mkConst ``Ix.Kernel.Derived.model
+  | .impl => mkConst ``Ix.Kernel.Derived.impl
+  | .tag => mkConst ``Ix.Kernel.Derived.tag
+  | .auxFamily => mkConst ``Ix.Kernel.Derived.auxFamily
+  | .member k => mkApp (mkConst ``Ix.Kernel.Derived.member) (mkRawNatLit k)
+  | .ctor j => mkApp (mkConst ``Ix.Kernel.Derived.ctor) (mkRawNatLit j)
+  | .recursor => mkConst ``Ix.Kernel.Derived.recursor
+  | .iota j => mkApp (mkConst ``Ix.Kernel.Derived.iota) (mkRawNatLit j)
+  | .eta => mkConst ``Ix.Kernel.Derived.eta
+  | .unitlike => mkConst ``Ix.Kernel.Derived.unitlike
+  | .projModel i => mkApp (mkConst ``Ix.Kernel.Derived.projModel) (mkRawNatLit i)
+  | .projIota => mkConst ``Ix.Kernel.Derived.projIota
+  | .projFn i => mkApp (mkConst ``Ix.Kernel.Derived.projFn) (mkRawNatLit i)
+  | .projTable => mkConst ``Ix.Kernel.Derived.projTable
+  | .pack j => mkApp (mkConst ``Ix.Kernel.Derived.pack) (mkRawNatLit j)
+  | .unpack j => mkApp (mkConst ``Ix.Kernel.Derived.unpack) (mkRawNatLit j)
+  | .unpackPack j => mkApp (mkConst ``Ix.Kernel.Derived.unpackPack) (mkRawNatLit j)
+  | .packUnpack j => mkApp (mkConst ``Ix.Kernel.Derived.packUnpack) (mkRawNatLit j)
+  | .congrPack j => mkApp (mkConst ``Ix.Kernel.Derived.congrPack) (mkRawNatLit j)
+  | .unpackAll => mkConst ``Ix.Kernel.Derived.unpackAll
+  | .packUnpackAll => mkConst ``Ix.Kernel.Derived.packUnpackAll
+  | .implRec => mkConst ``Ix.Kernel.Derived.implRec
+
+/-- A name, constructor by constructor. -/
+private def qName : Ix.Kernel.Name → Lean.Expr
+  | .anonymous => mkConst ``Ix.Kernel.Name.anonymous
+  | .str p s => mkApp2 (mkConst ``Ix.Kernel.Name.str) (qName p) (mkStrLit s)
+  | .num p i => mkApp2 (mkConst ``Ix.Kernel.Name.num) (qName p) (mkRawNatLit i)
+
+/-- A key: a role key as `roleKey`, a derived key as `auxKey`, an input key
+by its name. -/
+private def qKey : Ix.Kernel.Key → Lean.Expr
+  | .id n => mkApp (mkConst ``Ix.Kernel.Key.id) (qName n)
+  | .role r => mkApp (mkConst ``Ix.Kernel.roleKey) (qRole r)
+  | .aux k d => mkApp2 (mkConst ``Ix.Kernel.auxKey) (qKey k) (qDerived d)
 
 private def qLevelParams (ps : List Ix.Kernel.LevelParam) : Lean.Expr :=
   qList levelParamTy (ps.map mkRawNatLit)
@@ -175,7 +202,7 @@ private def qExpr : Ix.Kernel.Expr → Lean.Expr
   | .bvar i => mkApp (mkConst ``Ix.Kernel.Expr.bvar) (mkRawNatLit i)
   | .fvar i ty => mkApp2 (mkConst ``Ix.Kernel.Expr.fvar) (mkRawNatLit i) (qExpr ty)
   | .sort u => mkApp (mkConst ``Ix.Kernel.Expr.sort) (qLevel u)
-  | .const n us => mkApp2 (mkConst ``Ix.Kernel.Expr.const) (qName n) (qLevels us)
+  | .const n us => mkApp2 (mkConst ``Ix.Kernel.Expr.const) (qKey n) (qLevels us)
   | .app f a => mkApp2 (mkConst ``Ix.Kernel.Expr.app) (qExpr f) (qExpr a)
   | .lam ty b m =>
     mkApp3 (mkConst ``Ix.Kernel.Expr.lam) (qExpr ty) (qExpr b) (qBinderMeta m)
@@ -185,10 +212,10 @@ private def qExpr : Ix.Kernel.Expr → Lean.Expr
     mkApp3 (mkConst ``Ix.Kernel.Expr.letE) (qExpr ty) (qExpr v) (qExpr b)
   | .lit l => mkApp (mkConst ``Ix.Kernel.Expr.lit) (qLiteral l)
   | .proj s i e =>
-    mkApp3 (mkConst ``Ix.Kernel.Expr.proj) (qName s) (mkRawNatLit i) (qExpr e)
+    mkApp3 (mkConst ``Ix.Kernel.Expr.proj) (qKey s) (mkRawNatLit i) (qExpr e)
 
 private def qConstantVal (cv : Ix.Kernel.ConstantVal) : Lean.Expr :=
-  mkApp3 (mkConst ``Ix.Kernel.ConstantVal.mk) (qName cv.name)
+  mkApp3 (mkConst ``Ix.Kernel.ConstantVal.mk) (qKey cv.name)
     (qLevelParams cv.levelParams) (qExpr cv.type)
 
 private def qRecRuleFire : Ix.Kernel.RecRuleFire → Lean.Expr
@@ -200,12 +227,12 @@ private def qRecRuleFire : Ix.Kernel.RecRuleFire → Lean.Expr
 
 private def qRecRule (r : Ix.Kernel.RecRule) : Lean.Expr :=
   mkAppN (mkConst ``Ix.Kernel.RecRule.mk)
-    #[qName r.ctor, mkRawNatLit r.nfields, mkRawNatLit r.ctorParams,
+    #[qKey r.ctor, mkRawNatLit r.nfields, mkRawNatLit r.ctorParams,
       qRecRuleFire r.fire, qExpr r.rhs, qBool r.k, qBool r.eta,
       qBool r.paramsBlind]
 
 private def qOptionKey : Option Ix.Kernel.Key → Lean.Expr
-  | some k => mkApp2 (mkConst ``Option.some [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key) (qName k)
+  | some k => mkApp2 (mkConst ``Option.some [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key) (qKey k)
   | none => mkApp (mkConst ``Option.none [Lean.Level.zero]) (mkConst ``Ix.Kernel.Key)
 
 private def qIndCaps (c : Ix.Kernel.IndCaps) : Lean.Expr :=

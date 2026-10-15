@@ -17,7 +17,7 @@ boundary:
 
 * `Ix.Kernel.Reader` (`IxC/Kernel/Ixon/Reader.lean`, with
   `ReaderSpec`): the Ixon reader from decoded records to
-  `Array Ix.Kernel.Declaration`, its address-to-name encoding (`keyName`,
+  `Array Ix.Kernel.Declaration`, its address-to-key encoding (`keyName`,
   injective) and its record-by-record specification;
 * `IxC/Kernel/Ixon/RoleTable.lean`: the role table, its binding-section
   format and canonical decoder (`RoleTable.ofBytes_eq_some_iff`) and its

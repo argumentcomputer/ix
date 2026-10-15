@@ -1,7 +1,12 @@
 module
 
 public import IxC.Kernel.Name
-import Std.Data.String.ToNat
+/- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
+is that it is *definitionally* `k ()`, which is what `Key.beqPtr_eq`
+proves. `import all` makes that body visible **in this module only**, as in
+`IxC/Kernel/Name.lean`; the executed `Key.beq` stays the plain
+`decide (· = ·)` that the kernel can still reduce. -/
+import all Init.Util
 
 @[expose] public section
 
@@ -11,35 +16,40 @@ import Std.Data.String.ToNat
 What the checker knows a constant by, and the two vocabularies in which it
 names constants itself:
 
-* `Key`, the identity of a constant: Lean's own name in Source mode, the
-  reader's `ix.<hex>` encoding of a record address in Ixon mode;
+* `Key`, the identity of a constant: an input constant's identifier
+  (`Key.id`: Lean's own name in Source mode, the reader's `ix.<hex>`
+  encoding of a record address in Ixon mode), a constant bound to a role
+  (`Key.role`), or a constant the checker or the front ends' shared back half
+  generates from another key (`Key.aux`);
 * `Role`, the closed set of constants the checker names (the basis blocks,
   the standard and trust axioms, the literal support, the certified `Nat`
-  operations), each at `roleKey r`;
-* `Derived`, the shapes of the constants the checker and the front ends'
-  shared back half generate from another key `k`, each at `auxKey k d`.
+  operations), each at `roleKey r = .role r`;
+* `Derived`, the shapes of the generated constants, each at
+  `auxKey k d = .aux k d`.
 
-`roleKey r` is `r`'s Lean name and `auxKey k d` is the spelling the
-generated constant has always had, so keys, generated declarations and
-verdicts are Lean's. Every fabrication of a role or derived key goes through
-these two functions, and every inspection of a derived shape
-(`Key.isModelSuffix`, `Key.isProjFnShape`, `Key.isProjIota`,
-`Key.isRecSpelling`) is a view of `auxKey`'s spelling.
+Every fabrication of a role or derived key goes through `roleKey` and
+`auxKey`, and every inspection of a derived shape (`Key.isModelSuffix`,
+`Key.isProjFnShape`, `Key.isProjIota`) is a test of `Key.aux`'s shape. An
+input is always `.id` or `.role`, never `.aux`: the front ends make no
+derived keys, so no input name can collide with, or be refused for, a
+generated shape.
 
-Proofs reason about keys through the lemmas here, not through `Name`'s
-structure: `auxKey` is injective in its base (`auxKey_inj`) and, at one
-derived shape, in its base and index together (`auxKey_inj₂`); two shapes at
-one base differ (`auxKey_derived_eq`, with the one exception that the
-modeller's `.implRec` and `.recursor` are both spelled `rec`); a derived key
-differs from its base (`auxKey_ne_self`) and from every role key except a
-recursor's (`auxKey_ne_roleKey`); `roleKey` is injective (`roleKey_inj`), so a
+Proofs reason about keys through the lemmas here, which are constructor
+injectivity and disjointness: `auxKey` is injective in its base and shape
+together (`auxKey_inj₂`); a derived key differs from its base
+(`auxKey_ne_self`), from every role key (`auxKey_ne_roleKey`) and from every
+input key (`auxKey_ne_id`); `roleKey` is injective (`roleKey_inj`), so a
 `decide` between role keys is a `decide` between roles.
+
+**Rendering.** `Key.toName` spells a key as the name it had while keys were
+names: `.id n` is `n`, `.role r` is `r.leanName`, and `.aux k d` is `k`'s
+spelling with `d`'s suffix (`Derived.spell`). `ToString` and `Repr` print that
+name, so messages and rows read as before. The checker never reads a key's
+spelling; the front ends read it for their name maps and, until recursors
+have keys of their own (SP3 D8), for the reader's recursor keys.
 -/
 
 namespace Ix.Kernel
-
-/-- What identifies a constant. -/
-abbrev Key := Name
 
 /-! ## Roles -/
 
@@ -71,7 +81,8 @@ namespace Role
 /-- A two-component Lean name. -/
 @[inline] def subName (a b : String) : Name := .str (.str .anonymous a) b
 
-/-- The Lean name of a role's constant. -/
+/-- The Lean name of a role's constant: Source mode's fixed binding, and the
+role key's rendering. -/
 @[inline] def leanName : Role → Name
   | .nat => topName "Nat"
   | .natZero => subName "Nat" "zero"
@@ -166,19 +177,6 @@ theorem leanName_inj {r s : Role} : r.leanName = s.leanName ↔ r = s := by
     exact (Option.some.inj h').symm
   · intro h; rw [h]
 
-/-- The last components of the roles' Lean names. -/
-def lastNames : List String :=
-  ["Nat", "zero", "succ", "rec", "Bool", "false", "true", "Eq", "refl", "PUnit", "unit",
-   "Empty", "False", "True", "intro", "And", "Iff", "Nonempty", "List", "nil", "cons",
-   "Quot", "mk", "lift", "ind", "sound", "String", "ofList", "Char", "ofNat",
-   "pred", "add", "sub", "mul", "pow", "beq", "ble", "div", "mod", "gcd", "land", "lor",
-   "xor", "shiftLeft", "shiftRight", "propext", "choice", "sorryAx", "trustCompiler",
-   "reduceBool", "reduceNat", "ofReduceBool", "ofReduceNat"]
-
-/-- Every role's Lean name is a string component under a prefix. -/
-theorem leanName_str (r : Role) : ∃ p s, r.leanName = .str p s ∧ s ∈ lastNames := by
-  cases r <;> exact ⟨_, _, rfl, by decide⟩
-
 /-- **The recursor of a basis inductive role**: the role of `T.rec` for the
 inductive `T`, for the roles whose recursor is itself a role. -/
 def recOf : Role → Option Role
@@ -204,16 +202,7 @@ theorem recOf_eq_some {r r' : Role} :
 
 end Role
 
-/-- **The key of a role's constant.** -/
-@[inline] def roleKey (r : Role) : Key := r.leanName
-
-/-- Role keys are distinct exactly when their roles are. -/
-@[simp] theorem roleKey_inj {r s : Role} : roleKey r = roleKey s ↔ r = s := Role.leanName_inj
-
-theorem roleKey_ne {r s : Role} (h : r ≠ s) : roleKey r ≠ roleKey s :=
-  fun e => h (roleKey_inj.mp e)
-
-/-! ## Derived keys -/
+/-! ## Derived shapes -/
 
 /-- **The shapes of generated constants.** At a base key `k`:
 * `model`: the model companion of a block member, constructor or recursor;
@@ -244,73 +233,141 @@ inductive Derived where
 /-- `s` followed by the decimal digits of `j`. -/
 def indexedStr (s : String) (j : Nat) : String := s ++ toString j
 
+/-- **The spelling of shape `d` at a base spelled `n`**: the name the
+generated constant had while keys were names. Display only (`Key.toName`). -/
+def Derived.spell (n : Name) : Derived → Name
+  | .model => n.str "_model"
+  | .impl => n.str "_impl"
+  | .tag => n.str "tag"
+  | .auxFamily => n.str "aux"
+  | .member i => n.num i
+  | .ctor j => n.str (indexedStr "ctor_" j)
+  | .recursor => n.str "rec"
+  | .iota j => n.str (indexedStr "iota_" j)
+  | .eta => n.str "eta"
+  | .unitlike => n.str "unitlike"
+  | .projModel i => n.str (indexedStr "proj_" i)
+  | .projIota => n.str "iota"
+  | .projFn i => (n.str "proj").num i
+  | .projTable => (n.str "projTable").num 0
+  | .pack j => n.str (indexedStr "pack_" j)
+  | .unpack j => n.str (indexedStr "unpack_" j)
+  | .unpackPack j => n.str (indexedStr "unpackPack_" j)
+  | .packUnpack j => n.str (indexedStr "packUnpack_" j)
+  | .congrPack j => n.str (indexedStr "congrPack_" j)
+  | .unpackAll => n.str "unpack"
+  | .packUnpackAll => n.str "packUnpack"
+  | .implRec => n.str "rec"
+
+/-! ## Keys -/
+
+/-- **What identifies a constant.**
+* `id n`: an input constant, by its identifier;
+* `role r`: the constant bound to role `r` (the front ends rename a bound
+  constant to its role);
+* `aux k d`: the constant of shape `d` that the checker or the front ends'
+  shared back half generates from `k`. No input is ever `aux`.
+
+The hash is cached, as `Name`'s is: an input key hashes as its name, a role
+key and a derived key mix their role's or shape's hash. -/
+inductive Key where
+  | id (n : Name)
+  | role (r : Role)
+  | aux (base : Key) (d : Derived)
+with
+  /-- The cached hash of a key. -/
+  @[computed_field] hashData : Key → UInt64
+    | .id n => n.hashData
+    | .role r => mixHash 1741 (hash r)
+    | .aux k d => mixHash k.hashData (hash d)
+deriving DecidableEq, Inhabited
+
+/-- Hashing a key is an `O(1)` field read. -/
+instance : Hashable Key := ⟨Key.hashData⟩
+
+/-- Key equality in `Name`'s shape: **pointer**, then the **cached hash**,
+then the structural comparison. The implementation of `Key.beq`;
+`Key.beqPtr_eq` proves both guards redundant. -/
+@[inline] def Key.beqPtr (a b : Key) : Bool :=
+  withPtrEq a b (fun _ => a.hashData == b.hashData && decide (a = b))
+    (fun h => by subst h; simp)
+
+/-- Both guards are redundant: `withPtrEq a b k h` is *defined* as `k ()`,
+and `hashData` is a function of the value. -/
+theorem Key.beqPtr_eq (a b : Key) : Key.beqPtr a b = decide (a = b) := by
+  show (a.hashData == b.hashData && decide (a = b)) = decide (a = b)
+  by_cases h : a = b
+  · subst h; simp
+  · simp [h]
+
+/-- The executed key equality: definitionally `decide (a = b)`, so the
+kernel, `by decide` and `#guard` see structural equality, with `beqPtr`
+substituted by the compiler on the `@[csimp]` equation below (as
+`Name.beq_eq_beqPtr`). -/
+def Key.beq (a b : Key) : Bool := decide (a = b)
+
+/-- The `Key` twin of `Name.beq_eq_beqPtr`: `@[csimp]`, not
+`@[implemented_by]`, on a kernel-checked equality. -/
+@[csimp] theorem Key.beq_eq_beqPtr : @Key.beq = @Key.beqPtr := by
+  funext a b; exact (Key.beqPtr_eq a b).symm
+
+instance : BEq Key := ⟨Key.beq⟩
+
+/-- `Key.beq` is lawful: it *is* `decide (· = ·)`. -/
+instance : LawfulBEq Key where
+  eq_of_beq h := of_decide_eq_true h
+  rfl := by simp [BEq.beq, Key.beq]
+
+/-! ## Rendering -/
+
+/-- **A key's spelling**: the name it had while keys were names. `.id n` is
+`n`, `.role r` is `r.leanName`, `.aux k d` is `k`'s spelling with `d`'s
+suffix. For messages, rows and the front ends' name maps only. -/
+def Key.toName : Key → Name
+  | .id n => n
+  | .role r => r.leanName
+  | .aux k d => d.spell k.toName
+
+instance : ToString Key := ⟨fun k => k.toName.toString⟩
+
+/-- A key prints as its spelling's `Repr`, as it did while keys were names. -/
+instance : Repr Key := ⟨fun k prec => reprPrec k.toName prec⟩
+
+/-! ## Source mode's naming -/
+
+/-- The roles by their Lean names. -/
+def Role.byLeanName : Std.HashMap Name Role :=
+  all.foldl (fun m r => m.insert r.leanName r) {}
+
+/-- **The key of the constant Lean names `n`**, under Source mode's fixed
+binding: the role whose Lean name `n` is, otherwise the input key `n`. For
+the front ends and their tests; the checker never reads a key's name. -/
+def Key.ofName (n : Name) : Key :=
+  match Role.byLeanName[n]? with
+  | some r => .role r
+  | none => .id n
+
+/-! ## Role and derived keys -/
+
+/-- **The key of a role's constant.** -/
+@[inline] def roleKey (r : Role) : Key := .role r
+
 /-- **The key of a generated constant**: shape `d` at base `k`. -/
-@[inline] def auxKey (k : Key) : Derived → Key
-  | .model => k.str "_model"
-  | .impl => k.str "_impl"
-  | .tag => k.str "tag"
-  | .auxFamily => k.str "aux"
-  | .member i => k.num i
-  | .ctor j => k.str (indexedStr "ctor_" j)
-  | .recursor => k.str "rec"
-  | .iota j => k.str (indexedStr "iota_" j)
-  | .eta => k.str "eta"
-  | .unitlike => k.str "unitlike"
-  | .projModel i => k.str (indexedStr "proj_" i)
-  | .projIota => k.str "iota"
-  | .projFn i => (k.str "proj").num i
-  | .projTable => (k.str "projTable").num 0
-  | .pack j => k.str (indexedStr "pack_" j)
-  | .unpack j => k.str (indexedStr "unpack_" j)
-  | .unpackPack j => k.str (indexedStr "unpackPack_" j)
-  | .packUnpack j => k.str (indexedStr "packUnpack_" j)
-  | .congrPack j => k.str (indexedStr "congrPack_" j)
-  | .unpackAll => k.str "unpack"
-  | .packUnpackAll => k.str "packUnpack"
-  | .implRec => k.str "rec"
+@[inline] def auxKey (k : Key) (d : Derived) : Key := .aux k d
 
-/-! ### Spelling facts (private: proofs elsewhere use the lemmas below) -/
+/-- Role keys are distinct exactly when their roles are. -/
+@[simp] theorem roleKey_inj {r s : Role} : roleKey r = roleKey s ↔ r = s := by
+  simp [roleKey]
 
-private theorem indexedStr_inj {s : String} {i j : Nat} :
-    indexedStr s i = indexedStr s j ↔ i = j := by
-  unfold indexedStr
-  rw [String.append_right_inj]
-  exact Nat.repr_inj
+theorem roleKey_ne {r s : Role} (h : r ≠ s) : roleKey r ≠ roleKey s :=
+  fun e => h (roleKey_inj.mp e)
 
-private theorem lit_ne_indexedStr {a p : String} {i : Nat}
-    (h : p.toList.isPrefixOf a.toList = false) : a ≠ indexedStr p i := by
-  intro e
-  have : p.toList.isPrefixOf a.toList = true := by
-    rw [List.isPrefixOf_iff_prefix, e, indexedStr, String.toList_append]
-    exact List.prefix_append _ _
-  simp_all
-
-private theorem indexedStr_ne {p q : String} {i j : Nat}
-    (h : p.toList.isPrefixOf q.toList = false ∧ q.toList.isPrefixOf p.toList = false) :
-    indexedStr p i ≠ indexedStr q j := by
-  intro e
-  have e' := congrArg String.toList e
-  simp only [indexedStr, String.toList_append] at e'
-  rcases List.prefix_or_prefix_of_prefix (List.prefix_append p.toList (toString i).toList)
-    (e' ▸ List.prefix_append q.toList (toString j).toList) with hp | hp
-  · have : p.toList.isPrefixOf q.toList = true := List.isPrefixOf_iff_prefix.mpr hp
-    simp_all
-  · have : q.toList.isPrefixOf p.toList = true := List.isPrefixOf_iff_prefix.mpr hp
-    simp_all
-
-private theorem str_ne_self (n : Name) (s : String) : n.str s ≠ n := by
-  intro h; have := congrArg sizeOf h; simp at this; omega
-
-private theorem lastNames_ne_indexedStr {p s : String} {j : Nat} (hs : s ∈ Role.lastNames)
-    (hp : Role.lastNames.all (fun a => !p.toList.isPrefixOf a.toList) = true) :
-    s ≠ indexedStr p j :=
-  lit_ne_indexedStr (by have := List.all_eq_true.mp hp s hs; simpa using this)
-
-/-! ### The lemmas -/
+/-- A role key is not an input key. -/
+@[simp] theorem roleKey_ne_id (r : Role) (n : Name) : roleKey r ≠ .id n := nofun
 
 /-- A derived key is larger than its base. -/
 theorem sizeOf_lt_auxKey (k : Key) (d : Derived) : sizeOf k < sizeOf (auxKey k d) := by
-  cases d <;> simp [auxKey] <;> omega
+  simp [auxKey]; omega
 
 /-- A derived key is not its base. -/
 theorem auxKey_ne_self (k : Key) (d : Derived) : auxKey k d ≠ k := fun h =>
@@ -323,49 +380,22 @@ theorem auxKey_auxKey_ne_self (k : Key) (d d' : Derived) : auxKey (auxKey k d) d
 
 /-- **`auxKey` is injective in its base.** -/
 @[simp] theorem auxKey_inj {k k' : Key} {d : Derived} : auxKey k d = auxKey k' d ↔ k = k' := by
-  constructor
-  · intro h; cases d <;> simp_all [auxKey]
-  · rintro rfl; rfl
+  simp [auxKey]
 
-/-- **At one derived shape, `auxKey` is injective in its base and its index
-together.** -/
-theorem auxKey_inj₂ {k k' : Key} {d d' : Derived} (hd : d.ctorIdx = d'.ctorIdx)
-    (h : auxKey k d = auxKey k' d') : k = k' ∧ d = d' := by
-  cases d <;> cases d' <;> first
-    | exact absurd hd (by simp only [Derived.ctorIdx]; decide)
-    | simp_all [auxKey, indexedStr_inj]
+/-- **`auxKey` is injective in its base and its shape together.** -/
+theorem auxKey_inj₂ {k k' : Key} {d d' : Derived} (h : auxKey k d = auxKey k' d') :
+    k = k' ∧ d = d' := by
+  simpa [auxKey] using h
 
-/-- **Distinct shapes at one base are distinct keys**, except that the
-nested modeller's `implRec` is spelled as a recursor. -/
-theorem auxKey_derived_eq {k : Key} {d d' : Derived} (h : auxKey k d = auxKey k d') :
-    d = d' ∨ (d = .recursor ∧ d' = .implRec) ∨ (d = .implRec ∧ d' = .recursor) := by
-  cases d <;> cases d' <;>
-    simp only [auxKey, Name.str.injEq, Name.num.injEq, true_and, reduceCtorEq] at h <;>
-    first
-    | exact Or.inl rfl
-    | exact Or.inr (Or.inl ⟨rfl, rfl⟩)
-    | exact Or.inr (Or.inr ⟨rfl, rfl⟩)
-    | exact Or.inl (congrArg _ h)
-    | exact Or.inl (congrArg _ (indexedStr_inj.mp h))
-    | exact absurd h (by decide)
-    | exact absurd h.1 (by decide)
-    | exact absurd h (lit_ne_indexedStr (by decide))
-    | exact absurd h.symm (lit_ne_indexedStr (by decide))
-    | exact absurd h (indexedStr_ne (by decide))
-    | exact absurd h.1 (str_ne_self _ _)
-    | exact absurd h.1.symm (str_ne_self _ _)
+/-- **Distinct shapes at one base are distinct keys.** -/
+theorem auxKey_derived_eq {k : Key} {d d' : Derived} (h : auxKey k d = auxKey k d') : d = d' :=
+  (auxKey_inj₂ h).2
 
-/-- Two different shapes at one base, neither of them the modeller's
-recursors, are different keys. -/
-theorem auxKey_ne_auxKey {k : Key} {d d' : Derived} (hne : d ≠ d')
-    (hr : d ≠ .implRec ∨ d' ≠ .recursor) (hr' : d ≠ .recursor ∨ d' ≠ .implRec) :
-    auxKey k d ≠ auxKey k d' := fun h => by
-  rcases auxKey_derived_eq h with h | ⟨h1, h2⟩ | ⟨h1, h2⟩
-  · exact hne h
-  · exact hr'.elim (· h1) (· h2)
-  · exact hr.elim (· h1) (· h2)
+/-- **Different shapes are different keys**, at any bases. -/
+theorem auxKey_ne_auxKey {k k' : Key} {d d' : Derived} (hne : d ≠ d') :
+    auxKey k d ≠ auxKey k' d' := fun h => hne (auxKey_inj₂ h).2
 
-/-- The shapes whose key ends in a number: a member's constructor, a
+/-- The shapes whose spelling ends in a number: a member's constructor, a
 projection function, a projection table. -/
 def Derived.endsNum : Derived → Bool
   | .member _ | .projFn _ | .projTable => true
@@ -373,76 +403,58 @@ def Derived.endsNum : Derived → Bool
 
 /-- **Shapes of different ends are different keys**, at any bases. -/
 theorem auxKey_ne_of_endsNum {k k' : Key} {d d' : Derived} (h : d.endsNum ≠ d'.endsNum) :
-    auxKey k d ≠ auxKey k' d' := by
-  cases d <;> cases d' <;> first
-    | exact absurd rfl h
-    | (simp only [auxKey]; exact fun e => Name.noConfusion e)
+    auxKey k d ≠ auxKey k' d' :=
+  auxKey_ne_auxKey fun e => h (e ▸ rfl)
 
-/-- **A derived key is not a role key**, except at the recursor spelling,
-which a basis recursor shares with its inductive's `.recursor` shape. -/
-theorem auxKey_ne_roleKey {k : Key} {d : Derived} (r : Role) (hd : d ≠ .recursor)
-    (hd' : d ≠ .implRec) : auxKey k d ≠ roleKey r := by
-  intro h
-  obtain ⟨p, s, hr, hs⟩ := Role.leanName_str r
-  rw [roleKey, hr] at h
-  cases d <;> simp only [auxKey, Name.str.injEq, reduceCtorEq] at h <;>
-    first
-    | exact absurd rfl hd
-    | exact absurd rfl hd'
-    | (obtain ⟨-, rfl⟩ := h; revert hs; decide)
-    | (obtain ⟨-, hx⟩ := h; exact lastNames_ne_indexedStr hs (by decide) hx.symm)
+/-- **A derived key is not a role key.** -/
+@[simp] theorem auxKey_ne_roleKey (k : Key) (d : Derived) (r : Role) : auxKey k d ≠ roleKey r :=
+  nofun
+
+/-- **A derived key is not an input key.** -/
+@[simp] theorem auxKey_ne_id (k : Key) (d : Derived) (n : Name) : auxKey k d ≠ .id n := nofun
 
 /-! ## Views of derived shapes
 
-The inspections of a key's shape, each a test on `auxKey`'s spelling. -/
+The inspections of a key's shape, each a test of `Key.aux`'s constructor. No
+input key (`.id`, `.role`) has a derived shape. -/
 
 namespace Key
 
 /-- Is `k` a model companion, `auxKey _ .model`? -/
 def isModelSuffix : Key → Bool
-  | .str _ "_model" => true
+  | .aux _ .model => true
   | _ => false
 
-/-- Is `k` spelled as an installed projection function `auxKey _ (.projFn i)`
-or a projection table `auxKey _ .projTable` (at any index)?  Both shapes are
-reserved for the checker's own installs. -/
+/-- Is `k` an installed projection function `auxKey _ (.projFn i)` or a
+projection table `auxKey _ .projTable`? Both shapes are reserved for the
+checker's own installs. -/
 def isProjFnShape : Key → Bool
-  | .num (.str _ "proj") _ => true
-  | .num (.str _ "projTable") _ => true
+  | .aux _ (.projFn _) => true
+  | .aux _ .projTable => true
   | _ => false
 
 /-- Is `k` a projection's constructor-reduction theorem, `auxKey _ .projIota`? -/
 def isProjIota : Key → Bool
-  | .str _ "iota" => true
+  | .aux _ .projIota => true
   | _ => false
 
-/-- Is `k` spelled as an input recursor (`T.rec`, the spelling of
-`auxKey _ .recursor`, or `T.rec_j`)? -/
-def isRecSpelling : Key → Bool
-  | .str _ s => s == "rec" || s.startsWith "rec_"
-  | _ => false
+@[simp] theorem isModelSuffix_id (n : Name) : (Key.id n).isModelSuffix = false := rfl
+@[simp] theorem isModelSuffix_role (r : Role) : (Key.role r).isModelSuffix = false := rfl
+@[simp] theorem isProjFnShape_id (n : Name) : (Key.id n).isProjFnShape = false := rfl
+@[simp] theorem isProjFnShape_role (r : Role) : (Key.role r).isProjFnShape = false := rfl
 
 end Key
 
 theorem isModelSuffix_iff {k : Key} : k.isModelSuffix = true ↔ ∃ b, k = auxKey b .model := by
   constructor
   · intro h
-    cases k with
-    | anonymous => exact absurd h (by decide)
-    | num p i => exact absurd h (by simp [Key.isModelSuffix])
-    | str b s =>
-      by_cases hs : s = "_model"
-      · subst hs; exact ⟨b, rfl⟩
-      · exact absurd h (by simp [Key.isModelSuffix, hs])
+    match k, h with
+    | .aux b .model, _ => exact ⟨b, rfl⟩
   · rintro ⟨b, rfl⟩; rfl
 
 theorem isModelSuffix_auxKey (k : Key) (d : Derived) :
     (auxKey k d).isModelSuffix = (d == .model) := by
-  cases d <;> first
-    | rfl
-    | (simp only [auxKey, Key.isModelSuffix]
-       rw [if_neg (Ne.symm (lit_ne_indexedStr (by decide)))]
-       rfl)
+  cases d <;> rfl
 
 @[simp] theorem isProjFnShape_auxKey_projFn (k : Key) (i : Nat) :
     (auxKey k (.projFn i)).isProjFnShape = true := rfl
@@ -450,19 +462,14 @@ theorem isModelSuffix_auxKey (k : Key) (d : Derived) :
 @[simp] theorem isProjFnShape_auxKey_projTable (k : Key) :
     (auxKey k .projTable).isProjFnShape = true := rfl
 
-/-- Off the member constructors (`k.num i`, whose shape depends on `k`), a
-derived key has the projection shape exactly at the projection shapes. -/
-theorem isProjFnShape_auxKey (k : Key) {d : Derived} (hd : ∀ i, d ≠ .member i) :
+/-- A derived key has the projection shape exactly at the projection shapes. -/
+theorem isProjFnShape_auxKey (k : Key) (d : Derived) :
     (auxKey k d).isProjFnShape = (d matches .projFn _ | .projTable) := by
-  cases d <;> first | rfl | exact absurd rfl (hd _)
+  cases d <;> rfl
 
 theorem isProjIota_auxKey (k : Key) (d : Derived) :
     (auxKey k d).isProjIota = (d == .projIota) := by
-  cases d <;> first
-    | rfl
-    | (simp only [auxKey, Key.isProjIota]
-       rw [if_neg (Ne.symm (lit_ne_indexedStr (by decide)))]
-       rfl)
+  cases d <;> rfl
 
 /-- A model companion is not a key of another shape. -/
 theorem auxKey_model_ne {n m : Key} (hm : m.isModelSuffix = false) : auxKey n .model ≠ m := by

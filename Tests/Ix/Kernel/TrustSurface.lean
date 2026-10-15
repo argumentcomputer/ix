@@ -52,6 +52,12 @@ list fails just as loudly as one in a bare file.
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
+  IxC/Kernel/Key.lean           computed_field
+      A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
+      (input, role and derived) hash in O(1). Pointer equality goes
+      through `@[csimp]` + `withPtrEq` with the redundancy proved
+      (`Key.beqPtr_eq`).
+
   IxC/Kernel/Exclusive.lean     unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
@@ -118,6 +124,7 @@ def tokens : List String :=
 def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
   ("IxC/Kernel/Name.lean", ["computed_field"]),
+  ("IxC/Kernel/Key.lean", ["computed_field"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
   ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
   ("Ix/Address/Admission.lean", ["implemented_by"])]

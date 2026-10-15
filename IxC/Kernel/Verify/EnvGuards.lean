@@ -56,7 +56,7 @@ theorem projFnName_ne_reserved {T n : Key} {j : Nat}
     (h : reservedBasisNames.contains n = true) : projFnName T j ≠ n := by
   intro hh
   subst hh
-  rw [projFnName, reservedBasisNames_contains_auxKey T (d := .projFn j) nofun nofun] at h
+  rw [projFnName, reservedBasisNames_contains_auxKey T (.projFn j)] at h
   exact Bool.false_ne_true h
 
 /-- Everything `natLitSupported` checked, as separate facts. -/

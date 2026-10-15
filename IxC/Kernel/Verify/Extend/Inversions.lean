@@ -117,7 +117,7 @@ theorem checkConstantVal_inv {env : Env} {cv cv' : ConstantVal}
 /-- No projection function is a reserved basis name. -/
 theorem reservedBasisNames_not_projFn (T : Key) (i : Nat) :
     reservedBasisNames.contains (projFnName T i) = false :=
-  reservedBasisNames_contains_auxKey T (d := .projFn i) nofun nofun
+  reservedBasisNames_contains_auxKey T (.projFn i)
 
 theorem domsMatchAux_inv {g : Nat → Expr → Expr}
     {bs₁ bs₂ : List (Expr × BinderMeta)} {o₁ o₂ n : Nat}

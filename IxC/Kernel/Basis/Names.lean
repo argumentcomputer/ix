@@ -125,13 +125,12 @@ def reservedBasisNames : List Key :=
    falseName, falseRecName,
    quotName, quotMkName, quotLiftName, quotIndName, quotSoundName]
 
-/-- A derived key is not reserved, except at the recursor spelling. -/
-theorem reservedBasisNames_contains_auxKey (k : Key) {d : Derived} (hd : d ≠ .recursor)
-    (hd' : d ≠ .implRec) : reservedBasisNames.contains (auxKey k d) = false := by
-  have hne := fun r => auxKey_ne_roleKey (k := k) r hd hd'
+/-- A derived key is not reserved. -/
+theorem reservedBasisNames_contains_auxKey (k : Key) (d : Derived) :
+    reservedBasisNames.contains (auxKey k d) = false := by
   simp [reservedBasisNames, eqName, eqReflName, eqRecName, natName, natZeroName, natSuccName,
     natRecName, punitName, punitUnitName, punitRecName, emptyName, emptyRecName, falseName,
-    falseRecName, quotName, quotMkName, quotLiftName, quotIndName, quotSoundName, hne]
+    falseRecName, quotName, quotMkName, quotLiftName, quotIndName, quotSoundName]
 
 /-! ## The tolerated axiom
 

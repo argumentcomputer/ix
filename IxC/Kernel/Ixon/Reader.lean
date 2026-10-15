@@ -30,31 +30,35 @@ environment to the Ixon records; the latter is the fidelity theorem
 
 ## Keys
 
-The kernel key is `Ix.Kernel.Key`. A constant reference `ConstRef Address`
-is encoded injectively under the reserved root `ix`:
+The kernel key is `Ix.Kernel.Key` (`IxC/Kernel/Key.lean`). A constant
+reference `ConstRef Address` is an input key, encoded injectively under the
+reserved root `ix`:
 
-* `.member b i` ↦ `ix.<hex b>.i` (a `.num` component);
-* `.ctor b i c` ↦ `ix.<hex b>.i.c`;
-* a level parameter is positional: parameter `i` is `.num .anonymous i`.
+* `.member b i` ↦ `.id ix.<hex b>.i` (a `.num` component);
+* `.ctor b i c` ↦ `.id ix.<hex b>.i.c`;
+* a level parameter is positional: parameter `i` is the number `i`.
 
 Hex spelling of the address bytes is injective, and the two shapes differ in
-their number of `.num` components, so distinct references get distinct
-names (`keyName_injective`). None of these names has a shape the checker
-reserves (`_model`, `T.proj.i`, `T.projTable.0`) or that the frontend derives
-(`T.rec`, `T.rec_k`).
+their number of `.num` components, so distinct references get distinct keys
+(`keyName_injective`). No input key is derived (`.aux`), so none is a key
+the checker or the modeller generates (`_model`, `T.proj.i`,
+`T.projTable.0`, …).
 
-Three kinds of names are not of this form:
+Two kinds of keys are not of this form:
 
-* **Recursors** are named after what they eliminate, because the direct
-  install, the structure route and the in-process modeller find a block's
-  recursor by name: the recursor whose motive is the block's member `m`
-  (in motive order) is `T_m.rec`, and the one whose motive is the `j`-th
-  auxiliary (nested) motive is `T_0.rec_j` (1-based), exactly Lean's own
-  convention. The motive is read off the recursor's type (the head of its
-  result), the member off that motive's major carrier.
+* **Recursors** the role table does not bind are keyed after what they
+  eliminate: the recursor whose motive is the block's member `m` (in motive
+  order) is `.id ⟦T_m⟧.rec`, and the one whose motive is the `j`-th
+  auxiliary (nested) motive is `.id ⟦T_0⟧.rec_j` (1-based), spelled from
+  the member's key (`Key.toName`), exactly Lean's own convention. The
+  motive is read off the recursor's type (the head of its result), the
+  member off that motive's major carrier. The checker and the modeller take
+  a block's recursors by position; only the stream check that pairs a
+  recursor with its type for the index count (`lowerInductive`) reads the
+  spelling, until recursors are keyed by their own records.
 * **Role keys** (`Bindings.names`): every reference the input's role table
-  (`Ix.Kernel.RoleTable`) binds is named after its role (`roleKey r`, the
-  role's Lean name), and no other: the basis (`Eq`, `Nat`, `PUnit`,
+  (`Ix.Kernel.RoleTable`) binds is keyed by its role (`roleKey r = .role r`),
+  and no other: the basis (`Eq`, `Nat`, `PUnit`,
   `Empty`, `False`, the `Quot` package), `And` and `Bool`, the literal
   support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`), the
   certified `Nat` operations, the standard axioms with `Iff` and
@@ -135,17 +139,21 @@ abbrev CVal := Ix.Kernel.ConstantVal
 /-! ## Keys -/
 
 /-- The reserved root of address-encoded names. -/
-def ixRoot : CName := .str .anonymous "ix"
+def ixRoot : Ix.Kernel.Name := .str .anonymous "ix"
 
 def addressHex (a : Address) : String := hexOfBytes a.hash
 
 /-- `ix.<hex b>`. -/
-def blockName (b : Address) : CName := .str ixRoot (addressHex b)
+def blockName (b : Address) : Ix.Kernel.Name := .str ixRoot (addressHex b)
 
-/-- The address encoding of a constant reference. -/
-def keyName : ConstRef Address → CName
+/-- The address encoding of a constant reference, as a name. -/
+def addressName : ConstRef Address → Ix.Kernel.Name
   | .member b i => .num (blockName b) i
   | .ctor b i c => .num (.num (blockName b) i) c
+
+/-- The key of a constant reference the role table does not bind: an input
+key, its address encoding. -/
+def keyName (r : ConstRef Address) : CName := .id (addressName r)
 
 /-! ### `keyName` is injective
 
@@ -233,26 +241,32 @@ theorem addressHex_injective {a b : Address} (h : addressHex a = addressHex b) :
   simp only [addressHex] at h
   rw [hexOfBytes_injective h]
 
-/-- **`keyName` is injective**: distinct constant references get distinct
-names. -/
-theorem keyName_injective {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := by
+/-- **`addressName` is injective**: distinct constant references get
+distinct names. -/
+theorem addressName_injective {r s : ConstRef Address} (h : addressName r = addressName s) :
+    r = s := by
   cases r with
   | member b i =>
     cases s with
     | member b' i' =>
-      simp only [keyName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
+      simp only [addressName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
         true_and] at h
       obtain ⟨hb, hi⟩ := h
       rw [addressHex_injective hb, hi]
-    | ctor b' i' c' => simp [keyName, blockName] at h
+    | ctor b' i' c' => simp [addressName, blockName] at h
   | ctor b i c =>
     cases s with
-    | member b' i' => simp [keyName, blockName] at h
+    | member b' i' => simp [addressName, blockName] at h
     | ctor b' i' c' =>
-      simp only [keyName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
+      simp only [addressName, blockName, Ix.Kernel.Name.num.injEq, Ix.Kernel.Name.str.injEq,
         true_and] at h
       obtain ⟨⟨hb, hi⟩, hc⟩ := h
       rw [addressHex_injective hb, hi, hc]
+
+/-- **`keyName` is injective**: distinct constant references get distinct
+keys. -/
+theorem keyName_injective {r s : ConstRef Address} (h : keyName r = keyName s) : r = s :=
+  addressName_injective (Ix.Kernel.Key.id.inj h)
 
 /-! ## Errors -/
 
@@ -278,8 +292,8 @@ def declined (reason : String) : ReadM α := throw (.declined reason)
 /-! ## The role bindings -/
 
 /-- **The role bindings a reading uses**: each reference the role table binds
-(`Ix.Kernel.RoleTable`), renamed to its role's key (`roleKey r`, its Lean
-name while keys are names). Built from a table by `bindingsOf`. -/
+(`Ix.Kernel.RoleTable`), renamed to its role's key (`roleKey r = .role r`).
+Built from a table by `bindingsOf`. -/
 structure Bindings where
   names : Std.HashMap (ConstRef Address) CName := {}
 
@@ -329,9 +343,9 @@ resolved to the reference it denotes (`resolve`), renamed to its role's key.
 An address the store does not resolve binds nothing, which affects coverage
 only; a reference two roles resolve to keeps the first. Well-formedness
 (`RoleTable.check`) has made the table injective in both directions; on
-canonical records two addresses never resolve to one reference. Role keys
-are never under the reserved `ix` root nor of a derived shape (`roleKey` is a
-role's Lean name), the two checks the committed pin table needed (SP3 D6). -/
+canonical records two addresses never resolve to one reference. A role key
+is `.role r`, never an input or a derived key, by construction: the two
+checks the committed pin table needed (SP3 D6) have no counterpart. -/
 def bindingsOf (store : Store) (t : Ix.Kernel.RoleTable) : Bindings :=
   { names := t.bound.foldl (init := {}) fun m (r, a) =>
       match resolve store a with
@@ -464,13 +478,15 @@ def analyseRecursor (store : Store) (owner : Address) (c : Ixon.Constant)
   let major ← headRef store owner c (← doms.getLast?)
   pure (pos - nP, carriers, major)
 
-/-- Index every recursor of `records` by the block it eliminates, and name
-it (`T_m.rec`, or `T_0.rec_j` at the `j`-th auxiliary motive). A recursor
-whose type does not have the recursor shape is not indexed; its record and
-its block then decline. -/
+/-- Index every recursor of `records` by the block it eliminates, and key
+it: its role's key if the table binds its reference, otherwise the input key
+spelled `T_m.rec`, or `T_0.rec_j` at the `j`-th auxiliary motive, from the
+spelling of its member's key. A recursor whose type does not have the
+recursor shape is not indexed; its record and its block then decline. -/
 def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) CName)
     (records : Array (Address × Ixon.Constant)) : RecIndex := Id.run do
-  let memberName (r : ConstRef Address) : CName := roles.getD r (keyName r)
+  let memberSpelling (r : ConstRef Address) : Ix.Kernel.Name :=
+    (roles.getD r (keyName r)).toName
   let mut idx : RecIndex := {}
   let mut found : Std.HashMap Address (Array (Nat × ConstRef Address)) := {}
   for (owner, c) in records do
@@ -492,9 +508,11 @@ def buildIndex (store : Store) (roles : Std.HashMap (ConstRef Address) CName)
           order.all (fun i => indc.any (·.1 == i)) &&
           (order.toList.eraseDups.length == size) do continue
       let base : ConstRef Address := .member b (order[0]!)
-      let name :=
-        if m < size then (memberName (.member b (order[m]!))).str "rec"
-        else (memberName base).str s!"rec_{m - size + 1}"
+      let name : CName := match roles[ref]? with
+        | some k => k
+        | none => .id <|
+          if m < size then (memberSpelling (.member b (order[m]!))).str "rec"
+          else (memberSpelling base).str s!"rec_{m - size + 1}"
       -- one recursor per motive of a block: the first record's (the supplied
       -- records come before the prelude's fallback); a second one is not
       -- grouped with the block and declines as a recursor without its block
@@ -901,9 +919,11 @@ def lowerInductive (st : State) (rb : BlockRead) : ReadM Read := do
       if let some kE := kExpected? then
         unless r.k == kE do
           malformed s!"recursor {cv.name} declares k := {r.k}; the generated recursor is{if kE then "" else " not"} K-like"
-      if let .str T "rec" := cv.name then
+      -- the recursor of the type its spelling names (SP3 D8: pairing by the
+      -- motive replaces the spelling when recursors get their own keys)
+      if let .str T "rec" := cv.name.toName then
         for (ty, _, _) in types do
-          if ty.name == T then
+          if ty.name.toName == T then
             if let some n := ty.type.piSortTeleLen? then
               unless nPd + r.indices == n do
                 malformed s!"recursor {cv.name} declares {r.indices} indices; {T} has {n - nPd}"
@@ -945,7 +965,7 @@ def lowerInductive (st : State) (rb : BlockRead) : ReadM Read := do
       ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
        fun n => if memberNames.contains n then some b else st.indBlocks[n]?⟩
     match Ix.Kernel.Frontend.InModel.generate ctx b with
-    | .error why => declined s!"in-process model of {(types[0]?.map (·.1.name)).getD .anonymous}: {why}"
+    | .error why => declined s!"in-process model of {(types[0]?.map (·.1.name)).getD (.id .anonymous)}: {why}"
     | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }
   else
     pure { decls := #[decl], owners, blocks }

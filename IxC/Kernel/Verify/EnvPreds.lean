@@ -309,7 +309,7 @@ theorem ProjOkT.empty : ProjOkT Env.empty := by
 
 /-- A projection table is not a role's constant. -/
 theorem projTableName_ne_roleKey (T : Key) (r : Role) : projTableName T ≠ roleKey r :=
-  auxKey_ne_roleKey r (by decide) (by decide)
+  auxKey_ne_roleKey T .projTable r
 
 /-- A constant stored under a name that is no structure's projection table
 is not a tower table. -/

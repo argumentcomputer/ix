@@ -39,14 +39,24 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3350 compiled functions, with the computed-field overrides of
-`Level`, `Expr` and `Name` and 20 proved csimps; the Ixon reader
-(`readRecords` with `Admission.readStream`) reaches 2018, adding the
+reaches 3274 compiled functions, with the computed-field overrides of
+`Level`, `Expr`, `Name` and `Key` and 20 proved csimps; the Ixon reader
+(`readRecords` with `Admission.readStream`) reaches 2021, adding the
 in-model generator's 9 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5656 with 111 inherited externs, adding the
+`publicOperations`) reaches 5447 with 111 inherited externs, adding the
 byte stage (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`), the
 binding section's admission (`admitBinding`, `RoleTable.ofBytes`,
-`RoleTable.check`) and the committed default table and prelude. Step 4
+`RoleTable.check`) and the committed default table and prelude. Step 5a
+(typed keys) moved the counts from 3350, 2018 and 5656: `Key` became an
+inductive with a cached hash, whose three constructor overrides
+(`Key.{id,role,aux}._override`) the rulings admit with `Key`; a role key is
+now `.role r`, so the closed name terms that spelled the role and derived
+names went (121 in `evidenceDepKeys`, 121 in the reader's `bindingsOf`, one
+to three per pinned-name constant and per derived-name helper), and the
+rendering that prints keys in messages came in (`Key.toName`, with
+`Role.leanName`'s 121 closed terms and `Derived.spell`'s 19), with `Key`'s,
+`Role`'s and `Derived`'s derived instances; the rest are the compiler's
+specialisations renumbered. Step 4
 (primitives by specification) moved the counts from 3086, 1886 and 5224 with
 120 externs: the fold gained the specification set (`IxC/Kernel/Roles.lean`)
 and the evidence checks with their closure condition (`evidenceLocal`), the
@@ -193,7 +203,7 @@ def runtimeAllowlist : Array Lean.Name := #[`Init, `Std]
 /-- The ruled exceptions to the runtime audit (`docs/kernel.md`, "Trust
 surface"). Each names exactly what it admits:
 * the `@[computed_field]` overrides of the kernel's `Level` (`hashData`),
-  `Expr` (`data`) and `Name` (`hashData`);
+  `Expr` (`data`), `Name` (`hashData`) and `Key` (`hashData`);
 * project `@[csimp]` replacements in `Ix.Kernel`, each only with a theorem
   on the standard axioms;
 * `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
@@ -210,7 +220,7 @@ surface"). Each names exactly what it admits:
 No substitution is admitted on an assumption (`assumed` is empty): the
 kernel's closures take their content hash as a parameter. -/
 def runtimeRulings : RuntimeRulings where
-  computedFieldTypes := #[`Ix.Kernel.Level, `Ix.Kernel.Expr, `Ix.Kernel.Name]
+  computedFieldTypes := #[`Ix.Kernel.Level, `Ix.Kernel.Expr, `Ix.Kernel.Name, `Ix.Kernel.Key]
   csimpModules := #[`IxC.Kernel]
   primitives := #[``withPtrEq, ``withPtrEqUnsafe, ``withPtrEqDecEq, ``withPtrAddr,
     ``withPtrAddrUnsafe, ``ptrEq, ``ptrAddrUnsafe, ``isExclusiveUnsafe]
@@ -303,7 +313,7 @@ The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
 the rulings they use: the fold reaches the kernel's computed-field
-overrides of `Level`, `Expr` and `Name` (18) and 20 project csimps; the
+overrides of `Level`, `Expr`, `Name` and `Key` (21) and 20 project csimps; the
 reader adds the in-model generator's 9 `partial` definitions; the entry
 adds the byte stage, the binding section's admission and the committed
 default table and prelude. -/
@@ -333,19 +343,19 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3350 compiled functions; inherited externs 82, implemented_by 0, unsafe 22, csimp 4; ruled computed_field 18, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3274 compiled functions; inherited externs 82, implemented_by 0, unsafe 25, csimp 4; ruled computed_field 21, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2018 compiled functions; inherited externs 79, implemented_by 0, unsafe 23, csimp 0; ruled computed_field 18, csimp 7, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2021 compiled functions; inherited externs 79, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5656 compiled functions; inherited externs 111, implemented_by 0, unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5447 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

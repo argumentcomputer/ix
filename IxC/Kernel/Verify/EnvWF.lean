@@ -18,7 +18,7 @@ namespace Ix.Kernel
 /-- The projection-table name shape is injective. -/
 theorem projFnName_inj {T T' : Key} {i i' : Nat}
     (h : projFnName T i = projFnName T' i') : T = T' ∧ i = i' := by
-  obtain ⟨hT, hi⟩ := auxKey_inj₂ (d := .projFn i) (d' := .projFn i') rfl h
+  obtain ⟨hT, hi⟩ := auxKey_inj₂ (d := .projFn i) (d' := .projFn i') h
   exact ⟨hT, Derived.projFn.inj hi⟩
 
 /-- The projection-table name shape is injective (task #175 S1). -/
