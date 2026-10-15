@@ -188,3 +188,18 @@ fun binding maxProjections limits orderLimits records blobs hint =>
           Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure binding output blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Authenticated.checkBytesBlockOrder_authentic
+
+/-! ## The tiered entry at BLAKE3 (the typing tier)
+
+The tiered entry's closure is frozen apart, so the three entries' above is
+unchanged: the generic tiered entries' (`Ix.Kernel.Audit.tierOperations`)
+and the same one assumed substitution: 5878 and 10 more, the Rust BLAKE3
+backend's three externs among them (ruled assumed 4). -/
+
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5888 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
+
+#guard_kernel_axioms Ixon.Authenticated.checkBytesTiered [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.Authenticated.checkBytesTiered_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.Authenticated.checkBytesTiered_typed [propext, Classical.choice, Quot.sound]

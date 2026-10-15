@@ -1,6 +1,7 @@
 import IxC.Kernel
 import IxC.Ixon.Types
 import IxC.Kernel.Admission.Theorems
+import IxC.Kernel.Admission.TierTheorems
 import IxC.Kernel.Audit.Axioms
 import IxC.Kernel.Audit.Imports
 import IxC.Kernel.Audit.Runtime
@@ -47,7 +48,11 @@ TagN writer twin; the entry (the four `publicOperations`) reaches 5799 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
-default table and prelude, and the codec's two TagN twins. The validation
+default table and prelude, and the codec's two TagN twins. The tiered
+entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
+the typing tier) are frozen apart, at 5878: the entry's closure and the
+tier's 79 functions, with nothing new to rule; the closures above do not
+reach the tier. The validation
 of the four install anchors (`Bool.rec`, `And`, `And.intro`, `And.rec`;
 `Declaration.anchorMismatch?` in `Cached.annotDeclStep`, owner 2026-10-15)
 moved the fold from 3352 to 3399 and the entry from 5788 to 5799: the guard
@@ -218,6 +223,20 @@ def kernelOperations : Array Lean.Name := #[``Ix.Kernel.Cached.checkDecls]
 /-- The Ixon reader of the entry. -/
 def readerOperations : Array Lean.Name :=
   #[``Ix.Kernel.Reader.readRecords, ``Ix.Kernel.Admission.readStream]
+
+/-- The tiered entries (the typing tier, `IxC/Kernel/Admission/Tier.lean`): the
+logical check, then the tier fold. Their closure is frozen apart, so the
+logical entry's is unchanged. -/
+def tierOperations : Array Lean.Name :=
+  #[``Ix.Kernel.Admission.checkBytesTiered, ``Ix.Kernel.Admission.checkConstantsTiered]
+
+/-- The typing tier's theorems (`IxC/Kernel/Verify/Tier.lean`) and the tiered
+entries' (`IxC/Kernel/Admission/TierTheorems.lean`). -/
+def tierRoots : Array Lean.Name :=
+  #[``Ix.Kernel.Tier.checkTierC_typed, ``Ix.Kernel.Tier.checkDecls_closed,
+    ``Ix.Kernel.Tier.checkDecls_checkTierC, ``Ix.Kernel.Admission.checkConstantsTiered_ok,
+    ``Ix.Kernel.Admission.checkBytesTieredUsing_ok, ``Ix.Kernel.Admission.checkBytesTiered_ok,
+    ``Ix.Kernel.Admission.checkBytesTiered_has_model, ``Ix.Kernel.Admission.checkBytesTiered_typed]
 
 /-- The certified entry's module, whose import closure is audited. -/
 def publicModules : Array Lean.Name := #[`IxC.Kernel.Admission]
@@ -398,6 +417,28 @@ run_cmd do
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Reader.readRecords [propext, Classical.choice, Quot.sound]
 
+/-! ### The typing tier
+
+The tier's guarantee, the fence and the tiered entries' theorems stand on the
+same three axioms, and so do the tiered entries. -/
+
+run_cmd do
+  let env ← Lean.getEnv
+  for root in Ix.Kernel.Audit.tierRoots ++ Ix.Kernel.Audit.tierOperations do
+    unless env.contains root do throwError m!"required root is missing: {root}"
+
+#guard_kernel_axioms Ix.Kernel.Tier.checkTierC_typed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Tier.checkDecls_closed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Tier.checkDecls_checkTierC [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTiered_ok [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsing_ok [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered_ok [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered_has_model [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered_typed [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Tier.checkTierC [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTiered [propext, Classical.choice, Quot.sound]
+
 /-! ### Import and runtime closures
 
 The entry's import closure stays inside `importAllowlist`, below the ruled
@@ -450,6 +491,20 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
  Ix.Kernel.Admission.checkConstants]: 5799 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+
+-- The tiered entries (the typing tier, safety-tier S3): the logical entry's
+-- closure (5799, the four `publicOperations`) and 79 functions more: the
+-- partition, the fence's test, the tier reader (`readTierRecord`, over the
+-- reader's own member reader) and the tier fold (`checkTierC`, over the logical
+-- fold's cached functions). No new extern, `unsafe` constant, csimp, `partial`
+-- definition or ruling.
+/-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
+ Ix.Kernel.Admission.checkConstantsTiered]: 5878 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
 
 -- Without the rulings the entry's closure fails: they are what admits it.
 /-- error: project-level execution replacements reached from [Ix.Kernel.Cached.checkDecls] -/

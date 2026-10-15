@@ -1,5 +1,6 @@
 import Ix.Ixon.Authenticated
 import Ix.Ixon.BlockOrder.Theorems
+import IxC.Kernel.Admission.TierTheorems
 
 /-! # The theorems of the authenticated entries at BLAKE3
 
@@ -24,6 +25,8 @@ theorem checkBytes_eq : checkBytes = Admission.checkBytes Address.blake3Pure := 
 theorem checkBytesProjection_eq : checkBytesProjection = Projection.checkBytes Address.blake3Pure := rfl
 
 theorem checkBytesBlockOrder_eq : checkBytesBlockOrder = BlockOrder.checkBytes Address.blake3Pure := rfl
+
+theorem checkBytesTiered_eq : checkBytesTiered = Admission.checkBytesTiered Address.blake3Pure := rfl
 
 /-! ## The certified entry -/
 
@@ -168,5 +171,30 @@ theorem checkBytesBlockOrder_no_proof_of_False (V : Type v) [Ix.Kernel.SetTheory
     (h : checkBytesBlockOrder binding maxProjections limits orderLimits records blobs hint = .ok env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False :=
   BlockOrder.checkBytes_no_proof_of_False V h
+
+end Ixon.Authenticated
+
+namespace Ixon.Authenticated
+
+open Ix.Kernel
+
+universe w
+
+/-! ## The tiered entry -/
+
+/-- **The tiered entry at BLAKE3**: every record and blob authenticated
+under BLAKE3; the logical environment has a model in every set theory; it is
+well formed and misses every tier constant; and every tier constant is
+typed in its scope, with every tier constant opaque. -/
+theorem checkBytesTiered_typed (V : Type w) [Ix.Kernel.SetTheory V] {binding : Admission.Binding}
+    {limits : Admission.Limits} {records : Admission.Records} {blobs : Ingress.Blobs}
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
+    {ts : List (Ix.Kernel.Tier.TierConst .anon)}
+    (h : checkBytesTiered binding limits records blobs hint = .ok (env, ts)) :
+    Admission.Authentic Address.blake3Pure records blobs ∧ Nonempty (Ix.Kernel.Model V env) ∧
+      Ix.Kernel.EnvWF env ∧ (∀ c ∈ ts, env.find? c.cv.name = none) ∧
+      ∃ tds : List (Ix.Kernel.Tier.TierDecl .anon), ∀ c ∈ ts, Ix.Kernel.Tier.TypedIn env tds ts c :=
+  ⟨(Admission.checkBytesTiered_ok h).1, Admission.checkBytesTiered_has_model V h,
+    Admission.checkBytesTiered_typed V h⟩
 
 end Ixon.Authenticated

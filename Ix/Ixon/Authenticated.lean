@@ -1,5 +1,6 @@
 import Ix.Address.Admission
 import Ix.Ixon.BlockOrder
+import IxC.Kernel.Admission.Tier
 
 /-! # The authenticated Ixon entries at BLAKE3
 
@@ -52,6 +53,14 @@ def checkBytesBlockOrder (binding : Admission.Binding) (maxProjections : Nat)
     Except BlockOrder.CheckError (Ix.Kernel.Env .anon) :=
   BlockOrder.checkBytes Address.admissionHash binding maxProjections limits orderLimits records blobs
     hint
+
+/-- **The tiered Ixon entry at BLAKE3** (`Ix.Kernel.Admission.checkBytesTiered`
+at `Address.admissionHash`): the logical check, then the typing tier. -/
+def checkBytesTiered (binding : Admission.Binding) (limits : Admission.Limits)
+    (records : Admission.Records) (blobs : Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Admission.TierError (Ix.Kernel.Env .anon × List (Ix.Kernel.Tier.TierConst .anon)) :=
+  Admission.checkBytesTiered Address.admissionHash binding limits records blobs hint
 
 /-- A projection record's address at BLAKE3. -/
 def projectionAddress (record : Ixon.Constant) : Address :=
