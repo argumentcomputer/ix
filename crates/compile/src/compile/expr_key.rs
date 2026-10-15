@@ -1,13 +1,13 @@
 //! Exact keys for compiled expressions and universes. Stored digests index the
-//! table; complete source equality confirms a hit. Pair memos keep comparisons
-//! of independently allocated expression and universe DAGs from becoming tree
-//! walks. This mirrors `Ix.Compile.ExactKey`.
+//! table; complete source equality confirms a hit, through the raw comparisons
+//! of `ix_common::env` (`Expr::same_raw`, `Level::same_raw`, `Name::same_raw`:
+//! the derived `==`, iterative and linear in the DAG, R03-21). This mirrors
+//! `Ix.Compile.ExactKey`.
 
 use ix_common::{
   address::Address,
-  env::{Expr, ExprData, Level, LevelData, Name, NameData},
+  env::{Expr, Level, Name},
 };
-use rustc_hash::FxHashSet;
 use std::{
   hash::{Hash, Hasher},
   sync::Arc,
@@ -24,7 +24,7 @@ impl Hash for ExprKey {
 
 impl PartialEq for ExprKey {
   fn eq(&self, other: &Self) -> bool {
-    same_expr(&self.0, &other.0)
+    self.0.same_raw(&other.0)
   }
 }
 
@@ -49,14 +49,14 @@ impl Hash for PreseedKey {
 impl PartialEq for PreseedKey {
   fn eq(&self, other: &Self) -> bool {
     self.context_hash == other.context_hash
-      && same_expr(&self.expr, &other.expr)
+      && self.expr.same_raw(&other.expr)
       && (Arc::ptr_eq(&self.params, &other.params)
         || (self.params.len() == other.params.len()
           && self
             .params
             .iter()
             .zip(other.params.iter())
-            .all(|(a, b)| same_name(a, b))))
+            .all(|(a, b)| a.same_raw(b))))
   }
 }
 
@@ -110,149 +110,12 @@ impl PartialEq for UnivKey {
   fn eq(&self, other: &Self) -> bool {
     self.context_hash == other.context_hash
       && self.params.len() == other.params.len()
-      && self
-        .params
-        .iter()
-        .zip(other.params.iter())
-        .all(|(a, b)| same_name(a, b))
-      && same_level(&self.level, &other.level)
+      && self.params.iter().zip(other.params.iter()).all(|(a, b)| a.same_raw(b))
+      && self.level.same_raw(&other.level)
   }
 }
 
 impl Eq for UnivKey {}
-
-fn same_name(mut a: &Name, mut b: &Name) -> bool {
-  loop {
-    if Arc::ptr_eq(&a.0, &b.0) {
-      return true;
-    }
-    if a.get_hash() != b.get_hash() {
-      return false;
-    }
-    match (a.as_data(), b.as_data()) {
-      (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
-      (NameData::Str(ap, av, _), NameData::Str(bp, bv, _)) if av == bv => {
-        (a, b) = (ap, bp);
-      },
-      (NameData::Num(ap, av, _), NameData::Num(bp, bv, _)) if av == bv => {
-        (a, b) = (ap, bp);
-      },
-      _ => return false,
-    }
-  }
-}
-
-fn same_level(a: &Level, b: &Level) -> bool {
-  if Arc::ptr_eq(&a.0, &b.0) {
-    return true;
-  }
-  if a.get_hash() != b.get_hash() {
-    return false;
-  }
-  let mut completed = FxHashSet::default();
-  let mut pending = vec![(a, b, false)];
-  while let Some((a, b, finish)) = pending.pop() {
-    let pair = (Arc::as_ptr(&a.0), Arc::as_ptr(&b.0));
-    if finish {
-      completed.insert(pair);
-      continue;
-    }
-    if pair.0 == pair.1 || completed.contains(&pair) {
-      continue;
-    }
-    if a.get_hash() != b.get_hash() {
-      return false;
-    }
-    pending.push((a, b, true));
-    match (a.as_data(), b.as_data()) {
-      (LevelData::Zero(_), LevelData::Zero(_)) => {},
-      (LevelData::Succ(a, _), LevelData::Succ(b, _)) => {
-        pending.push((a, b, false));
-      },
-      (LevelData::Max(a, b, _), LevelData::Max(c, d, _))
-      | (LevelData::Imax(a, b, _), LevelData::Imax(c, d, _)) => {
-        pending.extend([(b, d, false), (a, c, false)]);
-      },
-      (LevelData::Param(a, _), LevelData::Param(b, _))
-      | (LevelData::Mvar(a, _), LevelData::Mvar(b, _))
-        if same_name(a, b) => {},
-      _ => return false,
-    }
-  }
-  true
-}
-
-fn same_expr(a: &Expr, b: &Expr) -> bool {
-  if Arc::ptr_eq(&a.0, &b.0) {
-    return true;
-  }
-  if a.get_hash() != b.get_hash() {
-    return false;
-  }
-  // Both borrowed roots retain all nodes until the comparison ends. The
-  // memo contains only pairs whose children have already compared equal.
-  let mut completed = FxHashSet::default();
-  let mut pending = vec![(a, b, false)];
-  while let Some((a, b, finish)) = pending.pop() {
-    let pair = (Arc::as_ptr(&a.0), Arc::as_ptr(&b.0));
-    if finish {
-      completed.insert(pair);
-      continue;
-    }
-    if pair.0 == pair.1 || completed.contains(&pair) {
-      continue;
-    }
-    if a.get_hash() != b.get_hash() {
-      return false;
-    }
-    pending.push((a, b, true));
-    match (a.as_data(), b.as_data()) {
-      (ExprData::Bvar(a, _), ExprData::Bvar(b, _)) if a == b => {},
-      (ExprData::Fvar(a, _), ExprData::Fvar(b, _))
-      | (ExprData::Mvar(a, _), ExprData::Mvar(b, _))
-        if same_name(a, b) => {},
-      (ExprData::Sort(a, _), ExprData::Sort(b, _)) if same_level(a, b) => {},
-      (ExprData::Const(a, us, _), ExprData::Const(b, vs, _))
-        if same_name(a, b)
-          && us.len() == vs.len()
-          && us.iter().zip(vs).all(|(u, v)| same_level(u, v)) => {},
-      (ExprData::App(f, a, _), ExprData::App(g, b, _)) => {
-        pending.extend([(a, b, false), (f, g, false)]);
-      },
-      (
-        ExprData::Lam(n, t, body, info, _),
-        ExprData::Lam(m, u, other, other_info, _),
-      )
-      | (
-        ExprData::ForallE(n, t, body, info, _),
-        ExprData::ForallE(m, u, other, other_info, _),
-      ) if same_name(n, m) && info == other_info => {
-        pending.extend([(body, other, false), (t, u, false)]);
-      },
-      (
-        ExprData::LetE(n, t, v, body, nd, _),
-        ExprData::LetE(m, u, w, other, other_nd, _),
-      ) if same_name(n, m) && nd == other_nd => {
-        pending.extend([(body, other, false), (v, w, false), (t, u, false)]);
-      },
-      (ExprData::Lit(a, _), ExprData::Lit(b, _)) if a == b => {},
-      (ExprData::Mdata(md, a, _), ExprData::Mdata(other_md, b, _))
-        if md == other_md =>
-      {
-        // Rust syntax metadata is owned Vec/Box data, so its derived
-        // equality walks its stored tree and includes names and hashes.
-        pending.push((a, b, false));
-      },
-      (ExprData::Proj(n, i, a, _), ExprData::Proj(m, j, b, _))
-        if same_name(n, m) && i == j =>
-      {
-        pending.push((a, b, false));
-      },
-      _ => return false,
-    }
-  }
-  true
-}
 
 #[cfg(test)]
 mod tests {
@@ -263,7 +126,10 @@ mod tests {
   };
   use crate::mutual::MutCtx;
   use bignat::Nat;
-  use ix_common::env::{BinderInfo, DataValue, Literal};
+  use ix_common::env::{
+    BinderInfo, DataValue, ExprData, LevelData, Literal, NameData,
+  };
+  use rustc_hash::FxHashSet;
 
   fn raw(value: ExprData) -> Expr {
     Expr(Arc::new(value))
@@ -327,7 +193,7 @@ mod tests {
     ];
     for a in &samples {
       for b in &samples {
-        assert_eq!(same_expr(a, b), a == b);
+        assert_eq!(a.same_raw(b), a == b);
       }
     }
   }
@@ -341,14 +207,14 @@ mod tests {
       a = Expr::lam(n.clone(), a.clone(), a, BinderInfo::Default);
       b = Expr::lam(n.clone(), b.clone(), b, BinderInfo::Default);
     }
-    assert!(same_expr(&a, &b));
+    assert!(a.same_raw(&b));
     let mut u = Level::zero();
     let mut v = Level::zero();
     for _ in 0..64 {
       u = Level::max(u.clone(), u);
       v = Level::max(v.clone(), v);
     }
-    assert!(same_expr(&Expr::sort(u), &Expr::sort(v)));
+    assert!(Expr::sort(u).same_raw(&Expr::sort(v)));
   }
 
   #[test]

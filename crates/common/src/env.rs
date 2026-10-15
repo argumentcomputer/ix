@@ -15,7 +15,7 @@ use std::{
 };
 
 use bignat::Nat;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 // -- Name tags ----------------------------------------------------------------
 
@@ -149,6 +149,33 @@ impl Name {
     loop {
       if Arc::ptr_eq(&a.0, &b.0) {
         return true;
+      }
+      match (a.as_data(), b.as_data()) {
+        (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
+        (NameData::Str(ap, av, _), NameData::Str(bp, bv, _)) if av == bv => {
+          (a, b) = (ap, bp);
+        },
+        (NameData::Num(ap, av, _), NameData::Num(bp, bv, _)) if av == bv => {
+          (a, b) = (ap, bp);
+        },
+        _ => return false,
+      }
+    }
+  }
+
+  /// Raw equality: the same components and the same stored digest at every
+  /// node, which is the derived `==`, iteratively and pointer-first. The
+  /// exact cache keys (`expr_key`) and the aux-gen memos confirm hits with
+  /// it: a stored digest is data of the compiled metadata, so raw equality,
+  /// not the digest-blind [`Name::same_structure`], is what a hit must keep.
+  pub fn same_raw(&self, other: &Self) -> bool {
+    let (mut a, mut b) = (self, other);
+    loop {
+      if Arc::ptr_eq(&a.0, &b.0) {
+        return true;
+      }
+      if a.get_hash() != b.get_hash() {
+        return false;
       }
       match (a.as_data(), b.as_data()) {
         (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
@@ -331,37 +358,64 @@ pub enum LevelData {
 }
 
 impl Level {
-  /// Structural equality, independent of all level and name cached digests.
-  /// The completed pair memo is local to this comparison; both borrowed roots
-  /// keep every node alive, and no digest is an equality witness.
+  /// Structural equality, independent of all level and name cached digests:
+  /// no digest is an equality witness.
   pub fn same_structure(&self, other: &Self) -> bool {
-    fn compare(
-      a: &Level,
-      b: &Level,
-      memo: &mut FxHashMap<(*const LevelData, *const LevelData), bool>,
-    ) -> bool {
+    Self::compare(self, other, false)
+  }
+
+  /// Raw equality: the same structure and the same stored digest at every
+  /// level and name node (the derived `==`, iteratively, pointer-first, and
+  /// linear in the DAG). See [`Name::same_raw`].
+  pub fn same_raw(&self, other: &Self) -> bool {
+    Self::compare(self, other, true)
+  }
+
+  /// The one level comparison (R03-21): an explicit stack, and a set of
+  /// completed pairs, so a DAG-shared pair is compared once. The set is made
+  /// on the first completed composite pair only, as `max_smart` compares
+  /// small levels on a hot path. Both borrowed roots keep every node alive,
+  /// so a node pointer cannot be reused during the comparison. With
+  /// `digests`, the stored digests of every level and name node must agree
+  /// too.
+  fn compare(a: &Level, b: &Level, digests: bool) -> bool {
+    type Pair = (*const LevelData, *const LevelData);
+    let mut completed: Option<FxHashSet<Pair>> = None;
+    let mut pending = vec![(a, b, false)];
+    while let Some((a, b, finish)) = pending.pop() {
       let pair = (Arc::as_ptr(&a.0), Arc::as_ptr(&b.0));
-      if pair.0 == pair.1 {
-        return true;
+      if finish {
+        completed.get_or_insert_with(FxHashSet::default).insert(pair);
+        continue;
       }
-      if let Some(result) = memo.get(&pair) {
-        return *result;
+      if pair.0 == pair.1
+        || completed.as_ref().is_some_and(|c| c.contains(&pair))
+      {
+        continue;
       }
-      let result = match (a.as_data(), b.as_data()) {
-        (LevelData::Zero(_), LevelData::Zero(_)) => true,
-        (LevelData::Succ(a, _), LevelData::Succ(b, _)) => compare(a, b, memo),
-        (LevelData::Max(a, b, _), LevelData::Max(c, d, _))
-        | (LevelData::Imax(a, b, _), LevelData::Imax(c, d, _)) => {
-          compare(a, c, memo) && compare(b, d, memo)
+      if digests && a.get_hash() != b.get_hash() {
+        return false;
+      }
+      match (a.as_data(), b.as_data()) {
+        (LevelData::Zero(_), LevelData::Zero(_)) => {},
+        (LevelData::Succ(x, _), LevelData::Succ(y, _)) => {
+          pending.extend([(a, b, true), (x, y, false)]);
         },
-        (LevelData::Param(a, _), LevelData::Param(b, _))
-        | (LevelData::Mvar(a, _), LevelData::Mvar(b, _)) => a.same_structure(b),
-        _ => false,
-      };
-      memo.insert(pair, result);
-      result
+        (LevelData::Max(x, y, _), LevelData::Max(z, w, _))
+        | (LevelData::Imax(x, y, _), LevelData::Imax(z, w, _)) => {
+          pending.extend([(a, b, true), (y, w, false), (x, z, false)]);
+        },
+        (LevelData::Param(x, _), LevelData::Param(y, _))
+        | (LevelData::Mvar(x, _), LevelData::Mvar(y, _)) => {
+          let same = if digests { x.same_raw(y) } else { x.same_structure(y) };
+          if !same {
+            return false;
+          }
+        },
+        _ => return false,
+      }
     }
-    compare(self, other, &mut FxHashMap::default())
+    true
   }
 
   /// Returns a reference to the inner [`LevelData`].
@@ -871,6 +925,85 @@ pub enum ExprData {
 }
 
 impl Expr {
+  /// Raw equality: the derived `==` (structure, binder information,
+  /// literals, metadata and every stored digest of the expression, level
+  /// and name nodes), iteratively, pointer-first, and linear in the DAG,
+  /// where the derived recursion is exponential on distinct allocations of a
+  /// shared DAG. The only expression comparison of the exact cache keys
+  /// (`expr_key::ExprKey`, `PreseedKey`) and the aux-gen memo confirmations
+  /// (R03-21).
+  pub fn same_raw(&self, other: &Self) -> bool {
+    if Arc::ptr_eq(&self.0, &other.0) {
+      return true;
+    }
+    if self.get_hash() != other.get_hash() {
+      return false;
+    }
+    // Both borrowed roots retain all nodes until the comparison ends. The
+    // set contains only pairs whose children have already compared equal.
+    let mut completed = FxHashSet::default();
+    let mut pending = vec![(self, other, false)];
+    while let Some((a, b, finish)) = pending.pop() {
+      let pair = (Arc::as_ptr(&a.0), Arc::as_ptr(&b.0));
+      if finish {
+        completed.insert(pair);
+        continue;
+      }
+      if pair.0 == pair.1 || completed.contains(&pair) {
+        continue;
+      }
+      if a.get_hash() != b.get_hash() {
+        return false;
+      }
+      pending.push((a, b, true));
+      match (a.as_data(), b.as_data()) {
+        (ExprData::Bvar(x, _), ExprData::Bvar(y, _)) if x == y => {},
+        (ExprData::Fvar(x, _), ExprData::Fvar(y, _))
+        | (ExprData::Mvar(x, _), ExprData::Mvar(y, _))
+          if x.same_raw(y) => {},
+        (ExprData::Sort(x, _), ExprData::Sort(y, _)) if x.same_raw(y) => {},
+        (ExprData::Const(x, us, _), ExprData::Const(y, vs, _))
+          if x.same_raw(y)
+            && us.len() == vs.len()
+            && us.iter().zip(vs).all(|(u, v)| u.same_raw(v)) => {},
+        (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
+          pending.extend([(x, y, false), (f, g, false)]);
+        },
+        (
+          ExprData::Lam(n, t, body, info, _),
+          ExprData::Lam(m, u, other, other_info, _),
+        )
+        | (
+          ExprData::ForallE(n, t, body, info, _),
+          ExprData::ForallE(m, u, other, other_info, _),
+        ) if n.same_raw(m) && info == other_info => {
+          pending.extend([(body, other, false), (t, u, false)]);
+        },
+        (
+          ExprData::LetE(n, t, v, body, nd, _),
+          ExprData::LetE(m, u, w, other, other_nd, _),
+        ) if n.same_raw(m) && nd == other_nd => {
+          pending.extend([(body, other, false), (v, w, false), (t, u, false)]);
+        },
+        (ExprData::Lit(x, _), ExprData::Lit(y, _)) if x == y => {},
+        (ExprData::Mdata(md, x, _), ExprData::Mdata(other_md, y, _))
+          if md == other_md =>
+        {
+          // Syntax metadata is owned Vec/Box data, so its derived equality
+          // walks its stored tree and includes names and hashes.
+          pending.push((x, y, false));
+        },
+        (ExprData::Proj(n, i, x, _), ExprData::Proj(m, j, y, _))
+          if n.same_raw(m) && i == j =>
+        {
+          pending.push((x, y, false));
+        },
+        _ => return false,
+      }
+    }
+    true
+  }
+
   /// Returns a reference to the inner [`ExprData`].
   pub fn as_data(&self) -> &ExprData {
     &self.0
@@ -1897,5 +2030,57 @@ mod scalar_structure_tests {
     let different = dag(18, "v", blake3::hash(b"left"));
     assert!(a.same_structure(&b));
     assert!(!a.same_structure(&different));
+    // Raw comparison of separately allocated shared DAGs (2^18 paths) is
+    // linear: equal digests and structure agree, differing caches do not.
+    let a2 = dag(18, "u", blake3::hash(b"left"));
+    assert!(a.same_raw(&a2));
+    assert!(!a.same_raw(&b));
+    assert!(!a.same_raw(&different));
+  }
+
+  /// The raw comparisons are the derived `==`: structure plus every stored
+  /// digest, for names, levels and expressions (R03-21).
+  #[test]
+  fn raw_comparisons_are_derived_equality() {
+    let u = Name::str(Name::anon(), "u".into());
+    let digest = blake3::hash(b"deliberately unrelated cache");
+    let rehashed = Name(Arc::new(NameData::Str(
+      Name(Arc::new(NameData::Anonymous(digest))),
+      "u".into(),
+      digest,
+    )));
+    let names =
+      [u.clone(), rehashed.clone(), Name::str(Name::anon(), "v".into())];
+    for a in &names {
+      for b in &names {
+        assert_eq!(a.same_raw(b), a == b);
+      }
+    }
+    let levels = [
+      Level::param(u.clone()),
+      Level(Arc::new(LevelData::Param(rehashed.clone(), digest))),
+      Level::max(Level::param(u.clone()), Level::zero()),
+      Level(Arc::new(LevelData::Max(
+        Level::param(u.clone()),
+        Level::zero(),
+        digest,
+      ))),
+      Level::succ(Level::zero()),
+    ];
+    for a in &levels {
+      for b in &levels {
+        assert_eq!(a.same_raw(b), a == b);
+      }
+    }
+    let exprs = [
+      Expr::sort(Level::param(u.clone())),
+      Expr::sort(Level(Arc::new(LevelData::Param(rehashed, digest)))),
+      Expr::app(Expr::sort(Level::zero()), Expr::sort(Level::param(u))),
+    ];
+    for a in &exprs {
+      for b in &exprs {
+        assert_eq!(a.same_raw(b), a == b);
+      }
+    }
   }
 }

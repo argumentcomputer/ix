@@ -26,8 +26,9 @@ fn rewrite(
   let key = (*e.get_hash(), depth);
   if let Some((stored, value)) = cache.get(&key) {
     // Exact input equality includes every cached field: a hit must retain
-    // the raw result of this invocation's pure substitution step.
-    if stored == e {
+    // the raw result of this invocation's pure substitution step. Raw
+    // equality is linear in the DAG (the derived `==` is not).
+    if stored.same_raw(e) {
       return Ok(value.clone());
     }
   }
@@ -70,11 +71,7 @@ fn rewrite(
     }
   };
   // Avoid retaining a second copy of unchanged nodes and their children.
-  let result = if result.get_hash() == e.get_hash() && result == *e {
-    e.clone()
-  } else {
-    result
-  };
+  let result = if result.same_raw(e) { e.clone() } else { result };
   cache.insert(key, (e.clone(), result.clone()));
   control.scratch(
     cache.capacity()
@@ -380,7 +377,7 @@ pub(super) fn subst_levels(
     if let Some((stored, value)) = cache.get(&key) {
       // Confirm the entire input, including cached fields: returning an old
       // result must preserve exactly this pure step's raw output as well.
-      if stored == l {
+      if stored.same_raw(l) {
         return Ok(value.clone());
       }
     }
