@@ -393,11 +393,11 @@ theorem canonicalTail_cache_sound {md : Mode} (raw : Ixon.Univ) (compileContext 
     (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (source : Ix.Expr → Kernel.Reader.CExpr md → Prop)
     (valid : CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader reader param self) before)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader reader param self) before)
       before.exprCache) :
     let after := (rawRun (canonicalTail raw) compileContext before).2
     CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader reader param self) after)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader reader param self) after)
       after.exprCache :=
   ExpressionRead.blockReader_cache_sound
     (canonicalTail_reading raw compileContext before exact sound reader param self)

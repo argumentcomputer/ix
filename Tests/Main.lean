@@ -23,6 +23,7 @@ import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.ClaimOrder
 import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
+import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
@@ -149,6 +150,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("expression-index", Tests.Ix.Compile.ExpressionIndex.suite),
   -- the ordinary expression compiler's frame: spines, caching, failure effects, DAGs
   ("expression-frame", Tests.Ix.Compile.ExpressionFrame.suite),
+  -- exact expression-cache keys: digest aliases never identify terms; DAG comparison
+  ("exact-expression-key", Tests.Ix.Compile.ExactKey.suite),
   -- the compile drivers refuse a condensation block without a reference set
   ("compile-driver-input", Tests.Ix.Compile.DriverInput.suite),
   ("local-blob", Tests.Ix.Compile.LocalBlob.suite),

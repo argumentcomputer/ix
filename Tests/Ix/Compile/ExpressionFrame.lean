@@ -31,7 +31,7 @@ def controls : List (String × Bool) := Id.run do
   let (innerResult, afterInner) := raw (compileExpr inner) after
   let (cached, afterCached) := raw (compileExpr outer) afterInner
   let seeded : BlockState := {
-    exprCache := ({} : Std.HashMap Expr (Ixon.Expr × UInt64)).insert inner (.var 99, 99) }
+    exprCache := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64)).insert inner (.var 99, 99) }
   let (seedResult, seedAfter) := raw (compileExpr outer) seeded
   let broken := Expr.mkApp inner (Expr.mkMVar (Name.fromLeanName `missing))
   let (failure, failed) := raw (compileExpr broken)
@@ -41,6 +41,25 @@ def controls : List (String × Bool) := Id.run do
   for _ in [:64] do
     shared := Expr.mkLam Name.mkAnon shared shared .default
   let (sharedResult, sharedAfter) := raw (compileExpr shared)
+  -- Semantic-contract wrappers are cached under their exact source key.
+  let contract : _root_.Ix.SemanticContract.Contract := {
+    kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let contractData := #[
+    (Name.fromLeanName `ix.contract, _root_.Ix.DataValue.ofNat 3),
+    (Name.fromLeanName `ix.contract.kind, _root_.Ix.DataValue.ofNat contract.kindCode),
+    (Name.fromLeanName `ix.contract.code, _root_.Ix.DataValue.ofNat contract.code)]
+  let binder := Expr.mkLam Name.mkAnon (Expr.mkSort _root_.Ix.Level.mkZero) f .default
+  let annotated := Expr.mkMData contractData binder
+  let (annotation, annotationAfter) := raw (compileExpr annotated)
+  let (annotationAgain, annotationAgainAfter) := raw (compileExpr annotated) annotationAfter
+  -- Supplied raw keys deliberately share a digest. They exercise the
+  -- lookup boundary without claiming a cryptographic collision.
+  let colliding : Expr := .bvar 1 f.getHash
+  let collidingBad : Expr := .mvar (Name.fromLeanName `missing) f.getHash
+  let (_, firstAfter) := raw (compileExpr f)
+  let (collision, collisionAfter) := raw (compileExpr colliding) firstAfter
+  let (originalAgain, originalAfter) := raw (compileExpr f) collisionAfter
+  let (collisionError, collisionErrorAfter) := raw (compileExpr collidingBad) firstAfter
   return [
     ("flattened application result and root",
       compiled.toOption == some (.app (.app (.var 0) (.var 1)) (.var 2), 4)),
@@ -61,7 +80,26 @@ def controls : List (String × Bool) := Id.run do
       failed.exprCache.contains a),
     ("failed whole expression is not cached", !failed.exprCache.contains broken),
     ("shared DAG has no runtime tree-size prepass",
-      sharedResult.isOk && sharedAfter.arena.nodes.size == 65)
+      sharedResult.isOk && sharedAfter.arena.nodes.size == 65),
+    ("semantic contract lowers the anonymous binder", match annotation with
+      | .ok (.lam actual (.sort 0) (.var 0), _) => actual == contract.binder
+      | _ => false),
+    ("semantic contract wrapper is cached after success",
+      annotation.isOk && annotationAfter.exprCache.get? annotated == annotation.toOption),
+    ("repeated semantic contract reuses its result and arena",
+      annotationAgain.toOption == annotation.toOption &&
+        annotationAgainAfter.arena.nodes == annotationAfter.arena.nodes),
+    ("different indices sharing a stored hash compile independently",
+      collision.toOption == some (.var 1, 1)),
+    ("colliding keys retain both cache entries",
+      collisionAfter.exprCache.get? f == some (.var 0, 0) &&
+      collisionAfter.exprCache.get? colliding == some (.var 1, 1) &&
+      collisionAfter.exprCache.size == 2),
+    ("colliding insertion preserves the original cached root",
+      originalAgain.toOption == some (.var 0, 0) && originalAfter.arena.nodes.size == 2),
+    ("a colliding unsupported expression still fails", (match collisionError with
+      | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
+      collisionErrorAfter.arena.nodes == firstAfter.arena.nodes)
   ]
 
 def suite : List TestSeq := controls.map fun (label, ok) => test s!"expression frame: {label}" ok

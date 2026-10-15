@@ -230,6 +230,14 @@ def Reading {md : Mode} (source : Ix.Expr → CExpr md → Prop)
     (expr : Ix.Expr) (value : Ixon.Expr × UInt64) : Prop :=
   ∃ target, source expr target ∧ (reader state).read value.1 = .ok target
 
+/-- The meaning of an expression-cache entry. The cache is keyed by
+`Ix.Compile.ExactKey.ExprKey` (exact keys, CQ2.8): an entry means what its
+key's expression reads as. -/
+def KeyReading {md : Mode} (source : Ix.Expr → CExpr md → Prop)
+    (reader : Ix.CompileM.BlockState → MemberReader md) (state : Ix.CompileM.BlockState)
+    (key : Ix.Compile.ExactKey.ExprKey) (value : Ixon.Expr × UInt64) : Prop :=
+  Reading source reader state key.expr value
+
 theorem blockReader_cache_blind {md : Mode} (context : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (state : Ix.CompileM.BlockState) (cache) :
     blockReader context param self { state with exprCache := cache } =
@@ -259,10 +267,10 @@ theorem cache_sound_of_growth {md : Mode} {source : Ix.Expr → CExpr md → Pro
     (sharing : ∀ (index : Nat) (value : CExpr md), (reader before).tbl[index]? = some (.ok value) →
       (reader after).tbl[index]? = some (.ok value))
     (cache : after.exprCache = before.exprCache)
-    (prior : CacheSound (Reading source reader before) before.exprCache) :
-    CacheSound (Reading source reader after) after.exprCache := by
+    (prior : CacheSound (KeyReading source reader before) before.exprCache) :
+    CacheSound (KeyReading source reader after) after.exprCache := by
   rw [cache]
-  exact prior.mono fun _ _ related => related.of_growth growth sharing
+  exact prior.mono fun _ _ related => Reading.of_growth growth sharing related
 
 /-- `cache_sound_of_growth` for the in-flight reader, whose sharing table is
 empty. -/
@@ -271,8 +279,9 @@ theorem blockReader_cache_sound {md : Mode} {source : Ix.Expr → CExpr md → P
     {before after : Ix.CompileM.BlockState}
     (growth : Extends (blockReader context param self before).ecx (blockReader context param self after).ecx)
     (cache : after.exprCache = before.exprCache)
-    (prior : CacheSound (Reading source (blockReader context param self) before) before.exprCache) :
-    CacheSound (Reading source (blockReader context param self) after) after.exprCache := by
+    (prior : CacheSound (KeyReading source (blockReader context param self) before)
+      before.exprCache) :
+    CacheSound (KeyReading source (blockReader context param self) after) after.exprCache := by
   apply cache_sound_of_growth growth ?_ cache prior
   intro index value found
   rw [blockReader_tbl] at found

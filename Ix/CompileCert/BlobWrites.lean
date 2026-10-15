@@ -215,9 +215,9 @@ theorem cache_preserved {md : Mode} (ambient : Store) (before after : BlockState
     (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (aligned : ∀ address, reader.blob address = ambient.get? address)
     (related : Ix.Expr → Kernel.Reader.CExpr md → Prop)
-    (valid : CacheSound (ExpressionRead.Reading related (ExpressionRead.blockReader reader param self) before)
+    (valid : CacheSound (ExpressionRead.KeyReading related (ExpressionRead.blockReader reader param self) before)
       before.exprCache) :
-    CacheSound (ExpressionRead.Reading related (ExpressionRead.blockReader reader param self) after)
+    CacheSound (ExpressionRead.KeyReading related (ExpressionRead.blockReader reader param self) after)
       after.exprCache :=
   ExpressionRead.blockReader_cache_sound
     (reader_extends ambient before after frame grows reader param self aligned)

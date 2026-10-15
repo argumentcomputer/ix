@@ -157,10 +157,10 @@ theorem NamesBlobs.cache_sound {md : Mode} {action : CompileM α} (framed : Name
     (param : Nat → LevelParam) (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (aligned : ∀ address, reader.blob address = context.1.blobs.get? address)
     (related : Ix.Expr → Kernel.Reader.CExpr md → Prop)
-    (valid : CacheSound (ExpressionRead.Reading related (ExpressionRead.blockReader reader param self) before)
+    (valid : CacheSound (ExpressionRead.KeyReading related (ExpressionRead.blockReader reader param self) before)
       before.exprCache) :
     let after := (rawRun action context before).2
-    CacheSound (ExpressionRead.Reading related (ExpressionRead.blockReader reader param self) after)
+    CacheSound (ExpressionRead.KeyReading related (ExpressionRead.blockReader reader param self) after)
       after.exprCache :=
   BlobWrites.cache_preserved context.1.blobs before _ (framed context before).1 (framed context before).2
     reader param self aligned related valid

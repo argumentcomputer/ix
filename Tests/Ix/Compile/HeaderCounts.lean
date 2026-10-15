@@ -121,7 +121,7 @@ def controls : List (String × Bool) := Id.run do
     arena := { nodes := #[.leaf] }
     refs := #[default]
     univs := #[.zero]
-    exprCache := ({} : Std.HashMap _ _).insert (Expr.mkBVar 0) (.var 0, 0) }
+    exprCache := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExprKey _).insert (Expr.mkBVar 0) (.var 0, 0) }
   let (failed, failedState) := raw (finishConstructorCompilation { ctor with numFields := UInt64.size } (.sort 0) 0) initial
   result := result ++ [("header refusal drains per-constant state and retains tables",
     refused failed && failedState.arena.nodes.isEmpty && failedState.exprCache.isEmpty &&

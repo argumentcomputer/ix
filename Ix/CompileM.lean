@@ -26,6 +26,7 @@ public import Ix.Mutual
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.SOrder
+public import Ix.Compile.ExactKey
 public import Ix.CallSitePlan
 public import Ix.CallSiteSurgery
 public import Ix.CanonM
@@ -168,9 +169,9 @@ structure BlockResult where
 
 /-- Per-block compilation state and tables. -/
 structure BlockState where
-  /-- Expression compilation cache (keyed by Expr for O(1) lookup).
-      Value is (compiled expression, arena root index). -/
-  exprCache : Std.HashMap Expr (Ixon.Expr × UInt64) := {}
+  /-- Expression cache indexed by stored hash and confirmed by exact source
+      equality. Value is (compiled expression, arena root index). -/
+  exprCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) := {}
   /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
   univCache : Std.HashMap Level Ixon.Univ := {}
   /-- Constant comparison cache (by name pairs) -/
@@ -1261,7 +1262,8 @@ mutual
 
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
     Returns (compiled expression, arena root index).
-    Uses Ix.Expr as cache key for O(1) lookup via embedded hash.
+    Uses exact source keys with embedded hashes for indexing. Shared objects
+    compare by identity; distinct candidates receive a proved DAG comparison.
 
     Mirrors Rust `compile_expr` (compile.rs:650). Rust is stack-based
     (`Frame::Compile`/`Frame::Cache`); this recursion has identical
@@ -1276,7 +1278,7 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
   let isEta ← match e with
     | .const name _ _ => etaAdapterNeeded name 0
     | _ => pure false
-  -- Check cache (O(1) lookup via embedded hash)
+  -- Hash-indexed lookup with exact source-key confirmation.
   let state ← getBlockState
   if !isEta then
     if let some cached := state.exprCache.get? e then

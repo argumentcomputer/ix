@@ -298,11 +298,11 @@ theorem internRef_cache_sound {md : Mode} (address : Address) (compileContext : 
     (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (source : Ix.Expr → Kernel.Reader.CExpr md → Prop)
     (valid : CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) state)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) state)
       state.exprCache) :
     let after := (rawRun (internRef address) compileContext state).2
     CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) after)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) after)
       after.exprCache :=
   ExpressionRead.blockReader_cache_sound
     (internRef_reading address compileContext state context param self)
@@ -416,11 +416,11 @@ theorem internUniv_cache_sound {md : Mode} (univ : Ixon.Univ) (compileContext : 
     (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (source : Ix.Expr → Kernel.Reader.CExpr md → Prop)
     (valid : CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) state)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) state)
       state.exprCache) :
     let after := (rawRun (internUniv univ) compileContext state).2
     CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) after)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) after)
       after.exprCache :=
   ExpressionRead.blockReader_cache_sound
     (internUniv_reading univ compileContext state context param self)
@@ -540,11 +540,11 @@ theorem internMetaUniv_cache_sound {md : Mode} (univ : Ixon.Univ)
     (param : Nat → LevelParam) (self : Nat → Option (Kernel.Reader.ReadM (Kernel.Reader.CName md)))
     (source : Ix.Expr → Kernel.Reader.CExpr md → Prop)
     (valid : CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) state)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) state)
       state.exprCache) :
     let after := (rawRun (internMetaUniv univ) compileContext state).2
     CacheSound
-      (ExpressionRead.Reading source (ExpressionRead.blockReader context param self) after)
+      (ExpressionRead.KeyReading source (ExpressionRead.blockReader context param self) after)
       after.exprCache :=
   ExpressionRead.blockReader_cache_sound
     (internMetaUniv_reading univ compileContext state context param self)
