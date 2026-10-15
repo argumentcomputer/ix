@@ -632,6 +632,91 @@ fn to_kexpr_static_refuses_unknown_universe_parameter() {
   );
 }
 
+/// 2^64, the least `Nat` beyond `u64`.
+fn two_pow_64() -> Nat {
+  Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1])
+}
+
+/// A bound-variable or projection index beyond `u64` is refused (it used to
+/// panic in `nat_to_u64`), with the kernel crate's wording; `u64::MAX` is
+/// the valid neighbour.
+#[test]
+fn to_kexpr_static_refuses_indices_beyond_u64() {
+  let stt = CompileState::new_empty();
+  let fvars = FxHashMap::default();
+  assert_refused(
+    to_kexpr_static(&LeanExpr::bvar(two_pow_64()), &fvars, 0, &[], &stt),
+    "aux kernel bridge: to_kexpr_static: bound variable index \
+     18446744073709551616 exceeds u64",
+  );
+  let kernel =
+    to_kexpr_static(&LeanExpr::bvar(Nat::from(u64::MAX)), &fvars, 0, &[], &stt)
+      .unwrap();
+  assert!(matches!(kernel.data(), KED::Var(u64::MAX, ..)));
+  let subject = LeanExpr::lit(Literal::NatVal(Nat::from(0u64)));
+  assert_refused(
+    to_kexpr_static(
+      &LeanExpr::proj(name("S"), two_pow_64(), subject.clone()),
+      &fvars,
+      0,
+      &[],
+      &stt,
+    ),
+    "aux kernel bridge: to_kexpr_static: projection index \
+     18446744073709551616 of S exceeds u64",
+  );
+  let kernel = to_kexpr_static(
+    &LeanExpr::proj(name("S"), Nat::from(u64::MAX), subject),
+    &fvars,
+    0,
+    &[],
+    &stt,
+  )
+  .unwrap();
+  assert!(matches!(kernel.data(), KED::Prj(_, u64::MAX, ..)));
+}
+
+/// A Nat literal of 2^64 or more is addressed by its full little-endian
+/// bytes (it used to panic in `nat_to_u64`); below 2^64 the address is the
+/// u64's eight bytes, as before.
+#[test]
+fn to_kexpr_static_addresses_large_nat_literals_by_full_bytes() {
+  let stt = CompileState::new_empty();
+  let fvars = FxHashMap::default();
+  let large = two_pow_64();
+  let kernel = to_kexpr_static(
+    &LeanExpr::lit(Literal::NatVal(large.clone())),
+    &fvars,
+    0,
+    &[],
+    &stt,
+  )
+  .unwrap();
+  let KED::Nat(value, addr, _) = kernel.data() else { panic!("nat") };
+  assert_eq!(value, &large);
+  assert_eq!(addr, &Address::hash(&[0, 0, 0, 0, 0, 0, 0, 0, 1]));
+  let kernel = to_kexpr_static(
+    &LeanExpr::lit(Literal::NatVal(Nat::from(u64::MAX))),
+    &fvars,
+    0,
+    &[],
+    &stt,
+  )
+  .unwrap();
+  let KED::Nat(_, addr, _) = kernel.data() else { panic!("nat") };
+  assert_eq!(addr, &Address::hash(&u64::MAX.to_le_bytes()));
+  let kernel = to_kexpr_static(
+    &LeanExpr::lit(Literal::NatVal(Nat::from(1u64))),
+    &fvars,
+    0,
+    &[],
+    &stt,
+  )
+  .unwrap();
+  let KED::Nat(_, addr, _) = kernel.data() else { panic!("nat") };
+  assert_eq!(addr, &Address::hash(&1u64.to_le_bytes()));
+}
+
 /// The Lean bridge refuses (`kunivToLevel`) a universe parameter index
 /// outside the parameter names; Rust used to invent `u_{idx}`.
 #[test]

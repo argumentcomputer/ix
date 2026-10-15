@@ -205,6 +205,15 @@ def paramNamesHash (paramNames : Array Name) : Address := Id.run do
     buf := buf ++ n.getHash.hash
   return Address.blake3 buf
 
+/-- The blob address of a Nat literal in the bridge's kernel terms. Below
+    2⁶⁴ it is the 8-byte little-endian encoding (the compile-side
+    convention: Rust `to_kexpr_static` hashes `n.to_u64()`'s bytes); from
+    2⁶⁴ on it is the full minimal little-endian encoding (`Ix.Tc`'s
+    `natBlob`, the kernel crate's convention), never a truncation of `n`. -/
+def bridgeNatBlob (n : Nat) : Address :=
+  if n < UInt64.size then Address.blake3 (UInt64.ofNat n).toLEBytes
+  else Ix.Tc.KExpr.natBlob n
+
 /-- Closed-term `Ix.Expr → KExpr .meta`, cached by
     `(expr hash, paramNames hash)` and interned. Mirrors Rust
     `lean_expr_to_zexpr_cached`/`_raw` (kernel ingress.rs:2232/:2273):
@@ -231,6 +240,9 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
 
   let raw ← match cur with
     | .bvar idx _ =>
+      if idx ≥ UInt64.size then
+        throw (.unsupportedExpr
+          s!"aux kernel bridge: bound variable index {idx} exceeds u64 in closed ingress")
       let name := Id.run do
         if h : idx < binderNames.size then
           return binderNames[binderNames.size - 1 - idx]'(by omega)
@@ -265,14 +277,15 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
         (binderNames.push binderName) pnHash maps
       pure (Ix.Tc.KExpr.mkLet binderName tk vk bk nd mdataLayers)
     | .proj pname idx s _ =>
+      if idx ≥ UInt64.size then
+        throw (.unsupportedExpr
+          s!"aux kernel bridge: projection index {idx} of {pname.pretty} exceeds u64 in closed ingress")
       let zid : MKId := ⟨maps.resolve pname, pname⟩
       let sk ← leanExprToKexprCached s paramNames binderNames pnHash maps
       pure (Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx) sk mdataLayers)
     | .lit (.natVal n) _ =>
-      -- Compile-side blob convention: 8-byte u64 LE (Rust to_kexpr_static
-      -- / ingress use `nat_to_u64(n).to_le_bytes()`), NOT the kernel's
-      -- trimmed `natBlob`.
-      pure (Ix.Tc.KExpr.mkNat n (Address.blake3 (UInt64.ofNat n).toLEBytes) mdataLayers)
+      -- Compile-side blob convention below 2⁶⁴ (`bridgeNatBlob`).
+      pure (Ix.Tc.KExpr.mkNat n (bridgeNatBlob n) mdataLayers)
     | .lit (.strVal s) _ =>
       pure (Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8) mdataLayers)
     | .fvar name _ =>
@@ -461,7 +474,9 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
       if level >= ctxDepth then throw s!"toKexprStatic: free variable {fname.pretty} outside context depth {ctxDepth}"
       return Ix.Tc.KExpr.mkVar (UInt64.ofNat (ctxDepth - level - 1)) .mkAnon
     | none => throw s!"toKexprStatic: unknown free variable {fname.pretty}"
-  | .bvar idx _ => return Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) .mkAnon
+  | .bvar idx _ =>
+    if idx ≥ UInt64.size then throw s!"toKexprStatic: bound variable index {idx} exceeds u64"
+    return Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) .mkAnon
   | .sort lvl _ => return Ix.Tc.KExpr.mkSort (← leanLevelToKuniv lvl paramNames)
   | .const cname us _ =>
     let zid : MKId := ⟨maps.resolve cname, cname⟩
@@ -483,12 +498,14 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
       (← toKexprStatic val fvarLevels ctxDepth paramNames maps)
       (← toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps) nd
   | .proj pname idx s _ =>
+    if idx ≥ UInt64.size then
+      throw s!"toKexprStatic: projection index {idx} of {pname.pretty} exceeds u64"
     let zid : MKId := ⟨maps.resolve pname, pname⟩
     return Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx)
       (← toKexprStatic s fvarLevels ctxDepth paramNames maps)
   | .lit (.natVal n) _ =>
-    -- 8-byte u64 LE blob convention (see leanExprToKexprCached).
-    return Ix.Tc.KExpr.mkNat n (Address.blake3 (UInt64.ofNat n).toLEBytes)
+    -- The compile-side blob convention (`bridgeNatBlob`).
+    return Ix.Tc.KExpr.mkNat n (bridgeNatBlob n)
   | .lit (.strVal s) _ =>
     return Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8)
   | .mdata _ inner _ =>

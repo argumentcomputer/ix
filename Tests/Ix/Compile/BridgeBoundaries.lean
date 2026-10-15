@@ -118,8 +118,57 @@ private def mdataEverywhere : Bool :=
     -- valid neighbour: no metadata gives the bare term
     && (kexprToLean (Ix.Tc.KExpr.mkApp (Ix.Tc.KExpr.mkConst ⟨x.getHash, x⟩ #[]) ky) 0 {} 0 #[]).toOption
       == some (Expr.mkApp (Expr.mkConst x #[]) (Expr.mkConst y #[]))
+/-- Bound-variable and projection indices beyond `u64` are refused by both
+ingresses (they used to wrap through `UInt64.ofNat`; Rust panicked), with the
+kernel crate's wording; `2⁶⁴ - 1` is the valid neighbour. -/
+private def wideIndices : Bool :=
+  let big := 2 ^ 64
+  let subject := Expr.mkLit (.natVal 0)
+  let openBVar := failsWith (toKexprStatic (Expr.mkBVar big) {} 0 #[] maps)
+    "toKexprStatic: bound variable index 18446744073709551616 exceeds u64"
+  let openProj := failsWith (toKexprStatic (Expr.mkProj x big subject) {} 0 #[] maps)
+    "toKexprStatic: projection index 18446744073709551616 of x exceeds u64"
+  let openValid :=
+    (match toKexprStatic (Expr.mkBVar (big - 1)) {} 0 #[] maps with
+      | .ok (.var idx _ _) => idx == UInt64.ofNat (big - 1)
+      | _ => false) &&
+    (match toKexprStatic (Expr.mkProj x (big - 1) subject) {} 0 #[] maps with
+      | .ok (.prj _ field _ _) => field == UInt64.ofNat (big - 1)
+      | _ => false)
+  let closedBVar := bridgeFails (Expr.mkBVar big)
+    "bound variable index 18446744073709551616 exceeds u64 in closed ingress"
+  let closedProj := bridgeFails (Expr.mkProj x big subject)
+    "projection index 18446744073709551616 of x exceeds u64 in closed ingress"
+  let closedValid := match execute (leanExprToKexpr (Expr.mkBVar (big - 1)) #[] maps) with
+    | .ok (.var idx _ _) => idx == UInt64.ofNat (big - 1)
+    | _ => false
+  openBVar && openProj && openValid && closedBVar && closedProj && closedValid
+
+/-- A Nat literal of `2⁶⁴` or more is addressed by its full little-endian
+bytes (`Ix.Tc`'s `natBlob`) in both ingresses, never by a truncation; below
+`2⁶⁴` the address stays the u64's eight bytes. -/
+private def largeNatLiterals : Bool :=
+  let blobOf {ε : Type} (r : Except ε MKExpr) : Option Address := match r with
+    | .ok (.nat _ blob _) => some blob
+    | _ => none
+  let both (n : Nat) : Option Address × Option Address :=
+    (blobOf (toKexprStatic (Expr.mkLit (.natVal n)) {} 0 #[] maps),
+     blobOf (execute (leanExprToKexpr (Expr.mkLit (.natVal n)) #[] maps)))
+  let big := 2 ^ 64
+  let bigBlob := some (Address.blake3 ⟨#[0, 0, 0, 0, 0, 0, 0, 0, 1]⟩)
+  let maxBlob := some (Address.blake3 (UInt64.ofNat (big - 1)).toLEBytes)
+  let oneBlob := some (Address.blake3 (1 : UInt64).toLEBytes)
+  both big == (bigBlob, bigBlob)
+    && bigBlob == some (Ix.Tc.KExpr.natBlob big)
+    && both (big - 1) == (maxBlob, maxBlob)
+    && both 1 == (oneBlob, oneBlob)
+    -- the truncation the bridge must not produce
+    && bigBlob != some (Address.blake3 (UInt64.ofNat big).toLEBytes)
+
 def suite : List TestSeq := [
-  test "unknown universe parameters are explicit errors"
+  test "bound-variable and projection indices beyond u64 are refused" wideIndices
+  ++ test "Nat literals beyond u64 are addressed by their full bytes" largeNatLiterals
+  ++ test "unknown universe parameters are explicit errors"
     (failsWith (leanLevelToKuniv (Level.mkParam u) #[]) "unknown level param")
   ++ test "universe metavariables are explicit errors"
     (failsWith (leanLevelToKuniv (Level.mkMvar u) #[]) "level metavariable")

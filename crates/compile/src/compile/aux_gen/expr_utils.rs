@@ -2938,7 +2938,14 @@ fn to_kexpr_cached(
         )));
       },
     },
-    ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
+    ExprData::Bvar(idx, _) => {
+      let idx = idx.to_u64().ok_or_else(|| {
+        bridge_refusal(format!(
+          "to_kexpr_static: bound variable index {idx} exceeds u64"
+        ))
+      })?;
+      KExpr::var(idx, Name::anon())
+    },
     ExprData::Sort(lvl, _) => {
       KExpr::sort(bridge_level_to_kuniv(lvl, param_names)?)
     },
@@ -2975,14 +2982,26 @@ fn to_kexpr_cached(
     ExprData::Proj(pname, idx, e, _) => {
       let addr = resolve_lean_name_addr(pname, n2a, aux_n2a);
       let zid = KId::new(addr, pname.clone());
+      let field = idx.to_u64().ok_or_else(|| {
+        bridge_refusal(format!(
+          "to_kexpr_static: projection index {idx} of {} exceeds u64",
+          pname.pretty()
+        ))
+      })?;
       let ke = go(e, ctx_depth, cache)?;
-      KExpr::prj(zid, nat_to_u64(idx), ke)
+      KExpr::prj(zid, field, ke)
     },
     ExprData::Lit(lit, _) => {
       use ix_common::env::Literal;
       match lit {
         Literal::NatVal(n) => {
-          let addr = Address::hash(&nat_to_u64(n).to_le_bytes());
+          // The compile-side convention below 2^64 (the u64's 8 LE bytes);
+          // from 2^64 on, the full minimal LE bytes (the kernel crate's
+          // convention), never a truncation (Lean `bridgeNatBlob`).
+          let addr = match n.to_u64() {
+            Some(v) => Address::hash(&v.to_le_bytes()),
+            None => Address::hash(&n.to_le_bytes()),
+          };
           KExpr::nat(n.clone(), addr)
         },
         Literal::StrVal(s) => {
