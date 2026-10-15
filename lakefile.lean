@@ -4,6 +4,10 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
   moreLinkObjs := #[⟨.packageTarget .anonymous `ix_cuda_runtime⟩]
+  -- The CUDA DSO resolves libc against the running system. Lean's link-time
+  -- glibc stubs can be older; the DSO itself is linked with -z defs.
+  moreLinkArgs := if System.Platform.isLinux then
+    #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
@@ -48,7 +52,7 @@ The archives are built when native targets need them. Keeping Rust linkage on
 section FFI
 
 /-- Rust feature selection shared by compilation and native runtime linkage. -/
-def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : BaseIO (Array String) := do
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
   -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
@@ -94,71 +98,38 @@ def usesCuda (features : Array String) : Bool :=
   features.any fun feature => (feature.splitOn ",").any fun name =>
     name == "cuda" || name == "cuda-trace-codegen"
 
-/-- Query nvcc's actual host compiler, including its configured overrides. -/
-def cudaCompilerLibrary (pkg : Package) (name : String) : IO FilePath := do
-  unless System.Platform.isLinux do
-    throw <| IO.userError "CUDA runtime linkage requires Linux"
-  let nvcc ← match ← IO.getEnv "NVCC" with
-    | some path => pure path
-    | none =>
-      match (← IO.getEnv "CUDA_HOME") <|> (← IO.getEnv "CUDA_PATH") with
-      | some root =>
-        let path := System.FilePath.mk root / "bin/nvcc"
-        if ← path.pathExists then pure path.toString else pure "nvcc"
-      | none => pure "nvcc"
-  let result ← IO.Process.output {
-    cmd := nvcc
-    args := #["-x", "c++", "-c", "/dev/null", "-o", "/dev/null",
-      s!"-Xcompiler=-print-file-name={name}"]
-    cwd := pkg.dir
-  }
-  let path := System.FilePath.mk result.stdout.trimAscii.toString
-  unless result.exitCode == 0 && path.isAbsolute && (← path.pathExists) do
-    throw <| IO.userError s!"Cannot locate {name} via {nvcc}: {result.stderr} {result.stdout}"
-  IO.FS.realPath path
+def cudaLibraryName := "libmulti_stark_cuda.so"
 
-def cudaRuntimeArchive (pkg : Package) (args : Array String) : IO (Option FilePath) := do
-  if usesCuda args then return some (← cudaCompilerLibrary pkg "libstdc++.a")
-  return none
+/-- Cargo reports native build outputs even when the build is already fresh. -/
+def cargoCudaLibrary (messages : String) : Except String FilePath := do
+  for line in messages.splitOn "\n" do
+    let .ok message := Lean.Json.parse line | continue
+    let .ok libs := message.getObjValAs? (Array String) "linked_libs" | continue
+    if libs.contains "dylib=multi_stark_cuda" then
+      let directory ← message.getObjValAs? String "out_dir"
+      return System.FilePath.mk directory / cudaLibraryName
+  throw "Cargo did not report multi-stark's CUDA shared library"
 
-/-- The private GNU C++ runtime needs its host compiler's C library family.
-Mixing a new libc with Lean's older libpthread/libdl leaves GLIBC_PRIVATE
-references unresolved. CPU builds need neither discovery nor this override. -/
-target ix_cuda_runtime pkg : FilePath := do
-  unless usesCuda (← cargoFeatures) do
-    return ← buildStaticLib (pkg.buildDir / "lib" / "libix_cuda_runtime.a") #[]
-  let libraries ← #["libc.so", "libm.so", "libpthread.so.0", "libdl.so.2", "librt.so.1"].mapM
-    fun name => do return ← cudaCompilerLibrary pkg name
-  let inputs ← libraries.mapM fun path => do return ← inputBinFile path
-  let output := pkg.buildDir / "lib" / "ix_cuda_runtime.ld"
-  buildFileAfterDep output (Job.collectArray inputs) (fun paths => do
-    IO.FS.createDirAll (pkg.buildDir / "lib")
-    let quoted := paths.toList.map fun (path : FilePath) => Lean.Json.compress (.str path.toString)
-    IO.FS.writeFile output s!"INPUT ({String.intercalate " " quoted})\n"
-  ) (extraDepTrace := pure <| .ofHash (pureHash (libraries.map FilePath.toString))
-    "CUDA system library paths")
+local instance : CheckExists (Array FilePath) where
+  checkExists paths := paths.allM (·.pathExists)
 
-/-- CUDA's C++ implementation and exception metadata stay private to the
-native archive; only C entry points cross into Lean's separate C++ runtime. -/
-def snapshotRustStatic (pkg : Package) (tag : String) (runtime : Option FilePath) :
-    JobM FilePath := do
-  IO.FS.createDirAll (pkg.buildDir / "lib")
-  let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-  let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
-  if let some runtime := runtime then
-    proc { cmd := "python3", cwd := pkg.dir, args := #[
-      (pkg.dir / "crates/proof-compression/cuda/isolate_runtime.py").toString,
-      "--source", built.toString, "--output", output.toString, "--runtime", runtime.toString] } (quiet := true)
-  else
-    copyFile built output
-  return output
+local instance : GetMTime (Array FilePath) where
+  getMTime paths := do
+    paths.foldlM (fun oldest path => return min oldest (← getMTime path))
+      (← getMTime paths[0]!)
+
+/-- Replacing the inode keeps an already-loaded shared library intact. -/
+def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := do
+  IO.FS.createDirAll output.parent.get!
+  let temporary := output.addExtension s!"{tag}.tmp"
+  proc { cmd := "cp", args := #["-f", source.toString, temporary.toString] } (quiet := true)
+  IO.FS.rename temporary output
 
 /-- Every source, kernel, manifest and profile file the Cargo builds read. -/
 def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
     path.extension == some "cuh" || path.extension == some "cpp" ||
-    path.extension == some "py" ||
     path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
@@ -172,78 +143,81 @@ def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources := sources.zipWith (fun _ _ => ()) profiles
   return sources.zipWith (fun _ _ => ()) manifests
 
-/-- Build and snapshot one feature selection of the Rust static library.
-The copied output has a Lake trace containing both Rust sources and Cargo
-arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
-archive from a previous invocation. -/
-def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
+/-- Cargo's archive or executable and its native library are one build output.
+Both must exist before a cached result can be used. -/
+def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
+    (built output : FilePath) (before : Option (Job FilePath) := none) :
     SpawnM (Job FilePath) := do
   let deps ← rustSources pkg
+  let deps := match before with
+    | some before => deps.zipWith (fun _ _ => ()) before
+    | none => deps
   let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
   let cargoEnv := cargoEnvironment environment
-  let runtimeJob ← Job.async do
-    let runtime ← cudaRuntimeArchive pkg args
-    if let some runtime := runtime then addTrace (← computeTrace runtime)
-    return runtime
-  let deps := deps.zipWith (fun _ runtime => runtime) runtimeJob
-  let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
-  buildFileAfterDep output deps (fun runtime => do
-    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
-    discard <| snapshotRustStatic pkg tag runtime
-  ) (extraDepTrace := do
-    addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}; cargo env: {cargoEnv}"
-    return .nil)
+  let native := pkg.buildDir / "lib" / cudaLibraryName
+  let cuda := usesCuda args
+  let outputs := if cuda then #[output, native] else #[output]
+  deps.mapM fun _ => do
+    addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}"
+    buildUnlessUpToDate outputs (← getTrace) (output.addExtension "trace") do
+      let result ← captureProc' {
+        cmd := "cargo"
+        args := args.push "--message-format=json-render-diagnostics"
+        cwd := pkg.dir
+        env := cargoEnv
+      }
+      unless result.stderr.isEmpty do logVerbose result.stderr
+      if cuda then
+        let source ← match cargoCudaLibrary result.stdout with
+          | .ok source => pure source
+          | .error message => error message
+        copyNativeArtifact source native tag
+      copyNativeArtifact built output tag
+    setTrace (← computeTrace outputs)
+    return output
+
+def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
+    (before : Option (Job FilePath) := none) : SpawnM (Job FilePath) :=
+  buildCargoArtifact pkg args tag
+    (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi")
+    (pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a") before
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
-/-- The stage worker `ix compress` spawns, built as its own executable beside
-`ix` with the same `parallel` and `cuda` selection as the static libraries.
-The KZG prover and its CUDA runtime live only here. -/
+/-- The native library is built by multi-stark and packaged alongside the archive. -/
+target ix_cuda_runtime pkg : FilePath := do
+  unless usesCuda (← cargoFeatures) do
+    return ← buildStaticLib (pkg.buildDir / "lib" / "libix_cuda_runtime.a") #[]
+  let base ← ix_rs.fetch
+  base.mapM fun _ => do
+    let native := pkg.buildDir / "lib" / cudaLibraryName
+    setTrace (← computeTrace native)
+    return native
+
+/-- The compression worker and Lean executables use the same native library. -/
 target ix_compression_worker pkg : FilePath := do
   let features ← cargoFeatures
   let mut args := #["build", "--release", "-p", "ix-proof-compression",
     "--bin", "ix-compression-worker"]
   unless features.contains "parallel" do
     args := args.push "--no-default-features"
+  let mut before := none
   if usesCuda features then
     args := args ++ #["--features", "cuda"]
-  let deps ← rustSources pkg
-  let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
-  let cargoEnv := cargoEnvironment environment
-  let built := pkg.dir / "target" / "release" / "ix-compression-worker"
-  let output := pkg.buildDir / "bin" / "ix-compression-worker"
-  buildFileAfterDep output deps (fun _ => do
-    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv } (quiet := true)
-    IO.FS.createDirAll (pkg.buildDir / "bin")
-    proc { cmd := "cp", args := #["-f", built.toString, output.toString] } (quiet := true)
-  ) (extraDepTrace := do
-    addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}; cargo env: {cargoEnv}"
-    return .nil)
+    before := some (← ix_rs.fetch)
+  buildCargoArtifact pkg args "worker"
+    (pkg.dir / "target" / "release" / "ix-compression-worker")
+    (pkg.buildDir / "bin" / "ix-compression-worker") before
 
-/-- Rebuild the Rust static lib with `test-ffi`.
-Used by `IxTests` and the focused `kernel-codec` differential runner.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+/-- Cargo feature variants wait for the default archive before building. -/
 target ix_rs_test pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (testFfi := true)
-    let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
-    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnvironment environment } (quiet := true)
-    let runtime ← cudaRuntimeArchive pkg args
-    snapshotRustStatic pkg "test" runtime
+  buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
 
-/-- Build the Rust static lib with `net` for the `ix` CLI.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+/-- Build the Rust static lib with `net` for the `ix` CLI. -/
 target ix_rs_net pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (net := true)
-    let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
-    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnvironment environment } (quiet := true)
-    let runtime ← cudaRuntimeArchive pkg args
-    snapshotRustStatic pkg "net" runtime
+  buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
 
 end FFI
 

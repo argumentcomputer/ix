@@ -11,6 +11,9 @@ use std::process::Command;
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
   println!("cargo:rerun-if-env-changed=NVCC");
+  println!("cargo:rerun-if-env-changed=NVCC_CCBIN");
+  println!("cargo:rerun-if-env-changed=NVCC_PREPEND_FLAGS");
+  println!("cargo:rerun-if-env-changed=NVCC_APPEND_FLAGS");
   println!("cargo:rerun-if-env-changed=CUDA_HOME");
   println!("cargo:rerun-if-env-changed=CUDA_PATH");
   println!("cargo:rerun-if-env-changed=MULTI_STARK_CUDA_ARCHS");
@@ -195,25 +198,12 @@ fn nvcc_path() -> std::ffi::OsString {
 
 fn cuda_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
   let supported = supported_architectures(nvcc);
-  let configured = env::var("MULTI_STARK_CUDA_ARCHS").ok().map_or_else(
-    || {
-      let preferred = ["80", "86", "89", "90", "100", "120"];
-      let selected = preferred
-        .into_iter()
-        .filter(|architecture| {
-          supported.iter().any(|item| item == architecture)
-        })
-        .collect::<Vec<_>>();
-      let defaults = if selected.is_empty() {
-        detect_nvidia_architectures().unwrap_or_else(|| "80".to_owned())
-      } else {
-        selected.join(",")
-      };
-      (defaults, false)
-    },
-    |value| (value, true),
-  );
-  let (configured, explicitly_configured) = configured;
+  let configured = env::var("MULTI_STARK_CUDA_ARCHS")
+    .ok()
+    .or_else(detect_nvidia_architectures)
+    .expect(
+      "no NVIDIA GPU detected; set MULTI_STARK_CUDA_ARCHS for the target GPU",
+    );
   let architectures: Vec<_> = configured
         .split(',')
         .map(str::trim)
@@ -225,8 +215,7 @@ fn cuda_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
                 "invalid CUDA architecture {architecture:?}; expected comma-separated numbers such as 80,90"
             );
             assert!(
-                !explicitly_configured
-                    || supported.is_empty()
+                supported.is_empty()
                     || supported.iter().any(|item| item == architecture),
                 "nvcc does not support CUDA architecture sm_{architecture}"
             );
@@ -256,9 +245,7 @@ fn supported_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
 }
 
 /// Detect the architecture of the installed GPU when building on the target
-/// machine. This avoids requiring users to translate `nvidia-smi`'s `12.0`
-/// compute capability into nvcc's `sm_120` spelling. Cross builds and hosts
-/// without a visible GPU retain the portable sm_80 default and can still set
+/// machine. Cross builds and hosts without a GPU must set
 /// `MULTI_STARK_CUDA_ARCHS` explicitly.
 fn detect_nvidia_architectures() -> Option<String> {
   let output = Command::new("nvidia-smi")

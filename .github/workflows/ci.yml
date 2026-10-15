@@ -142,9 +142,8 @@ jobs:
       image: nvidia/cuda:13.3.1-devel-ubuntu26.04
     env:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
-      # link without paying for a GPU runner. Multi-stark CI compiles the
-      # complete supported cubin set; one representative architecture is
-      # sufficient for this downstream integration gate.
+      # link without paying for a GPU runner. One explicit architecture
+      # is sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
       # No sccache here yet. Once the GPU benchmark lands after #644, wire
@@ -182,6 +181,10 @@ jobs:
         run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_cuda_runtime
       - name: Link CUDA-enabled Lean executables
         run: IX_CUDA=1 lake build ix bench-typecheck
+      - name: Check the CUDA runtime stays private
+        run: |
+          ! readelf -d .lake/build/lib/libmulti_stark_cuda.so | grep -q 'libstdc++\|libc++\|libgcc_s'
+          ! nm -D --defined-only .lake/build/lib/libmulti_stark_cuda.so | grep -qE ' (_Z|__cxa_|__gxx_|_Unwind_)'
       - name: Check the CUDA compression CLI starts without a GPU
         run: |
           set -o pipefail
