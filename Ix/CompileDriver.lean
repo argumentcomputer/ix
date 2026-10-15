@@ -546,9 +546,10 @@ def missingBlockRefs? (blocks : Ix.CondensedBlocks) : Option String :=
     Rust FFI phase split). An input inductive group with non-canonical
     flags fails the compile first (`validateInductiveFlags`).
 
-    Per-block failures are recorded in `ungrounded` per member and the
-    scheduler continues (dependents cascade into `MissingConstant`
-    failures recorded the same way) — mirroring env.rs:727-737. -/
+    Per-block failures, and the names of a cross-SCC subset whose compile
+    fails, are recorded in `ungrounded` per member and the scheduler
+    continues (dependents cascade into `MissingConstant` failures recorded
+    the same way) — mirroring env.rs:727-737. -/
 def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
@@ -629,10 +630,14 @@ missing canonical aliases: {missing}"
           -- in `Set` order.
           let clo := canonicalKey lo unresolvedNames
           match runBlockWithAux acc.cenv crossAll clo with
-          | .error _ =>
-            -- Rust logs and does NOT register failed names — dependents
-            -- will get MissingConstant rather than broken data.
-            pure ()
+          | .error e =>
+            -- The subset's names are failures of the compile, recorded per
+            -- name as Rust records them, and not registered: dependents get
+            -- `MissingConstant` rather than broken data.
+            let msg := toString e
+            for n in unresolvedNames do
+              acc := { acc with cenv := { acc.cenv with
+                ungrounded := acc.cenv.ungrounded.insert n msg } }
           | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
             acc := mergeCompiledBlock acc clo result cache
               plans brecPlans belowPlans
@@ -753,7 +758,8 @@ inductive AuxBlockOutcome where
       (belowPlans : Std.HashMap Name BRecOnCallSitePlan)
   /-- Promotion path (env.rs:566-708): pre-compiled by prereqs or a
       parent's aux tail. `crossScc` carries the compiled unresolved
-      subset (non-aux case); `incompleteMsg` the aux-incomplete failure;
+      subset (non-aux case), `crossFailure` its names and error when its
+      compile fails; `incompleteMsg` the aux-incomplete failure;
       `noAux` the original-form compile for `Named.original` grafting;
       `noAuxFailMsg` its failure. The promote-remaining loop runs at
       merge time against the live env. -/
@@ -763,6 +769,7 @@ inductive AuxBlockOutcome where
         × Std.HashMap Name BRecOnCallSitePlan
         × Std.HashMap Name BRecOnCallSitePlan))
       (crossNames : Array Name)
+      (crossFailure : Option (Array Name × String))
       (incompleteMsg : Option String)
       (noAux : Option (BlockResult × BlockState))
       (noAuxFailMsg : Option String)
@@ -787,6 +794,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       unresolvedNames := unresolvedNames.push n
     let mut crossScc := none
     let mut crossNames : Array Name := #[]
+    let mut crossFailure := none
     let mut incompleteMsg := none
     if !unresolvedNames.isEmpty then
       if anyAuxGen then
@@ -799,7 +807,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
         -- Named by its canonical key, as in the sequential driver.
         let clo := canonicalKey lo unresolvedNames
         match runBlockWithAux cenv crossAll clo with
-        | .error _ => pure ()
+        | .error e => crossFailure := some (unresolvedNames, toString e)
         | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
           crossScc := some (clo, result, cache,
             plans, brecPlans, belowPlans)
@@ -810,7 +818,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       match compileConstNoAuxPure cenv lo all with
       | .error e => noAuxFailMsg := some (toString e)
       | .ok out => noAux := some out
-    return .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg
+    return .promoted crossScc crossNames crossFailure incompleteMsg noAux noAuxFailMsg
   else
     match runBlockWithAux cenv all lo with
     | .error e => return .failed (toString e)
@@ -837,7 +845,13 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     for m in all do
       acc := { acc with cenv := { acc.cenv with
         ungrounded := acc.cenv.ungrounded.insert m msg } }
-  | .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg =>
+  | .promoted crossScc crossNames crossFailure incompleteMsg noAux noAuxFailMsg =>
+    -- A failed cross-SCC subset: its names are failures, as in the
+    -- sequential driver.
+    if let some (names, msg) := crossFailure then
+      for n in names do
+        acc := { acc with cenv := { acc.cenv with
+          ungrounded := acc.cenv.ungrounded.insert n msg } }
     if let some (clo, result, cache, plans, brecPlans, belowPlans) := crossScc then
       acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
       if result.projections.isEmpty then
@@ -1042,8 +1056,14 @@ blocks remaining but none ready"
         if let .failed _ := outcome then
           for n in all do
             failedNames := failedNames.insert n
-        if let .promoted _ _ (some _) _ _ := outcome then
+        if let .promoted _ _ _ (some _) _ _ := outcome then
           for n in all do
+            failedNames := failedNames.insert n
+        -- The names of a failed cross-SCC subset are released like a failed
+        -- block's, so their dependents run and fail with `MissingConstant`
+        -- (the sequential driver releases every member of the block).
+        if let .promoted _ _ (some (names, _)) _ _ _ := outcome then
+          for n in names do
             failedNames := failedNames.insert n
         let (acc', newNames) := applyAuxBlockOutcome acc lo all outcome
         acc := acc'

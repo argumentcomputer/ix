@@ -701,9 +701,15 @@ pub fn compile_env_with_profile(
                           unresolved_names[0].pretty(),
                           e,
                         );
-                        // Don't register failed names — downstream blocks
-                        // will get MissingConstant rather than silently
-                        // referencing broken data.
+                        // The subset's names are failures of the compile,
+                        // recorded per name (as the Lean drivers record
+                        // them), and not registered: downstream blocks get
+                        // MissingConstant rather than silently referencing
+                        // broken data.
+                        let msg = format!("{e}");
+                        for name in &unresolved_names {
+                          stt_ref.ungrounded.insert(name.clone(), msg.clone());
+                        }
                       } else {
                         for name in &unresolved_names {
                           stt_ref.aux_gen_extra_names.insert(name.clone());
