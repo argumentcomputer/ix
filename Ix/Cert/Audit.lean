@@ -1,4 +1,5 @@
 import Ix.Cert.Statement
+import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 
 /-! # The certification statements, frozen
@@ -82,58 +83,77 @@ fun condense env roots sub envS =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.SourceAccepts
 
-/-- info: def Ix.Cert.recursorsByBlock : Ix.Environment → Ix.Map Ix.Name (Array Ix.Name) :=
+-- CQP.3: the worklist finds an inductive's recursors by the block's first
+-- member compared structurally (`nameEq`), as `DependsOn` compares it. It
+-- compared the hash fields only (`Ix.Name`'s `==`), so with two names of one
+-- hash field it kept a recursor the roots do not reach, and `ClosureCorrect`
+-- was false. It is now a `repeatM` loop over a stack (`closureStep`,
+-- `closureLoop`), which unfolds one step at a time, and `ClosureCorrect` is
+-- proved (`Ix.Cert.closureCorrect`, `Ix.Cert.Closure`).
+/-- info: Ix.Cert.nameEq.eq_def : ∀ (x x_1 : Ix.Name),
+  Ix.Cert.nameEq x x_1 =
+    match x, x_1 with
+    | Ix.Name.anonymous h, Ix.Name.anonymous h' => h == h'
+    | p.str s h, p'.str s' h' => h == h' && s == s' && Ix.Cert.nameEq p p'
+    | p.num i h, p'.num i' h' => h == h' && i == i' && Ix.Cert.nameEq p p'
+    | x, x_2 => false -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.nameEq.eq_def
+
+/-- info: def Ix.Cert.recursorsByBlock : Ix.Environment → Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)) :=
 fun env =>
   Std.HashMap.fold
     (fun m n ci =>
       match ci with
       | Ix.ConstantInfo.recInfo rv =>
         match rv.all[0]? with
-        | some first => Std.HashMap.insert m first ((Std.HashMap.getD m first #[]).push n)
+        | some first => Std.HashMap.insert m first ((Std.HashMap.getD m first #[]).push (first, n))
         | none => m
       | x => m)
     ∅ env.consts -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.recursorsByBlock
 
-/-- info: def Ix.Cert.dependencies : Ix.Map Ix.Name (Array Ix.Name) → Ix.ConstantInfo → Array Ix.Name :=
+/-- info: def Ix.Cert.dependencies : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)) → Ix.ConstantInfo → Array Ix.Name :=
 fun recursors ci =>
   Std.HashSet.toArray (Ix.Cert.refsOf ci) ++
     match ci with
     | Ix.ConstantInfo.inductInfo v =>
       v.all ++
         match v.all[0]? with
-        | some first => Std.HashMap.getD recursors first #[]
+        | some first =>
+          Array.map (fun x => x.snd)
+            (Array.filter (fun x => Ix.Cert.nameEq x.fst first) (Std.HashMap.getD recursors first #[]))
         | none => #[]
     | Ix.ConstantInfo.recInfo rv => rv.all
     | x => #[] -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.dependencies
 
+/-- info: def Ix.Cert.closureStep : Ix.Environment →
+  Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)) →
+    Ix.Set Ix.Name × List Ix.Name → Ix.Set Ix.Name × List Ix.Name ⊕ Ix.Set Ix.Name :=
+fun env recursors x =>
+  match x with
+  | (seen, []) => Sum.inr seen
+  | (seen, n :: todo) =>
+    if Std.HashSet.contains seen n = true then Sum.inl (seen, todo)
+    else
+      match env.consts.get? n with
+      | none => Sum.inl (seen, todo)
+      | some ci => Sum.inl (Std.HashSet.insert seen n, (Ix.Cert.dependencies recursors ci).toList ++ todo) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.closureStep
+
+/-- info: def Ix.Cert.closureLoop : Ix.Environment → Ix.Set Ix.Name × List Ix.Name → Ix.Set Ix.Name :=
+fun env s => (repeatM (fun s => pure (Ix.Cert.closureStep env (Ix.Cert.recursorsByBlock env) s)) s).run -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.closureLoop
+
 /-- info: def Ix.Cert.closure : Ix.Environment → List Ix.Name → Ix.Environment :=
 fun env roots =>
-  (have recursors := Ix.Cert.recursorsByBlock env;
-    have seen := ∅;
-    have todo := roots.toArray;
-    do
-    let __s ←
-      forIn { } (seen, todo) fun x __s =>
-          have seen := __s.fst;
-          let todo := __s.snd;
-          if h : todo.size > 0 then
-            have n := todo[todo.size - 1];
-            have todo := todo.pop;
-            if Std.HashSet.contains seen n = true then pure (ForInStep.yield (seen, todo))
-            else
-              match env.consts.get? n with
-              | none => pure (ForInStep.yield (seen, todo))
-              | some ci =>
-                have seen := Std.HashSet.insert seen n;
-                have todo := todo ++ Ix.Cert.dependencies recursors ci;
-                pure (ForInStep.yield (seen, todo))
-          else pure (ForInStep.done (seen, todo))
-    have seen : Ix.Set Ix.Name := __s.fst
-    pure { consts := Std.HashMap.filter (fun n x => Std.HashSet.contains seen n) env.consts }).run -/
+  have seen := Ix.Cert.closureLoop env (∅, roots);
+  { consts := Std.HashMap.filter (fun n x => Std.HashSet.contains seen n) env.consts } -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.closure
 
@@ -866,6 +886,10 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceValueSound_blocksOf
 
+/-- info: Ix.Cert.closureCorrect : Ix.Cert.ClosureCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.closureCorrect
+
 -- CQP.1: the definitional steps of `CompileAuthentic`.
 /-- info: Ix.Cert.blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
   (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
@@ -936,6 +960,10 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.sourceValueSound_blocksOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.sourceValueSound_blocksOf
+
+/-- info: 'Ix.Cert.closureCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.closureCorrect
 
 /-- info: 'Ix.Cert.blockAddr_mk'' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

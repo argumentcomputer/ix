@@ -50,7 +50,8 @@ Statements (`def … : Prop`) and the theorems proved now:
 * `CompileAuthentic`: every record and blob `compile` returns is stored under
   the pure BLAKE3 hash of its bytes. Stated, not proved; its definitional
   steps are (`blockAddr_mk'`, `storedRecord_authentic`);
-* `ClosureCorrect`: the computed closure is the closure. Stated, not proved;
+* `ClosureCorrect`: the computed closure is the closure. Proved
+  (`closureCorrect`, in `Ix.Cert.Closure`);
 * `RenamingLemma`: the fold commutes with renaming a Source run's keys to
   compiled ones by `Key.map f`, for every `f` injective on the run's ids
   (`RenamingHyp`). Stated, not proved.
@@ -113,45 +114,62 @@ def SourceAccepts (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.E
     (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source) : Prop :=
   IsClosure env roots sub ∧ Ix.LeanIngress.checkSource sub (condense sub) = .ok envS
 
-/-- The recursors of `env`, by the first member of the block they eliminate. -/
-def recursorsByBlock (env : Ix.Environment) : Ix.Map Ix.Name (Array Ix.Name) :=
+/-- Structural equality of names. `Ix.Name`'s `==` compares the stored hashes
+only, so two names with one hash field are `==` without being equal. -/
+def nameEq : Ix.Name → Ix.Name → Bool
+  | .anonymous h, .anonymous h' => h == h'
+  | .str p s h, .str p' s' h' => h == h' && s == s' && nameEq p p'
+  | .num p i h, .num p' i' h' => h == h' && i == i' && nameEq p p'
+  | _, _ => false
+
+/-- The recursors of `env`, each with the first member of the block it
+eliminates, keyed by that member. -/
+def recursorsByBlock (env : Ix.Environment) : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)) :=
   env.consts.fold (init := {}) fun m n ci =>
     match ci with
     | .recInfo rv =>
       match rv.all[0]? with
-      | some first => m.insert first ((m.getD first #[]).push n)
+      | some first => m.insert first ((m.getD first #[]).push (first, n))
       | none => m
     | _ => m
 
-/-- The names `DependsOn` relates a constant `ci` to. -/
-def dependencies (recursors : Ix.Map Ix.Name (Array Ix.Name)) (ci : Ix.ConstantInfo) :
-    Array Ix.Name :=
+/-- The names `DependsOn` relates a constant `ci` to. An inductive's
+recursors are those whose block's first member is the inductive block's,
+compared structurally (`nameEq`) as `DependsOn` compares them; the map's
+lookup compares the hash fields only. -/
+def dependencies (recursors : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name)))
+    (ci : Ix.ConstantInfo) : Array Ix.Name :=
   (refsOf ci).toArray ++
     match ci with
     | .inductInfo v =>
       v.all ++ match v.all[0]? with
-        | some first => recursors.getD first #[]
+        | some first => ((recursors.getD first #[]).filter (nameEq ·.1 first)).map (·.2)
         | none => #[]
     | .recInfo rv => rv.all
     | _ => #[]
 
-/-- The closure of `roots` in `env`, computed by a worklist. -/
-def closure (env : Ix.Environment) (roots : List Ix.Name) : Ix.Environment := Id.run do
-  let recursors := recursorsByBlock env
-  let mut seen : Ix.Set Ix.Name := {}
-  let mut todo : Array Ix.Name := roots.toArray
-  while h : todo.size > 0 do
-    let n := todo[todo.size - 1]
-    todo := todo.pop
-    if seen.contains n then continue
-    match env.consts.get? n with
-    | none => continue
-    | some ci =>
-      seen := seen.insert n
-      todo := todo ++ dependencies recursors ci
-  return { consts := env.consts.filter fun n _ => seen.contains n }
+/-- One step of the closure's worklist (a stack): take the top name; if it
+is new and a constant of `env`, mark it and push the names it needs. -/
+def closureStep (env : Ix.Environment) (recursors : Ix.Map Ix.Name (Array (Ix.Name × Ix.Name))) :
+    Ix.Set Ix.Name × List Ix.Name → (Ix.Set Ix.Name × List Ix.Name) ⊕ Ix.Set Ix.Name
+  | (seen, []) => .inr seen
+  | (seen, n :: todo) =>
+    if seen.contains n then .inl (seen, todo)
+    else match env.consts.get? n with
+      | none => .inl (seen, todo)
+      | some ci => .inl (seen.insert n, (dependencies recursors ci).toList ++ todo)
 
-/-- **The computed closure is the closure.** Stated, not proved. -/
+/-- The worklist run from a state to its end: the names marked. -/
+def closureLoop (env : Ix.Environment) (s : Ix.Set Ix.Name × List Ix.Name) : Ix.Set Ix.Name :=
+  Id.run (repeatM (fun s => pure (closureStep env (recursorsByBlock env) s)) s)
+
+/-- The closure of `roots` in `env`, computed by a worklist. -/
+def closure (env : Ix.Environment) (roots : List Ix.Name) : Ix.Environment :=
+  let seen := closureLoop env (∅, roots)
+  { consts := env.consts.filter fun n _ => seen.contains n }
+
+/-- **The computed closure is the closure.** Proved (`Ix.Cert.closureCorrect`,
+`Ix.Cert.Closure`). -/
 def ClosureCorrect : Prop :=
   ∀ env roots, IsClosure env roots (closure env roots)
 
