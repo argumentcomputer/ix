@@ -27,8 +27,10 @@
      Lean's own `mkBelow` would have failed on the name. The Rust compiler
      (`ix compile`'s FFI), the sequential and wave drivers (1, 4, 16
      workers) and the `ix compile-lean` pipeline (1, 4, 16 workers) must all
-     refuse exactly `T`'s block, with the same message (same name, same two
-     addresses), and `T.rec` fails in both for the missing `T` (a failed
+     refuse exactly `T`'s block with the same refusal: the source name
+     `T.below` that its aux tail claims has no forward provenance to `T`
+     (source ownership, `Ix.AuxGen.checkAuxSourceClaim`), which is checked
+     before any claim. `T.rec` fails in both for the missing `T` (a failed
      block publishes nothing); the user `T.below` itself compiles.
 
   Run with: `lake test -- --ignored compile-claim-conflict`.
@@ -305,10 +307,10 @@ got {actual.getD "accepted"}"
   let belowPretty := (Ix.Name.fromLeanName belowName).pretty
   let tPretty := (Ix.Name.fromLeanName tName).pretty
   let isConflict (m : String) :=
-    m.startsWith s!"conflicting claims for name '{belowPretty}': already registered at "
+    m == s!"auxiliary claim for source name '{belowPretty}' has no forward provenance to the claiming block"
   if !(rust.any fun (n, m) => n == tPretty && isConflict m) then
     failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: Rust does not refuse {tPretty} with the conflicting claim on {belowPretty}"
+    IO.println s!"[claim-conflict] FAIL: Rust does not refuse {tPretty} for its claim on the source name {belowPretty}"
   if rust.any (·.1 == belowPretty) then
     failures := failures + 1
     IO.println s!"[claim-conflict] FAIL: Rust refuses the user {belowPretty} itself"

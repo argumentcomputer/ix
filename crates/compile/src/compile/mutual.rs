@@ -62,8 +62,61 @@ pub fn compile_aux_block(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  source_owners: &[Name],
 ) -> Result<(), CompileError> {
-  compile_aux_block_with_rename(aux_consts, lean_env, stt, kctx, None, None)
+  compile_aux_block_with_rename(
+    aux_consts,
+    lean_env,
+    stt,
+    kctx,
+    None,
+    None,
+    source_owners,
+  )
+}
+
+/// A source-name claim needs forward provenance to the claiming source
+/// block (the Lean twin is `Ix.AuxGen.checkAuxSourceClaim`): the claimed
+/// name, if the source has it, must reach one of the block's inductives
+/// through its references. A recursor's `all` is source provenance even
+/// when the generated content evaporates to an external recursor. Never
+/// inspect that target's source ownership or use a shared content address
+/// as evidence. Names the source does not have are generated declarations.
+fn check_aux_source_claim(
+  name: &Name,
+  source_owners: &[Name],
+  lean_env: &LeanEnv,
+) -> Result<(), CompileError> {
+  if source_owners.is_empty() || lean_env.get(name).is_none() {
+    return Ok(());
+  }
+  let mut pending = vec![name.clone()];
+  let mut seen = rustc_hash::FxHashSet::default();
+  seen.insert(name.clone());
+  while let Some(current) = pending.pop() {
+    if source_owners.contains(&current) {
+      return Ok(());
+    }
+    let Some(ci) = lean_env.get(&current) else { continue };
+    let mut refs = crate::graph::get_constant_info_references(&ci);
+    if let LeanConstantInfo::RecInfo(rec) = &*ci {
+      refs.extend(rec.all.iter().cloned());
+    }
+    if refs.iter().any(|r| source_owners.contains(r)) {
+      return Ok(());
+    }
+    for r in refs {
+      if seen.insert(r.clone()) && lean_env.get(&r).is_some() {
+        pending.push(r);
+      }
+    }
+  }
+  Err(CompileError::InvalidMutualBlock {
+    reason: format!(
+      "auxiliary claim for source name '{}' has no forward provenance to the claiming block",
+      name.pretty()
+    ),
+  })
 }
 
 /// Like `compile_aux_block`, but applies an optional name-rename map when
@@ -107,6 +160,7 @@ pub fn compile_aux_block_with_rename(
   kctx: &mut crate::compile::KernelCtx,
   name_rename: Option<&FxHashMap<Name, Name>>,
   class_order_key: Option<&dyn Fn(&MutConst) -> u64>,
+  source_owners: &[Name],
 ) -> Result<(), CompileError> {
   if aux_consts.is_empty() {
     return Ok(());
@@ -120,6 +174,17 @@ pub fn compile_aux_block_with_rename(
       .and_then(|m| m.get(canon).cloned())
       .unwrap_or_else(|| canon.clone())
   };
+
+  // Preflight all source-facing products before this block publishes any
+  // of them. Canonical target addresses are irrelevant to source ownership.
+  for c in aux_consts {
+    check_aux_source_claim(&resolve_name(&c.name()), source_owners, lean_env)?;
+    if let MutConst::Indc(ind) = c {
+      for ctor in &ind.ctors {
+        check_aux_source_claim(&ctor.cnst.name, source_owners, lean_env)?;
+      }
+    }
+  }
 
   // Sort into equivalence classes (same algorithm as compile_mutual).
   let refs: Vec<&MutConst> = aux_consts.iter().collect();
@@ -415,6 +480,8 @@ fn register_aux_aliases(
   aliases: &FxHashMap<Name, Name>,
   stt: &CompileState,
   ctx: &str,
+  source_owners: &[Name],
+  lean_env: &LeanEnv,
 ) -> Result<(), CompileError> {
   if aliases.is_empty() {
     return Ok(());
@@ -431,6 +498,7 @@ fn register_aux_aliases(
     if source == target {
       continue;
     }
+    check_aux_source_claim(&source, source_owners, lean_env)?;
 
     let target_addr = stt.resolve_addr(&target).ok_or_else(|| {
       CompileError::InvalidMutualBlock {
@@ -575,6 +643,19 @@ pub fn generate_and_compile_aux_recursors(
   if aux_class_names.is_empty() {
     return Ok(None);
   }
+  // The block's source inductives: the owners an auxiliary source-name
+  // claim must reach (`check_aux_source_claim`).
+  let source_owners: Vec<Name> = class_names
+    .iter()
+    .flatten()
+    .filter(|name| {
+      matches!(
+        lean_env.get(name).as_deref(),
+        Some(LeanConstantInfo::InductInfo(_))
+      )
+    })
+    .cloned()
+    .collect();
 
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
@@ -762,6 +843,7 @@ pub fn generate_and_compile_aux_recursors(
       kctx,
       Some(&aux_name_rename),
       Some(&class_order_key),
+      &source_owners,
     )?;
     for (name, pre_addr) in pre_claims {
       let post_addr = stt.resolve_addr(&name);
@@ -804,6 +886,8 @@ pub fn generate_and_compile_aux_recursors(
     &available_rec_aliases,
     stt,
     &format!("{block_label}/rec-phase"),
+    &source_owners,
+    lean_env,
   )?;
   let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
@@ -827,7 +911,7 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !cases_on_defs.is_empty() {
-    compile_aux_block(&cases_on_defs, lean_env, stt, kctx)?;
+    compile_aux_block(&cases_on_defs, lean_env, stt, kctx, &source_owners)?;
   }
   let cases_elapsed = t2.elapsed();
 
@@ -851,7 +935,7 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_on_defs.is_empty() {
-    compile_aux_block(&rec_on_defs, lean_env, stt, kctx)?;
+    compile_aux_block(&rec_on_defs, lean_env, stt, kctx, &source_owners)?;
   }
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
@@ -912,6 +996,7 @@ pub fn generate_and_compile_aux_recursors(
       kctx,
       Some(&aux_name_rename),
       None,
+      &source_owners,
     )?;
     // Note: constructor names are already correctly set by rename_below_indc
     // during alias patching. register_below_ctor_aliases was removed because
@@ -944,6 +1029,7 @@ pub fn generate_and_compile_aux_recursors(
       kctx,
       Some(&aux_name_rename),
       None,
+      &source_owners,
     )?;
   }
   let below_elapsed = t4.elapsed();
@@ -951,7 +1037,7 @@ pub fn generate_and_compile_aux_recursors(
   // Phase 5: Compile .below.rec (for Prop-level .below inductives).
   let t5 = std::time::Instant::now();
   if !below_indcs.is_empty() {
-    compile_below_recursors(&below_indcs, lean_env, stt, kctx)?;
+    compile_below_recursors(&below_indcs, lean_env, stt, kctx, &source_owners)?;
   }
   let below_rec_elapsed = t5.elapsed();
 
@@ -975,12 +1061,19 @@ pub fn generate_and_compile_aux_recursors(
         kctx,
         Some(&aux_name_rename),
         None,
+        &source_owners,
       )?;
     }
   }
   let brecon_elapsed = t6.elapsed();
 
-  register_aux_aliases(&aux_out.aliases, stt, &format!("{block_label}/final"))?;
+  register_aux_aliases(
+    &aux_out.aliases,
+    stt,
+    &format!("{block_label}/final"),
+    &source_owners,
+    lean_env,
+  )?;
 
   // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
   // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
@@ -1159,6 +1252,7 @@ fn compile_below_recursors(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &mut crate::compile::KernelCtx,
+  source_owners: &[Name],
 ) -> Result<(), CompileError> {
   // Build a small overlay with just the .below inductives + ctors.
   // These don't exist in the original lean_env, but generate_canonical_recursors
@@ -1242,6 +1336,7 @@ fn compile_below_recursors(
       kctx,
       None,
       Some(&class_order_key),
+      source_owners,
     )?;
   }
 
@@ -1300,7 +1395,44 @@ fn compile_below_recursors(
     }
   }
   if !below_cases.is_empty() {
-    compile_aux_block(&below_cases, lean_env, stt, kctx)?;
+    compile_aux_block(&below_cases, lean_env, stt, kctx, source_owners)?;
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod source_claim_tests {
+  use super::*;
+  use ix_common::env::{ConstantVal, Expr, Level, RecursorVal};
+
+  #[test]
+  fn source_family_survives_evaporation_but_does_not_own_external_target() {
+    let owner = Name::str(Name::anon(), "Owner".into());
+    let source = Name::str(owner.clone(), "rec_1".into());
+    let external = Name::str(Name::anon(), "List".into());
+    let target = Name::str(external.clone(), "rec".into());
+    let rec = |name: Name, parent: Name| {
+      LeanConstantInfo::RecInfo(RecursorVal {
+        cnst: ConstantVal {
+          name,
+          level_params: vec![],
+          typ: Expr::sort(Level::zero()),
+        },
+        all: vec![parent],
+        num_params: 0u64.into(),
+        num_indices: 0u64.into(),
+        num_motives: 0u64.into(),
+        num_minors: 0u64.into(),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let mut env = LeanEnv::default();
+    env.insert(source.clone(), rec(source.clone(), owner.clone()));
+    env.insert(target.clone(), rec(target.clone(), external));
+    let owners = [owner];
+    assert!(check_aux_source_claim(&source, &owners, &env).is_ok());
+    assert!(check_aux_source_claim(&target, &owners, &env).is_err());
+  }
 }

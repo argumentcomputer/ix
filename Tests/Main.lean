@@ -20,6 +20,7 @@ import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.IndFlags
 import Tests.Ix.Compile.ClaimConflict
+import Tests.Ix.Compile.ClaimOrder
 import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.DriverInput
@@ -363,6 +364,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Single ownership of compiled names: conflicting claims refused by both
   -- compilers (Tests.Ix.Compile.ClaimConflict).
   ("compile-claim-conflict", Tests.Ix.Compile.ClaimConflict.run),
+  -- Source ownership of auxiliary claims, independent of arrival order
+  -- (Tests.Ix.Compile.ClaimOrder).
+  ("compile-claim-order", Tests.Ix.Compile.ClaimOrder.run),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
