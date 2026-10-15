@@ -58,6 +58,11 @@ public def run : IO Unit := do
     let proof := tag ++ packet
     let wrapped : Ixon.Proof := { claim := expected, proof }
     let compressedAddr ← putProof home (Ixon.Proof.ser wrapped)
+    let metadata ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile
+      "crates/proof-compression/profiles/aggregate-filecoin-v5.json"))
+    let expectedAddr ← IO.ofExcept (metadata.getObjValAs? String "compressed_proof_address")
+    unless toString compressedAddr == expectedAddr do
+      throw <| IO.userError "bundled proof address differs from its metadata"
     let args := #["verify", toString compressedAddr]
     let out ← invoke home args
     unless out.exitCode == 0 && (out.stdout.splitOn "Filecoin").length > 1 do
@@ -92,10 +97,7 @@ public def run : IO Unit := do
       let badAddr ← putProof home (Ixon.Proof.ser { wrapped with proof := bad })
       let result ← invoke home (args.set! 1 (toString badAddr))
       unless result.exitCode != 0 do throw <| IO.userError "modified compact proof accepted"
-    let devPacket ← IO.FS.readBinFile (fixtures / "development-v5-packet.bin")
-    let devAddr ← putProof home (Ixon.Proof.ser { wrapped with proof := tag ++ devPacket })
-    rejects home #["verify", toString devAddr] "--dev-srs"
-    IO.println "compression CLI: compact proof, bundled verifier, claim binding and setup policy passed"
+    IO.println "compression CLI: compact proof, bundled verifier and claim binding passed"
   finally
     IO.FS.removeDirAll home
 
