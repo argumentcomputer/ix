@@ -34,6 +34,10 @@ import Tests.Ix.Compile.HeaderCounts
 import Tests.Ix.Compile.PayloadArrays
 import Tests.Ix.Compile.UniverseWire
 import Tests.Ix.Compile.GroundRefusal
+import Tests.Ix.Compile.SelectedClosure
+import Tests.Ix.Compile.ClosureWhole
+import Tests.Ix.Compile.CheckerSupport
+import Tests.Ix.Compile.PackUnits
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -157,6 +161,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("header-count", Tests.Ix.Compile.HeaderCounts.suite),
   ("payload-arrays", Tests.Ix.Compile.PayloadArrays.suite),
   ("universe-wire", Tests.Ix.Compile.UniverseWire.suite),
+  -- selected closures (`collectSelectedDeps`): whole logical units, a
+  -- matcher's unit, mutual siblings, checker support from `Role.deps`
+  ("compiler-selected-closure", Tests.Ix.Compile.SelectedClosure.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
@@ -387,6 +394,12 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).
   ("compile-claim-order", Tests.Ix.Compile.ClaimOrder.run),
+  -- Selected closures (Tests.Ix.Compile.{SelectedClosure,ClosureWhole,CheckerSupport,PackUnits}):
+  -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
+  ("compiler-selected-closure-e2e", Tests.Ix.Compile.SelectedClosure.run),
+  ("compile-closure-whole", Tests.Ix.Compile.ClosureWhole.run),
+  ("checker-support-regression", Tests.Ix.Compile.CheckerSupport.run),
+  ("pack-units", Tests.Ix.Compile.PackUnits.run),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
