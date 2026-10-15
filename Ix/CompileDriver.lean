@@ -41,6 +41,7 @@ public import Ix.Ixon
 public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
+public import Ix.Compile.Publication
 public import Ix.AuxGen.CompileAux
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Addressed
@@ -371,6 +372,18 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
         throw (.invalidMutualBlock s!"conflicting below call-site plans for \
 '{name.pretty}' — two blocks claim one source-indexed aux name")
 
+/-- Validate both the block's name claims (`checkBlockClaims`) and its
+    anonymous payloads (`checkBlockContent`: a reused record or blob address
+    must hold the same bytes) against the live state before publishing any
+    output of this block. -/
+def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState)
+    (plans : Std.HashMap Name CallSitePlan)
+    (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan)
+    : Except CompileError Unit := do
+  checkBlockClaims cenv (primaryClaims lo result) cache plans brecPlans belowPlans
+  checkBlockContent cenv result cache
+
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
     (primary `register_name` + `name_to_addr`, compile.rs:3902-3969),
@@ -378,16 +391,17 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
     `Muts` entry and aliases), aux name→addr map, extra names, and
     call-site plans.
 
-    Every caller first checks the block for single ownership against the
-    live state (`checkBlockClaims`) and merges only if the check passes: a
-    conflict is an error and nothing is merged. The check is a separate
-    step, not part of this function, so that the merge keeps consuming the
-    driver state uniquely (a merge returning `Except` would keep the old
-    state alive for the error branch and copy every map it inserts into).
-    `Named` entries are overrides by design (the tail re-registers
-    regenerated names and the `Muts` entry), as with Rust's
-    `register_name`; content-keyed tables (constants, blobs) are unioned by
-    content. -/
+    Every caller first checks the block against the live state
+    (`checkCompiledBlock`: single ownership of its names, and its records'
+    and blobs' bytes) and merges only if the check passes: a conflict is an
+    error and nothing is merged. The check is a separate step, not part of
+    this function, so that the merge keeps consuming the driver state
+    uniquely (a merge returning `Except` would keep the old state alive for
+    the error branch and copy every map it inserts into). `Named` entries are
+    overrides by design (the tail re-registers regenerated names and the
+    `Muts` entry), as with Rust's `register_name`; content-keyed tables
+    (constants, blobs) are unioned by content, which the check made
+    conflict-free. -/
 def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     (result : BlockResult) (cache : BlockState)
     (plans : Std.HashMap Name CallSitePlan)
@@ -572,7 +586,7 @@ env is inconsistent."
     | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
       -- A conflicting claim fails the pre-compile like a block error (Rust's
       -- claims raise inside `compile_const`).
-      match checkBlockClaims acc.cenv (primaryClaims rep result) cache plans brecPlans belowPlans with
+      match checkCompiledBlock acc.cenv rep result cache plans brecPlans belowPlans with
       | .error e => return .error (failed e)
       | .ok () => acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
       -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
@@ -781,7 +795,7 @@ missing canonical aliases: {missing}"
           match runBlockWithAux acc.cenv crossAll clo with
           | .error e => acc := crossFailed acc e
           | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-            match checkBlockClaims acc.cenv (primaryClaims clo result) cache plans brecPlans
+            match checkCompiledBlock acc.cenv clo result cache plans brecPlans
                 belowPlans with
             | .error e => acc := crossFailed acc e
             | .ok () =>
@@ -800,37 +814,46 @@ missing canonical aliases: {missing}"
             acc := { acc with cenv := { acc.cenv with
               ungrounded := acc.cenv.ungrounded.insert m msg } }
         | .ok (result, cache) =>
-          -- Promote per member: original projection (addr, meta) — or the
-          -- lone constant for singleton no-aux blocks.
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.admissionHash (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
-            | .error e =>
-              promoteFailed := true
-              let msg := toString e
-              for m in all do
-                acc := { acc with cenv := { acc.cenv with
-                  ungrounded := acc.cenv.ungrounded.insert m msg } }
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          -- The ephemeral compile still stores blobs/name components and
-          -- records hints (Rust `store_string`/`compile_name`/`def_hints`
-          -- are unconditional; only const/Named stores are aux-gated).
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
+          -- The ephemeral compile's blobs are published below: they must
+          -- agree with the published ones (`checkBlobContent`).
+          match checkBlobContent acc.cenv cache with
+          | .error e =>
+            let msg := toString e
+            for m in all do
+              acc := { acc with cenv := { acc.cenv with
+                ungrounded := acc.cenv.ungrounded.insert m msg } }
+          | .ok () =>
+            -- Promote per member: original projection (addr, meta) — or the
+            -- lone constant for singleton no-aux blocks.
+            let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
+              if result.projections.isEmpty then
+                #[(lo, result.blockAddr, result.blockMeta)]
+              else
+                result.projections.map fun (name, proj, constMeta) =>
+                  (name, Address.admissionHash (Ixon.ser proj), constMeta)
+            let mut promoteFailed := false
+            for (name, origAddr, origMeta) in promotions do
+              if promoteFailed then continue
+              match promoteAuxDriver acc.cenv name origAddr origMeta with
+              | .error e =>
+                promoteFailed := true
+                let msg := toString e
+                for m in all do
+                  acc := { acc with cenv := { acc.cenv with
+                    ungrounded := acc.cenv.ungrounded.insert m msg } }
+              | .ok cenv' =>
+                acc := { acc with cenv := cenv' }
+            -- The ephemeral compile still stores blobs/name components and
+            -- records hints (Rust `store_string`/`compile_name`/`def_hints`
+            -- are unconditional; only const/Named stores are aux-gated).
+            acc := { acc with
+              cenv := { acc.cenv with
+                blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
+                  acc.cenv.blobs }
+              blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
+                acc.blockNames
+              defHints := cache.defHints.fold (fun m k v => m.insert k v)
+                acc.defHints }
       if !auxIncomplete then
         -- Promote remaining names from auxNameToAddr.
         acc := (promoteRemaining acc all).1
@@ -850,7 +873,7 @@ missing canonical aliases: {missing}"
       | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
         -- A conflicting claim is a failure of this block (Rust raises it
         -- inside `compile_const`): nothing of it is merged.
-        match checkBlockClaims acc.cenv (primaryClaims lo result) cache plans brecPlans belowPlans with
+        match checkCompiledBlock acc.cenv lo result cache plans brecPlans belowPlans with
         | .error e => acc := fail acc e
         | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
 
@@ -895,8 +918,9 @@ snapshot, and the main thread applies the same merges as the sequential
 driver. Blocks within a wave are dependency-independent, and every merge
 is per-name-disjoint or content-keyed: two blocks of one wave that claim
 one name at different addresses (or one plan key with different plans)
-are refused by the merge-time check (`checkBlockClaims`) against the live
-state, as Rust's insert-once claims refuse them. Which of the two blocks
+are refused by the merge-time check (`checkCompiledBlock`) against the live
+state, as Rust's insert-once claims refuse them; so are conflicting
+payloads at one record or blob address. Which of the two blocks
 reports the conflict follows completion order, in both compilers. -/
 
 /-- Pure per-block outcome computed by a wave worker. -/
@@ -979,8 +1003,8 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
     newly REGISTERED by this block (for rustRef fail-fast comparison), and
     the names that failed at merge time, which the wave loop must release
     as failed: every member when the block claims a name another block owns
-    (`checkBlockClaims`), and the names of a cross-SCC subset whose compile
-    failed or whose claims conflict. -/
+    or publishes conflicting bytes (`checkCompiledBlock`), and the names of
+    a cross-SCC subset whose compile failed or whose check failed. -/
 def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     (outcome : AuxBlockOutcome) : DriverAcc × Array Name × Array Name := Id.run do
   let mut acc := acc
@@ -994,7 +1018,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     return acc
   match outcome with
   | .compiled result cache plans brecPlans belowPlans =>
-    match checkBlockClaims acc.cenv (primaryClaims lo result) cache plans brecPlans belowPlans with
+    match checkCompiledBlock acc.cenv lo result cache plans brecPlans belowPlans with
     | .error e => return (recordFailure acc all.toArray (toString e), #[], all.toArray)
     | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
     if result.projections.isEmpty then
@@ -1015,7 +1039,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     if let some (clo, result, cache, plans, brecPlans, belowPlans) := crossScc then
       -- A conflicting claim is a failure of the cross-SCC subset, as in the
       -- sequential driver: nothing of it is registered.
-      match checkBlockClaims acc.cenv (primaryClaims clo result) cache plans brecPlans belowPlans with
+      match checkCompiledBlock acc.cenv clo result cache plans brecPlans belowPlans with
       | .error e =>
         acc := recordFailure acc crossNames (toString e)
         failedNames := failedNames ++ crossNames
@@ -1040,29 +1064,34 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
         acc := recordFailure acc all.toArray msg
       | none =>
         if let some (result, cache) := noAux then
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.admissionHash (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
-            | .error e =>
-              promoteFailed := true
-              acc := recordFailure acc all.toArray (toString e)
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
+          -- The ephemeral compile ran against the wave's snapshot; its blobs
+          -- must agree with the live published ones (`checkBlobContent`).
+          match checkBlobContent acc.cenv cache with
+          | .error e => acc := recordFailure acc all.toArray (toString e)
+          | .ok () =>
+            let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
+              if result.projections.isEmpty then
+                #[(lo, result.blockAddr, result.blockMeta)]
+              else
+                result.projections.map fun (name, proj, constMeta) =>
+                  (name, Address.admissionHash (Ixon.ser proj), constMeta)
+            let mut promoteFailed := false
+            for (name, origAddr, origMeta) in promotions do
+              if promoteFailed then continue
+              match promoteAuxDriver acc.cenv name origAddr origMeta with
+              | .error e =>
+                promoteFailed := true
+                acc := recordFailure acc all.toArray (toString e)
+              | .ok cenv' =>
+                acc := { acc with cenv := cenv' }
+            acc := { acc with
+              cenv := { acc.cenv with
+                blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
+                  acc.cenv.blobs }
+              blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
+                acc.blockNames
+              defHints := cache.defHints.fold (fun m k v => m.insert k v)
+                acc.defHints }
       -- Promote remaining names from auxNameToAddr — against the LIVE env;
       -- also counts as registration for rustRef.
       let (acc', promoted) := promoteRemaining acc all

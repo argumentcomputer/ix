@@ -463,7 +463,7 @@ impl CompileState {
       _ => None,
     };
     if let Some(meta_addr) = meta_name_addr {
-      let expected_addr = compile_name(name, self);
+      let expected_addr = compile_name(name, self)?;
       if *meta_addr != expected_addr {
         return Err(CompileError::InvalidMutualBlock {
           reason: format!(
@@ -519,44 +519,51 @@ fn nat_to_u64(n: &Nat, context: &'static str) -> Result<u64, CompileError> {
 // Name compilation
 // ===========================================================================
 
-/// Store a string as a blob and return its address.
-pub fn store_string(s: &str, stt: &CompileState) -> Address {
-  stt.env.store_blob(s.as_bytes().to_vec())
+/// Store a string as a blob and return its address (compare-and-insert:
+/// `CompileState::store_blob`).
+pub fn store_string(
+  s: &str,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
+  stt.store_blob(s.as_bytes().to_vec())
 }
 
-/// Store a Nat as a blob and return its address.
-pub fn store_nat(n: &Nat, stt: &CompileState) -> Address {
-  stt.env.store_blob(n.to_le_bytes())
+/// Store a Nat as a blob and return its address (compare-and-insert).
+pub fn store_nat(n: &Nat, stt: &CompileState) -> Result<Address, CompileError> {
+  stt.store_blob(n.to_le_bytes())
 }
 
 /// Compile a Lean Name to an address (stored in env.names).
 /// Uses the Name's internal hash as the address.
 /// String components are stored in blobs.
-pub fn compile_name(name: &Name, stt: &CompileState) -> Address {
+pub fn compile_name(
+  name: &Name,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
   // Use the Name's internal hash as the address
   let addr = Address::from_blake3_hash(*name.get_hash());
 
   // Check if already stored
   if stt.env.names.contains_key(&addr) {
-    return addr;
+    return Ok(addr);
   }
 
   // Recurse on parent first (ensures parent is stored)
   match name.as_data() {
     NameData::Anonymous(_) => {},
     NameData::Str(parent, s, _) => {
-      compile_name(parent, stt);
-      store_string(s, stt); // string data in blobs
+      compile_name(parent, stt)?;
+      store_string(s, stt)?; // string data in blobs
     },
     NameData::Num(parent, _, _) => {
-      compile_name(parent, stt);
+      compile_name(parent, stt)?;
       // Nat is inline in Name, no blob needed
     },
   }
 
   // Store Name struct directly in env.names
   stt.env.names.insert(addr.clone(), name.clone());
-  addr
+  Ok(addr)
 }
 
 // ===========================================================================
@@ -734,10 +741,10 @@ fn collect_expr_tables(
         stack.push(ty);
       },
       ExprData::Lit(Literal::NatVal(n), _) => {
-        refs.push(store_nat(n, stt));
+        refs.push(store_nat(n, stt)?);
       },
       ExprData::Lit(Literal::StrVal(s), _) => {
-        refs.push(store_string(s, stt));
+        refs.push(store_string(s, stt)?);
       },
       ExprData::Proj(type_name, _, struct_val, _) => {
         let type_addr = stt.resolve_addr(type_name).ok_or_else(|| {
@@ -986,7 +993,7 @@ fn compile_const_expr_raw(
     } else {
       None
     };
-  let name_addr = compile_name(name, stt);
+  let name_addr = compile_name(name, stt)?;
   let expr = if let Some(idx) = mut_ctx.get(name) {
     let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
     Expr::rec(idx_u64, univ_indices)
@@ -1287,7 +1294,7 @@ pub fn compile_expr(
                           ),
                         }
                       })?;
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1470,7 +1477,7 @@ pub fn compile_expr(
                   if args.len() >= minimal_full_prefix {
                     // Surgery path: separate args into kept/collapsed,
                     // reorder kept to canonical, compile everything.
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1661,7 +1668,7 @@ pub fn compile_expr(
                   // major+minors alike.
                   let minimal_full_prefix = plan.below_minimal_full_prefix();
                   if args.len() >= minimal_full_prefix {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1762,7 +1769,7 @@ pub fn compile_expr(
                   let fixed_tail_len = plan.n_indices + 1; // indices + major
                   let expected_total = plan.brecon_minimal_full_prefix();
                   if args.len() >= expected_total {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1943,21 +1950,21 @@ pub fn compile_expr(
           },
 
           ExprData::Lam(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildLam(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildAll(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildLet(name_addr, *non_dep));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(val.clone()));
@@ -1965,14 +1972,14 @@ pub fn compile_expr(
           },
 
           ExprData::Lit(Literal::NatVal(n), _) => {
-            let addr = store_nat(n, stt);
+            let addr = store_nat(n, stt)?;
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::nat(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Lit(Literal::StrVal(s), _) => {
-            let addr = store_string(s, stt);
+            let addr = store_string(s, stt)?;
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::str(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
@@ -1993,7 +2000,7 @@ pub fn compile_expr(
             })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
-            let name_addr = compile_name(type_name, stt);
+            let name_addr = compile_name(type_name, stt)?;
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
             stack.push(Frame::Compile(struct_val.clone()));
@@ -2009,8 +2016,8 @@ pub fn compile_expr(
             // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
-              let k_addr = compile_name(k, stt);
-              let v_data = compile_data_value(v, stt);
+              let k_addr = compile_name(k, stt)?;
+              let v_data = compile_data_value(v, stt)?;
               pairs.push((k_addr, v_data));
             }
             // Mdata becomes a separate arena node wrapping inner
@@ -2592,12 +2599,15 @@ fn audit_constant_info_plan_heads(
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
-fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
-  match dv {
-    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s, stt)),
+fn compile_data_value(
+  dv: &LeanDataValue,
+  stt: &CompileState,
+) -> Result<DataValue, CompileError> {
+  Ok(match dv {
+    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s, stt)?),
     LeanDataValue::OfBool(b) => DataValue::OfBool(*b),
-    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n, stt)),
-    LeanDataValue::OfNat(n) => DataValue::OfNat(store_nat(n, stt)),
+    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n, stt)?),
+    LeanDataValue::OfNat(n) => DataValue::OfNat(store_nat(n, stt)?),
     LeanDataValue::OfInt(i) => {
       // Serialize Int and store as blob
       let mut bytes = Vec::new();
@@ -2611,69 +2621,73 @@ fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
           bytes.extend_from_slice(&n.to_le_bytes());
         },
       }
-      DataValue::OfInt(stt.env.store_blob(bytes))
+      DataValue::OfInt(stt.store_blob(bytes)?)
     },
     LeanDataValue::OfSyntax(syn) => {
       // Serialize syntax and store as blob
-      let bytes = serialize_syntax(syn, stt);
-      DataValue::OfSyntax(stt.env.store_blob(bytes))
+      let bytes = serialize_syntax(syn, stt)?;
+      DataValue::OfSyntax(stt.store_blob(bytes)?)
     },
-  }
+  })
 }
 
 /// Serialize a Lean Syntax to bytes.
-fn serialize_syntax(syn: &LeanSyntax, stt: &CompileState) -> Vec<u8> {
+fn serialize_syntax(
+  syn: &LeanSyntax,
+  stt: &CompileState,
+) -> Result<Vec<u8>, CompileError> {
   let mut bytes = Vec::new();
-  serialize_syntax_inner(syn, stt, &mut bytes);
-  bytes
+  serialize_syntax_inner(syn, stt, &mut bytes)?;
+  Ok(bytes)
 }
 
 fn serialize_syntax_inner(
   syn: &LeanSyntax,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match syn {
     LeanSyntax::Missing => bytes.push(0),
     LeanSyntax::Node(info, kind, args) => {
       bytes.push(1);
-      serialize_source_info(info, stt, bytes);
-      bytes.extend_from_slice(compile_name(kind, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      bytes.extend_from_slice(compile_name(kind, stt)?.as_bytes());
       TagN::put(0, 0, args.len() as u64, bytes);
       for arg in args {
-        serialize_syntax_inner(arg, stt, bytes);
+        serialize_syntax_inner(arg, stt, bytes)?;
       }
     },
     LeanSyntax::Atom(info, val) => {
       bytes.push(2);
-      serialize_source_info(info, stt, bytes);
-      bytes.extend_from_slice(store_string(val, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      bytes.extend_from_slice(store_string(val, stt)?.as_bytes());
     },
     LeanSyntax::Ident(info, raw_val, val, preresolved) => {
       bytes.push(3);
-      serialize_source_info(info, stt, bytes);
-      serialize_substring(raw_val, stt, bytes);
-      bytes.extend_from_slice(compile_name(val, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      serialize_substring(raw_val, stt, bytes)?;
+      bytes.extend_from_slice(compile_name(val, stt)?.as_bytes());
       TagN::put(0, 0, preresolved.len() as u64, bytes);
       for pr in preresolved {
-        serialize_preresolved(pr, stt, bytes);
+        serialize_preresolved(pr, stt, bytes)?;
       }
     },
   }
+  Ok(())
 }
 
 fn serialize_source_info(
   info: &LeanSourceInfo,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match info {
     LeanSourceInfo::Original(leading, leading_pos, trailing, trailing_pos) => {
       bytes.push(0);
-      serialize_substring(leading, stt, bytes);
+      serialize_substring(leading, stt, bytes)?;
       // u64::MAX sentinel for positions that overflow u64 (should never happen in practice)
       TagN::put(0, 0, leading_pos.to_u64().unwrap_or(u64::MAX), bytes);
-      serialize_substring(trailing, stt, bytes);
+      serialize_substring(trailing, stt, bytes)?;
       TagN::put(0, 0, trailing_pos.to_u64().unwrap_or(u64::MAX), bytes);
     },
     LeanSourceInfo::Synthetic(start, end, canonical) => {
@@ -2684,37 +2698,40 @@ fn serialize_source_info(
     },
     LeanSourceInfo::None => bytes.push(2),
   }
+  Ok(())
 }
 
 fn serialize_substring(
   ss: &LeanSubstring,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
-  bytes.extend_from_slice(store_string(&ss.str, stt).as_bytes());
+) -> Result<(), CompileError> {
+  bytes.extend_from_slice(store_string(&ss.str, stt)?.as_bytes());
   TagN::put(0, 0, ss.start_pos.to_u64().unwrap_or(u64::MAX), bytes);
   TagN::put(0, 0, ss.stop_pos.to_u64().unwrap_or(u64::MAX), bytes);
+  Ok(())
 }
 
 fn serialize_preresolved(
   pr: &SyntaxPreresolved,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match pr {
     SyntaxPreresolved::Namespace(n) => {
       bytes.push(0);
-      bytes.extend_from_slice(compile_name(n, stt).as_bytes());
+      bytes.extend_from_slice(compile_name(n, stt)?.as_bytes());
     },
     SyntaxPreresolved::Decl(n, fields) => {
       bytes.push(1);
-      bytes.extend_from_slice(compile_name(n, stt).as_bytes());
+      bytes.extend_from_slice(compile_name(n, stt)?.as_bytes());
       TagN::put(0, 0, fields.len() as u64, bytes);
       for f in fields {
-        bytes.extend_from_slice(store_string(f, stt).as_bytes());
+        bytes.extend_from_slice(store_string(f, stt)?.as_bytes());
       }
     },
   }
+  Ok(())
 }
 
 // ===========================================================================
@@ -3047,11 +3064,13 @@ pub fn compile_definition(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&def.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&def.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
   let all_addrs: Vec<Address> =
-    def.all.iter().map(|n| compile_name(n, stt)).collect();
+    def.all.iter().map(|n| compile_name(n, stt)).collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
@@ -3088,7 +3107,7 @@ fn compile_recursor_rule(
   stt: &CompileState,
 ) -> Result<(RecursorRule, Address), CompileError> {
   let rhs = compile_expr(&rule.rhs, univ_params, mut_ctx, cache, stt)?;
-  let ctor_addr = compile_name(&rule.ctor, stt);
+  let ctor_addr = compile_name(&rule.ctor, stt)?;
   let fields = nat_to_u64(&rule.n_fields, "n_fields too large")?;
 
   Ok((RecursorRule { fields, rhs }, ctor_addr))
@@ -3138,9 +3157,11 @@ pub fn compile_recursor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&rec.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&rec.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Recursor {
     k: rec.k,
@@ -3155,7 +3176,7 @@ pub fn compile_recursor(
   };
 
   let all_addrs: Vec<Address> =
-    rec.all.iter().map(|n| compile_name(n, stt)).collect();
+    rec.all.iter().map(|n| compile_name(n, stt)).collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
@@ -3205,10 +3226,12 @@ fn compile_constructor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&ctor.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
-  let induct_addr = compile_name(&ctor.induct, stt);
+  let name_addr = compile_name(&ctor.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
+  let induct_addr = compile_name(&ctor.induct, stt)?;
 
   let data = Constructor {
     is_unsafe: ctor.is_unsafe,
@@ -3271,15 +3294,17 @@ pub fn compile_inductive(
   let mut ctor_name_addrs = Vec::new();
   for ctor in &ind.ctors {
     let (c, m) = compile_constructor(ctor, mut_ctx, cache, stt)?;
-    let ctor_name_addr = compile_name(&ctor.cnst.name, stt);
+    let ctor_name_addr = compile_name(&ctor.cnst.name, stt)?;
     ctor_name_addrs.push(ctor_name_addr);
     ctor_const_metas.push(m);
     ctors.push(c);
   }
 
-  let name_addr = compile_name(&ind.ind.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&ind.ind.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Inductive {
     is_unsafe: ind.ind.is_unsafe,
@@ -3293,8 +3318,12 @@ pub fn compile_inductive(
     ctors,
   };
 
-  let all_addrs: Vec<Address> =
-    ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
+  let all_addrs: Vec<Address> = ind
+    .ind
+    .all
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
@@ -3339,9 +3368,11 @@ fn compile_axiom(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&val.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
@@ -3385,9 +3416,11 @@ fn compile_quotient(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&val.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
@@ -4400,8 +4433,10 @@ fn compile_const_inner_body(
       stt,
       "compile_single_def",
     )?;
-    let ctx_addrs: Vec<Address> =
-      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+      .iter()
+      .map(|n| compile_name(n, stt))
+      .collect::<Result<_, _>>()?;
     let (data, meta) =
       compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
@@ -4435,7 +4470,7 @@ fn compile_const_inner_body(
       );
     }
     if aux {
-      stt.env.store_const(addr.clone(), constant);
+      stt.store_const(addr.clone(), constant)?;
       // Claim before registering: a refused claim leaves the owner's
       // `Named` entry as it was.
       stt.claim_compiled_name(name, &addr)?;
@@ -4497,7 +4532,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.store_const(addr.clone(), constant)?;
         stt.claim_compiled_name(name, &addr)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
@@ -4525,7 +4560,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
+        stt.store_const(addr.clone(), constant)?;
         stt.claim_compiled_name(name, &addr)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
@@ -4544,8 +4579,10 @@ fn compile_const_inner_body(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let ctx_addrs: Vec<Address> =
-          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+          .iter()
+          .map(|n| compile_name(n, stt))
+          .collect::<Result<_, _>>()?;
         let (data, meta) =
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -4560,7 +4597,7 @@ fn compile_const_inner_body(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.env.store_const(addr.clone(), constant);
+          stt.store_const(addr.clone(), constant)?;
           stt.claim_compiled_name(name, &addr)?;
           stt.register_named(
             name.clone(),
@@ -4667,8 +4704,10 @@ fn compile_mutual(
   // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -4745,7 +4784,7 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.env.store_const(addr.clone(), standalone_constant);
+      stt.store_const(addr.clone(), standalone_constant)?;
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -4773,7 +4812,7 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.env.store_const(block_addr.clone(), compiled.constant);
+    stt.store_const(block_addr.clone(), compiled.constant)?;
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -4807,7 +4846,7 @@ fn compile_mutual(
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
-            stt.env.store_const(proj_addr.clone(), indc_proj);
+            stt.store_const(proj_addr.clone(), indc_proj)?;
             stt.claim_compiled_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
           } else {
@@ -4824,7 +4863,7 @@ fn compile_mutual(
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
             if aux {
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
+              stt.store_const(ctor_addr.clone(), ctor_proj)?;
               stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
               stt.register_named(
                 ctor.cnst.name.clone(),
@@ -4844,7 +4883,7 @@ fn compile_mutual(
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
-        stt.env.store_const(proj_addr.clone(), proj);
+        stt.store_const(proj_addr.clone(), proj)?;
         stt.claim_compiled_name(&n, &proj_addr)?;
         stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
       } else {
@@ -4863,7 +4902,7 @@ fn compile_mutual(
   // reaches the kernel env.
   //
   // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.env.store_const(block_addr, ...)` above is
+  // the block constant (`stt.store_const(block_addr, ...)` above is
   // guarded by `if aux`). The `aux=false` promotion path reuses entries
   // that were already registered in a prior `aux=true` call.
   if aux {
@@ -4882,7 +4921,7 @@ fn compile_mutual(
       })
       .collect();
     let muts_name = block_addr.muts_name(&first_name);
-    compile_name(&muts_name, stt);
+    compile_name(&muts_name, stt)?;
     stt.register_named(
       muts_name,
       Named::new(
@@ -5204,6 +5243,7 @@ mod env;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;
+mod publication;
 pub mod surgery;
 pub(crate) mod validation;
 pub use env::{
@@ -5337,8 +5377,8 @@ mod tests {
   #[test]
   fn test_store_string() {
     let stt = CompileState::default();
-    let addr1 = store_string("hello", &stt);
-    let addr2 = store_string("hello", &stt);
+    let addr1 = store_string("hello", &stt).unwrap();
+    let addr2 = store_string("hello", &stt).unwrap();
     // Same content should give same address
     assert_eq!(addr1, addr2);
     // Check we can retrieve it
@@ -5350,7 +5390,7 @@ mod tests {
   fn test_store_nat() {
     let stt = CompileState::default();
     let n = Nat::from(42u64);
-    let addr = store_nat(&n, &stt);
+    let addr = store_nat(&n, &stt).unwrap();
     let bytes = stt.env.get_blob(&addr).unwrap();
     let n2 = Nat::from_le_bytes(&bytes);
     assert_eq!(n, n2);
@@ -5360,7 +5400,7 @@ mod tests {
   fn test_compile_name_anon() {
     let stt = CompileState::default();
     let name = Name::anon();
-    let addr = compile_name(&name, &stt);
+    let addr = compile_name(&name, &stt).unwrap();
     // Name is stored in env.names, not blobs
     let stored_name = stt.env.names.get(&addr).unwrap();
     assert_eq!(*stored_name, name);
@@ -5370,7 +5410,7 @@ mod tests {
   fn test_compile_name_str() {
     let stt = CompileState::default();
     let name = Name::str(Name::anon(), "foo".to_string());
-    let addr = compile_name(&name, &stt);
+    let addr = compile_name(&name, &stt).unwrap();
     // Name is stored in env.names
     let stored_name = stt.env.names.get(&addr).unwrap();
     assert_eq!(*stored_name, name);
@@ -5649,7 +5689,7 @@ mod tests {
     else {
       panic!("expected CallSite metadata at expression root");
     };
-    assert_eq!(*name, compile_name(&head, &stt));
+    assert_eq!(*name, compile_name(&head, &stt).unwrap());
     assert_eq!(
       canon_meta.len(),
       app_args(&result).len(),

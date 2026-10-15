@@ -149,8 +149,10 @@ pub fn compile_aux_block_with_rename(
   // list is identical for every member — computed once, not per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   for class in &sorted_classes {
     let mut rep_pushed = false;
@@ -224,7 +226,7 @@ pub fn compile_aux_block_with_rename(
       IxonMutConst::Indc(_) => unreachable!(),
     };
     let standalone_addr = content_address(&result);
-    stt.env.store_const(standalone_addr.clone(), result);
+    stt.store_const(standalone_addr.clone(), result)?;
 
     let mut pending_names: Vec<Name> = Vec::new();
     for cnst in &sorted_classes[0] {
@@ -257,7 +259,7 @@ pub fn compile_aux_block_with_rename(
     block_univs,
   )?;
   let block_addr = compiled.addr.clone();
-  stt.env.store_const(block_addr.clone(), compiled.constant);
+  stt.store_const(block_addr.clone(), compiled.constant)?;
 
   // Register projections for each constant, same pattern as compile_mutual.
   // Collect names for batched pending-queue push (one lock acquisition).
@@ -288,7 +290,7 @@ pub fn compile_aux_block_with_rename(
             // Inductive projection
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
-            stt.env.store_const(proj_addr.clone(), indc_proj);
+            stt.store_const(proj_addr.clone(), indc_proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
@@ -304,7 +306,7 @@ pub fn compile_aux_block_with_rename(
               let ctor_proj =
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
+              stt.store_const(ctor_addr.clone(), ctor_proj)?;
               stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
               stt.register_named(
                 ctor.cnst.name.clone(),
@@ -316,7 +318,7 @@ pub fn compile_aux_block_with_rename(
           MutConst::Recr(_) => {
             let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
-            stt.env.store_const(proj_addr.clone(), proj);
+            stt.store_const(proj_addr.clone(), proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
@@ -324,7 +326,7 @@ pub fn compile_aux_block_with_rename(
           MutConst::Defn(_) => {
             let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
-            stt.env.store_const(proj_addr.clone(), proj);
+            stt.store_const(proj_addr.clone(), proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
@@ -368,7 +370,7 @@ pub fn compile_aux_block_with_rename(
     })
     .collect();
   let muts_name = block_addr.muts_name(&first_name);
-  compile_name(&muts_name, stt);
+  compile_name(&muts_name, stt)?;
   // `compile_aux_block_with_rename` handles derivative blocks (rec, below,
   // brecOn, ...) that share the same aux_layout as the primary inductive
   // block. We DO NOT attach aux_layout here — those derived blocks inherit
@@ -475,7 +477,7 @@ fn register_aux_aliases(
     let mut alias_named = target_named;
     alias_named.addr = target_addr.clone();
 
-    compile_name(&source, stt);
+    compile_name(&source, stt)?;
     stt.claim_aux_name(&source, &target_addr)?;
     stt.register_named(source.clone(), alias_named);
     pending_names.push(source);
