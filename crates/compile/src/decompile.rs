@@ -296,7 +296,7 @@ impl DecompileState {
 ///   indices also start at 0 but live in a SEPARATE namespace from the
 ///   block sharing: compile writes them as `surgery_sharing.len() +
 ///   collapsed_idx` where `surgery_sharing` is reset per constant (see
-///   `src/ix/compile.rs::compile_expr` BuildCallSite path).
+///   `crates/compile/src/compile.rs::compile_expr` BuildCallSite path).
 ///
 /// Treating them as the same vector would make a `sharing_idx` in `[0,
 /// block_sharing.len())` silently return the wrong block subtree

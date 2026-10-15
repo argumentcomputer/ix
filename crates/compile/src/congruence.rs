@@ -404,7 +404,7 @@ mod tests {
   //! every pair would fail with "level mismatch". Post-fix, they pass.
   //!
   //! The cases mirror the simplifications inside `Level::max_smart` /
-  //! `Level::imax_smart` (see `src/ix/env.rs:340-404`), so they double
+  //! `Level::imax_smart` (see `crates/common/src/env.rs`), so they double
   //! as a contract test for those constructors.
   use super::*;
   use ix_common::env::Name;
