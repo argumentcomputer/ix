@@ -42,7 +42,7 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
 use crate::compile::{
@@ -50,11 +50,136 @@ use crate::compile::{
   aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, setup_scan};
+use crate::graph::{NameSet, RefMap, setup_scan};
 use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
-use ix_common::env::{Env as LeanEnv, Name};
+use ix_common::env::{
+  ConstantInfo as LeanConstantInfo, DefinitionSafety, Env as LeanEnv, Name,
+};
 use ixon::CompileError;
+
+// ===========================================================================
+// Mutual-block safety (a domain restriction, beside the inductive flags)
+// ===========================================================================
+
+const MIXED_SAFETY: &str = "mixed safety in a mutual block";
+
+/// A constant's safety as the kernels compare it within a mutual block:
+/// `unsafe`, `partial` (a definition's) or `safe`. Mirrors Lean
+/// `Ix.CompileM.constSafety`.
+fn const_safety(ci: &LeanConstantInfo) -> &'static str {
+  let flag = |is_unsafe: bool| if is_unsafe { "unsafe" } else { "safe" };
+  match ci {
+    LeanConstantInfo::AxiomInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::OpaqueInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::InductInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::CtorInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::RecInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::DefnInfo(v) => match v.safety {
+      DefinitionSafety::Unsafe => "unsafe",
+      DefinitionSafety::Partial => "partial",
+      DefinitionSafety::Safe => "safe",
+    },
+    LeanConstantInfo::ThmInfo(_) | LeanConstantInfo::QuotInfo(_) => "safe",
+  }
+}
+
+/// Whether the members present in `env` share one safety.
+fn uniform_safety(members: &[Name], env: &LeanEnv) -> bool {
+  let mut first: Option<&'static str> = None;
+  for m in members {
+    if let Some(c) = env.get(m) {
+      let s = const_safety(&c);
+      match first {
+        None => first = Some(s),
+        Some(s0) if s != s0 => return false,
+        Some(_) => {},
+      }
+    }
+  }
+  true
+}
+
+/// The refusal of members that disagree on safety: the least member present
+/// in `env` (by name hash) and the least member whose safety differs from
+/// its (Lean `Ix.CompileM.mixedSafetyMessage`).
+fn mixed_safety_error(members: &[Name], env: &LeanEnv) -> CompileError {
+  let safety = |n: &Name| env.get(n).map_or("safe", |c| const_safety(&c));
+  let mut present: Vec<&Name> =
+    members.iter().filter(|m| env.get(m).is_some()).collect();
+  present.sort_unstable_by(|a, b| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  let reason = present
+    .first()
+    .and_then(|first| {
+      let s0 = safety(first);
+      present.iter().find(|m| safety(m) != s0).map(|m| {
+        format!(
+          "{MIXED_SAFETY}: '{}' is {s0}, '{}' is {}",
+          first.pretty(),
+          m.pretty(),
+          safety(m)
+        )
+      })
+    })
+    .unwrap_or_else(|| MIXED_SAFETY.to_string());
+  CompileError::InvalidMutualBlock { reason }
+}
+
+/// The second domain restriction (Lean `Ix.CompileM.validateMutualSafety`):
+/// the members of a mutual block share one safety, or the compile fails
+/// before any block is scheduled. The kernels reject a mixed-safety block,
+/// and the compilers' orders do not key on safety (C6), so such members
+/// could be alpha-collapsed into one representative's safety. Checked first
+/// on each inductive group (`all`, with each member's constructors) in the
+/// order of their first members' hashes, then on each condensation block in
+/// the order of its least member's hash; the first disagreement is the error.
+pub(crate) fn validate_mutual_safety(
+  ind_groups: &FxHashMap<Name, Vec<Name>>,
+  blocks: &RefMap,
+  env: &LeanEnv,
+) -> Result<(), CompileError> {
+  let mut groups: Vec<(&Name, &Vec<Name>)> = ind_groups.iter().collect();
+  groups.sort_unstable_by(|(a, _), (b, _)| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  for (_, all) in groups {
+    let mut members: Vec<Name> = Vec::with_capacity(all.len());
+    for n in all {
+      members.push(n.clone());
+      if let Some(c) = env.get(n)
+        && let LeanConstantInfo::InductInfo(v) = &*c
+      {
+        members.extend(v.ctors.iter().cloned());
+      }
+    }
+    if !uniform_safety(&members, env) {
+      return Err(mixed_safety_error(&members, env));
+    }
+  }
+  let mut offenders: Vec<(Name, Vec<Name>)> = blocks
+    .values()
+    .filter_map(|set| {
+      let members: Vec<Name> = set.iter().cloned().collect();
+      if uniform_safety(&members, env) {
+        return None;
+      }
+      let least = members
+        .iter()
+        .min_by(|a, b| a.get_hash().as_bytes().cmp(b.get_hash().as_bytes()))?
+        .clone();
+      Some((least, members))
+    })
+    .collect();
+  offenders.sort_unstable_by(|(a, _), (b, _)| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  match offenders.first() {
+    Some((_, members)) => Err(mixed_safety_error(members, env)),
+    None => Ok(()),
+  }
+}
 
 // ===========================================================================
 // Progress + diagnostic logging
@@ -256,7 +381,7 @@ pub fn compile_env_with_profile(
 
   // Filter ungrounded names from the ref graph before SCC computation so
   // condensed blocks only contain constants we can actually compile.
-  let grounded_out_refs: crate::graph::RefMap = if ungrounded_map.is_empty() {
+  let grounded_out_refs: RefMap = if ungrounded_map.is_empty() {
     graph.out_refs
   } else {
     graph
@@ -297,6 +422,11 @@ pub fn compile_env_with_profile(
     );
   }
   validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
+  validate_mutual_safety(
+    &scan.ind_groups,
+    &condensed.blocks,
+    lean_env.as_ref(),
+  )?;
   if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 4/7 validate_ind_flags: {:.2}s{}",
@@ -1526,5 +1656,81 @@ mod promotion_tests {
     let named = stt.env.named.get(&n).unwrap();
     assert_eq!(named.original().unwrap().0, addr("successful-original"));
     assert_eq!(stt.resolve_addr(&n), Some(canonical));
+  }
+}
+
+#[cfg(test)]
+mod safety_tests {
+  use super::*;
+  use ix_common::env::{
+    AxiomVal, ConstantVal, DefinitionVal, Expr as LeanExpr, Level,
+    ReducibilityHints,
+  };
+
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  fn cval(n: &Name) -> ConstantVal {
+    ConstantVal {
+      name: n.clone(),
+      level_params: vec![],
+      typ: LeanExpr::sort(Level::succ(Level::zero())),
+    }
+  }
+
+  fn defn(n: &Name, safety: DefinitionSafety) -> LeanConstantInfo {
+    LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: cval(n),
+      value: LeanExpr::sort(Level::zero()),
+      hints: ReducibilityHints::Opaque,
+      safety,
+      all: vec![n.clone()],
+    })
+  }
+
+  fn axiom(n: &Name, is_unsafe: bool) -> LeanConstantInfo {
+    LeanConstantInfo::AxiomInfo(AxiomVal { cnst: cval(n), is_unsafe })
+  }
+
+  fn block(names: &[&Name]) -> RefMap {
+    let set: NameSet = names.iter().map(|n| (*n).clone()).collect();
+    [(names[0].clone(), set)].into_iter().collect()
+  }
+
+  /// A condensation block whose members disagree on safety is refused,
+  /// naming the least member and the least one that differs from it; a
+  /// uniform block, and singleton blocks of any safety, pass.
+  #[test]
+  fn mixed_safety_blocks_are_refused_uniform_ones_pass() {
+    let (f, g, h) = (name("f"), name("g"), name("h"));
+    for (fs, gs) in [
+      (DefinitionSafety::Unsafe, DefinitionSafety::Safe),
+      (DefinitionSafety::Safe, DefinitionSafety::Unsafe),
+      (DefinitionSafety::Unsafe, DefinitionSafety::Partial),
+    ] {
+      let mut env = LeanEnv::default();
+      env.insert(f.clone(), defn(&f, fs));
+      env.insert(g.clone(), defn(&g, gs));
+      env.insert(h.clone(), axiom(&h, true));
+      let groups = FxHashMap::default();
+      let err = validate_mutual_safety(&groups, &block(&[&f, &g]), &env)
+        .expect_err("mixed block");
+      let CompileError::InvalidMutualBlock { reason } = err else {
+        panic!("wrong error kind")
+      };
+      assert!(reason.starts_with(MIXED_SAFETY), "{reason}");
+      assert!(reason.contains("'f'") && reason.contains("'g'"), "{reason}");
+      // singletons of different safeties are not a mixed block
+      let mut singles = block(&[&f]);
+      singles.extend(block(&[&g]));
+      singles.extend(block(&[&h]));
+      assert!(validate_mutual_safety(&groups, &singles, &env).is_ok());
+    }
+    let mut env = LeanEnv::default();
+    env.insert(f.clone(), defn(&f, DefinitionSafety::Unsafe));
+    env.insert(h.clone(), axiom(&h, true));
+    let groups = FxHashMap::default();
+    assert!(validate_mutual_safety(&groups, &block(&[&f, &h]), &env).is_ok());
   }
 }

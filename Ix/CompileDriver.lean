@@ -817,6 +817,79 @@ def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run
     if let some e := t.get then return .error e
   return .ok ()
 
+/-- A constant's safety as the kernels compare it within a mutual block:
+    `unsafe`, `partial` (a definition's), or `safe` (theorems, quotients and
+    the safe constants of the other kinds). -/
+def constSafety : ConstantInfo → String
+  | .axiomInfo v | .opaqueInfo v | .inductInfo v | .ctorInfo v | .recInfo v =>
+    if v.isUnsafe then "unsafe" else "safe"
+  | .defnInfo v =>
+    match v.safety with
+    | .unsafe => "unsafe"
+    | .partial => "partial"
+    | .safe => "safe"
+  | .thmInfo _ | .quotInfo _ => "safe"
+
+/-- Whether the members present in `env` share one safety. -/
+def uniformSafety (env : Ix.Environment) (members : Array Name) : Bool := Id.run do
+  let mut first : Option String := none
+  for m in members do
+    if let some c := env.consts.get? m then
+      let s := constSafety c
+      match first with
+      | none => first := some s
+      | some s0 => if s != s0 then return false
+  return true
+
+/-- The refusal of members that disagree on safety (`uniformSafety` false):
+    the least member present in `env` (by name hash) and the least member
+    whose safety differs from its. -/
+def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String := Id.run do
+  let present := (members.filter env.consts.contains).qsort fun a b =>
+    a.getHash.cmpBytes b.getHash == .lt
+  let some first := present[0]? | return "mixed safety in a mutual block"
+  let s0 := (env.consts.get? first).map constSafety |>.getD "safe"
+  for m in present do
+    let s := (env.consts.get? m).map constSafety |>.getD "safe"
+    if s != s0 then
+      return s!"mixed safety in a mutual block: '{first.pretty}' is {s0}, '{m.pretty}' is {s}"
+  return "mixed safety in a mutual block"
+
+/-- The second domain restriction of both drivers (Rust
+    `validate_mutual_safety`): the members of a mutual block share one
+    safety, or the compile fails before any block is scheduled. The kernels
+    reject a mixed-safety block, and the compilers' orders do not key on
+    safety (C6), so such members could be alpha-collapsed into one
+    representative's safety. Checked first on each inductive group (`all`,
+    with each member's constructors) in the order of their first members'
+    hashes, then on each condensation block in the order of its least
+    member's hash; the first disagreement found is the error. -/
+def validateMutualSafety (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except String Unit := Id.run do
+  let groups := (inductiveGroups env).toArray.qsort fun a b =>
+    a.1.getHash.cmpBytes b.1.getHash == .lt
+  for (_, all) in groups do
+    let members := all.foldl (init := #[]) fun acc n =>
+      match env.consts.get? n with
+      | some (.inductInfo v) => acc.push n ++ v.ctors
+      | _ => acc.push n
+    unless uniformSafety env members do
+      return .error (toString (CompileError.invalidMutualBlock (mixedSafetyMessage env members)))
+  let least (members : Array Name) : Option Name :=
+    members.foldl (init := none) fun acc n => match acc with
+      | some m => if n.getHash.cmpBytes m.getHash == .lt then some n else some m
+      | none => some n
+  let offenders := blocks.blocks.fold (init := #[]) fun (acc : Array (Name × Array Name)) _ set =>
+    let members := set.toArray
+    if uniformSafety env members then acc
+    else match least members with
+      | some m => acc.push (m, members)
+      | none => acc
+  match (offenders.qsort fun a b => a.1.getHash.cmpBytes b.1.getHash == .lt)[0]? with
+  | some (_, members) =>
+    return .error (toString (CompileError.invalidMutualBlock (mixedSafetyMessage env members)))
+  | none => return .ok ()
+
 /-- The drivers' refusal of a condensation with a block that has no reference
     set: the scheduler would schedule such a block without its dependencies.
     `CondenseM.run` and the Rust condensation give every block one. The block
@@ -851,6 +924,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
   if let some msg := missingBlockRefs? blocks then return .error msg
   if let .error e := validateInductiveFlags env then return .error e
+  if let .error e := validateMutualSafety env blocks then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
@@ -1217,6 +1291,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let dbg := opts.dbg
 
   if let .error e := validateInductiveFlags env then return .error e
+  if let .error e := validateMutualSafety env blocks then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
