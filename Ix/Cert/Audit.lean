@@ -1192,11 +1192,16 @@ What ties the shared `Ix.Environment` to Lean's: the cache-free
 specification of `Ix.CanonM` (`nameS`, `levelS`, `exprS`, `constS`), the
 direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
 `leanPos`), and the cache-free universe compiler (`compileUnivS`).
-`CanonMCorrect` and `CanonChunkCorrect` (C1) are **stated**. Since CQ2.26
-they are provable: `Ix.CanonM` confirms every memo hit, has no hash-keyed
-cache, and has a total `canonSyntax`. The universe bridge from Lean is
-proved (`universeBridge`, under `HashEqAgrees`). The proved
-theorems are at the three standard axioms or fewer. -/
+`CanonMCorrect` and `CanonChunkCorrect` (C1) are **proved** (`canonMCorrect`,
+`canonChunkCorrect`), from every state: since CQ2.26 `Ix.CanonM` confirms
+every memo hit (`withPtrEq`) against an entry that carries its proof, has no
+hash-keyed cache, and has a total `canonSyntax`. So `ingressExpr_canonExpr`
+holds without a hypothesis. CQ2.26 re-froze this section: `Reachable` is
+gone (C1 holds from every state, which is stronger), `CanonMCorrect` is
+stated over every state, and `ingressExpr_canonExpr` lost its two premises.
+The universe bridge from Lean is proved (`universeBridge`, under
+`HashEqAgrees`). The proved theorems are at the three standard axioms or
+fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
   Ix.Cert.Canon.nameS x =
@@ -1279,28 +1284,12 @@ fun x =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Canon.constS
 
-/-- info: inductive Ix.Cert.Canon.Reachable : Ix.CanonM.CanonState → Prop
-number of parameters: 0
-constructors:
-Ix.Cert.Canon.Reachable.empty : Ix.Cert.Canon.Reachable { }
-Ix.Cert.Canon.Reachable.name : ∀ {s : Ix.CanonM.CanonState} (n : Lean.Name),
-  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonName n) s).run.snd
-Ix.Cert.Canon.Reachable.level : ∀ {s : Ix.CanonM.CanonState} (l : Lean.Level),
-  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonLevel l) s).run.snd
-Ix.Cert.Canon.Reachable.expr : ∀ {s : Ix.CanonM.CanonState} (e : Lean.Expr),
-  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonExpr e) s).run.snd
-Ix.Cert.Canon.Reachable.const : ∀ {s : Ix.CanonM.CanonState} (c : Lean.ConstantInfo),
-  Ix.Cert.Canon.Reachable s → Ix.Cert.Canon.Reachable (StateT.run (Ix.CanonM.canonConst c) s).run.snd -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Canon.Reachable
-
 /-- info: def Ix.Cert.Canon.CanonMCorrect : Prop :=
 ∀ (s : Ix.CanonM.CanonState),
-  Ix.Cert.Canon.Reachable s →
-    (∀ (n : Lean.Name), (StateT.run (Ix.CanonM.canonName n) s).run.fst = Ix.Cert.Canon.nameS n) ∧
-      (∀ (l : Lean.Level), (StateT.run (Ix.CanonM.canonLevel l) s).run.fst = Ix.Cert.Canon.levelS l) ∧
-        (∀ (e : Lean.Expr), (StateT.run (Ix.CanonM.canonExpr e) s).run.fst = Ix.Cert.Canon.exprS e) ∧
-          ∀ (c : Lean.ConstantInfo), (StateT.run (Ix.CanonM.canonConst c) s).run.fst = Ix.Cert.Canon.constS c -/
+  (∀ (n : Lean.Name), (StateT.run (Ix.CanonM.canonName n) s).run.fst = Ix.Cert.Canon.nameS n) ∧
+    (∀ (l : Lean.Level), (StateT.run (Ix.CanonM.canonLevel l) s).run.fst = Ix.Cert.Canon.levelS l) ∧
+      (∀ (e : Lean.Expr), (StateT.run (Ix.CanonM.canonExpr e) s).run.fst = Ix.Cert.Canon.exprS e) ∧
+        ∀ (c : Lean.ConstantInfo), (StateT.run (Ix.CanonM.canonConst c) s).run.fst = Ix.Cert.Canon.constS c -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Canon.CanonMCorrect
 
@@ -1451,12 +1440,20 @@ fun names =>
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.Canon.ingressExpr_exprS
 
-/-- info: Ix.Cert.Canon.ingressExpr_canonExpr (hc : Ix.Cert.Canon.CanonMCorrect) {s : Ix.CanonM.CanonState}
-  (hs : Ix.Cert.Canon.Reachable s) (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Lean.Expr) :
+/-- info: Ix.Cert.Canon.ingressExpr_canonExpr (s : Ix.CanonM.CanonState) (σ : Ix.Name → Ix.Kernel.LevelParam) (e : Lean.Expr) :
   Ix.LeanIngress.ingressExpr σ (StateT.run (Ix.CanonM.canonExpr e) s).run.fst =
     Ix.Cert.Canon.leanExpr (σ ∘ Ix.Cert.Canon.nameS) e -/
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.Canon.ingressExpr_canonExpr
+
+-- CQ2.26: C1, proved.
+/-- info: Ix.Cert.Canon.canonMCorrect : Ix.Cert.Canon.CanonMCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.canonMCorrect
+
+/-- info: Ix.Cert.Canon.canonChunkCorrect : Ix.Cert.Canon.CanonChunkCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Canon.canonChunkCorrect
 
 /-- info: Ix.Cert.Canon.numbering_nameS (names : Array Lean.Name) (large : Bool) (h : Ix.Cert.Canon.HashEqAgrees names)
   (n : Lean.Name) :
@@ -1492,6 +1489,14 @@ fun names =>
 /-- info: 'Ix.Cert.Canon.ingressExpr_canonExpr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.ingressExpr_canonExpr
+
+/-- info: 'Ix.Cert.Canon.canonMCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.canonMCorrect
+
+/-- info: 'Ix.Cert.Canon.canonChunkCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.canonChunkCorrect
 
 /-- info: 'Ix.Cert.Canon.numbering_nameS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

@@ -15,14 +15,15 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    the structural conversion, with the same smart constructors (so the same
    hash fields) and no cache. It is defined in `Ix.CanonM` (under this
    namespace), so that the memo's entries carry their proofs.
-2. **`CanonMCorrect`, C1: stated.** `canonName`, `canonLevel`, `canonExpr`
-   and `canonConst` compute the specification from every state they reach
-   (`CanonChunkCorrect`: so does `canonChunk`). Since CQ2.26 it is
-   provable: `Ix.CanonM` keeps one pointer memo per kind whose entries carry
-   the proof that their image is the specification's, and confirms each hit
-   with `withPtrEq`, as `Ix.LeanIngress.ingressExprsShared` confirms its
-   memo; it has no hash-keyed cache, and `canonSyntax` is total. Only
-   `ingressExpr_canonExpr` uses it, as a hypothesis.
+2. **`CanonMCorrect`, C1: proved** (`canonMCorrect`, `canonChunkCorrect`).
+   `canonName`, `canonLevel`, `canonExpr` and `canonConst` compute the
+   specification from every state, and `canonChunk` maps it over its chunk
+   (`CanonChunkCorrect`). Since CQ2.26, `Ix.CanonM` keeps one pointer memo
+   per kind whose entries carry the proof that their image is the
+   specification's, and confirms each hit with `withPtrEq`, as
+   `Ix.LeanIngress.ingressExprsShared` confirms its memo. It has no
+   hash-keyed cache, and `canonSyntax` is total. So `ingressExpr_canonExpr`
+   holds from every state, without a hypothesis.
 3. **The Source reading** (`leanExpr`; proved: `ingressExpr_exprS`):
    Source mode's reading of the specification's term is a direct structural
    function of Lean's term. It reads no hash and no cache, under the
@@ -55,42 +56,83 @@ the same smart constructors (so the same hash fields). They are defined
 beside the conversions, in the module `Ix.CanonM`, under this namespace, so
 that the memo's entries can carry their proofs (CQ2.26). -/
 
-/-! ## 2. `CanonM` computes the specification (C1: stated here)
+/-! ## 2. `CanonM` computes the specification (C1, proved)
 
-These are statements (`def … : Prop`). Since CQ2.26 they are provable:
 `Ix.CanonM`'s memo entries carry the proof that their image is the
-specification's, every hit is confirmed with `withPtrEq`, there is no
-hash-keyed cache, and `canonSyntax` is total. -/
+specification's, and a hit is confirmed by identity (`withPtrEq`), whose
+pure meaning decides that the stored source is the input (CQ2.26). So every
+conversion returns the specification from every state, whatever the
+addresses are: the memo changes only how much is recomputed. -/
 
 section Production
 open Ix.CanonM
 
-/-- The states `Ix.CanonM` reaches from the empty state through any sequence
-of its conversions. `canonChunk`, `canonEnv` and the compile driver's
-streamed canon (`Ix.CompileDriver`) thread one state through many
-constants. -/
-inductive Reachable : CanonState → Prop
-  | empty : Reachable {}
-  | name {s : CanonState} (n : Lean.Name) : Reachable s → Reachable (Id.run ((canonName n).run s)).2
-  | level {s : CanonState} (l : Lean.Level) : Reachable s → Reachable (Id.run ((canonLevel l).run s)).2
-  | expr {s : CanonState} (e : Lean.Expr) : Reachable s → Reachable (Id.run ((canonExpr e).run s)).2
-  | const {s : CanonState} (c : Lean.ConstantInfo) : Reachable s →
-      Reachable (Id.run ((canonConst c).run s)).2
+theorem canonName_run (n : Lean.Name) (s : CanonState) :
+    (Id.run ((canonName n).run s)).1 = nameS n :=
+  (Id.run ((canonNameS n).run s)).1.2
 
-/-- **The CanonM correspondence, computational half (C1).** From every
-reachable state, the conversions return the specification. -/
+theorem canonLevel_run (l : Lean.Level) (s : CanonState) :
+    (Id.run ((canonLevel l).run s)).1 = levelS l :=
+  (Id.run ((canonLevelS l).run s)).1.2
+
+theorem canonExpr_run (e : Lean.Expr) (s : CanonState) :
+    (Id.run ((canonExpr e).run s)).1 = exprS e :=
+  (Id.run ((canonExprS e).run s)).1.2
+
+theorem canonConst_run (c : Lean.ConstantInfo) (s : CanonState) :
+    (Id.run ((canonConst c).run s)).1 = constS c :=
+  (Id.run ((canonConstS c).run s)).1.2
+
+/-- **The CanonM correspondence, computational half (C1, proved:
+`canonMCorrect`).** From every state, the conversions return the
+specification. -/
 def CanonMCorrect : Prop :=
-  ∀ s, Reachable s →
+  ∀ s : CanonState,
     (∀ n, (Id.run ((canonName n).run s)).1 = nameS n) ∧
     (∀ l, (Id.run ((canonLevel l).run s)).1 = levelS l) ∧
     (∀ e, (Id.run ((canonExpr e).run s)).1 = exprS e) ∧
     (∀ c, (Id.run ((canonConst c).run s)).1 = constS c)
 
+theorem canonMCorrect : CanonMCorrect := fun s =>
+  ⟨fun n => canonName_run n s, fun l => canonLevel_run l s, fun e => canonExpr_run e s,
+    fun c => canonConst_run c s⟩
+
 /-- What Source mode and the compile driver actually run: a chunk of
-constants through one state. -/
+constants through one state (proved: `canonChunkCorrect`). -/
 def CanonChunkCorrect : Prop :=
   ∀ chunk : Array (Lean.Name × Lean.ConstantInfo),
     canonChunk chunk = chunk.map fun (n, c) => (nameS n, constS c)
+
+/-- A state monad's map whose every step returns `g x`, from every state,
+returns `xs.map g`. -/
+theorem list_mapM_run {σ α β : Type} (f : α → StateT σ Id β) (g : α → β)
+    (hf : ∀ x s, (Id.run ((f x).run s)).1 = g x) :
+    ∀ (xs : List α) (s : σ), (Id.run ((xs.mapM f).run s)).1 = xs.map g := by
+  intro xs
+  induction xs with
+  | nil => intro s; rfl
+  | cons x xs ih =>
+    intro s
+    simp only [List.mapM_cons, StateT.run_bind, Id.run_bind, StateT.run_pure, Id.run_pure, hf,
+      ih, List.map_cons]
+
+theorem canonChunkCorrect : CanonChunkCorrect := by
+  intro chunk
+  have hf : ∀ (p : Lean.Name × Lean.ConstantInfo) (s : CanonState),
+      (Id.run (((fun (p : Lean.Name × Lean.ConstantInfo) => do
+        let name' ← canonName p.1
+        let const' ← canonConst p.2
+        pure (name', const') : Lean.Name × Lean.ConstantInfo → CanonM _) p).run s)).1 =
+        (nameS p.1, constS p.2) := by
+    intro p s
+    simp only [StateT.run_bind, Id.run_bind, StateT.run_pure, Id.run_pure, canonName_run,
+      canonConst_run]
+  unfold canonChunk
+  rw [Array.mapM_eq_mapM_toList]
+  simp only [StateT.run'_eq, StateT.run_map, Id.run_map]
+  rw [list_mapM_run _ _ hf]
+  rcases chunk with ⟨l⟩
+  simp
 
 end Production
 
@@ -280,13 +322,13 @@ theorem ingressExpr_exprS (σ : Ix.Name → LevelParam) (e : Lean.Expr) :
     simp only [exprS, leanExpr, Ix.Expr.mkProj, Id.run, Ix.LeanIngress.ingressExpr,
       ingressKey_nameS, ih]
 
-/-- With the computational half, Source mode reads what `CanonM` produced as
-Lean's own term. -/
-theorem ingressExpr_canonExpr (hc : CanonMCorrect) {s : Ix.CanonM.CanonState}
-    (hs : Reachable s) (σ : Ix.Name → LevelParam) (e : Lean.Expr) :
+/-- Source mode reads what `CanonM` produced, from every state, as Lean's own
+term (C1 and C2). -/
+theorem ingressExpr_canonExpr (s : Ix.CanonM.CanonState) (σ : Ix.Name → LevelParam)
+    (e : Lean.Expr) :
     Ix.LeanIngress.ingressExpr σ (Id.run ((Ix.CanonM.canonExpr e).run s)).1 =
       leanExpr (σ ∘ nameS) e := by
-  rw [(hc s hs).2.2.1 e, ingressExpr_exprS]
+  rw [canonExpr_run, ingressExpr_exprS]
 
 /-! ## 4. The numbering -/
 
