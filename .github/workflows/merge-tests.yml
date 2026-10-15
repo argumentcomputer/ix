@@ -132,7 +132,7 @@ jobs:
               graph-cross condense-cross rust-serialize ixon-corpus
               rust-decompile validate-aux aux-gen-diff decompile-diff
               aux-gen-closure canon-closure-aux aux-cert
-              compile-ind-flags
+              compile-ind-flags compile-claim-conflict
           - name: Lake ignored tests (compile)
             kind: lake
             test_args: --ignored compile

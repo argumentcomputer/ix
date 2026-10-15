@@ -19,6 +19,7 @@ import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.IndFlags
+import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.DriverInput
@@ -357,6 +358,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
   ("compile-ind-flags", Tests.Ix.Compile.IndFlags.run),
+  -- Single ownership of compiled names: conflicting claims refused by both
+  -- compilers (Tests.Ix.Compile.ClaimConflict).
+  ("compile-claim-conflict", Tests.Ix.Compile.ClaimConflict.run),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
