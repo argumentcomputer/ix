@@ -319,6 +319,13 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.canonicalTieredExpanded_eq_C,
     standardAxioms := standard },
+  -- The compiler's preseed table walks (CQ2.9, `Ix.CompileM.TableWorklist`):
+  -- compiled code runs the total worklists, proved equal to the structural
+  -- walks (`@[csimp]`), in place of the former `implemented_by` code.
+  { root := ``Ix.CompileM.collectExprTables_eq_worklist,
+    standardAxioms := standard },
+  { root := ``Ix.CompileM.preseedExprTables_eq_worklist,
+    standardAxioms := standard },
   -- Compiled-code replacements (`@[csimp]`): compiled code runs the
   -- right-hand side wherever the specification on the left is called.
   { root := ``Ix.Sharing.Exact.tagNByteWidth_eq_fast,
