@@ -438,7 +438,8 @@ def collectChecks {ev : Evidences md} {ds : List (Declaration md)}
 /-! ## The fold, and the fully checked environment it is
 
 `checkDecls` is phase A as a `foldlM` over the records and phase B as a
-walk over the records.  An accepting `InstallRun` is an accepting
+walk over the records, run in chunks on tasks (`checkPendingTasks`, equal
+to the walk by `checkPendingTasks_eq`).  An accepting `InstallRun` is an accepting
 `foldlM` and conversely; every record checked is the walk's accept and
 conversely; so a `FullyChecked mode ds` and an accept of `checkDecls`
 are the same evidence in two dressings.  The lemmas are self-contained
@@ -455,13 +456,108 @@ def checkPendingList (fe : FEnv md) : List (PendingCheck md) → Except (CheckEr
     | .ok _ => checkPendingList fe rest
     | .error e => .error (e, pc.pos)
 
+/-! ## Phase B on tasks (PERF P2)
+
+Phase B's records are independent of one another: each is checked against
+the installed index's prefix view from a fresh memo state (`GroupChecked`).
+`checkDecls` runs them in chunks of `phaseBChunk` records, each chunk's walk
+`checkPendingList` on a task of its own (`Task.spawn`, the runtime's thread
+pool), and reads the chunks' verdicts back in record order
+(`awaitInOrder`), stopping at the first failure.  That is the walk's
+verdict over all the records, whatever order the tasks finish in
+(`checkPendingTasks_eq`).
+
+As a Lean function `Task.spawn fn` is the resolved task `⟨fn ()⟩` and
+`Task.get` its field (`Init/Core.lean`), so every statement about the
+fold reads the sequential walk; only execution is concurrent.  The
+runtime sizes the pool (`LEAN_NUM_THREADS`, else the hardware's thread
+count), so the thread count is a parameter outside the function and
+cannot change a verdict.  The two entry points are `Init` externs
+(`lean_task_spawn`, `lean_task_get_own`), inherited like the rest of
+Lean's runtime (`IxC/Kernel/Audit/Roots.lean`). -/
+
+/-- Records per phase-B task. -/
+def phaseBChunk : Nat := 64
+
+/-- `l` cut into consecutive pieces of `c + 1` elements (the last one
+shorter), in order (`chunksOf_flatten`). -/
+def chunksOf {α : Type} (c : Nat) : List α → List (List α)
+  | [] => []
+  | a :: l => (a :: l.take c) :: chunksOf c (l.drop c)
+termination_by l => l.length
+decreasing_by simp only [List.length_drop, List.length_cons]; omega
+
+theorem chunksOf_flatten {α : Type} (c : Nat) : ∀ (l : List α), (chunksOf c l).flatten = l
+  | [] => by simp [chunksOf]
+  | a :: l => by
+    rw [chunksOf, List.flatten_cons, chunksOf_flatten c (l.drop c), List.cons_append,
+      List.take_append_drop]
+termination_by l => l.length
+decreasing_by simp only [List.length_drop, List.length_cons]; omega
+
+/-- The verdicts of `tasks`, read in order: the first failure, else
+success. -/
+def awaitInOrder {ε : Type} : List (Task (Except ε Unit)) → Except ε Unit
+  | [] => .ok ()
+  | t :: ts =>
+    match t.get with
+    | .ok () => awaitInOrder ts
+    | .error e => .error e
+
+/-- **Phase B on tasks**: the records in chunks, each chunk's walk on a
+task of its own, the verdicts read back in record order. -/
+def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md)) :
+    Except (CheckError × Nat) Unit :=
+  awaitInOrder ((chunksOf (phaseBChunk - 1) pend.toList).map fun l =>
+    Task.spawn fun _ => checkPendingList mode fe l)
+
+/-- A spawned task's value is the function's (`Task.spawn` is `⟨fn ()⟩`). -/
+theorem task_get_spawn {α : Type} (fn : Unit → α) (prio : Task.Priority) :
+    (Task.spawn fn prio).get = fn () := rfl
+
+/-- The walk over `l₁ ++ l₂` is the walk over `l₁`, then, on success, the
+walk over `l₂`. -/
+theorem checkPendingList_append (fe : FEnv md) :
+    ∀ (l₁ l₂ : List (PendingCheck md)),
+      checkPendingList mode fe (l₁ ++ l₂) =
+        match checkPendingList mode fe l₁ with
+        | .ok () => checkPendingList mode fe l₂
+        | .error e => .error e
+  | [], _ => rfl
+  | pc :: rest, l₂ => by
+    rw [List.cons_append, checkPendingList, checkPendingList]
+    cases checkPending mode fe pc {} with
+    | ok _ => exact checkPendingList_append fe rest l₂
+    | error e => rfl
+
+/-- Reading back the chunks' walks in order is the walk over their
+concatenation. -/
+theorem awaitInOrder_walks (fe : FEnv md) : ∀ (ls : List (List (PendingCheck md))),
+    awaitInOrder (ls.map fun l => Task.spawn fun _ => checkPendingList mode fe l) =
+      checkPendingList mode fe ls.flatten
+  | [] => rfl
+  | l :: ls => by
+    rw [List.map_cons, List.flatten_cons, checkPendingList_append, awaitInOrder,
+      task_get_spawn]
+    cases checkPendingList mode fe l with
+    | ok u => cases u; exact awaitInOrder_walks fe ls
+    | error e => rfl
+
+/-- **Phase B on tasks is the walk**: the same verdict, the same first
+failure. -/
+theorem checkPendingTasks_eq (fe : FEnv md) (pend : Array (PendingCheck md)) :
+    checkPendingTasks mode fe pend = checkPendingList mode fe pend.toList := by
+  unfold checkPendingTasks
+  rw [awaitInOrder_walks, chunksOf_flatten]
+
 /-- **The declaration fold**: install every record (phase A), check
-every recorded declaration (phase B), return the environment.
+every recorded declaration (phase B, on tasks), return the environment.
 
 The records are the ARRAY the frontend produces and the driver holds
 (`Frontend.preparePrelude`) — phase A is `Array.foldlM` over it, phase
-B a walk over the array of records phase A recorded, and nothing on
-the run path builds a list of millions of declarations.  The PROOFS
+B the records phase A recorded, cut into chunks, each chunk walked on a
+task of its own (`checkPendingTasks`; the list of records is the one
+list of that length the run builds).  The PROOFS
 below read the same fold as `ds.toList.foldlM` (`Array.foldlM_toList`),
 which is where `InstallRun` and every lemma above it live; the
 `× Nat` of the error is the failure's POSITION — here the record's
@@ -471,7 +567,7 @@ def checkDecls (mode : CheckMode) (ev : Evidences md)
     (ds : Array (Declaration md)) :
     Except (CheckError × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingList mode p.2.1 p.2.2.toList
+  checkPendingTasks mode p.2.1 p.2.2
   pure p.2.1.env
 
 /-- An accepting run is an accepting `foldlM`. -/
@@ -557,8 +653,8 @@ theorem fullyChecked_checkDecls {ev : Evidences md} {ds : Array (Declaration md)
   obtain ⟨n, s, r⟩ := fc.1.run
   unfold checkDecls
   rw [← Array.foldlM_toList, r.foldlM]
-  show (checkPendingList mode fc.1.fe fc.1.pend.toList >>= fun _ => pure fc.1.fe.env) = _
-  rw [checkPendingList_ok mode fc.1.fe fc.1.pend.toList fc.records]
+  show (checkPendingTasks mode fc.1.fe fc.1.pend >>= fun _ => pure fc.1.fe.env) = _
+  rw [checkPendingTasks_eq, checkPendingList_ok mode fc.1.fe fc.1.pend.toList fc.records]
   rfl
 
 /-- **Every accept of the fold is a fully checked environment.** -/
@@ -572,7 +668,8 @@ theorem checkDecls_fullyChecked {ev : Evidences md} {ds : Array (Declaration md)
   | ok r =>
     obtain ⟨⟨n, fe, pend⟩, s⟩ := r
     rw [hrun] at h
-    change (checkPendingList mode fe pend.toList >>= fun _ => pure fe.env) = _ at h
+    change (checkPendingTasks mode fe pend >>= fun _ => pure fe.env) = _ at h
+    rw [checkPendingTasks_eq] at h
     cases hchk : checkPendingList mode fe pend.toList with
     | error e => rw [hchk] at h; exact nomatch h
     | ok u =>
