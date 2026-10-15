@@ -15,8 +15,10 @@ standard ones. Every BLAKE3 digest they reach (`Address.blake3`, and the
 finalized by `Address.ofHasher`, which passes the package's length bound
 explicitly instead of proving it `by native_decide`; `blocksOf`'s
 condensation is total (`Ix.CompileCert.Canon.condensation_isSome`, frozen
-with it) and reads no `Inhabited Ix.Name` default. The proved theorems still
-quantify over the grouping function instead of naming `blocksOf`.
+with it) and reads no `Inhabited Ix.Name` default. The proved Source theorems
+quantify over every grouping function, which is stronger than naming
+`blocksOf`; their instances at `blocksOf` (`sourceConsistent_blocksOf`,
+`sourceValueSound_blocksOf`) are frozen at the three standard axioms too.
 
 `#print axioms` does not show what executes in place of the logic.
 `Ix.Cert.RuntimeAudit` freezes the runtime closure of `compile`: the
@@ -848,6 +850,22 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Commutes.alias
 
+-- CQP.3: the Source theorems at the compiler's grouping.
+/-- info: Ix.Cert.sourceConsistent_blocksOf : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] (env : Ix.Environment)
+  (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source),
+  Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+    ∀ (ci : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+      ci ∈ envS.consts → ci.toConstantVal.type = Ix.Kernel.Expr.const Ix.Kernel.falseName [] → False -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.sourceConsistent_blocksOf
+
+/-- info: Ix.Cert.sourceValueSound_blocksOf : ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment)
+  (envS : Ix.Kernel.Env Ix.Kernel.Mode.source),
+  Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+    ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V], Nonempty (Ix.Cert.ValueModel V envS) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.sourceValueSound_blocksOf
+
 -- CQP.1: the definitional steps of `CompileAuthentic`.
 /-- info: Ix.Cert.blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
   (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
@@ -910,6 +928,14 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.Commutes.alias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Commutes.alias
+
+/-- info: 'Ix.Cert.sourceConsistent_blocksOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.sourceConsistent_blocksOf
+
+/-- info: 'Ix.Cert.sourceValueSound_blocksOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.sourceValueSound_blocksOf
 
 /-- info: 'Ix.Cert.blockAddr_mk'' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

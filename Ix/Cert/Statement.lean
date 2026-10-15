@@ -34,7 +34,9 @@ Statements (`def … : Prop`) and the theorems proved now:
 * `IxonAuthentic`: every accepted record and blob, and the role table's
   section, is stored under the pure BLAKE3 hash of its bytes (`ixonAuthentic`);
 * `SourceValueSound`, `IxonValueSound`: every accepted environment has a
-  value model (`sourceValueSound`, `ixonValueSound`);
+  value model (`sourceValueSound`, `ixonValueSound`). The Source statements
+  hold for every grouping function, and so at the compiler's, `blocksOf`
+  (`sourceConsistent_blocksOf`, `sourceValueSound_blocksOf`);
 * `CompileCorrect`: if Source accepts a closure and no constant of it failed
   in the compiler's report (`NoFailure`, decidable), the compiler published
   the closure, Ixon accepts the compiled closure, and every value model of the
@@ -562,6 +564,25 @@ theorem ixonValueSound : IxonValueSound.{w} := by
   intro _ _ _ _ _ _ h V _
   obtain ⟨M, hM⟩ := Ix.Kernel.Admission.checkBytes_has_model_values (hash := Address.blake3Pure) V h.2
   exact ⟨{ M with defn_value := hM }⟩
+
+/-! The Source theorems hold for every grouping function, which is stronger
+than for the compiler's. At the compiler's own grouping, `blocksOf` (the one
+`CompileCorrect` names), they stand on the three standard axioms as well:
+`blocksOf` is total (CQ1.15) and reaches no `native_decide` axiom (CQ1.2,
+CQ2.1), which was the reason the statements quantify over the grouping. -/
+
+/-- `sourceConsistent` at the compiler's grouping, `blocksOf`. -/
+theorem sourceConsistent_blocksOf (V : Type w) [SetTheory V] (env : Ix.Environment)
+    (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
+    (h : SourceAccepts blocksOf env roots sub envS) :
+    ∀ ci ∈ envS.consts, ci.toConstantVal.type = .const falseName [] → False :=
+  sourceConsistent blocksOf V env roots sub envS h
+
+/-- `sourceValueSound` at the compiler's grouping, `blocksOf`. -/
+theorem sourceValueSound_blocksOf (env : Ix.Environment) (roots : List Ix.Name)
+    (sub : Ix.Environment) (envS : Env .source) (h : SourceAccepts blocksOf env roots sub envS)
+    (V : Type w) [SetTheory V] : Nonempty (ValueModel V envS) :=
+  sourceValueSound blocksOf env roots sub envS h V
 
 /-- **Aliases collapse.** Source constants that read as the same compiled
 term get one value in the commuting source model. -/
