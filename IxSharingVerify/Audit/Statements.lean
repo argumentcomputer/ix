@@ -211,6 +211,11 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.searchComponentsWith_eq_fast,
     standardAxioms := standard },
+  -- The compiled tiered copies (`*_eq_C` below) run that loop as
+  -- `searchComponentsArea`, the search on each component's area with the
+  -- truncated evaluation, equal to `searchComponentsWith` on a stage's tables.
+  { root := ``Ix.Sharing.Exact.AreaProof.searchComponentsArea_eq,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.canonicalTieredCore_select,
     standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.Tiered.tieredAtWidth_parts,
