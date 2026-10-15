@@ -331,6 +331,24 @@ def getBlockEnv : CompileM BlockEnv := do
 def getBlockState : CompileM BlockState := do
   get
 
+/-- The named error of an out-of-range access in the compiler. It names the
+    block (`BlockEnv.current`) and the site; the drivers record it for every
+    member of the block, like any other block failure. -/
+def internalIndexError (what : String) (i size : Nat) : CompileM α := do
+  throw (.invalidMutualBlock s!"internal error in block '{(← getBlockEnv).current.pretty}': \
+{what}: index {i} out of range (size {size})")
+
+/-- Total array access for the compiler's monads (`CompileM` and the stacks
+    over it, by lifting). Replaces `a[i]!`, which on an out-of-range index
+    printed `PANIC` and continued with `default`, so a construction bug could
+    reach the output as a well-formed but wrong constant; now it is
+    `internalIndexError`. On every index that was in range the value is the
+    same. -/
+@[inline] def arrIdx (a : Array α) (i : Nat) (what : String) : CompileM α :=
+  match a[i]? with
+  | some x => pure x
+  | none => internalIndexError what i a.size
+
 /-- Modify the block state. -/
 def modifyBlockState (f : BlockState → BlockState) : CompileM Unit := do
   modify f
@@ -1000,7 +1018,7 @@ def auditPlanHeadArities (owner : Name) (top : Expr) : CompileM Unit := do
   let mut seen : Std.HashSet (Expr × Bool) := {}
   let mut stack : Array (Expr × Bool) := #[(top, false)]
   while !stack.isEmpty do
-    let (e, obscured) := stack.back!
+    let some (e, obscured) := stack.back? | break
     stack := stack.pop
     if seen.contains (e, obscured) then continue
     seen := seen.insert (e, obscured)
@@ -1490,17 +1508,15 @@ partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
   for entry in entries do
     match entry with
     | .kept canonIdx _ =>
-      filled := filled.push (.kept canonIdx canonicalRoots[canonIdx.toNat]!)
+      filled := filled.push (.kept canonIdx (← arrIdx canonicalRoots canonIdx.toNat "buildCallSite: canonicalRoots"))
     | .collapsed _ _ =>
       filled := filled.push (.collapsed (sharingBase + collapsedIdx).toUInt64
-        collapsedRoots[collapsedIdx]!)
+        (← arrIdx collapsedRoots collapsedIdx "buildCallSite: collapsedRoots"))
       collapsedIdx := collapsedIdx + 1
-  let origHead : Option (UInt64 × UInt64) :=
-    if origHeadCollapsed && collapsedArgs.size > 0 then
-      some ((sharingBase + collapsedArgs.size - 1).toUInt64,
-        collapsedRoots[collapsedArgs.size - 1]!)
-    else
-      none
+  let mut origHead : Option (UInt64 × UInt64) := none
+  if origHeadCollapsed && collapsedArgs.size > 0 then
+    origHead := some ((sharingBase + collapsedArgs.size - 1).toUInt64,
+      ← arrIdx collapsedRoots (collapsedArgs.size - 1) "buildCallSite: collapsedRoots")
   let root ← allocArenaNode (.callSite nameAddr filled canonicalRoots origHead)
   -- Canonicity §10.6: clone the head's level-spelling patch (if any)
   -- onto the callSite root (see the docstring). Clone, not move — the
@@ -1546,8 +1562,8 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
   -- Motives: kept or collapsed per plan.
   let canonBase := plan.nParams
   for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := canonBase + plan.sourceToCanonMotive[srcI]!
+    if (← arrIdx plan.motiveKeep srcI "compileRecCallSite: motiveKeep") then
+      let canonPos := canonBase + (← arrIdx plan.sourceToCanonMotive srcI "compileRecCallSite: sourceToCanonMotive")
       canonicalArgs := canonicalArgs.push (canonPos, motive)
       motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
@@ -1562,8 +1578,8 @@ partial def compileRecCallSite (name : Name) (lvls : Array Level)
   let minorCanonBase := plan.nParams + nCanonMotives
   let env := (← getCompileEnv).env
   for (minor, srcI) in minors.zipIdx do
-    if plan.minorKeep[srcI]! then
-      let canonPos := minorCanonBase + plan.sourceToCanonMinor[srcI]!
+    if (← arrIdx plan.minorKeep srcI "compileRecCallSite: minorKeep") then
+      let canonPos := minorCanonBase + (← arrIdx plan.sourceToCanonMinor srcI "compileRecCallSite: sourceToCanonMinor")
       let adaptedMinor := Ix.AuxGen.adaptSplitMinor name lvls plan srcI minor
         params motives minors env
       let minorArg := adaptedMinor.getD minor
@@ -1642,7 +1658,7 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   let nSpecs := specs.size
   canonicalArgs := canonicalArgs ++ specs
   for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
+    if (← arrIdx plan.motiveKeep srcI "compileHeadRewriteCallSite: motiveKeep") then
       motiveSlots := motiveSlots.push (.canon canonicalArgs.size)
       canonicalArgs := canonicalArgs.push motive
       entries := entries.push (.kept nSpecs.toUInt64 0)
@@ -1651,7 +1667,7 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
   for (minor, srcI) in minors.zipIdx do
-    if plan.minorKeep[srcI]! then
+    if (← arrIdx plan.minorKeep srcI "compileHeadRewriteCallSite: minorKeep") then
       let canonPos := canonicalArgs.size
       let adaptedMinor := Ix.AuxGen.adaptSplitMinor name lvls plan srcI minor
         params motives minors env
@@ -1714,8 +1730,8 @@ partial def compileBelowCallSite (name : Name)
 
   let motiveCanonBase := plan.nParams
   for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
+    if (← arrIdx plan.motiveKeep srcI "compileBelowCallSite: motiveKeep") then
+      let canonPos := motiveCanonBase + (← arrIdx plan.sourceToCanonMotive srcI "compileBelowCallSite: sourceToCanonMotive")
       canonicalArgs := canonicalArgs.push (canonPos, motive)
       motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
@@ -1768,8 +1784,8 @@ partial def compileBRecOnCallSite (name : Name)
 
   let motiveCanonBase := plan.nParams
   for (motive, srcI) in motives.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := motiveCanonBase + plan.sourceToCanonMotive[srcI]!
+    if (← arrIdx plan.motiveKeep srcI "compileBRecOnCallSite: motiveKeep") then
+      let canonPos := motiveCanonBase + (← arrIdx plan.sourceToCanonMotive srcI "compileBRecOnCallSite: sourceToCanonMotive")
       canonicalArgs := canonicalArgs.push (canonPos, motive)
       motiveSlots := motiveSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
@@ -1785,8 +1801,8 @@ partial def compileBRecOnCallSite (name : Name)
 
   let handlerCanonBase := fixedTailCanonBase + fixedTailLen
   for (handler, srcI) in handlers.zipIdx do
-    if plan.motiveKeep[srcI]! then
-      let canonPos := handlerCanonBase + plan.sourceToCanonMotive[srcI]!
+    if (← arrIdx plan.motiveKeep srcI "compileBRecOnCallSite: motiveKeep") then
+      let canonPos := handlerCanonBase + (← arrIdx plan.sourceToCanonMotive srcI "compileBRecOnCallSite: sourceToCanonMotive")
       canonicalArgs := canonicalArgs.push (canonPos, handler)
       handlerSlots := handlerSlots.push (.canon canonPos)
       entries := entries.push (.kept canonPos.toUInt64 0)
@@ -1852,9 +1868,9 @@ def univSortKey (u : Ixon.Univ) : ByteArray :=
     `Address.cmpBytes`; Rust `Vec<u8>` `Ord`). -/
 def byteArrayCmp (x y : ByteArray) : Ordering := Id.run do
   let n := min x.size y.size
-  for i in [0:n] do
-    let xi := x[i]!
-    let yi := y[i]!
+  for h : i in [0:n] do
+    let xi := x[i]'(Nat.lt_of_lt_of_le h.upper (Nat.min_le_left _ _))
+    let yi := y[i]'(Nat.lt_of_lt_of_le h.upper (Nat.min_le_right _ _))
     if xi < yi then return .lt
     if xi > yi then return .gt
   return compare x.size y.size
@@ -1939,7 +1955,7 @@ private unsafe def collectExprTablesImpl (top : Expr) (ctxKey : Address)
   let mut (refs, univs, seen) := acc
   let mut stack : Array Expr := #[top]
   while !stack.isEmpty do
-    let e := stack.back!
+    let some e := stack.back? | break
     stack := stack.pop
     let key := (e.getHash, ctxKey)
     if seen.contains key then continue
@@ -3200,13 +3216,10 @@ representative. Inductives retain the mutual wrapper for their projection
 scheme. -/
 def standaloneMutConstInfo? (payloads : Array Ixon.MutConst) :
     Option Ixon.ConstantInfo :=
-  if payloads.size == 1 then
-    match payloads[0]! with
-    | .defn definition => some (.defn definition)
-    | .recr recursor => some (.recr recursor)
-    | .indc _ => none
-  else
-    none
+  match payloads with
+  | #[.defn definition] => some (.defn definition)
+  | #[.recr recursor] => some (.recr recursor)
+  | _ => none
 
 /-- Build a BlockResult from a block constant, serializing once. -/
 def BlockResult.mk' (block : Ixon.Constant)

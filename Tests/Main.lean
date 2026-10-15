@@ -25,6 +25,7 @@ import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
+import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -137,6 +138,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   -- the compile drivers refuse a condensation block without a reference set
   ("compile-driver-input", Tests.Ix.Compile.DriverInput.suite),
   ("local-blob", Tests.Ix.Compile.LocalBlob.suite),
+  ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
