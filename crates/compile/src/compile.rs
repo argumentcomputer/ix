@@ -3481,6 +3481,8 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
+  /// The serialization `addr` hashes
+  pub bytes: Vec<u8>,
 }
 
 /// Compile a mutual block with block-level sharing under `limits`.
@@ -3499,7 +3501,7 @@ pub fn compile_mutual_block(
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
 
-  Ok(CompiledMutualBlock { constant, addr })
+  Ok(CompiledMutualBlock { constant, addr, bytes })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -4494,7 +4496,7 @@ fn compile_const_inner_body(
       );
     }
     if aux {
-      stt.store_const(addr.clone(), constant)?;
+      stt.store_const_bytes(addr.clone(), bytes, constant)?;
       // Claim before registering: a refused claim leaves the owner's
       // `Named` entry as it was.
       stt.claim_compiled_name(name, &addr)?;
@@ -4556,7 +4558,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.store_const(addr.clone(), constant)?;
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
         stt.claim_compiled_name(name, &addr)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
@@ -4584,7 +4586,7 @@ fn compile_const_inner_body(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.store_const(addr.clone(), constant)?;
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
         stt.claim_compiled_name(name, &addr)?;
         stt.register_named(name.clone(), Named::new(addr.clone(), meta));
       }
@@ -4621,7 +4623,7 @@ fn compile_const_inner_body(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.store_const(addr.clone(), constant)?;
+          stt.store_const_bytes(addr.clone(), bytes, constant)?;
           stt.claim_compiled_name(name, &addr)?;
           stt.register_named(
             name.clone(),
@@ -4802,7 +4804,7 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.store_const(addr.clone(), standalone_constant)?;
+      stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
@@ -4830,7 +4832,11 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.store_const(block_addr.clone(), compiled.constant)?;
+    stt.store_const_bytes(
+      block_addr.clone(),
+      compiled.bytes,
+      compiled.constant,
+    )?;
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -4868,7 +4874,7 @@ fn compile_mutual(
             requested_addr = Some(proj_addr.clone());
           }
           if aux {
-            stt.store_const(proj_addr.clone(), indc_proj)?;
+            stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
             stt.claim_compiled_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
           } else {
@@ -4888,7 +4894,11 @@ fn compile_mutual(
               requested_addr = Some(ctor_addr.clone());
             }
             if aux {
-              stt.store_const(ctor_addr.clone(), ctor_proj)?;
+              stt.store_const_bytes(
+                ctor_addr.clone(),
+                ctor_bytes,
+                ctor_proj,
+              )?;
               stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
               stt.register_named(
                 ctor.cnst.name.clone(),
@@ -4911,7 +4921,7 @@ fn compile_mutual(
         requested_addr = Some(proj_addr.clone());
       }
       if aux {
-        stt.store_const(proj_addr.clone(), proj)?;
+        stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
         stt.claim_compiled_name(&n, &proj_addr)?;
         stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
       } else {
@@ -4930,7 +4940,7 @@ fn compile_mutual(
   // reaches the kernel env.
   //
   // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.store_const(block_addr, ...)` above is
+  // the block constant (`stt.store_const_bytes(block_addr, ...)` above is
   // guarded by `if aux`). The `aux=false` promotion path reuses entries
   // that were already registered in a prior `aux=true` call.
   if aux {

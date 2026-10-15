@@ -290,8 +290,7 @@ pub fn compile_aux_block_with_rename(
       )?,
       IxonMutConst::Indc(_) => unreachable!(),
     };
-    let standalone_addr = content_address(&result);
-    stt.store_const(standalone_addr.clone(), result)?;
+    let standalone_addr = store_content(stt, result)?;
 
     let mut pending_names: Vec<Name> = Vec::new();
     for cnst in &sorted_classes[0] {
@@ -324,7 +323,11 @@ pub fn compile_aux_block_with_rename(
     block_univs,
   )?;
   let block_addr = compiled.addr.clone();
-  stt.store_const(block_addr.clone(), compiled.constant)?;
+  stt.store_const_bytes(
+    block_addr.clone(),
+    compiled.bytes,
+    compiled.constant,
+  )?;
 
   // Register projections for each constant, same pattern as compile_mutual.
   // Collect names for batched pending-queue push (one lock acquisition).
@@ -354,8 +357,7 @@ pub fn compile_aux_block_with_rename(
           MutConst::Indc(ind) => {
             // Inductive projection
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
-            let proj_addr = content_address(&indc_proj);
-            stt.store_const(proj_addr.clone(), indc_proj)?;
+            let proj_addr = store_content(stt, indc_proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
@@ -370,8 +372,7 @@ pub fn compile_aux_block_with_rename(
                 all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
               let ctor_proj =
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
-              let ctor_addr = content_address(&ctor_proj);
-              stt.store_const(ctor_addr.clone(), ctor_proj)?;
+              let ctor_addr = store_content(stt, ctor_proj)?;
               stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
               stt.register_named(
                 ctor.cnst.name.clone(),
@@ -382,16 +383,14 @@ pub fn compile_aux_block_with_rename(
           },
           MutConst::Recr(_) => {
             let proj = recr_proj_constant(idx, block_addr.clone());
-            let proj_addr = content_address(&proj);
-            stt.store_const(proj_addr.clone(), proj)?;
+            let proj_addr = store_content(stt, proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
             let proj = defn_proj_constant(idx, block_addr.clone());
-            let proj_addr = content_address(&proj);
-            stt.store_const(proj_addr.clone(), proj)?;
+            let proj_addr = store_content(stt, proj)?;
             stt.claim_aux_name(&n, &proj_addr)?;
             stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
             pending_names.push(n);
@@ -561,11 +560,16 @@ fn register_aux_aliases(
   Ok(())
 }
 
-/// Compute the content-addressed hash for a Constant.
-fn content_address(constant: &Constant) -> Address {
+/// Store a constant under its content address, serializing it once.
+fn store_content(
+  stt: &CompileState,
+  constant: Constant,
+) -> Result<Address, CompileError> {
   let mut bytes = Vec::new();
   constant.put(&mut bytes);
-  Address::hash(&bytes)
+  let addr = Address::hash(&bytes);
+  stt.store_const_bytes(addr.clone(), bytes, constant)?;
+  Ok(addr)
 }
 
 // ===========================================================================
