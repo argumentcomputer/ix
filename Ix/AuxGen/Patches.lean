@@ -708,6 +708,6 @@ refusing to compile the original form")
         evaporated := some evaporatedFlags
 
   return { patches, aliases, perm := capturedPerm, evaporated,
-           nCanonicalAux := capturedNCanonicalAux }
+           nCanonicalAux := capturedNCanonicalAux, canonicalRecs }
 
 end Ix.AuxGen
