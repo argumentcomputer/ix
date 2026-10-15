@@ -30,6 +30,38 @@ impl PartialEq for ExprKey {
 
 impl Eq for ExprKey {}
 
+/// A visited collector node in its exact positional universe context.
+/// The precomputed context hash is a bucket hint, never an equality witness.
+#[derive(Clone, Debug)]
+pub(super) struct PreseedKey {
+  pub(super) expr: Expr,
+  pub(super) params: Arc<[Name]>,
+  pub(super) context_hash: Address,
+}
+
+impl Hash for PreseedKey {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.expr.hash(state);
+    self.context_hash.hash(state);
+  }
+}
+
+impl PartialEq for PreseedKey {
+  fn eq(&self, other: &Self) -> bool {
+    self.context_hash == other.context_hash
+      && same_expr(&self.expr, &other.expr)
+      && (Arc::ptr_eq(&self.params, &other.params)
+        || (self.params.len() == other.params.len()
+          && self
+            .params
+            .iter()
+            .zip(other.params.iter())
+            .all(|(a, b)| same_name(a, b))))
+  }
+}
+
+impl Eq for PreseedKey {}
+
 /// The source level and its complete positional parameter context. Context
 /// digests select candidates but never identify different name sequences.
 #[derive(Clone, Debug)]
@@ -203,7 +235,10 @@ fn same_expr(a: &Expr, b: &Expr) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::compile::{BlockCache, CompileState, compile_expr, compile_univ};
+  use crate::compile::{
+    BlockCache, CompileState, collect_expr_tables, compile_expr, compile_univ,
+    compile_univ_idx, preseed_expr_tables,
+  };
   use crate::mutual::MutCtx;
   use bignat::Nat;
   use ix_common::env::{BinderInfo, DataValue, Literal};
@@ -313,6 +348,141 @@ mod tests {
     assert_eq!(cache.arena_roots.last(), Some(&0));
     assert!(compile_expr(&bad, &[], &ctx, &mut cache, &stt).is_err());
     assert_eq!(cache.exprs.len(), 2);
+  }
+
+  #[test]
+  fn preseed_distinguishes_colliding_expressions_with_valid_neighbour() {
+    for collide in [false, true] {
+      let u = Name::str(Name::anon(), "u".into());
+      let v = Name::str(Name::anon(), "v".into());
+      let first = Expr::sort(Level::param(u.clone()));
+      let second = if collide {
+        raw(ExprData::Sort(Level::param(v.clone()), *first.get_hash()))
+      } else {
+        Expr::sort(Level::param(v.clone()))
+      };
+      let params = [u, v];
+      let stt = CompileState::default();
+      let ctx = MutCtx::default();
+      let mut cache = BlockCache::default();
+      preseed_expr_tables(
+        &[(&first, &params), (&second, &params), (&first, &params)],
+        &ctx,
+        &mut cache,
+        &stt,
+        "preseed expression collision",
+      )
+      .unwrap();
+      assert_eq!(cache.univs.len(), 2);
+      assert_eq!(
+        compile_expr(&second, &params, &ctx, &mut cache, &stt).unwrap(),
+        ixon::expr::Expr::sort(1)
+      );
+      assert_eq!(cache.univs.len(), 2);
+      assert!(cache.univs_final);
+    }
+  }
+
+  #[test]
+  fn preseed_distinguishes_colliding_contexts_with_valid_neighbour() {
+    for collide in [false, true] {
+      let u = Name::str(Name::anon(), "u".into());
+      let v = if collide {
+        Name(Arc::new(NameData::Str(Name::anon(), "v".into(), *u.get_hash())))
+      } else {
+        Name::str(Name::anon(), "v".into())
+      };
+      let first = [u.clone(), v.clone()];
+      let second = [v, u.clone()];
+      assert_eq!(
+        super::super::univ_params_key(&first)
+          == super::super::univ_params_key(&second),
+        collide
+      );
+      let level = Level::param(u);
+      let expr = Expr::sort(level.clone());
+      let stt = CompileState::default();
+      let ctx = MutCtx::default();
+      let mut cache = BlockCache::default();
+      preseed_expr_tables(
+        &[(&expr, &first), (&expr, &second)],
+        &ctx,
+        &mut cache,
+        &stt,
+        "preseed context collision",
+      )
+      .unwrap();
+      assert_eq!(cache.univs.len(), 2);
+      assert_eq!(compile_univ_idx(&level, &first, &mut cache).unwrap().0, 0);
+      assert_eq!(compile_univ_idx(&level, &second, &mut cache).unwrap().0, 1);
+      assert_eq!(
+        compile_expr(&expr, &second, &ctx, &mut cache, &stt).unwrap(),
+        ixon::expr::Expr::sort(1)
+      );
+      assert_eq!(cache.univs.len(), 2);
+    }
+  }
+
+  #[test]
+  fn preseed_collision_does_not_hide_an_unsupported_expression() {
+    let good = Expr::sort(Level::zero());
+    let bad = raw(ExprData::Mvar(Name::anon(), *good.get_hash()));
+    let stt = CompileState::default();
+    let ctx = MutCtx::default();
+    let mut cache = BlockCache::default();
+    let result = preseed_expr_tables(
+      &[(&good, &[]), (&bad, &[])],
+      &ctx,
+      &mut cache,
+      &stt,
+      "preseed unsupported collision",
+    );
+    assert!(matches!(result, Err(ixon::CompileError::UnsupportedExpr { .. })));
+    assert!(cache.univs.is_empty());
+    assert!(!cache.univs_final);
+    preseed_expr_tables(
+      &[(&good, &[]), (&good, &[])],
+      &ctx,
+      &mut cache,
+      &stt,
+      "preseed valid duplicate",
+    )
+    .unwrap();
+    assert_eq!(cache.univs.len(), 1);
+  }
+
+  #[test]
+  fn preseed_visits_shared_dags_once_under_exact_keys() {
+    let n = Name::anon();
+    let mut a = Expr::bvar(Nat::from(0u64));
+    let mut b = Expr::bvar(Nat::from(0u64));
+    for _ in 0..64 {
+      a = Expr::lam(n.clone(), a.clone(), a, BinderInfo::Default);
+      b = Expr::lam(n.clone(), b.clone(), b, BinderInfo::Default);
+    }
+    let mut refs = Vec::new();
+    let mut univs = Vec::new();
+    let mut seen = FxHashSet::default();
+    let mut cache = BlockCache::default();
+    let stt = CompileState::default();
+    let ctx = MutCtx::default();
+    for expr in [&a, &b] {
+      collect_expr_tables(
+        expr,
+        &[],
+        &ctx,
+        &mut cache,
+        &stt,
+        &mut refs,
+        &mut univs,
+        &mut seen,
+        "preseed shared DAG",
+      )
+      .unwrap();
+    }
+    assert_eq!(seen.len(), 65);
+    assert!(refs.is_empty());
+    assert!(univs.is_empty());
   }
 
   #[test]

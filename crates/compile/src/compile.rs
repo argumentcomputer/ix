@@ -49,6 +49,7 @@ use crate::{
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
+use expr_key::PreseedKey;
 pub use expr_key::{ExprKey, UnivKey};
 
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
@@ -247,7 +248,7 @@ pub struct BlockCache {
   /// compiles each member under its own `level_params`, so a shared key
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
-  /// The table collector's separate seen cache still uses context digests.
+  /// The table collector's seen set is keyed the same way (`PreseedKey`).
   pub univ_cache: FxHashMap<UnivKey, Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
@@ -745,14 +746,19 @@ fn collect_expr_tables(
   stt: &CompileState,
   refs: &mut Vec<Address>,
   univs: &mut Vec<Arc<Univ>>,
-  seen_exprs: &mut FxHashMap<(Address, Address), ()>,
+  seen_exprs: &mut FxHashSet<PreseedKey>,
   caller: &str,
 ) -> Result<(), CompileError> {
   let ctx_key = univ_params_key(univ_params);
+  let params: Arc<[Name]> = Arc::from(univ_params);
   let mut stack = vec![expr];
   while let Some(e) = stack.pop() {
-    let key = Address::from_blake3_hash(*e.get_hash());
-    if seen_exprs.insert((key, ctx_key.clone()), ()).is_some() {
+    let key = PreseedKey {
+      expr: e.clone(),
+      params: params.clone(),
+      context_hash: ctx_key.clone(),
+    };
+    if !seen_exprs.insert(key) {
       continue;
     }
 
@@ -832,7 +838,7 @@ pub fn preseed_expr_tables(
 ) -> Result<(), CompileError> {
   let mut refs = Vec::new();
   let mut univs = Vec::new();
-  let mut seen_exprs = FxHashMap::default();
+  let mut seen_exprs = FxHashSet::default();
 
   for (expr, univ_params) in exprs {
     collect_expr_tables(

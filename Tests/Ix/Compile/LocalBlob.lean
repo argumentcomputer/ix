@@ -43,7 +43,7 @@ def controls : List (String × Bool) := Id.run do
   let (direct, directAfter) := raw (compileExprNoSurgery literal) poisoned
   let (surgical, surgicalAfter) := raw (compileExprSurgical literal) poisoned
   let (structural, structuralAfter) :=
-    raw (collectExprTablesStructural default default literal (#[], #[], {})) poisoned
+    raw (collectExprTablesStructural default default [] literal (#[], #[], {})) poisoned
   let (runtime, runtimeAfter) := raw (collectExprTables literal default (#[], #[], {})) poisoned
   let (datum, datumAfter) := raw (compileDataValue (.ofString "new")) poisoned
   let natural := ByteArray.mk (Nat.toBytesLE 42)
