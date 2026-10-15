@@ -149,11 +149,18 @@ section Tests
 
 lean_lib Tests
 
+/-- The `twins` suite's fixtures (`Tests.Ix.Compile.Twins.Fixtures` and its
+imports). `IxTests` builds them but does not import them: the suite imports
+them at run time, so their deliberately refused presentations stay out of the
+environment that the whole-environment suites compile. -/
+lean_lib TwinsFixtures where
+  roots := #[`Tests.Ix.Compile.Twins.Fixtures]
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe»]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
