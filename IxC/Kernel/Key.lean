@@ -296,6 +296,48 @@ class Certified (md : Mode) : Prop where
 instance : Certified .anon := ⟨fun _ => rfl⟩
 instance : Certified .source := ⟨fun _ => rfl⟩
 
+/-! ### Display fields (IXC-PLAN §3, step 6)
+
+A display field has type `md.D α`: a value in `.meta`, `()` elsewhere. The
+instances below case on the mode, so a structure with display fields derives
+`DecidableEq`, `Repr` and `Inhabited` at every mode. The reader's output
+carries `.meta`'s display (`Reader.Read.display`: the names the `.ixe`'s
+metadata gives the keys a record declares), which the meta reader fills; the
+checker's own types carry none, and no checker code reads a display field
+(the display-use audit, `IxC/Kernel/Audit/Display.lean`). -/
+
+/-- The empty display: `default` in `.meta`, `()` elsewhere. -/
+def D.none [Inhabited α] : {md : Mode} → md.D α
+  | .meta => default
+  | .anon | .source => ()
+
+/-- A display field holding `a` in `.meta`; `()` elsewhere. -/
+def D.mk : {md : Mode} → α → md.D α
+  | .meta, a => a
+  | .anon, _ | .source, _ => ()
+
+/-- A display field's value, in `.meta`; `none` elsewhere. For renderers. -/
+def D.get? : {md : Mode} → md.D α → Option α
+  | .meta, a => some a
+  | .anon, _ | .source, _ => Option.none
+
+instance {md : Mode} [Inhabited α] : Inhabited (md.D α) := ⟨D.none⟩
+
+/-- Display fields compare as their values in `.meta`; elsewhere they are
+`()`. -/
+def D.decEq [DecidableEq α] : (md : Mode) → DecidableEq (md.D α)
+  | .meta => inferInstanceAs (DecidableEq α)
+  | .anon | .source => inferInstanceAs (DecidableEq Unit)
+
+instance {md : Mode} [DecidableEq α] : DecidableEq (md.D α) := D.decEq md
+
+/-- Display fields print as their values in `.meta`, as `()` elsewhere. -/
+def D.repr [Repr α] : {md : Mode} → md.D α → Nat → Std.Format
+  | .meta, a, p => reprPrec a p
+  | .anon, _, _ | .source, _, _ => "()"
+
+instance {md : Mode} [Repr α] : Repr (md.D α) := ⟨D.repr⟩
+
 /-- Input ids compare as addresses or as names. -/
 def decEqId : (md : Mode) → DecidableEq md.Id
   | .anon | .meta => inferInstanceAs (DecidableEq Address)

@@ -687,10 +687,23 @@ def projRewrite (st : State md) (cv : CVal md) (value : CExpr md) : Option (CExp
 
 /-! ## Records -/
 
+/-- **What the `.ixe`'s metadata says of a key** (`.meta`'s display, IXC-PLAN
+§3, step 6): every Lean name of the constant (an alias fiber has several),
+and its level parameters' names, by position. -/
+structure Display where
+  names : List Ix.Kernel.Name := []
+  levelNames : List Ix.Kernel.Name := []
+  deriving Repr, Inhabited, DecidableEq
+
 /-- The result of reading one record: its declarations in fold order (the
 modeller's generated records first), and what the reader's state learns
 from it. The state is updated only by `State.commit`, after the record:
-reading never modifies it, so a driver threads it uniquely. -/
+reading never modifies it, so a driver threads it uniquely.
+
+In `.meta` it also carries the display of the keys it declares (`display`),
+which the meta reader fills from the `.ixe`'s metadata; elsewhere that field
+is `()`. Only the declarations reach the checker, so no checker code can read
+display (`IxC/Kernel/Audit/Display.lean`). -/
 structure Read (md : Mode) where
   decls : Array (CDecl md) := #[]
   /-- how many of `decls` (at the front) the modeller generated -/
@@ -701,6 +714,9 @@ structure Read (md : Mode) where
   blocks : List (CName md × Ix.Kernel.Frontend.InModel.BlockRec md) := []
   /-- projection functions rewritten -/
   projRewrites : Nat := 0
+  /-- display (`.meta` only): what the metadata says of the keys the record
+  declares -/
+  display : md.D (List (CName md × Display)) := Mode.D.none
 
 /-- The state after a record (in `ExportC.installIndD`'s order: owners,
 block, generated records, the record's own declarations). -/
