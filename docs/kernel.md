@@ -569,13 +569,21 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3303 | 82 |
-| reader `readRecords`, `readStream` | 2025 | 79 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5474 | 111 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5471 | 111 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5505 | 111 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5638 | 112 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5657 | 115 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3364 | 82 |
+| reader `readRecords`, `readStream` | 2066 | 79 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5566 | 111 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5563 | 111 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5598 | 111 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5733 | 112 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5752 | 115 |
+
+Step 5b's walk change moved them from 3303, 2025, 5474, 5471, 5505, 5638 and
+5657, externs unchanged: the walk visits the source `f` of every
+arity-reduced `f._redArg` it reaches (`Ix.Kernel.Audit.reducedAritySource?`).
+The code generator calls `f._redArg` directly, and `f` is where an `unsafe`,
+`implemented_by`, `csimp` or `partial` status is recorded; none came in with
+these sources. The codec's closure (`IxC/Ixon/Audit.lean`) moved from 339 to
+351 the same way.
 
 Step 5b's `LetMeta` (a `letE` keeps its Ixon let contract) moved them from
 3274, 2021, 5447, 5444, 5478, 5611 and 5630: the let contract's equality, hash

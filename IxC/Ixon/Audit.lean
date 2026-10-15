@@ -97,10 +97,15 @@ writers: `getTag0/2/4`, `getTag0Sizes`, `putTag0/2/4`, `get/putU64TrimmedLE`,
 `u64ByteCount` and the writers' cached UInt8 constants left the closure;
 `getTagN`, `getTagNWide`, `getTagN0Values`, `putTagN`, `tagNHeader`,
 `tagNEnd1..5` and the `Nat.shiftRight` extern entered, and the `UInt8.add` and
-`UInt8.sub` externs left (352 compiled functions and 54 externs before). -/
+`UInt8.sub` externs left (352 compiled functions and 54 externs before).
+The walk now visits the source `f` of each arity-reduced `f._redArg` it
+reaches (`Ix.Kernel.Audit.reducedAritySource?`), 12 more functions: the sources
+(`Ixon.getArray`, `Ixon.runGet`, `Ixon.runGetExact`,
+`Ixon.WireCheck.validArray`, `panic`, `outOfBounds` and Init's tail-recursive
+list helpers), with no extern, `unsafe` or `csimp` among them (339 before). -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 339 compiled functions;
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 351 compiled functions;
 inherited externs 53, implemented_by 0, unsafe 2, csimp 0 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime Ixon.Audit.operations #[`Init, `Std]

@@ -19,6 +19,8 @@ every constant it reaches that execution treats specially:
   that `@[computed_field]` generates are both;
 * `csimp` replacements, found by their source or, since the IR already
   calls the replacement, by their target;
+* the source `f` of each arity-reduced auxiliary `f._redArg` reached, whose
+  code the auxiliary carries;
 * opaque constants with compiled code. On Lean 4.34 a `partial` definition
   executes this way, as an opaque whose code is compiled from its
   `_unsafe_rec` body, with no `implemented_by` entry.
@@ -52,6 +54,16 @@ def csimpByTarget (env : Environment) : NameMap (Array Compiler.CSimp.Entry) :=
   (Compiler.CSimp.ext.getState env).map.fold (init := {}) fun acc _ entry =>
     acc.insert entry.toDeclName ((acc.find? entry.toDeclName).getD #[] |>.push entry)
 
+/-- The declaration an arity-reduced auxiliary `f._redArg` was split from.
+The code generator drops erased and unused parameters by moving `f`'s body
+into `f._redArg` and calling that directly, so a closure that reaches
+`f._redArg` executes `f`'s code under another name. The walk visits `f` as
+well, where its `unsafe`, `implemented_by`, `csimp` and `partial` status is
+reported. -/
+def reducedAritySource? (env : Environment) : Name → Option Name
+  | .str source "_redArg" => if env.contains source then some source else none
+  | _ => none
+
 /-- Compiled code reachable through execution from `roots`. -/
 partial def runtimeClosure (env : Environment) (roots : Array Name) : RuntimeReport :=
   go (csimpByTarget env) roots {} {}
@@ -64,6 +76,9 @@ where
       let todo := todo.pop
       if seen.contains name then go targets todo seen report else
       let seen := seen.insert name
+      let todo := match reducedAritySource? env name with
+        | some source => todo.push source
+        | none => todo
       let report := if (env.find? name).any (·.isUnsafe) then
         { report with unsafes := report.unsafes.push name } else report
       let implementation := Compiler.getImplementedBy? env name
@@ -417,6 +432,31 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``treeSize] #[`Init] { computedFieldT
 [Ix.Kernel.Audit.RuntimeControls.Tree.leaf._override, Ix.Kernel.Audit.RuntimeControls.Tree.node._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``treeSize] #[`Init] { computedFieldTypes := #[``Nat] }
+
+/-! An unused parameter makes the code generator move a function's body into
+an arity-reduced `f._redArg` that callers reach directly. The walk visits `f`
+from it, so the overrides of an indexed type stay flagged. -/
+
+inductive IndexedTree (k : Bool) where
+  | leaf (n : Nat)
+  | node (left right : IndexedTree k)
+with
+  @[computed_field] size : (k : Bool) → IndexedTree k → Nat
+  | _, .leaf _ => 1
+  | _, .node left right => left.size + right.size + 1
+
+def indexedTreeSize (n : Nat) : Nat := (IndexedTree.node (k := true) (.leaf n) (.leaf 0)).size
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.indexedTreeSize]:
+[Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf._override,
+ Ix.Kernel.Audit.RuntimeControls.IndexedTree.node._override] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``indexedTreeSize] #[`Init]
+
+/-- info: runtime closure of [Ix.Kernel.Audit.RuntimeControls.indexedTreeSize]: 7 compiled functions;
+inherited externs 1, implemented_by 0, unsafe 2, csimp 0; ruled computed_field 2 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``indexedTreeSize] #[`Init] { computedFieldTypes := #[``IndexedTree] }
 
 /-! A `csimp` replacement is found by its target; the ruling admits it only
 with a theorem on the standard axioms. -/

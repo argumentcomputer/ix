@@ -79,10 +79,12 @@ codec: projection records are written with Ixon v4's TagN writer
 (`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
 (`getTagN`, `getTagNWide`, `getTagN0Values`). Step 5a (typed keys) moved the
 count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
-`LetMeta` from 5478, by the let contract's equality, hash and `Repr`. -/
+`LetMeta` from 5478, by the let contract's equality, hash and `Repr`; step 5b's
+walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
+reaches (no extern, `unsafe`, `csimp` or `partial` constant among them). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5505 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ixon.Projection.checkBytes]: 5598 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

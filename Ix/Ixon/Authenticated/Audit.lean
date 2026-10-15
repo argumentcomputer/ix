@@ -35,11 +35,13 @@ end Ixon.Authenticated.Audit
 
 -- Step 5a (typed keys) moved the count from 5839 by the generic entries' change
 -- (`IxC/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
--- contract's equality, hash and `Repr`.
+-- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
+-- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
+-- `csimp` or `partial` constant among them).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5657 compiled functions; inherited externs 115, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
+ Address.admissionHash]: 5752 compiled functions; inherited externs 115, implemented_by 1, unsafe 26, csimp 4; ruled assumed 4, computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
