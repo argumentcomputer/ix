@@ -26,6 +26,12 @@
   `TypeChecker::new(&mut kenv)` per scope = fresh `TcState.new` carrying
   over the persistent `KEnv` (whose whnf/infer caches live inside it,
   matching the Rust split of TC-transient vs kenv-persistent state).
+
+  Since AuxGen M0 (CQ2.16) this file is the `Ix.Tc` BACKEND of the
+  `AuxKernel` interface (`Ix.AuxGen.AuxKernel`): generators ask the
+  interface (`AuxScope`, `AuxKernel.elimDecision`, the environment hooks),
+  not `TcScopeSt` and the kenv directly. Refusals are `AuxKernelError`s
+  (`Ix.AuxGen.KernelError`).
 -/
 module
 public import Ix.Common
@@ -151,6 +157,11 @@ structure AuxKernelCtx where
       as long as the kenv (this ctx never clears — see the Pass-2
       driver's KENV_CLEAR note). -/
   auxIngressSeen : Std.HashSet MKId := {}
+  /-- Bumped whenever the type checker's state is replaced (`TcScopeSt.new`,
+      the elimination decision), so a scope value opened before is
+      superseded even when the new context is again empty (AuxGen M0,
+      `AuxScope.live?`). No `Ix.Tc` code reads it. -/
+  scopeEpoch : Nat := 0
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations
@@ -734,10 +745,13 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
     if fvarLevels.contains decl.fvarName then
       throwBridge (.duplicateOuterFVar decl.fvarName)
     fvarLevels := fvarLevels.insert decl.fvarName i
-  -- Fresh TC portions, persistent env (caches live in KEnv).
-  modify fun kctx => { kctx with tcState :=
-    { Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims with
-      inferOnly := true } }
+  -- Fresh TC portions, persistent env (caches live in KEnv). Every scope
+  -- opened before is superseded (`scopeEpoch`).
+  modify fun kctx => { kctx with
+    tcState :=
+      { Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims with
+        inferOnly := true }
+    scopeEpoch := kctx.scopeEpoch + 1 }
   let scope : TcScopeSt :=
     { fvarLevels, baseDepth := outerFvarCtx.size, paramNames, maps }
   for (decl, i) in outerFvarCtx.zipIdx do
@@ -909,34 +923,43 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
   return raw
 
 /-- WHNF a `LeanExpr` in the current context, restoring source display
-    names (kernel caches alias same-content names). Falls back to the
-    input on kernel errors. Mirrors Rust `TcScope::whnf_lean`
-    (expr_utils.rs:2589). -/
-def whnfLean (scope : TcScopeSt) (ty : Expr) : KBridgeM Expr := do
+    names (kernel caches alias same-content names); `none` when the kernel
+    gives no answer (its own error). Conversion failures are refusals. -/
+def whnf? (scope : TcScopeSt) (ty : Expr) : KBridgeM (Option Expr) := do
   let depth := scope.depth
   let kexpr ← liftBridgeResult (toKexprStatic ty scope.fvarLevels depth
     scope.paramNames scope.maps)
   let whnfed ← match ← runTc (Ix.Tc.TcM.whnf kexpr) with
     | .ok k => pure k
-    | .error _ => return ty
+    | .error _ => return none
   let out ← liftBridgeResult (kexprToLean whnfed depth scope.fvarLevels 0 scope.paramNames)
   if whnfed.addr == kexpr.addr then
-    return restoreSourceNamesSameContent out ty scope.maps
+    return some (restoreSourceNamesSameContent out ty scope.maps)
   else
     let hints ← liftBridgeResult (collectLeanSourceNameHints ty scope.fvarLevels depth
       scope.paramNames scope.maps {})
-    liftBridgeResult (restoreLeanSourceNameHints out scope.fvarLevels depth
-      scope.paramNames scope.maps hints)
+    return some (← liftBridgeResult (restoreLeanSourceNameHints out scope.fvarLevels depth
+      scope.paramNames scope.maps hints))
 
-/-- Definitional equality in the current context; `false` on kernel
-    errors. Mirrors Rust `TcScope::is_def_eq` (expr_utils.rs:2636). -/
-def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
+/-- `whnf?`, falling back to the input when the kernel gives no answer.
+    Mirrors Rust `TcScope::whnf_lean` (expr_utils.rs:2589). -/
+def whnfLean (scope : TcScopeSt) (ty : Expr) : KBridgeM Expr :=
+  return (← scope.whnf? ty).getD ty
+
+/-- Definitional equality in the current context; `none` when the kernel
+    gives no answer (its own error). -/
+def isDefEq? (scope : TcScopeSt) (a b : Expr) : KBridgeM (Option Bool) := do
   let depth := scope.depth
   let ka ← liftBridgeResult (toKexprStatic a scope.fvarLevels depth scope.paramNames scope.maps)
   let kb ← liftBridgeResult (toKexprStatic b scope.fvarLevels depth scope.paramNames scope.maps)
   match ← runTc (Ix.Tc.TcM.isDefEq ka kb) with
-  | .ok r => return r
-  | .error _ => return false
+  | .ok r => return some r
+  | .error _ => return none
+
+/-- `isDefEq?`, `false` when the kernel gives no answer. Mirrors Rust
+    `TcScope::is_def_eq` (expr_utils.rs:2636). -/
+def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool :=
+  return (← scope.isDefEq? a b).getD false
 
 /-- Infer the type of a `LeanExpr` in the current context. Decision
     support only (the Eq-vs-HEq binder choice's unit-like check): the
@@ -1179,9 +1202,10 @@ def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
     Ix.CompileM.arrIdx indInfos 0 "computeIsLargeAndK: first class info"
 
   -- Fresh TypeChecker over the persistent kenv (Rust
-  -- `TypeChecker::new(&mut kctx.kenv)`).
+  -- `TypeChecker::new(&mut kctx.kenv)`); every open scope is superseded.
   modify fun kctx => { kctx with
-    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims }
+    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims
+    scopeEpoch := kctx.scopeEpoch + 1 }
 
   let block := firstInd.cnst.name.pretty
   -- WHNF-reduced result sort level via the kernel.

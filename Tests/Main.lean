@@ -38,6 +38,7 @@ import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.SurgeryTests
+import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -136,7 +137,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("bench-measures", Tests.Ix.BenchMeasures.suite),
-  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
+  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
+    ++ Tests.AuxGen.AuxKernel.suite),
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   ("ground-unit", Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped
