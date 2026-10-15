@@ -2612,21 +2612,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     )?;
     let result_level = self
       .get_result_sort_level(&ind_infos[0].4, u64_to_usize(first_ind_arity)?)?;
-    let is_large = self.is_large_eliminator(&result_level, &ind_infos)?;
-    let univ_offset: u64 = if is_large { 1 } else { 0 };
-    let rec_lvls = checked_metadata_sum::<M>(
+    let mut is_large = self.is_large_eliminator(&result_level, &ind_infos)?;
+    let mut univ_offset: u64 = if is_large { 1 } else { 0 };
+    let mut rec_lvls = checked_metadata_sum::<M>(
       "generated recursor universe arity",
       &[block_lvls, univ_offset],
     )?;
+
+    // Build flat block (detects nested occurrences).
+    //
+    // Prop elimination is decided on the complete expanded block. A single
+    // source member with a proof-valued nested field can pass the ordinary
+    // singleton test while its nested auxiliaries make the block mutual.
+    // Rebuild at offset zero if discovery retracts the provisional large
+    // eliminator; keeping the offset-one specializations would corrupt the
+    // recursor's universe arguments. Provably nonzero sorts stay large. The
+    // retraction reads the discovered block, before the canonical aux order
+    // below (which can only merge auxiliaries, never members with the
+    // originals, so it cannot change whether the block is mutual).
+    let mut flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
+    if is_large && !result_level.is_never_zero() && flat.len() != 1 {
+      is_large = false;
+      univ_offset = 0;
+      rec_lvls = block_lvls;
+      flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
+    }
     let rec_is_unsafe = block_is_unsafe.unwrap_or(false);
     let elim_level = if is_large {
       KUniv::param(0, M::meta_field(ix_common::env::Name::anon()))
     } else {
       KUniv::zero()
     };
-
-    // Build flat block (detects nested occurrences).
-    let mut flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
     let n_originals = block_inds.len();
     self.dump_flat_aux_order("pre-canonical", block_id, &flat, n_originals);
 
@@ -6065,6 +6081,158 @@ mod tests {
       vec![mk_id("List"), mk_id("List.nil"), mk_id("List.cons")],
     );
     env
+  }
+
+  /// `Box (p : Sort l) : Sort l | mk : p -> Box p`,
+  /// `Nested : Sort l | mk : Box Nested -> Nested`.
+  /// At l=0 the ordinary Box has a large eliminator, while Nested's
+  /// expanded two-member Prop block must have only a small eliminator.
+  fn nested_singleton_env(is_prop: bool, polymorphic: bool) -> KEnv<Anon> {
+    let mut env = KEnv::new();
+    let sort = if is_prop { _sort0() } else { sort1() };
+    let lvls = u64::from(polymorphic);
+    let us = if polymorphic { vec![param(0)] } else { vec![] };
+    for (name, params, ty, ctor_ty) in [
+      (
+        "Box",
+        1,
+        pi(sort.clone(), sort.clone()),
+        pi(sort.clone(), pi(var(0), app(cnst("Box", &us), var(1)))),
+      ),
+      (
+        "Nested",
+        0,
+        sort,
+        pi(app(cnst("Box", &us), cnst("Nested", &us)), cnst("Nested", &us)),
+      ),
+    ] {
+      let ctor = format!("{name}.mk");
+      env.insert(
+        mk_id(name),
+        KConst::Indc {
+          name: (),
+          level_params: (),
+          lvls,
+          params,
+          indices: 0,
+          is_unsafe: false,
+          block: mk_id(name),
+          member_idx: 0,
+          ty,
+          ctors: vec![mk_id(&ctor)],
+          lean_all: (),
+        },
+      );
+      env.insert(
+        mk_id(&ctor),
+        KConst::Ctor {
+          name: (),
+          level_params: (),
+          is_unsafe: false,
+          lvls,
+          induct: mk_id(name),
+          cidx: 0,
+          params,
+          fields: 1,
+          ty: ctor_ty,
+        },
+      );
+      env.blocks.insert(mk_id(name), vec![mk_id(name), mk_id(&ctor)]);
+    }
+    env
+  }
+
+  #[test]
+  fn nested_prop_recursors_have_small_elimination() {
+    let mut env = nested_singleton_env(true, false);
+    let mut tc = TypeChecker::new(&mut env);
+    tc.check_const(&mk_id("Nested")).unwrap();
+    let generated = tc.env.recursor_cache.get(&mk_id("Nested")).unwrap();
+    assert_eq!(generated.len(), 2);
+    for rec in generated {
+      assert_eq!(rec.lvls, 0);
+      assert_eq!(rec.motives, 2);
+      assert_eq!(rec.minors, 2);
+    }
+  }
+
+  #[test]
+  fn nested_prop_repair_keeps_ordinary_prop_and_nested_type_large() {
+    for (is_prop, name, motives) in [(true, "Box", 1), (false, "Nested", 2)] {
+      let mut env = nested_singleton_env(is_prop, false);
+      let mut tc = TypeChecker::new(&mut env);
+      tc.check_const(&mk_id(name)).unwrap();
+      let generated = tc.env.recursor_cache.get(&mk_id(name)).unwrap();
+      assert_eq!(generated.len(), motives);
+      for rec in generated {
+        assert_eq!(rec.lvls, 1);
+      }
+    }
+  }
+
+  #[test]
+  fn nested_prop_rejects_a_forged_large_recursor_header() {
+    for (forged, polymorphic) in
+      [(false, false), (true, false), (false, true), (true, true)]
+    {
+      let mut env = nested_singleton_env(true, polymorphic);
+      let mut tc = TypeChecker::new(&mut env);
+      tc.check_const(&mk_id("Nested")).unwrap();
+      let generated =
+        tc.env.recursor_cache.get(&mk_id("Nested")).unwrap().clone();
+      let rec_block = mk_id("Nested.rec.block");
+      let rec_ids = vec![mk_id("Nested.rec"), mk_id("Nested.rec_1")];
+      for (i, (id, rec)) in rec_ids.iter().zip(&generated).enumerate() {
+        tc.env.insert(
+          id.clone(),
+          KConst::Recr {
+            name: (),
+            level_params: (),
+            k: false,
+            is_unsafe: false,
+            lvls: u64::from(polymorphic) + u64::from(forged && i == 0),
+            params: rec.params,
+            indices: rec.indices,
+            motives: rec.motives,
+            minors: rec.minors,
+            block: rec_block.clone(),
+            member_idx: i as u64,
+            ty: rec.ty.clone(),
+            rules: vec![],
+            lean_all: (),
+          },
+        );
+      }
+      tc.env.blocks.insert(rec_block.clone(), rec_ids);
+      let result = tc.populate_recursor_rules_from_block_core(
+        &mk_id("Nested"),
+        &rec_block,
+        &generated,
+      );
+      if forged {
+        assert!(
+          matches!(result, Err(TcError::Other(ref message))
+          if message.contains("canonical header mismatch")),
+          "{result:?}"
+        );
+      } else {
+        let populated = result.expect("valid small header");
+        for (id, rec) in
+          [mk_id("Nested.rec"), mk_id("Nested.rec_1")].iter().zip(populated)
+        {
+          let Some(KConst::Recr { rules, .. }) = tc.env.consts.get_mut(id)
+          else {
+            panic!("missing stored recursor");
+          };
+          *rules = rec.rules;
+        }
+        // Check complete stored recursors too: the polymorphic neighbour
+        // catches offset-one universe terms left behind after small
+        // elimination retracts the extra universe parameter.
+        tc.check_const(&mk_id("Nested.rec")).unwrap();
+        tc.check_const(&mk_id("Nested.rec_1")).unwrap();
+      }
+    }
   }
 
   #[test]
