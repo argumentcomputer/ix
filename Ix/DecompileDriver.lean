@@ -542,18 +542,20 @@ def Pass2Ctx.cenvFor (ctx : Pass2Ctx)
     constants := {}, blobs := {}, totalBytes := 0 }
 
 /-- Run a `KBridgeM` action over the CURRENT work env, threading the
-    kernel context. Returns the action result; the caller's state gets
-    the updated `kctx`. -/
+    kernel context. The action asks the kernel it is given (`Ix.Tc` over
+    the work env's addresses, AuxGen M0; the decompile driver's
+    construction point of the `AuxKernel`). Returns the action result; the
+    caller's state gets the updated `kctx`. -/
 private def runK (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
-    (act : Ix.AuxGen.AddrMaps → Ix.AuxGen.KBridgeM α)
+    (act : Ix.AuxGen.AuxKernel → Ix.AuxGen.KBridgeM α)
     (view? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Except String (α × Ix.AuxGen.AuxKernelCtx) :=
   let cenv := ctx.cenvFor (view?.getD st.workEnv)
-  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
+  let kernel : Ix.AuxGen.AuxKernel := .tc (Ix.AuxGen.AddrMaps.ofCompileEnv cenv)
   let blockEnv : Ix.CompileM.BlockEnv :=
     { all := {}, current := lo, mutCtx := default, univCtx := [],
         provenanceOnly := true }
-  match Ix.CompileM.CompileM.run cenv blockEnv {} ((act maps).run st.kctx) with
+  match Ix.CompileM.CompileM.run cenv blockEnv {} ((act kernel).run st.kctx) with
   | .ok ((a, kctx'), _) => .ok (a, kctx')
   | .error e => .error (toString e)
 
@@ -630,9 +632,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         (Ix.graphConst ci)
       for r in refs do
         ingressNames := ingressNames.push r
-  match runK ctx st lo (fun maps => do
-      for n in ingressNames do
-        Ix.AuxGen.ensureInKenvOf n maps) with
+  match runK ctx st lo (fun kernel => kernel.admitSource ingressNames) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e => st := recordErr st lo s!"aux_gen ingress failed: {e}"
 
@@ -652,8 +652,8 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   let mut isProp := false
   if needsRec || needsRecOn || needsCasesOn || needsBelow
       || needsBelowRec || needsBrecon then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none (.tc maps)
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none kernel
           none none) with
     | .ok ((recs, p), kctx') =>
       canonicalRecs := recs
@@ -789,8 +789,8 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   -- Phase 2: .below constants (:4522-4739).
   let mut belowConsts : Array Ix.AuxGen.BelowConstant := #[]
   if needsBelow || needsBelowRec || needsBrecon then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp (.tc maps)) with
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp kernel) with
     | .ok (consts, kctx') =>
       belowConsts := consts
       st := { st with kctx := kctx' }
@@ -865,9 +865,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           belowEnv := belowEnv.insert ctor.cnst.name (.ctorInfo ctor)
         belowClasses := belowClasses.push #[i.name]
     if !belowClasses.isEmpty then
-      match runK ctx st lo (fun maps =>
+      match runK ctx st lo (fun kernel =>
           Ix.AuxGen.generateCanonicalRecursorsWithOverlay belowClasses none
-            none (.tc maps)) (view? := some belowEnv) with
+            none kernel) (view? := some belowEnv) with
       | .ok ((belowRecs, _), kctx') =>
         st := { st with kctx := kctx' }
         let belowRecMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
@@ -907,16 +907,16 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   -- Sync + kenv below-population before brecOn (:4828-4841).
   st := sync st generatedConsts
   if !belowConsts.isEmpty then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.populateCanonKenvWithBelow belowConsts classes maps) with
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.populateCanonKenvWithBelow belowConsts classes kernel) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e => st := recordErr st lo s!"populate_canon_kenv: {e}"
 
   -- Phase 4: .brecOn / .go / .eq (:4843-4936).
   if needsBrecon then
-    match runK ctx st lo (fun maps =>
+    match runK ctx st lo (fun kernel =>
         Ix.AuxGen.generateBreconConstants classes canonicalRecs belowConsts
-          isProp (.tc maps)) with
+          isProp kernel) with
     | .ok (breconDefs, kctx') =>
       st := { st with kctx := kctx' }
       for d in breconDefs do
@@ -1049,8 +1049,8 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     kctx := Ix.AuxGen.AuxKernelCtx.new
     auxPerms }
   -- Cold-start kernel prelude (decompile.rs:5140-5142).
-  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
-      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
+      kernel.admitPrelude) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e =>
     let errs := st.errors.push (Ix.Name.mkAnon, s!"prelude ingress: {e}")
@@ -1077,9 +1077,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
         for r in refs do
           if !st.ingressed.contains r then
             stack := stack.push r
-    match runK ctx st blockKey (fun maps => do
-        for n in toIngress do
-          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
+    match runK ctx st blockKey (fun kernel => kernel.admitSource toIngress .prewarm) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       let errs := st.errors.push (blockKey, s!"block ingress: {e}")
@@ -1160,8 +1158,8 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     dstt := pass1
     kctx := Ix.AuxGen.AuxKernelCtx.new
     auxPerms }
-  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
-      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
+      kernel.admitPrelude) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e =>
     st := { st with
@@ -1187,9 +1185,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
         for r in refs do
           if !st.ingressed.contains r then
             stack := stack.push r
-    match runK ctx st blockKey (fun maps => do
-        for n in toIngress do
-          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
+    match runK ctx st blockKey (fun kernel => kernel.admitSource toIngress .prewarm) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       st := { st with

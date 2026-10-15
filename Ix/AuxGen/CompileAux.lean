@@ -54,7 +54,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.Patches
 public import Ix.AuxGen.Surgery
@@ -208,7 +208,7 @@ private def listHead (xs : List α) (what : String) : CompileM α :=
     against already-cleared block caches (the wrapper handles the fresh
     `BlockCache` model). -/
 private def compileAuxBlockCore (auxConsts : Array MutConst)
-    (maps : AddrMaps) (nameRename : Option (Std.HashMap Name Name))
+    (kernel : AuxKernel) (nameRename : Option (Std.HashMap Name Name))
     (classOrderKey : Option (MutConst → UInt64)) : KBridgeM Unit := do
   -- Helper: canonical name → source name under the optional rename
   -- (mutual.rs:118-122).
@@ -289,7 +289,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
     -- Ingress all registered aux constants into the kernel environment
     -- (mutual.rs:238-245).
     for cnst in auxConsts do
-      ensureInKenvOf cnst.name maps
+      kernel.admitSource #[cnst.name]
     return ()
 
   -- Compile the mutual block (mutual.rs:249-256).
@@ -378,7 +378,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
   -- Ingress all registered aux constants into the kernel environment
   -- (mutual.rs:403-411).
   for cnst in auxConsts do
-    ensureInKenvOf cnst.name maps
+    kernel.admitSource #[cnst.name]
 
 /-- Like `compileAuxBlock`, but applies an optional canonical→source
     name-rename when registering named entries, and an optional
@@ -392,7 +392,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
     cleared, and restored around the body; the stt-like fields
     accumulate. -/
 def compileAuxBlockWithRename (auxConsts : Array MutConst)
-    (maps : AddrMaps) (nameRename : Option (Std.HashMap Name Name))
+    (kernel : AuxKernel) (nameRename : Option (Std.HashMap Name Name))
     (classOrderKey : Option (MutConst → UInt64)) : KBridgeM Unit := do
   if auxConsts.isEmpty then
     return ()
@@ -402,7 +402,7 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
     exprCache := {}, univCache := {}, cmpCache := {},
     refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
     arena := {} }) : CompileM _)
-  compileAuxBlockCore auxConsts maps nameRename classOrderKey
+  compileAuxBlockCore auxConsts kernel nameRename classOrderKey
   -- Drop the local cache (restore the caller's cache fields; the aux
   -- registrations and blob/name/hint accumulators persist).
   liftM (modifyBlockState (fun c => { c with
@@ -416,9 +416,9 @@ def compileAuxBlockWithRename (auxConsts : Array MutConst)
     register into the block's `auxNameToAddr` (not the primary name map)
     so they don't interfere with scheduler dependency tracking. Mirrors
     Rust `compile_aux_block` (mutual.rs:60). -/
-def compileAuxBlock (auxConsts : Array MutConst) (maps : AddrMaps)
+def compileAuxBlock (auxConsts : Array MutConst) (kernel : AuxKernel)
     : KBridgeM Unit :=
-  compileAuxBlockWithRename auxConsts maps none none
+  compileAuxBlockWithRename auxConsts kernel none none
 
 /-! ## Alias registration (mutual.rs:420) -/
 
@@ -580,7 +580,7 @@ def brecOnToMutConst (d : BRecOnDef) : MutConst :=
     (Defined before `generateAndCompileAuxRecursors` — its only caller —
     instead of at its Rust source position after it; no semantic
     difference.) -/
-def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
+def compileBelowRecursors (belowIndcs : Array MutConst) (kernel : AuxKernel)
     : KBridgeM Unit := do
   -- Overlay with just the .below inductives + ctors (mutual.rs:1063-1077).
   let mut overlay : Std.HashMap Name ConstantInfo := {}
@@ -615,7 +615,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     return ()
 
   let (recs, _) ← generateCanonicalRecursorsWithOverlay classes
-    (some overlay) none (.tc maps)
+    (some overlay) none kernel
   let mut belowRecs : Array MutConst := #[]
   for (_, rv) in recs do
     belowRecs := belowRecs.push (.recr rv)
@@ -638,7 +638,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     let keyMap := nameToPos
     let classOrderKey : MutConst → UInt64 := fun c =>
       (keyMap.get? c.name).getD u64Max
-    compileAuxBlockWithRename belowRecs maps none (some classOrderKey)
+    compileAuxBlockWithRename belowRecs kernel none (some classOrderKey)
 
   -- Regenerate `.below.casesOn` against the canonical below-recs
   -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
@@ -683,7 +683,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
             safety := defSafety d.isUnsafe
             all := #[] })
   if !belowCases.isEmpty then
-    compileAuxBlock belowCases maps
+    compileAuxBlock belowCases kernel
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
@@ -705,6 +705,7 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     `IX_TIMING` instrumentation is not ported. -/
 def generateAndCompileAuxRecursors (cs : Array MutConst)
     (classNames : Array (Array Name)) (maps : AddrMaps)
+    (kernel : AuxKernel := .tc maps)
     : KBridgeM (Option Ixon.AuxLayout) := do
   -- Guard: aux_gen canonical generation only runs for blocks containing
   -- inductives (mutual.rs:521-524).
@@ -742,7 +743,7 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
 
   -- Phase 1: Generate patches (mutual.rs:572-587). Errors propagate —
   -- they indicate an aux_gen bug, not a user error.
-  let auxOut ← generateAuxPatches auxClassNames sourceAll maps
+  let auxOut ← generateAuxPatches auxClassNames sourceAll maps kernel
   let patches := auxOut.patches
   if patches.isEmpty then
     return none
@@ -843,7 +844,7 @@ for {perm.size} permutation entries")
     for c in recConsts do
       preClaims := preClaims.push
         (c.name, ← liftM (resolveAddr? c.name : CompileM _))
-    compileAuxBlockWithRename recConsts maps (some auxNameRename)
+    compileAuxBlockWithRename recConsts kernel (some auxNameRename)
       (some classOrderKey)
     for (name, preAddr) in preClaims do
       let postAddr ← liftM (resolveAddr? name : CompileM _)
@@ -881,7 +882,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !casesOnDefs.isEmpty then
-    compileAuxBlock casesOnDefs maps
+    compileAuxBlock casesOnDefs kernel
 
   -- Phase 2c: Compile .recOn definitions (arg-reordered .rec wrapper),
   -- after .rec (mutual.rs:761-783).
@@ -900,7 +901,7 @@ source-indexed aux name")
           all := #[] })
     return out
   if !recOnDefs.isEmpty then
-    compileAuxBlock recOnDefs maps
+    compileAuxBlock recOnDefs kernel
 
   -- Phase 3: Compile .below inductives (Prop-level); all .below names
   -- first for the mutual `all` field (mutual.rs:784-816).
@@ -950,7 +951,7 @@ source-indexed aux name")
   let belowIndcs : Array MutConst :=
     belowRaw.map (belowIndcToMutConst · allBelowNames)
   if !belowIndcs.isEmpty then
-    compileAuxBlockWithRename belowIndcs maps (some auxNameRename) none
+    compileAuxBlockWithRename belowIndcs kernel (some auxNameRename) none
     -- Note: constructor names are already correctly set by
     -- rename_below_indc during alias patching;
     -- register_below_ctor_aliases was removed because it created
@@ -973,12 +974,12 @@ source-indexed aux name")
           all := #[] })
     return out
   if !belowDefs.isEmpty then
-    compileAuxBlockWithRename belowDefs maps (some auxNameRename) none
+    compileAuxBlockWithRename belowDefs kernel (some auxNameRename) none
 
   -- Phase 5: Compile .below.rec for Prop-level .below inductives
   -- (mutual.rs:847-852).
   if !belowIndcs.isEmpty then
-    compileBelowRecursors belowIndcs maps
+    compileBelowRecursors belowIndcs kernel
 
   -- Phase 6: Compile .brecOn in 3 batches: .go, main, .eq
   -- (mutual.rs:854-877).
@@ -991,7 +992,7 @@ source-indexed aux name")
             out := out.push (brecOnToMutConst d)
       return out
     if !defs.isEmpty then
-      compileAuxBlockWithRename defs maps (some auxNameRename) none
+      compileAuxBlockWithRename defs kernel (some auxNameRename) none
 
   liftM (registerAuxAliases auxOut.aliases
     s!"{blockLabel}/final" : CompileM _)
@@ -1011,10 +1012,15 @@ source-indexed aux name")
     call-site surgery plans. Returns `(auxLayout, plans, brecOnPlans,
     belowPlans)` — the driver stores them (next milestone); the plans gate
     dumps them. Lives here rather than in `Ix.CompileM.compileMutualBlock`
-    because CompileM cannot import AuxGen (dependency direction). -/
+    because CompileM cannot import AuxGen (dependency direction).
+
+    `kernel` is the kernel AuxGen asks (`Ix.Tc` over `maps` by default);
+    `maps` also serves the compile-side alias identification. This is the
+    compile driver's construction point of the `AuxKernel` (AuxGen M1's
+    seam). -/
 def compileMutualAuxTail (cs : Array MutConst)
     (sortedClasses : List (List MutConst)) (blockAddr : Address)
-    (maps : AddrMaps)
+    (maps : AddrMaps) (kernel : AuxKernel := .tc maps)
     : KBridgeM (Option Ixon.AuxLayout
         × Std.HashMap Name CallSitePlan
         × Std.HashMap Name BRecOnCallSitePlan
@@ -1035,7 +1041,7 @@ def compileMutualAuxTail (cs : Array MutConst)
   -- Regenerate + compile auxiliaries (compile.rs:4018-4029).
   let classNames : Array (Array Name) :=
     sortedClasses.toArray.map fun cls => cls.toArray.map (·.name)
-  let auxLayout ← generateAndCompileAuxRecursors cs classNames maps
+  let auxLayout ← generateAndCompileAuxRecursors cs classNames maps kernel
 
   -- Original inductive `all` + the plan class filtering (compile.rs:4031-4056).
   let originalAll : Array Name := Id.run do

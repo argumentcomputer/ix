@@ -129,9 +129,12 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
+  -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0). AuxGen
+  -- M1 chooses the IxC arm here.
+  let kernel : Ix.AuxGen.AuxKernel := .tc maps
   let (auxLayout?, plans, brecPlans, belowPlans) ←
     (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps).run' Ix.AuxGen.AuxKernelCtx.new
+      maps kernel).run' Ix.AuxGen.AuxKernelCtx.new
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the

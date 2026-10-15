@@ -19,7 +19,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.CasesOn
 public import Ix.AuxGen.RecOn
@@ -57,19 +57,19 @@ def belowFamilyLeanExistsM (originalAll : Array Name) : CompileM Bool := do
     (Defined before `generateAuxPatches` — its only caller — instead of
     at its Rust source position after it; no semantic difference.) -/
 def populateCanonKenvWithBelow (belowConsts : Array BelowConstant)
-    (sortedClasses : Array (Array Name)) (maps : AddrMaps)
+    (sortedClasses : Array (Array Name)) (kernel : AuxKernel)
     : KBridgeM Unit := do
   -- Ensure PUnit and PProd are in kenv.
-  ensurePreludeInKenvOf maps
+  kernel.admitPrelude
 
   -- Ensure parent inductives (and their constructors) are in the kenv —
   -- the .below types reference these in their motive/major domains.
   for cls in sortedClasses do
     let rep ← arrIdx cls 0 "populateCanonKenvWithBelow: class representative"
-    ensureInKenvOf rep maps
+    kernel.admitSource #[rep]
 
   -- Insert canonical .below definitions/inductives.
-  tcAdmitBelow belowConsts maps
+  kernel.admitGenerated belowConsts
 
 /-- Alias-target lookup for original-order `_N` aux aliases. Mirrors the
     Rust `find_target` closure in `generate_aux_patches`
@@ -99,9 +99,13 @@ def auxAliasFindTarget (patches : Std.HashMap Name PatchedConstant)
     `sortConsts` determines the canonical classes; `originalAll` is the
     Lean-source `InductiveVal.all` list driving `<all0>.rec_N` naming and
     the source-aux walk. Mirrors Rust `generate_aux_patches`
-    (aux_gen.rs:188). -/
+    (aux_gen.rs:188).
+
+    `maps` serves the compile-side alias identification (the permutation's
+    `resolveAddr` and the claims); `kernel` (by default `Ix.Tc` over the
+    same `maps`) answers every kernel question. -/
 def generateAuxPatches (sortedClasses : Array (Array Name))
-    (originalAll : Array Name) (maps : AddrMaps)
+    (originalAll : Array Name) (maps : AddrMaps) (kernel : AuxKernel := .tc maps)
     : KBridgeM AuxPatchesOutput := do
   let patches : Std.HashMap Name PatchedConstant := {}
   let aliases : Std.HashMap Name Name := {}
@@ -114,7 +118,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
   let mut capturedNCanonicalAux : Nat := 0
 
   -- PUnit/PProd must be authoritative BEFORE any ingress (aux_gen.rs:229).
-  ensurePreludeInKenvOf maps
+  kernel.admitPrelude
 
   -- Phase 1: canonical recursors (aux_gen.rs:231-549).
   let orderedOriginals : Array Name ←
@@ -170,7 +174,7 @@ refusing to synthesize canonical-indexed _N names")
         let sourceOfCanonical := canonRepr
 
         let (rawRecs, isProp) ← generateRecursorsFromExpanded sortedClasses
-          expanded (some sourceOfCanonical) (.tc maps)
+          expanded (some sourceOfCanonical) kernel
 
         -- aux_rec_map: `_nested.X.rec` → `<source_all0>.rec_{source_j+1}`
         -- (aux_gen.rs:381-393; source_all0 is the LEAN source first
@@ -233,7 +237,7 @@ refusing to synthesize canonical-indexed _N names")
               origToCanonMap (fun n => some (maps.resolve n)) : CompileM _)
           capturedPerm := some perm
           capturedNCanonicalAux := nCanon
-        generateCanonicalRecursorsWithOverlay sortedClasses none none (.tc maps)
+        generateCanonicalRecursorsWithOverlay sortedClasses none none kernel
     else do
       -- Standard flat-block generation; disagreement flavors still need
       -- the perm for surgery/aliases (aux_gen.rs:500-548).
@@ -249,7 +253,7 @@ refusing to synthesize canonical-indexed _N names")
             (fun n => some (maps.resolve n)) : CompileM _)
         capturedPerm := some perm
         capturedNCanonicalAux := nCanon
-      generateCanonicalRecursorsWithOverlay sortedClasses none none (.tc maps)
+      generateCanonicalRecursorsWithOverlay sortedClasses none none kernel
 
   -- Block membership is decided per FAMILY, never per name (aux_gen.rs
   -- `family_exported`). Each auxiliary kind (`.rec`, `.casesOn`, `.recOn`,
@@ -353,7 +357,7 @@ refusing to synthesize canonical-indexed _N names")
   -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
   if ← familyExported "below" none then
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
-      isProp (.tc maps) (allAux := true)
+      isProp kernel (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
     -- references from already-source-indexed rec names (see
     -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no
@@ -368,7 +372,7 @@ refusing to synthesize canonical-indexed _N names")
     -- during brecOn generation — uses the SAME renamed belowConsts that
     -- `patches` got, keeping hash addressing consistent end-to-end
     -- (aux_gen.rs:646-657).
-    populateCanonKenvWithBelow belowConsts sortedClasses maps
+    populateCanonKenvWithBelow belowConsts sortedClasses kernel
 
     -- Phase 3: Generate .brecOn constants (if originals exist)
     -- (aux_gen.rs:659-702).
@@ -380,7 +384,7 @@ refusing to synthesize canonical-indexed _N names")
     let emitEq ← familyExported "brecOn" (some "eq")
     if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
-        canonicalRecs belowConsts isProp (.tc maps) (allAux := true)
+        canonicalRecs belowConsts isProp kernel (allAux := true)
       -- Emit per family (the `.go` / main / `.eq` batch the name falls
       -- in, as CompileAux's `breconBatch` splits them), not per name, in
       -- batch order so each batch can resolve the ones before it. `BRecOn`
