@@ -288,14 +288,15 @@ pub fn compare_krec_rule<M: KernelMode>(
   )
 }
 
-/// Compare two `KConst::Indc` payloads. Mirrors `compare_indc`
-/// (`src/ix/compile.rs:2472`).
+/// Compare two `KConst::Indc` payloads.
 ///
 /// Field order:
-/// `(is_rec, is_unsafe, lvls, params, indices, |ctors|, ty, ctors[*])`.
+/// `(is_unsafe, lvls, params, indices, |ctors|, ty, ctors[*])`.
 ///
-/// `is_unsafe` participates so alpha-collapse can't merge
-/// inductives whose derived flags differ.
+/// The compilers' inductive keys (Rust `compare_indc`, Lean `compareInd`)
+/// have no flag keys and otherwise match. The leading `is_unsafe` key is
+/// inert on any block this kernel accepts: every member of a mutual block
+/// must carry the same safety flag (`inductive.rs`).
 fn compare_kindc<M: KernelMode>(
   x_lvls: u64,
   x_params: u64,
