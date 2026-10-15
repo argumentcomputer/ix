@@ -351,14 +351,22 @@ fun τ envS envA =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Commutes
 
-/-- info: def Ix.Cert.HashAgreement : Prop :=
-∀ (bytes : ByteArray), Address.blake3 bytes = Address.blake3Pure bytes -/
+-- CQP.1: `HashAgreement` (`∀ bytes, Address.blake3 bytes = Address.blake3Pure
+-- bytes`) is gone, as `CompileCorrect`'s hypothesis and as a definition: since
+-- CQ2.2 every content address the compiler computes is `Address.admissionHash`,
+-- pure BLAKE3 in the logic, so the statement no longer assumes that the Rust
+-- and the pure BLAKE3 agree. That the compiler's records and blobs sit at pure
+-- BLAKE3 of their bytes is a property of `compile`, `CompileAuthentic`.
+/-- info: def Ix.Cert.CompileAuthentic : Prop :=
+∀ (env : Ix.Environment) (ixe : Ixon.Env),
+  Ix.Cert.compile env = Except.ok ixe →
+    (∀ (a : Address) (lc : Ixon.LazyConstant), ixe.consts.get? a = some lc → a = Address.blake3Pure lc.rawBytes) ∧
+      ∀ (a : Address) (bytes : ByteArray), ixe.blobs.get? a = some bytes → a = Address.blake3Pure bytes -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.HashAgreement
+#print Ix.Cert.CompileAuthentic
 
 /-- info: def Ix.Cert.CompileCorrect.{w} : Prop :=
-Ix.Cert.HashAgreement →
-  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
     (ixe : Ixon.Env),
     Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
       Ix.Cert.compile env = Except.ok ixe →
@@ -810,6 +818,19 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Commutes.alias
 
+-- CQP.1: the definitional steps of `CompileAuthentic`.
+/-- info: Ix.Cert.blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
+  (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
+  (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockAddr =
+    Address.blake3Pure (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockBytes -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.blockAddr_mk'
+
+/-- info: Ix.Cert.storedRecord_authentic (bytes : ByteArray) :
+  Address.admissionHash bytes = Address.blake3Pure { buf := bytes, len := bytes.size }.rawBytes -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.storedRecord_authentic
+
 /-! ## Axioms -/
 
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -835,6 +856,18 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.Commutes.alias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Commutes.alias
+
+/-- info: 'Ix.Cert.blockAddr_mk'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.blockAddr_mk'
+
+/-- info: 'Ix.Cert.storedRecord_authentic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.storedRecord_authentic
+
+/-- info: 'Ix.Cert.CompileAuthentic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.CompileAuthentic
 
 /-- info: 'Ix.Cert.SourceAccepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

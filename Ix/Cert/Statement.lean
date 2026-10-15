@@ -39,6 +39,9 @@ Statements (`def … : Prop`) and the theorems proved now:
   Ixon accepts the compiled closure, and every value model of the compiled
   environment, read through `reading`, is one of the source's (`Commutes`).
   Stated, not proved;
+* `CompileAuthentic`: every record and blob `compile` returns is stored under
+  the pure BLAKE3 hash of its bytes. Stated, not proved; its definitional
+  steps are (`blockAddr_mk'`, `storedRecord_authentic`);
 * `ClosureCorrect`: the computed closure is the closure. Stated, not proved;
 * `RenamingLemma`: the fold commutes with renaming a Source run's keys to
   compiled ones by `Key.map f`, for every `f` injective on the run's ids
@@ -306,13 +309,34 @@ def Commutes (τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .an
     ∀ c ∈ envS.consts, ∀ t, τ c = some t →
       ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval envA φ ρ t (N.cval c.name φ)
 
-/-- The compiler's hash is pure BLAKE3. The compiler addresses records with
-the Rust BLAKE3 (`Address.blake3`), and the entry authenticates them with
-pure BLAKE3. Like the admission hash's substitution
-(`Address.admissionHash`), this is an assumption, checked on fixtures
-(`Tests.Ix.Kernel.AddressPure`). -/
-def HashAgreement : Prop :=
-  ∀ bytes, Address.blake3 bytes = Address.blake3Pure bytes
+/-- **The compiler's addresses are pure BLAKE3.** Every record of `compile`'s
+output is stored under `Address.blake3Pure` of its stored bytes, and so is
+every blob. The compiler computes every content address (record, projection,
+blob) with `Address.admissionHash`, which is `Address.blake3Pure` in the logic
+(`Address.admissionHash_eq`) and runs as the Rust BLAKE3, so this is a
+property of `compile`, not an assumption that the two BLAKE3s agree. Its
+definitional steps are proved (`blockAddr_mk'`, `storedRecord_authentic`);
+that every storing site goes through them is an invariant of the driver's
+loop, stated here and checked on the fixtures (`cert-statement`). -/
+def CompileAuthentic : Prop :=
+  ∀ (env : Ix.Environment) (ixe : Ixon.Env), compile env = .ok ixe →
+    (∀ a lc, ixe.consts.get? a = some lc → a = Address.blake3Pure lc.rawBytes) ∧
+      ∀ a bytes, ixe.blobs.get? a = some bytes → a = Address.blake3Pure bytes
+
+/-- A block result's address is pure BLAKE3 of its stored bytes. -/
+theorem blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
+    (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
+    (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockAddr =
+      Address.blake3Pure (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockBytes :=
+  rfl
+
+/-- A record stored as the compiler's output stores it (`compileEnvAux`'s
+`assembleEnv`: the bytes as their own buffer), under the admission hash of
+those bytes, is at pure BLAKE3 of its stored bytes. -/
+theorem storedRecord_authentic (bytes : ByteArray) :
+    Address.admissionHash bytes =
+      Address.blake3Pure ({ buf := bytes, len := bytes.size } : Ixon.LazyConstant).rawBytes := by
+  simp [Address.admissionHash_eq, Ixon.LazyConstant.rawBytes]
 
 /-- **Compiler correctness, forward, per root.** Suppose Source accepts the
 closure `sub` of `roots` in `env`, grouped as the compiler groups it,
@@ -325,7 +349,6 @@ This is partial correctness. A closure that Source rejects or declines, a
 compile that fails, and constants the compile leaves out are outside the
 statement. -/
 def CompileCorrect : Prop :=
-  HashAgreement →
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
     (ixe : Ixon.Env),
     SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe → Published ixe sub →

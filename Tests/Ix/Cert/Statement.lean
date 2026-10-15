@@ -12,6 +12,8 @@ import Tests.Ix.SourceContract.SyntaxFixture
   constant of `Tests.Ix.Kernel.ReaderFidelityDefs` and
   `Tests.Ix.Kernel.SourceIngressDefs`: the serialized environments
   (`Ixon.serEnv`) are byte-identical, and so are the published addresses.
+  Every record and blob of `Ix.Cert.compile`'s output is at pure BLAKE3 of
+  its bytes (`Ix.Cert.CompileAuthentic`).
   `cert-compile-parity-init` (ignored) does the same on `Init`.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
@@ -80,6 +82,20 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   lines := lines.push s!"{label}: {consts.length} constants; canon {t1 - t0} ms, \
     Ix.Cert.compile {t2 - t1} ms: {ixe.consts.size} records, {ixe.named.size} names, \
     {pureBytes.size} bytes"
+  -- `CompileAuthentic`: every record and blob at pure BLAKE3 of its bytes
+  let t5 ← IO.monoMsNow
+  let badRecords := ixe.consts.fold (init := (#[] : Array Address)) fun out a lc =>
+    if a == Address.blake3Pure lc.rawBytes then out else out.push a
+  let badBlobs := ixe.blobs.fold (init := (#[] : Array Address)) fun out a bytes =>
+    if a == Address.blake3Pure bytes then out else out.push a
+  let t6 ← IO.monoMsNow
+  if badRecords.isEmpty && badBlobs.isEmpty then
+    lines := lines.push s!"{label}: CompileAuthentic: all {ixe.consts.size} records and \
+      {ixe.blobs.size} blobs are at pure BLAKE3 of their bytes ({t6 - t5} ms)"
+  else
+    errors := errors.push s!"{label}: CompileAuthentic: {badRecords.size} records and \
+      {badBlobs.size} blobs are not at pure BLAKE3 of their bytes: \
+      {(badRecords ++ badBlobs).toList.take 5}"
   -- the IO pipeline
   let t3 ← IO.monoMsNow
   match ← Ix.CompileM.compileLeanConsts consts (numWorkers := workers) with
