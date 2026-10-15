@@ -722,42 +722,54 @@ fun f ev ds => ∀ (i j : Ix.Kernel.Mode.source.Id), Ix.Cert.InputId ev ds i →
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RenamingHyp
 
-/-- info: inductive Ix.Cert.ErrorKind : Type
-number of parameters: 0
-constructors:
-Ix.Cert.ErrorKind.notImplemented : Ix.Cert.ErrorKind
-Ix.Cert.ErrorKind.invalid : Ix.Cert.ErrorKind
-Ix.Cert.ErrorKind.internal : Ix.Cert.ErrorKind -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.ErrorKind
-
-/-- info: def Ix.Cert.ErrorKind.of : {md : Ix.Kernel.Mode} → Ix.Kernel.CheckError md → Ix.Cert.ErrorKind :=
-fun {md} x =>
+-- Step 6: failures are structured (`Ix.Kernel.CheckError md`: a verdict and a
+-- message of prose and keys), so the lemma maps a failure's keys
+-- (`Rename.result`, `CheckError.mapKeys`) instead of comparing the verdict
+-- kind and the position only; `ErrorKind` and `verdict` went.
+/-- info: def Ix.Kernel.MsgPart.mapKeys : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.MsgPart md → Ix.Kernel.MsgPart md' :=
+fun {md md'} σ x =>
   match x with
-  | Ix.Kernel.CheckError.notImplemented what => Ix.Cert.ErrorKind.notImplemented
-  | Ix.Kernel.CheckError.invalid msg => Ix.Cert.ErrorKind.invalid
-  | Ix.Kernel.CheckError.internal msg => Ix.Cert.ErrorKind.internal -/
+  | Ix.Kernel.MsgPart.text s => Ix.Kernel.MsgPart.text s
+  | Ix.Kernel.MsgPart.key k => Ix.Kernel.MsgPart.key (σ k)
+  | Ix.Kernel.MsgPart.nat n => Ix.Kernel.MsgPart.nat n -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.ErrorKind.of
+#print Ix.Kernel.MsgPart.mapKeys
 
-/-- info: def Ix.Cert.verdict : {md : Ix.Kernel.Mode} →
-  Except (Ix.Kernel.CheckError md × Nat) (Ix.Kernel.Env md) → Except (Ix.Cert.ErrorKind × Nat) (Ix.Kernel.Env md) :=
-fun {md} x =>
-  match x with
-  | Except.ok e => Except.ok e
-  | Except.error (e, i) => Except.error (Ix.Cert.ErrorKind.of e, i) -/
+/-- info: def Ix.Kernel.Msg.mapKeys : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.Msg md → Ix.Kernel.Msg md' :=
+fun {md md'} σ m => List.map (Ix.Kernel.MsgPart.mapKeys σ) m -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.verdict
+#print Ix.Kernel.Msg.mapKeys
+
+/-- info: def Ix.Kernel.CheckError.mapKeys : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.CheckError md → Ix.Kernel.CheckError md' :=
+fun {md md'} σ x =>
+  match x with
+  | Ix.Kernel.CheckError.notImplemented m => Ix.Kernel.CheckError.notImplemented (Ix.Kernel.Msg.mapKeys σ m)
+  | Ix.Kernel.CheckError.invalid m => Ix.Kernel.CheckError.invalid (Ix.Kernel.Msg.mapKeys σ m)
+  | Ix.Kernel.CheckError.internal m => Ix.Kernel.CheckError.internal (Ix.Kernel.Msg.mapKeys σ m) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Kernel.CheckError.mapKeys
+
+/-- info: def Ix.Cert.Rename.result : {md md' : Ix.Kernel.Mode} →
+  (Ix.Kernel.Key md → Ix.Kernel.Key md') →
+    Except (Ix.Kernel.CheckError md × Nat) (Ix.Kernel.Env md) →
+      Except (Ix.Kernel.CheckError md' × Nat) (Ix.Kernel.Env md') :=
+fun {md md'} σ x =>
+  match x with
+  | Except.ok e => Except.ok (Ix.Cert.Rename.env σ e)
+  | Except.error (e, i) => Except.error (Ix.Kernel.CheckError.mapKeys σ e, i) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Rename.result
 
 /-- info: def Ix.Cert.RenamingLemma : Prop :=
 ∀ (f : Ix.Kernel.Mode.source.Id → Ix.Kernel.Mode.anon.Id) (ev : Ix.Kernel.Evidences Ix.Kernel.Mode.source)
   (ds : Array (Ix.Kernel.Declaration Ix.Kernel.Mode.source)),
   Ix.Cert.RenamingHyp f ev ds →
-    Ix.Cert.verdict
-        (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified (Ix.Cert.Rename.evidences (Ix.Kernel.Key.map f) ev)
-          (Array.map (Ix.Cert.Rename.declaration (Ix.Kernel.Key.map f)) ds)) =
-      Except.map (Ix.Cert.Rename.env (Ix.Kernel.Key.map f))
-        (Ix.Cert.verdict (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds)) -/
+    Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified (Ix.Cert.Rename.evidences (Ix.Kernel.Key.map f) ev)
+        (Array.map (Ix.Cert.Rename.declaration (Ix.Kernel.Key.map f)) ds) =
+      Ix.Cert.Rename.result (Ix.Kernel.Key.map f) (Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RenamingLemma
 

@@ -700,7 +700,8 @@ theorem Commutes.alias {τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kerne
 /-! ## The renaming lemma
 
 IXC-PLAN §12 and SP3-PARAMETRICITY §9: the fold commutes with renaming the
-input keys, up to error messages. The bridge from Source to Ixon renames a
+input keys, a failure's keys included (its message is structured: prose and
+keys, `Ix.Kernel.Msg`, step 6). The bridge from Source to Ixon renames a
 source key to a compiled one by `Key.map f`, `f` taking a Lean name to the
 address the artifact publishes for it; it applies the lemma after an
 alias-collapse step, because that map is not injective. -/
@@ -773,6 +774,13 @@ def evidences (ev : Ix.Kernel.Evidences md) : Ix.Kernel.Evidences md' :=
   ev.map fun (r, es) => (r, es.map (evidence σ))
 
 def env (e : Env md) : Env md' := ⟨e.consts.map (constantInfo σ)⟩
+
+/-- A fold's result: an accepted environment renamed by `env`, a failure's
+keys by `CheckError.mapKeys`, at the same position. -/
+def result : Except (Ix.Kernel.CheckError md × Nat) (Env md) →
+    Except (Ix.Kernel.CheckError md' × Nat) (Env md')
+  | .ok e => .ok (env σ e)
+  | .error (e, i) => .error (e.mapKeys σ, i)
 
 end Rename
 
@@ -851,34 +859,18 @@ def RenamingHyp (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon)
     (ev : Ix.Kernel.Evidences .source) (ds : Array (Ix.Kernel.Declaration .source)) : Prop :=
   ∀ i j, InputId ev ds i → InputId ev ds j → f i = f j → i = j
 
-/-- What a fold failure says without its message: `CheckError` carries
-strings that spell names, so until structured errors (IXC-PLAN step 6) the
-lemma compares the kind and the position only. -/
-inductive ErrorKind where
-  | notImplemented
-  | invalid
-  | internal
-  deriving DecidableEq, Repr
-
-def ErrorKind.of : Ix.Kernel.CheckError md → ErrorKind
-  | .notImplemented _ => .notImplemented
-  | .invalid _ => .invalid
-  | .internal _ => .internal
-
-/-- A fold's verdict up to error messages. -/
-def verdict : Except (Ix.Kernel.CheckError md × Nat) (Env md) → Except (ErrorKind × Nat) (Env md)
-  | .ok e => .ok e
-  | .error (e, i) => .error (ErrorKind.of e, i)
-
 /-- **The renaming lemma.** Stated, not proved: renaming a Source run's keys
 to compiled ones by `Key.map f`, `f` injective on the run's ids, renames the
-fold's verdict. -/
+fold's result: the accepted environment, or the failure's keys at the same
+position (`Rename.result`). The failure is compared whole: its verdict, its
+position and its message, whose keys are renamed (structured errors,
+IXC-PLAN step 6; before them the lemma compared the verdict kind and the
+position only). -/
 def RenamingLemma : Prop :=
   ∀ (f : Ix.Kernel.Mode.Id .source → Ix.Kernel.Mode.Id .anon) (ev : Ix.Kernel.Evidences .source)
     (ds : Array (Ix.Kernel.Declaration .source)), RenamingHyp f ev ds →
-      verdict (Ix.Kernel.Cached.checkDecls .verified (Rename.evidences (Ix.Kernel.Key.map f) ev)
-          (ds.map (Rename.declaration (Ix.Kernel.Key.map f)))) =
-        (verdict (Ix.Kernel.Cached.checkDecls .verified ev ds)).map
-          (Rename.env (Ix.Kernel.Key.map f))
+      Ix.Kernel.Cached.checkDecls .verified (Rename.evidences (Ix.Kernel.Key.map f) ev)
+          (ds.map (Rename.declaration (Ix.Kernel.Key.map f))) =
+        Rename.result (Ix.Kernel.Key.map f) (Ix.Kernel.Cached.checkDecls .verified ev ds)
 
 end Ix.Cert
