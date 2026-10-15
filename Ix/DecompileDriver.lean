@@ -790,7 +790,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   let mut belowConsts : Array Ix.AuxGen.BelowConstant := #[]
   if needsBelow || needsBelowRec || needsBrecon then
     match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp maps) with
+        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp (.tc maps)) with
     | .ok (consts, kctx') =>
       belowConsts := consts
       st := { st with kctx := kctx' }
@@ -916,7 +916,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   if needsBrecon then
     match runK ctx st lo (fun maps =>
         Ix.AuxGen.generateBreconConstants classes canonicalRecs belowConsts
-          isProp maps) with
+          isProp (.tc maps)) with
     | .ok (breconDefs, kctx') =>
       st := { st with kctx := kctx' }
       for d in breconDefs do

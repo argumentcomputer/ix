@@ -47,7 +47,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.CasesOn
 public section
 
@@ -296,10 +296,10 @@ structure BelowMinorField where
     `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean:33-48`.
 
     (The Rust `tc_scope: &mut TcScope` becomes pass-in/return of
-    `TcScopeSt`; the kernel state itself lives in KBridgeM.) -/
+    `AuxScope`; the kernel state itself lives in KBridgeM.) -/
 def buildBelowMinor (minorDom : Expr) (rlvl : Level)
-    (motiveFvars : Array Expr) (tcScope : TcScopeSt)
-    : KBridgeM (Expr × TcScopeSt) := do
+    (motiveFvars : Array Expr) (tcScope : AuxScope)
+    : KBridgeM (Expr × AuxScope) := do
   -- Open all field binders with forallTelescope. After this, field
   -- domains reference motive FVars directly (no BVar arithmetic needed).
   --
@@ -345,7 +345,7 @@ def buildBelowMinor (minorDom : Expr) (rlvl : Level)
 
   -- Push field decls (with replaced IH domains) into the TcScope so that
   -- getLevel can resolve the FVars in PProd operands.
-  let mut scope ← tcScope.pushLocals lamDecls
+  let mut scope ← tcScope.push lamDecls
 
   -- Build PProd entries from IH fields. Infer each PProd operand's level
   -- via TC — matches Lean's `mkPProd` (PProdN.lean:37-38), which calls
@@ -361,11 +361,11 @@ def buildBelowMinor (minorDom : Expr) (rlvl : Level)
           ihEntries := ihEntries.push (mkPProd lvl1 lvl2 leaf field.fvar)
         else
           -- Higher-order IH: ∀ (a₁..aₙ), PProd(leaf, ih_fvar a₁..aₙ).
-          scope ← scope.pushLocals field.innerDecls
+          scope ← scope.push field.innerDecls
           let ihApplied := mkAppN field.fvar field.innerFvars
           let lvl1 ← scope.getLevel leaf
           let lvl2 ← scope.getLevel ihApplied
-          scope ← scope.popLocals field.innerDecls
+          scope ← scope.pop field.innerDecls
           let pprod := mkPProd lvl1 lvl2 leaf ihApplied
           ihEntries := ihEntries.push (mkForall pprod field.innerDecls)
 
@@ -382,7 +382,7 @@ def buildBelowMinor (minorDom : Expr) (rlvl : Level)
     body := acc
 
   -- Pop field decls from the TcScope.
-  scope ← scope.popLocals lamDecls
+  scope ← scope.pop lamDecls
 
   return (mkLambda body lamDecls, scope)
 
@@ -395,7 +395,7 @@ def buildBelowMinor (minorDom : Expr) (rlvl : Level)
     references, then closes with `mkLambda` over the non-minor binders. -/
 def buildBelowValue (recVal : RecursorVal) (_ind : InductiveVal)
     (rlvl : Level) (_nClasses : Nat)
-    (_canonicalRecs : Array (Name × RecursorVal)) (maps : AddrMaps)
+    (_canonicalRecs : Array (Name × RecursorVal)) (kernel : AuxKernel)
     : KBridgeM Expr := do
   let nParams := recVal.numParams
   let nMotives := recVal.numMotives
@@ -467,7 +467,7 @@ def buildBelowValue (recVal : RecursorVal) (_ind : InductiveVal)
   -- paramDecls + motiveDecls; per-minor field decls are pushed inside.
   let recLevelParams := recVal.cnst.levelParams
   let outerCtx : Array LocalDecl := paramDecls ++ motiveDecls
-  let mut tcScope ← TcScopeSt.new outerCtx recLevelParams maps
+  let mut tcScope ← AuxScope.new kernel outerCtx recLevelParams
 
   for minorDom in minorDoms do
     let (minorArg, tcScope') ←
@@ -503,7 +503,7 @@ def buildBelowValue (recVal : RecursorVal) (_ind : InductiveVal)
     only the error itself is surfaced; its message text is identical.) -/
 def buildBelowDef (belowName : Name) (recVal : RecursorVal)
     (ind : InductiveVal) (nClasses : Nat)
-    (canonicalRecs : Array (Name × RecursorVal)) (maps : AddrMaps)
+    (canonicalRecs : Array (Name × RecursorVal)) (kernel : AuxKernel)
     : KBridgeM BelowDef := do
   let nParams := recVal.numParams
   let nMotives := recVal.numMotives
@@ -539,7 +539,7 @@ n_minors({nMinors}) + n_indices({nIndices}) + 1 major"
     let majorDomain := (← arrIdx decls (total - 1) "buildBelowDef: decls").domain
 
     let ctxDecls : Array LocalDecl := decls.extract 0 (total - 1)
-    let tc ← TcScopeSt.new ctxDecls recLevelParams maps
+    let tc ← AuxScope.new kernel ctxDecls recLevelParams
     tc.getLevel majorDomain
 
   -- rlvl = mkLevelMax(ilvl, elim_level), matching Lean's BRecOn.lean:83:
@@ -561,7 +561,7 @@ n_minors({nMinors}) + n_indices({nIndices}) + 1 major"
 
   -- Build the value: λ {params} {motives} (indices) (major),
   --   I.rec.{succ(rlvl), lvls...} params motives' minors' indices major
-  let belowValue ← buildBelowValue recVal ind rlvl nClasses canonicalRecs maps
+  let belowValue ← buildBelowValue recVal ind rlvl nClasses canonicalRecs kernel
 
   return {
     name := belowName
@@ -1111,7 +1111,7 @@ but '{recK.cnst.name.pretty}' has {recK.rules.size} rules")
     `IndPredBelow`. -/
 def generateBelowConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal)) (isProp : Bool)
-    (maps : AddrMaps) (allAux : Bool := false) :
+    (kernel : AuxKernel) (allAux : Bool := false) :
     KBridgeM (Array BelowConstant) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty then
@@ -1147,7 +1147,7 @@ def generateBelowConstants (sortedClasses : Array (Array Name))
 
     if !isProp then
       -- Type-level: generate definition (BRecOn.lean path)
-      let d ← buildBelowDef belowName recVal ind nClasses canonicalRecs maps
+      let d ← buildBelowDef belowName recVal ind nClasses canonicalRecs kernel
       results := results.push (.defn d)
     else
       -- Prop-level: generate .below inductive (IndPredBelow.lean path)
@@ -1222,7 +1222,7 @@ source-indexed; refusing to synthesize below_{j + 1}")
 auxiliary recursor major premise")
 
           let d ← buildBelowDef belowName auxRecVal extInd nClasses
-            canonicalRecs maps
+            canonicalRecs kernel
           results := results.push (.defn d)
 
   return results

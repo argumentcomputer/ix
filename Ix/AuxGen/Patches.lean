@@ -353,7 +353,7 @@ refusing to synthesize canonical-indexed _N names")
   -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
   if ← familyExported "below" none then
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
-      isProp maps (allAux := true)
+      isProp (.tc maps) (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
     -- references from already-source-indexed rec names (see
     -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no
@@ -380,7 +380,7 @@ refusing to synthesize canonical-indexed _N names")
     let emitEq ← familyExported "brecOn" (some "eq")
     if emitGo || emitMain || emitEq then
       let breconConsts ← generateBreconConstants sortedClasses
-        canonicalRecs belowConsts isProp maps (allAux := true)
+        canonicalRecs belowConsts isProp (.tc maps) (allAux := true)
       -- Emit per family (the `.go` / main / `.eq` batch the name falls
       -- in, as CompileAux's `breconBatch` splits them), not per name, in
       -- batch order so each batch can resolve the ones before it. `BRecOn`
