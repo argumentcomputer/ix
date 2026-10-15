@@ -1401,3 +1401,65 @@ fun names =>
 /-- info: 'Ix.Cert.Canon.UniverseBridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.UniverseBridge
+
+/-! ## Component theorems: the reading chain's tables
+
+The certified reader's reading of an in-flight compiler expression survives
+every step that retains the reader's leaves (`convExpr_preserves`); the table
+interners keep their index invariant and every old slot, and return the
+index of what they intern (`internRef_correct`, `internUniv_correct`); the
+metadata serializers write only names and blobs, and keep every readable blob
+(`NamesBlobs.compileKVMap`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: @Ix.CompileCert.ExpressionRead.convExpr_preserves : ∀ {md : Ix.Kernel.Mode} {before after : Ix.Kernel.Reader.ECx md},
+  Ix.CompileCert.ExpressionRead.Extends before after →
+    ∀ {table nextTable : Array (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CExpr md))},
+      (∀ (index : Nat) (value : Ix.Kernel.Reader.CExpr md),
+          table[index]? = some (Except.ok value) → nextTable[index]? = some (Except.ok value)) →
+        ∀ (expr : Ixon.Expr),
+          Ix.CompileCert.ExpressionRead.Preserves (Ix.Kernel.Reader.convExpr before table expr)
+            (Ix.Kernel.Reader.convExpr after nextTable expr) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ExpressionRead.convExpr_preserves
+
+/-- info: Ix.CompileCert.Interning.internRef_correct : ∀ (address : Address)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState),
+  Ix.CompileCert.Interning.RefIndexSound state →
+    have result := Ix.CompileCert.rawRun (Ix.CompileM.internRef address) context state;
+    Ix.CompileCert.Interning.RefIndexSound result.snd ∧
+      Ix.CompileCert.Interning.Retains state.refs result.snd.refs ∧
+        ∀ (index : UInt64), result.fst = Except.ok index → result.snd.refs[index.toNat]? = some address -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.Interning.internRef_correct
+
+/-- info: Ix.CompileCert.Interning.internUniv_correct : ∀ (univ : Ixon.Univ)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState),
+  Ix.CompileCert.Interning.UnivIndexSound state →
+    have result := Ix.CompileCert.rawRun (Ix.CompileM.internUniv univ) context state;
+    Ix.CompileCert.Interning.UnivIndexSound result.snd ∧
+      Ix.CompileCert.Interning.Retains state.univs result.snd.univs ∧
+        ∀ (index : UInt64), result.fst = Except.ok index → result.snd.univs[index.toNat]? = some univ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.Interning.internUniv_correct
+
+/-- info: Ix.CompileCert.Serializers.NamesBlobs.compileKVMap : ∀ (values : Array (Ix.Name × Ix.DataValue)),
+  Ix.CompileCert.Serializers.NamesBlobs (Ix.CompileM.compileKVMap values) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.Serializers.NamesBlobs.compileKVMap
+
+/-- info: 'Ix.CompileCert.ExpressionRead.convExpr_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ExpressionRead.convExpr_preserves
+
+/-- info: 'Ix.CompileCert.Interning.internRef_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Interning.internRef_correct
+
+/-- info: 'Ix.CompileCert.Interning.internUniv_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Interning.internUniv_correct
+
+/-- info: 'Ix.CompileCert.Serializers.NamesBlobs.compileKVMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Serializers.NamesBlobs.compileKVMap
