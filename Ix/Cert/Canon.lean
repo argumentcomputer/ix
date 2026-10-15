@@ -13,17 +13,16 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
 
 1. **The specification** (`nameS`, `levelS`, `syntaxS`, `exprS`, `constS`):
    the structural conversion, with the same smart constructors (so the same
-   hash fields) and no cache.
-2. **`CanonMCorrect`, C1: stated, not proved.** `canonName`, `canonLevel`,
-   `canonExpr` and `canonConst` compute the specification from every state
-   they reach (`CanonChunkCorrect`: so does `canonChunk`). It is *not
-   provable for today's `Ix.CanonM`*. A pointer-cache hit is keyed by
-   `ptrAddrUnsafe`, which is opaque in the logic, and a hash-cache hit is
-   keyed by the stored BLAKE3 field. Neither hit is confirmed against its
-   input, and `canonSyntax` is `partial`. It becomes provable once every hit
-   is confirmed, as `Ix.LeanIngress.ingressExprsShared` confirms its memo
-   (compiler queue CQ2.26). Only `ingressExpr_canonExpr` uses it, as a
-   hypothesis.
+   hash fields) and no cache. It is defined in `Ix.CanonM` (under this
+   namespace), so that the memo's entries carry their proofs.
+2. **`CanonMCorrect`, C1: stated.** `canonName`, `canonLevel`, `canonExpr`
+   and `canonConst` compute the specification from every state they reach
+   (`CanonChunkCorrect`: so does `canonChunk`). Since CQ2.26 it is
+   provable: `Ix.CanonM` keeps one pointer memo per kind whose entries carry
+   the proof that their image is the specification's, and confirms each hit
+   with `withPtrEq`, as `Ix.LeanIngress.ingressExprsShared` confirms its
+   memo; it has no hash-keyed cache, and `canonSyntax` is total. Only
+   `ingressExpr_canonExpr` uses it, as a hypothesis.
 3. **The Source reading** (`leanExpr`; proved: `ingressExpr_exprS`):
    Source mode's reading of the specification's term is a direct structural
    function of Lean's term. It reads no hash and no cache, under the
@@ -48,99 +47,20 @@ namespace Ix.Cert.Canon
 open Ix.Kernel (LevelParam)
 open Ix.LeanIngress (ExprError KExpr KLevel)
 
-/-! ## 1. The specification of `Ix.CanonM` -/
+/-! ## 1. The specification of `Ix.CanonM`
 
-/-- `canonName` without its caches. -/
-def nameS : Lean.Name → Ix.Name
-  | .anonymous => .mkAnon
-  | .str p s => .mkStr (nameS p) s
-  | .num p n => .mkNat (nameS p) n
+`nameS`, `levelS`, `preresolvedS`, `syntaxS`, `dataValueS`, `mdataS`,
+`exprS`, `constValS` and `constS`: the conversions without their memo, with
+the same smart constructors (so the same hash fields). They are defined
+beside the conversions, in the module `Ix.CanonM`, under this namespace, so
+that the memo's entries can carry their proofs (CQ2.26). -/
 
-/-- `canonLevel` without its caches. -/
-def levelS : Lean.Level → Ix.Level
-  | .zero => .mkZero
-  | .succ u => .mkSucc (levelS u)
-  | .max u v => .mkMax (levelS u) (levelS v)
-  | .imax u v => .mkIMax (levelS u) (levelS v)
-  | .param n => .mkParam (nameS n)
-  | .mvar m => .mkMvar (nameS m.name)
+/-! ## 2. `CanonM` computes the specification (C1: stated here)
 
-def preresolvedS : Lean.Syntax.Preresolved → Ix.SyntaxPreresolved
-  | .namespace n => .namespace (nameS n)
-  | .decl n aliases => .decl (nameS n) aliases.toArray
-
-/-- `canonSyntax` (a `partial def` in `Ix.CanonM`), as a total function. -/
-def syntaxS : Lean.Syntax → Ix.Syntax
-  | .missing => .missing
-  | .node info kind args =>
-    .node (Ix.CanonM.canonSourceInfo info) (nameS kind) (args.map syntaxS)
-  | .atom info val => .atom (Ix.CanonM.canonSourceInfo info) val
-  | .ident info rawVal val pre =>
-    .ident (Ix.CanonM.canonSourceInfo info) (Ix.CanonM.canonSubstring rawVal) (nameS val)
-      (pre.toArray.map preresolvedS)
-
-def dataValueS : Lean.DataValue → Ix.DataValue
-  | .ofString s => .ofString s
-  | .ofBool b => .ofBool b
-  | .ofName n => .ofName (nameS n)
-  | .ofNat n => .ofNat n
-  | .ofInt i => .ofInt (Ix.CanonM.canonInt i)
-  | .ofSyntax s => .ofSyntax (syntaxS s)
-
-/-- `canonMData` without its caches: the entries in order. -/
-def mdataS (d : Lean.MData) : Array (Ix.Name × Ix.DataValue) :=
-  (d.entries.map fun (n, v) => (nameS n, dataValueS v)).toArray
-
-/-- `canonExpr` without its caches. -/
-def exprS : Lean.Expr → Ix.Expr
-  | .bvar i => .mkBVar i
-  | .fvar x => .mkFVar (nameS x.name)
-  | .mvar x => .mkMVar (nameS x.name)
-  | .sort u => .mkSort (levelS u)
-  | .const n us => .mkConst (nameS n) (us.map levelS).toArray
-  | .app f a => .mkApp (exprS f) (exprS a)
-  | .lam n t b bi => .mkLam (nameS n) (exprS t) (exprS b) bi
-  | .forallE n t b bi => .mkForallE (nameS n) (exprS t) (exprS b) bi
-  | .letE n t v b nd => .mkLetE (nameS n) (exprS t) (exprS v) (exprS b) nd
-  | .lit l => .mkLit l
-  | .mdata d e => .mkMData (mdataS d) (exprS e)
-  | .proj s i e => .mkProj (nameS s) i (exprS e)
-
-def constValS (cv : Lean.ConstantVal) : Ix.ConstantVal :=
-  { name := nameS cv.name, levelParams := (cv.levelParams.map nameS).toArray, type := exprS cv.type }
-
-/-- `canonConst` without its caches. -/
-def constS : Lean.ConstantInfo → Ix.ConstantInfo
-  | .axiomInfo v => .axiomInfo { cnst := constValS v.toConstantVal, isUnsafe := v.isUnsafe }
-  | .defnInfo v => .defnInfo
-      { cnst := constValS v.toConstantVal, value := exprS v.value, hints := v.hints,
-        safety := v.safety, all := (v.all.map nameS).toArray }
-  | .thmInfo v => .thmInfo
-      { cnst := constValS v.toConstantVal, value := exprS v.value, all := (v.all.map nameS).toArray }
-  | .opaqueInfo v => .opaqueInfo
-      { cnst := constValS v.toConstantVal, value := exprS v.value, isUnsafe := v.isUnsafe,
-        all := (v.all.map nameS).toArray }
-  | .quotInfo v => .quotInfo { cnst := constValS v.toConstantVal, kind := v.kind }
-  | .inductInfo v => .inductInfo
-      { cnst := constValS v.toConstantVal, numParams := v.numParams, numIndices := v.numIndices,
-        all := (v.all.map nameS).toArray, ctors := (v.ctors.map nameS).toArray,
-        numNested := v.numNested, isRec := v.isRec, isUnsafe := v.isUnsafe,
-        isReflexive := v.isReflexive }
-  | .ctorInfo v => .ctorInfo
-      { cnst := constValS v.toConstantVal, induct := nameS v.induct, cidx := v.cidx,
-        numParams := v.numParams, numFields := v.numFields, isUnsafe := v.isUnsafe }
-  | .recInfo v => .recInfo
-      { cnst := constValS v.toConstantVal, all := (v.all.map nameS).toArray,
-        numParams := v.numParams, numIndices := v.numIndices, numMotives := v.numMotives,
-        numMinors := v.numMinors,
-        rules := (v.rules.map fun r => { ctor := nameS r.ctor, nfields := r.nfields, rhs := exprS r.rhs }).toArray,
-        k := v.k, isUnsafe := v.isUnsafe }
-
-/-! ## 2. `CanonM` computes the specification (C1: stated, not proved)
-
-These are statements (`def … : Prop`), not theorems, and nothing proves them:
-they are unprovable for today's `Ix.CanonM` (the module docstring, item 2).
-The fix that makes them provable is CQ2.26. -/
+These are statements (`def … : Prop`). Since CQ2.26 they are provable:
+`Ix.CanonM`'s memo entries carry the proof that their image is the
+specification's, every hit is confirmed with `withPtrEq`, there is no
+hash-keyed cache, and `canonSyntax` is total. -/
 
 section Production
 open Ix.CanonM
@@ -157,12 +77,8 @@ inductive Reachable : CanonState → Prop
   | const {s : CanonState} (c : Lean.ConstantInfo) : Reachable s →
       Reachable (Id.run ((canonConst c).run s)).2
 
-/-- **The CanonM correspondence, computational half (C1, stated only).**
-From every reachable state, the conversions return the specification.
-Unprovable for today's `Ix.CanonM`. Its caches answer a hit with the value stored under
-`ptrAddrUnsafe` of the input (opaque, so not injective in the logic), or
-under the stored BLAKE3 field (not injective), without comparing.
-`canonSyntax` is also `partial`. -/
+/-- **The CanonM correspondence, computational half (C1).** From every
+reachable state, the conversions return the specification. -/
 def CanonMCorrect : Prop :=
   ∀ s, Reachable s →
     (∀ n, (Id.run ((canonName n).run s)).1 = nameS n) ∧
@@ -171,7 +87,7 @@ def CanonMCorrect : Prop :=
     (∀ c, (Id.run ((canonConst c).run s)).1 = constS c)
 
 /-- What Source mode and the compile driver actually run: a chunk of
-constants through one state. Stated only, like `CanonMCorrect`. -/
+constants through one state. -/
 def CanonChunkCorrect : Prop :=
   ∀ chunk : Array (Lean.Name × Lean.ConstantInfo),
     canonChunk chunk = chunk.map fun (n, c) => (nameS n, constS c)

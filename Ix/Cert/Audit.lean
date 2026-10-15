@@ -1192,10 +1192,10 @@ What ties the shared `Ix.Environment` to Lean's: the cache-free
 specification of `Ix.CanonM` (`nameS`, `levelS`, `exprS`, `constS`), the
 direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
 `leanPos`), and the cache-free universe compiler (`compileUnivS`).
-`CanonMCorrect` and `CanonChunkCorrect` (C1) are **stated, not proved**:
-they are unprovable for today's `Ix.CanonM`, whose cache hits are not
-confirmed and whose `canonSyntax` is `partial` (CQ2.26). The universe bridge
-from Lean is proved (`universeBridge`, under `HashEqAgrees`). The proved
+`CanonMCorrect` and `CanonChunkCorrect` (C1) are **stated**. Since CQ2.26
+they are provable: `Ix.CanonM` confirms every memo hit, has no hash-keyed
+cache, and has a total `canonSyntax`. The universe bridge from Lean is
+proved (`universeBridge`, under `HashEqAgrees`). The proved
 theorems are at the three standard axioms or fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
