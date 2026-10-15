@@ -889,7 +889,7 @@ sharing + integers together.
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (140 roots on Lean
+and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (144 roots on Lean
 4.34.1; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
@@ -932,9 +932,11 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   `finishConstantInfoWithSharing_run_codecWF` for the singleton-driver tail) are stated over it;
   the tail concludes `SharingRunOK`: it returns an exactly decodable block, or fails with an
   error that the sharing builder returns on some payload (the payload is existentially
-  quantified). The theorems about the stored bytes are not audit roots, because
-  `BlockResult.mk'` hashes with Blake3, whose package carries a `native_decide` axiom; the
-  per-declaration compiler endpoints are retired with the compiler-correctness proofs.
+  quantified). The theorems about the stored bytes (`BlockResult.mk'_codec_roundtrip`,
+  `BlockResult.mk'_codecWF`, `BlockResult.constantInfo_codec_roundtrip`) are audit roots too:
+  `BlockResult.mk'` hashes with `Address.admissionHash`, and no BLAKE3 call reaches a
+  `native_decide` axiom since the compiler's batch 2a; the per-declaration compiler endpoints
+  are retired with the compiler-correctness proofs.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
   build unless every csimp theorem on the compiler's import path is an audit root (22) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`

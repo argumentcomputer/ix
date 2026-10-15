@@ -68,12 +68,19 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Verify.ExprCache.Sound.mono, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit, standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
-  -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
-  -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
-  -- `BlockResult.constantInfo_codec_roundtrip`,
-  -- `finishConstantInfoWithSharing_run_codecWF`) are not roots: `mk'` hashes
-  -- the block, and the Blake3 package's `HasherOps.hash` carries a
-  -- `native_decide` axiom, which this manifest does not admit.
+  -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`) and the
+  -- stored-byte wrapper `BlockResult.mk'`, which hashes the block with
+  -- `Address.admissionHash` (pure BLAKE3 in the logic; since CQ2.1 no hash
+  -- reaches a `native_decide` axiom). These assert no hash-injectivity or
+  -- FFI-agreement law.
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.mk'_codecWF,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.BlockResult.constantInfo_codec_roundtrip,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.finishConstantInfoWithSharing_run_codecWF,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF,
     standardAxioms := standard },
   -- The same endpoint from the payload's header fields alone: the roots that
