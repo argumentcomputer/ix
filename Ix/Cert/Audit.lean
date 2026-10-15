@@ -1078,8 +1078,9 @@ direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
 `leanPos`), and the cache-free universe compiler (`compileUnivS`).
 `CanonMCorrect` and `CanonChunkCorrect` (C1) are **stated, not proved**:
 they are unprovable for today's `Ix.CanonM`, whose cache hits are not
-confirmed and whose `canonSyntax` is `partial` (CQ2.26). `UnivMeaningS` is
-stated. The proved theorems are at the three standard axioms or fewer. -/
+confirmed and whose `canonSyntax` is `partial` (CQ2.26). The universe bridge
+from Lean is proved (`universeBridge`, under `HashEqAgrees`). The proved
+theorems are at the three standard axioms or fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
   Ix.Cert.Canon.nameS x =
@@ -1352,6 +1353,14 @@ fun names =>
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.Canon.universe_bridge
 
+/-- info: Ix.Cert.Canon.univMeaningS : Ix.Cert.Canon.UnivMeaningS -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.univMeaningS
+
+/-- info: Ix.Cert.Canon.universeBridge : Ix.Cert.Canon.UniverseBridge -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.Canon.universeBridge
+
 /-- info: 'Ix.Cert.Canon.ingressName_nameS' depends on axioms: [propext, Classical.choice] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.ingressName_nameS
@@ -1375,6 +1384,14 @@ fun names =>
 /-- info: 'Ix.Cert.Canon.universe_bridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.universe_bridge
+
+/-- info: 'Ix.Cert.Canon.univMeaningS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.univMeaningS
+
+/-- info: 'Ix.Cert.Canon.universeBridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Canon.universeBridge
 
 /-- info: 'Ix.Cert.Canon.CanonMCorrect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

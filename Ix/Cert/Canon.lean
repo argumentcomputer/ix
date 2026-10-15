@@ -33,13 +33,14 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    the direct numbering only where that comparison agrees with name
    equality on the constant's level-parameter names. A structural
    comparison in `Numbering.pos` removes the premise (CQ2.25).
-5. **Universes** (`universe_bridge`, proved from `UnivMeaningS`). Ixon's
+5. **Universes** (`universeBridge`, proved under `HashEqAgrees`). Ixon's
    reading of the canonical compiled universe of `levelS l` has the value of
    Lean's level `l`, read directly. It composes CT-12's
-   `Ix.CompileCert.CanonUnivScope.convCanon_eval` with `UnivMeaningS`, the
-   pure half of CQ2.8's `UniverseMeaning`, about `compileUnivS`: the
-   cache-free universe compiler, which stands in for `compileUniv`. That
-   `compileUniv` computes it is CQ2.8's exact-key work.
+   `Ix.CompileCert.CanonUnivScope.convCanon_eval` (`universe_bridge`) with
+   `UnivMeaningS` (proved: `univMeaningS`), the pure half of CQ2.8's
+   `UniverseMeaning`, about `compileUnivS`: the cache-free universe
+   compiler, which stands in for `compileUniv`. That `compileUniv` computes
+   it is CQ2.8's exact-key work.
 -/
 
 namespace Ix.Cert.Canon
@@ -434,9 +435,9 @@ def compileUnivS (ctx : List Ix.Name) : Ix.Level → Option Ixon.Univ
 
 /-- The cache-free compile keeps the value that Source mode reads (a member's
 own parameters, `large = false`): the pure half of CQ2.8's
-`UniverseMeaning`, over `Ix.Level`. Stated here (a structural induction:
-the parameter case is `idxOf? = findIdx? (· == n)` under a `UInt64`
-bound). -/
+`UniverseMeaning`, over `Ix.Level`. Proved below (`univMeaningS`), by a
+structural induction: the parameter case is `idxOf? = findIdx? (· == n)`
+under a `UInt64` bound. -/
 def UnivMeaningS : Prop :=
   ∀ (ctx : Array Ix.Name), ctx.size < UInt64.size →
     ∀ (l : Ix.Level) (u : Ixon.Univ) (k : KLevel) (φ : LevelParam → Nat),
@@ -469,5 +470,76 @@ theorem universe_bridge (hmean : UnivMeaningS) : UniverseBridge := by
       (levelS l) = .ok k := by
     rw [ingressLevel_levelS, hσ]; exact hk
   exact hmean (ps.map nameS) (by simpa using hsize) (levelS l) u k φ hc hk'
+
+/-! ### The pure universe meaning, proved -/
+
+theorem except_bind_ok {ε α β : Type} {x : Except ε α} {f : α → Except ε β} {b : β}
+    (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- `Numbering.pos` of a member's own parameters (`large = false`) is the
+position `idxOf?` finds, as `compileUnivS` numbers a parameter. -/
+theorem pos_of_idxOf (ctx : Array Ix.Name) (n : Ix.Name) {i : Nat}
+    (found : ctx.toList.idxOf? n = some i) :
+    Ix.LeanIngress.Numbering.pos ⟨ctx, false⟩ n = i := by
+  rcases ctx with ⟨l⟩
+  have h : l.findIdx? (· == n) = some i := found
+  unfold Ix.LeanIngress.Numbering.pos
+  simp only [List.findIdx?_toArray, h]
+  cases i <;> rfl
+
+/-- **The pure universe meaning** (proved): the cache-free compile keeps the
+value that Source mode reads, by structural induction on the level. -/
+theorem univMeaningS : UnivMeaningS := by
+  intro ctx hsize l
+  induction l with
+  | zero h =>
+    intro u k φ hc hk
+    cases hc
+    cases hk
+    rfl
+  | succ l h ih =>
+    intro u k φ hc hk
+    obtain ⟨v, hv, rfl⟩ := Option.map_eq_some_iff.mp hc
+    obtain ⟨x, hx, hk⟩ := except_bind_ok hk
+    cases hk
+    simp only [univEval, Ix.Kernel.Level.eval, ih v x φ hv hx]
+  | max l r h ihl ihr =>
+    intro u k φ hc hk
+    simp only [compileUnivS, Option.bind_eq_bind, Option.bind_eq_some_iff] at hc
+    obtain ⟨a, ha, b, hb, hc⟩ := hc
+    cases hc
+    obtain ⟨x, hx, hk⟩ := except_bind_ok hk
+    obtain ⟨y, hy, hk⟩ := except_bind_ok hk
+    cases hk
+    simp only [univEval, Ix.Kernel.Level.eval, ihl a x φ ha hx, ihr b y φ hb hy]
+  | imax l r h ihl ihr =>
+    intro u k φ hc hk
+    simp only [compileUnivS, Option.bind_eq_bind, Option.bind_eq_some_iff] at hc
+    obtain ⟨a, ha, b, hb, hc⟩ := hc
+    cases hc
+    obtain ⟨x, hx, hk⟩ := except_bind_ok hk
+    obtain ⟨y, hy, hk⟩ := except_bind_ok hk
+    cases hk
+    simp only [univEval, Ix.Kernel.Level.eval, ihl a x φ ha hx, ihr b y φ hb hy]
+  | param n h =>
+    intro u k φ hc hk
+    obtain ⟨i, hi, rfl⟩ := Option.map_eq_some_iff.mp hc
+    cases hk
+    have bound : i < ctx.size := by
+      have := (List.findIdx?_eq_some_iff_getElem.mp hi).1
+      simpa using this
+    simp only [univEval, Ix.Kernel.Level.eval, pos_of_idxOf ctx n hi]
+    rw [UInt64.toNat_ofNat_of_lt' (by omega)]
+  | mvar n h =>
+    intro u k φ hc hk
+    cases hc
+
+/-- **The universe bridge from Lean** (proved): `universe_bridge` with the
+pure universe meaning discharged. Its only premises are the context bound
+and `HashEqAgrees` on the constant's level-parameter names. -/
+theorem universeBridge : UniverseBridge := universe_bridge univMeaningS
 
 end Ix.Cert.Canon
