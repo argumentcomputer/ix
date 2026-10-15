@@ -1,6 +1,7 @@
 import Ix.LeanIngress
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Verify.Cached.MainC
+import IxC.Kernel.Verify.Tier
 
 /-! # The theorems of the Source-mode check
 
@@ -15,7 +16,12 @@ the ingress and the evidence owe nothing: these theorems hold whatever
 * `checkSourceWith_has_model`, `checkSource_has_model`: the accepted
   environment has a model in every set theory;
 * `checkSourceWith_no_proof_of_False`, `checkSource_no_proof_of_False`: no
-  constant of the accepted environment has `False`'s role key as its type. -/
+  constant of the accepted environment has `False`'s role key as its type.
+* `checkSourceTieredUsing_ok`, `checkSourceTiered_has_model`,
+  `checkSourceTiered_typed`: the tiered check (`checkSourceTiered`) accepts
+  the logical declarations exactly as `checkSource` would, its logical
+  environment has a model, is well formed and misses every tier constant,
+  and every tier constant is typed in its scope (`Ix.Kernel.Tier.TypedIn`). -/
 
 namespace Ix.LeanIngress
 
@@ -114,6 +120,75 @@ theorem checkSource_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {env 
   obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
   exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
 
+/-! ## The tiered check -/
+
+/-- **The reading of an accepted tiered check**: the prelude, the tiered
+ingress of the environment's graph, the fold's accept of the logical
+declarations behind the prelude at Source mode's evidence (so every theorem
+about that accept applies), the logical environment well formed and missing
+every tier constant, and every tier constant typed in its scope over the
+tier groups' conversions. -/
+theorem checkSourceTieredUsing_ok (V : Type u) [Ix.Kernel.SetTheory V]
+    {prelude : Except String (Ix.Kernel.Reader.Prelude .source)} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    {ts : List (Ix.Kernel.Tier.TierConst .source)}
+    (h : checkSourceTieredUsing prelude env blocks = .ok (kenv, ts)) :
+    ∃ pre decls tier, prelude = .ok pre ∧
+      leanIngressTieredOf (graph env blocks) pre.state = .ok (decls, tier) ∧
+      Ix.Kernel.Cached.checkDecls .verified
+        (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok kenv ∧
+      Ix.Kernel.EnvWF kenv ∧ (∀ c ∈ ts, kenv.find? c.cv.name = none) ∧
+      ∀ c ∈ ts, Ix.Kernel.Tier.TypedIn kenv tier.toList ts c := by
+  unfold checkSourceTieredUsing at h
+  cases hp : prelude with
+  | error e => simp [hp, bind, Except.bind, Except.mapError] at h
+  | ok pre =>
+  simp only [hp, bind, Except.bind, Except.mapError] at h
+  cases hf : sourceFenceOf (graph env blocks) with
+  | some x => simp [hf, throw, throwThe, MonadExceptOf.throw] at h
+  | none =>
+  simp only [hf, pure, Except.pure] at h
+  cases hi : leanIngressTieredOf (graph env blocks) pre.state with
+  | error e => simp [hi] at h
+  | ok r =>
+  obtain ⟨decls, tier⟩ := r
+  simp only [hi] at h
+  cases hc : Ix.Kernel.Cached.checkDecls .verified
+      (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
+  | error e => simp [hc] at h
+  | ok kenv' =>
+  simp only [hc] at h
+  cases ht : Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv kenv') tier.toList with
+  | error e => simp [ht, throw, throwThe, MonadExceptOf.throw] at h
+  | ok r =>
+  obtain ⟨fe', ts'⟩ := r
+  simp only [ht, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  obtain ⟨hwf, hfresh, -, htyped⟩ := Ix.Kernel.Tier.checkDecls_checkTierC V hc ht
+  exact ⟨pre, decls, tier, rfl, hi, hc, hwf, hfresh, htyped⟩
+
+/-- **Model existence** for the tiered check's logical environment. -/
+theorem checkSourceTiered_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    {ts : List (Ix.Kernel.Tier.TierConst .source)}
+    (h : checkSourceTiered env blocks = .ok (kenv, ts)) : Nonempty (Ix.Kernel.Model V kenv) := by
+  obtain ⟨_, _, _, _, _, hc, _⟩ := checkSourceTieredUsing_ok V h
+  exact Ix.Kernel.model_exists V _ _ kenv hc
+
+/-- **The tier of the tiered check**: the logical environment is well formed
+and misses every tier constant, and every tier constant is typed in its
+scope. -/
+theorem checkSourceTiered_typed (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    {ts : List (Ix.Kernel.Tier.TierConst .source)}
+    (h : checkSourceTiered env blocks = .ok (kenv, ts)) :
+    Ix.Kernel.EnvWF kenv ∧ (∀ c ∈ ts, kenv.find? c.cv.name = none) ∧
+      ∃ tds : List (Ix.Kernel.Tier.TierDecl .source), ∀ c ∈ ts, Ix.Kernel.Tier.TypedIn kenv tds ts c := by
+  obtain ⟨_, _, tier, _, _, _, hwf, hfresh, htyped⟩ := checkSourceTieredUsing_ok V h
+  exact ⟨hwf, hfresh, _, htyped⟩
+
 end Ix.LeanIngress
 
 /-! ## Axioms
@@ -145,3 +220,15 @@ the build. -/
 
 /-- info: 'Ix.LeanIngress.checkSource' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.LeanIngress.checkSource
+
+/-- info: 'Ix.LeanIngress.checkSourceTieredUsing_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceTieredUsing_ok
+
+/-- info: 'Ix.LeanIngress.checkSourceTiered_has_model' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceTiered_has_model
+
+/-- info: 'Ix.LeanIngress.checkSourceTiered_typed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceTiered_typed
+
+/-- info: 'Ix.LeanIngress.checkSourceTiered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceTiered

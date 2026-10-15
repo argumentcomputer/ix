@@ -3,6 +3,7 @@ import Ix.LeanIngress.Expr
 import IxC.Kernel.Ixon.Prelude
 import IxC.Kernel.Cached.Installed
 import Ix.RoleEvidence
+import IxC.Kernel.Tier.Check
 
 /-! # Source mode: Lean environments as the checker's declarations
 
@@ -726,5 +727,135 @@ def checkSourceUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source)
 def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except SourceError (Ix.Kernel.Env .source) :=
   checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
+
+/-! ## The typing tier: partial definitions
+
+`checkSource` declines every group with a member that is not safe. The
+**tiered** check gives a group of `partial` definitions (Lean's
+`_unsafe_rec` companions) the typing tier's verdict instead
+(`Ix.Kernel.Tier`): the logical groups are checked exactly as `checkSource`
+checks them, and then the tier groups, at the accepted environment's index,
+with every tier constant opaque. Unsafe groups stay logical and decline, as
+in `checkSource` (the unsafe stage is not built).
+
+* **The partition** (`isTierGroup`): a definition group with a `partial`
+  member. It decides coverage only.
+* **Order.** The groups are ordered as `leanIngress` orders them; a tier
+  group is converted by the tier's conversion (`convertTier`: the same term
+  conversion, no safety policy, no definition order, since the tier installs
+  a block's headers before its values) behind the schedule's placement
+  checks (an unplaced reference, a cycle through another group).
+* **The fence.** A logical group that references a tier group is refused
+  with the reason (`TierSourceError.fence`). Without that test it would still
+  be refused: the fold resolves every term it stores, and a tier constant is
+  never installed in the logical environment. -/
+
+open Ix.Kernel.Tier (TierDecl TierConst)
+
+/-- A tier group of the partial stage: a definition group with a `partial`
+member. -/
+def isTierGroup : Group → Bool
+  | .definitions ms => ms.any fun
+    | .defnInfo v => v.safety == .partial
+    | _ => false
+  | _ => false
+
+/-- **A tier group's conversion**: every member a `partial` definition (else
+declined), each member's header and value converted under its own numbering,
+as `convertDefinitions` converts them, in the group's order. -/
+def convertTier (members : Array Ix.ConstantInfo) : Except ReadError (TierDecl .source) := do
+  let mut items : Array (Numbering × Ix.Expr) := #[]
+  for ci in members do
+    let .defnInfo v := ci
+      | throw (.declined "tier: a partial block with a member that is not a definition")
+    unless v.safety == .partial do
+      throw (.declined s!"tier: a partial block with a member of safety \
+        '{Ix.Kernel.Reader.safetyWord (safetyOf v.safety)}'")
+    let σ : Numbering := ⟨v.cnst.levelParams, false⟩
+    items := items.push (σ, v.cnst.type) |>.push (σ, v.value)
+  let ks ← exprsOf items
+  let ms := members.zipIdx.map fun (ci, j) =>
+    let σ : Numbering := ⟨ci.getCnst.levelParams, false⟩
+    ((⟨ingressKey ci.getCnst.name, σ.params, ks[2 * j]!⟩ : CVal .source), ks[2 * j + 1]!)
+  return .defs .part ms.toList
+
+/-- Failures of the tiered Source-mode check, kept apart. -/
+inductive TierSourceError where
+  /-- the logical check's: ingress, prelude, fold -/
+  | source (error : SourceError)
+  /-- a logical group (named by its first constant) references a tier group -/
+  | fence (group : CName .source) (tier : CName .source)
+  /-- the tier fold, at the failing tier group's position among the tier groups -/
+  | tier (error : Ix.Kernel.CheckError .source) (position : Nat)
+
+instance : ToString TierSourceError where
+  toString
+    | .source e => toString e
+    | .fence g t => s!"fence: the group {g} references the tier group {t}"
+    | .tier e p => s!"tier at {p}: {e}"
+
+/-- **The tiered ingress** over a graph: the logical groups lowered as
+`leanIngress` lowers them (the schedule without the tier groups), and the tier
+groups' conversions, in the schedule's order, each behind the schedule's
+placement checks. -/
+def leanIngressTieredOf (g : Graph) (st : State .source := {}) :
+    Except IngressError (Array (CDecl .source) × Array (TierDecl .source)) := do
+  let tierConv : Array (Option (Except ReadError (TierDecl .source))) := g.groups.map fun grp =>
+    match grp with
+    | .definitions ms => if isTierGroup grp then some (convertTier ms) else none
+    | _ => none
+  -- the tier groups' slots pass the conversion, so that the schedule's verdict
+  -- on them is the placement checks alone; the order is the graph's, unchanged
+  let gT : Graph := { g with converted := g.converted.zipIdx.map fun (c, i) =>
+    if (tierConv[i]!).isSome then .ok (.definitions #[]) else c }
+  let sched := scheduleOf gT
+  let (_, decls) ← lowerAll st gT (sched.filter fun (i, _) => (tierConv[i]!).isNone)
+  let mut tier : Array (TierDecl .source) := #[]
+  for ((gi, c), k) in sched.zipIdx do
+    if let some t := tierConv[gi]! then
+      let fail (e : ReadError) : IngressError := ⟨g.groups[gi]!.name, k, e⟩
+      let _ ← c.mapError fail
+      tier := tier.push (← t.mapError fail)
+  return (decls, tier)
+
+/-- The tiered ingress of an environment under its condensation. -/
+def leanIngressTiered (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (st : State .source := {}) :
+    Except IngressError (Array (CDecl .source) × Array (TierDecl .source)) :=
+  leanIngressTieredOf (graph env blocks) st
+
+/-- The fence's test: the first logical group that references a tier group,
+and that tier group. -/
+def sourceFenceOf (g : Graph) : Option (CName .source × CName .source) :=
+  (Array.range g.groups.size).findSome? fun i =>
+    if isTierGroup g.groups[i]! then none
+    else (g.hard[i]!.find? (isTierGroup g.groups[·]!)).map fun j => (g.groups[i]!.name, g.groups[j]!.name)
+
+/-- The tiered Source-mode check over a prelude source: the fence's test, the
+logical groups through the fold at Source mode's evidence, exactly as
+`checkSourceUsing` does over them, then the tier fold over the tier groups at
+the accepted environment's index. -/
+def checkSourceTieredUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except TierSourceError (Ix.Kernel.Env .source × List (TierConst .source)) := do
+  let pre ← prelude.mapError (.source ∘ .prelude)
+  let g := graph env blocks
+  if let some (a, t) := sourceFenceOf g then throw (.fence a t)
+  let (decls, tier) ← (leanIngressTieredOf g pre.state).mapError (.source ∘ .ingress)
+  let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix decls
+  let kenv ← (Ix.Kernel.Cached.checkDecls .verified (sourceEvidence prepared) prepared).mapError
+    fun (e, i) => .source (.kernel e i)
+  match Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv kenv) tier.toList with
+  | .ok (_, ts) => pure (kenv, ts)
+  | .error (e, k) => throw (.tier e k)
+
+/-- **The tiered Source-mode check**: `checkSource` over the logical groups
+behind the committed prelude, then the typing tier over the partial groups.
+The result is the logical environment, model-backed as `checkSource`'s, and
+the tier constants, typed with every tier constant opaque
+(`Ix.LeanIngress.checkSourceTiered_ok`). -/
+def checkSourceTiered (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except TierSourceError (Ix.Kernel.Env .source × List (TierConst .source)) :=
+  checkSourceTieredUsing Ix.Kernel.Reader.builtinPrelude env blocks
 
 end Ix.LeanIngress
