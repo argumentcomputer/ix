@@ -706,6 +706,15 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
     let vData ← compileDataValue v
     pure (k.getHash, vData)
 
+/-- A source index (bound variable, mutual slot, projection field) as its
+    Ixon wire integer, or the compile's refusal when it does not fit in a
+    `UInt64`. `Nat.toUInt64` would wrap it to its residue, so a
+    `bvar 2⁶⁴` would compile as `bvar 0`; the Rust compiler refuses these
+    (`nat_to_u64` in `compile_expr`). -/
+def checkedTableIndex (table : String) (index : Nat) : CompileM UInt64 :=
+  if index < UInt64.size then pure index.toUInt64
+  else throw (.resourceLimit s!"{table} table index {index} exceeds the Ixon UInt64 range")
+
 /-! ## Expression Compilation -/
 
 /-- Stable insertion sort of `(canonical position, arg)` pairs by
@@ -761,8 +770,9 @@ def compileExprNoSurgeryStep
     (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
   match e with
     | .bvar idx _ => do
+      let index ← checkedTableIndex "bound variable" idx
       let root ← allocArenaNode .leaf
-      pure (.var idx.toUInt64, root)
+      pure (.var index, root)
 
     | .sort lvl _ => do
       let (idx, orig?) ← compileAndInternUnivCanon lvl
@@ -782,9 +792,10 @@ def compileExprNoSurgeryStep
           pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
       match mutCtx.get? name with
       | some recIdx =>
+        let index ← checkedTableIndex "mutual reference" recIdx
         let root ← allocArenaNode (.ref nameAddr)
         recordPatch root
-        pure (.recur recIdx.toUInt64 univIndices, root)
+        pure (.recur index univIndices, root)
       | none => do
         let addr ← lookupConstAddr name
         let refIdx ← internRef addr
@@ -838,13 +849,14 @@ def compileExprNoSurgeryStep
       pure (.str idx, root)
 
     | .proj typeName fieldIdx struct _ => do
+      let field ← checkedTableIndex "projection field" fieldIdx
       compileName typeName
       let typeAddr ← lookupConstAddr typeName
       let typeRefIdx ← internRef typeAddr
       let structNameAddr := typeName.getHash
       let (s, sRoot) ← compile struct
       let root ← allocArenaNode (.prj structNameAddr sRoot)
-      pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
+      pure (.prj typeRefIdx field s, root)
 
     | .mdata kvData inner _ => do
       if SemanticContract.hasMetadata kvData then
@@ -1134,9 +1146,10 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
       pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
   match mutCtx.get? name with
   | some recIdx =>
+    let index ← checkedTableIndex "mutual reference" recIdx
     let root ← allocArenaNode (.ref nameAddr)
     recordPatch root
-    pure (.recur recIdx.toUInt64 univIndices, root)
+    pure (.recur index univIndices, root)
   | none =>
     let addr ← lookupConstAddr name
     let refIdx ← internRef addr
@@ -1199,8 +1212,9 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
 
   let (result, root) ← match e with
   | .bvar idx _ => do
+    let index ← checkedTableIndex "bound variable" idx
     let root ← allocArenaNode .leaf
-    pure (.var idx.toUInt64, root)
+    pure (.var index, root)
 
   | .sort lvl _ => do
     let (idx, orig?) ← compileAndInternUnivCanon lvl
@@ -1263,13 +1277,14 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
     pure (.str idx, root)
 
   | .proj typeName fieldIdx struct _ => do
+    let field ← checkedTableIndex "projection field" fieldIdx
     compileName typeName
     let typeAddr ← lookupConstAddr typeName
     let typeRefIdx ← internRef typeAddr
     let structNameAddr := typeName.getHash
     let (s, sRoot) ← compileExprSurgical struct
     let root ← allocArenaNode (.prj structNameAddr sRoot)
-    pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
+    pure (.prj typeRefIdx field s, root)
 
   | .mdata kvData inner _ => do
     if SemanticContract.hasMetadata kvData then
