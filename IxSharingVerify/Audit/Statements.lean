@@ -41,6 +41,33 @@ private def quotOnly : Array Lean.Name := #[``Quot.sound]
 requires every `@[csimp]` theorem on the compiler's import path to be one of
 them. -/
 def roots : Array RootAllowance := #[
+  -- The meaning of the canonical construction: the pointer cache, ingestion
+  -- of the table and the roots, and canonical numbering preserve what each
+  -- input expression denotes.
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.canonicalize_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_unshared, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.expand_root_terms, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.CanonicalMeaning.canonicalSharingTiered_meaning, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_run, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.canonicalize_ingested, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_initial, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestTable_unshared, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.reexpand_correct, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.termOf_retains, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Verify.Ingestion.internNode_good, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestExpr_checked, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.Ingestion.ingestExpr_initial, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_empty, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.sound_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_entry, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_sound, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.lookup_insert, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.collision_miss, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.Sound.mono, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit, standardAxioms := standard },
+  { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
   -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`). The
   -- theorems about `BlockResult.mk'` (`BlockResult.mk'_codec_roundtrip`,
   -- `BlockResult.constantInfo_codec_roundtrip`,
