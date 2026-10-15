@@ -155,6 +155,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("exact-expression-key", Tests.Ix.Compile.ExactKey.suite),
   -- exact universe-cache keys: the level and its complete parameter context
   ("universe-cache", Tests.Ix.Compile.UniverseCache.suite),
+  -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
+  ("aux-dump-inputs", Tests.Compile.AuxGenDiff.suite),
   -- the compile drivers refuse a condensation block without a reference set
   ("compile-driver-input", Tests.Ix.Compile.DriverInput.suite),
   ("local-blob", Tests.Ix.Compile.LocalBlob.suite),
