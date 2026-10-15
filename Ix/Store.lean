@@ -1,6 +1,7 @@
 module
 
 public import Ix.Address
+public import Ix.Address.Admission
 
 public section
 
@@ -73,7 +74,7 @@ private def publish (path : System.FilePath) (bytes : ByteArray) : IO Unit := do
   IO.FS.rename tmp path
 
 def write (bytes: ByteArray) : StoreIO Address := do
-  let addr  := Address.blake3 bytes
+  let addr  := Address.admissionHash bytes
   let path <- storePath addr
   let _ <- IO.toEIO .ioError (publish path bytes)
   return addr

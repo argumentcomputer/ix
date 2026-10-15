@@ -21,6 +21,13 @@ Its input is `Ix.Environment`, `Ix.CanonM`'s output, which is also Source
 mode's input (`Ix.LeanIngress`). Only `env.consts` is read: the streaming
 fallback (`Ix.Environment.fallback?`) is dropped.
 
+Every content address it computes (each record, projection and blob) is
+`Address.admissionHash`, the hash the authenticated entries check: pure
+BLAKE3 (`Address.blake3Pure`) in the logic, executed as the Rust BLAKE3
+(`Address.blake3`). The structural hashes of `Ix.Name`, `Ix.Level` and
+`Ix.Expr`, which are map keys and never authenticated, stay the Rust
+BLAKE3's.
+
 What the IO pipeline does that this function does not:
 * it starts from Lean's constants: it resolves source contracts
   (`Ix.Compile.CompileInput.prepare`), refuses unresolved binder contracts,

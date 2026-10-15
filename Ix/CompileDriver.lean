@@ -111,7 +111,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     return (blockResult, none, {}, {}, {})
   -- Primary member registrations, visible to the tail (compile.rs:3902+).
   for (name, proj, _) in blockResult.projections do
-    let projAddr := Address.blake3 (Ixon.ser proj)
+    let projAddr := Address.admissionHash (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
   -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`,
@@ -297,7 +297,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   else
     for (name, proj, constMeta) in result.projections do
       let projBytes := Ixon.ser proj
-      let projAddr := Address.blake3 projBytes
+      let projAddr := Address.admissionHash projBytes
       cenv := { cenv with
         totalBytes := cenv.totalBytes + projBytes.size
         constants := cenv.constants.insert projAddr projBytes
@@ -657,7 +657,7 @@ missing canonical aliases: {missing}"
               #[(lo, result.blockAddr, result.blockMeta)]
             else
               result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
+                (name, Address.admissionHash (Ixon.ser proj), constMeta)
           let mut promoteFailed := false
           for (name, origAddr, origMeta) in promotions do
             if promoteFailed then continue
@@ -868,7 +868,7 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
               #[(lo, result.blockAddr, result.blockMeta)]
             else
               result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
+                (name, Address.admissionHash (Ixon.ser proj), constMeta)
           let mut promoteFailed := false
           for (name, origAddr, origMeta) in promotions do
             if promoteFailed then continue

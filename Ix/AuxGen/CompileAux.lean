@@ -79,7 +79,7 @@ def u64Max : UInt64 := 0xFFFFFFFFFFFFFFFF
     (Defined before its callers instead of at its Rust source position
     after `register_aux_aliases`; no semantic difference.) -/
 def contentAddress (constant : Ixon.Constant) : Address :=
-  Address.blake3 (Ixon.ser constant)
+  Address.admissionHash (Ixon.ser constant)
 
 /-- Model of Rust `stt.env.store_const(addr, constant)` for aux blocks:
     append to the current block's `auxConsts`. -/
@@ -235,7 +235,7 @@ private def compileAuxBlockCore (auxConsts : Array MutConst)
   let block ← liftM
     (buildBlockConstant (.muts mutConsts) blockRefs blockUnivs : CompileM _)
   let blockBytes := Ixon.ser block
-  let blockAddr := Address.blake3 blockBytes
+  let blockAddr := Address.admissionHash blockBytes
   liftM (auxStoreConst blockAddr block : CompileM _)
 
   -- Register projections for every member, even when the block

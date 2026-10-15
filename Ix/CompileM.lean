@@ -573,7 +573,7 @@ def serializeIxInt (i : Ix.Int) : ByteArray :=
 /-- Store a string as a blob and return its 32-byte address. -/
 def storeString (s : String) : CompileM Address := do
   let bytes := s.toUTF8
-  let addr := Address.blake3 bytes
+  let addr := Address.admissionHash bytes
   modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
   pure addr
 
@@ -595,7 +595,7 @@ def BlockState.compileName : BlockState → Ix.Name → BlockState
         let state :=
           { state with blockNames := state.blockNames.insert addr name }
         let bytes := s.toUTF8
-        let stringAddr := Address.blake3 bytes
+        let stringAddr := Address.admissionHash bytes
         let state :=
           { state with blockBlobs := state.blockBlobs.insert stringAddr bytes }
         state.compileName parent
@@ -697,7 +697,7 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
   match dv with
   | .ofString s =>
     let bytes := s.toUTF8
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofString addr)
   | .ofBool b => pure (.ofBool b)
@@ -706,17 +706,17 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
     pure (.ofName n.getHash)
   | .ofNat n =>
     let bytes := ByteArray.mk (Nat.toBytesLE n)
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofNat addr)
   | .ofInt i =>
     let bytes := serializeIxInt i
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofInt addr)
   | .ofSyntax syn =>
     let bytes ← serializeIxSyntax syn
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofSyntax addr)
 
@@ -845,7 +845,7 @@ def compileExprNoSurgeryStep (e : Expr)
 
     | .lit (.natVal n) _ => do
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c =>
         { c with blockBlobs := c.blockBlobs.insert addr bytes }
       let idx ← internRef addr
@@ -854,7 +854,7 @@ def compileExprNoSurgeryStep (e : Expr)
 
     | .lit (.strVal s) _ => do
       let bytes := s.toUTF8
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c =>
         { c with blockBlobs := c.blockBlobs.insert addr bytes }
       let idx ← internRef addr
@@ -1265,7 +1265,7 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
 
   | .lit (.natVal n) _ => do
     let bytes := ByteArray.mk (Nat.toBytesLE n)
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     let idx ← internRef addr
     let root ← allocArenaNode .leaf
@@ -1273,7 +1273,7 @@ partial def compileExprSurgical (e : Expr) : CompileM (Ixon.Expr × UInt64) := d
 
   | .lit (.strVal s) _ => do
     let bytes := s.toUTF8
-    let addr := Address.blake3 bytes
+    let addr := Address.admissionHash bytes
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     let idx ← internRef addr
     let root ← allocArenaNode .leaf
@@ -1888,13 +1888,13 @@ def collectExprTablesStructural (ctxKey : Address) (mutCtx : MutCtx) :
       collectExprTablesStructural ctxKey mutCtx body acc
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c =>
         { c with blockBlobs := c.blockBlobs.insert addr bytes }
       pure (refs.push addr, univs, seen)
     | .lit (.strVal s) _ =>
       let bytes := s.toUTF8
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c =>
         { c with blockBlobs := c.blockBlobs.insert addr bytes }
       pure (refs.push addr, univs, seen)
@@ -1941,12 +1941,12 @@ private unsafe def collectExprTablesImpl (top : Expr) (ctxKey : Address)
       stack := stack.push body |>.push val |>.push ty
     | .lit (.natVal n) _ =>
       let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
       refs := refs.push addr
     | .lit (.strVal s) _ =>
       let bytes := s.toUTF8
-      let addr := Address.blake3 bytes
+      let addr := Address.admissionHash bytes
       modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
       refs := refs.push addr
     | .proj typeName _ struct _ =>
@@ -3194,7 +3194,7 @@ def BlockResult.mk' (block : Ixon.Constant)
     (projections : Array
       (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
   let blockBytes := Ixon.ser block
-  let blockAddr := Address.blake3 blockBytes
+  let blockAddr := Address.admissionHash blockBytes
   ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
 
 /-- Name-to-block registrations for a collapsed standalone representative. -/
@@ -3263,7 +3263,7 @@ def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
   else
     let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
     pure (BlockResult.mk' block .empty
-      (buildMutualProjections classes (Address.blake3 (Ixon.ser block)) metas))
+      (buildMutualProjections classes (Address.admissionHash (Ixon.ser block)) metas))
 
 /-- Read the finished table state and assemble a compiled mutual payload with
 the compiler's canonical sharing (`CompileEnv.sharingLimits`). -/
@@ -3346,7 +3346,7 @@ def finishInductiveFamilyBlock (i : InductiveVal)
   let block ← buildBlockConstant
     (.muts #[.indc ind]) cache.refs cache.univs
   let blockBytes := Ixon.ser block
-  let blockAddr := Address.blake3 blockBytes
+  let blockAddr := Address.admissionHash blockBytes
   let projections :=
     buildInductiveProjections i indMeta ctorMetaPairs blockAddr
   pure (BlockResult.mk' block .empty projections)

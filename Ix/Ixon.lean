@@ -8,6 +8,7 @@
 -/
 module
 public import Ix.Address
+public import Ix.Address.Admission
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
@@ -1223,7 +1224,7 @@ def getName? (env : Env) (addr : Address) : Option Ix.Name :=
 
 /-- Store a blob and return its content address. -/
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
-  let addr := Address.blake3 bytes
+  let addr := Address.admissionHash bytes
   ({ env with blobs := env.blobs.insert addr bytes }, addr)
 
 /-- Get a blob by address. -/
@@ -1503,7 +1504,7 @@ partial def addNameComponentsWithBlobs
     | .str parent s _ =>
       -- Store string component as blob for deduplication
       let strBytes := s.toUTF8
-      let strAddr := Address.blake3 strBytes
+      let strAddr := Address.admissionHash strBytes
       let blobs := blobs.insert strAddr strBytes
       addNameComponentsWithBlobs names blobs parent
     | .num parent _ _ =>
