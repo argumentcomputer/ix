@@ -41,6 +41,7 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -420,6 +421,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   ("twins", Tests.Ix.Compile.Twins.run),
+  -- The Lean compiler's output does not depend on the schedule: sequential,
+  -- wave and pipeline legs byte-identical (Tests.Ix.Compile.ScheduleIdentity).
+  ("compile-schedule-identity", Tests.Ix.Compile.ScheduleIdentity.run),
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
