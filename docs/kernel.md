@@ -231,9 +231,9 @@ equation, by upstream's design.
   is installed under that name with its kind (a quotient record,
   `sorryAx` and `Quot.sound` install as the basis blocks do).
 - `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_role`/`Ctx.nameOf_of_unbound`
-  (`IxC/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which name a reference
-  is read under (its role's key where the table binds it, `keyName`
-  otherwise).
+  (`IxC/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which key a reference
+  is read under (its role's key where the table binds it, the input key
+  `keyName` otherwise).
 - `RoleTable.ofBytes_eq_some_iff` (`IxC/Kernel/Ixon/RoleTable.lean`): the
   binding section's decoder is canonical: it returns `t` exactly when `t` is
   in the format's domain and encodes to the given bytes.
@@ -314,20 +314,37 @@ projection variant hashes the records it writes, which carry no table). A
 check of table canonicity, if wanted, belongs in a separate variant, as the
 block-order check is.
 
-**Keys** (`IxC/Kernel/Ixon/Reader.lean`). The kernel's environment is keyed
-by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
-reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
-`ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
-parameters are positions (`LevelParam := Nat`): a constant's are
-`0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]` after its
-block's `n`, the shape by which the checker recognises it (`Reader.recLps`).
-Two kinds of names differ:
+**Keys** (`IxC/Kernel/Key.lean`, `IxC/Kernel/Ixon/Reader.lean`). The kernel's
+environment is keyed by `Ix.Kernel.Key`, an inductive with a cached hash:
 
-- recursors are named after what they eliminate, as Lean names them
-  (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
-  block), because the checker finds a block's recursor by name;
-- references the role table binds take their role's key (`roleKey r`, the
-  role's Lean name, `Role.leanName`; `Reader.bindingsOf`).
+- `.id n`, an input constant. The reader encodes a reference
+  `ConstRef Address` under the reserved root `ix`: `.member b i` is
+  `.id ix.<hex b>.i` and `.ctor b i c` is `.id ix.<hex b>.i.c`, with numeric
+  components (`keyName`, injective). The Lean ingress keys a constant by its
+  Lean name (`Ix.LeanIngress.ingressKey`).
+- `.role r`, the constant a role is bound to: in Ixon mode the reference the
+  role table binds (`Reader.bindingsOf`), in Source mode the constant under
+  the role's Lean name (`Role.leanName`, `Key.ofName`).
+- `.aux k d`, a constant the checker or the front ends' shared back half
+  generates from `k`, of shape `d : Derived` (a model companion, an installed
+  projection function or table, the modeller's families and transports). No
+  front end makes one, so an input is never `.aux`: the front door's
+  reserved-shape tests (`Key.isProjFnShape`, `Key.isModelSuffix`) refuse only
+  generated keys, never an input name.
+
+Equality is structural behind a pointer and hash guard (`Key.beq`, `@[csimp]`
+on `Key.beqPtr_eq`). A key prints as the name it had while keys were names
+(`Key.toName`: `.role r` as `r.leanName`, `.aux k d` as `k`'s spelling with
+`d`'s suffix, `Derived.spell`). Only messages and the front ends read that
+spelling: their name maps, the reader's key for an unbound recursor (below)
+and the stream check that pairs a recursor with its type by it; the fold
+never does. Level parameters are positions (`LevelParam := Nat`): a
+constant's are `0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]`
+after its block's `n`, the shape by which the checker recognises it
+(`Reader.recLps`). A recursor the table does not bind is keyed after what it
+eliminates, as Lean names it (`.id ⟦T⟧.rec`, and `.id ⟦T⟧.rec_j` for the
+`j`-th auxiliary motive of a nested block); the checker takes a block's
+recursors by position, not by name.
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
 knows 64 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
@@ -495,7 +512,7 @@ Project-level execution constructs are admitted only as named by
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
 | project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxC/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
@@ -549,13 +566,19 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3350 | 82 |
-| reader `readRecords`, `readStream` | 2018 | 79 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5656 | 111 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5653 | 111 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5687 | 111 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5820 | 112 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5839 | 115 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3274 | 82 |
+| reader `readRecords`, `readStream` | 2021 | 79 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5447 | 111 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5444 | 111 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5478 | 111 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5611 | 112 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5630 | 115 |
+
+Step 5a (typed keys) moved them from 3350, 2018, 5656, 5653, 5687, 5820 and
+5839, externs unchanged: `Key`'s three computed-field overrides came in,
+ruled with `Key`; the closed name terms that spelled role and derived keys
+left (a role key is a constructor now), and the rendering that prints keys
+in messages came in (`Key.toName`, `Role.leanName`, `Derived.spell`).
 
 Step 4 (primitives by specification) moved them from 3086, 1886, 5224 (120),
 5222 (120), 5255 (120), 5389 (121) and 5407 (124): the fold gained the

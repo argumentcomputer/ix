@@ -37,10 +37,12 @@ constructs. A block of recursors is checked in motive order (`checkRecord`,
 `isRecursor`, `checkMotives`, `recursorMotive`), which reuses the reader's
 `stripAll` and `appHead` (`Reader.analyseRecursor`); every other block
 is checked in canonical structural order. Its codec is the projection
-entry's: Ixon v4's TagN reader and writer (`Ixon.getTagN`, `putTagN`). -/
+entry's: Ixon v4's TagN reader and writer (`Ixon.getTagN`, `putTagN`). Step 5a
+(typed keys) moved the count from 5820 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5820 compiled functions; inherited externs 112, implemented_by 0, unsafe 23, csimp 4; ruled computed_field 18, csimp 21, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5611 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
