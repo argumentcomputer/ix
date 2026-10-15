@@ -107,10 +107,38 @@ theorem takeRoots_append : ∀ (es rest : List Ixon.Expr),
       takeRoots_append es rest, pure, Except.pure]
 
 
-/-- Writing wire-safe roots into a wire-safe mutual member keeps it wire-safe,
-and leaves a wire-safe rest of the cursor. -/
-theorem withMutConstRoots_wireWF {m m' : Ixon.MutConst} {rs rest : List Ixon.Expr}
-    (h : withMutConstRoots m rs = .ok (m', rest)) (hm : m.wireWF)
+/-- Non-expression fields required by a mutual member's wire format. -/
+def MutConstHeaderWF : Ixon.MutConst → Prop
+  | .defn _ => True
+  | .indc value => value.ctors.size < UInt64.size
+  | .recr value => value.rules.size < UInt64.size
+
+/-- Payload wire fields independent of the roots that sharing rewrites. -/
+def ConstantInfoHeaderWF : Ixon.ConstantInfo → Prop
+  | .defn _ | .axio _ | .quot _ => True
+  | .recr value => value.rules.size < UInt64.size
+  | .cPrj value => value.block.hash.size = 32
+  | .rPrj value => value.block.hash.size = 32
+  | .iPrj value => value.block.hash.size = 32
+  | .dPrj value => value.block.hash.size = 32
+  | .muts values => values.size < UInt64.size ∧ ∀ value ∈ values, MutConstHeaderWF value
+
+theorem MutConstHeaderWF.of_wire {value : Ixon.MutConst} (wire : value.wireWF) : MutConstHeaderWF value := by
+  cases value with
+  | defn _ => trivial
+  | indc _ | recr _ => exact wire.2.1
+
+theorem ConstantInfoHeaderWF.of_wire {value : Ixon.ConstantInfo} (wire : value.wireWF) : ConstantInfoHeaderWF value := by
+  cases value with
+  | defn _ | axio _ | quot _ => trivial
+  | recr _ => exact wire.2.1
+  | cPrj _ | rPrj _ | iPrj _ | dPrj _ => exact wire
+  | muts values => exact ⟨wire.1, fun value member => MutConstHeaderWF.of_wire (wire.2 value member)⟩
+
+/-- Wire-safe rewritten roots need only the unchanged header fields, not
+wire validity of the roots that are being replaced. -/
+theorem withMutConstRoots_wireWF_headers {m m' : Ixon.MutConst} {rs rest : List Ixon.Expr}
+    (h : withMutConstRoots m rs = .ok (m', rest)) (hm : MutConstHeaderWF m)
     (hrs : ∀ e ∈ rs, e.wireWF) :
     m'.wireWF ∧ ∀ e ∈ rest, e.wireWF := by
   cases m with
@@ -144,7 +172,7 @@ theorem withMutConstRoots_wireWF {m m' : Ixon.MutConst} {rs rest : List Ixon.Exp
         obtain rfl := takeRoot_eq_ok h1
         obtain ⟨hlen, rfl⟩ := takeRoots_eq_ok h2
         refine ⟨⟨hrs _ (by simp), ?_, ?_⟩, fun e he => hrs e (by simp [he])⟩
-        · have := hm.2.1
+        · have : i.ctors.size < UInt64.size := hm
           simp only [List.size_toArray, List.length_map, List.length_zip, Array.length_toList]
           omega
         · intro c hc
@@ -166,7 +194,7 @@ theorem withMutConstRoots_wireWF {m m' : Ixon.MutConst} {rs rest : List Ixon.Exp
         obtain rfl := takeRoot_eq_ok h1
         obtain ⟨hlen, rfl⟩ := takeRoots_eq_ok h2
         refine ⟨⟨hrs _ (by simp), ?_, ?_⟩, fun e he => hrs e (by simp [he])⟩
-        · have := hm.2.1
+        · have : r.rules.size < UInt64.size := hm
           simp only [List.size_toArray, List.length_map, List.length_zip, Array.length_toList]
           omega
         · intro c hc
@@ -174,6 +202,11 @@ theorem withMutConstRoots_wireWF {m m' : Ixon.MutConst} {rs rest : List Ixon.Exp
           obtain ⟨⟨c0, t⟩, hmem, rfl⟩ := hc
           exact hrs t (by simp [(List.of_mem_zip hmem).2])
 
+
+theorem withMutConstRoots_wireWF {m m' : Ixon.MutConst} {rs rest : List Ixon.Expr}
+    (h : withMutConstRoots m rs = .ok (m', rest)) (hm : m.wireWF)
+    (hrs : ∀ e ∈ rs, e.wireWF) : m'.wireWF ∧ ∀ e ∈ rest, e.wireWF :=
+  withMutConstRoots_wireWF_headers h (MutConstHeaderWF.of_wire hm) hrs
 
 /-- With one root per slot of the member at the front of the cursor,
 `withMutConstRoots` succeeds and leaves the rest. -/
@@ -247,11 +280,10 @@ theorem withRoots_tail {x info' : Ixon.ConstantInfo} {c : Prop} [Decidable c]
         (Except.ok info' : Except SharingError Ixon.ConstantInfo)) : x = info' := by
   split at h <;> simp_all
 
-/-- **The root write-back keeps the payload wire-safe**: `withRoots` of
-wire-safe roots into a wire-safe `ConstantInfo` yields a wire-safe
-`ConstantInfo`, for every variant. -/
-theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Expr}
-    (h : withRoots info roots = .ok info') (hinfo : info.wireWF)
+/-- Writing back wire-safe roots yields a wire-safe payload whenever its
+unchanged header fields meet the wire format, for every variant. -/
+theorem withRoots_wireWF_headers {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Expr}
+    (h : withRoots info roots = .ok info') (hinfo : ConstantInfoHeaderWF info)
     (hroots : ∀ e ∈ roots, e.wireWF) : info'.wireWF := by
   have hrs : ∀ e ∈ roots.toList, e.wireWF := fun e he => hroots e (by simpa using he)
   simp only [withRoots] at h
@@ -260,7 +292,7 @@ theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Ex
   cases info with
   | defn d =>
     obtain ⟨⟨m, rest⟩, hw, h⟩ := except_bind_eq_ok h
-    have hm := (withMutConstRoots_wireWF hw hinfo hrs).1
+    have hm := (withMutConstRoots_wireWF_headers hw hinfo hrs).1
     cases m with
     | defn d' =>
       simp [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
@@ -268,7 +300,7 @@ theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Ex
     | _ => simp [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   | recr r =>
     obtain ⟨⟨m, rest⟩, hw, h⟩ := except_bind_eq_ok h
-    have hm := (withMutConstRoots_wireWF hw hinfo hrs).1
+    have hm := (withMutConstRoots_wireWF_headers hw hinfo hrs).1
     cases m with
     | recr r' =>
       simp [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
@@ -294,12 +326,12 @@ theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Ex
     have hloop := forIn_except_inv
       (fun (l : List Ixon.MutConst) (b : Array Ixon.MutConst × List Ixon.Expr) =>
         b.1.size + l.length = ms.size ∧ (∀ m ∈ b.1, m.wireWF) ∧
-          (∀ e ∈ b.2, e.wireWF) ∧ ∀ m ∈ l, m.wireWF) _
+          (∀ e ∈ b.2, e.wireWF) ∧ ∀ m ∈ l, MutConstHeaderWF m) _
       (by
         intro a l b r hb hf
         obtain ⟨⟨m', rest⟩, hw, hf⟩ := except_bind_eq_ok hf
         simp only [pure, Except.pure, Except.ok.injEq] at hf
-        have hm := withMutConstRoots_wireWF hw (hb.2.2.2 a (by simp)) hb.2.2.1
+        have hm := withMutConstRoots_wireWF_headers hw (hb.2.2.2 a (by simp)) hb.2.2.1
         refine ⟨_, hf.symm, ?_, ?_, hm.2, fun m hmem => hb.2.2.2 m (by simp [hmem])⟩
         · simp only [Array.size_push, List.length_cons] at hb ⊢
           omega
@@ -314,6 +346,11 @@ theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Ex
     have hsize : s.1.size = ms.size := by simpa using hloop.1
     exact ⟨hsize ▸ hinfo.1, hloop.2.1⟩
 
+
+theorem withRoots_wireWF {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Expr}
+    (h : withRoots info roots = .ok info') (hinfo : info.wireWF)
+    (hroots : ∀ e ∈ roots, e.wireWF) : info'.wireWF :=
+  withRoots_wireWF_headers h (ConstantInfoHeaderWF.of_wire hinfo) hroots
 
 /-- `takeRoots` of a whole cursor. -/
 theorem takeRoots_self (es : List Ixon.Expr) : takeRoots es.length es = .ok (es, []) := by
@@ -506,6 +543,17 @@ theorem withRootExprs_wireWF {info info' : Ixon.ConstantInfo} {rewritten : Array
 
 /-! ## The canonical sharing builder -/
 
+/-- The stronger root write-back endpoint needs only unchanged header fields. -/
+theorem withRootExprs_wireWF_headers {info info' : Ixon.ConstantInfo} {rewritten : Array Ixon.Expr}
+    (h : Ix.CompileM.withRootExprs info rewritten = .ok info')
+    (hinfo : ConstantInfoHeaderWF info) (hwire : ExprArrayWireWF rewritten) : info'.wireWF := by
+  simp only [Ix.CompileM.withRootExprs] at h
+  cases hw : Ix.Sharing.Exact.withRoots info rewritten with
+  | error e => simp [hw, Except.mapError] at h
+  | ok x =>
+    simp [hw, Except.mapError] at h
+    exact h ▸ withRoots_wireWF_headers hw hinfo hwire
+
 /-- The canonical sharing construction succeeds on the payload's roots under
 `limits` and returns one root per input root: exactly when
 `buildConstantWithSharing` succeeds (`buildConstantWithSharing_of_succeeds`). -/
@@ -568,26 +616,33 @@ theorem buildConstantWithSharing_of_succeeds {limits : Ix.Sharing.Exact.Limits}
   obtain ⟨_, _, hb⟩ := buildConstantWithSharing_of_canonical hr hs refs univs
   exact ⟨_, hb⟩
 
-/-- **Every block the compiler's sharing builds is in the constant codec's wire
-domain**, for every `ConstantInfo` variant: the payload's fields are kept,
-its roots and the table come from the canonical construction, and
-`Tiered.canonicalSharingTiered_format` makes them wire-safe with a table count
-below `2^64`. -/
-theorem buildConstantWithSharing_wireWF {limits : Ix.Sharing.Exact.Limits}
+/-- A successful sharing build is wire-safe when its unchanged header fields
+and primary tables meet the wire format. Canonical sharing supplies rewritten
+root and sharing-table validity; the input roots need no wire-validity premise. -/
+theorem buildConstantWithSharing_wireWF_headers {limits : Ix.Sharing.Exact.Limits}
     {info : Ixon.ConstantInfo} {state : Ix.CompileM.BlockState}
-    {block : Ixon.Constant} (hinfo : info.wireWF)
+    {block : Ixon.Constant} (hinfo : ConstantInfoHeaderWF info)
     (htables : BlockWireTablesWF state)
     (h : Ix.CompileM.buildConstantWithSharing limits info
       state.refs state.univs = .ok block) :
     block.wireWF := by
   obtain ⟨r, info', hr, -, hw, rfl⟩ := buildConstantWithSharing_eq_ok h
   obtain ⟨hentries, hroots, hcapacity, -, -⟩ := Tiered.canonicalSharingTiered_format hr
-  refine ⟨withRootExprs_wireWF hw hinfo ?_, hcapacity, ?_, htables.refsCount,
+  refine ⟨withRootExprs_wireWF_headers hw hinfo ?_, hcapacity, ?_, htables.refsCount,
     htables.refs, htables.univsCount, htables.univs⟩
   · intro expr hmem
     exact hroots expr (by simpa using hmem)
   · intro expr hmem
     exact hentries expr (by simpa using hmem)
+
+/-- Compatibility endpoint retaining its original stronger payload premise. -/
+theorem buildConstantWithSharing_wireWF {limits : Ix.Sharing.Exact.Limits}
+    {info : Ixon.ConstantInfo} {state : Ix.CompileM.BlockState}
+    {block : Ixon.Constant} (hinfo : info.wireWF)
+    (htables : BlockWireTablesWF state)
+    (h : Ix.CompileM.buildConstantWithSharing limits info state.refs state.univs = .ok block) :
+    block.wireWF :=
+  buildConstantWithSharing_wireWF_headers (ConstantInfoHeaderWF.of_wire hinfo) htables h
 
 /-- When the canonical construction keeps a singleton axiom root and builds no
 table, the builder yields exactly the unshared axiom assembly. -/

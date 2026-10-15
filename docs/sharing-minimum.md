@@ -889,8 +889,8 @@ sharing + integers together.
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
-4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
+and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (138 roots on Lean
+4.34.1; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
 
@@ -937,7 +937,7 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   per-declaration compiler endpoints are retired with the compiler-correctness proofs.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
-  build unless every csimp theorem on the compiler's import path is an audit root (19) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
+  build unless every csimp theorem on the compiler's import path is an audit root (20) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
   declaration besides the pointer-cache key `exprPtr`.
 
 Run-time checks that remain in Lean's phase 3 (`rematerialize`), each failing closed with an

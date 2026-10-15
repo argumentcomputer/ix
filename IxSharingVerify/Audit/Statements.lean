@@ -76,6 +76,10 @@ def roots : Array RootAllowance := #[
   -- `native_decide` axiom, which this manifest does not admit.
   { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF,
     standardAxioms := standard },
+  -- The same endpoint from the payload's header fields alone: the roots that
+  -- sharing rewrites need no wire-validity premise.
+  { root := ``Ix.Sharing.Verify.buildConstantWithSharing_wireWF_headers,
+    standardAxioms := standard },
   { root := ``Ix.Sharing.Verify.constantInfoRootExprs_toList,
     standardAxioms := #[``propext] },
   { root := ``Ixon.Verify.TagN.runGetExact_getTagN_eq,
