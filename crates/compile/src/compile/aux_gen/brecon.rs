@@ -876,7 +876,7 @@ fn build_type_brecon_fvar(
             ),
           }
         })?;
-        ilvl_tc.pop_locals(&idcls);
+        ilvl_tc.pop_locals(&idcls)?;
         Ok(ilvl_j)
       })
       .collect::<Result<Vec<_>, _>>()?
@@ -997,8 +997,8 @@ fn build_type_brecon_fvar(
   let go_ret_type =
     mk_pprod(&go_ret_lvl1, &go_ret_lvl2, &motive_ci_app, &below_ci_app);
 
-  rtc.pop_locals(&major_decls);
-  rtc.pop_locals(&index_decls);
+  rtc.pop_locals(&major_decls)?;
+  rtc.pop_locals(&index_decls)?;
 
   // go value: I.rec.{rlvl, lvls...} params [modified_motives] [modified_minors] indices major
   let mut go_val = mk_const(&rec_val.cnst.name, &{
@@ -1030,7 +1030,7 @@ fn build_type_brecon_fvar(
     let mm_lvl2 = rtc.get_level(&b_app)?;
     let pprod_body = mk_pprod(&mm_lvl1, &mm_lvl2, &m_app, &b_app);
 
-    rtc.pop_locals(&idcls);
+    rtc.pop_locals(&idcls)?;
 
     go_val = LeanExpr::app(go_val, mk_lambda(pprod_body, &idcls));
   }
@@ -1328,7 +1328,7 @@ fn build_type_minor_premise_fvar(
   let lvl_b = rtc.get_level(&b_type)?;
   let body = mk_pprod_mk(&lvl_a, &lvl_b, &motive_app, &b_type, &f_app, &b);
 
-  rtc.pop_locals(&lambda_decls);
+  rtc.pop_locals(&lambda_decls)?;
 
   Ok(mk_lambda(body, &lambda_decls))
 }
@@ -1379,7 +1379,7 @@ fn replace_motive_with_pprod_fvar(
   let lvl1 = rtc.get_level(&motive_app)?;
   let lvl2 = rtc.get_level(&below_app)?;
   if !inner_decls.is_empty() {
-    rtc.pop_locals(&inner_decls);
+    rtc.pop_locals(&inner_decls)?;
   }
 
   let pprod = mk_pprod(&lvl1, &lvl2, &motive_app, &below_app);

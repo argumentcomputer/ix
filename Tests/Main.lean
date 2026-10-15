@@ -27,6 +27,7 @@ import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.BridgeBoundaries
+import Tests.Ix.Compile.BridgeScopes
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.HeaderCounts
 import Tests.Ix.Compile.PayloadArrays
@@ -147,6 +148,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("compiler-index-safety", Tests.Ix.Compile.IndexSafety.suite),
   -- the aux kernel bridges refuse what they cannot convert (D-12)
   ("compiler-bridge-boundaries", Tests.Ix.Compile.BridgeBoundaries.suite),
+  ("compiler-bridge-scopes", Tests.Ix.Compile.BridgeScopes.suite),
   ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
   ("header-count", Tests.Ix.Compile.HeaderCounts.suite),
   ("payload-arrays", Tests.Ix.Compile.PayloadArrays.suite),
