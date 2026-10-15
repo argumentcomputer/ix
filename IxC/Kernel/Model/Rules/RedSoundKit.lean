@@ -559,7 +559,7 @@ theorem piChain_of_stripPis {acval : Key → (LevelParam → Nat) → AnnotTerm}
     | .const _ _, hs => exact nomatch hs
     | .app _ _, hs => exact nomatch hs
     | .lam _ _ _, hs => exact nomatch hs
-    | .letE _ _ _, hs => exact nomatch hs
+    | .letE _ _ _ _, hs => exact nomatch hs
     | .lit _, hs => exact nomatch hs
     | .proj _ _ _, hs => exact nomatch hs
     | .forallE ty bd mb, hs =>

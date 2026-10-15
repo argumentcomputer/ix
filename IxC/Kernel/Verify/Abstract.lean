@@ -34,7 +34,7 @@ open Expr
   | .fvar idx ty' => idx = d → ty' = ty
   | .app f a => fvarConsistent d ty f ∧ fvarConsistent d ty a
   | .lam t b _ | .forallE t b _ => fvarConsistent d ty t ∧ fvarConsistent d ty b
-  | .letE t v b => fvarConsistent d ty t ∧ fvarConsistent d ty v ∧ fvarConsistent d ty b
+  | .letE t v b _ => fvarConsistent d ty t ∧ fvarConsistent d ty v ∧ fvarConsistent d ty b
   | .proj _ _ e => fvarConsistent d ty e
   | _ => True
 
@@ -147,7 +147,7 @@ theorem annotateCore_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
   | app f2 a2 => intro h; exact nomatch h
   | lam t2 b2 m2 => intro h; exact nomatch h
   | forallE t2 b2 m2 => intro h; exact nomatch h
-  | letE t2 v2 b2 => intro h; exact nomatch h
+  | letE t2 v2 b2 _ => intro h; exact nomatch h
   | lit l2 => intro h; exact nomatch h
   | proj s2 i2 e2 => intro h; exact nomatch h
   intro h
@@ -200,8 +200,8 @@ back into the clause — `ensure_sort_core(infer(ty'))`, `infer(v')`,
 extra conjuncts are back with it; consumers that do not need them
 discard them with `-`. -/
 theorem annotateCore_letE_inv {env : Env} {fuel d : Nat}
-    {ty v b e' : Expr}
-    (h : annotateCore mode env (fuel + 1) d (.letE ty v b) = .ok e') :
+    {ty v b e' : Expr} {l : LetMeta}
+    (h : annotateCore mode env (fuel + 1) d (.letE ty v b l) = .ok e') :
     ∃ ty' v', annotateCore mode env fuel d ty = .ok ty' ∧
       annotateCore mode env fuel d v = .ok v' ∧
       annotateCore mode env fuel d (b.instantiate1 v) = .ok e' ∧
@@ -404,7 +404,7 @@ theorem annotateCore_WScoped {env : Env} :
       (hwty'.instantiate1 0 hw.2)
     simp only [WScoped]
     exact ⟨hwty', WScoped.abstract1 0 hwbody'⟩
-  | fuel + 1, .letE ty v b, d, e', h, hw => by
+  | fuel + 1, .letE ty v b _, d, e', h, hw => by
     simp only [WScoped] at hw
     obtain ⟨ty', v', -, -, hb, -⟩ := annotateCore_letE_inv h
     exact annotateCore_WScoped fuel _ hb
@@ -490,7 +490,7 @@ theorem annotateCore_looseBVars {env : Env} :
     refine ⟨annotateCore_looseBVars fuel ty hty hb.1, ?_⟩
     exact looseBVarsBounded_abstract1 _ 0
       (annotateCore_looseBVars fuel _ hbody (looseBVarsBounded_instantiate1 body 0 hb.2))
-  | fuel + 1, .letE ty v bd, d, e', h, hb => by
+  | fuel + 1, .letE ty v bd _, d, e', h, hb => by
     simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
     obtain ⟨ty', v', -, -, hbody, -⟩ := annotateCore_letE_inv h
     exact annotateCore_looseBVars fuel _ hbody
@@ -516,7 +516,7 @@ def Expr.LeafEquiv : Expr → Expr → Prop
   | .app f a, .app f' a' => LeafEquiv f f' ∧ LeafEquiv a a'
   | .lam ty b _, .lam ty' b' _ => LeafEquiv ty ty' ∧ LeafEquiv b b'
   | .forallE ty b _, .forallE ty' b' _ => LeafEquiv ty ty' ∧ LeafEquiv b b'
-  | .letE ty v b, .letE ty' v' b' =>
+  | .letE ty v b _, .letE ty' v' b' _ =>
     LeafEquiv ty ty' ∧ LeafEquiv v v' ∧ LeafEquiv b b'
   | .proj _ _ e, .proj _ _ e' => LeafEquiv e e'
   | _, _ => False

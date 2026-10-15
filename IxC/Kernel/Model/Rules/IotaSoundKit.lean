@@ -334,7 +334,7 @@ theorem piResidual_frameK {m : EnvModel V env} {d : Nat}
     | .const _ _, h => exact nomatch h
     | .app _ _, h => exact nomatch h
     | .lam _ _ _, h => exact nomatch h
-    | .letE _ _ _, h => exact nomatch h
+    | .letE _ _ _ _, h => exact nomatch h
     | .lit _, h => exact nomatch h
     | .proj _ _ _, h => exact nomatch h
     | .forallE ty body mb, h =>
@@ -386,7 +386,7 @@ theorem teleFitPA_residualK {acval : Key → (LevelParam → Nat) → AnnotTerm}
     | .const _ _, hpr, _, _ => exact nomatch hpr
     | .app _ _, hpr, _, _ => exact nomatch hpr
     | .lam _ _ _, hpr, _, _ => exact nomatch hpr
-    | .letE _ _ _, hpr, _, _ => exact nomatch hpr
+    | .letE _ _ _ _, hpr, _, _ => exact nomatch hpr
     | .lit _, hpr, _, _ => exact nomatch hpr
     | .proj _ _ _, hpr, _, _ => exact nomatch hpr
     | .forallE dom body mb, hpr, hwty, hty => ?_

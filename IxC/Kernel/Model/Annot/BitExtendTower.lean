@@ -149,7 +149,7 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env}
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

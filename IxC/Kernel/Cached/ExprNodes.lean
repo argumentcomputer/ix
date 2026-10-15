@@ -118,8 +118,8 @@ so nothing is added at runtime. -/
 @[inline] def mkForallE (ty body : Expr) (m : BinderMeta) :
     Expr := .forallE ty body m
 
-@[inline] def mkLetE (ty val body : Expr) : Expr :=
-  .letE ty val body
+@[inline] def mkLetE (ty val body : Expr) (l : LetMeta) : Expr :=
+  .letE ty val body l
 
 @[inline] def mkLit (l : Literal) : Expr := .lit l
 
@@ -175,8 +175,8 @@ own equations, and the tier still rewrites with them. -/
 @[simp] theorem mkForallE_eq (ty b : Expr) (m : BinderMeta) :
     mkForallE ty b m = .forallE ty b m := rfl
 
-@[simp] theorem mkLetE_eq (ty v b : Expr) :
-    mkLetE ty v b = .letE ty v b := rfl
+@[simp] theorem mkLetE_eq (ty v b : Expr) (l : LetMeta) :
+    mkLetE ty v b l = .letE ty v b l := rfl
 
 @[simp] theorem mkLit_eq (l : Literal) : mkLit l = .lit l := rfl
 

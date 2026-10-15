@@ -404,7 +404,7 @@ def constsResolveSk (sk : List InstallSkel) : Expr → Bool
   | .app f a => constsResolveSk sk f && constsResolveSk sk a
   | .lam ty body _ => constsResolveSk sk ty && constsResolveSk sk body
   | .forallE ty body _ => constsResolveSk sk ty && constsResolveSk sk body
-  | .letE ty val body =>
+  | .letE ty val body _ =>
     constsResolveSk sk ty && constsResolveSk sk val && constsResolveSk sk body
   | .proj s _ e => (skFind? sk s).isSome && constsResolveSk sk e
 
@@ -428,7 +428,7 @@ theorem constsResolveF_skel {fe : FEnv} {sk : List InstallSkel}
     simp only [Expr.constsResolveF, constsResolveSk, ihty, ihb]
   | forallE ty b _ ihty ihb =>
     simp only [Expr.constsResolveF, constsResolveSk, ihty, ihb]
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     simp only [Expr.constsResolveF, constsResolveSk, iht, ihv, ihb]
   | proj s _ e ihe =>
     simp only [Expr.constsResolveF, constsResolveSk, h.isSome', ihe]

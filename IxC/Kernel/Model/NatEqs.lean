@@ -754,7 +754,7 @@ theorem denoteMeta_substConst0 {acval : Key → (LevelParam → Nat) → AnnotTe
   | bvar _ => intro hfr; simp [shallowE] at hfr
   | lam _ _ _ => intro hfr; simp [shallowE] at hfr
   | forallE _ _ _ => intro hfr; simp [shallowE] at hfr
-  | letE _ _ _ => intro hfr; simp [shallowE] at hfr
+  | letE _ _ _ _ => intro hfr; simp [shallowE] at hfr
   | proj _ _ _ => intro hfr; simp [shallowE] at hfr
   | lit _ => intro hfr; simp [shallowE] at hfr
 
@@ -885,7 +885,7 @@ theorem constsBound_of_natFragOk {c : Key}
   | bvar _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | lam _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | forallE _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
-  | letE _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
+  | letE _ _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | proj _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | lit _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
 
@@ -920,7 +920,7 @@ theorem consCrossAt_of_natFragOk {c : Key} {c₀ : ConstantInfo} :
     simp only [Ix.Kernel.Verify.natFragOk, Bool.and_eq_true] at h
     simp only [Expr.NoProjAt]
     exact ⟨ihf h.1 entry heq j, iha h.2 entry heq j⟩
-  | bvar _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+  | bvar _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
     intro h; simp [Ix.Kernel.Verify.natFragOk] at h
 
 /-- **The per-operation crossing at a fresh cons**: an operation

@@ -205,7 +205,7 @@ theorem residualPW_some_inv {o : Option Expr} {pw : PropWhen}
   | none, h => exact nomatch h
   | some (.bvar _), h | some (.fvar _ _), h | some (.const _ _), h
   | some (.app _ _), h | some (.lam _ _ _), h | some (.forallE _ _ _), h
-  | some (.letE _ _ _), h | some (.lit _), h | some (.proj _ _ _), h =>
+  | some (.letE _ _ _ _), h | some (.lit _), h | some (.proj _ _ _), h =>
     exact nomatch h
 
 theorem headTypePW_some_inv (find? : Key → Option ConstantInfo) {hd : Expr}

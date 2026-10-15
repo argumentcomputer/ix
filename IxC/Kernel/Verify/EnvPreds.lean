@@ -95,7 +95,7 @@ theorem recRuleKOf_inv {f : Key → Option ConstantInfo} {ctor : Key}
     dsimp only
     match hpr : (cvj.type.piResult).getAppFn with
     | .bvar _ | .fvar _ _ | .sort _ | .app _ _ | .lam _ _ _
-    | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+    | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
       intro h; exact nomatch h
     | .const T us =>
       dsimp only
@@ -146,7 +146,7 @@ theorem recRuleEtaOf_inv {f : Key → Option ConstantInfo}
     dsimp only
     match hpr : (cvj.type.piResult).getAppFn with
     | .bvar _ | .fvar _ _ | .sort _ | .app _ _ | .lam _ _ _
-    | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+    | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
       intro h; exact nomatch h
     | .const T us =>
       dsimp only

@@ -63,7 +63,7 @@ def idNatWith (c : Ixon.BinderContract) (r : Ixon.ValueContract) (c' : Ixon.Bind
 def contracts : Ix.Kernel.Expr → List (Ixon.BinderContract × Ixon.ValueContract)
   | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contracts t ++ contracts b)
   | .app f a => contracts f ++ contracts a
-  | .letE t v b => contracts t ++ contracts v ++ contracts b
+  | .letE t v b _ => contracts t ++ contracts v ++ contracts b
   | .proj _ _ e | .fvar _ e => contracts e
   | _ => []
 
@@ -92,8 +92,8 @@ def valueContracts : List Ixon.ValueContract :=
 #guard binderContracts.all fun c => valueContracts.all fun r =>
   defnContracts (installed [(address 10, idNatWith c r c)] (address 10)) ==
     some ([(c, r)], [(c, .shared)])
--- a `let` contract is erased (the checker's `letE` has no field for it), and
--- the annotation pass ζ-reduces the `let`
+-- a `let` contract is read into the `let`'s `LetMeta`, and the annotation pass
+-- ζ-reduces the `let`, so the installed value has the binder contracts only
 def borrowLet : Ixon.Constant :=
   defn .defn (all (ref 0) (ref 0))
     (lam (ref 0) (.letE (.borrow false .linear) (ref 0) (var 0) (var 0))) [nat]

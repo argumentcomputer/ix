@@ -71,7 +71,7 @@ theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = 
   | forallE ty b _ ihty ihb =>
     intro i k hik
     simp only [Expr.instantiate1, Expr.hasLooseBVar, ihty i k hik, ihb (i + 1) (k + 1) (by omega)]
-  | letE t v' b iht ihv ihb =>
+  | letE t v' b _ iht ihv ihb =>
     intro i k hik
     simp only [Expr.instantiate1, Expr.hasLooseBVar, iht i k hik, ihv i k hik,
       ihb (i + 1) (k + 1) (by omega)]
@@ -117,7 +117,7 @@ theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
     rcases hl with hl | hl
     · exact Or.inl (ihty v k hk.1 l hl)
     · exact Or.inr (ihb v (k + 1) hk.2 l hl)
-  | letE t v' b iht ihv ihb =>
+  | letE t v' b _ iht ihv ihb =>
     intro v k hk l hl
     simp only [Expr.hasLooseBVar, Bool.or_eq_false_iff] at hk
     simp only [Expr.instantiate1, Expr.fvarLeaves, List.mem_append] at hl ⊢
@@ -224,7 +224,7 @@ theorem openPisAtFvars_leaf_free :
             omega
       · exact nomatch hop
     | .bvar _, hop, _ | .fvar _ _, hop, _ | .sort _, hop, _ | .const _ _, hop, _
-    | .app _ _, hop, _ | .lam _ _ _, hop, _ | .letE _ _ _, hop, _ | .lit _, hop, _
+    | .app _ _, hop, _ | .lam _ _ _, hop, _ | .letE _ _ _ _, hop, _ | .lit _, hop, _
     | .proj _ _ _, hop, _ =>
       simp [openPisAtFvars] at hop
 
@@ -370,7 +370,7 @@ theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Lev
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

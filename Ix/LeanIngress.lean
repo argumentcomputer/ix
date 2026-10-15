@@ -493,7 +493,7 @@ def literalKinds (c : Converted) : Bool × Bool := Id.run do
     | .lit (.strVal _) => str := true
     | .app f a => todo := todo.push f |>.push a
     | .lam t b _ | .forallE t b _ => todo := todo.push t |>.push b
-    | .letE t v b => todo := todo.push t |>.push v |>.push b
+    | .letE t v b _ => todo := todo.push t |>.push v |>.push b
     | .proj _ _ b => todo := todo.push b
     | _ => pure ()
   return (nat, str)

@@ -69,7 +69,7 @@ theorem instantiate1_instantiate1 {a b : Expr}
   | forallE ty body m ihty ihbody =>
     intro j k hjk
     simp [instantiate1, ihty _ _ hjk, ihbody _ _ (by omega : j + 1 ≤ k + 1)]
-  | letE ty v body ihty ihv ihbody =>
+  | letE ty v body _ ihty ihv ihbody =>
     intro j k hjk
     simp [instantiate1, ihty _ _ hjk, ihv _ _ hjk,
       ihbody _ _ (by omega : j + 1 ≤ k + 1)]
@@ -129,7 +129,7 @@ names — exactly what the interpretation never reads. -/
     m = m' ∧ ErasedEq ty ty' ∧ ErasedEq b b'
   | .forallE ty b m, .forallE ty' b' m' =>
     m = m' ∧ ErasedEq ty ty' ∧ ErasedEq b b'
-  | .letE ty v b, .letE ty' v' b' =>
+  | .letE ty v b _, .letE ty' v' b' _ =>
     ErasedEq ty ty' ∧ ErasedEq v v' ∧ ErasedEq b b'
   | .lit l, .lit l' => l = l'
   | .proj s i e, .proj s' i' e' => s = s' ∧ i = i' ∧ ErasedEq e e'
@@ -185,10 +185,10 @@ theorem ErasedEq.instantiate1 :
     match e', he with
     | .forallE ty' body' m', he =>
       exact ⟨he.1, ihty he.2.1 hv, ihbody he.2.2 hv⟩
-  | letE ty vl body ihty ihv ihbody =>
+  | letE ty vl body _ ihty ihv ihbody =>
     intro e' v v' k he hv
     match e', he with
-    | .letE ty' vl' body', he =>
+    | .letE ty' vl' body' _, he =>
       exact ⟨ihty he.1 hv, ihv he.2.1 hv, ihbody he.2.2 hv⟩
   | lit l =>
     intro e' v v' k he hv
@@ -275,7 +275,7 @@ theorem instantiate1_liftLooseBVars {v : Expr} :
     intro k c j hcj hjk
     simp only [liftLooseBVars, instantiate1, ihty hcj hjk,
       ihbody (by omega : c + 1 ≤ j + 1) (by omega : j + 1 ≤ c + 1 + k)]
-  | letE ty vl body ihty ihv ihbody =>
+  | letE ty vl body _ ihty ihv ihbody =>
     intro k c j hcj hjk
     simp only [liftLooseBVars, instantiate1, ihty hcj hjk, ihv hcj hjk,
       ihbody (by omega : c + 1 ≤ j + 1) (by omega : j + 1 ≤ c + 1 + k)]
@@ -333,7 +333,7 @@ theorem liftLooseBVars_instantiate1 {v : Expr}
     simp only [liftLooseBVars, instantiate1, ihty hjc]
     rw [show j + k + 1 = (j + 1) + k from by omega,
       ihbody (by omega : j + 1 ≥ c + 1)]
-  | letE ty vl body ihty ihv ihbody =>
+  | letE ty vl body _ ihty ihv ihbody =>
     intro k c j hjc
     simp only [liftLooseBVars, instantiate1, ihty hjc, ihv hjc]
     rw [show j + k + 1 = (j + 1) + k from by omega,
@@ -422,7 +422,7 @@ theorem ErasedEq.symm : ∀ {e₁ e₂ : Expr}, ErasedEq e₁ e₂ → ErasedEq 
     ⟨Eq.symm h.1, ErasedEq.symm h.2.1, ErasedEq.symm h.2.2⟩
   | .forallE _ _ _, .forallE _ _ _, h =>
     ⟨Eq.symm h.1, ErasedEq.symm h.2.1, ErasedEq.symm h.2.2⟩
-  | .letE _ _ _, .letE _ _ _, h =>
+  | .letE _ _ _ _, .letE _ _ _ _, h =>
     ⟨ErasedEq.symm h.1, ErasedEq.symm h.2.1, ErasedEq.symm h.2.2⟩
   | .lit _, .lit _, h => Eq.symm h
   | .proj _ _ _, .proj _ _ _, h =>
@@ -504,12 +504,12 @@ theorem ErasedEq.trans :
         have y : m₂ = m₃ ∧ ErasedEq ty₂ ty₃ ∧ ErasedEq body₂ body₃ := h23
         exact show m = m₃ ∧ ErasedEq ty ty₃ ∧ ErasedEq body body₃ from
           ⟨x.1.trans y.1, ihty x.2.1 y.2.1, ihbody x.2.2 y.2.2⟩
-  | letE ty vl body ihty ihv ihbody =>
+  | letE ty vl body _ ihty ihv ihbody =>
     intro e₂ e₃ h12 h23
     match e₂, h12 with
-    | .letE ty₂ vl₂ body₂, h12 =>
+    | .letE ty₂ vl₂ body₂ _, h12 =>
       match e₃, h23 with
-      | .letE ty₃ vl₃ body₃, h23 =>
+      | .letE ty₃ vl₃ body₃ _, h23 =>
         have x : ErasedEq ty ty₂ ∧ ErasedEq vl vl₂ ∧ ErasedEq body body₂ :=
           h12
         have y : ErasedEq ty₂ ty₃ ∧ ErasedEq vl₂ vl₃ ∧
@@ -999,7 +999,7 @@ theorem instantiate1Lift_instantiate1 {a s : Expr}
     simp only [instantiate1Lift, instantiate1, ihty]
     rw [show k + u + 1 = (k + 1) + u from by omega,
       show k + 1 + u + 1 = (k + 1) + 1 + u from by omega, ihbody]
-  | letE ty vl body ihty ihv ihbody =>
+  | letE ty vl body _ ihty ihv ihbody =>
     intro k u
     simp only [instantiate1Lift, instantiate1, ihty, ihv]
     rw [show k + u + 1 = (k + 1) + u from by omega,
@@ -1335,7 +1335,7 @@ theorem stripLams_instantiate1_fvar_isSome_rev {i : Nat}
     | .const _ _ => simp [instantiate1, stripLams] at h
     | .app _ _ => simp [instantiate1, stripLams] at h
     | .forallE _ _ _ => simp [instantiate1, stripLams] at h
-    | .letE _ _ _ => simp [instantiate1, stripLams] at h
+    | .letE _ _ _ _ => simp [instantiate1, stripLams] at h
     | .lit _ => simp [instantiate1, stripLams] at h
     | .proj _ _ _ => simp [instantiate1, stripLams] at h
 
@@ -1406,8 +1406,8 @@ theorem fvarsBelow_instantiate1_gen {d : Nat} {a : Expr} (ha : fvarsBelow d a) :
   | .app f b => .app (substFvarAt p a f) (substFvarAt p a b)
   | .lam ty body m => .lam (substFvarAt p a ty) (substFvarAt p a body) m
   | .forallE ty body m => .forallE (substFvarAt p a ty) (substFvarAt p a body) m
-  | .letE ty val body =>
-    .letE (substFvarAt p a ty) (substFvarAt p a val) (substFvarAt p a body)
+  | .letE ty val body lmeta =>
+    .letE (substFvarAt p a ty) (substFvarAt p a val) (substFvarAt p a body) lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i (substFvarAt p a e)
 

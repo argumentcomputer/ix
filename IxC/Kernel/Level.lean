@@ -238,8 +238,8 @@ def Expr.instantiateLevelParams (ks : List LevelParam) (us : List Level) : Expr 
   | .forallE ty body m =>
     .forallE (ty.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
       { m with pw := Level.substPW ks us m.pw }
-  | .letE ty val body => .letE (ty.instantiateLevelParams ks us)
-      (val.instantiateLevelParams ks us) (body.instantiateLevelParams ks us)
+  | .letE ty val body lmeta => .letE (ty.instantiateLevelParams ks us)
+      (val.instantiateLevelParams ks us) (body.instantiateLevelParams ks us) lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i (e.instantiateLevelParams ks us)
 
@@ -257,7 +257,7 @@ def Expr.allLevelParamsDefined (params : List LevelParam) : Expr → Bool
   | .lam t b m | .forallE t b m =>
     t.allLevelParamsDefined params && b.allLevelParamsDefined params
       && m.pw.paramsDefined params
-  | .letE t v b => t.allLevelParamsDefined params && v.allLevelParamsDefined params
+  | .letE t v b _ => t.allLevelParamsDefined params && v.allLevelParamsDefined params
       && b.allLevelParamsDefined params
   | .lit _ => true
   | .proj _ _ e => e.allLevelParamsDefined params
@@ -317,7 +317,7 @@ def Expr.allLevelParamsDefinedGo (params : List LevelParam) (memo : Std.HashMap 
           let (b₁, memo) := allLevelParamsDefinedGo params memo t
           let (b₂, memo) := allLevelParamsDefinedGo params memo b
           (b₁ && b₂ && m.pw.paramsDefined params, memo)
-        | .letE t v b =>
+        | .letE t v b _ =>
           let (b₁, memo) := allLevelParamsDefinedGo params memo t
           let (b₂, memo) := allLevelParamsDefinedGo params memo v
           let (b₃, memo) := allLevelParamsDefinedGo params memo b
@@ -376,7 +376,7 @@ theorem Expr.allLevelParamsDefinedGo_spec {params : List LevelParam} :
       obtain ⟨h3, h4⟩ := ihb _ h2
       refine ⟨by simp [allLevelParamsDefined, h1, h3], ?_⟩
       exact h4.insert (by simp [allLevelParamsDefined, h1, h3])
-  | letE ty val body iht ihv ihb =>
+  | letE ty val body _ iht ihv ihb =>
     intro memo hm
     rw [allLevelParamsDefinedGo]
     split

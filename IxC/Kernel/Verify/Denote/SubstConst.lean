@@ -112,7 +112,7 @@ theorem denote_substConst0 {env : Env} {cval : TConstVal}
   | bvar _ => intro hfr; simp [shallowE] at hfr
   | lam _ _ _ => intro hfr; simp [shallowE] at hfr
   | forallE _ _ _ => intro hfr; simp [shallowE] at hfr
-  | letE _ _ _ => intro hfr; simp [shallowE] at hfr
+  | letE _ _ _ _ => intro hfr; simp [shallowE] at hfr
   | proj _ _ _ => intro hfr; simp [shallowE] at hfr
   | lit _ => intro hfr; simp [shallowE] at hfr
 

@@ -61,8 +61,8 @@ def canonExpr (m : LevelParam → LevelParam) : Expr → Expr
   | .lam ty b bm => .lam (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
   | .forallE ty b bm =>
       .forallE (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
-  | .letE ty v b => .letE (canonExpr m ty) (canonExpr m v)
-      (canonExpr m b)
+  | .letE ty v b lmeta => .letE (canonExpr m ty) (canonExpr m v)
+      (canonExpr m b) lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i (canonExpr m e)
 
@@ -141,9 +141,9 @@ def canonExprEqFast (m m' : LevelParam → LevelParam) : Expr → Expr → Bool
   | .forallE t b bm, .forallE t' b' bm' =>
       canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
         bm.contract == bm'.contract && bm.result == bm'.result
-  | .letE t v b, .letE t' v' b' =>
+  | .letE t v b l, .letE t' v' b' l' =>
       canonExprEqFast m m' t t' && canonExprEqFast m m' v v' &&
-        canonExprEqFast m m' b b'
+        canonExprEqFast m m' b b' && l == l'
   | .lit l, .lit l' => l == l'
   | .proj s i e, .proj s' i' e' =>
       s == s' && i == i' && canonExprEqFast m m' e e'
@@ -172,7 +172,7 @@ theorem canonExprEqFast_iff (m m' : LevelParam → LevelParam) :
   | forallE t b m iht ihb =>
     intro c; cases c <;>
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihv, ihb, and_assoc]
   | lit l => intro b; cases b <;> simp [canonExprEqFast, canonExpr]

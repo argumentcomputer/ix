@@ -418,16 +418,19 @@ evidence is untrusted.
 **Binder contracts** (`IxC/Ixon/Types/Contract.lean`). Ixon binders carry
 usage, ownership and locality contracts, inside the committed bytes. The
 reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
-`all`'s input and result contracts (`contract`, `result`); it erases a
-`let`'s, since the checker's `letE` has no field for one. They are identity
-data. Structural equality, the expression hash and the specification
-comparisons see them; every specification carries the Lean fragment's
-defaults (`many`, `shared`, `unrestricted`), so a constant with other
-contracts does not meet it. Conversion compares input contracts: the binder
-congruences and η require equal input contracts as well as equal `pw` data,
-so the entry declines `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It
-never compares result contracts: a `lam` has none, so the type inferred for
-one carries the default, and `fun[linear] x => x` checks against
+`all`'s input and result contracts (`contract`, `result`), and a `let`'s
+let contract (`nonDep`, value or shared borrow, and the bound variable's
+contract) in the `letE`'s `LetMeta`; the Lean ingress gives Lean's lets
+`LetContract.lean nonDep`, as the compiler does. They are identity data. A
+`let` never reaches conversion: the annotation pass ζ-reduces it. Structural
+equality, the expression hash and the specification comparisons see them;
+every specification carries the Lean fragment's defaults (`many`, `shared`,
+`unrestricted`), so a constant with other contracts does not meet it.
+Conversion compares input contracts: the binder congruences and η require
+equal input contracts as well as equal `pw` data, so the entry declines
+`f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It never compares result
+contracts: a `lam` has none, so the type inferred for one carries the
+default, and `fun[linear] x => x` checks against
 `∀[linear] (x : Nat), unique Nat`. The model reads only `pw`, so an
 accepted environment says nothing about how a variable is used
 (`Tests/Ix/Kernel/Contracts.lean`). The kernel imports these data types
@@ -566,13 +569,17 @@ Frozen runtime closures (compiled functions; inherited externs):
 
 | Roots | Functions | Externs |
 | --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3274 | 82 |
-| reader `readRecords`, `readStream` | 2021 | 79 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5447 | 111 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5444 | 111 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5478 | 111 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5611 | 112 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5630 | 115 |
+| fold `Ix.Kernel.Cached.checkDecls` | 3303 | 82 |
+| reader `readRecords`, `readStream` | 2025 | 79 |
+| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5474 | 111 |
+| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5471 | 111 |
+| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5505 | 111 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5638 | 112 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 5657 | 115 |
+
+Step 5b's `LetMeta` (a `letE` keeps its Ixon let contract) moved them from
+3274, 2021, 5447, 5444, 5478, 5611 and 5630: the let contract's equality, hash
+and `Repr`.
 
 Step 5a (typed keys) moved them from 3350, 2018, 5656, 5653, 5687, 5820 and
 5839, externs unchanged: `Key`'s three computed-field overrides came in,

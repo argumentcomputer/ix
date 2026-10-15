@@ -165,7 +165,7 @@ partial def countUses (e : CExpr) : StateM (Std.HashMap CExpr Nat) Unit := do
   match e with
   | .app f a => countUses f; countUses a
   | .lam t b _ | .forallE t b _ => countUses t; countUses b
-  | .letE t v b => countUses t; countUses v; countUses b
+  | .letE t v b _ => countUses t; countUses v; countUses b
   | .proj _ _ x => countUses x
   | .fvar _ t => countUses t
   | _ => pure ()
@@ -197,8 +197,8 @@ where
     | .lam t b m => pure (.lam m.contract (← egress uses addrOf t) (← egress uses addrOf b))
     | .forallE t b m =>
       pure (.all m.contract m.result (← egress uses addrOf t) (← egress uses addrOf b))
-    | .letE t v b =>
-      pure (.letE (Ixon.LetContract.lean false) (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
+    | .letE t v b l =>
+      pure (.letE l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
     | .lit (.natVal n) => pure (.nat (← blobOf (natBytes n)))
     | .lit (.strVal s) => pure (.str (← blobOf s.toUTF8))
     | .proj s i x =>

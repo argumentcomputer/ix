@@ -295,7 +295,7 @@ theorem denoteMeta_substFvarAt
           (body.instantiate1 (.fvar (D + 1) ty)) with
       | none => rfl
       | some ba => rfl
-  | .letE ty val body, D, hpD, hfb => by
+  | .letE ty val body _, D, hpD, hfb => by
     -- task #241: `denoteMeta` is `none` at a `letE`, on both sides
     simp only [Ix.Kernel.Expr.substFvarAt, denoteMeta, Option.map_none]
   | .proj sn i e, D, hpD, hfb => by

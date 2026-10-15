@@ -43,7 +43,7 @@ open Ix.Kernel.Expr
   | .app f a => NoProjAt T i f ∧ NoProjAt T i a
   | .lam ty b _ => NoProjAt T i ty ∧ NoProjAt T i b
   | .forallE ty b _ => NoProjAt T i ty ∧ NoProjAt T i b
-  | .letE t v b => NoProjAt T i t ∧ NoProjAt T i v ∧ NoProjAt T i b
+  | .letE t v b _ => NoProjAt T i t ∧ NoProjAt T i v ∧ NoProjAt T i b
   | .fvar _ ty => NoProjAt T i ty
   | _ => True
 termination_by e => e.sizeF
@@ -68,7 +68,7 @@ variable {T : Key} {i : Nat}
     NoProjAt T i (.forallE ty b m) ↔ NoProjAt T i ty ∧ NoProjAt T i b := by
   rw [NoProjAt]
 @[simp] theorem noProjAt_letE {t v b : Expr} :
-    NoProjAt T i (.letE t v b) ↔
+    NoProjAt T i (.letE t v b lmeta) ↔
       NoProjAt T i t ∧ NoProjAt T i v ∧ NoProjAt T i b := by
   rw [NoProjAt]
 @[simp] theorem noProjAt_fvar {idx : Nat} {ty : Expr} :
@@ -116,7 +116,7 @@ theorem NoProjAt.instantiate1 {v : Expr} (hv : NoProjAt T i v) :
     rw [noProjAt_forallE] at h
     rw [Expr.instantiate1, noProjAt_forallE]
     exact ⟨ihty d h.1, ihb (d + 1) h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro d h
     rw [noProjAt_letE] at h
     rw [Expr.instantiate1, noProjAt_letE]
@@ -157,7 +157,7 @@ theorem NoProjAt.instantiateLevelParams (ks : List LevelParam) (us : List Level)
     rw [noProjAt_forallE] at h
     rw [Expr.instantiateLevelParams, noProjAt_forallE]
     exact ⟨ihty h.1, ihb h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro h
     rw [noProjAt_letE] at h
     rw [Expr.instantiateLevelParams, noProjAt_letE]
@@ -199,7 +199,7 @@ theorem NoProjAt.abstract1 :
     rw [noProjAt_forallE] at h
     rw [Expr.abstract1, noProjAt_forallE]
     exact ⟨ihty d k h.1, ihb d (k + 1) h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro d k h
     rw [noProjAt_letE] at h
     rw [Expr.abstract1, noProjAt_letE]
@@ -236,7 +236,7 @@ theorem noProjAt_of_constsResolve {env : Env} (hT : env.find? T = none) :
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     exact noProjAt_forallE.mpr ⟨ihty h.1, ihb h.2⟩
-  | letE ty v b ihty ihv ihb =>
+  | letE ty v b _ ihty ihv ihb =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     exact noProjAt_letE.mpr ⟨ihty h.1.1, ihv h.1.2, ihb h.2⟩
@@ -258,7 +258,7 @@ def ProjSlotsOk (env : Env) : Expr → Prop
   | .app f a => ProjSlotsOk env f ∧ ProjSlotsOk env a
   | .lam ty b _ => ProjSlotsOk env ty ∧ ProjSlotsOk env b
   | .forallE ty b _ => ProjSlotsOk env ty ∧ ProjSlotsOk env b
-  | .letE t v b => ProjSlotsOk env t ∧ ProjSlotsOk env v ∧ ProjSlotsOk env b
+  | .letE t v b _ => ProjSlotsOk env t ∧ ProjSlotsOk env v ∧ ProjSlotsOk env b
   | .fvar _ ty => ProjSlotsOk env ty
   | _ => True
 termination_by e => e.sizeF
@@ -275,7 +275,7 @@ def FvarTysOk (env : Env) : Expr → Prop
   | .app f a => FvarTysOk env f ∧ FvarTysOk env a
   | .lam ty b _ => FvarTysOk env ty ∧ FvarTysOk env b
   | .forallE ty b _ => FvarTysOk env ty ∧ FvarTysOk env b
-  | .letE t v b => FvarTysOk env t ∧ FvarTysOk env v ∧ FvarTysOk env b
+  | .letE t v b _ => FvarTysOk env t ∧ FvarTysOk env v ∧ FvarTysOk env b
   | _ => True
 termination_by e => e.sizeF
 decreasing_by all_goals first
@@ -302,7 +302,7 @@ variable {env : Env}
       ProjSlotsOk env ty ∧ ProjSlotsOk env b := by
   rw [ProjSlotsOk]
 @[simp] theorem projSlotsOk_letE {t v b : Expr} :
-    ProjSlotsOk env (.letE t v b) ↔
+    ProjSlotsOk env (.letE t v b lmeta) ↔
       ProjSlotsOk env t ∧ ProjSlotsOk env v ∧ ProjSlotsOk env b := by
   rw [ProjSlotsOk]
 @[simp] theorem projSlotsOk_fvar {idx : Nat} {ty : Expr} :
@@ -335,7 +335,7 @@ variable {env : Env}
       FvarTysOk env ty ∧ FvarTysOk env b := by
   rw [FvarTysOk]
 @[simp] theorem fvarTysOk_letE {t v b : Expr} :
-    FvarTysOk env (.letE t v b) ↔
+    FvarTysOk env (.letE t v b lmeta) ↔
       FvarTysOk env t ∧ FvarTysOk env v ∧ FvarTysOk env b := by
   rw [FvarTysOk]
 @[simp] theorem fvarTysOk_bvar {j : Nat} : FvarTysOk env (.bvar j) := by
@@ -371,7 +371,7 @@ theorem FvarTysOk.of_not_hasFvar :
     intro h
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
     exact fvarTysOk_forallE.mpr ⟨ihty h.1, ihb h.2⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro h
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
     exact fvarTysOk_letE.mpr ⟨iht h.1.1, ihv h.1.2, ihb h.2⟩
@@ -418,7 +418,7 @@ theorem ProjSlotsOk.fvarLeaves :
     rcases hl with hl | hl
     · exact ihty h.1 l hl
     · exact ihb h.2 l hl
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro h l hl
     rw [projSlotsOk_letE] at h
     rw [Expr.fvarLeaves, List.mem_append, List.mem_append] at hl
@@ -464,7 +464,7 @@ theorem FvarTysOk.instantiate1 {v : Expr} (hv : FvarTysOk env v) :
     rw [fvarTysOk_forallE] at h
     rw [Expr.instantiate1, fvarTysOk_forallE]
     exact ⟨ihty d h.1, ihb (d + 1) h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro d h
     rw [fvarTysOk_letE] at h
     rw [Expr.instantiate1, fvarTysOk_letE]
@@ -506,7 +506,7 @@ theorem ProjSlotsOk.abstract1 :
     rw [projSlotsOk_forallE] at h
     rw [Expr.abstract1, projSlotsOk_forallE]
     exact ⟨ihty d k h.1, ihb d (k + 1) h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro d k h
     rw [projSlotsOk_letE] at h
     rw [Expr.abstract1, projSlotsOk_letE]
@@ -543,7 +543,7 @@ theorem ProjSlotsOk.noProjAt (hslot : env.findProj? T i = none) :
     intro h
     rw [projSlotsOk_forallE] at h
     exact noProjAt_forallE.mpr ⟨ihty h.1, ihb h.2⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro h
     rw [projSlotsOk_letE] at h
     exact noProjAt_letE.mpr ⟨iht h.1, ihv h.2.1, ihb h.2.2⟩
@@ -652,7 +652,7 @@ theorem annotateCore_projSlotsOk {env : Env} :
       (Expr.FvarTysOk.instantiate1 (Expr.fvarTysOk_fvar.mpr hty'ok) body 0 hf.2)
     exact Expr.projSlotsOk_lam.mpr
       ⟨hty'ok, Expr.ProjSlotsOk.abstract1 body' d 0 hbody'ok⟩
-  | fuel + 1, .letE ty v b, d, e', h, hf => by
+  | fuel + 1, .letE ty v b _, d, e', h, hf => by
     rw [Expr.fvarTysOk_letE] at hf
     obtain ⟨ty', v', -, -, hb, -⟩ := annotateCore_letE_inv h
     exact annotateCore_projSlotsOk fuel _ hb

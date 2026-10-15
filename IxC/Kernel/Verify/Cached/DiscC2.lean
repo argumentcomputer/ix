@@ -123,7 +123,7 @@ theorem propIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
       | app f' a' => exact SimC.pure hs₈ rfl
       | lam t b' m => exact SimC.pure hs₈ rfl
       | forallE t b' m => exact SimC.pure hs₈ rfl
-      | letE t v b' => exact SimC.pure hs₈ rfl
+      | letE t v b' _ => exact SimC.pure hs₈ rfl
       | proj s i e => exact SimC.pure hs₈ rfl
     | bvar k => exact SimC.pure hs₄ rfl
     | const nm us => exact SimC.pure hs₄ rfl
@@ -132,7 +132,7 @@ theorem propIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
     | app f' a' => exact SimC.pure hs₄ rfl
     | lam t b' m => exact SimC.pure hs₄ rfl
     | forallE t b' m => exact SimC.pure hs₄ rfl
-    | letE t v b' => exact SimC.pure hs₄ rfl
+    | letE t v b' _ => exact SimC.pure hs₄ rfl
     | proj s i e => exact SimC.pure hs₄ rfl
 
 /-- `Expr.isBoolTrue` transported along the value equation. -/
@@ -285,7 +285,7 @@ theorem proofIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
       | app f' a' => exact SimC.pure hs₈ rfl
       | lam t b' m => exact SimC.pure hs₈ rfl
       | forallE t b' m => exact SimC.pure hs₈ rfl
-      | letE t v b' => exact SimC.pure hs₈ rfl
+      | letE t v b' _ => exact SimC.pure hs₈ rfl
       | proj sn j' e' => exact SimC.pure hs₈ rfl
     | bvar k => exact SimC.pure hs₄ rfl
     | const nm us => exact SimC.pure hs₄ rfl
@@ -294,7 +294,7 @@ theorem proofIrrelC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr}
     | app f' a' => exact SimC.pure hs₄ rfl
     | lam t b' m => exact SimC.pure hs₄ rfl
     | forallE t b' m => exact SimC.pure hs₄ rfl
-    | letE t v b' => exact SimC.pure hs₄ rfl
+    | letE t v b' _ => exact SimC.pure hs₄ rfl
     | proj sn j' e' => exact SimC.pure hs₄ rfl
 
 end Walks
@@ -426,7 +426,7 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
   | fvar idx t => exact SimC.pure hs₂ rfl
   | app f' a' => exact SimC.pure hs₂ rfl
   | lam t b' m => exact SimC.pure hs₂ rfl
-  | letE t v b' => exact SimC.pure hs₂ rfl
+  | letE t v b' _ => exact SimC.pure hs₂ rfl
   | proj sn j' e' => exact SimC.pure hs₂ rfl
 
 /-- Indexed readout of a related list (the `DenL.getD` transposition:
@@ -621,7 +621,7 @@ theorem structUnitCertC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode 
     exact SimC.pure hs₂ rfl
   | forallE t b' m =>
     exact SimC.pure hs₂ rfl
-  | letE t v b' =>
+  | letE t v b' _ =>
     exact SimC.pure hs₂ rfl
   | proj sn j' e' =>
     exact SimC.pure hs₂ rfl
@@ -1102,7 +1102,7 @@ theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mo
             exact SimC.pure hs rfl
           | forallE t b' m =>
             exact SimC.pure hs rfl
-          | letE t v b' =>
+          | letE t v b' _ =>
             exact SimC.pure hs rfl
           | proj sn jx e' =>
             exact SimC.pure hs rfl
@@ -1127,7 +1127,7 @@ theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mo
     exact SimC.pure hs rfl
   | forallE t b' m =>
     exact SimC.pure hs rfl
-  | letE t v b' =>
+  | letE t v b' _ =>
     exact SimC.pure hs rfl
   | proj sn jx e' =>
     exact SimC.pure hs rfl

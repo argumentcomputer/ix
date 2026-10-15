@@ -223,11 +223,11 @@ partial def specAllGo (fam : Family) (memo : Std.HashMap (Expr × Nat) Expr)
             let (d', memo) := specAllGo fam memo o d
             let (b', memo) := specAllGo fam memo (o + 1) b
             (.forallE d' b' m, memo)
-          | .letE t v b =>
+          | .letE t v b lmeta =>
             let (t', memo) := specAllGo fam memo o t
             let (v', memo) := specAllGo fam memo o v
             let (b', memo) := specAllGo fam memo (o + 1) b
-            (.letE t' v' b', memo)
+            (.letE t' v' b' lmeta, memo)
           | .proj s i x =>
             let (x', memo) := specAllGo fam memo o x
             (.proj s i x', memo)

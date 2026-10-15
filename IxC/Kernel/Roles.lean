@@ -494,7 +494,7 @@ def constKeysGo : Nat → List Expr → Std.HashSet Expr → Std.HashSet Key →
       | .app f a => constKeysGo n (f :: a :: todo) seen acc
       | .lam t b _ => constKeysGo n (t :: b :: todo) seen acc
       | .forallE t b _ => constKeysGo n (t :: b :: todo) seen acc
-      | .letE t v b => constKeysGo n (t :: v :: b :: todo) seen acc
+      | .letE t v b _ => constKeysGo n (t :: v :: b :: todo) seen acc
       | .lit (.natVal _) => constKeysGo n todo seen (litNatKeys.foldl (·.insert ·) acc)
       | .lit (.strVal _) => constKeysGo n todo seen (litStrKeys.foldl (·.insert ·) acc)
       | _ => constKeysGo n todo seen acc

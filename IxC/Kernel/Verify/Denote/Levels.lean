@@ -293,7 +293,7 @@ theorem denote_params_ext {env : Env} {cval : TConstVal}
     | .forallE b c dd => exact (k4 b c dd rfl).elim
     | .lam b c dd => exact (k5 b c dd rfl).elim
     | .app a b => exact (k6 a b rfl).elim
-    | .letE b c dd => exact (k7 b c dd rfl).elim
+    | .letE b c dd _ => exact (k7 b c dd _ rfl).elim
     | .proj a b c => exact (k8 a b c rfl).elim
     | .lit (.natVal n) => exact (k9 n rfl).elim
     | .lit (.strVal t) => exact (k10 t rfl).elim
@@ -380,7 +380,7 @@ theorem denote_instLevels {env : Env} {cval : TConstVal}
     | .forallE b c dd => exact (k4 b c dd rfl).elim
     | .lam b c dd => exact (k5 b c dd rfl).elim
     | .app a b => exact (k6 a b rfl).elim
-    | .letE b c dd => exact (k7 b c dd rfl).elim
+    | .letE b c dd _ => exact (k7 b c dd _ rfl).elim
     | .proj a b c => exact (k8 a b c rfl).elim
     | .lit (.natVal n) => exact (k9 n rfl).elim
     | .lit (.strVal t) => exact (k10 t rfl).elim

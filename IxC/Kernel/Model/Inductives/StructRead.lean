@@ -124,7 +124,7 @@ theorem denoteMeta_acvalWith_unmentioned
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -195,7 +195,7 @@ theorem denoteMeta_openPis {acval : Key → (LevelParam → Nat) → AnnotTerm} 
               by rw [show d + (i + 1) = d + 1 + i from by omega]; exact hpd⟩
       · exact nomatch hop
     | .bvar _, hop | .fvar _ _, hop | .sort _, hop | .const _ _, hop
-    | .app _ _, hop | .lam _ _ _, hop | .letE _ _ _, hop | .lit _, hop
+    | .app _ _, hop | .lam _ _ _, hop | .letE _ _ _ _, hop | .lit _, hop
     | .proj _ _ _, hop =>
       simp [openPisAtFvars] at hop
 

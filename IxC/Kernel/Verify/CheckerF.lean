@@ -59,7 +59,7 @@ theorem constsResolveF_eq (env : Env) :
   | .forallE ty body _ => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
       constsResolveF_eq env ty, constsResolveF_eq env body]
-  | .letE ty val body => by
+  | .letE ty val body _ => by
     simp only [Expr.constsResolveF, Expr.constsResolve,
       constsResolveF_eq env ty, constsResolveF_eq env val,
       constsResolveF_eq env body]

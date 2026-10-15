@@ -208,7 +208,7 @@ theorem denote_shiftFrom (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {p : Nat} :
       cases denote cval env φ (d + 1) (body.instantiate1 (.fvar d ty)) with
       | none => rfl
       | some B => simp only [Option.map_some, Term.liftN_lam]
-  | .letE ty val body, d, hpd, hfb => by
+  | .letE ty val body _, d, hpd, hfb => by
     -- task #241: `denote` is `none` at a `letE`, on both sides
     simp only [Expr.shiftFrom, denote_letE, Option.map_none]
   | .proj s i e, d, hpd, hfb => by
@@ -422,7 +422,7 @@ theorem denote_bvarsBelow (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
     | .forallE b c dd => exact (k4 b c dd rfl).elim
     | .lam b c dd => exact (k5 b c dd rfl).elim
     | .app a b => exact (k6 a b rfl).elim
-    | .letE b c dd => exact (k7 b c dd rfl).elim
+    | .letE b c dd _ => exact (k7 b c dd _ rfl).elim
     | .proj a b c => exact (k8 a b c rfl).elim
     | .lit (.natVal n) => exact (k9 n rfl).elim
     | .lit (.strVal t) => exact (k10 t rfl).elim

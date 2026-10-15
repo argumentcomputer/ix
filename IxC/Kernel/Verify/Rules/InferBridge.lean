@@ -146,7 +146,7 @@ theorem infer_bridge_succ (hw : WhnfBridge env fuel) (hd : DefEqBridge env fuel)
   intro d e t h
   match e, h with
   | .bvar _, h => exact (inferTypeCore_bvar_inv h).elim
-  | .letE _ _ _, h => exact (inferTypeCore_letE_inv h).elim
+  | .letE _ _ _ _, h => exact (inferTypeCore_letE_inv h).elim
   | .sort u, h =>
     obtain rfl := inferTypeCore_sort_inv h
     exact .sort
@@ -200,7 +200,7 @@ theorem inferIO_bridge_succ (hw : WhnfBridge env fuel) (hd : DefEqBridge env fue
   intro d e t h
   match e, h with
   | .bvar _, h => exact (inferTypeCoreIO_bvar_inv h).elim
-  | .letE _ _ _, h => exact (inferTypeCoreIO_letE_inv h).elim
+  | .letE _ _ _ _, h => exact (inferTypeCoreIO_letE_inv h).elim
   | .sort u, h =>
     rw [inferTypeCoreIO_sort_eq] at h
     obtain rfl := inferTypeCore_sort_inv h

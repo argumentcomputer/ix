@@ -61,7 +61,7 @@ theorem replacePisPw_instantiate1 {pw : PropWhen} {v : Expr} :
         replacePisPw_instantiate1 k (j + 1) hr']
       rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.replacePisPw] at h
 
 theorem pisToLamsPw_instantiate1 {pw : PropWhen} {v : Expr} :
@@ -83,7 +83,7 @@ theorem pisToLamsPw_instantiate1 {pw : PropWhen} {v : Expr} :
         pisToLamsPw_instantiate1 k (j + 1) hr']
       rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.pisToLamsPw] at h
 
 /-- An instantiation sequence pushes through the walk: the telescope
@@ -150,7 +150,7 @@ theorem replacePisPw_stripPis {pw : PropWhen} :
         obtain ⟨rfl, rfl⟩ := hs
         simp only [stripPis, replacePisPw_stripPis k hr' hs', Option.map_some, List.map_cons]
     | .bvar _, h, _ | .fvar _ _, h, _ | .sort _, h, _ | .const _ _, h, _
-    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _, h, _ | .lit _, h, _
+    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _ _, h, _ | .lit _, h, _
     | .proj _ _ _, h, _ => simp [Expr.replacePisPw] at h
 
 /-- Two strips compose. -/
@@ -176,7 +176,7 @@ theorem stripPis_append :
         rw [show k + 1 + m = (k + m) + 1 from by omega]
         simp only [stripPis, stripPis_append k hs h', Option.map_some, List.cons_append]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [stripPis] at h
 
 /-- The `instPisAt` peel at a spine is the strip's body instantiated
@@ -206,7 +206,7 @@ theorem instPisAt_of_stripPis :
         simp only [Expr.instPisAt, hds, Option.map_some, List.length_cons, Nat.add_sub_cancel]
         rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [stripPis] at h
 
 /-- An instantiation sequence pushes through a `λ` (the twin of
@@ -333,7 +333,7 @@ theorem NoProjAt.liftLooseBVars {k : Nat} :
     rw [noProjAt_forallE] at h
     simp only [Expr.liftLooseBVars, noProjAt_forallE]
     exact ⟨ihty h.1, ihb h.2⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro c h
     rw [noProjAt_letE] at h
     simp only [Expr.liftLooseBVars, noProjAt_letE]
@@ -372,7 +372,7 @@ theorem NoProjAt.stripPis :
         rw [noProjAt_forallE] at he
         exact NoProjAt.stripPis k hs he.2
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 theorem NoProjAt.replacePisPw {pw : PropWhen} :
@@ -389,7 +389,7 @@ theorem NoProjAt.replacePisPw {pw : PropWhen} :
       rw [noProjAt_forallE] at he ⊢
       exact ⟨he.1, NoProjAt.replacePisPw k hr' he.2 hb⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.replacePisPw] at h
 
 theorem NoProjAt.pisToLamsPw {pw : PropWhen} :
@@ -407,7 +407,7 @@ theorem NoProjAt.pisToLamsPw {pw : PropWhen} :
       rw [noProjAt_lam]
       exact ⟨he.1, NoProjAt.pisToLamsPw k hr' he.2 hb⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.pisToLamsPw] at h
 
 theorem NoProjAt.structPsAt (o nP : Nat) : ∀ a ∈ structPsAt o nP, NoProjAt T i a := by

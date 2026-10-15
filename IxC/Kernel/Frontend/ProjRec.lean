@@ -123,7 +123,7 @@ def occursConst (n : Key) : Expr → Bool
   | .app f a => occursConst n f || occursConst n a
   | .lam ty b _ => occursConst n ty || occursConst n b
   | .forallE ty b _ => occursConst n ty || occursConst n b
-  | .letE t v b => occursConst n t || occursConst n v || occursConst n b
+  | .letE t v b _ => occursConst n t || occursConst n v || occursConst n b
   | .proj _ _ e => occursConst n e
   | _ => false
 
@@ -160,7 +160,7 @@ def occursConstB (n : Key) : Nat → Expr → Option Bool × Nat
     match occursConstB n fuel ty with
     | (some false, fuel) => occursConstB n fuel b
     | r => r
-  | fuel + 1, .letE t v b =>
+  | fuel + 1, .letE t v b _ =>
     match occursConstB n fuel t with
     | (some false, fuel) =>
       match occursConstB n fuel v with
@@ -199,7 +199,7 @@ def occursConstGo (n : Key) (seen : Std.HashSet Expr) : Expr →
         | (false, seen) => (false, seen.insert e)
         | r => r
       | r => r
-  | e@(.letE t v b) =>
+  | e@(.letE t v b _) =>
     if seen.contains e then (false, seen) else
       match occursConstGo n seen t with
       | (false, seen) =>

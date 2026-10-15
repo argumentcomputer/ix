@@ -62,12 +62,12 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
   | const nmN us =>
     dsimp only
     exact SimC.pure hs ⟨hden, hw⟩
-  | letE t v b =>
+  | letE t v b lmeta =>
     dsimp only
     have hwtvb : Expr.WScoped d t ∧ Expr.WScoped d v ∧
         Expr.WScoped d b := by
       have hw' : Expr.WScoped d
-        (Expr.letE t v b) := hw
+        (Expr.letE t v b lmeta) := hw
       simpa only [Expr.WScoped] using hw'
     unfold annotateBody
     try dsimp only
@@ -309,7 +309,7 @@ theorem annotateBodyC_sim (ih : SSimC mode env f) (_henv : EnvWF env)
       exact SimC.throw
     | forallE t' b' m' =>
       exact SimC.throw
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact SimC.throw
     | proj s' j' e'' =>
       exact SimC.throw

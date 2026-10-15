@@ -209,7 +209,7 @@ the `.proj` clause. -/
     match denote cval env φ d f, denote cval env φ d a with
     | some vf, some va => some (.app vf va)
     | _, _ => none
-  | _, .letE _ _ _ =>
+  | _, .letE _ _ _ _ =>
     -- **`none` by design** (task #241): `Term` has no `letE` former.
     -- See "There is no `let` in the term language" above.
     none
@@ -305,7 +305,7 @@ theorem denote_lam (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
 
 theorem denote_letE (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)
     (d : Nat) (ty val body : Expr) :
-    denote cval env φ d (.letE ty val body) = none := by
+    denote cval env φ d (.letE ty val body lmeta) = none := by
   rw [denote]
 
 theorem denote_proj (cval : TConstVal) (env : Env) (φ : LevelParam → Nat)

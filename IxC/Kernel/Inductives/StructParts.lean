@@ -364,7 +364,7 @@ def Expr.hasLooseBVar : Nat → Expr → Bool
   | i, .app f a => hasLooseBVar i f || hasLooseBVar i a
   | i, .lam ty b _ => hasLooseBVar i ty || hasLooseBVar (i + 1) b
   | i, .forallE ty b _ => hasLooseBVar i ty || hasLooseBVar (i + 1) b
-  | i, .letE t v b =>
+  | i, .letE t v b _ =>
     hasLooseBVar i t || hasLooseBVar i v || hasLooseBVar (i + 1) b
   | i, .proj _ _ e => hasLooseBVar i e
 
@@ -385,7 +385,7 @@ def Expr.hasLooseBVarB (i : Nat) (e : Expr) : Bool :=
   | .app f a => hasLooseBVarB i f || hasLooseBVarB i a
   | .lam ty b _ => hasLooseBVarB i ty || hasLooseBVarB (i + 1) b
   | .forallE ty b _ => hasLooseBVarB i ty || hasLooseBVarB (i + 1) b
-  | .letE t v b =>
+  | .letE t v b _ =>
     hasLooseBVarB i t || hasLooseBVarB i v || hasLooseBVarB (i + 1) b
   | .proj _ _ e => hasLooseBVarB i e
 
@@ -467,7 +467,7 @@ def Expr.hasLooseBVarBGo (memo : Std.HashMap (Expr × Nat) Bool) (i : Nat) (e : 
           match hasLooseBVarBGo memo i ty with
           | (true, memo) => (true, memo)
           | (false, memo) => hasLooseBVarBGo memo (i + 1) b
-        | .letE t v b =>
+        | .letE t v b _ =>
           match hasLooseBVarBGo memo i t with
           | (true, memo) => (true, memo)
           | (false, memo) =>
@@ -573,14 +573,14 @@ theorem Expr.hasLooseBVarBGo_spec :
           rw [heq] at h1 h2
           obtain ⟨h3, h4⟩ := ihb (i + 1) memo₁ h2
           exact ⟨by simp [hspec, ← h1, h3], h4.insert (by simp [hspec, ← h1, h3])⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b lmeta iht ihv ihb =>
     intro i memo hm
     rw [hasLooseBVarBGo]
     split
     · rename_i hcut
       exact ⟨by rw [Expr.hasLooseBVarB, if_pos hcut], hm⟩
     · rename_i hcut
-      have hspec : Expr.hasLooseBVarB i (.letE t v b)
+      have hspec : Expr.hasLooseBVarB i (.letE t v b lmeta)
           = (Expr.hasLooseBVarB i t || Expr.hasLooseBVarB i v
               || Expr.hasLooseBVarB (i + 1) b) := by
         rw [Expr.hasLooseBVarB, if_neg hcut]
@@ -778,7 +778,7 @@ def Expr.mentionsConst (T : Key) : Expr → Bool
   | .fvar _ ty => ty.mentionsConst T
   | .app f a => f.mentionsConst T || a.mentionsConst T
   | .lam ty b _ | .forallE ty b _ => ty.mentionsConst T || b.mentionsConst T
-  | .letE ty v b => ty.mentionsConst T || v.mentionsConst T || b.mentionsConst T
+  | .letE ty v b _ => ty.mentionsConst T || v.mentionsConst T || b.mentionsConst T
   | .proj s _ e => s == T || e.mentionsConst T
 
 /-! ### `mentionsConst`, memoized (task #210 Part B)
@@ -837,7 +837,7 @@ def Expr.mentionsConstGo (T : Key) (memo : Std.HashMap Expr Bool) :
           let (b₁, memo) := mentionsConstGo T memo ty
           let (b₂, memo) := mentionsConstGo T memo body
           (b₁ || b₂, memo)
-        | .letE ty val body =>
+        | .letE ty val body _ =>
           let (b₁, memo) := mentionsConstGo T memo ty
           let (b₂, memo) := mentionsConstGo T memo val
           let (b₃, memo) := mentionsConstGo T memo body
@@ -898,7 +898,7 @@ theorem Expr.mentionsConstGo_spec {T : Key} :
       obtain ⟨h3, h4⟩ := ihb _ h2
       refine ⟨by simp [mentionsConst, h1, h3], ?_⟩
       exact h4.insert (by simp [mentionsConst, h1, h3])
-  | letE ty val body iht ihv ihb =>
+  | letE ty val body _ iht ihv ihb =>
     intro memo hm
     rw [mentionsConstGo]
     split

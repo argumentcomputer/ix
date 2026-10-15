@@ -180,7 +180,7 @@ theorem isEqHead_inv {e : Expr} (h : isEqHead e = true) :
   | .app _ _, h => simp [isEqHead] at h
   | .lam _ _ _, h => simp [isEqHead] at h
   | .forallE _ _ _, h => simp [isEqHead] at h
-  | .letE _ _ _, h => simp [isEqHead] at h
+  | .letE _ _ _ _, h => simp [isEqHead] at h
   | .lit _, h => simp [isEqHead] at h
   | .proj _ _ _, h => simp [isEqHead] at h
 

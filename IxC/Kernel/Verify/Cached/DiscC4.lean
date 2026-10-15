@@ -122,7 +122,7 @@ private theorem whnfCoreStepM_unfold (env : Env) (d : Nat)
           else pure (.proj sn i pe)
         | _ => pure (.proj sn i pe)
       | none => pure (.proj sn i pe)
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       throw (.internal "whnfCore: `let` in an annotated expression")
     | .bvar _ =>
       throw (.notImplemented "whnf beyond the supported fragment")) := by
@@ -252,9 +252,9 @@ theorem whnfAppC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
         fun _ _ _ h => nomatch h
       rw [whnfApp_ne_lam _ _ _ _ hnl]
       exact whnfAppIotaC_sim hμ ih henv hk hs hvr hwv hax hwxa hrest hwrest
-    | letE t vv b =>
+    | letE t vv b lmeta =>
       have hnl : ∀ ty' body' mb',
-          (Expr.letE t vv b)
+          (Expr.letE t vv b lmeta)
             ≠ Expr.lam ty' body' mb' :=
         fun _ _ _ h => nomatch h
       rw [whnfApp_ne_lam _ _ _ _ hnl]
@@ -487,9 +487,9 @@ theorem betaPeelC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f)
       obtain ⟨hvd, hwv'⟩ := hP
       exact whnfAppC_sim hμ ih henv hk hs₂ hvd hwv'
         (RelCL.cons hax hrest) hwargs
-    | letE tt vv b =>
+    | letE tt vv b lmeta =>
       have hnl : ∀ ty' body' mb',
-          (Expr.letE tt vv b)
+          (Expr.letE tt vv b lmeta)
             ≠ Expr.lam ty' body' mb' :=
         fun _ _ _ h => nomatch h
       rw [betaPeel_ne_lam _ _ _ _ hnl]
@@ -537,7 +537,7 @@ theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
   | const nm us => exact SimC.pure hs ⟨hden, hw⟩
   | lit l => exact SimC.pure hs ⟨hden, hw⟩
   | bvar k => exact SimC.throw
-  | letE t v b =>
+  | letE t v b _ =>
     -- task #241: both sides are the same positive `.internal` error
     exact SimC.throw
   | app g' a =>
@@ -647,7 +647,7 @@ theorem whnfCoreStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
         exact SimC.of_eff
           (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
-      | letE t v b =>
+      | letE t v b _ =>
         exact SimC.of_eff
           (pureC_eff hs₁ (x := Expr.proj sn ip pe)) _
           (fun pr hQ => ⟨hQ, hwproj⟩)
@@ -910,7 +910,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | sort u =>
       dsimp only
@@ -957,7 +957,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | const nm us =>
       dsimp only
@@ -1004,7 +1004,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | lit l =>
       dsimp only
@@ -1051,7 +1051,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | fvar idx tt =>
       dsimp only
@@ -1098,7 +1098,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | app f₂ a₂ =>
       dsimp only
@@ -1145,7 +1145,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | lam tt b mm =>
       dsimp only
@@ -1192,12 +1192,12 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
-    | letE tt vv b =>
+    | letE tt vv b lmeta =>
       dsimp only
       have hnl : ∀ dom' body' bi',
-          (Expr.letE tt vv b) ≠ Expr.forallE dom' body' bi' :=
+          (Expr.letE tt vv b lmeta) ≠ Expr.forallE dom' body' bi' :=
         fun _ _ _ h => nomatch h
       rw [inferSpine_ne_pi _ _ hnl]
       unfold inferSpineWhnf
@@ -1239,7 +1239,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | proj sn j pe =>
       dsimp only
@@ -1286,7 +1286,7 @@ theorem inferSpineC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
 
 theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat} :
@@ -1409,7 +1409,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | sort u =>
       dsimp only
@@ -1462,7 +1462,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | const nm us =>
       dsimp only
@@ -1515,7 +1515,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | lit l =>
       dsimp only
@@ -1568,7 +1568,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | fvar idx tt =>
       dsimp only
@@ -1621,7 +1621,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | app f₂ a₂ =>
       dsimp only
@@ -1674,7 +1674,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | lam tt b mm =>
       dsimp only
@@ -1727,12 +1727,12 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
-    | letE tt vv b =>
+    | letE tt vv b lmeta =>
       dsimp only
       have hnl : ∀ dom' body' bi',
-          (Expr.letE tt vv b) ≠ Expr.forallE dom' body' bi' :=
+          (Expr.letE tt vv b lmeta) ≠ Expr.forallE dom' body' bi' :=
         fun _ _ _ h => nomatch h
       rw [inferSpineIO_ne_pi _ _ hnl]
       unfold inferSpineIOWhnf
@@ -1780,7 +1780,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
     | proj sn j pe =>
       dsimp only
@@ -1833,7 +1833,7 @@ theorem inferSpineIOC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
       | fvar idx' t' => exact SimC.throw
       | app f' a' => exact SimC.throw
       | lam t' b' m' => exact SimC.throw
-      | letE t' v' b' => exact SimC.throw
+      | letE t' v' b' _ => exact SimC.throw
       | proj s' j' e' => exact SimC.throw
 
 theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
@@ -1863,7 +1863,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     dsimp only
     try dsimp only
     exact SimC.throw
-  | letE t v b =>
+  | letE t v b _ =>
     -- task #241: both sides are the same positive `.internal` error
     exact SimC.throw
   | fvar idx t =>
@@ -1965,7 +1965,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     | app f' a' => exact SimC.throw
     | lam t' b' m' => exact SimC.throw
     | forallE t' b' m' => exact SimC.throw
-    | letE t' v' b' => exact SimC.throw
+    | letE t' v' b' _ => exact SimC.throw
     | proj s' j' e' => exact SimC.throw
   | lam t b m =>
     dsimp only
@@ -2000,7 +2000,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     | app f' a' => exact SimC.throw
     | lam t' b' m' => exact SimC.throw
     | forallE t' b' m' => exact SimC.throw
-    | letE t' v' b' => exact SimC.throw
+    | letE t' v' b' _ => exact SimC.throw
     | proj s' j' e' => exact SimC.throw
   | app g' a =>
     dsimp only
@@ -2082,7 +2082,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     | app f' a' => exact SimC.throw
     | lam t' b' m' => exact SimC.throw
     | forallE t' b' m' => exact SimC.throw
-    | letE t' v' b' => exact SimC.throw
+    | letE t' v' b' _ => exact SimC.throw
     | proj s' j' e' => exact SimC.throw
 
 /-- The io inference body's walk (task #172 B4), at the gated mode
@@ -2121,7 +2121,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
     dsimp only
     try dsimp only
     exact SimC.throw
-  | letE t v b =>
+  | letE t v b _ =>
     -- task #241: both sides are the same positive `.internal` error
     exact SimC.throw
   | fvar idx t =>
@@ -2251,7 +2251,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
     | app f' a' => exact SimC.throw
     | lam t' b' m' => exact SimC.throw
     | forallE t' b' m' => exact SimC.throw
-    | letE t' v' b' => exact SimC.throw
+    | letE t' v' b' _ => exact SimC.throw
     | proj s' j' e' => exact SimC.throw
   | lam t b m =>
     dsimp only
@@ -2397,7 +2397,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
     | app f' a' => exact SimC.throw
     | lam t' b' m' => exact SimC.throw
     | forallE t' b' m' => exact SimC.throw
-    | letE t' v' b' => exact SimC.throw
+    | letE t' v' b' _ => exact SimC.throw
     | proj s' j' e' => exact SimC.throw
 
 

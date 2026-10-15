@@ -271,7 +271,7 @@ theorem WScoped_sharpen : ∀ {e : Expr} {d d' : Nat}, Expr.WScoped d e →
     simp only [Expr.WScoped] at h ⊢
     exact ⟨ihty h.1 (fun l hl' => hl l (by simp [Expr.fvarLeaves, hl'])),
       ihbody h.2 (fun l hl' => hl l (by simp [Expr.fvarLeaves, hl']))⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro d d' h hl
     simp only [Expr.WScoped] at h ⊢
     exact ⟨ihty h.1 (fun l hl' => hl l (by simp [Expr.fvarLeaves, hl'])),

@@ -119,7 +119,7 @@ theorem allLevelParamsDefinedP_spec {ps : List LevelParam} : ∀ {e : Expr},
     split
     · simp only [iht, ihb, Expr.allLevelParamsDefined]
     · next h => exact lpdP_cut_spec h
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     rw [Expr.allLevelParamsDefinedP.eq_def]
     split
     · simp only [iht, ihv, ihb, Expr.allLevelParamsDefined]
@@ -174,7 +174,7 @@ private theorem fvarLeaves_forallE (ty b : Expr) (m : BinderMeta) :
   rw [Expr.fvarLeaves]
 
 private theorem fvarLeaves_letE (ty v b : Expr) :
-    (Expr.letE ty v b).fvarLeaves
+    (Expr.letE ty v b lmeta).fvarLeaves
       = ty.fvarLeaves ++ v.fvarLeaves ++ b.fvarLeaves := by
   rw [Expr.fvarLeaves]
 
@@ -518,21 +518,21 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
           rw [h5, h2, hlv, List.mem_append]
           grind
         exact ⟨hmem, h6.dropGray (fun l hl => (hmem l).mpr (Or.inr hl))⟩
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd lmeta iht ihv ihb =>
     intro G acc seen hseen hG
-    have herase : (Expr.letE ty val bd)
-        = Expr.letE ty val bd := rfl
-    have hlv : (Expr.fvarLeaves (Expr.letE ty val bd))
+    have herase : (Expr.letE ty val bd lmeta)
+        = Expr.letE ty val bd lmeta := rfl
+    have hlv : (Expr.fvarLeaves (Expr.letE ty val bd lmeta))
         = (Expr.fvarLeaves ty) ++ (Expr.fvarLeaves val)
             ++ (Expr.fvarLeaves bd) := by
       rw [herase, fvarLeaves_letE]
-    have hsz : (Expr.letE ty val bd).sizeF
+    have hsz : (Expr.letE ty val bd lmeta).sizeF
         = ty.sizeF + val.sizeF + bd.sizeF + 1 := by
       rw [herase]; rfl
     rw [Expr.fvarLeavesGoC.eq_def]
     split
     · rename_i hcut
-      have : (Expr.fvarLeaves (Expr.letE ty val bd)) = [] :=
+      have : (Expr.fvarLeaves (Expr.letE ty val bd lmeta)) = [] :=
         fvarLeaves_nil_of_fvarsBelow_zero _
           (fvarB_le (Nat.le_of_eq (by simpa using hcut)))
       exact ⟨by simp [this], hseen⟩
@@ -543,7 +543,7 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
         · exact absurd (hG _ hgray) (Nat.lt_irrefl _)
       · dsimp only
         have hGt : ∀ y,
-            (G y ∨ y = (Expr.letE ty val bd)) →
+            (G y ∨ y = (Expr.letE ty val bd lmeta)) →
             ty.sizeF < y.sizeF := by
           intro y hy
           rcases hy with hy | hy
@@ -553,7 +553,7 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
         rcases hp : Expr.fvarLeavesGoC acc (seen.insert _ ()) ty with ⟨acc1, seen1⟩
         rw [hp] at h2 h3
         have hGv : ∀ y,
-            (G y ∨ y = (Expr.letE ty val bd)) →
+            (G y ∨ y = (Expr.letE ty val bd lmeta)) →
             val.sizeF < y.sizeF := by
           intro y hy
           rcases hy with hy | hy
@@ -563,7 +563,7 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
         rcases hq : Expr.fvarLeavesGoC acc1 seen1 val with ⟨acc2, seen2⟩
         rw [hq] at h5 h6
         have hGb : ∀ y,
-            (G y ∨ y = (Expr.letE ty val bd)) →
+            (G y ∨ y = (Expr.letE ty val bd lmeta)) →
             bd.sizeF < y.sizeF := by
           intro y hy
           rcases hy with hy | hy
@@ -574,7 +574,7 @@ theorem fvarLeavesGoC_spec : ∀ {e : Expr},
         rw [hr] at h8 h9
         have hmem : ∀ l, l ∈ leavesEr acc3 ↔
             l ∈ leavesEr acc ∨
-              l ∈ (Expr.fvarLeaves (Expr.letE ty val bd)) := by
+              l ∈ (Expr.fvarLeaves (Expr.letE ty val bd lmeta)) := by
           intro l
           rw [h8, h5, h2, hlv, List.mem_append, List.mem_append]
           grind
@@ -716,7 +716,7 @@ theorem leavesSubP_spec {bl : List (Nat × Expr)} {B' : List (Nat × Expr)}
     rw [Expr.leavesSubP.eq_def]; split
     · next h => exact leavesSubP_cut_spec h
     · simp only [fvarLeaves_forallE, List.all_append, iht, ihb]
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     rw [Expr.leavesSubP.eq_def]; split
     · next h => exact leavesSubP_cut_spec h
     · simp only [fvarLeaves_letE, List.all_append, iht, ihv, ihb]
@@ -1013,7 +1013,7 @@ theorem constsResolveFP_spec {fe : FEnv} : ∀ {e : Expr},
   | app f a ihf iha => rw [constsResolveFP, Expr.constsResolveF, ihf, iha]
   | lam ty bd m iht ihb => rw [constsResolveFP, Expr.constsResolveF, iht, ihb]
   | forallE ty bd m iht ihb => rw [constsResolveFP, Expr.constsResolveF, iht, ihb]
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     rw [constsResolveFP, Expr.constsResolveF, iht, ihv, ihb]
   | proj s i sub ihe => rw [constsResolveFP, Expr.constsResolveF, ihe]
 

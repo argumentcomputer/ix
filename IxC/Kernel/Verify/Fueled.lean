@@ -129,7 +129,7 @@ theorem iotaCerts_atF (d : Nat) (lic : Bool) (F : Nat) :
       | false => rfl
   | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
   | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _ _, _ :: _
-  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+  | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem defEqList_atF (d : Nat) (F : Nat) :
     ∀ (as bs : List Expr),

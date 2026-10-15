@@ -829,7 +829,7 @@ theorem defeqStepC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f
                   | _ =>
                     dsimp only
                     exact stuckIrrelC_sim hμ ih henv hs₆ haS hbS hwa' hwb'
-                | letE t₁ v₁ b₁ =>
+                | letE t₁ v₁ b₁ _ =>
                   cases b' with
                   | lam t₂ b₂ m₂ =>
                     dsimp only

@@ -182,7 +182,7 @@ theorem Expr.looseBVarsBounded_liftLooseBVars (k : Nat) :
     have := ihb (b := b + 1) (c := c + 1) hb.2
     rw [show b + 1 + k = b + k + 1 from by omega] at this
     exact this
-  | letE ty v body ihty ihv ihb =>
+  | letE ty v body _ ihty ihv ihb =>
     intro b c hb
     simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded, Bool.and_eq_true] at hb ⊢
     refine ⟨⟨ihty hb.1.1, ihv hb.1.2⟩, ?_⟩
@@ -267,7 +267,7 @@ theorem Expr.WScoped_shiftFrom {p : Nat} :
     simp only [Expr.WScoped] at hw
     simp only [Expr.shiftFrom, Expr.WScoped]
     exact ⟨ihty hw.1, ihb hw.2⟩
-  | letE ty v b ihty ihv ihb =>
+  | letE ty v b _ ihty ihv ihb =>
     intro d hw
     simp only [Expr.WScoped] at hw
     simp only [Expr.shiftFrom, Expr.WScoped]
@@ -412,7 +412,7 @@ theorem NoProjAt.getAppArgs : ∀ {e : Expr}, NoProjAt T i e → ∀ a ∈ e.get
     · exact NoProjAt.getAppArgs h.1 b hb
     · exact h.2
   | .bvar _, _, _, hb | .fvar _ _, _, _, hb | .sort _, _, _, hb | .const _ _, _, _, hb
-  | .lam _ _ _, _, _, hb | .forallE _ _ _, _, _, hb | .letE _ _ _, _, _, hb | .lit _, _, _, hb
+  | .lam _ _ _, _, _, hb | .forallE _ _ _, _, _, hb | .letE _ _ _ _, _, _, hb | .lit _, _, _, hb
   | .proj _ _ _, _, _, hb => by simp [Expr.getAppArgs] at hb
 
 /-- The binder domains of a stripped telescope carry no projection node
@@ -439,7 +439,7 @@ theorem NoProjAt.stripPis_doms :
         · exact he.1
         · exact NoProjAt.stripPis_doms k hs he.2 d hd
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 theorem NoProjAt.piBinders : ∀ {e : Expr}, NoProjAt T i e →
@@ -453,7 +453,7 @@ theorem NoProjAt.piBinders : ∀ {e : Expr}, NoProjAt T i e →
     · exact h.1
     · exact hbs d hd
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-  | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+  | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
     ⟨fun d hd => by simp [Expr.piBinders] at hd, h⟩
 
 theorem NoProjAt.mkPisOf : ∀ {bs : List (Expr × BinderMeta)} {b : Expr},

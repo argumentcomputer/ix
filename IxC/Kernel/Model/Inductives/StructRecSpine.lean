@@ -134,7 +134,7 @@ theorem instPisAt_openerRes {acval : Key → (LevelParam → Nat) → AnnotTerm}
       rw [show j + (sp.length + 1) = j + 1 + sp.length from by omega]
       exact this
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.instPisAt] at h
 
 /-! ## Graded applications along a fit -/

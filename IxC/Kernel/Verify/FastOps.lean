@@ -138,5 +138,5 @@ theorem instPisAtLift_append :
       instPisAtLift_append xs ys (body.instantiate1Lift x)]
   | x :: xs, ys, .bvar _ | x :: xs, ys, .fvar _ _ | x :: xs, ys, .sort _
   | x :: xs, ys, .const _ _ | x :: xs, ys, .app _ _ | x :: xs, ys, .lam _ _ _
-  | x :: xs, ys, .letE _ _ _ | x :: xs, ys, .lit _
+  | x :: xs, ys, .letE _ _ _ _ | x :: xs, ys, .lit _
   | x :: xs, ys, .proj _ _ _ => rfl

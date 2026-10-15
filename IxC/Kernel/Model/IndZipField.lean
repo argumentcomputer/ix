@@ -131,7 +131,7 @@ theorem zipFieldTermEq
     | fvar a c => simp [Expr.instPisAt] at hdr
     | lam b c d => simp [Expr.instPisAt] at hdr
     | app a b => simp [Expr.instPisAt] at hdr
-    | letE b c d => simp [Expr.instPisAt] at hdr
+    | letE b c d _ => simp [Expr.instPisAt] at hdr
     | proj a b c => simp [Expr.instPisAt] at hdr
     | lit l => simp [Expr.instPisAt] at hdr
   have hcdlen : cdoms.length = cnP + cnF := by

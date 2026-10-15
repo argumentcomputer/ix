@@ -320,7 +320,7 @@ private theorem acceptedReads_aux (m : EnvModel V env) (φ : LevelParam → Nat)
       obtain ⟨pa, hpa⟩ := ih htpe hws hb (fun l hl =>
         hL l (by simpa [Expr.fvarLeaves] using hl))
       exact ⟨_, denoteMeta_proj_tower hfe hpa⟩
-    | .letE ty val body =>
+    | .letE ty val body _ =>
       exact (Ix.Kernel.inferTypeCore_letE_inv h).elim
 
 /-- **`accepted_reads`, discharged** — the statement `SemTierInputsP`

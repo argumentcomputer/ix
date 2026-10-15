@@ -285,7 +285,7 @@ abbrev Contracts := List (Ixon.BinderContract × Ixon.ValueContract)
 def contractsOf : Ix.Kernel.Expr → Contracts
   | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contractsOf t ++ contractsOf b)
   | .app f a => contractsOf f ++ contractsOf a
-  | .letE t v b => contractsOf t ++ contractsOf v ++ contractsOf b
+  | .letE t v b _ => contractsOf t ++ contractsOf v ++ contractsOf b
   | .proj _ _ e | .fvar _ e => contractsOf e
   | _ => []
 

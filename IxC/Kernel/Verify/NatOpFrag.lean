@@ -66,7 +66,7 @@ theorem shallowE_of_natFragOk {env : Env} {c : Key} :
     simp only [shallowE, Bool.and_eq_true]
     exact ⟨shallowE_of_natFragOk h.1, shallowE_of_natFragOk h.2⟩
   | .bvar _, h | .lam _ _ _, h | .forallE _ _ _, h
-  | .letE _ _ _, h | .proj _ _ _, h | .lit _, h => by
+  | .letE _ _ _ _, h | .proj _ _ _, h | .lit _, h => by
     simp [natFragOk] at h
 
 /-! ## The equations are in the fragment

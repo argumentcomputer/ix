@@ -428,7 +428,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
                   | forallE t b' m =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                  | letE t v b' =>
+                  | letE t v b' _ =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
                   | proj sn jx e' =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -563,7 +563,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
                     | forallE t b' m =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                    | letE t v b' =>
+                    | letE t v b' _ =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
                     | proj sn jx e' =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -688,7 +688,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
                       | forallE t b' m =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                      | letE t v b' =>
+                      | letE t v b' _ =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
                       | proj sn jx e' =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -706,7 +706,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
           | app f' a' => exact SimC.pure hs ⟨hden, hmaj⟩
           | lam t b' m => exact SimC.pure hs ⟨hden, hmaj⟩
           | forallE t b' m => exact SimC.pure hs ⟨hden, hmaj⟩
-          | letE t v b' => exact SimC.pure hs ⟨hden, hmaj⟩
+          | letE t v b' _ => exact SimC.pure hs ⟨hden, hmaj⟩
           | lit l => exact SimC.pure hs ⟨hden, hmaj⟩
           | proj s'ᵢ j' e' => exact SimC.pure hs ⟨hden, hmaj⟩
         | axiomInfo cv => exact SimC.pure hs ⟨hden, hmaj⟩
@@ -1267,7 +1267,7 @@ theorem iotaRecC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
             exact SimC.pure hs₄ trivial
           | forallE t b' m =>
             exact SimC.pure hs₄ trivial
-          | letE t v b' =>
+          | letE t v b' _ =>
             exact SimC.pure hs₄ trivial
           | proj sn jx e' =>
             exact SimC.pure hs₄ trivial
@@ -1293,7 +1293,7 @@ theorem iotaRecC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
     exact SimC.pure hs trivial
   | forallE t b' m =>
     exact SimC.pure hs trivial
-  | letE t v b' =>
+  | letE t v b' _ =>
     exact SimC.pure hs trivial
   | proj s'ᵢ j' e' =>
     exact SimC.pure hs trivial

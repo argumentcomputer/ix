@@ -254,7 +254,7 @@ theorem normFieldDomsS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env)
         (fun s₂ q q' hs₂ hQ => ?_)
       obtain rfl : q = q' := hQ
       exact SimC.pure hs₂ rfl
-    | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _ | .letE _ _ _
+    | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _ | .letE _ _ _ _
     | .lit _ | .proj _ _ _ =>
       simp only [normFieldDoms]
       exact SimC.throw

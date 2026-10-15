@@ -290,7 +290,7 @@ theorem Expr.constsResolve_of_find {env env' : Env}
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨ihty h.1, ihbody h.2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨⟨ihty h.1.1, ihval h.1.2⟩, ihbody h.2⟩
@@ -499,7 +499,7 @@ theorem Expr.constsResolve_le {envA envB : Env}
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨ihty h.1, ihbody h.2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h ⊢
     exact ⟨⟨ihty h.1.1, ihval h.1.2⟩, ihbody h.2⟩

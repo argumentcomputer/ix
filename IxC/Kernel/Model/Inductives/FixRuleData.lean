@@ -46,7 +46,7 @@ theorem constsBound_getAppArgs {env₀ : Env} :
   | .const _ _, _, _, hx => nomatch hx
   | .lam _ _ _, _, _, hx => nomatch hx
   | .forallE _ _ _, _, _, hx => nomatch hx
-  | .letE _ _ _, _, _, hx => nomatch hx
+  | .letE _ _ _ _, _, _, hx => nomatch hx
   | .lit _, _, _, hx => nomatch hx
   | .proj _ _ _, _, _, hx => nomatch hx
 

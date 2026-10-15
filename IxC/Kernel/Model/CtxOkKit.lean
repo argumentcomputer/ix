@@ -141,7 +141,7 @@ theorem lam_body {d : Nat} {Δa : List AnnotTerm}
 
 theorem letE_ty {d : Nat} {Δa : List AnnotTerm}
     {ty val body : Expr}
-    (hC : CtxOk m φ d Δa (.letE ty val body)) :
+    (hC : CtxOk m φ d Δa (.letE ty val body lmeta)) :
     CtxOk m φ d Δa ty :=
   hC.of_subset fun _ hl => by
     rw [Expr.fvarLeaves]
@@ -149,7 +149,7 @@ theorem letE_ty {d : Nat} {Δa : List AnnotTerm}
 
 theorem letE_val {d : Nat} {Δa : List AnnotTerm}
     {ty val body : Expr}
-    (hC : CtxOk m φ d Δa (.letE ty val body)) :
+    (hC : CtxOk m φ d Δa (.letE ty val body lmeta)) :
     CtxOk m φ d Δa val :=
   hC.of_subset fun _ hl => by
     rw [Expr.fvarLeaves]
@@ -211,7 +211,7 @@ private theorem fvarsBelow_of_leaves : ∀ (e : Expr) {d : Nat},
     intro d h
     exact ⟨iht (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl])),
       ihb (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl]))⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro d h
     exact ⟨iht (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl])),
       ihv (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl])),
@@ -257,7 +257,7 @@ private theorem wScoped_of_leaves : ∀ (e : Expr) {d : Nat},
         (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl])),
       ihb hfb.2
         (fun l hl => h l (by simp [Ix.Kernel.Expr.fvarLeaves, hl]))⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro d hfb h
     rw [Ix.Kernel.Expr.WScoped]
     exact ⟨iht hfb.1

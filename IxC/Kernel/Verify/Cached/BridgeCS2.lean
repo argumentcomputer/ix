@@ -898,7 +898,7 @@ theorem checkProjShapeS_sim {pty cty : Expr} {nP nF : Nat}
   | .app _ _ => exact SimC.throw
   | .lam _ _ _ => exact SimC.throw
   | .forallE _ _ _ => exact SimC.throw
-  | .letE _ _ _ => exact SimC.throw
+  | .letE _ _ _ _ => exact SimC.throw
   | .lit _ => exact SimC.throw
   | .proj _ _ _ => exact SimC.throw
 

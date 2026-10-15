@@ -990,7 +990,7 @@ def whnfCoreStepI (r : CoreFnsI) (fe : FEnv) (depth : Nat)
           else pure e
         | _ => pure e
       | none => pure e
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- unreachable by construction, as in the spec body (task #241):
       -- the annotate pass returns the ζ reduct, so no `letE` node
       -- survives into the checked world
@@ -1383,7 +1383,7 @@ def inferBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- unreachable by construction, as in the spec body (task #241):
       -- the official `infer_let` triple lives in `annotateBodyI`'s own
       -- `.letE` clause, which returns the ζ reduct (task #217)
@@ -1833,7 +1833,7 @@ def annotateBodyI (r : CoreFnsI) (fe : FEnv) : Nat → Expr → CheckCM Expr :=
             annotPwLamI r fe (depth + 1) body'
           else pure mb.pw
         pure (Expr.lam ty' bAbs { mb with pw })
-    | .letE ty v b => do
+    | .letE ty v b _ => do
       -- official `infer_let` check order (see the spec body): the
       -- annotation is a type, the value's inferred type matches it,
       -- then the body with the value transparent (zeta at annotate;

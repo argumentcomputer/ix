@@ -20,7 +20,7 @@ Integers are TagN codes with no flag (`Ixon.putTagN 0`, `N0(n)` in
 `Role.all`: the specifications are closed over role keys, and the encoder
 refuses any other key (`specBytes` fails), so the encoding checks the
 closedness it relies on. Level parameters are positions; binder data are the
-`PropWhen` datum and the two contracts' bits.
+`PropWhen` datum and the two contracts' bits, a let's data its contract.
 
     specs     := N0(specVersion) N0(#roles) role*            (in `Role.all` order)
     role      := N0(index) spec N0(#block) index* N0(#deps) index*
@@ -34,9 +34,10 @@ closedness it relies on. Level parameters are positions; binder data are the
     val       := key N0(#lps) N0* expr
     expr      := 00 N0 | 01 N0 expr | 02 level | 03 key N0(#us) level*
                | 04 expr expr | 05 expr expr binder | 06 expr expr binder
-               | 07 expr expr expr | 08 N0 | 09 N0(#bytes) byte* | 0A key N0 expr
+               | 07 expr expr expr let | 08 N0 | 09 N0(#bytes) byte* | 0A key N0 expr
     level     := 00 | 01 level | 02 level level | 03 level level | 04 N0
     binder    := pw contract result
+    let       := bool(nonDep) (00 | 01)(value | borrowShared) contract
     pw        := 00 | 01 N0(#ps) N0*                          never | ifAllZero ps
 
 `caps`, `rule`, `hint` and `table` spell their fields in declaration order
@@ -91,7 +92,11 @@ def expr : Expr → EncM Unit
   | .app f a => do byte 4; expr f; expr a
   | .lam t b m => do byte 5; expr t; expr b; binder m
   | .forallE t b m => do byte 6; expr t; expr b; binder m
-  | .letE t v b => do byte 7; expr t; expr v; expr b
+  | .letE t v b l => do
+    byte 7; expr t; expr v; expr b
+    bool l.contract.nonDep
+    byte (match l.contract.kind with | .value => 0 | .borrowShared => 1)
+    byte l.contract.binder.toBits
   | .lit (.natVal n) => do byte 8; nat n
   | .lit (.strVal s) => do byte 9; list s.toUTF8.toList byte
   | .proj s i e => do byte 10; key s; nat i; expr e

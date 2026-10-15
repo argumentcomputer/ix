@@ -282,9 +282,9 @@ def instantiate1LiftP (v : Expr) (e : Expr) (d : Nat) : Expr :=
     mkLam (instantiate1LiftP v ty d) (instantiate1LiftP v body (d + 1)) m
   | .forallE ty body m .. =>
     mkForallE (instantiate1LiftP v ty d) (instantiate1LiftP v body (d + 1)) m
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     mkLetE (instantiate1LiftP v ty d) (instantiate1LiftP v val d)
-      (instantiate1LiftP v body (d + 1))
+      (instantiate1LiftP v body (d + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (instantiate1LiftP v sub d)
 
 theorem instantiate1LiftP_cut {v e : Expr} {d : Nat} (h : e.bvarB ≤ d) :
@@ -326,11 +326,11 @@ def instantiate1LiftXP (v : @& Expr) (memo : MemoXP (instantiate1LiftP v)) (e : 
     enterLiftP v ty d memo (fun h => instantiate1LiftXP v memo ty d h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLiftP v body (d + 1) memo (fun h => instantiate1LiftXP v memo body (d + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by rw [instantiate1LiftP]; simp [hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterLiftP v ty d memo (fun h => instantiate1LiftXP v memo ty d h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLiftP v val d memo (fun h => instantiate1LiftXP v memo val d h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterLiftP v body (d + 1) memo (fun h => instantiate1LiftXP v memo body (d + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by rw [instantiate1LiftP]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by rw [instantiate1LiftP]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterLiftP v sub d memo (fun h => instantiate1LiftXP v memo sub d h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by rw [instantiate1LiftP]; simp [hcut, hs, mkProj]⟩, memo)
@@ -352,8 +352,8 @@ def instantiate1P (v : Expr) (e : Expr) (d : Nat) : Expr :=
   | .lam ty body m .. => mkLam (instantiate1P v ty d) (instantiate1P v body (d + 1)) m
   | .forallE ty body m .. =>
     mkForallE (instantiate1P v ty d) (instantiate1P v body (d + 1)) m
-  | .letE ty val body .. =>
-    mkLetE (instantiate1P v ty d) (instantiate1P v val d) (instantiate1P v body (d + 1))
+  | .letE ty val body lmeta =>
+    mkLetE (instantiate1P v ty d) (instantiate1P v val d) (instantiate1P v body (d + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (instantiate1P v sub d)
 
 theorem instantiate1P_cut {v e : Expr} {d : Nat} (h : e.bvarB ≤ d) :
@@ -394,11 +394,11 @@ def instantiate1XP (v : @& Expr) (memo : MemoXP (instantiate1P v)) (e : @& Expr)
     enter1P v ty d memo (fun h => instantiate1XP v memo ty d h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enter1P v body (d + 1) memo (fun h => instantiate1XP v memo body (d + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by rw [instantiate1P]; simp [hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enter1P v ty d memo (fun h => instantiate1XP v memo ty d h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enter1P v val d memo (fun h => instantiate1XP v memo val d h) |>.lift fun (⟨v', hv⟩, memo) =>
     enter1P v body (d + 1) memo (fun h => instantiate1XP v memo body (d + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by rw [instantiate1P]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by rw [instantiate1P]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enter1P v sub d memo (fun h => instantiate1XP v memo sub d h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by rw [instantiate1P]; simp [hcut, hs, mkProj]⟩, memo)
@@ -429,8 +429,8 @@ def instantiateListP (vs : Array Expr) (e : Expr) (k : Nat) (d : Nat) : Expr :=
     | .lam ty body m .. => mkLam (instantiateListP vs ty k d) (instantiateListP vs body k (d + 1)) m
     | .forallE ty body m .. =>
       mkForallE (instantiateListP vs ty k d) (instantiateListP vs body k (d + 1)) m
-    | .letE ty val body .. =>
-      mkLetE (instantiateListP vs ty k d) (instantiateListP vs val k d) (instantiateListP vs body k (d + 1))
+    | .letE ty val body lmeta =>
+      mkLetE (instantiateListP vs ty k d) (instantiateListP vs val k d) (instantiateListP vs body k (d + 1)) lmeta
     | .proj sn i sub .. => mkProj sn i (instantiateListP vs sub k d)
 termination_by (k, sizeOf e)
 decreasing_by
@@ -489,11 +489,11 @@ def instantiateListXP (vs : @& Array Expr) (k : Nat) (memo : MemoXP (fun e d => 
     enterListP vs ty k d memo (fun h => instantiateListXP vs k memo ty d hk h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterListP vs body k (d + 1) memo (fun h => instantiateListXP vs k memo body (d + 1) hk h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by dsimp only; rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterListP vs ty k d memo (fun h => instantiateListXP vs k memo ty d hk h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterListP vs val k d memo (fun h => instantiateListXP vs k memo val d hk h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterListP vs body k (d + 1) memo (fun h => instantiateListXP vs k memo body (d + 1) hk h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by dsimp only; rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by dsimp only; rw [instantiateListP.eq_def]; simp [hk, hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterListP vs sub k d memo (fun h => instantiateListXP vs k memo sub d hk h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by dsimp only; rw [instantiateListP.eq_def]; simp [hk, hcut, hs, mkProj]⟩, memo)
@@ -533,8 +533,8 @@ def instantiateRevP (vs : Array Expr) (e : Expr) (k : Nat) (d : Nat) : Expr :=
     | .lam ty body m .. => mkLam (instantiateRevP vs ty k d) (instantiateRevP vs body k (d + 1)) m
     | .forallE ty body m .. =>
       mkForallE (instantiateRevP vs ty k d) (instantiateRevP vs body k (d + 1)) m
-    | .letE ty val body .. =>
-      mkLetE (instantiateRevP vs ty k d) (instantiateRevP vs val k d) (instantiateRevP vs body k (d + 1))
+    | .letE ty val body lmeta =>
+      mkLetE (instantiateRevP vs ty k d) (instantiateRevP vs val k d) (instantiateRevP vs body k (d + 1)) lmeta
     | .proj sn i sub .. => mkProj sn i (instantiateRevP vs sub k d)
 termination_by (k, sizeOf e)
 decreasing_by
@@ -594,11 +594,11 @@ def instantiateRevXP (vs : @& Array Expr) (k : Nat) (memo : MemoXP (fun e d => i
     enterRevP vs ty k d memo (fun h => instantiateRevXP vs k memo ty d hk h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterRevP vs body k (d + 1) memo (fun h => instantiateRevXP vs k memo body (d + 1) hk h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by dsimp only; rw [instantiateRevP.eq_def]; simp [hk, hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterRevP vs ty k d memo (fun h => instantiateRevXP vs k memo ty d hk h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterRevP vs val k d memo (fun h => instantiateRevXP vs k memo val d hk h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterRevP vs body k (d + 1) memo (fun h => instantiateRevXP vs k memo body (d + 1) hk h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by dsimp only; rw [instantiateRevP.eq_def]; simp [hk, hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by dsimp only; rw [instantiateRevP.eq_def]; simp [hk, hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterRevP vs sub k d memo (fun h => instantiateRevXP vs k memo sub d hk h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by dsimp only; rw [instantiateRevP.eq_def]; simp [hk, hcut, hs, mkProj]⟩, memo)
@@ -627,8 +627,8 @@ def abstract1P (d : Nat) (e : Expr) (k : Nat) : Expr :=
   | .app f a .. => mkApp (abstract1P d f k) (abstract1P d a k)
   | .lam ty body m .. => mkLam (abstract1P d ty k) (abstract1P d body (k + 1)) m
   | .forallE ty body m .. => mkForallE (abstract1P d ty k) (abstract1P d body (k + 1)) m
-  | .letE ty val body .. =>
-    mkLetE (abstract1P d ty k) (abstract1P d val k) (abstract1P d body (k + 1))
+  | .letE ty val body lmeta =>
+    mkLetE (abstract1P d ty k) (abstract1P d val k) (abstract1P d body (k + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (abstract1P d sub k)
 
 theorem abstract1P_cut {d : Nat} {e : Expr} {k : Nat} (h : e.fvarB ≤ d) :
@@ -667,11 +667,11 @@ def abstract1XP (d : Nat) (memo : MemoXP (abstract1P d)) (e : @& Expr) (k : Nat)
     enterAbs1P d ty k memo (fun h => abstract1XP d memo ty k h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterAbs1P d body (k + 1) memo (fun h => abstract1XP d memo body (k + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by rw [abstract1P]; simp [hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterAbs1P d ty k memo (fun h => abstract1XP d memo ty k h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterAbs1P d val k memo (fun h => abstract1XP d memo val k h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterAbs1P d body (k + 1) memo (fun h => abstract1XP d memo body (k + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by rw [abstract1P]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by rw [abstract1P]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterAbs1P d sub k memo (fun h => abstract1XP d memo sub k h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by rw [abstract1P]; simp [hcut, hs, mkProj]⟩, memo)
@@ -694,9 +694,9 @@ def abstractRangeP (d k : Nat) (e : Expr) (c : Nat) : Expr :=
     mkLam (abstractRangeP d k ty c) (abstractRangeP d k body (c + 1)) m
   | .forallE ty body m .. =>
     mkForallE (abstractRangeP d k ty c) (abstractRangeP d k body (c + 1)) m
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     mkLetE (abstractRangeP d k ty c) (abstractRangeP d k val c)
-      (abstractRangeP d k body (c + 1))
+      (abstractRangeP d k body (c + 1)) lmeta
   | .proj sn i sub .. => mkProj sn i (abstractRangeP d k sub c)
 
 theorem abstractRangeP_cut {d k : Nat} {e : Expr} {c : Nat} (h : e.fvarB ≤ d) :
@@ -736,11 +736,11 @@ def abstractRangeXP (d k : Nat) (memo : MemoXP (abstractRangeP d k)) (e : @& Exp
     enterAbsRP d k ty c memo (fun h => abstractRangeXP d k memo ty c h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterAbsRP d k body (c + 1) memo (fun h => abstractRangeXP d k memo body (c + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' m, by rw [abstractRangeP]; simp [hcut, ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterAbsRP d k ty c memo (fun h => abstractRangeXP d k memo ty c h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterAbsRP d k val c memo (fun h => abstractRangeXP d k memo val c h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterAbsRP d k body (c + 1) memo (fun h => abstractRangeXP d k memo body (c + 1) h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by rw [abstractRangeP]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by rw [abstractRangeP]; simp [hcut, ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterAbsRP d k sub c memo (fun h => abstractRangeXP d k memo sub c h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by rw [abstractRangeP]; simp [hcut, hs, mkProj]⟩, memo)
@@ -771,9 +771,9 @@ def instLevelParamsP (ks : List LevelParam) (us : List Level) (e : Expr) : Expr 
   | .forallE ty body m .. =>
     mkForallE (instLevelParamsP ks us ty) (instLevelParamsP ks us body)
       { m with pw := Level.substPW ks us m.pw }
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     mkLetE (instLevelParamsP ks us ty) (instLevelParamsP ks us val)
-      (instLevelParamsP ks us body)
+      (instLevelParamsP ks us body) lmeta
   | .proj s i sub .. => mkProj s i (instLevelParamsP ks us sub)
 
 theorem instLevelParamsP_cut {ks : List LevelParam} {us : List Level} {e : Expr}
@@ -821,11 +821,11 @@ def instLevelParamsXP (ks : @& List LevelParam) (us : @& List Level)
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
     Squash.mk (⟨mkForallE ty' b' { m with pw := Level.substPW ks us m.pw },
       by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hb, mkForallE]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterLPP ks us ty memo (fun h => instLevelParamsXP ks us memo ty h) |>.lift fun (⟨ty', ht⟩, memo) =>
     enterLPP ks us val memo (fun h => instLevelParamsXP ks us memo val h) |>.lift fun (⟨v', hv⟩, memo) =>
     enterLPP ks us body memo (fun h => instLevelParamsXP ks us memo body h) |>.lift fun (⟨b', hb⟩, memo) =>
-    Squash.mk (⟨mkLetE ty' v' b', by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hv, hb, mkLetE]⟩, memo)
+    Squash.mk (⟨mkLetE ty' v' b' lmeta, by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [ht, hv, hb, mkLetE]⟩, memo)
   | .proj sn i sub .. =>
     enterLPP ks us sub memo (fun h => instLevelParamsXP ks us memo sub h) |>.lift fun (⟨s', hs⟩, memo) =>
     Squash.mk (⟨mkProj sn i s', by rw [instLevelParamsP.eq_def, if_neg hcut]; simp only [hs, mkProj]⟩, memo)
@@ -1007,7 +1007,7 @@ def wscopedBP (e : Expr) (d : Nat) : Bool :=
   | .fvar idx ty .. => idx < d && wscopedBP ty idx
   | .app f a .. => wscopedBP f d && wscopedBP a d
   | .lam ty body _ .. | .forallE ty body _ .. => wscopedBP ty d && wscopedBP body d
-  | .letE ty val body .. => wscopedBP ty d && wscopedBP val d && wscopedBP body d
+  | .letE ty val body _ => wscopedBP ty d && wscopedBP val d && wscopedBP body d
   | .proj _ _ sub .. => wscopedBP sub d
 
 theorem wscopedBP_cut {e : Expr} {d : Nat} (h : (e.fvarB == 0) = true) :
@@ -1068,7 +1068,7 @@ def wscopedBXP (memo : MemoB wscopedBP) (e : @& Expr) (d : Nat)
       Squash.mk (⟨rb, by rw [wscopedBP]; simp [hcut, ← ht, ← hb]⟩, memo)
     | false, ht =>
       Squash.mk (⟨false, by rw [wscopedBP]; simp [hcut, ← ht]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterWSP ty d memo (fun h => wscopedBXP memo ty d h) |>.lift fun (⟨rt, ht⟩, memo) =>
     match rt, ht with
     | true, ht =>
@@ -1144,7 +1144,7 @@ def fvarLeavesGoC (acc : List (Nat × Expr))
     | .lam ty body _ .. | .forallE ty body _ .. =>
       let (acc, seen) := fvarLeavesGoC acc seen ty
       fvarLeavesGoC acc seen body
-    | .letE ty val body .. =>
+    | .letE ty val body _ =>
       let (acc, seen) := fvarLeavesGoC acc seen ty
       let (acc, seen) := fvarLeavesGoC acc seen val
       fvarLeavesGoC acc seen body
@@ -1173,7 +1173,7 @@ def leavesSubP (bl : List (Nat × Expr)) (e : Expr) : Bool :=
   | .fvar idx ty .. => leafMem bl idx ty && leavesSubP bl ty
   | .app f a .. => leavesSubP bl f && leavesSubP bl a
   | .lam ty body _ .. | .forallE ty body _ .. => leavesSubP bl ty && leavesSubP bl body
-  | .letE ty val body .. =>
+  | .letE ty val body _ =>
     leavesSubP bl ty && leavesSubP bl val && leavesSubP bl body
   | .proj _ _ sub .. => leavesSubP bl sub
 
@@ -1236,7 +1236,7 @@ def leavesSubXP (bl : @& List (Nat × Expr)) (memo : MemoB0 (leavesSubP bl))
       Squash.mk (⟨rb, by rw [leavesSubP]; simp [hcut, ← ht, ← hb]⟩, memo)
     | false, ht =>
       Squash.mk (⟨false, by rw [leavesSubP]; simp [hcut, ← ht]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterLSub bl ty memo (fun h => leavesSubXP bl memo ty h) |>.lift fun (⟨rt, ht⟩, memo) =>
     match rt, ht with
     | true, ht =>
@@ -1325,7 +1325,7 @@ def allLevelParamsDefinedP (params : List LevelParam) (e : Expr) : Bool :=
     | .lam ty body m .. | .forallE ty body m .. =>
       allLevelParamsDefinedP params ty && allLevelParamsDefinedP params body
         && m.pw.paramsDefined params
-    | .letE ty val body .. =>
+    | .letE ty val body _ =>
       allLevelParamsDefinedP params ty && allLevelParamsDefinedP params val
         && allLevelParamsDefinedP params body
     | .proj _ _ sub .. => allLevelParamsDefinedP params sub
@@ -1399,7 +1399,7 @@ def allLevelParamsDefinedXP (params : @& List LevelParam)
         by rw [allLevelParamsDefinedP]; simp [hcut, ← ht, ← hb]⟩, memo)
     | false, ht =>
       Squash.mk (⟨false, by rw [allLevelParamsDefinedP]; simp [hcut, ← ht]⟩, memo)
-  | .letE ty val body .. =>
+  | .letE ty val body lmeta =>
     enterLPD params ty memo (fun h => allLevelParamsDefinedXP params memo ty h)
       |>.lift fun (⟨rt, ht⟩, memo) =>
     match rt, ht with

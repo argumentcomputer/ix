@@ -399,6 +399,7 @@ Ix.Cert.HashAgreement →
 -- derived shape off the input keys) and drops `anonymous` (keys have no
 -- `etaCtor` sentinel) and `recursor` (no key spells a recursor the checker
 -- reads).
+-- Step 5b: `letE` carries a fourth field, its `LetMeta`, which a renaming keeps.
 /-- info: Ix.Cert.Rename.expr.eq_def : ∀ (σ : Ix.Kernel.Key → Ix.Kernel.Key) (x : Ix.Kernel.Expr),
   Ix.Cert.Rename.expr σ x =
     match x with
@@ -409,7 +410,7 @@ Ix.Cert.HashAgreement →
     | f.app a => (Ix.Cert.Rename.expr σ f).app (Ix.Cert.Rename.expr σ a)
     | t.lam b m => (Ix.Cert.Rename.expr σ t).lam (Ix.Cert.Rename.expr σ b) m
     | t.forallE b m => (Ix.Cert.Rename.expr σ t).forallE (Ix.Cert.Rename.expr σ b) m
-    | t.letE v b => (Ix.Cert.Rename.expr σ t).letE (Ix.Cert.Rename.expr σ v) (Ix.Cert.Rename.expr σ b)
+    | t.letE v b l => (Ix.Cert.Rename.expr σ t).letE (Ix.Cert.Rename.expr σ v) (Ix.Cert.Rename.expr σ b) l
     | Ix.Kernel.Expr.lit l => Ix.Kernel.Expr.lit l
     | Ix.Kernel.Expr.proj n i e => Ix.Kernel.Expr.proj (σ n) i (Ix.Cert.Rename.expr σ e) -/
 #guard_msgs (whitespace := lax) in
@@ -505,7 +506,7 @@ fun σ e => { consts := List.map (Ix.Cert.Rename.constantInfo σ) e.consts } -/
     | f.app a => Ix.Cert.Keys.expr f ++ Ix.Cert.Keys.expr a
     | t.lam b m => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr b
     | t.forallE b m => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr b
-    | t.letE v b => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr v ++ Ix.Cert.Keys.expr b
+    | t.letE v b l => Ix.Cert.Keys.expr t ++ Ix.Cert.Keys.expr v ++ Ix.Cert.Keys.expr b
     | Ix.Kernel.Expr.proj n idx e => n :: Ix.Cert.Keys.expr e
     | x => [] -/
 #guard_msgs (whitespace := lax) in

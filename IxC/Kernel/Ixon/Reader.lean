@@ -115,9 +115,8 @@ Two kinds of keys are not of this form:
 * Every binder carries `pw := .never` (the checker's annotation pass computes
   the datum) and keeps its Ixon contracts in `BinderMeta`: a `lam`'s
   binder contract as `contract` (its `result` is `shared`), an `all`'s input
-  contract as `contract` and its result contract as `result`. A `letE`'s
-  contract (`Ixon.LetContract`) is erased: the checker's `letE` has no field
-  for it yet (it is to arrive with a `LetMeta` field).
+  contract as `contract` and its result contract as `result`, and a `letE`'s
+  contract (`Ixon.LetContract`) as its `LetMeta`'s `contract`.
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
@@ -666,8 +665,8 @@ def convExpr (e : ECx) (tbl : Array (ReadM CExpr)) : Ixon.Expr → ReadM CExpr
   | .all c r t b => do
     pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b)
       { pw := .never, contract := c, result := r })
-  | .letE _ t v b => do
-    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b))
+  | .letE c t v b => do
+    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { contract := c })
   | .share i =>
     match tbl[i.toNat]? with
     | some r => r

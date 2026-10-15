@@ -180,7 +180,7 @@ theorem piBits_of_infer {env : Env} (hver : mode.verifiedChecks = true) :
         · exact nomatch hop
     | .bvar _, hop, _ | .fvar _ _, hop, _ | .sort _, hop, _
     | .const _ _, hop, _ | .app _ _, hop, _ | .lam _ _ _, hop, _
-    | .letE _ _ _, hop, _ | .lit _, hop, _ | .proj _ _ _, hop, _ =>
+    | .letE _ _ _ _, hop, _ | .lit _, hop, _ | .proj _ _ _, hop, _ =>
       simp [openPisAtFvars] at hop
 
 /-! ## The bits, read -/
@@ -212,7 +212,7 @@ theorem stripPisAV_bits {acval : Key → (LevelParam → Nat) → AnnotTerm} {en
       · exact hhead
       · exact stripPisAV_bits n htail hba hst' p hp
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       exact h.elim
 
 /-! ## `openPisAtFvars` bookkeeping -/
@@ -233,7 +233,7 @@ theorem openPisAtFvars_length :
         rw [← h.1, List.length_cons, openPisAtFvars_length n h']
       · exact nomatch h
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [openPisAtFvars] at h
 
 /-- Two consecutive openings are one. -/
@@ -263,7 +263,7 @@ theorem openPisAtFvars_add :
         rfl
       · exact nomatch h
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [openPisAtFvars] at h
 
 /-- Opening a telescope whose stripped body is a sort reaches that
@@ -298,7 +298,7 @@ theorem openPisAtFvars_of_stripPis_sort :
         | none => none) = _
       rw [hop]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 end Ix.Kernel.Model

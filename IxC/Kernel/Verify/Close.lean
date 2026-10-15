@@ -31,7 +31,7 @@ number of binders crossed. -/
   | .app f a, k => .app (closeN d f k) (closeN d a k)
   | .lam ty body m, k => .lam (closeN d ty k) (closeN d body (k + 1)) m
   | .forallE ty body m, k => .forallE (closeN d ty k) (closeN d body (k + 1)) m
-  | .letE ty v b, k => .letE (closeN d ty k) (closeN d v k) (closeN d b (k + 1))
+  | .letE ty v b lmeta, k => .letE (closeN d ty k) (closeN d v k) (closeN d b (k + 1)) lmeta
   | .lit l, _ => .lit l
   | .proj s i e, k => .proj s i (closeN d e k)
 

@@ -90,9 +90,9 @@ theorem denoteMeta_erasedEq {acval : Key → (LevelParam → Nat) → AnnotTerm}
         denoteMeta_erasedEq (Expr.ErasedEq.instantiate1 h2
           (show Expr.ErasedEq (.fvar d ty) (.fvar d ty') from rfl))
           (d + 1)]
-  | .letE ty vl body, e₂, he, d => by
+  | .letE ty vl body _, e₂, he, d => by
     match e₂, he with
-    | .letE ty' vl' body', he => rw [denoteMeta, denoteMeta]
+    | .letE ty' vl' body' _, he => rw [denoteMeta, denoteMeta]
   | .lit l, e₂, he, _ => by
     match e₂, he with
     | .lit l', he => obtain rfl : l = l' := he; rfl
@@ -165,7 +165,7 @@ theorem denoteMeta_renameConsts_resolve {f : Key → Key}
       denoteMeta_renameConsts_resolve hup hval
         (body.instantiate1 (.fvar d ty)) (d + 1)
         (Expr.constsResolve_instantiate1 hr.1 0 hr.2)]
-  | .letE ty val body, d, hr => by
+  | .letE ty val body _, d, hr => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
   termination_by e => e.sizeB

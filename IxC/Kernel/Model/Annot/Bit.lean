@@ -176,7 +176,7 @@ checker runs, no fuel, no mode.  See the module docstring for the
     let fa ← denoteMeta acval env φ d f
     let aa ← denoteMeta acval env φ d a
     some (.app fa aa)
-  | _, .letE _ _ _ =>
+  | _, .letE _ _ _ _ =>
     -- **`none` by design** (task #241).  `AnnotTerm` has no `letE`
     -- former, and it needs none: the checker's own `letE` arms are
     -- positive errors, so an accepting run never reaches this clause
@@ -378,7 +378,7 @@ theorem denoteMeta_erase {acval : Key → (LevelParam → Nat) → AnnotTerm}
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app fe a => exact absurd rfl (happ fe a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

@@ -162,7 +162,7 @@ theorem iotaCerts_fst (d : Nat) (lic : Bool) :
       | false => rfl
   | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
   | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _ _, _ :: _
-  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+  | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem iotaCerts_snd (d : Nat) (lic : Bool) :
     ∀ (ty : Expr) (args : List Expr),
@@ -200,7 +200,7 @@ theorem iotaCerts_snd (d : Nat) (lic : Bool) :
       | false => rfl
   | .bvar _, _ :: _ | .fvar _ _, _ :: _ | .sort _, _ :: _
   | .const _ _, _ :: _ | .app _ _, _ :: _ | .lam _ _ _, _ :: _
-  | .letE _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
+  | .letE _ _ _ _, _ :: _ | .lit _, _ :: _ | .proj _ _ _, _ :: _ => rfl
 
 theorem defEqList_fst (d : Nat) :
     ∀ (as bs : List Expr),

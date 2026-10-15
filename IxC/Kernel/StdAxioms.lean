@@ -109,7 +109,7 @@ def Expr.erasePw : Expr → Expr
   | .app f a => .app f.erasePw a.erasePw
   | .lam ty b bm => .lam ty.erasePw b.erasePw { bm with pw := .never }
   | .forallE ty b bm => .forallE ty.erasePw b.erasePw { bm with pw := .never }
-  | .letE ty v b => .letE ty.erasePw v.erasePw b.erasePw
+  | .letE ty v b lmeta => .letE ty.erasePw v.erasePw b.erasePw lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i e.erasePw
 
@@ -149,8 +149,8 @@ def Expr.erasePwEq : Expr → Expr → Bool
       m.contract == m'.contract && m.result == m'.result
   | .forallE t b m, .forallE t' b' m' => t.erasePwEq t' && b.erasePwEq b' &&
       m.contract == m'.contract && m.result == m'.result
-  | .letE t v b, .letE t' v' b' =>
-      t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b'
+  | .letE t v b l, .letE t' v' b' l' =>
+      t.erasePwEq t' && v.erasePwEq v' && b.erasePwEq b' && l == l'
   | .lit l, .lit l' => l == l'
   | .proj s i e, .proj s' i' e' => s == s' && i == i' && e.erasePwEq e'
   | _, _ => false
@@ -179,7 +179,7 @@ theorem Expr.erasePwEq_iff :
   | forallE t b m iht ihb =>
     intro c; cases c <;>
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihb, and_assoc]
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [Expr.erasePwEq, Expr.erasePw, Bool.and_eq_true, iht, ihv, ihb, and_assoc]
   | lit l => intro b; cases b <;> simp [Expr.erasePwEq, Expr.erasePw]

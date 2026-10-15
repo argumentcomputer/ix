@@ -183,7 +183,7 @@ theorem Expr.mentionsFvar_forallE (q : Nat) (ty b : Expr) (m : BinderMeta) :
   simp [Expr.mentionsFvar, Expr.fvarLeaves]
 
 theorem Expr.mentionsFvar_letE (q : Nat) (t v b : Expr) :
-    (Expr.letE t v b).mentionsFvar q
+    (Expr.letE t v b lmeta).mentionsFvar q
       = (t.mentionsFvar q || v.mentionsFvar q || b.mentionsFvar q) := by
   simp [Expr.mentionsFvar, Expr.fvarLeaves, Bool.or_assoc]
 
@@ -246,7 +246,7 @@ def Expr.mentionsFvarGo (q : Nat) (memo : Std.HashMap Expr Bool) (e : Expr) :
           match mentionsFvarGo q memo ty with
           | (true, memo) => (true, memo)
           | (false, memo) => mentionsFvarGo q memo b
-        | .letE t v b =>
+        | .letE t v b _ =>
           match mentionsFvarGo q memo t with
           | (true, memo) => (true, memo)
           | (false, memo) =>
@@ -340,7 +340,7 @@ theorem Expr.mentionsFvarGo_spec (q : Nat) :
         obtain ⟨h3, h4⟩ := ihb memo₁ h2
         exact ⟨by simp [mentionsFvar_forallE, ← h1, h3],
           h4.insert (by simp [mentionsFvar_forallE, ← h1, h3])⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro memo hm
     rw [mentionsFvarGo]
     split

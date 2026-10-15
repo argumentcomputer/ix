@@ -90,7 +90,7 @@ theorem piDoms_of_infer {mode : CheckMode} :
         · exact nomatch hop
     | .bvar _, hop, _ | .fvar _ _, hop, _ | .sort _, hop, _
     | .const _ _, hop, _ | .app _ _, hop, _ | .lam _ _ _, hop, _
-    | .letE _ _ _, hop, _ | .lit _, hop, _ | .proj _ _ _, hop, _ =>
+    | .letE _ _ _ _, hop, _ | .lit _, hop, _ | .proj _ _ _, hop, _ =>
       simp [Ix.Kernel.openPisAtFvars] at hop
 
 /-! ## The bound, walked along the telescope -/
@@ -173,7 +173,7 @@ theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
       · exact nomatch hop
     | .bvar _, hop, _, _ | .fvar _ _, hop, _, _ | .sort _, hop, _, _
     | .const _ _, hop, _, _ | .app _ _, hop, _, _ | .lam _ _ _, hop, _, _
-    | .letE _ _ _, hop, _, _ | .lit _, hop, _, _ | .proj _ _ _, hop, _, _ =>
+    | .letE _ _ _ _, hop, _, _ | .lit _, hop, _, _ | .proj _ _ _, hop, _, _ =>
       simp [Ix.Kernel.openPisAtFvars] at hop
 
 /-! ## The bound at the constructor data -/

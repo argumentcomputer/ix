@@ -46,7 +46,7 @@ theorem ConstsBound.cons {c : ConstantInfo} :
   | .forallE ty b bi, h => by
     rw [constsBound_forallE] at h ⊢
     exact ⟨ConstsBound.cons ty h.1, ConstsBound.cons b h.2⟩
-  | .letE t v b, h => by
+  | .letE t v b _, h => by
     rw [constsBound_letE] at h ⊢
     exact ⟨ConstsBound.cons t h.1, ConstsBound.cons v h.2.1, ConstsBound.cons b h.2.2⟩
   | .proj s i e, h => by

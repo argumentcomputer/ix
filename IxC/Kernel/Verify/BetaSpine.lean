@@ -273,7 +273,7 @@ the loop's continuation `k` abstracted. -/
         else pure (.proj sn i pe)
       | _ => pure (.proj sn i pe)
     | none => pure (.proj sn i pe)
-  | .letE _ _ _ =>
+  | .letE _ _ _ _ =>
     -- unreachable by construction, as in `whnfCoreStepI` (task #241)
     throw (.internal "whnfCore: `let` in an annotated expression")
   | .bvar _ => throw (.notImplemented "whnf beyond the supported fragment")
@@ -1105,7 +1105,7 @@ theorem whnfCoreStepM_sound {d : Nat} (k : Expr → FueledM Expr)
   | lit l => exact ⟨F, H⟩
   | lam ty bd mb => exact ⟨F, H⟩
   | forallE ty bd mb => exact ⟨F, H⟩
-  | letE ty v bd =>
+  | letE ty v bd _ =>
     -- task #241: the ζ arm is a positive `.internal` error
     exact absurd H (by simp [whnfCoreStepM])
   | app f a =>
@@ -1468,7 +1468,7 @@ theorem inferSpine_snoc {d : Nat} :
       | const nm us => exact nomatch H
       | app f' a' => exact nomatch H
       | lam t b mb => exact nomatch H
-      | letE t v b => exact nomatch H
+      | letE t v b _ => exact nomatch H
       | lit l => exact nomatch H
       | proj s i e => exact nomatch H
   | x :: xs', ty, acc, a, F, vres => by
@@ -1534,7 +1534,7 @@ theorem inferSpine_snoc {d : Nat} :
       | const nm us => exact nomatch H
       | app f' a' => exact nomatch H
       | lam t b mb => exact nomatch H
-      | letE t v b => exact nomatch H
+      | letE t v b _ => exact nomatch H
       | lit l => exact nomatch H
       | proj s i e => exact nomatch H
 
@@ -1896,7 +1896,7 @@ theorem inferSpineIO_snoc {d : Nat} :
       | const nm us => exact nomatch H
       | app f' a' => exact nomatch H
       | lam t b mb => exact nomatch H
-      | letE t v b => exact nomatch H
+      | letE t v b _ => exact nomatch H
       | lit l => exact nomatch H
       | proj s i e => exact nomatch H
   | x :: xs', ty, acc, a, F, vres => by
@@ -1997,7 +1997,7 @@ theorem inferSpineIO_snoc {d : Nat} :
       | const nm us => exact nomatch H
       | app f' a' => exact nomatch H
       | lam t b mb => exact nomatch H
-      | letE t v b => exact nomatch H
+      | letE t v b _ => exact nomatch H
       | lit l => exact nomatch H
       | proj s i e => exact nomatch H
 

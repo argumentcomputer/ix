@@ -456,7 +456,7 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Key}
   | some (pre, .const _ _) => intro h; exact nomatch h
   | some (pre, .app _ _) => intro h; exact nomatch h
   | some (pre, .lam _ _ _) => intro h; exact nomatch h
-  | some (pre, .letE _ _ _) => intro h; exact nomatch h
+  | some (pre, .letE _ _ _ _) => intro h; exact nomatch h
   | some (pre, .lit _) => intro h; exact nomatch h
   | some (pre, .proj _ _ _) => intro h; exact nomatch h
   | some (pre, .forallE dom body bm) => ?_
@@ -470,7 +470,7 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Key}
   | .app _ _ => intro h; exact nomatch h
   | .lam _ _ _ => intro h; exact nomatch h
   | .forallE _ _ _ => intro h; exact nomatch h
-  | .letE _ _ _ => intro h; exact nomatch h
+  | .letE _ _ _ _ => intro h; exact nomatch h
   | .lit _ => intro h; exact nomatch h
   | .proj _ _ _ => intro h; exact nomatch h
   | .const D lvls' => ?_
@@ -605,7 +605,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Key → Key}
   | .app _ _ => intro h; exact nomatch h
   | .lam _ _ _ => intro h; exact nomatch h
   | .forallE _ _ _ => intro h; exact nomatch h
-  | .letE _ _ _ => intro h; exact nomatch h
+  | .letE _ _ _ _ => intro h; exact nomatch h
   | .lit _ => intro h; exact nomatch h
   | .proj _ _ _ => intro h; exact nomatch h
   | .const Dc usc => ?_
@@ -1237,7 +1237,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
   | .const _ _ => intro hb; exact nomatch hb
   | .lam _ _ _ => intro hb; exact nomatch hb
   | .forallE _ _ _ => intro hb; exact nomatch hb
-  | .letE _ _ _ => intro hb; exact nomatch hb
+  | .letE _ _ _ _ => intro hb; exact nomatch hb
   | .lit _ => intro hb; exact nomatch hb
   | .proj _ _ _ => intro hb; exact nomatch hb
   | .app (.bvar _) _ => intro hb; exact nomatch hb
@@ -1246,7 +1246,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
   | .app (.const _ _) _ => intro hb; exact nomatch hb
   | .app (.lam _ _ _) _ => intro hb; exact nomatch hb
   | .app (.forallE _ _ _) _ => intro hb; exact nomatch hb
-  | .app (.letE _ _ _) _ => intro hb; exact nomatch hb
+  | .app (.letE _ _ _ _) _ => intro hb; exact nomatch hb
   | .app (.lit _) _ => intro hb; exact nomatch hb
   | .app (.proj _ _ _) _ => intro hb; exact nomatch hb
   | .app (.app (.bvar _) _) _ => intro hb; exact nomatch hb
@@ -1255,7 +1255,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
   | .app (.app (.const _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lam _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.forallE _ _ _) _) _ => intro hb; exact nomatch hb
-  | .app (.app (.letE _ _ _) _) _ => intro hb; exact nomatch hb
+  | .app (.app (.letE _ _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lit _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.proj _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.bvar _) _) _) _ => intro hb; exact nomatch hb
@@ -1266,7 +1266,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Key}
     intro hb; exact nomatch hb
   | .app (.app (.app (.forallE _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
-  | .app (.app (.app (.letE _ _ _) _) _) _ =>
+  | .app (.app (.app (.letE _ _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
   | .app (.app (.app (.lit _) _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.proj _ _ _) _) _) _ =>
@@ -1422,7 +1422,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
   | .const _ _ => intro hb; exact nomatch hb
   | .lam _ _ _ => intro hb; exact nomatch hb
   | .forallE _ _ _ => intro hb; exact nomatch hb
-  | .letE _ _ _ => intro hb; exact nomatch hb
+  | .letE _ _ _ _ => intro hb; exact nomatch hb
   | .lit _ => intro hb; exact nomatch hb
   | .proj _ _ _ => intro hb; exact nomatch hb
   | .app (.bvar _) _ => intro hb; exact nomatch hb
@@ -1431,7 +1431,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
   | .app (.const _ _) _ => intro hb; exact nomatch hb
   | .app (.lam _ _ _) _ => intro hb; exact nomatch hb
   | .app (.forallE _ _ _) _ => intro hb; exact nomatch hb
-  | .app (.letE _ _ _) _ => intro hb; exact nomatch hb
+  | .app (.letE _ _ _ _) _ => intro hb; exact nomatch hb
   | .app (.lit _) _ => intro hb; exact nomatch hb
   | .app (.proj _ _ _) _ => intro hb; exact nomatch hb
   | .app (.app (.bvar _) _) _ => intro hb; exact nomatch hb
@@ -1440,7 +1440,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
   | .app (.app (.const _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lam _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.forallE _ _ _) _) _ => intro hb; exact nomatch hb
-  | .app (.app (.letE _ _ _) _) _ => intro hb; exact nomatch hb
+  | .app (.app (.letE _ _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lit _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.proj _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.bvar _) _) _) _ => intro hb; exact nomatch hb
@@ -1451,7 +1451,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Key}
     intro hb; exact nomatch hb
   | .app (.app (.app (.forallE _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
-  | .app (.app (.app (.letE _ _ _) _) _) _ =>
+  | .app (.app (.app (.letE _ _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
   | .app (.app (.app (.lit _) _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.proj _ _ _) _) _) _ =>

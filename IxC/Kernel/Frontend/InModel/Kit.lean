@@ -185,11 +185,11 @@ partial def specFamGo (T : Key) (lps : List LevelParam) (nP : Nat)
           let (d', memo) := specFamGo T lps nP members memo d
           let (b', memo) := specFamGo T lps nP members memo b
           (.forallE d' b' m, memo)
-        | .letE t v b =>
+        | .letE t v b lmeta =>
           let (t', memo) := specFamGo T lps nP members memo t
           let (v', memo) := specFamGo T lps nP members memo v
           let (b', memo) := specFamGo T lps nP members memo b
-          (.letE t' v' b', memo)
+          (.letE t' v' b' lmeta, memo)
         | .proj s i x =>
           let (x', memo) := specFamGo T lps nP members memo x
           (.proj s i x', memo)
@@ -253,11 +253,11 @@ where
             let (t', memo) := go memo k t
             let (b', memo) := go memo (k + 1) b
             (.forallE t' b' m, memo)
-          | .letE t v b =>
+          | .letE t v b lmeta =>
             let (t', memo) := go memo k t
             let (v', memo) := go memo k v
             let (b', memo) := go memo (k + 1) b
-            (.letE t' v' b', memo)
+            (.letE t' v' b' lmeta, memo)
           | .proj s i x =>
             let (x', memo) := go memo k x
             (.proj s i x', memo)
@@ -300,7 +300,7 @@ def mentionsAnyGo (ns : List Key) (memo : Std.HashMap Expr Bool) :
           match mentionsAnyGo ns memo ty with
           | (true, memo) => (true, memo)
           | (false, memo) => mentionsAnyGo ns memo b
-        | .letE ty v b =>
+        | .letE ty v b _ =>
           match mentionsAnyGo ns memo ty with
           | (true, memo) => (true, memo)
           | (false, memo) =>
@@ -384,7 +384,7 @@ partial def inferTy (tbl : ConstTable) (ctx : List Expr) : Expr → Option Expr
   | .forallE d b _ =>
     (sortOf tbl ctx d).bind fun u =>
       (sortOf tbl (d :: ctx) b).map fun v => .sort (.imax u v)
-  | .letE _ v b => inferTy tbl ctx (b.instantiate1 v)
+  | .letE _ v b _ => inferTy tbl ctx (b.instantiate1 v)
   | .lit (.natVal _) => some (.const natName [])
   | .lit (.strVal _) => some (.const stringName [])
   | _ => none
@@ -451,7 +451,7 @@ def sortCeil (tbl : ConstTable) : Nat → List Expr → Expr → Option Level
       | .forallE dom body _ =>
         (sortCeil tbl fuel ctx dom).bind fun a =>
           (sortCeil tbl fuel (dom :: ctx) body).map fun b => .max a b
-      | .letE _ v b => sortCeil tbl fuel ctx (b.instantiate1 v)
+      | .letE _ v b _ => sortCeil tbl fuel ctx (b.instantiate1 v)
       | d' =>
         match inferTy tbl ctx d'.getAppFn with
         | some f => sortCeil tbl fuel ctx f
@@ -493,7 +493,7 @@ def maxHeightGo (heights : Key → Nat) (memo : Std.HashMap Expr Nat) :
           let (rt, memo) := maxHeightGo heights memo ty
           let (rb, memo) := maxHeightGo heights memo b
           (max rt rb, memo)
-        | .letE ty v b =>
+        | .letE ty v b _ =>
           let (rt, memo) := maxHeightGo heights memo ty
           let (rv, memo) := maxHeightGo heights memo v
           let (rb, memo) := maxHeightGo heights memo b

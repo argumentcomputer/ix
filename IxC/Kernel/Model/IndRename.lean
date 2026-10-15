@@ -101,7 +101,7 @@ theorem denoteMeta_renameConsts {f : Key → Key}
     rw [← Expr.renameConsts_instantiate1]
     rw [denoteMeta_renameConsts hro ty d,
       denoteMeta_renameConsts hro (body.instantiate1 (.fvar d ty)) (d + 1)]
-  | .letE ty val body, d => by
+  | .letE ty val body _, d => by
     simp only [Expr.renameConsts]
     rw [denoteMeta, denoteMeta]
   termination_by e => e.sizeB

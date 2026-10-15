@@ -40,7 +40,7 @@ theorem openPisAtFvars_of_stripPis_isSome :
         (Expr.stripPis_instantiate1_isSome (v := .fvar d dom) n 0 h)
       exact ⟨.fvar d dom :: fvs, o, by simp only [openPisAtFvars, ho]⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 /-! ## Per-index scoping -/
@@ -80,7 +80,7 @@ theorem openPisAtFvars_typeWScoped :
           exact this
       · exact nomatch hop
     | .bvar _, hop | .fvar _ _, hop | .sort _, hop | .const _ _, hop | .app _ _, hop
-    | .lam _ _ _, hop | .letE _ _ _, hop | .lit _, hop | .proj _ _ _, hop =>
+    | .lam _ _ _, hop | .letE _ _ _ _, hop | .lit _, hop | .proj _ _ _, hop =>
       simp [openPisAtFvars] at hop
 
 /-- An `instPisAt` residual is scoped at the spine's end. -/
@@ -117,7 +117,7 @@ theorem instPisAt_res_WScoped :
         rw [show d + (sp.length + 1) = d + 1 + sp.length from by omega]
         exact this
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.instPisAt] at h
 
 /-! ## Frame shifts under a consed spine -/

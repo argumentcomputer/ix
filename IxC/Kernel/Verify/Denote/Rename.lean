@@ -89,7 +89,7 @@ theorem denote_renameConsts {f : Key → Key} (hro : RenameOkT cval env f) :
     rw [← Expr.renameConsts_instantiate1]
     rw [denote_renameConsts hro ty d,
       denote_renameConsts hro (body.instantiate1 (.fvar d ty)) (d + 1)]
-  | .letE ty val body, d => by
+  | .letE ty val body _, d => by
     simp only [Expr.renameConsts, denote_letE]
   termination_by e => e.sizeB
   decreasing_by
@@ -256,7 +256,7 @@ theorem denote_renameConsts_resolve {f : Key → Key}
       denote_renameConsts_resolve hup hval
         (body.instantiate1 (.fvar d ty)) (d + 1)
         (Expr.constsResolve_instantiate1 hr.1 0 hr.2)]
-  | .letE ty val body, d, hr => by
+  | .letE ty val body _, d, hr => by
     simp only [Expr.renameConsts, denote_letE]
   termination_by e => e.sizeB
   decreasing_by

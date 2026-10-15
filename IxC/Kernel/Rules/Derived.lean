@@ -35,7 +35,7 @@ theorem Expr.mkAppN_getApp' : ∀ (e : Expr),
     simp only [Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN_append_one']
     rw [Expr.mkAppN_getApp' f]
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .lam _ _ _
-  | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ => rfl
+  | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ => rfl
 
 /-! ## `DefEqList` kit -/
 
@@ -76,7 +76,7 @@ theorem Red.litToCtorIfNat {d : Nat} (e : Expr) :
     · exact .natLit ‹_›
     · exact .refl
   | .lit (.strVal _) | .bvar _ | .fvar _ _ | .sort _ | .const _ _
-  | .app _ _ | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ =>
+  | .app _ _ | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .proj _ _ _ =>
     exact .refl
 
 /-! ## `DefEq` derived rules -/

@@ -254,7 +254,7 @@ def Expr.constsResolve (env : Env) : Expr → Bool
   | .app f a => f.constsResolve env && a.constsResolve env
   | .lam ty body _ | .forallE ty body _ =>
     ty.constsResolve env && body.constsResolve env
-  | .letE ty val body =>
+  | .letE ty val body _ =>
     ty.constsResolve env && val.constsResolve env && body.constsResolve env
   | .proj s _ e => (env.find? s).isSome && e.constsResolve env
 
@@ -629,9 +629,9 @@ def Expr.substConstAll (n : Key) (r : Expr) : Expr → Expr
     .lam (Expr.substConstAll n r ty) (Expr.substConstAll n r b) mb
   | .forallE ty b mb =>
     .forallE (Expr.substConstAll n r ty) (Expr.substConstAll n r b) mb
-  | .letE ty v b =>
+  | .letE ty v b lmeta =>
     .letE (Expr.substConstAll n r ty) (Expr.substConstAll n r v)
-      (Expr.substConstAll n r b)
+      (Expr.substConstAll n r b) lmeta
   | .proj s i e => .proj s i (Expr.substConstAll n r e)
   | e => e
 

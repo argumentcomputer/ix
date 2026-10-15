@@ -1043,7 +1043,7 @@ def whnfCoreBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else pure (.proj sn i pe)
         | _ => pure (.proj sn i pe)
       | none => pure (.proj sn i pe)
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- **Unreachable by construction** (task #241).  The former ζ step
       -- (official kernel `whnf_core`, `case expr_kind::Let`; nanoda
       -- `whnf_no_unfolding_aux` `Let`; lean4lean `whnfCore'` `.letE`)
@@ -1269,7 +1269,7 @@ def inferBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- **Unreachable by construction** (task #241).  The official
       -- kernel's `infer_let` triple (`!infer_only`) is not lost: it is
       -- `annotateBody`'s `.letE` clause, which is the one pass that
@@ -1404,7 +1404,7 @@ def inferBodyIO (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
-    | .letE _ _ _ =>
+    | .letE _ _ _ _ =>
       -- unreachable by construction, as in `inferBody` (task #241)
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
@@ -1861,7 +1861,7 @@ def annotateBody (r : CoreFns m) (env : Env) : Nat → Expr → m Expr :=
           annotPwLam r env (depth + 1) body'
         else pure mb.pw
       pure (.lam ty' (body'.abstract1 depth) { mb with pw })
-    | .letE ty v b => do
+    | .letE ty v b _ => do
       -- The body is annotated *with the value transparent* — nanoda's
       -- `infer_let` instantiates the body with the value and recurses
       -- (the official kernel gets the same transparency from valued

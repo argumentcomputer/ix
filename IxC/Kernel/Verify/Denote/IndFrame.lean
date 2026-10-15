@@ -1179,7 +1179,7 @@ theorem instLamsAt_index_WScoped :
         rw [show d + (i + 1) = d + 1 + i from by omega]
         exact hrec
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _
-    | forallE _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+    | forallE _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
       exact nomatch h
 
 /-- A nonempty tower's head domain is its context's outermost entry. -/
@@ -2019,7 +2019,7 @@ theorem getAppArgs_length_renameConsts {f : Key → Key} :
   | const n us => rfl
   | lam ty b m => rfl
   | forallE ty b m => rfl
-  | letE ty v b => rfl
+  | letE ty v b _ => rfl
   | lit l => rfl
   | proj s i e => rfl
 

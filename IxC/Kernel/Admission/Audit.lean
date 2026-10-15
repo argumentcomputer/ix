@@ -66,12 +66,13 @@ externs, and the pin table's derived-shape check (`Reader.derivedShape`) with
 from 5653 by the entry's change (`IxC/Kernel/Audit/Roots.lean`): `Key`'s three
 computed-field overrides, its rendering for messages (`Key.toName`,
 `Role.leanName`, `Derived.spell`) in, the closed terms that spelled role and
-derived names out. -/
+derived names out. Step 5b's `LetMeta` moved it from 5444 by the let contract's
+equality, hash and `Repr` (`IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5444 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5471 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

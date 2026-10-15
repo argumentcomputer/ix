@@ -113,12 +113,12 @@ theorem reduceNat_bridge (hw : WhnfBridge env fuel)
           simp [throw, throwThe, MonadExceptOf.throw] at h
       · simp [pure, Except.pure] at h
   | .bvar _, h | .fvar _ _, h | .sort _, h | .lam _ _ _, h
-  | .forallE _ _ _, h | .letE _ _ _, h | .lit _, h
+  | .forallE _ _ _, h | .letE _ _ _ _, h | .lit _, h
   | .proj _ _ _, h | .const _ _, h =>
     simp [reduceNatFueled, reduceNat, pure, Except.pure] at h
   | .app (.bvar _) _, h | .app (.fvar _ _) _, h
   | .app (.sort _) _, h | .app (.lam _ _ _) _, h
-  | .app (.forallE _ _ _) _, h | .app (.letE _ _ _) _, h
+  | .app (.forallE _ _ _) _, h | .app (.letE _ _ _ _) _, h
   | .app (.lit _) _, h | .app (.proj _ _ _) _, h =>
     simp [reduceNatFueled, reduceNat, pure, Except.pure] at h
   | .app (.const c (_ :: _)) _, h =>
@@ -127,7 +127,7 @@ theorem reduceNat_bridge (hw : WhnfBridge env fuel)
   | .app (.app (.sort _) _) _, h | .app (.app (.app _ _) _) _, h
   | .app (.app (.lam _ _ _) _) _, h
   | .app (.app (.forallE _ _ _) _) _, h
-  | .app (.app (.letE _ _ _) _) _, h
+  | .app (.app (.letE _ _ _ _) _) _, h
   | .app (.app (.lit _) _) _, h
   | .app (.app (.proj _ _ _) _) _, h =>
     simp [reduceNatFueled, reduceNat, pure, Except.pure] at h
@@ -263,7 +263,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge env fuel)
   | .bvar _, h =>
     rw [whnfCore_succ] at h
     simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
-  | .letE _ _ _, h => exact (whnfCore_letE_inv h).elim
+  | .letE _ _ _ _, h => exact (whnfCore_letE_inv h).elim
   | .app f a, h =>
     obtain ⟨f', hf, hcase⟩ := whnf_app_inv h
     have hRf : Red env d (.app f a) (.app f' a) := .appFn (hwc hf)

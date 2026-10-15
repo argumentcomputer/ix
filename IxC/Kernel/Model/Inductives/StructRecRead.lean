@@ -121,7 +121,7 @@ theorem denoteMeta_replacePisPw {pw : PropWhen} :
             (Expr.instSeq fvs' (k - 1) (b.instantiate1 (.fvar d ty) k)) <;> rfl
       · exact nomatch hop
     | .bvar _, hr, _ | .fvar _ _, hr, _ | .sort _, hr, _ | .const _ _, hr, _
-    | .app _ _, hr, _ | .lam _ _ _, hr, _ | .letE _ _ _, hr, _ | .lit _, hr, _
+    | .app _ _, hr, _ | .lam _ _ _, hr, _ | .letE _ _ _ _, hr, _ | .lit _, hr, _
     | .proj _ _ _, hr, _ => simp [Expr.replacePisPw] at hr
 
 /-- **The `λ`-walk's reading**: the λ-tower over the telescope's
@@ -174,7 +174,7 @@ theorem denoteMeta_pisToLamsPw {pw : PropWhen} :
             (Expr.instSeq fvs' (k - 1) (b.instantiate1 (.fvar d ty) k)) <;> rfl
       · exact nomatch hop
     | .bvar _, hr, _ | .fvar _ _, hr, _ | .sort _, hr, _ | .const _ _, hr, _
-    | .app _ _, hr, _ | .lam _ _ _, hr, _ | .letE _ _ _, hr, _ | .lit _, hr, _
+    | .app _ _, hr, _ | .lam _ _ _, hr, _ | .letE _ _ _ _, hr, _ | .lit _, hr, _
     | .proj _ _ _, hr, _ => simp [Expr.pisToLamsPw] at hr
 
 /-! ## Syntactic bookkeeping -/
@@ -210,7 +210,7 @@ theorem stripPis_isSome_drop :
         obtain ⟨-, rfl⟩ := hs
         exact stripPis_isSome_drop k h hs'
     | .bvar _, h, _ | .fvar _ _, h, _ | .sort _, h, _ | .const _ _, h, _
-    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _, h, _ | .lit _, h, _
+    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _ _, h, _ | .lit _, h, _
     | .proj _ _ _, h, _ => simp [Expr.stripPis] at h
 
 /-- An instantiation sequence's index is immaterial at the empty

@@ -186,11 +186,21 @@ private def qValueContract (v : Ixon.ValueContract) : Lean.Expr :=
 
 /-- Defaults are quoted as the default constants, so a quoted pin is the
 same term `{ pw := … }` elaborates to. -/
+private def qBinderContract (c : Ixon.BinderContract) : Lean.Expr :=
+  if c == .many then mkConst ``Ixon.BinderContract.many else
+    mkApp2 (mkConst ``Ixon.BinderContract.mk) (qUses c.uses) (qValueContract c.value)
+
+/-- A let's metadata: its contract, field by field. -/
+private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
+  mkApp (mkConst ``Ix.Kernel.LetMeta.mk)
+    (mkApp3 (mkConst ``Ixon.LetContract.mk) (qBool l.contract.nonDep)
+      (match l.contract.kind with
+        | .value => mkConst ``Ixon.LetKind.value
+        | .borrowShared => mkConst ``Ixon.LetKind.borrowShared)
+      (qBinderContract l.contract.binder))
+
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp3 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw)
-    (if m.contract == .many then mkConst ``Ixon.BinderContract.many else
-      mkApp2 (mkConst ``Ixon.BinderContract.mk) (qUses m.contract.uses)
-        (qValueContract m.contract.value))
+  mkApp3 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderContract m.contract)
     (if m.result == .shared then mkConst ``Ixon.ValueContract.shared else
       qValueContract m.result)
 
@@ -208,8 +218,8 @@ private def qExpr : Ix.Kernel.Expr → Lean.Expr
     mkApp3 (mkConst ``Ix.Kernel.Expr.lam) (qExpr ty) (qExpr b) (qBinderMeta m)
   | .forallE ty b m =>
     mkApp3 (mkConst ``Ix.Kernel.Expr.forallE) (qExpr ty) (qExpr b) (qBinderMeta m)
-  | .letE ty v b =>
-    mkApp3 (mkConst ``Ix.Kernel.Expr.letE) (qExpr ty) (qExpr v) (qExpr b)
+  | .letE ty v b l =>
+    mkApp4 (mkConst ``Ix.Kernel.Expr.letE) (qExpr ty) (qExpr v) (qExpr b) (qLetMeta l)
   | .lit l => mkApp (mkConst ``Ix.Kernel.Expr.lit) (qLiteral l)
   | .proj s i e =>
     mkApp3 (mkConst ``Ix.Kernel.Expr.proj) (qKey s) (mkRawNatLit i) (qExpr e)

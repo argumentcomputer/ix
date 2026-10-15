@@ -52,7 +52,7 @@ def Expr.constsResolveF (fe : FEnv) : Expr → Bool
   | .app f a => f.constsResolveF fe && a.constsResolveF fe
   | .lam ty body _ | .forallE ty body _ =>
     ty.constsResolveF fe && body.constsResolveF fe
-  | .letE ty val body =>
+  | .letE ty val body _ =>
     ty.constsResolveF fe && val.constsResolveF fe &&
       body.constsResolveF fe
   | .proj s _ e => (fe.find? s).isSome && e.constsResolveF fe
@@ -112,7 +112,7 @@ def Expr.constsResolveFGo (fe : FEnv) (memo : Std.HashMap Expr Bool) :
           let (b₁, memo) := constsResolveFGo fe memo ty
           let (b₂, memo) := constsResolveFGo fe memo body
           (b₁ && b₂, memo)
-        | .letE ty val body =>
+        | .letE ty val body _ =>
           let (b₁, memo) := constsResolveFGo fe memo ty
           let (b₂, memo) := constsResolveFGo fe memo val
           let (b₃, memo) := constsResolveFGo fe memo body
@@ -173,7 +173,7 @@ theorem Expr.constsResolveFGo_spec {fe : FEnv} :
       obtain ⟨h3, h4⟩ := ihb _ h2
       refine ⟨by simp [constsResolveF, h1, h3], ?_⟩
       exact h4.insert (by simp [constsResolveF, h1, h3])
-  | letE ty val body iht ihv ihb =>
+  | letE ty val body _ iht ihv ihb =>
     intro memo hm
     rw [constsResolveFGo]
     split

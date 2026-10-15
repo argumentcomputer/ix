@@ -127,8 +127,8 @@ partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr) :
     | .app f a => return .app (← instLevelsGo ks us f) (← instLevelsGo ks us a)
     | .lam t b m => return .lam (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
     | .forallE t b m => return .forallE (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
-    | .letE t v b =>
-      return .letE (← instLevelsGo ks us t) (← instLevelsGo ks us v) (← instLevelsGo ks us b)
+    | .letE t v b l =>
+      return .letE (← instLevelsGo ks us t) (← instLevelsGo ks us v) (← instLevelsGo ks us b) l
     | .proj s i x => return .proj s i (← instLevelsGo ks us x)
     | .fvar i t => return .fvar i (← instLevelsGo ks us t)
     | e => pure e
@@ -161,7 +161,7 @@ partial def instGo (vs : Array CExpr) (d : Nat) (e : CExpr) :
     | .app f a => return .app (← instGo vs d f) (← instGo vs d a)
     | .lam t b m => return .lam (← instGo vs d t) (← instGo vs (d + 1) b) m
     | .forallE t b m => return .forallE (← instGo vs d t) (← instGo vs (d + 1) b) m
-    | .letE t v b => return .letE (← instGo vs d t) (← instGo vs d v) (← instGo vs (d + 1) b)
+    | .letE t v b l => return .letE (← instGo vs d t) (← instGo vs d v) (← instGo vs (d + 1) b) l
     | .proj s i x => return .proj s i (← instGo vs d x)
     | e => pure e
   modify (·.insert (e, d) r)
@@ -203,8 +203,8 @@ partial def unfoldGo (u : Universe) (inline : CName → Bool) (e : CExpr) : Stat
       | .app f a => return .app (← unfoldGo u inline f) (← unfoldGo u inline a)
       | .lam t b m => return .lam (← unfoldGo u inline t) (← unfoldGo u inline b) m
       | .forallE t b m => return .forallE (← unfoldGo u inline t) (← unfoldGo u inline b) m
-      | .letE t v b =>
-        return .letE (← unfoldGo u inline t) (← unfoldGo u inline v) (← unfoldGo u inline b)
+      | .letE t v b l =>
+        return .letE (← unfoldGo u inline t) (← unfoldGo u inline v) (← unfoldGo u inline b) l
       | .proj s i x => return .proj s i (← unfoldGo u inline x)
       | e => pure e
   modify (·.insert e r)
@@ -225,7 +225,7 @@ result visited again. -/
 partial def simpGo (u : Universe) (e : CExpr) : StateM Memo CExpr := do
   if let some r := (← get)[e]? then return r
   let reduced : Option CExpr := match e with
-    | .letE _ v b => some (instantiate b #[v])
+    | .letE _ v b _ => some (instantiate b #[v])
     | .proj _ i x => projOfCtor u i x
     | .app .. =>
       match e.getAppFn with

@@ -592,7 +592,7 @@ theorem denoteMeta_instPisAt_peel
     | .const _ _, hpr, _, _ => exact nomatch hpr
     | .app _ _, hpr, _, _ => exact nomatch hpr
     | .lam _ _ _, hpr, _, _ => exact nomatch hpr
-    | .letE _ _ _, hpr, _, _ => exact nomatch hpr
+    | .letE _ _ _ _, hpr, _, _ => exact nomatch hpr
     | .lit _, hpr, _, _ => exact nomatch hpr
     | .proj _ _ _, hpr, _, _ => exact nomatch hpr
     | .forallE dom body mb, hpr, hwty, hty => ?_

@@ -137,7 +137,7 @@ theorem inferTypeCoreIO_WScoped {env : Env} (henv : EnvWF env) :
       rw [inferTypeCoreIO_succ] at h
       simp [inferBodyIO, Bind.bind, Except.bind, pure,
         Except.pure, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCoreIO_letE_inv h).elim
 
 theorem inferTypeCoreIO_fvarLeaves {env : Env} (henv : EnvWF env) :
@@ -277,7 +277,7 @@ theorem inferTypeCoreIO_fvarLeaves {env : Env} (henv : EnvWF env) :
       rw [inferTypeCoreIO_succ] at h
       simp [inferBodyIO, Bind.bind, Except.bind, pure,
         Except.pure, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCoreIO_letE_inv h).elim
 
 theorem inferTypeCoreIO_looseBVars {env : Env} (henv : EnvWF env) :
@@ -407,7 +407,7 @@ theorem inferTypeCoreIO_looseBVars {env : Env} (henv : EnvWF env) :
       rw [inferTypeCoreIO_succ] at h
       simp [inferBodyIO, Bind.bind, Except.bind, pure,
         Except.pure, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCoreIO_letE_inv h).elim
 
 

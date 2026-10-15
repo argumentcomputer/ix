@@ -50,7 +50,7 @@ theorem iotaCerts_bridge (hd : DefEqBridge env fuel) (hio : InferIOBridge env fu
         exact .skip hg.1 hg.2 (ih hrest)
       · exact .cert (inferTypeIO_bridge hio hta) (hd hde) (ih hrest)
     | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _
-    | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+    | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
       intro h
       simp [iotaCertsFueled, iotaCerts, pure, Except.pure] at h
 

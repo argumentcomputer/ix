@@ -405,7 +405,7 @@ theorem dmNatFrag_graded {m : EnvModel V env} {ψ : LevelParam → Nat}
         rw [denoteMeta_fvar]
       · exact ⟨⟨by simp, by simp⟩, by rw [interp_bvar]; exact hy,
           by rw [interp_bvar]; rfl⟩
-  | .bvar _, h | .sort _, h | .lam _ _ _, h | .letE _ _ _, h
+  | .bvar _, h | .sort _, h | .lam _ _ _, h | .letE _ _ _ _, h
   | .forallE _ _ _, h | .lit _, h | .proj _ _ _, h => by
     simp [dmNatFrag] at h
 
@@ -679,7 +679,7 @@ theorem dmNatFrag_syntax {bins uns : List Key} :
         fun d hd => dmFvarWScoped (by omega)
           (Expr.WScoped.of_not_hasFvar
             (e := .const Ix.Kernel.natName []) rfl)⟩
-  | .bvar _, h | .sort _, h | .lam _ _ _, h | .letE _ _ _, h
+  | .bvar _, h | .sort _, h | .lam _ _ _, h | .letE _ _ _ _, h
   | .forallE _ _ _, h | .lit _, h | .proj _ _ _, h => by
     simp [dmNatFrag] at h
 
@@ -701,7 +701,7 @@ theorem wscoped_substConst0 {c : Key} {v : Expr}
       (wscoped_substConst0 hv a hw.2)
   | .bvar _, _, hw | .fvar _ _, _, hw | .sort _, _, hw
   | .lit _, _, hw | .lam _ _ _, _, hw | .forallE _ _ _, _, hw
-  | .letE _ _ _, _, hw | .proj _ _ _, _, hw => hw
+  | .letE _ _ _ _, _, hw | .proj _ _ _, _, hw => hw
 
 /-! ## The certificate frame
 

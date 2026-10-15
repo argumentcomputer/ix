@@ -42,7 +42,7 @@ def ConstsBound (env₀ : Env) : Expr → Prop
   | .app f a => ConstsBound env₀ f ∧ ConstsBound env₀ a
   | .lam ty b _ => ConstsBound env₀ ty ∧ ConstsBound env₀ b
   | .forallE ty b _ => ConstsBound env₀ ty ∧ ConstsBound env₀ b
-  | .letE t v b =>
+  | .letE t v b _ =>
       ConstsBound env₀ t ∧ ConstsBound env₀ v ∧ ConstsBound env₀ b
   | .proj _ _ e => ConstsBound env₀ e
   | .fvar _ ty => ConstsBound env₀ ty
@@ -82,7 +82,7 @@ and the one closure fact `denoteAnnot`'s binder cases need. -/
 
 @[simp] theorem constsBound_letE {env₀ : Env}
     {t v b : Expr} :
-    ConstsBound env₀ (.letE t v b) ↔
+    ConstsBound env₀ (.letE t v b lmeta) ↔
       ConstsBound env₀ t ∧ ConstsBound env₀ v ∧ ConstsBound env₀ b := by
   rw [ConstsBound]
 
@@ -142,7 +142,7 @@ theorem ConstsBound.instantiate1 {env₀ : Env} {v : Expr}
     rw [constsBound_forallE] at h
     rw [Ix.Kernel.Expr.instantiate1, constsBound_forallE]
     exact ⟨ihty d h.1, ihb (d + 1) h.2⟩
-  | letE t val b iht ihval ihb =>
+  | letE t val b _ iht ihval ihb =>
     intro d h
     rw [constsBound_letE] at h
     rw [Ix.Kernel.Expr.instantiate1, constsBound_letE]
@@ -233,7 +233,7 @@ theorem constsBound_of_constsResolve {env₀ : Env} :
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     exact constsBound_forallE.mpr ⟨ihty h.1, ihb h.2⟩
-  | letE ty v b ihty ihv ihb =>
+  | letE ty v b _ ihty ihv ihb =>
     intro h
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     exact constsBound_letE.mpr ⟨ihty h.1.1, ihv h.1.2, ihb h.2⟩

@@ -137,6 +137,27 @@ hashes by `pw` alone. -/
   if m.contract == .many && m.result == .shared then Hashable.hash m.pw
   else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
 
+/-- Metadata carried by a `letE`: Ixon's let contract (`Ixon.LetContract`,
+`IxC/Ixon/Types/Contract.lean`): the `nonDep` flag, whether the let binds a
+value or a shared borrow, and the bound variable's contract. Like a binder's
+contracts it is committed content (it moves a constant's address), so it is
+identity data: structural `=` sees it. Lean's lets carry `LetContract.lean
+nonDep`. Conversion never compares it: the annotation pass substitutes every
+let away before a term is inferred or compared, and the model reads none of
+it. The packed hash mixes it in only off the Lean fragment (a value let at the
+default binder contract), so a Lean let hashes as before. -/
+structure LetMeta where
+  contract : Ixon.LetContract := .lean false
+  deriving DecidableEq, Repr, Hashable
+
+instance : Inhabited LetMeta := ⟨{}⟩
+
+/-- A let's share of its node's hash: none on the Lean fragment, else the
+contract's hash. -/
+@[inline] def LetMeta.hashData (l : LetMeta) : UInt64 :=
+  if l.contract.kind == .value && l.contract.binder == .many then 0
+  else hash l.contract
+
 /-- Literals. -/
 inductive Literal where
   | natVal (n : Nat)
@@ -380,7 +401,7 @@ inductive Expr where
   | app (f a : Expr)
   | lam (type body : Expr) (m : BinderMeta)
   | forallE (type body : Expr) (m : BinderMeta)
-  | letE (type value body : Expr)
+  | letE (type value body : Expr) (l : LetMeta)
   | lit (l : Literal)
   | proj (structName : Key) (idx : Nat) (e : Expr)
 with
@@ -418,10 +439,12 @@ with
         (max (bvarOfData ty.data) (satPred (bvarOfData b.data)))
         (max (fvarOfData ty.data) (fvarOfData b.data))
         (lpOfData ty.data || lpOfData b.data || m.pw.hasParams)
-    | .letE ty v b =>
+    | .letE ty v b l =>
       packData (hash32 (mixHash 29
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData v.data) (hashOfData b.data)))))
+            (mixHash (hashOfData v.data)
+              (if l.hashData == 0 then hashOfData b.data
+               else mixHash (hashOfData b.data) l.hashData)))))
         (max (max (bvarOfData ty.data) (bvarOfData v.data))
           (satPred (bvarOfData b.data)))
         (max (max (fvarOfData ty.data) (fvarOfData v.data))
@@ -556,8 +579,8 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     toNat_satPred (bvarOfData_lt _)]
   rfl
 
-@[simp] theorem bvarBRaw_letE (ty v b : Expr) :
-    (Expr.letE ty v b).bvarBRaw =
+@[simp] theorem bvarBRaw_letE (ty v b : Expr) (l : LetMeta) :
+    (Expr.letE ty v b l).bvarBRaw =
       max (max ty.bvarBRaw v.bvarBRaw)
         (if b.bvarBRaw = satRange then satRange else b.bvarBRaw - 1) := by
   show (bvarOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
@@ -622,8 +645,8 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _)), toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_letE (ty v b : Expr) :
-    (Expr.letE ty v b).fvarBRaw =
+@[simp] theorem fvarBRaw_letE (ty v b : Expr) (l : LetMeta) :
+    (Expr.letE ty v b l).fvarBRaw =
       max (max ty.fvarBRaw v.fvarBRaw) b.fvarBRaw := by
   show (fvarOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
     _)).toNat = _
@@ -690,8 +713,8 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_letE (ty v b : Expr) :
-    (Expr.letE ty v b).hasLP = (ty.hasLP || v.hasLP || b.hasLP) := by
+@[simp] theorem hasLP_letE (ty v b : Expr) (l : LetMeta) :
+    (Expr.letE ty v b l).hasLP = (ty.hasLP || v.hasLP || b.hasLP) := by
   show lpOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
     _) = _
   rw [lpOfData_pack _ _ _ _
@@ -976,18 +999,20 @@ def beqGoX (map : Option BeqMap) (a b : @& Expr) : BeqOutX a b :=
             | isFalse h₂ => isFalse (fun e => h₂ (Expr.forallE.inj e).2.1))
             r₂.map
     else .mk (isFalse (fun e => h (Expr.forallE.inj e).2.2)) map
-  | .letE t v b, .letE t' v' b' =>
-    Squash.lift (enterBeq map t t' fun mp => beqGoX mp t t') fun r₁ =>
-      match r₁.dec with
-      | isFalse h₁ => .mk (isFalse (fun e => h₁ (Expr.letE.inj e).1)) r₁.map
-      | isTrue h₁ => Squash.lift (enterBeq r₁.map v v' fun mp => beqGoX mp v v') fun r₂ =>
-        match r₂.dec with
-        | isFalse h₂ => .mk (isFalse (fun e => h₂ (Expr.letE.inj e).2.1)) r₂.map
-        | isTrue h₂ => Squash.lift (enterBeq r₂.map b b' fun mp => beqGoX mp b b') fun r₃ =>
-          .mk (match r₃.dec with
-            | isTrue h₃ => isTrue (by subst h₁; subst h₂; subst h₃; rfl)
-            | isFalse h₃ => isFalse (fun e => h₃ (Expr.letE.inj e).2.2))
-            r₃.map
+  | .letE t v b l, .letE t' v' b' l' =>
+    if h : l = l' then
+      Squash.lift (enterBeq map t t' fun mp => beqGoX mp t t') fun r₁ =>
+        match r₁.dec with
+        | isFalse h₁ => .mk (isFalse (fun e => h₁ (Expr.letE.inj e).1)) r₁.map
+        | isTrue h₁ => Squash.lift (enterBeq r₁.map v v' fun mp => beqGoX mp v v') fun r₂ =>
+          match r₂.dec with
+          | isFalse h₂ => .mk (isFalse (fun e => h₂ (Expr.letE.inj e).2.1)) r₂.map
+          | isTrue h₂ => Squash.lift (enterBeq r₂.map b b' fun mp => beqGoX mp b b') fun r₃ =>
+            .mk (match r₃.dec with
+              | isTrue h₃ => isTrue (by subst h; subst h₁; subst h₂; subst h₃; rfl)
+              | isFalse h₃ => isFalse (fun e => h₃ (Expr.letE.inj e).2.2.1))
+              r₃.map
+    else .mk (isFalse (fun e => h (Expr.letE.inj e).2.2.2)) map
   | .lit l, .lit l' =>
     .mk (if h : l = l' then isTrue (by subst h; rfl)
          else isFalse (fun e => h (Expr.lit.inj e))) map

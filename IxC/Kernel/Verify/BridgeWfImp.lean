@@ -483,7 +483,7 @@ theorem openPisAtFvars_index :
           obtain ⟨ty', hx'⟩ := ih _ (i + 1) hrec j x hx
           exact ⟨ty', by rw [hx']; congr 1; omega⟩
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _
-    | lam _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+    | lam _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
       exact nomatch h
 
 /-- Opening a `∀`-telescope at fresh free variables produces variables
@@ -533,7 +533,7 @@ theorem openPisAtFvars_WScoped :
     | const c us => exact nomatch h
     | app f a => exact nomatch h
     | lam b c d => exact nomatch h
-    | letE b c d => exact nomatch h
+    | letE b c d _ => exact nomatch h
     | lit l => exact nomatch h
     | proj s k e => exact nomatch h
 
@@ -581,7 +581,7 @@ theorem instPisAt_index_WScoped :
         rw [show d + (i + 1) = d + 1 + i from by omega]
         exact hrec
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _
-    | letE _ _ _ | lit _ | proj _ _ _ => exact nomatch h
+    | letE _ _ _ _ | lit _ | proj _ _ _ => exact nomatch h
 
 /-- `instPisAt` for `λ`-binders, scoped. -/
 theorem instLamsAt_WScoped {d : Nat} :
@@ -623,7 +623,7 @@ theorem instLamsAt_WScoped {d : Nat} :
     | const c us => exact nomatch h
     | app f a' => exact nomatch h
     | forallE b c d' => exact nomatch h
-    | letE b c d' => exact nomatch h
+    | letE b c d' _ => exact nomatch h
     | lit l => exact nomatch h
     | proj s k e => exact nomatch h
 
@@ -640,7 +640,7 @@ theorem fvarTypeD_WScoped {d : Nat} {e : Expr} (h : WScoped d e) :
   | app f a => exact h
   | lam b c d' => exact h
   | forallE b c d' => exact h
-  | letE b c d' => exact h
+  | letE b c d' _ => exact h
   | lit l => exact h
   | proj s k e => exact h
 
@@ -1635,7 +1635,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
     | app _ _ => exact hw.mono (by omega)
     | lam _ _ _ => exact hw.mono (by omega)
     | forallE _ _ _ => exact hw.mono (by omega)
-    | letE _ _ _ => exact hw.mono (by omega)
+    | letE _ _ _ _ => exact hw.mono (by omega)
     | lit _ => exact hw.mono (by omega)
     | proj _ _ _ => exact hw.mono (by omega)
   obtain ⟨hcdW, hcrW⟩ := instPisAt_WScoped (d := nP) fvsP cvj.type
@@ -1686,7 +1686,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
     | app _ _ => exact hw.mono (by omega)
     | lam _ _ _ => exact hw.mono (by omega)
     | forallE _ _ _ => exact hw.mono (by omega)
-    | letE _ _ _ => exact hw.mono (by omega)
+    | letE _ _ _ _ => exact hw.mono (by omega)
     | lit _ => exact hw.mono (by omega)
     | proj _ _ _ => exact hw.mono (by omega)
   obtain ⟨hldW, -⟩ := instLamsAt_WScoped (fvsP ++ xFvs) rhsA hlinst
@@ -2024,7 +2024,7 @@ theorem wscopedB_substConst0 {n : Key} {r : Expr}
     exact ⟨wscopedB_substConst0 hr f he.1, wscopedB_substConst0 hr a he.2⟩
   | .bvar _, _, he | .fvar _ _, _, he | .sort _, _, he | .lit _, _, he
   | .lam _ _ _, _, he | .forallE _ _ _, _, he
-  | .letE _ _ _, _, he | .proj _ _ _, _, he => he
+  | .letE _ _ _ _, _, he | .proj _ _ _, _, he => he
 
 /-! ## The div/mod pin gate, `wfOpsM mode` runs to pure runs -/
 

@@ -157,14 +157,19 @@ def frameRefused : Except ExprError (List KExpr) → Bool
   | .error (.contract _) => true
   | _ => false
 
+def letOf : Except ExprError (List KExpr) → Option Ix.Kernel.LetMeta
+  | .ok [.letE _ _ _ l] => some l
+  | _ => none
+
 def sameTree : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
   | .ok [a], .ok b => decide (a = b)
   | _, _ => false
 
 /-- Binder contracts: a plain binder carries the Lean fragment's, and a
 contract frame puts its contract on the binder it wraps, as the compiler
-lowers it; a `let` frame's contract is erased; a frame the compiler refuses
-is refused. -/
+lowers it; a plain `let` carries Lean's let contract and a `let` frame puts
+its binder contract and kind on the let it wraps; a frame the compiler
+refuses is refused. -/
 def contractFrames : TestSeq :=
   let nat := Ix.Expr.mkConst (nm "Nat") #[]
   let lam := Ix.Expr.mkLam (nm "x") nat (.mkBVar 0) .default
@@ -185,7 +190,11 @@ def contractFrames : TestSeq :=
   test "an all frame's input and result contracts are the binder's"
     (binderOf (conv (framed allC pi)) ==
       some { pw := .never, contract := .erased, result := .localUnique }) ++
-  test "a let frame's contract is erased" (sameResult (conv (framed letC letE)) (conv letE)) ++
+  test "a plain let carries Lean's let contract"
+    (letOf (conv letE) == some { contract := .lean false }) ++
+  test "a let frame's contract is the let's"
+    (letOf (conv (framed letC letE)) ==
+      some { contract := { nonDep := false, kind := letC.letKind, binder := .affine } }) ++
   test "plain metadata around a frame is erased"
     (binderOf (conv (plain (framed lamC lam))) == some { pw := .never, contract := .linear }) ++
   test "a frame not directly around a binder of its kind is refused"

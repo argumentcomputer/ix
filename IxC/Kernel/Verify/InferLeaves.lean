@@ -55,7 +55,7 @@ theorem instPisAt_fvarLeaves :
           · exact Or.inr ⟨a, List.mem_cons_self, hb⟩
         · exact Or.inr ⟨a', List.mem_cons_of_mem _ ha', hla⟩
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _
-    | letE _ _ _ | lit _ | proj _ _ _ => exact nomatch h
+    | letE _ _ _ _ | lit _ | proj _ _ _ => exact nomatch h
 
 open Expr in
 /-- Peeling a `∀`-telescope along scoped arguments preserves
@@ -152,7 +152,7 @@ theorem Expr.fvarConsistent_of_leafCond {d : Nat} {ty : Expr} :
     intro hc
     exact ⟨ihty (fun l hl => hc l (by simp [fvarLeaves, hl])),
       ihbody (fun l hl => hc l (by simp [fvarLeaves, hl]))⟩
-  | letE ty' val body ihty ihval ihbody =>
+  | letE ty' val body _ ihty ihval ihbody =>
     intro hc
     exact ⟨ihty (fun l hl => hc l (by simp [fvarLeaves, hl])),
       ihval (fun l hl => hc l (by simp [fvarLeaves, hl])),
@@ -207,7 +207,7 @@ theorem Expr.fvarLeaves_abstract1_ne {D : Nat} :
       exact ⟨Or.inl h1, h2⟩
     · obtain ⟨h1, h2⟩ := ihbody (k + 1) hw.2 l hl
       exact ⟨Or.inr h1, h2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro k hw l hl
     simp only [WScoped] at hw
     simp only [abstract1, fvarLeaves, List.mem_append] at hl ⊢
@@ -313,7 +313,7 @@ theorem litToCtorIfNat_fvarLeaves {env : Env} {e : Expr} :
   | .lit (.strVal _), hl => exact hl
   | .bvar _, hl | .fvar _ _, hl | .sort _, hl | .const _ _, hl
   | .app _ _, hl | .lam _ _ _, hl | .forallE _ _ _, hl
-  | .letE _ _ _, hl | .proj _ _ _, hl => exact hl
+  | .letE _ _ _ _, hl | .proj _ _ _, hl => exact hl
 
 /-- The literal-major conversion preserves the bvar bound. -/
 theorem litToCtorIfNat_looseBVars {env : Env} {e : Expr} {k : Nat}
@@ -327,7 +327,7 @@ theorem litToCtorIfNat_looseBVars {env : Env} {e : Expr} {k : Nat}
     · exact hb
   | .lit (.strVal _) => exact hb
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _
-  | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ =>
+  | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .proj _ _ _ =>
     exact hb
 
 /-- Unfolding a definition at the head only shrinks the leaf
@@ -340,7 +340,7 @@ theorem unfoldDefinition_fvarLeaves {env : Env} (henv : EnvWF env)
   match hfn : e.getAppFn with
   | .const n us => ?_
   | .bvar _ | .fvar _ _ | .sort _ | .app _ _ | .lam _ _ _
-  | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+  | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
     intro h; exact nomatch h
   intro h
   dsimp only at h
@@ -381,7 +381,7 @@ theorem unfoldDefinition_looseBVars {env : Env} (henv : EnvWF env)
   match hfn : e.getAppFn with
   | .const n us => ?_
   | .bvar _ | .fvar _ _ | .sort _ | .app _ _ | .lam _ _ _
-  | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+  | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
     intro h; exact nomatch h
   intro h
   dsimp only at h
@@ -455,7 +455,7 @@ theorem whnfPres_fvarLeaves {env : Env} (henv : EnvWF env) :
       | bvar i =>
         rw [whnfCore_succ] at h
         simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
-      | letE tt vv bb =>
+      | letE tt vv bb _ =>
         -- task #241: the ζ arm is a positive `.internal` error
         rw [whnfCore_succ] at h
         simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
@@ -605,7 +605,7 @@ theorem whnfPres_looseBVars {env : Env} (henv : EnvWF env) :
       | bvar i =>
         rw [whnfCore_succ] at h
         simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
-      | letE tt vv bb =>
+      | letE tt vv bb _ =>
         -- task #241: the ζ arm is a positive `.internal` error
         rw [whnfCore_succ] at h
         simp [whnfCoreBody, throw, throwThe, MonadExceptOf.throw] at h
@@ -824,7 +824,7 @@ theorem inferTypeCore_WScoped {env : Env} (henv : EnvWF env) :
     | bvar i =>
       rw [inferTypeCore_succ] at h
       simp [inferBody, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCore_letE_inv h).elim
 
 theorem inferTypeCore_fvarLeaves {env : Env} (henv : EnvWF env) :
@@ -961,7 +961,7 @@ theorem inferTypeCore_fvarLeaves {env : Env} (henv : EnvWF env) :
     | bvar i =>
       rw [inferTypeCore_succ] at h
       simp [inferBody, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCore_letE_inv h).elim
 
 theorem inferTypeCore_looseBVars {env : Env} (henv : EnvWF env) :
@@ -1087,7 +1087,7 @@ theorem inferTypeCore_looseBVars {env : Env} (henv : EnvWF env) :
     | bvar i =>
       rw [inferTypeCore_succ] at h
       simp [inferBody, throw, throwThe, MonadExceptOf.throw] at h
-    | letE t' v' b' =>
+    | letE t' v' b' _ =>
       exact (inferTypeCore_letE_inv h).elim
 
 end Ix.Kernel

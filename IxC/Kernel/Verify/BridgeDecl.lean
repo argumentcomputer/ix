@@ -708,7 +708,7 @@ theorem normFieldDoms_datF (env : Env) (T : Key) (F : Nat) (n : Nat) :
       funext dom'
       simp only [FueledM.atF_bind, FueledM.atF_pure,
         ih (i + 1) (body.instantiate1 (.fvar i dom))]
-    | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _ | .letE _ _ _
+    | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _ | .letE _ _ _ _
     | .lit _ | .proj _ _ _ =>
       simp only [normFieldDoms, FueledM.atF_throw]
 

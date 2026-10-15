@@ -231,7 +231,7 @@ theorem structProjBodiesGo_spec (T : Key) :
         funext acc jj
         rw [show i + (jj + 1) = i + 1 + jj from by omega]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       exact nomatch h
 
 /-- **The bodies are the peel's domains**: body `i` is the head domain
@@ -433,7 +433,7 @@ theorem Expr.hasLooseBVar_eq_false_of_bound : ∀ (e : Expr) (i : Nat),
     simp only [Expr.hasLooseBVar, Bool.or_eq_false_iff]
     exact ⟨hasLooseBVar_eq_false_of_bound ty i h.1,
       hasLooseBVar_eq_false_of_bound b (i + 1) (by omega)⟩
-  | .letE t v b, i, h => by
+  | .letE t v b _, i, h => by
     simp only [Expr.bvarBound, Nat.max_le] at h
     simp only [Expr.hasLooseBVar, Bool.or_eq_false_iff]
     exact ⟨⟨hasLooseBVar_eq_false_of_bound t i h.1.1, hasLooseBVar_eq_false_of_bound v i h.1.2⟩,
@@ -476,7 +476,7 @@ theorem Expr.hasLooseBVarB_eq : ∀ (i : Nat) (e : Expr), e.hasLooseBVarB i = e.
     · rename_i hcut
       exact (Expr.hasLooseBVar_eq_false_of_bound _ _ (Expr.bvarB_eq _ ▸ hcut)).symm
     · simp only [Expr.hasLooseBVar, iht, ihb]
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     rw [Expr.hasLooseBVarB]
     split
     · rename_i hcut

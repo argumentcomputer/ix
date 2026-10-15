@@ -908,7 +908,7 @@ theorem inferLamsLeaf_sound {d : Nat} {t : Expr}
         · simp only [if_neg hz] at hrun
           exact nomatch hrun
     | bvar _ | fvar _ _ | const _ _ | app _ _ | lam _ _ _
-    | forallE _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+    | forallE _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
       intro hrun
       exact nomatch hrun
 
@@ -947,7 +947,7 @@ theorem inferLams_sound {d : Nat} :
         | app f a => exact nomatch hrun
         | lam tt b mm => exact nomatch hrun
         | forallE tt b mm => exact nomatch hrun
-        | letE tt vv b => exact nomatch hrun
+        | letE tt vv b _ => exact nomatch hrun
         | lit l => exact nomatch hrun
         | proj sp i e => exact nomatch hrun
       dsimp only at hrun
@@ -1156,7 +1156,7 @@ theorem inferPisLeaf_sound {d : Nat} {t : Expr}
     | app f a => exact nomatch hrun
     | lam tt b mm => exact nomatch hrun
     | forallE tt b mm => exact nomatch hrun
-    | letE tt vv b => exact nomatch hrun
+    | letE tt vv b _ => exact nomatch hrun
     | lit l => exact nomatch hrun
     | proj sp i e => exact nomatch hrun
   dsimp only at hrun
@@ -1239,7 +1239,7 @@ theorem inferPis_sound {d : Nat} :
         | app f a => exact nomatch hrun
         | lam tt b mm => exact nomatch hrun
         | forallE tt b mm => exact nomatch hrun
-        | letE tt vv b => exact nomatch hrun
+        | letE tt vv b _ => exact nomatch hrun
         | lit l => exact nomatch hrun
         | proj sp i e => exact nomatch hrun
       dsimp only at hrun

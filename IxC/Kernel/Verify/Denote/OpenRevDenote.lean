@@ -81,7 +81,7 @@ private theorem bounded_instantiate1_le {a : Expr}
     simp only [Expr.instantiate1, Expr.looseBVarsBounded,
       Bool.and_eq_true] at hb ⊢
     exact ⟨ihty k m hkm hb.1, ihbody (k + 1) (m + 1) (by omega) hb.2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro k m hkm hb
     simp only [Expr.instantiate1, Expr.looseBVarsBounded,
       Bool.and_eq_true] at hb ⊢
@@ -311,7 +311,7 @@ theorem Expr.fvarsBelow_of_fvarLeaves :
   case forallE ty b m ihty ihb =>
     exact ⟨ihty fun l hl => h l (List.mem_append_left _ hl),
       ihb fun l hl => h l (List.mem_append_right _ hl)⟩
-  case letE ty v b ihty ihv ihb =>
+  case letE ty v b _ ihty ihv ihb =>
     refine ⟨ihty fun l hl => h l ?_, ihv fun l hl => h l ?_,
       ihb fun l hl => h l ?_⟩
     · exact List.mem_append_left _ (List.mem_append_left _ hl)

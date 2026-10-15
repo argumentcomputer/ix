@@ -263,7 +263,7 @@ theorem denoteMeta_instLevels (hp : AcvalParamsAt env acval)
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app fe a => exact absurd rfl (happ fe a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

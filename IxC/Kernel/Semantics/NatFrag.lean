@@ -125,7 +125,7 @@ theorem natFrag_subst_syntax {c : Key} {v : Expr}
       · exact hlf l h'
       · exact hla l h'
   | .bvar _, h | .lam _ _ _, h | .forallE _ _ _, h
-  | .letE _ _ _, h | .proj _ _ _, h | .lit _, h => by
+  | .letE _ _ _ _, h | .proj _ _ _, h | .lit _, h => by
     simp [natFragOk] at h
 
 end Ix.Kernel.Verify

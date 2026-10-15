@@ -39,14 +39,17 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3274 compiled functions, with the computed-field overrides of
+reaches 3303 compiled functions, with the computed-field overrides of
 `Level`, `Expr`, `Name` and `Key` and 20 proved csimps; the Ixon reader
-(`readRecords` with `Admission.readStream`) reaches 2021, adding the
+(`readRecords` with `Admission.readStream`) reaches 2025, adding the
 in-model generator's 9 `partial` definitions; the entry (the four
-`publicOperations`) reaches 5447 with 111 inherited externs, adding the
+`publicOperations`) reaches 5474 with 111 inherited externs, adding the
 byte stage (`preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`), the
 binding section's admission (`admitBinding`, `RoleTable.ofBytes`,
-`RoleTable.check`) and the committed default table and prelude. Step 5a
+`RoleTable.check`) and the committed default table and prelude. Step 5b's
+`LetMeta` (a `letE` keeps its Ixon let contract) moved them from 3274, 2021
+and 5447: the let contract's equality and hash (`Ixon.LetContract`,
+`Ixon.LetKind`) and its `Repr` for the terms printed in messages. Step 5a
 (typed keys) moved the counts from 3350, 2018 and 5656: `Key` became an
 inductive with a cached hash, whose three constructor overrides
 (`Key.{id,role,aux}._override`) the rulings admit with `Key`; a role key is
@@ -343,19 +346,19 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3274 compiled functions; inherited externs 82, implemented_by 0, unsafe 25, csimp 4; ruled computed_field 21, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3303 compiled functions; inherited externs 82, implemented_by 0, unsafe 25, csimp 4; ruled computed_field 21, csimp 20 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2021 compiled functions; inherited externs 79, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2025 compiled functions; inherited externs 79, implemented_by 0, unsafe 26, csimp 0; ruled computed_field 21, csimp 7, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5447 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5474 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

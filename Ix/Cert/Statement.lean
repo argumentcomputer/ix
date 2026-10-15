@@ -432,7 +432,7 @@ def expr : Ix.Kernel.Expr → Ix.Kernel.Expr
   | .app f a => .app (expr f) (expr a)
   | .lam t b m => .lam (expr t) (expr b) m
   | .forallE t b m => .forallE (expr t) (expr b) m
-  | .letE t v b => .letE (expr t) (expr v) (expr b)
+  | .letE t v b l => .letE (expr t) (expr v) (expr b) l
   | .lit l => .lit l
   | .proj n i e => .proj (σ n) i (expr e)
 
@@ -493,7 +493,7 @@ def expr : Ix.Kernel.Expr → List Ix.Kernel.Key
   | .app f a => expr f ++ expr a
   | .lam t b _ => expr t ++ expr b
   | .forallE t b _ => expr t ++ expr b
-  | .letE t v b => expr t ++ expr v ++ expr b
+  | .letE t v b _ => expr t ++ expr v ++ expr b
   | .proj n _ e => n :: expr e
   | _ => []
 

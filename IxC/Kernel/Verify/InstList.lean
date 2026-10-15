@@ -102,7 +102,7 @@ theorem instantiateList_cons :
   | vs, .forallE ty body bi, v, d => by
     simp only [instantiateList, instantiate1]
     rw [instantiateList_cons vs ty v d, instantiateList_cons vs body v (d + 1)]
-  | vs, .letE ty val body, v, d => by
+  | vs, .letE ty val body _, v, d => by
     simp only [instantiateList, instantiate1]
     rw [instantiateList_cons vs ty v d, instantiateList_cons vs val v d,
       instantiateList_cons vs body v (d + 1)]

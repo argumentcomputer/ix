@@ -78,10 +78,11 @@ the certified byte admission
 codec: projection records are written with Ixon v4's TagN writer
 (`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
 (`getTagN`, `getTagNWide`, `getTagN0Values`). Step 5a (typed keys) moved the
-count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`). -/
+count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
+`LetMeta` from 5478, by the let contract's equality, hash and `Repr`. -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5478 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
+ Ixon.Projection.checkBytes]: 5505 compiled functions; inherited externs 111, implemented_by 0, unsafe 26, csimp 4; ruled computed_field 21, csimp 21, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

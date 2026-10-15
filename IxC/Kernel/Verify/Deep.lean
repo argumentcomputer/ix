@@ -162,8 +162,8 @@ private theorem shiftFrom_app (p : Nat) (f a : Expr) :
 
 /-- `shiftFrom` distributes over `letE` (definitional). -/
 private theorem shiftFrom_letE (p : Nat) (ty v b : Expr) :
-    shiftFrom p (.letE ty v b) =
-      .letE (shiftFrom p ty) (shiftFrom p v) (shiftFrom p b) := rfl
+    shiftFrom p (.letE ty v b lmeta) =
+      .letE (shiftFrom p ty) (shiftFrom p v) (shiftFrom p b) lmeta := rfl
 
 /-- `getD` with the (shift-invariant) `bvar 0` default commutes with
 mapping the shift. -/
@@ -235,7 +235,7 @@ private theorem litToCtorIfNat_shiftFrom {env : Env} (p : Nat) (e : Expr) :
     · rfl
   | .lit (.strVal _) => rfl
   | .bvar _ | .sort _ | .const _ _ | .app _ _
-  | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ => rfl
+  | .lam _ _ _ | .forallE _ _ _ | .letE _ _ _ _ | .proj _ _ _ => rfl
   | .fvar idx ty => simp [litToCtorIfNat, shiftFrom_fvar]
 
 /-- Delta-unfolding commutes with the shift (stored values are closed
@@ -453,7 +453,7 @@ private theorem reduceNat_shift (_henv : EnvWF env)
         (Option.map (shiftFrom p)) := by
   match e with
   | .bvar _ | .fvar _ _ | .sort _ | .lam _ _ _ | .forallE _ _ _
-  | .letE _ _ _ | .lit _ | .proj _ _ _ | .const _ _ =>
+  | .letE _ _ _ _ | .lit _ | .proj _ _ _ | .const _ _ =>
     first
     | rfl
     | (simp only [shiftFrom_fvar]; rfl)
@@ -461,7 +461,7 @@ private theorem reduceNat_shift (_henv : EnvWF env)
     have hwfa : WScoped d f ∧ WScoped d a := by simpa only [WScoped] using hw
     match f with
     | .bvar _ | .fvar _ _ | .sort _ | .lam _ _ _ | .forallE _ _ _
-    | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+    | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
       first
       | rfl
       | (simp only [shiftFrom_app, shiftFrom_fvar]; rfl)
@@ -481,7 +481,7 @@ private theorem reduceNat_shift (_henv : EnvWF env)
         simpa only [WScoped] using hwfa.1
       match g with
       | .bvar _ | .fvar _ _ | .sort _ | .lam _ _ _ | .forallE _ _ _
-      | .letE _ _ _ | .lit _ | .proj _ _ _ | .app _ _ =>
+      | .letE _ _ _ _ | .lit _ | .proj _ _ _ | .app _ _ =>
         first
         | rfl
         | (simp only [shiftFrom_app, shiftFrom_fvar]; rfl)
@@ -604,7 +604,7 @@ private theorem iotaCerts_shift (henv : EnvWF env)
     | .const n' us => rfl
     | .app f a => rfl
     | .lam ty'' body' m' => rfl
-    | .letE ty'' v' b' => rfl
+    | .letE ty'' v' b' _ => rfl
     | .lit l => rfl
     | .proj sp i' e' => rfl
 
@@ -1395,8 +1395,8 @@ private theorem litMajorToCtor_shift (_henv : EnvWF env)
     show pure (litToCtorIfNat env (shiftFrom p (.forallE ty body bi))) = _
     rw [litToCtorIfNat_shiftFrom]
     rfl
-  | .letE ty v body, _ => by
-    show pure (litToCtorIfNat env (shiftFrom p (.letE ty v body))) = _
+  | .letE ty v body lmeta, _ => by
+    show pure (litToCtorIfNat env (shiftFrom p (.letE ty v body lmeta))) = _
     rw [litToCtorIfNat_shiftFrom]
     rfl
   | .proj sn i pe, _ => by
@@ -1434,7 +1434,7 @@ private theorem projLitToCtor_shift (_henv : EnvWF env)
   | .app f a, _ => rfl
   | .lam ty body bi, _ => rfl
   | .forallE ty body bi, _ => rfl
-  | .letE ty v body, _ => rfl
+  | .letE ty v body _, _ => rfl
   | .proj sn i pe, _ => rfl
 
 private theorem iotaIndexOk_shift (henv : EnvWF env)
@@ -1690,7 +1690,7 @@ private theorem whnfCore_step (henv : EnvWF env)
   | .lam ty body mb => rfl
   | .const n us => rfl
   | .lit l => rfl
-  | .letE ty v body =>
+  | .letE ty v body _ =>
     -- task #241: both sides are the same positive `.internal` error
     rfl
   | .app f a =>
@@ -1755,7 +1755,7 @@ private theorem whnfCore_step (henv : EnvWF env)
     | sort u => exact hiota _ hwf'
     | const n' us => exact hiota _ hwf'
     | forallE ty' body' m' => exact hiota _ hwf'
-    | letE ty' v' body' => exact hiota _ hwf'
+    | letE ty' v' body' _ => exact hiota _ hwf'
     | lit l => exact hiota _ hwf'
     | proj s' i' e' => exact hiota _ hwf'
     | app f'' a'' => exact hiota _ hwf'
@@ -1862,7 +1862,7 @@ private theorem infer_step (henv : EnvWF env)
   rw [inferTypeCore_succ, inferTypeCore_succ]
   match e with
   | .bvar i => rfl
-  | .letE ty v body =>
+  | .letE ty v body _ =>
     -- task #241: both sides are the same positive `.internal` error
     rfl
   | .sort u => rfl
@@ -2066,7 +2066,7 @@ private theorem inferIOCore_step (henv : EnvWF env)
   rw [inferTypeCoreIO_succ, inferTypeCoreIO_succ]
   match e with
   | .bvar i => rfl
-  | .letE ty v body =>
+  | .letE ty v body _ =>
     -- task #241: both sides are the same positive `.internal` error
     rfl
   | .sort u => rfl
@@ -2656,7 +2656,7 @@ private theorem defeqLoop_shift (henv : EnvWF env)
     refine bind_congr_eq he ?_
     intro bb _
     exact ite_congr' (fun _ => rfl) (fun _ => hstuck)
-  case lam.letE ty1 body1 m1 lty lv lb hne =>
+  case lam.letE ty1 body1 m1 lty lv lb _ hne =>
     simp only [WScoped] at hwwa
     have he := etaCert_shift henv ih hpd m1 hwwa.1 hwwa.2 hwwb
     try simp only [shiftFrom_fvar] at he
@@ -2721,7 +2721,7 @@ private theorem defeqLoop_shift (henv : EnvWF env)
     refine bind_congr_eq he ?_
     intro bb _
     exact ite_congr' (fun _ => rfl) (fun _ => hstuck)
-  case letE.lam lty lv lb ty2 body2 m2 hne =>
+  case letE.lam lty lv lb _ ty2 body2 m2 hne =>
     simp only [WScoped] at hwwb
     have he := etaCert_shift henv ih hpd m2 hwwb.1 hwwb.2 hwwa
     try simp only [shiftFrom_fvar] at he
@@ -2763,12 +2763,12 @@ private theorem annotate_step (henv : EnvWF env)
         (shiftFrom p)
     simp only [annotateBody]
     exact ite_rel _ (fun _ => rfl) (fun _ => rfl)
-  | .letE ty v body =>
+  | .letE ty v body lmeta =>
     simp only [WScoped] at hw
     rw [shiftFrom_letE]
     show annotateBody (pureFns mode env fuel) env (d + 1)
-        (.letE (shiftFrom p ty) (shiftFrom p v) (shiftFrom p body)) =
-      (annotateBody (pureFns mode env fuel) env d (.letE ty v body)).map
+        (.letE (shiftFrom p ty) (shiftFrom p v) (shiftFrom p body) lmeta) =
+      (annotateBody (pureFns mode env fuel) env d (.letE ty v body lmeta)).map
         (shiftFrom p)
     simp only [annotateBody]
     refine bind_rel _ _ (ih.annotate hpd hw.1) ?_

@@ -196,7 +196,7 @@ theorem instantiate1P_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
     · dsimp only
       rw [mkForallE_eq, iht d, ihb (d + 1)]
       rfl
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro d
     rw [Expr.instantiate1P.eq_def]
     split
@@ -247,11 +247,11 @@ private theorem instList_forallE (ty b : Expr) (m : BinderMeta)
           (b.instantiateList ws (d + 1)) m := by
   rw [Expr.instantiateList]
 
-private theorem instList_letE (ty v b : Expr) (ws : List Expr)
+private theorem instList_letE (ty v b : Expr) (l : LetMeta) (ws : List Expr)
     (d : Nat) :
-    (Expr.letE ty v b).instantiateList ws d
+    (Expr.letE ty v b l).instantiateList ws d
       = .letE (ty.instantiateList ws d) (v.instantiateList ws d)
-          (b.instantiateList ws (d + 1)) := by
+          (b.instantiateList ws (d + 1)) l := by
   rw [Expr.instantiateList]
 
 private theorem instList_proj (s : Key) (i : Nat) (e : Expr)
@@ -419,7 +419,7 @@ theorem instantiateListP_spec {vs : Array Expr} :
         exact (Expr.instantiateList_eq_self (bvarB_le hcut)).symm
       · dsimp only
         rw [instList_forallE, mkForallE_eq, iht (d := d) hk, ihb (d := d + 1) hk]
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro d hk
     rw [Expr.instantiateListP.eq_def]
     split
@@ -579,13 +579,13 @@ theorem instantiateRevP_eq {vs : Array Expr} :
     rw [if_neg hcut, if_neg hcut]
     dsimp only
     rw [iht d, ihb (d + 1)]
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd lmeta iht ihv ihb =>
     intro d
     rw [Expr.instantiateRevP.eq_def, Expr.instantiateListP.eq_def]
     by_cases hk0 : k = 0
     · simp only [if_pos hk0]
     rw [if_neg hk0, if_neg hk0]
-    by_cases hcut : (Expr.letE ty val bd).bvarB ≤ d
+    by_cases hcut : (Expr.letE ty val bd lmeta).bvarB ≤ d
     · rw [if_pos hcut, if_pos hcut]
     rw [if_neg hcut, if_neg hcut]
     dsimp only
@@ -722,7 +722,7 @@ theorem abstract1P_spec {d : Nat} : ∀ (e : Expr) (k : Nat),
     · dsimp only
       rw [mkForallE_eq, iht k, ihb (k + 1)]
       rfl
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro k
     rw [Expr.abstract1P.eq_def]
     split
@@ -827,7 +827,7 @@ theorem abstractRangeP_spec {d k : Nat} : ∀ (e : Expr) (c : Nat),
     · dsimp only
       rw [mkForallE_eq, iht c, ihb (c + 1)]
       rfl
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro c
     rw [Expr.abstractRangeP.eq_def]
     split
@@ -920,7 +920,7 @@ theorem instLevelParamsP_spec {ks : List LevelParam} {us : List Level} : ∀ (e 
     · dsimp only
       rw [mkForallE_eq, iht, ihb]
       rfl
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     rw [Expr.instLevelParamsP.eq_def]
     split
     · rename_i hcut
@@ -991,8 +991,8 @@ private theorem wscopedB_forallE (ty b : Expr) (m : BinderMeta)
     (Expr.forallE ty b m).wscopedB d = (ty.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
-private theorem wscopedB_letE (ty v b : Expr) (d : Nat) :
-    (Expr.letE ty v b).wscopedB d
+private theorem wscopedB_letE (ty v b : Expr) (l : LetMeta) (d : Nat) :
+    (Expr.letE ty v b l).wscopedB d
       = (ty.wscopedB d && v.wscopedB d && b.wscopedB d) := by
   rw [Expr.wscopedB]
 
@@ -1051,7 +1051,7 @@ theorem wscopedBP_spec : ∀ (e : Expr) (d : Nat),
     split
     · next h => exact wscopedBP_cut_spec h
     · simp only [wscopedB_forallE, iht, ihb]
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro d
     rw [Expr.wscopedBP.eq_def]
     split
@@ -1151,7 +1151,7 @@ theorem piResidualAcc_spec :
       dsimp only
       rw [instList_lam]
       exact trivial
-    | letE ty v b =>
+    | letE ty v b _ =>
       rw [piResidualAcc.eq_def]
       dsimp only
       rw [instList_letE]
@@ -1249,7 +1249,7 @@ theorem instantiate1LiftP_spec {v : Expr} : ∀ (e : Expr) (d : Nat),
     · dsimp only
       rw [mkForallE_eq, iht d, ihb (d + 1)]
       rfl
-  | letE ty val bd iht ihv ihb =>
+  | letE ty val bd _ iht ihv ihb =>
     intro d
     rw [Expr.instantiate1LiftP.eq_def]
     split

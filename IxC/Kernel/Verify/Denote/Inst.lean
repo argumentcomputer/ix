@@ -138,7 +138,7 @@ theorem denote_substFvarAt (hcl : ∀ n ψ, Term.Closed (cval n ψ))
           (body.instantiate1 (.fvar (D + 1) ty)) with
       | none => rfl
       | some B => simp only [Option.map_some, Term.inst_lam]
-  | .letE ty val body, D, hpD, hfb => by
+  | .letE ty val body _, D, hpD, hfb => by
     -- task #241: `denote` is `none` at a `letE`, on both sides
     simp only [Expr.substFvarAt, denote_letE, Option.map_none]
   | .proj s i e, D, hpD, hfb => by
@@ -248,9 +248,9 @@ theorem denote_erasedEq {cval : TConstVal} {env : Env} {φ : LevelParam → Nat}
         denote_erasedEq (Expr.ErasedEq.instantiate1 h2
           (show Expr.ErasedEq (.fvar d ty) (.fvar d ty') from rfl))
           (d + 1)]
-  | .letE ty vl body, e₂, he, d => by
+  | .letE ty vl body _, e₂, he, d => by
     match e₂, he with
-    | .letE ty' vl' body', he => simp only [denote_letE]
+    | .letE ty' vl' body' _, he => simp only [denote_letE]
   | .lit l, e₂, he, d => by
     match e₂, he with
     | .lit l', he => obtain rfl : l = l' := he; rfl
@@ -321,7 +321,7 @@ theorem denote_erasePw {cval : TConstVal} {env : Env} {φ : LevelParam → Nat} 
       rw [Expr.erasePw_instantiate1]; rfl
     simp only [Expr.erasePw, denote_lam, denote_erasePw ty d, hb,
       denote_erasePw (body.instantiate1 (.fvar d ty)) (d + 1)]
-  | .letE ty vl body, d => by
+  | .letE ty vl body _, d => by
     simp only [Expr.erasePw, denote_letE]
   | .lit _, _ => rfl
   | .proj sn i pe, d => by

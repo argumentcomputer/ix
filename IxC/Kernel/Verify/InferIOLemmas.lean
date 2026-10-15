@@ -66,7 +66,7 @@ theorem inferTypeCoreIO_forall_inv {env : Env} {fuel d : Nat}
   match w with
   | .sort u => ?_
   | .bvar _ | .fvar _ _ | .const _ _ | .app _ _ | .lam _ _ _
-  | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+  | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
     intro h; simp [throw, throwThe, MonadExceptOf.throw] at h
   intro h
   dsimp only at h
@@ -152,7 +152,7 @@ theorem inferTypeCoreIO_lam_inv {env : Env} {fuel d : Nat}
     · rw [if_neg hpw] at h
       simp [throw, throwThe, MonadExceptOf.throw] at h
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _
-  | .forallE _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _ =>
+  | .forallE _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _ =>
     intro h
     simp only [Expr.lamPw] at h
     revert h
@@ -230,7 +230,7 @@ theorem inferTypeCoreIO_app_inv {env : Env} {fuel d : Nat} {f a t : Expr}
   | .lam t2 b2 m2, h => exact nomatch h
   | .bvar i, h => exact nomatch h
   | .app f2 a2, h => exact nomatch h
-  | .letE t2 v2 b2, h => exact nomatch h
+  | .letE t2 v2 b2 _, h => exact nomatch h
   | .lit l2, h => exact nomatch h
   | .proj s2 i2 e2, h => exact nomatch h
   dsimp only at h
@@ -326,7 +326,7 @@ theorem inferTypeCoreIO_app_inv' {env : Env} {fuel d : Nat}
 `inferTypeCore_letE_inv`'s: the arm is a positive `.internal` error. -/
 theorem inferTypeCoreIO_letE_inv {env : Env} {fuel d : Nat}
     {ty v b t : Expr}
-    (h : inferTypeCoreIO mode env (fuel + 1) d (.letE ty v b)
+    (h : inferTypeCoreIO mode env (fuel + 1) d (.letE ty v b lmeta)
       = .ok t) :
     False := by
   rw [inferTypeCoreIO_succ] at h
@@ -376,7 +376,7 @@ theorem inferTypeCoreIO_proj_inv {env : Env} {fuel d : Nat} {sn : Key}
   | app f2 a2 => intro h; exact nomatch h
   | lam t2 b2 m2 => intro h; exact nomatch h
   | forallE t2 b2 m2 => intro h; exact nomatch h
-  | letE t2 v2 b2 => intro h; exact nomatch h
+  | letE t2 v2 b2 _ => intro h; exact nomatch h
   | lit l2 => intro h; exact nomatch h
   | proj s2 i2 e2 => intro h; exact nomatch h
   intro h
@@ -572,7 +572,7 @@ theorem inferTypeCoreIO_of_full {env : Env} :
         dsimp only
         rw [hde]
         simp
-    | .letE ty v b =>
+    | .letE ty v b _ =>
       exact (inferTypeCore_letE_inv h).elim
     | .proj sn i pe =>
       obtain ⟨tpe, te, T, us, entry, htpe, hwte, hfn, hfe,

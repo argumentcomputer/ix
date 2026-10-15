@@ -46,7 +46,7 @@ theorem fvarLeaves_substConst0 {n : Key} {r : Expr}
     simp only [Expr.substConst0, Expr.fvarLeaves,
       fvarLeaves_substConst0 hr f, fvarLeaves_substConst0 hr a]
   | .bvar _ | .fvar _ _ | .sort _ | .lit _ | .lam _ _ _
-  | .forallE _ _ _ | .letE _ _ _ | .proj _ _ _ => rfl
+  | .forallE _ _ _ | .letE _ _ _ _ | .proj _ _ _ => rfl
 
 /-- A `looseBVars`-closed replacement keeps the bound. -/
 theorem looseBVarsBounded_substConst0 {n : Key} {r : Expr}
@@ -65,7 +65,7 @@ theorem looseBVarsBounded_substConst0 {n : Key} {r : Expr}
       looseBVarsBounded_substConst0 hr a he.2⟩
   | .bvar _, _, he | .fvar _ _, _, he | .sort _, _, he
   | .lit _, _, he | .lam _ _ _, _, he | .forallE _ _ _, _, he
-  | .letE _ _ _, _, he | .proj _ _ _, _, he => he
+  | .letE _ _ _ _, _, he | .proj _ _ _, _, he => he
 
 /-- The binary pinned type, inverted. -/
 theorem natOpTyPinned_binaryE {env : Env} {n : Key} {ty : Expr}
@@ -83,11 +83,11 @@ theorem natOpTyPinned_binaryE {env : Env} {n : Key} {ty : Expr}
     simp only [Bool.and_eq_true, beq_iff_eq] at h
     exact ⟨mb, mb2, cod, by rw [h.1.1, h.1.2], h.2⟩
   | .bvar _ | .fvar _ _ | .sort _ | .const _ _ | .app _ _
-  | .lam _ _ _ | .letE _ _ _ | .lit _ | .proj _ _ _
+  | .lam _ _ _ | .letE _ _ _ _ | .lit _ | .proj _ _ _
   | .forallE _ (.bvar _) _ | .forallE _ (.fvar _ _) _
   | .forallE _ (.sort _) _ | .forallE _ (.const _ _) _
   | .forallE _ (.app _ _) _ | .forallE _ (.lam _ _ _) _
-  | .forallE _ (.letE _ _ _) _ | .forallE _ (.lit _) _
+  | .forallE _ (.letE _ _ _ _) _ | .forallE _ (.lit _) _
   | .forallE _ (.proj _ _ _) _ => intro h; exact nomatch h
 
 /-- The codomain is a stored, level-monomorphic constant. -/

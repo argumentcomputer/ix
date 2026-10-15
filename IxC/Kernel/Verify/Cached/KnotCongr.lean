@@ -126,7 +126,7 @@ theorem constsResolveFP_congr (hfe : fe₁.find? = fe₂.find?) : ∀ e : Expr,
   | app f a ihf iha => simp only [constsResolveFP, ihf, iha]
   | lam ty body m iht ihb => simp only [constsResolveFP, iht, ihb]
   | forallE ty body m iht ihb => simp only [constsResolveFP, iht, ihb]
-  | letE ty val body iht ihv ihb => simp only [constsResolveFP, iht, ihv, ihb]
+  | letE ty val body _ iht ihv ihb => simp only [constsResolveFP, iht, ihv, ihb]
   | proj sn i sub ih => simp only [constsResolveFP, hfe, ih]
 
 /-- `constsResolveFC` reads `fe` only through `find?`. -/

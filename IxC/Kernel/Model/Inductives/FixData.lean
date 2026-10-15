@@ -173,7 +173,7 @@ theorem stripPisAV_denoteMeta_bits {acval : Key → (LevelParam → Nat) → Ann
     | .const _ _, hop => nomatch hop
     | .app _ _, hop => nomatch hop
     | .lam _ _ _, hop => nomatch hop
-    | .letE _ _ _, hop => nomatch hop
+    | .letE _ _ _ _, hop => nomatch hop
     | .proj _ _ _, hop => nomatch hop
     | .lit _, hop => nomatch hop
 

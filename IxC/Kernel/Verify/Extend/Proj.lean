@@ -529,7 +529,7 @@ theorem checkProjShape_inv {pty cty : Expr} {nP nF : Nat} {u : Unit}
     | .app _ _ => intro h; exact nomatch h
     | .lam _ _ _ => intro h; exact nomatch h
     | .forallE _ _ _ => intro h; exact nomatch h
-    | .letE _ _ _ => intro h; exact nomatch h
+    | .letE _ _ _ _ => intro h; exact nomatch h
     | .lit _ => intro h; exact nomatch h
     | .proj _ _ _ => intro h; exact nomatch h
   next => exact nomatch h

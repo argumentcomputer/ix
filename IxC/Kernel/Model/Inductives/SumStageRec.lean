@@ -62,7 +62,7 @@ theorem stripPis_liftLooseBVars :
       simp only [Expr.stripPis, hs'', Option.map_some]
       rw [show c + 1 + k = c + (k + 1) from by omega]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 /-! ## The rule data's shape -/
