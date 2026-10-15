@@ -880,15 +880,34 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 
 The compiler canonicalizes every universe it stores (`Ixon.canonUniv`, through
 the block memo `Ix.CompileM.canonUnivCached`). Canonicalization preserves the
-value of a universe under every valuation, with no premise. Every lemma behind
-it is audited in `Ix.CompileCert.UniverseAudit`. -/
+value of a universe under every valuation, with no premise; the memo returns
+exactly the canonicalizer's output; and the certified reader's reading of a
+canonical universe has the raw universe's value over positional level
+parameters. Every lemma behind them is audited in
+`Ix.CompileCert.UniverseAudit`. -/
 
 /-- info: Ix.CompileCert.CanonUnivEmit.canonUniv_eval (ρ : UInt64 → Nat) (level : Ixon.Univ) :
   Ix.CompileCert.univEval ρ (Ixon.canonUniv level) = Ix.CompileCert.univEval ρ level -/
 #guard_msgs (whitespace := lax) in
 #check Ix.CompileCert.CanonUnivEmit.canonUniv_eval
 
+/-- info: Ix.CompileCert.CanonUnivScope.convCanon_eval (param : Nat → Ix.Kernel.LevelParam) (φ : Ix.Kernel.LevelParam → Nat)
+  (source : Ixon.Univ) :
+  Ix.Kernel.Level.eval φ (Ix.Kernel.Reader.convUniv param (Ixon.canonUniv source)) =
+    Ix.CompileCert.univEval (fun index => φ (param index.toNat)) source -/
+#guard_msgs (whitespace := lax) in
+#check Ix.CompileCert.CanonUnivScope.convCanon_eval
+
 /-- info: 'Ix.CompileCert.CanonUnivEmit.canonUniv_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.CanonUnivEmit.canonUniv_eval
 
+/-- info: 'Ix.CompileCert.CanonUnivScope.convCanon_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.CanonUnivScope.convCanon_eval
+
+/-- info: 'Ix.CompileCert.CanonUnivCache.canonUnivCached_correct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.CanonUnivCache.canonUnivCached_correct

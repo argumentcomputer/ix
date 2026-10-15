@@ -1,21 +1,24 @@
-import Ix.CompileCert.CanonUnivEmit
+import Ix.CompileCert.CanonUnivScope
+import Ix.CompileCert.CanonUnivCache
 import IxC.Kernel.Audit.Axioms
 import Lean.Compiler.CSimpAttr
 import Lean.Compiler.ImplementedByAttr
 
 /-! # Audit of the universe canonicalization proofs
 
-Every theorem of `Ix.CompileCert.{UniverseEval, CanonUnivMeaning,
-CanonUnivSubsumption, CanonUnivPaths, CanonUnivGateOrder, CanonUnivEmit}`
-that a later proof uses is a root here. Each root must exist, occur once, and
-depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
-(`Ix.Kernel.Audit.collectCached`, the certified kernel's traversal of checked
-types and bodies, so `sorryAx` fails it). The headline theorem is frozen with
-its exact axioms in `Ix.Cert.Audit`.
+Every theorem of `Ix.CompileCert.{UniverseEval, RawRun, CanonUnivMeaning,
+CanonUnivSubsumption, CanonUnivPaths, CanonUnivGateOrder, CanonUnivEmit,
+CanonUnivScope, CanonUnivCache}` that a later proof uses is a root here. Each
+root must exist, occur once, and depend on no axiom but `propext`,
+`Classical.choice` and `Quot.sound` (`Ix.Kernel.Audit.collectCached`, the
+certified kernel's traversal of checked types and bodies, so `sorryAx` fails
+it). The headline theorems are frozen with their exact axioms in
+`Ix.Cert.Audit`.
 
-The proofs are about the definitions that run: the canonicalizer's phases
-carry no `@[csimp]` replacement and no `@[implemented_by]`, and are safe
-definitions, which the last check enforces. -/
+The proofs are about the definitions that run: the canonicalizer's phases,
+its memo and the certified reader's universe reading carry no `@[csimp]`
+replacement and no `@[implemented_by]`, and are safe definitions, which the
+last two checks enforce. -/
 
 open Lean Elab Command
 
@@ -116,6 +119,26 @@ def emissionRoots : Array Lean.Name :=
     `potential_output_le, `emitGroups_ge, `emitGroups_le, `linearize_phases,
     `linearize_normalize_eval, `canonUniv_eval].map (`Ix.CompileCert.CanonUnivEmit ++ ·)
 
+/-- Parameter provenance through canonicalization, and the certified
+reader's reading of a canonical universe, over positional level parameters. -/
+def scopeRoots : Array Lean.Name :=
+  #[`Shape.addSuccs, `Shape.gated, `shape_maxFold, `shape_maxChain,
+    `atomTerm_shape, `retainedTerms_shape, `groupOutput_shape, `rootPass_shape,
+    `finishEmission_shape, `emitGroups_shape, `canonUniv_shape, `Shape.parameter_le,
+    `univEval_ext, `canonUniv_occurs, `canonUniv_bounded,
+    `convUniv_eval, `convCanon_eval, `convUniv_defined, `recParam_mem,
+    `convCanon_defined, `convCanon_defined_id].map (`Ix.CompileCert.CanonUnivScope ++ ·)
+
+/-- The compiler's canonical memo, the raw compiler's frame, and the run
+combinators they are proved with. -/
+def cacheRoots : Array Lean.Name :=
+  (#[`canonCache_empty, `canonCache_insert, `canonUnivCached_run,
+    `canonUnivCached_correct, `canonUnivCached_eval,
+    `compileUniv_frame].map (`Ix.CompileCert.CanonUnivCache ++ ·)) ++
+  (#[`rawRun_bind, `rawRun_pure, `rawRun_read, `rawRun_readBlock, `rawRun_get,
+    `rawRun_modify, `Preserves.pure, `Preserves.throw, `Preserves.get,
+    `Preserves.read, `Preserves.modify, `Preserves.bind].map (`Ix.CompileCert ++ ·))
+
 end Ix.CompileCert.UniverseAudit
 
 run_cmd Ix.CompileCert.UniverseAudit.checkRoots "evaluation" Ix.CompileCert.UniverseAudit.evalRoots
@@ -123,6 +146,8 @@ run_cmd Ix.CompileCert.UniverseAudit.checkRoots "normalization" Ix.CompileCert.U
 run_cmd Ix.CompileCert.UniverseAudit.checkRoots "subsumption" Ix.CompileCert.UniverseAudit.subsumptionRoots
 run_cmd Ix.CompileCert.UniverseAudit.checkRoots "gates" Ix.CompileCert.UniverseAudit.gateRoots
 run_cmd Ix.CompileCert.UniverseAudit.checkRoots "emission" Ix.CompileCert.UniverseAudit.emissionRoots
+run_cmd Ix.CompileCert.UniverseAudit.checkRoots "scope and reading" Ix.CompileCert.UniverseAudit.scopeRoots
+run_cmd Ix.CompileCert.UniverseAudit.checkRoots "memo" Ix.CompileCert.UniverseAudit.cacheRoots
 
 /-- The runtime definitions the proofs are about carry no compiled
 replacement and are safe. -/
@@ -149,4 +174,11 @@ def Ix.CompileCert.UniverseAudit.canonicalizer : Array Lean.Name :=
     `gateOrder, `gatesLeakFree, `maxChain, `linearize].map (`Ixon.CanonUniv ++ ·)) ++
       #[``Ixon.Univ.addSuccs, ``Ixon.canonUniv]
 
+/-- The compiler's memoized canonicalization and the certified reader's
+universe reading. -/
+def Ix.CompileCert.UniverseAudit.memoAndReader : Array Lean.Name :=
+  #[``Ix.CompileM.canonUnivCached, ``Ix.CompileM.compileAndInternUnivCanon,
+    ``Ix.Kernel.Reader.convUniv, ``Ix.Kernel.Reader.recParam, ``Ix.Kernel.Reader.ECx.level]
+
 run_cmd Ix.CompileCert.UniverseAudit.checkRuntime "canonicalizer" Ix.CompileCert.UniverseAudit.canonicalizer
+run_cmd Ix.CompileCert.UniverseAudit.checkRuntime "memo and reader" Ix.CompileCert.UniverseAudit.memoAndReader
