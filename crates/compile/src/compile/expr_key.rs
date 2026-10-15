@@ -62,21 +62,39 @@ impl PartialEq for PreseedKey {
 
 impl Eq for PreseedKey {}
 
+/// A positional universe-parameter context with its digest, built once per
+/// universe and shared by the keys of all its sub-levels.
+#[derive(Clone, Debug)]
+pub struct UnivContext {
+  params: Arc<[Name]>,
+  hash: Address,
+}
+
+impl UnivContext {
+  pub fn new(params: &[Name]) -> Self {
+    Self { params: params.into(), hash: super::univ_params_key(params) }
+  }
+
+  pub fn params(&self) -> &[Name] {
+    &self.params
+  }
+}
+
 /// The source level and its complete positional parameter context. Context
 /// digests select candidates but never identify different name sequences.
 #[derive(Clone, Debug)]
 pub struct UnivKey {
   level: Level,
-  params: Vec<Name>,
+  params: Arc<[Name]>,
   context_hash: Address,
 }
 
 impl UnivKey {
-  pub fn new(level: &Level, params: &[Name]) -> Self {
+  pub fn new(level: &Level, ctx: &UnivContext) -> Self {
     Self {
       level: level.clone(),
-      params: params.to_vec(),
-      context_hash: super::univ_params_key(params),
+      params: ctx.params.clone(),
+      context_hash: ctx.hash.clone(),
     }
   }
 }
@@ -92,7 +110,11 @@ impl PartialEq for UnivKey {
   fn eq(&self, other: &Self) -> bool {
     self.context_hash == other.context_hash
       && self.params.len() == other.params.len()
-      && self.params.iter().zip(&other.params).all(|(a, b)| same_name(a, b))
+      && self
+        .params
+        .iter()
+        .zip(other.params.iter())
+        .all(|(a, b)| same_name(a, b))
       && same_level(&self.level, &other.level)
   }
 }
