@@ -2715,8 +2715,8 @@ fn validate_one_group(
         CompileError::InvalidMutualBlock {
           reason: format!(
             "non-canonical inductive flags for '{}': \
-               stored isRec={}isReflexive={} numNested={}, \
-               computed isRec={}isReflexive={} numNested={}",
+               stored isRec={} isReflexive={} numNested={}, \
+               computed isRec={} isReflexive={} numNested={}",
             member.pretty(),
             v.is_rec,
             v.is_reflexive,

@@ -1310,35 +1310,38 @@ def computeLeanIndFlags (all : Array Name) : CompileM LeanIndFlags := do
         | _ => go := false
   return { isRec, isReflexive, numNested }
 
-/-- Validate that every inductive group carries exactly the recomputed
-    flags. Groups with missing members/ctors are skipped (Rust returns Ok
-    for them). Mirrors Rust `validate_ind_groups` (nested.rs:2176),
-    sequentially (Rust uses par_iter; ordering of error discovery is the
-    only difference, and each group's verdict is independent). -/
-def validateIndGroups (groups : Std.HashMap Name (Array Name))
-    : CompileM Unit := do
-  for (_, all) in groups do
-    -- Skip groups whose members/ctors aren't all resolvable inductives.
-    let mut skip := false
-    for member in all do
-      match ← lookupConst? member with
-      | some (.inductInfo v) =>
-        for cn in v.ctors do
-          match ← lookupConst? cn with
-          | some (.ctorInfo _) => pure ()
-          | _ => skip := true
-      | _ => skip := true
-    if skip then
-      continue
-    let flags ← computeLeanIndFlags all
-    for member in all do
-      let some (.inductInfo v) ← lookupConst? member | continue
-      if v.isRec != flags.isRec || v.isReflexive != flags.isReflexive
-          || v.numNested != flags.numNested then
-        throw (.invalidMutualBlock
-          s!"non-canonical inductive flags for '{member.pretty}': stored \
+/-- Validate that one inductive group carries exactly the recomputed flags.
+    A group with a member that is not an inductive, or a constructor that is
+    not a constructor, is skipped (Rust returns `Ok` for it). Mirrors Rust
+    `validate_one_group` (nested.rs:2685). -/
+def validateIndGroup (all : Array Name) : CompileM Unit := do
+  for member in all do
+    match ← lookupConst? member with
+    | some (.inductInfo v) =>
+      for cn in v.ctors do
+        match ← lookupConst? cn with
+        | some (.ctorInfo _) => pure ()
+        | _ => return
+    | _ => return
+  let flags ← computeLeanIndFlags all
+  for member in all do
+    let some (.inductInfo v) ← lookupConst? member | continue
+    if v.isRec != flags.isRec || v.isReflexive != flags.isReflexive
+        || v.numNested != flags.numNested then
+      throw (.invalidMutualBlock
+        s!"non-canonical inductive flags for '{member.pretty}': stored \
 isRec={v.isRec} isReflexive={v.isReflexive} numNested={v.numNested}, \
 computed isRec={flags.isRec} isReflexive={flags.isReflexive} \
 numNested={flags.numNested}")
+
+/-- Validate that every inductive group carries exactly the recomputed
+    flags (`validateIndGroup`). Mirrors Rust `validate_ind_groups`
+    (nested.rs:2653), sequentially (Rust uses par_iter; ordering of error
+    discovery is the only difference, and each group's verdict is
+    independent). -/
+def validateIndGroups (groups : Std.HashMap Name (Array Name))
+    : CompileM Unit := do
+  for (_, all) in groups do
+    validateIndGroup all
 
 end Ix.AuxGen

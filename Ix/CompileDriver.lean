@@ -464,6 +464,46 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
+/-! ## Domain restriction: canonical inductive flags — env.rs:262-285 -/
+
+/-- The input's inductive groups: each inductive's `all`, keyed by its first
+    member, the first `all` met for a key kept (Rust `scan.ind_groups`,
+    graph.rs:120). -/
+def inductiveGroups (env : Ix.Environment) : Std.HashMap Name (Array Name) :=
+  env.consts.fold (init := {}) fun groups _ ci =>
+    match ci with
+    | .inductInfo v =>
+      match v.all[0]? with
+      | some first => if groups.contains first then groups else groups.insert first v.all
+      | none => groups
+    | _ => groups
+
+/-- Groups per task in `validateInductiveFlags`. -/
+def inductiveFlagsChunk : Nat := 256
+
+/-- The domain restriction of both drivers (Rust `validate_ind_groups`,
+    env.rs:277): every input inductive group must carry the flags Lean
+    computes for it (`isRec`, `isReflexive`, `numNested`;
+    `Ix.AuxGen.validateIndGroup`), or the compile fails before any block is
+    scheduled. The groups are checked on parallel tasks, in chunks of
+    `inductiveFlagsChunk` in the order of their first members' hashes; the
+    error reported is the first in that order (Rust reports one of them). -/
+def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run do
+  let groups := (inductiveGroups env).toArray.qsort fun a b =>
+    a.1.getHash.cmpBytes b.1.getHash == .lt
+  let cenv := CompileEnv.new env
+  let blockEnv : BlockEnv :=
+    { all := {}, current := .mkAnon, mutCtx := default, univCtx := [] }
+  let chunks := (groups.size + inductiveFlagsChunk - 1) / inductiveFlagsChunk
+  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ => Id.run do
+    for (_, all) in groups[c * inductiveFlagsChunk:(c + 1) * inductiveFlagsChunk] do
+      if let .error e := CompileM.run cenv blockEnv {} (Ix.AuxGen.validateIndGroup all) then
+        return some (toString e)
+    return none
+  for t in tasks do
+    if let some e := t.get then return .error e
+  return .ok ()
+
 /-! ## The aux-aware sequential driver -/
 
 /-- Compile an entire environment with the FULL production pipeline
@@ -473,7 +513,8 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
     pending-aux dependency release. Sequential mirror of Rust
     `compile_env_with_options`' scheduler (env.rs:146-990; grounding and
     SCC condensation happen upstream of the `blocks` input, as in the
-    Rust FFI phase split).
+    Rust FFI phase split). An input inductive group with non-canonical
+    flags fails the compile first (`validateInductiveFlags`).
 
     Per-block failures are recorded in `ungrounded` per member and the
     scheduler continues (dependents cascade into `MissingConstant`
@@ -483,6 +524,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (nameByHash : Std.HashMap Address Name := {})
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
+  if let .error e := validateInductiveFlags env then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
@@ -847,6 +889,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     | .ok l => pure l
     | .error e => return .error e
 
+  if let .error e := validateInductiveFlags env then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
@@ -988,10 +1031,10 @@ compile → serialize` — the Lean-side mirror of Rust
 scheduler. This is what `ix compile-lean` and `ix validate-lean`
 phase 1 run.
 
-Rust's env-level `validate_ind_groups` domain restriction is not
-re-scanned here: the per-block nested-expansion path performs the same
-inductive-flag validation when it matters, and the compile fails loudly
-there on non-canonical flags. -/
+Both drivers apply Rust's env-level domain restriction
+(`validate_ind_groups`) first: an input inductive group whose stored flags
+differ from the recomputed ones (`validateInductiveFlags`) fails the compile
+before any block is scheduled. -/
 
 /-- Result of the full pure-Lean compile pipeline. -/
 structure LeanPipelineOut where
