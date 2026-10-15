@@ -29,6 +29,7 @@ import Tests.Ix.Compile.IndexSafety
 import Tests.Ix.Compile.TableWorklist
 import Tests.Ix.Compile.HeaderCounts
 import Tests.Ix.Compile.PayloadArrays
+import Tests.Ix.Compile.UniverseWire
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -145,6 +146,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("table-worklist", Tests.Ix.Compile.TableWorklist.suite),
   ("header-count", Tests.Ix.Compile.HeaderCounts.suite),
   ("payload-arrays", Tests.Ix.Compile.PayloadArrays.suite),
+  ("universe-wire", Tests.Ix.Compile.UniverseWire.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
