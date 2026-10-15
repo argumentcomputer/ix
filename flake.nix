@@ -227,7 +227,16 @@
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
             depOverrideDeriv = {
-              Blake3 = blake3-lean.packages.${system}.rust;
+              # Blake3.lean's `rust` package builds only its `Blake3Rust`
+              # library (`Blake3.Rust` and the `Blake3` root). Ix also imports
+              # `Blake3.Pure` (`Ix.Address.Pure`), and binaries that import
+              # their closure at run time (`get_env!`) look for it under this
+              # package's path in `LEAN_PATH`, so build it here as well.
+              Blake3 = blake3-lean.packages.${system}.rust.overrideAttrs (old: {
+                postBuild = (old.postBuild or "") + ''
+                  lake build +Blake3.Pure
+                '';
+              });
             };
           }) (map (p: p.name) (builtins.filter (p: p.type == "path") lakeManifest.packages));
           lakePackageOverrides = pkgs.writers.writeJSON "lake-package-overrides.json" (
