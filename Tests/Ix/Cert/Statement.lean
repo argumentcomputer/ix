@@ -242,7 +242,7 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let some cx := Ix.Cert.admissionContext binding limits ixe order.toList
     | return (errors.push "no admission context", lines)
   let mut read := 0
-  let mut unread : Array Ix.Kernel.Name := #[]
+  let mut unread : Array Ix.Kernel.Key := #[]
   let mut bad : Array String := #[]
   for c in envS.consts do
     match Ix.Cert.reading ixe cx c with
@@ -258,8 +258,8 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     | some t => bad := bad.push s!"{c.name} reads as {repr t}"
   for b in bad.toList.take 5 do errors := errors.push s!"reading: {b}"
   -- every constant of the closure is read
-  let subNames : Std.HashSet Ix.Kernel.Name :=
-    sub.consts.fold (fun s n _ => s.insert (Ix.LeanIngress.ingressName n)) {}
+  let subNames : Std.HashSet Ix.Kernel.Key :=
+    sub.consts.fold (fun s n _ => s.insert (Ix.LeanIngress.ingressKey n)) {}
   let unreadOwn := unread.filter subNames.contains
   unless unreadOwn.isEmpty do
     errors := errors.push s!"reading: {unreadOwn.size} constants of the closure are not read: \
@@ -323,7 +323,7 @@ def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
   let mut contracted : Array Lean.Name := #[]
   let mut seen : Std.HashMap Lean.Name (Contracts × Contracts) := {}
   for n in contractSeeds do
-    let some c := envS.find? (Ix.Kernel.Name.ofLeanName n)
+    let some c := envS.find? (Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n))
       | errors := errors.push s!"{n}: not installed in Source mode"
     let some (.const k _) := Ix.Cert.reading ixe cx c
       | errors := errors.push s!"{n}: not read"
