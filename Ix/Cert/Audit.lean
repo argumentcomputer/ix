@@ -1477,3 +1477,35 @@ metadata serializers write only names and blobs, and keep every readable blob
 /-- info: 'Ix.CompileCert.WireTables.internUniv_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.WireTables.internUniv_preserves
+
+/-! ## Component theorems: the universe pipeline's tables
+
+After the raw universe compile, `compileAndInternUnivCanon` canonicalizes
+through the block memo and interns the canonical form
+(`Ix.CompileCert.UniversePipeline.canonicalTail`). A successful run leaves
+the memo exact and the tables sound, and the certified reader reads the
+returned slot as the canonical form, whose value under every valuation is the
+raw universe's (`canonicalTail_read`). -/
+
+/-- info: @Ix.CompileCert.UniversePipeline.canonicalTail_read : ∀ {md : Ix.Kernel.Mode} (raw : Ixon.Univ)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (before : Ix.CompileM.BlockState),
+  Ix.CompileCert.CanonUnivCache.CanonCacheExact before →
+    Ix.CompileCert.UniversePipeline.TablesSound before →
+      ∀ {value : UInt64 × Option UInt64} {after : Ix.CompileM.BlockState},
+        Ix.CompileCert.rawRun (Ix.CompileCert.UniversePipeline.canonicalTail raw) context before =
+            (Except.ok value, after) →
+          ∀ (reader : Ix.Kernel.Reader.Ctx md) (param : Nat → Ix.Kernel.LevelParam)
+            (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md))),
+            Ix.CompileCert.CanonUnivCache.CanonCacheExact after ∧
+              Ix.CompileCert.UniversePipeline.TablesSound after ∧
+                (Ix.CompileCert.ExpressionRead.blockReader reader param self after).ecx.level value.fst =
+                    Except.ok (Ix.Kernel.Reader.convUniv param (Ixon.canonUniv raw)) ∧
+                  ∀ (φ : Ix.Kernel.LevelParam → Nat),
+                    Ix.Kernel.Level.eval φ (Ix.Kernel.Reader.convUniv param (Ixon.canonUniv raw)) =
+                      Ix.CompileCert.univEval (fun index => φ (param index.toNat)) raw -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.UniversePipeline.canonicalTail_read
+
+/-- info: 'Ix.CompileCert.UniversePipeline.canonicalTail_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.UniversePipeline.canonicalTail_read

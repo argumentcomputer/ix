@@ -3,6 +3,7 @@ import Ix.CompileCert.CacheSound
 import Ix.CompileCert.Serializers
 import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.WireTables
+import Ix.CompileCert.UniversePipeline
 
 /-! # Audit of the reading-chain proofs
 
@@ -14,8 +15,9 @@ compiler's in-flight tables (`Ix.CompileCert.ExpressionRead`), the table
 interners (`Ix.CompileCert.Interning`), the checked blob writes
 (`Ix.CompileCert.BlobWrites`), the metadata serializers' footprint
 (`Ix.CompileCert.Serializers`), the preseed's universe-wire guard
-(`Ix.CompileCert.PreseedValidation`) and the primary tables' wire validity
-(`Ix.CompileCert.WireTables`). Each root must exist, occur once, and
+(`Ix.CompileCert.PreseedValidation`), the primary tables' wire validity
+(`Ix.CompileCert.WireTables`) and the table half of the universe pipeline
+(`Ix.CompileCert.UniversePipeline`). Each root must exist, occur once, and
 depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -98,6 +100,17 @@ def wireRoots : Array Lean.Name :=
     `internRef_count_failure, `internUniv_count_failure,
     `internAdmission_preserves].map (`Ix.CompileCert.WireTables ++ ·)
 
+/-- The table half of the universe pipeline: interning the canonical form,
+success, and reading it back. -/
+def pipelineRoots : Array Lean.Name :=
+  #[`internUniv_frame, `internMetaUniv_frame, `compileAndInternUnivCanon_eq,
+    `TablesSound.primary, `TablesSound.metadata, `tablesSound_empty, `finishSpelling_correct,
+    `internCanonical_correct, `internMetaUniv_returns, `internUniv_returns,
+    `finishSpelling_returns, `internCanonical_returns, `finishSpelling_frame,
+    `internCanonical_frame, `canonUnivCached_frame, `canonicalTail_frame,
+    `canonicalTail_correct, `canonicalTail_returns, `canonicalTail_read, `canonicalTail_reading,
+    `canonicalTail_cache_sound].map (`Ix.CompileCert.UniversePipeline ++ ·)
+
 /-- The production definitions the table, blob and serializer proofs unfold,
 and the reader functions the reading proofs unfold. -/
 def tableRuntime : Array Lean.Name :=
@@ -128,6 +141,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "serializers" Ix.CompileCert.ReadingAudit.serializerRoots
   checkRoots (tag := "reading-audit") "preseed guard" Ix.CompileCert.ReadingAudit.preseedRoots
   checkRoots (tag := "reading-audit") "wire tables" Ix.CompileCert.ReadingAudit.wireRoots
+  checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
