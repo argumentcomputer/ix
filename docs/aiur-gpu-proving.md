@@ -195,7 +195,7 @@ The ones a run needs, then the ones a measurement might.
 | `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Every real GPU plan runs `regenerate`: round two rebuilds each shard from its seeds, which the resident seed cache makes cheap. |
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
-| `--texray` | Per-phase wall and RSS lines on stderr, as on the CPU. |
+| `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables compression-worker TeXRay output. |
 
 ## 6. Benchmarking a multi-GPU run
 
@@ -204,10 +204,11 @@ command, recorded with its identities. The script that produced the
 measurements below does only this: write the provenance, sample the
 devices, run the one command under the cap, and keep the exit status.
 
-Set `RUNS_DIR` to fast local storage with room for the lane and KZG
-caches. These caches write fsynced checkpoints, so storage throughput can
-limit the run. Preserve final proofs and any cache worth keeping before
-discarding an ephemeral volume.
+Set `RUNS_DIR` to fast local storage for this script's outputs and lane cache.
+For subsequent KZG compression, use the separate
+[NVMe and cache placement instructions](../crates/proof-compression/README.md#disk-placement)
+and [KZG benchmark recipe](../crates/proof-compression/README.md#kzg-benchmarking).
+`RUNS_DIR` does not configure KZG cache paths.
 
 ```sh
 #!/bin/bash

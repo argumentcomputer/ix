@@ -151,7 +151,7 @@ All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. The ooc and Aiur cells share per-constant
 **full-closure** scope.
 
-With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
+With `--texray` or `IX_TEXRAY=1`, tools write per-phase span timings (`aiur/prove_ixvm`,
 `aiur/witness`, `stark/*`, …) to `<json>.spans`. The
 per-constant backends run **one process per constant**, so each spawn's
 window belongs wholly to its constant: `ix bench run` folds it into the
@@ -307,10 +307,12 @@ Benchmark jobs use exact `r8i` instance types; CI jobs request the
 `r7i+r8i+r7a+r8a` families so Spot has several pools to fill from. All use
 the `ubuntu26-full-x64` image with the default Spot policy. RunsOn can fall
 back to on-demand capacity and automatically retry interrupted jobs. There
-are no GPU benchmarks; future GPU benchmarks should use `spot=false` and
-keep their run and cache directories on fast local storage, as
-[the GPU proving guide](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run)
-describes. The CUDA compile job runs its toolchain in an Ubuntu 26.04
+are no GPU benchmark jobs in CI; future GPU jobs should use `spot=false`.
+For manual measurements, follow the
+[Aiur proving guide](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run) or the
+[KZG benchmark recipe](../crates/proof-compression/README.md#kzg-benchmarking),
+which defines input boundaries, NVMe/cache placement, and cold/warm state.
+The CUDA compile job runs its toolchain in an Ubuntu 26.04
 container on a CPU runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
 [CI and merge queue configuration](ci.md) for the required checks and retry
 behavior.
