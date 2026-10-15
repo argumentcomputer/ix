@@ -17,7 +17,10 @@
      claim over a compiled name, over an earlier aux claim and over itself
      within one block, an identical re-claim (accepted), a conflicting plan
      of each of the three kinds, and a second compiled claim at another
-     address. The messages must be Rust's, character for character.
+     address. The messages must be Rust's, character for character. An
+     alias of a promoted target does not borrow the target's `original`
+     (its own promotion supplies one), so its metadata does not depend on
+     promotion order.
   2. **Both compilers.** A constructed closure that bypasses the rule that
      auxiliaries exist exactly when Lean generates them: it holds a user
      constant named `T.below` (a plain definition, not Lean's auxiliary) for
@@ -207,6 +210,47 @@ registered {names₂.size}, claim {acc₂.cenv.auxNameToAddr.get? n}"
     (accP.cenv.ungrounded.get? n).map fun m => (m.drop "invalidMutualBlock: ".length).toString)]
   return cases
 
+/-- Target promotion must not change a new alias's provenance (an alias
+    borrowing its target's `original` made its metadata depend on promotion
+    order), and the alias's own source promotion must still be retained. -/
+def aliasProvenanceCheck : Except String Unit := do
+  let source := ixName "Fx.A.rec_1"
+  let target := ixName "Fx.B.rec"
+  let canonical := addr "canonical"
+  let targetOriginal := addr "target-original"
+  let sourceOriginal := addr "source-original"
+  let aliases := ({} : Std.HashMap Ix.Name Ix.Name).insert source target
+  let blockEnv : BlockEnv :=
+    { all := ({} : Ix.Set Ix.Name).insert source, current := source, mutCtx := default, univCtx := [] }
+  let targetEnv (original : Option (Address × Ixon.ConstantMeta)) : CompileEnv :=
+    { (default : CompileEnv) with
+      nameToAddr := ({} : Std.HashMap _ _).insert target canonical
+      nameToNamed := ({} : Std.HashMap _ _).insert target
+        { addr := canonical, original, hints := some .abbrev } }
+  let register (env : CompileEnv) :=
+    (CompileM.run env blockEnv {} (Ix.AuxGen.registerAuxAliases aliases "alias fixture"))
+      |>.mapError toString
+  let (_, before) ← register (targetEnv none)
+  let (_, after) ← register (targetEnv (some (targetOriginal, .empty)))
+  let some (n, aliasBefore) := before.auxNamed[0]? | throw "missing initial alias"
+  let some (_, aliasAfter) := after.auxNamed[0]? | throw "missing alias after target promotion"
+  if n != source || before.auxNamed.size != 1 || after.auxNamed.size != 1 then
+    throw "wrong alias registrations"
+  if aliasBefore != aliasAfter || aliasAfter.original.isSome then
+    throw "alias borrowed the target's source provenance"
+  if aliasAfter.addr != canonical || aliasAfter.hints != some .abbrev then
+    throw "canonical alias content or hints lost"
+  let env := { targetEnv (some (targetOriginal, .empty)) with
+    nameToNamed := (targetEnv none).nameToNamed.insert source aliasAfter
+    auxNameToAddr := ({} : Std.HashMap _ _).insert source canonical }
+  let promoted ← (promoteAuxDriver env source sourceOriginal .empty).mapError toString
+  let some own := promoted.nameToNamed.get? source | throw "own promotion missing"
+  if own.original != some (sourceOriginal, .empty) || own.addr != canonical then
+    throw "own source provenance was not preserved"
+  let (_, repeated) ← register promoted
+  if !repeated.auxNamed.isEmpty then
+    throw "consistent re-registration overwrote the source's own original"
+
 end DriverApi
 
 /-! ## Part 2: both compilers on a constructed closure -/
@@ -283,6 +327,11 @@ def leanCompile (env : Environment) (closure : List (Name × ConstantInfo)) (wor
 
 def run : IO UInt32 := do
   let mut failures := 0
+  match aliasProvenanceCheck with
+  | .ok () => IO.println "[claim-conflict] alias provenance: target promotion independent; own original preserved"
+  | .error e =>
+    failures := failures + 1
+    IO.println s!"[claim-conflict] alias provenance: FAIL: {e}"
   -- Part 1
   for (label, expected, actual) in driverCases do
     if expected == actual then
