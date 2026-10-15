@@ -35,10 +35,16 @@ Statements (`def … : Prop`) and the theorems proved now:
   section, is stored under the pure BLAKE3 hash of its bytes (`ixonAuthentic`);
 * `SourceValueSound`, `IxonValueSound`: every accepted environment has a
   value model (`sourceValueSound`, `ixonValueSound`);
-* `CompileCorrect`: if Source accepts a closure and the compiler compiled it,
-  Ixon accepts the compiled closure, and every value model of the compiled
-  environment, read through `reading`, is one of the source's (`Commutes`).
-  Stated, not proved;
+* `CompileCorrect`: if Source accepts a closure and no constant of it failed
+  in the compiler's report (`NoFailure`, decidable), the compiler published
+  the closure, Ixon accepts the compiled closure, and every value model of the
+  compiled environment, read through `reading`, is one of the source's
+  (`Commutes`). Stated, not proved;
+* `CompileCovers`: the compiler publishes an input constant exactly when its
+  report does not list it as failed. Stated, not proved; under it,
+  `CompileCorrect` is equivalent to the same statement hypothesised on the
+  artifact publishing the closure (`CompileCorrect.published`,
+  `CompileCorrect.of_published`);
 * `CompileAuthentic`: every record and blob `compile` returns is stored under
   the pure BLAKE3 hash of its bytes. Stated, not proved; its definitional
   steps are (`blockAddr_mk'`, `storedRecord_authentic`);
@@ -246,6 +252,83 @@ dependents, and the compile still succeeds. -/
 def Published (ixe : Ixon.Env) (sub : Ix.Environment) : Prop :=
   ∀ n ci, sub.consts.get? n = some ci → ∃ named, ixe.named.get? n = some named
 
+/-! ### What the compile reports
+
+`compileReport` returns, with the environment, every constant it left out
+(`Failures`). The statements are hypothesised on that report: "no constant of
+the closure failed" is decidable from the compile's own output, without
+looking into the artifact. -/
+
+/-- `Ix.Name`'s `==` compares the stored hashes, which are `Address`es, whose
+`==` is equality: an equivalence, and `Hashable` hashes the stored hash. -/
+theorem name_beq_iff {a b : Ix.Name} : (a == b) = true ↔ a.getHash = b.getHash :=
+  Address.beq_iff_eq
+
+instance : EquivBEq Ix.Name where
+  rfl := name_beq_iff.mpr rfl
+  symm h := name_beq_iff.mpr (name_beq_iff.mp h).symm
+  trans h₁ h₂ := name_beq_iff.mpr ((name_beq_iff.mp h₁).trans (name_beq_iff.mp h₂))
+
+instance : LawfulHashable Ix.Name where
+  hash_eq a b h := by
+    show hash a.getHash = hash b.getHash
+    rw [name_beq_iff.mp h]
+
+/-- The compile reports `n` as failed: the ground filter removed it, or its
+block failed to compile. -/
+def Failures.failed (failures : Failures) (n : Ix.Name) : Bool :=
+  failures.ungrounded.contains n || failures.blocks.contains n
+
+/-- **No constant of `sub` failed** in the compile that reported
+`failures`. Decidable (`NoFailure.instDecidable`). -/
+def NoFailure (failures : Failures) (sub : Ix.Environment) : Prop :=
+  ∀ n ci, sub.consts.get? n = some ci → failures.failed n = false
+
+theorem Failures.failed_congr (failures : Failures) {a b : Ix.Name} (h : (a == b) = true) :
+    failures.failed a = failures.failed b := by
+  unfold Failures.failed
+  rw [Std.HashMap.contains_congr (m := failures.ungrounded) h,
+    Std.HashMap.contains_congr (m := failures.blocks) h]
+
+theorem noFailure_iff (failures : Failures) (sub : Ix.Environment) :
+    NoFailure failures sub ↔ (sub.consts.keys.all fun n => !failures.failed n) = true := by
+  rw [List.all_eq_true]
+  constructor
+  · intro h k hk
+    have hc : sub.consts.contains k = true := by
+      rw [← Std.HashMap.contains_keys]; exact List.elem_eq_true_of_mem hk
+    rw [Std.HashMap.contains_eq_isSome_getElem?, Option.isSome_iff_exists] at hc
+    obtain ⟨ci, hci⟩ := hc
+    simp [h k ci hci]
+  · intro h n ci hn
+    have hc : sub.consts.keys.contains n = true := by
+      rw [Std.HashMap.contains_keys, Std.HashMap.contains_eq_isSome_getElem?]
+      exact Option.isSome_iff_exists.mpr ⟨ci, hn⟩
+    obtain ⟨k, hk, hnk⟩ := List.contains_iff_exists_mem_beq.mp hc
+    have := h k hk
+    rw [failures.failed_congr hnk]
+    simpa using this
+
+instance NoFailure.instDecidable (failures : Failures) (sub : Ix.Environment) :
+    Decidable (NoFailure failures sub) :=
+  decidable_of_iff _ (noFailure_iff failures sub).symm
+
+/-- **Coverage.** `compileReport` accounts for every input constant once:
+it is published (`Ixon.Env.named`) exactly when it did not fail. The ground
+filter records what it removes; the driver records every member of a block
+that failed, including a refused claim or payload and a withdrawn promotion
+(CQ2.3, CQ2.4, CQ2.6); and the readiness rule (CQ2.6) fails a block whose
+dependency failed instead of leaving it unscheduled. A failed block publishes
+nothing (CQ2.4b, CQ2.6). Stated, not proved: it is an invariant of the
+driver's loop (`Ix.CompileM.compileEnvAux`). Checked on the fixtures
+(`cert-statement`) and on `Init` (`cert-compile-parity-init`). Under it,
+`NoFailure` and `Published` agree on every closure
+(`CompileCorrect.published`, `CompileCorrect.of_published`). -/
+def CompileCovers : Prop :=
+  ∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures),
+    compileReport env = .ok (ixe, failures) → ∀ n ci, env.consts.get? n = some ci →
+      ((∃ named, ixe.named.get? n = some named) ↔ failures.failed n = false)
+
 /-! ## Value models
 
 The public `Ix.Kernel.Model` constrains types only: a definition may denote
@@ -338,24 +421,81 @@ theorem storedRecord_authentic (bytes : ByteArray) :
       Address.blake3Pure ({ buf := bytes, len := bytes.size } : Ixon.LazyConstant).rawBytes := by
   simp [Address.admissionHash_eq, Ixon.LazyConstant.rawBytes]
 
+/-- **The compiled closure is accepted and commutes**: Ixon accepts the
+compiled closure of the addresses `ixe` publishes for `sub` under the default
+role table, within some resource limits and in some order that respects its
+references, and the compiled environment commutes with the source `envS`
+through the reading. -/
+def IxonCommutes (ixe : Ixon.Env) (sub : Ix.Environment) (envS : Env .source) : Prop :=
+  ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
+  ∃ limits order envA cx, IxonAccepts binding limits ixe (Seed ixe sub) order envA ∧
+    admissionContext binding limits ixe order = some cx ∧
+      Commutes.{w} (reading ixe cx) envS envA
+
 /-- **Compiler correctness, forward, per root.** Suppose Source accepts the
 closure `sub` of `roots` in `env`, grouped as the compiler groups it,
-`compile env` returns `ixe`, and `ixe` publishes every constant of `sub`.
-Then Ixon accepts the compiled closure under the default role table, within
-some resource limits and in some order that respects its references, and the
-compiled environment commutes with the source through the reading.
+`compileReport env` returns `ixe` with `failures`, and no constant of `sub`
+failed (`NoFailure`, decidable from the report). Then `ixe` publishes every
+constant of `sub`, and the compiled closure is accepted and commutes with
+the source (`IxonCommutes`).
 
 This is partial correctness. A closure that Source rejects or declines, a
-compile that fails, and constants the compile leaves out are outside the
-statement. -/
+compile that fails, and a closure with a failed constant are outside the
+statement. Under `CompileCovers` it is the statement hypothesised on
+`Published` instead of `NoFailure` (`CompileCorrect.published`,
+`CompileCorrect.of_published`). -/
 def CompileCorrect : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
-    (ixe : Ixon.Env),
-    SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe → Published ixe sub →
-    ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
-    ∃ limits order envA cx, IxonAccepts binding limits ixe (Seed ixe sub) order envA ∧
-      admissionContext binding limits ixe order = some cx ∧
-        Commutes.{w} (reading ixe cx) envS envA
+    (ixe : Ixon.Env) (failures : Failures),
+    SourceAccepts blocksOf env roots sub envS → compileReport env = .ok (ixe, failures) →
+    NoFailure failures sub → Published ixe sub ∧ IxonCommutes.{w} ixe sub envS
+
+/-- `compile` succeeds exactly when `compileReport` does, with its
+environment. -/
+theorem compile_eq_ok {env : Ix.Environment} {ixe : Ixon.Env} :
+    compile env = .ok ixe ↔ ∃ failures, compileReport env = .ok (ixe, failures) := by
+  unfold compile
+  cases compileReport env with
+  | error e =>
+    show Except.error e = Except.ok ixe ↔ ∃ failures, Except.error e = Except.ok (ixe, failures)
+    simp
+  | ok p =>
+    obtain ⟨a, f⟩ := p
+    show Except.ok a = Except.ok ixe ↔ ∃ failures, Except.ok (a, f) = Except.ok (ixe, failures)
+    constructor
+    · intro h; cases h; exact ⟨f, rfl⟩
+    · rintro ⟨_, h⟩; cases h; rfl
+
+/-- A constant of a closure is a constant of the environment. -/
+theorem IsClosure.mem_env {env sub : Ix.Environment} {roots : List Ix.Name}
+    (h : IsClosure env roots sub) {n : Ix.Name} {ci : Ix.ConstantInfo}
+    (hn : sub.consts.get? n = some ci) : env.consts.get? n = some ci := by
+  by_cases hr : Reaches env roots n
+  · rw [← (h n).1 hr]; exact hn
+  · rw [(h n).2 hr] at hn; cases hn
+
+/-- Under `CompileCovers`, `CompileCorrect` gives the statement hypothesised
+on `Published`: the closure is published, so none of it failed. -/
+theorem CompileCorrect.published (hcov : CompileCovers) (h : CompileCorrect.{w}) :
+    ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
+      (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe →
+      Published ixe sub → IxonCommutes.{w} ixe sub envS := by
+  intro env roots sub envS ixe hs hc hp
+  obtain ⟨failures, hr⟩ := compile_eq_ok.mp hc
+  refine (h env roots sub envS ixe failures hs hr fun n ci hn => ?_).2
+  exact (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mp (hp n ci hn)
+
+/-- Under `CompileCovers`, the statement hypothesised on `Published` gives
+`CompileCorrect`: a closure none of whose constants failed is published. -/
+theorem CompileCorrect.of_published (hcov : CompileCovers)
+    (h : ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment)
+      (envS : Env .source) (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS →
+      compile env = .ok ixe → Published ixe sub → IxonCommutes.{w} ixe sub envS) :
+    CompileCorrect.{w} := by
+  intro env roots sub envS ixe failures hs hr hf
+  have hp : Published ixe sub := fun n ci hn =>
+    (hcov env ixe failures hr n ci (hs.1.mem_env hn)).mpr (hf n ci hn)
+  exact ⟨hp, h env roots sub envS ixe hs (compile_eq_ok.mpr ⟨failures, hr⟩) hp⟩
 
 /-! ## The theorems that hold now -/
 

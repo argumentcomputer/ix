@@ -365,18 +365,48 @@ fun τ envS envA =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileAuthentic
 
+-- CQP.2: `CompileCorrect` is hypothesised on the compile's own report
+-- (`compileReport`), decidably, instead of on the artifact: "no constant of the
+-- closure failed" (`NoFailure`) replaces `Published ixe sub`, which it now
+-- concludes; the rest of the conclusion is `IxonCommutes`, the former one
+-- verbatim. `CompileCovers` (every input constant is published exactly when it
+-- did not fail) is stated, and under it the new and the former statement imply
+-- each other (`CompileCorrect.published`, `CompileCorrect.of_published`).
+/-- info: def Ix.Cert.Failures.failed : Ix.Cert.Failures → Ix.Name → Bool :=
+fun failures n => failures.ungrounded.contains n || failures.blocks.contains n -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Failures.failed
+
+/-- info: def Ix.Cert.NoFailure : Ix.Cert.Failures → Ix.Environment → Prop :=
+fun failures sub => ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), sub.consts.get? n = some ci → failures.failed n = false -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.NoFailure
+
+/-- info: def Ix.Cert.CompileCovers : Prop :=
+∀ (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures),
+  Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+    ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
+      env.consts.get? n = some ci → ((∃ named, ixe.named.get? n = some named) ↔ failures.failed n = false) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.CompileCovers
+
+/-- info: def Ix.Cert.IxonCommutes.{w} : Ixon.Env → Ix.Environment → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
+fun ixe sub envS =>
+  ∃ binding,
+    Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
+      ∃ limits order envA cx,
+        Ix.Cert.IxonAccepts binding limits ixe (Ix.Cert.Seed ixe sub) order envA ∧
+          Ix.Cert.admissionContext binding limits ixe order = some cx ∧
+            Ix.Cert.Commutes (Ix.Cert.reading ixe cx) envS envA -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.IxonCommutes
+
 /-- info: def Ix.Cert.CompileCorrect.{w} : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
-    (ixe : Ixon.Env),
-    Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
-      Ix.Cert.compile env = Except.ok ixe →
-        Ix.Cert.Published ixe sub →
-          ∃ binding,
-            Ix.Kernel.Admission.defaultBinding = Except.ok binding ∧
-              ∃ limits order envA cx,
-                Ix.Cert.IxonAccepts binding limits ixe (Ix.Cert.Seed ixe sub) order envA ∧
-                  Ix.Cert.admissionContext binding limits ixe order = some cx ∧
-                    Ix.Cert.Commutes (Ix.Cert.reading ixe cx) envS envA -/
+  (ixe : Ixon.Env) (failures : Ix.Cert.Failures),
+  Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+    Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+      Ix.Cert.NoFailure failures sub → Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutes ixe sub envS -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileCorrect
 
@@ -831,6 +861,30 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.storedRecord_authentic
 
+-- CQP.2: the bridges between the two hypotheses, under `CompileCovers`.
+/-- info: Ix.Cert.CompileCorrect.published : Ix.Cert.CompileCovers →
+  Ix.Cert.CompileCorrect →
+    ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
+      (ixe : Ixon.Env),
+      Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+        Ix.Cert.compile env = Except.ok ixe → Ix.Cert.Published ixe sub → Ix.Cert.IxonCommutes ixe sub envS -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.published
+
+/-- info: Ix.Cert.CompileCorrect.of_published : Ix.Cert.CompileCovers →
+  (∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
+      (ixe : Ixon.Env),
+      Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+        Ix.Cert.compile env = Except.ok ixe → Ix.Cert.Published ixe sub → Ix.Cert.IxonCommutes ixe sub envS) →
+    Ix.Cert.CompileCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.of_published
+
+/-- info: Ix.Cert.noFailure_iff : ∀ (failures : Ix.Cert.Failures) (sub : Ix.Environment),
+  Ix.Cert.NoFailure failures sub ↔ (sub.consts.keys.all fun n => !failures.failed n) = true -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.noFailure_iff
+
 /-! ## Axioms -/
 
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -868,6 +922,22 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 /-- info: 'Ix.Cert.CompileAuthentic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.CompileAuthentic
+
+/-- info: 'Ix.Cert.CompileCorrect.published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.CompileCorrect.published
+
+/-- info: 'Ix.Cert.CompileCorrect.of_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.CompileCorrect.of_published
+
+/-- info: 'Ix.Cert.noFailure_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.noFailure_iff
+
+/-- info: 'Ix.Cert.CompileCovers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.CompileCovers
 
 /-- info: 'Ix.Cert.SourceAccepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

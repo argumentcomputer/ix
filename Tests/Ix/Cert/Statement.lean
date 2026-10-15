@@ -13,7 +13,9 @@ import Tests.Ix.SourceContract.SyntaxFixture
   `Tests.Ix.Kernel.SourceIngressDefs`: the serialized environments
   (`Ixon.serEnv`) are byte-identical, and so are the published addresses.
   Every record and blob of `Ix.Cert.compile`'s output is at pure BLAKE3 of
-  its bytes (`Ix.Cert.CompileAuthentic`).
+  its bytes (`Ix.Cert.CompileAuthentic`), and every input constant is
+  published exactly when the report does not list it as failed
+  (`Ix.Cert.CompileCovers`).
   `cert-compile-parity-init` (ignored) does the same on `Init`.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
@@ -21,7 +23,9 @@ import Tests.Ix.SourceContract.SyntaxFixture
   - the computed closure (`Ix.Cert.closure`) is the closure the Source-mode
     test checks, and is closed under `DependsOn`;
   - Source mode accepts it under the compiler's grouping (`Ix.Cert.blocksOf`);
-  - the compile publishes every constant of it (`Ix.Cert.Published`);
+  - no constant of it failed in the compile's report (`Ix.Cert.NoFailure`,
+    decided), and the compile publishes every constant of it
+    (`Ix.Cert.Published`);
   - a dependency-first order of the compiled closure meets `ClosureOrder`
     and is accepted by the certified entry at BLAKE3 (`Ix.Cert.IxonAccepts`);
   - the reading (`Ix.Cert.reading`) reads every constant of the closure as an
@@ -63,8 +67,21 @@ def addressDiffs (a b : Ixon.Env) : Array String := Id.run do
     unless a.named.contains n do out := out.push s!"{n}: missing from the first"
   return out
 
+/-- `Ix.CompileCovers` on one compile: the input constants published, the
+failed ones, those both published and failed, and those neither. -/
+def coverage (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures) :
+    Nat × Nat × Array Ix.Name × Array Ix.Name :=
+  env.consts.fold (init := (0, 0, #[], #[])) fun (pub, failed, both, neither) n _ =>
+    match ixe.named.contains n, failures.failed n with
+    | true, true => (pub, failed, both.push n, neither)
+    | true, false => (pub + 1, failed, both, neither)
+    | false, true => (pub, failed + 1, both, neither)
+    | false, false => (pub, failed, both, neither.push n)
+
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
-`consts`: errors, and lines for the report. -/
+`consts`: errors, and lines for the report. `compile` is `compileReport`'s
+first component (`Ix.Cert.compile_eq_ok`); the report's failures are checked
+against the artifact (`Ix.Cert.CompileCovers`). -/
 def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) :
     IO (Array String × Array String) := do
   let mut errors : Array String := #[]
@@ -72,11 +89,20 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts.toArray workers
   let t1 ← IO.monoMsNow
-  let pure? ← IO.lazyPure fun _ => Ix.Cert.compile env
+  let pure? ← IO.lazyPure fun _ => Ix.Cert.compileReport env
   let t2 ← IO.monoMsNow
-  let ixe ← match pure? with
-    | .ok ixe => pure ixe
+  let (ixe, failures) ← match pure? with
+    | .ok out => pure out
     | .error e => return (#[s!"{label}: Ix.Cert.compile failed: {e}"], lines)
+  -- `CompileCovers`: every input constant published exactly when it did not fail
+  let (published, failed, both, neither) := coverage env ixe failures
+  if both.isEmpty && neither.isEmpty then
+    lines := lines.push s!"{label}: CompileCovers: of {env.consts.size} input constants \
+      {published} published, {failed} failed, none both, none neither"
+  else
+    errors := errors.push s!"{label}: CompileCovers: {both.size} input constants both \
+      published and failed ({both.toList.take 5}), {neither.size} neither \
+      ({neither.toList.take 5}); {published} published, {failed} failed"
   let some pureBytes := (Ixon.serEnv ixe).toOption
     | return (#[s!"{label}: serEnv of Ix.Cert.compile's output failed"], lines)
   lines := lines.push s!"{label}: {consts.length} constants; canon {t1 - t0} ms, \
@@ -227,9 +253,15 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let some envS := (Ix.LeanIngress.checkSource sub (Ix.Cert.blocksOf sub)).toOption
     | return (errors.push "Source mode refuses the closure under Ix.Cert.blocksOf", lines)
   lines := lines.push s!"Source accepts the closure: {envS.consts.length} kernel constants"
-  -- the compile publishes the closure
-  let some ixe := (Ix.Cert.compile env).toOption
-    | return (errors.push "Ix.Cert.compile failed", lines)
+  -- no constant of the closure failed (`NoFailure`, decided on the report),
+  -- and the compile publishes the closure (`Published`, which `CompileCorrect`
+  -- concludes from it)
+  let some (ixe, failures) := (Ix.Cert.compileReport env).toOption
+    | return (errors.push "Ix.Cert.compileReport failed", lines)
+  if decide (Ix.Cert.NoFailure failures sub) then
+    lines := lines.push s!"no constant of the closure failed (NoFailure, decided)"
+  else
+    errors := errors.push "a constant of the closure failed (NoFailure is false)"
   let unpublished := sub.consts.toList.filter fun (n, _) => !ixe.named.contains n
   unless unpublished.isEmpty do
     errors := errors.push s!"{unpublished.length} constants of the closure are not published: \
