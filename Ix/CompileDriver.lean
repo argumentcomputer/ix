@@ -9,10 +9,8 @@
   (`Ix.AuxGen.CompileAux.compileMutualAuxTail`).
 
   This module sits ABOVE `Ix.AuxGen` (unlike Rust, where everything
-  shares one crate): `Ix.CompileM`'s own `compileEnv`/`compileEnvParallel`
-  cannot invoke the aux tail without an import cycle, so the aux-aware
-  driver lives here. The pre-existing drivers in `Ix.CompileM` remain as
-  the plain no-aux-pipeline substrate.
+  shares one crate): `Ix.CompileM` cannot invoke the aux tail without an
+  import cycle, so the environment drivers live here.
 
   Deliberate deviations from Rust, none output-visible:
   - Sequential scheduling instead of work-stealing threads. Output maps
@@ -244,7 +242,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
 /-! ## Driver state and merges -/
 
 /-- Accumulated driver-level side maps that live OUTSIDE `CompileEnv`
-    (mirrors the fields the pre-existing drivers thread manually). -/
+    (the per-name hints and the name-component index). -/
 structure DriverAcc where
   cenv : CompileEnv
   blockNames : Std.HashMap Address Ix.Name := {}
@@ -429,8 +427,7 @@ env is inconsistent."
   return .ok acc
 
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
-    (shared tail of both aux drivers, identical to the plain drivers'
-    assembly: names index, name blobs, finalize_hints — the exact
+    (shared tail of both drivers: names index, name blobs, finalize_hints — the exact
     per-Named channel plus the per-address `anonHints` advisory map with
     order-independent merge). -/
 def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
@@ -504,6 +501,17 @@ def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run
     if let some e := t.get then return .error e
   return .ok ()
 
+/-- The drivers' refusal of a condensation with a block that has no reference
+    set: the scheduler would schedule such a block without its dependencies.
+    `CondenseM.run` and the Rust condensation give every block one. The block
+    named is the least by displayed name. -/
+def missingBlockRefs? (blocks : Ix.CondensedBlocks) : Option String :=
+  let missing := blocks.blocks.fold (init := #[]) fun (acc : Array Name) lo _ =>
+    if blocks.blockRefs.contains lo then acc else acc.push lo
+  match (missing.qsort fun a b => a.pretty < b.pretty)[0]? with
+  | some lo => some s!"block {lo.pretty} has no condensation reference set"
+  | none => none
+
 /-! ## The aux-aware sequential driver -/
 
 /-- Compile an entire environment with the FULL production pipeline
@@ -524,6 +532,7 @@ def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (nameByHash : Std.HashMap Address Name := {})
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
+  if let some msg := missingBlockRefs? blocks then return .error msg
   if let .error e := validateInductiveFlags env then return .error e
   let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
   match precompileAuxGenPrereqs blocks acc with
@@ -695,8 +704,7 @@ missing canonical aliases: {missing}"
 
 /-! ## The aux-aware parallel driver
 
-Wave-based parallel version of `compileEnvAux`, mirroring the plain
-`compileEnvParallel` architecture: each wave snapshots the accumulated
+Wave-based parallel version of `compileEnvAux`: each wave snapshots the accumulated
 `CompileEnv`, workers compute a pure per-block outcome against the
 snapshot, and the main thread applies the same merges as the sequential
 driver. Blocks within a wave are dependency-independent, and every merge
@@ -872,8 +880,7 @@ instance : Inhabited AuxBlockOutcome where
 
 /-- Parallel aux-aware environment compile. Same output as
     `compileEnvAux` (see the module docstring for the intra-wave
-    order-independence argument); wave-based workers mirror the plain
-    `compileEnvParallel`.
+    order-independence argument).
 
     `rustRef` enables fail-fast address comparison: after each block's
     merge, every name it registered is checked against the reference
@@ -883,6 +890,7 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     (nameByHash : Std.HashMap Address Name := {})
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
+  if let some msg := missingBlockRefs? blocks then return .error msg
   let totalBlocks := blocks.blocks.size
   -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
   let sharingLimits ← match ← compilerSharingLimitsFromEnv with

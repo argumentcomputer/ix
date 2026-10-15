@@ -731,8 +731,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
       else
         rep := { rep with defnError := rep.defnError.push (lo, toString e) }
     | .ok (result, _cache) =>
-      -- Member name → Lean address, mirroring the parallel driver's
-      -- projection handling (CompileM.compileEnvParallel).
+      -- Member name → Lean address, mirroring the drivers' projection
+      -- handling (`Ix.CompileM.mergeCompiledBlock`).
       let mut outs : Array (Ix.Name × Address × Ixon.ConstantMeta) := #[]
       if result.projections.isEmpty then
         outs := #[(lo, Address.blake3 result.blockBytes, result.blockMeta)]
