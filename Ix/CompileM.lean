@@ -2794,6 +2794,9 @@ def finishDefinitionDataCompilation (d : Def)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  -- Header counts must fit before the conversions used to assemble the payload.
+  let _ ← checkedTableCount "declaration universe parameters" d.levelParams.size
+
   -- Store name string components as blobs for deduplication
   compileName d.name
   compileNames d.levelParams
@@ -2886,6 +2889,8 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  let _ ← checkedTableCount "declaration universe parameters" a.cnst.levelParams.size
+
   -- Store name string components for deduplication
   compileName a.cnst.name
   compileNames a.cnst.levelParams
@@ -2929,6 +2934,8 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
+  let _ ← checkedTableCount "declaration universe parameters" q.cnst.levelParams.size
+
   compileName q.cnst.name
   compileNames q.cnst.levelParams
 
@@ -2955,6 +2962,7 @@ def compileQuotient (q : QuotVal) :
 /-- Compile a recursor rule to Ixon, returning the ctor address and rhs expression. -/
 def compileRecursorRule (rule : RecursorRule) : CompileM (Ixon.RecursorRule × Address × UInt64) := do
   let (rhs, ruleRoot) ← compileExpr rule.rhs
+  let _ ← checkedTableCount "recursor rule fields" rule.nfields
   let ctorAddr := rule.ctor.getHash
   pure ({ fields := rule.nfields.toUInt64, rhs }, ctorAddr, ruleRoot)
 
@@ -2988,6 +2996,13 @@ def finishRecursorCompilation (r : RecursorVal)
   let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
+
+  let _ ← checkedTableCount "declaration universe parameters" r.cnst.levelParams.size
+  let _ ← checkedTableCount "recursor parameters" r.numParams
+  let _ ← checkedTableCount "recursor indices" r.numIndices
+  let _ ← checkedTableCount "recursor motives" r.numMotives
+  let _ ← checkedTableCount "recursor minors" r.numMinors
+  let _ ← checkedTableCount "recursor rules" compiledRules.rules.size
 
   -- Store name string components as blobs for deduplication
   compileName r.cnst.name
@@ -3036,6 +3051,11 @@ def finishConstructorCompilation (c : ConstructorVal)
   let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
+
+  let _ ← checkedTableCount "declaration universe parameters" c.cnst.levelParams.size
+  let _ ← checkedTableIndex "constructor index" c.cidx
+  let _ ← checkedTableCount "constructor parameters" c.numParams
+  let _ ← checkedTableCount "constructor fields" c.numFields
 
   -- Store name string components as blobs for deduplication
   compileName c.cnst.name
@@ -3109,6 +3129,10 @@ def finishInductiveCompilation (i : InductiveVal)
     (compiledCtors : InductiveConstructorCompileState) :
     CompileM (Ixon.Inductive × Ixon.ConstantMeta ×
       Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  let _ ← checkedTableCount "declaration universe parameters" i.cnst.levelParams.size
+  let _ ← checkedTableCount "inductive parameters" i.numParams
+  let _ ← checkedTableCount "inductive indices" i.numIndices
+  let _ ← checkedTableCount "inductive constructors" compiledCtors.ctors.size
   -- Store name string components as blobs for deduplication
   compileName i.cnst.name
   compileNames i.cnst.levelParams
@@ -3172,6 +3196,10 @@ def finishInductiveDataCompilation (i : Ind)
     (compiledCtors : InductiveConstructorCompileState) :
     CompileM (Ixon.Inductive × Ixon.ConstantMeta ×
       Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  let _ ← checkedTableCount "declaration universe parameters" i.levelParams.size
+  let _ ← checkedTableCount "inductive parameters" i.numParams
+  let _ ← checkedTableCount "inductive indices" i.numIndices
+  let _ ← checkedTableCount "inductive constructors" compiledCtors.ctors.size
   -- Store name components for deduplication
   compileName i.name
   compileNames i.levelParams
@@ -3428,11 +3456,29 @@ def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
     pure (BlockResult.mk' block .empty
       (buildMutualProjections classes (Address.admissionHash (Ixon.ser block)) metas))
 
+/-- Check only the non-expression wire counts of a mutual member. Canonical
+sharing validates the rewritten expressions separately. -/
+def checkMutConstArrayCounts : Ixon.MutConst → CompileM Unit
+  | .defn _ => pure ()
+  | .indc value => do
+    let _ ← checkedTableCount "inductive constructors" value.ctors.size
+    pure ()
+  | .recr value => do
+    let _ ← checkedTableCount "recursor rules" value.rules.size
+    pure ()
+
+/-- Admit the mutual payload's outer and nested array counts before building
+or serializing its shared representation. The pure sharing API is unchanged. -/
+def checkMutualPayloadCounts (payloads : Array Ixon.MutConst) : CompileM Unit := do
+  let _ ← checkedTableCount "mutual members" payloads.size
+  for payload in payloads do checkMutConstArrayCounts payload
+
 /-- Read the finished table state and assemble a compiled mutual payload with
 the compiler's canonical sharing (`CompileEnv.sharingLimits`). -/
 def finishMutualCompilation (classes : List (List MutConst))
     (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
+  checkMutualPayloadCounts payloads
   let cache ← getBlockState
   match buildCompiledMutualBlock (← read).1.sharingLimits classes payloads metas cache with
   | .ok result => pure result
@@ -3505,6 +3551,8 @@ family. -/
 def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
+  let _ ← checkedTableCount "inductive constructors" i.ctors.size
+  let _ ← checkedTableCount "constructor projections" ctorMetaPairs.size
   let cache ← getBlockState
   let block ← buildBlockConstant
     (.muts #[.indc ind]) cache.refs cache.univs
