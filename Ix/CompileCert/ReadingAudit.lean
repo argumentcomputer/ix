@@ -2,6 +2,7 @@ import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.CacheSound
 import Ix.CompileCert.Serializers
 import Ix.CompileCert.PreseedValidation
+import Ix.CompileCert.WireTables
 
 /-! # Audit of the reading-chain proofs
 
@@ -12,8 +13,9 @@ invariant (`Ix.CompileCert.CacheSound`), the certified reader on the
 compiler's in-flight tables (`Ix.CompileCert.ExpressionRead`), the table
 interners (`Ix.CompileCert.Interning`), the checked blob writes
 (`Ix.CompileCert.BlobWrites`), the metadata serializers' footprint
-(`Ix.CompileCert.Serializers`) and the preseed's universe-wire guard
-(`Ix.CompileCert.PreseedValidation`). Each root must exist, occur once, and
+(`Ix.CompileCert.Serializers`), the preseed's universe-wire guard
+(`Ix.CompileCert.PreseedValidation`) and the primary tables' wire validity
+(`Ix.CompileCert.WireTables`). Each root must exist, occur once, and
 depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -90,6 +92,12 @@ def preseedRoots : Array Lean.Name :=
   #[`array_valid, `run, `state, `accepts, `valid_of_success, `refuses, `wire_count,
     `refuses_count, `after_check].map (`Ix.CompileCert.PreseedValidation ++ ·)
 
+/-- The primary tables stay on the wire through the interners. -/
+def wireRoots : Array Lean.Name :=
+  #[`of_same, `empty, `internRef_preserves, `internUniv_preserves, `internMetaUniv_preserves,
+    `internRef_count_failure, `internUniv_count_failure,
+    `internAdmission_preserves].map (`Ix.CompileCert.WireTables ++ ·)
+
 /-- The production definitions the table, blob and serializer proofs unfold,
 and the reader functions the reading proofs unfold. -/
 def tableRuntime : Array Lean.Name :=
@@ -119,6 +127,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "blobs" Ix.CompileCert.ReadingAudit.blobRoots
   checkRoots (tag := "reading-audit") "serializers" Ix.CompileCert.ReadingAudit.serializerRoots
   checkRoots (tag := "reading-audit") "preseed guard" Ix.CompileCert.ReadingAudit.preseedRoots
+  checkRoots (tag := "reading-audit") "wire tables" Ix.CompileCert.ReadingAudit.wireRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime

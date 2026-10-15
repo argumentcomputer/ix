@@ -1463,3 +1463,17 @@ metadata serializers write only names and blobs, and keep every readable blob
 /-- info: 'Ix.CompileCert.Serializers.NamesBlobs.compileKVMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.Serializers.NamesBlobs.compileKVMap
+
+-- The interners keep the primary tables on the wire (the sharing builder's
+-- table hypothesis, `Ix.Sharing.Verify.BlockWireTablesWF`).
+/-- info: Ix.CompileCert.WireTables.internUniv_preserves : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (state : Ix.CompileM.BlockState) (univ : Ixon.Univ),
+  Ix.Sharing.Verify.BlockWireTablesWF state →
+    univ.wireWF →
+      Ix.Sharing.Verify.BlockWireTablesWF (Ix.CompileCert.rawRun (Ix.CompileM.internUniv univ) context state).snd -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.WireTables.internUniv_preserves
+
+/-- info: 'Ix.CompileCert.WireTables.internUniv_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.WireTables.internUniv_preserves

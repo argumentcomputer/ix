@@ -1,5 +1,6 @@
 import Ix.CompileM
 import IxSharingVerify.TieredWire
+import IxSharingVerify.BlockTables
 
 /-!
 # The compiler's sharing builder
@@ -19,14 +20,6 @@ only when the builder does (`SharingRunOK`).
 -/
 
 namespace Ix.Sharing.Verify
-
-/-- The primary reference and universe tables in a production block state are
-representable by the constant wire format. -/
-structure BlockWireTablesWF (state : Ix.CompileM.BlockState) : Prop where
-  refsCount : state.refs.size < UInt64.size
-  refs : ∀ ref ∈ state.refs, ref.hash.size = 32
-  univsCount : state.univs.size < UInt64.size
-  univs : ∀ univ ∈ state.univs, Ixon.Verify.Codec.Univ.WireWF univ
 
 /-- Assemble an unshared axiom constant from one compiled type and the primary
 tables of its final production block state. -/
