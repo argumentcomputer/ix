@@ -479,7 +479,7 @@ structure Pass2Ctx where
   mutsIndex : MutsPlanIndex
   /-- `name → addr` view of `ixonEnv.named` (Rust `resolve_addr`'s
       first hop on a deserialized state), precomputed once. -/
-  nameToAddr : Std.HashMap Ix.Name Address
+  nameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address
   /-- Debug-track source env (Rust `stt.lean_env`). -/
   origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo)
   /-- Sharing limits of every recompile in the run (Rust

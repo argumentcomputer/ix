@@ -1987,6 +1987,31 @@ pub mod arbitrary {
 mod scalar_structure_tests {
   use super::*;
 
+  /// Name tables (`name_to_addr`, `aux_name_to_addr`, `MutCtx`) hash a
+  /// name by its digest and confirm a hit with the derived `==`, which
+  /// compares the components: two names that share a digest are two keys.
+  /// The Lean compiler's tables are keyed the same way since CQ2.25
+  /// (`Ix.Compile.ExactKey.ExactName`, `Ix.nameCompareExact`).
+  #[test]
+  fn name_tables_keep_names_with_one_digest_apart() {
+    let x = Name::str(Name::anon(), "x".into());
+    let forged =
+      Name(Arc::new(NameData::Str(Name::anon(), "y".into(), *x.get_hash())));
+    assert_eq!(x.get_hash(), forged.get_hash());
+    assert_ne!(x, forged);
+    let mut table: FxHashMap<Name, u64> = FxHashMap::default();
+    table.insert(x.clone(), 1);
+    table.insert(forged.clone(), 2);
+    assert_eq!(table.len(), 2);
+    assert_eq!(table.get(&x), Some(&1));
+    assert_eq!(table.get(&forged), Some(&2));
+    let absent =
+      Name(Arc::new(NameData::Str(Name::anon(), "z".into(), *x.get_hash())));
+    assert!(!table.contains_key(&absent));
+    // Valid neighbour: an equal name built separately is found.
+    assert_eq!(table.get(&Name::str(Name::anon(), "x".into())), Some(&1));
+  }
+
   #[test]
   fn cache_fields_do_not_decide_smart_equalities() {
     let u = Name::str(Name::anon(), "u".into());

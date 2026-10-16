@@ -251,6 +251,27 @@ theorem nameEqImpl_eq (a b : Ix.Name) : nameEqImpl a b = decide (a = b) := by
 theorem nameEq_iff (a b : Ix.Name) : nameEq a b = true ↔ a = b := by
   simp [nameEq]
 
+/-- A key of the compiler's name tables (`CompileEnv.nameToAddr` and
+`auxNameToAddr`, `BlockState.blockNameToAddr` and `auxNameToAddr`): a name
+compared structurally (`nameEq`, whose stored hash is only its fast path) and
+hashed by its stored hash. `Ix.Name`'s own `==` compares the stored hashes
+only, so a table keyed by it holds two names with one hash field as one entry
+(CQ2.25). A type synonym, so that a name is a key as it is. -/
+@[expose] def ExactName : Type := Ix.Name
+
+instance : BEq ExactName := ⟨fun a b => nameEq a b⟩
+instance : Hashable ExactName := ⟨fun n => hash (Ix.Name.getHash n)⟩
+
+instance : LawfulBEq ExactName where
+  eq_of_beq {a b} same := (nameEq_iff a b).mp same
+  rfl {a} := (nameEq_iff a a).mpr rfl
+
+instance : LawfulHashable ExactName where
+  hash_eq a b same := by
+    have equal : a = b := (nameEq_iff a b).mp same
+    subst equal
+    rfl
+
 /-- Parameter identity before conversion to positional universes. Stored
 digests cannot make a different parameter capture the first matching slot. -/
 def nameIndex (name : Ix.Name) (params : List Ix.Name) : Option Nat :=

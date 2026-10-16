@@ -90,8 +90,8 @@ def AddrMaps.resolve (maps : AddrMaps) (name : Name) : Address :=
     before the aux tail runs, so the tail must see them on the
     first-hop map. -/
 def AddrMaps.ofCompileEnv (cenv : Ix.CompileM.CompileEnv)
-    (aux : Std.HashMap Name Address := {})
-    (primary : Std.HashMap Name Address := {}) : AddrMaps where
+    (aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {})
+    (primary : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}) : AddrMaps where
   nameToAddr := fun n => match primary.get? n with
     | some a => some a
     | none => cenv.nameToAddr.get? n

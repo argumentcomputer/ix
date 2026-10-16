@@ -130,9 +130,9 @@ def driverCases : List (String × Option String × Option String) := Id.run do
   let x := addr "x"
   let y := addr "y"
   let withCompiled : DriverAcc :=
-    { cenv := { (default : CompileEnv) with nameToAddr := ({} : Std.HashMap _ _).insert n x } }
+    { cenv := { (default : CompileEnv) with nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
   let withClaimed : DriverAcc :=
-    { cenv := { (default : CompileEnv) with auxNameToAddr := ({} : Std.HashMap _ _).insert n x } }
+    { cenv := { (default : CompileEnv) with auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x } }
   let none₀ : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
   let noneB : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   let mut cases : List (String × Option String × Option String) := []
@@ -205,8 +205,8 @@ claim {acc₂.cenv.auxNameToAddr.get? n}"
   -- the promote-remaining pass: a member compiled at `x` with an aux claim
   -- at `y` is recorded, not skipped
   let both : DriverAcc := { cenv := { (default : CompileEnv) with
-    nameToAddr := ({} : Std.HashMap _ _).insert n x
-    auxNameToAddr := ({} : Std.HashMap _ _).insert n y } }
+    nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n y } }
   let (accP, _) := promoteRemaining both (({} : Ix.Set Ix.Name).insert n)
   cases := cases ++ [("promote-remaining over a compiled member", some (rustConflict n x y),
     (accP.cenv.ungrounded.get? n).map fun m => (m.drop "invalidMutualBlock: ".length).toString)]
@@ -226,7 +226,7 @@ def aliasProvenanceCheck : Except String Unit := do
     { all := ({} : Ix.Set Ix.Name).insert source, current := source, mutCtx := default, univCtx := [] }
   let targetEnv (original : Option (Address × Ixon.ConstantMeta)) : CompileEnv :=
     { (default : CompileEnv) with
-      nameToAddr := ({} : Std.HashMap _ _).insert target canonical
+      nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert target canonical
       nameToNamed := ({} : Std.HashMap _ _).insert target
         { addr := canonical, original, hints := some .abbrev } }
   let register (env : CompileEnv) :=
@@ -244,7 +244,7 @@ def aliasProvenanceCheck : Except String Unit := do
     throw "canonical alias content or hints lost"
   let env := { targetEnv (some (targetOriginal, .empty)) with
     nameToNamed := (targetEnv none).nameToNamed.insert source aliasAfter
-    auxNameToAddr := ({} : Std.HashMap _ _).insert source canonical }
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert source canonical }
   let promoted ← (promoteAuxDriver env source sourceOriginal .empty).mapError toString
   let some own := promoted.nameToNamed.get? source | throw "own promotion missing"
   if own.original != some (sourceOriginal, .empty) || own.addr != canonical then
@@ -271,7 +271,7 @@ def ownerNamedCheck : Except String Unit := do
   let noneB : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   -- an aux claim over an earlier block's aux claim of `n` at `x`
   let claimed : DriverAcc := { cenv := { (default : CompileEnv) with
-    auxNameToAddr := ({} : Std.HashMap _ _).insert n x
+    auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
     nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
   let later : BlockState :=
     { auxCache [(n, x)] with auxNamed := #[(n, { addr := x, constMeta := tag "later" })] }
@@ -280,7 +280,7 @@ def ownerNamedCheck : Except String Unit := do
     throw "an identical aux re-claim replaced the owner's Named"
   -- a primary name over an earlier block's compiled claim of `n` at `x`
   let compiled : DriverAcc := { cenv := { (default : CompileEnv) with
-    nameToAddr := ({} : Std.HashMap _ _).insert n x
+    nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert n x
     nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
   let acc ← (merge compiled n { loneResult x with blockMeta := tag "later" } default
     none₀ noneB noneB).mapError toString
@@ -309,10 +309,10 @@ def promotionCases : List (String × Bool) := Id.run do
   let all : Ix.Set Ix.Name := (({} : Ix.Set Ix.Name).insert a).insert b
   let acc : DriverAcc :=
     { cenv := { (default : CompileEnv) with
-        auxNameToAddr := ({} : Std.HashMap _ _).insert a canonical |>.insert b canonical
+        auxNameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert a canonical |>.insert b canonical
         nameToNamed := ({} : Std.HashMap _ _).insert a { addr := canonical }
           |>.insert b { addr := canonical } |>.insert other { addr := canonical }
-        nameToAddr := ({} : Std.HashMap _ _).insert other canonical
+        nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert other canonical
         auxGenExtraNames := all
         constants := ({} : Std.HashMap _ _).insert canonical ByteArray.empty }
       defHints := ({} : Std.HashMap _ _).insert a .abbrev |>.insert other .opaque

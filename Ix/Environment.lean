@@ -152,6 +152,38 @@ def nameCompare (a b : Name) : Ordering :=
 instance : Ord Name where
   compare := nameCompare
 
+/-- The stored hashes of two name nodes, ordered: equal hashes are decided
+by `==`, so the common case (a confirmed hit) builds no byte lists. -/
+@[expose, inline] def Name.cmpHash (h h' : Address) : Ordering :=
+  if h == h' then .eq else compare h h'
+
+/-- The structural order on names: the components from the root, then the
+stored hash at each node. `.eq` holds exactly on equal names, stored hashes
+included. -/
+@[expose] def Name.cmpRaw : Name → Name → Ordering
+  | .anonymous h, .anonymous h' => Name.cmpHash h h'
+  | .anonymous _, _ => .lt
+  | _, .anonymous _ => .gt
+  | .str p s h, .str p' s' h' =>
+    match Name.cmpRaw p p' with
+    | .eq => if s == s' then Name.cmpHash h h' else compare s s'
+    | o => o
+  | .str .., .num .. => .lt
+  | .num .., .str .. => .gt
+  | .num p i h, .num p' i' h' =>
+    match Name.cmpRaw p p' with
+    | .eq => if i == i' then Name.cmpHash h h' else compare i i'
+    | o => o
+
+/-- `nameCompare` with its ties confirmed: names are ordered by their stored
+hashes, and two names with one hash field by `Name.cmpRaw`, so `.eq` holds
+exactly on equal names. `nameCompare` alone would make two names that share
+a hash field one key (CQ2.25). Only a tie pays for the structural walk. -/
+@[expose] def nameCompareExact (a b : Name) : Ordering :=
+  match nameCompare a b with
+  | .eq => Name.cmpRaw a b
+  | o => o
+
 /-! ## Level -/
 
 /-- Content-addressed universe level. Mirrors `Lean.Level` with a Blake3 hash at each node. -/
@@ -661,8 +693,10 @@ def Environment.toRaw (env : Environment) : RawEnvironment :=
 
 /-! ## Context Types for Compilation -/
 
-/-- Mutual context mapping Name to index within block. -/
-abbrev MutCtx := Std.TreeMap Name Nat nameCompare
+/-- Mutual context mapping Name to index within block. Keys are compared by
+`nameCompareExact`: a name that only shares a member's hash field is not that
+member. -/
+abbrev MutCtx := Std.TreeMap Name Nat nameCompareExact
 
 instance : Ord MutCtx where
   compare a b := compare a.toList b.toList

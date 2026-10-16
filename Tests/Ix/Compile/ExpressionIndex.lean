@@ -17,7 +17,7 @@ open _root_.Ix.CompileM
 private def structName := Name.fromLeanName `IndexBoundary.Structure
 private def recursiveName := Name.fromLeanName `IndexBoundary.recursive
 private def env : CompileEnv := { (default : CompileEnv) with
-  nameToAddr := ({} : Std.HashMap Name Address).insert structName default }
+  nameToAddr := ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName Address).insert structName default }
 private def block (index : Nat := 0) : BlockEnv := {
   all := {}, current := Name.mkAnon,
   mutCtx := (default : _root_.Ix.MutCtx).insert recursiveName index, univCtx := [] }

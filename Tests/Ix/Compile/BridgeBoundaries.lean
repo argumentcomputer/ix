@@ -49,7 +49,7 @@ private def provisionalCompilation (resolved : Bool) : Bool := Id.run do
   let .ok restored := kexprToLean kernel 0 {} 0 #[] | return false
   let actual := Address.blake3 "compiled source content".toUTF8
   let env : CompileEnv := { (default : CompileEnv) with
-    nameToAddr := if resolved then ({} : Std.HashMap _ _).insert x actual else {} }
+    nameToAddr := if resolved then ({} : Std.HashMap _root_.Ix.Compile.ExactKey.ExactName _).insert x actual else {} }
   match CompileM.run env
       { all := {}, current := y, mutCtx := default, univCtx := [] } {}
       (compileExprNoSurgery restored) with

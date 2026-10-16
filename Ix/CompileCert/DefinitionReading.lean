@@ -45,23 +45,23 @@ def selfAt (cx : Ctx md) (owner : Address) : Nat → Option (ReadM (CName md)) :
 theorem definitionReader_eq (cx : Ctx md) (owner : Address) (record : Ixon.Constant) (target : Ixon.Definition) :
     definitionReader cx owner record target = MemberReader.mk' cx record id (selfAt cx owner) := rfl
 
-/-- The singleton mutual context maps exactly the names whose hash field is
-the declaration's to slot 0 (`Ix.MutCtx` compares names by `nameCompare`). -/
+/-- The singleton mutual context maps exactly the names `nameCompareExact`
+finds equal to the declaration's to slot 0 (`Ix.MutCtx`'s comparator). -/
 theorem singleton_lookup (name query : Ix.Name) (index : Nat)
     (found : ((Std.TreeMap.empty : Ix.MutCtx).insert name 0).get? query = some index) :
-    Ix.nameCompare query name = .eq ∧ index = 0 := by
+    Ix.nameCompareExact query name = .eq ∧ index = 0 := by
   have unfolded : ((Std.TreeMap.empty : Ix.MutCtx).insert name 0).get? query =
-      (match Ix.nameCompare query name with | .lt => none | .gt => none | .eq => some 0) := rfl
+      (match Ix.nameCompareExact query name with | .lt => none | .gt => none | .eq => some 0) := rfl
   rw [unfolded] at found
-  cases compared : Ix.nameCompare query name <;> rw [compared] at found
+  cases compared : Ix.nameCompareExact query name <;> rw [compared] at found
   · cases found
   · exact ⟨rfl, (Option.some.inj found).symm⟩
   · cases found
 
-/-- Every name the compiler resolves as the singleton's self reference (an
-equal hash field) is related to the record's key. -/
+/-- Every name the compiler resolves as the singleton's self reference
+(`nameCompareExact`-equal to it) is related to the record's key. -/
 def SelfAliases (source : Ix.Name) (key : CName md) (names : Ix.Name → CName md → Prop) : Prop :=
-  ∀ query, Ix.nameCompare query source = .eq → names query key
+  ∀ query, Ix.nameCompareExact query source = .eq → names query key
 
 /-- **The singleton's self references read as its key.** -/
 theorem singleton_self (cx : Ctx md) (owner : Address) (source : Ix.Name) (context : CompileEnv × BlockEnv)

@@ -48,8 +48,9 @@ structure CompileEnv where
   nameToNamed : Std.HashMap Name Ixon.Named
   /-- Resolution map from constant name to compiled address (Rust
       `stt.name_to_addr`): primary block/projection registrations plus
-      `promote_aux` copies. First hop of `lookupConstAddr`. -/
-  nameToAddr : Std.HashMap Name Address := {}
+      `promote_aux` copies. First hop of `lookupConstAddr`. Keys are
+      compared structurally (`ExactName`, CQ2.25). -/
+  nameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   /-- Compiled constants storage, SERIALIZED. Holding structured
       `Ixon.Constant`s here retained a whole-env-scale object graph for
       the entire compile; the serialized bytes (already computed when a
@@ -65,7 +66,7 @@ structure CompileEnv where
   /-- Aux-generated name→address view merged from previously compiled
       blocks (Rust `stt.aux_name_to_addr`; scheduler-visible only after
       the driver merges each block's registrations). -/
-  auxNameToAddr : Std.HashMap Name Address := {}
+  auxNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   /-- Per-auxiliary call-site surgery plans, keyed by the original
       auxiliary name (Rust `stt.call_site_plans`). Computed per block by
       `compileMutualAuxTail`; visible to later blocks once the driver
@@ -216,13 +217,13 @@ structure BlockState where
       (compile.rs:3926/3946/3966), so the tail's aux compilation
       resolves sibling members through them. The driver merges these
       into `CompileEnv.nameToAddr` on block completion. -/
-  blockNameToAddr : Std.HashMap Name Address := {}
+  blockNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   /-- Aux-generation outputs of the CURRENT block (Rust mutates
       `stt.aux_name_to_addr` / `stt.env` globally; the pure model collects
       per block and the driver merges). Within-block phases resolve
       earlier phases' constants through `auxNameToAddr` via
       `lookupConstAddr`'s fallback chain. -/
-  auxNameToAddr : Std.HashMap Name Address := {}
+  auxNameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   /-- `stt.env.store_const` calls (blocks + projections), in order. -/
   auxConsts : Array (Address × Ixon.Constant) := #[]
   /-- `stt.env.register_name` calls (incl. synthetic `Muts` entries), in

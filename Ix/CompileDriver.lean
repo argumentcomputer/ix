@@ -332,7 +332,7 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
     (plans : Std.HashMap Name CallSitePlan)
     (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan)
     : Except CompileError Unit := do
-  let mut compiled : Std.HashMap Name Address := {}
+  let mut compiled : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   for (name, addr) in primary do
     if let some existing := cenv.auxNameToAddr.get? name then
       if existing != addr then throw (nameClaimConflict name existing addr)
@@ -344,7 +344,7 @@ def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
     if let some existing := (compiled.get? name).orElse fun _ => cenv.nameToAddr.get? name then
       if existing != addr then throw (nameClaimConflict name existing addr)
     compiled := compiled.insert name addr
-  let mut claimed : Std.HashMap Name Address := {}
+  let mut claimed : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
   for (name, named) in cache.auxNamed do
     unless cache.auxGenExtraNames.contains name && cache.auxNameToAddr.contains name do
       continue

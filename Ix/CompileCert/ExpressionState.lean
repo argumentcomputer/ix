@@ -103,7 +103,8 @@ inductive Related {md : Mode} (names : Ix.Name → CName md → Prop)
 
 /-! ## External references -/
 
-abbrev Bindings := Std.HashMap Ix.Name Address × Std.HashMap Ix.Name Address
+abbrev Bindings :=
+  Std.HashMap Ix.Compile.ExactKey.ExactName Address × Std.HashMap Ix.Compile.ExactKey.ExactName Address
 
 /-- The block's own binding maps, which expression compilation never
 writes. -/
