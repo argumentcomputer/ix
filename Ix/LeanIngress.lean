@@ -94,6 +94,32 @@ namespace Ix.LeanIngress
 
 open Ix.Kernel.Reader (CName CExpr CVal CDecl ReadError State Read BlockRead RecCounts)
 
+/-! ## Names, compared structurally
+
+`Ix.Name`'s `==` compares the root's stored hash only, so the ingress compares
+names structurally (`Ix.Name.beqRaw`) and keys its own tables by `TableName`, as
+the compiler's tables do since CQ2.25. The environment's map
+(`Ix.Environment.consts`) and the condensation's (`Ix.CondensedBlocks`) are
+inputs, looked up as they come. -/
+
+/-- A name as a key of the ingress's own tables: compared structurally
+(`Ix.Name.beqRaw`), hashed by its stored hash. A type synonym, so that a name
+is a key as it is. -/
+def TableName : Type := Ix.Name
+
+instance : BEq TableName := ⟨fun a b => Ix.Name.beqRaw a b⟩
+instance : Hashable TableName := ⟨fun n => hash (Ix.Name.getHash n)⟩
+
+instance : LawfulBEq TableName where
+  eq_of_beq same := Ix.Name.beqRaw_iff.mp same
+  rfl := Ix.Name.beqRaw_iff.mpr rfl
+
+instance : LawfulHashable TableName where
+  hash_eq a b same := by
+    have equal : a = b := Ix.Name.beqRaw_iff.mp same
+    subst equal
+    rfl
+
 /-! ## Declaration groups -/
 
 /-- A declaration group of the environment: what becomes one reading. -/
@@ -129,7 +155,7 @@ def Group.name (g : Group) : CName .source :=
 
 /-- Whether `n` is `parent.s`. -/
 def isStrName (parent : Ix.Name) (s : String) : Ix.Name → Bool
-  | .str p s' _ => s' == s && p == parent
+  | .str p s' _ => s' == s && Ix.Name.beqRaw p parent
   | _ => false
 
 /-- The recursors of an inductive block among `candidates` (the recursors
@@ -163,7 +189,7 @@ def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
   for n in block do
     let some (.inductInfo v) := env.consts.get? n
       | return bad (.malformed s!"inductive block member {ingressName n} is missing or not an inductive")
-    unless v.all == block do
+    unless v.all.isEqv block Ix.Name.beqRaw do
       return bad (.malformed s!"inductive {ingressName n} names a different block")
     types := types.push v
   let mut ctors : Array (Array Ix.ConstructorVal) := #[]
@@ -173,7 +199,7 @@ def inductiveGroup (env : Ix.Environment) (first : Ix.InductiveVal)
       let some (.ctorInfo cv) := env.consts.get? c
         | return bad (.malformed s!"constructor {ingressName c} of {ingressName v.cnst.name} is \
             missing or not a constructor")
-      unless cv.induct == v.cnst.name do
+      unless Ix.Name.beqRaw cv.induct v.cnst.name do
         return bad (.malformed s!"constructor {ingressName c} names another inductive")
       unless cv.cidx == j do return bad (.malformed "constructor index differs from its position")
       cs := cs.push cv
@@ -237,7 +263,7 @@ def unplaced (n : Ix.Name) : Ix.ConstantInfo → Group
 blocks, the components' other constants, and a group of its own for every
 constant neither claims. -/
 def groupsOf (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Array Group := Id.run do
-  let mut recsOf : Ix.Map Ix.Name (Array Ix.RecursorVal) := {}
+  let mut recsOf : Ix.Map TableName (Array Ix.RecursorVal) := {}
   for (_, ci) in env.consts do
     if let .recInfo rv := ci then
       if let some first := rv.all[0]? then
@@ -245,10 +271,10 @@ def groupsOf (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Array Group 
   let mut out : Array Group := #[]
   for (n, ci) in env.consts do
     if let .inductInfo v := ci then
-      if v.all[0]? == some n then out := out.push (inductiveGroup env v (recsOf.getD n #[]))
+      if v.all[0]?.any (Ix.Name.beqRaw · n) then out := out.push (inductiveGroup env v (recsOf.getD n #[]))
   for (_, members) in blocks.blocks do
     if let some g := componentGroup env members then out := out.push g
-  let mut claimed : Ix.Set Ix.Name := {}
+  let mut claimed : Ix.Set TableName := {}
   for g in out do
     for n in g.names do claimed := claimed.insert n
   for (n, ci) in env.consts do
@@ -385,7 +411,7 @@ def convertInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Co
       i := i + 1
     -- the motive a recursor eliminates, by Lean's naming: `T.rec` eliminates `T`
     let motive := match r.cnst.name with
-      | .str T "rec" _ => types.findIdx? (·.cnst.name == T)
+      | .str T "rec" _ => types.findIdx? (Ix.Name.beqRaw ·.cnst.name T)
       | _ => none
     rs := rs.push (cv, ⟨r.numParams, r.numMotives, r.numMinors, r.numIndices, r.k, motive⟩, rules)
   return .inductive ⟨nPd, tys, cts, ctorNames, rs⟩
@@ -520,7 +546,7 @@ structure Graph where
 def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
     (converted : Array (Except ReadError Converted)) : Graph := Id.run do
   let supportNames := Ix.Kernel.Reader.strLitSupportNames
-  let mut groupOf : Ix.Map Ix.Name Nat := {}
+  let mut groupOf : Ix.Map TableName Nat := {}
   let mut supportOf : Std.HashMap (CName .source) Nat := {}
   for (g, i) in groups.zipIdx do
     for n in g.names do
@@ -529,7 +555,7 @@ def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
   let mut hard : Array (Array Nat) := #[]
   let mut unplaced : Array (Option ReadError) := #[]
   for (g, i) in groups.zipIdx do
-    let mut seenLo : Ix.Set Ix.Name := {}
+    let mut seenLo : Ix.Set TableName := {}
     let mut ds : Std.HashSet Nat := {}
     let mut bad : Option ReadError := none
     for n in g.names do

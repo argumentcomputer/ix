@@ -131,11 +131,18 @@ name, the elimination level, is the fresh position `n` and whose name
 structure Numbering where
   names : Array Ix.Name
   large : Bool := false
-  deriving BEq
 
-/-- The position of a level-parameter name. -/
+/-- Numberings compare their names structurally (`Ix.Name.beqRaw`):
+`Ix.LeanIngress.exprsOf` converts a run of terms under one numbering with one
+memo, so two numberings whose names only share stored hashes must not be one
+(CQ2.25). -/
+instance : BEq Numbering where
+  beq σ τ := σ.large == τ.large && σ.names.isEqv τ.names Ix.Name.beqRaw
+
+/-- The position of a level-parameter name, found by structural name equality
+(`Ix.Name.beqRaw`; `Ix.Name`'s `==` compares stored hashes only, CQ2.25). -/
 @[expose] def Numbering.pos (σ : Numbering) (n : Ix.Name) : Ix.Kernel.LevelParam :=
-  match σ.names.findIdx? (· == n) with
+  match σ.names.findIdx? (Ix.Name.beqRaw · n) with
   | none => σ.names.size
   | some 0 => if σ.large then σ.names.size - 1 else 0
   | some (i + 1) => if σ.large then i else i + 1
