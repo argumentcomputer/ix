@@ -2,20 +2,24 @@ import Lean.Elab.Command
 import IxC.Kernel.Admission
 import IxC.Kernel.Audit.Runtime
 
-/-! # The display-use audit (IXC-PLAN §11, step 6)
+/-! # The display-use audit (IXC-PLAN §11, steps 6 and 6b)
 
 `.meta` carries display data that the checker never reads: a field of type
-`Mode.D α` holds a value in `.meta` and `()` in the certified modes. Today
-the one display field is the reader's output (`Reader.Read.display`, what the
-`.ixe`'s metadata says of the keys a record declares); the checker's own
-types (keys, terms, constants, declarations) carry none, so its structural
-equality stays α-equivalence at `.meta` too. A checker that read display
-could decide differently at `.meta` than at `.anon` on the erasure; the
-erasure test (`kernel-check-ixe --meta`) measures that on the corpus, and
-this audit rules it out in the code. It finds
+`Mode.D α` holds a value in `.meta` and `()` in the certified modes; the
+reader's output holds one (`Reader.Read.display`, what the `.ixe`'s metadata
+says of the keys a record declares). Step 6b put display inside the
+checker's own terms: a binder's and a let's Lean name (`BinderMeta.display`,
+`LetMeta.display`, in every mode, written only outside the kernel), held in
+a `Squash`, a subsingleton, so structural equality stays α-equivalence:
+equality, `==`, hashing and every decision are blind to it by construction,
+and safe code cannot read its value. A checker that read display could
+decide differently at `.meta` than at `.anon` on the erasure; the erasure
+test (`kernel-check-ixe --meta`) measures that on the corpus, and this audit
+rules it out in the code. It finds
 
 * every **display field**: a structure field of the kernel whose type is
-  `Mode.D …`;
+  `Mode.D …`, or a display annotation (`Squash BinderDisplay`,
+  `Squash Name`, `Squash (FailureDisplay _)`);
 * every **reader** of one: a definition of the kernel's modules whose value
   uses a display field's projection, or a primitive projection at its index,
   other than copying the field into the same field of a value of the same
@@ -28,8 +32,15 @@ this audit rules it out in the code. It finds
 * every definition that destructures a structure with display fields by
   cases (a match could bind a display field).
 
-All four lists are frozen. Readers must stay empty: the renderers that spell
-a key with its names (`.meta`'s messages) live outside the kernel. -/
+All four lists are frozen. Readers must stay empty: the renderers that spell a
+key with its names and print terms (`Ix.KernelDisplay`) live outside the
+kernel. A structure's own declarations are not readers; among `BinderMeta`'s,
+`shareAlwaysImpl` (PERF P14 with names, step 6b) reads an annotation's
+*address*, not its value, to choose between two equal results (the shared
+`leanAlways` or a copy that keeps the name), and its `@[csimp]` equation
+proves the choice invisible. The derived equalities of `BinderMeta` and
+`LetMeta` reach the fold, and compare the annotation with the subsingleton's
+constant decision (the guards at the end), so they read nothing. -/
 
 open Lean Meta Elab Command
 
@@ -64,6 +75,11 @@ def displayFields : MetaM (Array Field) := do
     -- on a free mode
     let isDisplay := isDisplay ||
       (ci.type.getForallBody.getAppFn.isConstOf ``Ix.Kernel.Mode.D)
+    -- a display annotation: a `Squash` of a display type (step 6b)
+    let body := ci.type.getForallBody
+    let isDisplay := isDisplay || (body.isAppOfArity ``Squash 1 &&
+      [``Ix.Kernel.BinderDisplay, ``Ix.Kernel.Name, ``Ix.Kernel.FailureDisplay].any
+        (body.appArg!.getAppFn.isConstOf ·))
     if isDisplay then
       let some ctor := env.find? info.ctorName | continue
       out := out.push { struct := ctor.name.getPrefix, idx := info.i, proj := n }
@@ -127,7 +143,13 @@ def isDerivedInstance (structs : Array Lean.Name) (n : Lean.Name) : Bool :=
 end Ix.Kernel.Audit.Display
 
 open Ix.Kernel.Audit.Display in
-/-- info: display field Ix.Kernel.Reader.Read.display (Ix.Kernel.Reader.Read, field 5) -/
+/--
+info: display field Ix.Kernel.BinderMeta.display (Ix.Kernel.BinderMeta, field 3)
+---
+info: display field Ix.Kernel.LetMeta.display (Ix.Kernel.LetMeta, field 1)
+---
+info: display field Ix.Kernel.Reader.Read.display (Ix.Kernel.Reader.Read, field 5)
+-/
 #guard_msgs in
 run_cmd liftTermElabM do
   for f in ← displayFields do
@@ -152,7 +174,12 @@ run_cmd liftTermElabM do
     {readers.qsort (·.toString < ·.toString)}"
 
 open Ix.Kernel.Audit.Display in
-/-- info: derived instances of display structures in the fold's runtime closure: [] -/
+-- Step 6b: the binder's and the let's derived equalities, which compare the
+-- annotation with the subsingleton's constant decision (the guards at the
+-- end): reached from structural identity (`Expr.ptrDec`, the derived
+-- `DecidableEq (Expr md)`) and the binder comparisons of `beqGoX`.
+/-- info: derived instances of display structures in the fold's runtime closure: [Ix.Kernel.instDecidableEqBinderMeta.decEq,
+ Ix.Kernel.instDecidableEqLetMeta.decEq] -/
 #guard_msgs in
 run_cmd liftTermElabM do
   let env ← getEnv
@@ -184,3 +211,11 @@ run_cmd liftTermElabM do
     if (v.find? fun e => elims.any e.isConstOf).isSome then found := found.push n
   logInfo m!"definitions destructuring a display structure by cases: \
     {found.qsort (·.toString < ·.toString)}"
+
+-- The annotations' decisions are constant (step 6b): two different names
+-- compare equal, so an equality that reaches one reads nothing.
+#guard decide ((Squash.mk ({ name := .str .anonymous "x" } : Ix.Kernel.BinderDisplay)) =
+  Squash.mk {})
+#guard decide ((Squash.mk (Ix.Kernel.Name.str .anonymous "x")) = Squash.mk .anonymous)
+#guard (({ pw := .never, display := Squash.mk { name := .str .anonymous "x" } } :
+  Ix.Kernel.BinderMeta) == { pw := .never })
