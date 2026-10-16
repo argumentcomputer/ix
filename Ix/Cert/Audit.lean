@@ -4,6 +4,7 @@ import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
 import Ix.Cert.Canon
 import Ix.Cert.Schedule
+import Ix.Cert.Hybrid
 
 /-! # The certification statements, frozen
 
@@ -3105,6 +3106,10 @@ task's value is its function's, so the split (`width`) and the trace
 being independent (the reference schedule) stays a test
 (`compile-schedule-identity`, `cert-compile-parity-init`). -/
 
+/-- info: [cert-audit] schedule: 12 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] schedule: 4 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "schedule"
@@ -3155,3 +3160,110 @@ fun snapshot ready acc =>
 /-- info: 'Ix.Cert.Schedule.compileEnvFold_width' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Schedule.compileEnvFold_width
+
+/-! ## CQP.4 (b): the hybrid environment compiles as the materialized one
+
+The driver and its validations read the environment through
+`Ix.Environment.get?` only, apart from the order of the inductive groups
+they check (`Ix.Cert.Hybrid.groupOrder`). So two environments with the same
+lookups, the same group order and the same source count compile alike under
+every schedule (`compileEnvFold_lookups`), and the IO pipeline's hybrid
+environment (`hybridEnv`), whose fallback computes the canonicalization's
+specification (`fallback_spec`, from C1), folds as `Ix.Cert.compile`'s
+materialized environment does (`pipeline_fold`), given that the latter is
+the input's canonicalization and the code constants are its own. The
+restatement's bound on the source-claim walk changes nothing
+(`sourceClaimOwned_fuel`, `pipeline_walk`). The IO pipeline's own loops,
+its front end (canonicalization, graph, ground filter, condensation) and
+the blocks' independence within a wave stay tested. -/
+
+/-- info: [cert-audit] hybrid: 20 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] hybrid: 8 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "hybrid"
+    (#[`uniformSafety_eq, `mixedSafetyMessage_eq, `validateMutualSafety_eq, `validateInductiveFlags_eq,
+      `compileEnvFold_lookups, `fallback_spec, `hybrid_lookups, `pipeline_fold, `filter_length_mono,
+      `filter_length_lt, `measure_push, `idBind, `fuel_exit, `forIn_measure, `sourceClaimOwned_fuel,
+      `sourceClaimOwned_lookups, `view_get, `hybrid_invariant, `hybrid_covers,
+      `pipeline_walk].map (`Ix.Cert.Hybrid ++ ·))
+  checkRuntime (tag := "cert-audit") "hybrid"
+    #[``Ix.CompileM.validateInductiveFlags, ``Ix.CompileM.validateMutualSafety, ``Ix.CompileM.uniformSafety,
+      ``Ix.CompileM.mixedSafetyMessage, ``Ix.CompileM.inductiveGroups, ``Ix.AuxGen.sourceClaimOwned,
+      ``Ix.Environment.get?, ``Ix.CanonM.canonChunk]
+
+/-- info: def Ix.Cert.Hybrid.groupOrder : Ix.Environment → Array (Ix.Name × Array Ix.Name) :=
+fun env =>
+  (Ix.CompileM.inductiveGroups env).toArray.qsort fun a b => a.fst.getHash.cmpBytes b.fst.getHash == Ordering.lt -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Hybrid.groupOrder
+
+/-- info: def Ix.Cert.Hybrid.hybridEnv : Std.HashMap Ix.Name Ix.ConstantInfo →
+  Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) → Ix.Environment :=
+fun codeConsts leanByIx =>
+  { consts := codeConsts,
+    fallback? :=
+      some fun n =>
+        (leanByIx.get? n).bind fun x =>
+          match x with
+          | (ln, lci) => Option.map (fun x => x.snd) (Ix.CanonM.canonChunk #[(ln, lci)])[0]? } -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Hybrid.hybridEnv
+
+/-- info: @Ix.Cert.Hybrid.compileEnvFold_lookups : ∀ {e₁ e₂ : Ix.Environment},
+  (∀ (n : Ix.Name), e₁.get? n = e₂.get? n) →
+    Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
+      ∀ {u₁ u₂ : Nat},
+        e₁.consts.size + u₁ = e₂.consts.size + u₂ →
+          ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits)
+            (width width' : Nat),
+            Ix.CompileM.compileEnvFold e₁ blocks dbg u₁ sharingLimits width =
+              Ix.Cert.Hybrid.restore e₁ u₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' u₂ sharingLimits width' -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Hybrid.compileEnvFold_lookups
+
+/-- info: Ix.Cert.Hybrid.pipeline_fold : ∀ (full : Ix.Environment) (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
+  (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)),
+  (∀ (n : Ix.Name), full.get? n = Option.map (fun p => Ix.Cert.Canon.constS p.snd) (leanByIx.get? n)) →
+    (∀ (n : Ix.Name) (ci : Ix.ConstantInfo), codeConsts.get? n = some ci → full.get? n = some ci) →
+      codeConsts.size ≤ leanByIx.size ∧ full.consts.size = leanByIx.size →
+        Ix.Cert.Hybrid.groupOrder (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) = Ix.Cert.Hybrid.groupOrder full →
+          ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+            Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg
+                (leanByIx.size - codeConsts.size) sharingLimits width =
+              Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx)
+                  (leanByIx.size - codeConsts.size) <$>
+                Ix.CompileM.compileEnvFold full blocks false 0 sharingLimits -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Hybrid.pipeline_fold
+
+/-- info: Ix.Cert.Hybrid.pipeline_walk : ∀ (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
+  (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)),
+  (∀ (n : Ix.Name), codeConsts.contains n = true → leanByIx.contains n = true) →
+    ∀ (owners : Std.HashSet Ix.Name) (name : Ix.Name) {k k' : Nat},
+      leanByIx.size ≤ k →
+        leanByIx.size ≤ k' →
+          Ix.AuxGen.sourceClaimOwned
+                { consts := ∅, fallback? := some (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx).get? } owners name k =
+              Ix.AuxGen.sourceClaimOwned (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) owners name k' ∧
+            ∃ b, Ix.AuxGen.sourceClaimOwned (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) owners name k' = Except.ok b -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Hybrid.pipeline_walk
+
+/-- info: 'Ix.Cert.Hybrid.compileEnvFold_lookups' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Hybrid.compileEnvFold_lookups
+
+/-- info: 'Ix.Cert.Hybrid.pipeline_fold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Hybrid.pipeline_fold
+
+/-- info: 'Ix.Cert.Hybrid.sourceClaimOwned_fuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Hybrid.sourceClaimOwned_fuel
+
+/-- info: 'Ix.Cert.Hybrid.pipeline_walk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Hybrid.pipeline_walk
