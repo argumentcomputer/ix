@@ -493,7 +493,10 @@ The executed fold refines the pure fold (`checkDecls_refines_ref`), at the
 certified entry too (`Admission.checkBytes_refines_ref`); the pure checker is
 monotone in its fuel and a reference accept determines its environment; and
 per-block admission accepts exactly what the deferred fold accepts
-(`checkDecls_ok_iff_PB`). -/
+(`checkDecls_ok_iff_PB`). A reference accept has a strong model, one
+witness of the fold's invariant whose public model satisfies the value
+clauses (`AcceptsRef.strongModel`, `AcceptsRef.model_values`), and so do
+the executed fold and the certified entry. -/
 
 #guard_kernel_axioms Ix.Kernel.checkDecl_mono [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDeclsFrom_deterministic [propext, Classical.choice, Quot.sound]
@@ -501,6 +504,13 @@ per-block admission accepts exactly what the deferred fold accepts
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_refines_ref [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_refines_ref [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_ok_iff_PB [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.AcceptsRef.strongModel [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.AcceptsRef.model_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.AcceptsRef.no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.StrongModel.rec_rhs [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_model_values [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytes_strongModel [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytes_model_values [propext, Classical.choice, Quot.sound]
 
 /-! ### Import and runtime closures
 

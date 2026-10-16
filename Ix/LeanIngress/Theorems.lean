@@ -2,7 +2,7 @@ import Ix.LeanIngress
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Verify.Cached.MainC
 import IxC.Kernel.Verify.Tier
-import IxC.Kernel.Verify.Cached.Reference
+import IxC.Kernel.Ixon.Values
 
 /-! # The theorems of the Source-mode check
 
@@ -25,6 +25,10 @@ the ingress and the evidence owe nothing: these theorems hold whatever
   and every tier constant is typed in its scope (`Ix.Kernel.Tier.TypedIn`).
 * `checkSource_refines_ref`: an accepted check is a reference accept (the
   pure fold at some fuel), `Ix.Kernel.Cached.AcceptsRef`;
+* `checkSource_strongModel`, `checkSource_model_values`: the strong model
+  (`Ix.Kernel.Cached.StrongModel`, one witness of the fold's invariant) and
+  a model with the value clauses (definitions denote their values, values
+  read only their own level parameters);
 * `orderOf_complete`, `scheduleOf_complete`, `leanIngress_converts`,
   `checkSource_converts`: every group is in the order and scheduled, so an
   accepted check converted every group of its environment (coverage, not
@@ -124,6 +128,24 @@ theorem checkSource_refines_ref (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.E
         (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList kenv := by
   obtain ⟨pre, decls, hp, hi, hc⟩ := checkSource_reading h
   exact ⟨pre, decls, hp, hi, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
+
+/-- **The strong model** of an accepted Source-mode check (step 7.2,
+`Ix.Kernel.Cached.StrongModel`): one witness of the fold's invariant, whose
+public model satisfies the value clauses. -/
+theorem checkSource_strongModel (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
+    Nonempty (Ix.Kernel.Cached.StrongModel V kenv) := by
+  obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
+  exact Ix.Kernel.Cached.checkDecls_strongModel V hc
+
+/-- **Model existence with the value clauses** for the Source-mode check:
+definitions denote their values, and values read only their own level
+parameters. -/
+theorem checkSource_model_values (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
+    ∃ M : Ix.Kernel.Model V kenv, Ix.Kernel.Cached.ValueClauses M := by
+  obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
+  exact Ix.Kernel.Cached.checkDecls_model_values V hc
 
 /-- **Model existence** for the Source-mode check. -/
 theorem checkSource_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
@@ -397,3 +419,9 @@ the build. -/
 
 /-- info: 'Ix.LeanIngress.checkSource_refines_ref' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.LeanIngress.checkSource_refines_ref
+
+/-- info: 'Ix.LeanIngress.checkSource_strongModel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSource_strongModel
+
+/-- info: 'Ix.LeanIngress.checkSource_model_values' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSource_model_values
