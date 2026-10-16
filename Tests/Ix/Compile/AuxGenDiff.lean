@@ -30,6 +30,7 @@ import Ix.AuxGen.Nested
 import Ix.AuxGen.Patches
 import Ix.AuxGen.CompileAux
 import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
 import LSpec
 
@@ -996,34 +997,42 @@ def run (env : Lean.Environment) : IO UInt32 := do
         && anonHintsMism == 0 && serOk)
   IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
 
-  -- Parallel-driver gate: the PARALLEL aux-aware driver must produce the
-  -- identical env (wave workers + rustRef fail-fast — the InitStd gate
-  -- vehicle).
-  IO.println "[aux-gen-diff] parallel aux driver (compileEnvParallelAux)..."
+  -- Reference-schedule gate: the test-only reference schedule (the former
+  -- sequential driver, with the Rust-style seed pre-pass) and the fold at
+  -- another width must produce the identical env; the fold's names are also
+  -- checked against Rust's addresses (`rustRefMismatch?`).
+  IO.println "[aux-gen-diff] reference schedule and the fold at width 32..."
   let rustNameToAddr : Std.HashMap Ix.Name Address :=
     rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
   let parOk ← do
-    match ← Ix.CompileM.compileEnvParallelAux rawEnv condensed
-        (rustRef := some rustNameToAddr) with
-    | .error e =>
-      IO.println s!"[aux-gen-diff]   parallel driver ERROR: {e}"
-      pure false
-    | .ok (parEnv, _, _) =>
-      match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
-      | .ok pb, .ok rb =>
-        if pb == rb then
-          IO.println s!"[aux-gen-diff]   parallel serialized env: {pb.size} bytes, IDENTICAL"
-          pure true
-        else
-          IO.println s!"[aux-gen-diff]   parallel serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
-          pure false
-      | .error e, _ =>
-        IO.println s!"[aux-gen-diff]   serEnv (parallel) failed: {e}"
-        pure false
-      | _, .error e =>
-        IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
-        pure false
-  IO.println s!"[aux-gen-diff] parallel driver gate: {if parOk then "PASS" else "FAIL"}"
+    let runs : List (String × Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :=
+      [("reference schedule", Tests.Ix.Compile.ScheduleReference.sequential rawEnv condensed),
+       ("fold, width 32", Ix.CompileM.compileEnvFold rawEnv condensed (width := 32))]
+    let mut ok := true
+    for (label, run) in runs do
+      match run with
+      | .error e =>
+        IO.println s!"[aux-gen-diff]   {label} ERROR: {e}"
+        ok := false
+      | .ok (parEnv, _, parCenv) =>
+        if let some msg := Ix.CompileM.rustRefMismatch? rustNameToAddr parCenv then
+          IO.println s!"[aux-gen-diff]   {label}: {msg}"
+          ok := false
+        match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
+        | .ok pb, .ok rb =>
+          if pb == rb then
+            IO.println s!"[aux-gen-diff]   {label} serialized env: {pb.size} bytes, IDENTICAL"
+          else
+            IO.println s!"[aux-gen-diff]   {label} serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
+            ok := false
+        | .error e, _ =>
+          IO.println s!"[aux-gen-diff]   serEnv ({label}) failed: {e}"
+          ok := false
+        | _, .error e =>
+          IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
+          ok := false
+    pure ok
+  IO.println s!"[aux-gen-diff] reference-schedule gate: {if parOk then "PASS" else "FAIL"}"
 
   return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk then 0 else 1
 

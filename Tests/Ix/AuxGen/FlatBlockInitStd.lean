@@ -9,7 +9,7 @@ tail, for that block's groups and its canonical flat block (AUXGEN-IXC §3.2,
 CQ2.14); this is the projection.
 
 Init+Std is canonicalized and condensed as `kernel-source-ingress` does it,
-and compiled by the parallel driver (`compileEnvParallelAux`, production
+and compiled by the driver (`compileEnvFold`, `--workers` tasks per wave, production
 `Ix.Tc` kernel), whose environment the aux generator reads, as
 `aux-gen-diff`'s patch gate does. Then, over every inductive block in
 dependency order:
@@ -47,7 +47,7 @@ def evaluate : IO (Array String × Array String) := do
   let env ← IO.lazyPure fun _ => canon consts workers
   let blocks ← IO.lazyPure fun _ => condense env (parallel := true)
   let t1 ← IO.monoMsNow
-  let (_, _, cenv) ← match ← Ix.CompileM.compileEnvParallelAux env blocks (numWorkers := workers) with
+  let (_, _, cenv) ← match ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks (width := workers) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile: {e}")
   let t2 ← IO.monoMsNow

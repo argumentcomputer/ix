@@ -1087,7 +1087,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
   return st
 
 /-- Parallel Pass 2: wave-based workers over the aux-block dependency
-    graph, mirroring `Ix.CompileM.compileEnvParallelAux`. Each worker
+    graph (the shape of the compile driver before CQ2.14). Each worker
     runs `decompileBlockAuxGen` against a SNAPSHOT of the merged state
     (persistent structures make the snapshot free) with a worker-local
     kernel context, and ships exactly its block's outputs via the

@@ -303,7 +303,7 @@ pub fn compile_env_with_profile(
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
-  // scheduled (Lean `compileEnvParallelAux` does the same).
+  // scheduled (Lean's `Ix.Cli.driverOptionsFromEnv` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
   let setup_start = Instant::now();
@@ -1412,7 +1412,8 @@ fn precompile_aux_gen_prereqs(
     // One block transaction per pre-compiled SCC, as for a scheduled block:
     // a name the SCC claims twice is still its own (`claim_and_register_*`),
     // and a name an earlier SCC claimed keeps that SCC's entry, as in the
-    // Lean drivers' `precompileAuxGenPrereqs`. A failure aborts the compile.
+    // Lean driver's per-block merge (`mergeCompiledBlock`). A failure aborts
+    // the compile.
     crate::compile::block_txn::start();
     let res =
       compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx);

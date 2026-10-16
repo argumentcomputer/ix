@@ -76,7 +76,7 @@ def run : IO UInt32 := do
     let blockRefs := phases.condensed.blockRefs.insert afterLo
       ((phases.condensed.blockRefs.getD afterLo {}).insert before)
     let blocks := { phases.condensed with blockRefs := blockRefs }
-    let .ok (_, _, cenv) := Ix.CompileM.compileEnvAux phases.rawEnv blocks
+    let .ok (_, _, cenv) := Ix.CompileM.compileEnvFold phases.rawEnv blocks
       | throw (IO.userError "claim-order scheduler failed")
     let refused := ClaimConflict.sorted (cenv.ungrounded.toList.map fun (n, why) => (n.pretty, why))
     let label := if ownerFirst then "owner-first" else "user-first"
@@ -101,7 +101,7 @@ def run : IO UInt32 := do
   if seeds.isEmpty then throw (IO.userError "claim-order positive fixture set is empty")
   let positive ← Ix.CompileM.rsCompilePhasesOf
     (ClaimConflict.closeWithRecursors env (Ix.EnvScope.collectDeps env seeds))
-  let .ok (output, _, positiveEnv) := Ix.CompileM.compileEnvAux positive.rawEnv positive.condensed
+  let .ok (output, _, positiveEnv) := Ix.CompileM.compileEnvFold positive.rawEnv positive.condensed
     | throw (IO.userError "claim-order positive scheduler failed")
   for (name, why) in positiveEnv.ungrounded.toList do
     failures := failures + 1

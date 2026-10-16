@@ -6,16 +6,16 @@ public section
 /-!
 # The Lean compile drivers' options, from the CLI's environment
 
-The drivers (`Ix.CompileM.compileEnvParallelAux` and the pipeline above it)
-read no environment variable and no `/proc` file; they take
+The driver (`Ix.CompileM.compileEnvFold`, and the pipeline above it)
+reads no environment variable and no `/proc` file; it takes
 `Ix.CompileM.DriverOptions`. `ix compile-lean` and `ix validate-lean` build
 the options here:
 - `IX_SHARING_LIMITS` (set by `--sharing-limits`, or directly): the sharing
   construction's limits;
-- `IX_LOG_BLOCKS`: the parallel driver's per-block trace;
-- `IX_COMPILE_DBG`: phase timings and the periodic progress trace.
+- `IX_COMPILE_DBG`: phase timings and the per-wave trace.
 
-The traces print the process's resident set size, read here.
+Under `IX_COMPILE_DBG` the pipeline prints the process's resident set size
+after the compile phase, read here.
 -/
 
 namespace Ix.Cli
@@ -38,9 +38,8 @@ def driverOptionsFromEnv (dbg : Bool := false) :
   | .error e => return .error e
   | .ok sharingLimits =>
     let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
-    let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
-    return .ok { sharingLimits, dbg, logBlocks
-                 memory := if dbg || logBlocks then some residentSetSize else none }
+    return .ok { sharingLimits, dbg
+                 memory := if dbg then some residentSetSize else none }
 
 end Ix.Cli
 

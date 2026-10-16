@@ -478,7 +478,7 @@ returns only; keys of the other language are accepted and ignored. One list of 3
 specifications pins both (`LIMIT_SPEC_PARITY` in `crates/ixon/src/sharing_exact/tests.rs`,
 `limitSpecParity` in `Tests/Ix/SharingExact.lean`). `ix compile --sharing-limits` and
 `ix compile-lean --sharing-limits` validate the override and publish it through
-`IX_SHARING_LIMITS`. It is read once per run: by the Lean drivers `compileEnvParallelAux` and
+`IX_SHARING_LIMITS`. It is read once per run: by the Lean CLI's driver options (`Ix.Cli.driverOptionsFromEnv`) and
 `decompileEnvFullParallel` (`compilerSharingLimitsFromEnv`, carried in
 `CompileEnv.sharingLimits`) and by each Rust compile or decompile entry point
 (`CompileState::sharing_limits`); an invalid value fails the run once, before any block is

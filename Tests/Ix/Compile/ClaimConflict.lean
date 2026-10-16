@@ -43,6 +43,7 @@
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
 
 open Lean
 
@@ -495,16 +496,19 @@ got {actual.getD "accepted"}"
   for (ln, _) in closure do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     nameByHash := nameByHash.insert ixn.getHash ixn
-  match Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash) with
-  | .error e => throw (IO.userError s!"[claim-conflict] sequential driver: {e}")
+  match Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (nameByHash := nameByHash) with
+  | .error e => throw (IO.userError s!"[claim-conflict] fold: {e}")
   | .ok (_, _, cenv) =>
-    runs := runs.push ("sequential", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
-  for k in [1, 4, 16] do
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
-        (nameByHash := nameByHash) with
-    | .error e => throw (IO.userError s!"[claim-conflict] wave driver, {k} workers: {e}")
+    runs := runs.push ("fold", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+  -- the test-only reference schedule (the former sequential driver), with the
+  -- least and with the greatest ready key first
+  for least in [true, false] do
+    match ScheduleReference.sequential phases.rawEnv phases.condensed (nameByHash := nameByHash)
+        (least := least) with
+    | .error e => throw (IO.userError s!"[claim-conflict] reference schedule: {e}")
     | .ok (_, _, cenv) =>
-      runs := runs.push (s!"wave --jobs {k}", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+      runs := runs.push (s!"reference, {if least then "least" else "greatest"} key first",
+        cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
   for k in [1, 4, 16] do
     let out ← leanCompile env closure k
     runs := runs.push (s!"compile-lean --workers {k}",

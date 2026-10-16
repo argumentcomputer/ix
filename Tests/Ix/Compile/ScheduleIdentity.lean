@@ -7,12 +7,14 @@
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
   families), compile with
 
-  - the sequential driver `Ix.CompileM.compileEnvAux` on the canonical
-    environment and condensation of `rsCompilePhasesOf` (as `ix compile`
-    computes them);
-  - the pure wave fold `compileEnvFold` on the same input;
-  - the wave driver `compileEnvParallelAux` on the same input at 1, 2, 4,
-    16 and 32 workers;
+  - the driver, the pure wave fold `Ix.CompileM.compileEnvFold`, on the
+    canonical environment and condensation of `rsCompilePhasesOf` (as
+    `ix compile` computes them), at its default width and at widths 1 and
+    32 (tasks per wave; the value must not depend on it);
+  - the reference schedule (`Tests.Ix.Compile.ScheduleReference.sequential`,
+    the sequential driver the fold replaced: live state, one block at a
+    time, the aux-gen seeds pre-compiled as Rust does) on the same input,
+    with the least and with the greatest ready key first;
   - the whole `ix compile-lean` pipeline (`compileLeanInput`, with its own
     canon and condensation, so other block representatives) at 1, 4 and 16
     workers;
@@ -34,10 +36,10 @@
   read-only input; `SCHED_JOBS=<n>` runs at most n at a time), and are
   reported and compared in the order above once all have finished.
 
-  Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all ten
+  Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all eight
   legs. `SCHED_LEGS=quick` is the per-iteration tier: `fold` (the
-  reference), `wave --jobs 4`, `wave --jobs 32` and `compile-lean
-  --workers 16`, with every check below; it is never the integration gate.
+  reference), `reference, least key first` and `compile-lean --workers 16`,
+  with every check below; it is never the integration gate.
   `SCHED_OUTPUT_DIR=<dir>` writes each leg's bytes and failures, for
   diagnosis.
 
@@ -47,6 +49,7 @@
   Run with: `lake exe IxTests --ignored compile-schedule-identity`.
 -/
 import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.IxVM
 import Tests.Ix.Fixtures
@@ -73,9 +76,6 @@ def say (s : String) : IO Unit := do
   IO.println s!"{s} (t={(← IO.monoMsNow) / 1000}s)"
   (← IO.getStdout).flush
 
-/-- Wave driver worker counts. -/
-def waveWorkers : List Nat := [1, 2, 4, 16, 32]
-
 /-- `ix compile-lean` worker counts. -/
 def pipelineWorkers : List Nat := [1, 4, 16]
 
@@ -101,7 +101,7 @@ structure Leg where
   saveLabel : String
   act : IO (ByteArray × Ixon.Env × List (String × String))
 
-/-- The leg tier: `SCHED_LEGS=quick` (four legs) or `full` (the default, the
+/-- The leg tier: `SCHED_LEGS=quick` (three legs) or `full` (the default, the
     integration tier). -/
 def quickTier : IO Bool := do
   match ← IO.getEnv "SCHED_LEGS" with
@@ -116,36 +116,35 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
   let quick ← quickTier
   let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
     cenv.ungrounded.toList.map fun (n, e) => (n.pretty, e)
-  let mut legs : Array Leg := #[]
-  -- sequential
-  if !quick then
-    legs := legs.push { label := "sequential", saveLabel := "sequential", act := do
-      -- the pure driver runs on a task of its own: inside the action the
-      -- compiler may evaluate a pure term before the action runs
-      let seq := Task.spawn fun _ =>
-        Ix.CompileM.compileEnvAux phases.rawEnv phases.condensed (nameByHash := nameByHash)
-      match seq.get with
-      | .error e => throw (IO.userError s!"[schedule] sequential driver: {e}")
-      | .ok (ixon, _, cenv) =>
-        let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-        pure (bytes, ixon, failuresOf cenv) }
-  -- the pure wave fold (`compileEnvFold`), at its default width
-  legs := legs.push { label := "fold", saveLabel := "fold", act := do
-    match ← IO.lazyPure fun _ =>
-        Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (nameByHash := nameByHash) with
-    | .error e => throw (IO.userError s!"[schedule] fold: {e}")
+  let outcome (label : String)
+      (result : Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :
+      IO (ByteArray × Ixon.Env × List (String × String)) := do
+    match result with
+    | .error e => throw (IO.userError s!"[schedule] {label}: {e}")
     | .ok (ixon, _, cenv) =>
       let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-      pure (bytes, ixon, failuresOf cenv) }
-  -- wave driver
-  for k in (if quick then [4, 32] else waveWorkers) do
-    legs := legs.push { label := s!"wave --jobs {k}", saveLabel := s!"wave-{k}", act := do
-      match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (numWorkers := k)
-          (nameByHash := nameByHash) with
-      | .error e => throw (IO.userError s!"[schedule] wave driver, {k} workers: {e}")
-      | .ok (ixon, _, cenv) =>
-        let bytes ← IO.ofExcept (Ixon.serEnv ixon)
-        pure (bytes, ixon, failuresOf cenv) }
+      pure (bytes, ixon, failuresOf cenv)
+  let mut legs : Array Leg := #[]
+  -- the driver, at its default width (the reference) and at widths 1 and 32
+  for width in (if quick then [none] else [none, some 1, some 32]) do
+    let label := match width with | none => "fold" | some w => s!"fold, width {w}"
+    let saveLabel := match width with | none => "fold" | some w => s!"fold-{w}"
+    legs := legs.push { label, saveLabel, act := do
+      -- `IO.lazyPure`: the pure driver is evaluated inside the action, so the
+      -- legs run concurrently
+      outcome label (← IO.lazyPure fun _ => match width with
+        | none => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed
+            (nameByHash := nameByHash)
+        | some w => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed
+            (nameByHash := nameByHash) (width := w)) }
+  -- the reference schedule, least and greatest ready key first
+  for least in (if quick then [true] else [true, false]) do
+    let label := s!"reference, {if least then "least" else "greatest"} key first"
+    let saveLabel := s!"reference-{if least then "least" else "greatest"}"
+    legs := legs.push { label, saveLabel, act := do
+      outcome label (← IO.lazyPure fun _ =>
+        ScheduleReference.sequential phases.rawEnv phases.condensed
+          (nameByHash := nameByHash) (least := least)) }
   -- the whole `ix compile-lean` pipeline
   for k in (if quick then [16] else pipelineWorkers) do
     legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
@@ -174,7 +173,7 @@ def runLegs (legs : Array Leg) : IO (Array LegResult) := do
 def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
     (runs : Array LegResult) : IO Nat := do
   if ← quickTier then
-    say "[schedule] SCHED_LEGS=quick: the per-iteration tier (4 legs); not the integration gate"
+    say "[schedule] SCHED_LEGS=quick: the per-iteration tier (3 legs); not the integration gate"
   let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
   for (leg, (_, bytes, _, fails)) in legs.zip runs do
     saveRun leg.saveLabel bytes fails

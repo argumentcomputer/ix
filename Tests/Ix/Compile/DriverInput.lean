@@ -2,6 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.EnvScope
 import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
 
 /-! The compile drivers' input checks and keys: a condensation with a block
 that has no reference set is refused by both drivers
@@ -117,28 +118,24 @@ def suite : List TestSeq := [
   test "missingBlockRefs? accepts a complete condensation"
     (_root_.Ix.CompileM.missingBlockRefs?
       { blocks with blockRefs := blocks.blockRefs.insert missing {} } == none),
-  test "the sequential driver refuses a block without references"
-    (show Bool from match _root_.Ix.CompileM.compileEnvAux { consts := {} } blocks with
+  test "the driver refuses a block without references"
+    (show Bool from match _root_.Ix.CompileM.compileEnvFold { consts := {} } blocks with
       | .error why => why == expected
       | .ok _ => false),
-  .individualIO "the parallel driver refuses a block without references" none (do
-    let result ← _root_.Ix.CompileM.compileEnvParallelAux { consts := {} } blocks
-      (numWorkers := 1)
-    let ok := match result with
+  test "the driver refuses a block without references at every width"
+    ([1, 2, 256].all fun width =>
+      match _root_.Ix.CompileM.compileEnvFold { consts := {} } blocks (width := width) with
       | .error why => why == expected
-      | .ok _ => false
-    return (ok, if ok then 1 else 0, 1,
-
-      if ok then none else some "the parallel driver did not refuse the condensation")) .done,
-  .individualIO "a failed cross-SCC subset fails its block by name, in both drivers" none (do
+      | .ok _ => false),
+  .individualIO "a failed cross-SCC subset fails its block by name, in the driver and the reference schedule" none (do
     let leanEnv ← get_env!
     let some (env, blocks, owner, resolved, bad) := crossInput leanEnv
       | return (false, 0, 1, some "could not craft the cross-SCC input")
-    let seq := crossVerdict "sequential driver" owner resolved bad
-      (_root_.Ix.CompileM.compileEnvAux env blocks)
-    let par := crossVerdict "wave driver" owner resolved bad
-      (← _root_.Ix.CompileM.compileEnvParallelAux env blocks (numWorkers := 2))
-    let errors := [seq, par].filterMap id
+    let fold := crossVerdict "driver" owner resolved bad
+      (_root_.Ix.CompileM.compileEnvFold env blocks (width := 2))
+    let seq := crossVerdict "reference schedule" owner resolved bad
+      (Tests.Ix.Compile.ScheduleReference.sequential env blocks)
+    let errors := [fold, seq].filterMap id
     let ok := errors.isEmpty
     return (ok, if ok then 1 else 0, 1, if ok then none else some (", ".intercalate errors))) .done]
 

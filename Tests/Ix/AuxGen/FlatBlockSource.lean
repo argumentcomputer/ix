@@ -15,7 +15,7 @@ over-merges, collapsed mutual and nested blocks, blocks that reference
 collapsed ones):
 
 1. **The flat blocks are accepted.** The fixtures' closure is compiled by the
-   pure driver (`compileEnvAux`); each inductive block's canonical classes
+   driver (`compileEnvFold`); each inductive block's canonical classes
    and canonical recursors are generated as the driver's aux tail generates
    them (`sortConsts`, the classes restricted to Lean's `all`,
    `generateAuxPatches`). Every block whose canonical layout is not Lean's
@@ -207,7 +207,7 @@ def evaluate : IO (Array String × Array String) := do
   let certs := (Ix.RoleEvidence.certTheorems.flatMap (·.2)).toArray
   let env ← envOf leanEnv (seeds ++ certs)
   let blocks := condense env
-  let (_, _, cenv) ← IO.ofExcept (← IO.lazyPure fun _ => Ix.CompileM.compileEnvAux env blocks)
+  let (_, _, cenv) ← IO.ofExcept (← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold env blocks)
   let t1 ← IO.monoMsNow
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let mut svc ← IO.lazyPure fun _ => Service.create pre env blocks (workers := 4)

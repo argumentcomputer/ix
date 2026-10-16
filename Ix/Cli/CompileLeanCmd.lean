@@ -4,8 +4,8 @@
   end-to-end — the `Ix.CompileM` counterpart of `ix compile` (which
   drives the Rust FFI compiler). Phases: elaborate → canonicalize
   (`Ix.CanonM`) → reference graph (`Ix.GraphM`) → groundedness filter
-  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → aux-aware parallel
-  compile (`Ix.CompileM.compileEnvParallelAux`) → `Ixon.serEnv`.
+  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → the driver, a pure
+  fold over waves (`Ix.CompileM.compileEnvFold`) → `Ixon.serEnv`.
 
   `--rust-check` additionally compiles the same environment through the
   Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
@@ -59,7 +59,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     p.printError s!"error: {e}"
     return 2
   -- The drivers' options: limits (`--sharing-limits` / `IX_SHARING_LIMITS`),
-  -- traces (`IX_LOG_BLOCKS`, `IX_COMPILE_DBG`); phase timings always on.
+  -- traces (`IX_COMPILE_DBG`); phase timings always on.
   let opts ← match ← Ix.Cli.driverOptionsFromEnv (dbg := true) with
     | .ok opts => pure opts
     | .error e =>

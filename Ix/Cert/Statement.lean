@@ -430,7 +430,7 @@ theorem blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
       Address.blake3Pure (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockBytes :=
   rfl
 
-/-- A record stored as the compiler's output stores it (`compileEnvAux`'s
+/-- A record stored as the compiler's output stores it (`compileEnvFold`'s
 `assembleEnv`: the bytes as their own buffer), under the admission hash of
 those bytes, is at pure BLAKE3 of its stored bytes. -/
 theorem storedRecord_authentic (bytes : ByteArray) :
