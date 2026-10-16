@@ -1952,3 +1952,82 @@ Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
 /-- info: 'Ix.CompileCert.ExpressionState.related_ingress_value' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.ExpressionState.related_ingress_value
+
+/-! ## Component theorems: the preseed
+
+Every run of `preseedExprTables` keeps the expression invariant and extends
+the in-flight reader (`PreseedState.preseed_good`), so the expression
+compiler's correctness applies after it (`preseed_compileExpr_read`); a
+successful run keeps the primary tables on the wire when names resolve to
+32-byte addresses (`PreseedWire.preseed_wire`) and leaves the universe
+table final, after which universe compilation does not grow it
+(`FinalUniverses.compile_no_growth`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: @Ix.CompileCert.PreseedState.preseed_good : ∀ {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Reader.Ctx md}
+  {param : Nat → Ix.Kernel.LevelParam} {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md))}
+  {related : Ix.Expr → Ix.Kernel.Reader.CExpr md → Prop} {bindings : Ix.CompileCert.ExpressionState.Bindings}
+  {compileEnv : Ix.CompileM.CompileEnv},
+  (∀ (address : Address), cx.blob address = compileEnv.blobs.get? address) →
+    ∀ (roots : Array (Ix.Expr × List Ix.Name)),
+      Ix.CompileCert.PreseedState.GoodStep cx param self related bindings compileEnv
+        (Ix.CompileM.preseedExprTables roots) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.PreseedState.preseed_good
+
+/-- info: @Ix.CompileCert.PreseedState.preseed_compileExpr_read : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
+          ∀ (roots : Array (Ix.Expr × List Ix.Name)) (source : Ix.Expr) {before middle after : Ix.CompileM.BlockState}
+            {value : Ixon.Expr × UInt64},
+            Ix.CompileCert.ExpressionState.Good cx param self
+                (Ix.CompileCert.ExpressionState.Related names
+                  (Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param))
+                bindings before →
+              Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), middle) →
+                Ix.CompileCert.rawRun (Ix.CompileM.compileExpr source) context middle = (Except.ok value, after) →
+                  ∃ target,
+                    Ix.CompileCert.ExpressionState.Related names
+                        (Ix.CompileCert.UniversePipeline.LevelMeaning context.snd.univCtx σ param) source target ∧
+                      (Ix.CompileCert.ExpressionRead.blockReader cx param self after).read value.fst = Except.ok target -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.PreseedState.preseed_compileExpr_read
+
+/-- info: Ix.CompileCert.PreseedWire.preseed_wire : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (roots : Array (Ix.Expr × List Ix.Name)) {before after : Ix.CompileM.BlockState},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
+        Ix.Sharing.Verify.BlockWireTablesWF after -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.PreseedWire.preseed_wire
+
+/-- info: Ix.CompileCert.FinalUniverses.compile_no_growth : ∀ (source : Ix.Level)
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) {before after : Ix.CompileM.BlockState},
+  before.univsFinal = true →
+    ∀ {output : UInt64 × Option UInt64},
+      Ix.CompileCert.rawRun (Ix.CompileM.compileAndInternUnivCanon source) context before = (Except.ok output, after) →
+        after.univs = before.univs ∧ after.univsFinal = true -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.FinalUniverses.compile_no_growth
+
+/-- info: 'Ix.CompileCert.PreseedState.preseed_good' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.PreseedState.preseed_good
+
+/-- info: 'Ix.CompileCert.PreseedState.preseed_compileExpr_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.PreseedState.preseed_compileExpr_read
+
+/-- info: 'Ix.CompileCert.PreseedWire.preseed_wire' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.PreseedWire.preseed_wire
+
+/-- info: 'Ix.CompileCert.FinalUniverses.compile_no_growth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.FinalUniverses.compile_no_growth

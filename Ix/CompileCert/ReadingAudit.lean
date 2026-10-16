@@ -6,6 +6,8 @@ import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.ExpressionIngress
+import Ix.CompileCert.PreseedWire
+import Ix.CompileCert.FinalUniverses
 
 /-! # Audit of the reading-chain proofs
 
@@ -20,10 +22,12 @@ interners (`Ix.CompileCert.Interning`), the checked blob writes
 (`Ix.CompileCert.PreseedValidation`), the primary tables' wire validity
 (`Ix.CompileCert.WireTables`), the raw universe compiler's exact lowering
 and its value (`Ix.CompileCert.UniverseMeaning`), the universe pipeline
-(`Ix.CompileCert.UniversePipeline`), and the ordinary expression compiler's
+(`Ix.CompileCert.UniversePipeline`), the ordinary expression compiler's
 core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
-`ExpressionCorrectness`, `ExpressionIngress`). Each root must exist, occur
-once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
+`ExpressionCorrectness`, `ExpressionIngress`) and the preseed
+(`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`). Each root
+must exist, occur once, and depend on no axiom but `propext`,
+`Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
 
@@ -158,6 +162,38 @@ def expressionRoots : Array Lean.Name :=
     `compileExprNoSurgery_initial_read, `withContract_matches, `levels_ingress, `related_ingress,
     `related_ingress_value].map (`Ix.CompileCert.ExpressionState ++ ·)
 
+/-- The preseed (CT-14): it keeps the expression invariant and the binding
+view, it keeps the primary tables on the wire, and a final table does not
+grow. -/
+def preseedStateRoots : Array Lean.Name :=
+  (#[`good_of_growth, `good_of_same, `GoodStep.pure, `GoodStep.throw, `GoodStep.get, `GoodStep.readBlock,
+    `GoodStep.bind, `GoodStep.discard, `GoodStep.withBlockEnv, `GoodStep.lookup, `GoodStep.check,
+    `GoodStep.blob, `GoodStep.ref, `GoodStep.compileUniv, `GoodStep.canon, `GoodStep.univ,
+    `GoodStep.final, `GoodStep.resetUnivCache, `GoodStep.withUnivCtx, `GoodStep.collectUnivs,
+    `GoodStep.collectStructural, `GoodStep.collect, `GoodStep.collectRoots, `GoodStep.internRefs,
+    `GoodStep.canonUnivs, `GoodStep.internUnivs, `preseed_good, `preseed_final,
+    `preseed_compileExpr_read].map (`Ix.CompileCert.PreseedState ++ ·)) ++
+  (#[`AllWidths.push, `frame_compileUniv, `frame_lookup, `frame_blob, `frame_collectUnivs,
+    `frame_structural, `frame_collect, `frame_withUnivCtx, `collection_frame, `Widths.pure,
+    `Widths.throw, `Widths.forget, `Widths.bind, `Widths.lookup, `Widths.blob, `widths_structural,
+    `widths_collect, `collect_widths, `Wire.pure, `Wire.bind, `Wire.of_frame, `Wire.discard,
+    `internRefs_wire, `internUnivs_wire, `canonUnivs_wire, `preseed_wire, `binding_internRefs,
+    `binding_internUnivs, `binding_canonUnivs, `preseed_binding,
+    `preseed_widths].map (`Ix.CompileCert.PreseedWire ++ ·)) ++
+  (#[`internMetaUniv_univs, `finishSpelling_univs, `internCanonical_no_growth,
+    `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·))
+
+/-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
+`collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
+theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
+roots of `IxSharingVerify.Audit.Statements`), so they are not listed. -/
+def preseedRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.collectPreseedExprs,
+    ``Ix.CompileM.collectExprTablesStructural, ``Ix.CompileM.collectExprTableUnivs,
+    ``Ix.CompileM.internPreseedRefs, ``Ix.CompileM.canonPreseedUnivs, ``Ix.CompileM.internPreseedUnivs,
+    ``Ix.CompileM.withUnivCtx, ``Ix.CompileM.univParamsKey, ``Ix.CompileM.univSortKey,
+    ``Ix.CompileM.byteArrayCmp]
+
 /-- The expression compiler's definitions the expression proofs unfold, and
 Source mode's term conversion the correspondence is about. -/
 def expressionRuntime : Array Lean.Name :=
@@ -203,7 +239,9 @@ run_cmd do
   checkRoots (tag := "reading-audit") "universe meaning" Ix.CompileCert.ReadingAudit.meaningRoots
   checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
   checkRoots (tag := "reading-audit") "expression core" Ix.CompileCert.ReadingAudit.expressionRoots
+  checkRoots (tag := "reading-audit") "preseed state" Ix.CompileCert.ReadingAudit.preseedStateRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
   checkRuntime (tag := "reading-audit") "expression compiler" Ix.CompileCert.ReadingAudit.expressionRuntime
+  checkRuntime (tag := "reading-audit") "preseed" Ix.CompileCert.ReadingAudit.preseedRuntime
