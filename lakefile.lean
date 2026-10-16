@@ -282,6 +282,127 @@ lean_exe Apps.ZKVoting.Verifier
 
 end IxApplications
 
+section ModuleCoverage
+
+/-- Why the module-coverage gate does not build a `.lean` file under a covered
+directory. -/
+inductive ModuleExclusionKind where
+  /-- A module that does not elaborate yet, with its first error under
+  `lake build --wfail`. Remove the entry once the module builds. -/
+  | draft (firstError : String)
+  /-- A draft that fails only because it imports another draft. -/
+  | importsDraft (draft : Lean.Name)
+  /-- Not Lean to compile: input data for a tool. -/
+  | data
+  /-- A `lean --run` script under no library or executable root. -/
+  | script
+  /-- A source file a tool elaborates (an `ix compile` input), under no
+  library or executable root. -/
+  | compileInput
+  /-- A reproducer Lean itself rejects, kept so that `suite`'s record is
+  complete; the suite expects `firstError`. -/
+  | rejectedFixture (suite : String) (firstError : String)
+
+/-- A `.lean` file under a covered directory that `check-modules` leaves out. -/
+structure ModuleExclusion where
+  module : Lean.Name
+  reason : String
+  kind : ModuleExclusionKind
+
+/-- The `.lean` files under `coveredDirs` that `check-modules` does not build.
+It builds every other module there, so a new module is either built or listed
+here. No module is a draft. -/
+def moduleExclusions : Array ModuleExclusion := #[
+  { module := `Tests.Fixtures.«trust-surface».lexer
+    reason := "the trust-surface scanner's lexer self-test input, kept unchanged from con-leche"
+    kind := .data },
+  { module := `Benchmarks.Kernel.AnthropicFLT.RunSuite
+    reason := "the FLT subject harness, run with `lean --run` (its README)"
+    kind := .script },
+  { module := `Benchmarks.Kernel.IxEnv
+    reason := "`import Ix` as an `ix compile` input: the environment of Ix itself"
+    kind := .compileInput },
+  { module := `Tests.Ix.Compile.AuxCert.PropEvap
+    reason := "WB §9 reproducer; nothing reaches either compiler"
+    kind := .rejectedFixture "aux-cert" "Application type mismatch" },
+  { module := `Tests.Ix.Compile.AuxCert.SortU
+    reason := "WB-B8 note reproducer; nothing reaches either compiler"
+    kind := .rejectedFixture "aux-cert" "Invalid universe polymorphic resulting type" },
+  { module := `Tests.Ix.Compile.AuxCert.SortURec
+    reason := "WB-B8 note reproducer; nothing reaches either compiler"
+    kind := .rejectedFixture "aux-cert" "Invalid universe polymorphic resulting type" },
+  { module := `Tests.Ix.Compile.AuxCert.SortUOpt
+    reason := "WB-B8 note reproducer; nothing reaches either compiler"
+    kind := .rejectedFixture "aux-cert" "Unknown constant `SortUOpt.SU.ctorIdx`" }]
+
+/-- The directories whose modules `check-modules` builds, with the root files.
+`IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
+`IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
+their own targets; `Models/` and every directory with its own lakefile are
+other workspaces. -/
+def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps", "MultiStark"]
+def coveredRootFiles : Array FilePath :=
+  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean"]
+
+/-- Whether `dir` is a nested Lake workspace (it has its own lakefile). -/
+def isNestedWorkspace (dir : FilePath) : IO Bool := do
+  return (← (dir / "lakefile.lean").pathExists) || (← (dir / "lakefile.toml").pathExists)
+
+/-- The modules of the `.lean` files under `dir` (relative to the package
+root), skipping `.lake` directories and nested workspaces. -/
+def modulesUnder (dir : FilePath) : IO (Array Lean.Name) := do
+  let entries ← dir.walkDir fun d => do
+    return d.fileName != some ".lake" && !(← isNestedWorkspace d)
+  let modules := entries.filterMap fun path =>
+    if path.extension == some "lean" then
+      some <| (path.withExtension "").components.foldl .str .anonymous
+    else none
+  return modules.qsort (·.toString < ·.toString)
+
+/-- Every module the gate covers, sorted. -/
+def coveredModules : IO (Array Lean.Name) := do
+  let mut out := #[]
+  for d in coveredDirs do out := out ++ (← modulesUnder d)
+  for f in coveredRootFiles do
+    if ← f.pathExists then out := out.push (f.withExtension "").toString.toName
+  return out.qsort (·.toString < ·.toString)
+
+/-- The module-coverage gate: check `moduleExclusions`, require every covered
+module to be buildable (under a library root or an executable root), then
+`lake build <args> +M…` every covered module that is not excluded. -/
+def checkModules (args : List String) : ScriptM UInt32 := do
+  let ws ← getWorkspace
+  let modules ← coveredModules
+  let excluded := moduleExclusions.map (·.module)
+  let drafts := moduleExclusions.filterMap fun e =>
+    match e.kind with | .draft _ | .importsDraft _ => some e.module | _ => none
+  let mut problems : Array String := #[]
+  for e in moduleExclusions do
+    unless modules.contains e.module do
+      problems := problems.push s!"excluded {e.module} is not a module under the covered directories"
+    if let .importsDraft d := e.kind then
+      unless drafts.contains d do
+        problems := problems.push s!"draft {e.module} imports {d}, which is not a draft"
+  unless excluded.toList.eraseDups.length == excluded.size do
+    problems := problems.push "moduleExclusions lists a module twice"
+  let built := modules.filter (!excluded.contains ·)
+  for m in built do
+    if (ws.findTargetModule? m).isNone then
+      problems := problems.push s!"{m} is under no library root or executable root: \
+        add it to a library, or list it in moduleExclusions with its kind"
+  unless problems.isEmpty do
+    for p in problems do IO.eprintln s!"[check-modules] {p}"
+    return 1
+  IO.println s!"[check-modules] building {built.size} modules under \
+    {coveredDirs.toList} and the root files; {excluded.size} left out: {excluded.toList}"
+  let child ← IO.Process.spawn {
+    cmd := "lake", args := #["build"] ++ args.toArray ++ built.map (s!"+{·}")
+    stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  return if code == 0 then 0 else 1
+
+end ModuleCoverage
+
 section Scripts
 
 open IO in
@@ -338,9 +459,16 @@ script "build-all" (args) := do
       stdout := .inherit, stderr := .inherit }
     let exitCode ← child.wait
     if exitCode != 0 then failed := failed.push name
+  IO.println "Building: every module under the covered directories (check-modules)"
+  if (← checkModules args) != 0 then failed := failed.push "check-modules"
   if failed.isEmpty then return 0
-  IO.eprintln s!"Failed to build {failed.size} of {allNames.length} targets: {", ".intercalate failed.toList}"
+  IO.eprintln s!"Failed to build {failed.size} of {allNames.length + 1} targets: {", ".intercalate failed.toList}"
   return 1
+
+/-- The module-coverage gate (`checkModules`), always strict. `lake lint`
+runs it too, with the lint arguments. -/
+script "check-modules" (args) := do
+  return ← checkModules ("--wfail" :: args)
 
 end Scripts
 
