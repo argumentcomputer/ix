@@ -75,6 +75,7 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
@@ -199,6 +200,9 @@ def registry : List Entry := [
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
+  -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
+  -- the well-founded operations' Init closure without the certificate theorems
+  .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
   -- AuxGen M1: the canonical flat blocks in Source mode, σ, the alias collapse resolved
   .suite "auxgen-flat-source" .primary Tests.Ix.AuxGen.FlatBlockSource.suite,
   -- the certification statements on the same fixtures: compile parity, and
@@ -440,6 +444,8 @@ def registry : List Entry := [
   .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
   -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
   .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the Source service environment (about 7 min), named in no gate yet") Tests.Ix.AuxGen.FlatBlockInitStd.run,
+  -- Source evidence from the committed bundle unblocks the service's inductive blocks
+  .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
   .runner "tc-pins" (.ci .tc) Tests.Tc.Pins.run,

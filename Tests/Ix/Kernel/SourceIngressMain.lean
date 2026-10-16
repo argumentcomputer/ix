@@ -8,17 +8,19 @@ import Tests.Ix.Kernel.SourceIngressCompare
 * `kernel-source-ingress --fixture`: the `lake test` suite
   `kernel-source-ingress` (`Tests.Ix.Kernel.SourceIngress`).
 * `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs]
-  Module…`: the modules' environment (default `Init`), with
+  [--bundle-evidence] Module…`: the modules' environment (default `Init`), with
   `IxC.Kernel.PinGen.Certs` (the certificate theorems Source mode's evidence
   is made of, `Ix.LeanIngress.sourceEvidence`; not with `--no-certs`), loaded
   from this toolchain's `.olean` files, canonicalized (`Ix.CanonM`) and
   condensed (`Ix.GraphM`, `Ix.CondenseM`) on `n` workers (default 8), and
   checked in Source mode group by group (`Tests.Ix.Kernel.SourceIngressStep`)
-  at Source mode's evidence. The certificate module's own constants are
-  checked and reported like the others. The report (the input names of a
-  derived shape the front door reserves, counts of constants and groups by
-  outcome, constants by outcome and reason, the blocked constants' roots, the
-  phases' times) goes to stdout; with `--rows`, one line per
+  at Source mode's evidence (with `--bundle-evidence`, the committed bundle's,
+  `Ix.RoleEvidence.bundleEvidence`, whatever the input carries). The
+  certificate module's own constants are checked and reported like the
+  others. The report (the input names of a derived shape the front door
+  reserves, counts of constants and groups by outcome, constants by outcome
+  and reason, the blocked constants' roots, the phases' times) goes to
+  stdout; with `--rows`, one line per
   constant, `name<TAB>outcome<TAB>kind<TAB>reason`, goes to `path`.
   With `--ixe`, the same environment compiled by Ix's compiler (compiled to
   `path` first if there is no file there) is checked by the Ixon environment
@@ -40,6 +42,7 @@ structure Args where
   rows : Option System.FilePath := none
   ixe : Option System.FilePath := none
   certs : Bool := true
+  bundle : Bool := false
   modules : Array Lean.Name := #[]
 
 partial def parse (a : Args) : List String → Except String Args
@@ -50,6 +53,7 @@ partial def parse (a : Args) : List String → Except String Args
   | "--rows" :: p :: rest => parse { a with rows := some p } rest
   | "--ixe" :: p :: rest => parse { a with ixe := some p } rest
   | "--no-certs" :: rest => parse { a with certs := false } rest
+  | "--bundle-evidence" :: rest => parse { a with bundle := true } rest
   | m :: rest =>
     if m.startsWith "--" then throw s!"unknown option {m}"
     else parse { a with modules := a.modules.push m.toName } rest
@@ -71,7 +75,13 @@ def main (args : List String) : IO UInt32 := do
     canonicalized, {blocks.blocks.size} components; load {t1 - t0} ms, canon {t2 - t1} ms, \
     condense {t3 - t2} ms"
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
-  let r ← run pre env blocks a.workers (progress := true)
+  let bundled : Option (Ix.Kernel.Evidences .source) ← if a.bundle then do
+      let (ev, whys) := Ix.RoleEvidence.bundleEvidenceReport ()
+      IO.println s!"evidence: the committed bundle's (`Ix.RoleEvidence.bundleEvidence`)"
+      for why in whys do IO.println s!"  bundle: {why}"
+      pure (some ev)
+    else pure none
+  let r ← run pre env blocks a.workers (progress := true) (evidence := bundled)
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun
     | .proof _ => true | .defeq => false
   IO.println s!"evidence: {withEvidence.length} well-founded operations with proof evidence: \
