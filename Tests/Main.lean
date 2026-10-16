@@ -26,6 +26,7 @@ import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
 import Tests.Ix.Compile.AuxCert
 import Tests.Ix.Compile.IndFlags
+import Tests.Ix.Compile.ReservedMetadata
 import Tests.Ix.Compile.ClaimConflict
 import Tests.Ix.Compile.ClaimOrder
 import Tests.Ix.Compile.ExpressionIndex
@@ -167,8 +168,8 @@ def registry : List Entry := [
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
   .suite "image-motive-eq" .primary Tests.Ix.Compile.MotiveEq.suite,
-  -- Pass 3's reserved names (D14): the reserved component `_ix`, the Ix auxiliaries'
-  -- display names, prefixes by components
+  -- Pass 3's reserved names: the reserved component `_ix`, the Ix auxiliaries'
+  -- display names, prefixes by components, the drivers' refusals by their least message
   .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
@@ -438,6 +439,9 @@ def registry : List Entry := [
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
   .runner "compile-ind-flags" (.ci .compilePipeline) Tests.Ix.Compile.IndFlags.run,
+  -- Reserved input: a metadata key or an input name with the reserved component `_ix`,
+  -- refused by both compilers (Tests.Ix.Compile.ReservedMetadata).
+  .runner "compile-reserved-mdata" (.ci .compilePipeline) Tests.Ix.Compile.ReservedMetadata.run,
   -- Recognition of source auxiliaries against the generators run on the
   -- source recursors: ordinary casesOn/recOn recognized, custom bodies with
   -- their names declined; below/brecOn families authenticated as a whole

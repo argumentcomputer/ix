@@ -1,9 +1,11 @@
-//! Pass 3: the reserved names (D14). A port of `Ix/Compile/Pass/Names.lean`,
+//! Pass 3: the reserved names. A port of `Ix/Compile/Pass/Names.lean`,
 //! the naming contract of the faithful rewrite.
 //!
 //! * `_ix` is the reserved component: a Lean input name with a component that
 //!   is `_ix` or starts with `_ix` is refused, and so is an input constant
-//!   with a metadata key that has such a component.
+//!   with a metadata key that has such a component (`compile_env` checks both
+//!   before compiling, naming the least message, as the Lean IO pipeline
+//!   does).
 //! * The Ix auxiliaries of a changed block are displayed as `x._ix.S` for the
 //!   Lean name `x.S`; a nested auxiliary by its canonical position
 //!   (`rep0._ix.rec_i`).
@@ -18,7 +20,7 @@ use ix_common::env::{ConstantInfo, Name, NameData};
 
 use bignat::Nat;
 
-/// The reserved component (D14).
+/// The reserved component.
 pub const IX_COMPONENT: &str = "_ix";
 
 pub fn mk_str(p: &Name, s: &str) -> Name {
@@ -115,6 +117,15 @@ pub fn reserved_input(n: &Name) -> Option<String> {
   } else {
     None
   }
+}
+
+/// The least rejection message (by its text) over `names`, as the Lean IO
+/// pipeline names it (`Ix.CompileM.reservedInputRefusal?`): with several
+/// reserved names both compilers name the same one.
+pub fn reserved_input_in<'a>(
+  names: impl Iterator<Item = &'a Name>,
+) -> Option<String> {
+  names.filter_map(reserved_input).min()
 }
 
 /// The rejection message of a Lean input constant with a metadata key that
@@ -290,6 +301,19 @@ mod tests {
     assert!(has_reserved(&inline_key()));
     assert!(has_reserved(&inline_meta_key()));
     assert_eq!(ix_form_name(&dotted("A")), dotted("A._ix"));
+  }
+
+  #[test]
+  fn reserved_input_in_names_the_least_message() {
+    let names: Vec<Name> =
+      (0..40).rev().map(|i| dotted(&format!("R.N{}._ix.v", i + 10))).collect();
+    let mut all = vec![dotted("R.a"), dotted("S.c")];
+    all.extend(names);
+    assert_eq!(
+      reserved_input_in(all.iter()),
+      reserved_input(&dotted("R.N10._ix.v"))
+    );
+    assert_eq!(reserved_input_in([dotted("R.a")].iter()), None);
   }
 
   #[test]

@@ -1,14 +1,19 @@
-/- # Pass 3: reserved names (D14)
+/- # Pass 3: reserved names
 
 ## Contract
 Input: Lean names (`Ix.Name`). Output: the reserved display names of the
 faithful rewrite and the predicates on them.
 
-* `_ix` is the reserved name component (D14). A Lean input name with a
+* `_ix` is the reserved name component. A Lean input name with a
   component that is `_ix` or starts with `_ix` is refused (`reservedInput?`),
   and so is an input constant with a metadata key that has such a component
   (`reservedMetadataInput`): every reserved name below is then fresh, and no
-  source metadata stands for a placeholder or decompile record.
+  source metadata stands for a placeholder or decompile record. The IO
+  pipeline (`Ix.CompileM.compileDecoratedConsts`) and the Rust compiler
+  (`compile_env`) check both before compiling, over the grounded input;
+  when several inputs are reserved both name the least message by its text
+  (`Ix.CompileM.reservedInputRefusal?`, Rust `reserved_input_in`), an
+  ordering of diagnostics, not a claim that pretty names identify names.
 * The Ix auxiliaries of a changed block (Pass 2's canonical `rec`,
   `casesOn`, `recOn`, `below`, `brecOn`, `.go`, `.eq`, `_N`, and the
   canonical `IndPredBelow` family) are displayed as `x._ix.S` for the Lean
@@ -25,7 +30,8 @@ faithful rewrite and the predicates on them.
   `_ix.inline_meta` (its arena root); the rewrite leaves the placeholder
   `[(_ix.inline, n)]` that the compiler replaces.
 
-Pass 3 is not wired yet: nothing here is read by the compile.
+Pass 3 is not wired yet: nothing here is read by the compile except the two
+refusals.
 
 ## Faithfulness
 Names are metadata: no definition here changes a term or an address.
@@ -47,7 +53,7 @@ namespace Ix.Compile.Pass
 
 open Ix (Name)
 
-/-- The reserved component (D14). -/
+/-- The reserved component. -/
 def ixComponent : String := "_ix"
 
 /-- A component that is reserved: `_ix` or any string starting with it. -/

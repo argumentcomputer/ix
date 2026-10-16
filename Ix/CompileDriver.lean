@@ -44,6 +44,7 @@ public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
 public import Ix.Compile.Publication
+public import Ix.Compile.Pass.Names
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
 public import Ix.Compile.SourceContract.Transport
@@ -894,6 +895,65 @@ def missingBlockRefs? (blocks : Ix.CondensedBlocks) : Option String :=
   | some lo => some s!"block {lo.pretty} has no condensation reference set"
   | none => none
 
+/-! ## Reserved input (D14)
+
+`_ix` names Pass 3's auxiliaries and images, and `_ix.inline`/`_ix.inline_meta`
+its placeholders and decompile records (`Ix.Compile.Pass.Names`). The IO
+pipeline (`compileDecoratedConsts`) refuses, before compiling, an input
+constant with a metadata key that has a reserved component, then an input
+name with one, each by its least message, as the Rust compiler does
+(`compile_env`): with several reserved inputs both compilers name the same
+one. `Ix.Cert.compile` takes the check with Pass 3's wiring, where its fold
+changes. -/
+
+/-- Some component of the Lean name `n` is reserved
+    (`Ix.Compile.Pass.hasReserved` on Lean names). -/
+def leanNameHasReserved : Lean.Name → Bool
+  | .anonymous => false
+  | .str p s => Ix.Compile.Pass.isReservedComponent s || leanNameHasReserved p
+  | .num p _ => leanNameHasReserved p
+
+/-- Some metadata key in `e` has a reserved component. -/
+def exprHasReservedMetadata (e : Lean.Expr) : Bool :=
+  (e.find? fun
+    | .mdata data _ => data.entries.any (leanNameHasReserved ·.1)
+    | _ => false).isSome
+
+/-- Some expression of the Lean source constant has a metadata key with a
+    reserved component: the expressions the reference graph walks (Rust
+    `graph::inspect_constant_references`). -/
+def sourceHasReservedMetadata (source : Lean.ConstantInfo) : Bool :=
+  exprHasReservedMetadata source.type ||
+    match source with
+    | .defnInfo v => exprHasReservedMetadata v.value
+    | .thmInfo v => exprHasReservedMetadata v.value
+    | .opaqueInfo v => exprHasReservedMetadata v.value
+    | .recInfo v => v.rules.any (exprHasReservedMetadata ·.rhs)
+    | _ => false
+
+/-- The least of some messages, by their text. -/
+def leastMessage? (msgs : Array String) : Option String :=
+  msgs.foldl (init := none) fun best msg =>
+    match best with
+    | some b => if msg < b then some msg else some b
+    | none => some msg
+
+/-- The refusal of input constants with a reserved metadata key: the least
+    message (`Ix.Compile.Pass.reservedMetadataInput`), as Rust names it. -/
+def reservedMetadataRefusal? (names : Array Name) : Option String :=
+  leastMessage? (names.map Ix.Compile.Pass.reservedMetadataInput)
+
+/-- The refusal of reserved input names in a condensation: the least message
+    (`Ix.Compile.Pass.reservedInput?`), as Rust names it
+    (`pass3::names::reserved_input_in`), not the first in the blocks'
+    iteration order. -/
+def reservedInputRefusal? (blocks : Ix.CondensedBlocks) : Option String :=
+  leastMessage? <| blocks.blocks.fold (init := #[]) fun (acc : Array String) _ all =>
+    all.fold (init := acc) fun (acc : Array String) n =>
+      match Ix.Compile.Pass.reservedInput? n with
+      | some msg => acc.push msg
+      | none => acc
+
 /-! ## Per-block outcomes
 
 The driver's step (`compileEnvFold`, below): a block's outcome is computed
@@ -1497,7 +1557,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       let mut state : Ix.CanonM.CanonState := {}
       let mut out : Array
         (Ix.Name × Ix.Set Ix.Name × Option Ix.GroundError × UInt64
-          × Option Ix.ConstantInfo) := #[]
+          × Option Ix.ConstantInfo × Bool) := #[]
       for (ixn, lci) in chunk do
         let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
         state := state'
@@ -1509,14 +1569,17 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         let keep? := match ci with
           | .thmInfo _ | .opaqueInfo _ => none
           | _ => some ci
-        out := out.push (ixn, refs, groundErr?, hash ci, keep?)
+        out := out.push (ixn, refs, groundErr?, hash ci, keep?,
+          sourceHasReservedMetadata lci)
       out
   let mut outRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
   let mut immediate : Ix.Map Ix.Name Ix.GroundError := {}
   let mut digests : Std.HashMap Ix.Name UInt64 := {}
   let mut codeConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
+  let mut reservedMetadata : Array Ix.Name := #[]
   for task in tasks do
-    for (n, refs, gerr?, dig, keep?) in task.get do
+    for (n, refs, gerr?, dig, keep?, reserved) in task.get do
+      if reserved then reservedMetadata := reservedMetadata.push n
       outRefs := outRefs.insert n refs
       if let some e := gerr? then
         immediate := immediate.insert n e
@@ -1546,6 +1609,14 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   -- 4. Condense (Tarjan SCCs over the filtered graph).
   let condensed := Ix.CondenseM.run groundedOutRefs
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
+  -- 4b. Reserved input (D14): a grounded input constant with a reserved
+  --     metadata key, then a grounded input name with a reserved component,
+  --     is refused before compiling, as Rust's `compile_env` refuses it.
+  let groundedReserved := reservedMetadata.filter (!ungrounded.contains ·)
+  if let some msg := reservedMetadataRefusal? groundedReserved then
+    return .error msg
+  if let some msg := reservedInputRefusal? condensed then
+    return .error msg
   -- 5. The driver (`compileEnvFold`, the same function as `Ix.Cert.compile`'s)
   --    against the HYBRID environment: code kinds are the materialized
   --    (shared) map; proof bodies canonicalize on demand from the pinned

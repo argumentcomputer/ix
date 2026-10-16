@@ -1,13 +1,19 @@
 /-
-  reserved-input: the reserved names of Pass 3 (D14, `Ix.Compile.Pass.Names`).
+  reserved-input: the reserved names of Pass 3 (`Ix.Compile.Pass.Names`).
   A name with a component that is `_ix` or starts with it is reserved, a
   neighbour (`_i`, `ix`) is not; the display names of a changed block's Ix
   auxiliaries (`ixAuxName`), including a nested auxiliary at its canonical
   position; name prefixes compared by components, never by a stored hash.
-  The Rust twins are `pass3::names`' unit tests.
+  The drivers' refusals name the least message by its text
+  (`Ix.CompileM.reservedInputRefusal?`, `reservedMetadataRefusal?`), as the
+  Rust compiler does (`pass3::names::reserved_input_in`), not the first in
+  the blocks' iteration order: two synthetic condensations of forty reserved
+  names each, and a neighbour with none. The Rust twins are `pass3::names`'
+  unit tests; `compile-reserved-mdata` runs both compilers.
 -/
 import LSpec
 import Ix.Compile.Pass.Names
+import Ix.CompileDriver
 
 namespace Tests.Ix.Compile.ReservedInput
 
@@ -52,7 +58,46 @@ def hashControls : List (String × Bool) :=
   [("A is not a prefix of B.rec although the hashes agree", (stripPrefix? x yc).isNone),
    ("B is a prefix of B.rec", (stripPrefix? y yc).map (·.length) == some 1)]
 
+/-! ## The drivers' refusals -/
+
+/-- One singleton block per name. -/
+def blocksOf (names : List Name) : _root_.Ix.CondensedBlocks :=
+  { lowLinks := names.foldl (fun m n => m.insert n n) {}
+    blocks := names.foldl (fun m n => m.insert n (({} : _root_.Ix.Set Name).insert n)) {}
+    blockRefs := names.foldl (fun m n => m.insert n {}) {} }
+
+/-- `R.N<i>._ix.v` for `lo ≤ i < lo + 40`; the least is `R.N<lo>._ix.v`. -/
+def reservedFrom (lo : Nat) : List Name :=
+  (List.range 40).map fun i => nm ["R", s!"N{lo + i}", "_ix", "v"]
+
+def ordinary : List Name := [nm ["R", "a"], nm ["R", "b"], nm ["S", "c"]]
+
+/-- The first reserved name in the blocks' iteration order. -/
+def firstInOrder (b : _root_.Ix.CondensedBlocks) : Option Name := Id.run do
+  for (_, all) in b.blocks do
+    for n in all do
+      if hasReserved n then return some n
+  return none
+
+def driverControls : List (String × Bool) :=
+  -- two fixtures, so that the least is not first in iteration order in at
+  -- least one of them
+  let fixtures := [10, 50].map fun lo =>
+    (blocksOf (ordinary ++ reservedFrom lo), nm ["R", s!"N{lo}", "_ix", "v"])
+  [("the refusal names the least reserved name",
+      fixtures.all fun (b, least) =>
+        _root_.Ix.CompileM.reservedInputRefusal? b == reservedInput? least),
+   ("in a fixture the least reserved name is not the first in iteration order",
+      fixtures.any fun (b, least) => (firstInOrder b).map comps != some (comps least)),
+   ("no reserved name, no refusal",
+      (_root_.Ix.CompileM.reservedInputRefusal? (blocksOf ordinary)).isNone),
+   ("the metadata refusal names the least constant",
+      _root_.Ix.CompileM.reservedMetadataRefusal? #[nm ["M", "b"], nm ["M", "a"]]
+        == some (reservedMetadataInput (nm ["M", "a"]))),
+   ("no reserved metadata, no refusal", (_root_.Ix.CompileM.reservedMetadataRefusal? #[]).isNone)]
+
 def suite : List TestSeq :=
-  (nameControls ++ auxNameControls ++ hashControls).map fun (label, ok) => test label ok
+  (nameControls ++ auxNameControls ++ hashControls ++ driverControls).map fun (label, ok) =>
+    test label ok
 
 end Tests.Ix.Compile.ReservedInput
