@@ -34,6 +34,7 @@ import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.UniverseCache
 import Tests.Ix.Compile.RewriteRetry
+import Tests.Ix.Compile.Pass3Core
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
@@ -191,6 +192,9 @@ def registry : List Entry := [
   -- the call-site rewrite's retry after a proof-justified hit: generic callbacks keep
   -- it, the production ordering may skip it (Ix.Compile.Pass.Translate)
   .suite "rewrite-retry" .primary Tests.Ix.Compile.RewriteRetry.suite,
+  -- the Pass 3 core without the driver: the call-site rewrite, the side-car, the memo
+  -- shape and the views' equality (Ix.Compile.Pass)
+  .suite "pass3-core-unit" .primary Tests.Ix.Compile.Pass3Core.suite,
   -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
