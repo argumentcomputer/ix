@@ -4440,9 +4440,17 @@ pub fn compile_const_no_aux(
   //   .below.rec   → expand via .below.rec's .all, keep only RecInfo
   //   .brecOn/*    → expand via .all as-is
 
+  // The members in canonical order (Lean `aliasPrecedes`: by name hash), so
+  // that the first matches below are a function of the member set, not of
+  // the set's iteration order.
+  let mut members: Vec<&Name> = all.iter().collect();
+  members.sort_unstable_by(|a, b| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+
   // First, collect the Lean .all names from any constant in the SCC.
   let mut lean_all: Vec<Name> = Vec::new();
-  for n in all {
+  for n in members.iter().copied() {
     if let Some(ci) = lean_env.get(n) {
       let block_all = match &*ci {
         LeanConstantInfo::InductInfo(v) => &v.all,
@@ -4459,7 +4467,7 @@ pub fn compile_const_no_aux(
   }
 
   // Determine phase from the first aux_gen constant in the SCC.
-  let phase = all.iter().find_map(|n| {
+  let phase = members.iter().copied().find_map(|n| {
     if !stt.aux_gen_extra_names.contains(n) {
       return None;
     }
@@ -4492,7 +4500,7 @@ pub fn compile_const_no_aux(
     },
     NoAuxPhase::BelowIndc => {
       // Use .below's own .all, keep only inductives + their ctors.
-      for n in all {
+      for n in members.iter().copied() {
         if let Some(LeanConstantInfo::InductInfo(v)) =
           lean_env.get(n).as_deref()
         {

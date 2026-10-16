@@ -176,6 +176,9 @@ def fixtures : List Fixture := [
   { stem := "SurgName", ns := ["SurgName"] },
   -- A0 item 3 (WB-B8): no forced large elimination.
   { stem := "SortUDecl", ns := ["SortUD"] },
+  -- A nested Prop inductive whose `IndPredBelow` family has `P.below_1.rec`:
+  -- its original form compiles the same in both compilers.
+  { stem := "BelowNRec", ns := ["BelowNRec"] },
   -- CQ3.1 (D-09): a nested `Sort u` singleton whose expanded block has two
   -- members eliminates into Prop only, as in Lean (lane P `6327e496`).
   -- `Box T` is nested under the definition `K`; the kernels find it there
