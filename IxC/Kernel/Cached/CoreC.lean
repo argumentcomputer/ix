@@ -1031,7 +1031,8 @@ def inferSpineI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
       let dom' ← instListRevM dom acc
       let ta ← r.infer depth a
       unless ← r.defeq depth ta dom' do
-        throw (.invalid "application type mismatch")
+        throw (.invalid (Msg.withTerms "application type mismatch"
+          [("argument", a), ("argument has type", ta), ("but is expected to have type", dom')]))
       inferSpineI r fe depth body (acc.push a) rest
     | _ => do
       let ty' ← instListRevM ty acc
@@ -1040,9 +1041,11 @@ def inferSpineI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
       | .forallE dom body _mt => do
         let ta ← r.infer depth a
         unless ← r.defeq depth ta dom do
-          throw (.invalid "application type mismatch")
+          throw (.invalid (Msg.withTerms "application type mismatch"
+            [("argument", a), ("argument has type", ta), ("but is expected to have type", dom)]))
         inferSpineI r fe depth body #[a] rest
-      | _ => throw (.invalid "function expected")
+      | _ => throw (.invalid (Msg.withTerms "function expected"
+        [("argument", a), ("function has type", w)]))
 
 /-- **The io-grade spine walk** (task #172 B4): `inferSpineI` with the
 per-argument certificate gated — the ONE io-graded check
@@ -1079,7 +1082,8 @@ def inferSpineIOI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
         let dom' ← instListRevM dom acc
         let ta ← r.infer depth a
         unless ← r.defeq depth ta dom' do
-          throw (.invalid "application type mismatch")
+          throw (.invalid (Msg.withTerms "application type mismatch"
+            [("argument", a), ("argument has type", ta), ("but is expected to have type", dom')]))
       inferSpineIOI r fe depth body (acc.push a) rest
     | _ => do
       let ty' ← instListRevM ty acc
@@ -1089,9 +1093,11 @@ def inferSpineIOI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
         unless mode.ioSkip mt.pw do
           let ta ← r.infer depth a
           unless ← r.defeq depth ta dom do
-            throw (.invalid "application type mismatch")
+            throw (.invalid (Msg.withTerms "application type mismatch"
+              [("argument", a), ("argument has type", ta), ("but is expected to have type", dom)]))
         inferSpineIOI r fe depth body #[a] rest
-      | _ => throw (.invalid "function expected")
+      | _ => throw (.invalid (Msg.withTerms "function expected"
+        [("argument", a), ("function has type", w)]))
 
 /-- Twin of `whnfStep`. -/
 def whnfStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
@@ -1119,7 +1125,7 @@ def ensureSortI (r : CoreFnsI md) (depth : Nat) (e : Expr md) : (CheckCM md) Lev
   let w ← r.whnf depth e
   match w with
   | .sort u => pure u
-  | _ => throw (.invalid "expected a sort")
+  | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", w)]))
 
 /-! ### Binder-telescope loops (task #72)
 
@@ -1192,7 +1198,7 @@ def inferLamsLeafI (r : CoreFnsI md) (d : Nat) (t : Expr md) (k : Nat)
             throw (.notImplemented
               "sort-annotation mismatch (lam-cod-leaf)")
         | [] => pure ()
-      | _ => throw (.invalid "expected a sort")
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wbtt)]))
   let cur ← abstractRangeM bt d k
   -- The fold's initial neighbour: a λ residual (the fuel-exhausted
   -- path) supplies its own annotation — the head entry's chain check
@@ -1226,7 +1232,7 @@ def inferLamsI (r : CoreFnsI md) (d : Nat) :
         let fv ← pure (Expr.fvar (d + k) tyo)
         inferLamsI r d fuel body (k + 1) (fvs.push fv)
           ((tyo, mb) :: stk)
-      | _ => throw (.invalid "expected a sort")
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | _ => inferLamsLeafI mode r d t k fvs stk
   | 0, t, k, fvs, stk => inferLamsLeafI mode r d t k fvs stk
 
@@ -1267,7 +1273,7 @@ def inferPisLeafI (r : CoreFnsI md) (d : Nat) (t : Expr md) (k : Nat)
   | .sort v => do
     let iv ← inferPisOutI mode stk v (Level.zeronessOf v)
     pure (Expr.sort iv)
-  | _ => throw (.invalid "expected a sort")
+  | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wbt)]))
 
 /-- ∀-telescope inference loop (task #100 stage 6: the `∀`-rule infers
 its codomain sort — the stored annotation is not read): peel the raw
@@ -1288,7 +1294,7 @@ def inferPisI (r : CoreFnsI md) (d : Nat) :
         let fv ← pure (Expr.fvar (d + k) tyo)
         inferPisI r d fuel body (k + 1) (fvs.push fv)
           ((u, mb.pw) :: stk)
-      | _ => throw (.invalid "expected a sort")
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | _ => inferPisLeafI mode r d t k fvs stk
   | 0, t, k, fvs, stk => inferPisLeafI mode r d t k fvs stk
 
@@ -1324,7 +1330,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
         pure (Expr.const si [])
       else throw (.notImplemented
         "string literals before the String support declarations")
-    | .forallE ty body mb => do
+    | .forallE ty body mb => withChain depth e do
       -- Binder-telescope loop (task #72 discipline; the codomain sort
       -- is inferred; task #161: each node's prop-ness annotation is
       -- validated against it in the rebuild fold).
@@ -1335,8 +1341,8 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
         let fv ← pure (Expr.fvar depth ty)
         let fuel ← peelFuelM
         inferPisI mode r depth fuel body 1 #[fv] [(u, mb.pw)]
-      | _ => throw (.invalid "expected a sort")
-    | .lam ty body mb => do
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
+    | .lam ty body mb => withChain depth e do
       let tty ← r.infer depth ty
       let wtty ← r.whnf depth tty
       match wtty with
@@ -1346,7 +1352,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
         let fv ← pure (Expr.fvar depth ty)
         let fuel ← peelFuelM
         inferLamsI mode r depth fuel body 1 #[fv] [(ty, mb)]
-      | _ => throw (.invalid "expected a sort")
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | .app _ _ => do
       -- Bulk telescope consumption (task #50): infer the spine head
       -- once and walk its Π-telescope against the whole spine.
@@ -1407,7 +1413,7 @@ def inferBodyIOI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM
       let args ← pure (Expr.getAppArgsC e)
       let tf ← r.infer depth h
       inferSpineIOI mode r fe depth tf #[] args
-    | .forallE ty body mb => do
+    | .forallE ty body mb => withChain depth e do
       -- the pure io ∀ clause, **chained** (deliberately not the
       -- task-#72 telescope loop: the loops are the front door's
       -- optimization, and looping the io lane would owe the whole
@@ -1427,8 +1433,8 @@ def inferBodyIOI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM
             throw (.notImplemented "sort-annotation mismatch (forall-cod)")
         let iu ← pure (.imax u v)
         pure (Expr.sort iu)
-      | _ => throw (.invalid "expected a sort")
-    | .lam ty body mb => do
+      | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
+    | .lam ty body mb => withChain depth e do
       -- the pure io λ clause, chained; no domain-sort run (task #168
       -- stage 2, as in the spec)
       let fv ← pure (Expr.fvar depth ty)
@@ -1807,14 +1813,14 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       let f' ← r.annotate depth f
       let a' ← r.annotate depth a
       pure (Expr.app f' a')
-    | .forallE ty body mb => do
+    | .forallE ty body mb => withChain depth e do
       -- Binder-telescope loop (task #72): peel the whole ∀-chain,
       -- open in bulk, rebuild with `abstractRange`.
       let ty' ← r.annotate depth ty
       let fv ← pure (Expr.fvar depth ty')
       let fuel ← peelFuelM
       annotatePisI r fe depth fuel body 1 #[fv] [(ty', mb)]
-    | .lam ty body mb => do
+    | .lam ty body mb => withChain depth e do
       -- The λ-loop is chain-identical only on bvar-closed nodes (the
       -- chained tails re-open exactly what they closed); disciplined
       -- inputs always are, and the cached bound decides in O(1).
@@ -1849,7 +1855,8 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       let v' ← r.annotate depth v
       let tv ← r.infer depth v'
       unless ← r.defeq depth tv ty' do
-        throw (.invalid "let value type mismatch")
+        throw (.invalid (Msg.withTerms "let value type mismatch"
+          [("value", v'), ("has type", tv), ("but is expected to have type", ty')]))
       let ob ← inst1M b v
       r.annotate depth ob
     | .proj sn i pe => do

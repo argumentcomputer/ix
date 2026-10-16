@@ -726,11 +726,15 @@ fun f ev ds => ∀ (i j : Ix.Kernel.Mode.source.Id), Ix.Cert.InputId ev ds i →
 -- message of prose and keys), so the lemma maps a failure's keys
 -- (`Rename.result`, `CheckError.mapKeys`) instead of comparing the verdict
 -- kind and the position only; `ErrorKind` and `verdict` went.
+-- Step 6b: a prose part carries the failure's display (`FailureDisplay`: the
+-- terms and binders `.meta` and `.source` print), a subsingleton, so two
+-- failures that differ only there are equal; a renaming drops it (the other
+-- mode's display is the empty one, equal to any).
 /-- info: def Ix.Kernel.MsgPart.mapKeys : {md md' : Ix.Kernel.Mode} →
   (Ix.Kernel.Key md → Ix.Kernel.Key md') → Ix.Kernel.MsgPart md → Ix.Kernel.MsgPart md' :=
 fun {md md'} σ x =>
   match x with
-  | Ix.Kernel.MsgPart.text s => Ix.Kernel.MsgPart.text s
+  | Ix.Kernel.MsgPart.text s display => Ix.Kernel.MsgPart.text s
   | Ix.Kernel.MsgPart.key k => Ix.Kernel.MsgPart.key (σ k)
   | Ix.Kernel.MsgPart.nat n => Ix.Kernel.MsgPart.nat n -/
 #guard_msgs (whitespace := lax) in

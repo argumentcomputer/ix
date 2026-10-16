@@ -40,11 +40,11 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3404 compiled functions with 67 inherited externs, with the
-computed-field overrides of `Level`, `Expr` and `Key` and 21 proved
+reaches 3434 compiled functions with 67 inherited externs, with the
+computed-field overrides of `Level`, `Expr` and `Key` and 22 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2140, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5807 with
+TagN writer twin; the entry (the four `publicOperations`) reaches 5837 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
@@ -53,6 +53,19 @@ entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
 the typing tier) are frozen apart: the entry's closure and the tier's 79
 functions, with nothing new to rule; the closures above do not reach the
 tier. Step 6b's
+failure display (a failure's terms and binders at `.meta` and `.source`,
+`Ix.Kernel.FailureDisplay`, a subsingleton on a message's prose part) moved
+the fold from 3404 to 3434 and the entry from 5807 to 5837 (the tiered
+entries likewise); the reader is
+unchanged: the display operations (`Msg.withTermsImpl`, the `@[csimp]`
+substitute of `Msg.withTerms`, one more ruled csimp in both, and
+`Msg.mapDisplay`, `CheckError.mapDisplay`, `CheckError.underChain`,
+`CheckError.chainFrames`, with their arity-reduced forms and lambdas, 12),
+the empty display's closed object, the handlers `withChain` inlines into
+`inferBodyIOI` and `annotateBodyI` (3 lambdas), and the message sites'
+closed terms, each prose part now holding the empty display (14 more, after
+the code generator's renumbering; `ensureSortI` lost its arity-reduced
+form). Step 6b's
 display annotations (a binder's and a let's Lean name, a subsingleton field,
 `BinderMeta.display`/`LetMeta.display`) moved them from 3399, 2134 and 5799
 (the tiered entries from 5878):
@@ -489,7 +502,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3404 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 21 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3434 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 22 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -501,7 +514,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5807 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5837 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -511,9 +524,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- reader's own member reader) and the tier fold (`checkTierC`, over the logical
 -- fold's cached functions). No new extern, `unsafe` constant, csimp, `partial`
 -- definition or ruling. Step 6b's display annotations moved it from 5878 by the
--- entry's change (8 more, one more ruled csimp).
+-- entry's change (8 more, one more ruled csimp), and its failure display from
+-- 5886: the entry's 30 and the closed terms of three of the tier's own message
+-- sites (`Tier.blockShape`), each prose part holding the empty display (one
+-- more ruled csimp).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5886 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5919 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

@@ -52,11 +52,31 @@ namespace Ix.Kernel
 
 /-! ## Failure messages (IXC-PLAN §7, step 6) -/
 
+/-- **What a failure shows beside its message** (step 6b, display only): the
+terms it is about, each with its role (`"argument"`, `"has type"`, …), and the
+binders it was thrown under, each at the depth it was opened at (the binder of
+`fvar d`), outermost first. -/
+structure FailureDisplay (md : Mode) where
+  terms : List (String × Expr md) := []
+  binders : List (Nat × BinderMeta) := []
+
+/-- The empty failure display. -/
+@[inline] def FailureDisplay.empty : Squash (FailureDisplay md) := Squash.mk {}
+
+/-- Failure displays compare equal: a `Squash` is a subsingleton. -/
+instance : DecidableEq (Squash (FailureDisplay md)) := fun a b => isTrue (Subsingleton.elim a b)
+instance : Repr (Squash (FailureDisplay md)) := ⟨fun _ _ => "⟨display⟩"⟩
+
 /-- **A part of a failure's message**: fixed prose, the key of a constant
 the failure is about, or a number. Keys stay keys: the mode's renderer
-spells them (`Msg.render`). -/
+spells them (`Msg.render`).
+
+A prose part carries the failure's display (`FailureDisplay`, step 6b): a
+subsingleton, so two failures that differ only there are equal, and only the
+renderers outside the kernel read it. Only the first prose part of a message
+holds one (`Msg.mapDisplay`). -/
 inductive MsgPart (md : Mode) where
-  | text (s : String)
+  | text (s : String) (display : Squash (FailureDisplay md) := FailureDisplay.empty)
   | key (k : Key md)
   | nat (n : Nat)
   deriving DecidableEq, Repr
@@ -85,9 +105,10 @@ macro_rules
   | `(msg! $interpStr) => do
     interpStr.expandInterpolatedStr (← `(Ix.Kernel.Msg _)) (← `(Ix.Kernel.ToMsg.toMsg))
 
-/-- A message part with its key spelled by `spell`. -/
+/-- A message part with its key spelled by `spell` (the display is not
+printed: the renderers of `.meta` and `.source` read it outside the kernel). -/
 def MsgPart.render (spell : Key md → String) : MsgPart md → String
-  | .text s => s
+  | .text s _ => s
   | .key k => spell k
   | .nat n => toString n
 
@@ -95,11 +116,54 @@ def MsgPart.render (spell : Key md → String) : MsgPart md → String
 def Msg.render (spell : Key md → String) (m : Msg md) : String :=
   String.join (m.map (MsgPart.render spell))
 
-/-- A message part with its key renamed. -/
+/-- A message part with its key renamed (a display is dropped: its terms are
+the other mode's). -/
 def MsgPart.mapKeys (σ : Key md → Key md') : MsgPart md → MsgPart md'
-  | .text s => .text s
+  | .text s _ => .text s
   | .key k => .key (σ k)
   | .nat n => .nat n
+
+/-! ### A failure's display (step 6b)
+
+The checker puts what a failure is about on its message at run time, outside
+`.anon`: the terms (`Msg.withTerms`) and the binders it was thrown under
+(`CheckError.underChain`, through `withChain` in the cached core). Both are
+the identity in the logic, because a display is a subsingleton, so no
+statement or proof sees them: each is a `@[reducible]` identity whose
+run-time version is substituted by a `@[csimp]` equation. -/
+
+/-- The first prose part's display, updated by `f`. -/
+def Msg.mapDisplay (f : FailureDisplay md → FailureDisplay md) : Msg md → Msg md
+  | [] => []
+  | .text s d :: rest => .text s (Squash.lift d fun x => Squash.mk (f x)) :: rest
+  | p :: rest => p :: Msg.mapDisplay f rest
+
+/-- Updating a display changes no message. -/
+theorem Msg.mapDisplay_eq (f : FailureDisplay md → FailureDisplay md) (m : Msg md) :
+    Msg.mapDisplay f m = m := by
+  induction m with
+  | nil => rfl
+  | cons p rest ih =>
+    cases p with
+    | text s d =>
+      show MsgPart.text s _ :: rest = MsgPart.text s d :: rest
+      rw [Subsingleton.elim (Squash.lift d fun x => Squash.mk (f x)) d]
+    | key k => exact congrArg _ ih
+    | nat n => exact congrArg _ ih
+
+/-- **The message `m` of a failure about the terms `ts`** (display only): `m`
+itself; at run time (`withTermsImpl`) the terms go on its display. -/
+@[reducible] def Msg.withTerms (m : Msg md) (_ts : List (String × Expr md)) : Msg md := m
+
+/-- The run-time `Msg.withTerms`: the terms on the display, outside `.anon`. -/
+def Msg.withTermsImpl (m : Msg md) (ts : List (String × Expr md)) : Msg md :=
+  match md with
+  | .anon => m
+  | .meta | .source => Msg.mapDisplay (fun d => { d with terms := ts }) m
+
+@[csimp] theorem Msg.withTerms_eq_impl : @Msg.withTerms = @Msg.withTermsImpl := by
+  funext md m ts
+  cases md <;> simp only [Msg.withTerms, Msg.withTermsImpl, Msg.mapDisplay_eq]
 
 /-- A message with its keys renamed. -/
 def Msg.mapKeys (σ : Key md → Key md') (m : Msg md) : Msg md' :=
@@ -157,6 +221,30 @@ def mapKeys (σ : Key md → Key md') : CheckError md → CheckError md'
   | .notImplemented m => .notImplemented (Msg.mapKeys σ m)
   | .invalid m => .invalid (Msg.mapKeys σ m)
   | .internal m => .internal (Msg.mapKeys σ m)
+
+/-- The failure with its display updated by `f` (step 6b). -/
+def mapDisplay (f : FailureDisplay md → FailureDisplay md) : CheckError md → CheckError md
+  | .notImplemented m => .notImplemented (Msg.mapDisplay f m)
+  | .invalid m => .invalid (Msg.mapDisplay f m)
+  | .internal m => .internal (Msg.mapDisplay f m)
+
+/-- Updating a display changes no failure. -/
+theorem mapDisplay_eq (f : FailureDisplay md → FailureDisplay md) (e : CheckError md) :
+    e.mapDisplay f = e := by
+  cases e <;> simp only [mapDisplay, Msg.mapDisplay_eq]
+
+/-- The binders of the chain at the head of `e` (binders of `e`'s own kind:
+a λ-chain or a ∀-chain), opened from depth `d`, outermost first. -/
+def chainFrames (d : Nat) : Expr md → List (Nat × BinderMeta)
+  | .lam _ b m => (d, m) :: (if b matches .lam .. then chainFrames (d + 1) b else [])
+  | .forallE _ b m => (d, m) :: (if b matches .forallE .. then chainFrames (d + 1) b else [])
+  | _ => []
+
+/-- **A failure thrown under the binder chain at the head of `e`, opened
+from depth `d`** (display only): the chain's binders before those the display
+holds (which were opened inside it). -/
+def underChain (d : Nat) (e : Expr md) (err : CheckError md) : CheckError md :=
+  err.mapDisplay fun disp => { disp with binders := chainFrames d e ++ disp.binders }
 
 end CheckError
 

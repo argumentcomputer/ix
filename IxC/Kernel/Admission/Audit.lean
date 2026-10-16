@@ -88,12 +88,14 @@ externs fewer), and every fixed message of the fold is a one-part list (two
 more closed objects per message site). The validation of the four install
 anchors moved it from 5785 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
 11 more). Step 6b's display annotations moved it from 5796 by the entry's change
-(`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: PERF P14 with names). -/
+(`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: PERF P14 with names),
+and its failure display from 5804 by the entry's change (30 more, one more
+ruled csimp: `Msg.withTerms`). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5804 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5834 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

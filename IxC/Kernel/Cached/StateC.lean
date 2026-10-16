@@ -161,6 +161,34 @@ def instCCapC : Nat := 32000000
 `CheckM`. -/
 abbrev CheckCM (md : Mode) := StateT (CState md) (CheckM md)
 
+/-- **`x`, run under the binder chain at the head of `e`, opened from depth
+`d`** (step 6b, display only): `x` itself; at run time (`withChainImpl`), outside
+`.anon`, a failure of `x` gets the chain's binders on its display
+(`CheckError.underChain`), so that a renderer can name the free variables of
+the terms it shows. -/
+@[reducible] def withChain {α : Type} (_d : Nat) (_e : Expr md) (x : (CheckCM md) α) :
+    (CheckCM md) α := x
+
+/-- The run-time `withChain`. -/
+@[inline] def withChainImpl {α : Type} (d : Nat) (e : Expr md) (x : (CheckCM md) α) :
+    (CheckCM md) α :=
+  match md with
+  | .anon => x
+  | .meta | .source => fun s =>
+    match x s with
+    | .error err => .error (err.underChain d e)
+    | .ok r => .ok r
+
+@[csimp] theorem withChain_eq_impl : @withChain = @withChainImpl := by
+  funext md α d e x
+  cases md <;> try rfl
+  all_goals
+    funext s
+    show x s = (match x s with
+      | .error err => .error (err.underChain d e)
+      | .ok r => .ok r)
+    cases x s <;> simp only [CheckError.underChain, CheckError.mapDisplay_eq]
+
 /-- Peel fuel of the binder-telescope loops.  A constant beyond any
 real binder chain; the fuel is *semantically transparent*: on
 exhaustion the leaf phase hands the residual chain back to the knot,

@@ -49,10 +49,11 @@ P3, P2) from 5708 and 114 inherited externs, by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors from 5726 and
 116 inherited externs, by the entry's change; the validation of the four
 install anchors from 5944, by the entry's change; step 6b's display annotations from
-5955, by the entry's change (8 more, one more ruled csimp). -/
+5955, by the entry's change (8 more, one more ruled csimp), and its failure display
+from 5963 (30 more, one more ruled csimp). -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 5963 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 5993 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

@@ -295,14 +295,16 @@ def checkPending (fe : FEnv md) (pc : PendingCheck md) : (CheckCM md) Unit := do
   let u ← opSIxC mode fe 0 jsty
   let jv ← if pc.vg.kind = .thm then do
       unless (← liftFueled "level comparison" (Level.isEquiv u .zero)) do
-        throw (.invalid msg!"type of theorem {pc.vg.cvA.name} is not a proposition")
+        throw (.invalid (Msg.withTerms msg!"type of theorem {pc.vg.cvA.name} is not a proposition"
+          [("type", pc.vg.cvA.type)]))
       -- a theorem's value arrives raw: its guards and annotation run
       -- here, at the view (`annotValC` — `installValue`'s twin)
       annotValC mode fe pc.vg.cvA pc.vg.jv
     else pure pc.vg.jv
   let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
   unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt pc.vg.cvA.type do
-    throw (.invalid msg!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}")
+    throw (.invalid (Msg.withTerms msg!"type mismatch in {pc.vg.kind.word} {pc.vg.cvA.name}"
+      [("has type", jvt), ("but is expected to have type", pc.vg.cvA.type)]))
 
 /-- **In a properly installed environment, record `i` has been
 checked**: its check against the prefix view, from a fresh memo state,
