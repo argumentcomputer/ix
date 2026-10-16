@@ -1,4 +1,5 @@
 import Benchmarks.Kernel.CheckIxeMeta
+import Ix.KernelDisplay.Peek
 import Tests.Ix.Kernel.Reader
 
 /-! # The erasure test on fixtures (IXC-PLAN §11, step 6)
@@ -89,5 +90,77 @@ def table : DisplayTable .meta :=
 #guard spellWith table (.aux (.id (address 201)) .model) == "Foo.bar@c9c9c9c9._model"
 #guard spellWith table (.id (address 203)) == "#cbcbcbcbcbcb"
 #guard spellWith table (.role .natAdd) == "Nat.add"
+
+/-! ## Named terms (step 6b)
+
+`.meta` (and `.source`) binders carry Lean's names in a subsingleton
+(`BinderMeta.display`): the named declarations below are *equal* to their
+anonymous erasures, the fold decides them alike at both modes, and a failure
+prints its terms with the names (read through `Ix.KernelDisplay.peekAll`, the
+display-only read, at elaboration time). -/
+
+/-- A binder named `n`, with info `bi`. -/
+def named (n : String) (bi : Ix.Kernel.BinderInfo := .default) : Ix.Kernel.BinderMeta :=
+  { pw := .never, display := Squash.mk ⟨.str .anonymous n, bi⟩ }
+
+/-- `∀ (x : Prop), x → x`, its binders named `x` and `h` (anonymous with
+`n := false`). -/
+def idTy (n : Bool) : Ix.Kernel.Expr md :=
+  .forallE (.sort .zero)
+    (.forallE (.bvar 0) (.bvar 1) (if n then named "h" else { pw := .never }))
+    (if n then named "x" else { pw := .never })
+
+/-- `fun (y : Prop) (h : y) => y`: of type `(y : Prop) → y → Prop`, not
+`idTy`'s. -/
+def badVal (n : Bool) : Ix.Kernel.Expr md :=
+  .lam (.sort .zero) (.lam (.bvar 0) (.bvar 1) (if n then named "h" else { pw := .never }))
+    (if n then named "y" else { pw := .never })
+
+/-- A theorem named at its key `k`. -/
+def thmOf (k : Ix.Kernel.Key md) (ty v : Ix.Kernel.Expr md) : Ix.Kernel.Declaration md :=
+  .thmDecl { name := k, levelParams := [], type := ty } v
+
+-- the named term is its erasure
+#guard (idTy true : Ix.Kernel.Expr .meta) == idTy false
+#guard decide ((idTy true : Ix.Kernel.Expr .meta) = idTy false)
+#guard hash (idTy true : Ix.Kernel.Expr .meta) == hash (idTy false : Ix.Kernel.Expr .meta)
+
+-- a named axiom: accepted at both modes; a named ill-typed theorem: the same
+-- failure at both modes
+#guard agree (anonRun #[.axiomDecl { name := .id (address 204), levelParams := [], type := idTy false }])
+  (metaRun #[.axiomDecl { name := .id (address 204), levelParams := [], type := idTy true }])
+#guard (anonRun #[thmOf (.id (address 205)) (idTy false) (badVal false)]).toOption.isNone
+#guard agree (anonRun #[thmOf (.id (address 205)) (idTy false) (badVal false)])
+  (metaRun #[thmOf (.id (address 205)) (idTy true) (badVal true)])
+
+/-- The named ill-typed theorem's failure. -/
+def namedFailure : Option (Ix.Kernel.CheckError .meta) :=
+  match metaRun #[thmOf (.id (address 205)) (idTy true) (badVal true)] with
+  | .error (e, _) => some e
+  | .ok _ => none
+
+/-- The same failure at `.anon`. -/
+def anonFailure : Option (Ix.Kernel.CheckError .anon) :=
+  match anonRun #[thmOf (.id (address 205)) (idTy false) (badVal false)] with
+  | .error (e, _) => some e
+  | .ok _ => none
+
+-- printed with names (the display-only read, evaluated at elaboration time)
+/--
+info: some "invalid: type mismatch in theorem #cdcdcdcdcdcd\nhas type\n  (y : Prop) → y → Prop\nbut is expected to have type\n  ∀ (x : Prop), x → x"
+-/
+#guard_msgs (whitespace := lax) in
+#eval namedFailure.map
+  (Ix.KernelDisplay.renderFailure { peek := Ix.KernelDisplay.peekAll, spell := spellWith table })
+
+-- at `.anon` the failure carries no terms (`Msg.withTerms` writes none there)
+/-- info: some "invalid: type mismatch in theorem #cdcdcdcdcdcd" -/
+#guard_msgs (whitespace := lax) in
+#eval anonFailure.map (Ix.KernelDisplay.renderFailure { peek := Ix.KernelDisplay.peekAll })
+
+-- PERF P14 keeps a name: `withPw` at the shared datum copies a named binder
+/-- info: "x" -/
+#guard_msgs in
+#eval toString (Ix.KernelDisplay.peekSquash ((named "x").withPw (.ifAllZero [])).display).name
 
 end Tests.Ix.Kernel.Erasure
