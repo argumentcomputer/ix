@@ -12,7 +12,7 @@
   Per sub-case, in a scratch environment grown with `addDecl` (every
   declaration through Lean's kernel, `Elab.async false`):
 
-  * **G** the canonical form from Pass 1 (`canonBlock Rules.phaseA`) and the
+  * **G** the canonical form from Pass 1 (`canonBlock Rules.compiler`) and the
     canonical declarations from it (`ImageSpec.ofBlock`), declared as
     `Ck.Gen.*`: the kernel generates their recursors, whose types are the
     generator's input (in the compiler, Pass 2's recursors);
@@ -258,12 +258,12 @@ def runCase (c : Case) : CoreM Unit := do
   let cenv : _root_.Ix.Compile.Canon.Env := {
     const? := ixLookup (← getEnv)
     addr? := fun n => some (Address.blake3 n.pretty.toUTF8) }
-  let block ← match _root_.Ix.Compile.Canon.canonBlock _root_.Ix.Compile.Canon.Rules.phaseA cenv
+  let block ← match _root_.Ix.Compile.Canon.canonBlock _root_.Ix.Compile.Canon.Rules.compiler cenv
       (all.toArray.map ixName) with
     | .ok b => pure b
     | .error e => throwError "canonBlock: {e}"
   let comps := block.components.map fun cc => cc.classes.map (·.map (·.pretty))
-  log s!"=== Pass 1 (phaseA): components/classes {comps}"
+  log s!"=== Pass 1: components/classes {comps}"
   let naming : Naming := {
     ind := fun _ _ rep => _root_.Ix.Compile.Canon.nameReplacePrefix rep srcIx genIx
     img := fun r => _root_.Ix.Compile.Canon.nameReplacePrefix r srcIx viewIx }

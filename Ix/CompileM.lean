@@ -2281,14 +2281,12 @@ def mutConstPreseedExprs (c : MutConst) : Array (Expr × List Name) :=
 /-! ## Classes and canonical order (Pass 1, `Ix.Compile.Canon`)
 
 Step 1 of a block's compilation, the classes (collapse) and their canonical
-order, is `Ix.Compile.Canon.sortClasses` under `Rules.compiler`: the
-comparator this module had before (external references by address at the
-first difference, name-hash seed and least-name-hash representative,
-syntactic levels) with the two port fixes on (mixed kinds by kind tag; the
-comparison cache in its key's orientation; `Ix/Compile/Canon/Order.lean`).
-Neither fix is reachable on Lean input, so the classes and orders are the
-former comparator's. The pure functions are the definition; what follows
-only converts between them and `CompileM`. -/
+order, is `Ix.Compile.Canon.sortClasses` under `Rules.compiler`: external
+references by compiled address at the first difference, levels compared
+after `canonUniv`, mixed kinds by kind tag, the comparison cache in its
+key's orientation (`Ix/Compile/Canon/Order.lean`), name-hash seed and
+least-name-hash representative. The pure functions are the definition; what
+follows only converts between them and `CompileM`. -/
 
 /-- The compiled address of a constant as `lookupConstAddr` resolves it
 (current block's primary registrations, the merged name map, the current

@@ -8,20 +8,19 @@
   1. **split**: the components of the reference graph on the members and
      their constructors (`Graph.sccsOf`);
   2. **classes and order** of each component (`Classes.sortClasses`) over
-     the members as `MutConst.indc` (today's `MutConst.mkIndc`);
-  3. **nested auxiliaries** of each component, gated as today
+     the members as `MutConst.indc` (the compiler's `MutConst.mkIndc`);
+  3. **nested auxiliaries** of each component, gated as the compiler does
      (`generateAuxPatches`): when some member of `all` has `numNested > 0`
      or the canonical expansion of the component has auxiliaries, the
-     canonical auxiliary order (`Nested.canonicalAuxOrder`) and the source
-     permutation `perm` (`Nested.computePerm`) against Lean's discovery
-     order over `all`;
+     canonical auxiliary order (the discovery order of the canonical
+     expansion, `Nested.lean`) and the source permutation `perm`
+     (`Nested.computePerm`) against Lean's discovery order over `all`;
   4. **evaporation** of source positions no component discovers.
 
   Everything is a function of the block's constants, the constants they
-  reference (through `Env.const?`) and, where the rule set compares by
-  address, the compiled addresses of external constants (`Env.addr?`). No
-  names enter the result except through `Seed.byNameHash` and
-  `Representative.leastNameHash`.
+  reference (through `Env.const?`) and the compiled addresses of external
+  constants (`Env.addr?`). No names enter the result except through the
+  name-hash seed (`Seed.byNameHash`) and representative.
 
   Not called by the compiler: `canon-pass1` checks it against the
   compiler's own path on its fixtures.
@@ -48,14 +47,14 @@ structure Env where
   addr? : Name → Option Address
   /-- External groups of the canonical expansion (`Nested.GroupOf`): the
   compiled canonical classes of an external block when the caller has them;
-  Lean's `I.all` otherwise (the census, which compiles nothing). -/
+  Lean's `I.all` otherwise (a caller that compiles nothing). -/
   groupOf : GroupOf := leanGroup
 
 def Env.ind? (env : Env) : Name → Option IndView := IndView.ofConst? env.const?
 
 /-- Nested data of one component. -/
 structure NestedCanon where
-  /-- Lean's source auxiliaries (discovery over `all`), under the rule set's
+  /-- Lean's source auxiliaries (discovery over `all`), with Lean's
   deduplication. -/
   source : Array Sig
   /-- The canonical auxiliary classes (names in the canonical expansion). -/
@@ -64,8 +63,6 @@ structure NestedCanon where
   /-- Source position ↦ canonical position (`none`: outside the component). -/
   perm : Array (Option Nat)
   evaporated : Array Bool
-  /-- The structural order changes when addresses are ignored. -/
-  addrDecided : Bool
   deriving Inhabited
 
 /-- One component of a block. -/
@@ -74,8 +71,6 @@ structure ComponentCanon where
   members : Array Name
   /-- Classes in canonical order, representative first. -/
   classes : Array (Array Name)
-  /-- Classes when external references are all equal. -/
-  blindClasses : Array (Array Name)
   stats : SortStats
   nested : Option NestedCanon
   deriving Inhabited
@@ -88,7 +83,7 @@ structure BlockCanon where
   components : Array ComponentCanon
   deriving Inhabited
 
-/-- The members of `all` as today's sorter sees them. -/
+/-- The members of `all` as the compiler's sorter sees them. -/
 def mutConstOf (env : Env) (n : Name) : Except String MutConst :=
   match env.const? n with
   | some (.inductInfo v) => do
@@ -137,37 +132,30 @@ def aliasesOf (classes : Array (Array Name)) : Std.HashMap Name Name :=
     | some rep => (cls.extract 1 cls.size).foldl (init := m) fun m n => m.insert n rep
     | none => m
 
-/-- The dedup rule of a rule set. -/
-def Rules.dedup (r : Rules) : Dedup :=
-  match r.nested with
-  | .structural => .compiler
-  | .discovery => .lean
-
-/-- Nested data of one component, before evaporation. -/
-def componentNested (rules : Rules) (env : Env) (all : Array Name)
+/-- Nested data of one component, before evaporation. The canonical order
+is the discovery order of the canonical expansion (deduplicated up to
+compiled addresses, `Nested.addrKey`). -/
+def componentNested (env : Env) (all : Array Name)
     (classes : Array (Array Name)) : Except String (Option NestedCanon) := do
   let reps := classes.filterMap (·[0]?)
   if reps.isEmpty then return none
   let metaNested := all.any fun n => match env.const? n with
     | some (.inductInfo v) => v.numNested > 0
     | _ => false
-  let x ← expand env.ind? rules.dedup reps (aliasesOf classes) env.groupOf
-    (if rules.nested == .discovery then some env.addr? else none)
+  let x ← expand env.ind? reps (aliasesOf classes) env.groupOf (some env.addr?)
   let structNested := x.types.size > x.nOriginals
   if !metaNested && !structNested then return none
-  let (order, addrDecided) ←
-    if metaNested && structNested then canonicalAuxOrder rules env.addr? x
-    else pure (x.aux.map fun m => #[m.name], false)
+  let order := x.aux.map fun m => #[m.name]
   let canon ← sigsInOrder x order
-  let src ← expand env.ind? rules.dedup all
+  let src ← expand env.ind? all
   let source := src.sigs
   let perm ← computePerm env.addr? canon source all (origToCanonOf classes)
   return some { source, canonClasses := order, canon, perm,
-                evaporated := Array.replicate perm.size false, addrDecided }
+                evaporated := Array.replicate perm.size false }
 
 /-- Evaporation (`generateAuxPatches`, the evaporated-alias pass): see
 `Nested.lean`. `comps` are all components of the block with their classes. -/
-def evaporate (env : Env) (rules : Rules) (all : Array Name)
+def evaporate (env : Env) (all : Array Name)
     (comps : Array (Array (Array Name))) (here : Nat) (n : NestedCanon) :
     Except String NestedCanon := do
   if !n.perm.contains none then return n
@@ -191,8 +179,7 @@ def evaporate (env : Env) (rules : Rules) (all : Array Name)
         let compMembers : Std.HashSet Name := cls.foldl (fun s c => c.foldl (·.insert ·) s) {}
         if !refs.toList.any compMembers.contains then continue
         let reps := cls.filterMap (·[0]?)
-        let x ← expand env.ind? rules.dedup reps (aliasesOf cls) env.groupOf
-          (if rules.nested == .discovery then some env.addr? else none)
+        let x ← expand env.ind? reps (aliasesOf cls) env.groupOf (some env.addr?)
         let o2c := origToCanonOf cls
         let strict : Std.HashSet Name := all.foldl (init := {}) fun st m =>
           if compMembers.contains m then st else st.insert m
@@ -206,21 +193,20 @@ def evaporate (env : Env) (rules : Rules) (all : Array Name)
     if targetOk then flags := flags.set! j true
   return { n with evaporated := flags }
 
-/-- The canonical form of the Lean block `all`. -/
+/-- The canonical form of the Lean block `all`, its classes refined from the
+seed of `rules`. -/
 def canonBlock (rules : Rules) (env : Env) (all : Array Name) : Except String BlockCanon := do
   let comps ← blockComponents env all
   let mut out : Array ComponentCanon := #[]
   for members in comps do
     let cs ← members.toList.mapM (mutConstOf env)
     let (classes, stats) ← (sortClasses rules env.addr? cs).mapError toString
-    let blind ← (sortClassesBlind rules cs).mapError toString
-    out := out.push { members, classes := classNames classes,
-                      blindClasses := classNames blind, stats, nested := none }
+    out := out.push { members, classes := classNames classes, stats, nested := none }
   let classesAll := out.map (·.classes)
   let mut out' : Array ComponentCanon := #[]
   for (c, i) in out.zipIdx do
-    let nested ← componentNested rules env all c.classes
-    let nested ← nested.mapM (evaporate env rules all classesAll i)
+    let nested ← componentNested env all c.classes
+    let nested ← nested.mapM (evaporate env all classesAll i)
     out' := out'.push { c with nested }
   return { all, components := out' }
 

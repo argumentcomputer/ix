@@ -3644,7 +3644,7 @@ pub fn mk_indc(
 /// of its context is `Var(i)`), put in canonical form, and compared
 /// structurally with the constructor order `Zero < Succ < Max < IMax < Var`.
 ///
-/// Lean `Ix.Compile.Canon.compareLevel .afterCanonUniv` (`Rules.compiler`):
+/// Lean `Ix.Compile.Canon.compareLevel` (Pass 1's comparator):
 /// collapse is equality of compiled content, and the stored universes are
 /// canonical forms, so the order does not depend on how a level is spelled.
 pub fn compare_level(

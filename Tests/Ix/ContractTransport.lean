@@ -70,7 +70,7 @@ def run : IO Unit := do
       -- The compiler's comparator (Pass 1, `Ix.Compile.Canon.compareExpr`),
       -- with no block members and no external constants.
       let ctx : Ix.Compile.Canon.CmpCtx :=
-        { levels := .syntactic, mode := .addr, addr? := fun _ => none, mutCtx := {} }
+        { addr? := fun _ => none, mutCtx := {} }
       let comparison ← get "ordering" <|
         Ix.Compile.Canon.compareExpr ctx [] [] canonical[i]! canonical[j]!
       unless (comparison.ord == .eq) == (i == j) do

@@ -2,7 +2,7 @@
   Ix.Compile.Canon.Classes: classes (collapse) and canonical order by
   partition refinement, total.
 
-  The compiler's former `sortConsts` (Rust `sort_consts`):
+  The compiler's `sortConsts` (Rust `sort_consts`):
 
   1. start from one class holding every member, in the seed order
      (`Seed.byNameHash`: sorted by the blake3 hash of the name, an insertion
@@ -12,9 +12,8 @@
      its current class index (`Ix.MutConst.ctx`), and adjacent equal members
      are grouped (`List.sortByM`, a stable natural merge sort, and
      `List.groupByM`, both total, from `Ix.Common`);
-  3. every group is then re-sorted by name hash
-     (`Representative.leastNameHash`), or keeps the stable order
-     (`firstInCanonicalOrder`);
+  3. every group is then re-sorted by name hash, so the first member has the
+     least name hash;
   4. stop when a round leaves the number of classes unchanged (refinement
      only splits, so this is the fixed point; Rust's stopping rule, an
      unchanged class list, agrees). The fuel is the member count plus one;
@@ -48,70 +47,55 @@ def sortByName : List MutConst → List MutConst
 /-- Statistics of one refinement. -/
 structure SortStats where
   rounds : Nat := 0
-  /-- `byAddress` comparisons decided by addresses. -/
-  addrDecided : Nat := 0
-  /-- Reversed non-equal cache hits (see `Order.lean`). -/
-  hazards : Nat := 0
   deriving Repr, Inhabited
 
-def refineClass (rules : Rules) (addr? : Name → Option Address) (ctx : MutCtx) :
+def refineClass (addr? : Name → Option Address) (ctx : MutCtx) :
     List MutConst → CmpM (List (List MutConst))
   | [] => liftE (.error (.refinement "empty class in sortConsts"))
   | [x] => pure [[x]]
   | xs => do
-    let sorted ← xs.sortByM (compareConst rules addr? ctx)
+    let sorted ← xs.sortByM (compareConst addr? ctx)
     -- `groupByM` compares each element with the previous group's head, the
-    -- reverse of the sort's orientation; only equality is read, so a reversed
-    -- cache hit there is harmless and is not counted as a hazard.
-    let h0 := (← get).hazards
+    -- reverse of the sort's orientation; only equality is read.
     let groups ← List.groupByM
-      (fun a b => do return (← compareConst rules addr? ctx a b) == .eq) sorted
-    modify fun st => { st with hazards := h0 }
-    pure <| match rules.representative with
-      | .leastNameHash => groups.map sortByName
-      | .firstInCanonicalOrder => groups
+      (fun a b => do return (← compareConst addr? ctx a b) == .eq) sorted
+    pure (groups.map sortByName)
 
-def refineClasses (rules : Rules) (addr? : Name → Option Address) (ctx : MutCtx) :
+def refineClasses (addr? : Name → Option Address) (ctx : MutCtx) :
     List (List MutConst) → CmpM (List (List MutConst))
   | [] => pure []
   | c :: cs => do
-    let gs ← refineClass rules addr? ctx c
-    let rest ← refineClasses rules addr? ctx cs
+    let gs ← refineClass addr? ctx c
+    let rest ← refineClasses addr? ctx cs
     pure (gs ++ rest)
 
-def sortLoop (rules : Rules) (addr? : Name → Option Address) :
+def sortLoop (addr? : Name → Option Address) :
     Nat → Nat → List (List MutConst) → CmpM (List (List MutConst) × Nat)
   | 0, _, _ => liftE (.error (.refinement "sortConsts did not converge"))
   | fuel + 1, round, classes => do
-    let refined ← refineClasses rules addr? (MutConst.ctx classes) classes
+    let refined ← refineClasses addr? (MutConst.ctx classes) classes
     if classes.length == refined.length then pure (refined, round + 1)
-    else sortLoop rules addr? fuel (round + 1) refined
+    else sortLoop addr? fuel (round + 1) refined
 
 /-- The classes of `sources` in canonical order, each class's first member
-its representative. `addr?` gives external constants' compiled addresses
-(unused under `TieBreak.blind`). No members, no classes. -/
+its representative, from the seed `rules.seed`. `addr?` gives external
+constants' compiled addresses. No members, no classes. -/
 def sortClasses (rules : Rules) (addr? : Name → Option Address)
     (sources : List MutConst) : Except CmpError (List (List MutConst) × SortStats) := do
   if sources.isEmpty then return ([], {})
   let seed := match rules.seed with
     | .byNameHash => sortByName sources
     | .allOrder => sources
-  let ((classes, rounds), st) ←
-    (sortLoop rules addr? (sources.length + 1) 0 [seed]).run {}
+  let ((classes, rounds), _) ←
+    (sortLoop addr? (sources.length + 1) 0 [seed]).run {}
   if classes.any (·.isEmpty) then .error (.refinement "empty class after sortConsts")
   if sources.length < classes.length then
     .error (.refinement "too many classes after sortConsts")
-  return (classes, { rounds, addrDecided := st.addrDecided, hazards := st.hazards })
+  return (classes, { rounds })
 
 /-- Class names, for comparison and reporting. -/
 def classNames (classes : List (List MutConst)) : Array (Array Name) :=
   classes.toArray.map fun c => c.toArray.map (·.name)
-
-/-- The same refinement with every external reference equal: if it yields
-the same classes, the order is decided without addresses. -/
-def sortClassesBlind (rules : Rules) (sources : List MutConst) :
-    Except CmpError (List (List MutConst)) :=
-  (·.1) <$> sortClasses { rules with tieBreak := .blind } (fun _ => none) sources
 
 end Ix.Compile.Canon
 

@@ -1,9 +1,8 @@
 /-
   Ix.Compile.Canon.Order: the structural comparator of Pass 1, total.
 
-  Same structure as the compiler's Lean comparator `compareLevel`/`compareExpr`/
-  `compareDef`/`compareCtor`/`compareInd`/`compareRecr`/`compareConst`, which it
-  replaces (Rust `compile.rs` `compare_level` … `compare_const`):
+  The compiler's comparator (Rust `compile.rs` `compare_level` …
+  `compare_const`):
 
   * kind tag first (definition < inductive < recursor), then the per-kind
     keys: definitions by kind, level-parameter count, type, value;
@@ -17,52 +16,32 @@
     (`Ixon.BlockOrder.compareExpr_letE`) do; `mdata` stripped except
     semantic-contract metadata, which compares by `orderKey` (and a
     contract frame sorts after any non-contract term);
-    level parameters by position; constants by their level arguments
-    first, then: the same name is equal, two in-block names compare by
-    class index *weakly*, in-block sorts before external, two external
-    names by compiled address (`ExtMode.addr`; an unresolved name is an
-    error, never a fall back to the name); projections the same way on the
-    structure name;
-  * only strong results are cached, keyed by the unordered name pair.
+    levels compared after `Ixon.canonUniv`, parameters by position;
+    constants by their level arguments first, then: the same name is equal,
+    two in-block names compare by class index *weakly*, in-block sorts
+    before external, two external names by compiled address (an unresolved
+    name is an error, never a fall back to the name); projections the same
+    way on the structure name;
+  * only strong results are cached, keyed by the unordered name pair; a hit
+    for the swapped pair returns the stored ordering swapped.
 
-  **Rule sets** (`Rules`): `Rules.compiler` is the compiler's rule set, the
-  Phase A decision set `Rules.phaseA` (levels compared after `canonUniv`,
-  nested auxiliaries in discovery order, the two port fixes); `Rules.today`
-  is the compiler's former rule set (syntactic levels, the structural
-  auxiliary order, the port fixes off), kept as the negative control of
-  `canon-pass1`. The switches:
-  * `seed`: `byNameHash` (the refinement starts from one class sorted by
-    the blake3 hash of the name) or `allOrder` (the caller's order: Lean's
-    `all` restricted to the component, or a clique's member order, kept
-    stably; used by the seed sweep);
-  * `levels`: `syntactic` or `afterCanonUniv` (levels compared after
-    `Ixon.canonUniv`, with parameters by position);
-  * `representative`: `leastNameHash` (every group re-sorted by name hash,
-    so the first member has the least name hash) or `firstInCanonicalOrder`
-    (first member in the stable order);
-  * `tieBreak`: `inline` (external references compare by address wherever
-    they occur, at the first difference), `byAddress` (the lexicographic
-    pair `(k₀, k₁)`, `k₀` with every external reference equal and `k₁` the
-    inline key; only the class order can move), or `blind` (never use
-    addresses);
-  * `nested`: the order of nested auxiliaries, `structural` (the
-    compiler's former) or `discovery` (Lean's), used by `Nested.lean`.
+  Two constants of different kinds compare by kind tag, and a cached
+  ordering is returned in the orientation of the call. The compiler's former
+  Lean comparator did neither (it answered `lt` for every mixed-kind pair
+  and returned a cached ordering as stored); no Lean input reaches the
+  difference (components are kind-homogeneous, and no cached ordering is
+  read back for the swapped pair inside a sort). `canon-pass1` keeps a copy
+  of that comparator as its negative control and checks that the classes do
+  not move.
 
-  **The port fixes.** The compiler's Lean comparator keys its cache
-  by the unordered name pair but stores and returns the ordering in the
-  orientation of the call that computed it (C2), and answers `lt` for
-  every mixed-kind pair, which is not antisymmetric (C1). Rust compares
-  kind tags. With `portFixes := false` (`Rules.today`) both are mirrored
-  and every reversed non-equal cache hit is counted in `CmpState.hazards`;
-  with `portFixes := true` both are fixed. Neither is reachable on Lean
-  input (components are kind-homogeneous; every class is sorted in
-  name-hash order, so no cached ordering is read back for the swapped pair
-  inside a sort), so the fixes change no class and no order on their own
-  (`canon-pass1` checks this on its fixtures).
+  **Rules** carry only the seed of the refinement (`Classes.lean`):
+  `byNameHash` (the refinement starts from one class sorted by the blake3
+  hash of the name; `Rules.compiler`) or `allOrder` (the caller's order,
+  kept stably; `canon-pass1`'s seed sweep).
 
   **Errors** are `CmpError`s, so the compiler's adapter
   (`Ix.CompileM.sortConsts`) can raise exactly the error the compiler's
-  own comparator raises.
+  former comparator raised.
 -/
 module
 public import Ix.Environment
@@ -78,82 +57,28 @@ namespace Ix.Compile.Canon
 open Ix (Name Level Expr MutConst Def Ind Rec MutCtx ConstructorVal RecursorVal
   RecursorRule)
 
-/-! ## Rule sets -/
+/-! ## Rules -/
 
+/-- Where the refinement starts. -/
 inductive Seed where
+  /-- One class sorted by the blake3 hash of the name. -/
   | byNameHash
+  /-- The caller's order (Lean's `all`, a clique's member order), kept
+  stably. -/
   | allOrder
   deriving BEq, Repr, Inhabited
 
-inductive LevelCompare where
-  | syntactic
-  | afterCanonUniv
-  deriving BEq, Repr, Inhabited
-
-inductive Representative where
-  | leastNameHash
-  | firstInCanonicalOrder
-  deriving BEq, Repr, Inhabited
-
-inductive TieBreak where
-  | inline
-  | byAddress
-  | blind
-  deriving BEq, Repr, Inhabited
-
-inductive NestedOrder where
-  | structural
-  | discovery
-  deriving BEq, Repr, Inhabited
-
+/-- What a refinement is parameterised by: its seed. -/
 structure Rules where
-  seed : Seed
-  levels : LevelCompare
-  representative : Representative
-  tieBreak : TieBreak
-  nested : NestedOrder
-  /-- The two port fixes (C1, mixed kinds by kind tag; C2, the cache
-  normalised to the key's orientation). Off only for `Rules.today`;
-  required by any seed other than the name hash. -/
-  portFixes : Bool := true
+  seed : Seed := .byNameHash
   deriving BEq, Repr, Inhabited
 
-/-- The compiler's Lean comparator as written, port defects included. -/
-def Rules.today : Rules :=
-  ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
+/-- The compiler's rules: the name-hash seed. -/
+def Rules.compiler : Rules := {}
 
-/-- The Phase A decisions: the compiler's comparator, seed and
-representative, plus levels compared after `canonUniv` and nested
-auxiliaries in discovery order. -/
-def Rules.phaseA : Rules :=
-  ⟨.byNameHash, .afterCanonUniv, .leastNameHash, .inline, .discovery, true⟩
-
-/-- The compiler's rules: the Phase A rules. Against `Rules.today` three
-things change:
-* the two port fixes (C1, C2). No Lean input reaches them: components are
-  kind-homogeneous, and no cached ordering is read back for the swapped
-  pair inside a sort;
-* levels are compared after `canonUniv`. No block or clique order of
-  Init+Std or Mathlib depends on it;
-* nested auxiliaries are in discovery order over the canonical block
-  (`Nested.lean`). This is Lean's `rec_N` order on every block whose
-  members Lean already lists in canonical order, so such a block stores the
-  identity permutation. It is the one change that moves addresses. -/
-def Rules.compiler : Rules := Rules.phaseA
-
-/-- How a comparison treats two different external constants. -/
-inductive ExtMode where
-  /-- By compiled address (an unresolved name is an error). -/
-  | addr
-  /-- As equal: the address-free relation. -/
-  | blind
-  deriving BEq, Repr, Inhabited
-
-/-- What one comparison needs: the level rule, the external mode, the
-external addresses and the current class index of every in-block name. -/
+/-- What one comparison needs: the external addresses and the current class
+index of every in-block name. -/
 structure CmpCtx where
-  levels : LevelCompare
-  mode : ExtMode
   addr? : Name → Option Address
   mutCtx : MutCtx
 
@@ -189,30 +114,6 @@ instance : ToString CmpError := ⟨CmpError.render⟩
 
 /-! ## Levels -/
 
-/-- Syntactic level comparison with parameters by position
-(the compiler's `compareLevel`). -/
-def compareLevelSyn (xctx yctx : List Name) : Level → Level → Except CmpError SOrder
-  | .mvar .., _ | _, .mvar .. => .error .levelMVar
-  | .zero _, .zero _ => pure ⟨true, .eq⟩
-  | .zero _, _ => pure ⟨true, .lt⟩
-  | _, .zero _ => pure ⟨true, .gt⟩
-  | .succ x _, .succ y _ => compareLevelSyn xctx yctx x y
-  | .succ .., _ => pure ⟨true, .lt⟩
-  | _, .succ .. => pure ⟨true, .gt⟩
-  | .max xl xr _, .max yl yr _ =>
-    SOrder.cmpM (compareLevelSyn xctx yctx xl yl) (compareLevelSyn xctx yctx xr yr)
-  | .max .., _ => pure ⟨true, .lt⟩
-  | _, .max .. => pure ⟨true, .gt⟩
-  | .imax xl xr _, .imax yl yr _ =>
-    SOrder.cmpM (compareLevelSyn xctx yctx xl yl) (compareLevelSyn xctx yctx xr yr)
-  | .imax .., _ => pure ⟨true, .lt⟩
-  | _, .imax .. => pure ⟨true, .gt⟩
-  | .param x _, .param y _ =>
-    match xctx.idxOf? x, yctx.idxOf? y with
-    | some xi, some yi => pure ⟨true, compare xi yi⟩
-    | none, _ => .error (.unknownUnivParam x)
-    | _, none => .error (.unknownUnivParam y)
-
 /-- A level as an `Ixon.Univ`, parameters by position. -/
 def toUniv (ctx : List Name) : Level → Except CmpError Ixon.Univ
   | .zero _ => pure .zero
@@ -225,8 +126,8 @@ def toUniv (ctx : List Name) : Level → Except CmpError Ixon.Univ
     | none => .error (.unknownUnivParam n)
   | .mvar .. => .error .levelMVar
 
-/-- Structural order on `Ixon.Univ` with the constructor order of
-`compareLevelSyn`. -/
+/-- Structural order on `Ixon.Univ`: `zero < succ < max < imax < var`,
+then the arguments left to right. -/
 def compareUniv : Ixon.Univ → Ixon.Univ → Ordering
   | .zero, .zero => .eq
   | .zero, _ => .lt
@@ -242,19 +143,16 @@ def compareUniv : Ixon.Univ → Ixon.Univ → Ordering
   | _, .imax .. => .gt
   | .var i, .var j => compare i j
 
-def compareLevel (lc : LevelCompare) (xctx yctx : List Name) (x y : Level) :
-    Except CmpError SOrder :=
-  match lc with
-  | .syntactic => compareLevelSyn xctx yctx x y
-  | .afterCanonUniv => do
-    let ux ← toUniv xctx x
-    let uy ← toUniv yctx y
-    pure ⟨true, compareUniv (Ixon.canonUniv ux) (Ixon.canonUniv uy)⟩
+/-- Two levels, compared after `Ixon.canonUniv` with parameters by position
+in `xctx` and `yctx` (the serializer's normal form). -/
+def compareLevel (xctx yctx : List Name) (x y : Level) : Except CmpError SOrder := do
+  let ux ← toUniv xctx x
+  let uy ← toUniv yctx y
+  pure ⟨true, compareUniv (Ixon.canonUniv ux) (Ixon.canonUniv uy)⟩
 
 /-- `SOrder.zipM` specialised (pointwise, then by length). -/
-def compareLevels (lc : LevelCompare) (xctx yctx : List Name) :
-    List Level → List Level → Except CmpError SOrder :=
-  SOrder.zipM (compareLevel lc xctx yctx)
+def compareLevels (xctx yctx : List Name) : List Level → List Level → Except CmpError SOrder :=
+  SOrder.zipM (compareLevel xctx yctx)
 
 /-! ## Expressions -/
 
@@ -278,15 +176,12 @@ def exprSize : Expr → Nat
 @[simp] theorem exprSize_mdata (d : Array (Name × Ix.DataValue)) (s : Expr)
     (h : Address) : exprSize (.mdata d s h) = exprSize s + 1 := by rfl
 
-/-- Two external names. -/
+/-- Two external names, by compiled address. -/
 def compareExternal (c : CmpCtx) (x y : Name) : Except CmpError SOrder :=
-  match c.mode with
-  | .blind => pure ⟨true, .eq⟩
-  | .addr =>
-    match c.addr? x, c.addr? y with
-    | some ax, some ay => pure ⟨true, compare ax ay⟩
-    | none, _ => .error (.missingAddress x)
-    | _, none => .error (.missingAddress y)
+  match c.addr? x, c.addr? y with
+  | some ax, some ay => pure ⟨true, compare ax ay⟩
+  | none, _ => .error (.missingAddress x)
+  | _, none => .error (.missingAddress y)
 
 /-- Two referenced names (constant heads after their levels, or projection
 structures): same name equal; in-block by class index, weakly; in-block
@@ -324,11 +219,11 @@ def compareExpr (c : CmpCtx) (xl yl : List Name) (x y : Expr) :
   | .bvar i _, .bvar j _ => pure ⟨true, compare i j⟩
   | .bvar .., _ => pure ⟨true, .lt⟩
   | _, .bvar .. => pure ⟨true, .gt⟩
-  | .sort u _, .sort v _ => compareLevel c.levels xl yl u v
+  | .sort u _, .sort v _ => compareLevel xl yl u v
   | .sort .., _ => pure ⟨true, .lt⟩
   | _, .sort .. => pure ⟨true, .gt⟩
   | .const xn xls _, .const yn yls _ => do
-    let us ← compareLevels c.levels xl yl xls.toList yls.toList
+    let us ← compareLevels xl yl xls.toList yls.toList
     if us.ord != .eq then pure us else compareRef c xn yn
   | .const .., _ => pure ⟨true, .lt⟩
   | _, .const .. => pure ⟨true, .gt⟩
@@ -364,41 +259,31 @@ decreasing_by
 
 /-! ## Constants -/
 
-/-- The comparison cache: unordered name pair (and external mode) ↦ the
-ordering and the name that was on the left when it was computed. -/
+/-- The comparison cache: unordered name pair ↦ the ordering and the name
+that was on the left when it was computed. -/
 structure CmpState where
-  cache : Std.HashMap (Bool × Name × Name) (Ordering × Name) := {}
-  /-- Cache hits for the reversed pair with a non-equal stored ordering. -/
-  hazards : Nat := 0
-  /-- `byAddress` comparisons that were address-free equal and decided by
-  addresses. -/
-  addrDecided : Nat := 0
+  cache : Std.HashMap (Name × Name) (Ordering × Name) := {}
   deriving Inhabited
 
 abbrev CmpM := StateT CmpState (Except CmpError)
 
 def liftE (x : Except CmpError α) : CmpM α := liftM x
 
-def cacheKey (blind : Bool) (x y : Name) : Bool × Name × Name :=
+def cacheKey (x y : Name) : Name × Name :=
   match compare x y with
-  | .lt => (blind, x, y)
-  | _ => (blind, y, x)
+  | .lt => (x, y)
+  | _ => (y, x)
 
-/-- Look up the cache; `flip` says whether a reversed hit is flipped (the
-port fix) or returned as stored (the Lean comparator as written). -/
-def cacheGet (flip : Bool) (blind : Bool) (x y : Name) : CmpM (Option Ordering) := do
-  let st ← get
-  match st.cache.get? (cacheKey blind x y) with
+/-- Look up the cache, in the orientation of the call: a hit computed for the
+swapped pair is returned swapped. -/
+def cacheGet (x y : Name) : CmpM (Option Ordering) := do
+  match (← get).cache.get? (cacheKey x y) with
   | none => pure none
-  | some (o, left) =>
-    if left == x || o == .eq then pure (some o)
-    else do
-      set { st with hazards := st.hazards + 1 }
-      pure (some (if flip then o.swap else o))
+  | some (o, left) => pure (some (if left == x then o else o.swap))
 
-def cachePut (blind : Bool) (x y : Name) (o : SOrder) : CmpM Unit :=
+def cachePut (x y : Name) (o : SOrder) : CmpM Unit :=
   if o.strong then
-    modify fun st => { st with cache := st.cache.insert (cacheKey blind x y) (o.ord, x) }
+    modify fun st => { st with cache := st.cache.insert (cacheKey x y) (o.ord, x) }
   else pure ()
 
 def compareDef (c : CmpCtx) (x y : Def) : Except CmpError SOrder :=
@@ -407,39 +292,45 @@ def compareDef (c : CmpCtx) (x y : Def) : Except CmpError SOrder :=
   SOrder.cmpM (compareExpr c x.levelParams.toList y.levelParams.toList x.type y.type)
     (compareExpr c x.levelParams.toList y.levelParams.toList x.value y.value)
 
-def compareCtor (flip : Bool) (c : CmpCtx) (xl yl : List Name)
-    (x y : ConstructorVal) : CmpM SOrder := do
-  let blind := c.mode == .blind
-  if let some o ← cacheGet flip blind x.cnst.name y.cnst.name then
+/-- A constructor's own keys, uncached. -/
+def compareCtorKeys (c : CmpCtx) (xl yl : List Name) (x y : ConstructorVal) :
+    Except CmpError SOrder :=
+  SOrder.cmpM (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
+  SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
+  SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
+  SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩)
+    (compareExpr c xl yl x.cnst.type y.cnst.type)
+
+def compareCtor (c : CmpCtx) (xl yl : List Name) (x y : ConstructorVal) : CmpM SOrder := do
+  if let some o ← cacheGet x.cnst.name y.cnst.name then
     return ⟨true, o⟩
-  let so ← liftE <|
-    SOrder.cmpM (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-    SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩)
-      (compareExpr c xl yl x.cnst.type y.cnst.type)
-  cachePut blind x.cnst.name y.cnst.name so
+  let so ← liftE (compareCtorKeys c xl yl x y)
+  cachePut x.cnst.name y.cnst.name so
   return so
 
-def compareCtors (flip : Bool) (c : CmpCtx) (xl yl : List Name) :
+def compareCtors (c : CmpCtx) (xl yl : List Name) :
     List ConstructorVal → List ConstructorVal → CmpM SOrder :=
-  SOrder.zipM (compareCtor flip c xl yl)
+  SOrder.zipM (compareCtor c xl yl)
 
-def compareInd (flip : Bool) (c : CmpCtx) (x y : Ind) : CmpM SOrder := do
+/-- An inductive's header: level count, parameters, indices, constructor
+count. -/
+def indHeader (x y : Ind) : SOrder :=
+  SOrder.cmpMany ⟨true, compare x.levelParams.size y.levelParams.size⟩
+    [⟨true, compare x.numParams y.numParams⟩,
+     ⟨true, compare x.numIndices y.numIndices⟩,
+     ⟨true, compare x.ctors.size y.ctors.size⟩]
+
+def compareInd (c : CmpCtx) (x y : Ind) : CmpM SOrder := do
   let xl := x.levelParams.toList
   let yl := y.levelParams.toList
-  let hdr : SOrder :=
-    SOrder.cmpMany ⟨true, compare x.levelParams.size y.levelParams.size⟩
-      [⟨true, compare x.numParams y.numParams⟩,
-       ⟨true, compare x.numIndices y.numIndices⟩,
-       ⟨true, compare x.ctors.size y.ctors.size⟩]
+  let hdr := indHeader x y
   match hdr with
   | ⟨true, .eq⟩ => pure ()
   | o => if o.ord != .eq then return o else pure ()
   let ty ← liftE (compareExpr c xl yl x.type y.type)
   let ty := SOrder.cmp hdr ty
   if ty.ord != .eq then return ty
-  let cs ← compareCtors flip c xl yl x.ctors.toList y.ctors.toList
+  let cs ← compareCtors c xl yl x.ctors.toList y.ctors.toList
   return SOrder.cmp ty cs
 
 def compareRule (c : CmpCtx) (xl yl : List Name) (x y : RecursorRule) :
@@ -463,45 +354,23 @@ def kindTag : MutConst → Nat
   | .indc _ => 1
   | .recr _ => 2
 
-/-- Variant dispatch. Two constants of different kinds: the compiler's Lean
-comparator answers `lt` whatever the order of the arguments, which is not
-antisymmetric; Rust compares the kind tags (`compile.rs` `mut_const_kind`).
-`kindsByTag := false` mirrors it, `true` compares
-tags. Lean never puts two kinds in one component, so the difference is
-latent. -/
-def compareConstBody (kindsByTag flip : Bool) (c : CmpCtx) (x y : MutConst) :
-    CmpM SOrder :=
+/-- Variant dispatch; two constants of different kinds compare by kind tag
+(Rust `compile.rs` `mut_const_kind`). -/
+def compareConstBody (c : CmpCtx) (x y : MutConst) : CmpM SOrder :=
   match x, y with
   | .defn x, .defn y => liftE (compareDef c x y)
-  | .indc x, .indc y => compareInd flip c x y
+  | .indc x, .indc y => compareInd c x y
   | .recr x, .recr y => liftE (compareRecr c x y)
-  | x, y =>
-    if kindsByTag then pure ⟨true, compare (kindTag x) (kindTag y)⟩
-    else pure ⟨true, .lt⟩
+  | x, y => pure ⟨true, compare (kindTag x) (kindTag y)⟩
 
-/-- One cached comparison in one external mode. -/
-def compareConstIn (flip : Bool) (c : CmpCtx) (x y : MutConst) : CmpM Ordering := do
-  let blind := c.mode == .blind
-  if let some o ← cacheGet flip blind x.name y.name then
+/-- The comparison the refinement sorts by, cached. -/
+def compareConst (addr? : Name → Option Address) (mutCtx : MutCtx) (x y : MutConst) :
+    CmpM Ordering := do
+  if let some o ← cacheGet x.name y.name then
     return o
-  let so ← compareConstBody flip flip c x y -- `flip` is `portFixes`
-  cachePut blind x.name y.name so
+  let so ← compareConstBody { addr?, mutCtx } x y
+  cachePut x.name y.name so
   return so.ord
-
-/-- The comparison a rule set sorts by. -/
-def compareConst (rules : Rules) (addr? : Name → Option Address) (mutCtx : MutCtx)
-    (x y : MutConst) : CmpM Ordering := do
-  let flip := rules.portFixes
-  let c : CmpCtx := { levels := rules.levels, mode := .addr, addr?, mutCtx }
-  match rules.tieBreak with
-  | .inline => compareConstIn flip c x y
-  | .blind => compareConstIn flip { c with mode := .blind } x y
-  | .byAddress =>
-    let b ← compareConstIn flip { c with mode := .blind } x y
-    if b != .eq then return b
-    let a ← compareConstIn flip c x y
-    if a != .eq then modify fun st => { st with addrDecided := st.addrDecided + 1 }
-    return a
 
 end Ix.Compile.Canon
 

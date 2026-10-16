@@ -8,10 +8,10 @@
   `Ix.AuxGen.expandNestedBlock` (the canonical expansion) →
   `computeAuxPerm`, called in a `CompileEnv` seeded with the Rust compile of
   the same closure (the `aux-gen-diff` harness's setup). The compiler's
-  sorts and permutation are Pass 1's under `Rules.compiler` (`Rules.phaseA`:
-  levels after `canonUniv`, nested auxiliaries in discovery order, the port
-  fixes), so checks 2 and 3 check the adapters (`constAddrLookup`,
-  `ExpandedBlock.toCanon`). Checked:
+  sorts and permutation are Pass 1's under `Rules.compiler` (levels after
+  `canonUniv`, nested auxiliaries in discovery order, kinds by tag, the
+  cache in its key's orientation), so checks 2 and 3 check the adapters
+  (`constAddrLookup`, `ExpandedBlock.toCanon`). Checked:
 
   1. the condensation (`Ix.CondenseM.run` over the closure's reference
      graph) has the components of Rust's condensation and of `sccsOf`, as
@@ -19,41 +19,39 @@
   2. for every component with two or more members or an inductive, the
      compiler's `sortConsts` (addresses through the compile environment)
      gives the classes of the pure `sortClasses Rules.compiler`, member by
-     member and in order (the components whose order `Rules.today` would
-     give differently are counted);
+     member and in order;
   3. for every inductive component with nested auxiliaries, the compiler's
      path gives the canonical auxiliary count and the source permutation of
-     Pass 1's own expansion (`componentNested Rules.compiler`, external
-     groups from the compiled class registry); the components with a moved
-     auxiliary are counted under discovery order and under `Rules.today`'s
-     structural order;
+     Pass 1's own expansion (`componentNested`, external groups from the
+     compiled class registry); the components with a moved auxiliary are
+     counted;
   4. for every Lean block with nested auxiliaries, the discovery order
      (`Nested.expand`, Lean's deduplication) equals the occurrences of the
      environment's `all₀.rec_1 …` in order;
-  5. `canonBlock` succeeds under `Rules.today` and `Rules.phaseA` on every
-     Lean block, and the comparator is a total preorder
-     (`preorderViolations`) on every component under both;
+  5. `canonBlock Rules.compiler` succeeds on every Lean block, and the
+     comparator is a total preorder (`preorderViolations`) on every
+     component;
   6. small pure checks of `tarjan` and `condensation`;
   7. the seed sweep: the classes do not depend on the presentation;
   8. sibling occurrences of an external mutual group;
   9. **the port fixes change nothing on the fixtures**: on every component
-     (and every nested block's auxiliary sort) the classes and their order
-     are identical with `portFixes` off (`Rules.today`) and on
-     (`todayFixed`), and the unfixed comparator reads no cached
-     ordering back for the swapped pair inside a sort; and two synthetic
-     pairs show what each fix does (a definition against an inductive: `lt`
-     both ways unfixed, by kind tag fixed; a cached strong `lt` read back
-     for the swapped pair: unflipped unfixed, flipped fixed);
+     the classes and their order are identical under the compiler's former
+     comparator as written (`Unfixed`, below: mixed kinds `lt` both ways,
+     a cached ordering returned as stored) and under the library's, and the
+     former comparator reads no cached ordering back for the swapped pair
+     inside a sort; and two synthetic pairs show what each fix does (a
+     definition against an inductive: `lt` both ways unfixed, by kind tag
+     fixed; a cached strong `lt` read back for the swapped pair: unflipped
+     unfixed, flipped fixed);
   10. a `let`'s nondependency bit is a key: on synthetic definitions, the
       bit decides only when the `let`'s type, value and body are equal
       (`let` before `have`), the body decides before it, and the
-      same bit under another binder name compares equal, under
-      `Rules.compiler` and `Rules.phaseA`. (The checked `LetNonDep`
-      fixture's blocks are the `twins` suite's: two classes, the same bytes
-      in both presentations, Lean = Rust.)
+      same bit under another binder name compares equal. (The checked
+      `LetNonDep` fixture's blocks are the `twins` suite's: two classes,
+      the same bytes in both presentations, Lean = Rust.)
 
   The comparator-study helpers (`compareFresh`, `preorderViolations`, the
-  seed sweep) live here, not in the library.
+  seed sweep) and the former comparator live here, not in the library.
 
   Invoked as `lake test -- --ignored canon-pass1`.
 -/
@@ -82,21 +80,135 @@ def Tally.check (t : Tally) (ok : Bool) (msg : String) : Tally :=
 def pretty (xs : Array (Array Ix.Name)) : String :=
   toString (xs.map (·.map namePretty))
 
-def ruleName (r : Rules) : String :=
-  if r == .today then "today" else if r == .phaseA then "phaseA"
-  else if r == .compiler then "compiler" else reprStr r
-
 /-! ## The comparator study -/
 
-/-- Uncached comparison under `rules` at context `ctx`. -/
-def compareFresh (rules : Rules) (addr? : Ix.Name → Option Address) (ctx : Ix.MutCtx)
+/-- Uncached comparison at context `ctx`. -/
+def compareFresh (addr? : Ix.Name → Option Address) (ctx : Ix.MutCtx)
     (x y : Ix.MutConst) : Except CmpError Ordering :=
-  (·.1) <$> (compareConst rules addr? ctx x y).run {}
+  (·.1) <$> (compareConst addr? ctx x y).run {}
+
+/-! ## The compiler's former comparator, as written
+
+The negative control of the two port fixes (check 9): the library's
+comparator except that two constants of different kinds compare `lt`
+whatever their order (C1) and a cached ordering is returned as stored, not
+in the orientation of the call (C2). Reads of a stored non-equal ordering
+for the swapped pair are counted (`hazards`). Expressions, definitions,
+recursors and constructor keys are the library's (`compareExpr`,
+`compareDef`, `compareRecr`, `compareCtorKeys`, `indHeader`): only the
+cache and the kind dispatch are copied. -/
+
+structure UnfixedState where
+  cache : Std.HashMap (Ix.Name × Ix.Name) (Ordering × Ix.Name) := {}
+  hazards : Nat := 0
+  deriving Inhabited
+
+abbrev UnfixedM := StateT UnfixedState (Except CmpError)
+
+def unfixedLift (x : Except CmpError α) : UnfixedM α := liftM x
+
+/-- A cache hit as stored, whatever the orientation of the call (C2). -/
+def unfixedGet (x y : Ix.Name) : UnfixedM (Option Ordering) := do
+  let st ← get
+  match st.cache.get? (cacheKey x y) with
+  | none => pure none
+  | some (o, left) =>
+    if left == x || o == .eq then pure (some o)
+    else do
+      set { st with hazards := st.hazards + 1 }
+      pure (some o)
+
+def unfixedPut (x y : Ix.Name) (o : SOrder) : UnfixedM Unit :=
+  if o.strong then
+    modify fun st => { st with cache := st.cache.insert (cacheKey x y) (o.ord, x) }
+  else pure ()
+
+def unfixedCtor (c : CmpCtx) (xl yl : List Ix.Name) (x y : Ix.ConstructorVal) :
+    UnfixedM SOrder := do
+  if let some o ← unfixedGet x.cnst.name y.cnst.name then
+    return ⟨true, o⟩
+  let so ← unfixedLift (compareCtorKeys c xl yl x y)
+  unfixedPut x.cnst.name y.cnst.name so
+  return so
+
+def unfixedInd (c : CmpCtx) (x y : Ix.Ind) : UnfixedM SOrder := do
+  let xl := x.levelParams.toList
+  let yl := y.levelParams.toList
+  let hdr := indHeader x y
+  match hdr with
+  | ⟨true, .eq⟩ => pure ()
+  | o => if o.ord != .eq then return o else pure ()
+  let ty ← unfixedLift (compareExpr c xl yl x.type y.type)
+  let ty := SOrder.cmp hdr ty
+  if ty.ord != .eq then return ty
+  let cs ← SOrder.zipM (unfixedCtor c xl yl) x.ctors.toList y.ctors.toList
+  return SOrder.cmp ty cs
+
+/-- Two constants of different kinds: `lt` whatever their order (C1). -/
+def unfixedConstBody (c : CmpCtx) (x y : Ix.MutConst) : UnfixedM SOrder :=
+  match x, y with
+  | .defn x, .defn y => unfixedLift (compareDef c x y)
+  | .indc x, .indc y => unfixedInd c x y
+  | .recr x, .recr y => unfixedLift (compareRecr c x y)
+  | _, _ => pure ⟨true, .lt⟩
+
+def unfixedConst (addr? : Ix.Name → Option Address) (mutCtx : Ix.MutCtx) (x y : Ix.MutConst) :
+    UnfixedM Ordering := do
+  if let some o ← unfixedGet x.name y.name then
+    return o
+  let so ← unfixedConstBody { addr?, mutCtx } x y
+  unfixedPut x.name y.name so
+  return so.ord
+
+def unfixedRefineClass (addr? : Ix.Name → Option Address) (ctx : Ix.MutCtx) :
+    List Ix.MutConst → UnfixedM (List (List Ix.MutConst))
+  | [] => unfixedLift (.error (.refinement "empty class in sortConsts"))
+  | [x] => pure [[x]]
+  | xs => do
+    let sorted ← xs.sortByM (unfixedConst addr? ctx)
+    -- `groupByM` compares each element with the previous group's head, the
+    -- reverse of the sort's orientation; only equality is read, so a
+    -- reversed cache hit there is harmless and is not counted.
+    let h0 := (← get).hazards
+    let groups ← List.groupByM
+      (fun a b => do return (← unfixedConst addr? ctx a b) == .eq) sorted
+    modify fun st => { st with hazards := h0 }
+    pure (groups.map sortByName)
+
+def unfixedRefineClasses (addr? : Ix.Name → Option Address) (ctx : Ix.MutCtx) :
+    List (List Ix.MutConst) → UnfixedM (List (List Ix.MutConst))
+  | [] => pure []
+  | c :: cs => do
+    let gs ← unfixedRefineClass addr? ctx c
+    let rest ← unfixedRefineClasses addr? ctx cs
+    pure (gs ++ rest)
+
+def unfixedSortLoop (addr? : Ix.Name → Option Address) :
+    Nat → List (List Ix.MutConst) → UnfixedM (List (List Ix.MutConst))
+  | 0, _ => unfixedLift (.error (.refinement "sortConsts did not converge"))
+  | fuel + 1, classes => do
+    let refined ← unfixedRefineClasses addr? (Ix.MutConst.ctx classes) classes
+    if classes.length == refined.length then pure refined
+    else unfixedSortLoop addr? fuel refined
+
+/-- The former comparator's classes from the name-hash seed, and its reversed
+non-equal cache hits inside the sorts. -/
+def unfixedSortClasses (addr? : Ix.Name → Option Address) (sources : List Ix.MutConst) :
+    Except CmpError (List (List Ix.MutConst) × Nat) := do
+  if sources.isEmpty then return ([], 0)
+  let (classes, st) ←
+    (unfixedSortLoop addr? (sources.length + 1) [sortByName sources]).run {}
+  return (classes, st.hazards)
+
+/-- Uncached comparison under the former comparator. -/
+def unfixedFresh (addr? : Ix.Name → Option Address) (ctx : Ix.MutCtx)
+    (x y : Ix.MutConst) : Except CmpError Ordering :=
+  (·.1) <$> (unfixedConst addr? ctx x y).run {}
 
 /-- Pairs that are not antisymmetric and triples that are not transitive at
 the fixed-point context of `classes` (members flattened), each as a short
 description. Exhaustive: cubic in the member count. -/
-def preorderViolations (rules : Rules) (addr? : Ix.Name → Option Address)
+def preorderViolations (addr? : Ix.Name → Option Address)
     (classes : List (List Ix.MutConst)) : Except String (Array String) := do
   let ctx := Ix.MutConst.ctx classes
   let ms := classes.flatten.toArray
@@ -105,7 +217,7 @@ def preorderViolations (rules : Rules) (addr? : Ix.Name → Option Address)
   for hi : i in [0:ms.size] do
     let mut row : Array Ordering := #[]
     for hj : j in [0:ms.size] do
-      row := row.push (← (compareFresh rules addr? ctx ms[i] ms[j]).mapError toString)
+      row := row.push (← (compareFresh addr? ctx ms[i] ms[j]).mapError toString)
     tbl := tbl.push row
   let mut out : Array String := #[]
   let nm := fun (i : Nat) => ((ms[i]?).map (namePretty ·.name)).getD s!"#{i}"
@@ -143,9 +255,9 @@ def classSets (classes : List (List Ix.MutConst)) : Array (Array Ix.Name) :=
 pseudo-random presentations of `sources` (seed `allOrder`, so the
 presentation is the seed) and report the first presentation whose class
 list differs, as sets in order, from the identity's. -/
-def seedSweep (rules : Rules) (addr? : Ix.Name → Option Address) (sources : List Ix.MutConst)
+def seedSweep (addr? : Ix.Name → Option Address) (sources : List Ix.MutConst)
     (random : Nat := 10) : Except CmpError (Option String) := do
-  let r := { rules with seed := .allOrder, portFixes := true }
+  let r : Rules := { seed := .allOrder }
   let run := fun (xs : List Ix.MutConst) => do
     let (cls, _) ← sortClasses r addr? xs
     pure (classSets cls)
@@ -193,12 +305,10 @@ def showE {ε α : Type} [ToString ε] [Repr α] : Except ε α → String
   | .ok a => reprStr a
   | .error e => s!"error: {e}"
 
-/-- `Rules.today` with only the two port fixes on. -/
-def todayFixed : Rules := { Rules.today with portFixes := true }
-
-/-- What each port fix does, on synthetic members. C1: a definition and an
-inductive compare `lt` in both orders unfixed, and by kind tag
-(definition < inductive) fixed. C2: a strong `lt` cached for `(x, y)` is
+/-- What each port fix does, on synthetic members (unfixed: the former
+comparator, `unfixedConst`; fixed: the library's `compareConst`). C1: a
+definition and an inductive compare `lt` in both orders unfixed, and by kind
+tag (definition < inductive) fixed. C2: a strong `lt` cached for `(x, y)` is
 read back for `(y, x)` unflipped unfixed, flipped fixed. -/
 def portFixUnitChecks (t : Tally) : Tally :=
   let s0 := Ix.Expr.mkSort Ix.Level.mkZero
@@ -210,18 +320,24 @@ def portFixUnitChecks (t : Tally) : Tally :=
   let x := defn "canonPortFixX" #[]
   let y := defn "canonPortFixY" #[nm "u"]
   let none? : Ix.Name → Option Address := fun _ => none
-  let fresh := fun (r : Rules) (a b : Ix.MutConst) => compareFresh r none? {} a b
-  let t := match fresh .today d i, fresh .today i d, fresh todayFixed d i, fresh todayFixed i d with
+  let unfixed := fun (a b : Ix.MutConst) => unfixedFresh none? {} a b
+  let fixed := fun (a b : Ix.MutConst) => compareFresh none? {} a b
+  let t := match unfixed d i, unfixed i d, fixed d i, fixed i d with
     | .ok .lt, .ok .lt, .ok .lt, .ok .gt => t.check true ""
-    | a, b, c, e => t.check false s!"C1: today {showE a}/{showE b}, fixed {showE c}/{showE e}"
-  let seq := fun (r : Rules) =>
+    | a, b, c, e => t.check false s!"C1: unfixed {showE a}/{showE b}, fixed {showE c}/{showE e}"
+  let unfixedSeq :=
     (do
-      let a ← compareConst r none? {} x y
-      let b ← compareConst r none? {} y x
+      let a ← unfixedConst none? {} x y
+      let b ← unfixedConst none? {} y x
+      pure (a, b) : UnfixedM (Ordering × Ordering)).run' {}
+  let fixedSeq :=
+    (do
+      let a ← compareConst none? {} x y
+      let b ← compareConst none? {} y x
       pure (a, b) : CmpM (Ordering × Ordering)).run' {}
-  match seq .today, seq todayFixed, fresh .today y x with
+  match unfixedSeq, fixedSeq, fixed y x with
   | .ok (.lt, .lt), .ok (.lt, .gt), .ok .gt => t.check true ""
-  | a, b, c => t.check false s!"C2: today {showE a}, fixed {showE b}, uncached {showE c}"
+  | a, b, c => t.check false s!"C2: unfixed {showE a}, fixed {showE b}, uncached {showE c}"
 
 /-- A `let`'s nondependency bit is a key. `letDefn n binder body nd` is a
 definition of type `Type` whose value is `let binder : Type := Prop; #body`
@@ -246,15 +362,14 @@ def nonDepUnitChecks (t : Tally) : Tally := Id.run do
   let early := letDefn "canonNonDepEarly" "x" 0 true
   let late := letDefn "canonNonDepLate" "x" 1 false
   let neighbour := letDefn "canonNonDepNeighbour" "y" 0 false
+  let cmp := fun (a b : Ix.MutConst) => compareFresh none? {} a b
   let mut t := t
-  for r in [Rules.compiler, Rules.phaseA] do
-    let cmp := fun (a b : Ix.MutConst) => compareFresh r none? {} a b
-    t := t.check (hasOrd (cmp letForm haveForm) .lt && hasOrd (cmp haveForm letForm) .gt)
-      s!"nonDep ({ruleName r}): let/have {showE (cmp letForm haveForm)}, have/let {showE (cmp haveForm letForm)}"
-    t := t.check (hasOrd (cmp early late) .lt && hasOrd (cmp late early) .gt)
-      s!"nonDep ({ruleName r}): the body must decide before the bit: {showE (cmp early late)}"
-    t := t.check (hasOrd (cmp letForm neighbour) .eq)
-      s!"nonDep ({ruleName r}): the same bit under another binder name: {showE (cmp letForm neighbour)}"
+  t := t.check (hasOrd (cmp letForm haveForm) .lt && hasOrd (cmp haveForm letForm) .gt)
+    s!"nonDep: let/have {showE (cmp letForm haveForm)}, have/let {showE (cmp haveForm letForm)}"
+  t := t.check (hasOrd (cmp early late) .lt && hasOrd (cmp late early) .gt)
+    s!"nonDep: the body must decide before the bit: {showE (cmp early late)}"
+  t := t.check (hasOrd (cmp letForm neighbour) .eq)
+    s!"nonDep: the same bit under another binder name: {showE (cmp letForm neighbour)}"
   return t
 
 def run (env : Lean.Environment) : IO UInt32 := do
@@ -308,10 +423,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let mut nCollapsed := 0
   let mut nMulti := 0
   let mut nPermMoved := 0
-  let mut nTodayDiffers := 0
-  let mut nPermMovedToday := 0
   let mut nPortFix := 0
-  let mut nPortFixAux := 0
   for (lo, members) in condensed.blocks do
     let ms := members.toArray
     let hasInd := ms.any fun n => match rawEnv.consts.get? n with
@@ -338,7 +450,6 @@ def run (env : Lean.Environment) : IO UInt32 := do
           if let .indc i := c then return i.all
         return #[]
       let mut nestedOut : Option (Nat × Array Nat) := none
-      let mut auxX : Option Expanded := none
       if hasInd && !originalAll.isEmpty then
         let reps := classes.filterMap (·[0]?)
         let mut aliasToRep : Std.HashMap Ix.Name Ix.Name := {}
@@ -355,42 +466,29 @@ def run (env : Lean.Environment) : IO UInt32 := do
         let probe ← Ix.AuxGen.expandNestedBlock reps aliasToRep (canonicalGroups := true)
         let structNested := probe.types.size > probe.nOriginals
         if metaNested || structNested then
-          if metaNested && structNested then auxX := some probe.toCanon
           let perm ← Ix.AuxGen.computeAuxPerm probe originalAll o2c addr?
           nestedOut := some (probe.types.size - probe.nOriginals, perm)
-      pure (cs, classes, nestedOut, auxX)
+      pure (cs, classes, nestedOut)
     match ixRes with
     | .error e => t := t.check false s!"compiler side {namePretty lo}: {repr e}"
-    | .ok ((cs, classes, nestedOut, auxX), _) =>
-      -- 9. the port fixes change nothing: classes and order with them off
-      -- (`Rules.today`) and on (`todayFixed`), and no reversed
-      -- non-equal cache hit inside the unfixed sort
-      match sortClasses Rules.today addr? cs.toList, sortClasses todayFixed addr? cs.toList with
-      | .ok (off, st), .ok (on, _) =>
+    | .ok ((cs, classes, nestedOut), _) =>
+      -- 9. the port fixes change nothing: classes and order under the former
+      -- comparator (`unfixedSortClasses`) and the library's, and no reversed
+      -- non-equal cache hit inside the former comparator's sorts
+      match unfixedSortClasses addr? cs.toList, sortClasses Rules.compiler addr? cs.toList with
+      | .ok (off, hazards), .ok (on, _) =>
         nPortFix := nPortFix + 1
         t := t.check (classNames off == classNames on)
           s!"port fixes {namePretty lo}: {pretty (classNames off)} off vs {pretty (classNames on)} on"
-        t := t.check (st.hazards == 0)
-          s!"port fixes {namePretty lo}: {st.hazards} reversed non-equal cache hits unfixed"
+        t := t.check (hazards == 0)
+          s!"port fixes {namePretty lo}: {hazards} reversed non-equal cache hits unfixed"
       | .error e, _ | _, .error e => t := t.check false s!"port fixes {namePretty lo}: {e}"
-      if let some x := auxX then
-        match structuralAuxClasses Rules.today addr? x, structuralAuxClasses todayFixed addr? x with
-        | .ok off, .ok on =>
-          nPortFixAux := nPortFixAux + 1
-          t := t.check (classNames off == classNames on)
-            s!"port fixes, auxiliaries of {namePretty lo}: {pretty (classNames off)} off vs \
-              {pretty (classNames on)} on"
-        | .error e, _ | _, .error e => t := t.check false s!"port fixes, auxiliaries of {namePretty lo}: {e}"
       match sortClasses Rules.compiler addr? cs.toList with
       | .error e => t := t.check false s!"sortClasses {namePretty lo}: {e}"
       | .ok (mine, _) =>
         nClasses := nClasses + 1
         if classes.any (·.size > 1) then nCollapsed := nCollapsed + 1
         if classes.size > 1 then nMulti := nMulti + 1
-        -- the order moves of comparing levels after `canonUniv`: today's
-        -- classes against the compiler's
-        if let .ok (a, _) := sortClasses Rules.today addr? cs.toList then
-          if classNames a != classes then nTodayDiffers := nTodayDiffers + 1
         t := t.check (classNames mine == classes)
           s!"classes {namePretty lo}: {pretty (classNames mine)} vs {pretty classes}"
         if let some (nCanon, perm) := nestedOut then
@@ -398,29 +496,23 @@ def run (env : Lean.Environment) : IO UInt32 := do
             for c in cs do
               if let .indc i := c then return i.all
             return #[]
-          match componentNested Rules.compiler cenvRefC originalAll classes with
+          match componentNested cenvRefC originalAll classes with
           | .error e => t := t.check false s!"nested {namePretty lo}: {e}"
           | .ok none => t := t.check false s!"nested {namePretty lo}: none, compiler has {perm}"
           | .ok (some n) =>
             nNested := nNested + 1
             if perm.zipIdx.any (fun (p, j) => p != Ix.AuxGen.PERM_OUT_OF_SCC && p != j) then
               nPermMoved := nPermMoved + 1
-            -- today's structural order, for the count of blocks it moved
-            if let .ok (some n0) := componentNested Rules.today cenvRef originalAll classes then
-              if n0.perm.zipIdx.any (fun (p, j) => p.isSome && p != some j) then
-                nPermMovedToday := nPermMovedToday + 1
             let permMine := n.perm.map fun
               | some i => i
               | none => Ix.AuxGen.PERM_OUT_OF_SCC
             t := t.check (permMine == perm && n.canonClasses.size == nCanon)
               s!"nested {namePretty lo}: perm {permMine} / {n.canonClasses.size} vs {perm} / {nCanon}"
   IO.println s!"[canon-pass1] compared {nClasses} components ({nMulti} with several classes, \
-    {nCollapsed} with a collapse; today's rules differ on {nTodayDiffers}), {nNested} nested \
-    ({nPermMoved} with a moved auxiliary under discovery order, {nPermMovedToday} under \
-    today's structural order); port fixes neutral on {nPortFix} components and \
-    {nPortFixAux} auxiliary sorts"
+    {nCollapsed} with a collapse), {nNested} nested ({nPermMoved} with a moved auxiliary); \
+    port fixes neutral on {nPortFix} components"
 
-  -- 4, 5. Lean blocks: discovery vs rec_N; canonBlock under both rule sets
+  -- 4, 5. Lean blocks: discovery vs rec_N; canonBlock and the preorder
   let mut seen : Std.HashSet Ix.Name := {}
   let mut nBlocks := 0
   let mut nDisc := 0
@@ -430,19 +522,18 @@ def run (env : Lean.Environment) : IO UInt32 := do
     if seen.contains all0 then continue
     seen := seen.insert all0
     nBlocks := nBlocks + 1
-    for rules in [Rules.today, Rules.phaseA] do
-      match canonBlock rules cenvRef v.all with
-      | .error e => t := t.check false s!"canonBlock {ruleName rules} {namePretty all0}: {e}"
-      | .ok b =>
-        t := t.check true ""
-        for comp in b.components do
-          let cs := comp.classes.toList.map fun cls =>
-            cls.toList.filterMap fun n => (mutConstOf cenvRef n).toOption
-          match preorderViolations rules addr? cs with
-          | .error e => t := t.check false s!"preorder {ruleName rules} {namePretty all0}: {e}"
-          | .ok vs => t := t.check vs.isEmpty s!"preorder {ruleName rules} {namePretty all0}: {vs}"
+    match canonBlock Rules.compiler cenvRef v.all with
+    | .error e => t := t.check false s!"canonBlock {namePretty all0}: {e}"
+    | .ok b =>
+      t := t.check true ""
+      for comp in b.components do
+        let cs := comp.classes.toList.map fun cls =>
+          cls.toList.filterMap fun n => (mutConstOf cenvRef n).toOption
+        match preorderViolations addr? cs with
+        | .error e => t := t.check false s!"preorder {namePretty all0}: {e}"
+        | .ok vs => t := t.check vs.isEmpty s!"preorder {namePretty all0}: {vs}"
     if v.numNested > 0 then
-      match expand cenvRef.ind? .lean v.all with
+      match expand cenvRef.ind? v.all with
       | .error e => t := t.check false s!"discovery {namePretty all0}: {e}"
       | .ok x =>
         let sigs := x.sigs
@@ -458,7 +549,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
           {recs.map fun r => (r.map fun (h, _, _) => namePretty h)}"
   IO.println s!"[canon-pass1] {nBlocks} Lean blocks, {nDisc} nested blocks checked against rec_N"
 
-  -- 7. seed sweep on every fixture component (with the port fixes, and phaseA)
+  -- 7. seed sweep on every fixture component
   let mut nSwept := 0
   for (_, members) in condensed.blocks do
     let ms := members.toArray
@@ -466,10 +557,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
     let cs := ms.toList.filterMap fun n => (mutConstOf cenvRef n).toOption
     if cs.length != ms.size then continue
     nSwept := nSwept + 1
-    for rules in [Rules.today, Rules.phaseA] do
-      match seedSweep rules addr? cs with
-      | .ok r => t := t.check r.isNone s!"seed sweep {ruleName rules}: {r}"
-      | .error e => t := t.check false s!"seed sweep {ruleName rules}: {e}"
+    match seedSweep addr? cs with
+    | .ok r => t := t.check r.isNone s!"seed sweep: {r}"
+    | .error e => t := t.check false s!"seed sweep: {e}"
   IO.println s!"[canon-pass1] seed sweep on {nSwept} components"
 
   -- 8. sibling occurrences of an external mutual group; isRec on a split block
@@ -486,10 +576,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
     for nm in [`CanonSiblingNest.T, `CanonSiblingNest.F, `CanonSiblingNest.B] do
       let n := Ix.Name.fromLeanName nm
       let some (.inductInfo v) := consts.get? n | t := t.check false s!"sibling {nm}: missing"; continue
-      let leanX := expand fenv.ind? .lean v.all
-      let compX := expand fenv.ind? .compiler v.all
-      match leanX, compX with
-      | .ok x, .ok y =>
+      match expand fenv.ind? v.all with
+      | .ok x =>
         let sigs := x.sigs
         let recs := recMajorSignatures fenv.const? n v.numParams (max sigs.size v.numNested)
         let ok := sigs.size == v.numNested && (sigs.zip recs).all fun (s, r) =>
@@ -497,12 +585,11 @@ def run (env : Lean.Environment) : IO UInt32 := do
           | some (h, ls, ps) => s.head == h && s.levels == ls && s.specs.size == ps.size &&
               (s.specs.zip ps).all fun (a, b) => auxSpecEq (fun _ => none) {} a b
           | none => false
-        t := t.check ok s!"sibling {nm}: Lean dedup {sigs.map (namePretty ·.head)} vs rec_N"
+        t := t.check ok s!"sibling {nm}: expansion {sigs.map (namePretty ·.head)} vs rec_N"
         let recHeads := recs.map fun r => (r.map fun (h, _, _) => namePretty h).getD "-"
         IO.println s!"[canon-pass1] sibling {nm}: numNested {v.numNested}, rec_N heads {recHeads}; \
-          Lean-dedup expansion {sigs.map (namePretty ·.head)}; compiler-dedup expansion \
-          {y.sigs.map (namePretty ·.head)}"
-      | .error e, _ | _, .error e => t := t.check false s!"sibling {nm}: {e}"
+          expansion {sigs.map (namePretty ·.head)}"
+      | .error e => t := t.check false s!"sibling {nm}: {e}"
     for nm in [`CanonSiblingNest.NR, `CanonSiblingNest.R] do
       if let some (.inductInfo v) := lenv.find? nm then
         IO.println s!"[canon-pass1] isRec {nm} = {v.isRec} (all {v.all})"

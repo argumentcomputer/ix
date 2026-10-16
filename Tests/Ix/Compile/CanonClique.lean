@@ -3,7 +3,7 @@
   `Canon.CliqueMember.toMutConst` puts the structural `recArgPos` after the
   value, so it decides only between members whose types and values tie.
   Synthetic cliques of two members of one type (`Nat → Nat → Nat`, values
-  constant functions), under the compiler's rules and Phase A's:
+  constant functions), under the compiler's rules:
 
   * values 1 and 2, pinned positions 1 and 0: the values decide;
   * the same clique in the other member order gives the same order;
@@ -51,6 +51,6 @@ def suiteFor (rules : Rules) (label : String) : List TestSeq := [
   test s!"{label}: equal specifications without a pinned choice form one class"
     ((order rules #[member "f" 1 none, member "g" 1 none]).map (·.length) == some 1)]
 
-def suite : List TestSeq := suiteFor Rules.compiler "compiler" ++ suiteFor Rules.phaseA "phaseA"
+def suite : List TestSeq := suiteFor Rules.compiler "compiler"
 
 end Tests.Ix.Compile.CanonClique

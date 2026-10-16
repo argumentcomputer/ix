@@ -34,35 +34,21 @@
   `all₀.rec_1, …, all₀.rec_k` in exactly this order (`mk_aux_rec_name_map`),
   which `recMajorSignatures` reads back for validation.
 
-  **One difference between Lean and today's compiler** (`Dedup`): Lean
-  records every `J Ds` of the new group as seen (`m_nested_aux` gets one
-  entry per `J`); the compiler records only the occurrence `I Ds` that
-  triggered the group, and keys it to the group's *first* auxiliary
+  Every member `J Ds` of the new group is recorded as seen (`m_nested_aux`
+  gets one entry per `J`), as the compiler's expansion does
   (`Ix/AuxGen/Nested.lean` `replaceIfNested`, `auxSeen`; Rust
-  `replace_if_nested`). The two agree unless a block nests a non-first
-  member of an external mutual group, or nests two members of one; then the
-  compiler either creates a second group or replaces `I Ds` by the
-  auxiliary of `all₀ I`. `Dedup.compiler` mirrors the compiler,
-  `Dedup.lean` the kernel.
+  `replace_if_nested`; A0, WB-A1).
 
-  ## Orders
+  ## The canonical order
 
-  * `NestedOrder.structural` (`Rules.today`, the compiler before
-    A2-order): the auxiliaries, each with a trailing identity-marker
-    constructor typed by its occurrence (block parameters as `bvar i`,
-    literally, as the compiler did), are sorted by `Classes.sortClasses`
-    with today's rules; references to the block's members are external (by
-    address). Kept for the census's `today` column (`structuralAuxClasses`).
-  * `NestedOrder.discovery` (Phase A; what the compiler runs, A2-order):
-    the discovery order of the expansion of the canonical block (members in
-    canonical order, collapsed members renamed to their representatives,
-    Lean's deduplication of sibling occurrences). An external group opens
-    as `GroupOf` says: Lean's `I.all` (`leanGroup`), or, in the compiler, the
-    external block's compiled canonical classes (`groupOfBlocks`), which is
-    what the kernels recompute from the stored Ixon; the two agree whenever
-    the external block is an identity block. The compiler applies no sort:
-    under `Rules.compiler`, `canonicalAuxOrder` returns this order, the
-    canonical expansion's own.
+  The canonical order of the auxiliaries is the discovery order of the
+  expansion of the canonical block (members in canonical order, collapsed
+  members renamed to their representatives; A2-order). An external group
+  opens as `GroupOf` says: Lean's `I.all` (`leanGroup`), or, in the
+  compiler, the external block's compiled canonical classes
+  (`groupOfBlocks`), which is what the kernels recompute from the stored
+  Ixon; the two agree whenever the external block is an identity block.
+  The compiler applies no sort.
 
   `perm` maps each of Lean's source positions (discovery order over the
   block's `all`) to its canonical position (`computeAuxPerm`): signatures
@@ -128,14 +114,6 @@ def IndView.ofConst? (const? : Name → Option ConstantInfo) (n : Name) : Option
   | _ => none
 
 /-! ## Expansion -/
-
-inductive Dedup where
-  /-- Today's compiler: only the triggering occurrence, keyed to the first
-  auxiliary of the group. -/
-  | compiler
-  /-- Lean's kernel: every member of the new group. -/
-  | lean
-  deriving BEq, Repr, Inhabited
 
 structure XCtor where
   name : Name
@@ -296,7 +274,6 @@ structure XCtx where
   /-- Deduplicate occurrences up to compiled addresses (`addrKey`): the
   canonical expansion. `none` for Lean's source walk. -/
   keyAddr? : Option (Name → Option Address) := none
-  dedup : Dedup
   all0 : Name
   /-- The block's universe parameters (positions of `addrKey`'s levels). -/
   levelParams : List Name
@@ -383,10 +360,9 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
     st := { st with
       nextAuxIdx := st.nextAuxIdx + 1
       auxToNested := st.auxToNested.insert auxName jAs }
-    st := match cx.dedup with
-      | .compiler => if st.seen.contains iKey then st else { st with seen := st.seen.insert iKey auxName }
-      | .lean => keys.foldl (init := st) fun st kAs =>
-          if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
+    -- every member of the group, as Lean's kernel (and the compiler) record it
+    st := keys.foldl (init := st) fun st kAs =>
+      if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
     let jType := instantiatePiParams (substLevels j.levelParams hls j.type) enp specs
     let auxType := mkForalls cx.paramBinders jType
     let mut ctors : Array XCtor := #[]
@@ -462,7 +438,7 @@ def expansionBound : Nat := 100000
 
 /-- Expand the block whose members are `ordered` (in that order), with
 collapsed members renamed by `aliasToRep` first (`expandNestedBlock`). -/
-def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Name)
+def expand (ind? : Name → Option IndView) (ordered : Array Name)
     (aliasToRep : Std.HashMap Name Name := {}) (groupOf : GroupOf := leanGroup)
     (keyAddr? : Option (Name → Option Address) := none) :
     Except String Expanded := do
@@ -470,7 +446,7 @@ def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Nam
   let some fi := ind? first | .error s!"expand: {namePretty first} is not an inductive"
   let nParams := fi.numParams
   let (paramBinders, _) := peelForalls nParams fi.type #[]
-  let cx : XCtx := { ind?, groupOf, keyAddr?, dedup, all0 := fi.all[0]?.getD first,
+  let cx : XCtx := { ind?, groupOf, keyAddr?, all0 := fi.all[0]?.getD first,
                      levelParams := fi.levelParams.toList,
                      blockLevels := fi.levelParams.map Level.mkParam, nParams, paramBinders }
   let mut st : XSt := {}
@@ -596,69 +572,6 @@ def computePerm (addr? : Name → Option Address) (canon : Array Sig) (source : 
     if !perm.contains (some i) then
       throw s!"computePerm: canonical auxiliary #{i} has no source mapping"
   return perm
-
-/-! ## Today's structural order -/
-
-/-- The marker constructor's type: the occurrence with block parameter `i`
-replaced by the literal `bvar i` at every depth (the compiler's
-`replaceParamsExpr nested blockParamFvars blockParamBvars`). -/
-def markerize (np : Nat) : Expr → Nat → Expr
-  | .bvar b _, k =>
-    if b ≥ k && b - k < np then Expr.mkBVar (np - 1 - (b - k)) else Expr.mkBVar b
-  | .app f a _, k => Expr.mkApp (markerize np f k) (markerize np a k)
-  | .lam n t b bi _, k => Expr.mkLam n (markerize np t k) (markerize np b (k + 1)) bi
-  | .forallE n t b bi _, k => Expr.mkForallE n (markerize np t k) (markerize np b (k + 1)) bi
-  | .letE n t v b nd _, k =>
-    Expr.mkLetE n (markerize np t k) (markerize np v k) (markerize np b (k + 1)) nd
-  | .proj n i s _, k => Expr.mkProj n i (markerize np s k)
-  | .mdata md x _, k => Expr.mkMData md (markerize np x k)
-  | e, _ => e
-
-/-- The auxiliaries as the inductives the structural order sorts
-(the structural order of `Rules.today`). -/
-def auxMutConsts (x : Expanded) : Array MutConst :=
-  x.aux.map fun mem =>
-    let ctors := mem.ctors.zipIdx.map fun (c, ci) =>
-      ({ cnst := { name := c.name, levelParams := x.levelParams, type := c.typ }
-         induct := mem.name, cidx := ci, numParams := mem.nParams,
-         numFields := c.nFields, isUnsafe := false } : ConstructorVal)
-    let ctors := match x.auxToNested.get? mem.name with
-      | some nested => ctors.push
-          { cnst := { name := Name.mkStr mem.name "_nested_id", levelParams := x.levelParams,
-                      type := markerize x.nParams nested 0 }
-            induct := mem.name, cidx := ctors.size, numParams := mem.nParams,
-            numFields := 0, isUnsafe := false }
-      | none => ctors
-    .indc { name := mem.name, levelParams := x.levelParams, type := mem.typ,
-            numParams := mem.nParams, numIndices := mem.nIndices, all := #[],
-            ctors, numNested := 0, isRec := false, isReflexive := false, isUnsafe := false }
-
-/-- The rules of today's structural auxiliary sort: today's comparator,
-with the port fixes as `rules` sets them (`Rules.compiler` turns them on;
-they change no result, see `Order.lean`). The seed, levels and tie-break of
-`rules` do not apply: the structural order is today's by definition. -/
-def Rules.structuralAux (rules : Rules) : Rules :=
-  { Rules.today with portFixes := rules.portFixes }
-
-/-- Today's structural order of the auxiliaries of an expansion: their
-classes, in order, under `rules.structuralAux`
-(canon-pass1's `today` column). -/
-def structuralAuxClasses (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
-    Except CmpError (List (List MutConst)) :=
-  (·.1) <$> sortClasses rules.structuralAux addr? (auxMutConsts x).toList
-
-/-- Canonical auxiliary order of an expansion: the auxiliaries' names, one
-per class, in order. Today: sorted structurally (`structuralAuxClasses`);
-Phase A: the expansion's own discovery order. Also returns whether the
-structural order needs addresses (it differs from the blind sort). -/
-def canonicalAuxOrder (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
-    Except String (Array (Array Name) × Bool) := do
-  match rules.nested with
-  | .discovery => return (x.aux.map fun m => #[m.name], false)
-  | .structural =>
-    let classes ← (structuralAuxClasses rules addr? x).mapError toString
-    let blind ← (sortClassesBlind rules.structuralAux (auxMutConsts x).toList).mapError toString
-    return (classNames classes, classNames classes != classNames blind)
 
 /-- Canonical signatures for an order of class representatives. -/
 def sigsInOrder (x : Expanded) (order : Array (Array Name)) : Except String (Array Sig) :=

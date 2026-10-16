@@ -2,13 +2,11 @@
   Nested occurrences of the members of an external mutual group, and a split
   block with a recursive and a non-recursive member.
 
-  Not part of any Lake library: the compiler's nested expansion registers
-  only the head occurrence of an external group (design document §2.5,
-  "[open] Deduplication of sibling occurrences"), so these declarations may
-  not compile under Ix. `canon-pass1` elaborates this file at run time
-  (`Ix.Meta.getFileEnvCore`) and compares Lean's `rec_N` with both
-  deduplication rules of `Ix.Compile.Canon.Nested.expand`, and reads
-  `InductiveVal.isRec` of the split block's members.
+  Not imported by any test library. `canon-pass1` elaborates this file at
+  run time (`Ix.Meta.getFileEnvCore`), compares Lean's `rec_N` with
+  `Ix.Compile.Canon.Nested.expand`, which records every member of a new
+  external group as seen, as Lean's kernel and the compiler do (A0,
+  WB-A1), and reads `InductiveVal.isRec` of the split block's members.
 -/
 namespace CanonSiblingNest
 

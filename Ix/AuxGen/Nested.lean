@@ -14,8 +14,8 @@
   is Lean's `X.rec_N` numbering on every block whose members Lean already
   lists in canonical order; `computeAuxPerm` (Pass 1's `computePerm`, read
   through `ExpandedBlock.toCanon`) maps Lean's source numbering onto the
-  canonical positions. No sort is applied: `canonicalAuxOrder` under
-  `Rules.compiler` is the identity on the canonical expansion.
+  canonical positions. No sort is applied: the canonical expansion's
+  discovery order is the canonical order.
 
   The auxiliaries are EPHEMERAL: they exist only during recursor
   generation and are restored to nested applications before emission —
