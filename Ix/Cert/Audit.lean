@@ -3,6 +3,7 @@ import Ix.Cert.Closure
 import Ix.CompileCert.UniverseAudit
 import Ix.CompileCert.ReadingAudit
 import Ix.Cert.Canon
+import Ix.Cert.Schedule
 
 /-! # The certification statements, frozen
 
@@ -3090,3 +3091,67 @@ fun env first =>
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.SourceConstructorPositions.inductive_reads_source
+
+/-! ## CQP.4 (a): the driver's schedule is a fold
+
+`Ix.CompileM.compileEnvFold`, the driver of `Ix.Cert.compile` and of the IO
+pipeline, is its sequential form (`Ix.Cert.Schedule.compileEnvFoldSeq`):
+each wave's ready blocks, in block-key order, each block's outcome computed
+against the wave's snapshot, applied one by one (`applySeq`). The tasks a
+wave is split into are contiguous slices of the ready blocks and a spawned
+task's value is its function's, so the split (`width`) and the trace
+(`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
+`IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
+being independent (the reference schedule) stays a test
+(`compile-schedule-identity`, `cert-compile-parity-init`). -/
+
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "schedule"
+    (#[`slices_flatten, `ceil_mul_ge, `chunks_cover, `slices_map, `waveTasks_flatten, `applyTasks_eq,
+      `foldWave_eq_with, `foldWave_eq, `foldWaves_eq, `compileEnvFold_eq_seq, `compileEnvFold_width,
+      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·))
+  checkRuntime (tag := "cert-audit") "schedule"
+    #[``Ix.CompileM.waveTasks, ``Ix.CompileM.foldWave, ``Ix.CompileM.foldWaves, ``Ix.CompileM.compileEnvFold]
+
+/-- info: def Ix.Cert.Schedule.applySeq : Ix.CompileM.CompileEnv →
+  Array (Ix.Name × Ix.Name × Ix.Set Ix.Name) → Ix.CompileM.DriverAcc → Ix.CompileM.DriverAcc :=
+fun snapshot ready acc =>
+  Array.foldl
+    (fun acc x =>
+      match x with
+      | (key, fst, all) =>
+        (Ix.CompileM.applyAuxBlockOutcome acc key all (Ix.CompileM.auxBlockOutcome snapshot key all)).fst)
+    acc ready -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Schedule.applySeq
+
+/-- info: Ix.Cert.Schedule.compileEnvFold_eq_seq : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool)
+  (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg nameByHash sharingLimits width =
+    Ix.Cert.Schedule.compileEnvFoldSeq env blocks nameByHash sharingLimits -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Schedule.compileEnvFold_eq_seq
+
+/-- info: Ix.Cert.Schedule.compileEnvFold_width : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool)
+  (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg nameByHash sharingLimits width =
+    Ix.CompileM.compileEnvFold env blocks dbg' nameByHash sharingLimits width' -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Schedule.compileEnvFold_width
+
+/-- info: 'Ix.Cert.Schedule.applyTasks_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Schedule.applyTasks_eq
+
+/-- info: 'Ix.Cert.Schedule.foldWaves_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Schedule.foldWaves_eq
+
+/-- info: 'Ix.Cert.Schedule.compileEnvFold_eq_seq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Schedule.compileEnvFold_eq_seq
+
+/-- info: 'Ix.Cert.Schedule.compileEnvFold_width' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Schedule.compileEnvFold_width
