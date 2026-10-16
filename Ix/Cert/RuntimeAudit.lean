@@ -24,7 +24,9 @@ as proved `csimp` replacements (`collectExprTables_eq_worklist`,
 recursive definitions. `hasOutOfSccConst` left it when the auxiliary
 permutation became Pass 1's total `Ix.Compile.Canon.computePerm`; the class
 refinement (`Ix.Compile.Canon.sortClasses`) that replaced the compiler's
-comparators adds nothing to it.
+comparators adds nothing to it. The reference check (Route A, B4,
+`Ix.Cert.referenceCycle`) reads the stored records with the Ixon codec's
+`getTagN` (`getTagN_eq_fast`, listed below for AuxGen M1) and adds no entry.
 
 **AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
 wave fold carries IxC's verified fold over the Source ingress of its input,

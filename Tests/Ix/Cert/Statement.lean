@@ -17,7 +17,10 @@ import Tests.Ix.SourceContract.SyntaxFixture
   published exactly when the report does not list it as failed
   (`Ix.Cert.CompileCovers`). Both are proved now, from `compileReport`'s own
   checks (`Ix.Cert.checkReport`, CQ2.27); the checks are timed on the
-  compile's result and must refuse six tampered copies of it.
+  compile's result and must refuse six tampered copies of it, and the
+  reference check (`Ix.Cert.referenceCycle`, Route A, B4) must find four
+  planted reference cycles (two decoded, two stored as bytes), and its
+  refs-only reader must agree with the decoder on every record.
   `cert-compile-parity-init` (ignored) does the same on `Init`.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
@@ -82,7 +85,11 @@ def coverage (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failure
 
 /-- `compileReport`'s own checks (`Ix.Cert.checkReport`, CQ2.27): timed on
 the compile's result, which they must pass, and run on tampered copies of
-it, each of which they must refuse. -/
+it, each of which they must refuse. The reference check alone
+(`Ix.Cert.referenceCycle`, Route A, B4) is timed on the result and must find
+the cycles planted in four copies of it (two decoded, two as bytes only), and
+its refs-only reader (`Ix.Cert.RecordRefs.lazyRefs`) is compared with the
+decoder on every record of the result. -/
 def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     (failures : Ix.Cert.Failures) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
@@ -120,6 +127,56 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a tampered report: {what}"
     | .error _ => refused := refused + 1
   lines := lines.push s!"{label}: checkReport refuses {refused} of {tampered.length} tampered reports"
+  -- the reference check (Route A, B4), timed alone on the compile's result,
+  -- then on planted cycles: records rewritten to reference themselves or each
+  -- other, which `referenceCycle` must each find
+  let r0 ← IO.monoMsNow
+  let cycle? ← IO.lazyPure fun _ => Ix.Cert.referenceCycle ixe
+  let r1 ← IO.monoMsNow
+  match cycle? with
+  | none => lines := lines.push s!"{label}: referenceCycle finds no cycle in the compile's result \
+      ({r1 - r0} ms)"
+  | some cycle => errors := errors.push s!"{label}: referenceCycle finds a cycle in the \
+      compile's result: {cycle.take 5}"
+  let plain := ixe.consts.toList.filterMap fun (a, lc) =>
+    lc.get?.bind fun c => if Ix.Cert.refOwner a c == a then some (a, c) else none
+  let some ((a₁, c₁), (a₂, c₂)) := match plain with
+      | p₁ :: p₂ :: _ => some (p₁, p₂)
+      | _ => none
+    | return (errors.push s!"{label}: fewer than two records that are not projections", lines)
+  -- each planted twice: decoded (`ofConstant`, as a cache), and as bytes only,
+  -- as the compile stores records, so the refs-only reader reads them
+  let refer (c : Ixon.Constant) (b : Address) : Ixon.LazyConstant :=
+    Ixon.LazyConstant.ofConstant { c with refs := c.refs.push b }
+  let referBytes (c : Ixon.Constant) (b : Address) : Ixon.LazyConstant :=
+    let bytes := Ixon.serConstant { c with refs := c.refs.push b }
+    { buf := bytes, len := bytes.size }
+  let planted : List (String × Ixon.Env) := [
+    ("a record that references itself", { ixe with consts := ixe.consts.insert a₁ (refer c₁ a₁) }),
+    ("two records that reference each other",
+      { ixe with consts := (ixe.consts.insert a₁ (refer c₁ a₂)).insert a₂ (refer c₂ a₁) }),
+    ("a record that references itself, stored as bytes",
+      { ixe with consts := ixe.consts.insert a₁ (referBytes c₁ a₁) }),
+    ("two records that reference each other, stored as bytes",
+      { ixe with consts := (ixe.consts.insert a₁ (referBytes c₁ a₂)).insert a₂ (referBytes c₂ a₁) })]
+  let mut found := 0
+  for (what, ixe') in planted do
+    match Ix.Cert.referenceCycle ixe' with
+    | none => errors := errors.push s!"{label}: referenceCycle misses a planted cycle: {what}"
+    | some _ => found := found + 1
+  lines := lines.push s!"{label}: referenceCycle finds {found} of {planted.length} planted cycles"
+  -- the check reads each record's references without its expressions
+  -- (`Ix.Cert.RecordRefs.lazyRefs`, proved equal: `Ix.Cert.RefsRead.lazyRefs_eq`);
+  -- run against the full decode on every record of the result
+  let d0 ← IO.monoMsNow
+  let disagree ← IO.lazyPure fun _ => ixe.consts.toList.filter fun (a, lc) =>
+    Ix.Cert.RecordRefs.lazyRefs a lc != lc.get?.map fun c => (c.refs, Ix.Cert.refOwner a c)
+  let d1 ← IO.monoMsNow
+  match disagree with
+  | [] => lines := lines.push s!"{label}: the refs-only reader agrees with the decoder on all \
+      {ixe.consts.size} records ({d1 - d0} ms)"
+  | (a, _) :: _ => errors := errors.push s!"{label}: the refs-only reader disagrees with the \
+      decoder on {disagree.length} record(s); first: {a}"
   return (errors, lines)
 
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on

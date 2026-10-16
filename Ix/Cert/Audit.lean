@@ -882,10 +882,146 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unauthentic
 
+-- Route A, B4 (coordinator decision, 2026-10-16): `checkReport` gained a
+-- third check, acyclic references (`referenceCycle`: the stored records'
+-- reference graph, `recordGraph`, through `Ix.Compile.Canon.condensation`;
+-- a component of more than one record, or a record referencing itself, is
+-- an error). Each record's `refs` table and projection block are read
+-- without its expressions (`RecordRefs.getRefs`, proved to be
+-- `Ixon.getConstant` with the rest forgotten: `Ix.Cert.RefsRead`), on tasks
+-- over the record list (`parMap`), and the edges are resolved on tasks too.
+-- Re-frozen here: `checkReport` and `checkReport_ok` (a third conjunct);
+-- new: `storedRecord`, `refOwner`, `storedRefs`, `recordTasks`, `parMap`,
+-- `recordRefs`, `recordGraph`, `referenceCycle`, `RecordRefs.lazyRefs`,
+-- `RecordRefs.refsAt`, `RecordRefs.getRefs`. On a consistent run the
+-- result is unchanged.
+/-- info: def Ix.Cert.storedRecord : Ixon.Env → Address → Option Ixon.Constant :=
+fun ixe a => (ixe.consts.get? a).bind fun x => x.get? -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.storedRecord
+
+/-- info: def Ix.Cert.refOwner : Address → Ixon.Constant → Address :=
+fun a c =>
+  match c.info with
+  | Ixon.ConstantInfo.dPrj p => p.block
+  | Ixon.ConstantInfo.iPrj p => p.block
+  | Ixon.ConstantInfo.rPrj p => p.block
+  | Ixon.ConstantInfo.cPrj p => p.block
+  | x => a -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.refOwner
+
+/-- info: def Ix.Cert.storedRefs : Ixon.Env → Address → Option (Array Address × Address) :=
+fun ixe a => (ixe.consts.get? a).bind (Ix.Cert.RecordRefs.lazyRefs a) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.storedRefs
+
+/-- info: def Ix.Cert.RecordRefs.lazyRefs : Address → Ixon.LazyConstant → Option (Array Address × Address) :=
+fun a lc =>
+  match lc.cache with
+  | some c => some (c.refs, Ix.Cert.refOwner a c)
+  | none =>
+    Option.map
+      (fun x =>
+        match x with
+        | (refs, block) => (refs, block.getD a))
+      (Ix.Cert.RecordRefs.refsAt lc.buf lc.off) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecordRefs.lazyRefs
+
+/-- info: def Ix.Cert.RecordRefs.refsAt : ByteArray → Nat → Option (Array Address × Option Address) :=
+fun buf off =>
+  match EStateM.run Ix.Cert.RecordRefs.getRefs { idx := off, bytes := buf } with
+  | EStateM.Result.ok r a => some r
+  | EStateM.Result.error a a_1 => none -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecordRefs.refsAt
+
+/-- info: def Ix.Cert.RecordRefs.getRefs : Ixon.GetM (Array Address × Option Address) :=
+do
+  let block ← Ix.Cert.RecordRefs.skipInfo
+  let __do_lift ← Ixon.getTagN 0
+  have numSharing : Nat := __do_lift.value.toNat
+  Ix.Cert.RecordRefs.skipMany Ix.Cert.RecordRefs.skipExpr numSharing
+  let __do_lift ← Ixon.getTagN 0
+  have numRefs : Nat := __do_lift.value.toNat
+  let refs ← Ixon.getArray Ixon.Serialize.get numRefs
+  let __do_lift ← Ixon.getTagN 0
+  have numUnivs : Nat := __do_lift.value.toNat
+  Ix.Cert.RecordRefs.skipMany Ix.Cert.RecordRefs.skipUniv numUnivs
+  pure (refs, block) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecordRefs.getRefs
+
+/-- info: def Ix.Cert.recordTasks : Nat :=
+256 -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.recordTasks
+
+/-- info: def Ix.Cert.parMap : {α β : Type} → (α → β) → Array α → Array β :=
+fun {α β} f xs =>
+  have n := xs.size;
+  have size := (n + Ix.Cert.recordTasks - 1) / Ix.Cert.recordTasks;
+  have chunks := if (size == 0) = true then 0 else (n + size - 1) / size;
+  (Array.map Task.get
+      (Array.map (fun c => Task.spawn fun x => Array.map f (xs.extract (c * size) ((c + 1) * size)))
+        (Array.range chunks))).flatten -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.parMap
+
+/-- info: def Ix.Cert.recordRefs : Array (Address × Option Ixon.LazyConstant) → Array (Option (Array Address × Address)) :=
+fun recs =>
+  Ix.Cert.parMap
+    (fun x =>
+      match x with
+      | (a, lc) => lc.bind (Ix.Cert.RecordRefs.lazyRefs a))
+    recs -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.recordRefs
+
+/-- info: def Ix.Cert.recordGraph : Ixon.Env → Array Address × Array (Array Nat) :=
+fun ixe =>
+  have addrs := ixe.consts.keys.toArray;
+  have index := Std.HashMap.ofList addrs.toList.zipIdx;
+  have info := Ix.Cert.recordRefs (Array.map (fun a => (a, ixe.consts.get? a)) addrs);
+  have ownerAt := fun r => do
+    let j ← index.get? r
+    let __x ← info[j]?.join
+    match __x with
+      | (fst, o) => pure o;
+  have adj :=
+    Ix.Cert.parMap
+      (fun x =>
+        match x with
+        | none => #[]
+        | some (refs, snd) => Array.filterMap (fun r => ownerAt r >>= index.get?) refs)
+      info;
+  (addrs, adj) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.recordGraph
+
+/-- info: def Ix.Cert.referenceCycle : Ixon.Env → Option (List Address) :=
+fun ixe =>
+  match Ix.Cert.recordGraph ixe with
+  | (addrs, adj) =>
+    have cyclic := fun c => c.size != 1 || c.any fun i => (adj[i]?.getD #[]).contains i;
+    match Ix.Compile.Canon.condensation adj with
+    | none => some []
+    | some C => Option.map (fun c => List.filterMap (fun x => addrs[x]?) c.toList) (List.find? cyclic C.comps.toList) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.referenceCycle
+
 /-- info: def Ix.Cert.checkReport : Ix.Environment → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
 fun env out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
-  | [], [] => Except.ok ()
+  | [], [] =>
+    match Ix.Cert.referenceCycle out.fst with
+    | none => Except.ok ()
+    | some cycle =>
+      Except.error
+        (toString "compileReport: reference check failed: " ++ toString cycle.length ++
+            toString " stored record(s) on a reference cycle; first: " ++
+          toString (List.take 5 cycle))
   | n :: rest, x =>
     Except.error
       (toString "compileReport: coverage check failed: " ++ toString (rest.length + 1) ++
@@ -1025,7 +1161,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 
 /-- info: @Ix.Cert.checkReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.checkReport env out = Except.ok () →
-    Ix.Cert.uncovered env out.fst out.snd = [] ∧ Ix.Cert.unauthentic out.fst = [] -/
+    Ix.Cert.uncovered env out.fst out.snd = [] ∧
+      Ix.Cert.unauthentic out.fst = [] ∧ Ix.Cert.referenceCycle out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 

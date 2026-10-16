@@ -545,14 +545,14 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
       subst ho
       exact ⟨rfl, hc⟩
 
-/-- `checkReport` passes exactly when nothing is uncovered and nothing is
-unauthentic. -/
+/-- `checkReport` passes exactly when nothing is uncovered, nothing is
+unauthentic and no stored record is on a reference cycle. -/
 theorem checkReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : checkReport env out = .ok ()) :
-    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] := by
+    uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none := by
   unfold checkReport at h
   revert h
-  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> simp
+  cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;> simp
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
 constant exactly when it does not report it as failed. -/
@@ -579,7 +579,7 @@ returns is stored under the pure BLAKE3 hash of its bytes. -/
 theorem compileAuthentic : CompileAuthentic := by
   intro env ixe hc
   obtain ⟨failures, h⟩ := compile_eq_ok.mp hc
-  have hu : unauthentic ixe = [] := (checkReport_ok (compileReport_ok h).2).2
+  have hu : unauthentic ixe = [] := (checkReport_ok (compileReport_ok h).2).2.1
   unfold unauthentic at hu
   obtain ⟨hr, hb⟩ := List.append_eq_nil_iff.mp hu
   rw [List.map_eq_nil_iff, List.filter_eq_nil_iff] at hr hb
