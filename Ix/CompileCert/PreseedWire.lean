@@ -37,9 +37,10 @@ theorem AllWidths.push {refs : Array Address} {address : Address}
 
 /-! ## The collector writes neither table nor binding -/
 
-/-- The fields the collector leaves alone: the primary tables and the
-binding view. -/
-def collectionView (state : BlockState) := (state.refs, state.univs, bindingView state)
+/-- The fields the collector leaves alone: the primary tables, the binding
+view, the canonical memo and the universe index. -/
+def collectionView (state : BlockState) :=
+  (state.refs, state.univs, bindingView state, state.canonUnivCache, state.univsIndex)
 
 theorem frame_compileUniv (source : Ix.Level) : Preserves collectionView (compileUniv source) := by
   intro context before
@@ -135,7 +136,7 @@ theorem Widths.bind {action : CompileM α} {next : α → CompileM β} {first : 
     have same := framed context before
     rw [firstRan] at same
     have binding : bindingView middle = bindingView before := by
-      have view := congrArg (fun view => view.2.2) same
+      have view := congrArg (fun view => view.2.2.1) same
       exact view
     intro name address found
     rw [binding] at found
@@ -185,7 +186,7 @@ theorem widths_structural (context : Address) (mutualContext : MutCtx) (params :
       have same := frame_collectUnivs levels.toList univs ctx state
       rw [levelsRan] at same
       have binding : bindingView middle = bindingView state := by
-        have view := congrArg (fun view => view.2.2) same; exact view
+        have view := congrArg (fun view => view.2.2.1) same; exact view
       intro other address found
       rw [binding] at found
       exact widths other address found
@@ -399,7 +400,7 @@ theorem preseed_binding (roots : Array (Ix.Expr × List Ix.Name)) :
     Preserves bindingView (preseedExprTables roots) := by
   rw [preseedExprTables]
   refine Preserves.bind (fun context before => ?_) (fun collection => ?_)
-  · have same := congrArg (fun view => view.2.2) (collection_frame roots.toList (#[], #[], {}) context before)
+  · have same := congrArg (fun view => view.2.2.1) (collection_frame roots.toList (#[], #[], {}) context before)
     exact same
   rcases collection with ⟨refs, univs, _⟩
   apply Preserves.bind (binding_internRefs _ none)

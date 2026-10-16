@@ -2031,3 +2031,23 @@ table final, after which universe compilation does not grow it
 /-- info: 'Ix.CompileCert.FinalUniverses.compile_no_growth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.FinalUniverses.compile_no_growth
+
+-- After a successful preseed, every level occurrence of every root is
+-- preseeded (the universe table is final and holds the canonical form of
+-- the level's exact lowering), discharging `UniversePipeline.Preseeded`.
+/-- info: Ix.CompileCert.PreseedInsertion.preseed_preseeded : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (roots : Array (Ix.Expr × List Ix.Name)) {before after : Ix.CompileM.BlockState},
+  Ix.CompileCert.Interning.UnivIndexSound before →
+    Ix.CompileCert.CanonUnivCache.CanonCacheExact before →
+      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
+        after.univsFinal = true ∧
+          ∀ (root : Ix.Expr × List Ix.Name),
+            root ∈ roots →
+              Ix.CompileCert.PreseedUniverses.LevelsSatisfy
+                (fun level => Ix.CompileCert.UniversePipeline.Preseeded root.snd level after) root.fst -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.PreseedInsertion.preseed_preseeded
+
+/-- info: 'Ix.CompileCert.PreseedInsertion.preseed_preseeded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.PreseedInsertion.preseed_preseeded

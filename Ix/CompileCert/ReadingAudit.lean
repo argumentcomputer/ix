@@ -8,6 +8,7 @@ import Ix.CompileCert.ExpressionCorrectness
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
+import Ix.CompileCert.PreseedInsertion
 
 /-! # Audit of the reading-chain proofs
 
@@ -25,9 +26,9 @@ and its value (`Ix.CompileCert.UniverseMeaning`), the universe pipeline
 (`Ix.CompileCert.UniversePipeline`), the ordinary expression compiler's
 core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 `ExpressionCorrectness`, `ExpressionIngress`) and the preseed
-(`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`). Each root
-must exist, occur once, and depend on no axiom but `propext`,
-`Classical.choice` and `Quot.sound`
+(`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
+`PreseedCoverage`, `PreseedInsertion`). Each root must exist, occur once,
+and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
 
@@ -183,6 +184,25 @@ def preseedStateRoots : Array Lean.Name :=
   (#[`internMetaUniv_univs, `finishSpelling_univs, `internCanonical_no_growth,
     `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·))
 
+/-- The preseed's universe coverage: the collector covers every level of its
+roots, and the insertion gives each canonical form a slot, so every level
+of every root is preseeded. -/
+def coverageRoots : Array Lean.Name :=
+  (#[`insert_other, `insert_retains, `CoveredBelow.empty, `CoveredBelow.mono, `CoveredBelow.restrict,
+    `CoveredBelow.insert, `CoveredBelow.insert_above, `CoveredBelow.lookup, `collect_hit,
+    `root_run].map (`Ix.CompileCert.PreseedKeys ++ ·)) ++
+  (#[`CacheSafe.pure, `CacheSafe.throw, `CacheSafe.bind, `CacheSafe.compileUniv, `CacheSafe.lookup,
+    `CacheSafe.blob, `CacheSafe.levels, `CacheSafe.structural, `LevelsSatisfy.imp, `Present.mono,
+    `Present.value, `Covered.mono, `levels_correct, `Added.refl, `Added.mono, `Added.trans,
+    `Added.close_parent, `Added.ready, `Result.cached, `Result.insert, `prepare_child, `cached_run,
+    `cache_after, `binary, `unary, `ternary, `Correct.of_miss, `collect_correct, `Complete.empty,
+    `Complete.ready, `Complete.after, `root_correct, `roots_correct,
+    `roots_initial].map (`Ix.CompileCert.PreseedUniverses ++ ·)) ++
+  (#[`bytes_beq_iff, `MapExtends.refl, `MapExtends.trans, `MapExtends.insert_fresh, `internUniv_index,
+    `discard_ok, `univ_key_injective, `univs_inserted, `sortedUnivs_valid, `sortedUnivs_member,
+    `univs_sorted, `canonicalize, `refs_frame,
+    `preseed_preseeded].map (`Ix.CompileCert.PreseedInsertion ++ ·))
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -240,6 +260,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "universe pipeline" Ix.CompileCert.ReadingAudit.pipelineRoots
   checkRoots (tag := "reading-audit") "expression core" Ix.CompileCert.ReadingAudit.expressionRoots
   checkRoots (tag := "reading-audit") "preseed state" Ix.CompileCert.ReadingAudit.preseedStateRoots
+  checkRoots (tag := "reading-audit") "preseed coverage" Ix.CompileCert.ReadingAudit.coverageRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
