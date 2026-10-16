@@ -8,7 +8,7 @@ index of its class and each constructor to `#classes + offset + position`,
 the offsets reserved per class by the class's largest constructor count.
 This module reads the imperative definition as a fold of insertions of an
 explicit list of pairs (`ctx_eq`, `ctxPairs`) and, when the member and
-constructor names are pairwise distinct under `==` (`KeysDistinct`),
+constructor names are pairwise distinct (`KeysDistinct`),
 proves:
 
 * `ctx_member`, `ctx_ctor`: the value of a member's and of a constructor's
@@ -182,17 +182,13 @@ theorem foldl_insP_getElem? :
 /-- The names a member contributes: its own, then its constructors'. -/
 def keysOf (m : MutConst) : List Name := m.name :: m.ctors.toList.map (·.cnst.name)
 
-/-- The member and constructor names are pairwise distinct under `==` (Lean's names are
+/-- The member and constructor names are pairwise distinct (Lean's names are
 unique). -/
-def KeysDistinct (ms : List MutConst) : Prop := (ms.flatMap keysOf).Pairwise (fun a b => (a == b) = false)
+def KeysDistinct (ms : List MutConst) : Prop := (ms.flatMap keysOf).Nodup
 
 theorem KeysDistinct.perm {ms ms' : List MutConst} (h : ms.Perm ms') (hk : KeysDistinct ms) :
-    KeysDistinct ms' := by
-  unfold KeysDistinct at *
-  exact (List.Perm.flatMap_right keysOf h).pairwise hk fun {a b} e => by
-    cases hb : (b == a)
-    · rfl
-    · rw [name_beq_symm hb] at e; cases e
+    KeysDistinct ms' :=
+  (List.Perm.flatMap_right keysOf h).nodup_iff.1 hk
 
 theorem map_zipIdx_fst {β γ : Type} (f : β → γ) :
     ∀ (l : List β) (n : Nat), (l.zipIdx n).map (fun q => f q.1) = l.map f
@@ -279,10 +275,9 @@ theorem default_getElem? (x : Name) : (default : MutCtx)[x]? = none := by
   show (∅ : MutCtx)[x]? = none
   exact Std.TreeMap.getElem?_emptyc
 
-/-- Pairwise `==`-distinct names are pairwise distinct. -/
+/-- Distinct keys, as a pairwise statement. -/
 theorem KeysDistinct.ne {ms : List MutConst} (hk : KeysDistinct ms) :
-    (ms.flatMap keysOf).Pairwise (· ≠ ·) :=
-  hk.imp fun {a b} h e => by rw [e, name_beq_refl] at h; cases h
+    (ms.flatMap keysOf).Pairwise (· ≠ ·) := hk
 
 section
 variable {cls : List (List MutConst)} (hk : KeysDistinct cls.flatten)

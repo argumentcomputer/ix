@@ -429,7 +429,7 @@ def sourceRoots : Array Lean.Name :=
 
 /-- Pass 1's comparator is a total preorder on its ok-domain at a fixed
 context (CS-01): the preorder combinators, the level, reference, expression
-and constant comparisons (on faithful names), `nameCompareExact` lawful, and
+and constant comparisons, `nameCompareExact` lawful, and
 the comparisons under two contexts (strength, `eq` monotonicity). -/
 def canonOrderRoots : Array Lean.Name :=
   #[`le_ok, `Le.ok, `not_le_error, `PreOn.mono, `PreOn.comap, `PreOn.congr, `PreOn.swap_iff, `PreOn.refl,
@@ -440,12 +440,13 @@ def canonOrderRoots : Array Lean.Name :=
     `compareLevels_eq, `compareLevels_total, `addr_beq_iff, `addr_data_inj, `transCmp_comap,
     `address_compare_eq_iff, `name_beq_iff, `name_beq_refl, `name_beq_symm, `name_beq_trans, `name_beq_comm,
     `name_beq_of_eq, `nameCompare_eq_iff, `cmpHash_eq, `cmpRaw_str, `cmpRaw_num, `rawC_total, `cmpRaw_eq_iff,
-    `nameCompareExact_eq, `nameCompareExact_eq_iff, `Faithful.mono, `compareRef_beq, `compareRef_in_in,
-    `compareRef_in_out, `compareRef_out_in, `compareRef_out_out, `compareExternal_swap, `nbeq_of_refTag,
+    `nameCompareExact_eq, `nameCompareExact_eq_iff, `nameEq_true, `nameEq_false, `nameEq_comm,
+    `compareRef_self, `compareRef_in_in,
+    `compareRef_in_out, `compareRef_out_in, `compareRef_out_out, `compareExternal_swap, `ne_of_refTag,
     `compareRef_total, `literal_compare_natVal, `literal_compare_strVal, `literal_total, `ehd_spec,
     `ehd_of_HN, `HN_etag_lt, `NotVar_of_ehd, `cE_mdata_left, `cE_mdata_right, `compareExpr_strip_lt,
     `compareExpr_strip, `compareExpr_bad_lt, `compareExpr_bad, `compareExpr_diff, `etag_eq_mdata,
-    `cE_contract, `ExprIn.mono, `exprIn_ehd, `exprIn_e1, `exprIn_e2, `exprIn_e3, `exprIn_name,
+    `cE_contract,
     `compareExpr_total, `cmp_true, `compareDef_total, `ctorP_total, `indHeader_eq, `indP_total,
     `compareRule_total, `compareRecr_total, `constP_total, `cE_bvar, `cE_sort, `cE_const, `cE_app, `cE_lam,
     `cE_forallE, `cE_letE, `cE_lit, `cE_proj, `ResRel.zipCtx, `compareExpr_rel, `compareDef_rel, `ctorP_rel,
@@ -457,7 +458,7 @@ comparison, the merge sort sorts, `List.groupByM` groups adjacent equals,
 the class context's values, the code is the pure refinement, one round's
 specification, and the coarsest consistent partition (`sortClasses_coarsest`). -/
 def canonClassRoots : Array Lean.Name :=
-  #[`prod_beq_iff, `cacheKey_beq, `mem_ents_mem, `mem_ents_ctor, `entIn_of_mem, `entP_swap, `entP_strong,
+  #[`cacheKey_eq, `mem_ents_mem, `mem_ents_ctor, `entP_swap, `entP_strong,
     `Run.Adm.sameDom, `coh_empty, `Sim.pure', `Sim.bind, `Sim.liftE', `Sim.congr, `Sim.cmpM, `Sim.zipM,
     `cacheGet_run, `cachePut_run, `cacheGet_spec, `cachePut_coh, `liftE_run, `cached_sim, `compareCtor_sim,
     `compareInd_sim, `compareConstBody_sim, `Run.adm_ctxOf, `compareConst_sim, `PreOn.ord, `constOrd_total,

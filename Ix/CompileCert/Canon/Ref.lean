@@ -17,13 +17,10 @@ for equal names only.
 
 The leaf `compareRef` (the map `κ` of the design: same name equal,
 in-block names by class index weakly, in-block before external, external
-names by compiled address) still tests `x == y` on the stored hash first. So
-it is a total preorder on its ok-domain (`compareRef_total`) on a set of
-names `N` within which `==` is equality (`Faithful N`): the donor's
-hypothesis `AddrCongr` (an address map answering alike for `==` names) does
-not hold of the exact maps, and `MutCtx` no longer answers alike for `==`
-names, but on faithful names both are trivial. `compareRef` testing `nameEq`
-instead would make the hypothesis unnecessary. -/
+names by compiled address) compares names structurally too since the
+CQ2.25 follow-up (`nameEq`), so it is a total preorder on its ok-domain on
+every name (`compareRef_total`): the donor's hypothesis `AddrCongr` (an
+address map answering alike for `==` names) has no counterpart. -/
 
 namespace Ix.CompileCert.Canon
 
@@ -216,44 +213,44 @@ instance lawfulEqCmp_nameCompareExact : Std.LawfulEqCmp Ix.nameCompareExact wher
   compare_self := nameCompareExact_eq_iff.2 rfl
   eq_of_compare := nameCompareExact_eq_iff.1
 
-/-! ## Faithful names -/
-
-/-- Within `N`, `==` (stored-hash equality) is equality: no two distinct
-names of `N` share a stored hash. -/
-def Faithful (N : Name → Prop) : Prop :=
-  ∀ a b, N a → N b → (a == b) = true → a = b
-
-theorem Faithful.mono {N N' : Name → Prop} (h : Faithful N) (sub : ∀ n, N' n → N n) : Faithful N' :=
-  fun a b ha hb e => h a b (sub a ha) (sub b hb) e
-
 /-! ## The reference leaf -/
 
-theorem compareRef_beq (c : CmpCtx) {x y : Name} (h : (x == y) = true) :
-    compareRef c x y = .ok ⟨true, .eq⟩ := by
-  simp [compareRef, h, pure, Except.pure]
+theorem nameEq_true {x y : Name} (h : x = y) : Ix.Compile.ExactKey.nameEq x y = true :=
+  (Ix.Compile.ExactKey.nameEq_iff x y).2 h
 
-theorem compareRef_in_in (c : CmpCtx) {x y : Name} (h : (x == y) = false) {nx ny : Nat}
+theorem nameEq_false {x y : Name} (h : x ≠ y) : Ix.Compile.ExactKey.nameEq x y = false :=
+  Bool.eq_false_iff.2 fun e => h ((Ix.Compile.ExactKey.nameEq_iff x y).1 e)
+
+theorem nameEq_comm (x y : Name) : Ix.Compile.ExactKey.nameEq x y = Ix.Compile.ExactKey.nameEq y x := by
+  by_cases h : x = y
+  · subst h; rfl
+  · rw [nameEq_false h, nameEq_false (Ne.symm h)]
+
+theorem compareRef_self (c : CmpCtx) (x : Name) : compareRef c x x = .ok ⟨true, .eq⟩ := by
+  simp [compareRef, nameEq_true (rfl : x = x), pure, Except.pure]
+
+theorem compareRef_in_in (c : CmpCtx) {x y : Name} (h : x ≠ y) {nx ny : Nat}
     (hx : c.mutCtx[x]? = some nx) (hy : c.mutCtx[y]? = some ny) :
     compareRef c x y = .ok ⟨false, compare nx ny⟩ := by
-  simp only [compareRef, h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
+  simp only [compareRef, nameEq_false h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
   rfl
 
-theorem compareRef_in_out (c : CmpCtx) {x y : Name} (h : (x == y) = false) {nx : Nat}
+theorem compareRef_in_out (c : CmpCtx) {x y : Name} (h : x ≠ y) {nx : Nat}
     (hx : c.mutCtx[x]? = some nx) (hy : c.mutCtx[y]? = none) :
     compareRef c x y = .ok ⟨true, .lt⟩ := by
-  simp only [compareRef, h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
+  simp only [compareRef, nameEq_false h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
   rfl
 
-theorem compareRef_out_in (c : CmpCtx) {x y : Name} (h : (x == y) = false) {ny : Nat}
+theorem compareRef_out_in (c : CmpCtx) {x y : Name} (h : x ≠ y) {ny : Nat}
     (hx : c.mutCtx[x]? = none) (hy : c.mutCtx[y]? = some ny) :
     compareRef c x y = .ok ⟨true, .gt⟩ := by
-  simp only [compareRef, h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
+  simp only [compareRef, nameEq_false h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
   rfl
 
-theorem compareRef_out_out (c : CmpCtx) {x y : Name} (h : (x == y) = false)
+theorem compareRef_out_out (c : CmpCtx) {x y : Name} (h : x ≠ y)
     (hx : c.mutCtx[x]? = none) (hy : c.mutCtx[y]? = none) :
     compareRef c x y = compareExternal c x y := by
-  simp only [compareRef, h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
+  simp only [compareRef, nameEq_false h, Bool.false_eq_true, ↓reduceIte, Std.TreeMap.get?_eq_getElem?, hx, hy]
 
 theorem compareExternal_swap (c : CmpCtx) (x y : Name) {s o}
     (h : compareExternal c x y = .ok ⟨s, o⟩) : compareExternal c y x = .ok ⟨s, o.swap⟩ := by
@@ -268,19 +265,15 @@ def refTag (c : CmpCtx) (n : Name) : Nat :=
   | some _ => 0
   | none => 1
 
-theorem nbeq_of_refTag (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) {x y : Name} (hx : N x)
-    (hy : N y) (ht : refTag c x ≠ refTag c y) : (x == y) = false := by
-  cases h : (x == y)
-  · rfl
-  · exfalso; apply ht; rw [hN x y hx hy h]
+theorem ne_of_refTag (c : CmpCtx) {x y : Name} (ht : refTag c x ≠ refTag c y) : x ≠ y :=
+  fun e => ht (e ▸ rfl)
 
-/-- **The reference leaf is a total preorder** on faithful names. -/
-theorem compareRef_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn N (compareRef c) := by
+/-- **The reference leaf is a total preorder** at a fixed context. -/
+theorem compareRef_total (c : CmpCtx) : TotalPre (compareRef c) := by
   -- in-block before external, strongly
   refine PreOn.ofTag (refTag c) ?_ ?_
-  · intro x y hx' hy' ht
-    have hne := nbeq_of_refTag c hN hx' hy' ht
+  · intro x y _ _ ht
+    have hne := ne_of_refTag c ht
     cases hx : c.mutCtx[x]? <;> cases hy : c.mutCtx[y]? <;> simp only [refTag, hx, hy] at ht
     · exact absurd rfl ht
     · rw [compareRef_out_in c hne hx hy]; simp only [refTag, hx, hy]; rfl
@@ -290,37 +283,36 @@ theorem compareRef_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
   match T with
   | 0 =>
     -- two in-block names: by class index
-    have key : ∀ x y, N x → N y → refTag c x = 0 → refTag c y = 0 →
+    have key : ∀ x y, refTag c x = 0 → refTag c y = 0 →
         ∃ s, compareRef c x y = .ok ⟨s, compare ((c.mutCtx[x]?).getD 0)
-          ((c.mutCtx[y]?).getD 0)⟩ ∧ (s = (x == y)) := by
-      intro x y nx' ny' hx hy
+          ((c.mutCtx[y]?).getD 0)⟩ ∧ s = Ix.Compile.ExactKey.nameEq x y := by
+      intro x y hx hy
       cases hnx : c.mutCtx[x]? with
       | none => simp [refTag, hnx] at hx
       | some nx =>
         cases hny : c.mutCtx[y]? with
         | none => simp [refTag, hny] at hy
         | some ny =>
-          cases h : (x == y)
-          · exact ⟨false, by rw [compareRef_in_in c h hnx hny]; rfl, rfl⟩
-          · refine ⟨true, ?_, rfl⟩
-            rw [compareRef_beq c h]
-            rw [hN x y nx' ny' h] at hnx
+          by_cases h : x = y
+          · subst h
             rw [hnx] at hny; cases hny
-            simp
+            refine ⟨true, ?_, (nameEq_true rfl).symm⟩
+            rw [compareRef_self]; simp
+          · exact ⟨false, by rw [compareRef_in_in c h hnx hny]; rfl, (nameEq_false h).symm⟩
     constructor
     · intro x y hx hy s o hxy
-      obtain ⟨s1, e1, h1⟩ := key x y hx.1 hy.1 hx.2 hy.2
-      obtain ⟨s2, e2, h2⟩ := key y x hy.1 hx.1 hy.2 hx.2
+      obtain ⟨s1, e1, h1⟩ := key x y hx.2 hy.2
+      obtain ⟨s2, e2, h2⟩ := key y x hy.2 hx.2
       rw [e1] at hxy
       simp only [Except.ok.injEq, SOrder.mk.injEq] at hxy
       obtain ⟨rfl, rfl⟩ := hxy
-      rw [e2, h1, h2, name_beq_comm x y]
+      rw [e2, h1, h2, nameEq_comm x y]
       simp only [Except.ok.injEq, SOrder.mk.injEq, true_and]
       exact Std.OrientedCmp.eq_swap (cmp := (compare : Nat → Nat → Ordering))
     · intro x y z hx hy hz h1 h2
-      obtain ⟨s1, e1, -⟩ := key x y hx.1 hy.1 hx.2 hy.2
-      obtain ⟨s2, e2, -⟩ := key y z hy.1 hz.1 hy.2 hz.2
-      obtain ⟨s3, e3, -⟩ := key x z hx.1 hz.1 hx.2 hz.2
+      obtain ⟨s1, e1, -⟩ := key x y hx.2 hy.2
+      obtain ⟨s2, e2, -⟩ := key y z hy.2 hz.2
+      obtain ⟨s3, e3, -⟩ := key x z hx.2 hz.2
       obtain ⟨_, _, h1, n1⟩ := h1
       obtain ⟨_, _, h2, n2⟩ := h2
       rw [e1] at h1; rw [e2] at h2
@@ -336,39 +328,38 @@ theorem compareRef_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
       intro x hx; cases h : c.mutCtx[x]? <;> simp_all [refTag]
     constructor
     · intro x y hx hy s o hxy
-      cases h : (x == y)
-      · rw [compareRef_out_out c h (out hx.2) (out hy.2)] at hxy
-        rw [compareRef_out_out c (by rw [name_beq_comm]; exact h) (out hy.2) (out hx.2)]
-        exact compareExternal_swap c x y hxy
-      · rw [compareRef_beq c h] at hxy
+      by_cases h : x = y
+      · subst h
+        rw [compareRef_self] at hxy
         simp only [Except.ok.injEq, SOrder.mk.injEq] at hxy
         obtain ⟨rfl, rfl⟩ := hxy
-        exact compareRef_beq c (name_beq_symm h)
+        exact compareRef_self c x
+      · rw [compareRef_out_out c h (out hx.2) (out hy.2)] at hxy
+        rw [compareRef_out_out c (Ne.symm h) (out hy.2) (out hx.2)]
+        exact compareExternal_swap c x y hxy
     · intro x y z hx hy hz h1 h2
       have ex := out hx.2; have ey := out hy.2; have ez := out hz.2
-      by_cases hxz : (x == z) = true
-      · exact ⟨true, .eq, compareRef_beq c hxz, by decide⟩
-      have hxz' : (x == z) = false := by simpa using hxz
-      rw [compareRef_out_out c hxz' ex ez]
+      by_cases hxz : x = z
+      · subst hxz; exact ⟨true, .eq, compareRef_self c x, by decide⟩
+      rw [compareRef_out_out c hxz ex ez]
       unfold compareExternal
-      -- every step that is not `==` has both addresses
+      -- every step between different names has both addresses
       have addrOf : ∀ u v, c.mutCtx[u]? = none → c.mutCtx[v]? = none → Le (compareRef c u v) →
-          (u == v) = true ∨ ∃ au av, c.addr? u = some au ∧ c.addr? v = some av ∧
-            compare au av ≠ .gt := by
+          u = v ∨ ∃ au av, c.addr? u = some au ∧ c.addr? v = some av ∧ compare au av ≠ .gt := by
         intro u v hu hv hle
-        cases huv : (u == v)
+        by_cases huv : u = v
+        · exact .inl huv
         · right
           rw [compareRef_out_out c huv hu hv] at hle
           obtain ⟨s, o, he, hne⟩ := hle
           unfold compareExternal at he
           cases hau : c.addr? u <;> cases hav : c.addr? v <;> simp_all [pure, Except.pure]
-        · exact .inl rfl
-      rcases addrOf x y ex ey h1 with hxy | ⟨ax, ay, hax, hay, n1⟩ <;>
-        rcases addrOf y z ey ez h2 with hyz | ⟨ay', az, hay', haz, n2⟩
-      · exact absurd (name_beq_trans hxy hyz) hxz
-      · rw [hN x y hx.1 hy.1 hxy, hay', haz]
+      rcases addrOf x y ex ey h1 with rfl | ⟨ax, ay, hax, hay, n1⟩ <;>
+        rcases addrOf _ z ey ez h2 with rfl | ⟨ay', az, hay', haz, n2⟩
+      · exact absurd rfl hxz
+      · rw [hay', haz]
         exact ⟨true, _, rfl, n2⟩
-      · rw [hax, ← hN y z hy.1 hz.1 hyz, hay]
+      · rw [hax, hay]
         exact ⟨true, _, rfl, n1⟩
       · rw [hay] at hay'; cases hay'
         rw [hax, haz]

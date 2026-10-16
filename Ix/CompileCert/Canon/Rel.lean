@@ -8,8 +8,7 @@ contexts compared here share). Any relation between results that the
 comparator's combinators preserve (`ResRel`) therefore holds between the
 comparisons under two contexts as soon as it holds between their reference
 leaves (`compareExpr_rel`, `compareDef_rel`, `ctorP_rel`, `indP_rel`,
-`compareRecr_rel`, `constP_rel`). Two instances, on every name (the class
-context answers for equal names only, so no faithfulness is needed):
+`compareRecr_rel`, `constP_rel`). Two instances, on every name:
 
 * `StrongRel`: a strong result is the same under every context with the
   same in-block names: caching strong results across rounds is sound
@@ -238,7 +237,7 @@ structure SameDom (c c' : CmpCtx) : Prop where
 theorem compareRef_strong {c c' : CmpCtx} (h : SameDom c c') (x y : Name) :
     StrongRel (compareRef c x y) (compareRef c' x y) := by
   intro o e
-  cases hb : (x == y)
+  by_cases hb : ¬ x = y
   · have dx := h.dom x
     have dy := h.dom y
     cases hx : c.mutCtx[x]? <;> cases hy : c.mutCtx[y]? <;>
@@ -251,7 +250,8 @@ theorem compareRef_strong {c c' : CmpCtx} (h : SameDom c c') (x y : Name) :
     · rw [compareRef_out_in c hb hx hy] at e; rw [compareRef_out_in c' hb hx' hy']; exact e
     · rw [compareRef_in_out c hb hx hy] at e; rw [compareRef_in_out c' hb hx' hy']; exact e
     · rw [compareRef_in_in c hb hx hy] at e; cases e
-  · rw [compareRef_beq c hb] at e; rw [compareRef_beq c' hb]; exact e
+  · obtain rfl := Decidable.of_not_not hb
+    rw [compareRef_self] at e; rw [compareRef_self]; exact e
 
 /-- **Strength** (design document §3.2; §3.4 C3). A strong comparison of two constants is the
 same under every context with the same in-block names: strong results may be cached across
@@ -301,7 +301,7 @@ structure Coarser (c c' : CmpCtx) : Prop extends SameDom c c' where
 theorem compareRef_eq_mono {c c' : CmpCtx} (h : Coarser c c') (x y : Name) :
     EqRel (compareRef c x y) (compareRef c' x y) := by
   rintro ⟨s, e⟩
-  cases hb : (x == y)
+  by_cases hb : ¬ x = y
   · have dx := h.dom x
     have dy := h.dom y
     cases hx : c.mutCtx[x]? <;> cases hy : c.mutCtx[y]? <;>
@@ -320,7 +320,8 @@ theorem compareRef_eq_mono {c c' : CmpCtx} (h : Coarser c c') (x y : Name) :
       rw [hx', hy'] at this; cases this
       rw [compareRef_in_in c' hb hx' hy']
       exact ⟨false, by simp⟩
-  · rw [compareRef_beq c' hb]; exact ⟨true, rfl⟩
+  · obtain rfl := Decidable.of_not_not hb
+    rw [compareRef_self c']; exact ⟨true, rfl⟩
 
 /-- **Monotonicity of equality** (design document §3.3 (b)). Two constants equal under a
 context stay equal under any coarser one. -/

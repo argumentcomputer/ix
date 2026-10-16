@@ -8,7 +8,7 @@ identifications it makes. `ExprEq c xl yl x y` is that relation on
 expressions: binder names and binder information ignored, non-semantic
 `mdata` stripped, semantic contracts by their order key, levels equal after
 `toUniv` (parameters by position in each side's own list) and `canonUniv`,
-references identified by `RefEq` (the same name under `==`, the same class
+references identified by `RefEq` (the same name, the same class
 index, or two external names at one compiled address), and everything else
 literally (`bvar` indices, literals, projection indices, a `let`'s nonDep
 bit). `ConstMatch` lifts it to constants: the same kind, the same scalar
@@ -22,8 +22,7 @@ expressions.
 * `sortClasses_match`: two members of one class of `sortClasses` match under
   the classes' own context (from `sortClasses_coarsest`'s consistency).
 
-No faithfulness is needed: soundness reads only the comparator's own
-answers. -/
+Soundness reads only the comparator's own answers. -/
 
 namespace Ix.CompileCert.Canon
 
@@ -34,7 +33,7 @@ open Ix (Name Level Expr MutConst Def Ind ConstructorVal RecursorVal RecursorRul
 
 /-- Two references the comparator identifies at context `c`. -/
 def RefEq (c : CmpCtx) (x y : Name) : Prop :=
-  (x == y) = true ∨ (∃ n, c.mutCtx[x]? = some n ∧ c.mutCtx[y]? = some n) ∨
+  x = y ∨ (∃ n, c.mutCtx[x]? = some n ∧ c.mutCtx[y]? = some n) ∨
     (c.mutCtx[x]? = none ∧ c.mutCtx[y]? = none ∧ ∃ a, c.addr? x = some a ∧ c.addr? y = some a)
 
 /-- Two levels the comparator identifies: both lower to universes with one
@@ -141,7 +140,7 @@ theorem compareLevels_eq_sound {xl yl : List Name} {us vs : List Level} {s : Boo
 
 theorem compareRef_eq_sound {c : CmpCtx} {x y : Name} {s : Bool}
     (h : compareRef c x y = .ok ⟨s, .eq⟩) : RefEq c x y := by
-  cases hb : (x == y)
+  by_cases hb : ¬ x = y
   · cases hx : c.mutCtx[x]? <;> cases hy : c.mutCtx[y]?
     · rw [compareRef_out_out c hb hx hy] at h
       unfold compareExternal at h
@@ -155,7 +154,7 @@ theorem compareRef_eq_sound {c : CmpCtx} {x y : Name} {s : Bool}
       simp only [Except.ok.injEq, SOrder.mk.injEq] at h
       rename_i nx ny
       exact .inr (.inl ⟨nx, hx, by rw [hy, Nat.compare_eq_eq.1 h.2]⟩)
-  · exact .inl hb
+  · exact .inl (Decidable.of_not_not hb)
 
 /-! ## Expressions -/
 
@@ -398,12 +397,12 @@ theorem constOrd_eq_sound {addr? : Name → Option Address} {ctx : MutCtx} {x y 
 
 /-- **Two distinct members of one class match** under the classes' own
 context. -/
-theorem sortClasses_match (rules : Rules) {addr? : Name → Option Address} {N : Name → Prop}
-    (hN : Faithful N) {sources : List MutConst} (hin : ∀ m ∈ sources, ConstIn N m)
+theorem sortClasses_match (rules : Rules) {addr? : Name → Option Address}
+    {sources : List MutConst}
     (hk : KeysDistinct sources) {F : List (List MutConst)} {stats : SortStats}
     (h : sortClasses rules addr? sources = .ok (F, stats)) :
     ∀ C ∈ F, ∀ a ∈ C, ∀ b ∈ C, a ≠ b → ConstMatch (ctxOf addr? (MutConst.ctx F)) a b :=
   fun C hC a ha b hb hab =>
-    constOrd_eq_sound ((sortClasses_coarsest rules hN hin hk h).2.1 C hC a ha b hb hab)
+    constOrd_eq_sound ((sortClasses_coarsest rules hk h).2.1 C hC a ha b hb hab)
 
 end Ix.CompileCert.Canon

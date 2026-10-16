@@ -6,8 +6,10 @@ CS-01, ported from the donor `a9cf3607` (`Canon/Cache`). `compareConst`
 (and through it `compareInd`, `compareCtor`) runs in `CmpM`: a state whose
 cache maps the unordered name pair to an ordering and the name that was on
 the left when it was computed; a hit is read back in the call's
-orientation. Caching strong results across the rounds of one refinement is
-sound:
+orientation. Since the CQ2.25 follow-up the keys are exact
+(`ExactName × ExactName`, ordered by `nameCompareExact`) and the
+orientation test is `nameEq`. Caching strong results across the rounds of
+one refinement is sound:
 
 * `Coh A ms st`: every cache entry is the true strong result of two entries
   (members, or constructors with their inductives' level lists) of the
@@ -15,11 +17,10 @@ sound:
   in-block names; any class indices);
 * the cached comparisons return exactly the pure ones and keep `Coh`
   (`compareCtor_sim` … `compareConst_sim`), given `NameInj ms` (the
-  component's member and constructor names identify their entries under
-  `==`, as Lean's names do) and the members' references in a faithful set
-  of names;
-* the pure comparison a round sorts by, `constOrd`, is a total preorder on
-  those members (`constOrd_total`).
+  component's member and constructor names identify their entries, as
+  Lean's names do);
+* the pure comparison a round sorts by, `constOrd`, is a total preorder
+  (`constOrd_total`).
 
 Adapted to today's Pass 1: one external mode (by address), one tie-break,
 the cache read in the call's orientation (the donor's port fix C2 is the
@@ -30,60 +31,13 @@ namespace Ix.CompileCert.Canon
 open Ix.Compile.Canon
 open Ix (Name Level Expr MutConst Def Ind Rec ConstructorVal RecursorVal RecursorRule MutCtx)
 
-/-! ## `==` on names and on cache keys -/
+/-! ## Cache keys -/
 
-instance equivBEq_name : EquivBEq Name where
-  rfl := name_beq_refl _
-  symm h := name_beq_symm h
-  trans h1 h2 := name_beq_trans h1 h2
-
-instance lawfulHashable_name : LawfulHashable Name where
-  hash_eq a b h := by
-    show hash a.getHash = hash b.getHash
-    rw [name_beq_iff.1 h]
-
-instance equivBEq_prod {α β : Type} [BEq α] [BEq β] [EquivBEq α] [EquivBEq β] :
-    EquivBEq (α × β) where
-  rfl {a} := by
-    obtain ⟨x, y⟩ := a
-    show (x == x && y == y) = true
-    simp
-  symm {a b} h := by
-    obtain ⟨x, y⟩ := a; obtain ⟨x', y'⟩ := b
-    change (x == x' && y == y') = true at h
-    show (x' == x && y' == y) = true
-    simp only [Bool.and_eq_true] at h ⊢
-    exact ⟨BEq.symm h.1, BEq.symm h.2⟩
-  trans {a b c} h1 h2 := by
-    obtain ⟨x, y⟩ := a; obtain ⟨x', y'⟩ := b; obtain ⟨x'', y''⟩ := c
-    change (x == x' && y == y') = true at h1
-    change (x' == x'' && y' == y'') = true at h2
-    show (x == x'' && y == y'') = true
-    simp only [Bool.and_eq_true] at h1 h2 ⊢
-    exact ⟨BEq.trans h1.1 h2.1, BEq.trans h1.2 h2.2⟩
-
-instance lawfulHashable_prod {α β : Type} [BEq α] [BEq β] [Hashable α] [Hashable β]
-    [LawfulHashable α] [LawfulHashable β] : LawfulHashable (α × β) where
-  hash_eq a b h := by
-    obtain ⟨x, y⟩ := a; obtain ⟨x', y'⟩ := b
-    change (x == x' && y == y') = true at h
-    simp only [Bool.and_eq_true] at h
-    have h1 : hash x = hash x' := LawfulHashable.hash_eq x x' h.1
-    have h2 : hash y = hash y' := LawfulHashable.hash_eq y y' h.2
-    show mixHash (hash x) (hash y) = mixHash (hash x') (hash y')
-    rw [h1, h2]
-
-theorem prod_beq_iff {α β : Type} [BEq α] [BEq β] (a b : α × β) :
-    (a == b) = true ↔ (a.1 == b.1) = true ∧ (a.2 == b.2) = true := by
-  obtain ⟨x, y⟩ := a; obtain ⟨x', y'⟩ := b
-  show (x == x' && y == y') = true ↔ _
-  simp
-
-/-- Two cache keys that are `==` name the same unordered pair. -/
-theorem cacheKey_beq {x y x' y' : Name} (h : (cacheKey x y == cacheKey x' y') = true) :
-    ((x == x') = true ∧ (y == y') = true) ∨ ((x == y') = true ∧ (y == x') = true) := by
+/-- Two equal cache keys name the same unordered pair. -/
+theorem cacheKey_eq {x y x' y' : Name} (h : cacheKey x y = cacheKey x' y') :
+    (x = x' ∧ y = y') ∨ (x = y' ∧ y = x') := by
   unfold cacheKey at h
-  split at h <;> split at h <;> simp only [prod_beq_iff] at h <;> obtain ⟨h1, h2⟩ := h
+  split at h <;> split at h <;> injection h with h1 h2
   · exact .inl ⟨h1, h2⟩
   · exact .inr ⟨h1, h2⟩
   · exact .inr ⟨h2, h1⟩
@@ -113,9 +67,9 @@ theorem mem_ents_ctor {ms : List MutConst} {m : MutConst} (h : m ∈ ms) {cv : C
   simp only [ents, List.mem_flatMap]; exact ⟨m, h, by simpa using hc⟩
 
 /-- The component's member and constructor names identify their entries
-(Lean's names are unique; `Ix.Name`'s `==` is hash equality). -/
+(Lean's names are unique). -/
 def NameInj (ms : List MutConst) : Prop :=
-  ∀ e₁ ∈ ents ms, ∀ e₂ ∈ ents ms, (e₁.name == e₂.name) = true → e₁ = e₂
+  ∀ e₁ ∈ ents ms, ∀ e₂ ∈ ents ms, e₁.name = e₂.name → e₁ = e₂
 
 /-- The pure comparison of two entries. -/
 def entP (c : CmpCtx) : Ent → Ent → Except CmpError SOrder
@@ -123,29 +77,14 @@ def entP (c : CmpCtx) : Ent → Ent → Except CmpError SOrder
   | .ctor mx x, .ctor my y => compareCtorKeys c mx.levelParams.toList my.levelParams.toList x y
   | _, _ => .error (.refinement "entP: kinds")
 
-/-- The references of an entry are in `N`. -/
-def EntIn (N : Name → Prop) : Ent → Prop
-  | .mem m => ConstIn N m
-  | .ctor _ cv => ExprIn N cv.cnst.type
-
-theorem entIn_of_mem {N : Name → Prop} {ms : List MutConst} (hin : ∀ m ∈ ms, ConstIn N m) :
-    ∀ e ∈ ents ms, EntIn N e := by
-  intro e he
-  simp only [ents, List.mem_flatMap, List.mem_cons, List.mem_map] at he
-  obtain ⟨m, hm, rfl | ⟨cv, hcv, rfl⟩⟩ := he
-  · exact hin m hm
-  · have h := hin m hm
-    cases m with
-    | indc x => exact h.2 cv (by simpa [MutConst.ctors] using hcv)
-    | defn x | recr x => simp [MutConst.ctors] at hcv
-
-theorem entP_swap {c : CmpCtx} {N : Name → Prop} (hN : Faithful N) {e₁ e₂ : Ent} (h₁ : EntIn N e₁)
-    (h₂ : EntIn N e₂) {s o} (h : entP c e₁ e₂ = .ok ⟨s, o⟩) : entP c e₂ e₁ = .ok ⟨s, o.swap⟩ := by
+theorem entP_swap {c : CmpCtx} {e₁ e₂ : Ent} {s o} (h : entP c e₁ e₂ = .ok ⟨s, o⟩) :
+    entP c e₂ e₁ = .ok ⟨s, o.swap⟩ := by
   cases e₁ <;> cases e₂ <;> simp only [entP] at h ⊢
-  · exact (constP_total c hN).swap h₁ h₂ h
+  · exact (constP_total c).swap trivial trivial h
   · cases h
   · cases h
-  · exact (ctorP_total c hN).swap (a := (_, _)) (b := (_, _)) h₁ h₂ h
+  · exact (ctorP_total c).swap (a := (_, _)) (b := (_, _)) trivial trivial h
+
 
 theorem entP_strong {c c' : CmpCtx} (hd : SameDom c c') {e₁ e₂ : Ent} {o}
     (h : entP c e₁ e₂ = .ok ⟨true, o⟩) : entP c' e₁ e₂ = .ok ⟨true, o⟩ := by
@@ -174,10 +113,11 @@ theorem Run.Adm.sameDom {A : Run} {c c' : CmpCtx} (h : A.Adm c) (h' : A.Adm c') 
 /-- Every cache entry is a true strong result of two entries of the
 component under every context of the run. -/
 def Coh (A : Run) (ms : List MutConst) (st : CmpState) : Prop :=
-  ∀ (k : Name × Name) (v : Ordering × Name), st.cache[k]? = some v →
-    ∃ e₁ ∈ ents ms, ∃ e₂ ∈ ents ms, (v.2 == e₁.name) = true ∧
-      (k == cacheKey e₁.name e₂.name) = true ∧
-      ∀ c, A.Adm c → entP c e₁ e₂ = .ok ⟨true, v.1⟩
+  ∀ (k : Ix.Compile.ExactKey.ExactName × Ix.Compile.ExactKey.ExactName) (v : Ordering × Name),
+    st.cache[k]? = some v →
+      ∃ e₁ ∈ ents ms, ∃ e₂ ∈ ents ms, v.2 = e₁.name ∧
+        k = cacheKey e₁.name e₂.name ∧
+        ∀ c, A.Adm c → entP c e₁ e₂ = .ok ⟨true, v.1⟩
 
 theorem coh_empty (A : Run) (ms : List MutConst) : Coh A ms {} := by
   intro k v h
@@ -259,7 +199,8 @@ theorem cacheGet_run (x y : Name) (st : CmpState) :
     (cacheGet x y).run st =
       match st.cache[cacheKey x y]? with
       | none => .ok (none, st)
-      | some (o, left) => .ok (some (if (left == x) = true then o else o.swap), st) := by
+      | some (o, left) =>
+        .ok (some (if Ix.Compile.ExactKey.nameEq left x = true then o else o.swap), st) := by
   cases h : st.cache[cacheKey x y]? with
   | none =>
     simp [cacheGet, StateT.run_bind, Std.HashMap.get?_eq_getElem?, h]; rfl
@@ -276,9 +217,8 @@ theorem cachePut_run (x y : Name) (o : SOrder) (st : CmpState) :
 
 section cache
 
-variable {A : Run} {ms : List MutConst} {N : Name → Prop} (hinj : NameInj ms) (hN : Faithful N)
-  (hin : ∀ m ∈ ms, ConstIn N m)
-include hinj hN hin
+variable {A : Run} {ms : List MutConst} (hinj : NameInj ms)
+include hinj
 
 /-- Reading a coherent cache: a hit is the pure comparison of the queried
 pair, in the query's orientation. -/
@@ -286,41 +226,40 @@ theorem cacheGet_spec {st : CmpState} (hst : Coh A ms st) {e₁ e₂ : Ent} (h�
     (h₂ : e₂ ∈ ents ms) :
     ∃ res, (cacheGet e₁.name e₂.name).run st = .ok (res, st) ∧
       ∀ o, res = some o → ∀ c, A.Adm c → entP c e₁ e₂ = .ok ⟨true, o⟩ := by
-  have eIn := entIn_of_mem hin
   rw [cacheGet_run]
   cases hk : st.cache[cacheKey e₁.name e₂.name]? with
   | none => exact ⟨none, rfl, by simp⟩
   | some v =>
     obtain ⟨o, left⟩ := v
     obtain ⟨f₁, hf₁, f₂, hf₂, hl, hkey, hent⟩ := hst _ _ hk
-    have same : ∀ {u v : Ent}, u ∈ ents ms → v ∈ ents ms → (u.name == v.name) = true → u = v :=
+    simp only at hl
+    have same : ∀ {u v : Ent}, u ∈ ents ms → v ∈ ents ms → u.name = v.name → u = v :=
       fun hu hv h => hinj _ hu _ hv h
     refine ⟨_, rfl, ?_⟩
     intro o' ho c hc
     cases ho
-    rcases cacheKey_beq hkey with ⟨k1, k2⟩ | ⟨k1, k2⟩
+    rcases cacheKey_eq hkey with ⟨k1, k2⟩ | ⟨k1, k2⟩
     · -- the stored pair is the queried pair
       have e1 := same h₁ hf₁ k1
       have e2 := same h₂ hf₂ k2
       subst e1; subst e2
-      have hlx : (left == e₁.name) = true := hl
-      simp only [hlx, ↓reduceIte]
+      simp only [nameEq_true hl, ↓reduceIte]
       exact hent c hc
     · -- the stored pair is the swapped pair
       have e1 := same h₁ hf₂ k1
       have e2 := same h₂ hf₁ k2
       subst e1; subst e2
-      by_cases hlx : (left == e₁.name) = true
+      by_cases hlx : left = e₁.name
       · -- `left` names `e₁` and `e₂`: the pair is `(e₁, e₁)`
-        have h12 : e₁ = e₂ := same h₁ h₂ (BEq.trans (BEq.symm hlx) hl)
+        have h12 : e₁ = e₂ := same h₁ h₂ (hlx.symm.trans hl)
         subst h12
-        simp only [hlx, ↓reduceIte]
+        simp only [nameEq_true hlx, ↓reduceIte]
         exact hent c hc
-      · simp only [hlx, Bool.false_eq_true, ↓reduceIte]
-        have := entP_swap hN (eIn _ h₂) (eIn _ h₁) (hent c hc)
+      · simp only [nameEq_false hlx, Bool.false_eq_true, ↓reduceIte]
+        have := entP_swap (hent c hc)
         simpa using this
 
-omit hinj hN hin in
+omit hinj in
 /-- Writing a true result keeps the cache coherent. -/
 theorem cachePut_coh {st : CmpState} (hst : Coh A ms st) {e₁ e₂ : Ent} (h₁ : e₁ ∈ ents ms)
     (h₂ : e₂ ∈ ents ms) {c : CmpCtx} (hc : A.Adm c) {so : SOrder}
@@ -336,7 +275,7 @@ theorem cachePut_coh {st : CmpState} (hst : Coh A ms st) {e₁ e₂ : Ent} (h₁
     split at hkv
     · rename_i hK
       cases hkv
-      refine ⟨e₁, h₁, e₂, h₂, BEq.rfl, BEq.symm hK, ?_⟩
+      refine ⟨e₁, h₁, e₂, h₂, rfl, (beq_iff_eq.1 hK).symm, ?_⟩
       intro c' hc'
       obtain ⟨s, o⟩ := so
       simp only at hs; subst hs
@@ -346,7 +285,7 @@ theorem cachePut_coh {st : CmpState} (hst : Coh A ms st) {e₁ e₂ : Ent} (h₁
 
 /-! ## The cached comparisons are the pure ones -/
 
-omit hinj hN hin in
+omit hinj in
 theorem liftE_run {α : Type} (x : Except CmpError α) (st : CmpState) :
     (liftE x).run st = x.map (·, st) := by
   cases x <;> rfl
@@ -364,7 +303,7 @@ theorem cached_sim {α : Type} {e₁ e₂ : Ent} (he₁ : e₁ ∈ ents ms) (he�
       pure (ret so))) :
     Sim (Coh A ms) (cacheGet e₁.name e₂.name >>= k) ((entP c e₁ e₂).map ret) := by
   intro st hst
-  obtain ⟨res, e1, hres⟩ := cacheGet_spec hinj hN hin hst he₁ he₂
+  obtain ⟨res, e1, hres⟩ := cacheGet_spec hinj hst he₁ he₂
   rw [StateT.run_bind, e1]
   simp only [bind, Except.bind]
   cases res with
@@ -389,7 +328,7 @@ theorem compareCtor_sim {c : CmpCtx} (hc : A.Adm c) {mx my : MutConst}
     (hy : y ∈ my.ctors) :
     Sim (Coh A ms) (compareCtor c mx.levelParams.toList my.levelParams.toList x y)
       (compareCtorKeys c mx.levelParams.toList my.levelParams.toList x y) := by
-  have := cached_sim hinj hN hin (mem_ents_ctor hmx hx) (mem_ents_ctor hmy hy) hc
+  have := cached_sim hinj (mem_ents_ctor hmx hx) (mem_ents_ctor hmy hy) hc
     (body := liftE (compareCtorKeys c mx.levelParams.toList my.levelParams.toList x y))
     (Sim.liftE' _) id (fun d => match d with
       | some o => pure ⟨true, o⟩
@@ -408,7 +347,7 @@ theorem compareInd_sim {c : CmpCtx} (hc : A.Adm c) {x y : Ind}
       (zipCtx (ctorC c) (x.levelParams.toList, x.ctors.toList)
         (y.levelParams.toList, y.ctors.toList)) :=
     Sim.zipM _ _ fun u hu v hv =>
-      compareCtor_sim hinj hN hin hc (mx := .indc x) (my := .indc y) hx hy
+      compareCtor_sim hinj hc (mx := .indc x) (my := .indc y) hx hy
         (by simpa [MutConst.ctors] using hu) (by simpa [MutConst.ctors] using hv)
   have hh := indHeader_eq x y
   unfold compareInd indP
@@ -444,7 +383,7 @@ theorem compareConstBody_sim {c : CmpCtx} (hc : A.Adm c) {x y : MutConst}
   all_goals first
     | exact Sim.liftE' _
     | exact Sim.pure' _
-    | exact compareInd_sim hinj hN hin hc hx hy
+    | exact compareInd_sim hinj hc hx hy
 
 /-- The context `compareConst` builds. -/
 def ctxOf (addr? : Name → Option Address) (ctx : MutCtx) : CmpCtx := { addr?, mutCtx := ctx }
@@ -454,7 +393,7 @@ def constOrd (addr? : Name → Option Address) (ctx : MutCtx) (x y : MutConst) :
     Except CmpError Ordering :=
   (constP (ctxOf addr? ctx) x y).map (·.ord)
 
-omit hinj hN hin in
+omit hinj in
 theorem Run.adm_ctxOf {A : Run} {ctx : MutCtx} (hdom : ∀ n, (ctx[n]?).isSome = true ↔ A.dom n) :
     A.Adm (ctxOf A.addr? ctx) :=
   ⟨rfl, hdom⟩
@@ -464,8 +403,8 @@ cache. -/
 theorem compareConst_sim {ctx : MutCtx} (hdom : ∀ n, (ctx[n]?).isSome = true ↔ A.dom n)
     {x y : MutConst} (hx : x ∈ ms) (hy : y ∈ ms) :
     Sim (Coh A ms) (compareConst A.addr? ctx x y) (constOrd A.addr? ctx x y) := by
-  have := cached_sim hinj hN hin (mem_ents_mem hx) (mem_ents_mem hy) (Run.adm_ctxOf hdom)
-    (compareConstBody_sim hinj hN hin (Run.adm_ctxOf hdom) hx hy) SOrder.ord (fun d => match d with
+  have := cached_sim hinj (mem_ents_mem hx) (mem_ents_mem hy) (Run.adm_ctxOf hdom)
+    (compareConstBody_sim hinj (Run.adm_ctxOf hdom) hx hy) SOrder.ord (fun d => match d with
       | some o => pure o
       | _ => do
         let so ← compareConstBody (ctxOf A.addr? ctx) x y
@@ -506,10 +445,9 @@ theorem PreOn.ord {α : Type} {S : α → Prop} {F : α → α → Except CmpErr
         obtain ⟨s3, o3, e3, n3⟩ := h.trans ha hb hc ⟨_, _, f1, n1⟩ ⟨_, _, f2, n2⟩
         exact ⟨true, o3, by rw [e3]; rfl, n3⟩
 
-/-- **The comparator is a total preorder at a fixed context**, on the members
-whose references are faithful names. -/
-theorem constOrd_total (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) : PreOn (ConstIn N) (fun x y => liftOrd (constOrd addr? ctx x y)) :=
-  (constP_total (ctxOf addr? ctx) hN).ord
+/-- **The comparator is a total preorder at a fixed context.** -/
+theorem constOrd_total (addr? : Name → Option Address) (ctx : MutCtx) :
+    TotalPre (fun x y => liftOrd (constOrd addr? ctx x y)) :=
+  (constP_total (ctxOf addr? ctx)).ord
 
 end Ix.CompileCert.Canon

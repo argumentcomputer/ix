@@ -503,27 +503,24 @@ theorem match_shape {c : Ix.Compile.Canon.CmpCtx} {left right : MutConst}
 of `sortClasses` match under the classes' context (`Canon.sortClasses_match`,
 from the coarsest partition's consistency), so they have one shape. -/
 theorem sorted_classes_agree (rules : Ix.Compile.Canon.Rules) {addresses : Ix.Name → Option Address}
-    {N : Ix.Name → Prop} (faithful : Canon.Faithful N) {sources : List MutConst}
-    (refs : ∀ source ∈ sources, Canon.ConstIn N source) (keys : Canon.KeysDistinct sources)
+    {sources : List MutConst} (keys : Canon.KeysDistinct sources)
     {classes : List (List MutConst)} {stats : Ix.Compile.Canon.SortStats}
     (ran : Ix.Compile.Canon.sortClasses rules addresses sources = .ok (classes, stats)) :
     ClassesAgree classes := by
   intro members present left leftIn right rightIn
   by_cases same : left = right
   · exact same ▸ rfl
-  · exact match_shape (Canon.sortClasses_match rules faithful refs keys ran members present left leftIn
+  · exact match_shape (Canon.sortClasses_match rules keys ran members present left leftIn
       right rightIn same)
 
 /-- **The compiler's class sort returns a partition of its members whose
 classes agree in shape** (R9b: `ClassesAgree` discharged), for members whose
-member and constructor names are pairwise distinct under `==` and whose
-references lie in a set of names within which `==` is equality. -/
-theorem sort_classes (sources : List MutConst) {N : Ix.Name → Prop} (faithful : Canon.Faithful N)
-    (refs : ∀ source ∈ sources, Canon.ConstIn N source) (keys : Canon.KeysDistinct sources) :
+member and constructor names are pairwise distinct. -/
+theorem sort_classes (sources : List MutConst) (keys : Canon.KeysDistinct sources) :
     Emission.Yields (sortConsts sources)
       (fun classes => Canon.Partition classes sources ∧ ClassesAgree classes) := by
   intro context before classes after ran
   obtain ⟨-, addresses, stats, sorted⟩ := ProjectionLayout.sort_run sources ran
-  exact ⟨(Canon.sortClasses_coarsest _ faithful refs keys sorted).1,
-    sorted_classes_agree _ faithful refs keys sorted⟩
+  exact ⟨(Canon.sortClasses_coarsest _ keys sorted).1, sorted_classes_agree _ keys sorted⟩
+
 end Ix.CompileCert.MutualProjections

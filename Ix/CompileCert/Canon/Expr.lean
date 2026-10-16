@@ -7,9 +7,8 @@ CS-01, ported from the donor `a9cf3607` (`Canon/Expr`). At a fixed context
 comparison of finite trees whose leaves are totally preordered, with
 non-semantic `mdata` stripped on either side and semantic-contract `mdata`
 a node above every other tag. `compareExpr_total`: on the points
-`(universe-parameter list, expression)` whose referenced names (constant
-heads and projection structures) lie in a faithful set `N` (`ExprIn N`;
-`Ref.lean`), the comparison is oriented and transitive on its ok-domain.
+`(universe-parameter list, expression)`, the comparison is oriented and
+transitive on its ok-domain.
 
 The proof reads the comparator through its head view:
 
@@ -301,67 +300,7 @@ theorem cE_contract (c : CmpCtx) (xl yl : List Name) {dx x hx dy y hy}
         lexIf (pure ⟨true, compare cx.orderKey cy.orderKey⟩) (compareExpr c xl yl x y)) := by
   rw [compareExpr.eq_def]; simp only [h1, h2, ↓reduceIte]; rfl
 
-/-! ## The names an expression references -/
-
-/-- Every constant head and projection structure `e` references is in `N`
-(binder names, level parameters and `mdata` keys are not compared as
-references). -/
-def ExprIn (N : Name → Prop) : Expr → Prop
-  | .const n _ _ => N n
-  | .proj n _ s _ => N n ∧ ExprIn N s
-  | .app f a _ => ExprIn N f ∧ ExprIn N a
-  | .lam _ t b _ _ => ExprIn N t ∧ ExprIn N b
-  | .forallE _ t b _ _ => ExprIn N t ∧ ExprIn N b
-  | .letE _ t v b _ _ => ExprIn N t ∧ ExprIn N v ∧ ExprIn N b
-  | .mdata _ e _ => ExprIn N e
-  | _ => True
-
-theorem ExprIn.mono {N N' : Name → Prop} (sub : ∀ n, N n → N' n) : ∀ {e : Expr}, ExprIn N e → ExprIn N' e
-  | .const .., h => sub _ h
-  | .proj .., h => ⟨sub _ h.1, h.2.mono sub⟩
-  | .app .., h | .lam .., h | .forallE .., h => ⟨h.1.mono sub, h.2.mono sub⟩
-  | .letE .., h => ⟨h.1.mono sub, h.2.1.mono sub, h.2.2.mono sub⟩
-  | .mdata _ x _, h => ExprIn.mono sub (e := x) h
-  | .bvar .., _ | .fvar .., _ | .mvar .., _ | .sort .., _ | .lit .., _ => trivial
-
-theorem exprIn_ehd {N : Name → Prop} : ∀ {e h : Expr}, ExprIn N e → ehd e = some h → ExprIn N h
-  | .mdata d x hh, h, he, eh => by
-    unfold ehd at eh
-    split at eh
-    · cases eh; exact he
-    · exact exprIn_ehd (e := x) he eh
-  | .mvar .., _, _, eh | .fvar .., _, _, eh => by simp [ehd] at eh
-  | .bvar .., _, he, eh | .sort .., _, he, eh | .const .., _, he, eh | .app .., _, he, eh
-  | .lam .., _, he, eh | .forallE .., _, he, eh | .letE .., _, he, eh | .lit .., _, he, eh
-  | .proj .., _, he, eh => by
-    simp only [ehd, Option.some.injEq] at eh; subst eh; exact he
-
-theorem exprIn_e1 {N : Name → Prop} : ∀ {e : Expr}, ExprIn N e → ExprIn N (e1 e)
-  | .app .., h | .lam .., h | .forallE .., h | .letE .., h => h.1
-  | .proj .., h => h.2
-  | .mdata .., h => h
-  | .bvar .., h | .fvar .., h | .mvar .., h | .sort .., h | .const .., h | .lit .., h => h
-
-theorem exprIn_e2 {N : Name → Prop} : ∀ {e : Expr}, ExprIn N e → ExprIn N (e2 e)
-  | .app .., h | .lam .., h | .forallE .., h => h.2
-  | .letE .., h => h.2.1
-  | .proj .., h | .mdata .., h | .bvar .., h | .fvar .., h | .mvar .., h | .sort .., h
-  | .const .., h | .lit .., h => h
-
-theorem exprIn_e3 {N : Name → Prop} : ∀ {e : Expr}, ExprIn N e → ExprIn N (e3 e)
-  | .letE .., h => h.2.2
-  | .app .., h | .lam .., h | .forallE .., h | .proj .., h | .mdata .., h | .bvar .., h
-  | .fvar .., h | .mvar .., h | .sort .., h | .const .., h | .lit .., h => h
-
-theorem exprIn_name {N : Name → Prop} : ∀ {e : Expr}, ExprIn N e → (etag e = 2 ∨ etag e = 8) →
-    N (eConstName e)
-  | .const .., h, _ => h
-  | .proj .., h, _ => h.1
-  | .app .., _, t | .lam .., _, t | .forallE .., _, t | .letE .., _, t | .mdata .., _, t
-  | .bvar .., _, t | .fvar .., _, t | .mvar .., _, t | .sort .., _, t | .lit .., _, t => by
-    simp [etag] at t
-
-/-! ## The comparison is a total preorder on faithful names -/
+/-! ## The comparison is a total preorder -/
 
 /-- An expression with its side's universe-parameter list. -/
 abbrev EPt := List Name × Expr
@@ -369,24 +308,22 @@ abbrev EPt := List Name × Expr
 /-- `compareExpr` on points. -/
 def eC (c : CmpCtx) (a b : EPt) : Except CmpError SOrder := compareExpr c a.1 b.1 a.2 b.2
 
-/-- **The expression comparison is a total preorder at a fixed context**, on
-the expressions whose references lie in a faithful set of names. -/
-theorem compareExpr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (fun a : EPt => ExprIn N a.2) (eC c) := by
-  refine PreOn.ofSizeOn (fun a => exprSize a.2) fun n ih => ?_
+/-- **The expression comparison is a total preorder at a fixed context.** -/
+theorem compareExpr_total (c : CmpCtx) : TotalPre (eC c) := by
+  refine PreOn.ofSize (fun a => exprSize a.2) fun n ih => ?_
   refine PreOn.ofGood (fun a => (ehd a.2).isSome) ?_ ?_
   · rintro ⟨xl, x⟩ ⟨yl, y⟩ - - h r
     apply compareExpr_bad c xl yl x y
     simpa [Option.isSome_iff_ne_none] using h
   -- reduce to heads
   let H : EPt → EPt := fun a => (a.1, (ehd a.2).getD a.2)
-  suffices hH : PreOn (fun a : EPt => (ExprIn N a.2 ∧ exprSize a.2 < n + 1) ∧ HN a.2) (eC c) by
+  suffices hH : PreOn (fun a : EPt => exprSize a.2 < n + 1 ∧ HN a.2) (eC c) by
     refine (hH.comap H ?_).congr ?_
-    · rintro ⟨l, x⟩ ⟨⟨hi, hs⟩, hg⟩
+    · rintro ⟨l, x⟩ ⟨hs, hg⟩
       obtain ⟨hx, ex⟩ := Option.isSome_iff_exists.1 hg
       have hsp := ehd_spec (e := x) (h := hx) ex
       simp only [H, ex, Option.getD_some]
-      exact ⟨⟨exprIn_ehd hi ex, by simp only at hs; omega⟩, hsp.1⟩
+      exact ⟨by simp only at hs; omega, hsp.1⟩
     · rintro ⟨xl, x⟩ ⟨yl, y⟩ ⟨-, gx⟩ ⟨-, gy⟩
       obtain ⟨hx, ex⟩ := Option.isSome_iff_exists.1 gx
       obtain ⟨hy, ey⟩ := Option.isSome_iff_exists.1 gy
@@ -396,35 +333,25 @@ theorem compareExpr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
   · rintro ⟨xl, x⟩ ⟨yl, y⟩ ⟨-, hx⟩ ⟨-, hy⟩ ht
     exact compareExpr_diff c xl yl hx hy ht
   intro T
-  -- the parts of a head of tag `T` are smaller, and reference names of `N`
-  have h1 : ∀ a : EPt, ((ExprIn N a.2 ∧ exprSize a.2 < n + 1) ∧ HN a.2) ∧ etag a.2 = T →
-      T = 3 ∨ T = 4 ∨ T = 5 ∨ T = 6 ∨ T = 8 ∨ T = 9 → ExprIn N (e1 a.2) ∧ exprSize (e1 a.2) < n := by
-    rintro ⟨l, x⟩ ⟨⟨⟨hi, hs⟩, -⟩, ht⟩ hT
-    refine ⟨exprIn_e1 hi, ?_⟩
+  -- the parts of a head of tag `T` are smaller
+  have h1 : ∀ a : EPt, (exprSize a.2 < n + 1 ∧ HN a.2) ∧ etag a.2 = T →
+      T = 3 ∨ T = 4 ∨ T = 5 ∨ T = 6 ∨ T = 8 ∨ T = 9 → exprSize (e1 a.2) < n := by
+    rintro ⟨l, x⟩ ⟨⟨hs, -⟩, ht⟩ hT
     cases x <;> simp_all [etag, e1] <;> omega
-  have h2 : ∀ a : EPt, ((ExprIn N a.2 ∧ exprSize a.2 < n + 1) ∧ HN a.2) ∧ etag a.2 = T →
-      T = 3 ∨ T = 4 ∨ T = 5 ∨ T = 6 → ExprIn N (e2 a.2) ∧ exprSize (e2 a.2) < n := by
-    rintro ⟨l, x⟩ ⟨⟨⟨hi, hs⟩, -⟩, ht⟩ hT
-    refine ⟨exprIn_e2 hi, ?_⟩
+  have h2 : ∀ a : EPt, (exprSize a.2 < n + 1 ∧ HN a.2) ∧ etag a.2 = T →
+      T = 3 ∨ T = 4 ∨ T = 5 ∨ T = 6 → exprSize (e2 a.2) < n := by
+    rintro ⟨l, x⟩ ⟨⟨hs, -⟩, ht⟩ hT
     cases x <;> simp_all [etag, e2] <;> omega
-  have h3 : ∀ a : EPt, ((ExprIn N a.2 ∧ exprSize a.2 < n + 1) ∧ HN a.2) ∧ etag a.2 = T →
-      T = 6 → ExprIn N (e3 a.2) ∧ exprSize (e3 a.2) < n := by
-    rintro ⟨l, x⟩ ⟨⟨⟨hi, hs⟩, -⟩, ht⟩ hT
-    refine ⟨exprIn_e3 hi, ?_⟩
-    cases x <;> simp_all [etag, e3]
-    omega
-  have hn : ∀ a : EPt, ((ExprIn N a.2 ∧ exprSize a.2 < n + 1) ∧ HN a.2) ∧ etag a.2 = T →
-      T = 2 ∨ T = 8 → N (eConstName a.2) := by
-    rintro ⟨l, x⟩ ⟨⟨⟨hi, -⟩, -⟩, ht⟩ hT
-    have ht' : etag x = T := ht
-    exact exprIn_name hi (by omega)
-  have P1 : ∀ {S' : EPt → Prop}, (∀ a, S' a → ExprIn N (e1 a.2) ∧ exprSize (e1 a.2) < n) →
+  have h3 : ∀ a : EPt, (exprSize a.2 < n + 1 ∧ HN a.2) ∧ etag a.2 = T →
+      T = 6 → exprSize (e3 a.2) < n := by
+    rintro ⟨l, x⟩ ⟨⟨hs, -⟩, ht⟩ hT
+    cases x <;> simp_all [etag, e3]; omega
+  have P1 : ∀ {S' : EPt → Prop}, (∀ a, S' a → exprSize (e1 a.2) < n) →
       PreOn S' (fun a b => eC c (a.1, e1 a.2) (b.1, e1 b.2)) := fun hs => ih.comap _ hs
-  have P2 : ∀ {S' : EPt → Prop}, (∀ a, S' a → ExprIn N (e2 a.2) ∧ exprSize (e2 a.2) < n) →
+  have P2 : ∀ {S' : EPt → Prop}, (∀ a, S' a → exprSize (e2 a.2) < n) →
       PreOn S' (fun a b => eC c (a.1, e2 a.2) (b.1, e2 b.2)) := fun hs => ih.comap _ hs
-  have P3 : ∀ {S' : EPt → Prop}, (∀ a, S' a → ExprIn N (e3 a.2) ∧ exprSize (e3 a.2) < n) →
+  have P3 : ∀ {S' : EPt → Prop}, (∀ a, S' a → exprSize (e3 a.2) < n) →
       PreOn S' (fun a b => eC c (a.1, e3 a.2) (b.1, e3 b.2)) := fun hs => ih.comap _ hs
-  have R := compareRef_total c hN
   match T with
   | 0 =>
     refine (PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun a : EPt => eBvar a.2)).congr ?_
@@ -439,8 +366,8 @@ theorem compareExpr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
     symm; rw [eC, compareExpr.eq_def]; rfl
   | 2 =>
     refine ((compareLevels_total.comap (fun a : EPt => (a.1, eConstLevels a.2))
-      fun _ _ => trivial).lexIf (R.comap (fun a : EPt => eConstName a.2)
-      fun a h => hn a h (by omega))).congr ?_
+      fun _ _ => trivial).lexIf ((compareRef_total c).comap (fun a : EPt => eConstName a.2)
+      fun _ _ => trivial)).congr ?_
     rintro ⟨xl, x⟩ ⟨yl, y⟩ ⟨_, hx⟩ ⟨_, hy⟩
     cases x <;> cases y <;> simp only [etag] at hx hy <;> try omega
     symm; rw [eC, compareExpr.eq_def]; rfl
@@ -473,7 +400,7 @@ theorem compareExpr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
     cases x <;> cases y <;> simp only [etag] at hx hy <;> try omega
     symm; rw [eC, compareExpr.eq_def]; rfl
   | 8 =>
-    refine ((R.comap (fun a : EPt => eConstName a.2) fun a h => hn a h (by omega)).cmpM
+    refine (((compareRef_total c).comap (fun a : EPt => eConstName a.2) fun _ _ => trivial).cmpM
       ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun a : EPt => eProjIdx a.2)).cmpM
         (P1 fun a h => h1 a h (by omega)))).congr ?_
     rintro ⟨xl, x⟩ ⟨yl, y⟩ ⟨_, hx⟩ ⟨_, hy⟩

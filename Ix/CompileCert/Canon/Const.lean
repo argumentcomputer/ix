@@ -15,8 +15,7 @@ as pure functions with the same structure (`compareCtorKeys` is the
 compiler's own, `indP`, `constP`); `Cache.lean` proves that the cached
 functions return exactly these values whenever the cache holds only true
 results. The theorems: `compareDef_total`, `ctorP_total`, `indP_total`,
-`compareRecr_total`, `constP_total`, each on the constants whose
-expressions reference faithful names only (`ConstIn N`). Today's dispatch
+`compareRecr_total`, `constP_total`. Today's dispatch
 compares two kinds by their tags (the donor's port fix C1 is the only
 behaviour now, so its defect exhibit is gone). -/
 
@@ -34,31 +33,16 @@ instance transCmp_defKind : Std.TransCmp (compare : Ix.DefKind → Ix.DefKind �
 theorem cmp_true (o p : Ordering) : SOrder.cmp ⟨true, o⟩ ⟨true, p⟩ = ⟨true, o.then p⟩ := by
   cases o <;> rfl
 
-/-! ## The names a constant references -/
-
-def DefIn (N : Name → Prop) (x : Def) : Prop := ExprIn N x.type ∧ ExprIn N x.value
-
-def IndIn (N : Name → Prop) (x : Ind) : Prop :=
-  ExprIn N x.type ∧ ∀ c ∈ x.ctors.toList, ExprIn N c.cnst.type
-
-def RecIn (N : Name → Prop) (x : RecursorVal) : Prop :=
-  ExprIn N x.cnst.type ∧ ∀ r ∈ x.rules.toList, ExprIn N r.rhs
-
-/-- Every expression of the constant references only names of `N`. -/
-def ConstIn (N : Name → Prop) : MutConst → Prop
-  | .defn x => DefIn N x
-  | .indc x => IndIn N x
-  | .recr x => RecIn N x
 
 /-! ## Definitions -/
 
-theorem compareDef_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (DefIn N) (compareDef c) := by
-  have E := compareExpr_total c hN
+theorem compareDef_total (c : CmpCtx) :
+    TotalPre (compareDef c) := by
+  have E := compareExpr_total c
   refine ((PreOn.pureCmp (compare : Ix.DefKind → Ix.DefKind → Ordering) (fun x : Def => x.kind)).cmpM
     ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : Def => x.levelParams.size)).cmpM
-      ((E.comap (fun x : Def => (x.levelParams.toList, x.type)) fun _ h => h.1).cmpM
-        (E.comap (fun x : Def => (x.levelParams.toList, x.value)) fun _ h => h.2)))).congr ?_
+      ((E.comap (fun x : Def => (x.levelParams.toList, x.type)) fun _ _ => trivial).cmpM
+        (E.comap (fun x : Def => (x.levelParams.toList, x.value)) fun _ _ => trivial)))).congr ?_
   intro x y _ _; rfl
 
 /-! ## Constructors -/
@@ -68,9 +52,9 @@ universe-parameter list. -/
 def ctorC (c : CmpCtx) (a b : List Name × ConstructorVal) : Except CmpError SOrder :=
   compareCtorKeys c a.1 b.1 a.2 b.2
 
-theorem ctorP_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (fun a : List Name × ConstructorVal => ExprIn N a.2.cnst.type) (ctorC c) := by
-  have E := compareExpr_total c hN
+theorem ctorP_total (c : CmpCtx) :
+    TotalPre (ctorC c) := by
+  have E := compareExpr_total c
   refine ((PreOn.pureCmp (compare : Nat → Nat → Ordering)
       (fun a : List Name × ConstructorVal => a.2.cnst.levelParams.size)).cmpM
     ((PreOn.pureCmp (compare : Nat → Nat → Ordering)
@@ -80,7 +64,7 @@ theorem ctorP_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
     ((PreOn.pureCmp (compare : Nat → Nat → Ordering)
       (fun a : List Name × ConstructorVal => a.2.numFields)).cmpM
     (E.comap (fun a : List Name × ConstructorVal => (a.1, a.2.cnst.type))
-      fun _ h => h))))).congr ?_
+      fun _ _ => trivial))))).congr ?_
   intro x y _ _; rfl
 
 /-! ## Inductives -/
@@ -103,9 +87,9 @@ def indP (c : CmpCtx) (x y : Ind) : Except CmpError SOrder :=
       (zipCtx (ctorC c) (x.levelParams.toList, x.ctors.toList)
         (y.levelParams.toList, y.ctors.toList)))
 
-theorem indP_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (IndIn N) (indP c) := by
-  have E := compareExpr_total c hN
+theorem indP_total (c : CmpCtx) :
+    TotalPre (indP c) := by
+  have E := compareExpr_total c
   have H : TotalPre (fun x y : Ind => (pure (indHeader x y) : Except CmpError SOrder)) := by
     refine ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : Ind => x.levelParams.size)).cmpM
       ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : Ind => x.numParams)).cmpM
@@ -113,10 +97,11 @@ theorem indP_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
       (PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : Ind => x.ctors.size))))).congr ?_
     intro x y _ _
     simp only [cmpM_pure, indHeader_eq]
-  have C := (ctorP_total c hN).zipCtx
+  have C := ((ctorP_total c).zipCtx).mono
+    (S' := fun _ : List Name × List ConstructorVal => True) fun _ _ _ _ => trivial
   refine ((H.mono fun _ _ => trivial).lexIf
-    ((E.comap (fun x : Ind => (x.levelParams.toList, x.type)) fun _ h => h.1).cmpM
-    (C.comap (fun x : Ind => (x.levelParams.toList, x.ctors.toList)) fun _ h => h.2))).congr ?_
+    ((E.comap (fun x : Ind => (x.levelParams.toList, x.type)) fun _ _ => trivial).cmpM
+    (C.comap (fun x : Ind => (x.levelParams.toList, x.ctors.toList)) fun _ _ => trivial))).congr ?_
   intro x y _ _; rfl
 
 /-! ## Recursors -/
@@ -126,18 +111,19 @@ list. -/
 def ruleC (c : CmpCtx) (a b : List Name × RecursorRule) : Except CmpError SOrder :=
   compareRule c a.1 b.1 a.2 b.2
 
-theorem compareRule_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (fun a : List Name × RecursorRule => ExprIn N a.2.rhs) (ruleC c) := by
-  have E := compareExpr_total c hN
+theorem compareRule_total (c : CmpCtx) :
+    TotalPre (ruleC c) := by
+  have E := compareExpr_total c
   refine ((PreOn.pureCmp (compare : Nat → Nat → Ordering)
       (fun a : List Name × RecursorRule => a.2.nfields)).cmpM
-    (E.comap (fun a : List Name × RecursorRule => (a.1, a.2.rhs)) fun _ h => h)).congr ?_
+    (E.comap (fun a : List Name × RecursorRule => (a.1, a.2.rhs)) fun _ _ => trivial)).congr ?_
   intro x y _ _; rfl
 
-theorem compareRecr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (RecIn N) (compareRecr c) := by
-  have E := compareExpr_total c hN
-  have R := (compareRule_total c hN).zipCtx
+theorem compareRecr_total (c : CmpCtx) :
+    TotalPre (compareRecr c) := by
+  have E := compareExpr_total c
+  have R := ((compareRule_total c).zipCtx).mono
+    (S' := fun _ : List Name × List RecursorRule => True) fun _ _ _ _ => trivial
   let L := fun x : RecursorVal => x.cnst.levelParams.toList
   refine ((PreOn.pureCmp (compare : Nat → Nat → Ordering)
       (fun x : RecursorVal => x.cnst.levelParams.size)).cmpM
@@ -146,8 +132,8 @@ theorem compareRecr_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
     ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : RecursorVal => x.numMotives)).cmpM
     ((PreOn.pureCmp (compare : Nat → Nat → Ordering) (fun x : RecursorVal => x.numMinors)).cmpM
     ((PreOn.pureCmp (compare : Bool → Bool → Ordering) (fun x : RecursorVal => x.k)).cmpM
-    ((E.comap (fun x : RecursorVal => (L x, x.cnst.type)) fun _ h => h.1).cmpM
-      (R.comap (fun x : RecursorVal => (L x, x.rules.toList)) fun _ h => h.2)))))))).congr ?_
+    ((E.comap (fun x : RecursorVal => (L x, x.cnst.type)) fun _ _ => trivial).cmpM
+      (R.comap (fun x : RecursorVal => (L x, x.rules.toList)) fun _ _ => trivial)))))))).congr ?_
   intro x y _ _; rfl
 
 /-! ## The kind dispatch -/
@@ -179,30 +165,26 @@ def constP (c : CmpCtx) : MutConst → MutConst → Except CmpError SOrder
   | .recr x, .recr y => compareRecr c x y
   | x, y => pure ⟨true, compare (kindTag x) (kindTag y)⟩
 
-/-- **The constant comparison is a total preorder at a fixed context**, on
-the constants whose expressions reference faithful names only. -/
-theorem constP_total (c : CmpCtx) {N : Name → Prop} (hN : Faithful N) :
-    PreOn (ConstIn N) (constP c) := by
+/-- **The constant comparison is a total preorder at a fixed context.** -/
+theorem constP_total (c : CmpCtx) :
+    TotalPre (constP c) := by
   refine PreOn.ofTag kindTag ?_ ?_
   · intro x y _ _ h
     cases x <;> cases y <;> simp_all [kindTag, constP, pure, Except.pure]
   intro T
   match T with
   | 0 =>
-    refine ((compareDef_total c hN).comap defOf fun x h => ?_).congr ?_
-    · obtain ⟨hx, t⟩ := h; cases x <;> simp_all [kindTag, ConstIn, defOf]
-    · intro x y ⟨_, hx⟩ ⟨_, hy⟩
-      cases x <;> cases y <;> simp_all [kindTag, constP, defOf]
+    refine ((compareDef_total c).comap defOf fun _ _ => trivial).congr ?_
+    intro x y ⟨_, hx⟩ ⟨_, hy⟩
+    cases x <;> cases y <;> simp_all [kindTag, constP, defOf]
   | 1 =>
-    refine ((indP_total c hN).comap indOf fun x h => ?_).congr ?_
-    · obtain ⟨hx, t⟩ := h; cases x <;> simp_all [kindTag, ConstIn, indOf]
-    · intro x y ⟨_, hx⟩ ⟨_, hy⟩
-      cases x <;> cases y <;> simp_all [kindTag, constP, indOf]
+    refine ((indP_total c).comap indOf fun _ _ => trivial).congr ?_
+    intro x y ⟨_, hx⟩ ⟨_, hy⟩
+    cases x <;> cases y <;> simp_all [kindTag, constP, indOf]
   | 2 =>
-    refine ((compareRecr_total c hN).comap recOf fun x h => ?_).congr ?_
-    · obtain ⟨hx, t⟩ := h; cases x <;> simp_all [kindTag, ConstIn, recOf]
-    · intro x y ⟨_, hx⟩ ⟨_, hy⟩
-      cases x <;> cases y <;> simp_all [kindTag, constP, recOf]
+    refine ((compareRecr_total c).comap recOf fun _ _ => trivial).congr ?_
+    intro x y ⟨_, hx⟩ ⟨_, hy⟩
+    cases x <;> cases y <;> simp_all [kindTag, constP, recOf]
   | T + 3 =>
     refine PreOn.empty fun x ⟨_, h⟩ => ?_
     cases x <;> simp [kindTag] at h

@@ -9,8 +9,7 @@ across all rounds). This module states the same procedure in `Except`
 comparison of each round is `constOrd` under that round's context
 `MutConst.ctx classes`, the grouping `List.groupByM` itself) and proves that
 the code returns exactly its classes (`sortClasses_eq`), for members whose
-member and constructor names are pairwise distinct under `==`
-(`KeysDistinct`) and whose references lie in a faithful set of names. -/
+member and constructor names are pairwise distinct (`KeysDistinct`). -/
 
 namespace Ix.CompileCert.Canon
 
@@ -123,10 +122,9 @@ theorem pairwise_map_inj {β γ : Type} {f : β → γ} {R : γ → γ → Prop}
 
 theorem KeysDistinct.nameInj {ms : List MutConst} (hk : KeysDistinct ms) : NameInj ms := by
   intro e₁ h₁ e₂ h₂ he
-  unfold KeysDistinct at hk
+  unfold KeysDistinct List.Nodup at hk
   rw [← ents_names] at hk
-  exact pairwise_map_inj hk e₁ h₁ e₂ h₂ (fun h => by rw [he] at h; cases h)
-    (fun h => by rw [name_beq_symm he] at h; cases h)
+  exact pairwise_map_inj hk e₁ h₁ e₂ h₂ (fun h => h he) (fun h => h he.symm)
 
 /-- The names of a member list, as a run's domain. -/
 def domOf (ms : List MutConst) (n : Name) : Prop := n ∈ ms.flatMap keysOf
@@ -138,30 +136,29 @@ theorem ctx_dom_perm {classes : List (List MutConst)} {ms : List MutConst} (h : 
 
 /-! ## Orientation and permutation -/
 
-theorem constOrd_oriented (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) {S : MutConst → Prop} (hS : ∀ x, S x → ConstIn N x) :
+theorem constOrd_oriented (addr? : Name → Option Address) (ctx : MutCtx) {S : MutConst → Prop} :
     Oriented S (constOrd addr? ctx) := by
   intro a b ha hb o h
-  have := (constOrd_total addr? ctx hN).swap (a := a) (b := b) (hS a ha) (hS b hb) (s := true) (o := o)
+  have := (constOrd_total addr? ctx).swap (a := a) (b := b) trivial trivial (s := true) (o := o)
     (by simp [liftOrd, h, Except.map])
   cases e : constOrd addr? ctx b a with
   | error err => rw [e] at this; cases this
   | ok o' => rw [e] at this; simp [liftOrd, Except.map] at this; rw [this]
 
 /-- The groups of one round's output permute its input. -/
-theorem refineClassP_perm (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) : ∀ (xs : List MutConst) (gs : List (List MutConst)), (∀ x ∈ xs, ConstIn N x) →
+theorem refineClassP_perm (addr? : Name → Option Address) (ctx : MutCtx) :
+    ∀ (xs : List MutConst) (gs : List (List MutConst)),
       refineClassP addr? ctx xs = .ok gs → gs.flatten.Perm xs
-  | [], gs, _, h => by simp [refineClassP] at h
-  | [x], gs, _, h => by
+  | [], gs, h => by simp [refineClassP] at h
+  | [x], gs, h => by
     simp only [refineClassP, pure, Except.pure, Except.ok.injEq] at h; subst h; simp
-  | x :: y :: rest, gs, hxs, h => by
+  | x :: y :: rest, gs, h => by
     simp only [refineClassP] at h
     obtain ⟨sorted, hs, h⟩ := except_bind_ok.1 h
     obtain ⟨groups, hg, h⟩ := except_bind_ok.1 h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
-    obtain ⟨hp, -⟩ := sortByM_spec (constOrd_oriented addr? ctx hN (S := (· ∈ x :: y :: rest))
-      fun z hz => hxs z hz) _ (fun _ h => h) sorted hs
+    obtain ⟨hp, -⟩ := sortByM_spec (constOrd_oriented addr? ctx (S := (· ∈ x :: y :: rest)))
+      _ (fun _ h => h) sorted hs
     rw [groupByM_eq] at hg
     obtain ⟨G, hG, rfl⟩ : ∃ G, groupAdjP (eqOf (constOrd addr? ctx)) sorted = .ok G ∧ groups = lastRev G := by
       cases hG : groupAdjP (eqOf (constOrd addr? ctx)) sorted with
@@ -170,26 +167,25 @@ theorem refineClassP_perm (addr? : Name → Option Address) (ctx : MutCtx) {N : 
     obtain ⟨-, hf⟩ := groupAdjP_spec _ _ _ hG
     exact (map_sortByName_flatten_perm _).trans ((lastRev_flatten_perm G).trans (by rw [hf]; exact hp))
 
-theorem refineClassesP_perm (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) : ∀ (classes refined : List (List MutConst)), (∀ C ∈ classes, ∀ x ∈ C, ConstIn N x) →
+theorem refineClassesP_perm (addr? : Name → Option Address) (ctx : MutCtx) :
+    ∀ (classes refined : List (List MutConst)),
       refineClassesP addr? ctx classes = .ok refined → refined.flatten.Perm classes.flatten
-  | [], refined, _, h => by
+  | [], refined, h => by
     simp only [refineClassesP, pure, Except.pure, Except.ok.injEq] at h; subst h; exact List.Perm.refl _
-  | c :: cs, refined, hin, h => by
+  | c :: cs, refined, h => by
     simp only [refineClassesP] at h
     obtain ⟨gs, hgs, h⟩ := except_bind_ok.1 h
     obtain ⟨rest, hr, h⟩ := except_bind_ok.1 h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
     simp only [List.flatten_append, List.flatten_cons]
-    exact (refineClassP_perm addr? ctx hN c gs (hin c (by simp)) hgs).append
-      (refineClassesP_perm addr? ctx hN cs rest (fun C hC => hin C (by simp [hC])) hr)
+    exact (refineClassP_perm addr? ctx c gs hgs).append
+      (refineClassesP_perm addr? ctx cs rest hr)
 
 /-! ## Simulation -/
 
 section sim
-variable {addr? : Name → Option Address} {ms : List MutConst} {N : Name → Prop}
-  (hN : Faithful N) (hin : ∀ m ∈ ms, ConstIn N m) (hk : KeysDistinct ms)
-include hN hin hk
+variable {addr? : Name → Option Address} {ms : List MutConst} (hk : KeysDistinct ms)
+include hk
 
 /-- The run of a refinement over the members `ms`. -/
 abbrev runOf (addr? : Name → Option Address) (ms : List MutConst) : Run :=
@@ -200,8 +196,8 @@ theorem refineClass_sim {ctx : MutCtx} (hdom : ∀ n, (ctx[n]?).isSome = true �
       Sim (Coh (runOf addr? ms) ms) (refineClass addr? ctx xs) (refineClassP addr? ctx xs) := by
   have hsim : ∀ a b, a ∈ ms → b ∈ ms →
       Sim (Coh (runOf addr? ms) ms) (compareConst addr? ctx a b) (constOrd addr? ctx a b) :=
-    fun a b ha hb => compareConst_sim (A := runOf addr? ms) hk.nameInj hN hin hdom ha hb
-  have hor : Oriented (· ∈ ms) (constOrd addr? ctx) := constOrd_oriented addr? ctx hN hin
+    fun a b ha hb => compareConst_sim (A := runOf addr? ms) hk.nameInj hdom ha hb
+  have hor : Oriented (· ∈ ms) (constOrd addr? ctx) := constOrd_oriented addr? ctx
   intro xs hxs
   match xs, hxs with
   | [], _ => exact Sim.liftE' _
@@ -222,7 +218,7 @@ theorem refineClasses_sim {ctx : MutCtx} (hdom : ∀ n, (ctx[n]?).isSome = true 
   | [], _ => Sim.pure' _
   | c :: cs, h => by
     simp only [refineClasses, refineClassesP]
-    refine Sim.bind (refineClass_sim hN hin hk hdom c (h c (by simp))) fun _ _ => ?_
+    refine Sim.bind (refineClass_sim hk hdom c (h c (by simp))) fun _ _ => ?_
     exact Sim.bind (refineClasses_sim hdom cs fun C hC => h C (by simp [hC])) fun _ _ => Sim.pure' _
 
 theorem sortLoop_sim : ∀ (fuel round : Nat) (classes : List (List MutConst)), classes.flatten.Perm ms →
@@ -236,19 +232,16 @@ theorem sortLoop_sim : ∀ (fuel round : Nat) (classes : List (List MutConst)), 
     simp only [sortLoop, sortLoopP]
     have hmem : ∀ C ∈ classes, ∀ x ∈ C, x ∈ ms :=
       fun C hC x hx => hp.mem_iff.1 (List.mem_flatten.2 ⟨C, hC, hx⟩)
-    refine Sim.bind (refineClasses_sim hN hin hk (ctx_dom_perm hp) classes hmem) fun refined hr => ?_
+    refine Sim.bind (refineClasses_sim hk (ctx_dom_perm hp) classes hmem) fun refined hr => ?_
     split
     · exact Sim.pure' _
-    · exact ih _ refined ((refineClassesP_perm addr? _ hN classes refined
-        (fun C hC x hx => hin x (hmem C hC x hx)) hr).trans hp)
+    · exact ih _ refined ((refineClassesP_perm addr? _ classes refined hr).trans hp)
 
 end sim
 
 /-- **The code's classes are the pure refinement's**, for members with
-pairwise `==`-distinct names whose references lie in a faithful set of
-names. -/
-theorem sortClasses_eq (rules : Rules) {addr? : Name → Option Address} {N : Name → Prop}
-    (hN : Faithful N) {sources : List MutConst} (hin : ∀ m ∈ sources, ConstIn N m)
+pairwise distinct member and constructor names. -/
+theorem sortClasses_eq (rules : Rules) {addr? : Name → Option Address} {sources : List MutConst}
     (hk : KeysDistinct sources) :
     (sortClasses rules addr? sources).map (·.1) = sortClassesP rules addr? sources := by
   unfold sortClasses sortClassesP
@@ -257,7 +250,7 @@ theorem sortClasses_eq (rules : Rules) {addr? : Name → Option Address} {N : Na
   · simp only [he, Bool.false_eq_true, ↓reduceIte]
     cases hs : rules.seed
     · simp only [seedOf, hs]
-      obtain ⟨st', -, e⟩ := sortLoop_sim hN hin hk (sources.length + 1) 0 [sortByName sources]
+      obtain ⟨st', -, e⟩ := sortLoop_sim hk (sources.length + 1) 0 [sortByName sources]
         (by simpa using sortByName_perm sources) {} (coh_empty _ _)
       rw [e]
       cases sortLoopP addr? (sources.length + 1) 0 [sortByName sources] with
@@ -271,7 +264,7 @@ theorem sortClasses_eq (rules : Rules) {addr? : Name → Option Address} {N : Na
           · simp only [h1, h2, Bool.false_eq_true, ↓reduceIte]
           · simp only [h1, h2, Bool.false_eq_true, ↓reduceIte, pure, Except.pure]
     · simp only [seedOf, hs]
-      obtain ⟨st', -, e⟩ := sortLoop_sim hN hin hk (sources.length + 1) 0 [sources]
+      obtain ⟨st', -, e⟩ := sortLoop_sim hk (sources.length + 1) 0 [sources]
         (by simp) {} (coh_empty _ _)
       rw [e]
       cases sortLoopP addr? (sources.length + 1) 0 [sources] with

@@ -251,29 +251,28 @@ theorem mem_repOf (groups : List (List MutConst)) (g : List MutConst) :
 /-- **One class**: its groups partition it, members of one group compare
 `eq`, and the members of an earlier group compare `lt` against those of a
 later one. -/
-theorem refineClassP_spec (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) (xs : List MutConst) (hxs : ∀ x ∈ xs, ConstIn N x)
+theorem refineClassP_spec (addr? : Name → Option Address) (ctx : MutCtx) (xs : List MutConst)
     (gs : List (List MutConst)) (h : refineClassP addr? ctx xs = .ok gs) :
     gs.flatten.Perm xs ∧ (∀ g ∈ gs, g ≠ []) ∧
     (∀ g ∈ gs, ∀ x ∈ g, ∀ y ∈ g, x ≠ y → constOrd addr? ctx x y = .ok .eq) ∧
     (∀ (i j : Nat) (hij : i < j) (hj : j < gs.length), ∀ x ∈ gs[i]'(Nat.lt_trans hij hj),
       ∀ y ∈ gs[j], constOrd addr? ctx x y = .ok .lt) := by
-  have ht := (constOrd_total addr? ctx hN).mono (S' := (· ∈ xs)) fun x hx => hxs x hx
-  match xs, hxs, ht, h with
-  | [], _, _, h => simp [refineClassP] at h
-  | [x], _, _, h =>
+  have ht := (constOrd_total addr? ctx).mono (S' := (· ∈ xs)) fun _ _ => trivial
+  match xs, ht, h with
+  | [], _, h => simp [refineClassP] at h
+  | [x], _, h =>
     simp only [refineClassP, pure, Except.pure, Except.ok.injEq] at h; subst h
     refine ⟨by simp, by simp, ?_, fun i j hij hj => by simp at hj; omega⟩
     intro g hg a ha b hb hab
     simp at hg; subst hg; simp at ha hb; subst ha; subst hb; exact absurd rfl hab
-  | x :: y :: rest, hxs, ht, h =>
-    have hp := refineClassP_perm addr? ctx hN _ gs hxs h
+  | x :: y :: rest, ht, h =>
+    have hp := refineClassP_perm addr? ctx _ gs h
     simp only [refineClassP] at h
     obtain ⟨sorted, hs, h⟩ := except_bind_ok.1 h
     obtain ⟨groups, hg, h⟩ := except_bind_ok.1 h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
-    obtain ⟨hsp, hsorted⟩ := sortByM_spec (constOrd_oriented addr? ctx hN (S := (· ∈ x :: y :: rest))
-      fun z hz => hxs z hz) _ (fun _ h => h) sorted hs
+    obtain ⟨hsp, hsorted⟩ := sortByM_spec (constOrd_oriented addr? ctx (S := (· ∈ x :: y :: rest)))
+      _ (fun _ h => h) sorted hs
     rw [groupByM_eq] at hg
     obtain ⟨G, hG, rfl⟩ : ∃ G, groupAdjP (eqOf (constOrd addr? ctx)) sorted = .ok G ∧ groups = lastRev G := by
       cases hG : groupAdjP (eqOf (constOrd addr? ctx)) sorted with
@@ -302,12 +301,12 @@ theorem refineClassP_spec (addr? : Name → Option Address) (ctx : MutCtx) {N : 
 /-! ## A round -/
 
 /-- Two members of one class end in one group when they compare `eq`. -/
-theorem same_group_of_eq (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) {xs : List MutConst} (hxs : ∀ x ∈ xs, ConstIn N x) {gs : List (List MutConst)}
+theorem same_group_of_eq (addr? : Name → Option Address) (ctx : MutCtx) {xs : List MutConst}
+    {gs : List (List MutConst)}
     (h : refineClassP addr? ctx xs = .ok gs) {x y : MutConst} (hx : x ∈ xs) (hy : y ∈ xs)
     (he : constOrd addr? ctx x y = .ok .eq) : ∃ g ∈ gs, x ∈ g ∧ y ∈ g := by
-  obtain ⟨hp, -, -, hlt⟩ := refineClassP_spec addr? ctx hN xs hxs gs h
-  have ht := constOrd_total addr? ctx hN
+  obtain ⟨hp, -, -, hlt⟩ := refineClassP_spec addr? ctx xs gs h
+  have ht := constOrd_total addr? ctx
   obtain ⟨gx, hgx, hxg⟩ := List.mem_flatten.1 (hp.mem_iff.2 hx)
   obtain ⟨gy, hgy, hyg⟩ := List.mem_flatten.1 (hp.mem_iff.2 hy)
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hgx
@@ -315,12 +314,11 @@ theorem same_group_of_eq (addr? : Name → Option Address) (ctx : MutCtx) {N : N
   rcases Nat.lt_trichotomy i j with hij | rfl | hij
   · rw [hlt i j hij hj x hxg y hyg] at he; cases he
   · exact ⟨_, hgx, hxg, hyg⟩
-  · have := ord_swap ht (hxs y hy) (hxs x hx) (hlt j i hij hi y hyg x hxg); rw [this] at he; cases he
+  · have := ord_swap ht trivial trivial (hlt j i hij hi y hyg x hxg); rw [this] at he; cases he
 
 /-- **A round**: each class is replaced by its groups. -/
-theorem refineClassesP_spec (addr? : Name → Option Address) (ctx : MutCtx) {N : Name → Prop}
-    (hN : Faithful N) : ∀ (classes refined : List (List MutConst)), (∀ C ∈ classes, C ≠ []) →
-      (∀ C ∈ classes, ∀ x ∈ C, ConstIn N x) →
+theorem refineClassesP_spec (addr? : Name → Option Address) (ctx : MutCtx) :
+    ∀ (classes refined : List (List MutConst)), (∀ C ∈ classes, C ≠ []) →
       refineClassesP addr? ctx classes = .ok refined →
       refined.flatten.Perm classes.flatten ∧ (∀ g ∈ refined, g ≠ []) ∧ Refines refined classes ∧
       (∀ C ∈ classes, ∀ x ∈ C, ∀ y ∈ C, constOrd addr? ctx x y = .ok .eq →
@@ -328,19 +326,17 @@ theorem refineClassesP_spec (addr? : Name → Option Address) (ctx : MutCtx) {N 
       (∀ g ∈ refined, ∀ x ∈ g, ∀ y ∈ g, x ≠ y → constOrd addr? ctx x y = .ok .eq) ∧
       classes.length ≤ refined.length ∧
       (classes.length = refined.length → ∀ C ∈ classes, ∃ g ∈ refined, ∀ x, x ∈ g ↔ x ∈ C)
-  | [], refined, _, _, h => by
+  | [], refined, _, h => by
     simp only [refineClassesP, pure, Except.pure, Except.ok.injEq] at h; subst h
     refine ⟨List.Perm.refl _, by simp, fun C hC => by simp at hC, by simp, by simp, by simp, by simp⟩
-  | c :: cs, refined, hne, hin, h => by
+  | c :: cs, refined, hne, h => by
     simp only [refineClassesP] at h
     obtain ⟨gs, hgs, h⟩ := except_bind_ok.1 h
     obtain ⟨rest, hr, h⟩ := except_bind_ok.1 h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
-    have hc := hin c (by simp)
-    obtain ⟨hp, hgne, heq, -⟩ := refineClassP_spec addr? ctx hN c hc gs hgs
+    obtain ⟨hp, hgne, heq, -⟩ := refineClassP_spec addr? ctx c gs hgs
     obtain ⟨rp, rne, rref, rsame, req, rlen, rone⟩ :=
-      refineClassesP_spec addr? ctx hN cs rest (fun C hC => hne C (by simp [hC]))
-        (fun C hC => hin C (by simp [hC])) hr
+      refineClassesP_spec addr? ctx cs rest (fun C hC => hne C (by simp [hC])) hr
     have hgs1 : 1 ≤ gs.length := by
       cases gs with
       | nil =>
@@ -360,7 +356,7 @@ theorem refineClassesP_spec (addr? : Name → Option Address) (ctx : MutCtx) {N 
         exact ⟨D, by simp [hD], h1, h2⟩
     · intro C hC x hx y hy he
       rcases List.mem_cons.1 hC with rfl | hC
-      · obtain ⟨g, hg, h1, h2⟩ := same_group_of_eq addr? ctx hN hc hgs hx hy he
+      · obtain ⟨g, hg, h1, h2⟩ := same_group_of_eq addr? ctx hgs hx hy he
         exact ⟨g, List.mem_append_left _ hg, h1, h2⟩
       · obtain ⟨g, hg, h1, h2⟩ := rsame C hC x hx y hy he
         exact ⟨g, List.mem_append_right _ hg, h1, h2⟩

@@ -247,14 +247,12 @@ call-site plans and from a state whose tables are on the wire, return classes
 that partition the members and a block that decodes exactly, whose
 projections decode exactly, and whose rows read, in any store holding the
 block, as the classes' source-indexed references; given members whose member
-and constructor names are pairwise distinct under `==`, whose references lie
-in a set of names within which `==` is equality, and whose constructors
-declare their positions. `mutual_correct`'s `nonempty` and `ClassesAgree`
-premises are discharged by the sort (`MutualProjections.sort_classes`). -/
+and constructor names are pairwise distinct and whose constructors declare
+their positions. `mutual_correct`'s `nonempty` and `ClassesAgree` premises are
+discharged by the sort (`MutualProjections.sort_classes`). -/
 theorem mutual_sorted_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (members : List MutConst) {before after : BlockState} {output : BlockResult}
     (wire : Ix.Sharing.Verify.BlockWireTablesWF before) (widths : PreseedWire.LookupWidths context.1 before)
-    {N : Ix.Name → Prop} (faithful : Canon.Faithful N) (refs : ∀ member ∈ members, Canon.ConstIn N member)
     (keys : Canon.KeysDistinct members)
     (positions : ∀ member ∈ members, MutualProjections.ConstructorPositions member)
     (ran : rawRun (sortConsts members >>= compileMutualBlock) context before = (.ok output, after)) :
@@ -264,7 +262,7 @@ theorem mutual_sorted_correct (context : CompileEnv × BlockEnv) (free : context
         readRows store (logicalRows output.projections) = expectedReferences output.blockAddr classes := by
   obtain ⟨classes, middle, sorted, compiled⟩ := bind_ok ran
   obtain ⟨rfl, -⟩ := ProjectionLayout.sort_run members sorted
-  obtain ⟨partition, agree⟩ := MutualProjections.sort_classes members faithful refs keys context middle
+  obtain ⟨partition, agree⟩ := MutualProjections.sort_classes members keys context middle
     classes middle sorted
   refine ⟨classes, partition, mutual_correct context free classes wire widths partition.2 agree
     (fun source present => positions source (partition.1.mem_iff.1 present)) compiled⟩

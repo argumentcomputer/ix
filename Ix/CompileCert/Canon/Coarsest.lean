@@ -19,12 +19,10 @@ under the coarser round's context, `constOrd_eq_mono`, and the round keeps
 `eq` members together); at the fixed point no class splits, so its members
 compare `eq` under the final context.
 
-Hypotheses: the members' and constructors' names are pairwise distinct
-under `==` (`KeysDistinct`, as Lean's names are), and the names the members
-reference lie in a set within which `==` is equality (`Faithful N`; since
-CQ2.25 the class context and the compiler's address map compare names
-exactly while `compareRef` tests the stored hash). For any rule set: the
-seed only permutes the start. -/
+Hypothesis: the members' and constructors' names are pairwise distinct
+(`KeysDistinct`, as Lean's names are). Since the CQ2.25 follow-up the
+comparator compares names structurally throughout, so nothing more is
+needed. For any rule set: the seed only permutes the start. -/
 
 namespace Ix.CompileCert.Canon
 
@@ -74,8 +72,8 @@ def Coarsest (addr? : Name → Option Address) (ms : List MutConst)
     (classes : List (List MutConst)) : Prop :=
   ∀ Q, Partition Q ms → Consistent addr? Q → Refines Q classes
 
-theorem sortLoopP_spec {addr? : Name → Option Address} {N : Name → Prop} (hN : Faithful N)
-    {ms : List MutConst} (hin : ∀ m ∈ ms, ConstIn N m) (hk : KeysDistinct ms) :
+theorem sortLoopP_spec {addr? : Name → Option Address}
+    {ms : List MutConst} (hk : KeysDistinct ms) :
     ∀ (fuel round : Nat) (classes F : List (List MutConst)) (r : Nat),
       Partition classes ms → Coarsest addr? ms classes →
       sortLoopP addr? fuel round classes = .ok (F, r) →
@@ -87,10 +85,8 @@ theorem sortLoopP_spec {addr? : Name → Option Address} {N : Name → Prop} (hN
     intro round classes F r hP hC h
     simp only [sortLoopP] at h
     obtain ⟨refined, hr, h⟩ := except_bind_ok.1 h
-    have hcin : ∀ C ∈ classes, ∀ x ∈ C, ConstIn N x :=
-      fun C hC x hx => hin x (hP.1.mem_iff.1 (List.mem_flatten.2 ⟨C, hC, hx⟩))
     obtain ⟨rp, rne, rref, rsame, req, -, rone⟩ :=
-      refineClassesP_spec addr? _ hN classes refined hP.2 hcin hr
+      refineClassesP_spec addr? _ classes refined hP.2 hr
     have hPr : Partition refined ms := ⟨rp.trans hP.1, rne⟩
     -- every consistent partition still refines the refined classes
     have hCr : Coarsest addr? ms refined := by
@@ -120,8 +116,8 @@ theorem sortLoopP_spec {addr? : Name → Option Address} {N : Name → Prop} (hN
 
 /-- **The classes are the coarsest consistent partition**, for the pure
 refinement. -/
-theorem sortClassesP_coarsest (rules : Rules) {addr? : Name → Option Address} {N : Name → Prop}
-    (hN : Faithful N) {sources : List MutConst} (hin : ∀ m ∈ sources, ConstIn N m)
+theorem sortClassesP_coarsest (rules : Rules) {addr? : Name → Option Address}
+    {sources : List MutConst}
     (hk : KeysDistinct sources) {F : List (List MutConst)}
     (h : sortClassesP rules addr? sources = .ok F) :
     Partition F sources ∧ Consistent addr? F ∧ Coarsest addr? sources F := by
@@ -153,19 +149,18 @@ theorem sortClassesP_coarsest (rules : Rules) {addr? : Name → Option Address} 
       refine ⟨seedOf rules sources, by simp, ?_, ?_⟩
       · exact (seedOf_perm rules sources).mem_iff.2 (hQ.1.mem_iff.1 (List.mem_flatten.2 ⟨D, hD, hm⟩))
       · exact (seedOf_perm rules sources).mem_iff.2 (hQ.1.mem_iff.1 (List.mem_flatten.2 ⟨D, hD, hm'⟩))
-    exact sortLoopP_spec hN hin hk _ _ _ classes rounds hseed hC0 hl
+    exact sortLoopP_spec hk _ _ _ classes rounds hseed hC0 hl
 
 /-- **The classes of `sortClasses` are the coarsest consistent partition**,
-for every rule set, members whose member and constructor names are pairwise
-distinct under `==`, and members whose references lie in a faithful set of
-names. -/
-theorem sortClasses_coarsest (rules : Rules) {addr? : Name → Option Address} {N : Name → Prop}
-    (hN : Faithful N) {sources : List MutConst} (hin : ∀ m ∈ sources, ConstIn N m)
+for every rule set and members whose member and constructor names are
+pairwise distinct. -/
+theorem sortClasses_coarsest (rules : Rules) {addr? : Name → Option Address}
+    {sources : List MutConst}
     (hk : KeysDistinct sources) {F : List (List MutConst)} {stats : SortStats}
     (h : sortClasses rules addr? sources = .ok (F, stats)) :
     Partition F sources ∧ Consistent addr? F ∧ Coarsest addr? sources F := by
-  have := sortClasses_eq rules hN hin hk (addr? := addr?)
+  have := sortClasses_eq rules hk (addr? := addr?)
   rw [h] at this
-  exact sortClassesP_coarsest rules hN hin hk this.symm
+  exact sortClassesP_coarsest rules hk this.symm
 
 end Ix.CompileCert.Canon
