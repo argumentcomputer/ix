@@ -21,7 +21,7 @@ import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
-import Ix.CompileCert.Canon.Rel
+import Ix.CompileCert.Canon.Coarsest
 
 /-! # Audit of the reading-chain proofs
 
@@ -54,7 +54,8 @@ syntactic walks through sharing and along the source
 (`Ix.CompileCert.InductiveReading`), and what Source mode admits of an
 inductive block (`Ix.CompileCert.SourceConstructorPositions`), and the shared
 loop lemmas (`Ix.CompileCert.Loop`), and Pass 1's comparator as a total preorder
-(`Ix.CompileCert.Canon.Basic` … `Rel`).
+(`Ix.CompileCert.Canon.Basic` … `Rel`) and its classes, the coarsest consistent
+partition (`Ix.CompileCert.Canon.Cache` … `Coarsest`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -440,6 +441,33 @@ def canonOrderRoots : Array Lean.Name :=
     `indP_rel, `compareRecr_rel, `constP_rel, `strongRel, `compareRef_strong, `constP_strong, `ctorP_strong,
     `eqRel, `compareRef_eq_mono, `constP_eq_mono].map (`Ix.CompileCert.Canon ++ ·)
 
+/-- Pass 1's classes (CS-01): the strong-result cache returns the pure
+comparison, the merge sort sorts, `List.groupByM` groups adjacent equals,
+the class context's values, the code is the pure refinement, one round's
+specification, and the coarsest consistent partition (`sortClasses_coarsest`). -/
+def canonClassRoots : Array Lean.Name :=
+  #[`prod_beq_iff, `cacheKey_beq, `mem_ents_mem, `mem_ents_ctor, `entIn_of_mem, `entP_swap, `entP_strong,
+    `Run.Adm.sameDom, `coh_empty, `Sim.pure', `Sim.bind, `Sim.liftE', `Sim.congr, `Sim.cmpM, `Sim.zipM,
+    `cacheGet_run, `cachePut_run, `cacheGet_spec, `cachePut_coh, `liftE_run, `cached_sim, `compareCtor_sim,
+    `compareInd_sim, `compareConstBody_sim, `Run.adm_ctxOf, `compareConst_sim, `PreOn.ord, `constOrd_total,
+    `sorted_cons_cons, `sorted_tail, `sorted_cons, `sorted_append_single, `leC_of_gt, `mergeM_spec,
+    `runs_spec, `mergePairs_spec, `mergeAll_spec, `sortByM_spec, `mergeM_sim, `runs_sim, `mergePairs_sim,
+    `mergeAll_sim, `sortByM_sim, `sorted_append_iff, `groupsOK_extend, `groupsOK_new, `groupGoP_spec,
+    `groupAdjP_spec, `lastRev_append_single, `groupByMAux_eq, `groupByM_eq, `lastRev_length,
+    `lastRev_getElem_mem, `mem_lastRev, `groupByMAux_sim, `groupByM_sim, `ctx_eq, `foldl_max, `ctor_fold,
+    `class_fold, `classes_fold, `ctx_fold, `treeMap_insert_self, `treeMap_insert_ne, `foldl_insP_getElem?,
+    `KeysDistinct.perm, `map_zipIdx_fst, `keys_pairsOf, `offs_zero, `offs_cons_succ, `keys_ctxPairs,
+    `mem_pairsOf, `mem_ctxPairs, `default_getElem?, `KeysDistinct.ne, `ctx_lookup, `ctx_member, `ctx_ctor,
+    `ctx_val, `ctx_dom, `maxC_ge, `offs_succ, `offs_mono, `slot_disjoint, `class_index, `ctx_merge,
+    `insertByName_perm, `sortByName_perm, `seedOf_perm, `map_sortByName_flatten_perm, `lastRev_flatten_perm,
+    `ents_names, `pairwise_map_inj, `KeysDistinct.nameInj, `ctx_dom_perm, `constOrd_oriented,
+    `refineClassP_perm, `refineClassesP_perm, `refineClass_sim, `refineClasses_sim, `sortLoop_sim,
+    `sortClasses_eq, `ord_swap, `le_of_ok, `ok_of_le, `eq_symm', `eq_trans', `lt_of_lt_le', `lt_of_le_lt',
+    `sorted_getElem, `sorted_flatten_adjacent, `eqOf_true, `eqOf_false, `group_eq, `group_eq_mem,
+    `groups_lt, `repOf_length, `repOf_getElem_mem, `mem_repOf, `refineClassP_spec, `same_group_of_eq,
+    `refineClassesP_spec, `coarser_ctxOf, `constOrd_eq_mono, `sortLoopP_spec, `sortClassesP_coarsest,
+    `sortClasses_coarsest].map (`Ix.CompileCert.Canon ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -576,6 +604,22 @@ def sourceRuntime : Array Lean.Name :=
     ``Ix.LeanIngress.withContract, ``Ix.CompileM.findConst, ``Ix.CompileM.collectMutConstConstructors,
     ``Ix.CompileM.MutConst.mkIndc]
 
+/-- Pass 1's comparator and refinement, which the class proofs unfold. -/
+def canonRuntime : Array Lean.Name :=
+  #[``Ix.Compile.Canon.toUniv, ``Ix.Compile.Canon.compareUniv, ``Ix.Compile.Canon.compareLevel,
+    ``Ix.Compile.Canon.compareLevels, ``Ix.Compile.Canon.compareExternal, ``Ix.Compile.Canon.compareRef,
+    ``Ix.Compile.Canon.compareExpr, ``Ix.Compile.Canon.liftE, ``Ix.Compile.Canon.cacheKey,
+    ``Ix.Compile.Canon.cacheGet, ``Ix.Compile.Canon.cachePut, ``Ix.Compile.Canon.compareDef,
+    ``Ix.Compile.Canon.compareCtorKeys, ``Ix.Compile.Canon.compareCtor, ``Ix.Compile.Canon.compareCtors,
+    ``Ix.Compile.Canon.indHeader, ``Ix.Compile.Canon.compareInd, ``Ix.Compile.Canon.compareRule,
+    ``Ix.Compile.Canon.compareRecr, ``Ix.Compile.Canon.kindTag, ``Ix.Compile.Canon.compareConstBody,
+    ``Ix.Compile.Canon.compareConst, ``Ix.Compile.Canon.insertByName, ``Ix.Compile.Canon.sortByName,
+    ``Ix.Compile.Canon.refineClass, ``Ix.Compile.Canon.refineClasses, ``Ix.Compile.Canon.sortLoop,
+    ``Ix.Compile.Canon.sortClasses, ``Ix.MutConst.ctx, ``Ix.nameCompare, ``Ix.nameCompareExact,
+    ``Ix.Name.cmpRaw, ``Ix.Name.cmpHash, ``List.sortByM, ``List.sequencesM, ``List.descendingM,
+    ``List.ascendingM, ``List.mergeAllM, ``List.mergeAllMFuel, ``List.mergePairsM, ``List.mergeM,
+    ``List.groupByM, ``List.groupByMAux, ``SOrder.cmpM, ``SOrder.zipM, ``SOrder.cmp, ``SOrder.cmpMany]
+
 
 end Ix.CompileCert.ReadingAudit
 
@@ -607,6 +651,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
   checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
   checkRoots (tag := "reading-audit") "canon order" Ix.CompileCert.ReadingAudit.canonOrderRoots
+  checkRoots (tag := "reading-audit") "canon classes" Ix.CompileCert.ReadingAudit.canonClassRoots
   checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
@@ -623,3 +668,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRuntime
   checkRuntime (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRuntime
   checkRuntime (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRuntime
+  checkRuntime (tag := "reading-audit") "canon" Ix.CompileCert.ReadingAudit.canonRuntime
