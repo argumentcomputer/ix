@@ -417,8 +417,17 @@ impl<M: KernelMode> KExpr<M> {
     mdata: M::MField<Vec<MData>>,
     addr: Addr,
   ) -> Self {
-    let info =
-      mk_info::<M>(addr, idx + 1, if idx == 0 { 1 } else { 0 }, false, mdata);
+    // The loose-bvar range of `Var(idx)` is `idx + 1`; at `idx = u64::MAX` it
+    // saturates (no expression has 2^64 binders, so every reachable offset
+    // compares below it). A wrapping add made such a variable look closed
+    // (range 0) in release builds and overflowed in debug builds.
+    let info = mk_info::<M>(
+      addr,
+      idx.saturating_add(1),
+      if idx == 0 { 1 } else { 0 },
+      false,
+      mdata,
+    );
     KExpr::new(ExprData::Var(idx, name, info))
   }
 
@@ -941,6 +950,16 @@ mod tests {
     let a = ME::cnst(KId::new(mk_addr("Nat"), mk_name("Nat")), Box::new([]));
     let b = ME::cnst(KId::new(mk_addr("Nat"), mk_name("Int")), Box::new([]));
     assert_eq!(a, b);
+  }
+
+  /// The loose-bvar range of the largest index saturates instead of wrapping
+  /// to 0 (which made the variable look closed).
+  #[test]
+  fn var_max_index_is_not_closed() {
+    let v = AE::var(u64::MAX, ());
+    assert_eq!(v.lbr(), u64::MAX);
+    assert_eq!(AE::var(u64::MAX - 1, ()).lbr(), u64::MAX);
+    assert_eq!(AE::var(0, ()).lbr(), 1);
   }
 
   #[test]
