@@ -260,6 +260,20 @@ structure PreparedRecursorMemberCheck (m : Mode) where
   computedK : Bool
   generated : Array (GeneratedRecursor m)
 
+/-- The original syntax supplies the erased termination measure and the
+constructor-local visit key. `current` has intervening binders opened with
+fresh scope markers. A valid specialization cannot contain those markers,
+so its identity depends on the original syntax and binder depth, not marker
+allocation. No marker needs an entry in the typing context. -/
+structure NestedScanItem (m : Mode) where
+  source : KExpr m
+  current : KExpr m
+  depth : Nat
+
+def nestedScanWorkSize : List (NestedScanItem m) → Nat
+  | [] => 0
+  | item :: rest => item.source.treeSize + nestedScanWorkSize rest
+
 mutual
 
 -- ### Well-scopedness validation (check.rs)
@@ -1248,45 +1262,39 @@ def appendNestedAuxiliary (headId : KId m)
       ctors := extCtors, lvls := extLvls, indUs := auxUs, occurrenceUs }
   return (flat', auxSeen')
 
-/-- Core of nested-occurrence detection (early-return style; the caller
-    restores the lctx). Structural forall peel — NO whnf (a defn head like
-    `IO.Ref` is not a nested occurrence). -/
-def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
+/-- Recognize one nested application without reducing or peeling its head.
+The Boolean includes already-seen specializations: source expansion prunes
+the whole application at every successful recognition. -/
+def tryDetectNestedAt (dom : KExpr m) (blockAddrs : Array Address)
     (flat : Array (FlatBlockMember m))
     (auxSeen : Array NestedSpecializationKey) (univOffset : UInt64)
     (paramDepth : Nat) (nRecParams : UInt64) :
-    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
-  let cur ← runBounded (fun cur => do
-    match cur with
-    | .all _ _ innerDom body _ =>
-      let (open', _) ← TcM.openBinderAnon innerDom body
-      return .next open'
-    | _ => return .done cur) maxWhnfFuel.toNat dom
-  let (head, args) := cur.collectSpine
+    RecM m (Bool × Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
+  let (head, args) := dom.collectSpine
   let some headId := (match head with
       | .const id _ _ => some id
       | _ => none)
-    | return (flat, auxSeen)
+    | return (false, flat, auxSeen)
   -- Direct recursion (block member) or already-detected original.
   if blockAddrs.contains headId.addr then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   if flat.any (fun mem => mem.id.addr == headId.addr && !mem.isAux) then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   let (extParams, extIndices, extCtors, extLvls) ←
     match (← TcM.tryGetConst headId) with
     | some (.indc (params := extParams) (indices := extIndices)
         (ctors := extCtors) (lvls := extLvls) ..) =>
       pure (extParams, extIndices, extCtors, extLvls)
-    | _ => return (flat, auxSeen)
+    | _ => return (false, flat, auxSeen)
   let extNParams := extParams.toNat
   if args.size < extNParams then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   -- Some param arg must mention a block ORIGINAL (aux flat addrs would
   -- falsely match unrelated occurrences).
   let hasNestedRef := (args.extract 0 extNParams).any
     (exprMentionsAnyAddr · blockAddrs)
   if !hasNestedRef then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   let specParams := args.extract 0 extNParams
   -- S7: reject param args depending on field/domain-local binders.
   let paramBound ← checkedNatMetadataSum "nested parameter scope"
@@ -1294,13 +1302,13 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
   let s7ok := specParams.all fun sp =>
     !sp.hasFVars && sp.lbr ≤ paramBound
   if !s7ok then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   let occurrenceUs := match head with
     | .const _ us _ => us
     | _ => #[]
   if auxSeen.contains (NestedSpecializationKey.ofApplication headId.addr
       occurrenceUs specParams) then
-    return (flat, auxSeen)
+    return (true, flat, auxSeen)
   -- A new occurrence `I As` opens I's whole mutual group, one auxiliary per
   -- member `J`, in group order, each `J As` registered as seen (Lean's
   -- `elim_nested_inductive_fn`; the compilers' expansion). Over a compiled
@@ -1331,7 +1339,65 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
           pair ← appendNestedAuxiliary jId occurrenceUs specParams jParams
             jIndices jCtors jLvls pair.1 pair.2 univOffset
       | _ => pure ()
-  return pair
+  return (true, pair)
+
+/-- Open a syntax binder for the S7 locality check. Discovery never infers
+the marker's type, and rejects every candidate parameter containing it. -/
+def openNestedScanBody (body : KExpr m) : RecM m (KExpr m) := do
+  let id ← TcM.freshFVarId (m := m)
+  let marker ← TcM.intern (m := m) (KExpr.mkFVar id anonN)
+  TcM.runIntern (instantiateRev body #[marker])
+
+/-- Stack-safe source preorder. Keep the original skeleton alongside opened
+nodes so termination does not depend on an assumed substitution-cache law.
+The size measure is erased; visited nodes are keyed by syntax and scope. -/
+def scanNestedSyntax (blockAddrs : Array Address)
+    (univOffset : UInt64) (paramDepth : Nat) (nRecParams : UInt64)
+    (work : List (NestedScanItem m))
+    (flat : Array (FlatBlockMember m)) (auxSeen : Array NestedSpecializationKey)
+    (visited : Std.HashSet (Address × Nat)) :
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
+  match work with
+  | [] => return (flat, auxSeen)
+  | ⟨source, current, depth⟩ :: rest =>
+    let key := (source.addr, depth)
+    if visited.contains key then
+      return ← scanNestedSyntax blockAddrs univOffset paramDepth nRecParams rest flat auxSeen visited
+    let visited := visited.insert key
+    let (recognized, flat, auxSeen) ←
+      tryDetectNestedAt current blockAddrs flat auxSeen univOffset paramDepth nRecParams
+    if recognized then
+      return ← scanNestedSyntax blockAddrs univOffset paramDepth nRecParams rest flat auxSeen visited
+    match source, current with
+    | .app sf sa _, .app f a _ =>
+      scanNestedSyntax blockAddrs univOffset paramDepth nRecParams
+        (⟨sf, f, depth⟩ :: ⟨sa, a, depth⟩ :: rest) flat auxSeen visited
+    | .lam _ _ st sb _, .lam _ _ ty body _
+    | .all _ _ st sb _, .all _ _ ty body _ =>
+      let body ← openNestedScanBody body
+      scanNestedSyntax blockAddrs univOffset paramDepth nRecParams
+        (⟨st, ty, depth⟩ :: ⟨sb, body, depth + 1⟩ :: rest) flat auxSeen visited
+    | .letE _ st sv sb _ _, .letE _ ty value body _ _ =>
+      let body ← openNestedScanBody body
+      scanNestedSyntax blockAddrs univOffset paramDepth nRecParams
+        (⟨st, ty, depth⟩ :: ⟨sv, value, depth⟩ :: ⟨sb, body, depth + 1⟩ :: rest) flat auxSeen visited
+    | .prj _ _ sv _, .prj _ _ value _ =>
+      scanNestedSyntax blockAddrs univOffset paramDepth nRecParams
+        (⟨sv, value, depth⟩ :: rest) flat auxSeen visited
+    | .var .., .var .. | .var .., .fvar .. | .fvar .., .fvar ..
+    | .sort .., .sort .. | .const .., .const .. | .nat .., .nat .. | .str .., .str .. =>
+      scanNestedSyntax blockAddrs univOffset paramDepth nRecParams rest flat auxSeen visited
+    | _, _ => throw (.other "nested discovery: binder substitution changed expression shape")
+termination_by nestedScanWorkSize work
+decreasing_by
+  all_goals simp [nestedScanWorkSize, KExpr.treeSize, KExpr.treeSize_pos] <;> omega
+
+def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
+    (flat : Array (FlatBlockMember m)) (auxSeen : Array NestedSpecializationKey)
+    (univOffset : UInt64) (paramDepth : Nat) (nRecParams : UInt64) :
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) :=
+  scanNestedSyntax blockAddrs univOffset paramDepth nRecParams
+    [⟨dom, dom, 0⟩] flat auxSeen {}
 
 /-- Detect whether `dom` is a nested inductive occurrence; if so append an
     auxiliary entry (dedup by family, universe, and parameter addresses).
@@ -1366,41 +1432,21 @@ def instantiateFlatConstructorParams (member : FlatBlockMember m)
           cur
       | _ => pure cur
 
-/-- Scan one constructor's fields in source order, threading the dynamically
-growing flat block and exact deduplication array. -/
-def scanFlatConstructorFields (allBlockAddrs : Array Address)
-    (nRecParams univOffset : UInt64) (paramDepth : Nat) :
-    Nat → KExpr m →
-      (Array (FlatBlockMember m) × Array NestedSpecializationKey) →
-      RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey)
-  | 0, _, pair => pure pair
-  | remaining + 1, cur, pair => do
-      let w ← whnf cur
-      match w with
-      | .all _ _ dom body _ =>
-        let pair ← tryDetectNested dom allBlockAddrs pair.1 pair.2 univOffset
-          paramDepth nRecParams
-        let (open', _) ← TcM.openBinderAnon dom body
-        scanFlatConstructorFields allBlockAddrs nRecParams univOffset
-          paramDepth remaining open' pair
-      | _ => pure pair
-
 /-- Scan one source constructor, including universe instantiation, parameter
-substitution, nested-field discovery, and the production lctx restoration. -/
+substitution, complete syntax discovery, and the production lctx restoration. -/
 def scanFlatConstructor (allBlockAddrs : Array Address)
     (nRecParams univOffset : UInt64) (member : FlatBlockMember m)
     (ctorId : KId m)
     (pair : Array (FlatBlockMember m) × Array NestedSpecializationKey) :
     RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
-  let some (.ctor (fields := ctorFields) (ty := ctorTy) ..) ←
+  let some (.ctor (ty := ctorTy) ..) ←
       TcM.tryGetConst ctorId
     | return pair
   let ctorTyInst ← TcM.instantiateUnivParams ctorTy member.occurrenceUs
   let saved := (← get).lctx.size
   let cur ← instantiateFlatConstructorParams member nRecParams
     member.ownParams.toNat 0 ctorTyInst
-  let pair ← scanFlatConstructorFields allBlockAddrs nRecParams univOffset
-    saved ctorFields.toNat cur pair
+  let pair ← tryDetectNested cur allBlockAddrs pair.1 pair.2 univOffset saved nRecParams
   modify fun s => { s with lctx := s.lctx.truncate saved }
   return pair
 
@@ -1471,7 +1517,7 @@ def buildFlatBlockWithAuxSeen (blockInds : Array (KId m))
     maxWhnfFuel.toNat (0, flat, #[])
 
 /-- Build the flat block: originals seeded, then a queue pass over every
-member's constructor fields detecting nested occurrences. -/
+member's constructor syntax detecting nested occurrences. -/
 def buildFlatBlock (blockInds : Array (KId m))
     (nRecParams univOffset : UInt64) :
     RecM m (Array (FlatBlockMember m)) := do

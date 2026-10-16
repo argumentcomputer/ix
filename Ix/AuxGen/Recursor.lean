@@ -197,49 +197,34 @@ def abstractSpecParamsToBVars (specParams : Array Expr)
         m.insert d.fvarName i
     specParams.map fun sp => batchAbstract sp fvarMap n 0
 
-/-- Mirrors Rust `try_detect_nested_fvar` (aux_gen/nested.rs:2003).
-
-    Check if a field domain contains a nested inductive occurrence and, if
-    so, add an auxiliary entry to the flat block. A nested occurrence is:
-    after peeling foralls, the result is `ExtInd args` where `ExtInd` is a
-    previously-declared inductive (not in our block) and some parameter arg
-    mentions an original block inductive. Rust mutates `flat`/`aux_seen`
-    in place; here they are passed and returned. -/
-def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
+/-- Test one application without reducing or peeling it. A recognized
+occurrence stops the source preorder even when its specialization was already
+seen, just as `replaceAllNested` stops at a replacement. -/
+def tryDetectNestedFVarAt (dom : Expr) (blockNames : Std.HashSet Name)
     (flat : Array FvarFlatMember)
     (auxSeen : Array (Name × Array Address × Array Address))
     (overlay : Option (Std.HashMap Name ConstantInfo))
     (blockParamFvarNames : Array Name) :
     CompileM
-      (Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
-  -- Peel foralls structurally to get to the result type. Note: NOT
-  -- forallTelescope — peeled binders introduce BVars in the body, which
-  -- `hasInvalidSpecRef` flags if they leak into a spec_param.
-  let mut cur := dom
-  repeat
-    cur := stripMdataRef cur
-    match cur with
-    | .forallE _ _ body _ _ => cur := body
-    | _ => break
-
-  let (head, args) := decomposeApps cur
-  let .const headName headLevels _ := head | return (flat, auxSeen)
+      (Bool × Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
+  let (head, args) := decomposeApps (stripMdataRef dom)
+  let .const headName headLevels _ := head | return (false, flat, auxSeen)
 
   -- Skip if head is in the original block (direct recursive, not nested).
   if blockNames.contains headName then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
   -- Skip if head is already a non-auxiliary flat member.
   if flat.any (fun m => m.name == headName && blockNames.contains m.name) then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Verify head is an external inductive.
   let (extNParams, extNIndices, extAll) ← match ← envGet overlay headName with
     | some (.inductInfo v) => pure (v.numParams, v.numIndices, v.all)
-    | _ => return (flat, auxSeen)
+    | _ => return (false, flat, auxSeen)
 
   -- Must have at least extNParams applied args.
   if args.size < extNParams then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Some parameter arg must mention an *original* block inductive
   -- (deliberately NOT extended with flat-stored aux names — see the Rust
@@ -247,14 +232,14 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
   let hasNestedRef :=
     (args.extract 0 extNParams).any (exprMentionsAnyName · blockNames)
   if !hasNestedRef then
-    return (flat, auxSeen)
+    return (false, flat, auxSeen)
 
   -- Extract spec_params (first extNParams args) and reject invalid refs
   -- (free BVars from domain-local foralls, non-param FVars).
   let specParams : Array Expr := args.extract 0 extNParams
   for sp in specParams do
     if hasInvalidSpecRef sp blockParamFvarNames then
-      return (flat, auxSeen)
+      return (false, flat, auxSeen)
 
   -- Dedup by the complete nested application identity. Universe arguments
   -- remain distinct even when the family and term-parameter spine agree.
@@ -265,7 +250,7 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
         && ((levels.zip levelHashes).all fun (a, b) => a == b)
         && hashes.size == specHashes.size
         && ((hashes.zip specHashes).all fun (a, b) => a == b)) then
-    return (flat, auxSeen)
+    return (true, flat, auxSeen)
   -- Lean's rule (`elim_nested_inductive_fn`; A0, WB-A1): the first
   -- occurrence of an external inductive `I As` registers an auxiliary for
   -- EVERY member `J As` of I's mutual group, in group order, and marks each
@@ -293,7 +278,62 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
         occurrenceLevelArgs := headLevels
         ownParams
         nIndices }
-  return (flat, auxSeen)
+  return (true, flat, auxSeen)
+
+/-- A proof-only measure; no structural-size walk is executed at runtime. -/
+noncomputable def nestedScanWeight : List Expr → Nat
+  | [] => 0
+  | expr :: rest => sizeOf expr + nestedScanWeight rest
+
+private theorem nestedScanExpr_size_pos (expr : Expr) : 0 < sizeOf expr := by
+  cases expr <;> simp <;> omega
+
+/-- Source preorder over a constructor's remaining syntax, after its block
+parameters have been opened. Field-local bound variables stay loose in a
+candidate parameter and are rejected by `hasInvalidSpecRef`; block parameters
+are the permitted FVars. Recognition prunes the whole application. The visited
+set is local to this constructor, as in the source expansion's walk cache. -/
+def scanNestedFVars (blockNames : Std.HashSet Name)
+    (overlay : Option (Std.HashMap Name ConstantInfo))
+    (blockParamFvarNames : Array Name) (work : List Expr)
+    (flat : Array FvarFlatMember)
+    (auxSeen : Array (Name × Array Address × Array Address))
+    (visited : Std.HashSet Address) :
+    CompileM (Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
+  match work with
+  | [] => return (flat, auxSeen)
+  | expr :: rest =>
+    if visited.contains expr.getHash then
+      return ← scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+    let visited := visited.insert expr.getHash
+    let (recognized, flat, auxSeen) ←
+      tryDetectNestedFVarAt expr blockNames flat auxSeen overlay blockParamFvarNames
+    if recognized then
+      return ← scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+    match expr with
+    | .app fn arg _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (fn :: arg :: rest) flat auxSeen visited
+    | .lam _ type body _ _ | .forallE _ type body _ _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (type :: body :: rest) flat auxSeen visited
+    | .letE _ type value body _ _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (type :: value :: body :: rest) flat auxSeen visited
+    | .mdata _ inner _ | .proj _ _ inner _ =>
+      scanNestedFVars blockNames overlay blockParamFvarNames (inner :: rest) flat auxSeen visited
+    | _ => scanNestedFVars blockNames overlay blockParamFvarNames rest flat auxSeen visited
+termination_by nestedScanWeight work
+decreasing_by
+  all_goals simp only [nestedScanWeight]
+  all_goals first
+    | exact Nat.lt_add_of_pos_left (nestedScanExpr_size_pos _)
+    | simp_wf; omega
+
+def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
+    (flat : Array FvarFlatMember)
+    (auxSeen : Array (Name × Array Address × Array Address))
+    (overlay : Option (Std.HashMap Name ConstantInfo))
+    (blockParamFvarNames : Array Name) :
+    CompileM (Array FvarFlatMember × Array (Name × Array Address × Array Address)) :=
+  scanNestedFVars blockNames overlay blockParamFvarNames [dom] flat auxSeen {}
 
 /-- Mirrors Rust `build_compile_flat_block_with_overlay`
     (aux_gen/nested.rs:1734).
@@ -352,8 +392,8 @@ inductive)")
       | _ => continue
 
     for ctorName in ctorNames do
-      let (ctorNFields, ctorTyp) ← match ← envGet overlay ctorName with
-        | some (.ctorInfo c) => pure (c.numFields, c.cnst.type)
+      let ctorTyp ← match ← envGet overlay ctorName with
+        | some (.ctorInfo c) => pure c.cnst.type
         | _ => continue
 
       -- Substitute the external inductive's level params with the concrete
@@ -372,15 +412,13 @@ inductive)")
             continue -- Shouldn't happen for well-formed types.
         | _ => break
 
-      -- Open field foralls into FVars; each field domain is now in FVar
-      -- space (block-param FVars + earlier-field FVars).
-      let (_, fieldDecls, _) := forallTelescope cur ctorNFields "nf" 0
-
-      for decl in fieldDecls do
-        let (flat', auxSeen') ← tryDetectNestedFVar decl.domain blockNameSet
-          flat auxSeen overlay blockParamFvarNames
-        flat := flat'
-        auxSeen := auxSeen'
+      -- Scan the remaining constructor syntax in source preorder. In
+      -- particular, `Id (List T)` contains the occurrence `List T` even
+      -- though its outer head is a definition. Do not delta-reduce heads.
+      let (flat', auxSeen') ← tryDetectNestedFVar cur blockNameSet
+        flat auxSeen overlay blockParamFvarNames
+      flat := flat'
+      auxSeen := auxSeen'
 
   -- Convert FVar-form spec_params back to BVar form for the output.
   return flat.map fun entry =>
