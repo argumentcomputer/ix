@@ -23,9 +23,12 @@ the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe` (
 * `--compare`, `--paired`: two row files compared, and paired runs of two
   binaries (`Benchmarks.Kernel.CheckIxePaired`);
 * `--meta`: the erasure test, every record checked at `.anon` and at `.meta`
-  and the runs compared (`Benchmarks.Kernel.CheckIxeMeta`). -/
+  and the runs compared, failures printed with names (`Benchmarks.Kernel.CheckIxeMeta`).
 
-def main : List String → IO UInt32
+`main` is `unsafe` because `--meta` prints names through the display-only
+read (`Ix.KernelDisplay.Peek`, step 6b); no mode's verdict reads one. -/
+
+unsafe def main : List String → IO UInt32
   | "--fold" :: args => Benchmarks.Kernel.CheckIxeFold.run args
   | "--entry" :: args => Benchmarks.Kernel.CheckIxeEntry.run args
   | "--guarded" :: args => Benchmarks.Kernel.CheckIxeGuarded.run args

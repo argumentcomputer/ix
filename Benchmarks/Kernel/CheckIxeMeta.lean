@@ -1,4 +1,6 @@
 import Benchmarks.Kernel.CheckIxeStep
+import Ix.KernelDisplay.MetaNames
+import Ix.KernelDisplay.Peek
 
 /-! # `.meta`: the display table, the meta reader and the erasure run (untrusted harness)
 
@@ -19,11 +21,19 @@ output carries what the `.ixe`'s metadata says of the keys a record declares
   at `.anon` (as `kernel-check-ixe` does) and at `.meta` (the meta reader and
   the checker at `md = .meta`, under the same table, prelude, evidence and
   hints), and the two runs are compared record by record: the readings
-  (declared keys exactly, terms by their cached hashes, display aside), the
-  outcome, the fold position and the failure itself, whose keys are mapped
-  from `.anon` to `.meta` by `Key.map id` (the same addresses). The rows are
-  the `.anon` run's, with a failure's reason rendered by `.meta`
-  (`Reader.spellWith`). Any difference is printed and fails the run (exit 1).
+  (declared keys exactly, terms by their cached hashes and term by term,
+  `declAcross`), the outcome, the fold position and the failure itself, whose
+  keys are mapped from `.anon` to `.meta` by `Key.map id` (the same addresses;
+  display parts are subsingletons, so they never differ). The rows are the
+  `.anon` run's, with a failure's reason rendered by `.meta`: keys by
+  `Reader.spellWith`, then the terms the failure is about, printed with Lean's
+  names (`Ix.KernelDisplay.renderFailure` with the display read). Any difference is printed and
+  fails the run (exit 1).
+
+Step 6b: the `.meta` reading's binders and lets carry the names the `.ixe`'s
+metadata gives them (`Ix.KernelDisplay.nameRead`), and the run reports the
+**name coverage**: of the binders and lets in the terms of constants with
+metadata, the share the metadata names. A run below `minCoverage` fails.
 -/
 
 namespace Benchmarks.Kernel.CheckIxeMeta
@@ -128,6 +138,103 @@ def tierPrint : Ix.Kernel.Tier.TierDecl md → List UInt64
   | .defs s ms => [if s == .part then 7 else 8] ++
     ms.flatMap fun (cv, v) => fingerprint.cvPrint cv ++ [hash v]
 
+/-- Name coverage (per mille) under which the erasure run fails. -/
+def minCoverage : Nat := 990
+
+/-! ## Term-level erasure (step 6b) -/
+
+/-- Pairs of an `.anon` and a `.meta` term proved the same, under their
+common hash. -/
+abbrev AcrossMemo := Std.HashMap UInt64 (List (Ix.Kernel.Expr .anon × Ix.Kernel.Expr .meta))
+
+/-- **An `.anon` term and a `.meta` term are the same up to the keys' mode**
+(`Key.map id`; display annotations are invisible to `==`): a lockstep walk,
+memoized on the pairs it proved, a hit confirmed by `==` on both sides (a
+pointer test at run time). Terms hash alike in the two modes (an address key's
+hash is its address's), so the hashes filter first. -/
+def exprAcross (a : Ix.Kernel.Expr .anon) (m : Ix.Kernel.Expr .meta) : StateM AcrossMemo Bool := do
+  if hash a != hash m then return false
+  let compound := match a with
+    | .bvar _ | .sort _ | .const .. | .lit _ => false
+    | _ => true
+  if compound then
+    if let some ps := (← get)[hash a]? then
+      if ps.any fun (a', m') => a' == a && m' == m then return true
+  let r ← match a, m with
+    | .bvar i, .bvar j => pure (i == j)
+    | .fvar i t, .fvar j u => if i == j then exprAcross t u else pure false
+    | .sort u, .sort v => pure (u == v)
+    | .const k us, .const k' vs => pure (toMeta k == k' && us == vs)
+    | .app f x, .app g y => do pure ((← exprAcross f g) && (← exprAcross x y))
+    | .lam t b mb, .lam t' b' mb' =>
+      if mb == mb' then do pure ((← exprAcross t t') && (← exprAcross b b')) else pure false
+    | .forallE t b mb, .forallE t' b' mb' =>
+      if mb == mb' then do pure ((← exprAcross t t') && (← exprAcross b b')) else pure false
+    | .letE t v b l, .letE t' v' b' l' =>
+      if l == l' then do pure ((← exprAcross t t') && (← exprAcross v v') && (← exprAcross b b'))
+      else pure false
+    | .lit l, .lit l' => pure (l == l')
+    | .proj s i e, .proj s' i' e' =>
+      if toMeta s == s' && i == i' then exprAcross e e' else pure false
+    | _, _ => pure false
+  if r && compound then
+    modify fun memo => memo.insert (hash a) ((a, m) :: memo.getD (hash a) [])
+  return r
+
+/-- A constant header across the modes. -/
+def valAcross (a : Ix.Kernel.ConstantVal .anon) (m : Ix.Kernel.ConstantVal .meta) :
+    StateM AcrossMemo Bool := do
+  if toMeta a.name != m.name || a.levelParams != m.levelParams then return false
+  exprAcross a.type m.type
+
+/-- A block member across the modes: its header, and a definition's value or a
+recursor's rules (their right-hand sides). -/
+def infoAcross : Ix.Kernel.ConstantInfo .anon → Ix.Kernel.ConstantInfo .meta → StateM AcrossMemo Bool
+  | .axiomInfo a, .axiomInfo m | .indInfo a _, .indInfo m _ | .ctorInfo a _ _, .ctorInfo m _ _ =>
+    valAcross a m
+  | .defnInfo a v _, .defnInfo m w _ | .thmInfo a v, .thmInfo m w => do
+    pure ((← valAcross a m) && (← exprAcross v w))
+  | .recInfo a _ _ rs, .recInfo m _ _ ws => do
+    if rs.length != ws.length then return false
+    let mut ok ← valAcross a m
+    for (r, w) in rs.zip ws do
+      ok := ok && toMeta r.ctor == w.ctor && r.nfields == w.nfields && (← exprAcross r.rhs w.rhs)
+    pure ok
+  | .projInfo _, .projInfo _ => pure true
+  | _, _ => pure false
+
+/-- **A declaration across the modes**, term by term. -/
+def declAcross : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .meta → StateM AcrossMemo Bool
+  | .axiomDecl a, .axiomDecl m | .quotDecl _ a, .quotDecl _ m => valAcross a m
+  | .defnDecl a v _, .defnDecl m w _ | .thmDecl a v, .thmDecl m w | .opaqueDecl a v, .opaqueDecl m w =>
+    do pure ((← valAcross a m) && (← exprAcross v w))
+  | .indDecl as n, .indDecl ms n' => do
+    if n != n' || as.length != ms.length then return false
+    let mut ok := true
+    for (a, m) in as.zip ms do ok := ok && (← infoAcross a m)
+    pure ok
+  | .basisDecl _, .basisDecl _ => pure true
+  | _, _ => pure false
+
+/-- **A tier declaration across the modes**, member by member. -/
+def tierAcross : Ix.Kernel.Tier.TierDecl .anon → Ix.Kernel.Tier.TierDecl .meta →
+    StateM AcrossMemo Bool
+  | .defs s ms, .defs s' ws => do
+    if s != s' || ms.length != ws.length then return false
+    let mut ok := true
+    for ((a, v), (m, w)) in ms.zip ws do ok := ok && (← valAcross a m) && (← exprAcross v w)
+    pure ok
+
+/-- A `.meta` tier declaration's binders named from the metadata (as
+`Ix.KernelDisplay.nameRead` names a reading). -/
+def nameTier (c : Ix.KernelDisplay.NameCx) (d : Ix.Kernel.Tier.TierDecl .meta)
+    (names : Std.HashMap Address Ix.Kernel.Name) :
+    Ix.Kernel.Tier.TierDecl .meta × Ix.KernelDisplay.Coverage × Std.HashMap Address Ix.Kernel.Name :=
+  match d with
+  | .defs s ms =>
+    let (ms, st) := (ms.mapM fun (cv, v) => Ix.KernelDisplay.nameValue c cv v).run { names }
+    (.defs s ms, st.coverage, st.names)
+
 /-- Two failures are the same: the verdict and the message, keys included. -/
 def sameError (a b : Ix.Kernel.CheckError .meta) : Bool :=
   a.verdictPrefix == b.verdictPrefix && a.msg == b.msg
@@ -144,8 +251,10 @@ def parseArgs : List String → Option Options
   | [input, output, limit] => do some { input, output, limit := some (← limit.toNat?) }
   | _ => none
 
-/-- `kernel-check-ixe --meta`: the erasure test (module docstring). -/
-def run (args : List String) : IO UInt32 := do
+/-- `kernel-check-ixe --meta`: the erasure test (module docstring). `unsafe`:
+it prints failures with names, through the display-only read
+(`Ix.KernelDisplay.Peek`); no verdict depends on it. -/
+unsafe def run (args : List String) : IO UInt32 := do
   let some o := parseArgs args | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile o.input
@@ -160,6 +269,7 @@ def run (args : List String) : IO UInt32 := do
   let s := setup store (env.blobs[·]?) table preA hints.lookup
   let (cxM, evM) := metaContext s (env.blobs[·]?) table preM hints.lookup
   let display := displayTable env cxM
+  let nameCx : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cxM⟩
   let names := reportNames env s.store
   let addresses := match o.limit with
     | some n => s.ordered.extract 0 (min n s.ordered.size)
@@ -188,6 +298,9 @@ def run (args : List String) : IO UInt32 := do
   -- the tier records (`Admission.isTierInfo`), read at both modes and deferred
   let mut deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl .anon ×
     Ix.Kernel.Tier.TierDecl .meta × Array Address) := #[]
+  let mut coverage : Ix.KernelDisplay.Coverage := {}
+  let mut types : Std.HashMap (Ix.Kernel.Key .meta) (Ix.Kernel.Expr .meta) := {}
+  let mut nameCache : Std.HashMap Address Ix.Kernel.Name := {}
   let mut index := 0
   for address in addresses do
     index := index + 1
@@ -201,9 +314,13 @@ def run (args : List String) : IO UInt32 := do
     if Ix.Kernel.Admission.isTierInfo source.info then
       match readTierAt s.cx address source, readTierAt cxM address source with
       | some (.ok dA), some (.ok dM) =>
+        let (dM, cov, cache) := nameTier nameCx dM nameCache
+        nameCache := cache
+        coverage := coverage + cov
+        for (cv, _) in (match dM with | .defs _ ms => ms) do types := types.insert cv.name cv.type
         unless tierKeys dA |>.map toMeta |> (· == tierKeys dM) do
           diffs.modify (·.push s!"{address}: tier readings differ in their keys")
-        unless tierPrint dA == tierPrint dM do
+        unless tierPrint dA == tierPrint dM && (tierAcross dA dM).run' {} do
           diffs.modify (·.push s!"{address}: tier readings differ")
         let deps := v.deps ()
         let f ← failed.get
@@ -223,6 +340,14 @@ def run (args : List String) : IO UInt32 := do
       continue
     let readA := readRecord s.cx stA address source
     let readM := (readRecord cxM stM address source).map (withDisplay display)
+    let readM ← match readM with
+      | .ok rM => do
+        let (rM, cov, cache) := Ix.KernelDisplay.nameRead nameCx rM nameCache
+        nameCache := cache
+        coverage := coverage + cov
+        for (k, t) in Ix.KernelDisplay.declTypes rM.decls do types := types.insert k t
+        pure (Except.ok rM)
+      | .error e => pure (.error e)
     match readA, readM with
     | .error eA, .error eM =>
       unless toString eA == toString eM do
@@ -235,6 +360,12 @@ def run (args : List String) : IO UInt32 := do
       unless keysA == keysM && rA.decls.toList.map fingerprint == rM.decls.toList.map fingerprint &&
           rA.generated == rM.generated do
         diffs.modify (·.push s!"{address}: readings differ")
+      -- term-level erasure: the named reading is the anonymous one (a memo per
+      -- record: a record's terms share through its sharing table)
+      let same := ((rA.decls.toList.zip rM.decls.toList).allM
+        (fun (a, m) => declAcross a m)).run' {}
+      unless same && rA.decls.size == rM.decls.size do
+        diffs.modify (·.push s!"{address}: readings differ term by term")
       displayed := displayed + rM.display.length
       stA := stA.commit rA
       stM := stM.commit rM
@@ -258,8 +389,13 @@ def run (args : List String) : IO UInt32 := do
         match eM with
         | none => note address v "accept" "" address
         | some e =>
-          let (outcome, reason) := checkOutcome e (spellWith display)
-          note address v outcome reason address
+          let (outcome, _) := checkOutcome e (spellWith display)
+          let levelNames := match (rM.display.find? fun (_, d) => !d.levelNames.isEmpty) with
+            | some (_, d) => d.levelNames
+            | none => []
+          let rcx := { Ix.KernelDisplay.metaCx display cm'.fe levelNames types with
+            msgSpell := some (spellWith display) }
+          note address v outcome (Ix.KernelDisplay.renderFailure { rcx with peek := Ix.KernelDisplay.peekAll } e) address
     | .ok _, .error eM =>
       diffs.modify (·.push s!"{address}: .anon reads, .meta does not: {eM}")
       note address v "decline" s!"check-ixe --meta: .meta does not read: {eM}" address
@@ -297,12 +433,23 @@ def run (args : List String) : IO UInt32 := do
         note address v "typed" (tierSafety dM).word address
       | some e =>
         let (outcome, reason) := tierOutcome (tierSafety dM) e (spellWith display)
-        note address v outcome reason address
+        -- the failure's terms, printed with names, after the tier's reason
+        let base := Ix.KernelDisplay.metaCx display m₀ [] types
+        let full := Ix.KernelDisplay.renderFailure
+          { base with peek := Ix.KernelDisplay.peekAll, msgSpell := some (spellWith display) } e
+        let terms := String.join (((full.splitOn "\n").drop 1).map ("\n" ++ ·))
+        note address v outcome (reason ++ terms) address
   handle.flush
   let diffs ← diffs.get
   IO.eprintln s!"check-ixe --meta: done in {(← IO.monoMsNow) - started} ms; {(← counts.get).toList}; \
     {displayed} declared keys with display; fold positions .anon {ca.pos}, .meta {cm.pos}; \
     {deferred.size} tier records, {typed} typed at both modes"
+  let perMille := if coverage.binders == 0 then 1000 else coverage.named * 1000 / coverage.binders
+  IO.eprintln s!"check-ixe --meta: name coverage {coverage.named}/{coverage.binders} binders and \
+    lets of constants with metadata named ({perMille}‰; minimum {minCoverage}‰)"
+  if perMille < minCoverage then
+    IO.eprintln "check-ixe --meta: name coverage FAILED"
+    return 1
   if diffs.isEmpty then
     IO.eprintln s!"check-ixe --meta: erasure: {addresses.size} records, .meta equals .anon on every \
       reading, outcome, position and failure"
