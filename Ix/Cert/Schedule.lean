@@ -36,7 +36,10 @@ here.
 
 The driver is restated with its apply step as a parameter
 (`foldWaveWith`), by `rfl` (`foldWave_eq_with`): an edit of `foldWave`
-breaks the build here until the restatement follows. -/
+breaks the build here until the restatement follows. The wave's ask of the
+Source service (AuxGen M1, `source.ask ready`) is restated verbatim; no
+outcome reads it, and `compileEnvFold` is `compileEnvFoldWithSource`'s first
+component (`compileEnvFoldSeq` likewise). -/
 
 namespace Ix.Cert.Schedule
 
@@ -139,7 +142,7 @@ key order and the settling are `foldWave`'s, verbatim; the wave's outcomes
 are applied by `apply snapshot ready`. -/
 def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → DriverAcc → DriverAcc)
     (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState) : Except String FoldState := Id.run do
-  let { acc, settled, unmet, candidates, remaining, waves } := st
+  let { acc, settled, unmet, candidates, remaining, waves, source } := st
   let sourceOwned := blocks.lowLinks.contains
   let mut ready : Array (Name × Name × Set Name) := #[]
   let mut parked : Array Name := #[]
@@ -156,6 +159,7 @@ def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → Dr
   if ready.isEmpty then
     return .error s!"Circular dependency detected: {remaining} blocks remaining but none ready"
   ready := ready.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+  let source := source.ask ready
   let acc := apply acc.cenv ready acc
   let mut settled := settled
   let mut unmet := unmet
@@ -173,7 +177,7 @@ def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → Dr
         | some k => unmet := unmet.insert w (k - 1)
         | none => pure ()
   return .ok { acc, settled, unmet, candidates := next,
-               remaining := remaining - ready.size, waves := waves + 1 }
+               remaining := remaining - ready.size, waves := waves + 1, source }
 
 /-- `foldWave` is its restatement with the tasks' apply step, for either
 `dbg` (the trace is `dbgTrace`, whose value is its continuation's). -/
@@ -224,23 +228,32 @@ theorem foldWaves_eq (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width
 
 /-! ## The driver -/
 
-/-- **The driver, sequentially**: `compileEnvFold` with its waves
-sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/
-def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+/-- The driver with its Source service's report (AuxGen M1,
+`compileEnvFoldWithSource`), its waves sequential (`foldWavesSeq`). -/
+def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    : Except String (Ixon.Env × Nat × CompileEnv) := do
+    : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let st₀ := FoldState.init
-    { CompileEnv.new view with
-      unmaterialized := env.consts.size + unmaterialized, sharingLimits } blocks sched
+  let cenv₀ := { CompileEnv.new view with
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
+  let st₀ := { FoldState.init cenv₀ blocks sched with
+    source := Ix.AuxGen.Source.Chain.start cenv₀.env.get? blocks }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) st₀
   let (ixe, bytes, cenv) := assembleEnv st.acc
-  return (ixe, bytes, { cenv with env, unmaterialized })
+  return ((ixe, bytes, { cenv with env, unmaterialized }), st.source.report)
+
+/-- **The driver, sequentially**: `compileEnvFold` with its waves
+sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/
+def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (unmaterialized : Nat := 0)
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    : Except String (Ixon.Env × Nat × CompileEnv) :=
+  Prod.fst <$> compileEnvFoldWithSourceSeq env blocks unmaterialized sharingLimits
 
 /-- **Schedule = fold (CQP.4 a)**: the driver is its sequential form, for
 every `width` and `dbg`: within each wave, every ready block's outcome is
@@ -250,7 +263,7 @@ theorem compileEnvFold_eq_seq (env : Ix.Environment) (blocks : Ix.CondensedBlock
     (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
     compileEnvFold env blocks dbg unmaterialized sharingLimits width =
       compileEnvFoldSeq env blocks unmaterialized sharingLimits := by
-  unfold compileEnvFold compileEnvFoldSeq
+  unfold compileEnvFold compileEnvFoldSeq compileEnvFoldWithSource compileEnvFoldWithSourceSeq
   simp only [foldWaves_eq]
   rfl
 

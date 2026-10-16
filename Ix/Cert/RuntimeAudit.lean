@@ -26,6 +26,21 @@ permutation became Pass 1's total `Ix.Compile.Canon.computePerm`; the class
 refinement (`Ix.Compile.Canon.sortClasses`) that replaced the compiler's
 comparators adds nothing to it.
 
+**AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
+wave fold carries IxC's verified fold over the Source ingress of its input,
+so `compile` now reaches IxC's executable kernel, and with it 54 entries,
+each one of the replacements IxC's own runtime audit rules on
+(`Ix.Kernel.Audit.runtimeRulings`, `IxC/Kernel/Audit/Roots.lean`): the
+`@[computed_field]` overrides of the kernel's `Expr`, `Level`, `Name` and
+`Key` (21); the kernel's `@[csimp]` replacements (`Ix.Kernel.canonEqList`,
+`structProjGuards`, `BinderMeta.shareAlways`, `ConstantInfo.canonEq`,
+`ConstantVal.canonEq`, `ConstantVal.matchesPin`, `Msg.withTerms` and 16 of
+`Expr`'s operations; 23) and the Ixon codec's `getTagN` (`getTagN_eq_fast`,
+reading the committed prelude and evidence bundle; 1), each on the standard
+axioms; and the `partial` definitions of the in-model generator
+(`IxC/Kernel/Frontend/InModel*`, 9). Nothing the service computes reaches
+`compile`'s result.
+
 `lake run check-kernel` builds this module with the other root audits. No
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
@@ -33,6 +48,7 @@ symbol that no library defines, so a binary that links them fails. -/
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
 [Ix.groundExpr,
  Ix.groundLevel,
+ Ixon.getTagN,
  UInt64.toLEBytes,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
@@ -96,6 +112,8 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.CompileM.compileExprSurgical,
  Ix.CompileM.compileHeadRewriteCallSite,
  Ix.CompileM.compileRecCallSite,
+ Ix.Kernel.canonEqList,
+ Ix.Kernel.structProjGuards,
  Ix.Name.pretty,
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
@@ -104,6 +122,57 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.RestoreCtx.replaceWalk,
  Ix.AuxGen.RestoreCtx.replaceWalkUncached,
  Ix.AuxGen.TcScopeSt.isNotZeroLevel,
- Ix.AuxGen.TcScopeSt.kunivToLevelWithConstLevels] -/
+ Ix.AuxGen.TcScopeSt.kunivToLevelWithConstLevels,
+ Ix.Kernel.BinderMeta.shareAlways,
+ Ix.Kernel.ConstantInfo.canonEq,
+ Ix.Kernel.ConstantVal.canonEq,
+ Ix.Kernel.ConstantVal.matchesPin,
+ Ix.Kernel.Expr.abstract1,
+ Ix.Kernel.Expr.allLevelParamsDefined,
+ Ix.Kernel.Expr.constsResolveF,
+ Ix.Kernel.Expr.hasFvar,
+ Ix.Kernel.Expr.hasLooseBVarB,
+ Ix.Kernel.Expr.instantiate1,
+ Ix.Kernel.Expr.instantiate1Lift,
+ Ix.Kernel.Expr.instantiateLevelParams,
+ Ix.Kernel.Expr.instantiateList,
+ Ix.Kernel.Expr.liftLooseBVars,
+ Ix.Kernel.Expr.looseBVarsBounded,
+ Ix.Kernel.Expr.lowerBVars,
+ Ix.Kernel.Expr.mentionsConst,
+ Ix.Kernel.Expr.mentionsFvar,
+ Ix.Kernel.Expr.renameConsts,
+ Ix.Kernel.Expr.resetMeta,
+ Ix.Kernel.Msg.withTerms,
+ Ix.Kernel.Expr.app._override,
+ Ix.Kernel.Expr.bvar._override,
+ Ix.Kernel.Expr.const._override,
+ Ix.Kernel.Expr.forallE._override,
+ Ix.Kernel.Expr.fvar._override,
+ Ix.Kernel.Expr.lam._override,
+ Ix.Kernel.Expr.letE._override,
+ Ix.Kernel.Expr.lit._override,
+ Ix.Kernel.Expr.proj._override,
+ Ix.Kernel.Expr.sort._override,
+ Ix.Kernel.Frontend.InModel.betaHead,
+ Ix.Kernel.Frontend.InModel.inferTy,
+ Ix.Kernel.Frontend.InModel.specAllGo,
+ Ix.Kernel.Frontend.InModel.specAllGoList,
+ Ix.Kernel.Frontend.InModel.specFamGo,
+ Ix.Kernel.Frontend.InModel.specFamGoList,
+ Ix.Kernel.Key.aux._override,
+ Ix.Kernel.Key.id._override,
+ Ix.Kernel.Key.role._override,
+ Ix.Kernel.Level.hashData._override,
+ Ix.Kernel.Level.imax._override,
+ Ix.Kernel.Level.max._override,
+ Ix.Kernel.Level.param._override,
+ Ix.Kernel.Level.succ._override,
+ Ix.Kernel.Name.hashData._override,
+ Ix.Kernel.Name.num._override,
+ Ix.Kernel.Name.str._override,
+ Ix.Kernel.Frontend.InModel.congrChain.go,
+ Ix.Kernel.Frontend.InModel.inferTy.sortOf,
+ Ix.Kernel.Frontend.InModel.substParams.go] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }

@@ -112,7 +112,7 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
       restore e₁ u₁ <$> compileEnvFold e₂ blocks dbg' u₂ sharingLimits width' := by
   have get : Ix.Environment.get? e₁ = Ix.Environment.get? e₂ := funext lookups
   rw [Schedule.compileEnvFold_eq_seq, Schedule.compileEnvFold_eq_seq]
-  unfold Schedule.compileEnvFoldSeq
+  unfold Schedule.compileEnvFoldSeq Schedule.compileEnvFoldWithSourceSeq
   rw [validateInductiveFlags_eq lookups groups, validateMutualSafety_eq lookups groups, count, get]
   generalize missingBlockRefs? blocks = missing
   generalize validateInductiveFlags e₂ = flags
@@ -120,7 +120,8 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
   cases missing <;> cases flags <;> cases safety <;> try rfl
   all_goals
     simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map]
-    split <;> rfl
+    generalize Schedule.foldWavesSeq _ _ _ _ = r
+    cases r <;> rfl
 
 /-! ## The IO pipeline's environment -/
 

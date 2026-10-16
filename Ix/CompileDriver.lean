@@ -45,6 +45,7 @@ public import Ix.Ground
 public import Ix.CompileM
 public import Ix.Compile.Publication
 public import Ix.AuxGen.CompileAux
+public import Ix.AuxGen.SourceService
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Addressed
 public section
@@ -1094,7 +1095,19 @@ closure either way, its names end at the same addresses with the same
 nothing else, so the output is the same (checked by `cert-compile-parity-init`,
 the byte legs and `compile-schedule-identity`'s reference schedule, which keeps
 the pre-pass). A failed seed block is now an ordinary block failure with its
-cascade, instead of an error of the whole compile. -/
+cascade, instead of an error of the whole compile.
+
+**The Source service** (AuxGen M1, AUXGEN-IXC §3.2): the fold carries IxC's
+Source-mode environment over its input (`Ix.AuxGen.Source.Chain`), read
+through the same lookups as the blocks (`get?`) and at the committed bundle's
+evidence. Each wave asks it for the wave's ready blocks, in key order, before
+their aux tails: a block that holds an inductive has its declaration groups
+folded, with everything they depend on, after everything asked before. The
+asks run on a task chain of their own, beside the waves' compiles; no outcome
+reads the service yet (the aux tails ask `Ix.Tc` until M2), so the compiled
+environment does not depend on it. `compileEnvFoldWithSource` waits for the
+chain at the end and returns what Source mode accepted
+(`Ix.AuxGen.Source.Report`). -/
 
 /-- The aux-gen seeds the condensation holds. -/
 def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
@@ -1176,6 +1189,10 @@ structure FoldState where
   remaining : Nat := 0
   /-- Waves so far. -/
   waves : Nat := 0
+  /-- AuxGen M1: the Source service environment, asked for each wave's
+      blocks before their aux tails (`Ix.AuxGen.Source.Chain`). No outcome
+      reads it. -/
+  source : Ix.AuxGen.Source.Chain := default
 
 /-- The state before the first wave. -/
 def FoldState.init (cenv : CompileEnv) (blocks : Ix.CondensedBlocks)
@@ -1211,7 +1228,7 @@ def waveTasks (width : Nat) (snapshot : CompileEnv) (ready : Array (Name × Name
 /-- One wave. -/
 def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
     (dbg : Bool) (st : FoldState) : Except String FoldState := Id.run do
-  let { acc, settled, unmet, candidates, remaining, waves } := st
+  let { acc, settled, unmet, candidates, remaining, waves, source } := st
   let sourceOwned := blocks.lowLinks.contains
   -- 1. The ready blocks: the candidates the one readiness rule admits.
   let mut ready : Array (Name × Name × Set Name) := #[]
@@ -1233,6 +1250,9 @@ def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
     dbg_trace s!"  [Lean CompileAux] Wave {waves + 1}: {ready.size} blocks ready, \
 {remaining - ready.size} after it"
     pure ()
+  -- AuxGen M1: the Source service is asked for the ready blocks, in key
+  -- order, before their tails, on its own task chain; no outcome reads it.
+  let source := source.ask ready
   -- 2. The outcomes against the wave's snapshot, on tasks; 3. applied in key
   -- order, each chunk as soon as the chunks before it are done.
   let tasks := waveTasks width acc.cenv ready
@@ -1257,7 +1277,7 @@ def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
         | some k => unmet := unmet.insert w (k - 1)
         | none => pure ()
   return .ok { acc, settled, unmet, candidates := next,
-               remaining := remaining - ready.size, waves := waves + 1 }
+               remaining := remaining - ready.size, waves := waves + 1, source }
 
 /-- The waves, at most `fuel` of them (every wave compiles at least one block). -/
 def foldWaves (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
@@ -1290,24 +1310,39 @@ blocks - circular dependency?"
     counts the input constants `env.consts` does not hold; the view carries
     `env.consts.size + unmaterialized`, so the source-claim walk's bound is
     the same either way. The returned `CompileEnv` holds `env` and
-    `unmaterialized` again. -/
-def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    `unmaterialized` again.
+
+    With the compiled environment it returns what the Source service said of
+    the inductive blocks (AuxGen M1, see the section docstring): the service
+    reads the input through the same view's `get?`, and nothing compiled
+    depends on it. -/
+def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (width : Nat := foldWaveTasks)
-    : Except String (Ixon.Env × Nat × CompileEnv) := do
+    : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let st₀ := FoldState.init
-    { CompileEnv.new view with
-      unmaterialized := env.consts.size + unmaterialized, sharingLimits } blocks sched
+  let cenv₀ := { CompileEnv.new view with
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
+  let st₀ := { FoldState.init cenv₀ blocks sched with
+    source := Ix.AuxGen.Source.Chain.start cenv₀.env.get? blocks }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) st₀
   let (ixe, bytes, cenv) := assembleEnv st.acc
-  return (ixe, bytes, { cenv with env, unmaterialized })
+  return ((ixe, bytes, { cenv with env, unmaterialized }), st.source.report)
+
+/-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
+def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (dbg : Bool := false)
+    (unmaterialized : Nat := 0)
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (width : Nat := foldWaveTasks)
+    : Except String (Ixon.Env × Nat × CompileEnv) :=
+  Prod.fst <$> compileEnvFoldWithSource env blocks dbg unmaterialized sharingLimits width
 
 /-- The first name, in `Ix.nameCompare` order, whose published address
     differs from a reference's (the wave driver's fail-fast `rustRef` check,
@@ -1373,6 +1408,9 @@ structure LeanPipelineOut where
   /-- The input carries semantic contracts: its output is emitted only after
       the resource post-step (`Ix.CompileM.resourcePostStep`). -/
   annotated : Bool := false
+  /-- What the driver's Source service said of the inductive blocks (AuxGen
+      M1; `compileEnvFoldWithSource`). -/
+  source : Ix.AuxGen.Source.Report := {}
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -1518,7 +1556,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --    different sizes, where `numWorkers` chunks left the wave waiting on its
   --    slowest chunk (Mathlib's compile phase 505.5 s at width 32, 414.1 s at
   --    128; the queue driver took 458.1 s). At most `min width pool` blocks
-  --    compile at once.
+  --    compile at once. The fold's Source service (AuxGen M1) reads the same
+  --    lookups; its report is printed under `dbg` and returned.
   let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
     (leanByIx.get? n).bind fun (ln, lci) =>
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
@@ -1527,13 +1566,19 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   if dbg then
     IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
   let folded ← IO.lazyPure fun _ =>
-    compileEnvFold ixEnv condensed (dbg := dbg)
+    compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
       (unmaterialized := leanByIx.size - codeConsts.size)
       (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
   match folded with
   | .error e => return .error e
-  | .ok (ixonEnv, _, cenv) =>
+  | .ok ((ixonEnv, _, cenv), source) =>
     let t ← tick "compile" t
+    if dbg then
+      IO.println s!"  [compile-lean] source service: {source.summary}"
+      for (k, why) in source.notAccepted.extract 0 8 do
+        IO.println s!"    source service, block not accepted: {k.pretty}: {why.take 160}"
+      for (g, why) in source.refused.extract 0 8 do
+        IO.println s!"    source service, group refused: {g}: {why.take 160}"
     if dbg then
       if let some read := opts.memory then
         IO.println s!"  [compile-lean] rss after the compile phase: {← read}"
@@ -1565,7 +1610,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         ungroundedCount := ungrounded.size
         blockCount := condensed.blocks.size
         digests
-        annotated }
+        annotated
+        source }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
 canonicalization. Resources are validated by the caller's post-step
