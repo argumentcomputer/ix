@@ -2438,3 +2438,114 @@ exactly. Every lemma behind them is audited in
 /-- info: 'Ix.CompileCert.EmissionDispatch.mutualBlock_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.EmissionDispatch.mutualBlock_codec
+
+/-! ## Component theorems: compiled singleton records are read back as their sources
+
+Public dispatch of a definition, theorem, opaque, axiom or quotient, under
+an environment without call-site plans, from a clean state whose tables
+are on the wire and whose declaration prefix resolves names to 32-byte
+addresses, returns a block that decodes exactly and that the certified
+reader's `readRecord` (over the block's blobs overlaid on the context's)
+reads as exactly the declaration the source describes: under the record's
+key, with the level parameters `0, …, n - 1`, and with a type (and a
+value) `Related` to the source's; given that the key reads, that the self
+references resolve to it (`DefinitionReading.SelfAliases`) or do not occur
+(headers), and the reader's safety policy. A declined declaration is
+declined. Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: @Ix.CompileCert.DefinitionReading.constant_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
+          Ix.CompileCert.EmissionDispatch.sourceData info = some source →
+            ∀ {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult}
+              (state : Ix.Kernel.Reader.State md) {key : Ix.Kernel.Reader.CName md},
+              cx.memberKey (Ix.Kernel.ConstRef.member output.blockAddr 0) = Except.ok key →
+                Ix.CompileCert.DefinitionReading.SelfAliases source.name key names →
+                  Ix.CompileCert.Emission.Clean bindings before →
+                    Ix.Sharing.Verify.BlockWireTablesWF before →
+                      Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+                        Ix.Kernel.Reader.safetyDeclineOf source.kind source.safety = none →
+                          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before =
+                              (Except.ok output, after) →
+                            Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                              (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
+                                ∃ result declaration type value,
+                                  Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                        state output.blockAddr output.block =
+                                      Except.ok result ∧
+                                    result.decls = #[declaration] ∧
+                                      Ix.CompileCert.DefinitionReading.related names σ source source.type type ∧
+                                        Ix.CompileCert.DefinitionReading.related names σ source source.value value ∧
+                                          Ix.Kernel.Reader.DefinitionDecl
+                                            { name := key, levelParams := List.range source.levelParams.size,
+                                              type := type }
+                                            value
+                                            (Ix.Kernel.Reader.projRewrite state
+                                              { name := key, levelParams := List.range source.levelParams.size,
+                                                type := type }
+                                              value)
+                                            source.kind declaration -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.DefinitionReading.constant_reads
+
+/-- info: @Ix.CompileCert.HeaderReading.axiom_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (source : Ix.AxiomVal) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult}
+          (state : Ix.Kernel.Reader.State md) {key : Ix.Kernel.Reader.CName md},
+          cx.memberKey (Ix.Kernel.ConstRef.member output.blockAddr 0) = Except.ok key →
+            Ix.CompileCert.ExpressionState.ConstsSatisfy
+                (Ix.CompileCert.ExpressionState.SelfName
+                  (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context).snd (fun x => none) names)
+                source.cnst.type →
+              Ix.CompileCert.Emission.Clean bindings before →
+                Ix.Sharing.Verify.BlockWireTablesWF before →
+                  Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+                    source.isUnsafe = false →
+                      Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo (Ix.ConstantInfo.axiomInfo source)) context
+                            before =
+                          (Except.ok output, after) →
+                        Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                          (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
+                            ∃ type,
+                              Ix.CompileCert.ExpressionState.Related names
+                                  (Ix.CompileCert.UniversePipeline.LevelMeaning source.cnst.levelParams.toList σ id)
+                                  source.cnst.type type ∧
+                                Ix.Kernel.Reader.readRecord (Ix.CompileCert.ExpressionRead.withBlockBlobs cx after)
+                                    state output.blockAddr output.block =
+                                  Except.ok
+                                    {
+                                      decls :=
+                                        #[Ix.Kernel.Declaration.axiomDecl
+                                            { name := key, levelParams := List.range source.cnst.levelParams.size,
+                                              type := type }] } -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.HeaderReading.axiom_reads
+
+/-- info: 'Ix.CompileCert.DefinitionReading.constant_reads' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.DefinitionReading.constant_reads
+
+/-- info: 'Ix.CompileCert.DefinitionReading.constant_declines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.DefinitionReading.constant_declines
+
+/-- info: 'Ix.CompileCert.HeaderReading.axiom_reads' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.HeaderReading.axiom_reads
+
+/-- info: 'Ix.CompileCert.HeaderReading.axiom_declines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.HeaderReading.axiom_declines
+
+/-- info: 'Ix.CompileCert.HeaderReading.quotient_reads' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.HeaderReading.quotient_reads

@@ -14,6 +14,7 @@ import Ix.CompileCert.SharingRoots
 import Ix.CompileCert.Emission
 import Ix.CompileCert.EmissionBlocks
 import Ix.CompileCert.EmissionDispatch
+import Ix.CompileCert.HeaderReading
 
 /-! # Audit of the reading-chain proofs
 
@@ -34,9 +35,10 @@ core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 (`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
 `PreseedCoverage`, `PreseedInsertion`), the emitters' wire validity
 (`Ix.CompileCert.EmissionWire`), the sharing builder's root reading
-(`Ix.CompileCert.SharingRoots`), the payload emitters (`Ix.CompileCert.Emission`) and
+(`Ix.CompileCert.SharingRoots`), the payload emitters (`Ix.CompileCert.Emission`),
 the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
-`EmissionDispatch`).
+`EmissionDispatch`), and the reading of compiled singleton records
+(`Ix.CompileCert.DefinitionReading`, `HeaderReading`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -284,6 +286,18 @@ def dispatchRoots : Array Lean.Name :=
     `family_run, `inductive_codec, `constant_codec, `member_counts, `forIn_checks, `mutual_counts,
     `member_state, `mutual_state, `standalone_header, `build_mutual_codec, `finish_mutual_codec,
     `mutualBlock_codec].map (`Ix.CompileCert.EmissionDispatch ++ ·)
+
+/-- Compiled singleton records are read back as their sources (CT-16's
+definition and header reading): the reader on definition, axiom and
+quotient records, the skeletons' inversions, and public dispatch composed
+with `readRecord`. -/
+def singletonReadRoots : Array Lean.Name :=
+  (#[`definitionReader_eq, `singleton_lookup, `singleton_self, `readDefinition_ok, `readRecord_ok,
+    `readRecord_declines, `erase_defn, `definitionInfo_levels, `constant_reads,
+    `constant_declines].map (`Ix.CompileCert.DefinitionReading ++ ·)) ++
+  (#[`readAxiom_ok, `readAxiom_declines, `readQuotient_ok, `erase_axio, `erase_quot, `axiomInfo_levels,
+    `quotientInfo_levels, `axiom_unsafe, `axiom_reads, `axiom_declines,
+    `quotient_reads].map (`Ix.CompileCert.HeaderReading ++ ·))
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -382,6 +396,11 @@ def dispatchRuntime : Array Lean.Name :=
     ``Ix.CompileM.standaloneMutConstInfo?, ``Ix.CompileM.buildCompiledMutualBlock,
     ``Ix.CompileM.finishMutualCompilation, ``Ix.CompileM.compileMutualPayload, ``Ix.CompileM.compileMutualBlock]
 
+/-- The record reader's functions the reading proofs unfold. -/
+def recordReaderRuntime : Array Lean.Name :=
+  #[``Ix.Kernel.Reader.readRecord, ``Ix.Kernel.Reader.readDefinition, ``Ix.Kernel.Reader.lowerDefinition,
+    ``Ix.Kernel.Reader.safetyDeclineOf, ``Ix.Kernel.Reader.Ctx.memberKey]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -404,6 +423,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "emitters" Ix.CompileCert.ReadingAudit.emissionRoots
   checkRoots (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRoots
   checkRoots (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRoots
+  checkRoots (tag := "reading-audit") "singleton reading" Ix.CompileCert.ReadingAudit.singletonReadRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -413,3 +433,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "sharing" Ix.CompileCert.ReadingAudit.sharingRuntime
   checkRuntime (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRuntime
   checkRuntime (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRuntime
+  checkRuntime (tag := "reading-audit") "record reader" Ix.CompileCert.ReadingAudit.recordReaderRuntime
