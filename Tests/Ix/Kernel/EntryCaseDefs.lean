@@ -165,6 +165,17 @@ run_meta do
     { name := U, levelParams := [], type := mkApp (mkConst T) (mkSort .one),
       value := mkSort .zero, hints := .opaque, safety := .partial, all := [U] }])
 
+/- The unsafe stage of the typing tier: an unsafe definition, an unsafe
+opaque (Lean checks it in safe mode), an unsafe axiom of `False` and an
+unsafe definition of `False` by it. The tier types all four; the logical
+environment never holds them. -/
+unsafe def unsafeSucc (n : Nat) : Nat := n + 1
+unsafe opaque unsafeOpq : Nat
+unsafe axiom unsafeAx : False
+-- a definition of a proposition on purpose: Lean has no unsafe theorems
+set_option linter.defProp false in
+unsafe def unsafeFalse : False := unsafeAx
+
 /-- An equation between elements of a `Subtype` of a type in
 `Sort (imax (u+2) (imax (v+1) v))`, the shape of `RatFunc.liftOn_def` (an
 `irreducible_def` unfolding lemma). Lean elaborates `Subtype.{W}` and

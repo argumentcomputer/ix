@@ -547,9 +547,14 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- terms of its duplicate message, `sortC`, `axiomC`) and the staging
 -- (`TierDecl.stage`, `indexed`, each with its arity-reduced form, `staged` and
 -- its three `List.filter` specialisations); out went `checkDeclC`'s five
--- closed terms (the unsafe stage's "not implemented" decline).
+-- closed terms (the unsafe stage's "not implemented" decline). The tiered
+-- Ixon entry's routing of unsafe records (U1) moved it from 5957, 14 in and 2
+-- out: the partition's safety (`tierSafety?` and two closed terms; its
+-- `Tier.Safety` test, `Tier.Safety.ctorIdx` and `instDecidableEqSafety`) and
+-- the tier reader's unsafe opaque and axiom branches (`readTierRecord`: five
+-- more closed terms, two lambdas with their boxed forms in for one out).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5957 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5969 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

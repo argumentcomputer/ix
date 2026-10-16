@@ -15,12 +15,13 @@ records, against the accepted logical environment:
   uniqueness, authentication and canonical decoding are those of
   `checkBytes`, so every record, tier records included, is authenticated.
 * **The partition** (`partitionTier`) sends to the tier a definition record
-  whose safety is `partial`, a definition block with such a member, and the
-  definition projections of such a block; every other record stays on the
-  logical side. The unsafe stage is not built: an unsafe record stays
-  logical, where the reader declines it, as `checkBytes` does. The
-  partition decides coverage only: a record misrouted to the tier gets the
-  weaker verdict, and a tier record left on the logical side is declined.
+  whose safety is not safe (`partial` or `unsafe`, of any kind), an unsafe
+  axiom, a definition block with such a member, and the definition
+  projections of such a block; every other record stays on the logical
+  side, unsafe inductive pieces included, where the reader declines them as
+  `checkBytes` does. The partition decides coverage only: a record
+  misrouted to the tier gets the weaker verdict, and a tier record left on
+  the logical side is declined.
 * **The logical part is `checkConstantsWith`, unchanged**, over the logical
   records. Every theorem about it applies to the accepted environment as
   stated (`Ix.Kernel.Admission.TierTheorems`).
@@ -32,11 +33,13 @@ records, against the accepted logical environment:
   reader's own member reader, in a context over **all** the records
   (`streamContext`), so a key is the one the logical reading gives it. It
   skips the projection rewrite and the hints: a tier constant never
-  unfolds. It declines a block whose members are not all partial
-  definitions, and a theorem or an opaque with safety `partial` (no Lean
-  declaration has that shape).
+  unfolds. It reads an unsafe opaque as itself and an unsafe axiom as its
+  header; it declines a block whose members are not all definitions of one
+  safety, and a theorem with a safety that is not safe or an opaque with
+  safety `partial` (no Lean declaration has those shapes).
 * **The tier** runs at the index of the accepted logical environment, one
-  `mkFEnv`. Every tier failure is a decline.
+  `mkFEnv`, staged as Lean's lattice (`Tier.staged`). Every tier failure is
+  a decline.
 
 The existing entries (`checkBytes`, `checkConstantsWith`) are unchanged and
 still decline every tier record: they remain the entries whose accept is
@@ -78,13 +81,22 @@ def TierError.outcome : TierError → Outcome
   | .read _ (.declined _) => .declined
   | .tier .. => .declined
 
-/-- Whether a record's info is a tier record of the partial stage: a
-definition with safety `partial` (of any kind), or a definition block with
-such a member. -/
+/-- Whether a definition's safety puts it in the tier: anything but safe. -/
+def tierSafety? : Ix.DefinitionSafety → Option Ix.Kernel.Tier.Safety
+  | .part => some .part
+  | .unsaf => some .unsaf
+  | .safe => none
+
+/-- Whether a record's info is a tier record: a definition whose safety is
+not safe (of any kind: a theorem or an opaque with `partial`, which no Lean
+declaration has, goes to the tier, which declines it), an unsafe axiom, or a
+definition block with such a member. Unsafe inductive pieces are not: they
+stay logical, where the reader declines them. -/
 def isTierInfo : Ixon.ConstantInfo → Bool
-  | .defn d => d.safety == .part
+  | .defn d => (tierSafety? d.safety).isSome
+  | .axio a => a.isUnsafe
   | .muts ms => ms.any fun
-    | .defn d => d.safety == .part
+    | .defn d => (tierSafety? d.safety).isSome
     | _ => false
   | _ => false
 
@@ -112,22 +124,25 @@ def fenceOf (logical : List (Address × Ixon.Constant)) (tier : Array (Nat × Ad
   let tierAddresses : Std.HashSet Address := tier.foldl (fun s (_, a, _) => s.insert a) {}
   logical.findSome? fun (a, c) => (c.refs.find? tierAddresses.contains).map (a, ·)
 
-/-- A partial definition member's header and value. A theorem or an opaque
-with safety `partial` matches no Lean declaration, and another safety
-does not belong to a partial block: both decline. -/
-def tierMember (cx : Ctx md) (mr : MemberReader md) (ref : ConstRef Address) (d : Ixon.Definition) :
-    ReadM (CVal md × CExpr md) := do
-  unless d.safety == .part do
-    declined s!"tier: a partial block with a member of safety '{safetyWord d.safety}'"
+/-- A tier block member's header and value: a definition (`defn`) of the
+block's safety `s`. A theorem or an opaque with that safety matches no Lean
+declaration (Lean has no unsafe theorem, and a block never holds an
+opaque), and a member of another safety makes a mixed-safety block: both
+decline. -/
+def tierMember (cx : Ctx md) (mr : MemberReader md) (ref : ConstRef Address)
+    (s : Ix.DefinitionSafety) (d : Ixon.Definition) : ReadM (CVal md × CExpr md) := do
+  unless d.safety == s do
+    declined s!"tier: a {safetyWord s} block with a member of safety '{safetyWord d.safety}'"
   unless d.kind == .defn do
-    declined "tier: a theorem or an opaque with safety 'partial'"
+    declined s!"tier: a theorem or an opaque with safety '{safetyWord d.safety}'"
   let cv : CVal md := ⟨← cx.memberKey ref, List.range d.lvls.toNat, ← mr.read d.typ⟩
   pure (cv, ← mr.read d.value)
 
-/-- **A tier record's declaration**, read against `cx`: a partial
-definition, or a block of them, as a partial block; a definition projection
-of a tier block, checked as the reader checks one, yields none. The
-projection rewrite and the hints are skipped: a tier constant never
+/-- **A tier record's declaration**, read against `cx`: a partial or unsafe
+definition, or a block of them, as a definition block of that safety; an
+unsafe opaque as itself; an unsafe axiom, its header; a definition
+projection of a tier block, checked as the reader checks one, yields none.
+The projection rewrite and the hints are skipped: a tier constant never
 unfolds. -/
 def readTierRecord (cx : Ctx md) (owner : Address) (c : Ixon.Constant) :
     ReadM (Option (TierDecl md)) := do
@@ -139,17 +154,32 @@ def readTierRecord (cx : Ctx md) (owner : Address) (c : Ixon.Constant) :
   | .defn d =>
     let self : Nat → Option (ReadM (CName md)) := fun i =>
       if i == 0 then some (cx.memberKey (.member owner 0)) else none
-    let m ← tierMember cx (.mk' cx c id self) (.member owner 0) d
-    pure (some (.defs .part [m]))
+    let mr := MemberReader.mk' cx c id self
+    let some s := tierSafety? d.safety | malformed "not a tier record"
+    if d.kind == .opaq && s == .unsaf then
+      let cv : CVal md := ⟨← cx.memberKey (.member owner 0), List.range d.lvls.toNat, ← mr.read d.typ⟩
+      pure (some (.unsafeOpaque cv (← mr.read d.value)))
+    else
+      let m ← tierMember cx mr (.member owner 0) d.safety d
+      pure (some (.defs s [m]))
+  | .axio a =>
+    unless a.isUnsafe do malformed "not a tier record"
+    let mr := MemberReader.mk' cx c id (fun _ => none)
+    let cv : CVal md := ⟨← cx.memberKey (.member owner 0), List.range a.lvls.toNat, ← mr.read a.typ⟩
+    pure (some (.unsafeAxiom cv))
   | .muts ms =>
     let self : Nat → Option (ReadM (CName md)) := fun i =>
       if i < ms.size then some (cx.memberKey (.member owner i)) else none
     let mr := MemberReader.mk' cx c id self
+    let some (Ixon.MutConst.defn d₀) := ms[0]?
+      | declined "tier: a block that mixes definitions with other kinds"
+    let some s := tierSafety? d₀.safety
+      | declined s!"tier: a block of safety '{safetyWord d₀.safety}' with a member that is not safe"
     let mut members : Array (CVal md × CExpr md) := #[]
     for (m, i) in ms.zipIdx do
       let .defn d := m | declined "tier: a block that mixes definitions with other kinds"
-      members := members.push (← tierMember cx mr (.member owner i) d)
-    pure (some (.defs .part members.toList))
+      members := members.push (← tierMember cx mr (.member owner i) d₀.safety d)
+    pure (some (.defs s members.toList))
   | _ => malformed "not a tier record"
 
 /-- The tier records' declarations, each with its record's position. -/

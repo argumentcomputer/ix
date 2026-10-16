@@ -334,9 +334,11 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
 
 `Ixon.Authenticated.checkBytesTiered` (the logical check, then the typing
 tier) on host-compiled records: a partial definition, a mutual partial block
-of three and a partial definition of `False` are typed, each seed's key among
-the tier constants and none in the logical environment; a partial definition
-that types only by unfolding another declines at the tier. Over decoded
+of three, a partial definition of `False`, an unsafe definition, an unsafe
+opaque, and an unsafe axiom of `False` with an unsafe definition of `False`
+by it are typed, each seed's key among the tier constants and none in the
+logical environment; a partial definition that types only by unfolding
+another declines at the tier. Over decoded
 records (`Admission.checkConstantsTiered`, where an altered record keeps its
 key without failing authentication): a block that mixes safeties and a
 theorem with safety `partial` decline at the tier reader. `checkBytes`
@@ -376,6 +378,9 @@ def tierCases : List TierCase := [
     seeds := [seed "ping._unsafe_rec", seed "pong._unsafe_rec", seed "pang._unsafe_rec"],
     expected := .typed },
   { label := "tier-partial-false", seeds := [seed "badFalse"], expected := .typed },
+  { label := "tier-unsafe-definition", seeds := [seed "unsafeSucc"], expected := .typed },
+  { label := "tier-unsafe-opaque", seeds := [seed "unsafeOpq"], expected := .typed },
+  { label := "tier-unsafe-false", seeds := [seed "unsafeAx", seed "unsafeFalse"], expected := .typed },
   { label := "tier-needs-delta", seeds := [seed "deltaUse"],
     expected := .fail .declined fun input e => match e, keyOf input (seed "deltaUse") with
       | .tier (.invalid m) p, some key => some p == positionOf input (seed "deltaUse") &&

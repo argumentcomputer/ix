@@ -206,9 +206,11 @@ annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
 one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,
 likewise (28 more), and the tier fold's unsafe stage (U1) from 5957, likewise (10
-more: the fold's split by kind and the staging; `IxC/Kernel/Audit/Roots.lean`). -/
+more: the fold's split by kind and the staging; `IxC/Kernel/Audit/Roots.lean`), and the
+tiered Ixon entry's routing of unsafe records (U1) from 5967, likewise (12 more: the
+partition's safety and the tier reader's unsafe opaque and axiom branches). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5967 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5979 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
