@@ -70,6 +70,33 @@ def Fold.steps (ev : Ix.Kernel.Evidences .source) (f : Fold) (ds : Array Decl) :
     Except (Ix.Kernel.CheckError .source) Fold :=
   ds.foldlM (·.step ev) f
 
+/-- `steps` on a fold its caller gives up: the fold after the group, or at
+the first failure the fold before it, rebuilt from its environment with
+fresh memo state, and the failure. The caller keeps no other reference to
+the fold, so on success the index and the memo state are updated in place,
+and only a failure costs a rebuild (the per-record step drivers' rollback,
+`Benchmarks.Kernel.CheckIxeStep.Checker.step`). Under `steps`, whose caller
+keeps the fold to fall back on, the group's first install copies the index
+and the memo state. -/
+def Fold.stepsOwned (ev : Ix.Kernel.Evidences .source) (f : Fold) (ds : Array Decl) :
+    Fold × Option (Ix.Kernel.CheckError .source) := Id.run do
+  let ⟨fe, cs, pos₀⟩ := f
+  let before := fe.env
+  let mut fe := fe
+  let mut cs := cs
+  let mut pos := pos₀
+  for d in ds do
+    match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
+    | .error (e, _) => return (⟨Ix.Kernel.mkFEnv before, {}, pos₀⟩, some e)
+    | .ok ((pos', fe', pend), cs') =>
+      match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
+      | .ok () =>
+        fe := fe'
+        cs := cs'
+        pos := pos'
+      | .error (e, _) => return (⟨Ix.Kernel.mkFEnv before, {}, pos₀⟩, some e)
+  return (⟨fe, cs, pos⟩, none)
+
 /-- A failure as text: the verdict and the message, keys spelled as their
 Lean names. -/
 def renderCheck (e : Ix.Kernel.CheckError .source) : String := e.render toString
