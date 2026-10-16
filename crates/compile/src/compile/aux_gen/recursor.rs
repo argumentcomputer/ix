@@ -2525,9 +2525,12 @@ fn compute_is_large_and_k(
   // peel short-circuits (can't find enough Pi's) and returns None, which
   // would wrongly classify the inductive as non-Prop and produce a
   // Type-level `.brecOn` (with `.brecOn.go` / `.brecOn.eq` sub-constants)
-  // for what is actually a `Prop`-valued inductive. `KUniv::is_zero()`
-  // here handles `Zero`, `IMax(_, Zero)`, and the like.
-  let is_prop = result_kuniv.is_zero();
+  // for what is actually a `Prop`-valued inductive. The test is semantic
+  // (`u ≡ 0` under every assignment), as Lean's `computeIsLargeAndK`
+  // (`KUniv.isSemanticZero`) and the kernels' Prop tests are, not the
+  // syntactic `is_zero` (WB-F3): it does not depend on how the level was
+  // spelled or which constructors built it.
+  let is_prop = result_kuniv.is_semantic_zero();
 
   // The kernels' rule (Lean's `elim_only_at_universe_zero`), which counts
   // the expanded block: a result level that may be zero eliminates small
