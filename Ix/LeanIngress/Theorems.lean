@@ -21,7 +21,11 @@ the ingress and the evidence owe nothing: these theorems hold whatever
   `checkSourceTiered_typed`: the tiered check (`checkSourceTiered`) accepts
   the logical declarations exactly as `checkSource` would, its logical
   environment has a model, is well formed and misses every tier constant,
-  and every tier constant is typed in its scope (`Ix.Kernel.Tier.TypedIn`). -/
+  and every tier constant is typed in its scope (`Ix.Kernel.Tier.TypedIn`).
+* `orderOf_complete`, `scheduleOf_complete`, `leanIngress_converts`,
+  `checkSource_converts`: every group is in the order and scheduled, so an
+  accepted check converted every group of its environment (coverage, not
+  soundness: it says what Source acceptance establishes about the ingress). -/
 
 namespace Ix.LeanIngress
 
@@ -197,6 +201,133 @@ theorem checkSourceTiered_typed (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.E
   obtain ⟨_, _, tier, _, _, _, hwf, hfresh, htyped⟩ := checkSourceTieredUsing_ok V h
   exact ⟨hwf, hfresh, _, htyped⟩
 
+open Ix.Kernel.Reader (CDecl ReadError State)
+
+/-! ## Coverage: every group is scheduled
+
+The order is a structural walk (`Ix.LeanIngress.Order`), so every group of
+the graph is in it (`orderOf_complete`) and is scheduled
+(`scheduleOf_complete`), with its own conversion (`scheduleOf_converted`). A
+successful ingress lowered every scheduled item (`lowerAll_ok`), so it
+converted every group of its environment (`leanIngress_converts`), and so
+did an accepted Source-mode check (`checkSource_converts`). -/
+
+/-- **Every group is in the order.** -/
+theorem orderOf_complete (g : Graph) {i : Nat} (hi : i < g.groups.size) : i ∈ orderOf g :=
+  Order.mem_dfs_of_array _ _ _ hi
+
+/-- **Every group is scheduled.** -/
+theorem scheduleOf_complete (g : Graph) {i : Nat} (hi : i < g.groups.size) :
+    ∃ c, (i, c) ∈ scheduleOf g := by
+  unfold scheduleOf
+  exact ⟨_, Array.mem_map_of_mem (orderOf_complete g hi)⟩
+
+/-- A scheduled group that the schedule lets through is its own conversion's
+result. -/
+theorem scheduleOf_converted {g : Graph} {i : Nat} {c : Except ReadError Converted}
+    (h : (i, c) ∈ scheduleOf g) {conv : Converted} (ok : c = .ok conv) :
+    g.converted[i]! = .ok conv := by
+  unfold scheduleOf at h
+  obtain ⟨j, _, e⟩ := Array.mem_map.mp h
+  simp only [Prod.mk.injEq] at e
+  obtain ⟨rfl, rfl⟩ := e
+  cases hc : g.converted[j]! with
+  | error err => simp [hc, bind, Except.bind] at ok
+  | ok v =>
+    simp only [hc, bind, Except.bind] at ok
+    split at ok
+    · cases ok
+    · split at ok
+      · simp only [pure, Except.pure, Except.ok.injEq] at ok
+        rw [ok]
+      · cases ok
+
+/-- A loop in `Except` that only yields, run to success over `l`, ran every
+element's step to success. -/
+theorem forIn_ok_each {α σ ε : Type} (P : α → Prop) {f : α → σ → Except ε (ForInStep σ)}
+    (hf : ∀ a b s, f a b = .ok s → P a ∧ ∃ b', s = .yield b') :
+    ∀ (l : List α) (b r : σ), forIn l b f = .ok r → ∀ a ∈ l, P a := by
+  intro l
+  induction l with
+  | nil => intro _ _ _ a h; cases h
+  | cons x l ih =>
+    intro b r h a ha
+    rw [List.forIn_cons] at h
+    cases hx : f x b with
+    | error e => simp [hx, bind, Except.bind] at h
+    | ok s =>
+      obtain ⟨px, b', rfl⟩ := hf x b s hx
+      simp only [hx, bind, Except.bind] at h
+      rcases List.mem_cons.mp ha with e | e
+      · subst e; exact px
+      · exact ih b' r h a e
+
+/-- **A successful lowering ran every scheduled item**: each was let through
+by the schedule. -/
+theorem lowerAll_ok {st : State .source} {g : Graph} {sched : Array (Nat × Except ReadError Converted)}
+    {r : State .source × Array (CDecl .source)} (h : lowerAll st g sched = .ok r) :
+    ∀ p ∈ sched, ∃ conv, p.2 = .ok conv := by
+  unfold lowerAll at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  split at h
+  · cases h
+  · rename_i r' hr
+    rw [← Array.forIn_toList] at hr
+    intro p hp
+    obtain ⟨k, hk, rfl⟩ := Array.getElem_of_mem hp
+    have each := forIn_ok_each (fun (x : (Nat × Except ReadError Converted) × Nat) =>
+        ∃ conv, x.1.2 = .ok conv) ?_ _ _ _ hr (sched[k], k)
+      (by rw [Array.toList_zipIdx]; exact List.mem_zipIdx_iff_getElem?.mpr (by simp [hk]))
+    · exact each
+    · intro a b s hs
+      obtain ⟨⟨gi, c⟩, i⟩ := a
+      cases c with
+      | error e => simp [Except.mapError] at hs
+      | ok conv =>
+        refine ⟨⟨conv, rfl⟩, ?_⟩
+        simp only [Except.mapError] at hs
+        split at hs
+        · cases hs
+        · cases hs; exact ⟨_, rfl⟩
+
+/-- **A successful ingress converted every group** of the environment's
+graph. -/
+theorem leanIngress_converts {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {st : State .source} {decls : Array (CDecl .source)} (h : leanIngress env blocks st = .ok decls)
+    {i : Nat} (hi : i < (graph env blocks).groups.size) :
+    ∃ conv, (graph env blocks).converted[i]! = .ok conv := by
+  unfold leanIngress at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  split at h
+  · cases h
+  · rename_i r hr
+    obtain ⟨c, hc⟩ := scheduleOf_complete _ hi
+    obtain ⟨conv, ok⟩ := lowerAll_ok hr _ hc
+    exact ⟨conv, scheduleOf_converted hc ok⟩
+
+theorem graph_groups (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    (graph env blocks).groups = groupsOf env blocks := rfl
+
+theorem graph_converted (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    (graph env blocks).converted = (groupsOf env blocks).map convert := rfl
+
+/-- **An accepted Source-mode check converted every group** of its
+environment (`groupsOf`): in particular every inductive block's group passes
+`convertInductive`'s checks. -/
+theorem checkSource_converts {env : Ix.Environment} {blocks : Ix.CondensedBlocks}
+    {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
+    ∀ grp ∈ groupsOf env blocks, ∃ conv, convert grp = .ok conv := by
+  obtain ⟨pre, decls, _, hi, _⟩ := checkSource_reading h
+  intro grp hg
+  obtain ⟨i, hlt, rfl⟩ := Array.getElem_of_mem hg
+  have hi' : i < (graph env blocks).groups.size := by rw [graph_groups]; exact hlt
+  obtain ⟨conv, hc⟩ := leanIngress_converts hi hi'
+  have same : (graph env blocks).converted[i]! = convert (groupsOf env blocks)[i] := by
+    rw [graph_converted]
+    simp [hlt]
+    rfl
+  exact ⟨conv, same ▸ hc⟩
+
 end Ix.LeanIngress
 
 /-! ## Axioms
@@ -240,3 +371,9 @@ the build. -/
 
 /-- info: 'Ix.LeanIngress.checkSourceTiered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.LeanIngress.checkSourceTiered
+
+/-- info: 'Ix.LeanIngress.orderOf_complete' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.orderOf_complete
+
+/-- info: 'Ix.LeanIngress.checkSource_converts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSource_converts

@@ -3,6 +3,7 @@ module
 public import Ix.CondenseM
 public import Ix.LeanIngress.Expr
 public import Ix.LeanIngress.Names
+public import Ix.LeanIngress.Order
 public import IxC.Kernel.Ixon.Prelude
 public import IxC.Kernel.Cached.Installed
 public import Ix.RoleEvidence
@@ -558,38 +559,26 @@ def graphOf (blocks : Ix.CondensedBlocks) (groups : Array Group)
     | .error _ => #[]
   return ⟨groups, converted, hard, literal, unplaced⟩
 
-/-- **The order**: a depth-first postorder over the hard and literal edges.
-The roots are taken, and every group's successors visited, in Lean's name
-order of the groups' constants (`namesLt`), so the order depends on the
-environment's names and references and not on the groups' indices, which
-follow the environment's hash-map iteration. -/
-def orderOf (g : Graph) : Array Nat := Id.run do
+/-- Each group's successors over the hard and literal edges, highest rank
+first: the walk pushes them in this order, so it visits them lowest rank
+first. -/
+def succsByRank (g : Graph) (rank : Array Nat) : Array (Array Nat) :=
+  (Array.range g.groups.size).map fun i =>
+    (g.hard[i]! ++ g.literal[i]!).qsort fun a b => rank[a]! > rank[b]!
+
+/-- **The order**: a depth-first postorder over the hard and literal edges
+(`Order.dfs`, a structural walk with an explicit stack). The roots are
+taken, and every group's successors visited, in Lean's name order of the
+groups' constants (`namesLt`), so the order depends on the environment's
+names and references and not on the groups' indices, which follow the
+environment's hash-map iteration. Every group is in the order
+(`orderOf_complete`). -/
+def orderOf (g : Graph) : Array Nat :=
   let n := g.groups.size
   let byName := (Array.range n).qsort fun i j => namesLt g.groups[i]!.names g.groups[j]!.names
-  let mut rank : Array Nat := Array.replicate n 0
-  for (i, r) in byName.zipIdx do rank := rank.set! i r
-  let mut done : Array Bool := Array.replicate n false
-  let mut active : Array Bool := Array.replicate n false
-  let mut out : Array Nat := #[]
-  for root in byName do
-    if done[root]! then continue
-    let mut stack : Array (Nat × Bool) := #[(root, false)]
-    while h : stack.size > 0 do
-      let (node, expanded) := stack[stack.size - 1]
-      stack := stack.pop
-      if expanded then
-        active := active.set! node false
-        unless done[node]! do
-          done := done.set! node true
-          out := out.push node
-      else unless done[node]! || active[node]! do
-        active := active.set! node true
-        stack := stack.push (node, true)
-        -- pushed last-first, so that they are visited first-first
-        let succs := (g.hard[node]! ++ g.literal[node]!).qsort fun a b => rank[a]! > rank[b]!
-        for d in succs do
-          unless done[d]! || active[d]! do stack := stack.push (d, false)
-  return out
+  let rank := byName.zipIdx.foldl (fun rank (i, r) => rank.set! i r) (Array.replicate n 0)
+  let succs := succsByRank g rank
+  Order.dfs n byName (succs[·]!) (Order.fuelOf n (Order.maxBelow n (succs[·]!.size)))
 
 /-- The groups in order, by index, each with its conversion or the reason it
 is refused before lowering: its conversion's, an unplaced reference, or a
