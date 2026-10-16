@@ -234,22 +234,31 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `meta-env`, `catalog`, `import-ixe`, `truthmines-spec`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `exact-sharing`, `exact-sharing-ffi`, `source-contract`, `graph-unit`, `condense-unit`, `bench-measures`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `kernel-reader-roundtrip`, `kernel-read-cache`, `primitive-address-parity`, `decompile-unit`, `tc-unit`
-    - `exact-sharing` tests the canonical sharing construction of Ixon v4; `exact-sharing-ffi` checks that Lean and Rust produce identical bytes
-    - `kernel-reader-roundtrip` checks the certified checker's Ixon reader against a direct translation of the compiled Lean constants; `kernel-read-cache` checks the environment check's persistent read cache
-    - Primary runners run with the primary suites and can be selected by name in the same way: `aiur-rust-syntax`, `ixvm-tagn`, `aiur-prove`, `aiur-hashes`, `rbtree-map`, `multi-stark`, `recursive-verifier`, `ix-aggr`, `ixes-manifest`; `ixvm-tagn` holds the IxVM circuit's TagN codec to the Lean codec
+Every test entry is registered once, with its tier, in `Tests/Main.lean`
+(the typed registry, `Tests/Registry.lean`). The tiers: `primary` (run by a
+bare `lake test`), `ci:<job>` (a CI partition: `cli`, `compile-pipeline`,
+`compiler-closures`, `compile`, `decompile`, `misc`, `tc`), `landing` (the
+landing gates) and `manual` (with a reason, e.g. a Mathlib-sized input).
+- `lake test` runs every primary entry. Every selected entry runs, even after
+  a failure, with a result line each; the exit code is the first non-zero one.
+- `lake test -- <name>...` runs exactly the named entries, whatever their tier
+  (names match exactly; an unknown name is an error)
+- `lake test -- --tier <tier>` runs every entry of a tier (`primary`,
+  `landing`, `manual`, or `ci:<job>`); CI's partitions run this way
+- `lake test -- --list` prints every entry with its tier; `lake test --
+  --list-gate <tier>` prints the names of one tier
+- `lake test -- --ignored` runs every entry that is not primary; `--ignored
+  <name>...` is the same as naming them
+- `lake test -- --include-ignored [<name>...]` runs the primary entries, then
+  the named ones (or every other entry)
+- `--exclude=<name,...>` drops entries from a selection
+- `lake run check-modules` builds every module under `Ix/`, `Tests/`,
+  `Benchmarks/`, `Apps/` and `MultiStark/` except a typed exclusion list
+  (`lakefile.lean`, `moduleExclusions`); `lake lint` runs it too
+- Most expensive entries require at least 32 GB RAM; `compile` and
+  `decompile` require 128 GB, and `ixvm` generates ZK proofs
 - `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
 - `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
-- `lake test -- --ignored` runs all expensive test suites and runners
-    - Most tests require at least 32 GB RAM
-    - The `compile` and `decompile` tests require 128 GB RAM
-    - `ixvm` generates ZK proofs and uses significant CPU
-- `lake test -- --ignored <name>` runs one or more expensive suites or runners by name
-- `--exclude=<name,...>` excludes ignored suites or runners from a full ignored-test run
-- `lake test -- --include-ignored` runs both primary and expensive test suites
-- `lake test -- --include-ignored <name>` runs all primary suites plus selected expensive suites or runners
-- `lake test -- cli` runs CLI integration tests
-- `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 
