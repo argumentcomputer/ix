@@ -27,7 +27,12 @@ def expressionCases : List Case :=
     .all .many .shared (.sort 0) (.var 0),
     .letE (.lean false) (.sort 0) (.var 0) (.var 1), .letE (.lean true) (.sort 0) (.var 0) (.var 1),
     .nat 0, .nat 1, .str 0, .str 1,
-    .prj 0 0 (.var 0), .prj 0 1 (.var 0), .prj 1 0 (.var 0), .share 0]
+    .prj 0 0 (.var 0), .prj 0 1 (.var 0), .prj 1 0 (.var 0), .share 0,
+    -- `let`s whose order against 13 or 14 depends on where the nondependency
+    -- bit is compared: a smaller body with the other bit, a larger value, a
+    -- larger type
+    .letE (.lean true) (.sort 0) (.var 0) (.var 0), .letE (.lean false) (.sort 0) (.var 1) (.var 1),
+    .letE (.lean false) (.sort 1) (.var 0) (.var 1)]
   let blobs : Ingress.Blobs := [(address 1, "z".toUTF8), (address 2, "ab".toUTF8)]
   expressions.zipIdx.flatMap fun (x, i) =>
     expressions.zipIdx.map fun (y, j) =>
@@ -73,7 +78,10 @@ def cases : List Case := [
   ⟨"constructor-offsets", ctorBlock, []⟩,
   ⟨"unreduced-levels", { unreduced with info := .muts #[defn (.sort 0), defn (.sort 1)] }, []⟩,
   ⟨"ref-recur-alias", asPartial
-    { localAliases with info := .muts #[defn (.ref 0 #[]), defn (.recur 1 #[])] }, []⟩]
+    { localAliases with info := .muts #[defn (.ref 0 #[]), defn (.recur 1 #[])] }, []⟩,
+  -- members that differ only in a `let`'s nondependency bit: two classes
+  ⟨"nondep-let-have", letHave, []⟩, ⟨"nondep-have-let", haveLet, []⟩, ⟨"nondep-same-bit", letLet, []⟩,
+  ⟨"nondep-left-right", leftRight, []⟩, ⟨"nondep-right-left", rightLeft, []⟩]
   ++ expressionCases ++ payloadCases
 
 def run (test : Case) : IO Bool := do

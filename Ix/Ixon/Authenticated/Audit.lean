@@ -47,11 +47,14 @@ end Ixon.Authenticated.Audit
 -- step 6b's display annotations from 5974, by the generic entries' change (8
 -- more, one more ruled csimp), and its failure display from 5982 (30 more, one
 -- more ruled csimp); the reader's conversion to Lean `module`s from 6012, by the
--- generic entries' change (29 more, the block-order entry's).
+-- generic entries' change (29 more, the block-order entry's); the block
+-- order's `let` key (a `let`'s nondependency bit,
+-- `Ixon.BlockOrder.compareExpr_letE`) from 6041, by `compareExpr`'s own
+-- compiler-generated lambdas (`Ix/Ixon/BlockOrder/Audit.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6041 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
+ Address.admissionHash]: 6043 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

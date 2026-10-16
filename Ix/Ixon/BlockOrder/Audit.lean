@@ -54,13 +54,21 @@ from 5963 (30 more, one more ruled csimp); the reader's conversion to Lean `modu
 5993, by the entry's change (28) and one specialisation more: the entry and
 the block-order code shared one specialisation of `Ingress.natural`'s fold,
 which the block-order code still reaches, beside the one the module now
-compiles for the entry (29 more). -/
+compiles for the entry (29 more); a `let`'s nondependency bit became a key
+(`compareExpr_letE`) from 6022: the closures differ only in `compareExpr`'s
+own compiler-generated lambdas (the new `thenM` continuation after the body and
+the renumbering of the existing ones); `Bool.toNat` was already in the closure
+(`compareMember`); no extern, unsafe or ruled construct moved. -/
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6022 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ixon.BlockOrder.compareExpr]: 6024 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
+#guard_kernel_axioms Ixon.BlockOrder.compareExpr_letE [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.BlockOrder.compareExpr_letE_nonDep [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.BlockOrder.compareExpr_letE_sameBit [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.BlockOrder.bind_thenM_eq []
 #guard_kernel_axioms Ixon.BlockOrder.Refinement.positive [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.BlockOrder.Refinement.fixedPoint [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.BlockOrder.refine_ok_iff [propext, Classical.choice, Quot.sound]
@@ -102,6 +110,48 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Ini
     Ixon.BlockOrder.Canonical hash limits owner source blobs -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.BlockOrder.checkBlock_ok_iff
+
+/- The comparison's `let` arm, frozen: the type, the value, the body, then
+the nondependency bit; two `let`s that differ only in the bit are never
+equal, and with equal bits the arm is the one before the bit was a key. -/
+/-- info: Ixon.BlockOrder.compareExpr_letE : ∀ (block : Ixon.BlockOrder.Block) (ctx : Ixon.BlockOrder.LocalContext)
+  (fuel leftLimit rightLimit : Nat) (xc yc : Ixon.LetContract) (xt xv xb yt yv yb : Ixon.Expr),
+  Ixon.BlockOrder.compareExpr block ctx (fuel + 1) leftLimit (Ixon.Expr.letE xc xt xv xb) rightLimit
+      (Ixon.Expr.letE yc yt yv yb) =
+    do
+    let __do_lift ← Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xt rightLimit yt
+    Ixon.BlockOrder.thenM __do_lift fun x => do
+        let __do_lift ← Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xv rightLimit yv
+        Ixon.BlockOrder.thenM __do_lift fun x => do
+            let __do_lift ← Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xb rightLimit yb
+            Ixon.BlockOrder.thenM __do_lift fun x => Except.ok (compare xc.nonDep.toNat yc.nonDep.toNat) -/
+#guard_msgs (whitespace := lax) in
+#check @Ixon.BlockOrder.compareExpr_letE
+
+/-- info: @Ixon.BlockOrder.compareExpr_letE_nonDep : ∀ {block : Ixon.BlockOrder.Block} {ctx : Ixon.BlockOrder.LocalContext}
+  {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr},
+  Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xt rightLimit yt = Except.ok Ordering.eq →
+    Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xv rightLimit yv = Except.ok Ordering.eq →
+      Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xb rightLimit yb = Except.ok Ordering.eq →
+        xc.nonDep ≠ yc.nonDep →
+          Ixon.BlockOrder.compareExpr block ctx (fuel + 1) leftLimit (Ixon.Expr.letE xc xt xv xb) rightLimit
+              (Ixon.Expr.letE yc yt yv yb) =
+            Except.ok (if xc.nonDep = true then Ordering.gt else Ordering.lt) -/
+#guard_msgs (whitespace := lax) in
+#check @Ixon.BlockOrder.compareExpr_letE_nonDep
+
+/-- info: @Ixon.BlockOrder.compareExpr_letE_sameBit : ∀ {block : Ixon.BlockOrder.Block} {ctx : Ixon.BlockOrder.LocalContext}
+  {fuel leftLimit rightLimit : Nat} {xc yc : Ixon.LetContract} {xt xv xb yt yv yb : Ixon.Expr},
+  xc.nonDep = yc.nonDep →
+    Ixon.BlockOrder.compareExpr block ctx (fuel + 1) leftLimit (Ixon.Expr.letE xc xt xv xb) rightLimit
+        (Ixon.Expr.letE yc yt yv yb) =
+      do
+      let __do_lift ← Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xt rightLimit yt
+      Ixon.BlockOrder.thenM __do_lift fun x => do
+          let __do_lift ← Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xv rightLimit yv
+          Ixon.BlockOrder.thenM __do_lift fun x => Ixon.BlockOrder.compareExpr block ctx fuel leftLimit xb rightLimit yb -/
+#guard_msgs (whitespace := lax) in
+#check @Ixon.BlockOrder.compareExpr_letE_sameBit
 
 /- Recursor blocks in motive order. `Ordered`, which every entry theorem
 below states, is `OrderedRecord` at each record: a block of recursors must
