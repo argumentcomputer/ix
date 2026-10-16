@@ -1985,9 +1985,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Check that a field domain doesn't have block inductives in negative position.
-  /// Follows lean4lean's `checkPositivity`: recurse through foralls, reject if
-  /// inductive in domain (negative), accept if result is a valid inductive app
-  /// (direct or nested).
+  /// Follows Lean's `check_positivity` (`inductive.cpp`) and lean4lean's
+  /// `checkPositivity`: whnf the domain; accept it if the block no longer
+  /// occurs in it (a nonrecursive field, even when the unreduced domain
+  /// mentioned the block, as `K True (Box T)` with `K a _ := a`); otherwise
+  /// recurse through foralls, reject if inductive in domain (negative), accept
+  /// if result is a valid inductive app (direct or nested).
   ///
   /// For nested inductives `J Ds is` where `J` is external and `Ds` mention block
   /// inductives, we recursively verify that `J`'s constructors (with `Ds` substituted
@@ -2013,6 +2016,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     let w = self.whnf(dom)?;
+    // Lean tests the occurrence after whnf: reduction can remove the block
+    // (a definition dropping the argument that mentions it), never add it,
+    // so the test above is only a fast path.
+    if !expr_mentions_any_addr(&w, root_addrs) {
+      return Ok(());
+    }
     match w.data() {
       ExprData::All(_, _, inner_dom, inner_body, _) => {
         // Inductive in domain of a Pi = negative position → reject

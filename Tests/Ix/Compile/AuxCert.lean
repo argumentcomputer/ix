@@ -146,6 +146,20 @@ def fixtures : List Fixture := [
       kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
         ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
           "NestedSortU.t_rec"] },
+  -- CQX.8: `T`'s field `K True (Box T)` mentions the block only before
+  -- whnf. The Rust kernel tests positivity after whnf, as Lean does, and
+  -- accepts `T` (its recursors stay D-14's, as in `NestedSortU`); `Ix.Tc`
+  -- still rejects the block (not fixed: deleted in CQX.2); the certified
+  -- checker's modeller declines it.
+  { stem := "NestedSortUK", ns := ["NestedSortUK"]
+    knownFails :=
+      kf "rs" "D-14 (kernel nested discovery at the field head; CQ3.3)"
+        ["NestedSortUK.T.rec", "NestedSortUK.T.rec_1"] ++
+      kf "lean" "CQX.8 (Ix.Tc tests positivity before whnf; not fixed, CQX.2)"
+        ["NestedSortUK.T", "NestedSortUK.T.*"] ++
+      kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
+        ["NestedSortUK.T", "NestedSortUK.T.mk", "NestedSortUK.T.rec", "NestedSortUK.T.rec_1",
+          "NestedSortUK.t_rec"] },
   -- A0 item 3 (WB-E1/A4): an evaporation target that is not a one-motive
   -- recursor is refused, naming the block.
   { stem := "F3_SplitRoseRace", ns := ["A", "B", "Rose"]
