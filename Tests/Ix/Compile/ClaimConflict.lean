@@ -492,18 +492,17 @@ got {actual.getD "accepted"}"
   -- Lean: every schedule
   let mut runs : Array (String × List (String × String)) := #[]
   let phases ← Ix.CompileM.rsCompilePhasesOf closure
-  let mut nameByHash : Std.HashMap Address Ix.Name := {}
-  for (ln, _) in closure do
-    let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
-    nameByHash := nameByHash.insert ixn.getHash ixn
-  match Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (nameByHash := nameByHash) with
+  -- the IO pipeline's count of input constants, which bounds the
+  -- source-claim walk as there
+  let unmaterialized := closure.length
+  match Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (unmaterialized := unmaterialized) with
   | .error e => throw (IO.userError s!"[claim-conflict] fold: {e}")
   | .ok (_, _, cenv) =>
     runs := runs.push ("fold", cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
   -- the test-only reference schedule (the former sequential driver), with the
   -- least and with the greatest ready key first
   for least in [true, false] do
-    match ScheduleReference.sequential phases.rawEnv phases.condensed (nameByHash := nameByHash)
+    match ScheduleReference.sequential phases.rawEnv phases.condensed (unmaterialized := unmaterialized)
         (least := least) with
     | .error e => throw (IO.userError s!"[claim-conflict] reference schedule: {e}")
     | .ok (_, _, cenv) =>

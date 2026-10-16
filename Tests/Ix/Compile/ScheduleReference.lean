@@ -102,14 +102,14 @@ env is inconsistent."
     the same way) — mirroring env.rs:727-737. -/
 def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
-    (nameByHash : Std.HashMap Address Name := {})
+    (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (least : Bool := true)
     : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
   if let some msg := missingBlockRefs? blocks then return .error msg
   if let .error e := validateInductiveFlags env then return .error e
   if let .error e := validateMutualSafety env blocks then return .error e
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
+  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with unmaterialized, sharingLimits } }
   match precompileSeeds blocks acc with
   | .error e => return .error e
   | .ok a => acc := a

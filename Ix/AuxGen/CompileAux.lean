@@ -133,7 +133,7 @@ def checkAuxSourceClaim (name : Name) : CompileM Unit := do
     | some (.inductInfo _) => owners.insert n
     | _ => owners
   if owners.isEmpty then return
-  match sourceClaimOwned source owners name (source.consts.size + cenv.nameByHash.size) with
+  match sourceClaimOwned source owners name (source.consts.size + cenv.unmaterialized) with
   | .ok true => return
   | .ok false => throw (.invalidMutualBlock
       s!"auxiliary claim for source name '{name.pretty}' has no forward provenance to the claiming block")

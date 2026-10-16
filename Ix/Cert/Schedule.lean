@@ -224,29 +224,32 @@ theorem foldWaves_eq (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width
 
 /-! ## The driver -/
 
-open Ix (Name) in
 /-- **The driver, sequentially**: `compileEnvFold` with its waves
 sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/
 def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (nameByHash : Std.HashMap Address Name := {})
+    (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     : Except String (Ixon.Env × Nat × CompileEnv) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
-  let st₀ := FoldState.init { CompileEnv.new env with nameByHash, sharingLimits } blocks sched
+  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let st₀ := FoldState.init
+    { CompileEnv.new view with
+      unmaterialized := env.consts.size + unmaterialized, sharingLimits } blocks sched
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) st₀
-  return assembleEnv st.acc
+  let (ixe, bytes, cenv) := assembleEnv st.acc
+  return (ixe, bytes, { cenv with env, unmaterialized })
 
 /-- **Schedule = fold (CQP.4 a)**: the driver is its sequential form, for
 every `width` and `dbg`: within each wave, every ready block's outcome is
 computed against the wave's snapshot and the outcomes are applied one by
 one in block-key order. -/
 theorem compileEnvFold_eq_seq (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool)
-    (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
-    compileEnvFold env blocks dbg nameByHash sharingLimits width =
-      compileEnvFoldSeq env blocks nameByHash sharingLimits := by
+    (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
+    compileEnvFold env blocks dbg unmaterialized sharingLimits width =
+      compileEnvFoldSeq env blocks unmaterialized sharingLimits := by
   unfold compileEnvFold compileEnvFoldSeq
   simp only [foldWaves_eq]
   rfl
@@ -255,12 +258,12 @@ theorem compileEnvFold_eq_seq (env : Ix.Environment) (blocks : Ix.CondensedBlock
 tasks per wave) and `dbg` (the per-wave trace) change nothing. So
 `Ix.Cert.compile`'s fold (width `foldWaveTasks`, no trace) and the IO
 pipeline's (width `4 * numWorkers`, its options' trace) are one function of
-the environment, the condensation, the name-hash index and the sharing
-limits. -/
+the environment, the condensation, the count of unmaterialized constants
+and the sharing limits. -/
 theorem compileEnvFold_width (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool)
-    (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat) :
-    compileEnvFold env blocks dbg nameByHash sharingLimits width =
-      compileEnvFold env blocks dbg' nameByHash sharingLimits width' := by
+    (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat) :
+    compileEnvFold env blocks dbg unmaterialized sharingLimits width =
+      compileEnvFold env blocks dbg' unmaterialized sharingLimits width' := by
   rw [compileEnvFold_eq_seq, compileEnvFold_eq_seq]
 
 /-- The IO pipeline's wrapper (`compileDecoratedConsts` runs the driver

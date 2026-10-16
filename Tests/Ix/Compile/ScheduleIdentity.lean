@@ -111,7 +111,7 @@ def quickTier : IO Bool := do
 
 /-- The legs, in the order the log reports them; the first is the reference. -/
 def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
-    (phases : Ix.CompileM.CompilePhases) (nameByHash : Std.HashMap Address Ix.Name) :
+    (phases : Ix.CompileM.CompilePhases) (unmaterialized : Nat) :
     IO (Array Leg) := do
   let quick ← quickTier
   let failuresOf (cenv : Ix.CompileM.CompileEnv) : List (String × String) :=
@@ -134,9 +134,9 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
       -- legs run concurrently
       outcome label (← IO.lazyPure fun _ => match width with
         | none => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed
-            (nameByHash := nameByHash)
+            (unmaterialized := unmaterialized)
         | some w => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed
-            (nameByHash := nameByHash) (width := w)) }
+            (unmaterialized := unmaterialized) (width := w)) }
   -- the reference schedule, least and greatest ready key first
   for least in (if quick then [true] else [true, false]) do
     let label := s!"reference, {if least then "least" else "greatest"} key first"
@@ -144,7 +144,7 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
     legs := legs.push { label, saveLabel, act := do
       outcome label (← IO.lazyPure fun _ =>
         ScheduleReference.sequential phases.rawEnv phases.condensed
-          (nameByHash := nameByHash) (least := least)) }
+          (unmaterialized := unmaterialized) (least := least)) }
   -- the whole `ix compile-lean` pipeline
   for k in (if quick then [16] else pipelineWorkers) do
     legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
@@ -234,13 +234,11 @@ def run : IO UInt32 := do
 {fixtures.length})"
   -- the canonical environment and condensation, as `ix compile` computes them
   let phases ← Ix.CompileM.rsCompilePhasesOf closure
-  let mut nameByHash : Std.HashMap Address Ix.Name := {}
-  for (ln, _) in closure do
-    let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
-    nameByHash := nameByHash.insert ixn.getHash ixn
   -- Every leg is an independent compile of the same input: run them
-  -- concurrently (`SCHED_JOBS` bounds it), then compare in leg order.
-  let legs ← legsOf env closure phases nameByHash
+  -- concurrently (`SCHED_JOBS` bounds it), then compare in leg order. The
+  -- folds take the IO pipeline's count of input constants, which bounds the
+  -- source-claim walk as there.
+  let legs ← legsOf env closure phases closure.length
   let results ← runLegs legs
   let failures ← compareLegs closure legs results
   say s!"[schedule] {if failures == 0 then "PASS" else s!"FAIL ({failures})"}"

@@ -1272,10 +1272,19 @@ blocks - circular dependency?"
     mirroring env.rs:727-737. The compile itself fails on a condensation
     block without references, on an input inductive group with non-canonical
     flags, on a mutual block of mixed safety, and on a schedule that cannot
-    finish. -/
+    finish.
+
+    The fold reads constants only through `Ix.Environment.get?`: it runs over
+    a lookup view of `env` whose map is empty, so a materialized environment
+    and a hybrid one with the same lookups (the IO pipeline's, whose theorem
+    and opaque bodies come from `fallback?`) compile alike. `unmaterialized`
+    counts the input constants `env.consts` does not hold; the view carries
+    `env.consts.size + unmaterialized`, so the source-claim walk's bound is
+    the same either way. The returned `CompileEnv` holds `env` and
+    `unmaterialized` again. -/
 def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
-    (nameByHash : Std.HashMap Address Name := {})
+    (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (width : Nat := foldWaveTasks)
     : Except String (Ixon.Env × Nat × CompileEnv) := do
@@ -1283,9 +1292,13 @@ def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   validateInductiveFlags env
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
-  let st₀ := FoldState.init { CompileEnv.new env with nameByHash, sharingLimits } blocks sched
+  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let st₀ := FoldState.init
+    { CompileEnv.new view with
+      unmaterialized := env.consts.size + unmaterialized, sharingLimits } blocks sched
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) st₀
-  return assembleEnv st.acc
+  let (ixe, bytes, cenv) := assembleEnv st.acc
+  return (ixe, bytes, { cenv with env, unmaterialized })
 
 /-- The first name, in `Ix.nameCompare` order, whose published address
     differs from a reference's (the wave driver's fail-fast `rustRef` check,
@@ -1398,8 +1411,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let t0 ← IO.monoMsNow
   let constArr := consts.toArray
   -- 1a. Name pre-pass: canonical names only. Builds the lazy-lookup key
-  --     map (Ix name → pinned Lean constant), the name-hash view
-  --     (`CompileEnv.nameByHash`), and the THIN ground-check env — ground
+  --     map (Ix name → pinned Lean constant), and the THIN ground-check env — ground
   --     checks read only name-existence and is-it-a-ctor
   --     (`groundExpr`/`groundConst`), so two shared placeholder
   --     constants stand in for every value.
@@ -1411,13 +1423,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     { cnst := placeholderCnst, induct := .mkAnon, cidx := 0
       numParams := 0, numFields := 0, isUnsafe := false }
   let mut leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) := {}
-  let mut nameByHash : Std.HashMap Address Ix.Name := {}
   let mut thinConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
   let mut ixArr : Array (Ix.Name × Lean.ConstantInfo) := #[]
   for (ln, lci) in constArr do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     leanByIx := leanByIx.insert ixn (ln, lci)
-    nameByHash := nameByHash.insert ixn.getHash ixn
     thinConsts := thinConsts.insert ixn
       (if lci matches .ctorInfo _ then phCtor else phAxiom)
     ixArr := ixArr.push (ixn, lci)
@@ -1508,7 +1518,8 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   if dbg then
     IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
   let folded ← IO.lazyPure fun _ =>
-    compileEnvFold ixEnv condensed (dbg := dbg) (nameByHash := nameByHash)
+    compileEnvFold ixEnv condensed (dbg := dbg)
+      (unmaterialized := leanByIx.size - codeConsts.size)
       (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
   match folded with
   | .error e => return .error e

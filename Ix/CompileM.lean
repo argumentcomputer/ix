@@ -104,11 +104,13 @@ structure CompileEnv where
       SCC's canonical expansion — scheduler dependency order guarantees
       the entry exists before any dependent block compiles. -/
   blocks : Std.HashMap Name (Array (Array Name)) := {}
-  /-- Name-hash → name over the full INPUT constant set, filled by the
-      streaming driver, which leaves `env.consts` unmaterialized; its size
-      bounds the source-claim walk (`checkAuxSourceClaim`). Materialized-env
-      callers leave this empty. -/
-  nameByHash : Std.HashMap Address Name := {}
+  /-- The number of input constants `env.consts` does not hold: the
+      streaming driver leaves theorem and opaque bodies to `env.fallback?`,
+      and the wave fold looks every constant up through a view whose map is
+      empty (`compileEnvFold`). With `env.consts.size` it bounds the
+      source-claim walk (`checkAuxSourceClaim`). A materialized environment
+      outside the fold has none. -/
+  unmaterialized : Nat := 0
   /-- Resource limits of the canonical sharing construction
       (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
       unless a driver's options set others (`DriverOptions.sharingLimits`,

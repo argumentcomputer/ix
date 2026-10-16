@@ -3127,16 +3127,16 @@ fun snapshot ready acc =>
 #print Ix.Cert.Schedule.applySeq
 
 /-- info: Ix.Cert.Schedule.compileEnvFold_eq_seq : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool)
-  (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
-  Ix.CompileM.compileEnvFold env blocks dbg nameByHash sharingLimits width =
-    Ix.Cert.Schedule.compileEnvFoldSeq env blocks nameByHash sharingLimits -/
+  (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg unmaterialized sharingLimits width =
+    Ix.Cert.Schedule.compileEnvFoldSeq env blocks unmaterialized sharingLimits -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Schedule.compileEnvFold_eq_seq
 
 /-- info: Ix.Cert.Schedule.compileEnvFold_width : ∀ (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool)
-  (nameByHash : Std.HashMap Address Ix.Name) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
-  Ix.CompileM.compileEnvFold env blocks dbg nameByHash sharingLimits width =
-    Ix.CompileM.compileEnvFold env blocks dbg' nameByHash sharingLimits width' -/
+  (unmaterialized : Nat) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
+  Ix.CompileM.compileEnvFold env blocks dbg unmaterialized sharingLimits width =
+    Ix.CompileM.compileEnvFold env blocks dbg' unmaterialized sharingLimits width' -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Schedule.compileEnvFold_width
 

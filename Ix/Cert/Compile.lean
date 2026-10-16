@@ -36,8 +36,8 @@ What the IO pipeline does that this function does not:
   inspects semantic contracts and canonicalizes (`Ix.CanonM`) itself;
 * it compiles against a hybrid environment, in which theorem and opaque
   bodies are canonicalized again on demand (`fallback?`) instead of
-  materialized, and passes the name-hash index (`CompileEnv.nameByHash`)
-  that such an environment needs;
+  materialized, and passes the count of constants it leaves to the fallback
+  (`compileEnvFold`'s `unmaterialized`);
 * it splits each wave of the driver into four tasks per `--workers` (the
   value does not depend on the split) and
   takes the sharing limits from its options (`DriverOptions`);
