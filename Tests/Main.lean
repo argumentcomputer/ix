@@ -33,6 +33,7 @@ import Tests.Ix.Compile.ExpressionIndex
 import Tests.Ix.Compile.ExpressionFrame
 import Tests.Ix.Compile.ExactKey
 import Tests.Ix.Compile.UniverseCache
+import Tests.Ix.Compile.RewriteRetry
 import Tests.Ix.Compile.DriverInput
 import Tests.Ix.Compile.LocalBlob
 import Tests.Ix.Compile.IndexSafety
@@ -187,6 +188,9 @@ def registry : List Entry := [
   .suite "exact-expression-key" .primary Tests.Ix.Compile.ExactKey.suite,
   -- exact universe-cache keys: the level and its complete parameter context
   .suite "universe-cache" .primary Tests.Ix.Compile.UniverseCache.suite,
+  -- the call-site rewrite's retry after a proof-justified hit: generic callbacks keep
+  -- it, the production ordering may skip it (Ix.Compile.Pass.Translate)
+  .suite "rewrite-retry" .primary Tests.Ix.Compile.RewriteRetry.suite,
   -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
   .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
   -- the compile drivers refuse a condensation block without a reference set
