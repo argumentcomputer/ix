@@ -2735,7 +2735,8 @@ fn below_indc_to_lean(
     ctors: ctor_names,
     num_nested: Nat::from(0u64),
     is_rec: true,
-    // Reflexivity is inherited from the parent (see `build_below_indc`).
+    // Reflexivity is inherited from the parent (see
+    // `build_prop_below_family`).
     // The `ConstantInfo::InductInfo` hash includes `is_reflexive`, so the
     // regenerated `.below` must carry the same flag as Lean's original.
     is_reflexive: indc.is_reflexive,
@@ -4571,7 +4572,7 @@ fn install_decompile_call_site_plans(
         // `below_plan_key_is_head`). The below inductive itself is
         // regenerated later (Phase 3), so at install time its ctor names
         // are derived from the PARENT inductive's ctors via the same
-        // suffix transplant `build_below_indc_ctor` uses. Prop-ness is
+        // suffix transplant `build_prop_below_family` uses. Prop-ness is
         // signalled by the presence of a `.below.rec` aux member
         // (Type-level `.below` is a definition and has no recursor).
         let is_prop_below = aux_members.iter().any(|(k, n)| {

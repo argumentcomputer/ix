@@ -405,7 +405,7 @@ def installDecompileCallSitePlans
           -- `belowPlanKeyIsHead`). The below inductive itself is
           -- regenerated later, so its ctor names are derived from the
           -- PARENT inductive's ctors via the same suffix transplant
-          -- `buildBelowIndcCtor` uses. Prop-ness is signalled by the
+          -- `buildPropBelowFamily` uses. Prop-ness is signalled by the
           -- presence of a `.below.rec` aux member (Type-level `.below`
           -- is a definition and has no recursor).
           let isPropBelow :=

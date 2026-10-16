@@ -255,11 +255,10 @@ def fixtures : List Fixture := [
       kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress), WB-B2" ["*"] },
   { stem := "L2_PropSplit", ns := ["A", "B", "ua"]
     knownFails := ["rs", "lean", "cert"].flatMap fun leg => kf leg "BB-L2 (= WB-B2)" ["ua"] },
-  { stem := "RecAlias", ns := ["RecAlias"]
-    knownFails := kf "rs" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
-      kf "lean" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2"] ++
-      kf "cert" "WB-B6" ["RecAlias.PA.brecOn", "RecAlias.PA.triv.match_2",
-        "RecAlias.PA.triv"] },
+  -- WB-B6: a recursive field behind a reducible alias (`Id' (PA n)`, and
+  -- `Branches Higher`, an alias of a function telescope). The Prop `.below`
+  -- family is built from the recursor's minor premises, so every leg accepts.
+  { stem := "RecAlias", ns := ["RecAlias"] },
   { stem := "SurgAlias", ns := ["SurgAlias"]
     knownFails :=
       kf "rs" "WB-B5" ["SurgAlias.A._sizeOf_1", "SurgAlias.A.a.sizeOf_spec", "SurgAlias.f",
