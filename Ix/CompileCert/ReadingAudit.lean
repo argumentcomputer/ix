@@ -11,6 +11,7 @@ import Ix.CompileCert.FinalUniverses
 import Ix.CompileCert.PreseedInsertion
 import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.SharingRoots
+import Ix.CompileCert.Emission
 
 /-! # Audit of the reading-chain proofs
 
@@ -30,9 +31,9 @@ core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 `ExpressionCorrectness`, `ExpressionIngress`), the preseed
 (`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
 `PreseedCoverage`, `PreseedInsertion`), the emitters' wire validity
-(`Ix.CompileCert.EmissionWire`) and the sharing builder's root reading
-(`Ix.CompileCert.SharingRoots`). Each root must exist, occur once,
-and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
+(`Ix.CompileCert.EmissionWire`), the sharing builder's root reading
+(`Ix.CompileCert.SharingRoots`) and the payload emitters (`Ix.CompileCert.Emission`).
+Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
 
@@ -236,6 +237,23 @@ def sharingRootRoots : Array Lean.Name :=
     `meaning_read_before, `unshared_read, `zip_ctors, `zip_rules, `withMutConstRoots_inv, `withRoots_inv,
     `build_roots, `RootsRead.transfer, `RootsRead.grow, `RootsRead.append,
     `build_read].map (`Ix.CompileCert.SharingRoots ++ ·)
+
+/-- The payload emitters read back as their sources (CT-15's emission, as one
+skeleton): the finishers' invariant and frames, the header counts, and the
+definition, axiom, quotient, constructor, inductive and recursor emitters. -/
+def emissionRoots : Array Lean.Name :=
+  #[`Clean.good, `Frame.tidy, `Frame.same, `Frame.display, `Frame.namesBlobs, `Frame.compileName,
+    `Frame.compileNames, `Frame.checkedCount, `Frame.checkedIndex, `Frame.readBlock, `Frame.mutCtxAddrs,
+    `Frame.takeArena, `Frame.takeSurgerySharing, `Frame.recordDefHints, `Frame.takeUnivPatches, `clear_tidy,
+    `finishDefinition_tidy, `finishAxiom_tidy, `finishQuotient_tidy, `finishConstructor_tidy,
+    `finishRecursor_tidy, `inductiveMetadata_tidy, `finishInductiveData_tidy, `finish_clean, `Yields.pure,
+    `Yields.bind, `Yields.bindAny, `Yields.count, `Yields.index, `exact_header, `definitionHeader,
+    `axiomHeader, `quotientHeader, `recursorRuleHeader, `recursorHeader, `constructorHeader,
+    `inductiveDataHeader, `Yields.withBlockEnv, `Yields.withCurrent, `Yields.withUnivCtx, `enter_ok,
+    `current_ok, `prepared_good, `reset_good, `compileExpr_checked, `compiled_root, `definition_correct,
+    `definitionData_header, `single_correct, `axiom_correct, `axiomPayload_header, `quotient_correct,
+    `quotientPayload_header, `constructor_correct, `constructors_correct, `compileInductive_eq,
+    `inductiveData_correct, `rules_correct, `recursor_correct].map (`Ix.CompileCert.Emission ++ ·)
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -324,6 +342,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "preseed coverage" Ix.CompileCert.ReadingAudit.coverageRoots
   checkRoots (tag := "reading-audit") "emission wire" Ix.CompileCert.ReadingAudit.emissionWireRoots
   checkRoots (tag := "reading-audit") "sharing roots" Ix.CompileCert.ReadingAudit.sharingRootRoots
+  checkRoots (tag := "reading-audit") "emitters" Ix.CompileCert.ReadingAudit.emissionRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime

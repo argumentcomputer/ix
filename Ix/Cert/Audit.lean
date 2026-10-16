@@ -2191,3 +2191,115 @@ fun {md} reader related sources roots =>
 /-- info: 'Ix.CompileCert.SharingRoots.build_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.SharingRoots.build_read
+
+/-! ## Component theorems: the payload emitters read back as their sources
+
+Every declaration emitter (definition-like, axiom, quotient, constructor and
+the constructor loop, inductive, recursor and the rule loop), from a state
+satisfying the expression invariant for the declaration's own relation and
+under an environment without call-site plans, returns on success the
+payload its source describes, whose expression roots the in-flight reader
+reads as terms `Related` to the source's, in order
+(`SharingRoots.RootsRead`); it ends `Emission.Clean` (the invariant's state
+part, with an empty memo) and extends the reader. The finishers are one
+skeleton (`Emission.Tidy`, `Emission.Frame`); the header counts are the
+source's by the production guards (`Emission.Yields`). Every lemma behind
+them is audited in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.Emission.Clean : Ix.CompileCert.ExpressionState.Bindings → Ix.CompileM.BlockState → Prop :=
+fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state ∧ state.exprCache = ∅ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.Emission.Clean
+
+/-- info: @Ix.CompileCert.Emission.definition_correct : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (source : Ix.Def),
+          Ix.CompileCert.ExpressionState.ConstsSatisfy (Ix.CompileCert.ExpressionState.SelfName context.snd self names)
+              source.type →
+            Ix.CompileCert.ExpressionState.ConstsSatisfy
+                (Ix.CompileCert.ExpressionState.SelfName context.snd self names) source.value →
+              ∀ {before after : Ix.CompileM.BlockState}
+                {output : Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr},
+                Ix.CompileCert.ExpressionState.Good cx param self
+                    (Ix.CompileCert.Emission.related param names σ
+                      (Ix.CompileCert.Emission.inner source.name source.levelParams.toList context))
+                    bindings before →
+                  Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionData source) context before =
+                      (Except.ok output, after) →
+                    Ix.CompileCert.Emission.Clean bindings after ∧
+                      Ix.CompileCert.ExpressionRead.Extends
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self before).ecx
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx ∧
+                        output.fst = Ix.CompileCert.Emission.definitionPayload source output.fst.typ output.fst.value ∧
+                          output.snd.snd = (output.fst.typ, output.fst.value) ∧
+                            Ix.CompileCert.SharingRoots.RootsRead
+                              (Ix.CompileCert.ExpressionRead.blockReader cx param self after)
+                              (Ix.CompileCert.Emission.related param names σ
+                                (Ix.CompileCert.Emission.inner source.name source.levelParams.toList context))
+                              [source.type, source.value] [output.fst.typ, output.fst.value] -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.Emission.definition_correct
+
+/-- info: @Ix.CompileCert.Emission.recursor_correct : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (source : Ix.RecursorVal),
+          Ix.CompileCert.ExpressionState.ConstsSatisfy (Ix.CompileCert.ExpressionState.SelfName context.snd self names)
+              source.cnst.type →
+            (∀ (rule : Ix.RecursorRule),
+                rule ∈ source.rules.toList →
+                  Ix.CompileCert.ExpressionState.ConstsSatisfy
+                    (Ix.CompileCert.ExpressionState.SelfName context.snd self names) rule.rhs) →
+              ∀ {before after : Ix.CompileM.BlockState} {output : Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr},
+                Ix.CompileCert.ExpressionState.Good cx param self
+                    (Ix.CompileCert.Emission.related param names σ
+                      (Ix.CompileCert.Emission.inner source.cnst.name source.cnst.levelParams.toList context))
+                    bindings before →
+                  Ix.CompileCert.rawRun (Ix.CompileM.compileRecursor source) context before =
+                      (Except.ok output, after) →
+                    Ix.CompileCert.Emission.Clean bindings after ∧
+                      Ix.CompileCert.ExpressionRead.Extends
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self before).ecx
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx ∧
+                        output.fst = Ix.CompileCert.Emission.recursorPayload source output.fst.typ output.fst.rules ∧
+                          List.map (fun x => x.fields) output.fst.rules.toList =
+                              List.map (fun rule => rule.nfields.toUInt64) source.rules.toList ∧
+                            output.snd.snd = output.fst.typ ∧
+                              Ix.CompileCert.SharingRoots.RootsRead
+                                (Ix.CompileCert.ExpressionRead.blockReader cx param self after)
+                                (Ix.CompileCert.Emission.related param names σ
+                                  (Ix.CompileCert.Emission.inner source.cnst.name source.cnst.levelParams.toList
+                                    context))
+                                (source.cnst.type :: List.map (fun x => x.rhs) source.rules.toList)
+                                (output.fst.typ :: List.map (fun x => x.rhs) output.fst.rules.toList) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.Emission.recursor_correct
+
+/-- info: 'Ix.CompileCert.Emission.definition_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Emission.definition_correct
+
+/-- info: 'Ix.CompileCert.Emission.axiom_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Emission.axiom_correct
+
+/-- info: 'Ix.CompileCert.Emission.quotient_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Emission.quotient_correct
+
+/-- info: 'Ix.CompileCert.Emission.inductiveData_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Emission.inductiveData_correct
+
+/-- info: 'Ix.CompileCert.Emission.recursor_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.Emission.recursor_correct
