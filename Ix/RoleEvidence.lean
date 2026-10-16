@@ -1,4 +1,6 @@
-import IxC.Kernel.Ixon.Reader
+module
+
+public import IxC.Kernel.Ixon.Reader
 
 /-! # Proof evidence for the role table (untrusted)
 
@@ -27,6 +29,8 @@ them (`Ix.LeanIngress.sourceEvidence`), and the table generator
 as theorem records that the default table's evidence names. Nothing here is
 trusted: the fold is sound at every evidence (`Ix.Kernel.model_exists`); a
 proof this module gets wrong only declines its operation. -/
+
+@[expose] public section
 
 namespace Ix.RoleEvidence
 

@@ -25,6 +25,14 @@ the ingress and the evidence owe nothing: these theorems hold whatever
 
 namespace Ix.LeanIngress
 
+/-! Source mode's binding (`sourceBinding`), checked: every role's Lean name
+keys that role, and the name map holds the roles' names and nothing else.
+(Here rather than beside `sourceBinding`: `Ix.LeanIngress` is a `module`, whose
+`#guard`s would need `meta` imports.) -/
+
+#guard Ix.Kernel.Role.all.all fun r => (Ix.Kernel.Key.ofName r.leanName == .role r : Bool)
+#guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length
+
 universe u
 
 /-- **The reading of an accepted Source-mode check**: the ingress succeeded

@@ -1,10 +1,12 @@
-import Ix.CondenseM
-import Ix.LeanIngress.Expr
-import Ix.LeanIngress.Names
-import IxC.Kernel.Ixon.Prelude
-import IxC.Kernel.Cached.Installed
-import Ix.RoleEvidence
-import IxC.Kernel.Tier.Check
+module
+
+public import Ix.CondenseM
+public import Ix.LeanIngress.Expr
+public import Ix.LeanIngress.Names
+public import IxC.Kernel.Ixon.Prelude
+public import IxC.Kernel.Cached.Installed
+public import Ix.RoleEvidence
+public import IxC.Kernel.Tier.Check
 
 /-! # Source mode: Lean environments as the checker's declarations
 
@@ -84,6 +86,8 @@ Every group is lowered by the reader's own functions, against the reader's
 in-process modeller), `Reader.lowerDefinition` (the projection rewrite, the
 safety policy, the hint), and `State.note`/`noteGenerated` through
 `State.commit`. -/
+
+@[expose] public section
 
 namespace Ix.LeanIngress
 
@@ -684,12 +688,6 @@ and declines. -/
 
 /-- Source mode's binding: role `r` is the constant named `r.leanName`. -/
 def sourceBinding (r : Ix.Kernel.Role) : Ix.Kernel.Name := r.leanName
-
-/-! Source mode's binding, checked: every role's Lean name keys that role, and
-the name map holds the roles' names and nothing else. -/
-
-#guard Ix.Kernel.Role.all.all fun r => (Ix.Kernel.Key.ofName r.leanName == .role r : Bool)
-#guard Ix.Kernel.Role.byLeanName.size == Ix.Kernel.Role.all.length
 
 /-- **Source mode's evidence** over the prepared declarations, with the
 reason each well-founded operation without evidence has none. -/
