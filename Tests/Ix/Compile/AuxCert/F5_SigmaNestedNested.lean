@@ -8,6 +8,7 @@ kernel-check-ixe (certified): 30/30 accept.
 Phase 7b fidelity 15 ("roundtrip recompile hash mismatch for T.rec / casesOn / recOn / below").
 Passes: `Nat × List T`, `(_ : Nat) × T`, `PSigma (fun _ => T)`, `Option (Vec T 2)`.
 Fails too: `(n : Nat) × Vec T n` (user indexed Vec). -/
+set_option linter.unusedVariables false in
 inductive T : Type where
   | leaf : T
   | node : (n : Nat) × List T → T

@@ -23,7 +23,10 @@ def go : T → Nat
   | .base => 0
   | .succ t => go t + 1
 termination_by structural t => t
+set_option linter.defProp false in
 noncomputable def goEq1 := @go.eq_1
+set_option linter.defProp false in
 noncomputable def goEqDef := @go.eq_def
+set_option linter.defProp false in
 noncomputable def goInduct := @go.induct
 end AX.S_T_0_0_dir
