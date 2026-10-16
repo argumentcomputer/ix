@@ -21,6 +21,7 @@ import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
+import Ix.CompileCert.Canon.Rel
 
 /-! # Audit of the reading-chain proofs
 
@@ -52,7 +53,8 @@ syntactic walks through sharing and along the source
 `ReaderIndexDiscovery`), and the reading of compiled standalone inductives
 (`Ix.CompileCert.InductiveReading`), and what Source mode admits of an
 inductive block (`Ix.CompileCert.SourceConstructorPositions`), and the shared
-loop lemmas (`Ix.CompileCert.Loop`).
+loop lemmas (`Ix.CompileCert.Loop`), and Pass 1's comparator as a total preorder
+(`Ix.CompileCert.Canon.Basic` … `Rel`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -413,6 +415,31 @@ def sourceRoots : Array Lean.Name :=
     `admitted_member, `forall₂_mono_mem, `source_premises, `mkIndc_positions,
     `inductive_reads_source].map (`Ix.CompileCert.SourceConstructorPositions ++ ·)
 
+/-- Pass 1's comparator is a total preorder on its ok-domain at a fixed
+context (CS-01): the preorder combinators, the level, reference, expression
+and constant comparisons (on faithful names), `nameCompareExact` lawful, and
+the comparisons under two contexts (strength, `eq` monotonicity). -/
+def canonOrderRoots : Array Lean.Name :=
+  #[`le_ok, `Le.ok, `not_le_error, `PreOn.mono, `PreOn.comap, `PreOn.congr, `PreOn.swap_iff, `PreOn.refl,
+    `PreOn.lt_of_lt_le, `PreOn.lt_of_le_lt, `PreOn.eq_trans, `PreOn.pureCmp, `PreOn.const_eq, `cmpM_ok,
+    `lexIf_error, `lexIf_okLeft, `lexIf_ok, `PreOn.cmpM, `PreOn.lexIf, `PreOn.ofTag, `PreOn.ofGood,
+    `PreOn.empty, `PreOn.ofSizeOn, `PreOn.ofSize, `zipM_cons, `zipM_nil_nil, `zipM_nil_cons, `zipM_cons_nil,
+    `PreOn.zipCtx, `cmpM_pure, `transCmp_of_total, `univC_total, `compareUniv_eq_iff, `compareLevel_total,
+    `compareLevels_eq, `compareLevels_total, `addr_beq_iff, `addr_data_inj, `transCmp_comap,
+    `address_compare_eq_iff, `name_beq_iff, `name_beq_refl, `name_beq_symm, `name_beq_trans, `name_beq_comm,
+    `name_beq_of_eq, `nameCompare_eq_iff, `cmpHash_eq, `cmpRaw_str, `cmpRaw_num, `rawC_total, `cmpRaw_eq_iff,
+    `nameCompareExact_eq, `nameCompareExact_eq_iff, `Faithful.mono, `compareRef_beq, `compareRef_in_in,
+    `compareRef_in_out, `compareRef_out_in, `compareRef_out_out, `compareExternal_swap, `nbeq_of_refTag,
+    `compareRef_total, `literal_compare_natVal, `literal_compare_strVal, `literal_total, `ehd_spec,
+    `ehd_of_HN, `HN_etag_lt, `NotVar_of_ehd, `cE_mdata_left, `cE_mdata_right, `compareExpr_strip_lt,
+    `compareExpr_strip, `compareExpr_bad_lt, `compareExpr_bad, `compareExpr_diff, `etag_eq_mdata,
+    `cE_contract, `ExprIn.mono, `exprIn_ehd, `exprIn_e1, `exprIn_e2, `exprIn_e3, `exprIn_name,
+    `compareExpr_total, `cmp_true, `compareDef_total, `ctorP_total, `indHeader_eq, `indP_total,
+    `compareRule_total, `compareRecr_total, `constP_total, `cE_bvar, `cE_sort, `cE_const, `cE_app, `cE_lam,
+    `cE_forallE, `cE_letE, `cE_lit, `cE_proj, `ResRel.zipCtx, `compareExpr_rel, `compareDef_rel, `ctorP_rel,
+    `indP_rel, `compareRecr_rel, `constP_rel, `strongRel, `compareRef_strong, `constP_strong, `ctorP_strong,
+    `eqRel, `compareRef_eq_mono, `constP_eq_mono].map (`Ix.CompileCert.Canon ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -579,6 +606,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
   checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
+  checkRoots (tag := "reading-audit") "canon order" Ix.CompileCert.ReadingAudit.canonOrderRoots
   checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
