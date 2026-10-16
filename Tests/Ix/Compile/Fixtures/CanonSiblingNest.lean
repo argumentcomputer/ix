@@ -2,11 +2,14 @@
   Nested occurrences of the members of an external mutual group, and a split
   block with a recursive and a non-recursive member.
 
-  Not imported by any test library. `canon-pass1` elaborates this file at
-  run time (`Ix.Meta.getFileEnvCore`), compares Lean's `rec_N` with
+  Imported by no suite: the suites elaborate this file at run time
+  (`Ix.Meta.getFileEnvCore`). `canon-pass1` compares Lean's `rec_N` with
   `Ix.Compile.Canon.Nested.expand`, which records every member of a new
   external group as seen, as Lean's kernel and the compiler do (A0,
-  WB-A1), and reads `InductiveVal.isRec` of the split block's members.
+  WB-A1), and reads `InductiveVal.isRec` of the split block's members;
+  `nested-agreement` checks the compiler's expansion against IxC's readings
+  of both families; `aux-cert` compiles it with both compilers and requires
+  every checker to accept it.
 -/
 namespace CanonSiblingNest
 

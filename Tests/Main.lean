@@ -14,6 +14,7 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.NestedAgreement
 import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.AlphaEq
@@ -415,6 +416,10 @@ def registry : List Entry := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   .env "aux-gen-diff" (.ci .compilePipeline) Tests.Compile.AuxGenDiff.run,
+  -- The compiler's nested expansion against IxC's nested modeller (SP5):
+  -- source order, canonical order, permutation, field kinds and verdicts
+  -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
+  .env "nested-agreement" .landing Tests.Ix.Compile.NestedAgreement.run,
   -- Pass 1 (Ix.Compile.Canon) against the compiler's CondenseM / sortConsts /
   -- nested order on the same fixture corpus, the port fixes' neutrality, and
   -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).

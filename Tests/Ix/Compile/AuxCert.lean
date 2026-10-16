@@ -39,6 +39,13 @@
      (an unexpected pass is reported, so the record stays exact).
   3. Required and forbidden names in the output (`NestMutGroup`: exactly the
      two nested auxiliaries Lean has).
+  4. For the canonical-layout fixtures (`NestedLevels`, `CanonSiblingNest`,
+     which live in `Tests/Ix/Compile/Fixtures/`): every record holding a
+     fixture name is accepted by the certified checker (no decline at all,
+     documented or not); names that must share one compiled address (the
+     two presentations of a block, its collapsed members, every source
+     `rec_N` of one canonical auxiliary); and recursor blocks of an exact
+     size (one class and one canonical auxiliary).
 
   The output's names are read from its own named section (all of them):
   the required and forbidden names, the constants handed to `check-lean`, and
@@ -82,7 +89,8 @@ inductive Expect where
 
 /-- One fixture and its record. -/
 structure Fixture where
-  /-- File stem under `Tests/Ix/Compile/AuxCert/`. -/
+  /-- File stem under `Tests/Ix/Compile/AuxCert/` (the fixture's label
+      when `src` names its file). -/
   stem : String
   /-- Name prefixes the fixture owns (a namespace, or its top-level names). -/
   ns : List String
@@ -96,6 +104,16 @@ structure Fixture where
   requireNames : List String := []
   /-- Names that must not be in the compiled output. -/
   forbidNames : List String := []
+  /-- The source file, when it is not `Tests/Ix/Compile/AuxCert/<stem>.lean`. -/
+  src : Option String := none
+  /-- Every record holding a fixture name must be accepted by the certified
+      checker: a decline fails even in a documented class. -/
+  certAccepts : Bool := false
+  /-- Groups of names that must have one compiled address each. -/
+  sameAddress : List (List String) := []
+  /-- `(name, n)`: the name is a projection into a block of exactly `n`
+      members. -/
+  blockSizes : List (String × Nat) := []
   deriving Inhabited
 
 /-- Substring test (independent of the `String` pattern API). -/
@@ -110,6 +128,32 @@ def documentedDecline (reason : String) : Bool :=
 /-- Known failures of `names` on one leg. -/
 def kf (leg defect : String) (names : List String) : List (String × String × String) :=
   names.map fun n => (leg, n, defect)
+
+/-- A name of `Tests.Ix.Compile.Fixtures.NestedLevels`: `family`'s
+    presentation `p`, then `m`. -/
+def nestedLevelsName (family p m : String) : String :=
+  s!"Tests.Ix.Compile.Fixtures.NestedLevels.{family}.{p}.{m}"
+
+/-- `NestedLevels`, per family: the two presentations' members (one class:
+    `Left` and `Right` collapse), their constructors and their recursors
+    share one address each, and every source `rec_N` of both presentations
+    is the one canonical auxiliary's recursor (Lean numbers `Mixed`'s three
+    occurrences and `Neighbour`'s two; `B` lists `Right` first, so its
+    `rec_N` hang off `Right`). -/
+def nestedLevelsSame : List (List String) :=
+  [("Mixed", 3), ("Neighbour", 2)].flatMap fun (family, nAux) =>
+    let both := fun (suffix : String) =>
+      ["A", "B"].flatMap fun p =>
+        ["Left", "Right"].map fun m => nestedLevelsName family p (m ++ suffix)
+    [both "", both ".mk", both ".rec",
+     (List.range nAux).flatMap fun j =>
+       [nestedLevelsName family "A" s!"Left.rec_{j + 1}",
+        nestedLevelsName family "B" s!"Right.rec_{j + 1}"]]
+
+/-- `NestedLevels`' recursor blocks: one class and one canonical auxiliary. -/
+def nestedLevelsBlocks : List (String × Nat) :=
+  ["Mixed", "Neighbour"].flatMap fun family =>
+    ["A", "B"].map fun p => (nestedLevelsName family p "Left.rec", 2)
 
 -- The fixture record (filled from the A0 survey on 2026-10-03, Lean
 -- 4.34.1; expected behaviours from `plans/replan/D-evidence-digest.md` §2,
@@ -237,6 +281,19 @@ def fixtures : List Fixture := [
   -- WB-A3: the nested auxiliary's index sits behind a reducible alias;
   -- both recursor generators peel it through `whnf`.
   { stem := "AliasIdx", ns := ["AliasIdx"] },
+  -- CQ3.3 (SP5): the canonical layout's fixtures (in `Fixtures/`).
+  -- `NestedLevels`: in each family `Left` and `Right` collapse into one
+  -- class, and its occurrences are one canonical auxiliary up to compiled
+  -- addresses and `canonUniv` levels (`Mixed`'s `List.{max 0 0}` and
+  -- `List.{0}`), so the certified checker reads one container group: it
+  -- declined `Mixed` before CQ3.3 (SP5 §3.1). `CanonSiblingNest`:
+  -- occurrences of the members of an external mutual group.
+  { stem := "NestedLevels", ns := ["Tests.Ix.Compile.Fixtures.NestedLevels"]
+    src := some "Tests/Ix/Compile/Fixtures/NestedLevels.lean"
+    certAccepts := true, sameAddress := nestedLevelsSame, blockSizes := nestedLevelsBlocks },
+  { stem := "CanonSiblingNest", ns := ["CanonSiblingNest"]
+    src := some "Tests/Ix/Compile/Fixtures/CanonSiblingNest.lean"
+    certAccepts := true },
   { stem := "UnsafeI", ns := ["UnsafeI"]
     knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
       kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
@@ -392,7 +449,7 @@ def scopeBridge (src : String) (wholeEnv : Ixon.Env) (localOut : System.FilePath
 /-- Runs one fixture; returns its problems (empty: as recorded) and a
     one-line summary. -/
 def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
-  let src := s!"Tests/Ix/Compile/AuxCert/{f.stem}.lean"
+  let src := f.src.getD s!"Tests/Ix/Compile/AuxCert/{f.stem}.lean"
   let dir ← IO.FS.createTempDir
   let mut problems : Array String := #[]
   try
@@ -470,11 +527,42 @@ def runFixture (whole : Bool) (f : Fixture) : IO (Array String × String) := do
       unless allNames.contains n do problems := problems.push s!"output lacks {n}"
     for n in f.forbidNames do
       if allNames.contains n then problems := problems.push s!"output has {n}"
+    -- Every record of the fixture accepted, shared addresses, block sizes.
+    if f.certAccepts then
+      let accepted : Std.HashSet String := rows.foldl (init := {}) fun s (address, _, outcome, _) =>
+        if outcome == "accept" then s.insert address else s
+      for (record, names) in byRecord.toList do
+        unless accepted.contains record do
+          problems := problems.push
+            s!"cert: record {record.take 12} ({names.toList.take 3}) is not accepted"
+    let addrOf : Std.HashMap String Address :=
+      outEnv.named.fold (fun m n named => m.insert (toString n) named.addr) {}
+    for group in f.sameAddress do
+      for n in group do
+        unless addrOf.contains n do problems := problems.push s!"output lacks {n}"
+      match group.filterMap addrOf.get? with
+      | a :: rest =>
+        unless rest.all (· == a) do problems := problems.push s!"addresses differ within {group}"
+      | [] => pure ()
+    for (n, size) in f.blockSizes do
+      match addrOf.get? n with
+      | none => problems := problems.push s!"output lacks {n}"
+      | some a =>
+        let block := recordOf outEnv a
+        let members : Option Nat := if block == a then none else
+          match (outEnv.consts.get? block).bind (·.get?) with
+          | some c => match c.info with
+            | .muts ms => some ms.size
+            | _ => none
+          | none => none
+        unless members == some size do
+          problems := problems.push
+            s!"{n}: block of {(members.map toString).getD "no"} members, expected {size}"
     -- Observed failures per leg.
     let mut failed : Array (String × String × String) := #[]
     for (address, names, outcome, reason) in rows do
       if outcome == "accept" then continue
-      if outcome == "decline" && documentedDecline reason then continue
+      if outcome == "decline" && documentedDecline reason && !f.certAccepts then continue
       let ours := ((byRecord.getD address #[]).toList ++ names.filter (owns f)).eraseDups
       for n in ours do failed := failed.push ("cert", n, s!"{outcome}: {reason}")
     let rsCheck ← IO.ofExcept (← IO.wait rsCheckTask)
