@@ -19,6 +19,7 @@ import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
+import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
@@ -166,6 +167,9 @@ def registry : List Entry := [
   -- matching up to canonical universes (Ix.Compile.Image)
   .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
   .suite "image-motive-eq" .primary Tests.Ix.Compile.MotiveEq.suite,
+  -- Pass 3's reserved names (D14): the reserved component `_ix`, the Ix auxiliaries'
+  -- display names, prefixes by components
+  .suite "reserved-input" .primary Tests.Ix.Compile.ReservedInput.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
