@@ -21,6 +21,7 @@ import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
 import Tests.Ix.Compile.ReservedInput
 import Tests.Ix.Compile.Image
+import Tests.Ix.Compile.Pass3RustParity
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -459,6 +460,9 @@ def registry : List Entry := [
   -- Single ownership of compiled names: conflicting claims refused by both
   -- compilers (Tests.Ix.Compile.ClaimConflict).
   .runner "compile-claim-conflict" (.ci .compilePipeline) Tests.Ix.Compile.ClaimConflict.run,
+  -- The Rust Pass 3 core (not wired yet) against Ix.Compile.Image: the images of
+  -- image-gen's fixtures through the test-only FFI (Tests.Ix.Compile.Pass3RustParity).
+  .runner "pass3-rust-parity" (.ci .compilePipeline) Tests.Ix.Compile.Pass3RustParity.run,
   -- Source ownership of auxiliary claims, independent of arrival order
   -- (Tests.Ix.Compile.ClaimOrder).
   .runner "compile-claim-order" (.ci .compilePipeline) Tests.Ix.Compile.ClaimOrder.run,

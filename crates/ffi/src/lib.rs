@@ -30,6 +30,8 @@ pub mod graph;
 pub mod ix;
 pub mod kernel;
 pub mod lean_ixon;
+#[cfg(feature = "test-ffi")]
+pub mod pass3;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]
 pub mod refcount;

@@ -1,6 +1,7 @@
 //! Pass 3, the faithful rewrite, in the Rust compiler: its core, unwired.
 //! The reference is the Lean compiler's `Ix.Compile.Image` (the image
-//! generator) and `Ix.Compile.Pass`.
+//! generator) and `Ix.Compile.Pass`; the parity of the two image
+//! constructions is the `pass3-rust-parity` suite.
 //!
 //! Module map (Lean to Rust):
 //!
@@ -19,7 +20,8 @@
 //! reserved-input refusal ([`names`]): the driver's hooks, which record the
 //! changed blocks' components and rewrite the blocks that reference an image
 //! head, come with the switch from the call-site surgery to Pass 3. The
-//! modules are public, so the unit tests reach them. The optimisation passes
+//! modules are public, so the parity suite's FFI entry (`rs_pass3_images`,
+//! `test-ffi`) and the unit tests reach them. The optimisation passes
 //! are not here.
 
 pub mod build;
