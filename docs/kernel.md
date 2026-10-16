@@ -383,10 +383,50 @@ block-order check is.
 `CanonM`: an input constant is identified by its name). `.meta`'s display is
 the reader's output's (`Reader.Read.display`: what the `.ixe`'s metadata says
 of the keys a record declares, its Lean names and level names), filled by the
-meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`); the checker's own types
-carry none, and no checker code reads a display field
-(`IxC/Kernel/Audit/Display.lean`). `.meta` never decides: it explains
-failures with names (IXC-PLAN §11).
+meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`), and no checker code
+reads a display field (`IxC/Kernel/Audit/Display.lean`). `.meta` never
+decides: it explains failures with names (IXC-PLAN §11).
+
+**Names in terms (step 6b).** So that a failure can print a term, a reduced
+one included, with Lean's names, the names travel inside the terms, as in
+Lean, through δ, β and instantiation:
+- a binder carries its Lean name and `BinderInfo`
+  (`BinderMeta.display : Squash BinderDisplay`) and a let its name
+  (`LetMeta.display : Squash Name`). A `Squash` is a subsingleton, so
+  structural `=`, the derived `DecidableEq`, `==`, the hash and every
+  equation and decision of the checker are blind to the annotation: a named
+  term *is* its anonymous erasure, `.meta` and `.source` check exactly what
+  `.anon` checks, and no theorem moved. The type is the same in every mode
+  (the renaming statement `Ix.Cert.Rename.expr` carries a binder's metadata
+  between modes); `.anon` writes none (its reader builds the shared anonymous
+  objects of PERF P14, which `BinderMeta.withPw` keeps only for an anonymous
+  binder, `shareAlwaysImpl`);
+- `.source` names its terms from the Lean terms (`Ix/LeanIngress/Names.lean`,
+  `nameExprs`, after `ingressExprs`; `nameExprs_eq` proves the result is the
+  conversion), and `.meta` from the `.ixe`'s metadata arenas
+  (`Ix/KernelDisplay/MetaNames.lean`, `nameRead`, after the reader): binder,
+  let, application, projection, call-site and η call-site nodes, followed as
+  `Ix.Tc`'s meta ingress follows them. Missing or inconsistent metadata adds
+  nothing and is never an error;
+- a failure carries the terms it is about and the binders it was thrown under
+  (`FailureDisplay`, a `Squash` on its message's first prose part), written
+  outside `.anon` by `Msg.withTerms` and `withChain` (each a `@[reducible]`
+  identity in the logic with a proved `@[csimp]` substitute), at application
+  type mismatch, function expected, expected a sort, let value type mismatch,
+  declaration type mismatch and theorem-not-a-proposition;
+- the renderer (`Ix/KernelDisplay/Render.lean`, outside the kernel) prints in
+  `ppExpr`'s style (names freshened with safe shadowing, `∀` versus `→`,
+  implicit arguments hidden, no notation, full names); safe code cannot read
+  a `Squash`, so it takes the read as a parameter, and the one display-only
+  `unsafe` read is `Ix/KernelDisplay/Peek.lean` (trust-surface allowlisted;
+  no certified root reaches it, `Tests/Ix/Kernel/DisplayRead.lean`).
+
+Known limits: `.meta` keys are addresses, so the members of an alias fiber
+(α-equivalent constants, such as `HAdd.hAdd` and `HMul.hMul`) print as its
+first name; a memo hit may return an α-equivalent term whose names come from
+a sibling occurrence, as Lean's caches do. `kernel-meta-names` is the oracle
+against Lean (`ppExpr`, `Kernel.whnf`, the kernel's exceptions).
+
 `Mode.Id md` is what identifies an input constant (an `Address` in `.anon`
 and `.meta`, a `Name` in `.source`), `Mode.D md α` the display data (`Unit`
 outside `.meta`), and `Mode.Certified` holds of the modes the theorems are
@@ -784,11 +824,13 @@ re-records it states why the closure or the statement moved.
 6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
-   checker, the theory and the admission hash (`Ix/Address/Admission.lean`)
-   for compiler escapes (`unsafe`, `implemented_by`, `computed_field`,
-   `native_decide`, `extern`, `sorry`, `axiom`, ...); the escapes in five
-   allowlisted files (`IxC/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`,
-   `Ix/Address/Admission.lean`) are permitted, each with its justification
+   checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
+   the display modules (`Ix/KernelDisplay/*`, `Ix/LeanIngress/Names.lean`,
+   step 6b) for compiler escapes (`unsafe`, `implemented_by`,
+   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); the
+   escapes in the allowlisted files (`IxC/Kernel/{Expr,Name,Key,Exclusive,
+   BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
+   `Ix/KernelDisplay/Peek.lean`) are permitted, each with its justification
    in the tool's header;
 7. `kernel-level-comparison`: the level comparison (`Level.leq`,
    `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
@@ -1036,10 +1078,13 @@ its install plus its checks. A checker failure's reason is rendered by
 the first eight hexadecimal digits of their addresses, `Nat.add@a1b2c3d4`
 (`Reader.spellWith`); the verdict is the `.anon` run's.
 `kernel-check-ixe --meta <input.ixe> <output.jsonl> [limit]` is the erasure
-test: every record read and checked at `.anon` and at `.meta` and the runs
-compared record by record (readings, outcome, fold position, failure with
-its keys mapped), failing on any difference (Init+Std: 97,906 records, no
-difference, about 220 s and 4 GB). Environment:
+test: every record read and checked at `.anon` and at `.meta` (named from the
+metadata) and the runs compared record by record (readings by hash and term
+by term, outcome, fold position, failure with its keys mapped), failing on
+any difference or on a name coverage under 99% (Init+Std: 97,906 records, no
+difference, 99.998% of 2,576,066 binders and lets named, about 230 s). Its
+rows print a failure with its terms and Lean's names
+(`Ix.KernelDisplay.renderFailure`). Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one constant's check exceeds
