@@ -184,6 +184,19 @@ a hash field one key (CQ2.25). Only a tie pays for the structural walk. -/
   | .eq => Name.cmpRaw a b
   | o => o
 
+/-- **Structural equality of names**, stored hashes included: `Name`'s `==`
+compares the root's stored hash only, so two names that share it are `==`
+without being equal (CQ2.25). The stored hash is compared first, so names
+that differ there answer at once. -/
+@[expose] def Name.beqRaw : Name → Name → Bool
+  | .anonymous h, .anonymous h' => decide (h = h')
+  | .str p s h, .str p' s' h' => decide (h = h') && s == s' && Name.beqRaw p p'
+  | .num p i h, .num p' i' h' => decide (h = h') && i == i' && Name.beqRaw p p'
+  | _, _ => false
+
+theorem Name.beqRaw_iff {a b : Name} : Name.beqRaw a b = true ↔ a = b := by
+  induction a generalizing b <;> cases b <;> simp [Name.beqRaw, *] <;> grind
+
 /-! ## Level -/
 
 /-- Content-addressed universe level. Mirrors `Lean.Level` with a Blake3 hash at each node. -/
