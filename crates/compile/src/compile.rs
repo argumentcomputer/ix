@@ -345,39 +345,51 @@ impl CompileState {
   /// but a claim at a different address — by another aux block, or on a
   /// name a non-aux block has already compiled — is a hard error instead of
   /// a schedule-dependent overwrite (the `FieldBelowRace` shape, WB-C1).
+  ///
+  /// Returns whether the caller owns `name`'s `Named` entry: its claim
+  /// entered `aux_name_to_addr`, now or earlier in the same block
+  /// (`block_txn`). An identical re-claim of a name another block claimed
+  /// owns nothing (`claim_and_register_aux`).
   pub fn claim_aux_name(
     &self,
     name: &Name,
     addr: &Address,
-  ) -> Result<(), CompileError> {
+  ) -> Result<bool, CompileError> {
     if let Some(existing) = self.name_to_addr.get(name)
       && *existing.value() != *addr
     {
       return Err(name_claim_conflict(name, existing.value(), addr));
     }
-    match self.aux_name_to_addr.entry(name.clone()) {
+    let owns = match self.aux_name_to_addr.entry(name.clone()) {
       dashmap::mapref::entry::Entry::Occupied(e) => {
         if e.get() != addr {
           return Err(name_claim_conflict(name, e.get(), addr));
         }
+        block_txn::holds_aux_claim(name)
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
         block_txn::log_aux(name);
+        true
       },
-    }
+    };
     self.aux_gen_extra_names.insert(name.clone());
-    Ok(())
+    Ok(owns)
   }
 
   /// Claim `name` for the block that compiles it (aux mode) at `addr`.
   /// A name aux_gen has claimed at another address is a hard error: two
   /// producers would otherwise race for it.
+  ///
+  /// Returns whether the caller owns `name`'s `Named` entry: its claim
+  /// entered `name_to_addr`, now or earlier in the same block
+  /// (`block_txn`). An identical re-claim of a name another block compiled
+  /// owns nothing (`claim_and_register_compiled`).
   pub fn claim_compiled_name(
     &self,
     name: &Name,
     addr: &Address,
-  ) -> Result<(), CompileError> {
+  ) -> Result<bool, CompileError> {
     if let Some(existing) = self.aux_name_to_addr.get(name)
       && *existing.value() != *addr
     {
@@ -388,27 +400,89 @@ impl CompileState {
     // It was an overwrite, so the address a name kept depended on which
     // block claimed last; an identical re-claim stays a no-op, so valid
     // input registers the same values.
-    match self.name_to_addr.entry(name.clone()) {
+    let owns = match self.name_to_addr.entry(name.clone()) {
       dashmap::mapref::entry::Entry::Occupied(e) => {
         if e.get() != addr {
           return Err(name_claim_conflict(name, e.get(), addr));
         }
+        block_txn::holds_compiled_claim(name)
       },
       dashmap::mapref::entry::Entry::Vacant(e) => {
         e.insert(addr.clone());
         block_txn::log_compiled(name);
+        true
       },
-    }
-    Ok(())
+    };
+    Ok(owns)
   }
 
   /// Register `name`'s `Named` entry, logging it for the failed-block
   /// rollback when the entry is new (`block_txn`).
+  ///
+  /// A claimed name is registered through `claim_and_register_compiled` or
+  /// `claim_and_register_aux`, so that only its owner writes the entry. The
+  /// unclaimed synthetic `Muts` entries are registered here directly; the
+  /// aux-layout patch re-registers the block's own entry.
   pub fn register_named(&self, name: Name, named: Named) {
     if !self.env.named.contains_key(&name) {
       block_txn::log_named(&name);
     }
     self.env.register_name(name, named);
+  }
+
+  /// Claim `name` at `named.addr` for the block that compiles it
+  /// (`claim_compiled_name`) and register `named` if the claim owns the
+  /// name.
+  ///
+  /// An identical re-claim of a name another block owns registers nothing
+  /// (CQ2.24 b, R03-16's residual): the owner's entry, with the original
+  /// and hints its promotion set, is kept, which entry a name keeps no
+  /// longer depends on which block registered last, and a later failure of
+  /// the re-claiming block has nothing of the owner's to roll back. The
+  /// claim precedes the registration, so a refused claim writes nothing
+  /// either. Mirrors the Lean drivers' `mergeCompiledBlock`.
+  pub fn claim_and_register_compiled(
+    &self,
+    name: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if self.claim_compiled_name(name, &named.addr)? {
+      self.register_named(name.clone(), named);
+    } else {
+      self.log_kept_owner_entry(name, &named);
+    }
+    Ok(())
+  }
+
+  /// Claim `name` at `named.addr` for an aux_gen product
+  /// (`claim_aux_name`) and register `named` if the claim owns the name;
+  /// see `claim_and_register_compiled`.
+  pub fn claim_and_register_aux(
+    &self,
+    name: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if self.claim_aux_name(name, &named.addr)? {
+      self.register_named(name.clone(), named);
+    } else {
+      self.log_kept_owner_entry(name, &named);
+    }
+    Ok(())
+  }
+
+  /// `IX_LOG_AUX_NAMES`: an identical re-claim that kept another block's
+  /// entry, and whether the two entries' metadata agree.
+  fn log_kept_owner_entry(&self, name: &Name, named: &Named) {
+    if *IX_LOG_AUX_NAMES {
+      let same_meta =
+        self.env.lookup_name(name).map(|owner| owner.meta() == named.meta());
+      eprintln!(
+        "[aux-names] identical re-claim of {} at {:.12} keeps the owner's \
+         Named (same metadata: {same_meta:?})",
+        name.pretty(),
+        named.addr.hex(),
+      );
+    }
   }
 
   /// Look up a compiled constant's address by name.
@@ -4527,8 +4601,10 @@ fn compile_const_inner_body(
       stt.store_const_bytes(addr.clone(), bytes, constant)?;
       // Claim before registering: a refused claim leaves the owner's
       // `Named` entry as it was.
-      stt.claim_compiled_name(name, &addr)?;
-      stt.register_named(name.clone(), Named::new(addr.clone(), meta.clone()));
+      stt.claim_and_register_compiled(
+        name,
+        Named::new(addr.clone(), meta.clone()),
+      )?;
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
@@ -4587,8 +4663,8 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.store_const_bytes(addr.clone(), bytes, constant)?;
-        stt.claim_compiled_name(name, &addr)?;
-        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
+        stt
+          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       }
       addr
     },
@@ -4615,8 +4691,8 @@ fn compile_const_inner_body(
       let addr = Address::hash(&bytes);
       if aux {
         stt.store_const_bytes(addr.clone(), bytes, constant)?;
-        stt.claim_compiled_name(name, &addr)?;
-        stt.register_named(name.clone(), Named::new(addr.clone(), meta));
+        stt
+          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       }
       addr
     },
@@ -4652,11 +4728,10 @@ fn compile_const_inner_body(
         let addr = Address::hash(&bytes);
         if aux {
           stt.store_const_bytes(addr.clone(), bytes, constant)?;
-          stt.claim_compiled_name(name, &addr)?;
-          stt.register_named(
-            name.clone(),
+          stt.claim_and_register_compiled(
+            name,
             Named::new(addr.clone(), meta.clone()),
-          );
+          )?;
         } else {
           stt.promote_aux(name, addr.clone(), meta)?;
         }
@@ -4839,8 +4914,8 @@ fn compile_mutual(
           // `remove`, not `get().cloned()`: each name is consumed exactly
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.claim_compiled_name(&n, &addr)?;
-          stt.register_named(n.clone(), Named::new(addr.clone(), meta));
+          stt
+            .claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
         }
       }
     } else {
@@ -4903,8 +4978,10 @@ fn compile_mutual(
           }
           if aux {
             stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
-            stt.claim_compiled_name(&n, &proj_addr)?;
-            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_and_register_compiled(
+              &n,
+              Named::new(proj_addr.clone(), meta),
+            )?;
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
           }
@@ -4927,11 +5004,10 @@ fn compile_mutual(
                 ctor_bytes,
                 ctor_proj,
               )?;
-              stt.claim_compiled_name(&ctor.cnst.name, &ctor_addr)?;
-              stt.register_named(
-                ctor.cnst.name.clone(),
+              stt.claim_and_register_compiled(
+                &ctor.cnst.name,
                 Named::new(ctor_addr.clone(), ctor_meta),
-              );
+              )?;
             } else {
               stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
             }
@@ -4950,8 +5026,10 @@ fn compile_mutual(
       }
       if aux {
         stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
-        stt.claim_compiled_name(&n, &proj_addr)?;
-        stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+        stt.claim_and_register_compiled(
+          &n,
+          Named::new(proj_addr.clone(), meta),
+        )?;
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
       }
@@ -8197,5 +8275,137 @@ mod tests {
     assert_eq!(stt.name_to_addr.get(&g).map(|r| r.clone()), Some(owner));
     assert!(!stt.env.named.contains_key(&f));
     assert!(!stt.name_to_addr.contains_key(&f));
+  }
+
+  /// Claim `n` with `named` through the registration path of a compiled
+  /// (`aux == false`) or an aux_gen (`aux == true`) block.
+  fn claim_and_register(
+    stt: &CompileState,
+    aux: bool,
+    n: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if aux {
+      stt.claim_and_register_aux(n, named)
+    } else {
+      stt.claim_and_register_compiled(n, named)
+    }
+  }
+
+  fn axio_meta(tag: &[u8]) -> ConstantMeta {
+    ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: Address::hash(tag),
+      lvls: vec![],
+      arena: Default::default(),
+      type_root: 0,
+    })
+  }
+
+  #[test]
+  fn identical_reclaim_keeps_the_owner_named() {
+    // CQ2.24 b (R03-16's residual): a later block's identical re-claim of a
+    // name another block owns registers nothing. The owner's entry (its
+    // metadata, the original its promotion set, its hints) is kept, and
+    // the re-claiming block's rollback leaves it as it was. For both claim
+    // kinds.
+    use ix_common::env::ReducibilityHints;
+    let n = Name::str(Name::anon(), "n".to_string());
+    let addr = Address::hash(b"shared");
+    let owner_original = Address::hash(b"owner-original");
+    for aux in [false, true] {
+      let stt = CompileState::default();
+      // the owner's block, then its promotion and hints
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"owner")),
+      )
+      .unwrap();
+      block_txn::finish(&stt, false).unwrap();
+      {
+        let mut entry = stt.env.named.get_mut(&n).unwrap();
+        entry
+          .value_mut()
+          .set_original(owner_original.clone(), ConstantMeta::default());
+        entry.value_mut().set_hints(Some(ReducibilityHints::Abbrev));
+      }
+      let check = |stage: &str| {
+        let kept =
+          stt.env.named.get(&n).map(|r| r.clone()).expect("owner named");
+        assert_eq!(kept.addr, addr, "aux={aux} {stage}");
+        assert_eq!(*kept.meta(), axio_meta(b"owner"), "aux={aux} {stage}");
+        assert_eq!(
+          kept.original().map(|(a, _)| a),
+          Some(owner_original.clone()),
+          "aux={aux} {stage}"
+        );
+        assert_eq!(
+          kept.hints(),
+          Some(ReducibilityHints::Abbrev),
+          "aux={aux} {stage}"
+        );
+        assert_eq!(
+          stt.resolve_addr(&n),
+          Some(addr.clone()),
+          "aux={aux} {stage}"
+        );
+      };
+      // a later block re-claims `n` at the same address with other metadata
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"later")),
+      )
+      .unwrap();
+      check("after the identical re-claim");
+      // ... and fails: its rollback has nothing of the owner's to undo
+      block_txn::finish(&stt, true).unwrap();
+      check("after the re-claiming block's rollback");
+      // outside a block transaction (direct callers) the same holds
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"direct")),
+      )
+      .unwrap();
+      check("after a direct identical re-claim");
+    }
+  }
+
+  #[test]
+  fn reclaim_within_one_block_reregisters() {
+    // A name one block claims twice is still that block's: the later
+    // registration wins (the Lean drivers keep the last `auxNamed` entry per
+    // name), and the block's failure removes the entry with its claim.
+    let n = Name::str(Name::anon(), "n".to_string());
+    let addr = Address::hash(b"own");
+    for aux in [false, true] {
+      let stt = CompileState::default();
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"first")),
+      )
+      .unwrap();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"second")),
+      )
+      .unwrap();
+      let named = stt.env.named.get(&n).map(|r| r.clone()).expect("own named");
+      assert_eq!(*named.meta(), axio_meta(b"second"), "aux={aux}");
+      block_txn::finish(&stt, true).unwrap();
+      assert!(!stt.env.named.contains_key(&n), "aux={aux}");
+      assert!(stt.resolve_addr(&n).is_none(), "aux={aux}");
+    }
   }
 }

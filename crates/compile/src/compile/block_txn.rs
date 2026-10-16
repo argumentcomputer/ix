@@ -17,7 +17,11 @@
 //!
 //! Only names a block *newly* entered are logged (an insert into a vacant
 //! entry), so a name another block owns (an identical re-claim) is never
-//! removed. Anonymous constants and blobs the failed block stored stay in the
+//! removed. Nor is its `Named` entry ever replaced: an identical re-claim
+//! does not own the entry ([`holds_compiled_claim`], [`holds_aux_claim`]),
+//! so the re-claiming block registers nothing for it, and its rollback has
+//! nothing of the owner's to restore (`CompileState::claim_and_register_*`).
+//! Anonymous constants and blobs the failed block stored stay in the
 //! content-addressed tables: no name refers to them, and another block may
 //! have stored the same content.
 
@@ -157,6 +161,21 @@ pub fn log_compiled(n: &Name) {
 
 pub fn log_aux(n: &Name) {
   with(|x| x.aux.push(n.clone()));
+}
+
+/// Whether the active transaction entered `n` into `name_to_addr` itself
+/// ([`log_compiled`]): an identical re-claim later in the same block still
+/// owns the name's `Named` entry. `false` outside a transaction. Read only on
+/// a re-claim, so the linear scan of the block's log stays off the common
+/// path.
+pub fn holds_compiled_claim(n: &Name) -> bool {
+  TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.compiled.contains(n)))
+}
+
+/// Whether the active transaction entered `n` into `aux_name_to_addr`
+/// itself ([`log_aux`]); see [`holds_compiled_claim`].
+pub fn holds_aux_claim(n: &Name) -> bool {
+  TXN.with(|t| t.borrow().as_ref().is_some_and(|x| x.aux.contains(n)))
 }
 
 pub fn log_plan(n: &Name) {

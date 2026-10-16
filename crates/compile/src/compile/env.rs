@@ -1409,34 +1409,41 @@ fn precompile_aux_gen_prereqs(
     };
     let mut cache = BlockCache::default();
     let mut prereq_kctx = crate::compile::KernelCtx::new();
-    compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx)
-      .map_err(|e| match e {
-        // A sharing failure is about this block, not the dependency
-        // order: keep its category (and the limit to raise) and name the
-        // block.
-        CompileError::ResourceLimit { reason } => CompileError::ResourceLimit {
+    // One block transaction per pre-compiled SCC, as for a scheduled block:
+    // a name the SCC claims twice is still its own (`claim_and_register_*`),
+    // and a name an earlier SCC claimed keeps that SCC's entry, as in the
+    // Lean drivers' `precompileAuxGenPrereqs`. A failure aborts the compile.
+    crate::compile::block_txn::start();
+    let res =
+      compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx);
+    let res = crate::compile::block_txn::finish(stt, res.is_err()).and(res);
+    res.map_err(|e| match e {
+      // A sharing failure is about this block, not the dependency
+      // order: keep its category (and the limit to raise) and name the
+      // block.
+      CompileError::ResourceLimit { reason } => CompileError::ResourceLimit {
+        reason: format!("aux_gen prereq '{}': {reason}", rep.pretty()),
+      },
+      CompileError::SharingConstruction { reason } => {
+        CompileError::SharingConstruction {
           reason: format!("aux_gen prereq '{}': {reason}", rep.pretty()),
-        },
-        CompileError::SharingConstruction { reason } => {
-          CompileError::SharingConstruction {
-            reason: format!("aux_gen prereq '{}': {reason}", rep.pretty()),
-          }
-        },
-        e => CompileError::InvalidMutualBlock {
-          reason: format!(
-            "aux_gen prereq pre-compile failed for SCC '{}' ({} members): \
+        }
+      },
+      e => CompileError::InvalidMutualBlock {
+        reason: format!(
+          "aux_gen prereq pre-compile failed for SCC '{}' ({} members): \
              {:?}. The SCC closure is traversed in reverse-topological \
              order starting from the aux_gen seed names (see \
              `aux_gen_seed_names`), so all transitive deps *should* be \
              compiled before this — if you're hitting this, a dep \
              relationship isn't captured in the ref graph, or the source \
              env is inconsistent.",
-            rep.pretty(),
-            all.len(),
-            e,
-          ),
-        },
-      })?;
+          rep.pretty(),
+          all.len(),
+          e,
+        ),
+      },
+    })?;
     // Move compiled names → aux_name_to_addr. The scheduler can still
     // re-encounter this SCC later; the entries will just be no-ops.
     let just_compiled: Vec<(Name, Address)> = stt

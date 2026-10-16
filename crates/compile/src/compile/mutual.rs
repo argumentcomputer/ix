@@ -297,8 +297,10 @@ pub fn compile_aux_block_with_rename(
       let canon_n = cnst.name();
       let n = resolve_name(&canon_n);
       let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt.claim_aux_name(&n, &standalone_addr)?;
-      stt.register_named(n.clone(), Named::new(standalone_addr.clone(), meta));
+      stt.claim_and_register_aux(
+        &n,
+        Named::new(standalone_addr.clone(), meta),
+      )?;
       pending_names.push(n);
     }
     if !pending_names.is_empty() {
@@ -358,8 +360,10 @@ pub fn compile_aux_block_with_rename(
             // Inductive projection
             let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = store_content(stt, indc_proj)?;
-            stt.claim_aux_name(&n, &proj_addr)?;
-            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_and_register_aux(
+              &n,
+              Named::new(proj_addr.clone(), meta),
+            )?;
             pending_names.push(n);
 
             // Constructor projections. Inductives don't typically get a
@@ -373,26 +377,29 @@ pub fn compile_aux_block_with_rename(
               let ctor_proj =
                 ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = store_content(stt, ctor_proj)?;
-              stt.claim_aux_name(&ctor.cnst.name, &ctor_addr)?;
-              stt.register_named(
-                ctor.cnst.name.clone(),
+              stt.claim_and_register_aux(
+                &ctor.cnst.name,
                 Named::new(ctor_addr.clone(), ctor_meta),
-              );
+              )?;
               pending_names.push(ctor.cnst.name.clone());
             }
           },
           MutConst::Recr(_) => {
             let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = store_content(stt, proj)?;
-            stt.claim_aux_name(&n, &proj_addr)?;
-            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_and_register_aux(
+              &n,
+              Named::new(proj_addr.clone(), meta),
+            )?;
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
             let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = store_content(stt, proj)?;
-            stt.claim_aux_name(&n, &proj_addr)?;
-            stt.register_named(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.claim_and_register_aux(
+              &n,
+              Named::new(proj_addr.clone(), meta),
+            )?;
             pending_names.push(n);
           },
         }
@@ -548,8 +555,7 @@ fn register_aux_aliases(
     alias_named.clear_original();
 
     compile_name(&source, stt)?;
-    stt.claim_aux_name(&source, &target_addr)?;
-    stt.register_named(source.clone(), alias_named);
+    stt.claim_and_register_aux(&source, alias_named)?;
     pending_names.push(source);
   }
 

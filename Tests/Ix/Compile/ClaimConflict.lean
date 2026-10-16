@@ -20,7 +20,9 @@
      address. The messages must be Rust's, character for character. An
      alias of a promoted target does not borrow the target's `original`
      (its own promotion supplies one), so its metadata does not depend on
-     promotion order.
+     promotion order. An identical re-claim of a name an earlier block owns
+     keeps the owner's `Named` entry (CQ2.24 b), while a block's own second
+     registration of a name it claimed replaces its first.
   2. **Both compilers.** A constructed closure that bypasses the rule that
      auxiliaries exist exactly when Lean generates them: it holds a user
      constant named `T.below` (a plain definition, not Lean's auxiliary) for
@@ -250,6 +252,48 @@ def aliasProvenanceCheck : Except String Unit := do
   if !repeated.auxNamed.isEmpty then
     throw "consistent re-registration overwrote the source's own original"
 
+/-- CQ2.24 b (R03-16's residual): an identical re-claim of a name an earlier
+    block owns does not replace the owner's `Named` entry (its metadata, its
+    promoted original, its hints), for an aux claim and for a primary name;
+    a name one block claims twice keeps that block's last entry. Mirrors
+    Rust `compile::tests::identical_reclaim_keeps_the_owner_named` and
+    `reclaim_within_one_block_reregisters`. -/
+def ownerNamedCheck : Except String Unit := do
+  let n := ixName "Fx.A.rec_1"
+  let lo := ixName "Fx.T"
+  let x := addr "x"
+  let tag (s : String) : Ixon.ConstantMeta := .new (.muts #[#[addr s]] none)
+  let owner : Ixon.Named :=
+    { addr := x, constMeta := tag "owner", original := some (addr "owner-original", .empty),
+      hints := some .abbrev }
+  let none₀ : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
+  let noneB : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
+  -- an aux claim over an earlier block's aux claim of `n` at `x`
+  let claimed : DriverAcc := { cenv := { (default : CompileEnv) with
+    auxNameToAddr := ({} : Std.HashMap _ _).insert n x
+    nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
+  let later : BlockState :=
+    { auxCache [(n, x)] with auxNamed := #[(n, { addr := x, constMeta := tag "later" })] }
+  let acc ← (merge claimed lo (loneResult (addr "t")) later none₀ noneB noneB).mapError toString
+  if acc.cenv.nameToNamed.get? n != some owner then
+    throw "an identical aux re-claim replaced the owner's Named"
+  -- a primary name over an earlier block's compiled claim of `n` at `x`
+  let compiled : DriverAcc := { cenv := { (default : CompileEnv) with
+    nameToAddr := ({} : Std.HashMap _ _).insert n x
+    nameToNamed := ({} : Std.HashMap _ _).insert n owner } }
+  let acc ← (merge compiled n { loneResult x with blockMeta := tag "later" } default
+    none₀ noneB noneB).mapError toString
+  if acc.cenv.nameToNamed.get? n != some owner then
+    throw "an identical primary re-claim replaced the owner's Named"
+  -- one block claiming `n` twice keeps its own last entry
+  let twice : BlockState :=
+    { auxCache [(n, x), (n, x)] with
+      auxNamed := #[(n, { addr := x, constMeta := tag "first" }),
+        (n, { addr := x, constMeta := tag "second" })] }
+  let acc ← (merge emptyAcc lo (loneResult (addr "t")) twice none₀ noneB noneB).mapError toString
+  if (acc.cenv.nameToNamed.get? n).map (·.constMeta) != some (tag "second") then
+    throw "a block's own second registration was dropped"
+
 /-- Original-form publication is conditional on the entire promotion
     succeeding, including writes for a member outside the scheduled block
     that the source-family compile visits; a failed promotion withdraws the
@@ -401,6 +445,12 @@ def run : IO UInt32 := do
   | .error e =>
     failures := failures + 1
     IO.println s!"[claim-conflict] alias provenance: FAIL: {e}"
+  match ownerNamedCheck with
+  | .ok () => IO.println "[claim-conflict] owner Named: an identical re-claim keeps the \
+owner's entry; a block's own re-registration wins"
+  | .error e =>
+    failures := failures + 1
+    IO.println s!"[claim-conflict] owner Named: FAIL: {e}"
   -- Part 1
   for (label, expected, actual) in driverCases do
     if expected == actual then

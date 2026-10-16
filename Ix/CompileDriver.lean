@@ -387,6 +387,26 @@ def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
   checkBlockClaims cenv (primaryClaims lo result) cache plans brecPlans belowPlans
   checkBlockContent cenv result cache
 
+/-- The names of a compiled block whose `Named` entry another block owns
+    (`mergeCompiledBlock`, CQ2.24 b): its primary names already claimed in
+    `nameToAddr`, and its aux claims already in `auxNameToAddr`. A function
+    of its own: when the merge read the state inside its own loops, a second
+    reference to the state stayed alive and every insert of the merge
+    copied its maps (Init+Std's compile phase went from 44 s to 388 s). -/
+def reclaimedNames (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : Std.HashSet Name := Id.run do
+  let primaryNames : Array Name :=
+    if result.projections.isEmpty then #[lo] else result.projections.map (·.1)
+  let mut reclaimed : Std.HashSet Name := {}
+  for name in primaryNames do
+    if cenv.nameToAddr.contains name then
+      reclaimed := reclaimed.insert name
+  for (n, _) in cache.auxNamed do
+    if cache.auxGenExtraNames.contains n && cache.auxNameToAddr.contains n
+        && cenv.auxNameToAddr.contains n then
+      reclaimed := reclaimed.insert n
+  return reclaimed
+
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
     (primary `register_name` + `name_to_addr`, compile.rs:3902-3969),
@@ -400,26 +420,43 @@ def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
     error and nothing is merged. The check is a separate step, not part of
     this function, so that the merge keeps consuming the driver state
     uniquely (a merge returning `Except` would keep the old state alive for
-    the error branch and copy every map it inserts into). `Named` entries are
-    overrides by design (the tail re-registers regenerated names and the
-    `Muts` entry), as with Rust's `register_name`; content-keyed tables
-    (constants, blobs) are unioned by content, which the check made
-    conflict-free. -/
+    the error branch and copy every map it inserts into). `Named` entries
+    the block owns are overrides by design (the tail re-registers
+    regenerated names and the `Muts` entry), as with Rust's `register_name`;
+    content-keyed tables (constants, blobs) are unioned by content, which the
+    check made conflict-free.
+
+    An identical re-claim of a name an earlier block claimed in the same
+    table (a primary name already in `nameToAddr`, an aux claim already in
+    `auxNameToAddr`; the check made the addresses equal) does not own the
+    name: its `Named` entry is not merged, so the owner's entry, with the
+    original and hints its promotion set, is kept, and which entry a name
+    keeps does not depend on which block merged last (CQ2.24 b, R03-16's
+    residual). Mirrors Rust `CompileState::claim_and_register_compiled` and
+    `claim_and_register_aux`; a name this block claims twice is still its
+    own (Rust: the claim is in the block's transaction log). -/
 def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     (result : BlockResult) (cache : BlockState)
     (plans : Std.HashMap Name CallSitePlan)
     (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan) : DriverAcc := Id.run do
   let mut cenv := acc.cenv
+  -- The names whose `Named` entry another block owns, read from the state
+  -- before this merge by a function of its own, so that the merge below
+  -- still consumes the driver state's maps uniquely. Do not inline it: read
+  -- in this function's loops, the state stayed referenced twice and every
+  -- insert below copied its maps (Init+Std's compile phase 44 s → 391 s).
+  let reclaimed := reclaimedNames cenv lo result cache
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
     constants := cenv.constants.insert result.blockAddr result.blockBytes
     blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) cenv.blobs }
   -- Primary registrations.
   if result.projections.isEmpty then
-    cenv := { cenv with
-      nameToNamed := cenv.nameToNamed.insert lo
-        { addr := result.blockAddr, constMeta := result.blockMeta }
-      nameToAddr := cenv.nameToAddr.insert lo result.blockAddr }
+    if !reclaimed.contains lo then
+      cenv := { cenv with
+        nameToNamed := cenv.nameToNamed.insert lo
+          { addr := result.blockAddr, constMeta := result.blockMeta } }
+    cenv := { cenv with nameToAddr := cenv.nameToAddr.insert lo result.blockAddr }
   else
     for (name, proj, constMeta) in result.projections do
       let projBytes := Ixon.ser proj
@@ -427,14 +464,17 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv := { cenv with
         totalBytes := cenv.totalBytes + projBytes.size
         constants := cenv.constants.insert projAddr projBytes
-        nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta }
         nameToAddr := cenv.nameToAddr.insert name projAddr }
+      if !reclaimed.contains name then
+        cenv := { cenv with
+          nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta } }
   -- Aux tail outputs: stored constants, Named overrides (in registration
   -- order — LAST wins per name), aux resolution map, extra names, plans.
   for (addr, c) in cache.auxConsts do
     cenv := { cenv with constants := cenv.constants.insert addr (Ixon.ser c) }
   for (n, named) in cache.auxNamed do
-    cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
+    if !reclaimed.contains n then
+      cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
   cenv := { cenv with
     auxNameToAddr := cache.auxNameToAddr.fold (fun m k v => m.insert k v)
       cenv.auxNameToAddr
