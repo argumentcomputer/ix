@@ -2802,3 +2802,65 @@ fun sources =>
 /-- info: 'Ix.CompileCert.MutualArtifact.mutual_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.MutualArtifact.mutual_correct
+
+/-! ## Component theorems: the reader's recursor index
+
+The certified reader indexes recursors by their own records (SP3 D8)
+before reading (`Ix.Kernel.Reader.buildIndex`). Every block shape's order
+was validated against the block's record, so a compiled standalone family
+is indexed at member 0 exactly (`ReaderIndex.buildIndex_singleton_order`);
+every indexed recursor comes from a scanned record whose analysis gave its
+entry, and every recursor of a block shape is indexed at that block
+(`buildIndex_valid`); over records coherent with the store, the reader's
+lookups for a shape's recursors succeed (`grouped_lookup`), every eligible
+recursor's block and motive is covered (`ReaderIndexDiscovery.buildIndex_covers`),
+and the index holds one recursor per block and motive
+(`buildIndex_role_unique`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: Ix.CompileCert.ReaderIndex.buildIndex_singleton_order : ∀ (store : Ix.Kernel.Reader.Store)
+  (records : Array (Address × Ixon.Constant)) (owner : Address) (constant : Ixon.Constant) (source : Ixon.Inductive)
+  (shape : Ix.Kernel.Reader.BlockShape),
+  store owner = some constant →
+    constant.info = Ixon.ConstantInfo.muts #[Ixon.MutConst.indc source] →
+      (Ix.Kernel.Reader.buildIndex store records).blocks[owner]? = some shape → shape.order = #[0] -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ReaderIndex.buildIndex_singleton_order
+
+/-- info: Ix.CompileCert.ReaderIndexDiscovery.buildIndex_covers : ∀ (store : Ix.Kernel.Reader.Store)
+  (records : Array (Address × Ixon.Constant)),
+  Ix.CompileCert.ReaderIndex.Coherent store records →
+    ∀ (ref : Ix.Kernel.ConstRef Address) (entry : Ix.Kernel.Reader.RecEntry),
+      Ix.CompileCert.ReaderIndex.From store records ref entry →
+        ∃ selected chosen shape,
+          (Ix.Kernel.Reader.buildIndex store records).recs[selected]? = some chosen ∧
+            chosen.block = entry.block ∧
+              chosen.motive = entry.motive ∧
+                (Ix.Kernel.Reader.buildIndex store records).blocks[entry.block]? = some shape ∧
+                  selected ∈ shape.recs ∧ Ix.CompileCert.ReaderIndex.From store records selected chosen -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ReaderIndexDiscovery.buildIndex_covers
+
+/-- info: 'Ix.CompileCert.ReaderIndex.run_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndex.run_eq
+
+/-- info: 'Ix.CompileCert.ReaderIndex.buildIndex_singleton_order' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndex.buildIndex_singleton_order
+
+/-- info: 'Ix.CompileCert.ReaderIndex.compiled_order' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndex.compiled_order
+
+/-- info: 'Ix.CompileCert.ReaderIndex.grouped_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndex.grouped_lookup
+
+/-- info: 'Ix.CompileCert.ReaderIndexDiscovery.buildIndex_covers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndexDiscovery.buildIndex_covers
+
+/-- info: 'Ix.CompileCert.ReaderIndexDiscovery.buildIndex_role_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderIndexDiscovery.buildIndex_role_unique

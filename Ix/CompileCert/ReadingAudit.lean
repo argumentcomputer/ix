@@ -18,6 +18,7 @@ import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.ReaderSourceSpines
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.MutualArtifact
+import Ix.CompileCert.ReaderIndexDiscovery
 
 /-! # Audit of the reading-chain proofs
 
@@ -45,7 +46,8 @@ the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
 syntactic walks through sharing and along the source
 (`Ix.CompileCert.ReaderSpines`, `ReaderSourceSpines`), and the mutual layout
 (`Ix.CompileCert.ProjectionLayout`) and its projections (`Ix.CompileCert.MutualProjections`,
-`MutualArtifact`).
+`MutualArtifact`), and the reader's recursor index (`Ix.CompileCert.ReaderIndex`,
+`ReaderIndexDiscovery`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -356,6 +358,24 @@ def projectionRoots : Array Lean.Name :=
     `finish_references, `payload_references, `mutual_references,
     `mutual_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
 
+/-- The reader's recursor index (CT-16, R10a, re-derived for D8): the
+builder's two loops and one candidate inversion, validated block shapes,
+provenance and grouping, the reader's lookups, per-motive coverage and one
+recursor per motive. -/
+def indexRoots : Array Lean.Name :=
+  (#[`run_eq, `candidate_step, `valid_empty, `shapes_insert, `supported_insert_shape, `added_valid,
+    `candidate_valid, `record_valid, `collect_valid, `complete_valid, `run_shapes, `buildIndex_shapes,
+    `singleton_inductives, `array_one, `singleton_order, `buildIndex_singleton_order, `compiled_order,
+    `recs_insert_extends, `provenance_insert, `grouped_extends, `grouped_empty_insert, `found_getD,
+    `found_insert, `origins_empty, `added_origins, `candidate_origins, `record_origins, `collect_origins,
+    `complete_origins, `buildIndex_valid, `entry_stored, `grouped_entry, `member_source, `member_unique,
+    `member_lookup, `entry_lookup, `grouped_lookup].map (`Ix.CompileCert.ReaderIndex ++ ·)) ++
+  (#[`from_role_unique, `found_push_extends, `added_recs, `added_found, `backed_added, `candidate_transition,
+    `covered_extends, `candidate_covers, `valid_empty, `candidate_next, `record_next, `record_covers,
+    `collect_covers, `complete_pair, `complete_preserves, `complete_covers, `complete_recs, `buildIndex_covers,
+    `buildIndex_unique_reference, `one_push, `candidate_unique, `collect_unique, `collect_backed,
+    `buildIndex_role_unique].map (`Ix.CompileCert.ReaderIndexDiscovery ++ ·))
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -474,6 +494,10 @@ def layoutRuntime : Array Lean.Name :=
     ``Ix.Compile.Canon.sortClasses, ``Ix.Kernel.Reader.resolveSource, ``Ix.Kernel.Reader.emptyTables,
     ``Ix.CompileM.buildMutualProjections, ``Ix.CompileM.buildStandaloneMutualProjections]
 
+/-- The reader's recursor index builder, which the index proofs unfold. -/
+def indexRuntime : Array Lean.Name :=
+  #[``Ix.Kernel.Reader.buildIndex, ``Ix.Kernel.Reader.recursorMembers]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -500,6 +524,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRoots
   checkRoots (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRoots
   checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
+  checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -512,3 +537,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "record reader" Ix.CompileCert.ReadingAudit.recordReaderRuntime
   checkRuntime (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRuntime
   checkRuntime (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRuntime
+  checkRuntime (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRuntime
