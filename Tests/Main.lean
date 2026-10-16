@@ -47,6 +47,7 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
@@ -444,6 +445,10 @@ def registry : List Entry := [
   -- Canonicity over twin presentations, exact against the non-canonical
   -- record under the records policy (Tests.Ix.Compile.Twins).
   .runner "twins" .landing Tests.Ix.Compile.Twins.run,
+  -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
+  -- families with a canonical reference: the nested-order and packaging
+  -- classes fail (Tests.Ix.Compile.Oracle).
+  .runner "aux-oracle" .landing Tests.Ix.Compile.Oracle.run,
   -- The Lean compiler's output does not depend on the schedule: the fold at
   -- three widths, the reference schedule both ways and the pipeline at three
   -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).
