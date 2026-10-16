@@ -47,16 +47,22 @@
 
   ## Orders
 
-  * `NestedOrder.structural` (today, `sortAuxByPartitionRefinement`): the
-    auxiliaries, each with a trailing identity-marker constructor typed by
-    its occurrence (block parameters as `bvar i`, literally, as the
-    compiler does), are sorted by `Classes.sortClasses` with today's rules;
-    references to the block's members are external (by address). The
-    compiler reads this order through `structuralAuxClasses` and the
-    permutation through `computePerm`.
-  * `NestedOrder.discovery` (Phase A): the discovery order of the expansion
-    of the canonical block (members in canonical order, collapsed members
-    renamed to their representatives).
+  * `NestedOrder.structural` (`Rules.today`, the compiler before
+    A2-order): the auxiliaries, each with a trailing identity-marker
+    constructor typed by its occurrence (block parameters as `bvar i`,
+    literally, as the compiler did), are sorted by `Classes.sortClasses`
+    with today's rules; references to the block's members are external (by
+    address). Kept for the census's `today` column (`structuralAuxClasses`).
+  * `NestedOrder.discovery` (Phase A; what the compiler runs, A2-order):
+    the discovery order of the expansion of the canonical block (members in
+    canonical order, collapsed members renamed to their representatives,
+    Lean's deduplication of sibling occurrences). An external group opens
+    as `GroupOf` says: Lean's `I.all` (`leanGroup`), or, in the compiler, the
+    external block's compiled canonical classes (`groupOfBlocks`), which is
+    what the kernels recompute from the stored Ixon; the two agree whenever
+    the external block is an identity block. The compiler applies no sort:
+    under `Rules.compiler`, `canonicalAuxOrder` returns this order, the
+    canonical expansion's own.
 
   `perm` maps each of Lean's source positions (discovery order over the
   block's `all`) to its canonical position (`computeAuxPerm`): signatures
@@ -83,6 +89,7 @@
 module
 public import Ix.Environment
 public import Ix.Mutual
+public import Ix.Compile.ExactKey
 public import Ix.Compile.Canon.Expr
 public import Ix.Compile.Canon.Order
 public import Ix.Compile.Canon.Classes
@@ -160,10 +167,139 @@ structure Expanded where
 
 def Expanded.aux (x : Expanded) : Array XMember := x.types.extract x.nOriginals x.types.size
 
+/-- The external group a new occurrence of `I` opens, as classes in order
+(each class's first name is its representative, which gets the auxiliary;
+every name of the class is registered as seen). Lean's kernel opens `I.all`
+(`leanGroup`). Over a canonical block the group is `I`'s canonical
+component instead, which is what the kernels can recompute from Ixon (the
+compiler passes its compiled classes); the two agree whenever `I`'s block is
+an identity block. -/
+abbrev GroupOf := IndView → Array (Array Name)
+
+/-- Lean's group: `I.all`, one name per class. -/
+def leanGroup : GroupOf := fun v => v.all.map (#[·])
+
+/-- The canonical group from a compiled class registry (the compiler's
+`CompileEnv.blocks` / Rust `stt.blocks`: each member's block classes in
+canonical order, representative first); `I.all` for a block the registry
+does not hold. -/
+def blockGroup (blocks : Std.HashMap Name (Array (Array Name))) (name : Name)
+    (all : Array Name) : Array (Array Name) :=
+  match blocks.get? name with
+  | some classes => classes.filter (!·.isEmpty)
+  | none => all.map (#[·])
+
+@[inherit_doc blockGroup]
+def groupOfBlocks (blocks : Std.HashMap Name (Array (Array Name))) : GroupOf := fun v =>
+  blockGroup blocks v.name v.all
+
+/-! ## Occurrence keys
+
+An occurrence already seen is replaced by its auxiliary; `seen` is keyed by
+`SeenKey`, compared exactly (never by a stored hash alone):
+* on Lean's source walk (`keyAddr? = none`), by the occurrence itself
+  (`ExactKey.ExprKey`: every field of the term);
+* on the canonical expansion, by its `addrKey`: every constant outside the
+  queue whose compiled address is known by that address (a reference tag of
+  its own, so no source name can equal an address), universe levels in the
+  serializer's positional normal form (`Ixon.canonUniv` over the block's
+  universe parameters), binder names, binder information and `mdata`
+  erased. That is all the kernels see when they recompute the expansion from
+  the stored Ixon, so two occurrences equal up to compiled addresses or level
+  spelling (`List.{max 0 0} T` and `List.{0} T`, `Fixtures.NestedLevels`)
+  share one auxiliary in the compilers as in the kernels. Lean's own walk
+  compares names and spellings; the difference is recorded by the block's
+  permutation (A2-order). -/
+
+/-- A reference in a canonical occurrence key: a queue member (or a constant
+without a compiled address) by its name, an external constant by its
+compiled address. -/
+inductive OccurrenceRef where
+  | named (name : Lean.Name)
+  | external (address : Address)
+  deriving BEq, Hashable, Inhabited
+
+/-- The canonical deduplication key of a nested occurrence (`addrKey`). -/
+inductive OccurrenceKey where
+  | bvar (index : Nat)
+  | fvar (name : Lean.Name)
+  | sort (level : Ixon.Univ)
+  | const (ref : OccurrenceRef) (levels : List Ixon.Univ)
+  | app (fn arg : OccurrenceKey)
+  | lam (type body : OccurrenceKey)
+  | forallE (type body : OccurrenceKey)
+  | letE (type value body : OccurrenceKey) (nonDep : Bool)
+  | natLit (value : Nat)
+  | strLit (value : String)
+  | proj (ref : OccurrenceRef) (index : Nat) (struct : OccurrenceKey)
+  deriving BEq, Hashable, Inhabited
+
+/-- A level of an occurrence in the serializer's normal form: parameters by
+position in the block's universe parameters `ctx`, then `Ixon.canonUniv`. -/
+def keyLevel (ctx : List Name) (u : Level) : Except String Ixon.Univ :=
+  match toUniv ctx u with
+  | .ok v => .ok (Ixon.canonUniv v)
+  | .error e => .error s!"nested occurrence key: {e}"
+
+def occurrenceRef (addr? : Name → Option Address) (keep : Name → Bool) (n : Name) :
+    OccurrenceRef :=
+  if keep n then .named (SemanticContract.toLeanName n) else
+  match addr? n with
+  | some a => .external a
+  | none => .named (SemanticContract.toLeanName n)
+
+/-- The canonical deduplication key of `e` (see the section docstring);
+`keep` holds the queue's names, `ctx` the block's universe parameters. -/
+def addrKey (ctx : List Name) (addr? : Name → Option Address) (keep : Name → Bool) :
+    Expr → Except String OccurrenceKey
+  | .bvar i _ => pure (.bvar i)
+  | .fvar n _ => pure (.fvar (SemanticContract.toLeanName n))
+  | .mvar .. => .error "nested occurrence key: metavariable"
+  | .sort u _ => .sort <$> keyLevel ctx u
+  | .const n ls _ => do
+    pure (.const (occurrenceRef addr? keep n) (← ls.toList.mapM (keyLevel ctx)))
+  | .app f a _ => do pure (.app (← addrKey ctx addr? keep f) (← addrKey ctx addr? keep a))
+  | .lam _ t b _ _ => do pure (.lam (← addrKey ctx addr? keep t) (← addrKey ctx addr? keep b))
+  | .forallE _ t b _ _ => do
+    pure (.forallE (← addrKey ctx addr? keep t) (← addrKey ctx addr? keep b))
+  | .letE _ t v b nd _ => do
+    pure (.letE (← addrKey ctx addr? keep t) (← addrKey ctx addr? keep v)
+      (← addrKey ctx addr? keep b) nd)
+  | .lit (.natVal n) _ => pure (.natLit n)
+  | .lit (.strVal s) _ => pure (.strLit s)
+  | .proj n i s _ => .proj (occurrenceRef addr? keep n) i <$> addrKey ctx addr? keep s
+  | .mdata _ x _ => addrKey ctx addr? keep x
+
+/-- The key of the `seen` table: the occurrence itself, exactly, on Lean's
+source walk; its `addrKey` on a canonical expansion. -/
+inductive SeenKey where
+  | source (expr : Ix.Compile.ExactKey.ExprKey)
+  | canonical (key : OccurrenceKey)
+  deriving BEq, Hashable
+
+/-- The `seen` key of `e`: `addrKey` when `keyAddr?` is given (a canonical
+expansion), the exact occurrence otherwise. -/
+def seenKey (ctx : List Name) (keyAddr? : Option (Name → Option Address))
+    (keep : Name → Bool) (e : Expr) : Except String SeenKey :=
+  match keyAddr? with
+  | some addr? => .canonical <$> addrKey ctx addr? keep e
+  | none => pure (.source ⟨e⟩)
+
+/-- The error of a failed key, if any. -/
+def keyErrorOf {α : Type} : Except String α → Option String
+  | .error e => some e
+  | .ok _ => none
+
 structure XCtx where
   ind? : Name → Option IndView
+  groupOf : GroupOf := leanGroup
+  /-- Deduplicate occurrences up to compiled addresses (`addrKey`): the
+  canonical expansion. `none` for Lean's source walk. -/
+  keyAddr? : Option (Name → Option Address) := none
   dedup : Dedup
   all0 : Name
+  /-- The block's universe parameters (positions of `addrKey`'s levels). -/
+  levelParams : List Name
   blockLevels : Array Level
   nParams : Nat
   paramBinders : Array Binder
@@ -173,8 +309,11 @@ structure XSt where
   typeNames : Std.HashSet Name := {}
   auxToNested : Std.HashMap Name Expr := {}
   auxCtorMap : Std.HashMap Name (Name × Name) := {}
-  seen : Std.HashMap Expr Name := {}
+  seen : Std.HashMap SeenKey Name := {}
   nextAuxIdx : Nat := 1
+  /-- An occurrence whose key does not form (a level parameter outside the
+  block's, a metavariable); `expand` reports it. -/
+  keyError : Option String := none
   deriving Inhabited
 
 def XSt.push (st : XSt) (m : XMember) : XSt :=
@@ -222,10 +361,21 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
   let repl := fun (aux : Name) =>
     mkAppN (mkAppN (Expr.mkConst aux cx.blockLevels) (paramArgs np d))
       (args.extract enp args.size)
-  if let some aux := st.seen.get? iAs then return (some (repl aux), st)
+  let keyOf := seenKey cx.levelParams cx.keyAddr? st.typeNames.contains
+  let iKey? := keyOf iAs
+  let some iKey := iKey?.toOption
+    | return (none, { st with keyError := st.keyError <|> keyErrorOf iKey? })
+  if let some aux := st.seen.get? iKey then return (some (repl aux), st)
+  let groups := cx.groupOf ext
+  -- every key of the new group, before the state changes
+  let groupKeys? := groups.mapM fun cls =>
+    cls.mapM fun k => keyOf (mkAppN (Expr.mkConst k hls) specs)
+  let some groupKeys := groupKeys?.toOption
+    | return (none, { st with keyError := st.keyError <|> keyErrorOf groupKeys? })
   let mut st := st
   let mut result : Option Expr := none
-  for jName in ext.all do
+  for (cls, keys) in groups.zip groupKeys do
+    let some jName := cls[0]? | continue
     let some j := cx.ind? jName | continue
     let auxName := Name.mkStr (Name.mkStr cx.all0 "_nested")
       s!"{(namePretty jName).replace "." "_"}_{st.nextAuxIdx}"
@@ -234,8 +384,9 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
       nextAuxIdx := st.nextAuxIdx + 1
       auxToNested := st.auxToNested.insert auxName jAs }
     st := match cx.dedup with
-      | .compiler => if st.seen.contains iAs then st else { st with seen := st.seen.insert iAs auxName }
-      | .lean => if st.seen.contains jAs then st else { st with seen := st.seen.insert jAs auxName }
+      | .compiler => if st.seen.contains iKey then st else { st with seen := st.seen.insert iKey auxName }
+      | .lean => keys.foldl (init := st) fun st kAs =>
+          if st.seen.contains kAs then st else { st with seen := st.seen.insert kAs auxName }
     let jType := instantiatePiParams (substLevels j.levelParams hls j.type) enp specs
     let auxType := mkForalls cx.paramBinders jType
     let mut ctors : Array XCtor := #[]
@@ -245,7 +396,7 @@ def replaceIfNested (cx : XCtx) (np : Nat) (owner : Name) (e : Expr) (d : Nat)
       let t := replaceCtorResultHead jName auxName enp cx.blockLevels cx.nParams t 0
       st := { st with auxCtorMap := st.auxCtorMap.insert auxCtorName (cn, auxName) }
       ctors := ctors.push { name := auxCtorName, typ := mkForalls cx.paramBinders t, nFields := nf }
-    if jName == hn then result := some (repl auxName)
+    if cls.contains hn then result := some (repl auxName)
     st := st.push { name := auxName, sourceOwner := owner, typ := auxType, ctors,
                     nParams := cx.nParams, nIndices := j.numIndices }
   return (result, st)
@@ -312,12 +463,15 @@ def expansionBound : Nat := 100000
 /-- Expand the block whose members are `ordered` (in that order), with
 collapsed members renamed by `aliasToRep` first (`expandNestedBlock`). -/
 def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Name)
-    (aliasToRep : Std.HashMap Name Name := {}) : Except String Expanded := do
+    (aliasToRep : Std.HashMap Name Name := {}) (groupOf : GroupOf := leanGroup)
+    (keyAddr? : Option (Name → Option Address) := none) :
+    Except String Expanded := do
   let some first := ordered[0]? | .error "expand: empty block"
   let some fi := ind? first | .error s!"expand: {namePretty first} is not an inductive"
   let nParams := fi.numParams
   let (paramBinders, _) := peelForalls nParams fi.type #[]
-  let cx : XCtx := { ind?, dedup, all0 := fi.all[0]?.getD first,
+  let cx : XCtx := { ind?, groupOf, keyAddr?, dedup, all0 := fi.all[0]?.getD first,
+                     levelParams := fi.levelParams.toList,
                      blockLevels := fi.levelParams.map Level.mkParam, nParams, paramBinders }
   let mut st : XSt := {}
   for n in ordered do
@@ -328,6 +482,7 @@ def expand (ind? : Name → Option IndView) (dedup : Dedup) (ordered : Array Nam
                     ctors, nParams, nIndices := v.numIndices }
   let nOriginals := st.types.size
   let fin ← walkQueue cx expansionBound 0 st
+  if let some e := fin.keyError then throw e
   return { types := fin.types, auxToNested := fin.auxToNested, auxCtorMap := fin.auxCtorMap,
            nOriginals, levelParams := fi.levelParams, nParams }
 
@@ -423,7 +578,13 @@ def computePerm (addr? : Name → Option Address) (canon : Array Sig) (source : 
   let mut perm : Array (Option Nat) := #[]
   for (s, j) in source.zipIdx do
     let specs := s.specs.map (replaceConstNames origToCanon)
-    match matchSig addr? strict canon s.head s.levels specs with
+    -- an exact spelling first (constants by name), then up to addresses: in
+    -- a canonical expansion (deduplicated up to addresses) at most one
+    -- candidate matches either way, but an expansion of uncollapsed classes
+    -- can hold two candidates equal up to addresses, and each source
+    -- position keeps its own (A2-order; Rust `compute_aux_perm`)
+    let exact := matchSig (fun _ => none) strict canon s.head s.levels specs
+    match exact <|> matchSig addr? strict canon s.head s.levels specs with
     | some i => perm := perm.push (some i)
     | none =>
       if s.specs.any (mentionsOutside originals inComp) || !inComp.contains s.owner then
@@ -453,8 +614,8 @@ def markerize (np : Nat) : Expr → Nat → Expr
   | .mdata md x _, k => Expr.mkMData md (markerize np x k)
   | e, _ => e
 
-/-- The auxiliaries as the inductives the compiler sorts
-(`sortAuxByPartitionRefinement`). -/
+/-- The auxiliaries as the inductives the structural order sorts
+(the structural order of `Rules.today`). -/
 def auxMutConsts (x : Expanded) : Array MutConst :=
   x.aux.map fun mem =>
     let ctors := mem.ctors.zipIdx.map fun (c, ci) =>
@@ -481,7 +642,7 @@ def Rules.structuralAux (rules : Rules) : Rules :=
 
 /-- Today's structural order of the auxiliaries of an expansion: their
 classes, in order, under `rules.structuralAux`
-(`sortAuxByPartitionRefinement` reads this). -/
+(canon-pass1's `today` column). -/
 def structuralAuxClasses (rules : Rules) (addr? : Name → Option Address) (x : Expanded) :
     Except CmpError (List (List MutConst)) :=
   (·.1) <$> sortClasses rules.structuralAux addr? (auxMutConsts x).toList

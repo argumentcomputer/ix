@@ -25,11 +25,12 @@
     structure name;
   * only strong results are cached, keyed by the unordered name pair.
 
-  **Rule sets** (`Rules`): `Rules.compiler` is the compiler's rule set;
-  `Rules.today` is the same with the two port fixes off (below), kept as
-  the negative control of `canon-pass1`; `Rules.phaseA` is the Phase A
-  decision set (levels compared after `canonUniv`, nested auxiliaries in
-  discovery order), which the compiler does not run yet. The switches:
+  **Rule sets** (`Rules`): `Rules.compiler` is the compiler's rule set, the
+  Phase A decision set `Rules.phaseA` (levels compared after `canonUniv`,
+  nested auxiliaries in discovery order, the two port fixes); `Rules.today`
+  is the compiler's former rule set (syntactic levels, the structural
+  auxiliary order, the port fixes off), kept as the negative control of
+  `canon-pass1`. The switches:
   * `seed`: `byNameHash` (the refinement starts from one class sorted by
     the blake3 hash of the name) or `allOrder` (the caller's order: Lean's
     `all` restricted to the component, or a clique's member order, kept
@@ -45,7 +46,7 @@
     inline key; only the class order can move), or `blind` (never use
     addresses);
   * `nested`: the order of nested auxiliaries, `structural` (the
-    compiler's) or `discovery` (Lean's), used by `Nested.lean`.
+    compiler's former) or `discovery` (Lean's), used by `Nested.lean`.
 
   **The port fixes.** The compiler's Lean comparator keys its cache
   by the unordered name pair but stores and returns the ordering in the
@@ -56,7 +57,7 @@
   with `portFixes := true` both are fixed. Neither is reachable on Lean
   input (components are kind-homogeneous; every class is sorted in
   name-hash order, so no cached ordering is read back for the swapped pair
-  inside a sort), so `Rules.compiler`'s classes are `Rules.today`'s
+  inside a sort), so the fixes change no class and no order on their own
   (`canon-pass1` checks this on its fixtures).
 
   **Errors** are `CmpError`s, so the compiler's adapter
@@ -121,16 +122,24 @@ structure Rules where
 def Rules.today : Rules :=
   ⟨.byNameHash, .syntactic, .leastNameHash, .inline, .structural, false⟩
 
-/-- The compiler's rules: `Rules.today` with the port fixes on. Its classes
-and orders are `Rules.today`'s on every Lean input (see the module
-docstring). -/
-def Rules.compiler : Rules := { Rules.today with portFixes := true }
-
 /-- The Phase A decisions: the compiler's comparator, seed and
 representative, plus levels compared after `canonUniv` and nested
-auxiliaries in discovery order. Not run by the compiler yet. -/
+auxiliaries in discovery order. -/
 def Rules.phaseA : Rules :=
   ⟨.byNameHash, .afterCanonUniv, .leastNameHash, .inline, .discovery, true⟩
+
+/-- The compiler's rules: the Phase A rules. Against `Rules.today` three
+things change:
+* the two port fixes (C1, C2). No Lean input reaches them: components are
+  kind-homogeneous, and no cached ordering is read back for the swapped
+  pair inside a sort;
+* levels are compared after `canonUniv`. No block or clique order of
+  Init+Std or Mathlib depends on it;
+* nested auxiliaries are in discovery order over the canonical block
+  (`Nested.lean`). This is Lean's `rec_N` order on every block whose
+  members Lean already lists in canonical order, so such a block stores the
+  identity permutation. It is the one change that moves addresses. -/
+def Rules.compiler : Rules := Rules.phaseA
 
 /-- How a comparison treats two different external constants. -/
 inductive ExtMode where

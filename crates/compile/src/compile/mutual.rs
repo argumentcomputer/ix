@@ -144,7 +144,8 @@ fn check_aux_source_claim(
 /// the recursor block path to align stored block positions with the
 /// inductive block's flat layout: the kernel's `populate_recursor_rules_from_block`
 /// expects `rec_block[i]` to be the recursor for `flat[i]`, where `flat` is
-/// `[originals (in inductive-block class order), aux (in canonical_aux_order)]`.
+/// `[originals (in inductive-block class order), aux (in the discovery
+/// order of the canonical expansion)]`.
 /// Without this reorder, `sort_consts` on recursors picks an independent
 /// canonical permutation that diverges from the inductive block's layout.
 /// See `docs/ix_canonicity.md` §6.2 and the rationale in

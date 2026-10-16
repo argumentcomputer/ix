@@ -615,45 +615,46 @@ in the **recursor block** (and below / brecOn derivatives), but never
 in the inductive block — aux inductives are not stored on disk
 (§6.0).
 
-- `expand_nested_block` walks user-class ctors, replacing each nested
-  occurrence `ExtInd (args containing block params)` with a synthetic
-  `_nested.ExtInd_N α` aux inductive (compile time).
-- `sort_aux_by_content_hash` is a legacy name. The implementation
-  builds temporary aux `Indc` values and runs `sort_consts` on the
-  aux slice, so ordering and alpha-collapse use the same structural
-  relation as normal mutual blocks.
-- References to already-compiled originals/external constants
-  compare by compiled content address. If a referenced name cannot
-  be resolved, the comparator errors instead of falling back to a
-  namespace-sensitive name hash.
-- Alpha-equivalent auxes collapse into one aux class; source auxes
-  that share that class all point at the same canonical
-  representative aux inductive.
+The canonical order is the **discovery order of the canonical
+expansion** (A2-order; Pass 1's `Rules.compiler`,
+`Ix/Compile/Canon/Nested.lean`):
 
-This gives a **source-order-independent** canonical layout: any
-permutation of user source declaration produces the same ordered
-aux section, because the sort key is structural content plus
-resolved addresses.
+- The block's classes are expanded in canonical order, each class by its
+  representative, collapsed members renamed to their representatives
+  (`expandNestedBlock … (canonicalGroups := true)`, Rust
+  `expand_nested_block_canonical`). The walk is Lean's
+  `elim_nested_inductive`: each constructor type is walked in pre-order,
+  and a nested occurrence `ExtInd (args mentioning block members)` is
+  replaced by a synthetic `_nested.ExtInd_N` auxiliary appended to the
+  queue.
+- A new occurrence opens the external group as that group's **compiled
+  canonical classes** (one auxiliary per class, in canonical order),
+  not as Lean's `ExtInd.all`.
+- Occurrences are deduplicated by a **canonical key**: external constants
+  by compiled address, universe levels in the serializer's positional
+  normal form (`canonUniv`), binder names, binder information and
+  metadata erased. Two occurrences that the stored Ixon cannot tell apart
+  (collapsed or content-equal constants, `List.{max 0 0} T` and
+  `List.{0} T`) share one auxiliary.
+- There is no sort: the canonical expansion is already in canonical
+  order. It equals Lean's `rec_N` numbering on every block whose members
+  Lean lists in canonical order; elsewhere `compute_aux_perm` maps
+  Lean's source positions onto the canonical ones (§6.4).
 
-The recursor block's aux positions (`<addr>.rec_1`, `.rec_2`, …) are
-the **only stored manifestation** of this canonical ordering. The
-kernel revalidates by:
+This gives a **source-order-independent** layout: the canonical
+expansion starts from the canonical classes, so every permutation of
+the source declaration produces the same aux section.
 
-1. Rediscovering aux from primary ctor walks
-   (`build_flat_block` in `src/ix/kernel/inductive.rs`).
-2. Synthesizing comparable `KConst::Indc` views (instantiating ext
-   types with `spec_params`, replacing aux ctor result heads with
-   the synthetic aux KId).
-3. Running `sort_kconsts` (§4.4) to compute the kernel-canonical
-   aux order.
-4. Position-by-position validating each stored aux recursor against
-   the kernel-canonical aux at the same offset
-   (`is_def_eq` on the recursor type).
-
-Compile-side and kernel-side use the same comparator
-(`sort_consts` ↔ `sort_kconsts`), so they produce the same canonical
-order on the same input. A divergence is a kernel correctness bug,
-immediately observable as a `kernel-check-const` regression.
+The recursor block's aux positions are the **only stored
+manifestation** of this ordering. The kernels revalidate by the same
+walk over the stored canonical members (`build_flat_block` in
+`crates/kernel/src/inductive.rs`, `buildFlatBlock` in
+`Ix/Tc/Inductive.lean`): over a compiled environment each external
+group opens as its stored block, and occurrences are deduplicated by
+address, stored universes and specialization. Each stored aux recursor
+is then validated position by position against the kernel's aux at the
+same offset. IxC's modeller reads the expansion off the recursor family
+in any motive order.
 
 All downstream blocks (recursors, below, brecOn) number their
 aux-derived members in this same canonical order, so an aux at
@@ -884,11 +885,9 @@ compile_mutual_block(primary_inductives)                      [compile.rs]
   ▼
 generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
   │
-  ├─ expand_nested_block(ordered_originals, alias_to_rep)     [nested.rs]
+  ├─ expand_nested_block_canonical(ordered_originals, …, stt) [nested.rs]
   │    → ExpandedBlock { types, aux_to_nested, aux_ctor_map, … }
-  │
-  ├─ sort_aux_by_content_hash(&mut expanded, stt)             [nested.rs]
-  │    → perm[old_j] = new_j  (mutates expanded.types in place)
+  │      (auxes in canonical = discovery order; no sort)
   │
   ├─ compute_aux_perm(expanded, original_all, …)              [nested.rs]
   │    → perm[source_j] = canonical_i
@@ -946,13 +945,16 @@ Five invariants hold at the pipeline seams:
    `sort_consts` iterates until the partition of a mutual block into
    equivalence classes stabilizes. Name-based tie-breaking only selects
    *within* a class — class membership is determined by structure.
-3. **Nested-aux discovery is de-duped by bundle-hash.**
-   `replace_if_nested` in `nested.rs` keeps an `aux_seen: Vec<(Hash, Name)>`
-   table so alpha-equivalent nested occurrences reuse the same aux name.
-4. **Nested-aux section is structurally sorted.** `sort_aux_by_content_hash`
-   renames `_nested.Ext_<new_idx>` after `sort_consts`-style structural
-   sorting, so two semantically equal blocks declared in different source
-   orders produce byte-equal aux sections.
+3. **Nested-aux discovery is de-duped by a canonical key.**
+   `replace_if_nested` in `nested.rs` keys its `aux_seen` table by the
+   occurrence's canonical key (`addr_key`: compiled addresses, `canonUniv`
+   levels, no binder names or metadata), compared exactly, so occurrences
+   the stored Ixon cannot tell apart reuse the same aux.
+4. **Nested-aux section is the canonical expansion's discovery order.**
+   The expansion starts from the canonical classes and opens each external
+   group as its compiled canonical classes, so two semantically equal
+   blocks declared in different source orders produce byte-equal aux
+   sections (§6.2).
 5. **Binder names exit the bytes, into the arena.** `put_expr` omits
    names on `Lam`/`All`/`Let`; the arena records them as
    `ExprMetaData::Binder` entries that never contribute to
@@ -1269,9 +1271,9 @@ compile(c')                             ─▸ canonical bytes B₂
     - expand_nested_block produces the same ExpandedBlock because
       c''s ctors mention the same nested inductives applied to the
       same structural block members.
-    - sort_aux_by_content_hash produces the same canonical order
-      because aux comparison depends on structural content and resolved
-      addresses, not source names.
+    - the canonical expansion produces the same aux order because it
+      starts from the canonical classes and keys occurrences by
+      structural content and resolved addresses, not source names.
     - aux_gen produces the same patches because its input is
       (sorted_classes, expanded, level params, etc.) — all of which
       are determined by c''s structure.
@@ -1868,31 +1870,15 @@ structurally-distinct constants end up separated. The refinement loop
 terminates because the partition can only get finer, and there are
 finitely many constants.
 
-### 11.2 Nested-aux `sort_aux_by_content_hash`
+### 11.2 Nested-aux canonical expansion
 
-The name is historical; this is now a structural sort, not a direct
-Blake3 bundle sort.
-
-```
-expanded auxes → temporary MutConst::Indc values
-sort_consts(aux slice, cache, stt)
-  where compare_expr resolves non-mutual Const/Proj names by content address
-  and errors if a name is unresolved
-
-after sort, rebuild aux names as `<all0>._nested.<Ext>_<new_j+1>`,
-where `<Ext>` is recovered from the pre-sort name's suffix (e.g.
-`Array`, `Option`, `List`).
-
-cascade rename:
-  - aux_ctor_map keys and values
-  - aux_to_nested keys
-  - every member.typ and ctor.typ (auxes can reference other auxes)
-```
-
-This gives content-addressed canonical ordering without using source names as
-a tie-breaker. Alpha-equivalent auxes collapse through `sort_consts`, and
-source-walk aux positions are related back to canonical positions by
-`compute_aux_perm`.
+The aux section is not sorted. The canonical expansion
+(`expand_nested_block_canonical`, Lean `expandNestedBlock … (canonicalGroups
+:= true)`) walks the canonical classes in order and appends auxes as it
+discovers them; an external group opens as its compiled canonical classes,
+and occurrences are deduplicated by their canonical key (§6.2). The result
+is content-addressed: no source name enters the order. Source-walk aux
+positions are related back to canonical positions by `compute_aux_perm`.
 
 ## 12. Worked Examples — Single Constants
 
@@ -2059,14 +2045,12 @@ to `Inductive with one ctor of domain (Rec 0)`. The test verifies
 Nested inductives are the hardest case. The pipeline:
 
 ```
-expand_nested_block        (src/ix/compile/aux_gen/nested.rs:369)
-  → replaces each `ExtInd (args-with-block-params)` with a synthetic
-    `_nested.ExtInd_N` aux inductive sharing block params/levels.
-  → dedupes alpha-equivalent occurrences via hash-keyed aux_seen table.
-
-sort_aux_by_content_hash   (nested.rs:538)
-  → sorts auxes with the same structural comparator as `sort_consts`
-    and renames them to canonical _N positions.
+expand_nested_block_canonical   (crates/compile/src/compile/aux_gen/nested.rs)
+  → walks the canonical classes and replaces each
+    `ExtInd (args-with-block-params)` with a synthetic `_nested.ExtInd_N`
+    aux inductive sharing block params/levels, in discovery order (the
+    canonical order; no sort).
+  → dedupes occurrences by their canonical key (`addr_key`).
 
 compute_aux_perm            (nested.rs:797)
   → builds the source-walk → canonical permutation for surgery.
@@ -2150,11 +2134,10 @@ This holds because:
 
 - `sort_consts` produces the **same** class ordering for both blocks
   (alpha structure is source-order-blind);
-- `sort_aux_by_content_hash` assigns **same canonical `_N`** to each
-  nested aux based on structural content and resolved addresses — not on
-  source-walk position.
+- the canonical expansion assigns the **same canonical `_N`** to each
+  nested aux: it walks the canonical classes, not the source order.
 
-Without canonical aux sorting, the two `Array/Option/List` auxes would be numbered
+Without a canonical aux order, the two `Array/Option/List` auxes would be numbered
 differently between the two blocks, and so would `A.rec_1` /
 `A2.rec_1`, and so would every downstream constant that references
 them. With structural aux sorting, the `_N`s match.
@@ -2195,13 +2178,13 @@ that enforces it:
 | Hash is Blake3 over serializer output                      | `Constant::commit` at `serialize.rs:861` → `Address::hash`      |
 | `sort_consts` is deterministic and refinement-stable       | `src/ix/compile.rs:2526-2564` (iterative refinement)            |
 | Nested-aux dedup across aliases                            | `replace_if_nested` `aux_seen` table, `nested.rs:191-362`       |
-| Nested-aux section is structurally sorted                  | `sort_aux_by_content_hash`, `nested.rs`                         |
+| Nested-aux section is the canonical expansion's discovery order | `expand_nested_block_canonical`, `addr_key`, `crates/compile/src/compile/aux_gen/nested.rs` |
 | Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
 | Call sites are surgically rewritten to canonical order     | `compute_call_site_plans`, `surgery.rs:166-570`                 |
 | CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }`; `compile_expr::BuildCallSite`; `kernel/ingress.rs` |
 | Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
 | Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
-| Aux ordering matches `sort_consts` on rediscovered aux     | `sort_kconsts`, `src/ix/kernel/canonical_check.rs` (called from `canonical_aux_order` in `inductive.rs`); position-by-position recursor validation in `check_recursor` |
+| Aux ordering matches the canonical expansion             | `build_flat_block` (stored external groups), `crates/kernel/src/inductive.rs`; position-by-position recursor validation in `check_recursor` |
 
 ## 16. Testing Plan
 
@@ -2228,8 +2211,6 @@ address comparison as the observation**.
 - **`universe_permutation_distinct`** — `f.{u,v}` vs `f.{v,u}` → different.
 - **`sort_consts_classes_stable`** — invariant test: repeated sort on
   same input yields same classes.
-- **`sort_aux_by_content_hash_idempotent`** — sorting already-sorted
-  auxes is identity.
 
 ### 16.2 Validate-aux phases
 
@@ -2443,14 +2424,9 @@ Add `doc_string: Option<Address>` to `ConstantMeta`. Ingest via
 
 ### 17.7 `kernel-check-const` Category B residue
 
-After the §4.4 kernel-canonicity port (independent `sort_consts`
-on rediscovered aux + position-based stored-recursor lookup),
-Categories A, C, F, and G still show some residual failures.
-Investigate whether the kernel's synthetic aux Indc views
-(in `canonical_aux_order`) need a more faithful mirror of
-compile-side's `replace_ctor_result_head_with_aux` — the current
-implementation rewrites the result head but does not re-wrap with
-block-param Pis. Some failure modes may also reflect orthogonal
+After the §4.4 kernel-canonicity port (position-based stored-recursor
+lookup; the kernel no longer sorts auxes, §6.2),
+Categories A, C, F, and G still showed some residual failures. Some failure modes may also reflect orthogonal
 issues (e.g. `String.Legacy.back ""` reduction, `_sparseCasesOn_N`
 regeneration) that surface alongside the canonical-order
 mismatches but have unrelated root causes.
@@ -2604,17 +2580,16 @@ is known to be partial.
   kernel's independent canonicity oracle (§4.4).
 - `src/ix/kernel/ingress.rs::ingress_muts_block` — wires
   `validate_canonical_block_single_pass` for stored Indc blocks.
-- `src/ix/kernel/inductive.rs::canonical_aux_order` — synthesizes
-  `KConst::Indc` views of rediscovered auxes and runs
-  `sort_kconsts` to compute the kernel-canonical aux order.
-  Position-by-position recursor validation lives in
+- `crates/kernel/src/inductive.rs::build_flat_block` — rediscovers the
+  auxes in the canonical expansion's discovery order (stored external
+  groups). Position-by-position recursor validation lives in
   `check_recursor`.
 - `src/ix/kernel/error.rs::TcError::NonCanonicalBlock` — rejection
   variant emitted when ingress finds a non-canonical primary block.
 - `src/ix/compile/aux_gen.rs` — main `generate_aux_patches` entry
   and the `AuxPatchesOutput` return type.
 - `src/ix/compile/aux_gen/nested.rs` — `expand_nested_block`,
-  `sort_aux_by_content_hash`, `compute_aux_perm`, `source_aux_order`.
+  `expand_nested_block_canonical`, `compute_aux_perm`, `source_aux_order`.
 - `src/ix/compile/aux_gen/recursor.rs` — canonical recursors from an
   expanded block, plus targeted canonical KEnv ingress for aux_gen
   sort/recursor generation. Reducible definitions referenced by inductive

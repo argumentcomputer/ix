@@ -14,10 +14,12 @@
 //!    validation falls back to full iterative refinement and requires the
 //!    result to be the same ordered list of singleton classes.
 //!
-//! 2. [`sort_kconsts`] / [`sort_kconsts_with_seed_key`] — for rediscovered
-//!    auxiliary inductives. Runs the iterative partition refinement (sort →
-//!    group → re-sort under updated `KMutCtx`) until fixpoint. Returns
-//!    canonical equivalence classes.
+//! 2. [`sort_kconsts`] / [`sort_kconsts_with_seed_key`] — the full
+//!    iterative partition refinement (sort → group → re-sort under updated
+//!    `KMutCtx`) until fixpoint, the fallback of (1). Returns canonical
+//!    equivalence classes. Nested auxiliaries are not sorted: their
+//!    canonical order is the discovery order of the canonical expansion,
+//!    which `build_flat_block` produces directly.
 //!
 //! Both share the same comparator — [`compare_kconst`] / [`compare_kexpr`]
 //! / [`compare_kuniv`] — keyed on a [`KMutCtx`] that maps block-local

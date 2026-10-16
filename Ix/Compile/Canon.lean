@@ -10,17 +10,19 @@
   * `Ix.CompileM.sortConsts` (classes and canonical order of every block,
     primary and auxiliary) is `sortClasses Rules.compiler`, with external
     addresses from `Ix.CompileM.constAddrLookup`;
-  * `Ix.AuxGen.sortAuxByPartitionRefinement` takes its order from
-    `structuralAuxClasses` and `Ix.AuxGen.computeAuxPerm` is `computePerm`,
-    both on `Ix.AuxGen.ExpandedBlock.toCanon`.
+  * the nested auxiliaries are in the discovery order of the canonical
+    expansion (`Nested.lean`; `canonicalAuxOrder Rules.compiler` is the
+    identity on it, so the compiler applies no sort), and
+    `Ix.AuxGen.computeAuxPerm` is `computePerm` on
+    `Ix.AuxGen.ExpandedBlock.toCanon`.
   The compiler's nested expansion (`expandNestedBlock`, locally nameless)
-  and the evaporation probe (`positionClaimedBySpecScc`) are still its own.
+  and the evaporation probe (`positionClaimedBySpecScc`) are still its own;
+  both deduplicate occurrences by `Nested.SeenKey`.
 
-  `Rules.compiler` is the compiler's former rules with the two port fixes
-  (`Order.lean`), which change no class and no order on Lean input.
-  `Rules.phaseA` computes the Phase A canonical form; the compiler does not
-  run it yet. `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the
-  compiler's path against these functions on the fixtures;
+  `Rules.compiler` is `Rules.phaseA` (`Order.lean`): levels compared after
+  `canonUniv`, nested auxiliaries in discovery order, the two port fixes.
+  `Tests/Ix/Compile/Canon.lean` (`canon-pass1`) checks the compiler's path
+  against these functions on the fixtures;
   `Tests/Ix/Compile/CanonClique.lean` (`canon-clique`) the clique order.
 
   Further entry points, not called by the compiler:
