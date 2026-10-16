@@ -189,9 +189,10 @@ def compareKExpr (ctx : KMutCtx) (x y : KExpr m) :
     return (← compareKExpr ctx xt yt).andThen (← compareKExpr ctx xb yb)
   | .all .., _ => return .lt' true
   | _, .all .. => return .gt' true
-  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ => do
+  | .letE _ xt xv xb xnd _, .letE _ yt yv yb ynd _ => do
     -- Preserve `zipWithM`'s left-to-right short circuit: later fields must
-    -- not introduce an error after an earlier non-equal decision.
+    -- not introduce an error after an earlier non-equal decision. The
+    -- nondependency bit is a key, compared last (`false < true`).
     let tyOrd ← compareKExpr ctx xt yt
     if tyOrd.ordering != .eq then
       return tyOrd
@@ -199,7 +200,8 @@ def compareKExpr (ctx : KMutCtx) (x y : KExpr m) :
     let head := tyOrd.andThen valOrd
     if head.ordering != .eq then
       return head
-    return head.andThen (← compareKExpr ctx xb yb)
+    return (head.andThen (← compareKExpr ctx xb yb)).andThen
+      (.ofOrdering (compare xnd ynd))
   | .letE .., _ => return .lt' true
   | _, .letE .. => return .gt' true
   | .nat xv _ _, .nat yv _ _ => return .ofOrdering (compare xv yv)

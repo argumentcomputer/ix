@@ -14,7 +14,9 @@ Unit tests for the kernel's primary-block canonicity gate
   refinement's order is accepted (the weak `gt` falls back to the full check);
   the other order is rejected by the full check;
 - a strong `gt` (wrong order decided without the partition) is rejected at the
-  single pass.
+  single pass;
+- a `let`'s nondependency bit is a key: members that differ only in it are two
+  classes (`let` before `have`), and a same-bit neighbour must be collapsed.
 -/
 
 public section
@@ -81,6 +83,19 @@ def equalCrossResolve : ResolveCtor .anon := fun id =>
   else if id == aId "SB.mk" then some (ctor "SB" 1 (arrow (cnst "SA") (cnst "SB")))
   else none
 
+/-- `let a : Type := Prop; a` with the nondependency bit `nd` (`Fixtures.LetNonDep`'s
+shape): the bit is anonymous content, the binder name metadata. -/
+def flagType (nd : Bool) : AE :=
+  .mkLet () (.mkSort (.mkSucc .mkZero)) sort0 (.mkVar 0 ()) nd
+
+/-- `SA.mk : flagType false → SB → SA` and `SB.mk : flagType rightFlag → SA → SB`. -/
+def flagResolve (rightFlag : Bool) : ResolveCtor .anon := fun id =>
+  if id == aId "SA.mk" then
+    some (ctor "SA" 2 (arrow (flagType false) (arrow (cnst "SB") (cnst "SA"))))
+  else if id == aId "SB.mk" then
+    some (ctor "SB" 2 (arrow (flagType rightFlag) (arrow (cnst "SA") (cnst "SB"))))
+  else none
+
 def suite : List TestSeq :=
   match swapCanonical with
   | .error e => [test s!"swap pair refinement: {e}" false]
@@ -101,7 +116,15 @@ def suite : List TestSeq :=
       ++ test "weak gt cross references still reject an uncollapsed equal class"
         (rejectsAs #[sa, sb] equalCrossResolve .eq)
       ++ test "strong lt (params 1 before 2) accepted"
-        (accepts #[(aId "A", indc "A" 1 #[]), (aId "B", indc "B" 2 #[])] (fun _ => none)) ]
+        (accepts #[(aId "A", indc "A" 1 #[]), (aId "B", indc "B" 2 #[])] (fun _ => none))
+      ++ test "different nonDep bits accepted as two classes, false before true"
+        (accepts #[sa, sb] (flagResolve true))
+      ++ test "reversed nonDep classes rejected"
+        (rejectsAs #[sb, sa] (flagResolve true) .gt)
+      ++ test "same-bit neighbour still requires collapse"
+        (rejectsAs #[sa, sb] (flagResolve false) .eq)
+      ++ test "collapsed same-bit neighbour accepted"
+        (accepts #[sa] (flagResolve false)) ]
 
 end Tests.Tc.CanonicalCheck
 
