@@ -2,6 +2,7 @@ import IxC.Kernel
 import IxC.Ixon.Types
 import IxC.Kernel.Admission.Theorems
 import IxC.Kernel.Admission.TierTheorems
+import IxC.Kernel.Admission.Reference
 import IxC.Kernel.Audit.Axioms
 import IxC.Kernel.Audit.Imports
 import IxC.Kernel.Audit.Runtime
@@ -484,6 +485,18 @@ run_cmd do
 #guard_kernel_axioms Ix.Kernel.Tier.checkTierC [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTiered [propext, Classical.choice, Quot.sound]
+
+/-! ### The reference level (step 7)
+
+The executed fold refines the pure fold (`checkDecls_refines_ref`), at the
+certified entry too (`Admission.checkBytes_refines_ref`); the pure checker is
+monotone in its fuel and a reference accept determines its environment. -/
+
+#guard_kernel_axioms Ix.Kernel.checkDecl_mono [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDeclsFrom_deterministic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.AcceptsRef.unique [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_refines_ref [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytes_refines_ref [propext, Classical.choice, Quot.sound]
 
 /-! ### Import and runtime closures
 

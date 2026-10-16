@@ -221,6 +221,19 @@ consistency. Definition values come from the kernel's model invariant
 (`IxC/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
 equation, by upstream's design.
 
+**The reference level** (`IxC/Kernel/Verify/Cached/Reference.lean`,
+`PerBlock.lean`, `IxC/Kernel/Admission/Reference.lean`): an accept of the fold
+is an accept of the pure declaration checker at some fuel, of the same
+declarations with the same environment (`Ix.Kernel.Cached.AcceptsRef`,
+`checkDecls_refines_ref`; at the entry `Admission.checkBytes_refines_ref`, in
+Source mode `Ix.LeanIngress.checkSource_refines_ref`). The pure checker is
+monotone in its fuel, so a reference accept determines its environment
+(`AcceptsRef.unique`). Checking each declaration's deferred records right
+after it (`checkDeclsPB`) accepts exactly what the deferred fold accepts
+(`checkDecls_ok_iff_PB`): phase B is deferred for parallelism, not for
+correctness. Statements about the fold that should mention neither the caches
+nor a fuel (renaming, locality) are stated at this level.
+
 **Fidelity** is what `checkBytes_reading` adds to consistency:
 
 - `WithinBatch` and `UniqueKeys` (`IxC/Kernel/Admission/Bytes/Theorems.lean`): the

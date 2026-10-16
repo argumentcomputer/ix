@@ -2,6 +2,7 @@ import Ix.LeanIngress
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Verify.Cached.MainC
 import IxC.Kernel.Verify.Tier
+import IxC.Kernel.Verify.Cached.Reference
 
 /-! # The theorems of the Source-mode check
 
@@ -22,6 +23,8 @@ the ingress and the evidence owe nothing: these theorems hold whatever
   the logical declarations exactly as `checkSource` would, its logical
   environment has a model, is well formed and misses every tier constant,
   and every tier constant is typed in its scope (`Ix.Kernel.Tier.TypedIn`).
+* `checkSource_refines_ref`: an accepted check is a reference accept (the
+  pure fold at some fuel), `Ix.Kernel.Cached.AcceptsRef`;
 * `orderOf_complete`, `scheduleOf_complete`, `leanIngress_converts`,
   `checkSource_converts`: every group is in the order and scheduled, so an
   accepted check converted every group of its environment (coverage, not
@@ -107,6 +110,20 @@ theorem checkSourceWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
     (h : checkSourceWith pre ev env blocks = .ok kenv) : Nonempty (Ix.Kernel.Model V kenv) := by
   obtain ⟨_, _, hc⟩ := checkSourceWith_reading h
   exact Ix.Kernel.model_exists V ev _ kenv hc
+
+/-- **An accepted Source-mode check is a reference accept** (step 7,
+`Ix.Kernel.Cached.checkDecls_refines_ref`): the pure fold at some fuel
+accepts the ingress's declarations behind the prelude, at Source mode's
+evidence, with the same environment. -/
+theorem checkSource_refines_ref (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
+    ∃ pre decls, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
+      leanIngress env blocks pre.state = .ok decls ∧
+      Ix.Kernel.Cached.AcceptsRef .verified
+        (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList kenv := by
+  obtain ⟨pre, decls, hp, hi, hc⟩ := checkSource_reading h
+  exact ⟨pre, decls, hp, hi, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
 
 /-- **Model existence** for the Source-mode check. -/
 theorem checkSource_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
@@ -377,3 +394,6 @@ the build. -/
 
 /-- info: 'Ix.LeanIngress.checkSource_converts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.LeanIngress.checkSource_converts
+
+/-- info: 'Ix.LeanIngress.checkSource_refines_ref' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSource_refines_ref
