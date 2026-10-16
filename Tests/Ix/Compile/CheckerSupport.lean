@@ -55,11 +55,12 @@ namespace Tests.Ix.Compile.CheckerSupport
 def fixture : System.FilePath := "Tests/Ix/Compile/CheckerSupport/Single.lean"
 
 /-- The certified checker's reason for declining `Nat.land` in the raw
-closure (`IxC/Kernel/DeclCheck.lean:883`). **Re-record from a run of this
-tree** (step 4 changed the evidence path; plan §2.2). This is the donor's
-text: replace it with the reason the first run prints, character for
-character. -/
-def rawLandDecline : String := "unsupported Nat.div/mod environment (Nat.land)"
+closure (`IxC/Kernel/DeclCheck.lean:882`), as `kernel-check-ixe` renders it
+since IxC step 6: the key as its Lean name and the first eight hexadecimal
+digits of its record address (`Ix.Kernel.Reader.spellWith`). Recorded from a
+run of this tree, character for character; re-record it when the raw
+closure's `Nat.land` record moves. -/
+def rawLandDecline : String := "unsupported Nat.div/mod environment (Nat.land@de8c100c)"
 
 /-- The constants the certificate ground concerns: the fixture's three
 `isBase` helpers (blocked in the raw closure), then `Nat.land` and `Nat.mul`. -/
