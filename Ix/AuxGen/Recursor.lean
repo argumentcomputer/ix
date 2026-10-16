@@ -778,16 +778,52 @@ def buildMotiveType (indInfo : IndRecInfo) (elimLevel : Level) : Expr :=
   let decls : Array LocalDecl := indInfo.indices.push indInfo.major
   mkForall sort decls
 
+/-- Peel `n` index binders of an auxiliary member's instantiated type: the
+    leading Pi's as they stand, and through the kernel's `whnf` where the
+    head is not a Pi (WB-A3: `Ext α : Fam` with `abbrev Fam := Nat → Type`),
+    as `decomposeInductiveType` does for the originals and Lean's kernel
+    (`mk_rec_infos`) for every member. The scope over the block parameters
+    (`paramDecls`, universe parameters `levelParams`) is opened only when a
+    head is stuck, so a syntactic telescope costs no kernel call and gives
+    exactly `forallTelescope`'s binders. Mirrors Rust `peel_aux_indices`. -/
+def peelAuxIndices (ty : Expr) (n : Nat) (pfx : String)
+    (paramDecls : Array LocalDecl) (levelParams : Array Name) (kernel : AuxKernel) :
+    KBridgeM (Array Expr × Array LocalDecl × Expr) := do
+  let (fvars, decls, rest) := forallTelescope ty n pfx 0
+  if decls.size == n then return (fvars, decls, rest)
+  let start := decls.size
+  let mut scope ← AuxScope.new kernel (paramDecls ++ decls) levelParams
+  let mut fvars := fvars
+  let mut decls := decls
+  let mut cur := rest
+  for i in [start:n] do
+    cur := stripMdataRef cur
+    if !(cur matches .forallE ..) then
+      cur ← scope.whnfOrInput cur
+    match cur with
+    | .forallE name dom body bi _ =>
+      let (fvName, fv) := freshFVar pfx i
+      let decl : LocalDecl :=
+        { fvarName := fvName, binderName := name, domain := dom, info := bi }
+      scope ← scope.push #[decl]
+      decls := decls.push decl
+      fvars := fvars.push fv
+      cur := instantiate1 body fv
+    | _ => break
+  return (fvars, decls, cur)
+
 /-- Mirrors Rust `build_motive_type_aux` (recursor.rs:1226).
 
     Motive type for an auxiliary (nested) flat member: for a nested
     occurrence `J Ds` the motive type is
     `∀ (indices...) (t : J Ds indices), Sort u`, with `Ds` the FVar-form
-    spec_params. Uses FVar-based index peeling so dependent index domains
-    are correctly instantiated. -/
+    spec_params. Uses FVar-based index peeling (`peelAuxIndices`) so
+    dependent index domains are correctly instantiated and an index behind
+    a reducible alias is found. -/
 def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
     (_indUnivs : Array Level) (overlay : Option (Std.HashMap Name ConstantInfo))
-    (paramFvars : Array Expr) : CompileM Expr := do
+    (paramFvars : Array Expr) (paramDecls : Array LocalDecl)
+    (levelParams : Array Name) (kernel : AuxKernel) : KBridgeM Expr := do
   -- Look up the external inductive (overlay first for expanded aux types).
   let ind ← match ← envGet overlay member.name with
     | some (.inductInfo v) => pure v
@@ -815,8 +851,9 @@ def buildMotiveTypeAux (member : FlatInfo) (_nParams : Nat) (elimLevel : Level)
   -- Beta-reduce after spec_param instantiation (lambda-valued spec_params
   -- create unreduced redexes that may obstruct the telescope below).
   cur := betaReduce cur
-  -- Peel index binders using FVars.
-  let (indexFvars, indexDecls, _) := forallTelescope cur nExtIndices "ma_idx" 0
+  -- Peel index binders using FVars (through `whnf` where stuck).
+  let (indexFvars, indexDecls, _) ←
+    peelAuxIndices cur nExtIndices "ma_idx" paramDecls levelParams kernel
 
   -- Major type: `J.{occurrence_us} spec_params index_fvars`.
   let majorUnivs :=
@@ -1072,7 +1109,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
         pure (buildMotiveType (← arrIdx classInfos j "buildRecType: class info") elimLevel)
       else do
         buildMotiveTypeAux (← arrIdx classes j "buildRecType: aux class") nParams elimLevel indUnivs overlay
-          paramFvars
+          paramFvars paramDecls recLevelParams kernel
     let motiveName :=
       if nFlat > 1 then
         Name.mkStr .mkAnon s!"motive_{j + 1}"
@@ -1122,8 +1159,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
 
   -- --- Indices + major for member di ---
   -- Non-aux: drop the pre-computed `IndRecInfo` decls straight in. Aux:
-  -- substitute spec_params and peel syntactically (see Rust note about
-  -- WHNF-on-reducible-target for aux members — not observed in the wild).
+  -- substitute spec_params and peel the indices (`peelAuxIndices`).
   let diMember ← arrIdx classes di "buildRecType: class"
   let diIsAux := diMember.isAux
 
@@ -1138,7 +1174,7 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     majorFv := Expr.mkFVar info.major.fvarName
     allDecls := allDecls.push info.major
   else
-    -- Legacy aux path: substitute spec_params, peel syntactically.
+    -- Aux path: substitute spec_params, then peel the indices.
     let diTy :=
       if !diMember.occurrenceLevelArgs.isEmpty then
         substLevels diMember.ind.cnst.type diMember.ind.cnst.levelParams
@@ -1161,19 +1197,11 @@ def buildRecType (di : Nat) (classes : Array FlatInfo)
     -- Beta-reduce: lambda-valued spec_params create redexes.
     ity := betaReduce ity
 
-    -- Peel nIndices leading Pi's (syntactic for aux members).
-    let nIndices := diMember.nIndices
-    let mut indexDecls : Array LocalDecl := #[]
-    for fi in [0:nIndices] do
-      ity := stripMdataRef ity
-      match ity with
-      | .forallE name dom body bi _ =>
-        let (fvName, fv) := freshFVar "idx" fi
-        indexDecls := indexDecls.push
-          { fvarName := fvName, binderName := name, domain := dom, info := bi }
-        indexFvars := indexFvars.push fv
-        ity := instantiate1 body fv
-      | _ => break
+    -- Peel nIndices leading Pi's, through `whnf` where the head is stuck
+    -- (an index behind a reducible alias, WB-A3).
+    let (auxIndexFvars, indexDecls, _) ←
+      peelAuxIndices ity diMember.nIndices "idx" paramDecls recLevelParams kernel
+    indexFvars := indexFvars ++ auxIndexFvars
     allDecls := allDecls ++ indexDecls
 
     -- Major domain: I spec_params indices.

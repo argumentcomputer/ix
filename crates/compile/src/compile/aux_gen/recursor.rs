@@ -985,7 +985,11 @@ fn build_rec_type(
         lean_env,
         overlay,
         param_fvars,
-      )
+        param_decls,
+        rec_level_params,
+        stt,
+        kctx,
+      )?
     };
     // Domain stays in FVar form — contains param FVars which mk_forall
     // will abstract when processing this binder's domain.
@@ -1129,27 +1133,18 @@ fn build_rec_type(
     // reduction before forall_telescope peeling.
     ity = super::expr_utils::beta_reduce(&ity);
 
-    // Peel `n_indices` leading Pi's. For aux nested members this is still
-    // syntactic — see note above.
-    let n_indices = di_member.n_indices;
-    let mut index_decls: Vec<LocalDecl> = Vec::new();
-    for fi in 0..n_indices {
-      ity = strip_mdata_ref(&ity).clone();
-      match ity.as_data() {
-        ExprData::ForallE(name, dom, body, bi, _) => {
-          let (fv_name, fv) = fresh_fvar("idx", fi);
-          index_decls.push(LocalDecl {
-            fvar_name: fv_name,
-            binder_name: name.clone(),
-            domain: dom.clone(),
-            info: bi.clone(),
-          });
-          index_fvars.push(fv.clone());
-          ity = instantiate1(body, &fv);
-        },
-        _ => break,
-      }
-    }
+    // Peel `n_indices` leading Pi's, through `whnf` where the head is stuck
+    // (an index behind a reducible alias, WB-A3).
+    let (aux_index_fvars, index_decls, _) = peel_aux_indices(
+      &ity,
+      di_member.n_indices,
+      "idx",
+      param_decls,
+      rec_level_params,
+      stt,
+      kctx,
+    )?;
+    index_fvars.extend(aux_index_fvars);
     all_decls.extend(index_decls);
 
     // Build major domain: I spec_params indices.
@@ -1221,15 +1216,67 @@ fn build_motive_type(
   mk_forall(sort, &decls)
 }
 
+/// Peel `n` index binders of an auxiliary member's instantiated type: the
+/// leading Pi's as they stand, and through the kernel's `whnf` where the head
+/// is not a Pi (WB-A3: `Ext α : Fam` with `abbrev Fam := Nat → Type`), as
+/// `decompose_inductive_type` does for the originals and Lean's kernel
+/// (`mk_rec_infos`) for every member. The scope over the block parameters is
+/// opened only when a head is stuck, so a syntactic telescope costs no kernel
+/// call and gives exactly `forall_telescope`'s binders. Lean
+/// `Ix.AuxGen.peelAuxIndices`.
+fn peel_aux_indices(
+  ty: &LeanExpr,
+  n: usize,
+  prefix: &str,
+  param_decls: &[LocalDecl],
+  level_params: &[Name],
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<(Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr), CompileError> {
+  let (mut fvars, mut decls, mut cur) =
+    super::expr_utils::forall_telescope(ty, n, prefix, 0);
+  if decls.len() == n {
+    return Ok((fvars, decls, cur));
+  }
+  let outer: Vec<LocalDecl> =
+    param_decls.iter().chain(decls.iter()).cloned().collect();
+  let mut scope =
+    super::expr_utils::TcScope::new(&outer, level_params, stt, kctx)?;
+  for i in decls.len()..n {
+    cur = strip_mdata_ref(&cur).clone();
+    if !matches!(cur.as_data(), ExprData::ForallE(..)) {
+      cur = scope.whnf_lean(&cur)?;
+    }
+    let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() else {
+      break;
+    };
+    let (fv_name, fv) = fresh_fvar(prefix, i);
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: name.clone(),
+      domain: dom.clone(),
+      info: bi.clone(),
+    };
+    scope.push_locals(std::slice::from_ref(&decl))?;
+    let next = instantiate1(body, &fv);
+    decls.push(decl);
+    fvars.push(fv);
+    cur = next;
+  }
+  Ok((fvars, decls, cur))
+}
+
 /// Build motive type for an auxiliary (nested) flat member.
 ///
 /// For a nested occurrence `J Ds` where `J` is an external inductive
 /// with indices, the motive type is `∀ (indices...) (t : J Ds indices), Sort u`.
 /// `Ds` are the spec_params from the flat member.
 ///
-/// Uses FVar-based index peeling via `forall_telescope` so that dependent
-/// index domains are correctly instantiated (earlier indices as FVars).
-/// The returned expression contains param FVars as free variables.
+/// Uses FVar-based index peeling ([`peel_aux_indices`]) so that dependent
+/// index domains are correctly instantiated (earlier indices as FVars) and
+/// an index behind a reducible alias is found. The returned expression
+/// contains param FVars as free variables.
+#[allow(clippy::too_many_arguments)]
 fn build_motive_type_aux(
   member: &FlatInfo,
   _n_params: usize,
@@ -1238,7 +1285,11 @@ fn build_motive_type_aux(
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   param_fvars: &[LeanExpr],
-) -> LeanExpr {
+  param_decls: &[LocalDecl],
+  rec_level_params: &[Name],
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<LeanExpr, CompileError> {
   // Look up the external inductive (check overlay first for expanded aux types).
   let env_get_local = |n: &Name| -> Option<ConstantInfo> {
     overlay
@@ -1247,7 +1298,7 @@ fn build_motive_type_aux(
   };
   let ind = match env_get_local(&member.name) {
     Some(ConstantInfo::InductInfo(v)) => v,
-    _ => return LeanExpr::sort(Level::zero()), // fallback
+    _ => return Ok(LeanExpr::sort(Level::zero())), // fallback
   };
   let n_ext_params = member.own_params;
   let n_ext_indices = member.n_indices;
@@ -1287,10 +1338,16 @@ fn build_motive_type_aux(
   // beta-reducing here doesn't conflict with the Lean-stored structure.
   cur = super::expr_utils::beta_reduce(&cur);
   // Peel index binders using FVars so that dependent index domains are
-  // correctly instantiated. This fixes the structural-peeling bug where
-  // body.clone() left dangling BVars in dependent index types.
-  let (index_fvars, index_decls, _) =
-    super::expr_utils::forall_telescope(&cur, n_ext_indices, "ma_idx", 0);
+  // correctly instantiated, through `whnf` where the head is stuck.
+  let (index_fvars, index_decls, _) = peel_aux_indices(
+    &cur,
+    n_ext_indices,
+    "ma_idx",
+    param_decls,
+    rec_level_params,
+    stt,
+    kctx,
+  )?;
 
   // Build major type: J.{occurrence_us} spec_params index_fvars
   let fallback_univs;
@@ -1327,7 +1384,7 @@ fn build_motive_type_aux(
   let mut all_decls: Vec<LocalDecl> = Vec::new();
   all_decls.extend(index_decls);
   all_decls.push(major_decl);
-  mk_forall(sort, &all_decls)
+  Ok(mk_forall(sort, &all_decls))
 }
 
 /// Build minor premise type for a constructor using FVars.

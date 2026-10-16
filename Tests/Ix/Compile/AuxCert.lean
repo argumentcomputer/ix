@@ -234,6 +234,9 @@ def fixtures : List Fixture := [
       kf "lean" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.len2"] ++
       kf "cert" "WB-B3" ["SurgSplit.A.len._f", "SurgSplit.A.len", "SurgSplit.len2",
         "SurgSplit.A.len._sunfold"] },
+  -- WB-A3: the nested auxiliary's index sits behind a reducible alias;
+  -- both recursor generators peel it through `whnf`.
+  { stem := "AliasIdx", ns := ["AliasIdx"] },
   { stem := "UnsafeI", ns := ["UnsafeI"]
     knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
       kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
@@ -259,8 +262,6 @@ def fixtures : List Fixture := [
       kf "cert" "IxC modeller: nested under a definition (SP5 §3.5; decline)"
         ["KernelSpec.T", "KernelSpec.T.*"] },
   -- Expected compile failures outside A0 (totality defects).
-  { stem := "AliasIdx", ns := ["AliasIdx"]
-    expect := .xfail "WB-A3" "function expected, got Sort u" },
   { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"]
     expect := .xfail "WB-A2" "found no residual Pi binders" },
   { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"]
