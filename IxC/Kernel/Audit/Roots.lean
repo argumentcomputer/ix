@@ -3,6 +3,7 @@ import IxC.Ixon.Types
 import IxC.Kernel.Admission.Theorems
 import IxC.Kernel.Admission.TierTheorems
 import IxC.Kernel.Admission.Reference
+import IxC.Kernel.Verify.Cached.PerBlock
 import IxC.Kernel.Audit.Axioms
 import IxC.Kernel.Audit.Imports
 import IxC.Kernel.Audit.Runtime
@@ -490,13 +491,16 @@ run_cmd do
 
 The executed fold refines the pure fold (`checkDecls_refines_ref`), at the
 certified entry too (`Admission.checkBytes_refines_ref`); the pure checker is
-monotone in its fuel and a reference accept determines its environment. -/
+monotone in its fuel and a reference accept determines its environment; and
+per-block admission accepts exactly what the deferred fold accepts
+(`checkDecls_ok_iff_PB`). -/
 
 #guard_kernel_axioms Ix.Kernel.checkDecl_mono [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDeclsFrom_deterministic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.AcceptsRef.unique [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_refines_ref [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_refines_ref [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_ok_iff_PB [propext, Classical.choice, Quot.sound]
 
 /-! ### Import and runtime closures
 
