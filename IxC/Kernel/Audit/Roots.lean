@@ -40,19 +40,32 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3399 compiled functions with 67 inherited externs, with the
-computed-field overrides of `Level`, `Expr` and `Key` and 20 proved
+reaches 3404 compiled functions with 67 inherited externs, with the
+computed-field overrides of `Level`, `Expr` and `Key` and 21 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2134, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5799 with
+2140, adding the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 5807 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
 default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
-the typing tier) are frozen apart, at 5878: the entry's closure and the
-tier's 79 functions, with nothing new to rule; the closures above do not
-reach the tier. The validation
+the typing tier) are frozen apart: the entry's closure and the tier's 79
+functions, with nothing new to rule; the closures above do not reach the
+tier. Step 6b's
+display annotations (a binder's and a let's Lean name, a subsingleton field,
+`BinderMeta.display`/`LetMeta.display`) moved them from 3399, 2134 and 5799
+(the tiered entries from 5878):
+the shared anonymous annotations' closed objects (`BinderDisplay.anon`, the
+fold, the reader and the entry; `LetDisplay.anon`, the reader and the entry;
+`instInhabitedBinderDisplay.default._closed_0`, all three), the let
+metadata's equality now a function of its own (`instDecidableEqLetMeta.decEq`,
+all three: a second field, compared by the subsingleton's constant decision),
+PERF P14's shared `leanAlways` kept for an anonymous binder only
+(`BinderMeta.shareAlwaysImpl` and a closed term, the fold and the entry: one
+more ruled csimp there, `BinderMeta.shareAlways_eq_impl`), and in the reader
+and the entry two lambdas the code generator split out of the in-model
+generator's `genNested` specialisation. The validation
 of the four install anchors (`Bool.rec`, `And`, `And.intro`, `And.rec`;
 `Declaration.anchorMismatch?` in `Cached.annotDeclStep`, owner 2026-10-15)
 moved the fold from 3352 to 3399 and the entry from 5788 to 5799: the guard
@@ -476,19 +489,19 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3399 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 20 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3404 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 21 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2134 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2140 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5799 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5807 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -497,9 +510,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- partition, the fence's test, the tier reader (`readTierRecord`, over the
 -- reader's own member reader) and the tier fold (`checkTierC`, over the logical
 -- fold's cached functions). No new extern, `unsafe` constant, csimp, `partial`
--- definition or ruling.
+-- definition or ruling. Step 6b's display annotations moved it from 5878 by the
+-- entry's change (8 more, one more ruled csimp).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5878 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5886 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

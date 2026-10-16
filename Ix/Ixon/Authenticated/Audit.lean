@@ -43,11 +43,13 @@ end Ixon.Authenticated.Audit
 -- P16, P14, P3, P2) from 5727 and 117 inherited externs, by the generic
 -- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
 -- from 5745 and 119 inherited externs, by the generic entries' change; the
--- validation of the four install anchors from 5963, by the generic entries' change.
+-- validation of the four install anchors from 5963, by the generic entries' change;
+-- step 6b's display annotations from 5974, by the generic entries' change (8
+-- more, one more ruled csimp).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5974 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
+ Address.admissionHash]: 5982 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 24, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -194,9 +196,11 @@ fun binding maxProjections limits orderLimits records blobs hint =>
 The tiered entry's closure is frozen apart, so the three entries' above is
 unchanged: the generic tiered entries' (`Ix.Kernel.Audit.tierOperations`)
 and the same one assumed substitution: 5878 and 10 more, the Rust BLAKE3
-backend's three externs among them (ruled assumed 4). -/
+backend's three externs among them (ruled assumed 4). Step 6b's display
+annotations moved it from 5888 by the generic tiered entries' change (8 more,
+one more ruled csimp). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5888 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 23, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5896 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 24, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

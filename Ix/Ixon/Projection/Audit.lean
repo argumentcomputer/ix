@@ -92,10 +92,11 @@ the projection writer and reader also call, and phase B on tasks with
 inherited externs, by the entry's change (`IxC/Kernel/Audit/Roots.lean`: the
 fold no longer spells keys or prints terms, and a fixed message is a one-part
 list, two more closed objects per message site); the validation of the four
-install anchors from 5810, by the entry's change. -/
+install anchors from 5810, by the entry's change; step 6b's display annotations from
+5821, by the entry's change (8 more, one more ruled csimp). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5821 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 23, partial 9 -/
+ Ixon.Projection.checkBytes]: 5829 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 24, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

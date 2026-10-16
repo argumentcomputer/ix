@@ -93,6 +93,62 @@ instance : LawfulBEq Level where
   eq_of_beq h := of_decide_eq_true h
   rfl := by simp [BEq.beq, Level.beq]
 
+/-! ### Display annotations (step 6b)
+
+A binder and a let carry the Lean name the input gave them, and a binder its
+`BinderInfo`, so that a failure can print a term, a reduced one included,
+with Lean's names (`.source` from the Lean term, `.meta` from the `.ixe`'s
+metadata). The annotation is held in a **quotient**, `Squash`, so it is a
+subsingleton: structural `=`, the derived `DecidableEq`, `==`, the hash and
+every equation of the checker are blind to it, two terms that differ only in
+names are *equal*, and no theorem moves. Safe code cannot read a `Squash`'s
+value either: the renderers read it outside the kernel and every certified
+closure, and the checker never does (the display-use audit,
+`IxC/Kernel/Audit/Display.lean`).
+
+The annotation's type is the same in every mode: the renaming statement
+(`Ix.Cert.Rename.expr`) carries a binder's metadata unchanged from `.source`
+to `.anon`. `.anon` writes none: its reader builds the shared anonymous
+objects below, and only the Source ingress and the `.meta` reader's name
+pass, both outside the kernel, write names. -/
+
+/-- Lean's binder annotation, for display only (`Lean.BinderInfo`). -/
+inductive BinderInfo where
+  | default | implicit | strictImplicit | instImplicit
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a binder shows: Lean's name for it and its annotation. -/
+structure BinderDisplay where
+  name : Name := .anonymous
+  info : BinderInfo := .default
+  deriving Repr, Inhabited
+
+/-- Annotations compare equal: a `Squash` is a subsingleton. -/
+instance : DecidableEq (Squash BinderDisplay) := fun a b => isTrue (Subsingleton.elim a b)
+instance : DecidableEq (Squash Name) := fun a b => isTrue (Subsingleton.elim a b)
+/-- Annotations print as a placeholder: the value is not readable here. -/
+instance : Repr (Squash BinderDisplay) := ⟨fun _ _ => "⟨display⟩"⟩
+instance : Repr (Squash Name) := ⟨fun _ _ => "⟨display⟩"⟩
+
+/-- The anonymous binder annotation: one shared object, the default of every
+binder that carries no name. Not inlined, so every default refers to it. -/
+@[noinline] def BinderDisplay.anon : Squash BinderDisplay := Squash.mk {}
+
+/-- The anonymous let annotation: one shared object. -/
+@[noinline] def LetDisplay.anon : Squash Name := Squash.mk .anonymous
+
+instance : Inhabited (Squash BinderDisplay) := ⟨BinderDisplay.anon⟩
+instance : Inhabited (Squash Name) := ⟨LetDisplay.anon⟩
+
+/-- Any two binder annotations are equal (a `Squash` is a subsingleton), so
+`simp` discharges the display conjunct of a binder's injectivity. -/
+@[simp] theorem BinderDisplay.squash_eq (a b : Squash BinderDisplay) : (a = b) = True :=
+  eq_true (Subsingleton.elim a b)
+
+/-- Any two let annotations are equal. -/
+@[simp] theorem LetDisplay.squash_eq (a b : Squash Name) : (a = b) = True :=
+  eq_true (Subsingleton.elim a b)
+
 /-- Metadata carried by a binder (`forallE`, `lam`): the codomain
 prop-ness annotation `pw` (task #161 — the validated-annotation design;
 one datum per binder, written by the untrusted annotate pass or the
@@ -120,12 +176,16 @@ compares `result`s: a `lam` has none, so the type inferred for one carries
 the default. The model reads only `pw`. Structural `=` and the packed
 hash (`BinderMeta.hashData`) see all the contracts, so terms that differ
 only in contracts are different terms, as their Ixon addresses are; basis
-and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too. -/
+and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too.
+
+`display` is the binder's display annotation (step 6b, above): a
+subsingleton, so none of the above sees it. -/
 structure BinderMeta where
   pw : PropWhen
   contract : Ixon.BinderContract := .many
   result : Ixon.ValueContract := .shared
-  deriving DecidableEq, Repr, Hashable
+  display : Squash BinderDisplay := BinderDisplay.anon
+  deriving DecidableEq, Repr
 
 instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
 
@@ -162,14 +222,56 @@ theorem BinderMeta.ofContracts_eq (c : Ixon.BinderContract) (r : Ixon.ValueContr
   · next h => obtain ⟨rfl, rfl⟩ := h; rfl
   · rfl
 
+/-- `{ mb with pw := .ifAllZero [] }`; at run time the shared `leanAlways`
+when that is the same binder, display included (`shareAlwaysImpl`). -/
+def BinderMeta.shareAlways (mb : BinderMeta) : BinderMeta := { mb with pw := .ifAllZero [] }
+
+/-- A Lean-fragment binder at the datum `ifAllZero []` is `leanAlways`,
+whatever its display: the annotation is a subsingleton. -/
+theorem BinderMeta.leanAlways_eq (mb : BinderMeta)
+    (h : mb.contract = .many ∧ mb.result = .shared) :
+    BinderMeta.leanAlways = { mb with pw := .ifAllZero [] } := by
+  obtain ⟨p, c, r, d⟩ := mb
+  obtain ⟨rfl, rfl⟩ := h
+  show BinderMeta.mk _ _ _ BinderDisplay.anon = BinderMeta.mk _ _ _ d
+  rw [Subsingleton.elim BinderDisplay.anon d]
+
+/-- `withPtrAddr` into the subsingleton `{ m // m = c }`: its side condition
+holds because both results are `c`. -/
+@[inline] def BinderMeta.withAddrEq {α : Type} {c : BinderMeta} (a : α)
+    (k : USize → { m : BinderMeta // m = c }) : { m : BinderMeta // m = c } :=
+  withPtrAddr a k (fun u₁ u₂ => Subtype.ext ((k u₁).2.trans (k u₂).2.symm))
+
+/-- The run-time `shareAlways` (PERF P14, step 6b): the shared `leanAlways` for
+a Lean-fragment binder whose display is the shared anonymous object, and a copy
+otherwise, so that a binder with a name keeps it. The display test reads the
+annotation's address, never its value: each branch is the same binder (the
+annotation is a subsingleton), so the result is a subsingleton and does not
+depend on the address (`withPtrAddr`'s side condition). -/
+def BinderMeta.shareAlwaysImpl (mb : BinderMeta) : BinderMeta :=
+  (BinderMeta.withAddrEq mb.display fun a => BinderMeta.withAddrEq BinderDisplay.anon fun b =>
+    if h : a == b && decide (mb.contract = .many) && decide (mb.result = .shared) then
+      ⟨BinderMeta.leanAlways, BinderMeta.leanAlways_eq mb (by
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+        exact ⟨h.1.2, h.2⟩)⟩
+    else ⟨{ mb with pw := .ifAllZero [] }, rfl⟩).1
+
+/-- The compiler runs `shareAlwaysImpl` for `shareAlways`: the same binder. -/
+@[csimp] theorem BinderMeta.shareAlways_eq_impl :
+    @BinderMeta.shareAlways = @BinderMeta.shareAlwaysImpl := by
+  funext mb
+  unfold BinderMeta.shareAlwaysImpl
+  exact (Subtype.property
+    (BinderMeta.withAddrEq (c := { mb with pw := .ifAllZero [] }) mb.display _)).symm
+
 /-- `{ mb with pw }`, without a new object where an equal one exists: `mb`
 itself when both data are `never`, the shared `leanAlways` for a
-Lean-fragment binder whose new datum is `ifAllZero []`
-(`BinderMeta.withPw_eq`). -/
+Lean-fragment binder whose new datum is `ifAllZero []` and which carries no
+name (`shareAlways`; `BinderMeta.withPw_eq`). -/
 @[inline] def BinderMeta.withPw (mb : BinderMeta) (pw : PropWhen) : BinderMeta :=
   if pw.isNever && mb.pw.isNever then mb
   else if !pw.hasParams && !pw.isNever && decide (mb.contract = .many) &&
-      decide (mb.result = .shared) then BinderMeta.leanAlways
+      decide (mb.result = .shared) then BinderMeta.shareAlways mb
   else { mb with pw }
 
 theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
@@ -210,10 +312,14 @@ identity data: structural `=` sees it. Lean's lets carry `LetContract.lean
 nonDep`. Conversion never compares it: the annotation pass substitutes every
 let away before a term is inferred or compared, and the model reads none of
 it. The packed hash mixes it in only off the Lean fragment (a value let at the
-default binder contract), so a Lean let hashes as before. -/
+default binder contract), so a Lean let hashes as before.
+
+`display` is the let's display annotation, its Lean name (step 6b): a
+subsingleton, so none of the above sees it. -/
 structure LetMeta where
   contract : Ixon.LetContract := .lean false
-  deriving DecidableEq, Repr, Hashable
+  display : Squash Name := LetDisplay.anon
+  deriving DecidableEq, Repr
 
 instance : Inhabited LetMeta := ⟨{}⟩
 

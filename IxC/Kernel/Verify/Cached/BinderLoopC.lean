@@ -594,7 +594,8 @@ stage 6: the tail is a pure rebuild — the λ-annotation re-check died
 with the stored annotations). -/
 theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     {d fuel : Nat} {b t fv : Expr md} {bodyx tyx : Expr md}
-    {mbpw : PropWhen} {mbc : Ixon.BinderContract} {mbr : Ixon.ValueContract} {s₀ : CState md}
+    {mbpw : PropWhen} {mbc : Ixon.BinderContract} {mbr : Ixon.ValueContract}
+    {mbd : Squash BinderDisplay} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbody : RelC b bodyx)
     (hty : RelC t tyx)
@@ -602,32 +603,32 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     (hwty : Expr.WScoped d tyx) (hwbody : Expr.WScoped d bodyx) :
     SimC mode env s₀ (RelEC d)
       (inferLamsI mode (coreKnotI mode (mkFEnv env) f) d fuel b 1 #[fv]
-        [(t, ⟨mbpw, mbc, mbr⟩)])
+        [(t, ⟨mbpw, mbc, mbr, mbd⟩)])
       (do
         let bt ← (fueledFns mode env).infer (d + 1)
           (bodyx.instantiate1 (.fvar d tyx))
         if mode.verifiedChecks then
           match bodyx.lamPw with
           | some pwI =>
-            unless (⟨mbpw, mbc, mbr⟩ : BinderMeta).pw == pwI do
+            unless (⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw == pwI do
               throw (.notImplemented
                 "sort-annotation mismatch (lam-cod-chain)")
           | none => do
             let btt ← (fueledFns mode env).inferIO (d + 1) bt
             let vb ← ensureSort (fueledFns mode env) env (d + 1) btt
-            unless Level.zeronessOf vb == (⟨mbpw, mbc, mbr⟩ : BinderMeta).pw do
+            unless Level.zeronessOf vb == (⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw do
               throw (.notImplemented
                 "sort-annotation mismatch (lam-cod-leaf)")
-        pure (Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr⟩)) := by
+        pure (Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr, mbd⟩)) := by
   have hwopen : Expr.WScoped (d + 1)
       (bodyx.instantiateList [Expr.fvar d tyx]) := by
     rw [instList_single]
     exact Expr.WScoped.instantiate1 hwty 0 hwbody
   have hcore : SimC mode env s₀ RelDC
       (inferLamsI mode (coreKnotI mode (mkFEnv env) f) d fuel b 1 #[fv]
-        [(t, ⟨mbpw, mbc, mbr⟩)])
+        [(t, ⟨mbpw, mbc, mbr, mbd⟩)])
       (inferLams mode (fueledFns mode env) d fuel bodyx 1 [Expr.fvar d tyx]
-        [(tyx, ⟨mbpw, mbc, mbr⟩)]) := by
+        [(tyx, ⟨mbpw, mbc, mbr, mbd⟩)]) := by
     refine inferLamsC_sim ih fuel hs hbody
       (by rw [toListRev_singleton]; exact RelCL.cons hfv RelCL.nil)
       ⟨⟨hty, rfl⟩, trivial⟩ hwopen
@@ -636,7 +637,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     intro res F hF
     rw [inferLams_atF] at hF
     obtain ⟨F', hchain⟩ := inferLams_sound fuel bodyx 1
-      [Expr.fvar d tyx] [(tyx, ⟨mbpw, mbc, mbr⟩)] F res rfl
+      [Expr.fvar d tyx] [(tyx, ⟨mbpw, mbc, mbr, mbd⟩)] F res rfl
       (by
         intro x hx
         rcases List.mem_singleton.mp hx with rfl
@@ -662,14 +663,14 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
       unfold inferLamsWrap at htail
       dsimp only
       by_cases hg : (mode.verifiedChecks
-          && !((⟨mbpw, mbc, mbr⟩ : BinderMeta).pw == pwI)) = true
+          && !((⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw == pwI)) = true
       · rw [if_pos hg] at htail
         exact nomatch htail
       rw [if_neg hg] at htail
       by_cases hv : mode.verifiedChecks = true
       · rw [if_pos hv]
-        have hpw : ((⟨mbpw, mbc, mbr⟩ : BinderMeta).pw == pwI) = true := by
-          by_cases hc : ((⟨mbpw, mbc, mbr⟩ : BinderMeta).pw == pwI) = true
+        have hpw : ((⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw == pwI) = true := by
+          by_cases hc : ((⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw == pwI) = true
           · exact hc
           · exact absurd (by simp [hv, hc]) hg
         rw [if_pos hpw]
@@ -696,7 +697,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
       obtain ⟨v, hvv, htail⟩ := bind_okB htail
       rw [hvv, okB_bind]
       try dsimp only at htail ⊢
-      by_cases hz : (Level.zeronessOf v == (⟨mbpw, mbc, mbr⟩ : BinderMeta).pw) = true
+      by_cases hz : (Level.zeronessOf v == (⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw) = true
       case neg =>
         rw [if_neg hz] at htail
         exact nomatch htail
@@ -714,7 +715,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     have hwbt : Expr.WScoped (d + 1) bt :=
       inferTypeCore_WScoped henv F hbt
         (Expr.WScoped.instantiate1 hwty 0 hwbody)
-    have hres : vv = Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr⟩ := by
+    have hres : vv = Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr, mbd⟩ := by
       revert hF
       by_cases hv : mode.verifiedChecks = true
       case neg =>
@@ -726,7 +727,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
       cases bodyx.lamPw with
       | some pwI =>
         dsimp only
-        by_cases hc : ((⟨mbpw, mbc, mbr⟩ : BinderMeta).pw == pwI) = true
+        by_cases hc : ((⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw == pwI) = true
         · rw [if_pos hc]
           intro hF
           injection hF with hres
@@ -740,7 +741,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
         obtain ⟨btt, -, hF⟩ := bind_okB hF
         obtain ⟨v, -, hF⟩ := bind_okB hF
         revert hF
-        by_cases hc : (Level.zeronessOf v == (⟨mbpw, mbc, mbr⟩ : BinderMeta).pw) = true
+        by_cases hc : (Level.zeronessOf v == (⟨mbpw, mbc, mbr, mbd⟩ : BinderMeta).pw) = true
         · rw [if_pos hc]
           intro hF
           injection hF with hres
@@ -752,7 +753,7 @@ theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     exact (by
       simp only [Expr.WScoped]
       exact ⟨hwty, Ix.Kernel.WScoped.abstract1 0 hwbt⟩ :
-      Expr.WScoped d (Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr⟩))
+      Expr.WScoped d (Expr.forallE tyx (bt.abstract1 d) ⟨mbpw, mbc, mbr, mbd⟩))
 
 private theorem inferPiTail_atF {env : Env md} (d : Nat)
     (tyx bodyx : Expr md) (lu : Level) (pw : PropWhen) (F : Nat) :

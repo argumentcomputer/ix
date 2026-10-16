@@ -224,17 +224,20 @@ private def qBinderContract (c : Ixon.BinderContract) : Lean.Expr :=
 
 /-- A let's metadata: its contract, field by field. -/
 private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
-  mkApp (mkConst ``Ix.Kernel.LetMeta.mk)
+  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk)
     (mkApp3 (mkConst ``Ixon.LetContract.mk) (qBool l.contract.nonDep)
       (match l.contract.kind with
         | .value => mkConst ``Ixon.LetKind.value
         | .borrowShared => mkConst ``Ixon.LetKind.borrowShared)
       (qBinderContract l.contract.binder))
+    (mkConst ``Ix.Kernel.LetDisplay.anon)
 
+/-- A pin's binders carry no name (the default, `BinderDisplay.anon`). -/
 private def qBinderMeta (m : Ix.Kernel.BinderMeta) : Lean.Expr :=
-  mkApp3 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderContract m.contract)
+  mkApp4 (mkConst ``Ix.Kernel.BinderMeta.mk) (qPropWhen m.pw) (qBinderContract m.contract)
     (if m.result == .shared then mkConst ``Ixon.ValueContract.shared else
       qValueContract m.result)
+    (mkConst ``Ix.Kernel.BinderDisplay.anon)
 
 private def qLiteral : Ix.Kernel.Literal → Lean.Expr
   | .natVal n => mkApp (mkConst ``Ix.Kernel.Literal.natVal) (mkRawNatLit n)
