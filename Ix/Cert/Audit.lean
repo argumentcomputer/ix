@@ -5,6 +5,7 @@ import Ix.CompileCert.ReadingAudit
 import Ix.Cert.Canon
 import Ix.Cert.Schedule
 import Ix.Cert.Hybrid
+import Ix.Cert.Stream
 
 /-! # The certification statements, frozen
 
@@ -3378,3 +3379,119 @@ fun codeConsts leanByIx =>
 /-- info: 'Ix.Cert.Hybrid.pipeline_walk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Hybrid.pipeline_walk
+
+/-! ## Route A, B3: the reader succeeds over the compiled closure's stream
+
+The certified entry's preparation (`Ix.Kernel.Admission.prepareWith`)
+succeeds on the compiled closure (`Ix.Cert.Stream.closure_prepares`): the
+byte stage holds for the artifact `compile` returns (unique keys from an
+order of distinct addresses and the blob map, authentication from
+`compileAuthentic`, batch limits and canonical decoding within some limits,
+given that every stored record decodes to a wire-valid constant whose
+canonical encoding is its stored bytes, `StoredCanonical`), and the reader's
+stream succeeds on every record-by-record reading (`readRecords_complete`,
+the converse of IxC's `readRecords_spec`). With the fold's acceptance under
+the committed prelude that is `IxonAccepts` (`closure_accepts`).
+`StoredCanonical` (R13, from R7e's per-block codec) and the stream reading
+(N-READS) stay obligations. -/
+
+/-- info: [cert-audit] stream: 22 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] stream: 11 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "stream"
+    (#[`streamRead_cons_inv, `forIn_complete, `readRecords_loop, `readRecords_complete, `readStream_complete,
+      `recordsOf_cons, `decodedOf_cons, `recordsOf_keys, `decodedOf_keys, `mem_blobsOf, `blobsOf_keys,
+      `closure_unique, `mem_recordsOf, `closure_authentic, `size_le_payload, `nodes_le, `closure_reads,
+      `closure_decodes, `prepareWith_ok, `closure_prepares, `checkBytesUsing_ok,
+      `closure_accepts].map (`Ix.Cert.Stream ++ ·))
+  checkRuntime (tag := "cert-audit") "stream"
+    #[``Ix.Kernel.Admission.preflight, ``Ix.Kernel.Admission.uniqueKeys, ``Ix.Kernel.Admission.authenticate,
+      ``Ix.Kernel.Admission.decodeRecords, ``Ix.Kernel.Admission.prepareWith,
+      ``Ix.Kernel.Admission.readStream, ``Ix.Kernel.Admission.checkBytesWith,
+      ``Ix.Kernel.Admission.checkBytesUsing, ``Ix.Kernel.Admission.checkBytes,
+      ``Ix.Kernel.Reader.readRecords, ``Ixon.Authenticated.checkBytes]
+
+/-- info: def Ix.Cert.Stream.StoredCanonical : Ixon.Env → List Address → Prop :=
+fun ixe order =>
+  ∀ (a : Address),
+    a ∈ order →
+      ∀ (lc : Ixon.LazyConstant),
+        ixe.consts.get? a = some lc → ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Stream.StoredCanonical
+
+/-- info: @Ix.Cert.Stream.readRecords_complete : ∀ {md : Ix.Kernel.Mode} {cx : Ix.Kernel.Reader.Ctx md}
+  {st st' : Ix.Kernel.Reader.State md} {records : List (Address × Ixon.Constant)}
+  {out : Array (Ix.Kernel.Reader.CDecl md)},
+  Ix.Kernel.Reader.StreamRead cx st records st' out →
+    (List.map Prod.fst records).Nodup → Ix.Kernel.Reader.readRecords cx st records.toArray = Except.ok (st', out) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Stream.readRecords_complete
+
+/-- info: @Ix.Cert.Stream.closure_prepares : ∀ {env : Ix.Environment} {ixe : Ixon.Env},
+  Ix.Cert.compile env = Except.ok ixe →
+    ∀ {order : List Address},
+      order.Nodup →
+        Ix.Cert.Stream.StoredCanonical ixe order →
+          ∀ {binding : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable},
+            Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok t →
+              ∀ (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon) {st' : Ix.Kernel.Reader.State Ix.Kernel.Mode.anon}
+                {decls : Array (Ix.Kernel.Reader.CDecl Ix.Kernel.Mode.anon)},
+                Ix.Kernel.Reader.StreamRead
+                    (Ix.Kernel.Admission.streamContext Address.admissionHash t pre (Ix.Cert.Stream.decodedOf ixe order)
+                      (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe))
+                    pre.state (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                  ∃ limits,
+                    Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits
+                        (Ix.Cert.recordsOf ixe order) (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe) =
+                      Except.ok
+                        (Ix.Kernel.Reader.evidenceOf
+                            (Ix.Kernel.Admission.streamContext Address.admissionHash t pre
+                              (Ix.Cert.Stream.decodedOf ixe order) (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe))
+                            st' t,
+                          Ix.Kernel.Frontend.preparePrelude pre.ix decls) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Stream.closure_prepares
+
+/-- info: @Ix.Cert.Stream.closure_accepts : ∀ {env : Ix.Environment} {ixe : Ixon.Env},
+  Ix.Cert.compile env = Except.ok ixe →
+    ∀ {S : Address → Prop} {order : List Address},
+      Ix.Cert.ClosureOrder ixe S order →
+        Ix.Cert.Stream.StoredCanonical ixe order →
+          ∀ {binding : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable},
+            Ix.Kernel.Admission.admitBinding Address.admissionHash binding = Except.ok t →
+              ∀ {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon},
+                Ix.Kernel.Reader.preludeFor t = Except.ok pre →
+                  ∀ {st' : Ix.Kernel.Reader.State Ix.Kernel.Mode.anon}
+                    {decls : Array (Ix.Kernel.Reader.CDecl Ix.Kernel.Mode.anon)},
+                    Ix.Kernel.Reader.StreamRead
+                        (Ix.Kernel.Admission.streamContext Address.admissionHash t pre
+                          (Ix.Cert.Stream.decodedOf ixe order) (Ix.Cert.blobsOf ixe order) (Ix.Cert.hintsOf ixe))
+                        pre.state (Ix.Cert.Stream.decodedOf ixe order) st' decls →
+                      ∀ {envA : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+                        Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified
+                              (Ix.Kernel.Reader.evidenceOf
+                                (Ix.Kernel.Admission.streamContext Address.admissionHash t pre
+                                  (Ix.Cert.Stream.decodedOf ixe order) (Ix.Cert.blobsOf ixe order)
+                                  (Ix.Cert.hintsOf ixe))
+                                st' t)
+                              (Ix.Kernel.Frontend.preparePrelude pre.ix decls) =
+                            Except.ok envA →
+                          ∃ limits, Ix.Cert.IxonAccepts binding limits ixe S order envA -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Stream.closure_accepts
+
+/-- info: 'Ix.Cert.Stream.readRecords_complete' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Stream.readRecords_complete
+
+/-- info: 'Ix.Cert.Stream.closure_prepares' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Stream.closure_prepares
+
+/-- info: 'Ix.Cert.Stream.closure_accepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Stream.closure_accepts
