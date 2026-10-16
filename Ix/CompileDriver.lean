@@ -1493,19 +1493,23 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --    against the HYBRID environment: code kinds are the materialized
   --    (shared) map; proof bodies canonicalize on demand from the pinned
   --    Lean constants and are dropped when their block's `CompileM.run`
-  --    returns. Each wave runs on at most `numWorkers` tasks (`width`; the
-  --    value does not depend on it), so `--workers` still bounds how many
-  --    blocks compile at once, and with it the memory of whole-Mathlib runs.
+  --    returns. Each wave is split into `4 * numWorkers` tasks (`width`; the
+  --    value does not depend on it): chunks that small let the task pool
+  --    (`LEAN_NUM_THREADS`, else one thread per core) balance blocks of very
+  --    different sizes, where `numWorkers` chunks left the wave waiting on its
+  --    slowest chunk (Mathlib's compile phase 505.5 s at width 32, 414.1 s at
+  --    128; the queue driver took 458.1 s). At most `min width pool` blocks
+  --    compile at once.
   let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
     (leanByIx.get? n).bind fun (ln, lci) =>
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
   if dbg then
-    IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {numWorkers} tasks per wave"
+    IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
   let folded ← IO.lazyPure fun _ =>
     compileEnvFold ixEnv condensed (dbg := dbg) (nameByHash := nameByHash)
-      (sharingLimits := opts.sharingLimits) (width := numWorkers)
+      (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
   match folded with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>

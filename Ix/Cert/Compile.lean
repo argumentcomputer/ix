@@ -38,7 +38,7 @@ What the IO pipeline does that this function does not:
   bodies are canonicalized again on demand (`fallback?`) instead of
   materialized, and passes the name-hash index (`CompileEnv.nameByHash`)
   that such an environment needs;
-* it splits each wave of the driver into as many tasks as `--workers` (the
+* it splits each wave of the driver into four tasks per `--workers` (the
   value does not depend on the split) and
   takes the sharing limits from its options (`DriverOptions`);
 * it serializes (`Ixon.serEnv`).
