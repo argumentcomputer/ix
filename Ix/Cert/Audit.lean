@@ -2051,3 +2051,66 @@ table final, after which universe compilation does not grow it
 /-- info: 'Ix.CompileCert.PreseedInsertion.preseed_preseeded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.PreseedInsertion.preseed_preseeded
+
+/-! ## Component theorems: successful compilation keeps the tables on the wire
+
+A successful run of the production expression compiler, under an
+environment without call-site plans, or of any payload emitter (definition,
+axiom, quotient, recursor, constructor, inductive, mutual members and
+classes) keeps the primary reference and universe tables representable by
+the constant wire format, from a state where the declaration prefix
+resolves names to 32-byte addresses and the universe table is final
+(`EmissionWire.Valid`); a successful preseed establishes that state
+(`EmissionWire.seeded_valid`). Success-only: a refused universe miss may
+write before its guard fires. Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.EmissionWire.Valid : Ix.CompileM.CompileEnv → Ix.CompileM.BlockState → Prop :=
+fun environment state =>
+  Ix.CompileCert.PreseedWire.LookupWidths environment state ∧
+    Ix.Sharing.Verify.BlockWireTablesWF state ∧ state.univsFinal = true -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.EmissionWire.Valid
+
+/-- info: def Ix.CompileCert.EmissionWire.Safe : {α : Type} →
+  Ix.CompileM.CompileM α → (optParam (α → Prop) fun x => True) → Prop :=
+fun {α} action post =>
+  ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+    context.fst.surgeryFree = true →
+      ∀ (before : Ix.CompileM.BlockState) (value : α) (after : Ix.CompileM.BlockState),
+        Ix.CompileCert.EmissionWire.Valid context.fst before →
+          Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
+            Ix.CompileCert.EmissionWire.Valid context.fst after ∧ post value -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.EmissionWire.Safe
+
+/-- info: Ix.CompileCert.EmissionWire.Safe.expression : ∀ (source : Ix.Expr),
+  Ix.CompileCert.EmissionWire.Safe (Ix.CompileM.compileExpr source) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionWire.Safe.expression
+
+/-- info: Ix.CompileCert.EmissionWire.Safe.mutConsts : ∀ (sources : List (List Ix.MutConst)),
+  Ix.CompileCert.EmissionWire.Safe (Ix.CompileM.compileMutConsts sources) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionWire.Safe.mutConsts
+
+/-- info: Ix.CompileCert.EmissionWire.seeded_valid : ∀ (roots : Array (Ix.Expr × List Ix.Name))
+  (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) {before after : Ix.CompileM.BlockState},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
+        Ix.CompileCert.EmissionWire.Valid context.fst after -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionWire.seeded_valid
+
+/-- info: 'Ix.CompileCert.EmissionWire.Safe.expression' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionWire.Safe.expression
+
+/-- info: 'Ix.CompileCert.EmissionWire.Safe.mutConsts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionWire.Safe.mutConsts
+
+/-- info: 'Ix.CompileCert.EmissionWire.seeded_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionWire.seeded_valid

@@ -9,6 +9,7 @@ import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
 import Ix.CompileCert.PreseedInsertion
+import Ix.CompileCert.EmissionWire
 
 /-! # Audit of the reading-chain proofs
 
@@ -25,9 +26,10 @@ interners (`Ix.CompileCert.Interning`), the checked blob writes
 and its value (`Ix.CompileCert.UniverseMeaning`), the universe pipeline
 (`Ix.CompileCert.UniversePipeline`), the ordinary expression compiler's
 core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
-`ExpressionCorrectness`, `ExpressionIngress`) and the preseed
+`ExpressionCorrectness`, `ExpressionIngress`), the preseed
 (`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
-`PreseedCoverage`, `PreseedInsertion`). Each root must exist, occur once,
+`PreseedCoverage`, `PreseedInsertion`) and the emitters' wire validity
+(`Ix.CompileCert.EmissionWire`). Each root must exist, occur once,
 and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -203,6 +205,25 @@ def coverageRoots : Array Lean.Name :=
     `univs_sorted, `canonicalize, `refs_frame,
     `preseed_preseeded].map (`Ix.CompileCert.PreseedInsertion ++ ·))
 
+
+/-- Successful compilation keeps the primary tables on the wire (CT-14's
+`EmissionWire`, CT-15's `FamilyWire` traversal): the combinators, the
+leaves, the well-founded expression compiler, every emitter and the preseed. -/
+def emissionWireRoots : Array Lean.Name :=
+  #[`Valid.of_view, `Safe.framed, `Safe.pure, `Safe.returns, `Safe.throw, `Safe.bind, `Safe.throwBind,
+    `Safe.forget, `Safe.seq, `Safe.get, `Safe.readCompile, `Safe.readBlock, `Safe.modify, `Safe.modifyGet,
+    `Safe.map, `Safe.withBlockEnv, `Safe.withCurrent, `Safe.withMutCtx, `Safe.withUnivCtx,
+    `Safe.checkedIndex, `Safe.checkedCount, `Safe.mapM_list, `Safe.mapM_array, `Safe.forIn_list,
+    `Safe.forIn_array, `Safe.compileLevel, `Safe.internRef, `Safe.lookup, `Safe.blob, `Safe.namesBlobs,
+    `Safe.compileName, `Safe.compileNames, `Safe.kvmap, `Safe.alloc, `Safe.patch, `Safe.finishReference,
+    `Safe.step, `Safe.noSurgery, `Safe.expression, `Safe.takeArena, `Safe.takeSurgerySharing,
+    `Safe.takeUnivPatches, `Safe.clearExprCache, `Safe.resetArena, `Safe.recordDefHints,
+    `Safe.mutCtxAddrs, `Safe.finishDefinition, `Safe.definitionData, `Safe.finishAxiom,
+    `Safe.axiomPayload, `Safe.finishQuotient, `Safe.quotientPayload, `Safe.rule, `Safe.rules,
+    `Safe.finishRecursor, `Safe.recursorPayload, `Safe.finishConstructor, `Safe.constructorPayload,
+    `Safe.constructors, `Safe.inductiveMetadata, `Safe.finishInductive, `Safe.inductivePayload,
+    `Safe.finishInductiveData, `Safe.inductiveData, `Safe.member, `Safe.equivalents, `Safe.constClass,
+    `Safe.classes, `Safe.mutConsts, `seeded_valid].map (`Ix.CompileCert.EmissionWire ++ ·)
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -244,6 +265,25 @@ def readerRuntime : Array Lean.Name :=
     ``Ix.Kernel.Reader.MemberReader.read, ``Ix.Kernel.Reader.ECx.keyAt,
     ``Ix.Kernel.Reader.ECx.blobAt, ``Ix.Kernel.Reader.ECx.levels, ``Ix.Kernel.Reader.Ctx.keyAt]
 
+/-- The payload emitters, their finishers and drains, which the emission
+proofs unfold. -/
+def emissionRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.takeArena, ``Ix.CompileM.takeSurgerySharing, ``Ix.CompileM.takeUnivPatches,
+    ``Ix.CompileM.clearExprCache, ``Ix.CompileM.resetArena, ``Ix.CompileM.recordDefHints,
+    ``Ix.CompileM.getMutCtxAddrs, ``Ix.CompileM.withCurrent, ``Ix.CompileM.withMutCtx,
+    ``Ix.CompileM.withBlockEnv, ``Ix.CompileM.finishDefinitionDataCompilation,
+    ``Ix.CompileM.compileDefinitionData, ``Ix.CompileM.finishAxiomCompilation, ``Ix.CompileM.compileAxiom,
+    ``Ix.CompileM.finishQuotientCompilation, ``Ix.CompileM.compileQuotient,
+    ``Ix.CompileM.compileRecursorRule, ``Ix.CompileM.compileRecursorRules,
+    ``Ix.CompileM.finishRecursorCompilation, ``Ix.CompileM.compileRecursor,
+    ``Ix.CompileM.finishConstructorCompilation, ``Ix.CompileM.compileConstructor,
+    ``Ix.CompileM.compileInductiveConstructors, ``Ix.CompileM.takeInductiveTypeCompileMeta,
+    ``Ix.CompileM.finishInductiveCompilation, ``Ix.CompileM.compileInductive,
+    ``Ix.CompileM.finishInductiveDataCompilation, ``Ix.CompileM.compileInductiveData,
+    ``Ix.CompileM.compileMutConstMember, ``Ix.CompileM.compileEquivalentMutConsts,
+    ``Ix.CompileM.compileMutConstClass, ``Ix.CompileM.compileMutConstClasses,
+    ``Ix.CompileM.compileMutConsts]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -261,8 +301,10 @@ run_cmd do
   checkRoots (tag := "reading-audit") "expression core" Ix.CompileCert.ReadingAudit.expressionRoots
   checkRoots (tag := "reading-audit") "preseed state" Ix.CompileCert.ReadingAudit.preseedStateRoots
   checkRoots (tag := "reading-audit") "preseed coverage" Ix.CompileCert.ReadingAudit.coverageRoots
+  checkRoots (tag := "reading-audit") "emission wire" Ix.CompileCert.ReadingAudit.emissionWireRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
   checkRuntime (tag := "reading-audit") "expression compiler" Ix.CompileCert.ReadingAudit.expressionRuntime
   checkRuntime (tag := "reading-audit") "preseed" Ix.CompileCert.ReadingAudit.preseedRuntime
+  checkRuntime (tag := "reading-audit") "emission" Ix.CompileCert.ReadingAudit.emissionRuntime
