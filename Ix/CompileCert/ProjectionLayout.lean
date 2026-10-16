@@ -16,7 +16,9 @@ build's write-back keeps of the payload (CT-15's `ProjectionLayout`, R9a):
   they follow from R7b's one inversion (`SharingRoots.withRoots_inv`,
   `build_roots`);
 * the class sort's guard leaves no empty class (`sort_nonempty`), which
-  discharges `payload_count`'s premise for every sorted block;
+  discharges `payload_count`'s premise for every sorted block, and the
+  compiler's sort is `sortClasses Rules.compiler` on an address map of the
+  state, which it leaves unchanged (`sort_run`, R9b);
 * the standalone inductive family's block is `.muts #[.indc target]` with
   the source's constructor positions (`family_layout`), and its projection
   records resolve under the certified reader to the block's member and its
@@ -270,6 +272,39 @@ theorem sort_nonempty (sources : List MutConst) :
     have equal := Except.ok.inj (congrArg Prod.fst tail)
     cases equal
     exact sorted_nonempty _ addresses sources pair.1 pair.2 sorted
+
+theorem constAddrLookup_run (context : CompileEnv × BlockEnv) (state : BlockState) :
+    ∃ addresses, rawRun constAddrLookup context state = (.ok addresses, state) := ⟨_, rfl⟩
+
+/-- **The compiler's class sort is `sortClasses Rules.compiler`**, run on an
+address map of the state, and leaves the state as it found it (R9b). -/
+theorem sort_run (sources : List MutConst) {context : CompileEnv × BlockEnv} {before after : BlockState}
+    {classes : List (List MutConst)} (ran : rawRun (sortConsts sources) context before = (.ok classes, after)) :
+    after = before ∧ ∃ addresses stats,
+      Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addresses sources = .ok (classes, stats) := by
+  unfold sortConsts at ran
+  dsimp only at ran
+  split at ran
+  · obtain ⟨_, _, thrown, _⟩ := bind_ok ran
+    rw [rawRun_throw] at thrown
+    cases thrown
+  obtain ⟨addresses, middle, looked, tail⟩ := bind_ok ran
+  obtain ⟨addresses', looked'⟩ := constAddrLookup_run context before
+  rw [looked'] at looked
+  cases looked
+  cases sorted : Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addresses sources with
+  | error reason =>
+    rw [sorted] at tail
+    obtain ⟨failure, failed⟩ := throwCmpError_fails (α := List (List MutConst)) reason context before
+    dsimp only at tail
+    rw [tail] at failed
+    cases failed
+  | ok pair =>
+    rw [sorted] at tail
+    dsimp only at tail
+    rw [rawRun_pure] at tail
+    cases tail
+    exact ⟨rfl, addresses, pair.2, sorted⟩
 
 /-! ## Member shapes -/
 

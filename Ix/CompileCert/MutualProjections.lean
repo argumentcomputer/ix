@@ -1,4 +1,5 @@
 import Ix.CompileCert.ProjectionLayout
+import Ix.CompileCert.Canon.EqSound
 
 /-! # A mutual block's projection rows: what they are, their codec, what they read as
 
@@ -21,11 +22,14 @@ CT-15's `MutualProjections` (R9a), ported from the donor `a9cf3607`:
 
 Adapted: `Address.admissionHash` for `Address.blake3`, the mutual
 finisher's inversion (`ProjectionLayout.finish_mutual_ok`), dispatch under
-`surgeryFree` (until CQ3.5). Not ported here (R9b): the donor's comparator
-lemmas (`ctor_compare_index` … `production_classes`), which discharge
-`ClassesAgree` from the class sort's coarsest-partition property; since
-CQ2.18 the sort is `Ix.Compile.Canon.sortClasses`, whose comparator facts
-come with CQ3.2 and the `Canon.Coarsest` proofs. -/
+`surgeryFree` (until CQ3.5).
+
+R9b discharges `ClassesAgree` for the compiler's classes (`sort_classes`):
+the donor's comparator lemmas (`ctor_compare_index` … `production_classes`)
+become `match_shape` over `Canon.ConstMatch` and `sorted_classes_agree` over
+`Canon.sortClasses_match` (CS-01's coarsest partition and `eq` soundness,
+re-derived for `Ix.Compile.Canon.sortClasses` since CQ2.18). The donor's
+`orderRecursorFamily` step has no subject on this tree. -/
 
 namespace Ix.CompileCert.MutualProjections
 
@@ -371,7 +375,7 @@ theorem selected_member (sources : List (List MutConst)) (targets : List Ixon.Mu
 
 /-- The class-specific condition needed for every alias of a class, beyond
 the compiled representative's shape: the members of a class have one shape.
-(Its discharge from the class sort's comparator is R9b.) -/
+(The compiler's classes satisfy it: `sort_classes`, R9b.) -/
 def ClassesAgree (sources : List (List MutConst)) : Prop :=
   ∀ members ∈ sources, ∀ left ∈ members, ∀ right ∈ members, sourceShape left = sourceShape right
 
@@ -477,4 +481,49 @@ theorem build_resolves (store : Store) (owner : Address) (block : Ixon.Constant)
   exact source_rows_resolve store owner block targets source target index stored info wire targetAt sourceShape
     (positions source (List.mem_flatten.mpr ⟨members, classPresent, sourceIn⟩))
 
+
+/-! ## The class sort's classes agree (R9b) -/
+
+theorem ctor_match_indices {c : Ix.Compile.Canon.CmpCtx} {xl yl : List Ix.Name} :
+    ∀ {left right : List Ix.ConstructorVal}, List.Forall₂ (Canon.CtorMatch c xl yl) left right →
+      left.map (·.cidx) = right.map (·.cidx)
+  | _, _, .nil => rfl
+  | _, _, .cons head tail => by simp only [List.map_cons, head.cidx, ctor_match_indices tail]
+
+/-- Two constants the comparator identifies have one shape (the donor's
+`const_compare_shape`, through `Canon.ConstMatch`). -/
+theorem match_shape {c : Ix.Compile.Canon.CmpCtx} {left right : MutConst}
+    (matched : Canon.ConstMatch c left right) : sourceShape left = sourceShape right := by
+  cases left <;> cases right <;> simp only [Canon.ConstMatch] at matched
+  · rfl
+  · exact congrArg MemberShape.indc (ctor_match_indices matched.ctors)
+  · rfl
+
+/-- **The class sort's classes agree in shape**: two members of one class
+of `sortClasses` match under the classes' context (`Canon.sortClasses_match`,
+from the coarsest partition's consistency), so they have one shape. -/
+theorem sorted_classes_agree (rules : Ix.Compile.Canon.Rules) {addresses : Ix.Name → Option Address}
+    {N : Ix.Name → Prop} (faithful : Canon.Faithful N) {sources : List MutConst}
+    (refs : ∀ source ∈ sources, Canon.ConstIn N source) (keys : Canon.KeysDistinct sources)
+    {classes : List (List MutConst)} {stats : Ix.Compile.Canon.SortStats}
+    (ran : Ix.Compile.Canon.sortClasses rules addresses sources = .ok (classes, stats)) :
+    ClassesAgree classes := by
+  intro members present left leftIn right rightIn
+  by_cases same : left = right
+  · exact same ▸ rfl
+  · exact match_shape (Canon.sortClasses_match rules faithful refs keys ran members present left leftIn
+      right rightIn same)
+
+/-- **The compiler's class sort returns a partition of its members whose
+classes agree in shape** (R9b: `ClassesAgree` discharged), for members whose
+member and constructor names are pairwise distinct under `==` and whose
+references lie in a set of names within which `==` is equality. -/
+theorem sort_classes (sources : List MutConst) {N : Ix.Name → Prop} (faithful : Canon.Faithful N)
+    (refs : ∀ source ∈ sources, Canon.ConstIn N source) (keys : Canon.KeysDistinct sources) :
+    Emission.Yields (sortConsts sources)
+      (fun classes => Canon.Partition classes sources ∧ ClassesAgree classes) := by
+  intro context before classes after ran
+  obtain ⟨-, addresses, stats, sorted⟩ := ProjectionLayout.sort_run sources ran
+  exact ⟨(Canon.sortClasses_coarsest _ faithful refs keys sorted).1,
+    sorted_classes_agree _ faithful refs keys sorted⟩
 end Ix.CompileCert.MutualProjections

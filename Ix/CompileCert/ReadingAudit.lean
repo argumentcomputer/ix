@@ -367,6 +367,16 @@ def projectionRoots : Array Lean.Name :=
     `finish_references, `payload_references, `mutual_references,
     `mutual_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
 
+/-- The compiler's classes agree (R9b): its sort is `sortClasses
+Rules.compiler` on an address map of the unchanged state, two members of one
+class match and so have one shape, and a sorted and compiled mutual block is
+a correct artifact with no class premise. -/
+def mutualClassRoots : Array Lean.Name :=
+  (#[`constAddrLookup_run, `sort_run].map (`Ix.CompileCert.ProjectionLayout ++ ·)) ++
+  (#[`ctor_match_indices, `match_shape, `sorted_classes_agree,
+    `sort_classes].map (`Ix.CompileCert.MutualProjections ++ ·)) ++
+  (#[`mutual_sorted_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
+
 /-- The reader's recursor index (CT-16, R10a, re-derived for D8): the
 builder's two loops and one candidate inversion, validated block shapes,
 provenance and grouping, the reader's lookups, per-motive coverage and one
@@ -658,6 +668,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRoots
   checkRoots (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRoots
   checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
+  checkRoots (tag := "reading-audit") "mutual classes" Ix.CompileCert.ReadingAudit.mutualClassRoots
   checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
   checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
