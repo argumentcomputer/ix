@@ -813,11 +813,15 @@ def constSafety : ConstantInfo → String
     | .safe => "safe"
   | .thmInfo _ | .quotInfo _ => "safe"
 
-/-- Whether the members present in `env` share one safety. -/
+/-- Whether the members present in `env` share one safety. Members are read
+    through `get?`, so a hybrid environment's theorem and opaque members
+    (`fallback?`) count as in a materialized one; a single member is uniform
+    without a lookup (the IO pipeline's fallback re-canonicalizes). -/
 def uniformSafety (env : Ix.Environment) (members : Array Name) : Bool := Id.run do
+  if members.size ≤ 1 then return true
   let mut first : Option String := none
   for m in members do
-    if let some c := env.consts.get? m then
+    if let some c := env.get? m then
       let s := constSafety c
       match first with
       | none => first := some s
@@ -828,12 +832,12 @@ def uniformSafety (env : Ix.Environment) (members : Array Name) : Bool := Id.run
     the least member present in `env` (by name hash) and the least member
     whose safety differs from its. -/
 def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String := Id.run do
-  let present := (members.filter env.consts.contains).qsort fun a b =>
+  let present := (members.filter fun m => (env.get? m).isSome).qsort fun a b =>
     a.getHash.cmpBytes b.getHash == .lt
   let some first := present[0]? | return "mixed safety in a mutual block"
-  let s0 := (env.consts.get? first).map constSafety |>.getD "safe"
+  let s0 := (env.get? first).map constSafety |>.getD "safe"
   for m in present do
-    let s := (env.consts.get? m).map constSafety |>.getD "safe"
+    let s := (env.get? m).map constSafety |>.getD "safe"
     if s != s0 then
       return s!"mixed safety in a mutual block: '{first.pretty}' is {s0}, '{m.pretty}' is {s}"
   return "mixed safety in a mutual block"
@@ -846,14 +850,17 @@ def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String :=
     representative's safety. Checked first on each inductive group (`all`,
     with each member's constructors) in the order of their first members'
     hashes, then on each condensation block in the order of its least
-    member's hash; the first disagreement found is the error. -/
+    member's hash; the first disagreement found is the error. Members are
+    read through `get?`, so the IO pipeline's hybrid environment, whose
+    theorem and opaque members come from `fallback?`, refuses exactly as a
+    materialized one does. -/
 def validateMutualSafety (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except String Unit := Id.run do
   let groups := (inductiveGroups env).toArray.qsort fun a b =>
     a.1.getHash.cmpBytes b.1.getHash == .lt
   for (_, all) in groups do
     let members := all.foldl (init := #[]) fun acc n =>
-      match env.consts.get? n with
+      match env.get? n with
       | some (.inductInfo v) => acc.push n ++ v.ctors
       | _ => acc.push n
     unless uniformSafety env members do
