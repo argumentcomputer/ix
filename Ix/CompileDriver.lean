@@ -787,7 +787,9 @@ def inductiveFlagsChunk : Nat := 256
 def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run do
   let groups := (inductiveGroups env).toArray.qsort fun a b =>
     a.1.getHash.cmpBytes b.1.getHash == .lt
-  let cenv := CompileEnv.new env
+  -- the lookup view of `compileEnvFold`: the groups read constants only
+  -- through `get?`, so a materialized and a hybrid environment check alike
+  let cenv := CompileEnv.new { consts := {}, fallback? := some env.get? }
   let blockEnv : BlockEnv :=
     { all := {}, current := .mkAnon, mutCtx := default, univCtx := [] }
   let chunks := (groups.size + inductiveFlagsChunk - 1) / inductiveFlagsChunk
