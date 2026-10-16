@@ -178,27 +178,22 @@ def fixtures : List Fixture := [
   { stem := "SortUDecl", ns := ["SortUD"] },
   -- CQ3.1 (D-09): a nested `Sort u` singleton whose expanded block has two
   -- members eliminates into Prop only, as in Lean (lane P `6327e496`).
-  -- `Box T` is nested under the definition `K`, so the kernels, which find
-  -- nested occurrences at a field's head only (D-14, CQ3.3), see a
-  -- singleton and reject the two-motive recursors; the certified checker's
+  -- `Box T` is nested under the definition `K`; the kernels find it there
+  -- (D-14) and accept the two-motive recursors. The certified checker's
   -- modeller declines the field that mentions `Box T` under `K`, and the
   -- block's dependents are blocked on it.
   { stem := "NestedSortU", ns := ["NestedSortU"]
     knownFails :=
-      ["rs", "lean"].flatMap (fun leg => kf leg "D-14 (kernel nested discovery at the field head; CQ3.3)"
-        ["NestedSortU.T.rec", "NestedSortU.T.rec_1"]) ++
       kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
         ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
           "NestedSortU.t_rec"] },
   -- CQX.8: `T`'s field `K True (Box T)` mentions the block only before
   -- whnf. The Rust kernel tests positivity after whnf, as Lean does, and
-  -- accepts `T` (its recursors stay D-14's, as in `NestedSortU`); `Ix.Tc`
+  -- accepts `T` and its recursors (D-14 finds `Box T` under `K`); `Ix.Tc`
   -- still rejects the block (not fixed: deleted in CQX.2); the certified
   -- checker's modeller declines it.
   { stem := "NestedSortUK", ns := ["NestedSortUK"]
     knownFails :=
-      kf "rs" "D-14 (kernel nested discovery at the field head; CQ3.3)"
-        ["NestedSortUK.T.rec", "NestedSortUK.T.rec_1"] ++
       kf "lean" "CQX.8 (Ix.Tc tests positivity before whnf; not fixed, CQX.2)"
         ["NestedSortUK.T", "NestedSortUK.T.*"] ++
       kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
@@ -294,28 +289,25 @@ def fixtures : List Fixture := [
   { stem := "CanonSiblingNest", ns := ["CanonSiblingNest"]
     src := some "Tests/Ix/Compile/Fixtures/CanonSiblingNest.lean"
     certAccepts := true },
-  { stem := "UnsafeI", ns := ["UnsafeI"]
-    knownFails := kf "rs" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] ++
-      kf "lean" "WB-B9" ["UnsafeI.UNestNeg.rec", "UnsafeI.UNestNeg.rec_1"] },
+  -- WB-B9 and BB-F5 were the kernels' head-only nested discovery (D-14):
+  -- `UNestNeg`'s and `T`'s occurrences sit under a binder or a
+  -- non-inductive head, and both kernels now find them.
+  { stem := "UnsafeI", ns := ["UnsafeI"] },
   { stem := "F1_Collapse2p1", ns := ["A", "B", "C"]
     knownFails := kf "rs" "BB-F1 (metadata of collapsed aliases)" ["*"] ++
       kf "lean" "BB-F1, BB-F7" ["*"] },
-  { stem := "F5_SigmaNestedNested", ns := ["T"]
-    knownFails := ["rs", "lean"].flatMap fun leg =>
-      kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },
+  { stem := "F5_SigmaNestedNested", ns := ["T"] },
   { stem := "F7_AlphaVLean", ns := ["A", "B"]
     knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
   -- WB-A7, fixed by CQ3.1: `P`'s elimination is decided by the kernels'
   -- rule before the field probe, which failed on the auxiliary `And P P`
   -- the bridge's kernel does not hold. `T` (`Id (List T)`) is nested under
-  -- a definition: the kernels see a singleton (D-14, CQ3.3) and reject the
-  -- two-motive recursors, and the certified checker's modeller declines the
-  -- block (one inductive hypothesis for no syntactically recursive field,
-  -- SP5 §3.5), blocking its dependents.
+  -- a definition; the kernels find it there (D-14) and accept the
+  -- two-motive recursors, while the certified checker's modeller declines
+  -- the block (one inductive hypothesis for no syntactically recursive
+  -- field, SP5 §3.5), blocking its dependents.
   { stem := "KernelSpec", ns := ["KernelSpec"]
     knownFails :=
-      ["rs", "lean"].flatMap (fun leg => kf leg "D-14 (kernel nested discovery at the field head; CQ3.3)"
-        ["KernelSpec.T.rec", "KernelSpec.T.rec_1"]) ++
       kf "cert" "IxC modeller: nested under a definition (SP5 §3.5; decline)"
         ["KernelSpec.T", "KernelSpec.T.*"] },
   -- Expected compile failures outside A0 (totality defects).
