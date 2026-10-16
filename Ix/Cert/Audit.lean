@@ -2389,3 +2389,52 @@ fun source =>
 /-- info: 'Ix.CompileCert.EmissionBlocks.familyInfo_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.EmissionBlocks.familyInfo_codec
+
+/-! ## Component theorems: every public dispatch kind decodes exactly
+
+Without call-site plans the plan-head audits are no-ops, so public dispatch
+(`Ix.CompileM.compileConstantInfo`) is the kind's preseeded block compiler
+in the singleton mutual context (`EmissionDispatch.*_run`); for every kind,
+and for a mutual block, a successful compile from tables on the wire and a
+declaration prefix of 32-byte addresses returns a block that decodes
+exactly. Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+      Ix.Sharing.Verify.BlockWireTablesWF before →
+        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
+            Ix.Sharing.Verify.BlockResultCodecWF output -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionDispatch.constant_codec
+
+/-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+      Ix.Sharing.Verify.BlockWireTablesWF before →
+        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+          Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
+            Ix.Sharing.Verify.BlockResultCodecWF output -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionDispatch.mutualBlock_codec
+
+/-- info: Ix.CompileCert.EmissionDispatch.definition_run : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
+      Ix.CompileCert.EmissionDispatch.sourceData info = some source →
+        ∀ (state : Ix.CompileM.BlockState),
+          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context state =
+            Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source)
+              (Ix.CompileCert.EmissionDispatch.singletonContext source.name context) state -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionDispatch.definition_run
+
+/-- info: 'Ix.CompileCert.EmissionDispatch.constant_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionDispatch.constant_codec
+
+/-- info: 'Ix.CompileCert.EmissionDispatch.mutualBlock_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionDispatch.mutualBlock_codec

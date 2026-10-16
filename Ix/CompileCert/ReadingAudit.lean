@@ -13,6 +13,7 @@ import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.SharingRoots
 import Ix.CompileCert.Emission
 import Ix.CompileCert.EmissionBlocks
+import Ix.CompileCert.EmissionDispatch
 
 /-! # Audit of the reading-chain proofs
 
@@ -34,7 +35,8 @@ core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 `PreseedCoverage`, `PreseedInsertion`), the emitters' wire validity
 (`Ix.CompileCert.EmissionWire`), the sharing builder's root reading
 (`Ix.CompileCert.SharingRoots`), the payload emitters (`Ix.CompileCert.Emission`) and
-the singleton blocks (`Ix.CompileCert.EmissionBlocks`).
+the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
+`EmissionDispatch`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -270,6 +272,18 @@ def blockRoots : Array Lean.Name :=
     `recursorPayload_rules, `recursorBlock_correct, `recursorBlock_codec, `recursorInfo_correct,
     `recursorInfo_codec, `familyFinish_ok, `inductiveData_ctors, `familyBlock_correct, `familyBlock_codec,
     `familyInfo_correct, `familyInfo_codec].map (`Ix.CompileCert.EmissionBlocks ++ ·)
+
+/-- Public constant dispatch without call-site plans: the plan-head audits
+are no-ops, dispatch is the kind's block compiler in the singleton context,
+every kind's block decodes exactly, and so does a mutual block (CT-15's
+`FamilyWire` and `PayloadArrays`). -/
+def dispatchRoots : Array Lean.Name :=
+  #[`free_parts, `audit_free, `auditRules_free, `auditConstantInfo_free, `auditConstructors_free,
+    `auditMutConst_free, `auditClass_free, `auditClasses_free, `compileDefinitionInfo_eq, `definition_run,
+    `axiom_run, `quotient_run, `recursor_run, `inductive_run, `constructor_run, `find_state, `collect_state,
+    `family_run, `inductive_codec, `constant_codec, `member_counts, `forIn_checks, `mutual_counts,
+    `member_state, `mutual_state, `standalone_header, `build_mutual_codec, `finish_mutual_codec,
+    `mutualBlock_codec].map (`Ix.CompileCert.EmissionDispatch ++ ·)
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -350,6 +364,24 @@ def blockRuntime : Array Lean.Name :=
     ``Ix.CompileM.compileInductiveFamilyBlock, ``Ix.CompileM.compileInductiveFamilyInfo,
     ``Ix.CompileM.finishInductiveFamilyBlock, ``Ix.CompileM.buildInductiveProjections]
 
+/-- The public dispatch, its plan-head audits, constructor resolution and
+the mutual block's finisher, which the dispatch proofs unfold. -/
+def dispatchRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.auditPlanHeadArities, ``Ix.CompileM.auditRecursorRulePlanHeads,
+    ``Ix.CompileM.auditConstantInfoPlanHeads, ``Ix.CompileM.auditMutualConstructorPlanHeads,
+    ``Ix.CompileM.auditMutConstPlanHeads, ``Ix.CompileM.auditMutConstClassPlanHeads,
+    ``Ix.CompileM.auditMutConstClassesPlanHeads, ``Ix.CompileM.compileConstantInfo,
+    ``Ix.CompileM.compileConstantInfoCore, ``Ix.CompileM.compileDefinitionConstantInfo,
+    ``Ix.CompileM.compileTheoremConstantInfo, ``Ix.CompileM.compileOpaqueConstantInfo,
+    ``Ix.CompileM.compileQuotientConstantInfo, ``Ix.CompileM.compileRecursorConstantInfo,
+    ``Ix.CompileM.compileInductiveConstantInfo, ``Ix.CompileM.compileConstructorConstantInfo,
+    ``Ix.CompileM.compileDefinitionInfo, ``Ix.CompileM.compileTheoremInfo, ``Ix.CompileM.compileOpaqueInfo,
+    ``Ix.CompileM.compileInductiveInfo, ``Ix.CompileM.compileConstructorInfo,
+    ``Ix.CompileM.lookupInductiveConstructors, ``Ix.CompileM.collectInductiveConstructors,
+    ``Ix.CompileM.findConst, ``Ix.CompileM.checkMutConstArrayCounts, ``Ix.CompileM.checkMutualPayloadCounts,
+    ``Ix.CompileM.standaloneMutConstInfo?, ``Ix.CompileM.buildCompiledMutualBlock,
+    ``Ix.CompileM.finishMutualCompilation, ``Ix.CompileM.compileMutualPayload, ``Ix.CompileM.compileMutualBlock]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -371,6 +403,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "sharing roots" Ix.CompileCert.ReadingAudit.sharingRootRoots
   checkRoots (tag := "reading-audit") "emitters" Ix.CompileCert.ReadingAudit.emissionRoots
   checkRoots (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRoots
+  checkRoots (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -379,3 +412,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "emission" Ix.CompileCert.ReadingAudit.emissionRuntime
   checkRuntime (tag := "reading-audit") "sharing" Ix.CompileCert.ReadingAudit.sharingRuntime
   checkRuntime (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRuntime
+  checkRuntime (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRuntime
