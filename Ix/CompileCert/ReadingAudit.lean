@@ -12,6 +12,7 @@ import Ix.CompileCert.PreseedInsertion
 import Ix.CompileCert.EmissionWire
 import Ix.CompileCert.SharingRoots
 import Ix.CompileCert.Emission
+import Ix.CompileCert.EmissionBlocks
 
 /-! # Audit of the reading-chain proofs
 
@@ -32,7 +33,8 @@ core (`Ix.CompileCert.ExpressionState`, `ExpressionSteps`,
 (`Ix.CompileCert.PreseedState`, `PreseedWire`, `FinalUniverses`,
 `PreseedCoverage`, `PreseedInsertion`), the emitters' wire validity
 (`Ix.CompileCert.EmissionWire`), the sharing builder's root reading
-(`Ix.CompileCert.SharingRoots`) and the payload emitters (`Ix.CompileCert.Emission`).
+(`Ix.CompileCert.SharingRoots`), the payload emitters (`Ix.CompileCert.Emission`) and
+the singleton blocks (`Ix.CompileCert.EmissionBlocks`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -254,6 +256,20 @@ def emissionRoots : Array Lean.Name :=
     `definitionData_header, `single_correct, `axiom_correct, `axiomPayload_header, `quotient_correct,
     `quotientPayload_header, `constructor_correct, `constructors_correct, `compileInductive_eq,
     `inductiveData_correct, `rules_correct, `recursor_correct].map (`Ix.CompileCert.Emission ++ ·)
+
+/-- The singleton blocks read back as their sources and decode exactly
+(CT-15's blocks): the block finisher's inversion, the skeletons, the
+definition-like, axiom, quotient, recursor and inductive-family blocks,
+with and without their preseed. -/
+def blockRoots : Array Lean.Name :=
+  #[`finish_run, `build_block_run, `block_ok, `block_codec, `rules_skeleton, `ctors_skeleton,
+    `definition_erase, `axiom_erase, `quotient_erase, `recursor_erase, `inductive_erase, `family_roots,
+    `preseed_then, `definitionBlock_correct, `definitionBlock_codec, `definitionInfo_correct,
+    `definitionInfo_codec, `axiomBlock_correct, `axiomBlock_codec, `axiomInfo_correct, `axiomInfo_codec,
+    `quotientBlock_correct, `quotientBlock_codec, `quotientInfo_correct, `quotientInfo_codec,
+    `recursorPayload_rules, `recursorBlock_correct, `recursorBlock_codec, `recursorInfo_correct,
+    `recursorInfo_codec, `familyFinish_ok, `inductiveData_ctors, `familyBlock_correct, `familyBlock_codec,
+    `familyInfo_correct, `familyInfo_codec].map (`Ix.CompileCert.EmissionBlocks ++ ·)
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -323,6 +339,17 @@ def sharingRuntime : Array Lean.Name :=
     ``Ix.Sharing.Exact.withRoots, ``Ix.Sharing.Exact.withMutConstRoots, ``Ix.Sharing.Exact.takeRoot,
     ``Ix.Sharing.Exact.takeRoots, ``Ix.Sharing.Exact.constantInfoRoots, ``Ix.Sharing.Exact.mutConstRoots]
 
+/-- The block finishers and the preseeded singleton block compilers, which
+the block proofs unfold. -/
+def blockRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.finishConstantInfoWithSharing, ``Ix.CompileM.finishConstantWithSharing,
+    ``Ix.CompileM.buildBlockConstant, ``Ix.CompileM.liftSharing, ``Ix.CompileM.BlockResult.mk',
+    ``Ix.CompileM.compileDefinitionDataBlock, ``Ix.CompileM.compileDefinitionDataInfo,
+    ``Ix.CompileM.compileAxiomBlock, ``Ix.CompileM.compileAxiomInfo, ``Ix.CompileM.compileQuotientBlock,
+    ``Ix.CompileM.compileQuotientInfo, ``Ix.CompileM.compileRecursorBlock, ``Ix.CompileM.compileRecursorInfo,
+    ``Ix.CompileM.compileInductiveFamilyBlock, ``Ix.CompileM.compileInductiveFamilyInfo,
+    ``Ix.CompileM.finishInductiveFamilyBlock, ``Ix.CompileM.buildInductiveProjections]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -343,6 +370,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "emission wire" Ix.CompileCert.ReadingAudit.emissionWireRoots
   checkRoots (tag := "reading-audit") "sharing roots" Ix.CompileCert.ReadingAudit.sharingRootRoots
   checkRoots (tag := "reading-audit") "emitters" Ix.CompileCert.ReadingAudit.emissionRoots
+  checkRoots (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -350,3 +378,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "preseed" Ix.CompileCert.ReadingAudit.preseedRuntime
   checkRuntime (tag := "reading-audit") "emission" Ix.CompileCert.ReadingAudit.emissionRuntime
   checkRuntime (tag := "reading-audit") "sharing" Ix.CompileCert.ReadingAudit.sharingRuntime
+  checkRuntime (tag := "reading-audit") "blocks" Ix.CompileCert.ReadingAudit.blockRuntime

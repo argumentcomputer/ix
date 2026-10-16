@@ -2303,3 +2303,89 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
 /-- info: 'Ix.CompileCert.Emission.recursor_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.Emission.recursor_correct
+
+/-! ## Component theorems: the singleton blocks read back as their sources
+
+The preseeded singleton block compilers (definition-like, axiom, quotient,
+recursor, standalone inductive family), from a clean state and under an
+environment without call-site plans, return on success a block whose
+payload keeps the source's skeleton (`SharingRoots.erase`: every field but
+the expression roots) and whose actual member reader (the block's blobs
+overlaid on the context's) reads the roots as terms `Related` to the
+source's, in order; and, from tables on the wire and a declaration prefix
+of 32-byte addresses, a block that decodes exactly
+(`Ix.Sharing.Verify.BlockResultCodecWF`). Every lemma behind them is
+audited in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.EmissionBlocks.definitionSkeleton : Ix.Def → Ixon.ConstantInfo :=
+fun source =>
+  Ixon.ConstantInfo.defn (Ix.CompileCert.Emission.definitionPayload source (Ixon.Expr.sort 0) (Ixon.Expr.sort 0)) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.EmissionBlocks.definitionSkeleton
+
+/-- info: @Ix.CompileCert.EmissionBlocks.definitionInfo_correct : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (source : Ix.Def),
+          Ix.CompileCert.ExpressionState.ConstsSatisfy (Ix.CompileCert.ExpressionState.SelfName context.snd self names)
+              source.type →
+            Ix.CompileCert.ExpressionState.ConstsSatisfy
+                (Ix.CompileCert.ExpressionState.SelfName context.snd self names) source.value →
+              ∀ {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+                Ix.CompileCert.Emission.Clean bindings before →
+                  Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
+                      (Except.ok output, after) →
+                    Ix.CompileCert.Emission.Clean bindings after ∧
+                      Ix.CompileCert.ExpressionRead.Extends
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self before).ecx
+                          (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx ∧
+                        (∃ blockMeta, output = Ix.CompileM.BlockResult.mk' output.block blockMeta) ∧
+                          Ix.CompileCert.SharingRoots.erase output.block.info =
+                              Ix.CompileCert.SharingRoots.erase
+                                (Ix.CompileCert.EmissionBlocks.definitionSkeleton source) ∧
+                            Ix.CompileCert.SharingRoots.RootsRead
+                              (Ix.CompileCert.EmissionBlocks.recordReader cx param self after output.block)
+                              (Ix.CompileCert.Emission.related param names σ
+                                (Ix.CompileCert.Emission.inner source.name source.levelParams.toList context))
+                              [source.type, source.value] (Ix.CompileM.constantInfoRootExprs output.block.info).toList -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionBlocks.definitionInfo_correct
+
+/-- info: Ix.CompileCert.EmissionBlocks.definitionInfo_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+      Ix.Sharing.Verify.BlockWireTablesWF before →
+        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+          Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
+              (Except.ok output, after) →
+            Ix.Sharing.Verify.BlockResultCodecWF output -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.EmissionBlocks.definitionInfo_codec
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.definitionInfo_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.definitionInfo_correct
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.axiomInfo_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.axiomInfo_correct
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.quotientInfo_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.quotientInfo_correct
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.recursorInfo_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.recursorInfo_correct
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.familyInfo_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.familyInfo_correct
+
+/-- info: 'Ix.CompileCert.EmissionBlocks.familyInfo_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.EmissionBlocks.familyInfo_codec
