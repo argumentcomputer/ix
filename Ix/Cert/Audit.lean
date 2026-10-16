@@ -2549,3 +2549,121 @@ declined. Every lemma behind them is audited in
 /-- info: 'Ix.CompileCert.HeaderReading.quotient_reads' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.HeaderReading.quotient_reads
+
+/-! ## Component theorems: the reader's syntactic walks
+
+The certified reader indexes a recursor before converting it, by walking
+its raw type (`stripAll`, `stripAllFull`, `appHead`, `headRef`). The
+sharing builder keeps that analysis (`ReaderSpines.build_analyse`), and on
+the unshared in-flight record the walks follow the source: a complete
+source telescope gives the reader's telescope with every domain still
+related (`ReaderSourceSpines.source_stripAllFull`), a source constant head
+of a domain's last binder gives the reader's carrier reference, whose key
+the source name is related to (`source_carrier`), and the compiled
+recursor's result-variable walk is the source's
+(`compiled_telescope_variable`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: Ix.CompileCert.ReaderSpines.build_analyse : ∀ (store : Ix.Kernel.Reader.Store) (owner : Address)
+  (limits : Ix.Sharing.Exact.Limits) (source : Ixon.Recursor) (refs : Array Address) (univs : Array Ixon.Univ)
+  (output : Ixon.Constant),
+  Ix.CompileM.buildConstantWithSharing limits (Ixon.ConstantInfo.recr source) refs univs = Except.ok output →
+    Ix.CompileCert.ReaderSpines.AnalysisBounds
+        { info := Ixon.ConstantInfo.recr source, sharing := #[], refs := refs, univs := univs } source →
+      ∃ target,
+        output.info = Ixon.ConstantInfo.recr target ∧
+          Ix.Kernel.Reader.analyseRecursor store owner output target =
+            Ix.Kernel.Reader.analyseRecursor store owner
+              { info := Ixon.ConstantInfo.recr source, sharing := #[], refs := refs, univs := univs } source -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ReaderSpines.build_analyse
+
+/-- info: @Ix.CompileCert.ReaderSourceSpines.source_carrier : ∀ {md : Ix.Kernel.Mode} (reader : Ix.Kernel.Reader.ECx md),
+  reader.src.sharing = #[] →
+    ∀ (owner : Address),
+      Ix.CompileCert.ReaderSourceSpines.SelfAligned reader owner →
+        ∀ {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
+          (source : Ix.Expr) (expression : Ixon.Expr),
+          Ix.CompileCert.ReaderSourceSpines.SourceRead reader names levels source expression →
+            ∀ (count : Nat),
+              count < Ix.Kernel.Reader.spineFuel →
+                ∀ (types : List Ix.Expr) (body : Ix.Expr),
+                  Ix.CompileCert.ReaderSourceSpines.sourceStrip count source = some (types, body) →
+                    Ix.CompileCert.ReaderSourceSpines.SourceNonForall body →
+                      ∀ (domain : Ix.Expr),
+                        types.getLast? = some domain →
+                          Ix.CompileCert.ReaderSourceSpines.sourceAppDepth domain < Ix.Kernel.Reader.spineFuel →
+                            ∀ (name : Ix.Name) (sourceLevels : Array Ix.Level) (hash : Address),
+                              Ix.CompileCert.ReaderSourceSpines.sourceHead domain =
+                                  Ix.Expr.const name sourceLevels hash →
+                                ∃ ref key,
+                                  Ix.CompileCert.ReaderSpines.carrier reader.cx.store owner reader.src expression =
+                                      some ref ∧
+                                    Ix.CompileCert.ReaderSourceSpines.HeadKey reader.cx ref key ∧ names name key -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ReaderSourceSpines.source_carrier
+
+/-- info: @Ix.CompileCert.ReaderSourceSpines.compiled_telescope_variable : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
+  (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
+      Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
+        ∀ (source : Ix.RecursorVal),
+          Ix.CompileCert.ExpressionState.ConstsSatisfy (Ix.CompileCert.ExpressionState.SelfName context.snd self names)
+              source.cnst.type →
+            (∀ (rule : Ix.RecursorRule),
+                rule ∈ source.rules.toList →
+                  Ix.CompileCert.ExpressionState.ConstsSatisfy
+                    (Ix.CompileCert.ExpressionState.SelfName context.snd self names) rule.rhs) →
+              ∀ {before after : Ix.CompileM.BlockState} {output : Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr},
+                Ix.CompileCert.ExpressionState.Good cx param self
+                    (Ix.CompileCert.Emission.related param names σ
+                      (Ix.CompileCert.Emission.inner source.cnst.name source.cnst.levelParams.toList context))
+                    bindings before →
+                  Ix.CompileCert.rawRun (Ix.CompileM.compileRecursor source) context before =
+                      (Except.ok output, after) →
+                    ∀ (types : List Ix.Expr) (body : Ix.Expr),
+                      Ix.CompileCert.ReaderSourceSpines.sourceStrip
+                            (Ix.CompileCert.ReaderSourceSpines.sourceDepth source) source.cnst.type =
+                          some (types, body) →
+                        Ix.CompileCert.ReaderSourceSpines.sourceAppDepth body < Ix.Kernel.Reader.spineFuel →
+                          ∀ (index : Nat) (hash : Address),
+                            Ix.CompileCert.ReaderSourceSpines.sourceHead body = Ix.Expr.bvar index hash →
+                              ∃ rawTypes residual rawIndex,
+                                Ix.Kernel.Reader.stripAll
+                                      (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx.src
+                                      (Ix.CompileCert.ReaderSpines.depth output.fst) output.fst.typ =
+                                    some (rawTypes, residual) ∧
+                                  List.Forall₂
+                                      (Ix.CompileCert.ReaderSourceSpines.SourceRead
+                                        (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx names
+                                        (Ix.CompileCert.UniversePipeline.LevelMeaning source.cnst.levelParams.toList σ
+                                          param))
+                                      types rawTypes ∧
+                                    Ix.Kernel.Reader.appHead
+                                          (Ix.CompileCert.ExpressionRead.blockReader cx param self after).ecx.src
+                                          Ix.Kernel.Reader.spineFuel residual =
+                                        Ixon.Expr.var rawIndex ∧
+                                      rawIndex.toNat = index -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ReaderSourceSpines.compiled_telescope_variable
+
+/-- info: 'Ix.CompileCert.ReaderSpines.build_analyse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderSpines.build_analyse
+
+/-- info: 'Ix.CompileCert.ReaderSourceSpines.source_stripAllFull' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderSourceSpines.source_stripAllFull
+
+/-- info: 'Ix.CompileCert.ReaderSourceSpines.source_carrier' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderSourceSpines.source_carrier
+
+/-- info: 'Ix.CompileCert.ReaderSourceSpines.compiled_telescope_variable' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ReaderSourceSpines.compiled_telescope_variable
