@@ -49,6 +49,8 @@ import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.Oracle
 import Tests.Ix.Compile.ScheduleIdentity
+import Tests.Ix.Compile.SourceIdentity
+import Tests.Ix.Compile.SourceFamily
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -168,6 +170,8 @@ def registry : List Entry := [
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
     ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
+  -- source-body recognition of casesOn/recOn: the comparison controls (Ix.AuxGen.SourceIdentity)
+  .suite "aux-source-identity-unit" .primary Tests.Ix.Compile.SourceIdentity.suite,
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped
@@ -430,6 +434,12 @@ def registry : List Entry := [
   -- Non-canonical stored inductive flags: refused by both compilers
   -- (Tests.Ix.Compile.IndFlags).
   .runner "compile-ind-flags" (.ci .compilePipeline) Tests.Ix.Compile.IndFlags.run,
+  -- Recognition of source auxiliaries against the generators run on the
+  -- source recursors: ordinary casesOn/recOn recognized, custom bodies with
+  -- their names declined; below/brecOn families authenticated as a whole
+  -- (Tests.Ix.Compile.{SourceIdentity,SourceFamily}; fixtures elaborated at run time).
+  .runner "aux-source-identity" (.ci .compilePipeline) Tests.Ix.Compile.SourceIdentity.run,
+  .runner "aux-source-family" (.ci .compilePipeline) Tests.Ix.Compile.SourceFamily.run,
   -- Single ownership of compiled names: conflicting claims refused by both
   -- compilers (Tests.Ix.Compile.ClaimConflict).
   .runner "compile-claim-conflict" (.ci .compilePipeline) Tests.Ix.Compile.ClaimConflict.run,

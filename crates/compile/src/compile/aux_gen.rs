@@ -86,6 +86,8 @@ mod kernel_bridge_reference;
 pub mod nested;
 pub mod rec_on;
 pub mod recursor;
+pub mod source_family;
+pub mod source_identity;
 
 use std::sync::Arc;
 
