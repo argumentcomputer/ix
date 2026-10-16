@@ -71,9 +71,6 @@ inductive NonCanonicalCause where
   | pendingCollapse
   /-- Pending CQ5.3 (O11a): Lean's mutual `_sizeOf_N` over a split block. -/
   | o11aPending
-  /-- Pending CQ3.2: the `let` nonDep bit is not an ordering key, so members
-      that differ only in it compare equal (`Fixtures.LetNonDep`). -/
-  | pendingNonDep
   /-- Pending CQ3.3 (levels after `canonUniv`): nested occurrences whose levels
       differ in spelling only (`Fixtures.NestedLevels`). -/
   | pendingLevels
@@ -92,7 +89,7 @@ def NonCanonicalCause.tag : NonCanonicalCause → String
   | .pendingTransport => "PENDING-TRANSPORT" | .pendingSplitAux => "PENDING-SPLIT-AUX"
   | .pendingNoConfusion => "PENDING-NOCONFUSION" | .pendingSurgery => "PENDING-SURGERY"
   | .pendingCollapse => "PENDING-COLLAPSE" | .o11aPending => "O11A-PENDING"
-  | .pendingNonDep => "PENDING-NONDEP" | .pendingLevels => "PENDING-LEVELS"
+  | .pendingLevels => "PENDING-LEVELS"
   | .unreviewed s => s!"UNREVIEWED({s})"
 
 /-- The cause as Lean syntax, for the re-recorded data file. -/
@@ -104,7 +101,7 @@ def NonCanonicalCause.syntax : NonCanonicalCause → String
   | .pendingTransport => ".pendingTransport" | .pendingSplitAux => ".pendingSplitAux"
   | .pendingNoConfusion => ".pendingNoConfusion" | .pendingSurgery => ".pendingSurgery"
   | .pendingCollapse => ".pendingCollapse" | .o11aPending => ".o11aPending"
-  | .pendingNonDep => ".pendingNonDep" | .pendingLevels => ".pendingLevels"
+  | .pendingLevels => ".pendingLevels"
   | .unreviewed s => s!"(.unreviewed {s.quote})"
 
 /-- How a difference shows in the two presentations' Lean terms under the

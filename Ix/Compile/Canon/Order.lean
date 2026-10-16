@@ -11,11 +11,12 @@
     constructors pairwise (level count, index, parameters, fields, type);
     recursors by level count, parameters, indices, motives, minors, `k`,
     type, rules (field count, right-hand side);
-  * expressions: binder names and binder info ignored; a `let`'s `nonDep`
-    flag ignored (as in both compilers and the kernels' block-order check
-    today; ordering by it is a byte-moving change of its own); `mdata`
-    stripped except semantic-contract metadata, which compares by
-    `orderKey` (and a contract frame sorts after any non-contract term);
+  * expressions: binder names and binder info ignored; `letE` compares
+    type, value, body, then `nonDep` (false before true), as the Rust
+    compiler, the Rust kernel, `Ix.Tc` and the certified block-order check
+    (`Ixon.BlockOrder.compareExpr_letE`) do; `mdata` stripped except
+    semantic-contract metadata, which compares by `orderKey` (and a
+    contract frame sorts after any non-contract term);
     level parameters by position; constants by their level arguments
     first, then: the same name is equal, two in-block names compare by
     class index *weakly*, in-block sorts before external, two external
@@ -334,9 +335,10 @@ def compareExpr (c : CmpCtx) (xl yl : List Name) (x y : Expr) :
     SOrder.cmpM (compareExpr c xl yl xt yt) (compareExpr c xl yl xb yb)
   | .forallE .., _ => pure ⟨true, .lt⟩
   | _, .forallE .. => pure ⟨true, .gt⟩
-  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ =>
+  | .letE _ xt xv xb xnd _, .letE _ yt yv yb ynd _ =>
     SOrder.cmpM (compareExpr c xl yl xt yt) <|
-      SOrder.cmpM (compareExpr c xl yl xv yv) (compareExpr c xl yl xb yb)
+      SOrder.cmpM (compareExpr c xl yl xv yv) <|
+        SOrder.cmpM (compareExpr c xl yl xb yb) (pure ⟨true, compare xnd ynd⟩)
   | .letE .., _ => pure ⟨true, .lt⟩
   | _, .letE .. => pure ⟨true, .gt⟩
   | .lit a _, .lit b _ => pure ⟨true, compare a b⟩

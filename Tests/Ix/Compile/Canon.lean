@@ -38,7 +38,14 @@
      ordering back for the swapped pair inside a sort; and two synthetic
      pairs show what each fix does (a definition against an inductive: `lt`
      both ways unfixed, by kind tag fixed; a cached strong `lt` read back
-     for the swapped pair: unflipped unfixed, flipped fixed).
+     for the swapped pair: unflipped unfixed, flipped fixed);
+  10. a `let`'s nondependency bit is a key: on synthetic definitions, the
+      bit decides only when the `let`'s type, value and body are equal
+      (`let` before `have`), the body decides before it, and the
+      same bit under another binder name compares equal, under
+      `Rules.compiler` and `Rules.phaseA`. (The checked `LetNonDep`
+      fixture's blocks are the `twins` suite's: two classes, the same bytes
+      in both presentations, Lean = Rust.)
 
   The comparator-study helpers (`compareFresh`, `preorderViolations`, the
   seed sweep) live here, not in the library.
@@ -208,8 +215,42 @@ def portFixUnitChecks (t : Tally) : Tally :=
   | .ok (.lt, .lt), .ok (.lt, .gt), .ok .gt => t.check true ""
   | a, b, c => t.check false s!"C2: today {showE a}, fixed {showE b}, uncached {showE c}"
 
+/-- A `let`'s nondependency bit is a key. `letDefn n binder body nd` is a
+definition of type `Type` whose value is `let binder : Type := Prop; #body`
+with the bit `nd` (a `have` when true). The bit decides only when the
+`let`'s type, value and body are equal (`let` before `have`); the
+body decides before it; the same bit under another binder name compares
+equal. -/
+def nonDepUnitChecks (t : Tally) : Tally := Id.run do
+  let nm := fun (s : String) => Ix.Name.mkStr Ix.Name.mkAnon s
+  let ty := Ix.Expr.mkSort (Ix.Level.mkSucc Ix.Level.mkZero)
+  let letDefn := fun (n binder : String) (body : Nat) (nd : Bool) =>
+    Ix.MutConst.defn ⟨nm n, #[], ty, .defn,
+      Ix.Expr.mkLetE (nm binder) ty (Ix.Expr.mkSort Ix.Level.mkZero) (Ix.Expr.mkBVar body) nd,
+      .opaque, .safe, #[]⟩
+  let none? : Ix.Name → Option Address := fun _ => none
+  let hasOrd (e : Except CmpError Ordering) (o : Ordering) : Bool :=
+    match e with
+    | .ok r => r == o
+    | .error _ => false
+  let letForm := letDefn "canonNonDepLet" "x" 0 false
+  let haveForm := letDefn "canonNonDepHave" "x" 0 true
+  let early := letDefn "canonNonDepEarly" "x" 0 true
+  let late := letDefn "canonNonDepLate" "x" 1 false
+  let neighbour := letDefn "canonNonDepNeighbour" "y" 0 false
+  let mut t := t
+  for r in [Rules.compiler, Rules.phaseA] do
+    let cmp := fun (a b : Ix.MutConst) => compareFresh r none? {} a b
+    t := t.check (hasOrd (cmp letForm haveForm) .lt && hasOrd (cmp haveForm letForm) .gt)
+      s!"nonDep ({ruleName r}): let/have {showE (cmp letForm haveForm)}, have/let {showE (cmp haveForm letForm)}"
+    t := t.check (hasOrd (cmp early late) .lt && hasOrd (cmp late early) .gt)
+      s!"nonDep ({ruleName r}): the body must decide before the bit: {showE (cmp early late)}"
+    t := t.check (hasOrd (cmp letForm neighbour) .eq)
+      s!"nonDep ({ruleName r}): the same bit under another binder name: {showE (cmp letForm neighbour)}"
+  return t
+
 def run (env : Lean.Environment) : IO UInt32 := do
-  let mut t : Tally := portFixUnitChecks (tarjanChecks {})
+  let mut t : Tally := nonDepUnitChecks (portFixUnitChecks (tarjanChecks {}))
   let filtered := validateAuxClosure env
   IO.println s!"[canon-pass1] {filtered.length} constants"
   let raw ← Ix.CompileM.rsCompilePhasesFFI filtered

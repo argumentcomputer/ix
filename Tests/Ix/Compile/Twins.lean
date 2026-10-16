@@ -474,8 +474,6 @@ def suggest (f : Family) (d : DiffRec) : NonCanonicalCause × String := Id.run d
   let isSizeOf := s.startsWith "_sizeOf_" || s == "sizeOf_spec"
   let oneSided := d.cls == .onlyA || d.cls == .onlyB
   if let .inherited _ := d.cls then return (.inherited, "user constant")
-  if Name.isPrefixOf `Tests.Ix.Compile.Fixtures.LetNonDep f.fixture then
-    return (.pendingNonDep, "block member or auxiliary")
   if Name.isPrefixOf `Tests.Ix.Compile.Fixtures.NestedLevels f.fixture then
     return (.pendingLevels, "block member or auxiliary")
   match f.kind with

@@ -3819,13 +3819,18 @@ pub fn compare_expr(
     ),
     (ExprData::ForallE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::ForallE(..)) => Ok(SOrd::gt(true)),
+    // A `let`'s nondependency bit is a key, compared after its type, value
+    // and body (`false < true`), as in every canonical-order comparator.
     (
-      ExprData::LetE(_, xt, xv, xb, _, _),
-      ExprData::LetE(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip(
-      |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
-      &[xt, xv, xb],
-      &[yt, yv, yb],
+      ExprData::LetE(_, xt, xv, xb, xnd, _),
+      ExprData::LetE(_, yt, yv, yb, ynd, _),
+    ) => SOrd::try_compare(
+      SOrd::try_zip(
+        |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
+        &[xt, xv, xb],
+        &[yt, yv, yb],
+      )?,
+      || Ok(SOrd::cmp(xnd, ynd)),
     ),
     (ExprData::LetE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::LetE(..)) => Ok(SOrd::gt(true)),

@@ -105,3 +105,81 @@ fn sort_consts_orders_by_content_whatever_the_names() {
     assert_eq!(reps, vec![name(small), name(large)]);
   }
 }
+
+/// A definition of type `Type` whose value is `let x : Type := Prop; #body`
+/// with the binder name `binder` and the nondependency bit `non_dep` (`let`
+/// when false, `have` when true).
+fn let_defn(s: &str, binder: &str, body: u64, non_dep: bool) -> MutConst {
+  let ty = LeanExpr::sort(Level::succ(Level::zero()));
+  let value = LeanExpr::letE(
+    name(binder),
+    ty.clone(),
+    LeanExpr::sort(Level::zero()),
+    LeanExpr::bvar(Nat::from(body)),
+    non_dep,
+  );
+  MutConst::Defn(Def {
+    name: name(s),
+    level_params: vec![],
+    typ: ty,
+    kind: DefKind::Definition,
+    value,
+    hints: ReducibilityHints::Opaque,
+    safety: DefinitionSafety::Safe,
+    all: vec![],
+  })
+}
+
+#[test]
+fn let_non_dep_is_a_key_after_the_let_children() {
+  // equal type, value and body: the bit decides, `let` before `have`
+  check_pair(
+    &let_defn("CmpLetA", "x", 0, false),
+    &let_defn("CmpLetB", "x", 0, true),
+  );
+  check_pair(
+    &let_defn("CmpLetB2", "x", 0, false),
+    &let_defn("CmpLetA2", "x", 0, true),
+  );
+  // the body decides before the bit, whichever way the bits go
+  check_pair(
+    &let_defn("CmpLetBodyA", "x", 0, true),
+    &let_defn("CmpLetBodyB", "x", 1, false),
+  );
+  // the same bit under another binder name: equal
+  let x = let_defn("CmpLetSameX", "x", 0, false);
+  let y = let_defn("CmpLetSameY", "y", 0, false);
+  let mut cache = BlockCache::default();
+  assert_eq!(cmp(&x, &y, &mut cache), Ordering::Equal);
+  assert_eq!(cmp(&y, &x, &mut cache), Ordering::Equal);
+}
+
+#[test]
+fn members_that_differ_only_in_a_let_bit_are_two_classes() {
+  let have_form = let_defn("CmpLetClassHave", "x", 0, true);
+  let let_form = let_defn("CmpLetClassLet", "x", 0, false);
+  for members in [[&have_form, &let_form], [&let_form, &have_form]] {
+    let classes = sort_consts(
+      &members,
+      &mut BlockCache::default(),
+      &CompileState::default(),
+    )
+    .unwrap();
+    let shape: Vec<Vec<Name>> =
+      classes.iter().map(|c| c.iter().map(|m| m.name()).collect()).collect();
+    assert_eq!(
+      shape,
+      vec![vec![name("CmpLetClassLet")], vec![name("CmpLetClassHave")]]
+    );
+  }
+  // the same bit under another binder name: one class
+  let neighbour = let_defn("CmpLetClassNeighbour", "y", 0, false);
+  let classes = sort_consts(
+    &[&let_form, &neighbour],
+    &mut BlockCache::default(),
+    &CompileState::default(),
+  )
+  .unwrap();
+  assert_eq!(classes.len(), 1);
+  assert_eq!(classes[0].len(), 2);
+}

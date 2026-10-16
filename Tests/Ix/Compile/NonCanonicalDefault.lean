@@ -1017,19 +1017,7 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.diseq.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `DiseqCnstr._sizeOf_inst])
     "950bd0ebc5c2b761d97af1eb27b38bbff010c3c62f16f2d7f3203f802f547988" "aee51dde98107e66eb8eca83a704fe4830285fb0bbdbcafc8f0ef00947e03db2" "",
   e `Tests.Ix.Compile.Oracle.Lib.Linear "twin" "orig" `UnsatProof.lt.sizeOf_spec "user constant" .inherited (.inherited [`UnsatProof._sizeOf_inst, `IneqCnstr._sizeOf_inst])
-    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2" "e938f7d52cb54aa49030ec12d2a71f7c0bf08d3c69e0ffd646a37073bc057568" "",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Left "block member" .inherited (.inherited [`Left.mk])
-    "60563ca466d7212940c3df4c094171548d771e16bf692d7351df97c22c42cdf5" "76bb95d0262456888cf868028d6403af9929f865afe79e8505442478fb4e9fad" "",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Left.mk "constructor" .inherited (.inherited [`Left, `Right, `Left.mk])
-    "62efb534d406dcd3d1d54c63067a59f47e9651552030bffbdf029a3b79b0f18e" "0a60eccdd0aa8cce11a2950b69a02c6bdf0e76b6f2a8865a6b6c82825136089f" "",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Left.rec "block recursor" .pendingNonDep (.root true true false)
-    "d7db7088285f06ad611b9b3d41204235e4a0746c656632a44fbfb6d9709655a6" "8eedb17b9cc4369c152094e3c88c6044f5f06714e45270c26502578eef1f41a2" "type.∀.dom.∀.dom" "`Left` and `Right` are two classes whose bytes differ only in the `let` nonDep flag, which no comparator orders by, so each presentation keeps its source order (CQ3.2 makes the flag an ordering key)",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Right "block member" .inherited (.inherited [`Right.mk])
-    "60563ca466d7212940c3df4c094171548d771e16bf692d7351df97c22c42cdf5" "76bb95d0262456888cf868028d6403af9929f865afe79e8505442478fb4e9fad" "",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Right.mk "constructor" .inherited (.inherited [`Right.mk, `Left, `Right])
-    "62efb534d406dcd3d1d54c63067a59f47e9651552030bffbdf029a3b79b0f18e" "0a60eccdd0aa8cce11a2950b69a02c6bdf0e76b6f2a8865a6b6c82825136089f" "",
-  e `Tests.Ix.Compile.Fixtures.LetNonDep.Split "A" "B" `Right.rec "block recursor" .pendingNonDep (.root true true false)
-    "d7db7088285f06ad611b9b3d41204235e4a0746c656632a44fbfb6d9709655a6" "8eedb17b9cc4369c152094e3c88c6044f5f06714e45270c26502578eef1f41a2" "type.∀.dom.∀.dom" "`Left` and `Right` are two classes whose bytes differ only in the `let` nonDep flag, which no comparator orders by, so each presentation keeps its source order (CQ3.2 makes the flag an ordering key)"
+    "7db1620eb349e5e89775e44bb0d7bb373a4bcf8a39373cd6a5bf33ce5e643fa2" "e938f7d52cb54aa49030ec12d2a71f7c0bf08d3c69e0ffd646a37073bc057568" ""
 ]
 
 end Tests.Ix.Compile.NonCanonicalDefault
