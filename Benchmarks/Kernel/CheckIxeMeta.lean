@@ -130,13 +130,14 @@ where
     | ci => cvPrint ci.toConstantVal
 
 /-- A tier declaration's declared keys. -/
-def tierKeys : Ix.Kernel.Tier.TierDecl md → List (CName md)
-  | .defs _ ms => ms.map (·.1.name)
+def tierKeys (d : Ix.Kernel.Tier.TierDecl md) : List (CName md) := d.names
 
 /-- A tier declaration's fingerprint up to its keys' mode (as `fingerprint`). -/
 def tierPrint : Ix.Kernel.Tier.TierDecl md → List UInt64
   | .defs s ms => [if s == .part then 7 else 8] ++
     ms.flatMap fun (cv, v) => fingerprint.cvPrint cv ++ [hash v]
+  | .unsafeOpaque cv v => [9] ++ fingerprint.cvPrint cv ++ [hash v]
+  | .unsafeAxiom cv => [10] ++ fingerprint.cvPrint cv
 
 /-- Name coverage (per mille) under which the erasure run fails. -/
 def minCoverage : Nat := 990
@@ -224,6 +225,9 @@ def tierAcross : Ix.Kernel.Tier.TierDecl .anon → Ix.Kernel.Tier.TierDecl .meta
     let mut ok := true
     for ((a, v), (m, w)) in ms.zip ws do ok := ok && (← valAcross a m) && (← exprAcross v w)
     pure ok
+  | .unsafeOpaque a v, .unsafeOpaque m w => do pure ((← valAcross a m) && (← exprAcross v w))
+  | .unsafeAxiom a, .unsafeAxiom m => valAcross a m
+  | _, _ => pure false
 
 /-- A `.meta` tier declaration's binders named from the metadata (as
 `Ix.KernelDisplay.nameRead` names a reading). -/
@@ -234,6 +238,12 @@ def nameTier (c : Ix.KernelDisplay.NameCx) (d : Ix.Kernel.Tier.TierDecl .meta)
   | .defs s ms =>
     let (ms, st) := (ms.mapM fun (cv, v) => Ix.KernelDisplay.nameValue c cv v).run { names }
     (.defs s ms, st.coverage, st.names)
+  | .unsafeOpaque cv v =>
+    let ((cv, v), st) := (Ix.KernelDisplay.nameValue c cv v).run { names }
+    (.unsafeOpaque cv v, st.coverage, st.names)
+  | .unsafeAxiom cv =>
+    let (cv, st) := (Ix.KernelDisplay.nameVal c cv).run { names }
+    (.unsafeAxiom cv, st.coverage, st.names)
 
 /-- Two failures are the same: the verdict and the message, keys included. -/
 def sameError (a b : Ix.Kernel.CheckError .meta) : Bool :=
@@ -317,7 +327,7 @@ unsafe def run (args : List String) : IO UInt32 := do
         let (dM, cov, cache) := nameTier nameCx dM nameCache
         nameCache := cache
         coverage := coverage + cov
-        for (cv, _) in (match dM with | .defs _ ms => ms) do types := types.insert cv.name cv.type
+        for cv in dM.headers do types := types.insert cv.name cv.type
         unless tierKeys dA |>.map toMeta |> (· == tierKeys dM) do
           diffs.modify (·.push s!"{address}: tier readings differ in their keys")
         unless tierPrint dA == tierPrint dM && (tierAcross dA dM).run' {} do
@@ -403,11 +413,14 @@ unsafe def run (args : List String) : IO UInt32 := do
       diffs.modify (·.push s!"{address}: .meta reads, .anon does not: {eA}")
       let (outcome, reason) := readOutcome eA
       note address v outcome reason address
-  -- the typing tier at both modes, at each mode's checked index, in order
-  let feA ← IO.mkRef ca.fe
-  let feM ← IO.mkRef cm.fe
+  -- the typing tier at both modes, from each mode's checked index (also its
+  -- logical view), staged as the tier fold stages it
+  let logicalA := ca.fe
+  let logicalM := cm.fe
+  let feA ← IO.mkRef logicalA
+  let feM ← IO.mkRef logicalM
   let mut typed := 0
-  for (address, v, dA, dM, deps) in deferred do
+  for (address, v, dA, dM, deps) in stageDeferred (·.2.2.1) deferred do
     let f ← failed.get
     match deps.find? f.contains with
     | some blocker =>
@@ -416,8 +429,8 @@ unsafe def run (args : List String) : IO UInt32 := do
     | none =>
       let a₀ ← feA.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
       let m₀ ← feM.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
-      let (a₁, eA) := stepTier a₀ dA
-      let (m₁, eM) := stepTier m₀ dM
+      let (a₁, eA) := stepTier logicalA a₀ dA
+      let (m₁, eM) := stepTier logicalM m₀ dM
       feA.set a₁
       feM.set m₁
       let same := match eA, eM with

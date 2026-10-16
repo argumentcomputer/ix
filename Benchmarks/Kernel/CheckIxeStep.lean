@@ -329,14 +329,16 @@ def Setup.view (s : Setup) (address : Address) : Option RecordView := do
 /-! ## The typing tier
 
 The drivers' half of `Ix.Kernel.Admission.checkBytesTiered`: a tier record
-(`Admission.isTierInfo`, a partial definition or block) is read by the tier
-reader (`Admission.readTierRecord`) at its turn and deferred; after the
-logical loop, the deferred records are checked in order by the tier fold's
-step (`Tier.checkDeclC`) at the final step state's index, each at the index
-the ones before it extended, a failure rolled back. A tier record that depends
+(`Admission.isTierInfo`: a partial or unsafe definition or block, an unsafe
+opaque or axiom) is read by the tier reader (`Admission.readTierRecord`) at
+its turn and deferred; after the logical loop, the deferred records are
+checked by the tier fold's step (`Tier.checkDeclC`), staged as the tier fold
+stages them (`Tier.staged`: partial blocks, then unsafe opaques at the
+logical view, then the rest), from the final step state's index, each at the
+index the ones before it extended, a failure rolled back. A tier record that depends
 on a failed record is blocked; a logical record that names a deferred tier
 record is declined (`fence: …`). A typed row's outcome is `typed`, its reason
-the safety (`partial`); a tier failure declines, `tier (partial): …`. -/
+the safety (`partial`, `unsafe`); a tier failure declines, `tier (<safety>): …`. -/
 
 /-- What a check loop needs to run the typing tier: a record's tier
 declaration, read at its turn (`none`: not a tier record), and the index of
@@ -355,18 +357,25 @@ def readTierAt (cx : Ctx md) (address : Address) (source : Ixon.Constant) :
       | .error e => .error e
   else none
 
-/-- One tier declaration at `fe`; a failure leaves the index as it was (rebuilt
-from its environment, as `Checker.step` rolls back). -/
-def stepTier (fe : Ix.Kernel.FEnv md) (d : Ix.Kernel.Tier.TierDecl md) :
+/-- One tier declaration at `fe`, with `fe₀` the logical view (the index before
+any tier constant); a failure leaves the index as it was (rebuilt from its
+environment, as `Checker.step` rolls back). -/
+def stepTier (fe₀ fe : Ix.Kernel.FEnv md) (d : Ix.Kernel.Tier.TierDecl md) :
     Ix.Kernel.FEnv md × Option (Ix.Kernel.CheckError md) :=
   let before := fe.env
-  match Ix.Kernel.Tier.checkDeclC fe d with
+  match Ix.Kernel.Tier.checkDeclC fe₀ fe d with
   | .ok (fe', _) => (fe', none)
   | .error e => (Ix.Kernel.mkFEnv before, some e)
 
 /-- A tier declaration's safety. -/
-def tierSafety : Ix.Kernel.Tier.TierDecl md → Ix.Kernel.Tier.Safety
-  | .defs s _ => s
+def tierSafety (d : Ix.Kernel.Tier.TierDecl md) : Ix.Kernel.Tier.Safety := d.safety
+
+/-- Deferred tier records in the tier fold's staged order (`Tier.staged`):
+partial blocks, then unsafe opaques, then unsafe blocks and axioms, each in
+the order they came. -/
+def stageDeferred {α : Type} (decl : α → Ix.Kernel.Tier.TierDecl md) (xs : Array α) : Array α :=
+  xs.filter (fun x => (decl x).stage == 0) ++ xs.filter (fun x => (decl x).stage == 1) ++
+    xs.filter (fun x => (decl x).stage == 2)
 
 /-- A tier failure's outcome and reason: always a decline (IxC cannot tell an
 ill-typed tier declaration from one that types only by unfolding a tier
@@ -481,7 +490,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
       | none =>
         -- the fence: a logical record that names a tier record
         if let some t := deps.find? deferredSet.contains then
-          let reason := s!"fence: names the partial record {t}"
+          let reason := s!"fence: names the tier record {t}"
           for row in rowsFor "decline" reason 0 readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
                               counts := out.counts.insert "decline" (out.counts.getD "decline" 0 + 1) }
@@ -516,10 +525,12 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
             emit row
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
   let checker ← stepper.get
-  -- the typing tier, at the final step state's index
+  -- the typing tier, staged, from the final step state's index (also the
+  -- logical view of the unsafe opaques)
   if let some th := tier then
-    let fe ← IO.mkRef (th.index checker)
-    for (address, v, d, deps, readMicros) in deferred do
+    let logical := th.index checker
+    let fe ← IO.mkRef logical
+    for (address, v, d, deps, readMicros) in stageDeferred (·.2.2.1) deferred do
       let row (outcome reason : String) (micros : Nat) : Row :=
         ⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩
       match deps.find? out.failed.contains with
@@ -531,7 +542,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
       | none =>
         let t0 ← IO.monoNanosNow
         let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
-        let (fe₁, err) ← IO.lazyPure fun _ => stepTier fe₀ d
+        let (fe₁, err) ← IO.lazyPure fun _ => stepTier logical fe₀ d
         fe.set fe₁
         let micros := ((← IO.monoNanosNow) - t0) / 1000
         match err with

@@ -30,12 +30,12 @@ extended by the tier's constants as `axiomInfo`
   declaration that types only by such an unfolding declines.
 
 This module is the data; the fold is `Ix.Kernel.Tier.checkTierC`
-(`IxC/Kernel/Tier/Check.lean`). The **partial stage** is built: blocks of
-`partial` definitions (Lean's `_unsafe_rec` companions, always a
-`mutualDefnDecl` with `safety := .partial`). The **unsafe stage** (unsafe
-definitions, opaques in Lean's safe mode, axioms; staged after the partial
-blocks, as Lean's lattice requires) is not: the fold declines an unsafe
-block. See `docs/kernel.md`, "The typing tier".
+(`IxC/Kernel/Tier/Check.lean`). Both stages are built: blocks of `partial`
+definitions (Lean's `_unsafe_rec` companions, always a `mutualDefnDecl`
+with `safety := .partial`), and, staged after them as Lean's lattice
+requires, unsafe opaques (checked in Lean's safe mode), unsafe definition
+blocks and unsafe axioms. Unsafe inductives stay declined: the front ends
+never route them here. See `docs/kernel.md`, "The typing tier".
 -/
 
 namespace Ix.Kernel.Tier
@@ -60,18 +60,38 @@ structure TierConst (md : Mode) where
   safety : Safety
   deriving Inhabited
 
-/-- **What a front end hands the tier.** A definition block: its safety and
-its members, each with its value. A singleton is a block of one, since
-Lean's partial definitions are always a `mutualDefnDecl` and Lean adds a
-block's members before it checks their bodies (`add_mutual`,
-`environment.cpp:254-267`). -/
+/-- **What a front end hands the tier.** -/
 inductive TierDecl (md : Mode) where
+  /-- A definition block: its safety and its members, each with its value. A
+  singleton is a block of one: Lean's partial definitions are always a
+  `mutualDefnDecl`, and Lean adds a block's members, or an unsafe singleton,
+  before it checks their bodies (`add_mutual`, `environment.cpp:254-267`;
+  `add_definition`, `:163-178`). -/
   | defs (safety : Safety) (members : List (ConstantVal md × Expr md))
+  /-- An unsafe opaque, with its value: Lean checks it in safe mode
+  (`add_opaque`, `environment.cpp:211-223`), so it may name no tier
+  constant. -/
+  | unsafeOpaque (cv : ConstantVal md) (value : Expr md)
+  /-- An unsafe axiom: its header only, checked in unsafe mode (`add_axiom`,
+  `environment.cpp:152-158`). -/
+  | unsafeAxiom (cv : ConstantVal md)
   deriving Inhabited
 
 /-- The constants a tier declaration declares. -/
 def TierDecl.names : TierDecl md → List (Key md)
   | .defs _ ms => ms.map (·.1.name)
+  | .unsafeOpaque cv _ | .unsafeAxiom cv => [cv.name]
+
+/-- The headers a tier declaration declares, in order. -/
+def TierDecl.headers : TierDecl md → List (ConstantVal md)
+  | .defs _ ms => ms.map (·.1)
+  | .unsafeOpaque cv _ | .unsafeAxiom cv => [cv]
+
+/-- A tier declaration's safety: a block's own, `unsafe` for an opaque or an
+axiom. -/
+def TierDecl.safety : TierDecl md → Safety
+  | .defs s _ => s
+  | .unsafeOpaque .. | .unsafeAxiom _ => .unsaf
 
 /-- The tier constants as the environment stores them: `axiomInfo` of each
 header, newest first. -/

@@ -13,6 +13,10 @@ import IxC.Kernel.Verify.Inductives.StructWF
 import IxC.Kernel.Verify.Abstract
 import IxC.Kernel.Verify.Shift
 import IxC.Kernel.Verify.Cached.MainC
+import IxC.Kernel.Verify.Cached.KnotC
+import IxC.Kernel.Verify.Cached.BridgeC
+import IxC.Kernel.Verify.Cached.BridgeCS4
+import IxC.Kernel.Verify.Cached.SimC
 
 public section
 
@@ -25,18 +29,21 @@ well-formed logical environment `env`, then
 * the index it returns is the index of `env.extendOpaque ts`, which is
   well-formed;
 * no tier constant is a constant of `env` (`env.find?` misses it);
-* every tier constant `c` is **typed**: it comes from a member `(cv, v)` of a
-  partial block of `ds`, its header is the install of `cv` at the
-  environment of the tier constants before its block
-  (`installConstantVal`: the guards, the annotation, resolution), and in the
-  environment with its block and the constants before it (its *scope*,
-  every tier constant opaque, as `axiomInfo`) its type is a sort and its
-  value annotates to a term whose type is convertible to its type, by
-  derivations of the rules tier (`Rules.Infer`, `Rules.Red`,
-  `Rules.DefEq`, through the bridge from the executable core).
+* every tier constant `c` is **typed in its scope** (`TypedIn`): it comes
+  from a declaration `d` of `ds`, its header is the install of `d`'s header
+  (`installConstantVal`: the guards, the annotation, resolution), and in its
+  scope (`ScopeOf`: the logical environment extended by the tier constants
+  its check saw, every one opaque, as `axiomInfo`) its value annotates to a
+  term whose type is convertible to its type and its type is a sort, or, for
+  an axiom, its type is a sort, by derivations of the rules tier
+  (`Rules.Infer`, `Rules.Red`, `Rules.DefEq`, through the bridge from the
+  executable core).
 
-The scope is Lean's lattice: a partial constant sees the logical
-environment, the partial constants before its block and its own block.
+The scope is Lean's lattice, by staging: a partial member's is its block and
+the tier constants before it, **all partial** (partial code sees no unsafe
+constant); an unsafe opaque's is empty, the logical environment (Lean checks
+an opaque in safe mode); an unsafe member's is its block and every tier
+constant before it; an unsafe axiom's, every tier constant before it.
 Nothing here is about meaning: no model is claimed for a tier constant.
 
 **The fence** is `checkDecls_closed` with the freshness above: the logical
@@ -45,9 +52,9 @@ and no tier constant resolves in it. So no accepted logical declaration
 names a tier constant.
 
 The proofs are composition: the run lemmas of the cached fold
-(`annotConstantValC_run`, `annotValC_run`, `checkPending_run`,
-`IxC/Kernel/Verify/Cached/InstalledC.lean`), `EnvWF.cons` per install, and
-the bridge.
+(`annotConstantValC_run`, `annotValC_run`, `checkPending_run`, and the
+simulations of `infer` and `ensureSort`, `IxC/Kernel/Verify/Cached/`),
+`EnvWF.cons` per install, and the bridge.
 -/
 
 namespace Ix.Kernel.Tier
@@ -65,17 +72,51 @@ universe w
   ∃ F jv vt, installValue (fueledOps .verified F) E c v = .ok jv ∧
     Rules.Infer E .full 0 jv vt ∧ Rules.DefEq E 0 vt c.type
 
+/-- **A header whose type is a sort** in `E` (an axiom's typing). -/
+@[expose] def SortTyped (E : Env md) (c : ConstantVal md) : Prop :=
+  ∃ s u, Rules.Infer E .full 0 c.type s ∧ Rules.Red E 0 s (.sort u)
+
+/-- **A tier constant's scope** (Lean's lattice by staging), given the tier
+constants `pre` checked before its declaration and the declaration's own
+constants `blk`: the tier constants its check sees beside the logical
+environment. A block member's is its block and every tier constant before it
+(a partial block's are all partial, `TypedIn`); an unsafe opaque's is none
+(Lean checks it in safe mode); an unsafe axiom's, the tier constants before
+it. -/
+@[expose] def ScopeOf (pre blk : List (TierConst md)) : TierDecl md → List (TierConst md)
+  | .defs .. => blk ++ pre
+  | .unsafeOpaque .. => []
+  | .unsafeAxiom _ => pre
+
+/-- **What the tier establishes of a constant `c`** of the declaration `d`,
+whose constants are `blk`, checked after the tier constants `pre`: its
+safety is `d`'s; a block member is the install of a member's header at the
+extension by `pre`, and typed in its scope; an unsafe opaque, the only
+constant of its declaration, is the install of its header at the logical
+environment and typed in its scope (the logical environment); an unsafe
+axiom, likewise alone, is the install of its header at the extension by
+`pre`, its type a sort in its scope. -/
+@[expose] def DeclTyped (env : Env md) (pre blk : List (TierConst md)) (c : TierConst md) :
+    TierDecl md → Prop
+  | .defs s ms => c.safety = s ∧ ∃ m ∈ ms,
+      (∃ F, installConstantVal (fueledOps .verified F) (env.extendOpaque pre) m.1 = .ok c.cv) ∧
+      Typed (env.extendOpaque (ScopeOf pre blk (.defs s ms))) c.cv m.2
+  | .unsafeOpaque cv v => c.safety = .unsaf ∧ blk = [c] ∧
+      (∃ F, installConstantVal (fueledOps .verified F) env cv = .ok c.cv) ∧
+      Typed (env.extendOpaque (ScopeOf pre blk (.unsafeOpaque cv v))) c.cv v
+  | .unsafeAxiom cv => c.safety = .unsaf ∧ blk = [c] ∧
+      (∃ F, installConstantVal (fueledOps .verified F) (env.extendOpaque pre) cv = .ok c.cv) ∧
+      SortTyped (env.extendOpaque (ScopeOf pre blk (.unsafeAxiom cv))) c.cv
+
 /-- **`c` is a typed tier constant of `ts`, from `ds`**: `ts` is the
-constants after `c`'s block, its block, and the ones before it (`pre`);
-`c` is the install of a member `(cv, v)` of a partial block of `ds` at
-`env.extendOpaque pre`, and typed in `env.extendOpaque (blk ++ pre)`. -/
+constants after `c`'s declaration, the declaration's own (`blk`), and the
+ones before it (`pre`); `c` is typed in its scope as a constant of a
+declaration `d` of `ds` (`DeclTyped`); and a partial member's scope is
+partial: partial code sees no unsafe constant. -/
 @[expose] def TypedIn (env : Env md) (ds : List (TierDecl md)) (ts : List (TierConst md))
     (c : TierConst md) : Prop :=
-  c.safety = .part ∧
-  ∃ later blk pre, ts = later ++ blk ++ pre ∧ c ∈ blk ∧
-    ∃ ms, TierDecl.defs .part ms ∈ ds ∧ ∃ m ∈ ms,
-      (∃ F, installConstantVal (fueledOps .verified F) (env.extendOpaque pre) m.1 = .ok c.cv) ∧
-      Typed (env.extendOpaque (blk ++ pre)) c.cv m.2
+  ∃ later blk pre, ts = later ++ blk ++ pre ∧ c ∈ blk ∧ ∃ d ∈ ds, DeclTyped env pre blk c d ∧
+    (d.stage = 0 → ∀ x ∈ ScopeOf pre blk d, x.safety = .part)
 
 /-- Two lists related element by element (Mathlib's `List.Forall₂`, which
 the kernel's closure does not have). -/
@@ -102,6 +143,14 @@ theorem find?_of_extendOpaque {env : Env md} {ts : List (TierConst md)} {n : Key
   | none => rw [hl] at h; simpa using h
   | some c => rw [hl] at h; exact nomatch h
 
+/-- What resolves in `env` resolves in an extension of it. -/
+theorem constsResolve_extendOpaque {env : Env md} {e : Expr md} (h : e.constsResolve env = true) :
+    ∀ ts : List (TierConst md), e.constsResolve (env.extendOpaque ts) = true
+  | [] => h
+  | t :: ts => by
+    show e.constsResolve ⟨.axiomInfo t.cv :: (env.extendOpaque ts).consts⟩ = true
+    exact Expr.constsResolve_mono (constsResolve_extendOpaque h ts)
+
 /-- The headers pushed are the extension by the block. -/
 theorem pushHeaders_mkFEnv : ∀ (E : Env md) (hs : List (ConstantVal md)) (s : Safety),
     pushHeaders (mkFEnv E) hs = mkFEnv (E.extendOpaque (blockConsts s hs))
@@ -110,6 +159,14 @@ theorem pushHeaders_mkFEnv : ∀ (E : Env md) (hs : List (ConstantVal md)) (s : 
     rw [pushHeaders, push_mkFEnv, pushHeaders_mkFEnv _ hs s]
     congr 1
     simp [Env.extendOpaque, TierConst.infos, blockConsts, List.map_reverse]
+
+/-- Every constant of a block's has the block's safety. -/
+theorem blockConsts_safety {s : Safety} {hs : List (ConstantVal md)} :
+    ∀ c ∈ blockConsts s hs, c.safety = s := by
+  intro c hc
+  simp only [blockConsts, List.mem_reverse, List.mem_map] at hc
+  obtain ⟨_, -, rfl⟩ := hc
+  rfl
 
 /-! ## The headers -/
 
@@ -210,7 +267,23 @@ theorem valuesC_ok {E : Env md} (hE : EnvWF E)
     · rename_i hv
       exact .cons ⟨hr, valueC_ok hE (hR _ _ hr) hv⟩ (valuesC_ok hE hR rest h)
 
-/-! ## One declaration, and the fold -/
+/-- A header's type checked to be a sort at `mkFEnv E` (`sortC`): a sort in
+`E`. -/
+theorem sortC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md}
+    (hwty : Expr.WScoped 0 c.type) (h : sortC (mkFEnv E) c = .ok ()) : SortTyped E c := by
+  simp only [sortC] at h
+  split at h
+  · exact nomatch h
+  · rename_i r hrun
+    obtain ⟨⟨⟩, s₄⟩ := r
+    obtain ⟨jsty, s₂, hst, h₂⟩ := bindC_ok hrun
+    obtain ⟨hs₂, wsty, ⟨rfl, hwsty⟩, F₁, hF₁⟩ :=
+      (ssimC rfl E hE checkFuel).infer (CSOK.empty E) rfl hwty jsty s₂ hst
+    obtain ⟨u, s₃, hsort, -⟩ := bindC_ok h₂
+    obtain ⟨-, u', rfl, F₂, hF₂⟩ := opSIxC_sim rfl hE hs₂ rfl hwsty u s₃ hsort
+    exact ⟨jsty, u, Rules.inferTypeCore_bridge hF₁, Rules.whnf_bridge (ensureSortCore_inv hF₂)⟩
+
+/-! ## One declaration -/
 
 /-- A related pair for every element on the right. -/
 theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} :
@@ -222,80 +295,216 @@ theorem forall₂_mem_right {α β : Type} {R : α → β → Prop} :
     · obtain ⟨a', ha', hr'⟩ := forall₂_mem_right rest hb
       exact ⟨a', List.mem_cons_of_mem _ ha', hr'⟩
 
-/-- **One tier declaration**, accepted at `mkFEnv E`: a partial block, the
-returned index is the extension by its constants, which is well formed, and
-each of its constants is the install of a member's header at `E`, typed in
-the extension. -/
-theorem checkDeclC_ok {E : Env md} (hE : EnvWF E) {d : TierDecl md} {fe' : FEnv md}
-    {blk : List (TierConst md)} (h : checkDeclC (mkFEnv E) d = .ok (fe', blk)) :
+/-- **A definition block**, accepted at `mkFEnv E`: the returned index is
+the extension by its constants, which is well formed, every one of its
+constants has its safety, and each is the install of a member's header at
+`E`, typed in the extension. -/
+theorem blockC_ok {E : Env md} (hE : EnvWF E) {s : Safety} {ms : List (ConstantVal md × Expr md)}
+    {fe' : FEnv md} {blk : List (TierConst md)} (h : blockC (mkFEnv E) s ms = .ok (fe', blk)) :
     fe' = mkFEnv (E.extendOpaque blk) ∧ EnvWF (E.extendOpaque blk) ∧
-      ∃ ms, d = .defs .part ms ∧ ∀ c ∈ blk, c.safety = .part ∧
-        ∃ m ∈ ms, (∃ F, installConstantVal (fueledOps .verified F) E m.1 = .ok c.cv) ∧
-          Typed (E.extendOpaque blk) c.cv m.2 := by
-  match d, h with
-  | .defs .unsaf _, h => exact absurd h (by simp [checkDeclC])
-  | .defs .part ms, h =>
-    simp only [checkDeclC] at h
-    split at h
-    · exact nomatch h
-    split at h
-    · exact nomatch h
-    rename_i hs hhs
-    split at h
-    · exact nomatch h
-    rename_i hvals
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    have hfe := pushHeaders_mkFEnv E hs .part
-    have h₂ := headersC_ok hE hhs
-    have hfacts : ∀ c ∈ hs, c.type.hasFvar = false ∧ c.type.allLevelParamsDefined c.levelParams = true ∧
-        c.type.constsResolve E = true ∧ c.type.looseBVarsBounded 0 = true := by
-      intro c hc
-      obtain ⟨m, -, ⟨⟨F, hI⟩, -⟩⟩ := forall₂_mem_right h₂ hc
-      obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
-      exact ⟨g1, g2, g3, g4⟩
-    have hE' := envWF_blockConsts hE .part hfacts
-    rw [hfe] at hvals
-    have h₃ := valuesC_ok hE' (fun _ _ hr => hr.2) h₂ hvals
-    refine ⟨hfe, hE', ms, rfl, ?_⟩
+      ∀ c ∈ blk, c.safety = s ∧ ∃ m ∈ ms,
+        (∃ F, installConstantVal (fueledOps .verified F) E m.1 = .ok c.cv) ∧
+        Typed (E.extendOpaque blk) c.cv m.2 := by
+  simp only [blockC] at h
+  split at h
+  · exact nomatch h
+  split at h
+  · exact nomatch h
+  rename_i hs hhs
+  split at h
+  · exact nomatch h
+  rename_i hvals
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  have hfe := pushHeaders_mkFEnv E hs s
+  have h₂ := headersC_ok hE hhs
+  have hfacts : ∀ c ∈ hs, c.type.hasFvar = false ∧ c.type.allLevelParamsDefined c.levelParams = true ∧
+      c.type.constsResolve E = true ∧ c.type.looseBVarsBounded 0 = true := by
     intro c hc
-    simp only [blockConsts, List.mem_reverse, List.mem_map] at hc
-    obtain ⟨cv, hcv, rfl⟩ := hc
-    obtain ⟨m, hm, ⟨⟨F, hI⟩, -⟩, hty⟩ := forall₂_mem_right h₃ hcv
-    exact ⟨rfl, m, hm, ⟨F, hI⟩, hty⟩
+    obtain ⟨m, -, ⟨⟨F, hI⟩, -⟩⟩ := forall₂_mem_right h₂ hc
+    obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
+    exact ⟨g1, g2, g3, g4⟩
+  have hE' := envWF_blockConsts hE s hfacts
+  rw [hfe] at hvals
+  have h₃ := valuesC_ok hE' (fun _ _ hr => hr.2) h₂ hvals
+  refine ⟨hfe, hE', ?_⟩
+  intro c hc
+  have hsafe := blockConsts_safety c hc
+  simp only [blockConsts, List.mem_reverse, List.mem_map] at hc
+  obtain ⟨cv, hcv, rfl⟩ := hc
+  obtain ⟨m, hm, ⟨⟨F, hI⟩, -⟩, hty⟩ := forall₂_mem_right h₃ hcv
+  exact ⟨hsafe, m, hm, ⟨F, hI⟩, hty⟩
 
-/-- The fold from an accumulator. -/
-theorem checkTierFrom_typed {env : Env md} :
-    ∀ {ds : List (TierDecl md)} {acc : List (TierConst md)} {i : Nat}
+/-- A single header installed at `E` with its type-slot facts at `E`:
+the extension by it is well formed. -/
+theorem envWF_single {E : Env md} (hE : EnvWF E) (s : Safety) {cvA : ConstantVal md}
+    (hf : cvA.type.hasFvar = false ∧ cvA.type.allLevelParamsDefined cvA.levelParams = true ∧
+      cvA.type.constsResolve E = true ∧ cvA.type.looseBVarsBounded 0 = true) :
+    EnvWF (E.extendOpaque (blockConsts s [cvA])) :=
+  envWF_blockConsts hE s fun c hc => by
+    rcases List.mem_singleton.mp hc with rfl
+    exact hf
+
+/-- A single header pushed is the extension by it. -/
+theorem push_single (E : Env md) (s : Safety) (cvA : ConstantVal md) :
+    (mkFEnv E).push (.axiomInfo cvA) = mkFEnv (E.extendOpaque (blockConsts s [cvA])) :=
+  pushHeaders_mkFEnv E [cvA] s
+
+/-- **An unsafe opaque**, accepted with the logical view `mkFEnv env` at
+`mkFEnv E`, `E` an extension of `env`: the returned index is the extension
+by its one constant, which is well formed, an unsafe constant that is the
+install of its header at `env` and typed in `env`. -/
+theorem opaqueC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
+    (hE : EnvWF (env.extendOpaque acc)) {cv : ConstantVal md} {v : Expr md}
+    {fe' : FEnv md} {blk : List (TierConst md)}
+    (h : opaqueC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) cv v = .ok (fe', blk)) :
+    fe' = mkFEnv ((env.extendOpaque acc).extendOpaque blk) ∧
+      EnvWF ((env.extendOpaque acc).extendOpaque blk) ∧
+      ∃ c, blk = [c] ∧ c.safety = .unsaf ∧
+        (∃ F, installConstantVal (fueledOps .verified F) env cv = .ok c.cv) ∧ Typed env c.cv v := by
+  simp only [opaqueC] at h
+  split at h
+  · exact nomatch h
+  rename_i cvA jty s₁ ha
+  split at h
+  · exact nomatch h
+  split at h
+  · exact nomatch h
+  rename_i hval
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl henv (CSOK.empty env) ha
+  have hwty' : Expr.WScoped 0 cvA.type := by rw [hcvA]; exact hwty
+  obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
+  refine ⟨push_single _ .unsaf cvA,
+    envWF_single hE .unsaf ⟨g1, g2, constsResolve_extendOpaque g3 acc, g4⟩,
+    ⟨cvA, .unsaf⟩, rfl, rfl, ⟨F, hI⟩, valueC_ok henv hwty' hval⟩
+
+/-- **An unsafe axiom**, accepted at `mkFEnv E`: the returned index is the
+extension by its one constant, which is well formed, an unsafe constant that
+is the install of its header at `E`, its type a sort in `E`. -/
+theorem axiomC_ok {E : Env md} (hE : EnvWF E) {cv : ConstantVal md}
+    {fe' : FEnv md} {blk : List (TierConst md)} (h : axiomC (mkFEnv E) cv = .ok (fe', blk)) :
+    fe' = mkFEnv (E.extendOpaque blk) ∧ EnvWF (E.extendOpaque blk) ∧
+      ∃ c, blk = [c] ∧ c.safety = .unsaf ∧
+        (∃ F, installConstantVal (fueledOps .verified F) E cv = .ok c.cv) ∧ SortTyped E c.cv := by
+  simp only [axiomC] at h
+  split at h
+  · exact nomatch h
+  rename_i cvA jty s₁ ha
+  split at h
+  · exact nomatch h
+  rename_i hsort
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl hE (CSOK.empty E) ha
+  have hwty' : Expr.WScoped 0 cvA.type := by rw [hcvA]; exact hwty
+  obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
+  exact ⟨push_single _ .unsaf cvA, envWF_single hE .unsaf ⟨g1, g2, g3, g4⟩,
+    ⟨cvA, .unsaf⟩, rfl, rfl, ⟨F, hI⟩, sortC_ok hE hwty' hsort⟩
+
+/-- **One tier declaration**, accepted with the logical view `mkFEnv env` at
+the index of the extension by `acc`: the returned index is the extension by
+its constants `blk` too, which is well formed; every constant of `blk` has
+the declaration's safety and is typed in its scope (`DeclTyped`). -/
+theorem checkDeclC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
+    (hE : EnvWF (env.extendOpaque acc)) {d : TierDecl md} {fe' : FEnv md}
+    {blk : List (TierConst md)}
+    (h : checkDeclC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) d = .ok (fe', blk)) :
+    fe' = mkFEnv (env.extendOpaque (blk ++ acc)) ∧ EnvWF (env.extendOpaque (blk ++ acc)) ∧
+      ∀ c ∈ blk, c.safety = d.safety ∧ DeclTyped env acc blk c d := by
+  rw [← extendOpaque_append]
+  match d, h with
+  | .defs s ms, h =>
+    obtain ⟨hfe, hwf, hall⟩ := blockC_ok hE h
+    refine ⟨hfe, hwf, fun c hc => ?_⟩
+    obtain ⟨hs, m, hm, hI, hty⟩ := hall c hc
+    refine ⟨hs, hs, m, hm, hI, ?_⟩
+    simpa only [ScopeOf, extendOpaque_append] using hty
+  | .unsafeOpaque cv v, h =>
+    obtain ⟨hfe, hwf, c, rfl, hs, hI, hty⟩ := opaqueC_ok henv hE h
+    refine ⟨hfe, hwf, fun c' hc' => ?_⟩
+    rcases List.mem_singleton.mp hc' with rfl
+    exact ⟨hs, hs, rfl, hI, hty⟩
+  | .unsafeAxiom cv, h =>
+    obtain ⟨hfe, hwf, c, rfl, hs, hI, hty⟩ := axiomC_ok hE h
+    refine ⟨hfe, hwf, fun c' hc' => ?_⟩
+    rcases List.mem_singleton.mp hc' with rfl
+    exact ⟨hs, hs, rfl, hI, hty⟩
+
+/-! ## The fold -/
+
+/-- **The fold from an accumulator**, with the logical view `mkFEnv env`:
+the returned index is the extension by the constants, which is well formed,
+and every new constant is typed in its scope as a constant of one of the
+declarations, whose constants all have its safety. -/
+theorem checkTierFrom_typed {env : Env md} (henv : EnvWF env) :
+    ∀ {xs : List (Nat × TierDecl md)} {acc : List (TierConst md)}
       {fe' : FEnv md} {ts : List (TierConst md)},
       EnvWF (env.extendOpaque acc) →
-      checkTierFrom (mkFEnv (env.extendOpaque acc)) acc i ds = .ok (fe', ts) →
+      checkTierFrom (mkFEnv env) (mkFEnv (env.extendOpaque acc)) acc xs = .ok (fe', ts) →
       fe' = mkFEnv (env.extendOpaque ts) ∧ EnvWF (env.extendOpaque ts) ∧
         (∃ new, ts = new ++ acc) ∧
-        ∀ c ∈ ts, c ∈ acc ∨ TypedIn env ds ts c
-  | [], acc, i, fe', ts, hwf, h => by
+        ∀ c ∈ ts, c ∈ acc ∨ ∃ later blk pre, ts = later ++ blk ++ pre ∧ c ∈ blk ∧
+          ∃ x ∈ xs, DeclTyped env pre blk c x.2 ∧ ∀ y ∈ blk, y.safety = x.2.safety
+  | [], acc, fe', ts, hwf, h => by
     simp only [checkTierFrom, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
     exact ⟨rfl, hwf, ⟨[], rfl⟩, fun c hc => .inl hc⟩
-  | d :: ds, acc, i, fe', ts, hwf, h => by
+  | (i, d) :: xs, acc, fe', ts, hwf, h => by
     simp only [checkTierFrom] at h
     split at h
     · rename_i fe₁ blk hd
-      obtain ⟨rfl, hwf₁, ms, rfl, hblk⟩ := checkDeclC_ok hwf hd
-      rw [extendOpaque_append] at hwf₁ hblk
-      rw [extendOpaque_append] at h
-      obtain ⟨hfe, hwfT, ⟨new, hnew⟩, hall⟩ := checkTierFrom_typed hwf₁ h
+      obtain ⟨rfl, hwf₁, hblk⟩ := checkDeclC_ok henv hwf hd
+      obtain ⟨hfe, hwfT, ⟨new, hnew⟩, hall⟩ := checkTierFrom_typed henv hwf₁ h
       refine ⟨hfe, hwfT, ⟨new ++ blk, by rw [hnew, List.append_assoc]⟩, ?_⟩
       intro c hc
       rcases hall c hc with hin | ht
       · rcases List.mem_append.mp hin with hb | ha
-        · obtain ⟨hs, m, hm, hI, hty⟩ := hblk c hb
-          exact .inr ⟨hs, new, blk, acc, by rw [hnew, List.append_assoc], hb, ms,
-            List.mem_cons_self, m, hm, hI, hty⟩
+        · obtain ⟨-, hty⟩ := hblk c hb
+          exact .inr ⟨new, blk, acc, by rw [hnew, List.append_assoc], hb, (i, d),
+            List.mem_cons_self, hty, fun y hy => (hblk y hy).1⟩
         · exact .inl ha
-      · obtain ⟨hs, later, b, pre, hts, hb, ms', hms', rest⟩ := ht
-        exact .inr ⟨hs, later, b, pre, hts, hb, ms', List.mem_cons_of_mem _ hms', rest⟩
+      · obtain ⟨later, b, pre, hts, hb, x, hx, rest⟩ := ht
+        exact .inr ⟨later, b, pre, hts, hb, x, List.mem_cons_of_mem _ hx, rest⟩
     · exact nomatch h
+
+/-- The fold over two lists is the fold over the first, then over the
+second from where it stopped. -/
+theorem checkTierFrom_append {fe₀ : FEnv md} :
+    ∀ {xs ys : List (Nat × TierDecl md)} {fe : FEnv md} {acc : List (TierConst md)}
+      {r : FEnv md × List (TierConst md)},
+      checkTierFrom fe₀ fe acc (xs ++ ys) = .ok r →
+      ∃ fe₁ acc₁, checkTierFrom fe₀ fe acc xs = .ok (fe₁, acc₁) ∧
+        checkTierFrom fe₀ fe₁ acc₁ ys = .ok r
+  | [], ys, fe, acc, r, h => ⟨fe, acc, rfl, h⟩
+  | (i, d) :: xs, ys, fe, acc, r, h => by
+    simp only [List.cons_append, checkTierFrom] at h ⊢
+    split at h
+    · exact checkTierFrom_append h
+    · exact nomatch h
+
+/-- A declaration of stage 0 is a partial block. -/
+theorem TierDecl.stage_eq_zero {d : TierDecl md} (h : d.stage = 0) : ∃ ms, d = .defs .part ms := by
+  cases d with
+  | defs s ms =>
+    cases s with
+    | part => exact ⟨ms, rfl⟩
+    | unsaf => simp [TierDecl.stage] at h
+  | unsafeOpaque cv v => simp [TierDecl.stage] at h
+  | unsafeAxiom cv => simp [TierDecl.stage] at h
+
+/-- The declarations with their positions, from position `i`. -/
+theorem mem_indexed {ds : List (TierDecl md)} {x : Nat × TierDecl md} :
+    ∀ {i : Nat}, x ∈ indexed i ds → x.2 ∈ ds := by
+  induction ds with
+  | nil => intro i hx; simp [indexed] at hx
+  | cons d ds ih =>
+    intro i hx
+    simp only [indexed, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (ih hx)
 
 /-- **The tier's guarantee: typing only, tier constants opaque.** If the
 tier fold accepts `ds` at the index of a well-formed environment `env`, the
@@ -307,12 +516,54 @@ theorem checkTierC_typed {env : Env md} (hwf : EnvWF env) {ds : List (TierDecl m
     (h : checkTierC (mkFEnv env) ds = .ok (fe', ts)) :
     fe' = mkFEnv (env.extendOpaque ts) ∧ EnvWF (env.extendOpaque ts) ∧
       (∀ c ∈ ts, env.find? c.cv.name = none) ∧ ∀ c ∈ ts, TypedIn env ds ts c := by
-  obtain ⟨hfe, hwfT, -, hall⟩ := checkTierFrom_typed (acc := []) hwf h
-  have htyped : ∀ c ∈ ts, TypedIn env ds ts c := fun c hc =>
-    (hall c hc).resolve_left (List.not_mem_nil)
+  simp only [checkTierC, staged] at h
+  obtain ⟨fe₁, ts₁, h₁, h₂⟩ := checkTierFrom_append h
+  -- the partial stage, from nothing
+  obtain ⟨rfl, hwf₁, -, hall₁⟩ :=
+    checkTierFrom_typed (acc := []) hwf (by exact hwf) (by exact h₁)
+  -- every constant of the partial stage is partial
+  have hpart : ∀ c ∈ ts₁, c.safety = .part := by
+    intro c hc
+    rcases hall₁ c hc with hin | ⟨-, blk, -, -, hb, x, hx, -, hsafe⟩
+    · exact absurd hin List.not_mem_nil
+    · obtain ⟨-, hx0⟩ := List.mem_filter.mp hx
+      obtain ⟨ms, hxd⟩ := TierDecl.stage_eq_zero (by simpa using hx0)
+      simp [hsafe c hb, hxd, TierDecl.safety]
+  -- the unsafe stages, from there
+  obtain ⟨hfe, hwfT, ⟨new, rfl⟩, hall⟩ := checkTierFrom_typed hwf hwf₁ h₂
+  have htyped : ∀ c ∈ new ++ ts₁, TypedIn env ds (new ++ ts₁) c := by
+    intro c hc
+    rcases hall c hc with hin | ⟨later, blk, pre, hts, hb, x, hx, hty, hsafe⟩
+    · rcases hall₁ c hin with hnil | ⟨later₁, blk, pre, hts₁, hb, x, hx, hty, hsafe⟩
+      · exact absurd hnil List.not_mem_nil
+      · obtain ⟨hxm, hx0⟩ := List.mem_filter.mp hx
+        obtain ⟨ms, hxd⟩ := TierDecl.stage_eq_zero (by simpa using hx0)
+        refine ⟨new ++ later₁, blk, pre, by rw [hts₁]; simp, hb, x.2, mem_indexed hxm, hty,
+          fun _ y hy => ?_⟩
+        rw [hxd] at hy hsafe
+        simp only [ScopeOf, List.mem_append] at hy
+        rcases hy with hy | hy
+        · exact hsafe y hy
+        · exact hpart y (by rw [hts₁]; simp [hy])
+    · rcases List.mem_append.mp hx with hx | hx
+      · obtain ⟨hxm, hx1⟩ := List.mem_filter.mp hx
+        refine ⟨later, blk, pre, hts, hb, x.2, mem_indexed hxm, hty, fun h0 => ?_⟩
+        simp only [beq_iff_eq] at hx1
+        exact absurd (hx1.symm.trans h0) (by decide)
+      · obtain ⟨hxm, hx2⟩ := List.mem_filter.mp hx
+        refine ⟨later, blk, pre, hts, hb, x.2, mem_indexed hxm, hty, fun h0 => ?_⟩
+        simp only [beq_iff_eq] at hx2
+        exact absurd (hx2.symm.trans h0) (by decide)
   refine ⟨hfe, hwfT, ?_, htyped⟩
   intro c hc
-  obtain ⟨-, -, -, pre, -, -, -, -, m, -, ⟨F, hI⟩, -⟩ := htyped c hc
+  obtain ⟨later, blk, pre, -, hb, d, -, hty, -⟩ := htyped c hc
+  have key : ∃ cv F, ∃ E : List (TierConst md),
+      installConstantVal (fueledOps .verified F) (env.extendOpaque E) cv = .ok c.cv := by
+    match d, hty with
+    | .defs _ _, ⟨_, m, _, ⟨F, hI⟩, _⟩ => exact ⟨m.1, F, pre, hI⟩
+    | .unsafeOpaque cv _, ⟨_, _, ⟨F, hI⟩, _⟩ => exact ⟨cv, F, [], hI⟩
+    | .unsafeAxiom cv, ⟨_, _, ⟨F, hI⟩, _⟩ => exact ⟨cv, F, pre, hI⟩
+  obtain ⟨cv, F, E, hI⟩ := key
   obtain ⟨-, -, -, -, hname, hfind⟩ := installConstantVal_typeFacts hI
   rw [hname]
   exact find?_of_extendOpaque hfind

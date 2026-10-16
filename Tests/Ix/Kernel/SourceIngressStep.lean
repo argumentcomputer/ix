@@ -21,12 +21,11 @@ environment check does for Ixon records (`Benchmarks.Kernel.CheckIxeStep`):
   continuing past failures;
 * a group that references a refused or blocked group is blocked and not
   checked; a group is accepted when every one of its declarations is;
-* a group of `partial` definitions (`isTierGroup`) is converted by the
-  tier's conversion (`convertTier`) and, after the step check, checked by the
-  typing tier at the checked environment's index (`typed`, reason
-  `partial`; a failure declines, `tier (partial): …`), as
-  `checkSourceTiered` does; a logical group that references one is declined
-  (`fence: …`).
+* a tier group (`isTierGroup`) is converted by the tier's conversion
+  (`convertTier`) and, after the step check, checked by the typing tier at
+  the checked environment's index, staged as `checkSourceTiered` stages it
+  (`typed`, reason its safety; a failure declines, `tier (<safety>): …`); a
+  logical group that references one is declined (`fence: …`).
 
 None of this is a certified verdict; `checkSource` is. -/
 
@@ -185,7 +184,7 @@ def run (pre : Prelude .source) (env : Ix.Environment)
         if let some t := g.hard[gi]!.find? tierSet.contains then
           failed := failed.insert gi gi
           rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
-            s!"fence: references the partial group {(names[t]!)[0]?.getD (.id .anonymous)}", 0⟩)
+            s!"fence: references the tier group {(names[t]!)[0]?.getD (.id .anonymous)}", 0⟩)
           continue
     let s0 ← IO.monoNanosNow
     let (c', err) ← IO.lazyPure fun _ => checker.step ev d
@@ -201,11 +200,14 @@ def run (pre : Prelude .source) (env : Ix.Environment)
     | none =>
       if let some e := err then
         IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD (.id .anonymous)} failed: {e}"
-  -- the typing tier, at the index of the checked environment, in schedule
-  -- order; a tier group behind a failed group is blocked
+  -- the typing tier, at the index of the checked environment (also the
+  -- logical view of the unsafe opaques), staged as the tier fold stages it,
+  -- in schedule order within a stage; a tier group behind a failed group is
+  -- blocked
   let t4t ← IO.monoMsNow
-  let fe ← IO.mkRef checker.fe
-  for (gi, d) in tierQueue do
+  let logical := checker.fe
+  let fe ← IO.mkRef logical
+  for (gi, d) in Benchmarks.Kernel.CheckIxeStep.stageDeferred (·.2) tierQueue do
     if let some blocker := g.hard[gi]!.find? failed.contains then
       let root := failed.getD blocker blocker
       failed := failed.insert gi root
@@ -214,7 +216,7 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       continue
     let s0 ← IO.monoNanosNow
     let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
-    let (fe₁, err) ← IO.lazyPure fun _ => Benchmarks.Kernel.CheckIxeStep.stepTier fe₀ d
+    let (fe₁, err) ← IO.lazyPure fun _ => Benchmarks.Kernel.CheckIxeStep.stepTier logical fe₀ d
     fe.set fe₁
     let us := ((← IO.monoNanosNow) - s0) / 1000
     let s := Benchmarks.Kernel.CheckIxeStep.tierSafety d

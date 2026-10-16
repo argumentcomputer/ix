@@ -541,9 +541,15 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- 5886: the entry's 30 and the closed terms of three of the tier's own message
 -- sites (`Tier.blockShape`), each prose part holding the empty display (one
 -- more ruled csimp). The reader's conversion to modules moved it from 5919 by
--- the entry's change (28 more; see the module docstring).
+-- the entry's change (28 more; see the module docstring). The tier fold's
+-- unsafe stage (U1) moved it from 5947, 15 functions in and 5 out, nothing new
+-- to rule: the fold's split by kind (`blockC`, `opaqueC` with three closed
+-- terms of its duplicate message, `sortC`, `axiomC`) and the staging
+-- (`TierDecl.stage`, `indexed`, each with its arity-reduced form, `staged` and
+-- its three `List.filter` specialisations); out went `checkDeclC`'s five
+-- closed terms (the unsafe stage's "not implemented" decline).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5947 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5957 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
