@@ -57,7 +57,7 @@ open Ix.CompileCert.Loop
 inductive the environment has under `n`, if it names the block. -/
 def memberValue (env : Ix.Environment) (block : Array Ix.Name) (n : Ix.Name) : Option Ix.InductiveVal :=
   match env.consts.get? n with
-  | some (.inductInfo v) => if (v.all == block) = true then some v else none
+  | some (.inductInfo v) => if (v.all.isEqv block Ix.Name.beqRaw) = true then some v else none
   | _ => none
 
 /-- The value `inductiveGroup` records for the constructor `x.1` of `owner`
@@ -65,7 +65,8 @@ at position `x.2`: the constructor the environment has under that name, if
 it names `owner` and declares that position. -/
 def ctorValue (env : Ix.Environment) (owner : Ix.Name) (x : Ix.Name × Nat) : Option Ix.ConstructorVal :=
   match env.consts.get? x.1 with
-  | some (.ctorInfo cv) => if (cv.induct == owner) = true then if (cv.cidx == x.2) = true then some cv else none
+  | some (.ctorInfo cv) =>
+    if (Ix.Name.beqRaw cv.induct owner) = true then if (cv.cidx == x.2) = true then some cv else none
     else none
   | _ => none
 
@@ -74,11 +75,11 @@ def Invalid (g : Group) : Prop := ∃ names e, g = .invalid names e
 
 theorem memberValue_some {env : Ix.Environment} {block : Array Ix.Name} {n : Ix.Name} {v : Ix.InductiveVal}
     (value : memberValue env block n = some v) :
-    env.consts.get? n = some (.inductInfo v) ∧ (v.all == block) = true := by
+    env.consts.get? n = some (.inductInfo v) ∧ (v.all.isEqv block Ix.Name.beqRaw) = true := by
   unfold memberValue at value
   split at value
   · rename_i w found
-    by_cases same : (w.all == block) = true
+    by_cases same : (w.all.isEqv block Ix.Name.beqRaw) = true
     · simp only [same, ite_true, Option.some.injEq] at value
       subst value
       exact ⟨found, same⟩
@@ -88,11 +89,11 @@ theorem memberValue_some {env : Ix.Environment} {block : Array Ix.Name} {n : Ix.
 
 theorem ctorValue_some {env : Ix.Environment} {owner : Ix.Name} {x : Ix.Name × Nat} {cv : Ix.ConstructorVal}
     (value : ctorValue env owner x = some cv) :
-    env.consts.get? x.1 = some (.ctorInfo cv) ∧ (cv.induct == owner) = true ∧ cv.cidx = x.2 := by
+    env.consts.get? x.1 = some (.ctorInfo cv) ∧ (Ix.Name.beqRaw cv.induct owner) = true ∧ cv.cidx = x.2 := by
   unfold ctorValue at value
   split at value
   · rename_i w found
-    by_cases owned : (w.induct == owner) = true
+    by_cases owned : (Ix.Name.beqRaw w.induct owner) = true
     · by_cases placed : (w.cidx == x.2) = true
       · simp only [owned, placed, ite_true, Option.some.injEq] at value
         subst value
@@ -170,7 +171,7 @@ local macro "member_step" : tactic => `(tactic| (
       rw [found] at value
       cases ci with
       | inductInfo v =>
-        by_cases same : (v.all == first.all) = true
+        by_cases same : (v.all.isEqv first.all Ix.Name.beqRaw) = true
         · simp only [same, ite_true] at value; cases value
         · simp only [same]; exact ⟨_, _, rfl, _, _, rfl⟩
       | _ => simp only; exact ⟨_, _, rfl, _, _, rfl⟩))
@@ -190,7 +191,7 @@ local macro "ctor_step" : tactic => `(tactic| (
       rw [found] at value
       cases ci with
       | ctorInfo cv =>
-        by_cases owned : (cv.induct == v.cnst.name) = true
+        by_cases owned : (Ix.Name.beqRaw cv.induct v.cnst.name) = true
         · by_cases placed : (cv.cidx == x.2) = true
           · simp only [owned, placed, ite_true] at value; cases value
           · simp only [owned, placed, ite_true]; exact ⟨_, _, rfl, _, _, rfl⟩
@@ -228,8 +229,8 @@ recs` lists the block's members, each the inductive the environment has
 under its name, naming the block (`memberValue`); and each member's
 constructors, each the constructor the environment has under the member's
 constructor name at that position, naming the member, with that position as
-its index (`classValue`, `ctorValue`). The names are compared as
-`Ix.Name`'s `==` compares them (their hash fields); the positions exactly. -/
+its index (`classValue`, `ctorValue`). The names are compared structurally
+(`Ix.Name.beqRaw`, CQ2.25), the positions exactly. -/
 theorem inductiveGroup_spec (env : Ix.Environment) (first : Ix.InductiveVal) (cands : Array Ix.RecursorVal)
     (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal)) (recs : Array Ix.RecursorVal)
     (h : inductiveGroup env first cands = .inductive types ctors recs) :
@@ -267,9 +268,8 @@ section Conversion
 open Ix.LeanIngress (ingressExpr ingressExprs nameExprs exprsOf)
 
 /-- A term Source mode converted: some numbering's conversion of the
-item's term (the batching compares numberings by `==`, which compares
-names by their hash fields, so the numbering used may be another equal
-one; the shape of the conversion does not depend on it). -/
+item's term (the batching compares numberings structurally, so the numbering
+used is an equal one; the statement does not depend on which). -/
 def Converts (item : Numbering × Ix.Expr) (k : Ix.Kernel.Reader.CExpr .source) : Prop :=
   ∃ τ : Numbering, ingressExpr τ.pos item.2 = .ok k
 

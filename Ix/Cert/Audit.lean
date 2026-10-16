@@ -1223,9 +1223,13 @@ hash-keyed cache, and has a total `canonSyntax`. So `ingressExpr_canonExpr`
 holds without a hypothesis. CQ2.26 re-froze this section: `Reachable` is
 gone (C1 holds from every state, which is stronger), `CanonMCorrect` is
 stated over every state, and `ingressExpr_canonExpr` lost its two premises.
-The universe bridge from Lean is proved (`universeBridge`, under
-`HashEqAgrees`). The proved theorems are at the three standard axioms or
-fewer. -/
+The universe bridge from Lean is proved (`universeBridge`, under the wire's
+bound only). CQ2.25's ingress part re-froze this section: `Numbering.pos`
+compares names structurally (`Ix.Name.beqRaw`), so `HashEqAgrees` is gone,
+`numbering_nameS` and `UniverseBridge` lost that premise and
+`lower_eq_compileUnivS` its `agree` premise, and `compileUnivS` finds a
+parameter structurally (stronger, every one). The proved theorems are at the
+three standard axioms or fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
   Ix.Cert.Canon.nameS x =
@@ -1404,12 +1408,6 @@ fun names large n =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Canon.leanPos
 
-/-- info: def Ix.Cert.Canon.HashEqAgrees : Array Lean.Name → Prop :=
-fun names =>
-  ∀ (m : Lean.Name), m ∈ names → ∀ (n : Lean.Name), (Ix.Cert.Canon.nameS m == Ix.Cert.Canon.nameS n) = (m == n) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.Canon.HashEqAgrees
-
 /-- info: Ix.Cert.Canon.compileUnivS.eq_def : ∀ (ctx : List Ix.Name) (x : Ix.Level),
   Ix.Cert.Canon.compileUnivS ctx x =
     match x with
@@ -1423,7 +1421,7 @@ fun names =>
       let __do_lift ← Ix.Cert.Canon.compileUnivS ctx l
       let __do_lift_1 ← Ix.Cert.Canon.compileUnivS ctx r
       pure (__do_lift.imax __do_lift_1)
-    | Ix.Level.param n hash => Option.map (fun i => Ixon.Univ.var i.toUInt64) (List.idxOf? n ctx)
+    | Ix.Level.param n hash => Option.map (fun i => Ixon.Univ.var i.toUInt64) (List.findIdx? (fun x => x.beqRaw n) ctx)
     | Ix.Level.mvar n hash => none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Canon.compileUnivS.eq_def
@@ -1441,7 +1439,6 @@ fun names =>
 /-- info: def Ix.Cert.Canon.UniverseBridge : Prop :=
 ∀ (ps : Array Lean.Name),
   ps.size < UInt64.size →
-    Ix.Cert.Canon.HashEqAgrees ps →
       ∀ (l : Lean.Level) (u : Ixon.Univ) (k : Ix.LeanIngress.KLevel) (φ : Ix.Kernel.LevelParam → Nat),
         Ix.Cert.Canon.compileUnivS (Array.map Ix.Cert.Canon.nameS ps).toList (Ix.Cert.Canon.levelS l) = some u →
           Ix.Cert.Canon.leanLevel (Ix.Cert.Canon.leanPos ps false) l = Except.ok k →
@@ -1479,8 +1476,7 @@ fun names =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Canon.canonChunkCorrect
 
-/-- info: Ix.Cert.Canon.numbering_nameS (names : Array Lean.Name) (large : Bool) (h : Ix.Cert.Canon.HashEqAgrees names)
-  (n : Lean.Name) :
+/-- info: Ix.Cert.Canon.numbering_nameS (names : Array Lean.Name) (large : Bool) (n : Lean.Name) :
   { names := Array.map Ix.Cert.Canon.nameS names, large := large }.pos (Ix.Cert.Canon.nameS n) =
     Ix.Cert.Canon.leanPos names large n -/
 #guard_msgs (whitespace := lax) in
@@ -1799,10 +1795,9 @@ constructor:
 #print axioms Ix.CompileCert.UniversePipeline.compileAndInternUnivCanon_total_read
 
 -- The exact lowering is the Canon bridge's cache-free compile wherever the
--- context fits the wire and its hash comparison agrees with name equality.
+-- context fits the wire.
 /-- info: Ix.Cert.Canon.lower_eq_compileUnivS : ∀ (ctx : List Ix.Name),
   ctx.length ≤ UInt64.size →
-    (∀ (m : Ix.Name), m ∈ ctx → ∀ (n : Ix.Name), (m == n) = Ix.Compile.ExactKey.nameEq m n) →
       ∀ (l : Ix.Level), Ix.CompileCert.UniverseMeaning.lower ctx l = Ix.Cert.Canon.compileUnivS ctx l -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Canon.lower_eq_compileUnivS

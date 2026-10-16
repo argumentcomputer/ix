@@ -29,20 +29,18 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    Source mode's reading of the specification's term is a direct structural
    function of Lean's term. It reads no hash and no cache, under the
    numbering `σ ∘ nameS`.
-4. **The numbering** (`numbering_nameS`, proved under `HashEqAgrees`):
-   `Numbering.pos` compares `Ix.Name`s by their hash fields, so it equals
-   the direct numbering only where that comparison agrees with name
-   equality on the constant's level-parameter names. A structural
-   comparison in `Numbering.pos` removes the premise (CQ2.25).
-5. **Universes** (`universeBridge`, proved under `HashEqAgrees`). Ixon's
-   reading of the canonical compiled universe of `levelS l` has the value of
-   Lean's level `l`, read directly. It composes CT-12's
+4. **The numbering** (`numbering_nameS`, proved): `Numbering.pos` compares
+   `Ix.Name`s structurally (`Ix.Name.beqRaw`, CQ2.25), so it is the direct
+   numbering of Lean's names, with no hypothesis.
+5. **Universes** (`universeBridge`, proved, under the wire's bound only).
+   Ixon's reading of the canonical compiled universe of `levelS l` has the
+   value of Lean's level `l`, read directly. It composes CT-12's
    `Ix.CompileCert.CanonUnivScope.convCanon_eval` (`universe_bridge`) with
    `UnivMeaningS` (proved: `univMeaningS`), the pure half of CQ2.8's
    `UniverseMeaning`, about `compileUnivS`: the cache-free universe
-   compiler. `compileUniv` computes it wherever the context fits the wire and
-   its hash comparison agrees with name equality (`lower_eq_compileUnivS`,
-   with `Ix.CompileCert.UniverseMeaning.compileUniv_exact`, CQ2.8).
+   compiler. `compileUniv` computes it wherever the context fits the wire
+   (`lower_eq_compileUnivS`, with
+   `Ix.CompileCert.UniverseMeaning.compileUniv_exact`, CQ2.8).
 -/
 
 namespace Ix.Cert.Canon
@@ -341,33 +339,39 @@ def leanPos (names : Array Lean.Name) (large : Bool) (n : Lean.Name) : LevelPara
   | some 0 => if large then names.size - 1 else 0
   | some (i + 1) => if large then i else i + 1
 
-/-- On a constant's level-parameter names, `BEq Ix.Name` (which compares
-hash fields only) agrees with name equality. A run-time check per constant
-can establish it. It fails only on a BLAKE3 collision between name encodings. -/
-def HashEqAgrees (names : Array Lean.Name) : Prop :=
-  ∀ m ∈ names, ∀ n, (nameS m == nameS n) = (m == n)
+/-- `nameS` is injective: `toLeanName` inverts it. -/
+theorem nameS_inj {m n : Lean.Name} (h : nameS m = nameS n) : m = n := by
+  rw [← toLeanName_nameS m, ← toLeanName_nameS n, h]
 
-theorem findIdx_nameS (l : List Lean.Name) (n : Lean.Name)
-    (h : ∀ m ∈ l, (nameS m == nameS n) = (m == n)) :
-    l.findIdx? ((· == nameS n) ∘ nameS) = l.findIdx? (· == n) := by
+/-- The structural comparison of `CanonM`'s names is Lean's name equality. -/
+theorem beqRaw_nameS (m n : Lean.Name) : Ix.Name.beqRaw (nameS m) (nameS n) = (m == n) := by
+  by_cases same : m = n
+  · subst same
+    simp [Ix.Name.beqRaw_iff.mpr rfl]
+  · have differ : Ix.Name.beqRaw (nameS m) (nameS n) = false := by
+      cases found : Ix.Name.beqRaw (nameS m) (nameS n)
+      · rfl
+      · exact absurd (nameS_inj (Ix.Name.beqRaw_iff.mp found)) same
+    rw [differ]
+    simp [same]
+
+theorem findIdx_nameS (l : List Lean.Name) (n : Lean.Name) :
+    l.findIdx? ((Ix.Name.beqRaw · (nameS n)) ∘ nameS) = l.findIdx? (· == n) := by
   induction l with
   | nil => rfl
   | cons a l ih =>
-    rw [List.findIdx?_cons, List.findIdx?_cons, Function.comp_apply, h a (by simp),
-      ih (fun m hm => h m (by simp [hm]))]
+    rw [List.findIdx?_cons, List.findIdx?_cons, Function.comp_apply, beqRaw_nameS a n, ih]
 
 /-- **The numbering** (proved): Source mode's numbering of `CanonM`'s names
-is the direct numbering of Lean's, wherever the hash comparison agrees with
-name equality. A structural comparison in `Numbering.pos` would make this
-unconditional. -/
-theorem numbering_nameS (names : Array Lean.Name) (large : Bool) (h : HashEqAgrees names)
-    (n : Lean.Name) :
+is the direct numbering of Lean's. `Numbering.pos` compares names
+structurally (CQ2.25), so no hash agreement is assumed. -/
+theorem numbering_nameS (names : Array Lean.Name) (large : Bool) (n : Lean.Name) :
     Ix.LeanIngress.Numbering.pos ⟨names.map nameS, large⟩ (nameS n) = leanPos names large n := by
   rcases names with ⟨l⟩
-  have hl : ∀ m ∈ l, (nameS m == nameS n) = (m == n) := fun m hm => h m (by simpa using hm) n
-  have key : (Array.map nameS ⟨l⟩).findIdx? (· == nameS n) = (⟨l⟩ : Array Lean.Name).findIdx? (· == n) := by
+  have key : (Array.map nameS ⟨l⟩).findIdx? (Ix.Name.beqRaw · (nameS n)) =
+      (⟨l⟩ : Array Lean.Name).findIdx? (· == n) := by
     rw [Array.findIdx?_map]
-    simpa using findIdx_nameS l n hl
+    simpa using findIdx_nameS l n
   simp only [Ix.LeanIngress.Numbering.pos, leanPos, Array.size_map]
   rw [key]
   rfl
@@ -382,24 +386,23 @@ value. -/
 open Ix.CompileCert (univEval)
 
 /-- `Ix.CompileM.compileUniv` without its cache, under the context `ctx` of
-the constant's level-parameter names (positional, compared by `BEq Ix.Name`,
-as `Ix.LeanIngress.Numbering.pos` compares them). Since CQ2.8 `compileUniv`
-compares names structurally and checks the wire bound
+the constant's level-parameter names (positional, compared structurally,
+`Ix.Name.beqRaw`, as `Ix.LeanIngress.Numbering.pos` compares them). Since CQ2.8
+`compileUniv` compares names structurally too and checks the wire bound
 (`Ix.CompileCert.UniverseMeaning.lower`); the two agree where the context fits
-the wire and its hash comparison agrees with name equality
-(`lower_eq_compileUnivS`). -/
+the wire (`lower_eq_compileUnivS`). -/
 def compileUnivS (ctx : List Ix.Name) : Ix.Level → Option Ixon.Univ
   | .zero _ => some .zero
   | .succ l _ => (compileUnivS ctx l).map .succ
   | .max l r _ => do return .max (← compileUnivS ctx l) (← compileUnivS ctx r)
   | .imax l r _ => do return .imax (← compileUnivS ctx l) (← compileUnivS ctx r)
-  | .param n _ => (ctx.idxOf? n).map fun i => .var i.toUInt64
+  | .param n _ => (ctx.findIdx? (Ix.Name.beqRaw · n)).map fun i => .var i.toUInt64
   | .mvar _ _ => none
 
 /-- The cache-free compile keeps the value that Source mode reads (a member's
 own parameters, `large = false`): the pure half of CQ2.8's
 `UniverseMeaning`, over `Ix.Level`. Proved below (`univMeaningS`), by a
-structural induction: the parameter case is `idxOf? = findIdx? (· == n)`
+structural induction: the parameter case is the structural `findIdx?` of both
 under a `UInt64` bound. -/
 def UnivMeaningS : Prop :=
   ∀ (ctx : Array Ix.Name), ctx.size < UInt64.size →
@@ -414,7 +417,7 @@ from Lean. Stated for a member's own parameters (`param = id`,
 `large = false`). A large eliminator's (`recParam`) is the same with the
 shifted numbering. -/
 def UniverseBridge : Prop :=
-  ∀ (ps : Array Lean.Name), ps.size < UInt64.size → HashEqAgrees ps →
+  ∀ (ps : Array Lean.Name), ps.size < UInt64.size →
     ∀ (l : Lean.Level) (u : Ixon.Univ) (k : KLevel) (φ : LevelParam → Nat),
       compileUnivS (ps.map nameS).toList (levelS l) = some u →
       leanLevel (leanPos ps false) l = .ok k →
@@ -425,10 +428,10 @@ def UniverseBridge : Prop :=
 universe meaning give the universe bridge from Lean, through
 `ingressLevel_levelS` and `numbering_nameS`. -/
 theorem universe_bridge (hmean : UnivMeaningS) : UniverseBridge := by
-  intro ps hsize hagree l u k φ hc hk
+  intro ps hsize l u k φ hc hk
   rw [Ix.CompileCert.CanonUnivScope.convCanon_eval id φ u]
   have hσ : (Ix.LeanIngress.Numbering.pos ⟨ps.map nameS, false⟩ ∘ nameS) = leanPos ps false :=
-    funext fun n => numbering_nameS ps false hagree n
+    funext fun n => numbering_nameS ps false n
   have hk' : Ix.LeanIngress.ingressLevel (Ix.LeanIngress.Numbering.pos ⟨ps.map nameS, false⟩)
       (levelS l) = .ok k := by
     rw [ingressLevel_levelS, hσ]; exact hk
@@ -443,12 +446,12 @@ theorem except_bind_ok {ε α β : Type} {x : Except ε α} {f : α → Except �
   | ok a => exact ⟨a, rfl, h⟩
 
 /-- `Numbering.pos` of a member's own parameters (`large = false`) is the
-position `idxOf?` finds, as `compileUnivS` numbers a parameter. -/
-theorem pos_of_idxOf (ctx : Array Ix.Name) (n : Ix.Name) {i : Nat}
-    (found : ctx.toList.idxOf? n = some i) :
+position the structural `findIdx?` finds, as `compileUnivS` numbers a parameter. -/
+theorem pos_of_findIdx (ctx : Array Ix.Name) (n : Ix.Name) {i : Nat}
+    (found : ctx.toList.findIdx? (Ix.Name.beqRaw · n) = some i) :
     Ix.LeanIngress.Numbering.pos ⟨ctx, false⟩ n = i := by
   rcases ctx with ⟨l⟩
-  have h : l.findIdx? (· == n) = some i := found
+  have h : l.findIdx? (Ix.Name.beqRaw · n) = some i := found
   unfold Ix.LeanIngress.Numbering.pos
   simp only [List.findIdx?_toArray, h]
   cases i <;> rfl
@@ -494,15 +497,14 @@ theorem univMeaningS : UnivMeaningS := by
     have bound : i < ctx.size := by
       have := (List.findIdx?_eq_some_iff_getElem.mp hi).1
       simpa using this
-    simp only [univEval, Ix.Kernel.Level.eval, pos_of_idxOf ctx n hi]
+    simp only [univEval, Ix.Kernel.Level.eval, pos_of_findIdx ctx n hi]
     rw [UInt64.toNat_ofNat_of_lt' (by omega)]
   | mvar n h =>
     intro u k φ hc hk
     cases hc
 
 /-- **The universe bridge from Lean** (proved): `universe_bridge` with the
-pure universe meaning discharged. Its only premises are the context bound
-and `HashEqAgrees` on the constant's level-parameter names. -/
+pure universe meaning discharged. Its only premise is the context bound. -/
 theorem universeBridge : UniverseBridge := universe_bridge univMeaningS
 
 /-! ### `compileUniv` computes the cache-free compile
@@ -510,23 +512,24 @@ theorem universeBridge : UniverseBridge := universe_bridge univMeaningS
 Since CQ2.8, `Ix.CompileM.compileUniv` computes the exact positional lowering
 `Ix.CompileCert.UniverseMeaning.lower` from every exact memo
 (`compileUniv_exact`): parameters at their first structural position, under
-the wire's `UInt64` bound. Where the context's hash comparison agrees with
-name equality and the context fits the wire, that is `compileUnivS`, so the
-universe bridge is about `compileUniv`'s own output. -/
+the wire's `UInt64` bound. Where the context fits the wire, that is
+`compileUnivS`, so the universe bridge is about `compileUniv`'s own output. -/
 
-theorem findIdx_agree (ctx : List Ix.Name) (n : Ix.Name)
-    (agree : ∀ m ∈ ctx, (m == n) = Ix.Compile.ExactKey.nameEq m n) :
-    ctx.findIdx? (fun m => Ix.Compile.ExactKey.nameEq m n) = ctx.findIdx? (· == n) := by
-  induction ctx with
-  | nil => rfl
-  | cons a rest ih =>
-    rw [List.findIdx?_cons, List.findIdx?_cons, agree a (by simp),
-      ih (fun m member => agree m (by simp [member]))]
+/-- The compiler's structural name equality is the ingress's. -/
+theorem nameEq_eq_beqRaw (a b : Ix.Name) :
+    Ix.Compile.ExactKey.nameEq a b = Ix.Name.beqRaw a b := by
+  cases found : Ix.Name.beqRaw a b
+  · cases exact : Ix.Compile.ExactKey.nameEq a b
+    · rfl
+    · have := Ix.Name.beqRaw_iff.mpr ((Ix.Compile.ExactKey.nameEq_iff a b).mp exact)
+      rw [found] at this
+      cases this
+  · exact (Ix.Compile.ExactKey.nameEq_iff a b).mpr (Ix.Name.beqRaw_iff.mp found)
 
 /-- **The exact lowering is the cache-free compile** on a context that fits
-the wire and whose hash comparison agrees with name equality. -/
+the wire. -/
 theorem lower_eq_compileUnivS (ctx : List Ix.Name) (fits : ctx.length ≤ UInt64.size)
-    (agree : ∀ m ∈ ctx, ∀ n, (m == n) = Ix.Compile.ExactKey.nameEq m n) (l : Ix.Level) :
+    (l : Ix.Level) :
     Ix.CompileCert.UniverseMeaning.lower ctx l = compileUnivS ctx l := by
   induction l with
   | zero h => rfl
@@ -546,13 +549,16 @@ theorem lower_eq_compileUnivS (ctx : List Ix.Name) (fits : ctx.length ≤ UInt64
       (compileUnivS ctx l >>= fun u => compileUnivS ctx r >>= fun v => pure (Ixon.Univ.imax u v))
     rw [ihl, ihr]
   | param n h =>
-    have same : Ix.Compile.ExactKey.nameIndex n ctx = ctx.idxOf? n :=
-      findIdx_agree ctx n (fun m member => agree m member n)
+    have same : Ix.Compile.ExactKey.nameIndex n ctx = ctx.findIdx? (Ix.Name.beqRaw · n) := by
+      unfold Ix.Compile.ExactKey.nameIndex
+      congr 1
+      funext m
+      exact nameEq_eq_beqRaw m n
     show (Ix.Compile.ExactKey.nameIndex n ctx >>= fun index =>
         if index < UInt64.size then some (Ixon.Univ.var index.toUInt64) else none) =
-      (ctx.idxOf? n).map fun i => Ixon.Univ.var i.toUInt64
+      (ctx.findIdx? (Ix.Name.beqRaw · n)).map fun i => Ixon.Univ.var i.toUInt64
     rw [same]
-    cases found : ctx.idxOf? n with
+    cases found : ctx.findIdx? (Ix.Name.beqRaw · n) with
     | none => rfl
     | some i =>
       have inside : i < ctx.length := (List.findIdx?_eq_some_iff_getElem.mp found).1
