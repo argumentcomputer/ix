@@ -4297,6 +4297,65 @@ pub fn sort_consts<'a>(
   }
 }
 
+/// The declared flat position of a recursor in its family: `X.rec` of the
+/// `i`-th member of `RecursorVal.all` is at `i`, and the nested auxiliary
+/// recursor `all[0].rec_N` (`N >= 1` in plain decimal digits) at
+/// `all.len() + N - 1`; `u64::MAX` otherwise, and for a position that does
+/// not fit below it. Mirrors Lean `recursorFamilyPosition`.
+pub fn recursor_family_position(rec: &ix_common::env::RecursorVal) -> u64 {
+  let NameData::Str(parent, last, _) = rec.cnst.name.as_data() else {
+    return u64::MAX;
+  };
+  if last == "rec" {
+    return rec
+      .all
+      .iter()
+      .position(|n| n == parent)
+      .map_or(u64::MAX, |i| i as u64);
+  }
+  if let Some(digits) = last.strip_prefix("rec_")
+    && !digits.is_empty()
+    && digits.bytes().all(|b| b.is_ascii_digit())
+    && let Ok(k) = digits.parse::<u64>()
+    && k >= 1
+    && rec.all.first() == Some(parent)
+    && let Some(pos) = (rec.all.len() as u64).checked_add(k - 1)
+    && pos < u64::MAX
+  {
+    return pos;
+  }
+  u64::MAX
+}
+
+/// A block of recursors is laid out in its family's flat order (the order
+/// the kernel's `populate_recursor_rules_from_block` pairs with the
+/// inductive block's flat members), not in `sort_consts` order. The
+/// regenerated families get this from `compile_aux_block_with_rename`'s
+/// class-order key; this applies the same rule to a recursor block compiled
+/// from Lean's own declarations (`Named.original`, and decompile's
+/// verification recompile), using Lean's `RecursorVal.all`. On a block that
+/// canonicalisation leaves unchanged the two layouts coincide, so Lean's
+/// form and the Ix form of each recursor have one address (D6). The sort is
+/// stable; other classes keep their `sort_consts` order. Mirrors Lean
+/// `orderRecursorFamily`.
+pub fn order_recursor_family(classes: &mut [Vec<&MutConst>]) {
+  if classes.is_empty()
+    || !classes.iter().flatten().all(|c| matches!(c, MutConst::Recr(_)))
+  {
+    return;
+  }
+  classes.sort_by_key(|class| {
+    class
+      .iter()
+      .map(|c| match c {
+        MutConst::Recr(r) => recursor_family_position(r),
+        _ => u64::MAX,
+      })
+      .min()
+      .unwrap_or(u64::MAX)
+  });
+}
+
 // ===========================================================================
 // Main compilation entry points
 // ===========================================================================
@@ -4834,8 +4893,10 @@ fn compile_mutual(
     cs.push(mut_const);
   }
 
-  // Sort constants
-  let sorted_classes = sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  // Sort constants; a recursor block in its family's flat order (D6)
+  let mut sorted_classes =
+    sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  order_recursor_family(&mut sorted_classes);
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
   let mut exprs = Vec::new();
@@ -5528,6 +5589,53 @@ mod tests {
     ] {
       assert_eq!(no_aux_phase(&nm(n), &ci), Some(want), "{n}");
     }
+  }
+
+  /// D6: a recursor block compiled from Lean's form is laid out in its
+  /// family's flat order (`X.rec` at its `all` position, `all0.rec_N` after
+  /// the members); malformed `rec_N` suffixes and mixed blocks keep the
+  /// `sort_consts` order.
+  #[test]
+  fn order_recursor_family_lays_out_flat_order() {
+    use ix_common::env::{ConstantVal, RecursorVal};
+    let nm = |s: &str| {
+      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
+    };
+    let rec = |n: &str| {
+      MutConst::Recr(RecursorVal {
+        cnst: ConstantVal {
+          name: nm(n),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::zero()),
+        },
+        all: vec![nm("A"), nm("B")],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(3u64),
+        num_minors: Nat::from(0u64),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let pos = |n: &str| match rec(n) {
+      MutConst::Recr(r) => recursor_family_position(&r),
+      _ => unreachable!(),
+    };
+    assert_eq!(pos("A.rec"), 0);
+    assert_eq!(pos("B.rec"), 1);
+    assert_eq!(pos("A.rec_1"), 2);
+    assert_eq!(pos("A.rec_3"), 4);
+    for odd in ["B.rec_1", "A.rec_0", "A.rec_", "A.rec_+1", "A.rec_1_0"] {
+      assert_eq!(pos(odd), u64::MAX, "{odd}");
+    }
+    assert_eq!(pos("A.rec_18446744073709551615"), u64::MAX);
+    let (ar, br, a1) = (rec("A.rec"), rec("B.rec"), rec("A.rec_1"));
+    let mut classes = vec![vec![&a1], vec![&br], vec![&ar]];
+    order_recursor_family(&mut classes);
+    let order: Vec<String> =
+      classes.iter().map(|c| c[0].name().pretty()).collect();
+    assert_eq!(order, ["A.rec", "B.rec", "A.rec_1"]);
   }
 
   #[test]

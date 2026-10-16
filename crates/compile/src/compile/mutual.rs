@@ -9,11 +9,17 @@
 //!
 //! 2. **`generate_and_compile_aux_recursors`**: Orchestrates the full aux_gen
 //!    pipeline: generates canonical patches (recursors, `.below`, `.brecOn`),
-//!    then compiles each phase's output via `compile_aux_block`.
+//!    then compiles each phase's output: the recursor family (and the
+//!    Prop `.below` inductive family with its `.below.rec`) as one block,
+//!    laid out in the inductive block's flat order as the kernel requires,
+//!    and every definition (`casesOn`, `recOn`, `below`, `brecOn`, `.go`,
+//!    `.eq`, `.below.casesOn`) as its own constant, packed into a block only
+//!    when several genuinely form a strongly connected component
+//!    (`aux_components`; D6, one constant per auxiliary).
 
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use bignat::Nat;
 
@@ -26,6 +32,8 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
+use crate::condense::{CondensedBlocks, compute_sccs};
+use crate::graph::{NameSet, RefMap, collect_expr_references};
 use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
 use ix_common::env::{
@@ -75,6 +83,136 @@ pub fn compile_aux_block(
   )
 }
 
+/// The names a `MutConst` refers to (types, values, constructor types,
+/// rule right-hand sides), by the reference graph's rule
+/// (`graph::collect_expr_references`). Mirrors Lean `mutConstReferences`.
+fn mut_const_references(c: &MutConst) -> NameSet {
+  let mut acc = NameSet::default();
+  let mut visited = FxHashSet::default();
+  match c {
+    MutConst::Defn(d) => {
+      collect_expr_references(&d.typ, &mut visited, &mut acc);
+      collect_expr_references(&d.value, &mut visited, &mut acc);
+    },
+    MutConst::Recr(r) => {
+      collect_expr_references(&r.cnst.typ, &mut visited, &mut acc);
+      for rule in &r.rules {
+        acc.insert(rule.ctor.clone());
+        collect_expr_references(&rule.rhs, &mut visited, &mut acc);
+      }
+    },
+    MutConst::Indc(i) => {
+      collect_expr_references(&i.ind.cnst.typ, &mut visited, &mut acc);
+      for ctor in &i.ctors {
+        acc.insert(ctor.cnst.name.clone());
+        collect_expr_references(&ctor.cnst.typ, &mut visited, &mut acc);
+      }
+    },
+  }
+  acc
+}
+
+/// The strongly connected components of a set of auxiliaries under their
+/// references to one another, in dependency order (a component comes after
+/// every component it refers to; ties by least member name).
+///
+/// D6, one constant per auxiliary: a component of one member is compiled as a
+/// standalone constant, and only a genuine cycle is packed into a block.
+/// Lean declares every `casesOn`, `recOn`, `below` definition and
+/// `brecOn`/`.go`/`.eq` as its own non-mutual definition, so their components
+/// are singletons, and an auxiliary's address no longer depends on which
+/// siblings its batch holds. Mirrors Lean `auxComponents`.
+pub fn aux_components(
+  consts: &[MutConst],
+) -> Result<Vec<Vec<MutConst>>, CompileError> {
+  let by_name: FxHashMap<Name, &MutConst> =
+    consts.iter().map(|c| (c.name(), c)).collect();
+  let mut refs = RefMap::default();
+  for c in consts {
+    let r: NameSet = mut_const_references(c)
+      .into_iter()
+      .filter(|n| by_name.contains_key(n) && *n != c.name())
+      .collect();
+    refs.insert(c.name(), r);
+  }
+  let condensed = compute_sccs(&refs);
+  Ok(
+    component_order(&condensed)?
+      .into_iter()
+      .map(|ms| {
+        // Keep the input order of the members inside a component.
+        let set: FxHashSet<&Name> = ms.iter().collect();
+        consts.iter().filter(|c| set.contains(&c.name())).cloned().collect()
+      })
+      .collect(),
+  )
+}
+
+/// The components of `condensed` in dependency order, each as its members
+/// sorted by name: repeatedly the first ready component (every dependency
+/// done) in least-member-name order. A condensation in which no pending
+/// component is ready is refused, as Lean's `auxComponents` refuses it, not
+/// compiled out of order.
+fn component_order(
+  condensed: &CondensedBlocks,
+) -> Result<Vec<Vec<Name>>, CompileError> {
+  let mut comps: Vec<(Name, Vec<Name>)> = condensed
+    .blocks
+    .iter()
+    .map(|(root, members)| {
+      let mut ms: Vec<Name> = members.iter().cloned().collect();
+      ms.sort_by_cached_key(|n| n.pretty());
+      (root.clone(), ms)
+    })
+    .collect();
+  comps.sort_by_cached_key(|(_, ms)| ms[0].pretty());
+  let mut done: FxHashSet<Name> = FxHashSet::default();
+  let mut out: Vec<Vec<Name>> = Vec::with_capacity(comps.len());
+  while !comps.is_empty() {
+    let pos = comps
+      .iter()
+      .position(|(root, _)| {
+        condensed.block_refs.get(root).is_none_or(|deps| {
+          deps.iter().all(|d| {
+            condensed.low_links.get(d).is_some_and(|r| done.contains(r))
+          })
+        })
+      })
+      .ok_or_else(|| CompileError::InvalidMutualBlock {
+        reason: "auxComponents: no component has all dependencies ready".into(),
+      })?;
+    let (root, ms) = comps.remove(pos);
+    done.insert(root);
+    out.push(ms);
+  }
+  Ok(out)
+}
+
+/// Compile a batch of auxiliaries one strongly connected component at a time
+/// (`aux_components`): each singleton component becomes a standalone
+/// constant, a genuine cycle one block. Mirrors Lean `compileAuxComponents`.
+pub fn compile_aux_components(
+  aux_consts: &[MutConst],
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  name_rename: Option<&FxHashMap<Name, Name>>,
+  source_owners: &[Name],
+) -> Result<(), CompileError> {
+  for comp in aux_components(aux_consts)? {
+    compile_aux_block_with_rename(
+      &comp,
+      lean_env,
+      stt,
+      kctx,
+      name_rename,
+      None,
+      source_owners,
+    )?;
+  }
+  Ok(())
+}
+
 /// A source-name claim needs forward provenance to the claiming source
 /// block (the Lean twin is `Ix.AuxGen.checkAuxSourceClaim`): the claimed
 /// name, if the source has it, must reach one of the block's inductives
@@ -91,7 +229,7 @@ fn check_aux_source_claim(
     return Ok(());
   }
   let mut pending = vec![name.clone()];
-  let mut seen = rustc_hash::FxHashSet::default();
+  let mut seen = FxHashSet::default();
   seen.insert(name.clone());
   while let Some(current) = pending.pop() {
     if source_owners.contains(&current) {
@@ -925,7 +1063,14 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !cases_on_defs.is_empty() {
-    compile_aux_block(&cases_on_defs, lean_env, stt, kctx, &source_owners)?;
+    compile_aux_components(
+      &cases_on_defs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      &source_owners,
+    )?;
   }
   let cases_elapsed = t2.elapsed();
 
@@ -949,7 +1094,14 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_on_defs.is_empty() {
-    compile_aux_block(&rec_on_defs, lean_env, stt, kctx, &source_owners)?;
+    compile_aux_components(
+      &rec_on_defs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      &source_owners,
+    )?;
   }
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
@@ -1036,13 +1188,12 @@ pub fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !below_defs.is_empty() {
-    compile_aux_block_with_rename(
+    compile_aux_components(
       &below_defs,
       lean_env,
       stt,
       kctx,
       Some(&aux_name_rename),
-      None,
       &source_owners,
     )?;
   }
@@ -1068,13 +1219,12 @@ pub fn generate_and_compile_aux_recursors(
       })
       .collect();
     if !defs.is_empty() {
-      compile_aux_block_with_rename(
+      compile_aux_components(
         &defs,
         lean_env,
         stt,
         kctx,
         Some(&aux_name_rename),
-        None,
         &source_owners,
       )?;
     }
@@ -1409,7 +1559,14 @@ fn compile_below_recursors(
     }
   }
   if !below_cases.is_empty() {
-    compile_aux_block(&below_cases, lean_env, stt, kctx, source_owners)?;
+    compile_aux_components(
+      &below_cases,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      source_owners,
+    )?;
   }
   Ok(())
 }
@@ -1448,5 +1605,90 @@ mod source_claim_tests {
     let owners = [owner];
     assert!(check_aux_source_claim(&source, &owners, &env).is_ok());
     assert!(check_aux_source_claim(&target, &owners, &env).is_err());
+  }
+}
+
+#[cfg(test)]
+mod aux_component_tests {
+  use super::*;
+  use ix_common::env::{Expr, Level};
+
+  fn n(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  /// A definition named `name` whose value mentions `refs`.
+  fn def(name: &str, refs: &[&str]) -> MutConst {
+    let value = refs.iter().fold(Expr::sort(Level::zero()), |acc, r| {
+      Expr::app(acc, Expr::cnst(n(r), vec![]))
+    });
+    MutConst::Defn(Def {
+      name: n(name),
+      level_params: vec![],
+      typ: Expr::sort(Level::zero()),
+      kind: DefKind::Definition,
+      value,
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![],
+    })
+  }
+
+  fn names(comps: &[Vec<MutConst>]) -> Vec<Vec<String>> {
+    comps
+      .iter()
+      .map(|c| c.iter().map(|m| m.name().pretty()).collect())
+      .collect()
+  }
+
+  /// D6: independent auxiliaries are singleton components, in least-name
+  /// order; a dependency comes first; only a genuine cycle is one component.
+  #[test]
+  fn aux_components_are_singletons_unless_cyclic() {
+    let batch = [
+      def("Z", &[]),
+      def("B", &["A"]),
+      def("A", &[]),
+      def("D", &["E"]),
+      def("E", &["D", "outside"]),
+    ];
+    let comps = aux_components(&batch).unwrap();
+    assert_eq!(
+      names(&comps),
+      vec![vec!["A"], vec!["B"], vec!["D", "E"], vec!["Z"]]
+    );
+  }
+
+  /// A condensation in which every component waits on another has no ready
+  /// component: refused, as Lean's `auxComponents` refuses it, not compiled
+  /// out of order. The valid neighbour orders a dependency first.
+  #[test]
+  fn component_order_refuses_a_condensation_with_no_ready_component() {
+    let (a, b) = (n("A"), n("B"));
+    let one = |x: &Name| -> NameSet { [x.clone()].into_iter().collect() };
+    let condensed = |a_refs: NameSet| CondensedBlocks {
+      low_links: [(a.clone(), a.clone()), (b.clone(), b.clone())]
+        .into_iter()
+        .collect(),
+      blocks: [(a.clone(), one(&a)), (b.clone(), one(&b))]
+        .into_iter()
+        .collect(),
+      block_refs: [(a.clone(), a_refs), (b.clone(), one(&a))]
+        .into_iter()
+        .collect(),
+    };
+    // valid: B refers to A, so A comes first
+    assert_eq!(
+      component_order(&condensed(NameSet::default())).unwrap(),
+      vec![vec![a.clone()], vec![b.clone()]]
+    );
+    // forged: A and B wait on each other
+    match component_order(&condensed(one(&b))) {
+      Err(CompileError::InvalidMutualBlock { reason }) => assert_eq!(
+        reason,
+        "auxComponents: no component has all dependencies ready"
+      ),
+      other => panic!("expected the refusal, got {other:?}"),
+    }
   }
 }

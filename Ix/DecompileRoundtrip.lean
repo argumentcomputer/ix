@@ -250,7 +250,7 @@ def roundtripBlock (consts : List Ix.MutConst)
   -- sort_consts (:2717), preseed (:2742) and the member compiles.
   let (sorted, blockRes, cache) ←
     match Ix.CompileM.CompileM.run cenv blockEnv {} (do
-        let sorted ← Ix.CompileM.sortConsts consts
+        let sorted := Ix.CompileM.orderRecursorFamily (← Ix.CompileM.sortConsts consts)
         let res ← Ix.CompileM.compileMutualBlock sorted
         pure (sorted, res)) with
     | .ok ((sorted, res), cache) => pure (sorted, res, cache)

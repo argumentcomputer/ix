@@ -267,11 +267,19 @@ proof-carrying use cases.
 
 ## 6. The Canonical Block Layout
 
-A mutual inductive declaration in Lean generates **many** Ixon blocks,
-not one monolithic block. Each kind of auxiliary lives in its own
-canonical `Muts` block, compiled in a specific downstream order, and
-the blocks link to each other via content-address projections.
-This section is the structural reference for what's in each block.
+A mutual inductive declaration in Lean generates **many** Ixon constants,
+not one monolithic block. The inductive block, the recursor family and
+the Prop `.below` inductive family (with its `.below.rec` family) each
+live in one canonical `Muts` block; every auxiliary **definition**
+(`casesOn`, `recOn`, a Type-level `below`/`below_N`, `brecOn`/`brecOn_N`
+with their `.go` and `.eq`, `below.casesOn`) is its own standalone
+constant, as Lean declares it, packed into a block only when several
+genuinely form a strongly connected component (D6, one constant per
+auxiliary: `aux_components` in `compile/mutual.rs`, `auxComponents` in
+`Ix/AuxGen/CompileAux.lean`). They are compiled in a specific downstream
+order and link to each other by content address, through projections
+into the blocks. This section is the structural reference for each of
+them.
 
 ### 6.0 What lives in each Ixon block
 
@@ -349,48 +357,44 @@ order. For aux recursors, the rules cover the aux inductive's ctors.
 The motive/minor split inside each recursor's `typ` follows §6.3:
 `∀ params, [user-motives] [aux-motives] [user-minors] [aux-minors] indices major, target`.
 
-#### `casesOn` block — `Muts([ Defn, Defn, … ])`
+#### `casesOn` — one standalone `Defn` per representative
 
 ```
-Muts([
-  Defn(rep₀.casesOn), Defn(rep₁.casesOn), … Defn(rep_{n−1}.casesOn),
-])
+Defn(rep₀.casesOn)   Defn(rep₁.casesOn)   …   Defn(rep_{n−1}.casesOn)
 ```
 
-One `Defn` per user representative. Auxiliary inductives don't get
-their own `.casesOn` (Lean only emits them for user types). Each
-`.casesOn` body is `λ params motive indices major, rep.rec p₀ … (λ … PUnit) …`
-— the `.rec` with non-target motives stubbed to `PUnit`.
+One `Defn` per user representative, each its own constant. Auxiliary
+inductives don't get their own `.casesOn` (Lean only emits them for user
+types). Each `.casesOn` body is
+`λ params motive indices major, rep.rec p₀ … (λ … PUnit) …` — the `.rec`
+with non-target motives stubbed to `PUnit`.
 
-#### `recOn` block — `Muts([ Defn, Defn, … ])`
+#### `recOn` — one standalone `Defn` per representative
 
 ```
-Muts([
-  Defn(rep₀.recOn), Defn(rep₁.recOn), … Defn(rep_{n−1}.recOn),
-])
+Defn(rep₀.recOn)   Defn(rep₁.recOn)   …   Defn(rep_{n−1}.recOn)
 ```
 
 Same shape as `.casesOn` but preserves all motives and reorders the
 binder chain `(major after minors)` to `(major before minors)` —
 matching Lean's `Iff.rec` / `Eq.rec` style.
 
-#### `below` blocks — two of them
+#### `below` — a Prop block, or standalone Type-level definitions
 
 ```
 Muts([                               // BELOW INDC BLOCK (Prop case)
   Indc(rep₀.below), Indc(rep₁.below), …,
+  Indc(rep₀.below_1), … Indc(rep₀.below_m),    // nested aux .below_N
 ])
 
-Muts([                               // BELOW DEF BLOCK (Type case + nested aux)
-  Defn(rep₀.below), Defn(rep₁.below), …,
-  Defn(rep₀.below_1), … Defn(rep₀.below_m),    // nested aux .below_N
-])
+Defn(rep₀.below)  …  Defn(rep₀.below_1)  …   // Type case: one constant each
 ```
 
-`.below` lives in different blocks depending on the inductive's universe:
-inductives in `Prop` get an `Inductive` payload (no value, just a
-type-level predicate); inductives in `Type` get a `Definition`
-payload (value-level, returning `PProd` of motives).
+`.below` depends on the inductive's universe: inductives in `Prop` get
+an `Inductive` family (no value, a type-level predicate per motive, built
+from the recursor's minor premises as Lean's `IndPredBelow` does), one
+mutual block; inductives in `Type` get a `Definition` per motive
+(value-level, returning `PProd` of motives), each its own constant.
 
 #### `below.rec` block — Prop case only
 
@@ -432,22 +436,24 @@ below patch) upstream; the `PropCollapseA/B` fixtures pin that
 collapsed path, including the `.below.rec` alias for non-representative
 members.
 
-#### `brecOn` blocks — three of them
+#### `brecOn` — three batches of standalone definitions
 
 ```
-Muts([ Defn(rep₀.brecOn.go), … ])    // BRECON.GO BLOCK (sub-defs)
-Muts([ Defn(rep₀.brecOn),    … ])    // BRECON BLOCK (main entry)
-Muts([ Defn(rep₀.brecOn.eq), … ])    // BRECON.EQ BLOCK (unfolding lemmas)
+Defn(rep₀.brecOn.go)  …  Defn(rep₀.brecOn_1.go)  …   // batch 1 (sub-defs)
+Defn(rep₀.brecOn)     …  Defn(rep₀.brecOn_1)     …   // batch 2 (main entry)
+Defn(rep₀.brecOn.eq)  …  Defn(rep₀.brecOn_1.eq)  …   // batch 3 (unfolding lemmas)
 ```
 
 Three batches because of dependency order: `.go` is the inner worker,
 `.brecOn` calls into `.go`, and `.eq` proves the unfolding equation
-for `.brecOn`.
+for `.brecOn`. Each definition is its own constant.
 
 #### Inter-block references — projections
 
-Individual constants are exposed as **projections** into their
-containing `Muts` block:
+Constants that live in a `Muts` block (the inductives, their
+constructors, the recursors, a Prop `.below` family) are exposed as
+**projections** into it; a standalone auxiliary definition is referred to
+by its own address:
 
 ```rust
 pub enum ConstantInfo {
@@ -480,11 +486,11 @@ A._nested.List_1.cons    (no CPrj) — aux ctor not stored; rule positions only
 A.rec                    RPrj { block: <rec-block-addr>, idx: 0 }
 B.rec                    RPrj { block: <rec-block-addr>, idx: 1 }
 A.rec_1                  RPrj { block: <rec-block-addr>, idx: 2 }   ← canonical _N
-A.casesOn                DPrj { block: <cases-block-addr>, idx: 0 }
-A.below                  DPrj/IPrj { block: <below-block-addr>, idx: 0 }
-A.brecOn                 DPrj { block: <brecon-block-addr>, idx: 0 }
-A.brecOn.go              DPrj { block: <brecon-go-block-addr>, idx: 0 }
-A.brecOn.eq              DPrj { block: <brecon-eq-block-addr>, idx: 0 }
+A.casesOn                Defn (standalone, its own address)
+A.below                  Defn (standalone; Type) / IPrj { block: <below-block-addr>, idx: 0 } (Prop)
+A.brecOn                 Defn (standalone)
+A.brecOn.go              Defn (standalone)
+A.brecOn.eq              Defn (standalone)
 ```
 
 A few key consequences:
@@ -517,23 +523,31 @@ A few key consequences:
   re-running `sort_kconsts` on its own discovery output and
   position-matching against the stored rec-block (§4.4).
 
-- **Aux `.below_N` definitions sit inside the existing below-def
-  block.** They're appended after the user-class `.below` defs.
+- **Auxiliary definitions are standalone constants (D6).** Lean declares
+  each `casesOn`, `recOn`, Type-level `below`/`below_N` and
+  `brecOn`/`.go`/`.eq` as its own non-mutual definition, and Ix stores it
+  the same way, so an auxiliary's address never depends on which
+  siblings its batch held, and Lean's own form of the auxiliary of an
+  unchanged block (`Named.original`) has the stored address. A batch is
+  split into the strongly connected components of its members'
+  references to one another, dependencies first; a genuine cycle would be
+  one block. A recursor block compiled from Lean's own declarations is
+  laid out in its family's flat order (`order_recursor_family`), as the
+  regenerated family is.
 
 - **`.casesOn` and `.recOn` have no aux variants.** Lean only emits
-  them for user-declared inductives. The blocks contain exactly
-  `n` entries.
+  them for user-declared inductives: exactly `n` of each.
 
-- **Block membership is per family, not per name.** A closure-only
+- **Generation is per family, not per name.** A closure-only
   compile (`ix compile --consts`, a claim's dependency closure) may hold
   `A.brecOn` without `B.brecOn`, or `T.brecOn` without `T.brecOn_1`.
-  `generate_aux_patches` emits a family's whole block whenever Lean
-  exported any of its members, so each block (and every projection into
-  it) has the same address as in a whole-environment compile. Building a
-  whole block can need constants none of the slice's own members reach
-  (a nested block's `.brecOn.eq` block holds `<all0>.brecOn_N.eq`, which
-  cases on the external inductive, `List.casesOn`), so the closure
-  producers close slices under "block of" as well as "references":
+  `generate_aux_patches` generates a family's whole set whenever Lean
+  exported any of its members, so each auxiliary (and every projection
+  into a family block) has the same address as in a whole-environment
+  compile. Generating a whole family can need constants none of the
+  slice's own members reach (a nested block's `<all0>.brecOn_N.eq` cases
+  on the external inductive, `List.casesOn`), so the closure
+  producers close slices under "family of" as well as "references":
   `Lean.auxFamilySiblings` (`Ix/Common.lean`) names a member's family, and
   `Ix.EnvScope.collectDeps` and `Lean.collectDependencies` pull it and its
   dependencies. A slice built any other way that still lacks such a
@@ -558,31 +572,35 @@ compile_aux_block(rec_consts)           // Primary + aux recursors
   → Muts([ Recr(U₀.rec), Recr(U₁.rec), …,
            Recr(A₀.rec), Recr(A₁.rec), … ])
 
-compile_aux_block(cases_on_defs)        // CasesOn definitions
-  → Muts([ Defn(U₀.casesOn), Defn(U₁.casesOn), … ])
+compile_aux_components(cases_on_defs)   // CasesOn definitions
+  → Defn(U₀.casesOn), Defn(U₁.casesOn), …   // one constant each (D6)
 
-compile_aux_block(rec_on_defs)          // RecOn definitions
-  → Muts([ Defn(U₀.recOn), Defn(U₁.recOn), … ])
+compile_aux_components(rec_on_defs)     // RecOn definitions
+  → Defn(U₀.recOn), Defn(U₁.recOn), …
 
 compile_aux_block(below_indcs)          // Prop-level .below inductives
   → Muts([ Indc(U₀.below), Indc(U₁.below), … ])
 
-compile_aux_block(below_defs)           // Type-level .below definitions
-  → Muts([ Defn(U₀.below), Defn(U₁.below), …,
-           Defn(U₀.below_1), Defn(U₀.below_2), … ])
+compile_aux_components(below_defs)      // Type-level .below definitions
+  → Defn(U₀.below), Defn(U₁.below), …, Defn(U₀.below_1), …
 
 compile_below_recursors(below_indcs)    // .below's own recursors (Prop case)
-  → Muts([ Recr(U₀.below.rec), … ])
+  → Muts([ Recr(U₀.below.rec), … ])     //   (its .below.casesOn: one each)
 
-compile_aux_block(brecon_defs) × 3      // BRecOn, split into 3 batches
-  → Muts([ Defn(U₀.brecOn.go), … ])     //   batch 0: .go sub-definitions
-  → Muts([ Defn(U₀.brecOn), … ])        //   batch 1: main .brecOn
-  → Muts([ Defn(U₀.brecOn.eq), … ])     //   batch 2: .eq sub-definitions
+compile_aux_components(brecon_defs) × 3 // BRecOn, split into 3 batches
+  → Defn(U₀.brecOn.go), …               //   batch 0: .go sub-definitions
+  → Defn(U₀.brecOn), …                  //   batch 1: main .brecOn
+  → Defn(U₀.brecOn.eq), …               //   batch 2: .eq sub-definitions
 ```
 
-Ixon references between these blocks are **content-address projections**
-(`InductiveProj`, `RecursorProj`, `DefinitionProj`): each projection
-carries a block address and an index within that block's member list.
+`compile_aux_components` splits a batch into the strongly connected
+components of its members' references to one another
+(`aux_components`): a singleton is a standalone constant, and only a
+genuine cycle would be one `Muts` block. Ixon references into the blocks
+are **content-address projections** (`InductiveProj`, `RecursorProj`,
+`DefinitionProj`): each projection carries a block address and an index
+within that block's member list; a standalone constant is referred to by
+its own address.
 So the primary recursor `A₀.rec` lives at
 `RecursorProj { block: <rec-block-addr>, idx: 0 }`, independent of
 where the primary inductive `A₀` lives in the inductive block.
@@ -908,21 +926,21 @@ generate_aux_patches(sorted_classes, original_all, …)         [aux_gen.rs]
   ▼
 AuxPatchesOutput { patches, perm, … }
   │
-  │  (per aux kind, each compiled into its OWN downstream Muts block:)
+  │  (each family block, and each auxiliary definition, compiled on its own:)
   ▼
 compile_aux_block(rec_consts)     → Muts([ Recr(…), … ])      // REC BLOCK
-compile_aux_block(cases_on_defs)  → Muts([ Defn(…), … ])      // CASES_ON BLOCK
-compile_aux_block(rec_on_defs)    → Muts([ Defn(…), … ])      // REC_ON BLOCK
+compile_aux_components(cases_on_defs) → Defn(…), …         // standalone (D6)
+compile_aux_components(rec_on_defs)   → Defn(…), …         // standalone
 compile_aux_block(below_indcs)    → Muts([ Indc(…), … ])      // BELOW INDC BLOCK (Prop)
-compile_aux_block(below_defs)     → Muts([ Defn(…), … ])      // BELOW DEF BLOCK (Type)
+compile_aux_components(below_defs)    → Defn(…), …         // standalone (Type)
 compile_below_recursors(…)        → Muts([ Recr(…), … ])      // BELOW.REC BLOCK (Prop)
-compile_aux_block(brecon_go)      → Muts([ Defn(…), … ])      // BRECON.GO BLOCK
-compile_aux_block(brecon_main)    → Muts([ Defn(…), … ])      // BRECON BLOCK
-compile_aux_block(brecon_eq)      → Muts([ Defn(…), … ])      // BRECON.EQ BLOCK
+compile_aux_components(brecon_go)     → Defn(…), …         // standalone
+compile_aux_components(brecon_main)   → Defn(…), …         // standalone
+compile_aux_components(brecon_eq)     → Defn(…), …         // standalone
   │
   │  Each block's member order is [user-classes (sort_consts) | aux (structural sort)].
-  │  Blocks reference each other via content-address projections
-  │  (IndcProj / RecrProj / DefnProj), NOT by embedding.
+  │  Constants reference each other by content address: projections into the
+  │  blocks (IndcProj / RecrProj / DefnProj) or a standalone constant's own address.
   │
   ▼
 stt.aux_perms.insert(

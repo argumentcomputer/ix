@@ -56,6 +56,7 @@ import Tests.Ix.AuxGen.AuxKernelTests
 import Tests.Ix.AuxGen.ElimRuleTests
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
+import Tests.Ix.AuxGen.ComponentsTests
 import Tests.Ix.AuxGen.FlatBlockSource
 import Tests.Ix.AuxGen.FlatBlockInitStd
 import Tests.Ix.GroundTests
@@ -165,7 +166,7 @@ def registry : List Entry := [
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
     ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
-    ++ Tests.AuxGen.LevelEgress.suite),
+    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped

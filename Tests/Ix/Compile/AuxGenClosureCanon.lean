@@ -3,11 +3,12 @@
   compile set.
 
   Every auxiliary kind (`.rec`, `.casesOn`, `.recOn`, `.below`,
-  `.brecOn.go`, `.brecOn`, `.brecOn.eq`, `.below.casesOn`) is compiled as
-  one Ixon block holding the member of every class (and of every nested
-  auxiliary, `_N`), and each name is a projection into it. A closure-only
-  environment (any claim built from a dependency closure) holds only the
-  members its seeds reach. Before the fix the
+  `.brecOn.go`, `.brecOn`, `.brecOn.eq`, `.below.casesOn`) is generated for
+  the member of every class (and of every nested auxiliary, `_N`): the
+  recursors and a Prop `.below` family as one Ixon block with each name a
+  projection into it, every definition as its own constant (D6). A
+  closure-only environment (any claim built from a dependency closure)
+  holds only the members its seeds reach. Before the fix the
   compiler emitted only the members present, so a closure compile gave
   `A.brecOn` (and `.casesOn`, `.recOn`, `.brecOn.go`, `.brecOn.eq`,
   `.below` of a nested block, and everything that references them: the
@@ -30,8 +31,8 @@
     raw collector, which reaches fewer family members.)
   - `raw`: the closure without family completion (`rawDeps`), which tests
     the compiler's per-family block membership on its own. Every address
-    must match except a nested block's class `.brecOn.eq`: its canonical
-    block holds `<all0>.brecOn_N.eq`, which needs `List.casesOn`, not in
+    must match except a nested block's class `.brecOn.eq`: its family
+    holds `<all0>.brecOn_N.eq`, which needs `List.casesOn`, not in
     the raw closure, so the compiler refuses the block with "partial
     auxiliary family" (A0, WB-E3), and those seeds must be refused.
   - `pack`: `ix pack` (`rsPackEnv`) of the reference to each auxiliary
