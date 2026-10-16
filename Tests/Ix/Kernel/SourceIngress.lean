@@ -92,10 +92,9 @@ def expected : List (Lean.Name × String) := [
   -- the checker admits the standard axioms only
   (defs "fidelityAxiom", "decline"),
   (defs "levelMax", "accept"), (defs "levelImax", "accept"),
-  -- a `partial` definition's compiled companion is typed by the typing tier
-  -- (`checkSourceTiered`); an `unsafe` one is declined (the unsafe stage is
-  -- not built)
-  (defs "spin._unsafe_rec", "typed"), (defs "unsafeId", "decline"),
+  -- a `partial` definition's compiled companion and an `unsafe` definition
+  -- are typed by the typing tier (`checkSourceTiered`)
+  (defs "spin._unsafe_rec", "typed"), (defs "unsafeId", "typed"),
   -- `Nat.div` is a certified operation, accepted on the proof evidence of
   -- the certificate theorems the environment carries
   -- (`IxC.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded

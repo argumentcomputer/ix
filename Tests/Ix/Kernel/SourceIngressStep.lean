@@ -21,7 +21,8 @@ environment check does for Ixon records (`Benchmarks.Kernel.CheckIxeStep`):
   continuing past failures;
 * a group that references a refused or blocked group is blocked and not
   checked; a group is accepted when every one of its declarations is;
-* a tier group (`isTierGroup`) is converted by the tier's conversion
+* a tier group (`isTierGroup`: `partial` or `unsafe` definitions, an unsafe
+  opaque, an unsafe axiom) is converted by the tier's conversion
   (`convertTier`) and, after the step check, checked by the typing tier at
   the checked environment's index, staged as `checkSourceTiered` stages it
   (`typed`, reason its safety; a failure declines, `tier (<safety>): …`); a
@@ -112,9 +113,8 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   -- the logical conversion, so that the schedule's verdict on them is the
   -- placement checks alone (`leanIngressTieredOf`); the order is unchanged
   let tierConv : Array (Option (Except ReadError (TierDecl .source))) ←
-    IO.lazyPure fun _ => groups.map fun grp => match grp with
-      | .definitions ms => if isTierGroup grp then some (convertTier ms) else none
-      | _ => none
+    IO.lazyPure fun _ => groups.map fun grp =>
+      if isTierGroup grp then some (convertTier grp) else none
   let gT : Graph := { g with converted := g.converted.zipIdx.map fun (c, i) =>
     if (tierConv[i]!).isSome then .ok (.definitions #[]) else c }
   let sched ← IO.lazyPure fun _ => scheduleOf gT

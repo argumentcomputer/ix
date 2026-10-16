@@ -728,18 +728,19 @@ def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except SourceError (Ix.Kernel.Env .source) :=
   checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
 
-/-! ## The typing tier: partial definitions
+/-! ## The typing tier: partial and unsafe declarations
 
 `checkSource` declines every group with a member that is not safe. The
 **tiered** check gives a group of `partial` definitions (Lean's
-`_unsafe_rec` companions) the typing tier's verdict instead
-(`Ix.Kernel.Tier`): the logical groups are checked exactly as `checkSource`
-checks them, and then the tier groups, at the accepted environment's index,
-with every tier constant opaque. Unsafe groups stay logical and decline, as
-in `checkSource` (the unsafe stage is not built).
+`_unsafe_rec` companions), of `unsafe` definitions, an unsafe opaque and an
+unsafe axiom the typing tier's verdict instead (`Ix.Kernel.Tier`): the
+logical groups are checked exactly as `checkSource` checks them, and then
+the tier groups, at the accepted environment's index, staged as Lean's
+lattice requires (`Tier.staged`), with every tier constant opaque. Unsafe
+inductives stay logical and decline, as in `checkSource`.
 
-* **The partition** (`isTierGroup`): a definition group with a `partial`
-  member. It decides coverage only.
+* **The partition** (`isTierGroup`): a definition group with a member that
+  is not safe, or an unsafe axiom. It decides coverage only.
 * **Order.** The groups are ordered as `leanIngress` orders them; a tier
   group is converted by the tier's conversion (`convertTier`: the same term
   conversion, no safety policy, no definition order, since the tier installs
@@ -752,32 +753,61 @@ in `checkSource` (the unsafe stage is not built).
 
 open Ix.Kernel.Tier (TierDecl TierConst)
 
-/-- A tier group of the partial stage: a definition group with a `partial`
-member. -/
+/-- A definition's safety in the tier: anything but safe. -/
+def tierSafetyOf? : Lean.DefinitionSafety → Option Ix.Kernel.Tier.Safety
+  | .partial => some .part
+  | .unsafe => some .unsaf
+  | .safe => none
+
+/-- **A tier group**: a definition group with a member that is not safe (a
+`partial` or `unsafe` definition, or an unsafe opaque), or an unsafe axiom.
+Unsafe inductives are not: they stay logical, where the reader declines
+them. -/
 def isTierGroup : Group → Bool
   | .definitions ms => ms.any fun
-    | .defnInfo v => v.safety == .partial
+    | .defnInfo v => (tierSafetyOf? v.safety).isSome
+    | .opaqueInfo v => v.isUnsafe
     | _ => false
+  | .axiom v => v.isUnsafe
   | _ => false
 
-/-- **A tier group's conversion**: every member a `partial` definition (else
-declined), each member's header and value converted under its own numbering,
-as `convertDefinitions` converts them, in the group's order. -/
-def convertTier (members : Array Ix.ConstantInfo) : Except ReadError (TierDecl .source) := do
-  let mut items : Array (Numbering × Ix.Expr) := #[]
-  for ci in members do
-    let .defnInfo v := ci
-      | throw (.declined "tier: a partial block with a member that is not a definition")
-    unless v.safety == .partial do
-      throw (.declined s!"tier: a partial block with a member of safety \
-        '{Ix.Kernel.Reader.safetyWord (safetyOf v.safety)}'")
+/-- **A tier group's conversion**, each header and value under its own
+numbering, as `convertDefinitions` converts them, in the group's order: an
+unsafe axiom, its header; a lone unsafe opaque, itself; otherwise a
+definition block, every member a definition of the first member's safety,
+which is not safe (else declined: a mixed-safety block, a theorem, or an
+opaque in a block). -/
+def convertTier : Group → Except ReadError (TierDecl .source)
+  | .axiom v => do
     let σ : Numbering := ⟨v.cnst.levelParams, false⟩
-    items := items.push (σ, v.cnst.type) |>.push (σ, v.value)
-  let ks ← exprsOf items
-  let ms := members.zipIdx.map fun (ci, j) =>
-    let σ : Numbering := ⟨ci.getCnst.levelParams, false⟩
-    ((⟨ingressKey ci.getCnst.name, σ.params, ks[2 * j]!⟩ : CVal .source), ks[2 * j + 1]!)
-  return .defs .part ms.toList
+    let ks ← exprsOf #[(σ, v.cnst.type)]
+    return .unsafeAxiom ⟨ingressKey v.cnst.name, σ.params, ks[0]!⟩
+  | .definitions #[.opaqueInfo v] => do
+    unless v.isUnsafe do throw (.declined "tier: a safe opaque")
+    let σ : Numbering := ⟨v.cnst.levelParams, false⟩
+    let ks ← exprsOf #[(σ, v.cnst.type), (σ, v.value)]
+    return .unsafeOpaque ⟨ingressKey v.cnst.name, σ.params, ks[0]!⟩ ks[1]!
+  | .definitions members => do
+    let some (Ix.ConstantInfo.defnInfo v₀) := members[0]?
+      | throw (.declined "tier: a block with a member that is not a definition")
+    let some s := tierSafetyOf? v₀.safety
+      | throw (.declined s!"tier: a block of safety \
+          '{Ix.Kernel.Reader.safetyWord (safetyOf v₀.safety)}' with a member that is not safe")
+    let mut items : Array (Numbering × Ix.Expr) := #[]
+    for ci in members do
+      let .defnInfo v := ci
+        | throw (.declined s!"tier: a {s.word} block with a member that is not a definition")
+      unless v.safety == v₀.safety do
+        throw (.declined s!"tier: a {s.word} block with a member of safety \
+          '{Ix.Kernel.Reader.safetyWord (safetyOf v.safety)}'")
+      let σ : Numbering := ⟨v.cnst.levelParams, false⟩
+      items := items.push (σ, v.cnst.type) |>.push (σ, v.value)
+    let ks ← exprsOf items
+    let ms := members.zipIdx.map fun (ci, j) =>
+      let σ : Numbering := ⟨ci.getCnst.levelParams, false⟩
+      ((⟨ingressKey ci.getCnst.name, σ.params, ks[2 * j]!⟩ : CVal .source), ks[2 * j + 1]!)
+    return .defs s ms.toList
+  | _ => throw (.declined "tier: not a tier group")
 
 /-- Failures of the tiered Source-mode check, kept apart. -/
 inductive TierSourceError where
@@ -801,9 +831,7 @@ placement checks. -/
 def leanIngressTieredOf (g : Graph) (st : State .source := {}) :
     Except IngressError (Array (CDecl .source) × Array (TierDecl .source)) := do
   let tierConv : Array (Option (Except ReadError (TierDecl .source))) := g.groups.map fun grp =>
-    match grp with
-    | .definitions ms => if isTierGroup grp then some (convertTier ms) else none
-    | _ => none
+    if isTierGroup grp then some (convertTier grp) else none
   -- the tier groups' slots pass the conversion, so that the schedule's verdict
   -- on them is the placement checks alone; the order is the graph's, unchanged
   let gT : Graph := { g with converted := g.converted.zipIdx.map fun (c, i) =>
@@ -850,8 +878,8 @@ def checkSourceTieredUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .s
   | .error (e, k) => throw (.tier e k)
 
 /-- **The tiered Source-mode check**: `checkSource` over the logical groups
-behind the committed prelude, then the typing tier over the partial groups.
-The result is the logical environment, model-backed as `checkSource`'s, and
+behind the committed prelude, then the typing tier over the tier groups
+(partial and unsafe). The result is the logical environment, model-backed as `checkSource`'s, and
 the tier constants, typed with every tier constant opaque
 (`Ix.LeanIngress.checkSourceTiered_ok`). -/
 def checkSourceTiered (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
