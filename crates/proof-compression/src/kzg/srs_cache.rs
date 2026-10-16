@@ -3,9 +3,12 @@
 //! uncompressed points behind a BLAKE3 checksum; loading checks canonical
 //! coordinates, curve membership and the seed-dependent anchors, not the
 //! full subgroup and progression validation of an import.
+use super::curve::{
+  G1_UNCOMPRESSED_BYTES as G1_BYTES, G1Affine, G1Projective,
+  G2_UNCOMPRESSED_BYTES as G2_BYTES, G2Affine, G2Projective,
+};
 use super::srs::dev_tau;
 use super::{PublicSetup, Srs};
-use ark_bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective};
 use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
 use ark_ff::Field;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -18,9 +21,10 @@ use std::{
   time::Instant,
 };
 
+#[cfg(not(feature = "bn254"))]
 const MAGIC: &[u8] = b"ix/bls12-381/dev-srs/v1\0";
-const G1_BYTES: usize = 96;
-const G2_BYTES: usize = 192;
+#[cfg(feature = "bn254")]
+const MAGIC: &[u8] = b"ix/bn254/dev-srs/v1\0";
 const BLOCK_POINTS: usize = 1 << 18;
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -256,6 +260,19 @@ mod directory_tests {
   }
 
   #[test]
+  fn cache_identity_is_curve_specific() {
+    let seed = b"curve-specific-cache";
+    let mut legacy_header = b"ix/bls12-381/dev-srs/v1\0".to_vec();
+    legacy_header.extend_from_slice(&16u64.to_le_bytes());
+    legacy_header.extend_from_slice(blake3::hash(seed).as_bytes());
+    assert_eq!(header(16, seed) == legacy_header, !cfg!(feature = "bn254"));
+    assert_eq!(
+      blake3::hash(&header(16, seed)) == blake3::hash(&legacy_header),
+      !cfg!(feature = "bn254")
+    );
+  }
+
+  #[test]
   fn cache_round_trip_and_key_separation() {
     let directory = TestDirectory::new();
     for (size, seed) in [
@@ -267,6 +284,12 @@ mod directory_tests {
       let fresh = cached_in_directory(size, 63, seed, &directory.0).unwrap();
       let cached = cached_in_directory(size, 63, seed, &directory.0).unwrap();
       let expected = Srs::unsafe_dev_setup_prefix(size, 63, seed);
+      assert_eq!(expected.g1[0].uncompressed_size(), G1_BYTES);
+      assert_eq!(expected.g2.uncompressed_size(), G2_BYTES);
+      assert_eq!(
+        fs::metadata(directory.path(size, seed)).unwrap().len(),
+        (header(size, seed).len() + size * G1_BYTES + 2 * G2_BYTES + 32) as u64
+      );
       for actual in [fresh, cached] {
         assert_eq!(actual.g1, expected.g1);
         assert_eq!(actual.g2, expected.g2);

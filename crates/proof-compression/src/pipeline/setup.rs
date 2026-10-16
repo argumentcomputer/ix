@@ -4,16 +4,18 @@
 //! Filecoin policy loads an authenticated prefix of the phase-one powers of
 //! tau from the cache named by `IX_KZG_FILECOIN_CACHE`, pinned by the manifest
 //! receipt in `IX_KZG_FILECOIN_MANIFEST` or, when that is unset, the built-in
-//! receipt of the complete `2^27` cache. The development policy derives a
+//! receipt of the complete `2^27` cache. Filecoin is available only with
+//! BLS12-381; BN254 requires explicit development setup selection.
+//! The development policy derives a
 //! known trapdoor from the stage seed, with parameters from a per-stage cache
 //! file or from the shared directory named by `IX_KZG_SRS_CACHE`.
 use super::storage;
-use crate::kzg::{
-  KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams,
-  srs::filecoin::{
-    FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
-  },
+#[cfg(not(feature = "bn254"))]
+use crate::kzg::srs::filecoin::{
+  FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
 };
+use crate::kzg::{KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams};
+use multi_stark::traits::TwoAdicField;
 use std::{
   fs,
   path::{Path, PathBuf},
@@ -22,14 +24,16 @@ use std::{
 
 pub(crate) const FIRST_SEED: &[u8] = b"init-fri-kzg-ordinary-v1";
 pub(crate) const BINDING_FILE: &str = "kzg-setup-id.bin";
+#[cfg(not(feature = "bn254"))]
 pub(crate) const FILECOIN_CACHE_VAR: &str = "IX_KZG_FILECOIN_CACHE";
+#[cfg(not(feature = "bn254"))]
 pub(crate) const FILECOIN_MANIFEST_VAR: &str = "IX_KZG_FILECOIN_MANIFEST";
 
 /// The trust class of verifier parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupClass {
   /// Filecoin's phase-one powers of tau. The trapdoor is unknown unless
-  /// every ceremony participant colluded.
+  /// every ceremony participant colluded. No BN254 parameters have this class.
   Filecoin,
   /// A trapdoor derived from a seed; anyone can forge proofs.
   Development,
@@ -39,6 +43,7 @@ impl SetupClass {
   /// Filecoin only when the identity, public degree and all four anchor
   /// points equal the pinned ceremony values; an identity alone is just
   /// bytes any profile could carry.
+  #[cfg(not(feature = "bn254"))]
   pub fn of(params: &VerifierParams) -> Self {
     let pinned = filecoin_anchors();
     if params.public_setup == pinned.public_setup
@@ -50,6 +55,12 @@ impl SetupClass {
     } else {
       Self::Development
     }
+  }
+
+  /// No authenticated production setup is available for BN254.
+  #[cfg(feature = "bn254")]
+  pub fn of(_params: &VerifierParams) -> Self {
+    Self::Development
   }
 
   pub fn label(self) -> &'static str {
@@ -70,21 +81,31 @@ impl SetupClass {
 }
 
 fn development_refused<T>() -> storage::Result<T> {
-  Err(
-    format!(
-      "no Filecoin SRS cache is configured; set {FILECOIN_CACHE_VAR} to an \
-       authenticated prefix cache, or pass --dev-srs to use the \
-       known-trapdoor development setup (not production-secure)"
-    )
-    .into(),
-  )
+  #[cfg(feature = "bn254")]
+  let message = "no authenticated BN254 production setup is available; pass \
+                 --dev-srs to use the known-trapdoor development setup \
+                 (not production-secure)"
+    .to_owned();
+  #[cfg(not(feature = "bn254"))]
+  let message = format!(
+    "no Filecoin SRS cache is configured; set {FILECOIN_CACHE_VAR} to an \
+     authenticated prefix cache, or pass --dev-srs to use the \
+     known-trapdoor development setup (not production-secure)"
+  );
+  Err(message.into())
 }
 
 /// Setup policy captured for one worker invocation.
 #[derive(Clone)]
 pub(crate) enum SetupConfig {
-  Filecoin { cache: PathBuf, manifest: [u8; 32] },
-  Development { cache_directory: Option<PathBuf> },
+  #[cfg(not(feature = "bn254"))]
+  Filecoin {
+    cache: PathBuf,
+    manifest: [u8; 32],
+  },
+  Development {
+    cache_directory: Option<PathBuf>,
+  },
 }
 
 impl SetupConfig {
@@ -95,6 +116,7 @@ impl SetupConfig {
           .map(PathBuf::from),
       });
     }
+    #[cfg(not(feature = "bn254"))]
     if let Some(cache) = std::env::var_os(FILECOIN_CACHE_VAR) {
       let cache = PathBuf::from(cache);
       if !cache.is_file() {
@@ -120,6 +142,7 @@ impl SetupConfig {
 
   pub(crate) fn class(&self) -> SetupClass {
     match self {
+      #[cfg(not(feature = "bn254"))]
       Self::Filecoin { .. } => SetupClass::Filecoin,
       Self::Development { .. } => SetupClass::Development,
     }
@@ -130,10 +153,14 @@ impl SetupConfig {
     seed: &[u8],
     height: usize,
   ) -> storage::Result<SetupSource> {
-    if height < 2 || !height.is_power_of_two() {
+    if height < 2
+      || !height.is_power_of_two()
+      || height.ilog2() as usize > crate::kzg::Scalar::TWO_ADICITY
+    {
       return Err("invalid trace height".into());
     }
     match self {
+      #[cfg(not(feature = "bn254"))]
       Self::Filecoin { cache, manifest } => {
         Ok(SetupSource::filecoin(cache.clone(), *manifest))
       },
@@ -150,8 +177,15 @@ impl SetupConfig {
 
 #[derive(Clone)]
 enum Policy {
-  Development { seed: Vec<u8>, cache_directory: Option<PathBuf> },
-  Filecoin { cache: PathBuf, manifest: [u8; 32] },
+  Development {
+    seed: Vec<u8>,
+    cache_directory: Option<PathBuf>,
+  },
+  #[cfg(not(feature = "bn254"))]
+  Filecoin {
+    cache: PathBuf,
+    manifest: [u8; 32],
+  },
 }
 
 #[derive(Clone)]
@@ -161,6 +195,7 @@ pub(crate) struct SetupSource {
   transcript_kind: TranscriptKind,
 }
 
+#[cfg(not(feature = "bn254"))]
 fn parse_digest(text: &str) -> storage::Result<[u8; 32]> {
   if text.len() != 64 || !text.is_ascii() {
     return Err(
@@ -195,6 +230,7 @@ impl SetupSource {
 
   /// Filecoin parameters: pinned anchors for verification, and proving
   /// prefixes from an authenticated cache pinned by its import receipt.
+  #[cfg(not(feature = "bn254"))]
   pub(crate) fn filecoin(cache: PathBuf, manifest: [u8; 32]) -> Self {
     Self {
       policy: Policy::Filecoin { cache, manifest },
@@ -212,8 +248,12 @@ impl SetupSource {
   /// Serve development parameters from a shared directory of cached
   /// files, keyed by prefix length and seed, instead of regenerating them.
   pub(crate) fn with_cache_directory(mut self, directory: PathBuf) -> Self {
-    if let Policy::Development { cache_directory, .. } = &mut self.policy {
-      *cache_directory = Some(directory);
+    match &mut self.policy {
+      Policy::Development { cache_directory, .. } => {
+        *cache_directory = Some(directory);
+      },
+      #[cfg(not(feature = "bn254"))]
+      Policy::Filecoin { .. } => {},
     }
     self
   }
@@ -221,6 +261,7 @@ impl SetupSource {
   pub(crate) fn class(&self) -> SetupClass {
     match self.policy {
       Policy::Development { .. } => SetupClass::Development,
+      #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { .. } => SetupClass::Filecoin,
     }
   }
@@ -239,7 +280,7 @@ impl SetupSource {
   fn check_height(&self, height: usize) -> storage::Result<()> {
     if height < 2
       || !height.is_power_of_two()
-      || height.ilog2() > 32
+      || height.ilog2() as usize > crate::kzg::Scalar::TWO_ADICITY
       || height - 1 > self.public_setup.max_degree
     {
       return Err("trace height exceeds public setup allowance".into());
@@ -256,7 +297,9 @@ impl SetupSource {
     self.check_height(height)?;
     let length = if verify_only { 2 } else { height };
     match &self.policy {
+      #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { .. } if verify_only => Ok(filecoin_anchors()),
+      #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { cache, manifest } => {
         Ok(load_filecoin_cache(cache, *manifest, length)?)
       },
@@ -291,8 +334,14 @@ impl SetupSource {
     quotient: usize,
     verify_only: bool,
   ) -> storage::Result<KzgConfig> {
+    self.check_height(height)?;
     if !quotient.is_power_of_two() {
       return Err("invalid quotient budget".into());
+    }
+    if height.ilog2() as usize + quotient.ilog2() as usize
+      > crate::kzg::Scalar::TWO_ADICITY
+    {
+      return Err("quotient domain exceeds scalar field two-adicity".into());
     }
     Ok(
       (if verify_only {
@@ -353,6 +402,7 @@ impl SetupSource {
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[cfg(not(feature = "bn254"))]
   use crate::kzg::srs::filecoin::{
     FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
   };
@@ -425,6 +475,7 @@ mod tests {
     Ok(())
   }
 
+  #[cfg(not(feature = "bn254"))]
   #[test]
   fn setup_class_requires_the_pinned_anchors_and_identity() {
     let pinned = filecoin_anchors();
@@ -488,6 +539,7 @@ mod tests {
       config.for_stage(FIRST_SEED, 64)?.identity(64, 2)?,
       SetupSource::development(FIRST_SEED, 63)?.identity(64, 2)?
     );
+    #[cfg(not(feature = "bn254"))]
     if std::env::var_os(FILECOIN_CACHE_VAR).is_none() {
       assert!(
         SetupConfig::from_env(false)
@@ -500,6 +552,7 @@ mod tests {
     Ok(())
   }
 
+  #[cfg(not(feature = "bn254"))]
   #[test]
   fn checked_in_filecoin_cache_proves_and_binds_under_its_identity()
   -> storage::Result<()> {
@@ -530,6 +583,40 @@ mod tests {
     assert_ne!(
       setup.identity(256, 2)?,
       SetupSource::development(FIRST_SEED, 255)?.identity(256, 2)?
+    );
+    Ok(())
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
+  fn bn254_requires_explicit_development_setup() -> storage::Result<()> {
+    let error = SetupConfig::from_env(false).err().unwrap().to_string();
+    assert!(error.contains("BN254"));
+    assert!(error.contains("--dev-srs"));
+    let source = SetupConfig::from_env(true)?.for_stage(FIRST_SEED, 8)?;
+    assert_eq!(source.class(), SetupClass::Development);
+    assert_eq!(
+      SetupClass::of(&source.verifier_params(8)?),
+      SetupClass::Development
+    );
+    Ok(())
+  }
+
+  #[test]
+  fn setup_rejects_unsupported_trace_and_quotient_domains()
+  -> storage::Result<()> {
+    let max_height = 1usize << crate::kzg::Scalar::TWO_ADICITY;
+    let source = SetupSource::development(FIRST_SEED, max_height * 2 - 1)?;
+    assert!(source.config(max_height / 2, 2, true).is_ok());
+    assert!(source.config(max_height, 1, true).is_ok());
+    assert!(source.config(max_height, 2, true).is_err());
+    assert!(source.verifier_params(max_height * 2).is_err());
+    assert!(source.config(8, 0, true).is_err());
+    assert!(source.config(8, 3, true).is_err());
+    assert!(
+      SetupConfig::from_env(true)?
+        .for_stage(FIRST_SEED, max_height * 2)
+        .is_err()
     );
     Ok(())
   }

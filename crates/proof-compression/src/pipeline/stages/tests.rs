@@ -112,6 +112,13 @@ fn kzg_stages_derive_claims_for_different_layouts_and_parameters() -> Result<()>
     let key_bytes = verifier.to_bytes()?;
     let verifier = KzgVerifier::from_bytes(&key_bytes)?;
     assert_eq!(verifier.to_bytes()?, key_bytes);
+    let mut other_curve = key_bytes.clone();
+    other_curve[..8].copy_from_slice(if cfg!(feature = "bn254") {
+      b"IXKZGV02"
+    } else {
+      b"IXBNKV02"
+    });
+    assert!(KzgVerifier::from_bytes(&other_curve).is_err());
     assert!(
       KzgVerifier::from_bytes(&key_bytes[..key_bytes.len() - 1]).is_err()
     );

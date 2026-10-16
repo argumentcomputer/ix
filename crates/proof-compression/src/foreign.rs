@@ -1,4 +1,4 @@
-//! Goldilocks constraints over the BLS12-381 scalar field.
+//! Goldilocks constraints over the selected KZG curve's scalar field.
 //! Each modular relation has a bounded quotient; small integer relations lift directly.
 
 use num_bigint::{BigInt, BigUint, Sign};
@@ -92,7 +92,7 @@ fn tune_kzg_input(
       karatsuba: false,
     })
     .expect("valid lowering");
-  let commitment_bytes = 48;
+  let commitment_bytes = crate::kzg::curve::G1_COMPRESSED_BYTES;
   let best = (1..=MAX_LOOKUP_GROUP)
     .filter_map(|group| {
       let degree = graph

@@ -1,6 +1,6 @@
-//! Verifier profiles authenticated by the application release. A packet
-//! names its profile; the profile pins the aggregation program its proofs
-//! attest, so the statement for a claim follows without the proving backend.
+//! Verifier profiles authenticated by a release bundle or an independent
+//! digest. Bundles pin an aggregation program; local profiles require its
+//! independently supplied statement as well as the certificate claim.
 use super::{
   Result,
   setup::SetupClass,
@@ -20,11 +20,13 @@ struct BundledVerifier {
   decoded: OnceLock<std::result::Result<PreparedVerifierProfile, String>>,
 }
 
+#[cfg(not(feature = "bn254"))]
 const AGGREGATE_PREFIX: [u64; 10] = [
   0, 293, 3008464260, 3936129970, 1088962797, 1141056675, 2347219926,
   1176003176, 683533119, 3085659920,
 ];
 
+#[cfg(not(feature = "bn254"))]
 static VERIFIERS: [BundledVerifier; 4] = [
   BundledVerifier {
     id: "4224c47197ed387320dfb9b8bbf2369fa326f72c54e1cbc65907f5e6e8541ca0",
@@ -59,6 +61,9 @@ static VERIFIERS: [BundledVerifier; 4] = [
     decoded: OnceLock::new(),
   },
 ];
+
+#[cfg(feature = "bn254")]
+static VERIFIERS: [BundledVerifier; 0] = [];
 
 impl BundledVerifier {
   fn profile(&self) -> Result<&PreparedVerifierProfile> {
@@ -111,7 +116,32 @@ pub(super) fn verify(
   Ok(verifier.setup)
 }
 
-#[cfg(test)]
+/// Verify using an independently authenticated profile and expected statement.
+pub(super) fn verify_with_profile(
+  packet: &[u8],
+  claim: &[u8],
+  expected: &statement::Statement,
+  profile: &[u8],
+  trusted_digest: &[u8; 32],
+  allow_development: bool,
+) -> Result<SetupClass> {
+  if blake3::hash(profile).as_bytes() != trusted_digest {
+    return Err(
+      "local verifier profile digest differs from the trusted digest".into(),
+    );
+  }
+  statement::bind_claim(claim, expected)?;
+  let profile = VerifierProfile::from_bytes(profile)?;
+  let setup = SetupClass::of(&profile.verifier_params()?);
+  profile.check_setup_class(setup)?;
+  if setup == SetupClass::Development && !allow_development {
+    return Err("compressed proof uses the known-trapdoor development setup; pass --dev-srs to accept it (not production-secure)".into());
+  }
+  profile.verify(packet, expected)?;
+  Ok(setup)
+}
+
+#[cfg(all(test, not(feature = "bn254")))]
 mod tests {
   use super::*;
   use crate::pipeline::{self, PROOF_TAG};
@@ -278,5 +308,25 @@ mod tests {
       wrong_version[7] ^= 1;
       assert!(verify(&wrong_version, CLAIM, true).is_err());
     }
+  }
+}
+
+#[cfg(all(test, feature = "bn254"))]
+mod bn254_tests {
+  use super::*;
+
+  #[test]
+  fn bn254_requires_an_explicit_trusted_profile() {
+    assert!(bundled(&[0; 32]).is_none());
+    let bls_packet = include_bytes!(
+      "../../tests/fixtures/aggregate-kzg/development-v5-packet.bin"
+    );
+    assert!(verify(bls_packet, b"claim", true).is_err());
+    assert!(
+      VerifierProfile::from_bytes(include_bytes!(
+        "../../profiles/aggregate-development-v6.bin"
+      ))
+      .is_err()
+    );
   }
 }

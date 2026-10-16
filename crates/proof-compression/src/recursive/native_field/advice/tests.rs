@@ -1,6 +1,8 @@
 use super::*;
-use crate::recursive::native_field::{Builder, FqGadget};
-use ark_bls12_381::Fq;
+use crate::{
+  kzg::curve::Fq,
+  recursive::native_field::{Builder, FqGadget},
+};
 use ark_ff::PrimeField;
 
 fn integer_reference(value: Scalar) -> BigUint {
@@ -26,8 +28,8 @@ pub(in crate::recursive::native_field) fn relation_reference(
   lc: &[i8],
   constant: i8,
   p_hint: &[BigUint; L],
-) -> Result<[Scalar; 9], String> {
-  let mut t = vec![BigInt::from(0u8); 10];
+) -> Result<[Scalar; RELATION_ADVICE_LEN], String> {
+  let mut t = vec![BigInt::from(0u8); 2 * L];
   let mut at = 0;
   for &c in pc {
     for i in 0..L {
@@ -51,34 +53,34 @@ pub(in crate::recursive::native_field) fn relation_reference(
   if &total % &prime != BigInt::from(0u8) {
     return Err("nonzero Fq relation".into());
   }
-  let q: BigInt = total / prime + (BigInt::from(1u8) << 383usize);
+  let q: BigInt = total / prime + (BigInt::from(1u8) << QUOTIENT_BIAS_BITS);
   let q = q.to_biguint().ok_or("negative biased quotient")?;
-  if q.bits() > 384 {
+  if q.bits() > QUOTIENT_BITS as u64 {
     return Err("Fq quotient overflow".into());
   }
   let q = digits(&q);
-  let bias = digits(&(BigUint::from(1u8) << 383));
+  let bias = digits(&(BigUint::from(1u8) << QUOTIENT_BIAS_BITS));
   for i in 0..L {
     for j in 0..L {
       t[i + j] -= BigInt::from(p_hint[i].clone())
         * (BigInt::from(q[j].clone()) - BigInt::from(bias[j].clone()));
     }
   }
-  let mut out = [Scalar::ZERO; 9];
+  let mut out = [Scalar::ZERO; RELATION_ADVICE_LEN];
   for i in 0..L {
     out[i] = scalar(&q[i]);
   }
   let radix = BigInt::from(1u8) << W;
   let block_radix = &radix * &radix;
   let mut carry = BigInt::from(0u8);
-  for j in 0..5 {
+  for j in 0..L {
     carry += &t[2 * j] + &radix * &t[2 * j + 1];
     if &carry % &block_radix != BigInt::from(0u8) {
       return Err("nonintegral Fq carry".into());
     }
     carry /= &block_radix;
-    if j < 4 {
-      let biased: BigInt = &carry + (BigInt::from(1u8) << 88usize);
+    if j < L - 1 {
+      let biased: BigInt = &carry + (BigInt::from(1u8) << CARRY_BIAS_BITS);
       let v = biased.to_biguint().ok_or("negative biased carry")?;
       if v.bits() > CARRY_BITS as u64 {
         return Err("Fq carry overflow".into());
@@ -211,6 +213,35 @@ fn zero_and_quotient_limit_errors_match_reference() {
       relation_reference(&values, &[coefficient], &[], 0, &modulus_digits),
       expected
     );
+  }
+}
+
+#[test]
+fn maximal_representatives_have_exact_signed_integer_quotients() {
+  let field_bits = Fq::MODULUS_BIT_SIZE as usize;
+  let max = (BigUint::from(1u8) << field_bits) - 1u8;
+  let total = 3u8 * &max * &max + 3u8 * &max + 4u8;
+  let residue = &total % modulus();
+  let quotient = &total / modulus();
+  let mut values = Vec::new();
+  for n in [&max, &max, &max, &residue] {
+    values.extend(digits(n).map(|limb| scalar(&limb)));
+  }
+  for sign in [-1i8, 1] {
+    let advice =
+      relation(&values, &[3 * sign], &[3 * sign, -sign], 4 * sign).unwrap();
+    let encoded_quotient = advice[..L]
+      .iter()
+      .rev()
+      .fold(BigUint::from(0u8), |acc, &limb| (acc << W) + integer(limb));
+    let expected = (BigInt::from(1u8) << QUOTIENT_BIAS_BITS)
+      + sign * BigInt::from(quotient.clone());
+    assert_eq!(BigInt::from(encoded_quotient), expected);
+    let top = integer(advice[L - 1]);
+    assert!(top.bits() <= (QUOTIENT_BITS - W * (L - 1)) as u64);
+    for &carry in &advice[L..] {
+      assert!(integer(carry).bits() <= CARRY_BITS as u64);
+    }
   }
 }
 

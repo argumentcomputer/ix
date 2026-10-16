@@ -6,8 +6,14 @@ use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, TranscriptKind, VerifierParams,
 };
 use multi_stark::system::{Circuit, System};
+use multi_stark::traits::TwoAdicField;
 use multi_stark::types::Val;
 use serde::{Serialize, de::DeserializeOwned};
+
+#[cfg(not(feature = "bn254"))]
+const KZG_VERIFIER_MAGIC: &[u8; 8] = b"IXKZGV02";
+#[cfg(feature = "bn254")]
+const KZG_VERIFIER_MAGIC: &[u8; 8] = b"IXBNKV02";
 
 pub(super) fn encode(tag: &[u8; 8], value: impl Serialize) -> Result<Vec<u8>> {
   let mut bytes = tag.to_vec();
@@ -54,7 +60,7 @@ impl KzgVerifier {
   /// the public statement schema. Proving powers and matrices are excluded.
   pub fn to_bytes(&self) -> Result<Vec<u8>> {
     encode(
-      b"IXKZGV02",
+      KZG_VERIFIER_MAGIC,
       (
         self.params.to_bytes()?,
         match self.system.config.transcript_kind() {
@@ -76,14 +82,17 @@ impl KzgVerifier {
       Vec<Circuit<Scalar>>,
       Option<KzgCommitment>,
       Statement<Scalar>,
-    ) = if bytes.starts_with(b"IXKZGV01") {
+    ) = if !cfg!(feature = "bn254") && bytes.starts_with(b"IXKZGV01") {
       let (params, circuits, preprocessing, statement) =
         decode(b"IXKZGV01", bytes)?;
       (params, 0, circuits, preprocessing, statement)
     } else {
-      decode(b"IXKZGV02", bytes)?
+      decode(KZG_VERIFIER_MAGIC, bytes)?
     };
     let params = VerifierParams::from_bytes(&params)?;
+    if params.max_trace_len().ilog2() as usize + 1 > Scalar::TWO_ADICITY {
+      return Err("quotient domain exceeds scalar field two-adicity".into());
+    }
     let transcript = match transcript {
       0 => TranscriptKind::Blake3,
       1 => TranscriptKind::Keccak256,
@@ -99,5 +108,32 @@ impl KzgVerifier {
       },
       statement,
     )
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::kzg::Srs;
+
+  #[test]
+  fn verifier_decoder_rejects_trace_cap_without_quotient_headroom() -> Result<()>
+  {
+    let cap = 1usize << Scalar::TWO_ADICITY;
+    let anchors = Srs::unsafe_dev_setup_prefix(2, cap - 1, b"domain-cap");
+    let params = VerifierParams::with_max_trace_len(&anchors, cap);
+    let encoded = encode(
+      KZG_VERIFIER_MAGIC,
+      (
+        params.to_bytes()?,
+        0u8,
+        Vec::<Circuit<Scalar>>::new(),
+        Option::<KzgCommitment>::None,
+        Statement::recursive(0),
+      ),
+    )?;
+    let error = KzgVerifier::from_bytes(&encoded).err().unwrap();
+    assert!(error.to_string().contains("quotient domain"));
+    Ok(())
   }
 }

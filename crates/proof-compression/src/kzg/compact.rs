@@ -4,7 +4,7 @@
 #[cfg(test)]
 use crate::foreign::KzgCircuitExt;
 
-use ark_bls12_381::G1Affine;
+use super::curve::{Fr, G1_COMPRESSED_BYTES, G1Affine, read_g1_compressed};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use super::KzgCommitment;
@@ -16,6 +16,11 @@ use multi_stark::prover::Commitments;
 use multi_stark::prover::Proof;
 use multi_stark::system::System;
 use multi_stark::traits::Algebra;
+
+#[cfg(not(feature = "bn254"))]
+const MAGIC: &[u8; 4] = b"KQP4";
+#[cfg(feature = "bn254")]
+const MAGIC: &[u8; 4] = b"KBN1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompactProofError;
@@ -122,8 +127,8 @@ impl FixedProofCodec {
         .as_ref()
         .map(|_| prep),
     };
-    let body_bytes =
-      points(&template).count() * 48 + fields(&template).count() * 32;
+    let body_bytes = points(&template).count() * G1_COMPRESSED_BYTES
+      + fields(&template).count() * 32;
     Ok(Self { template, max_openings: heights.len() + 1, body_bytes })
   }
 
@@ -140,7 +145,7 @@ impl FixedProofCodec {
     {
       return Err(CompactProofError);
     }
-    let mut bytes = b"KQP4".to_vec();
+    let mut bytes = MAGIC.to_vec();
     bytes.push(
       u8::try_from(proof.opening_proof.0.len())
         .map_err(|_error| CompactProofError)?,
@@ -163,13 +168,13 @@ impl FixedProofCodec {
     &self,
     bytes: &[u8],
   ) -> Result<Proof<KzgConfig>, CompactProofError> {
-    if bytes.len() < 5 || &bytes[..4] != b"KQP4" {
+    if bytes.len() < 5 || &bytes[..4] != MAGIC {
       return Err(CompactProofError);
     }
     let openings = usize::from(bytes[4]);
     if openings == 0
       || openings > self.max_openings
-      || bytes.len() != 5 + self.body_bytes + 48 * openings
+      || bytes.len() != 5 + self.body_bytes + G1_COMPRESSED_BYTES * openings
     {
       return Err(CompactProofError);
     }
@@ -182,13 +187,13 @@ impl FixedProofCodec {
       &mut proof.commitments.quotient_chunks,
     ] {
       for point in commitment.0.iter_mut().flatten() {
-        *point = G1Affine::deserialize_compressed(&mut input)
-          .map_err(|_error| CompactProofError)?;
+        *point =
+          read_g1_compressed(&mut input).map_err(|_error| CompactProofError)?;
       }
     }
     for point in &mut proof.opening_proof.0 {
-      *point = G1Affine::deserialize_compressed(&mut input)
-        .map_err(|_error| CompactProofError)?;
+      *point =
+        read_g1_compressed(&mut input).map_err(|_error| CompactProofError)?;
     }
     let accumulator_count = proof.intermediate_accumulators.len() - 1;
     for value in
@@ -205,7 +210,7 @@ impl FixedProofCodec {
         .flatten(),
       )
     {
-      value.0 = ark_bls12_381::Fr::deserialize_compressed(&mut input)
+      value.0 = Fr::deserialize_compressed(&mut input)
         .map_err(|_error| CompactProofError)?;
     }
     if !input.is_empty() {
@@ -363,7 +368,7 @@ mod tests {
     bad.push(0);
     assert!(codec.decode(&bad).is_err());
     bad = bytes.clone();
-    bad[5..53].fill(0xff);
+    bad[5..5 + G1_COMPRESSED_BYTES].fill(0xff);
     assert!(codec.decode(&bad).is_err());
     bad = bytes.clone();
     let n = bad.len();

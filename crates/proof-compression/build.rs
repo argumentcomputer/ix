@@ -23,6 +23,11 @@ const SOURCES: &[&str] = &[
 ];
 
 fn main() {
+  assert!(
+    env::var_os("CARGO_FEATURE_BN254").is_none()
+      || env::var_os("CARGO_FEATURE_BLS12_381").is_none(),
+    "BN254 CPU KZG requires --no-default-features --features bn254; BLS12-381, Solidity, PLONK and CUDA features cannot be combined with it"
+  );
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");

@@ -283,3 +283,270 @@ Recommended order: run the stage-3 retuning experiment first, then decide
 whether the wrapper is still needed and on which stage. Evaluate Plan A only if
 prover time remains the bottleneck afterwards and the trace-share and MSM
 measurements both show large gains.
+
+## Choosing the terminal BN254 PLONK relation
+
+Plan A initially retains a separate PLONK wrapper, but the recursive KZG
+stage and the terminal wrapper can instead be replaced by one gnark proof:
+
+| Path after first KZG | Relation proved by gnark | Tradeoff to measure |
+| --- | --- | --- |
+| Recursive KZG, then PLONK | Verify the compact recursive packet, including its opening equation and the deferred first-stage pairing equation | Smaller terminal circuit; retains the native recursive proving stage and its GPU implementation path |
+| Direct PLONK | Verify the complete first KZG proof, including its opening pairing equation | Removes one proving stage; moves the larger first-proof verifier into gnark |
+
+Both paths end in a standard BN254 PLONK proof with the independently expected
+claim digest as public input. Direct PLONK requires an adapter for the full
+first-stage verifier shape; it is not a change of proof encoding or a switch
+of the polynomial commitment backend. The current Init first proof has 19
+partitions, whereas the existing recursive output has two traces. Constraint
+counts from the native recursive frontend do not directly predict gnark's
+constraint count or padded domain.
+
+Compile and size both relations before selecting the production path. Pin
+the appropriate verifier profile, preserve BLAKE3 transcript and canonical
+encoding constraints, bind the original claim, and enforce every required
+pairing inside the terminal circuit. Compare padded domains, witness/key
+memory and total proving time across the complete path, with setup/key
+preparation reported separately. Include the availability and cost of GPU
+proving for each backend; removing a stage alone does not establish a faster
+pipeline. Retuning FRI to reduce the first KZG proof remains complementary to
+either choice.
+
+## BN254 GPU integration plan
+
+This section is the implementation plan for the optional BN254 backend. The
+architecture proposals and benchmark figures above are historical context;
+they do not establish BN254 performance or the current wrapper circuit size.
+In particular, a smaller field does not establish an MSM speedup, a smaller
+recursive domain, or unchanged FFT/lookup/quotient timings. Those are
+measurements required below. CPU pipeline wiring is a prerequisite for these
+steps, and does not by itself make a real Init compression run practical.
+
+The real Init CPU measurement now establishes 61,151,005 BN254 recursive
+frontend rows, padding to `2^26`, against 118,389,942 rows and `2^27` in the
+historical BLS reference. The recursive witness and external pairings pass;
+full outer proving and matched GPU timings remain pending. See the
+[measurement details](../crates/proof-compression/README.md#real-input-measurements).
+This supports prioritizing parity and resource measurements at `2^26`; it
+does not establish an MSM speedup or the benefit of splitting across GPUs.
+
+### Scope and source baseline
+
+The first deliverable is GPU support for the existing KZG pipeline: saved Init
+proof, Goldilocks FRI compression, first BN254 KZG proof, recursive BN254 KZG
+proof, and native verification. BLS12-381 remains the default and the
+comparison baseline. Each executable selects one KZG curve; comparison runs
+use separate binaries, build directories, setup caches, and artifact
+directories. The Goldilocks FRI backend remains present in either GPU build.
+
+The current bridge is concrete and reusable, but contains BLS-specific
+assumptions in several places:
+
+- [`Cargo.toml`](../crates/proof-compression/Cargo.toml) makes `cuda` select
+  BLS12-381. [`build.rs`](../crates/proof-compression/build.rs) selects
+  `FEATURE_BLS12_381` and `MAX_LG_DOMAIN_SIZE=32`.
+- [`cuda/kzg.cu`](../crates/proof-compression/cuda/kzg.cu) includes
+  `ff/bls12-381.hpp` and defines the affine upload layout.
+  [`src/kzg/cuda.rs`](../crates/proof-compression/src/kzg/cuda.rs) imports
+  BLS types, checks their layout, and returns six-limb projective coordinates.
+- [`src/kzg/cuda/srs_cache.rs`](../crates/proof-compression/src/kzg/cuda/srs_cache.rs)
+  has both six-limb output pointers and fixed 96/104-byte point accounting.
+  [`cuda/kzg_srs.cuh`](../crates/proof-compression/cuda/kzg_srs.cuh) provides
+  native MSM scratch estimates, resident points, and batched uploads.
+- [`lakefile.lean`](../lakefile.lean) builds and installs the worker with its
+  feature selection and shared Goldilocks runtime.
+  [`flake.nix`](../flake.nix) provides the opt-in CUDA toolkit shell and
+  runtime-driver plumbing. Both must preserve CPU-only builds.
+
+Use the existing sppark pin from the crate manifest,
+`114feb69ebfe029e2caa5e6c2d372c695e5d4da8`, shared with multi-stark. Its
+[`ff/alt_bn128.hpp`](https://github.com/argumentcomputer/sppark/blob/114feb69ebfe029e2caa5e6c2d372c695e5d4da8/ff/alt_bn128.hpp)
+already supplies BN254 Fq/Fr and `FEATURE_BN254`. Its
+[`ntt/parameters.cuh`](https://github.com/argumentcomputer/sppark/blob/114feb69ebfe029e2caa5e6c2d372c695e5d4da8/ntt/parameters.cuh)
+selects the BN254 table with `S = 28` in
+[`ntt/parameters/alt_bn128.h`](https://github.com/argumentcomputer/sppark/blob/114feb69ebfe029e2caa5e6c2d372c695e5d4da8/ntt/parameters/alt_bn128.h).
+No dependency update is needed to begin the port. The BN254 host field types
+use `blst_256_t` through `blst_t.hpp`; retain the `blst` dependency, include
+path, and portable host linkage while those types require them.
+
+### Targeted implementation steps
+
+**1. Select the CUDA curve and make its ABI explicit.** Change the feature
+graph, build flags, C++ field include, Rust curve imports, and native point
+layouts together in one focused PR. Preserve the symbol isolation from
+Goldilocks in [`kzg_sppark.cuh`](../crates/proof-compression/cuda/kzg_sppark.cuh).
+Use curve-dependent limb aliases for all projective result pointers,
+including cached and resident MSM paths; derive allocation sizes from the
+actual selected types. Prove the following contracts with Rust layout
+assertions and C++ `static_assert`s on the supported Linux x86-64 target:
+
+| Value crossing the bridge | BLS12-381 | BN254 |
+| --- | ---: | ---: |
+| Fr limb storage | 32 bytes, four `u64` limbs | 32 bytes, four `u64` limbs |
+| Fq limb storage | 48 bytes, six `u64` limbs | 32 bytes, four `u64` limbs |
+| Arkworks affine upload, including infinity and padding | 104 bytes | 72 bytes |
+| Affine `y` / infinity offsets | 48 / 96 bytes | 32 / 64 bytes |
+| Device affine coordinates | 96 bytes | 64 bytes |
+| Native projective result, three Fq coordinates | 144 bytes | 96 bytes |
+
+These are memory layouts, not serialized proof encodings. Verify both Fq and
+Fr Montgomery modulus, radix, limb order and representation of one; equal
+storage width alone does not permit copying values between curves. Preserve
+the conversion from Arkworks' infinity flag to sppark affine `(0, 0)` and
+projective `Z = 0`.
+
+The target build matrix is below. All rows start with
+`--no-default-features`; retain a separate check of the existing default
+build, which includes the BLS terminal backends.
+
+| Feature selection | Intended backend |
+| --- | --- |
+| `bls12-381,parallel` | BLS CPU worker and library |
+| `bn254,parallel` | BN254 CPU worker and library |
+| `bls12-381,parallel,cuda` | BLS KZG CUDA plus Goldilocks CUDA |
+| `bn254,parallel,cuda` | BN254 KZG CUDA plus Goldilocks CUDA |
+
+BN254 plus CUDA is a target of this plan, not an available command today.
+Reject simultaneous BLS and BN selection. Keep BLS-only Solidity/PLONK
+features from silently selecting the wrong curve. Thread the worker's curve
+selection through Lake's build arguments and artifact trace, preserve the
+native runtime/rpath packaging, and keep CPU builds independent of nvcc.
+Acceptance: the feature matrix compiles with the intended field instantiation
+and ABI assertions; rebuilding one curve cannot reuse the other's worker or
+parameters. Do not enable BN254 GPU proving by default before the following
+parity gates pass.
+
+**2. Establish field, FFT, and polynomial parity.** Parameterize the Rust and
+native FFT bounds: BN254 permits `log(domain) <= 28`; retain existing BLS
+implementation limits unless separately justified. The native bridge
+currently checks `lg <= 31`, so changing only the NTT macro is insufficient.
+Reject unsupported trace-plus-quotient domains before allocation. In
+particular, quotient factor two at trace `2^27` consumes the complete BN254
+domain limit; this does not imply that the device can admit it.
+
+Extend [`cuda/tests.rs`](../crates/proof-compression/src/kzg/cuda/tests.rs)
+with small deterministic CPU/GPU comparisons for scalar arithmetic,
+subgroup and arbitrary-coset forward/inverse FFTs, zero-padding, batched
+column order, resident inputs, evaluation, division by `X-z`, and quotient
+openings. Check the actual root-of-unity convention against Arkworks and
+`Scalar`; a round trip alone can conceal a consistent ordering error. Include
+maximum-domain rejection tests that do not allocate maximum-sized arrays.
+Acceptance: exact field-element equality with the CPU reference, preserved
+input/output order, and explicit errors for unsupported domains.
+
+**3. Establish MSM and SRS-cache parity.** Compare normalized affine results
+against Arkworks for ordinary, chunked, resident-scalar, cached-SRS and
+division-plus-MSM paths. Cover zero scalars, infinity, opposite points,
+repeated points, non-multiple chunk tails, and structured columns that trigger
+the normalization optimization. Keep fresh mutable MSM workspace distinct
+from immutable uploaded SRS ranges. Verify eviction, re-upload, SRS-owner
+isolation, offsets, and cleanup after native failures.
+
+Audit every persistent, temporary, staging, bucket and point-memory estimate,
+including the fixed sizes in `srs_cache.rs` and native estimates from
+`ix_kzg_srs_plan`. Smaller points do not shrink scalar columns, FFT buffers or
+all MSM scratch in the same proportion. Acceptance: exact commitment parity,
+no stale range reuse, and admission accounting consistent with actual native
+allocations for the measured small shapes.
+
+**4. Port lookup, quotient, and constraint-pass execution.** Review the paired
+Rust and CUDA implementations together:
+[`lookup.rs`](../crates/proof-compression/src/kzg/cuda/lookup.rs) /
+[`kzg_lookup.cuh`](../crates/proof-compression/cuda/kzg_lookup.cuh),
+[`quotient.rs`](../crates/proof-compression/src/kzg/cuda/quotient.rs) /
+[`kzg_quotient.cuh`](../crates/proof-compression/cuda/kzg_quotient.cuh), and
+[`passes.rs`](../crates/proof-compression/src/kzg/cuda/passes.rs) /
+[`kzg_passes.cuh`](../crates/proof-compression/cuda/kzg_passes.cuh).
+Their 32-byte Fr descriptors can retain their ABI, subject to assertions, but
+their arithmetic and domain constants must use BN254. Compare LogUp totals,
+lookup columns and quotient chunks against CPU output, including next-row
+access, cosets, resident inputs, streaming mode, and forced constraint passes.
+Check device-lease admission, rejection, stream completion and buffer lifetime
+on both success and failure.
+
+Include pinned host staging, device-pool reservations, resident coefficient
+limits, and SRS/workspace eviction in the memory audit. Preserve the transfer
+timing and NVTX hooks in
+[`kzg_transfer.cuh`](../crates/proof-compression/cuda/kzg_transfer.cuh) and
+[`kzg_profile.cuh`](../crates/proof-compression/cuda/kzg_profile.cuh).
+Acceptance: CPU/GPU parity in both dense and pass execution, bounded transfer
+buffers, and useful errors when no selected GPU admits the work. GPU runs
+must report any intentional CPU path, such as tiny shapes or disk-backed
+columns, so a successful smoke test cannot conceal an unused backend.
+
+**5. Validate the complete development pipeline on a small saved Init
+fixture.** Use one saved proof, trusted root key and expected public claim,
+with fixed stage parameters and explicit `--dev-srs`. Build CPU and CUDA
+workers separately for each curve. Preserve curve-specific artifact
+directories and profiles. Compare canonical proof bytes between CPU and GPU
+for the same curve, setup and transcript at the FRI, first-KZG and recursive
+KZG boundaries, and verify every output with the native verifier. BLS and
+BN254 proofs are not expected to have identical bytes to each other.
+
+The fixture must exercise GPU operations: record dispatch, and where the
+smallest valid proof falls below an acceleration threshold, add a targeted
+component parity case above that threshold. Include saved-stage replay,
+portable profile loading, altered-claim and deferred-pairing rejection, and
+cross-curve artifact rejection. Acceptance: exact CPU/GPU proof parity and
+native verification for both curves, with logs proving that the intended GPU
+paths ran. This gate validates integration, not production setup security or
+production-scale resource use.
+
+**6. Profile increasing sizes, then the real Init proof.** Start with selected
+small kernel dimensions and the small pipeline fixture; use their measured
+working sets to choose the next size. Size the real Init verifier circuits
+before allocating proving traces or parameters. Report total rows, maximum
+trace and quotient domains, columns, lookup/table shape, partition count, and
+recursive public-input/commitment counts for both curves on the same source
+proof. Advance to one real Init run on one GPU only when host and device
+memory estimates fit, then measure any multi-GPU configuration separately.
+
+Do not introduce recursive sharding merely because two GPUs are available.
+After sizing, compare one trace with candidate partition caps, including
+extra commitments, lookups, aggregation/recursive-verifier work, proof bytes,
+SRS replication, transfer traffic and total GPU-seconds. Existing scheduling
+of columns or MSM chunks across devices is distinct from adding independently
+proved recursive shards. Choose sharding only when the measured aggregate
+cost and memory requirements justify it; revise the circuit/profile boundary
+in a separate PR.
+
+### Reports and run permissions
+
+Each step should attach its scoped source changes and a validation report;
+unexecuted checks remain marked pending. Parity reports identify the fixture
+digest, root/profile/setup identities, exact feature set, source revisions,
+commands, proof hashes, verification results and CPU/GPU dispatch. Performance
+reports additionally record GPU model/count, driver/toolkit and compiled SM
+architectures, cold versus warm cache state, per-stage wall time, CPU witness
+time, kernel/transfer time, peak host RSS and VRAM, pinned/resident/SRS-cache
+bytes, pass count, cache hits/evictions, and final proof sizes. Report
+profiling overhead separately where relevant. Compare the same source proof
+and explicitly identify any different circuit shape or partition policy.
+
+No builds, tests, circuit sizing or benchmark runs are authorized by this
+plan. Before a cold build, full proof, large sizing run or benchmark sweep,
+request machine time with the exact target and dimensions plus a resource
+estimate grounded in the preceding measurements. Do not guess full-run times
+from the historical BLS figures. Once authorized, use default machine
+parallelism; do not impose `--jobs`, test-thread or Rayon caps. Device choices
+for a one-GPU versus multi-GPU comparison are experimental inputs and must be
+recorded.
+
+### Separate production and terminal-wrapper gates
+
+GPU correctness is only one production requirement. BN254 still needs an
+authenticated production SRS with validated anchors, adequate public degree,
+an authenticated import/receipt, curve-separated cache identities, and
+reproducible verifier profiles. Select and audit its provenance separately;
+Filecoin parameters cannot supply this gate. Development SRS results remain
+known-trapdoor experiments even after every GPU check passes.
+
+The final off-the-shelf gnark BN254 PLONK wrapper is a separate workstream.
+Port and validate its custom ix verifier circuit and pairing obligations,
+then establish CPU correctness and measure its own constraints, witness,
+setup/proving memory and time. The CUDA kernels in this crate accelerate the
+custom KZG prover; they do not accelerate gnark PLONK. Any GPU integration
+for gnark requires its own backend selection, compatibility/serialization
+checks, CPU/GPU proof and native/Solidity verification gates, and resource
+report. End-to-end production claims must include that terminal stage and
+the authenticated-setup gate, not only KZG kernel timings.

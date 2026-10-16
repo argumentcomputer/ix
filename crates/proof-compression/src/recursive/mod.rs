@@ -4,3 +4,4 @@ pub mod native_field;
 pub mod native_msm;
 pub mod native_transcript;
 pub mod native_verifier;
+pub mod pairing;

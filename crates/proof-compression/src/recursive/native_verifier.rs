@@ -1,14 +1,17 @@
 //! Fixed-profile ordinary KZG verification with publicly bound pairing inputs.
 use crate::{
-  kzg::{KzgCommitment, KzgConfig, Scalar},
+  kzg::{
+    KzgCommitment, KzgConfig, Scalar,
+    curve::{Fq, G1_COMPRESSED_BYTES, G1Affine, G2Affine, PairingCurve},
+  },
   recursive::{
     native_curve::{Affine, PointInput},
     native_field::{Builder, FqGadget},
     native_msm::{self, Base},
     native_transcript::{self, Transcript},
+    pairing,
   },
 };
-use ark_bls12_381::{Bls12_381, G1Affine, G2Affine};
 #[cfg(test)]
 use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
@@ -73,6 +76,14 @@ pub struct Counts {
   pub stats: CircuitStats,
   pub table_dimensions: Vec<(usize, usize)>,
   pub msm_terms: Vec<usize>,
+  pub phases: Vec<PhaseCounts>,
+}
+
+/// Cumulative frontend counts at a verifier construction boundary.
+#[derive(Clone, Copy, Debug)]
+pub struct PhaseCounts {
+  pub name: &'static str,
+  pub stats: CircuitStats,
 }
 
 struct Construction {
@@ -80,6 +91,7 @@ struct Construction {
   pairing_outputs: Vec<PointInput>,
   pairing_keys: Vec<G2Affine>,
   terms: Vec<Vec<(usize, Value)>>,
+  phases: Vec<PhaseCounts>,
 }
 
 impl Construction {
@@ -106,6 +118,7 @@ impl Construction {
       stats: self.context.b.stats(),
       table_dimensions: self.context.b.table_dimensions().collect(),
       msm_terms: self.terms.iter().map(Vec::len).collect(),
+      phases: self.phases.clone(),
     }
   }
 }
@@ -118,7 +131,7 @@ struct Context {
   bases: Vec<Base>,
   points: Vec<PointBinding>,
   point_ends: Vec<usize>,
-  encodings: Vec<[ByteValue; 48]>,
+  encodings: Vec<[ByteValue; G1_COMPRESSED_BYTES]>,
   scalar_encodings: BTreeMap<usize, [ByteValue; 32]>,
 }
 impl Context {
@@ -157,7 +170,7 @@ impl Context {
         x: self.f.constant(&mut self.b, value.x),
         y: self.f.constant(
           &mut self.b,
-          if value.infinity { ark_bls12_381::Fq::from(0u8) } else { value.y },
+          if value.infinity { Fq::from(0u8) } else { value.y },
         ),
       };
       let flag = self.b.constant(Scalar::from_bool(value.infinity));
@@ -283,7 +296,8 @@ fn combine(b: &mut Builder, terms: Vec<(usize, Value)>) -> Vec<(usize, Value)> {
   unique.into_iter().collect()
 }
 
-#[cfg(test)]
+/// Compile the fixed verifier relation and bind one proof's witness inputs.
+/// Call [`Built::assign`] to check its constraints and deferred pairing.
 pub fn build(
   system: &System<KzgConfig>,
   srs: &crate::kzg::Srs,
@@ -351,6 +365,8 @@ fn construct(
   let prefix_blocks = c.point_ends.len();
   let prefix_values = c.b.stats().values;
   let parallel_prefix = c.seal_point_prefix();
+  let mut phases =
+    vec![PhaseCounts { name: "curve_inputs", stats: c.b.stats() }];
   eprintln!("Curve inputs complete: {:?}", c.b.stats());
   eprintln!(
     "Point witness prefix: admitted={parallel_prefix}, blocks={prefix_blocks}, values={prefix_values}"
@@ -495,6 +511,7 @@ fn construct(
     t.observe(&c.encodings[id]);
   }
   let r = c.sample(&mut t);
+  phases.push(PhaseCounts { name: "transcript", stats: c.b.stats() });
   eprintln!("Transcript complete: {:?}", c.b.stats());
   let mut lhs = vec![];
   let mut rhs = vec![];
@@ -636,6 +653,7 @@ fn construct(
   terms.push(combine(&mut c.b, rhs));
   keys.push(profile.tau_g2);
   let mut outputs = vec![];
+  phases.push(PhaseCounts { name: "scalar_checks", stats: c.b.stats() });
   for (i, terms) in terms.iter().enumerate() {
     eprintln!("MSM {i}/{}: {} bases", keys.len(), terms.len());
     let point = native_msm::msm(
@@ -648,7 +666,7 @@ fn construct(
     );
     let point = point.canonical(&mut c.b, &c.f);
     let encoded = native_transcript::point_bytes(&mut c.b, &c.bytes, point);
-    for chunk in encoded.as_chunks::<24>().0 {
+    for chunk in encoded.as_chunks::<{ pairing::POINT_LIMB_BYTES }>().0 {
       let mut coefficient = Scalar::ONE;
       let terms: Vec<_> = chunk
         .iter()
@@ -662,6 +680,10 @@ fn construct(
       c.b.expose_public(packed);
     }
     outputs.push(point);
+    phases.push(PhaseCounts {
+      name: ["opening_msm_0", "opening_msm_1"][i],
+      stats: c.b.stats(),
+    });
     eprintln!("MSM {i} complete: {:?}", c.b.stats());
   }
   Ok(Construction {
@@ -669,6 +691,7 @@ fn construct(
     pairing_outputs: outputs,
     pairing_keys: keys,
     terms,
+    phases,
   })
 }
 
@@ -767,15 +790,9 @@ mod tests {
           .all(|v| assignment.value(v).unwrap() == Scalar::ZERO)
       );
     }
-    assert_eq!(
-      assignment.public_values(),
-      [
-        Scalar::from_u8(0xc0),
-        Scalar::ZERO,
-        Scalar::from_u8(0xc0),
-        Scalar::ZERO
-      ]
-    );
+    let expected = pairing::encode([G1Affine::identity(); 2]);
+    assert_eq!(assignment.public_values(), expected);
+    assert_eq!(pairing::decode(&expected).unwrap(), [G1Affine::identity(); 2]);
   }
 
   fn wrapper_fixture(public_degree: bool) {
@@ -837,6 +854,12 @@ mod tests {
       encoded.len()
     );
     assert_eq!(counted.stats, built.circuit.stats());
+    assert_eq!(counted.phases.last().unwrap().stats, counted.stats);
+    assert!(counted.phases.windows(2).all(|pair| {
+      pair[0].stats.gates <= pair[1].stats.gates
+        && pair[0].stats.lookups <= pair[1].stats.lookups
+        && pair[0].stats.values <= pair[1].stats.values
+    }));
     assert_eq!(
       counted.table_dimensions,
       built
@@ -852,7 +875,8 @@ mod tests {
     );
     built.check().unwrap();
     let key = built.pairing_keys[1];
-    built.pairing_keys[1] = (key * ark_bls12_381::Fr::from(2u8)).into_affine();
+    built.pairing_keys[1] =
+      (key * crate::kzg::curve::Fr::from(2u8)).into_affine();
     assert!(built.assign().is_err());
     built.pairing_keys[1] = key;
     let public = built.circuit.public_values()[0];

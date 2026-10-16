@@ -127,7 +127,7 @@ impl Prepared<Val> {
   }
 }
 
-/// Prepare a FRI verifier over the BLS12-381 scalar field. The statement and
+/// Prepare a FRI verifier over the selected KZG scalar field. The statement and
 /// all activation anchors come from the trusted previous stage's verifier.
 pub fn prepare_kzg(
   verifier: &FriVerifier,
@@ -254,6 +254,11 @@ impl Prepared<Scalar> {
       return Err(
         "partition height must be a power of two within the SRS range".into(),
       );
+    }
+    if max_height.ilog2() as usize + 1
+      > <Scalar as multi_stark::traits::TwoAdicField>::TWO_ADICITY
+    {
+      return Err("quotient domain exceeds scalar field two-adicity".into());
     }
     let compiled =
       construct::lower_first(self.circuit, max_height, max_height)?;

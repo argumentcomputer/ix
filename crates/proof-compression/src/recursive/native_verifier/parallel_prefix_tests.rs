@@ -1,5 +1,6 @@
 use super::*;
-use ark_bls12_381::Fr;
+use crate::kzg::curve::Fr;
+use crate::recursive::native_field::L;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use multi_stark::plonkish::{Assignment, WitnessError};
@@ -186,7 +187,7 @@ fn point_prefix_matches_serial_inputs_values_and_encodings() {
   assert!(
     parallel.circuit.num_values() > *parallel.prefix_ends.last().unwrap()
   );
-  assert_eq!(parallel.circuit.stats().inputs, 11 * points.len());
+  assert_eq!(parallel.circuit.stats().inputs, (2 * L + 1) * points.len());
 }
 
 #[test]
@@ -194,14 +195,15 @@ fn point_prefix_preserves_earliest_point_error() {
   let points = points(4);
   let serial = PointFixture::new(&points, false);
   let parallel = PointFixture::new(&points, true);
+  let stride = 2 * L + 1;
   for (missing, corrupt) in [
     (Some(0), None),
-    (Some(21), None),
-    (Some(43), None),
-    (None, Some(11)),
-    (Some(0), Some(11)),
-    (Some(33), Some(11)),
-    (Some(33), Some(22)),
+    (Some(2 * stride - 1), None),
+    (Some(4 * stride - 1), None),
+    (None, Some(stride)),
+    (Some(0), Some(stride)),
+    (Some(3 * stride), Some(stride)),
+    (Some(3 * stride), Some(2 * stride)),
   ] {
     let expected = serial.generate_changed(missing, corrupt).err().unwrap();
     let actual = parallel.generate_changed(missing, corrupt).err().unwrap();

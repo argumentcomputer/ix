@@ -1,19 +1,19 @@
-//! Crate field traits for the BLS12-381 scalar field.
+//! Crate field traits for the selected KZG curve's scalar field.
 //!
-//! [`Scalar`] is a `repr(transparent)` newtype over `ark_bls12_381::Fr`.
+//! [`Scalar`] is a `repr(transparent)` newtype over [`Fr`].
 //! A newtype (unlike the p3 fields, which implement the crate traits
 //! directly) because the traits require serde and arkworks types only
 //! speak `CanonicalSerialize`; the wrapper carries a canonical 32-byte
 //! little-endian serde encoding and every crate trait.
 //!
 //! The field is its own challenge field: `ExtensionOf<Scalar>` with
-//! `D = 1` (|Fr| ~ 2^255 dwarfs every Schwartz-Zippel term), and its own
+//! `D = 1`, and its own
 //! packing with `WIDTH = 1` (the sweep runs scalar; MSM dominates the
 //! prover here, not constraint evaluation).
 
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use ark_bls12_381::Fr;
+use super::curve::Fr;
 use ark_ff::{AdditiveGroup, FftField, Field as ArkField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use p3_matrix::Matrix;
@@ -26,7 +26,7 @@ use multi_stark::traits::Packed;
 use multi_stark::traits::PackedExtension;
 use multi_stark::traits::TwoAdicField;
 
-/// The BLS12-381 scalar field as a crate [`Field`].
+/// The selected KZG curve's scalar field as a crate [`Field`].
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 #[repr(transparent)]
 pub struct Scalar(pub Fr);
@@ -186,12 +186,11 @@ impl Field for Scalar {
 }
 
 impl TwoAdicField for Scalar {
-  // Fr has a 2^32 root of unity; pinned by a test below.
-  const TWO_ADICITY: usize = 32;
+  const TWO_ADICITY: usize = <Fr as FftField>::TWO_ADICITY as usize;
 
   #[inline]
   fn two_adic_generator(bits: usize) -> Self {
-    assert!(bits <= Self::TWO_ADICITY);
+    assert!(bits <= Self::TWO_ADICITY, "domain exceeds scalar two-adicity");
     Self(Fr::get_root_of_unity(1u64 << bits).expect("two-adic subgroup exists"))
   }
 }
@@ -267,6 +266,7 @@ impl multi_stark::traits::PrimeField for Scalar {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ark_ff::{BigInteger, PrimeField};
 
   #[test]
   fn two_adicity_matches_ark() {
@@ -280,17 +280,46 @@ mod tests {
       assert_eq!(g * g, Scalar::two_adic_generator(bits - 1));
     }
     assert_eq!(Scalar::two_adic_generator(0), <Scalar as Algebra<Scalar>>::ONE);
+    assert_eq!(
+      Scalar::two_adic_generator(Scalar::TWO_ADICITY)
+        .exp_power_of_2(Scalar::TWO_ADICITY - 1),
+      Scalar::NEG_ONE
+    );
+    #[cfg(feature = "bn254")]
+    assert_eq!(Scalar::TWO_ADICITY, 28);
+    #[cfg(not(feature = "bn254"))]
+    assert_eq!(Scalar::TWO_ADICITY, 32);
+  }
+
+  #[test]
+  #[should_panic(expected = "domain exceeds scalar two-adicity")]
+  fn rejects_oversized_generator() {
+    Scalar::two_adic_generator(Scalar::TWO_ADICITY + 1);
   }
 
   #[test]
   fn serde_round_trip() {
-    let x = Scalar::from_u64(0xdead_beef_cafe_f00d);
-    let bytes =
-      bincode::serde::encode_to_vec(x, bincode::config::standard()).unwrap();
-    let (y, _): (Scalar, usize) =
-      bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-        .unwrap();
-    assert_eq!(x, y);
+    for x in
+      [Scalar::ZERO, Scalar::from_u64(0xdead_beef_cafe_f00d), Scalar::NEG_ONE]
+    {
+      let bytes =
+        bincode::serde::encode_to_vec(x, bincode::config::standard()).unwrap();
+      assert_eq!(bytes, x.0.into_bigint().to_bytes_le());
+      let (y, consumed): (Scalar, usize) =
+        bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+          .unwrap();
+      assert_eq!(consumed, 32);
+      assert_eq!(x, y);
+    }
+  }
+
+  #[test]
+  fn serde_rejects_noncanonical_scalars() {
+    for bytes in [Fr::MODULUS.to_bytes_le(), vec![255; 32], vec![0; 31]] {
+      let decoded: Result<(Scalar, usize), _> =
+        bincode::serde::decode_from_slice(&bytes, bincode::config::standard());
+      assert!(decoded.is_err());
+    }
   }
 
   #[test]

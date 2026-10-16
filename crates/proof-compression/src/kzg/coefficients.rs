@@ -7,7 +7,7 @@ use std::{
   sync::{Arc, Mutex},
 };
 
-use ark_bls12_381::Fr;
+use super::curve::Fr;
 use ark_serialize::{CanonicalDeserialize, SerializationError};
 use p3_maybe_rayon::prelude::*;
 

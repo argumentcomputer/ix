@@ -180,9 +180,20 @@ pub(super) fn check_pairings(
   pairing_keys: &[G2Affine],
 ) -> Result<(), Box<dyn std::error::Error>> {
   let outputs = pairing_points(assignment, pairing_outputs)?;
+  let public_values = assignment.public_values();
+  let public_start = public_values
+    .len()
+    .checked_sub(pairing::PUBLIC_VALUES)
+    .ok_or("missing public pairing operands")?;
+  let public_outputs = pairing::decode(&public_values[public_start..])?;
+  if outputs != public_outputs {
+    return Err(
+      "public pairing operands differ from the constrained points".into(),
+    );
+  }
   if outputs.len() != 2
     || pairing_keys.len() != 2
-    || !Bls12_381::multi_pairing(outputs, pairing_keys.iter().copied())
+    || !PairingCurve::multi_pairing(outputs, pairing_keys.iter().copied())
       .is_zero()
   {
     return Err("external opening pairing check failed".into());
@@ -203,7 +214,7 @@ pub(super) fn check_msm_outputs(
     let expected = terms
       .iter()
       .map(|&(id, scalar)| points[id] * assignment.value(scalar).unwrap().0)
-      .sum::<ark_bls12_381::G1Projective>()
+      .sum::<crate::kzg::curve::G1Projective>()
       .into_affine();
     if *point != expected {
       return Err("MSM differs from native computation".into());

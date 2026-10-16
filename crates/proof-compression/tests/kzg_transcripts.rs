@@ -181,6 +181,7 @@ fn default_transcript_preserves_explicit_blake3_proof_bytes() {
 }
 
 #[test]
+#[cfg(not(feature = "bn254"))]
 fn filecoin_keccak_proof_verifies_with_portable_authenticated_parameters() {
   use ix_proof_compression::kzg::VerifierParams;
   use ix_proof_compression::kzg::srs::filecoin::{

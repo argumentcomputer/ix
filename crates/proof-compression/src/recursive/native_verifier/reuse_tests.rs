@@ -1,6 +1,6 @@
 use super::*;
 use crate::kzg::Srs;
-use ark_bls12_381::Fq;
+use ark_ec::AffineRepr;
 use multi_stark::{
   expr::Expr,
   lookup::Lookup,
@@ -199,6 +199,115 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
 }
 
 #[test]
+fn recursive_witness_rejects_tampering_without_native_preverification() {
+  let fixture = Fixture::new();
+  let (proof, claims) = fixture.proof(17);
+  let plan =
+    Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
+  let Compiled { circuit, bindings } = plan.compile().unwrap();
+  let counts = plan.count().unwrap();
+  assert_eq!(counts.stats, circuit.stats());
+  assert_eq!(counts.phases.last().unwrap().stats, counts.stats);
+  let valid = bindings
+    .check(plan.identity(), &proof, &claims, circuit.witness())
+    .unwrap();
+  assert_eq!(valid.public_values()[0], claims[0][3]);
+  let pairings = pairing::decode(&valid.public_values()[1..]).unwrap();
+  assert!(!pairings[1].is_zero());
+  let mut wrong_keys = bindings.pairing_keys.clone();
+  wrong_keys[1] =
+    (wrong_keys[1] * crate::kzg::curve::Fr::from(2u8)).into_affine();
+  assert!(
+    bindings::check_pairings(&valid, &bindings.pairing_outputs, &wrong_keys)
+      .is_err()
+  );
+
+  for mutation in ["claim", "evaluation", "commitment", "opening"] {
+    let mut bad = proof.clone();
+    let mut bad_claims = claims.clone();
+    match mutation {
+      "claim" => bad_claims[0][3] += Scalar::ONE,
+      "evaluation" => bad.stage_1_opened_values[0][0][0] += Scalar::ONE,
+      "commitment" => {
+        let point = &mut bad.commitments.stage_1_trace.0[0][0];
+        *point = (*point + G1Affine::generator()).into_affine();
+      },
+      "opening" => {
+        let point = &mut bad.opening_proof.0[0];
+        *point = (*point + G1Affine::generator()).into_affine();
+      },
+      _ => unreachable!(),
+    }
+    assert!(
+      bindings
+        .check(plan.identity(), &bad, &bad_claims, circuit.witness())
+        .is_err(),
+      "accepted {mutation}"
+    );
+  }
+
+  let input_point = bindings
+    .points
+    .iter()
+    .find(|point| !matches!(point.source, PointSource::Fixed(_)))
+    .unwrap()
+    .point;
+  for (changed, replacement) in [
+    (input_point.infinity.value(), Scalar::TWO),
+    (input_point.point.x.0[0], Scalar::NEG_ONE),
+  ] {
+    let inputs =
+      bindings.request_inputs(plan.identity(), &proof, &claims).unwrap();
+    let mut witness = circuit.witness();
+    for (wire, value) in inputs.inputs {
+      witness
+        .set(wire, if wire == changed { replacement } else { value })
+        .unwrap();
+    }
+    assert!(witness.generate().is_err());
+  }
+
+  for &changed in &circuit.public_values()[1..] {
+    assert!(circuit.gates().iter().any(|gate| {
+      let [a, b, c] = gate.wires.map(|wire| {
+        valid.value(wire).unwrap()
+          + if wire == changed { Scalar::ONE } else { Scalar::ZERO }
+      });
+      let [qm, qa, qb, qc, k] = gate.coefficients;
+      qm * a * b + qa * a + qb * b + qc * c + k != Scalar::ZERO
+    }));
+  }
+}
+
+#[test]
+fn recursive_profile_rejects_identity_anchors_and_oversized_layout_caps() {
+  let fixture = Fixture::new();
+  let (_, claims) = fixture.proof(17);
+  let plan =
+    Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
+  for anchor in 0..3 {
+    let mut profile = plan.profile;
+    match anchor {
+      0 => profile.generator = G1Affine::identity(),
+      1 => profile.g2 = G2Affine::identity(),
+      _ => profile.tau_g2 = G2Affine::identity(),
+    }
+    assert!(
+      Plan::from_profile(&profile, &[2], schema(&claims), layout()).is_err()
+    );
+  }
+  let oversized = 1usize << (Scalar::TWO_ADICITY + 1);
+  for bad_layout in [
+    LayoutPolicy { max_computation_height: oversized, ..layout() },
+    LayoutPolicy { max_table_height: oversized, ..layout() },
+  ] {
+    assert!(
+      Plan::new(&fixture.system, &[2], schema(&claims), bad_layout).is_err()
+    );
+  }
+}
+
+#[test]
 fn recursive_schema_rejects_malformed_and_constant_claims() {
   let claims = vec![vec![Scalar::from_u8(9), Scalar::from_u8(17)]];
   assert!(ClaimSchema::from_claims(&claims, &[(0, 1), (0, 1)]).is_err());
@@ -350,7 +459,7 @@ fn recursive_profile_identity_binds_metadata_and_schema() {
   }
   let point = fixture.system.preprocessed_commit.as_ref().unwrap().0[0][0];
   fixture.system.preprocessed_commit.as_mut().unwrap().0[0][0] =
-    (point * ark_bls12_381::Fr::from(2u8)).into_affine();
+    (point * crate::kzg::curve::Fr::from(2u8)).into_affine();
   assert_ne!(baseline, id(&fixture.system, schema(&claims), layout()));
   fixture.system.preprocessed_commit.as_mut().unwrap().0[0][0] = point;
   fixture.system.circuits[0].graph.nodes.push(Node::Const(Scalar::from_u8(43)));

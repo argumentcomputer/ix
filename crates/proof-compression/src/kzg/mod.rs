@@ -1,4 +1,4 @@
-//! BLS12-381 KZG backend with BLAKE3 and Keccak-256 transcripts.
+//! KZG backend with BLAKE3 and Keccak-256 transcripts.
 //! Commitments contain one G1 point per column; openings are batched by point.
 
 mod buffer;
@@ -7,6 +7,7 @@ pub mod compact;
 pub mod config;
 #[cfg(feature = "cuda")]
 pub mod cuda;
+pub mod curve;
 pub mod domain;
 pub mod encoding;
 mod fft_batch;

@@ -202,6 +202,7 @@ pub(crate) fn check(
   let witness_seconds = witness_start.elapsed().as_secs_f64();
   let stats = built.circuit.stats();
   let result = serde_json::json!({
+    "curve": crate::kzg::curve::NAME,
     "gates": stats.gates,
     "lookups": stats.lookups,
     "values": stats.values,

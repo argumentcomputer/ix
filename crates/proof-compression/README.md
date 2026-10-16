@@ -1,5 +1,239 @@
 # Proof compression
 
+## Experimental BN254 CPU backend
+
+The `bn254` feature selects BN254 for the KZG library, including scalar
+arithmetic, FFTs, commitments, batched openings, BLAKE3 transcripts, compact
+proof encoding, recursive verifier gadgets and the standalone compression
+worker. Use it independently of the BLS12-381 terminal-backend features:
+
+```sh
+cargo test -p ix-proof-compression --no-default-features \
+  --features bn254,parallel --test bn254_kzg
+```
+
+This target proves small circuits with an explicitly known-trapdoor development
+SRS. BN254 has no authenticated production parameter loader yet. Its worker
+requires `--dev-srs` even if Filecoin environment variables are configured.
+The ordinary `ix` executable, Solidity exporter, gnark wrapper and CUDA backend
+remain BLS12-381. Combining `bn254` with the default features,
+`bls12-381`, `solidity`, `plonk` or `cuda` is unsupported and rejected.
+
+BN254's scalar field permits radix-2 domains through `2^28`; the trace size
+multiplied by the quotient factor must fit that limit. Compressed G1/G2 points
+occupy 32/64 bytes in arkworks' canonical encoding. Proofs, checkpoints,
+portable verifier parameters, transcript seeds and development setup/cache
+identities distinguish the curve. Existing BLS12-381 formats retain their
+identities.
+
+Curve selection is per build. Separate target directories, such as
+`--target-dir target/bls12-381` and `--target-dir target/bn254`, keep both
+executables available for comparison. The shared `kzg_transcripts`,
+`kzg_sharding` and `kzg_streaming` test targets run on either curve; enable
+`parallel` for both. These are correctness checks, not performance benchmarks.
+
+The recursive source port uses four 80-bit base-field limbs for BN254, a
+257-bit biased quotient and the existing bounded carry construction. G1
+validation uses BN254's cofactor-one property after enforcing the curve
+equation. Its canonical 32-byte point encoding is exposed as two 128-bit
+little-endian public limbs per deferred pairing operand; BLS retains two
+192-bit limbs per point. The native assignment path checks that these public
+values match the constrained points and verifies the deferred pairing.
+
+Focused debug validation with Rust 1.98.1 passed 132 BN254 tests and 114 BLS
+regression tests using locked, offline dependencies. Coverage includes KZG
+proofs, recursive field/curve/transcript/MSM constraints, malformed witnesses,
+deferred pairings, profile authentication, worker selection and existing BLS
+catalog fixtures. BN254 also passed verifier reuse, FRI-to-KZG stage checks,
+saved Init FRI input verification and the small root-stage integration tests.
+Clippy with `-D warnings` passed for both configurations, including the sizing
+example. These are targeted checks, not the complete repository suite.
+
+Init's first BN254 KZG proof and its full recursive witness passed native
+checks. Full recursive proving, CUDA and terminal BN254 PLONK remain
+unvalidated. Ignored proving/benchmark tests and the larger KZG component
+cases were excluded. Complete pipeline results are pending.
+
+### Real-input measurements
+
+The saved mathlib aggregate FRI proof was verified and compressed through one
+additional Goldilocks FRI layer using the existing CUDA worker. The run took
+60.0 seconds end to end, including 50.2 seconds for outer proving and
+verification, with 186.3 GiB peak host RSS. The raw input proof was 5,554,329
+bytes and the compressed FRI proof was 1,441,095 bytes. These measurements
+used a 48-logical-CPU Xeon Platinum 8559C host with two RTX PRO 6000 Blackwell
+Server GPUs; they measure FRI, not BN254 KZG.
+
+For the same saved Init FRI proof and first-stage log-height 24, the BN254
+frontend and padded main traces match the historical BLS12-381 run exactly:
+
+| First KZG metric | BN254 and BLS12-381 |
+| --- | ---: |
+| Gates | 113,913,480 |
+| Lookups | 31,689,479 |
+| Witness values | 132,837,040 |
+| Partitions | 19 |
+| Padded main-trace cells | 1,071,842,048 |
+| Main scalar storage only | 31.943 GiB |
+
+The mathlib frontend has eight more gates and four more values than Init,
+with the same lookup count. Main-trace storage excludes the frontend, fixed,
+lookup and quotient columns, and scratch space. The historical BLS recursive
+verifier and measured BN254 verifier compare as follows:
+
+| Recursive verifier metric | BLS12-381 reference | BN254 Init |
+| --- | ---: | ---: |
+| Gates | 85,902,077 | 44,895,563 |
+| Lookups | 32,487,842 | 16,255,419 |
+| Frontend rows | 118,389,942 | 61,151,005 |
+| Witness values | 115,263,448 | 59,590,881 |
+| Padded computation height | `2^27` | `2^26` |
+| Opening MSM terms | 583 and 9 | 583 and 9 |
+
+BN254 has about 48% fewer recursive frontend rows and halves the padded
+computation trace. Its full recursive witness and external pairing checks
+passed against the real Init first KZG proof. That first proof is 32,869 bytes,
+or 33,045 bytes including its packet header and statement. The recursive
+outer proof is still pending.
+
+At the recursive frontend boundaries, point validation accounts for 36.47
+million BLS rows versus 0.41 million BN254 rows; BN254's cofactor-one G1
+removes the BLS subgroup-check machinery. The two opening MSMs add 62.80
+million versus 45.45 million rows. Transcript processing adds 19.12 million
+versus 15.28 million rows, with shorter point encodings on BN254. These
+increments include newly exposed public values and are not operation counts
+or gnark PLONK constraint counts.
+
+These are structural comparisons. Historical BLS timings use CUDA, Filecoin
+parameters and an older build with a Keccak final transcript; current BN254
+runs use CPU, development parameters and BLAKE3. A curve-speed comparison
+requires matching those conditions.
+
+### Saved Init pipeline
+
+The worker has two entry points for a complete KZG run. `pipeline run` reads
+`root-vk.bin`, `root-proof.bin` and `root-claims.bin`, performs FRI compression,
+then runs first and recursive KZG stages. `pipeline run-fri` starts from an
+existing `outer-vk.bin`, `outer-proof.bin` and `outer-claims.bin`; it verifies
+that saved FRI proof and compares all eighteen statement words with the
+separately supplied root claims before starting the KZG workers.
+
+Build and execute these commands only when machine time is available. Real
+inputs require tens of millions of rows and substantial RAM; use the
+measurements above when choosing a host and place outputs and caches on fast
+local storage.
+
+```sh
+cargo build --release --locked -p ix-proof-compression --bin ix-compression-worker \
+  --no-default-features --features bn254,parallel --target-dir target/bn254
+export IX_COMPRESSION_WORKER="$PWD/target/bn254/release/ix-compression-worker"
+"$IX_COMPRESSION_WORKER" fri capabilities
+
+"$IX_COMPRESSION_WORKER" pipeline run \
+  /path/to/root /path/to/claim.bin /path/to/bn254-run 24 --dev-srs
+```
+
+Alternatively, reuse an already saved FRI proof in a separate empty output
+directory:
+
+```sh
+"$IX_COMPRESSION_WORKER" pipeline run-fri \
+  /path/to/fri /path/to/claim.bin /path/to/root/root-claims.bin \
+  /path/to/bn254-from-fri 24 --dev-srs
+```
+
+To verify the saved FRI input and count the translated frontend before
+proving, use:
+
+```sh
+"$IX_COMPRESSION_WORKER" kzg size \
+  /path/to/fri /path/to/kzg-size.json --dev-srs
+```
+
+This retains the source Goldilocks circuit and translation wire map, without
+allocating the translated circuit, proving traces or SRS. Its exact gate,
+lookup and value counts do not estimate total prover memory or padded trace
+sizes. The saved Init and mathlib inputs each used about 8.13 GiB peak RSS
+and 20 seconds wall time for this preflight on the measurement host.
+
+`claim.bin` contains the canonical serialized claim whose digest appears in
+the root statement. The top-level driver admits first-stage log-heights 24
+and 25, matching the saved recursive layout policy. Workers run in separate
+processes and are checked for the selected curve before proving. Each run
+writes `proof.envelope.bin`, `final-kzg/verifier.bin`,
+`expected-root-claims.bin` and `pipeline-report.json`; failed stages retain
+their checkpoints. Shared cache environment variables override the default
+per-run `cache/` directory.
+
+BN254 has no bundled verifier catalog entry. Its packet/profile versions are
+separate from BLS, and generating a profile does not authorize it. For local
+verification, set `BN254_PROFILE_DIGEST` to the independently reviewed BLAKE3
+digest of `final-kzg/verifier.bin`, then supply that pin, the original claim,
+and independently expected root claims:
+
+```sh
+"$IX_COMPRESSION_WORKER" pipeline verify \
+  /path/to/bn254-run/proof.envelope.bin /path/to/claim.bin \
+  /path/to/root/root-claims.bin /path/to/bn254-run/final-kzg/verifier.bin \
+  "$BN254_PROFILE_DIGEST" --dev-srs
+```
+
+Verification needs no proving SRS or cache. It checks the profile digest,
+development opt-in, claim digest, all expected statement words, outer KZG
+proof and deferred pairing. The generated report records the profile digest
+for inspection; the verifier never obtains its trusted pin from the proof.
+The library equivalents are `compress`, `compress_fri` and
+`verify_with_profile`. Ordinary `ix verify` continues to use its BLS catalog.
+
+### Validation and sizing entry points
+
+Focused entry points include the field primitives and complete verifier
+witness, with additional curve, transcript, MSM and public-pairing modules:
+
+```sh
+cargo test -p ix-proof-compression --no-default-features --features bn254,parallel \
+  --lib recursive::native_field::
+cargo test -p ix-proof-compression --no-default-features --features bn254,parallel \
+  --lib recursive::native_verifier::reuse_tests::recursive_witness_rejects_tampering_without_native_preverification -- --exact
+```
+
+The sizing example uses the same four-row inner circuit on both curves. It
+proves that small development fixture, then counts the recursive frontend
+without retaining the full recursive IR, generating its witness or producing
+an outer proof:
+
+```sh
+cargo run -p ix-proof-compression --no-default-features --features parallel \
+  --example recursive_size > target/recursive-bls12-381.json
+cargo run -p ix-proof-compression --no-default-features --features bn254,parallel \
+  --example recursive_size > target/recursive-bn254.json
+```
+
+The reports contain cumulative and incremental gates, lookups and values at
+the curve-input, transcript, scalar-check and opening-MSM boundaries. Shared
+tables and scalar preparation contribute to these phases; these frontend
+counts are not gnark PLONK constraint counts. The real Init comparison above
+uses saved pipeline artifacts; this smaller example provides another
+controlled input for comparing the two curves.
+
+The remaining migration steps are:
+
+1. Complete the Init and mathlib development compression runs and matched
+   backend comparisons. Compare circuit reports before choosing production
+   resource requirements or authorizing profiles.
+2. Adapt the gnark circuit to that profile and BN254 Fr, preserving both
+   pairing obligations and the two public claim-digest limbs; prove a complete
+   small wrapper with the standard BN254 PLONK backend.
+3. Add authenticated BN254 ceremony provisioning, profile/catalog authorization
+   and regenerated fixtures before enabling production proving.
+4. Follow the [BN254 GPU integration plan](../../docs/compression-architecture-options.md#bn254-gpu-integration-plan): port layouts and kernels, establish CPU/GPU
+   parity, then measure resources before real Init and multi-GPU benchmarks.
+
+See the [architecture options](../../docs/compression-architecture-options.md)
+for the proposed pipeline and unmeasured performance expectations.
+
+## BLS12-381 compression pipeline
+
 Compress an aggregate `CheckEnv` root proof through FRI → KZG → recursive
 KZG. The statement the compressed proof exposes is the root's public claim
 row, derived from the aggregation backend as `ix verify --aggregate` derives
@@ -76,9 +310,11 @@ statement from that profile's pinned aggregation-program prefix and the hash
 of the caller's serialized claim. It checks the compact proof and both
 pairing obligations without a verifier file, registry, proving SRS or GPU.
 
-External verifier imports are not supported, and local files under
+Ordinary `ix verify` does not import external profiles, and local files under
 `~/.ix/verifiers` have no effect. Unknown profile IDs are rejected; adding an
-accepted profile requires an application update. The bundled profiles are:
+accepted profile requires an application update. The standalone worker's
+`pipeline verify` command instead requires an explicit profile pin and expected
+statement, as described above. The bundled BLS profiles are:
 
 | Profile | Setup | First-stage log-height |
 | --- | --- | --- |

@@ -6,6 +6,7 @@ pub use stages::{
   prepare_root, setup,
 };
 
+mod driver;
 mod first;
 mod fixed_cache;
 #[cfg(test)]
@@ -27,14 +28,18 @@ use std::{
   process::{Command, Stdio},
 };
 
+#[cfg(not(feature = "bn254"))]
 pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x04";
+#[cfg(feature = "bn254")]
+pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn command(stage: &str, args: &[String]) -> Result<()> {
-  if stage != "plonk" {
+  if !matches!(stage, "plonk" | "pipeline") {
     configure_backend(stage)?;
   }
   match stage {
+    "pipeline" => driver::run(args),
     #[cfg(feature = "plonk")]
     "plonk" => plonk::run(args),
     "fri" => root::run(args),
@@ -202,6 +207,33 @@ fn worker_executable() -> Result<PathBuf> {
   )
 }
 
+fn check_worker_capabilities(bytes: &[u8]) -> Result<()> {
+  let capabilities: serde_json::Value = serde_json::from_slice(bytes)?;
+  if capabilities["format"] != "ix-compression-capabilities/v1"
+    || capabilities["binary"] != WORKER_EXECUTABLE
+    || capabilities["curve"] != crate::kzg::curve::NAME
+  {
+    return Err(format!("compression worker must report curve {}; select a matching IX_COMPRESSION_WORKER", crate::kzg::curve::NAME).into());
+  }
+  Ok(())
+}
+
+fn check_worker_curve() -> Result<()> {
+  let output = Command::new(worker_executable()?)
+    .args(["fri", "capabilities"])
+    .output()?;
+  if !output.status.success() {
+    return Err(
+      format!(
+        "compression worker capability check failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+      )
+      .into(),
+    );
+  }
+  check_worker_capabilities(&output.stdout)
+}
+
 fn child(stage: &str, args: &[&str], caches: &Caches) -> Result<()> {
   let status = Command::new(worker_executable()?)
     .arg(stage)
@@ -254,6 +286,30 @@ pub fn verify(
   verifier::verify(packet, claim, allow_development)
 }
 
+/// Verify with a caller-authorized profile digest and independently expected
+/// root statement. No proving parameters or bundled catalog entry are needed.
+pub fn verify_with_profile(
+  proof: &[u8],
+  claim: &[u8],
+  expected_claims: &[u8],
+  profile: &[u8],
+  trusted_profile_digest: &[u8; 32],
+  allow_development: bool,
+) -> Result<setup::SetupClass> {
+  let words = check_claim(claim, expected_claims)?;
+  let packet = proof
+    .strip_prefix(PROOF_TAG)
+    .ok_or("unsupported compressed proof curve or version")?;
+  verifier::verify_with_profile(
+    packet,
+    claim,
+    &words,
+    profile,
+    trusted_profile_digest,
+    allow_development,
+  )
+}
+
 /// Cross-run caches the stages share: fixed preprocessing keyed by the
 /// executable and profile, and development SRS files. Variables already set
 /// in the environment take precedence over the directory given to `compress`.
@@ -274,32 +330,23 @@ impl Caches {
   }
 }
 
-/// Run the three stages into an empty `out` directory, each as a child
-/// process so every heavy phase releases its memory and device state before
-/// the next starts. Only each stage's proof and verifying metadata are
-/// written; a rerun starts over, reusing the caches under `cache_root`.
-pub fn compress(
-  vk: &[u8],
-  proof: &[u8],
-  claim: &[u8],
-  statement: &[u8],
-  out: &Path,
-  cache_root: &Path,
+fn validate_compression_options(
   development: bool,
   log_height: u32,
   terminal_plonk: bool,
-) -> Result<Vec<u8>> {
-  let words = check_claim(claim, statement)?;
+) -> Result<()> {
   if terminal_plonk {
-    if development {
-      return Err(
-        "terminal PLONK requires Filecoin parameters; omit --dev-srs".into(),
-      );
-    }
-    #[cfg(feature = "plonk")]
-    plonk::helper_executable()?;
     #[cfg(not(feature = "plonk"))]
     return Err("this build does not include terminal PLONK support".into());
+    #[cfg(feature = "plonk")]
+    {
+      if development {
+        return Err(
+          "terminal PLONK requires Filecoin parameters; omit --dev-srs".into(),
+        );
+      }
+      plonk::helper_executable()?;
+    }
   }
   if !matches!(log_height, 24 | 25) {
     return Err(
@@ -316,12 +363,39 @@ pub fn compress(
         .into(),
     );
   }
+  check_worker_curve()
+}
+
+fn prepare_output(out: &Path) -> Result<()> {
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
     return Err(
       "output directory must be empty; use a new --out directory".into(),
     );
   }
+  Ok(())
+}
+
+fn path_string(path: &Path) -> Result<String> {
+  Ok(path.to_str().ok_or("non-UTF8 artifact path")?.to_owned())
+}
+
+/// Run FRI, first KZG and recursive KZG in separate worker processes.
+/// The output directory must be empty; interrupted stages retain checkpoints.
+pub fn compress(
+  vk: &[u8],
+  proof: &[u8],
+  claim: &[u8],
+  statement: &[u8],
+  out: &Path,
+  cache_root: &Path,
+  development: bool,
+  log_height: u32,
+  terminal_plonk: bool,
+) -> Result<Vec<u8>> {
+  let words = check_claim(claim, statement)?;
+  validate_compression_options(development, log_height, terminal_plonk)?;
+  prepare_output(out)?;
   let caches = Caches::under(cache_root);
   let root = out.join("root");
   fs::create_dir_all(&root)?;
@@ -329,13 +403,63 @@ pub fn compress(
   fs::write(root.join("root-proof.bin"), proof)?;
   fs::write(root.join("root-claims.bin"), statement::to_claims_bytes(&words))?;
   let fri = out.join("fri");
+  child(
+    "fri",
+    &[&path_string(&root)?, &path_string(&fri)?, "--prove-outer"],
+    &caches,
+  )?;
+  finish_kzg(
+    &fri,
+    &words,
+    out,
+    cache_root,
+    development,
+    log_height,
+    terminal_plonk,
+  )
+}
+
+/// Compress an already saved FRI stage while binding its statement to a
+/// caller-supplied claim and expected root claims. The FRI stage is verified
+/// before starting the KZG workers.
+pub fn compress_fri(
+  fri: &Path,
+  claim: &[u8],
+  expected_claims: &[u8],
+  out: &Path,
+  cache_root: &Path,
+  development: bool,
+  log_height: u32,
+) -> Result<Vec<u8>> {
+  let words = check_claim(claim, expected_claims)?;
+  validate_compression_options(development, log_height, false)?;
+  prepare_output(out)?;
+  {
+    let fixture = init_fri::load(fri)?;
+    let actual =
+      statement::from_scalars(&stages::scalar_statement(&fixture.public))?;
+    if actual != words {
+      return Err("saved FRI statement differs from the independently expected root statement".into());
+    }
+  }
+  finish_kzg(fri, &words, out, cache_root, development, log_height, false)
+}
+
+fn finish_kzg(
+  fri: &Path,
+  words: &statement::Statement,
+  out: &Path,
+  cache_root: &Path,
+  development: bool,
+  log_height: u32,
+  terminal_plonk: bool,
+) -> Result<Vec<u8>> {
+  let caches = Caches::under(cache_root);
   let first = out.join("first-kzg");
   let final_dir = out.join("final-kzg");
-  let path = |p: &Path| -> Result<String> {
-    Ok(p.to_str().ok_or("non-UTF8 output path")?.to_owned())
-  };
-  let (root_s, fri_s, first_s, final_s) =
-    (path(&root)?, path(&fri)?, path(&first)?, path(&final_dir)?);
+  let path = path_string;
+  let (fri_s, first_s, final_s) =
+    (path(fri)?, path(&first)?, path(&final_dir)?);
   // Each KZG worker selects its setup from the forwarded development flag
   // and cache configuration.
   let kzg = |stage, args: &[&str]| {
@@ -345,14 +469,13 @@ pub fn compress(
     }
     child(stage, &args, &caches)
   };
-  child("fri", &[&root_s, &fri_s, "--prove-outer"], &caches)?;
   let height = log_height.to_string();
   kzg("kzg", &["run", &fri_s, &first_s, &height])?;
   kzg("wrap", &["stage-and-prove", &first_s, &final_s])?;
   let mut result = PROOF_TAG.to_vec();
   result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
   let packet = &result[PROOF_TAG.len()..];
-  wrap::verify(&final_dir, packet, Some(&words))?;
+  wrap::verify(&final_dir, packet, Some(words))?;
   // A bundled profile pins the aggregation program its proofs attest; the
   // backend this run proved under must be that program, or the bundle is
   // stale and verification elsewhere would accept the wrong statement.
@@ -398,6 +521,39 @@ pub use wrap::{export_solidity_verifier, write_solidity_fixture};
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn worker_capabilities_reject_other_curves_and_missing_identity() {
+    let capabilities = |curve: &str| {
+      serde_json::to_vec(&serde_json::json!({
+        "format": "ix-compression-capabilities/v1",
+        "binary": WORKER_EXECUTABLE,
+        "curve": curve,
+      }))
+      .unwrap()
+    };
+    check_worker_capabilities(&capabilities(crate::kzg::curve::NAME)).unwrap();
+    let other = if cfg!(feature = "bn254") { "bls12-381" } else { "bn254" };
+    assert!(check_worker_capabilities(&capabilities(other)).is_err());
+    assert!(check_worker_capabilities(b"{}").is_err());
+    assert!(check_worker_capabilities(b"not-json").is_err());
+  }
+
+  #[test]
+  fn explicit_profile_verification_rejects_other_curve_envelopes() {
+    let expected =
+      statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
+    let other = if cfg!(feature = "bn254") {
+      b"IXCMP\0\0\x04"
+    } else {
+      b"IXBN\0\0\0\x01"
+    };
+    let error =
+      verify_with_profile(other, b"claim", &expected, b"", &[0; 32], true)
+        .unwrap_err();
+    assert!(error.to_string().contains("curve or version"));
+  }
+
   #[test]
   fn unsupported_claim_is_rejected_before_io() {
     assert!(

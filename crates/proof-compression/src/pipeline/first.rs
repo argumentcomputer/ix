@@ -6,13 +6,13 @@
 //! proof and the metadata the recursive stage verifies it with, plus the
 //! fixed-preprocessing checkpoints that populate the cross-run disk cache.
 use crate::fri::{VerifierLimits, VerifierPlan};
-#[cfg(test)]
 use crate::kzg::Scalar;
 use multi_stark::config::ProofConfig;
 #[cfg(test)]
 use multi_stark::plonkish::{Assignment, MultiStarkCircuit};
 #[cfg(test)]
 use multi_stark::traits::Field;
+use multi_stark::traits::TwoAdicField;
 use std::{fs, path::Path, time::Instant};
 
 use super::stages::construct::{self, FriConstruction, Lowered, max_height};
@@ -32,8 +32,15 @@ pub(super) use super::stages::statement::first_claims as expected_claims;
 
 fn log_height_arg(arg: Option<&String>) -> storage::Result<usize> {
   let log_height = arg.map(|s| s.parse::<usize>()).transpose()?.unwrap_or(24);
-  if !(24..=28).contains(&log_height) {
-    return Err("log-height must be 24..28".into());
+  let maximum = 28.min(Scalar::TWO_ADICITY - 1);
+  if !(24..=maximum).contains(&log_height) {
+    return Err(
+      format!(
+        "log-height must be 24..{maximum} for {} with quotient factor 2",
+        crate::kzg::curve::NAME
+      )
+      .into(),
+    );
   }
   Ok(log_height)
 }
@@ -42,12 +49,13 @@ pub(super) fn run(
   args: &[String],
   config: &super::WorkerConfig,
 ) -> storage::Result<()> {
-  const USAGE: &str = "usage: ix-compression-worker kzg run <saved-fri-dir> <output-dir> [log-height: 24..28]";
+  const USAGE: &str = "usage: ix-compression-worker kzg run <saved-fri-dir> <output-dir> [log-height] [--dev-srs] | kzg size <saved-fri-dir> <report.json> [--dev-srs]";
   let Some(command) = args.first() else {
     return Err(USAGE.into());
   };
   let rest = &args[1..];
   match command.as_str() {
+    "size" if rest.len() == 2 => size(Path::new(&rest[0]), Path::new(&rest[1])),
     "run" if (2..=3).contains(&rest.len()) => {
       let log_height = log_height_arg(rest.get(2))?;
       stage_and_prove(
@@ -59,6 +67,51 @@ pub(super) fn run(
     },
     _ => Err(USAGE.into()),
   }
+}
+
+fn size(fri: &Path, report: &Path) -> storage::Result<()> {
+  let start = Instant::now();
+  let fixture = init_fri::load(fri)?;
+  let plan = VerifierPlan::validate(
+    &fixture.key,
+    fixture.profile,
+    VerifierLimits::default(),
+  )?;
+  let plan_id = plan.identity(&fixture.schema)?;
+  let source = FriConstruction::build(&plan, fixture.schema)?.circuit;
+  let translated = crate::foreign::GoldilocksCircuit::estimate(&source);
+  let counts = |stats: multi_stark::plonkish::CircuitStats| {
+    serde_json::json!({
+      "values": stats.values,
+      "inputs": stats.inputs,
+      "gates": stats.gates,
+      "lookups": stats.lookups,
+      "tables": stats.tables,
+      "publics": stats.publics,
+      "hint_calls": stats.hint_calls,
+      "hint_outputs": stats.hint_outputs,
+      "hash_calls": stats.hash_calls,
+      "hash_compressions": stats.hash_compressions,
+    })
+  };
+  let result = serde_json::json!({
+    "format": "ix-first-kzg-sizing/v1",
+    "curve": crate::kzg::curve::NAME,
+    "native_input_verified": true,
+    "plan_id": blake3::Hash::from_bytes(plan_id).to_hex().as_str(),
+    "source_frontend": counts(source.stats()),
+    "scalar_frontend": counts(translated),
+    "scalar_bytes": size_of::<Scalar>(),
+    "g1_affine_bytes": size_of::<crate::kzg::curve::G1Affine>(),
+    "max_trace_log_with_quotient2": Scalar::TWO_ADICITY - 1,
+    "elapsed_seconds": start.elapsed().as_secs_f64(),
+    "srs_loaded": false,
+    "proof_generated": false,
+    "scope": "Exact translated frontend counts; retains the source Goldilocks IR and translation wire map, not the translated IR or proving traces. Padded layouts, custom trace widths and total prover memory require separate accounting.",
+  });
+  storage::write_atomic(report, &serde_json::to_vec_pretty(&result)?)?;
+  println!("{}", serde_json::to_string_pretty(&result)?);
+  Ok(())
 }
 
 fn stage_and_prove(
@@ -132,7 +185,7 @@ fn prove(
     return Err("unexpected trace layout".into());
   }
   let height = *manifest.heights.iter().max().ok_or("empty manifest")?;
-  if height > 1 << 28
+  if height > 1 << 28.min(Scalar::TWO_ADICITY - 1)
     || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
   {
     return Err("unsupported trace height".into());
@@ -180,7 +233,10 @@ fn prove(
   // The label is part of every published profile id and predates the
   // Filecoin setup; the setup class is bound through the transcript seed.
   let mut profile = blake3::Hasher::new();
+  #[cfg(not(feature = "bn254"))]
   profile.update(b"init-fri-kzg-ordinary-v1/development-srs/quotient2");
+  #[cfg(feature = "bn254")]
+  profile.update(b"init-fri-kzg-bn254/v1/development-srs/quotient2");
   profile.update(system.config.transcript_seed());
   profile.update(&plan_id);
   profile.update(&fs::read(dir.join("manifest.bin"))?);
@@ -199,6 +255,7 @@ fn prove(
   let development = setup.class() == SetupClass::Development;
   let public_setup = system.config.pcs().public_setup();
   let evidence = serde_json::json!({
+    "curve": crate::kzg::curve::NAME,
     "proof_bytes": bytes.len(),
     "packet_bytes": packet.len(),
     "trace_heights": manifest.heights,
@@ -230,6 +287,15 @@ mod tests {
   use multi_stark::plonkish::gadgets::ByteGadgets;
   use multi_stark::plonkish::gadgets::blake3;
   use multi_stark::plonkish::{CircuitBuilder, Value};
+
+  #[test]
+  fn first_stage_height_leaves_room_for_quotients() {
+    let maximum = 28.min(Scalar::TWO_ADICITY - 1);
+    assert_eq!(log_height_arg(None).unwrap(), 24);
+    assert_eq!(log_height_arg(Some(&maximum.to_string())).unwrap(), maximum);
+    assert!(log_height_arg(Some(&(maximum + 1).to_string())).is_err());
+    assert!(log_height_arg(Some(&"23".to_owned())).is_err());
+  }
 
   const OPTIONS: super::super::WorkerConfig = super::super::WorkerConfig {
     prefetch_bytes: 1 << 20,

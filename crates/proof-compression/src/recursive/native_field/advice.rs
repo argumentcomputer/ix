@@ -1,7 +1,9 @@
 use std::sync::OnceLock;
 
 use super::{
-  BigInt, BigUint, CARRY_BITS, L, Scalar, W, digits, integer, modulus, scalar,
+  BigInt, BigUint, CARRY_BIAS_BITS, CARRY_BITS, L, QUOTIENT_BIAS_BITS,
+  QUOTIENT_BITS, RELATION_ADVICE_LEN, Scalar, W, digits, integer, modulus,
+  scalar,
 };
 use multi_stark::traits::{Algebra, Field};
 
@@ -19,14 +21,14 @@ pub(super) fn constants() -> &'static Constants {
   CONSTANTS.get_or_init(|| {
     let prime = modulus();
     let modulus_digits = digits(&prime);
-    let quotient_bias = BigUint::from(1u8) << 383;
+    let quotient_bias = BigUint::from(1u8) << QUOTIENT_BIAS_BITS;
     Constants {
       modulus_signed_digits: modulus_digits.clone().map(BigInt::from),
       modulus_digits,
       prime: BigInt::from(prime),
       bias_digits: digits(&quotient_bias).map(BigInt::from),
       quotient_bias: BigInt::from(quotient_bias),
-      carry_bias: BigInt::from(1u8) << 88usize,
+      carry_bias: BigInt::from(1u8) << CARRY_BIAS_BITS,
     }
   })
 }
@@ -43,11 +45,11 @@ pub(super) fn relation(
   products: &[i8],
   linear: &[i8],
   constant: i8,
-) -> Result<[Scalar; 9], String> {
+) -> Result<[Scalar; RELATION_ADVICE_LEN], String> {
   let constants = constants();
   let values: Vec<_> =
     values.iter().map(|&v| BigInt::from(integer(v))).collect();
-  let mut terms: [BigInt; 10] = std::array::from_fn(|_| BigInt::from(0u8));
+  let mut terms: [BigInt; 2 * L] = std::array::from_fn(|_| BigInt::from(0u8));
   let mut at = 0;
   for &coefficient in products {
     let scaled: [BigInt; L] =
@@ -74,7 +76,7 @@ pub(super) fn relation(
   }
   let quotient = quotient + &constants.quotient_bias;
   let quotient = quotient.to_biguint().ok_or("negative biased quotient")?;
-  if quotient.bits() > 384 {
+  if quotient.bits() > QUOTIENT_BITS as u64 {
     return Err("Fq quotient overflow".into());
   }
   let quotient = digits(&quotient);
@@ -86,15 +88,15 @@ pub(super) fn relation(
       terms[i + j] -= &constants.modulus_signed_digits[i] * &unbiased[j];
     }
   }
-  let mut out = [Scalar::ZERO; 9];
+  let mut out = [Scalar::ZERO; RELATION_ADVICE_LEN];
   for i in 0..L {
     out[i] = scalar(&quotient[i]);
   }
   let mut carry = BigInt::from(0u8);
-  for j in 0..5 {
+  for j in 0..L {
     carry += &terms[2 * j] + (&terms[2 * j + 1] << W);
     divide_carry(&mut carry)?;
-    if j < 4 {
+    if j < L - 1 {
       let biased = &carry + &constants.carry_bias;
       let value = biased.to_biguint().ok_or("negative biased carry")?;
       if value.bits() > CARRY_BITS as u64 {
