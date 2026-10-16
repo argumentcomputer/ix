@@ -286,8 +286,9 @@ def evaluate : IO (Array String × Array String) := do
     {indcs} inductive and constructor names): {showCounts deferred}"
   lines := lines.push s!"collapsed blocks' definitions refused by Lean's names (control): \
     {controlRefused} of {controlChecked}"
-  lines := lines.push s!"service groups: folded {acc} accepted, {ref} refused, {blk} blocked, \
-    {pending} never asked for; prelude declarations synthesised {svc.synthesised}"
+  lines := lines.push s!"service groups: {svc.entries.size} met of the closure's; folded {acc} \
+    accepted, {ref} refused, {blk} blocked, {pending} met and not folded; prelude declarations \
+    synthesised {svc.synthesised}"
   if installed == 0 then errors := errors.push "no flat block was installed"
   if controlRefused == 0 then
     errors := errors.push "the control accepted every collapsed block's definition by Lean's names"
@@ -302,6 +303,70 @@ def fixtures : TestSeq :=
       let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
       return (errors.isEmpty, 1, 0, msg)) .done
 
-def suite : List TestSeq := [fixtures]
+/-! ## The drivers' Source service (AuxGen M1, step 4)
+
+The wave fold asks its Source service for every block that holds an inductive,
+before the block's aux tail (`Ix.CompileM.compileEnvFoldWithSource`). On the
+fixtures' closure, compiled by both paths: the pure compiler's
+(`Ix.Cert.compileUnchecked`'s call: the materialized environment, `blocksOf`)
+and the IO pipeline (`compileLeanConsts`: theorem and opaque bodies
+canonicalized on demand). Asserted: both reports are equal (the service reads
+the input through lookups only, so the two environments give one service);
+the service started; the blocks asked for are exactly the condensation's
+blocks that hold an inductive (by kind, against the `T.rec` probe the drivers
+use, `holdsInductive`); every one is accepted or named with its reason. -/
+
+def driverEvaluate : IO (Array String × Array String) := do
+  let leanEnv ← getCompileEnv (fixtureModules ++ #[`IxC.Kernel.PinGen.Certs])
+  let idxs := fixtureModules.filterMap leanEnv.getModuleIdx?
+  let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
+    if (leanEnv.getModuleIdxFor? n).any idxs.contains then some n else none
+  let certs := (Ix.RoleEvidence.certTheorems.flatMap (·.2)).toArray
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv
+    (seeds ++ certs ++ Tests.Ix.Kernel.SourceIngress.preludeNames))
+  let env := Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray (workers := 4)
+  let blocks := Ix.Cert.blocksOf env
+  let t0 ← IO.monoMsNow
+  let ((_, _, _), cert) ← IO.ofExcept (← IO.lazyPure fun _ =>
+    Ix.CompileM.compileEnvFoldWithSource env blocks)
+  let t1 ← IO.monoMsNow
+  let io ← IO.ofExcept (← Ix.CompileM.compileLeanConsts closed (numWorkers := 4))
+  let t2 ← IO.monoMsNow
+  let isInd (n : Ix.Name) : Bool := match env.consts.get? n with
+    | some (.inductInfo _) => true
+    | _ => false
+  let nInd := blocks.blocks.fold (init := 0) fun k _ members =>
+    if members.toArray.any isInd then k + 1 else k
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  lines := lines.push s!"closure: {env.consts.size} constants, {blocks.blocks.size} blocks, \
+    {nInd} holding an inductive; pure compile with the service {t1 - t0} ms, IO pipeline \
+    {t2 - t1} ms"
+  lines := lines.push s!"pure path: {cert.summary}"
+  lines := lines.push s!"IO pipeline: {io.source.summary}"
+  for (k, why) in cert.notAccepted do
+    lines := lines.push s!"  not accepted: {k.pretty}: {why.take 160}"
+  for (g, why) in cert.refused do
+    lines := lines.push s!"  group refused: {g}: {why.take 160}"
+  if let some e := cert.error then errors := errors.push s!"no service: {e}"
+  unless cert == io.source do
+    errors := errors.push s!"the two paths' reports differ: {cert.summary} / {io.source.summary}"
+  unless cert.blocks == nInd do
+    errors := errors.push s!"{cert.blocks} blocks asked for, {nInd} hold an inductive"
+  unless cert.notAccepted.size ≥ Ix.AuxGen.Source.Report.cap ||
+      cert.accepted + cert.notAccepted.size == cert.blocks do
+    errors := errors.push "a block neither accepted nor named"
+  return (errors, lines)
+
+def driverService : TestSeq :=
+  .individualIO "the drivers' Source service: asked for every inductive block, one report on both paths"
+    none (do
+      let (errors, lines) ← driverEvaluate
+      for l in lines do IO.println l
+      for e in errors do IO.println s!"  error: {e}"
+      let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
+      return (errors.isEmpty, 1, 0, msg)) .done
+
+def suite : List TestSeq := [fixtures, driverService]
 
 end Tests.Ix.AuxGen.FlatBlockSource

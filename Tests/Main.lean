@@ -454,7 +454,7 @@ def registry : List Entry := [
   -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).
   .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
   -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
-  .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the Source service environment (about 7 min), named in no gate yet") Tests.Ix.AuxGen.FlatBlockInitStd.run,
+  .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the drivers' Source service (about 2 min), in the compiler gate's suites") Tests.Ix.AuxGen.FlatBlockInitStd.run,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks
   .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
