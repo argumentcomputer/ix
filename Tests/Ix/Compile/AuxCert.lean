@@ -183,23 +183,26 @@ def fixtures : List Fixture := [
   -- members eliminates into Prop only, as in Lean (lane P `6327e496`).
   -- `Box T` is nested under the definition `K`; the kernels find it there
   -- (D-14) and accept the two-motive recursors. The certified checker's
-  -- modeller declines the field that mentions `Box T` under `K`, and the
-  -- block's dependents are blocked on it.
+  -- modeller takes the field as an ordinary one since CQX.8 (no member left
+  -- once its carriers are rewritten), then declines the block: a non-`Prop`
+  -- nested block with a small eliminator (its `_impl.unpack` eliminates into
+  -- `Sort u`). The block's dependents are blocked on it.
   { stem := "NestedSortU", ns := ["NestedSortU"]
     knownFails :=
-      kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
+      kf "cert" "IxC modeller: a non-Prop nested block with a small eliminator (decline)"
         ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
           "NestedSortU.t_rec"] },
   -- CQX.8: `T`'s field `K True (Box T)` mentions the block only before
   -- whnf. The Rust kernel tests positivity after whnf, as Lean does, and
   -- accepts `T` and its recursors (D-14 finds `Box T` under `K`); `Ix.Tc`
-  -- still rejects the block (not fixed: deleted in CQX.2); the certified
-  -- checker's modeller declines it.
+  -- still rejects the block (not fixed: deleted in CQX.2). The certified
+  -- checker's modeller passes the field since CQX.8 and declines the block
+  -- as `NestedSortU`'s (a non-`Prop` nested block with a small eliminator).
   { stem := "NestedSortUK", ns := ["NestedSortUK"]
     knownFails :=
       kf "lean" "CQX.8 (Ix.Tc tests positivity before whnf; not fixed, CQX.2)"
         ["NestedSortUK.T", "NestedSortUK.T.*"] ++
-      kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
+      kf "cert" "IxC modeller: a non-Prop nested block with a small eliminator (decline)"
         ["NestedSortUK.T", "NestedSortUK.T.mk", "NestedSortUK.T.rec", "NestedSortUK.T.rec_1",
           "NestedSortUK.t_rec"] },
   -- A0 item 3 (WB-E1/A4): an evaporation target that is not a one-motive
