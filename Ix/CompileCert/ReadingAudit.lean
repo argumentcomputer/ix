@@ -21,7 +21,7 @@ import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
-import Ix.CompileCert.Canon.Coarsest
+import Ix.CompileCert.Canon.EqSound
 
 /-! # Audit of the reading-chain proofs
 
@@ -55,7 +55,8 @@ syntactic walks through sharing and along the source
 inductive block (`Ix.CompileCert.SourceConstructorPositions`), and the shared
 loop lemmas (`Ix.CompileCert.Loop`), and Pass 1's comparator as a total preorder
 (`Ix.CompileCert.Canon.Basic` … `Rel`) and its classes, the coarsest consistent
-partition (`Ix.CompileCert.Canon.Cache` … `Coarsest`).
+partition (`Ix.CompileCert.Canon.Cache` … `Coarsest`), and what its `eq` means
+(`Ix.CompileCert.Canon.EqSound`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -468,6 +469,16 @@ def canonClassRoots : Array Lean.Name :=
     `refineClassesP_spec, `coarser_ctxOf, `constOrd_eq_mono, `sortLoopP_spec, `sortClassesP_coarsest,
     `sortClasses_coarsest].map (`Ix.CompileCert.Canon ++ ·)
 
+/-- What Pass 1's `eq` means (CS-01): an `eq` comparison relates the two
+sides by `ExprEq`/`ConstMatch` (the comparator's identifications), and two
+members of one class of `sortClasses` match under the classes' context. -/
+def canonEqRoots : Array Lean.Name :=
+  #[`cmpM_eq_parts, `lexIf_eq_parts, `pure_eq_nat, `zipM_eq, `literal_compare_eq, `forall₂_imp,
+    `defKind_compare_eq, `bool_compare_eq, `compareLevel_eq_sound, `compareLevels_eq_sound,
+    `compareRef_eq_sound, `exprEq_strip_left, `exprEq_strip_right, `compareExpr_eq_sound,
+    `ctorKeys_eq_sound, `compareDef_eq_sound, `indP_eq_sound, `compareRecr_eq_sound, `constP_eq_sound,
+    `constOrd_eq_sound, `sortClasses_match].map (`Ix.CompileCert.Canon ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -652,6 +663,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
   checkRoots (tag := "reading-audit") "canon order" Ix.CompileCert.ReadingAudit.canonOrderRoots
   checkRoots (tag := "reading-audit") "canon classes" Ix.CompileCert.ReadingAudit.canonClassRoots
+  checkRoots (tag := "reading-audit") "canon eq" Ix.CompileCert.ReadingAudit.canonEqRoots
   checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
