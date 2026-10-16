@@ -21,19 +21,19 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   NativeParts)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## Boundness through openings -/
 
 omit [SetTheory V] in
 /-- A bounded application's arguments are bounded. -/
-theorem constsBound_getAppArgs {env₀ : Env} :
-    ∀ (e : Expr), ConstsBound env₀ e → ∀ a ∈ e.getAppArgs, ConstsBound env₀ a
+theorem constsBound_getAppArgs {env₀ : Env md} :
+    ∀ (e : Expr md), ConstsBound env₀ e → ∀ a ∈ e.getAppArgs, ConstsBound env₀ a
   | .app f a, he, x, hx => by
     rw [constsBound_app] at he
     simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
@@ -46,15 +46,15 @@ theorem constsBound_getAppArgs {env₀ : Env} :
   | .const _ _, _, _, hx => nomatch hx
   | .lam _ _ _, _, _, hx => nomatch hx
   | .forallE _ _ _, _, _, hx => nomatch hx
-  | .letE _ _ _, _, _, hx => nomatch hx
+  | .letE _ _ _ _, _, _, hx => nomatch hx
   | .lit _, _, _, hx => nomatch hx
   | .proj _ _ _, _, _, hx => nomatch hx
 
 omit [SetTheory V] in
 /-- An opening's variables (their types) and residual are bounded when
 the opened term is. -/
-theorem openPisAtFvars_constsBound {env₀ : Env} :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr},
+theorem openPisAtFvars_constsBound {env₀ : Env md} :
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md},
       ConstsBound env₀ e → openPisAtFvars n e d = some (fvs, o) →
       (∀ x ∈ fvs, ConstsBound env₀ x) ∧ ConstsBound env₀ o
   | 0, e, d, fvs, o, he, hop => by
@@ -85,12 +85,12 @@ theorem openPisAtFvars_constsBound {env₀ : Env} :
 /-- A recursive constructor's reading premise crosses a cons whose
 head is not the block's former and is not mentioned by the
 constructor's type. -/
-theorem CtorReadR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
-    {nP nIdx : Nat} {c : Name × Nat × Expr × List Nat} {cd : CtorDatumR}
+theorem CtorReadR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {c : Key md × Nat × Expr md × List Nat} {cd : CtorDatumR md}
     (h : CtorReadR m ψ T lps nP nIdx c cd)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
-    (hat : ∀ e : Expr, ConsCrossAt c₀ e) (hcb : ConstsBound env c.2.2.1)
+    (hat : ∀ e : Expr md, ConsCrossAt c₀ e) (hcb : ConstsBound env c.2.2.1)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
     CtorReadR m₂ ψ T lps nP nIdx c cd := by
@@ -116,13 +116,13 @@ theorem CtorReadR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps
     exact h.recEntry i hi
 
 /-- The reading premises cross the recursor's cons. -/
-theorem CtorReadsR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lps : List Name}
-    {nP nIdx : Nat} {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hT : T ≠ c₀.name)
-    (hat : ∀ e : Expr, ConsCrossAt c₀ e)
+    (hat : ∀ e : Expr md, ConsCrossAt c₀ e)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith m.acval c₀.name A) :
-    ∀ {ctors : List (Name × Nat × Expr × List Nat)} {cds : List CtorDatumR},
+    ∀ {ctors : List (Key md × Nat × Expr md × List Nat)} {cds : List (CtorDatumR md)},
       CtorReadsR m ψ T lps nP nIdx ctors cds →
       (∀ c ∈ ctors, ConstsBound env c.2.2.1) →
       CtorReadsR m₂ ψ T lps nP nIdx ctors cds
@@ -136,37 +136,37 @@ theorem CtorReadsR.cross {m : EnvModel V env} {ψ : Name → Nat} {T : Name} {lp
 /-- **Rule `j`'s reading** at the recursor's cons: the rule's λ-data
 over the rule's core with the stored recursor leaf. -/
 theorem fixRuleData_of (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts} {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
-    {rhss : List Expr} {caps : IndCaps}
+    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} {caps : IndCaps md}
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
-    {bsT : List (Expr × BinderMeta)}
+    {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
-    {tfvs : List Expr} {trest : Expr}
+    {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {env₀ : Env md} {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
       FixCtorFactsAt mp.base2 env₀ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA)
-    {mI rP : Nat} {rules : List Ix.Kernel.RecRule}
+    {mI rP : Nat} {rules : List (Ix.Kernel.RecRule md)}
     (hfresh : env.find? cvRa.name = none) (hT : p.cvT.name ≠ cvRa.name)
-    {A : (Name → Nat) → AnnotTerm}
+    {A : (LevelParam → Nat) → AnnotTerm}
     (m₂ : EnvModel V ⟨.recInfo cvRa mI rP rules :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval cvRa.name A)
-    {j : Nat} {cA : ConstantVal × Nat} (hj : ctorsA[j]? = some cA) :
-    ∃ rhs : Expr, rhss[j]? = some rhs ∧
+    {j : Nat} {cA : ConstantVal md × Nat} (hj : ctorsA[j]? = some cA) :
+    ∃ rhs : Expr md, rhss[j]? = some rhs ∧
       rhs.constsResolve ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ = true ∧
       rhs.hasFvar = false ∧ rhs.looseBVarsBounded 0 = true ∧
-      ∀ ψ : Name → Nat, denoteMeta m₂.acval ⟨.recInfo cvRa mI rP rules :: env.consts⟩ ψ 0 rhs
+      ∀ ψ : LevelParam → Nat, denoteMeta m₂.acval ⟨.recInfo cvRa mI rP rules :: env.consts⟩ ψ 0 rhs
         = some (mkLamsAV (fixRuleDataAV m₂ p.cvT.name ψ p.nP p.nIdx
             (Ix.Kernel.structElimLevel p.elim p.large) ((ppsAll ψ).take p.nP) ((ppsAll ψ).drop p.nP)
             (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
@@ -183,7 +183,7 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
   obtain ⟨rhs, hrhs, hgen, -, hres, hbr, hrf⟩ := hall j (by rw [hlen4]; exact hjn)
   rw [Nat.zero_add] at hgen
   -- the cons head and the crossing
-  have hcross : ∀ e : Expr, ConsCrossAt (.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) e :=
+  have hcross : ∀ e : Expr md, ConsCrossAt (.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) e :=
     fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
   have hcbC : ∀ c ∈ Ix.Kernel.nativeCtors4 ctorsA p.kinds, ConstsBound env c.2.2.1 := by
     intro c hc
@@ -208,10 +208,10 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
     exact constsBound_of_constsResolve _ hTres
   have hFD₂ := hFD.cross (c₀ := .recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) hfresh
     (hcross _) hcbT m₂ hac
-  have hfT₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env).find?
+  have hfT₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env md).find?
       p.cvT.name = some (.indInfo cvTa caps) :=
     Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT
-  have hfR₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env).find?
+  have hfR₂ : (⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules :: env.consts⟩ : Env md).find?
       p.cvR.name = some (.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ mI rP rules) :=
     Ix.Kernel.Env.find?_cons_self _ _
   have hjd : ∀ ψ, (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)[j]?

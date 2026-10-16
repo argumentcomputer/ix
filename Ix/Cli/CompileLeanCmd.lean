@@ -4,8 +4,8 @@
   end-to-end — the `Ix.CompileM` counterpart of `ix compile` (which
   drives the Rust FFI compiler). Phases: elaborate → canonicalize
   (`Ix.CanonM`) → reference graph (`Ix.GraphM`) → groundedness filter
-  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → aux-aware parallel
-  compile (`Ix.CompileM.compileEnvParallelAux`) → `Ixon.serEnv`.
+  (`Ix.Ground`) → Tarjan condense (`Ix.CondenseM`) → the driver, a pure
+  fold over waves (`Ix.CompileM.compileEnvFold`) → `Ixon.serEnv`.
 
   `--rust-check` additionally compiles the same environment through the
   Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
@@ -24,6 +24,8 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
 public import Ix.Cli.ValidateCmd
 public import Ix.Cli.CompileCmd
 public section
@@ -32,6 +34,13 @@ open System (FilePath)
 open Ix.EnvScope
 
 namespace Ix.Cli.CompileLeanCmd
+
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
 def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
@@ -49,17 +58,26 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if let some e ← applySharingLimitsFlag p then
     p.printError s!"error: {e}"
     return 2
+  -- The drivers' options: limits (`--sharing-limits` / `IX_SHARING_LIMITS`),
+  -- traces (`IX_COMPILE_DBG`); phase timings always on.
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv (dbg := true) with
+    | .ok opts => pure opts
+    | .error e =>
+      p.printError s!"error: {e}"
+      return 2
 
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
   let fe ← getFileEnvCore pathStr
-  let constList ← defaultConstList fe pathStr
+  let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers)
-      (dbg := true) with
+  -- The compile, then the resource post-step (an input with semantic
+  -- contracts is emitted only if its resources validate).
+  match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers)
+      (opts := opts) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return 1
@@ -73,7 +91,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[compile-lean] error: {ungroundedCount} constant(s) \
 failed to compile; nothing written to {outPath} (use --allow-partial to \
 serialize the grounded subset)"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
     IO.FS.writeBinFile outPath out.bytes
@@ -82,7 +100,7 @@ serialize the grounded subset)"
 {ungroundedCount} block failures) in {elapsed}ms"
     if ungroundedCount > 0 then
       IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
-      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+      for (n, e) in (rootCausesFirst out.cenv.ungrounded.toList).take 8 do
         IO.println s!"  {n.pretty}: {e.take 200}"
 
     if p.hasFlag "rust-check" then
@@ -119,6 +137,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); applies to the Lean compile and to --rust-check. Sets IX_SHARING_LIMITS."
 

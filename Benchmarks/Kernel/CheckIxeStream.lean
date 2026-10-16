@@ -81,7 +81,7 @@ structure Loaded where
 
 /-- Load an `.ixe` for streaming: decode every record once for its skeleton
 and its literal kinds, and build the setup over the skeletons. -/
-def load (bytes : ByteArray) (pins : Pins) (pre : Prelude) : IO Loaded := do
+def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon) : IO Loaded := do
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
   let consts := env.consts
   let env := { env with consts := {} }
@@ -95,7 +95,7 @@ def load (bytes : ByteArray) (pins : Pins) (pre : Prelude) : IO Loaded := do
   let preludeOnly := pre.records.foldl (init := {}) fun (acc : Std.HashSet Address) (a, _) =>
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup (literals := some lits)
+  let s := setup store (env.blobs[·]?) table pre hints.lookup (literals := some lits)
   return { env, setup := s, windows := ← IO.mkRef consts, preludeOnly }
 
 /-! ## Reading -/
@@ -103,7 +103,7 @@ def load (bytes : ByteArray) (pins : Pins) (pre : Prelude) : IO Loaded := do
 /-- The reading state of a streaming run: the reader's state, and the
 serialized bytes of every record of the `.ixe` not yet read. -/
 structure StreamState where
-  st : State := {}
+  st : State .anon := {}
   bytes : Std.HashMap Address ByteArray := {}
 
 /-- The initial reading state: every record's bytes, copied out of the
@@ -117,7 +117,7 @@ def StreamState.take (windows : IO.Ref (Std.HashMap Address Ixon.LazyConstant)) 
 
 /-- A record read in full: decoded from its bytes, or, for a prelude record
 the `.ixe` does not hold, the setup's. -/
-def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Except ReadError Read :=
+def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Except ReadError (Read .anon) :=
   match ss.bytes[address]? with
   | some b => match Ixon.deConstantAt b 0 with
     | .ok source => readRecord l.setup.cx ss.st address source
@@ -128,12 +128,25 @@ def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Excep
 
 /-- The state after a record: the reader's state learns from it, and its
 bytes are dropped. -/
-def StreamState.commit (ss : StreamState) (address : Address) (rd : Read) : StreamState :=
+def StreamState.commit (ss : StreamState) (address : Address) (rd : Read .anon) : StreamState :=
   { st := ss.st.commit rd, bytes := ss.bytes.erase address }
+
+/-- A tier record read in full by the tier reader (`none`: not a tier record).
+Its skeleton keeps its safety, so the test needs no decoding. -/
+def StreamState.tierRead (l : Loaded) (ss : StreamState) (address : Address) :
+    Option (Except ReadError (Ix.Kernel.Tier.TierDecl .anon)) := do
+  let sk ← l.setup.store[address]?
+  guard (Ix.Kernel.Admission.isTierInfo sk.info)
+  match ss.bytes[address]? with
+  | some b => match Ixon.deConstantAt b 0 with
+    | .ok source => readTierAt l.setup.cx address source
+    | .error e => some (.error (.malformed s!"record does not decode: {e}"))
+  | none => some (.error (.malformed "record is missing or was read already"))
 
 /-- A streaming load as a loop source. -/
 def Loaded.source (l : Loaded) : LoopSource StreamState :=
   { view := l.setup.view, read := StreamState.read l,
-    commit := StreamState.commit, init := StreamState.take l.windows }
+    commit := StreamState.commit, init := StreamState.take l.windows,
+    tier := some (StreamState.tierRead l) }
 
 end Benchmarks.Kernel.CheckIxeStream

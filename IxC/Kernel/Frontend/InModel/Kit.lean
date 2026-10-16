@@ -46,69 +46,62 @@ open Ix.Kernel
 
 /-! ## Names -/
 
-/-- `T._model._impl.<s>`. -/
-def implName (T : Name) (s : String) : Name := ((T.str "_model").str "_impl").str s
+/-- The modeller's namespace `T._model._impl` of the block owned by `T`
+(never declared itself). -/
+def implKey (T : Key md) : Key md := auxKey (auxKey T .model) .impl
 
 /-- The tag family `T._model._impl.tag` of the block owned by `T`. -/
-def tagName (T : Name) : Name := implName T "tag"
+def tagName (T : Key md) : Key md := auxKey (implKey T) .tag
 
 /-- The tag constructor of member `k`: `T._model._impl.tag.k`. -/
-def tagCtorName (T : Name) (k : Nat) : Name := (tagName T).num k
+def tagCtorName (T : Key md) (k : Nat) : Key md := auxKey (tagName T) (.member k)
 
 /-- The auxiliary family `T._model._impl.aux`. -/
-def auxName (T : Name) : Name := implName T "aux"
+def auxName (T : Key md) : Key md := auxKey (implKey T) .auxFamily
 
-/-- The auxiliary constructor of member `k`'s constructor `C`:
-`T._model._impl.aux.k.<last component of C>`. -/
-def auxCtorName (T : Name) (k : Nat) (C : Name) : Name :=
-  match C with
-  | .str _ s => ((auxName T).num k).str s
-  | .num _ n => ((auxName T).num k).num n
-  | .anonymous => (auxName T).num k
+/-- The auxiliary constructor of member `k`'s constructor `j`:
+`T._model._impl.aux.k.ctor_j`. -/
+def auxCtorName (T : Key md) (k j : Nat) : Key md := auxKey (auxKey (auxName T) (.member k)) (.ctor j)
 
 /-- The model companion of a block member: `X._model`. -/
-def modelName (n : Name) : Name := n.str "_model"
+def modelName (n : Key md) : Key md := auxKey n .model
 
 /-- The iota theorem of rule `j` of a modeled recursor `R`:
 `R._model.iota_j` (`IxC/Kernel/Inductives/Modeled.lean`'s lookup). -/
-def iotaName (R : Name) (j : Nat) : Name := (modelName R).str s!"iota_{j}"
+def iotaName (R : Key md) (j : Nat) : Key md := auxKey (modelName R) (.iota j)
 
-/-- A level-parameter name not among `lps`: `u`, then `u_1`, `u_2`, …
-— the official kernel's `mk_fresh_lvl_name` convention for a
-recursor's elimination level (`inductive.cpp`), so a generated
-recursor's level parameters are the ones Lean's own kernel would
-mint for the same block. -/
-partial def freshLevelName (lps : List Name) (base : String := "u") : Name :=
-  if lps.contains (Name.str .anonymous base) then go 1 else Name.str .anonymous base
-where
-  go (i : Nat) : Name :=
-    let n := Name.str .anonymous s!"{base}_{i}"
-    if lps.contains n then go (i + 1) else n
+/-- A level parameter not among `lps`: the least number that is not in
+the list — `n` for a block's `[0, …, n-1]`, the number the front ends
+give a large eliminator's elimination parameter, so a generated
+recursor's level parameters are the ones the reader would give the
+same block's recursor. -/
+def freshLevelParam (lps : List LevelParam) : LevelParam :=
+  ((List.range (lps.length + 1)).find? (!lps.contains ·)).getD lps.length
 
 /-! ## Binders and frames -/
 
 /-- The default binder datum of a generated binder: `.never` — what the
 frontend gives every parsed binder (task #161; the annotate pass
 recomputes the datum before it is validated). -/
-def bm : BinderMeta := ⟨.never⟩
+def bm : BinderMeta := { pw := .never }
 
 /-- `λ`-telescope over domains (outermost first). -/
-def mkLams (bs : List Expr) (body : Expr) : Expr :=
+def mkLams (bs : List (Expr md)) (body : Expr md) : Expr md :=
   bs.foldr (fun d acc => .lam d acc bm) body
 
 /-- `∀`-telescope over domains (outermost first). -/
-def mkPis (bs : List Expr) (body : Expr) : Expr :=
+def mkPis (bs : List (Expr md)) (body : Expr md) : Expr md :=
   bs.foldr (fun d acc => .forallE d acc bm) body
 
 /-- The variables `bvar (o + n - 1 - k)`, `k < n`: a telescope of `n`
 binders seen from `o` binders below it (`structPsAt`). -/
-def varsAt (o n : Nat) : List Expr := structPsAt o n
+def varsAt (o n : Nat) : List (Expr md) := structPsAt o n
 
 /-- A constant at its level parameters. -/
-def constP (n : Name) (lps : List Name) : Expr := .const n (lps.map .param)
+def constP (n : Key md) (lps : List LevelParam) : Expr md := .const n (lps.map .param)
 
 /-- The domains of a `∀`-telescope's binder list. -/
-def piBinders (bs : List (Expr × BinderMeta)) : List Expr :=
+def piBinders (bs : List (Expr md × BinderMeta)) : List (Expr md) :=
   bs.map (·.1)
 
 /-- A member's or constructor's telescope `ty` re-spelled over the
@@ -123,7 +116,7 @@ The re-spelling is checked, not trusted: the residual was typed under
 the member's own domains, and the fold's typing of the generated record
 is what compares them (a genuinely different domain makes the record
 ill-typed and the fold rejects it). -/
-def overFirstParams (nP : Nat) (former ty : Expr) : Option Expr :=
+def overFirstParams (nP : Nat) (former ty : Expr md) : Option (Expr md) :=
   (ty.stripPis nP).bind fun q => Expr.replacePiBody nP former q.2
 
 /-! ## Family occurrences -/
@@ -141,9 +134,9 @@ One memoized DAG walk (keyed by the node — the rewrite reads no binder
 cursor), and, like `mentionsAnyGo`, with no spec lemma: the modeller
 is untrusted.  Without it the rebuild runs once per path, which is what
 `tests/e2e/tower_mutual.ndjson` exposes. -/
-partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
-    Expr → Expr × Std.HashMap Expr Expr
+partial def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key md × Nat × Nat)) (memo : Std.HashMap (Expr md) (Expr md)) :
+    (Expr md) → Expr md × Std.HashMap (Expr md) (Expr md)
   | .bvar i => (.bvar i, memo)
   | .sort u => (.sort u, memo)
   | .fvar i t => (.fvar i t, memo)
@@ -159,7 +152,7 @@ partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Expr × Std.HashMap Expr Expr :=
+      let (r, memo) : Expr md × Std.HashMap (Expr md) (Expr md) :=
         match e with
         | e@(.app _ _) =>
           let f := e.getAppFn
@@ -192,11 +185,11 @@ partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
           let (d', memo) := specFamGo T lps nP members memo d
           let (b', memo) := specFamGo T lps nP members memo b
           (.forallE d' b' m, memo)
-        | .letE t v b =>
+        | .letE t v b lmeta =>
           let (t', memo) := specFamGo T lps nP members memo t
           let (v', memo) := specFamGo T lps nP members memo v
           let (b', memo) := specFamGo T lps nP members memo b
-          (.letE t' v' b', memo)
+          (.letE t' v' b' lmeta, memo)
         | .proj s i x =>
           let (x', memo) := specFamGo T lps nP members memo x
           (.proj s i x', memo)
@@ -204,9 +197,9 @@ partial def specFamGo (T : Name) (lps : List Name) (nP : Nat)
       (r, memo.insert e r)
 
 @[inherit_doc specFamGo]
-partial def specFamGoList (T : Name) (lps : List Name) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (memo : Std.HashMap Expr Expr) :
-    List Expr → List Expr × Std.HashMap Expr Expr
+partial def specFamGoList (T : Key md) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key md × Nat × Nat)) (memo : Std.HashMap (Expr md) (Expr md)) :
+    List (Expr md) → List (Expr md) × Std.HashMap (Expr md) (Expr md)
   | [] => ([], memo)
   | x :: xs =>
     let (y, memo) := specFamGo T lps nP members memo x
@@ -216,8 +209,8 @@ partial def specFamGoList (T : Name) (lps : List Name) (nP : Nat)
 end
 
 @[inherit_doc specFamGo]
-def specFam (T : Name) (lps : List Name) (nP : Nat)
-    (members : List (Name × Nat × Nat)) (e : Expr) : Expr :=
+def specFam (T : Key md) (lps : List LevelParam) (nP : Nat)
+    (members : List (Key md × Nat × Nat)) (e : Expr md) : Expr md :=
   (specFamGo T lps nP members {} e).1
 
 /-- Simultaneous substitution of a parameter block: under `d` binders,
@@ -227,14 +220,14 @@ block's, lifted past the binders passed on the way), and every loose
 `bvar ≥ d + n` is lowered by `n`.  Unlike `instantiateList` the
 replacements are never re-traversed, so they may mention variables of
 the surrounding frame. -/
-partial def substParams (d n : Nat) (vals : List Expr) (e : Expr) : Expr :=
+partial def substParams (d n : Nat) (vals : List (Expr md)) (e : Expr md) : Expr md :=
   (go {} 0 e).1
 where
   /-- The memoized rebuild, keyed by the node and the binder cursor
   `k` (which shifts under binders).  As everywhere in the modeller,
   no spec lemma: it is untrusted, and what it emits is checked. -/
-  go (memo : Std.HashMap (Expr × Nat) Expr) (k : Nat) :
-      Expr → Expr × Std.HashMap (Expr × Nat) Expr
+  go (memo : Std.HashMap (Expr md × Nat) (Expr md)) (k : Nat) :
+      (Expr md) → Expr md × Std.HashMap (Expr md × Nat) (Expr md)
     | .bvar i =>
       (if i < d + k then .bvar i
        else if i < d + k + n then (vals.getD (n - 1 - (i - d - k)) default).liftLooseBVars k 0
@@ -246,7 +239,7 @@ where
       match memo[(e, k)]? with
       | some r => (r, memo)
       | none =>
-        let (r, memo) : Expr × Std.HashMap (Expr × Nat) Expr :=
+        let (r, memo) : Expr md × Std.HashMap (Expr md × Nat) (Expr md) :=
           match e with
           | .app f a =>
             let (f', memo) := go memo k f
@@ -260,11 +253,11 @@ where
             let (t', memo) := go memo k t
             let (b', memo) := go memo (k + 1) b
             (.forallE t' b' m, memo)
-          | .letE t v b =>
+          | .letE t v b lmeta =>
             let (t', memo) := go memo k t
             let (v', memo) := go memo k v
             let (b', memo) := go memo (k + 1) b
-            (.letE t' v' b', memo)
+            (.letE t' v' b' lmeta, memo)
           | .proj s i x =>
             let (x', memo) := go memo k x
             (.proj s i x', memo)
@@ -286,8 +279,8 @@ declaration), so a memo here needs no `@[csimp]` twin — unlike
 `tests/e2e/tower_mutual.ndjson` is what walks it: `classifyCtor` asks
 this of every ordinary field domain, and a domain carrying a depth-60
 shared tower mentions no member, so nothing short-circuits. -/
-def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
-    Expr → Bool × Std.HashMap Expr Bool
+def mentionsAnyGo (ns : List (Key md)) (memo : Std.HashMap (Expr md) Bool) :
+    (Expr md) → Bool × Std.HashMap (Expr md) Bool
   | .bvar _ => (false, memo)
   | .sort _ => (false, memo)
   | .lit _ => (false, memo)
@@ -296,7 +289,7 @@ def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Bool × Std.HashMap Expr Bool :=
+      let (r, memo) : Bool × Std.HashMap (Expr md) Bool :=
         match e with
         | .fvar _ ty => mentionsAnyGo ns memo ty
         | .app f a =>
@@ -307,7 +300,7 @@ def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
           match mentionsAnyGo ns memo ty with
           | (true, memo) => (true, memo)
           | (false, memo) => mentionsAnyGo ns memo b
-        | .letE ty v b =>
+        | .letE ty v b _ =>
           match mentionsAnyGo ns memo ty with
           | (true, memo) => (true, memo)
           | (false, memo) =>
@@ -320,7 +313,7 @@ def mentionsAnyGo (ns : List Name) (memo : Std.HashMap Expr Bool) :
       (r, memo.insert e r)
 
 @[inherit_doc mentionsAnyGo]
-def mentionsAny (ns : List Name) (e : Expr) : Bool := (mentionsAnyGo ns {} e).1
+def mentionsAny (ns : List (Key md)) (e : Expr md) : Bool := (mentionsAnyGo ns {} e).1
 
 /-! ## The kernel-shape recursor of an indexed recursive family
 
@@ -339,8 +332,8 @@ output, and the route's comparison of the stream's record against them
 holds by construction. -/
 
 /-- **The recursor type** of a recursive family (`structRecTyR`). -/
-def recTy (T : Name) (lps : List Name) (elim : Name) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat)) : Option Expr :=
+def recTy (T : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat)) : Option (Expr md) :=
   structRecTyR T lps elim large nP nIdx tty ctors
 
 /-- **The rule** of constructor `j` (`structRecRhsR`; `recC`, `rlvls`:
@@ -350,9 +343,9 @@ compares a stream rule's body SYNTACTICALLY with the generator's output
 reset to the placeholder (`nativeRulesOk`), as a parsed stream carries
 it everywhere — and a reflexive hypothesis `λ a⃗, T.rec … (f a⃗)` is
 where a generated body has binders of its own. -/
-def recRhs (T : Name) (lps : List Name) (elim : Name) (large : Bool)
-    (nP nIdx : Nat) (tty : Expr) (ctors : List (Name × Nat × Expr × List Nat))
-    (recC : Name) (rlvls : List Level) (j : Nat) : Option Expr :=
+def recRhs (T : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
+    (nP nIdx : Nat) (tty : Expr md) (ctors : List (Key md × Nat × Expr md × List Nat))
+    (recC : Key md) (rlvls : List Level) (j : Nat) : Option (Expr md) :=
   (structRecRhsR T lps elim large nP nIdx tty ctors recC rlvls j).map Expr.resetMeta
 
 /-! ## A syntactic sort inferer
@@ -366,17 +359,17 @@ syntactically a `∀` after instantiation fails.  `sortOf` reads the
 result as a sort. -/
 
 /-- The declared type of a constant: its level parameters and type. -/
-abbrev ConstTable := Name → Option (List Name × Expr)
+abbrev ConstTable (md : Mode) := Key md → Option (List LevelParam × Expr md)
 
 /-- Head β-reduction only. -/
-partial def betaHead : Expr → Expr
+partial def betaHead : Expr md → Expr md
   | .app f a =>
     match betaHead f with
     | .lam _ b _ => betaHead (b.instantiate1 a)
     | f' => .app f' a
   | e => e
 
-partial def inferTy (tbl : ConstTable) (ctx : List Expr) : Expr → Option Expr
+partial def inferTy (tbl : ConstTable md) (ctx : List (Expr md)) : Expr md → Option (Expr md)
   | .bvar i => (ctx[i]?).map (·.liftLooseBVars (i + 1) 0)
   | .sort u => some (.sort (.succ u))
   | .const n us =>
@@ -391,20 +384,20 @@ partial def inferTy (tbl : ConstTable) (ctx : List Expr) : Expr → Option Expr
   | .forallE d b _ =>
     (sortOf tbl ctx d).bind fun u =>
       (sortOf tbl (d :: ctx) b).map fun v => .sort (.imax u v)
-  | .letE _ v b => inferTy tbl ctx (b.instantiate1 v)
+  | .letE _ v b _ => inferTy tbl ctx (b.instantiate1 v)
   | .lit (.natVal _) => some (.const natName [])
   | .lit (.strVal _) => some (.const stringName [])
   | _ => none
 where
   /-- The sort of a type. -/
-  sortOf (tbl : ConstTable) (ctx : List Expr) (e : Expr) : Option Level :=
+  sortOf (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
     (inferTy tbl ctx e).bind fun t =>
       match betaHead t with
       | .sort u => some u
       | _ => none
 
 /-- The sort of a type at a context. -/
-def sortOf (tbl : ConstTable) (ctx : List Expr) (e : Expr) : Option Level :=
+def sortOf (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
   inferTy.sortOf tbl ctx e
 
 /-! ### The sort ceiling (task #227)
@@ -445,7 +438,7 @@ that is not one) is a level like any other, and the tag family the
 modeller then emits fails the fold's own type check.  `fuel` bounds the
 walk — up the type tower and down a `∀` telescope — and only keeps the
 function total. -/
-def sortCeil (tbl : ConstTable) : Nat → List Expr → Expr → Option Level
+def sortCeil (tbl : ConstTable md) : Nat → List (Expr md) → Expr md → Option Level
   | 0, _, _ => none
   | fuel + 1, ctx, d =>
     match inferTy tbl ctx d with
@@ -458,7 +451,7 @@ def sortCeil (tbl : ConstTable) : Nat → List Expr → Expr → Option Level
       | .forallE dom body _ =>
         (sortCeil tbl fuel ctx dom).bind fun a =>
           (sortCeil tbl fuel (dom :: ctx) body).map fun b => .max a b
-      | .letE _ v b => sortCeil tbl fuel ctx (b.instantiate1 v)
+      | .letE _ v b _ => sortCeil tbl fuel ctx (b.instantiate1 v)
       | d' =>
         match inferTy tbl ctx d'.getAppFn with
         | some f => sortCeil tbl fuel ctx f
@@ -467,7 +460,7 @@ def sortCeil (tbl : ConstTable) : Nat → List Expr → Expr → Option Level
 /-- A ceiling for the sort of an index domain at a context
 (`sortCeil`), at a fuel no `∀` telescope or type tower of a real stream
 reaches. -/
-def idxSort (tbl : ConstTable) (ctx : List Expr) (e : Expr) : Option Level :=
+def idxSort (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) : Option Level :=
   sortCeil tbl 128 ctx e
 
 /-! ## Definitional heights -/
@@ -479,8 +472,8 @@ anything else).  One memoized DAG walk, keyed by the node — and, like
 and the hint it computes is checked with the declaration it rides on.
 Every generated value embeds the block's constructor domains, so a
 tower in one of them is walked here once per path without it. -/
-def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
-    Expr → Nat × Std.HashMap Expr Nat
+def maxHeightGo (heights : Key md → Nat) (memo : Std.HashMap (Expr md) Nat) :
+    (Expr md) → Nat × Std.HashMap (Expr md) Nat
   | .const n _ => (heights n, memo)
   | .bvar _ => (0, memo)
   | .sort _ => (0, memo)
@@ -489,7 +482,7 @@ def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
     match memo[e]? with
     | some r => (r, memo)
     | none =>
-      let (r, memo) : Nat × Std.HashMap Expr Nat :=
+      let (r, memo) : Nat × Std.HashMap (Expr md) Nat :=
         match e with
         | .fvar _ ty => maxHeightGo heights memo ty
         | .app f a =>
@@ -500,7 +493,7 @@ def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
           let (rt, memo) := maxHeightGo heights memo ty
           let (rb, memo) := maxHeightGo heights memo b
           (max rt rb, memo)
-        | .letE ty v b =>
+        | .letE ty v b _ =>
           let (rt, memo) := maxHeightGo heights memo ty
           let (rv, memo) := maxHeightGo heights memo v
           let (rb, memo) := maxHeightGo heights memo b
@@ -510,13 +503,13 @@ def maxHeightGo (heights : Name → Nat) (memo : Std.HashMap Expr Nat) :
       (r, memo.insert e r)
 
 @[inherit_doc maxHeightGo]
-def maxHeight (heights : Name → Nat) (e : Expr) : Nat :=
+def maxHeight (heights : Key md → Nat) (e : Expr md) : Nat :=
   (maxHeightGo heights {} e).1
 
 /-- The reducibility hint of a generated definition: one above the
 highest constant its value mentions (the kernel's `getMaxHeight`
 rule). -/
-def hintFor (heights : Name → Nat) (value : Expr) : ReducibilityHint :=
+def hintFor (heights : Key md → Nat) (value : Expr md) : ReducibilityHint :=
   .regular (maxHeight heights value + 1)
 
 /-- The height a hint records. -/

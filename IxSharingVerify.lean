@@ -1,6 +1,11 @@
 import IxSharingVerify.SharingExact
 import IxSharingVerify.SharingExactPasses
 import IxSharingVerify.SharingExactCanon
+import IxSharingVerify.ExprCache
+import IxSharingVerify.Ingestion
+import IxSharingVerify.IngestionTable
+import IxSharingVerify.IngestionUnique
+import IxSharingVerify.CanonicalMeaning
 import IxSharingVerify.UniformModel
 import IxSharingVerify.UniformOptimizer
 import IxSharingVerify.UniformLength
@@ -37,6 +42,10 @@ v4 codec laws of `Ixon.Verify.Codec` and the TagN bijection of
 * `SharingExact*`: the TagN widths and expression lengths the construction
   counts are the production encodings' lengths, and the exact core's passes
   (materialization, canonicalization) meet their specifications;
+* `ExprCache`, `Ingestion*`, `CanonicalMeaning`: the interner's pointer cache
+  reuses an ID only for an equal expression, ingestion of the table and the
+  roots preserves each expression's meaning, and the canonical construction
+  denotes its ordered input expressions (`canonicalSharingTiered_meaning`);
 * `Uniform*` (namespace `UniformModel`): the uniform-width optimizer of
   phase 1 returns a minimum of its cost model, with the component search,
   knapsack and tie-breaking proved against their specifications;

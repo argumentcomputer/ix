@@ -711,7 +711,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 /// FFI function to compute the LEON content hash of every constant in a
 /// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
 /// `Address` is the 32-byte Blake3 digest produced by
-/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+/// `ConstantInfo::get_hash()` in `crates/common/src/env.rs`.
 ///
 /// The LEON hash is the Rust kernel's "original" addressing scheme: it's
 /// derived from the serialized `ConstantInfo` (name + level params + type
@@ -1934,8 +1934,8 @@ fn aux_dump_expr_addr(e: &ix_common::env::Expr) -> String {
 /// rebuilding exactly the production aux_gen Phase-1 inputs
 /// (`compile_mutual` → `generate_aux_patches`): member `MutConst`s →
 /// `sort_consts` → `ordered_originals`/`alias_to_rep` →
-/// `expand_nested_block` → (nested path) `sort_aux_by_partition_refinement`
-/// → `compute_aux_perm` → `source_aux_order_with_owner`. Every step is
+/// `expand_nested_block` → (nested path) `compute_aux_perm` →
+/// `source_aux_order_with_owner`. Every step is
 /// deterministic, so a post-compile re-run reproduces what production did
 /// (same argument as the `validate-aux` Phase 2 re-run).
 #[cfg(feature = "test-ffi")]
@@ -2013,10 +2013,11 @@ fn aux_dump_block(
     )
   });
 
-  let mut expanded = match nested::expand_nested_block(
+  let expanded = match nested::expand_nested_block_canonical(
     &ordered_originals,
     lean_env,
     &alias_to_rep,
+    stt,
   ) {
     Ok(x) => x,
     Err(e) => {
@@ -2082,36 +2083,6 @@ fn aux_dump_block(
     return;
   }
 
-  // Canonical sort of the aux tail (aux_gen.rs:280).
-  let sortperm =
-    match nested::sort_aux_by_partition_refinement(&mut expanded, stt) {
-      Ok(p) => p,
-      Err(e) => {
-        let _ = writeln!(out, "error sortaux {e:?}");
-        return;
-      },
-    };
-  let sortperm_strs: Vec<String> =
-    sortperm.iter().map(|p| p.to_string()).collect();
-  let _ = writeln!(out, "sortperm {}", sortperm_strs.join(" "));
-  for (i, mem) in expanded.types.iter().enumerate().skip(expanded.n_originals) {
-    let _ = writeln!(
-      out,
-      "post {i} name={} owner={} typ={}",
-      mem.name.pretty(),
-      mem.source_owner.pretty(),
-      aux_dump_expr_addr(&mem.typ)
-    );
-    for (j, ctor) in mem.ctors.iter().enumerate() {
-      let _ = writeln!(
-        out,
-        "postctor {i} {j} name={} typ={}",
-        ctor.name.pretty(),
-        aux_dump_expr_addr(&ctor.typ)
-      );
-    }
-  }
-
   // Source→canonical permutation (aux_gen.rs:292-307).
   let orig_to_canon_map: HashMap<Name, Name> = sorted_classes
     .iter()
@@ -2167,6 +2138,29 @@ fn aux_dump_block(
   }
 }
 
+/// Stable inputs for both auxiliary dumps. A Tarjan representative can vary
+/// between independent condensations; label each nonempty block by its least
+/// member in name-hash order, matching the Lean driver's canonical key.
+/// Keep all members in the existing pretty-sorted generator input order.
+#[cfg(feature = "test-ffi")]
+fn aux_dump_blocks(
+  condensed: &ix_compile::condense::CondensedBlocks,
+  is_inductive: impl Fn(&Name) -> bool,
+) -> Vec<(String, Name, Vec<Name>)> {
+  let mut blocks: Vec<_> = condensed
+    .blocks
+    .values()
+    .filter_map(|members| {
+      let key = members.iter().min()?.clone();
+      let mut all: Vec<Name> = members.iter().cloned().collect();
+      all.sort_by_key(|a| a.pretty());
+      all.iter().any(&is_inductive).then(|| (key.pretty(), key, all))
+    })
+    .collect();
+  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  blocks
+}
+
 /// FFI: deterministic text dump of nested-expansion/canonicity
 /// intermediates for every inductive SCC block. The pure-Lean port
 /// (`Tests.Compile.AuxGenDiff`) reproduces the same text from its own
@@ -2193,24 +2187,12 @@ pub extern "C" fn rs_aux_gen_dump_expand(
   let ref_graph = build_ref_graph(&rust_env);
   let condensed = compute_sccs(&ref_graph.out_refs);
 
-  // Deterministic block order: sort inductive-containing blocks by
-  // lowlink pretty name.
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(
-          rust_env.get(n).as_deref(),
-          Some(ix_common::env::ConstantInfo::InductInfo(_))
-        )
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  let blocks = aux_dump_blocks(&condensed, |n| {
+    matches!(
+      rust_env.get(n).as_deref(),
+      Some(ix_common::env::ConstantInfo::InductInfo(_))
+    )
+  });
 
   let mut out = String::new();
   for (_, lo, all) in &blocks {
@@ -2221,9 +2203,9 @@ pub extern "C" fn rs_aux_gen_dump_expand(
 }
 
 /// Render one generated patch as stable text lines. Expression bodies are
-/// content HASHES (both sides build via mirrored hash-maintaining
-/// constructors, so tree equality ⇔ hash equality — the expansion gate
-/// established this for expansion outputs). Lines are kind-tagged so the
+/// content hashes from the mirrored hash-maintaining constructors, serving
+/// as a differential diagnostic rather than a structural-equality proof.
+/// Lines are kind-tagged so the
 /// Lean harness can widen its comparison scope generator by generator
 /// (rec → casesOn/recOn → below → brecOn).
 #[cfg(feature = "test-ffi")]
@@ -2368,19 +2350,9 @@ pub extern "C" fn rs_aux_gen_dump_patches(
   let ref_graph = build_ref_graph(&rust_env);
   let condensed = compute_sccs(&ref_graph.out_refs);
 
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(rust_env.get(n).as_deref(), Some(LeanCI::InductInfo(_)))
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+  let blocks = aux_dump_blocks(&condensed, |n| {
+    matches!(rust_env.get(n).as_deref(), Some(LeanCI::InductInfo(_)))
+  });
 
   let mut out = String::new();
   for (_, lo, all) in &blocks {

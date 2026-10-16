@@ -68,8 +68,11 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println "[decompile-diff] Lean decompile (full driver: Pass 1 → 1.5 → 2)..."
   let t0 ← IO.monoMsNow
   let origView : Std.HashMap Ix.Name Ix.ConstantInfo := rawEnv.consts
+  -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
+  let sharingLimits ← IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
   let (decompiled, errors, p2st) ←
     Ix.DecompileM.decompileEnvFullParallel rustEnv (some origView)
+      (sharingLimits := sharingLimits)
   IO.println s!"[decompile-diff]   {decompiled.size} constants, {errors.size} errors in {(← IO.monoMsNow) - t0}ms"
 
   -- Error classification.
@@ -134,6 +137,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (aux-fidelity gate — must be 0)"
   if !auxErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample auxErrs}"
+    for (n, e) in (errors.filter fun (n, _) => auxErrs.contains n).toList.take 3 do
+      IO.println s!"[decompile-diff]       {n}: {e.take 300}"
   IO.println s!"[decompile-diff]   other errors: {otherErrs.size}  (plain-fidelity gate — must be 0)"
   for (n, e) in otherErrs.toList.take 8 do
     IO.println s!"[decompile-diff]     {n.pretty}: {e.take 200}"

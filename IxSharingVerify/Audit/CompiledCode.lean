@@ -31,9 +31,10 @@ open Lean Lean.Elab.Command
 namespace Ix.Sharing.Verify.Audit.CompiledCode
 
 /-- The accepted unsafe items of `Ix.Sharing.*`, by the declaration they come
-from: the interner's pointer-cache key `exprPtr` (`unsafe ptrAddrUnsafe`).
-Logically it is an arbitrary function of the expression; no theorem inspects
-it, so every theorem holds for the address map of any run. -/
+from: the interner's pointer-cache candidate selector `exprPtr`
+(`unsafe ptrAddrUnsafe`). Logically it is an arbitrary function. A cache hit
+also requires checked equality with the retained source expression; the cache
+proofs quantify over arbitrary address hints without assuming injectivity. -/
 def acceptedUnsafe : Array Lean.Name := #[``Ix.Sharing.Exact.exprPtr]
 
 /-- The modules `root` imports, transitively, and `root` itself. -/

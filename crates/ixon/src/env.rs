@@ -301,13 +301,10 @@ impl Named {
 /// correctly permute source-order aux motives/minors into canonical
 /// positions. Both arrays have one entry per source-walk-discovered aux.
 ///
-/// This lives in `ixon::env` (not `ix_compile::surgery`, where it originated)
-/// so it can be persisted into the serialized Ixon environment as a
-/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
-///
-/// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
-/// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
-/// `.brecOn_N` names off.
+/// It lives in `ixon::env` (not `ix_compile::surgery`, where it originated;
+/// the surgery layer re-exports it) and is carried per block in the block's
+/// `Muts` metadata (`ConstantMetaInfo::Muts::aux_layout`, encoded inline
+/// there), not in a side table of the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuxLayout {
   /// `perm[source_j] = canonical_i`: Lean's source-walk position to
@@ -950,8 +947,29 @@ impl Env {
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    self.prune_fixpoint(
+      &mut out,
+      &mut visited,
+      &mut pending,
+      &mut named_done,
+      assumed,
+    )?;
+    Ok(out)
+  }
+
+  /// The value and named passes of [`Self::prune_to_closure`], run until
+  /// the named pass finds no new DAG work.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn prune_fixpoint(
+    &self,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+    named_done: &mut FxHashSet<Name>,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<(), String> {
     loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+      self.prune_value_pass(out, visited, pending, assumed)?;
 
       // ── Named pass: carry display metadata for every carried
       // constant. Metadata references content the value walk cannot
@@ -964,14 +982,14 @@ impl Env {
         }
         named_done.insert(name.clone());
         Self::carry_named_entry(
-          &mut out,
+          out,
           name,
           named,
           &|na| self.get_name(na),
           &|ba| self.get_blob(ba),
           &|a| self.holds_or_assumed(a, assumed),
-          &mut visited,
-          &mut pending,
+          visited,
+          pending,
           &mut named_refs,
         )?;
       }
@@ -979,17 +997,16 @@ impl Env {
       Self::enqueue_named_refs(
         named_refs,
         &|nm| self.named.get(nm).map(|e| e.addr.clone()),
-        &mut visited,
-        &mut pending,
+        visited,
+        pending,
       );
 
       // The named pass ran against the final consts of this round; if
       // it produced no new DAG work, the walk is complete.
       if pending.is_empty() {
-        break;
+        return Ok(());
       }
     }
-    Ok(out)
   }
 
   /// Value-only bundle: the 3-edge closure of `main` cut at `assumed` —

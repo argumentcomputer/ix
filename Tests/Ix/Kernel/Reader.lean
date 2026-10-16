@@ -1,9 +1,15 @@
 import IxC.Kernel.Admission.Theorems
+import IxC.Fixtures.Authentic
+import Ix.Address.Admission
 
 /-! # Ixon records through the verified checker
 
-End-to-end fixtures for `Ix.Kernel.Admission.checkBytes`: canonical
-record bytes are preflighted, decoded, read by `Ix.Kernel.Reader`,
+End-to-end fixtures for `Ix.Kernel.Admission.checkBytes` at the admission
+hash (BLAKE3): the fixtures are written with stand-in keys and re-keyed to
+their BLAKE3 addresses before admission (`Tests.Ix.Kernel.Authentic.rekey`),
+with role tables renamed and installed names spelled back in the stand-in
+keys, so the expectations below are stated in the stand-ins. Canonical
+record bytes are preflighted, authenticated, decoded, read by `Ix.Kernel.Reader`,
 prepared with the Ixon prelude (`Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
 quotient package, `And`, `Bool`, from the compiled Init's own records) and
 checked by `Ix.Kernel.Cached.checkDecls .verified`.
@@ -14,7 +20,7 @@ through both members, an
 inductive with its separately stored recursor and an ι-reduction, a
 structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
-literal against its `String.ofList` expansion (over test constants pinned as
+literal against its `String.ofList` expansion (over test constants bound as
 the string-literal support), a compiled block nested through a container
 that is itself nested, whose auxiliary motives Ix's compiler orders with the
 container family's instance before its head, and a compiled theorem
@@ -23,20 +29,21 @@ Géran fallback of the level comparison equates (the `RatFunc.liftOn_def`
 shape).
 
 Negative: a block of another shape stored under the real `Eq`'s address is
-named `Eq` and rejected by the checker's reserved-name check; a definition
+refused, because the address is not its hash; a definition
 block with an ill-typed member is rejected by the checker; a `partial` block
 whose members call each other (the shape of Lean's `_unsafe_rec` companions)
 declines with its safety, as a partial singleton does, and the same block
 marked safe declines as mutually recursive; a definition of
-the wrong shape pinned as `Nat.add` is not accepted under that name (and is
-accepted unpinned); a copy of `Nat`'s contents at another address is not
+the wrong shape bound to `Nat.add` is not accepted under that name (and is
+accepted unbound); a copy of `Nat`'s contents at another address is not
 named `Nat`; malformed tables, duplicate records (byte stage and reader)
-and unsafe declarations;
-`pinMap`'s refusals. -/
+and unsafe declarations; the role table's refusals (`RoleTable.check`, the
+binding section's decoder, the admission of an unauthentic section). -/
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
 open Ix.Kernel.Admission
+open Tests.Ix.Kernel.Authentic (rekey Rekeyed)
 
 namespace Tests.Ix.Kernel.Reader
 
@@ -72,62 +79,99 @@ def limits : Ix.Kernel.Admission.Limits := ⟨1024, 1024, 1 <<< 24, 1 <<< 20, 1 
 def encode (cs : List (Address × Ixon.Constant)) : Ix.Kernel.Admission.Records :=
   cs.map fun (a, c) => (a, Ixon.serConstant c)
 
-def builtinPins : Pins := match defaultPins with | .ok p => p | .error _ => {}
-def builtinPre : Prelude := match builtinPrelude with | .ok p => p | .error _ => default
-def builtinNatPins : List Ix.Kernel.NatOpPinSet := match builtinNatOpPins with | .ok ps => ps | .error _ => []
+def builtinTable : Ix.Kernel.RoleTable := match defaultTable with | .ok t => t | .error _ => default
+def builtinPre : Prelude .anon := match builtinPrelude with | .ok p => p | .error _ => default
+
+/-- The admission hash: BLAKE3 (the Rust backend executes it). -/
+def hash : ByteArray → Address := Address.admissionHash
+
+/-- A fixture under its BLAKE3 keys. -/
+def rekeyed (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := []) : Rekeyed :=
+  rekey hash cs blobs
+
+/-- A table's section, authenticated under the admission hash. -/
+def bindingOf (t : Ix.Kernel.RoleTable) : Binding := ⟨hash t.toBytes, t.toBytes⟩
+
+def builtinBinding : Binding := bindingOf builtinTable
+
+/-- A role table over a fixture's stand-in keys, on its BLAKE3 keys. -/
+def renameTable (r : Rekeyed) (t : Ix.Kernel.RoleTable) : Ix.Kernel.RoleTable :=
+  { t with bound := t.bound.map fun (role, a) => (role, r.rename a) }
+
+/-- The default table with some roles bound to other addresses. -/
+def rebind (pairs : List (Ix.Kernel.Role × Address)) : Ix.Kernel.RoleTable :=
+  { builtinTable with bound := builtinTable.bound.map fun (role, a) =>
+      match pairs.find? (·.1 == role) with
+      | some (_, a') => (role, a')
+      | none => (role, a) }
+
+/-- A key with a fixture's stand-in keys in place of its BLAKE3 keys. -/
+def unrename (r : Rekeyed) : CName .anon → CName .anon
+  | .id a => .id (r.original a)
+  | .role ro => .role ro
+  | .aux k d => .aux (unrename r k) d
 
 def run (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
-    (pins : Pins := builtinPins) : Except Error Ix.Kernel.Env :=
-  checkBytesWith pins builtinPre builtinNatPins limits (encode cs) blobs
+    (table : Ix.Kernel.RoleTable := builtinTable) : Except Error (Ix.Kernel.Env .anon) :=
+  let r := rekeyed cs blobs
+  checkBytesWith hash (bindingOf (renameTable r table)) builtinPre limits r.encoded r.blobs
 
 def accepts (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
-    (pins : Pins := builtinPins) : Bool :=
-  (run cs blobs pins).isOk
+    (table : Ix.Kernel.RoleTable := builtinTable) : Bool :=
+  (run cs blobs table).isOk
 
 def namesOf (cs : List (Address × Ixon.Constant)) (blobs : List (Address × ByteArray) := [])
-    (pins : Pins := builtinPins) : List String :=
-  match run cs blobs pins with
-  | .ok env => env.consts.map (toString ·.name)
+    (table : Ix.Kernel.RoleTable := builtinTable) : List String :=
+  match run cs blobs table with
+  | .ok env => env.consts.map fun c => toString (unrename (rekeyed cs blobs) c.name)
   | .error _ => []
 
-def keyString (r : ConstRef Address) : String := toString (keyName r)
+/-- How the input key of the record at `a` prints. -/
+def idString (a : Address) : String := toString (Ix.Kernel.Key.id (md := .anon) a)
 
-/-- The prelude record that denotes a pinned name. -/
-def pinned (n : String) : Address := Id.run do
-  let some (r, _) := builtinPins.names.toList.find? (toString ·.2 == n) | return address 0
-  let store := storeOf builtinPre.records
-  let some (a, _) := builtinPre.records.find? (fun (a, c) => resolveSource store a c == some r)
-    | return address 0
-  return a
+/-- The address the default table binds a role to (a prelude record). -/
+def bound (r : Ix.Kernel.Role) : Address := (builtinTable.addressOf? r).getD (address 0)
 
-def eq := pinned "Eq"
-def eqRefl := pinned "Eq.refl"
-def nat := pinned "Nat"
-def natZero := pinned "Nat.zero"
-def natSucc := pinned "Nat.succ"
-def quotMk := pinned "Quot.mk"
-def quotLift := pinned "Quot.lift"
+/-- The reference a role's bound address denotes. -/
+def boundRef (r : Ix.Kernel.Role) : Option (ConstRef Address) :=
+  resolve (storeOf builtinPre.records) (bound r)
+
+def eq := bound .eq
+def eqRefl := bound .eqRefl
+def nat := bound .nat
+def natZero := bound .natZero
+def natSucc := bound .natSucc
+def quotMk := bound .quotMk
+def quotLift := bound .quotLift
 
 /-! ## The prelude and the tables -/
 
-#guard defaultPins.isOk && builtinPrelude.isOk && builtinNatOpPins.isOk
--- the committed Nat-operation pin variant, generated from Ixon records: one
--- variant, eight operations, the certificate proofs of their pinned statements
-#guard builtinNatPins.length == 1 && builtinNatPins.all fun ps =>
-  ps.divProofs.length == 3 && ps.modProofs.length == 3 && ps.gcdProofs.length == 2 &&
-  ps.landProofs.length == 2 && ps.lorProofs.length == 2 && ps.xorProofs.length == 2 &&
-  ps.shiftLeftProofs.length == 2 && ps.shiftRightProofs.length == 2
--- the share-table decoder refuses forward references and unknown nodes
-#guard (decodePinTable "A 2 3").isOk == false && (decodePinTable "Q 0").isOk == false
-#guard match decodePinTable "n 0 Nat\nn 2 succ\nC 3\nT a%20b" with
-  | .ok ns => match (ns[4]? : Option PinNode), (ns[5]? : Option PinNode) with
-    | some (.expr (.const n [])), some (.expr (.lit (.strVal s))) => toString n == "Nat.succ" && s == "a b"
-    | _, _ => false
+#guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
+-- the default table: every role bound, well formed, its section canonical and
+-- committed under its BLAKE3 hash
+#guard builtinTable.bound.size == 64 && builtinTable.check.isOk
+#guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
+#guard match defaultBinding with
+  | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
   | .error _ => false
-#guard builtinPins.names.size == 55
-#guard (builtinPre.ix.decls.toList.map (toString ∘ Ix.Kernel.Frontend.preludeKey)) ==
+-- its evidence: one entry per equation of each of the fifteen operations, of
+-- the kind the equation fixes (a proof for each well-founded operation's)
+#guard builtinTable.evidence.size == 15 && builtinTable.evidence.all fun (r, es) =>
+  es.size == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length &&
+    (es.toList.zip (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds).all fun (e, k) => e.isDefeqKind k
+-- over the prelude alone, the structural operations' evidence resolves and
+-- the well-founded operations' does not: their theorems reference the
+-- operations, whose records only a stream supplies
+#guard
+  let ev := evidenceOf (contextOf builtinTable #[] [] (builtinPre.records ++ builtinPre.evidence) builtinPre.blobs)
+    builtinPre.state builtinTable
+  ev.length == 15 && ev.all fun (r, es) =>
+    if (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.all id then
+      es.length == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length
+    else es.isEmpty
+#guard (builtinPre.ix.decls.toList.map (fun d => toString <$> Ix.Kernel.Frontend.preludeKey d)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
-   "And", "Bool"]
+   "And", "Bool"].map some
 #guard [eq, eqRefl, nat, natZero, natSucc, quotMk, quotLift].all (· != address 0)
 -- the empty stream: the prelude alone
 #guard (namesOf []).length == 27 && (namesOf []).contains "Eq.rec" && (namesOf []).contains "Bool.true"
@@ -147,8 +191,8 @@ def definitions : List (Address × Ixon.Constant) :=
   [(address 10, idNat), (address 11, twoDef), (address 12, twoEq)]
 
 #guard accepts definitions
-#guard (namesOf definitions).contains (keyString (.member (address 10) 0))
-#guard (namesOf definitions).contains (keyString (.member (address 12) 0))
+#guard (namesOf definitions).contains (idString (address 10))
+#guard (namesOf definitions).contains (idString (address 12))
 -- a false equation is not
 #guard !accepts [(address 10, idNat), (address 11, twoDef),
   (address 12, defn .thm (apps (ref 0 [0]) [ref 1, ref 2, ref 4]) (apps (ref 5 [0]) [ref 1, ref 4])
@@ -187,8 +231,9 @@ def abFixture (block : Ixon.Constant := abBlock) : List (Address × Ixon.Constan
 #guard defOrder #[Std.HashSet.ofList [0], {}] == some #[0, 1]
 #guard defOrder #[Std.HashSet.ofList [1], Std.HashSet.ofList [0]] == none
 #guard accepts abFixture
-#guard (namesOf abFixture).contains (keyString (.member (address 100) 0)) &&
-  (namesOf abFixture).contains (keyString (.member (address 100) 1))
+-- the members are keyed by their projection records
+#guard (namesOf abFixture).contains (idString (address 101)) &&
+  (namesOf abFixture).contains (idString (address 102))
 -- `b = succ zero` is not
 #guard !accepts ((abFixture.take 3) ++ [(address 103,
   defn .thm (apps (ref 0 [0]) [ref 1, ref 2, .app (ref 5) (ref 3)]) (apps (ref 4 [0]) [ref 1, ref 3])
@@ -224,12 +269,14 @@ def declineReason (cs : List (Address × Ixon.Constant)) : Option String :=
 
 /-! ## An inductive with its separately stored recursor
 
-`inductive Two | a | b` and `Two.rec.{u}`, as the compiler lays them out: the
-block, its projection records, the recursor as its own record. -/
+`inductive Two : Type 1 | a | b` and `Two.rec.{u}`, as the compiler lays
+them out: the block, its projection records, the recursor as its own record.
+(In `Type` its block would be `Bool`'s, byte for byte, and so would be the
+prelude's `Bool` under its content address.) -/
 
 def twoBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [one]
+    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [.succ one]
 
 def twoMotive : E := all (ref 0) (sort 0)
 def twoRec : Ixon.Constant :=
@@ -252,8 +299,9 @@ def twoFixture : List (Address × Ixon.Constant) :=
    (address 23, cPrj (address 20) 1), (address 24, twoRec), (address 25, twoIota)]
 
 #guard accepts twoFixture
-#guard (namesOf twoFixture).contains (keyString (.member (address 20) 0) ++ ".rec")
-#guard (namesOf twoFixture).contains (keyString (.ctor (address 20) 0 1))
+-- the recursor is keyed by its own record, a constructor by its projection record
+#guard (namesOf twoFixture).contains (idString (address 24))
+#guard (namesOf twoFixture).contains (idString (address 23))
 -- the recursor record may come before its block
 #guard accepts [(address 24, twoRec), (address 20, twoBlock), (address 21, iPrj (address 20)),
   (address 22, cPrj (address 20) 0), (address 23, cPrj (address 20) 1), (address 25, twoIota)]
@@ -414,22 +462,19 @@ def strBlobs : List (Address × ByteArray) :=
 def stringNames : List String := ["String", "String.ofList", "List", "List.nil", "List.cons", "Char", "Char.ofNat"]
 
 /-- The committed table with the string-literal support moved to the test constants. -/
-def stringPins : Pins :=
-  let kept := builtinPins.names.toList.filter fun p => !stringNames.contains (toString p.2)
-  let test : List (ConstRef Address × CName) :=
-    [(.member (address 70) 0, .str .anonymous "String"),
-     (.member (address 74) 0, .str (.str .anonymous "String") "ofList"),
-     (.member (address 50) 0, .str .anonymous "List"),
-     (.ctor (address 50) 0 0, .str (.str .anonymous "List") "nil"),
-     (.ctor (address 50) 0 1, .str (.str .anonymous "List") "cons"),
-     (.member (address 60) 0, .str .anonymous "Char"),
-     (.member (address 64) 0, .str (.str .anonymous "Char") "ofNat")]
-  { builtinPins with names := (kept ++ test).foldl (fun m (r, n) => m.insert r n) {} }
+def stringTable : Ix.Kernel.RoleTable :=
+  rebind [(.string, address 71), (.stringOfList, address 74), (.list, address 51),
+    (.listNil, address 52), (.listCons, address 53), (.char, address 61), (.charOfNat, address 64)]
 
-#guard accepts strings strBlobs stringPins
+/-- The role keys a table binds over fixture records backed by the prelude. -/
+def namesUnder (t : Ix.Kernel.RoleTable) (cs : List (Address × Ixon.Constant)) :
+    Std.HashMap (ConstRef Address) (CName .anon) :=
+  (bindingsOf (storeOf cs.toArray (storeOf builtinPre.records)) t).names
+
+#guard accepts strings strBlobs stringTable
 -- a string of another length is not that expansion (the test `Char.ofNat` is
 -- constant, so only the length is observable)
-#guard !accepts strings [(address 80, "abc".toUTF8), (address 81, ⟨#[97]⟩), (address 82, ⟨#[98]⟩)] stringPins
+#guard !accepts strings [(address 80, "abc".toUTF8), (address 81, ⟨#[97]⟩), (address 82, ⟨#[98]⟩)] stringTable
 -- without the support pinned on these constants, the literal does not check
 #guard !accepts strings strBlobs
 
@@ -439,16 +484,16 @@ A record that contains a literal depends on the records of the constants the
 literal references (`literalEdges`): the `Nat` block for a `Nat` literal, and
 also the string-support records for a string literal. -/
 
-def natBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == "Nat") with
-  | some (r, _) => r.block
+def natBlock : Address := match boundRef .nat with
+  | some r => r.block
   | none => address 0
 
 #guard literalKinds strEq == (true, true) && literalKinds litEq == (true, false) &&
   literalKinds charOfNat == (false, false)
-#guard (literalEdges stringPins.names strings.toArray)[address 75]? ==
+#guard (literalEdges (namesUnder stringTable strings) strings.toArray)[address 75]? ==
   some #[natBlock, address 70, address 74, address 50, address 60, address 64]
-#guard ((literalEdges stringPins.names strings.toArray)[address 74]?).isNone
-#guard (literalEdges builtinPins.names #[(address 42, litEq)])[address 42]? == some #[natBlock]
+#guard ((literalEdges (namesUnder stringTable strings) strings.toArray)[address 74]?).isNone
+#guard (literalEdges (namesUnder builtinTable []) #[(address 42, litEq)])[address 42]? == some #[natBlock]
 
 /-! ## A block nested through a container that is itself nested
 
@@ -575,19 +620,35 @@ def lTreeStream : Ix.Kernel.Admission.Records :=
 def lTreeBlock : Address := (addressOfHex "504ca8ca533da7dfb6b77d5d692f44e5e30803e352c2824525467bc6bab42df8").getD (address 0)
 def lNodeBlock : Address := (addressOfHex "0e134da1cd17a91969db45268025d2de367398d017906d3234f81cabc9461381").getD (address 0)
 
-/-- The reader's state and declarations after the stream. -/
-def lTreeRead : Option (State × Array Ix.Kernel.Declaration) := do
+/-- The stream's records and its reading context, as the entry builds them. -/
+def lTreeContext : Option (List (Address × Ixon.Constant) × Ctx .anon) := do
   let constants ← (Ix.Kernel.Admission.decodeRecords limits lTreeStream).toOption
-  let cx := streamContext builtinPins builtinPre constants [] (fun _ => none)
+  pure (constants, streamContext hash builtinTable builtinPre constants [] (fun _ => none))
+
+/-- The key the stream's reading gives the constant at `r`. -/
+def lTreeKey (r : ConstRef Address) : Option (CName .anon) := do
+  let (_, cx) ← lTreeContext
+  (cx.memberKey r).toOption
+
+/-- The keys of the recursors that eliminate `LTree`'s block, in motive order. -/
+def lTreeRecKeys : List (CName .anon) := Id.run do
+  let some (_, cx) := lTreeContext | return []
+  let some shape := cx.index.blocks[lTreeBlock]? | return []
+  return shape.recs.toList.filterMap fun r => (cx.memberKey r).toOption
+
+/-- The reader's state and declarations after the stream. -/
+def lTreeRead : Option (State .anon × Array (Ix.Kernel.Declaration .anon)) := do
+  let (constants, cx) ← lTreeContext
   (readRecords cx builtinPre.state constants.toArray).toOption
 
 /-- The carriers' heads of `LTree.rec`'s motives, in motive order, as the
 modeller reads them. -/
 def lTreeMotiveHeads : Option (List String) := do
   let (st, _) ← lTreeRead
-  let b ← st.indBlocks[keyName (.member lTreeBlock 0)]?
+  let b ← st.indBlocks[← lTreeKey (.member lTreeBlock 0)]?
   let t0 ← b.types.head?
-  let r0 ← b.recs.find? (·.cv.name == t0.cv.name.str "rec")
+  -- the recursor of the first motive
+  let r0 ← b.recs.head?
   let (_, afterP) ← r0.cv.type.stripPis t0.nP
   let (motives, _) ← afterP.stripPis r0.nM
   let mems ← (Ix.Kernel.Frontend.InModel.readMems t0.cv.levelParams t0.nP b.types
@@ -601,23 +662,24 @@ def lTreeNames : List String :=
     | .indDecl block _ => block.map (toString ·.toConstantVal.name)
     | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .axiomDecl cv | .quotDecl _ cv =>
       [toString cv.name]
-    | .basisDecl k => k.decls.map (toString ·.toConstantVal.name)
+    | .basisDecl k => (k.decls (md := .anon)).map (toString ·.toConstantVal.name)
   | none => []
 
 #guard lTreeStream.length == lTreeRecords.length && lTreeRecords.length == 19
 -- the order that exercises the grouping: `List (LNode LTree)` before `LNode LTree`
 #guard lTreeMotiveHeads ==
-  some [keyString (.member lTreeBlock 0), "List", keyString (.member lNodeBlock 0)]
+  some [toString (lTreeKey (.member lTreeBlock 0)).get!, "List",
+    toString (lTreeKey (.member lNodeBlock 0)).get!]
 -- the modeller's records introduce every name once (`pack_0` was emitted twice)
 #guard !lTreeNames.isEmpty && lTreeNames.eraseDups.length == lTreeNames.length
-#guard (lTreeNames.filter (· == keyString (.member lTreeBlock 0) ++ "._model._impl.pack_0")).length == 1
+#guard (lTreeNames.filter
+  (· == toString (lTreeKey (.member lTreeBlock 0)).get! ++ "._model._impl.pack_0")).length == 1
 -- and the block, its three recursors and the container's install
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits lTreeStream [] with
+#guard match checkBytesWith hash builtinBinding builtinPre limits lTreeStream [] with
   | .ok env =>
-    let names := env.consts.map (toString ·.name)
-    let t := keyString (.member lTreeBlock 0)
-    names.contains t && names.contains (t ++ ".rec") && names.contains (t ++ ".rec_1") &&
-      names.contains (t ++ ".rec_2") && names.contains (keyString (.member lNodeBlock 0))
+    let names := env.consts.map (·.name)
+    (lTreeKey (.member lTreeBlock 0)).any names.contains && lTreeRecKeys.length == 3 &&
+      lTreeRecKeys.all names.contains && (lTreeKey (.member lNodeBlock 0)).any names.contains
   | .error _ => false
 
 /-! ## Universe levels in canonical form
@@ -689,9 +751,9 @@ def levelTheorem : String := "9ba138c292613a142ae19b183bcda2530ea8a96905139bce04
 def levelStream : Ix.Kernel.Admission.Records :=
   levelRecords.filterMap fun (a, b) => do pure (← addressOfHex a, ← bytesOfHex b)
 
-/-- The theorem's level parameters as the reader names them. -/
-def lw : Ix.Kernel.Level := .param (levelName 0)
-def lx : Ix.Kernel.Level := .param (levelName 1)
+/-- The theorem's level parameters as the reader numbers them. -/
+def lw : Ix.Kernel.Level := .param 0
+def lx : Ix.Kernel.Level := .param 1
 def lsucc (l : Ix.Kernel.Level) : Nat → Ix.Kernel.Level
   | 0 => l
   | k + 1 => .succ (lsucc l k)
@@ -705,7 +767,7 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 -- equal at every valuation of `w, x` in `0‥5` (both are `1` at `x = 0`, and
 -- `max (w+2) (x+1)` otherwise)
 #guard (List.range 6).all fun i => (List.range 6).all fun j =>
-  let φ : Ix.Kernel.Name → Nat := fun n => if n == levelName 0 then i else if n == levelName 1 then j else 0
+  let φ : Ix.Kernel.LevelParam → Nat := fun n => if n == 0 then i else if n == 1 then j else 0
   Ix.Kernel.Level.eval φ subtypeLevel == Ix.Kernel.Level.eval φ eqLevel
 -- the comparison establishes both directions, and so the equivalence
 #guard Ix.Kernel.Level.leq subtypeLevel eqLevel == some true
@@ -716,25 +778,40 @@ def eqLevel : Ix.Kernel.Level := .max (lsucc lx 1) (.imax (lsucc lw 2) lx)
 -- the `1` where it is zero
 #guard Ix.Kernel.Level.Geran.leq lx (subtypeLevel) (-1)
 -- and the theorem is accepted
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits levelStream [] with
+#guard match checkBytesWith hash builtinBinding builtinPre limits levelStream [] with
   | .ok env => (env.consts.map (toString ·.name)).contains
-      (keyString (.member ((addressOfHex levelTheorem).getD (address 0)) 0))
+      (idString ((addressOfHex levelTheorem).getD (address 0)))
   | .error _ => false
 
 /-! ## Negative: pinned names on constants of another shape -/
 
 /-- A one-constructor `Type` stored under the real `Eq` block's address, with
-its recursor over the real `Eq`/`Eq.refl` projection records: the reader
-names it `Eq` (by address), and the checker rejects the reserved name. -/
-def eqBlock : Address := match builtinPins.names.toList.find? (toString ·.2 == "Eq") with
-  | some (r, _) => r.block
+its recursor over the real `Eq`/`Eq.refl` projection records: the address is
+not the block's hash, so the entry refuses it before the reader names it
+`Eq` (by address). -/
+def eqBlock : Address := match boundRef .eq with
+  | some r => r.block
   | none => address 0
 
 def fakeEq : List (Address × Ixon.Constant) :=
   [(eqBlock, unitBlock), (address 90, unitRec eq eqRefl)]
 
-#guard match run fakeEq with
-  | .error (.kernel (.invalid msg) _) => msg.startsWith "reserved basis name"
+#guard match checkBytesWith hash builtinBinding builtinPre limits (encode fakeEq) [] with
+  | .error e@(.mismatch .records 0 a) => a == eqBlock && e.outcome == .rejected
+  | _ => false
+
+/-- The same block under its own address, with its projection records and
+recursor, and a pin table that names it `Eq` in place of Init's: the reader
+names it `Eq`, and the checker rejects the reserved name. -/
+def ownEq : List (Address × Ixon.Constant) :=
+  [(address 89, unitBlock), (address 88, iPrj (address 89)), (address 87, cPrj (address 89) 0),
+   (address 90, unitRec (address 88) (address 87))]
+
+def eqTable : Ix.Kernel.RoleTable :=
+  rebind [(.eq, address 88), (.eqRefl, address 87), (.eqRec, address 90)]
+
+#guard match run ownEq (table := eqTable) with
+  | .error (.kernel (.invalid msg) _) => (Ix.Kernel.Msg.render toString msg).startsWith "reserved basis name"
   | _ => false
 
 /-- `fun n m => n` pinned as `Nat.add` is not certified, so not accepted under
@@ -742,44 +819,52 @@ that name; unpinned, it is an ordinary definition. -/
 def fakeAdd : Ixon.Constant :=
   defn .defn (all (ref 0) (all (ref 0) (ref 0))) (lam (ref 0) (lam (ref 0) (var 1))) [nat]
 
-def addPins : Pins :=
-  let kept := builtinPins.names.toList.filter (toString ·.2 != "Nat.add")
-  let test : List (ConstRef Address × CName) := [(.member (address 91) 0, .str (.str .anonymous "Nat") "add")]
-  { builtinPins with names := (kept ++ test).foldl (fun m (r, n) => m.insert r n) {} }
+def addTable : Ix.Kernel.RoleTable := rebind [(.natAdd, address 91)]
 
-#guard !accepts [(address 91, fakeAdd)] (pins := addPins)
+#guard !accepts [(address 91, fakeAdd)] (table := addTable)
 #guard accepts [(address 91, fakeAdd)]
 
-/-- Names attach to addresses, not to contents: `Nat`'s block stored at
-another address is not named `Nat`. -/
+/-- Keys attach to addresses, not to contents: `Nat`'s block stored at another
+address is not keyed as `Nat`. -/
 def natBlockRecord : Ixon.Constant := Id.run do
-  let some (r, _) := builtinPins.names.toList.find? (toString ·.2 == "Nat") | return default
+  let some r := boundRef .nat | return default
   let some (_, c) := builtinPre.records.find? (·.1 == r.block) | return default
   return c
 
+-- its member is keyed by the address its projection record would have (none is
+-- in the input), under the entry's hash; without the hash it has no key
 #guard
-  let cx := contextOf builtinPins #[(address 92, natBlockRecord)] [] builtinPre.records
-  toString (cx.nameOf (.member (address 92) 0)) == keyString (.member (address 92) 0) &&
-    toString (cx.nameOf (.member (address 92) 0)) != "Nat"
+  let cx := contextOf (md := .anon) builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
+    (reconstruct := Ix.Kernel.Admission.projectionAddress hash)
+  let projection := Ix.Kernel.Admission.projectionAddress hash cx.store (.member (address 92) 0)
+  match cx.memberKey (.member (address 92) 0) with
+  | .ok (.id a) => projection == some a && a != address 92
+  | _ => false
+#guard
+  let cx := contextOf (md := .anon) builtinTable #[(address 92, natBlockRecord)] [] builtinPre.records
+  match cx.memberKey (.member (address 92) 0) with
+  | .error (.declined _) => true
+  | _ => false
 
--- The address encodings are computed ahead (`Ctx.keys`): an unpinned
--- record's reference is in the table, under `keyName`'s spelling, and a
--- pinned one is not.
+-- The keys are computed ahead (`Ctx.keys`): every record address has its key,
+-- an unbound singleton its own address and a bound reference its role's, and
+-- every reference its address
 #guard
-  let cx := contextOf builtinPins #[(address 93, idNat)] [] builtinPre.records
-  let natRef := (builtinPins.names.toList.find? (toString ·.2 == "Nat")).map (·.1)
-  cx.keys.map.contains (.member (address 93) 0) &&
-    toString (cx.nameOf (.member (address 93) 0)) == keyString (.member (address 93) 0) &&
-    natRef.isSome && natRef.all (!cx.keys.map.contains ·)
+  let cx := contextOf (md := .anon) builtinTable #[(address 93, idNat)] [] builtinPre.records
+  let natRef := boundRef .nat
+  cx.keys.byAddress[address 93]? == some (.id (address 93)) &&
+    cx.keys.address[ConstRef.member (address 93) 0]? == some (address 93) &&
+    (cx.memberKey (.member (address 93) 0)).toOption == some (.id (address 93)) &&
+    natRef.isSome && natRef.all fun r => (cx.memberKey r).toOption == some (.role .nat)
 
 /-! ## Negative: malformed and unsupported records -/
 
 -- the same address twice: the byte stage rejects it (`uniqueKeys`),
 -- and the reader rejects it in decoded records (`readRecords_nodup`)
 #guard match run [(address 10, idNat), (address 10, idNat)] with
-  | .error (.duplicate .records 1 a) => a == address 10
+  | .error (.duplicate .records 1 a) => a == (rekeyed [(address 10, idNat)]).rename (address 10)
   | _ => false
-#guard match checkConstantsWith builtinPins builtinPre builtinNatPins
+#guard match checkConstantsWith hash builtinTable builtinPre
     [(address 10, idNat), (address 10, idNat)] [] with
   | .error (.read 1 (.malformed _)) => true
   | _ => false
@@ -798,35 +883,86 @@ def natBlockRecord : Ixon.Constant := Id.run do
 #guard match run [(address 10, defn .defn (all (ref 0) (ref 0)) (lam (ref 0) (var 0)) [nat] (safety := .part))] with
   | .error (.read 0 (.declined _)) => true
   | _ => false
--- a non-canonical byte string fails at decoding
-#guard match checkBytesWith builtinPins builtinPre builtinNatPins limits [(address 10, ⟨#[0xff]⟩)] [] with
+-- a non-canonical byte string under its own hash fails at decoding; under
+-- any other key it fails at authentication, before decoding
+#guard match checkBytesWith hash builtinBinding builtinPre limits [(hash ⟨#[0xff]⟩, ⟨#[0xff]⟩)] [] with
   | .error (.decode 0 _ _) => true
   | _ => false
+#guard match checkBytesWith hash builtinBinding builtinPre limits [(address 10, ⟨#[0xff]⟩)] [] with
+  | .error (.mismatch .records 0 a) => a == address 10
+  | _ => false
 
-/-! ## The table's own refusals -/
+/-! ## The role table's own refusals
 
-#guard (pinMap #[⟨.member (address 1) 0, .str .anonymous "A"⟩, ⟨.member (address 2) 0, .str .anonymous "A"⟩]).isOk == false
-#guard (pinMap #[⟨.member (address 1) 0, .str .anonymous "A"⟩, ⟨.member (address 1) 0, .str .anonymous "B"⟩]).isOk == false
-#guard (pinMap #[⟨.member (address 1) 0, .str (.str .anonymous "ix") "A"⟩]).isOk == false
-#guard (pinMap #[⟨.member (address 1) 0, .str (.str .anonymous "A") "rec"⟩]).isOk == false
-#guard (pinMap #[⟨.member (address 1) 0, .str (.str .anonymous "A") "B"⟩]).isOk
+`RoleTable.check`: the version, injectivity in both directions, closure
+under blocks and dependencies, and evidence exactly the bound operations',
+of the kinds their equations fix. -/
 
-/-! ## The key encoding is injective -/
+def drop (t : Ix.Kernel.RoleTable) (rs : List Ix.Kernel.Role) : Ix.Kernel.RoleTable :=
+  { t with bound := t.bound.filter (!rs.contains ·.1),
+           evidence := t.evidence.filter (!rs.contains ·.1) }
 
-example {r s : ConstRef Address} (h : keyName r = keyName s) : r = s := keyName_injective h
+def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
+  match t.check with
+  | .error e => (e.splitOn why).length > 1
+  | .ok () => false
 
-/-- info: 'Ix.Kernel.Reader.keyName_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms keyName_injective
+#guard refuses { builtinTable with version := 2 } "version 2"
+#guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
+#guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
+#guard refuses (drop builtinTable [.eqRefl]) "its block's"
+#guard refuses (drop builtinTable [.natPred]) "a dependency"
+#guard refuses { builtinTable with evidence := builtinTable.evidence.filter (·.1 != .natDiv) }
+  "without evidence"
+#guard refuses { builtinTable with evidence := builtinTable.evidence.push (.nat, #[]) }
+  "not an operation"
+#guard refuses { builtinTable with evidence := builtinTable.evidence.map fun (r, es) =>
+    (r, if r == .natDiv then es.map fun _ => .defeq else es) } "does not match"
+#guard refuses { builtinTable with evidence := builtinTable.evidence.map fun (r, es) =>
+    (r, if r == .natAdd then es.pop else es) } "does not match"
+-- an unbound role is only absent: the table without the string-literal
+-- support is well formed
+#guard (drop builtinTable [.string, .stringOfList]).check.isOk
+
+/-! ## The binding section
+
+Canonical decoding (`RoleTable.ofBytes_eq_some_iff`): the encoder's output
+decodes back; trailing bytes, another tag, roles out of order are refused. The
+entry admits a section only under the hash of its bytes, decoded and well
+formed (`admitBinding`), before it reads any record. -/
+
+#guard (Ix.Kernel.RoleTable.ofBytes (builtinTable.toBytes.push 0)).isNone
+#guard (Ix.Kernel.RoleTable.ofBytes ⟨builtinTable.toBytes.data.set! 1 0x02⟩).isNone
+#guard (Ix.Kernel.RoleTable.ofBytes
+  { builtinTable with bound := builtinTable.bound.reverse }.toBytes).isNone
+#guard match checkBytesWith hash ⟨address 1, builtinTable.toBytes⟩ builtinPre limits [] [] with
+  | .error (.binding (.mismatch a)) => a == address 1
+  | _ => false
+#guard match checkBytesWith hash (bindingOf { builtinTable with version := 2 }) builtinPre limits [] [] with
+  | .error (.binding (.malformed _)) => true
+  | _ => false
+#guard match checkBytesWith hash ⟨hash ⟨#[0xe8]⟩, ⟨#[0xe8]⟩⟩ builtinPre limits [] [] with
+  | .error (.binding .decode) => true
+  | _ => false
+
+/-! ## The keys a reading gives -/
+
+example {cx : Ctx .anon} {a : Address} {k : CName .anon} (h : cx.keyAt a = .ok k) :
+    keyOfAddress cx.store cx.roles a = some k :=
+  Ctx.keyAt_eq_ok.mp h
+
+/-- info: 'Ix.Kernel.Reader.Ctx.keyAt_eq_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ctx.keyAt_eq_ok
 
 /-! ## Model existence -/
 
-example (V : Type) [Ix.Kernel.SetTheory V] {records : Ix.Kernel.Admission.Records}
-    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env}
-    (h : checkBytes limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
+example (V : Type) [Ix.Kernel.SetTheory V] {binding : Binding} {records : Ix.Kernel.Admission.Records}
+    {blobs : List (Address × ByteArray)} {env : Ix.Kernel.Env .anon}
+    (h : checkBytes hash binding limits records blobs = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytes_has_model V h
 
-example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env}
-    (h : run strings strBlobs stringPins = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
+example (V : Type) [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
+    (h : run strings strBlobs stringTable = .ok env) : Nonempty (Ix.Kernel.Model V env) :=
   checkBytesWith_has_model V h
 
 end Tests.Ix.Kernel.Reader

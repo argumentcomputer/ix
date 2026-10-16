@@ -13,9 +13,10 @@ import IxSharingVerify.TieredPhase3
   reproduces it, provided expanding the output yields the same canonical DAG
   and root IDs as expanding the input. That proviso is the statement that
   canonical expansion depends only on the denoted terms; `canonicalize_det`
-  proves it for the canonicalization step, while the interner's pointer
-  cache (`Ix.Sharing.Exact.exprPtr`, an opaque pointer comparison) is outside what
-  can be proved here, so the proviso is stated, not proved.
+  proves it for the canonicalization step. `ExprCache` now proves that
+  pointer-selected cache hits require exact source equality. The full
+  ingestion/interner correspondence still needs proof, so the proviso is
+  stated, not proved here.
 -/
 
 namespace Ix.Sharing.Verify.Tiered

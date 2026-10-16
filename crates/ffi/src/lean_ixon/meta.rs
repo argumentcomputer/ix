@@ -181,7 +181,7 @@ impl LeanIxonAuxLayout<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonAuxLayout<R> {
   /// Decode Ixon.AuxLayout. `usize` is 64-bit on every supported target
-  /// (same contract as `ixon::serialize::get_aux_layout`).
+  /// (same contract as the `Muts` metadata encoding in `ixon::metadata`).
   #[allow(clippy::cast_possible_truncation)]
   pub fn decode(&self) -> AuxLayout {
     let perm: Vec<usize> = decode_u64_array(self.get_obj(0).as_array())

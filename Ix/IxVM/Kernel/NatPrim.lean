@@ -185,22 +185,10 @@ def natPrim := ⟦
      0x5au8, 0x9eu8, 0x71u8, 0x38u8, 0x66u8, 0xf4u8, 0xc6u8, 0x3eu8])
   }
 
-  -- Native primitives ()
-  fn system_platform_num_bits_addr() -> Addr {
-    store([0x57u8, 0xa3u8, 0x1cu8, 0x1eu8, 0x34u8, 0xcfu8, 0x39u8, 0x93u8,
-     0xb2u8, 0x09u8, 0x39u8, 0xddu8, 0x29u8, 0xbau8, 0x27u8, 0x26u8,
-     0x3fu8, 0x24u8, 0xfbu8, 0xbeu8, 0xedu8, 0xe2u8, 0xf6u8, 0xa6u8,
-     0xd0u8, 0x89u8, 0xb8u8, 0x05u8, 0x1fu8, 0xe3u8, 0x2cu8, 0x3cu8])
-  }
-
-  fn punit_size_of_1_addr() -> Addr {
-    store([0x52u8, 0x36u8, 0x99u8, 0xb6u8, 0xe8u8, 0x27u8, 0xb7u8, 0x4au8,
-     0x95u8, 0x0du8, 0x47u8, 0x18u8, 0xbdu8, 0xf5u8, 0xb1u8, 0x3cu8,
-     0x19u8, 0x3eu8, 0x3cu8, 0x7cu8, 0x37u8, 0x1au8, 0xaau8, 0xd4u8,
-     0xd6u8, 0x35u8, 0x66u8, 0x7bu8, 0xe7u8, 0x4bu8, 0x05u8, 0xfau8])
-  }
-
-  -- Compiler-emitted native reduction primitives.
+  -- Compiler-emitted native reduction primitives. Nothing else reduces
+  -- natively: as in Lean's kernel, `System.Platform.numBits` stays the value
+  -- of the opaque `getNumBits ()`, and `SizeOf.sizeOf` (with the `PUnit`
+  -- instance's `PUnit._sizeOf_1`) reduces through its definition.
   fn reduce_bool_addr() -> Addr {
     store([0xbau8, 0xccu8, 0x4cu8, 0x81u8, 0x4au8, 0x45u8, 0x72u8, 0xddu8,
      0xfdu8, 0x96u8, 0x9au8, 0x18u8, 0x57u8, 0xadu8, 0xfeu8, 0x18u8,
@@ -215,108 +203,28 @@ def natPrim := ⟦
      0x9eu8, 0x20u8, 0x79u8, 0x4du8, 0x7au8, 0x0eu8, 0x85u8, 0x95u8])
   }
 
-  fn subtype_val_addr() -> Addr {
-    store([0xd1u8, 0xbfu8, 0xecu8, 0x8du8, 0xf9u8, 0x08u8, 0xc8u8, 0x87u8,
-     0xe4u8, 0xf4u8, 0x89u8, 0xadu8, 0xc2u8, 0xeeu8, 0xc7u8, 0x7au8,
-     0x53u8, 0xe8u8, 0xffu8, 0x28u8, 0xb5u8, 0xbdu8, 0x9au8, 0x4cu8,
-     0x21u8, 0xa5u8, 0x6du8, 0xa6u8, 0x38u8, 0x1eu8, 0xedu8, 0x8fu8])
-  }
-
-  fn system_platform_get_num_bits_addr() -> Addr {
-    store([0x23u8, 0x6eu8, 0x46u8, 0xbdu8, 0xe1u8, 0xf5u8, 0x93u8, 0x09u8,
-     0xc2u8, 0xccu8, 0x68u8, 0x5au8, 0x73u8, 0x79u8, 0xbcu8, 0x52u8,
-     0x94u8, 0xa9u8, 0x81u8, 0x7eu8, 0x59u8, 0x79u8, 0x15u8, 0xddu8,
-     0xccu8, 0x4bu8, 0x3du8, 0x93u8, 0x32u8, 0x84u8, 0xcdu8, 0x70u8])
-  }
-
-
   fn is_native_prim_addr(a: Addr) -> G {
-    match address_eq(a, system_platform_num_bits_addr()) {
-      1 => 1,
-      _ =>
-      match address_eq(a, punit_size_of_1_addr()) {
-        1 => 1,
-        _ =>
-        match address_eq(a, reduce_bool_addr()) {
-          1 => 1,
-          _ =>
-          match address_eq(a, reduce_nat_addr()) {
-            1 => 1,
-            _ =>
-            match address_eq(a, subtype_val_addr()) {
-              1 => 1,
-              _ => 0,
-            },
-          },
-        },
-      },
-    }
-  }
-
-  fn mk_nat_literal_64() -> KExpr {
-    let limbs = store(ListNode.Cons(
-      [64u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
-    store(KExprNode.Lit(KLiteral.Nat(limbs)))
-  }
-
-  fn mk_nat_one() -> KExpr {
-    let limbs = store(ListNode.Cons(
-      [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
-    store(KExprNode.Lit(KLiteral.Nat(limbs)))
+    address_eq(a, reduce_bool_addr()) + address_eq(a, reduce_nat_addr())
   }
 
   -- Native reduce dispatch.
-  --   numBits (nullary)      → Lit(Nat 64)
-  --   PUnit.SizeOf.1 (nul)   → Lit(Nat 1)
   --   Lean.reduceBool arg    → whnf arg; accept Const(Bool.true|Bool.false)
   --   Lean.reduceNat arg     → whnf arg; accept Lit(Nat _)
   fn try_native_dispatch(head_addr: Addr, spine: List‹KExpr›,
                              types: List‹KExpr›) -> (G, KExpr) {
-    match address_eq(head_addr, system_platform_num_bits_addr()) {
-      1 => (1, mk_nat_literal_64()),
+    let is_rb = address_eq(head_addr, reduce_bool_addr());
+    let is_rn = address_eq(head_addr, reduce_nat_addr());
+    match is_rb + is_rn {
+      0 => (0, store(KExprNode.BVar(0))),
       _ =>
-      match address_eq(head_addr, punit_size_of_1_addr()) {
-        1 => (1, mk_nat_one()),
-        _ =>
-        match address_eq(head_addr, subtype_val_addr()) {
-          1 => try_reduce_subtype_val(spine),
+        match u32_less_than(list_length(spine), 1) {
+          1 => (0, store(KExprNode.BVar(0))),
           _ =>
-              let is_rb = address_eq(head_addr, reduce_bool_addr());
-              let is_rn = address_eq(head_addr, reduce_nat_addr());
-              match is_rb + is_rn {
-                0 => (0, store(KExprNode.BVar(0))),
-                _ =>
-                  match u32_less_than(list_length(spine), 1) {
-                    1 => (0, store(KExprNode.BVar(0))),
-                    _ =>
-                      let arg = list_lookup(spine, 0);
-                      let result = whnf(arg, types);
-                      match is_rb {
-                        1 => check_native_bool(result),
-                        _ => check_native_nat(result),
-                      },
-                  },
-              },
-        },
-      },
-    }
-  }
-
-  -- Subtype.val A P (System.Platform.getNumBits ()) → 64.
-  -- Spine: [A, P, val_arg]. val_arg's spine head must = getNumBits.
-  fn try_reduce_subtype_val(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 3) {
-      1 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        match collect_spine(list_lookup(spine, 2)) {
-          (head, _) =>
-            match load(head) {
-              KExprNode.Const(caddr, _) =>
-                match address_eq(caddr, system_platform_get_num_bits_addr()) {
-                  1 => (1, mk_nat_literal_64()),
-                  _ => (0, store(KExprNode.BVar(0))),
-                },
-              _ => (0, store(KExprNode.BVar(0))),
+            let arg = list_lookup(spine, 0);
+            let result = whnf(arg, types);
+            match is_rb {
+              1 => check_native_bool(result),
+              _ => check_native_nat(result),
             },
         },
     }
@@ -361,13 +269,6 @@ def natPrim := ⟦
      0x68u8, 0x0fu8, 0xf2u8, 0xa7u8, 0x7bu8, 0x0bu8, 0xe9u8, 0x86u8])
   }
 
-  fn bit_vec_addr() -> Addr {
-    store([0x90u8, 0x02u8, 0x2au8, 0xe4u8, 0xc5u8, 0xd5u8, 0x2au8, 0xd2u8,
-     0x8au8, 0xcdu8, 0x80u8, 0x05u8, 0x1du8, 0xd4u8, 0x1fu8, 0x27u8,
-     0xf5u8, 0x1cu8, 0x9cu8, 0x4au8, 0xfbu8, 0xabu8, 0x1bu8, 0xb3u8,
-     0x91u8, 0x77u8, 0x3cu8, 0x19u8, 0xefu8, 0x0du8, 0xc1u8, 0xe9u8])
-  }
-
   fn bit_vec_ult_addr() -> Addr {
     store([0x2fu8, 0x9cu8, 0x9cu8, 0x36u8, 0x90u8, 0x45u8, 0x03u8, 0x6du8,
      0x9au8, 0x35u8, 0xffu8, 0x7bu8, 0x38u8, 0x28u8, 0x5du8, 0xcau8,
@@ -375,32 +276,10 @@ def natPrim := ⟦
      0x6fu8, 0xceu8, 0x11u8, 0x61u8, 0xb0u8, 0x90u8, 0xd6u8, 0x0du8])
   }
 
-  fn decidable_decide_addr() -> Addr {
-    store([0x11u8, 0x15u8, 0x7bu8, 0xc3u8, 0x89u8, 0x8fu8, 0x06u8, 0xe3u8,
-     0xe6u8, 0xf2u8, 0xcau8, 0x83u8, 0x41u8, 0x1eu8, 0xfdu8, 0x0du8,
-     0x43u8, 0xb8u8, 0x84u8, 0x6bu8, 0x57u8, 0xd2u8, 0xf6u8, 0x08u8,
-     0x8eu8, 0x18u8, 0xf3u8, 0x44u8, 0x7du8, 0xdcu8, 0x3bu8, 0x28u8])
-  }
-
-  fn lt_lt_addr() -> Addr {
-    store([0x06u8, 0x1cu8, 0x26u8, 0x58u8, 0xc7u8, 0x6au8, 0x68u8, 0xd9u8,
-     0x09u8, 0x78u8, 0x85u8, 0x98u8, 0x24u8, 0x99u8, 0x3bu8, 0xbbu8,
-     0xe1u8, 0x5du8, 0xbfu8, 0x9bu8, 0x99u8, 0x68u8, 0x61u8, 0x93u8,
-     0x25u8, 0x42u8, 0x0eu8, 0x7cu8, 0x83u8, 0x9bu8, 0x05u8, 0xc7u8])
-  }
-
   fn is_bitvec_prim_addr(a: Addr) -> G {
     match address_eq(a, bit_vec_to_nat_addr()) {
       1 => 1,
-      _ =>
-      match address_eq(a, bit_vec_ult_addr()) {
-        1 => 1,
-        _ =>
-        match address_eq(a, decidable_decide_addr()) {
-          1 => 1,
-          _ => 0,
-        },
-      },
+      _ => address_eq(a, bit_vec_ult_addr()),
     }
   }
 
@@ -456,54 +335,6 @@ def natPrim := ⟦
     }
   }
 
-  -- decide (LT.lt BitVec width lhs rhs) inst → bit_vec_ult.
-  fn try_reduce_decide_bitvec_lt(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
-      1 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        let prop = list_lookup(spine, 0);
-        match collect_spine(prop) {
-          (lt_head, lt_args) =>
-            match load(lt_head) {
-              KExprNode.Const(lt_caddr, _) =>
-                match address_eq(lt_caddr, lt_lt_addr()) {
-                  0 => (0, store(KExprNode.BVar(0))),
-                  _ =>
-                    match u32_less_than(list_length(lt_args), 4) {
-                      1 => (0, store(KExprNode.BVar(0))),
-                      _ =>
-                        let ty_arg = list_lookup(lt_args, 0);
-                        match collect_spine(ty_arg) {
-                          (ty_head, ty_args) =>
-                            match load(ty_head) {
-                              KExprNode.Const(ty_caddr, _) =>
-                                match address_eq(ty_caddr, bit_vec_addr()) {
-                                  0 => (0, store(KExprNode.BVar(0))),
-                                  _ =>
-                                    match u32_less_than(list_length(ty_args), 1) {
-                                      1 => (0, store(KExprNode.BVar(0))),
-                                      _ =>
-                                        let width = list_lookup(ty_args, 0);
-                                        let lhs = list_lookup(lt_args, 2);
-                                        let rhs = list_lookup(lt_args, 3);
-                                        let inner = store(ListNode.Cons(width,
-                                          store(ListNode.Cons(lhs,
-                                            store(ListNode.Cons(rhs,
-                                              store(ListNode.Nil)))))));
-                                        try_reduce_bit_vec_ult(inner),
-                                    },
-                                },
-                              _ => (0, store(KExprNode.BVar(0))),
-                            },
-                        },
-                    },
-                },
-              _ => (0, store(KExprNode.BVar(0))),
-            },
-        },
-    }
-  }
-
   -- Extract (width, value) from `BitVec.ofNat W N` shape. Returns
   -- (1, W, N) or (0, _, _). Direct form only: the `OfNat.ofNat`-wrapped
   -- form is not recognized here, so a wrapped literal stays stuck rather
@@ -526,10 +357,10 @@ def natPrim := ⟦
     }
   }
 
-  -- BitVec.toNat / BitVec.ult / decide(BitVec.lt) dispatch.
-  -- toNat + ult prep spine (whnf inner (W, N) args first). decide
-  -- inspects prop head shape — no pre-whnf (avoid cascading Defn
-  -- unfolds on arbitrary Prop args).
+  -- BitVec.toNat / BitVec.ult dispatch: both heads are functions, and the
+  -- spine is prepared (whnf inner (W, N) args first). The class methods
+  -- `OfNat.ofNat (BitVec w) n inst` and `decide (@LT.lt (BitVec w) inst x
+  -- y)` take their value from the instance, so neither is read here.
   fn try_bitvec_dispatch(head_addr: Addr, spine: List‹KExpr›,
                               types: List‹KExpr›) -> (G, KExpr) {
     match address_eq(head_addr, bit_vec_to_nat_addr()) {
@@ -550,11 +381,7 @@ def natPrim := ⟦
           1 =>
             let spine_p = bitvec_prep_spine_ult(spine, types);
             try_reduce_bit_vec_ult(spine_p),
-          _ =>
-            match address_eq(head_addr, decidable_decide_addr()) {
-              1 => try_reduce_decide_bitvec_lt(spine),
-              _ => (0, store(KExprNode.BVar(0))),
-            },
+          _ => (0, store(KExprNode.BVar(0))),
         },
     }
   }

@@ -50,15 +50,15 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 /-- Does every pinned basis declaration that is an eta-capable
 former carry a reserved name?  Decidable, and `decide`d at each
 kind — the basis blocks are literal lists. -/
-def basisIndOk (l : List ConstantInfo) : Bool :=
+def basisIndOk (l : List (ConstantInfo md)) : Bool :=
   l.all (fun ci => match ci with
     | .indInfo _ caps => !caps.eta || reservedBasisNames.contains ci.name
     | _ => true)
 
 /-- `basisIndOk` at one member. -/
-theorem basisIndOk_mem {l : List ConstantInfo} (h : basisIndOk l = true)
-    {ci : ConstantInfo} (hci : ci ∈ l) {cv : ConstantVal}
-    {caps : IndCaps} (heq : ci = .indInfo cv caps)
+theorem basisIndOk_mem {l : List (ConstantInfo md)} (h : basisIndOk l = true)
+    {ci : ConstantInfo md} (hci : ci ∈ l) {cv : ConstantVal md}
+    {caps : IndCaps md} (heq : ci = .indInfo cv caps)
     (hcape : caps.eta = true) :
     reservedBasisNames.contains ci.name = true := by
   have hm := List.all_eq_true.mp h ci hci
@@ -71,7 +71,7 @@ theorem basisIndOk_mem {l : List ConstantInfo} (h : basisIndOk l = true)
 /-- The pinned basis fold keeps the stored eta families closed: every
 pinned former it stores carries a reserved name. -/
 theorem basisInstallRun_etaClosed :
-    ∀ (l : List ConstantInfo) {env env₂ : Env},
+    ∀ (l : List (ConstantInfo md)) {env env₂ : Env md},
       BasisInstallRun env l env₂ → basisIndOk l = true →
       EtaFamiliesClosed env → EtaFamiliesClosed env₂
   | [], _, _, h, _, hE => by rw [h]; exact hE
@@ -88,8 +88,8 @@ theorem basisInstallRun_etaClosed :
 
 /-- Every pinned basis block passes the former check, by computation. -/
 theorem basisIndOk_declsA (kind : BasisKind) :
-    basisIndOk kind.declsA = true := by
-  cases kind <;> decide
+    (basisIndOk (md := md)) kind.declsA = true := by
+  cases kind <;> (cases md <;> decide)
 
 /-- **The declaration fold's η-closure half, on the run projection**
 (task #161 S4).  The proof never looked at a derivation conjunct — it
@@ -102,9 +102,9 @@ The inductive kind is `DeclRun`'s `Ind` parameter here, so the one
 premise is at whatever payload the caller instantiates — today
 `DeclIndRun`, after S5's ind unit `DeclIndRun`. -/
 theorem declEtaStepRun {μ : CheckMode} {F : Nat}
-    {Ind : List ConstantInfo → Nat → Env → Prop}
-    {env : Env} {d : Declaration} {env₂ : Env}
-    (hind : ∀ {block : List ConstantInfo} {nP : Nat} {envI : Env},
+    {Ind : List (ConstantInfo md) → Nat → Env md → Prop}
+    {env : Env md} {d : Declaration md} {env₂ : Env md}
+    (hind : ∀ {block : List (ConstantInfo md)} {nP : Nat} {envI : Env md},
       Ind block nP envI → EtaFamiliesClosed envI)
     (hE : EtaFamiliesClosed env)
     (h : DeclRun μ F Ind env d env₂) : EtaFamiliesClosed env₂ := by

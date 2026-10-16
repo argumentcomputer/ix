@@ -38,42 +38,41 @@ annotations.  Opened by the pin modules (`IxC/Kernel/Basis/*`,
 
 namespace BasisDSL
 
-/-- A top-level (single-component) name: `bn "Eq"` is `Eq`. -/
-def bn (s : String) : Name := .str .anonymous s
+/-- Universe parameter `0` (the exporter's `u`) — every basis block's
+first one. -/
+def uN : LevelParam := 0
 
-/-- The universe parameter `u` — every basis block's first one. -/
-def uN : Name := bn "u"
-
-/-- The universe parameter `u`, as a level. -/
+/-- The universe parameter `uN`, as a level. -/
 def u : Level := .param uN
 
-/-- The universe parameter `v` (`Quot.lift`'s target sort). -/
-def vN : Name := bn "v"
+/-- Universe parameter `1` (the exporter's `v`, `Quot.lift`'s target
+sort). -/
+def vN : LevelParam := 1
 
-/-- The universe parameter `v`, as a level. -/
+/-- The universe parameter `vN`, as a level. -/
 def v : Level := .param vN
 
-/-- The universe parameter `u_1` — the motive sort the exporter names
-for a recursor whose type former already spends `u`. -/
-def u1N : Name := bn "u_1"
+/-- Universe parameter `1` — a recursor's elimination parameter
+after its block's one parameter `uN` (the exporter's `u_1`). -/
+def u1N : LevelParam := 1
 
-/-- The universe parameter `u_1`, as a level. -/
+/-- The universe parameter `u1N`, as a level. -/
 def u1 : Level := .param u1N
 
 /-- A bound variable, by de Bruijn index. -/
-def bv (i : Nat) : Expr := .bvar i
+def bv (i : Nat) : Expr md := .bvar i
 
 /-- `Sort u`. -/
-def srt (u : Level) : Expr := .sort u
+def srt (u : Level) : Expr md := .sort u
 
 /-- `Prop` = `Sort 0`. -/
-def prop : Expr := .sort .zero
+def prop : Expr md := .sort .zero
 
 /-- `Type` = `Sort 1`. -/
-def type1 : Expr := .sort (.succ .zero)
+def type1 : Expr md := .sort (.succ .zero)
 
 /-- A constant, at the given universe arguments. -/
-def cnst (n : Name) (us : List Level := []) : Expr := .const n us
+def cnst (n : Key md) (us : List Level := []) : Expr md := .const n us
 
 /-! **Binder names and binder infos are for the reader only** (tasks
 #203/#205).  `Expr` carries neither (task #205: the official kernel's
@@ -84,40 +83,40 @@ where the signature says `{…}`.  All five build the same node shape. -/
 
 /-- `∀ (x : ty), body` — an explicit binder (`x` documents the
 `Init.Prelude` spelling). -/
-def pi (_x : String) (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+def pi (_x : String) (ty body : Expr md) : Expr md :=
+  .forallE ty body { pw := .never }
 
 /-- `∀ {x : ty}, body` — an implicit binder in `Init.Prelude` (the
 same node as `pi`; the braces are for the reader). -/
-def piI (_x : String) (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+def piI (_x : String) (ty body : Expr md) : Expr md :=
+  .forallE ty body { pw := .never }
 
 /-- `∀ (_ : ty), body` — an anonymous explicit binder (`ty → body`). -/
-def piA (ty body : Expr) : Expr :=
-  .forallE ty body ⟨.never⟩
+def piA (ty body : Expr md) : Expr md :=
+  .forallE ty body { pw := .never }
 
 /-- `fun (x : ty) => body` — an explicit binder (name for the reader). -/
-def lm (_x : String) (ty body : Expr) : Expr :=
-  .lam ty body ⟨.never⟩
+def lm (_x : String) (ty body : Expr md) : Expr md :=
+  .lam ty body { pw := .never }
 
 /-- `fun {x : ty} => body` — an implicit binder in `Init.Prelude` (the
 same node as `lm`). -/
-def lmI (_x : String) (ty body : Expr) : Expr :=
-  .lam ty body ⟨.never⟩
+def lmI (_x : String) (ty body : Expr md) : Expr md :=
+  .lam ty body { pw := .never }
 
 /-- Binary application. -/
-def ap2 (f a b : Expr) : Expr := .app (.app f a) b
+def ap2 (f a b : Expr md) : Expr md := .app (.app f a) b
 
 /-- Ternary application. -/
-def ap3 (f a b c : Expr) : Expr := .app (.app (.app f a) b) c
+def ap3 (f a b c : Expr md) : Expr md := .app (.app (.app f a) b) c
 
 /-- Quaternary application. -/
-def ap4 (f a b c d : Expr) : Expr := .app (.app (.app (.app f a) b) c) d
+def ap4 (f a b c d : Expr md) : Expr md := .app (.app (.app (.app f a) b) c) d
 
 /-- A raw iota rule: the install-computed fields (`ctorParams`,
 `fire`, `k`, `eta`, `paramsBlind`) at their parse placeholders, which
 is what the exporter emits and what `#annotate_basis` recomputes. -/
-def rule (ctor : Name) (nfields : Nat) (rhs : Expr) : RecRule :=
+def rule (ctor : Key md) (nfields : Nat) (rhs : Expr md) : RecRule md :=
   ⟨ctor, nfields, 0, .inert, rhs, false, false, false⟩
 
 end BasisDSL

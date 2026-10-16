@@ -48,8 +48,11 @@ def testDecompile : TestSeq :=
     IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
     let decompStart ← IO.monoMsNow
     let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
+    -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
+    let sharingLimits ← IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
     let (decompiled, decompErrors, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel phases.compileEnv (some origView)
+        (sharingLimits := sharingLimits)
     IO.println s!"[Step 2]   {decompiled.size} constants, {decompErrors.size} errors in {(← IO.monoMsNow) - decompStart}ms"
     IO.println ""
 

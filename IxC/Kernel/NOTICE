@@ -33,10 +33,22 @@ Modifications
   * Every derived file was moved from ConLeche/Kernel/X or ConLeche/X to
     IxC/Kernel/X, and the namespace and module prefix ConLeche (and
     ConLeche.Kernel) was renamed to Ix.Kernel.
-  * CheckerBase.lean imports NatOpPinSet instead of upstream's NatOpPins,
-    which splices JSON pin dumps at elaboration time; Ix's Nat-operation
-    pins are generated from Ixon records (Ixon/NatOpPinData.lean), and
-    NatOpPins.lean is not included.
+  * Primitives by specification (2026-10): the checker validates the
+    constants an input role table binds against fixed specifications
+    (Roles.lean, this repository's) instead of pin tables. CheckerBase.lean
+    imports Roles instead of upstream's NatOpPins, which splices JSON pin
+    dumps at elaboration time (NatOpPins.lean is not included).
+    Checker.lean: the operations' install gate checks the table's evidence
+    (checkDivModEvidence, under the closure condition evidenceLocal;
+    divModCertsGuard), the reduce opaques keep their identity certificate
+    (checkReduceIdentity), and the Nat.div/Nat.mod pin variants,
+    checkDivModPinAt and checkReducePin are gone; TrustAxioms.lean drops
+    the reduce pin; DeclCheck.lean and Cached/ParsedC.lean mirror the gate.
+    The proofs that consume the gate (Cached/Installed.lean,
+    Model/{Fold,Harvest,DivModCert,ReduceOps,Annot/Laws}.lean,
+    Semantics/{DeclRun,Bridge/*}.lean, Verify/**) take the evidence where
+    they took the pin list, and their statements hold for every evidence.
+    TrustPins.lean is removed.
   * Level.lean: when both branches of the level comparison's (param, max)
     case fail, the comparison falls back on Géran's sublevels
     (LevelGeran.lean), which decide the case nanoda's branch split misses.
@@ -56,7 +68,7 @@ Modifications
 Ix's own files
 --------------
 
-LevelGeran.lean, Verify/LevelGeran.lean, Ref.lean, Search.lean,
+LevelGeran.lean, Verify/LevelGeran.lean, Roles.lean, Ref.lean, Search.lean,
 Admission.lean, and the Admission, Audit, Ingress, Egress and Ixon
 directories are this repository's, under its root licence.
 

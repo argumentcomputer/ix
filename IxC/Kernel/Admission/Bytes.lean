@@ -4,16 +4,21 @@ import Std.Data.HashSet.Basic
 
 /-! # The byte stage of admission
 
-Batch limits (`preflight`), key uniqueness (`uniqueKeys`) and canonical
-per-record decoding (`decodeRecords`) of the certified entry
-(`Ix.Kernel.Admission.checkBytes`, the verified checker behind the Ixon reader), in that
-order. Their composition is proved in `Ix.Kernel.Admission.Bytes.Theorems`.
+Batch limits (`preflight`), key uniqueness (`uniqueKeys`), address
+authentication (`authenticate`) and canonical per-record decoding
+(`decodeRecords`) of the certified entry (`Ix.Kernel.Admission.checkBytes`, the
+verified checker behind the Ixon reader), in that order. Their composition is
+proved in `Ix.Kernel.Admission.Bytes.Theorems`.
 
-The host supplies record order, address keys, and literal blobs. Addresses
-are keys, not authenticated content hashes, but a batch may use each key
-once per table: two records, or two blobs, under one address are malformed
-input (a reject at the Ix API, `Ix.Kernel.Admission.Error.outcome`), not a choice
-for the reader to make. Blobs retain their exact supplied bytes. No host
+The host supplies record order, address keys, and literal blobs. A batch may
+use each key once per table: two records, or two blobs, under one address are
+malformed input (a reject at the Ix API, `Ix.Kernel.Admission.Error.outcome`),
+not a choice for the reader to make. Each key must be the content hash of the
+bytes stored under it, exactly as supplied: `authenticate` recomputes the
+entry's `hash` parameter over every record payload and every blob and refuses
+a mismatch (also a reject). The hash is a parameter because the kernel admits
+no hasher (`Ix.Kernel.Audit.kernelImportAllowlist`); the root library
+instantiates it at BLAKE3. Blobs retain their exact supplied bytes. No host
 decoder or verdict participates in this path.
 -/
 
@@ -46,14 +51,15 @@ inductive Table where
   | blobs
   deriving Repr, DecidableEq
 
-/-- Byte failures: a batch limit, a key used twice in one table, or a record
-that does not decode canonically. Positions are zero-based and identify the
-original input record or blob; a duplicate's is its second occurrence.
-The entry's failures (`Ix.Kernel.Admission.Error`) include them unchanged
-(`Error.ofBytes`). -/
+/-- Byte failures: a batch limit, a key used twice in one table, a key that
+is not the hash of the bytes stored under it, or a record that does not
+decode canonically. Positions are zero-based and identify the original input
+record or blob; a duplicate's is its second occurrence. The entry's failures
+(`Ix.Kernel.Admission.Error`) include them unchanged (`Error.ofBytes`). -/
 inductive ByteError where
   | limit (resource : Resource)
   | duplicate (table : Table) (position : Nat) (address : Address)
+  | mismatch (table : Table) (position : Nat) (address : Address)
   | decode (position : Nat) (address : Address) (reason : String)
   deriving Repr, DecidableEq
 
@@ -98,6 +104,29 @@ def uniqueKeys (records : Records) (blobs : Ingress.Blobs) : Except ByteError Un
   | none =>
     match firstDuplicate 0 {} blobs with
     | some (position, address) => .error (.duplicate .blobs position address)
+    | none => .ok ()
+
+/-- The first entry of a table whose key is not `hash` of its bytes, with
+its position. -/
+def firstMismatch (hash : ByteArray → Address) : Nat → List (Address × ByteArray) →
+    Option (Nat × Address)
+  | _, [] => none
+  | position, (address, bytes) :: rest =>
+    if hash bytes == address then firstMismatch hash (position + 1) rest
+    else some (position, address)
+
+/-- Each record address and each blob address is `hash` of the bytes stored
+under it, as supplied (`Ix.Kernel.Admission.authenticate_ok_iff`): a record's
+payload is hashed before it is decoded, never re-encoded. The entries run it
+after `preflight` and `uniqueKeys`, so the bytes it hashes are bounded by the
+batch limits. -/
+def authenticate (hash : ByteArray → Address) (records : Records) (blobs : Ingress.Blobs) :
+    Except ByteError Unit :=
+  match firstMismatch hash 0 records with
+  | some (position, address) => .error (.mismatch .records position address)
+  | none =>
+    match firstMismatch hash 0 blobs with
+    | some (position, address) => .error (.mismatch .blobs position address)
     | none => .ok ()
 
 /-- Tail-recursive decoding retains all records, keys, and their order,

@@ -49,6 +49,9 @@ use crate::{
   mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
+pub use expr_key::{ExprKey, UnivKey};
+use expr_key::{PreseedKey, UnivContext};
+
 /// Whether to output timing diagnostics for slow blocks and aux_gen phases.
 /// Set via IX_TIMING=1 environment variable.
 pub static IX_TIMING: std::sync::LazyLock<bool> =
@@ -97,7 +100,19 @@ pub struct KernelCtx {
   /// the new id, exactly as the per-call sets healed it. Must be cleared
   /// together with `kenv` (the entries it vouches for die with it).
   pub aux_ingress_seen: FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
+  /// Forward source provenance (Lean `AuxKernelCtx.sourceNames`): every
+  /// source name the bridge's inputs referenced, by the address it was
+  /// ingressed at. All identities are kept: a Meta `KId` includes the name,
+  /// so another alias at the same address cannot stand in for a missing
+  /// one. `fault_in_addr` loads only from here, never from ambient compiled
+  /// aliases or a reverse scan. Fresh with the context and cleared with
+  /// `kenv`.
+  pub source_names: SourceNames,
 }
+
+/// Forward source provenance: ingress address → the source names
+/// referenced at it (see [`KernelCtx::source_names`]).
+pub type SourceNames = FxHashMap<Address, FxHashSet<Name>>;
 
 impl Default for KernelCtx {
   fn default() -> Self {
@@ -110,6 +125,7 @@ impl KernelCtx {
     KernelCtx {
       kenv: ix_kernel::env::KEnv::new(),
       aux_ingress_seen: FxHashSet::default(),
+      source_names: FxHashMap::default(),
     }
   }
 }
@@ -209,8 +225,9 @@ pub struct CompileState {
 
 /// Cached compiled expression with arena root index.
 ///
-/// On cache hit: O(1) — just push the cached expr and arena_root.
-/// The subtree's metadata nodes are already in the arena (append-only).
+/// Once exact key equality confirms a hit, reuse the compiled value and
+/// arena root. The subtree's metadata nodes are already in the append-only
+/// arena; shared source objects compare by identity.
 #[derive(Clone, Debug)]
 pub struct CachedExpr {
   pub expr: Arc<Expr>,
@@ -220,10 +237,10 @@ pub struct CachedExpr {
 /// Per-block compilation cache.
 #[derive(Default)]
 pub struct BlockCache {
-  /// Cache for compiled expressions (keyed by Lean hash address)
-  pub exprs: FxHashMap<Address, CachedExpr>,
-  /// Cache for compiled universes (Level -> Univ conversion)
-  /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
+  /// Cache indexed by stored digest and confirmed by complete source equality.
+  pub exprs: FxHashMap<ExprKey, CachedExpr>,
+  /// Cache for compiled universes, with exact source levels and parameter
+  /// contexts. Digests index candidates; complete equality confirms hits. A
   /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
   /// parameter's POSITION in `univ_params`, so the result depends on the
   /// context. This cache lives for a whole block (unlike the expression
@@ -231,8 +248,8 @@ pub struct BlockCache {
   /// compiles each member under its own `level_params`, so a shared key
   /// would hand the second member the first member's index — a silently
   /// wrong constant under a correct-looking name, with no abort.
-  /// `collect_expr_tables` keys its `seen_exprs` the same way.
-  pub univ_cache: FxHashMap<(Level, Address), Arc<Univ>>,
+  /// The table collector's seen set is keyed the same way (`PreseedKey`).
+  pub univ_cache: FxHashMap<UnivKey, Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -253,7 +270,7 @@ pub struct BlockCache {
   /// final. From then on any on-the-fly intern of a canonical form must
   /// HIT a preseeded entry — a miss would silently shift the virtual
   /// indices in `univ_patches` (which are `univs.len() + slot`), so
-  /// `compile_univ_idx` debug-asserts against it.
+  /// `compile_univ_idx` refuses it.
   pub univs_final: bool,
   /// Extension univs of the CURRENT constant: original (non-canonical)
   /// spellings referenced by `univ_patches`, in first-use order.
@@ -269,6 +286,13 @@ pub struct BlockCache {
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
   /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
   pub surgery_sharing: Vec<Arc<Expr>>,
+  /// Set while compiling the original Lean form of a regenerated auxiliary
+  /// (`compile_const_inner` with `aux = false`): the result is provenance
+  /// only (`Named.original` address and metadata, never a stored constant),
+  /// and its call sites keep every dropped argument in `Collapsed`
+  /// metadata, so the collapse-drop check (A0) does not apply there. Every
+  /// stored constant is compiled with this flag unset.
+  pub provenance_only: bool,
 }
 
 #[derive(Debug)]
@@ -315,6 +339,152 @@ impl CompileState {
     }
   }
 
+  /// Claim `name` for an aux_gen product at `addr` (A0: single ownership).
+  ///
+  /// Insert-once: the first claim wins and an identical re-claim is a no-op,
+  /// but a claim at a different address — by another aux block, or on a
+  /// name a non-aux block has already compiled — is a hard error instead of
+  /// a schedule-dependent overwrite (the `FieldBelowRace` shape, WB-C1).
+  ///
+  /// Returns whether the caller owns `name`'s `Named` entry: its claim
+  /// entered `aux_name_to_addr`, now or earlier in the same block
+  /// (`block_txn`). An identical re-claim of a name another block claimed
+  /// owns nothing (`claim_and_register_aux`).
+  pub fn claim_aux_name(
+    &self,
+    name: &Name,
+    addr: &Address,
+  ) -> Result<bool, CompileError> {
+    if let Some(existing) = self.name_to_addr.get(name)
+      && *existing.value() != *addr
+    {
+      return Err(name_claim_conflict(name, existing.value(), addr));
+    }
+    let owns = match self.aux_name_to_addr.entry(name.clone()) {
+      dashmap::mapref::entry::Entry::Occupied(e) => {
+        if e.get() != addr {
+          return Err(name_claim_conflict(name, e.get(), addr));
+        }
+        block_txn::holds_aux_claim(name)
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(addr.clone());
+        block_txn::log_aux(name);
+        true
+      },
+    };
+    self.aux_gen_extra_names.insert(name.clone());
+    Ok(owns)
+  }
+
+  /// Claim `name` for the block that compiles it (aux mode) at `addr`.
+  /// A name aux_gen has claimed at another address is a hard error: two
+  /// producers would otherwise race for it.
+  ///
+  /// Returns whether the caller owns `name`'s `Named` entry: its claim
+  /// entered `name_to_addr`, now or earlier in the same block
+  /// (`block_txn`). An identical re-claim of a name another block compiled
+  /// owns nothing (`claim_and_register_compiled`).
+  pub fn claim_compiled_name(
+    &self,
+    name: &Name,
+    addr: &Address,
+  ) -> Result<bool, CompileError> {
+    if let Some(existing) = self.aux_name_to_addr.get(name)
+      && *existing.value() != *addr
+    {
+      return Err(name_claim_conflict(name, existing.value(), addr));
+    }
+    // A second compiled claim at another address is the same conflict (a
+    // name assigned twice is an error unless both assignments are equal).
+    // It was an overwrite, so the address a name kept depended on which
+    // block claimed last; an identical re-claim stays a no-op, so valid
+    // input registers the same values.
+    let owns = match self.name_to_addr.entry(name.clone()) {
+      dashmap::mapref::entry::Entry::Occupied(e) => {
+        if e.get() != addr {
+          return Err(name_claim_conflict(name, e.get(), addr));
+        }
+        block_txn::holds_compiled_claim(name)
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(addr.clone());
+        block_txn::log_compiled(name);
+        true
+      },
+    };
+    Ok(owns)
+  }
+
+  /// Register `name`'s `Named` entry, logging it for the failed-block
+  /// rollback when the entry is new (`block_txn`).
+  ///
+  /// A claimed name is registered through `claim_and_register_compiled` or
+  /// `claim_and_register_aux`, so that only its owner writes the entry. The
+  /// unclaimed synthetic `Muts` entries are registered here directly; the
+  /// aux-layout patch re-registers the block's own entry.
+  pub fn register_named(&self, name: Name, named: Named) {
+    if !self.env.named.contains_key(&name) {
+      block_txn::log_named(&name);
+    }
+    self.env.register_name(name, named);
+  }
+
+  /// Claim `name` at `named.addr` for the block that compiles it
+  /// (`claim_compiled_name`) and register `named` if the claim owns the
+  /// name.
+  ///
+  /// An identical re-claim of a name another block owns registers nothing
+  /// (CQ2.24 b, R03-16's residual): the owner's entry, with the original
+  /// and hints its promotion set, is kept, which entry a name keeps no
+  /// longer depends on which block registered last, and a later failure of
+  /// the re-claiming block has nothing of the owner's to roll back. The
+  /// claim precedes the registration, so a refused claim writes nothing
+  /// either. Mirrors the Lean drivers' `mergeCompiledBlock`.
+  pub fn claim_and_register_compiled(
+    &self,
+    name: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if self.claim_compiled_name(name, &named.addr)? {
+      self.register_named(name.clone(), named);
+    } else {
+      self.log_kept_owner_entry(name, &named);
+    }
+    Ok(())
+  }
+
+  /// Claim `name` at `named.addr` for an aux_gen product
+  /// (`claim_aux_name`) and register `named` if the claim owns the name;
+  /// see `claim_and_register_compiled`.
+  pub fn claim_and_register_aux(
+    &self,
+    name: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if self.claim_aux_name(name, &named.addr)? {
+      self.register_named(name.clone(), named);
+    } else {
+      self.log_kept_owner_entry(name, &named);
+    }
+    Ok(())
+  }
+
+  /// `IX_LOG_AUX_NAMES`: an identical re-claim that kept another block's
+  /// entry, and whether the two entries' metadata agree.
+  fn log_kept_owner_entry(&self, name: &Name, named: &Named) {
+    if *IX_LOG_AUX_NAMES {
+      let same_meta =
+        self.env.lookup_name(name).map(|owner| owner.meta() == named.meta());
+      eprintln!(
+        "[aux-names] identical re-claim of {} at {:.12} keeps the owner's \
+         Named (same metadata: {same_meta:?})",
+        name.pretty(),
+        named.addr.hex(),
+      );
+    }
+  }
+
   /// Look up a compiled constant's address by name.
   /// Checks `name_to_addr` first, then `aux_name_to_addr` when `aux` is true.
   pub fn resolve_addr_aux(&self, name: &Name, aux: bool) -> Option<Address> {
@@ -330,6 +500,30 @@ impl CompileState {
   /// Look up a compiled constant's address (with `aux_name_to_addr` fallback).
   pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
     self.resolve_addr_aux(name, true)
+  }
+
+  /// Record `name`'s reducibility hint (`None` removes it). Scheduled
+  /// blocks publish hints only after all compilation and promotion checks
+  /// succeed (`block_txn::commit`); direct callers write immediately.
+  pub fn record_hint(&self, name: &Name, hint: Option<ReducibilityHints>) {
+    if block_txn::defer_hint(name, hint) {
+      return;
+    }
+    match hint {
+      Some(h) => {
+        self.def_hints.insert(name.clone(), h);
+      },
+      None => {
+        self.def_hints.remove(name);
+      },
+    }
+  }
+
+  /// The hint `name` carries for this thread: the active block's own last
+  /// write, else the published one.
+  pub fn recorded_hint(&self, name: &Name) -> Option<ReducibilityHints> {
+    block_txn::hint(name)
+      .unwrap_or_else(|| self.def_hints.get(name).map(|r| *r))
   }
 
   /// Resolve the per-name hints recorded by `compile_definition` into
@@ -358,6 +552,10 @@ impl CompileState {
   /// `Named.original` to the given `(orig_addr, orig_meta)` from the
   /// ephemeral no-aux compilation. The existing aux_gen `Named` entry keeps
   /// its canonical `addr`/`meta`; `original` captures the Lean-native form.
+  /// The promotion claims `name` at its aux address: a name already compiled
+  /// at another address is a conflict, not an overwrite. During a scheduled
+  /// block the claim and the metadata are deferred until the whole block has
+  /// succeeded (`block_txn::commit`).
   ///
   /// Errors with `CompileError::InvalidMutualBlock` if the metadata's
   /// self-name address does not match `name`'s compiled address — that
@@ -384,7 +582,7 @@ impl CompileState {
       _ => None,
     };
     if let Some(meta_addr) = meta_name_addr {
-      let expected_addr = compile_name(name, self);
+      let expected_addr = compile_name(name, self)?;
       if *meta_addr != expected_addr {
         return Err(CompileError::InvalidMutualBlock {
           reason: format!(
@@ -398,8 +596,16 @@ impl CompileState {
       }
     }
 
-    if let Some(aux_addr) = self.aux_name_to_addr.get(name) {
-      self.name_to_addr.insert(name.clone(), aux_addr.clone());
+    // During a scheduled block the claim and the original metadata wait until
+    // the whole block has succeeded (`block_txn::commit`).
+    let Some((orig_addr, orig_meta)) =
+      block_txn::defer_promotion(name, orig_addr, orig_meta)
+    else {
+      return Ok(());
+    };
+    let aux_addr = self.aux_name_to_addr.get(name).map(|r| r.value().clone());
+    if let Some(aux_addr) = aux_addr {
+      self.claim_compiled_name(name, &aux_addr)?;
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
       entry.value_mut().set_original(orig_addr, orig_meta);
@@ -412,6 +618,23 @@ impl CompileState {
 // Helper functions
 // ===========================================================================
 
+/// Two producers claim one name at different addresses.
+pub fn name_claim_conflict(
+  name: &Name,
+  existing: &Address,
+  claimed: &Address,
+) -> CompileError {
+  CompileError::InvalidMutualBlock {
+    reason: format!(
+      "conflicting claims for name '{}': already registered at {:.12}, \
+       claimed again at {:.12}",
+      name.pretty(),
+      existing.hex(),
+      claimed.hex(),
+    ),
+  }
+}
+
 /// Convert a Nat to u64, returning an error if the value is too large.
 fn nat_to_u64(n: &Nat, context: &'static str) -> Result<u64, CompileError> {
   n.to_u64().ok_or(CompileError::UnsupportedExpr { desc: context.into() })
@@ -421,44 +644,51 @@ fn nat_to_u64(n: &Nat, context: &'static str) -> Result<u64, CompileError> {
 // Name compilation
 // ===========================================================================
 
-/// Store a string as a blob and return its address.
-pub fn store_string(s: &str, stt: &CompileState) -> Address {
-  stt.env.store_blob(s.as_bytes().to_vec())
+/// Store a string as a blob and return its address (compare-and-insert:
+/// `CompileState::store_blob`).
+pub fn store_string(
+  s: &str,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
+  stt.store_blob(s.as_bytes().to_vec())
 }
 
-/// Store a Nat as a blob and return its address.
-pub fn store_nat(n: &Nat, stt: &CompileState) -> Address {
-  stt.env.store_blob(n.to_le_bytes())
+/// Store a Nat as a blob and return its address (compare-and-insert).
+pub fn store_nat(n: &Nat, stt: &CompileState) -> Result<Address, CompileError> {
+  stt.store_blob(n.to_le_bytes())
 }
 
 /// Compile a Lean Name to an address (stored in env.names).
 /// Uses the Name's internal hash as the address.
 /// String components are stored in blobs.
-pub fn compile_name(name: &Name, stt: &CompileState) -> Address {
+pub fn compile_name(
+  name: &Name,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
   // Use the Name's internal hash as the address
   let addr = Address::from_blake3_hash(*name.get_hash());
 
   // Check if already stored
   if stt.env.names.contains_key(&addr) {
-    return addr;
+    return Ok(addr);
   }
 
   // Recurse on parent first (ensures parent is stored)
   match name.as_data() {
     NameData::Anonymous(_) => {},
     NameData::Str(parent, s, _) => {
-      compile_name(parent, stt);
-      store_string(s, stt); // string data in blobs
+      compile_name(parent, stt)?;
+      store_string(s, stt)?; // string data in blobs
     },
     NameData::Num(parent, _, _) => {
-      compile_name(parent, stt);
+      compile_name(parent, stt)?;
       // Nat is inline in Name, no blob needed
     },
   }
 
   // Store Name struct directly in env.names
   stt.env.names.insert(addr.clone(), name.clone());
-  addr
+  Ok(addr)
 }
 
 // ===========================================================================
@@ -471,31 +701,39 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  let ctx_key = univ_params_key(univ_params);
-  if let Some(cached) = cache.univ_cache.get(&(level.clone(), ctx_key.clone()))
-  {
+  compile_univ_in(level, &UnivContext::new(univ_params), cache)
+}
+
+/// `compile_univ` under a parameter context built once for the whole level.
+fn compile_univ_in(
+  level: &Level,
+  ctx: &UnivContext,
+  cache: &mut BlockCache,
+) -> Result<Arc<Univ>, CompileError> {
+  let key = UnivKey::new(level, ctx);
+  if let Some(cached) = cache.univ_cache.get(&key) {
     return Ok(cached.clone());
   }
 
   let univ = match level.as_data() {
     LevelData::Zero(_) => Univ::zero(),
     LevelData::Succ(inner, _) => {
-      let inner_univ = compile_univ(inner, univ_params, cache)?;
+      let inner_univ = compile_univ_in(inner, ctx, cache)?;
       Univ::succ(inner_univ)
     },
     LevelData::Max(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_in(a, ctx, cache)?;
+      let b_univ = compile_univ_in(b, ctx, cache)?;
       Univ::max(a_univ, b_univ)
     },
     LevelData::Imax(a, b, _) => {
-      let a_univ = compile_univ(a, univ_params, cache)?;
-      let b_univ = compile_univ(b, univ_params, cache)?;
+      let a_univ = compile_univ_in(a, ctx, cache)?;
+      let b_univ = compile_univ_in(b, ctx, cache)?;
       Univ::imax(a_univ, b_univ)
     },
     LevelData::Param(name, _) => {
       let idx =
-        univ_params.iter().position(|n| n == name).ok_or_else(|| {
+        ctx.params().iter().position(|n| n == name).ok_or_else(|| {
           CompileError::UnknownUnivParam {
             curr: String::new(),
             param: name.pretty(),
@@ -510,7 +748,7 @@ pub fn compile_univ(
     },
   };
 
-  cache.univ_cache.insert((level.clone(), ctx_key), univ.clone());
+  cache.univ_cache.insert(key, univ.clone());
   Ok(univ)
 }
 
@@ -537,14 +775,20 @@ fn compile_univ_idx(
 ) -> Result<(u64, Option<u64>), CompileError> {
   let univ = compile_univ(level, univ_params, cache)?;
   let canon = canon_univ_cached(&univ, cache);
-  let (idx, fresh) = cache.univs.insert_full(canon.clone());
-  debug_assert!(
-    !(fresh && cache.univs_final),
-    "compile_univ_idx: preseed missed canonical form {canon:?} while \
-     compiling {:?} — primary univ table grew after preseeding, which \
-     shifts univ_patches virtual indices (canonicity §10.6 V3)",
-    cache.compiling
-  );
+  // V3 tripwire (canonicity §10.6): the primary table must not grow after
+  // preseeding; a miss here would shift every virtual patch index minted so
+  // far. Lean's `compileAndInternUnivCanon` refuses the same way, in every
+  // build profile.
+  if cache.univs_final && !cache.univs.contains(&canon) {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "preseed missed canonical form {canon:?} — primary univ table grew \
+         after preseeding, shifting univPatches virtual indices (canonicity \
+         10.6 V3)"
+      ),
+    });
+  }
+  let (idx, _) = cache.univs.insert_full(canon.clone());
   if canon == univ {
     return Ok((idx as u64, None));
   }
@@ -585,14 +829,19 @@ fn collect_expr_tables(
   stt: &CompileState,
   refs: &mut Vec<Address>,
   univs: &mut Vec<Arc<Univ>>,
-  seen_exprs: &mut FxHashMap<(Address, Address), ()>,
+  seen_exprs: &mut FxHashSet<PreseedKey>,
   caller: &str,
 ) -> Result<(), CompileError> {
   let ctx_key = univ_params_key(univ_params);
+  let params: Arc<[Name]> = Arc::from(univ_params);
   let mut stack = vec![expr];
   while let Some(e) = stack.pop() {
-    let key = Address::from_blake3_hash(*e.get_hash());
-    if seen_exprs.insert((key, ctx_key.clone()), ()).is_some() {
+    let key = PreseedKey {
+      expr: e.clone(),
+      params: params.clone(),
+      context_hash: ctx_key.clone(),
+    };
+    if !seen_exprs.insert(key) {
       continue;
     }
 
@@ -630,10 +879,10 @@ fn collect_expr_tables(
         stack.push(ty);
       },
       ExprData::Lit(Literal::NatVal(n), _) => {
-        refs.push(store_nat(n, stt));
+        refs.push(store_nat(n, stt)?);
       },
       ExprData::Lit(Literal::StrVal(s), _) => {
-        refs.push(store_string(s, stt));
+        refs.push(store_string(s, stt)?);
       },
       ExprData::Proj(type_name, _, struct_val, _) => {
         let type_addr = stt.resolve_addr(type_name).ok_or_else(|| {
@@ -672,7 +921,7 @@ pub fn preseed_expr_tables(
 ) -> Result<(), CompileError> {
   let mut refs = Vec::new();
   let mut univs = Vec::new();
-  let mut seen_exprs = FxHashMap::default();
+  let mut seen_exprs = FxHashSet::default();
 
   for (expr, univ_params) in exprs {
     collect_expr_tables(
@@ -764,6 +1013,40 @@ fn eta_adapter_needed(
     .is_some_and(|arity| !arity.head_rewrite && n_args < arity.floor)
 }
 
+/// The constant being compiled, for error messages.
+fn compiling_label(cache: &BlockCache) -> String {
+  cache.compiling.as_ref().map_or_else(|| "<none>".to_string(), |c| c.pretty())
+}
+
+/// Refuse the Tier-B eta adapter for a head whose plan drops arguments of
+/// collapsed members. The wrapper binds the missing source arguments as
+/// variables, so a dropped motive or minor is a bound variable that no kept
+/// argument equals: the drop cannot be justified (and both kernels reject
+/// such users anyway).
+fn refuse_collapsed_eta(
+  name: &Name,
+  n_args: usize,
+  cache: &BlockCache,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  if cache.provenance_only {
+    return Ok(());
+  }
+  if plan_head_arity(stt, name).is_some_and(|arity| arity.drops_collapsed) {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "{}: compiling '{}', call-site head '{}' applied to {} argument(s) \
+         would be eta-wrapped, dropping bound arguments of collapsed members",
+        surgery::COLLAPSE_ETA_ERROR,
+        compiling_label(cache),
+        name.pretty(),
+        n_args,
+      ),
+    });
+  }
+  Ok(())
+}
+
 /// Build the source-interface eta wrapper for a short plan-bearing
 /// application. Binder types/names/info come from the source declaration's
 /// stored Pi telescope after universe and applied-prefix instantiation.
@@ -848,7 +1131,7 @@ fn compile_const_expr_raw(
     } else {
       None
     };
-  let name_addr = compile_name(name, stt);
+  let name_addr = compile_name(name, stt)?;
   let expr = if let Some(idx) = mut_ctx.get(name) {
     let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
     Expr::rec(idx_u64, univ_indices)
@@ -909,6 +1192,11 @@ pub fn compile_expr(
       /// expression of a head-rewritten call site. It gets a
       /// `CallSite.orig_head` pointer instead of a source-order entry.
       orig_head_collapsed: bool,
+      /// Collapse drops to justify once the arguments are compiled: each
+      /// dropped argument's compiled form must equal its kept partner's.
+      collapse_checks: Vec<surgery::CollapseCheck>,
+      /// The call-site head, for the refusal message.
+      head_name: Name,
     },
     /// Replace the ordinary synthesized Binder/CallSite root with the
     /// decompile-facing eta marker after the wrapper has compiled.
@@ -918,8 +1206,8 @@ pub fn compile_expr(
     },
   }
 
-  // Top-level cache check (O(1) with arena)
-  let expr_key = Address::from_blake3_hash(*expr.get_hash());
+  // Exact source keys keep distinct terms with colliding digests separate.
+  let expr_key = ExprKey(expr.clone());
   let root_is_eta = matches!(expr.as_data(), ExprData::Const(name, _, _)
     if eta_adapter_needed(name, 0, cache, stt));
   if !root_is_eta && let Some(cached) = cache.exprs.get(&expr_key).cloned() {
@@ -950,11 +1238,11 @@ pub fn compile_expr(
         cache.arena_roots.push(root);
       },
       Frame::Compile(e) => {
-        let e_key = Address::from_blake3_hash(*e.get_hash());
+        let e_key = ExprKey(e.clone());
         let is_eta = matches!(e.as_data(), ExprData::Const(name, _, _)
           if eta_adapter_needed(name, 0, cache, stt));
         if !is_eta && let Some(cached) = cache.exprs.get(&e_key).cloned() {
-          // O(1) cache hit: arena root already valid
+          // Confirmed cache hit: arena root already valid.
           results.push(cached.expr);
           cache.arena_roots.push(cached.arena_root);
           continue;
@@ -987,6 +1275,7 @@ pub fn compile_expr(
 
           ExprData::Const(name, levels, _) => {
             if is_eta {
+              refuse_collapsed_eta(name, 0, cache, stt)?;
               let (wrapper, n_synth) =
                 synthesize_eta_call_site(name, levels, &[], stt)?;
               stack.push(Frame::BuildEtaCallSite { n_synth, n_applied: 0 });
@@ -1143,7 +1432,7 @@ pub fn compile_expr(
                           ),
                         }
                       })?;
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1191,10 +1480,16 @@ pub fn compile_expr(
                         meta: 0,
                       });
                     }
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut minor_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(minors.len());
                     let n_specs = specs.len();
                     canonical_args.extend(specs);
                     for (src_i, motive) in motives.iter().enumerate() {
                       if plan.motive_keep[src_i] {
+                        motive_slots
+                          .push(surgery::ArgSlot::Canon(canonical_args.len()));
                         canonical_args.push(motive.clone());
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: n_specs as u64,
@@ -1203,6 +1498,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1230,11 +1527,14 @@ pub fn compile_expr(
                         if adapted_minor.is_some() {
                           let sharing_idx = collapsed_args.len();
                           collapsed_args.push(minor.clone());
+                          minor_slots
+                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
                           });
                         } else {
+                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
@@ -1243,6 +1543,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(minor.clone());
+                        minor_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1271,12 +1573,34 @@ pub fn compile_expr(
                     // the target's level list.
                     let head_for_canon =
                       LeanExpr::cnst(name.clone(), target_levels);
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "minor",
+                      &plan.minor_keep,
+                      &plan.source_to_canon_minor,
+                      &plan.minor_in_block,
+                      &minor_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: true,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1291,7 +1615,7 @@ pub fn compile_expr(
                   if args.len() >= minimal_full_prefix {
                     // Surgery path: separate args into kept/collapsed,
                     // reorder kept to canonical, compile everything.
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1321,6 +1645,10 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut minor_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(minors.len());
 
                     // Params: always kept, identity mapping
                     for (i, p) in params.iter().enumerate() {
@@ -1338,6 +1666,7 @@ pub fn compile_expr(
                         let canon_pos =
                           canon_base + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1345,6 +1674,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1372,11 +1703,14 @@ pub fn compile_expr(
                         if adapted_minor.is_some() {
                           let sharing_idx = collapsed_args.len();
                           collapsed_args.push(minor.clone());
+                          minor_slots
+                            .push(surgery::ArgSlot::Collapsed(sharing_idx));
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
                           });
                         } else {
+                          minor_slots.push(surgery::ArgSlot::Canon(canon_pos));
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
@@ -1385,6 +1719,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(minor.clone());
+                        minor_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1414,12 +1750,34 @@ pub fn compile_expr(
                     let n_collapsed = collapsed_args.len();
 
                     // Push frames in reverse order (LIFO)
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "minor",
+                      &plan.minor_keep,
+                      &plan.source_to_canon_minor,
+                      &plan.minor_in_block,
+                      &minor_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1448,7 +1806,7 @@ pub fn compile_expr(
                   // major+minors alike.
                   let minimal_full_prefix = plan.below_minimal_full_prefix();
                   if args.len() >= minimal_full_prefix {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
                     let params = &args_owned[..plan.n_params];
@@ -1464,6 +1822,8 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
 
                     for (i, p) in params.iter().enumerate() {
                       canonical_args.push((i, p.clone()));
@@ -1479,6 +1839,7 @@ pub fn compile_expr(
                         let canon_pos = motive_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1486,6 +1847,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1510,12 +1873,23 @@ pub fn compile_expr(
 
                     let n_canonical = sorted_canon.len();
                     let n_collapsed = collapsed_args.len();
+                    let collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling_label(cache),
+                      &name.pretty(),
+                    )?;
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1533,7 +1907,7 @@ pub fn compile_expr(
                   let fixed_tail_len = plan.n_indices + 1; // indices + major
                   let expected_total = plan.brecon_minimal_full_prefix();
                   if args.len() >= expected_total {
-                    let name_addr = compile_name(name, stt);
+                    let name_addr = compile_name(name, stt)?;
 
                     let args_owned: Vec<LeanExpr> =
                       args.iter().map(|arg| (*arg).clone()).collect();
@@ -1560,6 +1934,10 @@ pub fn compile_expr(
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    let mut motive_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(motives.len());
+                    let mut handler_slots: Vec<surgery::ArgSlot> =
+                      Vec::with_capacity(handlers.len());
 
                     for (i, p) in params.iter().enumerate() {
                       canonical_args.push((i, p.clone()));
@@ -1575,6 +1953,7 @@ pub fn compile_expr(
                         let canon_pos = motive_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, motive.clone()));
+                        motive_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1582,6 +1961,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(motive.clone());
+                        motive_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1606,6 +1987,7 @@ pub fn compile_expr(
                         let canon_pos = handler_canon_base
                           + plan.source_to_canon_motive[src_i];
                         canonical_args.push((canon_pos, handler.clone()));
+                        handler_slots.push(surgery::ArgSlot::Canon(canon_pos));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: canon_pos as u64,
                           meta: 0,
@@ -1613,6 +1995,8 @@ pub fn compile_expr(
                       } else {
                         let sharing_idx = collapsed_args.len();
                         collapsed_args.push(handler.clone());
+                        handler_slots
+                          .push(surgery::ArgSlot::Collapsed(sharing_idx));
                         entries.push(CallSiteEntry::Collapsed {
                           sharing_idx: sharing_idx as u64,
                           meta: 0,
@@ -1639,12 +2023,34 @@ pub fn compile_expr(
 
                     let n_canonical = sorted_canon.len();
                     let n_collapsed = collapsed_args.len();
+                    let compiling = compiling_label(cache);
+                    let head = name.pretty();
+                    let mut collapse_checks = surgery::collapse_checks(
+                      "motive",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &motive_slots,
+                      &compiling,
+                      &head,
+                    )?;
+                    collapse_checks.extend(surgery::collapse_checks(
+                      "handler",
+                      &plan.motive_keep,
+                      &plan.source_to_canon_motive,
+                      &plan.source_in_block,
+                      &handler_slots,
+                      &compiling,
+                      &head,
+                    )?);
                     stack.push(Frame::BuildCallSite {
                       name_addr,
                       entries,
                       n_canonical,
                       n_collapsed,
                       orig_head_collapsed: false,
+                      collapse_checks,
+                      head_name: name.clone(),
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1657,6 +2063,7 @@ pub fn compile_expr(
                   }
                 }
                 if eta_adapter_needed(name, args.len(), cache, stt) {
+                  refuse_collapsed_eta(name, args.len(), cache, stt)?;
                   let (wrapper, n_synth) =
                     synthesize_eta_call_site(name, levels, &args, stt)?;
                   stack.push(Frame::BuildEtaCallSite {
@@ -1681,21 +2088,21 @@ pub fn compile_expr(
           },
 
           ExprData::Lam(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildLam(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildAll(name_addr, info.clone()));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
-            let name_addr = compile_name(name, stt);
+            let name_addr = compile_name(name, stt)?;
             stack.push(Frame::BuildLet(name_addr, *non_dep));
             stack.push(Frame::Compile(body.clone()));
             stack.push(Frame::Compile(val.clone()));
@@ -1703,14 +2110,14 @@ pub fn compile_expr(
           },
 
           ExprData::Lit(Literal::NatVal(n), _) => {
-            let addr = store_nat(n, stt);
+            let addr = store_nat(n, stt)?;
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::nat(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Lit(Literal::StrVal(s), _) => {
-            let addr = store_string(s, stt);
+            let addr = store_string(s, stt)?;
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::str(ref_idx as u64));
             cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
@@ -1731,7 +2138,7 @@ pub fn compile_expr(
             })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
-            let name_addr = compile_name(type_name, stt);
+            let name_addr = compile_name(type_name, stt)?;
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
             stack.push(Frame::Compile(struct_val.clone()));
@@ -1747,8 +2154,8 @@ pub fn compile_expr(
             // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
-              let k_addr = compile_name(k, stt);
-              let v_data = compile_data_value(v, stt);
+              let k_addr = compile_name(k, stt)?;
+              let v_data = compile_data_value(v, stt)?;
               pairs.push((k_addr, v_data));
             }
             // Mdata becomes a separate arena node wrapping inner
@@ -1856,7 +2263,7 @@ pub fn compile_expr(
       },
 
       Frame::Cache(e) => {
-        let e_key = Address::from_blake3_hash(*e.get_hash());
+        let e_key = ExprKey(e);
         if let Some(result) = results.last() {
           let arena_root =
             *cache.arena_roots.last().expect("Cache missing arena root");
@@ -1946,6 +2353,8 @@ pub fn compile_expr(
         n_canonical,
         n_collapsed,
         orig_head_collapsed,
+        collapse_checks,
+        head_name,
       } => {
         // Pop collapsed arg results and their arena roots
         let mut collapsed_exprs = Vec::with_capacity(n_collapsed);
@@ -1981,6 +2390,50 @@ pub fn compile_expr(
         }
         canonical_exprs.reverse();
         canonical_roots.reverse();
+
+        // A collapse drop is sound only when the dropped argument compiles
+        // to the same Ixon as the kept argument at its canonical slot (the
+        // two members share one projection address, so motives written
+        // over `A` and `B` agree here). Otherwise the rebuilt spine would
+        // run the kept member's code at the dropped member's nodes.
+        let checks: &[surgery::CollapseCheck] =
+          if cache.provenance_only { &[] } else { &collapse_checks };
+        for check in checks {
+          let slot_expr = |slot: surgery::ArgSlot| match slot {
+            surgery::ArgSlot::Canon(i) => canonical_exprs.get(i),
+            surgery::ArgSlot::Collapsed(i) => collapsed_exprs.get(i),
+          };
+          let (Some(dropped), Some(kept)) =
+            (slot_expr(check.dropped), slot_expr(check.kept))
+          else {
+            return Err(CompileError::InvalidMutualBlock {
+              reason: format!(
+                "{}: compiling '{}', call-site head '{}': {} #{} has no \
+                 compiled argument",
+                surgery::COLLAPSE_DROP_ERROR,
+                compiling_label(cache),
+                head_name.pretty(),
+                check.what,
+                check.src,
+              ),
+            });
+          };
+          if dropped != kept {
+            return Err(CompileError::InvalidMutualBlock {
+              reason: format!(
+                "{}: compiling '{}', call-site head '{}': dropped {} #{} \
+                 differs from the kept {} #{}",
+                surgery::COLLAPSE_DROP_ERROR,
+                compiling_label(cache),
+                head_name.pretty(),
+                check.what,
+                check.src,
+                check.what,
+                check.kept_src,
+              ),
+            });
+          }
+        }
         let canon_meta = canonical_roots.clone();
 
         // Pop head result and root
@@ -2086,6 +2539,9 @@ struct PlanHeadArity {
   expected: usize,
   /// Evaporated-aux head rewrites do not yet have a Tier-B adapter.
   head_rewrite: bool,
+  /// The plan drops arguments of collapsed members: a Tier-B eta wrapper
+  /// would drop bound variables, which no kept argument equals.
+  drops_collapsed: bool,
 }
 
 fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
@@ -2101,6 +2557,7 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
       floor: plan.minimal_full_prefix(),
       expected,
       head_rewrite: plan.head_rewrite.is_some(),
+      drops_collapsed: plan.drops_collapsed(),
     });
   }
   if let Some(plan) = stt.below_call_site_plans.get(name)
@@ -2112,7 +2569,12 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
     } else {
       floor
     };
-    return Some(PlanHeadArity { floor, expected, head_rewrite: false });
+    return Some(PlanHeadArity {
+      floor,
+      expected,
+      head_rewrite: false,
+      drops_collapsed: plan.drops_collapsed(),
+    });
   }
   if let Some(plan) = stt.brec_on_call_site_plans.get(name)
     && !plan.is_identity()
@@ -2122,6 +2584,7 @@ fn plan_head_arity(stt: &CompileState, name: &Name) -> Option<PlanHeadArity> {
       floor: expected,
       expected,
       head_rewrite: false,
+      drops_collapsed: plan.drops_collapsed(),
     });
   }
   None
@@ -2274,12 +2737,15 @@ fn audit_constant_info_plan_heads(
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
-fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
-  match dv {
-    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s, stt)),
+fn compile_data_value(
+  dv: &LeanDataValue,
+  stt: &CompileState,
+) -> Result<DataValue, CompileError> {
+  Ok(match dv {
+    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s, stt)?),
     LeanDataValue::OfBool(b) => DataValue::OfBool(*b),
-    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n, stt)),
-    LeanDataValue::OfNat(n) => DataValue::OfNat(store_nat(n, stt)),
+    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n, stt)?),
+    LeanDataValue::OfNat(n) => DataValue::OfNat(store_nat(n, stt)?),
     LeanDataValue::OfInt(i) => {
       // Serialize Int and store as blob
       let mut bytes = Vec::new();
@@ -2293,69 +2759,73 @@ fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
           bytes.extend_from_slice(&n.to_le_bytes());
         },
       }
-      DataValue::OfInt(stt.env.store_blob(bytes))
+      DataValue::OfInt(stt.store_blob(bytes)?)
     },
     LeanDataValue::OfSyntax(syn) => {
       // Serialize syntax and store as blob
-      let bytes = serialize_syntax(syn, stt);
-      DataValue::OfSyntax(stt.env.store_blob(bytes))
+      let bytes = serialize_syntax(syn, stt)?;
+      DataValue::OfSyntax(stt.store_blob(bytes)?)
     },
-  }
+  })
 }
 
 /// Serialize a Lean Syntax to bytes.
-fn serialize_syntax(syn: &LeanSyntax, stt: &CompileState) -> Vec<u8> {
+fn serialize_syntax(
+  syn: &LeanSyntax,
+  stt: &CompileState,
+) -> Result<Vec<u8>, CompileError> {
   let mut bytes = Vec::new();
-  serialize_syntax_inner(syn, stt, &mut bytes);
-  bytes
+  serialize_syntax_inner(syn, stt, &mut bytes)?;
+  Ok(bytes)
 }
 
 fn serialize_syntax_inner(
   syn: &LeanSyntax,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match syn {
     LeanSyntax::Missing => bytes.push(0),
     LeanSyntax::Node(info, kind, args) => {
       bytes.push(1);
-      serialize_source_info(info, stt, bytes);
-      bytes.extend_from_slice(compile_name(kind, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      bytes.extend_from_slice(compile_name(kind, stt)?.as_bytes());
       TagN::put(0, 0, args.len() as u64, bytes);
       for arg in args {
-        serialize_syntax_inner(arg, stt, bytes);
+        serialize_syntax_inner(arg, stt, bytes)?;
       }
     },
     LeanSyntax::Atom(info, val) => {
       bytes.push(2);
-      serialize_source_info(info, stt, bytes);
-      bytes.extend_from_slice(store_string(val, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      bytes.extend_from_slice(store_string(val, stt)?.as_bytes());
     },
     LeanSyntax::Ident(info, raw_val, val, preresolved) => {
       bytes.push(3);
-      serialize_source_info(info, stt, bytes);
-      serialize_substring(raw_val, stt, bytes);
-      bytes.extend_from_slice(compile_name(val, stt).as_bytes());
+      serialize_source_info(info, stt, bytes)?;
+      serialize_substring(raw_val, stt, bytes)?;
+      bytes.extend_from_slice(compile_name(val, stt)?.as_bytes());
       TagN::put(0, 0, preresolved.len() as u64, bytes);
       for pr in preresolved {
-        serialize_preresolved(pr, stt, bytes);
+        serialize_preresolved(pr, stt, bytes)?;
       }
     },
   }
+  Ok(())
 }
 
 fn serialize_source_info(
   info: &LeanSourceInfo,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match info {
     LeanSourceInfo::Original(leading, leading_pos, trailing, trailing_pos) => {
       bytes.push(0);
-      serialize_substring(leading, stt, bytes);
+      serialize_substring(leading, stt, bytes)?;
       // u64::MAX sentinel for positions that overflow u64 (should never happen in practice)
       TagN::put(0, 0, leading_pos.to_u64().unwrap_or(u64::MAX), bytes);
-      serialize_substring(trailing, stt, bytes);
+      serialize_substring(trailing, stt, bytes)?;
       TagN::put(0, 0, trailing_pos.to_u64().unwrap_or(u64::MAX), bytes);
     },
     LeanSourceInfo::Synthetic(start, end, canonical) => {
@@ -2366,37 +2836,40 @@ fn serialize_source_info(
     },
     LeanSourceInfo::None => bytes.push(2),
   }
+  Ok(())
 }
 
 fn serialize_substring(
   ss: &LeanSubstring,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
-  bytes.extend_from_slice(store_string(&ss.str, stt).as_bytes());
+) -> Result<(), CompileError> {
+  bytes.extend_from_slice(store_string(&ss.str, stt)?.as_bytes());
   TagN::put(0, 0, ss.start_pos.to_u64().unwrap_or(u64::MAX), bytes);
   TagN::put(0, 0, ss.stop_pos.to_u64().unwrap_or(u64::MAX), bytes);
+  Ok(())
 }
 
 fn serialize_preresolved(
   pr: &SyntaxPreresolved,
   stt: &CompileState,
   bytes: &mut Vec<u8>,
-) {
+) -> Result<(), CompileError> {
   match pr {
     SyntaxPreresolved::Namespace(n) => {
       bytes.push(0);
-      bytes.extend_from_slice(compile_name(n, stt).as_bytes());
+      bytes.extend_from_slice(compile_name(n, stt)?.as_bytes());
     },
     SyntaxPreresolved::Decl(n, fields) => {
       bytes.push(1);
-      bytes.extend_from_slice(compile_name(n, stt).as_bytes());
+      bytes.extend_from_slice(compile_name(n, stt)?.as_bytes());
       TagN::put(0, 0, fields.len() as u64, bytes);
       for f in fields {
-        bytes.extend_from_slice(store_string(f, stt).as_bytes());
+        bytes.extend_from_slice(store_string(f, stt)?.as_bytes());
       }
     },
   }
+  Ok(())
 }
 
 // ===========================================================================
@@ -2729,11 +3202,13 @@ pub fn compile_definition(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&def.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&def.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
   let all_addrs: Vec<Address> =
-    def.all.iter().map(|n| compile_name(n, stt)).collect();
+    def.all.iter().map(|n| compile_name(n, stt)).collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
@@ -2756,7 +3231,7 @@ pub fn compile_definition(
   meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
-  stt.def_hints.insert(def.name.clone(), def.hints);
+  stt.record_hint(&def.name, Some(def.hints));
 
   Ok((data, meta))
 }
@@ -2770,7 +3245,7 @@ fn compile_recursor_rule(
   stt: &CompileState,
 ) -> Result<(RecursorRule, Address), CompileError> {
   let rhs = compile_expr(&rule.rhs, univ_params, mut_ctx, cache, stt)?;
-  let ctor_addr = compile_name(&rule.ctor, stt);
+  let ctor_addr = compile_name(&rule.ctor, stt)?;
   let fields = nat_to_u64(&rule.n_fields, "n_fields too large")?;
 
   Ok((RecursorRule { fields, rhs }, ctor_addr))
@@ -2820,9 +3295,11 @@ pub fn compile_recursor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&rec.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&rec.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Recursor {
     k: rec.k,
@@ -2837,7 +3314,7 @@ pub fn compile_recursor(
   };
 
   let all_addrs: Vec<Address> =
-    rec.all.iter().map(|n| compile_name(n, stt)).collect();
+    rec.all.iter().map(|n| compile_name(n, stt)).collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
@@ -2887,10 +3364,12 @@ fn compile_constructor(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&ctor.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
-  let induct_addr = compile_name(&ctor.induct, stt);
+  let name_addr = compile_name(&ctor.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
+  let induct_addr = compile_name(&ctor.induct, stt)?;
 
   let data = Constructor {
     is_unsafe: ctor.is_unsafe,
@@ -2953,15 +3432,17 @@ pub fn compile_inductive(
   let mut ctor_name_addrs = Vec::new();
   for ctor in &ind.ctors {
     let (c, m) = compile_constructor(ctor, mut_ctx, cache, stt)?;
-    let ctor_name_addr = compile_name(&ctor.cnst.name, stt);
+    let ctor_name_addr = compile_name(&ctor.cnst.name, stt)?;
     ctor_name_addrs.push(ctor_name_addr);
     ctor_const_metas.push(m);
     ctors.push(c);
   }
 
-  let name_addr = compile_name(&ind.ind.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&ind.ind.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Inductive {
     is_unsafe: ind.ind.is_unsafe,
@@ -2975,8 +3456,12 @@ pub fn compile_inductive(
     ctors,
   };
 
-  let all_addrs: Vec<Address> =
-    ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
+  let all_addrs: Vec<Address> = ind
+    .ind
+    .all
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
   let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
@@ -3021,9 +3506,11 @@ fn compile_axiom(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&val.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
@@ -3067,9 +3554,11 @@ fn compile_quotient(
   cache.arena_roots.clear();
   cache.exprs.clear();
 
-  let name_addr = compile_name(&val.cnst.name, stt);
-  let lvl_addrs: Vec<Address> =
-    univ_params.iter().map(|n| compile_name(n, stt)).collect();
+  let name_addr = compile_name(&val.cnst.name, stt)?;
+  let lvl_addrs: Vec<Address> = univ_params
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
@@ -3096,6 +3585,8 @@ pub struct CompiledMutualBlock {
   pub constant: Constant,
   /// Content-addressed hash
   pub addr: Address,
+  /// The serialization `addr` hashes
+  pub bytes: Vec<u8>,
 }
 
 /// Compile a mutual block with block-level sharing under `limits`.
@@ -3114,7 +3605,7 @@ pub fn compile_mutual_block(
   constant.put(&mut bytes);
   let addr = Address::hash(&bytes);
 
-  Ok(CompiledMutualBlock { constant, addr })
+  Ok(CompiledMutualBlock { constant, addr, bytes })
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -3148,58 +3639,75 @@ pub fn mk_indc(
 // data) or "weak" (needed a name-based tiebreaker).
 // ===========================================================================
 
-/// Compare two universe levels structurally, using level parameter position
-/// (not name) for `Param` comparisons.
+/// Compare two universe levels after `canon_univ`, with level parameters by
+/// position (not name): both levels are compiled to `Univ` (parameter `i`
+/// of its context is `Var(i)`), put in canonical form, and compared
+/// structurally with the constructor order `Zero < Succ < Max < IMax < Var`.
+///
+/// Lean `Ix.Compile.Canon.compareLevel` (Pass 1's comparator):
+/// collapse is equality of compiled content, and the stored universes are
+/// canonical forms, so the order does not depend on how a level is spelled.
 pub fn compare_level(
   x: &Level,
   y: &Level,
   x_ctx: &[Name],
   y_ctx: &[Name],
 ) -> Result<SOrd, CompileError> {
-  match (x.as_data(), y.as_data()) {
-    (LevelData::Mvar(..), _) | (_, LevelData::Mvar(..)) => {
-      Err(CompileError::UnsupportedExpr {
+  let ux = canon_univ(&level_to_univ(x, x_ctx)?);
+  let uy = canon_univ(&level_to_univ(y, y_ctx)?);
+  Ok(SOrd { strong: true, ordering: compare_univ(&ux, &uy) })
+}
+
+/// A level as a `Univ` with parameters by position, without simplification
+/// (Lean `Ix.Compile.Canon.toUniv`).
+fn level_to_univ(l: &Level, ctx: &[Name]) -> Result<Arc<Univ>, CompileError> {
+  Ok(match l.as_data() {
+    LevelData::Zero(_) => Univ::zero(),
+    LevelData::Succ(a, _) => Univ::succ(level_to_univ(a, ctx)?),
+    LevelData::Max(a, b, _) => {
+      Univ::max(level_to_univ(a, ctx)?, level_to_univ(b, ctx)?)
+    },
+    LevelData::Imax(a, b, _) => {
+      Univ::imax(level_to_univ(a, ctx)?, level_to_univ(b, ctx)?)
+    },
+    LevelData::Param(n, _) => {
+      let i = ctx.iter().position(|m| m == n).ok_or_else(|| {
+        CompileError::UnknownUnivParam {
+          curr: String::new(),
+          param: n.pretty(),
+        }
+      })?;
+      Univ::var(i as u64)
+    },
+    LevelData::Mvar(..) => {
+      return Err(CompileError::UnsupportedExpr {
         desc: "level metavariable in comparison".into(),
-      })
+      });
     },
-    (LevelData::Zero(_), LevelData::Zero(_)) => Ok(SOrd::eq(true)),
-    (LevelData::Zero(_), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Zero(_)) => Ok(SOrd::gt(true)),
-    (LevelData::Succ(x, _), LevelData::Succ(y, _)) => {
-      compare_level(x, y, x_ctx, y_ctx)
+  })
+}
+
+/// Structural order on `Univ`: `Zero < Succ < Max < IMax < Var`, arguments
+/// left to right, variables by index (Lean `Ix.Compile.Canon.compareUniv`;
+/// the kernels' `compare_kuniv` and the certified `compareUniverse`).
+fn compare_univ(x: &Univ, y: &Univ) -> Ordering {
+  fn rank(u: &Univ) -> u8 {
+    match u {
+      Univ::Zero => 0,
+      Univ::Succ(_) => 1,
+      Univ::Max(..) => 2,
+      Univ::IMax(..) => 3,
+      Univ::Var(_) => 4,
+    }
+  }
+  match (x, y) {
+    (Univ::Succ(a), Univ::Succ(b)) => compare_univ(a, b),
+    (Univ::Max(a, b), Univ::Max(c, d))
+    | (Univ::IMax(a, b), Univ::IMax(c, d)) => {
+      compare_univ(a, c).then_with(|| compare_univ(b, d))
     },
-    (LevelData::Succ(_, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Succ(_, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Max(xl, xr, _), LevelData::Max(yl, yr, _)) => {
-      SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
-        compare_level(xr, yr, x_ctx, y_ctx)
-      })
-    },
-    (LevelData::Max(_, _, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Max(_, _, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Imax(xl, xr, _), LevelData::Imax(yl, yr, _)) => {
-      SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
-        compare_level(xr, yr, x_ctx, y_ctx)
-      })
-    },
-    (LevelData::Imax(_, _, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Imax(_, _, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Param(x, _), LevelData::Param(y, _)) => {
-      match (
-        x_ctx.iter().position(|n| x == n),
-        y_ctx.iter().position(|n| y == n),
-      ) {
-        (Some(xi), Some(yi)) => Ok(SOrd::cmp(&xi, &yi)),
-        (None, _) => Err(CompileError::UnknownUnivParam {
-          curr: String::new(),
-          param: x.pretty(),
-        }),
-        (_, None) => Err(CompileError::UnknownUnivParam {
-          curr: String::new(),
-          param: y.pretty(),
-        }),
-      }
-    },
+    (Univ::Var(i), Univ::Var(j)) => i.cmp(j),
+    _ => rank(x).cmp(&rank(y)),
   }
 }
 
@@ -3328,13 +3836,18 @@ pub fn compare_expr(
     ),
     (ExprData::ForallE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::ForallE(..)) => Ok(SOrd::gt(true)),
+    // A `let`'s nondependency bit is a key, compared after its type, value
+    // and body (`false < true`), as in every canonical-order comparator.
     (
-      ExprData::LetE(_, xt, xv, xb, _, _),
-      ExprData::LetE(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip(
-      |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
-      &[xt, xv, xb],
-      &[yt, yv, yb],
+      ExprData::LetE(_, xt, xv, xb, xnd, _),
+      ExprData::LetE(_, yt, yv, yb, ynd, _),
+    ) => SOrd::try_compare(
+      SOrd::try_zip(
+        |a, b| compare_expr(a, b, mut_ctx, x_lvls, y_lvls, stt),
+        &[xt, xv, xb],
+        &[yt, yv, yb],
+      )?,
+      || Ok(SOrd::cmp(xnd, ynd)),
     ),
     (ExprData::LetE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::LetE(..)) => Ok(SOrd::gt(true)),
@@ -3458,13 +3971,12 @@ pub fn compare_ctor(
   }
 }
 
-/// Compare two inductives by derived flags, params, indices, constructor count,
-/// type, then constructors.
+/// Compare two inductives by universe-parameter count, params, indices,
+/// constructor count, type, then constructors, matching Lean's `compareInd`.
 ///
-/// Includes `is_rec` and `is_unsafe` to prevent alpha-collapse from merging
-/// inductives whose derived properties differ — a mismatch in `is_rec` would
-/// cause the collapsed representative to silently omit `.brecOn` for aliases
-/// that need it (or generate it for aliases that shouldn't have it).
+/// Recursion and safety flags remain inputs to validation, serialization and
+/// auxiliary generation; they are not ordering keys. This comparator does not
+/// validate a raw mutual block's flags.
 pub fn compare_indc(
   x: &Ind,
   y: &Ind,
@@ -3472,50 +3984,40 @@ pub fn compare_indc(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  SOrd::try_compare(SOrd::cmp(&x.ind.is_rec, &y.ind.is_rec), || {
-    SOrd::try_compare(SOrd::cmp(&x.ind.is_unsafe, &y.ind.is_unsafe), || {
-      SOrd::try_compare(
-        SOrd::cmp(
-          &x.ind.cnst.level_params.len(),
-          &y.ind.cnst.level_params.len(),
-        ),
-        || {
-          SOrd::try_compare(
-            SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
-            || {
-              SOrd::try_compare(
-                SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
-                || {
-                  SOrd::try_compare(
-                    SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
-                    || {
-                      SOrd::try_compare(
-                        compare_expr(
-                          &x.ind.cnst.typ,
-                          &y.ind.cnst.typ,
-                          mut_ctx,
-                          &x.ind.cnst.level_params,
-                          &y.ind.cnst.level_params,
-                          stt,
-                        )?,
-                        || {
-                          SOrd::try_zip(
-                            |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
-                            &x.ctors,
-                            &y.ctors,
-                          )
-                        },
-                      )
-                    },
-                  )
-                },
-              )
-            },
-          )
-        },
-      )
-    })
-  })
+  SOrd::try_compare(
+    SOrd::cmp(&x.ind.cnst.level_params.len(), &y.ind.cnst.level_params.len()),
+    || {
+      SOrd::try_compare(SOrd::cmp(&x.ind.num_params, &y.ind.num_params), || {
+        SOrd::try_compare(
+          SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
+          || {
+            SOrd::try_compare(
+              SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
+              || {
+                SOrd::try_compare(
+                  compare_expr(
+                    &x.ind.cnst.typ,
+                    &y.ind.cnst.typ,
+                    mut_ctx,
+                    &x.ind.cnst.level_params,
+                    &y.ind.cnst.level_params,
+                    stt,
+                  )?,
+                  || {
+                    SOrd::try_zip(
+                      |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
+                      &x.ctors,
+                      &y.ctors,
+                    )
+                  },
+                )
+              },
+            )
+          },
+        )
+      })
+    },
+  )
 }
 
 /// Compare two recursor rules by field count, then RHS expression.
@@ -3594,6 +4096,14 @@ fn mut_const_kind(c: &MutConst) -> u8 {
 /// Compare two mutual constants with caching. Dispatches to the appropriate
 /// type-specific comparator (defn, indc, recr). Different-kind constants
 /// are ordered by kind tag.
+///
+/// The result is in the orientation of the call (`x` against `y`). The
+/// cache is keyed by the name pair in name order and stores the ordering in
+/// that key's orientation, as `compare_ctor` does, so a hit for the swapped
+/// pair is read back reversed. (Before, a fresh comparison with
+/// `x.name() > y.name()` was returned reversed and stored unreversed; the
+/// sorter only reached that case through `eq_const`, which reads equality
+/// alone, so no class or order depended on it.)
 pub fn compare_const(
   x: &MutConst,
   y: &MutConst,
@@ -3606,8 +4116,8 @@ pub fn compare_const(
   } else {
     ((y.name(), x.name()), true)
   };
-  if let Some(so) = cache.cmps.get(&key) {
-    return Ok(if reversed { so.reverse() } else { *so });
+  if let Some(stored) = cache.cmps.get(&key) {
+    return Ok(if reversed { stored.reverse() } else { *stored });
   }
   let so: SOrd = match (x, y) {
     (MutConst::Defn(x), MutConst::Defn(y)) => compare_defn(x, y, mut_ctx, stt)?,
@@ -3618,9 +4128,10 @@ pub fn compare_const(
     _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
   };
   if so.strong {
-    cache.cmps.insert(key, so.ordering);
+    let stored = if reversed { so.ordering.reverse() } else { so.ordering };
+    cache.cmps.insert(key, stored);
   }
-  Ok(if reversed { so.ordering.reverse() } else { so.ordering })
+  Ok(so.ordering)
 }
 
 /// Check if two mutual constants are structurally equal.
@@ -3786,6 +4297,65 @@ pub fn sort_consts<'a>(
   }
 }
 
+/// The declared flat position of a recursor in its family: `X.rec` of the
+/// `i`-th member of `RecursorVal.all` is at `i`, and the nested auxiliary
+/// recursor `all[0].rec_N` (`N >= 1` in plain decimal digits) at
+/// `all.len() + N - 1`; `u64::MAX` otherwise, and for a position that does
+/// not fit below it. Mirrors Lean `recursorFamilyPosition`.
+pub fn recursor_family_position(rec: &ix_common::env::RecursorVal) -> u64 {
+  let NameData::Str(parent, last, _) = rec.cnst.name.as_data() else {
+    return u64::MAX;
+  };
+  if last == "rec" {
+    return rec
+      .all
+      .iter()
+      .position(|n| n == parent)
+      .map_or(u64::MAX, |i| i as u64);
+  }
+  if let Some(digits) = last.strip_prefix("rec_")
+    && !digits.is_empty()
+    && digits.bytes().all(|b| b.is_ascii_digit())
+    && let Ok(k) = digits.parse::<u64>()
+    && k >= 1
+    && rec.all.first() == Some(parent)
+    && let Some(pos) = (rec.all.len() as u64).checked_add(k - 1)
+    && pos < u64::MAX
+  {
+    return pos;
+  }
+  u64::MAX
+}
+
+/// A block of recursors is laid out in its family's flat order (the order
+/// the kernel's `populate_recursor_rules_from_block` pairs with the
+/// inductive block's flat members), not in `sort_consts` order. The
+/// regenerated families get this from `compile_aux_block_with_rename`'s
+/// class-order key; this applies the same rule to a recursor block compiled
+/// from Lean's own declarations (`Named.original`, and decompile's
+/// verification recompile), using Lean's `RecursorVal.all`. On a block that
+/// canonicalisation leaves unchanged the two layouts coincide, so Lean's
+/// form and the Ix form of each recursor have one address (D6). The sort is
+/// stable; other classes keep their `sort_consts` order. Mirrors Lean
+/// `orderRecursorFamily`.
+pub fn order_recursor_family(classes: &mut [Vec<&MutConst>]) {
+  if classes.is_empty()
+    || !classes.iter().flatten().all(|c| matches!(c, MutConst::Recr(_)))
+  {
+    return;
+  }
+  classes.sort_by_key(|class| {
+    class
+      .iter()
+      .map(|c| match c {
+        MutConst::Recr(r) => recursor_family_position(r),
+        _ => u64::MAX,
+      })
+      .min()
+      .unwrap_or(u64::MAX)
+  });
+}
+
 // ===========================================================================
 // Main compilation entry points
 // ===========================================================================
@@ -3802,9 +4372,55 @@ pub fn compile_const(
   compile_const_inner(name, all, lean_env, cache, stt, kctx, true)
 }
 
+/// The original-form phase of an aux-generated constant
+/// (`compile_const_no_aux`; Lean `NoAuxPhase`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum NoAuxPhase {
+  Rec,
+  BelowIndc,
+  BelowDef,
+  BelowRec,
+  BrecOn,
+}
+
+/// A component naming a member of a Lean `IndPredBelow` family: `below` or
+/// `below_N`.
+fn is_below_component(s: &str) -> bool {
+  s == "below" || s.starts_with("below_")
+}
+
+/// The phase of the aux-generated constant `n` (Lean `compileConstNoAuxPure`):
+/// the recursor of any `below` family member, `X.below.rec` or
+/// `X.below_N.rec`, is a `below` recursor, as in Lean.
+fn no_aux_phase(n: &Name, ci: &LeanConstantInfo) -> Option<NoAuxPhase> {
+  match ci {
+    LeanConstantInfo::RecInfo(_) => {
+      // Distinguish .rec from the recursor of a `below` family member
+      if matches!(n.as_data(), NameData::Str(p, _, _)
+        if p.last_str().is_some_and(is_below_component))
+      {
+        Some(NoAuxPhase::BelowRec)
+      } else {
+        Some(NoAuxPhase::Rec)
+      }
+    },
+    LeanConstantInfo::InductInfo(_) => Some(NoAuxPhase::BelowIndc),
+    LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_) => {
+      if n.last_str().is_some_and(is_below_component) {
+        Some(NoAuxPhase::BelowDef)
+      } else {
+        Some(NoAuxPhase::BrecOn)
+      }
+    },
+    _ => None,
+  }
+}
+
 /// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
 /// no aux_gen side effects. Used to compile the original Lean form of
-/// aux_gen-rewritten constants for metadata preservation.
+/// aux_gen-rewritten constants for metadata preservation. A newly compiled
+/// result returns its original-form address before the deferred promotions
+/// commit (`block_txn::commit`).
 pub fn compile_const_no_aux(
   name: &Name,
   all: &NameSet,
@@ -3824,9 +4440,17 @@ pub fn compile_const_no_aux(
   //   .below.rec   → expand via .below.rec's .all, keep only RecInfo
   //   .brecOn/*    → expand via .all as-is
 
+  // The members in canonical order (Lean `aliasPrecedes`: by name hash), so
+  // that the first matches below are a function of the member set, not of
+  // the set's iteration order.
+  let mut members: Vec<&Name> = all.iter().collect();
+  members.sort_unstable_by(|a, b| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+
   // First, collect the Lean .all names from any constant in the SCC.
   let mut lean_all: Vec<Name> = Vec::new();
-  for n in all {
+  for n in members.iter().copied() {
     if let Some(ci) = lean_env.get(n) {
       let block_all = match &*ci {
         LeanConstantInfo::InductInfo(v) => &v.all,
@@ -3843,39 +4467,11 @@ pub fn compile_const_no_aux(
   }
 
   // Determine phase from the first aux_gen constant in the SCC.
-  #[derive(Clone, Copy, PartialEq, Debug)]
-  enum Phase {
-    Rec,
-    BelowIndc,
-    BelowDef,
-    BelowRec,
-    BrecOn,
-  }
-  let phase = all.iter().find_map(|n| {
+  let phase = members.iter().copied().find_map(|n| {
     if !stt.aux_gen_extra_names.contains(n) {
       return None;
     }
-    match lean_env.get(n).as_deref() {
-      Some(LeanConstantInfo::RecInfo(_)) => {
-        // Distinguish .rec from .below.rec
-        if matches!(n.as_data(), NameData::Str(p, _, _) if p.last_str() == Some("below"))
-        {
-          Some(Phase::BelowRec)
-        } else {
-          Some(Phase::Rec)
-        }
-      },
-      Some(LeanConstantInfo::InductInfo(_)) => Some(Phase::BelowIndc),
-      Some(LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_)) => {
-        if matches!(n.last_str(), Some(s) if s == "below" || s.starts_with("below_"))
-        {
-          Some(Phase::BelowDef)
-        } else {
-          Some(Phase::BrecOn)
-        }
-      },
-      _ => None,
-    }
+    no_aux_phase(n, lean_env.get(n).as_deref()?)
   });
 
   let Some(phase) = phase else {
@@ -3886,7 +4482,7 @@ pub fn compile_const_no_aux(
   // Build the filtered set from the .all field based on phase.
   let mut filtered = NameSet::default();
   match phase {
-    Phase::Rec => {
+    NoAuxPhase::Rec => {
       // All .rec and .rec_N from the mutual block that are in the current SCC.
       // lean_all only contains inductive names (from RecursorVal.all), not the
       // mutually-referencing recursor names. The scheduler's `all` has the full
@@ -3902,9 +4498,9 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowIndc => {
+    NoAuxPhase::BelowIndc => {
       // Use .below's own .all, keep only inductives + their ctors.
-      for n in all {
+      for n in members.iter().copied() {
         if let Some(LeanConstantInfo::InductInfo(v)) =
           lean_env.get(n).as_deref()
         {
@@ -3923,7 +4519,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowDef => {
+    NoAuxPhase::BelowDef => {
       // lean_all for BelowDef already contains .below names
       // (from DefnInfo.all = [EqC.below]), so use directly.
       for a in &lean_all {
@@ -3937,7 +4533,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BelowRec => {
+    NoAuxPhase::BelowRec => {
       // lean_all for .below.rec already contains .below names
       // (from RecursorVal.all = [A.below, B.below]), so just append ".rec".
       for ind_name in &lean_all {
@@ -3952,7 +4548,7 @@ pub fn compile_const_no_aux(
         }
       }
     },
-    Phase::BrecOn => {
+    NoAuxPhase::BrecOn => {
       // Use .all as-is — include all .brecOn/.brecOn.go/.brecOn.eq.
       for n in all {
         if stt.aux_gen_extra_names.contains(n) {
@@ -3985,6 +4581,10 @@ pub fn compile_const_no_aux(
   compile_const_inner(name, &filtered, lean_env, cache, stt, kctx, false)
 }
 
+/// `aux = false` is the original-form compile of a regenerated auxiliary
+/// (`Named.original` provenance): its constants are never stored, so the
+/// block cache is marked `provenance_only` for its duration (see
+/// `BlockCache::provenance_only`).
 fn compile_const_inner(
   name: &Name,
   all: &NameSet,
@@ -3994,7 +4594,23 @@ fn compile_const_inner(
   kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
-  let _cci_start = std::time::Instant::now();
+  let prev = cache.provenance_only;
+  cache.provenance_only = !aux;
+  let res =
+    compile_const_inner_body(name, all, lean_env, cache, stt, kctx, aux);
+  cache.provenance_only = prev;
+  res
+}
+
+fn compile_const_inner_body(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  kctx: &mut KernelCtx,
+  aux: bool,
+) -> Result<Address, CompileError> {
   if let Some(cached) = stt.resolve_addr_aux(name, aux) {
     return Ok(cached);
   }
@@ -4011,16 +4627,6 @@ fn compile_const_inner(
     })?
     .clone();
   audit_constant_info_plan_heads(&cnst, stt)?;
-  let _cnst_kind = match &cnst {
-    LeanConstantInfo::DefnInfo(_) => "defn",
-    LeanConstantInfo::ThmInfo(_) => "thm",
-    LeanConstantInfo::InductInfo(_) => "indc",
-    LeanConstantInfo::RecInfo(_) => "rec",
-    LeanConstantInfo::CtorInfo(_) => "ctor",
-    LeanConstantInfo::AxiomInfo(_) => "axio",
-    LeanConstantInfo::OpaqueInfo(_) => "opaq",
-    LeanConstantInfo::QuotInfo(_) => "quot",
-  };
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
   // When `aux` is false (ephemeral compilation for metadata capture),
@@ -4033,7 +4639,6 @@ fn compile_const_inner(
     aux: bool,
   ) -> Result<(Address, ConstantMeta), CompileError> {
     let _t0 = std::time::Instant::now();
-    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     preseed_expr_tables(
       &[
@@ -4045,8 +4650,10 @@ fn compile_const_inner(
       stt,
       "compile_single_def",
     )?;
-    let ctx_addrs: Vec<Address> =
-      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+      .iter()
+      .map(|n| compile_name(n, stt))
+      .collect::<Result<_, _>>()?;
     let (data, meta) =
       compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
@@ -4080,10 +4687,13 @@ fn compile_const_inner(
       );
     }
     if aux {
-      stt.env.store_const(addr.clone(), constant);
-      stt
-        .env
-        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+      stt.store_const_bytes(addr.clone(), bytes, constant)?;
+      // Claim before registering: a refused claim leaves the owner's
+      // `Named` entry as it was.
+      stt.claim_and_register_compiled(
+        name,
+        Named::new(addr.clone(), meta.clone()),
+      )?;
     } else {
       // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
       // original (addr, meta) in Named.original for decompilation metadata.
@@ -4141,8 +4751,9 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
+        stt
+          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       }
       addr
     },
@@ -4168,8 +4779,9 @@ fn compile_const_inner(
       constant.put(&mut bytes);
       let addr = Address::hash(&bytes);
       if aux {
-        stt.env.store_const(addr.clone(), constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.store_const_bytes(addr.clone(), bytes, constant)?;
+        stt
+          .claim_and_register_compiled(name, Named::new(addr.clone(), meta))?;
       }
       addr
     },
@@ -4186,8 +4798,10 @@ fn compile_const_inner(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let ctx_addrs: Vec<Address> =
-          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+          .iter()
+          .map(|n| compile_name(n, stt))
+          .collect::<Result<_, _>>()?;
         let (data, meta) =
           compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -4202,11 +4816,11 @@ fn compile_const_inner(
         constant.put(&mut bytes);
         let addr = Address::hash(&bytes);
         if aux {
-          stt.env.store_const(addr.clone(), constant);
-          stt.env.register_name(
-            name.clone(),
+          stt.store_const_bytes(addr.clone(), bytes, constant)?;
+          stt.claim_and_register_compiled(
+            name,
             Named::new(addr.clone(), meta.clone()),
-          );
+          )?;
         } else {
           stt.promote_aux(name, addr.clone(), meta)?;
         }
@@ -4221,16 +4835,10 @@ fn compile_const_inner(
       if let Some(LeanConstantInfo::InductInfo(_)) =
         lean_env.get(&val.induct).as_deref()
       {
-        let _ =
-          compile_mutual(&val.induct, all, lean_env, cache, stt, kctx, aux)?;
-        stt
-          .name_to_addr
-          .get(name)
-          .ok_or_else(|| CompileError::MissingConstant {
-            name: name.pretty(),
-            caller: "compile_const(ctor_lookup)".into(),
-          })?
-          .clone()
+        // The constructor's own projection, as this compilation computed it
+        // (an original-form compile stages its promotions, so the name need
+        // not be published yet).
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       } else {
         return Err(CompileError::MissingConstant {
           name: val.induct.pretty(),
@@ -4241,7 +4849,7 @@ fn compile_const_inner(
   };
 
   if aux {
-    stt.name_to_addr.insert(name.clone(), addr.clone());
+    stt.claim_compiled_name(name, &addr)?;
   }
   Ok(addr)
 }
@@ -4293,8 +4901,10 @@ fn compile_mutual(
     cs.push(mut_const);
   }
 
-  // Sort constants
-  let sorted_classes = sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  // Sort constants; a recursor block in its family's flat order (D6)
+  let mut sorted_classes =
+    sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
+  order_recursor_family(&mut sorted_classes);
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
   let mut exprs = Vec::new();
@@ -4308,8 +4918,10 @@ fn compile_mutual(
   // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()?;
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -4386,15 +4998,15 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     if aux {
-      stt.env.store_const(addr.clone(), standalone_constant);
+      stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
           // `remove`, not `get().cloned()`: each name is consumed exactly
           // once, and ConstantMeta is an arena-sized deep clone.
           let meta = all_metas.remove(&n).unwrap_or_default();
-          stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
-          stt.name_to_addr.insert(n.clone(), addr.clone());
+          stt
+            .claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
         }
       }
     } else {
@@ -4414,7 +5026,11 @@ fn compile_mutual(
   let block_addr = compiled.addr.clone();
 
   if aux {
-    stt.env.store_const(block_addr.clone(), compiled.constant);
+    stt.store_const_bytes(
+      block_addr.clone(),
+      compiled.bytes,
+      compiled.constant,
+    )?;
     // Register class ordering for each inductive name in the block.
     let class_ordering: Vec<Vec<Name>> = sorted_classes
       .iter()
@@ -4432,6 +5048,7 @@ fn compile_mutual(
   // When aux=false: promote from aux_name_to_addr, setting Named.original
   // with the original (proj_addr, meta) for decompilation roundtrip.
   let mut idx = 0u64;
+  let mut requested_addr = None;
   for class in &sorted_classes {
     for cnst in class {
       let n = cnst.name();
@@ -4447,12 +5064,15 @@ fn compile_mutual(
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
+          if n == *name {
+            requested_addr = Some(proj_addr.clone());
+          }
           if aux {
-            stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-            stt.name_to_addr.insert(n.clone(), proj_addr.clone());
+            stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
+            stt.claim_and_register_compiled(
+              &n,
+              Named::new(proj_addr.clone(), meta),
+            )?;
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
           }
@@ -4466,13 +5086,19 @@ fn compile_mutual(
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
+            if ctor.cnst.name == *name {
+              requested_addr = Some(ctor_addr.clone());
+            }
             if aux {
-              stt.env.store_const(ctor_addr.clone(), ctor_proj);
-              stt.env.register_name(
-                ctor.cnst.name.clone(),
+              stt.store_const_bytes(
+                ctor_addr.clone(),
+                ctor_bytes,
+                ctor_proj,
+              )?;
+              stt.claim_and_register_compiled(
+                &ctor.cnst.name,
                 Named::new(ctor_addr.clone(), ctor_meta),
-              );
-              stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
+              )?;
             } else {
               stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta)?;
             }
@@ -4486,10 +5112,15 @@ fn compile_mutual(
       let mut proj_bytes = Vec::new();
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
+      if n == *name {
+        requested_addr = Some(proj_addr.clone());
+      }
       if aux {
-        stt.env.store_const(proj_addr.clone(), proj);
-        stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-        stt.name_to_addr.insert(n.clone(), proj_addr);
+        stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
+        stt.claim_and_register_compiled(
+          &n,
+          Named::new(proj_addr.clone(), meta),
+        )?;
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
       }
@@ -4506,7 +5137,7 @@ fn compile_mutual(
   // reaches the kernel env.
   //
   // Only register on `aux=true` since that's the path that actually stores
-  // the block constant (`stt.env.store_const(block_addr, ...)` above is
+  // the block constant (`stt.store_const_bytes(block_addr, ...)` above is
   // guarded by `if aux`). The `aux=false` promotion path reuses entries
   // that were already registered in a prior `aux=true` call.
   if aux {
@@ -4525,8 +5156,8 @@ fn compile_mutual(
       })
       .collect();
     let muts_name = block_addr.muts_name(&first_name);
-    compile_name(&muts_name, stt);
-    stt.env.register_name(
+    compile_name(&muts_name, stt)?;
+    stt.register_named(
       muts_name,
       Named::new(
         block_addr.clone(),
@@ -4607,7 +5238,7 @@ fn compile_mutual(
             .collect()
         })
         .collect();
-      stt.env.register_name(
+      stt.register_named(
         muts_name,
         Named::new(
           block_addr.clone(),
@@ -4647,6 +5278,13 @@ fn compile_mutual(
         lean_env,
         aux_layout_stored.as_ref(),
       )?;
+      // Shape check for the derived plans (A0, WB-A5/C3): `.brecOn` and
+      // `.below` plans exist only when Lean generates those families
+      // (`below_family_lean_exists`), the same rule aux_gen uses. A user
+      // constant `X.brecOn`/`X.below` of a reordered non-recursive block
+      // is the user's and keeps its call sites.
+      let below_lean =
+        aux_gen::below_family_lean_exists(lean_env, &original_all);
       for (name, plan) in plans {
         if *IX_LOG_AUX_NAMES {
           eprintln!(
@@ -4677,7 +5315,7 @@ fn compile_mutual(
         // differing pre-existing entry is a claim collision — fail
         // loudly instead of shipping schedule-dependent rewrites
         // (plans/aux-recursor-alias-collision.md §2.4).
-        if plan.head_rewrite.is_none() {
+        if plan.head_rewrite.is_none() && below_lean {
           // Keyed per name present, not gated on `.brecOn` itself: a
           // closure-only environment can hold `X.brecOn.go` (an equation
           // lemma's dependency) without `X.brecOn`, and aux_gen regenerates
@@ -4727,7 +5365,13 @@ fn compile_mutual(
                   ),
                 });
               }
-              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
+              if stt
+                .brec_on_call_site_plans
+                .insert(key.clone(), new_plan.clone())
+                .is_none()
+              {
+                block_txn::log_brec_on_plan(&key);
+              }
             }
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
@@ -4779,9 +5423,21 @@ fn compile_mutual(
                   ),
                 });
               }
-              stt.below_call_site_plans.insert(member, new_plan.clone());
+              if stt
+                .below_call_site_plans
+                .insert(member.clone(), new_plan.clone())
+                .is_none()
+              {
+                block_txn::log_below_plan(&member);
+              }
             }
-            stt.below_call_site_plans.insert(below_name, new_plan);
+            if stt
+              .below_call_site_plans
+              .insert(below_name.clone(), new_plan)
+              .is_none()
+            {
+              block_txn::log_below_plan(&below_name);
+            }
           }
         }
         if stt
@@ -4797,33 +5453,44 @@ fn compile_mutual(
             ),
           });
         }
-        stt.call_site_plans.insert(name, plan);
+        if stt.call_site_plans.insert(name.clone(), plan).is_none() {
+          block_txn::log_plan(&name);
+        }
       }
     }
   }
 
-  // Return the address for the requested name
-  stt
-    .name_to_addr
-    .get(name)
-    .ok_or_else(|| CompileError::MissingConstant {
-      name: name.pretty(),
-      caller: "compile_mutual(result)".into(),
-    })
-    .map(|r| r.clone())
+  // Return this compilation's projection, independently of publication.
+  // Original-form compilation stages promotions until the block transaction
+  // commits; its requested name need not be in name_to_addr yet, and its
+  // original projection can differ from the canonical address published
+  // there.
+  requested_addr.ok_or_else(|| CompileError::MissingConstant {
+    name: name.pretty(),
+    caller: "compile_mutual(result)".into(),
+  })
 }
 
 mod admission;
 pub mod aux_gen;
+pub mod block_txn;
 mod env;
+pub mod expr_key;
 mod memory;
 pub mod mutual;
 pub mod nat_conv;
+mod publication;
 pub mod surgery;
 pub(crate) mod validation;
 pub use env::{
   compile_env, compile_env_with_options, compile_env_with_profile,
 };
+
+#[cfg(test)]
+mod c6_flags_tests;
+
+#[cfg(test)]
+mod compare_const_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4860,6 +5527,126 @@ mod tests {
   }
 
   #[test]
+  fn compile_univ_idx_refuses_growth_after_preseed() {
+    let mut cache = BlockCache::default();
+    let zero = Level::zero();
+    assert_eq!(compile_univ_idx(&zero, &[], &mut cache).unwrap(), (0, None));
+    cache.univs_final = true;
+    // A preseeded canonical form still hits its entry.
+    assert_eq!(compile_univ_idx(&zero, &[], &mut cache).unwrap(), (0, None));
+    // A canonical form the preseed missed is refused, as in Lean, in every
+    // build profile, not appended (which would shift every virtual patch
+    // index).
+    let one = Level::succ(Level::zero());
+    match compile_univ_idx(&one, &[], &mut cache) {
+      Err(CompileError::InvalidMutualBlock { reason }) => {
+        assert!(reason.starts_with("preseed missed canonical form"), "{reason}")
+      },
+      other => panic!("expected the V3 refusal, got {other:?}"),
+    }
+    assert_eq!(cache.univs.len(), 1, "the refused form was not interned");
+  }
+
+  /// The original-form phase classifies the recursor of every member of a
+  /// Lean `IndPredBelow` family, `X.below.rec` and `X.below_N.rec`, as a
+  /// `below` recursor, as Lean's `compileConstNoAuxPure` does.
+  #[test]
+  fn no_aux_phase_classifies_below_family_recursors() {
+    use ix_common::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, RecursorVal,
+      ReducibilityHints,
+    };
+    let nm = |s: &str| {
+      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
+    };
+    let cv = |n: &str| ConstantVal {
+      name: nm(n),
+      level_params: vec![],
+      typ: LeanExpr::sort(Level::zero()),
+    };
+    let rec = |n: &str| {
+      LeanConstantInfo::RecInfo(RecursorVal {
+        cnst: cv(n),
+        all: vec![],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(1u64),
+        num_minors: Nat::from(0u64),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let defn = |n: &str| {
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: cv(n),
+        value: LeanExpr::sort(Level::zero()),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![nm(n)],
+      })
+    };
+    for (n, ci, want) in [
+      ("X.rec", rec("X.rec"), NoAuxPhase::Rec),
+      ("X.rec_1", rec("X.rec_1"), NoAuxPhase::Rec),
+      ("X.below.rec", rec("X.below.rec"), NoAuxPhase::BelowRec),
+      ("X.below_1.rec", rec("X.below_1.rec"), NoAuxPhase::BelowRec),
+      ("X.below", defn("X.below"), NoAuxPhase::BelowDef),
+      ("X.below_2", defn("X.below_2"), NoAuxPhase::BelowDef),
+      ("X.brecOn", defn("X.brecOn"), NoAuxPhase::BrecOn),
+    ] {
+      assert_eq!(no_aux_phase(&nm(n), &ci), Some(want), "{n}");
+    }
+  }
+
+  /// D6: a recursor block compiled from Lean's form is laid out in its
+  /// family's flat order (`X.rec` at its `all` position, `all0.rec_N` after
+  /// the members); malformed `rec_N` suffixes and mixed blocks keep the
+  /// `sort_consts` order.
+  #[test]
+  fn order_recursor_family_lays_out_flat_order() {
+    use ix_common::env::{ConstantVal, RecursorVal};
+    let nm = |s: &str| {
+      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
+    };
+    let rec = |n: &str| {
+      MutConst::Recr(RecursorVal {
+        cnst: ConstantVal {
+          name: nm(n),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::zero()),
+        },
+        all: vec![nm("A"), nm("B")],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(3u64),
+        num_minors: Nat::from(0u64),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      })
+    };
+    let pos = |n: &str| match rec(n) {
+      MutConst::Recr(r) => recursor_family_position(&r),
+      _ => unreachable!(),
+    };
+    assert_eq!(pos("A.rec"), 0);
+    assert_eq!(pos("B.rec"), 1);
+    assert_eq!(pos("A.rec_1"), 2);
+    assert_eq!(pos("A.rec_3"), 4);
+    for odd in ["B.rec_1", "A.rec_0", "A.rec_", "A.rec_+1", "A.rec_1_0"] {
+      assert_eq!(pos(odd), u64::MAX, "{odd}");
+    }
+    assert_eq!(pos("A.rec_18446744073709551615"), u64::MAX);
+    let (ar, br, a1) = (rec("A.rec"), rec("B.rec"), rec("A.rec_1"));
+    let mut classes = vec![vec![&a1], vec![&br], vec![&ar]];
+    order_recursor_family(&mut classes);
+    let order: Vec<String> =
+      classes.iter().map(|c| c[0].name().pretty()).collect();
+    assert_eq!(order, ["A.rec", "B.rec", "A.rec_1"]);
+  }
+
+  #[test]
   fn test_compile_univ_max() {
     let level = Level::max(Level::zero(), Level::succ(Level::zero()));
     let mut cache = BlockCache::default();
@@ -4879,8 +5666,8 @@ mod tests {
   #[test]
   fn test_store_string() {
     let stt = CompileState::default();
-    let addr1 = store_string("hello", &stt);
-    let addr2 = store_string("hello", &stt);
+    let addr1 = store_string("hello", &stt).unwrap();
+    let addr2 = store_string("hello", &stt).unwrap();
     // Same content should give same address
     assert_eq!(addr1, addr2);
     // Check we can retrieve it
@@ -4892,7 +5679,7 @@ mod tests {
   fn test_store_nat() {
     let stt = CompileState::default();
     let n = Nat::from(42u64);
-    let addr = store_nat(&n, &stt);
+    let addr = store_nat(&n, &stt).unwrap();
     let bytes = stt.env.get_blob(&addr).unwrap();
     let n2 = Nat::from_le_bytes(&bytes);
     assert_eq!(n, n2);
@@ -4902,7 +5689,7 @@ mod tests {
   fn test_compile_name_anon() {
     let stt = CompileState::default();
     let name = Name::anon();
-    let addr = compile_name(&name, &stt);
+    let addr = compile_name(&name, &stt).unwrap();
     // Name is stored in env.names, not blobs
     let stored_name = stt.env.names.get(&addr).unwrap();
     assert_eq!(*stored_name, name);
@@ -4912,7 +5699,7 @@ mod tests {
   fn test_compile_name_str() {
     let stt = CompileState::default();
     let name = Name::str(Name::anon(), "foo".to_string());
-    let addr = compile_name(&name, &stt);
+    let addr = compile_name(&name, &stt).unwrap();
     // Name is stored in env.names
     let stored_name = stt.env.names.get(&addr).unwrap();
     assert_eq!(*stored_name, name);
@@ -4930,6 +5717,70 @@ mod tests {
     let result =
       compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
     assert!(matches!(result.as_ref(), Expr::Var(3)));
+  }
+
+  #[test]
+  fn expression_wire_bound_variable_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let too_large = Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let source = LeanExpr::bvar(too_large);
+    let error =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt)
+        .expect_err("an oversized variable must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    let source = LeanExpr::bvar(Nat::from(u64::MAX));
+    let result =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Var(u64::MAX)));
+  }
+
+  #[test]
+  fn expression_wire_projection_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let name = Name::str(Name::anon(), "IndexBoundary".to_owned());
+    let too_large = Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let source =
+      LeanExpr::proj(name.clone(), too_large, LeanExpr::bvar(Nat::from(0u64)));
+    let error =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt)
+        .expect_err("an oversized field must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    assert!(cache.refs.is_empty());
+    assert!(stt.env.names.is_empty());
+    stt.name_to_addr.insert(name.clone(), Address::hash(b"structure"));
+    let source = LeanExpr::proj(
+      name,
+      Nat::from(u64::MAX),
+      LeanExpr::bvar(Nat::from(0u64)),
+    );
+    let result =
+      compile_expr(&source, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Prj(_, u64::MAX, _)));
+  }
+
+  #[test]
+  fn expression_wire_mutual_limits() {
+    let stt = CompileState::default();
+    let mut cache = BlockCache::default();
+    let name = Name::str(Name::anon(), "IndexBoundary".to_owned());
+    let mut mutual = MutCtx::default();
+    mutual
+      .insert(name.clone(), Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1]));
+    let source = LeanExpr::cnst(name.clone(), vec![]);
+    let error = compile_expr(&source, &[], &mutual, &mut cache, &stt)
+      .expect_err("an oversized mutual slot must not wrap");
+    assert!(matches!(error, CompileError::UnsupportedExpr { .. }));
+    assert!(cache.exprs.is_empty());
+    assert!(cache.arena.nodes.is_empty());
+    mutual.insert(name, Nat::from(u64::MAX));
+    let result = compile_expr(&source, &[], &mutual, &mut cache, &stt).unwrap();
+    assert!(matches!(result.as_ref(), Expr::Rec(u64::MAX, _)));
   }
 
   #[test]
@@ -5049,6 +5900,7 @@ mod tests {
         source_to_canon_motive: vec![1, 0],
         source_to_canon_minor: vec![1, 0],
         source_in_block: vec![true, true],
+        minor_in_block: vec![true, true],
         head_rewrite: None,
       },
     );
@@ -5094,6 +5946,7 @@ mod tests {
         source_to_canon_motive: vec![1, 0],
         source_to_canon_minor: vec![1, 0],
         source_in_block: vec![true, true],
+        minor_in_block: vec![true, true],
         head_rewrite: None,
       },
     );
@@ -5142,6 +5995,7 @@ mod tests {
         source_to_canon_motive: vec![0, 1, 3, 2],
         source_to_canon_minor: vec![0, 1, 3, 2],
         source_in_block: vec![true, true, true, true],
+        minor_in_block: vec![true, true, true, true],
         head_rewrite: None,
       },
     );
@@ -5188,7 +6042,7 @@ mod tests {
     else {
       panic!("expected CallSite metadata at expression root");
     };
-    assert_eq!(*name, compile_name(&head, &stt));
+    assert_eq!(*name, compile_name(&head, &stt).unwrap());
     assert_eq!(
       canon_meta.len(),
       app_args(&result).len(),
@@ -5233,6 +6087,7 @@ mod tests {
         n_indices: 0,
         motive_keep: vec![true, true, true, true],
         source_to_canon_motive: vec![0, 3, 1, 2],
+        source_in_block: vec![true, true, true, true],
       },
     );
 
@@ -5289,6 +6144,7 @@ mod tests {
         n_indices: 0,
         motive_keep: vec![true, true, true, true],
         source_to_canon_motive: vec![0, 3, 1, 2],
+        source_in_block: vec![true, true, true, true],
       },
     );
 
@@ -7498,5 +8354,196 @@ mod tests {
     assert_eq!(l.max_height, ExactSharingLimits::default().max_height);
     let err = compiler_sharing_limits_with(Some("bogus=1")).unwrap_err();
     assert!(err.starts_with("IX_SHARING_LIMITS: unknown sharing limit bogus"));
+  }
+
+  /// A block refused for a conflicting claim leaves the owner's `Named`
+  /// entry as it was (the claim comes before the registration, as the Lean
+  /// drivers merge a block's state only after its claims check), and its
+  /// rollback removes what it entered.
+  #[test]
+  fn refused_conflicting_claim_keeps_the_owner_named() {
+    use ix_common::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
+    };
+    let f = Name::str(Name::anon(), "f".to_string());
+    let g = Name::str(Name::anon(), "g".to_string());
+    let def = |n: &Name, other: &Name| {
+      LeanConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: n.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::succ(Level::zero())),
+        },
+        value: LeanExpr::cnst(other.clone(), vec![]),
+        hints: ReducibilityHints::Opaque,
+        safety: DefinitionSafety::Safe,
+        all: vec![f.clone(), g.clone()],
+      })
+    };
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(f.clone(), def(&f, &g));
+    lean_env.insert(g.clone(), def(&g, &f));
+    let lean_env = Arc::new(lean_env);
+    let stt = CompileState::default();
+    // `g` is owned by another block, with its original form promoted
+    let owner = Address::hash(b"owner");
+    let owner_original = Address::hash(b"owner-original");
+    let mut named = Named::new(owner.clone(), ConstantMeta::default());
+    named.set_original(owner_original.clone(), ConstantMeta::default());
+    stt.claim_compiled_name(&g, &owner).unwrap();
+    stt.register_named(g.clone(), named);
+    let all: NameSet = [f.clone(), g.clone()].into_iter().collect();
+    block_txn::start();
+    let err = compile_const(
+      &f,
+      &all,
+      &lean_env,
+      &mut BlockCache::default(),
+      &stt,
+      &mut KernelCtx::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    let txn = block_txn::take().unwrap();
+    block_txn::rollback(&stt, &txn);
+    assert!(err.contains("conflicting claims for name 'g'"), "{err}");
+    let kept = stt.env.named.get(&g).map(|r| r.clone()).expect("owner named");
+    assert_eq!(kept.addr, owner);
+    assert_eq!(kept.original().map(|(a, _)| a), Some(owner_original));
+    assert_eq!(stt.name_to_addr.get(&g).map(|r| r.clone()), Some(owner));
+    assert!(!stt.env.named.contains_key(&f));
+    assert!(!stt.name_to_addr.contains_key(&f));
+  }
+
+  /// Claim `n` with `named` through the registration path of a compiled
+  /// (`aux == false`) or an aux_gen (`aux == true`) block.
+  fn claim_and_register(
+    stt: &CompileState,
+    aux: bool,
+    n: &Name,
+    named: Named,
+  ) -> Result<(), CompileError> {
+    if aux {
+      stt.claim_and_register_aux(n, named)
+    } else {
+      stt.claim_and_register_compiled(n, named)
+    }
+  }
+
+  fn axio_meta(tag: &[u8]) -> ConstantMeta {
+    ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: Address::hash(tag),
+      lvls: vec![],
+      arena: Default::default(),
+      type_root: 0,
+    })
+  }
+
+  #[test]
+  fn identical_reclaim_keeps_the_owner_named() {
+    // CQ2.24 b (R03-16's residual): a later block's identical re-claim of a
+    // name another block owns registers nothing. The owner's entry (its
+    // metadata, the original its promotion set, its hints) is kept, and
+    // the re-claiming block's rollback leaves it as it was. For both claim
+    // kinds.
+    use ix_common::env::ReducibilityHints;
+    let n = Name::str(Name::anon(), "n".to_string());
+    let addr = Address::hash(b"shared");
+    let owner_original = Address::hash(b"owner-original");
+    for aux in [false, true] {
+      let stt = CompileState::default();
+      // the owner's block, then its promotion and hints
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"owner")),
+      )
+      .unwrap();
+      block_txn::finish(&stt, false).unwrap();
+      {
+        let mut entry = stt.env.named.get_mut(&n).unwrap();
+        entry
+          .value_mut()
+          .set_original(owner_original.clone(), ConstantMeta::default());
+        entry.value_mut().set_hints(Some(ReducibilityHints::Abbrev));
+      }
+      let check = |stage: &str| {
+        let kept =
+          stt.env.named.get(&n).map(|r| r.clone()).expect("owner named");
+        assert_eq!(kept.addr, addr, "aux={aux} {stage}");
+        assert_eq!(*kept.meta(), axio_meta(b"owner"), "aux={aux} {stage}");
+        assert_eq!(
+          kept.original().map(|(a, _)| a),
+          Some(owner_original.clone()),
+          "aux={aux} {stage}"
+        );
+        assert_eq!(
+          kept.hints(),
+          Some(ReducibilityHints::Abbrev),
+          "aux={aux} {stage}"
+        );
+        assert_eq!(
+          stt.resolve_addr(&n),
+          Some(addr.clone()),
+          "aux={aux} {stage}"
+        );
+      };
+      // a later block re-claims `n` at the same address with other metadata
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"later")),
+      )
+      .unwrap();
+      check("after the identical re-claim");
+      // ... and fails: its rollback has nothing of the owner's to undo
+      block_txn::finish(&stt, true).unwrap();
+      check("after the re-claiming block's rollback");
+      // outside a block transaction (direct callers) the same holds
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"direct")),
+      )
+      .unwrap();
+      check("after a direct identical re-claim");
+    }
+  }
+
+  #[test]
+  fn reclaim_within_one_block_reregisters() {
+    // A name one block claims twice is still that block's: the later
+    // registration wins (the Lean drivers keep the last `auxNamed` entry per
+    // name), and the block's failure removes the entry with its claim.
+    let n = Name::str(Name::anon(), "n".to_string());
+    let addr = Address::hash(b"own");
+    for aux in [false, true] {
+      let stt = CompileState::default();
+      block_txn::start();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"first")),
+      )
+      .unwrap();
+      claim_and_register(
+        &stt,
+        aux,
+        &n,
+        Named::new(addr.clone(), axio_meta(b"second")),
+      )
+      .unwrap();
+      let named = stt.env.named.get(&n).map(|r| r.clone()).expect("own named");
+      assert_eq!(*named.meta(), axio_meta(b"second"), "aux={aux}");
+      block_txn::finish(&stt, true).unwrap();
+      assert!(!stt.env.named.contains_key(&n), "aux={aux}");
+      assert!(stt.resolve_addr(&n).is_none(), "aux={aux}");
+    }
   }
 }

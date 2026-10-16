@@ -70,13 +70,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint BinderMeta)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-! ## The pinned projection argument, read and evaluated
 
@@ -87,8 +87,8 @@ The one genuinely new move.  Everything else in this file is
 own descending family, one entry longer: the member slot is its
 `k = nP` entry. -/
 theorem projArgSpine_eq (nP : Nat) :
-    (((List.range nP).map fun k => Expr.bvar (nP - k)) ++ [Expr.bvar 0])
-      = (List.range (nP + 1)).map fun k => Expr.bvar (nP - k) := by
+    (((List.range nP).map fun k => (Expr.bvar (md := md)) (nP - k)) ++ [Expr.bvar 0])
+      = (List.range (nP + 1)).map fun k => (Expr.bvar (md := md)) (nP - k) := by
   rw [List.range_succ, List.map_append, List.map_cons, List.map_nil,
     Nat.sub_self]
 
@@ -99,23 +99,23 @@ one flat parameter spine; here the constructor's spine is
 so the wrapper has to come off. -/
 theorem instSeq_openSpine_list (nP L t : Nat) (hnL : nP ≤ L)
     (hnP : nP ≤ t + 1) :
-    ((List.range nP).map fun k => Expr.bvar (t - k)).map
-        (Expr.instSeq (openFvars 0 L) t)
-      = openFvars 0 nP := by
+    ((List.range nP).map fun k => (Expr.bvar (md := md)) (t - k)).map
+        ((Expr.instSeq (md := md)) (openFvars 0 L) t)
+      = (openFvars (md := md)) 0 nP := by
   rw [List.map_map]
   refine List.ext_getElem (by simp) fun q h1 h2 => ?_
   have hq : q < nP := by simpa using h1
   rw [List.getElem_map, List.getElem_range]
   show Expr.instSeq (openFvars 0 L) t (Expr.bvar (t - q))
     = (openFvars 0 nP)[q]
-  have hbnd := openFvars_getElem? (d := 0) (k := nP) (i := q) hq
+  have hbnd := openFvars_getElem? (md := md) (d := 0) (k := nP) (i := q) hq
   rw [List.getElem?_eq_getElem h2] at hbnd
   rw [Option.some.inj hbnd]
-  have hhit := Expr.instSeq_bvar (openFvars 0 L) t (t - q)
+  have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 L) t (t - q)
     (openFvars_bounded 0 L) (by omega)
     (by rw [openFvars_length]; omega)
   rw [show t - (t - q) = q from by omega,
-    openFvars_getElem? (d := 0) (k := L) (i := q) (by omega)] at hhit
+    openFvars_getElem? (md := md) (d := 0) (k := L) (i := q) (by omega)] at hhit
   exact (Option.some.inj hhit).symm
 
 /-- `interp` of an application spine, as a `map`-then-`foldl`.  The
@@ -146,34 +146,34 @@ because the family's earlier projection slots were installed by
 earlier `ProjInstallR` steps and that fold is where the
 identification lives. -/
 @[expose] def ProjEtaLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {blockNames : List Name} {env : Env}
-    (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
-    {A : (Name → Nat) → AnnotTerm} {T : Name} {i : Nat},
+  ∀ {μ : CheckMode} {blockNames : List (Key md)} {env : Env md}
+    (mp : EnvModelM V μ env) {c₀ : ConstantInfo md}
+    {A : (LevelParam → Nat) → AnnotTerm} {T : Key md} {i : Nat},
     c₀.name = Ix.Kernel.projFnName T i →
     (∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules) →
     env.find? c₀.name = none →
     BlockInstalledTT blockNames env mp.base2.cvalE →
     BlockAcvalInstalled blockNames env mp.base2.acval →
-    ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
+    ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps) →
       caps.eta = true →
       Ix.Kernel.reservedBasisNames.contains T = false →
       Ix.Kernel.EtaPins μ env T cvT.levelParams caps →
       blockNames.contains T = true →
-      blockNames.contains caps.etaCtor = true →
+      (∀ C, caps.etaCtor = some C → blockNames.contains C = true) →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name A →
         -- v1's `hvP`, install-supplied
-        (∀ j, j < caps.etaFields → ∀ ψ : Name → Nat,
+        (∀ j, j < caps.etaFields → ∀ ψ : LevelParam → Nat,
           m₂.acval (Ix.Kernel.projFnName T j) ψ
             = mp.base2.acval (Ix.Kernel.projModelName T j) ψ) →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps
 
 set_option maxHeartbeats 3200000 in
-theorem projEtaLaw : ProjEtaLaw V := by
+theorem projEtaLaw : (ProjEtaLaw (md := md)) V := by
   intro μ blockNames env mp c₀ A T i hc₀name hc₀rec hfresh0 hIB hIA
-    cvT caps hfT hcape hnresT hp hbT hbC hfam m₂ hac hvP φ'
+    cvT caps hfT hcape hnresT hp hbT hbC hfam m₂ hac hvP φ' C hC
   -- the cons is a `recInfo`: neither the former nor the constructor
   obtain ⟨cvr, mIr, rPr, rulesr, hc₀eq⟩ := hc₀rec
   have hT0 : T ≠ c₀.name := by
@@ -183,36 +183,37 @@ theorem projEtaLaw : ProjEtaLaw V := by
   have hfE : env.find? T = some (.indInfo cvT caps) := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hT0 hh.symm)] at hfT
     exact hfT
-  have hC0 : caps.etaCtor ≠ c₀.name := by
+  obtain ⟨C₁, hC₁, -, ⟨cvCst, cnPst, cnFst, hfCst⟩, -⟩ := id hfam
+  obtain rfl : C = C₁ := Option.some.inj (hC.symm.trans hC₁)
+  have hC0 : C ≠ c₀.name := by
     intro hh
-    obtain ⟨-, ⟨cvC, _, _, hfC⟩, -⟩ := hfam
-    rw [hh, Ix.Kernel.Env.find?_cons_self, hc₀eq] at hfC
-    exact nomatch hfC
-  obtain ⟨-, ⟨cvCst, cnPst, cnFst, hfCst⟩, -⟩ := id hfam
-  have hfCe : env.find? caps.etaCtor
+    rw [hh, Ix.Kernel.Env.find?_cons_self, hc₀eq] at hfCst
+    exact nomatch hfCst
+  have hfCe : env.find? C
       = some (.ctorInfo cvCst cnPst cnFst) := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hC0 hh.symm)] at hfCst
     exact hfCst
   -- the kernel's η-capability pins
-  obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody,
-    tbodyM, tySlot, ℓA, hthmE, htlps, hTmE, hTmlps, hCmE, hprojE,
+  obtain ⟨C₂, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody,
+    tbodyM, tySlot, ℓA, hC₂, hthmE, htlps, hTmE, hTmlps, hCmE, hprojE,
     heqfE, hSstrip, hTstrip, hsdoms, hxdom, hsbody, htySlot, -⟩ :=
     hp.1 hcape
+  obtain rfl : C = C₂ := Option.some.inj (hC.symm.trans hC₂)
   obtain ⟨cvmC, mvalC, hmC, hCmE', hCmlps⟩ := hCmE
   -- ===== the two valuation identifications (v1's `hvT`/`hvC`) =====
   -- one `acvalWith_ne` each: no case split, because a `recInfo` cons
   -- is neither the former nor the capability constructor
-  have hvT : ∀ ψ : Name → Nat,
-      m₂.acval T ψ = mp.base2.acval (T.str "_model") ψ := fun ψ => by
+  have hvT : ∀ ψ : LevelParam → Nat,
+      m₂.acval T ψ = mp.base2.acval (auxKey T .model) ψ := fun ψ => by
     rw [hac, acvalWith_ne hT0]
     exact (hIA T hbT _ hfE ψ).symm
-  have hvC : ∀ ψ : Name → Nat,
-      m₂.acval caps.etaCtor ψ
-        = mp.base2.acval (caps.etaCtor.str "_model") ψ := fun ψ => by
+  have hvC : ∀ ψ : LevelParam → Nat,
+      m₂.acval C ψ
+        = mp.base2.acval (auxKey C .model) ψ := fun ψ => by
     rw [hac, acvalWith_ne hC0]
-    exact (hIA caps.etaCtor hbC _ hfCe ψ).symm
+    exact (hIA C (hbC C hC) _ hfCe ψ).symm
   -- ===== the former's type reads as its model's =====
-  have hEqTy : ∀ ψ : Name → Nat,
+  have hEqTy : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 cvT.type
         = denoteMeta mp.base2.acval env ψ 0 cvmT.type := by
     intro ψ
@@ -228,7 +229,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
       mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfE)
     exact constsBound_of_constsResolve _ hty
   intro us hus
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ' cvT.levelParams us := ⟨_, rfl⟩
   obtain ⟨ta, htaM, hokta, -⟩ := mp.acval_memType hTmE ψ
   have htaM' : denoteMeta mp.base2.acval env ψ 0 cvmT.type = some ta := htaM
@@ -294,7 +295,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
         from by omega] at h1
     exact Option.some.inj h1
   -- ===== the opened slot, read and evaluated =====
-  have hKle : ∀ (K : Name) (ci : ConstantInfo),
+  have hKle : ∀ (K : Key md) (ci : ConstantInfo md),
       env.find? K = some ci →
       ci.toConstantVal.levelParams = cvT.levelParams →
       ∀ d : Nat, caps.etaParams ≤ d →
@@ -305,7 +306,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
           ((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q)))) :=
     fun K ci hf hlps d hd => denoteMeta_openSpine hf hlps _ d hd
-  have hspineVal : ∀ (K : Name) (d : Nat) (σ : Nat → V),
+  have hspineVal : ∀ (K : Key md) (d : Nat) (σ : Nat → V),
       (∀ q, q < ts.length →
         σ (d - 1 - (0 + q)) = consN ts ρ (ts.length - 1 - q)) →
       interp V σ (AnnotTerm.mkAppN (mp.base2.acval K ψ)
@@ -319,7 +320,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
       (acval_interp_closedC mp.base2 _ ψ σ ρ)
   -- the major's slot
   obtain ⟨mx, hxb⟩ := hxdom
-  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+  have hAx : Ax = AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
       ((List.range caps.etaParams).map fun q =>
         AnnotTerm.bvar (caps.etaParams - 1 - (0 + q))) := by
     have h := hdomsS caps.etaParams _ hxb
@@ -365,13 +366,13 @@ theorem projEtaLaw : ProjEtaLaw V := by
     exact denoteMeta_openSpine hfj hlpj (caps.etaParams + 1)
       (caps.etaParams + 1) (Nat.le_refl _)
   have hctorHead : denoteMeta mp.base2.acval env ψ (caps.etaParams + 1)
-      (.const (caps.etaCtor.str "_model") (cvT.levelParams.map .param))
-      = some (mp.base2.acval (caps.etaCtor.str "_model") ψ) := by
+      (.const (auxKey C .model) (cvT.levelParams.map .param))
+      = some (mp.base2.acval (auxKey C .model) ψ) := by
     rw [denoteMeta_const hCmE'
       (by show (cvT.levelParams.map Level.param).length
               = cvmC.levelParams.length
           rw [hCmlps, List.length_map])]
-    show some (mp.base2.acval (caps.etaCtor.str "_model")
+    show some (mp.base2.acval (auxKey C .model)
         (Level.substFn ψ cvmC.levelParams
           (cvT.levelParams.map .param))) = _
     rw [hCmlps, show Level.substFn ψ cvT.levelParams
@@ -400,12 +401,12 @@ theorem projEtaLaw : ProjEtaLaw V := by
         caps.etaParams (Nat.le_refl _) (by omega)]
   have hCs : Cs = .app (.app (.app
       (mp.base2.acval eqName
-        (Level.substFn ψ eqA.toConstantVal.levelParams [ℓA]))
-      (AnnotTerm.mkAppN (mp.base2.acval (T.str "_model") ψ)
+        (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams [ℓA]))
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey T .model) ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))))
       (.bvar 0))
-      (AnnotTerm.mkAppN (mp.base2.acval (caps.etaCtor.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey C .model) ψ)
         (((List.range caps.etaParams).map fun q =>
             AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q)))
           ++ (List.range caps.etaFields).map fun j =>
@@ -424,19 +425,19 @@ theorem projEtaLaw : ProjEtaLaw V := by
     -- the two halves separately
     rw [Expr.instSeq_mkAppN,
       Expr.instSeq_eq_self _ _
-        (e := .const (caps.etaCtor.str "_model")
+        (e := .const (auxKey C .model)
           (cvT.levelParams.map .param)) rfl,
       List.map_append,
       instSeq_openSpine_list caps.etaParams (caps.etaParams + 1)
         caps.etaParams (by omega) (by omega),
       hprojList] at h
-    have hb0 : Expr.instSeq (openFvars 0 (caps.etaParams + 1))
-        caps.etaParams (Expr.bvar 0)
-        = Expr.fvar caps.etaParams (.sort .zero) := by
-      have hhit := Expr.instSeq_bvar (openFvars 0 (caps.etaParams + 1))
+    have hb0 : (Expr.instSeq (md := md)) (openFvars 0 (caps.etaParams + 1))
+        caps.etaParams ((Expr.bvar (md := md)) 0)
+        = (Expr.fvar (md := md)) caps.etaParams (.sort .zero) := by
+      have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (caps.etaParams + 1))
         caps.etaParams 0 (openFvars_bounded 0 (caps.etaParams + 1))
         (by omega) (by rw [openFvars_length]; omega)
-      rw [openFvars_getElem? (d := 0) (k := caps.etaParams + 1)
+      rw [openFvars_getElem? (md := md) (d := 0) (k := caps.etaParams + 1)
           (i := caps.etaParams - 0) (by omega),
         show (0 : Nat) + (caps.etaParams - 0) = caps.etaParams from by
           omega] at hhit
@@ -466,7 +467,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
     have h := teleFit_wellDenotedV_residual (ts ++ [x]) hteleFull (hokua ρ)
       hfitFull
     rwa [hconsApp] at h
-  have hSval : ∀ K : Name, interp V (cons x (consN ts ρ))
+  have hSval : ∀ K : Key md, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range caps.etaParams).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))
@@ -478,7 +479,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
         rfl)
   -- the projection arguments, evaluated: the side condition is
   -- reflexivity, because `consN (ts ++ [x]) ρ` IS the environment
-  have hPval : ∀ K : Name, interp V (cons x (consN ts ρ))
+  have hPval : ∀ K : Key md, interp V (cons x (consN ts ρ))
       (AnnotTerm.mkAppN (mp.base2.acval K ψ)
         ((List.range (caps.etaParams + 1)).map fun q =>
           AnnotTerm.bvar (caps.etaParams + 1 - 1 - (0 + q))))
@@ -499,7 +500,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
   have hSuniv := eqSlot_univ mp heqfE _ (hCs ▸ hokCs)
   rw [hSval] at hSuniv
   have hxS : x ∈ˢ ts.foldl SetTheory.app
-      (interp V ρ (mp.base2.acval (T.str "_model") ψ)) := hmx
+      (interp V ρ (mp.base2.acval (auxKey T .model) ψ)) := hmx
   have hRS := eqThird_mem mp heqfE _ (hCs ▸ hokCs)
     (by rw [hSval]; exact hSuniv)
     (by rw [hSval]; exact hxS)
@@ -532,7 +533,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
     exact List.map_congr_left fun j _ => hPval _
   rw [List.map_map] at hmapS hmapP
   rw [hmapS, hmapP,
-    acval_interp_closedC mp.base2 (caps.etaCtor.str "_model") ψ
+    acval_interp_closedC mp.base2 (auxKey C .model) ψ
       (cons x (consN ts ρ)) ρ] at hRS
   have hlanded := memFoldl_of_teleFit (ts ++ [x]) (hokua ρ)
     (hmemua ρ) hfitFull
@@ -542,7 +543,7 @@ theorem projEtaLaw : ProjEtaLaw V := by
   rw [interp_mkAppN_map, List.map_append, List.map_map, List.map_map]
     at hlanded
   rw [hmapS, hmapP,
-    acval_interp_closedC mp.base2 (caps.etaCtor.str "_model") ψ
+    acval_interp_closedC mp.base2 (auxKey C .model) ψ
       (cons x (consN ts ρ)) ρ] at hlanded
   rw [(mp.eq_law heqfE _).1 (cons x (consN ts ρ)) _ x _
     hSuniv hxS hRS] at hlanded
@@ -558,8 +559,8 @@ family's own data because `hvP` mentions `caps.etaFields`, which is not
 in scope until the family is found. -/
 theorem capsOk_cons_proj_of (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T₀ : Name} {i : Nat}
-    {blockNames : List Name}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} {T₀ : Key md} {i : Nat}
+    {blockNames : List (Key md)}
     (hfresh : env.find? c₀.name = none)
     (hc₀name : c₀.name = Ix.Kernel.projFnName T₀ i)
     (hc₀rec : ∃ cv mI rP rules, c₀ = .recInfo cv mI rP rules)
@@ -568,13 +569,13 @@ theorem capsOk_cons_proj_of (mp : EnvModelM V μ env)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
     -- the install-supplied bundle at the completed family
-    (hinst : ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T₀ = some (.indInfo cvT caps) →
+    (hinst : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T₀ = some (.indInfo cvT caps) →
       caps.eta = true →
       Ix.Kernel.EtaPins μ env T₀ cvT.levelParams caps ∧
         blockNames.contains T₀ = true ∧
-        blockNames.contains caps.etaCtor = true ∧
-        ∀ j, j < caps.etaFields → ∀ ψ : Name → Nat,
+        (∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
+        ∀ j, j < caps.etaFields → ∀ ψ : LevelParam → Nat,
           m₂.acval (Ix.Kernel.projFnName T₀ j) ψ
             = mp.base2.acval (Ix.Kernel.projModelName T₀ j) ψ) :
     CapsOk m₂ :=

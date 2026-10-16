@@ -40,6 +40,8 @@ public import Ix.Common
 public import Ix.CanonM
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileResource
+public import Ix.Cli.DriverOptions
 public import Ix.DecompileM
 public import Ix.DecompileDriver
 public import Ix.DecompileRoundtrip
@@ -92,6 +94,13 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
+  -- The drivers' options (sharing limits, traces), read once for the compile
+  -- (phase 1) and the decompile (phase 5).
+  let opts ← match ← Ix.Cli.driverOptionsFromEnv with
+    | .ok opts => pure opts
+    | .error e =>
+      IO.eprintln s!"[validate-lean] error: {e}"
+      return 2
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
   -- available) or read a pre-compiled `.ixe` (phases 2–3 only).
@@ -138,7 +147,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
           IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-          let closed := collectDeps leanEnv seeds
+          let closed := collectSelectedDeps leanEnv seeds
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
     IO.println s!"Total constants: {constList.length}"
@@ -148,8 +157,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     -- ground → condense → aux-aware parallel compile → serialize).
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileLeanConsts constList
-        (numWorkers := compileWorkers) with
+    match ← Ix.CompileM.compileLeanConstsValidated constList
+        (numWorkers := compileWorkers) (opts := opts) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
@@ -312,7 +321,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
-        (numWorkers := decompileWorkers)
+        (numWorkers := decompileWorkers) (sharingLimits := opts.sharingLimits)
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5

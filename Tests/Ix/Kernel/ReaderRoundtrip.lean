@@ -115,16 +115,16 @@ def expected : List (Lean.Name × Verdict) := [
 
 /-! ## Tampering: the comparison has teeth -/
 
-def always : Ix.Kernel.BinderMeta := ⟨.ifAllZero []⟩
+def always : Ix.Kernel.BinderMeta := { pw := .ifAllZero [] }
 
 /-- The first binder's annotation set to `always`. -/
-def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+def tamperPw : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lam t b _ => some (.lam t b always)
   | .forallE t b _ => some (.forallE t b always)
   | _ => none
 
 /-- A natural-number literal bumped. -/
-partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+partial def tamperLit : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lit (.natVal n) => some (.lit (.natVal (n + 1)))
   | .app f a => ((tamperLit a).map (.app f ·)).orElse fun _ => (tamperLit f).map (.app · a)
   | .lam t b m => (tamperLit b).map (.lam t · m)
@@ -134,8 +134,8 @@ partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
 def tampers : List (String × Lean.Name × (Entry → Option Entry)) := [
   ("definition value replaced by its type", defs "twice", fun
     | .defn cv _ h => some (.defn cv cv.type h) | _ => none),
-  ("level parameter renamed", defs "twice", fun
-    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (·.str "x") } v h)
+  ("level parameter renumbered", defs "twice", fun
+    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (· + 1) } v h)
     | _ => none),
   ("binder annotation set", defs "twice", fun
     | .defn cv v h => (tamperPw v).map (.defn cv · h) | _ => none),

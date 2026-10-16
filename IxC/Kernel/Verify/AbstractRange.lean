@@ -20,7 +20,7 @@ namespace Ix.Kernel
 open Expr
 
 /-- An empty range abstracts nothing. -/
-theorem abstractRange_zero : ∀ (e : Expr) (d c : Nat),
+theorem abstractRange_zero : ∀ (e : Expr md) (d c : Nat),
     e.abstractRange d 0 c = e := by
   intro e
   induction e <;> intro d c <;>
@@ -30,7 +30,7 @@ theorem abstractRange_zero : ∀ (e : Expr) (d c : Nat),
 `abstract1` at the top of the range, then the shorter range one cursor
 deeper — the fold `abstractRange` implements in one pass. -/
 theorem abstractRange_succ :
-    ∀ (e : Expr) (d k c : Nat),
+    ∀ (e : Expr md) (d k c : Nat),
       e.abstractRange d (k + 1) c
         = (e.abstract1 (d + k) c).abstractRange d k (c + 1) := by
   intro e
@@ -58,7 +58,7 @@ theorem abstractRange_succ :
 identity (the fvar-range cutoff of the interned traversal, task #86;
 `Expr.fvarsBelow` is the annotation-free fvar bound of
 `IxC/Kernel/Verify/Shift.lean`). -/
-theorem abstractRange_eq_self : ∀ {e : Expr} {d k c : Nat},
+theorem abstractRange_eq_self : ∀ {e : Expr md} {d k c : Nat},
     e.fvarsBelow d → e.abstractRange d k c = e := by
   intro e
   induction e <;> intro d k c hb <;>

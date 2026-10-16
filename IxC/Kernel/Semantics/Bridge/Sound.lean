@@ -27,7 +27,7 @@ built it.
 namespace Ix.Kernel.Semantics
 open Ix.Kernel.Term Ix.Kernel.Verify
 
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences md}
 universe w
 
 
@@ -50,9 +50,9 @@ slot S4 built for it, which S11b replaces with the `ind` run bridge.
 The collapsed lane's projection route (`checkDeclRun_sound`) is gone:
 S11b's opener deleted it, consumer-free. -/
 theorem checkDeclRun_ofEnvFactsE
-    {μ : CheckMode} {F : Nat} {env env₂ : Env}
-    {d : Declaration}
-    (h : checkDecl μ (fueledOps μ F) pins env d = .ok env₂) :
+    {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {d : Declaration md}
+    (h : checkDecl μ (fueledOps μ F) ev env d = .ok env₂) :
     DeclRun μ F (DeclIndRunDispatch μ F env) env d env₂ :=
   checkDeclRun_of
     -- FLAG-AGNOSTIC (task #175 wiring W4): case on the `.indDecl`

@@ -2220,7 +2220,8 @@ pub extern "C" fn rs_env_extract(
 // ===========================================================================
 // Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
 // recording per-block heartbeats + the delta-unfold graph into a `.ixprof`.
-// See `plans/sharding.md`.
+// `profile_anon_ixe` below records the profile; `Ix/Cli/ShardCmd.lean`
+// selects its consumer with `--profile`.
 // ===========================================================================
 
 /// Summary returned by [`profile_anon_ixe`].
@@ -4057,7 +4058,7 @@ fn format_tc_error<M: KernelMode>(
       format!("unknown constant {name} ({:.12})", addr.hex())
     },
     // Everything else has a hand-written `Display` impl in
-    // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
+    // `crates/kernel/src/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
     other => format!("{other}"),
   }
@@ -4636,7 +4637,14 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   // Direct Lean → kernel ingress. No compile, no Ixon.
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let kenv = lean_ingress(&rust_env_arc);
+  let kenv = match lean_ingress(&rust_env_arc) {
+    Ok(kenv) => kenv,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_roundtrip_no_compile: ingress failed {e}"
+      ));
+    },
+  };
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] ingress:     {:>8.1?} ({} consts)",
     t1.elapsed(),

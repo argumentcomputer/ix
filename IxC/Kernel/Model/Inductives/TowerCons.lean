@@ -29,18 +29,18 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecRule ProjEntry
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecRule ProjEntry
   ProjTable natName natZeroName natSuccName eqName)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## `NoProjEnv` bookkeeping -/
 
 /-- A well-formed environment that does not store `T` has no `.proj T _`
 node anywhere: every stored piece resolves in it. -/
-theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Name}
+theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Key md}
     (hT : env.find? T = none) (i : Nat) : NoProjEnv env T i where
   type c hc := Ix.Kernel.Expr.noProjAt_of_constsResolve hT _ (hwf c hc).2.2.1
   defn cv v hint hc :=
@@ -62,21 +62,21 @@ theorem noProjEnv_of_fresh (hwf : Ix.Kernel.EnvWF env) {T : Name}
     exact Ix.Kernel.Expr.noProjAt_of_constsResolve hT _ this.2.2.1
 
 /-- The head's pieces, for a cons step of `NoProjEnv`. -/
-structure NoProjHead (c₀ : ConstantInfo) (T : Name) (i : Nat) : Prop where
+structure NoProjHead (c₀ : ConstantInfo md) (T : Key md) (i : Nat) : Prop where
   type : Expr.NoProjAt T i c₀.toConstantVal.type
-  defn : ∀ (cv : ConstantVal) (v : Expr) (hint : Ix.Kernel.ReducibilityHint),
+  defn : ∀ (cv : ConstantVal md) (v : Expr md) (hint : Ix.Kernel.ReducibilityHint),
     c₀ = .defnInfo cv v hint → Expr.NoProjAt T i v
-  rule : ∀ (cv : ConstantVal) (mI rP : Nat) (rules : List RecRule),
+  rule : ∀ (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
     c₀ = .recInfo cv mI rP rules →
     ∀ r ∈ rules, Expr.NoProjAt T i (RecRule.rhs r) ∧
       ∀ lvls pins, RecRule.fire r = .nested lvls pins →
         ∀ pin ∈ pins, Expr.NoProjAt T i pin
-  table : ∀ (tbl : Ix.Kernel.ProjTable), c₀ = .projInfo tbl →
+  table : ∀ (tbl : Ix.Kernel.ProjTable md), c₀ = .projInfo tbl →
     ∀ j, j < tbl.numFields → Expr.NoProjAt T i (tbl.bodies.getD j default)
 
 /-- A head with no value, rule or body pieces (an inductive, a
 constructor, a recursor-free constant): only its type is asked. -/
-theorem NoProjHead.ofType {c₀ : ConstantInfo} {T : Name} {i : Nat}
+theorem NoProjHead.ofType {c₀ : ConstantInfo md} {T : Key md} {i : Nat}
     (hty : Expr.NoProjAt T i c₀.toConstantVal.type)
     (hnotdefn : ∀ cv v hint, c₀ ≠ .defnInfo cv v hint)
     (hnotrec : ∀ cv mI rP rules, c₀ ≠ .recInfo cv mI rP rules)
@@ -86,8 +86,8 @@ theorem NoProjHead.ofType {c₀ : ConstantInfo} {T : Name} {i : Nat}
     fun cv mI rP rules h => absurd h (hnotrec cv mI rP rules),
     fun tbl h => absurd h (hnottable tbl)⟩
 
-theorem NoProjEnv.cons {T : Name} {i : Nat} (h : NoProjEnv env T i)
-    {c₀ : ConstantInfo} (hh : NoProjHead c₀ T i) :
+theorem NoProjEnv.cons {T : Key md} {i : Nat} (h : NoProjEnv env T i)
+    {c₀ : ConstantInfo md} (hh : NoProjHead c₀ T i) :
     NoProjEnv ⟨c₀ :: env.consts⟩ T i where
   type c hc := by
     rcases List.mem_cons.mp hc with rfl | hc
@@ -115,7 +115,7 @@ at the extension; and the fields' projection laws are supplied.  The
 leaf is `Sort 0` (a member of the dummy type's reading); everything
 else transports as at any fresh cons. -/
 theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
-    {tbl : ProjTable}
+    {tbl : ProjTable md}
     (hfresh : env.find? (ConstantInfo.projInfo tbl).name = none)
     (hnres : Ix.Kernel.reservedBasisNames.contains
       (ConstantInfo.projInfo tbl).name = false)
@@ -126,7 +126,7 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
     (hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval
         (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
-      ∀ (φ : Name → Nat) (i : Nat), i < tbl.numFields →
+      ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
         TowerEntryLaw m₂ φ tbl.structName i (tbl.entry i)) :
     ∃ mp' : EnvModelM V μ ⟨.projInfo tbl :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval
@@ -141,7 +141,7 @@ theorem declStep_preserves_of_tower_cons (mp : EnvModelM V μ env)
         obtain rfl := ConstantInfo.projInfo.inj heq
         exact hhead,
       fun _ _ _ _ heq => nomatch heq⟩
-  have hreads : ∀ ψ : Name → Nat,
+  have hreads : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0))
         ⟨.projInfo tbl :: env.consts⟩ ψ 0 (ConstantInfo.projInfo tbl).toConstantVal.type
         = some (.sort 1) := by

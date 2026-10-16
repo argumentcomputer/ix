@@ -148,12 +148,12 @@ def testCrossImpl : TestSeq :=
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks
-    -- (the aux-aware parallel driver: prereqs, aux tails, promotion +
+    -- (the driver, `compileEnvFold`: aux tails, promotion +
     -- no-aux originals — full production semantics).
-    IO.println s!"[Step 2] Running Lean parallel compilation (aux-aware)..."
+    IO.println s!"[Step 2] Running the Lean driver (compileEnvFold)..."
     let leanStart ← IO.monoMsNow
 
-    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true) with
+    match ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (dbg := true) with
     | .error err =>
       let leanTime := (← IO.monoMsNow) - leanStart
       IO.println s!"[Step 2] Compilation failed after {leanTime}ms"

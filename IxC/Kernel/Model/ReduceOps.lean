@@ -23,8 +23,8 @@ erasure factoring of `interp` through `interp`, refuted at the very
 
 ## The route: the run-certificate move, fifth execution
 
-`checkReducePin` runs the identity certificate and `ReducePinR`
-**records the run** (`SetR/Decl.lean:270`):
+`checkReduceIdentity` runs the identity certificate and
+`ReduceIdentityRun` **records the run** (`Semantics/DeclRun.lean`):
 
 > `isDefEqCore μ env F 1 (.app valA (reduceCertVar c)) (reduceCertVar c)
 > = .ok true`
@@ -77,30 +77,30 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal)
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The one-entry element context -/
 
 /-- The element type's leaf at an assignment (the reduce operations'
 element inductives — `Nat`, `Bool` — are stored level-free, so the
 spelling is the plain assignment). -/
-def elemA {env : Env} (m : EnvModel V env) (c : Name)
-    (ψ : Name → Nat) : AnnotTerm :=
+def elemA {env : Env md} (m : EnvModel V env) (c : Key md)
+    (ψ : LevelParam → Nat) : AnnotTerm :=
   m.acval (Ix.Kernel.reduceElemName c) ψ
 
 /-- The certificate's context: one slot, the element type. -/
-def elemCtx {env : Env} (m : EnvModel V env) (c : Name)
-    (ψ : Name → Nat) : List AnnotTerm :=
+def elemCtx {env : Env md} (m : EnvModel V env) (c : Key md)
+    (ψ : LevelParam → Nat) : List AnnotTerm :=
   [elemA m c ψ]
 
 /-- One element member satisfies the one-variable context (the leaf
 reading collapses by closedness). -/
-theorem sat_elemCtx (m : EnvModel V env) {c : Name} {ψ : Name → Nat}
+theorem sat_elemCtx (m : EnvModel V env) {c : Key md} {ψ : LevelParam → Nat}
     {ρ : Nat → V} {x : V} (hx : x ∈ˢ interp V ρ (elemA m c ψ)) :
     Sat V (elemCtx m c ψ) (cons x ρ) := by
   intro i Aa hi
@@ -116,7 +116,7 @@ theorem sat_elemCtx (m : EnvModel V env) {c : Name} {ψ : Name → Nat}
 /-- The element type expression is the element inductive's bare
 constant (`Verify/OfReducePin.lean`'s `ofReduce_elemTy` at the
 *operation*'s index rather than the axiom's). -/
-theorem reduceElemTy_constS (c : Name) :
+theorem reduceElemTy_constS (c : Key md) :
     Ix.Kernel.reduceElemTy c = .const (Ix.Kernel.reduceElemName c) [] := by
   unfold Ix.Kernel.reduceElemTy Ix.Kernel.reduceElemName
   split <;> simp [Ix.Kernel.natName, Ix.Kernel.boolName]
@@ -125,7 +125,7 @@ theorem reduceElemTy_constS (c : Name) :
 erasures.**  The domain and the codomain are the *same* bare constant,
 and both erasures fix a `.const`, so the pin leaves exactly the binder
 name and the binder meta free — and neither is ever read below. -/
-theorem reduceOp_shapeS {c : Name} {type' : Expr}
+theorem reduceOp_shapeS {c : Key md} {type' : Expr md}
     (hc : c ∈ Ix.Kernel.reduceOpNames)
     (h : type'.erasePw
       = (Ix.Kernel.reduceOpCvA c).type.erasePw) :
@@ -136,7 +136,7 @@ theorem reduceOp_shapeS {c : Name} {type' : Expr}
   have hshape : (Ix.Kernel.reduceOpCvA c).type.erasePw
       = .forallE
           (Ix.Kernel.reduceElemTy c) (Ix.Kernel.reduceElemTy c)
-          ⟨.never⟩ := by
+          { pw := .never } := by
     rcases hcases with rfl | rfl <;>
       simp [Ix.Kernel.reduceOpCvA, Ix.Kernel.reduceNatCvA,
         Ix.Kernel.reduceBoolCvA, Ix.Kernel.reduceElemTy, Ix.Kernel.reduceNatName,
@@ -160,7 +160,7 @@ theorem reduceOp_shapeS {c : Name} {type' : Expr}
 /-- The certificate variable's leaf list: one leaf at index `0`, whose
 annotation is the element type (a bare constant, so the hereditary
 recursion stops there). -/
-theorem reduceCertVar_fvarLeaves (c : Name) :
+theorem reduceCertVar_fvarLeaves (c : Key md) :
     (Ix.Kernel.reduceCertVar c).fvarLeaves
       = [(0, Ix.Kernel.reduceElemTy c)] := by
   have hE := reduceElemTy_constS c
@@ -176,24 +176,24 @@ the module docstring for the route and for why no regime bit is ever
 read. -/
 theorem reduceOps_install (hμ : μ.verifiedChecks = true)
     (mp : EnvModelM V μ env) {F : Nat}
-    {cv : ConstantVal} {value type' value' : Expr}
-    {A Ta : (Name → Nat) → AnnotTerm}
+    {cv : ConstantVal md} {value type' value' : Expr md}
+    {A Ta : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? cv.name = none)
     (hvf' : value'.hasFvar = false)
     (hbv' : value'.looseBVarsBounded 0 = true)
     (hannv : Ix.Kernel.annotateCore μ env F 0 value = .ok value')
-    (hA : ∀ ψ : Name → Nat,
+    (hA : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ))
-    (hAclosed : ∀ (ψ : Name → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
-    (hAvalid : ∀ (ψ : Name → Nat) (ρ : Nat → V), AnnotValid V ρ (A ψ))
-    (hTa : ∀ ψ : Name → Nat,
+    (hAclosed : ∀ (ψ : LevelParam → Nat) (k : Nat), (A ψ).liftN 1 k = A ψ)
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenoted V ρ (A ψ))
+    (hAvalid : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), AnnotValid V ρ (A ψ))
+    (hTa : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 0 type' = some (Ta ψ))
-    (hTaOk : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
-    (hmemA : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hTaOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
+    (hmemA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ))
     (hred : Ix.Kernel.reduceOpNames.contains cv.name = true →
-      ReducePinRun μ F env
+      ReduceIdentityRun μ F env
         ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩
         cv.name value)
     (m₂ : EnvModel V
@@ -208,7 +208,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
       hfresh m₂ hac hcN hne hf₂ hpin
   subst hne
   -- the recorded certificate, and its annotated subject
-  obtain ⟨-, helemOk, -, valA, pinA, hannA, -, hrun⟩ :=
+  obtain ⟨-, helemOk, valA, hannA, hrun⟩ :=
     hred (List.contains_iff_mem.mpr hcN)
   obtain rfl : valA = value' := Except.ok.inj (hannA.symm.trans hannv)
   -- the element inductive is stored, level-free, and is not the cons
@@ -216,7 +216,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
   have hneE : Ix.Kernel.reduceElemName cv.name ≠ cv.name := by
     intro h; rw [h, hfresh] at hfE; exact nomatch hfE
   have hEty := reduceElemTy_constS cv.name
-  have hdenE : ∀ (ψ : Name → Nat) (d : Nat),
+  have hdenE : ∀ (ψ : LevelParam → Nat) (d : Nat),
       denoteMeta mp.base2.acval env ψ d (Ix.Kernel.reduceElemTy cv.name)
         = some (mp.base2.acval (Ix.Kernel.reduceElemName cv.name) ψ) := by
     intro ψ d
@@ -229,7 +229,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
   have hmoveC : m₂.acval cv.name = A := by
     rw [hac]; exact acvalWith_self
   -- `A` is a leaf, hence environment-blind
-  have hclA : ∀ ρ₁ ρ₂ : Nat → V, ∀ ψ : Name → Nat,
+  have hclA : ∀ ρ₁ ρ₂ : Nat → V, ∀ ψ : LevelParam → Nat,
       interp V ρ₁ (A ψ) = interp V ρ₂ (A ψ) := by
     intro ρ₁ ρ₂ ψ
     have h := acval_interp_closedC m₂ cv.name ψ ρ₁ ρ₂
@@ -248,7 +248,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
         (.fvar 0 (Ix.Kernel.reduceElemTy cv.name))
       = Ix.Kernel.reduceElemTy cv.name :=
     Expr.instantiate1_eq_self (by rw [hEty]; rfl)
-  have hTaShape : ∀ ψ : Name → Nat,
+  have hTaShape : ∀ ψ : LevelParam → Nat,
       Ta ψ = .pi 0 (pwBit ψ mb₀.pw)
         (mp.base2.acval (Ix.Kernel.reduceElemName cv.name) ψ)
         (mp.base2.acval (Ix.Kernel.reduceElemName cv.name) ψ) := by
@@ -297,7 +297,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
         = valA.fvarLeaves ++ (Ix.Kernel.reduceCertVar cv.name).fvarLeaves
         from by rw [Expr.fvarLeaves], hvLeaves, List.nil_append] at hl
     exact hLCert l hl
-  have hctxCert : ∀ ψ : Name → Nat,
+  have hctxCert : ∀ ψ : LevelParam → Nat,
       CtxOk mp.base2 ψ 1 (elemCtx mp.base2 cv.name ψ)
         (Ix.Kernel.reduceCertVar cv.name) := by
     intro ψ
@@ -309,7 +309,7 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
       elemA mp.base2 cv.name ψ, hdenE ψ 1, rfl, fun ρ' _ => ?_,
       fun ρ' _ => ⟨mp.base2.acval_wellDenoted _ ψ ρ', mp.acval_validV _ ψ ρ'⟩⟩
     exact acval_interp_closedC mp.base2 _ ψ _ _
-  have hctxApp : ∀ ψ : Name → Nat,
+  have hctxApp : ∀ ψ : LevelParam → Nat,
       CtxOk mp.base2 ψ 1 (elemCtx mp.base2 cv.name ψ)
         (Expr.app valA (Ix.Kernel.reduceCertVar cv.name)) := by
     intro ψ
@@ -319,16 +319,16 @@ theorem reduceOps_install (hμ : μ.verifiedChecks = true)
         from by rw [Expr.fvarLeaves], hvLeaves, List.nil_append] at hl
     exact (hctxCert ψ).2 l hl
   -- the two sides' readings at the certificate's depth
-  have hdenCert : ∀ ψ : Name → Nat,
+  have hdenCert : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 1 (Ix.Kernel.reduceCertVar cv.name)
         = some (.bvar 0) := by
     intro ψ
     rw [Ix.Kernel.reduceCertVar, denoteMeta_fvar]
-  have hdenV1 : ∀ ψ : Name → Nat,
+  have hdenV1 : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 1 valA = some (A ψ) := fun ψ =>
     denoteMeta_depth_of_closed mp.base2.acval_closed hvf'
       (fun k => hAclosed ψ k) (hA ψ) 1
-  have hdenApp : ∀ ψ : Name → Nat,
+  have hdenApp : ∀ ψ : LevelParam → Nat,
       denoteMeta mp.base2.acval env ψ 1
           (Expr.app valA (Ix.Kernel.reduceCertVar cv.name))
         = some (.app (A ψ) (.bvar 0)) := by

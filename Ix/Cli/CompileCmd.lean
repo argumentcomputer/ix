@@ -32,6 +32,13 @@ def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
     Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
     return none
 
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch. The Rust compiler and serializer
@@ -85,11 +92,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- inside `namespace Tests.Ix.Kernel.TutorialDefs` that register
   -- under bare `basicDef`. The module that elaborated them is
   -- `Tests.Ix.Kernel.TutorialDefs`, so the prefix still matches.
-  -- Seeds pass through `collectDeps` for the transitive-dep closure.
+  -- Seeds pass through `collectSelectedDeps` (a selected input's closure:
+  -- recursors, whole logical units and checker support included), as do
+  -- `--consts` and `--exclude` seeds.
   -- Flag name is `--module` (not `--ns`) because the match is against
   -- the source module name, not the decl's own namespace.
   -- `--consts` / `--consts-file`: seed by EXACT constant name, transitive
-  -- deps via `collectDeps` — a closure-only env (e.g. one benchmark constant
+  -- deps via `collectSelectedDeps` — a closure-only env (e.g. one benchmark constant
   -- + deps) instead of the whole import env. Resolution tries `String.toName`
   -- first, then a displayed-form scan so `_private`/numeric components
   -- round-trip. Mutually exclusive with `--module`; `--exclude` doesn't
@@ -99,7 +108,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     p.printError "error: --consts/--consts-file and --module are mutually exclusive"
     return 1
   let constList ←
-    if !constsSeeds.isEmpty then do
+    if p.hasFlag "local" then do
+      if !constsSeeds.isEmpty || (p.flag? "module").isSome || !excludeSet.isEmpty then
+        p.printError "error: --local excludes --consts/--consts-file, --module and --exclude"
+        return 1
+      let closed := localConstList fe
+      IO.println s!"[compile] local: {closed.length} constants (the file's own and their dependencies)"
+      pure closed
+    else if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
       -- Displayed-form fallback, built at most once: a fresh
@@ -121,7 +137,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         p.printError s!"error: no constant(s) named {missing} in the environment"
         return 1
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
-      let closed := collectDeps leanEnv seeds
+      let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
       pure closed
     else match p.flag? "module" with
@@ -134,7 +150,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectDeps leanEnv seeds)
+        pure (collectSelectedDeps leanEnv seeds)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
@@ -151,7 +167,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
             let mod := moduleNames[idx.toNat]!
             if prefixes.any (·.isPrefixOf mod) then some n else none
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
-        let closed := collectDeps leanEnv seeds
+        let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
         pure closed
 
@@ -232,7 +248,7 @@ grounded subset)"
 serialized the grounded subset ({status.named} named, \
 {status.uniqueAnon} unique constants)"
     stream.putStrLn verdict
-    for (n, r) in status.ungrounded.toList.take 10 do
+    for (n, r) in (rootCausesFirst status.ungrounded.toList).take 10 do
       stream.putStrLn s!"  [ungrounded] {n}: {(r.replace "\n" " ").take 200}"
     if ungroundedCount > 10 then
       stream.putStrLn s!"  … and {ungroundedCount - 10} more (see --report for the full list)"
@@ -267,6 +283,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
+    "local" ;               "Compile only the constants the input file itself declares, with their transitive dependencies, instead of the whole import env. Mutually exclusive with --consts, --consts-file, --module and --exclude."
     module         : String; "Comma-separated module-name prefixes to filter on (e.g. 'Tests.Ix.Kernel.TutorialDefs,Tests.Ix.Kernel.NatReduction'). Match is against the SOURCE MODULE a constant came from (via `Lean.Environment.getModuleIdxFor?`), not the constant's own name — so macro-emitted decls that register under unqualified names still get caught when their host module's name matches. Transitive deps are pulled in automatically."
     exclude        : String; "Comma-separated exact Lean.Name(s) to strip from the seed set. Excluded names that are still referenced by another seed will reappear via the transitive-dep closure."
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."

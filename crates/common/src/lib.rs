@@ -15,6 +15,7 @@ use rustc_hash::FxBuildHasher;
 
 pub mod address;
 pub mod env;
+pub mod name_table;
 pub mod prim_addrs;
 pub mod strong_ordering;
 

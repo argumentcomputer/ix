@@ -22,7 +22,7 @@ use ixon::CompileError;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, fresh_fvar, instantiate_spec_with_fvars,
-  instantiate1, mk_const, mk_forall, mk_lambda, subst_levels,
+  instantiate1, mk_const, mk_forall, mk_lambda, strip_mdata_ref, subst_levels,
 };
 
 // =========================================================================
@@ -725,14 +725,23 @@ pub fn generate_canonical_recursors_with_layout(
   // Creating them once lets `decompose_inductive_type` populate
   // `IndRecInfo::indices` / `major` with domains that reference the same
   // FVars the rec types will use, so the results embed without substitution.
+  //
+  // The telescope must peel exactly `n_params` binders: a short telescope
+  // would silently drop parameters. Binder info comes from the telescope
+  // itself, which (like `collect_binders`) looks through spine metadata.
   let (shared_param_fvars, raw_param_decls, _) =
-    super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
+    super::expr_utils::forall_telescope_exact(
+      &first_ty,
+      n_params,
+      "param",
+      0,
+      "generate_canonical_recursors_with_layout",
+      "inductive parameters",
+    )?;
   let shared_param_decls: Vec<LocalDecl> = raw_param_decls
     .into_iter()
-    .zip(param_binders.iter())
-    .map(|(mut d, pb)| {
+    .map(|mut d| {
       d.domain = super::expr_utils::consume_type_annotations(&d.domain);
-      d.info = pb.info.clone();
       d
     })
     .collect();
@@ -824,7 +833,7 @@ pub fn generate_canonical_recursors_with_layout(
       stt,
       kctx,
       block_nested_rewrite.as_mut(),
-    );
+    )?;
 
     // Build rules
     let rules = build_rec_rules(
@@ -886,35 +895,22 @@ pub fn generate_canonical_recursors_with_layout(
 // Binder info collected from types
 // =========================================================================
 
-/// A binder extracted from a forall chain.
-///
-/// `name` and `domain` are used by `collect_binders` and retained for
-/// dead-code reference implementations (`_extract_field_binders_from_rec_type`).
+/// A binder extracted from a forall chain: its binder info.
 #[derive(Clone)]
 struct Binder {
-  #[allow(dead_code)]
-  name: Name,
-  #[allow(dead_code)]
-  domain: LeanExpr,
   info: BinderInfo,
 }
 
-/// Collect the first `n` forall binders from an expression.
+/// Collect the first `n` forall binders from an expression. Metadata on the
+/// forall spine is transparent, as it is for `forall_telescope`.
 fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
   let mut binders = Vec::with_capacity(n);
   let mut cur = expr.clone();
   for _ in 0..n {
+    cur = strip_mdata_ref(&cur).clone();
     match cur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        // Strip outParam/semiOutParam/optParam/autoParam wrappers,
-        // matching Lean's consume_type_annotations in mk_local_decl
-        // (inductive.cpp:179).
-        let clean_dom = super::expr_utils::consume_type_annotations(dom);
-        binders.push(Binder {
-          name: name.clone(),
-          domain: clean_dom,
-          info: bi.clone(),
-        });
+      ExprData::ForallE(_, _, body, bi, _) => {
+        binders.push(Binder { info: bi.clone() });
         cur = body.clone();
       },
       _ => break,
@@ -960,7 +956,7 @@ fn build_rec_type(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
       .and_then(|o| o.get(name).map(|e| e.cloned()))
@@ -989,7 +985,11 @@ fn build_rec_type(
         lean_env,
         overlay,
         param_fvars,
-      )
+        param_decls,
+        rec_level_params,
+        stt,
+        kctx,
+      )?
     };
     // Domain stays in FVar form — contains param FVars which mk_forall
     // will abstract when processing this binder's domain.
@@ -1048,7 +1048,7 @@ fn build_rec_type(
         stt,
         kctx,
         nested_rewrite.as_deref_mut(),
-      );
+      )?;
       // Domain stays in FVar form — contains param + motive FVars.
       let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
         || ctor.cnst.name.clone(),
@@ -1118,6 +1118,7 @@ fn build_rec_type(
     let di_sp_fvars =
       instantiate_spec_with_fvars(&di_member.spec_params, param_fvars);
     for p in 0..di_n_ext_params {
+      ity = strip_mdata_ref(&ity).clone();
       if let ExprData::ForallE(_, _, body, _, _) = ity.as_data() {
         if p < di_sp_fvars.len() {
           ity = instantiate1(body, &di_sp_fvars[p]);
@@ -1132,26 +1133,18 @@ fn build_rec_type(
     // reduction before forall_telescope peeling.
     ity = super::expr_utils::beta_reduce(&ity);
 
-    // Peel `n_indices` leading Pi's. For aux nested members this is still
-    // syntactic — see note above.
-    let n_indices = di_member.n_indices;
-    let mut index_decls: Vec<LocalDecl> = Vec::new();
-    for fi in 0..n_indices {
-      match ity.as_data() {
-        ExprData::ForallE(name, dom, body, bi, _) => {
-          let (fv_name, fv) = fresh_fvar("idx", fi);
-          index_decls.push(LocalDecl {
-            fvar_name: fv_name,
-            binder_name: name.clone(),
-            domain: dom.clone(),
-            info: bi.clone(),
-          });
-          index_fvars.push(fv.clone());
-          ity = instantiate1(body, &fv);
-        },
-        _ => break,
-      }
-    }
+    // Peel `n_indices` leading Pi's, through `whnf` where the head is stuck
+    // (an index behind a reducible alias, WB-A3).
+    let (aux_index_fvars, index_decls, _) = peel_aux_indices(
+      &ity,
+      di_member.n_indices,
+      "idx",
+      param_decls,
+      rec_level_params,
+      stt,
+      kctx,
+    )?;
+    index_fvars.extend(aux_index_fvars);
     all_decls.extend(index_decls);
 
     // Build major domain: I spec_params indices.
@@ -1197,7 +1190,7 @@ fn build_rec_type(
   // Apply infer_implicit: Lean calls inferImplicit(ty, 1000, false)
   // which processes ALL binders, marking them implicit if their BVar
   // appears in an explicit domain downstream.
-  infer_implicit(&rec_type, 1000)
+  Ok(infer_implicit(&rec_type, 1000))
 }
 
 /// Build motive type for a class from its pre-computed [`IndRecInfo`]:
@@ -1223,15 +1216,67 @@ fn build_motive_type(
   mk_forall(sort, &decls)
 }
 
+/// Peel `n` index binders of an auxiliary member's instantiated type: the
+/// leading Pi's as they stand, and through the kernel's `whnf` where the head
+/// is not a Pi (WB-A3: `Ext α : Fam` with `abbrev Fam := Nat → Type`), as
+/// `decompose_inductive_type` does for the originals and Lean's kernel
+/// (`mk_rec_infos`) for every member. The scope over the block parameters is
+/// opened only when a head is stuck, so a syntactic telescope costs no kernel
+/// call and gives exactly `forall_telescope`'s binders. Lean
+/// `Ix.AuxGen.peelAuxIndices`.
+fn peel_aux_indices(
+  ty: &LeanExpr,
+  n: usize,
+  prefix: &str,
+  param_decls: &[LocalDecl],
+  level_params: &[Name],
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<(Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr), CompileError> {
+  let (mut fvars, mut decls, mut cur) =
+    super::expr_utils::forall_telescope(ty, n, prefix, 0);
+  if decls.len() == n {
+    return Ok((fvars, decls, cur));
+  }
+  let outer: Vec<LocalDecl> =
+    param_decls.iter().chain(decls.iter()).cloned().collect();
+  let mut scope =
+    super::expr_utils::TcScope::new(&outer, level_params, stt, kctx)?;
+  for i in decls.len()..n {
+    cur = strip_mdata_ref(&cur).clone();
+    if !matches!(cur.as_data(), ExprData::ForallE(..)) {
+      cur = scope.whnf_lean(&cur)?;
+    }
+    let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() else {
+      break;
+    };
+    let (fv_name, fv) = fresh_fvar(prefix, i);
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: name.clone(),
+      domain: dom.clone(),
+      info: bi.clone(),
+    };
+    scope.push_locals(std::slice::from_ref(&decl))?;
+    let next = instantiate1(body, &fv);
+    decls.push(decl);
+    fvars.push(fv);
+    cur = next;
+  }
+  Ok((fvars, decls, cur))
+}
+
 /// Build motive type for an auxiliary (nested) flat member.
 ///
 /// For a nested occurrence `J Ds` where `J` is an external inductive
 /// with indices, the motive type is `∀ (indices...) (t : J Ds indices), Sort u`.
 /// `Ds` are the spec_params from the flat member.
 ///
-/// Uses FVar-based index peeling via `forall_telescope` so that dependent
-/// index domains are correctly instantiated (earlier indices as FVars).
-/// The returned expression contains param FVars as free variables.
+/// Uses FVar-based index peeling ([`peel_aux_indices`]) so that dependent
+/// index domains are correctly instantiated (earlier indices as FVars) and
+/// an index behind a reducible alias is found. The returned expression
+/// contains param FVars as free variables.
+#[allow(clippy::too_many_arguments)]
 fn build_motive_type_aux(
   member: &FlatInfo,
   _n_params: usize,
@@ -1240,7 +1285,11 @@ fn build_motive_type_aux(
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   param_fvars: &[LeanExpr],
-) -> LeanExpr {
+  param_decls: &[LocalDecl],
+  rec_level_params: &[Name],
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<LeanExpr, CompileError> {
   // Look up the external inductive (check overlay first for expanded aux types).
   let env_get_local = |n: &Name| -> Option<ConstantInfo> {
     overlay
@@ -1249,7 +1298,7 @@ fn build_motive_type_aux(
   };
   let ind = match env_get_local(&member.name) {
     Some(ConstantInfo::InductInfo(v)) => v,
-    _ => return LeanExpr::sort(Level::zero()), // fallback
+    _ => return Ok(LeanExpr::sort(Level::zero())), // fallback
   };
   let n_ext_params = member.own_params;
   let n_ext_indices = member.n_indices;
@@ -1273,6 +1322,7 @@ fn build_motive_type_aux(
     instantiate_spec_with_fvars(&member.spec_params, param_fvars);
   let mut cur = ty;
   for p in 0..n_ext_params {
+    cur = strip_mdata_ref(&cur).clone();
     if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
       if p < spec_fvars.len() {
         cur = instantiate1(body, &spec_fvars[p]);
@@ -1288,10 +1338,16 @@ fn build_motive_type_aux(
   // beta-reducing here doesn't conflict with the Lean-stored structure.
   cur = super::expr_utils::beta_reduce(&cur);
   // Peel index binders using FVars so that dependent index domains are
-  // correctly instantiated. This fixes the structural-peeling bug where
-  // body.clone() left dangling BVars in dependent index types.
-  let (index_fvars, index_decls, _) =
-    super::expr_utils::forall_telescope(&cur, n_ext_indices, "ma_idx", 0);
+  // correctly instantiated, through `whnf` where the head is stuck.
+  let (index_fvars, index_decls, _) = peel_aux_indices(
+    &cur,
+    n_ext_indices,
+    "ma_idx",
+    param_decls,
+    rec_level_params,
+    stt,
+    kctx,
+  )?;
 
   // Build major type: J.{occurrence_us} spec_params index_fvars
   let fallback_univs;
@@ -1328,7 +1384,7 @@ fn build_motive_type_aux(
   let mut all_decls: Vec<LocalDecl> = Vec::new();
   all_decls.extend(index_decls);
   all_decls.push(major_decl);
-  mk_forall(sort, &all_decls)
+  Ok(mk_forall(sort, &all_decls))
 }
 
 /// Build minor premise type for a constructor using FVars.
@@ -1364,7 +1420,7 @@ fn build_minor_type(
   // Shared scratch for nested-aux level rewrites across every ctor in
   // the block. `None` when the block doesn't need any rewriting.
   nested_rewrite: Option<&mut NestedRewriteCtx>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   // `n_classes` is no longer read inside this function since the
   // nested-aux lookup moved to the caller-owned `nested_rewrite`; keep
   // the parameter so the call-site signature stays self-describing and
@@ -1393,6 +1449,7 @@ fn build_minor_type(
     vec![]
   };
   for p in 0..n_ctor_params {
+    cur = strip_mdata_ref(&cur).clone();
     if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
       if member.is_aux && p < sp_fvars.len() {
         cur = instantiate1(body, &sp_fvars[p]);
@@ -1435,9 +1492,10 @@ fn build_minor_type(
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
 
   let mut scope =
-    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx)?;
 
   for fi in 0..n_fields {
+    cur = strip_mdata_ref(&cur).clone();
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
         // Strip autoParam/optParam/outParam wrappers, matching Lean's
@@ -1457,11 +1515,11 @@ fn build_minor_type(
           n_params,
           &mut scope,
           stt,
-        );
+        )?;
         if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
         }
-        scope.push_locals(std::slice::from_ref(&decl));
+        scope.push_locals(std::slice::from_ref(&decl))?;
         field_decls.push(decl);
         field_fvars.push(fv.clone());
         cur = instantiate1(body, &fv);
@@ -1483,7 +1541,7 @@ fn build_minor_type(
       motive_fvars,
       classes,
       &mut scope,
-    );
+    )?;
     // Lean C++ uses appendAfter("_ih") which appends "_ih" to the
     // innermost string component of the Name structure.
     let ih_name = name_append_after(&field_decls[fi].binder_name, "_ih");
@@ -1539,7 +1597,7 @@ fn build_minor_type(
   let mut all_binders: Vec<LocalDecl> = Vec::new();
   all_binders.extend(field_decls);
   all_binders.extend(ih_decls);
-  mk_forall(conclusion, &all_binders)
+  Ok(mk_forall(conclusion, &all_binders))
 }
 
 /// Build IH type for a recursive field using FVars, with kernel WHNF.
@@ -1565,10 +1623,10 @@ fn build_ih_type_fvar(
   motive_fvars: &[LeanExpr],
   classes: &[FlatInfo],
   scope: &mut super::expr_utils::TcScope<'_>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = scope.whnf_lean(field_dom);
+  let mut cur = scope.whnf_lean(field_dom)?;
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     // Check if the expression head is an inductive in the block — stop if so.
@@ -1585,16 +1643,16 @@ fn build_ih_type_fvar(
       domain: dom.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = scope.whnf_lean(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
 
   // Pop the xs decls we pushed during peeling so the scope stays balanced
   // for the next field / constructor. The IH body construction below does
   // not need them in the TC context.
-  scope.pop_locals(&xs_decls);
+  scope.pop_locals(&xs_decls)?;
 
   // `cur` is now the fully FVar-instantiated inner expression: I params idx_args
   let (_, inner_args) = decompose_apps(&cur);
@@ -1614,7 +1672,7 @@ fn build_ih_type_fvar(
   ih_body = LeanExpr::app(ih_body, field_app);
 
   // Abstract xs FVars back into foralls, preserving original binder names
-  mk_forall(ih_body, &xs_decls)
+  Ok(mk_forall(ih_body, &xs_decls))
 }
 
 // =========================================================================
@@ -1650,9 +1708,6 @@ fn build_rec_rules(
   let n_minors: usize = classes.iter().map(|c| c.ctors.len()).sum();
   let pmm = n_params + n_motives + n_minors;
 
-  // Extract PMM binder info from the rec_type for lambda domains/names.
-  let _pmm_binders = collect_binders(rec_type, pmm);
-
   // Collect param binder infos from the inductive type (for rule RHS lambdas).
   let param_binder_infos: Vec<BinderInfo> = {
     let ind_ty = subst_levels(
@@ -1680,6 +1735,7 @@ fn build_rec_rules(
       ("rminor", i - n_params - n_motives)
     };
     let (fv_name, fv) = fresh_fvar(kind, local_idx);
+    rec_ty_cur = strip_mdata_ref(&rec_ty_cur).clone();
     let (binder_name, domain, _info) = match rec_ty_cur.as_data() {
       ExprData::ForallE(n, d, b, bi, _) => {
         let result = (n.clone(), d.clone(), bi.clone());
@@ -1718,7 +1774,7 @@ fn build_rec_rules(
   // delta-unfolding reducible-alias heads matters for recognizing recursive
   // fields hidden under a definition (`reduceCtorParam` family).
   let mut scope =
-    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx)?;
 
   let mut rules = Vec::new();
 
@@ -1756,6 +1812,7 @@ fn build_rec_rules(
         vec![]
       };
       for p in 0..n_ctor_params {
+        ty = strip_mdata_ref(&ty).clone();
         if let ExprData::ForallE(_, _, b, _, _) = ty.as_data() {
           if class.is_aux && p < rule_sp_fvars.len() {
             ty = instantiate1(b, &rule_sp_fvars[p]);
@@ -1783,6 +1840,7 @@ fn build_rec_rules(
       let mut rec_field_data: Vec<(LeanExpr, usize)> = Vec::new(); // (field_fvar, target_ci)
 
       for fi in 0..n_fields {
+        ty = strip_mdata_ref(&ty).clone();
         match ty.as_data() {
           ExprData::ForallE(fname, dom, b, fbi, _) => {
             let clean_dom = super::expr_utils::consume_type_annotations(dom);
@@ -1800,10 +1858,10 @@ fn build_rec_rules(
               n_params,
               &mut scope,
               stt,
-            ) {
+            )? {
               rec_field_data.push((fv.clone(), target_ci));
             }
-            scope.push_locals(std::slice::from_ref(&decl));
+            scope.push_locals(std::slice::from_ref(&decl))?;
             field_decls.push(decl);
             field_fvars.push(fv.clone());
             ty = instantiate1(b, &fv);
@@ -1872,7 +1930,7 @@ fn build_rec_rules(
             &minor_fvars,
             classes,
             &mut scope,
-          )
+          )?
         } else {
           field_fv.clone() // fallback — shouldn't happen
         };
@@ -1880,7 +1938,7 @@ fn build_rec_rules(
       }
 
       // Pop this ctor's field decls so the scope is clean for the next ctor.
-      scope.pop_locals(&field_decls);
+      scope.pop_locals(&field_decls)?;
 
       // Abstract and wrap: fields (innermost), then PMM (outermost).
       let mut all_decls: Vec<LocalDecl> = Vec::new();
@@ -1924,12 +1982,12 @@ fn build_rule_ih_fvar(
   minor_fvars: &[LeanExpr],
   classes: &[FlatInfo],
   scope: &mut super::expr_utils::TcScope<'_>,
-) -> LeanExpr {
+) -> Result<LeanExpr, CompileError> {
   let target_n_params = nat_to_usize(&classes[target_ci].ind.num_params);
 
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = scope.whnf_lean(field_dom);
+  let mut cur = scope.whnf_lean(field_dom)?;
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (h, _) = decompose_apps(&cur);
@@ -1945,12 +2003,12 @@ fn build_rule_ih_fvar(
       domain: dom.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = scope.whnf_lean(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
-  scope.pop_locals(&xs_decls);
+  scope.pop_locals(&xs_decls)?;
 
   let (_, inner_args) = decompose_apps(&cur);
   let idx_args: Vec<LeanExpr> =
@@ -1975,7 +2033,7 @@ fn build_rule_ih_fvar(
   }
   ih = LeanExpr::app(ih, field_app);
 
-  mk_lambda(ih, &xs_decls)
+  Ok(mk_lambda(ih, &xs_decls))
 }
 
 // =========================================================================
@@ -2106,7 +2164,7 @@ fn find_rec_target(
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
   _stt: &crate::compile::CompileState,
-) -> Option<usize> {
+) -> Result<Option<usize>, CompileError> {
   // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
   let mut phase1_match: Option<usize> = None;
@@ -2131,17 +2189,17 @@ fn find_rec_target(
   // `field_dom`; without this warming pass, every recursive field's
   // downstream WHNF is cold. Discard the result — class matching above
   // already used the source-shape head.
-  let _ = scope.whnf_lean(dom);
+  let _ = scope.whnf_lean(dom)?;
 
   if let Some(ci) = phase1_match {
-    return Some(ci);
+    return Ok(Some(ci));
   }
 
   // Phase 2: WHNF fallback for reducible-alias heads. Phase 1 didn't
   // find a class-member head at any peeling depth, so the head is
   // either not a class member at all, or is a reducible alias that
   // delta-unfolds to one.
-  let mut ty = scope.whnf_lean(dom);
+  let mut ty = scope.whnf_lean(dom)?;
   let mut pushed: Vec<LocalDecl> = Vec::new();
   while let ExprData::ForallE(name, d, body, bi, _) = ty.as_data() {
     let (fv_name, fv) = fresh_fvar("frt", pushed.len());
@@ -2151,12 +2209,12 @@ fn find_rec_target(
       domain: d.clone(),
       info: bi.clone(),
     };
-    scope.push_locals(std::slice::from_ref(&decl));
+    scope.push_locals(std::slice::from_ref(&decl))?;
     pushed.push(decl);
-    ty = scope.whnf_lean(&instantiate1(body, &fv));
+    ty = scope.whnf_lean(&instantiate1(body, &fv))?;
   }
-  scope.pop_locals(&pushed);
-  match_classes_against_app(&ty, classes, param_fvars, n_params)
+  scope.pop_locals(&pushed)?;
+  Ok(match_classes_against_app(&ty, classes, param_fvars, n_params))
 }
 
 /// Helper for [`find_rec_target`]: match an `App`-spine against the
@@ -2402,26 +2460,44 @@ fn compute_is_large_and_k(
 
     let cls_addr = resolve_lean_name_addr(&cls_ind.cnst.name, n2a, aux_n2a);
     let cls_zid: KId<Meta> = KId::new(cls_addr, cls_ind.cnst.name.clone());
-    let cls_ty_z = lean_expr_to_zexpr_with_kenv(
+    // Forward provenance of the converted terms (Lean records it in
+    // `leanExprToKexpr`).
+    super::expr_utils::remember_source_expr(
+      &mut kctx.source_names,
       &cls_ind.cnst.typ,
-      cls_lvl_params,
-      &mut kctx.kenv,
-      n2a,
-      aux_n2a,
+      stt,
     );
+    let cls_ty_z = super::expr_utils::kernel_ingress(
+      &cls_ind.cnst.name,
+      lean_expr_to_zexpr_with_kenv(
+        &cls_ind.cnst.typ,
+        cls_lvl_params,
+        &mut kctx.kenv,
+        n2a,
+        aux_n2a,
+      ),
+    )?;
 
     // Convert constructors
     let mut cls_ctor_zids: Vec<KId<Meta>> = Vec::new();
     for ctor in &cls.ctors {
       let ctor_addr = resolve_lean_name_addr(&ctor.cnst.name, n2a, aux_n2a);
       let ctor_zid = KId::new(ctor_addr, ctor.cnst.name.clone());
-      let ctor_ty_z = lean_expr_to_zexpr_with_kenv(
+      super::expr_utils::remember_source_expr(
+        &mut kctx.source_names,
         &ctor.cnst.typ,
-        cls_lvl_params,
-        &mut kctx.kenv,
-        n2a,
-        aux_n2a,
+        stt,
       );
+      let ctor_ty_z = super::expr_utils::kernel_ingress(
+        &ctor.cnst.name,
+        lean_expr_to_zexpr_with_kenv(
+          &ctor.cnst.typ,
+          cls_lvl_params,
+          &mut kctx.kenv,
+          n2a,
+          aux_n2a,
+        ),
+      )?;
       let ctor_fields = nat_to_u64(&ctor.num_fields);
       let ctor_params = nat_to_u64(&ctor.num_params);
 
@@ -2464,12 +2540,12 @@ fn compute_is_large_and_k(
     // (`Set`, local `abbrev`s, etc.). Load just those referenced constants
     // as real KEnv entries before asking the kernel to WHNF the target.
     let _ig_target_start = std::time::Instant::now();
-    ingress_target_type_deps(&cls_ind.cnst.typ, lean_env, stt, kctx);
+    ingress_target_type_deps(&cls_ind.cnst.typ, lean_env, stt, kctx)?;
     _ingress_total += _ig_target_start.elapsed();
 
     // Ingress field deps for this class
     let _ig_start = std::time::Instant::now();
-    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx);
+    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx)?;
     _ingress_total += _ig_start.elapsed();
 
     ind_infos.push((
@@ -2501,7 +2577,31 @@ fn compute_is_large_and_k(
       ),
     })?;
 
-  let is_large =
+  // Prop determination: use the WHNF-reduced kernel-derived level, not the
+  // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic
+  // peel short-circuits (can't find enough Pi's) and returns None, which
+  // would wrongly classify the inductive as non-Prop and produce a
+  // Type-level `.brecOn` (with `.brecOn.go` / `.brecOn.eq` sub-constants)
+  // for what is actually a `Prop`-valued inductive. The test is semantic
+  // (`u ≡ 0` under every assignment), as Lean's `computeIsLargeAndK`
+  // (`KUniv.isSemanticZero`) and the kernels' Prop tests are, not the
+  // syntactic `is_zero` (WB-F3): it does not depend on how the level was
+  // spelled or which constructors built it.
+  let is_prop = result_kuniv.is_semantic_zero();
+
+  // The kernels' rule (Lean's `elim_only_at_universe_zero`), which counts
+  // the expanded block: a result level that may be zero eliminates small
+  // when the block, nested auxiliaries included, is not a singleton,
+  // whatever the originals' singleton test says. Decide this before
+  // probing fields in the original-only KEnv: a field can name an
+  // auxiliary that was not inserted (WB-A7). Otherwise the probe decides,
+  // with no override (A0, WB-B8): a former override forced large
+  // elimination whenever the level was not literally zero, so a `Sort u`
+  // inductive (reachable through `addDecl`) got a large recursor both
+  // kernels reject.
+  let is_large = if !result_kuniv.is_never_zero() && classes.len() != 1 {
+    false
+  } else {
     tc.is_large_eliminator(&result_kuniv, &ind_infos).map_err(|e| {
       CompileError::InvalidMutualBlock {
         reason: format!(
@@ -2509,36 +2609,7 @@ fn compute_is_large_and_k(
           classes[0].ind.cnst.name.pretty()
         ),
       }
-    })?;
-
-  // Spec-level override: non-Prop inductives always get large elimination
-  // (Lean C++ `inductive.cpp:539-548`). Our kernel's `is_large_eliminator`
-  // only early-returns when the result level is *provably* non-zero; a
-  // Param universe that happens to be non-zero syntactically (e.g., u+1)
-  // falls through to the single-ctor check and can come back "small".
-  // Correct that here using the WHNF-reduced result level.
-  let is_large =
-    if !is_large && !result_kuniv.is_zero() { true } else { is_large };
-
-  // Prop determination: use the WHNF-reduced kernel-derived level, not the
-  // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic
-  // peel short-circuits (can't find enough Pi's) and returns None, which
-  // would wrongly classify the inductive as non-Prop and produce a
-  // Type-level `.brecOn` (with `.brecOn.go` / `.brecOn.eq` sub-constants)
-  // for what is actually a `Prop`-valued inductive. `KUniv::is_zero()`
-  // here handles `Zero`, `IMax(_, Zero)`, and the like.
-  let is_prop = result_kuniv.is_zero();
-
-  // C1 fix: if the block has nested auxiliary flat members that weren't
-  // inserted into the KEnv, the is_large_eliminator result may be wrong.
-  // In Lean's kernel, nested auxiliaries are full mutual block members
-  // (via elim_nested_inductive_fn), and any mutual Prop block (>1 type)
-  // gets small elimination. The KEnv path only saw n_classes types, so
-  // it may have incorrectly allowed large elimination.
-  let is_large = if is_large && is_prop && classes.len() > n_classes {
-    false
-  } else {
-    is_large
+    })?
   };
 
   // K-target: single inductive, Prop, single ctor, 0 non-param fields.
@@ -2547,10 +2618,10 @@ fn compute_is_large_and_k(
   // the expanded block (inductive.cpp:556).
   //
   // Use the WHNF-reduced `result_kuniv` / `is_prop` for Prop-detection,
-  // NOT the syntactic `peek_result_sort(first_ty_z)`. For inductives whose
-  // target type is a reducible alias (e.g. `Presieve X := ∀ Y, (Y ⟶ X) →
-  // Prop`), `peek_result_sort` peels foralls but stops at the unreduced
-  // `App(Const(Presieve), X)` and returns `None`, falsely rejecting K.
+  // NOT a syntactic peek at the result sort of `first_ty_z`. For inductives
+  // whose target type is a reducible alias (e.g. `Presieve X := ∀ Y,
+  // (Y ⟶ X) → Prop`), such a peek peels foralls but stops at the unreduced
+  // `App(Const(Presieve), X)` and finds no sort, falsely rejecting K.
   // Lean's C++ init_K_target (`kernel/inductive.cpp`) uses the kernel's
   // `m_result_level` which is set from the WHNF-reduced return-sort —
   // same thing we already computed into `result_kuniv` a few lines up.
@@ -2582,10 +2653,10 @@ fn ingress_target_type_deps(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   let mut queue = Vec::new();
   collect_const_refs(target_ty, &mut queue);
-  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx)
 }
 
 /// Walk field domains of constructors and ingress any referenced constants
@@ -2598,14 +2669,14 @@ fn ingress_field_deps(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   let mut queue: Vec<Name> = Vec::new();
 
   // Collect all Const references from constructor types.
   for ctor in &class.ctors {
     collect_const_refs(&ctor.cnst.typ, &mut queue);
   }
-  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx)
 }
 
 /// Drain a worklist of names through `ingress_aux_gen_dep`, deduplicated
@@ -2618,7 +2689,7 @@ fn drain_ingress_queue(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   use ix_kernel::id::KId;
   use ix_kernel::ingress::resolve_lean_name_addr;
   use ix_kernel::mode::Meta;
@@ -2634,11 +2705,16 @@ fn drain_ingress_queue(
     if !seen.insert(zid) {
       continue;
     }
-    if let Some(ci) = lean_env.get(&name) {
-      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue);
+    if let Some(ci) = lean_env.get(&name)
+      && let Err(e) =
+        ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue)
+    {
+      kctx.aux_ingress_seen = seen;
+      return Err(e);
     }
   }
   kctx.aux_ingress_seen = seen;
+  Ok(())
 }
 
 fn ingress_aux_gen_dep(
@@ -2648,15 +2724,15 @@ fn ingress_aux_gen_dep(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
   queue: &mut Vec<Name>,
-) {
+) -> Result<(), CompileError> {
   match ci {
     ConstantInfo::DefnInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
       collect_const_refs(&v.value, queue);
     },
     ConstantInfo::InductInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
       for ctor_name in &v.ctors {
         if let Some(ConstantInfo::CtorInfo(ctor)) =
@@ -2667,30 +2743,31 @@ fn ingress_aux_gen_dep(
       }
     },
     ConstantInfo::CtorInfo(v) => {
-      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::AxiomInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::ThmInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::OpaqueInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::RecInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
     ConstantInfo::QuotInfo(v) => {
-      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx)?;
       collect_const_refs(&v.cnst.typ, queue);
     },
   }
+  Ok(())
 }
 
 fn ingress_type_stub(
@@ -2699,7 +2776,7 @@ fn ingress_type_stub(
   level_params: &[Name],
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) {
+) -> Result<(), CompileError> {
   use ix_kernel::constant::KConst;
   use ix_kernel::id::KId;
   use ix_kernel::ingress::{
@@ -2713,16 +2790,20 @@ fn ingress_type_stub(
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
   if kctx.kenv.contains_key(&zid) {
-    return;
+    return Ok(());
   }
 
-  let ty_z = lean_expr_to_zexpr_with_kenv(
-    typ,
-    level_params,
-    &mut kctx.kenv,
-    n2a,
-    aux_n2a,
-  );
+  super::expr_utils::remember_source_expr(&mut kctx.source_names, typ, stt);
+  let ty_z = super::expr_utils::kernel_ingress(
+    name,
+    lean_expr_to_zexpr_with_kenv(
+      typ,
+      level_params,
+      &mut kctx.kenv,
+      n2a,
+      aux_n2a,
+    ),
+  )?;
   let n_lvls = level_params.len() as u64;
   kctx.kenv.insert(
     zid,
@@ -2734,6 +2815,7 @@ fn ingress_type_stub(
       ty: ty_z,
     },
   );
+  Ok(())
 }
 
 /// Collect all constant names referenced in a LeanExpr.
@@ -2777,28 +2859,6 @@ pub(crate) fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
   }
 }
 
-/// Peek at the result sort of a KExpr type (peel foralls, check for Sort).
-///
-/// No longer wired into the K-target check (see `compute_is_large_and_k`),
-/// which now uses the WHNF-reduced `result_kuniv` to correctly classify
-/// inductives whose target type is a reducible alias. Kept available for
-/// potential future callers that need a syntactic-only peek, and
-/// referenced by that same comment for the historical record.
-#[allow(dead_code)]
-fn peek_result_sort(
-  ty: &ix_kernel::expr::KExpr<ix_kernel::mode::Meta>,
-) -> Option<ix_kernel::level::KUniv<ix_kernel::mode::Meta>> {
-  use ix_kernel::expr::ExprData as ZED;
-  let mut cur = ty.clone();
-  loop {
-    match cur.data() {
-      ZED::All(_, _, _, body, _) => cur = body.clone(),
-      ZED::Sort(u, _) => return Some(u.clone()),
-      _ => return None,
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -2813,6 +2873,238 @@ mod tests {
   /// Helper: `∀ (name : domain), body` with default binder info.
   fn epi(name: Name, domain: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name, domain, body, BinderInfo::Default)
+  }
+
+  /// A flat member with one constructor `mk` whose fields are `fields`, at
+  /// result level `level`; `aux` marks a nested auxiliary. The Lean twins
+  /// are `Tests.AuxGen.ElimRule`'s controls.
+  fn c1_member(
+    label: &str,
+    level: Level,
+    fields: &[LeanExpr],
+    aux: bool,
+    levels: Vec<Name>,
+  ) -> FlatInfo {
+    let name = n(label);
+    let ctor = Name::str(name.clone(), "mk".into());
+    let result = LeanExpr::cnst(
+      name.clone(),
+      levels.iter().cloned().map(Level::param).collect(),
+    );
+    let ty = fields
+      .iter()
+      .rev()
+      .fold(result, |body, dom| epi(n("field"), dom.clone(), body));
+    let ind = InductiveVal {
+      cnst: ConstantVal {
+        name: name.clone(),
+        level_params: levels.clone(),
+        typ: LeanExpr::sort(level),
+      },
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      all: vec![name.clone()],
+      ctors: vec![ctor.clone()],
+      num_nested: Nat::from(0u64),
+      is_rec: !fields.is_empty(),
+      is_unsafe: false,
+      is_reflexive: false,
+    };
+    let cv = ConstructorVal {
+      cnst: ConstantVal { name: ctor, level_params: levels, typ: ty },
+      induct: name.clone(),
+      cidx: Nat::from(0u64),
+      num_params: Nat::from(0u64),
+      num_fields: Nat::from(fields.len() as u64),
+      is_unsafe: false,
+    };
+    FlatInfo {
+      name: name.clone(),
+      ind,
+      ctors: vec![cv],
+      all_names: vec![name],
+      is_aux: aux,
+      spec_params: vec![],
+      occurrence_level_args: vec![],
+      own_params: 0,
+      n_indices: 0,
+    }
+  }
+
+  /// The decision for a block of one original class (no parameters) and
+  /// the auxiliaries after it.
+  fn c1_flags(
+    classes: &[FlatInfo],
+  ) -> Result<(bool, bool, bool), CompileError> {
+    compute_is_large_and_k(
+      classes,
+      1,
+      0,
+      &LeanEnv::default(),
+      &crate::compile::CompileState::default(),
+      &mut crate::compile::KernelCtx::new(),
+    )
+  }
+
+  /// `C1Q` is an auxiliary of the flat block, but the KEnv holds only the
+  /// original `C1P`, whose field names it: the kernels' rule decides before
+  /// that probe (WB-A7), and a probe that is reached still fails closed.
+  #[test]
+  fn c1_nested_singleton_and_non_c1_error_controls() {
+    let cn = |s| LeanExpr::cnst(n(s), vec![]);
+    let p = c1_member("C1P", Level::zero(), &[cn("C1Q")], false, vec![]);
+    let q = c1_member("C1Q", Level::zero(), &[cn("C1P")], true, vec![]);
+    assert_eq!(c1_flags(&[p, q]).unwrap(), (false, false, true));
+
+    let p = c1_member("C1P", Level::zero(), &[cn("C1Q")], false, vec![]);
+    match c1_flags(&[p]) {
+      Err(CompileError::InvalidMutualBlock { reason }) => assert!(
+        reason
+          .starts_with("compute_is_large_and_k: is_large_eliminator failed")
+      ),
+      other => {
+        panic!("non-C1 missing field must retain its named error: {other:?}")
+      },
+    }
+    let mut bad = c1_member("C1P", Level::zero(), &[], false, vec![]);
+    bad.ind.cnst.typ = cn("MissingResult");
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    match c1_flags(&[bad, q]) {
+      Err(CompileError::InvalidMutualBlock { reason }) => {
+        assert!(reason.starts_with("compute_is_large_and_k: TC failed"))
+      },
+      other => panic!("C1 must not bypass result-sort errors: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn c1_flags_valid_neighbours_and_semantic_zero() {
+    let mut empty = c1_member("Empty", Level::zero(), &[], false, vec![]);
+    empty.ctors.clear();
+    empty.ind.ctors.clear();
+    assert_eq!(c1_flags(&[empty]).unwrap(), (true, false, true));
+    let k = c1_member("PlainK", Level::zero(), &[], false, vec![]);
+    assert_eq!(c1_flags(&[k]).unwrap(), (true, true, true));
+    let drec = c1_member(
+      "PlainDrec",
+      Level::zero(),
+      &[LeanExpr::cnst(n("PlainDrec"), vec![])],
+      false,
+      vec![],
+    );
+    assert_eq!(c1_flags(&[drec]).unwrap(), (true, false, true));
+    let t = c1_member(
+      "C1T",
+      Level::succ(Level::zero()),
+      &[LeanExpr::cnst(n("C1U"), vec![])],
+      false,
+      vec![],
+    );
+    let a = c1_member("C1U", Level::succ(Level::zero()), &[], true, vec![]);
+    assert_eq!(c1_flags(&[t, a]).unwrap(), (true, false, false));
+    let p = c1_member(
+      "ZeroSpelling",
+      Level::imax(Level::param(n("u")), Level::zero()),
+      &[LeanExpr::cnst(n("MissingAux"), vec![])],
+      false,
+      vec![n("u")],
+    );
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    assert_eq!(c1_flags(&[p, q]).unwrap(), (false, false, true));
+    let mut su =
+      c1_member("SortU", Level::param(n("u")), &[], false, vec![n("u")]);
+    let mut other = su.ctors[0].clone();
+    other.cnst.name = Name::str(su.name.clone(), "other".into());
+    other.cidx = Nat::from(1u64);
+    su.ind.ctors.push(other.cnst.name.clone());
+    su.ctors.push(other);
+    assert_eq!(c1_flags(&[su]).unwrap(), (false, false, false));
+  }
+
+  /// A `Sort u` original whose own constructor passes the singleton test,
+  /// with one auxiliary: the expanded block is not a singleton and `u` may
+  /// be zero, so elimination is small, as in the kernels (lane P
+  /// `6327e496`; the former rule, small only at a zero level, gave a large
+  /// recursor).
+  #[test]
+  fn c1_nested_sort_u_singleton_is_small() {
+    let u = || vec![n("u")];
+    let nsu = c1_member("NestedSortU", Level::param(n("u")), &[], false, u());
+    let aux = c1_member("NestedSortUAux", Level::param(n("u")), &[], true, u());
+    assert_eq!(c1_flags(&[nsu, aux]).unwrap(), (false, false, false));
+  }
+
+  #[test]
+  fn c1_followed_by_ordinary_call_on_same_kernel_context() {
+    let env = LeanEnv::default();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
+    let p = c1_member(
+      "C1P",
+      Level::zero(),
+      &[LeanExpr::cnst(n("C1Q"), vec![])],
+      false,
+      vec![],
+    );
+    let q = c1_member("C1Q", Level::zero(), &[], true, vec![]);
+    assert_eq!(
+      compute_is_large_and_k(&[p, q], 1, 0, &env, &stt, &mut kctx).unwrap(),
+      (false, false, true)
+    );
+    let drec = c1_member(
+      "PlainDrec",
+      Level::zero(),
+      &[LeanExpr::cnst(n("PlainDrec"), vec![])],
+      false,
+      vec![],
+    );
+    assert_eq!(
+      compute_is_large_and_k(&[drec], 1, 0, &env, &stt, &mut kctx).unwrap(),
+      (true, false, true)
+    );
+  }
+
+  /// Mirrors the Lean `RecursorTests` case: metadata on a parameter spine
+  /// keeps the dependent scope and the binder information.
+  #[test]
+  fn metadata_on_parameter_spines_preserves_scope_and_binder_info() {
+    let mark = |e: LeanExpr| LeanExpr::mdata(vec![], e);
+    let prop = LeanExpr::sort(Level::zero());
+    let ty = mark(LeanExpr::all(
+      n("alpha"),
+      mark(prop.clone()),
+      mark(LeanExpr::all(
+        n("x"),
+        mark(LeanExpr::bvar(Nat::from(0u64))),
+        prop.clone(),
+        BinderInfo::InstImplicit,
+      )),
+      BinderInfo::Implicit,
+    ));
+    let binders = collect_binders(&ty, 2);
+    let (fvars, decls, _) =
+      super::super::expr_utils::forall_telescope(&ty, 2, "param", 0);
+    assert_eq!(binders.len(), 2);
+    assert_eq!(decls.len(), 2);
+    assert!(matches!(binders[0].info, BinderInfo::Implicit));
+    assert!(matches!(binders[1].info, BinderInfo::InstImplicit));
+    assert_eq!(decls[0].domain, mark(prop.clone()));
+    assert_eq!(decls[1].domain, mark(fvars[0].clone()));
+    // Valid neighbour: the same spine without metadata.
+    let plain = LeanExpr::all(
+      n("alpha"),
+      prop.clone(),
+      LeanExpr::all(
+        n("x"),
+        LeanExpr::bvar(Nat::from(0u64)),
+        prop,
+        BinderInfo::InstImplicit,
+      ),
+      BinderInfo::Implicit,
+    );
+    let plain_binders = collect_binders(&plain, 2);
+    assert_eq!(plain_binders.len(), 2);
+    assert!(matches!(plain_binders[1].info, BinderInfo::InstImplicit));
   }
 
   /// Build a minimal Prop mutual block: A | a : B → A, B | b : A → B.
@@ -4225,7 +4517,7 @@ mod tests {
       for (name, ci) in &entries {
         source.insert(name.clone(), ci.clone());
       }
-      let mut kenv = lean_ingress(&source);
+      let mut kenv = lean_ingress(&source).unwrap();
       let (block, _) =
         kenv.consts.iter().find(|(id, _)| &id.name == head).unwrap();
       let peers: Vec<_> = kenv.blocks[block]
@@ -4271,6 +4563,85 @@ mod tests {
         Name::str(tree.clone(), "rec_1".into()),
       ],
     );
+  }
+
+  /// An original-form compile returns its own projection address while its
+  /// promotions are still staged (`block_txn`): the requested name is not
+  /// yet published, and nothing is stored or overwritten until the commit.
+  #[test]
+  fn test_original_mutual_result_precedes_promotion() {
+    use crate::compile::{
+      BlockCache, CompileOptions, KernelCtx, block_txn, compile_const_no_aux,
+      env::compile_env_with_options,
+    };
+    use crate::graph::NameSet;
+    use std::sync::Arc;
+
+    let (source, a, b) = build_alpha_collapse_env_with_recursors();
+    let source = Arc::new(source);
+    let a_rec = Name::str(a.clone(), "rec".into());
+    let b_rec = Name::str(b.clone(), "rec".into());
+    let a_ctor = Name::str(a.clone(), "a".into());
+    let b_ctor = Name::str(b.clone(), "b".into());
+    let family = vec![a.clone(), b, a_ctor.clone(), b_ctor.clone()];
+
+    for (requested, members) in [
+      (a_rec.clone(), vec![a_rec.clone(), b_rec]),
+      (a, family.clone()),
+      (a_ctor, family.clone()),
+      (b_ctor, family),
+    ] {
+      let stt = compile_env_with_options(
+        &source,
+        CompileOptions { max_workers: Some(1) },
+      )
+      .unwrap();
+      assert!(stt.ungrounded.is_empty(), "{:?}", stt.ungrounded);
+      let all: NameSet = members.into_iter().collect();
+      let canonical: Vec<_> = all
+        .iter()
+        .map(|name| (name.clone(), stt.resolve_addr(name).unwrap()))
+        .collect();
+      for (name, addr) in &canonical {
+        stt.name_to_addr.remove(name);
+        stt.aux_name_to_addr.insert(name.clone(), addr.clone());
+        stt.env.named.get_mut(name).unwrap().clear_original();
+      }
+      let canonical_target = stt.resolve_addr(&requested).unwrap();
+      let stored = stt.env.const_count();
+
+      block_txn::start();
+      let original = compile_const_no_aux(
+        &requested,
+        &all,
+        &source,
+        &mut BlockCache::default(),
+        &stt,
+        &mut KernelCtx::new(),
+      )
+      .unwrap();
+      for (name, addr) in &canonical {
+        assert!(!stt.name_to_addr.contains_key(name));
+        let named = stt.env.named.get(name).unwrap();
+        assert!(!named.has_original());
+        assert_eq!(&named.addr, addr);
+      }
+      assert_eq!(stt.env.const_count(), stored, "originals are ephemeral");
+      if requested == a_rec {
+        assert_ne!(original, canonical_target, "return the source projection");
+      }
+
+      block_txn::commit(&stt).unwrap();
+      let _ = block_txn::take().unwrap();
+      assert_eq!(
+        stt.env.named.get(&requested).unwrap().original().unwrap().0,
+        original,
+      );
+      for (name, addr) in &canonical {
+        assert_eq!(stt.name_to_addr.get(name).unwrap().value(), addr);
+        assert_eq!(&stt.env.named.get(name).unwrap().addr, addr);
+      }
+    }
   }
 
   #[test]
@@ -4330,7 +4701,7 @@ mod tests {
     }
     source.insert(a_rec.clone(), right);
     source.insert(b_rec, left);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let error = TypeChecker::new(&mut kenv).check_const(&id).unwrap_err();
     assert!(error.to_string().contains("canonical-order mismatch"), "{error}");
@@ -4347,7 +4718,7 @@ mod tests {
     let ConstantInfo::RecInfo(rec) = &mut extra else { unreachable!() };
     rec.cnst.name = extra_name.clone();
     source.insert(extra_name.clone(), extra);
-    let mut kenv = lean_ingress(&source);
+    let mut kenv = lean_ingress(&source).unwrap();
     let id = kenv.consts.keys().find(|id| id.name == a_rec).unwrap().clone();
     let KConst::Recr { block, .. } = &kenv.consts[&id] else { unreachable!() };
     assert!(kenv.blocks[block].iter().any(|id| id.name == extra_name));
@@ -4468,7 +4839,8 @@ mod tests {
     );
     crate::compile::aux_gen::expr_utils::ensure_in_kenv_of(
       &t, &env, &stt, &mut kctx,
-    );
+    )
+    .unwrap();
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
@@ -4487,7 +4859,8 @@ mod tests {
       &std::sync::Arc::new(env.clone()),
       &stt,
       &mut kctx,
-    );
+    )
+    .unwrap();
 
     let brecon = generate_brecon_constants(
       &classes, &recs, &below, &env, is_prop, &stt, &mut kctx,

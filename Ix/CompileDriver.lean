@@ -9,17 +9,21 @@
   (`Ix.AuxGen.CompileAux.compileMutualAuxTail`).
 
   This module sits ABOVE `Ix.AuxGen` (unlike Rust, where everything
-  shares one crate): `Ix.CompileM`'s own `compileEnv`/`compileEnvParallel`
-  cannot invoke the aux tail without an import cycle, so the aux-aware
-  driver lives here. The pre-existing drivers in `Ix.CompileM` remain as
-  the plain no-aux-pipeline substrate.
+  shares one crate): `Ix.CompileM` cannot invoke the aux tail without an
+  import cycle, so the environment drivers live here.
 
   Deliberate deviations from Rust, none output-visible:
-  - Sequential scheduling instead of work-stealing threads. Output maps
-    are keyed by name/address and every merge is insert-once or
-    last-wins-per-name in dependency order, so scheduling order does not
-    affect the result (Rust relies on the same property for its
-    nondeterministic work-stealing order).
+  - One schedule, a pure fold over waves of ready blocks applied in
+    block-key order (`compileEnvFold`), instead of work-stealing threads
+    and Rust's seed pre-pass (the seeds are scheduling dependencies). Output maps
+    are keyed by name/address. Name claims (`nameToAddr`,
+    `auxNameToAddr`) and call-site plans are insert-once: a second claim
+    at a different address, or a different plan, is the error Rust's
+    insert-once claims raise (`checkBlockClaims`, single ownership).
+    `Named` entries are last-wins overrides within one block's
+    registrations, and constants and blobs are content-keyed. So
+    scheduling order does not affect the result (Rust relies on the same
+    property for its nondeterministic work-stealing order).
   - A fresh `AuxKernelCtx` per block instead of Rust's per-worker
     `KernelCtx` reused across blocks (cleared every `KENV_CLEAR_EVERY`).
     The kernel env is content-addressed, so reuse is a cache, not an
@@ -39,9 +43,10 @@ public import Ix.Ixon
 public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
+public import Ix.Compile.Publication
 public import Ix.AuxGen.CompileAux
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Resource.Validate
+public import Ix.Resource.Addressed
 public section
 
 namespace Ix.CompileM
@@ -54,6 +59,19 @@ def resolveAddrPure (cenv : CompileEnv) (name : Name) : Option Address :=
   match cenv.nameToAddr.get? name with
   | some a => some a
   | none => cenv.auxNameToAddr.get? name
+
+/-- The canonical key of a set of names: its earliest member in seed order
+    (`aliasPrecedes`), `dflt` for the empty set. The drivers name a block by
+    this key, never by the condensation's representative (the Tarjan root,
+    which depends on the graph's iteration order and so differs between a
+    closure compile, the whole compile and the Rust condensation) nor by the
+    first element of a `Set` in iteration order. -/
+def canonicalKey (dflt : Name) (names : Array Name) : Name :=
+  names.foldl (init := names[0]?.getD dflt) fun k n => if aliasPrecedes n k then n else k
+
+/-- `canonicalKey` of a block's member set. -/
+def blockKey (lo : Name) (all : Set Name) : Name :=
+  canonicalKey lo all.toArray
 
 /-- Compile one SCC block WITH the aux-generation tail. Mirrors the
     `aux=true` route of `compile_const_inner` (compile.rs:3444-3716):
@@ -88,7 +106,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     | .thmInfo val => cs := cs.push (MutConst.fromTheoremVal val)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
-  let sortedClasses ← sortConsts cs.toList
+  let sortedClasses := orderRecursorFamily (← sortConsts cs.toList)
   let blockResult ← compileMutualBlock sortedClasses
   -- Alpha-collapsed standalone (single non-inductive class): Rust
   -- returns BEFORE the Muts registration and the aux tail
@@ -100,7 +118,7 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     return (blockResult, none, {}, {}, {})
   -- Primary member registrations, visible to the tail (compile.rs:3902+).
   for (name, proj, _) in blockResult.projections do
-    let projAddr := Address.blake3 (Ixon.ser proj)
+    let projAddr := Address.admissionHash (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
   -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`,
@@ -113,9 +131,12 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
+  -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0). AuxGen
+  -- M1 chooses the IxC arm here.
+  let kernel : Ix.AuxGen.AuxKernel := .tc maps
   let (auxLayout?, plans, brecPlans, belowPlans) ←
     (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps).run' Ix.AuxGen.AuxKernelCtx.new
+      maps kernel).run' Ix.AuxGen.AuxKernelCtx.new
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
@@ -156,10 +177,16 @@ private inductive NoAuxPhase where
 def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     : Except CompileError (BlockResult × BlockState) := Id.run do
   let getConst (n : Name) : Option ConstantInfo := cenv.env.get? n
+  -- The members in canonical order (`aliasPrecedes`), not in `Set`
+  -- iteration order, so the first match below (`leanAll`, the phase) is a
+  -- function of the member set. On valid input every member gives the same
+  -- `.all` and the same phase family (the order note above), so the value is
+  -- the one the iteration order gave.
+  let members : Array Name := all.toArray.qsort aliasPrecedes
   -- Collect the Lean `.all` names from any constant in the SCC
   -- (compile.rs:3283-3299).
   let mut leanAll : Array Name := #[]
-  for n in all do
+  for n in members do
     match getConst n with
     | some (.inductInfo v) => leanAll := v.all; break
     | some (.recInfo v) => leanAll := v.all; break
@@ -168,7 +195,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     | _ => continue
   -- Determine phase from the first aux_gen constant (compile.rs:3302-3334).
   let mut phase? : Option NoAuxPhase := none
-  for n in all do
+  for n in members do
     if phase?.isSome then break
     if !cenv.auxGenExtraNames.contains n then continue
     match getConst n with
@@ -188,7 +215,8 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     | _ => pure ()
   let run (target : Set Name) : Except CompileError (BlockResult × BlockState) :=
     let blockEnv : BlockEnv :=
-      { all := target, current := lo, mutCtx := default, univCtx := [] }
+      { all := target, current := lo, mutCtx := default, univCtx := []
+        provenanceOnly := true }
     CompileM.run cenv blockEnv {} (compileConstant lo)
   let some phase := phase?
     | return run all
@@ -202,7 +230,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
         if let some (.recInfo _) := getConst n then
           filtered := filtered.insert n
   | .belowIndc =>
-    for n in all do
+    for n in members do
       match getConst n with
       | some (.inductInfo v) =>
         for a in v.all do
@@ -243,7 +271,7 @@ def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
 /-! ## Driver state and merges -/
 
 /-- Accumulated driver-level side maps that live OUTSIDE `CompileEnv`
-    (mirrors the fields the pre-existing drivers thread manually). -/
+    (the per-name hints and the name-component index). -/
 structure DriverAcc where
   cenv : CompileEnv
   blockNames : Std.HashMap Address Ix.Name := {}
@@ -255,42 +283,200 @@ structure DriverAcc where
       mutual.rs:235/400/480). -/
   pending : Array Name := #[]
 
+/-- Two producers claim one name at different addresses. Mirrors Rust
+    `name_claim_conflict` (compile.rs), including the 12-hex-digit address
+    prefixes. -/
+def nameClaimConflict (name : Name) (existing claimed : Address) : CompileError :=
+  .invalidMutualBlock s!"conflicting claims for name '{name.pretty}': already \
+registered at {(toString existing).take 12}, claimed again at \
+{(toString claimed).take 12}"
+
+/-- The primary names a compiled block claims, with their addresses, in
+    Rust's claim order: the lone constant of a block without projections,
+    else each member projection. -/
+def primaryClaims (lo : Name) (result : BlockResult) : Array (Name × Address) :=
+  if result.projections.isEmpty then
+    #[(lo, result.blockAddr)]
+  else
+    result.projections.map fun (name, proj, _) => (name, Address.admissionHash (Ixon.ser proj))
+
+/-- Single ownership of the names a block claims (Rust
+    `CompileState::claim_compiled_name` and `claim_aux_name`, and the checked
+    plan inserts), checked against the LIVE driver state before anything is
+    merged.
+
+    Rust claims inside the block, against the shared state, in this order:
+    - the primary names (`claim_compiled_name`): an `aux_name_to_addr` or a
+      `name_to_addr` entry at another address is a conflict;
+    - the aux tail's names (`claim_aux_name`): a `name_to_addr` entry
+      (including this block's own primary names) or an earlier
+      `aux_name_to_addr` claim at another address is a conflict, and an
+      identical re-claim is a no-op;
+    - the call-site plans: a different plan already registered under the
+      name is a conflict.
+
+    The Lean block computes against a snapshot and the driver merges
+    afterwards, so the same checks run here, in the same order, with the
+    same messages. In the sequential driver the snapshot is the live state;
+    in the wave driver these checks are what catch two blocks of one wave
+    claiming one name. A refused block merges nothing; the driver records
+    the error for every member, like any other block failure.
+
+    The aux claims are replayed from `auxNamed` in registration order:
+    every claim in `Ix.AuxGen.CompileAux` registers its `Named` at the
+    claimed address immediately before inserting the claim, and the
+    synthetic `Muts` entries, the only other `auxNamed` entries, are not
+    claims. -/
+def checkBlockClaims (cenv : CompileEnv) (primary : Array (Name × Address))
+    (cache : BlockState)
+    (plans : Std.HashMap Name CallSitePlan)
+    (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan)
+    : Except CompileError Unit := do
+  let mut compiled : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
+  for (name, addr) in primary do
+    if let some existing := cenv.auxNameToAddr.get? name then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    -- A second compiled claim at another address, by an earlier block or
+    -- earlier in this block, is a conflict too: an overwrite would make the
+    -- address a name keeps depend on which block merged last. An identical
+    -- re-claim is a no-op, so valid input (where no name is compiled twice)
+    -- merges the same values.
+    if let some existing := (compiled.get? name).orElse fun _ => cenv.nameToAddr.get? name then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    compiled := compiled.insert name addr
+  let mut claimed : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}
+  for (name, named) in cache.auxNamed do
+    unless cache.auxGenExtraNames.contains name && cache.auxNameToAddr.contains name do
+      continue
+    let addr := named.addr
+    let registered := match compiled.get? name with
+      | some a => some a
+      | none => cenv.nameToAddr.get? name
+    if let some existing := registered then
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    let earlier := match claimed.get? name with
+      | some a => some a
+      | none => cenv.auxNameToAddr.get? name
+    match earlier with
+    | some existing =>
+      if existing != addr then throw (nameClaimConflict name existing addr)
+    | none => claimed := claimed.insert name addr
+  for (name, plan) in plans do
+    if let some existing := cenv.callSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+  for (name, plan) in brecPlans do
+    if let some existing := cenv.brecOnCallSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting brecOn call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+  for (name, plan) in belowPlans do
+    if let some existing := cenv.belowCallSitePlans.get? name then
+      if existing != plan then
+        throw (.invalidMutualBlock s!"conflicting below call-site plans for \
+'{name.pretty}' — two blocks claim one source-indexed aux name")
+
+/-- Validate both the block's name claims (`checkBlockClaims`) and its
+    anonymous payloads (`checkBlockContent`: a reused record or blob address
+    must hold the same bytes) against the live state before publishing any
+    output of this block. -/
+def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState)
+    (plans : Std.HashMap Name CallSitePlan)
+    (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan)
+    : Except CompileError Unit := do
+  checkBlockClaims cenv (primaryClaims lo result) cache plans brecPlans belowPlans
+  checkBlockContent cenv result cache
+
+/-- The names of a compiled block whose `Named` entry another block owns
+    (`mergeCompiledBlock`, CQ2.24 b): its primary names already claimed in
+    `nameToAddr`, and its aux claims already in `auxNameToAddr`. A function
+    of its own: when the merge read the state inside its own loops, a second
+    reference to the state stayed alive and every insert of the merge
+    copied its maps (Init+Std's compile phase went from 44 s to 388 s). -/
+def reclaimedNames (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : Std.HashSet Name := Id.run do
+  let primaryNames : Array Name :=
+    if result.projections.isEmpty then #[lo] else result.projections.map (·.1)
+  let mut reclaimed : Std.HashSet Name := {}
+  for name in primaryNames do
+    if cenv.nameToAddr.contains name then
+      reclaimed := reclaimed.insert name
+  for (n, _) in cache.auxNamed do
+    if cache.auxGenExtraNames.contains n && cache.auxNameToAddr.contains n
+        && cenv.auxNameToAddr.contains n then
+      reclaimed := reclaimed.insert n
+  return reclaimed
+
 /-- Merge one compiled block's outputs into the driver state, mirroring
     the Rust global-mutation order: block constant, member projections
     (primary `register_name` + `name_to_addr`, compile.rs:3902-3969),
     then the tail's aux constants, Named overrides (incl. the synthetic
     `Muts` entry and aliases), aux name→addr map, extra names, and
-    call-site plans. -/
+    call-site plans.
+
+    Every caller first checks the block against the live state
+    (`checkCompiledBlock`: single ownership of its names, and its records'
+    and blobs' bytes) and merges only if the check passes: a conflict is an
+    error and nothing is merged. The check is a separate step, not part of
+    this function, so that the merge keeps consuming the driver state
+    uniquely (a merge returning `Except` would keep the old state alive for
+    the error branch and copy every map it inserts into). `Named` entries
+    the block owns are overrides by design (the tail re-registers
+    regenerated names and the `Muts` entry), as with Rust's `register_name`;
+    content-keyed tables (constants, blobs) are unioned by content, which the
+    check made conflict-free.
+
+    An identical re-claim of a name an earlier block claimed in the same
+    table (a primary name already in `nameToAddr`, an aux claim already in
+    `auxNameToAddr`; the check made the addresses equal) does not own the
+    name: its `Named` entry is not merged, so the owner's entry, with the
+    original and hints its promotion set, is kept, and which entry a name
+    keeps does not depend on which block merged last (CQ2.24 b, R03-16's
+    residual). Mirrors Rust `CompileState::claim_and_register_compiled` and
+    `claim_and_register_aux`; a name this block claims twice is still its
+    own (Rust: the claim is in the block's transaction log). -/
 def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     (result : BlockResult) (cache : BlockState)
     (plans : Std.HashMap Name CallSitePlan)
     (brecPlans belowPlans : Std.HashMap Name BRecOnCallSitePlan) : DriverAcc := Id.run do
   let mut cenv := acc.cenv
+  -- The names whose `Named` entry another block owns, read from the state
+  -- before this merge by a function of its own, so that the merge below
+  -- still consumes the driver state's maps uniquely. Do not inline it: read
+  -- in this function's loops, the state stayed referenced twice and every
+  -- insert below copied its maps (Init+Std's compile phase 44 s → 391 s).
+  let reclaimed := reclaimedNames cenv lo result cache
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
     constants := cenv.constants.insert result.blockAddr result.blockBytes
     blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) cenv.blobs }
   -- Primary registrations.
   if result.projections.isEmpty then
-    cenv := { cenv with
-      nameToNamed := cenv.nameToNamed.insert lo
-        { addr := result.blockAddr, constMeta := result.blockMeta }
-      nameToAddr := cenv.nameToAddr.insert lo result.blockAddr }
+    if !reclaimed.contains lo then
+      cenv := { cenv with
+        nameToNamed := cenv.nameToNamed.insert lo
+          { addr := result.blockAddr, constMeta := result.blockMeta } }
+    cenv := { cenv with nameToAddr := cenv.nameToAddr.insert lo result.blockAddr }
   else
     for (name, proj, constMeta) in result.projections do
       let projBytes := Ixon.ser proj
-      let projAddr := Address.blake3 projBytes
+      let projAddr := Address.admissionHash projBytes
       cenv := { cenv with
         totalBytes := cenv.totalBytes + projBytes.size
         constants := cenv.constants.insert projAddr projBytes
-        nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta }
         nameToAddr := cenv.nameToAddr.insert name projAddr }
+      if !reclaimed.contains name then
+        cenv := { cenv with
+          nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta } }
   -- Aux tail outputs: stored constants, Named overrides (in registration
   -- order — LAST wins per name), aux resolution map, extra names, plans.
   for (addr, c) in cache.auxConsts do
     cenv := { cenv with constants := cenv.constants.insert addr (Ixon.ser c) }
   for (n, named) in cache.auxNamed do
-    cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
+    if !reclaimed.contains n then
+      cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
   cenv := { cenv with
     auxNameToAddr := cache.auxNameToAddr.fold (fun m k v => m.insert k v)
       cenv.auxNameToAddr
@@ -316,6 +502,66 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
     defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints
     pending }
 
+/-- Withdraw a failed source block's provisional auxiliary publication: its
+    members leave every name table (`nameToAddr`, `auxNameToAddr`,
+    `nameToNamed`, `auxGenExtraNames`, `blocks`, the hints) and the pending
+    releases, and each is recorded as a failure with `msg`. Anonymous content
+    and unrelated successful names remain available. Mirrors Rust
+    `fail_aux_promotion` (env.rs). -/
+def failAuxPromotion (acc : DriverAcc) (all : Set Name) (msg : String) : DriverAcc :=
+  Id.run do
+  let mut acc := acc
+  for n in all do
+    acc := { acc with
+      cenv := { acc.cenv with
+        nameToAddr := acc.cenv.nameToAddr.erase n
+        auxNameToAddr := acc.cenv.auxNameToAddr.erase n
+        nameToNamed := acc.cenv.nameToNamed.erase n
+        auxGenExtraNames := acc.cenv.auxGenExtraNames.erase n
+        blocks := acc.cenv.blocks.erase n
+        ungrounded := acc.cenv.ungrounded.insert n msg }
+      defHints := acc.defHints.erase n }
+  return { acc with pending := acc.pending.filter (!all.contains ·) }
+
+/-- The claim check of `promoteRemaining`, read-only: the first member, in
+    canonical member order, already in `nameToAddr` with an aux claim at a
+    different address. -/
+def remainingClaimConflict? (cenv : CompileEnv) (all : Set Name) : Option String := Id.run do
+  for name in all.toArray.qsort aliasPrecedes do
+    if let some existing := cenv.nameToAddr.get? name then
+      if let some claimed := cenv.auxNameToAddr.get? name then
+        if claimed != existing then
+          return some (toString (nameClaimConflict name existing claimed))
+  return none
+
+/-- The writes of `promoteRemaining`, after its check: each member not yet
+    registered takes its resolved address. Returns the members newly
+    registered. -/
+def promoteRemainingWrites (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name := Id.run do
+  let mut acc := acc
+  let mut newNames : Array Name := #[]
+  for name in all do
+    match acc.cenv.nameToAddr.get? name with
+    | some _ => pure ()
+    | none =>
+      if let some addr := resolveAddrPure acc.cenv name then
+        acc := { acc with cenv := { acc.cenv with
+          nameToAddr := acc.cenv.nameToAddr.insert name addr } }
+        newNames := newNames.push name
+  return (acc, newNames)
+
+/-- The scheduler's promote-remaining pass over a pre-compiled block's
+    members (Rust env.rs, after the original-form compile). Every claim is
+    checked before any member is published: a member already in `nameToAddr`
+    with an aux claim at a different address fails the whole block
+    (`failAuxPromotion`, single ownership; the first conflict in canonical
+    member order names it). Otherwise each member not yet registered takes
+    its resolved address. Returns the members newly registered. -/
+def promoteRemaining (acc : DriverAcc) (all : Set Name) : DriverAcc × Array Name :=
+  match remainingClaimConflict? acc.cenv all with
+  | some msg => (failAuxPromotion acc all msg, #[])
+  | none => promoteRemainingWrites acc all
+
 /-- Self-name address of a `ConstantMeta`, for the promote coherence
     check (Rust `promote_aux`, compile.rs:317-328). -/
 def constMetaSelfName? (m : Ixon.ConstantMeta) : Option Address :=
@@ -328,28 +574,135 @@ def constMetaSelfName? (m : Ixon.ConstantMeta) : Option Address :=
   | .recr n .. => some n
   | _ => none
 
-/-- Promote an aux_gen-compiled name: copy its aux address into the
-    resolution map and graft the ORIGINAL `(addr, meta)` into the
-    existing (regenerated) `Named` entry. Mirrors
-    `CompileState::promote_aux` (compile.rs:309-350), including the
-    meta self-name coherence check. -/
-def promoteAuxDriver (cenv : CompileEnv) (name : Name)
-    (origAddr : Address) (origMeta : Ixon.ConstantMeta)
-    : Except CompileError CompileEnv := do
+/-- The checks of `promoteAuxDriver`, read-only: the meta self-name
+    coherence check and the claim (a name already compiled at another
+    address than its aux address is a conflict). -/
+def checkPromoteAux (cenv : CompileEnv) (name : Name) (origMeta : Ixon.ConstantMeta) :
+    Except CompileError Unit := do
   if let some metaAddr := constMetaSelfName? origMeta then
     if metaAddr != name.getHash then
       throw (.invalidMutualBlock s!"promote_aux: name mismatch for \
 '{name.pretty}' — compile_name address is {name.getHash} but meta name \
 address is {metaAddr}")
+  if let some auxAddr := cenv.auxNameToAddr.get? name then
+    if let some existing := cenv.nameToAddr.get? name then
+      if existing != auxAddr then throw (nameClaimConflict name existing auxAddr)
+
+/-- The writes of `promoteAuxDriver`, after its checks: the aux address
+    into the resolution map, the original `(addr, meta)` into the existing
+    `Named` entry. -/
+def promoteAuxWrites (cenv : CompileEnv) (name : Name)
+    (origAddr : Address) (origMeta : Ixon.ConstantMeta) : CompileEnv := Id.run do
   let mut cenv := cenv
   if let some auxAddr := cenv.auxNameToAddr.get? name then
     cenv := { cenv with nameToAddr := cenv.nameToAddr.insert name auxAddr }
   if let some named := cenv.nameToNamed.get? name then
     let named' := { named with original := some (origAddr, origMeta) }
     cenv := { cenv with nameToNamed := cenv.nameToNamed.insert name named' }
-  pure cenv
+  return cenv
 
-/-! ## Aux-gen prereq pre-compilation — env.rs:993-1140 -/
+/-- Promote an aux_gen-compiled name: copy its aux address into the
+    resolution map and graft the ORIGINAL `(addr, meta)` into the
+    existing (regenerated) `Named` entry. Mirrors
+    `CompileState::promote_aux` (compile.rs), including the meta self-name
+    coherence check and the claim: a name already compiled at another
+    address is a conflict, not an overwrite. -/
+def promoteAuxDriver (cenv : CompileEnv) (name : Name)
+    (origAddr : Address) (origMeta : Ixon.ConstantMeta)
+    : Except CompileError CompileEnv := do
+  checkPromoteAux cenv name origMeta
+  pure (promoteAuxWrites cenv name origAddr origMeta)
+
+/-- The original-form promotion's members: each member's original
+    `(addr, meta)`, or the lone constant's. -/
+def originalPromotions (lo : Name) (result : BlockResult) :
+    Array (Name × Address × Ixon.ConstantMeta) :=
+  if result.projections.isEmpty then
+    #[(lo, result.blockAddr, result.blockMeta)]
+  else
+    result.projections.map fun (name, proj, constMeta) =>
+      (name, Address.admissionHash (Ixon.ser proj), constMeta)
+
+/-- The checks of the original-form promotion, read-only: its blobs agree
+    with the published ones (`checkBlobContent`), then each member's
+    `promoteAuxDriver` checks in member order. A member's write changes only
+    its own `nameToAddr` entry, to its aux address, so checking every member
+    against the state before the writes finds the same first error as
+    checking each after the writes of the members before it. -/
+def checkOriginalPromotion (cenv : CompileEnv) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : Except CompileError Unit := do
+  checkBlobContent cenv cache
+  for (name, _, origMeta) in originalPromotions lo result do
+    checkPromoteAux cenv name origMeta
+
+/-- The writes of the original-form promotion, after its checks: each
+    member's `promoteAuxDriver` writes, then the ephemeral compile's blobs,
+    name components and hints (Rust `store_string`, `compile_name` and
+    `def_hints` are unconditional; only constant and `Named` stores are
+    aux-gated). -/
+def promoteOriginalWrites (acc : DriverAcc) (lo : Name) (result : BlockResult)
+    (cache : BlockState) : DriverAcc := Id.run do
+  let mut acc := acc
+  for (name, origAddr, origMeta) in originalPromotions lo result do
+    acc := { acc with cenv := promoteAuxWrites acc.cenv name origAddr origMeta }
+  return { acc with
+    cenv := { acc.cenv with
+      blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) acc.cenv.blobs }
+    blockNames := cache.blockNames.fold (fun m k v => m.insert k v) acc.blockNames
+    defHints := cache.defHints.fold (fun m k v => m.insert k v) acc.defHints }
+
+/-- The entire original-form promotion in pure state (`checkOriginalPromotion`,
+    then `promoteOriginalWrites`). On error the caller keeps none of these
+    writes, then withdraws the failed block's earlier auxiliary bindings. -/
+def promoteOriginalBlock (acc : DriverAcc) (lo : Name)
+    (result : BlockResult) (cache : BlockState) : Except CompileError DriverAcc := do
+  checkOriginalPromotion acc.cenv lo result cache
+  pure (promoteOriginalWrites acc lo result cache)
+
+/-- Finish a source block's promotion atomically: the original-form
+    promotion (`promoteOriginalBlock`), then the remaining claims
+    (`promoteRemaining`). A failure of either, or a member already recorded
+    as failed (a failed cross-SCC subset), fails the whole block: the staged
+    original metadata is discarded, even for members outside the scheduled
+    block that the original-form compile visited, and the block is withdrawn
+    (`failAuxPromotion`). Returns the members newly registered and whether
+    the block failed.
+
+    Every check reads the live state before anything is written, in the
+    order of the steps: the original-form promotion's, the remaining
+    claims' (which the original-form writes cannot change: they set a
+    member's `nameToAddr` to its aux claim), then the members' recorded
+    failures (which neither step writes). The writes then consume the
+    driver state uniquely; a withdrawal that kept the state alive across
+    the writes would copy every table they insert into, for every block. -/
+def finishAuxPromotion (acc : DriverAcc) (lo : Name) (all : Set Name)
+    (original : Option (BlockResult × BlockState)) : DriverAcc × Array Name × Bool := Id.run do
+  if let some (result, cache) := original then
+    if let .error e := checkOriginalPromotion acc.cenv lo result cache then
+      return (failAuxPromotion acc all (toString e), #[], true)
+  if let some msg := remainingClaimConflict? acc.cenv all then
+    return (failAuxPromotion acc all msg, #[], true)
+  for name in all.toArray.qsort aliasPrecedes do
+    if let some msg := acc.cenv.ungrounded.get? name then
+      return (failAuxPromotion acc all msg, #[], true)
+  let acc := match original with
+    | some (result, cache) => promoteOriginalWrites acc lo result cache
+    | none => acc
+  let (acc, names) := promoteRemainingWrites acc all
+  return (acc, names, false)
+
+/-- The one readiness rule of both drivers: a source name (a member of a
+    condensation block, `sourceOwned`) is ready only when its own block has
+    completed, successfully or not (`settled`), never because a parent's
+    provisional aux publication resolved it before its original-form
+    promotion; a generated name without a source block is ready once it
+    resolves. Failed blocks settle too, so their dependents run and report
+    their missing reads. -/
+def auxDependencyReady (sourceOwned : Name → Bool) (cenv : CompileEnv)
+    (settled : Set Name) (name : Name) : Bool :=
+  settled.contains name || (!sourceOwned name && (resolveAddrPure cenv name).isSome)
+
+/-! ## The aux-gen seeds -/
 
 /-- Seed names for the aux_gen prereq closure — the exact Const refs
     aux_gen emits in generated `.below`/`.brecOn`/`.brecOn.eq` bodies
@@ -371,65 +724,8 @@ def auxGenSeedNames : Array Name := Id.run do
     Name.mkStr root "eq_of_heq",
     Name.mkStr root "True"]
 
-/-- Pre-compile the transitive SCC closure of the aux_gen seed names in
-    reverse-topological (dep-first) order, then move the compiled names
-    from `nameToAddr` to `auxNameToAddr` so the scheduler's promotion
-    pass recognizes and re-promotes them when their blocks come up.
-    Mirrors `precompile_aux_gen_prereqs` (env.rs:1036-1140). -/
-def precompileAuxGenPrereqs (blocks : Ix.CondensedBlocks) (acc₀ : DriverAcc)
-    : Except String DriverAcc := Id.run do
-  let seedReps := auxGenSeedNames.filterMap (blocks.lowLinks.get? ·)
-  if seedReps.isEmpty then
-    return .ok acc₀
-  -- Iterative DFS post-order over the condensed graph (env.rs:1063-1097).
-  let mut order : Array Name := #[]
-  let mut visited : Set Name := {}
-  -- Frame: (rep, isExit)
-  let mut stack : Array (Name × Bool) := seedReps.map ((·, false))
-  repeat
-    match stack.back? with
-    | none => break
-    | some (rep, isExit) =>
-      stack := stack.pop
-      if isExit then
-        order := order.push rep
-      else
-        if visited.contains rep then
-          continue
-        visited := visited.insert rep
-        stack := stack.push (rep, true)
-        if let some outRefs := blocks.blockRefs.get? rep then
-          for referenced in outRefs do
-            if let some depRep := blocks.lowLinks.get? referenced then
-              if !visited.contains depRep then
-                stack := stack.push (depRep, false)
-  let mut acc := acc₀
-  for rep in order do
-    if acc.cenv.auxNameToAddr.contains rep then
-      continue
-    let some all := blocks.blocks.get? rep | continue
-    match runBlockWithAux acc.cenv all rep with
-    | .error e =>
-      return .error s!"aux_gen prereq pre-compile failed for SCC \
-'{rep.pretty}' ({all.size} members): {e}. The SCC closure is traversed \
-in reverse-topological order starting from the aux_gen seed names, so \
-all transitive deps should be compiled before this — if you're hitting \
-this, a dep relationship isn't captured in the ref graph, or the source \
-env is inconsistent."
-    | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-      acc := mergeCompiledBlock acc rep result cache plans brecPlans belowPlans
-      -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
-      -- stage `nameToAddr` contains exactly the prereq registrations.
-      let moved := acc.cenv.nameToAddr
-      acc := { acc with cenv := { acc.cenv with
-        nameToAddr := {}
-        auxNameToAddr := moved.fold (fun m k v => m.insert k v)
-          acc.cenv.auxNameToAddr } }
-  return .ok acc
-
 /-- Assemble the final `Ixon.Env` from the accumulated driver state
-    (shared tail of both aux drivers, identical to the plain drivers'
-    assembly: names index, name blobs, finalize_hints — the exact
+    (shared tail of both drivers: names index, name blobs, finalize_hints — the exact
     per-Named channel plus the per-address `anonHints` advisory map with
     order-independent merge). -/
 def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
@@ -437,7 +733,8 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   let (addrToNameMap, namesMap, nameBlobs) :=
     cenv.nameToNamed.fold (init := ({}, acc.blockNames, {}))
       fun (addrMap, namesMap, blobs) name named =>
-        let addrMap := addrMap.insert named.addr name
+        -- The canonical alias, not the last one the fold met.
+        let addrMap := insertCanonicalAlias addrMap named.addr name
         let (namesMap, blobs) :=
           Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
         (addrMap, namesMap, blobs)
@@ -463,203 +760,152 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
-/-! ## The aux-aware sequential driver -/
+/-! ## Domain restriction: canonical inductive flags — env.rs:262-285 -/
 
-/-- Compile an entire environment with the FULL production pipeline
-    semantics: aux-gen prereq pre-compilation, per-block aux tails
-    (regeneration + call-site plans), the scheduler promotion pass with
-    the no-aux original-form second compile (`Named.original`), and
-    pending-aux dependency release. Sequential mirror of Rust
-    `compile_env_with_options`' scheduler (env.rs:146-990; grounding and
-    SCC condensation happen upstream of the `blocks` input, as in the
-    Rust FFI phase split).
+/-- The input's inductive groups: each inductive's `all`, keyed by its first
+    member, the first `all` met for a key kept (Rust `scan.ind_groups`,
+    graph.rs:120). -/
+def inductiveGroups (env : Ix.Environment) : Std.HashMap Name (Array Name) :=
+  env.consts.fold (init := {}) fun groups _ ci =>
+    match ci with
+    | .inductInfo v =>
+      match v.all[0]? with
+      | some first => if groups.contains first then groups else groups.insert first v.all
+      | none => groups
+    | _ => groups
 
-    Per-block failures are recorded in `ungrounded` per member and the
-    scheduler continues (dependents cascade into `MissingConstant`
-    failures recorded the same way) — mirroring env.rs:727-737. -/
-def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (dbg : Bool := false)
-    (nameByHash : Std.HashMap Address Name := {})
-    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
-  match precompileAuxGenPrereqs blocks acc with
-  | .error e => return .error e
-  | .ok a => acc := a
+/-- Groups per task in `validateInductiveFlags`. -/
+def inductiveFlagsChunk : Nat := 256
 
-  let totalBlocks := blocks.blocks.size
-  let mut blockInfo : Std.HashMap Name (Set Name × Nat) := {}
-  let mut reverseDeps : Std.HashMap Name (Array Name) := {}
-  for (lo, all) in blocks.blocks do
-    let deps := match blocks.blockRefs.get? lo with
-      | some d => d
-      | none => {}
-    blockInfo := blockInfo.insert lo (all, deps.size)
-    for depName in deps do
-      reverseDeps := reverseDeps.alter depName fun
-        | some arr => some (arr.push lo)
-        | none => some #[lo]
-  let mut readyQueue : Array (Name × Set Name) := #[]
-  for (lo, (all, depCount)) in blockInfo do
-    if depCount == 0 then
-      readyQueue := readyQueue.push (lo, all)
+/-- The domain restriction of both drivers (Rust `validate_ind_groups`,
+    env.rs:277): every input inductive group must carry the flags Lean
+    computes for it (`isRec`, `isReflexive`, `numNested`;
+    `Ix.AuxGen.validateIndGroup`), or the compile fails before any block is
+    scheduled. The groups are checked on parallel tasks, in chunks of
+    `inductiveFlagsChunk` in the order of their first members' hashes; the
+    error reported is the first in that order (Rust reports one of them). -/
+def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run do
+  let groups := (inductiveGroups env).toArray.qsort fun a b =>
+    a.1.getHash.cmpBytes b.1.getHash == .lt
+  -- the lookup view of `compileEnvFold`: the groups read constants only
+  -- through `get?`, so a materialized and a hybrid environment check alike
+  let cenv := CompileEnv.new { consts := {}, fallback? := some env.get? }
+  let blockEnv : BlockEnv :=
+    { all := {}, current := .mkAnon, mutCtx := default, univCtx := [] }
+  let chunks := (groups.size + inductiveFlagsChunk - 1) / inductiveFlagsChunk
+  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ => Id.run do
+    for (_, all) in groups[c * inductiveFlagsChunk:(c + 1) * inductiveFlagsChunk] do
+      if let .error e := CompileM.run cenv blockEnv {} (Ix.AuxGen.validateIndGroup all) then
+        return some (toString e)
+    return none
+  for t in tasks do
+    if let some e := t.get then return .error e
+  return .ok ()
 
-  let mut blocksCompleted : Nat := 0
-  let mut lastPct : Nat := 0
-  -- Deps already satisfied (released) — HashSet-style idempotent release
-  -- mirrors Rust's `remaining.remove` (env.rs:838-856): a name can be
-  -- released at most once per dependent.
-  let mut released : Set Name := {}
+/-- A constant's safety as the kernels compare it within a mutual block:
+    `unsafe`, `partial` (a definition's), or `safe` (theorems, quotients and
+    the safe constants of the other kinds). -/
+def constSafety : ConstantInfo → String
+  | .axiomInfo v | .opaqueInfo v | .inductInfo v | .ctorInfo v | .recInfo v =>
+    if v.isUnsafe then "unsafe" else "safe"
+  | .defnInfo v =>
+    match v.safety with
+    | .unsafe => "unsafe"
+    | .partial => "partial"
+    | .safe => "safe"
+  | .thmInfo _ | .quotInfo _ => "safe"
 
-  while !readyQueue.isEmpty do
-    let (lo, all) := readyQueue.back!
-    readyQueue := readyQueue.pop
+/-- Whether the members present in `env` share one safety. Members are read
+    through `get?`, so a hybrid environment's theorem and opaque members
+    (`fallback?`) count as in a materialized one; a single member is uniform
+    without a lookup (the IO pipeline's fallback re-canonicalizes). -/
+def uniformSafety (env : Ix.Environment) (members : Array Name) : Bool := Id.run do
+  if members.size ≤ 1 then return true
+  let mut first : Option String := none
+  for m in members do
+    if let some c := env.get? m then
+      let s := constSafety c
+      match first with
+      | none => first := some s
+      | some s0 => if s != s0 then return false
+  return true
 
-    if (resolveAddrPure acc.cenv lo).isSome then
-      -- Promotion path (env.rs:566-708): the block was pre-compiled into
-      -- `auxNameToAddr` (prereqs or a parent block's aux tail).
-      let anyAuxGen := Id.run do
-        for n in all do
-          if acc.cenv.auxGenExtraNames.contains n then return true
-        return false
-      let mut unresolvedNames : Array Name := #[]
-      for n in all do
-        if acc.cenv.nameToAddr.contains n then
-          continue
-        if (resolveAddrPure acc.cenv n).isSome then
-          continue
-        unresolvedNames := unresolvedNames.push n
-      let mut auxIncomplete := false
-      if !unresolvedNames.isEmpty then
-        if anyAuxGen then
-          auxIncomplete := true
-          let missing := ", ".intercalate
-            (unresolvedNames.toList.map (·.pretty))
-          let msg := s!"aux_gen precompile incomplete for {lo.pretty}; \
-missing canonical aliases: {missing}"
-          for m in all do
-            acc := { acc with cenv := { acc.cenv with
-              ungrounded := acc.cenv.ungrounded.insert m msg } }
-        else
-          -- Cross-SCC compile of the unresolved subset (env.rs:617-651).
-          let crossAll : Set Name :=
-            unresolvedNames.foldl (fun s n => s.insert n) {}
-          match runBlockWithAux acc.cenv crossAll unresolvedNames[0]! with
-          | .error _ =>
-            -- Rust logs and does NOT register failed names — dependents
-            -- will get MissingConstant rather than broken data.
-            pure ()
-          | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-            acc := mergeCompiledBlock acc unresolvedNames[0]! result cache
-              plans brecPlans belowPlans
-            for n in unresolvedNames do
-              acc := { acc with
-                cenv := { acc.cenv with
-                  auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n }
-                pending := acc.pending.push n }
-      if anyAuxGen && !auxIncomplete then
-        -- Compile the original Lean form and promote (env.rs:656-693).
-        match compileConstNoAuxPure acc.cenv lo all with
-        | .error e =>
-          let msg := toString e
-          for m in all do
-            acc := { acc with cenv := { acc.cenv with
-              ungrounded := acc.cenv.ungrounded.insert m msg } }
-        | .ok (result, cache) =>
-          -- Promote per member: original projection (addr, meta) — or the
-          -- lone constant for singleton no-aux blocks.
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
-            | .error e =>
-              promoteFailed := true
-              let msg := toString e
-              for m in all do
-                acc := { acc with cenv := { acc.cenv with
-                  ungrounded := acc.cenv.ungrounded.insert m msg } }
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          -- The ephemeral compile still stores blobs/name components and
-          -- records hints (Rust `store_string`/`compile_name`/`def_hints`
-          -- are unconditional; only const/Named stores are aux-gated).
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
-      if !auxIncomplete then
-        -- Promote remaining names from auxNameToAddr (env.rs:697-707).
-        for name in all do
-          if !acc.cenv.nameToAddr.contains name then
-            if let some addr := resolveAddrPure acc.cenv name then
-              acc := { acc with cenv := { acc.cenv with
-                nameToAddr := acc.cenv.nameToAddr.insert name addr } }
-    else
-      -- Normal path: compile the block with the aux tail.
-      match runBlockWithAux acc.cenv all lo with
-      | .error e =>
-        -- Soft failure (env.rs:727-737): record per member; the
-        -- scheduler keeps running and dependents cascade.
-        let msg := toString e
-        for m in all do
-          acc := { acc with cenv := { acc.cenv with
-            ungrounded := acc.cenv.ungrounded.insert m msg } }
-      | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-        acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
+/-- The refusal of members that disagree on safety (`uniformSafety` false):
+    the least member present in `env` (by name hash) and the least member
+    whose safety differs from its. -/
+def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String := Id.run do
+  let present := (members.filter fun m => (env.get? m).isSome).qsort fun a b =>
+    a.getHash.cmpBytes b.getHash == .lt
+  let some first := present[0]? | return "mixed safety in a mutual block"
+  let s0 := (env.get? first).map constSafety |>.getD "safe"
+  for m in present do
+    let s := (env.get? m).map constSafety |>.getD "safe"
+    if s != s0 then
+      return s!"mixed safety in a mutual block: '{first.pretty}' is {s0}, '{m.pretty}' is {s}"
+  return "mixed safety in a mutual block"
 
-    -- Release dependents: block members plus drained pending-aux names
-    -- (env.rs:838-870).
-    let pendingDrained := acc.pending
-    acc := { acc with pending := #[] }
-    let mut releaseNames : Array Name := #[]
-    for n in all do
-      releaseNames := releaseNames.push n
-    releaseNames := releaseNames ++ pendingDrained
-    for name in releaseNames do
-      if released.contains name then
-        continue
-      released := released.insert name
-      if let some dependents := reverseDeps.get? name then
-        for dependentLo in dependents do
-          if let some (depAll, depCount) := blockInfo.get? dependentLo then
-            let newCount := depCount - 1
-            blockInfo := blockInfo.insert dependentLo (depAll, newCount)
-            if newCount == 0 then
-              readyQueue := readyQueue.push (dependentLo, depAll)
+/-- The second domain restriction of both drivers (Rust
+    `validate_mutual_safety`): the members of a mutual block share one
+    safety, or the compile fails before any block is scheduled. The kernels
+    reject a mixed-safety block, and the compilers' orders do not key on
+    safety (C6), so such members could be alpha-collapsed into one
+    representative's safety. Checked first on each inductive group (`all`,
+    with each member's constructors) in the order of their first members'
+    hashes, then on each condensation block in the order of its least
+    member's hash; the first disagreement found is the error. Members are
+    read through `get?`, so the IO pipeline's hybrid environment, whose
+    theorem and opaque members come from `fallback?`, refuses exactly as a
+    materialized one does. -/
+def validateMutualSafety (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Except String Unit := Id.run do
+  let groups := (inductiveGroups env).toArray.qsort fun a b =>
+    a.1.getHash.cmpBytes b.1.getHash == .lt
+  for (_, all) in groups do
+    let members := all.foldl (init := #[]) fun acc n =>
+      match env.get? n with
+      | some (.inductInfo v) => acc.push n ++ v.ctors
+      | _ => acc.push n
+    unless uniformSafety env members do
+      return .error (toString (CompileError.invalidMutualBlock (mixedSafetyMessage env members)))
+  let least (members : Array Name) : Option Name :=
+    members.foldl (init := none) fun acc n => match acc with
+      | some m => if n.getHash.cmpBytes m.getHash == .lt then some n else some m
+      | none => some n
+  let offenders := blocks.blocks.fold (init := #[]) fun (acc : Array (Name × Array Name)) _ set =>
+    let members := set.toArray
+    if uniformSafety env members then acc
+    else match least members with
+      | some m => acc.push (m, members)
+      | none => acc
+  match (offenders.qsort fun a b => a.1.getHash.cmpBytes b.1.getHash == .lt)[0]? with
+  | some (_, members) =>
+    return .error (toString (CompileError.invalidMutualBlock (mixedSafetyMessage env members)))
+  | none => return .ok ()
 
-    blocksCompleted := blocksCompleted + 1
-    if dbg then
-      let pct := (blocksCompleted * 100) / totalBlocks
-      if pct >= lastPct + 10 then
-        dbg_trace s!"  [CompileAux] {pct}% ({blocksCompleted}/{totalBlocks})"
-        lastPct := pct
+/-- The drivers' refusal of a condensation with a block that has no reference
+    set: the scheduler would schedule such a block without its dependencies.
+    `CondenseM.run` and the Rust condensation give every block one. The block
+    named is the least by displayed name. -/
+def missingBlockRefs? (blocks : Ix.CondensedBlocks) : Option String :=
+  let missing := blocks.blocks.fold (init := #[]) fun (acc : Array Name) lo _ =>
+    if blocks.blockRefs.contains lo then acc else acc.push lo
+  match (missing.qsort fun a b => a.pretty < b.pretty)[0]? with
+  | some lo => some s!"block {lo.pretty} has no condensation reference set"
+  | none => none
 
-  if blocksCompleted != totalBlocks then
-    return .error s!"Only compiled {blocksCompleted}/{totalBlocks} blocks \
-- circular dependency?"
+/-! ## Per-block outcomes
 
-  return .ok (assembleEnv acc)
-
-/-! ## The aux-aware parallel driver
-
-Wave-based parallel version of `compileEnvAux`, mirroring the plain
-`compileEnvParallel` architecture: each wave snapshots the accumulated
-`CompileEnv`, workers compute a pure per-block outcome against the
-snapshot, and the main thread applies the same merges as the sequential
-driver. Blocks within a wave are dependency-independent, and every merge
-is per-name-disjoint or content-keyed, so intra-wave completion order
-cannot affect the output — the same property Rust's work-stealing
-scheduler relies on. -/
+The driver's step (`compileEnvFold`, below): a block's outcome is computed
+against a wave's snapshot of the state (`auxBlockOutcome`, pure), and applied
+to the live state (`applyAuxBlockOutcome`). Blocks within a wave are
+dependency-independent, and every merge is per-name-disjoint or
+content-keyed: two blocks of one wave that claim one name at different
+addresses (or one plan key with different plans) are refused by the
+merge-time check (`checkCompiledBlock`) against the live state, as Rust's
+insert-once claims refuse them; so are conflicting payloads at one record or
+blob address. The fold applies a wave's outcomes in block-key order, so the
+later block in that order reports the conflict (Rust reports by completion
+order). -/
 
 /-- Pure per-block outcome computed by a wave worker. -/
 inductive AuxBlockOutcome where
@@ -670,7 +916,8 @@ inductive AuxBlockOutcome where
       (belowPlans : Std.HashMap Name BRecOnCallSitePlan)
   /-- Promotion path (env.rs:566-708): pre-compiled by prereqs or a
       parent's aux tail. `crossScc` carries the compiled unresolved
-      subset (non-aux case); `incompleteMsg` the aux-incomplete failure;
+      subset (non-aux case), `crossFailure` its names and error when its
+      compile fails; `incompleteMsg` the aux-incomplete failure;
       `noAux` the original-form compile for `Named.original` grafting;
       `noAuxFailMsg` its failure. The promote-remaining loop runs at
       merge time against the live env. -/
@@ -680,6 +927,7 @@ inductive AuxBlockOutcome where
         × Std.HashMap Name BRecOnCallSitePlan
         × Std.HashMap Name BRecOnCallSitePlan))
       (crossNames : Array Name)
+      (crossFailure : Option (Array Name × String))
       (incompleteMsg : Option String)
       (noAux : Option (BlockResult × BlockState))
       (noAuxFailMsg : Option String)
@@ -687,7 +935,8 @@ inductive AuxBlockOutcome where
   | failed (msg : String)
 
 /-- Compute a block's outcome against a wave-snapshot env. Pure; mirrors
-    the per-block body of `compileEnvAux`. -/
+    the per-block body of the sequential driver it replaced (kept for the
+    tests as `Tests.Ix.Compile.ScheduleReference.sequential`). -/
 def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
     AuxBlockOutcome := Id.run do
   if (resolveAddrPure cenv lo).isSome then
@@ -704,6 +953,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       unresolvedNames := unresolvedNames.push n
     let mut crossScc := none
     let mut crossNames : Array Name := #[]
+    let mut crossFailure := none
     let mut incompleteMsg := none
     if !unresolvedNames.isEmpty then
       if anyAuxGen then
@@ -713,10 +963,12 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       else
         let crossAll : Set Name :=
           unresolvedNames.foldl (fun s n => s.insert n) {}
-        match runBlockWithAux cenv crossAll unresolvedNames[0]! with
-        | .error _ => pure ()
+        -- Named by its canonical key, as in the sequential driver.
+        let clo := canonicalKey lo unresolvedNames
+        match runBlockWithAux cenv crossAll clo with
+        | .error e => crossFailure := some (unresolvedNames, toString e)
         | .ok (result, cache, _, plans, brecPlans, belowPlans) =>
-          crossScc := some (unresolvedNames[0]!, result, cache,
+          crossScc := some (clo, result, cache,
             plans, brecPlans, belowPlans)
           crossNames := unresolvedNames
     let mut noAux := none
@@ -725,7 +977,7 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       match compileConstNoAuxPure cenv lo all with
       | .error e => noAuxFailMsg := some (toString e)
       | .ok out => noAux := some out
-    return .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg
+    return .promoted crossScc crossNames crossFailure incompleteMsg noAux noAuxFailMsg
   else
     match runBlockWithAux cenv all lo with
     | .error e => return .failed (toString e)
@@ -733,14 +985,26 @@ def auxBlockOutcome (cenv : CompileEnv) (lo : Name) (all : Set Name) :
       return .compiled result cache plans brecPlans belowPlans
 
 /-- Apply a worker outcome to the live driver state. Returns the names
-    newly REGISTERED by this block (for rustRef fail-fast comparison). -/
+    newly REGISTERED by this block (for rustRef fail-fast comparison), and
+    whether the block failed at merge time: a conflicting claim or payload
+    (`checkCompiledBlock`), or a failed promotion (`finishAuxPromotion`,
+    which withdraws the block). The wave loop settles every completed
+    block's members, failed or not (`auxDependencyReady`). -/
 def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
-    (outcome : AuxBlockOutcome) : DriverAcc × Array Name := Id.run do
+    (outcome : AuxBlockOutcome) : DriverAcc × Array Name × Bool := Id.run do
   let mut acc := acc
   let mut newNames : Array Name := #[]
+  let recordFailure (acc : DriverAcc) (names : Array Name) (msg : String) : DriverAcc := Id.run do
+    let mut acc := acc
+    for m in names do
+      acc := { acc with cenv := { acc.cenv with
+        ungrounded := acc.cenv.ungrounded.insert m msg } }
+    return acc
   match outcome with
   | .compiled result cache plans brecPlans belowPlans =>
-    acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
+    match checkCompiledBlock acc.cenv lo result cache plans brecPlans belowPlans with
+    | .error e => return (recordFailure acc all.toArray (toString e), #[], true)
+    | .ok () => acc := mergeCompiledBlock acc lo result cache plans brecPlans belowPlans
     if result.projections.isEmpty then
       newNames := newNames.push lo
     else
@@ -749,248 +1013,345 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     for (n, _) in cache.auxNamed do
       newNames := newNames.push n
   | .failed msg =>
-    for m in all do
-      acc := { acc with cenv := { acc.cenv with
-        ungrounded := acc.cenv.ungrounded.insert m msg } }
-  | .promoted crossScc crossNames incompleteMsg noAux noAuxFailMsg =>
+    acc := recordFailure acc all.toArray msg
+  | .promoted crossScc crossNames crossFailure incompleteMsg noAux noAuxFailMsg =>
+    -- A failed cross-SCC subset: its names are failures, as in the
+    -- sequential driver (and the block's promotion then fails as a whole).
+    if let some (names, msg) := crossFailure then
+      acc := recordFailure acc names msg
     if let some (clo, result, cache, plans, brecPlans, belowPlans) := crossScc then
-      acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
-      if result.projections.isEmpty then
-        newNames := newNames.push clo
-      else
-        for (name, _, _) in result.projections do
-          newNames := newNames.push name
-      for (n, _) in cache.auxNamed do
-        newNames := newNames.push n
-    for n in crossNames do
-      acc := { acc with cenv := { acc.cenv with
-        auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n } }
-    match incompleteMsg with
-    | some msg =>
-      for m in all do
-        acc := { acc with cenv := { acc.cenv with
-          ungrounded := acc.cenv.ungrounded.insert m msg } }
-    | none =>
-      match noAuxFailMsg with
-      | some msg =>
-        for m in all do
+      -- A conflicting claim or payload is a failure of the cross-SCC subset,
+      -- as in the sequential driver: nothing of it is registered.
+      match checkCompiledBlock acc.cenv clo result cache plans brecPlans belowPlans with
+      | .error e =>
+        acc := recordFailure acc crossNames (toString e)
+      | .ok () =>
+        acc := mergeCompiledBlock acc clo result cache plans brecPlans belowPlans
+        if result.projections.isEmpty then
+          newNames := newNames.push clo
+        else
+          for (name, _, _) in result.projections do
+            newNames := newNames.push name
+        for (n, _) in cache.auxNamed do
+          newNames := newNames.push n
+        for n in crossNames do
           acc := { acc with cenv := { acc.cenv with
-            ungrounded := acc.cenv.ungrounded.insert m msg } }
-      | none =>
-        if let some (result, cache) := noAux then
-          let promotions : Array (Name × Address × Ixon.ConstantMeta) :=
-            if result.projections.isEmpty then
-              #[(lo, result.blockAddr, result.blockMeta)]
-            else
-              result.projections.map fun (name, proj, constMeta) =>
-                (name, Address.blake3 (Ixon.ser proj), constMeta)
-          let mut promoteFailed := false
-          for (name, origAddr, origMeta) in promotions do
-            if promoteFailed then continue
-            match promoteAuxDriver acc.cenv name origAddr origMeta with
-            | .error e =>
-              promoteFailed := true
-              let msg := toString e
-              for m in all do
-                acc := { acc with cenv := { acc.cenv with
-                  ungrounded := acc.cenv.ungrounded.insert m msg } }
-            | .ok cenv' =>
-              acc := { acc with cenv := cenv' }
-          acc := { acc with
-            cenv := { acc.cenv with
-              blobs := cache.blockBlobs.fold (fun m k v => m.insert k v)
-                acc.cenv.blobs }
-            blockNames := cache.blockNames.fold (fun m k v => m.insert k v)
-              acc.blockNames
-            defHints := cache.defHints.fold (fun m k v => m.insert k v)
-              acc.defHints }
-      -- Promote remaining names from auxNameToAddr (env.rs:697-707) —
-      -- against the LIVE env; also counts as registration for rustRef.
-      if incompleteMsg.isNone then
-        for name in all do
-          if !acc.cenv.nameToAddr.contains name then
-            if let some addr := resolveAddrPure acc.cenv name then
-              acc := { acc with cenv := { acc.cenv with
-                nameToAddr := acc.cenv.nameToAddr.insert name addr } }
-              newNames := newNames.push name
-  return (acc, newNames)
+            auxGenExtraNames := acc.cenv.auxGenExtraNames.insert n } }
+    if let some msg := incompleteMsg then
+      return (failAuxPromotion acc all msg, #[], true)
+    if let some msg := noAuxFailMsg then
+      return (failAuxPromotion acc all msg, #[], true)
+    -- The original-form promotion and the remaining claims, atomically,
+    -- against the LIVE env; registrations count for rustRef.
+    let (next, promoted, failed) := finishAuxPromotion acc lo all noAux
+    if failed then return (next, #[], true)
+    acc := next
+    newNames := newNames ++ promoted
+  return (acc, newNames, false)
 
-/-- Work item for the aux-aware parallel driver. -/
-structure AuxWorkItem where
-  lo : Name
-  all : Set Name
-  cenv : CompileEnv
+/-! ## The wave fold: the one driver
 
-instance : Inhabited AuxWorkItem where
-  default := { lo := default, all := {}, cenv := default }
+`compileEnvFold` is the driver of both the pure compiler (`Ix.Cert.compile`)
+and the IO pipeline (`compileDecoratedConsts`): the same function, so the
+parallel schedule equals the pure one by definition.
+
+**Waves.** A wave is the set of blocks not yet compiled whose scheduling
+dependencies are all ready under the one readiness rule
+(`auxDependencyReady`) against the state the previous wave left. Every block
+of a wave computes its outcome (`auxBlockOutcome`) against that same state,
+the wave's snapshot; the outcomes are applied (`applyAuxBlockOutcome`) in the
+order of the blocks' canonical keys (`blockKey`, `Ix.nameCompare`), and the
+wave's members settle. The fold stops when every block has settled; a wave
+with no ready block is an error.
+
+**Parallelism.** A wave's blocks, in key order, are split into at most
+`width` contiguous chunks, each computed on a task of its own (`Task.spawn`,
+the task pool). The value does not depend on the split or on `width`:
+`(Task.spawn f).get = f ()` by definition, and the outcomes are applied in key
+order whatever the chunks. `width` bounds how many blocks compile at once
+(the IO pipeline passes its `--workers`, which bounds memory on whole-Mathlib
+runs; `Ix.Cert.compile` takes `foldWaveTasks`, leaving the pool to balance).
+Outcomes are taken in chunk order, so a chunk is applied as soon as the
+chunks before it have finished, while later chunks still run.
+
+**Readiness** is counted, not rescanned: each block counts its source-owned
+dependencies not yet settled; a settling block releases the blocks waiting on
+its members. A block whose count reaches zero is checked against the whole
+rule (`auxDependencyReady`, which also covers dependencies no block owns:
+those must resolve in the current state); one that fails the check is checked
+again at the next wave. So a wave is exactly the set the rule selects: a
+block with an unsettled source-owned dependency is not ready under the rule.
+
+**The aux-gen seeds are scheduling dependencies** (`e051b559`, A7 D2b): aux
+tails emit references to `auxGenSeedNames` (`PUnit`, `PProd`, `Eq`, …) that a
+block's source need not contain, so every block outside the seeds' closure
+depends on the seeds. Rust (and these drivers before CQ2.14) pre-compiled the
+seeds' closure in a pre-pass (`precompile_aux_gen_prereqs`, env.rs:1036-1140),
+moved the names into `auxNameToAddr` and re-promoted them when their blocks
+came up. Each seed block is compiled by the same `runBlockWithAux` on its own
+closure either way, its names end at the same addresses with the same
+`Named`, and the promotion route the pre-pass forced on them registered
+nothing else, so the output is the same (checked by `cert-compile-parity-init`,
+the byte legs and `compile-schedule-identity`'s reference schedule, which keeps
+the pre-pass). A failed seed block is now an ordinary block failure with its
+cascade, instead of an error of the whole compile. -/
+
+/-- The aux-gen seeds the condensation holds. -/
+def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
+  auxGenSeedNames.filter blocks.lowLinks.contains
+
+/-- The representatives of the blocks the seeds reach: their own blocks and,
+    transitively, every block those reference (the closure Rust pre-compiles,
+    env.rs:1063-1097). -/
+def auxGenSeedClosure (blocks : Ix.CondensedBlocks) : Set Name := Id.run do
+  let mut visited : Set Name := {}
+  let mut stack : Array Name := (auxGenSeeds blocks).filterMap (blocks.lowLinks.get? ·)
+  repeat
+    match stack.back? with
+    | none => break
+    | some rep =>
+      stack := stack.pop
+      if visited.contains rep then continue
+      visited := visited.insert rep
+      if let some outRefs := blocks.blockRefs.get? rep then
+        for referenced in outRefs do
+          if let some depRep := blocks.lowLinks.get? referenced then
+            if !visited.contains depRep then
+              stack := stack.push depRep
+  return visited
+
+/-- Each block's scheduling dependencies, by representative: its
+    condensation references, plus every seed for a block outside the seeds'
+    closure. No cycle: nothing in the closure references a block outside it. -/
+def scheduleDeps (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Set Name) := Id.run do
+  let seeds := auxGenSeeds blocks
+  let closure := auxGenSeedClosure blocks
+  let mut out : Std.HashMap Name (Set Name) := {}
+  for (rep, _) in blocks.blocks do
+    let refs := (blocks.blockRefs.get? rep).getD {}
+    out := out.insert rep (if closure.contains rep then refs else seeds.foldl (·.insert ·) refs)
+  return out
+
+/-- The fold's schedule, fixed before the first wave. -/
+structure FoldSchedule where
+  /-- Each block's scheduling dependencies (`scheduleDeps`), by representative. -/
+  deps : Std.HashMap Name (Set Name)
+  /-- For each source-owned name, the blocks (representatives) depending on it. -/
+  waiters : Std.HashMap Name (Array Name)
+  /-- Each block's number of source-owned scheduling dependencies. -/
+  sourceDeps : Std.HashMap Name Nat
+
+/-- The schedule of a condensation. The waiter lists are built by taking each
+    list out of the map before pushing to it, so that it is never copied
+    (PERF P4: `insert d ((getD d #[]).push lo)` copied the list every time). -/
+def FoldSchedule.of (blocks : Ix.CondensedBlocks) : FoldSchedule := Id.run do
+  let deps := scheduleDeps blocks
+  let mut waiters : Std.HashMap Name (Array Name) := {}
+  let mut sourceDeps : Std.HashMap Name Nat := {}
+  for (rep, ds) in deps do
+    let mut k := 0
+    for d in ds do
+      if blocks.lowLinks.contains d then
+        k := k + 1
+        let ws := waiters.getD d #[]
+        waiters := waiters.erase d
+        waiters := waiters.insert d (ws.push rep)
+    sourceDeps := sourceDeps.insert rep k
+  return { deps, waiters, sourceDeps }
+
+/-- The fold's state between waves. -/
+structure FoldState where
+  /-- The accumulated driver state. -/
+  acc : DriverAcc
+  /-- The members of every block that has completed, successfully or not
+      (`auxDependencyReady`'s `settled`). -/
+  settled : Set Name := {}
+  /-- Per block not yet ready-checked: its source-owned dependencies not yet
+      settled (absent once zero). -/
+  unmet : Std.HashMap Name Nat := {}
+  /-- The blocks to check at the next wave: every source-owned dependency
+      settled, not yet compiled. -/
+  candidates : Array Name := #[]
+  /-- Blocks not yet compiled. -/
+  remaining : Nat := 0
+  /-- Waves so far. -/
+  waves : Nat := 0
+
+/-- The state before the first wave. -/
+def FoldState.init (cenv : CompileEnv) (blocks : Ix.CondensedBlocks)
+    (sched : FoldSchedule) : FoldState := Id.run do
+  let mut unmet : Std.HashMap Name Nat := {}
+  let mut candidates : Array Name := #[]
+  for (rep, _) in blocks.blocks do
+    let k := (sched.sourceDeps.get? rep).getD 0
+    if k == 0 then candidates := candidates.push rep else unmet := unmet.insert rep k
+  return { acc := { cenv }, unmet, candidates, remaining := blocks.blocks.size }
+
+/-- The default `width` (`Ix.Cert.compile`'s): at most this many tasks per
+    wave. The value of the fold does not depend on it; it bounds the tasks a
+    wave spawns while leaving the task pool (`LEAN_NUM_THREADS`, else one
+    worker per core) enough of them to balance blocks of very different
+    sizes. -/
+def foldWaveTasks : Nat := 256
+
+/-- A wave's outcomes, as at most `width` tasks over contiguous chunks of
+    `ready` (in key order), each block compiled under its canonical key
+    against `snapshot`. Flattened, the chunks' values are `ready.map` of
+    `auxBlockOutcome`, whatever `width`. -/
+def waveTasks (width : Nat) (snapshot : CompileEnv) (ready : Array (Name × Name × Set Name)) :
+    Array (Task (Array (Name × Set Name × AuxBlockOutcome))) :=
+  let n := ready.size
+  let width := max 1 width
+  let size := (n + width - 1) / width
+  let chunks := if size == 0 then 0 else (n + size - 1) / size
+  (Array.range chunks).map fun c => Task.spawn fun _ =>
+    (ready.extract (c * size) ((c + 1) * size)).map fun (key, _, all) =>
+      (key, all, auxBlockOutcome snapshot key all)
+
+/-- One wave. -/
+def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
+    (dbg : Bool) (st : FoldState) : Except String FoldState := Id.run do
+  let { acc, settled, unmet, candidates, remaining, waves } := st
+  let sourceOwned := blocks.lowLinks.contains
+  -- 1. The ready blocks: the candidates the one readiness rule admits.
+  let mut ready : Array (Name × Name × Set Name) := #[]
+  let mut parked : Array Name := #[]
+  for rep in candidates do
+    let some all := blocks.blocks.get? rep
+      | return .error s!"wave driver: block {rep.pretty} is not in the condensation"
+    let deps := (sched.deps.get? rep).getD {}
+    let depsOk := Id.run do
+      for d in deps do
+        if !auxDependencyReady sourceOwned acc.cenv settled d then return false
+      return true
+    if depsOk then ready := ready.push (blockKey rep all, rep, all)
+    else parked := parked.push rep
+  if ready.isEmpty then
+    return .error s!"Circular dependency detected: {remaining} blocks remaining but none ready"
+  ready := ready.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+  if dbg then
+    dbg_trace s!"  [Lean CompileAux] Wave {waves + 1}: {ready.size} blocks ready, \
+{remaining - ready.size} after it"
+    pure ()
+  -- 2. The outcomes against the wave's snapshot, on tasks; 3. applied in key
+  -- order, each chunk as soon as the chunks before it are done.
+  let tasks := waveTasks width acc.cenv ready
+  let mut acc := acc
+  for t in tasks do
+    for (key, all, outcome) in t.get do
+      acc := (applyAuxBlockOutcome acc key all outcome).1
+  -- 4. The wave's members settle; the blocks waiting on them are released.
+  let mut settled := settled
+  let mut unmet := unmet
+  let mut next := parked
+  for (_, _, all) in ready do
+    for m in all do
+      settled := settled.insert m
+  for (_, _, all) in ready do
+    for m in all do
+      for w in (sched.waiters.get? m).getD #[] do
+        match unmet.get? w with
+        | some 1 =>
+          unmet := unmet.erase w
+          next := next.push w
+        | some k => unmet := unmet.insert w (k - 1)
+        | none => pure ()
+  return .ok { acc, settled, unmet, candidates := next,
+               remaining := remaining - ready.size, waves := waves + 1 }
+
+/-- The waves, at most `fuel` of them (every wave compiles at least one block). -/
+def foldWaves (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
+    (dbg : Bool) : Nat → FoldState → Except String FoldState
+  | 0, st =>
+    if st.remaining == 0 then .ok st
+    else .error s!"Only compiled {blocks.blocks.size - st.remaining}/{blocks.blocks.size} \
+blocks - circular dependency?"
+  | fuel + 1, st =>
+    if st.remaining == 0 then .ok st
+    else match foldWave blocks sched width dbg st with
+      | .error e => .error e
+      | .ok st' => foldWaves blocks sched width dbg fuel st'
+
+/-- **The driver.** Compile an environment's condensation with the full
+    production semantics (per-block aux tails with their call-site plans, the
+    promotion route with the original-form compile into `Named.original`, the
+    cross-SCC subsets, claims and fail-closed promotion), as a fold over waves
+    (see the section docstring). Per-block failures are recorded per member in
+    `ungrounded`, and dependents cascade into `MissingConstant` failures,
+    mirroring env.rs:727-737. The compile itself fails on a condensation
+    block without references, on an input inductive group with non-canonical
+    flags, on a mutual block of mixed safety, and on a schedule that cannot
+    finish.
+
+    The fold reads constants only through `Ix.Environment.get?`: it runs over
+    a lookup view of `env` whose map is empty, so a materialized environment
+    and a hybrid one with the same lookups (the IO pipeline's, whose theorem
+    and opaque bodies come from `fallback?`) compile alike. `unmaterialized`
+    counts the input constants `env.consts` does not hold; the view carries
+    `env.consts.size + unmaterialized`, so the source-claim walk's bound is
+    the same either way. The returned `CompileEnv` holds `env` and
+    `unmaterialized` again. -/
+def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (dbg : Bool := false)
+    (unmaterialized : Nat := 0)
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (width : Nat := foldWaveTasks)
+    : Except String (Ixon.Env × Nat × CompileEnv) := do
+  if let some msg := missingBlockRefs? blocks then throw msg
+  validateInductiveFlags env
+  validateMutualSafety env blocks
+  let sched := FoldSchedule.of blocks
+  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let st₀ := FoldState.init
+    { CompileEnv.new view with
+      unmaterialized := env.consts.size + unmaterialized, sharingLimits } blocks sched
+  let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) st₀
+  let (ixe, bytes, cenv) := assembleEnv st.acc
+  return (ixe, bytes, { cenv with env, unmaterialized })
+
+/-- The first name, in `Ix.nameCompare` order, whose published address
+    differs from a reference's (the wave driver's fail-fast `rustRef` check,
+    now made after the fold). -/
+def rustRefMismatch? (rust : Std.HashMap Name Address) (cenv : CompileEnv) : Option String :=
+  let bad := cenv.nameToNamed.fold (init := (#[] : Array (Name × Address × Address)))
+    fun acc n named =>
+      match rust.get? n with
+      | some r => if named.addr != r then acc.push (n, named.addr, r) else acc
+      | none => acc
+  match (bad.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt)[0]? with
+  | some (n, l, r) => some s!"rustRef mismatch at {n.pretty}: lean={l} rust={r}"
+  | none => none
 
 instance : Inhabited AuxBlockOutcome where
   default := .failed "uninitialized"
 
-/-- Parallel aux-aware environment compile. Same output as
-    `compileEnvAux` (see the module docstring for the intra-wave
-    order-independence argument); wave-based workers mirror the plain
-    `compileEnvParallel`.
+/-- The options of the Lean compile drivers. The drivers read no environment
+    variable and no `/proc` file: the CLI parses these (`ix compile-lean`:
+    `--sharing-limits` and `IX_SHARING_LIMITS`,
+    `IX_COMPILE_DBG`) and passes them in. -/
+structure DriverOptions where
+  /-- Resource limits of the canonical sharing construction. -/
+  sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits
+  /-- Phase timings, and the fold's per-wave trace. -/
+  dbg : Bool := false
+  /-- A memory reading for the trace after the compile phase, supplied by the
+      caller (the CLI reads the process's resident set size); `none` prints
+      none. -/
+  memory : Option (IO String) := none
 
-    `rustRef` enables fail-fast address comparison: after each block's
-    merge, every name it registered is checked against the reference
-    map; the first divergence aborts with the offending name. -/
-def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (nameByHash : Std.HashMap Address Name := {})
-    : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
-  let totalBlocks := blocks.blocks.size
-  -- The `IX_SHARING_LIMITS` override (`ix compile-lean --sharing-limits`).
-  let sharingLimits ← match ← compilerSharingLimitsFromEnv with
-    | .ok l => pure l
-    | .error e => return .error e
-
-  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash, sharingLimits } }
-  match precompileAuxGenPrereqs blocks acc with
-  | .error e => return .error e
-  | .ok a => acc := a
-
-  let workChan ← Std.CloseableChannel.Sync.new (α := AuxWorkItem)
-  let resultChan ← Std.CloseableChannel.Sync.new
-    (α := Name × Set Name × AuxBlockOutcome)
-
-  -- IX_LOG_BLOCKS=1: per-block BEGIN/END trace (with duration and RSS at
-  -- END), gated to the tail of the run (snapshot > 600k constants) where
-  -- the whole-Mathlib memory spike lives — identifies which block a
-  -- worker is inside when RSS blows up.
-  let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
-  let worker (_workerId : Nat) : IO Unit := do
-    while true do
-      match ← workChan.recv with
-      | none => break
-      | some item =>
-        let logThis := logBlocks && item.cenv.constants.size > 600000
-        if logThis then
-          IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
-          (← IO.getStdout).flush
-        let t0 ← IO.monoMsNow
-        let outcome := auxBlockOutcome item.cenv item.lo item.all
-        let t1 ← IO.monoMsNow
-        if logThis then
-          let rssKb ← do
-            let st ← IO.FS.readFile "/proc/self/status"
-            pure <| (st.splitOn "\n").findSome? fun l =>
-              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
-          IO.println s!"  [block] END {item.lo.pretty} {t1 - t0}ms \
-rss{(rssKb.getD "?").trimAscii}"
-          (← IO.getStdout).flush
-        discard <| resultChan.send (item.lo, item.all, outcome)
-
-  let mut workerTasks : Array (Task (Except IO.Error Unit)) := #[]
-  for i in [:numWorkers] do
-    let task ← IO.asTask (prio := .dedicated) (worker i)
-    workerTasks := workerTasks.push task
-
-  let mut remaining : Set Name := {}
-  for (lo, _) in blocks.blocks do
-    remaining := remaining.insert lo
-  -- Names of failed blocks count as "released" so dependents still run
-  -- (and fail with MissingConstant, recorded per member) — mirroring the
-  -- Rust scheduler's release-on-failure cascade.
-  let mut failedNames : Set Name := {}
-
-  if dbg then
-    IO.println s!"  [Lean CompileAux] {totalBlocks} blocks, {numWorkers} workers"
-
-  let mut waveNum := 0
-  let mut compiled := 0
-
-  while !remaining.isEmpty do
-    waveNum := waveNum + 1
-    let snapshot := acc.cenv
-    let mut ready : Array (Name × Set Name) := #[]
-    for lo in remaining do
-      let all := blocks.blocks.get! lo
-      let deps := match blocks.blockRefs.get? lo with
-        | some d => d
-        | none => {}
-      let depsOk := Id.run do
-        for d in deps do
-          if (resolveAddrPure snapshot d).isNone && !failedNames.contains d then
-            return false
-        return true
-      if depsOk then
-        ready := ready.push (lo, all)
-
-    if ready.isEmpty then
-      discard <| workChan.close
-      return .error s!"Circular dependency detected: {remaining.size} \
-blocks remaining but none ready"
-
-    if dbg then
-      let pct := (compiled * 100) / totalBlocks
-      IO.println s!"  [Lean CompileAux] Wave {waveNum}: {ready.size} blocks ready, {pct}% ({compiled}/{totalBlocks})"
-
-    for (lo, all) in ready do
-      discard <| workChan.send { lo, all, cenv := snapshot }
-
-    for _ in [:ready.size] do
-      match ← resultChan.recv with
-      | none =>
-        discard <| workChan.close
-        return .error "Result channel closed unexpectedly"
-      | some (lo, all, outcome) =>
-        if let .failed _ := outcome then
-          for n in all do
-            failedNames := failedNames.insert n
-        if let .promoted _ _ (some _) _ _ := outcome then
-          for n in all do
-            failedNames := failedNames.insert n
-        let (acc', newNames) := applyAuxBlockOutcome acc lo all outcome
-        acc := acc'
-        if let some rust := rustRef then
-          for name in newNames do
-            if let some rustAddr := rust.get? name then
-              if let some named := acc.cenv.nameToNamed.get? name then
-                if named.addr != rustAddr then
-                  discard <| workChan.close
-                  return .error s!"rustRef mismatch at {name.pretty}: \
-lean={named.addr} rust={rustAddr} (block {lo.pretty})"
-        compiled := compiled + 1
-        -- Memory attribution trace: which driver-retained structure is
-        -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
-        if dbg && compiled % 20000 == 0 then
-          let rssKb ← do
-            let st ← IO.FS.readFile "/proc/self/status"
-            pure <| (st.splitOn "\n").findSome? fun l =>
-              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
-          IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
-rss{(rssKb.getD "?").trimAscii} · consts {acc.cenv.constants.size} \
-({acc.cenv.totalBytes} B ser) · named {acc.cenv.nameToNamed.size} · \
-blobs {acc.cenv.blobs.size} · plans {acc.cenv.callSitePlans.size}\
-/{acc.cenv.brecOnCallSitePlans.size}/{acc.cenv.belowCallSitePlans.size} · \
-auxNames {acc.cenv.auxNameToAddr.size}"
-          (← IO.getStdout).flush
-
-    for (lo, _) in ready do
-      remaining := remaining.erase lo
-
-  discard <| workChan.close
-
-  if compiled != totalBlocks then
-    return .error s!"Only compiled {compiled}/{totalBlocks} blocks - \
-circular dependency?"
-
-  return .ok (assembleEnv acc)
 
 /-! ## The full pure-Lean pipeline
 
-`Lean canon → ref graph → ground filter → condense → aux-aware parallel
-compile → serialize` — the Lean-side mirror of Rust
+`Lean canon → ref graph → ground filter → condense → the wave fold →
+serialize` — the Lean-side mirror of Rust
 `compile_env_with_options`' setup phases (env.rs:146-260) feeding the
 scheduler. This is what `ix compile-lean` and `ix validate-lean`
 phase 1 run.
 
-Rust's env-level `validate_ind_groups` domain restriction is not
-re-scanned here: the per-block nested-expansion path performs the same
-inductive-flag validation when it matters, and the compile fails loudly
-there on non-canonical flags. -/
+The driver applies Rust's env-level domain restriction
+(`validate_ind_groups`) first: an input inductive group whose stored flags
+differ from the recomputed ones (`validateInductiveFlags`) fails the compile
+before any block is scheduled. -/
 
 /-- Result of the full pure-Lean compile pipeline. -/
 structure LeanPipelineOut where
@@ -1009,6 +1370,9 @@ structure LeanPipelineOut where
       pass. The whole-env canon map is never materialized; this is the
       phase-5 decompile oracle for `ix validate-lean`. -/
   digests : Std.HashMap Ix.Name UInt64 := {}
+  /-- The input carries semantic contracts: its output is emitted only after
+      the resource post-step (`Ix.CompileM.resourcePostStep`). -/
+  annotated : Bool := false
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
 
@@ -1038,8 +1402,7 @@ def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := d
 
 def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none)
+    (numWorkers : Nat := 32) (opts : DriverOptions := {})
     : IO (Except String LeanPipelineOut) := do
   let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
   for (name, source) in consts do
@@ -1048,9 +1411,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     match inspectSemanticSource source with
     | .error error => return .error error
     | .ok _ => pure ()
-  -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
-  -- attribution trace without threading a flag through callers.
-  let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
+  let dbg := opts.dbg
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow
     if dbg then
@@ -1059,8 +1420,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   let t0 ← IO.monoMsNow
   let constArr := consts.toArray
   -- 1a. Name pre-pass: canonical names only. Builds the lazy-lookup key
-  --     map (Ix name → pinned Lean constant), the reverse name-hash
-  --     view for `nameForAddr`, and the THIN ground-check env — ground
+  --     map (Ix name → pinned Lean constant), and the THIN ground-check env — ground
   --     checks read only name-existence and is-it-a-ctor
   --     (`groundExpr`/`groundConst`), so two shared placeholder
   --     constants stand in for every value.
@@ -1072,13 +1432,11 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     { cnst := placeholderCnst, induct := .mkAnon, cidx := 0
       numParams := 0, numFields := 0, isUnsafe := false }
   let mut leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) := {}
-  let mut nameByHash : Std.HashMap Address Ix.Name := {}
   let mut thinConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
   let mut ixArr : Array (Ix.Name × Lean.ConstantInfo) := #[]
   for (ln, lci) in constArr do
     let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
     leanByIx := leanByIx.insert ixn (ln, lci)
-    nameByHash := nameByHash.insert ixn.getHash ixn
     thinConsts := thinConsts.insert ixn
       (if lci matches .ctorInfo _ then phCtor else phAxiom)
     ixArr := ixArr.push (ixn, lci)
@@ -1150,33 +1508,52 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   -- 4. Condense (Tarjan SCCs over the filtered graph).
   let condensed := Ix.CondenseM.run groundedOutRefs
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
-  -- 5. Aux-aware parallel compile against the HYBRID environment: code
-  --    kinds are the materialized (shared) map; proof bodies
-  --    canonicalize on demand from the pinned Lean constants and are
-  --    dropped when their block's `CompileM.run` returns.
+  -- 5. The driver (`compileEnvFold`, the same function as `Ix.Cert.compile`'s)
+  --    against the HYBRID environment: code kinds are the materialized
+  --    (shared) map; proof bodies canonicalize on demand from the pinned
+  --    Lean constants and are dropped when their block's `CompileM.run`
+  --    returns. Each wave is split into `4 * numWorkers` tasks (`width`; the
+  --    value does not depend on it): chunks that small let the task pool
+  --    (`LEAN_NUM_THREADS`, else one thread per core) balance blocks of very
+  --    different sizes, where `numWorkers` chunks left the wave waiting on its
+  --    slowest chunk (Mathlib's compile phase 505.5 s at width 32, 414.1 s at
+  --    128; the queue driver took 458.1 s). At most `min width pool` blocks
+  --    compile at once.
   let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
     (leanByIx.get? n).bind fun (ln, lci) =>
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
-  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
-      nameByHash with
+  if dbg then
+    IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
+  let folded ← IO.lazyPure fun _ =>
+    compileEnvFold ixEnv condensed (dbg := dbg)
+      (unmaterialized := leanByIx.size - codeConsts.size)
+      (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
+  match folded with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
+    if dbg then
+      if let some read := opts.memory then
+        IO.println s!"  [compile-lean] rss after the compile phase: {← read}"
+    if let some rust := rustRef then
+      if let some msg := rustRefMismatch? rust cenv then return .error msg
+    -- The constants the groundedness scan rejected are failures of the
+    -- compile, each with its named refusal (`GroundError.refusal`), as the
+    -- Rust compiler records them: an input constant is never dropped
+    -- without a record (`ix compile-lean` is fail-closed on them).
+    let cenv := ungrounded.fold (init := cenv) fun c n e =>
+      if c.ungrounded.contains n then c
+      else { c with ungrounded := c.ungrounded.insert n (e.refusal ungrounded.contains) }
     if dbg && cenv.ungrounded.size > 0 then
       IO.println s!"  [compile-lean] {cenv.ungrounded.size} per-block compile failures"
       for (n, e) in cenv.ungrounded.toList.take 5 do
         IO.println s!"    failed: {n.pretty}: {e.take 200}"
-    -- Semantic emission is atomic: a failed source declaration must not
-    -- disappear into an otherwise successful partial artifact.
-    if annotated || resourceProfile.isSome then
-      if !ungrounded.isEmpty || !cenv.ungrounded.isEmpty then
-        return .error "resource compilation requires the complete requested closure"
-      match Ix.Resource.validate ixonEnv (resourceProfile.getD (Ix.Resource.standardProfile ixonEnv)) with
-      | .error error => return .error error
-      | .ok _ => pure ()
-    -- 6. Serialize only after the combined validation succeeds.
+    -- 6. Serialize. Resource validation is a post-step of the caller's
+    -- (`Ix.CompileM.resourcePostStep`, `Ix.CompileResource`): semantic
+    -- emission is atomic only through it, so an annotated input's output
+    -- is emitted only after it (`annotated`).
     match Ixon.serEnv ixonEnv with
     | .error e => return .error s!"serEnv failed: {e}"
     | .ok bytes =>
@@ -1187,30 +1564,30 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         cenv
         ungroundedCount := ungrounded.size
         blockCount := condensed.blocks.size
-        digests }
+        digests
+        annotated }
 
 /-- Explicit frontend boundary: resolve occurrence contracts before
-canonicalization, then validate resources and erased types before emission. -/
+canonicalization. Resources are validated by the caller's post-step
+(`Ix.CompileM.compileLeanInputValidated`). -/
 def compileLeanInput (input : Ix.Compile.CompileInput)
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
   let constants ← match input.prepare with
     | .ok constants => pure constants
     | .error error => return .error error
-  compileDecoratedConsts constants rustRef numWorkers dbg resourceProfile
+  compileDecoratedConsts constants rustRef numWorkers opts
 
 /-- Compile an isolated source list, extracting its checked occurrence records. -/
 def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (dbg : Bool := false)
-    (resourceProfile : Option Ix.Resource.Profile := none) :
+    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
     IO (Except String LeanPipelineOut) := do
   let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
     | .ok input => pure input
     | .error error => return .error (toString error)
-  compileLeanInput input rustRef numWorkers dbg resourceProfile
+  compileLeanInput input rustRef numWorkers opts
 
 /-- Native compiler entrypoint with an explicitly committed resource profile. -/
 @[extern "rs_compile_env_to_ixon_profile"]

@@ -101,9 +101,24 @@ pub fn generate_brecon_constants_with(
     return Ok(vec![]);
   }
 
+  // Every class needs its recursor and its `.below`; a shorter list is an
+  // inconsistent block, refused naming it (A0, WB-F5) instead of silently
+  // generating `.brecOn` for a prefix of the classes.
+  if canonical_recs.len() < n_classes || below_consts.len() < n_classes {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "brecOn generation for the block of '{}': {n_classes} classes \
+         but {} recursors and {} `.below` constants",
+        super::block_label(sorted_classes),
+        canonical_recs.len(),
+        below_consts.len(),
+      ),
+    });
+  }
+
   let mut results = Vec::new();
 
-  for ci in 0..n_classes.min(canonical_recs.len()).min(below_consts.len()) {
+  for ci in 0..n_classes {
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
     let ind_ref = lean_env.get(class_rep);
@@ -832,7 +847,7 @@ fn build_type_brecon_fvar(
     let ilvl_ctx: Vec<LocalDecl> =
       param_decls.iter().chain(motive_decls.iter()).cloned().collect();
     let mut ilvl_tc =
-      super::expr_utils::TcScope::new(&ilvl_ctx, rec_level_params, stt, kctx);
+      super::expr_utils::TcScope::new(&ilvl_ctx, rec_level_params, stt, kctx)?;
 
     motive_decls
       .iter()
@@ -849,7 +864,7 @@ fn build_type_brecon_fvar(
           &md.domain
         };
 
-        ilvl_tc.push_locals(&idcls);
+        ilvl_tc.push_locals(&idcls)?;
         let ilvl_j = ilvl_tc.get_level(major_dom).map_err(|e| {
           CompileError::UnsupportedExpr {
             desc: format!(
@@ -861,7 +876,7 @@ fn build_type_brecon_fvar(
             ),
           }
         })?;
-        ilvl_tc.pop_locals(&idcls);
+        ilvl_tc.pop_locals(&idcls)?;
         Ok(ilvl_j)
       })
       .collect::<Result<Vec<_>, _>>()?
@@ -956,12 +971,12 @@ fn build_type_brecon_fvar(
   let base_ctx: Vec<LocalDecl> =
     param_decls.iter().chain(motive_decls.iter()).cloned().collect();
   let mut rtc =
-    super::expr_utils::TcScope::new(&base_ctx, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(&base_ctx, rec_level_params, stt, kctx)?;
 
   // go return type: PProd (motive_ci indices major) (below_ci params motives indices major)
   // Infer levels via TC with indices + major in scope.
-  rtc.push_locals(&index_decls);
-  rtc.push_locals(&major_decls);
+  rtc.push_locals(&index_decls)?;
+  rtc.push_locals(&major_decls)?;
 
   let motive_ci_app = mk_app_n(
     mk_app_n(motive_fvars[ci].clone(), &index_fvars),
@@ -982,8 +997,8 @@ fn build_type_brecon_fvar(
   let go_ret_type =
     mk_pprod(&go_ret_lvl1, &go_ret_lvl2, &motive_ci_app, &below_ci_app);
 
-  rtc.pop_locals(&major_decls);
-  rtc.pop_locals(&index_decls);
+  rtc.pop_locals(&major_decls)?;
+  rtc.pop_locals(&index_decls)?;
 
   // go value: I.rec.{rlvl, lvls...} params [modified_motives] [modified_minors] indices major
   let mut go_val = mk_const(&rec_val.cnst.name, &{
@@ -1001,7 +1016,7 @@ fn build_type_brecon_fvar(
     let nma = super::expr_utils::count_foralls(mt);
     let (ifvs, idcls, _) = forall_telescope(mt, nma, &format!("tbgm{j}"), 0);
 
-    rtc.push_locals(&idcls);
+    rtc.push_locals(&idcls)?;
 
     let m_app = mk_app_n(motive_fvars[j].clone(), &ifvs);
     let b_app = mk_app_n(
@@ -1015,15 +1030,15 @@ fn build_type_brecon_fvar(
     let mm_lvl2 = rtc.get_level(&b_app)?;
     let pprod_body = mk_pprod(&mm_lvl1, &mm_lvl2, &m_app, &b_app);
 
-    rtc.pop_locals(&idcls);
+    rtc.pop_locals(&idcls)?;
 
     go_val = LeanExpr::app(go_val, mk_lambda(pprod_body, &idcls));
   }
 
   // Push remaining context (indices, major, F-binders) for minor premises.
-  rtc.push_locals(&index_decls);
-  rtc.push_locals(&major_decls);
-  rtc.push_locals(&f_decls);
+  rtc.push_locals(&index_decls)?;
+  rtc.push_locals(&major_decls)?;
+  rtc.push_locals(&f_decls)?;
 
   // Apply modified minors: for each ctor, build PProd-packed minor.
   //
@@ -1101,15 +1116,15 @@ fn build_type_brecon_fvar(
   //
   // Compute the levels here while the index decls are still pushed into
   // the live `rtc` scope so `get_level` resolves any FVar references to
-  // earlier indices/params correctly. Then pop them back to the state the
-  // existing code below expects.
+  // earlier indices/params correctly. The following equality construction
+  // opens its own fresh scope; these existing locals need no duplicate frame.
   let index_sort_levels: Vec<Level> = {
-    rtc.push_locals(&index_decls);
+    // Indices, major and F-binders remain live from minor construction.
+    // Re-pushing indices would duplicate their free-variable identities.
     let mut out = Vec::with_capacity(index_decls.len());
     for d in &index_decls {
       out.push(rtc.get_level(&d.domain)?);
     }
-    rtc.pop_locals(&index_decls);
     out
   };
   let eq_result = build_type_brecon_eq_fvar(
@@ -1143,7 +1158,7 @@ fn build_type_brecon_fvar(
     rec_level_params,
     stt,
     kctx,
-  );
+  )?;
 
   // Type-level `.brecOn.go` / `.brecOn` / `.brecOn.eq` all reference the
   // parent inductive's `.rec`, so Lean's `mkDefinitionValInferringUnsafe` /
@@ -1240,15 +1255,20 @@ fn build_type_minor_premise_fvar(
         rtc,
       )?;
       let (ih_fv_name, ih_fv) = fresh_fvar("tmih", fi);
-      lambda_decls.push(LocalDecl {
+      let lambda_decl = LocalDecl {
         fvar_name: ih_fv_name,
         binder_name: decl.binder_name.clone(),
         domain: pprod_dom,
         info: decl.info.clone(),
-      });
+      };
+      rtc.push_locals(std::slice::from_ref(&lambda_decl))?;
+      lambda_decls.push(lambda_decl);
       lambda_fvars.push(ih_fv.clone());
       prod_entries.push((ih_fv, lambda_decls.len() - 1));
     } else {
+      // Later IH domains can mention this ordinary field. Install the
+      // telescope prefix before inferring those domains, not after them.
+      rtc.push_locals(std::slice::from_ref(&decl))?;
       lambda_decls.push(decl);
       lambda_fvars.push(fvar);
     }
@@ -1257,10 +1277,8 @@ fn build_type_minor_premise_fvar(
   // Build PProdN.mk of prod entries (right-fold of VALUES, not types).
   //
   // Lean's mkPProdMk (PProdN.lean:44-53) infers universe levels from the
-  // types via getLevel. We use the TcScope to do the same. Push the lambda
-  // decls (with replaced IH domains) into the TC so FVars resolve correctly.
-
-  rtc.push_locals(&lambda_decls);
+  // types via getLevel. The lambda declarations, with replaced IH domains,
+  // are already in scope.
 
   let (b, b_type) = if prod_entries.is_empty() {
     // PUnit.{rlvl} : Sort rlvl
@@ -1310,7 +1328,7 @@ fn build_type_minor_premise_fvar(
   let lvl_b = rtc.get_level(&b_type)?;
   let body = mk_pprod_mk(&lvl_a, &lvl_b, &motive_app, &b_type, &f_app, &b);
 
-  rtc.pop_locals(&lambda_decls);
+  rtc.pop_locals(&lambda_decls)?;
 
   Ok(mk_lambda(body, &lambda_decls))
 }
@@ -1356,12 +1374,12 @@ fn replace_motive_with_pprod_fvar(
 
   // Infer PProd levels via TC, matching Lean's mkPProd (PProdN.lean:37-38).
   if !inner_decls.is_empty() {
-    rtc.push_locals(&inner_decls);
+    rtc.push_locals(&inner_decls)?;
   }
   let lvl1 = rtc.get_level(&motive_app)?;
   let lvl2 = rtc.get_level(&below_app)?;
   if !inner_decls.is_empty() {
-    rtc.pop_locals(&inner_decls);
+    rtc.pop_locals(&inner_decls)?;
   }
 
   let pprod = mk_pprod(&lvl1, &lvl2, &motive_app, &below_app);
@@ -1509,17 +1527,17 @@ fn meta_defeq(
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,
-) -> bool {
-  if tc.is_def_eq(a, b) {
-    return true;
+) -> Result<bool, CompileError> {
+  if tc.is_def_eq(a, b)? {
+    return Ok(true);
   }
-  if is_unit_like_pair(tc, lean_env, a, b) {
-    return true;
+  if is_unit_like_pair(tc, lean_env, a, b)? {
+    return Ok(true);
   }
   let (ha, aargs) = decompose_apps(a);
   let (hb, bargs) = decompose_apps(b);
   if aargs.is_empty() || aargs.len() != bargs.len() {
-    return false;
+    return Ok(false);
   }
   let heads_match = match (ha.as_data(), hb.as_data()) {
     (ExprData::Const(n1, l1, _), ExprData::Const(n2, l2, _)) => {
@@ -1528,9 +1546,14 @@ fn meta_defeq(
     _ => false,
   };
   if !heads_match {
-    return false;
+    return Ok(false);
   }
-  aargs.iter().zip(bargs.iter()).all(|(x, y)| meta_defeq(tc, lean_env, x, y))
+  for (x, y) in aargs.iter().zip(bargs.iter()) {
+    if !meta_defeq(tc, lean_env, x, y)? {
+      return Ok(false);
+    }
+  }
+  Ok(true)
 }
 
 /// `Meta.isDefEqUnitLike`: `a`'s type (whnf) is an application of a
@@ -1542,14 +1565,14 @@ fn is_unit_like_pair(
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,
-) -> bool {
-  let Some(ta) = tc.infer_lean(a) else {
-    return false;
+) -> Result<bool, CompileError> {
+  let Some(ta) = tc.infer_lean(a)? else {
+    return Ok(false);
   };
-  let ta = tc.whnf_lean(&ta);
+  let ta = tc.whnf_lean(&ta)?;
   let (head, _) = decompose_apps(&ta);
   let ExprData::Const(head_name, _, _) = head.as_data() else {
-    return false;
+    return Ok(false);
   };
   let is_unit_like = match lean_env.get(head_name).as_deref() {
     Some(ConstantInfo::InductInfo(iv)) => {
@@ -1566,10 +1589,10 @@ fn is_unit_like_pair(
     _ => false,
   };
   if !is_unit_like {
-    return false;
+    return Ok(false);
   }
-  let Some(tb) = tc.infer_lean(b) else {
-    return false;
+  let Some(tb) = tc.infer_lean(b)? else {
+    return Ok(false);
   };
   tc.is_def_eq(&ta, &tb)
 }
@@ -1623,7 +1646,7 @@ fn build_type_brecon_eq_fvar(
   rec_level_params: &[Name],
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> (LeanExpr, LeanExpr) {
+) -> Result<(LeanExpr, LeanExpr), CompileError> {
   // .brecOn.eq requires Eq and Eq.refl as constants. The real pipeline only
   // calls aux_gen when the original Lean environment has these, so this
   // always succeeds. If a future minimal-test caller needs to opt out (e.g.
@@ -1631,7 +1654,6 @@ fn build_type_brecon_eq_fvar(
   // gate via a `lean_env.get("Eq").is_some()` check.
   let _ = n_minors;
 
-  let _n_motives = motive_fvars.len();
   let major_fvar = &major_fvars[0];
 
   // --- Type ---
@@ -1752,9 +1774,9 @@ fn build_type_brecon_eq_fvar(
       lean_env,
       stt,
       kctx,
-    );
+    )?;
     if let Some(eq_value) = eq_value_opt {
-      return (eq_type, eq_value);
+      return Ok((eq_type, eq_value));
     }
     // Fall through to the simple path if the indexed construction
     // couldn't be completed (e.g., missing ctor info).
@@ -1894,7 +1916,7 @@ fn build_type_brecon_eq_fvar(
 
   let eq_value = mk_lambda(eq_val, all_decls);
 
-  (eq_type, eq_value)
+  Ok((eq_type, eq_value))
 }
 
 // =========================================================================
@@ -1975,7 +1997,7 @@ fn build_indexed_eq_value(
   lean_env: &LeanEnv,
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
-) -> Option<LeanExpr> {
+) -> Result<Option<LeanExpr>, CompileError> {
   let n_indices = index_decls.len();
   let outer_major = &major_fvars[0];
   let major_type = &major_decls[0].domain;
@@ -1997,11 +2019,11 @@ fn build_indexed_eq_value(
     .filter(|e| matches!(e.as_data(), ExprData::Fvar(..)))
     .count();
   if n_fvar_indices != n_indices {
-    return None;
+    return Ok(None);
   }
   // Validate that `outer_major` is a FVar (mirrors the same requirement).
   if !matches!(outer_major.as_data(), ExprData::Fvar(..)) {
-    return None;
+    return Ok(None);
   }
 
   // OUTER_Eq_body: `Eq (motive outer_idxs outer_major) (brecOn …) (F_1 …)`
@@ -2093,11 +2115,11 @@ fn build_indexed_eq_value(
   // We use `meta_defeq` — `TcScope::is_def_eq` extended with the
   // elaborator's unit-like rule — for the decision.
   let mut eq_tc =
-    super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx);
+    super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx)?;
   // The compared "new" types mention the generalized index fvars
   // (`new_idx_decls`), which are not part of `all_decls` — push them so
   // inference inside `meta_defeq` (the unit-like check) can type them.
-  eq_tc.push_locals(&new_idx_decls);
+  eq_tc.push_locals(&new_idx_decls)?;
   // Track which index binders are HEq (for the remaining-list construction
   // below in `build_minor_via_cases_sim`).
   let mut idx_is_heq: Vec<bool> = Vec::with_capacity(n_indices);
@@ -2106,7 +2128,7 @@ fn build_indexed_eq_value(
   for (i, idx_decl) in index_decls.iter().enumerate() {
     let outer_type = &idx_decl.domain;
     let new_type = &new_idx_decls[i].domain;
-    let types_defeq = meta_defeq(&mut eq_tc, lean_env, outer_type, new_type);
+    let types_defeq = meta_defeq(&mut eq_tc, lean_env, outer_type, new_type)?;
     let eq_ty = if types_defeq {
       mk_eq(&idx_sort(i), outer_type, &index_fvars[i], &new_idx_fvars[i])
     } else {
@@ -2137,7 +2159,7 @@ fn build_indexed_eq_value(
   // checking), discharged by `Eq.refl` and consumed by a plain
   // `Eq.ndrec` in the minors. Fixture: `TypeBrecOnEqDefUnit`.
   let major_types_defeq =
-    meta_defeq(&mut eq_tc, lean_env, major_type, &new_major_type);
+    meta_defeq(&mut eq_tc, lean_env, major_type, &new_major_type)?;
   drop(eq_tc); // release the TC before building the rest of the term
   let major_eq_ty = if major_types_defeq {
     mk_eq(major_level, major_type, outer_major, &new_major_fvar)
@@ -2206,7 +2228,7 @@ fn build_indexed_eq_value(
     // separately as `ctor_applied` below.
     let (_, minor_ret_args) = decompose_apps(&minor_ret);
     if minor_ret_args.len() < n_indices {
-      return None;
+      return Ok(None);
     }
     let ret_args: Vec<LeanExpr> = minor_ret_args[..n_indices].to_vec();
 
@@ -2231,7 +2253,7 @@ fn build_indexed_eq_value(
     }
 
     // Build the minor body by simulating `cases + refl`.
-    let minor_value = build_minor_via_cases_sim(
+    let Some(minor_value) = build_minor_via_cases_sim(
       ctor_idx,
       &non_ih_decls,
       &ret_args,
@@ -2248,7 +2270,9 @@ fn build_indexed_eq_value(
       f_fvars,
       &idx_is_heq,
       !major_types_defeq,
-    )?;
+    ) else {
+      return Ok(None);
+    };
 
     eq_val = LeanExpr::app(eq_val, minor_value);
   }
@@ -2278,7 +2302,7 @@ fn build_indexed_eq_value(
   };
   eq_val = LeanExpr::app(eq_val, major_refl);
 
-  Some(mk_lambda(eq_val, all_decls))
+  Ok(Some(mk_lambda(eq_val, all_decls)))
 }
 
 /// Whether an expression contains a free variable with the given name.
@@ -3031,6 +3055,8 @@ fn build_minor_via_cases_sim(
 ///
 /// Used for Prop brecOn: the recursor type has `Level::param(u)` for large elimination,
 /// but brecOn specializes to Prop, so `u -> Level::zero()`.
+/// It descends into every subterm, `Proj` and `Mdata` included; the remaining
+/// cases are leaves without levels.
 fn subst_level_in_expr(
   expr: &LeanExpr,
   param: &Name,
@@ -3068,6 +3094,14 @@ fn subst_level_in_expr(
       subst_level_in_expr(b, param, replacement),
       *nd,
     ),
+    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
+      n.clone(),
+      i.clone(),
+      subst_level_in_expr(e, param, replacement),
+    ),
+    ExprData::Mdata(kvs, e, _) => {
+      LeanExpr::mdata(kvs.clone(), subst_level_in_expr(e, param, replacement))
+    },
     _ => expr.clone(),
   }
 }
@@ -3086,5 +3120,43 @@ fn subst_level(lvl: &Level, param: &Name, replacement: &Level) -> Level {
       subst_level(l2, param, replacement),
     ),
     _ => lvl.clone(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  /// The substitution reaches a level under a projection and under
+  /// metadata, as it does under every other node.
+  #[test]
+  fn subst_level_in_expr_descends_into_proj_and_mdata() {
+    let u = name("u");
+    let in_sort = LeanExpr::sort(Level::param(u.clone()));
+    let in_const = LeanExpr::cnst(name("c"), vec![Level::param(u.clone())]);
+    let zero_sort = LeanExpr::sort(Level::zero());
+    let zero_const = LeanExpr::cnst(name("c"), vec![Level::zero()]);
+    let proj = |e| LeanExpr::proj(name("S"), Nat::from(0u64), e);
+    let mdata = |e| LeanExpr::mdata(vec![], e);
+    let cases = [
+      (proj(in_sort.clone()), proj(zero_sort.clone())),
+      (mdata(in_const.clone()), mdata(zero_const.clone())),
+      (proj(mdata(in_sort)), proj(mdata(zero_sort))),
+      (
+        LeanExpr::app(mdata(in_const.clone()), proj(in_const)),
+        LeanExpr::app(mdata(zero_const.clone()), proj(zero_const)),
+      ),
+    ];
+    for (input, expected) in cases {
+      let out = subst_level_in_expr(&input, &u, &Level::zero());
+      assert_eq!(out, expected);
+    }
+    // Another parameter is left alone.
+    let other = proj(LeanExpr::sort(Level::param(name("v"))));
+    assert_eq!(subst_level_in_expr(&other, &u, &Level::zero()), other);
   }
 }

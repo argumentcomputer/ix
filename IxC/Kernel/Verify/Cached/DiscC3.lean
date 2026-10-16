@@ -23,10 +23,10 @@ variable {mode : CheckMode}
 
 section Walks
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
-private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Name)
-    (rules : List RecRule) (major : Expr) :
+private theorem majorToCtor_unfold (env : Env md) (d : Nat) (recName : Key md)
+    (rules : List (RecRule md)) (major : Expr md) :
     majorToCtor mode (fueledFns mode env) env d recName rules major =
     (if isCtorApp env major then pure major else
     match rules with
@@ -75,7 +75,7 @@ private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Name)
                 if T' = T ∧ tmaj.getAppArgs.length = caps.etaParams ∧
                     ust.length = cvT.levelParams.length ∧
                     capsNeverZero cvT.levelParams ust caps = true then
-                  let fab := Expr.mkAppN (.const caps.etaCtor ust)
+                  let fab := Expr.mkAppN (.const rl.ctor ust)
                     (etaFabArgsE env T ust tmaj.getAppArgs major
                       caps.etaFields)
                   if fab.wscopedB d && fab.looseBVarsBounded 0 &&
@@ -139,8 +139,8 @@ private theorem majorToCtor_unfold (env : Env) (d : Nat) (recName : Name)
 
 /-- Port of `majorToCtorI_sim`. -/
 theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {recName : Name} {rules : List RecRule} {i : Expr}
-    {major : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {recName : Key md} {rules : List (RecRule md)} {i : Expr md}
+    {major : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i major) (hmaj : Expr.WScoped d major) :
     SimC mode env s₀ (RelEC d)
       (majorToCtorI mode (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d recName
@@ -213,7 +213,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                     pure T >>= fun TI =>
                     projAppsI (mkFEnv env) T TI ust margs i
                         caps.etaFields >>= fun projs =>
-                    pure caps.etaCtor >>= fun ctorI =>
+                    pure rl.ctor >>= fun ctorI =>
                     pure (Expr.const ctorI ust) >>= fun h =>
                     mkAppNM h (margs ++ projs) >>= fun fab =>
                     pure (Expr.wscopedBC d fab &&
@@ -428,7 +428,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
                   | forallE t b' m =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                  | letE t v b' =>
+                  | letE t v b' _ =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
                   | proj sn jx e' =>
                     exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -466,17 +466,17 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                           caps.etaFields hs₂r hmargs hden)
                           (fun s₃ projs hs₃ hQp => ?_)
                         refine SimC.bind_left (pureEq_eff hs₃
-                          caps.etaCtor)
+                          rl.ctor)
                           (fun s₃n ctorI hs₃ hQctorI => ?_)
                         subst hQctorI
                         refine SimC.bind_left (pureC_eff hs₃
-                          (x := Expr.const caps.etaCtor ust))
+                          (x := Expr.const rl.ctor ust))
                           (fun s₄ hd hs₄ hQh => ?_)
                         refine SimC.bind_left (mkAppNM_eff hs₄ hQh
                           (hmargs.append hQp))
                           (fun s₅ fab hs₅ hQfab => ?_)
                         have hQfab' : RelC fab
-                            (Expr.mkAppN (.const caps.etaCtor ust)
+                            (Expr.mkAppN (.const rl.ctor ust)
                               (etaFabArgsE env T ust (Expr.getAppArgs tmaj) i
                                 caps.etaFields)) := hQfab
                         refine SimC.pureB ?_
@@ -563,7 +563,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
                     | forallE t b' m =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                    | letE t v b' =>
+                    | letE t v b' _ =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
                     | proj sn jx e' =>
                       exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -688,7 +688,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
                       | forallE t b' m =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
-                      | letE t v b' =>
+                      | letE t v b' _ =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
                       | proj sn jx e' =>
                         exact SimC.pure hs₂ ⟨hden, hmaj⟩
@@ -706,7 +706,7 @@ theorem majorToCtorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env
           | app f' a' => exact SimC.pure hs ⟨hden, hmaj⟩
           | lam t b' m => exact SimC.pure hs ⟨hden, hmaj⟩
           | forallE t b' m => exact SimC.pure hs ⟨hden, hmaj⟩
-          | letE t v b' => exact SimC.pure hs ⟨hden, hmaj⟩
+          | letE t v b' _ => exact SimC.pure hs ⟨hden, hmaj⟩
           | lit l => exact SimC.pure hs ⟨hden, hmaj⟩
           | proj s'ᵢ j' e' => exact SimC.pure hs ⟨hden, hmaj⟩
         | axiomInfo cv => exact SimC.pure hs ⟨hden, hmaj⟩
@@ -720,15 +720,15 @@ end Walks
 
 section Walks2
 
-variable {env : Env} {f : Nat}
+variable {env : Env md} {f : Nat}
 
 /-- Port of `pinArgsI_eff`: the cached pin instantiations denote the
 nested comparand's mapped list.  (The interned original's separate
 `us : List LIdx` / `lus : List Level` pair collapses to the single
 level list, so its `denoteLList` premise vanishes.) -/
-theorem pinArgsC_eff (lps : List Name) (us : List Level) :
-    ∀ (ps : List Expr) {s₀ : CState}, CSOK mode env s₀ →
-      ∀ {args : List Expr} {xs : List Expr} (t : Nat),
+theorem pinArgsC_eff (lps : List LevelParam) (us : List Level) :
+    ∀ (ps : List (Expr md)) {s₀ : CState md}, CSOK mode env s₀ →
+      ∀ {args : List (Expr md)} {xs : List (Expr md)} (t : Nat),
       RelCL args xs →
       CEff mode env s₀ (fun rs => RelCL rs
           (ps.map fun p => Expr.instSpine xs t
@@ -755,8 +755,8 @@ theorem pinArgsC_eff (lps : List Name) (us : List Level) :
 /-- Port of `iotaIndexOkI_sim`: the canonical-index comparison (the ι
 batch) simulates its fueled original. -/
 theorem iotaIndexOkC_sim (ih : SSimC mode env f) {d : Nat} {mI rP cnP : Nat}
-    {tyCtor : Expr} {tyx : Expr} {margs idx : List Expr} {ys is : List Expr}
-    {s₀ : CState} (hs : CSOK mode env s₀)
+    {tyCtor : Expr md} {tyx : Expr md} {margs idx : List (Expr md)} {ys is : List (Expr md)}
+    {s₀ : CState md} (hs : CSOK mode env s₀)
     (hty : RelC tyCtor tyx) (hwty : Expr.WScoped d tyx)
     (hmargs : RelCL margs ys) (hwys : ∀ y ∈ ys, Expr.WScoped d y)
     (hidx : RelCL idx is) (hwis : ∀ x ∈ is, Expr.WScoped d x) :
@@ -800,8 +800,8 @@ certificate family is written in the first shape (one `certAtI`, so
 `.trusted` omits the lookups with the checks that read them), its pure
 comparand in the second. -/
 private theorem certBlock_reshape {α β γ : Type}
-    (A : CheckCM α) (B : α → CheckCM Bool) (C : CheckCM β)
-    (D E : β → CheckCM Bool) (F : CheckCM (Option γ)) :
+    (A : (CheckCM md) α) (B : α → (CheckCM md) Bool) (C : (CheckCM md) β)
+    (D E : β → (CheckCM md) Bool) (F : (CheckCM md) (Option γ)) :
     ((A >>= fun a =>
         B a >>= fun r₂ =>
         if r₂ then
@@ -843,12 +843,12 @@ telescope runs and the canonical-index comparison.  The interned
 original's `cI jI : NIdx` name indices stay as (unconstrained) `Name`
 parameters; their `denoteN` premises vanish with the name collapse. -/
 private theorem iotaRec_certs_tail (ih : SSimC mode env f) (henv : EnvWF env)
-    {mi : CheckMode} {d : Nat} {i major : Expr} {ex majorx : Expr} {cI jI : Name}
-    {c cj : Name}
+    {mi : CheckMode} {d : Nat} {i major : Expr md} {ex majorx : Expr md} {cI jI : Key md}
+    {c cj : Key md}
     {us usj : List Level}
-    {cv cvj : ConstantVal} {mI rP cnP cnF : Nat}
-    {rules : List RecRule} {rl : RecRule}
-    {args margs : List Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {cv cvj : ConstantVal md} {mI rP cnP cnF : Nat}
+    {rules : List (RecRule md)} {rl : RecRule md}
+    {args margs : List (Expr md)} {s₀ : CState md} (hs : CSOK mode env s₀)
     (_hden : RelC i ex) (hw : Expr.WScoped d ex)
     (hfc : env.find? c = some (.recInfo cv mI rP rules))
     (hfj : env.find? cj = some (.ctorInfo cvj cnP cnF))
@@ -967,8 +967,8 @@ private theorem iotaRec_certs_tail (ih : SSimC mode env f) (henv : EnvWF env)
 /-- Simulation of the major chain, in either order (the K flag is the
 single rule's stored bit, read identically on both sides). -/
 theorem prepareMajorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {d : Nat} {recName : Name} {rules : List RecRule} {i : Expr}
-    {major : Expr} {s₀ : CState} (hs : CSOK mode env s₀)
+    {d : Nat} {recName : Key md} {rules : List (RecRule md)} {i : Expr md}
+    {major : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
     (hden : RelC i major) (hmaj : Expr.WScoped d major) :
     SimC mode env s₀ (RelEC d)
       (prepareMajorI mode (coreKnotI mode (mkFEnv env) f) (mkFEnv env) d recName
@@ -991,8 +991,8 @@ theorem prepareMajorC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
     obtain ⟨hd₂, hw₂⟩ := hP₂
     exact majorToCtorC_sim hμ ih henv hs₂ hd₂ hw₂
 
-private theorem iotaRec_unfold (mi : CheckMode) (env : Env) (d : Nat)
-    (e : Expr) :
+private theorem iotaRec_unfold (mi : CheckMode) (env : Env md) (d : Nat)
+    (e : Expr md) :
     iotaRec mi (fueledFns mode env) env d e =
     (match e.getAppFn with
     | .const c us =>
@@ -1071,7 +1071,7 @@ knot's `mode` (the ι batch: `iotaRecI` now reads `mi.betaGate` for the
 slot licence, so the two are no longer identified by the `ttChecks`
 collapse; the walks apply this at the ι cone's own mode `mi`). -/
 theorem iotaRecC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) (henv : EnvWF env)
-    {mi : CheckMode} (hmi : mi.verifiedChecks = true) {d : Nat} {i : Expr} {ex : Expr} {s₀ : CState}
+    {mi : CheckMode} (hmi : mi.verifiedChecks = true) {d : Nat} {i : Expr md} {ex : Expr md} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hden : RelC i ex) (hw : Expr.WScoped d ex) :
     SimC mode env s₀ (RelOC d)
@@ -1267,7 +1267,7 @@ theorem iotaRecC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
             exact SimC.pure hs₄ trivial
           | forallE t b' m =>
             exact SimC.pure hs₄ trivial
-          | letE t v b' =>
+          | letE t v b' _ =>
             exact SimC.pure hs₄ trivial
           | proj sn jx e' =>
             exact SimC.pure hs₄ trivial
@@ -1293,7 +1293,7 @@ theorem iotaRecC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode env f) 
     exact SimC.pure hs trivial
   | forallE t b' m =>
     exact SimC.pure hs trivial
-  | letE t v b' =>
+  | letE t v b' _ =>
     exact SimC.pure hs trivial
   | proj s'ᵢ j' e' =>
     exact SimC.pure hs trivial

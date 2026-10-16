@@ -123,11 +123,52 @@ theorem uniqueKeys_ok_iff (records : Records) (blobs : Ingress.Blobs) :
       exact fun h => this h.2
     | none => simp [hrn, (firstDuplicate_empty_eq_none_iff blobs).mp hb]
 
+/-- Every record and every blob of a batch is stored under `hash` of its
+bytes, exactly as supplied. -/
+def Authentic (hash : ByteArray → Address) (records : Records) (blobs : Ingress.Blobs) : Prop :=
+  (∀ entry ∈ records, entry.1 = hash entry.2) ∧ ∀ entry ∈ blobs, entry.1 = hash entry.2
+
+theorem firstMismatch_eq_none_iff (hash : ByteArray → Address) (position : Nat)
+    (store : List (Address × ByteArray)) :
+    firstMismatch hash position store = none ↔ ∀ entry ∈ store, entry.1 = hash entry.2 := by
+  induction store generalizing position with
+  | nil => simp [firstMismatch]
+  | cons entry rest ih =>
+    obtain ⟨address, bytes⟩ := entry
+    by_cases same : hash bytes = address
+    · simp only [firstMismatch, same, beq_self_eq_true, ite_true, ih, List.mem_cons,
+        forall_eq_or_imp, true_and]
+    · have differ : (hash bytes == address) = false := by simpa using same
+      simp only [firstMismatch, differ, Bool.false_eq_true, ite_false, reduceCtorEq, false_iff,
+        List.mem_cons, forall_eq_or_imp, not_and]
+      exact fun h => absurd h.symm same
+
+/-- **Authentication**: the byte stage's hash check passes exactly when every
+record and every blob is stored under `hash` of its bytes, so each of its
+rejections names an entry whose key is not its hash. -/
+theorem authenticate_ok_iff (hash : ByteArray → Address) (records : Records) (blobs : Ingress.Blobs) :
+    authenticate hash records blobs = .ok () ↔ Authentic hash records blobs := by
+  unfold authenticate Authentic
+  cases hr : firstMismatch hash 0 records with
+  | some found =>
+    have := mt (firstMismatch_eq_none_iff hash 0 records).mpr (by simp [hr])
+    simp only [reduceCtorEq, false_iff]
+    exact fun h => this h.1
+  | none =>
+    have hrn := (firstMismatch_eq_none_iff hash 0 records).mp hr
+    cases hb : firstMismatch hash 0 blobs with
+    | some found =>
+      have := mt (firstMismatch_eq_none_iff hash 0 blobs).mpr (by simp [hb])
+      simp only [reduceCtorEq, false_iff]
+      exact fun h => this h.2
+    | none => exact iff_of_true rfl ⟨hrn, (firstMismatch_eq_none_iff hash 0 blobs).mp hb⟩
+
 /-- An exact ordered reading of record bytes. Keys are unchanged; each
 payload satisfies the per-record canonical contract `Ixon.Verify.Canonical.Reads`: it is
 the canonical encoding of its entire wire-well-formed constant, including
 sharing and side tables, within the per-record limits. This does not assert
-canonical mutual-block order or authenticate address hashes. -/
+canonical mutual-block order; authentication is `Authentic`, and its
+reading for decoded records is `RecordsRead.hashed`. -/
 inductive RecordsRead (limits : Limits) : Records → Ingress.Constants → Prop where
   | nil : RecordsRead limits [] []
   | cons {address : Address} {bytes : ByteArray} {constant : Constant}
@@ -149,6 +190,21 @@ theorem RecordsRead.keys {limits : Limits} {records : Records} {constants : Ingr
   induction reading with
   | nil => rfl
   | cons _ _ ih => simp [List.map_cons, ih]
+
+/-- Every decoded record is stored under `hash` of its canonical encoding. -/
+def Hashed (hash : ByteArray → Address) (constants : Ingress.Constants) : Prop :=
+  ∀ entry ∈ constants, entry.1 = hash (serConstant entry.2)
+
+/-- Authenticated payloads that read canonically: each decoded record is
+stored under `hash` of its canonical encoding, which is its supplied
+payload. -/
+theorem RecordsRead.hashed {limits : Limits} {records : Records} {constants : Ingress.Constants}
+    {hash : ByteArray → Address} (reading : RecordsRead limits records constants)
+    (authentic : ∀ entry ∈ records, entry.1 = hash entry.2) : Hashed hash constants := by
+  rintro ⟨address, constant⟩ mem
+  apply authentic (address, serConstant constant)
+  rw [reading.encode]
+  exact List.mem_map.mpr ⟨_, mem, rfl⟩
 
 /-- The per-record universe budgets imply a bound for the complete batch;
 unused universe entries count just like referenced entries. -/

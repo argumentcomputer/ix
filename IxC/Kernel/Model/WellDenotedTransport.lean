@@ -32,7 +32,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name)
+open Ix.Kernel (CheckMode Env Expr Key)
 
 universe w
 
@@ -84,9 +84,9 @@ second leaf premise, discharged from the erasure link and the
 collapse-lane closedness field.  (Shared home: both the infer and the
 whnf quarters proved this independently at their batches; deduplicated
 here at the merge.) -/
-theorem acval_inst_self {env : Ix.Kernel.Env}
-    (m : EnvModel V env) (n : Ix.Kernel.Name)
-    (ψ : Ix.Kernel.Name → Nat) (y : AnnotTerm) (k : Nat) :
+theorem acval_inst_self {env : Ix.Kernel.Env md}
+    (m : EnvModel V env) (n : Ix.Kernel.Key md)
+    (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat) :
     (m.acval n ψ).inst y k = m.acval n ψ :=
   AnnotTerm.inst_eq_self _
     (by rw [m.acval_erase]

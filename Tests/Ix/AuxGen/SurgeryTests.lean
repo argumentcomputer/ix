@@ -150,6 +150,7 @@ def identityPlan : CallSitePlan :=
     sourceToCanonMotive := #[0, 1]
     sourceToCanonMinor := #[0, 1]
     sourceInBlock := #[true, true]
+    minorInBlock := #[true, true]
     headRewrite := none }
 
 def identityTests : TestSeq :=
@@ -219,6 +220,7 @@ def auditRejectsMdataSplit : Bool :=
     sourceToCanonMotive := #[1, 0]
     sourceToCanonMinor := #[1, 0]
     sourceInBlock := #[true, true]
+    minorInBlock := #[true, true]
     headRewrite := none
   }
   let cenv : Ix.CompileM.CompileEnv := {

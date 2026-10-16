@@ -29,12 +29,12 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Inference kit -/
 
@@ -83,11 +83,11 @@ theorem stripPisAV_mkPisAV_take :
 /-- **The residual reads to the tower's core** (`instPisAt_openerDoms`'s
 companion): at an opener spine the run instantiates with the very
 `fvar`s the reading opens with. -/
-theorem instPisAt_openerRes {acval : Name → (Name → Nat) → AnnotTerm} :
-    ∀ (sp : List Expr) {ty : Expr} {ds : List Expr} {rs : Expr},
+theorem instPisAt_openerRes {acval : Key md → (LevelParam → Nat) → AnnotTerm} :
+    ∀ (sp : List (Expr md)) {ty : Expr md} {ds : List (Expr md)} {rs : Expr md},
       Expr.instPisAt sp ty = some (ds, rs) →
       ∀ {j : Nat} {T : AnnotTerm},
-        (∀ (q : Nat) (x : Expr), sp[q]? = some x →
+        (∀ (q : Nat) (x : Expr md), sp[q]? = some x →
           ∃ t, x = Expr.fvar (j + q) t) →
         denoteMeta acval env φ j ty = some T →
         ∀ {Γ : List AnnotTerm} {R : AnnotTerm}, PiTeleAV sp.length T Γ R →
@@ -124,7 +124,7 @@ theorem instPisAt_openerRes {acval : Name → (Name → Nat) → AnnotTerm} :
           (show Ix.Kernel.Expr.ErasedEq (.fvar (j + 0) t0) (.fvar j dom) from by
             rw [Nat.add_zero]; constructor)) (j + 1)]
         exact hB
-      have hshape' : ∀ (q0 : Nat) (x : Expr), sp[q0]? = some x →
+      have hshape' : ∀ (q0 : Nat) (x : Expr md), sp[q0]? = some x →
           ∃ t, x = Expr.fvar (j + 1 + q0) t := by
         intro q0 x hx
         obtain ⟨t', hx'⟩ := hshape (q0 + 1) x (by simpa using hx)
@@ -134,7 +134,7 @@ theorem instPisAt_openerRes {acval : Name → (Name → Nat) → AnnotTerm} :
       rw [show j + (sp.length + 1) = j + 1 + sp.length from by omega]
       exact this
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.instPisAt] at h
 
 /-! ## Graded applications along a fit -/
@@ -166,9 +166,9 @@ theorem paramBvars_eq_paramBvarsAt (nP nF : Nat) :
     paramBvars nP nF = paramBvarsAt nP (nP + nF) := rfl
 
 /-- A same-index `fvar` spine reads to the parameter variables. -/
-theorem denoteMetaSpine_fvars {acval : Name → (Name → Nat) → AnnotTerm} (D : Nat) :
-    ∀ (fvs : List Expr) (k₀ : Nat),
-      (∀ (k : Nat) (x : Expr), fvs[k]? = some x → ∃ ty, x = Expr.fvar (k₀ + k) ty) →
+theorem denoteMetaSpine_fvars {acval : Key md → (LevelParam → Nat) → AnnotTerm} (D : Nat) :
+    ∀ (fvs : List (Expr md)) (k₀ : Nat),
+      (∀ (k : Nat) (x : Expr md), fvs[k]? = some x → ∃ ty, x = Expr.fvar (k₀ + k) ty) →
       DenoteMetaSpine acval env φ D fvs
         ((List.range fvs.length).map fun k => .bvar (D - 1 - (k₀ + k)))
   | [], _, _ => .nil

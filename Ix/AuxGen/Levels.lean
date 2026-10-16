@@ -267,8 +267,8 @@ def sortByNormLt (lvls : Array Level) : Array Level :=
 def skipExplicit (lvls : Array Level) (start : Nat) : Nat := Id.run do
   let mut i := start
   repeat
-    if i < lvls.size then
-      match getLevelOffset lvls[i]! with
+    if h : i < lvls.size then
+      match getLevelOffset lvls[i] with
       | .zero _ => i := i + 1
       | _ => break
     else
@@ -287,8 +287,8 @@ def isExplicitSubsumed (lvls : Array Level) (firstNonExplicit : Nat) : Bool :=
     let maxExplicit := getOffset lvls[firstNonExplicit - 1]!
     let mut i := firstNonExplicit
     repeat
-      if i < lvls.size then
-        if getOffset lvls[i]! >= maxExplicit then
+      if h : i < lvls.size then
+        if getOffset lvls[i] >= maxExplicit then
           return true
         i := i + 1
       else
@@ -319,8 +319,8 @@ def mkMaxAux (lvls : Array Level) (extraK : Nat) (start : Nat)
   let mut prevK := initPrevK
   let mut result := initResult
   repeat
-    if i < lvls.size then
-      let lvl := lvls[i]!
+    if h : i < lvls.size then
+      let lvl := lvls[i]
       let curr := getLevelOffset lvl
       let currK := getOffset lvl
       if curr == prev then

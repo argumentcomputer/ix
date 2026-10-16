@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.CompileDriver
+public import Ix.CompileResource
 
 public section
 
@@ -70,7 +71,7 @@ def suite : List TestSeq := [
       if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
     return true,
   ioTest "Lean constant-list driver rejects an unadmitted annotated axiom" do
-    return unsupported (← compileLeanConsts (constants markedSource) (numWorkers := 1)),
+    return unsupported (← compileLeanConstsValidated (constants markedSource) (numWorkers := 1)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
     match ← compileLeanInput (.plain (constants markedSource)) (numWorkers := 1) with
     | .error message => return (message.splitOn "missingContract").length > 1
@@ -80,7 +81,7 @@ def suite : List TestSeq := [
       { binder := .position 0, uses := .linear }]
       | return false
     let input : CompileInput := { constants := constants plainSource, contracts := #[contract] }
-    return unsupported (← compileLeanInput input (numWorkers := 1)),
+    return unsupported (← compileLeanInputValidated input (numWorkers := 1)),
   ioTest "measure-only input preserves ordinary production bytes" do
     let input := CompileInput.plain (constants plainSource)
     let .ok plain ← compileLeanInput input (numWorkers := 1) | return false

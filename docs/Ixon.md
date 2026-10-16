@@ -762,7 +762,7 @@ a test oracle, which is also the only meter of `transitions`.
 `ix compile --sharing-limits SPEC` (also `ix compile-lean --sharing-limits`)
 overrides the defaults. It sets the `IX_SHARING_LIMITS` environment variable,
 which both compilers read once per run: Rust once per compile or decompile
-entry point (`CompileState::sharing_limits`), Lean in `compileEnvParallelAux`
+entry point (`CompileState::sharing_limits`), Lean in the CLI's driver options (`Ix.Cli.driverOptionsFromEnv`)
 and `decompileEnvFullParallel`. An invalid value therefore fails the run once,
 before any block is shared. `SPEC` is a comma-separated list of items, each
 `key=value` or the word `unbounded` (every production limit at its maximum). A

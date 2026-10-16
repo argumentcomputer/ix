@@ -232,13 +232,13 @@ def mkVar (idx : UInt64) (name : m.F Name)
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_EVAR]⟩
   h := h.update idx.toLEBytes
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFName mh name
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .var idx name
     { addr, lbr := idx + 1, count0 := if idx == 0 then 1 else 0,
       hasFVars := false, mdata, metaAddr }
@@ -248,7 +248,7 @@ def mkFVar (id : FVarId) (name : m.F Name)
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_EFVAR]⟩
   h := h.update id.id.toLEBytes
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   -- FVars are leaves: no loose bvars, no var-0 occurrences; hasFVars is true
   -- since this node *is* an fvar.
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
@@ -256,7 +256,7 @@ def mkFVar (id : FVarId) (name : m.F Name)
     mh := mh.update addr.hash
     mh := hashFName mh name
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .fvar id name
     { addr, lbr := 0, count0 := 0, hasFVars := true, mdata, metaAddr }
 
@@ -266,13 +266,13 @@ def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData)
     let mut h := Hasher.init ()
     h := h.update ⟨#[Ix.TAG_ESORT]⟩
     h := h.update u.addr.hash
-    let addr := Address.mk (h.finalizeWithLength 32).val
+    let addr := Address.ofHasher h
     let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
       let mut mh := Hasher.init ()
       mh := mh.update addr.hash
       mh := hashFUnivDecor mh univDecor
       mh := hashFMData mh mdata
-      return Address.mk (mh.finalizeWithLength 32).val
+      return Address.ofHasher mh
     return .sort u
       { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr,
         univDecor }
@@ -287,14 +287,14 @@ def mkConst (id : KId m) (us : Array (KUniv m))
   h := h.update id.addr.hash
   for u in us do
     h := h.update u.addr.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFName mh id.name
     mh := hashFUnivDecor mh univDecor
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .const id us
     { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr,
       univDecor }
@@ -305,14 +305,14 @@ def mkApp (f a : KExpr m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
     h := h.update ⟨#[Ix.TAG_EAPP]⟩
     h := h.update f.addr.hash
     h := h.update a.addr.hash
-    let addr := Address.mk (h.finalizeWithLength 32).val
+    let addr := Address.ofHasher h
     let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
       let mut mh := Hasher.init ()
       mh := mh.update addr.hash
       mh := mh.update f.metaAddrD.hash
       mh := mh.update a.metaAddrD.hash
       mh := hashFMData mh mdata
-      return Address.mk (mh.finalizeWithLength 32).val
+      return Address.ofHasher mh
     return .app f a
       { addr, lbr := max f.lbr a.lbr, count0 := f.count0 + a.count0,
         hasFVars := f.hasFVars || a.hasFVars, mdata, metaAddr }
@@ -324,7 +324,7 @@ def mkLam (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
   h := h.update ⟨#[Ix.TAG_ELAM]⟩
   h := h.update ty.addr.hash
   h := h.update body.addr.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
@@ -333,7 +333,7 @@ def mkLam (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
     mh := mh.update ty.metaAddrD.hash
     mh := mh.update body.metaAddrD.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .lam name bi ty body
     { addr, lbr := max ty.lbr body.lbr.sat1, count0 := ty.count0,
       hasFVars := ty.hasFVars || body.hasFVars, mdata, metaAddr }
@@ -345,7 +345,7 @@ def mkAll (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
   h := h.update ⟨#[Ix.TAG_EALL]⟩
   h := h.update ty.addr.hash
   h := h.update body.addr.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
@@ -354,7 +354,7 @@ def mkAll (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
     mh := mh.update ty.metaAddrD.hash
     mh := mh.update body.metaAddrD.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .all name bi ty body
     { addr, lbr := max ty.lbr body.lbr.sat1, count0 := ty.count0,
       hasFVars := ty.hasFVars || body.hasFVars, mdata, metaAddr }
@@ -368,7 +368,7 @@ def mkLet (name : m.F Name) (ty val body : KExpr m) (nonDep : Bool)
   h := h.update val.addr.hash
   h := h.update body.addr.hash
   h := h.update ⟨#[if nonDep then 1 else 0]⟩
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
@@ -377,7 +377,7 @@ def mkLet (name : m.F Name) (ty val body : KExpr m) (nonDep : Bool)
     mh := mh.update val.metaAddrD.hash
     mh := mh.update body.metaAddrD.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .letE name ty val body nonDep
     { addr, lbr := max (max ty.lbr val.lbr) body.lbr.sat1,
       count0 := ty.count0 + val.count0,
@@ -392,14 +392,14 @@ def mkPrj (id : KId m) (field : UInt64) (val : KExpr m)
   h := h.update id.addr.hash
   h := h.update field.toLEBytes
   h := h.update val.addr.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFName mh id.name
     mh := mh.update val.metaAddrD.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .prj id field val
     { addr, lbr := val.lbr, count0 := val.count0, hasFVars := val.hasFVars,
       mdata, metaAddr }
@@ -410,12 +410,12 @@ def mkNat (val : Nat) (blob : Address)
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_ENAT]⟩
   h := h.update blob.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .nat val blob
     { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 
@@ -425,12 +425,12 @@ def mkStr (val : String) (blob : Address)
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_ESTR]⟩
   h := h.update blob.hash
-  let addr := Address.mk (h.finalizeWithLength 32).val
+  let addr := Address.ofHasher h
   let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFMData mh mdata
-    return Address.mk (mh.finalizeWithLength 32).val
+    return Address.ofHasher mh
   return .str val blob
     { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 

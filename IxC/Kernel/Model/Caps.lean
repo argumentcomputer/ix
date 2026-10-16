@@ -40,13 +40,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The instantiated former type is prefix-bound
 
@@ -58,8 +58,8 @@ variable {μ : CheckMode} {env : Env}
 /-- **A stored constant's level-instantiated type is prefix-bound.**
 Level instantiation does not move constants, so this is the stored
 type's own `constsResolve` read through `ConstsBound`. -/
-theorem constsBound_instType {env : Env} (hwf : Ix.Kernel.EnvWF env)
-    {c : ConstantInfo} (hc : c ∈ env.consts) (us : List Level) :
+theorem constsBound_instType {env : Env md} (hwf : Ix.Kernel.EnvWF env)
+    {c : ConstantInfo md} (hc : c ∈ env.consts) (us : List Level) :
     ConstsBound env
       (c.toConstantVal.type.instantiateLevelParams
         c.toConstantVal.levelParams us) := by
@@ -76,41 +76,43 @@ name families miss the fresh name. -/
 
 /-- **The stored family descends past a value-kind cons**, together
 with the three disequalities the law's leaf transport needs. -/
-theorem etaFamilyStored_descend {c₀ : ConstantInfo} {T : Name}
-    {cvT : ConstantVal} {caps : IndCaps}
+theorem etaFamilyStored_descend {c₀ : ConstantInfo md} {T : Key md}
+    {cvT : ConstantVal md} {caps : IndCaps md}
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
     (hnotctor : ∀ cv np nf, c₀ ≠ .ctorInfo cv np nf)
     (hnotrec : ∀ cv mI rP rules, c₀ ≠ .recInfo cv mI rP rules)
-    (hf : (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps))
+    (hf : (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps))
     (hfam : Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps) :
     env.find? T = some (.indInfo cvT caps) ∧
       Ix.Kernel.EtaFamilyStored env T caps ∧
-      T ≠ c₀.name ∧ caps.etaCtor ≠ c₀.name ∧
+      T ≠ c₀.name ∧ caps.etaCtor ≠ some c₀.name ∧
       ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
-  obtain ⟨hCres, ⟨cvC, cnP, cnF, hfC⟩, hfP⟩ := hfam
+  obtain ⟨C, hC, hCres, ⟨cvC, cnP, cnF, hfC⟩, hfP⟩ := hfam
   -- the former is not the cons: the cons is not an `indInfo`
   have hnT : T ≠ c₀.name := by
     rintro rfl
     rw [Ix.Kernel.Env.find?_cons, if_pos rfl] at hf
     exact hnotind cvT caps (Option.some.inj hf)
   -- the capability constructor is not the cons: it is a `ctorInfo`
-  have hnC : caps.etaCtor ≠ c₀.name := by
+  have hnC' : C ≠ c₀.name := by
     intro heq
     rw [heq, Ix.Kernel.Env.find?_cons, if_pos rfl] at hfC
     exact hnotctor cvC cnP cnF (Option.some.inj hfC)
+  have hnC : caps.etaCtor ≠ some c₀.name := fun h =>
+    hnC' (Option.some.inj (hC.symm.trans h))
   -- no projection function is the cons: they are `recInfo`s
   have hnP : ∀ j, j < caps.etaFields → projFnName T j ≠ c₀.name := by
     intro j hj heq
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [heq, Ix.Kernel.Env.find?_cons, if_pos rfl] at hf2
     exact hnotrec cv2 mI2 rP2 rules2 (Option.some.inj hf2)
-  have hdown : ∀ n : Name, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  refine ⟨by rwa [hdown _ hnT] at hf, ⟨hCres, ⟨cvC, cnP, cnF, ?_⟩, ?_⟩,
+  refine ⟨by rwa [hdown _ hnT] at hf, ⟨C, hC, hCres, ⟨cvC, cnP, cnF, ?_⟩, ?_⟩,
     hnT, hnC, hnP⟩
-  · rwa [hdown _ hnC] at hfC
+  · rwa [hdown _ hnC'] at hfC
   · intro j hj
     obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
     rw [hdown _ (hnP j hj)] at hf2
@@ -156,9 +158,9 @@ in the census, named, for the lane lead. -/
 
 /-- The witnessing capability record: `unitlike` without `eta`, naming
 a constructor that is stored nowhere. -/
-def unitNoFamilyCaps : IndCaps where
+def unitNoFamilyCaps : IndCaps md where
   eta := false
-  etaCtor := Name.anonymous.str "ConLecheCapsWall.mk"
+  etaCtor := some (.aux (.role .true) .unitlike)
   etaParams := 0
   etaFields := 0
   unitlike := true
@@ -167,8 +169,8 @@ def unitNoFamilyCaps : IndCaps where
 
 /-- The witnessing environment: one non-reserved `unitlike` former
 carrying `unitNoFamilyCaps`. -/
-def unitNoFamilyEnv : Env :=
-  ⟨[.indInfo ⟨Name.anonymous.str "ConLecheCapsWall.T", [], .sort .zero⟩
+def unitNoFamilyEnv : Env md :=
+  ⟨[.indInfo ⟨.aux (.role .true) .eta, [], .sort .zero⟩
       unitNoFamilyCaps]⟩
 
 /-- **The wall, mechanized**: a well-formed environment storing a
@@ -176,21 +178,22 @@ non-reserved `unitlike` family for which `EtaFamilyStored` is FALSE.
 Everything `structUnitCert`'s inversion can ever hand a consumer holds
 here, and the frozen `CapsOk`'s unit half is vacuous. -/
 theorem etaFamilyStored_not_derivable :
-    ∃ (env : Env) (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+    ∃ (env : Env md) (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
       Ix.Kernel.EnvWF env ∧
       env.find? T = some (.indInfo cvT caps) ∧
       caps.unitlike = true ∧
       Ix.Kernel.reservedBasisNames.contains T = false ∧
       ¬ Ix.Kernel.EtaFamilyStored env T caps := by
-  refine ⟨unitNoFamilyEnv, Name.anonymous.str "ConLecheCapsWall.T",
-    ⟨Name.anonymous.str "ConLecheCapsWall.T", [], .sort .zero⟩,
-    unitNoFamilyCaps, ?_, rfl, rfl, by decide, ?_⟩
+  refine ⟨unitNoFamilyEnv, .aux (.role .true) .eta,
+    ⟨.aux (.role .true) .eta, [], .sort .zero⟩,
+    unitNoFamilyCaps, ?_, rfl, rfl, by (cases md <;> decide), ?_⟩
   · intro c hc
     rcases List.mem_singleton.mp hc with rfl
     exact ⟨rfl, rfl, rfl, rfl, by rintro _ _ _ ⟨⟩,
       by rintro _ _ _ _ ⟨⟩, by rintro _ ⟨⟩,
       Ix.Kernel.IndCapsWF.of_caps (fun _ => rfl) (fun h => nomatch h)⟩
-  · rintro ⟨-, ⟨cvC, _, _, hfC⟩, -⟩
+  · rintro ⟨C, hC, -, ⟨cvC, _, _, hfC⟩, -⟩
+    obtain rfl := Option.some.inj hC
     exact nomatch hfC
 
 /-! ## The crossing -/
@@ -202,7 +205,7 @@ and so genuinely owes the law; those installs supply it bespoke —
 `IndStepPB`'s bill.) -/
 theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
     (hprev : CapsOk mp.base2)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps)
@@ -213,11 +216,12 @@ theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
     CapsOk m₂ := by
   constructor
   · -- the η half
-    intro T cvT caps hf hcape hres hfam φ' us hlen
+    intro T cvT caps hf hcape hres hfam φ' C hC us hlen
     obtain ⟨hfE, hfam₀, hnT, hnC, hnP⟩ :=
       etaFamilyStored_descend hnotind hnotctor hnotrec hf hfam
+    have hnC' : C ≠ c₀.name := fun h => hnC (h ▸ hC)
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' us hlen
+      hprev.1 T cvT caps hfE hcape hres hfam₀ φ' C hC us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh
@@ -238,7 +242,7 @@ theorem capsOk_cons_fresh (mp : EnvModelM V μ env)
         refine congrArg _ (List.map_congr_left fun j hj => ?_)
         dsimp only
         rw [hac, acvalWith_ne (hnP j (List.mem_range.mp hj))]
-      rw [hfab, hac, acvalWith_ne hnC]
+      rw [hfab, hac, acvalWith_ne hnC']
       exact hlaw ρ ts rest x hlents hfit hmem
   · -- the unit-like half: no fabricated spine, one leaf to move
     -- (and, post-repair, no family premise: the former's freshness

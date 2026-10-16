@@ -57,10 +57,10 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta inferTypeCore whnf ensureSortCore)
 
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## The double-erasure inversions
 
@@ -79,7 +79,7 @@ step per node. -/
 
 /-- `whnf` is the identity on a sort, at whatever fuel the recorded
 run used (`whnf_forallE_eq`'s twin, by the same monotonicity step). -/
-theorem whnf_sort_eq {fuel d : Nat} {u : Level} {e' : Expr}
+theorem whnf_sort_eq {fuel d : Nat} {u : Level} {e' : Expr md}
     (h : whnf μ env fuel d (.sort u) = .ok e') : e' = .sort u := by
   have h1 := Ix.Kernel.whnf_mono (Nat.le_add_right fuel 2) h
   rw [Ix.Kernel.whnf_sort env fuel d u] at h1
@@ -97,7 +97,7 @@ Every domain and the innermost body is binder-free, so the pin fixes
 the whole shape and leaves exactly the three binder names and the
 three binder metas free — which is precisely the freedom the bit
 lemma below removes. -/
-theorem propext_shapeS {type' : Expr}
+theorem propext_shapeS {type' : Expr md}
     (h : type'.erasePw
       = propextA.type.erasePw) :
     ∃ m₁ m₂ m₃,
@@ -132,7 +132,7 @@ pins the stored `Eq` **on the nose**, so the spine's head carries the
 pinned `∀ (α : Sort 1) (a b : α), Prop` outright and three `app`
 inversions peel it to `Prop` — no erasure chase, and no assumption on
 the three arguments. -/
-theorem inferTypeCore_eqSpineS {fuel d : Nat} {X Y Z bt : Expr}
+theorem inferTypeCore_eqSpineS {fuel d : Nat} {X Y Z bt : Expr md}
     (hEq : env.find? eqName = some eqA)
     (h : inferTypeCore μ env fuel d
       (.app (.app (.app (.const eqName [.succ .zero]) X) Y) Z)
@@ -147,29 +147,29 @@ theorem inferTypeCore_eqSpineS {fuel d : Nat} {X Y Z bt : Expr}
   rw [hEq] at hci
   obtain rfl := Option.some.inj hci
   subst hb3
-  rw [show (Expr.instantiateLevelParams eqA.toConstantVal.levelParams
-        [Level.zero.succ] eqA.toConstantVal.type)
+  rw [show (Expr.instantiateLevelParams (eqA (md := md)).toConstantVal.levelParams
+        [Level.zero.succ] (eqA (md := md)).toConstantVal.type)
       = .forallE (.sort (.succ .zero))
         (.forallE (.bvar 0)
           (.forallE (.bvar 1) (.sort .zero)
-            ⟨.never⟩) ⟨.never⟩)
-        ⟨.never⟩ from rfl] at hw3
+            { pw := .never }) { pw := .never })
+        { pw := .never } from rfl] at hw3
   injection Ix.Kernel.whnf_forallE_eq hw3 with e1 e2 e3
   subst e2
   subst hb2
   rw [show (Expr.forallE (.bvar 0)
         (.forallE (.bvar 1) (.sort .zero)
-          ⟨.never⟩) ⟨.never⟩).instantiate1 X
+          { pw := .never }) { pw := .never }).instantiate1 X
       = .forallE X
         (.forallE X (.sort .zero)
-          ⟨.never⟩) ⟨.never⟩ from rfl] at hw2
+          { pw := .never }) { pw := .never } from rfl] at hw2
   injection Ix.Kernel.whnf_forallE_eq hw2 with f1 f2 f3
   subst f2
   subst hb1
   rw [show (Expr.forallE X
-        (.sort .zero) ⟨.never⟩).instantiate1 Y
+        (.sort .zero) { pw := .never }).instantiate1 Y
       = .forallE (X.instantiate1 Y 0)
-        (.sort .zero) ⟨.never⟩ from rfl] at hw1
+        (.sort .zero) { pw := .never } from rfl] at hw1
   injection Ix.Kernel.whnf_forallE_eq hw1 with g1 g2 g3
   subst g2
   rfl
@@ -183,7 +183,7 @@ which is why this is one fact and not three. -/
 theorem propext_bits (hμ : μ.verifiedChecks = true)
     (hEq : env.find? eqName = some eqA)
     {m₁ m₂ m₃ : BinderMeta}
-    {F d : Nat} {stype : Expr}
+    {F d : Nat} {stype : Expr md}
     (hrun : inferTypeCore μ env F d
       (.forallE (.sort .zero)
         (.forallE (.sort .zero)
@@ -191,7 +191,7 @@ theorem propext_bits (hμ : μ.verifiedChecks = true)
             (.app (.app (.const iffName []) (.bvar 1)) (.bvar 0))
             (.app (.app (.app (.const eqName [.succ .zero])
                 (.sort .zero)) (.bvar 2)) (.bvar 1)) m₃) m₂) m₁)
-      = .ok stype) (φ : Name → Nat) :
+      = .ok stype) (φ : LevelParam → Nat) :
     pwBit φ m₁.pw = 0 ∧ pwBit φ m₂.pw = 0 ∧ pwBit φ m₃.pw = 0 := by
   match F, hrun with
   | 0, hrun => rw [Ix.Kernel.inferTypeCore_zero] at hrun; exact nomatch hrun
@@ -236,7 +236,7 @@ one step rather than a spine peel. -/
 twin of `Annot/SortCoh/Discharge.lean`'s `inferTypeCore_fvar_out`,
 transcribed here so this file's imports stay at the pin tier's). -/
 theorem inferTypeCore_fvar_outS {f d : Nat} {i : Nat}
-    {ty t : Expr}
+    {ty t : Expr md}
     (h : inferTypeCore μ env f d (.fvar i ty) = .ok t) : t = ty := by
   cases f with
   | zero => exact nomatch h
@@ -254,7 +254,7 @@ erasures.**  Two binders; the domain `Nonempty α` and the body `α`
 are binder-free, so only the two names and the two metas stay free.
 The level argument is untouched by either erasure, so the stored
 `Nonempty` reference is pinned to `[.param u]` on the nose. -/
-theorem choice_shapeS {type' : Expr}
+theorem choice_shapeS {type' : Expr md}
     (h : type'.erasePw = choiceA.type.erasePw) :
     ∃ m₁ m₂,
       type' = .forallE (.sort (.param uN))
@@ -277,12 +277,12 @@ when the level parameter is.  The innermost codomain is the outer
 binder's variable, whose sort is `Sort u`, and the telescope collapse
 carries it to the outer binder. -/
 theorem choice_bits (hμ : μ.verifiedChecks = true)
-    {m₁ m₂ : BinderMeta} {F d : Nat} {stype : Expr}
+    {m₁ m₂ : BinderMeta} {F d : Nat} {stype : Expr md}
     (hrun : inferTypeCore μ env F d
       (.forallE (.sort (.param uN))
         (.forallE
           (.app (.const nonemptyName [.param uN]) (.bvar 0))
-          (.bvar 1) m₂) m₁) = .ok stype) (φ : Name → Nat) :
+          (.bvar 1) m₂) m₁) = .ok stype) (φ : LevelParam → Nat) :
     (pwBit φ m₁.pw = 0 ↔ φ uN = 0) ∧ (pwBit φ m₂.pw = 0 ↔ φ uN = 0) := by
   match F, hrun with
   | 0, hrun => rw [Ix.Kernel.inferTypeCore_zero] at hrun; exact nomatch hrun

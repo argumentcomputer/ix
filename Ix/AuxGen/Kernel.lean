@@ -26,6 +26,12 @@
   `TypeChecker::new(&mut kenv)` per scope = fresh `TcState.new` carrying
   over the persistent `KEnv` (whose whnf/infer caches live inside it,
   matching the Rust split of TC-transient vs kenv-persistent state).
+
+  Since AuxGen M0 (CQ2.16) this file is the `Ix.Tc` BACKEND of the
+  `AuxKernel` interface (`Ix.AuxGen.AuxKernel`): generators ask the
+  interface (`AuxScope`, `AuxKernel.elimDecision`, the environment hooks),
+  not `TcScopeSt` and the kenv directly. Refusals are `AuxKernelError`s
+  (`Ix.AuxGen.KernelError`).
 -/
 module
 public import Ix.Common
@@ -37,6 +43,7 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
+public import Ix.AuxGen.KernelError
 public section
 
 namespace Ix.AuxGen
@@ -83,8 +90,8 @@ def AddrMaps.resolve (maps : AddrMaps) (name : Name) : Address :=
     before the aux tail runs, so the tail must see them on the
     first-hop map. -/
 def AddrMaps.ofCompileEnv (cenv : Ix.CompileM.CompileEnv)
-    (aux : Std.HashMap Name Address := {})
-    (primary : Std.HashMap Name Address := {}) : AddrMaps where
+    (aux : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {})
+    (primary : Std.HashMap Ix.Compile.ExactKey.ExactName Address := {}) : AddrMaps where
   nameToAddr := fun n => match primary.get? n with
     | some a => some a
     | none => cenv.nameToAddr.get? n
@@ -92,43 +99,41 @@ def AddrMaps.ofCompileEnv (cenv : Ix.CompileM.CompileEnv)
 
 /-! ## Level conversions -/
 
-/-- `Ix.Level → KUniv .meta` with positional params. Mirrors Rust
-    `lean_level_to_kuniv` (kernel ingress.rs:2097) — including the panic
-    on unknown params (a construction bug, not a user error). Note the
+/-- `Ix.Level → KUniv .meta` with positional params. Missing parameters
+    and metavariables are explicit bridge errors. Note the
     SMART `mkMax`/`mkIMax` (Rust `KUniv::max/imax` normalize). -/
-partial def leanLevelToKuniv (lvl : Level) (paramNames : Array Name) : MKUniv :=
+partial def leanLevelToKuniv (lvl : Level) (paramNames : Array Name) :
+    Except AuxKernelError MKUniv := do
   match lvl with
-  | .zero _ => Ix.Tc.KUniv.mkZero
-  | .succ l _ => Ix.Tc.KUniv.mkSucc (leanLevelToKuniv l paramNames)
+  | .zero _ => return Ix.Tc.KUniv.mkZero
+  | .succ l _ => return Ix.Tc.KUniv.mkSucc (← leanLevelToKuniv l paramNames)
   | .max a b _ =>
-    Ix.Tc.KUniv.mkMax (leanLevelToKuniv a paramNames)
-      (leanLevelToKuniv b paramNames)
+    return Ix.Tc.KUniv.mkMax (← leanLevelToKuniv a paramNames)
+      (← leanLevelToKuniv b paramNames)
   | .imax a b _ =>
-    Ix.Tc.KUniv.mkIMax (leanLevelToKuniv a paramNames)
-      (leanLevelToKuniv b paramNames)
+    return Ix.Tc.KUniv.mkIMax (← leanLevelToKuniv a paramNames)
+      (← leanLevelToKuniv b paramNames)
   | .param name _ =>
     match paramNames.findIdx? (· == name) with
-    | some idx => Ix.Tc.KUniv.mkParam idx.toUInt64 name
-    | none =>
-      panic! s!"unknown level param `{name.pretty}` not found in param_names \
-{paramNames.toList.map (·.pretty)}"
-  | .mvar _ _ => panic! "leanLevelToKuniv: level metavariable"
+    | some idx => return Ix.Tc.KUniv.mkParam idx.toUInt64 name
+    | none => throw (.unknownLevelParam name paramNames)
+  | .mvar _ _ => throw .levelMVar
 
 /-- `KUniv .meta → Ix.Level` via positional param names, RAW max/imax
-    constructors (no smart simplification). Mirrors Rust `kuniv_to_level`
-    (aux_gen/below.rs:1689) including the `u_{idx}` fallback. -/
-partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Level :=
+    constructors (no smart simplification). Invalid indices are explicit
+    errors, never invented source universe names. -/
+partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Except AuxKernelError Level := do
   match u with
-  | .zero _ => Level.mkZero
-  | .succ inner _ => Level.mkSucc (kunivToLevel inner paramNames)
+  | .zero _ => return Level.mkZero
+  | .succ inner _ => return Level.mkSucc (← kunivToLevel inner paramNames)
   | .max a b _ =>
-    Level.mkMax (kunivToLevel a paramNames) (kunivToLevel b paramNames)
+    return Level.mkMax (← kunivToLevel a paramNames) (← kunivToLevel b paramNames)
   | .imax a b _ =>
-    Level.mkIMax (kunivToLevel a paramNames) (kunivToLevel b paramNames)
+    return Level.mkIMax (← kunivToLevel a paramNames) (← kunivToLevel b paramNames)
   | .param idx _ _ =>
     match paramNames[idx.toNat]? with
-    | some name => Level.mkParam name
-    | none => Level.mkParam (Name.mkStr .mkAnon s!"u_{idx.toNat}")
+    | some name => return Level.mkParam name
+    | none => throw (.levelParamIndex idx.toNat)
 
 /-! ## Bridge state -/
 
@@ -137,6 +142,12 @@ partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Level :=
 structure AuxKernelCtx where
   tcState : Ix.Tc.TcState .meta
   ingressCache : Std.HashMap (Address × Address) MKExpr := {}
+  /-- Forward provenance of identifiers referenced by this block's bridge
+  inputs. Keep every source identity: Meta KId equality includes the name,
+  so another alias at the same address cannot satisfy a missing identifier.
+  This map is fresh with the block, never reconstructed from ambient
+  compiled aliases or a whole-environment reverse index. -/
+  sourceNames : Std.HashMap Address (Std.HashSet Name) := {}
   /-- Mirrors Rust `KernelCtx.aux_ingress_seen`: ids whose
       `ingressAuxGenDep` dispatch already ran against this kenv. The
       dispatch is deterministic per constant kind, so a seen id is at
@@ -146,6 +157,11 @@ structure AuxKernelCtx where
       as long as the kenv (this ctx never clears — see the Pass-2
       driver's KENV_CLEAR note). -/
   auxIngressSeen : Std.HashSet MKId := {}
+  /-- Bumped whenever the type checker's state is replaced (`TcScopeSt.new`,
+      the elimination decision), so a scope value opened before is
+      superseded even when the new context is again empty (AuxGen M0,
+      `AuxScope.live?`). No `Ix.Tc` code reads it. -/
+  scopeEpoch : Nat := 0
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations
@@ -157,6 +173,29 @@ def AuxKernelCtx.new : AuxKernelCtx :=
 
 /-- Bridge monad: aux kernel state over CompileM. -/
 abbrev KBridgeM := StateT AuxKernelCtx CompileM
+
+/-- A bridge refusal crosses the compiler boundary as the compiler error it
+    renders to (`AuxKernelError.toCompileError`). -/
+def throwBridge (e : AuxKernelError) : KBridgeM α :=
+  throw e.toCompileError
+
+/-- Pure conversion errors cross the compiler boundary as named refusals. -/
+def liftBridgeResult (result : Except AuxKernelError α) : KBridgeM α :=
+  match result with
+  | .ok value => pure value
+  | .error e => throwBridge e
+
+/-- Record an explicit bridge input name under the address used at ingress. -/
+def rememberSourceName (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
+  modify fun ctx =>
+    let addr := maps.resolve name
+    let names := (ctx.sourceNames.getD addr {}).insert name
+    { ctx with sourceNames := ctx.sourceNames.insert addr names }
+
+/-- Open terms are converted without the closed-term ingress cache, so
+their referenced source identities are recorded at the scope boundary. -/
+def rememberSourceExpr (expr : Expr) (maps : AddrMaps) : KBridgeM Unit := do
+  for name in collectLeanConstRefs expr {} do rememberSourceName name maps
 
 /-- Run an `Ix.Tc.TcM` action against the bridge's kernel state,
     threading the state back in BOTH outcomes (Rust's `&mut` semantics —
@@ -200,6 +239,15 @@ def paramNamesHash (paramNames : Array Name) : Address := Id.run do
     buf := buf ++ n.getHash.hash
   return Address.blake3 buf
 
+/-- The blob address of a Nat literal in the bridge's kernel terms. Below
+    2⁶⁴ it is the 8-byte little-endian encoding (the compile-side
+    convention: Rust `to_kexpr_static` hashes `n.to_u64()`'s bytes); from
+    2⁶⁴ on it is the full minimal little-endian encoding (`Ix.Tc`'s
+    `natBlob`, the kernel crate's convention), never a truncation of `n`. -/
+def bridgeNatBlob (n : Nat) : Address :=
+  if n < UInt64.size then Address.blake3 (UInt64.ofNat n).toLEBytes
+  else Ix.Tc.KExpr.natBlob n
+
 /-- Closed-term `Ix.Expr → KExpr .meta`, cached by
     `(expr hash, paramNames hash)` and interned. Mirrors Rust
     `lean_expr_to_zexpr_cached`/`_raw` (kernel ingress.rs:2232/:2273):
@@ -226,16 +274,20 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
 
   let raw ← match cur with
     | .bvar idx _ =>
+      if idx ≥ UInt64.size then throwBridge (.closedBVarIndex idx)
       let name := Id.run do
-        if idx < binderNames.size then
-          return binderNames[binderNames.size - 1 - idx]!
+        if h : idx < binderNames.size then
+          return binderNames[binderNames.size - 1 - idx]'(by omega)
         return Name.mkAnon
       pure (Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) name mdataLayers)
     | .sort lvl _ =>
-      pure (Ix.Tc.KExpr.mkSort (leanLevelToKuniv lvl paramNames) mdataLayers)
+      -- `pure`, not `return`: a `return` here would leave the function
+      -- before the node is interned and cached.
+      pure <| Ix.Tc.KExpr.mkSort (← liftBridgeResult (leanLevelToKuniv lvl paramNames)) mdataLayers
     | .const name us _ =>
+      rememberSourceName name maps
       let zid : MKId := ⟨maps.resolve name, name⟩
-      let zus := us.map (leanLevelToKuniv · paramNames)
+      let zus ← liftBridgeResult (us.mapM (leanLevelToKuniv · paramNames))
       pure (Ix.Tc.KExpr.mkConst zid zus mdataLayers)
     | .app f a _ =>
       let fk ← leanExprToKexprCached f paramNames binderNames pnHash maps
@@ -258,23 +310,19 @@ partial def leanExprToKexprCached (e : Expr) (paramNames : Array Name)
         (binderNames.push binderName) pnHash maps
       pure (Ix.Tc.KExpr.mkLet binderName tk vk bk nd mdataLayers)
     | .proj pname idx s _ =>
+      if idx ≥ UInt64.size then throwBridge (.closedProjIndex pname idx)
+      rememberSourceName pname maps
       let zid : MKId := ⟨maps.resolve pname, pname⟩
       let sk ← leanExprToKexprCached s paramNames binderNames pnHash maps
       pure (Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx) sk mdataLayers)
     | .lit (.natVal n) _ =>
-      -- Compile-side blob convention: 8-byte u64 LE (Rust to_kexpr_static
-      -- / ingress use `nat_to_u64(n).to_le_bytes()`), NOT the kernel's
-      -- trimmed `natBlob`.
-      pure (Ix.Tc.KExpr.mkNat n (Address.blake3 (UInt64.ofNat n).toLEBytes) mdataLayers)
+      -- Compile-side blob convention below 2⁶⁴ (`bridgeNatBlob`).
+      pure (Ix.Tc.KExpr.mkNat n (bridgeNatBlob n) mdataLayers)
     | .lit (.strVal s) _ =>
       pure (Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8) mdataLayers)
-    | .fvar _ _ =>
-      -- Closed-term converter: fvars have no meaning here (Rust `_raw`
-      -- has no Fvar arm reachable from ensure-in-kenv callers).
-      pure (Ix.Tc.KExpr.mkSort Ix.Tc.KUniv.mkZero)
-    | .mvar _ _ =>
-      pure (Ix.Tc.KExpr.mkSort Ix.Tc.KUniv.mkZero)
-    | .mdata .. => unreachable!
+    | .fvar name _ => throwBridge (.closedFVar name)
+    | .mvar _ _ => throwBridge .closedMVar
+    | .mdata .. => throwBridge .outerMData
 
   let result ← internK raw
   modify fun kctx =>
@@ -353,6 +401,7 @@ def ensurePreludeInKenvOf (maps : AddrMaps) : KBridgeM Unit := do
     Mirrors Rust `ensure_in_kenv_of_inner_env` (expr_utils.rs:1944). -/
 partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
     (replaceAxioStub : Bool) (stubProofValues : Bool) : KBridgeM Unit := do
+  rememberSourceName name maps
   let addr := maps.resolve name
   let zid : MKId := ⟨addr, name⟩
 
@@ -442,50 +491,56 @@ def ensureInKenvOfPrewarm (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
 /-! ## Open-term conversion (FVar context) -/
 
 /-- `Ix.Expr → KExpr .meta` for open terms in an FVar context: FVars
-    become `Var(ctxDepth - level - 1)`, unknown FVars degrade to `Sort 0`,
+    become `Var(ctxDepth - level - 1)`, invalid FVars are rejected,
     mdata is STRIPPED (unlike the closed-term ingress). Pure construction
     — no interning, no cache. Mirrors Rust `to_kexpr_static`
     (expr_utils.rs:3153). -/
 partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
-    (ctxDepth : Nat) (paramNames : Array Name) (maps : AddrMaps) : MKExpr :=
+    (ctxDepth : Nat) (paramNames : Array Name) (maps : AddrMaps) :
+    Except AuxKernelError MKExpr := do
   match e with
   | .fvar fname _ =>
     match fvarLevels.get? fname with
-    | some level => Ix.Tc.KExpr.mkVar (UInt64.ofNat (ctxDepth - level - 1)) .mkAnon
-    | none => Ix.Tc.KExpr.mkSort Ix.Tc.KUniv.mkZero
-  | .bvar idx _ => Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) .mkAnon
-  | .sort lvl _ => Ix.Tc.KExpr.mkSort (leanLevelToKuniv lvl paramNames)
+    | some level =>
+      if level >= ctxDepth then throw (.fvarOutsideDepth fname ctxDepth)
+      return Ix.Tc.KExpr.mkVar (UInt64.ofNat (ctxDepth - level - 1)) .mkAnon
+    | none => throw (.unknownFVar fname)
+  | .bvar idx _ =>
+    if idx ≥ UInt64.size then throw (.openBVarIndex idx)
+    return Ix.Tc.KExpr.mkVar (UInt64.ofNat idx) .mkAnon
+  | .sort lvl _ => return Ix.Tc.KExpr.mkSort (← leanLevelToKuniv lvl paramNames)
   | .const cname us _ =>
     let zid : MKId := ⟨maps.resolve cname, cname⟩
-    Ix.Tc.KExpr.mkConst zid (us.map (leanLevelToKuniv · paramNames))
+    return Ix.Tc.KExpr.mkConst zid (← us.mapM (leanLevelToKuniv · paramNames))
   | .app f a _ =>
-    Ix.Tc.KExpr.mkApp (toKexprStatic f fvarLevels ctxDepth paramNames maps)
-      (toKexprStatic a fvarLevels ctxDepth paramNames maps)
+    return Ix.Tc.KExpr.mkApp (← toKexprStatic f fvarLevels ctxDepth paramNames maps)
+      (← toKexprStatic a fvarLevels ctxDepth paramNames maps)
   | .forallE binderName dom body bi _ =>
-    Ix.Tc.KExpr.mkAll binderName bi
-      (toKexprStatic dom fvarLevels ctxDepth paramNames maps)
-      (toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps)
+    return Ix.Tc.KExpr.mkAll binderName bi
+      (← toKexprStatic dom fvarLevels ctxDepth paramNames maps)
+      (← toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps)
   | .lam binderName dom body bi _ =>
-    Ix.Tc.KExpr.mkLam binderName bi
-      (toKexprStatic dom fvarLevels ctxDepth paramNames maps)
-      (toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps)
+    return Ix.Tc.KExpr.mkLam binderName bi
+      (← toKexprStatic dom fvarLevels ctxDepth paramNames maps)
+      (← toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps)
   | .letE binderName ty val body nd _ =>
-    Ix.Tc.KExpr.mkLet binderName
-      (toKexprStatic ty fvarLevels ctxDepth paramNames maps)
-      (toKexprStatic val fvarLevels ctxDepth paramNames maps)
-      (toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps) nd
+    return Ix.Tc.KExpr.mkLet binderName
+      (← toKexprStatic ty fvarLevels ctxDepth paramNames maps)
+      (← toKexprStatic val fvarLevels ctxDepth paramNames maps)
+      (← toKexprStatic body fvarLevels (ctxDepth + 1) paramNames maps) nd
   | .proj pname idx s _ =>
+    if idx ≥ UInt64.size then throw (.openProjIndex pname idx)
     let zid : MKId := ⟨maps.resolve pname, pname⟩
-    Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx)
-      (toKexprStatic s fvarLevels ctxDepth paramNames maps)
+    return Ix.Tc.KExpr.mkPrj zid (UInt64.ofNat idx)
+      (← toKexprStatic s fvarLevels ctxDepth paramNames maps)
   | .lit (.natVal n) _ =>
-    -- 8-byte u64 LE blob convention (see leanExprToKexprCached).
-    Ix.Tc.KExpr.mkNat n (Address.blake3 (UInt64.ofNat n).toLEBytes)
+    -- The compile-side blob convention (`bridgeNatBlob`).
+    return Ix.Tc.KExpr.mkNat n (bridgeNatBlob n)
   | .lit (.strVal s) _ =>
-    Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8)
+    return Ix.Tc.KExpr.mkStr s (Address.blake3 s.toUTF8)
   | .mdata _ inner _ =>
     toKexprStatic inner fvarLevels ctxDepth paramNames maps
-  | .mvar _ _ => Ix.Tc.KExpr.mkSort Ix.Tc.KUniv.mkZero
+  | .mvar _ _ => throw .openMVar
 
 /-- `KExpr .meta → Ix.Expr` reconstructing FVars from de-Bruijn `Var`s:
     indices below `localDepth` stay BVars; above, level =
@@ -494,53 +549,52 @@ partial def toKexprStatic (e : Expr) (fvarLevels : Std.HashMap Name Nat)
     outermost-first. Mirrors Rust `kexpr_to_lean` (expr_utils.rs:2671). -/
 partial def kexprToLean (e : MKExpr) (outerDepth : Nat)
     (fvarLevels : Std.HashMap Name Nat) (localDepth : Nat)
-    (paramNames : Array Name) : Expr := Id.run do
-  let lookupFvar (level : Nat) : Option Name :=
-    fvarLevels.toList.findSome? fun (name, lvl) =>
-      if lvl == level then some name else none
+    (paramNames : Array Name) : Except AuxKernelError Expr := do
+  let lookupFvar (level : Nat) : Except AuxKernelError Name :=
+    match fvarLevels.toList.filter (fun (_, lvl) => lvl == level) with
+    | [(name, _)] => .ok name
+    | [] => .error (.missingFVarAt level)
+    | _ => .error (.duplicateFVarAt level)
 
-  let inner := match e with
+  let inner ← match e with
     | .var i _ _ =>
       let i := i.toNat
       if i < localDepth then
-        Expr.mkBVar i
+        pure (Expr.mkBVar i)
       else
         let fvarIdxFromTop := i - localDepth
         if fvarIdxFromTop + 1 > outerDepth then
-          panic! "kexprToLean: Var index out of range of outer context"
+          throw .varOutOfRange
         else
           let level := outerDepth - fvarIdxFromTop - 1
-          let name := (lookupFvar level).getD
-            (Name.mkStr .mkAnon s!"_dangling_fvar_{level}")
-          Expr.mkFVar name
+          let name ← lookupFvar level
+          pure (Expr.mkFVar name)
     | .fvar id _ _ =>
-      -- Kernel-side FVar nodes should never appear here (leaked open
-      -- expression); surface as a synthetic free variable.
-      Expr.mkFVar (Name.mkStr .mkAnon s!"_kernel_fvar_{id.id.toNat}")
-    | .sort u _ => Expr.mkSort (kunivToLevel u paramNames)
+      throw (.leakedKernelFVar id.id.toNat)
+    | .sort u _ => pure <| Expr.mkSort (← kunivToLevel u paramNames)
     | .const kid us _ =>
-      Expr.mkConst kid.name (us.map (kunivToLevel · paramNames))
+      pure <| Expr.mkConst kid.name (← us.mapM (kunivToLevel · paramNames))
     | .app f a _ =>
-      Expr.mkApp (kexprToLean f outerDepth fvarLevels localDepth paramNames)
-        (kexprToLean a outerDepth fvarLevels localDepth paramNames)
+      pure <| Expr.mkApp (← kexprToLean f outerDepth fvarLevels localDepth paramNames)
+        (← kexprToLean a outerDepth fvarLevels localDepth paramNames)
     | .all name bi d b _ =>
-      Expr.mkForallE name
-        (kexprToLean d outerDepth fvarLevels localDepth paramNames)
-        (kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
+      pure <| Expr.mkForallE name
+        (← kexprToLean d outerDepth fvarLevels localDepth paramNames)
+        (← kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
     | .lam name bi d b _ =>
-      Expr.mkLam name
-        (kexprToLean d outerDepth fvarLevels localDepth paramNames)
-        (kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
+      pure <| Expr.mkLam name
+        (← kexprToLean d outerDepth fvarLevels localDepth paramNames)
+        (← kexprToLean b outerDepth fvarLevels (localDepth + 1) paramNames) bi
     | .letE name ty val body nd _ =>
-      Expr.mkLetE name
-        (kexprToLean ty outerDepth fvarLevels localDepth paramNames)
-        (kexprToLean val outerDepth fvarLevels localDepth paramNames)
-        (kexprToLean body outerDepth fvarLevels (localDepth + 1) paramNames) nd
+      pure <| Expr.mkLetE name
+        (← kexprToLean ty outerDepth fvarLevels localDepth paramNames)
+        (← kexprToLean val outerDepth fvarLevels localDepth paramNames)
+        (← kexprToLean body outerDepth fvarLevels (localDepth + 1) paramNames) nd
     | .prj kid field val _ =>
-      Expr.mkProj kid.name field.toNat
-        (kexprToLean val outerDepth fvarLevels localDepth paramNames)
-    | .nat n _ _ => Expr.mkLit (.natVal n)
-    | .str s _ _ => Expr.mkLit (.strVal s)
+      pure <| Expr.mkProj kid.name field.toNat
+        (← kexprToLean val outerDepth fvarLevels localDepth paramNames)
+    | .nat n _ _ => pure (Expr.mkLit (.natVal n))
+    | .str s _ _ => pure (Expr.mkLit (.strVal s))
 
   -- Re-wrap mdata layers, outermost first (matching egress order).
   return e.mdata.foldr (init := inner) fun kvs acc => Expr.mkMData kvs acc
@@ -559,27 +613,27 @@ def sameResolvedNameAddr (a b : Name) (maps : AddrMaps) : Bool :=
 partial def collectLeanSourceNameHints (source : Expr)
     (fvarLevels : Std.HashMap Name Nat) (depth : Nat)
     (paramNames : Array Name) (maps : AddrMaps)
-    (out : Std.HashMap Address Expr) : Std.HashMap Address Expr := Id.run do
+    (out : Std.HashMap Address Expr) : Except AuxKernelError (Std.HashMap Address Expr) := do
   let mut out := out
   if sourceNameHintCandidate source && !exprHasBVar source then
-    let key := (toKexprStatic source fvarLevels depth paramNames maps).addr
+    let key := (← toKexprStatic source fvarLevels depth paramNames maps).addr
     if !out.contains key then
       out := out.insert key source
   match source with
   | .mdata _ inner _ =>
-    return collectLeanSourceNameHints inner fvarLevels depth paramNames maps out
+    collectLeanSourceNameHints inner fvarLevels depth paramNames maps out
   | .app f a _ =>
-    out := collectLeanSourceNameHints f fvarLevels depth paramNames maps out
-    return collectLeanSourceNameHints a fvarLevels depth paramNames maps out
+    out ← collectLeanSourceNameHints f fvarLevels depth paramNames maps out
+    collectLeanSourceNameHints a fvarLevels depth paramNames maps out
   | .forallE _ d b _ _ | .lam _ d b _ _ =>
-    out := collectLeanSourceNameHints d fvarLevels depth paramNames maps out
-    return collectLeanSourceNameHints b fvarLevels depth paramNames maps out
+    out ← collectLeanSourceNameHints d fvarLevels depth paramNames maps out
+    collectLeanSourceNameHints b fvarLevels depth paramNames maps out
   | .letE _ t v b _ _ =>
-    out := collectLeanSourceNameHints t fvarLevels depth paramNames maps out
-    out := collectLeanSourceNameHints v fvarLevels depth paramNames maps out
-    return collectLeanSourceNameHints b fvarLevels depth paramNames maps out
+    out ← collectLeanSourceNameHints t fvarLevels depth paramNames maps out
+    out ← collectLeanSourceNameHints v fvarLevels depth paramNames maps out
+    collectLeanSourceNameHints b fvarLevels depth paramNames maps out
   | .proj _ _ v _ =>
-    return collectLeanSourceNameHints v fvarLevels depth paramNames maps out
+    collectLeanSourceNameHints v fvarLevels depth paramNames maps out
   | _ => return out
 
 /-- Restore source spellings for copied subterms after a real reduction.
@@ -587,35 +641,35 @@ partial def collectLeanSourceNameHints (source : Expr)
 partial def restoreLeanSourceNameHints (generated : Expr)
     (fvarLevels : Std.HashMap Name Nat) (depth : Nat)
     (paramNames : Array Name) (maps : AddrMaps)
-    (hints : Std.HashMap Address Expr) : Expr := Id.run do
+    (hints : Std.HashMap Address Expr) : Except AuxKernelError Expr := do
   if sourceNameHintCandidate generated && !exprHasBVar generated then
-    let key := (toKexprStatic generated fvarLevels depth paramNames maps).addr
+    let key := (← toKexprStatic generated fvarLevels depth paramNames maps).addr
     if let some source := hints.get? key then
       return source
   match generated with
   | .app f a _ =>
     return Expr.mkApp
-      (restoreLeanSourceNameHints f fvarLevels depth paramNames maps hints)
-      (restoreLeanSourceNameHints a fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints f fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints a fvarLevels depth paramNames maps hints)
   | .forallE n d b bi _ =>
     return Expr.mkForallE n
-      (restoreLeanSourceNameHints d fvarLevels depth paramNames maps hints)
-      (restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) bi
+      (← restoreLeanSourceNameHints d fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) bi
   | .lam n d b bi _ =>
     return Expr.mkLam n
-      (restoreLeanSourceNameHints d fvarLevels depth paramNames maps hints)
-      (restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) bi
+      (← restoreLeanSourceNameHints d fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) bi
   | .letE n t v b nd _ =>
     return Expr.mkLetE n
-      (restoreLeanSourceNameHints t fvarLevels depth paramNames maps hints)
-      (restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
-      (restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) nd
+      (← restoreLeanSourceNameHints t fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints b fvarLevels depth paramNames maps hints) nd
   | .proj n i v _ =>
     return Expr.mkProj n i
-      (restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
   | .mdata kvs v _ =>
     return Expr.mkMData kvs
-      (restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
+      (← restoreLeanSourceNameHints v fvarLevels depth paramNames maps hints)
   | _ => return generated
 
 /-- Restore source display names after a content-preserving WHNF
@@ -681,17 +735,28 @@ def depth (scope : TcScopeSt) : Nat := scope.baseDepth + scope.extraLocals
     outer FVar types as kernel locals (Rust `TcScope::new`). -/
 def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
     (maps : AddrMaps) : KBridgeM TcScopeSt := do
-  -- Fresh TC portions, persistent env (caches live in KEnv).
-  modify fun kctx => { kctx with tcState :=
-    { Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims with
-      inferOnly := true } }
+  let mut seenParams : Std.HashSet Name := {}
+  for name in paramNames do
+    if seenParams.contains name then
+      throwBridge (.duplicateLevelParam name)
+    seenParams := seenParams.insert name
   let mut fvarLevels : Std.HashMap Name Nat := {}
   for (decl, i) in outerFvarCtx.zipIdx do
+    if fvarLevels.contains decl.fvarName then
+      throwBridge (.duplicateOuterFVar decl.fvarName)
     fvarLevels := fvarLevels.insert decl.fvarName i
+  -- Fresh TC portions, persistent env (caches live in KEnv). Every scope
+  -- opened before is superseded (`scopeEpoch`).
+  modify fun kctx => { kctx with
+    tcState :=
+      { Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims with
+        inferOnly := true }
+    scopeEpoch := kctx.scopeEpoch + 1 }
   let scope : TcScopeSt :=
     { fvarLevels, baseDepth := outerFvarCtx.size, paramNames, maps }
   for (decl, i) in outerFvarCtx.zipIdx do
-    let kty := toKexprStatic decl.domain fvarLevels i paramNames maps
+    rememberSourceExpr decl.domain maps
+    let kty ← liftBridgeResult (toKexprStatic decl.domain fvarLevels i paramNames maps)
     discard <| runTc (Ix.Tc.TcM.pushLocal kty)
   return scope
 
@@ -699,19 +764,31 @@ def new (outerFvarCtx : Array LocalDecl) (paramNames : Array Name)
     `popLocals`. Mirrors Rust `push_locals` (expr_utils.rs:2257). -/
 def pushLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
+  if (← get).tcState.ctx.size != scope.depth then
+    throwBridge (.staleDepth "pushLocals")
   let mut scope := scope
   let depth0 := scope.depth
   for (decl, i) in decls.zipIdx do
+    if scope.fvarLevels.contains decl.fvarName then
+      throwBridge (.duplicatePushedFVar decl.fvarName)
     scope := { scope with
       fvarLevels := scope.fvarLevels.insert decl.fvarName (depth0 + i) }
-    let kty := toKexprStatic decl.domain scope.fvarLevels (depth0 + i)
-      scope.paramNames scope.maps
+    rememberSourceExpr decl.domain scope.maps
+    let kty ← liftBridgeResult (toKexprStatic decl.domain scope.fvarLevels (depth0 + i)
+      scope.paramNames scope.maps)
     discard <| runTc (Ix.Tc.TcM.pushLocal kty)
   return { scope with extraLocals := scope.extraLocals + decls.size }
 
 /-- Mirrors Rust `pop_locals` (expr_utils.rs:2274). -/
 def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
     : KBridgeM TcScopeSt := do
+  if (← get).tcState.ctx.size != scope.depth then
+    throwBridge (.staleDepth "popLocals")
+  if decls.size > scope.extraLocals then
+    throwBridge .popExceedsPushed
+  for (decl, i) in decls.zipIdx do
+    if scope.fvarLevels[decl.fvarName]? != some (scope.depth - decls.size + i) then
+      throwBridge (.popNotLifo decl.fvarName)
   let mut scope := scope
   for decl in decls.reverse do
     discard <| runTc Ix.Tc.TcM.popLocal
@@ -724,33 +801,30 @@ def popLocals (scope : TcScopeSt) (decls : Array LocalDecl)
 def faultInName (scope : TcScopeSt) (name : Name) : KBridgeM Bool := do
   ensureFullInKenvOf name scope.maps
   let addr := scope.maps.resolve name
-  return (← get).tcState.env.consts.toList.any fun (id, _) => id.addr == addr
+  return (← kenvGet? ⟨addr, name⟩).isSome
 
-/-- Reverse address lookup (linear over the compile-env views + name
-    hashes; mirrors Rust `name_for_addr`, expr_utils.rs:2317). -/
-def nameForAddr (addr : Address) : KBridgeM (Option Name) := do
-  let cenv ← Ix.CompileM.getCompileEnv
-  for (name, named) in cenv.nameToNamed do
-    if named.addr == addr then
-      return some name
-  -- Streaming driver: `env.consts` is unmaterialized; the input names'
-  -- hashes live in `nameByHash` instead.
-  if let some name := cenv.nameByHash.get? addr then
-    return some name
-  for (name, _) in cenv.env.consts do
-    if name.getHash == addr then
-      return some name
-  return none
-
-/-- Fault in the constant behind an address discovered mid-inference.
-    Mirrors Rust `fault_in_addr` (expr_utils.rs:2303). -/
+/-- Fault the explicitly referenced source identities at an address.
+`unknownConst` carries only the address, while Meta KIds also contain the
+source name; load all missing forward identities in deterministic order.
+Ingress may expose further aliases at this address, so close that set to a
+fixed point. An ambient compiled alias is never a substitute. Mirrors Rust
+`fault_in_addr`. -/
 def faultInAddr (scope : TcScopeSt) (addr : Address) : KBridgeM Bool := do
-  if (← get).tcState.env.consts.toList.any (fun (id, _) => id.addr == addr) then
-    return true
-  let some name ← nameForAddr addr | return false
-  if !(← scope.faultInName name) then
-    return false
-  return (← get).tcState.env.consts.toList.any fun (id, _) => id.addr == addr
+  if ((← get).sourceNames.getD addr {}).isEmpty then
+    throwBridge (.noProvenance addr)
+  let mut visited : Std.HashSet Name := {}
+  let mut loaded := false
+  repeat
+    let pending := (((← get).sourceNames.getD addr {}).toArray.filter (!visited.contains ·))
+      |>.qsort Ix.CompileM.aliasPrecedes
+    if pending.isEmpty then break
+    for name in pending do
+      visited := visited.insert name
+      if (← kenvGet? ⟨addr, name⟩).isSome then continue
+      if scope.maps.resolve name != addr then
+        throwBridge (.provenanceChanged name)
+      if ← scope.faultInName name then loaded := true
+  return loaded
 
 /-- Pre-fault every constant directly referenced by `e` (Rust
     `fault_in_direct_expr_consts`, expr_utils.rs:2282). -/
@@ -770,18 +844,18 @@ partial def isNotZeroLevel : Level → Bool
     level args, simplifying with `levelMax`/Lean's `mk_imax` rules.
     Mirrors Rust `kuniv_to_level_with_const_levels` (expr_utils.rs:2524). -/
 partial def kunivToLevelWithConstLevels (scope : TcScopeSt) (u : MKUniv)
-    (constLevels : Array Level) : Level :=
+    (constLevels : Array Level) : Except AuxKernelError Level := do
   match u with
-  | .zero _ => Level.mkZero
+  | .zero _ => return Level.mkZero
   | .succ inner _ =>
-    Level.mkSucc (kunivToLevelWithConstLevels scope inner constLevels)
+    return Level.mkSucc (← kunivToLevelWithConstLevels scope inner constLevels)
   | .max a b _ =>
-    levelMax (kunivToLevelWithConstLevels scope a constLevels)
-      (kunivToLevelWithConstLevels scope b constLevels)
+    return levelMax (← kunivToLevelWithConstLevels scope a constLevels)
+      (← kunivToLevelWithConstLevels scope b constLevels)
   | .imax a b _ =>
-    let la := kunivToLevelWithConstLevels scope a constLevels
-    let lb := kunivToLevelWithConstLevels scope b constLevels
-    if isNotZeroLevel lb then
+    let la ← kunivToLevelWithConstLevels scope a constLevels
+    let lb ← kunivToLevelWithConstLevels scope b constLevels
+    return if isNotZeroLevel lb then
       levelMax la lb
     else if lb matches .zero _ then lb
     else if la matches .zero _ then lb
@@ -790,11 +864,8 @@ partial def kunivToLevelWithConstLevels (scope : TcScopeSt) (u : MKUniv)
     else Level.mkIMax la lb
   | .param idx _ _ =>
     match constLevels[idx.toNat]? with
-    | some l => l
-    | none =>
-      match scope.paramNames[idx.toNat]? with
-      | some name => Level.mkParam name
-      | none => Level.mkParam (Name.mkStr .mkAnon s!"u_{idx.toNat}")
+    | some l => return l
+    | none => throw (.constLevelArgIndex idx.toNat)
 
 /-- Fast path for `getLevel`: fully-applied constant whose stored kernel
     type telescopes to `Sort l` — read `l` directly with level-param
@@ -813,7 +884,7 @@ def tryInferAppSortLevel (scope : TcScopeSt) (ty : Expr)
     | .all _ _ _ body _ => cur := body
     | _ => return none
   let .sort ku _ := cur | return none
-  return some (scope.kunivToLevelWithConstLevels ku levels)
+  return some (← liftBridgeResult (scope.kunivToLevelWithConstLevels ku levels))
 
 /-- Infer the sort level of a type in the current context, with the
     fault-in retry loop and forall-level normalization. Mirrors Rust
@@ -822,8 +893,8 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
   if let some lvl ← scope.tryInferAppSortLevel ty then
     return lvl
 
-  let kexpr := toKexprStatic ty scope.fvarLevels scope.depth
-    scope.paramNames scope.maps
+  let kexpr ← liftBridgeResult (toKexprStatic ty scope.fvarLevels scope.depth
+    scope.paramNames scope.maps)
 
   scope.faultInDirectExprConsts ty
   let mut faultedAddrs : Std.HashSet Address := {}
@@ -835,57 +906,60 @@ partial def getLevel (scope : TcScopeSt) (ty : Expr) : KBridgeM Level := do
       if !faultedAddrs.contains addr then
         faultedAddrs := faultedAddrs.insert addr
         if !(← scope.faultInAddr addr) then
-          throw (.unsupportedExpr
-            s!"TcScope::get_level: tc.infer failed: unknown constant \
-{(toString addr).take 12}")
+          throwBridge (.kernel (.inferUnknownConst addr) "")
       else
-        throw (.unsupportedExpr
-          s!"TcScope::get_level: tc.infer failed: unknown constant \
-{(toString addr).take 12}")
-    | .error e =>
-      throw (.unsupportedExpr
-        s!"TcScope::get_level: tc.infer failed: {e}")
-  let inferred := inferred?.get!
+        throwBridge (.kernel (.inferUnknownConst addr) "")
+    | .error e => throwBridge (.kernel .infer (toString e))
+  let some inferred := inferred?
+    | throwBridge (.internal "inference retry exited without a result")
 
   let ku ← match ← runTc (Ix.Tc.TcM.ensureSort inferred) with
     | .ok u => pure u
-    | .error e =>
-      throw (.unsupportedExpr s!"TcScope::get_level: ensure_sort failed: {e}")
-  let raw := kunivToLevel ku scope.paramNames
+    | .error e => throwBridge (.kernel .ensureSort (toString e))
+  let raw ← liftBridgeResult (kunivToLevel ku scope.paramNames)
   -- Mirror Lean's `inferForallType`: normalize forall-typed levels only.
   if ty matches .forallE .. then
     return levelNormalize raw
   return raw
 
 /-- WHNF a `LeanExpr` in the current context, restoring source display
-    names (kernel caches alias same-content names). Falls back to the
-    input on kernel errors. Mirrors Rust `TcScope::whnf_lean`
-    (expr_utils.rs:2589). -/
-def whnfLean (scope : TcScopeSt) (ty : Expr) : KBridgeM Expr := do
+    names (kernel caches alias same-content names); `none` when the kernel
+    gives no answer (its own error). Conversion failures are refusals. -/
+def whnf? (scope : TcScopeSt) (ty : Expr) : KBridgeM (Option Expr) := do
   let depth := scope.depth
-  let kexpr := toKexprStatic ty scope.fvarLevels depth
-    scope.paramNames scope.maps
+  let kexpr ← liftBridgeResult (toKexprStatic ty scope.fvarLevels depth
+    scope.paramNames scope.maps)
   let whnfed ← match ← runTc (Ix.Tc.TcM.whnf kexpr) with
     | .ok k => pure k
-    | .error _ => return ty
-  let out := kexprToLean whnfed depth scope.fvarLevels 0 scope.paramNames
+    | .error _ => return none
+  let out ← liftBridgeResult (kexprToLean whnfed depth scope.fvarLevels 0 scope.paramNames)
   if whnfed.addr == kexpr.addr then
-    return restoreSourceNamesSameContent out ty scope.maps
+    return some (restoreSourceNamesSameContent out ty scope.maps)
   else
-    let hints := collectLeanSourceNameHints ty scope.fvarLevels depth
-      scope.paramNames scope.maps {}
-    return restoreLeanSourceNameHints out scope.fvarLevels depth
-      scope.paramNames scope.maps hints
+    let hints ← liftBridgeResult (collectLeanSourceNameHints ty scope.fvarLevels depth
+      scope.paramNames scope.maps {})
+    return some (← liftBridgeResult (restoreLeanSourceNameHints out scope.fvarLevels depth
+      scope.paramNames scope.maps hints))
 
-/-- Definitional equality in the current context; `false` on kernel
-    errors. Mirrors Rust `TcScope::is_def_eq` (expr_utils.rs:2636). -/
-def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
+/-- `whnf?`, falling back to the input when the kernel gives no answer.
+    Mirrors Rust `TcScope::whnf_lean` (expr_utils.rs:2589). -/
+def whnfLean (scope : TcScopeSt) (ty : Expr) : KBridgeM Expr :=
+  return (← scope.whnf? ty).getD ty
+
+/-- Definitional equality in the current context; `none` when the kernel
+    gives no answer (its own error). -/
+def isDefEq? (scope : TcScopeSt) (a b : Expr) : KBridgeM (Option Bool) := do
   let depth := scope.depth
-  let ka := toKexprStatic a scope.fvarLevels depth scope.paramNames scope.maps
-  let kb := toKexprStatic b scope.fvarLevels depth scope.paramNames scope.maps
+  let ka ← liftBridgeResult (toKexprStatic a scope.fvarLevels depth scope.paramNames scope.maps)
+  let kb ← liftBridgeResult (toKexprStatic b scope.fvarLevels depth scope.paramNames scope.maps)
   match ← runTc (Ix.Tc.TcM.isDefEq ka kb) with
-  | .ok r => return r
-  | .error _ => return false
+  | .ok r => return some r
+  | .error _ => return none
+
+/-- `isDefEq?`, `false` when the kernel gives no answer. Mirrors Rust
+    `TcScope::is_def_eq` (expr_utils.rs:2636). -/
+def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool :=
+  return (← scope.isDefEq? a b).getD false
 
 /-- Infer the type of a `LeanExpr` in the current context. Decision
     support only (the Eq-vs-HEq binder choice's unit-like check): the
@@ -895,12 +969,305 @@ def isDefEq (scope : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
     unit-like"). Mirrors Rust `TcScope::infer_lean`. -/
 def inferLean (scope : TcScopeSt) (e : Expr) : KBridgeM (Option Expr) := do
   let depth := scope.depth
-  let ke := toKexprStatic e scope.fvarLevels depth scope.paramNames scope.maps
+  let ke ← liftBridgeResult (toKexprStatic e scope.fvarLevels depth scope.paramNames scope.maps)
   match ← runTc (Ix.Tc.TcM.infer ke) with
-  | .ok ty => return some (kexprToLean ty depth scope.fvarLevels 0
-      scope.paramNames)
+  | .ok ty => return some (← liftBridgeResult (kexprToLean ty depth scope.fvarLevels 0
+      scope.paramNames))
   | .error _ => return none
 
 end TcScopeSt
+
+/-! ## The elimination decision and its ingress (recursor.rs:2311)
+
+The kernel half of Rust `compute_is_large_and_k` and the dependency
+ingress it needs, moved here from `Ix.AuxGen.Recursor` (AuxGen M0.2) so that
+the generators reach the kernel only through the bridge; K stays in
+`Recursor.computeIsLargeAndK`. Also the kenv body of
+`populateCanonKenvWithBelow` (`tcAdmitBelow`, from `Ix.AuxGen.Patches`).
+
+NOTE (Rust recursor.rs:1976-1985): the old syntactic
+`elim_only_at_universe_zero` fallback trio was removed upstream — a TC
+failure here surfaces as a hard error, never a silent fallback. -/
+
+/-- Mirrors Rust `collect_const_refs` (recursor.rs:2694).
+
+    Collect all constant names referenced in an expression, appended onto
+    `out` (a work queue, NOT a set — dedup happens at the consumer's
+    `seen`). Explicit stack, matching the Rust traversal order, with a
+    digest-keyed visited set so structurally shared subterms are walked
+    once (DAG cost, not unshared-tree cost). -/
+def collectConstRefs (expr : Expr) (out : Array Name) : Array Name := Id.run do
+  let mut out := out
+  let mut visited : Std.HashSet Address := {}
+  let mut stack : Array Expr := #[expr]
+  repeat
+    if let some e := stack.back? then
+      stack := stack.pop
+      if visited.contains e.getHash then
+        continue
+      visited := visited.insert e.getHash
+      match e with
+      | .const n _ _ => out := out.push n
+      | .app f a _ =>
+        stack := stack.push f
+        stack := stack.push a
+      | .forallE _ d b _ _ | .lam _ d b _ _ =>
+        stack := stack.push d
+        stack := stack.push b
+      | .letE _ t v b _ _ =>
+        stack := stack.push t
+        stack := stack.push v
+        stack := stack.push b
+      | .proj name _ e' _ =>
+        out := out.push name
+        stack := stack.push e'
+      | .mdata _ e' _ =>
+        stack := stack.push e'
+      | _ => pure ()
+    else
+      break
+  return out
+
+/-- Mirrors Rust `ingress_type_stub` (recursor.rs:2649).
+
+    Insert a type-only `KConst.axio` stub for `name` into the bridge kenv
+    (skipped when an entry already exists under the resolved address). -/
+def ingressTypeStub (name : Name) (typ : Expr) (levelParams : Array Name)
+    (maps : AddrMaps) : KBridgeM Unit := do
+  let addr := maps.resolve name
+  let zid : MKId := ⟨addr, name⟩
+  if (← kenvGet? zid).isSome then
+    return
+  let tyZ ← leanExprToKexpr typ levelParams maps
+  let nLvls := UInt64.ofNat levelParams.size
+  kenvInsert zid (.axio name levelParams false nLvls tyZ)
+
+/-- Mirrors Rust `ingress_aux_gen_dep` (recursor.rs:2597).
+
+    Ingress one dependency with the right fidelity: definitions /
+    inductives / ctors as full entries (`ensureFullInKenvOf`), everything
+    else as type stubs. New const refs discovered in the entry's types
+    are appended to the returned queue (Rust `&mut Vec<Name>`). -/
+def ingressAuxGenDep (name : Name) (ci : ConstantInfo) (maps : AddrMaps)
+    (queue : Array Name) : KBridgeM (Array Name) := do
+  match ci with
+  | .defnInfo v => do
+    ensureFullInKenvOf name maps
+    let queue := collectConstRefs v.cnst.type queue
+    return collectConstRefs v.value queue
+  | .inductInfo v => do
+    ensureFullInKenvOf name maps
+    let mut queue := collectConstRefs v.cnst.type queue
+    for ctorName in v.ctors do
+      if let some (.ctorInfo ctor) ← lookupConst? ctorName then
+        queue := collectConstRefs ctor.cnst.type queue
+    return queue
+  | .ctorInfo v => do
+    ensureFullInKenvOf name maps
+    return collectConstRefs v.cnst.type queue
+  | .axiomInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .thmInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .opaqueInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .recInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+  | .quotInfo v => do
+    ingressTypeStub name v.cnst.type v.cnst.levelParams maps
+    return collectConstRefs v.cnst.type queue
+
+/-- Mirrors Rust `drain_ingress_queue` (recursor.rs).
+
+    Drain a worklist of names through `ingressAuxGenDep`, deduplicated
+    against the kenv-lifetime `auxIngressSeen` (resolved-id-keyed — see
+    the `AuxKernelCtx` field docs) instead of a per-call set: the
+    dispatch is deterministic per constant kind, so a seen id is already
+    at final kenv fidelity and re-expanding its closure would be pure
+    cost. -/
+def drainIngressQueue (queue₀ : Array Name) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  let mut queue := queue₀
+  repeat
+    let some name := queue.back? | break
+    queue := queue.pop
+    let zid : MKId := ⟨maps.resolve name, name⟩
+    if (← get).auxIngressSeen.contains zid then
+      continue
+    modify fun kctx =>
+      { kctx with auxIngressSeen := kctx.auxIngressSeen.insert zid }
+    if let some ci ← lookupConst? name then
+      queue ← ingressAuxGenDep name ci maps queue
+  return ()
+
+/-- Mirrors Rust `ingress_target_type_deps` (recursor.rs:2548).
+
+    Ingress constants referenced by an inductive target type with enough
+    fidelity for WHNF (target aliases like `Set α := α → Prop` must
+    unfold). -/
+def ingressTargetTypeDeps (targetTy : Expr) (maps : AddrMaps) :
+    KBridgeM Unit :=
+  drainIngressQueue (collectConstRefs targetTy #[]) maps
+
+/-- Mirrors Rust `ingress_field_deps` (recursor.rs:2572).
+
+    Walk field domains of the class's constructors and ingress referenced
+    constants into the bridge kenv so `infer`/WHNF can look them up
+    (reducible definitions as real `Defn` entries — recursive occurrences
+    hidden under aliases like `constType (I α) (I α)` are missed
+    otherwise). -/
+def ingressFieldDeps (ctors : Array ConstructorVal) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  let mut queue : Array Name := #[]
+  for ctor in ctors do
+    queue := collectConstRefs ctor.cnst.type queue
+  drainIngressQueue queue maps
+
+/-- The kernel's elimination decision for a block's original classes. -/
+structure ElimDecision where
+  /-- Large elimination: Lean's `elim_only_at_universe_zero`, negated. -/
+  isLarge : Bool
+  /-- The WHNF-peeled result sort is semantically zero. -/
+  isProp : Bool
+  deriving BEq, Inhabited, Repr
+
+/-- The kernel half of Rust `compute_is_large_and_k` (recursor.rs:2328),
+    over the block's ORIGINAL classes (inductive with constructors), in an
+    expanded block of `nFlat` members (the originals and the nested
+    auxiliaries):
+    - ephemeral `KConst.indc`/`KConst.ctor` entries for all of them go into
+      the bridge kenv (provisional addresses), so the kernel sees the full
+      mutual block and can apply the "mutual Prop → small" rule;
+    - `getResultSortLevel` WHNF-peels params+indices (crucial for
+      reducible-alias targets like `Set σ := σ → Prop`);
+    - the kernels' rule decides (Lean's `elim_only_at_universe_zero`, which
+      counts the expanded block): a result level that may be zero
+      eliminates small when the expanded block is not a singleton, decided
+      before any field is probed, since the original classes' fields can
+      name an auxiliary this kenv does not hold (WB-A7); otherwise
+      `isLargeEliminator` decides over the originals. No override (A0,
+      WB-B8): a former override forced large elimination whenever the level
+      was not semantically zero, so a `Sort u` inductive (reachable through
+      `addDecl`) got a large recursor both kernels reject.
+    It runs on a fresh `TcState` over the persistent kenv (Rust
+    `TypeChecker::new(&mut kctx.kenv)`). TC failures are hard
+    `invalidMutualBlock` refusals (no syntactic fallback). K stays with the
+    caller (`Recursor.computeIsLargeAndK`). -/
+def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
+    (nParams nFlat : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
+  let mut indInfos : Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr) := #[]
+
+  -- The first class's block KId is the shared block reference.
+  let (firstInd, _) ← Ix.CompileM.arrIdx originals 0 "computeIsLargeAndK: first class"
+  let blockAddr := maps.resolve firstInd.cnst.name
+  let blockZid : MKId := ⟨blockAddr, firstInd.cnst.name⟩
+
+  for ci in [0:originals.size] do
+    let (clsInd, clsCtors) ← Ix.CompileM.arrIdx originals ci "computeIsLargeAndK: class"
+    let clsLvlParams := clsInd.cnst.levelParams
+    let clsNLvls := UInt64.ofNat clsLvlParams.size
+    let clsNIndices := UInt64.ofNat clsInd.numIndices
+
+    let clsAddr := maps.resolve clsInd.cnst.name
+    let clsZid : MKId := ⟨clsAddr, clsInd.cnst.name⟩
+    let clsTyZ ← leanExprToKexpr clsInd.cnst.type clsLvlParams maps
+
+    -- Convert constructors.
+    let mut clsCtorZids : Array MKId := #[]
+    for ctor in clsCtors do
+      let ctorAddr := maps.resolve ctor.cnst.name
+      let ctorZid : MKId := ⟨ctorAddr, ctor.cnst.name⟩
+      let ctorTyZ ← leanExprToKexpr ctor.cnst.type clsLvlParams maps
+      let ctorFields := UInt64.ofNat ctor.numFields
+      let ctorParams := UInt64.ofNat ctor.numParams
+      kenvInsert ctorZid (.ctor ctor.cnst.name clsLvlParams ctor.isUnsafe
+        clsNLvls clsZid (UInt64.ofNat clsCtorZids.size) ctorParams ctorFields
+        ctorTyZ)
+      clsCtorZids := clsCtorZids.push ctorZid
+
+    -- Insert inductive.
+    kenvInsert clsZid (.indc clsInd.cnst.name clsLvlParams clsNLvls
+      (UInt64.ofNat nParams) clsNIndices clsInd.isUnsafe blockZid
+      (UInt64.ofNat ci) clsTyZ clsCtorZids #[])
+
+    -- Target types may hide their final Sort behind reducible aliases.
+    ingressTargetTypeDeps clsInd.cnst.type maps
+    -- Ingress field deps for this class.
+    ingressFieldDeps clsCtors maps
+
+    indInfos := indInfos.push
+      (clsZid, UInt64.ofNat nParams, clsNIndices, clsCtorZids, clsTyZ)
+
+  let (_, _, firstNIndices, _, firstTyZ) ←
+    Ix.CompileM.arrIdx indInfos 0 "computeIsLargeAndK: first class info"
+
+  -- Fresh TypeChecker over the persistent kenv (Rust
+  -- `TypeChecker::new(&mut kctx.kenv)`); every open scope is superseded.
+  modify fun kctx => { kctx with
+    tcState := Ix.Tc.TcState.new kctx.tcState.env kctx.tcState.prims
+    scopeEpoch := kctx.scopeEpoch + 1 }
+
+  let block := firstInd.cnst.name.pretty
+  -- WHNF-reduced result sort level via the kernel.
+  let resultKuniv ←
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.getResultSortLevel firstTyZ
+          (nParams + firstNIndices.toNat))) with
+    | .ok u => pure u
+    | .error e => throwBridge (.kernel (.resultSort block) (toString e))
+
+  -- Prop determination from the WHNF-reduced kernel-derived level.
+  let isProp := resultKuniv.isSemanticZero
+
+  -- The kernels' rule over the expanded block, before the field probe.
+  if !resultKuniv.isNeverZero && nFlat != 1 then
+    return { isLarge := false, isProp }
+
+  let isLarge ←
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
+    | .ok b => pure b
+    | .error e => throwBridge (.kernel (.largeElim block) (toString e))
+
+  return { isLarge, isProp }
+
+/-- Mirrors the kenv body of Rust `populate_canon_kenv_with_below`
+    (aux_gen.rs:1017): insert the canonical `.below` definitions and
+    inductives (with constructors) into the bridge kenv under their
+    provisional addresses, overwriting what is there. -/
+def tcAdmitBelow (belowConsts : Array BelowConstant) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  for bc in belowConsts do
+    match bc with
+    | .defn d =>
+      let addr := maps.resolve d.name
+      let zid : MKId := ⟨addr, d.name⟩
+      let tyZ ← leanExprToKexpr d.typ d.levelParams maps
+      let valZ ← leanExprToKexpr d.value d.levelParams maps
+      -- Rust: KConst::Defn { kind: Definition, safety: Safe,
+      -- hints: Abbrev, lean_all: vec![], block: zid }.
+      kenvInsert zid (.defn d.name d.levelParams .defn .safe .abbrev
+        (UInt64.ofNat d.levelParams.size) tyZ valZ #[] zid)
+    | .indc i =>
+      let addr := maps.resolve i.name
+      let zid : MKId := ⟨addr, i.name⟩
+      let tyZ ← leanExprToKexpr i.typ i.levelParams maps
+      let mut ctorZids : Array MKId := #[]
+      for ctor in i.ctors do
+        let ctorAddr := maps.resolve ctor.name
+        let ctorZid : MKId := ⟨ctorAddr, ctor.name⟩
+        let ctorTyZ ← leanExprToKexpr ctor.typ i.levelParams maps
+        kenvInsert ctorZid (.ctor ctor.name i.levelParams false
+          (UInt64.ofNat i.levelParams.size) zid
+          (UInt64.ofNat ctorZids.size) (UInt64.ofNat ctor.nParams)
+          (UInt64.ofNat ctor.nFields) ctorTyZ)
+        ctorZids := ctorZids.push ctorZid
+      kenvInsert zid (.indc i.name i.levelParams
+        (UInt64.ofNat i.levelParams.size) (UInt64.ofNat i.nParams)
+        (UInt64.ofNat i.nIndices) false zid 0 tyZ ctorZids #[])
 
 end Ix.AuxGen

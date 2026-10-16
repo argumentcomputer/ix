@@ -40,28 +40,27 @@ site.  The constructor's own parameter and field counts are NOT
 pinned to the record's: the law is stated at the record's counts, and
 the η certificate works at them too, so the two never have to be
 compared at a use. -/
-@[expose] def EtaFamilyStored (env : Env) (T : Name) (caps : IndCaps) : Prop :=
+@[expose] def EtaFamilyStored (env : Env md) (T : Key md) (caps : IndCaps md) : Prop :=
   -- name-only conjunct (static in `caps`): a reserved-named capability
   -- constructor never completes a family, which keeps the basis
   -- installs' head obligations vacuous by computation
-  reservedBasisNames.contains caps.etaCtor = false ∧
-  (∃ cvC cnP cnF, env.find? caps.etaCtor = some (.ctorInfo cvC cnP cnF)) ∧
+  ∃ C, caps.etaCtor = some C ∧
+  reservedBasisNames.contains C = false ∧
+  (∃ cvC cnP cnF, env.find? C = some (.ctorInfo cvC cnP cnF)) ∧
   ∀ j, j < caps.etaFields → ∃ cv mI rP rules,
     env.find? (projFnName T j) = some (.recInfo cv mI rP rules)
 
-/-- A projection function is never a reserved basis name: `projFnName`
-builds a `Name.num` node, and every reserved name is a `Name.str`. -/
-theorem projFnName_ne_reserved {T n : Name} {j : Nat}
+/-- A projection function is never a reserved basis name: a derived key is
+not a role key (`reservedBasisNames_contains_auxKey`). -/
+theorem projFnName_ne_reserved {T n : Key md} {j : Nat}
     (h : reservedBasisNames.contains n = true) : projFnName T j ≠ n := by
   intro hh
   subst hh
-  simp only [reservedBasisNames, List.contains_cons, List.contains_nil,
-    Bool.or_eq_true, beq_iff_eq, projFnName] at h
-  rcases h with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
-    h | h | h | h | h | h <;> exact nomatch h
+  rw [projFnName, reservedBasisNames_contains_auxKey T (.projFn j)] at h
+  exact Bool.false_ne_true h
 
 /-- Everything `natLitSupported` checked, as separate facts. -/
-theorem natLitSupported_inv {env : Env} (hs : natLitSupported env = true) :
+theorem natLitSupported_inv {env : Env md} (hs : natLitSupported env = true) :
     ∃ cv caps cv0 i0 j0 cv1 i1 j1,
       env.find? natName = some (.indInfo cv caps) ∧
       env.find? natZeroName = some (.ctorInfo cv0 i0 j0) ∧
@@ -97,7 +96,7 @@ theorem natLitSupported_inv {env : Env} (hs : natLitSupported env = true) :
           exact ⟨mb, by rw [heq, h.1, h.2]⟩
 
 /-- The literal guard only reads the three `Nat` slots. -/
-theorem natLitSupported_congr {env₁ env₂ : Env}
+theorem natLitSupported_congr {env₁ env₂ : Env md}
     (h1 : env₁.find? natName = env₂.find? natName)
     (h2 : env₁.find? natZeroName = env₂.find? natZeroName)
     (h3 : env₁.find? natSuccName = env₂.find? natSuccName) :
@@ -108,7 +107,7 @@ theorem natLitSupported_congr {env₁ env₂ : Env}
 /-- Everything `strLitSupported` checked beyond `natLitSupported`, as
 separate facts (level-parameter lists and exact annotated types of the
 seven string-support constants). -/
-theorem strLitSupported_inv {env : Env} (hs : strLitSupported env = true) :
+theorem strLitSupported_inv {env : Env md} (hs : strLitSupported env = true) :
     natLitSupported env = true ∧
     ∃ ciS ciO ciL ciN ciC ciH ciF pL pN pC,
       env.find? stringName = some ciS ∧
@@ -234,25 +233,25 @@ every declaration boundary and is threaded through the consistency
 fold *next to* the model; constructor-installing sites consume it to
 refute a fresh constructor completing an *older* former's eta family
 (the older family's constructor slot is already taken). -/
-@[expose] def EtaFamiliesClosed (env : Env) : Prop :=
-  ∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+@[expose] def EtaFamiliesClosed (env : Env md) : Prop :=
+  ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     reservedBasisNames.contains T = false →
-    ∃ cvC, env.find? caps.etaCtor =
-      some (.ctorInfo cvC caps.etaParams caps.etaFields)
+    ∃ C cvC, caps.etaCtor = some C ∧
+      env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
-theorem EtaFamiliesClosed.empty : EtaFamiliesClosed Env.empty := by
+theorem EtaFamiliesClosed.empty : (EtaFamiliesClosed (md := md)) Env.empty := by
   intro T cvT caps h
   simp [Env.find?, Env.empty] at h
 
 /-- Prepending one fresh constant that is not a non-reserved
 eta-capable former keeps the stored eta families closed. -/
-theorem EtaFamiliesClosed.cons_nonind {env : Env} {c₀ : ConstantInfo}
+theorem EtaFamiliesClosed.cons_nonind {env : Env md} {c₀ : ConstantInfo md}
     (hE1 : EtaFamiliesClosed env)
     (hfresh : env.find? c₀.name = none)
     (hknd : ∀ cv caps, c₀ = .indInfo cv caps → caps.eta = true →
       reservedBasisNames.contains c₀.name = true) :
-    EtaFamiliesClosed (⟨c₀ :: env.consts⟩ : Env) := by
+    EtaFamiliesClosed (⟨c₀ :: env.consts⟩ : Env md) := by
   intro T cvT caps hf he hr
   rw [Env.find?_cons] at hf
   split at hf
@@ -261,8 +260,8 @@ theorem EtaFamiliesClosed.cons_nonind {env : Env} {c₀ : ConstantInfo}
     rw [← hh] at hr
     rw [hknd cvT caps rfl he] at hr
     exact nomatch hr
-  · obtain ⟨cvC, hfC⟩ := hE1 T cvT caps hf he hr
-    refine ⟨cvC, ?_⟩
+  · obtain ⟨C, cvC, hC, hfC⟩ := hE1 T cvT caps hf he hr
+    refine ⟨C, cvC, hC, ?_⟩
     rw [Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]
     exact hfC
 
@@ -271,26 +270,26 @@ theorem EtaFamiliesClosed.cons_nonind {env : Env} {c₀ : ConstantInfo}
 former's cons and its constructor's, where the block's own η-capable
 family (the fixpoint route's structure-like block claims η at the
 former's cons) is not yet complete. -/
-@[expose] def EtaFamiliesClosedExcept (env : Env) (T : Name) : Prop :=
-  ∀ (T' : Name) (cvT : ConstantVal) (caps : IndCaps),
+@[expose] def EtaFamiliesClosedExcept (env : Env md) (T : Key md) : Prop :=
+  ∀ (T' : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T' = some (.indInfo cvT caps) → T' ≠ T → caps.eta = true →
     reservedBasisNames.contains T' = false →
-    ∃ cvC, env.find? caps.etaCtor =
-      some (.ctorInfo cvC caps.etaParams caps.etaFields)
+    ∃ C cvC, caps.etaCtor = some C ∧
+      env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)
 
-theorem EtaFamiliesClosed.except {env : Env} (h : EtaFamiliesClosed env) (T : Name) :
+theorem EtaFamiliesClosed.except {env : Env md} (h : EtaFamiliesClosed env) (T : Key md) :
     EtaFamiliesClosedExcept env T :=
   fun T' cvT caps hf _ he hr => h T' cvT caps hf he hr
 
 /-- Prepending one fresh constant that is neither a non-reserved
 η-capable former nor named other than `T` keeps the other families
 closed. -/
-theorem EtaFamiliesClosedExcept.cons {env : Env} {T : Name} {c₀ : ConstantInfo}
+theorem EtaFamiliesClosedExcept.cons {env : Env md} {T : Key md} {c₀ : ConstantInfo md}
     (hE1 : EtaFamiliesClosedExcept env T)
     (hfresh : env.find? c₀.name = none)
     (hknd : ∀ cv caps, c₀ = .indInfo cv caps → caps.eta = true →
       reservedBasisNames.contains c₀.name = true ∨ c₀.name = T) :
-    EtaFamiliesClosedExcept (⟨c₀ :: env.consts⟩ : Env) T := by
+    EtaFamiliesClosedExcept (⟨c₀ :: env.consts⟩ : Env md) T := by
   intro T' cvT caps hf hne he hr
   rw [Env.find?_cons] at hf
   split at hf
@@ -299,18 +298,19 @@ theorem EtaFamiliesClosedExcept.cons {env : Env} {T : Name} {c₀ : ConstantInfo
     rcases hknd cvT caps rfl he with hres | hT
     · rw [← hh] at hr; rw [hres] at hr; exact nomatch hr
     · exact absurd (hh.symm.trans hT) hne
-  · obtain ⟨cvC, hfC⟩ := hE1 T' cvT caps hf hne he hr
-    refine ⟨cvC, ?_⟩
+  · obtain ⟨C, cvC, hC, hfC⟩ := hE1 T' cvT caps hf hne he hr
+    refine ⟨C, cvC, hC, ?_⟩
     rw [Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]
     exact hfC
 
 /-- The families are all closed once `T`'s own is. -/
-theorem EtaFamiliesClosedExcept.closed {env : Env} {T : Name}
+theorem EtaFamiliesClosedExcept.closed {env : Env md} {T : Key md}
     (hE : EtaFamiliesClosedExcept env T)
-    (hT : ∀ (cvT : ConstantVal) (caps : IndCaps),
+    (hT : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
       env.find? T = some (.indInfo cvT caps) → caps.eta = true →
       reservedBasisNames.contains T = false →
-      ∃ cvC, env.find? caps.etaCtor = some (.ctorInfo cvC caps.etaParams caps.etaFields)) :
+      ∃ C cvC, caps.etaCtor = some C ∧
+        env.find? C = some (.ctorInfo cvC caps.etaParams caps.etaFields)) :
     EtaFamiliesClosed env := by
   intro T' cvT caps hf he hr
   by_cases hne : T' = T
@@ -320,24 +320,24 @@ theorem EtaFamiliesClosedExcept.closed {env : Env} {T : Name}
 /-- The extension shape every phase after a block's member fold has:
 non-recursor entries survive verbatim (the recursor swap replaces its
 own provisional entries), and no new former appears. -/
-@[expose] def ExtEta (env env' : Env) : Prop :=
-  (∀ (n : Name) (ci : ConstantInfo), env.find? n = some ci →
+@[expose] def ExtEta (env env' : Env md) : Prop :=
+  (∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
     (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
     env'.find? n = some ci) ∧
-  (∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
+  (∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env'.find? T = some (.indInfo cvT caps) →
     env.find? T = some (.indInfo cvT caps))
 
-theorem ExtEta.refl (env : Env) : ExtEta env env :=
+theorem ExtEta.refl (env : Env md) : ExtEta env env :=
   ⟨fun _ _ h _ => h, fun _ _ _ h => h⟩
 
-theorem ExtEta.trans {e₁ e₂ e₃ : Env} (h₁ : ExtEta e₁ e₂)
+theorem ExtEta.trans {e₁ e₂ e₃ : Env md} (h₁ : ExtEta e₁ e₂)
     (h₂ : ExtEta e₂ e₃) : ExtEta e₁ e₃ :=
   ⟨fun n ci hf hnr => h₂.1 n ci (h₁.1 n ci hf hnr) hnr,
    fun T cvT caps hf => h₁.2 T cvT caps (h₂.2 T cvT caps hf)⟩
 
 /-- One fresh install of a non-former. -/
-theorem ExtEta.cons {env : Env} {c₀ : ConstantInfo}
+theorem ExtEta.cons {env : Env md} {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none)
     (hnotind : ∀ cv caps, c₀ ≠ .indInfo cv caps) :
     ExtEta env ⟨c₀ :: env.consts⟩ := by
@@ -349,17 +349,17 @@ theorem ExtEta.cons {env : Env} {c₀ : ConstantInfo}
   · exact hf
 
 /-- Closure transfers along `ExtEta`. -/
-theorem EtaFamiliesClosed.keep {env env' : Env}
+theorem EtaFamiliesClosed.keep {env env' : Env md}
     (hE : EtaFamiliesClosed env) (hx : ExtEta env env') :
     EtaFamiliesClosed env' := by
   intro T cvT caps hf he hr
-  obtain ⟨cvC, hfC⟩ := hE T cvT caps (hx.2 T cvT caps hf) he hr
-  exact ⟨cvC, hx.1 _ _ hfC (fun _ _ _ _ hh => nomatch hh)⟩
+  obtain ⟨C, cvC, hC, hfC⟩ := hE T cvT caps (hx.2 T cvT caps hf) he hr
+  exact ⟨C, cvC, hC, hx.1 _ _ hfC (fun _ _ _ _ hh => nomatch hh)⟩
 
 /-! ## The guard, inverted -/
 
 /-- Everything `natOpGuard` checked, as separate facts. -/
-theorem natOpGuard_inv {c : Name} (h : natOpGuard env c = true) :
+theorem natOpGuard_inv {c : Key md} (h : natOpGuard env c = true) :
     natLitSupported env = true ∧
     (∀ n ∈ natOpDeps c, ∃ cvn vn hn,
       env.find? n = some (.defnInfo cvn vn hn) ∧ cvn.levelParams = []) ∧
@@ -405,7 +405,7 @@ theorem natOpGuard_inv {c : Name} (h : natOpGuard env c = true) :
       · intro hh; exact nomatch hh
 
 /-- Rebuild the guard from the separate facts. -/
-theorem natOpGuard_intro {c : Name}
+theorem natOpGuard_intro {c : Key md}
     (hs : natLitSupported env = true)
     (hdeps : ∀ n ∈ natOpDeps c, ∃ cvn vn hn,
       env.find? n = some (.defnInfo cvn vn hn) ∧ cvn.levelParams = [])
@@ -437,10 +437,10 @@ theorem natOpGuard_intro {c : Name}
     · rfl
 
 /-- The guard survives extension by a fresh constant. -/
-theorem natOpGuard_cons {c : Name} {c₀ : ConstantInfo}
+theorem natOpGuard_cons {c : Key md} {c₀ : ConstantInfo md}
     (hfresh : env.find? c₀.name = none)
     (h : natOpGuard env c = true) :
-    natOpGuard (⟨c₀ :: env.consts⟩ : Env) c = true := by
+    natOpGuard (⟨c₀ :: env.consts⟩ : Env md) c = true := by
   obtain ⟨hs, hdeps, hbool⟩ := natOpGuard_inv h
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hnn, hzz, hss, -⟩ :=
     natLitSupported_inv hs
@@ -477,7 +477,7 @@ them. -/
 /-- The guard's own consequences, in the form every operation clause
 reads them: the literal support, and that the operation and each of its
 dependencies is stored with no level parameters. -/
-theorem natOpGuard_deps {env : Env} {c : Name}
+theorem natOpGuard_deps {env : Env md} {c : Key md}
     (hguard : natOpGuard env c = true) :
     natLitSupported env = true ∧
       ∀ n ∈ natOpDeps c, ∃ cv v hh, env.find? n = some (.defnInfo cv v hh) ∧
@@ -499,7 +499,7 @@ theorem natOpGuard_deps {env : Env} {c : Name}
 
 /-- The `Bool` constructors are pinned by the guard of any operation
 whose recurrences mention them. -/
-theorem natOpGuard_bools {env : Env} {c : Name}
+theorem natOpGuard_bools {env : Env md} {c : Key md}
     (hguard : natOpGuard env c = true)
     (hc : c = natBeqName ∨ c = natBleName ∨ natDivModNames.contains c = true) :
     (∃ ci, env.find? boolTrueName = some ci ∧
@@ -527,7 +527,7 @@ theorem natOpGuard_bools {env : Env} {c : Name}
       by simpa [List.isEmpty_iff] using hF⟩
 
 /-- A guarded operation is stored as a definition. -/
-theorem natOp_stored {env : Env} {c : Name} (hg : natOpGuard env c = true)
+theorem natOp_stored {env : Env md} {c : Key md} (hg : natOpGuard env c = true)
     (hc : c ∈ natOpDeps c) :
     ∃ cv v hh, env.find? c = some (.defnInfo cv v hh) := by
   obtain ⟨-, hdeps⟩ := natOpGuard_deps hg
@@ -546,7 +546,7 @@ direction is `natOpGuard_stored` below, by computation. -/
 /-- Inversion of the reduction-time test: the operation is stored as a
 definition.  This is exactly the hypothesis `NatOpsV`/`DivModV` (and
 `NatOps`/`DivMod`) take before handing back `natOpGuard`. -/
-theorem natOpStored_inv {env : Env} {c : Name}
+theorem natOpStored_inv {env : Env md} {c : Key md}
     (h : natOpStored env c = true) :
     ∃ cv v hh, env.find? c = some (.defnInfo cv v hh) := by
   unfold natOpStored at h
@@ -560,7 +560,7 @@ theorem natOpStored_inv {env : Env} {c : Name}
 
 /-- The guard implies the reduction-time test (`c ∈ natOpDeps c` for
 every one of the sixteen guarded names). -/
-theorem natOpStored_of_guard {env : Env} {c : Name}
+theorem natOpStored_of_guard {env : Env md} {c : Key md}
     (hg : natOpGuard env c = true) (hc : c ∈ natOpDeps c) :
     natOpStored env c = true := by
   obtain ⟨cv, v, hh, hf⟩ := natOp_stored hg hc

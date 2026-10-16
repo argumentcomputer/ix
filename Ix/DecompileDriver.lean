@@ -60,7 +60,8 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
   let mut result := decompiled
   for (key, all) in groups do
     let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := key, mutCtx := default, univCtx := [] }
+      { all := {}, current := key, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
     match Ix.CompileM.CompileM.run cenv blockEnv {}
         (Ix.AuxGen.computeLeanIndFlags all) with
     | .error e =>
@@ -244,7 +245,8 @@ def fallbackPlanBlocksFromSort
   let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
   let lo := allNames[0]?.getD Ix.Name.mkAnon
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
   let sorted ← match Ix.CompileM.CompileM.run cenv blockEnv {} (do
       let mut cs : Array Ix.MutConst := #[]
       for n in allNames do
@@ -314,6 +316,9 @@ def installDecompileCallSitePlans
   if allNames.isEmpty then
     return ((callSitePlans, brecOnPlans, belowPlans), (#[], #[], #[]))
   let originalAll := allNames
+  -- Same existence rule as the compile side (A0, WB-B1/A5): derived
+  -- `.brecOn`/`.below` plans only for families Lean generates.
+  let belowLean := Ix.AuxGen.belowFamilyLeanExists (decompiledView.get? ·) originalAll
   let mut planBlocks := storedPlanBlocksForOriginalAll ixonEnv index originalAll
   if planBlocks.isEmpty then
     planBlocks ← fallbackPlanBlocksFromSort decompiledView auxPerms allNames
@@ -344,7 +349,8 @@ def installDecompileCallSitePlans
       continue
     let cenv := Ix.CompileM.CompileEnv.new { consts := decompiledView }
     let blockEnv : Ix.CompileM.BlockEnv :=
-      { all := {}, current := originalAll[0]!, mutCtx := default, univCtx := [] }
+      { all := {}, current := originalAll[0]!, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
     let plans ← match Ix.CompileM.CompileM.run cenv blockEnv {}
         (Ix.AuxGen.computeCallSitePlans block.classNames originalAll
           block.auxLayout) with
@@ -366,8 +372,8 @@ def installDecompileCallSitePlans
     -- plans/aux-recursor-alias-collision.md §2.4).
     for (name, plan) in plans do
       if let some breconName := Ix.AuxGen.recNameToBreconName name then
-        if auxMemberNames.contains breconName
-            || decompiledView.contains breconName then
+        if belowLean && (auxMemberNames.contains breconName
+            || decompiledView.contains breconName) then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
           -- Mirror the compile side: Type-level `.brecOn.go` /
           -- `.brecOn.eq` share `.brecOn`'s telescope and are referenced
@@ -389,8 +395,8 @@ def installDecompileCallSitePlans
               brecOnPlans := brecOnPlans.insert key newPlan
               newBrec := newBrec.push (key, newPlan)
       if let some belowName := Ix.AuxGen.recNameToBelowName name then
-        if auxMemberNames.contains belowName
-            || decompiledView.contains belowName then
+        if belowLean && (auxMemberNames.contains belowName
+            || decompiledView.contains belowName) then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
           -- Prop-level (IndPredBelow) `.below` families additionally
           -- expose constructors and a `.casesOn` wrapper to user code —
@@ -399,7 +405,7 @@ def installDecompileCallSitePlans
           -- `belowPlanKeyIsHead`). The below inductive itself is
           -- regenerated later, so its ctor names are derived from the
           -- PARENT inductive's ctors via the same suffix transplant
-          -- `buildBelowIndcCtor` uses. Prop-ness is signalled by the
+          -- `buildPropBelowFamily` uses. Prop-ness is signalled by the
           -- presence of a `.below.rec` aux member (Type-level `.below`
           -- is a definition and has no recursor).
           let isPropBelow :=
@@ -473,7 +479,7 @@ structure Pass2Ctx where
   mutsIndex : MutsPlanIndex
   /-- `name → addr` view of `ixonEnv.named` (Rust `resolve_addr`'s
       first hop on a deserialized state), precomputed once. -/
-  nameToAddr : Std.HashMap Ix.Name Address
+  nameToAddr : Std.HashMap Ix.Compile.ExactKey.ExactName Address
   /-- Debug-track source env (Rust `stt.lean_env`). -/
   origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo)
   /-- Sharing limits of every recompile in the run (Rust
@@ -536,17 +542,20 @@ def Pass2Ctx.cenvFor (ctx : Pass2Ctx)
     constants := {}, blobs := {}, totalBytes := 0 }
 
 /-- Run a `KBridgeM` action over the CURRENT work env, threading the
-    kernel context. Returns the action result; the caller's state gets
-    the updated `kctx`. -/
+    kernel context. The action asks the kernel it is given (`Ix.Tc` over
+    the work env's addresses, AuxGen M0; the decompile driver's
+    construction point of the `AuxKernel`). Returns the action result; the
+    caller's state gets the updated `kctx`. -/
 private def runK (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
-    (act : Ix.AuxGen.AddrMaps → Ix.AuxGen.KBridgeM α)
+    (act : Ix.AuxGen.AuxKernel → Ix.AuxGen.KBridgeM α)
     (view? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     : Except String (α × Ix.AuxGen.AuxKernelCtx) :=
   let cenv := ctx.cenvFor (view?.getD st.workEnv)
-  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
+  let kernel : Ix.AuxGen.AuxKernel := .tc (Ix.AuxGen.AddrMaps.ofCompileEnv cenv)
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
-  match Ix.CompileM.CompileM.run cenv blockEnv {} ((act maps).run st.kctx) with
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
+  match Ix.CompileM.CompileM.run cenv blockEnv {} ((act kernel).run st.kctx) with
   | .ok ((a, kctx'), _) => .ok (a, kctx')
   | .error e => .error (toString e)
 
@@ -555,7 +564,8 @@ private def runC (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
     (act : Ix.CompileM.CompileM α) : Except String α :=
   let cenv := ctx.cenvFor st.workEnv
   let blockEnv : Ix.CompileM.BlockEnv :=
-    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    { all := {}, current := lo, mutCtx := default, univCtx := [],
+        provenanceOnly := true }
   match Ix.CompileM.CompileM.run cenv blockEnv {} act with
   | .ok (a, _) => .ok a
   | .error e => .error (toString e)
@@ -622,9 +632,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         (Ix.graphConst ci)
       for r in refs do
         ingressNames := ingressNames.push r
-  match runK ctx st lo (fun maps => do
-      for n in ingressNames do
-        Ix.AuxGen.ensureInKenvOf n maps) with
+  match runK ctx st lo (fun kernel => kernel.admitSource ingressNames) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e => st := recordErr st lo s!"aux_gen ingress failed: {e}"
 
@@ -644,8 +652,8 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   let mut isProp := false
   if needsRec || needsRecOn || needsCasesOn || needsBelow
       || needsBelowRec || needsBrecon then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none maps
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none kernel
           none none) with
     | .ok ((recs, p), kctx') =>
       canonicalRecs := recs
@@ -781,8 +789,8 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   -- Phase 2: .below constants (:4522-4739).
   let mut belowConsts : Array Ix.AuxGen.BelowConstant := #[]
   if needsBelow || needsBelowRec || needsBrecon then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp maps) with
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp kernel) with
     | .ok (consts, kctx') =>
       belowConsts := consts
       st := { st with kctx := kctx' }
@@ -857,9 +865,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
           belowEnv := belowEnv.insert ctor.cnst.name (.ctorInfo ctor)
         belowClasses := belowClasses.push #[i.name]
     if !belowClasses.isEmpty then
-      match runK ctx st lo (fun maps =>
+      match runK ctx st lo (fun kernel =>
           Ix.AuxGen.generateCanonicalRecursorsWithOverlay belowClasses none
-            none maps) (view? := some belowEnv) with
+            none kernel) (view? := some belowEnv) with
       | .ok ((belowRecs, _), kctx') =>
         st := { st with kctx := kctx' }
         let belowRecMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
@@ -899,16 +907,16 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   -- Sync + kenv below-population before brecOn (:4828-4841).
   st := sync st generatedConsts
   if !belowConsts.isEmpty then
-    match runK ctx st lo (fun maps =>
-        Ix.AuxGen.populateCanonKenvWithBelow belowConsts classes maps) with
+    match runK ctx st lo (fun kernel =>
+        Ix.AuxGen.populateCanonKenvWithBelow belowConsts classes kernel) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e => st := recordErr st lo s!"populate_canon_kenv: {e}"
 
   -- Phase 4: .brecOn / .go / .eq (:4843-4936).
   if needsBrecon then
-    match runK ctx st lo (fun maps =>
+    match runK ctx st lo (fun kernel =>
         Ix.AuxGen.generateBreconConstants classes canonicalRecs belowConsts
-          isProp maps) with
+          isProp kernel) with
     | .ok (breconDefs, kctx') =>
       st := { st with kctx := kctx' }
       for d in breconDefs do
@@ -1041,8 +1049,8 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
     kctx := Ix.AuxGen.AuxKernelCtx.new
     auxPerms }
   -- Cold-start kernel prelude (decompile.rs:5140-5142).
-  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
-      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
+      kernel.admitPrelude) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e =>
     let errs := st.errors.push (Ix.Name.mkAnon, s!"prelude ingress: {e}")
@@ -1069,9 +1077,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
         for r in refs do
           if !st.ingressed.contains r then
             stack := stack.push r
-    match runK ctx st blockKey (fun maps => do
-        for n in toIngress do
-          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
+    match runK ctx st blockKey (fun kernel => kernel.admitSource toIngress .prewarm) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       let errs := st.errors.push (blockKey, s!"block ingress: {e}")
@@ -1081,7 +1087,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
   return st
 
 /-- Parallel Pass 2: wave-based workers over the aux-block dependency
-    graph, mirroring `Ix.CompileM.compileEnvParallelAux`. Each worker
+    graph (the shape of the compile driver before CQ2.14). Each worker
     runs `decompileBlockAuxGen` against a SNAPSHOT of the merged state
     (persistent structures make the snapshot free) with a worker-local
     kernel context, and ships exactly its block's outputs via the
@@ -1152,8 +1158,8 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
     dstt := pass1
     kctx := Ix.AuxGen.AuxKernelCtx.new
     auxPerms }
-  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
-      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun kernel =>
+      kernel.admitPrelude) with
   | .ok (_, kctx') => st := { st with kctx := kctx' }
   | .error e =>
     st := { st with
@@ -1179,9 +1185,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
         for r in refs do
           if !st.ingressed.contains r then
             stack := stack.push r
-    match runK ctx st blockKey (fun maps => do
-        for n in toIngress do
-          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
+    match runK ctx st blockKey (fun kernel => kernel.admitSource toIngress .prewarm) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       st := { st with
@@ -1322,18 +1326,16 @@ def decompileEnvFull (ixonEnv : Ixon.Env)
 /-- `decompileEnvFull` with the wave-parallel Pass 2
     (`decompileEnvPass2Parallel`). Same outputs — hash-identity is
     enforced by the whole-env decompile suites — with Pass-2 errors in
-    merge order rather than topo order. The recompiles run under the
-    compiler's sharing limits with the `IX_SHARING_LIMITS` override, read
-    once here (`Ix.CompileM.compilerSharingLimitsFromEnv`): an invalid
-    override fails the run before any work, as in Rust `rs_decompile_env`. -/
+    merge order rather than topo order. The recompiles run under
+    `sharingLimits`, the compiler's limits by default; the caller supplies
+    any override (the CLI from its `Ix.CompileM.DriverOptions`), as it does
+    for the compile drivers. -/
 def decompileEnvFullParallel (ixonEnv : Ixon.Env)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
     (numWorkers : Nat := 16)
+    (sharingLimits : Ix.Sharing.Exact.Limits := Ix.CompileM.compilerSharingLimits)
     : IO (Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String)
       × Pass2St) := do
-  let sharingLimits ← match ← Ix.CompileM.compilerSharingLimitsFromEnv with
-    | .ok l => pure l
-    | .error e => throw (IO.userError s!"decompileEnvFullParallel: {e}")
   -- `IX_DECOMPILE_WORKERS` overrides the worker count (memory/debug
   -- tuning); `0` selects the sequential Pass-2 driver.
   let numWorkers ← do

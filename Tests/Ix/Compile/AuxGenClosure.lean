@@ -1,8 +1,13 @@
 /-
   aux-gen-closure: auxiliary regeneration on closure-only environments.
 
-  `ix compile --consts` (and any claim built from a dependency closure)
-  hands the compiler only the seeds' transitive dependencies. Such a closure
+  A raw dependency closure (`Ix.EnvScope.collectDeps`, which any claim
+  built from a dependency closure may use, and which `ix compile --consts`
+  used before it took the selected closure, CQ2.19) hands the compiler
+  only the seeds' transitive dependencies. The cases below keep the raw
+  collector on purpose: the selected closure (`collectSelectedDeps`:
+  recursors, whole logical units, checker support) is a superset and
+  would hide the partial families tested here. Such a closure
   can hold a nested auxiliary `<all0>.brecOn_N`/`.below_N`, or one class's
   `.brecOn`, without the `.brecOn`/`.below` of the block's canonical first
   class. Each case below compiles exactly that closure and type-checks the
@@ -29,8 +34,8 @@
   `collectDeps` did not follow a definition's `all`, so the closure of
   `oddN` (or of a theorem about it) lacked `evenN`, and `ix check-rs`
   rejected the written `.ixe`: `resolve_all: Named entry for 'evenN'
-  missing`. That case compiles the closure to a file, as `ix compile
-  --consts` does, and checks the file with the meta Rust kernel, as
+  missing`. That case compiles the closure to a file, as `ix compile`
+  does, and checks the file with the meta Rust kernel, as
   `ix check-rs` does.
 
   A third case, `ix pack` on regenerated auxiliaries: a regenerated
@@ -147,7 +152,7 @@ def suite : List TestSeq := [
     for seed in seeds do
       let mut errs : Array String := #[]
       let closure := Ix.EnvScope.collectDeps env [seed]
-      -- The `ix compile --consts` path: fail-closed, no source-form fallback.
+      -- `ix compile`'s path on the raw closure: fail-closed, no source-form fallback.
       let prepared ← IO.ofExcept <|
         Ix.Compile.prepareRegisteredConstants env closure
       let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared
@@ -177,7 +182,7 @@ def suite : List TestSeq := [
       let closure := Ix.EnvScope.collectDeps env [seed]
       if !closure.any (·.1 == sibling) then
         errs := errs.push s!"closure lacks {sibling}"
-      -- The `ix compile --consts` path, written to a file …
+      -- `ix compile`'s path on the raw closure, written to a file …
       let path := (dir / s!"{seed}.ixe").toString
       let prepared ← IO.ofExcept <|
         Ix.Compile.prepareRegisteredConstants env closure

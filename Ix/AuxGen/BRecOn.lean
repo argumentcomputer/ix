@@ -26,7 +26,7 @@
   Environment access: Rust threads `lean_env: &LeanEnv` and
   `stt: &CompileState`; the Lean port reads the base compile environment
   via `lookupConst?` / `getCompileEnv` under KBridgeM, and the kernel via
-  `TcScopeSt` + `AddrMaps` (mirroring `stt`/`kctx`).
+  the `AuxKernel` interface (`AuxScope` values; mirroring `stt`/`kctx`).
 
   Deviations (behavioral no-ops):
   - the `IX_BRECON_DEBUG` stderr dumps (brecon.rs:363-371/:667-674) have no
@@ -36,6 +36,9 @@
     context strings (same note as `Ix.AuxGen.Below`);
   - `try_nat_to_usize` checked conversions vanish — `RecursorVal` counts
     are native `Nat`s.
+  - A7 (D8): out-of-range accesses are `internalIndexError`s naming the
+    block (`arrIdx`), or `none` in the `Option`-returning builders whose
+    contract already falls back on a structural precondition violation.
 
   PARITY RULE: every constructed node goes through the hash-maintaining
   smart constructors in `Ix.Environment` (`Expr.mkApp`, `Level.mkParam`,
@@ -51,13 +54,13 @@ public import Ix.AuxGen.Types
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
-public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.AuxKernel
 public import Ix.AuxGen.Below
 public section
 
 namespace Ix.AuxGen
 
-open Ix.CompileM (CompileM CompileError)
+open Ix.CompileM (CompileM CompileError arrIdx)
 
 /-! ## Level utilities (brecon.rs:2779) -/
 
@@ -67,7 +70,7 @@ open Ix.CompileM (CompileM CompileError)
     deliberate asymmetry: the `Succ` arm rebuilds with the SMART
     `mkLevelSucc` (distributes over Max) while `Max`/`Imax` use the RAW
     constructors — preserved exactly. -/
-partial def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
+def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
     : Level :=
   match lvl with
   | .param n _ => if n == param then replacement else lvl
@@ -87,9 +90,9 @@ partial def substLevelParam (lvl : Level) (param : Name) (replacement : Level)
     `Level::param(u)` for large elimination, but brecOn specializes to
     Prop, so `u -> Level::zero()`.
 
-    NOTE: the Rust catch-all `_ => expr.clone()` does NOT descend into
-    `Proj`/`Mdata`/leaf nodes — preserved exactly. -/
-partial def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
+    It descends into every subterm, `proj` and `mdata` included, as the Rust
+    function does; the remaining cases are leaves without levels. -/
+def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
     : Expr :=
   match expr with
   | .sort lvl _ => Expr.mkSort (substLevelParam lvl param replacement)
@@ -108,6 +111,8 @@ partial def substLevelInExpr (expr : Expr) (param : Name) (replacement : Level)
     Expr.mkLetE n (substLevelInExpr t param replacement)
       (substLevelInExpr v param replacement)
       (substLevelInExpr b param replacement) nd
+  | .proj n i e _ => Expr.mkProj n i (substLevelInExpr e param replacement)
+  | .mdata kvs e _ => Expr.mkMData kvs (substLevelInExpr e param replacement)
   | _ => expr
 
 /-! ## Eq/HEq application builders (brecon.rs:1284) -/
@@ -221,13 +226,15 @@ def buildReflProof (goalEq : Expr) : Option Expr := Id.run do
     return none
   let level ← match head with
     | .const name lvls _ =>
-      if name == Name.mkStr .mkAnon "Eq" && lvls.size == 1 then
-        pure lvls[0]!
+      if name == Name.mkStr .mkAnon "Eq" then
+        match lvls with
+        | #[l] => pure l
+        | _ => return none
       else
         return none
     | _ => return none
-  let alpha := args[0]!
-  let lhs := args[1]!
+  let some alpha := args[0]? | return none
+  let some lhs := args[1]? | return none
   -- rhs is args[2] — not used because Eq.refl uses LHS.
   return some (mkEqRefl level alpha lhs)
 
@@ -469,19 +476,23 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
   let mut eqDecls : Array LocalDecl := #[]
   let mut eqRetTypes : Array Expr := #[]
   for i in [0:nIndices] do
+    let some isHeq := idxIsHeq[i]? | return none
+    let some idxDecl := indexDecls[i]? | return none
+    let some idxFv := indexFvars[i]? | return none
+    let some retArg := retArgs[i]? | return none
     let eqTy ←
-      if idxIsHeq[i]! then do
-        let mut retType := indexDecls[i]!.domain
+      if isHeq then do
+        let mut retType := idxDecl.domain
         for j in [0:i] do
-          if let .fvar outerName _ := indexFvars[j]! then
-            retType := substFVar retType outerName retArgs[j]!
+          let some fvj := indexFvars[j]? | return none
+          if let .fvar outerName _ := fvj then
+            let some retj := retArgs[j]? | return none
+            retType := substFVar retType outerName retj
         eqRetTypes := eqRetTypes.push retType
-        pure (mkHeq (idxSort i) indexDecls[i]!.domain indexFvars[i]! retType
-          retArgs[i]!)
+        pure (mkHeq (idxSort i) idxDecl.domain idxFv retType retArg)
       else do
-        eqRetTypes := eqRetTypes.push indexDecls[i]!.domain
-        pure (mkEq (idxSort i) indexDecls[i]!.domain indexFvars[i]!
-          retArgs[i]!)
+        eqRetTypes := eqRetTypes.push idxDecl.domain
+        pure (mkEq (idxSort i) idxDecl.domain idxFv retArg)
     let (fvName, _) := freshFVar s!"ieq_eq_c{ctorIdx}" i
     eqDecls := eqDecls.push
       { fvarName := fvName, binderName := Name.mkStr .mkAnon "h",
@@ -521,13 +532,16 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
   -- is Eq or HEq per `idxIsHeq[i]` (must match `eqDecls`).
   let mut remaining : Array (EqBinderKind × LocalDecl) := #[]
   for (decl, i) in eqDecls.zipIdx do
+    let some isHeq := idxIsHeq[i]? | return none
+    let some idxDecl := indexDecls[i]? | return none
+    let some idxFv := indexFvars[i]? | return none
+    let some retArg := retArgs[i]? | return none
+    let some eqRetType := eqRetTypes[i]? | return none
     let kind :=
-      if idxIsHeq[i]! then
-        EqBinderKind.heq indexDecls[i]!.domain indexFvars[i]! eqRetTypes[i]!
-          retArgs[i]! (idxSort i)
+      if isHeq then
+        EqBinderKind.heq idxDecl.domain idxFv eqRetType retArg (idxSort i)
       else
-        EqBinderKind.eq indexDecls[i]!.domain indexFvars[i]! retArgs[i]!
-          (idxSort i)
+        EqBinderKind.eq idxDecl.domain idxFv retArg (idxSort i)
     remaining := remaining.push (kind, decl)
   let majorKind :=
     if majorIsHeq then
@@ -541,7 +555,8 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
   -- ordered by introduction: outer indices, major, non-IH fields.
   let mut localContext : Array LocalDecl := #[]
   for (idxDecl, i) in indexDecls.zipIdx do
-    if let .fvar fname _ := indexFvars[i]! then
+    let some idxFv := indexFvars[i]? | return none
+    if let .fvar fname _ := idxFv then
       localContext := localContext.push
         { fvarName := fname, binderName := idxDecl.binderName,
           domain := idxDecl.domain, info := idxDecl.info }
@@ -567,9 +582,9 @@ def buildMinorViaCasesSim (ctorIdx : Nat) (nonIhDecls : Array LocalDecl)
     is an application of a non-recursive inductive with no indices and a
     single 0-field constructor (`matchConstNonRecStructure` +
     `numFields == 0`), and `b`'s type is def-eq to it. -/
-def isUnitLikePair (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
-  let some ta ← eqTc.inferLean a | return false
-  let ta ← eqTc.whnfLean ta
+def isUnitLikePair (eqTc : AuxScope) (a b : Expr) : KBridgeM Bool := do
+  let some ta ← eqTc.inferType? a | return false
+  let ta ← eqTc.whnfOrInput ta
   let (head, _) := decomposeApps ta
   let .const headName _ _ := head | return false
   let isUnitLike ← do
@@ -578,14 +593,14 @@ def isUnitLikePair (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
       if iv.isRec || iv.numIndices != 0 || iv.ctors.size != 1 then
         pure false
       else
-        match ← lookupConst? iv.ctors[0]! with
+        match ← lookupConst? (← arrIdx iv.ctors 0 "isUnitLikePair: ctors") with
         | some (.ctorInfo cv) => pure (cv.numFields == 0)
         | _ => pure false
     | _ => pure false
   if !isUnitLike then
     return false
-  let some tb ← eqTc.inferLean b | return false
-  eqTc.isDefEq ta tb
+  let some tb ← eqTc.inferType? b | return false
+  eqTc.isDefEqOrFalse ta tb
 
 /-- Mirrors Rust `meta_defeq` (brecon.rs): elaborator-strength def-eq for
     Lean's `mkEqAndProof` Eq-vs-HEq binder decision
@@ -599,8 +614,8 @@ def isUnitLikePair (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
     app-congruence (same head constant) with the extended check per
     argument. Fixture: `Tests/Ix/Compile/Mutual.lean`
     `TypeBrecOnEqDefUnit`. -/
-partial def metaDefeq (eqTc : TcScopeSt) (a b : Expr) : KBridgeM Bool := do
-  if ← eqTc.isDefEq a b then
+partial def metaDefeq (eqTc : AuxScope) (a b : Expr) : KBridgeM Bool := do
+  if ← eqTc.isDefEqOrFalse a b then
     return true
   if ← isUnitLikePair eqTc a b then
     return true
@@ -633,11 +648,11 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     (minorDoms : Array Expr) (minorOffset : Nat)
     (elimLevel majorLevel : Level) (casesOnName : Name)
     (casesOnUnivs : Array Level) (casesOnSpecParams : Array Expr)
-    (recLevelParams : Array Name) (maps : AddrMaps)
+    (recLevelParams : Array Name) (kernel : AuxKernel)
     : KBridgeM (Option Expr) := do
   let nIndices := indexDecls.size
-  let outerMajor := majorFvars[0]!
-  let majorType := majorDecls[0]!.domain
+  let outerMajor ← arrIdx majorFvars 0 "buildIndexedEqValue: majorFvars"
+  let majorType := (← arrIdx majorDecls 0 "buildIndexedEqValue: majorDecls").domain
   -- Defensive: one level per index decl, else fall back to `Sort 1` (the
   -- historical hard-coded value) rather than panicking.
   let idxSort := fun (i : Nat) =>
@@ -654,15 +669,17 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     return none
 
   -- OUTER_Eq_body: `Eq (motive outer_idxs outer_major) (brecOn …) (F_1 …)`
+  let motiveCi ← arrIdx motiveFvars ci "buildIndexedEqValue: motiveFvars"
+  let fCi ← arrIdx fFvars ci "buildIndexedEqValue: fFvars"
   let outerEqBody := Id.run do
     let allFvarsOuter : Array Expr :=
       paramFvars ++ motiveFvars ++ indexFvars ++ #[outerMajor] ++ fFvars
     let breconApp := mkAppN (mkConst breconName recUnivs) allFvarsOuter
     let goApp := mkAppN (mkConst goName recUnivs) allFvarsOuter
     let goSnd := Expr.mkProj (Name.mkStr .mkAnon "PProd") 1 goApp
-    let motiveCiApp := mkAppN (mkAppN motiveFvars[ci]! indexFvars)
+    let motiveCiApp := mkAppN (mkAppN motiveCi indexFvars)
       #[outerMajor]
-    let mut fCiApp := fFvars[ci]!
+    let mut fCiApp := fCi
     fCiApp := mkAppN fCiApp indexFvars
     fCiApp := Expr.mkApp fCiApp outerMajor
     fCiApp := Expr.mkApp fCiApp goSnd
@@ -680,8 +697,9 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     let (fvName, fv) := freshFVar "ieq_ni" i
     let mut freshDomain := idxDecl.domain
     for j in [0:i] do
-      if let .fvar outerName _ := indexFvars[j]! then
-        freshDomain := substFVar freshDomain outerName newIdxFvars[j]!
+      if let .fvar outerName _ := (← arrIdx indexFvars j "buildIndexedEqValue: indexFvars") then
+        freshDomain := substFVar freshDomain outerName
+          (← arrIdx newIdxFvars j "buildIndexedEqValue: newIdxFvars")
     newIdxDecls := newIdxDecls.push
       { fvarName := fvName, binderName := idxDecl.binderName,
         domain := freshDomain, info := idxDecl.info }
@@ -698,23 +716,25 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
   -- (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`): `metaDefeq`
   -- (kernel def-eq + the elaborator's unit-like rule) on the outer and
   -- new index types decides — Eq if defEq, HEq otherwise.
-  let eqTc ← TcScopeSt.new allDecls recLevelParams maps
+  let eqTc ← AuxScope.new kernel allDecls recLevelParams
   -- The compared "new" types mention the generalized index fvars
   -- (`newIdxDecls`), which are not part of `allDecls` — push them so
   -- inference inside `metaDefeq` (the unit-like check) can type them.
-  let eqTc ← eqTc.pushLocals newIdxDecls
+  let eqTc ← eqTc.push newIdxDecls
   let mut idxIsHeq : Array Bool := #[]
   let mut idxNewTypes : Array Expr := #[]
   let mut mwDecls : Array LocalDecl := #[]
   for (idxDecl, i) in indexDecls.zipIdx do
     let outerType := idxDecl.domain
-    let newType := newIdxDecls[i]!.domain
+    let newType := (← arrIdx newIdxDecls i "buildIndexedEqValue: newIdxDecls").domain
+    let idxFv ← arrIdx indexFvars i "buildIndexedEqValue: indexFvars"
+    let newIdxFv ← arrIdx newIdxFvars i "buildIndexedEqValue: newIdxFvars"
     let typesDefeq ← metaDefeq eqTc outerType newType
     let eqTy :=
       if typesDefeq then
-        mkEq (idxSort i) outerType indexFvars[i]! newIdxFvars[i]!
+        mkEq (idxSort i) outerType idxFv newIdxFv
       else
-        mkHeq (idxSort i) outerType indexFvars[i]! newType newIdxFvars[i]!
+        mkHeq (idxSort i) outerType idxFv newType newIdxFv
     let (hName, _) := freshFVar "ieq_h" i
     mwDecls := mwDecls.push
       { fvarName := hName, binderName := Name.mkStr .mkAnon "h",
@@ -729,7 +749,7 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
   -- infer-only proof checking), discharged by `Eq.refl` and consumed by
   -- a plain `Eq.ndrec` in the minors. Fixture: `TypeBrecOnEqDefUnit`.
   let majorTypesDefeq ← metaDefeq eqTc majorType newMajorType
-  -- (Rust `drop(eq_tc)` — a no-op here; the next `TcScopeSt.new` resets.)
+  -- (Rust `drop(eq_tc)` — a no-op here; the next `AuxScope.new` resets.)
   let majorEqTy :=
     if majorTypesDefeq then
       mkEq majorLevel majorType outerMajor newMajorFvar
@@ -759,7 +779,7 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     let mi := minorOffset + ctorIdx
     if mi >= minorDoms.size then
       break
-    let minorDom := minorDoms[mi]!
+    let minorDom ← arrIdx minorDoms mi "buildIndexedEqValue: minorDoms"
 
     -- Open the minor's field binders, filter to non-IH (casesOn strips
     -- IH). Head-reduce field domains — same rationale as
@@ -780,7 +800,7 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
     let retArgs := minorRetArgs.extract 0 nIndices
 
     -- `C (spec_params|params) non_ih_fields`.
-    let ctorName := targetCtors[ctorIdx]!
+    let ctorName ← arrIdx targetCtors ctorIdx "buildIndexedEqValue: targetCtors"
     let ctorUnivs : Array Level :=
       if !casesOnSpecParams.isEmpty then
         casesOnUnivs.extract 1 casesOnUnivs.size
@@ -806,8 +826,9 @@ def buildIndexedEqValue (ci : Nat) (targetCtors : Array Name)
   -- (`refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-47`).
   for (pair, i) in (indexDecls.zip indexFvars).zipIdx do
     let (idxDecl, idxFv) := pair
+    let isHeq ← arrIdx idxIsHeq i "buildIndexedEqValue: idxIsHeq"
     let refl :=
-      if idxIsHeq[i]! then
+      if isHeq then
         mkHeqRefl (idxSort i) idxDecl.domain idxFv
       else
         mkEqRefl (idxSort i) idxDecl.domain idxFv
@@ -843,9 +864,9 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     (fFvars : Array Expr) (allDecls : Array LocalDecl)
     (allFvars : Array Expr) (minorDoms : Array Expr) (motiveCiApp : Expr)
     (elimLevel majorLevel : Level) (casesOnSpecParams : Array Expr)
-    (recLevelParams : Array Name) (maps : AddrMaps)
+    (recLevelParams : Array Name) (kernel : AuxKernel)
     : KBridgeM (Expr × Expr) := do
-  let majorFvar := majorFvars[0]!
+  let majorFvar ← arrIdx majorFvars 0 "buildTypeBreconEqFvar: majorFvars"
 
   -- --- Type ---
   -- @Eq.{elim_level} motive_ci_app (brecOn all_fvars)
@@ -854,7 +875,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
   let goApp := mkAppN (mkConst goName recUnivs) allFvars
   let goSnd := Expr.mkProj (Name.mkStr .mkAnon "PProd") 1 goApp
 
-  let mut fCiApp := fFvars[ci]!
+  let mut fCiApp ← arrIdx fFvars ci "buildTypeBreconEqFvar: fFvars"
   fCiApp := mkAppN fCiApp indexFvars
   fCiApp := Expr.mkApp fCiApp majorFvar
   fCiApp := Expr.mkApp fCiApp goSnd
@@ -892,8 +913,9 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
   let minorOffset : Nat := (ctorCounts.extract 0 ci).foldl (· + ·) 0
 
   -- casesOn universe args (shared between simple and indexed paths).
+  let majorDecl0 ← arrIdx majorDecls 0 "buildTypeBreconEqFvar: majorDecls"
   let eqCasesUnivs : Array Level := Id.run do
-    let (head, _) := decomposeApps majorDecls[0]!.domain
+    let (head, _) := decomposeApps majorDecl0.domain
     if let .const _ lvls _ := head then
       return #[Level.mkZero] ++ lvls
     else
@@ -907,7 +929,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
       recUnivs paramFvars motiveFvars indexFvars indexDecls
       indexSortLevels majorFvars majorDecls fFvars allDecls minorDoms
       minorOffset elimLevel majorLevel casesOnName eqCasesUnivs
-      casesOnSpecParams recLevelParams maps
+      casesOnSpecParams recLevelParams kernel
     if let some eqValue := eqValueOpt then
       return (eqType, eqValue)
     -- Fall through to the simple path if the indexed construction
@@ -928,8 +950,11 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
   -- Apply target motive (only one motive in casesOn):
   -- λ targs => @Eq (motive_ci targs) (brecOn ... targs ...)
   --   (F_ci targs (go ... targs ...).2)
+  let motiveDeclCi ← arrIdx motiveDecls ci "buildTypeBreconEqFvar: motiveDecls"
+  let fFvarCi ← arrIdx fFvars ci "buildTypeBreconEqFvar: fFvars"
+  let motiveFvarCi ← arrIdx motiveFvars ci "buildTypeBreconEqFvar: motiveFvars"
   let eqMotiveLam := Id.run do
-    let mt := motiveDecls[ci]!.domain
+    let mt := motiveDeclCi.domain
     let nma := countForalls mt
     let (targFvars, targDecls, _) := forallTelescope mt nma "tbeqmc" 0
 
@@ -938,11 +963,11 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     let innerBrecon := mkAppN (mkConst breconName recUnivs) innerAll
     let innerGo := mkAppN (mkConst goName recUnivs) innerAll
     let innerGoSnd := Expr.mkProj (Name.mkStr .mkAnon "PProd") 1 innerGo
-    let mut innerFCi := fFvars[ci]!
+    let mut innerFCi := fFvarCi
     innerFCi := mkAppN innerFCi targFvars
     innerFCi := Expr.mkApp innerFCi innerGoSnd
 
-    let innerMotiveApp := mkAppN motiveFvars[ci]! targFvars
+    let innerMotiveApp := mkAppN motiveFvarCi targFvars
 
     let eqMotiveBody := Expr.mkApp
       (Expr.mkApp
@@ -963,7 +988,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     let mi := minorOffset + ctorIdx
     if mi >= minorDoms.size then
       break
-    let minorDom := minorDoms[mi]!
+    let minorDom ← arrIdx minorDoms mi "buildTypeBreconEqFvar: minorDoms"
 
     -- Open minor fields; head-reduce (same rationale as
     -- `build_below_minor`); filter to non-IH (casesOn strips IH).
@@ -982,7 +1007,7 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     let innerAll : Array Expr :=
       paramFvars ++ motiveFvars ++ ctorRetArgs ++ fFvars
     let innerBrecon := mkAppN (mkConst breconName recUnivs) innerAll
-    let motiveApp := mkAppN motiveFvars[ci]! ctorRetArgs
+    let motiveApp := mkAppN motiveFvarCi ctorRetArgs
 
     let minorBody := Expr.mkApp
       (Expr.mkApp
@@ -1005,8 +1030,8 @@ def buildTypeBreconEqFvar (ci : Nat) (targetIndName breconName goName : Name)
     wrapping. -/
 def replaceMotiveWithPProdFvar (dom : Expr)
     (paramFvars motiveFvars : Array Expr) (belowNames : Array Name)
-    (recUnivs : Array Level) (rtc : TcScopeSt)
-    : KBridgeM (Expr × TcScopeSt) := do
+    (recUnivs : Array Level) (rtc : AuxScope)
+    : KBridgeM (Expr × AuxScope) := do
   let nInner := countForalls dom
   let (_innerFvars, innerDecls, leaf) := forallTelescope dom nInner "tpp" 0
 
@@ -1016,12 +1041,12 @@ def replaceMotiveWithPProdFvar (dom : Expr)
   let (_, args) := decomposeApps leaf
 
   -- motive_app: motiveFvars[j'] args
-  let mut motiveApp := motiveFvars[jPrime]!
+  let mut motiveApp ← arrIdx motiveFvars jPrime "replaceMotiveWithPProdFvar: motiveFvars"
   for a in args do
     motiveApp := Expr.mkApp motiveApp a
 
   -- below_app: belowNames[j'] params motives args
-  let mut belowApp := mkConst belowNames[jPrime]! recUnivs
+  let mut belowApp := mkConst (← arrIdx belowNames jPrime "replaceMotiveWithPProdFvar: belowNames") recUnivs
   belowApp := mkAppN belowApp paramFvars
   belowApp := mkAppN belowApp motiveFvars
   for a in args do
@@ -1030,11 +1055,11 @@ def replaceMotiveWithPProdFvar (dom : Expr)
   -- Infer PProd levels via TC, matching Lean's mkPProd (PProdN.lean:37-38).
   let mut rtc := rtc
   if !innerDecls.isEmpty then
-    rtc ← rtc.pushLocals innerDecls
+    rtc ← rtc.push innerDecls
   let lvl1 ← rtc.getLevel motiveApp
   let lvl2 ← rtc.getLevel belowApp
   if !innerDecls.isEmpty then
-    rtc ← rtc.popLocals innerDecls
+    rtc ← rtc.pop innerDecls
 
   let pprod := mkPProd lvl1 lvl2 motiveApp belowApp
 
@@ -1052,8 +1077,8 @@ def replaceMotiveWithPProdFvar (dom : Expr)
     through all minors (NOT specialised per motive). -/
 def buildTypeMinorPremiseFvar (minorDom : Expr)
     (paramFvars motiveFvars fFvars : Array Expr) (belowNames : Array Name)
-    (recUnivs : Array Level) (rlvl : Level) (rtc : TcScopeSt)
-    : KBridgeM (Expr × TcScopeSt) := do
+    (recUnivs : Array Level) (rlvl : Level) (rtc : AuxScope)
+    : KBridgeM (Expr × AuxScope) := do
   let nFields := countForalls minorDom
   let (fieldFvars, fieldDecls0, returnType) :=
     forallTelescope minorDom nFields "tmf" 0
@@ -1084,35 +1109,39 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
         paramFvars motiveFvars belowNames recUnivs rtc
       rtc := rtc'
       let (ihFvName, ihFv) := freshFVar "tmih" fi
-      lambdaDecls := lambdaDecls.push
+      let lambdaDecl : LocalDecl :=
         { fvarName := ihFvName, binderName := decl.binderName,
           domain := pprodDom, info := decl.info }
+      lambdaDecls := lambdaDecls.push lambdaDecl
+      rtc ← rtc.push #[lambdaDecl]
       lambdaFvars := lambdaFvars.push ihFv
       prodEntries := prodEntries.push (ihFv, lambdaDecls.size - 1)
     else
       lambdaDecls := lambdaDecls.push decl
       lambdaFvars := lambdaFvars.push fvar
+      -- Later IH domains can mention this ordinary field. Install the
+      -- telescope prefix before inferring those domains, not after them.
+      rtc ← rtc.push #[decl]
 
   -- PProdN.mk of prod entries (right-fold of VALUES). Lean's mkPProdMk
   -- (PProdN.lean:44-53) infers universe levels via getLevel — push the
-  -- lambda decls (with replaced IH domains) so FVars resolve.
-  rtc ← rtc.pushLocals lambdaDecls
+  -- lambda decls (with replaced IH domains) are already in scope.
 
   let (b, bType) ←
     if prodEntries.isEmpty then
       -- PUnit.{rlvl} : Sort rlvl
       pure (mkPUnitUnit rlvl, punitConst rlvl)
     else if prodEntries.size == 1 then
-      let (fv, declIdx) := prodEntries[0]!
-      pure (fv, lambdaDecls[declIdx]!.domain)
+      let (fv, declIdx) ← arrIdx prodEntries 0 "buildTypeMinorPremiseFvar: prodEntries"
+      pure (fv, (← arrIdx lambdaDecls declIdx "buildTypeMinorPremiseFvar: lambdaDecls").domain)
     else do
       -- Right-fold with mkPProdMk, inferring levels per-pair via TC.
       let lastIdx := prodEntries.size - 1
-      let (lastFv, lastDeclIdx) := prodEntries[lastIdx]!
+      let (lastFv, lastDeclIdx) ← arrIdx prodEntries lastIdx "buildTypeMinorPremiseFvar: prodEntries"
       let mut foldVal := lastFv
-      let mut foldTy := lambdaDecls[lastDeclIdx]!.domain
+      let mut foldTy := (← arrIdx lambdaDecls lastDeclIdx "buildTypeMinorPremiseFvar: lambdaDecls").domain
       for (fv, declIdx) in (prodEntries.extract 0 lastIdx).reverse do
-        let fvTy := lambdaDecls[declIdx]!.domain
+        let fvTy := (← arrIdx lambdaDecls declIdx "buildTypeMinorPremiseFvar: lambdaDecls").domain
         let fvSort ← rtc.getLevel fvTy
         let foldSort ← rtc.getLevel foldTy
         let packed := mkPProdMk fvSort foldSort fvTy foldTy fv foldVal
@@ -1124,20 +1153,20 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
   -- Conclusion: PProd.mk (F_{ret_idx} ret_args b) b
   let (_, retArgs) := decomposeApps returnType
 
-  let mut fApp := fFvars[retMotiveIdx]!
+  let mut fApp ← arrIdx fFvars retMotiveIdx "buildTypeMinorPremiseFvar: fFvars"
   for a in retArgs do
     fApp := Expr.mkApp fApp a
   fApp := Expr.mkApp fApp b
 
   -- motive_ci ret_args — the type of (F ret_args b).
-  let motiveApp := mkAppN motiveFvars[retMotiveIdx]! retArgs
+  let motiveApp := mkAppN (← arrIdx motiveFvars retMotiveIdx "buildTypeMinorPremiseFvar: motiveFvars") retArgs
 
   -- Outer PProd.mk wraps (F result, b); levels via TC (PProdN.lean:44-53).
   let lvlA ← rtc.getLevel motiveApp
   let lvlB ← rtc.getLevel bType
   let body := mkPProdMk lvlA lvlB motiveApp bType fApp b
 
-  rtc ← rtc.popLocals lambdaDecls
+  rtc ← rtc.pop lambdaDecls
 
   return (mkLambda body lambdaDecls, rtc)
 
@@ -1155,7 +1184,7 @@ def buildTypeMinorPremiseFvar (minorDom : Expr)
     from the first inductive (unused, mirroring Rust's `let _ = all0`). -/
 def buildTypeBreconFvar (ci : Nat) (recVal : RecursorVal)
     (breconName : Name) (_all0 : Name) (belowNames : Array Name)
-    (nClasses : Nat) (maps : AddrMaps) : KBridgeM (Array BRecOnDef) := do
+    (nClasses : Nat) (kernel : AuxKernel) : KBridgeM (Array BRecOnDef) := do
   -- canon_kenv is populated by `populateCanonKenvWithBelow` between
   -- and Phase 3: PUnit, PProd, parent inductives, canonical
   -- `.below` types.
@@ -1170,7 +1199,7 @@ def buildTypeBreconFvar (ci : Nat) (recVal : RecursorVal)
   let goName := Name.mkStr breconName "go"
   let eqName := Name.mkStr breconName "eq"
 
-  let elimLevel := Level.mkParam recLevelParams[0]!
+  let elimLevel := Level.mkParam (← arrIdx recLevelParams 0 "buildTypeBreconFvar: recLevelParams")
 
   -- below_names for each motive position in the canonical flat block —
   -- supplied by the caller (from `belowConsts`), Lean-source-indexed.
@@ -1210,7 +1239,7 @@ below constants for {nMotives} recursor motives")
     forallTelescope afterMinors nIndices "tbi" 0
   let (majorFvars, majorDecls, _) :=
     forallTelescope afterIndices 1 "tbj" 0
-  let majorFvar := majorFvars[0]!
+  let majorFvar ← arrIdx majorFvars 0 "buildTypeBreconFvar: majorFvars"
 
   -- Per-motive rlvl: each member of the flat block may live in a
   -- different universe. Lean (BRecOn.lean:215-220) computes ilvl via
@@ -1221,7 +1250,7 @@ below constants for {nMotives} recursor motives")
   -- dependency (see the Rust comment at brecon.rs:717-737).
   let ilvls : Array Level ← do
     let ilvlCtx : Array LocalDecl := paramDecls ++ motiveDecls
-    let mut ilvlTc ← TcScopeSt.new ilvlCtx recLevelParams maps
+    let mut ilvlTc ← AuxScope.new kernel ilvlCtx recLevelParams
     let mut out : Array Level := #[]
     for md in motiveDecls do
       -- Peel foralls from the motive type to find the major domain,
@@ -1233,7 +1262,7 @@ below constants for {nMotives} recursor motives")
       let majorDom := match idcls.back? with
         | some last => last.domain
         | none => md.domain
-      ilvlTc ← ilvlTc.pushLocals idcls
+      ilvlTc ← ilvlTc.push idcls
       let ilvlJ ←
         try
           ilvlTc.getLevel majorDom
@@ -1243,7 +1272,7 @@ below constants for {nMotives} recursor motives")
 TcScope::get_level on major domain returned {e}. This typically means \
 `canon_kenv` is missing a required inductive — check that Phase 2 \
 (populate_canon_kenv_with_below) ran before brecOn generation")
-      ilvlTc ← ilvlTc.popLocals idcls
+      ilvlTc ← ilvlTc.pop idcls
       out := out.push ilvlJ
     pure out
   -- Match Lean's BRecOn.lean:220: `mkLevelMax ilvl lvl` — raw Level.max
@@ -1253,8 +1282,8 @@ TcScope::get_level on major domain returned {e}. This typically means \
     else if elimLevel matches .zero _ then ilvlJ
     else Level.mkMax ilvlJ elimLevel
   -- The target's rlvl is used for the rec universe arg and go return type.
-  let rlvl := rlvls[ci]!
-  let ilvl := ilvls[ci]!
+  let rlvl ← arrIdx rlvls ci "buildTypeBreconFvar: rlvls"
+  let ilvl ← arrIdx ilvls ci "buildTypeBreconFvar: ilvls"
 
   -- --- Phase 2: Build F binders ---
   -- F_j : ∀ targs, I_j.below params motives targs → motive_j targs
@@ -1262,19 +1291,19 @@ TcScope::get_level on major domain returned {e}. This typically means \
   let mut fDecls : Array LocalDecl := #[]
 
   for j in [0:nMotives] do
-    let motiveType := motiveDecls[j]!.domain
+    let motiveType := (← arrIdx motiveDecls j "buildTypeBreconFvar: motiveDecls").domain
     let nMotiveArgs := countForalls motiveType
     let (innerFvars, innerDecls, _) :=
       forallTelescope motiveType nMotiveArgs s!"tbfa{j}" 0
 
     -- below_app: I_j.below params motives inner_fvars
     let belowApp := mkAppN
-      (mkAppN (mkAppN (mkConst belowNames[j]! recUnivs) paramFvars)
+      (mkAppN (mkAppN (mkConst (← arrIdx belowNames j "buildTypeBreconFvar: belowNames") recUnivs) paramFvars)
         motiveFvars)
       innerFvars
 
     -- motive_app: motiveFvars[j] inner_fvars
-    let motiveApp := mkAppN motiveFvars[j]! innerFvars
+    let motiveApp := mkAppN (← arrIdx motiveFvars j "buildTypeBreconFvar: motiveFvars") innerFvars
 
     -- F type: ∀ inner_args, below_app → motive_app
     let (belowFvName, _) := freshFVar s!"tbfb{j}" 0
@@ -1303,18 +1332,18 @@ TcScope::get_level on major domain returned {e}. This typically means \
   -- motives; push/pop indices/major/F-binders as needed (matches Lean's
   -- mkPProd/mkPProdMk which infer levels via getLevel).
   let baseCtx : Array LocalDecl := paramDecls ++ motiveDecls
-  let mut rtc ← TcScopeSt.new baseCtx recLevelParams maps
+  let mut rtc ← AuxScope.new kernel baseCtx recLevelParams
 
   -- go return type:
   -- PProd (motive_ci indices major) (below_ci params motives indices major)
-  rtc ← rtc.pushLocals indexDecls
-  rtc ← rtc.pushLocals majorDecls
+  rtc ← rtc.push indexDecls
+  rtc ← rtc.push majorDecls
 
-  let motiveCiApp := mkAppN (mkAppN motiveFvars[ci]! indexFvars)
+  let motiveCiApp := mkAppN (mkAppN (← arrIdx motiveFvars ci "buildTypeBreconFvar: motiveFvars") indexFvars)
     #[majorFvar]
   let belowCiApp := mkAppN
     (mkAppN
-      (mkAppN (mkAppN (mkConst belowNames[ci]! recUnivs) paramFvars)
+      (mkAppN (mkAppN (mkConst (← arrIdx belowNames ci "buildTypeBreconFvar: belowNames") recUnivs) paramFvars)
         motiveFvars)
       indexFvars)
     #[majorFvar]
@@ -1322,8 +1351,8 @@ TcScope::get_level on major domain returned {e}. This typically means \
   let goRetLvl2 ← rtc.getLevel belowCiApp
   let goRetType := mkPProd goRetLvl1 goRetLvl2 motiveCiApp belowCiApp
 
-  rtc ← rtc.popLocals majorDecls
-  rtc ← rtc.popLocals indexDecls
+  rtc ← rtc.pop majorDecls
+  rtc ← rtc.pop indexDecls
 
   -- go value: I.rec.{rlvl, lvls...} params [modified_motives]
   --   [modified_minors] indices major
@@ -1338,29 +1367,29 @@ TcScope::get_level on major domain returned {e}. This typically means \
   -- Modified motives: λ targs => PProd(motive_j targs, below_j params
   -- motives targs).
   for j in [0:nMotives] do
-    let mt := motiveDecls[j]!.domain
+    let mt := (← arrIdx motiveDecls j "buildTypeBreconFvar: motiveDecls").domain
     let nma := countForalls mt
     let (ifvs, idcls, _) := forallTelescope mt nma s!"tbgm{j}" 0
 
-    rtc ← rtc.pushLocals idcls
+    rtc ← rtc.push idcls
 
-    let mApp := mkAppN motiveFvars[j]! ifvs
+    let mApp := mkAppN (← arrIdx motiveFvars j "buildTypeBreconFvar: motiveFvars") ifvs
     let bApp := mkAppN
-      (mkAppN (mkAppN (mkConst belowNames[j]! recUnivs) paramFvars)
+      (mkAppN (mkAppN (mkConst (← arrIdx belowNames j "buildTypeBreconFvar: belowNames") recUnivs) paramFvars)
         motiveFvars)
       ifvs
     let mmLvl1 ← rtc.getLevel mApp
     let mmLvl2 ← rtc.getLevel bApp
     let pprodBody := mkPProd mmLvl1 mmLvl2 mApp bApp
 
-    rtc ← rtc.popLocals idcls
+    rtc ← rtc.pop idcls
 
     goVal := Expr.mkApp goVal (mkLambda pprodBody idcls)
 
   -- Push remaining context (indices, major, F-binders) for minors.
-  rtc ← rtc.pushLocals indexDecls
-  rtc ← rtc.pushLocals majorDecls
-  rtc ← rtc.pushLocals fDecls
+  rtc ← rtc.push indexDecls
+  rtc ← rtc.push majorDecls
+  rtc ← rtc.push fDecls
 
   -- Modified minors: PProd-packed, all sharing the single target `rlvl`
   -- (Lean computes rlvl once outside the per-minor loop).
@@ -1389,8 +1418,9 @@ TcScope::get_level on major domain returned {e}. This typically means \
   -- Target inductive name from the major premise domain head: for main
   -- inductives the block member; for nested auxiliaries the external
   -- inductive (e.g., List).
+  let majorDecl0 ← arrIdx majorDecls 0 "buildTypeBreconFvar: majorDecls"
   let targetIndName := Id.run do
-    let (head, _) := decomposeApps majorDecls[0]!.domain
+    let (head, _) := decomposeApps majorDecl0.domain
     match head with
     | .const name _ _ => return name
     | _ => return Name.mkAnon -- eq generation gracefully degrades
@@ -1398,7 +1428,7 @@ TcScope::get_level on major domain returned {e}. This typically means \
   -- (spec_params) applied before the block params.
   let casesOnSpec : Array Expr ←
     if ci >= nClasses then do
-      let (_, majorArgs) := decomposeApps majorDecls[0]!.domain
+      let (_, majorArgs) := decomposeApps majorDecl0.domain
       let extNParams ← match ← lookupConst? targetIndName with
         | some (.inductInfo v) => pure v.numParams
         | _ => pure 0
@@ -1407,20 +1437,17 @@ TcScope::get_level on major domain returned {e}. This typically means \
       pure #[]
   -- Per-index sort levels — Lean's `mkEq` calls `getLevel idx_type` per
   -- index (indexed inductives may have index types at any universe).
-  -- Compute while the index decls are pushed into the live `rtc` scope.
+  -- Indices, major and F-binders are still live from minor construction.
+  -- Re-pushing indexDecls here would duplicate their free-variable identities.
   let indexSortLevels : Array Level ← do
-    rtc ← rtc.pushLocals indexDecls
     let mut out : Array Level := #[]
     for d in indexDecls do
       out := out.push (← rtc.getLevel d.domain)
-    -- The restored scope is dead — `rtc` is not read past this point — but
-    -- the pop still has to run to balance the TC-side local context.
-    _ ← rtc.popLocals indexDecls
     pure out
   let eqResult ← buildTypeBreconEqFvar ci targetIndName breconName goName
     recUnivs paramFvars motiveFvars motiveDecls indexFvars indexDecls
     indexSortLevels majorFvars majorDecls fFvars allDecls allFvars
-    minorDoms motiveCiApp elimLevel ilvl casesOnSpec recLevelParams maps
+    minorDoms motiveCiApp elimLevel ilvl casesOnSpec recLevelParams kernel
 
   -- `.go` / `.brecOn` / `.eq` all reference the parent inductive's
   -- `.rec`, so Lean's `mkDefinitionValInferringUnsafe` /
@@ -1453,7 +1480,7 @@ TcScope::get_level on major domain returned {e}. This typically means \
     and the below-ctor gains (ih, proof) args. -/
 def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
     (paramFvars motiveFvars fFvars : Array Expr) (belowNames : Array Name)
-    (indUnivs : Array Level) (betaFields : Bool) : Expr := Id.run do
+    (indUnivs : Array Level) (betaFields : Bool) : CompileM Expr := do
   -- Open all minor fields; field domains reference motive FVars directly.
   let nFields := countForalls minorDom
   let (fieldFvars, fieldDecls0, _returnType) :=
@@ -1484,7 +1511,7 @@ def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
       let (_, leafArgs) := decomposeApps leaf
 
       -- Leaf below application: I_{j'}.below params motives leaf_args.
-      let mut belowLeaf := mkConst belowNames[jPrime]! indUnivs
+      let mut belowLeaf := mkConst (← arrIdx belowNames jPrime "buildPropBelowMinorFvar: belowNames") indUnivs
       belowLeaf := mkAppN belowLeaf paramFvars
       belowLeaf := mkAppN belowLeaf motiveFvars
       for a in leafArgs do
@@ -1505,14 +1532,15 @@ def buildPropBelowMinorFvar (minorDom : Expr) (belowCtorName : Name)
       -- proof arg: `F_{j'}` applied to leaf_args and `ih_fv applied to
       -- inner`. Non-reflexive: F_{j'} leaf_args ih_fv; reflexive:
       -- λ inner, F_{j'} leaf_args (ih_fv inner).
+      let fj ← arrIdx fFvars jPrime "buildPropBelowMinorFvar: fFvars"
       let proof :=
         if nInnerForalls == 0 then Id.run do
-          let mut p := fFvars[jPrime]!
+          let mut p := fj
           for a in leafArgs do
             p := Expr.mkApp p a
           return Expr.mkApp p ihFv
         else Id.run do
-          let mut p := fFvars[jPrime]!
+          let mut p := fj
           for a in leafArgs do
             p := Expr.mkApp p a
           let ihApp := mkAppN ihFv innerFvars
@@ -1560,7 +1588,7 @@ def buildPropBrecon (ci : Nat) (recVal0 : RecursorVal) (ind : InductiveVal)
   let indLevelParams := ind.cnst.levelParams
   if belowConsts.size < nMotives || ci >= nMotives then
     throw (CompileError.invalidMutualBlock
-      s!"{sortedClasses[0]![0]!.pretty}: Prop brecOn needs one .below per \
+      s!"{blockLabel sortedClasses}: Prop brecOn needs one .below per \
 motive ({nMotives}), have {belowConsts.size}")
 
   -- For Prop brecOn with large elimination (drec), substitute
@@ -1568,15 +1596,15 @@ motive ({nMotives}), have {belowConsts.size}")
   -- prepends the elimination level as level_params[0] for large
   -- recursors, so [0] is correct.
   let largeElim := recVal0.cnst.levelParams.size > indLevelParams.size
-  let recVal :=
-    if largeElim && !recVal0.cnst.levelParams.isEmpty then
-      let uParam := recVal0.cnst.levelParams[0]!
+  let recVal : RecursorVal :=
+    match (if largeElim then recVal0.cnst.levelParams[0]? else none) with
+    | some uParam =>
       { recVal0 with
         cnst := { recVal0.cnst with
           type := substLevelInExpr recVal0.cnst.type uParam Level.mkZero }
         rules := recVal0.rules.map fun r =>
           { r with rhs := substLevelInExpr r.rhs uParam Level.mkZero } }
-    else
+    | none =>
       recVal0
 
   -- Motive `j`'s `.below` and its constructors.
@@ -1631,21 +1659,22 @@ motive ({nMotives}), have {belowConsts.size}")
 
   for j in [0:nMotives] do
     -- Open motive_j's type to get inner binders (indices + major).
-    let motiveType := motiveDecls[j]!.domain
+    let motiveType := (← arrIdx motiveDecls j "buildPropBrecon: motiveDecls").domain
     let nMotiveArgs := countForalls motiveType
     let (innerFvars, innerDecls, _innerSort) :=
       forallTelescope motiveType nMotiveArgs s!"pbfa{j}" 0
 
     -- below_app: I_j.below params motives inner_args
+    let belowJ ← arrIdx belowNames j "buildPropBrecon: belowNames"
     let belowApp := Id.run do
-      let mut app := mkConst belowNames[j]! indUnivs
+      let mut app := mkConst belowJ indUnivs
       app := mkAppN app paramFvars
       app := mkAppN app motiveFvars
       app := mkAppN app innerFvars
       return app
 
     -- motive_app: motive_j inner_args
-    let motiveApp := mkAppN motiveFvars[j]! innerFvars
+    let motiveApp := mkAppN (← arrIdx motiveFvars j "buildPropBrecon: motiveFvars") innerFvars
 
     -- F_j type body: below_app → motive_app.
     let (belowFvName, _belowFv) := freshFVar s!"pbfb{j}" 0
@@ -1666,7 +1695,7 @@ motive ({nMotives}), have {belowConsts.size}")
 
   -- --- Phase 3: Build return type (for type) ---
   -- motive_ci index_fvars major_fvar
-  let retType := mkAppN (mkAppN motiveFvars[ci]! indexFvars) majorFvars
+  let retType := mkAppN (mkAppN (← arrIdx motiveFvars ci "buildPropBrecon: motiveFvars") indexFvars) majorFvars
 
   -- --- Phase 4: Build value body ---
   -- F_ci index_fvars major (I_ci.rec params below_motives below_minors
@@ -1695,10 +1724,10 @@ motive ({nMotives}), have {belowConsts.size}")
     for (belowCtorName, cidx) in classCtorNames.zipIdx do
       if globalCtorIdx + cidx >= minorDoms.size then
         break
-      let minorDom := minorDoms[globalCtorIdx + cidx]!
+      let minorDom ← arrIdx minorDoms (globalCtorIdx + cidx) "buildPropBrecon: minorDoms"
 
       -- Build the below minor using FVars.
-      let minor := buildPropBelowMinorFvar minorDom belowCtorName
+      let minor ← buildPropBelowMinorFvar minorDom belowCtorName
         paramFvars motiveFvars fFvars belowNames indUnivs nested
       recApp := Expr.mkApp recApp minor
     globalCtorIdx := globalCtorIdx + classCtorNames.size
@@ -1709,7 +1738,7 @@ motive ({nMotives}), have {belowConsts.size}")
 
   -- F_ci index_fvars major rec_app
   let valBody := Expr.mkApp
-    (mkAppN (mkAppN fFvars[ci]! indexFvars) majorFvars) recApp
+    (mkAppN (mkAppN (← arrIdx fFvars ci "buildPropBrecon: fFvars") indexFvars) majorFvars) recApp
 
   -- --- Phase 5: Close with mkForall / mkLambda ---
   let allDecls : Array LocalDecl :=
@@ -1741,7 +1770,7 @@ motive ({nMotives}), have {belowConsts.size}")
     (`.brecOn.go` + `.brecOn` + `.brecOn.eq`) generation. -/
 def generateBreconConstants (sortedClasses : Array (Array Name))
     (canonicalRecs : Array (Name × RecursorVal))
-    (belowConsts : Array BelowConstant) (isProp : Bool) (maps : AddrMaps)
+    (belowConsts : Array BelowConstant) (isProp : Bool) (kernel : AuxKernel)
     (allAux : Bool := false) : KBridgeM (Array BRecOnDef) := do
   let nClasses := sortedClasses.size
   if nClasses == 0 || canonicalRecs.isEmpty || belowConsts.isEmpty then
@@ -1749,12 +1778,18 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
 
   let mut results : Array BRecOnDef := #[]
 
-  -- Rust: `for ci in 0..n_classes.min(canonical_recs.len())
-  --   .min(below_consts.len())`.
-  let hi := min nClasses (min canonicalRecs.size belowConsts.size)
+  -- Every class needs its recursor and its `.below`; a shorter list is an
+  -- inconsistent block, refused naming it (A0, WB-F5) instead of silently
+  -- generating `.brecOn` for a prefix of the classes (brecon.rs, same
+  -- place).
+  if canonicalRecs.size < nClasses || belowConsts.size < nClasses then
+    throw (.invalidMutualBlock s!"brecOn generation for the block of \
+'{blockLabel sortedClasses}': {nClasses} classes but {canonicalRecs.size} recursors \
+and {belowConsts.size} `.below` constants")
+  let hi := nClasses
   for (pair, ci) in (canonicalRecs.extract 0 hi).zipIdx do
     let (_, recVal) := pair
-    let classRep := sortedClasses[ci]![0]!
+    let classRep ← arrIdx (← arrIdx sortedClasses ci "generateBreconConstants: sortedClasses") 0 "generateBreconConstants: class"
     let ind ←
       match ← lookupConst? classRep with
       | some (.inductInfo v) => pure v
@@ -1771,8 +1806,8 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
 
     if !isProp then
       -- Type-level: .brecOn.go + .brecOn + .brecOn.eq (BRecOn.lean path).
-      let breconName := Name.mkStr sortedClasses[ci]![0]! "brecOn"
-      let all0 := ind.all[0]!
+      let breconName := Name.mkStr classRep "brecOn"
+      let all0 ← arrIdx ind.all 0 "generateBreconConstants: all"
       -- Below names from belowConsts (source-indexed, matching
       -- canon_kenv's content hashes). Positions align with the canonical
       -- flat block: 0..nClasses = primary belows, nClasses.. = aux.
@@ -1781,7 +1816,7 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
         | .defn d => d.name
         | .indc i => i.name
       let defs ← buildTypeBreconFvar ci recVal breconName all0 belowNames
-        nClasses maps
+        nClasses kernel
       results := results ++ defs
     else
       -- Prop-level: single .brecOn theorem (IndPredBelow.lean path).
@@ -1793,7 +1828,9 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
   -- `IndPredBelow.mkBRecOn` declares one `.brecOn` theorem per motive,
   -- `<all0>.brecOn_N` for the auxiliaries (IndPredBelow.lean:185-208, 230).
   if isProp && canonicalRecs.size > nClasses then
-    if let some (.inductInfo firstInd) ← lookupConst? sortedClasses[0]![0]! then
+    if let some (.inductInfo firstInd) ← lookupConst?
+        (← arrIdx (← arrIdx sortedClasses 0 "generateBreconConstants: sortedClasses") 0
+          "generateBreconConstants: class") then
       if firstInd.isRec then
         let all0 := firstInd.all[0]?.getD firstInd.cnst.name
         for (pair, j) in
@@ -1804,9 +1841,14 @@ def generateBreconConstants (sortedClasses : Array (Array Name))
                 s!"brecOn aux recursor '{auxRecName.pretty}' is not \
 source-indexed; refusing to synthesize brecOn_{j + 1}")
           let breconName := Name.mkStr all0 s!"brecOn_{idx}"
-          let cenv ← Ix.CompileM.getCompileEnv
-          let existsInEnv := allAux || (← lookupConst? breconName).isSome
-            || cenv.nameToNamed.contains breconName
+          -- A7 (D13): the compile path passes `allAux := true`
+          -- (`Patches.lean`), so the global `nameToNamed` (what other
+          -- blocks registered) is read only on the decompile path. The
+          -- value is the one the former `allAux || …` gave.
+          let existsInEnv ← if allAux then pure true else do
+            let cenv ← Ix.CompileM.getCompileEnv
+            pure ((← lookupConst? breconName).isSome
+              || cenv.nameToNamed.contains breconName)
           if existsInEnv then
             let d ← buildPropBrecon (nClasses + j) auxRecVal firstInd
               breconName auxRecVal.numIndices sortedClasses belowConsts
@@ -1821,10 +1863,11 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
     if nAux > 0 then
       -- all[0] from the first class's inductive — Lean hangs _N names
       -- here.
-      let firstClassName := sortedClasses[0]![0]!
+      let firstClassName ← arrIdx (← arrIdx sortedClasses 0 "generateBreconConstants: sortedClasses") 0
+        "generateBreconConstants: class"
       let all0 ←
         match ← lookupConst? firstClassName with
-        | some (.inductInfo v) => pure v.all[0]!
+        | some (.inductInfo v) => arrIdx v.all 0 "generateBreconConstants: all"
         | _ => pure firstClassName
 
       for (pair, j) in
@@ -1842,11 +1885,13 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
         -- environment. Check lean_env OR stt.env.named (Ixon compile
         -- state — decompilation's work_env won't contain the constant
         -- we're about to generate).
-        let cenv ← Ix.CompileM.getCompileEnv
         -- `allAux`: see `generateBelowConstants` (brecon.rs
-        -- `generate_brecon_constants_with`).
-        let existsInEnv := allAux || (← lookupConst? breconName).isSome
-          || cenv.nameToNamed.contains breconName
+        -- `generate_brecon_constants_with`). A7 (D13): on the compile path
+        -- (`allAux := true`) the global `nameToNamed` is not read.
+        let existsInEnv ← if allAux then pure true else do
+          let cenv ← Ix.CompileM.getCompileEnv
+          pure ((← lookupConst? breconName).isSome
+            || cenv.nameToNamed.contains breconName)
         if existsInEnv then
           let ci := nClasses + j -- target motive index in the flat block
           let belowNames : Array Name := belowConsts.map fun bc =>
@@ -1854,7 +1899,7 @@ source-indexed; refusing to synthesize brecOn_{j + 1}")
             | .defn d => d.name
             | .indc i => i.name
           let defs ← buildTypeBreconFvar ci auxRecVal breconName all0
-            belowNames nClasses maps
+            belowNames nClasses kernel
           results := results ++ defs
 
   return results

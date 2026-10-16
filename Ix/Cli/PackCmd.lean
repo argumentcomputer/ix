@@ -9,10 +9,17 @@
   trust-boundary cut-points: reached cut-points are recorded in the
   bundle's `assumptions` instead of being carried (thin bundles).
 
-  The heavy lifting is `Env::prune_to_closure` (3-edge value closure of
-  `main`, display metadata carried to fixpoint) followed by
+  The bundle is the root's transitive reference closure, including the
+  constants the compiler introduced into its references, and never its
+  compilation unit: a bundle carries only what is needed to check or
+  evaluate the root, and units exist for compilation parallelism over the
+  DAG (owner, 2026-10-07). The closure is computed by Rust by address
+  (`Env::prune_to_closure`, through `Ixon.rsPackEnv`: the 3-edge value
+  closure of `main`, display metadata carried to fixpoint) followed by
   `Env::validate_closed` — the same check a receiver runs — so a written
-  bundle is closed by construction.
+  bundle is closed by construction. The `pack-units` runner
+  (`Tests.Ix.Compile.PackUnits`) checks that a root's bundle omits a unit
+  member the root does not reference.
 
   Different from `ix shard extract`: extract produces a general sub-env
   for the kernel-check pipeline (no `main`, no `assumptions`, anon-work

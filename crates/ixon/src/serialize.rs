@@ -1233,54 +1233,10 @@ fn get_name_component(
 // Named serialization
 // ============================================================================
 
-use super::env::{AuxLayout, LazyMetaWindow, Named};
+use super::env::{LazyMetaWindow, Named};
 use super::metadata::{
   ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
 };
-
-/// Serialize an `AuxLayout` side-table entry.
-///
-/// Encoding: two Vec<u64> telescopes. `usize` is written/read as `u64`
-/// (via `put_u64` / `TagN`) to avoid target-word-size divergence in
-/// cross-platform serialized envs.
-pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
-  put_u64(layout.perm.len() as u64, buf);
-  for &p in &layout.perm {
-    put_u64(p as u64, buf);
-  }
-  put_u64(layout.source_ctor_counts.len() as u64, buf);
-  for &c in &layout.source_ctor_counts {
-    put_u64(c as u64, buf);
-  }
-  put_u64(layout.evaporated.len() as u64, buf);
-  for &b in &layout.evaporated {
-    put_u8(u8::from(b), buf);
-  }
-}
-
-/// Deserialize an `AuxLayout` side-table entry.
-pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
-  let n_perm = get_u64(buf)? as usize;
-  let mut perm = Vec::with_capacity(n_perm);
-  for _ in 0..n_perm {
-    perm.push(get_u64(buf)? as usize);
-  }
-  let n_counts = get_u64(buf)? as usize;
-  let mut source_ctor_counts = Vec::with_capacity(n_counts);
-  for _ in 0..n_counts {
-    source_ctor_counts.push(get_u64(buf)? as usize);
-  }
-  let n_evap = get_u64(buf)? as usize;
-  let mut evaporated = Vec::with_capacity(n_evap);
-  for _ in 0..n_evap {
-    evaporated.push(match get_u8(buf)? {
-      0 => false,
-      1 => true,
-      x => return Err(format!("get_aux_layout: invalid evaporated flag {x}")),
-    });
-  }
-  Ok(AuxLayout { perm, source_ctor_counts, evaporated })
-}
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(
@@ -2717,8 +2673,39 @@ impl Env {
     // §5 name → constant address, from the index (no metadata parse).
     let named_addrs: FxHashMap<&Name, &Address> =
       index.named.iter().map(|n| (&n.name, &n.addr)).collect();
+    self.prune_fixpoint_streaming(
+      index,
+      data,
+      names,
+      &named_addrs,
+      &mut out,
+      &mut visited,
+      &mut pending,
+      &mut named_done,
+      assumed,
+    )?;
+    Ok(out)
+  }
+
+  /// The value and streamed named passes of
+  /// [`Self::prune_to_closure_streaming`], run until the named pass finds no
+  /// new DAG work.
+  #[cfg(not(target_arch = "riscv64"))]
+  #[allow(clippy::too_many_arguments)]
+  fn prune_fixpoint_streaming(
+    &self,
+    index: &LazyIndex,
+    data: &[u8],
+    names: &FxHashMap<Address, Name>,
+    named_addrs: &FxHashMap<&Name, &Address>,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut std::collections::VecDeque<Address>,
+    named_done: &mut FxHashSet<Name>,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<(), String> {
     loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+      self.prune_value_pass(out, visited, pending, assumed)?;
 
       // ── Named pass, streamed: every §5 entry is parsed (boundaries
       // require it — no length sidecar), but only entries whose
@@ -2734,29 +2721,28 @@ impl Env {
         }
         named_done.insert(name.clone());
         Self::carry_named_entry(
-          &mut out,
+          out,
           name,
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
           &|a| self.holds_or_assumed(a, assumed),
-          &mut visited,
-          &mut pending,
+          visited,
+          pending,
           &mut named_refs,
         )?;
       }
       Self::enqueue_named_refs(
         named_refs,
         &|nm| named_addrs.get(nm).map(|a| (*a).clone()),
-        &mut visited,
-        &mut pending,
+        visited,
+        pending,
       );
 
       if pending.is_empty() {
-        break;
+        return Ok(());
       }
     }
-    Ok(out)
   }
 
   /// Anonymous-only deserialization: read the header + §1 blobs +

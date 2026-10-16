@@ -187,6 +187,24 @@ impl LazyConstant {
     }
   }
 
+  /// [`Self::from_constant`] (`cache` true) or
+  /// [`Self::from_constant_uncached`] (`cache` false) for a constant the
+  /// caller has already serialized: `bytes` must be `c`'s serialization,
+  /// which is not computed again.
+  pub fn from_serialized(c: Constant, bytes: Vec<u8>, cache: bool) -> Self {
+    debug_assert!({
+      let mut buf = Vec::new();
+      c.put(&mut buf);
+      buf == bytes
+    });
+    LazyConstant {
+      bytes: BytesSource::Heap(bytes.into()),
+      cache: cache.then(|| Arc::new(c)),
+      pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
+    }
+  }
+
   /// Like [`Self::from_constant`] but drops the structured value after
   /// serializing (`cache: None`), so the entry costs only its bytes and
   /// `get()` re-parses per access — the same policy as

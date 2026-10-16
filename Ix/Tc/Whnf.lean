@@ -26,10 +26,18 @@ Errors inside K-synthesis, struct-eta, and decidable probes are swallowed
 (state mutations survive — EStateM parity with Rust `&mut`).
 
 v1 scope (per plan): Nat literal arithmetic + succ-collapse + linear-rec,
-String machinery, platform bits, reduceBool/reduceNat markers, Nat
-decidables, Int decidable literal normalization, and BitVec natives
-(`BitVec.toNat/ult/decide-lt` — load-bearing for UInt-heavy grind proofs,
-which otherwise descend into Nat.rec towers and trip maxDefEqDepth).
+String machinery, reduceBool/reduceNat markers, Nat decidables, Int
+decidable literal normalization, and BitVec natives (`BitVec.toNat/ult` —
+load-bearing for UInt-heavy grind proofs, which otherwise descend into
+Nat.rec towers and trip maxDefEqDepth).
+
+Every native rule is keyed on a function's address and reads every argument
+it depends on. A class method (`OfNat.ofNat`, `LT.lt`, `SizeOf.sizeOf`)
+takes its value from an instance a prover chooses, so none is recognized by
+its type argument: it reduces by unfolding the instance. Nothing reduces
+beyond Lean's kernel either: `System.Platform.numBits` stays the value of
+the opaque `getNumBits ()`, and a projection stays outside a recursor whose
+major is stuck.
 -/
 
 public section
@@ -537,41 +545,6 @@ def cleanupNatOffsetMajor (e : KExpr m) :
     else do mkNatAdd base (natExprFromValue predOffset)
   return some (← mkNatSucc pred)
 
-def projectDecidableFinValMinor (id : KId m) (field : UInt64)
-    (minor : KExpr m) : RecM m (Option (KExpr m)) := do
-  let .lam name bi dom body _ := minor | return none
-  let proj ← TcM.intern (KExpr.mkPrj id field body)
-  return some (← TcM.intern (KExpr.mkLam name bi dom proj))
-
-/-- `(Decidable.rec … : Fin n).val` → push the projection into both minors
-    (whnf.rs `try_reduce_fin_val_decidable_rec`). -/
-def tryReduceFinValDecidableRec (id : KId m) (field : UInt64)
-    (head : KExpr m) (args : Array (KExpr m)) :
-    RecM m (Option (KExpr m)) := do
-  if (← get).noAccel then return none
-  let p ← prims
-  if id.addr != p.fin.addr || field != 0 then
-    return none
-  let .const recId recUs _ := head | return none
-  if recId.addr != p.decidableRec.addr || args.size < 5 then
-    return none
-  let .lam motiveName motiveBi motiveDom _ _ := args[1]! | return none
-  let some falseMinor ← projectDecidableFinValMinor id field args[2]!
-    | return none
-  let some trueMinor ← projectDecidableFinValMinor id field args[3]!
-    | return none
-  let natTy ← TcM.intern (.mkConst p.nat #[])
-  let motive ← TcM.intern (KExpr.mkLam motiveName motiveBi motiveDom natTy)
-  let mut result ← TcM.intern (KExpr.mkConst recId recUs)
-  result ← TcM.intern (KExpr.mkApp result args[0]!)
-  result ← TcM.intern (KExpr.mkApp result motive)
-  result ← TcM.intern (KExpr.mkApp result falseMinor)
-  result ← TcM.intern (KExpr.mkApp result trueMinor)
-  result ← TcM.intern (KExpr.mkApp result args[4]!)
-  for arg in args.extract 5 args.size do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  return some result
-
 /-- Rewrite an applied projection-wrapper definition to a `prj` node. -/
 def tryReduceProjectionDefinition (e : KExpr m) :
     RecM m (Option (KExpr m)) := do
@@ -626,8 +599,9 @@ def isStuckNatPredicateProbe (e : KExpr m) : RecM m Bool := do
     | _ => return false
   | _ => return false
 
-/-- `(width, n)` from `BitVec.ofNat width n` or
-    `OfNat.ofNat (BitVec width) n inst…`. -/
+/-- `(width, n)` from `BitVec.ofNat width n`. The numeral
+    `@OfNat.ofNat (BitVec width) n inst` is not read here: its value is
+    `inst`'s. -/
 def bitvecOfNatArgs (e : KExpr m) :
     RecM m (Option (KExpr m × KExpr m)) := do
   let p ← prims
@@ -635,12 +609,6 @@ def bitvecOfNatArgs (e : KExpr m) :
   let .const id _ _ := head | return none
   if id.addr == p.bitVecOfNat.addr && args.size == 2 then
     return some (args[0]!, args[1]!)
-  if id.addr != p.ofNatOfNat.addr || args.size < 2 then
-    return none
-  let (typeHead, typeArgs) := args[0]!.collectSpine
-  let .const typeId _ _ := typeHead | return none
-  if typeId.addr == p.bitVec.addr && typeArgs.size == 1 then
-    return some (typeArgs[0]!, args[1]!)
   return none
 
 def charOfNatExpr (n : Nat) : RecM m (Option (KExpr m)) := do
@@ -987,7 +955,7 @@ def whnfNoDeltaReducersStep (flags : WhnfFlags)
   if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
     return .next reduced
   -- Native/string before projection-definition rewriting (wrappers like
-  -- Subtype.val are projection definitions; once rewritten to Prj the
+  -- String.toByteArray are projection definitions; once rewritten to Prj the
   -- recognizers no longer see the head).
   if let some reduced ← tryReduceNative cur then
     return .next reduced
@@ -1279,15 +1247,13 @@ def synthCtorWhenK (major : KExpr m) (recId : KId m)
 
 /- Projection reduction is split at the String-literal preprocessing
 boundary.  Besides giving verification an induction-free seam, this keeps
-the accelerated `Fin.val` probe and lazy constructor lookup in one tail whose
-evaluation order is shared by literal and non-literal inputs. -/
+the lazy constructor lookup in one tail whose evaluation order is shared by
+literal and non-literal inputs. -/
 
 /-- Projection tail after any String-literal expansion and recursive WHNF. -/
-def tryProjReduceTail (id : KId m) (field : UInt64) (wval : KExpr m) :
+def tryProjReduceTail (_id : KId m) (field : UInt64) (wval : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let (head, args) := wval.collectSpine
-  if let some result ← tryReduceFinValDecidableRec id field head args then
-    return some result
   let .const ctorId _ _ := head | return none
   let ctorParams ← match (← TcM.tryGetConst ctorId) with
     | some (.ctor (params := params) ..) => pure params.toNat
@@ -1302,8 +1268,7 @@ def tryProjPrepare (wval : KExpr m) : RecM m (KExpr m) :=
       whnfRec expanded
   | _ => pure wval
 
-/-- Projection of a ctor application (with string-literal expansion first,
-    and the `Fin.val`-through-`Decidable.rec` special case). -/
+/-- Projection of a ctor application (with string-literal expansion first). -/
 def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let wval ← tryProjPrepare wval
@@ -1850,22 +1815,9 @@ def tryReduceBitvecUlt (width lhs rhs : KExpr m) :
     return some result
   return none
 
-/-- `LT.lt (BitVec w) inst x y ⇒ ult w x y`. -/
-def tryReduceBitvecLtProp (prop : KExpr m) :
-    RecM m (Option (KExpr m)) := do
-  let p ← prims
-  let (head, args) := prop.collectSpine
-  let .const id _ _ := head | return none
-  if id.addr != p.ltLt.addr || args.size != 4 then
-    return none
-  let (typeHead, typeArgs) := args[0]!.collectSpine
-  let .const typeId _ _ := typeHead | return none
-  if typeId.addr != p.bitVec.addr || typeArgs.size != 1 then
-    return none
-  tryReduceBitvecUlt typeArgs[0]! args[2]! args[3]!
-
-/-- BitVec native reduction: `BitVec.toNat`, `BitVec.ult`, and
-    `Decidable.decide (LT.lt (BitVec w) …)`. -/
+/-- BitVec native reduction: `BitVec.toNat` and `BitVec.ult`. `decide` of
+    `@LT.lt (BitVec w) inst x y` is not recognized: the proposition is
+    `inst`'s. -/
 def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if (← get).noAccel then return none
   let p ← prims
@@ -1878,10 +1830,6 @@ def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if id.addr == p.bitVecUlt.addr && args.size ≥ 3 then
     if let some result ← tryReduceBitvecUlt args[0]! args[1]! args[2]! then
       return some (← finishAppResult result args 3)
-    return none
-  if id.addr == p.decidableDecide.addr && args.size ≥ 2 then
-    if let some result ← tryReduceBitvecLtProp args[0]! then
-      return some (← finishAppResult result args 2)
   return none
 
 /-- Execute an already recognized `Lean.reduceBool`/`Lean.reduceNat` marker.
@@ -1924,28 +1872,8 @@ separates it from the re-entrancy guard and recursive callback. -/
 def planNativeReduction (p : Primitives m) (e : KExpr m)
     (headAddr : Address) (args : Array (KExpr m)) :
     NativeReductionPlan m := Id.run do
-  let isUnitSizeofImpl := headAddr == p.punitSizeOf1.addr && args.size == 1
   if e.lbr > 0 then
-    if isUnitSizeofImpl then
-      return .done (some (natLiteral 1))
     return .done none
-  -- `System.Platform.numBits` via the subtype projection of getNumBits ().
-  if headAddr == p.subtypeVal.addr && args.size == 3 then
-    let (valueHead, valueArgs) := args[2]!.collectSpine
-    if valueArgs.size == 1 then
-      if let .const valueId _ _ := valueHead then
-        if valueId.addr == p.systemPlatformGetNumBits.addr then
-          return .done (some (natLiteral 64))
-  -- PUnit/Unit SizeOf instance is extensionally the constant 1.
-  if headAddr == p.sizeOfSizeOf.addr && args.size == 3 then
-    let (tyHead, _) := args[0]!.collectSpine
-    if let .const tyId _ _ := tyHead then
-      if tyId.addr == p.unit.addr || tyId.addr == p.punit.addr then
-        return .done (some (natLiteral 1))
-  if isUnitSizeofImpl then
-    return .done (some (natLiteral 1))
-  if headAddr == p.systemPlatformNumBits.addr && args.isEmpty then
-    return .done (some (natLiteral 64))
   let isReduceBool := headAddr == p.reduceBool.addr
   let isReduceNat := headAddr == p.reduceNat.addr
   if !isReduceBool && !isReduceNat then
@@ -1954,9 +1882,10 @@ def planNativeReduction (p : Primitives m) (e : KExpr m)
     return .done none
   return .marker isReduceBool args[0]!
 
-/-- Native reduction: `Lean.reduceBool/reduceNat` markers,
-    `System.Platform.numBits ⇒ 64` (also the `Subtype.val (getNumBits ())`
-    form), and the PUnit/Unit SizeOf singletons. -/
+/-- Native reduction: the `Lean.reduceBool/reduceNat` markers, and nothing
+    else. As in Lean's kernel, `System.Platform.numBits` stays the value of
+    the opaque `getNumBits ()`, and `SizeOf.sizeOf` reduces through its
+    instance like any class method. -/
 def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if (← get).noAccel then return none
   let (head, args) := e.collectSpine

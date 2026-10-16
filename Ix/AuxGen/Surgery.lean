@@ -309,6 +309,7 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
     -- canonical class-grouped order); aux minors follow the aux motive's
     -- decision, mapped into the canonical aux band at `nCanonUserMinors`.
     let mut minorKeep : Array Bool := #[]
+    let mut minorInBlock : Array Bool := #[]
     let mut sourceToCanonMinor : Array Nat := #[]
     let mut classMinorPlaced : Array Nat := Array.replicate nClasses 0
 
@@ -319,6 +320,7 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
       let parentKept := motiveKeep[srcI]!
       for ctorJ in [0:nCtors] do
         minorKeep := minorKeep.push parentKept
+        minorInBlock := minorInBlock.push sourceInBlock[srcI]!
         if parentKept then
           let canonPos :=
             canonMinorOffset[srcClass]! + classMinorPlaced[srcClass]!
@@ -362,6 +364,7 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
         let base := (canonI.bind fun ci => canonAuxOffset[ci]?).getD 0
         for k in [0:nCtors] do
           minorKeep := minorKeep.push parentKept
+          minorInBlock := minorInBlock.push (sourceInBlock.getD srcI false)
           -- Both kept and unkept positions reuse the canonical slot — this
           -- mirrors the user-side mapping where dropped sources still
           -- record where their canonical sibling landed.
@@ -373,11 +376,13 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
       while minorKeep.size < nSourceMinors do
         let k := sourceToCanonMinor.size - nUserMinors
         minorKeep := minorKeep.push true
+        minorInBlock := minorInBlock.push true
         sourceToCanonMinor := sourceToCanonMinor.push (nCanonUserMinors + k)
     | none =>
       -- Identity mapping when no layout is provided (surgery.rs:609).
       for k in [0:nAuxMinors] do
         minorKeep := minorKeep.push true
+        minorInBlock := minorInBlock.push true
         sourceToCanonMinor := sourceToCanonMinor.push (nCanonUserMinors + k)
 
     return {
@@ -385,6 +390,7 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
       motiveKeep, minorKeep
       sourceToCanonMotive, sourceToCanonMinor
       sourceInBlock
+      minorInBlock
       headRewrite := none }
 
   -- Build a plan for an EVAPORATED aux recursor `<all0>.rec_{auxJ+1}`
@@ -423,6 +429,7 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
         sourceToCanonMotive := planMotiveMap
         sourceToCanonMinor := planMinorMap
         sourceInBlock := planInBlock
+        minorInBlock := minorKeep
         headRewrite := some { targetRec, targetMotivePos := xPos } }
 
   -- Register plans for each user inductive's `X.rec`

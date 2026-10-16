@@ -126,31 +126,23 @@ jobs:
         include:
           - name: Lake ignored tests (compile pipeline)
             kind: lake
-            test_args: >-
-              --ignored
-              rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
-              graph-cross condense-cross rust-serialize ixon-corpus
-              rust-decompile validate-aux aux-gen-diff decompile-diff
-              aux-gen-closure canon-closure-aux
+            test_args: --tier ci:compile-pipeline
+          - name: Lake ignored tests (compiler closures)
+            kind: lake
+            test_args: --tier ci:compiler-closures
           - name: Lake ignored tests (compile)
             kind: lake
-            test_args: --ignored compile
+            test_args: --tier ci:compile
           - name: Lake ignored tests (decompile)
             kind: lake
-            test_args: --ignored decompile
+            test_args: --tier ci:decompile
           - name: Lake ignored tests (misc)
             kind: lake
-            test_args: >-
-              --ignored
-              shard-map catalog-dedup commit-io fidelity-initstd
-              kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
-              rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
+            test_args: --tier ci:misc
             zk_voting: true
           - name: Ix.Tc unit and parity tests
             kind: tc
-            test_args: >-
-              tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
-              tc-pins tc-accel-diff
+            test_args: --tier ci:tc
           - name: Certified kernel
             kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
@@ -219,7 +211,7 @@ jobs:
         if: ${{ matrix.kind == 'tc' }}
         run: |
           lake test --wfail -- tc-unit
-          lake test --wfail -- --ignored ${{ matrix.test_args }}
+          lake test --wfail -- ${{ matrix.test_args }}
 
       # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs

@@ -71,11 +71,20 @@
                        terms (`pinnedOrder_eq_fast`; `pinnedOrder`)
   * `Exact.KnapsackFast` the rank-based table-count knapsack
                        (`uniformKnapsack_eq_fast`; `uniformKnapsack`)
+  * `Exact.AreaSearch` the component search on the components' areas only,
+                       with the truncated evaluation and a checked opacity
+                       test (`searchComponentsArea`; equal to the loop
+                       `searchComponentsWith` on a stage's tables,
+                       `AreaProof.searchComponentsArea_eq`, proved in
+                       `Exact.AreaRowsRel`, `Exact.AreaClosureRows`,
+                       `Exact.AreaTruncRows`, `Exact.AreaCostEq`,
+                       `Exact.AreaBlockEq` and `Exact.AreaSearchEq`)
   * `Exact.TieredFast` recompiled copies of `allocate`, `tieredAtWidth`,
                        `canonicalTieredCore`, `canonicalTieredExpanded` and
                        `optimizeUniformExpanded` (`*_eq_C`), so their callers
                        reach the fast parts above (a csimp applies only to
-                       code compiled after it)
+                       code compiled after it); their component loop is
+                       `searchComponentsArea`
 
   Shared helpers and oracles:
   * `Exact.SortedSets` ascending lists as sets: first differences, the tie
@@ -86,7 +95,9 @@
   recompiled copy attached by `f_eq_C` (`Exact.TieredFast`); `fF` and `fP`
   take precomputed tables (`Prep`, graph facts) as arguments and are proved
   equal by unfolding (`f_eq_F`, `rematerialize_eq_P`); `fL` is the area- and
-  closure-local form of a uniform-search step; `searchComponentsVia` is
+  closure-local form of a uniform-search step, `fA` its area-only form;
+  `fG` is an `fF` whose component loop is `searchComponentsArea`, proved equal
+  after the DAG checks (`Exact.TieredFast`); `searchComponentsVia` is
   `searchComponents` written as `searchComponentsWith` on the stage's tables,
   so that compiled code reaches `searchComponentsWithFast`.
 -/

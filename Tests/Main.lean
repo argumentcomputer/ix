@@ -14,13 +14,52 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.NestedAgreement
+import Tests.Ix.Compile.Canon
+import Tests.Ix.Compile.CanonClique
+import Tests.Ix.Compile.AlphaEq
+import Tests.Ix.Compile.MotiveEq
+import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
+import Tests.Ix.Compile.AuxCert
+import Tests.Ix.Compile.IndFlags
+import Tests.Ix.Compile.ClaimConflict
+import Tests.Ix.Compile.ClaimOrder
+import Tests.Ix.Compile.ExpressionIndex
+import Tests.Ix.Compile.ExpressionFrame
+import Tests.Ix.Compile.ExactKey
+import Tests.Ix.Compile.UniverseCache
+import Tests.Ix.Compile.DriverInput
+import Tests.Ix.Compile.LocalBlob
+import Tests.Ix.Compile.IndexSafety
+import Tests.Ix.Compile.BridgeBoundaries
+import Tests.Ix.Compile.BridgeScopes
+import Tests.Ix.Compile.BridgeProvenance
+import Tests.Ix.Compile.TableWorklist
+import Tests.Ix.Compile.HeaderCounts
+import Tests.Ix.Compile.PayloadArrays
+import Tests.Ix.Compile.UniverseWire
+import Tests.Ix.Compile.GroundRefusal
+import Tests.Ix.Compile.SelectedClosure
+import Tests.Ix.Compile.ClosureWhole
+import Tests.Ix.Compile.CheckerSupport
+import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.Oracle
+import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.SurgeryTests
+import Tests.Ix.AuxGen.AuxKernelTests
+import Tests.Ix.AuxGen.ElimRuleTests
+import Tests.Ix.AuxGen.FlatBlockTests
+import Tests.Ix.AuxGen.LevelEgressTests
+import Tests.Ix.AuxGen.ComponentsTests
+import Tests.Ix.AuxGen.FlatBlockSource
+import Tests.Ix.AuxGen.FlatBlockInitStd
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -34,8 +73,13 @@ import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
+import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
+import Tests.Ix.Kernel.SourceIngress
+import Tests.Ix.Kernel.BundleEvidence
+import Tests.Ix.Cert.Statement
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -49,6 +93,7 @@ import Tests.Ix.SourceContract.SyntaxCheck
 import Tests.Ix.SourceContract.Driver
 import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
+import Tests.Ix.Tc.CanonicalCheck
 import Tests.Ix.Tc.Substrate
 import Tests.Ix.Tc.IxonFixtures
 import Tests.Ix.Tc.WhnfTests
@@ -83,114 +128,117 @@ import Tests.Ix.CompileFidelity
 import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
 import Tests.Ix.TruthMines
+import Tests.Registry
+import Tests.Ix.RustCompile
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
 
-/-- Runs the full compile → serialize → decompile roundtrip over the given
-    constants and returns the number of failures (0 = clean): decompile
-    mismatches, or a non-zero constant count if a phase aborted. -/
-@[extern "rs_tmp_decode_const_map"]
-opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
-
-/-- Primary test suites - run by default -/
-def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
-  ("ffi", Tests.FFI.suite),
-  ("meta-env", Tests.Ix.MetaEnv.suite),
-  ("catalog", Tests.Ix.Catalog.suite),
-  ("import-ixe", Tests.Ix.ImportIxe.suite),
-  ("truthmines-spec", Tests.Ix.TruthMinesRecords.suite),
-  ("ixon", Tests.Ixon.suite),
-  ("ixon-syntax", Tests.IxonSyntax.suite),
-  ("claim", Tests.Claim.suite),
-  ("merkle", Tests.Merkle.suite),
-  ("assumption-tree", Tests.AssumptionTree.suite),
-  ("commit", Tests.Commit.suite),
-  ("canon", [Tests.CanonM.suite]),
-  ("keccak", Tests.Keccak.suite),
-  ("exact-sharing", Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
-  ("exact-sharing-ffi", Tests.SharingExactFFI.suite),
-  ("source-contract", Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
-  ("graph-unit", Tests.Ix.GraphM.suite),
-  ("condense-unit", Tests.Ix.CondenseM.suite),
-  ("bench-measures", Tests.Ix.BenchMeasures.suite),
-  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
-  ("ground-unit", Tests.Ground.suite),
-  ("aiur-cross", [AiurTests.Cross.tests]),
-  ("aiur-cost", [AiurTests.Cost.tests]),
-  ("aiur-trace-plan", [AiurTests.TracePlan.tests]),
-  ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
+open Tests.Registry in
+/-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
+entries run with no arguments; the others are named, or selected by tier
+(`--tier ci:<job>`, `landing`, `manual`). -/
+def registry : List Entry := [
+  -- primary suites
+  .suite "ffi" .primary Tests.FFI.suite,
+  .suite "meta-env" .primary Tests.Ix.MetaEnv.suite,
+  .suite "catalog" .primary Tests.Ix.Catalog.suite,
+  .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
+  .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
+  .suite "ixon" .primary Tests.Ixon.suite,
+  .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
+  .suite "claim" .primary Tests.Claim.suite,
+  .suite "merkle" .primary Tests.Merkle.suite,
+  .suite "assumption-tree" .primary Tests.AssumptionTree.suite,
+  .suite "commit" .primary Tests.Commit.suite,
+  .suite "canon" .primary [Tests.CanonM.suite],
+  .suite "keccak" .primary Tests.Keccak.suite,
+  .suite "exact-sharing" .primary (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
+  .suite "exact-sharing-ffi" .primary Tests.SharingExactFFI.suite,
+  .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  .suite "graph-unit" .primary Tests.Ix.GraphM.suite,
+  .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
+  -- Pass 1's clique order: the pinned choice compares last
+  .suite "canon-clique" .primary Tests.Ix.Compile.CanonClique.suite,
+  -- the image generator's expression comparisons: raw-exact alpha equality, and motive
+  -- matching up to canonical universes (Ix.Compile.Image)
+  .suite "image-alpha-eq" .primary Tests.Ix.Compile.AlphaEq.suite,
+  .suite "image-motive-eq" .primary Tests.Ix.Compile.MotiveEq.suite,
+  .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
+  .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
+    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
+    ++ Tests.AuxGen.LevelEgress.suite ++ Tests.AuxGen.Components.suite),
+  -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
+  .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
+  -- expression wire indices that do not fit a UInt64 are refused, never wrapped
+  .suite "expression-index" .primary Tests.Ix.Compile.ExpressionIndex.suite,
+  -- the ordinary expression compiler's frame: spines, caching, failure effects, DAGs
+  .suite "expression-frame" .primary Tests.Ix.Compile.ExpressionFrame.suite,
+  -- exact expression-cache keys: digest aliases never identify terms; DAG comparison
+  .suite "exact-expression-key" .primary Tests.Ix.Compile.ExactKey.suite,
+  -- exact universe-cache keys: the level and its complete parameter context
+  .suite "universe-cache" .primary Tests.Ix.Compile.UniverseCache.suite,
+  -- auxiliary dump inputs keyed by the canonical member, not the Tarjan representative
+  .suite "aux-dump-inputs" .primary Tests.Compile.AuxGenDiff.suite,
+  -- the compile drivers refuse a condensation block without a reference set
+  .suite "compile-driver-input" .primary Tests.Ix.Compile.DriverInput.suite,
+  .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
+  .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
+  -- the aux kernel bridges refuse what they cannot convert (D-12)
+  .suite "compiler-bridge-boundaries" .primary Tests.Ix.Compile.BridgeBoundaries.suite,
+  .suite "compiler-bridge-scopes" .primary Tests.Ix.Compile.BridgeScopes.suite,
+  .suite "compiler-provenance" .primary Tests.Ix.Compile.BridgeProvenance.suite,
+  .suite "table-worklist" .primary Tests.Ix.Compile.TableWorklist.suite,
+  .suite "header-count" .primary Tests.Ix.Compile.HeaderCounts.suite,
+  .suite "payload-arrays" .primary Tests.Ix.Compile.PayloadArrays.suite,
+  .suite "universe-wire" .primary Tests.Ix.Compile.UniverseWire.suite,
+  -- selected closures (`collectSelectedDeps`): whole logical units, a
+  -- matcher's unit, mutual siblings, checker support from `Role.deps`
+  .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  .suite "aiur-cross" .primary [AiurTests.Cross.tests],
+  .suite "aiur-cost" .primary [AiurTests.Cost.tests],
+  .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
+  .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
   -- the Ixon reader against a direct translation of compiled Lean constants
-  ("kernel-reader-roundtrip", Tests.Ix.Kernel.ReaderRoundtrip.suite),
+  .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
+  -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
+  .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
+  -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
+  -- the well-founded operations' Init closure without the certificate theorems
+  .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
+  -- AuxGen M1: the canonical flat blocks in Source mode, σ, the alias collapse resolved
+  .suite "auxgen-flat-source" .primary Tests.Ix.AuxGen.FlatBlockSource.suite,
+  -- the certification statements on the same fixtures: compile parity, and
+  -- the per-root hypotheses and conclusion
+  .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
   -- the environment check's persistent read cache: a run from the mapped plan gives the live rows
-  ("kernel-read-cache", Tests.Ix.Kernel.ReadCache.suite),
-  ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
+  .suite "kernel-read-cache" .primary Tests.Ix.Kernel.ReadCache.suite,
+  .suite "primitive-address-parity" .primary (Tests.Ix.Kernel.BuildPrimitives.paritySuite
     ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
-  ("decompile-unit", Tests.Decompile.unitSuite),
-  ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
+  .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
+  .suite "tc-unit" .primary (Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
-]
-
-/-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
-def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
-  ("shard-map", Tests.ShardMap.suite),
-  ("compile-determinism", Tests.Ix.CompileDeterminism.suite),
-  ("fidelity-initstd", Tests.Ix.CompileFidelity.initStdSuite),
-  ("fidelity-flt", Tests.Ix.CompileFidelity.fltSuite),
-  ("fidelity-mathlib", Tests.Ix.CompileFidelity.mathlibSuite),
-  ("catalog-dedup", Tests.Ix.CatalogDedup.suite),
-  ("truthmines", Tests.Ix.TruthMines.buildSuite),
-  ("truthmines-check", Tests.Ix.TruthMines.checkSuite),
-  ("truthmines-mini", Tests.Ix.TruthMines.miniSuite),
-  ("truthmines-validate", Tests.Ix.TruthMines.validateSuite),
-  ("truthmines-validate-mini", Tests.Ix.TruthMines.validateMiniSuite),
-  ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
-  ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
-  ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
-  ("graph-cross", Tests.Ix.GraphM.suiteIO),
-  ("condense-cross", Tests.Ix.CondenseM.suiteIO),
-  -- Lean-side decompilation not yet revived, disabled
-  ("compile", Tests.Compile.compileSuiteIO),
-  ("decompile", Tests.Decompile.decompileSuiteIO),
-  ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
-  ("ixon-corpus", Tests.Ixon.Corpus.suite),
-  ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
-  ("commit-io", Tests.Commit.suiteIO),
-  ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
-  --("kernel-lean-roundtrip", Tests.Ix.Kernel.RoundtripNoCompile.suite),
-  ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
-  ("kernel-check-env", Tests.Ix.Kernel.CheckEnv.suite),
-  ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
-  ("kernel-check-comppoly", Tests.Ix.Kernel.CheckCompPoly.suite),
-  ("kernel-check-primegaps", Tests.Ix.Kernel.CheckPrimeGaps.suite),
-  ("kernel-check-tauceti", Tests.Ix.Kernel.CheckTauCeti.suite),
-  ("kernel-check-tauceti-reduction", Tests.Ix.Kernel.CheckTauCetiReduction.suite),
-  ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
-  ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
-  ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
-  ("tc-init", Tests.Tc.InitScale.suite),
-  ("tc-tutorial", Tests.Tc.TutorialTc.suite),
-  ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
-  ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
-  -- aux_gen on closure-only environments (`ix compile --consts`)
-  ("aux-gen-closure", Tests.Ix.Compile.AuxGenClosure.suite),
-  -- aux addresses do not depend on the compile set (closure vs whole env)
-  ("canon-closure-aux", Tests.Ix.Compile.AuxGenClosureCanon.suite),
-]
-
-/-- Primary test runners — quick suites run by default alongside
-`primarySuites`, but kept as deferred `IO` actions (not `TestSeq`
-values) so their setup — Aiur system builds, STARK proofs — does not
-execute at module initialization for unrelated invocations. All are
-seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
-about 11 s and the rest 2-4 s each (measured 2026-08-05). -/
-def primaryRunners : List (String × IO UInt32) := [
-  ("aiur-rust-syntax", AiurTests.RustSyntax.run),
+    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests
+    ++ Tests.Tc.CanonicalCheck.suite),
+  -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
+  .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
+  -- primary runners: quick suites kept as deferred `IO` actions (not
+  -- `TestSeq` values) so their setup (Aiur system builds, STARK proofs) does
+  -- not run at module initialization for unrelated invocations. All are
+  -- seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
+  -- about 11 s and the rest 2-4 s each (measured 2026-08-05).
+  .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
+  -- Reductions no kernel may make beyond Lean's (class methods reduced
+  -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
+  -- probe's closure through the Rust kernel, Ix.Tc and IxC (about 9 s).
+  .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
+  -- The pure image generator (Ix.Compile.Image) on the prototype's fifteen sub-cases,
+  -- with Lean's kernel as the oracle (Tests.Ix.Compile.Image).
+  .runner "image-gen" .primary Tests.Ix.Compile.Image.run,
   -- The circuit TagN codec against the host codec (about 16 s).
-  ("ixvm-tagn", Tests.Ix.IxVM.TagN.runSuite),
-  ("aiur-prove", do
+  .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,
+  .runner "aiur-prove" .primary (do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
     | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
@@ -206,7 +254,7 @@ def primaryRunners : List (String × IO UInt32) := [
           (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled]),
             ("aiur-inline-order", [assertOrderChecks env.compiled])]) []
         return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
-  ("aiur-hashes", do
+  .runner "aiur-hashes" .primary (do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
         let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge Aiur.Library.blake3)
@@ -217,7 +265,7 @@ def primaryRunners : List (String × IO UInt32) := [
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
-  ("rbtree-map", do
+  .runner "rbtree-map" .primary (do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
@@ -225,25 +273,73 @@ def primaryRunners : List (String × IO UInt32) := [
   -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
   -- primitive self-tests, `recursive-verifier` the full
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
-  ("multi-stark", Tests.MultiStark.selfTestSuite),
-  ("recursive-verifier", Tests.MultiStark.endToEndSuite),
+  .runner "multi-stark" .primary Tests.MultiStark.selfTestSuite,
+  .runner "recursive-verifier" .primary Tests.MultiStark.endToEndSuite,
   -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
-  ("ix-aggr", Tests.Aggr.convergedSuite),
+  .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
-  ("ixes-manifest", Tests.Ix.Ixes.suite),
-]
+  .runner "ixes-manifest" .primary Tests.Ix.Ixes.suite,
 
-/-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
-def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
-  ("aggregate-proof", Tests.Aggr.proofRoundTrip),
-  ("kernel-dependencies", do
+  -- CLI integration tests (ci.yml's lean-test job)
+  .runner "cli" (.ci .cli) Tests.Cli.suite,
+
+  -- expensive suites and runners (these require significant RAM)
+  .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
+  .suite "compile-determinism" (.ci .compile) Tests.Ix.CompileDeterminism.suite,
+  .suite "fidelity-initstd" (.ci .misc) Tests.Ix.CompileFidelity.initStdSuite,
+  .suite "fidelity-flt" (.manual "needs FLT built in Benchmarks/Compile") Tests.Ix.CompileFidelity.fltSuite,
+  .suite "fidelity-mathlib" (.manual "needs Mathlib in Benchmarks/Compile; about 100 GB") Tests.Ix.CompileFidelity.mathlibSuite,
+  .suite "catalog-dedup" (.ci .misc) Tests.Ix.CatalogDedup.suite,
+  .suite "truthmines" (.manual "builds the whole TruthMines corpus (network, Mathlib, FLT)") Tests.Ix.TruthMines.buildSuite,
+  .suite "truthmines-check" (.manual "checks the whole TruthMines corpus built by `truthmines`") Tests.Ix.TruthMines.checkSuite,
+  .suite "truthmines-mini" (.manual "builds the small TruthMines tier (network, Mathlib, FLT)") Tests.Ix.TruthMines.miniSuite,
+  .suite "truthmines-validate" (.manual "validates the whole TruthMines corpus") Tests.Ix.TruthMines.validateSuite,
+  .suite "truthmines-validate-mini" (.manual "validates the small TruthMines tier") Tests.Ix.TruthMines.validateMiniSuite,
+  .suite "rust-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.rustSuiteIO,
+  .suite "serial-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.serialSuiteIO,
+  .suite "parallel-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.parallelSuiteIO,
+  .suite "graph-cross" (.ci .compilePipeline) Tests.Ix.GraphM.suiteIO,
+  .suite "condense-cross" (.ci .compilePipeline) Tests.Ix.CondenseM.suiteIO,
+  .suite "compile" (.ci .compile) Tests.Compile.compileSuiteIO,
+  .suite "decompile" (.ci .decompile) Tests.Decompile.decompileSuiteIO,
+  .suite "rust-serialize" (.ci .compilePipeline) Tests.RustSerialize.rustSerializeSuiteIO,
+  .suite "ixon-corpus" (.ci .compilePipeline) Tests.Ixon.Corpus.suite,
+  .suite "rust-decompile" (.ci .compilePipeline) Tests.RustDecompile.rustDecompileSuiteIO,
+  .suite "commit-io" (.ci .misc) Tests.Commit.suiteIO,
+  .suite "kernel-ixon-roundtrip" (.ci .misc) Tests.Ix.Kernel.Roundtrip.suite,
+  --.suite "kernel-lean-roundtrip" … Tests.Ix.Kernel.RoundtripNoCompile.suite,
+  .suite "kernel-tutorial" (.ci .misc) Tests.Ix.Kernel.Tutorial.suite,
+  .suite "kernel-check-env" (.ci .misc) Tests.Ix.Kernel.CheckEnv.suite,
+  .suite "kernel-check-const" (.ci .misc) Tests.Ix.Kernel.CheckEnv.constSuite,
+  .suite "kernel-check-comppoly" (.manual "needs comppoly.ixe at the repository root") Tests.Ix.Kernel.CheckCompPoly.suite,
+  .suite "kernel-check-primegaps" (.manual "self-contained, but in no gate yet") Tests.Ix.Kernel.CheckPrimeGaps.suite,
+  .suite "kernel-check-tauceti" (.manual "needs tauceti.ixe") Tests.Ix.Kernel.CheckTauCeti.suite,
+  .suite "kernel-check-tauceti-reduction" (.manual "self-contained, but in no gate yet") Tests.Ix.Kernel.CheckTauCetiReduction.suite,
+  .suite "rust-kernel-build-primitives" (.ci .misc) Tests.Ix.Kernel.BuildPrimitives.suite,
+  .suite "rust-kernel-build-prim-origs" (.ci .misc) Tests.Ix.Kernel.BuildPrimOrigs.suite,
+  .suite "tc-anon-diff" (.ci .tc) Tests.Tc.AnonDiff.suite,
+  .suite "tc-init" (.ci .tc) Tests.Tc.InitScale.suite,
+  .suite "tc-tutorial" (.ci .tc) Tests.Tc.TutorialTc.suite,
+  .suite "tc-roundtrip" (.ci .tc) Tests.Tc.Roundtrip.suite,
+  .suite "tc-ingress-meta" (.ci .tc) Tests.Tc.IngressMeta.suite,
+  -- aux_gen on closure-only environments (`ix compile --consts`)
+  .suite "aux-gen-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosure.suite,
+  -- aux addresses do not depend on the compile set (closure vs whole env)
+  .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosureCanon.suite,
+  -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
+  .suite "cert-compile-parity-init" .landing Tests.Ix.Cert.Statement.initSuite,
+  -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
+  -- refused fallbacks): both compilers, both kernels, the certified checker
+  .suite "aux-cert" (.ci .compilePipeline) Tests.Ix.Compile.AuxCert.suite,
+  .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
+  .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
     | .ok vm =>
       let tests ← Tests.Ix.IxVM.DefinitionDependencies.tests vm.compiled
       LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
-  ("ixvm", do
+  .env "ixvm" (.ci .misc) fun env => do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
     let claimEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
@@ -312,27 +408,73 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_233_496_998, got {actual}"
-              (actual = 6_233_496_998))
+              s!"Shard pipeline FFT matches: expected 6_227_982_091, got {actual}"
+              (actual = 6_227_982_091))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) []),
-  ("validate-aux", runCompileValidateAux env),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) [],
+  .env "validate-aux" (.ci .compilePipeline) runCompileValidateAux,
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
-  ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
-  ("decompile-diff", Tests.Compile.DecompileDiff.run env),
+  .env "aux-gen-diff" (.ci .compilePipeline) Tests.Compile.AuxGenDiff.run,
+  -- The compiler's nested expansion against IxC's nested modeller (SP5):
+  -- source order, canonical order, permutation, field kinds and verdicts
+  -- on every nested fixture block (Tests.Ix.Compile.NestedAgreement).
+  .env "nested-agreement" .landing Tests.Ix.Compile.NestedAgreement.run,
+  -- Pass 1 (Ix.Compile.Canon) against the compiler's CondenseM / sortConsts /
+  -- nested order on the same fixture corpus, the port fixes' neutrality, and
+  -- discovery order against Lean's rec_N (Tests.Ix.Compile.Canon).
+  .env "canon-pass1" .landing Tests.Ix.Compile.Canon.run,
+  .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
+  -- Non-canonical stored inductive flags: refused by both compilers
+  -- (Tests.Ix.Compile.IndFlags).
+  .runner "compile-ind-flags" (.ci .compilePipeline) Tests.Ix.Compile.IndFlags.run,
+  -- Single ownership of compiled names: conflicting claims refused by both
+  -- compilers (Tests.Ix.Compile.ClaimConflict).
+  .runner "compile-claim-conflict" (.ci .compilePipeline) Tests.Ix.Compile.ClaimConflict.run,
+  -- Source ownership of auxiliary claims, independent of arrival order
+  -- (Tests.Ix.Compile.ClaimOrder).
+  .runner "compile-claim-order" (.ci .compilePipeline) Tests.Ix.Compile.ClaimOrder.run,
+  -- Selected closures (Tests.Ix.Compile.{SelectedClosure,ClosureWhole,CheckerSupport,PackUnits}):
+  -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
+  .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,
+  .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
+  .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
+  .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
+  -- Canonicity over twin presentations, exact against the non-canonical
+  -- record under the records policy (Tests.Ix.Compile.Twins).
+  .runner "twins" .landing Tests.Ix.Compile.Twins.run,
+  -- Lean's own auxiliaries against the ones Ix regenerates, over the twin
+  -- families with a canonical reference: the nested-order and packaging
+  -- classes fail (Tests.Ix.Compile.Oracle).
+  .runner "aux-oracle" .landing Tests.Ix.Compile.Oracle.run,
+  -- The Lean compiler's output does not depend on the schedule: the fold at
+  -- three widths, the reference schedule both ways and the pipeline at three
+  -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).
+  .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
+  -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
+  .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the Source service environment (about 7 min), named in no gate yet") Tests.Ix.AuxGen.FlatBlockInitStd.run,
+  -- Source evidence from the committed bundle unblocks the service's inductive blocks
+  .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
   -- demand (see Tests.Tc.ParityEnv).
-  ("tc-pins", Tests.Tc.Pins.run),
+  .runner "tc-pins" (.ci .tc) Tests.Tc.Pins.run,
   -- Accelerated-vs-pure reduction differentials over that same real env
   -- (see Tests.Tc.AccelDiff and TcState.noAccel).
-  ("tc-accel-diff", Tests.Tc.AccelDiff.run),
+  .runner "tc-accel-diff" (.ci .tc) Tests.Tc.AccelDiff.run,
+  .runner "admission-hash-diff" .landing Tests.Ix.Kernel.AdmissionHashDiff.run,
+  -- the Rust compiler's compile → decompile roundtrip over this binary's
+  -- environment (Tests.Ix.RustCompile); before the registry, a special case
+  -- that ran alone and skipped every other name
+  .env "rust-compile" .landing Tests.Ix.RustCompile.run,
+  -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
+  -- primary suite and independent of the large environment
+  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
 ]
 
 def main (args : List String) : IO UInt32 := do
-  -- Special case: namespace-filtered kernel ixon roundtrip diagnostic.
+  -- Namespace-filtered kernel ixon roundtrip diagnostic.
   -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
   -- `kernel-ixon-roundtrip` suite (compile → ingress → egress →
   -- decompile → hash-compare) but only on the transitive closure of the
@@ -355,83 +497,4 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
-
-  -- Special case: rust-compile diagnostic (full env)
-  if args.contains "rust-compile" then
-    let env ← get_env!
-    IO.println s!"Loaded environment with {env.constants.toList.length} constants"
-    let failures := tmpDecodeConstMap env.constants.toList
-    if failures != 0 then
-      IO.eprintln s!"[rust-compile] FAILED: {failures} compile/decompile roundtrip failure(s)"
-      return 1
-    IO.println "[rust-compile] OK: compile → decompile roundtrip clean"
-    return 0
-
-  -- Special case: cli tests have their own runner
-  if args.contains "cli" then
-    return ← Tests.Cli.suite
-
-  -- Section 14 M1-e diagnostic: keep the 132-case, twice-executed `ix_aggr`
-  -- activation matrix out of the default primary suite while making its gate
-  -- explicit and independent of the large environment used by ignored tests.
-  if args.contains "aggregate-activation" then
-    return ← Tests.Aggr.activationAudit
-
-  let runIgnored := args.contains "--ignored"
-  let includeIgnored := args.contains "--include-ignored"
-  -- `--exclude=a,b,c` drops named ignored suites and runners from an unfiltered sweep.
-  let excludeSet : List String :=
-    match args.find? (·.startsWith "--exclude=") with
-    | some a => (a.drop ("--exclude=".length)).toString.splitOn "," |>.filter fun s => !s.isEmpty
-    | none => []
-  let filterArgs := args.filter fun a =>
-    a != "--ignored" && a != "--include-ignored" && !a.startsWith "--exclude="
-
-  -- Run primary tests unless --ignored (without --include-ignored) is specified
-  if !runIgnored || includeIgnored then
-    let primaryArgs := if runIgnored || includeIgnored then [] else filterArgs
-    -- Same guard as the ignored section: a filter arg naming neither a
-    -- primary suite nor a primary runner must be an ERROR, not a silent
-    -- no-op reporting success having run nothing.
-    for arg in primaryArgs do
-      if !primarySuites.contains arg
-          && !(primaryRunners.any fun (key, _) => key == arg)
-          && arg != "getfileenv-body" then
-        IO.eprintln s!"error: no primary suite or runner named '{arg}'"
-        return 1
-    let primaryResult ← LSpec.lspecIO primarySuites primaryArgs
-    if primaryResult != 0 then return primaryResult
-    -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
-    let envBodySeq ← Tests.Ix.EnvBody.suite
-    let envBodyResult ← LSpec.lspecIO (.ofList [("getfileenv-body", [envBodySeq])]) primaryArgs
-    if envBodyResult != 0 then return envBodyResult
-    let runners := if primaryArgs.isEmpty then primaryRunners
-      else primaryRunners.filter fun (key, _) => primaryArgs.contains key
-    for (_, action) in runners do
-      let r ← action
-      if r != 0 then return r
-
-  -- Run ignored tests when --ignored or --include-ignored is specified
-  if runIgnored || includeIgnored then
-    let env ← get_env!
-    let allRunners := ignoredRunners env
-    -- A named suite — selected via a filter arg or removed via `--exclude` —
-    -- that matches nothing is an ERROR, not a silent no-op: otherwise a typo
-    -- runs (or excludes) nothing and still reports success having executed
-    -- nothing.
-    for arg in filterArgs ++ excludeSet do
-      if !(allRunners.any fun (key, _) => key == arg)
-          && !ignoredSuites.contains arg then
-        IO.eprintln s!"error: no ignored suite or runner named '{arg}'"
-        return 1
-    let suites := excludeSet.foldl (fun m k => m.erase k) ignoredSuites
-    let runners := allRunners.filter fun (key, _) => !excludeSet.contains key
-    let mut result ← LSpec.lspecIO suites filterArgs
-    let filtered := if filterArgs.isEmpty then runners
-      else filterArgs.filterMap fun arg => runners.find? fun (key, _) => key == arg
-    for (_, action) in filtered do
-      let r ← action
-      if r != 0 then result := r
-    return result
-  else
-    return 0
+  Tests.Registry.run registry get_env! args

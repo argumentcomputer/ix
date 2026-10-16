@@ -71,7 +71,7 @@ Differences from `Ix.Kernel.Expr`, each deliberate:
   this former anyway, so they are gone.)
 * **No `lit`.**  Literal computation is *derived*, not built in: any
   term satisfying an operation's certified recurrences computes it on
-  numerals (the pinned `Nat` operations, `IxC/Kernel/NatOpPins.lean`).
+  numerals (the certified `Nat` operations, `IxC/Kernel/Roles.lean`).
 * **No global environment / no named constants.**  There is no `Env`
   and no delta rule: every constant the checker accepts either has a
   value (definitions, theorems, `opaque`s, the trust family), or has a

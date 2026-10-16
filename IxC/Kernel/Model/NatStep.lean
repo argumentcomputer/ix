@@ -37,13 +37,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported natOpResult reduceNatFueled)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The pieces the rows read -/
 
@@ -52,7 +52,7 @@ reports — its two shapes are the literal itself and the `Nat.zero`
 constant, and `natLit … 0` *is* the `Nat.zero` leaf
 (`denote_rawNatLitR`'s mirror). -/
 theorem denoteMeta_rawNatLit (m : EnvModel V env)
-    (hs : natLitSupported env = true) {a0 : Expr} {n : Nat}
+    (hs : natLitSupported env = true) {a0 : Expr md} {n : Nat}
     (h : Ix.Kernel.rawNatLit? a0 = some n) (d : Nat) :
     denoteMeta m.acval env φ d a0 = some (natLit m φ n) := by
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
@@ -74,8 +74,8 @@ theorem denoteMeta_rawNatLit (m : EnvModel V env)
     · exact nomatch h
 
 /-- A stored level-monomorphic head's reading, inverted. -/
-theorem denoteMeta_head {m : EnvModel V env} {d : Nat} {c : Name}
-    {ci : ConstantInfo} {fa : AnnotTerm}
+theorem denoteMeta_head {m : EnvModel V env} {d : Nat} {c : Key md}
+    {ci : ConstantInfo md} {fa : AnnotTerm}
     (hf : env.find? c = some ci)
     (hlp : ci.toConstantVal.levelParams = [])
     (h : denoteMeta m.acval env φ d (.const c []) = some fa) :
@@ -99,7 +99,7 @@ task #305 closing. -/
 the `Nat.succ` application *is* the packed numeral: the head reads to
 the `Nat.succ` leaf, the argument to the numeral spine, and
 `natLit_succ` is the packing. -/
-theorem natSuccRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
+theorem natSuccRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.NatSuccRow mp.base2 φ := by
   intro d w n Δa ea hnat hraw hea hg
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
@@ -125,7 +125,7 @@ at two literal readings: the head reads to the stored operation's
 leaf, the arguments to the numeral spines, and the operation's own
 recurrence law (`EnvModelM.nat_ops` / `EnvModelM.div_mod`, through the
 `natOpV_*` transports) computes the interpretation of `natOpResult`. -/
-theorem natOpRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
+theorem natOpRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.NatOpRow mp.base2 φ := by
   intro d c wa wb r n₁ n₂ Δa ea hc hstored hrawa hrawb hres hea hg
   have h14 : c = Ix.Kernel.natAddName ∨ c = Ix.Kernel.natSubName ∨
@@ -139,7 +139,7 @@ theorem natOpRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
       using hc
   have hmemN : c ∈ Ix.Kernel.natOpNames ∨ c ∈ Ix.Kernel.natDivModNames := by
     rcases h14 with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl <;>
+      rfl | rfl | rfl | rfl | rfl | rfl <;> cases md <;>
       first
       | exact Or.inl (by decide)
       | exact Or.inr (by decide)
@@ -147,7 +147,7 @@ theorem natOpRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
   obtain ⟨hnat, hdeps, hbool⟩ := Ix.Kernel.natOpGuard_inv hguard
   have hself : c ∈ Ix.Kernel.natOpDeps c := by
     rcases h14 with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|
-      rfl|rfl <;> decide
+      rfl|rfl <;> (cases md <;> decide)
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps c hself
   obtain ⟨fab, ba, hfab, hba', rfl⟩ := denoteMeta_app_inv hea
   obtain ⟨fa, aa, hfa, haa, rfl⟩ := denoteMeta_app_inv hfab
@@ -184,7 +184,7 @@ theorem natOpRow_of (mp : EnvModelM V μ env) (φ : Name → Nat) :
     · rw [interp_app, interp_app]
       exact hop ρ
   have closeB : (c = Ix.Kernel.natBeqName ∨ c = Ix.Kernel.natBleName) →
-      ∀ bn : Name,
+      ∀ bn : Key md,
       (bn = Ix.Kernel.boolTrueName ∨ bn = Ix.Kernel.boolFalseName) →
       r = .const bn [] →
       (∀ ρ : Nat → V, SetTheory.app (SetTheory.app

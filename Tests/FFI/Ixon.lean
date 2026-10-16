@@ -586,6 +586,49 @@ def envPackTests : TestSeq :=
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
+/-! ## Long `imax` chains (canonUniv's normalizer memo) -/
+
+/-- `imax (a (n-1)) (imax (a (n-2)) (… (imax (a 0) last)))`: one `imax` per
+    binder, the shape `Meta.getLevel` returns for a long `∀`. -/
+def imaxChain (a : Nat → Univ) (last : Univ) : Nat → Univ
+  | 0 => last
+  | n + 1 => .imax (a n) (imaxChain a last n)
+
+/-- The Cutsat-shaped chain (`Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s
+    type did not canonicalize in 300 s) and a mixed two-parameter chain. -/
+def cutsatChain (n : Nat) : Univ := imaxChain (fun _ => .max (.succ .zero) (.var 0)) (.var 0) n
+
+def mixedChain (n : Nat) : Univ := imaxChain
+  (fun i => if i % 3 == 0 then .max (.succ .zero) (.var 0) else if i % 3 == 1 then .succ (.var 1)
+    else .imax (.var 1) (.var 0)) (.var (if n % 2 == 0 then 0 else 1)) n
+
+/-- `canonUniv` on long `imax` chains. The `imax` distributions repeat calls
+    of the normalizer (`2ⁿ` calls on these chains); both normalizers skip a
+    repeated call (`CanonUniv.NState`, Rust `Seen`), so chains of 64 finish.
+    Checked by value (P0), idempotence (P1), the `mk*` fixpoint (P3) and
+    Lean/Rust mirror parity. -/
+def canonUnivChainTests : TestSeq :=
+  let ok (u : Univ) : Bool :=
+    let c := Ixon.canonUniv u
+    (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c &&
+      Ixon.reduceUniv c == c && rsCanonUnivMatches u c
+  test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
+    (Ixon.canonUniv (cutsatChain 64) == .var 0)
+  ++ test "canonUniv P0, P1, P3 and mirror parity: imax chains of 0–10, 24, 40 and 64 links"
+    (((List.range 11) ++ [24, 40, 64]).all fun n => ok (cutsatChain n) && ok (mixedChain n))
+
+/-- `canonUniv` accumulates successor offsets in `Nat`: in `UInt64` an
+    accumulator at `2^64 - 1` plus one successor wrapped to `0`, and the level
+    lost its value. -/
+def canonUnivOffsetTests : TestSeq :=
+  let init : CanonUniv.NState := { acc := (∅ : CanonUniv.CNorm).insert [] {} }
+  test "canonUniv offset past 2^64 is kept, not wrapped"
+    (((CanonUniv.normalizeAux (.succ .zero) [] (2 ^ 64 - 1) init).acc.findD [] {}).constant
+      == 2 ^ 64)
+  ++ test "canonUniv offset past 2^64 on a variable is kept"
+    (((CanonUniv.normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) init).acc.findD [0] {}).vars
+      == #[(0, 2 ^ 64)])
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
@@ -658,6 +701,9 @@ def suite : List TestSeq := [
     ((Tests.Gen.Ixon.biasedUnivFamily 3 10 2000 41
         ++ Tests.Gen.Ixon.biasedUnivFamily 4 12 500 43).all fun u =>
       rsCanonUnivMatches u (Ixon.canonUniv u)),
+  -- long imax chains: the normalizers' call memo (FU item 10)
+  canonUnivChainTests,
+  canonUnivOffsetTests,
 ]
 
 end Tests.FFI.Ixon

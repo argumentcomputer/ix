@@ -296,7 +296,7 @@ impl DecompileState {
 ///   indices also start at 0 but live in a SEPARATE namespace from the
 ///   block sharing: compile writes them as `surgery_sharing.len() +
 ///   collapsed_idx` where `surgery_sharing` is reset per constant (see
-///   `src/ix/compile.rs::compile_expr` BuildCallSite path).
+///   `crates/compile/src/compile.rs::compile_expr` BuildCallSite path).
 ///
 /// Treating them as the same vector would make a `sharing_idx` in `[0,
 /// block_sharing.len())` silently return the wrong block subtree
@@ -2735,7 +2735,8 @@ fn below_indc_to_lean(
     ctors: ctor_names,
     num_nested: Nat::from(0u64),
     is_rec: true,
-    // Reflexivity is inherited from the parent (see `build_below_indc`).
+    // Reflexivity is inherited from the parent (see
+    // `build_prop_below_family`).
     // The `ConstantInfo::InductInfo` hash includes `is_reflexive`, so the
     // regenerated `.below` must carry the same flag as Lean's original.
     is_reflexive: indc.is_reflexive,
@@ -3195,12 +3196,19 @@ fn roundtrip_block(
   // ------------------------------------------------------------------
   // Phase A: Compile to Ixon (mirrors compile_aux_block lines 69-121)
   // ------------------------------------------------------------------
-  let mut cache = CompileBlockCache::default();
+  // A decompile recompile only verifies a reconstructed form against its
+  // stored address; it stores no constant, so the collapse-drop checks of
+  // the compile side (A0) do not apply (`BlockCache::provenance_only`).
+  let mut cache =
+    CompileBlockCache { provenance_only: true, ..Default::default() };
 
   let first_name = consts[0].name();
   let refs: Vec<&LeanMutConst> = consts.iter().collect();
-  let sorted_classes = sort_consts(&refs, &mut cache, stt)
+  let mut sorted_classes = sort_consts(&refs, &mut cache, stt)
     .map_err(|e| AuxGenError::recompile(&first_name, "sort_consts", e))?;
+  // A recursor block is laid out in its family's flat order, as the
+  // compile of Lean's own form lays it out (`order_recursor_family`).
+  crate::compile::order_recursor_family(&mut sorted_classes);
   let mut_ctx = LeanMutConst::ctx(&sorted_classes);
 
   // Mirror the production compile paths (`compile_single_def`, the
@@ -3229,8 +3237,11 @@ fn roundtrip_block(
   let mut name_to_class: FxHashMap<Name, usize> = FxHashMap::default();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
   let mut ixon_mutuals: Vec<MutConst> = Vec::new();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_to_all(&mut_ctx)
+    .iter()
+    .map(|n| compile_name(n, stt))
+    .collect::<Result<_, _>>()
+    .map_err(|e| AuxGenError::recompile(&first_name, "context names", e))?;
 
   for (class_idx, class) in sorted_classes.iter().enumerate() {
     let mut rep_pushed = false;
@@ -3500,7 +3511,8 @@ fn roundtrip_block(
             _ => None,
           };
           if let Some(omc) = omc {
-            let mut pcache = CompileBlockCache::default();
+            let mut pcache =
+              CompileBlockCache { provenance_only: true, ..Default::default() };
             let mut pexprs: Vec<(&LeanExpr, &[Name])> = Vec::new();
             collect_mut_const_exprs(&omc, &mut pexprs);
             let preseeded = preseed_expr_tables(
@@ -4457,6 +4469,9 @@ fn install_decompile_call_site_plans(
   }
 
   let original_all: Vec<Name> = all_names.to_vec();
+  // Same existence rule as the compile side (A0, WB-B1/A5): derived
+  // `.brecOn`/`.below` plans only for families Lean generates.
+  let below_lean = aux_gen::below_family_lean_exists(env, &original_all);
   let mut plan_blocks =
     stored_plan_blocks_for_original_all(&original_all, stt, muts_index);
   if plan_blocks.is_empty() {
@@ -4509,6 +4524,7 @@ fn install_decompile_call_site_plans(
       // decompiling with whichever block's plan happened to install
       // first (plans/aux-recursor-alias-collision.md §2.4).
       if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
+        && below_lean
         && (aux_member_names.contains(&brecon_name)
           || env.contains_key(&brecon_name))
       {
@@ -4547,6 +4563,7 @@ fn install_decompile_call_site_plans(
         }
       }
       if let Some(below_name) = surgery::rec_name_to_below_name(&name)
+        && below_lean
         && (aux_member_names.contains(&below_name)
           || env.contains_key(&below_name))
       {
@@ -4558,7 +4575,7 @@ fn install_decompile_call_site_plans(
         // `below_plan_key_is_head`). The below inductive itself is
         // regenerated later (Phase 3), so at install time its ctor names
         // are derived from the PARENT inductive's ctors via the same
-        // suffix transplant `build_below_indc_ctor` uses. Prop-ness is
+        // suffix transplant `build_prop_below_family` uses. Prop-ness is
         // signalled by the presence of a `.below.rec` aux member
         // (Type-level `.below` is a definition and has no recursor).
         let is_prop_below = aux_members.iter().any(|(k, n)| {
@@ -4802,6 +4819,87 @@ fn regen_one_cases_on(
   }
 }
 
+/// Pass 2's aux-generated constants grouped by mutual block: the key is the
+/// first name of the block's `all`, the value the block's `all` and its
+/// `(kind, name)` members.
+type AuxBlockMap = FxHashMap<Name, (Vec<Name>, Vec<(AuxKind, Name)>)>;
+
+/// The order in which Pass 2 regenerates the blocks: every block after the
+/// blocks it depends on. A block depends on another when one of its
+/// inductives or their constructors refers to a member or constructor of
+/// the other (the cross-block references sit in the constructors' field
+/// types). Kahn's algorithm over the block keys sorted by pretty name, so
+/// the order is independent of hash-map iteration; blocks left on a cycle
+/// follow in that order. Mirrors Lean `decompileEnvPass2`.
+fn pass2_block_order(
+  blocks: &AuxBlockMap,
+  get: &dyn Fn(&Name) -> Option<LeanConstantInfo>,
+) -> Vec<Name> {
+  use crate::graph::{NameSet, get_constant_info_references};
+  let mut name_to_block: FxHashMap<Name, Name> = FxHashMap::default();
+  for (block_key, (all_names, _)) in blocks {
+    for ind_name in all_names {
+      name_to_block.insert(ind_name.clone(), block_key.clone());
+      if let Some(LeanConstantInfo::InductInfo(v)) = get(ind_name) {
+        for ctor in &v.ctors {
+          name_to_block.insert(ctor.clone(), block_key.clone());
+        }
+      }
+    }
+  }
+
+  let mut block_deps: FxHashMap<Name, NameSet> = FxHashMap::default();
+  for (block_key, (all_names, _)) in blocks {
+    let mut graph_names: Vec<Name> = all_names.clone();
+    for ind_name in all_names {
+      if let Some(LeanConstantInfo::InductInfo(v)) = get(ind_name) {
+        graph_names.extend(v.ctors.iter().cloned());
+      }
+    }
+    let mut deps = NameSet::default();
+    for name in &graph_names {
+      if let Some(ci) = get(name) {
+        for ref_name in get_constant_info_references(&ci) {
+          if let Some(dep_block) = name_to_block.get(&ref_name)
+            && dep_block != block_key
+          {
+            deps.insert(dep_block.clone());
+          }
+        }
+      }
+    }
+    block_deps.insert(block_key.clone(), deps);
+  }
+
+  let mut sorted_keys: Vec<Name> = blocks.keys().cloned().collect();
+  sorted_keys.sort_by_cached_key(|n| n.pretty());
+  let mut emitted: FxHashSet<Name> = FxHashSet::default();
+  let mut order: Vec<Name> = Vec::with_capacity(sorted_keys.len());
+  let mut progress = true;
+  while progress {
+    progress = false;
+    for k in &sorted_keys {
+      if emitted.contains(k) {
+        continue;
+      }
+      let ready = block_deps
+        .get(k)
+        .is_none_or(|deps| deps.iter().all(|d| emitted.contains(d)));
+      if ready {
+        order.push(k.clone());
+        emitted.insert(k.clone());
+        progress = true;
+      }
+    }
+  }
+  for k in sorted_keys {
+    if !emitted.contains(&k) {
+      order.push(k);
+    }
+  }
+  order
+}
+
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -4840,7 +4938,13 @@ fn decompile_block_aux_gen(
 
   // Ingress parent inductives into the ephemeral kenv.
   for ind_name in all_names {
-    expr_utils::ensure_in_kenv_of(ind_name, env, stt, kctx);
+    if let Err(e) = expr_utils::ensure_in_kenv_of(ind_name, env, stt, kctx) {
+      aux_gen_errors.push((
+        ind_name.clone(),
+        AuxGenError::recompile(ind_name, "kernel ingress", e),
+      ));
+      return aux_gen_errors;
+    }
   }
 
   // Ingress transitive dependencies from constructor field types.
@@ -4849,7 +4953,15 @@ fn decompile_block_aux_gen(
     for ind_name in all_names {
       if let Some(ci) = env.get(ind_name) {
         for ref_name in get_constant_info_references(&ci) {
-          expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx);
+          if let Err(e) =
+            expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx)
+          {
+            aux_gen_errors.push((
+              ind_name.clone(),
+              AuxGenError::recompile(&ref_name, "kernel ingress", e),
+            ));
+            return aux_gen_errors;
+          }
         }
       }
     }
@@ -5489,8 +5601,15 @@ fn decompile_block_aux_gen(
 
   // Populate the ephemeral kenv with .below types so brecOn's TcScope
   // can infer PProd(motive, I.below ...) during sort level inference.
-  if !below_consts.is_empty() {
-    populate_canon_kenv_with_below(&below_consts, &classes, env, stt, kctx);
+  if !below_consts.is_empty()
+    && let Err(e) =
+      populate_canon_kenv_with_below(&below_consts, &classes, env, stt, kctx)
+  {
+    aux_gen_errors.push((
+      all_names[0].clone(),
+      AuxGenError::recompile(&all_names[0], "kernel ingress of .below", e),
+    ));
+    return aux_gen_errors;
   }
 
   // Phase 4: Generate .brecOn / .brecOn.go / .brecOn.eq.
@@ -5628,8 +5747,7 @@ pub fn decompile_env(
 ) -> Result<DecompileState, DecompileError> {
   use crate::compile::KernelCtx;
   use crate::compile::aux_gen::expr_utils;
-  use crate::condense::compute_sccs;
-  use crate::graph::{NameSet, RefMap, get_constant_info_references};
+  use crate::graph::get_constant_info_references;
 
   let dstt = DecompileState::default();
 
@@ -5726,7 +5844,6 @@ pub fn decompile_env(
   // Collect aux_gen constants grouped by mutual block.
   // Key: first name in the `all` field (canonical block identifier).
   // Value: (all_names, list of (AuxKind, constant_name)).
-  type AuxBlockMap = FxHashMap<Name, (Vec<Name>, Vec<(AuxKind, Name)>)>;
   let mut blocks: AuxBlockMap = FxHashMap::default();
   let t_p2_prep = std::time::Instant::now();
 
@@ -5753,46 +5870,9 @@ pub fn decompile_env(
       .push((kind, name.clone()));
   }
 
-  // Topologically sort blocks by cross-block dependencies derived from
-  // the parent inductives' constructor types.
-  let sorted_block_keys = {
-    let mut name_to_block: FxHashMap<Name, Name> = FxHashMap::default();
-    for (block_key, (all_names, _)) in &blocks {
-      for ind_name in all_names {
-        name_to_block.insert(ind_name.clone(), block_key.clone());
-        if let Some(LeanConstantInfo::InductInfo(v)) =
-          dstt.env.get(ind_name).as_deref()
-        {
-          for ctor in &v.ctors {
-            name_to_block.insert(ctor.clone(), block_key.clone());
-          }
-        }
-      }
-    }
-
-    let mut block_deps: RefMap = RefMap::default();
-    for (block_key, (all_names, _)) in &blocks {
-      let mut deps = NameSet::default();
-      for ind_name in all_names {
-        if let Some(ci) = dstt.env.get(ind_name) {
-          for ref_name in get_constant_info_references(&ci) {
-            if let Some(dep_block) = name_to_block.get(&ref_name)
-              && dep_block != block_key
-            {
-              deps.insert(dep_block.clone());
-            }
-          }
-        }
-      }
-      block_deps.insert(block_key.clone(), deps);
-    }
-
-    let condensed = compute_sccs(&block_deps);
-    let mut sorted: Vec<Name> = condensed.blocks.keys().cloned().collect();
-    sorted.reverse(); // Tarjan produces reverse topo order
-    sorted.retain(|k| blocks.contains_key(k));
-    sorted
-  };
+  // Regenerate the blocks in dependency order (`pass2_block_order`).
+  let sorted_block_keys =
+    pass2_block_order(&blocks, &|n| dstt.env.get(n).map(|c| c.clone()));
   eprintln!(
     "[decompile] Pass 2 prep done in {:.2}s: {} aux_gen blocks to \
      regenerate{}",
@@ -5878,7 +5958,10 @@ pub fn decompile_env(
       if !ingressed.insert(name.clone()) {
         continue;
       }
-      expr_utils::ensure_in_kenv_of_prewarm(&name, &work_env, stt, &mut kctx);
+      expr_utils::ensure_in_kenv_of_prewarm(&name, &work_env, stt, &mut kctx)
+        .map_err(|e| DecompileError::BadConstantFormat {
+        msg: format!("aux regeneration pre-warm: {e}"),
+      })?;
       if let Some(refs) = refs_memo.get(&name) {
         for ref_name in refs {
           if !ingressed.contains(ref_name) {
@@ -5975,6 +6058,7 @@ pub fn decompile_env(
     if kenv_clear_entries.is_some_and(|limit| ingressed.len() > limit) {
       kctx.kenv.clear_releasing_memory();
       kctx.aux_ingress_seen.clear();
+      kctx.source_names.clear();
       ingressed.clear();
       kenv_clears += 1;
       expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
@@ -6159,6 +6243,66 @@ mod tests {
   use crate::compile::compile_name;
   use ix_common::env::Level;
 
+  /// Pass 2 regenerates a block after every block it depends on, including
+  /// a dependency that only a constructor field carries (`A.mk : B → A`),
+  /// in Lean's order (`decompileEnvPass2`).
+  #[test]
+  fn pass2_block_order_puts_dependencies_first() {
+    let nm = |s: &str| {
+      s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
+    };
+    let c = |s: &str| LeanExpr::cnst(nm(s), vec![]);
+    let ind = |n: &str| {
+      LeanConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: nm(n),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::succ(Level::zero())),
+        },
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![nm(n)],
+        ctors: vec![nm(&format!("{n}.mk"))],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      })
+    };
+    let ctor = |n: &str, typ: LeanExpr| {
+      LeanConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: nm(&format!("{n}.mk")),
+          level_params: vec![],
+          typ,
+        },
+        induct: nm(n),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      })
+    };
+    // a chain `A.mk : B → A`, `B.mk : C → B`, `C.mk : D → C`, `D.mk : D`
+    let mut env: FxHashMap<Name, LeanConstantInfo> = FxHashMap::default();
+    for (n, field) in
+      [("A", Some("B")), ("B", Some("C")), ("C", Some("D")), ("D", None)]
+    {
+      env.insert(nm(n), ind(n));
+      let typ = match field {
+        Some(f) => LeanExpr::all(nm("x"), c(f), c(n), BinderInfo::Default),
+        None => c(n),
+      };
+      env.insert(nm(&format!("{n}.mk")), ctor(n, typ));
+    }
+    let blocks: AuxBlockMap = ["A", "B", "C", "D"]
+      .into_iter()
+      .map(|k| (nm(k), (vec![nm(k)], vec![])))
+      .collect();
+    let order = pass2_block_order(&blocks, &|n| env.get(n).cloned());
+    assert_eq!(order, vec![nm("D"), nm("C"), nm("B"), nm("A")]);
+  }
+
   #[test]
   fn decompile_kenv_clear_limit_parsing() {
     assert_eq!(
@@ -6234,7 +6378,7 @@ mod tests {
   /// Register a Name in `stt.env.names` so `decompile_name` can resolve it.
   /// Mirrors `compile_name` (content-address the name, insert into names map).
   fn register_name(stt: &CompileState, name: &Name) -> Address {
-    compile_name(name, stt)
+    compile_name(name, stt).unwrap()
   }
 
   /// Extract the source-order `(head, args)` telescope from a Lean App spine.
@@ -6681,8 +6825,8 @@ mod meta_share_tests {
     let stt = CompileState::default();
     let head = Name::str(Name::anon(), "MS.head".to_string());
     let head2 = Name::str(Name::anon(), "MS.head2".to_string());
-    let head_addr = compile_name(&head, &stt);
-    let head2_addr = compile_name(&head2, &stt);
+    let head_addr = compile_name(&head, &stt).unwrap();
+    let head2_addr = compile_name(&head2, &stt).unwrap();
     Fx { stt, head, head_addr, head2, head2_addr }
   }
 
@@ -7001,7 +7145,7 @@ mod meta_share_tests {
   ) -> (Result<DecompileState, DecompileError>, Fx, Name) {
     let fx = fx();
     let ax_name = Name::str(Name::anon(), "MS.ax".to_string());
-    let ax_addr_name = compile_name(&ax_name, &fx.stt);
+    let ax_addr_name = compile_name(&ax_name, &fx.stt).unwrap();
     let ax = Constant {
       info: ConstantInfo::Axio(Axiom {
         is_unsafe: false,

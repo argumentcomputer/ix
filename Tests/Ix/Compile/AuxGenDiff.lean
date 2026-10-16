@@ -30,7 +30,9 @@ import Ix.AuxGen.Nested
 import Ix.AuxGen.Patches
 import Ix.AuxGen.CompileAux
 import Ix.CompileDriver
+import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
+import LSpec
 
 namespace Tests.Compile.AuxGenDiff
 
@@ -165,9 +167,8 @@ def firstDiff (a b : ByteArray) : Option Nat := Id.run do
 `leanDumpExpand` reproduces — byte for byte — the text that
 `rs_aux_gen_dump_expand` emits from the Rust side, by running the
 pure-Lean `Ix.AuxGen` pipeline (`sortConsts` → `expandNestedBlock` →
-`sortAuxByPartitionRefinement` → `computeAuxPerm` →
-`sourceAuxOrderWithOwner`) per inductive SCC block. The gate is a line
-diff; the first diverging line pinpoints the phase. -/
+`computeAuxPerm` → `sourceAuxOrderWithOwner`) per inductive SCC block. The
+gate is a line diff; the first diverging line pinpoints the phase. -/
 
 /-- Expr content hash as lowercase hex (mirrors Rust
     `Address::from_blake3_hash(e.get_hash()).hex()`). -/
@@ -214,7 +215,7 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
     if let some (.inductInfo v) ← Ix.AuxGen.lookupConst? name then
       if v.numNested > 0 then metadataHasNested := true
 
-  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
+  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep true
   let structuralHasNested : Bool := expanded.types.size > expanded.nOriginals
 
   out := out ++ s!"flags meta_nested={metadataHasNested} structural_nested={structuralHasNested} n_classes={sortedClasses.length}\n"
@@ -239,15 +240,6 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
 
   if !(metadataHasNested && structuralHasNested) then
     return out
-
-  let (expanded, sortperm) ← Ix.AuxGen.sortAuxByPartitionRefinement expanded
-  out := out ++ s!"sortperm {" ".intercalate (sortperm.toList.map toString)}\n"
-  for (mem, i) in expanded.types.zipIdx do
-    if i < expanded.nOriginals then
-      continue
-    out := out ++ s!"post {i} name={mem.name.pretty} owner={mem.sourceOwner.pretty} typ={exprAddr mem.typ}\n"
-    for (ctor, j) in mem.ctors.zipIdx do
-      out := out ++ s!"postctor {i} {j} name={ctor.name.pretty} typ={exprAddr ctor.typ}\n"
 
   let mut origToCanonMap : Std.HashMap Ix.Name Ix.Name := {}
   for cls in sortedClasses do
@@ -384,20 +376,29 @@ def seedBlockRegistry (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error _ => continue
   return { cenv with blocks := registry }
 
+/-- Stable diagnostic inputs, shared by the expansion and patch dumps.
+Independent condensations can choose different Tarjan representatives. Use
+the production driver's canonical member key for the label and block order;
+retain every member and the existing pretty-sorted generator inputs. -/
+def dumpBlocks (isInductive : Ix.Name → Bool) (condensed : Ix.CondensedBlocks)
+    : Array (String × Ix.Name × Array Ix.Name) := Id.run do
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let all := members.toArray.qsort (fun a b => a.pretty < b.pretty)
+    if all.any isInductive then
+      let key := Ix.CompileM.canonicalKey lo all
+      blocks := blocks.push (key.pretty, key, all)
+  return blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+
+private def isInductive (cenv : CompileEnv) (name : Ix.Name) : Bool :=
+  match cenv.env.consts.get? name with
+  | some (.inductInfo _) => true
+  | _ => false
+
 /-- Whole-env Lean patches dump (same block selection/order as Rust). -/
 def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let sortedAll := (members.toArray.map (·, ())).map (·.1)
-      |>.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
   let mut out := ""
   for (_, lo, all) in blocks do
     let blockEnv : Ix.CompileM.BlockEnv :=
@@ -560,22 +561,12 @@ def filterPatchDump (dump : String) (kinds : List String) : String :=
   String.intercalate "\n" ((dump.splitOn "\n").filter keep)
 
 /-- Whole-env Lean dump over the same block selection/order as the Rust
-    endpoint (inductive-containing SCCs, sorted by lowlink pretty name,
+    endpoint (inductive-containing SCCs, sorted by canonical key pretty name,
     members pretty-sorted). CompileM errors surface as `error` lines so a
     divergence shows in the diff instead of aborting. -/
 def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
-  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
-  for (lo, members) in condensed.blocks do
-    let all := (members.toArray.map (·, ())).map (·.1)
-    let sortedAll := all.qsort (fun a b => a.pretty < b.pretty)
-    let hasInd := sortedAll.any fun n =>
-      match cenv.env.consts.get? n with
-      | some (.inductInfo _) => true
-      | _ => false
-    if hasInd then
-      blocks := blocks.push (lo.pretty, lo, sortedAll)
-  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let blocks := dumpBlocks (isInductive cenv) condensed
 
   let mut out := ""
   for (_, lo, all) in blocks do
@@ -585,6 +576,34 @@ def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .ok (s, _) => out := out ++ s
     | .error e => out := out ++ s!"block {lo.pretty}\nerror compilem {e}\n"
   return out
+
+/-- Exercise the actual dump input selection with a different representative,
+member insertion order and block insertion order, retaining both families. -/
+def suite : List LSpec.TestSeq := Id.run do
+  let eq := Ix.Name.fromLeanName `Eq
+  let refl := Ix.Name.fromLeanName `Eq.refl
+  let nat := Ix.Name.fromLeanName `Nat
+  let zero := Ix.Name.fromLeanName `Nat.zero
+  let plain := Ix.Name.fromLeanName `plain
+  let left : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert eq (({} : Ix.Set _).insert eq |>.insert refl)
+        |>.insert nat (({} : Ix.Set _).insert nat |>.insert zero)
+        |>.insert plain (({} : Ix.Set _).insert plain) }
+  let right : Ix.CondensedBlocks :=
+    { lowLinks := {}, blockRefs := {}, blocks := ({} : Ix.Map _ _)
+        |>.insert plain (({} : Ix.Set _).insert plain)
+        |>.insert zero (({} : Ix.Set _).insert zero |>.insert nat)
+        |>.insert refl (({} : Ix.Set _).insert refl |>.insert eq) }
+  let selected := dumpBlocks (fun n => n == eq || n == nat) left
+  let reordered := dumpBlocks (fun n => n == eq || n == nat) right
+  return [
+    LSpec.test "auxiliary dumps ignore SCC representative and insertion order"
+      (selected == reordered),
+    LSpec.test "auxiliary dumps retain both complete inductive blocks"
+      (selected.size == 2 && selected.all (fun (_, _, ns) => ns.size == 2)
+        && selected.any (fun (_, _, ns) => ns.contains eq && ns.contains refl)
+        && selected.any (fun (_, _, ns) => ns.contains nat && ns.contains zero))]
 
 /-- Compare the two dumps line-by-line; report the first divergence with
     surrounding context. Returns true iff identical. -/
@@ -731,8 +750,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
       else
         rep := { rep with defnError := rep.defnError.push (lo, toString e) }
     | .ok (result, _cache) =>
-      -- Member name → Lean address, mirroring the parallel driver's
-      -- projection handling (CompileM.compileEnvParallel).
+      -- Member name → Lean address, mirroring the drivers' projection
+      -- handling (`Ix.CompileM.mergeCompiledBlock`).
       let mut outs : Array (Ix.Name × Address × Ixon.ConstantMeta) := #[]
       if result.projections.isEmpty then
         outs := #[(lo, Address.blake3 result.blockBytes, result.blockMeta)]
@@ -874,16 +893,16 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  -- Driver gate: FULL aux-aware driver parity. `compileEnvAux` runs the
-  -- production pipeline (prereq seeding, per-block aux tails, promotion
+  -- Driver gate: FULL aux-aware driver parity. `compileEnvFold` runs the
+  -- production driver (the aux-gen seeds as dependencies, aux tails, promotion
   -- + no-aux originals, pending release) over the same corpus; the
   -- result env is compared against Rust's CompileState env whole:
   -- named coverage both directions, per-name addresses, per-address
   -- constant BYTES, and full Named metadata (constMeta + original +
   -- hints).
-  IO.println "[aux-gen-diff] aux-aware driver (compileEnvAux)..."
+  IO.println "[aux-gen-diff] aux-aware driver (compileEnvFold)..."
   let driverOk ← do
-    match Ix.CompileM.compileEnvAux rawEnv condensed with
+    match Ix.CompileM.compileEnvFold rawEnv condensed with
     | .error e =>
       IO.println s!"[aux-gen-diff] driver ERROR: {e}"
       pure false
@@ -968,34 +987,42 @@ def run (env : Lean.Environment) : IO UInt32 := do
         && anonHintsMism == 0 && serOk)
   IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
 
-  -- Parallel-driver gate: the PARALLEL aux-aware driver must produce the
-  -- identical env (wave workers + rustRef fail-fast — the InitStd gate
-  -- vehicle).
-  IO.println "[aux-gen-diff] parallel aux driver (compileEnvParallelAux)..."
+  -- Reference-schedule gate: the test-only reference schedule (the former
+  -- sequential driver, with the Rust-style seed pre-pass) and the fold at
+  -- another width must produce the identical env; the fold's names are also
+  -- checked against Rust's addresses (`rustRefMismatch?`).
+  IO.println "[aux-gen-diff] reference schedule and the fold at width 32..."
   let rustNameToAddr : Std.HashMap Ix.Name Address :=
     rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
   let parOk ← do
-    match ← Ix.CompileM.compileEnvParallelAux rawEnv condensed
-        (rustRef := some rustNameToAddr) with
-    | .error e =>
-      IO.println s!"[aux-gen-diff]   parallel driver ERROR: {e}"
-      pure false
-    | .ok (parEnv, _, _) =>
-      match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
-      | .ok pb, .ok rb =>
-        if pb == rb then
-          IO.println s!"[aux-gen-diff]   parallel serialized env: {pb.size} bytes, IDENTICAL"
-          pure true
-        else
-          IO.println s!"[aux-gen-diff]   parallel serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
-          pure false
-      | .error e, _ =>
-        IO.println s!"[aux-gen-diff]   serEnv (parallel) failed: {e}"
-        pure false
-      | _, .error e =>
-        IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
-        pure false
-  IO.println s!"[aux-gen-diff] parallel driver gate: {if parOk then "PASS" else "FAIL"}"
+    let runs : List (String × Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :=
+      [("reference schedule", Tests.Ix.Compile.ScheduleReference.sequential rawEnv condensed),
+       ("fold, width 32", Ix.CompileM.compileEnvFold rawEnv condensed (width := 32))]
+    let mut ok := true
+    for (label, run) in runs do
+      match run with
+      | .error e =>
+        IO.println s!"[aux-gen-diff]   {label} ERROR: {e}"
+        ok := false
+      | .ok (parEnv, _, parCenv) =>
+        if let some msg := Ix.CompileM.rustRefMismatch? rustNameToAddr parCenv then
+          IO.println s!"[aux-gen-diff]   {label}: {msg}"
+          ok := false
+        match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
+        | .ok pb, .ok rb =>
+          if pb == rb then
+            IO.println s!"[aux-gen-diff]   {label} serialized env: {pb.size} bytes, IDENTICAL"
+          else
+            IO.println s!"[aux-gen-diff]   {label} serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
+            ok := false
+        | .error e, _ =>
+          IO.println s!"[aux-gen-diff]   serEnv ({label}) failed: {e}"
+          ok := false
+        | _, .error e =>
+          IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
+          ok := false
+    pure ok
+  IO.println s!"[aux-gen-diff] reference-schedule gate: {if parOk then "PASS" else "FAIL"}"
 
   return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk then 0 else 1
 

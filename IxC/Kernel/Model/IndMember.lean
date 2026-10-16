@@ -42,30 +42,30 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-- **The annotated half of `BlockInstalledTT`**: an installed block
 member's *leaf* is its model's.  The other three conjuncts of
 `BlockInstalledTT` are V-free environment facts and are consumed from
 the v1 predicate directly. -/
-@[expose] def BlockAcvalInstalled (blockNames : List Name) (env : Env)
-    (acval : Name → (Name → Nat) → AnnotTerm) : Prop :=
-  ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo,
+@[expose] def BlockAcvalInstalled (blockNames : List (Key md)) (env : Env md)
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm) : Prop :=
+  ∀ n, blockNames.contains n = true → ∀ ci : ConstantInfo md,
     env.find? n = some ci →
-    ∀ ψ : Name → Nat, acval (n.str "_model") ψ = acval n ψ
+    ∀ ψ : LevelParam → Nat, acval (auxKey n .model) ψ = acval n ψ
 
 /-- The P invariant's three type facts at a *stored* constant, keyed
 by `find?` rather than by membership (`EnvS.cval_memType`'s
 transpose). -/
-theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Name}
-    {ci : ConstantInfo} (hf : env.find? n = some ci)
-    (ψ : Name → Nat) :
+theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Key md}
+    {ci : ConstantInfo md} (hf : env.find? n = some ci)
+    (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 ci.toConstantVal.type
         = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
@@ -80,23 +80,23 @@ theorem EnvModelM.acval_memType (mp : EnvModelM V μ env) {n : Name}
 /-- **The block member's key, P tier.**  The model artifact's leaf
 inhabits the checked member's type's reading, graded, at every
 assignment. -/
-theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
-    {cv cvA : ConstantVal}
+theorem memberKey (mp : EnvModelM V μ env) {blockNames : List (Key md)}
+    {cv cvA : ConstantVal md}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     ∃ ta, denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
-        interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)
+        interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)
           ∈ˢ interp V ρ ta := by
   obtain ⟨type', hcv, rfl, -, cvm, mval, hint, hfm, hlpm, hren⟩ := hmv
   obtain ⟨-, -, -, -, -, -, -, -, htr, -⟩ := hcv
   -- the renaming's two `RenameOkT` clauses, at a member environment
   have hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? ((fun n =>
-          if blockNames.contains n then n.str "_model" else n) n)
+          if blockNames.contains n then auxKey n .model else n) n)
         = some ci' ∧
         ci'.toConstantVal.levelParams
           = ci.toConstantVal.levelParams := by
@@ -107,10 +107,10 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
       exact ⟨.defnInfo cvm' mval' hint', by rw [if_pos hb]; exact hfm',
         hlp'⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
-  have hval : ∀ (n : Name) (ci : ConstantInfo),
-      env.find? n = some ci → ∀ ψ' : Name → Nat,
+  have hval : ∀ (n : Key md) (ci : ConstantInfo md),
+      env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
-        if blockNames.contains n then n.str "_model" else n) n) ψ'
+        if blockNames.contains n then auxKey n .model else n) n) ψ'
         = mp.base2.acval n ψ' := by
     intro n ci hfn ψ'
     dsimp only
@@ -119,7 +119,7 @@ theorem memberKey (mp : EnvModelM V μ env) {blockNames : List Name}
     · rw [if_neg hb]
   -- the model constant's own facts, and the two types read the same
   obtain ⟨ta, hta, hokta, hmem⟩ :=
-    mp.acval_memType (n := cv.name.str "_model") hfm ψ
+    mp.acval_memType (n := auxKey cv.name .model) hfm ψ
   refine ⟨ta, ?_, hokta, hmem⟩
   show denoteMeta mp.base2.acval env ψ 0 type' = some ta
   rw [← hta]
@@ -145,16 +145,16 @@ obligations do and for v1's reason: at a single member's install the
 family's constructor and projections need not be stored yet, so the
 caller — the block fold, which knows the whole block is in — is the
 only place it can be discharged. -/
-theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
-    {cvA : ConstantVal}
+theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo md}
+    {cvA : ConstantVal md}
     (hkind : (∃ caps, c₀ = .indInfo cvA caps) ∨
       (∃ nP nF, c₀ = .ctorInfo cvA nP nF) ∨
       (∃ mI rP, c₀ = .recInfo cvA mI rP []))
     (hfresh : env.find? cvA.name = none)
     (hnres : Ix.Kernel.reservedBasisNames.contains cvA.name = false)
     -- the model artifact whose leaf the member takes
-    {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hmE : env.find? (cvA.name.str "_model")
+    {cvm : ConstantVal md} {mval : Expr md} {hint : ReducibilityHint}
+    (hmE : env.find? (auxKey cvA.name .model)
       = some (.defnInfo cvm mval hint))
     (hmlps : cvm.levelParams = cvA.levelParams)
     -- the member's type resolves in the prefix (`ConstantValR`)
@@ -164,20 +164,20 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
     -- ever supplied here)
     (hwf : EnvWF ⟨c₀ :: env.consts⟩)
     -- the member's key at the prefix (`memberKey`)
-    (hkeyP : ∀ ψ : Name → Nat, ∃ ta,
+    (hkeyP : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ ta) ∧
       ∀ ρ : Nat → V,
-        interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)
+        interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)
           ∈ˢ interp V ρ ta)
     -- the block fold's row
     (hcaps : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
       CapsOk m₂) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) := by
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) := by
   -- the three kinds share a constant value and a name
   have hcvA : c₀.toConstantVal = cvA := by
     rcases hkind with ⟨caps, rfl⟩ | ⟨nP, nF, rfl⟩ | ⟨mI, rP, rfl⟩ <;> rfl
@@ -197,10 +197,10 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
   have hcb : ConstsBound env cvA.type :=
     constsBound_of_constsResolve _ hres
   -- the crossing, forward
-  have hcross : ∀ (ψ : Name → Nat) {ta : AnnotTerm},
+  have hcross : ∀ (ψ : LevelParam → Nat) {ta : AnnotTerm},
       denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta →
       denoteMeta (acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ))
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ))
         ⟨c₀ :: env.consts⟩ ψ 0 c₀.toConstantVal.type = some ta := by
     intro ψ ta h
     rw [hcvA]
@@ -209,7 +209,7 @@ theorem indMember (mp : EnvModelM V μ env) {c₀ : ConstantInfo}
         intro _ h <;> exact nomatch h)
       ψ 0 cvA.type hcb h
   have hgoal := declStep_preserves_of_ind_cons mp (c₀ := c₀)
-    (A := fun ψ => mp.base2.acval (cvA.name.str "_model") ψ)
+    (A := fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ)
     hfresh' hnres'
     (by rcases hkind with ⟨caps, rfl⟩ | ⟨nP, nF, rfl⟩ | ⟨mI, rP, rfl⟩ <;>
           intro _ _ _ h <;> exact nomatch h)

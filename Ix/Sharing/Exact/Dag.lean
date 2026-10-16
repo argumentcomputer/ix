@@ -16,11 +16,12 @@
     exact root-count check instead of out-of-range fallbacks.
 
   Structural equality is decided by `Node` keys (`BEq`), never by a hash
-  alone; the pointer cache only skips re-walking the same live object.
+  alone. Pointer-cache candidates retain their source expression, and a
+  checked equality is required before skipping its traversal.
 -/
 module
 
-public import Ix.Sharing.Exact.Basic
+public import Ix.Sharing.Exact.ExprCache
 
 public section
 
@@ -53,10 +54,9 @@ def Interner.ofNodes (nodes : Array Node) : Interner :=
 /-- State of one expansion pass. -/
 structure IngestState where
   interner : Interner := {}
-  /-- Live input object address ↦ term ID. Every object walked in one pass
-  was allocated before the pass and is alive while walked, so two walked
-  objects with the same address are the same object. -/
-  ptrCache : Std.HashMap USize Nat := {}
+  /-- Pointer-indexed candidates retain their expression. A hit requires
+  checked expression equality, without an address-injectivity premise. -/
+  ptrCache : ExprCache Nat := {}
   visits : Nat := 0
   deriving Inhabited
 
@@ -104,7 +104,7 @@ def internNode (limits : Limits) (n : Node) : IngestM Nat := do
 /-- Expand one expression into the interner and return its term ID. -/
 def ingestExpr (limits : Limits) (ctx : ShareCtx) (depth : Nat) (e : Ixon.Expr) :
     IngestM Nat := do
-  let ptr := exprPtr e
+  let ptr := exprKey e
   match (← get).ptrCache.get? ptr with
   | some id => return id
   | none =>

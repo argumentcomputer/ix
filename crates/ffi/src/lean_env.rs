@@ -2167,8 +2167,18 @@ extern "C" fn rs_compile_validate_aux(
       }
       drop(p2_ingressed);
 
+      // An ingress error (an ill-formed level or free variable in a
+      // constant) is reported here; the blocks that need the constant then
+      // fail in Pass 3 with an unknown constant, recorded per block.
       for name in &p2_names {
-        expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx);
+        if let Err(e) =
+          expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx)
+        {
+          eprintln!(
+            "[validate-aux] pass 2 pre-ingress of {}: {e}",
+            name.pretty()
+          );
+        }
       }
     }
 
@@ -4274,7 +4284,7 @@ extern "C" fn rs_compile_validate_aux(
   );
 
   // Skip destructors on the CLI path. Mirrors the `rs_compile_env`
-  // treatment (`src/ffi/compile.rs`). On Mathlib the remaining live state
+  // treatment (`crates/ffi/src/compile.rs`). On Mathlib the remaining live state
   // — `env` (~1–2 GB), `dstt2` (~30 GB) — would otherwise take 60+ seconds
   // to drop serially across DashMap shards and `Arc<NameData>` chains, and
   // the process exits moments after this function returns anyway.
@@ -4501,7 +4511,7 @@ fn serialized_meta_size(
 /// handle Lean's `«…»` escape syntax, so it's unsuitable for names
 /// containing special characters; callers that receive Lean-originated
 /// names should instead pass the structured `Lean.Name` across FFI and
-/// use `decode_name`, as done by `src/ffi/kernel.rs`.
+/// use `decode_name`, as done by `crates/ffi/src/kernel.rs`.
 #[cfg(feature = "test-ffi")]
 pub fn parse_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();

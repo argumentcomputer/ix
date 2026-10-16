@@ -38,7 +38,7 @@ namespace Benchmarks.Kernel.CheckIxePaired
 
 open Benchmarks.Kernel.CheckIxeRows
 
-def outcomesAllowed : List String := ["accept", "decline", "reject", "blocked"]
+def outcomesAllowed : List String := ["accept", "typed", "decline", "reject", "blocked"]
 
 /-- An insertion-ordered map from address to row. -/
 structure Rows where
@@ -112,6 +112,9 @@ def compare (before after : Rows) (top : Nat) : Value := Id.run do
     outcome before a == "accept" && (!after.contains a || outcome after a != "accept"))
   let gained := sorted (after.order.filter fun a =>
     outcome after a == "accept" && (!before.contains a || outcome before a != "accept"))
+  -- a lost typing-tier verdict counts as a lost acceptance
+  let lostTyped := sorted (before.order.filter fun a =>
+    outcome before a == "typed" && (!after.contains a || outcome after a != "typed"))
   let sumMicros (rows : Rows) := commonAccepts.foldl (fun s a => s + micros (rows.get a)) (0 : Int)
   let beforeMicros := sumMicros before
   let afterMicros := sumMicros after
@@ -125,6 +128,7 @@ def compare (before after : Rows) (top : Nat) : Value := Id.run do
     ("baseline_only", .arr ((sorted (before.order.filter (!after.contains ·))).map change)),
     ("current_only", .arr ((sorted (after.order.filter (!before.contains ·))).map change)),
     ("lost_accepts", .arr (lost.map change)),
+    ("lost_typed", .arr (lostTyped.map change)),
     ("gained_accepts", .arr (gained.map change)),
     ("changed_diagnostics", .arr ((shared.filter fun a =>
       outcome before a == outcome after a && reason before a != reason after a).map change)),
@@ -140,9 +144,10 @@ def compare (before after : Rows) (top : Nat) : Value := Id.run do
       ("current_micros", .int (micros (after.get a)))]))]
 
 def lostAny (result : Value) : Bool :=
-  match result.get? "lost_accepts" with
-  | some (.arr xs) => !xs.isEmpty
-  | _ => false
+  let lost (key : String) : Bool := match result.get? key with
+    | some (.arr xs) => !xs.isEmpty
+    | _ => false
+  lost "lost_accepts" || lost "lost_typed"
 
 /-- Write JSON (sorted keys, indent 2) atomically. -/
 def writeJson (path : String) (v : Value) : IO Unit := do
