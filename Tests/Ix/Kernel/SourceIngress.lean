@@ -252,6 +252,42 @@ def numbering : TestSeq :=
     (sortOf (ingressExprs large.pos [ty]) == some (.max (.param 0) (.param 1)) &&
       large.params == [1, 0])
 
+/-- Levels in the compiler's canonical form (`canonLevel`), read as the
+reader reads a compiled universe: `Ixon.canonUniv` over the Lean index order
+(variable `i` is the constant's `i`-th Lean level parameter), back through
+`Reader.convUniv` (at a large eliminator through `Reader.recParam`, the
+elimination level first). -/
+def canonical : TestSeq :=
+  let u := nm "u"
+  let v := nm "v"
+  let plain : Numbering := ⟨#[u, v], false⟩
+  -- a large eliminator of a block with one parameter `u`: Lean's list is
+  -- `[v, u]`, `v` the elimination level (position 1, index 0)
+  let large : Numbering := ⟨#[v, u], true⟩
+  let read (param : Nat → Ix.Kernel.LevelParam) (w : Ixon.Univ) : KLevel :=
+    Ix.Kernel.Reader.convUniv param (Ixon.canonUniv w)
+  let recP := Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps true [0])
+  let cases : List (KLevel × Ixon.Univ) := [
+    (.max (.param 1) (.param 0), .max (.var 1) (.var 0)),
+    (.max (.param 0) (.succ (.param 0)), .max (.var 0) (.succ (.var 0))),
+    (.imax (.param 1) (.max (.param 0) (.param 1)), .imax (.var 1) (.max (.var 0) (.var 1))),
+    (.succ (.max (.zero) (.param 1)), .succ (.max .zero (.var 1)))]
+  test "a member's level is the reader's reading of its compiled universe"
+    (cases.all fun (l, w) => canonLevel plain l == read (fun i => i) w) ++
+  test "at a large eliminator the index order puts the elimination level first"
+    -- Source `max u v` is positions `max 0 1`; compiled, `u` is variable 1
+    (canonLevel large (.max (.param 0) (.param 1)) == read recP (.max (.var 1) (.var 0)) &&
+      canonLevel large (.imax (.param 1) (.param 0)) == read recP (.imax (.var 0) (.var 1))) ++
+  test "canonical forms do not depend on the order of a max"
+    (canonLevel plain (.max (.param 0) (.param 1)) == canonLevel plain (.max (.param 1) (.param 0))) ++
+  test "canonicalizing is idempotent"
+    (cases.all fun (l, _) => canonLevel plain (canonLevel plain l) == canonLevel plain l) ++
+  test "mapLevels' executed walk is the structural map"
+    (let e : KExpr := .app (.sort (.max (.param 1) (.param 0)))
+        (.const (ingressKey (nm "f")) [.max (.param 1) (.param 0)])
+     mapLevelsList (canonLevel plain) [e, e] ==
+      [e, e].map (mapLevels (canonLevel plain)))
+
 /-- A DAG of depth `n` whose tree has `2^n` leaves: the shared conversion
 finishes, and agrees with the tree conversion at a depth the tree walk still
 manages. -/
@@ -337,6 +373,6 @@ def fixtures : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, expected.length, 0, msg)) .done
 
-def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, sharing, fixtures]
+def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures]
 
 end Tests.Ix.Kernel.SourceIngress

@@ -7,7 +7,7 @@ import Tests.Ix.Kernel.SourceIngressCompare
 
 * `kernel-source-ingress --fixture`: the `lake test` suite
   `kernel-source-ingress` (`Tests.Ix.Kernel.SourceIngress`).
-* `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs]
+* `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs] [--fiber-hints]
   [--bundle-evidence] Module…`: the modules' environment (default `Init`), with
   `IxC.Kernel.PinGen.Certs` (the certificate theorems Source mode's evidence
   is made of, `Ix.LeanIngress.sourceEvidence`; not with `--no-certs`), loaded
@@ -28,7 +28,9 @@ import Tests.Ix.Kernel.SourceIngressCompare
   the verdicts are compared constant by constant
   (`Tests.Ix.Kernel.SourceIngressCompare`); the differing constants go to
   `path.diff`, and the Ixon verdicts, one line per Lean name sorted by name,
-  `name<TAB>outcome<TAB>reason`, to `path.rows`. -/
+  `name<TAB>outcome<TAB>reason`, to `path.rows`. With `--fiber-hints`, Source
+  runs the artifact's hints, one per alias fiber (`Ix.LeanIngress.fiberHints`,
+  `checkSourceHinted`), instead of Lean's per name. -/
 
 namespace Tests.Ix.Kernel.SourceIngressMain
 
@@ -43,6 +45,7 @@ structure Args where
   ixe : Option System.FilePath := none
   certs : Bool := true
   bundle : Bool := false
+  fiberHints : Bool := false
   modules : Array Lean.Name := #[]
 
 partial def parse (a : Args) : List String → Except String Args
@@ -54,6 +57,7 @@ partial def parse (a : Args) : List String → Except String Args
   | "--ixe" :: p :: rest => parse { a with ixe := some p } rest
   | "--no-certs" :: rest => parse { a with certs := false } rest
   | "--bundle-evidence" :: rest => parse { a with bundle := true } rest
+  | "--fiber-hints" :: rest => parse { a with fiberHints := true } rest
   | m :: rest =>
     if m.startsWith "--" then throw s!"unknown option {m}"
     else parse { a with modules := a.modules.push m.toName } rest
@@ -81,7 +85,18 @@ def main (args : List String) : IO UInt32 := do
       for why in whys do IO.println s!"  bundle: {why}"
       pure (some ev)
     else pure none
-  let r ← run pre env blocks a.workers (progress := true) (evidence := bundled)
+  let hints ← if a.fiberHints then do
+      let some path := a.ixe | throw (IO.userError "--fiber-hints needs --ixe")
+      unless ← path.pathExists do
+        let t ← IO.monoMsNow
+        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
+        IO.println s!"compiled {path} in {(← IO.monoMsNow) - t} ms"
+      let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+      let m := Ix.LeanIngress.fiberHintsMap ixon
+      IO.println s!"hints: the artifact's per alias fiber (`Ix.LeanIngress.fiberHints`), {m.size} keys"
+      pure (some m)
+    else pure none
+  let r ← run pre env blocks a.workers (progress := true) (evidence := bundled) (hints := hints)
   let withEvidence := r.evidence.filter fun (_, es) => es.any fun
     | .proof _ => true | .defeq => false
   IO.println s!"evidence: {withEvidence.length} well-founded operations with proof evidence: \

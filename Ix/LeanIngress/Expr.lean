@@ -3,6 +3,7 @@ module
 public import Ix.Environment
 public import IxC.Kernel.Expr
 public import Ix.SemanticContract
+public import Ix.IxonUniv
 /- `withPtrEq` is `public` but not `@[expose]`; the memo probe (`probe`) reads
 that `withPtrEq a b k h` is definitionally `k ()`, as `IxC.Kernel.Expr` does.
 `import all` makes that body visible in this module only. -/
@@ -25,10 +26,12 @@ instead of repeating it; the rest of the Source-mode ingress
   key of the name (`ingressKey`). So the checker's role constants (`Eq`,
   `Nat`, `Quot`, the literal support, the `Nat` operations, the standard
   axioms) are met at their role keys.
-* **Levels** are Lean's levels, constructor by constructor; they are not
-  canonicalized. A level parameter becomes its position `σ n` under the
-  constant's numbering `σ` of its own level parameters
-  (`Ix.LeanIngress.Numbering`). A level metavariable is refused.
+* **Levels** are Lean's levels, constructor by constructor; the term
+  conversion does not canonicalize them. A level parameter becomes its
+  position `σ n` under the constant's numbering `σ` of its own level
+  parameters (`Ix.LeanIngress.Numbering`). A level metavariable is refused.
+  The ingress then puts every level of a converted term in the compiler's
+  canonical form (`canonLevel`, `mapLevels`, below; `Ix.LeanIngress.exprsOf`).
 * **Terms**: `mdata` is erased (except a contract frame, below), binder names
   and binder infos are dropped, a `letE` carries Lean's let contract
   (`LetContract.lean nonDep`), every binder
@@ -440,5 +443,264 @@ end Shared
 @[csimp] theorem ingressExprs_eq_shared : @ingressExprs = @ingressExprsShared := by
   funext σ es
   exact (ingressExprsShared_eq σ es).symm
+
+/-! ## Canonical universes
+
+The compiler stores every universe in canonical form: `Ixon.canonUniv` over
+the constant's level parameters numbered by their index in its list
+(`compileAndInternUnivCanon`), and the Ixon reader reads variable `i` back
+as the constant's `i`-th parameter (`Reader.convUniv`; at a large eliminator
+`Reader.recParam`, the elimination level first). `canonLevelIn lps` gives a
+level that form for a constant whose level parameters, in its own order, are
+`lps`: it numbers the positions by their index in `lps` (`idxIn`),
+canonicalizes, and reads the variables back (`ofIdxIn`). The order matters:
+`canonUniv` sorts by variable, and at a large eliminator the list's order
+(the elimination level first) is not the positions' order (it last).
+
+The ingress applies it to every lowered declaration, each constant over its
+own list (`Ix.LeanIngress.canonDecl`), after the lowering: the in-process
+modeller sees Lean's levels as Lean's kernel does, so its auxiliaries follow
+Lean's. The value of every level is unchanged (`canonLevelIn_eval`,
+`Ix/LeanIngress/CanonLevel.lean`). -/
+
+/-- The index of position `p` in the level-parameter list `lps`; a position
+not in `lps` goes past it, so that `ofIdxIn` inverts it (`ofIdxIn_idxIn`). -/
+@[expose] def idxIn (lps : List LevelParam) (p : LevelParam) : Nat :=
+  match lps.idxOf? p with
+  | some i => i
+  | none => lps.length + p
+
+/-- The position at index `i` of `lps` (past it, `idxIn`'s inverse). -/
+@[expose] def ofIdxIn (lps : List LevelParam) (i : Nat) : LevelParam :=
+  if h : i < lps.length then lps[i] else i - lps.length
+
+theorem ofIdxIn_idxIn (lps : List LevelParam) (p : LevelParam) : ofIdxIn lps (idxIn lps p) = p := by
+  unfold idxIn ofIdxIn
+  cases hi : lps.idxOf? p with
+  | some i =>
+    dsimp only
+    obtain ⟨hlt, hget, -⟩ := List.idxOf?_eq_some_iff.mp hi
+    simp only [hlt, ↓reduceDIte, hget]
+  | none =>
+    dsimp only
+    have hn : ¬ (lps.length + p < lps.length) := by omega
+    simp only [hn, ↓reduceDIte]
+    exact Nat.add_sub_cancel_left _ _
+
+/-- A level as an Ixon universe, its positions numbered by `ι`. -/
+@[expose] def univOfLevel (ι : LevelParam → Nat) : KLevel → Ixon.Univ
+  | .zero => .zero
+  | .succ u => .succ (univOfLevel ι u)
+  | .max u v => .max (univOfLevel ι u) (univOfLevel ι v)
+  | .imax u v => .imax (univOfLevel ι u) (univOfLevel ι v)
+  | .param p => .var (ι p).toUInt64
+
+/-- An Ixon universe as a level, variable `i` read as the position `π i`
+(the reader's `convUniv`). -/
+@[expose] def levelOfUniv (π : Nat → LevelParam) : Ixon.Univ → KLevel
+  | .zero => .zero
+  | .succ u => .succ (levelOfUniv π u)
+  | .max u v => .max (levelOfUniv π u) (levelOfUniv π v)
+  | .imax u v => .imax (levelOfUniv π u) (levelOfUniv π v)
+  | .var i => .param (π i.toNat)
+
+/-- **A level in the compiler's canonical form**, for a constant whose level
+parameters, in its own order, are `lps`. -/
+@[expose] def canonLevelIn (lps : List LevelParam) (l : KLevel) : KLevel :=
+  levelOfUniv (ofIdxIn lps) (Ixon.canonUniv (univOfLevel (idxIn lps) l))
+
+/-- `canonLevelIn` under a numbering: over its parameters' positions in the
+constant's order (`Numbering.params`). -/
+@[expose] def canonLevel (σ : Numbering) (l : KLevel) : KLevel :=
+  canonLevelIn σ.params l
+
+/-- Every level of a term mapped by `f` (a free variable's type included);
+binders, keys and literals unchanged. -/
+@[expose] def mapLevels (f : KLevel → KLevel) : KExpr → KExpr
+  | .bvar i => .bvar i
+  | .fvar i t => .fvar i (mapLevels f t)
+  | .sort u => .sort (f u)
+  | .const n us => .const n (us.map f)
+  | .app a b => .app (mapLevels f a) (mapLevels f b)
+  | .lam t b m => .lam (mapLevels f t) (mapLevels f b) m
+  | .forallE t b m => .forallE (mapLevels f t) (mapLevels f b) m
+  | .letE t v b l => .letE (mapLevels f t) (mapLevels f v) (mapLevels f b) l
+  | .lit l => .lit l
+  | .proj n i e => .proj n i (mapLevels f e)
+
+/-! The executed `mapLevels` over several terms: one walk memoized by term
+(a converted term is a DAG), proved to be the structural map. -/
+
+section MapLevels
+
+variable (f : KLevel → KLevel)
+
+/-- The memo holds structural results only. -/
+def LevelMemoInv (memo : Std.HashMap KExpr KExpr) : Prop :=
+  ∀ k v, memo[k]? = some v → v = mapLevels f k
+
+variable {f} in
+theorem LevelMemoInv.insert {memo : Std.HashMap KExpr KExpr} (hm : LevelMemoInv f memo)
+    {e r : KExpr} (heq : r = mapLevels f e) : LevelMemoInv f (memo.insert e r) := by
+  intro k v hk
+  rw [Std.HashMap.getElem?_insert] at hk
+  split at hk
+  · rename_i hbeq
+    cases hk
+    rw [← eq_of_beq hbeq]
+    exact heq
+  · exact hm k v hk
+
+/-- The memoized walk. -/
+def mapLevelsGo (memo : Std.HashMap KExpr KExpr) : KExpr → KExpr × Std.HashMap KExpr KExpr
+  | e@(.bvar _) => (e, memo)
+  | e@(.lit _) => (e, memo)
+  | e =>
+    match memo[e]? with
+    | some r => (r, memo)
+    | none =>
+      let (r, memo) : KExpr × Std.HashMap KExpr KExpr :=
+        match e with
+        | .fvar i t =>
+          let (t', memo) := mapLevelsGo memo t
+          (.fvar i t', memo)
+        | .sort u => (.sort (f u), memo)
+        | .const n us => (.const n (us.map f), memo)
+        | .app a b =>
+          let (a', memo) := mapLevelsGo memo a
+          let (b', memo) := mapLevelsGo memo b
+          (.app a' b', memo)
+        | .lam t b m =>
+          let (t', memo) := mapLevelsGo memo t
+          let (b', memo) := mapLevelsGo memo b
+          (.lam t' b' m, memo)
+        | .forallE t b m =>
+          let (t', memo) := mapLevelsGo memo t
+          let (b', memo) := mapLevelsGo memo b
+          (.forallE t' b' m, memo)
+        | .letE t v b l =>
+          let (t', memo) := mapLevelsGo memo t
+          let (v', memo) := mapLevelsGo memo v
+          let (b', memo) := mapLevelsGo memo b
+          (.letE t' v' b' l, memo)
+        | .proj n i s =>
+          let (s', memo) := mapLevelsGo memo s
+          (.proj n i s', memo)
+        | e => (e, memo)
+      (r, memo.insert e r)
+
+variable {f} in
+/-- **The memoized walk is `mapLevels`.** -/
+theorem mapLevelsGo_spec :
+    ∀ (e : KExpr) {memo : Std.HashMap KExpr KExpr}, LevelMemoInv f memo →
+      (mapLevelsGo f memo e).1 = mapLevels f e ∧ LevelMemoInv f (mapLevelsGo f memo e).2 := by
+  intro e
+  induction e with
+  | bvar i => intro memo hm; exact ⟨rfl, hm⟩
+  | lit l => intro memo hm; exact ⟨rfl, hm⟩
+  | sort u =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · exact ⟨rfl, hm.insert rfl⟩
+  | const n us =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · exact ⟨rfl, hm.insert rfl⟩
+  | fvar i t ih =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := ih hm
+      refine ⟨by simp [mapLevels, h1], ?_⟩
+      exact h2.insert (by simp [mapLevels, h1])
+  | app a b iha ihb =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iha hm
+      obtain ⟨h3, h4⟩ := ihb h2
+      refine ⟨by simp [mapLevels, h1, h3], ?_⟩
+      exact h4.insert (by simp [mapLevels, h1, h3])
+  | lam t b m iht ihb =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht hm
+      obtain ⟨h3, h4⟩ := ihb h2
+      refine ⟨by simp [mapLevels, h1, h3], ?_⟩
+      exact h4.insert (by simp [mapLevels, h1, h3])
+  | forallE t b m iht ihb =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht hm
+      obtain ⟨h3, h4⟩ := ihb h2
+      refine ⟨by simp [mapLevels, h1, h3], ?_⟩
+      exact h4.insert (by simp [mapLevels, h1, h3])
+  | letE t v b l iht ihv ihb =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht hm
+      obtain ⟨h3, h4⟩ := ihv h2
+      obtain ⟨h5, h6⟩ := ihb h4
+      refine ⟨by simp [mapLevels, h1, h3, h5], ?_⟩
+      exact h6.insert (by simp [mapLevels, h1, h3, h5])
+  | proj n i s ih =>
+    intro memo hm
+    rw [mapLevelsGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := ih hm
+      refine ⟨by simp [mapLevels, h1], ?_⟩
+      exact h2.insert (by simp [mapLevels, h1])
+
+/-- The walk over several terms, one memo throughout. -/
+def mapLevelsGoList (memo : Std.HashMap KExpr KExpr) : List KExpr → List KExpr
+  | [] => []
+  | e :: es =>
+    let (r, memo) := mapLevelsGo f memo e
+    r :: mapLevelsGoList memo es
+
+variable {f} in
+theorem mapLevelsGoList_spec :
+    ∀ (es : List KExpr) {memo : Std.HashMap KExpr KExpr}, LevelMemoInv f memo →
+      mapLevelsGoList f memo es = es.map (mapLevels f)
+  | [], _, _ => rfl
+  | e :: es, memo, hm => by
+    obtain ⟨h1, h2⟩ := mapLevelsGo_spec e hm
+    simp only [mapLevelsGoList, List.map_cons, ← h1, mapLevelsGoList_spec es h2]
+
+end MapLevels
+
+/-- Every level of several terms mapped by `f` (the specification). -/
+@[expose] def mapLevelsList (f : KLevel → KLevel) (es : List KExpr) : List KExpr :=
+  es.map (mapLevels f)
+
+/-- The executed `mapLevelsList`: one memoized walk. -/
+def mapLevelsListFast (f : KLevel → KLevel) (es : List KExpr) : List KExpr :=
+  mapLevelsGoList f {} es
+
+/-- Compiled code runs the memoized walk wherever it calls `mapLevelsList`. -/
+@[csimp] theorem mapLevelsList_eq_fast : @mapLevelsList = @mapLevelsListFast := by
+  funext f es
+  exact (mapLevelsGoList_spec es (fun k v h => by simp at h)).symm
 
 end Ix.LeanIngress

@@ -638,8 +638,65 @@ def graph (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Graph :=
   let groups := groupsOf env blocks
   graphOf blocks groups (groups.map convert)
 
+/-! ## Canonical levels on the lowered declarations
+
+Every level of a lowered declaration is put in the compiler's canonical form
+(`canonLevelIn`, over each constant's own level-parameter list), after the
+lowering: the reader's state, and so the in-process modeller of later
+groups, keeps Lean's levels, as Lean's kernel builds its auxiliaries from
+them. -/
+
+/-- A term's levels in canonical form, one memo per constant. -/
+def canonExprM (lps : List Ix.Kernel.LevelParam) (e : CExpr .source) :
+    StateM (Std.HashMap (CExpr .source) (CExpr .source)) (CExpr .source) :=
+  fun memo => mapLevelsGo (canonLevelIn lps) memo e
+
+def canonValM (cv : Ix.Kernel.ConstantVal .source) :
+    StateM (Std.HashMap (CExpr .source) (CExpr .source)) (Ix.Kernel.ConstantVal .source) := do
+  return { cv with type := ← canonExprM cv.levelParams cv.type }
+
+/-- A constant's levels in canonical form, over its own level parameters. -/
+def canonInfo (ci : Ix.Kernel.ConstantInfo .source) : Ix.Kernel.ConstantInfo .source :=
+  (go ci).run' {}
+where
+  go : Ix.Kernel.ConstantInfo .source →
+      StateM (Std.HashMap (CExpr .source) (CExpr .source)) (Ix.Kernel.ConstantInfo .source)
+    | .axiomInfo cv => return .axiomInfo (← canonValM cv)
+    | .defnInfo cv v h => return .defnInfo (← canonValM cv) (← canonExprM cv.levelParams v) h
+    | .thmInfo cv v => return .thmInfo (← canonValM cv) (← canonExprM cv.levelParams v)
+    | .indInfo cv caps => return .indInfo (← canonValM cv) caps
+    | .ctorInfo cv nP nF => return .ctorInfo (← canonValM cv) nP nF
+    | .recInfo cv m p rules => do
+      let cv' ← canonValM cv
+      let rules' ← rules.mapM fun r => do
+        let fire ← match r.fire with
+          | .nested lvls pins => do
+            let ps ← pins.mapM (canonExprM cv.levelParams)
+            pure (Ix.Kernel.RecRuleFire.nested (lvls.map (canonLevelIn cv.levelParams)) ps)
+          | f => pure f
+        return { r with rhs := ← canonExprM cv.levelParams r.rhs, fire }
+      return .recInfo cv' m p rules'
+    | .projInfo tbl => do
+      let f := canonLevelIn tbl.levelParams
+      return .projInfo { tbl with
+        structSort := f tbl.structSort, guards := tbl.guards.map f,
+        bodies := ← tbl.bodies.mapM (canonExprM tbl.levelParams) }
+
+/-- **A lowered declaration's levels in the compiler's canonical form.** -/
+def canonDecl : CDecl .source → CDecl .source
+  | .axiomDecl cv => .axiomDecl ((canonValM cv).run' {})
+  | .defnDecl cv v h => (do return .defnDecl (← canonValM cv) (← canonExprM cv.levelParams v) h :
+      StateM _ _).run' {}
+  | .thmDecl cv v => (do return .thmDecl (← canonValM cv) (← canonExprM cv.levelParams v) :
+      StateM _ _).run' {}
+  | .opaqueDecl cv v => (do return .opaqueDecl (← canonValM cv) (← canonExprM cv.levelParams v) :
+      StateM _ _).run' {}
+  | .basisDecl k => .basisDecl k
+  | .indDecl block nP => .indDecl (block.map canonInfo) nP
+  | .quotDecl k cv => .quotDecl k ((canonValM cv).run' {})
+
 /-- Lower the scheduled groups of `g` from `st`, threading the reader's
-state. -/
+state; the declarations come out with canonical levels (`canonDecl`). -/
 def lowerAll (st : State .source) (g : Graph) (scheduled : Array (Nat × Except ReadError Converted)) :
     Except IngressError (State .source × Array (CDecl .source)) := do
   let mut st := st
@@ -649,7 +706,7 @@ def lowerAll (st : State .source) (g : Graph) (scheduled : Array (Nat × Except 
     let c ← c.mapError fail
     let r ← (lower st c).mapError fail
     st := st.commit r
-    out := out ++ r.decls
+    out := out ++ r.decls.map canonDecl
   return (st, out)
 
 /-- **The Source-mode ingress**: the declarations of an environment under its
@@ -742,6 +799,116 @@ def checkSourceUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source)
 def checkSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except SourceError (Ix.Kernel.Env .source) :=
   checkSourceUsing Ix.Kernel.Reader.builtinPrelude env blocks
+
+/-! ## Hint overrides
+
+A definition's hint orders δ-unfolding only: the fold's soundness holds at
+every hint, so a Source check under other hints still means that the
+environment is well typed. The compiler ships one hint per address, merged
+over an alias fiber (`Ixon.Env.anonHints`), where Lean has one per name;
+Route A (B7, option (a1)) runs Source at the shipped hints, through
+`checkSourceHinted` with the artifact's per-key hints. With no override it
+is `checkSource` (`checkSourceHinted_none`). -/
+
+/-- A converted group with its definitions' hints overridden where `hints`
+gives one. -/
+def Converted.withHints (hints : CName .source → Option Ix.Kernel.ReducibilityHint) :
+    Converted → Converted
+  | .definitions ms => .definitions (ms.map fun m =>
+      match hints m.cv.name with
+      | some h => { m with hint := h }
+      | none => m)
+  | c => c
+
+/-- The reference graph, its definitions' hints overridden by `hints`. -/
+def graphHinted (hints : CName .source → Option Ix.Kernel.ReducibilityHint) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Graph :=
+  let g := graph env blocks
+  { g with converted := g.converted.map fun c => c.map (Converted.withHints hints) }
+
+/-- `leanIngress` with the definitions' hints overridden by `hints`. -/
+def leanIngressHinted (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (st : State .source := {}) :
+    Except IngressError (Array (CDecl .source)) := do
+  let g := graphHinted hints env blocks
+  return (← lowerAll st g (scheduleOf g)).2
+
+/-- `prepareSource` with the definitions' hints overridden by `hints`. -/
+def prepareSourceHinted (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (pre : Ix.Kernel.Reader.Prelude .source) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Array (CDecl .source)) := do
+  let decls ← (leanIngressHinted hints env blocks pre.state).mapError .ingress
+  pure (Ix.Kernel.Frontend.preparePrelude pre.ix decls)
+
+/-- `checkSourceUsing` with the definitions' hints overridden by `hints`. -/
+def checkSourceHintedUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .source))
+    (hints : CName .source → Option Ix.Kernel.ReducibilityHint) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) := do
+  let pre ← prelude.mapError .prelude
+  let decls ← prepareSourceHinted hints pre env blocks
+  (Ix.Kernel.Cached.checkDecls .verified (sourceEvidence decls) decls).mapError
+    fun (e, i) => .kernel e i
+
+/-- **The Source-mode check at hint overrides**: `checkSource`, every
+definition whose key `hints` maps running that hint instead of Lean's. -/
+def checkSourceHinted (hints : CName .source → Option Ix.Kernel.ReducibilityHint)
+    (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except SourceError (Ix.Kernel.Env .source) :=
+  checkSourceHintedUsing Ix.Kernel.Reader.builtinPrelude hints env blocks
+
+theorem Converted.withHints_none (c : Converted) : Converted.withHints (fun _ => none) c = c := by
+  cases c with
+  | definitions ms =>
+    simp only [Converted.withHints]
+    congr 1
+    conv => rhs; rw [← Array.map_id ms]
+    rfl
+  | _ => rfl
+
+theorem graphHinted_none (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    graphHinted (fun _ => none) env blocks = graph env blocks := by
+  have h : (fun c : Except ReadError Converted => c.map (Converted.withHints fun _ => none)) = id := by
+    funext c
+    cases c <;> simp [Except.map, Converted.withHints_none]
+  simp only [graphHinted, h, Array.map_id]
+
+theorem leanIngressHinted_none (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (st : State .source) :
+    leanIngressHinted (fun _ => none) env blocks st = leanIngress env blocks st := by
+  simp only [leanIngressHinted, leanIngress, graphHinted_none]
+
+theorem prepareSourceHinted_none :
+    prepareSourceHinted (fun _ => none) = prepareSource := by
+  funext pre env blocks
+  simp only [prepareSourceHinted, prepareSource, leanIngressHinted_none]
+
+/-- **With no override, the hinted check is `checkSource`.** -/
+theorem checkSourceHinted_none (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    checkSourceHinted (fun _ => none) env blocks = checkSource env blocks := by
+  simp only [checkSourceHinted, checkSourceHintedUsing, checkSource, checkSourceUsing,
+    prepareSourceHinted_none]
+
+/-- Lean's hint as the checker's. -/
+def hintOfLean : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
+  | .opaque => .opaque
+  | .abbrev => .abbrev
+  | .regular h => .regular h.toNat
+
+/-- **The artifact's hints by Source key** (Route A, B7 (a1)): for every name
+the artifact publishes (`Ixon.Env.named`), the hint it ships at that name's
+address (`Ixon.Env.anonHints`; for an alias fiber, the merge of its names'
+hints), under the name's Source key (`ingressKey`). A function of the
+artifact's data only. -/
+def fiberHintsMap (ixe : Ixon.Env) : Std.HashMap (CName .source) Ix.Kernel.ReducibilityHint :=
+  ixe.named.fold (init := {}) fun m n named =>
+    match ixe.anonHints.get? named.addr with
+    | some h => m.insert (ingressKey n) (hintOfLean h)
+    | none => m
+
+/-- The hint Source runs for the key `k` under the artifact `ixe`
+(`checkSourceHinted (fiberHints ixe)`): the one the artifact ships at the
+address it publishes for `k`'s name, so the two sides run one hint per alias
+fiber. -/
+def fiberHints (ixe : Ixon.Env) (k : CName .source) : Option Ix.Kernel.ReducibilityHint :=
+  (fiberHintsMap ixe)[k]?
 
 /-! ## The typing tier: partial and unsafe declarations
 

@@ -99,14 +99,19 @@ structure Run where
 
 /-- **The run.** The evidence is Source mode's, from the prepared declarations
 (`Ix.LeanIngress.sourceEvidenceReport`): the environment's certificate theorems,
-closed, unless `evidence` is given. -/
+closed, unless `evidence` is given. With `hints`, a definition whose key it
+maps runs that hint instead of Lean's (`Ix.LeanIngress.checkSourceHinted`). -/
 def run (pre : Prelude .source) (env : Ix.Environment)
     (blocks : Ix.CondensedBlocks) (workers : Nat := 1) (progress : Bool := false)
-    (evidence : Option (Ix.Kernel.Evidences .source) := none) : IO Run := do
+    (evidence : Option (Ix.Kernel.Evidences .source) := none)
+    (hints : Option (Std.HashMap (CName .source) Ix.Kernel.ReducibilityHint) := none) : IO Run := do
   let t0 ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let t1 ← IO.monoMsNow
   let converted ← IO.lazyPure fun _ => convertAll groups workers
+  let converted := match hints with
+    | some m => converted.map fun c => c.map (Converted.withHints (m[·]?))
+    | none => converted
   let t2 ← IO.monoMsNow
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
   -- the tier groups (`isTierGroup`): the tier's conversion; their slots pass
@@ -150,7 +155,7 @@ def run (pre : Prelude .source) (env : Ix.Environment)
       rewrites := rewrites + r.projRewrites
       for d in r.decls do
         for n in d.names do owner := owner.insert n gi
-      lowered := lowered ++ r.decls
+      lowered := lowered ++ r.decls.map canonDecl
   let t4 ← IO.monoMsNow
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
   let (ev, evErrors) ← match evidence with

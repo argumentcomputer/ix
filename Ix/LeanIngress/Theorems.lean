@@ -29,6 +29,11 @@ the ingress and the evidence owe nothing: these theorems hold whatever
   (`Ix.Kernel.Cached.StrongModel`, one witness of the fold's invariant) and
   a model with the value clauses (definitions denote their values, values
   read only their own level parameters);
+* `checkSourceHinted_reading`, `checkSourceHinted_refines_ref`,
+  `checkSourceHinted_strongModel`, `checkSourceHinted_model_values`,
+  `checkSourceHinted_no_proof_of_False`: the same at hint overrides
+  (`checkSourceHinted`, Route A's B7), which is `checkSource` with none
+  (`checkSourceHinted_none`);
 * `orderOf_complete`, `scheduleOf_complete`, `leanIngress_converts`,
   `checkSource_converts`: every group is in the order and scheduled, so an
   accepted check converted every group of its environment (coverage, not
@@ -146,6 +151,90 @@ theorem checkSource_model_values (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.
     ∃ M : Ix.Kernel.Model V kenv, Ix.Kernel.Cached.ValueClauses M := by
   obtain ⟨_, _, _, _, hc⟩ := checkSource_reading h
   exact Ix.Kernel.Cached.checkDecls_model_values V hc
+
+/-! ### At hint overrides
+
+The fold's theorems hold at every hint, so they hold of the hinted check
+(`checkSourceHinted`, Route A's B7) as of `checkSource`. -/
+
+/-- The reading of an accepted hinted check, at any prelude source. -/
+theorem checkSourceHintedUsing_reading {prelude : Except String (Ix.Kernel.Reader.Prelude .source)}
+    {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHintedUsing prelude hints env blocks = .ok kenv) :
+    ∃ pre decls, prelude = .ok pre ∧
+      leanIngressHinted hints env blocks pre.state = .ok decls ∧
+      Ix.Kernel.Cached.checkDecls .verified
+        (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok kenv := by
+  unfold checkSourceHintedUsing prepareSourceHinted at h
+  cases hp : prelude with
+  | error e => simp [hp, bind, Except.bind, Except.mapError] at h
+  | ok pre =>
+    cases hi : leanIngressHinted hints env blocks pre.state with
+    | error e => simp [hp, hi, bind, Except.bind, Except.mapError] at h
+    | ok decls =>
+      simp only [hp, hi, Except.mapError, bind, Except.bind, pure, Except.pure] at h
+      cases hc : Ix.Kernel.Cached.checkDecls .verified
+          (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+          (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
+      | error e => simp [hc] at h
+      | ok kenv' =>
+        simp only [hc, Except.ok.injEq] at h
+        subst h
+        exact ⟨pre, decls, rfl, hi, hc⟩
+
+/-- The reading of an accepted hinted check: the committed prelude, the
+hinted ingress's declarations behind it, and the fold's acceptance of them. -/
+theorem checkSourceHinted_reading {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHinted hints env blocks = .ok kenv) :
+    ∃ pre decls, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
+      leanIngressHinted hints env blocks pre.state = .ok decls ∧
+      Ix.Kernel.Cached.checkDecls .verified
+        (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok kenv :=
+  checkSourceHintedUsing_reading h
+
+/-- **An accepted hinted check is a reference accept.** -/
+theorem checkSourceHinted_refines_ref (V : Type u) [Ix.Kernel.SetTheory V]
+    {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHinted hints env blocks = .ok kenv) :
+    ∃ pre decls, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
+      leanIngressHinted hints env blocks pre.state = .ok decls ∧
+      Ix.Kernel.Cached.AcceptsRef .verified
+        (sourceEvidence (Ix.Kernel.Frontend.preparePrelude pre.ix decls))
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList kenv := by
+  obtain ⟨pre, decls, hp, hi, hc⟩ := checkSourceHinted_reading h
+  exact ⟨pre, decls, hp, hi, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
+
+/-- **The strong model** of an accepted hinted check. -/
+theorem checkSourceHinted_strongModel (V : Type u) [Ix.Kernel.SetTheory V]
+    {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHinted hints env blocks = .ok kenv) :
+    Nonempty (Ix.Kernel.Cached.StrongModel V kenv) := by
+  obtain ⟨_, _, _, _, hc⟩ := checkSourceHinted_reading h
+  exact Ix.Kernel.Cached.checkDecls_strongModel V hc
+
+/-- **Model existence with the value clauses** for the hinted check. -/
+theorem checkSourceHinted_model_values (V : Type u) [Ix.Kernel.SetTheory V]
+    {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHinted hints env blocks = .ok kenv) :
+    ∃ M : Ix.Kernel.Model V kenv, Ix.Kernel.Cached.ValueClauses M := by
+  obtain ⟨_, _, _, _, hc⟩ := checkSourceHinted_reading h
+  exact Ix.Kernel.Cached.checkDecls_model_values V hc
+
+/-- **No proof of `False`** for the hinted check. -/
+theorem checkSourceHinted_no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V]
+    {hints : Ix.Kernel.Key .source → Option Ix.Kernel.ReducibilityHint} {env : Ix.Environment}
+    {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source}
+    (h : checkSourceHinted hints env blocks = .ok kenv) :
+    ∀ ci ∈ kenv.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
+  obtain ⟨_, _, _, _, hc⟩ := checkSourceHinted_reading h
+  exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
 
 /-- **Model existence** for the Source-mode check. -/
 theorem checkSource_has_model (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
@@ -425,3 +514,18 @@ the build. -/
 
 /-- info: 'Ix.LeanIngress.checkSource_model_values' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.LeanIngress.checkSource_model_values
+
+/-- info: 'Ix.LeanIngress.checkSourceHinted_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceHinted_none
+
+/-- info: 'Ix.LeanIngress.checkSourceHinted_refines_ref' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceHinted_refines_ref
+
+/-- info: 'Ix.LeanIngress.checkSourceHinted_model_values' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceHinted_model_values
+
+/-- info: 'Ix.LeanIngress.checkSourceHinted_no_proof_of_False' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.checkSourceHinted_no_proof_of_False
+
+/-- info: 'Ix.LeanIngress.mapLevelsList_eq_fast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.LeanIngress.mapLevelsList_eq_fast
