@@ -25,7 +25,7 @@ use super::{
 use super::{init_claim, setup::SetupSource};
 use super::{init_fri, prover};
 
-/// Partitions of the supported Init profile: ten carry the public words and
+/// Partitions of the supported Init circuit: ten carry the public words and
 /// the rest are tables, which only exist above eleven partitions.
 pub(super) const MIN_PARTITIONS: usize = 11;
 pub(super) use super::stages::statement::first_claims as expected_claims;
@@ -99,7 +99,11 @@ fn stage_and_prove(
   let setup = config.setup.for_stage(FIRST_SEED, height)?;
   setup.bind_stage(out, height, 2)?;
   let setup_id = setup.identity(height, 2)?;
-  let cache = config.fixed_cache(out, &[plan_id, setup_id].concat())?;
+  let cache = config.fixed_cache(
+    out,
+    &[plan_id, setup_id].concat(),
+    &lowered.compiled,
+  )?;
   let cached = cache.restore(out)?;
   let manifest = storage::Manifest::for_compiled(
     &lowered.compiled,
@@ -115,7 +119,7 @@ fn stage_and_prove(
 
 /// Commit the fixed and witness traces of every partition, prove them
 /// together, verify the proof and write it with its packet. Fixed
-/// preprocessing comes from the cache when it holds this profile and is
+/// preprocessing comes from the cache when it holds this circuit and is
 /// published to it after the proof verifies.
 fn prove(
   dir: &Path,
@@ -177,24 +181,24 @@ fn prove(
     .commit(config, Some(&out), prefetch_bytes)?
     .prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
-  // The label is part of every published profile id and predates the
-  // Filecoin setup; the setup class is bound through the transcript seed.
-  let mut profile = blake3::Hasher::new();
-  profile.update(b"init-fri-kzg-ordinary-v1/development-srs/quotient2");
-  profile.update(system.config.transcript_seed());
-  profile.update(&plan_id);
-  profile.update(&fs::read(dir.join("manifest.bin"))?);
+  // The domain is fixed by the checkpoint format. The setup class is bound
+  // through the transcript seed, independently of the domain's spelling.
+  let mut checkpoint_id = blake3::Hasher::new();
+  checkpoint_id.update(b"init-fri-kzg-ordinary-v1/development-srs/quotient2");
+  checkpoint_id.update(system.config.transcript_seed());
+  checkpoint_id.update(&plan_id);
+  checkpoint_id.update(&fs::read(dir.join("manifest.bin"))?);
   for i in 0..count {
-    profile.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
+    checkpoint_id.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
   }
-  let profile = *profile.finalize().as_bytes();
-  let mut packet = profile.to_vec();
+  let checkpoint_id = *checkpoint_id.finalize().as_bytes();
+  let mut packet = checkpoint_id.to_vec();
   for claim in &manifest.claims[1..19] {
     packet.extend_from_slice(&claim[3].canonical_limbs_le()[0].to_le_bytes());
   }
   packet.extend_from_slice(&bytes);
   storage::write_atomic(&out.join("proof.compact.bin"), &bytes)?;
-  storage::write_atomic(&out.join("profile-id.bin"), &profile)?;
+  storage::write_atomic(&out.join("checkpoint-id.bin"), &checkpoint_id)?;
   storage::write_atomic(&out.join("packet.bin"), &packet)?;
   let development = setup.class() == SetupClass::Development;
   let public_setup = system.config.pcs().public_setup();
@@ -241,7 +245,7 @@ mod tests {
 
   fn artifacts(directory: &Path) -> storage::Result<Vec<Vec<u8>>> {
     Ok(
-      ["proof.compact.bin", "packet.bin", "profile-id.bin"]
+      ["proof.compact.bin", "packet.bin", "checkpoint-id.bin"]
         .into_iter()
         .map(|name| fs::read(directory.join("kzg").join(name)))
         .collect::<Result<_, _>>()?,
@@ -306,7 +310,8 @@ mod tests {
     SetupSource::development(FIRST_SEED, height - 1)?
       .bind_stage(dir, height, 2)?;
     fs::write(dir.join("plan-id.bin"), [0u8; 32])?;
-    let cache = FixedCache::from_profile(cache_root, b"fixture-v1")?;
+    let cache =
+      FixedCache::from_semantics(cache_root, b"fixture-v1", compiled)?;
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       compiled,
@@ -373,11 +378,14 @@ mod tests {
     }
     prove(&warm, &cache, 9)?;
     assert_eq!(first, artifacts(&warm)?);
-    let different =
-      FixedCache::from_profile(&cache_root, b"different-profile")?;
+    let different = FixedCache::from_semantics(
+      &cache_root,
+      b"different-checkpoint_id",
+      compiled,
+    )?;
     assert!(different.restore(&root.join("miss"))?.is_none());
 
-    // A different witness changes the proof but not the profile.
+    // Private witness changes preserve the checkpoint identity.
     let changed = root.join("changed");
     let cache = stage(&changed, compiled, public, &cache_root)?;
     prove(&changed, &cache, 231)?;
@@ -446,7 +454,8 @@ mod tests {
     let [entry] = entries.as_slice() else {
       panic!("expected one published entry, found {entries:?}");
     };
-    let cache = FixedCache::from_profile(&cache_root, b"fixture-v1")?;
+    let cache =
+      FixedCache::from_semantics(&cache_root, b"fixture-v1", compiled)?;
     let damaged = root.join("damaged");
     for name in ["kzg/fixed-0.bin", "kzg/setup-0.bin"] {
       let published = entry.join(name);

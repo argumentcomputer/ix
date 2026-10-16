@@ -1,11 +1,12 @@
 {
   "setup": "development",
   "known_trapdoor": true,
-  "profile_version": 5,
+  "verifying_key_version": 5,
+  "verifying_key_id_domain": "init-kzg-recursive-verifying-key/v5",
   "first_stage_log_height": 24,
-  "profile_id": "304340325a2fff6bbfbca27e0b58b335cd9f0731b7698ef8e9d9f2f23fe408a1",
-  "verifier_blake3": "e3e06165a20328dbd48964a0539341dd54b2c3e89accba313a09f4321d2f48b9",
-  "packet_blake3": "6162de2ddcf6b5ac6cc783f653ead5815f8504683c4f83d2b301fd61b3cafe47",
+  "verifying_key_id": "f02273be6a1b3a7c512aeb6a37fe30f96b7d691f7f1dd86e7330a6c4daae5c6c",
+  "verifying_key_blake3": "e3e06165a20328dbd48964a0539341dd54b2c3e89accba313a09f4321d2f48b9",
+  "packet_blake3": "a131b6057ff4759ea557982b44b356c2ecaf117c47a5abebaa57ba0edb023de3",
   "source_fri_verifier_blake3": "5f7db8e94c52f404df1c2658d4c686b7e1ccb5d95b473d47c0efda96141f89cf",
   "source_fri_proof_blake3": "c4c19524f0f633eccab88164cb1dd08e2fc877467ec7d0b45821f0c6791a11a6",
   "source_fri_fixture": "tests/fixtures/init-fri",
@@ -42,6 +43,6 @@
     "aggregate_proof_source": "multi-stark sb/kzg:experiments/kzg-cuda-validation/resume-20261009/root-artifacts/root-proof.bin",
     "aggregate_verification_passed": true
   },
-  "compressed_proof_address": "b6084ba2941da8a991afc978946ef63326148378addb6c1cd9d929a0e4a692c3",
+  "compressed_proof_address": "989ca0fbed46a4b619ceb009cbf2772d8db3b1e8df1073f264917237b48e6d93",
   "producer_worker_sha256": "ab7403a0f222b1098c51622614693c0e3ff7a243ec6cd3323a65bf7febcc5626"
 }

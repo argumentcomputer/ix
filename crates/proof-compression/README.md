@@ -53,72 +53,99 @@ checks the cache against its built-in receipt and the pinned tau anchors. A
 
 `--dev-srs` selects a **known-trapdoor development SRS**, including when a
 Filecoin cache is configured. Its proofs are **not production-secure**.
-Verification requires the corresponding bundled development profile and
-explicit `--dev-srs` opt-in; proof, claim and pairing checks still apply.
+Development keys are generated with the proving artifacts and cached by key ID
+under `~/.ix/compression/development/verifying-keys/`, outside the production
+catalog. `ix verify --dev-srs` selects the cached key named by the packet. Use
+`--dev-vk PATH` to override that lookup, for example with another machine's
+`final-kzg/verifier.bin`; the override still requires `--dev-srs`. Proof, claim
+and pairing checks apply in both cases. The expected aggregation program comes
+from the current build's backend; neither the packet nor the selected key
+supplies it. Verifying a development proof constructs that backend, so it has
+more startup work than production verification with a trusted key.
 
 ```sh
-ix compress ROOT_PROOF_ADDRESS --dev-srs --out "$IX_COMPRESSION_DATA/runs/dev-001"
+ix compress ROOT_PROOF_ADDRESS --dev-srs
 ix verify COMPRESSED_PROOF_ADDRESS --dev-srs
 ```
 
 Compression preserves the claim address and prints a new proof address.
 It runs the three stages in sequence, each as a child process, into an empty
-directory, `~/.ix/compression/PROOF_ADDRESS/HEIGHT` unless `--out DIR` names
-one. Each stage writes its proof and verifying metadata; a rerun starts over.
+directory. By default each run gets a fresh directory under
+`~/.ix/compression/runs/PROOF_ADDRESS/HEIGHT/`; development runs use
+`~/.ix/compression/development/runs/PROOF_ADDRESS/HEIGHT/`. `--out DIR` overrides
+that choice with an empty directory. The run directory and cached development
+key path are printed to stderr; stdout contains the new proof address.
+Each stage writes its proof and verifying metadata; a rerun starts over.
 Fixed preprocessing and development SRS files are cached across runs under
 `~/.ix/compression/cache`. Use `--log-height 25` for fewer partitions
 (default: 24) and `--root-vk PATH` for a trusted root key instead of the
 current aggregate key. Full proving needs hundreds of GiB of RAM.
 
-Verification uses the profiles compiled into the application from `profiles/`.
-`ix verify` selects a profile by the packet's ID and derives the expected
-statement from that profile's pinned aggregation-program prefix and the hash
+Production verification uses only Filecoin verifying keys compiled into the
+application from `verifying-keys/`.
+`ix verify` selects a key by the packet's ID and derives the expected
+statement from the catalog's pinned aggregation-program prefix and the hash
 of the caller's serialized claim. It checks the compact proof and both
 pairing obligations without a verifier file, registry, proving SRS or GPU.
 
-External verifier imports are not supported, and local files under
-`~/.ix/verifiers` have no effect. Unknown profile IDs are rejected; adding an
-accepted profile requires an application update. The bundled profiles are:
+The production catalog cannot be extended with local files; files under
+`~/.ix/verifiers` have no effect. Unknown key IDs are rejected; adding an
+accepted production key requires an application update. The production verifying keys are:
 
-| Profile | Setup | First-stage log-height |
+| Verifying key | Setup | First-stage log-height |
 | --- | --- | --- |
 | `aggregate-filecoin-v5.bin` | Filecoin | 24 |
-| `aggregate-development-v5.bin` | Development, requires `--dev-srs` | 24 |
 
 The adjacent JSON files record the setup, root key and artifact identities.
-The verifier catalog pins each profile and its aggregation-program prefix.
-The public claim is supplied by the caller rather than copied from the packet, so a bundled profile verifies
-any aggregate root proved by the same recursive circuit. `ix compress` derives
-the statement from the aggregation backend instead and fails if a bundled
-profile pins a different program than the build it runs in, so a stale
-bundle is caught where the backend is available.
+The key catalog pins each verifying key and its aggregation-program prefix.
+The public claim is supplied by the caller rather than copied from the packet,
+so a production verifying key verifies any aggregate root proved by the same
+recursive circuit. `ix compress` derives the statement from the aggregation
+backend and fails if the key's catalog entry pins a different program than
+the build it runs in, so stale catalog metadata is caught where the backend
+is available.
 
-Compression does not require a profile to be bundled before proving. It
+Compression does not require a verifying key in the production catalog before proving. It
 constructs its circuit, verifies its output and writes `final-kzg/verifier.bin`
-as an output of the run. That file can be reviewed and bundled in a later
-application release; generating it does not register it for verification.
+as an output of the run. Successful development compression also publishes the
+key to the development cache, so `ix verify --dev-srs` needs no path argument,
+catalog entry or application update. Explicit keys use `--dev-srs --dev-vk PATH`.
+A production key can be reviewed and included in a later application release;
+generating it does not register it for production verification. Development
+verification rejects Filecoin keys and never changes the production catalog.
 
-The packet carries the 18-word public claim, a profile ID, two compressed G1
+The packet carries the 18-word public claim, a verifying key ID, two compressed G1
 opening-pairing operands and the compact `KQP4` KZG proof. Generic Serde
 serialization of complete KZG proofs is unsupported; callers use
-`FixedProofCodec` with the expected profile. Internal commitment metadata
+`FixedProofCodec` with the expected verifying key. Internal commitment metadata
 retains its canonical encoding and checks nested counts before allocating.
+
+Verifying key metadata records `verifying_key_id`, `verifying_key_version`
+and `verifying_key_blake3`. IDs use the hash domain
+`init-kzg-recursive-verifying-key/v5`, recorded as `verifying_key_id_domain`.
+The final stage writes its key ID to
+`verifying-key-id.bin`. First-stage checkpoints use `checkpoint-id.bin`, whose
+identity also binds the public claims.
+
+Packets using the previous key-ID domain require updated key-ID headers;
+their serialized proof addresses and development key cache paths also change.
+The verifying key bytes and cryptographic proof bodies are unchanged.
 
 Every setup declares its complete public polynomial degree. Loading a shorter
 proving prefix or only verifier anchors preserves that degree and the setup
 identity. The Filecoin identity derives from the ceremony digest and its
 `2^28 - 2` public degree, so every prefix cache of it binds the same
-checkpoints and verifier profiles. Development identities derive from the
+checkpoints and verifying keys. Development identities derive from the
 seed and declared degree; the trapdoor remains known.
 
 ## Final proof transcript
 
-New recursive KZG proofs use Keccak-256 in portable verifier profile v5.
+New recursive KZG proofs use Keccak-256 in portable verifying key format v5.
 The FRI proof, first KZG proof and the recursive circuit's verification of
 that first proof retain BLAKE3. The compact proof layout and SRS are unchanged.
-The profile version selects the transcript without trying alternatives;
-application verification also requires that exact profile to be bundled.
-Setup bindings include the transcript choice. Metadata checksums and profile
+The key format version selects the transcript without trying alternatives;
+production verification also requires that exact key in the production catalog.
+Setup bindings include the transcript choice. Metadata checksums and key
 identities remain BLAKE3.
 
 The Keccak transcript starts with a zero 32-byte state. For counters 0, 1 and
@@ -131,7 +158,7 @@ Observations keep the existing canonical field/point and vector encodings.
 The parameter seed has its own Keccak protocol domain and binds the same
 public setup anchors and degree limits as the BLAKE3 configuration.
 
-This profile makes a custom Ethereum verifier's transcript use native Keccak;
+This transcript makes a custom Ethereum verifier use native Keccak;
 it does not change the proof into a standard PLONK format or implement a
 Solidity verifier.
 
@@ -250,19 +277,24 @@ payloads use 32 bytes per coefficient:
 fixed coefficient bytes = 32 × sum(preprocessed_width × trace_height)
 ```
 
-For the bundled v5 recursive profiles, the computation trace has 15 fixed
+For the circuits of the production v5 verifying keys, the computation trace has 15 fixed
 columns at `2^27` rows and the table trace has four at `2^17` rows. Their
 combined coefficient payload is **60.015625 GiB**, excluding checkpoint
 metadata. Together with the Filecoin file, this already exceeds 72 GiB before
 first-stage preprocessing, intermediate artifacts, and filesystem headroom.
-This is a calculation from those profiles, not a measured disk high-water mark
+This is a calculation from those keys, not a measured disk high-water mark
 for the current code. First-stage size depends on the layout; record the
-actual checkpoint sizes when provisioning a new profile.
+actual checkpoint sizes when provisioning a new circuit configuration.
 
 On one filesystem, cache entries and run checkpoints share storage through
 hard links. Deleting one directory does not free those bytes while another
-link remains. Cache keys include the worker executable digest, plan, and setup;
-a changed executable creates a new cache lineage. There is no automatic
+link remains. Cache keys bind the circuit's gates, wiring, lookup tables, public
+bindings and trace layout, the source verifier and setup identities, and a
+version for lowering and preprocessing semantics. Executable changes, build
+paths and CPU/CUDA selection do not invalidate compatible preprocessing.
+The preprocessing version must change when lowering, lookup grouping or fixed
+polynomial/checkpoint encoding changes without changing the circuit IR. Entries
+from the executable-keyed cache namespace are not reused. There is no automatic
 eviction of old runs or cache entries. Retire them explicitly once no worker
 uses them. Use `df -h` on the selected mount to check available space.
 
@@ -295,7 +327,7 @@ names them. Direct stage invocations use the defaults below.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `IX_KZG_FIXED_CACHE` | directory of fixed-preprocessing checkpoints, bound to the executable digest, plan and setup identity | `<stage>/kzg/fixed-cache` |
+| `IX_KZG_FIXED_CACHE` | directory of fixed-preprocessing checkpoints, bound to circuit, lowering, source-verifier and setup semantics | `<stage>/kzg/fixed-cache` |
 | `IX_KZG_FILECOIN_CACHE` | receipt-pinned Filecoin prefix cache, used unless `--dev-srs` selects development parameters | unset: `--dev-srs` required |
 | `IX_KZG_FILECOIN_MANIFEST` | BLAKE3 manifest receipt of that cache | the built-in receipt of the complete `2^27` cache |
 | `IX_KZG_SRS_CACHE` | directory holding block-checksummed development SRS files shared across stages | unset: regenerated per stage |
@@ -368,7 +400,7 @@ NVMe. Cold means empty fixed preprocessing; warm means reused preprocessing.
 Both used fresh worker processes and already-provisioned parameters. OS caches
 were uncontrolled. This historical result used the Init FRI fixture from
 `40c990ca`; the current fixture is regenerated by the current CLI. Use identical
-input fixtures when comparing binaries or profiles.
+input fixtures when comparing binaries or circuit configurations.
 
 | Stage | Cold | Warm |
 | --- | ---: | ---: |
@@ -398,7 +430,7 @@ KZG height bounds. For recursive preparation, `prepare_recursive` uses the
 production `2^27` cap; `prepare_recursive_with_max_height` accepts a library
 cap up to `2^28`. Setup and proving require a sufficient loaded SRS prefix
 and public degree allowance. Filecoin's declared degree is `2^28 - 2`, so
-it cannot admit a `2^28` trace. The CLI continues to use its bundled profiles
+it cannot admit a `2^28` trace. The CLI continues to use its supported circuits
 and production bounds.
 
 Constant coefficient columns retain their full domain length while storing
@@ -416,11 +448,11 @@ results. Multi-shard roots and the normalized `FixedRoot` remain supported;
 KZG commitment consumes the lowered circuit and assignment before proving.
 The remaining phase owns committed columns and verifier metadata, allowing
 frontend memory to be released before lookup and quotient allocation.
-Bundled and library recursive verification share validation and pairing checks.
-A bundled profile retains its prepared system, pairing keys and compact codec.
+Production and library recursive verification share validation and pairing checks.
+A prepared verifying key retains its system, pairing keys and compact codec.
 
 The library's `IXKZGV02` key encoding binds the transcript explicitly.
-The bundled v5 profile and packet encodings are unchanged.
+The v5 verifying key and packet encodings are unchanged.
 
 ## Code and tests
 
@@ -430,8 +462,8 @@ multiple Aiur trace shards, `FixedRoot` for a bounded normalized root, and
 proof witness. `Prepared::prove_fri`, `prepare_kzg`, `Prepared::prove_kzg` and
 `prepare_recursive` compose the stages with caller-selected bounds and SRS.
 These APIs return verifier-only metadata and keep the expected claim separate
-from the proof. They do not register a verifier in the application's bundled
-catalog. The CLI uses the worker and trusted profiles described above.
+from the proof. They do not register a verifying key in the production
+catalog. The CLI uses the worker and trusted verifying keys described above.
 
 `fri` constrains FRI verification, `foreign` translates Goldilocks arithmetic
 into scalar-field constraints, `kzg` implements the commitment backend, and
@@ -447,13 +479,16 @@ lake build ix compression-cli-tests
 
 The lakefile compiles Cargo's C units as C17 so they stay compatible with
 Lean's bundled libc on hosts whose C compiler defaults to C23, and tracks
-that flag and the embedded profile bytes when deciding whether to rebuild
+that flag and the embedded verifying key bytes when deciding whether to rebuild
 the Rust archive.
 
 Tests cover small proving, tampering, CLI validation and proof identity.
 The saved Init FRI fixture checks native verification and verifier planning.
 The CLI test verifies both checked-in packets in a fresh home without a proving
-SRS or verifier import. Development proofs require `--dev-srs`; that flag also
-selects development parameters when a Filecoin cache is configured. Tests reject
-modified claims, proofs and pairing data even with development opt-in, and
-confirm that a local verifier registry cannot override the application's profiles.
+SRS or verifier import. The development key lives with the test fixtures;
+tests cover cached lookup with `--dev-srs` and the `--dev-vk PATH` override.
+Production verification rejects development keys and ignores their cache.
+During compression, `--dev-srs` selects development parameters even
+when a Filecoin cache is configured. Tests reject modified claims, proofs,
+pairing data, wrong keys and key overrides without development opt-in, and confirm that a
+local verifier registry cannot override the application's production keys.

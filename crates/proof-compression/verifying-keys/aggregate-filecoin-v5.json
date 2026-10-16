@@ -1,11 +1,12 @@
 {
   "setup": "filecoin",
   "known_trapdoor": false,
-  "profile_version": 5,
+  "verifying_key_version": 5,
+  "verifying_key_id_domain": "init-kzg-recursive-verifying-key/v5",
   "first_stage_log_height": 24,
-  "profile_id": "4b033424efd56486ed972b04b773349149d9df6159d753e303f11aed89928302",
-  "verifier_blake3": "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
-  "packet_blake3": "80d136cbc7496a3436a2d9d291497025742a5573ffcd565a76bf1f21024c0b4c",
+  "verifying_key_id": "e4cb15b1b9ed7e4cc8a00aa331122e99e29d42f193e4cf0c052717f6defcbb4f",
+  "verifying_key_blake3": "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
+  "packet_blake3": "9326fde3d807c38e726d34ca80c6ec537305803c6908a82c9f3bdc7d2302db80",
   "source_fri_verifier_blake3": "5f7db8e94c52f404df1c2658d4c686b7e1ccb5d95b473d47c0efda96141f89cf",
   "source_fri_proof_blake3": "c4c19524f0f633eccab88164cb1dd08e2fc877467ec7d0b45821f0c6791a11a6",
   "source_fri_fixture": "tests/fixtures/init-fri",
@@ -42,6 +43,6 @@
     "aggregate_proof_source": "multi-stark sb/kzg:experiments/kzg-cuda-validation/resume-20261009/root-artifacts/root-proof.bin",
     "aggregate_verification_passed": true
   },
-  "compressed_proof_address": "14cb1679032f43cba067ea52e9b8899e2e57f5a1cf8581bc4309dc07f30afa22",
+  "compressed_proof_address": "ccd94ae237f7e6dafa1652bfb04e0b7675c75705bf8b3dbe5076a5ce24ef87bf",
   "producer_worker_sha256": "ab7403a0f222b1098c51622614693c0e3ff7a243ec6cd3323a65bf7febcc5626"
 }

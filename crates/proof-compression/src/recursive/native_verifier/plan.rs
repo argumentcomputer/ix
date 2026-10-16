@@ -120,7 +120,7 @@ impl LayoutPolicy {
 }
 
 pub(crate) struct Plan<'a> {
-  pub(super) profile: Profile<'a>,
+  pub(super) verifying_key: VerifyingKeyView<'a>,
   pub(super) shape: Shape,
   pub(super) claims: ClaimSchema,
   pub(super) layout: LayoutPolicy,
@@ -147,7 +147,7 @@ impl<'a> Plan<'a> {
       );
     }
     let params = system.config.pcs().verifier_params();
-    let profile = Profile {
+    let verifying_key = VerifyingKeyView {
       circuits: &system.circuits,
       fixed: system
         .preprocessed_commit
@@ -160,7 +160,7 @@ impl<'a> Plan<'a> {
       tau_g2: params.tau_g2,
       max_log_degree: system.config.max_log_degree(),
     };
-    let plan = Self::from_profile(&profile, logs, claims, layout)?;
+    let plan = Self::from_key(&verifying_key, logs, claims, layout)?;
     for (circuit, &log) in system.circuits.iter().zip(logs) {
       let quotient = circuit.quotient_degree();
       if quotient > system.config.max_quotient_degree()
@@ -175,25 +175,25 @@ impl<'a> Plan<'a> {
     Ok(plan)
   }
 
-  pub(super) fn from_profile(
-    profile: &Profile<'a>,
+  pub(super) fn from_key(
+    verifying_key: &VerifyingKeyView<'a>,
     logs: &[u8],
     claims: ClaimSchema,
     layout: LayoutPolicy,
   ) -> Result<Self, String> {
-    if profile.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
+    if verifying_key.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
       return Err(
         "recursive circuit requires a BLAKE3 inner transcript".into(),
       );
     }
     layout.validate()?;
-    let shape = Shape::new(profile, logs)?;
-    for point in profile
+    let shape = Shape::new(verifying_key, logs)?;
+    for point in verifying_key
       .fixed
       .0
       .iter()
       .flatten()
-      .chain(std::iter::once(&profile.generator))
+      .chain(std::iter::once(&verifying_key.generator))
     {
       if !point.is_on_curve()
         || !point.is_in_correct_subgroup_assuming_on_curve()
@@ -201,15 +201,15 @@ impl<'a> Plan<'a> {
         return Err("invalid fixed G1 verifier point".into());
       }
     }
-    for point in [profile.g2, profile.tau_g2] {
+    for point in [verifying_key.g2, verifying_key.tau_g2] {
       if !point.is_on_curve()
         || !point.is_in_correct_subgroup_assuming_on_curve()
       {
         return Err("invalid G2 verifier point".into());
       }
     }
-    let identity = identity(profile, &shape, &claims, layout)?;
-    Ok(Self { profile: *profile, shape, claims, layout, identity })
+    let identity = identity(verifying_key, &shape, &claims, layout)?;
+    Ok(Self { verifying_key: *verifying_key, shape, claims, layout, identity })
   }
 
   pub(crate) fn identity(&self) -> [u8; 32] {
@@ -217,8 +217,13 @@ impl<'a> Plan<'a> {
   }
 
   pub(crate) fn count(&self) -> Result<Counts, String> {
-    construct(&self.profile, &self.shape, &self.claims, Builder::counting())
-      .map(|construction| construction.counts())
+    construct(
+      &self.verifying_key,
+      &self.shape,
+      &self.claims,
+      Builder::counting(),
+    )
+    .map(|construction| construction.counts())
   }
 
   pub(crate) fn validate_compact_len(
@@ -226,9 +231,7 @@ impl<'a> Plan<'a> {
     bytes: usize,
   ) -> Result<(), String> {
     if bytes != self.shape.checked_compact_len()? {
-      return Err(
-        "compact proof length differs from the verifier profile".into(),
-      );
+      return Err("compact proof length differs from the verifying key".into());
     }
     Ok(())
   }
@@ -255,8 +258,12 @@ impl<'a> Plan<'a> {
   }
 
   pub(crate) fn compile(&self) -> Result<Compiled, String> {
-    let construction =
-      construct(&self.profile, &self.shape, &self.claims, Builder::new())?;
+    let construction = construct(
+      &self.verifying_key,
+      &self.shape,
+      &self.claims,
+      Builder::new(),
+    )?;
     let compiled = construction.finish(self);
     let layout = compiled
       .circuit
@@ -298,7 +305,7 @@ impl<'a> Plan<'a> {
 }
 
 fn identity(
-  profile: &Profile<'_>,
+  verifying_key: &VerifyingKeyView<'_>,
   shape: &Shape,
   claims: &ClaimSchema,
   layout: LayoutPolicy,
@@ -307,18 +314,18 @@ fn identity(
   hash.update(FRONTEND_VERSION);
   hash.update(b"one-computation-and-merged-table/v1");
   let parameters = (
-    profile.transcript_seed,
-    profile.max_log_degree,
+    verifying_key.transcript_seed,
+    verifying_key.max_log_degree,
     shape,
     claims,
     layout,
-    (0..profile.circuits.len()).collect::<Vec<_>>(),
+    (0..verifying_key.circuits.len()).collect::<Vec<_>>(),
   );
   hash.update(
     &bincode::serde::encode_to_vec(parameters, bincode::config::standard())
       .map_err(|error| error.to_string())?,
   );
-  for circuit in profile.circuits {
+  for circuit in verifying_key.circuits {
     let metadata = (
       &circuit.graph,
       circuit.main_width,
@@ -338,20 +345,20 @@ fn identity(
     hash.update(&bytes);
   }
   let mut points = vec![];
-  profile
+  verifying_key
     .fixed
     .0
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
-  profile
+  verifying_key
     .generator
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
-  profile
+  verifying_key
     .g2
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
-  profile
+  verifying_key
     .tau_g2
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;

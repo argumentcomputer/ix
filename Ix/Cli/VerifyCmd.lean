@@ -94,9 +94,25 @@ structure ExpectedAggregate where
   claim : Ix.Claim
   constantCount : Nat
 
+private inductive DevelopmentKey where
+  | cached
+  | explicit (bytes : ByteArray)
+
+private def verifyCompressedProof (getBackend : IO (Except String Aggr.VerificationBackend))
+    (developmentKey? : Option DevelopmentKey) (proofAddr : Address)
+    (wrapper : Ixon.Proof) : IO UInt32 := do
+  match developmentKey? with
+  | none => Compression.verifyProof proofAddr wrapper
+  | some selected =>
+    let key ← match selected with
+      | .cached => Compression.readDevelopmentKey wrapper.proof
+      | .explicit key => pure key
+    let backend ← IO.ofExcept (← getBackend)
+    Compression.verifyDevelopmentProof proofAddr wrapper key backend
+
 private def verifyAggregateProof (getBackend : IO (Except String Aggr.VerificationBackend))
     (expected? : Option ExpectedAggregate) (proofAddr : Address)
-    (devSrs : Bool := false) : IO UInt32 := do
+    (developmentKey? : Option DevelopmentKey) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
@@ -111,7 +127,9 @@ private def verifyAggregateProof (getBackend : IO (Except String Aggr.Verificati
       return 1
   | none => pure ()
   if Compression.isCompressed wrapper.proof then
-    return ← Compression.verifyProof proofAddr wrapper devSrs
+    return ← verifyCompressedProof getBackend developmentKey? proofAddr wrapper
+  if developmentKey?.isSome then
+    throw <| IO.userError "development verification requires a compressed aggregate proof"
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
@@ -224,6 +242,32 @@ proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
+  let developmentKeyPath? := (p.flag? "dev-vk").map (·.as! String)
+  if developmentKeyPath?.isSome && !p.hasFlag "dev-srs" then
+    p.printError "error: --dev-vk requires --dev-srs"
+    return 1
+  if p.hasFlag "dev-srs" && !p.hasFlag "aggregate" &&
+      (p.hasFlag "ixe" || p.hasFlag "ixes") then
+    p.printError "error: development verification with an expected environment requires --aggregate"
+    return 1
+  let developmentKey? : Option DevelopmentKey ← if p.hasFlag "dev-srs" then
+      match developmentKeyPath? with
+      | none => pure (some .cached)
+      | some path => do
+        let bytes ← IO.FS.readBinFile path
+        pure (some (.explicit bytes))
+    else pure none
+  let backendRef ← IO.mkRef (none : Option (Except String Aggr.VerificationBackend))
+  let getBackend : IO (Except String Aggr.VerificationBackend) := do
+    if let some result ← backendRef.get then
+      return result
+    let backendStarted ← IO.monoMsNow
+    let result ← Aggr.buildVerificationBackend recursionParameters
+    backendRef.set (some result)
+    if let .ok _ := result then
+      IO.println s!"[verify] aggregate backend setup: \
+        {(← IO.monoMsNow) - backendStarted}ms"
+    return result
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
       p.printError "error: --aggregate requires at least one aggregate proof address"
@@ -274,22 +318,11 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
           {(← IO.monoMsNow) - started}ms"
         pure (some { claim, constantCount := native.constantCount })
       | none, some _ => unreachable!
-    let backendRef ← IO.mkRef (none : Option (Except String Aggr.VerificationBackend))
-    let getBackend : IO (Except String Aggr.VerificationBackend) := do
-      if let some result ← backendRef.get then
-        return result
-      let backendStarted ← IO.monoMsNow
-      let result ← Aggr.buildVerificationBackend recursionParameters
-      backendRef.set (some result)
-      if let .ok _ := result then
-        IO.println s!"[verify] aggregate backend setup: \
-          {(← IO.monoMsNow) - backendStarted}ms"
-      return result
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
       if (← verifyAggregateProof getBackend expected? proofAddr
-          (p.hasFlag "dev-srs")) != 0 then
+          developmentKey?) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -306,9 +339,11 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
       let proofAddr ← addrOfHex! "proof" hex
       let wrapper ← Compression.readProof proofAddr
       if Compression.isCompressed wrapper.proof then
-        if (← Compression.verifyProof proofAddr wrapper (p.hasFlag "dev-srs")) != 0 then
+        if (← verifyCompressedProof getBackend developmentKey? proofAddr wrapper) != 0 then
           rc := 1
       else
+        if developmentKey?.isSome then
+          throw <| IO.userError "development verification requires a compressed aggregate proof"
         let (aiurSystem, compiled) ← match backend? with
           | some b => pure b
           | none =>
@@ -329,7 +364,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
-    "dev-srs"; "Allow development compressed proofs; these are not production-secure."
+    "dev-srs"; "Verify using the development key cache; not production-secure."
+    "dev-vk" : String; "Override the cached development verifying key; requires --dev-srs."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."

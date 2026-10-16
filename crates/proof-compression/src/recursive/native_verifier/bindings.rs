@@ -78,7 +78,7 @@ impl Bindings {
     claims: &[Vec<Scalar>],
   ) -> Result<RequestInputs, String> {
     if candidate_id != self.identity {
-      return Err("request uses a different recursive frontend profile".into());
+      return Err("request uses a different recursive circuit identity".into());
     }
     self.shape.validate(proof)?;
     self.claims.validate(claims)?;
@@ -111,7 +111,7 @@ impl Bindings {
     })
   }
 
-  /// Assign one request to a circuit compiled once for its profile.
+  /// Assign one request to a circuit compiled once for its verifying key.
   #[cfg(test)]
   pub(crate) fn check(
     &self,

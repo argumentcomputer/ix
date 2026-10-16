@@ -80,13 +80,14 @@ impl WorkerConfig {
   fn fixed_cache(
     &self,
     stage: &Path,
-    profile: &[u8],
+    semantics: &[u8],
+    compiled: &multi_stark::plonkish::MultiStarkCircuit<crate::kzg::Scalar>,
   ) -> Result<fixed_cache::FixedCache> {
     let root = self
       .fixed_cache_root
       .clone()
       .unwrap_or_else(|| stage.join("kzg/fixed-cache"));
-    fixed_cache::FixedCache::from_profile(&root, profile)
+    fixed_cache::FixedCache::from_semantics(&root, semantics, compiled)
   }
 
   #[cfg(test)]
@@ -231,21 +232,36 @@ pub fn setup_description(development: bool) -> Result<&'static str> {
   Ok(setup::SetupConfig::from_env(development)?.class().description())
 }
 
-/// Verify a compressed proof of `claim` with the profile bundled under the
-/// packet's id, needing neither the proving backend nor any file.
-pub fn verify(
-  proof: &[u8],
-  claim: &[u8],
-  allow_development: bool,
-) -> Result<setup::SetupClass> {
+/// Verify a compressed proof of `claim` with a trusted Filecoin verifying key,
+/// needing neither the proving backend nor any file.
+pub fn verify(proof: &[u8], claim: &[u8]) -> Result<setup::SetupClass> {
   let packet = proof
     .strip_prefix(PROOF_TAG)
     .ok_or("unsupported compressed proof version")?;
-  verifier::verify(packet, claim, allow_development)
+  verifier::verify(packet, claim)
 }
 
-/// Cross-run caches the stages share: fixed preprocessing keyed by the
-/// executable and profile, and development SRS files. Variables already set
+/// Verify under an explicitly selected development key. The caller derives
+/// `statement` independently from its aggregation backend; the claim digest,
+/// packet key ID, outer proof and deferred pairing are all checked.
+/// Development parameters have a known trapdoor and are not production-secure.
+pub fn verify_development(
+  proof: &[u8],
+  claim: &[u8],
+  statement: &[u8],
+  verifying_key: &[u8],
+) -> Result<()> {
+  let packet = proof
+    .strip_prefix(PROOF_TAG)
+    .ok_or("unsupported compressed proof version")?;
+  let words = check_claim(claim, statement)?;
+  let key = wrap::VerifyingKey::from_bytes(verifying_key)?;
+  key.check_setup_class(setup::SetupClass::Development)?;
+  key.verify(packet, &words)
+}
+
+/// Cross-run caches the stages share: fixed preprocessing keyed by circuit
+/// and setup semantics, and development SRS files. Variables already set
 /// in the environment take precedence over the directory given to `compress`.
 struct Caches {
   fixed: PathBuf,
@@ -281,7 +297,7 @@ pub fn compress(
   let words = check_claim(claim, statement)?;
   if !matches!(log_height, 24 | 25) {
     return Err(
-      "--log-height must be 24 or 25 for the supported recursive profiles"
+      "--log-height must be 24 or 25 for the supported recursive circuits"
         .into(),
     );
   }
@@ -290,7 +306,7 @@ pub fn compress(
   setup::SetupConfig::from_env(development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
-      "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
+      "unset IX_ROOT_GENERIC_HASHES for the supported compression configuration"
         .into(),
     );
   }
@@ -331,15 +347,15 @@ pub fn compress(
   result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
   let packet = &result[PROOF_TAG.len()..];
   wrap::verify(&final_dir, packet, Some(&words))?;
-  // A bundled profile pins the aggregation program its proofs attest; the
-  // backend this run proved under must be that program, or the bundle is
+  // A catalog entry pins the aggregation program its proofs attest; the
+  // backend this run proved under must be that program, or the catalog is
   // stale and verification elsewhere would accept the wrong statement.
-  if let Some(prefix) = verifier::bundled_prefix(packet[..32].try_into()?)
+  if let Some(prefix) = verifier::key_statement_prefix(packet[..32].try_into()?)
     && *prefix != words[..10]
   {
     return Err(
-      "the bundled verifier profile pins a different aggregation program \
-       than this build's backend; update the bundle"
+      "the production verifying key is associated with a different aggregation program \
+       than this build's backend; update the verifying key catalog"
         .into(),
     );
   }
@@ -364,6 +380,6 @@ mod tests {
       )
       .is_err()
     );
-    assert!(verify(PROOF_TAG, b"wrong", true).is_err());
+    assert!(verify(PROOF_TAG, b"wrong").is_err());
   }
 }

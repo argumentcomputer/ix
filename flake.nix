@@ -101,10 +101,10 @@
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
           cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
-          # Profiles are embedded in the verifier; compression tests also read
+          # Verifying keys are embedded; compression tests also read
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
-            ./crates/proof-compression/profiles
+            ./crates/proof-compression/verifying-keys
             ./crates/proof-compression/tests/fixtures
           ];
           # The Rust tests `include_bytes!` the `.ixe` files under

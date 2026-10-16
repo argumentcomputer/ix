@@ -36,10 +36,27 @@ extern "C" fn rs_compression_run(
 extern "C" fn rs_compression_verify(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
-  dev_srs: bool,
 ) -> LeanIOResult<LeanOwned> {
-  match pipeline::verify(proof.as_bytes(), claim.as_bytes(), dev_srs) {
+  match pipeline::verify(proof.as_bytes(), claim.as_bytes()) {
     Ok(class) => LeanIOResult::ok(LeanString::new(class.label())),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_verify_development(
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  statement: LeanByteArray<LeanBorrowed<'_>>,
+  verifying_key: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match pipeline::verify_development(
+    proof.as_bytes(),
+    claim.as_bytes(),
+    statement.as_bytes(),
+    verifying_key.as_bytes(),
+  ) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
 }

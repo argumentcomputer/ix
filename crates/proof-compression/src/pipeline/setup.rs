@@ -38,7 +38,7 @@ pub enum SetupClass {
 impl SetupClass {
   /// Filecoin only when the identity, public degree and all four anchor
   /// points equal the pinned ceremony values; an identity alone is just
-  /// bytes any profile could carry.
+  /// bytes any verifying key could carry.
   pub fn of(params: &VerifierParams) -> Self {
     let pinned = filecoin_anchors();
     if params.public_setup == pinned.public_setup
@@ -308,7 +308,7 @@ impl SetupSource {
     )
   }
 
-  /// The setup identity bound into checkpoints and fixed-cache profiles.
+  /// The setup identity bound into checkpoints and preprocessing cache keys.
   pub(crate) fn identity(
     &self,
     height: usize,

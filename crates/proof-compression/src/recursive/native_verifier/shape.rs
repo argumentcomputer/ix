@@ -21,7 +21,7 @@ impl Round {
   pub(super) fn commitment(self, proof: &Proof<KzgConfig>) -> &KzgCommitment {
     match self {
       Self::Fixed => {
-        unreachable!("fixed points belong to the authenticated profile")
+        unreachable!("fixed points belong to the authenticated verifying key")
       },
       Self::Main => &proof.commitments.stage_1_trace,
       Self::Stage2 => &proof.commitments.stage_2_trace,
@@ -60,9 +60,7 @@ impl MatrixShape {
         .zip(&self.widths)
         .any(|(row, &width)| row.len() != width)
     {
-      return Err(
-        "commitment dimensions differ from the verifier profile".into(),
-      );
+      return Err("commitment dimensions differ from the verifying key".into());
     }
     Ok(())
   }
@@ -78,7 +76,7 @@ impl MatrixShape {
         },
       )
     {
-      return Err("opening dimensions differ from the verifier profile".into());
+      return Err("opening dimensions differ from the verifying key".into());
     }
     Ok(())
   }
@@ -93,14 +91,14 @@ pub(super) struct Shape {
 
 impl Shape {
   pub(super) fn new(
-    profile: &Profile<'_>,
+    verifying_key: &VerifyingKeyView<'_>,
     logs: &[u8],
   ) -> Result<Self, String> {
-    if logs.is_empty() || logs.len() != profile.circuits.len() {
+    if logs.is_empty() || logs.len() != verifying_key.circuits.len() {
       return Err("trace logs must cover every circuit".into());
     }
-    if profile.max_log_degree > Scalar::TWO_ADICITY
-      || profile.max_log_degree >= usize::BITS as usize
+    if verifying_key.max_log_degree > Scalar::TWO_ADICITY
+      || verifying_key.max_log_degree >= usize::BITS as usize
     {
       return Err("invalid maximum trace degree".into());
     }
@@ -108,10 +106,10 @@ impl Shape {
       widths: vec![],
       opening_rows: vec![],
     });
-    for (circuit, &log) in profile.circuits.iter().zip(logs) {
+    for (circuit, &log) in verifying_key.circuits.iter().zip(logs) {
       let height =
         1usize.checked_shl(u32::from(log)).ok_or("trace height overflow")?;
-      if usize::from(log) > profile.max_log_degree
+      if usize::from(log) > verifying_key.max_log_degree
         || circuit.preprocessed_height != height
         || circuit.preprocessed_width == 0
         || circuit.main_width == 0
@@ -155,7 +153,7 @@ impl Shape {
         shape.opening_rows.push(rows);
       }
     }
-    rounds[Round::Fixed.index()].check_commitment(profile.fixed)?;
+    rounds[Round::Fixed.index()].check_commitment(verifying_key.fixed)?;
     let mut opening_generators = vec![];
     for round in Round::PCS {
       for (&log, &rows) in logs.iter().zip(&rounds[round.index()].opening_rows)
@@ -213,7 +211,7 @@ impl Shape {
       || proof.opening_proof.0.len() != self.opening_generators.len()
     {
       return Err(
-        "proof activation, degree, accumulator or witness shape differs from profile"
+        "proof activation, degree, accumulator or witness shape differs from the verifying key"
           .into(),
       );
     }

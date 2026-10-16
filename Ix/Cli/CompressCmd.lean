@@ -26,15 +26,20 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let out ← match (p.flag? "out").map (·.as! String) with
       | some path => pure path
       | none =>
-        let dir := (← StoreIO.toIO Store.getHomeDir) / ".ix/compression"
-        pure (dir / toString addr / toString height).toString
+        pure (← Compression.newRunDir addr height (p.hasFlag "dev-srs")).toString
     let vk ← match (p.flag? "root-vk").map (·.as! String) with
       | some path => IO.FS.readBinFile path
       | none => pure backend.system.vkBytes
     IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
+    IO.eprintln s!"Compression artifacts: {out}"
     let proof ← Compression.compress vk wrapper.proof (Ix.Claim.ser wrapper.claim) statement
       out (← Compression.cacheDir).toString
       (p.hasFlag "dev-srs") height.toUInt32
+    if p.hasFlag "dev-srs" then
+      let keyPath := System.FilePath.mk out / "final-kzg/verifier.bin"
+      let key ← IO.FS.readBinFile keyPath
+      let cached ← Compression.cacheDevelopmentKey proof (Ix.Claim.ser wrapper.claim) statement key
+      IO.eprintln s!"Development verifying key: {cached}"
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     let result ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
     IO.println (toString result)
@@ -49,7 +54,7 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
-    "out" : String; "Empty output directory for the stage proofs; defaults to a new directory under ~/.ix/compression."
+    "out" : String; "Override the fresh run directory created automatically under ~/.ix/compression."
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."

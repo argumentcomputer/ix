@@ -323,7 +323,7 @@ fn recursive_exact_shape_rejects_every_payload_dimension() {
 }
 
 #[test]
-fn recursive_profile_identity_binds_metadata_and_schema() {
+fn recursive_key_identity_binds_metadata_and_schema() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(17);
   let id = |system: &System<KzgConfig>, schema, layout| {
@@ -373,8 +373,7 @@ fn recursive_profile_identity_binds_metadata_and_schema() {
 }
 
 #[test]
-fn recursive_profile_rejects_invalid_graph_and_fixed_points_before_construction()
- {
+fn recursive_key_rejects_invalid_graph_and_fixed_points_before_construction() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(17);
   assert!(Plan::new(&fixture.system, &[1], schema(&claims), layout()).is_err());
@@ -404,15 +403,15 @@ fn recursive_shape_deduplicates_log_zero_opening_points() {
 }
 
 #[test]
-fn recursive_profile_rejects_keccak_before_circuit_construction() {
+fn recursive_key_rejects_keccak_before_circuit_construction() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(7);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
-  let mut profile = plan.profile;
-  profile.transcript_kind = crate::kzg::TranscriptKind::Keccak256;
+  let mut verifying_key = plan.verifying_key;
+  verifying_key.transcript_kind = crate::kzg::TranscriptKind::Keccak256;
   assert!(matches!(
-    Plan::from_profile(&profile, &[2], schema(&claims), layout()),
+    Plan::from_key(&verifying_key, &[2], schema(&claims), layout()),
     Err(error) if error.contains("requires a BLAKE3 inner transcript")
   ));
   fixture.system.config = fixture
