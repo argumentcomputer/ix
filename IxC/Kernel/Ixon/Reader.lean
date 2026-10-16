@@ -1,10 +1,12 @@
-import IxC.Kernel.Frontend.InModel
-import IxC.Kernel.Frontend.Prepare
-import IxC.Address.Core
-import IxC.Ixon.Types
-import IxC.Kernel.Ref
-import IxC.Kernel.Ixon.RoleTable
-import IxC.Kernel.Ingress.Records
+module
+
+public import IxC.Kernel.Frontend.InModel
+public import IxC.Kernel.Frontend.Prepare
+public import IxC.Address.Core
+public import IxC.Ixon.Types
+public import IxC.Kernel.Ref
+public import IxC.Kernel.Ixon.RoleTable
+public import IxC.Kernel.Ingress.Records
 
 /-! # Ixon records as kernel declarations
 
@@ -122,6 +124,8 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Reader
 

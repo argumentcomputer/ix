@@ -1,6 +1,8 @@
-import IxC.Kernel.Ixon.Reader
-import IxC.Kernel.Ixon.RoleData
-import IxC.Ixon.Canonical
+module
+
+public import IxC.Kernel.Ixon.Reader
+public import IxC.Kernel.Ixon.RoleData
+public import IxC.Ixon.Canonical
 
 /-! # The Ixon prelude and the default role table
 
@@ -33,6 +35,8 @@ theorem holds for every table. The evidence records back the store of every
 reading behind the prelude's (`Prelude.evidence`, beside `Prelude.records`),
 so a table that names them resolves them; they are never read as
 declarations of their own. -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Reader
 

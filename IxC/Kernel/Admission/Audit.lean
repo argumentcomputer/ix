@@ -90,12 +90,15 @@ anchors moved it from 5785 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
 11 more). Step 6b's display annotations moved it from 5796 by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: PERF P14 with names),
 and its failure display from 5804 by the entry's change (30 more, one more
-ruled csimp: `Msg.withTerms`). -/
+ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
+`module`s moved it from 5834 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
+28 more: the module's own specialisations, `instBEqAddress.beq` and
+`Std.Format.defWidth` called). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5834 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5862 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

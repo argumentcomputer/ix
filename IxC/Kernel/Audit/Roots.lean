@@ -43,8 +43,8 @@ The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
 reaches 3434 compiled functions with 67 inherited externs, with the
 computed-field overrides of `Level`, `Expr` and `Key` and 22 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2140, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5837 with
+2154, adding the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 5865 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
@@ -52,7 +52,20 @@ default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
 the typing tier) are frozen apart: the entry's closure and the tier's 79
 functions, with nothing new to rule; the closures above do not reach the
-tier. Step 6b's
+tier. The reader's and its tables' conversion to Lean `module`s
+(`IxC.Kernel.Ref`, `Ingress.Records`, `Ixon.RoleTable`, `Ixon.Reader`,
+`Ixon.RoleData`, `Ixon.Prelude`; no code changed) moved the reader from 2140
+and the entry from 5837 (the tiered entries from 5919); the externs,
+`implemented_by`, `unsafe` constants, csimps, `partial` definitions and
+rulings are unchanged. Two code-generator effects of the module system: a
+module compiles its own specialisations where a non-module reused one an
+import had cached (`HashMap.insert` specialised at
+`Lean.Elab.Tactic.Do.…parseInvariantMap` and at `Frontend.hoistTargets`,
+`List.elem` at `reduceNat`, …), so the reader's 82 such specialisations
+became 95 of its own, renumbered (the entry's 68 became 94); and the derived
+`BEq Address`, which `IxC.Address.Core` does not expose, is now called
+(`instBEqAddress.beq`) instead of inlined, as is `Std.Format.defWidth` in the
+entry. Step 6b's
 failure display (a failure's terms and binders at `.meta` and `.source`,
 `Ix.Kernel.FailureDisplay`, a subsingleton on a message's prose part) moved
 the fold from 3404 to 3434 and the entry from 5807 to 5837 (the tiered
@@ -507,14 +520,14 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2140 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2154 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5837 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5865 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -527,9 +540,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- entry's change (8 more, one more ruled csimp), and its failure display from
 -- 5886: the entry's 30 and the closed terms of three of the tier's own message
 -- sites (`Tier.blockShape`), each prose part holding the empty display (one
--- more ruled csimp).
+-- more ruled csimp). The reader's conversion to modules moved it from 5919 by
+-- the entry's change (28 more; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5919 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5947 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

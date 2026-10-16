@@ -1,6 +1,8 @@
-import IxC.Kernel.Roles
-import IxC.Address.Core
-import Std.Data.HashSet
+module
+
+public import IxC.Kernel.Roles
+public import IxC.Address.Core
+public import Std.Data.HashSet
 
 /-! # The role table and its binding section
 
@@ -44,6 +46,8 @@ the evidence is exactly the bound operations': one entry per equation of the
 role's `ops` specification, of the kind `Spec.evidenceKinds` fixes, and none
 for any other role. This replaces the reader's checks on its committed pin
 table (`pinMap`'s `rootComponent` and `derivedShape`, SP3's D6). -/
+
+@[expose] public section
 
 namespace Ix.Kernel
 

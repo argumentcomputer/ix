@@ -46,11 +46,12 @@ end Ixon.Authenticated.Audit
 -- validation of the four install anchors from 5963, by the generic entries' change;
 -- step 6b's display annotations from 5974, by the generic entries' change (8
 -- more, one more ruled csimp), and its failure display from 5982 (30 more, one
--- more ruled csimp).
+-- more ruled csimp); the reader's conversion to Lean `module`s from 6012, by the
+-- generic entries' change (29 more, the block-order entry's).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 6012 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
+ Address.admissionHash]: 6041 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -200,9 +201,10 @@ and the same one assumed substitution: 5878 and 10 more, the Rust BLAKE3
 backend's three externs among them (ruled assumed 4). Step 6b's display
 annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
-one more ruled csimp). -/
+one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,
+likewise (28 more). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5929 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5957 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 6; ruled assumed 4, computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
