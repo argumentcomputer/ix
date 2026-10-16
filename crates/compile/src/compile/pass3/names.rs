@@ -278,6 +278,26 @@ pub fn image_kinds(
   out
 }
 
+// The library constants the image construction uses (`Ix.Compile.LibraryNames`).
+pub fn n_pprod() -> Name {
+  root_name("PProd")
+}
+pub fn n_pprod_mk() -> Name {
+  mk_str(&n_pprod(), "mk")
+}
+pub fn n_and() -> Name {
+  root_name("And")
+}
+pub fn n_and_intro() -> Name {
+  mk_str(&n_and(), "intro")
+}
+pub fn n_true() -> Name {
+  root_name("True")
+}
+pub fn n_true_intro() -> Name {
+  mk_str(&n_true(), "intro")
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
