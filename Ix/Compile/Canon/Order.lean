@@ -50,6 +50,7 @@ public import Ix.SOrder
 public import Ix.SemanticContract
 public import Ix.IxonUniv
 public import Ix.Compile.Canon.Expr
+public import Ix.Compile.ExactKey
 @[expose] public section
 
 namespace Ix.Compile.Canon
@@ -184,10 +185,12 @@ def compareExternal (c : CmpCtx) (x y : Name) : Except CmpError SOrder :=
   | _, none => .error (.missingAddress y)
 
 /-- Two referenced names (constant heads after their levels, or projection
-structures): same name equal; in-block by class index, weakly; in-block
-before external; external by `compareExternal`. -/
+structures): same name equal (compared structurally, `nameEq`, as the
+mutual context `Ix.MutCtx` and the address lookups compare them; a stored
+hash shared by two names does not make them one); in-block by class index,
+weakly; in-block before external; external by `compareExternal`. -/
 def compareRef (c : CmpCtx) (x y : Name) : Except CmpError SOrder :=
-  if x == y then pure ⟨true, .eq⟩
+  if Ix.Compile.ExactKey.nameEq x y then pure ⟨true, .eq⟩
   else match c.mutCtx.get? x, c.mutCtx.get? y with
     | some nx, some ny => pure ⟨false, compare nx ny⟩
     | some _, none => pure ⟨true, .lt⟩
@@ -260,17 +263,23 @@ decreasing_by
 /-! ## Constants -/
 
 /-- The comparison cache: unordered name pair ↦ the ordering and the name
-that was on the left when it was computed. -/
+that was on the left when it was computed. Names are keys compared
+structurally (`ExactName`), so two names that share a stored hash are two
+keys. -/
 structure CmpState where
-  cache : Std.HashMap (Name × Name) (Ordering × Name) := {}
+  cache : Std.HashMap (Ix.Compile.ExactKey.ExactName × Ix.Compile.ExactKey.ExactName)
+    (Ordering × Name) := {}
   deriving Inhabited
 
 abbrev CmpM := StateT CmpState (Except CmpError)
 
 def liftE (x : Except CmpError α) : CmpM α := liftM x
 
-def cacheKey (x y : Name) : Name × Name :=
-  match compare x y with
+/-- The unordered pair's key: the two names in `Ix.nameCompareExact` order
+(the stored hash, ties by structure), so that `cacheKey x y = cacheKey y x`
+exactly when the pair is the same. -/
+def cacheKey (x y : Name) : Ix.Compile.ExactKey.ExactName × Ix.Compile.ExactKey.ExactName :=
+  match Ix.nameCompareExact x y with
   | .lt => (x, y)
   | _ => (y, x)
 
@@ -279,7 +288,7 @@ swapped pair is returned swapped. -/
 def cacheGet (x y : Name) : CmpM (Option Ordering) := do
   match (← get).cache.get? (cacheKey x y) with
   | none => pure none
-  | some (o, left) => pure (some (if left == x then o else o.swap))
+  | some (o, left) => pure (some (if Ix.Compile.ExactKey.nameEq left x then o else o.swap))
 
 def cachePut (x y : Name) (o : SOrder) : CmpM Unit :=
   if o.strong then
