@@ -6,6 +6,7 @@ import Ix.Cert.Canon
 import Ix.Cert.Schedule
 import Ix.Cert.Hybrid
 import Ix.Cert.Stream
+import Ix.Cert.Order
 
 /-! # The certification statements, frozen
 
@@ -3632,3 +3633,86 @@ fun ixe order =>
 /-- info: 'Ix.Cert.Stream.closure_accepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Stream.closure_accepts
+
+/-! ## Route A, B4: the compiled closure has an order
+
+`compileReport` checks that no stored record is on a reference cycle
+(`Ix.Cert.referenceCycle`, Pass 1's proved condensation over the stored
+records' reference graph). A successful check orders the stored records
+(`Ix.Cert.Order.recordsOrdered_of_acyclic`: sorted by component, since an
+edge never goes to a later component and every component is one record), and
+ordered records give every seed set's compiled closure a `ClosureOrder`
+(`closureOrder_of_ordered`), so one exists for every artifact `compile`
+returns (`closureOrder_exists`). The check reads each record's `refs` table and
+projection block without its expressions (`Ix.Cert.RecordRefs.getRefs`);
+`Ix.Cert.RefsRead` proves that reader is `Ixon.getConstant` with the rest
+forgotten, as an equation of reader programs, so the graph is the decoded
+records' (`storedRefs_eq`). -/
+
+/-- info: [cert-audit] refs read: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "refs read"
+    (#[`skipExpr_eq, `skipUniv_eq, `skipInfo_eq, `getRefs_eq, `refsAt_eq, `lazyRefs_eq,
+      `storedRefs_eq].map (`Ix.Cert.RefsRead ++ ·))
+
+/-- info: Ix.Cert.RefsRead.getRefs_eq : Ix.Cert.RecordRefs.getRefs =
+  (fun c => (c.refs, Ix.Cert.RefsRead.infoBlock c.info)) <$> Ixon.getConstant -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.RefsRead.getRefs_eq
+
+/-- info: Ix.Cert.RefsRead.storedRefs_eq : ∀ (ixe : Ixon.Env) (a : Address),
+  Ix.Cert.storedRefs ixe a = Option.map (fun c => (c.refs, Ix.Cert.refOwner a c)) (Ix.Cert.storedRecord ixe a) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.RefsRead.storedRefs_eq
+
+/-- info: [cert-audit] order: 15 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] order: 3 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "order"
+    (#[`refOwner_eq, `storedRecord_eq, `mem_keys_of_stored, `index_mem, `parMap_eq, `recordRefs_eq,
+      `recordGraph_size, `recordGraph_edge, `singletons, `recordsOrdered_of_acyclic, `exists_nodup_filter,
+      `closureOrder_of_ordered, `acyclic_of_compile, `recordsOrdered,
+      `closureOrder_exists].map (`Ix.Cert.Order ++ ·))
+  checkRuntime (tag := "cert-audit") "order"
+    #[``Ix.Cert.recordGraph, ``Ix.Cert.referenceCycle, ``Ix.Compile.Canon.condensation]
+
+/-- info: def Ix.Cert.Order.RecordsOrdered : Ixon.Env → Prop :=
+fun ixe =>
+  ∃ L,
+    L.Nodup ∧
+      (∀ (a : Address), a ∈ L ↔ ixe.consts.contains a = true) ∧ List.Pairwise (fun a b => ¬Ix.Cert.RecordRef ixe a b) L -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Order.RecordsOrdered
+
+/-- info: @Ix.Cert.Order.recordsOrdered_of_acyclic : ∀ {ixe : Ixon.Env},
+  Ix.Cert.referenceCycle ixe = none → Ix.Cert.Order.RecordsOrdered ixe -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Order.recordsOrdered_of_acyclic
+
+/-- info: @Ix.Cert.Order.closureOrder_of_ordered : ∀ {ixe : Ixon.Env},
+  Ix.Cert.Order.RecordsOrdered ixe → ∀ (S : Address → Prop), ∃ order, Ix.Cert.ClosureOrder ixe S order -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Order.closureOrder_of_ordered
+
+/-- info: @Ix.Cert.Order.recordsOrdered : ∀ {env : Ix.Environment} {ixe : Ixon.Env},
+  Ix.Cert.compile env = Except.ok ixe → Ix.Cert.Order.RecordsOrdered ixe -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Order.recordsOrdered
+
+/-- info: @Ix.Cert.Order.closureOrder_exists : ∀ {env : Ix.Environment} {ixe : Ixon.Env},
+  Ix.Cert.compile env = Except.ok ixe → ∀ (S : Address → Prop), ∃ order, Ix.Cert.ClosureOrder ixe S order -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Order.closureOrder_exists
+
+/-- info: 'Ix.Cert.Order.recordsOrdered_of_acyclic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Order.recordsOrdered_of_acyclic
+
+/-- info: 'Ix.Cert.Order.closureOrder_exists' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.Order.closureOrder_exists
