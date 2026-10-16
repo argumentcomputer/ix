@@ -1,5 +1,6 @@
 import Ix.CondenseM
 import Ix.LeanIngress.Expr
+import Ix.LeanIngress.Names
 import IxC.Kernel.Ixon.Prelude
 import IxC.Kernel.Cached.Installed
 import Ix.RoleEvidence
@@ -307,12 +308,13 @@ inductive Converted where
 
 /-- The conversion of terms, each under its constant's numbering: a run of
 consecutive terms under one numbering is converted together (one memo). A
-term conversion failure is a malformed group. -/
+term conversion failure is a malformed group. The converted terms carry Lean's binder
+names (`nameExprs`, display only: they are the conversions, `nameExprs_eq`). -/
 def exprsOf (items : Array (Numbering × Ix.Expr)) : Except ReadError (Array (CExpr .source)) := do
   let flush (σ : Numbering) (es : Array Ix.Expr) (out : Array (CExpr .source)) :
       Except ReadError (Array (CExpr .source)) :=
     match ingressExprs σ.pos es.toList with
-    | .ok ks => .ok (out ++ ks.toArray)
+    | .ok ks => .ok (out ++ (nameExprs es.toList ks).toArray)
     | .error e => .error (.malformed s!"source term: {e}")
   let mut out : Array (CExpr .source) := Array.mkEmpty items.size
   let mut run : Option (Numbering × Array Ix.Expr) := none
