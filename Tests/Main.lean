@@ -18,6 +18,7 @@ import Tests.Ix.Compile.Canon
 import Tests.Ix.Compile.CanonClique
 import Tests.Ix.Compile.AlphaEq
 import Tests.Ix.Compile.MotiveEq
+import Tests.Ix.Compile.Image
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxGenClosure
 import Tests.Ix.Compile.AuxGenClosureCanon
@@ -225,6 +226,9 @@ def registry : List Entry := [
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
   -- probe's closure through the Rust kernel, Ix.Tc and IxC (about 9 s).
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
+  -- The pure image generator (Ix.Compile.Image) on the prototype's fifteen sub-cases,
+  -- with Lean's kernel as the oracle (Tests.Ix.Compile.Image).
+  .runner "image-gen" .primary Tests.Ix.Compile.Image.run,
   -- The circuit TagN codec against the host codec (about 16 s).
   .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,
   .runner "aiur-prove" .primary (do
