@@ -11,10 +11,10 @@ public import IxC.Kernel.Tier.Check
 /-! # Source mode: Lean environments as the checker's declarations
 
 `leanIngress` turns an `Ix.Environment`, `Ix.CanonM`'s canonicalization of a
-Lean environment and the compiler's own input (`Ix.CompileM.compileEnv`), into
-the `Array Ix.Kernel.Declaration` that the verified fold
-`Ix.Kernel.Cached.checkDecls` consumes; `checkSource` runs the fold on it.
-It is the Source-mode counterpart of the Ixon reader (`Ix.Kernel.Reader`): the
+Lean environment and the compiler's own input (`Ix.Cert.compile`, whose fold
+is `Ix.CompileM.compileEnvFold`), into the `Array Ix.Kernel.Declaration` that
+the verified fold `Ix.Kernel.Cached.checkDecls` consumes; `checkSource` runs
+the fold on it. It is the Source-mode counterpart of the Ixon reader (`Ix.Kernel.Reader`): the
 source semantics and the compiler start from the same object, and both front
 ends lower through the reader's own back half.
 
