@@ -51,7 +51,8 @@ syntactic walks through sharing and along the source
 `MutualArtifact`), and the reader's recursor index (`Ix.CompileCert.ReaderIndex`,
 `ReaderIndexDiscovery`), and the reading of compiled standalone inductives
 (`Ix.CompileCert.InductiveReading`), and what Source mode admits of an
-inductive block (`Ix.CompileCert.SourceConstructorPositions`).
+inductive block (`Ix.CompileCert.SourceConstructorPositions`), and the shared
+loop lemmas (`Ix.CompileCert.Loop`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -393,15 +394,20 @@ def inductiveReadRoots : Array Lean.Name :=
     `inductive_reads, `inductive_reads_indexed,
     `inductive_declines_unindexed].map (`Ix.CompileCert.InductiveReading ++ ·)
 
+/-- The shared loop lemmas (`Ix.CompileCert.Loop`): folds in `Id`, loops
+that push or exit, invariants of fallible loops, and `List.mapM`. -/
+def loopRoots : Array Lean.Name :=
+  #[`except_bind_ok, `except_pure_ok, `idBind, `idPure, `forIn_id_list, `forIn_id_array, `forIn_exit,
+    `forIn_exit_array, `exit_of_fst, `pushed_of_fst, `forIn_all_some, `no_exit, `forall₂_append, `forIn_inv,
+    `forIn_inv_array, `forIn_push_array, `mapM_forall₂].map (`Ix.CompileCert.Loop ++ ·)
+
 /-- What Source mode admits of an inductive block (R12): `inductiveGroup`
 and `convertInductive` read (positions, safety, parameters, telescopes),
 the compiler's constructor resolution as environment lookups, and
 `inductive_reads` with its Source premises discharged by Source admission. -/
 def sourceRoots : Array Lean.Name :=
-  #[`forIn_exit, `forIn_exit_array, `exit_of_fst, `pushed_of_fst, `memberValue_some, `ctorValue_some,
-    `forIn_all_some, `ctorsValue_forall₂, `idBind, `idPure, `no_exit, `forall₂_some_unique,
-    `inductiveGroup_spec, `forIn_inv, `forIn_inv_array, `mapM_forall₂, `forall₂_append, `flush_ok,
-    `exprsOf_spec, `drop_cons, `drop_of_append, `forall₂_getElem?, `getElem!_of_toList, `telescope_at,
+  #[`memberValue_some, `ctorValue_some, `ctorsValue_forall₂, `forall₂_some_unique, `inductiveGroup_spec,
+    `flush_ok, `exprsOf_spec, `drop_cons, `drop_of_append, `forall₂_getElem?, `getElem!_of_toList, `telescope_at,
     `items_layout, `convertInductive_spec, `strip_of_ingress, `find_ok, `find_run, `collect_lookups,
     `collectMut_lookups, `mkIndc_lookups, `inductiveGroup_cases, `admits_layout, `forall₂_mem, `ctors_agree,
     `admitted_member, `forall₂_mono_mem, `source_premises, `mkIndc_positions,
@@ -572,6 +578,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
   checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
+  checkRoots (tag := "reading-audit") "loops" Ix.CompileCert.ReadingAudit.loopRoots
   checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
