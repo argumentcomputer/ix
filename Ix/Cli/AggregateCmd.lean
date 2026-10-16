@@ -138,7 +138,7 @@ def runAggregateCmdWith (recursionParameters : Aggr.RecursionParameters)
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Streamed `[texray]` span lines on stderr: the per-node wall and RSS
   -- breakdown of every slot's execution, witness and STARK phases.
-  if p.hasFlag "texray" then TracingTexray.init {}
+  if ← TracingTexray.enabled (p.hasFlag "texray") then TracingTexray.init {}
   runAggregateCmdWith Aggr.defaultRecursionParameters p
 
 end Ix.Cli.AggregateCmd

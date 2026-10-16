@@ -1,18 +1,17 @@
 use crate::kzg::Scalar;
-use crate::recursive::native_curve::PointInput;
-use crate::recursive::native_field::Builder;
-use crate::recursive::native_field::FqVar;
-use crate::recursive::native_field::integer;
-use crate::recursive::native_field::modulus;
+use crate::recursive::{
+  native_curve::PointInput,
+  native_field::{Builder, FqVar, integer, modulus},
+};
 use ark_bls12_381::Fr;
 use ark_ff::{BigInteger, PrimeField};
-use multi_stark::plonkish::Bool;
-use multi_stark::plonkish::Value;
-use multi_stark::plonkish::gadgets::ByteGadgets;
-use multi_stark::plonkish::gadgets::ByteValue;
-use multi_stark::plonkish::gadgets::blake3_xof;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::Field;
+use multi_stark::{
+  plonkish::{
+    Bool, Value,
+    gadgets::{ByteGadgets, ByteValue, blake3_xof},
+  },
+  traits::{Algebra, Field},
+};
 use num_bigint::BigUint;
 
 /// Final borrow of bound - bytes (both unsigned little endian).
@@ -25,7 +24,7 @@ fn greater_than(
   assert_eq!(input.len(), bound.len());
   let mut borrow = b.constant(Scalar::ZERO);
   for (&value, &limit) in input.iter().zip(bound) {
-    let out = b.hint_many::<2>(
+    let out = b.hint_many_pure::<2>(
       "byte subtraction",
       &[value.value(), borrow],
       move |v| {
@@ -98,7 +97,7 @@ pub fn fq_bytes(
 ) -> [ByteValue; 48] {
   let mut result = Vec::new();
   for (i, &limb) in v.0.iter().enumerate() {
-    let raw = b.hint_many::<10>("Fq limb bytes", &[limb], |v| {
+    let raw = b.hint_many_pure::<10>("Fq limb bytes", &[limb], |v| {
       let mut data = integer(v[0]).to_bytes_le();
       data.resize(10, 0);
       Ok(std::array::from_fn(|i| Scalar::from_u8(data[i])))
@@ -197,8 +196,7 @@ impl Transcript {
 mod tests {
   use super::*;
   use crate::kzg::Blake3Transcript;
-  use crate::recursive::native_curve::PointInput;
-  use crate::recursive::native_field::FqGadget;
+  use crate::recursive::{native_curve::PointInput, native_field::FqGadget};
   use ark_bls12_381::G1Affine;
   use ark_ec::{AffineRepr, CurveGroup};
   use ark_serialize::CanonicalSerialize;

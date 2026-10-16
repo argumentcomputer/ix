@@ -430,7 +430,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln "error: --join requires singleton CheckEnv shards; drop --skip-deps"
     return Ix.Benchmark.Results.exitUsage
   -- Off by default; CI passes --texray explicitly.
-  let useTexray := p.hasFlag "texray"
+  let useTexray ← TracingTexray.enabled (p.hasFlag "texray")
   let useInterp := p.hasFlag "interp"
   if join && useInterp then
     IO.eprintln "error: --join requires the native singleton-shard prover; drop --interp"

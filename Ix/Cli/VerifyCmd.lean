@@ -10,6 +10,7 @@
 -/
 module
 public import Cli
+public import Ix.Cli.Compression
 public import Ix.Address
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
@@ -25,7 +26,6 @@ public import Ix.Aggr.Backend
 public import Ix.Aggr.Verification
 public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
-public import Ix.Cli.Compression
 
 public section
 
@@ -94,8 +94,25 @@ structure ExpectedAggregate where
   claim : Ix.Claim
   constantCount : Nat
 
-private def verifyAggregateProof (backend : Aggr.VerificationBackend)
-    (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
+private inductive DevelopmentKey where
+  | cached
+  | explicit (bytes : ByteArray)
+
+private def verifyCompressedProof (getBackend : IO (Except String Aggr.VerificationBackend))
+    (developmentKey? : Option DevelopmentKey) (proofAddr : Address)
+    (wrapper : Ixon.Proof) : IO UInt32 := do
+  match developmentKey? with
+  | none => Compression.verifyProof proofAddr wrapper
+  | some selected =>
+    let key ← match selected with
+      | .cached => Compression.readDevelopmentKey wrapper.proof
+      | .explicit key => pure key
+    let backend ← IO.ofExcept (← getBackend)
+    Compression.verifyDevelopmentProof proofAddr wrapper key backend
+
+private def verifyAggregateProof (getBackend : IO (Except String Aggr.VerificationBackend))
+    (expected? : Option ExpectedAggregate) (proofAddr : Address)
+    (developmentKey? : Option DevelopmentKey) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
@@ -109,33 +126,34 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       IO.eprintln s!"error: aggregate claim {wrapper.claim} does not match expected {expected.claim}"
       return 1
   | none => pure ()
-  let outerClaim := Aggr.aggregateOuterClaim backend.allowed backend.aggrIdx wrapper.claim
-  let verifyStarted ← IO.monoMsNow
   if Compression.isCompressed wrapper.proof then
-    try
-      Compression.verify backend.system.vkBytes wrapper.proof outerClaim (← Compression.directory).toString
-    catch e =>
-      IO.eprintln s!"error: compressed verification failed: {e}"
-      return 1
-  else
-    let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
-      | .ok proof => pure proof
-      | .error e =>
-        IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
-        return 1
-    match backend.system.verify outerClaim proof with
-    | .ok () => pure ()
+    return ← verifyCompressedProof getBackend developmentKey? proofAddr wrapper
+  if developmentKey?.isSome then
+    throw <| IO.userError "development verification requires a compressed aggregate proof"
+  let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
+    | .ok proof => pure proof
     | .error e =>
-      IO.eprintln s!"error: aggregate verification failed: {e}"
+      IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
       return 1
-  IO.println s!"[verify] aggregate proof: {(← IO.monoMsNow) - verifyStarted}ms"
-  IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
-  if let some expected := expected? then
-    IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
-      {expected.constantCount} environment constants committed exactly once"
-    IO.println s!"[verify] all {expected.constantCount} included constants \
-      certified well-typed; 0 undischarged assumptions"
-  return 0
+  let backend ← match ← getBackend with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
+  let outerClaim := Aggr.aggregateOuterClaim
+    backend.allowed backend.aggrIdx wrapper.claim
+  let verifyStarted ← IO.monoMsNow
+  match backend.system.verify outerClaim proof with
+  | .ok () =>
+    IO.println s!"[verify] aggregate Aiur proof: {(← IO.monoMsNow) - verifyStarted}ms"
+    IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
+    if let some expected := expected? then
+      IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
+        {expected.constantCount} environment constants committed exactly once"
+      IO.println s!"[verify] all {expected.constantCount} included constants \
+        certified well-typed; 0 undischarged assumptions"
+    return 0
+  | .error e =>
+    IO.eprintln s!"error: aggregate verification failed: {e}"
+    return 1
 
 /-- Shard-aware verification (parity with `check`/`prove`):
     - `--shard K`, no proof: print shard K's reconstructed `CheckEnv` claim
@@ -224,6 +242,32 @@ proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
+  let developmentKeyPath? := (p.flag? "dev-vk").map (·.as! String)
+  if developmentKeyPath?.isSome && !p.hasFlag "dev-srs" then
+    p.printError "error: --dev-vk requires --dev-srs"
+    return 1
+  if p.hasFlag "dev-srs" && !p.hasFlag "aggregate" &&
+      (p.hasFlag "ixe" || p.hasFlag "ixes") then
+    p.printError "error: development verification with an expected environment requires --aggregate"
+    return 1
+  let developmentKey? : Option DevelopmentKey ← if p.hasFlag "dev-srs" then
+      match developmentKeyPath? with
+      | none => pure (some .cached)
+      | some path => do
+        let bytes ← IO.FS.readBinFile path
+        pure (some (.explicit bytes))
+    else pure none
+  let backendRef ← IO.mkRef (none : Option (Except String Aggr.VerificationBackend))
+  let getBackend : IO (Except String Aggr.VerificationBackend) := do
+    if let some result ← backendRef.get then
+      return result
+    let backendStarted ← IO.monoMsNow
+    let result ← Aggr.buildVerificationBackend recursionParameters
+    backendRef.set (some result)
+    if let .ok _ := result then
+      IO.println s!"[verify] aggregate backend setup: \
+        {(← IO.monoMsNow) - backendStarted}ms"
+    return result
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
       p.printError "error: --aggregate requires at least one aggregate proof address"
@@ -274,16 +318,11 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
           {(← IO.monoMsNow) - started}ms"
         pure (some { claim, constantCount := native.constantCount })
       | none, some _ => unreachable!
-    let backendStarted ← IO.monoMsNow
-    let backend ← match ← Aggr.buildVerificationBackend recursionParameters with
-      | .error e => IO.eprintln e; return 1
-      | .ok backend => pure backend
-    IO.println s!"[verify] aggregate backend setup: \
-      {(← IO.monoMsNow) - backendStarted}ms"
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
-      if (← verifyAggregateProof backend expected? proofAddr) != 0 then
+      if (← verifyAggregateProof getBackend expected? proofAddr
+          developmentKey?) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -294,27 +333,23 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
       return 1
-    let mut ordinary : Option (Aiur.AiurSystem × Aiur.CompiledToplevel) := none
-    let mut aggregate : Option Aggr.VerificationBackend := none
+    let mut backend? := none
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "proof" hex
       let wrapper ← Compression.readProof proofAddr
       if Compression.isCompressed wrapper.proof then
-        let backend ← match aggregate with
-          | some backend => pure backend
-          | none =>
-            let backend ← IO.ofExcept (← Aggr.buildVerificationBackend recursionParameters)
-            aggregate := some backend
-            pure backend
-        if (← verifyAggregateProof backend none proofAddr) != 0 then rc := 1
+        if (← verifyCompressedProof getBackend developmentKey? proofAddr wrapper) != 0 then
+          rc := 1
       else
-        let (aiurSystem, compiled) ← match ordinary with
-          | some backend => pure backend
+        if developmentKey?.isSome then
+          throw <| IO.userError "development verification requires a compressed aggregate proof"
+        let (aiurSystem, compiled) ← match backend? with
+          | some b => pure b
           | none =>
-            let backend ← IO.ofExcept (← buildBackend)
-            ordinary := some backend
-            pure backend
+            let b ← IO.ofExcept (← buildBackend)
+            backend? := some b
+            pure b
         if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
     return rc
 
@@ -326,9 +361,11 @@ end Ix.Cli.VerifyCmd
 open Ix.Cli.VerifyCmd in
 def verifyCmd : Cli.Cmd := `[Cli|
   verify VIA runVerifyCmd;
-  "Verify native or compressed proof(s) against their bundled claims, or a `.ixes` shard partition"
+  "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "dev-srs"; "Verify using the development key cache; not production-secure."
+    "dev-vk" : String; "Override the cached development verifying key; requires --dev-srs."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
