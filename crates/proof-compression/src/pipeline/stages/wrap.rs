@@ -81,7 +81,7 @@ impl RecursiveStage {
       return Err("recursive trace exceeds the SRS range".into());
     }
     let config = KzgConfig::with_max_trace_len(srs, height, 2)
-      .with_transcript(crate::kzg::TranscriptKind::Keccak256)
+      .with_transcript(crate::kzg::TranscriptKind::Blake3)
       .with_streaming_lookups()
       .with_streaming_quotient();
     let (verifier, proof) = super::prove_lowered(
@@ -117,7 +117,7 @@ pub(super) fn setup_recursive(
     return Err("recursive trace exceeds the SRS range".into());
   }
   let config = KzgConfig::with_max_trace_len(srs, height, 2)
-    .with_transcript(crate::kzg::TranscriptKind::Keccak256)
+    .with_transcript(crate::kzg::TranscriptKind::Blake3)
     .with_streaming_lookups()
     .with_streaming_quotient();
   let outer = super::setup::kzg_lowered(compiled, config, claim_len + 4)?;

@@ -23,23 +23,23 @@ struct CircuitShape {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct MatrixLayout {
-  width: usize,
-  rows: usize,
-  point_offset: usize,
-  value_offset: usize,
-  groups: [usize; 2],
+pub(super) struct MatrixLayout {
+  pub(super) width: usize,
+  pub(super) rows: usize,
+  pub(super) point_offset: usize,
+  pub(super) value_offset: usize,
+  pub(super) groups: [usize; 2],
 }
 
 pub(super) struct OpeningLayout {
-  matrices: Vec<MatrixLayout>,
-  factors: Vec<Scalar>,
-  commitment_count: usize,
-  point_count: usize,
-  field_count: usize,
-  fixed_count: usize,
-  generator_index: usize,
-  coefficient_count: usize,
+  pub(super) matrices: Vec<MatrixLayout>,
+  pub(super) factors: Vec<Scalar>,
+  pub(super) commitment_count: usize,
+  pub(super) point_count: usize,
+  pub(super) field_count: usize,
+  pub(super) fixed_count: usize,
+  pub(super) generator_index: usize,
+  pub(super) coefficient_count: usize,
 }
 
 fn add(a: usize, b: usize) -> Result<usize> {

@@ -19,6 +19,8 @@ use serde_json::{Value as Json, json};
 use std::{fmt::Write as _, sync::Arc};
 
 mod codegen;
+#[cfg(feature = "plonk")]
+pub(in crate::pipeline) mod plonk;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -606,7 +608,7 @@ fn write_export(
   expect_valid_pairing: bool,
   test_fixture: bool,
 ) -> Result<()> {
-  if profile.version != OUTER_PROFILE_VERSION {
+  if profile.version != 5 {
     return Err("Solidity export requires a v5 profile".into());
   }
   let system = profile.system()?;
@@ -682,7 +684,7 @@ pub fn export_solidity_verifier(
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
   let packet = fs::read(packet)?;
-  if profile.version != OUTER_PROFILE_VERSION {
+  if profile.version != 5 {
     return Err("Solidity export requires a v5 profile".into());
   }
   profile.verify(&packet, &statement_words(&packet)?)?;
@@ -691,6 +693,14 @@ pub fn export_solidity_verifier(
 
 /// Generate small Filecoin-backed outer-profile proofs for EVM conformance tests.
 pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
+  write_fixture(directory, Some(solidity), TranscriptKind::Keccak256)
+}
+
+fn write_fixture(
+  directory: &Path,
+  solidity: Option<&Path>,
+  transcript: TranscriptKind,
+) -> Result<()> {
   use crate::kzg::srs::filecoin::{
     FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3, load_filecoin_cache,
   };
@@ -724,8 +734,7 @@ pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
     .merge_table_traces(height)?;
   let srs =
     load_filecoin_cache(&cache, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3, height)?;
-  let config =
-    KzgConfig::new(Arc::new(srs), 2).with_transcript(TranscriptKind::Keccak256);
+  let config = KzgConfig::new(Arc::new(srs), 2).with_transcript(transcript);
   let (system, key) =
     System::new(config, compiled.kzg_circuit_inputs(height, 2)?);
   if system.circuits.len() != 2 {
@@ -745,7 +754,11 @@ pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
   let mut pairings = vec![];
   vec![anchors.g2, anchors.tau_g2].serialize_compressed(&mut pairings)?;
   let profile = VerifierProfile {
-    version: OUTER_PROFILE_VERSION,
+    version: if transcript == TranscriptKind::Keccak256 {
+      5
+    } else {
+      OUTER_PROFILE_VERSION
+    },
     heights: [
       system.circuits[0].preprocessed_height,
       system.circuits[1].preprocessed_height,
@@ -767,11 +780,14 @@ pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
     1 => 17,
     _ => 1000 + u64::try_from(i).unwrap(),
   });
-  let second_words: [u64; 18] = std::array::from_fn(|i| match i {
+  let mut second_words: [u64; 18] = std::array::from_fn(|i| match i {
     0 => 0,
     1 => 31,
     _ => 2000 + u64::try_from(i).unwrap(),
   });
+  if transcript == TranscriptKind::Blake3 {
+    second_words[..10].copy_from_slice(&first_words[..10]);
+  }
   for (name, words, valid) in [
     ("fixture", first_words, true),
     ("fixture-other-statement", second_words, true),
@@ -808,7 +824,12 @@ pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
     if valid {
       profile.verify(&packet, &words)?;
     }
-    write_export(&profile, &packet, directory, solidity, name, valid, true)?;
+    if let Some(solidity) = solidity {
+      write_export(&profile, &packet, directory, solidity, name, valid, true)?;
+    } else {
+      #[cfg(feature = "plonk")]
+      plonk::write_export(&profile, &packet, &words, directory, name, valid)?;
+    }
   }
   Ok(())
 }

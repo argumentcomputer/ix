@@ -11,6 +11,8 @@ mod fixed_cache;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
+#[cfg(feature = "plonk")]
+mod plonk;
 mod prover;
 mod root;
 mod setup;
@@ -29,8 +31,12 @@ pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x04";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn command(stage: &str, args: &[String]) -> Result<()> {
-  configure_backend(stage)?;
+  if stage != "plonk" {
+    configure_backend(stage)?;
+  }
   match stage {
+    #[cfg(feature = "plonk")]
+    "plonk" => plonk::run(args),
     "fri" => root::run(args),
     "kzg" | "wrap" => {
       let config = WorkerConfig::from_env(
@@ -231,13 +237,17 @@ pub fn setup_description(development: bool) -> Result<&'static str> {
   Ok(setup::SetupConfig::from_env(development)?.class().description())
 }
 
-/// Verify a compressed proof of `claim` with the profile bundled under the
-/// packet's id, needing neither the proving backend nor any file.
+/// Verify using a bundled KZG profile or an independently configured PLONK
+/// verification key. Proving parameters are not required.
 pub fn verify(
   proof: &[u8],
   claim: &[u8],
   allow_development: bool,
 ) -> Result<setup::SetupClass> {
+  #[cfg(feature = "plonk")]
+  if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
+    return plonk::verify(packet, claim);
+  }
   let packet = proof
     .strip_prefix(PROOF_TAG)
     .ok_or("unsupported compressed proof version")?;
@@ -277,8 +287,20 @@ pub fn compress(
   cache_root: &Path,
   development: bool,
   log_height: u32,
+  terminal_plonk: bool,
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, statement)?;
+  if terminal_plonk {
+    if development {
+      return Err(
+        "terminal PLONK requires Filecoin parameters; omit --dev-srs".into(),
+      );
+    }
+    #[cfg(feature = "plonk")]
+    plonk::helper_executable()?;
+    #[cfg(not(feature = "plonk"))]
+    return Err("this build does not include terminal PLONK support".into());
+  }
   if !matches!(log_height, 24 | 25) {
     return Err(
       "--log-height must be 24 or 25 for the supported recursive profiles"
@@ -343,8 +365,35 @@ pub fn compress(
         .into(),
     );
   }
+  if terminal_plonk {
+    #[cfg(feature = "plonk")]
+    {
+      let out_plonk = out.join("plonk");
+      let expected_path = final_dir.join("expected-statement.json");
+      storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
+      let verifier = final_dir.join("verifier.bin");
+      let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
+      child(
+        "plonk",
+        &[
+          "wrap",
+          &path(&verifier)?,
+          &path(&final_dir.join("kzg/packet.bin"))?,
+          trusted.as_str(),
+          &path(&expected_path)?,
+          &path(&cache_root.join("plonk"))?,
+          &path(&out_plonk)?,
+        ],
+        &caches,
+      )?;
+      return Ok(fs::read(out_plonk.join("proof.envelope.bin"))?);
+    }
+  }
   Ok(result)
 }
+
+#[cfg(feature = "solidity")]
+pub use wrap::{export_solidity_verifier, write_solidity_fixture};
 
 #[cfg(test)]
 mod tests {
@@ -360,13 +409,11 @@ mod tests {
         Path::new("/does-not-exist"),
         Path::new("/does-not-exist"),
         true,
-        24
+        24,
+        false
       )
       .is_err()
     );
     assert!(verify(PROOF_TAG, b"wrong", true).is_err());
   }
 }
-
-#[cfg(feature = "solidity")]
-pub use wrap::{export_solidity_verifier, write_solidity_fixture};

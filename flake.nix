@@ -97,6 +97,35 @@
             sha256 = "sha256-p8h3Sl/YRByZfZTAKXdsvF6xEenXKrXSVvpphmZENH4=";
           };
 
+          # gnark requires the 1.26.8 patch release; the newer pinned package
+          # set supplies its matching bootstrap and platform patches.
+          plonkGo = cudaPkgs.go_1_26.overrideAttrs (_: {
+            version = "1.26.8";
+            src = cudaPkgs.fetchurl {
+              url = "https://go.dev/dl/go1.26.8.src.tar.gz";
+              hash = "sha256-Tjm5jkL5RvoFrIvFtxh335fb23y7Gnd7VBZnrXEX/S4=";
+            };
+          });
+          plonkSources = pkgs.lib.fileset.fileFilter (
+            file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
+              || file.name == "go.mod" || file.name == "go.sum"
+          ) ./tools/bls-plonk-wrapper;
+          plonkHelper = (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
+            pname = "ix-bls-plonk-wrapper";
+            version = "0.1.0";
+            src = pkgs.lib.fileset.toSource {
+              root = ./tools/bls-plonk-wrapper;
+              fileset = plonkSources;
+            };
+            vendorHash = "sha256-bmRyQn7iMLGRATQStghs1KmlXwln70Sxzu5oSWR5pRU=";
+            subPackages = [ "." ];
+            env.CGO_ENABLED = "0";
+            env.GOTOOLCHAIN = "local";
+            postInstall = ''
+              mv "$out/bin/bls-plonk-wrapper" "$out/bin/ix-bls-plonk-wrapper"
+            '';
+          };
+
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
@@ -231,6 +260,7 @@
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
               compressionData
+              plonkSources
             ];
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
@@ -261,6 +291,7 @@
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
             src = leanSrc;
+            IX_PLONK_PREBUILT = "${plonkHelper}/bin/ix-bls-plonk-wrapper";
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
@@ -358,6 +389,7 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
+            plonk-wrapper = plonkHelper;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.
@@ -375,6 +407,7 @@
           };
 
           checks = {
+            plonk-wrapper = plonkHelper;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
               craneArgs
@@ -425,6 +458,7 @@
                 lean
                 cargo-deny
                 valgrind
+                plonkGo
               ];
             };
           }
@@ -448,6 +482,7 @@
                   lean
                   cargo-deny
                   valgrind
+                  plonkGo
                 ])
                 ++ [ cudaToolkit ];
               shellHook = ''

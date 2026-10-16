@@ -203,6 +203,7 @@ target ix_compression_worker pkg : FilePath := do
     "--bin", "ix-compression-worker"]
   unless features.contains "parallel" do
     args := args.push "--no-default-features"
+  args := args ++ #["--features", "plonk"]
   let mut before := none
   if usesCuda features then
     args := args ++ #["--features", "cuda"]
@@ -210,6 +211,33 @@ target ix_compression_worker pkg : FilePath := do
   buildCargoArtifact pkg args "worker"
     (pkg.dir / "target" / "release" / "ix-compression-worker")
     (pkg.buildDir / "bin" / "ix-compression-worker") before
+
+/-- The terminal prover is a native Go executable with a pinned module graph. -/
+target ix_plonk_wrapper pkg : FilePath := do
+  let sources ← inputDir (pkg.dir / "tools/bls-plonk-wrapper") true fun path =>
+    path.extension == some "go" || path.extension == some "json" ||
+    path.extension == some "bin" || path.fileName == "go.mod" || path.fileName == "go.sum"
+  let output := pkg.buildDir / "bin" / "ix-bls-plonk-wrapper"
+  let prebuilt ← IO.getEnv "IX_PLONK_PREBUILT"
+  sources.mapM fun _ => do
+    let compiler ← match prebuilt with
+      | some path => pure path
+      | none => (·.stdout) <$> captureProc' { cmd := "go", args := #["version"] }
+    addPureTrace (prebuilt, compiler) s!"PLONK helper compiler: {compiler}"
+    buildUnlessUpToDate #[output] (← getTrace) (output.addExtension "trace") do
+      match prebuilt with
+      | some path => copyNativeArtifact (FilePath.mk path) output "plonk"
+      | none =>
+        IO.FS.createDirAll output.parent.get!
+        let temporary := ((← IO.FS.realPath output.parent.get!) / "ix-bls-plonk-wrapper").addExtension "tmp"
+        proc {
+          cmd := "go"
+          args := #["build", "-buildvcs=false", "-trimpath", "-mod=readonly", "-o", temporary.toString, "."]
+          cwd := pkg.dir / "tools/bls-plonk-wrapper"
+        }
+        IO.FS.rename temporary output
+    setTrace (← computeTrace output)
+    return output
 
 /-- Cargo feature variants wait for the default archive before building. -/
 target ix_rs_test pkg : FilePath := do
@@ -244,7 +272,7 @@ lean_lib Ix where
 lean_exe ix where
   root := `Main
   supportInterpreter := true
-  needs := #[`@/ix_compression_worker]
+  needs := #[`@/ix_compression_worker, `@/ix_plonk_wrapper]
   moreLinkObjs := #[ix_rs_net]
 
 section Tests
@@ -397,16 +425,20 @@ script install := do
         eprintln "Target directory can't be empty."; return 1
       pure ⟨input⟩
 
-  -- Copy the ix binary into the target directory
-  let tgtPath := binDir / "ix"
-  let srcBytes ← FS.readBinFile $ ".lake" / "build" / "bin" / "ix"
-  FS.writeBinFile tgtPath srcBytes
-
-  -- Set access rights for the newly created file
   let fullAccess := { read := true, write := true, execution := true }
   let noWriteAccess := { fullAccess with write := false }
   let fileRight := { user := fullAccess, group := fullAccess, other := noWriteAccess }
-  setAccessRights tgtPath fileRight
+  FS.createDirAll binDir
+  -- Compression resolves its worker and terminal prover beside the CLI.
+  for name in ["ix", "ix-compression-worker", "ix-bls-plonk-wrapper"] do
+    let destination := binDir / name
+    FS.writeBinFile destination (← FS.readBinFile $ ".lake" / "build" / "bin" / name)
+    setAccessRights destination fileRight
+  let cudaLibrary : FilePath := ".lake" / "build" / "lib" / cudaLibraryName
+  if ← cudaLibrary.pathExists then
+    let libraryDir := binDir.parent.getD "." / "lib"
+    FS.createDirAll libraryDir
+    FS.writeBinFile (libraryDir / cudaLibraryName) (← FS.readBinFile cudaLibrary)
   return 0
 
 script "get-exe-targets" := do
