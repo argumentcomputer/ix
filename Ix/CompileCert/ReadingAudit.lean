@@ -20,6 +20,7 @@ import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
+import Ix.CompileCert.SourceConstructorPositions
 
 /-! # Audit of the reading-chain proofs
 
@@ -49,7 +50,8 @@ syntactic walks through sharing and along the source
 (`Ix.CompileCert.ProjectionLayout`) and its projections (`Ix.CompileCert.MutualProjections`,
 `MutualArtifact`), and the reader's recursor index (`Ix.CompileCert.ReaderIndex`,
 `ReaderIndexDiscovery`), and the reading of compiled standalone inductives
-(`Ix.CompileCert.InductiveReading`).
+(`Ix.CompileCert.InductiveReading`), and what Source mode admits of an
+inductive block (`Ix.CompileCert.SourceConstructorPositions`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -391,6 +393,20 @@ def inductiveReadRoots : Array Lean.Name :=
     `inductive_reads, `inductive_reads_indexed,
     `inductive_declines_unindexed].map (`Ix.CompileCert.InductiveReading ++ ·)
 
+/-- What Source mode admits of an inductive block (R12): `inductiveGroup`
+and `convertInductive` read (positions, safety, parameters, telescopes),
+the compiler's constructor resolution as environment lookups, and
+`inductive_reads` with its Source premises discharged by Source admission. -/
+def sourceRoots : Array Lean.Name :=
+  #[`forIn_exit, `forIn_exit_array, `exit_of_fst, `pushed_of_fst, `memberValue_some, `ctorValue_some,
+    `forIn_all_some, `ctorsValue_forall₂, `idBind, `idPure, `no_exit, `forall₂_some_unique,
+    `inductiveGroup_spec, `forIn_inv, `forIn_inv_array, `mapM_forall₂, `forall₂_append, `flush_ok,
+    `exprsOf_spec, `drop_cons, `drop_of_append, `forall₂_getElem?, `getElem!_of_toList, `telescope_at,
+    `items_layout, `convertInductive_spec, `strip_of_ingress, `find_ok, `find_run, `collect_lookups,
+    `collectMut_lookups, `mkIndc_lookups, `inductiveGroup_cases, `admits_layout, `forall₂_mem, `ctors_agree,
+    `admitted_member, `forall₂_mono_mem, `source_premises, `mkIndc_positions,
+    `inductive_reads_source].map (`Ix.CompileCert.SourceConstructorPositions ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -519,6 +535,15 @@ def inductiveReadRuntime : Array Lean.Name :=
   #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.lowerInductive, ``Ix.Kernel.Reader.piTeleLen,
     ``Ix.Kernel.Reader.inductiveAt]
 
+/-- Source mode's inductive group and conversion, and the compiler's
+constructor resolution, which the Source admission proofs unfold. -/
+def sourceRuntime : Array Lean.Name :=
+  #[``Ix.LeanIngress.inductiveGroup, ``Ix.LeanIngress.convertInductive, ``Ix.LeanIngress.convert,
+    ``Ix.LeanIngress.exprsOf, ``Ix.LeanIngress.ingressExpr, ``Ix.LeanIngress.ingressMData,
+    ``Ix.LeanIngress.withContract, ``Ix.CompileM.findConst, ``Ix.CompileM.collectMutConstConstructors,
+    ``Ix.CompileM.MutConst.mkIndc]
+
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -547,6 +572,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
   checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
   checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
+  checkRoots (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -561,3 +587,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRuntime
   checkRuntime (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRuntime
   checkRuntime (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRuntime
+  checkRuntime (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRuntime

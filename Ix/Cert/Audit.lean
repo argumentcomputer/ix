@@ -2999,3 +2999,94 @@ fun {md} key ctorKey type ctorTypes source constructors recs =>
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.InductiveReading.inductive_declines_unindexed
+
+/-! ## Component theorems: what Source mode admits of an inductive block (R12)
+
+Source mode's group and conversion of an inductive block
+(`Ix.LeanIngress.inductiveGroup`, `convertInductive`) check every
+constructor's position, every member's and constructor's safety, one
+`numParams`, and every constructor's type as a telescope of the parameters
+and its fields (`inductiveGroup_spec`, `convertInductive_spec`,
+`strip_of_ingress`). The compiler resolves a family's constructors through
+its environment (`collect_lookups`, `mkIndc_lookups`). So where the compile
+environment resolves a Source-admitted block's constructor names as
+Source's input does (`Ix.Cert.compile` compiles the environment Source mode
+checks), `InductiveReading.inductive_reads`' safety, position and telescope
+premises hold (`source_premises`, `inductive_reads_source`), and so do R9a's
+`ConstructorPositions` for the compiler's mutual members
+(`mkIndc_positions`). The self references stay premises (N-READS). Every
+lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.SourceConstructorPositions.Admits : Ix.Environment → Ix.InductiveVal → Prop :=
+fun env first =>
+  ∃ cands converted, Ix.LeanIngress.convert (Ix.LeanIngress.inductiveGroup env first cands) = Except.ok converted -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.SourceConstructorPositions.Admits
+
+/-- info: Ix.CompileCert.SourceConstructorPositions.source_premises : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ {env : Ix.Environment} {first : Ix.InductiveVal},
+      Ix.CompileCert.SourceConstructorPositions.Admits env first →
+        ∀ {source : Ix.InductiveVal},
+          source.cnst.name ∈ first.all.toList →
+            env.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
+              (∀ (n : Ix.Name), n ∈ source.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
+                ∀ {constructors : Array Ix.ConstructorVal} {before : Ix.CompileM.BlockState},
+                  (Ix.CompileCert.rawRun (Ix.CompileM.lookupInductiveConstructors source)
+                          (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context) before).fst =
+                      Except.ok constructors →
+                    source.isUnsafe = false ∧
+                      (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) ∧
+                        (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) ∧
+                          ∀ (ctor : Ix.ConstructorVal),
+                            ctor ∈ constructors.toList →
+                              ∃ types body,
+                                Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
+                                      ctor.cnst.type =
+                                    some (types, body) ∧
+                                  Ix.CompileCert.ReaderSourceSpines.SourceNonForall body -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.SourceConstructorPositions.source_premises
+
+/-- info: Ix.CompileCert.SourceConstructorPositions.mkIndc_positions : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  {env : Ix.Environment} {first : Ix.InductiveVal},
+  Ix.CompileCert.SourceConstructorPositions.Admits env first →
+    ∀ {i : Ix.InductiveVal},
+      i.cnst.name ∈ first.all.toList →
+        env.consts.get? i.cnst.name = some (Ix.ConstantInfo.inductInfo i) →
+          (∀ (n : Ix.Name), n ∈ i.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
+            ∀ {state : Ix.CompileM.BlockState} {m : Ix.MutConst},
+              (Ix.CompileCert.rawRun (Ix.CompileM.MutConst.mkIndc i) context state).fst = Except.ok m →
+                Ix.CompileCert.MutualProjections.ConstructorPositions m -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.SourceConstructorPositions.mkIndc_positions
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.inductiveGroup_spec' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.inductiveGroup_spec
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.convertInductive_spec' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.convertInductive_spec
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.strip_of_ingress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.strip_of_ingress
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.source_premises' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.source_premises
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.mkIndc_positions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.mkIndc_positions
+
+/-- info: 'Ix.CompileCert.SourceConstructorPositions.inductive_reads_source' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SourceConstructorPositions.inductive_reads_source
