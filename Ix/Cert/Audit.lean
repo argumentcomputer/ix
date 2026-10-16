@@ -2677,3 +2677,60 @@ recursor's result-variable walk is the source's
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.ReaderSourceSpines.compiled_telescope_variable
+
+/-! ## Component theorems: the mutual layout
+
+A mutual block keeps one payload per class, the class's first member, with
+that member's kind and constructor positions, and the sharing build's
+write-back keeps both (`ProjectionLayout.mutual_block_shape`); the class
+sort returns no empty class (`sort_nonempty`); the standalone inductive
+family's block keeps the source's constructor positions, so its projection
+records resolve under the certified reader to the block's member and
+constructors (`inductive_projection_resolves`,
+`constructor_projection_resolves`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: Ix.CompileCert.ProjectionLayout.mutual_block_shape : ∀ (sources : List (List Ix.MutConst)),
+  Ix.CompileCert.Emission.Yields (Ix.CompileM.compileMutualBlock sources) fun output =>
+    Ix.CompileCert.ProjectionLayout.blockShape output.block.info =
+      some (List.map Ix.CompileCert.ProjectionLayout.sourceShape (List.filterMap List.head? sources)) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ProjectionLayout.mutual_block_shape
+
+/-- info: Ix.CompileCert.ProjectionLayout.constructor_projection_resolves : ∀ (source : Ix.InductiveVal)
+  (constructors : Array Ix.ConstructorVal) (output : Ix.CompileM.BlockResult),
+  Ix.CompileCert.ProjectionLayout.InductiveLayout source constructors output →
+    ∀ (store : Ix.Kernel.Reader.Store),
+      store output.blockAddr = some output.block →
+        ∀ (index : Nat) (inside : index < constructors.size),
+          constructors[index].cidx = index →
+            ∃ projection metadata,
+              output.projections[index + 1]? = some (constructors[index].cnst.name, projection, metadata) ∧
+                Ix.Kernel.Reader.resolveSource store (Address.admissionHash (Ixon.ser projection)) projection =
+                  some (Ix.Kernel.ConstRef.ctor output.blockAddr 0 index) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.ProjectionLayout.constructor_projection_resolves
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.payload_count' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.payload_count
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.sort_nonempty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.sort_nonempty
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.mutual_block_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.mutual_block_shape
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.dispatch_layout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.dispatch_layout
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.inductive_projection_resolves' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.inductive_projection_resolves
+
+/-- info: 'Ix.CompileCert.ProjectionLayout.constructor_projection_resolves' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.ProjectionLayout.constructor_projection_resolves

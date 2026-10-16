@@ -16,6 +16,7 @@ import Ix.CompileCert.EmissionBlocks
 import Ix.CompileCert.EmissionDispatch
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.ReaderSourceSpines
+import Ix.CompileCert.ProjectionLayout
 
 /-! # Audit of the reading-chain proofs
 
@@ -41,7 +42,8 @@ the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
 `EmissionDispatch`), the reading of compiled singleton records
 (`Ix.CompileCert.DefinitionReading`, `HeaderReading`), and the reader's
 syntactic walks through sharing and along the source
-(`Ix.CompileCert.ReaderSpines`, `ReaderSourceSpines`).
+(`Ix.CompileCert.ReaderSpines`, `ReaderSourceSpines`), and the mutual layout
+(`Ix.CompileCert.ProjectionLayout`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -319,6 +321,24 @@ def spineRoots : Array Lean.Name :=
     `related_kernelNonForall, `related_nonForall, `full_of_nonForall, `full_of_strip, `source_stripAllFull,
     `last_pair, `source_lastHead, `source_carrier, `recursor_counts,
     `compiled_telescope_variable].map (`Ix.CompileCert.ReaderSourceSpines ++ ·))
+
+/-- The mutual layout (CT-15, R9a): what the constructor and class folds keep
+of the source, the write-back keeps every member's kind and constructor
+positions, the class sort leaves no empty class, and the standalone
+family's projections resolve. -/
+def layoutRoots : Array Lean.Name :=
+  #[`constructor_header, `constructor_index, `constructors_headers, `headers_indices, `constructors_layout,
+    `equivalents_count, `class_count, `classes_count, `payload_count, `finish_mutual_ok, `mutual_class_capacity,
+    `mutual_block, `mutual_block_capacity, `mutual_class_index, `sorted_nonempty, `throwCmpError_fails,
+    `sort_nonempty, `finish_inductive_layout, `finish_inductiveData_layout, `inductiveData_headers,
+    `inductiveData_layout, `inductive_layout, `member_shape, `equivalents_payloads, `class_shapes,
+    `classes_shapes, `payload_shapes, `memberShape_erase, `blockShape_erase, `writeback_member_shape,
+    `writeback_shape, `erase_muts, `writeback_mutual_shape, `sharing_shape, `sharing_mutual_shape,
+    `standalone_shape, `build_mutual_shape, `finish_mutual_shape, `mutual_shape, `mutual_block_shape,
+    `singleton_inductive_shape, `shared_inductive_shape, `familyFinish_pairs, `finish_inductive_shape,
+    `family_layout, `familyInfo_layout, `dispatch_layout, `inductive_projection_resolves,
+    `constructor_projection_resolves].map (`Ix.CompileCert.ProjectionLayout ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -430,6 +450,12 @@ def spineRuntime : Array Lean.Name :=
     ``Ix.Kernel.Reader.analyseRecursor, ``Ix.Kernel.Reader.resolve, ``Ix.Kernel.Reader.keyOfAddress,
     ``Ix.Kernel.Expr.stripPis, ``Ix.Kernel.Expr.getAppFn]
 
+/-- The class sort and the reader's reference resolution, which the layout proofs
+unfold. -/
+def layoutRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.sortConsts, ``Ix.CompileM.throwCmpError, ``Ix.CompileM.constAddrLookup,
+    ``Ix.Compile.Canon.sortClasses, ``Ix.Kernel.Reader.resolveSource, ``Ix.Kernel.Reader.emptyTables]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -454,6 +480,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRoots
   checkRoots (tag := "reading-audit") "singleton reading" Ix.CompileCert.ReadingAudit.singletonReadRoots
   checkRoots (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRoots
+  checkRoots (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -465,3 +492,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "dispatch" Ix.CompileCert.ReadingAudit.dispatchRuntime
   checkRuntime (tag := "reading-audit") "record reader" Ix.CompileCert.ReadingAudit.recordReaderRuntime
   checkRuntime (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRuntime
+  checkRuntime (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRuntime
