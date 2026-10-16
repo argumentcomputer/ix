@@ -902,16 +902,16 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  -- Driver gate: FULL aux-aware driver parity. `compileEnvAux` runs the
-  -- production pipeline (prereq seeding, per-block aux tails, promotion
+  -- Driver gate: FULL aux-aware driver parity. `compileEnvFold` runs the
+  -- production driver (the aux-gen seeds as dependencies, aux tails, promotion
   -- + no-aux originals, pending release) over the same corpus; the
   -- result env is compared against Rust's CompileState env whole:
   -- named coverage both directions, per-name addresses, per-address
   -- constant BYTES, and full Named metadata (constMeta + original +
   -- hints).
-  IO.println "[aux-gen-diff] aux-aware driver (compileEnvAux)..."
+  IO.println "[aux-gen-diff] aux-aware driver (compileEnvFold)..."
   let driverOk ← do
-    match Ix.CompileM.compileEnvAux rawEnv condensed with
+    match Ix.CompileM.compileEnvFold rawEnv condensed with
     | .error e =>
       IO.println s!"[aux-gen-diff] driver ERROR: {e}"
       pure false

@@ -1286,6 +1286,266 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
     newNames := newNames ++ promoted
   return (acc, newNames, false)
 
+/-! ## The wave fold: the one driver
+
+`compileEnvFold` is the driver of both the pure compiler (`Ix.Cert.compile`)
+and the IO pipeline (`compileDecoratedConsts`): the same function, so the
+parallel schedule equals the pure one by definition.
+
+**Waves.** A wave is the set of blocks not yet compiled whose scheduling
+dependencies are all ready under the one readiness rule
+(`auxDependencyReady`) against the state the previous wave left. Every block
+of a wave computes its outcome (`auxBlockOutcome`) against that same state,
+the wave's snapshot; the outcomes are applied (`applyAuxBlockOutcome`) in the
+order of the blocks' canonical keys (`blockKey`, `Ix.nameCompare`), and the
+wave's members settle. The fold stops when every block has settled; a wave
+with no ready block is an error.
+
+**Parallelism.** A wave's blocks, in key order, are split into at most
+`width` contiguous chunks, each computed on a task of its own (`Task.spawn`,
+the task pool). The value does not depend on the split or on `width`:
+`(Task.spawn f).get = f ()` by definition, and the outcomes are applied in key
+order whatever the chunks. `width` bounds how many blocks compile at once
+(the IO pipeline passes its `--workers`, which bounds memory on whole-Mathlib
+runs; `Ix.Cert.compile` takes `foldWaveTasks`, leaving the pool to balance).
+Outcomes are taken in chunk order, so a chunk is applied as soon as the
+chunks before it have finished, while later chunks still run.
+
+**Readiness** is counted, not rescanned: each block counts its source-owned
+dependencies not yet settled; a settling block releases the blocks waiting on
+its members. A block whose count reaches zero is checked against the whole
+rule (`auxDependencyReady`, which also covers dependencies no block owns:
+those must resolve in the current state); one that fails the check is checked
+again at the next wave. So a wave is exactly the set the rule selects: a
+block with an unsettled source-owned dependency is not ready under the rule.
+
+**The aux-gen seeds are scheduling dependencies** (`e051b559`, A7 D2b): aux
+tails emit references to `auxGenSeedNames` (`PUnit`, `PProd`, `Eq`, …) that a
+block's source need not contain, so every block outside the seeds' closure
+depends on the seeds. Rust (and these drivers before CQ2.14) pre-compiled the
+seeds' closure in a pre-pass (`precompile_aux_gen_prereqs`, env.rs:1036-1140),
+moved the names into `auxNameToAddr` and re-promoted them when their blocks
+came up. Each seed block is compiled by the same `runBlockWithAux` on its own
+closure either way, its names end at the same addresses with the same
+`Named`, and the promotion route the pre-pass forced on them registered
+nothing else, so the output is the same (checked by `cert-compile-parity-init`,
+the byte legs and `compile-schedule-identity`'s reference schedule, which keeps
+the pre-pass). A failed seed block is now an ordinary block failure with its
+cascade, instead of an error of the whole compile. -/
+
+/-- The aux-gen seeds the condensation holds. -/
+def auxGenSeeds (blocks : Ix.CondensedBlocks) : Array Name :=
+  auxGenSeedNames.filter blocks.lowLinks.contains
+
+/-- The representatives of the blocks the seeds reach: their own blocks and,
+    transitively, every block those reference (the closure Rust pre-compiles,
+    env.rs:1063-1097). -/
+def auxGenSeedClosure (blocks : Ix.CondensedBlocks) : Set Name := Id.run do
+  let mut visited : Set Name := {}
+  let mut stack : Array Name := (auxGenSeeds blocks).filterMap (blocks.lowLinks.get? ·)
+  repeat
+    match stack.back? with
+    | none => break
+    | some rep =>
+      stack := stack.pop
+      if visited.contains rep then continue
+      visited := visited.insert rep
+      if let some outRefs := blocks.blockRefs.get? rep then
+        for referenced in outRefs do
+          if let some depRep := blocks.lowLinks.get? referenced then
+            if !visited.contains depRep then
+              stack := stack.push depRep
+  return visited
+
+/-- Each block's scheduling dependencies, by representative: its
+    condensation references, plus every seed for a block outside the seeds'
+    closure. No cycle: nothing in the closure references a block outside it. -/
+def scheduleDeps (blocks : Ix.CondensedBlocks) : Std.HashMap Name (Set Name) := Id.run do
+  let seeds := auxGenSeeds blocks
+  let closure := auxGenSeedClosure blocks
+  let mut out : Std.HashMap Name (Set Name) := {}
+  for (rep, _) in blocks.blocks do
+    let refs := (blocks.blockRefs.get? rep).getD {}
+    out := out.insert rep (if closure.contains rep then refs else seeds.foldl (·.insert ·) refs)
+  return out
+
+/-- The fold's schedule, fixed before the first wave. -/
+structure FoldSchedule where
+  /-- Each block's scheduling dependencies (`scheduleDeps`), by representative. -/
+  deps : Std.HashMap Name (Set Name)
+  /-- For each source-owned name, the blocks (representatives) depending on it. -/
+  waiters : Std.HashMap Name (Array Name)
+  /-- Each block's number of source-owned scheduling dependencies. -/
+  sourceDeps : Std.HashMap Name Nat
+
+/-- The schedule of a condensation. The waiter lists are built by taking each
+    list out of the map before pushing to it, so that it is never copied
+    (PERF P4: `insert d ((getD d #[]).push lo)` copied the list every time). -/
+def FoldSchedule.of (blocks : Ix.CondensedBlocks) : FoldSchedule := Id.run do
+  let deps := scheduleDeps blocks
+  let mut waiters : Std.HashMap Name (Array Name) := {}
+  let mut sourceDeps : Std.HashMap Name Nat := {}
+  for (rep, ds) in deps do
+    let mut k := 0
+    for d in ds do
+      if blocks.lowLinks.contains d then
+        k := k + 1
+        let ws := waiters.getD d #[]
+        waiters := waiters.erase d
+        waiters := waiters.insert d (ws.push rep)
+    sourceDeps := sourceDeps.insert rep k
+  return { deps, waiters, sourceDeps }
+
+/-- The fold's state between waves. -/
+structure FoldState where
+  /-- The accumulated driver state. -/
+  acc : DriverAcc
+  /-- The members of every block that has completed, successfully or not
+      (`auxDependencyReady`'s `settled`). -/
+  settled : Set Name := {}
+  /-- Per block not yet ready-checked: its source-owned dependencies not yet
+      settled (absent once zero). -/
+  unmet : Std.HashMap Name Nat := {}
+  /-- The blocks to check at the next wave: every source-owned dependency
+      settled, not yet compiled. -/
+  candidates : Array Name := #[]
+  /-- Blocks not yet compiled. -/
+  remaining : Nat := 0
+  /-- Waves so far. -/
+  waves : Nat := 0
+
+/-- The state before the first wave. -/
+def FoldState.init (cenv : CompileEnv) (blocks : Ix.CondensedBlocks)
+    (sched : FoldSchedule) : FoldState := Id.run do
+  let mut unmet : Std.HashMap Name Nat := {}
+  let mut candidates : Array Name := #[]
+  for (rep, _) in blocks.blocks do
+    let k := (sched.sourceDeps.get? rep).getD 0
+    if k == 0 then candidates := candidates.push rep else unmet := unmet.insert rep k
+  return { acc := { cenv }, unmet, candidates, remaining := blocks.blocks.size }
+
+/-- The default `width` (`Ix.Cert.compile`'s): at most this many tasks per
+    wave. The value of the fold does not depend on it; it bounds the tasks a
+    wave spawns while leaving the task pool (`LEAN_NUM_THREADS`, else one
+    worker per core) enough of them to balance blocks of very different
+    sizes. -/
+def foldWaveTasks : Nat := 256
+
+/-- A wave's outcomes, as at most `width` tasks over contiguous chunks of
+    `ready` (in key order), each block compiled under its canonical key
+    against `snapshot`. Flattened, the chunks' values are `ready.map` of
+    `auxBlockOutcome`, whatever `width`. -/
+def waveTasks (width : Nat) (snapshot : CompileEnv) (ready : Array (Name × Name × Set Name)) :
+    Array (Task (Array (Name × Set Name × AuxBlockOutcome))) :=
+  let n := ready.size
+  let width := max 1 width
+  let size := (n + width - 1) / width
+  let chunks := if size == 0 then 0 else (n + size - 1) / size
+  (Array.range chunks).map fun c => Task.spawn fun _ =>
+    (ready.extract (c * size) ((c + 1) * size)).map fun (key, _, all) =>
+      (key, all, auxBlockOutcome snapshot key all)
+
+/-- One wave. -/
+def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
+    (dbg : Bool) (st : FoldState) : Except String FoldState := Id.run do
+  let { acc, settled, unmet, candidates, remaining, waves } := st
+  let sourceOwned := blocks.lowLinks.contains
+  -- 1. The ready blocks: the candidates the one readiness rule admits.
+  let mut ready : Array (Name × Name × Set Name) := #[]
+  let mut parked : Array Name := #[]
+  for rep in candidates do
+    let some all := blocks.blocks.get? rep
+      | return .error s!"wave driver: block {rep.pretty} is not in the condensation"
+    let deps := (sched.deps.get? rep).getD {}
+    let depsOk := Id.run do
+      for d in deps do
+        if !auxDependencyReady sourceOwned acc.cenv settled d then return false
+      return true
+    if depsOk then ready := ready.push (blockKey rep all, rep, all)
+    else parked := parked.push rep
+  if ready.isEmpty then
+    return .error s!"Circular dependency detected: {remaining} blocks remaining but none ready"
+  ready := ready.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+  if dbg then
+    dbg_trace s!"  [Lean CompileAux] Wave {waves + 1}: {ready.size} blocks ready, \
+{remaining - ready.size} after it"
+    pure ()
+  -- 2. The outcomes against the wave's snapshot, on tasks; 3. applied in key
+  -- order, each chunk as soon as the chunks before it are done.
+  let tasks := waveTasks width acc.cenv ready
+  let mut acc := acc
+  for t in tasks do
+    for (key, all, outcome) in t.get do
+      acc := (applyAuxBlockOutcome acc key all outcome).1
+  -- 4. The wave's members settle; the blocks waiting on them are released.
+  let mut settled := settled
+  let mut unmet := unmet
+  let mut next := parked
+  for (_, _, all) in ready do
+    for m in all do
+      settled := settled.insert m
+  for (_, _, all) in ready do
+    for m in all do
+      for w in (sched.waiters.get? m).getD #[] do
+        match unmet.get? w with
+        | some 1 =>
+          unmet := unmet.erase w
+          next := next.push w
+        | some k => unmet := unmet.insert w (k - 1)
+        | none => pure ()
+  return .ok { acc, settled, unmet, candidates := next,
+               remaining := remaining - ready.size, waves := waves + 1 }
+
+/-- The waves, at most `fuel` of them (every wave compiles at least one block). -/
+def foldWaves (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
+    (dbg : Bool) : Nat → FoldState → Except String FoldState
+  | 0, st =>
+    if st.remaining == 0 then .ok st
+    else .error s!"Only compiled {blocks.blocks.size - st.remaining}/{blocks.blocks.size} \
+blocks - circular dependency?"
+  | fuel + 1, st =>
+    if st.remaining == 0 then .ok st
+    else match foldWave blocks sched width dbg st with
+      | .error e => .error e
+      | .ok st' => foldWaves blocks sched width dbg fuel st'
+
+/-- **The driver.** Compile an environment's condensation with the full
+    production semantics (per-block aux tails with their call-site plans, the
+    promotion route with the original-form compile into `Named.original`, the
+    cross-SCC subsets, claims and fail-closed promotion), as a fold over waves
+    (see the section docstring). Per-block failures are recorded per member in
+    `ungrounded`, and dependents cascade into `MissingConstant` failures,
+    mirroring env.rs:727-737. The compile itself fails on a condensation
+    block without references, on an input inductive group with non-canonical
+    flags, on a mutual block of mixed safety, and on a schedule that cannot
+    finish. -/
+def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (dbg : Bool := false)
+    (nameByHash : Std.HashMap Address Name := {})
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (width : Nat := foldWaveTasks)
+    : Except String (Ixon.Env × Nat × CompileEnv) := do
+  if let some msg := missingBlockRefs? blocks then throw msg
+  validateInductiveFlags env
+  validateMutualSafety env blocks
+  let sched := FoldSchedule.of blocks
+  let st₀ := FoldState.init { CompileEnv.new env with nameByHash, sharingLimits } blocks sched
+  let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) st₀
+  return assembleEnv st.acc
+
+/-- The first name, in `Ix.nameCompare` order, whose published address
+    differs from a reference's (the wave driver's fail-fast `rustRef` check,
+    now made after the fold). -/
+def rustRefMismatch? (rust : Std.HashMap Name Address) (cenv : CompileEnv) : Option String :=
+  let bad := cenv.nameToNamed.fold (init := (#[] : Array (Name × Address × Address)))
+    fun acc n named =>
+      match rust.get? n with
+      | some r => if named.addr != r then acc.push (n, named.addr, r) else acc
+      | none => acc
+  match (bad.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt)[0]? with
+  | some (n, l, r) => some s!"rustRef mismatch at {n.pretty}: lean={l} rust={r}"
+  | none => none
+
 /-- Work item for the aux-aware parallel driver. -/
 structure AuxWorkItem where
   lo : Name

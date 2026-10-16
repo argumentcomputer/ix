@@ -10,6 +10,7 @@
   - the sequential driver `Ix.CompileM.compileEnvAux` on the canonical
     environment and condensation of `rsCompilePhasesOf` (as `ix compile`
     computes them);
+  - the pure wave fold `compileEnvFold` on the same input;
   - the wave driver `compileEnvParallelAux` on the same input at 1, 2, 4,
     16 and 32 workers;
   - the whole `ix compile-lean` pipeline (`compileLeanInput`, with its own
@@ -33,11 +34,12 @@
   read-only input; `SCHED_JOBS=<n>` runs at most n at a time), and are
   reported and compared in the order above once all have finished.
 
-  Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all nine
-  legs. `SCHED_LEGS=quick` is the per-iteration tier: `wave --jobs 4` (the
-  reference), `wave --jobs 32` and `compile-lean --workers 16`, with every
-  check below; it is never the integration gate. `SCHED_OUTPUT_DIR=<dir>`
-  writes each leg's bytes and failures, for diagnosis.
+  Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all ten
+  legs. `SCHED_LEGS=quick` is the per-iteration tier: `fold` (the
+  reference), `wave --jobs 4`, `wave --jobs 32` and `compile-lean
+  --workers 16`, with every check below; it is never the integration gate.
+  `SCHED_OUTPUT_DIR=<dir>` writes each leg's bytes and failures, for
+  diagnosis.
 
   Ported from the old branch (`a9cf3607`) without its Pass 3 mode and
   phase timers: the compiler here has one mode.
@@ -99,7 +101,7 @@ structure Leg where
   saveLabel : String
   act : IO (ByteArray × Ixon.Env × List (String × String))
 
-/-- The leg tier: `SCHED_LEGS=quick` (three legs) or `full` (the default, the
+/-- The leg tier: `SCHED_LEGS=quick` (four legs) or `full` (the default, the
     integration tier). -/
 def quickTier : IO Bool := do
   match ← IO.getEnv "SCHED_LEGS" with
@@ -127,6 +129,14 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
       | .ok (ixon, _, cenv) =>
         let bytes ← IO.ofExcept (Ixon.serEnv ixon)
         pure (bytes, ixon, failuresOf cenv) }
+  -- the pure wave fold (`compileEnvFold`), at its default width
+  legs := legs.push { label := "fold", saveLabel := "fold", act := do
+    match ← IO.lazyPure fun _ =>
+        Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed (nameByHash := nameByHash) with
+    | .error e => throw (IO.userError s!"[schedule] fold: {e}")
+    | .ok (ixon, _, cenv) =>
+      let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+      pure (bytes, ixon, failuresOf cenv) }
   -- wave driver
   for k in (if quick then [4, 32] else waveWorkers) do
     legs := legs.push { label := s!"wave --jobs {k}", saveLabel := s!"wave-{k}", act := do
@@ -164,7 +174,7 @@ def runLegs (legs : Array Leg) : IO (Array LegResult) := do
 def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
     (runs : Array LegResult) : IO Nat := do
   if ← quickTier then
-    say "[schedule] SCHED_LEGS=quick: the per-iteration tier (3 legs); not the integration gate"
+    say "[schedule] SCHED_LEGS=quick: the per-iteration tier (4 legs); not the integration gate"
   let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
   for (leg, (_, bytes, _, fails)) in legs.zip runs do
     saveRun leg.saveLabel bytes fails
