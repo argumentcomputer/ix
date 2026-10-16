@@ -15,7 +15,9 @@ are about. It is the compile pipeline after canonicalization, as
    every edge into them (`Ix.groundConsts` composes the two);
 3. the condensation (`Ix.CondenseM.run`), which `blocksOf` names because the
    Source-mode statements group by it too;
-4. the aux-aware driver, `Ix.CompileM.compileEnvAux`.
+4. the driver, `Ix.CompileM.compileEnvFold`: a fold over waves of ready
+   blocks, their outcomes applied in block-key order. The IO pipeline runs
+   the same function.
 
 Its input is `Ix.Environment`, `Ix.CanonM`'s output, which is also Source
 mode's input (`Ix.LeanIngress`). Only `env.consts` is read: the streaming
@@ -36,7 +38,8 @@ What the IO pipeline does that this function does not:
   bodies are canonicalized again on demand (`fallback?`) instead of
   materialized, and passes the name-hash index (`CompileEnv.nameByHash`)
   that such an environment needs;
-* it schedules the driver in parallel waves (`compileEnvParallelAux`) and
+* it splits each wave of the driver into as many tasks as `--workers` (the
+  value does not depend on the split) and
   takes the sharing limits from its options (`DriverOptions`);
 * it serializes (`Ixon.serEnv`).
 
@@ -122,7 +125,7 @@ refused input, or a condensation it cannot schedule). -/
 @[expose] def compileUnchecked (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let env : Ix.Environment := { consts := env.consts }
   let split := groundSplit env
-  let (ixe, _, cenv) ← Ix.CompileM.compileEnvAux env (Ix.CondenseM.run split.1)
+  let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env (Ix.CondenseM.run split.1)
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
   pure (ixe, { ungrounded, blocks := cenv.ungrounded })

@@ -1896,20 +1896,32 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   -- 4. Condense (Tarjan SCCs over the filtered graph).
   let condensed := Ix.CondenseM.run groundedOutRefs
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
-  -- 5. Aux-aware parallel compile against the HYBRID environment: code
-  --    kinds are the materialized (shared) map; proof bodies
-  --    canonicalize on demand from the pinned Lean constants and are
-  --    dropped when their block's `CompileM.run` returns.
+  -- 5. The driver (`compileEnvFold`, the same function as `Ix.Cert.compile`'s)
+  --    against the HYBRID environment: code kinds are the materialized
+  --    (shared) map; proof bodies canonicalize on demand from the pinned
+  --    Lean constants and are dropped when their block's `CompileM.run`
+  --    returns. Each wave runs on at most `numWorkers` tasks (`width`; the
+  --    value does not depend on it), so `--workers` still bounds how many
+  --    blocks compile at once, and with it the memory of whole-Mathlib runs.
   let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
     (leanByIx.get? n).bind fun (ln, lci) =>
       ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
   let ixEnv : Ix.Environment :=
     { consts := codeConsts, fallback? := some fallback }
-  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers opts
-      nameByHash with
+  if dbg then
+    IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {numWorkers} tasks per wave"
+  let folded ← IO.lazyPure fun _ =>
+    compileEnvFold ixEnv condensed (dbg := dbg) (nameByHash := nameByHash)
+      (sharingLimits := opts.sharingLimits) (width := numWorkers)
+  match folded with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
+    if dbg then
+      if let some read := opts.memory then
+        IO.println s!"  [compile-lean] rss after the compile phase: {← read}"
+    if let some rust := rustRef then
+      if let some msg := rustRefMismatch? rust cenv then return .error msg
     -- The constants the groundedness scan rejected are failures of the
     -- compile, each with its named refusal (`GroundError.refusal`), as the
     -- Rust compiler records them: an input constant is never dropped

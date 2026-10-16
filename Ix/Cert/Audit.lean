@@ -837,12 +837,18 @@ constructor:
 -- stored bytes). On a consistent run the result is `compileUnchecked`'s, so
 -- the bytes do not change. `Failures.failed` moved here from
 -- `Ix.Cert.Statement`, unchanged, because the check reads it.
+--
+-- CQ2.14: the driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
+-- one driver of `compile` and of the IO pipeline (`compileDecoratedConsts`);
+-- the queue drivers `compileEnvAux` (sequential, live state) and
+-- `compileEnvParallelAux` (waves applied in completion order) go. Only the
+-- driver's name changes in this body; its arguments are the same.
 /-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures) :=
 fun env =>
   have env := { consts := env.consts };
   have split := Ix.Cert.groundSplit env;
   do
-  let __x ← Ix.CompileM.compileEnvAux env (Ix.CondenseM.run split.fst)
+  let __x ← Ix.CompileM.compileEnvFold env (Ix.CondenseM.run split.fst)
   match __x with
     | (ixe, fst, cenv) =>
       have ungrounded :=
