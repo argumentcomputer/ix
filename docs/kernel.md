@@ -144,7 +144,7 @@ does not certify it):
 | `.duplicate`, `.decode` | reject | the bytes are malformed |
 | `.mismatch` | reject | a key is not the hash of the bytes stored under it |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
-| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions (the tiered entry types the `partial` ones, "The typing tier"), unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
+| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions and unsafe axioms (the tiered entry types them, "The typing tier"), unsafe inductives, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
 | `.binding` | reject | the role table's section is not the hash of its bytes, not canonical, or not well formed |
 | `.prelude` | decline | a corrupted committed prelude |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
@@ -312,31 +312,39 @@ checker checks itself ("Roles and the role table" below).
 
 The logical fold gives what it accepts a model, so it declines every
 declaration that is not safe. The **typing tier** gives Lean's `partial`
-definitions (the `_unsafe_rec` companions) a second verdict, `typed`: *the
-declaration is well-typed, with every tier constant opaque, including itself
-and its own block*. It says nothing about meaning. The unsafe stage (unsafe
-definitions, opaques and axioms) is not built: those still decline.
+definitions (the `_unsafe_rec` companions) and its unsafe definitions,
+opaques and axioms a second verdict, `typed`: *the declaration is
+well-typed, with every tier constant opaque, including itself and its own
+block*. It says nothing about meaning. Unsafe inductives still decline.
 
 - **Data and fold** (`IxC/Kernel/Tier/{Basic,Check}.lean`). A tier constant
   (`TierConst`) is a checked header stored as `axiomInfo`: it is never
-  unfolded. `checkTierC` checks the tier declarations in order at the index
-  of the accepted logical environment, with the logical fold's cached
-  functions and no change to them. A partial block is added as Lean's
-  `add_mutual` adds it: its shape (non-empty, distinct keys, equal universe
-  parameters, input keys only), its headers at the index before it, the
-  install, then its values at the extension (annotation, inference,
-  conversion against the header). A partial block sees the logical
-  environment and the partial constants before and in it, never an unsafe
-  one (Lean's lattice, by staging).
+  unfolded. `checkTierC` checks the tier declarations at the index of the
+  accepted logical environment, with the logical fold's cached functions and
+  no change to them, **staged as Lean's lattice** (`staged`): every partial
+  block, then every unsafe opaque, then every unsafe block and axiom, each
+  stage in input order. A definition block (partial or unsafe) is added as
+  Lean's `add_mutual` adds it: its shape (non-empty, distinct keys, equal
+  universe parameters, input keys only), its headers at the index before it,
+  the install, then its values at the extension (annotation, inference,
+  conversion against the header). An unsafe opaque is checked as
+  `add_opaque` checks one, in safe mode: its header and value at the logical
+  view, so it names no tier constant, its key fresh at the full index. An
+  unsafe axiom is its header at the full index, its type a sort there. So a
+  partial block sees the logical environment and the partial constants
+  before and in it, never an unsafe one; an unsafe opaque sees none; unsafe
+  code sees every tier constant before it and its own block.
 - **The guarantee** (`IxC/Kernel/Verify/Tier.lean`). `checkTierC_typed`: at
   the index of a well-formed environment `env`, an accept returns the index
   of `env.extendOpaque ts` (the tier constants in front, as `axiomInfo`),
   which is well formed; no tier constant is a constant of `env`; and every
-  tier constant is the install of its member's header at the environment of
-  the tier constants before its block, and is typed in its scope, the
-  extension by its block and the ones before it (`TypedIn`: its type is a
-  sort and its value annotates to a term whose type converts to it;
-  `Rules.Infer`, `Rules.Red`, `Rules.DefEq`).
+  tier constant is the install of its declaration's header and is typed in
+  its scope (`TypedIn`, `DeclTyped`, `ScopeOf`: a block member's scope is
+  its block and the tier constants before it, all partial for a partial
+  block; an unsafe opaque's is the logical environment; an unsafe axiom's,
+  the tier constants before it; typed means its type is a sort and its
+  value annotates to a term whose type converts to it, for an axiom its type
+  a sort; `Rules.Infer`, `Rules.Red`, `Rules.DefEq`).
 - **The fence.** A tier constant is never in the logical environment, and
   the logical fold's accept is well formed, so every term it stores resolves
   in it (`checkDecls_closed`): no accepted logical declaration names a tier
@@ -362,9 +370,9 @@ definitions, opaques and axioms) is not built: those still decline.
   whose accept is model-backed in full.
 - **Rows.** The environment check (`kernel-check-ixe`, the per-record path
   without `--jobs` or the read cache) and `kernel-source-ingress` defer the
-  tier records and check them after the logical walk, at its final index:
-  outcome `typed`, reason `partial`; a tier failure declines with reason
-  `tier (partial): <message>`; a logical record that names a tier record
+  tier records and check them after the logical walk, from its final index,
+  staged as the fold stages them: outcome `typed`, reason `partial` or
+  `unsafe`; a tier failure declines with reason `tier (<safety>): <message>`; a logical record that names a tier record
   declines with `fence: …`. `--report` and `--summary` count `typed`
   separately, `--paired` flags a lost `typed` as a lost acceptance, and the
   erasure test (`--meta`) runs the tier at both modes.
