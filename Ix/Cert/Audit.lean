@@ -2114,3 +2114,80 @@ fun {α} action post =>
 /-- info: 'Ix.CompileCert.EmissionWire.seeded_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.EmissionWire.seeded_valid
+
+/-! ## Component theorems: canonical sharing preserves the reading of every root
+
+One theorem for every payload kind (R07-01/02): a successful root
+write-back replaces exactly the roots, in order, and keeps the rest of the
+payload (`SharingRoots.withRoots_inv`, over `erase`, which replaces every
+root by one placeholder); the sharing builder keeps the payload but its
+roots and the tables, and the built constant's actual member reader reads
+its roots as the compiler's in-flight reader read the payload's roots, so
+every root-by-root relation transfers (`SharingRoots.build_read`,
+`RootsRead`). No pointer- or hash-injectivity premise
+(`canonicalSharingTiered_meaning`). Every lemma behind them is audited in
+`Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.SharingRoots.erase : Ixon.ConstantInfo → Ixon.ConstantInfo :=
+fun info => Ix.Sharing.Exact.mapRoots (fun x => Ixon.Expr.sort 0) info -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.SharingRoots.erase
+
+/-- info: def Ix.CompileCert.SharingRoots.RootsRead : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Reader.MemberReader md →
+    (Ix.Expr → Ix.Kernel.Reader.CExpr md → Prop) → List Ix.Expr → List Ixon.Expr → Prop :=
+fun {md} reader related sources roots =>
+  List.Forall₂ (fun source root => ∃ target, related source target ∧ reader.read root = Except.ok target) sources roots -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.SharingRoots.RootsRead
+
+/-- info: @Ix.CompileCert.SharingRoots.withRoots_inv : ∀ {info info' : Ixon.ConstantInfo} {roots : Array Ixon.Expr},
+  Ix.Sharing.Exact.withRoots info roots = Except.ok info' →
+    Ix.Sharing.Exact.constantInfoRoots info' = roots ∧
+      Ix.CompileCert.SharingRoots.erase info' = Ix.CompileCert.SharingRoots.erase info -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.SharingRoots.withRoots_inv
+
+/-- info: @Ix.CompileCert.SharingRoots.build_roots : ∀ {md : Ix.Kernel.Mode} (limits : Ix.Sharing.Exact.Limits)
+  (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) (out : Ixon.Constant),
+  Ix.CompileM.buildConstantWithSharing limits info refs univs = Except.ok out →
+    Ix.CompileCert.SharingRoots.erase out.info = Ix.CompileCert.SharingRoots.erase info ∧
+      out.refs = refs ∧
+        out.univs = univs ∧
+          ∀ (context : Ix.Kernel.Reader.Ctx md) (param : Nat → Ix.Kernel.LevelParam)
+            (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md))),
+            Array.map (Ix.Kernel.Reader.MemberReader.mk' context out param self).read
+                (Ix.CompileM.constantInfoRootExprs out.info) =
+              Array.map
+                (Ix.Kernel.Reader.MemberReader.mk' context
+                    { info := info, sharing := #[], refs := refs, univs := univs } param self).read
+                (Ix.CompileM.constantInfoRootExprs info) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.SharingRoots.build_roots
+
+/-- info: @Ix.CompileCert.SharingRoots.build_read : ∀ {md : Ix.Kernel.Mode} (context : Ix.Kernel.Reader.Ctx md)
+  (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
+  (state : Ix.CompileM.BlockState) (limits : Ix.Sharing.Exact.Limits) (info : Ixon.ConstantInfo) (out : Ixon.Constant),
+  Ix.CompileM.buildConstantWithSharing limits info state.refs state.univs = Except.ok out →
+    ∀ {related : Ix.Expr → Ix.Kernel.Reader.CExpr md → Prop} {sources : List Ix.Expr},
+      Ix.CompileCert.SharingRoots.RootsRead (Ix.CompileCert.ExpressionRead.blockReader context param self state) related
+          sources (Ix.CompileM.constantInfoRootExprs info).toList →
+        Ix.CompileCert.SharingRoots.erase out.info = Ix.CompileCert.SharingRoots.erase info ∧
+          Ix.CompileCert.SharingRoots.RootsRead
+            (Ix.Kernel.Reader.MemberReader.mk' (Ix.CompileCert.ExpressionRead.withBlockBlobs context state) out param
+              self)
+            related sources (Ix.CompileM.constantInfoRootExprs out.info).toList -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.SharingRoots.build_read
+
+/-- info: 'Ix.CompileCert.SharingRoots.withRoots_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SharingRoots.withRoots_inv
+
+/-- info: 'Ix.CompileCert.SharingRoots.build_roots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SharingRoots.build_roots
+
+/-- info: 'Ix.CompileCert.SharingRoots.build_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.SharingRoots.build_read
