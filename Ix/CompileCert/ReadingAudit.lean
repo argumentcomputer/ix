@@ -19,6 +19,7 @@ import Ix.CompileCert.ReaderSourceSpines
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
+import Ix.CompileCert.InductiveReading
 
 /-! # Audit of the reading-chain proofs
 
@@ -47,7 +48,8 @@ syntactic walks through sharing and along the source
 (`Ix.CompileCert.ReaderSpines`, `ReaderSourceSpines`), and the mutual layout
 (`Ix.CompileCert.ProjectionLayout`) and its projections (`Ix.CompileCert.MutualProjections`,
 `MutualArtifact`), and the reader's recursor index (`Ix.CompileCert.ReaderIndex`,
-`ReaderIndexDiscovery`).
+`ReaderIndexDiscovery`), and the reading of compiled standalone inductives
+(`Ix.CompileCert.InductiveReading`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -376,6 +378,19 @@ def indexRoots : Array Lean.Name :=
     `buildIndex_unique_reference, `one_push, `candidate_unique, `collect_unique, `collect_backed,
     `buildIndex_role_unique].map (`Ix.CompileCert.ReaderIndexDiscovery ++ ·))
 
+/-- Compiled standalone inductives are read back as their sources (CT-16,
+R10a): the reader's inductive block as named steps, its loops on a
+one-member block, what the compiled family keeps of the source, and public
+dispatch composed with `readRecord` = `lowerInductive` of the source's
+`BlockRead`. -/
+def inductiveReadRoots : Array Lean.Name :=
+  #[`readInductive_eq, `blockSelf_blobs, `readRecord_inductive, `indcs_singleton, `typeLoop, `ctorStep_ok,
+    `ctorLoop_ok, `ctorClassLoop, `readRecord_singleton, `blockSelf_singleton, `erase_singleton,
+    `headers_transfer, `family_headers, `familyInfo_headers, `erase_family, `piTeleLen_of_piTypes,
+    `arity_of_related, `rootsRead_split, `ctorFacts_of, `ctorReads_source, `forall₂_map_left, `rootsRead_cons,
+    `inductive_reads, `inductive_reads_indexed,
+    `inductive_declines_unindexed].map (`Ix.CompileCert.InductiveReading ++ ·)
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -498,6 +513,12 @@ def layoutRuntime : Array Lean.Name :=
 def indexRuntime : Array Lean.Name :=
   #[``Ix.Kernel.Reader.buildIndex, ``Ix.Kernel.Reader.recursorMembers]
 
+/-- The reader's inductive block and its lowering, which the inductive
+reading proofs unfold and state. -/
+def inductiveReadRuntime : Array Lean.Name :=
+  #[``Ix.Kernel.Reader.readInductive, ``Ix.Kernel.Reader.lowerInductive, ``Ix.Kernel.Reader.piTeleLen,
+    ``Ix.Kernel.Reader.inductiveAt]
+
 end Ix.CompileCert.ReadingAudit
 
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
@@ -525,6 +546,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRoots
   checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
   checkRoots (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRoots
+  checkRoots (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime
@@ -538,3 +560,4 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRuntime
   checkRuntime (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRuntime
   checkRuntime (tag := "reading-audit") "reader index" Ix.CompileCert.ReadingAudit.indexRuntime
+  checkRuntime (tag := "reading-audit") "inductive reading" Ix.CompileCert.ReadingAudit.inductiveReadRuntime
