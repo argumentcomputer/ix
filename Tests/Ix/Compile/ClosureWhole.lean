@@ -17,7 +17,7 @@
   That must be a whole-environment compile of that file by this tree, for
   example the Rust compile
   `ix compile Benchmarks/Compile/CompileInitStd.lean --out <ixe>`
-  (`adb7e184…`; ALIGNED with `ix compile-lean`, so the same Named entries).
+  (ALIGNED with `ix compile-lean`, so the same Named entries).
   Otherwise the whole environment is compiled once by the Lean pipeline.
 
   Roots: a fixed list over the kinds that read their own unit, plus the
