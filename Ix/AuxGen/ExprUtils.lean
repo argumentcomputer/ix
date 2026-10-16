@@ -24,6 +24,7 @@ module
 public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
+public import Ix.Compile.Canon.Expr
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -121,6 +122,26 @@ def decomposeApps.go (expr : Expr) (args : Array Expr) : Expr × Array Expr :=
 
 /-- Application head and arguments, in application order. -/
 def decomposeApps (expr : Expr) : Expr × Array Expr := decomposeApps.go expr #[]
+
+/-- `decomposeApps.go` is Pass 1's `getAppFnArgs` with the accumulated
+arguments appended in reverse. -/
+theorem decomposeApps.go_eq (expr : Expr) (args : Array Expr) :
+    decomposeApps.go expr args =
+      ((Compile.Canon.getAppFnArgs expr).1,
+        (Compile.Canon.getAppFnArgs expr).2 ++ args.reverse) := by
+  induction expr generalizing args <;> simp only [decomposeApps.go, Compile.Canon.getAppFnArgs]
+  case app fn arg hash ihfn iharg =>
+    rw [ihfn]
+    rw [Array.reverse_push]
+    simp only [Array.push_eq_append, Array.append_assoc]
+  all_goals simp only [Array.empty_append]
+
+/-- The compiler's application spine is Pass 1's
+(`Ix.Compile.Canon.getAppFnArgs`). -/
+theorem decomposeApps_eq (expr : Expr) :
+    decomposeApps expr = Compile.Canon.getAppFnArgs expr := by
+  simp only [decomposeApps, decomposeApps.go_eq, Array.reverse_empty,
+    Array.append_empty]
 
 theorem decomposeApps.go_head_le (expr : Expr) (args : Array Expr) :
     sizeOf (decomposeApps.go expr args).1 ≤ sizeOf expr := by
