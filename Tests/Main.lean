@@ -49,6 +49,7 @@ import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
 import Tests.Ix.AuxGen.SurgeryTests
 import Tests.Ix.AuxGen.AuxKernelTests
+import Tests.Ix.AuxGen.ElimRuleTests
 import Tests.Ix.AuxGen.FlatBlockTests
 import Tests.Ix.AuxGen.LevelEgressTests
 import Tests.Ix.AuxGen.FlatBlockSource
@@ -154,7 +155,8 @@ def registry : List Entry := [
   .suite "canon-clique" .primary Tests.Ix.Compile.CanonClique.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   .suite "aux-gen-unit" .primary (Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite
-    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.FlatBlock.suite ++ Tests.AuxGen.LevelEgress.suite),
+    ++ Tests.AuxGen.AuxKernel.suite ++ Tests.AuxGen.ElimRule.suite ++ Tests.AuxGen.FlatBlock.suite
+    ++ Tests.AuxGen.LevelEgress.suite),
   -- the scan, and the compile's named refusal of ungrounded input (Lean and Rust)
   .suite "ground-unit" .primary (Tests.Ground.suite ++ Tests.Ix.Compile.GroundRefusal.suite),
   -- expression wire indices that do not fit a UInt64 are refused, never wrapped

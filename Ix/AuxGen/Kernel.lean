@@ -981,8 +981,8 @@ end TcScopeSt
 
 The kernel half of Rust `compute_is_large_and_k` and the dependency
 ingress it needs, moved here from `Ix.AuxGen.Recursor` (AuxGen M0.2) so that
-the generators reach the kernel only through the bridge; the C1 fix and K
-stay in `Recursor.computeIsLargeAndK`. Also the kenv body of
+the generators reach the kernel only through the bridge; K stays in
+`Recursor.computeIsLargeAndK`. Also the kenv body of
 `populateCanonKenvWithBelow` (`tcAdmitBelow`, from `Ix.AuxGen.Patches`).
 
 NOTE (Rust recursor.rs:1976-1985): the old syntactic
@@ -1136,25 +1136,29 @@ structure ElimDecision where
   deriving BEq, Inhabited, Repr
 
 /-- The kernel half of Rust `compute_is_large_and_k` (recursor.rs:2328),
-    over the block's ORIGINAL classes (inductive with constructors):
+    over the block's ORIGINAL classes (inductive with constructors), in an
+    expanded block of `nFlat` members (the originals and the nested
+    auxiliaries):
     - ephemeral `KConst.indc`/`KConst.ctor` entries for all of them go into
       the bridge kenv (provisional addresses), so the kernel sees the full
       mutual block and can apply the "mutual Prop → small" rule;
     - `getResultSortLevel` WHNF-peels params+indices (crucial for
       reducible-alias targets like `Set σ := σ → Prop`);
-    - `isLargeEliminator` decides; no override (A0, WB-B8): Lean's kernel
-      gives large elimination when the result level is provably never zero
-      and otherwise applies the Prop restrictions, which is exactly
-      `isLargeEliminator`. A former override forced large elimination
-      whenever the level was not semantically zero, so a `Sort u` inductive
-      (reachable through `addDecl`) got a large recursor both kernels
-      reject.
+    - the kernels' rule decides (Lean's `elim_only_at_universe_zero`, which
+      counts the expanded block): a result level that may be zero
+      eliminates small when the expanded block is not a singleton, decided
+      before any field is probed, since the original classes' fields can
+      name an auxiliary this kenv does not hold (WB-A7); otherwise
+      `isLargeEliminator` decides over the originals. No override (A0,
+      WB-B8): a former override forced large elimination whenever the level
+      was not semantically zero, so a `Sort u` inductive (reachable through
+      `addDecl`) got a large recursor both kernels reject.
     It runs on a fresh `TcState` over the persistent kenv (Rust
     `TypeChecker::new(&mut kctx.kenv)`). TC failures are hard
-    `invalidMutualBlock` refusals (no syntactic fallback). The C1 fix and
-    K stay with the caller (`Recursor.computeIsLargeAndK`). -/
+    `invalidMutualBlock` refusals (no syntactic fallback). K stays with the
+    caller (`Recursor.computeIsLargeAndK`). -/
 def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
-    (nParams : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
+    (nParams nFlat : Nat) (maps : AddrMaps) : KBridgeM ElimDecision := do
   let mut indInfos : Array (MKId × UInt64 × UInt64 × Array MKId × MKExpr) := #[]
 
   -- The first class's block KId is the shared block reference.
@@ -1216,14 +1220,20 @@ def tcElimDecision (originals : Array (InductiveVal × Array ConstructorVal))
     | .ok u => pure u
     | .error e => throwBridge (.kernel (.resultSort block) (toString e))
 
+  -- Prop determination from the WHNF-reduced kernel-derived level.
+  let isProp := resultKuniv.isSemanticZero
+
+  -- The kernels' rule over the expanded block, before the field probe.
+  if !resultKuniv.isNeverZero && nFlat != 1 then
+    return { isLarge := false, isProp }
+
   let isLarge ←
     match ← runTc (Ix.Tc.TcM.runRec
         (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
     | .ok b => pure b
     | .error e => throwBridge (.kernel (.largeElim block) (toString e))
 
-  -- Prop determination from the WHNF-reduced kernel-derived level.
-  return { isLarge, isProp := resultKuniv.isSemanticZero }
+  return { isLarge, isProp }
 
 /-- Mirrors the kenv body of Rust `populate_canon_kenv_with_below`
     (aux_gen.rs:1017): insert the canonical `.below` definitions and

@@ -1420,25 +1420,20 @@ interface's `AuxKernel.elimDecision` (`Ix.AuxGen.tcElimDecision` in the
 
 /-- Mirrors Rust `compute_is_large_and_k` (recursor.rs:2328).
 
-    Compute `(isLarge, k, isProp)` for the canonical recursor: the kernel's
-    elimination decision over the block's original classes
-    (`AuxKernel.elimDecision`), then
-    - C1 fix: a Prop block with nested auxiliaries the kenv didn't see is
-      forced small;
+    Compute `(isLarge, k, isProp)` for the canonical recursor: the kernels'
+    elimination decision (`AuxKernel.elimDecision`) over the block's
+    original classes in the expanded block of `classes.size` members (Lean's
+    kernel counts the nested auxiliaries as members, so a level that may be
+    zero eliminates small whenever the flat block is not a singleton), then
     - K: single flat member (aux included), single ctor, 0 fields, Prop.
     TC failures are hard `invalidMutualBlock` errors (no syntactic
     fallback). Rust's `IX_TIMING` diagnostics block is not ported. -/
 def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
     (kernel : AuxKernel) : KBridgeM (Bool × Bool × Bool) := do
   let decision ← kernel.elimDecision
-    ((classes.extract 0 nClasses).map fun c => (c.ind, c.ctors)) nParams
+    ((classes.extract 0 nClasses).map fun c => (c.ind, c.ctors)) nParams classes.size
   let isProp := decision.isProp
-
-  -- C1 fix: Prop block with nested auxiliaries the KEnv didn't see →
-  -- small elimination (Lean treats nested auxes as full mutual members).
-  let isLarge :=
-    if decision.isLarge && isProp && classes.size > nClasses then false
-    else decision.isLarge
+  let isLarge := decision.isLarge
 
   -- K-target: single flat member (aux included, matching Lean's expanded
   -- `m_ind_types.size() == 1`), single ctor, 0 fields, Prop.

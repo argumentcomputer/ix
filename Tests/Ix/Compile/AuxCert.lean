@@ -132,6 +132,20 @@ def fixtures : List Fixture := [
   { stem := "SurgName", ns := ["SurgName"] },
   -- A0 item 3 (WB-B8): no forced large elimination.
   { stem := "SortUDecl", ns := ["SortUD"] },
+  -- CQ3.1 (D-09): a nested `Sort u` singleton whose expanded block has two
+  -- members eliminates into Prop only, as in Lean (lane P `6327e496`).
+  -- `Box T` is nested under the definition `K`, so the kernels, which find
+  -- nested occurrences at a field's head only (D-14, CQ3.3), see a
+  -- singleton and reject the two-motive recursors; the certified checker's
+  -- modeller declines the field that mentions `Box T` under `K`, and the
+  -- block's dependents are blocked on it.
+  { stem := "NestedSortU", ns := ["NestedSortU"]
+    knownFails :=
+      ["rs", "lean"].flatMap (fun leg => kf leg "D-14 (kernel nested discovery at the field head; CQ3.3)"
+        ["NestedSortU.T.rec", "NestedSortU.T.rec_1"]) ++
+      kf "cert" "IxC modeller: a field mentions the block under a definition (decline)"
+        ["NestedSortU.T", "NestedSortU.T.mk", "NestedSortU.T.rec", "NestedSortU.T.rec_1",
+          "NestedSortU.t_rec"] },
   -- A0 item 3 (WB-E1/A4): an evaporation target that is not a one-motive
   -- recursor is refused, naming the block.
   { stem := "F3_SplitRoseRace", ns := ["A", "B", "Rose"]
@@ -217,11 +231,22 @@ def fixtures : List Fixture := [
       kf leg "BB-F5 (kernel completeness)" ["T.rec", "T.rec_1", "T.rec_2"] },
   { stem := "F7_AlphaVLean", ns := ["A", "B"]
     knownFails := kf "lean" "BB-F7 (collapsed block in Ix.Tc meta ingress)" ["*"] },
+  -- WB-A7, fixed by CQ3.1: `P`'s elimination is decided by the kernels'
+  -- rule before the field probe, which failed on the auxiliary `And P P`
+  -- the bridge's kernel does not hold. `T` (`Id (List T)`) is nested under
+  -- a definition: the kernels see a singleton (D-14, CQ3.3) and reject the
+  -- two-motive recursors, and the certified checker's modeller declines the
+  -- block (one inductive hypothesis for no syntactically recursive field,
+  -- SP5 §3.5), blocking its dependents.
+  { stem := "KernelSpec", ns := ["KernelSpec"]
+    knownFails :=
+      ["rs", "lean"].flatMap (fun leg => kf leg "D-14 (kernel nested discovery at the field head; CQ3.3)"
+        ["KernelSpec.T.rec", "KernelSpec.T.rec_1"]) ++
+      kf "cert" "IxC modeller: nested under a definition (SP5 §3.5; decline)"
+        ["KernelSpec.T", "KernelSpec.T.*"] },
   -- Expected compile failures outside A0 (totality defects).
   { stem := "AliasIdx", ns := ["AliasIdx"]
     expect := .xfail "WB-A3" "function expected, got Sort u" },
-  { stem := "KernelSpec", ns := ["KernelSpec"]
-    expect := .xfail "WB-A7" "is_large_eliminator failed" },
   { stem := "SurgIdx", ns := ["SurgIdx", "SurgIdx2"]
     expect := .xfail "WB-A2" "found no residual Pi binders" },
   { stem := "F6_OrderIdxBrecOn", ns := ["A", "B"]

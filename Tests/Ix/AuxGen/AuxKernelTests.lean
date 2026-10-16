@@ -175,7 +175,7 @@ private def kernelRefusals : Bool :=
           #[({ cnst := { name := nm "Bad", levelParams := #[], type := Expr.mkLit (.natVal 0) }
                numParams := 0, numIndices := 0, all := #[nm "Bad"], ctors := #[]
                numNested := 0, isRec := false, isUnsafe := false, isReflexive := false },
-             #[])] 0) with
+             #[])] 0 1) with
         | .error (.invalidMutualBlock msg) =>
           (msg.splitOn "compute_is_large_and_k:").length > 1 && (msg.splitOn "Bad").length > 1
         | _ => false)
@@ -223,7 +223,7 @@ private def epochs : Bool :=
     && refuses (do
       let s ← AuxScope.new kernel #[] #[]
       let some two := original "Two" | return none
-      discard <| kernel.elimDecision #[two] 0
+      discard <| kernel.elimDecision #[two] 0 1
       s.inferType? prop) stale
 
 /-- A query whose kernel gives no answer leaves its scope live (`Ix.Tc`
@@ -263,9 +263,11 @@ private def failOpenDefaults : Bool :=
 
 /-! ## 6. The elimination decision -/
 
-private def decision (n : String) : Option ElimDecision := do
+/-- The decision for one original class in an expanded block of `nFlat`
+members (`nFlat - 1` nested auxiliaries). -/
+private def decision (n : String) (nFlat : Nat := 1) : Option ElimDecision := do
   let o ← original n
-  (run (kernel.elimDecision #[o] 0)).toOption
+  (run (kernel.elimDecision #[o] 0 nFlat)).toOption
 
 private def elimDecisions : Bool :=
   decision "Two" == some { isLarge := false, isProp := true }
@@ -273,6 +275,12 @@ private def elimDecisions : Bool :=
     && decision "One" == some { isLarge := true, isProp := true }
     -- the result sort behind `Set Two`
     && decision "S" == some { isLarge := true, isProp := true }
+    -- with a nested auxiliary the expanded block is not a singleton: a
+    -- level that may be zero eliminates small, as in Lean's kernel, while a
+    -- level that is never zero stays large
+    && decision "One" 2 == some { isLarge := false, isProp := true }
+    && decision "S" 2 == some { isLarge := false, isProp := true }
+    && decision "T" 2 == some { isLarge := true, isProp := false }
 
 def suite : List TestSeq := [
   test "AuxKernel: the interface answers exactly as the Ix.Tc bridge" interfaceIsBridge

@@ -51,9 +51,12 @@
   7. **Results out.** A result that does not denote a term over the scope
      is refused (the egress constructors of `AuxKernelError`).
   8. **`elimDecision`** is Lean's `elim_only_at_universe_zero` over the
-     block's original classes: the WHNF-peeled result sort, with the
-     mutual-Prop rule. It fails closed with the `invalidMutualBlock` texts.
-     It may supersede scopes, and does in `Ix.Tc`.
+     expanded block (the original classes and the nested auxiliaries,
+     `nFlat` members in all): the WHNF-peeled result sort; small, without
+     probing a field, when that level may be zero and the expanded block is
+     not a singleton; otherwise the original classes' probe. It fails
+     closed with the `invalidMutualBlock` texts. It may supersede scopes,
+     and does in `Ix.Tc`.
   9. **Environment hooks.** After `admitGenerated cs`, a query naming a
      constant of `cs` sees the generated declaration (`Ix.Tc` overwrites the
      kenv entry at that name's address; IxC will use a fresh key and σ).
@@ -197,12 +200,13 @@ end AuxScope
 
 namespace AuxKernel
 
-/-- The elimination decision for a block's original classes (clause 8). -/
+/-- The elimination decision for a block's original classes, in an expanded
+    block of `nFlat` members (clause 8). -/
 def elimDecision (k : AuxKernel)
-    (originals : Array (InductiveVal × Array ConstructorVal)) (nParams : Nat) :
+    (originals : Array (InductiveVal × Array ConstructorVal)) (nParams nFlat : Nat) :
     KBridgeM ElimDecision :=
   match k with
-  | .tc maps => tcElimDecision originals nParams maps
+  | .tc maps => tcElimDecision originals nParams nFlat maps
 
 /-- Admit the prelude constants the generators name (`PUnit`, `PProd`). -/
 def admitPrelude (k : AuxKernel) : KBridgeM Unit :=
