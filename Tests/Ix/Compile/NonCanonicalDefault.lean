@@ -85,23 +85,23 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.S3 "P0" "P2" `m2._sunfold "user constant" .inherited (.inherited [`m0])
     "a431a53139e1e5459d676fa6912c189fafecdbd8ec6bc0d6647cc342fb5a45ad" "21d4163d0aa268861745cfdc3b865fe1058e47174afe808a127d337d028aaba3" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo "clique member" .pendingTransport (.root false true false)
-    "cb2ceccb026b6cc729980d52ee1206ff9530828ca7f1b45b89e860733f79783a" "0b07971836a898b514ec7a4c899a1a43479a8a2755e0c591cacda0046bfce804" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "e55bb46e42de613f3f698f1f256bb0c43d4d2ab4126d267ea8b2a195b5979f67" "7ecc1fcb2d7f097e778c164e9665d57efa098d9c1ebcee0d529130903d4c9630" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._f "structural functional" .pendingTransport (.root false true false)
-    "27fd98201750b729e0e181320130e171d176b22a73f90de9719a411eb6fc49f8" "63b05e67d2da4ce10f6a63465b537af309d90244ef875fd775e1847498ae564a" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "946a04b42cf1cf5ca1420cc450facc5d4c25876b7017f5252801b58133e62e59" "670c4e32a9d88760ada44a3976269be77726d24b4da8c9de453922e1b87e0822" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@5" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cFo._sunfold "user constant" .inherited (.inherited [`cTr, `cFo])
-    "7ca92bdd62426d1db06c262f8f7b95f939efcf18d9addf6d95e67c192d9a3400" "df7ebbc14e8bded8891c032a4a42bd92961e739828648108c9f764896a53a56e" "",
+    "f7082d0443c1b38239ee1cfdff4e567d258b3d696b64d7fbbe3f92de7b225e16" "239af410afc555c9c55293077a79ded46fd2e8874c6695be43156e2e18a40838" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr "clique member" .pendingTransport (.root false true true)
-    "55dfac14426048a54fccc82a14cea850dad11dd36e93c500dd54de76d1e1b514" "8d9876206da19efa6cfa54581e2b59f0bb194445fcf339c6aef8093bc0e7a38f" "value.λ.body.@4.λ.body.λ.body.@2.fn" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "9aa5f057ed6e7e54bad1f0149269970892b4c883a73f90ab6ca89c7301788317" "8970fd3c2912f2e862b3ee0c5c82df3eff51905ff2f40e0719b63c2176ee8516" "value.λ.body.@4.λ.body.λ.body.@2.fn" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._f "structural functional" .pendingTransport (.root false true false)
-    "e840b545c5d514be53b5ab03a879262a0991fd1caea1548134ad9b76291cb48a" "0dc499524b6c8a644acd026036dcccfcc2d563f01362836dc87c3bb49c85a7f2" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "4cdb47b0efb189248c0332e19a478d3aab0fcbaa323105310b68494152f6a7df" "237e78baff718f272ad46fe08fcaa9038834e3764fbc472e7c26bb96430c7d00" "value.λ.body.λ.body.@3.λ.body.λ.body.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `cTr._sunfold "user constant" .inherited (.inherited [`lFo, `cFo])
-    "c10eb23935078e5705e028d73b00f119fb90ecaa9cc66e0702302f4bfdd3bbe8" "4425558d75f72897b2b3a973ea2ce839a907fe29b65fca637e2199c5c54a3f3b" "",
+    "fb34937e88e5d7e41ee2513fd96a275d23ec6806f3d1289cd1a6749a3ffaf220" "d1af06d85247648a324db39dab8892b112e59ef91c4900e51f834cd489109a4a" "",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo "clique member" .pendingTransport (.root false true false)
-    "7c83f22adaec27b49d53b79127eee72becf67ab69d066c52455b51976d023d9f" "87c66ac135f6cb8062849a6eb4851d79cbaf136064d45d529e98ef02ca7832d1" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
+    "925800c959defb61ab59e9ca4f1d03a8569d17c91230fcb5b683510ee78ae582" "671bf000e880c2b96203922ab5521785be73b705ad390454002e10e31bce0bcd" "value.λ.body" "projection into the packed `brecOn` result at the clique position; packed motive order",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._f "structural functional" .pendingTransport (.root false true false)
-    "026749257a9769d0dafdd5bd27121805d9845fbceecdf53dde000265bcb5be05" "cb19c9d8bd5eb1ea673aff7a84c7935df7d49482f36c5a436f72c920264834fa" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
+    "15d43c0ba995e823fbbd1c7227fa5a3b5182b11eff33a35da82a4b21704b3f59" "a3b54b4648b2c97d9f1a17f4b95e1bcca4222acdae4d929574ac47cf28b500d5" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "path into the packed `below` motive: position of the function in its type former group (clique order)",
   e `Tests.Ix.Compile.Twins.Cliques.SX "P0" "P2" `lFo._sunfold "user constant" .inherited (.inherited [`lFo, `cTr])
-    "75e43fe381ad00962db1fca94375d29f1e8c1b89557cf61a6d7c318a0cf4ccdd" "3346125e3773800380c8151370b05a31c143dc878dba13ba3a3cb7a057c5c250" "",
+    "d27e527b120e8e2aebd09a605de7966c237b488a6220c5a6fee5eb1e110d4298" "a4769f9dc5df3bc2011170a55507983f70af0b6bfd0bbb7cc9aaa7783bca257a" "",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa "clique member" .pendingTransport (.root false true true)
     "4759d7fe47f0d21c2b99cf95bfc7d5cb7b9ca281166e4f3f92d37c8c308a06b2" "641529fc41f1f6b72045cde3fb9c20357b95df6d1e659d54b53617f145b99f36" "value.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.WD "P0" "P1" `wa._mutual "clique encoding" .pendingTransport (.root false true true)
@@ -255,13 +255,13 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.TW "P0" "P1" `wb "clique member" .pendingTransport (.root false true true)
     "5883e50b907830935e717e5aa88faf8733fa45e2442687db5aa916e51bad0cb7" "993b8c17a4ddf9cec241eef2cfb7fa4913d8bba3683caac3388dc9b7b5a88f50" "value.λ.body.λ.body.@0.fn" "`PSum` injection at the clique position (A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM "clique member" .pendingTransport (.root false true false)
-    "9efd0f3c75547dbf5b4164813e94dc5a96d7f09099cafab984b6c8567455b349" "4126319694718f46e7c6afa06c63e08fb26098d2ec2ecc258d816262851b4bbc" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
+    "55e92b0f4431c3cbb924303a7d04d6ab9bbbba2257b2e8def68994925dacd20e" "ec18d622c25d595ae22f520d993ed32c870ed7c6d7e5a37094c67f5f7ab503ed" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `evM.match_2 "transformed matcher" .pendingTransport (.root true true false)
-    "3582fae2a150da5c36b53947dc78d1d0c89b6291302d5d19c864194c521ab6b4" "de267bfb295f3e16b87badb849271d2b1643423f074bc2300a68c5331dcd918e" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
+    "7a61df282f48e8bfa8c2ca603616f15e278c7c61c315c1fbb47aac40aba0c914" "2beb358feb2e7a05ecc2be785dad6b152790d85f23972ace4cad05d7d9c1be5c" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM "clique member" .pendingTransport (.root false true false)
-    "45f11f1e99ae48aadc8527b6bece926845e99a1ba0ef3eed86ade2d6ebc84d8f" "e7e127abf6a278f86163f1ed60923a3e6a6c138403e79dffceb127cec0c94174" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
+    "3dd63241391b7a881d2a7d21cdc88e01aaee05cf22b55383c4bd7532cce44f88" "29d497b90092325ea818f848d4d95dacadb6f2ac187e52315434deb715bd3b27" "value.λ.body.λ.body.let.ty.∀.body.∀.dom.fn" "`let funType_i` bound in clique order (`withFunTypes`); zeta-equivalent",
   e `Tests.Ix.Compile.Twins.Cliques.IP "P0" "P1" `odM.match_2 "transformed matcher" .pendingTransport (.root true true false)
-    "68626a4237f13c422940ed7f762097a776ebe19ee83c9de8d1beddff43dd5865" "9e603fee7874e8da8d3238dcb65741b2ac0c03d0d7c538eab60b0498eaaf7136" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
+    "4c737e0ec02324907ffb50f846873186dd3cc3d66510eec89a212747be5ba459" "faabdf4dfae1b3ca8b74378c129eb73defab49542de62aba22ec2e42331a9d73" "type.∀.dom.∀.body.∀.dom.fn" "IndPred `below` matcher: `funType_i` binders in clique order; regenerated by transport (R)+(A)",
   e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa "clique member" .pendingTransport (.root false true false)
     "e9d460ba7b4cd906fd0f660108b189fbfe154953883e20319d7dd6452d4ddaab" "3c2d53a05c70b77a5269ac8412b0095ed0dcca53d9ccebb753fbc6368e74d723" "value.λ.body" "projection into the packed `brecOn` result at the clique position",
   e `Tests.Ix.Compile.Twins.Cliques.TP "P0" "P1" `sa._f "structural functional" .pendingTransport (.root true true false)
@@ -355,33 +355,33 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Cliques.RF "P0" "P2" `rb._sunfold "user constant" .inherited (.inherited [`rb, `ra])
     "4125c6cad27672ccece179097e483aaca0c95328a1e4069f5b2787ab9bf076e9" "34088b183e9c4bfd3ad3253b77197c359e44034d3fd56866cfe4bfbe63b70bc7" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `na "clique member" .pendingTransport (.root false true false)
-    "fe2ce779aacd87f063f930dc49cc5804a922bcd9bfb70910df960690ad004915" "b7f3db9d945710991b36ea5e357b516bbae08a1b0fd75b10621bae4bf3edf1d0" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "ca628c3971f7484713705196f4a2b00005332b12c9e679f3207e9d0954697091" "c7ec1143f700e0bc71939855daac9330d717659f878141282de61288aaff0352" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `na._sunfold "user constant" .inherited (.inherited [`nl])
-    "0784e4d31b968aaf163dd24a54710e45deea6bf8d6a733cdcb8474eade53b474" "950442bd78c415e972380f7017c3629ab965735fb9806d44df19ff53e5d7fdd9" "",
+    "2b10963d7700959aad09815f4259bb47ca5868c967691808899d841bd1fe7077" "c354948fc1480c4a6a6ff334d4422dc40fc85679a4d92dfd24640451569ae59d" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nb "clique member" .pendingTransport (.root false true false)
-    "06cfcbc9ef246fd43f37997c676d92739e28165751c88b2b265c90f4e2ed150c" "ac7329d3d4f6e99a9b05556ddc4edf764bd2240768c434f537ec8fb7cdca9a46" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "addfd774526a0e194c7cd5df50968dd0256ac3af941229c85c6166c304ede1e5" "2c981aaf53cd21287f755cb46d9924d997bf752c49744615e6dd93502e166389" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nb._sunfold "user constant" .inherited (.inherited [`nl])
-    "fde9fe5d2c905f8bfd7ffd8172985f85b781c45efe14e3efcd537d584eb6b729" "966348d6716e37b637736f7093b86ac26367bdf1d9b37361436f17bb2d70e505" "",
+    "a1d2d1ac5294333f302ae9ca47f47a31eddb43894ffcca2a1e4355c826c91e19" "147b50011dd987e7fed44728db3d8917e71df83690dbdff7eeecb0e3f780499a" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl "clique member" .pendingTransport (.root false true true)
-    "ec27435dc7b8f0b619ead0c424d76cd490032a9cc9c9bb660b2a89330ec02660" "e8654f8097cc96dc715a2881b47cda1c6295173e4188a0a978bec16a9921af53" "value.λ.body.@3.λ.body.λ.body.@2.fn" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "3849636eeadba2246db3e4e2ce8d9254d524f2ed5eac67d697670f199a7c328c" "28dc5b9646e1b87e571b2ed282965b1a7d0d001ba044fe1914b1bd5e9d6cd403" "value.λ.body.@3.λ.body.λ.body.@2.fn" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl._f "structural functional" .pendingTransport (.root false true false)
-    "44a09cfbb06bd7fd97e101445ac87731923c60dd87a91cd28f309e21f9fe36a3" "5ecb15bdc67c7d3b089a9798df36b3aa915edc8b3efa3f1d7d77940c4c1cdd39" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "ed06ae82fa8626f18f62f1bcbbe20cdb0433be69c6df7d582d9805fa5615d49b" "082e23013ad28dd96fbbcdc68320a2d28df5b1ea2385c510f208023421cecfd8" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P1" `nl._sunfold "user constant" .inherited (.inherited [`nl, `na, `nb])
-    "8975ccb2c7d2cc145185f04cbcee393d6c20b31bb46ca8e5141ec40272576cbb" "aed9b2e370fd01debaa2c17cdf3759e0eb69a72734c8f335a936953f409cdd1a" "",
+    "93e8a5f08c16b4b81782fb01bb0f23d0b14861cae1011ae762a728d630da670a" "e75c0032e98a10a4755b5e1b021daf70e40c4fd5e4e21e2c74a75be8bc10491c" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `na "clique member" .pendingTransport (.root false true false)
-    "fe2ce779aacd87f063f930dc49cc5804a922bcd9bfb70910df960690ad004915" "b7f3db9d945710991b36ea5e357b516bbae08a1b0fd75b10621bae4bf3edf1d0" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "ca628c3971f7484713705196f4a2b00005332b12c9e679f3207e9d0954697091" "c7ec1143f700e0bc71939855daac9330d717659f878141282de61288aaff0352" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `na._sunfold "user constant" .inherited (.inherited [`nl])
-    "0784e4d31b968aaf163dd24a54710e45deea6bf8d6a733cdcb8474eade53b474" "950442bd78c415e972380f7017c3629ab965735fb9806d44df19ff53e5d7fdd9" "",
+    "2b10963d7700959aad09815f4259bb47ca5868c967691808899d841bd1fe7077" "c354948fc1480c4a6a6ff334d4422dc40fc85679a4d92dfd24640451569ae59d" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nb "clique member" .pendingTransport (.root false true false)
-    "06cfcbc9ef246fd43f37997c676d92739e28165751c88b2b265c90f4e2ed150c" "ac7329d3d4f6e99a9b05556ddc4edf764bd2240768c434f537ec8fb7cdca9a46" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "addfd774526a0e194c7cd5df50968dd0256ac3af941229c85c6166c304ede1e5" "2c981aaf53cd21287f755cb46d9924d997bf752c49744615e6dd93502e166389" "value.λ.body" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nb._sunfold "user constant" .inherited (.inherited [`nl])
-    "fde9fe5d2c905f8bfd7ffd8172985f85b781c45efe14e3efcd537d584eb6b729" "966348d6716e37b637736f7093b86ac26367bdf1d9b37361436f17bb2d70e505" "",
+    "a1d2d1ac5294333f302ae9ca47f47a31eddb43894ffcca2a1e4355c826c91e19" "147b50011dd987e7fed44728db3d8917e71df83690dbdff7eeecb0e3f780499a" "",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl "clique member" .pendingTransport (.root false true true)
-    "ec27435dc7b8f0b619ead0c424d76cd490032a9cc9c9bb660b2a89330ec02660" "e8654f8097cc96dc715a2881b47cda1c6295173e4188a0a978bec16a9921af53" "value.λ.body.@3.λ.body.λ.body.@2.fn" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "3849636eeadba2246db3e4e2ce8d9254d524f2ed5eac67d697670f199a7c328c" "28dc5b9646e1b87e571b2ed282965b1a7d0d001ba044fe1914b1bd5e9d6cd403" "value.λ.body.@3.λ.body.λ.body.@2.fn" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl._f "structural functional" .pendingTransport (.root false true false)
-    "44a09cfbb06bd7fd97e101445ac87731923c60dd87a91cd28f309e21f9fe36a3" "5ecb15bdc67c7d3b089a9798df36b3aa915edc8b3efa3f1d7d77940c4c1cdd39" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
+    "ed06ae82fa8626f18f62f1bcbbe20cdb0433be69c6df7d582d9805fa5615d49b" "082e23013ad28dd96fbbcdc68320a2d28df5b1ea2385c510f208023421cecfd8" "value.λ.body.λ.body.@3.λ.body.λ.body.λ.body.@4.@4" "packing of the Rose group (na, nb) at the motive and functional positions of brecOn/brecOn_1, and its paths; the nested List Rose group has one function; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.NS "P0" "P2" `nl._sunfold "user constant" .inherited (.inherited [`nl, `na, `nb])
-    "8975ccb2c7d2cc145185f04cbcee393d6c20b31bb46ca8e5141ec40272576cbb" "aed9b2e370fd01debaa2c17cdf3759e0eb69a72734c8f335a936953f409cdd1a" "",
+    "93e8a5f08c16b4b81782fb01bb0f23d0b14861cae1011ae762a728d630da670a" "e75c0032e98a10a4755b5e1b021daf70e40c4fd5e4e21e2c74a75be8bc10491c" "",
   e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la "clique member" .pendingTransport (.root false true false)
     "794636154366ec6dc813c37fc84560f9dd123a2dc5189ec542d18f462b0af64a" "343f2868bb45d3b0e5e94c8464a9f23feda4dc03bafe73b3faef36814ef4a1bf" "value" "PProd factor order of the lattice fixpoint (lfp_monotone over ImplicationOrder, instCompleteLatticePProd), the paths, the monotone_mk tree and the path proofs; the transport reproduces it",
   e `Tests.Ix.Compile.Twins.Cliques.LI "P0" "P1" `la.mutual "clique encoding" .pendingTransport (.root false true true)
@@ -645,13 +645,13 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A._sizeOf_4_eq "sizeOf family" .o11aPending .onlyB
     "-" "203831d813d2dd11fdb6657a41dbb43dc270341bb11c039dae14f3c436c1dd12" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor; the one-sided member of the numbered family (`_sizeOf_3` in the old branch's record: generated numbered names now pair in name order)",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.below_2 "block auxiliary" .pendingCollapse .onlyB
-    "-" "694093dbce13e3f60731f046c62ef385f2e4e1c27b330e0f3a392ff9ce973fc3" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
+    "-" "d7f5d16bbb3c95c180ccf2e4fc1be40b70d3c86cb5d2017748ff4fc9abb5e306" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2 "block auxiliary" .pendingCollapse .onlyB
-    "-" "b477fc4695d6a2d6e91e08c6939fabe67e1e948f3e10fadeb5e8510537750659" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
+    "-" "6739616e5d84bf5a9240792f0588464613e15c9a479545a31b4acad21081205a" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.eq "block auxiliary" .pendingCollapse .onlyB
-    "-" "f9f356444c9e8ea3741bc7ffa246785a017f778edf0f8436c9c69e7de8a55ec8" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
+    "-" "0e365d4cda30bffdafe0e6576d147fc6fc288cafa2839e85680713603bafa0f2" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
   e `Tests.Ix.Compile.Twins.Repro.F4_NestedAlphaUsers "twin" "orig" `A.brecOn_2.go "block auxiliary" .pendingCollapse .onlyB
-    "-" "df56c854d9a96c311facb49986499e1a1c270ba4be3f052fc9c46d6cc0ff99de" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
+    "-" "bc2cc1290f485c52fa239c5176521e5ca35616fa432ecaf10746e5dada00439b" "" "nested auxiliary of the collapsed member (`List B`, merged into `List A` by collapse)",
   e `Tests.Ix.Compile.Twins.Repro.PropCollapse "twin" "orig" `p_cases "user constant over the block" .pendingCollapse (.root false true false)
     "6a99811d2992052ed277106b72cc898e60dcd6a850b6bdcbd9bd9c8945cac093" "9c52c63fb2c6c1e3385fcafdef09ed564af1b69901d57fefff915c2c3edda9e7" "value.λ.body.fn" "`cases` on a collapsed Prop pair (O8)",
   e `Tests.Ix.Compile.Twins.Repro.PropSplit "twin" "orig" `p1 "user constant over the block" .pendingSurgery (.root false true false)
@@ -879,13 +879,13 @@ def nonCanonical : List NonCanonicalEntry := [
   e `Tests.Ix.Compile.Twins.Proto.C6 "can" "src" `X._sizeOf_4_eq "sizeOf family" .o11aPending .onlyB
     "-" "203831d813d2dd11fdb6657a41dbb43dc270341bb11c039dae14f3c436c1dd12" "" "§4.7 (d): Lean mutual `_sizeOf_N` inlines the block recursor",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR "user constant over the block" .indPredBelow (.root false true false)
-    "50fe12a59dc160f4a631b0f53326e0e214ee13c12c261804c7e2587bde392179" "60bcaf3e4f5eb2eda63082a5c8ec6541600f0f63b0fea9ff4e3ff7b2f01d87b5" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "3bb054b90e0582df85c92e346ffd1d629209328e85a6d36616531ab5fcb306f2" "674a7f9d14e21c2e77bf4a555b9a993cf95d2f4f18a346dd9fa7dbca98b3d897" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `EvenP.toR.match_2 "user constant over the block" .indPredBelow (.root true true false)
-    "fe1c05ab20b887b350ab84a0425e4e26781c9aa4ca8ef3205308063baa11c51a" "7064d688a309679e85646d41e78462c4e62d411b802385c3e25752b3a022e44e" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "d4fd427576f9b54f7c46c99776b0c0432d74ee8979de5a39e01c7908f4003eff" "b39c2a2df534bcf7b296b8274809090cb96cda46a0d3ec51650b924fe7600bcf" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR "user constant over the block" .indPredBelow (.root false true false)
-    "1b89d937bc08c34d761bcf15462418ddfa9a3b98c0edffd1a351a4a208652147" "f7537566880bd04f60701e51fc36bab5aeb10e02ca06832e530e4b0957645591" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "be619db32fe0d4ea5d256ddc9db477cc9769a6c29e9c372778aeb990a0b9bce0" "c96cdea7c81dd7aaf964b6626d8c3711b9593ab25bc5aa29f8c1d18d9ccd2846" "value.λ.body.λ.body.let.body.let.body" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `OddP.toR.match_2 "user constant over the block" .indPredBelow (.root true true false)
-    "798cdebbd7c748dcfec2c80a49bc29a7d196ab1b0b6629ebe66299db68c83187" "885530e94cb47575b8cdeea5d48647339a2fde64b57ebf95b0515883bc502eac" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
+    "4e63421fe9885ad5f4197226213dda9164e3c1c9f129abe4abdffc5f35607998" "976779949ffebcce10e408ec70d726423f4e86ba9918aeec7aa83b69e4df634e" "type.∀.body.∀.body.∀.dom.∀.body.∀.body.∀.dom" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `R.below "block auxiliary" .indPredBelow .onlyB
     "-" "66942408d847ddf39d53a58d374630ed0f63debe7e6d997b8c6891f8cddb41db" "" "Lean IndPredBelow family (and its users) of the changed Prop block, R split off; §4.7 (b): exists for the Lean block, not for the Ix component",
   e `Tests.Ix.Compile.Twins.Proto.C7b "can" "src" `R.below.casesOn "block auxiliary" .indPredBelow .onlyB
