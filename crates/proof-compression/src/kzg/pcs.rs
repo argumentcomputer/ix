@@ -1554,3 +1554,6 @@ mod tests {
 #[cfg(test)]
 #[path = "pcs/public_degree_tests.rs"]
 mod public_degree_tests;
+
+#[cfg(test)]
+mod constant_tests;

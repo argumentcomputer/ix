@@ -260,6 +260,51 @@ mod tests {
   use super::*;
 
   #[test]
+  fn streaming_validation_preserves_public_degree_challenge_and_sums() {
+    let mut srs = Srs::unsafe_dev_setup(1 << 17, b"validation-chunks");
+    let mut bytes = Vec::new();
+    srs.g1.serialize_compressed(&mut bytes).unwrap();
+    srs.g2.serialize_compressed(&mut bytes).unwrap();
+    srs.tau_g2.serialize_compressed(&mut bytes).unwrap();
+    let mut wide = [0u8; 64];
+    blake3::Hasher::new()
+      .update(b"multi-stark/kzg/srs-validate/v4")
+      .update(&srs.public_setup.id)
+      .update(&(srs.public_setup.max_degree as u64).to_le_bytes())
+      .update(&bytes)
+      .finalize_xof()
+      .fill(&mut wide);
+    let challenge = Fr::from_le_bytes_mod_order(&wide);
+    assert_eq!(srs.validation_challenge(), challenge);
+    let powers: Vec<_> = (0..srs.g1.len() - 1)
+      .scan(Fr::ONE, |power, _| {
+        let value = *power;
+        *power *= challenge;
+        Some(value)
+      })
+      .collect();
+    assert_eq!(
+      srs.validation_sums(challenge),
+      (
+        G1Projective::msm(&srs.g1[..srs.g1.len() - 1], &powers).unwrap(),
+        G1Projective::msm(&srs.g1[1..], &powers).unwrap(),
+      )
+    );
+    srs.validate().unwrap();
+    for index in [(1 << 16) - 1, 1 << 16, (1 << 16) + 1, (1 << 17) - 2] {
+      let saved = srs.g1[index];
+      srs.g1[index] = srs.g1[index + 1];
+      assert!(srs.validate().is_err(), "accepted changed power {index}");
+      srs.g1[index] = saved;
+    }
+    srs.public_setup.id[0] ^= 1;
+    assert_ne!(srs.validation_challenge(), challenge);
+    srs.public_setup.id[0] ^= 1;
+    srs.public_setup.max_degree += 1;
+    assert_ne!(srs.validation_challenge(), challenge);
+  }
+
+  #[test]
   fn development_powers_match_naive_at_chunk_boundaries() {
     let seed = b"chunk-powers";
     let srs = Srs::unsafe_dev_setup(1 << 16, seed);

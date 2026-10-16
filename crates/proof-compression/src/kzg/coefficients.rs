@@ -58,8 +58,8 @@ impl Column {
   pub(super) fn constant(&self) -> Option<Fr> {
     match self {
       Self::Constant { value, .. } => Some(*value),
-      Self::Resident { values, range } => {
-        let values = &values[range.clone()];
+      Self::Resident { .. } => {
+        let values = self.resident().expect("resident column");
         values
           .iter()
           .skip(1)

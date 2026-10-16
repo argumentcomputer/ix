@@ -3,7 +3,7 @@ mod stages;
 pub use stages::{
   FixedRoot, FriVerifier, KzgVerifier, Prepared, RecursiveProof,
   RecursiveStage, RecursiveVerifier, prepare_kzg, prepare_recursive,
-  prepare_root, setup,
+  prepare_recursive_with_max_height, prepare_root, setup,
 };
 
 mod first;

@@ -14,6 +14,7 @@ pub fn setup(
   kzg_height: usize,
   recursive_height: usize,
 ) -> Result<RecursiveVerifier> {
+  wrap::validate_parameters(&srs, recursive_height)?;
   let circuit = root.circuit(root_key, Default::default())?;
   let fri = fri(circuit, fri_config, fri_height)?;
   let circuit = foreign(&fri)?;

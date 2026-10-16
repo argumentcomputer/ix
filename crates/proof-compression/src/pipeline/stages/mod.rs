@@ -20,7 +20,10 @@ pub use verification::RecursiveVerifier;
 pub use fixed::FixedRoot;
 pub use root::prepare_root;
 pub use setup::setup;
-pub use wrap::{RecursiveProof, RecursiveStage, prepare_recursive};
+pub use wrap::{
+  RecursiveProof, RecursiveStage, prepare_recursive,
+  prepare_recursive_with_max_height,
+};
 
 use crate::fri::{self, VerifierKey};
 use crate::kzg::{KzgConfig, Scalar, Srs, VerifierParams};

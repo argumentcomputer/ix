@@ -386,6 +386,27 @@ comparison against another storage device.
 
 ## Shared stage construction
 
+`FixedRoot::new` takes one `u8` log-height per Aiur circuit, memory
+`(width, circuit_index)` pairs sorted by width, and the claim length.
+The same heights go to `AiurSystem::prove_from_execution_normalized`.
+Function and memory traces may have different bounds; preprocessed byte
+tables retain their native heights. Layout and memory-closure mismatches
+are rejected before proving.
+
+`pipeline::setup` accepts independent FRI, intermediate KZG, and recursive
+KZG height bounds. For recursive preparation, `prepare_recursive` uses the
+production `2^27` cap; `prepare_recursive_with_max_height` accepts a library
+cap up to `2^28`. Setup and proving require a sufficient loaded SRS prefix
+and public degree allowance. Filecoin's declared degree is `2^28 - 2`, so
+it cannot admit a `2^28` trace. The CLI continues to use its bundled profiles
+and production bounds.
+
+Constant coefficient columns retain their full domain length while storing
+only the constant term. CPU and CUDA operations share this representation;
+checkpoint serialization retains the `IXKZGCP4` encoding. SRS validation
+streams the existing public-degree-bound challenge encoding and checks
+adjacent powers in bounded batches.
+
 The public stage API and the worker use the same production circuit builders,
 statement schemas, lowering namespaces, and recursive Keccak transcript.
 The file adapters load artifacts, select setup and cache locations, and report

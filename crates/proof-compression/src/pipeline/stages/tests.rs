@@ -101,7 +101,7 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
 fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
   let config = || {
     GoldilocksBlake3Config::new(
-      CommitmentParameters { log_blowup: 1, cap_height: 0 },
+      CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters {
         log_final_poly_len: 0,
         max_log_arity: 1,
@@ -111,8 +111,8 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
       },
     )
   };
-  // Include multiple partitions and a lookup table. Build the reference using
-  // dense lowering and retained fixed evaluations, as before the optimization.
+  // The dense reference includes multiple partitions and a lookup table,
+  // with fixed evaluations retained during proving.
   let prepared = arithmetic(Val::TWO, 50);
   let compiled = prepared.circuit.lower_to_multi_stark_with_max_height(
     Val::from_u8(construct::FRI_NAMESPACE),

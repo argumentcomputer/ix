@@ -58,8 +58,9 @@ pub(in crate::pipeline) fn lower_recursive(
   circuit: Circuit<Scalar>,
   max_height: usize,
 ) -> Result<MultiStarkCircuit<Scalar>> {
+  let policy = recursive_layout_with_max_height(max_height)?;
   let height = circuit.multi_stark_layout()?.main_height;
-  if height > max_height.min(RECURSIVE_HEIGHT) {
+  if height > policy.max_computation_height {
     return Err(
       "recursive computation exceeds its single-trace height cap".into(),
     );
@@ -218,11 +219,23 @@ pub(in crate::pipeline) fn prepare_first(
 
 pub(in crate::pipeline) fn recursive_layout()
 -> crate::recursive::native_verifier::LayoutPolicy {
-  crate::recursive::native_verifier::LayoutPolicy {
-    namespace: Scalar::from_u8(RECURSIVE_NAMESPACE),
-    max_computation_height: RECURSIVE_HEIGHT,
-    max_table_height: RECURSIVE_HEIGHT,
+  recursive_layout_with_max_height(RECURSIVE_HEIGHT)
+    .expect("valid production layout")
+}
+
+pub(in crate::pipeline) fn recursive_layout_with_max_height(
+  max_height: usize,
+) -> Result<crate::recursive::native_verifier::LayoutPolicy> {
+  if max_height < 2 || !max_height.is_power_of_two() || max_height > 1 << 28 {
+    return Err(
+      "recursive trace cap must be a power of two in 2..=2^28".into(),
+    );
   }
+  Ok(crate::recursive::native_verifier::LayoutPolicy {
+    namespace: Scalar::from_u8(RECURSIVE_NAMESPACE),
+    max_computation_height: max_height,
+    max_table_height: max_height,
+  })
 }
 
 pub(in crate::pipeline) fn recursive_plan<'a>(
@@ -235,5 +248,19 @@ pub(in crate::pipeline) fn recursive_plan<'a>(
     logs,
     schema,
     recursive_layout(),
+  )?)
+}
+
+pub(in crate::pipeline) fn recursive_plan_with_max_height<'a>(
+  system: &'a multi_stark::system::System<KzgConfig>,
+  logs: &[u8],
+  schema: crate::recursive::native_verifier::ClaimSchema,
+  max_height: usize,
+) -> Result<crate::recursive::native_verifier::Plan<'a>> {
+  Ok(crate::recursive::native_verifier::Plan::new(
+    system,
+    logs,
+    schema,
+    recursive_layout_with_max_height(max_height)?,
   )?)
 }

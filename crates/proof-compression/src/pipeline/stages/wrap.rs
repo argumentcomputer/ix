@@ -18,14 +18,16 @@ fn build_recursive(
   verifier: &KzgVerifier,
   proof: &Proof<KzgConfig>,
   claims: &[Vec<Scalar>],
+  max_height: usize,
 ) -> Result<native_verifier::Built> {
-  let plan = super::construct::recursive_plan(
+  let plan = super::construct::recursive_plan_with_max_height(
     &verifier.system,
     &proof.log_degrees,
     native_verifier::ClaimSchema::from_claims(
       claims,
       &verifier.statement.locations,
     )?,
+    max_height,
   )?;
   Ok(plan.build(proof, claims)?)
 }
@@ -34,6 +36,7 @@ pub struct RecursiveStage {
   prepared: Prepared<Scalar>,
   pairings: Pairings,
   claim_len: usize,
+  max_height: usize,
 }
 
 /// Build the recursive KZG verifier. The original public statement remains
@@ -43,10 +46,27 @@ pub fn prepare_recursive(
   proof: &Proof<KzgConfig>,
   expected: &[Val],
 ) -> Result<RecursiveStage> {
+  prepare_recursive_with_max_height(
+    verifier,
+    proof,
+    expected,
+    super::construct::RECURSIVE_HEIGHT,
+  )
+}
+
+/// Prepare a recursive verifier under an explicit computation/table cap.
+/// Proving may lower this cap, but cannot exceed the prepared layout's bound.
+pub fn prepare_recursive_with_max_height(
+  verifier: &KzgVerifier,
+  proof: &Proof<KzgConfig>,
+  expected: &[Val],
+  max_height: usize,
+) -> Result<RecursiveStage> {
+  super::construct::recursive_layout_with_max_height(max_height)?;
   let public = scalar_statement(expected);
   verifier.verify(proof, &public)?;
   let claims = verifier.statement.claims(&public)?;
-  let built = build_recursive(verifier, proof, &claims)?;
+  let built = build_recursive(verifier, proof, &claims, max_height)?;
   let assignment = built.assign()?;
   let pairings = Pairings {
     keys: built
@@ -59,6 +79,7 @@ pub fn prepare_recursive(
     prepared: Prepared { circuit: built.circuit, assignment },
     pairings,
     claim_len: public.len(),
+    max_height,
   })
 }
 
@@ -72,6 +93,10 @@ impl RecursiveStage {
     srs: Arc<Srs>,
     max_height: usize,
   ) -> Result<(RecursiveVerifier, RecursiveProof)> {
+    validate_parameters(&srs, max_height)?;
+    if max_height > self.max_height {
+      return Err("recursive proving cap exceeds the prepared layout".into());
+    }
     let pairing_values =
       self.prepared.public_values()[self.claim_len..].to_vec();
     let compiled =
@@ -107,10 +132,11 @@ pub(super) fn setup_recursive(
   srs: Arc<Srs>,
   height: usize,
 ) -> Result<RecursiveVerifier> {
+  validate_parameters(&srs, height)?;
   let claim_len = verifier.statement.locations.len();
   let claims = verifier.statement.claims(&vec![Scalar::ZERO; claim_len])?;
   let template = verifier.codec.template();
-  let built = build_recursive(verifier, &template, &claims)?;
+  let built = build_recursive(verifier, &template, &claims, height)?;
   let compiled = super::construct::lower_recursive(built.circuit, height)?;
   let height = super::construct::max_height(&compiled)?;
   if height > srs.max_len() {
@@ -133,6 +159,23 @@ pub(super) fn setup_recursive(
   })
 }
 
+pub(super) fn validate_parameters(srs: &Srs, height: usize) -> Result<()> {
+  super::construct::recursive_layout_with_max_height(height)?;
+  if srs.public_setup.max_degree.checked_add(1).is_none()
+    || height - 1 > srs.public_setup.max_degree
+  {
+    return Err("recursive trace cap exceeds public setup allowance".into());
+  }
+  if srs.max_len() < 2
+    || !srs.max_len().is_power_of_two()
+    || height > srs.max_len()
+    || srs.max_len() - 1 > srs.public_setup.max_degree
+  {
+    return Err("recursive trace cap exceeds a valid loaded SRS prefix".into());
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -141,6 +184,36 @@ mod tests {
   use multi_stark::plonkish::CircuitBuilder;
   use multi_stark::traits::Algebra;
   use multi_stark::traits::Field;
+
+  #[test]
+  fn recursive_limits_respect_public_degree_and_loaded_prefix() -> Result<()> {
+    assert_eq!(
+      super::super::construct::recursive_layout_with_max_height(1 << 28)?
+        .max_computation_height,
+      1 << 28,
+    );
+    let filecoin = crate::kzg::srs::filecoin::filecoin_anchors();
+    assert!(
+      validate_parameters(&filecoin, 1 << 28)
+        .unwrap_err()
+        .to_string()
+        .contains("public setup allowance")
+    );
+    let srs = Srs::unsafe_dev_setup_prefix(16, 31, b"recursive-bounds");
+    for height in [2, 8, 16] {
+      validate_parameters(&srs, height)?;
+    }
+    assert!(
+      validate_parameters(&srs, 32)
+        .unwrap_err()
+        .to_string()
+        .contains("loaded SRS")
+    );
+    for height in [0, 1, 3, 1 << 29] {
+      assert!(validate_parameters(&srs, height).is_err());
+    }
+    Ok(())
+  }
 
   #[test]
   fn final_verifier_requires_claim_outer_proof_and_both_pairings() -> Result<()>
@@ -192,6 +265,7 @@ mod tests {
           prepared: Prepared { circuit, assignment },
           pairings: Pairings { keys },
           claim_len,
+          max_height: 128,
         };
         let (verifier, mut proof) = stage.prove(outer.clone(), 128)?;
         assert_eq!(

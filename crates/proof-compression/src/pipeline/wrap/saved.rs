@@ -244,9 +244,9 @@ pub(crate) fn check(
 mod tests {
   use super::*;
   use crate::kzg::Srs;
-  use crate::recursive::native_verifier::LayoutPolicy;
   use crate::pipeline::init_claim;
   use crate::pipeline::setup::SetupSource;
+  use crate::recursive::native_verifier::LayoutPolicy;
   use multi_stark::traits::Algebra;
   use multi_stark::{
     expr::Expr,
