@@ -17,6 +17,7 @@ import Ix.CompileCert.EmissionDispatch
 import Ix.CompileCert.HeaderReading
 import Ix.CompileCert.ReaderSourceSpines
 import Ix.CompileCert.ProjectionLayout
+import Ix.CompileCert.MutualArtifact
 
 /-! # Audit of the reading-chain proofs
 
@@ -43,7 +44,8 @@ the singleton blocks and public dispatch (`Ix.CompileCert.EmissionBlocks`,
 (`Ix.CompileCert.DefinitionReading`, `HeaderReading`), and the reader's
 syntactic walks through sharing and along the source
 (`Ix.CompileCert.ReaderSpines`, `ReaderSourceSpines`), and the mutual layout
-(`Ix.CompileCert.ProjectionLayout`).
+(`Ix.CompileCert.ProjectionLayout`) and its projections (`Ix.CompileCert.MutualProjections`,
+`MutualArtifact`).
 Each root must exist, occur once, and depend on no axiom but `propext`, `Classical.choice` and `Quot.sound`
 (`Ix.CompileCert.UniverseAudit.checkRoots`, through the certified kernel's
 traversal `Ix.Kernel.Audit.collectCached`, so `sorryAx` fails it).
@@ -339,6 +341,21 @@ def layoutRoots : Array Lean.Name :=
     `family_layout, `familyInfo_layout, `dispatch_layout, `inductive_projection_resolves,
     `constructor_projection_resolves].map (`Ix.CompileCert.ProjectionLayout ++ ·)
 
+/-- A mutual block's projections (CT-15, R9a): the rows the compiler emits,
+their wire validity and codec, and what the certified reader resolves them
+to. -/
+def projectionRoots : Array Lean.Name :=
+  (#[`indexed_rows, `constructor_rows, `memberStep_yield, `memberStep_rows, `members_rows, `classes_rows,
+    `build_rows, `pushed_rows, `standalone_classes_rows, `standalone_rows, `empty_tables_wire, `member_wire,
+    `constructor_wire, `source_rows_wire, `build_rows_wire, `build_rows_codec, `standalone_rows_wire,
+    `build_projection_wire, `finish_projection_wire, `payload_projection_wire, `mutual_projection_wire,
+    `mutual_codec, `member_resolves, `constructor_resolves, `selected_member, `class_member,
+    `source_rows_resolve, `build_resolves].map (`Ix.CompileCert.MutualProjections ++ ·)) ++
+  (#[`standalone_erase, `writeback_standalone, `sharing_standalone, `chosen_standalone, `build_cases,
+    `selected_length, `no_ctor_references, `collapsed_references, `standalone_resolves, `build_resolves,
+    `finish_references, `payload_references, `mutual_references,
+    `mutual_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
+
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
 `collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
@@ -450,11 +467,12 @@ def spineRuntime : Array Lean.Name :=
     ``Ix.Kernel.Reader.analyseRecursor, ``Ix.Kernel.Reader.resolve, ``Ix.Kernel.Reader.keyOfAddress,
     ``Ix.Kernel.Expr.stripPis, ``Ix.Kernel.Expr.getAppFn]
 
-/-- The class sort and the reader's reference resolution, which the layout proofs
-unfold. -/
+/-- The class sort, the projection builders and the reader's reference
+resolution, which the layout and projection proofs unfold. -/
 def layoutRuntime : Array Lean.Name :=
   #[``Ix.CompileM.sortConsts, ``Ix.CompileM.throwCmpError, ``Ix.CompileM.constAddrLookup,
-    ``Ix.Compile.Canon.sortClasses, ``Ix.Kernel.Reader.resolveSource, ``Ix.Kernel.Reader.emptyTables]
+    ``Ix.Compile.Canon.sortClasses, ``Ix.Kernel.Reader.resolveSource, ``Ix.Kernel.Reader.emptyTables,
+    ``Ix.CompileM.buildMutualProjections, ``Ix.CompileM.buildStandaloneMutualProjections]
 
 end Ix.CompileCert.ReadingAudit
 
@@ -481,6 +499,7 @@ run_cmd do
   checkRoots (tag := "reading-audit") "singleton reading" Ix.CompileCert.ReadingAudit.singletonReadRoots
   checkRoots (tag := "reading-audit") "reader walks" Ix.CompileCert.ReadingAudit.spineRoots
   checkRoots (tag := "reading-audit") "mutual layout" Ix.CompileCert.ReadingAudit.layoutRoots
+  checkRoots (tag := "reading-audit") "mutual projections" Ix.CompileCert.ReadingAudit.projectionRoots
   checkRuntime (tag := "reading-audit") "tables, blobs and serializers"
     Ix.CompileCert.ReadingAudit.tableRuntime
   checkRuntime (tag := "reading-audit") "reader" Ix.CompileCert.ReadingAudit.readerRuntime

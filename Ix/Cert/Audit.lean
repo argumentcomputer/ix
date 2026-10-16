@@ -2734,3 +2734,71 @@ constructors (`inductive_projection_resolves`,
 /-- info: 'Ix.CompileCert.ProjectionLayout.constructor_projection_resolves' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.ProjectionLayout.constructor_projection_resolves
+
+/-! ## Component theorems: a mutual block's projections
+
+A compiled mutual block either keeps the mutual wrapper, whose rows are a
+member projection per source member at its class index and a constructor
+projection per constructor position, or collapses a lone definition or
+recursor, every source name registered to the block itself
+(`MutualArtifact.build_cases`). Under an environment without call-site
+plans, a successful mutual block from a state whose tables are on the wire
+decodes exactly, so do its projections, and in any store holding the block
+its rows read under the certified reader as their source-indexed references
+(`MutualArtifact.mutual_correct`), given non-empty classes whose members
+agree in shape (`MutualProjections.ClassesAgree`, discharged from the class
+sort in R9b) and source constructors declaring their positions. Every lemma
+behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
+
+/-- info: def Ix.CompileCert.MutualProjections.ClassesAgree : List (List Ix.MutConst) → Prop :=
+fun sources =>
+  ∀ (members : List Ix.MutConst),
+    members ∈ sources →
+      ∀ (left : Ix.MutConst),
+        left ∈ members →
+          ∀ (right : Ix.MutConst),
+            right ∈ members →
+              Ix.CompileCert.ProjectionLayout.sourceShape left = Ix.CompileCert.ProjectionLayout.sourceShape right -/
+#guard_msgs (whitespace := lax) in
+#print Ix.CompileCert.MutualProjections.ClassesAgree
+
+/-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
+  context.fst.surgeryFree = true →
+    ∀ (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+      Ix.Sharing.Verify.BlockWireTablesWF before →
+        Ix.CompileCert.PreseedWire.LookupWidths context.fst before →
+          (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
+            Ix.CompileCert.MutualProjections.ClassesAgree sources →
+              (∀ (source : Ix.MutConst),
+                  source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+                Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before =
+                    (Except.ok output, after) →
+                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
+                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                      ∀ (store : Ix.Kernel.Reader.Store),
+                        store output.blockAddr = some output.block →
+                          Ix.CompileCert.MutualProjections.readRows store
+                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.CompileCert.MutualArtifact.mutual_correct
+
+/-- info: 'Ix.CompileCert.MutualProjections.build_rows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualProjections.build_rows
+
+/-- info: 'Ix.CompileCert.MutualProjections.mutual_codec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualProjections.mutual_codec
+
+/-- info: 'Ix.CompileCert.MutualProjections.build_resolves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualProjections.build_resolves
+
+/-- info: 'Ix.CompileCert.MutualArtifact.build_resolves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualArtifact.build_resolves
+
+/-- info: 'Ix.CompileCert.MutualArtifact.mutual_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.CompileCert.MutualArtifact.mutual_correct
