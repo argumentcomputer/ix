@@ -406,6 +406,13 @@ lean_exe «kernel-source-ingress» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
+/-- Step 6b's oracle: `.meta` and `.source` names against Lean's
+(`Tests.Ix.Kernel.MetaNames`). -/
+lean_exe «kernel-meta-names» where
+  root := `Tests.Ix.Kernel.MetaNames
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 /-- The certified checker's benchmark drivers and reporting helpers. -/
 lean_lib KernelEntry where
   roots := #[`Benchmarks.Kernel.CheckIxeStep,
@@ -445,7 +452,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
   run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
