@@ -1,6 +1,11 @@
 import Benchmarks.Kernel.CheckIxeStep
 import Ix.RoleEvidence
 import Ix.Address.Admission
+import Ix.Meta
+import Ix.CanonM
+import Ix.GraphM
+import Ix.CondenseM
+import Ix.LeanIngress
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
@@ -45,7 +50,14 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    environment.
 5. **Output.** `RoleData.lean`: the table's binding section (canonical, well
    formed, checked by decoding it back) and its address, the evidence
-   records and blobs, and the prelude's records, each as canonical bytes.
+   records and blobs, and the prelude's records, each as canonical bytes;
+   and Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`, for an
+   input without the certificate theorems): the theorems closed in Source
+   mode over the certificate module's own environment (`sourceEvidenceOf`;
+   the module's `.olean`, which `lake -d IxC build` builds), written as
+   theorem records whose references are names (`nameAddress`), with the
+   names, and read back. Not the `.anon` records renamed: an Ixon address
+   is an alias fiber's, several Lean names.
 
 Usage: `kernel-pin-gen <init.ixe> <certs.ixe> <RoleData.lean> [closure.jsonl]`. -/
 
@@ -65,9 +77,12 @@ def preludeGroups : List (List Role) :=
 
 /-- The commands that regenerate `RoleData.lean`, written into its header.
 `--no-build`: the files import only `Init`, and `IxC/`'s lakefile does not
-know `IxC/Kernel/PinGen/Certs.lean` as a target of the root's. -/
+know `IxC/Kernel/PinGen/Certs.lean` as a target of the root's. The
+generator loads that module's `.olean` for Source mode's evidence, which
+`lake -d IxC build` builds. -/
 def regenerate : List String :=
   ["lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe",
+   "lake -d IxC build IxC.Kernel.PinGen.Certs",
    s!"lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts \\\n      \
     {",".intercalate (Ix.RoleEvidence.certTheorems.flatMap (·.2) |>.map toString)}",
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
@@ -109,18 +124,18 @@ def readOrdered (s : Setup) (addresses : Array Address) :
 /-! ## Theorem records from closed proofs -/
 
 /-- The writer's state: the record's tables and the blobs its literals need. -/
-structure Egress where
+structure Egress (md : Ix.Kernel.Mode) where
   refs : Array Address := #[]
   refIdx : Std.HashMap Address Nat := {}
   univs : Array Ixon.Univ := #[]
   univIdx : Std.HashMap Ixon.Univ Nat := {}
   sharing : Array Ixon.Expr := #[]
-  shareIdx : Std.HashMap (CExpr .anon) Nat := {}
+  shareIdx : Std.HashMap (CExpr md) Nat := {}
   blobs : Array (Address × ByteArray) := #[]
 
-abbrev EgressM := StateT Egress (Except String)
+abbrev EgressM (md : Ix.Kernel.Mode) := StateT (Egress md) (Except String)
 
-def refOf (a : Address) : EgressM UInt64 := do
+def refOf {md : Ix.Kernel.Mode} (a : Address) : EgressM md UInt64 := do
   if let some i := (← get).refIdx[a]? then return i.toUInt64
   let i := (← get).refs.size
   modify fun s => { s with refs := s.refs.push a, refIdx := s.refIdx.insert a i }
@@ -133,7 +148,7 @@ def convLevel : CLevel → Ixon.Univ
   | .imax u v => .imax (convLevel u) (convLevel v)
   | .param i => .var i.toUInt64
 
-def univOf (l : CLevel) : EgressM UInt64 := do
+def univOf {md : Ix.Kernel.Mode} (l : CLevel) : EgressM md UInt64 := do
   let u := convLevel l
   if let some i := (← get).univIdx[u]? then return i.toUInt64
   let i := (← get).univs.size
@@ -150,7 +165,7 @@ def natBytes (n : Nat) : ByteArray := Id.run do
     k := k / 256
   return out
 
-def blobOf (bytes : ByteArray) : EgressM UInt64 := do
+def blobOf {md : Ix.Kernel.Mode} (bytes : ByteArray) : EgressM md UInt64 := do
   let a := hash bytes
   unless (← get).blobs.any (·.1 == a) do
     modify fun s => { s with blobs := s.blobs.push (a, bytes) }
@@ -158,7 +173,7 @@ def blobOf (bytes : ByteArray) : EgressM UInt64 := do
 
 /-- How often each node occurs in `e`'s DAG (each parent edge counted once
 per distinct parent). -/
-partial def countUses (e : CExpr .anon) : StateM (Std.HashMap (CExpr .anon) Nat) Unit := do
+partial def countUses {md : Ix.Kernel.Mode} (e : CExpr md) : StateM (Std.HashMap (CExpr md) Nat) Unit := do
   let seen := (← get)[e]?
   modify fun m => m.insert e (seen.getD 0 + 1)
   if seen.isSome then return
@@ -173,8 +188,8 @@ partial def countUses (e : CExpr .anon) : StateM (Std.HashMap (CExpr .anon) Nat)
 /-- An expression as an Ixon expression under the writer's tables: every
 node used more than once (and not a leaf) becomes a sharing entry, written
 after the entries it uses. `addrOf` names a constant's record. -/
-partial def egress (uses : Std.HashMap (CExpr .anon) Nat) (addrOf : CName .anon → Option Address)
-    (e : CExpr .anon) : EgressM Ixon.Expr := do
+partial def egress {md : Ix.Kernel.Mode} (uses : Std.HashMap (CExpr md) Nat)
+    (addrOf : CName md → Option Address) (e : CExpr md) : EgressM md Ixon.Expr := do
   let leaf := match e with
     | .bvar _ | .sort _ | .const .. | .lit _ => true
     | _ => false
@@ -186,7 +201,7 @@ partial def egress (uses : Std.HashMap (CExpr .anon) Nat) (addrOf : CName .anon 
     return .share i.toUInt64
   build
 where
-  build : EgressM Ixon.Expr := do
+  build : EgressM md Ixon.Expr := do
     match e with
     | .bvar i => pure (.var i.toUInt64)
     | .sort u => pure (.sort (← univOf u))
@@ -208,17 +223,71 @@ where
 
 /-- **A theorem record** with statement `type` and proof `value`: level
 monomorphic, safe, its constants named through `addrOf`. -/
-def theoremRecord (addrOf : CName .anon → Option Address) (type value : CExpr .anon) :
+def theoremRecord {md : Ix.Kernel.Mode} (addrOf : CName md → Option Address) (type value : CExpr md) :
     Except String (Ixon.Constant × Array (Address × ByteArray)) := do
   let uses := ((countUses type *> countUses value).run {}).2
   let ((typ, val), eg) ← (do
       let t ← egress uses addrOf type
       let v ← egress uses addrOf value
-      pure (t, v) : EgressM _).run {}
+      pure (t, v) : EgressM md _).run {}
   let c : Ixon.Constant :=
     { info := .defn { kind := .thm, safety := .safe, lvls := 0, typ, value := val },
       sharing := eg.sharing, refs := eg.refs, univs := eg.univs }
   pure (c, eg.blobs)
+
+/-! ## Source mode's evidence -/
+
+/-- The module of the certificate theorems. -/
+def certsModule : Lean.Name := `IxC.Kernel.PinGen.Certs
+
+/-- A Lean name's bytes for its address: each component tagged and
+length-delimited, so distinct names have distinct bytes. -/
+def nameBytes (n : Lean.Name) : ByteArray :=
+  let rec go : Lean.Name → String
+    | .anonymous => ""
+    | .str p s => go p ++ s!"s{s.utf8ByteSize}:{s}"
+    | .num p k => go p ++ s!"n{k};"
+  ("ix.source-name:" ++ go n).toUTF8
+
+/-- **A name's address**, by which a Source evidence record references the
+constant of that name (`RoleData.sourceNames` names it back). -/
+def nameAddress (n : Lean.Name) : Address := hash (nameBytes n)
+
+/-- **Source mode's closed certificate proofs**, over the Lean environment
+of the certificate module (Init and `IxC/Kernel/PinGen/Certs.lean`), as the
+Source ingress takes it: canonicalized (`Ix.CanonM`, on `workers` tasks) and
+condensed, every declaration group lowered in the Source order behind the
+prelude `pre` (a group that does not lower, a `partial` or `unsafe` one, is
+left out, as the step drivers leave it), then
+`Ix.LeanIngress.sourceEvidenceReport`. Also the prepared declarations. -/
+def sourceEvidenceOf (pre : Prelude .source) (leanEnv : Lean.Environment) (workers : Nat) :
+    (Ix.Kernel.Evidences .source × List String) × Array (CDecl .source) := Id.run do
+  let consts := leanEnv.constants.toList.toArray
+  let size := (consts.size + workers - 1) / max workers 1
+  let tasks := (Ix.CanonM.chunks consts (max size 1)).map fun chunk =>
+    Task.spawn fun _ => Ix.CanonM.canonChunk chunk
+  let env : Ix.Environment :=
+    { consts := tasks.foldl (init := {}) fun m t => t.get.foldl (fun m (n, c) => m.insert n c) m }
+  let blocks := Ix.CondenseM.run (Ix.GraphM.envParallel env)
+  let groups := Ix.LeanIngress.groupsOf env blocks
+  let g := Ix.LeanIngress.graphOf blocks groups (groups.map Ix.LeanIngress.convert)
+  let mut st := pre.state
+  let mut lowered : Array (CDecl .source) := #[]
+  for (_, c) in Ix.LeanIngress.scheduleOf g do
+    match c >>= Ix.LeanIngress.lower st with
+    | .ok r =>
+      st := st.commit r
+      lowered := lowered ++ r.decls
+    | .error _ => pure ()
+  let decls := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  return (Ix.LeanIngress.sourceEvidenceReport decls, decls)
+
+/-- A Lean name as a term of the generated file, constructor by constructor
+(exact for every component: numbers, and strings no identifier spells). -/
+def nameTerm : Lean.Name → String
+  | .anonymous => ".anonymous"
+  | .str p s => s!"(.str {nameTerm p} {s.quote})"
+  | .num p k => s!"(.num {nameTerm p} {k})"
 
 /-! ## The run -/
 
@@ -412,11 +481,74 @@ def run (args : List String) : IO UInt32 := do
     let a := ((refOfRole[r]?).map (·.block)).getD default
     let micros := ((rows.find? (·.address == a)).map (·.micros)).getD 0
     IO.eprintln s!"pin-gen: {repr r}: accepted with the generated evidence, {micros} µs"
+  -- 4b: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`): the
+  -- certificate theorems closed in Source mode over the certificate module's
+  -- own environment, written as theorem records whose references are names
+  -- (an Ixon address is an alias fiber's, several names, so the `.anon`
+  -- records cannot be read by name)
+  let srcStarted ← IO.monoMsNow
+  let leanEnv ← getCompileEnv #[certsModule]
+  let preSrc ← IO.ofExcept (readPrelude (md := .source) table preRecords evRecords evBlobs.toList)
+  let ((srcEv, srcWhy), srcDecls) := sourceEvidenceOf preSrc leanEnv 16
+  unless srcWhy.isEmpty do fail s!"Source evidence: {srcWhy}"
+  let mut srcRecords : Array (Address × Ixon.Constant) := #[]
+  let mut srcBlobs : Array (Address × ByteArray) := #[]
+  let mut srcNames : Std.HashMap Address Lean.Name := {}
+  for (r, es) in srcEv do
+    for e in es do
+      let .proof (k, p) := e | continue
+      let some type := srcDecls.findSome? (fun
+          | .thmDecl cv _ => if cv.name == k then some cv.type else none
+          | _ => none)
+        | fail s!"{k}: no statement in Source mode"
+      let mut named : Std.HashMap Address Lean.Name := {}
+      for n in (type.constKeys.toList ++ p.constKeys.toList) do
+        let ln := Ix.RoleEvidence.toLeanName n
+        unless Ix.RoleEvidence.ofLeanName ln == n do
+          fail s!"{k}: the key {n} is not its name's (a generated key)"
+        let a := nameAddress ln
+        if let some m := named[a]? then
+          unless m == ln do fail s!"{k}: {m} and {ln} have one name address"
+        named := named.insert a ln
+      let (c, blobs) ← match theoremRecord (fun n => some (nameAddress (Ix.RoleEvidence.toLeanName n))) type p with
+        | .ok x => pure x
+        | .error e => fail s!"{k}: {e}"
+      let bytes := Ixon.serConstant c
+      match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
+      | .ok c' => unless c' == c do fail s!"{k}: its Source record does not round-trip"
+      | .error e => fail s!"{k}: its Source record does not decode: {e}"
+      let a := hash bytes
+      srcRecords := srcRecords.push (a, c)
+      srcNames := srcNames.insert a (Ix.RoleEvidence.toLeanName k)
+      for (x, n) in named.toList do
+        if let some m := srcNames[x]? then
+          unless m == n do fail s!"{m} and {n} have one name address"
+        srcNames := srcNames.insert x n
+      for b in blobs do
+        unless evBlobs.any (·.1 == b.1) || srcBlobs.any (·.1 == b.1) do srcBlobs := srcBlobs.push b
+    if es.any (fun | .proof _ => true | .defeq => false) then
+      IO.eprintln s!"pin-gen: {repr r}: Source evidence closed and written"
+  let srcNameRows : Array (Address × Lean.Name) := srcNames.toArray.qsort fun (a, n) (b, m) =>
+    toString a < toString b || (toString a == toString b && n.toString < m.toString)
+  let hexRows (xs : Array (Address × ByteArray)) : Array (String × String) :=
+    xs.map fun (a, b) => (toString a, hexOfBytes b)
+  -- the bundle reads back as the closed proofs
+  let bundle ← IO.ofExcept ((Ix.RoleEvidence.Bundle.ofRows
+    (hexRows (srcRecords.map fun (a, c) => (a, Ixon.serConstant c)))
+    (srcNameRows.map fun (a, n) => (toString a, n)) (hexRows (evBlobs ++ srcBlobs))).mapError
+      (s!"pin-gen: the Source bundle: " ++ ·))
+  let (readEv, readWhy) := bundle.evidenceReport
+  unless readWhy.isEmpty && readEv == srcEv do
+    fail s!"the Source bundle does not read back as the closed proofs: {readWhy}"
+  IO.eprintln s!"pin-gen: Source evidence: {srcRecords.size} records, {srcNames.size} names, \
+    {srcBlobs.size} more blobs; reads back; {(← IO.monoMsNow) - srcStarted} ms"
   -- 5: output
   let digest ← sha256 input
   let certDigest ← sha256 certInput
   let rowsOf (xs : Array (Address × ByteArray)) : String :=
     ",\n".intercalate (xs.toList.map fun (a, b) => s!"  ({(toString a).quote},\n   {(hexOfBytes b).quote})")
+  let namesOf (xs : Array (Address × Lean.Name)) : String :=
+    ",\n".intercalate (xs.toList.map fun (a, n) => s!"  ({(toString a).quote},\n   {nameTerm n})")
   let recipe := "\n".intercalate (regenerate.map ("    " ++ ·))
   let text := s!"module
 
@@ -442,7 +574,15 @@ for tests and the command line only.
 its BLAKE3 hash. `evidence`: the evidence's theorem records (address,
 canonical bytes); `blobs`: the blobs their literals reference (address,
 bytes). `prelude`: (record address, canonical record bytes), in the checker's
-prelude order. -/
+prelude order.
+
+`sourceEvidence`: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`,
+for an input without the certificate theorems): the same theorems closed in
+Source mode over the certificate module's own environment, as theorem records
+(address, canonical bytes) whose references are names: `sourceNames` names
+each reference's address (the generator's `nameAddress`) and each record (its theorem), and
+a literal's blob is in `blobs` or `sourceBlobs`. These were read back as the
+closed proofs when this file was generated. -/
 
 @[expose] public section
 
@@ -463,11 +603,21 @@ def blobs : Array (String × String) := #[
 def prelude : Array (String × String) := #[
 {rowsOf (preRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
 
+def sourceEvidence : Array (String × String) := #[
+{rowsOf (srcRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+
+def sourceNames : Array (String × Lean.Name) := #[
+{namesOf srcNameRows}]
+
+def sourceBlobs : Array (String × String) := #[
+{rowsOf srcBlobs}]
+
 end Ix.Kernel.Reader.RoleData
 "
   IO.FS.writeFile output text
   IO.eprintln s!"pin-gen: wrote {output}: {bound.size} roles, {evRecords.size} evidence records, \
-    {evBlobs.size} blobs, {preRecords.size} prelude records"
+    {evBlobs.size} blobs, {preRecords.size} prelude records, {srcRecords.size} Source \
+    evidence records, {srcNameRows.size} names"
   return 0
 
 end Benchmarks.Kernel.PinGen

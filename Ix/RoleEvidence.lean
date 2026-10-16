@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Ixon.Reader
+public import IxC.Kernel.Ixon.Prelude
 
 /-! # Proof evidence for the role table (untrusted)
 
@@ -296,5 +296,150 @@ def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
     let some v := theoremOf decls k | throw s!"{k} is not a theorem here"
     let p ← (closeProof uni allowed.contains v).mapError (s!"{k}: " ++ ·)
     pure (k, p)
+
+/-! ## Source evidence from the committed bundle
+
+Source mode keys a constant by its Lean name, and its evidence is the
+certificate theorems closed at Source keys (`closedProofs`). An input that
+does not carry `IxC/Kernel/PinGen/Certs.lean` (the compiler's: Init, Std,
+Mathlib) takes them from the committed bundle instead
+(`RoleData.sourceEvidence`): the generator (`kernel-pin-gen`) closes the
+theorems in Source mode, over the certificate module's own environment, and
+writes each closed proof as a theorem record whose references are names. A
+reference's address is its name's (`RoleData.sourceNames` names it), and a
+literal's is its blob's (`RoleData.blobs`, `RoleData.sourceBlobs`).
+
+The `.anon` evidence (`RoleData.evidence`) cannot be read by name instead:
+an Ixon address is an alias fiber's, several Lean names at once (`HAdd.hAdd`
+and `HMul.hMul`, `Bool` and `Float.Model.UnpackedFloat.Sign`), and a proof
+needs the right one at each occurrence.
+
+A record reads as the Ixon reader reads one (`Reader.convExpr`: sharing
+entries once, contracts on binders, positional universes), with a name for
+every reference. Nothing here is trusted: the fold checks every proof, and
+its locality, at the operation's install gate, so a wrong or stale bundle
+only declines the operation. -/
+
+/-- The committed Source evidence, decoded: the theorem records, the name of
+each address (a record's theorem, a reference), and the literal blobs. -/
+structure Bundle where
+  records : Array (Address × Ixon.Constant) := #[]
+  names : Std.HashMap Address Lean.Name := {}
+  blobs : Std.HashMap Address ByteArray := {}
+
+/-- The key the reference `i` of record `c` reads as: its name's, under Source
+mode's binding (a role's name keys its role). -/
+def Bundle.keyAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String (CName .source) := do
+  let some a := c.refs[i.toNat]? | throw "reference index is out of bounds"
+  let some n := b.names[a]? | throw s!"reference {a} has no name"
+  pure (ofLeanName n)
+
+/-- The blob the literal reference `i` of record `c` names. -/
+def Bundle.blobAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String ByteArray := do
+  let some a := c.refs[i.toNat]? | throw "literal reference index is out of bounds"
+  let some bytes := b.blobs[a]? | throw s!"literal blob {a} is missing"
+  pure bytes
+
+/-- One expression of record `c` (its universes `univs`), against the sharing
+entries read before it: `Reader.convExpr`'s cases, with names for references. -/
+def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
+    (tbl : Array (Except String (CExpr .source))) : Ixon.Expr → Except String (CExpr .source)
+  | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
+  | .sort i => do pure (.sort (← level i))
+  | .ref i us => do pure (.const (← b.keyAt c i) (← us.toList.mapM level))
+  | .recur .. => throw "a recursive reference in a theorem record"
+  | .prj i field v => do pure (.proj (← b.keyAt c i) field.toNat (← b.conv c univs tbl v))
+  | .str i => do
+    let some s := String.fromUTF8? (← b.blobAt c i) | throw "string literal is not valid UTF-8"
+    pure (.lit (.strVal s))
+  | .nat i => do pure (.lit (.natVal (Ix.Kernel.Reader.natural (← b.blobAt c i))))
+  | .app f a => do pure (.app (← b.conv c univs tbl f) (← b.conv c univs tbl a))
+  | .lam ct t bd => do
+    pure (.lam (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
+      (Ix.Kernel.BinderMeta.ofContracts ct .shared))
+  | .all ct r t bd => do
+    pure (.forallE (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
+      (Ix.Kernel.BinderMeta.ofContracts ct r))
+  | .letE ct t v bd => do
+    pure (.letE (← b.conv c univs tbl t) (← b.conv c univs tbl v) (← b.conv c univs tbl bd)
+      { contract := ct })
+  | .share i =>
+    match tbl[i.toNat]? with
+    | some r => r
+    | none => throw "sharing reference is not to an earlier entry"
+where
+  level (i : UInt64) : Except String CLevel :=
+    match univs[i.toNat]? with
+    | some l => pure l
+    | none => throw "universe table index is out of bounds"
+
+/-- **A theorem record's proof**, read: its value, every sharing entry read
+once, against the entries before it. -/
+def Bundle.proofOf (b : Bundle) (c : Ixon.Constant) : Except String (CExpr .source) := do
+  let .defn d := c.info | throw "not a definition record"
+  unless d.kind == .thm do throw "not a theorem record"
+  let univs := c.univs.map (Ix.Kernel.Reader.convUniv id)
+  let mut tbl : Array (Except String (CExpr .source)) := Array.mkEmpty c.sharing.size
+  for e in c.sharing do
+    tbl := tbl.push (b.conv c univs tbl e)
+  b.conv c univs tbl d.value
+
+/-- The bundle from its committed rows: canonical records (address,
+bytes), names by address, blobs (address, bytes). -/
+def Bundle.ofRows (records : Array (String × String)) (names : Array (String × Lean.Name))
+    (blobs : Array (String × String)) : Except String Bundle := do
+  let records ← Ix.Kernel.Reader.decodeCommitted "source evidence" records
+  let mut nameMap : Std.HashMap Address Lean.Name := {}
+  for (hex, n) in names do
+    let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"source names: bad address {hex}"
+    nameMap := nameMap.insert a n
+  let mut blobMap : Std.HashMap Address ByteArray := {}
+  for (hex, bytes) in blobs do
+    let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"blobs: bad address {hex}"
+    let some bs := bytesOfHex bytes | throw s!"blobs: bad bytes at {hex}"
+    blobMap := blobMap.insert a bs
+  pure { records, names := nameMap, blobs := blobMap }
+
+/-- **Source mode's evidence from a bundle**: the structural operations'
+`defeq` entries, as `sourceEvidence`'s, and each well-founded operation's
+certificate theorems (`certTheorems`, in order) read from the bundle by
+their names, with the reason each operation without evidence has none. -/
+def Bundle.evidenceReport (b : Bundle) : Ix.Kernel.Evidences .source × List String := Id.run do
+  let byName : Std.HashMap Lean.Name Ixon.Constant := b.records.foldl (init := {}) fun m (a, c) =>
+    match b.names[a]? with
+    | some n => m.insert n c
+    | none => m
+  let mut ev : Ix.Kernel.Evidences .source := defeqRoles.map fun r => (r, defeqEvidence r)
+  let mut why : List String := []
+  for (r, thms) in certTheorems do
+    let proofs : Except String (List (CName .source × CExpr .source)) := thms.mapM fun t => do
+      let some c := byName[t]? | throw s!"{t} is not in the bundle"
+      let p ← (b.proofOf c).mapError (s!"{t}: " ++ ·)
+      pure (ofLeanName t, p)
+    match proofs with
+    | .ok ps => ev := ev ++ [(r, ps.map .proof)]
+    | .error e => why := why ++ [s!"{repr r}: {e}"]
+  return (ev, why)
+
+/-- The committed bundle: `RoleData.sourceEvidence`, `RoleData.sourceNames`,
+and the blobs (`RoleData.blobs`, `RoleData.sourceBlobs`). A function of `()`,
+so that it is decoded when it is asked for, not when a program starts. -/
+def committedBundle (_ : Unit) : Except String Bundle :=
+  Bundle.ofRows Ix.Kernel.Reader.RoleData.sourceEvidence Ix.Kernel.Reader.RoleData.sourceNames
+    (Ix.Kernel.Reader.RoleData.blobs ++ Ix.Kernel.Reader.RoleData.sourceBlobs)
+
+/-- **Source mode's evidence, independent of the input**: the committed
+bundle's (`committedBundle`), with the reason each well-founded operation
+without evidence has none. It is what an input without the certificate
+theorems (the compiler's, AuxGen's Source service) checks with, through
+`Ix.LeanIngress.checkSourceWith` or the service's `evidence`. Computed on each
+call (from the committed rows), so a caller asks once. -/
+def bundleEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String :=
+  match committedBundle () with
+  | .ok b => b.evidenceReport
+  | .error e => (defeqRoles.map fun r => (r, defeqEvidence r), [s!"the committed bundle: {e}"])
+
+/-- Source mode's evidence from the committed bundle (`bundleEvidenceReport`). -/
+def bundleEvidence (_ : Unit) : Ix.Kernel.Evidences .source := (bundleEvidenceReport ()).1
 
 end Ix.RoleEvidence

@@ -566,9 +566,12 @@ lean_exe «kernel-check-ixe» where
 
 /-- The role-table generator: regenerates `IxC/Kernel/Ixon/RoleData.lean` (the
 default role table, its evidence records and the Ixon prelude) from a compiled
-Init (`.lake/envs/initstd.ixe`), each binding validated by the verified fold. -/
+Init (`.lake/envs/initstd.ixe`), each binding validated by the verified fold,
+and Source mode's evidence from the certificate module's environment, which it
+loads as `kernel-source-ingress` does (hence the interpreter). -/
 lean_exe «kernel-pin-gen» where
   root := `Benchmarks.Kernel.PinGen
+  supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
