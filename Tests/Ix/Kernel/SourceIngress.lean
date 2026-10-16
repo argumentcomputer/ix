@@ -5,6 +5,7 @@ import Tests.Ix.Kernel.SourceIngressStep
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.ReaderFidelityDefs
 import Tests.Ix.Kernel.SourceIngressDefs
+import Tests.Ix.Kernel.SourceIngressReducedDefs
 
 /-! # The Source-mode check on compiled Lean declarations (`lake test -- kernel-source-ingress`)
 
@@ -45,6 +46,10 @@ def ownModule : Lean.Name := `Tests.Ix.Kernel.SourceIngressDefs
 
 def own (n : String) : Lean.Name := ownModule ++ n.toName
 
+def reducedModule : Lean.Name := `Tests.Ix.Kernel.SourceIngressReducedDefs
+
+def reduced (n : String) : Lean.Name := reducedModule ++ n.toName
+
 /-- The prelude's constants, so that the environment declares its own copy of
 each (the check then runs on them, not on the committed prelude). -/
 def preludeNames : Array Lean.Name := #[`Eq, `Nat, `PUnit, `Empty, `False, `Quot, `Quot.mk,
@@ -79,6 +84,19 @@ def expected : List (Lean.Name × String) := [
   (defs "isEven", "accept"), (defs "isOdd", "accept"), (defs "Tm.size", "accept"),
   (defs "WTree.depthAt", "accept"),
   (own "BoolQ", "accept"), (own "BoolQ.mk", "accept"), (own "BoolQ.const", "accept"),
+  -- fields whose occurrence of the block whnf removes (CQX.8; Lean's kernel
+  -- tests positivity after whnf): nested (`V`, `W`), mutual (`A`, `B`) and
+  -- single (`S`); `T` (lane P's reproducer) and `U`, the nested shapes at
+  -- `Sort u`, get past that test and are declined by the modeller's residual
+  -- for a non-`Prop` nested block with a small eliminator
+  (reduced "V", "accept"), (reduced "V.mk", "accept"), (reduced "V.rec", "accept"),
+  (reduced "V.rec_1", "accept"), (reduced "v_rec", "accept"),
+  (reduced "W", "accept"), (reduced "W.mk", "accept"), (reduced "W.rec_1", "accept"),
+  (reduced "A", "accept"), (reduced "A.mk", "accept"), (reduced "B.rec", "accept"),
+  (reduced "a_rec", "accept"),
+  (reduced "S", "accept"), (reduced "S.mk", "accept"), (reduced "s_rec", "accept"),
+  (reduced "T", "decline"), (reduced "T.rec_1", "decline"), (reduced "t_rec", "blocked"),
+  (reduced "U", "decline"), (reduced "U.mk", "decline"),
   -- the reader's fixture quotient divides (`parity`): `Nat.mod` is accepted
   -- on its certificate theorems' evidence, so the quotient is too
   (defs "ParityQ", "accept"), (defs "ParityQ.toBool", "accept"),
@@ -110,6 +128,12 @@ def acceptedSeeds : Array Lean.Name := #[defs "Color", defs "Point3", defs "Vec.
   defs "Trivial", defs "Both", defs "NatPair", defs "sumPoint", defs "isEven_two", defs "even_two",
   own "BoolQ.mk_eq", own "BoolQ.const_eq", defs "smallNat", defs "bigNat", defs "twice_id",
   defs "secret", defs "levelMax", defs "levelImax"]
+
+/-- Seeds of the reduced-field fixtures (CQX.8) whose closure is accepted as a
+whole by `checkSource`, apart from `acceptedSeeds`, which `cert-statement`
+also compiles. -/
+def reducedSeeds : Array Lean.Name := #[reduced "v_rec", reduced "W", reduced "a_rec",
+  reduced "s_rec"]
 
 /-! ## Terms -/
 
@@ -254,12 +278,13 @@ def sharing : TestSeq :=
 /-- The run on the fixture closure, its expected verdicts, and `checkSource` on
 the accepted closure: failures as messages, and lines for the report. -/
 def evaluate : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[defsModule, ownModule, `IxC.Kernel.PinGen.Certs]
+  let leanEnv ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxC.Kernel.PinGen.Certs]
   let some idx := leanEnv.getModuleIdx? defsModule | throw (IO.userError "fixture module not loaded")
   let some idx' := leanEnv.getModuleIdx? ownModule | throw (IO.userError "fixture module not loaded")
+  let some idx'' := leanEnv.getModuleIdx? reducedModule | throw (IO.userError "fixture module not loaded")
   let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
     let m := leanEnv.getModuleIdxFor? n
-    if m == some idx || m == some idx' then some n else none
+    if m == some idx || m == some idx' || m == some idx'' then some n else none
   let certs := (Ix.RoleEvidence.certTheorems.flatMap (·.2)).toArray
   let env ← envOf leanEnv (seeds ++ #[`Nat.div] ++ certs)
   let blocks := condense env
@@ -285,6 +310,12 @@ def evaluate : IO (Array String × Array String) := do
   | .ok kenv => lines := lines.push s!"checkSource: accepted, {kenv.consts.length} kernel constants \
       from {accEnv.consts.size} Lean constants"
   | .error e => errors := errors.push s!"checkSource on the accepted closure: {e}"
+  -- all at once, on the reduced-field fixtures' closure (CQX.8)
+  let redEnv ← envOf leanEnv reducedSeeds
+  match checkSource redEnv (condense redEnv) with
+  | .ok kenv => lines := lines.push s!"checkSource (reduced fields): accepted, \
+      {kenv.consts.length} kernel constants from {redEnv.consts.size} Lean constants"
+  | .error e => errors := errors.push s!"checkSource on the reduced-field closure: {e}"
   -- the tiered check: the accepted closure with the partial companion, whose
   -- logical part is accepted and whose tier constant is typed
   let tierEnv ← envOf leanEnv (acceptedSeeds.push (defs "spin._unsafe_rec"))

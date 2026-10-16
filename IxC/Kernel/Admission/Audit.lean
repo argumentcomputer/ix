@@ -93,12 +93,14 @@ and its failure display from 5804 by the entry's change (30 more, one more
 ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
 `module`s moved it from 5834 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
 28 more: the module's own specialisations, `instBEqAddress.beq` and
-`Std.Format.defWidth` called). -/
+`Std.Format.defWidth` called). CQX.8's field test in the in-model generator moved
+it from 5862 by the entry's change (`IxC/Kernel/Audit/Roots.lean`, 4 of `genNested`'s
+specialisations gone). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5862 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5858 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

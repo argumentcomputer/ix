@@ -43,8 +43,8 @@ The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
 reaches 3434 compiled functions with 67 inherited externs, with the
 computed-field overrides of `Level`, `Expr` and `Key` and 22 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2154, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5865 with
+2150, adding the in-model generator's 9 `partial` definitions and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 5861 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
@@ -52,7 +52,14 @@ default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
 the typing tier) are frozen apart: the entry's closure and the tier's 79
 functions, with nothing new to rule; the closures above do not reach the
-tier. The reader's and its tables' conversion to Lean `module`s
+tier. CQX.8's field test in the in-model generator (`readCtors`: a
+non-recursive field is tested after the auxiliary rewrite, as Lean tests
+positivity after whnf) moved the reader from 2154 and the entry from 5865
+(the tiered entries from 5969): four code-generator specialisations inside
+`genNested` (two `List.forIn'.loop` and two `List.mapTR.loop` lambda
+specialisations, each with its boxed form) are gone; the externs, `unsafe`
+constants, csimps, `partial` definitions and rulings are unchanged. The
+reader's and its tables' conversion to Lean `module`s
 (`IxC.Kernel.Ref`, `Ingress.Records`, `Ixon.RoleTable`, `Ixon.Reader`,
 `Ixon.RoleData`, `Ixon.Prelude`; no code changed) moved the reader from 2140
 and the entry from 5837 (the tiered entries from 5919); the externs,
@@ -520,14 +527,14 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2154 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
+ Ix.Kernel.Admission.readStream]: 2150 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5865 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5861 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -553,8 +560,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- `Tier.Safety` test, `Tier.Safety.ctorIdx` and `instDecidableEqSafety`) and
 -- the tier reader's unsafe opaque and axiom branches (`readTierRecord`: five
 -- more closed terms, two lambdas with their boxed forms in for one out).
+-- CQX.8's field test in the in-model generator moved it from 5969 by the
+-- entry's change (4 out; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5969 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5965 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

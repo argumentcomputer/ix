@@ -96,10 +96,12 @@ install anchors from 5810, by the entry's change; step 6b's display annotations 
 5821, by the entry's change (8 more, one more ruled csimp), and its failure display
 from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `module`s from
 5859, by the entry's change (28 more: the module's own specialisations,
-`instBEqAddress.beq` and `Std.Format.defWidth` called). -/
+`instBEqAddress.beq` and `Std.Format.defWidth` called); CQX.8's field test in the
+in-model generator from 5887, by the entry's change (4 of `genNested`'s
+specialisations gone, `IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5887 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ixon.Projection.checkBytes]: 5883 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

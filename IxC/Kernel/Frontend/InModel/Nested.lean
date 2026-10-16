@@ -45,8 +45,9 @@ container `Carrier_j` (over the *model* names) and `aux p⃗ (tag.(r+j))`:
   (unpacking a packed field), its iota by `unpackPack_j` or `Eq.refl`.
 
 Declines (the residual): a field mentioning the block other than as a
-whole member/mimic carrier (an occurrence under a binder — infinitary
-nesting), a container that is itself nested or mutual or whose mimics
+whole member/mimic carrier, anywhere in it (an occurrence under a binder —
+infinitary nesting; a field whose carriers whnf removes, `K True (Box T)`,
+is ordinary, CQX.8), a container that is itself nested or mutual or whose mimics
 form a cycle (B4), a reflexive member, a `Prop` block with a large
 eliminator, a container field a later container field depends on, an
 index domain whose sort not even a ceiling bounds (`Kit.sortCeil`,
@@ -335,10 +336,18 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     let nRec := kinds.filter (·.isSome) |>.length
     unless nRec == nIh do
       throw s!"minor {J} ({cname}): {nIh} inductive hypotheses for {nRec} recursive fields"
-    -- every other field must not mention the block at all
+    -- every other field must not mention the block once its whole carrier
+    -- occurrences are rewritten into the auxiliary family, as the auxiliary
+    -- constructors' fields are (`specAll`): Lean's kernel replaces nested
+    -- occurrences syntactically and tests positivity after whnf, so a field
+    -- whose occurrence reduces away (`K True (Box T)` with `K a _ := a`) is
+    -- an ordinary field, and the fold's install of the auxiliary family
+    -- tests it after whnf (CQX.8)
     let memberNames := fam.mems.filterMap fun m => if m.real?.isSome then some m.I else none
     for i in List.range nF do
-      if (kinds.getD i none).isNone && mentionsAny memberNames (doms.getD i default) then
+      let dom := doms.getD i default
+      if (kinds.getD i none).isNone && mentionsAny memberNames dom &&
+          mentionsAny memberNames (specAll fam i dom) then
         throw s!"field {i} of {cname} mentions the block other than as a whole member or \
           container occurrence (nested under a binder)"
     -- the residual's index expressions at the fields' frame

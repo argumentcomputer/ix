@@ -149,7 +149,10 @@ def memberApp? (members : List (Key md × Nat × Nat)) (lps : List LevelParam) (
   | _ => none
 
 /-- Classify one constructor's fields: each domain is ordinary (no
-member mentioned) or, under its own `∀`-telescope whose domains do not
+member mentioned, or none once its member applications are rewritten into
+the auxiliary family, `specFam`: an occurrence that whnf may remove, which
+the fold's install of the auxiliary family decides) or, under its own
+`∀`-telescope whose domains do not
 mention the block (empty at a finitary field), exactly a member at the
 parameters and some index expressions (`∀ a⃗, T_{m'} p⃗ e⃗`) — official
 `check_positivity`'s telescope walk, syntactically; anything else is
@@ -157,8 +160,8 @@ not this rung's (nested, non-positive).  `members` lists
 `(T, m, nIdx)`.  A recursive field is recorded by position and target
 member; its telescope is read off the constructor's type again where it
 is needed (`structFieldTeleOf`, the iota right-hand sides). -/
-def classifyCtor (members : List (Key md × Nat × Nat)) (lps : List LevelParam) (nP : Nat)
-    (m j : Nat) (c : IndCtorRec md) : Except String (MCtor md) := do
+def classifyCtor (T : Key md) (members : List (Key md × Nat × Nat)) (lps : List LevelParam)
+    (nP : Nat) (m j : Nat) (c : IndCtorRec md) : Except String (MCtor md) := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
     | throw s!"constructor {c.cv.name} is not a telescope"
@@ -176,9 +179,16 @@ def classifyCtor (members : List (Key md × Nat × Nat)) (lps : List LevelParam)
       match memberApp? members lps nP (i + tele.length) body with
       | some m' => recFields := recFields ++ [(i, m')]
       | none =>
-        throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
-          member application under the field's own binders (nested or non-positive \
-          occurrence)"
+        -- not a recursive field: an ordinary one if the auxiliary rewrite of
+        -- its member applications (`specFam`, as the auxiliary
+        -- constructors' types are rewritten) leaves no member. Lean's kernel
+        -- tests positivity after whnf, so an occurrence that reduces away
+        -- (`K True T` with `K a _ := a`) is not one, and the fold's install
+        -- of the auxiliary family tests the field after whnf (CQX.8)
+        if mentionsAny memberNames (specFam T lps nP members d) then
+          throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
+            member application under the field's own binders (nested or non-positive \
+            occurrence)"
   pure ⟨m, j, c, recFields⟩
 
 /-- Unwrap a generator step that cannot fail on a well-formed block. -/
@@ -225,7 +235,7 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | throw s!"constructor {cn} of {t.cv.name} is not in the block"
       unless c.nP == nP && c.cv.levelParams == lps do
         throw s!"constructor {cn}: parameter count or level parameters differ"
-      mctors := mctors ++ [← classifyCtor members lps nP m j c]
+      mctors := mctors ++ [← classifyCtor T members lps nP m j c]
   let n := mctors.length
   unless b.ctors.length == n do throw "constructors not all owned by a member"
   -- the recursors: one per member, `k` motives, `n` minors, no indices,

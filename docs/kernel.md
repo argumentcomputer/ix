@@ -745,12 +745,15 @@ Frozen runtime closures (compiled functions; inherited externs):
 | entry: `checkBytes{,With}`, `checkConstants{,With}` | 5799 | 113 |
 | byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5796 | 113 |
 | projection: `address`, `reconstruct`, `Projection.checkBytes` | 5821 | 113 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 6024 | 114 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 6043 | 117 |
+| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 6020 | 114 |
+| at BLAKE3: `Authenticated.checkBytes{,Projection,BlockOrder}`, `Address.admissionHash` | 6039 | 117 |
 
 A `let`'s nondependency bit as a block-order key (`compareExpr_letE`) moved the
 block-order and BLAKE3 rows from 6022 and 6041 (their audit records): 2 more,
-`compareExpr`'s own compiler-generated lambdas.
+`compareExpr`'s own compiler-generated lambdas. CQX.8's field test in the in-model
+generator (a non-recursive field is tested after the auxiliary rewrite) then
+moved them from 6024 and 6043: four of `genNested`'s code-generator
+specialisations are gone (`IxC/Kernel/Audit/Roots.lean`).
 
 The validation of the four install anchors (`Bool.rec`, `And`, `And.intro`,
 `And.rec`; owner, 2026-10-15) moved them from 3352, 5788, 5785, 5810, 5944 and
