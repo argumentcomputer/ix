@@ -16,6 +16,8 @@ use p3_maybe_rayon::prelude::*;
 
 #[cfg(not(feature = "bn254"))]
 pub mod filecoin;
+#[cfg(feature = "bn254")]
+pub mod ignition;
 
 #[cfg(not(feature = "bn254"))]
 const PUBLIC_SETUP_DOMAIN: &[u8] =

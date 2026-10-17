@@ -5,8 +5,8 @@
 //! tau from the cache named by `IX_KZG_FILECOIN_CACHE`, pinned by the manifest
 //! receipt in `IX_KZG_FILECOIN_MANIFEST` or, when that is unset, the built-in
 //! receipt of the complete `2^27` cache. Filecoin is available only with
-//! BLS12-381; BN254 requires explicit development setup selection.
-//! The development policy derives a
+//! BLS12-381. BN254's Ignition policy requires independently pinned admission
+//! metadata and an authenticated prefix cache. The development policy derives a
 //! known trapdoor from the stage seed, with parameters from a per-stage cache
 //! file or from the shared directory named by `IX_KZG_SRS_CACHE`.
 use super::storage;
@@ -14,8 +14,14 @@ use super::storage;
 use crate::kzg::srs::filecoin::{
   FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3, filecoin_anchors, load_filecoin_cache,
 };
+#[cfg(feature = "bn254")]
+use crate::kzg::srs::ignition::{
+  IgnitionAdmission, load_ignition_cache_with_identity,
+};
 use crate::kzg::{KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams};
 use multi_stark::traits::TwoAdicField;
+#[cfg(feature = "bn254")]
+use std::ffi::{OsStr, OsString};
 use std::{
   fs,
   path::{Path, PathBuf},
@@ -28,6 +34,23 @@ pub(crate) const BINDING_FILE: &str = "kzg-setup-id.bin";
 pub(crate) const FILECOIN_CACHE_VAR: &str = "IX_KZG_FILECOIN_CACHE";
 #[cfg(not(feature = "bn254"))]
 pub(crate) const FILECOIN_MANIFEST_VAR: &str = "IX_KZG_FILECOIN_MANIFEST";
+#[cfg(feature = "bn254")]
+pub(crate) const IGNITION_CACHE_VAR: &str = "IX_KZG_IGNITION_CACHE";
+#[cfg(feature = "bn254")]
+pub(crate) const IGNITION_CACHE_MANIFEST_VAR: &str =
+  "IX_KZG_IGNITION_CACHE_BLAKE3";
+#[cfg(feature = "bn254")]
+pub(crate) const IGNITION_ADMISSION_VAR: &str = "IX_KZG_IGNITION_ADMISSION";
+#[cfg(feature = "bn254")]
+pub(crate) const IGNITION_ADMISSION_DIGEST_VAR: &str =
+  "IX_KZG_IGNITION_ADMISSION_BLAKE3";
+#[cfg(feature = "bn254")]
+const IGNITION_ENV_VARS: [&str; 4] = [
+  IGNITION_CACHE_VAR,
+  IGNITION_CACHE_MANIFEST_VAR,
+  IGNITION_ADMISSION_VAR,
+  IGNITION_ADMISSION_DIGEST_VAR,
+];
 
 /// The trust class of verifier parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +58,10 @@ pub enum SetupClass {
   /// Filecoin's phase-one powers of tau. The trapdoor is unknown unless
   /// every ceremony participant colluded. No BN254 parameters have this class.
   Filecoin,
+  /// Ignition parameters whose identity, degree and anchors match an
+  /// independently pinned admission of the ceremony source.
+  #[cfg(feature = "bn254")]
+  Ignition,
   /// A trapdoor derived from a seed; anyone can forge proofs.
   Development,
 }
@@ -57,15 +84,27 @@ impl SetupClass {
     }
   }
 
-  /// No authenticated production setup is available for BN254.
+  /// Production classification requires independently admitted Ignition
+  /// metadata; verifier parameters alone do not establish provenance.
   #[cfg(feature = "bn254")]
   pub fn of(_params: &VerifierParams) -> Self {
     Self::Development
   }
 
+  #[cfg(feature = "bn254")]
+  pub fn of_with_ignition(
+    params: &VerifierParams,
+    admission: &IgnitionAdmission,
+  ) -> storage::Result<Self> {
+    admission.check_verifier(params)?;
+    Ok(Self::Ignition)
+  }
+
   pub fn label(self) -> &'static str {
     match self {
       Self::Filecoin => "filecoin",
+      #[cfg(feature = "bn254")]
+      Self::Ignition => "ignition",
       Self::Development => "development",
     }
   }
@@ -73,6 +112,8 @@ impl SetupClass {
   pub fn description(self) -> &'static str {
     match self {
       Self::Filecoin => "the Filecoin phase-one powers of tau",
+      #[cfg(feature = "bn254")]
+      Self::Ignition => "the admitted Aztec Ignition BN254 powers of tau",
       Self::Development => {
         "a known-trapdoor development SRS (not production-secure)"
       },
@@ -82,10 +123,13 @@ impl SetupClass {
 
 fn development_refused<T>() -> storage::Result<T> {
   #[cfg(feature = "bn254")]
-  let message = "no authenticated BN254 production setup is available; pass \
-                 --dev-srs to use the known-trapdoor development setup \
-                 (not production-secure)"
-    .to_owned();
+  let message = format!(
+    "no admitted BN254 Ignition setup is configured; set \
+     {IGNITION_CACHE_VAR}, {IGNITION_CACHE_MANIFEST_VAR}, \
+     {IGNITION_ADMISSION_VAR} and {IGNITION_ADMISSION_DIGEST_VAR}, or pass \
+     --dev-srs to use the known-trapdoor development setup \
+     (not production-secure)"
+  );
   #[cfg(not(feature = "bn254"))]
   let message = format!(
     "no Filecoin SRS cache is configured; set {FILECOIN_CACHE_VAR} to an \
@@ -103,6 +147,12 @@ pub(crate) enum SetupConfig {
     cache: PathBuf,
     manifest: [u8; 32],
   },
+  #[cfg(feature = "bn254")]
+  Ignition {
+    cache: PathBuf,
+    manifest: [u8; 32],
+    admission: Arc<IgnitionAdmission>,
+  },
   Development {
     cache_directory: Option<PathBuf>,
   },
@@ -110,40 +160,95 @@ pub(crate) enum SetupConfig {
 
 impl SetupConfig {
   pub(crate) fn from_env(development: bool) -> storage::Result<Self> {
-    if development {
-      return Ok(Self::Development {
-        cache_directory: std::env::var_os("IX_KZG_SRS_CACHE")
-          .map(PathBuf::from),
-      });
+    #[cfg(feature = "bn254")]
+    {
+      Self::from_ignition_env(development, |name| std::env::var_os(name))
     }
     #[cfg(not(feature = "bn254"))]
-    if let Some(cache) = std::env::var_os(FILECOIN_CACHE_VAR) {
-      let cache = PathBuf::from(cache);
-      if !cache.is_file() {
-        return Err(
-          format!(
-            "{FILECOIN_CACHE_VAR} does not name a file: {}",
-            cache.display()
-          )
-          .into(),
-        );
+    {
+      if development {
+        return Ok(Self::Development {
+          cache_directory: std::env::var_os("IX_KZG_SRS_CACHE")
+            .map(PathBuf::from),
+        });
       }
-      let manifest = match std::env::var(FILECOIN_MANIFEST_VAR) {
-        Ok(text) => parse_digest(text.trim())?,
-        Err(std::env::VarError::NotPresent) => {
-          FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3
-        },
-        Err(error) => return Err(error.into()),
-      };
-      return Ok(Self::Filecoin { cache, manifest });
+      if let Some(cache) = std::env::var_os(FILECOIN_CACHE_VAR) {
+        let cache = PathBuf::from(cache);
+        if !cache.is_file() {
+          return Err(
+            format!(
+              "{FILECOIN_CACHE_VAR} does not name a file: {}",
+              cache.display()
+            )
+            .into(),
+          );
+        }
+        let manifest = match std::env::var(FILECOIN_MANIFEST_VAR) {
+          Ok(text) => parse_digest(text.trim())?,
+          Err(std::env::VarError::NotPresent) => {
+            FILECOIN_PREFIX_2P27_MANIFEST_BLAKE3
+          },
+          Err(error) => return Err(error.into()),
+        };
+        return Ok(Self::Filecoin { cache, manifest });
+      }
+      development_refused()
     }
-    development_refused()
+  }
+
+  #[cfg(feature = "bn254")]
+  fn from_ignition_env(
+    development: bool,
+    mut lookup: impl FnMut(&str) -> Option<OsString>,
+  ) -> storage::Result<Self> {
+    if development {
+      return Ok(Self::Development {
+        cache_directory: lookup("IX_KZG_SRS_CACHE").map(PathBuf::from),
+      });
+    }
+    let values = IGNITION_ENV_VARS.map(&mut lookup);
+    if values.iter().all(Option::is_none) {
+      return development_refused();
+    }
+    let [cache, manifest, admission, admission_digest] = values;
+    let required = |name, value: Option<OsString>| {
+      value.ok_or_else(|| {
+        format!("incomplete BN254 Ignition configuration: missing {name}")
+      })
+    };
+    let cache = PathBuf::from(required(IGNITION_CACHE_VAR, cache)?);
+    let manifest = parse_ignition_digest(
+      IGNITION_CACHE_MANIFEST_VAR,
+      &required(IGNITION_CACHE_MANIFEST_VAR, manifest)?,
+    )?;
+    let admission_path =
+      PathBuf::from(required(IGNITION_ADMISSION_VAR, admission)?);
+    let admission_digest = parse_ignition_digest(
+      IGNITION_ADMISSION_DIGEST_VAR,
+      &required(IGNITION_ADMISSION_DIGEST_VAR, admission_digest)?,
+    )?;
+    let admission =
+      Arc::new(IgnitionAdmission::read(&admission_path, admission_digest)?);
+    let (anchors, identity) =
+      load_ignition_cache_with_identity(&cache, manifest, 2)?;
+    admission.check_cache(&anchors, &identity)?;
+    Ok(Self::Ignition { cache, manifest, admission })
+  }
+
+  #[cfg(feature = "bn254")]
+  pub(crate) fn ignition_admission(&self) -> Option<&IgnitionAdmission> {
+    match self {
+      Self::Ignition { admission, .. } => Some(admission),
+      Self::Development { .. } => None,
+    }
   }
 
   pub(crate) fn class(&self) -> SetupClass {
     match self {
       #[cfg(not(feature = "bn254"))]
       Self::Filecoin { .. } => SetupClass::Filecoin,
+      #[cfg(feature = "bn254")]
+      Self::Ignition { .. } => SetupClass::Ignition,
       Self::Development { .. } => SetupClass::Development,
     }
   }
@@ -163,6 +268,13 @@ impl SetupConfig {
       #[cfg(not(feature = "bn254"))]
       Self::Filecoin { cache, manifest } => {
         Ok(SetupSource::filecoin(cache.clone(), *manifest))
+      },
+      #[cfg(feature = "bn254")]
+      Self::Ignition { cache, manifest, admission } => {
+        let source =
+          SetupSource::ignition(cache.clone(), *manifest, admission.clone());
+        source.check_height(height)?;
+        Ok(source)
       },
       Self::Development { cache_directory } => {
         let mut source = SetupSource::development(seed, height - 1)?;
@@ -186,6 +298,12 @@ enum Policy {
     cache: PathBuf,
     manifest: [u8; 32],
   },
+  #[cfg(feature = "bn254")]
+  Ignition {
+    cache: PathBuf,
+    manifest: [u8; 32],
+    admission: Arc<IgnitionAdmission>,
+  },
 }
 
 #[derive(Clone)]
@@ -206,6 +324,29 @@ fn parse_digest(text: &str) -> storage::Result<[u8; 32]> {
   let mut digest = [0; 32];
   for (i, byte) in digest.iter_mut().enumerate() {
     *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16)?;
+  }
+  Ok(digest)
+}
+
+#[cfg(feature = "bn254")]
+fn parse_ignition_digest(
+  variable: &str,
+  value: &OsStr,
+) -> storage::Result<[u8; 32]> {
+  let text = value
+    .to_str()
+    .ok_or_else(|| format!("{variable} must contain an ASCII BLAKE3 digest"))?
+    .trim();
+  if text.len() != 64 || !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    return Err(
+      format!("{variable} must be a 64-character BLAKE3 digest").into(),
+    );
+  }
+  let mut digest = [0; 32];
+  for (byte, pair) in digest.iter_mut().zip(text.as_bytes().as_chunks::<2>().0)
+  {
+    let pair = std::str::from_utf8(pair).expect("validated ASCII hex");
+    *byte = u8::from_str_radix(pair, 16)?;
   }
   Ok(digest)
 }
@@ -239,6 +380,29 @@ impl SetupSource {
     }
   }
 
+  /// Verification uses admitted anchors directly. Proving additionally
+  /// authenticates the requested cache prefix and matches its provenance.
+  #[cfg(feature = "bn254")]
+  pub(crate) fn ignition(
+    cache: PathBuf,
+    manifest: [u8; 32],
+    admission: Arc<IgnitionAdmission>,
+  ) -> Self {
+    Self {
+      public_setup: admission.public_setup(),
+      policy: Policy::Ignition { cache, manifest, admission },
+      transcript_kind: TranscriptKind::Blake3,
+    }
+  }
+
+  #[cfg(feature = "bn254")]
+  pub(crate) fn ignition_admission(&self) -> Option<&IgnitionAdmission> {
+    match &self.policy {
+      Policy::Ignition { admission, .. } => Some(admission),
+      Policy::Development { .. } => None,
+    }
+  }
+
   /// Bind checkpoint identity to the selected Fiat-Shamir protocol.
   pub(crate) fn with_transcript(mut self, kind: TranscriptKind) -> Self {
     self.transcript_kind = kind;
@@ -254,6 +418,8 @@ impl SetupSource {
       },
       #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { .. } => {},
+      #[cfg(feature = "bn254")]
+      Policy::Ignition { .. } => {},
     }
     self
   }
@@ -263,6 +429,8 @@ impl SetupSource {
       Policy::Development { .. } => SetupClass::Development,
       #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { .. } => SetupClass::Filecoin,
+      #[cfg(feature = "bn254")]
+      Policy::Ignition { .. } => SetupClass::Ignition,
     }
   }
 
@@ -270,6 +438,10 @@ impl SetupSource {
     match self.class() {
       SetupClass::Filecoin => {
         "Filecoin phase-one powers of tau (challenge_19), authenticated against the published BLAKE2b-512 digest and loaded from a receipt-pinned prefix cache. Public ceremony parameters; the trapdoor is unknown unless every participant colluded.\n"
+      },
+      #[cfg(feature = "bn254")]
+      SetupClass::Ignition => {
+        "Aztec Ignition BN254 powers of tau, with setup identity, full public degree and shifted-basis anchors authorized by an independently pinned admission. Proving prefixes are authenticated against a separate cache receipt. Ceremony provenance depends on the admission's trusted source pins.\n"
       },
       SetupClass::Development => {
         "Known-trapdoor development public-degree KZG. Not ceremony parameters. For development and testing only.\n"
@@ -302,6 +474,17 @@ impl SetupSource {
       #[cfg(not(feature = "bn254"))]
       Policy::Filecoin { cache, manifest } => {
         Ok(load_filecoin_cache(cache, *manifest, length)?)
+      },
+      #[cfg(feature = "bn254")]
+      Policy::Ignition { admission, .. } if verify_only => {
+        Ok(admission.anchors())
+      },
+      #[cfg(feature = "bn254")]
+      Policy::Ignition { cache, manifest, admission } => {
+        let (srs, identity) =
+          load_ignition_cache_with_identity(cache, *manifest, length)?;
+        admission.check_cache(&srs, &identity)?;
+        Ok(srs)
       },
       Policy::Development { seed, cache_directory } => {
         if !verify_only && let Some(directory) = cache_directory {
@@ -589,10 +772,13 @@ mod tests {
 
   #[cfg(feature = "bn254")]
   #[test]
-  fn bn254_requires_explicit_development_setup() -> storage::Result<()> {
-    let error = SetupConfig::from_env(false).err().unwrap().to_string();
-    assert!(error.contains("BN254"));
-    assert!(error.contains("--dev-srs"));
+  fn bn254_requires_an_admission_or_explicit_development_setup()
+  -> storage::Result<()> {
+    if IGNITION_ENV_VARS.iter().all(|name| std::env::var_os(name).is_none()) {
+      let error = SetupConfig::from_env(false).err().unwrap().to_string();
+      assert!(error.contains("BN254"));
+      assert!(error.contains("--dev-srs"));
+    }
     let source = SetupConfig::from_env(true)?.for_stage(FIRST_SEED, 8)?;
     assert_eq!(source.class(), SetupClass::Development);
     assert_eq!(
@@ -621,3 +807,6 @@ mod tests {
     Ok(())
   }
 }
+
+#[cfg(all(test, feature = "bn254"))]
+mod ignition_tests;

@@ -332,10 +332,16 @@ impl ProofConfig for KzgConfig {
           )
         })
         .collect();
-      // Partitions the devices did not admit use the host path one at a
-      // time, keeping one trace-sized working set.
+      // Shapes and storage unsupported by the kernels use one host working
+      // set at a time. Device admission failures are errors.
       for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
         if part.is_none() {
+          tracing::info!(
+            curve = super::curve::NAME,
+            circuit = i,
+            reason = "shape or storage unsupported by CUDA lookup kernels",
+            "KZG lookup using CPU construction"
+          );
           *part = Some(self.host_lookup_part(i, input, beta, gamma));
         }
       }
@@ -384,6 +390,12 @@ impl ProofConfig for KzgConfig {
         .collect();
       for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
         if part.is_none() {
+          tracing::info!(
+            curve = super::curve::NAME,
+            circuit = i,
+            reason = "shape or storage unsupported by CUDA quotient kernels",
+            "KZG quotient using CPU construction"
+          );
           *part = Some(self.host_quotient_part(i, input, alpha));
         }
       }

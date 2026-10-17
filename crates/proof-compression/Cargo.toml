@@ -59,18 +59,22 @@ required-features = ["solidity"]
 name = "kzg_filecoin_import"
 required-features = ["bls12-381"]
 
+[[example]]
+name = "kzg_ignition_import"
+required-features = ["bn254"]
+
 [features]
 bls12-381 = []
-# BN254 supports the CPU compression worker with explicit development setup.
+# BN254 accepts admitted Ignition or development setup; CUDA support is experimental.
 # Production parameters and terminal proof backends require separate profiles.
 bn254 = ["dep:ark-bn254"]
 solidity = ["bls12-381"]
-plonk = ["solidity"]
-default = ["parallel", "plonk"]
+plonk = []
+default = ["parallel", "solidity", "plonk"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
 # at runtime; CPU-only builds neither compile sppark nor link CUDA.
-cuda = ["bls12-381", "multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
+cuda = ["multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
 parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
 
 [lints]

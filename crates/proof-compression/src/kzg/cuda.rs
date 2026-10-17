@@ -1,4 +1,4 @@
-//! Bounded, synchronous BLS12-381 operations on the visible sppark devices.
+//! Bounded, synchronous KZG operations on the visible sppark devices.
 //!
 //! With this feature compiled, every proving operation above the size
 //! thresholds in the prover runs on the devices; only tiny shapes and
@@ -8,7 +8,8 @@
 //! a device lease; leases are per thread and refuse reentrant acquisition so
 //! Rayon work stealing cannot deadlock a worker on its own device.
 
-use ark_bls12_381::{Fq, Fr, G1Affine, G1Projective};
+use super::curve::{Fq, Fr, G1Affine, G1Projective};
+use abi::{DEVICE_AFFINE_BYTES, FQ_LIMBS, MAX_FFT_LOG, ProjectiveLimbs};
 use ark_ff::{AdditiveGroup, BigInt, Field, Zero};
 use blst as _;
 use rayon::prelude::*;
@@ -17,12 +18,18 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
+mod abi;
 pub(super) mod lookup;
 mod passes;
 pub(super) mod quotient;
 pub(super) mod srs_cache;
 #[cfg(test)]
 mod tests;
+
+// Conservative bound for point storage, upload staging, scalars, signed
+// digits and sorting scratch on either curve. Buckets use separate headroom;
+// smaller Fq coordinates do not shrink scalar and sorting allocations.
+const MSM_BYTES_PER_POINT: usize = 384;
 
 /// When the constraint-pass layout replaces dense device admission.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,7 +129,7 @@ unsafe extern "C" {
   fn ix_kzg_msm_invoke(
     device: i32,
     context: *mut c_void,
-    out: *mut [[u64; 6]; 3],
+    out: *mut ProjectiveLimbs,
     scalars: *const [u64; 4],
     count: usize,
     normalization: *const [u64; 4],
@@ -130,7 +137,7 @@ unsafe extern "C" {
   fn ix_kzg_msm_invoke_resident(
     device: i32,
     context: *mut c_void,
-    out: *mut [[u64; 6]; 3],
+    out: *mut ProjectiveLimbs,
     polynomial: *const c_void,
     offset: usize,
     count: usize,
@@ -203,22 +210,6 @@ impl Drop for ProfileRange {
   }
 }
 
-// The FFI names explicit limb arrays. These checks reject an arkworks layout
-// change before its field storage can be borrowed without a packing copy.
-const _: () = {
-  assert!(size_of::<Fr>() == size_of::<[u64; 4]>());
-  assert!(align_of::<Fr>() == align_of::<[u64; 4]>());
-  assert!(std::mem::offset_of!(Fr, 0) == 0);
-  assert!(std::mem::offset_of!(BigInt<4>, 0) == 0);
-  assert!(size_of::<G1Affine>() == 104);
-  assert!(std::mem::offset_of!(G1Affine, x) == 0);
-  assert!(std::mem::offset_of!(G1Affine, y) == 48);
-  assert!(std::mem::offset_of!(G1Affine, infinity) == 96);
-  assert!(size_of::<Fq>() == size_of::<[u64; 6]>());
-  assert!(std::mem::offset_of!(Fq, 0) == 0);
-  assert!(std::mem::offset_of!(BigInt<6>, 0) == 0);
-};
-
 fn check(code: i32, operation: &str) {
   assert_eq!(code, 0, "KZG CUDA {operation} failed (CUDA status {code})");
 }
@@ -250,6 +241,7 @@ impl Devices {
 
   fn get() -> &'static Self {
     DEVICES.get_or_init(|| {
+      abi::validate();
       let settings = settings();
       let mut count = 0;
       // The FFI writes one integer and initializes sppark's device registry.
@@ -290,7 +282,7 @@ impl Devices {
             .min(free.saturating_sub(total / 4))
         })
         .collect();
-      tracing::info!(?ids, chunk_points, ?resident_limits, "KZG sppark CUDA backend");
+      tracing::info!(curve = super::curve::NAME, ?ids, chunk_points, ?resident_limits, "KZG sppark CUDA backend");
       Devices {
         busy: Mutex::new(vec![false; ids.len()]),
         resident_bytes: Mutex::new(vec![0; ids.len()]),
@@ -475,7 +467,8 @@ pub(super) fn fft_columns(
   inverse: bool,
   shift: Fr,
 ) -> Vec<Vec<Fr>> {
-  assert!(lg <= 31 && !shift.is_zero());
+  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+  assert!(!shift.is_zero());
   let count = 1usize << lg;
   assert!(inputs.iter().all(|(input, _)| input.len() <= count));
   if inputs.is_empty() {
@@ -570,7 +563,8 @@ pub(super) fn interpolate_columns(
   lg: usize,
   shift: Fr,
 ) -> (Vec<Vec<Fr>>, Vec<Option<Arc<ResidentPolynomial>>>) {
-  assert!(lg <= 31 && !shift.is_zero());
+  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+  assert!(!shift.is_zero());
   let count = 1usize << lg;
   let devices = Devices::get();
   let mut groups: Vec<Vec<_>> =
@@ -637,15 +631,7 @@ pub(super) fn interpolate_columns(
           slots,
         )
       };
-      // A later job can fail after an earlier retained output completed.
-      // Reclaim those handles while the lease still excludes native users.
-      if code != 0 {
-        for handle in handles.into_iter().filter(|p| !p.is_null()) {
-          unsafe { ix_kzg_polynomial_destroy(device.id(), handle) };
-        }
-        check(code, "interpolation queue");
-        unreachable!();
-      }
+      check(code, "interpolation queue");
       tracing::debug!(
         device = device.id(),
         columns = group.len(),
@@ -725,10 +711,12 @@ pub(super) fn msm_columns_resident(
     .map(|(index, group)| {
       let device = devices.acquire_at(index);
       device.prepare_budget(
-        devices.chunk_points.min(points.len()) * 384 + (1 << 30),
+        devices.chunk_points.min(points.len()) * MSM_BYTES_PER_POINT
+          + (1 << 30),
       );
-      let chunk =
-        devices.chunk_points.min(device.budget().saturating_sub(1 << 30) / 384);
+      let chunk = devices
+        .chunk_points
+        .min(device.budget().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT);
       assert!(chunk > 0, "insufficient free VRAM for KZG MSM");
       let mut sums = vec![G1Projective::zero(); group.len()];
       for (part, points) in points.chunks(chunk).enumerate() {
@@ -738,7 +726,7 @@ pub(super) fn msm_columns_resident(
           let (coefficients, resident) = columns[column];
           let input = &coefficients[start..start + points.len()];
           let normalization = msm_normalization(input);
-          let mut out = [[0; 6]; 3];
+          let mut out = [[0; FQ_LIMBS]; 3];
           // Resident coefficients are read-only. Normalization uses a
           // bounded temporary on the same device as this SRS chunk.
           check(
@@ -777,7 +765,7 @@ pub(super) fn msm_columns_resident(
   sums
 }
 
-fn projective(limbs: [[u64; 6]; 3]) -> G1Projective {
+fn projective(limbs: ProjectiveLimbs) -> G1Projective {
   G1Projective::new_unchecked(
     Fq::new_unchecked(BigInt(limbs[0])),
     Fq::new_unchecked(BigInt(limbs[1])),
@@ -864,10 +852,11 @@ fn msm_columns_chunked(
     .enumerate()
     .map(|(chunk_index, points)| {
       let device = devices.acquire();
-      device.prepare_budget(points.len() * 384 + (1 << 30));
+      device.prepare_budget(points.len() * MSM_BYTES_PER_POINT + (1 << 30));
       // The largest window uses < 1 GiB of buckets. Resident affine points,
       // scalars, signed digits and sorting scratch fit in 384 B/point.
-      let admitted = device.budget().saturating_sub(1 << 30) / 384;
+      let admitted =
+        device.budget().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT;
       assert!(admitted > 0, "insufficient free VRAM for KZG MSM");
       let mut sums = vec![G1Projective::zero(); columns.len()];
       for (part, points) in points.chunks(admitted).enumerate() {
@@ -877,7 +866,7 @@ fn msm_columns_chunked(
         for (sum, column) in sums.iter_mut().zip(columns) {
           let input = &column[start..start + count];
           let normalization = msm_normalization(input);
-          let mut out = [[0; 6]; 3];
+          let mut out = [[0; FQ_LIMBS]; 3];
           // The resident point chunk is immutable across all column calls.
           check(
             unsafe {
@@ -916,8 +905,11 @@ fn msm_columns_chunked(
 
 #[cfg(test)]
 pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
-  // sppark's 32-bit domain stride cannot represent 2^32.
-  assert!(values.len().is_power_of_two() && values.len().ilog2() <= 31);
+  assert!(values.len().is_power_of_two());
+  assert!(
+    values.len().ilog2() as usize <= MAX_FFT_LOG,
+    "unsupported KZG CUDA FFT domain"
+  );
   assert!(!shift.is_zero());
   if values.len() == 1 {
     return;
@@ -959,7 +951,8 @@ pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
 
 #[cfg(test)]
 pub(super) fn fft_from(coefficients: &[Fr], lg: usize, shift: Fr) -> Vec<Fr> {
-  assert!(lg <= 31 && !shift.is_zero());
+  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+  assert!(!shift.is_zero());
   let count = 1usize << lg;
   assert!(coefficients.len() <= count);
   let device = Devices::get().acquire();
@@ -1113,11 +1106,9 @@ fn divide_and_msm_chunked(
   let devices = Devices::get();
   let device = devices.acquire();
   device.prepare_budget(
-    coefficients
-      .len()
-      .checked_mul(32)?
-      .checked_add(1 << 30)?
-      .checked_add(chunk_limit.min(points.len()).checked_mul(384)?)?,
+    coefficients.len().checked_mul(32)?.checked_add(1 << 30)?.checked_add(
+      chunk_limit.min(points.len()).checked_mul(MSM_BYTES_PER_POINT)?,
+    )?,
   );
   let chunk = opening_chunk(coefficients.len(), chunk_limit, device.budget())?;
   let mut context = std::ptr::null_mut();
@@ -1143,7 +1134,7 @@ fn opening_chunk(
   budget: usize,
 ) -> Option<usize> {
   let fixed = count.checked_mul(32)?.checked_add(1 << 30)?;
-  let chunk = chunk_limit.min(budget.checked_sub(fixed)? / 384);
+  let chunk = chunk_limit.min(budget.checked_sub(fixed)? / MSM_BYTES_PER_POINT);
   (chunk > 0).then_some(chunk)
 }
 
@@ -1175,7 +1166,7 @@ fn commit_leased_quotient(
       None
     };
     let resident_points = upload_msm_points(device, points);
-    let mut out = [[0; 6]; 3];
+    let mut out = [[0; FQ_LIMBS]; 3];
     check(
       unsafe {
         ix_kzg_msm_invoke_resident(

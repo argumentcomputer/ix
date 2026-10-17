@@ -14,19 +14,38 @@ import (
 )
 
 type componentCircuit struct {
-	Inner wrapperCircuit
-	Phase int `gnark:"-"`
+	Inner   wrapperCircuit
+	Phase   int            `gnark:"-"`
+	Options circuitOptions `gnark:"-"`
 }
 
-func (c *componentCircuit) Define(api frontend.API) error { return c.Inner.constrain(api, c.Phase) }
+func (c *componentCircuit) Define(api frontend.API) error {
+	return c.Inner.constrainWithOptions(api, c.Phase, c.Options)
+}
 
 func TestComponentSizing(t *testing.T) {
 	if os.Getenv("IX_PLONK_SIZE") != "1" {
 		t.Skip("set IX_PLONK_SIZE=1 for full component compilation")
 	}
-	p, err := loadProfile(filepath.Join("testdata", "outer", "profile.json"))
+	path := os.Getenv("IX_PLONK_SIZE_PROFILE")
+	if path == "" {
+		fixture := "outer"
+		if curveID == ecc.BN254 {
+			fixture = "bn254"
+		}
+		path = filepath.Join("testdata", fixture, "profile.json")
+	}
+	p, err := loadProfile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	options := circuitOptions{classicGLV: true}
+	switch variant := os.Getenv("IX_PLONK_SIZE_VARIANT"); variant {
+	case "", "classic-glv":
+	case "baseline":
+		options.classicGLV = false
+	default:
+		t.Fatalf("component sizing requires baseline or classic-glv, got %q", variant)
 	}
 	type measurement struct {
 		Phase                    string
@@ -38,8 +57,8 @@ func TestComponentSizing(t *testing.T) {
 	for phase, name := range []string{"point validation and public binding", "transcript", "scalar relation", "opening MSMs", "outer pairing", "deferred pairing"} {
 		runtime.GC()
 		start := time.Now()
-		ccs, err := frontend.Compile(ecc.BLS12_381.ScalarField(), scs.NewBuilder,
-			&componentCircuit{Inner: *newCircuit(p), Phase: phase + 1}, frontend.IgnoreUnconstrainedInputs())
+		ccs, err := frontend.Compile(curveID.ScalarField(), scs.NewBuilder,
+			&componentCircuit{Inner: *newCircuit(p), Phase: phase + 1, Options: options}, frontend.IgnoreUnconstrainedInputs())
 		if err != nil {
 			t.Fatal(err)
 		}

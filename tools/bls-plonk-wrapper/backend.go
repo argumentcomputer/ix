@@ -13,12 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/consensys/gnark-crypto/ecc"
-	bls "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/plonk"
-	plonkbls "github.com/consensys/gnark/backend/plonk/bls12-381"
 	"github.com/consensys/gnark/backend/solidity"
 	"github.com/consensys/gnark/frontend"
 	"github.com/zeebo/blake3"
@@ -26,7 +22,7 @@ import (
 
 // readSRS consumes ix's authenticated export. The expected digest comes from
 // the Rust parameter loader, independently of this file's contents.
-func readSRS(path, expectedDigest string, domain uint64, p *profile) (*kzg.SRS, error) {
+func readSRS(path, expectedDigest string, domain uint64, p *profile) (*nativeSRS, error) {
 	expected, err := unhex(expectedDigest, 32)
 	if err != nil {
 		return nil, err
@@ -56,26 +52,26 @@ func readSRS(path, expectedDigest string, domain uint64, p *profile) (*kzg.SRS, 
 		return nil, err
 	}
 	count := binary.LittleEndian.Uint64(header[80:])
-	if string(header[:8]) != "IXPSRS01" || !bytes.Equal(header[8:40], setup) || binary.LittleEndian.Uint64(header[40:48]) != p.PublicMaxDegree || count != domain+3 || domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || count-1 > p.PublicMaxDegree {
+	if string(header[:8]) != srsMagic || !bytes.Equal(header[8:40], setup) || binary.LittleEndian.Uint64(header[40:48]) != p.PublicMaxDegree || count != domain+3 || domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || count-1 > p.PublicMaxDegree {
 		return nil, fmt.Errorf("SRS identity, degree or required power count differs")
 	}
 	stat, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	if stat.Size() != int64(280+96*count) {
+	if stat.Size() != int64(88+2*g2ExportBytes+2*baseBytes*count) {
 		return nil, fmt.Errorf("invalid SRS export length")
 	}
-	srs := &kzg.SRS{}
+	srs := &nativeSRS{}
 	for i := range srs.Vk.G2 {
-		var point [96]byte
+		var point [g2ExportBytes]byte
 		if _, err := io.ReadFull(r, point[:]); err != nil {
 			return nil, err
 		}
-		if _, err := srs.Vk.G2[i].SetBytes(point[:]); err != nil {
+		if srs.Vk.G2[i], err = decodeG2(point[:]); err != nil {
 			return nil, err
 		}
-		srs.Vk.Lines[i] = bls.PrecomputeLines(srs.Vk.G2[i])
+		srs.Vk.Lines[i] = precomputeLines(srs.Vk.G2[i])
 	}
 	anchors, err := g2Keys(p.OuterKeys)
 	if err != nil {
@@ -159,7 +155,7 @@ func prepare(dir, path, digest string) error {
 		return err
 	}
 	m.Seconds["index"] = time.Since(start).Seconds()
-	m.Commitments = len(vk.(*plonkbls.VerifyingKey).Qcp)
+	m.Commitments = len(vk.(*nativeVerifyingKey).Qcp)
 	debug.FreeOSMemory()
 	fmt.Fprintln(os.Stderr, "stage=write_keys")
 	if err := saveBinary(dir, "proving-key.bin", pk, m); err != nil {
@@ -184,6 +180,9 @@ func prepare(dir, path, digest string) error {
 }
 
 func prove(dir, path, out string) error {
+	if err := validateProvingBackend(); err != nil {
+		return err
+	}
 	p, ccs, m, err := loadCircuit(dir)
 	if err != nil {
 		return err
@@ -191,11 +190,11 @@ func prove(dir, path, out string) error {
 	if err := m.checkKeys(dir); err != nil {
 		return err
 	}
-	pk := plonk.NewProvingKey(ecc.BLS12_381)
+	pk := plonk.NewProvingKey(curveID)
 	if err := readBinary(filepath.Join(dir, "proving-key.bin"), pk); err != nil {
 		return err
 	}
-	vk := plonk.NewVerifyingKey(ecc.BLS12_381)
+	vk := plonk.NewVerifyingKey(curveID)
 	if err := readBinary(filepath.Join(dir, "verifying-key.bin"), vk); err != nil {
 		return err
 	}
@@ -203,16 +202,27 @@ func prove(dir, path, out string) error {
 	if err != nil {
 		return err
 	}
-	w, err := frontend.NewWitness(assignment, ecc.BLS12_381.ScalarField())
+	w, err := frontend.NewWitness(assignment, curveID.ScalarField())
 	if err != nil {
 		return err
 	}
+	setupStarted := time.Now()
+	cleanup, err := configureProvingBackend(pk)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cleanup() }()
+	backendSetupSeconds := time.Since(setupStarted).Seconds()
 	start := time.Now()
 	proof, err := plonk.Prove(ccs, pk, w, solidity.WithProverTargetSolidityVerifier(backend.PLONK))
+	seconds := time.Since(start).Seconds()
+	cleanupErr := cleanup()
 	if err != nil {
 		return err
 	}
-	seconds := time.Since(start).Seconds()
+	if cleanupErr != nil {
+		return cleanupErr
+	}
 	public, err := w.Public()
 	if err != nil {
 		return err
@@ -225,11 +235,15 @@ func prove(dir, path, out string) error {
 	if err := atomicFile(filepath.Join(out, "proof.bin"), func(w io.Writer) error { _, err := proof.WriteTo(w); return err }); err != nil {
 		return err
 	}
-	solidityBytes := proof.(*plonkbls.Proof).MarshalSolidity()
+	solidityBytes := proof.(*nativeProof).MarshalSolidity()
 	if err := atomicFile(filepath.Join(out, "proof.solidity.bin"), func(w io.Writer) error { _, err := w.Write(solidityBytes); return err }); err != nil {
 		return err
 	}
-	report := map[string]any{"proveSeconds": seconds, "verifySeconds": verifySeconds, "solidityBytes": len(solidityBytes), "verifyingKeySHA256": m.Files["verifying-key.bin"].SHA256}
+	selectedBackend := os.Getenv("IX_PLONK_BACKEND")
+	if selectedBackend == "" {
+		selectedBackend = "cpu"
+	}
+	report := map[string]any{"backend": selectedBackend, "backendSetupSeconds": backendSetupSeconds, "proveSeconds": seconds, "verifySeconds": verifySeconds, "solidityBytes": len(solidityBytes), "verifyingKeySHA256": m.Files["verifying-key.bin"].SHA256}
 	if err := writeJSON(filepath.Join(out, "report.json"), report); err != nil {
 		return err
 	}
@@ -237,28 +251,28 @@ func prove(dir, path, out string) error {
 	return nil
 }
 
-func decodeProof(data []byte, commitments int) (*plonkbls.Proof, error) {
-	if commitments < 0 || commitments > 1024 || len(data) != 664+80*commitments {
+func decodeProof(data []byte, commitments int) (*nativeProof, error) {
+	if commitments < 0 || commitments > 1024 || len(data) != 9*pointBytesLen+232+(32+pointBytesLen)*commitments {
 		return nil, fmt.Errorf("invalid PLONK proof length")
 	}
 	// Bound the two serialized vector lengths before gnark allocates them.
-	if binary.BigEndian.Uint32(data[384:388]) != uint32(6+commitments) || binary.BigEndian.Uint32(data[660+32*commitments:664+32*commitments]) != uint32(commitments) {
+	if binary.BigEndian.Uint32(data[8*pointBytesLen:8*pointBytesLen+4]) != uint32(6+commitments) || binary.BigEndian.Uint32(data[9*pointBytesLen+228+32*commitments:9*pointBytesLen+232+32*commitments]) != uint32(commitments) {
 		return nil, fmt.Errorf("invalid PLONK proof vector length")
 	}
 	for i := 0; i < 8; i++ {
-		if data[48*i]&0x80 == 0 {
+		if !isCompressedPoint(data[pointBytesLen*i]) {
 			return nil, fmt.Errorf("uncompressed proof point")
 		}
 	}
-	if data[580+32*commitments]&0x80 == 0 {
+	if !isCompressedPoint(data[8*pointBytesLen+196+32*commitments]) {
 		return nil, fmt.Errorf("uncompressed shifted opening")
 	}
 	for i := 0; i < commitments; i++ {
-		if data[664+32*commitments+48*i]&0x80 == 0 {
+		if !isCompressedPoint(data[9*pointBytesLen+232+32*commitments+pointBytesLen*i]) {
 			return nil, fmt.Errorf("uncompressed committed point")
 		}
 	}
-	proof := new(plonkbls.Proof)
+	proof := new(nativeProof)
 	r := bytes.NewReader(data)
 	if _, err := proof.ReadFrom(r); err != nil {
 		return nil, err
@@ -287,7 +301,7 @@ func verify(keyPath, trustedDigest, proofPath, expectedClaim string, expectedAnc
 	if key.SHA256 != strings.TrimPrefix(trustedDigest, "0x") {
 		return fmt.Errorf("trusted wrapper verification key digest differs")
 	}
-	vk := new(plonkbls.VerifyingKey)
+	vk := new(nativeVerifyingKey)
 	if err := readBinary(keyPath, vk); err != nil {
 		return err
 	}
@@ -298,14 +312,11 @@ func verify(keyPath, trustedDigest, proofPath, expectedClaim string, expectedAnc
 		return fmt.Errorf("expected one anchor encoding")
 	}
 	if len(expectedAnchors) == 1 {
-		expected, err := unhex(expectedAnchors[0], 240)
+		expected, err := unhex(expectedAnchors[0], anchorBytesLen)
 		if err != nil {
 			return err
 		}
-		g := vk.Kzg.G1.Bytes()
-		h := vk.Kzg.G2[0].Bytes()
-		tauH := vk.Kzg.G2[1].Bytes()
-		actual := append(append(append([]byte(nil), g[:]...), h[:]...), tauH[:]...)
+		actual := encodeAnchors(vk)
 		if !bytes.Equal(actual, expected) {
 			return fmt.Errorf("wrapper verification key setup anchors differ")
 		}
@@ -328,7 +339,7 @@ func verify(keyPath, trustedDigest, proofPath, expectedClaim string, expectedAnc
 	if err != nil {
 		return err
 	}
-	w, err := frontend.NewWitness(&publicClaim{Claim: digestLimbs(digest)}, ecc.BLS12_381.ScalarField(), frontend.PublicOnly())
+	w, err := frontend.NewWitness(&publicClaim{Claim: digestLimbs(digest)}, curveID.ScalarField(), frontend.PublicOnly())
 	if err != nil {
 		return err
 	}

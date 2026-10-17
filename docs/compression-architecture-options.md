@@ -29,10 +29,11 @@ working-tree wrapper status in
 | 3. FRI compression | about 1.5 MB | Goldilocks GPU | 61–62 s, 213 GiB host peak |
 | 4. First KZG stage | tens of KB | BLS12-381 GPU, 11+ partitions of `2^24` or `2^25` rows | 165–178 s warm |
 | 5. Recursive KZG stage | 2,181 bytes | BLS12-381 GPU, one `2^27` computation trace | 107–121 s warm |
-| 6. gnark PLONK wrapper | under 1 KB | BLS12-381, CPU | 23,358,575 constraints, `N = 2^25`; proving not yet measured |
+| 6. gnark PLONK wrapper | 624-byte BN254 / 784-byte BLS envelope | BN254 or BLS12-381, CPU | Actual Init: 53.79 s / 127.17 s core proving; BN254 `N = 2^24`, BLS `N = 2^25` |
 
-Stage timings are the one-GPU warm runs recorded in multi-stark
-`docs/kzg-merge-plan.md`. The partition rule is
+KZG stage timings are the one-GPU warm runs recorded in multi-stark
+`docs/kzg-merge-plan.md`. PLONK timings are the separate native CPU measurements
+in the [wrapper status](bls-plonk-wrapper-status.md). The partition rule is
 [`MIN_PARTITIONS = 11`](../crates/proof-compression/src/pipeline/first.rs)
 with heights checked in
 [`wrap/saved.rs`](../crates/proof-compression/src/pipeline/wrap/saved.rs).
@@ -303,7 +304,7 @@ counts from the native recursive frontend do not directly predict gnark's
 constraint count or padded domain.
 
 Compile and size both relations before selecting the production path. Pin
-the appropriate verifier profile, preserve BLAKE3 transcript and canonical
+the appropriate verifying key, preserve BLAKE3 transcript and canonical
 encoding constraints, bind the original claim, and enforce every required
 pairing inside the terminal circuit. Compare padded domains, witness/key
 memory and total proving time across the complete path, with setup/key
@@ -311,6 +312,262 @@ preparation reported separately. Include the availability and cost of GPU
 proving for each backend; removing a stage alone does not establish a faster
 pipeline. Retuning FRI to reduce the first KZG proof remains complementary to
 either choice.
+
+### BN254 gnark wrapper implementation plan
+
+Implementation update, 2026-10-16: the actual authenticated Ignition Init
+packet now compiles, proves and verifies through the BN254 helper. The measured
+2^25 wrapper had 17,996,081 constraints; core proving took 104.33 seconds. The
+subsequent classic-GLV circuit has 14,689,440 constraints plus two public rows,
+fitting `2^24` with 2,087,774 rows of headroom. That smaller circuit now proves
+and verifies the full Init packet: 53.79 seconds core proving, 73.70 seconds
+for the fresh prover process and 25.19 GiB peak RSS. See the
+[full benchmark and BLS comparison](bls-plonk-wrapper-status.md#bn254-224-full-init-proof-benchmark).
+The shared exporter, curve-specific helper selection, SRS/cache formats and
+pinned-admission verifier catalog are implemented. SP1's complete `2^25`
+Lagrange basis passed validation against our admitted monomial powers and was
+reused for ix's 2^25 keys. Component profiling and batching measurements are
+recorded in the wrapper status. The 2^24 basis and keys were generated locally
+and are cached. The same proof also passes the adapted SP1 Solidity verifier
+on Anvil at 320,103 total transaction gas through ix's expected-claim adapter;
+see the [EVM record](../contracts/plonk/README.md#actual-bn254-init-proof-on-anvil).
+Full CLI linking remains separate work.
+Terminal development-SRS wrapping
+remains rejected; the implementation uses authenticated Ignition directly.
+
+The first implementation wraps the verified Init recursive KZG packet with a
+standard BN254 gnark PLONK proof. Reuse the BLAKE3 implementation, exported
+scalar verifier program, artifact lifecycle and native verification oracle.
+Preserve the BLS backend while selecting the curve explicitly in each build.
+
+1. **Export the BN254 verification relation.** Separate the common verifier
+   graph/opening export from the BLS-only direct Solidity exporter. The
+   baseline `plonk` feature selected `solidity`, which selected BLS12-381, and
+   its exporter required Filecoin. Add a curve-tagged verifying key and explicit
+   development
+   export path that pins the verifying key digest, independently expected
+   claim and original statement. Derive dimensions from the codec; retain
+   the compact two-trace recursive shape for this first port.
+2. **Port the gnark circuit and encodings.** Compile over BN254 Fr and use
+   BN254 base-field, G1/G2, complete MSM and pairing gadgets. Preserve the
+   BLAKE3 transcript and two public 128-bit claim-digest limbs. Implement ix's
+   canonical 32-byte G1 encoding, including byte order, sign and infinity;
+   gnark's native serialization must not be assumed interchangeable. Pack each
+   deferred point as two 16-byte halves instead of two 24-byte halves. Check
+   untrusted points on curve and use BN254's cofactor-one G1 property without
+   retaining BLS subgroup-check multiplications. Validate G2 transport and
+   trusted anchors independently.
+3. **Preserve both pairing obligations and setup policy.** Constrain the
+   recursive proof's opening pairing and its deferred first-stage pairing.
+   The baseline Go verifying key assumed identical Filecoin anchors; the BN254
+   development stages use different seeds, so each equation must use its own
+   pinned keys. Keep the equations separate initially. Add explicit
+   development opt-in to export/prove/verify and propagate setup class through
+   artifacts; production acceptance must continue to reject known-trapdoor
+   proofs. Parameterize the outer PLONK setup binding rather than assuming
+   its anchors must equal an inner proof's anchors.
+4. **Port the PLONK backend and parameter interchange.** Select BN254 for
+   constraint-system, witness, key and proof construction. Version the SRS
+   transport, cache identities, manifests and verifying key catalogs so BLS
+   and BN254 artifacts cannot be mixed. For domain `N`, prepare `N+3` monomial
+   powers and `N` Lagrange points, checking the authenticated setup's declared
+   degree before allocation. Keep deterministic key/Lagrange preparation
+   separately measurable from proving and preserve the existing memory
+   release ordering around large conversions.
+5. **Establish correctness and size before full proving.** Differentially
+   compare point/scalar bytes, BLAKE3 challenges, scalar relations, MSM
+   operands and pairings with Rust. Exercise infinity, opposite points,
+   noncanonical encodings, changed claims, wrong verifying keys and invalid
+   deferred pairings through circuit constraints, bypassing host
+   preverification. Compile the real Init wrapper, measure incremental
+   constraints and padded domain, and check whether it fits `2^24` rather
+   than extrapolating native frontend rows. Prove and verify a small complete
+   BN254 PLONK fixture, then the real Init wrapper under development setup.
+6. **Integrate CLI and contract verification.** Select and package the helper
+   through Lake and `ix compress --plonk`, preserve the original claim,
+   authenticate the verifying key catalog and derive the two public limbs
+   from the caller's expected digest. Export the standard BN254 PLONK Solidity
+   verifier and test agreement with native verification, including negative
+   inputs. Gnark GPU acceleration is a separate workstream from KZG CUDA
+   parity and follows a validated CPU proof.
+
+The first reviewable milestone is **existing Init packet export, BN254 gnark
+compilation, valid/invalid witness checks and a phase-by-phase constraint
+report**. It reuses the completed CPU KZG run and can proceed alongside CUDA
+work. Production requires an authenticated BN254 ceremony import, reviewed
+verifying keys and fresh inner KZG proofs under production parameters;
+wrapping a development proof does not upgrade its setup security.
+
+### BN254 trusted setup research (2026-10-16)
+
+**Investigate Aztec Ignition first for the current sizes; retain Perpetual
+Powers of Tau as a larger-capacity alternative.** Both provide a reusable
+BN254 phase-one basis. PLONK needs deterministic circuit-key preparation,
+not a circuit-specific contribution ceremony; Groth16's phase two is a
+different requirement. See the [snarkjs setup distinction](https://github.com/iden3/snarkjs/blob/22003fbcde78608be902520661832db7933d279e/README.md#15-setup).
+This research selects candidates, not an authorized production setup.
+
+#### What SP1 actually uses
+
+At SP1 revision `02fa30185ecd658174b211d56128b14867ab8e81`, the non-development
+PLONK build calls `DownloadAndSaveAztecIgnitionSrs(174)`, derives Lagrange
+points and invokes gnark PLONK setup. Its converter selects `MAIN IGNITION`;
+the observed manifest has 176 valid participants, so index 174 selects its
+last two contributions, positions 196 and 197. This establishes the source
+path, not a fresh audit of SP1's prebuilt release bundles.
+[Build](https://github.com/succinctlabs/sp1/blob/02fa30185ecd658174b211d56128b14867ab8e81/crates/recursion/gnark-ffi/go/sp1/build.go#L108-L171),
+[converter](https://github.com/succinctlabs/sp1/blob/02fa30185ecd658174b211d56128b14867ab8e81/crates/recursion/gnark-ffi/go/sp1/trusted_setup/trusted_setup.go#L69-L131).
+
+Succinct's separate Groth16 ceremony tooling defaults to
+`powersOfTau28_hez_final_24.ptau` from Perpetual Powers of Tau, then initializes
+circuit-specific phase two. That is not its PLONK setup path.
+[Groth16 initialization](https://github.com/succinctlabs/semaphore-gnark-11/blob/6d6ebc3608e609ec879e9ba99abee6b6b97d937d/scripts/initialize_trusted_setup.py#L35-L45),
+[phase-one download](https://github.com/succinctlabs/semaphore-gnark-11/blob/6d6ebc3608e609ec879e9ba99abee6b6b97d937d/scripts/trusted_setup.py#L59-L80).
+
+#### Capacity and artifact choices
+
+The [Ignition manifest](https://aztec-ignition.s3.amazonaws.com/MAIN%20IGNITION/manifest.json)
+reports 100,800,000 G1 points in twenty transcripts of 5,040,000 points.
+The [format specification](https://github.com/AztecProtocol/ignition-verification/blob/c333ec4775045139f86732abfbbd65728404ab7f/Transcript_spec.md)
+describes powers starting at `tau * G1`. SP1 preserves that shifted basis and
+sets the verifying key's G1 base to its first entry. It does not prepend the
+canonical generator. The generic ix SRS/PCS paths use their supplied G1
+base, but a shifted-basis interoperability test is still required.
+
+| ix target | Required G1 entries | Fits Ignition's recorded capacity? |
+| --- | ---: | --- |
+| First KZG, trace `2^24` | 16,777,216 | Yes |
+| Recursive KZG, trace `2^26` | 67,108,864 | Yes |
+| gnark PLONK, domain `2^24` | 16,777,219 | Yes |
+| gnark PLONK, domain `2^25` | 33,554,435 | Yes |
+| gnark PLONK, domain `2^26` | 67,108,867 | Yes |
+| Native trace or gnark domain `2^27` | At least 134,217,728 | No |
+
+These counts follow ix's `srs(height)` use and gnark's `N+3` monomial / `N`
+Lagrange requirements. The quotient factor two expands the evaluation domain;
+it does not double ix's required SRS prefix. Halving the recursive trace
+therefore makes Ignition large enough for the measured pipeline.
+[ix setup](../crates/proof-compression/src/pipeline/setup.rs),
+[gnark parameter export](../crates/proof-compression/src/pipeline/plonk.rs).
+
+The linked [Perpetual Powers of Tau repository](https://github.com/privacy-ethereum/perpetualpowersoftau/tree/b077232729db7c9eb65b63c4aaaa0ac4a1b0bba2)
+documents BN254 parameters through power 28 and prepared files from
+contribution 0080 plus its beacon. It is archived, but its artifact endpoints
+remain reachable. The older `powersOfTau28_hez_final_*` family derives from
+54 contributions plus a beacon and has published BLAKE2b-512 digests in
+[snarkjs](https://github.com/iden3/snarkjs/blob/22003fbcde78608be902520661832db7933d279e/README.md#7-prepare-phase-2).
+These are different finalized snapshots; their anchors and hashes must not
+be mixed.
+
+For the current native `2^26` trace, a power-26 `.ptau` is sufficient.
+Its monomial G1 section contains `2^27 - 1` points, not merely `2^26`.
+A power-25 file has `2^26 - 1` entries and is one entry short of the native
+trace's requirement. Check section counts rather than inferring capacity
+from a filename. KZG uses the tau powers and G2 anchors; the additional
+Groth16 alpha/beta and prepared sections need not be retained in our cache.
+[Accumulator layout](https://github.com/iden3/snarkjs/blob/22003fbcde78608be902520661832db7933d279e/src/powersoftau_new.js),
+[truncation layout](https://github.com/iden3/snarkjs/blob/22003fbcde78608be902520661832db7933d279e/src/powersoftau_truncate.js).
+
+HEAD requests reported 77,309,494,424 bytes for
+[`powersOfTau28_hez_final_26.ptau`](https://circom.info/powersOfTau28_hez_final_26.ptau)
+and 77,309,504,658 bytes for
+[`ppot_0080_26.ptau`](https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_26.ptau),
+about 72 GiB each. A retained `2^26` G1 prefix requires about 4 GiB for
+uncompressed 64-byte coordinates, plus metadata; it does not require keeping
+all prepared sections. The published candidate digest for the older file is:
+
+```text
+powersOfTau28_hez_final_26.ptau — BLAKE2b-512
+418dee4a74b9592198bd8fd02ad1aea76f9cf3085f206dfd7d594c9e264ae919611b1459a1cc920c2f143417744ba9edd7b8d51e44be9452344a225ff7eead19
+```
+
+This digest is copied from the pinned snarkjs source above, not verified
+against a downloaded file. The 0080 README/index inspected here did not
+provide an equivalent file digest. HTTP metadata and multipart ETags are not
+substitutes for a trusted cryptographic receipt.
+
+#### Import and authentication work
+
+The [Ignition importer](../crates/proof-compression/src/kzg/srs/ignition.rs)
+and its [CLI](../crates/proof-compression/examples/kzg_ignition_import.rs)
+implement caller-pinned source inventories, bounded transcript validation,
+shifted-basis checks and authenticated prefix caches. A portable admission
+descriptor binds the exact source inventory, full degree and verifier
+anchors under a separate trusted digest. The pipeline can select these
+parameters with explicit admission and cache pins; local verification needs
+only the admission, expected claim and independently trusted verifying key.
+The verifying key catalog can bind a production key to an admitted setup.
+Its BN254 catalog remains empty and production-only: producing files
+does not authorize a release key. Source inspection remains an untrusted
+inventory, and no ceremony pin is admitted automatically. Import/admission
+and pipeline validation now pass: 249 BN254 and 238 BLS12-381 CPU tests
+(five ignored on each), thirty CUDA checks per curve, and Clippy on both
+curves. Complete cold and warm Init proofs under Ignition and independent
+CPU verification also pass.
+[Usage and limits](../crates/proof-compression/README.md#ignition-parameter-import),
+[pipeline selection](../crates/proof-compression/README.md#admitted-ignition-pipeline).
+
+The [gnark Ignition verifier](https://github.com/Consensys-Incorporated/gnark-ignition-verifier/tree/ca240270d7f48d4c9ce0970b20938bce8a8a6c00)
+provides useful parsing and algebraic checks. SP1 pins the older revision
+`10693546ab33`; its [contribution checker](https://github.com/Consensys/gnark-ignition-verifier/blob/10693546ab33/ignition/contribution.go)
+checks embedded checksums, subgroup membership and power relations, but
+explicitly omits participant-signature verification. The converter also
+loads an unpinned remote manifest. These checks alone do not authenticate a
+particular ceremony endpoint, and checking the final two contributions is
+not verification of the entire participant chain.
+
+The initial research fetched source files, the small Ignition manifest and
+HTTP headers. Subsequent provisioning downloaded all forty transcript files
+from contributions 196 and 197. All forty participant signatures verified
+using EIP-191 over each complete file's SHA256; both participants' first G1
+and contribution G2 anchors matched the historical records in
+[Aztec's verification repository at `c333ec47`](https://github.com/AztecProtocol/ignition-verification/tree/c333ec4775045139f86732abfbbd65728404ab7f).
+The source inventory's BLAKE2b-512 hashes were matched to that evidence before
+import. This authenticates the selected participant snapshot, without
+replaying the entire ceremony or proving secret erasure. The distinct
+`sealed` snapshot is not part of this import.
+
+The retained `2^26` prefix passed bounded import and progression checks in
+211.88 seconds with 0.134 GiB peak RSS. Full cache authentication/loading took
+5.54 seconds with 4.532 GiB peak RSS; loading two verifier anchors took
+4.31 milliseconds. The cache, source transcripts, admission, signature
+evidence and receipts are stored at
+`s3://argument-kzg-params-063002298335-us-east-1-an/bn254/ignition/main-197/`;
+all 116 objects passed size and SHA-256 verification after upload. The local
+copy and host-specific `setup.env` remain under
+`/opt/dlami/nvme/ix-bn254/parameters/ignition/`. See the
+[restore commands and pinned digests](../crates/proof-compression/README.md#ignition-parameter-import)
+for another host. Public degree remains
+100,799,999 for every loaded prefix, with the shifted `tau * G1` basis
+preserved. No Perpetual Powers of Tau artifact or SP1 release bundle has been
+downloaded or authenticated in this work.
+
+The real Init GPU pipeline completed in **284.30 seconds** with cold fixed
+preprocessing and **181.13 seconds** with it reused. First KZG took
+210.89/135.94 seconds and recursion took 72.69/44.56 seconds, cold/warm.
+Both stages retain the admitted setup identity and full public degree.
+Recursion has 61,151,377 frontend rows and still pads to `2^26`; the first
+stage retains nineteen circuits. Both 1,917-byte envelopes passed independent
+CPU verification and seven negative checks per run. The envelopes, 1,542-byte
+verifying keys and both stages' compact proofs are byte-identical across runs.
+The verifying key uses the shared BLS `VerifierProfile` structure with BN254
+version 7 and an explicit local verifying key digest; it is not a bundled
+verifying key catalog entry. These single runs have uncontrolled OS page
+cache and do not isolate a ceremony-related speedup over development
+parameters. Artifacts and checks are recorded in
+`/opt/dlami/nvme/ix-bn254/ignition-validation/experiment.json`.
+[Measurements and artifact locations](../crates/proof-compression/README.md#real-init-with-ignition).
+
+Remaining production work:
+
+1. Implement and validate the Rust/gnark conversion against small
+   authenticated prefixes: commitments, openings, shifted anchors and
+   Lagrange conversion. Measure full key preparation with explicit resource
+   approval, then prove the terminal PLONK wrapper under the admitted setup.
+2. Review and authorize the resulting verifying keys and catalog entries
+   separately from generating them. Perpetual Powers of Tau remains
+   a separate fallback requiring its own authenticated artifact pins, parser
+   and conversion validation.
 
 ## BN254 GPU integration plan
 
@@ -325,10 +582,15 @@ steps, and does not by itself make a real Init compression run practical.
 The real Init CPU measurement now establishes 61,151,005 BN254 recursive
 frontend rows, padding to `2^26`, against 118,389,942 rows and `2^27` in the
 historical BLS reference. The recursive witness and external pairings pass;
-full outer proving and matched GPU timings remain pending. See the
-[measurement details](../crates/proof-compression/README.md#real-input-measurements).
-This supports prioritizing parity and resource measurements at `2^26`; it
-does not establish an MSM speedup or the benefit of splitting across GPUs.
+the complete Init development pipeline and independent envelope verification
+also pass. A matched one-GPU development run now completes both KZG stages
+in 276.00 seconds for BN254 versus 378.19 seconds for BLS, with cold fixed
+preprocessing and prepared SRS caches. BN254 matches the CPU proof bytes at
+both stages. See the
+[GPU measurement](../crates/proof-compression/README.md#matched-init-gpu-comparison)
+and [CPU details](../crates/proof-compression/README.md#real-input-measurements).
+This measures complete curve-specific pipelines; it does not isolate an MSM
+speedup or establish the benefit of splitting across GPUs.
 
 ### Scope and source baseline
 
@@ -339,18 +601,18 @@ comparison baseline. Each executable selects one KZG curve; comparison runs
 use separate binaries, build directories, setup caches, and artifact
 directories. The Goldilocks FRI backend remains present in either GPU build.
 
-The current bridge is concrete and reusable, but contains BLS-specific
+At the CPU baseline `52c61479`, the reusable bridge contained BLS-specific
 assumptions in several places:
 
-- [`Cargo.toml`](../crates/proof-compression/Cargo.toml) makes `cuda` select
-  BLS12-381. [`build.rs`](../crates/proof-compression/build.rs) selects
+- [`Cargo.toml`](../crates/proof-compression/Cargo.toml) made `cuda` select
+  BLS12-381. [`build.rs`](../crates/proof-compression/build.rs) selected
   `FEATURE_BLS12_381` and `MAX_LG_DOMAIN_SIZE=32`.
-- [`cuda/kzg.cu`](../crates/proof-compression/cuda/kzg.cu) includes
-  `ff/bls12-381.hpp` and defines the affine upload layout.
-  [`src/kzg/cuda.rs`](../crates/proof-compression/src/kzg/cuda.rs) imports
-  BLS types, checks their layout, and returns six-limb projective coordinates.
+- [`cuda/kzg.cu`](../crates/proof-compression/cuda/kzg.cu) included
+  `ff/bls12-381.hpp` and defined the affine upload layout.
+  [`src/kzg/cuda.rs`](../crates/proof-compression/src/kzg/cuda.rs) imported
+  BLS types, checked their layout, and returned six-limb projective coordinates.
 - [`src/kzg/cuda/srs_cache.rs`](../crates/proof-compression/src/kzg/cuda/srs_cache.rs)
-  has both six-limb output pointers and fixed 96/104-byte point accounting.
+  had both six-limb output pointers and fixed 96/104-byte point accounting.
   [`cuda/kzg_srs.cuh`](../crates/proof-compression/cuda/kzg_srs.cuh) provides
   native MSM scratch estimates, resident points, and batched uploads.
 - [`lakefile.lean`](../lakefile.lean) builds and installs the worker with its
@@ -406,7 +668,27 @@ build, which includes the BLS terminal backends.
 | `bls12-381,parallel,cuda` | BLS KZG CUDA plus Goldilocks CUDA |
 | `bn254,parallel,cuda` | BN254 KZG CUDA plus Goldilocks CUDA |
 
-BN254 plus CUDA is a target of this plan, not an available command today.
+Both CUDA library test targets compile, and all 30 CUDA-module checks pass
+on each curve: 12 host/ABI checks and 18 GPU checks. Coverage includes field
+arithmetic, NTT roots, FFTs, MSM/cache paths, polynomial operations, dense and
+forced-pass constraints, concurrency and two-device resident admission.
+Separate CPU and CUDA binaries also produce identical proof and verifier
+bytes for a two-circuit development fixture at 4,096/8,192 rows on both
+curves, covering dense, forced-pass and cached-SRS modes. Cross-verification
+and changed-claim/evaluation/pin/curve rejection pass. This fixture excludes
+FRI compression and recursive KZG proving. Separate full saved Init GPU runs
+complete both KZG stages on each curve; BN254's proofs match its CPU run
+exactly and pass the original CPU worker's verifier. BLS's full-size CPU/GPU
+byte comparison remains pending. The Lake configuration typechecks and its
+seven curve/feature argument cases pass; complete CLI linking remains pending.
+Lake's `IX_KZG_CURVE` selects the curve
+for both the `ix` library and the existing worker target, with BLS terminal
+features omitted for BN254.
+The source also parameterizes native layouts, MSM result buffers, SRS-cache
+point accounting and FFT domain limits, and adds a host field-representation
+check. See the
+[implementation status](../crates/proof-compression/README.md#curve-selection-and-validation-status).
+
 Reject simultaneous BLS and BN selection. Keep BLS-only Solidity/PLONK
 features from silently selecting the wrong curve. Thread the worker's curve
 selection through Lake's build arguments and artifact trace, preserve the
@@ -418,8 +700,9 @@ parity gates pass.
 
 **2. Establish field, FFT, and polynomial parity.** Parameterize the Rust and
 native FFT bounds: BN254 permits `log(domain) <= 28`; retain existing BLS
-implementation limits unless separately justified. The native bridge
-currently checks `lg <= 31`, so changing only the NTT macro is insufficient.
+implementation limits unless separately justified. The BLS native bridge
+retains `lg <= 31`; the BN254 bridge now checks `lg <= 28` on both sides of
+the FFI. Changing only the NTT macro is insufficient.
 Reject unsupported trace-plus-quotient domains before allocation. In
 particular, quotient factor two at trace `2^27` consumes the complete BN254
 domain limit; this does not imply that the device can admit it.

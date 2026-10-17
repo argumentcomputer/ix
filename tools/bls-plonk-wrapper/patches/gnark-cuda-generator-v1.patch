@@ -1,0 +1,801 @@
+diff --git a/internal/generator/backend/template/zkpschemes/plonk/plonk.prove.go.tmpl b/internal/generator/backend/template/zkpschemes/plonk/plonk.prove.go.tmpl
+--- a/internal/generator/backend/template/zkpschemes/plonk/plonk.prove.go.tmpl
++++ b/internal/generator/backend/template/zkpschemes/plonk/plonk.prove.go.tmpl
+@@ -111,6 +111,93 @@
+ 	ComputeNumerator(in *NumeratorInput) (*iop.Polynomial, error)
+ }
+ 
++// AcceleratorFeatureFlagsV1 selects operations before a proof mutates its polynomials.
++type AcceleratorFeatureFlagsV1 uint64
++
++const (
++	AcceleratorFeatureMSMV1 AcceleratorFeatureFlagsV1 = 1 << iota
++	AcceleratorFeatureToCanonicalV1
++	AcceleratorFeatureNumeratorV1
++	AcceleratorFeatureQuotientV1
++)
++
++const legacyAcceleratorFeaturesV1 = AcceleratorFeatureMSMV1 | AcceleratorFeatureToCanonicalV1 | AcceleratorFeatureNumeratorV1
++const allAcceleratorFeaturesV1 = legacyAcceleratorFeaturesV1 | AcceleratorFeatureQuotientV1
++
++// AcceleratorFeaturesV1 optionally selects accelerated operations. FeaturesV1
++// is called exactly once per Prove; its result is frozen for that proof.
++// Implementations must make this method safe for concurrent proofs.
++type AcceleratorFeaturesV1 interface {
++	FeaturesV1() AcceleratorFeatureFlagsV1
++}
++
++// QuotientAcceleratorV1 computes H after division by X^N-1 and the inverse FFT.
++// Its result has Domain1.Cardinality coefficients in Canonical/Regular form.
++// Every nonblinding input must be restored to Canonical/Regular on Domain0;
++// blinding polynomials must remain unchanged. The corresponding feature bit
++// must be set explicitly; implementing this interface alone does not enable it.
++type QuotientAcceleratorV1 interface {
++	ComputeQuotientV1(*NumeratorInput) (*iop.Polynomial, error)
++}
++
++type acceleratorState struct {
++	implementation Accelerator
++	features       AcceleratorFeatureFlagsV1
++	quotient       QuotientAcceleratorV1
++}
++
++// StageEventV1 is a monotonic wall-clock interval relative to proof initialization.
++// Task spans include dependency waits and nested compute spans. Compute spans may
++// include backend queueing; overlapping intervals must not be summed.
++type StageEventV1 struct {
++	Stage, Phase string
++	Start, End time.Duration
++	Failed bool
++}
++
++type stageObserverStateV1 struct { callback func(StageEventV1) }
++
++// SetStageObserverV1 installs a runtime-only diagnostic callback. Prove freezes
++// the callback at entry. It may be called concurrently and must not panic or
++// block. Passing nil disables observation; key serialization is unchanged.
++func (pk *ProvingKey) SetStageObserverV1(observer func(StageEventV1)) {
++	if observer == nil { pk.stageObserver.Store(nil); return }
++	pk.stageObserver.Store(&stageObserverStateV1{callback: observer})
++}
++
++// proofKey snapshots runtime dispatch while retaining the immutable key arrays.
++// Concurrent SetAccelerator calls cannot change an already-started proof.
++func (pk *ProvingKey) proofKey() (*ProvingKey, error) {
++	view := &ProvingKey{Kzg: pk.Kzg, KzgLagrange: pk.KzgLagrange, Vk: pk.Vk}
++	view.stageObserver.Store(pk.stageObserver.Load())
++	configured := pk.accelerator.Load()
++	if configured == nil {
++		return view, nil
++	}
++	features := legacyAcceleratorFeaturesV1
++	if selectable, ok := configured.implementation.(AcceleratorFeaturesV1); ok {
++		features = selectable.FeaturesV1()
++	}
++	if features & ^allAcceleratorFeaturesV1 != 0 {
++		return nil, fmt.Errorf("unsupported accelerator feature bits: %#x", features & ^allAcceleratorFeaturesV1)
++	}
++	state := &acceleratorState{implementation: configured.implementation, features: features}
++	if features&AcceleratorFeatureQuotientV1 != 0 {
++		var ok bool
++		state.quotient, ok = configured.implementation.(QuotientAcceleratorV1)
++		if !ok {
++			return nil, errors.New("quotient feature requires QuotientAcceleratorV1")
++		}
++	}
++	view.accelerator.Store(state)
++	return view, nil
++}
++
++func (pk *ProvingKey) accelerated(feature AcceleratorFeatureFlagsV1) bool {
++	state := pk.accelerator.Load()
++	return state != nil && state.features&feature != 0
++}
++
+ // NumeratorInput is the input of Accelerator.ComputeNumerator. All polynomials
+ // have Domain0.Cardinality coefficients except the blinding polynomials, which
+ // are small-degree canonical polynomials.
+@@ -133,39 +220,47 @@
+ // SetAccelerator attaches an Accelerator to the proving key. Passing nil restores
+ // the CPU implementation.
+ func (pk *ProvingKey) SetAccelerator(a Accelerator) {
+-	pk.accelerator = a
++	if a == nil {
++		pk.accelerator.Store(nil)
++		return
++	}
++	pk.accelerator.Store(&acceleratorState{implementation: a, features: legacyAcceleratorFeaturesV1})
+ }
+ 
+ // Accelerator returns the accelerator attached to the proving key, or nil.
+ func (pk *ProvingKey) Accelerator() Accelerator {
+-	return pk.accelerator
++	state := pk.accelerator.Load()
++	if state == nil {
++		return nil
++	}
++	return state.implementation
+ }
+ 
+ // commit computes the KZG commitment of p with key. nbTasks is a parallelism
+ // hint for the CPU implementation.
+ func (pk *ProvingKey) commit(key kzg.ProvingKey, p []fr.Element, nbTasks ...int) (kzg.Digest, error) {
+-	if pk.accelerator == nil {
++	if !pk.accelerated(AcceleratorFeatureMSMV1) {
+ 		return kzg.Commit(p, key, nbTasks...)
+ 	}
+ 	if len(p) > len(key.G1) {
+ 		return kzg.Digest{}, kzg.ErrInvalidPolynomialSize
+ 	}
+-	return pk.accelerator.MultiExp(key.G1[:len(p)], p)
++	return pk.accelerator.Load().implementation.MultiExp(key.G1[:len(p)], p)
+ }
+ 
+ func (pk *ProvingKey) multiExp(res *curve.G1Affine, bases []curve.G1Affine, scalars []fr.Element) error {
+-	if pk.accelerator == nil {
++	if !pk.accelerated(AcceleratorFeatureMSMV1) {
+ 		_, err := res.MultiExp(bases, scalars, ecc.MultiExpConfig{})
+ 		return err
+ 	}
+ 	var err error
+-	*res, err = pk.accelerator.MultiExp(bases, scalars)
++	*res, err = pk.accelerator.Load().implementation.MultiExp(bases, scalars)
+ 	return err
+ }
+ 
+ // committer returns the kzg.Committer used for KZG openings with key.
+ func (pk *ProvingKey) committer(key kzg.ProvingKey) kzg.Committer {
+-	if pk.accelerator == nil {
++	if !pk.accelerated(AcceleratorFeatureMSMV1) {
+ 		return key
+ 	}
+ 	return acceleratedCommitter{pk: pk, key: key}
+@@ -180,7 +275,12 @@
+ 	return c.pk.commit(c.key, p)
+ }
+ 
+-func Prove(spr *cs.SparseR1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (*Proof, error) {
++func Prove(spr *cs.SparseR1CS, pk *ProvingKey, fullWitness witness.Witness, opts ...backend.ProverOption) (_ *Proof, err error) {
++
++	pk, err = pk.proofKey()
++	if err != nil {
++		return nil, fmt.Errorf("accelerator configuration: %w", err)
++	}
+ 
+ 	log := logger.Logger().With().
+ 		Str("curve", spr.CurveID().String()).
+@@ -197,37 +297,48 @@
+ 
+ 	// init instance
+ 	g, ctx := errgroup.WithContext(context.Background())
++	observer := pk.stageObserver.Load()
++	if observer != nil {
++		defer func() {
++			observer.callback(StageEventV1{Stage: "prove", Phase: "task", End: time.Since(start), Failed: err != nil})
++		}()
++	}
+ 	instance, err := newInstance(ctx, spr, pk, fullWitness, &opt)
++	if observer != nil {
++		observer.callback(StageEventV1{Stage: "initialization", Phase: "compute", End: time.Since(start), Failed: err != nil})
++	}
+ 	if err != nil {
+ 		return nil, fmt.Errorf("new instance: %w", err)
+ 	}
+ 
++	instance.stageObserver, instance.stageOrigin = observer, start
++
+ 	// solve constraints
+-	g.Go(instance.solveConstraints)
++	g.Go(instance.observeTaskV1("solver-lro", instance.solveConstraints))
+ 
+ 	// complete qk
+-	g.Go(instance.completeQk)
++	g.Go(instance.observeTaskV1("qk", instance.completeQk))
+ 
+ 	// init blinding polynomials
+-	g.Go(instance.initBlindingPolynomials)
++	g.Go(instance.observeTaskV1("blinding", instance.initBlindingPolynomials))
+ 
+ 	// derive gamma, beta (copy constraint)
+-	g.Go(instance.deriveGammaAndBeta)
++	g.Go(instance.observeTaskV1("gamma-beta", instance.deriveGammaAndBeta))
+ 
+ 	// compute accumulating ratio for the copy constraint
+-	g.Go(instance.buildRatioCopyConstraint)
++	g.Go(instance.observeTaskV1("z-permutation", instance.buildRatioCopyConstraint))
+ 
+ 	// compute h
+-	g.Go(instance.computeQuotient)
++	g.Go(instance.observeTaskV1("quotient-h", instance.computeQuotient))
+ 
+ 	// open Z (blinded) at ωζ (proof.ZShiftedOpening)
+-	g.Go(instance.openZ)
++	g.Go(instance.observeTaskV1("z-opening", instance.openZ))
+ 
+ 	// linearized polynomial
+-	g.Go(instance.computeLinearizedPolynomial)
++	g.Go(instance.observeTaskV1("evaluations-linearization", instance.computeLinearizedPolynomial))
+ 
+ 	// Batch opening
+-	g.Go(instance.batchOpening)
++	g.Go(instance.observeTaskV1("batch-opening", instance.batchOpening))
+ 
+ 	if err := g.Wait(); err != nil {
+ 		return nil, err
+@@ -240,6 +351,8 @@
+ // represents a Prover instance
+ type instance struct {
+ 	ctx context.Context
++	stageObserver *stageObserverStateV1
++	stageOrigin time.Time
+ 
+ 	pk    *ProvingKey
+ 	proof *Proof
+@@ -285,6 +398,37 @@
+ 	domain0, domain1 *fft.Domain
+ 
+ 	trace *Trace
++}
++
++func (s *instance) beginStageV1() time.Time {
++	if s.stageObserver == nil { return time.Time{} }
++	return time.Now()
++}
++
++func (s *instance) endStageV1(stage, phase string, start time.Time, failed bool) {
++	if s.stageObserver == nil { return }
++	s.stageObserver.callback(StageEventV1{Stage: stage, Phase: phase,
++		Start: start.Sub(s.stageOrigin), End: time.Since(s.stageOrigin), Failed: failed})
++}
++
++func (s *instance) observeTaskV1(stage string, fn func() error) func() error {
++	if s.stageObserver == nil { return fn }
++	return func() (err error) {
++		start := s.beginStageV1()
++		defer func() { s.endStageV1(stage, "task", start, err != nil) }()
++		return fn()
++	}
++}
++
++func (s *instance) waitStageV1(stage string, ready <-chan struct{}) (err error) {
++	start := s.beginStageV1()
++	defer func() { s.endStageV1(stage, "wait", start, err != nil) }()
++	select {
++	case <-s.ctx.Done():
++		return errContextDone
++	case <-ready:
++		return nil
++	}
+ }
+ 
+ func newInstance(ctx context.Context, spr *cs.SparseR1CS, pk *ProvingKey, fullWitness witness.Witness, opts *backend.ProverConfig) (*instance, error) {
+@@ -402,10 +546,13 @@
+ // solveConstraints computes the evaluation of the polynomials L, R, O
+ // and sets x[id_L], x[id_R], x[id_O] in Lagrange form
+ func (s *instance) solveConstraints() error {
++	solverStart := s.beginStageV1()
+ 	_solution, err := s.spr.Solve(s.fullWitness, s.opt.SolverOpts...)
++	s.endStageV1("solver", "compute", solverStart, err != nil)
+ 	if err != nil {
+ 		return err
+ 	}
++	polynomialsStart := s.beginStageV1()
+ 	solution := _solution.(*cs.SparseR1CSSolution)
+ 	evaluationLDomainSmall := []fr.Element(solution.L)
+ 	evaluationRDomainSmall := []fr.Element(solution.R)
+@@ -424,6 +571,7 @@
+ 	s.x[id_O] = iop.NewPolynomial(&evaluationODomainSmall, iop.Form{Basis: iop.Lagrange, Layout: iop.Regular})
+ 
+ 	wg.Wait()
++	s.endStageV1("witness-polynomials", "compute", polynomialsStart, false)
+ 
+ 	// commit to l, r, o and add blinding factors
+ 	if err := s.commitToLRO(); err != nil {
+@@ -445,10 +593,8 @@
+ 	copy(qkCoeffs, wWitness[:len(s.spr.Public)])
+ 
+ 	// wait for solver to be done
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chLRO:
++	if err := s.waitStageV1("qk/lro", s.chLRO); err != nil {
++		return err
+ 	}
+ 
+ 	for i := range s.commitmentInfo {
+@@ -486,14 +632,14 @@
+ // The (P[i]-s0) terms are zero in the padding region, so the MSM only needs
+ // the non-padding entries. For a 2.2M-constraint circuit on a 4M domain,
+ // this nearly halves each MSM.
+-func (s *instance) commitToLRO() error {
++func (s *instance) commitToLRO() (err error) {
+ 	// wait for blinding polynomials to be initialized or context to be done
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chbp:
+-	}
+-
++	if err := s.waitStageV1("lro/blinding", s.chbp); err != nil {
++		return err
++	}
++
++	lroStart := s.beginStageV1()
++	defer func() { s.endStageV1("lro", "compute", lroStart, err != nil) }()
+ 	n := int(s.domain0.Cardinality)
+ 	nbPublic := len(s.spr.Public)
+ 	offset := nbPublic + s.spr.GetNbConstraints()
+@@ -515,6 +661,8 @@
+ 
+ 	// L: subtract s0, MSM on [0:offset], add correction + blinding, restore
+ 	g.Go(func() (err error) {
++		commitStart := s.beginStageV1()
++		defer func() { s.endStageV1("l-commitment", "compute", commitStart, err != nil) }()
+ 		coeffs := s.x[id_L].Coefficients()
+ 		for i := 0; i < offset; i++ {
+ 			coeffs[i].Sub(&coeffs[i], &s0)
+@@ -534,6 +682,8 @@
+ 
+ 	// R: subtract s0, MSM on [nbPublic:offset], add correction + blinding, restore
+ 	g.Go(func() (err error) {
++		commitStart := s.beginStageV1()
++		defer func() { s.endStageV1("r-commitment", "compute", commitStart, err != nil) }()
+ 		coeffs := s.x[id_R].Coefficients()
+ 		for i := nbPublic; i < offset; i++ {
+ 			coeffs[i].Sub(&coeffs[i], &s0)
+@@ -553,6 +703,8 @@
+ 
+ 	// O: same as R
+ 	g.Go(func() (err error) {
++		commitStart := s.beginStageV1()
++		defer func() { s.endStageV1("o-commitment", "compute", commitStart, err != nil) }()
+ 		coeffs := s.x[id_O].Coefficients()
+ 		for i := nbPublic; i < offset; i++ {
+ 			coeffs[i].Sub(&coeffs[i], &s0)
+@@ -585,10 +737,8 @@
+ 	}
+ 
+ 	// wait for LRO to be committed
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chLRO:
++	if err := s.waitStageV1("gamma-beta/lro", s.chLRO); err != nil {
++		return err
+ 	}
+ 
+ 	gamma, err := deriveRandomness(s.fs, "gamma", &s.proof.LRO[0], &s.proof.LRO[1], &s.proof.LRO[2])
+@@ -641,6 +791,7 @@
+ 
+ // computeQuotient computes H
+ func (s *instance) computeQuotient() (err error) {
++	prepareStart := s.beginStageV1()
+ 	s.x[id_Ql] = s.trace.Ql
+ 	s.x[id_Qr] = s.trace.Qr
+ 	s.x[id_Qm] = s.trace.Qm
+@@ -657,11 +808,11 @@
+ 	lone := make([]fr.Element, n)
+ 	lone[0].SetOne()
+ 
++	s.endStageV1("quotient-preparation", "compute", prepareStart, false)
++
+ 	// wait for solver to be done
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chLRO:
++	if err := s.waitStageV1("quotient/lro", s.chLRO); err != nil {
++		return err
+ 	}
+ 
+ 	for i := 0; i < len(s.commitmentInfo); i++ {
+@@ -669,10 +820,8 @@
+ 	}
+ 
+ 	// wait for Z to be committed or context done
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chZ:
++	if err := s.waitStageV1("quotient/z", s.chZ); err != nil {
++		return err
+ 	}
+ 
+ 	// derive alpha
+@@ -686,24 +835,31 @@
+ 
+ 	s.x[id_ZS] = s.x[id_Z].ShallowClone().Shift(1)
+ 
+-	var numerator *iop.Polynomial
+-	if s.pk.accelerator == nil {
+-		numerator, err = s.computeNumerator()
++	if s.pk.accelerated(AcceleratorFeatureQuotientV1) {
++		s.h, err = s.computeQuotientAccelerated()
+ 	} else {
+-		numerator, err = s.computeNumeratorAccelerated()
++		var numerator *iop.Polynomial
++		if s.pk.accelerated(AcceleratorFeatureNumeratorV1) {
++			numerator, err = s.computeNumeratorAccelerated()
++		} else {
++			numerator, err = s.computeNumerator()
++		}
++		if err == nil {
++			divideStart := s.beginStageV1()
++			s.h, err = divideByZH(numerator, [2]*fft.Domain{s.domain0, s.domain1}, s.pk)
++			s.endStageV1("quotient-division", "compute", divideStart, err != nil)
++		}
+ 	}
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+-	s.h, err = divideByZH(numerator, [2]*fft.Domain{s.domain0, s.domain1}, s.pk)
+-	if err != nil {
+-		return err
+-	}
+-
+ 	// commit to h
+-	if err := commitToQuotient(s.h1(), s.h2(), s.h3(), s.proof, s.pk); err != nil {
+-		return err
++	commitStart := s.beginStageV1()
++	commitErr := commitToQuotient(s.h1(), s.h2(), s.h3(), s.proof, s.pk)
++	s.endStageV1("h-commitments", "compute", commitStart, commitErr != nil)
++	if commitErr != nil {
++		return commitErr
+ 	}
+ 
+ 	if err := s.deriveZeta(); err != nil {
+@@ -711,10 +867,8 @@
+ 	}
+ 
+ 	// wait for clean up tasks to be done
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chRestoreLRO:
++	if err := s.waitStageV1("quotient/restore", s.chRestoreLRO); err != nil {
++		return err
+ 	}
+ 
+ 	close(s.chH)
+@@ -724,14 +878,13 @@
+ 
+ func (s *instance) buildRatioCopyConstraint() (err error) {
+ 	// wait for gamma and beta to be derived (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chGammaBeta:
++	if err := s.waitStageV1("z-permutation/gamma-beta", s.chGammaBeta); err != nil {
++		return err
+ 	}
+ 
+ 	// TODO @gbotrel having iop.BuildRatioCopyConstraint return something
+ 	// with capacity = len() + 4 would avoid extra alloc / copy during openZ
++	permutationStart := s.beginStageV1()
+ 	s.x[id_Z], err = iop.BuildRatioCopyConstraint(
+ 		[]*iop.Polynomial{
+ 			s.x[id_L],
+@@ -744,12 +897,15 @@
+ 		iop.Form{Basis: iop.Lagrange, Layout: iop.Regular},
+ 		s.domain0,
+ 	)
++	s.endStageV1("permutation", "compute", permutationStart, err != nil)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	// commit to the blinded version of z
++	commitStart := s.beginStageV1()
+ 	s.proof.Z, err = s.commitToPolyAndBlinding(s.x[id_Z], s.bp[id_Bz])
++	s.endStageV1("z-commitment", "compute", commitStart, err != nil)
+ 
+ 	close(s.chZ)
+ 
+@@ -759,11 +915,11 @@
+ // open Z (blinded) at ωζ
+ func (s *instance) openZ() (err error) {
+ 	// wait for H to be committed and zeta to be derived (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chH:
+-	}
++	if err := s.waitStageV1("z-opening/h", s.chH); err != nil {
++		return err
++	}
++	openingStart := s.beginStageV1()
++	defer func() { s.endStageV1("z-opening", "compute", openingStart, err != nil) }()
+ 	var zetaShifted fr.Element
+ 	zetaShifted.Mul(&s.zeta, &s.pk.Vk.Generator)
+ 	s.blindedZ = getBlindedCoefficients(s.x[id_Z], s.bp[id_Bz])
+@@ -816,10 +972,8 @@
+ func (s *instance) computeLinearizedPolynomial() error {
+ 
+ 	// wait for H to be committed and zeta to be derived (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chH:
++	if err := s.waitStageV1("linearization/h", s.chH); err != nil {
++		return err
+ 	}
+ 
+ 	qcpzeta := make([]fr.Element, len(s.commitmentInfo))
+@@ -829,35 +983,44 @@
+ 
+ 	for i := 0; i < len(s.commitmentInfo); i++ {
+ 		go func(i int) {
++			evaluationStart := s.beginStageV1()
+ 			qcpzeta[i] = s.trace.Qcp[i].Evaluate(s.zeta)
++			s.endStageV1("evaluation-qcp", "compute", evaluationStart, false)
+ 			wg.Done()
+ 		}(i)
+ 	}
+ 
+ 	go func() {
++		evaluationStart := s.beginStageV1()
+ 		blzeta = evaluateBlinded(s.x[id_L], s.bp[id_Bl], s.zeta)
++		s.endStageV1("evaluation-l", "compute", evaluationStart, false)
+ 		wg.Done()
+ 	}()
+ 
+ 	go func() {
++		evaluationStart := s.beginStageV1()
+ 		brzeta = evaluateBlinded(s.x[id_R], s.bp[id_Br], s.zeta)
++		s.endStageV1("evaluation-r", "compute", evaluationStart, false)
+ 		wg.Done()
+ 	}()
+ 
+ 	go func() {
++		evaluationStart := s.beginStageV1()
+ 		bozeta = evaluateBlinded(s.x[id_O], s.bp[id_Bo], s.zeta)
++		s.endStageV1("evaluation-o", "compute", evaluationStart, false)
+ 		wg.Done()
+ 	}()
+ 
+ 	// wait for Z to be opened at zeta (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chZOpening:
++	if err := s.waitStageV1("linearization/z-opening", s.chZOpening); err != nil {
++		return err
+ 	}
+ 	bzuzeta := s.proof.ZShiftedOpening.ClaimedValue
+ 
++	evaluationsWait := s.beginStageV1()
+ 	wg.Wait()
++	s.endStageV1("linearization/evaluations", "wait", evaluationsWait, false)
++	linearizationStart := s.beginStageV1()
+ 
+ 	s.linearizedPolynomial = s.innerComputeLinearizedPoly(
+ 		blzeta,
+@@ -874,8 +1037,11 @@
+ 		s.pk,
+ 	)
+ 
++	s.endStageV1("linearization", "compute", linearizationStart, false)
++	commitStart := s.beginStageV1()
+ 	var err error
+ 	s.linearizedPolynomialDigest, err = s.pk.commit(s.pk.Kzg, s.linearizedPolynomial, runtime.NumCPU()*2)
++	s.endStageV1("linearization-commitment", "compute", commitStart, err != nil)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -883,15 +1049,15 @@
+ 	return nil
+ }
+ 
+-func (s *instance) batchOpening() error {
++func (s *instance) batchOpening() (err error) {
+ 
+ 	// wait for linearizedPolynomial to be computed (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return errContextDone
+-	case <-s.chLinearizedPolynomial:
+-	}
+-
++	if err := s.waitStageV1("batch-opening/linearization", s.chLinearizedPolynomial); err != nil {
++		return err
++	}
++
++	openingStart := s.beginStageV1()
++	defer func() { s.endStageV1("batch-opening", "compute", openingStart, err != nil) }()
+ 	polysQcp := coefficients(s.trace.Qcp)
+ 	polysToOpen := make([][]fr.Element, 6+len(polysQcp))
+ 	copy(polysToOpen[6:], polysQcp)
+@@ -913,7 +1079,6 @@
+ 	digestsToOpen[4] = s.pk.Vk.S[0]
+ 	digestsToOpen[5] = s.pk.Vk.S[1]
+ 
+-	var err error
+ 	s.proof.BatchedProof, err = kzg.BatchOpenSinglePointWithCommitter(
+ 		polysToOpen,
+ 		digestsToOpen,
+@@ -930,13 +1095,21 @@
+ // proving key's Accelerator. Like computeNumerator, it leaves the polynomials
+ // in x in canonical regular form; unlike it, the restoration is synchronous.
+ func (s *instance) computeNumeratorAccelerated() (*iop.Polynomial, error) {
++	return s.computeAcceleratedQuotient(false)
++}
++
++func (s *instance) computeQuotientAccelerated() (*iop.Polynomial, error) {
++	return s.computeAcceleratedQuotient(true)
++}
++
++func (s *instance) computeAcceleratedQuotient(fused bool) (_ *iop.Polynomial, err error) {
+ 	// wait for chQk to be closed (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return nil, errContextDone
+-	case <-s.chQk:
+-	}
+-
++	if err := s.waitStageV1("quotient/qk", s.chQk); err != nil {
++		return nil, err
++	}
++
++	computeStart := s.beginStageV1()
++	defer func() { s.endStageV1("quotient", "compute", computeStart, err != nil) }()
+ 	in := &NumeratorInput{
+ 		Domain0: s.domain0,
+ 		Domain1: s.domain1,
+@@ -967,8 +1140,18 @@
+ 		in.Pi[i] = s.x[id_Qci+2*i+1]
+ 	}
+ 
+-	res, err := s.pk.accelerator.ComputeNumerator(in)
++	blindings := snapshotAcceleratorBlindings(in)
++	state := s.pk.accelerator.Load()
++	var res *iop.Polynomial
++	if fused {
++		res, err = state.quotient.ComputeQuotientV1(in)
++	} else {
++		res, err = state.implementation.ComputeNumerator(in)
++	}
+ 	if err != nil {
++		return nil, err
++	}
++	if err := validateAcceleratorResult(in, res, fused, blindings); err != nil {
+ 		return nil, err
+ 	}
+ 
+@@ -979,9 +1162,63 @@
+ 	return res, nil
+ }
+ 
++type acceleratorBlindingSnapshot struct {
++	polynomial   *iop.Polynomial
++	basis        iop.Basis
++	layout       iop.Layout
++	size         int
++	coefficients []fr.Element
++}
++
++func snapshotAcceleratorBlindings(in *NumeratorInput) []acceleratorBlindingSnapshot {
++	result := make([]acceleratorBlindingSnapshot, 0, 4)
++	for _, p := range []*iop.Polynomial{in.Bl, in.Br, in.Bo, in.Bz} {
++		result = append(result, acceleratorBlindingSnapshot{
++			polynomial: p, basis: p.Basis, layout: p.Layout, size: p.Size(),
++			coefficients: append([]fr.Element(nil), p.Coefficients()...),
++		})
++	}
++	return result
++}
++
++func validateAcceleratorResult(in *NumeratorInput, result *iop.Polynomial, fused bool, blindings []acceleratorBlindingSnapshot) error {
++	basis, layout := iop.LagrangeCoset, iop.BitReverse
++	if fused {
++		basis, layout = iop.Canonical, iop.Regular
++	}
++	if result == nil || result.Basis != basis || result.Layout != layout ||
++		uint64(result.Size()) != in.Domain1.Cardinality ||
++		uint64(len(result.Coefficients())) != in.Domain1.Cardinality {
++		return errors.New("accelerator returned an invalid quotient-domain polynomial")
++	}
++	inputs := []*iop.Polynomial{in.L, in.R, in.O, in.Z, in.Qk, in.Ql, in.Qr, in.Qm, in.Qo, in.S1, in.S2, in.S3}
++	inputs = append(inputs, in.Qcp...)
++	inputs = append(inputs, in.Pi...)
++	for _, p := range inputs {
++		if p == nil || p.Basis != iop.Canonical || p.Layout != iop.Regular ||
++			uint64(p.Size()) != in.Domain0.Cardinality ||
++			uint64(len(p.Coefficients())) != in.Domain0.Cardinality {
++			return errors.New("accelerator did not restore canonical input polynomials")
++		}
++	}
++	for _, saved := range blindings {
++		p := saved.polynomial
++		if p.Basis != saved.basis || p.Layout != saved.layout || p.Size() != saved.size ||
++			len(p.Coefficients()) != len(saved.coefficients) {
++			return errors.New("accelerator changed a blinding polynomial")
++		}
++		for i, coefficient := range saved.coefficients {
++			if coefficient != p.Coefficients()[i] {
++				return errors.New("accelerator changed a blinding polynomial")
++			}
++		}
++	}
++	return nil
++}
++
+ // evaluate the full set of constraints, all polynomials in x are back in
+ // canonical regular form at the end
+-func (s *instance) computeNumerator() (*iop.Polynomial, error) {
++func (s *instance) computeNumerator() (_ *iop.Polynomial, err error) {
+ 	// init vectors that are used multiple times throughout the computation
+ 	n := s.domain0.Cardinality
+ 	twiddles0 := make([]fr.Element, n)
+@@ -1001,12 +1238,12 @@
+ 	}
+ 
+ 	// wait for chQk to be closed (or ctx.Done())
+-	select {
+-	case <-s.ctx.Done():
+-		return nil, errContextDone
+-	case <-s.chQk:
+-	}
+-
++	if err := s.waitStageV1("quotient/qk", s.chQk); err != nil {
++		return nil, err
++	}
++
++	computeStart := s.beginStageV1()
++	defer func() { s.endStageV1("quotient-numerator", "compute", computeStart, err != nil) }()
+ 	nbBsbGates := len(s.proof.Bsb22Commitments)
+ 
+ 	gateConstraint := func(u ...fr.Element) fr.Element {
+@@ -1231,6 +1468,7 @@
+ 
+ 	// scale everything back
+ 	go func() {
++		restoreStart := s.beginStageV1()
+ 		s.x[id_ZS] = nil
+ 		s.x[id_Qk] = nil
+ 
+@@ -1253,6 +1491,7 @@
+ 			scalePowers(q, cs)
+ 		}
+ 
++		s.endStageV1("polynomial-restoration", "compute", restoreStart, false)
+ 		close(s.chRestoreLRO)
+ 	}()
+ 
+@@ -1459,9 +1698,12 @@
+ 		}
+ 	})
+ 
+-	if pk.accelerator != nil {
+-		if err := pk.accelerator.ToCanonical(bigDomain, a); err != nil {
++	if pk.accelerated(AcceleratorFeatureToCanonicalV1) {
++		if err := pk.accelerator.Load().implementation.ToCanonical(bigDomain, a); err != nil {
+ 			return nil, err
++		}
++		if a.Basis != iop.Canonical || a.Layout != iop.Regular || uint64(len(a.Coefficients())) != bigDomain.Cardinality {
++			return nil, errors.New("accelerator canonical conversion returned an invalid polynomial")
+ 		}
+ 		return a, nil
+ 	}
+diff --git a/internal/generator/backend/template/zkpschemes/plonk/plonk.setup.go.tmpl b/internal/generator/backend/template/zkpschemes/plonk/plonk.setup.go.tmpl
+--- a/internal/generator/backend/template/zkpschemes/plonk/plonk.setup.go.tmpl
++++ b/internal/generator/backend/template/zkpschemes/plonk/plonk.setup.go.tmpl
+@@ -4,6 +4,7 @@
+ 	{{- template "import_fft" . }}
+ 	{{- template "import_backend_cs" . }}
+ 	"fmt"
++	"sync/atomic"
+ 	"github.com/consensys/gnark-crypto/ecc/{{toLower .Curve}}/fr/iop"
+ 	"github.com/consensys/gnark/backend/plonk/internal"
+ 	"github.com/consensys/gnark/constraint"
+@@ -86,7 +87,8 @@
+ 	// accelerator, when set, offloads the multi-scalar multiplications, the
+ 	// quotient numerator and the large inverse FFT of Prove (see Accelerator).
+ 	// Runtime-only, not serialized.
+-	accelerator Accelerator
++	accelerator atomic.Pointer[acceleratorState]
++	stageObserver atomic.Pointer[stageObserverStateV1]
+ }
+ 
+ func Setup(spr *cs.SparseR1CS, srs, srsLagrange kzg.SRS) (*ProvingKey, *VerifyingKey, error) {
