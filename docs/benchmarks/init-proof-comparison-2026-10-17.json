@@ -1,0 +1,1530 @@
+{
+  "format": "ix-init-proof-benchmark-comparison/v1",
+  "measurement_dates_utc": [
+    "2026-10-16",
+    "2026-10-17"
+  ],
+  "hardware": {
+    "cpu": "Intel Xeon Platinum 8559C",
+    "logical_cpus": 48,
+    "host_ram_gib": 499,
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    "active_gpus": 1,
+    "storage": "local NVMe"
+  },
+  "timing_units": "seconds; the accompanying document rounds to whole seconds as XmYs",
+  "scope": "Actual saved Init proof; warm proving uses prepared SRS, reused fixed preprocessing and prepared PLONK keys. Initial aggregation, FRI compression, builds and parameter provisioning are excluded from proving times. One-time PLONK key preparation is recorded separately. Default CPU parallelism and uncontrolled OS page caches.",
+  "warm_gpu_kzg": {
+    "bls12_381": {
+      "setup": "Filecoin",
+      "transcript": "BLAKE3",
+      "samples": 1,
+      "stage_seconds": [
+        146.96682424700703,
+        92.35522456599574
+      ],
+      "stage_sum_seconds": 239.32204881300277,
+      "complete_driver_seconds": null,
+      "peak_rss_gib": 175.7913475036621,
+      "sampled_gpu_peak_gib": 64.7001953125,
+      "largest_proof_bytes": 2189,
+      "largest_proof_encoding": "ix envelope",
+      "independent_cpu_verification_passed": true,
+      "proof_and_verifier_bytes_match_baseline": true
+    },
+    "bn254": {
+      "setup": "Ignition",
+      "transcript": "BLAKE3",
+      "samples": 1,
+      "stage_seconds": [
+        135.9354764230011,
+        44.56177651299731
+      ],
+      "stage_sum_seconds": 180.4972529359984,
+      "peak_rss_gib": 175.28718185424805,
+      "sampled_gpu_peak_gib": 57.2734375,
+      "complete_driver_seconds": 181.128614543999,
+      "largest_proof_bytes": 1917,
+      "largest_proof_encoding": "ix envelope",
+      "independent_cpu_verification_passed": true
+    }
+  },
+  "terminal_plonk": {
+    "bls12_381_cpu": {
+      "constraints": 21184618,
+      "domain": 33554432,
+      "core_prove_seconds": 127.168089918,
+      "standalone_wall_seconds": 293.8702487900009,
+      "peak_rss_gib": 53.627647399902344,
+      "internal_verify_seconds": 0.002753875,
+      "fresh_verify_median_seconds": 0.025507908,
+      "largest_proof_bytes": 1184,
+      "largest_proof_encoding": "Solidity payload",
+      "manifest": {
+        "Format": "ix-bls-plonk-artifacts-v1",
+        "ExecutableSHA256": "6ee690f092a9b5fb1aa8672abe9af5450ac4f47a42b64fd073c4bbc826b3490b",
+        "ProfileSHA256": "d8a701b2bbee09513c5cced0e94c41be3b48b43d755dbdb77309d7f4abc36091",
+        "SRSBLAKE3": "26d517c2c6c54adfba55635f01d942a3be3394a97f14a4ea22db8d3c13e44c20",
+        "KeysReady": true,
+        "Domain": 33554432,
+        "Constraints": 21184618,
+        "PublicInputs": 2,
+        "Commitments": 1,
+        "Files": {
+          "PlonkVerifier.sol": {
+            "SHA256": "4f76511cee62ea1218546f3d23119dc12eac5bab0ae2e86fc64f4f70326b13e0",
+            "Bytes": 57656
+          },
+          "circuit.bin": {
+            "SHA256": "1bd527b9eeb65b7c70f4d65cc6ce9449ec7d92b48cbd6a370a4bc57a33ae7d21",
+            "Bytes": 509824407
+          },
+          "profile.json": {
+            "SHA256": "d8a701b2bbee09513c5cced0e94c41be3b48b43d755dbdb77309d7f4abc36091",
+            "Bytes": 96765
+          },
+          "proving-key.bin": {
+            "SHA256": "cddeaf4e712a730a9fdba4559624bd6667d7e8db2e442f69575c88519621a746",
+            "Bytes": 3221274824
+          },
+          "verifying-key.bin": {
+            "SHA256": "73d8ebbad3df955310fcf7c8b7d35cf04f6ecd5be513f55af25036b7349e5299",
+            "Bytes": 49200
+          }
+        }
+      },
+      "verification_samples": [
+        {
+          "process_wall_seconds": 0.025091336,
+          "decode_witness_verify_seconds": 0.003572
+        },
+        {
+          "process_wall_seconds": 0.026360729,
+          "decode_witness_verify_seconds": 0.004243
+        },
+        {
+          "process_wall_seconds": 0.025014592,
+          "decode_witness_verify_seconds": 0.003729
+        },
+        {
+          "process_wall_seconds": 0.026099931,
+          "decode_witness_verify_seconds": 0.004399
+        },
+        {
+          "process_wall_seconds": 0.02616765,
+          "decode_witness_verify_seconds": 0.004373
+        },
+        {
+          "process_wall_seconds": 0.025507908,
+          "decode_witness_verify_seconds": 0.004196
+        },
+        {
+          "process_wall_seconds": 0.025265188,
+          "decode_witness_verify_seconds": 0.003868
+        }
+      ],
+      "process_resources": {
+        "command": [
+          "/opt/dlami/nvme/ix-bls-plonk-52c61479/bin/ix-bls-plonk-wrapper",
+          "prove",
+          "/opt/dlami/nvme/ix-bls-plonk-52c61479/artifacts",
+          "/opt/dlami/nvme/ix-bls-plonk-52c61479/input/witness.json",
+          "/opt/dlami/nvme/ix-bls-plonk-52c61479/proof"
+        ],
+        "started_utc": "2026-10-16T22:38:21.966614+00:00",
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 293.8702487900009,
+        "sampled_tree_peak_rss_gib": 53.63070297241211,
+        "minimum_host_available_gib": 433.12681579589844,
+        "sampled_device_peak_used_mib": {
+          "0": 0,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 53.627647399902344
+      },
+      "proof_sha256": "95a11e9dfaf74f8909c23b753237bde6c245cf809a3cfa3ec2d65e4aa3950912",
+      "one_time_key_preparation_seconds": 1217.1550381429988
+    },
+    "bn254_cpu": {
+      "constraints": 14689440,
+      "domain": 16777216,
+      "core_prove_seconds": 53.785198022,
+      "standalone_wall_seconds": 73.70435369999905,
+      "peak_rss_gib": 25.19399642944336,
+      "internal_verify_seconds": 0.001488194,
+      "fresh_verify_median_seconds": 0.022518681,
+      "largest_proof_bytes": 864,
+      "largest_proof_encoding": "Solidity payload",
+      "manifest": {
+        "Format": "ix-bn254-plonk-artifacts-v1",
+        "ExecutableSHA256": "fad956a1680bd2e7a6412e3b8e65a3cb90a8ac9d0848daa52c97036916d3e957",
+        "ProfileSHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+        "SRSBLAKE3": "a71cd91e2cf082700740aa25a37896d8f68fafa4bec07b927720dea881705e0a",
+        "KeysReady": true,
+        "Domain": 16777216,
+        "Constraints": 14689440,
+        "PublicInputs": 2,
+        "Commitments": 1,
+        "Files": {
+          "PlonkVerifier.sol": {
+            "SHA256": "6f3b0d598d3b08a925575b1494c58a4267852bb9fbd29cb1e9179005f45edfd4",
+            "Bytes": 58855
+          },
+          "circuit.bin": {
+            "SHA256": "a684964f61296fcda0df427980275764df242590373ce5680f70b0ac5dcfbded",
+            "Bytes": 363613886
+          },
+          "profile.json": {
+            "SHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+            "Bytes": 95498
+          },
+          "proving-key.bin": {
+            "SHA256": "4698740eb1ac6a07445a121b86a013d491755b3e906de20bcc0ea96afcf9002c",
+            "Bytes": 1073776312
+          },
+          "verifying-key.bin": {
+            "SHA256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+            "Bytes": 34384
+          }
+        }
+      },
+      "verification_samples": [
+        {
+          "process_wall_seconds": 0.023686866,
+          "decode_witness_verify_seconds": 0.002018
+        },
+        {
+          "process_wall_seconds": 0.022240173,
+          "decode_witness_verify_seconds": 0.002033
+        },
+        {
+          "process_wall_seconds": 0.022394519,
+          "decode_witness_verify_seconds": 0.001799
+        },
+        {
+          "process_wall_seconds": 0.022623626,
+          "decode_witness_verify_seconds": 0.001813
+        },
+        {
+          "process_wall_seconds": 0.022518681,
+          "decode_witness_verify_seconds": 0.001724
+        },
+        {
+          "process_wall_seconds": 0.021721128,
+          "decode_witness_verify_seconds": 0.001573
+        },
+        {
+          "process_wall_seconds": 0.022539387,
+          "decode_witness_verify_seconds": 0.001964
+        }
+      ],
+      "process_resources": {
+        "command": [
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/bin-final/ix-bn254-plonk-wrapper",
+          "prove",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/artifacts-final",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/input/witness.json",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/proof"
+        ],
+        "started_utc": "2026-10-16T23:35:02.750700+00:00",
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 73.70435369999905,
+        "sampled_tree_peak_rss_gib": 25.196983337402344,
+        "minimum_host_available_gib": 461.5277557373047,
+        "sampled_device_peak_used_mib": {
+          "0": 0,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 25.19399642944336
+      },
+      "proof_sha256": "06084a415648171e93bc638e49c111f75e67ef24c24186543d91e9398f42b438",
+      "one_time_key_preparation_seconds": 358.30234215900055
+    },
+    "bn254_gpu": {
+      "core_prove_median_seconds": 11.351813712,
+      "paired_cpu_median_seconds": 53.895310111,
+      "backend_setup_median_seconds": 0.110641134,
+      "initial_artifact_and_witness_seconds": 22.022895569,
+      "standalone_wall_seconds": 31.97249543900398,
+      "isolated_peak_rss_gib": 20.64031219482422,
+      "mixed_benchmark_peak_rss_gib": 35.80255889892578,
+      "sampled_gpu_peak_gib": 19.2626953125,
+      "internal_verify_median_seconds": 0.001438671,
+      "scope": "Externally pinned existing Init artifacts; same loaded circuit, keys and witness for CPU and CUDA, fresh gnark blinding. No compilation or key preparation.",
+      "largest_proof_bytes": 864,
+      "largest_proof_encoding": "Solidity payload",
+      "paired_core_runs": [
+        {
+          "mode": "cpu",
+          "iteration": 1,
+          "backendSetupSeconds": 8.7e-08,
+          "proveSeconds": 53.656700533,
+          "verifySeconds": 0.00124744,
+          "proofSHA256": "5b05ff0c5118c89e94ea67ad75c7670670226253ca2178a82c5f18895c41a232"
+        },
+        {
+          "mode": "cuda-unfused",
+          "iteration": 1,
+          "backendSetupSeconds": 0.401823658,
+          "proveSeconds": 11.447817987,
+          "verifySeconds": 0.001276493,
+          "proofSHA256": "4aaa04b329f6b197314700ff8fc5d55eecedbebd1e34505791b00f2967922700"
+        },
+        {
+          "mode": "cuda-fused",
+          "iteration": 1,
+          "backendSetupSeconds": 0.106406622,
+          "proveSeconds": 11.351813712,
+          "verifySeconds": 0.001438671,
+          "proofSHA256": "17d58f70a89504a7831913f9c66ba5c73362b6352b68a1acf2933e6e741c9e95"
+        },
+        {
+          "mode": "cpu",
+          "iteration": 2,
+          "backendSetupSeconds": 1.46e-07,
+          "proveSeconds": 54.08272919,
+          "verifySeconds": 0.0011952,
+          "proofSHA256": "287be3c083162ca0b93706d4a1ae50ebe2c147efba623dd3200f6576dbd027a9"
+        },
+        {
+          "mode": "cuda-unfused",
+          "iteration": 2,
+          "backendSetupSeconds": 0.115164503,
+          "proveSeconds": 11.741907965,
+          "verifySeconds": 0.001315053,
+          "proofSHA256": "58a8fea6284af428a1e642b5fdfdf0fb0f21180ce9f36e7334a4aa71123115bc"
+        },
+        {
+          "mode": "cuda-fused",
+          "iteration": 2,
+          "backendSetupSeconds": 0.110641134,
+          "proveSeconds": 11.24284263,
+          "verifySeconds": 0.001496779,
+          "proofSHA256": "5d461b59e7f0b1c8b2479029d1ad699d1d0b198fb51d9011aed830ab6d94215d"
+        },
+        {
+          "mode": "cpu",
+          "iteration": 3,
+          "backendSetupSeconds": 1.7e-07,
+          "proveSeconds": 53.895310111,
+          "verifySeconds": 0.001329616,
+          "proofSHA256": "184b63974b90b76f76b24e0afe1cc3c9a9aaada2972df89ef989fc67cdd175f5"
+        },
+        {
+          "mode": "cuda-unfused",
+          "iteration": 3,
+          "backendSetupSeconds": 0.125299825,
+          "proveSeconds": 11.374118567,
+          "verifySeconds": 0.001410155,
+          "proofSHA256": "22633b3d2b065aaf0bc75991f364a0a52e6123d81c95773a75dda1c224964fc7"
+        },
+        {
+          "mode": "cuda-fused",
+          "iteration": 3,
+          "backendSetupSeconds": 0.121757646,
+          "proveSeconds": 11.372368583,
+          "verifySeconds": 0.001378996,
+          "proofSHA256": "b9b17a96bb62ef85ea41e086ea6e9fc8a9e2e016db6e7e464092c81d726ab664"
+        }
+      ],
+      "native_build": {
+        "format": "ix-bn254-plonk-cuda-build-v1",
+        "gnark_version": "v0.16.5-0.20261015185324-262cf453c107",
+        "gnark_patch_sha256": "11bf0e9b4fb9b5d29498068a40d3d4b71298032062110e2a06e9ab28182b68d8",
+        "go_version": "go version go1.26.8 linux/amd64",
+        "binary": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/bin/cuda.test",
+        "binary_sha256": "6a8759a576e20879cdf6dcd6efa033a6b4569703b7459f38318e96c95a483c41",
+        "library": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/lib/libix_plonk_bn254_cuda.so",
+        "library_sha256": "ac101351e8e5fffd9651472926a3047620232b3d63d858104ca72b4305047a6b",
+        "native_build_identity": "702a28c34e4d7e1093060b004bfc161773dd85346681cd4b27ac83e39dee69b6",
+        "native_receipts": [
+          "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/build/native/build-manifest.json"
+        ],
+        "go_command": [
+          "/home/sam/repos/ix.sb-bn254/target/toolchains/go1.26.8/go/bin/go",
+          "test",
+          "-c",
+          "-buildvcs=false",
+          "-trimpath",
+          "-mod=readonly",
+          "-modfile=/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/build/cuda.mod",
+          "-tags",
+          "bn254,cuda",
+          "-o",
+          "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/bin/cuda.test.tmp",
+          "."
+        ],
+        "test_binary": true
+      },
+      "measurement_limitations": "Three paired rounds in one process with loaded keys, fresh CUDA context per proof, no forced GC, default CPU parallelism. Core timers exclude initial artifact loading and per-proof backend setup. Host RSS is shared-process peak, not isolated per-backend peak; device samples are two-second lower bounds.",
+      "standalone_sampled_gpu_peak_gib": 2.7626953125,
+      "standalone_core_prove_seconds": 11.385703605,
+      "standalone_internal_verify_seconds": 0.001365785,
+      "standalone_native_proof_sha256": "bf0b56e5aab620f3e21c1227c6c821b167d73bd524fde1a59b2230d13745180d",
+      "standalone_solidity_proof_sha256": "9889aa67e594a471fdc83c2af1326e45d7692afd12987a2d91ea4291b0728816",
+      "standalone_native_pool_reserved_peak_gib": 18.59375,
+      "standalone_native_accounted_peak_gib": 18.58419418334961,
+      "standalone_gpu_memory_note": "Two-second device polling missed the short allocation peak in this standalone run; native pool high-water marks are authoritative for allocations managed by that pool, excluding driver and other allocations. The comparison retains the repeated benchmark device-memory sample.",
+      "standalone_scope": "One production CLI proof in a fresh process with prepared keys, artifact authentication/loading, witness assembly, CUDA setup, proving, verification and serialization; default CPU parallelism; one GPU; OS page cache uncontrolled.",
+      "one_time_key_preparation_seconds": 357.1167934479963
+    }
+  },
+  "verification": {
+    "bls12_381_cpu_plonk": {
+      "transaction": {
+        "gas_used": 404637,
+        "calldata_bytes": 1284,
+        "intrinsic_calldata_gas": 40800,
+        "execution_gas": 363837,
+        "eip7623_floor_gas": 70500
+      },
+      "usd_estimate": "1.156942235107723200000000000",
+      "compiler_settings": {
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "viaIR": true,
+        "evmVersion": "prague",
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode.object",
+              "evm.deployedBytecode.object"
+            ]
+          }
+        }
+      },
+      "execution_hardfork": "osaka",
+      "checks_passed": 5,
+      "all_checks_passed": true,
+      "proof_sha256": "ca8827f7e3638c57778f32e8658a6601703d4c2ca18a67d1aeade5c80a6e18a7",
+      "claim_digest": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80",
+      "generated_contract_sha256": "4f76511cee62ea1218546f3d23119dc12eac5bab0ae2e86fc64f4f70326b13e0"
+    },
+    "bn254_cpu_plonk": {
+      "transaction": {
+        "transaction_hash": "0x782adafcfff7089af4c51a0ed6211337de8f18700039e19e65aee31999f6460d",
+        "gas_used": 320103,
+        "calldata_bytes": 964,
+        "intrinsic_calldata_gas": 35668,
+        "eip7623_floor_gas": 57670,
+        "execution_gas": 284435
+      },
+      "usd_estimate": "0.9152417606019408000000000003",
+      "compiler_settings": {
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "viaIR": true,
+        "evmVersion": "prague",
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode.object",
+              "evm.deployedBytecode.object"
+            ]
+          }
+        }
+      },
+      "execution_hardfork": "osaka",
+      "checks_passed": 47,
+      "all_checks_passed": true,
+      "toolchain": {
+        "solc": "solc, the solidity compiler commandline interface\nVersion: 0.8.37+commit.f401782d.Linux.g++",
+        "anvil": "anvil Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist",
+        "cast": "cast Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist"
+      },
+      "verifying_key_sha256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+      "claim_digest": "0xc019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80"
+    },
+    "bn254_gpu_plonk": {
+      "transaction": {
+        "transaction_hash": "0xdcbc34409cc9289befc1f5b8b45464c9bb601975ade3531e99f0737cf845af34",
+        "gas_used": 320091,
+        "calldata_bytes": 964,
+        "intrinsic_calldata_gas": 35656,
+        "eip7623_floor_gas": 57640,
+        "execution_gas": 284435
+      },
+      "usd_estimate": "0.9152074500796176000000000003",
+      "compiler_settings": {
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "viaIR": true,
+        "evmVersion": "prague",
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode.object",
+              "evm.deployedBytecode.object"
+            ]
+          }
+        }
+      },
+      "execution_hardfork": "osaka",
+      "checks_passed": 47,
+      "all_checks_passed": true,
+      "toolchain": {
+        "solc": "solc, the solidity compiler commandline interface\nVersion: 0.8.37+commit.f401782d.Linux.g++",
+        "anvil": "anvil Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist",
+        "cast": "cast Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist"
+      },
+      "verifying_key_sha256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+      "claim_digest": "0xc019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80"
+    },
+    "bls12_381_legacy_keccak_kzg": {
+      "scope": "Historical BLS aggregate Filecoin Keccak v5 proof; not the BLAKE3 v6 GPU proof.",
+      "compiler_settings": {
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "viaIR": true,
+        "evmVersion": "prague",
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode.object",
+              "evm.deployedBytecode.object"
+            ]
+          }
+        }
+      },
+      "execution_hardfork": "osaka",
+      "profile_blake3": "8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb",
+      "packet_bytes": 2181,
+      "hints_bytes": 816,
+      "runtime_bytes": 23700,
+      "checks": {
+        "accepts-aggregate": {
+          "accepted": true,
+          "passed": true
+        },
+        "rejects-wrong-claim": {
+          "accepted": false,
+          "passed": true
+        },
+        "rejects-mutated-proof": {
+          "accepted": false,
+          "passed": true
+        }
+      },
+      "deployment_gas": 5174467,
+      "transaction_gas": 825229,
+      "intrinsic_calldata_gas": 71896,
+      "execution_gas": 753333,
+      "eip7623_floor_gas": 148240,
+      "calldata_bytes": 3748,
+      "all_checks_passed": true,
+      "usd_estimate": "2.359503168854334400000000001",
+      "generated_contract_sha256": "f7e667cf2893ca3acb854f43567d5e5917731cc666055a0ff3acf720128a03d9"
+    }
+  },
+  "pricing": {
+    "gas_price_source": "https://ycharts.com/indicators/ethereum_average_gas_price",
+    "original_series_source": "Etherscan",
+    "gas_price_start": "2026-09-15",
+    "gas_price_end": "2026-10-14",
+    "averaging_method": "arithmetic mean of 30 published daily averages",
+    "daily_gwei": {
+      "2026-10-14": "0.9264",
+      "2026-10-13": "0.9179",
+      "2026-10-12": "0.8657",
+      "2026-10-11": "0.6591",
+      "2026-10-10": "0.6399",
+      "2026-10-09": "0.8663",
+      "2026-10-08": "1.976",
+      "2026-10-07": "1.512",
+      "2026-10-06": "1.332",
+      "2026-10-05": "1.335",
+      "2026-10-04": "0.8029",
+      "2026-10-03": "0.6738",
+      "2026-10-02": "0.9618",
+      "2026-10-01": "1.324",
+      "2026-09-30": "1.068",
+      "2026-09-29": "2.194",
+      "2026-09-28": "2.298",
+      "2026-09-27": "2.038",
+      "2026-09-26": "0.7302",
+      "2026-09-25": "1.143",
+      "2026-09-24": "2.348",
+      "2026-09-23": "1.347",
+      "2026-09-22": "0.8002",
+      "2026-09-21": "1.148",
+      "2026-09-20": "0.6966",
+      "2026-09-19": "0.8993",
+      "2026-09-18": "0.934",
+      "2026-09-17": "0.8043",
+      "2026-09-16": "0.7804",
+      "2026-09-15": "1.133"
+    },
+    "average_gwei": "1.171826666666666666666666667",
+    "eth_usd": "2439.96",
+    "eth_usd_date": "2026-10-16",
+    "eth_usd_source": "https://ycharts.com/indicators/ethereum_price",
+    "usd_per_million_gas": "2.859210193600000000000000001",
+    "formula": "gas * average_gwei * 1e-9 * eth_usd"
+  },
+  "raw_warm_kzg_records": {
+    "bls12_381": {
+      "format": "ix-init-bls-kzg-warm/v1",
+      "started_utc": "2026-10-17T02:07:18.502460+00:00",
+      "scope": "Actual Init FRI to two BLS KZG stages; authenticated Filecoin SRS and existing fixed preprocessing; fresh workers, uncontrolled OS page cache, default CPU parallelism, one GPU.",
+      "baseline_report": "/opt/dlami/nvme/ix-bls-plonk-52c61479/report.json",
+      "worker_sha256": "9ed90c2bdb98736e4b289dd86b78ff9cf2ec50033ec27c2ace4f2c3112e12a95",
+      "cpu_worker_sha256": "955b270db5f04befeb24cea73949383cde97ff370139dee6a4f75069d33501a7",
+      "fixed_cache": "/opt/dlami/nvme/ix-bls-plonk-52c61479/kzg-fixed",
+      "stages": {
+        "first-kzg": {
+          "command": [
+            "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/bin/ix-compression-worker",
+            "kzg",
+            "run",
+            "/opt/dlami/nvme/ix-bn254/inputs/init/fri",
+            "/opt/dlami/nvme/ix-bls-kzg-warm-20261017/first-kzg",
+            "24"
+          ],
+          "started_utc": "2026-10-17T02:07:18.502460+00:00",
+          "environment": {
+            "IX_COMPRESSION_WORKER": "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/bin/ix-compression-worker",
+            "IX_KZG_FIXED_CACHE": "/opt/dlami/nvme/ix-bls-plonk-52c61479/kzg-fixed",
+            "IX_TEXRAY": "1",
+            "IX_KZG_CUDA_DEVICES": "0",
+            "IX_KZG_CUDA_RESIDENT_GIB": "8",
+            "IX_KZG_CUDA_SRS_CACHE": "0",
+            "IX_KZG_MSM_CHUNK_POINTS": "16777216",
+            "IX_KZG_CUDA_PASSES": "1",
+            "IX_KZG_CUDA_PROFILE": "0",
+            "CUDA_VISIBLE_DEVICES": "0",
+            "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/lib",
+            "RUST_LOG": "info",
+            "IX_KZG_FILECOIN_CACHE": "/opt/dlami/nvme/ix-compression/parameters/filecoin-prefix-2p27.bin",
+            "IX_KZG_FILECOIN_MANIFEST": "1442386005c4e4a2ebc23c109694eb9bb16fe54bc5708f0380658ac99a37f10a"
+          },
+          "cpu_count": 48,
+          "initial_gpu_memory": {
+            "0": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            },
+            "1": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            }
+          },
+          "memory_stop_available_gib": 16,
+          "telemetry_interval_seconds": 2,
+          "exit_status": 0,
+          "wall_seconds": 146.96682424700703,
+          "sampled_tree_peak_rss_gib": 170.84671783447266,
+          "minimum_host_available_gib": 316.52491760253906,
+          "sampled_device_peak_used_mib": {
+            "0": 28399,
+            "1": 0
+          },
+          "stop_reason": null,
+          "peak_rss_gib": 175.7913475036621
+        },
+        "recursive-kzg": {
+          "command": [
+            "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/bin/ix-compression-worker",
+            "wrap",
+            "stage-and-prove",
+            "/opt/dlami/nvme/ix-bls-kzg-warm-20261017/first-kzg",
+            "/opt/dlami/nvme/ix-bls-kzg-warm-20261017/final-kzg"
+          ],
+          "started_utc": "2026-10-17T02:09:45.578573+00:00",
+          "environment": {
+            "IX_COMPRESSION_WORKER": "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/bin/ix-compression-worker",
+            "IX_KZG_FIXED_CACHE": "/opt/dlami/nvme/ix-bls-plonk-52c61479/kzg-fixed",
+            "IX_TEXRAY": "1",
+            "IX_KZG_CUDA_DEVICES": "0",
+            "IX_KZG_CUDA_RESIDENT_GIB": "8",
+            "IX_KZG_CUDA_SRS_CACHE": "0",
+            "IX_KZG_MSM_CHUNK_POINTS": "16777216",
+            "IX_KZG_CUDA_PASSES": "1",
+            "IX_KZG_CUDA_PROFILE": "0",
+            "CUDA_VISIBLE_DEVICES": "0",
+            "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-gpu-compare-52c61479/bls12-381/lib",
+            "RUST_LOG": "info",
+            "IX_KZG_FILECOIN_CACHE": "/opt/dlami/nvme/ix-compression/parameters/filecoin-prefix-2p27.bin",
+            "IX_KZG_FILECOIN_MANIFEST": "1442386005c4e4a2ebc23c109694eb9bb16fe54bc5708f0380658ac99a37f10a"
+          },
+          "cpu_count": 48,
+          "initial_gpu_memory": {
+            "0": {
+              "used_mib": 0,
+              "utilization_percent": 29
+            },
+            "1": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            }
+          },
+          "memory_stop_available_gib": 16,
+          "telemetry_interval_seconds": 2,
+          "exit_status": 0,
+          "wall_seconds": 92.35522456599574,
+          "sampled_tree_peak_rss_gib": 121.33783721923828,
+          "minimum_host_available_gib": 366.1709785461426,
+          "sampled_device_peak_used_mib": {
+            "0": 66253,
+            "1": 0
+          },
+          "stop_reason": null,
+          "peak_rss_gib": 128.53315353393555
+        },
+        "independent-verify": {
+          "command": [
+            "/opt/dlami/nvme/ix-bls-plonk-52c61479/bin/ix-compression-worker",
+            "pipeline",
+            "verify",
+            "/opt/dlami/nvme/ix-bls-kzg-warm-20261017/proof.envelope.bin",
+            "/opt/dlami/nvme/ix-bn254/inputs/init/claim.bin",
+            "/opt/dlami/nvme/ix-bn254/inputs/init/root-claims.bin",
+            "/opt/dlami/nvme/ix-bls-kzg-warm-20261017/final-kzg/verifier.bin",
+            "12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084"
+          ],
+          "started_utc": "2026-10-17T02:11:44.871430+00:00",
+          "environment": {
+            "CUDA_VISIBLE_DEVICES": "",
+            "LD_LIBRARY_PATH": "/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib",
+            "IX_KZG_FILECOIN_CACHE": "/opt/dlami/nvme/ix-compression/parameters/filecoin-prefix-2p27.bin",
+            "IX_KZG_FILECOIN_MANIFEST": "1442386005c4e4a2ebc23c109694eb9bb16fe54bc5708f0380658ac99a37f10a",
+            "IX_PLONK_LAGRANGE_CACHE": "/opt/dlami/nvme/ix-bls-plonk-52c61479/lagrange"
+          },
+          "cpu_count": 48,
+          "initial_gpu_memory": {
+            "0": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            },
+            "1": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            }
+          },
+          "memory_stop_available_gib": 16,
+          "telemetry_interval_seconds": 2,
+          "exit_status": 0,
+          "wall_seconds": 0.05951657100376906,
+          "sampled_tree_peak_rss_gib": 0.00017547607421875,
+          "minimum_host_available_gib": 487.66247940063477,
+          "sampled_device_peak_used_mib": {
+            "0": 0,
+            "1": 0
+          },
+          "stop_reason": null,
+          "peak_rss_gib": 0.0059356689453125
+        }
+      },
+      "proof_reports": {
+        "first-kzg": {
+          "curve": "bls12-381",
+          "development_srs": false,
+          "known_trapdoor": false,
+          "native_verification_passed": true,
+          "packet_bytes": 38405,
+          "proof_bytes": 38229,
+          "public_max_degree": 268435454,
+          "public_setup_id": "48b74609da5ec9a9d59efb1d4c9d91d81815a304a8baab8ba35af4fe0145239f",
+          "setup": "filecoin",
+          "setup_id": "a22bd897721c518e216b7156634f849d0cbfd54f03c24e251b75337af6eefca6",
+          "total_seconds": 82.004662081,
+          "trace_heights": [
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            16777216,
+            131072,
+            4194304,
+            4194304,
+            4194304,
+            4194304,
+            524288,
+            2097152,
+            65536,
+            512,
+            256
+          ],
+          "verify_seconds": 0.011010855
+        },
+        "final-kzg": {
+          "claim_bytes": 144,
+          "development_srs": false,
+          "external_pairings_pass": true,
+          "known_trapdoor": false,
+          "native_verification_passed": true,
+          "packet_bytes": 2181,
+          "pairing_bytes": 96,
+          "profile_bytes": 32,
+          "profile_id": "4224c47197ed387320dfb9b8bbf2369fa326f72c54e1cbc65907f5e6e8541ca0",
+          "profile_version": 6,
+          "proof_bytes": 1909,
+          "public_max_degree": 268435454,
+          "public_setup_id": "48b74609da5ec9a9d59efb1d4c9d91d81815a304a8baab8ba35af4fe0145239f",
+          "setup": "filecoin",
+          "setup_id": "53baf75f5382dbc76bdec1824ad95c4c53b852afaf2786b95a47cfe63c622664",
+          "srs_config_load_seconds": 10.251037308,
+          "total_seconds": 66.70987582,
+          "trace_heights": [
+            134217728,
+            131072
+          ],
+          "transcript": "blake3",
+          "verify_seconds": 0.006503513
+        }
+      },
+      "byte_comparisons": {
+        "first-kzg/kzg/packet.bin": {
+          "matches_baseline": true,
+          "bytes": 38405,
+          "sha256": "ef9fcfbfb7d2d401dab086ed58caff427f3beff3abe203c0da8232a68b010151"
+        },
+        "final-kzg/kzg/packet.bin": {
+          "matches_baseline": true,
+          "bytes": 2181,
+          "sha256": "b8097b8693dc85f2ef9ad158c8dbde3fcdc67eff44ad21c92e83b78763729413"
+        },
+        "final-kzg/verifier.bin": {
+          "matches_baseline": true,
+          "bytes": 2008,
+          "sha256": "b8744e3b92a098fbc1b6762d0ba9547780142711c57c90611267d58add08db1e"
+        }
+      },
+      "stage_sum_seconds": 239.32204881300277,
+      "peak_rss_gib": 175.7913475036621,
+      "sampled_gpu_peak_gib": 64.7001953125,
+      "largest_proof_bytes": 2189,
+      "all_checks_passed": true,
+      "completed_utc": "2026-10-17T02:11:45.005035+00:00",
+      "cache_restore_evidence": {
+        "first-kzg": [
+          "[texray] compression/cache_restore: 678.51ms  \u2500\u2500 RAM \u0394 +1.78 MiB peak 59.17 GiB"
+        ],
+        "recursive-kzg": [
+          "[texray] compression/cache_restore: 466.26ms  \u2500\u2500 RAM \u0394 +1.88 MiB peak 91.04 GiB"
+        ]
+      },
+      "independent_verification_output": "{\"curve\":\"bls12-381\",\"profile_blake3\":\"12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084\",\"setup\":\"filecoin\",\"verified\":true}\n"
+    },
+    "bn254": {
+      "command": [
+        "/opt/dlami/nvme/ix-bn254/ignition-validation/bin/ix-compression-worker",
+        "pipeline",
+        "run-fri",
+        "/opt/dlami/nvme/ix-bn254/inputs/init/fri",
+        "/opt/dlami/nvme/ix-bn254/inputs/init/claim.bin",
+        "/opt/dlami/nvme/ix-bn254/inputs/init/root-claims.bin",
+        "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run",
+        "24"
+      ],
+      "exit_status": 0,
+      "wall_seconds": 181.128614543999,
+      "stages": {
+        "first-kzg": {
+          "command": [
+            "/opt/dlami/nvme/ix-bn254/ignition-validation/bin/ix-compression-worker",
+            "kzg",
+            "run",
+            "/opt/dlami/nvme/ix-bn254/inputs/init/fri",
+            "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run/first-kzg",
+            "24"
+          ],
+          "started_utc": "2026-10-16T21:58:16.825769+00:00",
+          "environment": {
+            "IX_KZG_IGNITION_CACHE": "/opt/dlami/nvme/ix-bn254/parameters/ignition/ix-prefix-26.bin",
+            "IX_KZG_IGNITION_CACHE_BLAKE3": "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
+            "IX_KZG_IGNITION_ADMISSION": "/opt/dlami/nvme/ix-bn254/parameters/ignition/admission.json",
+            "IX_KZG_IGNITION_ADMISSION_BLAKE3": "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+            "IX_COMPRESSION_WORKER": "/opt/dlami/nvme/ix-bn254/ignition-validation/scripts/measured_worker.py",
+            "IX_KZG_FIXED_CACHE": "/opt/dlami/nvme/ix-bn254/ignition-validation/fixed",
+            "IX_KZG_SRS_CACHE": "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run/cache/development-srs",
+            "IX_TEXRAY": "1",
+            "IX_KZG_CUDA_DEVICES": "0",
+            "IX_KZG_CUDA_RESIDENT_GIB": "8",
+            "IX_KZG_CUDA_SRS_CACHE": "0",
+            "IX_KZG_MSM_CHUNK_POINTS": "16777216",
+            "IX_KZG_CUDA_PASSES": "1",
+            "IX_KZG_CUDA_PROFILE": "0",
+            "CUDA_VISIBLE_DEVICES": "0",
+            "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254/ignition-validation/lib",
+            "RUST_LOG": "info"
+          },
+          "cpu_count": 48,
+          "initial_gpu_memory": {
+            "0": {
+              "used_mib": 559,
+              "utilization_percent": 1
+            },
+            "1": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            }
+          },
+          "memory_stop_available_gib": 16,
+          "telemetry_interval_seconds": 2,
+          "exit_status": 0,
+          "wall_seconds": 135.9354764230011,
+          "sampled_tree_peak_rss_gib": 170.84218978881836,
+          "minimum_host_available_gib": 315.3720588684082,
+          "sampled_device_peak_used_mib": {
+            "0": 28952,
+            "1": 0
+          },
+          "stop_reason": null,
+          "peak_rss_gib": 175.28718185424805
+        },
+        "recursive-kzg": {
+          "command": [
+            "/opt/dlami/nvme/ix-bn254/ignition-validation/bin/ix-compression-worker",
+            "wrap",
+            "stage-and-prove",
+            "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run/first-kzg",
+            "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run/final-kzg"
+          ],
+          "started_utc": "2026-10-16T22:00:32.874091+00:00",
+          "environment": {
+            "IX_KZG_IGNITION_CACHE": "/opt/dlami/nvme/ix-bn254/parameters/ignition/ix-prefix-26.bin",
+            "IX_KZG_IGNITION_CACHE_BLAKE3": "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
+            "IX_KZG_IGNITION_ADMISSION": "/opt/dlami/nvme/ix-bn254/parameters/ignition/admission.json",
+            "IX_KZG_IGNITION_ADMISSION_BLAKE3": "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+            "IX_COMPRESSION_WORKER": "/opt/dlami/nvme/ix-bn254/ignition-validation/scripts/measured_worker.py",
+            "IX_KZG_FIXED_CACHE": "/opt/dlami/nvme/ix-bn254/ignition-validation/fixed",
+            "IX_KZG_SRS_CACHE": "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/run/cache/development-srs",
+            "IX_TEXRAY": "1",
+            "IX_KZG_CUDA_DEVICES": "0",
+            "IX_KZG_CUDA_RESIDENT_GIB": "8",
+            "IX_KZG_CUDA_SRS_CACHE": "0",
+            "IX_KZG_MSM_CHUNK_POINTS": "16777216",
+            "IX_KZG_CUDA_PASSES": "1",
+            "IX_KZG_CUDA_PROFILE": "0",
+            "CUDA_VISIBLE_DEVICES": "0",
+            "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254/ignition-validation/lib",
+            "RUST_LOG": "info"
+          },
+          "cpu_count": 48,
+          "initial_gpu_memory": {
+            "0": {
+              "used_mib": 559,
+              "utilization_percent": 56
+            },
+            "1": {
+              "used_mib": 0,
+              "utilization_percent": 0
+            }
+          },
+          "memory_stop_available_gib": 16,
+          "telemetry_interval_seconds": 2,
+          "exit_status": 0,
+          "wall_seconds": 44.56177651299731,
+          "sampled_tree_peak_rss_gib": 63.166259765625,
+          "minimum_host_available_gib": 423.2159080505371,
+          "sampled_device_peak_used_mib": {
+            "0": 58648,
+            "1": 0
+          },
+          "stop_reason": null,
+          "peak_rss_gib": 63.16126251220703
+        }
+      },
+      "pipeline_report": {
+        "cuda": true,
+        "curve": "bn254",
+        "expected_root_claims": "expected-root-claims.bin",
+        "format": "ix-saved-compression-run/v1",
+        "input_stage": "fri",
+        "known_trapdoor": false,
+        "native_verification_passed": true,
+        "parallel": true,
+        "profile": "final-kzg/verifier.bin",
+        "profile_blake3": "a4cf1b3b2489af6c939847d5060452bccb1f87ed8cff0fb90658e477549eafcd",
+        "proof_blake3": "2d8448eb402869e7d3801fa0b904d0242f3aa900a2833b62616b123b33e6cd19",
+        "proof_bytes": 1917,
+        "setup": "ignition"
+      },
+      "independent_verification_exit_status": 0
+    }
+  },
+  "missing_measurements": [
+    "Direct onchain verification of current BLAKE3 KZG packets for either curve"
+  ],
+  "source_reports": {
+    "prior_comparison": {
+      "local_path": "/tmp/ix-full-benchmark-comparison/comparison.json",
+      "sha256": "df2da573cbe6f3555994c268e4f1a27f8a662b166b6f31b01649c37d7e2044ee"
+    },
+    "bls_warm_kzg": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/gpu-parity/init-bls-filecoin-warm.json",
+      "sha256": "bfeae0d0409b8ec096497fedac278f1b8f53b0168d3f04eb5508c6da7b94ae94"
+    },
+    "bn254_warm_kzg": {
+      "local_path": "/opt/dlami/nvme/ix-bn254/ignition-validation/warm/result.json",
+      "sha256": "cd7073a8b25484427a29515c60f316f57256f68cf64206a4797bb677bf696084"
+    },
+    "bls_cpu_plonk": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/plonk-bench/report.json",
+      "sha256": "29bdd8f8723ac7e5a83d1d24494bd6fe7080e8a9e128519d536b565e72cd3173"
+    },
+    "bn254_cpu_plonk": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-2p24/report.json",
+      "sha256": "0065f222a46c023635626585b22d3672872652764523b6e33ea4ce5b67131e3d"
+    },
+    "bn254_gpu_plonk": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/init-03-report.json",
+      "sha256": "4871b0bde78b9882b32853855947ae18bbe2cbca3b83ce234b84b4417dd1b7bf"
+    },
+    "bls_plonk_evm": {
+      "local_path": "/tmp/ix-full-benchmark-comparison/bls-plonk-evm/report.json",
+      "sha256": "8cc982b045d524e88f62d09c7c1c984d7e574485a99d19f8bee6360f779c4500"
+    },
+    "bn254_cpu_plonk_evm": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/plonk-evm/run-final/report.json",
+      "sha256": "57737fb982a5d2b1fed2d461544251a89a11199ecc193bc7726660a1dfaf80c4"
+    },
+    "bn254_gpu_plonk_evm": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/plonk-evm/init-03-cuda-fused/report.json",
+      "sha256": "8bacf5d9acc72e7dc75c1166f197c56666be72e0399918512fbb179f771ea21f"
+    },
+    "bls_legacy_keccak_kzg_evm": {
+      "local_path": "/tmp/ix-full-benchmark-comparison/bls-kzg-keccak-v5-evm/report.json",
+      "sha256": "7bc744774853a4e4f203e4e8d3517e06de2479f323be64d30c0c139bcf74fbe2"
+    },
+    "bn254_gpu_plonk_standalone": {
+      "local_path": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/standalone-report.json",
+      "sha256": "6cbd8173d36a5af5e130537b38b955673b2ddef5002d3feb7a6a38a43e621930"
+    }
+  },
+  "solidity_verifier_branch_audit": {
+    "checked_utc_date": "2026-10-17",
+    "branch": "sb/solidity-verifier",
+    "local_commit": "022a45756e54fd04bd6b0fc53d1228411af9f259",
+    "remote_commit": "022a45756e54fd04bd6b0fc53d1228411af9f259",
+    "working_tree_clean": true,
+    "contract_curve": "BLS12-381",
+    "transcript": "Keccak v5",
+    "documented_fixture_call_gas": 757950,
+    "documented_scope": "Small conformance fixture; external-call measurement excludes transaction intrinsic/calldata gas and deployment.",
+    "bn254_direct_contract_present": false,
+    "blake3_direct_contract_present": false,
+    "readme_sha256": "65b6f9a444380f6873aa512f5c4a88e160a8abe245de3bef06af662ae9a77f2c"
+  },
+  "raw_standalone_gpu_plonk_record": {
+    "format": "ix-bn254-plonk-standalone/v1",
+    "complete": true,
+    "scope": "One production CLI proof in a fresh process with prepared keys, artifact authentication/loading, witness assembly, CUDA setup, proving, verification and serialization; default CPU parallelism; one GPU; OS page cache uncontrolled.",
+    "native_build": {
+      "format": "ix-bn254-plonk-cuda-build-v1",
+      "gnark_version": "v0.16.5-0.20261015185324-262cf453c107",
+      "gnark_patch_sha256": "7e24ccb7394928389f4500b29e29619228d4b4b00e98212c221adc403387d22d",
+      "go_version": "go version go1.26.8 linux/amd64",
+      "binary": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/bin/ix-bn254-plonk-wrapper",
+      "binary_sha256": "b916fba78ba9e996b2103bfb376730bde899cb206c28d2368921cd97578c5a3e",
+      "library": "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/lib/libix_plonk_bn254_cuda.so",
+      "library_sha256": "9276eace6218da6547498bdb57b5a75fc7b9e79cf384c7eca1a793b471293532",
+      "native_build_identity": "03202368a6a21f2d88f2eb8fde257ca9005e4ac49abe195d3d5ba70dd1fabcc2",
+      "native_receipts": [
+        "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/build/native/build-manifest.json"
+      ],
+      "go_command": [
+        "/home/sam/repos/ix.sb-bn254/target/toolchains/go1.26.8/go/bin/go",
+        "build",
+        "-buildvcs=false",
+        "-trimpath",
+        "-mod=readonly",
+        "-modfile=/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/build/cuda.mod",
+        "-tags",
+        "bn254,cuda",
+        "-o",
+        "/home/sam/repos/ix.sb-bn254/target/bn254-plonk-cuda/bin/ix-bn254-plonk-wrapper.tmp",
+        "."
+      ],
+      "test_binary": false
+    },
+    "baseline_manifest": {
+      "Format": "ix-bn254-plonk-artifacts-v1",
+      "ExecutableSHA256": "fad956a1680bd2e7a6412e3b8e65a3cb90a8ac9d0848daa52c97036916d3e957",
+      "ProfileSHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+      "SRSBLAKE3": "a71cd91e2cf082700740aa25a37896d8f68fafa4bec07b927720dea881705e0a",
+      "KeysReady": true,
+      "Domain": 16777216,
+      "Constraints": 14689440,
+      "PublicInputs": 2,
+      "Commitments": 1,
+      "Files": {
+        "PlonkVerifier.sol": {
+          "SHA256": "6f3b0d598d3b08a925575b1494c58a4267852bb9fbd29cb1e9179005f45edfd4",
+          "Bytes": 58855
+        },
+        "circuit.bin": {
+          "SHA256": "a684964f61296fcda0df427980275764df242590373ce5680f70b0ac5dcfbded",
+          "Bytes": 363613886
+        },
+        "profile.json": {
+          "SHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+          "Bytes": 95498
+        },
+        "proving-key.bin": {
+          "SHA256": "4698740eb1ac6a07445a121b86a013d491755b3e906de20bcc0ea96afcf9002c",
+          "Bytes": 1073776312
+        },
+        "verifying-key.bin": {
+          "SHA256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+          "Bytes": 34384
+        }
+      },
+      "Seconds": {
+        "compile": 13.095643549,
+        "index": 12.542368312,
+        "lagrange": 325.257681822,
+        "srsImport": 1.8505920009999999
+      }
+    },
+    "expected_claim": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80",
+    "setup_source": "Normal circuit-key preparation by the frozen CUDA helper from the authenticated existing Ignition monomial export. Preparation is excluded from the warm proving measurement.",
+    "stages": {
+      "compile-circuit": {
+        "command": [
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/bin/ix-bn254-plonk-wrapper",
+          "compile",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/input/profile.json",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/artifacts"
+        ],
+        "started_utc": "2026-10-17T02:12:25.305584+00:00",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "",
+          "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lib:/home/sam/repos/ix.sb-bn254/target/bn254-proof/validation-ignition/driver-lib:/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib",
+          "IX_PLONK_LAGRANGE_CACHE": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lagrange"
+        },
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 13.745541991003847,
+        "sampled_tree_peak_rss_gib": 4.892086029052734,
+        "minimum_host_available_gib": 482.83504486083984,
+        "sampled_device_peak_used_mib": {
+          "0": 0,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 5.174163818359375,
+        "proving_backend": "cpu"
+      },
+      "prepare-keys": {
+        "command": [
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/bin/ix-bn254-plonk-wrapper",
+          "prepare",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/artifacts",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/parameters/srs.bin",
+          "a71cd91e2cf082700740aa25a37896d8f68fafa4bec07b927720dea881705e0a"
+        ],
+        "started_utc": "2026-10-17T02:13:12.159673+00:00",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "",
+          "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lib:/home/sam/repos/ix.sb-bn254/target/bn254-proof/validation-ignition/driver-lib:/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib",
+          "IX_PLONK_LAGRANGE_CACHE": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lagrange"
+        },
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 357.1167934479963,
+        "sampled_tree_peak_rss_gib": 12.184375762939453,
+        "minimum_host_available_gib": 475.23936462402344,
+        "sampled_device_peak_used_mib": {
+          "0": 0,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 12.180252075195312,
+        "proving_backend": "cpu"
+      },
+      "prove": {
+        "command": [
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/bin/ix-bn254-plonk-wrapper",
+          "prove",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/artifacts",
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/input/witness.json",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/proof"
+        ],
+        "started_utc": "2026-10-17T02:19:09.386297+00:00",
+        "environment": {
+          "IX_KZG_CUDA_PROFILE": "0",
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lib:/home/sam/repos/ix.sb-bn254/target/bn254-proof/validation-ignition/driver-lib:/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib",
+          "IX_PLONK_LAGRANGE_CACHE": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lagrange"
+        },
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 31.97249543900398,
+        "sampled_tree_peak_rss_gib": 20.142070770263672,
+        "minimum_host_available_gib": 467.5751647949219,
+        "sampled_device_peak_used_mib": {
+          "0": 2829,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 20.64031219482422,
+        "proving_backend": "cuda"
+      },
+      "independent-verify": {
+        "command": [
+          "/opt/dlami/nvme/ix-bn254-plonk-2p24-52c61479/bin-final/ix-bn254-plonk-wrapper",
+          "verify",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/artifacts/verifying-key.bin",
+          "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+          "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/proof/proof.bin",
+          "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80"
+        ],
+        "started_utc": "2026-10-17T02:19:41.467973+00:00",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "",
+          "LD_LIBRARY_PATH": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lib:/home/sam/repos/ix.sb-bn254/target/bn254-proof/validation-ignition/driver-lib:/nix/store/xm08aqdd7pxcdhm0ak6aqb1v7hw5q6ri-gcc-14.3.0-lib/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib:/usr/local/cuda-13.3/lib:/usr/local/cuda-13.3/lib64:/usr/local/cuda-13.3:/usr/local/cuda-13.3/targets/x86_64-linux/lib/:/usr/local/cuda-13.3/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/lib:/usr/lib",
+          "IX_PLONK_LAGRANGE_CACHE": "/opt/dlami/nvme/ix-bn254-plonk-standalone-20261017/lagrange"
+        },
+        "cpu_count": 48,
+        "initial_gpu_memory": {
+          "0": {
+            "used_mib": 0,
+            "utilization_percent": 1
+          },
+          "1": {
+            "used_mib": 0,
+            "utilization_percent": 0
+          }
+        },
+        "memory_stop_available_gib": 16,
+        "telemetry_interval_seconds": 2,
+        "exit_status": 0,
+        "wall_seconds": 0.05256003799877362,
+        "sampled_tree_peak_rss_gib": 0.000232696533203125,
+        "minimum_host_available_gib": 487.7326469421387,
+        "sampled_device_peak_used_mib": {
+          "0": 0,
+          "1": 0
+        },
+        "stop_reason": null,
+        "peak_rss_gib": 0.020702362060546875,
+        "proving_backend": "cpu"
+      }
+    },
+    "manifest": {
+      "Format": "ix-bn254-plonk-artifacts-v1",
+      "ExecutableSHA256": "b916fba78ba9e996b2103bfb376730bde899cb206c28d2368921cd97578c5a3e",
+      "ProfileSHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+      "SRSBLAKE3": "a71cd91e2cf082700740aa25a37896d8f68fafa4bec07b927720dea881705e0a",
+      "KeysReady": true,
+      "Domain": 16777216,
+      "Constraints": 14689440,
+      "PublicInputs": 2,
+      "Commitments": 1,
+      "Files": {
+        "PlonkVerifier.sol": {
+          "SHA256": "6f3b0d598d3b08a925575b1494c58a4267852bb9fbd29cb1e9179005f45edfd4",
+          "Bytes": 58855
+        },
+        "circuit.bin": {
+          "SHA256": "a684964f61296fcda0df427980275764df242590373ce5680f70b0ac5dcfbded",
+          "Bytes": 363613886
+        },
+        "profile.json": {
+          "SHA256": "7f10e1e87329b57d148c915f38e28bc777988b7df8ead7e88fab5ad96b62a991",
+          "Bytes": 95498
+        },
+        "proving-key.bin": {
+          "SHA256": "4698740eb1ac6a07445a121b86a013d491755b3e906de20bcc0ea96afcf9002c",
+          "Bytes": 1073776312
+        },
+        "verifying-key.bin": {
+          "SHA256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+          "Bytes": 34384
+        }
+      },
+      "Seconds": {
+        "compile": 12.79034216,
+        "index": 12.020242143,
+        "lagrange": 324.438819771,
+        "srsImport": 1.855942845
+      }
+    },
+    "keys_match_cpu_baseline": true,
+    "native_timings": {
+      "backend": "cuda",
+      "backendSetupSeconds": 0.41296237,
+      "proveSeconds": 11.385703605,
+      "solidityBytes": 864,
+      "verifySeconds": 0.001365785,
+      "verifyingKeySHA256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368"
+    },
+    "largest_proof_bytes": 864,
+    "native_proof_sha256": "bf0b56e5aab620f3e21c1227c6c821b167d73bd524fde1a59b2230d13745180d",
+    "solidity_proof_sha256": "9889aa67e594a471fdc83c2af1326e45d7692afd12987a2d91ea4291b0728816",
+    "cpu_verifier_sha256": "fad956a1680bd2e7a6412e3b8e65a3cb90a8ac9d0848daa52c97036916d3e957",
+    "wrong_claim_rejected": true,
+    "modified_proof_rejected": true,
+    "cuda_metrics": {
+      "kind": "plonk_cuda_metrics",
+      "device": 0,
+      "msm_strategy": "split",
+      "stats": {
+        "DriverFreeBytes": 99010281472,
+        "DriverTotalBytes": 101975851008,
+        "PoolUsedBytes": 2237886464,
+        "PoolUsedHighBytes": 19954626560,
+        "PoolReservedBytes": 2248146944,
+        "PoolReservedHighBytes": 19964887040,
+        "AccountedBytes": 2237886464,
+        "AccountedHighBytes": 19954626560,
+        "BudgetBytes": 68719476736,
+        "MSMCalls": 11,
+        "FFTCalls": 75,
+        "NumeratorCalls": 0,
+        "QuotientCalls": 1,
+        "UploadBytes": 15368830016,
+        "DownloadBytes": 9663676416,
+        "UploadCalls": 27,
+        "DownloadCalls": 15,
+        "UploadWallMS": 446.14564499999994,
+        "DownloadWallMS": 759.061331,
+        "TransferHostCopyMS": 810.0209789999998,
+        "UploadDMAMS": 0,
+        "DownloadDMAMS": 0,
+        "TransferTimingEnabled": false,
+        "SmallCPUCalls": 0,
+        "CPUTailPoints": 13,
+        "MSMCallbackSeconds": 0.866234477,
+        "CanonicalCallbackSeconds": 0,
+        "NumeratorCallbackSeconds": 0,
+        "QuotientCallbackSeconds": 1.030959187,
+        "QueueWaitSeconds": 0.50334214,
+        "MaskedMSMCalls": 0,
+        "MaskSumCalls": 0,
+        "MaskCacheHits": 0,
+        "SplitMSMCalls": 11,
+        "SplitUnitPoints": 58971,
+        "SplitMaxBucket": [
+          1762935,
+          3223599,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          3672384,
+          918096,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "SplitChunkCount": [
+          62108,
+          88558,
+          90089,
+          92092,
+          101193,
+          101985,
+          101996,
+          102014,
+          43312,
+          43287,
+          43292,
+          43293,
+          43282,
+          43284,
+          43289,
+          42096,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "SplitNonzeroDigits": [
+          155314737,
+          154037837,
+          153347996,
+          153348007,
+          153223361,
+          153042993,
+          153043075,
+          153043212,
+          138006729,
+          137999848,
+          137997596,
+          137995128,
+          137992791,
+          137990520,
+          137987948,
+          137976998,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "SplitZeroDigits": [
+          22971313,
+          24248213,
+          24938054,
+          24938043,
+          25062689,
+          25243057,
+          25242975,
+          25242838,
+          40279321,
+          40286202,
+          40288454,
+          40290922,
+          40293259,
+          40295530,
+          40298102,
+          40309052,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "SplitClassifyMS": 44.86339235305786,
+        "SplitChunksMS": 356.19967966899276,
+        "SplitReduceMS": 7.3521280193235725
+      }
+    },
+    "gpu_memory_measurement_note": "Two-second device polling missed the short allocation peak in this standalone run; native pool high-water marks are authoritative for allocations managed by that pool, excluding driver and other allocations. The comparison retains the repeated benchmark device-memory sample.",
+    "independent_verification_output": "{\"level\":\"debug\",\"curve\":\"bn254\",\"backend\":\"plonk\",\"took\":1.555686,\"time\":\"2026-10-17T02:19:41Z\",\"message\":\"verifier done\"}\nverified claim=c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80 verify_seconds=0.001986\n"
+  },
+  "follow_up_work": [
+    "Allow validated Lagrange-basis reuse across compatible CPU/GPU helper builds without requiring the same executable hash; preserve SRS/domain binding, content hashes, format compatibility and basis validation, and retain separate circuit/key compatibility checks."
+  ],
+  "derived_comparisons": {
+    "bn254_gpu_vs_cpu_core_speedup": 4.747726793122696,
+    "bn254_warm_kzg_time_reduction_percent": 24.5797644507748
+  }
+}
