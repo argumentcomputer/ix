@@ -1,9 +1,13 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
+#[cfg(feature = "plonk")]
+mod plonk_export;
+#[cfg(any(feature = "plonk", feature = "solidity"))]
+mod relation;
 #[cfg(all(feature = "solidity", not(feature = "bn254")))]
 mod solidity;
-#[cfg(all(feature = "plonk", not(feature = "bn254")))]
-pub(in crate::pipeline) use solidity::plonk::{
+#[cfg(feature = "plonk")]
+pub(in crate::pipeline) use plonk_export::{
   export as plonk_export, fixture as plonk_fixture,
 };
 #[cfg(all(feature = "solidity", not(feature = "bn254")))]
@@ -127,6 +131,14 @@ impl Frontend {
       .setup
       .for_stage(OUTER_SEED, height)?
       .with_transcript(TranscriptKind::Blake3);
+    #[cfg(feature = "bn254")]
+    if let Some(admission) = setup.ignition_admission()
+      && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
+    {
+      return Err(
+        "recursive inner pairing anchors differ from Ignition admission".into(),
+      );
+    }
     let setup_id = setup.identity(height, 2)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
@@ -210,7 +222,7 @@ fn packet_body<'a>(
   Ok(&packet[offset..])
 }
 
-#[cfg(any(test, all(feature = "solidity", not(feature = "bn254"))))]
+#[cfg(any(test, feature = "plonk", feature = "solidity"))]
 fn packet_claims(
   packet: &[u8],
   profile: &[u8; 32],
@@ -415,7 +427,7 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifierProfile {
-  #[cfg(not(feature = "bn254"))]
+  #[cfg(all(not(feature = "bn254"), any(test, feature = "plonk")))]
   pub(crate) fn reencode_blake3(
     bytes: &[u8],
   ) -> PipelineResult<(Vec<u8>, [u8; 32])> {
@@ -469,6 +481,12 @@ impl VerifierProfile {
     &self,
     expected: SetupClass,
   ) -> PipelineResult<()> {
+    #[cfg(feature = "bn254")]
+    if expected == SetupClass::Ignition {
+      return Err(
+        "Ignition verification requires an explicit trusted admission".into(),
+      );
+    }
     let parameters = self.verifier_params()?;
     if SetupClass::of(&parameters) != expected {
       return Err("bundled verifier setup class differs".into());
@@ -478,6 +496,21 @@ impl VerifierProfile {
     {
       return Err(
         "Filecoin verifier has different inner pairing anchors".into(),
+      );
+    }
+    Ok(())
+  }
+
+  /// Admit both opening equations against independently pinned ceremony data.
+  #[cfg(feature = "bn254")]
+  pub(crate) fn check_ignition_admission(
+    &self,
+    admission: &crate::kzg::srs::ignition::IgnitionAdmission,
+  ) -> PipelineResult<()> {
+    SetupClass::of_with_ignition(&self.verifier_params()?, admission)?;
+    if self.keys()? != admission.pairing_keys() {
+      return Err(
+        "Ignition verifier has different inner pairing anchors".into(),
       );
     }
     Ok(())
@@ -580,6 +613,7 @@ impl PreparedVerifierProfile {
 /// Verify a packet against the stage's portable verifier. Without an
 /// independently derived statement, the one the stage's own claim rows
 /// carry is used, so the check covers the proof but not the claim binding.
+#[cfg(test)]
 pub(crate) fn verify_saved(
   dir: &Path,
   packet: &[u8],
@@ -672,6 +706,221 @@ mod tests {
     )
     .unwrap();
     assert!(profile.check_setup_class(SetupClass::Filecoin).is_err());
+  }
+
+  #[cfg(feature = "bn254")]
+  fn ignition_profile_fixture() -> storage::Result<(
+    crate::kzg::srs::ignition::IgnitionAdmission,
+    VerifierProfile,
+    Vec<u8>,
+  )> {
+    use crate::kzg::{VerifierParams, srs::ignition::test_admission};
+    let (admission, srs) = test_admission(7, 256, 41);
+    let claims = init_packet_claims(&srs);
+    let publics = staged_publics(&claims, 2)?;
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let one = builder.constant(Scalar::ONE);
+    builder.lookup(table, &[one]);
+    for claim in &claims[1..] {
+      let value = builder.constant(claim[3]);
+      builder.expose_public(value);
+    }
+    let compiled = builder
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+      .merge_table_traces(128)?;
+    let assignment = compiled.witness().generate()?;
+    let height = compiled.main_height();
+    let parameters = VerifierParams::with_max_trace_len(&srs, height);
+    let config = KzgConfig::with_max_trace_len(Arc::new(srs), height, 2)
+      .with_transcript(TranscriptKind::Blake3)
+      .with_streaming_lookups()
+      .with_streaming_quotient();
+    let proved = Lowered { compiled, assignment }
+      .commit(config, None, 0)?
+      .prove(&claims)?;
+    assert_eq!(proved.system.circuits.len(), 2);
+    let fixed = proved.system.preprocessed_commit.as_ref().unwrap();
+    let encode_setup = |index: usize| -> storage::Result<Vec<u8>> {
+      Ok(bincode::serde::encode_to_vec(
+        (
+          &proved.system.circuits[index],
+          KzgCommitment(vec![fixed.0[index].clone()]),
+        ),
+        bincode::config::standard(),
+      )?)
+    };
+    let mut keys = Vec::new();
+    admission.pairing_keys().to_vec().serialize_compressed(&mut keys)?;
+    let profile = VerifierProfile {
+      version: OUTER_PROFILE_VERSION,
+      heights: [
+        proved.system.circuits[0].preprocessed_height,
+        proved.system.circuits[1].preprocessed_height,
+      ],
+      setup: [encode_setup(0)?, encode_setup(1)?],
+      pairings: bincode::serde::encode_to_vec(
+        Pairings { keys },
+        bincode::config::standard(),
+      )?,
+      parameters: parameters.to_bytes()?,
+    };
+    let mut packet = profile.id().to_vec();
+    for word in init_claim::INIT_PUBLIC_WORDS {
+      packet.extend(word.to_le_bytes());
+    }
+    packet.extend(pairing_bytes(&publics[18..])?);
+    packet.extend(&proved.bytes);
+    Ok((admission, profile, packet))
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
+  fn ignition_staging_rejects_other_inner_keys_before_creating_files()
+  -> storage::Result<()> {
+    use crate::{
+      kzg::srs::ignition::test_admission,
+      pipeline::{WorkerConfig, setup::SetupConfig},
+    };
+    let (admission, _) = test_admission(7, 256, 44);
+    let inner = Srs::unsafe_dev_setup(2, b"ignition-stage-development-inner");
+    let claims = init_packet_claims(&inner);
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let one = builder.constant(Scalar::ONE);
+    builder.lookup(table, &[one]);
+    for claim in &claims[1..] {
+      let value = builder.constant(claim[3]);
+      builder.expose_public(value);
+    }
+    let circuit = builder.finish();
+    let assignment = circuit.witness().generate()?;
+    let frontend = Frontend::new(
+      circuit,
+      &[inner.g2, inner.tau_g2],
+      b"ignition-stage-admission",
+      128,
+    )?;
+    let root = std::env::temp_dir()
+      .join(format!("ignition-stage-admission-{}", std::process::id(),));
+    assert!(!root.exists());
+    let config = WorkerConfig {
+      setup: SetupConfig::Ignition {
+        cache: root.join("absent-cache.bin"),
+        manifest: [0; 32],
+        admission: Arc::new(admission),
+      },
+      fixed_cache_root: None,
+      prefetch_bytes: 0,
+    };
+    let error = frontend
+      .stage(assignment, &root, &init_claim::INIT_PUBLIC_WORDS, &config)
+      .unwrap_err();
+    assert!(error.to_string().contains("inner pairing anchors differ"));
+    assert!(!root.exists());
+    Ok(())
+  }
+
+  #[cfg(feature = "bn254")]
+  #[test]
+  fn ignition_admission_authenticates_both_openings_without_a_cache()
+  -> storage::Result<()> {
+    use super::super::super::verifier::verify_with_ignition_admission;
+    use crate::kzg::{
+      VerifierParams,
+      srs::ignition::{IgnitionAdmission, test_admission},
+    };
+    let (admission, profile, packet) = ignition_profile_fixture()?;
+    let claim = include_bytes!(
+      "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
+    );
+    let expected = init_claim::INIT_PUBLIC_WORDS;
+    let portable =
+      bincode::serde::encode_to_vec(&profile, bincode::config::standard())?;
+    let trusted = *blake3::hash(&portable).as_bytes();
+    let verify = |packet: &[u8],
+                  claim: &[u8],
+                  expected: &_,
+                  trusted: &_,
+                  admission: &IgnitionAdmission| {
+      verify_with_ignition_admission(
+        packet, claim, expected, &portable, trusted, admission,
+      )
+    };
+    assert_eq!(
+      verify(&packet, claim, &expected, &trusted, &admission)?,
+      SetupClass::Ignition
+    );
+    assert!(profile.check_setup_class(SetupClass::Ignition).is_err());
+    assert_eq!(
+      SetupClass::of(&profile.verifier_params()?),
+      SetupClass::Development
+    );
+    assert!(verify(&packet, claim, &expected, &[0; 32], &admission).is_err());
+    assert!(
+      verify(&packet, b"wrong", &expected, &trusted, &admission).is_err()
+    );
+    let mut wrong_statement = expected;
+    wrong_statement[0] ^= 1;
+    assert!(
+      verify(&packet, claim, &wrong_statement, &trusted, &admission).is_err()
+    );
+    let mut bad_packet = packet.clone();
+    *bad_packet.last_mut().unwrap() ^= 1;
+    assert!(
+      verify(&bad_packet, claim, &expected, &trusted, &admission).is_err()
+    );
+    for (tau, count, marker) in [(11, 256, 41), (7, 512, 41), (7, 256, 42)] {
+      let (other, _) = test_admission(tau, count, marker);
+      assert!(verify(&packet, claim, &expected, &trusted, &other).is_err());
+    }
+    for change in [0, 1, 2] {
+      let mut changed: VerifierProfile = decode(&portable)?;
+      let mut parameters = changed.verifier_params()?;
+      match change {
+        0 => parameters.public_setup.id[0] ^= 1,
+        1 => parameters.public_setup.max_degree += 1,
+        2 => {
+          let (_, other) = test_admission(11, 256, 41);
+          parameters = VerifierParams::with_max_trace_len(
+            &other,
+            parameters.max_trace_len(),
+          );
+        },
+        _ => unreachable!(),
+      }
+      changed.parameters = parameters.to_bytes()?;
+      assert!(changed.check_ignition_admission(&admission).is_err());
+    }
+    let mut mixed: VerifierProfile = decode(&portable)?;
+    let development = Srs::unsafe_dev_setup(2, b"ignition-mixed-inner");
+    let mut keys = Vec::new();
+    vec![development.g2, development.tau_g2].serialize_compressed(&mut keys)?;
+    mixed.pairings = bincode::serde::encode_to_vec(
+      Pairings { keys },
+      bincode::config::standard(),
+    )?;
+    assert!(
+      mixed
+        .check_ignition_admission(&admission)
+        .unwrap_err()
+        .to_string()
+        .contains("inner pairing anchors")
+    );
+    let mut development_profile: VerifierProfile = decode(&portable)?;
+    let development = Srs::unsafe_dev_setup_prefix(
+      2,
+      255,
+      b"ignition-existing-development-profile",
+    );
+    development_profile.parameters =
+      VerifierParams::with_max_trace_len(&development, profile.heights[0])
+        .to_bytes()?;
+    assert!(development_profile.check_ignition_admission(&admission).is_err());
+    Ok(())
   }
 
   #[test]

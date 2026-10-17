@@ -465,6 +465,13 @@ impl KzgPcs {
         1 << 30,
       );
     }
+    #[cfg(feature = "cuda")]
+    tracing::debug!(
+      rows = domain.size(),
+      columns = selected.len(),
+      reason = "small domain or disk-backed columns",
+      "KZG FFT using CPU evaluation"
+    );
     let ark = Self::ark_domain(domain);
     let width = selected.len();
     let height = domain.size();
@@ -737,6 +744,11 @@ impl KzgPcs {
       "proving requires the complete coefficient prefix"
     );
     if coeffs.iter().skip(1).all(Zero::is_zero) {
+      #[cfg(feature = "cuda")]
+      tracing::debug!(
+        reason = "constant polynomial",
+        "KZG commitment using CPU arithmetic"
+      );
       return self.prover_srs().g1[0]
         * coeffs.first().copied().unwrap_or(Fr::ZERO);
     }
@@ -751,6 +763,12 @@ impl KzgPcs {
       }
       return cuda::msm(&self.prover_srs().g1[..coeffs.len()], coeffs);
     }
+    #[cfg(feature = "cuda")]
+    tracing::debug!(
+      points = coeffs.len(),
+      reason = "small MSM",
+      "KZG commitment using CPU MSM"
+    );
     // Bound digit/bucket scratch and expose point-range parallelism in
     // addition to the MSM implementation's small number of scalar windows.
     const CHUNK: usize = 1 << 18;
@@ -823,6 +841,12 @@ impl KzgPcs {
       let _ = resident.set(all_residents);
       columns
     } else {
+      tracing::debug!(
+        rows = domain.size(),
+        columns = inputs.len(),
+        reason = "small domain",
+        "KZG interpolation using CPU FFT"
+      );
       Self::interpolate_on_host(domain, inputs)
     };
     #[cfg(not(feature = "cuda"))]
@@ -1006,6 +1030,13 @@ impl Pcs for KzgPcs {
               }
               continue;
             }
+            #[cfg(feature = "cuda")]
+            tracing::debug!(
+              column = column_index,
+              elements = column.len(),
+              reason = "small or disk-backed polynomial",
+              "KZG opening using CPU evaluation"
+            );
             // Decode a disk column once for all requested points.
             column
               .visit(|start, chunk| {
@@ -1271,6 +1302,12 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
   if p.len() >= 1 << 16 {
     return cuda::divide(&p, z);
   }
+  #[cfg(feature = "cuda")]
+  tracing::debug!(
+    elements = p.len(),
+    reason = "small polynomial",
+    "KZG opening using CPU division"
+  );
   let n = p.len() - 1;
   if n <= POLYNOMIAL_BLOCK {
     let mut carry = Fr::ZERO;

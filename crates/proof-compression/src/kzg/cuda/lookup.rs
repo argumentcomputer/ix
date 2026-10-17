@@ -17,6 +17,13 @@ pub(super) struct Parameters {
   pub(super) blocks: u32,
 }
 
+const _: () = {
+  assert!(size_of::<Parameters>() == 96 && align_of::<Parameters>() == 32);
+  assert!(std::mem::offset_of!(Parameters, gamma) == 32);
+  assert!(std::mem::offset_of!(Parameters, trace_log) == 64);
+  assert!(std::mem::offset_of!(Parameters, blocks) == 76);
+};
+
 unsafe extern "C" {
   fn ix_kzg_lookup(
     device: i32,
@@ -67,6 +74,15 @@ pub(in crate::kzg) fn coefficients(
   beta: Scalar,
   gamma: Scalar,
 ) -> Option<(Vec<Vec<Fr>>, Scalar)> {
+  coefficients_with_mode(input, beta, gamma, settings().passes)
+}
+
+pub(super) fn coefficients_with_mode(
+  input: &LookupCommitInput<'_, KzgConfig>,
+  beta: Scalar,
+  gamma: Scalar,
+  mode: PassMode,
+) -> Option<(Vec<Vec<Fr>>, Scalar)> {
   let main = quotient::matrix(input.stage_1)?;
   let fixed = match input.preprocessed {
     Some(data) => Some(quotient::matrix(data)?),
@@ -113,15 +129,15 @@ pub(in crate::kzg) fn coefficients(
   };
   let run_passes =
     || passes::lookup_coefficients(input, &parameters, &all_columns, widths);
-  if settings().passes == PassMode::Force
-    && let Some(output) = run_passes()
-  {
-    return Some(output);
+  if mode == PassMode::Force {
+    return Some(run_passes().expect(
+      "forced KZG lookup passes are unsupported or no selected device admits them",
+    ));
   }
   let mut columns = quotient::column_descriptors(&all_columns);
   let device = quotient::acquire_columns(&mut columns, &all_columns, bytes);
   if device.is_none()
-    && settings().passes == PassMode::Fallback
+    && mode == PassMode::Fallback
     && let Some(output) = run_passes()
   {
     return Some(output);

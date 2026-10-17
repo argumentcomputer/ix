@@ -102,7 +102,7 @@ func loadManifest(dir string) (*manifest, error) {
 	if err := decodeJSON(filepath.Join(dir, "manifest.json"), &m); err != nil {
 		return nil, err
 	}
-	if m.Format != "ix-bls-plonk-artifacts-v1" || m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil || m.Seconds == nil {
+	if m.Format != artifactFormat || m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil || m.Seconds == nil {
 		return nil, fmt.Errorf("invalid wrapper artifact manifest")
 	}
 	if m.KeysReady {

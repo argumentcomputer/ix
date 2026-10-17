@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,11 +9,8 @@ import (
 	"os"
 	"strings"
 
-	bls "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/frontend"
-	sw "github.com/consensys/gnark/std/algebra/emulated/sw_bls12381"
 )
 
 type pointJSON struct{ X, Y string }
@@ -82,13 +78,13 @@ func canonical(s string, modulus *big.Int) (*big.Int, error) {
 	return v, nil
 }
 
-func (p pointJSON) native() (bls.G1Affine, error) {
-	var result bls.G1Affine
-	x, err := canonical(p.X, fp.Modulus())
+func (p pointJSON) native() (nativeG1, error) {
+	var result nativeG1
+	x, err := canonical(p.X, baseModulus())
 	if err != nil {
 		return result, err
 	}
-	y, err := canonical(p.Y, fp.Modulus())
+	y, err := canonical(p.Y, baseModulus())
 	if err != nil {
 		return result, err
 	}
@@ -100,25 +96,18 @@ func (p pointJSON) native() (bls.G1Affine, error) {
 	return result, nil
 }
 
-func g2Keys(encoded []string) ([2]bls.G2Affine, error) {
-	var result [2]bls.G2Affine
+func g2Keys(encoded []string) ([2]nativeG2, error) {
+	var result [2]nativeG2
 	if len(encoded) != 2 {
 		return result, fmt.Errorf("expected two G2 anchors")
 	}
 	for i, s := range encoded {
-		b, err := unhex(s, 96)
+		b, err := unhex(s, g2ExportBytes)
 		if err != nil {
 			return result, err
 		}
-		if _, err := result[i].SetBytes(b); err != nil {
+		if result[i], err = decodeG2(b); err != nil {
 			return result, err
-		}
-		if result[i].IsInfinity() {
-			return result, fmt.Errorf("identity G2 anchor")
-		}
-		canonical := result[i].Bytes()
-		if !bytes.Equal(canonical[:], b) {
-			return result, fmt.Errorf("noncanonical G2 anchor")
 		}
 	}
 	return result, nil
@@ -136,7 +125,7 @@ func loadProfile(path string) (*profile, error) {
 }
 
 func (p *profile) validate() error {
-	if p.Format != "ix-bls-plonk-profile-v1" || len(p.Prefix) != 10 || len(p.Circuits) != 2 || len(p.Matrices) != 8 || p.PointCount < 1 || p.PointCount > 256 || p.FieldCount < 1 || p.FieldCount > 4096 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 3 || p.WitnessOffset+p.OpeningCount != p.PointCount {
+	if p.Format != profileFormat || len(p.Prefix) != 10 || len(p.Circuits) != 2 || len(p.Matrices) != 8 || p.PointCount < 1 || p.PointCount > 256 || p.FieldCount < 1 || p.FieldCount > 4096 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 3 || p.WitnessOffset+p.OpeningCount != p.PointCount {
 		return fmt.Errorf("invalid wrapper profile dimensions")
 	}
 	if _, err := unhex(p.ProfileID, 32); err != nil {
@@ -175,7 +164,7 @@ func (p *profile) validate() error {
 	if err != nil {
 		return err
 	}
-	if !outer[0].Equal(&inner[0]) || !outer[1].Equal(&inner[1]) {
+	if curveID == ecc.BLS12_381 && (!outer[0].Equal(&inner[0]) || !outer[1].Equal(&inner[1])) {
 		return fmt.Errorf("Filecoin pairing anchors differ")
 	}
 	if len(p.Program.Coefficients) != p.PointCount+len(p.Fixed)+1 || len(p.Program.Witnesses) != p.OpeningCount || len(p.Program.Assertions) != 2 {
@@ -185,7 +174,7 @@ func (p *profile) validate() error {
 		valid := func(id int) bool { return id >= 0 && id < i }
 		switch n.Op {
 		case "constant":
-			if _, err := canonical(n.Value, fr.Modulus()); err != nil {
+			if _, err := canonical(n.Value, scalarModulus()); err != nil {
 				return err
 			}
 		case "input":
@@ -216,7 +205,7 @@ func (p *profile) validate() error {
 }
 
 func newCircuit(p *profile) *wrapperCircuit {
-	return &wrapperCircuit{Profile: p, Points: make([]sw.G1Affine, p.PointCount), Values: make([]frontend.Variable, p.FieldCount)}
+	return &wrapperCircuit{Profile: p, Points: make([]circuitG1, p.PointCount), Values: make([]frontend.Variable, p.FieldCount)}
 }
 
 func witnessAssignment(p *profile, path string) (*wrapperCircuit, error) {
@@ -238,17 +227,17 @@ func witnessAssignment(p *profile, path string) (*wrapperCircuit, error) {
 		if err != nil {
 			return nil, err
 		}
-		result.Points[i] = sw.NewG1Affine(v)
+		result.Points[i] = newCircuitG1(v)
 	}
 	for i, point := range w.Deferred {
 		v, err := point.native()
 		if err != nil {
 			return nil, err
 		}
-		result.Deferred[i] = sw.NewG1Affine(v)
+		result.Deferred[i] = newCircuitG1(v)
 	}
 	for i, v := range w.Values {
-		scalar, err := canonical(v, fr.Modulus())
+		scalar, err := canonical(v, scalarModulus())
 		if err != nil {
 			return nil, err
 		}

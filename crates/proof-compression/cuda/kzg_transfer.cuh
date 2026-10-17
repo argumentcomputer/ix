@@ -68,6 +68,7 @@ class TransferRing {
     static constexpr size_t CHUNK = size_t(16) << 20;
     static constexpr size_t RING = 4;
     unsigned char* memory_ = nullptr;
+    int device_ = -1;
     std::array<cudaEvent_t, RING> ready_{};
     std::array<cudaEvent_t, RING> start_{};
     std::array<bool, RING> pending_{};
@@ -109,6 +110,7 @@ class TransferRing {
   public:
     TransferRing() {
         try {
+            CUDA_OK(cudaGetDevice(&device_));
             CUDA_OK(cudaMallocHost(reinterpret_cast<void**>(&memory_), RING * CHUNK));
             for (size_t i = 0; i < RING; ++i) {
                 CUDA_OK(cudaEventCreateWithFlags(&ready_[i], transfer_profiling()
@@ -121,6 +123,11 @@ class TransferRing {
     ~TransferRing() { release(); }
 
     void release() {
+        // Events and pinned allocations belong to the creating context;
+        // process teardown may run with a different device selected.
+        int saved = -1;
+        (void)cudaGetDevice(&saved);
+        if (device_ >= 0) (void)cudaSetDevice(device_);
         // An exception may leave a DMA using the pinned memory in flight.
         for (size_t i = 0; i < RING; ++i) {
             if (ready_[i]) {
@@ -130,6 +137,7 @@ class TransferRing {
             if (start_[i]) cudaEventDestroy(start_[i]);
         }
         if (memory_) cudaFreeHost(memory_);
+        if (saved >= 0) (void)cudaSetDevice(saved);
     }
 
     void upload(const gpu_t& gpu, cudaStream_t stream, void* dst,

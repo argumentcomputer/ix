@@ -176,7 +176,8 @@ pub(super) fn build(
   // An inverse node enforces the forbidden-challenge rejection even if its output is unused.
   let _ = zeta.inverse();
   for (i, c) in system.circuits.iter().enumerate() {
-    GraphProgram::compile(&c.graph, GraphInputs::for_circuit(system, i)?)?;
+    let graph =
+      GraphProgram::compile(&c.graph, GraphInputs::for_circuit(system, i)?)?;
     let height = c.preprocessed_height;
     let domain = system.config.pcs().natural_domain_for_degree(height);
     let omega = domain.generator();
@@ -197,17 +198,13 @@ pub(super) fn build(
       [current, following]
     };
     let stage2 = rows(1);
-    let view = VarValues {
-      main: rows(0),
-      preprocessed: rows(3),
-      stage2,
-      publics: &cp,
-      is_first_row: first,
-      is_last_row: last,
-      is_transition: zeta - Term::Constant(omega.inverse()),
-    };
-    let mut nodes = Vec::new();
-    c.graph.sweep(&view, &mut nodes);
+    let nodes = graph.evaluate(
+      |matrix, offset| values[layout.matrices[matrix].value_offset + offset],
+      &cp,
+      first,
+      last,
+      zeta - Term::Constant(omega.inverse()),
+    );
     let mut constraints = c.graph.constraint_values(&nodes);
     let ext = multi_stark::system::extension_params::<KzgConfig>();
     if ext.degree != 1 {

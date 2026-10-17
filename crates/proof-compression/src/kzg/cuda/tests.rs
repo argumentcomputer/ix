@@ -3,6 +3,107 @@ use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::PrimeField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
+mod constraints;
+#[cfg(feature = "bn254")]
+mod plonk_scale;
+
+unsafe extern "C" {
+  fn ix_kzg_ntt_parameters(lg: u32, output: *mut [[u64; 4]; 3]) -> i32;
+  fn ix_kzg_field_conformance(
+    device: i32,
+    fq: *const [abi::FqLimbs; 32],
+    fr: *const [[u64; 4]; 32],
+    fq_output: *mut [abi::FqLimbs; 192],
+    fr_output: *mut [[u64; 4]; 192],
+  ) -> i32;
+}
+
+#[test]
+fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
+  use crate::kzg::Scalar;
+  use multi_stark::traits::TwoAdicField;
+  for lg in 0..=MAX_FFT_LOG {
+    let mut output = [[0; 4]; 3];
+    let status = unsafe { ix_kzg_ntt_parameters(lg as u32, &mut output) };
+    assert_eq!(status, 0);
+    let [root, inverse, scale] =
+      output.map(|limbs| Fr::new_unchecked(BigInt(limbs)));
+    assert_eq!(root, Scalar::two_adic_generator(lg).0);
+    assert_eq!(inverse, root.inverse().unwrap());
+    assert_eq!(scale, Fr::from(1u64 << lg).inverse().unwrap());
+  }
+  let mut output = [[0; 4]; 3];
+  assert_eq!(
+    unsafe { ix_kzg_ntt_parameters(MAX_FFT_LOG as u32 + 1, &mut output) },
+    1
+  );
+}
+
+fn field_inputs<F: PrimeField>() -> [F; 32] {
+  let mut values = std::array::from_fn(|i| {
+    let mut bytes = [0; 64];
+    blake3::Hasher::new()
+      .update(&(i as u64).to_le_bytes())
+      .finalize_xof()
+      .fill(&mut bytes);
+    F::from_le_bytes_mod_order(&bytes)
+  });
+  values[..5].copy_from_slice(&[
+    F::ZERO,
+    F::ONE,
+    -F::ONE,
+    F::from(2u8),
+    -F::from(2u8),
+  ]);
+  for (value, bit) in values[5..9].iter_mut().zip([63, 64, 127, 192]) {
+    *value = F::from(2u8).pow([bit]);
+  }
+  values
+}
+
+fn field_reference<F: PrimeField>(values: [F; 32]) -> Vec<F> {
+  values
+    .iter()
+    .enumerate()
+    .flat_map(|(i, &a)| {
+      let b = values[(i + 1) % values.len()];
+      [F::ONE, a + b, a - b, a * b, -a, a.inverse().unwrap_or(F::ZERO)]
+    })
+    .collect()
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_base_and_scalar_arithmetic_match_arkworks() {
+  let fq = field_inputs::<Fq>();
+  let fr = field_inputs::<Fr>();
+  let fq_input = fq.map(|v| v.0.0);
+  let fr_input = fr.map(|v| v.0.0);
+  let mut fq_output = [[0; FQ_LIMBS]; 192];
+  let mut fr_output = [[0; 4]; 192];
+  let device = Devices::get().acquire();
+  check(
+    unsafe {
+      ix_kzg_field_conformance(
+        device.id(),
+        &fq_input,
+        &fr_input,
+        &mut fq_output,
+        &mut fr_output,
+      )
+    },
+    "field conformance",
+  );
+  assert_eq!(
+    fq_output.map(|v| Fq::new_unchecked(BigInt(v))).as_slice(),
+    field_reference(fq)
+  );
+  assert_eq!(
+    fr_output.map(|v| Fr::new_unchecked(BigInt(v))).as_slice(),
+    field_reference(fr)
+  );
+}
+
 fn scalars(n: usize) -> Vec<Fr> {
   (0..n)
     .map(|i| {
@@ -14,6 +115,54 @@ fn scalars(n: usize) -> Vec<Fr> {
       Fr::from_le_bytes_mod_order(&bytes)
     })
     .collect()
+}
+
+#[test]
+fn oversized_fft_domains_fail_before_allocation_or_device_access() {
+  let unsupported = MAX_FFT_LOG + 1;
+  assert!(
+    std::panic::catch_unwind(|| fft_columns(&[], unsupported, false, Fr::ONE))
+      .is_err()
+  );
+  assert!(
+    std::panic::catch_unwind(|| {
+      interpolate_columns(vec![], unsupported, Fr::ONE)
+    })
+    .is_err()
+  );
+  assert!(
+    std::panic::catch_unwind(|| fft_from(&[], unsupported, Fr::ONE)).is_err()
+  );
+  let shift = Fr::ONE.0.0;
+  let mut value = Fr::ZERO.0.0;
+  let original = value;
+  const INVALID_VALUE: i32 = 1;
+  // Invalid domains must fail before the invalid ordinal is resolved.
+  for lg in [unsupported as u32, u32::MAX] {
+    let code = unsafe { ix_kzg_fft(-1, &mut value, lg, false, &shift) };
+    assert_eq!(code, INVALID_VALUE);
+    let job = FftJob {
+      input: &value,
+      resident_input: std::ptr::null(),
+      output: &mut value,
+      input_count: 1,
+      resident_output: std::ptr::null_mut(),
+    };
+    let code = unsafe { ix_kzg_fft_batch(-1, &job, 1, lg, false, &shift, 1) };
+    assert_eq!(code, INVALID_VALUE);
+    assert_eq!(value, original);
+  }
+}
+
+#[test]
+fn projective_limb_transport_preserves_coordinates_and_infinity() {
+  let generator = G1Affine::generator();
+  for point in [generator, -generator, G1Affine::identity()] {
+    let native = point.into_group();
+    let decoded = projective([native.x.0.0, native.y.0.0, native.z.0.0]);
+    assert_eq!(decoded.into_affine(), point);
+  }
+  assert!(projective([[0; FQ_LIMBS]; 3]).is_zero());
 }
 
 #[test]
@@ -155,6 +304,32 @@ fn normalization_samples_structured_columns_only() {
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
+fn msm_handle_rejects_destruction_on_another_device() {
+  let points =
+    [G1Affine::generator(), -G1Affine::generator(), G1Affine::identity()];
+  let values = [Fr::ONE, Fr::from(2), Fr::from(3)];
+  let device = Devices::get().acquire();
+  let context = upload_msm_points(&device, &points);
+  assert_eq!(unsafe { ix_kzg_msm_destroy(-1, context.context) }, 1);
+  let mut output = [[0; FQ_LIMBS]; 3];
+  check(
+    unsafe {
+      ix_kzg_msm_invoke(
+        device.id(),
+        context.context,
+        &mut output,
+        values.as_ptr().cast(),
+        values.len(),
+        std::ptr::null(),
+      )
+    },
+    "MSM after rejected destruction",
+  );
+  assert_eq!(projective(output), G1Projective::msm(&points, &values).unwrap());
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
 fn cuda_msm_matches_arkworks_with_chunks_and_exceptional_points() {
   let mut scalars = scalars(4099);
   let mut points: Vec<_> = scalars
@@ -233,17 +408,6 @@ fn cuda_msm_normalizes_structured_columns() {
   for (actual, coefficients) in actual.into_iter().zip(columns) {
     assert_eq!(actual, G1Projective::msm(&points, coefficients).unwrap());
   }
-}
-
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn cuda_fft_rejects_overflowing_domain_stride() {
-  let mut value = Fr::ONE.0.0;
-  let original = value;
-  // The invalid size must be rejected before any transfer or allocation.
-  let status = unsafe { ix_kzg_fft(0, &mut value, 32, false, &original) };
-  assert_ne!(status, 0);
-  assert_eq!(value, original);
 }
 
 #[test]

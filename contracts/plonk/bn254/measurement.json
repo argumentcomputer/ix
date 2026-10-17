@@ -1,0 +1,227 @@
+{
+  "format": "ix-bn254-plonk-anvil-v1",
+  "toolchain": {
+    "solc": "solc, the solidity compiler commandline interface\nVersion: 0.8.37+commit.f401782d.Linux.g++",
+    "anvil": "anvil Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist",
+    "cast": "cast Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:18:54.332175693Z (1791220734)\nBuild Profile: dist"
+  },
+  "compiler_settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "viaIR": true,
+    "evmVersion": "prague",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object"
+        ]
+      }
+    }
+  },
+  "execution_hardfork": "osaka",
+  "fixture_sha256": "b195b17be039346e2b47bdbde57c380a32e58193c2e6bfc498b406e2d68c65ed",
+  "verifying_key_sha256": "4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b599ff368",
+  "sp1_commit": "d3629729c3216eb51bd4859d027a8eb729399fa4",
+  "changed_vk_constants": [
+    "VK_NB_PUBLIC_INPUTS",
+    "VK_DOMAIN_SIZE",
+    "VK_INV_DOMAIN_SIZE",
+    "VK_OMEGA",
+    "VK_QL_COM_X",
+    "VK_QL_COM_Y",
+    "VK_QR_COM_X",
+    "VK_QR_COM_Y",
+    "VK_QM_COM_X",
+    "VK_QM_COM_Y",
+    "VK_QO_COM_X",
+    "VK_QO_COM_Y",
+    "VK_QK_COM_X",
+    "VK_QK_COM_Y",
+    "VK_S1_COM_X",
+    "VK_S1_COM_Y",
+    "VK_S2_COM_X",
+    "VK_S2_COM_Y",
+    "VK_S3_COM_X",
+    "VK_S3_COM_Y",
+    "VK_QCP_0_X",
+    "VK_QCP_0_Y",
+    "VK_INDEX_COMMIT_API_0"
+  ],
+  "verifier_algorithm_unchanged": true,
+  "proof_solidity_bytes": 864,
+  "native_proof_bytes": 584,
+  "envelope_bytes": 624,
+  "deployments": {
+    "stock-sp1": {
+      "transaction_hash": "0x46d1a0a830020a24498a37e26e7f0e9c36c266707e95243fd8d90476ffba33da",
+      "gas_used": 1682087,
+      "calldata_bytes": 7560,
+      "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+      "initcode_bytes": 7560,
+      "runtime_bytes": 7534,
+      "runtime_sha256": "558958eb95cb5429b49f7a5c3b1be1128c1056f8eacd9f9be74c0346ae367771"
+    },
+    "stock-sp1-facade": {
+      "transaction_hash": "0xccd99a181a33228d7e35ea14de3b738c4553d5d0d4438549937ca6c91672b9e2",
+      "gas_used": 1991649,
+      "calldata_bytes": 8993,
+      "address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+      "initcode_bytes": 8993,
+      "runtime_bytes": 8967,
+      "runtime_sha256": "c6b7db252e79dc6c1fe2ab981153d6d128dcff74e14a20321dedae9d24c758b1"
+    },
+    "adapted-sp1": {
+      "transaction_hash": "0x3073d7b8073ea8236f7f3fa7b03323fcf85ba7ef0416e8037174a27e4dced770",
+      "gas_used": 1681283,
+      "calldata_bytes": 7557,
+      "address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+      "initcode_bytes": 7557,
+      "runtime_bytes": 7531,
+      "runtime_sha256": "624d483a7f7758fc4e782b2e0bd084902c25e4b99bb5023512f3a0cf0113d6c8"
+    },
+    "ix-adapter": {
+      "transaction_hash": "0xf035ea1e7c4d316635c7ee3ad93ca68b99ebc7722eadbae99b0b730c2695c6f9",
+      "gas_used": 255356,
+      "calldata_bytes": 1159,
+      "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "initcode_bytes": 1159,
+      "runtime_bytes": 913,
+      "runtime_sha256": "f63dc4f9ef3ec5691e2b0d43aed3257f968017c96f080ec413dd236a0a4ac8ac"
+    }
+  },
+  "transactions": {
+    "adapted-sp1-verify": {
+      "transaction_hash": "0xb0f8cf8c47fe5d1c44f5036451ae2eefe17c76b188b8ec38e65793b5a3f9fa18",
+      "gas_used": 316003,
+      "calldata_bytes": 1060,
+      "intrinsic_calldata_gas": 36088,
+      "eip7623_floor_gas": 58720,
+      "execution_gas": 279915,
+      "precompile_totals": {
+        "2": {
+          "calls": 9,
+          "gas": 1572
+        },
+        "5": {
+          "calls": 6,
+          "gas": 13644
+        },
+        "7": {
+          "calls": 21,
+          "gas": 126000
+        },
+        "6": {
+          "calls": 21,
+          "gas": 3150
+        },
+        "8": {
+          "calls": 1,
+          "gas": 113000
+        }
+      }
+    },
+    "ix-adapter-verify": {
+      "transaction_hash": "0x782adafcfff7089af4c51a0ed6211337de8f18700039e19e65aee31999f6460d",
+      "gas_used": 320103,
+      "calldata_bytes": 964,
+      "intrinsic_calldata_gas": 35668,
+      "eip7623_floor_gas": 57670,
+      "execution_gas": 284435,
+      "precompile_totals": {
+        "2": {
+          "calls": 9,
+          "gas": 1572
+        },
+        "5": {
+          "calls": 6,
+          "gas": 13644
+        },
+        "7": {
+          "calls": 21,
+          "gas": 126000
+        },
+        "6": {
+          "calls": 21,
+          "gas": 3150
+        },
+        "8": {
+          "calls": 1,
+          "gas": 113000
+        }
+      }
+    }
+  },
+  "all_checks_passed": true,
+  "date": "2026-10-17",
+  "checks_passed": 47,
+  "accepted_checks": [
+    "adapted-sp1-accepts-init",
+    "ix-adapter-accepts-init"
+  ],
+  "rejected_checks": [
+    "stock-rejects-two-ix-inputs",
+    "stock-rejects-proof-with-five-inputs",
+    "stock-facade-rejects-correctly-framed-ix-proof",
+    "changed-claim-byte-0",
+    "changed-claim-byte-15",
+    "changed-claim-byte-16",
+    "changed-claim-byte-31",
+    "swapped-inputs",
+    "missing-input",
+    "extra-input",
+    "noncanonical-input",
+    "empty-proof",
+    "truncated-proof",
+    "trailing-proof",
+    "native-format",
+    "ix-envelope-format",
+    "changed-proof-word-0",
+    "changed-proof-word-1",
+    "changed-proof-word-2",
+    "changed-proof-word-3",
+    "changed-proof-word-4",
+    "changed-proof-word-5",
+    "changed-proof-word-6",
+    "changed-proof-word-7",
+    "changed-proof-word-8",
+    "changed-proof-word-9",
+    "changed-proof-word-10",
+    "changed-proof-word-11",
+    "changed-proof-word-12",
+    "changed-proof-word-13",
+    "changed-proof-word-14",
+    "changed-proof-word-15",
+    "changed-proof-word-16",
+    "changed-proof-word-17",
+    "changed-proof-word-18",
+    "changed-proof-word-19",
+    "changed-proof-word-20",
+    "changed-proof-word-21",
+    "changed-proof-word-22",
+    "changed-proof-word-23",
+    "changed-proof-word-24",
+    "changed-proof-word-25",
+    "changed-proof-word-26",
+    "noncanonical-point",
+    "noncanonical-scalar"
+  ],
+  "tool_downloads": [
+    {
+      "name": "foundry",
+      "url": "https://github.com/foundry-rs/foundry/releases/download/v1.8.5/foundry_v1.8.5_linux_amd64.tar.gz",
+      "sha256": "6c66ffcc55fa4249197721baa3098bc208014ea1d8aa04b2ed50ac6bccffb226",
+      "bytes": 117753167
+    },
+    {
+      "name": "solc",
+      "url": "https://github.com/argotorg/solidity/releases/download/v0.8.37/solc-static-linux",
+      "sha256": "5de843c2c93563cc66425c99a4fb13fdbf32b4c4ae07469480faaf126e14404a",
+      "bytes": 15473648
+    }
+  ],
+  "full_report": "target/plonk-evm/run-final/report.json"
+}

@@ -1,7 +1,7 @@
 //! KZG CUDA kernels for the compression crate.
 //!
 //! Without the `cuda` feature this script does nothing, so CPU builds need
-//! neither nvcc nor the CUDA headers and libraries. With it, the BLS12-381
+//! neither nvcc nor the CUDA headers and libraries. With it, the selected
 //! sppark instantiation and the KZG kernels are compiled into their own
 //! archive, isolated from multi-stark's Goldilocks instantiation by the
 //! symbol renames in `cuda/kzg_sppark.cuh`.
@@ -12,6 +12,8 @@ use std::process::Command;
 
 const SOURCES: &[&str] = &[
   "cuda/kzg.cu",
+  "cuda/kzg_curve.cuh",
+  "cuda/kzg_conformance.cuh",
   "cuda/kzg_quotient.cuh",
   "cuda/kzg_srs.cuh",
   "cuda/kzg_lookup.cuh",
@@ -26,7 +28,7 @@ fn main() {
   assert!(
     env::var_os("CARGO_FEATURE_BN254").is_none()
       || env::var_os("CARGO_FEATURE_BLS12_381").is_none(),
-    "BN254 CPU KZG requires --no-default-features --features bn254; BLS12-381, Solidity, PLONK and CUDA features cannot be combined with it"
+    "BN254 KZG requires --no-default-features --features bn254; BLS12-381 and direct Solidity features cannot be combined with it"
   );
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
@@ -91,6 +93,12 @@ fn build_kzg_cuda() {
     println!("cargo:rerun-if-changed={}", root.join(directory).display());
   }
   let mut objects = Vec::new();
+  let (curve_flag, domain_flag) =
+    if env::var_os("CARGO_FEATURE_BN254").is_some() {
+      ("-DFEATURE_BN254", "-DMAX_LG_DOMAIN_SIZE=28")
+    } else {
+      ("-DFEATURE_BLS12_381", "-DMAX_LG_DOMAIN_SIZE=32")
+    };
   for (source, name) in
     [("cuda/kzg.cu", "kzg.o"), ("cuda/kzg_runtime.cpp", "kzg_runtime.o")]
   {
@@ -98,9 +106,9 @@ fn build_kzg_cuda() {
     let mut command = cuda_compile_command(&nvcc, &architectures);
     command.args([
       "-c",
-      "-DFEATURE_BLS12_381",
+      curve_flag,
       "-D__BLST_PORTABLE__",
-      "-DMAX_LG_DOMAIN_SIZE=32",
+      domain_flag,
       "-include",
       "cuda/kzg_sppark.cuh",
     ]);
@@ -157,7 +165,7 @@ fn cuda_compile_command(
 }
 
 fn link_cuda_runtime(nvcc: &std::ffi::OsStr) {
-  // The standalone worker links the BLS12-381 backend with its host runtime.
+  // The standalone worker links the KZG backend with its host runtime.
   println!("cargo:rustc-link-lib=static=cudart_static");
   for lib in ["dl", "rt", "pthread", "stdc++"] {
     println!("cargo:rustc-link-lib=dylib={lib}");

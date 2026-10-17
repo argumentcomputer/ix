@@ -16,8 +16,26 @@ struct BundledVerifier {
   /// this profile compresses.
   statement_prefix: [u64; 10],
   setup: SetupClass,
+  #[cfg(feature = "bn254")]
+  ignition_admission: Option<BundledIgnitionAdmission>,
   bytes: &'static [u8],
   decoded: OnceLock<std::result::Result<PreparedVerifierProfile, String>>,
+}
+
+#[cfg(feature = "bn254")]
+struct BundledIgnitionAdmission {
+  bytes: &'static [u8],
+  digest: [u8; 32],
+}
+
+#[cfg(feature = "bn254")]
+impl BundledIgnitionAdmission {
+  fn decode(&self) -> Result<crate::kzg::srs::ignition::IgnitionAdmission> {
+    Ok(crate::kzg::srs::ignition::IgnitionAdmission::from_bytes(
+      self.bytes,
+      self.digest,
+    )?)
+  }
 }
 
 #[cfg(not(feature = "bn254"))]
@@ -66,18 +84,43 @@ static VERIFIERS: [BundledVerifier; 4] = [
 static VERIFIERS: [BundledVerifier; 0] = [];
 
 impl BundledVerifier {
+  #[cfg(feature = "bn254")]
+  fn check_release_class(&self) -> Result<()> {
+    if self.setup != SetupClass::Ignition {
+      return Err(
+        "BN254 release verifier catalog admits only Ignition setups".into(),
+      );
+    }
+    Ok(())
+  }
+
   fn profile(&self) -> Result<&PreparedVerifierProfile> {
     self
       .decoded
       .get_or_init(|| {
+        #[cfg(feature = "bn254")]
+        self.check_release_class().map_err(|error| error.to_string())?;
         if blake3::hash(self.bytes).to_hex().as_str() != self.digest {
           return Err("bundled compression verifier digest differs".into());
         }
         let profile = VerifierProfile::from_bytes(self.bytes)
           .map_err(|error| error.to_string())?;
+        #[cfg(not(feature = "bn254"))]
         profile
           .check_setup_class(self.setup)
           .map_err(|error| error.to_string())?;
+        #[cfg(feature = "bn254")]
+        {
+          let admission = self
+            .ignition_admission
+            .as_ref()
+            .ok_or("bundled Ignition verifier has no trusted admission")?
+            .decode()
+            .map_err(|error| error.to_string())?;
+          profile
+            .check_ignition_admission(&admission)
+            .map_err(|error| error.to_string())?;
+        }
         if blake3::Hash::from_bytes(profile.id()).to_hex().as_str() != self.id {
           return Err("bundled compression verifier metadata differs".into());
         }
@@ -108,6 +151,8 @@ pub(super) fn verify(
   let verifier = bundled(&id).ok_or(
     "compressed proof uses a verifier profile not bundled with this application",
   )?;
+  #[cfg(feature = "bn254")]
+  verifier.check_release_class()?;
   if verifier.setup == SetupClass::Development && !allow_development {
     return Err("compressed proof uses the known-trapdoor development setup; pass --dev-srs to accept it (not production-secure)".into());
   }
@@ -139,6 +184,29 @@ pub(super) fn verify_with_profile(
   }
   profile.verify(packet, expected)?;
   Ok(setup)
+}
+
+/// Verify with an independently authenticated profile and ceremony admission.
+/// The admission contains the verifier anchors; no proving cache is required.
+#[cfg(feature = "bn254")]
+pub(super) fn verify_with_ignition_admission(
+  packet: &[u8],
+  claim: &[u8],
+  expected: &statement::Statement,
+  profile: &[u8],
+  trusted_digest: &[u8; 32],
+  admission: &crate::kzg::srs::ignition::IgnitionAdmission,
+) -> Result<SetupClass> {
+  if blake3::hash(profile).as_bytes() != trusted_digest {
+    return Err(
+      "local verifier profile digest differs from the trusted digest".into(),
+    );
+  }
+  statement::bind_claim(claim, expected)?;
+  let profile = VerifierProfile::from_bytes(profile)?;
+  profile.check_ignition_admission(admission)?;
+  profile.verify(packet, expected)?;
+  Ok(SetupClass::Ignition)
 }
 
 #[cfg(all(test, not(feature = "bn254")))]
@@ -314,6 +382,50 @@ mod tests {
 #[cfg(all(test, feature = "bn254"))]
 mod bn254_tests {
   use super::*;
+
+  #[test]
+  fn bn254_release_catalog_rejects_non_ignition_classes() {
+    for setup in [SetupClass::Development, SetupClass::Filecoin] {
+      let verifier = BundledVerifier {
+        id: "",
+        digest: "",
+        statement_prefix: [0; 10],
+        setup,
+        ignition_admission: None,
+        bytes: &[],
+        decoded: OnceLock::new(),
+      };
+      assert!(verifier.check_release_class().is_err());
+      assert!(
+        verifier
+          .profile()
+          .err()
+          .unwrap()
+          .to_string()
+          .contains("admits only Ignition")
+      );
+    }
+  }
+
+  #[test]
+  fn bundled_ignition_admission_requires_its_release_pin() {
+    let (admission, _) = crate::kzg::srs::ignition::test_admission(7, 16, 43);
+    let bytes: &'static [u8] =
+      Box::leak(admission.to_bytes().unwrap().into_boxed_slice());
+    let digest = *blake3::hash(bytes).as_bytes();
+    let bundled = BundledIgnitionAdmission { bytes, digest };
+    assert_eq!(
+      bundled.decode().unwrap().public_setup(),
+      admission.public_setup()
+    );
+    let mut wrong_digest = digest;
+    wrong_digest[0] ^= 1;
+    assert!(
+      BundledIgnitionAdmission { bytes, digest: wrong_digest }
+        .decode()
+        .is_err()
+    );
+  }
 
   #[test]
   fn bn254_requires_an_explicit_trusted_profile() {

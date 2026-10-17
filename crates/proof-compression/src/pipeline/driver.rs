@@ -1,10 +1,14 @@
 //! Saved-proof compression and verification with an explicitly pinned profile.
 
-use super::{Result, setup::SetupConfig, storage};
+use super::{
+  Result,
+  setup::{SetupClass, SetupConfig},
+  storage,
+};
 use crate::kzg::curve;
 use std::{fs, path::Path};
 
-const USAGE: &str = "usage: ix-compression-worker pipeline run <root-dir> <claim-file> <output-dir> [24|25] [--dev-srs]\n       ix-compression-worker pipeline run-fri <fri-dir> <claim-file> <root-claims.bin> <output-dir> [24|25] [--dev-srs]\n       ix-compression-worker pipeline verify <proof.envelope.bin> <claim-file> <root-claims.bin> <verifier.bin> <trusted-profile-blake3> [--dev-srs]";
+const USAGE: &str = "usage: ix-compression-worker pipeline run <root-dir> <claim-file> <output-dir> [24|25] [--dev-srs]\n       ix-compression-worker pipeline run-fri <fri-dir> <claim-file> <root-claims.bin> <output-dir> [24|25] [--dev-srs]\n       ix-compression-worker pipeline verify <proof.envelope.bin> <claim-file> <root-claims.bin> <verifier.bin> <trusted-profile-blake3> [--dev-srs]\n       ix-compression-worker pipeline verify-ignition <proof.envelope.bin> <claim-file> <root-claims.bin> <verifier.bin> <trusted-profile-blake3> <admission.json> <trusted-admission-blake3>";
 
 fn arguments(args: &[String]) -> Result<(Vec<&str>, bool)> {
   let mut positional = Vec::new();
@@ -50,26 +54,61 @@ fn digest(text: &str) -> Result<[u8; 32]> {
 fn publish(
   out: &Path,
   envelope: &[u8],
+  claim: &[u8],
   expected: &[u8],
   source: &str,
-  development: bool,
+  setup: &SetupConfig,
 ) -> Result<()> {
   let profile_path = out.join("final-kzg/verifier.bin");
   let profile = fs::read(&profile_path)?;
+  let profile_digest = *blake3::hash(&profile).as_bytes();
+  #[cfg(feature = "bn254")]
+  let verified_setup = if let Some(admission) = setup.ignition_admission() {
+    super::verify_with_ignition_admission(
+      envelope,
+      claim,
+      expected,
+      &profile,
+      &profile_digest,
+      admission,
+    )?
+  } else {
+    super::verify_with_profile(
+      envelope,
+      claim,
+      expected,
+      &profile,
+      &profile_digest,
+      setup.class() == SetupClass::Development,
+    )?
+  };
+  #[cfg(not(feature = "bn254"))]
+  let verified_setup = super::verify_with_profile(
+    envelope,
+    claim,
+    expected,
+    &profile,
+    &profile_digest,
+    setup.class() == SetupClass::Development,
+  )?;
+  if verified_setup != setup.class() {
+    return Err("completed proof differs from the selected setup class".into());
+  }
   storage::write_atomic(&out.join("proof.envelope.bin"), envelope)?;
   storage::write_atomic(&out.join("expected-root-claims.bin"), expected)?;
   let report = serde_json::json!({
     "format": "ix-saved-compression-run/v1",
     "curve": curve::NAME,
     "input_stage": source,
-    "known_trapdoor": development,
+    "setup": verified_setup.label(),
+    "known_trapdoor": verified_setup == SetupClass::Development,
     "cuda": cfg!(feature = "cuda"),
     "parallel": cfg!(feature = "parallel"),
     "native_verification_passed": true,
     "proof_bytes": envelope.len(),
     "proof_blake3": blake3::hash(envelope).to_hex().as_str(),
     "profile": "final-kzg/verifier.bin",
-    "profile_blake3": blake3::hash(&profile).to_hex().as_str(),
+    "profile_blake3": blake3::Hash::from_bytes(profile_digest).to_hex().as_str(),
     "expected_root_claims": "expected-root-claims.bin",
   });
   storage::write_atomic(
@@ -88,7 +127,7 @@ pub(super) fn run(args: &[String]) -> Result<()> {
   match (*command, args) {
     ("run", [root, claim, out, log @ ..]) if log.len() <= 1 => {
       let log_height = height(log)?;
-      SetupConfig::from_env(development)?;
+      let setup = SetupConfig::from_env(development)?;
       let root = Path::new(root);
       let out = Path::new(out);
       let claim = fs::read(claim)?;
@@ -104,23 +143,58 @@ pub(super) fn run(args: &[String]) -> Result<()> {
         log_height,
         false,
       )?;
-      publish(out, &envelope, &expected, "root", development)
+      publish(out, &envelope, &claim, &expected, "root", &setup)
     },
     ("run-fri", [fri, claim, expected, out, log @ ..]) if log.len() <= 1 => {
       let log_height = height(log)?;
-      SetupConfig::from_env(development)?;
+      let setup = SetupConfig::from_env(development)?;
       let out = Path::new(out);
+      let claim = fs::read(claim)?;
       let expected = fs::read(expected)?;
       let envelope = super::compress_fri(
         Path::new(fri),
-        &fs::read(claim)?,
+        &claim,
         &expected,
         out,
         &out.join("cache"),
         development,
         log_height,
       )?;
-      publish(out, &envelope, &expected, "fri", development)
+      publish(out, &envelope, &claim, &expected, "fri", &setup)
+    },
+    #[cfg(feature = "bn254")]
+    (
+      "verify-ignition",
+      [proof, claim, expected, profile, trusted, admission, admitted],
+    ) => {
+      if development {
+        return Err("verify-ignition does not accept --dev-srs".into());
+      }
+      let trusted = digest(trusted)?;
+      let admitted = digest(admitted)?;
+      let admission = crate::kzg::srs::ignition::IgnitionAdmission::read(
+        Path::new(admission),
+        admitted,
+      )?;
+      let class = super::verify_with_ignition_admission(
+        &fs::read(proof)?,
+        &fs::read(claim)?,
+        &fs::read(expected)?,
+        &fs::read(profile)?,
+        &trusted,
+        &admission,
+      )?;
+      println!(
+        "{}",
+        serde_json::json!({
+          "curve": curve::NAME,
+          "verified": true,
+          "setup": class.label(),
+          "profile_blake3": blake3::Hash::from_bytes(trusted).to_hex().as_str(),
+          "admission_blake3": blake3::Hash::from_bytes(admitted).to_hex().as_str(),
+        })
+      );
+      Ok(())
     },
     ("verify", [proof, claim, expected, profile, trusted]) => {
       let trusted = digest(trusted)?;

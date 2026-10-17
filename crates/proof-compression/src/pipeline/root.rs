@@ -21,7 +21,8 @@ fn print_capabilities() {
       "curve": crate::kzg::curve::NAME,
       "cuda": cfg!(feature = "cuda"),
       "parallel": cfg!(feature = "parallel"),
-      "development_setup_only": cfg!(feature = "bn254"),
+      "development_setup_only": false,
+      "ignition_setup": cfg!(feature = "bn254"),
       "terminal_plonk": cfg!(feature = "plonk"),
     })
   );

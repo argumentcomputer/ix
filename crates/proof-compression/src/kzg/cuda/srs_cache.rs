@@ -12,6 +12,9 @@ const HEADROOM: usize = 1 << 30;
 const MAX_CHUNK: usize = 1 << 24;
 const UPLOAD_POINTS: usize = 1 << 18;
 
+#[cfg(test)]
+mod tests;
+
 pub(in crate::kzg) struct Owner {
   id: u64,
   srs: Arc<Srs>,
@@ -59,7 +62,7 @@ unsafe extern "C" {
     workspace: *mut c_void,
     points: *const c_void,
     point_offset: usize,
-    output: *mut [[u64; 6]; 3],
+    output: *mut ProjectiveLimbs,
     host: *const [u64; 4],
     polynomial: *const c_void,
     scalar_offset: usize,
@@ -221,8 +224,10 @@ fn prepare(
     },
     "MSM memory plan",
   );
-  let point_bytes = count.div_ceil(32).checked_mul(32 * 96).unwrap();
-  let staging_bytes = count.min(UPLOAD_POINTS).div_ceil(32) * 32 * 104;
+  let point_bytes =
+    count.div_ceil(32).checked_mul(32 * DEVICE_AFFINE_BYTES).unwrap();
+  let staging_bytes =
+    count.min(UPLOAD_POINTS).div_ceil(32) * 32 * size_of::<G1Affine>();
   let mut cache = caches()[device.index].lock().unwrap();
   cache.purge(device);
   if cache
@@ -356,7 +361,7 @@ fn invoke(
       (std::ptr::null(), pointer as *const c_void, offset, count)
     },
   };
-  let mut output = [[0; 6]; 3];
+  let mut output = [[0; FQ_LIMBS]; 3];
   check(
     unsafe {
       ix_kzg_srs_msm(
@@ -423,8 +428,10 @@ pub(in crate::kzg) fn msm_columns(
     .into_par_iter()
     .map(|(index, offset, length, group)| {
       let device = devices.acquire_at(index);
-      let chunk = limit
-        .min(devices.potential_budget(index).saturating_sub(HEADROOM) / 384);
+      let chunk = limit.min(
+        devices.potential_budget(index).saturating_sub(HEADROOM)
+          / MSM_BYTES_PER_POINT,
+      );
       assert!(chunk > 0, "insufficient free VRAM for KZG MSM");
       let mut sums = vec![G1Projective::zero(); group.len()];
       for part in (offset..offset + length).step_by(chunk) {
@@ -474,7 +481,7 @@ pub(in crate::kzg) fn single_device_opening(
     .len()
     .checked_mul(32)?
     .checked_add(HEADROOM)?
-    .checked_add(chunk.checked_mul(384)?)?;
+    .checked_add(chunk.checked_mul(MSM_BYTES_PER_POINT)?)?;
   if !device.prepare_budget(required) {
     return None;
   }

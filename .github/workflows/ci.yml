@@ -141,7 +141,7 @@ jobs:
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Check BN254 CPU KZG
-        run: cargo clippy --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel --lib --tests --example recursive_size -- -D warnings
+        run: cargo clippy --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel,plonk --lib --tests --example recursive_size --example kzg_ignition_import -- -D warnings
       - name: Test BN254 CPU KZG
         run: |
           cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
@@ -171,6 +171,8 @@ jobs:
             cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
               --lib "pipeline::$pipeline_filter" ${{ github.event_name == 'push' && '--no-run' || '' }}
           done
+      - name: Test BN254 PLONK catalog
+        run: cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel,plonk --lib pipeline::plonk:: ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |

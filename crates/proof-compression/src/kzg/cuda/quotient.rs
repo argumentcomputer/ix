@@ -55,6 +55,22 @@ pub(super) struct Parameters {
   pub(super) blocks: u32,
 }
 
+const _: () = {
+  assert!(size_of::<Instruction>() == 64 && align_of::<Instruction>() == 32);
+  assert!(std::mem::offset_of!(Instruction, a) == 32);
+  assert!(std::mem::offset_of!(Instruction, out) == 44);
+  assert!(size_of::<Lookup>() == 12 && align_of::<Lookup>() == 4);
+  assert!(std::mem::offset_of!(Lookup, arg_count) == 8);
+  assert!(size_of::<Column>() == 96 && align_of::<Column>() == 32);
+  assert!(std::mem::offset_of!(Column, resident) == 8);
+  assert!(std::mem::offset_of!(Column, count) == 16);
+  assert!(std::mem::offset_of!(Column, constant) == 32);
+  assert!(std::mem::offset_of!(Column, slot) == 64);
+  assert!(size_of::<Parameters>() == 192 && align_of::<Parameters>() == 32);
+  assert!(std::mem::offset_of!(Parameters, trace_log) == 160);
+  assert!(std::mem::offset_of!(Parameters, blocks) == 180);
+};
+
 unsafe extern "C" {
   fn ix_kzg_quotient(
     device: i32,
@@ -352,6 +368,14 @@ pub(in crate::kzg) fn coefficients(
   input: &QuotientCommitInput<'_, KzgConfig>,
   alpha: Scalar,
 ) -> Option<Vec<Vec<Fr>>> {
+  coefficients_with_mode(input, alpha, settings().passes)
+}
+
+pub(super) fn coefficients_with_mode(
+  input: &QuotientCommitInput<'_, KzgConfig>,
+  alpha: Scalar,
+  mode: PassMode,
+) -> Option<Vec<Vec<Fr>>> {
   let trace = input.trace_domain;
   let quotient = input.quotient_domain;
   if trace.log_size < 10
@@ -448,15 +472,15 @@ pub(in crate::kzg) fn coefficients(
       &inverse_vanishing,
     )
   };
-  if settings().passes == PassMode::Force
-    && let Some(output) = run_passes()
-  {
-    return Some(output);
+  if mode == PassMode::Force {
+    return Some(run_passes().expect(
+      "forced KZG quotient passes are unsupported or no selected device admits them",
+    ));
   }
   let mut columns = column_descriptors(&all_columns);
   let device = acquire_columns(&mut columns, &all_columns, bytes);
   if device.is_none()
-    && settings().passes == PassMode::Fallback
+    && mode == PassMode::Fallback
     && let Some(output) = run_passes()
   {
     return Some(output);

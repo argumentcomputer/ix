@@ -218,7 +218,16 @@ fn check_worker_capabilities(bytes: &[u8]) -> Result<()> {
   Ok(())
 }
 
-fn check_worker_curve() -> Result<()> {
+fn check_worker_setup_capabilities(bytes: &[u8], ignition: bool) -> Result<()> {
+  check_worker_capabilities(bytes)?;
+  let capabilities: serde_json::Value = serde_json::from_slice(bytes)?;
+  if ignition && capabilities["ignition_setup"] != true {
+    return Err("compression worker does not support admitted Ignition parameters; select a matching IX_COMPRESSION_WORKER".into());
+  }
+  Ok(())
+}
+
+fn check_worker_curve(ignition: bool) -> Result<()> {
   let output = Command::new(worker_executable()?)
     .args(["fri", "capabilities"])
     .output()?;
@@ -231,7 +240,7 @@ fn check_worker_curve() -> Result<()> {
       .into(),
     );
   }
-  check_worker_capabilities(&output.stdout)
+  check_worker_setup_capabilities(&output.stdout, ignition)
 }
 
 fn child(stage: &str, args: &[&str], caches: &Caches) -> Result<()> {
@@ -310,6 +319,32 @@ pub fn verify_with_profile(
   )
 }
 
+/// Verify with an independently authorized profile and Ignition admission.
+/// Both outer and deferred pairing keys must match the admitted parameters.
+/// No proving cache or setup environment variables are read.
+#[cfg(feature = "bn254")]
+pub fn verify_with_ignition_admission(
+  proof: &[u8],
+  claim: &[u8],
+  expected_claims: &[u8],
+  profile: &[u8],
+  trusted_profile_digest: &[u8; 32],
+  admission: &crate::kzg::srs::ignition::IgnitionAdmission,
+) -> Result<setup::SetupClass> {
+  let words = check_claim(claim, expected_claims)?;
+  let packet = proof
+    .strip_prefix(PROOF_TAG)
+    .ok_or("unsupported compressed proof curve or version")?;
+  verifier::verify_with_ignition_admission(
+    packet,
+    claim,
+    &words,
+    profile,
+    trusted_profile_digest,
+    admission,
+  )
+}
+
 /// Cross-run caches the stages share: fixed preprocessing keyed by the
 /// executable and profile, and development SRS files. Variables already set
 /// in the environment take precedence over the directory given to `compress`.
@@ -334,7 +369,7 @@ fn validate_compression_options(
   development: bool,
   log_height: u32,
   terminal_plonk: bool,
-) -> Result<()> {
+) -> Result<setup::SetupConfig> {
   if terminal_plonk {
     #[cfg(not(feature = "plonk"))]
     return Err("this build does not include terminal PLONK support".into());
@@ -342,7 +377,7 @@ fn validate_compression_options(
     {
       if development {
         return Err(
-          "terminal PLONK requires Filecoin parameters; omit --dev-srs".into(),
+          "terminal PLONK requires admitted ceremony parameters; omit --dev-srs".into(),
         );
       }
       plonk::helper_executable()?;
@@ -356,14 +391,19 @@ fn validate_compression_options(
   }
   // Child stages re-read the same environment; the policy is enforced once
   // here so an unconfigured run fails before any checkpoint is written.
-  setup::SetupConfig::from_env(development)?;
+  let setup = setup::SetupConfig::from_env(development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
       "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
         .into(),
     );
   }
-  check_worker_curve()
+  #[cfg(feature = "bn254")]
+  let ignition = setup.ignition_admission().is_some();
+  #[cfg(not(feature = "bn254"))]
+  let ignition = false;
+  check_worker_curve(ignition)?;
+  Ok(setup)
 }
 
 fn prepare_output(out: &Path) -> Result<()> {
@@ -394,7 +434,8 @@ pub fn compress(
   terminal_plonk: bool,
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, statement)?;
-  validate_compression_options(development, log_height, terminal_plonk)?;
+  let setup =
+    validate_compression_options(development, log_height, terminal_plonk)?;
   prepare_output(out)?;
   let caches = Caches::under(cache_root);
   let root = out.join("root");
@@ -408,15 +449,7 @@ pub fn compress(
     &[&path_string(&root)?, &path_string(&fri)?, "--prove-outer"],
     &caches,
   )?;
-  finish_kzg(
-    &fri,
-    &words,
-    out,
-    cache_root,
-    development,
-    log_height,
-    terminal_plonk,
-  )
+  finish_kzg(&fri, &words, out, cache_root, &setup, log_height, terminal_plonk)
 }
 
 /// Compress an already saved FRI stage while binding its statement to a
@@ -432,7 +465,7 @@ pub fn compress_fri(
   log_height: u32,
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, expected_claims)?;
-  validate_compression_options(development, log_height, false)?;
+  let setup = validate_compression_options(development, log_height, false)?;
   prepare_output(out)?;
   {
     let fixture = init_fri::load(fri)?;
@@ -442,7 +475,7 @@ pub fn compress_fri(
       return Err("saved FRI statement differs from the independently expected root statement".into());
     }
   }
-  finish_kzg(fri, &words, out, cache_root, development, log_height, false)
+  finish_kzg(fri, &words, out, cache_root, &setup, log_height, false)
 }
 
 fn finish_kzg(
@@ -450,10 +483,11 @@ fn finish_kzg(
   words: &statement::Statement,
   out: &Path,
   cache_root: &Path,
-  development: bool,
+  setup: &setup::SetupConfig,
   log_height: u32,
   terminal_plonk: bool,
 ) -> Result<Vec<u8>> {
+  let development = setup.class() == setup::SetupClass::Development;
   let caches = Caches::under(cache_root);
   let first = out.join("first-kzg");
   let final_dir = out.join("final-kzg");
@@ -475,7 +509,18 @@ fn finish_kzg(
   let mut result = PROOF_TAG.to_vec();
   result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
   let packet = &result[PROOF_TAG.len()..];
-  wrap::verify(&final_dir, packet, Some(words))?;
+  let profile = wrap::VerifierProfile::from_bytes(&fs::read(
+    final_dir.join("verifier.bin"),
+  )?)?;
+  #[cfg(feature = "bn254")]
+  if let Some(admission) = setup.ignition_admission() {
+    profile.check_ignition_admission(admission)?;
+  } else {
+    profile.check_setup_class(setup.class())?;
+  }
+  #[cfg(not(feature = "bn254"))]
+  profile.check_setup_class(setup.class())?;
+  profile.verify(packet, words)?;
   // A bundled profile pins the aggregation program its proofs attest; the
   // backend this run proved under must be that program, or the bundle is
   // stale and verification elsewhere would accept the wrong statement.
@@ -537,6 +582,24 @@ mod tests {
     assert!(check_worker_capabilities(&capabilities(other)).is_err());
     assert!(check_worker_capabilities(b"{}").is_err());
     assert!(check_worker_capabilities(b"not-json").is_err());
+  }
+
+  #[test]
+  fn ignition_runs_require_explicit_worker_support() {
+    let mut capabilities = serde_json::json!({
+      "format": "ix-compression-capabilities/v1",
+      "binary": WORKER_EXECUTABLE,
+      "curve": crate::kzg::curve::NAME,
+    });
+    let bytes = serde_json::to_vec(&capabilities).unwrap();
+    check_worker_setup_capabilities(&bytes, false).unwrap();
+    assert!(check_worker_setup_capabilities(&bytes, true).is_err());
+    capabilities["ignition_setup"] = true.into();
+    check_worker_setup_capabilities(
+      &serde_json::to_vec(&capabilities).unwrap(),
+      true,
+    )
+    .unwrap();
   }
 
   #[test]

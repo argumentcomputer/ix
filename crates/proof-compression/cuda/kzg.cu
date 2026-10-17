@@ -1,4 +1,4 @@
-#include <ff/bls12-381.hpp>
+#include "kzg_curve.cuh"
 #include <ec/jacobian_t.hpp>
 #include <ec/xyzz_t.hpp>
 #include <ntt/ntt.cuh>
@@ -24,16 +24,19 @@ using bucket_t = xyzz_t<fp_t>;
 using affine_t = bucket_t::affine_t;
 using msm_impl = msm_t<bucket_t, point_t, affine_t, fr_t>;
 
-static_assert(sizeof(fr_t) == 32);
-static_assert(sizeof(affine_t) == 96);
-static_assert(sizeof(point_t) == 144);
+static_assert(sizeof(affine_t) == 2 * sizeof(fp_t));
+static_assert(sizeof(point_t) == 3 * sizeof(fp_t));
 
 struct ArkAffine {
-    uint64_t coordinates[12];
+    uint64_t x[KZG_FQ_LIMBS];
+    uint64_t y[KZG_FQ_LIMBS];
     uint8_t infinity;
 };
-static_assert(sizeof(ArkAffine) == 104);
-static_assert(offsetof(ArkAffine, infinity) == 96);
+static_assert(alignof(ArkAffine) == alignof(uint64_t));
+static_assert(sizeof(ArkAffine) == 2 * sizeof(fp_t) + sizeof(uint64_t));
+static_assert(offsetof(ArkAffine, x) == 0);
+static_assert(offsetof(ArkAffine, y) == sizeof(fp_t));
+static_assert(offsetof(ArkAffine, infinity) == 2 * sizeof(fp_t));
 
 __global__ void unpack_affine(affine_t* output, const ArkAffine* input, size_t count) {
     for (size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -42,7 +45,7 @@ __global__ void unpack_affine(affine_t* output, const ArkAffine* input, size_t c
         if (input[i].infinity)
             memset(&point, 0, sizeof(point));
         else
-            memcpy(&point, input[i].coordinates, sizeof(point));
+            memcpy(&point, &input[i], sizeof(point));
         output[i] = point;
     }
 }
@@ -110,11 +113,12 @@ extern "C" int ix_kzg_memory(int device, size_t* free, size_t* total) {
 
 namespace {
 struct MsmContext {
+    int device;
     size_t count;
     dev_ptr_t<affine_t> points;
     msm_impl msm;
     MsmContext(const gpu_t& gpu, size_t count)
-        : count(count), points(count, gpu),
+        : device(gpu.cid()), count(count), points(count, gpu),
           msm(nullptr, count, sizeof(affine_t), gpu.id()) {}
 };
 
@@ -173,7 +177,7 @@ extern "C" int ix_kzg_msm_invoke(int device, void* context, point_t* out,
             return cudaErrorInvalidValue;
         const auto& gpu = device_gpu(device);
         auto& msm = *static_cast<MsmContext*>(context);
-        if (count > msm.count) return cudaErrorInvalidValue;
+        if (msm.device != device || count > msm.count) return cudaErrorInvalidValue;
         dev_ptr_t<fr_t> data(count, gpu);
         TransferStats stats;
         auto& transfer = transfer_lane(gpu);
@@ -203,8 +207,10 @@ extern "C" int ix_kzg_msm_invoke(int device, void* context, point_t* out,
 
 extern "C" int ix_kzg_msm_destroy(int device, void* context) {
     try {
+        auto* msm = static_cast<MsmContext*>(context);
+        if (!msm || msm->device != device) return cudaErrorInvalidValue;
         const auto& gpu = device_gpu(device);
-        delete static_cast<MsmContext*>(context);
+        delete msm;
         gpu.sync();
         return 0;
     } catch (const cuda_error& e) { return failure(e.code(), e.what()); }
@@ -265,6 +271,11 @@ struct FftJob {
     size_t input_count;
     ResidentPolynomial** resident_output;
 };
+static_assert(sizeof(FftJob) == 40 && alignof(FftJob) == 8);
+static_assert(offsetof(FftJob, resident_input) == 8);
+static_assert(offsetof(FftJob, output) == 16);
+static_assert(offsetof(FftJob, input_count) == 24);
+static_assert(offsetof(FftJob, resident_output) == 32);
 
 void transform(const gpu_t& gpu, stream_t& stream, fr_t* data,
                uint32_t lg, bool inverse, const fr_t& shift) {
@@ -309,8 +320,11 @@ extern "C" int ix_kzg_polynomial_upload(int device, const fr_t* input,
 
 extern "C" int ix_kzg_polynomial_destroy(int device, void* pointer) {
     try {
+        auto* polynomial = static_cast<ResidentPolynomial*>(pointer);
+        if (!polynomial || polynomial->device != device) return cudaErrorInvalidValue;
         const auto& gpu = device_gpu(device);
-        delete static_cast<ResidentPolynomial*>(pointer);
+        gpu.sync();
+        delete polynomial;
         gpu.sync();
         return 0;
     } catch (const cuda_error& e) { return failure(e.code(), e.what()); }
@@ -327,7 +341,7 @@ extern "C" int ix_kzg_msm_invoke_resident(int device, void* context,
         const auto& gpu = device_gpu(device);
         const auto& coefficients = *static_cast<const ResidentPolynomial*>(polynomial);
         auto& msm = *static_cast<MsmContext*>(context);
-        if (count > msm.count || coefficients.device != device ||
+        if (msm.device != device || count > msm.count || coefficients.device != device ||
             offset > coefficients.count || count > coefficients.count - offset)
             return cudaErrorInvalidValue;
         dev_ptr_t<fr_t> normalized(normalization ? count : 0, gpu);
@@ -361,7 +375,7 @@ extern "C" int ix_kzg_fft_batch(int device, const FftJob* jobs,
                                           const fr_t* shift, size_t slots) {
     ProfileRange range(inverse ? "kzg/ifft-batch" : "kzg/fft-batch");
     try {
-        if (!jobs || !shift || lg > 31 || slots < 1 || slots > 2)
+        if (!jobs || !shift || lg > KZG_MAX_FFT_LOG || slots < 1 || slots > 2)
             return cudaErrorInvalidValue;
         const size_t count = size_t(1) << lg;
         for (size_t i = 0; i < job_count; ++i) {
@@ -373,6 +387,9 @@ extern "C" int ix_kzg_fft_batch(int device, const FftJob* jobs,
                 return cudaErrorInvalidValue;
         }
         const auto& gpu = device_gpu(device);
+        std::vector<std::unique_ptr<ResidentPolynomial>> residents(job_count);
+        for (size_t i = 0; i < job_count; ++i)
+            if (jobs[i].resident_output) *jobs[i].resident_output = nullptr;
         struct Slot {
             std::unique_ptr<ResidentPolynomial> buffer;
             const FftJob* job = nullptr;
@@ -391,7 +408,7 @@ extern "C" int ix_kzg_fft_batch(int device, const FftJob* jobs,
                 slot.kernel.collect(slot.stats);
                 slot.stats.report(device, inverse ? "ifft" : "fft", count);
                 if (slot.job->resident_output)
-                    *slot.job->resident_output = slot.buffer.release();
+                    residents[slot.job - jobs] = std::move(slot.buffer);
                 slot.job = nullptr;
             };
             for (size_t i = 0; i < job_count; ++i) {
@@ -424,6 +441,10 @@ extern "C" int ix_kzg_fft_batch(int device, const FftJob* jobs,
         }
         // Async frees precede the next memory admission on this device.
         gpu.sync();
+        // Publish only after the entire batch succeeds. A later job's failure
+        // must also reclaim earlier resident outputs before returning to Rust.
+        for (size_t i = 0; i < job_count; ++i)
+            if (jobs[i].resident_output) *jobs[i].resident_output = residents[i].release();
         return 0;
     } catch (const cuda_error& e) { return failure(e.code(), e.what()); }
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
@@ -438,7 +459,7 @@ extern "C" int ix_kzg_fft_from(int device, const fr_t* input,
 
 extern "C" int ix_kzg_fft(int device, fr_t* values, uint32_t lg,
                                     bool inverse, const fr_t* shift) {
-    if (lg > 31) return cudaErrorInvalidValue;
+    if (lg > KZG_MAX_FFT_LOG) return cudaErrorInvalidValue;
     return ix_kzg_fft_from(device, values, size_t(1) << lg,
                                     values, lg, inverse, shift);
 }
@@ -565,3 +586,5 @@ extern "C" int ix_kzg_polynomial_sample(int device, const void* pointer,
     } catch (const cuda_error& e) { return failure(e.code(), e.what()); }
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
+
+#include "kzg_conformance.cuh"

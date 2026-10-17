@@ -1,3 +1,5 @@
+//go:build !bn254
+
 package main
 
 import (

@@ -1,5 +1,20 @@
-//! Canonical verifier programs and witnesses for the terminal BLS PLONK circuit.
+//! Canonical verifier programs and witnesses for terminal PLONK circuits.
+use super::relation::{codegen, *};
 use super::*;
+use crate::kzg::curve::G1Affine;
+use ark_ec::AffineRepr;
+#[cfg(feature = "bn254")]
+use ark_ff::{BigInteger, PrimeField};
+use ark_serialize::CanonicalDeserialize;
+#[cfg(not(feature = "bn254"))]
+use ark_serialize::CanonicalSerialize;
+use multi_stark::{
+  config::ProofConfig,
+  system::System,
+  traits::{Algebra, Pcs},
+};
+use serde_json::{Value as Json, json};
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod ir;
 
 fn point(point: G1Affine) -> Json {
@@ -12,12 +27,23 @@ fn point(point: G1Affine) -> Json {
 
 fn key(point: &G2Affine) -> String {
   let mut bytes = vec![];
+  #[cfg(not(feature = "bn254"))]
   point.serialize_compressed(&mut bytes).unwrap();
+  #[cfg(feature = "bn254")]
+  for value in [point.x.c0, point.x.c1, point.y.c0, point.y.c1] {
+    bytes.extend(value.into_bigint().to_bytes_be());
+  }
   hex_json(&bytes)
 }
 
 pub(in crate::pipeline) fn fixture(directory: &Path) -> Result<()> {
-  write_fixture(directory, None, TranscriptKind::Blake3)
+  #[cfg(feature = "solidity")]
+  return solidity::write_fixture(directory, None, TranscriptKind::Blake3);
+  #[cfg(not(feature = "solidity"))]
+  {
+    let _ = directory;
+    Err("conformance fixture generation requires the Solidity feature".into())
+  }
 }
 
 pub(in crate::pipeline) fn export(
@@ -32,7 +58,16 @@ pub(in crate::pipeline) fn export(
     return Err("trusted verifier digest differs".into());
   }
   let profile = VerifierProfile::from_bytes(&bytes)?;
+  #[cfg(not(feature = "bn254"))]
   profile.check_setup_class(SetupClass::Filecoin)?;
+  #[cfg(feature = "bn254")]
+  {
+    let setup = super::super::super::setup::SetupConfig::from_env(false)?;
+    let admission = setup
+      .ignition_admission()
+      .ok_or("PLONK export requires admitted Ignition parameters")?;
+    profile.check_ignition_admission(admission)?;
+  }
   write_export(
     &profile,
     &fs::read(packet)?,
@@ -55,7 +90,6 @@ pub(super) fn write_export(
   if system.config.transcript_kind() != TranscriptKind::Blake3 {
     return Err("PLONK wrapping requires a BLAKE3 final KZG profile".into());
   }
-  profile.check_setup_class(SetupClass::Filecoin)?;
   let (claims, offset) = packet_claims(packet, &profile.id(), 2, expected)?;
   let logs = profile
     .heights
@@ -65,6 +99,23 @@ pub(super) fn write_export(
   let proof =
     FixedProofCodec::new(&system, &logs)?.decode(&packet[offset..])?;
   let diagnostic = diagnostics(&system, &proof, &claims)?;
+  #[cfg(feature = "bn254")]
+  let diagnostic = {
+    let mut value = diagnostic;
+    let encodings = proof_points(&proof)
+      .into_iter()
+      .map(|point| {
+        let mut bytes = Vec::new();
+        ark_serialize::CanonicalSerialize::serialize_compressed(
+          &point, &mut bytes,
+        )
+        .expect("Vec serialization");
+        hex_json(&bytes)
+      })
+      .collect::<Vec<_>>();
+    value["pointEncodings"] = json!(encodings);
+    value
+  };
   let deferred_bytes = &packet[32 + 18 * 8..offset];
   if check_pairings(deferred_bytes, &profile.keys()?).is_ok() != valid_pairing {
     return Err("unexpected deferred pairing result".into());
@@ -82,6 +133,9 @@ pub(super) fn write_export(
     .copied()
     .map(point)
     .collect();
+  if fixed.len() != layout.fixed_count {
+    return Err("fixed commitment count differs from layout".into());
+  }
   let circuits: Vec<_> = system.circuits.iter().enumerate().map(|(i, c)| {
     json!({
       "logDegree": logs[i],
@@ -100,7 +154,7 @@ pub(super) fn write_export(
     })
     .collect();
   let exported = json!({
-    "format": "ix-bls-plonk-profile-v1",
+    "format": if cfg!(feature = "bn254") { "ix-bn254-plonk-profile-v1" } else { "ix-bls-plonk-profile-v1" },
     "profileId": hex_json(&profile.id()),
     "setupId": hex_json(&params.public_setup.id),
     "publicMaxDegree": params.public_setup.max_degree,
@@ -131,7 +185,7 @@ pub(super) fn write_export(
     return Err("exported scalar count differs".into());
   }
   let deferred = deferred_bytes
-    .as_chunks::<48>()
+    .as_chunks::<{ G1_COMPRESSED_BYTES }>()
     .0
     .iter()
     .map(|bytes| G1Affine::deserialize_compressed(bytes.as_slice()).map(point))
