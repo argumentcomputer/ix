@@ -501,6 +501,30 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
 }
 
 impl Toplevel {
+  /// Bytecode function timings. The profile is incomplete if execution fails.
+  #[cfg(feature = "function-profile")]
+  pub fn execute_profiled(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    profile: &mut crate::function_profile::FunctionProfiler,
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    if !self.functions[fun_idx].entry {
+      return Err(ExecError::NotEntryFunction(fun_idx));
+    }
+    let mut record = QueryRecord::with_pointer_base(self, 0);
+    let output = self.functions[fun_idx].execute(
+      fun_idx,
+      args,
+      self,
+      &mut record,
+      io_buffer,
+      Some(profile),
+    )?;
+    Ok((record, output))
+  }
+
   pub fn execute(
     &self,
     fun_idx: FunIdx,
@@ -540,7 +564,15 @@ impl Toplevel {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
     let function = &self.functions[fun_idx];
-    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
+    let output = function.execute(
+      fun_idx,
+      args,
+      self,
+      record,
+      io_buffer,
+      #[cfg(feature = "function-profile")]
+      None,
+    )?;
     if *QUERY_STATS {
       dump_query_stats(record, "final");
     }
@@ -573,7 +605,14 @@ impl Function {
     toplevel: &Toplevel,
     record: &mut QueryRecord,
     io_buffer: &mut IOBuffer,
+    #[cfg(feature = "function-profile")] mut profile: Option<
+      &mut crate::function_profile::FunctionProfiler,
+    >,
   ) -> Result<Vec<G>, ExecError> {
+    #[cfg(feature = "function-profile")]
+    if let Some(profile) = &mut profile {
+      profile.enter(fun_idx);
+    }
     let mut exec_entries_stack = vec![];
     let mut callers_states_stack: Vec<CallerState> = vec![];
     let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
@@ -587,6 +626,38 @@ impl Function {
     let mut unconstrained = false;
     let mut stats_ops: u64 = 0;
     while let Some(exec_entry) = exec_entries_stack.pop() {
+      #[cfg(feature = "function-profile-ops")]
+      if let Some(profile) = &mut profile {
+        profile.operation(match &exec_entry {
+          ExecEntry::Op(op) => match op {
+            Op::Const(_) => "literal",
+            Op::Add(..) => "add",
+            Op::Sub(..) => "sub",
+            Op::Mul(..) => "mul",
+            Op::EqZero(..) => "eq_zero",
+            Op::Call(..) => "call",
+            Op::Store(..) => "store",
+            Op::Load(..) => "load",
+            Op::AssertEq(..) => "assert_eq",
+            Op::IOGetInfo(..)
+            | Op::IOSetInfo(..)
+            | Op::IORead(..)
+            | Op::IOWrite(..) => "io",
+            Op::UnconstrainedBigUintDivMod(..)
+            | Op::UnconstrainedGToBytes(..)
+            | Op::UnconstrainedGInverse(..)
+            | Op::UnconstrainedU32Add(..)
+            | Op::UnconstrainedU32Add3(..) => "hint",
+            Op::U32ToField(..) => "u32_to_field",
+            Op::U32LessThan(..) => "u32_less_than",
+            Op::Debug(..) => "debug",
+            _ => "native_byte",
+          },
+          ExecEntry::Ctrl(Ctrl::Return(..)) => "return",
+          ExecEntry::Ctrl(Ctrl::Yield(..)) => "yield",
+          ExecEntry::Ctrl(_) => "branch",
+        });
+      }
       if *QUERY_STATS {
         stats_ops += 1;
         if stats_ops.is_multiple_of(1 << 31) {
@@ -633,6 +704,10 @@ impl Function {
           if !callee_unconstrained && record.defer_call(*callee_idx, &args)? {
             continue;
           }
+          #[cfg(feature = "function-profile")]
+          if let Some(profile) = &mut profile {
+            profile.enter(*callee_idx);
+          }
           let mut cached_output = None;
           if let Some(i) =
             record.function_queries[*callee_idx].get_index_of(&args)
@@ -654,6 +729,10 @@ impl Function {
           }
           if let Some(output) = cached_output {
             map.extend(output);
+            #[cfg(feature = "function-profile")]
+            if let Some(profile) = &mut profile {
+              profile.exit(true);
+            }
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -1039,12 +1118,20 @@ impl Function {
             map = caller_map;
             map.extend(output);
             unconstrained = caller_unconstrained;
+            #[cfg(feature = "function-profile")]
+            if let Some(profile) = &mut profile {
+              profile.exit(false);
+            }
           } else {
             continuation_stack.clear();
             if !exec_entries_stack.is_empty() {
               return Err(ExecError::StackNotEmpty);
             }
             map = output;
+            #[cfg(feature = "function-profile")]
+            if let Some(profile) = &mut profile {
+              profile.exit(false);
+            }
             break;
           }
         },

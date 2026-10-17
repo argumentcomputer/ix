@@ -6,6 +6,10 @@ publish = false
 
 [workspace]
 
+[features]
+function-profile = ["aiur/function-profile"]
+function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
+
 [dependencies]
 aiur = { path = "../../crates/aiur", default-features = false, features = ["parallel"] }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef", features = ["parallel"] }

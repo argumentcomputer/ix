@@ -1,6 +1,8 @@
 pub mod bytecode;
 pub mod constraints;
 pub mod execute;
+#[cfg(feature = "function-profile")]
+pub mod function_profile;
 pub mod gadgets;
 mod lookup_budget;
 mod lookup_groups;

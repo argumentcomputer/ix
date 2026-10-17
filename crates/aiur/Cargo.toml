@@ -29,6 +29,8 @@ p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a8906
 
 [features]
 default = ["texray"]
+function-profile = []
+function-profile-ops = ["function-profile"]
 parallel = ["multi-stark/parallel"]
 cuda = ["multi-stark/cuda"]
 cuda-trace-codegen = ["cuda"]
