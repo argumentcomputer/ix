@@ -1,10 +1,120 @@
-# BLS PLONK wrapper implementation handoff
+# BLS12-381 PLONK wrapper implementation status
 
-Updated 2026-10-16. The experimental wrapper, ix integration and packaging are
-implemented, but a complete ix wrapper PLONK proof has not been produced.
-Parameter preparation was killed by a confirmed system OOM before indexing or
-proving. Work stopped at the user's request; no builds or prover jobs remain
-running. This checkpoint records the state before the initial local commit.
+Updated 2026-10-17. The complete BLS12-381 wrapper around the actual Init KZG
+packet proves and verifies natively. The measurements and persistent archive
+below supersede the earlier incomplete-proving status. The original checkpoint
+and OOM record are retained afterward as historical context.
+
+## Full Init benchmark
+
+The `sb/bn254` working tree above `52c61479` regenerated both BLS KZG stages
+from the saved Init FRI input using authenticated Filecoin parameters and
+BLAKE3. The resulting profile exactly matches the bundled
+`aggregate-filecoin-v6.bin`, with BLAKE3
+`12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084`.
+The expected public digest came from the original Init claim, independently
+of the wrapper witness. Both inner pairing obligations are constrained.
+
+The wrapper compiled to **21,184,618 constraints**, domain **2^25**, two
+public inputs and one extra commitment. This is the real Init profile,
+distinct from the smaller conformance fixture measured below.
+
+| Measurement | Result | Boundary |
+| --- | ---: | --- |
+| Core PLONK proving | 127.168 s | `plonk.Prove`, including the real constraint solver; keys and circuit already loaded |
+| Prove command | 293.870 s | Fresh process, artifact checks/loading, witness assembly, proving, verification and output |
+| Internal native verification | 2.754 ms | `plonk.Verify` with key, proof and public witness in memory |
+| Decode/public-witness/verify median | 4.196 ms | Seven fresh verifier processes; timer starts after key loading |
+| Complete verifier-process median | 25.508 ms | Seven fresh processes, including startup and key authentication/loading |
+| Peak prover RSS | 53.63 GiB | GNU time maximum RSS |
+| Native proof | 744 bytes | Compressed gnark proof |
+| ix envelope | 784 bytes | Version tag, verification-key identifier and native proof |
+| Solidity proof encoding | 1,184 bytes | Solidity-compatible encoding; EVM gas was not measured |
+
+This was one proof run on 48 logical CPUs of an Intel Xeon Platinum 8559C,
+with 499 GiB host RAM and local NVMe. The gnark backend used CPU only and
+default parallelism. Keys were prepared before proof timing; the prover ran
+in a fresh process and OS page-cache state was uncontrolled. No claim is
+made about an in-memory warm-prover latency. The verifier repetitions had
+warm file caches and no proving SRS or visible GPU. Their process timings
+exclude the resource monitor's GPU-query overhead.
+
+Preparation was measured separately:
+
+| Preparation | Time |
+| --- | ---: |
+| Compile command | 19.60 s (18.30 s internal compilation) |
+| Compiled witness diagnostic | 3.29 s |
+| Authenticated SRS export | 9.33 s |
+| Parameter/key preparation command | 1,217.16 s (20m 17s) |
+| SRS import within preparation | 5.84 s |
+| Lagrange conversion/cache publication within preparation | 1,139.22 s (18m 59s) |
+| Circuit indexing within preparation | 32.71 s |
+
+The preparation command also includes circuit loading, garbage collection,
+key serialization, hashes and publication; its child timings do not include
+all of that work. Peak preparation RSS was 28.43 GiB. Lagrange conversion is
+a group inverse FFT over 33,554,432 points derived from the downloaded
+monomial SRS. Its cached output is 3 GiB; the serialized proving key is
+3,221,274,824 bytes, and the verifying key is 49,200 bytes.
+
+The first and recursive KZG input-preparation processes took 225.34 s and
+153.40 s respectively; both are excluded from the PLONK timings. Builds are
+also excluded. The helper was built with Go 1.26.8 and the existing pinned
+gnark/gnark-crypto versions. Its SHA-256 is
+`6ee690f092a9b5fb1aa8672abe9af5450ac4f47a42b64fd073c4bbc826b3490b`.
+The verification key SHA-256 is
+`73d8ebbad3df955310fcf7c8b7d35cf04f6ecd5be513f55af25036b7349e5299`.
+
+Fresh-process verification passed against the original claim digest. Changed
+claims and a modified proof were rejected. The focused Filecoin backend and
+Lagrange-cache/basis-conversion tests also passed before the full run.
+The generated key has not been activated in a production verifier catalog;
+complete CLI packaging and full-wrapper EVM verification remain separate work.
+
+The local report is `target/plonk-bench/report.json`. Frozen executables,
+input proofs, exported profile/witness, compiled circuit, SRS export,
+Lagrange cache, proving/verifying keys, generated Solidity, proof and logs
+are under `/opt/dlami/nvme/ix-bls-plonk-52c61479/`, with `report.json` and
+`verification-timings.json` there. Successful preparation can be reused with
+the frozen helper; artifact manifests enforce its executable identity.
+
+## Persistent BLS12-381 archive
+
+The completed BLS12-381/Filecoin Init PLONK bundle is stored in
+`s3://argument-kzg-params-063002298335-us-east-1-an/`, region `us-east-1`, under:
+
+```text
+bls12-381/plonk/init/2p25/73d8ebbad3df955310fcf7c8b7d35cf04f6ecd5be513f55af25036b7349e5299/
+```
+
+The archive contains 89 objects totaling 9.503 GiB: the circuit, proving and
+verifying keys, frozen helper and worker, authenticated monomial export,
+Lagrange cache, input witness and original claim, inner KZG packet/profile,
+proof encodings, Solidity verifier, benchmark records and a portable candidate
+verifier catalog. Existing Filecoin ceremony objects are referenced rather
+than duplicated. Large KZG witness/fixed checkpoints and compiler caches are
+outside this PLONK archive.
+
+Every object was uploaded with a server-validated full-object SHA-256. The
+archive manifest was published after all payload objects were verified and
+then downloaded and checked independently. The SHA-256 of `MANIFEST.json` is:
+
+```text
+6be357f686599d283acca68e6eb4a9aa9f29c31d0010e7c8190f5767a04daaee
+```
+
+After downloading the prefix, run its `verify_bundle.py --manifest-sha256`
+with that pin, and restore executable permissions with `chmod +x bin/*`.
+The frozen helper is required by the artifact manifests. Archiving a candidate
+catalog does not authorize its key for production.
+
+## Original implementation checkpoint
+
+The following records the earlier run on the approximately 47 GiB host,
+where parameter preparation was killed by a system OOM before indexing or
+proving. Its remaining-work list describes that checkpoint, not the later
+benchmark above.
 
 Worktree: `/home/sam/repos/ix.bls-plonk-wrapper`, branch
 `sb/bls-plonk-wrapper`, based on ix

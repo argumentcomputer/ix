@@ -1,10 +1,11 @@
 # BLS12-381 PLONK wrapper plan
 
-Implementation state and measured results as of 2026-10-16 are recorded in the
-[implementation handoff](bls-plonk-wrapper-status.md). The wrapper is
-experimental; full parameter preparation and proving remain incomplete after
-an OOM. The sequence below describes the intended validation and acceptance
-criteria, not completed milestones.
+Implementation state and measured results are recorded in the
+[implementation status](bls-plonk-wrapper-status.md). Full parameter preparation
+and native proving/verification have completed on the actual Init packet. The
+wrapper remains experimental. The sequence below describes its validation and
+acceptance criteria; the status document distinguishes measured results from
+pending integration work.
 
 Add a terminal KZG-PLONK proof over the BLS12-381 scalar field around ix's
 existing final KZG packet. The wrapper must enforce the complete inner

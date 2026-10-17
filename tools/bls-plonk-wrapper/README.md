@@ -123,3 +123,31 @@ The backend is native CPU gnark at `262cf453c107d147a228b6b7418c5cf791c3b79b`.
 Upstream experimental WebGPU/WASM PLONK acceleration exists, but this helper
 does not activate it. The packaged native ICICLE/CUDA integration is for
 Groth16.
+
+## Full Init proof measurement
+
+A full Filecoin/BLAKE3 Init packet was wrapped and verified on October 16,
+2026, using 48 logical CPUs of a Xeon Platinum 8559C and 499 GiB RAM. The
+actual Init wrapper has 21,184,618 constraints, a `2^25` domain, two public
+inputs and one extra commitment.
+
+With keys prepared, `plonk.Prove` took **127.17 seconds**; the fresh prove
+process took **293.87 seconds**, including artifact authentication/loading,
+verification and output. Peak prover RSS was **53.63 GiB**. In-memory native
+verification took **2.75 ms**. Across seven fresh verifier processes,
+decode/public-witness/verification took a median **4.20 ms** and complete
+process wall time was **25.51 ms**. Wrong claims and a modified proof were
+rejected.
+
+The native proof is **744 bytes**, its ix envelope **784 bytes**, and the
+Solidity encoding **1,184 bytes**. Solidity transaction gas was not measured.
+One-time parameter/key preparation took **20m 17s**, including **18m 59s**
+for Lagrange conversion and cache publication. Those costs, compilation,
+SRS export and inner KZG proving are excluded from the proving figure.
+
+See the [full benchmark record](../../docs/bls-plonk-wrapper-status.md#full-init-benchmark)
+for boundaries, artifact identities, setup costs and retained cache paths.
+
+The matching circuit, keys, parameter representations, frozen tools and proof
+are archived in S3. See the [BLS archive and manifest pin](../../docs/bls-plonk-wrapper-status.md#persistent-bls12-381-archive)
+for authenticated restoration.
