@@ -19,14 +19,14 @@ final recursive KZG proof. It uses authenticated Filecoin parameters for
 BLS12-381 and Ignition parameters for BN254. Initial aggregation and FRI
 compression are outside these timings.
 
-| GPU KZG measurement | BLS12-381 | BN254 |
-| --- | ---: | ---: |
-| First KZG stage | 2m27s | 2m16s |
-| Recursive KZG stage | 1m32s | 0m45s |
-| **Total proving time** | **3m59s** | **3m0s** |
-| Peak host RAM | 175.79 GiB | 175.29 GiB |
-| Sampled peak GPU memory | 64.70 GiB | 57.27 GiB |
-| **Proof size** | **2,189 bytes** | **1,917 bytes** |
+| GPU KZG measurement     |       BLS12-381 |           BN254 |
+| ----------------------- | --------------: | --------------: |
+| First KZG stage         |           2m27s |           2m16s |
+| Recursive KZG stage     |           1m32s |           0m45s |
+| **Total proving time**  |       **3m59s** |        **3m0s** |
+| Peak host RAM           |      175.79 GiB |      175.29 GiB |
+| Sampled peak GPU memory |       64.70 GiB |       57.27 GiB |
+| **Proof size**          | **2,189 bytes** | **1,917 bytes** |
 
 Total proving time is the sum of the two worker processes. BN254's complete
 driver, including orchestration overhead, took 3m1s. Both stages reuse fixed
@@ -37,16 +37,16 @@ CPU verification. BN254 took approximately **25% less proving time**.
 The PLONK wrapper runs after KZG compression. Its timings are additional to
 the KZG pipeline above.
 
-| PLONK measurement | BLS12-381 CPU | BN254 CPU | BN254 GPU |
-| --- | ---: | ---: | ---: |
-| Constraints | 21,184,618 | 14,689,440 | 14,689,440 |
-| Domain | 2²⁵ | 2²⁴ | 2²⁴ |
-| One-time key preparation | 20m17s | 5m58s | 5m57s |
-| **Core proving time** | **2m7s** | **0m54s** | **0m11s** |
-| **Full prover process** | **4m54s** | **1m14s** | **0m32s** |
-| Peak host RAM | 53.63 GiB | 25.19 GiB | 20.64 GiB |
-| Sampled peak GPU memory | — | — | 19.26 GiB |
-| **Proof size** | **1,184 bytes** | **864 bytes** | **864 bytes** |
+| PLONK measurement        |   BLS12-381 CPU |     BN254 CPU |     BN254 GPU |
+| ------------------------ | --------------: | ------------: | ------------: |
+| Constraints              |      21,184,618 |    14,689,440 |    14,689,440 |
+| Domain                   |             2²⁵ |           2²⁴ |           2²⁴ |
+| One-time key preparation |          20m17s |         5m58s |         5m57s |
+| **Core proving time**    |        **2m7s** |     **0m54s** |     **0m11s** |
+| **Full prover process**  |       **4m54s** |     **1m14s** |     **0m32s** |
+| Peak host RAM            |       53.63 GiB |     25.19 GiB |     20.64 GiB |
+| Sampled peak GPU memory  |               — |             — |     19.26 GiB |
+| **Proof size**           | **1,184 bytes** | **864 bytes** | **864 bytes** |
 
 The matched BN254 core timings are medians of three runs with the same loaded
 circuit, keys and witness. GPU acceleration gives a **4.75× speedup** over
@@ -81,12 +81,12 @@ when this comparison was prepared. The USD conversion uses
 **$2,439.96 per ETH**, the [October 16 price](https://ycharts.com/indicators/ethereum_price).
 That is approximately **$2.859 per million gas**.
 
-| Proof | Verification transaction gas | Estimated cost |
-| --- | ---: | ---: |
-| BLS12-381 KZG, Keccak v5 reference | **825,229** | **$2.36** |
-| BLS12-381 CPU PLONK | **404,637** | **$1.16** |
-| BN254 CPU PLONK | **320,103** | **$0.92** |
-| BN254 GPU PLONK | **320,091** | **$0.92** |
+| Proof                              | Verification transaction gas | Estimated cost |
+| ---------------------------------- | ---------------------------: | -------------: |
+| BLS12-381 KZG, Keccak v5 reference |                  **825,229** |      **$2.36** |
+| BLS12-381 CPU PLONK                |                  **404,637** |      **$1.16** |
+| BN254 CPU PLONK                    |                  **320,103** |      **$0.92** |
+| BN254 GPU PLONK                    |                  **320,091** |      **$0.92** |
 
 These are complete verification transactions, including calldata and the
 PLONK claim-digest adapter, but excluding contract deployment. Measurements
