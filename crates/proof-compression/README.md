@@ -65,8 +65,10 @@ envelope verification and rejection of substituted claims, statements,
 verifying key digests and missing development opt-in. Mathlib passed native FRI,
 sizing and source/translated witness checks; no complete mathlib KZG proof
 was produced. The complete saved Init CUDA pipeline now passes with both
-development and admitted Ignition parameters. Terminal BN254 PLONK remains
-unvalidated.
+development and admitted Ignition parameters. Terminal BN254 PLONK is
+available with admitted Ignition parameters: CPU and CUDA Init proofs pass
+independent native verification and the adapted Solidity verifier. See the
+[current PLONK results and bottleneck profile](../../docs/bls-plonk-wrapper-status.md#bn254-cuda-plonk-implementation-and-actual-witness-msms).
 
 ### Real-input measurements
 

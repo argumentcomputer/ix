@@ -9,6 +9,14 @@ work and transfer costs below. These measurements
 supersede the earlier incomplete-proving status. The original BLS implementation
 checkpoint and its OOM record are retained afterward as historical context.
 
+Use this document for current measurements, validation, artifact identities and
+remaining work. The [plan](bls-plonk-wrapper-plan.md) records circuit/CUDA design
+and soundness decisions; the [compression README](../crates/proof-compression/README.md)
+covers BLS/BN254 KZG, Ignition provisioning and cache operation; the
+[helper README](../tools/bls-plonk-wrapper/README.md) gives PLONK build/run/profile
+controls; and the [contract README](../contracts/plonk/README.md) gives EVM replay
+instructions. Sections after **Original implementation checkpoint** are historical.
+
 ## Full Init benchmark
 
 The `sb/bn254` working tree above `52c61479` regenerated both BLS KZG stages
@@ -566,7 +574,12 @@ benchmark records, and a portable candidate verifier catalog. BN254 additionally
 includes the pinned Ignition admission and the Anvil verifier sources, fixture,
 receipts and traces. Existing ceremony objects are referenced rather than
 duplicated. Large KZG witness/fixed checkpoints, compiler caches and unfinished
-CUDA experiments are outside these PLONK archives.
+CUDA experiments at publication time are outside these PLONK archives. The
+subsequent completed CUDA benchmark/profile runs (`init-03` and `init-04`),
+MSM captures, and CUDA executables also remain local under the paths recorded
+above; they have not been uploaded. Their implementation, summarized findings
+and artifact locations are committed, while raw logs/profiles and captures
+remain in ignored `target/` directories and `/opt/dlami/nvme/`.
 
 Every upload used conditional creation and a server-validated full-object
 SHA-256. All 176 objects were checked with S3 checksum-enabled HEAD responses;
