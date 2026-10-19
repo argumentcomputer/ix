@@ -3429,9 +3429,12 @@ restatement's bound on the source-claim walk changes nothing
 its front end (canonicalization, graph, ground filter, condensation) and
 the blocks' independence within a wave stay tested. -/
 
+-- groupOrder (2026-10-19): the runtime check lists the production edit's
+-- `groupHeads` (which replaces `inductiveGroups`), `groupAll` and `orderedGroups`
+-- (8 → 10 safe definitions).
 /-- info: [cert-audit] hybrid: 20 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] hybrid: 8 safe definitions, no runtime substitution -/
+info: [cert-audit] hybrid: 10 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
@@ -3443,12 +3446,16 @@ run_cmd do
       `pipeline_walk].map (`Ix.Cert.Hybrid ++ ·))
   checkRuntime (tag := "cert-audit") "hybrid"
     #[``Ix.CompileM.validateInductiveFlags, ``Ix.CompileM.validateMutualSafety, ``Ix.CompileM.uniformSafety,
-      ``Ix.CompileM.mixedSafetyMessage, ``Ix.CompileM.inductiveGroups, ``Ix.AuxGen.sourceClaimOwned,
-      ``Ix.Environment.get?, ``Ix.CanonM.canonChunk]
+      ``Ix.CompileM.mixedSafetyMessage, ``Ix.CompileM.groupHeads, ``Ix.CompileM.groupAll,
+      ``Ix.CompileM.orderedGroups, ``Ix.AuxGen.sourceClaimOwned, ``Ix.Environment.get?,
+      ``Ix.CanonM.canonChunk]
 
+-- groupOrder (2026-10-19, flagged production edit in Ix/CompileDriver.lean): the
+-- validations' group order is now `orderedGroups` (the first members as a
+-- `Std.TreeSet` under `Ix.nameCompareExact`, each with its own `all`), and
+-- `groupOrder` restates it; re-frozen.
 /-- info: def Ix.Cert.Hybrid.groupOrder : Ix.Environment → Array (Ix.Name × Array Ix.Name) :=
-fun env =>
-  (Ix.CompileM.inductiveGroups env).toArray.qsort fun a b => a.fst.getHash.cmpBytes b.fst.getHash == Ordering.lt -/
+fun env => Ix.CompileM.orderedGroups env -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Hybrid.groupOrder
 

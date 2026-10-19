@@ -764,17 +764,34 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
 
 /-! ## Domain restriction: canonical inductive flags — env.rs:262-285 -/
 
-/-- The input's inductive groups: each inductive's `all`, keyed by its first
-    member, the first `all` met for a key kept (Rust `scan.ind_groups`,
-    graph.rs:120). -/
-def inductiveGroups (env : Ix.Environment) : Std.HashMap Name (Array Name) :=
-  env.consts.fold (init := {}) fun groups _ ci =>
+/-- A group's members: its first member's own `all`, read through `get?`
+    (a first member that is not an inductive is a group of itself, which
+    its validation then refuses). -/
+def groupAll (env : Ix.Environment) (first : Name) : Array Name :=
+  match env.get? first with
+  | some (.inductInfo v) => v.all
+  | _ => #[first]
+
+/-- The first members of the input's inductive groups (Rust
+    `scan.ind_groups`, graph.rs:120), each once, ordered by
+    `Ix.nameCompareExact` (by hash, ties by the name): a set, so neither the
+    order `consts` is folded in nor two first members sharing a hash field
+    changes it. -/
+def groupHeads (env : Ix.Environment) : Std.TreeSet Name Ix.nameCompareExact :=
+  env.consts.fold (init := {}) fun heads _ ci =>
     match ci with
     | .inductInfo v =>
       match v.all[0]? with
-      | some first => if groups.contains first then groups else groups.insert first v.all
-      | none => groups
-    | _ => groups
+      | some first => heads.insert first
+      | none => heads
+    | _ => heads
+
+/-- The inductive groups in the order the validations check them: each first
+    member with its own `all` (`groupAll`), in `groupHeads`' order. Rust keeps
+    the first `all` met for a first member; the two agree whenever a group's
+    members agree on `all`, as in every Lean environment. -/
+def orderedGroups (env : Ix.Environment) : Array (Name × Array Name) :=
+  (groupHeads env).toArray.map fun first => (first, groupAll env first)
 
 /-- Groups per task in `validateInductiveFlags`. -/
 def inductiveFlagsChunk : Nat := 256
@@ -784,11 +801,10 @@ def inductiveFlagsChunk : Nat := 256
     computes for it (`isRec`, `isReflexive`, `numNested`;
     `Ix.AuxGen.validateIndGroup`), or the compile fails before any block is
     scheduled. The groups are checked on parallel tasks, in chunks of
-    `inductiveFlagsChunk` in the order of their first members' hashes; the
-    error reported is the first in that order (Rust reports one of them). -/
+    `inductiveFlagsChunk` in `orderedGroups`' order; the error reported is
+    the first in that order (Rust reports one of them). -/
 def validateInductiveFlags (env : Ix.Environment) : Except String Unit := Id.run do
-  let groups := (inductiveGroups env).toArray.qsort fun a b =>
-    a.1.getHash.cmpBytes b.1.getHash == .lt
+  let groups := orderedGroups env
   -- the lookup view of `compileEnvFold`: the groups read constants only
   -- through `get?`, so a materialized and a hybrid environment check alike
   let cenv := CompileEnv.new { consts := {}, fallback? := some env.get? }
@@ -860,8 +876,7 @@ def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String :=
     materialized one does. -/
 def validateMutualSafety (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Except String Unit := Id.run do
-  let groups := (inductiveGroups env).toArray.qsort fun a b =>
-    a.1.getHash.cmpBytes b.1.getHash == .lt
+  let groups := orderedGroups env
   for (_, all) in groups do
     let members := all.foldl (init := #[]) fun acc n =>
       match env.get? n with

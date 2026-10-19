@@ -55,9 +55,10 @@ namespace Ix.Cert.Hybrid
 
 open Ix.CompileM
 
-/-- The inductive groups the validations check, in their order. -/
+/-- The inductive groups the validations check, in their order
+(`Ix.CompileM.orderedGroups`). -/
 def groupOrder (env : Ix.Environment) : Array (Ix.Name × Array Ix.Name) :=
-  (inductiveGroups env).toArray.qsort fun a b => a.1.getHash.cmpBytes b.1.getHash == .lt
+  orderedGroups env
 
 theorem uniformSafety_eq {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e₁.get? n = e₂.get? n) :
     uniformSafety e₁ = uniformSafety e₂ := by
