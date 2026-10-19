@@ -179,6 +179,32 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       decoder on {disagree.length} record(s); first: {a}"
   return (errors, lines)
 
+/-- The role table's bindings in a compile's result (Route A, B5a): every role whose
+Lean name the input declares is published at the default table's address for it
+(`Ix.Cert.Roles.rolesBound`). Also counted, not checked (B5c, on hold): the published
+names that are not a role's but sit at a role-bound address. -/
+def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
+    IO (Array String × Array String) := do
+  let .ok t := Ix.Kernel.Reader.defaultTable
+    | return (#[s!"{label}: the default role table does not read"], #[])
+  let roles := Ix.Kernel.Role.all
+  let declared := roles.filter fun r => env.consts.contains (Ix.Cert.Roles.roleName r)
+  let boundAt := t.bound.foldl (init := ({} : Std.HashMap Address Ix.Kernel.Role))
+    fun m (r, a) => m.insert a r
+  let aliases := ixe.named.toList.filter fun (n, named) =>
+    match boundAt.get? named.addr with
+    | some r => n != Ix.Cert.Roles.roleName r
+    | none => false
+  if Ix.Cert.Roles.rolesBound t ixe env then
+    return (#[], #[s!"{label}: rolesBound holds: {declared.length} of {roles.length} role names \
+      declared, each published at the default table's address; {aliases.length} other published \
+      names at a role-bound address (B5c, counted)"])
+  else
+    let bad := declared.filter fun r =>
+      (ixe.named.get? (Ix.Cert.Roles.roleName r)).map (·.addr) != t.addressOf? r
+    return (#[s!"{label}: rolesBound fails: {bad.length} role(s) not at the table's address; \
+      first: {(bad.take 5).map Ix.Cert.Roles.roleName}"], #[])
+
 /-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
 `consts`: errors, and lines for the report. `compile` is `compileReport`'s
 first component (`Ix.Cert.compile_eq_ok`); the report's failures are checked
@@ -227,6 +253,10 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let (checkErrors, checkLines) ← checkReportCases label env ixe failures
   errors := errors ++ checkErrors
   lines := lines ++ checkLines
+  -- the role table's bindings (Route A, B5a)
+  let (roleErrors, roleLines) ← rolesCases label env ixe
+  errors := errors ++ roleErrors
+  lines := lines ++ roleLines
   -- the IO pipeline
   let t3 ← IO.monoMsNow
   match ← Ix.CompileM.compileLeanConsts consts (numWorkers := workers) with
@@ -530,5 +560,21 @@ def initSuite : List TestSeq := [
   report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init" (do
     let leanEnv ← getCompileEnv #[`Init]
     parity "Init" leanEnv.constants.toList 6) 1]
+
+/-- `cert-roles-initstd` (ignored): the role table's bindings (Route A, B5a) on Init+Std,
+compiled in process by the Rust compiler (byte-identical to `Ix.Cert.compile`'s, the
+gates' byte leg `46214545…`). -/
+def rolesInitStdSuite : List TestSeq := [
+  report "the role table's bindings in the compiled Init+Std (Route A, B5a)" (do
+    let leanEnv ← getCompileEnv #[`Init, `Std]
+    let env ← IO.lazyPure fun _ =>
+      Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
+    let dir ← IO.FS.createTempDir
+    let ixe ← try
+        let path := dir / "initstd.ixe"
+        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
+        IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+      finally IO.FS.removeDirAll dir
+    rolesCases "Init+Std" env ixe) 1]
 
 end Tests.Ix.Cert.Statement

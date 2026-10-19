@@ -347,6 +347,7 @@ def registry : List Entry := [
   .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxGenClosureCanon.suite,
   -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
   .suite "cert-compile-parity-init" .landing Tests.Ix.Cert.Statement.initSuite,
+  .suite "cert-roles-initstd" .landing Tests.Ix.Cert.Statement.rolesInitStdSuite,
   -- A0 safety fixtures (collapse refusal, aux existence, single ownership,
   -- refused fallbacks): both compilers, both kernels, the certified checker
   .suite "aux-cert" (.ci .compilePipeline) Tests.Ix.Compile.AuxCert.suite,

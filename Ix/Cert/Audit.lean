@@ -7,6 +7,8 @@ import Ix.Cert.Schedule
 import Ix.Cert.Hybrid
 import Ix.Cert.Stream
 import Ix.Cert.Order
+import Ix.Cert.Evidence
+import Ix.Cert.Roles
 
 /-! # The certification statements, frozen
 
@@ -3716,3 +3718,64 @@ fun ixe =>
 /-- info: 'Ix.Cert.Order.closureOrder_exists' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Order.closureOrder_exists
+
+/-! ## Route A, B5a and B6a: roles in the artifact, and evidence only gates
+
+Source mode and Ixon mode check under different evidence (the certificate
+theorems of the checked environment against the role table's synthesized
+records). IxC's checker reads evidence only at `checkDecl`'s two gates, so an
+acceptance moves to any evidence that passes every gate the first passes, with
+the same environment (`Ix.Cert.Evidence.acceptsRef_covers`). The roles agree
+on `sub` when every role whose Lean name `sub` declares is published at the
+role table's address for it (`Ix.Cert.Roles.RolesBound`, decided by
+`rolesBound`); `cert-statement`, `cert-compile-parity-init` and
+`cert-roles-initstd` run it on the fixtures, `Init` and Init+Std. -/
+
+/-- info: [cert-audit] evidence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] roles: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "evidence"
+    (#[`natNames_disjoint, `checkDecl_covers, `foldlM_covers, `checkDeclsPure_covers,
+      `acceptsRef_covers].map (`Ix.Cert.Evidence ++ ·))
+  checkRoots (tag := "cert-audit") "roles" #[``Ix.Cert.Roles.rolesBound_iff]
+
+/-- info: structure Ix.Cert.Evidence.Covers {md : Ix.Kernel.Mode} (ops : Ix.Kernel.CheckerOps md (Ix.Kernel.CheckM md))
+  (ev ev' : Ix.Kernel.Evidences md) : Prop
+number of parameters: 4
+fields:
+  Ix.Cert.Evidence.Covers.defeq : ∀ (c : Ix.Kernel.Key md),
+      Ix.Kernel.evidenceDefeqOk ev c = true → Ix.Kernel.evidenceDefeqOk ev' c = true
+  Ix.Cert.Evidence.Covers.divMod : ∀ (env env2 : Ix.Kernel.Env md) (c : Ix.Kernel.Key md),
+      Ix.Kernel.checkDivModEvidence ops ev env env2 c = Except.ok () →
+        Ix.Kernel.checkDivModEvidence ops ev' env env2 c = Except.ok ()
+constructor:
+  Ix.Cert.Evidence.Covers.mk {md : Ix.Kernel.Mode} {ops : Ix.Kernel.CheckerOps md (Ix.Kernel.CheckM md)}
+    {ev ev' : Ix.Kernel.Evidences md}
+    (defeq : ∀ (c : Ix.Kernel.Key md), Ix.Kernel.evidenceDefeqOk ev c = true → Ix.Kernel.evidenceDefeqOk ev' c = true)
+    (divMod :
+      ∀ (env env2 : Ix.Kernel.Env md) (c : Ix.Kernel.Key md),
+        Ix.Kernel.checkDivModEvidence ops ev env env2 c = Except.ok () →
+          Ix.Kernel.checkDivModEvidence ops ev' env env2 c = Except.ok ()) :
+    Ix.Cert.Evidence.Covers ops ev ev' -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Evidence.Covers
+
+/-- info: @Ix.Cert.Evidence.acceptsRef_covers : ∀ {md : Ix.Kernel.Mode} {μ : Ix.Kernel.CheckMode}
+  {ev ev' : Ix.Kernel.Evidences md},
+  (∀ (F : Nat), Ix.Cert.Evidence.Covers (Ix.Kernel.fueledOps μ F) ev ev') →
+    ∀ {ds : List (Ix.Kernel.Declaration md)} {env : Ix.Kernel.Env md},
+      Ix.Kernel.Cached.AcceptsRef μ ev ds env → Ix.Kernel.Cached.AcceptsRef μ ev' ds env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.Evidence.acceptsRef_covers
+
+/-- info: def Ix.Cert.Roles.RolesBound : Ix.Kernel.RoleTable → Ixon.Env → Ix.Environment → Prop :=
+fun t ixe sub =>
+  ∀ (r : Ix.Kernel.Role),
+    r ∈ Ix.Kernel.Role.all →
+      sub.consts.contains (Ix.Cert.Roles.roleName r) = true →
+        Option.map (fun x => x.addr) (ixe.named.get? (Ix.Cert.Roles.roleName r)) = t.addressOf? r -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.Roles.RolesBound
