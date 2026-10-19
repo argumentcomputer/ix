@@ -466,7 +466,9 @@ The closure follows a stored constant's type, its value (a definition's, a
 theorem's stored one), its recursor rules (their constructors and right-hand
 sides) and its projection table (`ConstantInfo.refExprs`, `refKeys`); a
 literal references the constants its unfolding names, as `Expr.constsResolve`
-reads it. The condition only ever refuses: nothing in the model reads it. -/
+reads it. The condition only ever refuses: nothing in the model reads it. The
+walks visit keys in the terms' order, never a hash order (`constKeysGo`), so
+the verdict does not depend on how keys hash. -/
 
 /-- A bound on the walks below (they visit each key and subterm once; the
 bound only makes them total). -/
@@ -480,9 +482,26 @@ def litStrKeys : List (Key md) :=
   litNatKeys ++ [stringName, stringOfListName, listName, listNilName, listConsName, charName,
     charOfNatName]
 
+/-- The keys a walk has found: a set, for the membership test, and beside it
+the same keys as a list, each once, newest first. -/
+abbrev KeysAcc (md : Mode) := Std.HashSet (Key md) × List (Key md)
+
+/-- A key the walk meets, kept once, at its first meeting. -/
+def KeysAcc.add (acc : KeysAcc md) (k : Key md) : KeysAcc md :=
+  if acc.1.contains k then acc else (acc.1.insert k, k :: acc.2)
+
 /-- The keys the expressions of `todo` reference, added to `acc`: a walk over
-their distinct subterms (`seen`), each visited once. -/
-def constKeysGo : Nat → List (Expr md) → Std.HashSet (Expr md) → Std.HashSet (Key md) → Std.HashSet (Key md)
+their distinct subterms (`seen`), each visited once.
+
+The keys are kept as a set and, beside it, as a list in the order the walk
+first meets them, so that the closure walk below visits keys in the terms'
+order and not in a set's hash order. The closure walk is bounded
+(`walkFuel`), and where the bound is reached its result depends on the order
+it visited keys in; a hash order is not preserved when the keys are renamed,
+and the term order is, so with the list the condition's verdict is the same
+for renamed inputs (the renaming lemma, step 7.3). Within the bound the
+closure is the same set in either order, so no verdict changes. -/
+def constKeysGo : Nat → List (Expr md) → Std.HashSet (Expr md) → KeysAcc md → KeysAcc md
   | 0, _, _, acc => acc
   | _, [], _, acc => acc
   | n + 1, e :: todo, seen, acc =>
@@ -490,19 +509,28 @@ def constKeysGo : Nat → List (Expr md) → Std.HashSet (Expr md) → Std.HashS
     else
       let seen := seen.insert e
       match e with
-      | .const k _ => constKeysGo n todo seen (acc.insert k)
-      | .proj s _ x => constKeysGo n (x :: todo) seen (acc.insert s)
+      | .const k _ => constKeysGo n todo seen (acc.add k)
+      | .proj s _ x => constKeysGo n (x :: todo) seen (acc.add s)
       | .fvar _ t => constKeysGo n (t :: todo) seen acc
       | .app f a => constKeysGo n (f :: a :: todo) seen acc
       | .lam t b _ => constKeysGo n (t :: b :: todo) seen acc
       | .forallE t b _ => constKeysGo n (t :: b :: todo) seen acc
       | .letE t v b _ => constKeysGo n (t :: v :: b :: todo) seen acc
-      | .lit (.natVal _) => constKeysGo n todo seen (litNatKeys.foldl (·.insert ·) acc)
-      | .lit (.strVal _) => constKeysGo n todo seen (litStrKeys.foldl (·.insert ·) acc)
+      | .lit (.natVal _) => constKeysGo n todo seen (litNatKeys.foldl KeysAcc.add acc)
+      | .lit (.strVal _) => constKeysGo n todo seen (litStrKeys.foldl KeysAcc.add acc)
       | _ => constKeysGo n todo seen acc
 
 /-- The keys an expression references. -/
-def Expr.constKeys (e : Expr md) : Std.HashSet (Key md) := constKeysGo walkFuel [e] {} {}
+def Expr.constKeys (e : Expr md) : Std.HashSet (Key md) := (constKeysGo walkFuel [e] {} ({}, [])).1
+
+/-- The keys expressions reference, each once, in the order the walk first
+meets them. -/
+def constKeysOf (es : List (Expr md)) : List (Key md) :=
+  (constKeysGo walkFuel es {} ({}, [])).2.reverse
+
+/-- The keys an expression references, each once, in the order the walk first
+meets them (`Expr.constKeys`, as a list in the term's order). -/
+def Expr.constKeyList (e : Expr md) : List (Key md) := constKeysOf [e]
 
 /-- The expressions of a stored constant the closure follows. -/
 def ConstantInfo.refExprs : ConstantInfo md → List (Expr md)
@@ -537,9 +565,7 @@ def refClosureGo (look : Key md → Option (ConstantInfo md)) :
       let seen := seen.insert k
       match look k with
       | none => refClosureGo look n todo seen
-      | some ci =>
-        let ks := constKeysGo walkFuel ci.refExprs {} {}
-        refClosureGo look n (ci.refKeys ++ ks.toList ++ todo) seen
+      | some ci => refClosureGo look n (ci.refKeys ++ constKeysOf ci.refExprs ++ todo) seen
 
 /-- The roots of an operation's evidence closure besides its value: its
 dependencies' roles, with their blocks. -/
@@ -554,8 +580,8 @@ by `annVal`, is in the dependency closure of `annVal` and of `c`'s
 dependencies (`evidenceDepKeys`), through `look`. -/
 def evidenceLocal (look : Key md → Option (ConstantInfo md)) (c : Key md) (annVal : Expr md)
     (proofs : List (Expr md)) : Bool :=
-  let cl := refClosureGo look walkFuel (annVal.constKeys.toList ++ evidenceDepKeys c) {}
-  proofs.all fun p => (Expr.substConstAll c annVal p).constKeys.toList.all cl.contains
+  let cl := refClosureGo look walkFuel (annVal.constKeyList ++ evidenceDepKeys c) {}
+  proofs.all fun p => (Expr.substConstAll c annVal p).constKeyList.all cl.contains
 
 /-! ## Facts -/
 

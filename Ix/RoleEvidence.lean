@@ -114,7 +114,7 @@ def lookupOf (decls : Array (CDecl md)) : Std.HashMap (CName md) (Ix.Kernel.Cons
 def allowedFor (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (op : CName md) (opValue : CExpr md) :
     Std.HashSet (CName md) :=
   (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
-    (opValue.constKeys.toList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
+    (opValue.constKeyList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
 
 /-! ## Expression surgery (memoized over the DAG) -/
 
