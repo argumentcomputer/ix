@@ -47,6 +47,7 @@ public import Ix.Compile.Publication
 public import Ix.Compile.Pass.Names
 public import Ix.AuxGen.CompileAux
 public import Ix.AuxGen.SourceService
+public import Ix.AuxGen.IxcScope
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Resource.Addressed
 public section
@@ -134,11 +135,19 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
   -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0). AuxGen
-  -- M1 chooses the IxC arm here.
-  let kernel : Ix.AuxGen.AuxKernel := .tc maps
-  let (auxLayout?, plans, brecPlans, belowPlans) ←
+  -- M2a's measurement fold (`compileEnvFoldIxc`) gives the block an IxC
+  -- oracle for `.below` (`CompileEnv.auxOracle`, `none` in production), and
+  -- the tail's counts are traced.
+  let kernel : Ix.AuxGen.AuxKernel :=
+    match cenv.auxOracle.bind (· lo) with
+    | some oracle => .ixc maps oracle
+    | none => .tc maps
+  let ((auxLayout?, plans, brecPlans, belowPlans), kctx) ←
     (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
-      maps kernel).run' Ix.AuxGen.AuxKernelCtx.new
+      maps kernel).run Ix.AuxGen.AuxKernelCtx.new
+  if kernel matches .ixc .. then
+    dbg_trace s!"{Ix.AuxGen.IxcStats.line lo kctx.ixcStats}"
+    pure ()
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
@@ -1419,6 +1428,88 @@ def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     : Except String (Ixon.Env × Nat × CompileEnv) :=
   Prod.fst <$> compileEnvFoldWithSource env blocks dbg unmaterialized sharingLimits width
 
+/-! ## AuxGen M2a: the measurement fold (never the default)
+
+`compileEnvFoldIxc` is `compileEnvFoldWithSource` with two changes, for
+AuxGen M2a's measurements (`auxgen-m2.md` §2, §6):
+* the Source service runs **ahead of the waves**, from the start, level by
+  level of the fold's schedule (`scheduleLevels`,
+  `Ix.AuxGen.Source.RunAhead`), and the M1 chain is not started;
+* each block's aux tail asks `.below`'s level questions of **IxC** over its
+  level's snapshot (`CompileEnv.auxOracle`, `Ix.AuxGen.Ixc.oracleOfRun`), in
+  `AuxIxcOptions.mode`, and traces its counts.
+
+Under `shadow` the compiled environment is `compileEnvFold`'s, by
+construction (`Ix.Tc` answers every question as in production). The IO
+pipeline runs it when `DriverOptions.auxIxc` is set (the CLI's
+`IX_AUXGEN_IXC`); nothing else does, and `Ix.Cert.compile` does not reach it. -/
+
+/-- The fold's schedule as levels: the blocks with no source-owned
+dependency, then the blocks whose source-owned dependencies are all in
+earlier levels, and so on (the waves of a fold in which every block is ready
+as soon as its dependencies settle); `(canonical key, representative,
+members)`, in key order within a level. A block in a dependency cycle is
+in no level. -/
+def scheduleLevels (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
+    Array (Array (Name × Name × Set Name)) := Id.run do
+  let mut unmet : Std.HashMap Name Nat := {}
+  let mut current : Array Name := #[]
+  for (rep, _) in blocks.blocks do
+    let k := (sched.sourceDeps.get? rep).getD 0
+    if k == 0 then current := current.push rep else unmet := unmet.insert rep k
+  let mut out : Array (Array (Name × Name × Set Name)) := #[]
+  for _ in [0:blocks.blocks.size + 1] do
+    if current.isEmpty then break
+    let level := current.map fun rep =>
+      let all := (blocks.blocks.get? rep).getD {}
+      (blockKey rep all, rep, all)
+    out := out.push (level.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt)
+    let mut next : Array Name := #[]
+    for rep in current do
+      for m in (blocks.blocks.get? rep).getD {} do
+        for w in (sched.waiters.get? m).getD #[] do
+          match unmet.get? w with
+          | some 1 =>
+            unmet := unmet.erase w
+            next := next.push w
+          | some k => unmet := unmet.insert w (k - 1)
+          | none => pure ()
+    current := next
+  return out
+
+/-- AuxGen M2a's measurement mode (`DriverOptions.auxIxc`). -/
+structure AuxIxcOptions where
+  /-- how the tails use IxC's answers -/
+  mode : Ix.AuxGen.IxcMode := .shadow
+  /-- which blocks the run-ahead asks for (lever P2) -/
+  asks : Ix.AuxGen.Source.Asks := .inductive
+  /-- time the service's work alone instead of compiling (levers P1, P2;
+  `Ix.AuxGen.Source.measure`) -/
+  measureOnly : Bool := false
+  deriving Inhabited
+
+/-- **The measurement fold** (see the section docstring): the compiled
+environment, and the run-ahead's report. -/
+def compileEnvFoldIxc (opts : AuxIxcOptions) (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (dbg : Bool := false)
+    (unmaterialized : Nat := 0)
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (width : Nat := foldWaveTasks)
+    : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
+  if let some msg := missingBlockRefs? blocks then throw msg
+  validateInductiveFlags env
+  validateMutualSafety env blocks
+  let sched := FoldSchedule.of blocks
+  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) opts.asks
+  let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
+    (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun opts.mode fun _ => t.get
+  let cenv₀ := { CompileEnv.new view with
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
+  let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
+  let (ixe, bytes, cenv) := assembleEnv st.acc
+  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
+
 /-- The first name, in `Ix.nameCompare` order, whose published address
     differs from a reference's (the wave driver's fail-fast `rustRef` check,
     now made after the fold). -/
@@ -1448,6 +1539,9 @@ structure DriverOptions where
       caller (the CLI reads the process's resident set size); `none` prints
       none. -/
   memory : Option (IO String) := none
+  /-- AuxGen M2a's measurement mode (`compileEnvFoldIxc`; the CLI's
+      `IX_AUXGEN_IXC`); `none`, the production fold, by default. -/
+  auxIxc : Option AuxIxcOptions := none
 
 
 /-! ## The full pure-Lean pipeline
@@ -1651,10 +1745,24 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     { consts := codeConsts, fallback? := some fallback }
   if dbg then
     IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
+  -- AuxGen M2a's measurement mode (`opts.auxIxc`, never the default): the
+  -- service's work timed alone, or the measurement fold.
+  if let some aux := opts.auxIxc then
+    if aux.measureOnly then
+      let view : Ix.Environment := { consts := {}, fallback? := some ixEnv.get? }
+      let levels := scheduleLevels condensed (FoldSchedule.of condensed)
+      for line in ← Ix.AuxGen.Source.measure view.get? condensed levels do IO.println line
+      return .error "AuxGen M2a: service measured (IX_AUXGEN_IXC=measure); nothing compiled"
   let folded ← IO.lazyPure fun _ =>
-    compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
-      (unmaterialized := leanByIx.size - codeConsts.size)
-      (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
+    match opts.auxIxc with
+    | some aux =>
+      compileEnvFoldIxc aux ixEnv condensed (dbg := dbg)
+        (unmaterialized := leanByIx.size - codeConsts.size)
+        (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
+    | none =>
+      compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
+        (unmaterialized := leanByIx.size - codeConsts.size)
+        (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
   match folded with
   | .error e => return .error e
   | .ok ((ixonEnv, _, cenv), source) =>

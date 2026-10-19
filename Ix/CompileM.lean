@@ -17,6 +17,7 @@ public import Ix.Ixon
 public import Ix.IxonUniv
 public import IxC.Ixon.WireCheck
 public import Ix.Environment
+public import Ix.AuxGen.Oracle
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport
 public import Ix.Sharing.Exact
@@ -117,6 +118,10 @@ structure CompileEnv where
       which the CLI parses from `IX_SHARING_LIMITS`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
+  /-- AuxGen M2a's measurement fold only (`compileEnvFoldIxc`; `none` in every
+      production run): the IxC oracle a block's aux tail asks `.below`'s
+      levels of, by the block's canonical key (`Ix.AuxGen.Oracle`). -/
+  auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
