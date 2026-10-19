@@ -22,7 +22,7 @@ import (
 
 // readSRS consumes ix's authenticated export. The expected digest comes from
 // the Rust parameter loader, independently of this file's contents.
-func readSRS(path, expectedDigest string, domain uint64, p *profile) (*nativeSRS, error) {
+func readSRS(path, expectedDigest string, domain uint64, p *verifyingKey) (*nativeSRS, error) {
 	expected, err := unhex(expectedDigest, 32)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func prepare(dir, path, digest string) error {
 	if err := m.checkFile(dir, "circuit.bin"); err != nil {
 		return err
 	}
-	p, err := loadProfile(filepath.Join(dir, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
 	if err != nil {
 		return err
 	}

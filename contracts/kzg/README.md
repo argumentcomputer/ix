@@ -11,9 +11,9 @@ not a Lean library verifier.** Its traces have 32 and 16 rows and prove a lookup
 `private * private = 49`, and binding of the public values. It uses authentic
 Filecoin parameters and the same 2,181-byte packet layout, but it does not
 prove a Lean library computation. A library verifier must be generated from
-the trusted portable profile for its proof circuit. Library values are public
+the trusted portable verifying key for its proof circuit. Library values are public
 inputs, not embedded constants: one verifier accepts different statements
-that its pinned circuit/profile permits. Different proof geometries or
+that its pinned circuit/verifying key permits. Different proof geometries or
 circuits can require different authenticated verification keys.
 
 The implementation is a prototype. It has local native/EVM conformance tests;
@@ -30,9 +30,9 @@ function verify(
 ```
 
 `packet` is the native `kzg/packet.bin`, without the `IXCMP` storage envelope.
-It contains the profile ID, 18 little-endian public words, two compressed
+It contains the verifying key ID, 18 little-endian public words, two compressed
 deferred pairing operands, and the `KQP4` proof. The generated contract pins
-the profile, fixed commitments and setup anchors. `expectedClaim` is the
+the verifying key, fixed commitments and setup anchors. `expectedClaim` is the
 application's independently expected 18-word library statement. The contract
 requires an exact match with the packet and binds those values into proof
 verification. Applications must use the intended verifier address and obtain
@@ -48,7 +48,7 @@ transcript: it absorbs the original canonical compressed bytes.
 
 The fixture requires 816 hint bytes, for 2,997 payload bytes or 3,748 bytes
 including the Solidity ABI, function selector and expected statement.
-Noncanonical scalars and encodings, wrong profiles/claims, and failed scalar identities revert. A
+Noncanonical scalars and encodings, wrong verifying keys/claims, and failed scalar identities revert. A
 well-formed failing pairing returns `false`; acceptance requires `true`.
 
 ## Generate native fixtures
@@ -67,46 +67,46 @@ receipt. It generates three tiny proofs. The two positive fixtures use
 different synthetic library statements under the same verification key.
 `fixture-other-statement.json` exercises the second statement; exchanging
 the expected claims between these proofs must fail.
-`fixture-bad-pairing.json` has a valid outer proof under the same circuit/profile but fails the deferred pairing.
+`fixture-bad-pairing.json` has a valid outer proof under the same circuit/verifying key but fails the deferred pairing.
 Each JSON file includes native transcript challenges and folded opening
 points. The generated source and JSON explicitly identify the test-only scope.
 
 The exporter is behind `solidity`; normal prover builds do not include
 its fixture generation or Solidity code generation.
 
-## Export an existing library profile
+## Export an existing library verifying key
 
 ```sh
 cargo run --release --locked -p ix-proof-compression \
   --features solidity --example solidity_export -- \
-  export /path/to/final-kzg/verifier.bin \
+  export /path/to/final-kzg/vk.bin \
     /path/to/final-kzg/kzg/packet.bin TRUSTED_VERIFIER_BLAKE3 \
     /path/to/output /path/to/output/GeneratedVerifier.sol
 ```
 
 The verifier digest must come from a trusted source. The exporter checks it,
-decodes a v5 profile, and verifies the complete packet for its carried
+decodes a v5 verifying key, and verifies the complete packet for its carried
 statement before writing contract constants and test vectors. The exported
 contract accepts an independently expected statement at each verification
 call; the packet's values do not become contract constants. It supplies all
 verifier data from the portable key; proving powers and checkpoint traces are not needed. Place the
 generated contract beside `KzgVerifier.sol` and its libraries in a separate
-Foundry project to evaluate that profile without replacing these test fixtures.
+Foundry project to evaluate that verifying key without replacing these test fixtures.
 
-The repository includes a real aggregate Filecoin profile and proof. Export
+The repository includes a real aggregate Filecoin verifying key and proof. Export
 them without downloading proving parameters or running the prover:
 
 ```sh
 cargo run --release --locked -p ix-proof-compression \
   --features solidity --example solidity_export -- \
-  export crates/proof-compression/profiles/aggregate-filecoin-v5.bin \
+  export crates/proof-compression/verifying-keys/aggregate-filecoin-v5.bin \
     crates/proof-compression/tests/fixtures/aggregate-kzg/filecoin-v5-packet.bin \
     8779b34ad026a9e7075c253f036f50e553348b9d3f5c7baab21ddf487301d7cb \
     /path/to/output /path/to/output/GeneratedVerifier.sol
 ```
 
-The digest is pinned in the native verifier catalog and the adjacent profile
-JSON records the proof's provenance. For this profile, derive `expectedClaim`
+The digest is pinned in the native verifier catalog and the adjacent verifying key
+JSON records the proof's provenance. For this verifying key, derive `expectedClaim`
 from its authenticated ten-word aggregation-program prefix followed by the
 BLAKE3 digest of the serialized application claim, packed as eight
 little-endian `uint32` words. The checked-in serialized claim is
@@ -167,7 +167,7 @@ malformed points. These are local measurements of this fixture, not a full
 Lean library proof or an Ethereum transaction receipt.
 
 The Rust exporter generates direct graph arithmetic, matrix layouts and opening
-coefficients from the authenticated profile. Opening groups preserve native
+coefficients from the authenticated verifying key. Opening groups preserve native
 first-occurrence order and merge equal domain roots. Both pairing checks remain
 separate, and all variable points retain subgroup validation even when their
 MSM coefficients are zero. The fixture's curve precompile charges are 497,148
@@ -192,8 +192,8 @@ the small fixture. These are local Osaka measurements, not public-chain
 transaction receipts.
 
 Next work is broader real-proof differential coverage and CI integration.
-The native exporter regression covers the bundled aggregate Filecoin profile
+The native exporter regression covers the bundled aggregate Filecoin verifying key
 and packet. The `ix compress` driver derives statements from the aggregation
-backend and supports aggregate `CheckEnv` claims; accepted profiles pin the
+backend and supports aggregate `CheckEnv` claims; accepted verifying keys pin the
 aggregation program and proof geometry, while the application supplies the
 expected claim.

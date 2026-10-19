@@ -119,7 +119,7 @@ impl IgnitionAdmission {
   }
 
   /// Authenticate the exact admission bytes before parsing. The trusted pin
-  /// must be configured separately from the proof, profile and admission file.
+  /// must be configured separately from the proof, verifying key and admission file.
   pub fn from_bytes(
     bytes: &[u8],
     trusted_admission: [u8; 32],

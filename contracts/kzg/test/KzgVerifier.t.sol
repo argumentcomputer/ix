@@ -28,9 +28,9 @@ contract VerifierDiagnostics is GeneratedVerifier {
         returns (bool outer, bool inner)
     {
         Prepared memory result = _prepare(packet, yHints, expectedClaim);
-        Profile memory profile = _profile();
-        outer = Bls12381.pairing2(result.left, profile.outerH, Bls12381.negate(result.right), profile.outerTauH);
-        inner = Bls12381.pairing2(result.innerA, profile.innerH, result.innerB, profile.innerTauH);
+        VerifyingKey memory vk = _vk();
+        outer = Bls12381.pairing2(result.left, vk.outerH, Bls12381.negate(result.right), vk.outerTauH);
+        inner = Bls12381.pairing2(result.innerA, vk.innerH, result.innerB, vk.innerTauH);
     }
 }
 
@@ -101,8 +101,8 @@ contract KzgVerifierTest {
     function testRejectsBadDeferredPairingWithValidOuterProof() public view {
         string memory badFixture = _readFixture("fixture-bad-pairing.json");
         require(
-            vm.parseJsonBytes32(badFixture, ".profileId") == vm.parseJsonBytes32(fixture, ".profileId"),
-            "negative fixture must use the same profile"
+            vm.parseJsonBytes32(badFixture, ".vkId") == vm.parseJsonBytes32(fixture, ".vkId"),
+            "negative fixture must use the same vk"
         );
         bytes memory badPacket = vm.parseJsonBytes(badFixture, ".packet");
         bytes memory badHints = vm.parseJsonBytes(badFixture, ".yHints");
@@ -169,7 +169,7 @@ contract KzgVerifierTest {
         }
     }
 
-    function testRejectsChangedProfile() public view {
+    function testRejectsChangedVerifyingKey() public view {
         bytes memory bad = packet;
         bad[0] ^= 0x01;
         _assertRejected(bad, yHints, expectedClaim);
@@ -273,8 +273,8 @@ contract KzgVerifierTest {
     {
         string memory otherFixture = _readFixture("fixture-other-statement.json");
         require(
-            vm.parseJsonBytes32(otherFixture, ".profileId") == vm.parseJsonBytes32(fixture, ".profileId"),
-            "statements must use the same verifier profile"
+            vm.parseJsonBytes32(otherFixture, ".vkId") == vm.parseJsonBytes32(fixture, ".vkId"),
+            "statements must use the same verifier vk"
         );
         otherPacket = vm.parseJsonBytes(otherFixture, ".packet");
         otherHints = vm.parseJsonBytes(otherFixture, ".yHints");

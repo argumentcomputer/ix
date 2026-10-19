@@ -145,7 +145,7 @@ prefix represented by that key.
 
 The generated `verifier-catalog.candidate.json` has the catalog schema and uses
 a path relative to its directory for `verifying-key.bin`. It records the key's
-SHA-256, inner profile, program prefix, circuit hash and helper hash. Review and
+SHA-256, inner verifying key, program prefix, circuit hash and helper hash. Review and
 install accepted entries as trusted application configuration. Proof envelopes
 carry only a key identifier and proof bytes; they cannot supply a trusted key.
 
@@ -162,14 +162,14 @@ tagged and cannot be accepted as a BLS proof.
 
 ## Standalone operations
 
-`ix-compression-worker plonk export` authenticates a portable BLAKE3 profile,
+`ix-compression-worker plonk export` authenticates a portable BLAKE3 verifying key,
 verifies its packet against an independently expected statement, and exports
 the fixed scalar program and canonical witness:
 
 ```sh
 ix-compression-worker plonk export \
-  verifier.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json input
-ix-bls-plonk-wrapper compile input/profile.json artifacts
+  vk.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json input
+ix-bls-plonk-wrapper compile input/vk.json artifacts
 ix-bls-plonk-wrapper check-witness artifacts input/witness.json
 ```
 
@@ -196,7 +196,7 @@ monomial powers and `N` Lagrange points; the adapter requests the next power of
 two from ix and retains the ceremony's full public degree. Its current maximum
 PLONK domain is `2^26` with the provisioned `2^27` cache.
 
-Circuit and key artifacts bind the profile, executable and parameter receipt.
+Circuit and key artifacts bind the verifying key, executable and parameter receipt.
 The helper checks hashes before reuse. Lagrange points are cached separately
 by setup, domain, receipt and helper identity; `IX_PLONK_LAGRANGE_CACHE` can
 select the shared directory. A changed executable needs a new artifact
@@ -275,7 +275,7 @@ batching measurement variant reaches 13,810,186 rows with classic GLV; batching
 with BN254's previous multiplication path reaches 17,530,148 rows. Batching
 is experimental and is not selected by the normal helper. Reproduce sizing
 with `IX_PLONK_SIZE=1 go test -tags bn254 -run TestOptimizationSizing -v`;
-`IX_PLONK_SIZE_PROFILE` selects a profile and `IX_PLONK_SIZE_REPORT` saves JSON.
+`IX_PLONK_SIZE_VK` selects a verifying key and `IX_PLONK_SIZE_REPORT` saves JSON.
 `IX_PLONK_SIZE_VARIANT` can select `baseline`, `batched`, `classic-glv` or
 `batched-classic-glv`. The [measurement record](../../docs/bls-plonk-wrapper-status.md#bn254-pairing-batching-and-reduction-to-224)
 separates these compilation results from the completed 2^25 proof benchmark.

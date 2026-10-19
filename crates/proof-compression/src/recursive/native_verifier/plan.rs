@@ -129,7 +129,7 @@ impl LayoutPolicy {
 }
 
 pub(crate) struct Plan<'a> {
-  pub(super) profile: Profile<'a>,
+  pub(super) vk: InnerVerifyingKey<'a>,
   pub(super) shape: Shape,
   pub(super) claims: ClaimSchema,
   pub(super) layout: LayoutPolicy,
@@ -156,7 +156,7 @@ impl<'a> Plan<'a> {
       );
     }
     let params = system.config.pcs().verifier_params();
-    let profile = Profile {
+    let vk = InnerVerifyingKey {
       circuits: &system.circuits,
       fixed: system
         .preprocessed_commit
@@ -169,7 +169,7 @@ impl<'a> Plan<'a> {
       tau_g2: params.tau_g2,
       max_log_degree: system.config.max_log_degree(),
     };
-    let plan = Self::from_profile(&profile, logs, claims, layout)?;
+    let plan = Self::from_identity(&vk, logs, claims, layout)?;
     for (circuit, &log) in system.circuits.iter().zip(logs) {
       let quotient = circuit.quotient_degree();
       if quotient > system.config.max_quotient_degree()
@@ -184,31 +184,24 @@ impl<'a> Plan<'a> {
     Ok(plan)
   }
 
-  pub(super) fn from_profile(
-    profile: &Profile<'a>,
+  pub(super) fn from_identity(
+    vk: &InnerVerifyingKey<'a>,
     logs: &[u8],
     claims: ClaimSchema,
     layout: LayoutPolicy,
   ) -> Result<Self, String> {
-    if profile.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
+    if vk.transcript_kind != crate::kzg::TranscriptKind::Blake3 {
       return Err(
         "recursive circuit requires a BLAKE3 inner transcript".into(),
       );
     }
     layout.validate()?;
-    let shape = Shape::new(profile, logs)?;
-    if profile.generator.is_zero()
-      || profile.g2.is_zero()
-      || profile.tau_g2.is_zero()
-    {
+    let shape = Shape::new(vk, logs)?;
+    if vk.generator.is_zero() || vk.g2.is_zero() || vk.tau_g2.is_zero() {
       return Err("recursive verifier anchors must be nonidentity".into());
     }
-    for point in profile
-      .fixed
-      .0
-      .iter()
-      .flatten()
-      .chain(std::iter::once(&profile.generator))
+    for point in
+      vk.fixed.0.iter().flatten().chain(std::iter::once(&vk.generator))
     {
       if !point.is_on_curve()
         || !point.is_in_correct_subgroup_assuming_on_curve()
@@ -216,15 +209,15 @@ impl<'a> Plan<'a> {
         return Err("invalid fixed G1 verifier point".into());
       }
     }
-    for point in [profile.g2, profile.tau_g2] {
+    for point in [vk.g2, vk.tau_g2] {
       if !point.is_on_curve()
         || !point.is_in_correct_subgroup_assuming_on_curve()
       {
         return Err("invalid G2 verifier point".into());
       }
     }
-    let identity = identity(profile, &shape, &claims, layout)?;
-    Ok(Self { profile: *profile, shape, claims, layout, identity })
+    let identity = identity(vk, &shape, &claims, layout)?;
+    Ok(Self { vk: *vk, shape, claims, layout, identity })
   }
 
   pub(crate) fn identity(&self) -> [u8; 32] {
@@ -232,7 +225,7 @@ impl<'a> Plan<'a> {
   }
 
   pub(crate) fn count(&self) -> Result<Counts, String> {
-    construct(&self.profile, &self.shape, &self.claims, Builder::counting())
+    construct(&self.vk, &self.shape, &self.claims, Builder::counting())
       .map(|construction| construction.counts())
   }
 
@@ -242,7 +235,7 @@ impl<'a> Plan<'a> {
   ) -> Result<(), String> {
     if bytes != self.shape.checked_compact_len()? {
       return Err(
-        "compact proof length differs from the verifier profile".into(),
+        "compact proof length differs from the verifier verifying key".into(),
       );
     }
     Ok(())
@@ -271,7 +264,7 @@ impl<'a> Plan<'a> {
 
   pub(crate) fn compile(&self) -> Result<Compiled, String> {
     let construction =
-      construct(&self.profile, &self.shape, &self.claims, Builder::new())?;
+      construct(&self.vk, &self.shape, &self.claims, Builder::new())?;
     let compiled = construction.finish(self);
     let layout = compiled
       .circuit
@@ -313,7 +306,7 @@ impl<'a> Plan<'a> {
 }
 
 fn identity(
-  profile: &Profile<'_>,
+  vk: &InnerVerifyingKey<'_>,
   shape: &Shape,
   claims: &ClaimSchema,
   layout: LayoutPolicy,
@@ -322,18 +315,18 @@ fn identity(
   hash.update(FRONTEND_VERSION);
   hash.update(b"one-computation-and-merged-table/v1");
   let parameters = (
-    profile.transcript_seed,
-    profile.max_log_degree,
+    vk.transcript_seed,
+    vk.max_log_degree,
     shape,
     claims,
     layout,
-    (0..profile.circuits.len()).collect::<Vec<_>>(),
+    (0..vk.circuits.len()).collect::<Vec<_>>(),
   );
   hash.update(
     &bincode::serde::encode_to_vec(parameters, bincode::config::standard())
       .map_err(|error| error.to_string())?,
   );
-  for circuit in profile.circuits {
+  for circuit in vk.circuits {
     let metadata = (
       &circuit.graph,
       circuit.main_width,
@@ -353,21 +346,15 @@ fn identity(
     hash.update(&bytes);
   }
   let mut points = vec![];
-  profile
-    .fixed
+  vk.fixed
     .0
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
-  profile
-    .generator
+  vk.generator
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
-  profile
-    .g2
-    .serialize_compressed(&mut points)
-    .map_err(|error| error.to_string())?;
-  profile
-    .tau_g2
+  vk.g2.serialize_compressed(&mut points).map_err(|error| error.to_string())?;
+  vk.tau_g2
     .serialize_compressed(&mut points)
     .map_err(|error| error.to_string())?;
   hash.update(&(points.len() as u64).to_le_bytes());

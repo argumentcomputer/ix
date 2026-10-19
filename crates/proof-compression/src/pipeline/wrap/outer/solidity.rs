@@ -1,4 +1,4 @@
-//! Export a trusted v5 profile and native verification vectors for Solidity.
+//! Export a trusted v5 verifying key and native verification vectors for Solidity.
 
 use super::*;
 use crate::foreign::KzgCircuitExt;
@@ -44,11 +44,11 @@ fn hints(points: impl IntoIterator<Item = G1Affine>) -> Vec<u8> {
 }
 
 fn source(
-  profile: &VerifierProfile,
+  vk: &VerifyingKey,
   system: &System<KzgConfig>,
   test_fixture: bool,
 ) -> Result<String> {
-  let openings = codegen::OpeningLayout::new(profile, system)?;
+  let openings = codegen::OpeningLayout::new(vk, system)?;
   if system.circuits.len() != 2 {
     return Err("Solidity export requires two circuits".into());
   }
@@ -65,17 +65,17 @@ fn source(
     "pragma solidity ^0.8.28;\n\n",
     "import {KzgVerifier} from \"./KzgVerifier.sol\";\n",
     "import {Scalar} from \"./Scalar.sol\";\n\n",
-    "/// Fixed verifier constants exported from an authenticated native v5 profile.\n",
+    "/// Fixed verifier constants exported from an authenticated native v5 verifying key.\n",
     "contract GeneratedVerifier is KzgVerifier {\n",
-    "    function _profile() internal pure override returns (Profile memory p) {\n",
+    "    function _vk() internal pure override returns (VerifyingKey memory p) {\n",
   ));
   if test_fixture {
     out = out.replace(
-      "/// Fixed verifier constants exported from an authenticated native v5 profile.",
+      "/// Fixed verifier constants exported from an authenticated native v5 verifying key.",
       "/// Test-only conformance circuit; this does not prove a Lean library computation or an inner recursive proof.",
     );
   }
-  writeln!(out, "        p.id = hex\"{}\";", hex(&profile.id()))?;
+  writeln!(out, "        p.id = hex\"{}\";", hex(&vk.id()))?;
   writeln!(
     out,
     "        p.seed = hex\"{}\";",
@@ -94,7 +94,7 @@ fn source(
     .copied()
     .collect();
   let params = system.config.pcs().verifier_params();
-  let inner = profile.keys()?;
+  let inner = vk.keys()?;
   for (name, bytes) in [
     ("fixedCompressed", fixed.iter().flat_map(compressed).collect::<Vec<_>>()),
     ("fixedPoints", fixed.into_iter().flat_map(g1).collect()),
@@ -113,7 +113,7 @@ fn source(
       "\n    function _circuit{i}() private pure returns (Circuit memory c) {{"
     )?;
     for (name, value) in [
-      ("logDegree", profile.heights[i].ilog2() as usize),
+      ("logDegree", vk.heights[i].ilog2() as usize),
       ("mainWidth", c.main_width),
       ("stage2Width", c.stage_2_width),
       ("preprocessedWidth", c.preprocessed_width),
@@ -134,8 +134,7 @@ fn source(
       "        c.preprocessedNext = {};",
       system.opens_next_row(i, Source::Preprocessed)
     )?;
-    let domain =
-      system.config.pcs().natural_domain_for_degree(profile.heights[i]);
+    let domain = system.config.pcs().natural_domain_for_degree(vk.heights[i]);
     writeln!(out, "        c.omega = {};", scalar(domain.generator()))?;
     writeln!(out, "        c.zeros = new uint256[]({});", c.graph.zeros.len())?;
     for (j, node) in c.graph.zeros.iter().enumerate() {
@@ -168,7 +167,7 @@ fn source(
     "        internal pure override returns (uint256[] memory values) {\n",
     "        if (ci == 0) return _evaluateCircuit0(proof, view_);\n",
     "        if (ci == 1) return _evaluateCircuit1(proof, view_);\n",
-    "        revert InvalidProfile();\n",
+    "        revert InvalidVerifyingKey();\n",
     "    }\n",
   ));
   for (i, graph) in graphs.iter().enumerate() {
@@ -188,7 +187,7 @@ fn statement_words(packet: &[u8]) -> Result<[u64; 18]> {
 }
 
 fn write_export(
-  profile: &VerifierProfile,
+  vk: &VerifyingKey,
   packet: &[u8],
   directory: &Path,
   solidity: &Path,
@@ -196,16 +195,15 @@ fn write_export(
   expect_valid_pairing: bool,
   test_fixture: bool,
 ) -> Result<()> {
-  if profile.version != 5 {
-    return Err("Solidity export requires a v5 profile".into());
+  if vk.version != 5 {
+    return Err("Solidity export requires a v5 verifying key".into());
   }
-  let system = profile.system()?;
-  let keys = profile.keys()?;
+  let system = vk.system()?;
+  let keys = vk.keys()?;
   let words = statement_words(packet)?;
-  let (claims, offset) =
-    packet_claims(packet, &profile.id(), keys.len(), &words)?;
+  let (claims, offset) = packet_claims(packet, &vk.id(), keys.len(), &words)?;
   let logs: Vec<_> =
-    profile.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
+    vk.heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect();
   let proof =
     FixedProofCodec::new(&system, &logs)?.decode(&packet[offset..])?;
   let mut diagnostic = diagnostics(&system, &proof, &claims)?;
@@ -223,28 +221,28 @@ fn write_export(
   diagnostic["scope"] = if test_fixture {
     "small-conformance-circuit-not-a-lean-library"
   } else {
-    "trusted-exported-native-profile"
+    "trusted-exported-native-vk"
   }
   .into();
   diagnostic["setupClass"] =
-    SetupClass::of(&profile.verifier_params()?).label().into();
-  diagnostic["profileVersion"] = profile.version.into();
+    SetupClass::of(&vk.verifier_params()?).label().into();
+  diagnostic["vkVersion"] = vk.version.into();
   diagnostic["expectedClaim"] = json!(words);
   diagnostic["packet"] = hex_json(packet).into();
   diagnostic["yHints"] = hex_json(&y_hints).into();
-  diagnostic["profileId"] = hex_json(&profile.id()).into();
+  diagnostic["vkId"] = hex_json(&vk.id()).into();
   diagnostic["packetBytes"] = packet.len().into();
   diagnostic["hintBytes"] = y_hints.len().into();
   diagnostic["nativeOuterVerified"] = true.into();
   diagnostic["nativeDeferredPairingVerified"] = expect_valid_pairing.into();
-  diagnostic["traceHeights"] = json!(profile.heights);
+  diagnostic["traceHeights"] = json!(vk.heights);
   diagnostic["verifierDigestBlake3"] = blake3::hash(
-    &bincode::serde::encode_to_vec(profile, bincode::config::standard())?,
+    &bincode::serde::encode_to_vec(vk, bincode::config::standard())?,
   )
   .to_hex()
   .to_string()
   .into();
-  let contract = source(profile, &system, test_fixture)?;
+  let contract = source(vk, &system, test_fixture)?;
   fs::create_dir_all(directory)?;
   if let Some(parent) = solidity.parent() {
     fs::create_dir_all(parent)?;
@@ -258,7 +256,7 @@ fn write_export(
   Ok(())
 }
 
-/// Export constants from a trusted portable profile after native verification.
+/// Export constants from a trusted portable verifying key after native verification.
 pub fn export_solidity_verifier(
   verifier: &Path,
   packet: &Path,
@@ -270,16 +268,16 @@ pub fn export_solidity_verifier(
   if blake3::hash(&bytes).to_hex().as_str() != expected_verifier_digest {
     return Err("portable verifier digest mismatch".into());
   }
-  let profile = VerifierProfile::from_bytes(&bytes)?;
+  let vk = VerifyingKey::from_bytes(&bytes)?;
   let packet = fs::read(packet)?;
-  if profile.version != 5 {
-    return Err("Solidity export requires a v5 profile".into());
+  if vk.version != 5 {
+    return Err("Solidity export requires a v5 verifying key".into());
   }
-  profile.verify(&packet, &statement_words(&packet)?)?;
-  write_export(&profile, &packet, directory, solidity, "fixture", true, false)
+  vk.verify(&packet, &statement_words(&packet)?)?;
+  write_export(&vk, &packet, directory, solidity, "fixture", true, false)
 }
 
-/// Generate small Filecoin-backed outer-profile proofs for EVM conformance tests.
+/// Generate small Filecoin-backed outer-verifying key proofs for EVM conformance tests.
 pub fn write_solidity_fixture(directory: &Path, solidity: &Path) -> Result<()> {
   write_fixture(directory, Some(solidity), TranscriptKind::Keccak256)
 }
@@ -341,11 +339,11 @@ pub(super) fn write_fixture(
   }
   let mut pairings = vec![];
   vec![anchors.g2, anchors.tau_g2].serialize_compressed(&mut pairings)?;
-  let profile = VerifierProfile {
+  let vk = VerifyingKey {
     version: if transcript == TranscriptKind::Keccak256 {
       5
     } else {
-      OUTER_PROFILE_VERSION
+      OUTER_VK_VERSION
     },
     heights: [
       system.circuits[0].preprocessed_height,
@@ -360,8 +358,8 @@ pub(super) fn write_fixture(
   };
   fs::create_dir_all(directory)?;
   fs::write(
-    directory.join("verifier.bin"),
-    bincode::serde::encode_to_vec(&profile, bincode::config::standard())?,
+    directory.join("vk.bin"),
+    bincode::serde::encode_to_vec(&vk, bincode::config::standard())?,
   )?;
   let first_words: [u64; 18] = std::array::from_fn(|i| match i {
     0 => 0,
@@ -387,13 +385,13 @@ pub(super) fn write_fixture(
       (anchors.g1[1] + anchors.g1[0]).into_affine()
     };
     let second = -anchors.g1[0];
-    let mut prefix = profile.id().to_vec();
+    let mut prefix = vk.id().to_vec();
     for word in words {
       prefix.extend(word.to_le_bytes());
     }
     prefix.extend(compressed(&first));
     prefix.extend(compressed(&second));
-    let (claims, _) = packet_claims(&prefix, &profile.id(), 2, &words)?;
+    let (claims, _) = packet_claims(&prefix, &vk.id(), 2, &words)?;
     let mut witness = compiled.witness();
     witness.set(private, Scalar::from_u8(7))?;
     for (wire, claim) in publics.iter().zip(&claims[1..]) {
@@ -410,13 +408,13 @@ pub(super) fn write_fixture(
     let mut packet = prefix;
     packet.extend(codec.encode(&proof)?);
     if valid {
-      profile.verify(&packet, &words)?;
+      vk.verify(&packet, &words)?;
     }
     if let Some(solidity) = solidity {
-      write_export(&profile, &packet, directory, solidity, name, valid, true)?;
+      write_export(&vk, &packet, directory, solidity, name, valid, true)?;
     } else {
       #[cfg(feature = "plonk")]
-      plonk::write_export(&profile, &packet, &words, directory, name, valid)?;
+      plonk::write_export(&vk, &packet, &words, directory, name, valid)?;
     }
   }
   Ok(())
@@ -440,6 +438,7 @@ mod tests {
       preprocessed: GraphMatrix { index: 6 + circuit, width: 4, rows: 2 },
       stage2: GraphMatrix { index: 2 + circuit, width: 2, rows: 2 },
       public_count: 4,
+      matrix_count: 8,
     }
   }
 
@@ -631,21 +630,21 @@ mod tests {
   #[test]
   fn bundled_filecoin_proof_exports_with_an_independent_claim() -> Result<()> {
     let package = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let verifier = package.join("profiles/aggregate-filecoin-v5.bin");
+    let verifier = package.join("verifying-keys/aggregate-filecoin-v5.bin");
     let packet =
       package.join("tests/fixtures/aggregate-kzg/filecoin-v5-packet.bin");
     let claim = fs::read(
       package.join("tests/fixtures/aggregate-kzg/filecoin-claim.bin"),
     )?;
     let metadata: Json = serde_json::from_slice(&fs::read(
-      package.join("profiles/aggregate-filecoin-v5.json"),
+      package.join("verifying-keys/aggregate-filecoin-v5.json"),
     )?)?;
-    let profile = VerifierProfile::from_bytes(&fs::read(&verifier)?)?;
-    profile.check_setup_class(SetupClass::Filecoin)?;
-    let prefix = crate::pipeline::verifier::bundled_prefix(&profile.id())
-      .ok_or("Filecoin profile is not bundled")?;
+    let vk = VerifyingKey::from_bytes(&fs::read(&verifier)?)?;
+    vk.check_setup_class(SetupClass::Filecoin)?;
+    let prefix = crate::pipeline::verifier::bundled_prefix(&vk.id())
+      .ok_or("Filecoin verifying key is not bundled")?;
     let expected = statement::with_claim(prefix, &claim);
-    profile.verify(&fs::read(&packet)?, &expected)?;
+    vk.verify(&fs::read(&packet)?, &expected)?;
     let root = std::env::temp_dir()
       .join(format!("ix-solidity-aggregate-export-{}", std::process::id()));
     let solidity = root.join("GeneratedVerifier.sol");
@@ -659,9 +658,9 @@ mod tests {
     let exported: Json =
       serde_json::from_slice(&fs::read(root.join("fixture.json"))?)?;
     assert_eq!(exported["expectedClaim"], json!(expected));
-    assert_eq!(exported["profileId"], hex_json(&profile.id()));
+    assert_eq!(exported["vkId"], hex_json(&vk.id()));
     assert_eq!(exported["setupClass"], "filecoin");
-    assert_eq!(exported["scope"], "trusted-exported-native-profile");
+    assert_eq!(exported["scope"], "trusted-exported-native-vk");
     assert_eq!(exported["nativeOuterVerified"], true);
     assert_eq!(exported["nativeDeferredPairingVerified"], true);
     assert_eq!(fs::read(root.join("fixture.bin"))?, fs::read(&packet)?);
@@ -671,7 +670,7 @@ mod tests {
   }
 
   #[test]
-  fn filecoin_fixture_export_authenticates_profile_and_rejects_invalid_packets()
+  fn filecoin_fixture_export_authenticates_vk_and_rejects_invalid_packets()
   -> Result<()> {
     let root =
       std::env::temp_dir().join(format!("ix-solidity-{}", std::process::id()));
@@ -688,7 +687,7 @@ mod tests {
       "fixture-bad-pairing.bin",
       "fixture-other-statement.json",
       "fixture-other-statement.bin",
-      "verifier.bin",
+      "vk.bin",
     ] {
       assert_eq!(
         fs::read(data.join(file))?,
@@ -706,7 +705,7 @@ mod tests {
     assert_eq!(
       normalized_hash(&generated),
       normalized_hash(&checked_source),
-      "generated Solidity differs from its authenticated fixture profile"
+      "generated Solidity differs from its authenticated fixture verifying key"
     );
     let fixture: Json =
       serde_json::from_slice(&fs::read(data.join("fixture.json"))?)?;
@@ -722,14 +721,13 @@ mod tests {
     let first_words = statement_words(&original)?;
     let second_words = statement_words(&other)?;
     assert_ne!(first_words, second_words);
-    let profile =
-      VerifierProfile::from_bytes(&fs::read(data.join("verifier.bin"))?)?;
-    profile.verify(&original, &first_words)?;
-    profile.verify(&other, &second_words)?;
-    assert!(profile.verify(&original, &second_words).is_err());
-    assert!(profile.verify(&other, &first_words).is_err());
+    let vk = VerifyingKey::from_bytes(&fs::read(data.join("vk.bin"))?)?;
+    vk.verify(&original, &first_words)?;
+    vk.verify(&other, &second_words)?;
+    assert!(vk.verify(&original, &second_words).is_err());
+    assert!(vk.verify(&other, &first_words).is_err());
     let digest = fixture["verifierDigestBlake3"].as_str().unwrap();
-    let verifier = data.join("verifier.bin");
+    let verifier = data.join("vk.bin");
     let packet = data.join("fixture.bin");
     let exported = root.join("exported");
     let exported_sol = root.join("ExportedVerifier.sol");
@@ -759,7 +757,7 @@ mod tests {
       "challenges",
       "outerL",
       "outerR",
-      "profileId",
+      "vkId",
       "expectedClaim",
     ] {
       assert_eq!(fixture[key], result[key]);

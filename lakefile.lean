@@ -141,7 +141,7 @@ def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := 
   proc { cmd := "cp", args := #["-f", source.toString, temporary.toString] } (quiet := true)
   IO.FS.rename temporary output
 
-/-- Every source, kernel, manifest and profile file the Cargo builds read. -/
+/-- Every source, kernel, manifest and verifying-key file the Cargo builds read. -/
 def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
@@ -149,14 +149,14 @@ def rustSources (pkg : Package) : SpawnM (Job Unit) := do
     path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
-  let profiles ← inputDir (pkg.dir / "crates/proof-compression/profiles") false fun path =>
+  let keys ← inputDir (pkg.dir / "crates/proof-compression/verifying-keys") false fun path =>
     path.extension == some "bin"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock"),
     ← inputTextFile (pkg.dir / ".cargo/config.toml")
   ]
-  let sources := sources.zipWith (fun _ _ => ()) profiles
+  let sources := sources.zipWith (fun _ _ => ()) keys
   return sources.zipWith (fun _ _ => ()) manifests
 
 /-- Cargo's archive or executable and its native library are one build output.

@@ -4,11 +4,11 @@ import {KzgVerifier} from "../src/KzgVerifier.sol";
 import {Scalar} from "../src/Scalar.sol";
 
 contract GraphDifferentialHarness is KzgVerifier {
-    function _proofLayout(Profile memory, Proof memory) internal pure override returns (uint256, uint256) {
+    function _proofLayout(VerifyingKey memory, Proof memory) internal pure override returns (uint256, uint256) {
         return (0, 0);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory, uint256[6] memory)
+    function _openingCoefficients(VerifyingKey memory, Proof memory, uint256[6] memory)
         internal
         pure
         override
@@ -16,7 +16,7 @@ contract GraphDifferentialHarness is KzgVerifier {
     {
         return (new uint256[](0), new uint256[](0));
     }
-    function _profile() internal pure override returns (Profile memory profile) {}
+    function _vk() internal pure override returns (VerifyingKey memory vk) {}
 
     function evaluateBoth(uint256 trial) external pure returns (uint256[] memory direct, uint256[] memory interpreted) {
         Proof memory proof;
@@ -68,12 +68,12 @@ contract GraphDifferentialHarness is KzgVerifier {
             uint256 a = node[1];
             uint256 b = node[2];
             if (op == 0) {
-                if (a >= R) revert InvalidProfile();
+                if (a >= R) revert InvalidVerifyingKey();
                 values[i] = a;
             } else if (op == 1) {
                 uint256 index = a == 0 ? ci : (a == 1 ? 6 + ci : 2 + ci);
                 Matrix memory m = proof.matrices[index];
-                if (a > 2 || b >= m.rows || node[3] >= m.width) revert InvalidProfile();
+                if (a > 2 || b >= m.rows || node[3] >= m.width) revert InvalidVerifyingKey();
                 values[i] = proof.values[m.valueOffset + b * m.width + node[3]];
             } else if (op == 2) {
                 values[i] = view_.publics[a];
@@ -84,12 +84,12 @@ contract GraphDifferentialHarness is KzgVerifier {
             } else if (op == 5) {
                 values[i] = view_.transition;
             } else {
-                if (a >= i || (op != 9 && b >= i)) revert InvalidProfile();
+                if (a >= i || (op != 9 && b >= i)) revert InvalidVerifyingKey();
                 if (op == 6) values[i] = addmod(values[a], values[b], R);
                 else if (op == 7) values[i] = Scalar.sub(values[a], values[b]);
                 else if (op == 8) values[i] = mulmod(values[a], values[b], R);
                 else if (op == 9) values[i] = Scalar.negate(values[a]);
-                else revert InvalidProfile();
+                else revert InvalidVerifyingKey();
             }
         }
     }
@@ -101,7 +101,7 @@ contract GraphDifferentialHarness is KzgVerifier {
         returns (uint256[] memory values)
     {
         if (ci == 0) return _evaluateCircuit0(proof, view_);
-        revert InvalidProfile();
+        revert InvalidVerifyingKey();
     }
 
     function _evaluateCircuit0(Proof memory proof, EvaluationView memory view_)

@@ -158,16 +158,16 @@ jobs:
           for recursive_filter in native_field:: native_curve:: native_transcript:: native_msm:: pairing:: \
             native_verifier::parallel_prefix_tests:: \
             native_verifier::reuse_tests::recursive_witness_rejects_tampering_without_native_preverification \
-            native_verifier::reuse_tests::recursive_profile_rejects_identity_anchors_and_oversized_layout_caps; do
+            native_verifier::reuse_tests::recursive_vk_rejects_identity_anchors_and_oversized_layout_caps; do
             cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
               --lib "recursive::$recursive_filter" ${{ github.event_name == 'push' && '--no-run' || '' }}
           done
-      - name: Test BN254 worker and portable profiles
+      - name: Test BN254 worker and portable verifying keys
         run: |
           cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
             --test worker_tracing ${{ github.event_name == 'push' && '--no-run' || '' }}
           for pipeline_filter in driver:: tests:: setup:: stages::codec:: stages::verification:: stages::wrap:: \
-            verifier::bn254_tests:: wrap::outer::tests::fused_profiles_prove_and_portable_verifiers_round_trip; do
+            verifier::bn254_tests:: wrap::outer::tests::fused_vks_prove_and_portable_verifiers_round_trip; do
             cargo test --release --locked -p ix-proof-compression --no-default-features --features bn254,parallel \
               --lib "pipeline::$pipeline_filter" ${{ github.event_name == 'push' && '--no-run' || '' }}
           done

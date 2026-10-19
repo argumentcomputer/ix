@@ -17,9 +17,9 @@ import (
 	"github.com/consensys/gnark/frontend/cs/scs"
 )
 
-func importedFixture(t *testing.T) (*profile, *nativeSRS, string) {
+func importedFixture(t *testing.T) (*verifyingKey, *nativeSRS, string) {
 	t.Helper()
-	p, err := loadProfile(filepath.Join("testdata", "bn254", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

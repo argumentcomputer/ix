@@ -14,7 +14,7 @@ import (
 )
 
 func TestLagrangeCacheAndBasisConversion(t *testing.T) {
-	p, err := loadProfile(filepath.Join("testdata", "bn254", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

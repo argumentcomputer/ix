@@ -21,7 +21,7 @@ type pairingBatchCircuit struct {
 	Operands      [4]circuitG1
 	Claim         [2]frontend.Variable
 	PacketDigest  [32]uints.U8
-	Profile       *profile `gnark:"-"`
+	VK            *verifyingKey `gnark:"-"`
 	ExpectedRho   frontend.Variable
 	ChallengeOnly bool `gnark:"-"`
 }
@@ -51,7 +51,7 @@ func (c *pairingBatchCircuit) Define(api frontend.API) error {
 		pairing.AssertIsOnG1(&c.Operands[i])
 	}
 	if c.ChallengeOnly {
-		context, err := pairingBatchContext(c.Profile)
+		context, err := pairingBatchContext(c.VK)
 		if err != nil {
 			return err
 		}
@@ -59,11 +59,11 @@ func (c *pairingBatchCircuit) Define(api frontend.API) error {
 		api.AssertIsEqual(rho, c.ExpectedRho)
 		return nil
 	}
-	w := &wrapperCircuit{Profile: c.Profile, Claim: c.Claim, Deferred: [2]circuitG1{c.Operands[2], c.Operands[3]}}
+	w := &wrapperCircuit{VK: c.VK, Claim: c.Claim, Deferred: []circuitG1{c.Operands[2], c.Operands[3]}}
 	return w.batchedPairing(api, u, f, s, curve, c.PacketDigest[:], &c.Operands[0], &c.Operands[1])
 }
 
-func nativePairingBatchChallenge(p *profile, claim [2]uint64, packet [32]byte, points [4]nativeG1) *big.Int {
+func nativePairingBatchChallenge(p *verifyingKey, claim [2]uint64, packet [32]byte, points [4]nativeG1) *big.Int {
 	input, err := pairingBatchContext(p)
 	if err != nil {
 		panic(err)
@@ -100,8 +100,8 @@ func TestPairingBatchSoundnessAndChallengeBinding(t *testing.T) {
 	valid := [4]nativeG1{T, C, T, negC}
 	claim := [2]uint64{123, 456}
 	packet := [32]byte{9, 8, 7}
-	assignment := func(points [4]nativeG1, profile *profile) *pairingBatchCircuit {
-		w := &pairingBatchCircuit{Profile: profile, Claim: [2]frontend.Variable{claim[0], claim[1]}, ExpectedRho: nativePairingBatchChallenge(profile, claim, packet, points)}
+	assignment := func(points [4]nativeG1, verifyingKey *verifyingKey) *pairingBatchCircuit {
+		w := &pairingBatchCircuit{VK: verifyingKey, Claim: [2]frontend.Variable{claim[0], claim[1]}, ExpectedRho: nativePairingBatchChallenge(verifyingKey, claim, packet, points)}
 		copy(w.PacketDigest[:], uints.NewU8Array(packet[:]))
 		for i := range points {
 			w.Operands[i] = newCircuitG1(points[i])
@@ -110,7 +110,7 @@ func TestPairingBatchSoundnessAndChallengeBinding(t *testing.T) {
 	}
 	check := func(name string, points [4]nativeG1, ok bool) {
 		t.Helper()
-		err := test.IsSolved(&pairingBatchCircuit{Profile: p}, assignment(points, p), curveID.ScalarField())
+		err := test.IsSolved(&pairingBatchCircuit{VK: p}, assignment(points, p), curveID.ScalarField())
 		if (err == nil) != ok {
 			t.Fatalf("%s: expected accepted=%t: %v", name, ok, err)
 		}
@@ -155,13 +155,13 @@ func TestPairingBatchSoundnessAndChallengeBinding(t *testing.T) {
 	check("predetermined-coefficient-cancellation", cancel, false)
 	for _, points := range [][4]nativeG1{valid, cancel, {}} {
 		w := assignment(points, p)
-		if err := test.IsSolved(&pairingBatchCircuit{Profile: p, ChallengeOnly: true}, w, curveID.ScalarField()); err != nil {
+		if err := test.IsSolved(&pairingBatchCircuit{VK: p, ChallengeOnly: true}, w, curveID.ScalarField()); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, kind := range []string{"left", "right", "deferred-a", "deferred-b", "claim-low", "claim-high", "packet", "context"} {
 		w := assignment(valid, p)
-		profileCopy := *p
+		vkCopy := *p
 		switch kind {
 		case "left", "right", "deferred-a", "deferred-b":
 			i := map[string]int{"left": 0, "right": 1, "deferred-a": 2, "deferred-b": 3}[kind]
@@ -175,20 +175,20 @@ func TestPairingBatchSoundnessAndChallengeBinding(t *testing.T) {
 		case "packet":
 			w.PacketDigest[0] = uints.NewU8(packet[0] ^ 1)
 		case "context":
-			profileCopy.Seed = "0x01"
+			vkCopy.Seed = "0x01"
 		}
-		if err := test.IsSolved(&pairingBatchCircuit{Profile: &profileCopy, ChallengeOnly: true}, w, curveID.ScalarField()); err == nil {
+		if err := test.IsSolved(&pairingBatchCircuit{VK: &vkCopy, ChallengeOnly: true}, w, curveID.ScalarField()); err == nil {
 			t.Fatalf("unbound %s", kind)
 		}
 	}
 	w := assignment(valid, p)
 	w.ExpectedRho = 0
-	if err := test.IsSolved(&pairingBatchCircuit{Profile: p, ChallengeOnly: true}, w, curveID.ScalarField()); err == nil {
+	if err := test.IsSolved(&pairingBatchCircuit{VK: p, ChallengeOnly: true}, w, curveID.ScalarField()); err == nil {
 		t.Fatal("accepted zero challenge")
 	}
 	other := *p
 	other.DeferredKeys = []string{p.DeferredKeys[1], p.DeferredKeys[0]}
-	if err := test.IsSolved(&pairingBatchCircuit{Profile: &other}, assignment(valid, &other), curveID.ScalarField()); err == nil {
+	if err := test.IsSolved(&pairingBatchCircuit{VK: &other}, assignment(valid, &other), curveID.ScalarField()); err == nil {
 		t.Fatal("accepted mismatched anchors")
 	}
 	context, _ := pairingBatchContext(p)
@@ -201,7 +201,7 @@ func TestPairingBatchSoundnessAndChallengeBinding(t *testing.T) {
 }
 
 func TestBN254OptimizedFullVerifier(t *testing.T) {
-	p, err := loadProfile(filepath.Join("testdata", "bn254", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

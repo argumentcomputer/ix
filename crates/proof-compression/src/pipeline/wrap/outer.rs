@@ -8,7 +8,8 @@ mod relation;
 mod solidity;
 #[cfg(feature = "plonk")]
 pub(in crate::pipeline) use plonk_export::{
-  export as plonk_export, fixture as plonk_fixture,
+  export as plonk_export, export_first as plonk_export_first,
+  fixture as plonk_fixture,
 };
 #[cfg(all(feature = "solidity", not(feature = "bn254")))]
 pub use solidity::{export_solidity_verifier, write_solidity_fixture};
@@ -46,13 +47,13 @@ pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
 #[cfg(feature = "bn254")]
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
 #[cfg(not(feature = "bn254"))]
-const OUTER_PROFILE_VERSION: u32 = 6;
+const OUTER_VK_VERSION: u32 = 6;
 #[cfg(feature = "bn254")]
-const OUTER_PROFILE_VERSION: u32 = 7;
+const OUTER_VK_VERSION: u32 = 7;
 const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
 const RECURSIVE_PUBLIC_VALUES: usize = statement::WORDS + PUBLIC_VALUES;
 /// Largest admitted recursive computation trace. The development public
-/// degree of a staged profile covers exactly its own height.
+/// degree of a staged verifying key covers exactly its own height.
 pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -64,50 +65,46 @@ pub(crate) fn stage(
   built: Built,
   assignment: Assignment<Scalar>,
   dir: &Path,
-  profile: &[u8],
+  vk: &[u8],
   statement: &Statement,
   config: &super::super::WorkerConfig,
 ) -> storage::Result<()> {
-  let frontend = Frontend::from_built(built, profile)?;
+  let frontend = Frontend::from_built(built, vk)?;
   frontend.stage(assignment, dir, statement, config)
 }
 
 /// A recursive circuit lowered into one computation trace and one merged
-/// table, ready to stage any number of requests of its profile.
+/// table, ready to stage any number of requests of its verifying key.
 pub(crate) struct Frontend {
   compiled: MultiStarkCircuit<Scalar>,
   pairings: Pairings,
-  profile: Vec<u8>,
+  vk: Vec<u8>,
 }
 
 impl Frontend {
-  fn from_built(built: Built, profile: &[u8]) -> storage::Result<Self> {
-    Self::new(built.circuit, &built.pairing_keys, profile, MAX_TRACE_LEN)
+  fn from_built(built: Built, vk: &[u8]) -> storage::Result<Self> {
+    Self::new(built.circuit, &built.pairing_keys, vk, MAX_TRACE_LEN)
   }
 
   pub(crate) fn new(
     circuit: multi_stark::plonkish::Circuit<Scalar>,
     keys: &[G2Affine],
-    profile: &[u8],
+    vk: &[u8],
     max_height: usize,
   ) -> storage::Result<Self> {
     use ark_serialize::CanonicalSerialize;
     if keys.len() != 2 {
-      return Err("invalid recursive pairing profile".into());
+      return Err("invalid recursive pairing keys".into());
     }
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
     let compiled = construct::lower_recursive(circuit, max_height)?;
-    Ok(Self {
-      compiled,
-      pairings: Pairings { keys: encoded },
-      profile: profile.to_vec(),
-    })
+    Ok(Self { compiled, pairings: Pairings { keys: encoded }, vk: vk.to_vec() })
   }
 
   /// Stage and prove one request, keeping the witness traces in memory.
   /// Fixed preprocessing comes from the cache when it already holds this
-  /// profile and is published to it after the proof verifies.
+  /// verifying key and is published to it after the proof verifies.
   pub(crate) fn stage(
     self,
     assignment: Assignment<Scalar>,
@@ -143,8 +140,8 @@ impl Frontend {
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
     storage::save(&dir.join("pairings.bin"), &self.pairings)?;
-    let cache_profile = [self.profile.as_slice(), &setup_id].concat();
-    let cache = config.fixed_cache(dir, &cache_profile)?;
+    let cache_identity = [self.vk.as_slice(), &setup_id].concat();
+    let cache = config.fixed_cache(dir, &cache_identity)?;
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       &self.compiled,
@@ -166,30 +163,30 @@ impl Frontend {
 }
 
 fn pairing_keys(dir: &Path) -> storage::Result<Vec<G2Affine>> {
-  let profile: Pairings = storage::load(&dir.join("pairings.bin"))?;
-  decode_pairing_keys(&profile)
+  let vk: Pairings = storage::load(&dir.join("pairings.bin"))?;
+  decode_pairing_keys(&vk)
 }
 
-fn decode_pairing_keys(profile: &Pairings) -> storage::Result<Vec<G2Affine>> {
+fn decode_pairing_keys(vk: &Pairings) -> storage::Result<Vec<G2Affine>> {
   use ark_ec::AffineRepr;
   use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-  if profile.keys.len() != 8 + 2 * G2_COMPRESSED_BYTES
-    || profile.keys.get(..8) != Some(&2u64.to_le_bytes())
+  if vk.keys.len() != 8 + 2 * G2_COMPRESSED_BYTES
+    || vk.keys.get(..8) != Some(&2u64.to_le_bytes())
   {
-    return Err("invalid pairing profile".into());
+    return Err("invalid pairing keys".into());
   }
-  let mut input = profile.keys.as_slice();
+  let mut input = vk.keys.as_slice();
   let keys = Vec::<G2Affine>::deserialize_compressed(&mut input)?;
   if !input.is_empty()
     || keys.len() != 2
     || keys.iter().any(AffineRepr::is_zero)
   {
-    return Err("invalid pairing profile".into());
+    return Err("invalid pairing keys".into());
   }
   let mut canonical = Vec::new();
   keys.serialize_compressed(&mut canonical)?;
-  if canonical != profile.keys {
-    return Err("noncanonical pairing profile".into());
+  if canonical != vk.keys {
+    return Err("noncanonical pairing keys".into());
   }
   Ok(keys)
 }
@@ -205,12 +202,12 @@ fn check_pairings(bytes: &[u8], keys: &[G2Affine]) -> storage::Result<()> {
 }
 fn packet_body<'a>(
   packet: &'a [u8],
-  profile: &[u8; 32],
+  vk: &[u8; 32],
   expected: &Statement,
 ) -> storage::Result<&'a [u8]> {
   let offset = 32 + statement::WORDS * 8;
-  if packet.len() < offset + PAIRING_BYTES || packet[..32] != *profile {
-    return Err("packet profile mismatch".into());
+  if packet.len() < offset + PAIRING_BYTES || packet[..32] != *vk {
+    return Err("packet verifying key mismatch".into());
   }
   for (bytes, &word) in
     packet[32..offset].as_chunks::<8>().0.iter().zip(expected)
@@ -225,14 +222,14 @@ fn packet_body<'a>(
 #[cfg(any(test, feature = "plonk", feature = "solidity"))]
 fn packet_claims(
   packet: &[u8],
-  profile: &[u8; 32],
+  vk: &[u8; 32],
   pairing_count: usize,
   expected: &Statement,
 ) -> storage::Result<(Vec<Vec<Scalar>>, usize)> {
   if pairing_count != 2 {
     return Err("pairing point count".into());
   }
-  let body = packet_body(packet, profile, expected)?;
+  let body = packet_body(packet, vk, expected)?;
   let mut public: Vec<_> =
     expected.iter().copied().map(Scalar::from_u64).collect();
   public.extend(verification::unpack_pairings(&body[..PAIRING_BYTES])?);
@@ -243,11 +240,11 @@ fn verify_packet(
   system: &multi_stark::system::System<KzgConfig>,
   codec: &FixedProofCodec,
   packet: &[u8],
-  profile: &[u8; 32],
+  vk: &[u8; 32],
   keys: &[G2Affine],
   expected: &Statement,
 ) -> storage::Result<()> {
-  let body = packet_body(packet, profile, expected)?;
+  let body = packet_body(packet, vk, expected)?;
   let pairings = verification::Pairings {
     keys: keys.try_into().map_err(|_keys| "pairing point count")?,
   };
@@ -273,7 +270,7 @@ fn staged_publics(
 
 /// Commit the fixed and witness traces from memory, prove, verify the
 /// packet and write it with the portable verifier. Fixed columns are
-/// checkpointed because every proof of the profile shares them through the
+/// checkpointed because every proof of the verifying key shares them through the
 /// cache; witness columns never touch disk.
 fn prove(
   dir: &Path,
@@ -335,8 +332,8 @@ fn prove(
   let prover::Proved { system, codec, bytes, .. } =
     lowered.commit(config, Some(&out), 0)?.prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
-  let verifier = VerifierProfile {
-    version: OUTER_PROFILE_VERSION,
+  let verifier = VerifyingKey {
+    version: OUTER_VK_VERSION,
     heights: [manifest.heights[0], manifest.heights[1]],
     setup: [
       fs::read(out.join("setup-0.bin"))?,
@@ -345,8 +342,8 @@ fn prove(
     pairings: fs::read(dir.join("pairings.bin"))?,
     parameters: verifier_params.to_bytes()?,
   };
-  let profile = verifier.id();
-  let mut packet = profile.to_vec();
+  let vk = verifier.id();
+  let mut packet = vk.to_vec();
   for word in statement {
     packet.extend(word.to_le_bytes());
   }
@@ -359,14 +356,14 @@ fn prove(
   }
   let verify_start = Instant::now();
   tracing::info_span!("compression/verify_packet").in_scope(|| {
-    verify_packet(&system, &codec, &packet, &profile, &keys, &statement)
+    verify_packet(&system, &codec, &packet, &vk, &keys, &statement)
   })?;
   let verify_seconds = verify_start.elapsed().as_secs_f64();
   let encoded =
     bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
   storage::write_atomic(&out.join("proof.compact.bin"), &bytes)?;
-  storage::write_atomic(&dir.join("verifier.bin"), &encoded)?;
-  storage::write_atomic(&out.join("profile-id.bin"), &profile)?;
+  storage::write_atomic(&dir.join("vk.bin"), &encoded)?;
+  storage::write_atomic(&out.join("vk-id.bin"), &vk)?;
   storage::write_atomic(&out.join("packet.bin"), &packet)?;
   let public_setup = system.config.pcs().verifier_params().public_setup();
   let development = setup.class() == SetupClass::Development;
@@ -375,8 +372,8 @@ fn prove(
     "packet_bytes": packet.len(),
     "claim_bytes": 144,
     "pairing_bytes": PAIRING_BYTES,
-    "profile_bytes": 32,
-    "profile_version": OUTER_PROFILE_VERSION,
+    "vk_bytes": 32,
+    "vk_version": OUTER_VK_VERSION,
     "transcript": "blake3",
     "total_seconds": start.elapsed().as_secs_f64(),
     "verify_seconds": verify_seconds,
@@ -389,7 +386,7 @@ fn prove(
     "public_setup_id": blake3::Hash::from_bytes(public_setup.id).to_hex().to_string(),
     "public_max_degree": public_setup.max_degree,
     "setup_id": blake3::Hash::from_bytes(setup_id).to_hex().to_string(),
-    "profile_id": blake3::Hash::from_bytes(profile).to_hex().to_string(),
+    "vk_id": blake3::Hash::from_bytes(vk).to_hex().to_string(),
     "trace_heights": manifest.heights,
   });
   fs::write(
@@ -404,7 +401,7 @@ fn prove(
 
 /// Recursive verifier metadata authenticated by a bundle or an independent digest.
 #[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct VerifierProfile {
+pub(crate) struct VerifyingKey {
   version: u32,
   heights: [usize; 2],
   setup: [Vec<u8>; 2],
@@ -414,41 +411,40 @@ pub(crate) struct VerifierProfile {
 
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
   if bytes.len() > 1 << 20 {
-    return Err("verifier profile too large".into());
+    return Err("verifying key too large".into());
   }
   let (value, consumed) = bincode::serde::decode_from_slice(
     bytes,
     bincode::config::standard().with_limit::<{ 1 << 20 }>(),
   )?;
   if consumed != bytes.len() {
-    return Err("trailing verifier profile bytes".into());
+    return Err("trailing verifying key bytes".into());
   }
   Ok(value)
 }
 
-impl VerifierProfile {
+impl VerifyingKey {
   #[cfg(all(not(feature = "bn254"), any(test, feature = "plonk")))]
   pub(crate) fn reencode_blake3(
     bytes: &[u8],
   ) -> PipelineResult<(Vec<u8>, [u8; 32])> {
-    let mut profile = Self::from_bytes(bytes)?;
-    profile.version = OUTER_PROFILE_VERSION;
-    profile.prepare()?;
-    let id = profile.id();
-    Ok((
-      bincode::serde::encode_to_vec(profile, bincode::config::standard())?,
-      id,
-    ))
+    let mut vk = Self::from_bytes(bytes)?;
+    vk.version = OUTER_VK_VERSION;
+    vk.prepare()?;
+    let id = vk.id();
+    Ok((bincode::serde::encode_to_vec(vk, bincode::config::standard())?, id))
   }
 
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
-    let profile: Self = decode(bytes)?;
-    profile.prepare()?;
-    Ok(profile)
+    let vk: Self = decode(bytes)?;
+    vk.prepare()?;
+    Ok(vk)
   }
 
   pub(crate) fn id(&self) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
+    // The label predates the verifying-key naming and is part of every
+    // published id; changing it would re-key every bundled verifying key.
     #[cfg(not(feature = "bn254"))]
     let namespace = "init-kzg-recursive-profile";
     #[cfg(feature = "bn254")]
@@ -468,7 +464,7 @@ impl VerifierProfile {
     decode_pairing_keys(&decode(&self.pairings)?)
   }
 
-  /// The verifier parameters the profile carries.
+  /// The verifier parameters the verifying key carries.
   pub(crate) fn verifier_params(
     &self,
   ) -> storage::Result<crate::kzg::VerifierParams> {
@@ -520,11 +516,11 @@ impl VerifierProfile {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
     #[cfg(not(feature = "bn254"))]
-    let supported = matches!(self.version, 5 | OUTER_PROFILE_VERSION);
+    let supported = matches!(self.version, 5 | OUTER_VK_VERSION);
     #[cfg(feature = "bn254")]
-    let supported = self.version == OUTER_PROFILE_VERSION;
+    let supported = self.version == OUTER_VK_VERSION;
     if !supported {
-      return Err("unsupported recursive verifier profile".into());
+      return Err("unsupported recursive verifying key".into());
     }
     if self
       .heights
@@ -532,7 +528,7 @@ impl VerifierProfile {
       .any(|h| *h < 2 || !h.is_power_of_two() || *h > 1 << 28)
       || self.heights[1] > self.heights[0]
     {
-      return Err("unsupported recursive verifier profile".into());
+      return Err("unsupported recursive verifying key".into());
     }
     let params = VerifierParams::from_bytes(&self.parameters)?;
     if params.max_trace_len() != self.heights[0] {
@@ -570,8 +566,8 @@ impl VerifierProfile {
     })
   }
 
-  pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifierProfile> {
-    Ok(PreparedVerifierProfile {
+  pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifyingKey> {
+    Ok(PreparedVerifyingKey {
       id: self.id(),
       verifier: super::super::stages::RecursiveVerifier::from_parts(
         self.system()?,
@@ -591,12 +587,12 @@ impl VerifierProfile {
   }
 }
 
-pub(crate) struct PreparedVerifierProfile {
+pub(crate) struct PreparedVerifyingKey {
   id: [u8; 32],
   verifier: super::super::stages::RecursiveVerifier,
 }
 
-impl PreparedVerifierProfile {
+impl PreparedVerifyingKey {
   pub(crate) fn verify(
     &self,
     packet: &[u8],
@@ -629,7 +625,7 @@ pub(crate) fn verify_saved(
       &staged
     },
   };
-  VerifierProfile::from_bytes(&fs::read(dir.join("verifier.bin"))?)?
+  VerifyingKey::from_bytes(&fs::read(dir.join("vk.bin"))?)?
     .verify(packet, expected)
 }
 
@@ -651,8 +647,8 @@ mod tests {
   #[test]
   fn bundled_and_public_recursive_verifiers_share_transport_validation()
   -> storage::Result<()> {
-    let wire = VerifierProfile::from_bytes(include_bytes!(
-      "../../../profiles/aggregate-filecoin-v5.bin"
+    let wire = VerifyingKey::from_bytes(include_bytes!(
+      "../../../verifying-keys/aggregate-filecoin-v5.bin"
     ))?;
     let prepared = wire.prepare()?;
     let public = super::super::super::stages::RecursiveVerifier::from_bytes(
@@ -689,29 +685,29 @@ mod tests {
   #[test]
   fn filecoin_bundle_requires_filecoin_inner_pairing_anchors() {
     use ark_serialize::CanonicalSerialize;
-    let mut profile = VerifierProfile::from_bytes(include_bytes!(
-      "../../../profiles/aggregate-filecoin-v5.bin"
+    let mut vk = VerifyingKey::from_bytes(include_bytes!(
+      "../../../verifying-keys/aggregate-filecoin-v5.bin"
     ))
     .unwrap();
-    profile.check_setup_class(SetupClass::Filecoin).unwrap();
-    assert!(profile.check_setup_class(SetupClass::Development).is_err());
+    vk.check_setup_class(SetupClass::Filecoin).unwrap();
+    assert!(vk.check_setup_class(SetupClass::Development).is_err());
     let development = Srs::unsafe_dev_setup(2, b"mixed-pairing-setup");
     let mut keys = Vec::new();
     vec![development.g2, development.tau_g2]
       .serialize_compressed(&mut keys)
       .unwrap();
-    profile.pairings = bincode::serde::encode_to_vec(
+    vk.pairings = bincode::serde::encode_to_vec(
       Pairings { keys },
       bincode::config::standard(),
     )
     .unwrap();
-    assert!(profile.check_setup_class(SetupClass::Filecoin).is_err());
+    assert!(vk.check_setup_class(SetupClass::Filecoin).is_err());
   }
 
   #[cfg(feature = "bn254")]
-  fn ignition_profile_fixture() -> storage::Result<(
+  fn ignition_vk_fixture() -> storage::Result<(
     crate::kzg::srs::ignition::IgnitionAdmission,
-    VerifierProfile,
+    VerifyingKey,
     Vec<u8>,
   )> {
     use crate::kzg::{VerifierParams, srs::ignition::test_admission};
@@ -754,8 +750,8 @@ mod tests {
     };
     let mut keys = Vec::new();
     admission.pairing_keys().to_vec().serialize_compressed(&mut keys)?;
-    let profile = VerifierProfile {
-      version: OUTER_PROFILE_VERSION,
+    let vk = VerifyingKey {
+      version: OUTER_VK_VERSION,
       heights: [
         proved.system.circuits[0].preprocessed_height,
         proved.system.circuits[1].preprocessed_height,
@@ -767,13 +763,13 @@ mod tests {
       )?,
       parameters: parameters.to_bytes()?,
     };
-    let mut packet = profile.id().to_vec();
+    let mut packet = vk.id().to_vec();
     for word in init_claim::INIT_PUBLIC_WORDS {
       packet.extend(word.to_le_bytes());
     }
     packet.extend(pairing_bytes(&publics[18..])?);
     packet.extend(&proved.bytes);
-    Ok((admission, profile, packet))
+    Ok((admission, vk, packet))
   }
 
   #[cfg(feature = "bn254")]
@@ -833,13 +829,13 @@ mod tests {
       VerifierParams,
       srs::ignition::{IgnitionAdmission, test_admission},
     };
-    let (admission, profile, packet) = ignition_profile_fixture()?;
+    let (admission, vk, packet) = ignition_vk_fixture()?;
     let claim = include_bytes!(
       "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
     );
     let expected = init_claim::INIT_PUBLIC_WORDS;
     let portable =
-      bincode::serde::encode_to_vec(&profile, bincode::config::standard())?;
+      bincode::serde::encode_to_vec(&vk, bincode::config::standard())?;
     let trusted = *blake3::hash(&portable).as_bytes();
     let verify = |packet: &[u8],
                   claim: &[u8],
@@ -854,11 +850,8 @@ mod tests {
       verify(&packet, claim, &expected, &trusted, &admission)?,
       SetupClass::Ignition
     );
-    assert!(profile.check_setup_class(SetupClass::Ignition).is_err());
-    assert_eq!(
-      SetupClass::of(&profile.verifier_params()?),
-      SetupClass::Development
-    );
+    assert!(vk.check_setup_class(SetupClass::Ignition).is_err());
+    assert_eq!(SetupClass::of(&vk.verifier_params()?), SetupClass::Development);
     assert!(verify(&packet, claim, &expected, &[0; 32], &admission).is_err());
     assert!(
       verify(&packet, b"wrong", &expected, &trusted, &admission).is_err()
@@ -878,7 +871,7 @@ mod tests {
       assert!(verify(&packet, claim, &expected, &trusted, &other).is_err());
     }
     for change in [0, 1, 2] {
-      let mut changed: VerifierProfile = decode(&portable)?;
+      let mut changed: VerifyingKey = decode(&portable)?;
       let mut parameters = changed.verifier_params()?;
       match change {
         0 => parameters.public_setup.id[0] ^= 1,
@@ -895,7 +888,7 @@ mod tests {
       changed.parameters = parameters.to_bytes()?;
       assert!(changed.check_ignition_admission(&admission).is_err());
     }
-    let mut mixed: VerifierProfile = decode(&portable)?;
+    let mut mixed: VerifyingKey = decode(&portable)?;
     let development = Srs::unsafe_dev_setup(2, b"ignition-mixed-inner");
     let mut keys = Vec::new();
     vec![development.g2, development.tau_g2].serialize_compressed(&mut keys)?;
@@ -910,16 +903,13 @@ mod tests {
         .to_string()
         .contains("inner pairing anchors")
     );
-    let mut development_profile: VerifierProfile = decode(&portable)?;
-    let development = Srs::unsafe_dev_setup_prefix(
-      2,
-      255,
-      b"ignition-existing-development-profile",
-    );
-    development_profile.parameters =
-      VerifierParams::with_max_trace_len(&development, profile.heights[0])
+    let mut development_vk: VerifyingKey = decode(&portable)?;
+    let development =
+      Srs::unsafe_dev_setup_prefix(2, 255, b"ignition-existing-development-vk");
+    development_vk.parameters =
+      VerifierParams::with_max_trace_len(&development, vk.heights[0])
         .to_bytes()?;
-    assert!(development_profile.check_ignition_admission(&admission).is_err());
+    assert!(development_vk.check_ignition_admission(&admission).is_err());
     Ok(())
   }
 
@@ -927,9 +917,9 @@ mod tests {
   fn packet_requires_outer_proof_claim_and_external_pairings() {
     let inner = Srs::unsafe_dev_setup(8, b"packet-inner");
     let keys = vec![inner.g2, inner.tau_g2];
-    let profile = [17u8; 32];
+    let vk = [17u8; 32];
     let packet_prefix = |wrong: bool| {
-      let mut packet = profile.to_vec();
+      let mut packet = vk.to_vec();
       for v in init_claim::INIT_PUBLIC_WORDS {
         packet.extend(v.to_le_bytes());
       }
@@ -944,7 +934,7 @@ mod tests {
     };
     let (claims, _) = packet_claims(
       &packet_prefix(false),
-      &profile,
+      &vk,
       2,
       &init_claim::INIT_PUBLIC_WORDS,
     )
@@ -972,8 +962,7 @@ mod tests {
     for wrong in [false, true] {
       let mut packet = packet_prefix(wrong);
       let (claims, _) =
-        packet_claims(&packet, &profile, 2, &init_claim::INIT_PUBLIC_WORDS)
-          .unwrap();
+        packet_claims(&packet, &vk, 2, &init_claim::INIT_PUBLIC_WORDS).unwrap();
       let mut w = lowered.witness();
       for (&input, claim) in inputs.iter().zip(&claims[1..]) {
         w.set(input, claim[3]).unwrap();
@@ -990,7 +979,7 @@ mod tests {
           &system,
           &codec,
           &packet,
-          &profile,
+          &vk,
           &keys,
           &init_claim::INIT_PUBLIC_WORDS
         )
@@ -1005,7 +994,7 @@ mod tests {
             &system,
             &codec,
             &changed,
-            &profile,
+            &vk,
             &keys,
             &init_claim::INIT_PUBLIC_WORDS
           )
@@ -1026,7 +1015,7 @@ mod tests {
             &system,
             &codec,
             &packet[..packet.len() - 1],
-            &profile,
+            &vk,
             &keys,
             &init_claim::INIT_PUBLIC_WORDS
           )
@@ -1038,7 +1027,7 @@ mod tests {
             &system,
             &codec,
             &packet,
-            &profile,
+            &vk,
             &keys,
             &init_claim::INIT_PUBLIC_WORDS
           )
@@ -1076,7 +1065,7 @@ mod tests {
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
     storage::save(&dir.join("pairings.bin"), &Pairings { keys: encoded })?;
-    let cache = fixed_cache::FixedCache::from_profile(cache_root, b"outer")?;
+    let cache = fixed_cache::FixedCache::from_identity(cache_root, b"outer")?;
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       compiled,
@@ -1088,12 +1077,10 @@ mod tests {
   }
 
   #[test]
-  fn fused_profiles_prove_and_portable_verifiers_round_trip()
-  -> storage::Result<()> {
-    let dir = std::env::temp_dir().join(format!(
-      "outer-staged-{}-v{OUTER_PROFILE_VERSION}",
-      std::process::id()
-    ));
+  fn fused_vks_prove_and_portable_verifiers_round_trip() -> storage::Result<()>
+  {
+    let dir = std::env::temp_dir()
+      .join(format!("outer-staged-{}-v{OUTER_VK_VERSION}", std::process::id()));
     fs::create_dir(&dir)?;
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
@@ -1140,7 +1127,7 @@ mod tests {
     let mut extra = packet.clone();
     extra.push(0);
     assert!(verify_saved(&first, &extra, None).is_err());
-    // A second run of the profile restores the fixed preprocessing from
+    // A second run of the verifying key restores the fixed preprocessing from
     // the cache and produces the same packet.
     let second = dir.join("second");
     let Lowered { compiled, assignment } = make()?;
@@ -1158,13 +1145,13 @@ mod tests {
     bad[1].pop();
     assert!(staged_publics(&bad, keys.len()).is_err());
     assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
-    let portable = fs::read(first.join("verifier.bin"))?;
+    let portable = fs::read(first.join("vk.bin"))?;
     let claim = include_bytes!(
       "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
     );
     let trusted = *blake3::hash(&portable).as_bytes();
     let verify_local = |claim: &[u8], expected, trusted: &[u8; 32], allow| {
-      super::super::super::verifier::verify_with_profile(
+      super::super::super::verifier::verify_with_vk(
         &packet, claim, expected, &portable, trusted, allow,
       )
     };
@@ -1189,31 +1176,28 @@ mod tests {
     let mut wrong_program = init_claim::INIT_PUBLIC_WORDS;
     wrong_program[0] ^= 1;
     assert!(verify_local(claim, &wrong_program, &trusted, true).is_err());
-    let profile = VerifierProfile::from_bytes(&portable)?;
-    assert_eq!(profile.version, OUTER_PROFILE_VERSION);
-    assert_eq!(
-      profile.system()?.config.transcript_kind(),
-      TranscriptKind::Blake3
-    );
+    let vk = VerifyingKey::from_bytes(&portable)?;
+    assert_eq!(vk.version, OUTER_VK_VERSION);
+    assert_eq!(vk.system()?.config.transcript_kind(), TranscriptKind::Blake3);
 
     #[cfg(not(feature = "bn254"))]
     let unsupported_versions = [0, 4, 7];
     #[cfg(feature = "bn254")]
     let unsupported_versions = [0, 5, 6];
     for version in unsupported_versions {
-      let mut unsupported: VerifierProfile = decode(&portable)?;
+      let mut unsupported: VerifyingKey = decode(&portable)?;
       unsupported.version = version;
       let unsupported = bincode::serde::encode_to_vec(
         &unsupported,
         bincode::config::standard(),
       )?;
-      assert!(VerifierProfile::from_bytes(&unsupported).is_err());
+      assert!(VerifyingKey::from_bytes(&unsupported).is_err());
     }
 
     // Verify using only the portable object after deleting the SRS and all checkpoints.
     fs::remove_dir_all(&dir)?;
-    profile.verify(&packet, &init_claim::INIT_PUBLIC_WORDS)?;
-    let mut wrong_range: VerifierProfile = decode(&portable)?;
+    vk.verify(&packet, &init_claim::INIT_PUBLIC_WORDS)?;
+    let mut wrong_range: VerifyingKey = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());
     #[cfg(feature = "bn254")]
@@ -1223,7 +1207,7 @@ mod tests {
         Srs::unsafe_dev_setup_prefix(2, max_domain - 1, b"outer-domain-cap");
       let params =
         crate::kzg::VerifierParams::with_max_trace_len(&anchors, max_domain);
-      let mut oversized: VerifierProfile = decode(&portable)?;
+      let mut oversized: VerifyingKey = decode(&portable)?;
       oversized.heights = [max_domain; 2];
       oversized.parameters = params.to_bytes()?;
       for setup in &mut oversized.setup {
@@ -1239,7 +1223,7 @@ mod tests {
       }
       let bytes =
         bincode::serde::encode_to_vec(oversized, bincode::config::standard())?;
-      let error = VerifierProfile::from_bytes(&bytes).err().unwrap();
+      let error = VerifyingKey::from_bytes(&bytes).err().unwrap();
       assert!(error.to_string().contains("quotient domains exceed"));
     }
     Ok(())
@@ -1313,7 +1297,7 @@ mod tests {
       let packet = fs::read(dir.join("kzg/packet.bin"))?;
       verify_saved(&dir, &packet, None)?;
       outputs.push(
-        ["proof.compact.bin", "packet.bin", "profile-id.bin"]
+        ["proof.compact.bin", "packet.bin", "vk-id.bin"]
           .map(|name| fs::read(dir.join("kzg").join(name)).unwrap()),
       );
     }

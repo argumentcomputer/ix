@@ -60,12 +60,12 @@ pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
   Ok(ClaimSchema::from_claims(claims, &public)?)
 }
 
-struct Input {
-  system: System<KzgConfig>,
-  proof: Proof<KzgConfig>,
-  claims: Vec<Vec<Scalar>>,
-  logs: Vec<u8>,
-  proof_bytes: Vec<u8>,
+pub(super) struct Input {
+  pub(super) system: System<KzgConfig>,
+  pub(super) proof: Proof<KzgConfig>,
+  pub(super) claims: Vec<Vec<Scalar>>,
+  pub(super) logs: Vec<u8>,
+  pub(super) proof_bytes: Vec<u8>,
   input_blake3: BTreeMap<String, String>,
   setup_identity: [u8; 32],
   development_srs: bool,
@@ -86,23 +86,26 @@ impl Input {
     skip_all,
     name = "compression/load_input"
   )]
-  fn load(dir: &Path, config: &super::super::WorkerConfig) -> Result<Self> {
+  pub(super) fn load(
+    dir: &Path,
+    config: &super::super::WorkerConfig,
+  ) -> Result<Self> {
     let start = Instant::now();
     let mut input_blake3 = BTreeMap::new();
     let manifest: Manifest = load(dir, "manifest.bin", &mut input_blake3)?;
     let count = manifest.heights.len();
     let height =
-      *manifest.heights.iter().max().ok_or("empty recursive profile")?;
+      *manifest.heights.iter().max().ok_or("empty recursive verifying key")?;
     // The partition count follows the outer FRI proof's layout; the trace
-    // height is the supported profile's. Profile identity is bound separately
-    // through the profile id and the application's bundled verifier.
+    // height is the supported verifying key's. InnerVerifyingKey identity is bound separately
+    // through the verifying key id and the application's bundled verifier.
     if ![1 << 24, 1 << 25].contains(&height)
       || count < super::super::first::MIN_PARTITIONS
       || manifest.widths.len() != count
       || manifest.widths.contains(&0)
       || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
     {
-      return Err("unsupported partition profile".into());
+      return Err("unsupported partition verifying key".into());
     }
     let statement = statement::from_rows(&manifest.claims)?;
     if manifest.claims
@@ -192,7 +195,7 @@ pub(crate) fn check(
   let input = Input::load(dir, config)?;
   let build_start = Instant::now();
   let plan = input.plan()?;
-  let fixed_profile = plan.identity();
+  let plan_identity = plan.identity();
   let built = tracing::info_span!("compression/build_circuit")
     .in_scope(|| plan.build(&input.proof, &input.claims))?;
   let build_seconds = build_start.elapsed().as_secs_f64();
@@ -218,7 +221,7 @@ pub(crate) fn check(
     "input_proof_blake3": blake3::hash(&input.proof_bytes).to_hex().to_string(),
     "input_blake3": input.input_blake3,
     "setup_id": blake3::Hash::from_bytes(input.setup_identity).to_hex().to_string(),
-    "frontend_identity": blake3::Hash::from_bytes(fixed_profile).to_hex().to_string(),
+    "frontend_identity": blake3::Hash::from_bytes(plan_identity).to_hex().to_string(),
     "load_and_native_verify_seconds": input.load_seconds,
     "build_seconds": build_seconds,
     "total_seconds": start.elapsed().as_secs_f64(),
@@ -233,7 +236,7 @@ pub(crate) fn check(
       built,
       assignment,
       stage,
-      &fixed_profile,
+      &plan_identity,
       &statement,
       config,
     )?;

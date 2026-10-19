@@ -27,8 +27,24 @@ type scalarProgram struct {
 	Nodes                               []instruction
 	Assertions, Coefficients, Witnesses []int
 }
-type profile struct {
-	Format, ProfileID, SetupID, Seed                    string
+
+// One entry of a claim row: a circuit constant or an index into the
+// verifier-supplied public scalars.
+type claimSlot struct {
+	Constant *string
+	Public   *int
+}
+
+// Where the verifier takes one public scalar from: a constant, a word of the
+// fixed statement prefix, a word of the claim digest, or a half of a deferred
+// pairing operand's encoding.
+type publicSource struct {
+	Constant                         *string
+	Prefix, DigestWord, DeferredHalf *int
+}
+
+type verifyingKey struct {
+	Format, VKID, SetupID, Seed                         string
 	PublicMaxDegree                                     uint64
 	Prefix                                              []uint64
 	Circuits                                            []circuitShape
@@ -38,7 +54,57 @@ type profile struct {
 	Generator                                           pointJSON
 	OuterKeys, DeferredKeys                             []string
 	Program                                             scalarProgram
+	// Absent in verifying keys exported before first-stage wrapping: the
+	// recursive packet then implies one accumulator, 23 claim rows
+	// `[94, 1, i, public_i]` and two deferred operands.
+	AccumulatorCount *int
+	Claims           [][]claimSlot
+	Publics          []publicSource
 }
+
+func (p *verifyingKey) accumulators() int {
+	if p.AccumulatorCount == nil {
+		return 1
+	}
+	return *p.AccumulatorCount
+}
+
+func (p *verifyingKey) deferredCount() int {
+	return len(p.DeferredKeys)
+}
+
+func intPtr(v int) *int { return &v }
+
+func (p *verifyingKey) claimRows() [][]claimSlot {
+	if p.Claims != nil {
+		return p.Claims
+	}
+	rows := make([][]claimSlot, 23)
+	for i := range rows {
+		ns, one, index := "0x5e", "0x1", fmt.Sprintf("0x%x", i)
+		rows[i] = []claimSlot{{Constant: &ns}, {Constant: &one}, {Constant: &index}, {Public: intPtr(i)}}
+	}
+	return rows
+}
+
+func (p *verifyingKey) publicSources() []publicSource {
+	if p.Publics != nil {
+		return p.Publics
+	}
+	zero := "0x0"
+	sources := []publicSource{{Constant: &zero}}
+	for i := 0; i < 10; i++ {
+		sources = append(sources, publicSource{Prefix: intPtr(i)})
+	}
+	for i := 0; i < 8; i++ {
+		sources = append(sources, publicSource{DigestWord: intPtr(i)})
+	}
+	for i := 0; i < 4; i++ {
+		sources = append(sources, publicSource{DeferredHalf: intPtr(i)})
+	}
+	return sources
+}
+
 type witnessJSON struct {
 	ClaimDigest      string
 	Points, Deferred []pointJSON
@@ -113,8 +179,8 @@ func g2Keys(encoded []string) ([2]nativeG2, error) {
 	return result, nil
 }
 
-func loadProfile(path string) (*profile, error) {
-	var p profile
+func loadVerifyingKey(path string) (*verifyingKey, error) {
+	var p verifyingKey
 	if err := decodeJSON(path, &p); err != nil {
 		return nil, err
 	}
@@ -124,11 +190,61 @@ func loadProfile(path string) (*profile, error) {
 	return &p, nil
 }
 
-func (p *profile) validate() error {
-	if p.Format != profileFormat || len(p.Prefix) != 10 || len(p.Circuits) != 2 || len(p.Matrices) != 8 || p.PointCount < 1 || p.PointCount > 256 || p.FieldCount < 1 || p.FieldCount > 4096 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 3 || p.WitnessOffset+p.OpeningCount != p.PointCount {
-		return fmt.Errorf("invalid wrapper profile dimensions")
+func (p *verifyingKey) validate() error {
+	if p.Format != vkFormat || len(p.Prefix) != 10 || len(p.Circuits) < 2 || len(p.Matrices) != 4*len(p.Circuits) || p.PointCount < 1 || p.PointCount > 4096 || p.FieldCount < 1 || p.FieldCount > 65536 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 16 || p.WitnessOffset+p.OpeningCount != p.PointCount || p.accumulators() != len(p.Circuits)-1 || (p.deferredCount() != 0 && p.deferredCount() != 2) {
+		return fmt.Errorf("invalid wrapper verifying key dimensions")
 	}
-	if _, err := unhex(p.ProfileID, 32); err != nil {
+	publicCount := len(p.publicSources())
+	for i, source := range p.publicSources() {
+		set := 0
+		if source.Constant != nil {
+			set++
+			if _, err := canonical(*source.Constant, scalarModulus()); err != nil {
+				return err
+			}
+		}
+		if source.Prefix != nil {
+			set++
+			if *source.Prefix < 0 || *source.Prefix >= 10 {
+				return fmt.Errorf("invalid prefix public %d", i)
+			}
+		}
+		if source.DigestWord != nil {
+			set++
+			if *source.DigestWord < 0 || *source.DigestWord >= 8 {
+				return fmt.Errorf("invalid digest public %d", i)
+			}
+		}
+		if source.DeferredHalf != nil {
+			set++
+			if *source.DeferredHalf < 0 || *source.DeferredHalf >= 2*p.deferredCount() {
+				return fmt.Errorf("invalid deferred public %d", i)
+			}
+		}
+		if set != 1 {
+			return fmt.Errorf("public source %d must have exactly one kind", i)
+		}
+	}
+	for r, row := range p.claimRows() {
+		if len(row) == 0 || len(row) > 16 {
+			return fmt.Errorf("invalid claim row %d", r)
+		}
+		for _, slot := range row {
+			switch {
+			case slot.Constant != nil && slot.Public == nil:
+				if _, err := canonical(*slot.Constant, scalarModulus()); err != nil {
+					return err
+				}
+			case slot.Public != nil && slot.Constant == nil:
+				if *slot.Public < 0 || *slot.Public >= publicCount {
+					return fmt.Errorf("claim row %d references an unknown public", r)
+				}
+			default:
+				return fmt.Errorf("claim row %d slot must be a constant or a public", r)
+			}
+		}
+	}
+	if _, err := unhex(p.VKID, 32); err != nil {
 		return err
 	}
 	if _, err := unhex(p.SetupID, 32); err != nil {
@@ -160,14 +276,16 @@ func (p *profile) validate() error {
 	if err != nil {
 		return err
 	}
-	inner, err := g2Keys(p.DeferredKeys)
-	if err != nil {
-		return err
+	if p.deferredCount() == 2 {
+		inner, err := g2Keys(p.DeferredKeys)
+		if err != nil {
+			return err
+		}
+		if curveID == ecc.BLS12_381 && (!outer[0].Equal(&inner[0]) || !outer[1].Equal(&inner[1])) {
+			return fmt.Errorf("Filecoin pairing anchors differ")
+		}
 	}
-	if curveID == ecc.BLS12_381 && (!outer[0].Equal(&inner[0]) || !outer[1].Equal(&inner[1])) {
-		return fmt.Errorf("Filecoin pairing anchors differ")
-	}
-	if len(p.Program.Coefficients) != p.PointCount+len(p.Fixed)+1 || len(p.Program.Witnesses) != p.OpeningCount || len(p.Program.Assertions) != 2 {
+	if len(p.Program.Coefficients) != p.PointCount+len(p.Fixed)+1 || len(p.Program.Witnesses) != p.OpeningCount || len(p.Program.Assertions) != len(p.Circuits) {
 		return fmt.Errorf("invalid scalar program outputs")
 	}
 	for i, n := range p.Program.Nodes {
@@ -178,7 +296,7 @@ func (p *profile) validate() error {
 				return err
 			}
 		case "input":
-			bound := map[string]int{"challenge": 6, "value": p.FieldCount, "public": 23}[n.Kind]
+			bound := map[string]int{"challenge": 6, "value": p.FieldCount, "public": publicCount}[n.Kind]
 			if n.Index < 0 || n.Index >= bound {
 				return fmt.Errorf("invalid scalar input")
 			}
@@ -204,17 +322,17 @@ func (p *profile) validate() error {
 	return nil
 }
 
-func newCircuit(p *profile) *wrapperCircuit {
-	return &wrapperCircuit{Profile: p, Points: make([]circuitG1, p.PointCount), Values: make([]frontend.Variable, p.FieldCount)}
+func newCircuit(p *verifyingKey) *wrapperCircuit {
+	return &wrapperCircuit{VK: p, Points: make([]circuitG1, p.PointCount), Deferred: make([]circuitG1, p.deferredCount()), Values: make([]frontend.Variable, p.FieldCount)}
 }
 
-func witnessAssignment(p *profile, path string) (*wrapperCircuit, error) {
+func witnessAssignment(p *verifyingKey, path string) (*wrapperCircuit, error) {
 	var w witnessJSON
 	if err := decodeJSON(path, &w); err != nil {
 		return nil, err
 	}
-	if len(w.Points) != p.PointCount || len(w.Deferred) != 2 || len(w.Values) != p.FieldCount {
-		return nil, fmt.Errorf("witness dimensions differ from profile")
+	if len(w.Points) != p.PointCount || len(w.Deferred) != p.deferredCount() || len(w.Values) != p.FieldCount {
+		return nil, fmt.Errorf("witness dimensions differ from verifying key")
 	}
 	result := newCircuit(p)
 	digest, err := unhex(w.ClaimDigest, 32)

@@ -6,7 +6,7 @@ import {Scalar} from "./Scalar.sol";
 
 /// Test-only conformance circuit; this does not prove a Lean library computation or an inner recursive proof.
 contract GeneratedVerifier is KzgVerifier {
-    function _profile() internal pure override returns (Profile memory p) {
+    function _vk() internal pure override returns (VerifyingKey memory p) {
         p.id = hex"0deb36de58d4c36e4c50b8aca00870e2247446b5d0388232bac081e7a80a3ecb";
         p.seed =
             hex"6d756c74692d737461726b2f6b7a672f6b656363616b3235362f763105000000000000000200000000000000feffff0f0000000048b74609da5ec9a9d59efb1d4c9d91d81815a304a8baab8ba35af4fe0145239f97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8ae3f321e2ba24e302542a3ecf8847e8e820f9ca1b3a6a63bae25140f215344314e1bfc9c36bf2c3dcbe94dec33d71f3cb16010f1b3d33aa5f3f608c385400979ed36dc3fab53d3626f519c74d7e1ebef62c9ad35796404ce2fc3ebb42167b5a1050ac27c3527072b81af0fa9a683e226da79275f2985c9e89a0db969b76e0b6be94fee874c48586737ad5588cf1e1041";
@@ -127,7 +127,7 @@ contract GeneratedVerifier is KzgVerifier {
     {
         if (ci == 0) return _evaluateCircuit0(proof, view_);
         if (ci == 1) return _evaluateCircuit1(proof, view_);
-        revert InvalidProfile();
+        revert InvalidVerifyingKey();
     }
 
     function _evaluateCircuit0(Proof memory proof, EvaluationView memory)
@@ -187,7 +187,7 @@ contract GeneratedVerifier is KzgVerifier {
         values[6] = proof.values[proof.matrices[7].valueOffset + 3];
     }
 
-    function _proofLayout(Profile memory, Proof memory proof)
+    function _proofLayout(VerifyingKey memory, Proof memory proof)
         internal
         pure
         override
@@ -207,7 +207,7 @@ contract GeneratedVerifier is KzgVerifier {
         return (37, 19);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory proof, uint256[6] memory ch)
+    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)
         internal
         pure
         override

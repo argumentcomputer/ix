@@ -20,11 +20,11 @@ import (
 )
 
 func compileProfile(path, dir string) error {
-	p, err := loadProfile(path)
+	p, err := loadVerifyingKey(path)
 	if err != nil {
 		return err
 	}
-	profileHash, err := fileHash(path)
+	vkHash, err := fileHash(path)
 	if err != nil {
 		return err
 	}
@@ -33,8 +33,8 @@ func compileProfile(path, dir string) error {
 		if err != nil {
 			return err
 		}
-		if m.ProfileSHA256 != profileHash.SHA256 {
-			return fmt.Errorf("artifact directory belongs to a different profile")
+		if m.InnerVKSHA256 != vkHash.SHA256 {
+			return fmt.Errorf("artifact directory belongs to a different verifying key")
 		}
 		if err := m.checkFile(dir, "circuit.bin"); err != nil {
 			return err
@@ -60,7 +60,7 @@ func compileProfile(path, dir string) error {
 	}
 	m := &manifest{
 		Format: artifactFormat, ExecutableSHA256: executable.SHA256,
-		ProfileSHA256: profileHash.SHA256, Constraints: ccs.GetNbConstraints(),
+		InnerVKSHA256: vkHash.SHA256, Constraints: ccs.GetNbConstraints(),
 		PublicInputs: ccs.GetNbPublicVariables(),
 		Commitments:  len(ccs.GetCommitments().CommitmentIndexes()),
 		Domain:       ecc.NextPowerOfTwo(uint64(ccs.GetNbConstraints() + ccs.GetNbPublicVariables())),
@@ -69,7 +69,7 @@ func compileProfile(path, dir string) error {
 	if m.PublicInputs != 2 {
 		return fmt.Errorf("expected two public digest limbs")
 	}
-	if err := atomicFile(filepath.Join(dir, "profile.json"), func(w io.Writer) error {
+	if err := atomicFile(filepath.Join(dir, "vk.json"), func(w io.Writer) error {
 		f, err := os.Open(path)
 		if err != nil {
 			return err
@@ -80,7 +80,7 @@ func compileProfile(path, dir string) error {
 	}); err != nil {
 		return err
 	}
-	m.Files["profile.json"] = profileHash
+	m.Files["vk.json"] = vkHash
 	if err := saveBinary(dir, "circuit.bin", ccs, m); err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func compileProfile(path, dir string) error {
 	return nil
 }
 
-func loadCircuit(dir string) (*profile, constraint.ConstraintSystem, *manifest, error) {
+func loadCircuit(dir string) (*verifyingKey, constraint.ConstraintSystem, *manifest, error) {
 	m, err := loadManifest(dir)
 	if err != nil {
 		return nil, nil, nil, err
@@ -99,7 +99,7 @@ func loadCircuit(dir string) (*profile, constraint.ConstraintSystem, *manifest, 
 	if err := m.checkFile(dir, "circuit.bin"); err != nil {
 		return nil, nil, nil, err
 	}
-	p, err := loadProfile(filepath.Join(dir, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -175,7 +175,7 @@ func run(args []string) error {
 	if len(args) == 6 && args[0] == "verify" {
 		return verify(args[1], args[2], args[3], args[4], args[5])
 	}
-	return fmt.Errorf("usage: PLONK helper compile <profile.json> <artifacts> | check-witness <artifacts> <witness.json> | import-lagrange-sp1 <artifacts> <ix-srs.bin> <trusted-srs-blake3> <plonk_pk.bin> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
+	return fmt.Errorf("usage: PLONK helper compile <verifying key.json> <artifacts> | check-witness <artifacts> <witness.json> | import-lagrange-sp1 <artifacts> <ix-srs.bin> <trusted-srs-blake3> <plonk_pk.bin> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
 }
 
 func main() {

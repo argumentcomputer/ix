@@ -66,7 +66,7 @@ required-features = ["bn254"]
 [features]
 bls12-381 = []
 # BN254 accepts admitted Ignition or development setup; CUDA support is experimental.
-# Production parameters and terminal proof backends require separate profiles.
+# Production parameters and terminal proof backends require separate vks.
 bn254 = ["dep:ark-bn254"]
 solidity = ["bls12-381"]
 plonk = []

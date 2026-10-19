@@ -23,9 +23,9 @@ generation from public parameters are acceptable.
 
 Switch the final ix KZG transcript from Keccak back to BLAKE3 and add the
 terminal PLONK stage. Reuse ix's existing BLAKE3 transcript definition and
-recursive-verifier vectors. Regenerate the final profile, packet fixtures and
+recursive-verifier vectors. Regenerate the final verifying key, packet fixtures and
 wrapper keys together; an existing Keccak packet cannot be converted by changing
-its identifier. Backward compatibility with the Keccak profile is not required.
+its identifier. Backward compatibility with the Keccak verifying key is not required.
 The earlier compression stages and Filecoin parameter ownership remain intact.
 
 Implementation baseline: ix `sb/solidity-verifier` at
@@ -33,7 +33,7 @@ Implementation baseline: ix `sb/solidity-verifier` at
 `sb/proof-compression` at `eb50b1b2e08e6f4d5926617fd0773d2a7c8eeb8d`.
 It retains multi-stark `8b6c3fbdd8575bfeb818a32acf06509bac81ff3b` and the existing
 Filecoin setup implementation. Source links pin this baseline. Refresh the
-exported profile and fixtures together if the inner protocol changes.
+exported verifying key and fixtures together if the inner protocol changes.
 
 ## Existing ix components to reuse
 
@@ -46,9 +46,9 @@ independent Filecoin authentication implementation.
 | [SetupConfig and SetupSource][ix-setup] | Reuse environment selection, explicit development policy, authenticated SRS loading, and verifier parameters. |
 | [Filecoin loader][ix-filecoin] | Reuse receipt and chunk authentication, pinned anchors, validated point decoding, and the provisioned prefix cache. |
 | [Srs and PublicSetup][ix-srs] | Preserve the ceremony identity and complete public degree independently of the loaded prefix. |
-| [Bundled verifier catalog][ix-catalog] | Select and authenticate the inner profile and its aggregation-program prefix. |
+| [Bundled verifier catalog][ix-catalog] | Select and authenticate the inner verifying key and its aggregation-program prefix. |
 | [Recursive packet verifier][ix-verification] | Use as the native acceptance oracle, including the separate deferred pairing equation. |
-| [Statement encoding][ix-statement] and [compact proof codec][ix-codec] | Derive canonical packet shape and claim binding from the trusted profile. |
+| [Statement encoding][ix-statement] and [compact proof codec][ix-codec] | Derive canonical packet shape and claim binding from the trusted verifying key. |
 | [Solidity exporter][ix-exporter] and [opening code generator][ix-opening-export] | Share validated graph instructions, matrix layout, opening formulas and differential vectors with the gnark circuit. |
 | [Recursive verifier gadgets][ix-recursive] | Reuse constraint descriptions, test vectors, and scalar/MSM verification logic where applicable. |
 | [Fixed preprocessing cache][ix-cache] and [storage helpers][ix-storage] | Reuse cache identity principles, checksums, and durable publication helpers. |
@@ -60,7 +60,7 @@ the resulting pairing equation and the separate deferred pairing equation.
 
 ## Proof relation and public inputs
 
-Pin the inner verifier profile, its constraints and fixed commitments, Filecoin
+Pin the inner verifying key, its constraints and fixed commitments, Filecoin
 anchors, domain sizes, transcript parameters, and aggregation-program prefix in
 the wrapper circuit. A proof cannot supply its own trusted verification key or
 constraint graph.
@@ -68,15 +68,15 @@ constraint graph.
 The private witness is the existing final packet, or an equivalent decoded
 representation whose canonical encodings are constrained. The current fixture
 is 2,181 bytes and contains 15 outer-proof G1 points, 37 scalar values, two
-deferred G1 pairing operands, the statement, and the profile identifier. Derive
-dimensions from the trusted codec when exporting a profile rather than treating
+deferred G1 pairing operands, the statement, and the verifying key identifier. Derive
+dimensions from the trusted codec when exporting a verifying key rather than treating
 these fixture counts as a general protocol rule.
 
 Expose the existing 32-byte claim digest as two public 128-bit limbs. For digest
 bytes `d[0..32]`, define each limb by little-endian packing of its consecutive
 16-byte half. Constrain the limbs to 128 bits and reconstruct the eight
 little-endian 32-bit words in statement positions 10 through 17. Statement
-positions 0 through 9 are constants from the authenticated profile.
+positions 0 through 9 are constants from the authenticated verifying key.
 
 This preserves ix's existing BLAKE3 claim digest without adding a new hash of the
 statement. Native callers compute the expected digest through the existing ix
@@ -87,7 +87,7 @@ the proof.
 
 The circuit must enforce all of the following:
 
-1. Exact profile and shape, canonical scalar and point encodings, and the public
+1. Exact verifying key and shape, canonical scalar and point encodings, and the public
    statement binding.
 2. The existing BLAKE3 transcript, including parameter seeding, observation
    order, lengths, canonical encodings, challenge reduction and opening
@@ -229,7 +229,7 @@ argument, adversarial coverage and net constraint saving have been reviewed.
 
 #### Measured BN254 candidates
 
-The actual Init profile was compiled with the pinned gnark revision on
+The actual Init verifying key was compiled with the pinned gnark revision on
 2026-10-16. The baseline separate-pairing circuit has 17,996,083 rows including
 its two public inputs. Randomized batching reduces that to 17,530,148, still
 752,932 above `2^24`. Selecting gnark's complete classic-GLV multiplication
@@ -241,9 +241,9 @@ See the [component and correctness results](bls-plonk-wrapper-status.md#bn254-pa
 The experimental BN254 batching input is the concatenation of:
 
 1. ASCII `ix/plonk/pairing-batch/bn254/v1` followed by one zero byte.
-2. The 32-byte BLAKE3 digest of `json.Marshal` on the validated Go `profile`
+2. The 32-byte BLAKE3 digest of `json.Marshal` on the validated Go `verifying key`
    struct. Struct field order and string spellings are preserved. This is a
-   circuit constant committing to the inner profile, setup identity, G1 basis
+   circuit constant committing to the inner verifying key, setup identity, G1 basis
    anchor, ordered G2 anchors, scalar program, seed and fixed statement prefix.
 3. The two public claim limbs, each encoded as 16 little-endian bytes.
 4. The final 32-byte state from replaying the inner transcript: XOF bytes
@@ -290,12 +290,12 @@ against that exact revision. The BLS12-381 PLONK backend and curve gadgets used
 for the cost table are unchanged from v0.16.4.
 
 Place the Go module under `tools/bls-plonk-wrapper/` and add a narrow Rust adapter
-under `crates/proof-compression/src/plonk/`. Rust owns profile selection,
+under `crates/proof-compression/src/plonk/`. Rust owns verifying key selection,
 Filecoin parameter loading, packet decoding, and integration with the existing
 worker. The helper owns circuit compilation, PLONK indexing, proving, native
 wrapper verification, and Solidity export.
 
-Use a versioned canonical interchange format for the trusted profile, witness,
+Use a versioned canonical interchange format for the trusted verifying key, witness,
 and SRS adapter output. Specify lengths, endianness, field bounds, infinity
 encoding, and artifact digests. Never exchange an arkworks or gnark in-memory
 Montgomery representation as the transport format.
@@ -318,7 +318,7 @@ overstate this portion of the circuit.
 Distinguish the final ix KZG transcript, which is replayed inside the circuit,
 from the outer PLONK transcript, which native and Solidity verifiers replay.
 Use gnark's matching native/Solidity configuration for the latter. Freeze both
-choices in the wrapper profile and test their encodings independently.
+choices in the wrapper verifying key and test their encodings independently.
 
 ### SP1 comparison and GPU support
 
@@ -408,7 +408,7 @@ The full proof, independent native/Rust verification and negative checks passed.
 Core proving took **53.785 seconds**, the fresh process **73.704 seconds**, peak
 RSS **25.19 GiB**, and in-memory verification **1.488 ms**. Native/enveloped
 proof sizes remain 584/624 bytes. These are one prepared-key proof sample on
-48 logical CPUs with uncontrolled OS page-cache state; repeat and profile this
+48 logical CPUs with uncontrolled OS page-cache state; repeat and verifying key this
 configuration before projecting GPU gains. The historical 104.33-second core
 result belongs to the old `2^25` circuit.
 
@@ -440,7 +440,7 @@ Exclusive classification of sampled stacks gives the following CPU-work split:
 | Remaining visible solver, trace, division and runtime work | 0.67% |
 
 These are aggregate thread CPU samples, **not wall-clock stage percentages**.
-Most FFT/MSM worker stacks omit the launching phase, so the profile does not
+Most FFT/MSM worker stacks omit the launching phase, so the verifying key does not
 separate L/R/O from H commitments or N-sized from M-sized transforms. It supports
 accelerating MSMs and the complete numerator/FFT path together; stage spans are
 still required for a critical-path speedup estimate. Evidence is in
@@ -1090,7 +1090,7 @@ and point validation.
 Separate reusable Lagrange SRS preparation from circuit-specific deterministic
 PLONK indexing. Put derived artifacts in a distinct wrapper cache namespace,
 using the existing storage/checksum helpers. Bind cache entries to the Filecoin
-identity and receipt, inner profile, circuit digest, domain size, backend and
+identity and receipt, inner verifying key, circuit digest, domain size, backend and
 compiler versions, outer transcript, and public-input schema. Include the
 relevant executable identity for operational cache invalidation.
 
@@ -1104,7 +1104,7 @@ key and expected claim digest; it must not require a proving SRS file.
 ### 1 Share the exporter and switch the final transcript
 
 Change final-stage proving and verifier construction to BLAKE3 together. Bind
-the transcript choice to the profile and invalidate stale keys and caches.
+the transcript choice to the verifying key and invalidate stale keys and caches.
 Generate small positive and outer-valid/deferred-invalid Filecoin fixtures with
 the new transcript before regenerating a production aggregate packet.
 
@@ -1120,7 +1120,7 @@ Generate native intermediate vectors for BLAKE3 challenges, scalar identities,
 opening MSM results and both pairing equations. Include block/chunk/XOF
 boundaries from ix's transcript tests.
 
-Deliverable: authenticated profiles and reproducible small fixtures with native
+Deliverable: authenticated verifying keys and reproducible small fixtures with native
 verification and exporter/circuit agreement.
 
 ### 2 Size components before the complete circuit
@@ -1137,7 +1137,7 @@ Implement and measure the components over BLS12-381 Fr separately:
 | Pairings | Two fixed-G2 two-pair checks versus one randomized two-pair check, including the batching transcript and extra scalar multiplications. |
 
 Count fixed-commitment relations only after validating them for the exported
-profile. Keep all variable-point validation even when a coefficient is zero.
+verifying key. Keep all variable-point validation even when a coefficient is zero.
 Use the optimized `PairingCheck` gadget in both variants. Choose batching only
 if its reviewed soundness argument and measured cost justify it.
 
@@ -1145,7 +1145,7 @@ Then compile the whole circuit and record constraints, wires, public inputs,
 extra committed polynomials, padded domain, witness-generation time and peak
 memory. Component counts may not add exactly because range checks and
 commitments can be shared. Complete sizing before large SRS conversion or
-full-profile proving. BLAKE3 is the required transcript; a Poseidon2 redesign
+full-verifying key proving. BLAKE3 is the required transcript; a Poseidon2 redesign
 is outside this implementation.
 
 Deliverable: valid witnesses satisfy the circuit, adversarial witnesses fail,
@@ -1169,11 +1169,11 @@ and corrupted or mismatched derived artifacts are rejected.
 
 Produce a full wrapper proof for the regenerated BLAKE3 Filecoin packet and verify it
 against its independently expected claim digest. Repeat with another valid
-statement under the same profile. Use the same wrapper key for both.
+statement under the same verifying key. Use the same wrapper key for both.
 
 Test each inner obligation independently. In particular, include a packet with
 a valid outer KZG proof and an invalid deferred pairing equation. Exercise
-modified claims, transcript challenges, opening values, proof points, profile
+modified claims, transcript challenges, opening values, proof points, verifying key
 metadata, and canonical-encoding boundaries. Check that corrupted outer PLONK
 proofs fail in the native wrapper verifier. Cover both coordinates/flags of
 infinity, zero scalars, cancelling MSM terms and mismatched native/emulated
@@ -1208,7 +1208,7 @@ and assign a new proof address. Give the wrapper its own versioned proof format
 and verification dispatch; do not reinterpret an existing KZG packet as PLONK.
 
 Package the helper beside the worker through Lake and Nix. Track Go sources,
-`go.mod`, `go.sum`, profiles, fixtures, and backend versions in build inputs and
+`go.mod`, `go.sum`, verifying keys, fixtures, and backend versions in build inputs and
 cache keys. Proving must not require Go or Cargo on the deployment host.
 Add focused CPU CI coverage and explicit resource-heavy benchmark targets.
 
@@ -1218,7 +1218,7 @@ native/Solidity verification works without access to the proving cache.
 ## Performance measurements and targets
 
 Measure the added wrapper separately from the existing compression pipeline.
-Use a fixed statement, trusted profile, backend revision, compiler, machine,
+Use a fixed statement, trusted verifying key, backend revision, compiler, machine,
 and thread configuration. Use all available CPUs. The authorized development
 machine has no CUDA GPU and 48 GB usable RAM; start with small examples and
 component tests and admit larger runs only when sizing fits that memory budget.
@@ -1263,7 +1263,7 @@ target. Compile the actual circuit to determine `m` and measure its generated
 contract; the curve subtotals alone are not transaction estimates.
 
 The [pinned direct-verifier record][ix-direct-baseline] reports 761,311 gas around
-an external call for the aggregate Filecoin profile, excluding transaction
+an external call for the aggregate Filecoin verifying key, excluding transaction
 intrinsic/calldata costs, with 3,748 ABI bytes. Reproduce it as a real verify-only
 transaction under the same fork/compiler as the wrapper. Use adapters that both
 accept the independently expected digest, and separately record adapter costs;
@@ -1275,7 +1275,7 @@ Measure the direct verifier's outstanding fixed-commitment simplification,
 witness-MSM split and reviewed randomized pairing batching. The existing
 design calculations suggest roughly 47k, 7k and 89k curve-gas savings
 respectively, but they are not measured cumulative savings for the aggregate
-profile. Recompute the combined MSM sizes and overhead rather than subtracting
+verifying key. Recompute the combined MSM sizes and overhead rather than subtracting
 the three estimates. Execution near 620k is a scenario to beat, not an observed
 baseline. The acceptance comparison must use the combined measured result.
 
@@ -1297,7 +1297,7 @@ additional proving time does not predict this wrapper's proving time.
   identity cases. Shared exporter formulas drive the circuit.
 - Native and Solidity verification agree; neither needs the proving SRS.
 - The prepared parameters and keys can be reused safely across statements of
-  the fixed profile, and artifact corruption or identity mismatch is rejected.
+  the fixed verifying key, and artifact corruption or identity mismatch is rejected.
 - Proving time, memory, native verification time, successful Solidity gas,
   calldata, and deployment costs are measured with the stated boundaries.
 - The wrapper meets the 500k/25% transaction-gas target and the measured proving

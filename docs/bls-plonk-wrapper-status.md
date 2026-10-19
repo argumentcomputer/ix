@@ -13,7 +13,7 @@ Use this document for current measurements, validation, artifact identities and
 remaining work. The [plan](bls-plonk-wrapper-plan.md) records circuit/CUDA design
 and soundness decisions; the [compression README](../crates/proof-compression/README.md)
 covers BLS/BN254 KZG, Ignition provisioning and cache operation; the
-[helper README](../tools/bls-plonk-wrapper/README.md) gives PLONK build/run/profile
+[helper README](../tools/bls-plonk-wrapper/README.md) gives PLONK build/run/verifying key
 controls; and the [contract README](../contracts/plonk/README.md) gives EVM replay
 instructions. Sections after **Original implementation checkpoint** are historical.
 
@@ -21,14 +21,14 @@ instructions. Sections after **Original implementation checkpoint** are historic
 
 The `sb/bn254` working tree above `52c61479` regenerated both BLS KZG stages
 from the saved Init FRI input using authenticated Filecoin parameters and
-BLAKE3. The resulting profile exactly matches the bundled
+BLAKE3. The resulting verifying key exactly matches the bundled
 `aggregate-filecoin-v6.bin`, with BLAKE3
 `12ce28356f86ba34afb11b8e3b2c142f47ab9259e9c3f5751069bd1c41609084`.
 The expected public digest came from the original Init claim, independently
 of the wrapper witness. Both inner pairing obligations are constrained.
 
 The wrapper compiled to **21,184,618 constraints**, domain **2^25**, two
-public inputs and one extra commitment. This is the real Init profile,
+public inputs and one extra commitment. This is the real Init verifying key,
 distinct from the smaller conformance fixture measured below.
 
 | Measurement | Result | Boundary |
@@ -85,7 +85,7 @@ The generated key has not been activated in a production verifier catalog;
 complete CLI packaging and full-wrapper EVM verification remain separate work.
 
 The local report is `target/plonk-bench/report.json`. Frozen executables,
-input proofs, exported profile/witness, compiled circuit, SRS export,
+input proofs, exported verifying key/witness, compiled circuit, SRS export,
 Lagrange cache, proving/verifying keys, generated Solidity, proof and logs
 are under `/opt/dlami/nvme/ix-bls-plonk-52c61479/`, with `report.json` and
 `verification-timings.json` there. Successful preparation can be reused with
@@ -185,7 +185,7 @@ separate from the checked build configuration and worker/helper integration.
 
 ## BN254 pairing batching and reduction to 2^24
 
-On 2026-10-16, component compilation of the same actual Init profile isolated
+On 2026-10-16, component compilation of the same actual Init verifying key isolated
 the cost of the two pairing checks and the opening MSMs. Counts are SCS
 constraint differences; shared range checks affect component attribution.
 
@@ -217,7 +217,7 @@ default BN254 rational-reconstruction path. Complete arithmetic, point
 validation and both pairing obligations remain enabled. BLS already used the
 classic path, so its arithmetic selection is unchanged.
 
-The default helper compiled the real profile to 14,689,440 constraints, two
+The default helper compiled the real verifying key to 14,689,440 constraints, two
 public inputs, one commitment and domain 16,777,216. Its compiled witness
 diagnostic passed; changed claims and deferred operands were rejected by the
 compiled constraints. Classic-GLV MSMs matched native arithmetic on 36 cases
@@ -228,7 +228,7 @@ commitment and deferred-operand mutations without native preverification.
 
 Batching remains an internal measurement variant, with no CLI switch and no
 production key. It requires identical ordered G2 anchors, binds a fresh
-nonzero 512-bit BLAKE3 challenge to the inner profile, claim, final inner
+nonzero 512-bit BLAKE3 challenge to the inner verifying key, claim, final inner
 transcript state and all four pairing operands, and uses complete scalar
 multiplications and additions. Its tests reject independently invalid equations,
 deliberate cancellation at a predetermined coefficient, mismatched anchors and
@@ -453,7 +453,7 @@ The next work should follow this evidence:
 
 The diagnostic report is `target/bn254-plonk-cuda/init-04-report.json`, with
 CPU profiles and span data under
-`/opt/dlami/nvme/ix-bn254-plonk-cuda-52c61479/init-04/` and text profile analyses
+`/opt/dlami/nvme/ix-bn254-plonk-cuda-52c61479/init-04/` and text verifying key analyses
 under `target/bn254-plonk-cuda/profile-analysis/`. The final proof also passed
 all 47 isolated EVM checks (`target/plonk-evm/init-04-cuda-fused/report.json`).
 The production helper built and verified that proof with no GPU visible and
@@ -569,16 +569,16 @@ bn254/plonk/init/2p24/4f27f4cb17c22d0e73de231ffbda679314c76a2103f24468af5c700b59
 
 Each contains the compiled circuit, proving/verifying keys, matching frozen
 helper and worker, monomial export and receipt, Lagrange cache, input witness,
-inner KZG packet/profile, original claim, proof encodings, Solidity verifier,
+inner KZG packet/verifying key, original claim, proof encodings, Solidity verifier,
 benchmark records, and a portable candidate verifier catalog. BN254 additionally
 includes the pinned Ignition admission and the Anvil verifier sources, fixture,
 receipts and traces. Existing ceremony objects are referenced rather than
 duplicated. Large KZG witness/fixed checkpoints, compiler caches and unfinished
 CUDA experiments at publication time are outside these PLONK archives. The
-subsequent completed CUDA benchmark/profile runs (`init-03` and `init-04`),
+subsequent completed CUDA benchmark/verifying key runs (`init-03` and `init-04`),
 MSM captures, and CUDA executables also remain local under the paths recorded
 above; they have not been uploaded. Their implementation, summarized findings
-and artifact locations are committed, while raw logs/profiles and captures
+and artifact locations are committed, while raw logs/verifying keys and captures
 remain in ignored `target/` directories and `/opt/dlami/nvme/`.
 
 Every upload used conditional creation and a server-validated full-object
@@ -638,17 +638,17 @@ caller's claim. Verification does not require the proving SRS.
 
 | Area | Files and behavior |
 | --- | --- |
-| BLAKE3 profiles | `crates/proof-compression/src/pipeline/{stages/wrap.rs,wrap/outer.rs,verifier.rs}` and `profiles/aggregate-*-v6.*`. New proving selects version 6/BLAKE3. Historical v5 decoding and direct Solidity fixtures remain. Production v6 profile metadata was regenerated; production v6 proof packets were not. |
+| BLAKE3 verifying keys | `crates/proof-compression/src/pipeline/{stages/wrap.rs,wrap/outer.rs,verifier.rs}` and `verifying-keys/aggregate-*-v6.*`. New proving selects version 6/BLAKE3. Historical v5 decoding and direct Solidity fixtures remain. Production v6 verifying key metadata was regenerated; production v6 proof packets were not. |
 | Shared verifier export | `pipeline/wrap/outer/solidity/plonk.rs` and `plonk/ir.rs` reuse the validated graph/opening layout. The scalar program is generated through multi-stark's graph sweep and `logup_constraint_values`, rather than another handwritten scalar verifier. |
-| Circuit | `tools/bls-plonk-wrapper/{blake3,profile,circuit}.go`. BLAKE3 block/tree/XOF behavior, canonical point encodings, curve/subgroup checks, native-to-emulated scalar binding, complete MSM arithmetic and two separate pairing checks. Identity maps to `(0,0)`. Trusted fixed-base relations are checked before folding coefficients. |
-| Parameters and artifacts | `pipeline/plonk.rs` and Go `{parameters,artifacts,backend}.go`. Rust authenticates Filecoin and exports canonical coordinates with a BLAKE3 receipt. Go derives/caches Lagrange points, prepares keys, proves, verifies and exports Solidity. Cache identities bind the setup, domain, receipt, profile and relevant executable. |
+| Circuit | `tools/bls-plonk-wrapper/{blake3,verifying key,circuit}.go`. BLAKE3 block/tree/XOF behavior, canonical point encodings, curve/subgroup checks, native-to-emulated scalar binding, complete MSM arithmetic and two separate pairing checks. Identity maps to `(0,0)`. Trusted fixed-base relations are checked before folding coefficients. |
+| Parameters and artifacts | `pipeline/plonk.rs` and Go `{parameters,artifacts,backend}.go`. Rust authenticates Filecoin and exports canonical coordinates with a BLAKE3 receipt. Go derives/caches Lagrange points, prepares keys, proves, verifies and exports Solidity. Cache identities bind the setup, domain, receipt, verifying key and relevant executable. |
 | Native integration | `pipeline/mod.rs`, worker dispatch, `crates/ffi`, `Ix/Cli/{Compression,CompressCmd}.lean`. Adds the `--plonk` flag, proof-envelope dispatch and independently trusted key catalog. Helper output goes to stderr so CLI proof-address output remains usable. |
 | Solidity | `contracts/plonk/`. An immutable generated-verifier address and digest-to-limb adapter, with positive, changed-digest, malformed-proof and deployment-size tests. Requires EIP-2537. |
 | Build and CI | `lakefile.lean`, `flake.nix`, `.github/workflows/{ci,bench-main,bench-pr}.yml`. Builds/installs the Go helper beside ix and the worker, exposes a standalone Nix package/check, and provisions Go for CI. The new CI job uses the existing Ubuntu 26 RunsOn image. |
 
 Go helper commands are `compile`, `check-witness`, `prepare`, `prove` and
 `verify`. Worker PLONK commands are `fixture`, `export`, `srs`,
-`profile-blake3` and `wrap`. See the helper and contract READMEs for their
+`vk-blake3` and `wrap`. See the helper and contract READMEs for their
 arguments. `check-witness` explicitly reports that it creates no proof; its
 diagnostic commitment hint is not used by production `plonk.Prove`.
 
@@ -757,7 +757,7 @@ commit. Paths are relative to this worktree unless absolute.
 
 The old compiled artifact binds the original helper hash. The new helper must
 compile into a new artifact directory; do not edit the manifest to bypass
-identity checks. The underlying conformance profile SHA-256 is
+identity checks. The underlying conformance verifying key SHA-256 is
 `195b35b3f9dc926aa9fe7a01719adc6cb9e6913e0c6443228ae3105d2466830b`, and the
 existing compiled circuit SHA-256 is
 `e6b895608883f29d03a5db1183e0083d0ceb75bf2fc3bf5c5b38f7f13ca677b4`.
@@ -784,12 +784,12 @@ The independently obtained receipts are:
    words are synthetic `1000+i`-style test values, so they cannot exercise
    `pipeline::verify` against a known claim preimage. Regenerate those witnesses
    with `statement::with_claim`, preserve the fixed aggregation prefix, and
-   check profile identity before reusing keys. This change is not implemented.
+   check verifying key identity before reusing keys. This change is not implemented.
 4. Exercise the complete Rust proof-envelope/catalog path, including wrong
    claim, wrong key and setup anchors, without a proving SRS available to the
    verifier. Expand native intermediate-value differential checks as needed.
 5. Generate and prove an actual aggregate v6/BLAKE3 packet. The new production
-   profiles are public metadata conversions, not new proof packets; the small
+   verifying keys are public metadata conversions, not new proof packets; the small
    conformance circuit does not establish production resource requirements.
 6. Run real local verification transactions with the full wrapper proof and
    compare the same gas boundary against the optimized direct verifier. The
@@ -815,7 +815,7 @@ its alternative pipeline proposals have not been implemented or measured.
 The current wrapper measurements are recorded above. Ignored `target/`
 artifacts and generated contract fixtures are excluded.
 
-For a split review, the natural groups are: BLAKE3 profiles and shared Rust
+For a split review, the natural groups are: BLAKE3 verifying keys and shared Rust
 export; Go circuit/backend and fixtures; ix CLI/catalog/build integration; and
 Solidity plus documentation. Some files cross those boundaries, so splitting
 requires hunk staging and independent validation of the resulting commits.

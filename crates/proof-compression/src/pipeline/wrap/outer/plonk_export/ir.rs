@@ -149,28 +149,49 @@ impl ops::MulAssign for Term<'_> {
   }
 }
 
+/// One entry of a claim row: a circuit constant or the index of a public
+/// scalar the verifier supplies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::pipeline::wrap::outer) enum ClaimSlot {
+  Constant(Scalar),
+  Public(usize),
+}
+
 pub(super) fn build(
   system: &System<KzgConfig>,
   layout: &codegen::OpeningLayout,
+  claims: &[Vec<ClaimSlot>],
 ) -> Result<Program> {
+  let circuits = system.circuits.len();
+  if circuits != layout.accumulator_count + 1 {
+    return Err("layout accumulator count differs from the system".into());
+  }
+  let public_count = claims
+    .iter()
+    .flatten()
+    .filter_map(|slot| match slot {
+      ClaimSlot::Public(index) => Some(index + 1),
+      ClaimSlot::Constant(_) => None,
+    })
+    .max()
+    .unwrap_or(0);
   let arena = Mutex::new(Program::default());
   let ch: [_; 6] = std::array::from_fn(|i| Term::input(&arena, "challenge", i));
   let values: Vec<_> =
     (0..layout.field_count).map(|i| Term::input(&arena, "value", i)).collect();
   let publics: Vec<_> =
-    (0..23).map(|i| Term::input(&arena, "public", i)).collect();
+    (0..public_count).map(|i| Term::input(&arena, "public", i)).collect();
   let [beta, gamma, alpha, zeta, v, r] = ch;
   let mut assertions = Vec::new();
   let mut accumulator = Term::ZERO;
-  for (i, value) in publics.iter().copied().enumerate() {
-    let row = [
-      Term::Constant(Scalar::from_u8(94)),
-      Term::ONE,
-      Term::Constant(Scalar::from_usize(i)),
-      value,
-    ];
-    let message =
-      row.into_iter().rev().fold(Term::ZERO, |acc, value| acc * gamma + value);
+  for row in claims {
+    let message = row.iter().rev().fold(Term::ZERO, |acc, slot| {
+      let value = match *slot {
+        ClaimSlot::Constant(value) => Term::Constant(value),
+        ClaimSlot::Public(index) => publics[index],
+      };
+      acc * gamma + value
+    });
     accumulator += (beta + message).inverse();
   }
   // An inverse node enforces the forbidden-challenge rejection even if its output is unused.
@@ -185,10 +206,10 @@ pub(super) fn build(
     let _ = vanishing.inverse();
     let first = vanishing * (zeta - Term::ONE).inverse();
     let last = vanishing * (zeta * omega - Term::ONE).inverse() * omega;
-    let next = if i == 0 { values[0] } else { Term::ZERO };
+    let next = if i + 1 < circuits { values[i] } else { Term::ZERO };
     let cp = [beta, gamma, accumulator, next];
     let rows = |round: usize| {
-      let m = &layout.matrices[round * 2 + i];
+      let m = &layout.matrices[round * circuits + i];
       let current = &values[m.value_offset..m.value_offset + m.width];
       let following = if m.rows == 2 {
         &values[m.value_offset + m.width..m.value_offset + 2 * m.width]

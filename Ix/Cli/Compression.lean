@@ -20,7 +20,7 @@ preprocessing and development SRS caches under `cacheRoot`. -/
 opaque compress (vk proof claim statement : @& ByteArray) (dir cacheRoot : @& String)
   (devSrs : Bool) (logHeight : UInt32) (terminalPlonk : Bool) : IO ByteArray
 
-/-- Verify with the profile bundled under the packet's id, whose pinned
+/-- Verify with the verifying key compiled in under the packet's id, whose pinned
 aggregation program fixes the statement for `claim`, and return the setup
 class: `"filecoin"` or `"development"`. Development proofs need `devSrs`.
 Needs neither the aggregation backend nor a GPU. -/
@@ -28,7 +28,7 @@ Needs neither the aggregation backend nor a GPU. -/
 opaque verify (proof claim : @& ByteArray) (devSrs : Bool) : IO String
 
 /-- Caches shared by every compression run: fixed preprocessing keyed by the
-executable and profile, and development SRS files. -/
+executable and verifying key, and development SRS files. -/
 def cacheDir : IO System.FilePath := do
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/cache"
 

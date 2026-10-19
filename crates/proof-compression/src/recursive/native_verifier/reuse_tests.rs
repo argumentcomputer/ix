@@ -280,21 +280,19 @@ fn recursive_witness_rejects_tampering_without_native_preverification() {
 }
 
 #[test]
-fn recursive_profile_rejects_identity_anchors_and_oversized_layout_caps() {
+fn recursive_vk_rejects_identity_anchors_and_oversized_layout_caps() {
   let fixture = Fixture::new();
   let (_, claims) = fixture.proof(17);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
   for anchor in 0..3 {
-    let mut profile = plan.profile;
+    let mut vk = plan.vk;
     match anchor {
-      0 => profile.generator = G1Affine::identity(),
-      1 => profile.g2 = G2Affine::identity(),
-      _ => profile.tau_g2 = G2Affine::identity(),
+      0 => vk.generator = G1Affine::identity(),
+      1 => vk.g2 = G2Affine::identity(),
+      _ => vk.tau_g2 = G2Affine::identity(),
     }
-    assert!(
-      Plan::from_profile(&profile, &[2], schema(&claims), layout()).is_err()
-    );
+    assert!(Plan::from_identity(&vk, &[2], schema(&claims), layout()).is_err());
   }
   let oversized = 1usize << (Scalar::TWO_ADICITY + 1);
   for bad_layout in [
@@ -432,7 +430,7 @@ fn recursive_exact_shape_rejects_every_payload_dimension() {
 }
 
 #[test]
-fn recursive_profile_identity_binds_metadata_and_schema() {
+fn recursive_vk_identity_binds_metadata_and_schema() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(17);
   let id = |system: &System<KzgConfig>, schema, layout| {
@@ -482,8 +480,7 @@ fn recursive_profile_identity_binds_metadata_and_schema() {
 }
 
 #[test]
-fn recursive_profile_rejects_invalid_graph_and_fixed_points_before_construction()
- {
+fn recursive_vk_rejects_invalid_graph_and_fixed_points_before_construction() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(17);
   assert!(Plan::new(&fixture.system, &[1], schema(&claims), layout()).is_err());
@@ -513,15 +510,15 @@ fn recursive_shape_deduplicates_log_zero_opening_points() {
 }
 
 #[test]
-fn recursive_profile_rejects_keccak_before_circuit_construction() {
+fn recursive_vk_rejects_keccak_before_circuit_construction() {
   let mut fixture = Fixture::new();
   let (_, claims) = fixture.proof(7);
   let plan =
     Plan::new(&fixture.system, &[2], schema(&claims), layout()).unwrap();
-  let mut profile = plan.profile;
-  profile.transcript_kind = crate::kzg::TranscriptKind::Keccak256;
+  let mut vk = plan.vk;
+  vk.transcript_kind = crate::kzg::TranscriptKind::Keccak256;
   assert!(matches!(
-    Plan::from_profile(&profile, &[2], schema(&claims), layout()),
+    Plan::from_identity(&vk, &[2], schema(&claims), layout()),
     Err(error) if error.contains("requires a BLAKE3 inner transcript")
   ));
   fixture.system.config = fixture

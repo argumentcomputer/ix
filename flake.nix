@@ -193,7 +193,7 @@
           # Profiles are embedded in the verifier; compression tests also read
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
-            ./crates/proof-compression/profiles
+            ./crates/proof-compression/verifying-keys
             ./crates/proof-compression/tests/fixtures
           ];
           # The Rust tests `include_bytes!` the `.ixe` files under

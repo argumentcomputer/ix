@@ -15,9 +15,9 @@ import (
 type wrapperCircuit struct {
 	Claim    [2]frontend.Variable `gnark:",public"`
 	Points   []circuitG1
-	Deferred [2]circuitG1
+	Deferred []circuitG1
 	Values   []frontend.Variable
-	Profile  *profile `gnark:"-"`
+	VK       *verifyingKey `gnark:"-"`
 }
 
 func scalarBytes(api frontend.API, u *uints.BinaryField[uints.U32], v frontend.Variable) []uints.U8 {
@@ -44,21 +44,22 @@ func littleEndian(api frontend.API, u *uints.BinaryField[uints.U32], bytes []uin
 }
 
 func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) ([]frontend.Variable, []uints.U8) {
-	p := c.Profile
+	p := c.VK
 	seed, _ := unhex(p.Seed, -1)
 	t := newTranscript(api, u, seed)
 	field := func(v frontend.Variable) { t.observe(scalarBytes(api, u, v)) }
+	circuits := len(p.Circuits)
 	commitment := func(round int) {
-		t.observe(constantU64(2))
-		for i := 0; i < 2; i++ {
-			m := p.Matrices[2*round+i]
+		t.observe(constantU64(uint64(circuits)))
+		for i := 0; i < circuits; i++ {
+			m := p.Matrices[circuits*round+i]
 			t.observe(constantU64(uint64(m.Width)))
 			for j := 0; j < m.Width; j++ {
 				t.observe(encoded[m.PointOffset+j])
 			}
 		}
 	}
-	field(2)
+	field(circuits)
 	for _, circuit := range p.Circuits {
 		for _, value := range circuit.Shape {
 			field(value)
@@ -71,13 +72,17 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 	for _, circuit := range p.Circuits {
 		field(circuit.LogDegree)
 	}
-	field(23)
-	for i, value := range publics {
-		field(4)
-		field(94)
-		field(1)
-		field(i)
-		field(value)
+	rows := p.claimRows()
+	field(len(rows))
+	for _, row := range rows {
+		field(len(row))
+		for _, slot := range row {
+			if slot.Constant != nil {
+				field(*slot.Constant)
+			} else {
+				field(publics[*slot.Public])
+			}
+		}
 	}
 	ch := make([]frontend.Variable, 6)
 	ch[0] = t.sample()
@@ -85,7 +90,10 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 	ch[1] = t.sample()
 	field(ch[1])
 	commitment(1)
-	field(c.Values[0])
+	accumulators := p.accumulators()
+	for k := 0; k < accumulators; k++ {
+		field(c.Values[k])
+	}
 	field(0)
 	ch[2] = t.sample()
 	commitment(2)
@@ -96,7 +104,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 			t.observe(constantU64(uint64(circuit.LogDegree)))
 		}
 	}
-	for _, value := range c.Values[1:] {
+	for _, value := range c.Values[accumulators:] {
 		field(value)
 	}
 	ch[4] = t.sample()
@@ -155,9 +163,9 @@ type circuitOptions struct {
 }
 
 func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, options circuitOptions) error {
-	p := c.Profile
+	p := c.VK
 	if p == nil {
-		return fmt.Errorf("missing trusted profile")
+		return fmt.Errorf("missing trusted verifying key")
 	}
 	if err := p.validate(); err != nil {
 		return err
@@ -203,22 +211,35 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 	g, _ := p.Generator.native()
 	generator := newCircuitG1(g)
 	points = append(points, &generator)
-	publics := make([]frontend.Variable, 23)
-	publics[0] = 0
-	for i, word := range p.Prefix {
-		publics[1+i] = word
+	if len(c.Deferred) != p.deferredCount() {
+		return fmt.Errorf("deferred operand count differs from the verifying key")
 	}
+	var digestWords [8]frontend.Variable
 	for half := 0; half < 2; half++ {
 		b := bits.ToBinary(api, c.Claim[half], bits.WithNbDigits(128))
 		for word := 0; word < 4; word++ {
-			publics[11+4*half+word] = bits.FromBinary(api, b[32*word:32*word+32])
+			digestWords[4*half+word] = bits.FromBinary(api, b[32*word:32*word+32])
 		}
 	}
+	deferredHalves := make([]frontend.Variable, 0, 2*len(c.Deferred))
 	for i := range c.Deferred {
 		pairing.AssertIsOnG1(&c.Deferred[i])
 		bytes := pointBytes(api, u, f, &c.Deferred[i])
-		publics[19+2*i] = littleEndian(api, u, bytes[:pointLimbBytes])
-		publics[20+2*i] = littleEndian(api, u, bytes[pointLimbBytes:])
+		deferredHalves = append(deferredHalves, littleEndian(api, u, bytes[:pointLimbBytes]), littleEndian(api, u, bytes[pointLimbBytes:]))
+	}
+	sources := p.publicSources()
+	publics := make([]frontend.Variable, len(sources))
+	for i, source := range sources {
+		switch {
+		case source.Constant != nil:
+			publics[i] = *source.Constant
+		case source.Prefix != nil:
+			publics[i] = p.Prefix[*source.Prefix]
+		case source.DigestWord != nil:
+			publics[i] = digestWords[*source.DigestWord]
+		default:
+			publics[i] = deferredHalves[*source.DeferredHalf]
+		}
 	}
 	if phase == 1 {
 		return nil
@@ -244,6 +265,9 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 		return nil
 	}
 	if options.batchPairings {
+		if len(c.Deferred) != 2 {
+			return fmt.Errorf("pairing batching requires two deferred operands")
+		}
 		return c.batchedPairing(api, u, f, s, curve, packetDigest, left, right)
 	}
 	outer, _ := g2Keys(p.OuterKeys)
@@ -251,7 +275,7 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 	if err := pairing.PairingCheck([]*circuitG1{left, curve.Neg(right)}, []*circuitG2{&h, &tauH}); err != nil {
 		return err
 	}
-	if phase == 5 {
+	if phase == 5 || len(c.Deferred) == 0 {
 		return nil
 	}
 	inner, _ := g2Keys(p.DeferredKeys)
@@ -261,7 +285,7 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 
 // Fixed-point relations are checked at circuit construction. Variable inputs
 // retain their curve and subgroup checks even when a scalar is constant zero.
-func foldFixedBases(api frontend.API, p *profile, points []*circuitG1, scalars []frontend.Variable) ([]*circuitG1, []frontend.Variable) {
+func foldFixedBases(api frontend.API, p *verifyingKey, points []*circuitG1, scalars []frontend.Variable) ([]*circuitG1, []frontend.Variable) {
 	weights := append([]frontend.Variable(nil), scalars...)
 	indices := make([]int, p.PointCount)
 	for i := range indices {

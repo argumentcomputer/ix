@@ -1,4 +1,4 @@
-//! Fixed-profile proof transport. The verifier supplies the system and heights;
+//! Fixed-verifying key proof transport. The verifier supplies the system and heights;
 //! this codec omits their redundant shape metadata, not cryptographic checks.
 
 #[cfg(test)]
@@ -27,12 +27,12 @@ pub struct CompactProofError;
 
 impl std::fmt::Display for CompactProofError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str("invalid compact KZG proof or profile")
+    f.write_str("invalid compact KZG proof or verifying key")
   }
 }
 impl std::error::Error for CompactProofError {}
 
-/// Balanced ordinary proofs with all circuits active. Authenticate the system/profile separately and
+/// Balanced ordinary proofs with all circuits active. Authenticate the system/verifying key separately and
 /// run normal proof verification after decoding; decoding is not verification.
 pub struct FixedProofCodec {
   template: Proof<KzgConfig>,

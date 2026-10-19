@@ -14,7 +14,7 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
     }
 
     function compare(uint256 zeta, uint256 v, uint256 r, uint256 count) external pure returns (bool) {
-        Profile memory p = _profile();
+        VerifyingKey memory p = _vk();
         Proof memory generated;
         Proof memory interpreted;
         generated.openingCount = count;
@@ -46,7 +46,7 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
         return true;
     }
 
-    function _referenceLayout(Profile memory profile, Proof memory proof)
+    function _referenceLayout(VerifyingKey memory vk, Proof memory proof)
         private
         pure
         returns (uint256 fieldCount, uint256 fixedCount)
@@ -55,12 +55,12 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
         fieldCount = 1;
         for (uint256 round; round < 4; ++round) {
             for (uint256 ci; ci < 2; ++ci) {
-                Circuit memory c = profile.circuits[ci];
+                Circuit memory c = vk.circuits[ci];
                 if (
                     c.logDegree == 0 || c.logDegree > 28 || c.preprocessedWidth == 0 || c.stage2Width == 0
                         || c.lookupGroupSize == 0 || c.lookupGroupSize > 8
                 ) {
-                    revert InvalidProfile();
+                    revert InvalidVerifyingKey();
                 }
                 Matrix memory m;
                 if (round == 0) {
@@ -92,7 +92,7 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
         proof.pointCount = commitmentCount + proof.openingCount;
     }
 
-    function _referenceBatches(Profile memory profile, Proof memory proof, uint256 zeta)
+    function _referenceBatches(VerifyingKey memory vk, Proof memory proof, uint256 zeta)
         private
         pure
         returns (Batches memory batches)
@@ -100,11 +100,11 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
         for (uint256 i; i < 8; ++i) {
             Matrix memory m = proof.matrices[i];
             for (uint256 row; row < m.rows; ++row) {
-                uint256 point = row == 0 ? zeta : mulmod(zeta, profile.circuits[i % 2].omega, R);
+                uint256 point = row == 0 ? zeta : mulmod(zeta, vk.circuits[i % 2].omega, R);
                 uint256 group;
                 while (group < batches.count && batches.points[group] != point) ++group;
                 if (group == batches.count) {
-                    if (batches.count == 3) revert InvalidProfile();
+                    if (batches.count == 3) revert InvalidVerifyingKey();
                     batches.points[group] = point;
                     ++batches.count;
                 }
@@ -114,13 +114,13 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
         if (batches.count != proof.openingCount) revert InvalidPacket();
     }
 
-    function _referenceCoefficients(Profile memory profile, Proof memory proof, uint256[6] memory ch)
+    function _referenceCoefficients(VerifyingKey memory vk, Proof memory proof, uint256[6] memory ch)
         private
         pure
         returns (uint256[] memory coefficients, uint256[] memory witnessCoefficients)
     {
-        Batches memory batches = _referenceBatches(profile, proof, ch[3]);
-        uint256 fixedCount = profile.fixedPoints.length / 128;
+        Batches memory batches = _referenceBatches(vk, proof, ch[3]);
+        uint256 fixedCount = vk.fixedPoints.length / 128;
         uint256 generatorIndex = proof.pointCount + fixedCount;
         coefficients = new uint256[](generatorIndex + 1);
         uint256[3] memory vPowers = [uint256(1), uint256(1), uint256(1)];
@@ -150,7 +150,7 @@ abstract contract OpeningDifferentialBase is KzgVerifier {
 }
 
 contract OpeningCase0 is OpeningDifferentialBase {
-    function _profile() internal pure override returns (Profile memory p) {
+    function _vk() internal pure override returns (VerifyingKey memory p) {
         p.circuits[0].logDegree = 5;
         p.circuits[0].mainWidth = 3;
         p.circuits[0].stage2Width = 4;
@@ -172,7 +172,7 @@ contract OpeningCase0 is OpeningDifferentialBase {
         p.fixedPoints = new bytes(2432);
     }
 
-    function _proofLayout(Profile memory, Proof memory proof)
+    function _proofLayout(VerifyingKey memory, Proof memory proof)
         internal
         pure
         override
@@ -192,7 +192,7 @@ contract OpeningCase0 is OpeningDifferentialBase {
         return (37, 19);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory proof, uint256[6] memory ch)
+    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)
         internal
         pure
         override
@@ -344,7 +344,7 @@ contract OpeningCase0 is OpeningDifferentialBase {
 }
 
 contract OpeningCase1 is OpeningDifferentialBase {
-    function _profile() internal pure override returns (Profile memory p) {
+    function _vk() internal pure override returns (VerifyingKey memory p) {
         p.circuits[0].logDegree = 5;
         p.circuits[0].mainWidth = 3;
         p.circuits[0].stage2Width = 4;
@@ -366,7 +366,7 @@ contract OpeningCase1 is OpeningDifferentialBase {
         p.fixedPoints = new bytes(2432);
     }
 
-    function _proofLayout(Profile memory, Proof memory proof)
+    function _proofLayout(VerifyingKey memory, Proof memory proof)
         internal
         pure
         override
@@ -386,7 +386,7 @@ contract OpeningCase1 is OpeningDifferentialBase {
         return (44, 19);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory proof, uint256[6] memory ch)
+    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)
         internal
         pure
         override
@@ -549,7 +549,7 @@ contract OpeningCase1 is OpeningDifferentialBase {
 }
 
 contract OpeningCase2 is OpeningDifferentialBase {
-    function _profile() internal pure override returns (Profile memory p) {
+    function _vk() internal pure override returns (VerifyingKey memory p) {
         p.circuits[0].logDegree = 5;
         p.circuits[0].mainWidth = 3;
         p.circuits[0].stage2Width = 4;
@@ -571,7 +571,7 @@ contract OpeningCase2 is OpeningDifferentialBase {
         p.fixedPoints = new bytes(2432);
     }
 
-    function _proofLayout(Profile memory, Proof memory proof)
+    function _proofLayout(VerifyingKey memory, Proof memory proof)
         internal
         pure
         override
@@ -591,7 +591,7 @@ contract OpeningCase2 is OpeningDifferentialBase {
         return (57, 19);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory proof, uint256[6] memory ch)
+    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)
         internal
         pure
         override
@@ -803,7 +803,7 @@ contract OpeningCase2 is OpeningDifferentialBase {
 }
 
 contract OpeningCase3 is OpeningDifferentialBase {
-    function _profile() internal pure override returns (Profile memory p) {
+    function _vk() internal pure override returns (VerifyingKey memory p) {
         p.circuits[0].logDegree = 5;
         p.circuits[0].mainWidth = 0;
         p.circuits[0].stage2Width = 4;
@@ -825,7 +825,7 @@ contract OpeningCase3 is OpeningDifferentialBase {
         p.fixedPoints = new bytes(2432);
     }
 
-    function _proofLayout(Profile memory, Proof memory proof)
+    function _proofLayout(VerifyingKey memory, Proof memory proof)
         internal
         pure
         override
@@ -845,7 +845,7 @@ contract OpeningCase3 is OpeningDifferentialBase {
         return (52, 19);
     }
 
-    function _openingCoefficients(Profile memory, Proof memory proof, uint256[6] memory ch)
+    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)
         internal
         pure
         override
@@ -1056,10 +1056,10 @@ contract OpeningLayoutTest {
         uint256[4] memory zetas = [uint256(1), 7, Scalar.MODULUS - 1, 19];
         uint256[4] memory vs = [uint256(0), 1, 7, Scalar.MODULUS - 1];
         uint256[4] memory rs = [uint256(0), 1, Scalar.MODULUS - 1, 13];
-        for (uint256 profile; profile < 4; ++profile) {
+        for (uint256 vk; vk < 4; ++vk) {
             for (uint256 sample; sample < 4; ++sample) {
                 require(
-                    harnesses[profile].compare(zetas[sample], vs[sample], rs[sample], counts[profile]),
+                    harnesses[vk].compare(zetas[sample], vs[sample], rs[sample], counts[vk]),
                     "opening differs"
                 );
             }
@@ -1068,12 +1068,12 @@ contract OpeningLayoutTest {
 
     function testGeneratedOpeningRejectsWrongCountAndZeroChallenge() public view {
         uint256[4] memory counts = [uint256(3), 2, 3, 3];
-        for (uint256 profile; profile < 4; ++profile) {
-            (bool ok,) = address(harnesses[profile])
-                .staticcall(abi.encodeCall(OpeningDifferentialBase.compare, (7, 3, 5, counts[profile] == 2 ? 3 : 2)));
+        for (uint256 vk; vk < 4; ++vk) {
+            (bool ok,) = address(harnesses[vk])
+                .staticcall(abi.encodeCall(OpeningDifferentialBase.compare, (7, 3, 5, counts[vk] == 2 ? 3 : 2)));
             require(!ok, "wrong opening count accepted");
-            (ok,) = address(harnesses[profile])
-                .staticcall(abi.encodeCall(OpeningDifferentialBase.compare, (0, 3, 5, counts[profile])));
+            (ok,) = address(harnesses[vk])
+                .staticcall(abi.encodeCall(OpeningDifferentialBase.compare, (0, 3, 5, counts[vk])));
             require(!ok, "zero zeta accepted");
         }
     }

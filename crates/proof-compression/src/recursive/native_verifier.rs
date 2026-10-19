@@ -1,4 +1,4 @@
-//! Fixed-profile ordinary KZG verification with publicly bound pairing inputs.
+//! Fixed-verifying key ordinary KZG verification with publicly bound pairing inputs.
 use crate::{
   kzg::{
     KzgCommitment, KzgConfig, Scalar,
@@ -61,7 +61,7 @@ pub struct Built {
 }
 
 #[derive(Clone, Copy)]
-pub struct Profile<'a> {
+pub struct InnerVerifyingKey<'a> {
   pub circuits: &'a [multi_stark::system::Circuit<Scalar>],
   pub fixed: &'a KzgCommitment,
   pub transcript_seed: &'a [u8],
@@ -324,15 +324,15 @@ pub fn build(
 }
 
 /// Count the ordinary wrapper constraints without retaining an IR or generating
-/// a witness. This measures a profile; it does not verify its proof or its SRS.
+/// a witness. This measures a verifying key; it does not verify its proof or its SRS.
 pub fn count(
-  profile: &Profile<'_>,
+  vk: &InnerVerifyingKey<'_>,
   proof: &Proof<KzgConfig>,
   claims: &[Vec<Scalar>],
   public_locations: &[(usize, usize)],
 ) -> Result<Counts, String> {
-  let plan = Plan::from_profile(
-    profile,
+  let plan = Plan::from_identity(
+    vk,
     &proof.log_degrees,
     ClaimSchema::from_claims(claims, public_locations)?,
     LayoutPolicy::legacy(),
@@ -342,17 +342,17 @@ pub fn count(
 }
 
 fn construct(
-  profile: &Profile<'_>,
+  vk: &InnerVerifyingKey<'_>,
   shape: &Shape,
   claims: &ClaimSchema,
   builder: Builder,
 ) -> Result<Construction, String> {
-  let circuits = profile.circuits;
+  let circuits = vk.circuits;
   let quotients: Vec<_> =
     circuits.iter().map(|c| c.quotient_degree()).collect();
   let logs = &shape.logs;
   let mut c = Context::new(builder);
-  let fixed = c.fixed_commitment(profile.fixed);
+  let fixed = c.fixed_commitment(vk.fixed);
   let main = c.commitment(Round::Main, &shape.rounds[Round::Main.index()]);
   let stage2 =
     c.commitment(Round::Stage2, &shape.rounds[Round::Stage2.index()]);
@@ -361,7 +361,7 @@ fn construct(
   let witnesses: Vec<_> = (0..shape.opening_generators.len())
     .map(|index| c.point(PointSource::Witness(index)))
     .collect();
-  let generator = c.point(PointSource::Fixed(profile.generator));
+  let generator = c.point(PointSource::Fixed(vk.generator));
   let prefix_blocks = c.point_ends.len();
   let prefix_values = c.b.stats().values;
   let parallel_prefix = c.seal_point_prefix();
@@ -417,7 +417,7 @@ fn construct(
         .collect()
     })
     .collect();
-  let mut t = Transcript::new(&mut c.b, &c.bytes, profile.transcript_seed);
+  let mut t = Transcript::new(&mut c.b, &c.bytes, vk.transcript_seed);
   c.observe_constant(&mut t, circuits.len());
   for circuit in circuits {
     for v in [
@@ -645,13 +645,13 @@ fn construct(
   let mut terms = vec![];
   let mut keys = vec![];
   terms.push(combine(&mut c.b, lhs));
-  keys.push(profile.g2);
+  keys.push(vk.g2);
   let rhs = rhs
     .into_iter()
     .map(|(id, v)| (id, c.b.scale(v, Scalar::NEG_ONE)))
     .collect();
   terms.push(combine(&mut c.b, rhs));
-  keys.push(profile.tau_g2);
+  keys.push(vk.tau_g2);
   let mut outputs = vec![];
   phases.push(PhaseCounts { name: "scalar_checks", stats: c.b.stats() });
   for (i, terms) in terms.iter().enumerate() {
@@ -830,7 +830,7 @@ mod tests {
     );
     system.verify_multiple_claims(&refs, &proof).unwrap();
     let mut built = build(&system, &srs, &proof, &claims, &[(1, 3)]).unwrap();
-    let profile = Profile {
+    let vk = InnerVerifyingKey {
       circuits: &system.circuits,
       fixed: system.preprocessed_commit.as_ref().unwrap(),
       transcript_seed: system.config.transcript_seed(),
@@ -840,14 +840,14 @@ mod tests {
       tau_g2: srs.tau_g2,
       max_log_degree: system.config.max_log_degree(),
     };
-    let counted = count(&profile, &proof, &claims, &[(1, 3)]).unwrap();
+    let counted = count(&vk, &proof, &claims, &[(1, 3)]).unwrap();
     let encoded =
       crate::kzg::compact::FixedProofCodec::new(&system, &proof.log_degrees)
         .unwrap()
         .encode(&proof)
         .unwrap();
     assert_eq!(
-      Shape::new(&profile, &proof.log_degrees)
+      Shape::new(&vk, &proof.log_degrees)
         .unwrap()
         .checked_compact_len()
         .unwrap(),

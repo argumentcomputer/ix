@@ -132,10 +132,10 @@ def main():
             for key in ['curve', 'input_blake3', 'proof_blake3', 'verifier_blake3']:
                 if candidate[key] != reference[key]:
                     raise RuntimeError(f'{curve} {mode}: {key} differs from CPU')
-            for artifact in ['proof.bin', 'verifier.bin']:
+            for artifact in ['proof.bin', 'vk.bin']:
                 if (directory / mode / artifact).read_bytes() != (directory / 'cpu' / artifact).read_bytes():
                     raise RuntimeError(f'{curve} {mode}: {artifact} differs from CPU')
-        verifier = directory / 'cpu' / 'verifier.bin'
+        verifier = directory / 'cpu' / 'vk.bin'
         pin = reference['verifier_blake3']
         verified = []
         for mode in runs:
@@ -159,7 +159,7 @@ def main():
             directory = root / curve
             record = run([
                 str(directory / 'bin' / 'cpu'), 'verify', str(root / other / 'cpu' / 'proof.bin'),
-                str(directory / 'cpu' / 'verifier.bin'), report['curves'][curve]['verifier_blake3'],
+                str(directory / 'cpu' / 'vk.bin'), report['curves'][curve]['verifier_blake3'],
             ], directory / 'reject-other-curve.log', dict(environment, CUDA_VISIBLE_DEVICES=''),
                 success=False, expected_error='CompactProofError')
             report['cross_curve_rejections'].append(record)

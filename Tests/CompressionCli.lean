@@ -67,7 +67,7 @@ public def run : IO Unit := do
     let wrapped : Ixon.Proof := { claim := expected, proof }
     let compressedAddr ← putProof home (Ixon.Proof.ser wrapped)
     let metadata ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile
-      "crates/proof-compression/profiles/aggregate-filecoin-v5.json"))
+      "crates/proof-compression/verifying-keys/aggregate-filecoin-v5.json"))
     let expectedAddr ← IO.ofExcept (metadata.getObjValAs? String "compressed_proof_address")
     unless toString compressedAddr == expectedAddr do
       throw <| IO.userError "bundled proof address differs from its metadata"
@@ -88,9 +88,9 @@ public def run : IO Unit := do
 
     -- A local registry cannot replace a verifier carried by the application.
     let alias := toString (Address.mk (packet.extract 0 32))
-    let profiles := home / ".ix/verifiers/filecoin/profiles"
-    IO.FS.createDirAll profiles
-    IO.FS.writeBinFile (profiles / alias) "invalid registry entry".toUTF8
+    let keys := home / ".ix/verifiers/filecoin/verifying-keys"
+    IO.FS.createDirAll keys
+    IO.FS.writeBinFile (keys / alias) "invalid registry entry".toUTF8
     let independent ← invoke home args
     unless independent.exitCode == 0 do
       throw <| IO.userError s!"verification read an external registry: {independent.stderr}"
@@ -111,7 +111,7 @@ public def run : IO Unit := do
     let devWrapped : Ixon.Proof := { claim := expected, proof := devProof }
     let devAddr ← putProof home (Ixon.Proof.ser devWrapped)
     let devMetadata ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile
-      "crates/proof-compression/profiles/aggregate-development-v5.json"))
+      "crates/proof-compression/verifying-keys/aggregate-development-v5.json"))
     let expectedDevAddr ← IO.ofExcept (devMetadata.getObjValAs? String "compressed_proof_address")
     unless toString devAddr == expectedDevAddr do
       throw <| IO.userError "bundled development proof address differs from its metadata"

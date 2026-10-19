@@ -91,13 +91,13 @@ impl WorkerConfig {
   fn fixed_cache(
     &self,
     stage: &Path,
-    profile: &[u8],
+    vk: &[u8],
   ) -> Result<fixed_cache::FixedCache> {
     let root = self
       .fixed_cache_root
       .clone()
       .unwrap_or_else(|| stage.join("kzg/fixed-cache"));
-    fixed_cache::FixedCache::from_profile(&root, profile)
+    fixed_cache::FixedCache::from_identity(&root, vk)
   }
 
   #[cfg(test)]
@@ -278,7 +278,7 @@ pub fn setup_description(development: bool) -> Result<&'static str> {
   Ok(setup::SetupConfig::from_env(development)?.class().description())
 }
 
-/// Verify using a bundled KZG profile or an independently configured PLONK
+/// Verify using a bundled KZG verifying key or an independently configured PLONK
 /// verification key. Proving parameters are not required.
 pub fn verify(
   proof: &[u8],
@@ -295,31 +295,31 @@ pub fn verify(
   verifier::verify(packet, claim, allow_development)
 }
 
-/// Verify with a caller-authorized profile digest and independently expected
+/// Verify with a caller-authorized verifying key digest and independently expected
 /// root statement. No proving parameters or bundled catalog entry are needed.
-pub fn verify_with_profile(
+pub fn verify_with_vk(
   proof: &[u8],
   claim: &[u8],
   expected_claims: &[u8],
-  profile: &[u8],
-  trusted_profile_digest: &[u8; 32],
+  vk: &[u8],
+  trusted_vk_digest: &[u8; 32],
   allow_development: bool,
 ) -> Result<setup::SetupClass> {
   let words = check_claim(claim, expected_claims)?;
   let packet = proof
     .strip_prefix(PROOF_TAG)
     .ok_or("unsupported compressed proof curve or version")?;
-  verifier::verify_with_profile(
+  verifier::verify_with_vk(
     packet,
     claim,
     &words,
-    profile,
-    trusted_profile_digest,
+    vk,
+    trusted_vk_digest,
     allow_development,
   )
 }
 
-/// Verify with an independently authorized profile and Ignition admission.
+/// Verify with an independently authorized verifying key and Ignition admission.
 /// Both outer and deferred pairing keys must match the admitted parameters.
 /// No proving cache or setup environment variables are read.
 #[cfg(feature = "bn254")]
@@ -327,8 +327,8 @@ pub fn verify_with_ignition_admission(
   proof: &[u8],
   claim: &[u8],
   expected_claims: &[u8],
-  profile: &[u8],
-  trusted_profile_digest: &[u8; 32],
+  vk: &[u8],
+  trusted_vk_digest: &[u8; 32],
   admission: &crate::kzg::srs::ignition::IgnitionAdmission,
 ) -> Result<setup::SetupClass> {
   let words = check_claim(claim, expected_claims)?;
@@ -339,14 +339,14 @@ pub fn verify_with_ignition_admission(
     packet,
     claim,
     &words,
-    profile,
-    trusted_profile_digest,
+    vk,
+    trusted_vk_digest,
     admission,
   )
 }
 
 /// Cross-run caches the stages share: fixed preprocessing keyed by the
-/// executable and profile, and development SRS files. Variables already set
+/// executable and verifying key, and development SRS files. Variables already set
 /// in the environment take precedence over the directory given to `compress`.
 struct Caches {
   fixed: PathBuf,
@@ -385,7 +385,7 @@ fn validate_compression_options(
   }
   if !matches!(log_height, 24 | 25) {
     return Err(
-      "--log-height must be 24 or 25 for the supported recursive profiles"
+      "--log-height must be 24 or 25 for the supported recursive verifying keys"
         .into(),
     );
   }
@@ -394,7 +394,7 @@ fn validate_compression_options(
   let setup = setup::SetupConfig::from_env(development)?;
   if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
     return Err(
-      "unset IX_ROOT_GENERIC_HASHES for the supported compression profile"
+      "unset IX_ROOT_GENERIC_HASHES for the supported compression verifying key"
         .into(),
     );
   }
@@ -509,26 +509,25 @@ fn finish_kzg(
   let mut result = PROOF_TAG.to_vec();
   result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
   let packet = &result[PROOF_TAG.len()..];
-  let profile = wrap::VerifierProfile::from_bytes(&fs::read(
-    final_dir.join("verifier.bin"),
-  )?)?;
+  let vk =
+    wrap::VerifyingKey::from_bytes(&fs::read(final_dir.join("vk.bin"))?)?;
   #[cfg(feature = "bn254")]
   if let Some(admission) = setup.ignition_admission() {
-    profile.check_ignition_admission(admission)?;
+    vk.check_ignition_admission(admission)?;
   } else {
-    profile.check_setup_class(setup.class())?;
+    vk.check_setup_class(setup.class())?;
   }
   #[cfg(not(feature = "bn254"))]
-  profile.check_setup_class(setup.class())?;
-  profile.verify(packet, words)?;
-  // A bundled profile pins the aggregation program its proofs attest; the
+  vk.check_setup_class(setup.class())?;
+  vk.verify(packet, words)?;
+  // A bundled verifying key pins the aggregation program its proofs attest; the
   // backend this run proved under must be that program, or the bundle is
   // stale and verification elsewhere would accept the wrong statement.
   if let Some(prefix) = verifier::bundled_prefix(packet[..32].try_into()?)
     && *prefix != words[..10]
   {
     return Err(
-      "the bundled verifier profile pins a different aggregation program \
+      "the bundled verifier vk pins a different aggregation program \
        than this build's backend; update the bundle"
         .into(),
     );
@@ -539,7 +538,7 @@ fn finish_kzg(
       let out_plonk = out.join("plonk");
       let expected_path = final_dir.join("expected-statement.json");
       storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
-      let verifier = final_dir.join("verifier.bin");
+      let verifier = final_dir.join("vk.bin");
       let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
       child(
         "plonk",
@@ -603,7 +602,7 @@ mod tests {
   }
 
   #[test]
-  fn explicit_profile_verification_rejects_other_curve_envelopes() {
+  fn explicit_vk_verification_rejects_other_curve_envelopes() {
     let expected =
       statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
     let other = if cfg!(feature = "bn254") {
@@ -611,9 +610,8 @@ mod tests {
     } else {
       b"IXBN\0\0\0\x01"
     };
-    let error =
-      verify_with_profile(other, b"claim", &expected, b"", &[0; 32], true)
-        .unwrap_err();
+    let error = verify_with_vk(other, b"claim", &expected, b"", &[0; 32], true)
+      .unwrap_err();
     assert!(error.to_string().contains("curve or version"));
   }
 

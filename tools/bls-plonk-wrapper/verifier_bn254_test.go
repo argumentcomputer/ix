@@ -43,7 +43,7 @@ func TestBN254RustPointEncodingVectors(t *testing.T) {
 }
 
 func TestBN254FullVerifierRejectsTampering(t *testing.T) {
-	p, err := loadProfile(filepath.Join("testdata", "bn254", "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 	}
 	for _, kind := range []string{"claim", "evaluation", "commitment", "deferred-key", "outer-key"} {
 		w := assignment()
-		profileCopy := *p
+		vkCopy := *p
 		switch kind {
 		case "claim":
 			w.Claim[0] = new(big.Int).Add(w.Claim[0].(*big.Int), big.NewInt(1))
@@ -69,11 +69,11 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 			_, _, g, _ := bn.Generators()
 			w.Points[0] = newCircuitG1(g)
 		case "deferred-key":
-			profileCopy.DeferredKeys = []string{p.DeferredKeys[0], p.DeferredKeys[0]}
+			vkCopy.DeferredKeys = []string{p.DeferredKeys[0], p.DeferredKeys[0]}
 		case "outer-key":
-			profileCopy.OuterKeys = []string{p.OuterKeys[0], p.OuterKeys[0]}
+			vkCopy.OuterKeys = []string{p.OuterKeys[0], p.OuterKeys[0]}
 		}
-		if err := test.IsSolved(newCircuit(&profileCopy), w, curveID.ScalarField()); err == nil {
+		if err := test.IsSolved(newCircuit(&vkCopy), w, curveID.ScalarField()); err == nil {
 			t.Fatalf("accepted %s mutation", kind)
 		}
 	}

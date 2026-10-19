@@ -27,15 +27,15 @@ func TestComponentSizing(t *testing.T) {
 	if os.Getenv("IX_PLONK_SIZE") != "1" {
 		t.Skip("set IX_PLONK_SIZE=1 for full component compilation")
 	}
-	path := os.Getenv("IX_PLONK_SIZE_PROFILE")
+	path := os.Getenv("IX_PLONK_SIZE_VK")
 	if path == "" {
 		fixture := "outer"
 		if curveID == ecc.BN254 {
 			fixture = "bn254"
 		}
-		path = filepath.Join("testdata", fixture, "profile.json")
+		path = filepath.Join("testdata", fixture, "vk.json")
 	}
-	p, err := loadProfile(path)
+	p, err := loadVerifyingKey(path)
 	if err != nil {
 		t.Fatal(err)
 	}

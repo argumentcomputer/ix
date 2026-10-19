@@ -1,6 +1,6 @@
 //! Size the first KZG stage's FRI verifier for alternative query counts
 //! without a proof: the verifier relation depends only on the key, the
-//! profile and the FRI parameters, so a saved key can be re-parameterized
+//! verifying key and the FRI parameters, so a saved key can be re-parameterized
 //! and counted directly. Arity and cap changes are not supported by the
 //! in-circuit verifier and cannot be sized this way.
 //!
@@ -164,7 +164,7 @@ fn main() -> Result<()> {
   for &q in &queries {
     let start = Instant::now();
     let key = with_queries(&key, q);
-    let profile = ProofProfile {
+    let vk = ProofProfile {
       envelope: Envelope::Ordinary,
       active: vec![true; key.system().circuits.len()],
       log_degrees: key
@@ -177,8 +177,7 @@ fn main() -> Result<()> {
       message_lengths: vec![],
       max_field_retries: DEFAULT_FIELD_RETRIES,
     };
-    let plan =
-      VerifierPlan::validate(&key, profile, VerifierLimits::default())?;
+    let plan = VerifierPlan::validate(&key, vk, VerifierLimits::default())?;
     let resources = plan.resources();
     let (circuit, _inputs) =
       plan.build(schema.clone(), ImplementationOptions::default())?;

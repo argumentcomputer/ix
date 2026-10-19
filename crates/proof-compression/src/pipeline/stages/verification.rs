@@ -1,4 +1,4 @@
-//! Prepared recursive verification shared by local and bundled profiles.
+//! Prepared recursive verification shared by local and bundled verifying keys.
 use super::{
   KzgVerifier, Result, scalar_statement, statement::Statement,
   wrap::RecursiveProof,

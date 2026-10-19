@@ -1,7 +1,7 @@
 mod outer;
 mod saved;
 #[cfg(feature = "plonk")]
-pub(super) use outer::{plonk_export, plonk_fixture};
+pub(super) use outer::{plonk_export, plonk_export_first, plonk_fixture};
 
 /// Device bytes the recursive prover keeps resident per device unless
 /// `IX_KZG_CUDA_RESIDENT_GIB` overrides it. Its traces are the largest
@@ -57,7 +57,7 @@ fn spawn_memory_monitor() {
   });
 }
 
-pub(super) use outer::{PreparedVerifierProfile, VerifierProfile};
+pub(super) use outer::{PreparedVerifyingKey, VerifyingKey};
 
 #[cfg(feature = "solidity")]
 pub use outer::{export_solidity_verifier, write_solidity_fixture};

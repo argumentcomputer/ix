@@ -48,7 +48,7 @@ type msmCaptureRecord struct {
 type msmCaptureManifest struct {
 	Format, ScalarFormat, Scope                                                 string
 	Complete, StoppedBeforeQuotient                                             bool
-	ArtifactManifestSHA256, ProvingKeySHA256, VerifyingKeySHA256, ProfileSHA256 string
+	ArtifactManifestSHA256, ProvingKeySHA256, InnerVKSHA256, VerifyingKeySHA256 string
 	ExpectedClaim, TestBinarySHA256                                             string
 	Domain                                                                      uint64
 	Constraints, PublicInputs, NumCPU, GOMAXPROCS                               int
@@ -205,7 +205,7 @@ func (a *recordingCPUAccelerator) MultiExp(points []curve.G1Affine, scalars []fr
 }
 
 func validateCapture(m *msmCaptureManifest, artifacts *manifest) error {
-	if m.Format != msmCaptureFormat || m.ScalarFormat != msmScalarFormat || !m.Complete || !m.StoppedBeforeQuotient || len(m.Records) != 4 || m.Domain != artifacts.Domain || m.Constraints != artifacts.Constraints || m.PublicInputs != 2 || m.ProvingKeySHA256 != artifacts.Files["proving-key.bin"].SHA256 || m.VerifyingKeySHA256 != artifacts.Files["verifying-key.bin"].SHA256 || m.ProfileSHA256 != artifacts.ProfileSHA256 {
+	if m.Format != msmCaptureFormat || m.ScalarFormat != msmScalarFormat || !m.Complete || !m.StoppedBeforeQuotient || len(m.Records) != 4 || m.Domain != artifacts.Domain || m.Constraints != artifacts.Constraints || m.PublicInputs != 2 || m.ProvingKeySHA256 != artifacts.Files["proving-key.bin"].SHA256 || m.InnerVKSHA256 != artifacts.Files["verifying-key.bin"].SHA256 || m.InnerVKSHA256 != artifacts.InnerVKSHA256 {
 		return fmt.Errorf("capture identity or shape differs")
 	}
 	shapes := make(map[[2]uint64]int)
@@ -268,11 +268,11 @@ func TestCaptureActualInitMSMs(t *testing.T) {
 	if ccs.GetNbConstraints() != m.Constraints || ccs.GetNbPublicVariables() != 2 || len(ccs.GetCommitments().CommitmentIndexes()) != 1 {
 		t.Fatal("capture circuit metadata differs")
 	}
-	p, err := loadProfile(filepath.Join(dir, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.checkFile(dir, "profile.json"); err != nil {
+	if err := m.checkFile(dir, "vk.json"); err != nil {
 		t.Fatal(err)
 	}
 	loadSeconds := keySeconds + time.Since(started).Seconds()
@@ -314,7 +314,7 @@ func TestCaptureActualInitMSMs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := msmCaptureManifest{Format: msmCaptureFormat, ScalarFormat: msmScalarFormat, Scope: "Actual pinned Init witness solved on CPU; first four Lagrange MSMs captured before any quotient. CPU callbacks are serialized at default CPU parallelism. Raw local scalar captures are test artifacts, not proofs.", ArtifactManifestSHA256: pin, ProvingKeySHA256: m.Files["proving-key.bin"].SHA256, VerifyingKeySHA256: m.Files["verifying-key.bin"].SHA256, ProfileSHA256: m.ProfileSHA256, ExpectedClaim: claim, TestBinarySHA256: identity, Domain: m.Domain, Constraints: m.Constraints, PublicInputs: 2, Witness: witnessIdentity, NumCPU: runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0), ValidationSeconds: validationSeconds, LoadSeconds: loadSeconds, WitnessSeconds: time.Since(started).Seconds()}
+	report := msmCaptureManifest{Format: msmCaptureFormat, ScalarFormat: msmScalarFormat, Scope: "Actual pinned Init witness solved on CPU; first four Lagrange MSMs captured before any quotient. CPU callbacks are serialized at default CPU parallelism. Raw local scalar captures are test artifacts, not proofs.", ArtifactManifestSHA256: pin, ProvingKeySHA256: m.Files["proving-key.bin"].SHA256, VerifyingKeySHA256: m.Files["verifying-key.bin"].SHA256, InnerVKSHA256: m.InnerVKSHA256, ExpectedClaim: claim, TestBinarySHA256: identity, Domain: m.Domain, Constraints: m.Constraints, PublicInputs: 2, Witness: witnessIdentity, NumCPU: runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0), ValidationSeconds: validationSeconds, LoadSeconds: loadSeconds, WitnessSeconds: time.Since(started).Seconds()}
 	capture := &recordingCPUAccelerator{pk: pk, out: out}
 	pk.SetAccelerator(capture)
 	defer pk.SetAccelerator(nil)

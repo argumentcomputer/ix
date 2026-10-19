@@ -75,6 +75,7 @@ pub(super) struct GraphInputs {
   pub(super) preprocessed: GraphMatrix,
   pub(super) stage2: GraphMatrix,
   pub(super) public_count: usize,
+  pub(super) matrix_count: usize,
 }
 
 impl GraphInputs {
@@ -82,9 +83,7 @@ impl GraphInputs {
     system: &System<KzgConfig>,
     index: usize,
   ) -> Result<Self> {
-    if index >= 2 {
-      return Err("Solidity graph requires one of two circuits".into());
-    }
+    let count = system.circuits.len();
     let c = system.circuits.get(index).ok_or("missing circuit")?;
     Ok(Self {
       main: GraphMatrix {
@@ -93,13 +92,18 @@ impl GraphInputs {
         rows: 1 + usize::from(system.opens_next_row(index, Source::Main)),
       },
       preprocessed: GraphMatrix {
-        index: 6 + index,
+        index: 3 * count + index,
         width: c.preprocessed_width,
         rows: 1
           + usize::from(system.opens_next_row(index, Source::Preprocessed)),
       },
-      stage2: GraphMatrix { index: 2 + index, width: c.stage_2_width, rows: 2 },
+      stage2: GraphMatrix {
+        index: count + index,
+        width: c.stage_2_width,
+        rows: 2,
+      },
       public_count: c.num_publics,
+      matrix_count: 4 * count,
     })
   }
 
@@ -144,7 +148,7 @@ impl GraphProgram {
       return Err("Solidity graph requires four circuit public scalars".into());
     }
     for m in [inputs.main, inputs.preprocessed, inputs.stage2] {
-      if m.index >= 8 || !(1..=2).contains(&m.rows) {
+      if m.index >= inputs.matrix_count || !(1..=2).contains(&m.rows) {
         return Err("invalid Solidity graph opening window".into());
       }
     }

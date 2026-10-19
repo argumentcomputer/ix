@@ -196,7 +196,7 @@ func importLagrangeSP1(artifacts, monomial, receipt, candidate string) error {
 	if err != nil {
 		return err
 	}
-	p, err := loadProfile(filepath.Join(artifacts, "profile.json"))
+	p, err := loadVerifyingKey(filepath.Join(artifacts, "vk.json"))
 	if err != nil {
 		return err
 	}

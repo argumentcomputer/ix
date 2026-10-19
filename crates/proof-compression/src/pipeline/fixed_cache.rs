@@ -1,6 +1,6 @@
 //! Trusted local preprocessing, independent of each proof's witness and
 //! openings. Entries are keyed by the executable digest and the stage
-//! profile, so a rebuilt binary never reuses another build's preprocessing.
+//! verifying key, so a rebuilt binary never reuses another build's preprocessing.
 //! The root is `IX_KZG_FIXED_CACHE`, or `<stage>/kzg/fixed-cache`.
 use super::storage::{self, Manifest, Result};
 use serde::{Deserialize, Serialize};
@@ -57,14 +57,14 @@ fn file_digest(path: &Path) -> io::Result<[u8; 32]> {
 impl FixedCache {
   /// The executable digest conservatively binds the compiler, lowering,
   /// dependency versions, SRS recipe, and all circuit implementation choices.
-  pub(crate) fn from_profile(root: &Path, profile: &[u8]) -> Result<Self> {
+  pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Result<Self> {
     let mut hasher = blake3::Hasher::new();
     #[cfg(not(feature = "bn254"))]
     hasher.update(b"ix/kzg-fixed-cache/v5");
     #[cfg(feature = "bn254")]
     hasher.update(b"ix/kzg-fixed-cache/bn254/v1");
     hasher.update(&executable_digest()?);
-    hasher.update(profile);
+    hasher.update(vk);
     let identity = *hasher.finalize().as_bytes();
     Ok(Self::new(root, identity))
   }

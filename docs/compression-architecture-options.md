@@ -109,7 +109,7 @@ Three facts constrain both plans:
   plan would be redone.
 - **Port scope.** Arkworks curve types, the CUDA build's `FEATURE_BLS12_381`,
   the field-gadget constants, the compact codec, the Solidity verifier and
-  every fixture and profile change.
+  every fixture and verifying key change.
 - **Gas from the curve alone is small.** Under EIP-1108 the current verifier's
   curve work is about 459,700 gas against 497,148 under EIP-2537. BLS12-381
   pairings are cheaper than BN254's since Pectra. Most of the gas saving comes
@@ -266,7 +266,7 @@ proof size; and the security levels above.
   ZisK's 64-row layout. The gadget-level row counts from step 1 show how much.
 - ZisK's figures come from code comments and documentation in a draft PR.
 - Changing stage 3 changes the stage-4 circuit, its fixed preprocessing and
-  every downstream profile, verifier key and fixture.
+  every downstream verifying key, verifier key and fixture.
 
 ## Comparison
 
@@ -550,7 +550,7 @@ Recursion has 61,151,377 frontend rows and still pads to `2^26`; the first
 stage retains nineteen circuits. Both 1,917-byte envelopes passed independent
 CPU verification and seven negative checks per run. The envelopes, 1,542-byte
 verifying keys and both stages' compact proofs are byte-identical across runs.
-The verifying key uses the shared BLS `VerifierProfile` structure with BN254
+The verifying key uses the shared BLS `VerifyingKey` structure with BN254
 version 7 and an explicit local verifying key digest; it is not a bundled
 verifying key catalog entry. These single runs have uncontrolled OS page
 cache and do not isolate a ceremony-related speedup over development
@@ -761,7 +761,7 @@ columns, so a successful smoke test cannot conceal an unused backend.
 fixture.** Use one saved proof, trusted root key and expected public claim,
 with fixed stage parameters and explicit `--dev-srs`. Build CPU and CUDA
 workers separately for each curve. Preserve curve-specific artifact
-directories and profiles. Compare canonical proof bytes between CPU and GPU
+directories and verifying keys. Compare canonical proof bytes between CPU and GPU
 for the same curve, setup and transcript at the FRI, first-KZG and recursive
 KZG boundaries, and verify every output with the native verifier. BLS and
 BN254 proofs are not expected to have identical bytes to each other.
@@ -769,7 +769,7 @@ BN254 proofs are not expected to have identical bytes to each other.
 The fixture must exercise GPU operations: record dispatch, and where the
 smallest valid proof falls below an acceleration threshold, add a targeted
 component parity case above that threshold. Include saved-stage replay,
-portable profile loading, altered-claim and deferred-pairing rejection, and
+portable verifying key loading, altered-claim and deferred-pairing rejection, and
 cross-curve artifact rejection. Acceptance: exact CPU/GPU proof parity and
 native verification for both curves, with logs proving that the intended GPU
 paths ran. This gate validates integration, not production setup security or
@@ -790,14 +790,14 @@ extra commitments, lookups, aggregation/recursive-verifier work, proof bytes,
 SRS replication, transfer traffic and total GPU-seconds. Existing scheduling
 of columns or MSM chunks across devices is distinct from adding independently
 proved recursive shards. Choose sharding only when the measured aggregate
-cost and memory requirements justify it; revise the circuit/profile boundary
+cost and memory requirements justify it; revise the circuit/verifying key boundary
 in a separate PR.
 
 ### Reports and run permissions
 
 Each step should attach its scoped source changes and a validation report;
 unexecuted checks remain marked pending. Parity reports identify the fixture
-digest, root/profile/setup identities, exact feature set, source revisions,
+digest, root/verifying key/setup identities, exact feature set, source revisions,
 commands, proof hashes, verification results and CPU/GPU dispatch. Performance
 reports additionally record GPU model/count, driver/toolkit and compiled SM
 architectures, cold versus warm cache state, per-stage wall time, CPU witness
@@ -820,7 +820,7 @@ recorded.
 GPU correctness is only one production requirement. BN254 still needs an
 authenticated production SRS with validated anchors, adequate public degree,
 an authenticated import/receipt, curve-separated cache identities, and
-reproducible verifier profiles. Select and audit its provenance separately;
+reproducible verifying keys. Select and audit its provenance separately;
 Filecoin parameters cannot supply this gate. Development SRS results remain
 known-trapdoor experiments even after every GPU check passes.
 

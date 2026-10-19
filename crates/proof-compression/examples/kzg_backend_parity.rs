@@ -190,7 +190,7 @@ fn prove(out: &Path, mode: &str) -> Result<()> {
   });
   fs::create_dir_all(out)?;
   fs::write(out.join("proof.bin"), &bytes)?;
-  fs::write(out.join("verifier.bin"), &verifier)?;
+  fs::write(out.join("vk.bin"), &verifier)?;
   fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
   println!("{}", serde_json::to_string(&report)?);
   Ok(())
