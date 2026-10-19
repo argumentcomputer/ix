@@ -9,6 +9,10 @@ namespace Ix.Cli.Compression
 @[extern "rs_compression_check_claim"]
 opaque checkClaim (claim statement : @& ByteArray) : IO Unit
 
+/-- The KZG curve compiled into this executable: `"bn254"` or `"bls12-381"`. -/
+@[extern "rs_compression_curve"]
+opaque curve : IO String
+
 /-- Select development parameters when `devSrs` is set; otherwise require
 authenticated production parameters for the compiled curve. -/
 @[extern "rs_compression_setup"]
@@ -22,7 +26,8 @@ opaque compress (vk proof claim statement : @& ByteArray) (dir cacheRoot : @& St
 
 /-- Verify with the verifying key compiled in under the packet's id, whose pinned
 aggregation program fixes the statement for `claim`, and return the setup
-class: `"filecoin"` or `"development"`. Development proofs need `devSrs`.
+class: `"filecoin"`, `"ignition"` or `"development"`. Development proofs need
+`devSrs`.
 Needs neither the aggregation backend nor a GPU. -/
 @[extern "rs_compression_verify"]
 opaque verify (proof claim : @& ByteArray) (devSrs : Bool) : IO String
@@ -49,9 +54,12 @@ def statementBytes (backend : Aggr.VerificationBackend) (claim : Ix.Claim) : Byt
 def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UInt32 := do
   let claim := Ix.Claim.ser wrapper.claim
   let setup ← verify wrapper.proof claim devSrs
-  if setup == "development" then
+  match setup with
+  | "development" =>
     IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} (not production-secure)"
-  else
+  | "ignition" =>
+    IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Aztec Ignition powers of tau"
+  | _ =>
     IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Filecoin powers of tau"
   return 0
 

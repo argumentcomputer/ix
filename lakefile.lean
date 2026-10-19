@@ -53,7 +53,7 @@ section FFI
 
 /-- Curve selection shared by the CLI library and compression worker. -/
 def compressionFeatures : IO (Array String) := do
-  match (← IO.getEnv "IX_KZG_CURVE").getD "bls12-381" with
+  match (← IO.getEnv "IX_KZG_CURVE").getD "bn254" with
   | "bls12-381" => return #["bls12-381", "solidity", "plonk"]
   | "bn254" => return #["bn254", "plonk"]
   | other => throw <| IO.userError s!"IX_KZG_CURVE must be bls12-381 or bn254, got {other}"
@@ -225,11 +225,11 @@ target ix_compression_worker pkg : FilePath := do
 
 /-- The terminal prover is a native Go executable with a pinned module graph. -/
 def compressionHelperName (features : Array String) : String :=
-  if features.contains "bn254" then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper"
+  if features.contains "bls12-381" then "ix-bls-plonk-wrapper" else "ix-bn254-plonk-wrapper"
 
 def compressionHelperArgs (features : Array String) (output : FilePath) : Array String :=
   #["build", "-buildvcs=false", "-trimpath", "-mod=readonly"] ++
-    (if features.contains "bn254" then #["-tags", "bn254"] else #[]) ++
+    (if features.contains "bls12-381" then #["-tags", "bls12381"] else #[]) ++
     #["-o", output.toString, "."]
 
 /-- PLONK arithmetic selection is independent of the inner KZG CUDA backend. -/

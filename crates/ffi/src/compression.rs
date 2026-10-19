@@ -47,6 +47,11 @@ extern "C" fn rs_compression_verify(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_compression_curve() -> LeanIOResult<LeanOwned> {
+  LeanIOResult::ok(LeanString::new(ix_proof_compression::kzg::curve::NAME))
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_compression_setup(dev_srs: bool) -> LeanIOResult<LeanOwned> {
   match pipeline::setup_description(dev_srs) {
     Ok(description) => LeanIOResult::ok(LeanString::new(description)),

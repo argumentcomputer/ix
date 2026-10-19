@@ -1,4 +1,4 @@
-//go:build bn254 && cuda
+//go:build !bls12381 && cuda
 
 package main
 

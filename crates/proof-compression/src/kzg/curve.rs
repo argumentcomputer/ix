@@ -1,7 +1,7 @@
 //! Curve types and canonical encoding widths for the selected KZG backend.
 //!
-//! BN254 is selected with `--no-default-features --features bn254`.
-//! The default backend is BLS12-381. Encodings are arkworks canonical
+//! BN254 is the default backend; BLS12-381 is selected with
+//! `--no-default-features --features bls12-381`. Encodings are arkworks canonical
 //! encodings; these widths do not describe in-memory or EVM representations.
 
 use ark_serialize::{

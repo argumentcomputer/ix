@@ -156,7 +156,7 @@
           mkPlonkHelper = { bn254, cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
             pname = (if bn254 then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper")
               + pkgs.lib.optionalString cuda "-cuda";
-            tags = pkgs.lib.optional bn254 "bn254" ++ pkgs.lib.optional cuda "cuda";
+            tags = pkgs.lib.optional (!bn254) "bls12381" ++ pkgs.lib.optional cuda "cuda";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
               root = ./tools/bls-plonk-wrapper;
@@ -182,9 +182,9 @@
             '';
           };
 
-          plonkHelper = mkPlonkHelper { bn254 = false; };
-          bn254PlonkHelper = mkPlonkHelper { bn254 = true; };
-          bn254PlonkCudaHelper = mkPlonkHelper { bn254 = true; cuda = true; };
+          plonkHelper = mkPlonkHelper { bn254 = true; };
+          plonkCudaHelper = mkPlonkHelper { bn254 = true; cuda = true; };
+          blsPlonkHelper = mkPlonkHelper { bn254 = false; };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -351,7 +351,7 @@
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
             src = leanSrc;
-            IX_PLONK_PREBUILT = "${plonkHelper}/bin/ix-bls-plonk-wrapper";
+            IX_PLONK_PREBUILT = "${plonkHelper}/bin/ix-bn254-plonk-wrapper";
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
@@ -450,8 +450,8 @@
             default = ixLib;
             ix = ixCLI;
             plonk-wrapper = plonkHelper;
-            plonk-wrapper-bn254 = bn254PlonkHelper;
-            plonk-wrapper-bn254-cuda = bn254PlonkCudaHelper;
+            plonk-wrapper-cuda = plonkCudaHelper;
+            plonk-wrapper-bls12-381 = blsPlonkHelper;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.
@@ -470,7 +470,7 @@
 
           checks = {
             plonk-wrapper = plonkHelper;
-            plonk-wrapper-bn254 = bn254PlonkHelper;
+            plonk-wrapper-bls12-381 = blsPlonkHelper;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
               craneArgs

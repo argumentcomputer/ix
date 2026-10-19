@@ -1,4 +1,4 @@
-//go:build !bn254 || !cuda
+//go:build bls12381 || !cuda
 
 package main
 
@@ -14,7 +14,7 @@ func validateProvingBackend() error {
 	case "", "cpu":
 		return nil
 	case "cuda":
-		return fmt.Errorf("CUDA PLONK requires a helper built with bn254,cuda and cgo")
+		return fmt.Errorf("CUDA PLONK requires a BN254 helper built with the cuda tag and cgo")
 	default:
 		return fmt.Errorf("IX_PLONK_BACKEND must be cpu or cuda")
 	}

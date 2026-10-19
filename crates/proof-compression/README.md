@@ -1,16 +1,24 @@
 # Proof compression
 
-## Experimental BN254 backend
+## Curve selection
 
-The `bn254` feature selects BN254 for the KZG library, including scalar
-arithmetic, FFTs, commitments, batched openings, BLAKE3 transcripts, compact
-proof encoding, recursive verifier gadgets and the standalone compression
-worker. Use it independently of the BLS12-381 terminal-backend features:
+BN254 is the default KZG curve, for the library, the compression worker and
+the `ix` CLI. The `bn254` feature selects it for scalar arithmetic, FFTs,
+commitments, batched openings, BLAKE3 transcripts, compact proof encoding,
+recursive verifier gadgets and the worker. BLS12-381 remains available and
+is selected without the default features:
 
 ```sh
+cargo test -p ix-proof-compression --test bn254_kzg
 cargo test -p ix-proof-compression --no-default-features \
-  --features bn254,parallel --test bn254_kzg
+  --features bls12-381,parallel,solidity,plonk
 ```
+
+The bundled verifying keys, Filecoin setup and Solidity KZG packet verifier
+are BLS12-381; `solidity` therefore selects `bls12-381`. Enabling both curves
+is a compile error.
+
+## BN254 backend
 
 BN254 supports an explicit known-trapdoor development SRS and caller-admitted
 Ignition parameters. The importer, admission and pipeline passed crate tests,
@@ -20,10 +28,10 @@ key is bundled yet. Filecoin environment variables cannot select a BN254
 setup. Admission of parameters and authorization of a verifying key are
 separate trust decisions.
 The `ix` library and its worker select the same curve through Lake's
-`IX_KZG_CURVE=bls12-381|bn254` setting; BLS12-381 remains the default.
-The Solidity exporter and gnark wrapper remain BLS12-381. Combining `bn254`
-with the default features, `bls12-381`, `solidity` or `plonk` is unsupported
-and rejected. The `bn254,cuda` integration passes CUDA component checks and
+`IX_KZG_CURVE=bn254|bls12-381` setting; BN254 is the default. The PLONK
+wrapper supports both curves; the Solidity KZG packet verifier is BLS12-381
+only. Combining `bn254` with `bls12-381` or `solidity` is rejected. The
+`bn254,cuda` integration passes CUDA component checks and
 ordinary KZG proof-byte parity on a small fixture. Saved Init development
 GPU proofs match CPU output; Ignition GPU proofs pass independent CPU
 verification and produce identical bytes with cold/warm fixed preprocessing.
@@ -658,7 +666,7 @@ verifying key exporter and local EVM conformance tests.
 
 ### Curve selection and validation status
 
-Lake uses `IX_KZG_CURVE=bls12-381|bn254` for both `ix` and the single
+Lake uses `IX_KZG_CURVE=bn254|bls12-381`, defaulting to BN254, for both `ix` and the single
 `ix-compression-worker` target. `IX_CUDA=1` enables the selected KZG CUDA
 backend and Goldilocks CUDA. BN254 builds its matching PLONK helper and selects
 explicitly admitted Ignition parameters or `--dev-srs`. Curve features
