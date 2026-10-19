@@ -1,0 +1,122 @@
+diff --git a/src/plonkish/gadgets/bytes.rs b/src/plonkish/gadgets/bytes.rs
+index 8061262..96852a1 100644
+--- a/src/plonkish/gadgets/bytes.rs
++++ b/src/plonkish/gadgets/bytes.rs
+@@ -2,11 +2,14 @@ use crate::traits::PrimeField;
+ 
+ use crate::plonkish::{Bool, CircuitBuilder, Table, Value};
+ 
+-/// A byte with constrained low/high nibbles. Only gadget constructors can
+-/// create it, so hashing cannot accidentally accept unbounded byte inputs.
++/// A constrained byte. Only gadget constructors can create it, so hashing
++/// cannot accidentally accept unbounded byte inputs. The nibble decomposition
++/// is materialized on demand: a byte selected between two constrained bytes
++/// is itself a byte, and consumers that only read the value (the compact
++/// BLAKE3 lowering) never pay for its nibbles.
+ #[derive(Clone, Copy, Debug)]
+ pub struct ByteValue {
+-    pub(super) nibbles: [Value; 2],
++    nibbles: Option<[Value; 2]>,
+     value: Value,
+ }
+ 
+@@ -63,10 +66,22 @@ impl ByteGadgets {
+         yes: ByteValue,
+         no: ByteValue,
+     ) -> ByteValue {
+-        ByteValue {
+-            nibbles: std::array::from_fn(|i| b.select(bit, yes.nibbles[i], no.nibbles[i])),
+-            value: b.select(bit, yes.value, no.value),
+-        }
++        let nibbles = match (yes.nibbles, no.nibbles) {
++            (Some(y), Some(n)) if y == n => Some(y),
++            _ => None,
++        };
++        ByteValue { nibbles, value: b.select(bit, yes.value, no.value) }
++    }
++
++    /// The byte's nibbles, decomposing and range-checking them if the byte
++    /// was produced without them.
++    pub(super) fn nibbles<F: PrimeField>(&self, b: &mut CircuitBuilder<F>, byte: ByteValue) -> [Value; 2] {
++        byte.nibbles.unwrap_or_else(|| {
++            let nibbles = self.nibble_hints(b, byte.value);
++            let packed = self.pack(b, &nibbles);
++            b.assert_equal(byte.value, packed);
++            nibbles
++        })
+     }
+ 
+     pub fn new<F: PrimeField>(b: &mut CircuitBuilder<F>) -> Self {
+@@ -128,7 +143,7 @@ impl ByteGadgets {
+         let nibbles = self.nibble_hints(b, value);
+         let packed = self.pack(b, &nibbles);
+         b.assert_equal(value, packed);
+-        ByteValue { nibbles, value }
++        ByteValue { nibbles: Some(nibbles), value }
+     }
+ 
+     pub fn input<F: PrimeField>(&self, b: &mut CircuitBuilder<F>, name: &str) -> ByteValue {
+@@ -138,10 +153,10 @@ impl ByteGadgets {
+ 
+     pub fn constant<F: PrimeField>(&self, b: &mut CircuitBuilder<F>, value: u8) -> ByteValue {
+         ByteValue {
+-            nibbles: [
++            nibbles: Some([
+                 b.constant(F::from_u8(value & 15)),
+                 b.constant(F::from_u8(value >> 4)),
+-            ],
++            ]),
+             value: b.constant(F::from_u8(value)),
+         }
+     }
+@@ -153,7 +168,7 @@ impl ByteGadgets {
+     ) -> ByteValue {
+         ByteValue {
+             value: self.pack(b, &nibbles),
+-            nibbles,
++            nibbles: Some(nibbles),
+         }
+     }
+ 
+@@ -162,7 +177,8 @@ impl ByteGadgets {
+         b: &mut CircuitBuilder<F>,
+         bytes: [ByteValue; 4],
+     ) -> Word {
+-        let nibbles = std::array::from_fn(|i| bytes[i / 2].nibbles[i % 2]);
++        let pairs = bytes.map(|byte| self.nibbles(b, byte));
++        let nibbles = std::array::from_fn(|i| pairs[i / 2][i % 2]);
+         Word {
+             value: self.pack(b, &nibbles),
+             nibbles,
+@@ -287,8 +303,9 @@ impl ByteGadgets {
+         }
+         let zero = b.constant(F::ZERO);
+         let mut borrow = zero;
++        let pairs: Vec<[Value; 2]> = bytes.iter().map(|&byte| self.nibbles(b, byte)).collect();
+         for i in 0..16 {
+-            let x = bytes[i / 2].nibbles[i % 2];
++            let x = pairs[i / 2][i % 2];
+             let digit = (bound >> (4 * i)) & 15;
+             let next = b.hint("comparison borrow", &[x, borrow], move |v| {
+                 Ok(F::from_bool(integer(v[0])? + integer(v[1])? > digit))
+@@ -325,8 +342,9 @@ impl ByteGadgets {
+     ) -> (Bool, Value) {
+         // Each sum is in 0..=120. The upper word is all ones iff its
+         // nibble sum is 120; the lower word is zero iff its sum is zero.
++        let pairs: Vec<[Value; 2]> = bytes.iter().map(|&byte| self.nibbles(b, byte)).collect();
+         let sums = [0, 4].map(|start| {
+-            let nibbles = bytes[start..start + 4].iter().flat_map(|v| v.nibbles);
++            let nibbles = pairs[start..start + 4].iter().flatten().copied();
+             let zero = b.constant(F::ZERO);
+             nibbles.fold(zero, |sum, nibble| b.add(sum, nibble))
+         });
+@@ -342,7 +360,8 @@ impl ByteGadgets {
+         b: &mut CircuitBuilder<F>,
+         bytes: [ByteValue; 8],
+     ) -> Value {
+-        let nibbles: [Value; 16] = std::array::from_fn(|i| bytes[i / 2].nibbles[i % 2]);
++        let pairs = bytes.map(|byte| self.nibbles(b, byte));
++        let nibbles: [Value; 16] = std::array::from_fn(|i| pairs[i / 2][i % 2]);
+         self.pack(b, &nibbles)
+     }
+ 
