@@ -3423,7 +3423,9 @@ every schedule (`compileEnvFold_lookups`), and the IO pipeline's hybrid
 environment (`hybridEnv`), whose fallback computes the canonicalization's
 specification (`fallback_spec`, from C1), folds as `Ix.Cert.compile`'s
 materialized environment does (`pipeline_fold`), given that the latter is
-the input's canonicalization and the code constants are its own. The
+the input's canonicalization and the code constants are its own and hold
+exactly its inductives; the validations' group order follows
+(`groupOrder_eq`, `hybrid_heads`) and is no longer a premise. The
 restatement's bound on the source-claim walk changes nothing
 (`sourceClaimOwned_fuel`, `pipeline_walk`). The IO pipeline's own loops,
 its front end (canonicalization, graph, ground filter, condensation) and
@@ -3432,7 +3434,7 @@ the blocks' independence within a wave stay tested. -/
 -- groupOrder (2026-10-19): the runtime check lists the production edit's
 -- `groupHeads` (which replaces `inductiveGroups`), `groupAll` and `orderedGroups`
 -- (8 → 10 safe definitions).
-/-- info: [cert-audit] hybrid: 20 roots; axioms used: [propext, Classical.choice, Quot.sound]
+/-- info: [cert-audit] hybrid: 23 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
 info: [cert-audit] hybrid: 10 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
@@ -3443,7 +3445,7 @@ run_cmd do
       `compileEnvFold_lookups, `fallback_spec, `hybrid_lookups, `pipeline_fold, `filter_length_mono,
       `filter_length_lt, `measure_push, `idBind, `fuel_exit, `forIn_measure, `sourceClaimOwned_fuel,
       `sourceClaimOwned_lookups, `view_get, `hybrid_invariant, `hybrid_covers,
-      `pipeline_walk].map (`Ix.Cert.Hybrid ++ ·))
+      `pipeline_walk, `mem_groupHeads, `groupOrder_eq, `hybrid_heads].map (`Ix.Cert.Hybrid ++ ·))
   checkRuntime (tag := "cert-audit") "hybrid"
     #[``Ix.CompileM.validateInductiveFlags, ``Ix.CompileM.validateMutualSafety, ``Ix.CompileM.uniformSafety,
       ``Ix.CompileM.mixedSafetyMessage, ``Ix.CompileM.groupHeads, ``Ix.CompileM.groupAll,
@@ -3483,12 +3485,18 @@ fun codeConsts leanByIx =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.compileEnvFold_lookups
 
+-- groupOrder (2026-10-19): `pipeline_fold`'s premise that the two environments'
+-- groups agree in order is gone (proved: `groupOrder_eq`, `hybrid_heads`); in its
+-- place the IO layer's `inductives` (the code constants hold exactly the input's
+-- inductives), tested like `code`; re-frozen.
 /-- info: Ix.Cert.Hybrid.pipeline_fold : ∀ (full : Ix.Environment) (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
   (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)),
   (∀ (n : Ix.Name), full.get? n = Option.map (fun p => Ix.Cert.Canon.constS p.snd) (leanByIx.get? n)) →
     (∀ (n : Ix.Name) (ci : Ix.ConstantInfo), codeConsts.get? n = some ci → full.get? n = some ci) →
       codeConsts.size ≤ leanByIx.size ∧ full.consts.size = leanByIx.size →
-        Ix.Cert.Hybrid.groupOrder (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) = Ix.Cert.Hybrid.groupOrder full →
+        (∀ (n : Ix.Name) (v : Ix.InductiveVal),
+            (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
+              (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) →
           ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
             Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg
                 (leanByIx.size - codeConsts.size) sharingLimits width =

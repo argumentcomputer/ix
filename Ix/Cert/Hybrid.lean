@@ -1,4 +1,5 @@
 import Ix.Cert.Schedule
+import Ix.CompileCert.Canon.Ref
 import Ix.Cert.Canon
 import Ix.Cert.Statement
 
@@ -19,6 +20,13 @@ behaviour-identical). So:
 * `validateInductiveFlags_eq`, `validateMutualSafety_eq`: the two
   validations agree on environments with the same lookups whose inductive
   groups agree in order (`groupOrder`);
+* `groupOrder_eq`: the groups agree in order on environments with the same
+  lookups whose stored inductives have the same first members: the
+  validations take the first members as a set ordered by
+  `Ix.nameCompareExact` (`groupHeads`, `mem_groupHeads`), each with its own
+  `all` read through `get?`; `hybrid_heads`: so do the hybrid and the
+  materialized environments when the code constants hold exactly the input's
+  inductives;
 * `compileEnvFold_lookups`: **two such environments, with the same source
   count, compile alike** under every schedule (`width`, `dbg`, by CQP.4 a);
   the result's `CompileEnv` holds the environment and count it was given
@@ -38,14 +46,12 @@ behaviour-identical). So:
   while present and unseen, so the walk ends within that many iterations);
   the restatement passes exactly that number.
 
-**What stays a premise, and why:** the validations take their inductive
-groups from `inductiveGroups`, an `env.consts.fold` that keeps the first
-`all` met for each group and is then sorted by name hash. The hybrid map
-holds every inductive the materialized one does, so the two orders agree
-when a group's members agree on `all` and no two groups' first members share
-a hash field; `groupOrder` states that agreement. The IO layer's own steps
-are tested, not proved: that its loops build the hybrid environment's
-pieces as stated (`code`, `canon`, `sizes`), that its streamed
+**What stays a premise, and why:** the group order is no longer one (it was
+`groupOrder`'s agreement until the validations' order became the first
+members' set, 2026-10-19). The IO layer's own steps are tested, not proved:
+that its loops build the hybrid environment's pieces as stated (`code`,
+`canon`, `sizes`, and `inductives`: the code constants hold exactly the
+input's inductives), that its streamed
 canonicalization, graph, ground filter and condensation are
 `Ix.Cert.groundSplit`'s and `blocksOf`'s (`cert-compile-parity-init`), and
 that the blocks of one wave are independent (`compile-schedule-identity`'s
@@ -73,6 +79,58 @@ theorem mixedSafetyMessage_eq {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
   funext members
   unfold mixedSafetyMessage
   rw [get]
+
+/-! ## The validations' group order
+
+`Ix.CompileM.orderedGroups` pairs each first member of an inductive group,
+taken from a `Std.TreeSet` under `Ix.nameCompareExact`, with its own `all`
+read through `get?` (`groupAll`). The set's order is its comparator's,
+whatever the fold, so two environments with the same lookups whose stored
+inductives have the same first members order their groups alike
+(`groupOrder_eq`). -/
+
+/-- `k` is the first member of an inductive stored in `consts`. -/
+def HeadIn (consts : Std.HashMap Ix.Name Ix.ConstantInfo) (k : Ix.Name) : Prop :=
+  ∃ p ∈ consts.toList, ∃ v, p.2 = .inductInfo v ∧ v.all[0]? = some k
+
+/-- **The first members are the stored inductives'**, whatever the fold's order. -/
+theorem mem_groupHeads (e : Ix.Environment) (k : Ix.Name) :
+    k ∈ groupHeads e ↔ HeadIn e.consts k := by
+  unfold groupHeads HeadIn
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  generalize e.consts.toList = l
+  rw [show (∃ p ∈ l, ∃ v, p.2 = .inductInfo v ∧ v.all[0]? = some k) ↔
+      (k ∈ ({} : Std.TreeSet Ix.Name Ix.nameCompareExact) ∨
+        ∃ p ∈ l, ∃ v, p.2 = .inductInfo v ∧ v.all[0]? = some k) by simp]
+  generalize ({} : Std.TreeSet Ix.Name Ix.nameCompareExact) = t
+  induction l generalizing t with
+  | nil => simp
+  | cons p l ih =>
+    rw [List.foldl_cons, ih]
+    obtain ⟨n, ci⟩ := p
+    cases ci with
+    | inductInfo v =>
+      cases hv : v.all[0]? with
+      | none => simp [hv]
+      | some first =>
+        simp only [hv, Std.TreeSet.mem_insert, Std.LawfulEqCmp.compare_eq_iff_eq, List.mem_cons,
+          exists_eq_or_imp, ConstantInfo.inductInfo.injEq, exists_eq_left', Option.some.injEq]
+        constructor
+        · rintro ((h | h) | h) <;> simp_all
+        · rintro (h | h | h) <;> simp_all
+    | _ => simp
+
+/-- **The group order is the first members' and the lookups'**: two environments
+with the same lookups whose stored inductives have the same first members order
+their groups alike. -/
+theorem groupOrder_eq {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e₁.get? n = e₂.get? n)
+    (heads : ∀ k, HeadIn e₁.consts k ↔ HeadIn e₂.consts k) : groupOrder e₁ = groupOrder e₂ := by
+  have get : Ix.Environment.get? e₁ = Ix.Environment.get? e₂ := funext lookups
+  have sets : (groupHeads e₁).toArray = (groupHeads e₂).toArray :=
+    Std.TreeSet.Equiv.toArray_eq (Std.TreeSet.Equiv.of_forall_mem_iff fun k => by
+      rw [mem_groupHeads, mem_groupHeads, heads])
+  unfold groupOrder orderedGroups groupAll
+  rw [sets, get]
 
 /-- **The mixed-safety validation agrees** on environments with the same
 lookups whose inductive groups agree in order: it reads members through
@@ -164,27 +222,43 @@ theorem hybrid_lookups (full : Ix.Environment) (codeConsts : Std.HashMap Ix.Name
     rw [fallback_spec, ← canon]
     rfl
 
+/-- The hybrid environment's stored inductives, those of the materialized one,
+have its first members. -/
+theorem hybrid_heads {full : Ix.Environment} {codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo}
+    {leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)}
+    (inductives : ∀ n v, (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
+      (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) (k : Ix.Name) :
+    HeadIn (hybridEnv codeConsts leanByIx).consts k ↔ HeadIn full.consts k := by
+  show HeadIn codeConsts k ↔ HeadIn full.consts k
+  constructor
+  · rintro ⟨⟨n, ci⟩, hm, v, rfl, hv⟩
+    exact ⟨(n, .inductInfo v), (inductives n v).1 hm, v, rfl, hv⟩
+  · rintro ⟨⟨n, ci⟩, hm, v, rfl, hv⟩
+    exact ⟨(n, .inductInfo v), (inductives n v).2 hm, v, rfl, hv⟩
+
 /-- **The IO pipeline's fold equals `Ix.Cert.compile`'s** (CQP.4 b): over
 one condensation, the fold over the IO pipeline's hybrid environment, with
 its count of unmaterialized constants, its `--workers` width and its
 options' trace, is the fold `Ix.Cert.compile` runs over the materialized
 environment, its result's `CompileEnv` holding the hybrid environment and
-count. Premises: the materialized environment is the input's
-canonicalization and holds exactly the input's names, the materialized code
-constants are its own, and the two environments' inductive groups agree in
-order. -/
+count. Premises (the IO layer's loops, tested): the materialized environment
+is the input's canonicalization and holds exactly the input's names, the
+materialized code constants are its own, and they hold exactly its inductives
+(`inductives`). -/
 theorem pipeline_fold (full : Ix.Environment) (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
     (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo))
     (canon : ∀ n, full.get? n = (leanByIx.get? n).map fun p => Ix.Cert.Canon.constS p.2)
     (code : ∀ n ci, codeConsts.get? n = some ci → full.get? n = some ci)
     (sizes : codeConsts.size ≤ leanByIx.size ∧ full.consts.size = leanByIx.size)
-    (groups : groupOrder (hybridEnv codeConsts leanByIx) = groupOrder full)
+    (inductives : ∀ n v, (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
+      (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList)
     (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
     compileEnvFold (hybridEnv codeConsts leanByIx) blocks dbg (leanByIx.size - codeConsts.size) sharingLimits
         width =
       restore (hybridEnv codeConsts leanByIx) (leanByIx.size - codeConsts.size) <$>
         compileEnvFold full blocks false 0 sharingLimits foldWaveTasks :=
-  compileEnvFold_lookups (hybrid_lookups full codeConsts leanByIx canon code) groups
+  compileEnvFold_lookups (hybrid_lookups full codeConsts leanByIx canon code)
+    (groupOrder_eq (hybrid_lookups full codeConsts leanByIx canon code) (hybrid_heads inductives))
     (by show codeConsts.size + (leanByIx.size - codeConsts.size) = full.consts.size + 0; omega)
     blocks dbg false sharingLimits width foldWaveTasks
 
