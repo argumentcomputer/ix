@@ -808,6 +808,189 @@ def report (c : Chain) : Report := c.task.get.report
 
 end Chain
 
+/-! ## The run-ahead (AuxGen M2a, a measurement mode)
+
+M2's aux tails read the service, so its asks cannot wait for the waves: a
+wave's tails would wait for that wave's asks, and the waves would run at the
+service's pace plus the tails' (auxgen-m2.md §2). The asks depend only on the
+input and the condensation, so the run-ahead makes them from the start, one
+level of the fold's schedule at a time (`levels`: the blocks whose
+source-owned dependencies are in earlier levels, in key order), on a
+dedicated thread, and publishes the run after each level. A block's tail
+reads the run of its level, which holds its groups and everything they
+depend on: a function of the input and the condensation, not of timing or
+of the waves' width. One snapshot per level, not per block: each snapshot
+handed out costs the next ask one copy of the fold's index (a task's value is
+shared, and `Std.HashMap.insert` copies a shared map). -/
+
+/-- Which blocks the run-ahead asks for. -/
+inductive Asks where
+  /-- every block that holds an inductive (M1's asks) -/
+  | inductive
+  /-- the blocks with a Type-level `.below` family, the ones M2's IxC arm asks
+  about (lever P2) -/
+  | below
+  deriving BEq, Inhabited, Repr
+
+/-- Whether a block has a Type-level `.below` family in the input: a member
+`T` whose `T.below` is a definition, or whose `T.below_1` is (a nested
+auxiliary's, hung off Lean's first member). -/
+def holdsTypeBelow (get? : Ix.Name → Option Ix.ConstantInfo) (members : Array Ix.Name) : Bool :=
+  let isDefn (n : Ix.Name) : Bool := match get? n with
+    | some (.defnInfo _) => true
+    | _ => false
+  members.any fun n => isDefn (Ix.Name.mkStr n "below") || isDefn (Ix.Name.mkStr n "below_1")
+
+namespace Run
+
+/-- `ask`, asking only for the blocks `asks` selects. -/
+def askWhere (asks : Asks) (r : Run) (ready : Array (Ix.Name × Ix.Name × Ix.Set Ix.Name)) : Run :=
+  match asks, r.service with
+  | .inductive, _ => r.ask ready
+  | .below, .ok svc =>
+    r.ask (ready.filter fun (_, _, all) =>
+      holdsTypeBelow svc.input.get? (all.toArray.qsort (nameCmp · · == .lt)))
+  | .below, .error _ => r
+
+end Run
+
+/-- **The service run ahead of the waves**: the run before any ask, then the
+run after each level's asks. -/
+structure RunAhead where
+  /-- `levels[0]` before any ask; `levels[i + 1]` after level `i`'s -/
+  levels : Array (Task Run)
+  /-- each block's level, by canonical key -/
+  levelOf : Std.HashMap NameKey Nat
+
+instance : Inhabited RunAhead := ⟨{ levels := #[], levelOf := {} }⟩
+
+namespace RunAhead
+
+/-- Start the service over the input (`get?`, the condensation) and ask, on a
+dedicated thread, level by level (`(canonical key, representative,
+members)`, key order within a level), the blocks `asks` selects. -/
+def start (get? : Ix.Name → Option Ix.ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (levels : Array (Array (Ix.Name × Ix.Name × Ix.Set Ix.Name))) (asks : Asks) : RunAhead :=
+  Id.run do
+    let t₀ : Task Run :=
+      Task.spawn (prio := .dedicated) fun _ => Run.start { get? := get?, blocks := blocks }
+    let mut tasks : Array (Task Run) := #[t₀]
+    let mut levelOf : Std.HashMap NameKey Nat := {}
+    let mut t := t₀
+    for (level, i) in levels.zipIdx do
+      t := t.map (prio := .dedicated) (·.askWhere asks level)
+      tasks := tasks.push t
+      for (key, _, _) in level do
+        levelOf := levelOf.insert ⟨key⟩ i
+    return { levels := tasks, levelOf }
+
+/-- The run a block's tail reads: the run after its level's asks, by the
+block's canonical key; `none` for a block the schedule does not place. -/
+def runFor (ra : RunAhead) (key : Ix.Name) : Option (Task Run) := do
+  let i ← ra.levelOf.get? ⟨key⟩
+  ra.levels[i + 1]?
+
+/-- Wait for every ask; the report. -/
+def report (ra : RunAhead) : Report :=
+  match ra.levels.back? with
+  | some t => t.get.report
+  | none => {}
+
+end RunAhead
+
+/-! ## The service measured (AuxGen M2a: levers P1 and P2)
+
+`measure` times the run-ahead's work on the calling thread, in three ways:
+* **as it runs**: every level's asks, each group lowered when first met and
+  folded after what it depends on (`ensure`): the service's sequential time;
+* **lowering, then folding**: the same groups lowered first, all of them
+  (`lowerOnly`), then folded (`ensure`, whose lowering is then done): the
+  lowering's share, which bounds what a two-stage pipeline (P1) can save;
+* **the `.below` asks only** (P2), as it runs.
+-/
+
+namespace Service
+
+/-- **Lower group `root` and everything `ensure root` would fold, folding
+nothing**, in `ensure`'s first-visit order; `seen` carries the groups
+visited by earlier calls. -/
+def lowerOnly (s : Service) (seen : Std.HashSet Nat) (root : Nat) :
+    Service × Std.HashSet Nat := Id.run do
+  let mut s := s
+  let mut seen := seen
+  let mut stack : Array Nat := #[root]
+  while h : stack.size > 0 do
+    let node := stack[stack.size - 1]
+    stack := stack.pop
+    if seen.contains node || !s.isPendingStatus node then continue
+    seen := seen.insert node
+    s := s.lowerClosure node
+    -- pushed last-first, so that they are visited first-first
+    for d in s.byNameDesc (s.deps node) do
+      if !seen.contains d && s.isPendingStatus d then stack := stack.push d
+  return (s, seen)
+
+/-- `lowerOnly` for the groups claiming `names`. -/
+def lowerNames (s : Service) (seen : Std.HashSet Nat) (names : Array Ix.Name) :
+    Service × Std.HashSet Nat :=
+  names.foldl (init := (s, seen)) fun (s, seen) n =>
+    match s.discover n with
+    | (some i, s) => s.lowerOnly seen i
+    | (none, s) => (s, seen)
+
+end Service
+
+/-- The members of the blocks of `levels` that `asks` selects, in ask order. -/
+def askedMembers (get? : Ix.Name → Option Ix.ConstantInfo) (asks : Asks)
+    (levels : Array (Array (Ix.Name × Ix.Name × Ix.Set Ix.Name))) : Array (Array Ix.Name) :=
+  levels.foldl (init := #[]) fun out level =>
+    level.foldl (init := out) fun out (_, _, all) =>
+      let members := all.toArray.qsort (nameCmp · · == .lt)
+      let take := holdsInductive get? members &&
+        (asks == .inductive || holdsTypeBelow get? members)
+      if take then out.push members else out
+
+/-- **The service's work timed** on this thread (AuxGen M2a; P1, P2): one
+line per measurement. -/
+def measure (get? : Ix.Name → Option Ix.ConstantInfo) (blocks : Ix.CondensedBlocks)
+    (levels : Array (Array (Ix.Name × Ix.Name × Ix.Set Ix.Name))) : IO (Array String) := do
+  let .ok pre := Ix.Kernel.Reader.builtinPrelude (md := .source)
+    | return #["[auxgen-ixc] measure: the committed prelude does not load"]
+  let input : Input := { get? := get?, blocks := blocks }
+  let fresh : IO Service := IO.lazyPure fun _ =>
+    Service.start pre input (Ix.RoleEvidence.bundleEvidence ())
+  let summary (s : Service) : String :=
+    let (p, a, r, b) := s.counts
+    s!"groups met {s.entries.size}: {a} accepted, {r} refused, {b} blocked, {p} pending"
+  let mut out : Array String := #[]
+  -- as it runs, every inductive block
+  let all := askedMembers get? .inductive levels
+  let s₀ ← fresh
+  let t₀ ← IO.monoMsNow
+  let s ← IO.lazyPure fun _ => all.foldl (init := s₀) fun s ms => s.ensureNames ms
+  let t₁ ← IO.monoMsNow
+  out := out.push s!"[auxgen-ixc] measure: as it runs, {all.size} inductive blocks: {t₁ - t₀} ms; \
+    {summary s}"
+  -- lowering, then folding
+  let s₀ ← fresh
+  let t₀ ← IO.monoMsNow
+  let (s, _) ← IO.lazyPure fun _ =>
+    all.foldl (init := (s₀, ({} : Std.HashSet Nat))) fun (s, seen) ms => s.lowerNames seen ms
+  let t₁ ← IO.monoMsNow
+  let s ← IO.lazyPure fun _ => all.foldl (init := s) fun s ms => s.ensureNames ms
+  let t₂ ← IO.monoMsNow
+  out := out.push s!"[auxgen-ixc] measure: lowering {t₁ - t₀} ms, then folding {t₂ - t₁} ms; \
+    {summary s}"
+  -- the `.below` asks only
+  let below := askedMembers get? .below levels
+  let s₀ ← fresh
+  let t₀ ← IO.monoMsNow
+  let s ← IO.lazyPure fun _ => below.foldl (init := s₀) fun s ms => s.ensureNames ms
+  let t₁ ← IO.monoMsNow
+  out := out.push s!"[auxgen-ixc] measure: as it runs, the {below.size} blocks with a \
+    Type-level .below: {t₁ - t₀} ms; {summary s}"
+  return out
+
 end Ix.AuxGen.Source
 
 end
