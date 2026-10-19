@@ -356,7 +356,7 @@ def buildBelowValue (recVal : RecursorVal) (_ind : InductiveVal)
   -- paramDecls + motiveDecls; per-minor field decls are pushed inside.
   let recLevelParams := recVal.cnst.levelParams
   let outerCtx : Array LocalDecl := paramDecls ++ motiveDecls
-  let mut tcScope ← AuxScope.new kernel outerCtx recLevelParams
+  let mut tcScope ← AuxScope.new kernel outerCtx recLevelParams (route := .below)
 
   for minorDom in minorDoms do
     let (minorArg, tcScope') ←
@@ -428,7 +428,7 @@ n_minors({nMinors}) + n_indices({nIndices}) + 1 major"
     let majorDomain := (← arrIdx decls (total - 1) "buildBelowDef: decls").domain
 
     let ctxDecls : Array LocalDecl := decls.extract 0 (total - 1)
-    let tc ← AuxScope.new kernel ctxDecls recLevelParams
+    let tc ← AuxScope.new kernel ctxDecls recLevelParams (route := .below)
     tc.getLevel majorDomain
 
   -- rlvl = mkLevelMax(ilvl, elim_level), matching Lean's BRecOn.lean:83:

@@ -35,6 +35,10 @@ inductive KernelSite where
   /-- The elimination decision: `isLargeEliminator` on the block named
       `block`. -/
   | largeElim (block : String)
+  /-- AuxGen M2a: IxC Source mode's refusal of `op` (`getLevel`, a scope's
+      `new`/`push`/`pop`, the block's flat block), in the fail-closed mode
+      (`Ix.AuxGen.IxcMode.failClosed`). -/
+  | ixc (op : String)
   deriving BEq, Inhabited
 
 /-- D-12's refusals, one constructor each. Converter refusals (terms in,
@@ -132,6 +136,7 @@ out of range"
   | .kernel (.resultSort block) detail => s!"compute_is_large_and_k: TC failed for {block}: {detail}"
   | .kernel (.largeElim block) detail =>
     s!"compute_is_large_and_k: is_large_eliminator failed for {block}: {detail}"
+  | .kernel (.ixc op) detail => s!"aux kernel (IxC Source mode): {op}: {detail}"
   | .internal what => s!"aux kernel bridge: {what}"
 
 instance : ToString AuxKernelError := ⟨render⟩

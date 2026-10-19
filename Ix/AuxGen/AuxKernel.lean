@@ -8,10 +8,11 @@
   (for a decision), the block's elimination decision, and an environment
   that holds the constants those questions name. This module states those
   questions as an interface over a closed sum of backends. M0 has one
-  backend, `Ix.Tc` through the bridge (`Ix.AuxGen.Kernel`); AuxGen M1 adds
-  IxC's Source mode beside it (`ixc`, `ixcFallback`, `shadow`), at the two
-  construction points `compileMutualAuxTail` and the decompile driver's
-  `runK`.
+  backend, `Ix.Tc` through the bridge (`Ix.AuxGen.Kernel`), constructed at
+  `compileMutualAuxTail`'s caller and the decompile driver's `runK`. AuxGen
+  M2a adds IxC's Source mode beside it for `.below`'s scopes (the `ixc` arm,
+  in the modes `shadow`, `fallback`, `failClosed`; below), which only the
+  measurement fold constructs.
 
   ## The contract
 
@@ -71,9 +72,34 @@
   before M0, with the same arguments in the same order; the scope checks
   only read state. So the switch is byte-identical, and the runtime closure
   of `Ix.Cert.compile` is unchanged (dispatch is ordinary code).
+
+  ## The IxC arm (AuxGen M2a, a measurement mode)
+
+  `ixc maps oracle` is `Ix.Tc` over `maps` for every generator, except the
+  scopes a generator opens with `route := .below` (`.below`'s two scopes),
+  which ask IxC Source mode through `oracle` (`Ix.AuxGen.Oracle`), in the
+  oracle's mode (`IxcMode`):
+  * `shadow`: both kernels answer every question; `Ix.Tc`'s answer is used.
+  * `fallback`: both answer; IxC's answer is used where it answers.
+  * `failClosed`: IxC alone; a refusal fails the block.
+
+  The arm only calls the oracle's closures, so no production path reaches
+  IxC through it (`Ix.AuxGen.Oracle`'s docstring). Under `shadow` and
+  `fallback` the `Ix.Tc` scope is opened, pushed, popped and asked exactly as
+  on the `Ix.Tc` arm, so `Ix.Tc`'s environment evolves as in production. Each
+  question is counted in `AuxKernelCtx.ixcStats`.
+
+  Before `.below`, the tail asks the kernel to install the block's own
+  canonical flat block (`withFlatBlock`): `Ix.Tc` needs nothing; IxC
+  installs it when the block's layout is not Lean's, so `.below`'s terms
+  read through σ.
+
+  An IxC-only scope (`failClosed`) answers `getLevel`; it gives no answer to
+  `whnf?`, `isDefEq?` and `inferType?` (`.below` asks none of them).
 -/
 module
 public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.Oracle
 public section
 
 namespace Ix.AuxGen
@@ -85,6 +111,21 @@ open Ix.CompileM (CompileM CompileError)
 inductive AuxKernel where
   /-- `Ix.Tc` over the bridge kenv; `maps` gives provisional addresses. -/
   | tc (maps : AddrMaps)
+  /-- AuxGen M2a's measurement mode: `Ix.Tc` over `maps`, and IxC Source mode
+      through `oracle` for the scopes routed to it (`AuxRoute.below`). -/
+  | ixc (maps : AddrMaps) (oracle : AuxOracle)
+
+/-- The addresses `Ix.Tc` resolves through. -/
+def AuxKernel.maps : AuxKernel → AddrMaps
+  | .tc maps => maps
+  | .ixc maps _ => maps
+
+/-- Which generator opens a scope (AuxGen M2a): `.below`'s scopes ask IxC on
+    the `ixc` arm. -/
+inductive AuxRoute where
+  | tc
+  | below
+  deriving BEq, Inhabited
 
 /-- How `admitSource` loads a source constant. -/
 inductive AdmitMode where
@@ -107,6 +148,11 @@ structure TcScopeRef where
 /-- A scope value's backend part. -/
 inductive AuxScopeBackend where
   | tc (ref : TcScopeRef)
+  /-- IxC alone (`failClosed`). -/
+  | ixc (scope : OracleScope)
+  /-- `Ix.Tc`, and IxC beside it (`shadow`, `fallback`); `none` once IxC
+      refused the scope. -/
+  | both (ref : TcScopeRef) (scope : Option OracleScope)
 
 /-- A local context as a value. It denotes `(levelParams, locals)`. -/
 structure AuxScope where
@@ -118,6 +164,21 @@ structure AuxScope where
   nOuter : Nat
   backend : AuxScopeBackend
 
+/-! ## The IxC arm's bookkeeping -/
+
+/-- Update the tail's IxC counts. -/
+def bumpIxc (f : IxcStats → IxcStats) : KBridgeM Unit :=
+  modify fun k => { k with ixcStats := f k.ixcStats }
+
+/-- A telescope as the oracle takes it. -/
+def oracleLocals (decls : Array LocalDecl) : Array (Name × Expr) :=
+  decls.map fun d => (d.fvarName, d.domain)
+
+/-- The oracle's mode on the `ixc` arm. -/
+def AuxKernel.ixcMode? : AuxKernel → Option IxcMode
+  | .ixc _ o => some o.mode
+  | .tc _ => none
+
 namespace AuxScope
 
 /-- The scope's depth: its number of locals. -/
@@ -128,62 +189,185 @@ private def tcRef (view : TcScopeSt) : KBridgeM TcScopeRef := do
   let ctx ← get
   return { view, epoch := ctx.scopeEpoch, ctxId := ctx.tcState.ctxId }
 
-/-- The bridge view of a scope value, if its backend can serve it. `Ix.Tc`
-    serves a value while the kernel context it denotes is live: no newer
-    scope or elimination decision replaced the type checker (the epoch), and
-    the type checker's context is the one the value left (`ctxId`, which
-    `Ix.Tc` restores on every outcome of a query). Depth alone would not do:
-    after `push [x]`, `pop`, `push [y]` the depth matches, but `x` would be
-    answered as `y`. Otherwise the value is refused (`staleScope`). This
-    only reads state. -/
+/-- The bridge view of an `Ix.Tc` reference, if the context it denotes is
+    live: no newer scope or elimination decision replaced the type checker
+    (the epoch), and the type checker's context is the one the value left
+    (`ctxId`, which `Ix.Tc` restores on every outcome of a query). Depth
+    alone would not do: after `push [x]`, `pop`, `push [y]` the depth
+    matches, but `x` would be answered as `y`. Otherwise the value is
+    refused (`staleScope`). This only reads state. -/
+private def tcLive (r : TcScopeRef) (op : String) : KBridgeM TcScopeSt := do
+  let ctx ← get
+  if r.epoch == ctx.scopeEpoch && r.ctxId == ctx.tcState.ctxId then
+    return r.view
+  throwBridge (.staleScope op)
+
+/-- The bridge view of a scope value, if its backend can serve it: the
+    `Ix.Tc` part's (`tcLive`). An IxC-only scope has none (`staleScope`). -/
 def live? (s : AuxScope) (op : String) : KBridgeM TcScopeSt := do
   match s.backend with
-  | .tc r =>
-    let ctx ← get
-    if r.epoch == ctx.scopeEpoch && r.ctxId == ctx.tcState.ctxId then
-      return r.view
-    throwBridge (.staleScope op)
+  | .tc r | .both r _ => tcLive r op
+  | .ixc _ => throwBridge (.staleScope op)
 
-/-- Open a scope over `ctx` with level parameters `lps`. -/
-def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name) :
-    KBridgeM AuxScope := do
-  match k with
-  | .tc maps =>
+/-- The `Ix.Tc` scope's own checks, for an IxC-only scope: duplicate level
+    parameters and outer variables are refused as `TcScopeSt.new` refuses
+    them. -/
+private def checkScopeNames (ctx : Array LocalDecl) (lps : Array Name) : KBridgeM Unit := do
+  let mut seenParams : Std.HashSet Name := {}
+  for name in lps do
+    if seenParams.contains name then throwBridge (.duplicateLevelParam name)
+    seenParams := seenParams.insert name
+  let mut seen : Std.HashSet Name := {}
+  for decl in ctx do
+    if seen.contains decl.fvarName then throwBridge (.duplicateOuterFVar decl.fvarName)
+    seen := seen.insert decl.fvarName
+
+/-- IxC's scope over `ctx`, or `none` (counted) when IxC refuses it. -/
+private def ixcNew (o : AuxOracle) (ctx : Array LocalDecl) (lps : Array Name) :
+    KBridgeM (Option OracleScope × Option String) := do
+  match o.newScope lps (oracleLocals ctx) with
+  | .ok s => return (some s, none)
+  | .error e =>
+    bumpIxc fun st => (st.sample s!"scope new: {e}") |> fun st =>
+      { st with scopesRefused := st.scopesRefused + 1 }
+    return (none, some e)
+
+/-- Open a scope over `ctx` with level parameters `lps`, for the generator
+    `route`. -/
+def new (k : AuxKernel) (ctx : Array LocalDecl) (lps : Array Name)
+    (route : AuxRoute := .tc) : KBridgeM AuxScope := do
+  match k, route with
+  | .ixc maps o, .below =>
+    if o.mode == .failClosed then
+      checkScopeNames ctx lps
+      match ← ixcNew o ctx lps with
+      | (some s, _) =>
+        return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
+                 backend := .ixc s }
+      | (none, e) => throwBridge (.kernel (.ixc "scope") (e.getD ""))
     let view ← TcScopeSt.new ctx lps maps
+    let (s?, _) ← ixcNew o ctx lps
+    return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
+             backend := .both (← tcRef view) s? }
+  | k, _ =>
+    let view ← TcScopeSt.new ctx lps k.maps
     return { kernel := k, levelParams := lps, locals := ctx, nOuter := ctx.size,
              backend := .tc (← tcRef view) }
 
+/-- IxC's half of a `push`/`pop` on a `both` scope: the scope after it, or
+    `none` (counted) when IxC refuses it. -/
+private def ixcStep (op : String) (s? : Option OracleScope)
+    (step : OracleScope → Except String OracleScope) : KBridgeM (Option OracleScope) := do
+  let some s := s? | return none
+  match step s with
+  | .ok s' => return some s'
+  | .error e =>
+    bumpIxc fun st => (st.sample s!"scope {op}: {e}") |> fun st =>
+      { st with scopesRefused := st.scopesRefused + 1 }
+    return none
+
 /-- Push a telescope onto the scope. -/
 def push (s : AuxScope) (decls : Array LocalDecl) : KBridgeM AuxScope := do
-  let view ← (← s.live? "push").pushLocals decls
-  return { s with locals := s.locals ++ decls, backend := .tc (← tcRef view) }
+  match s.backend with
+  | .tc r =>
+    let view ← (← tcLive r "push").pushLocals decls
+    return { s with locals := s.locals ++ decls, backend := .tc (← tcRef view) }
+  | .ixc o =>
+    for decl in decls do
+      if s.locals.any (·.fvarName == decl.fvarName) then
+        throwBridge (.duplicatePushedFVar decl.fvarName)
+    match o.push (oracleLocals decls) with
+    | .ok o' => return { s with locals := s.locals ++ decls, backend := .ixc o' }
+    | .error e => throwBridge (.kernel (.ixc "push") e)
+  | .both r o? =>
+    let view ← (← tcLive r "push").pushLocals decls
+    let o' ← ixcStep "push" o? (·.push (oracleLocals decls))
+    return { s with locals := s.locals ++ decls, backend := .both (← tcRef view) o' }
 
 /-- Pop the most recently pushed telescope `decls`. -/
 def pop (s : AuxScope) (decls : Array LocalDecl) : KBridgeM AuxScope := do
   -- `popLocals` refuses a pop beyond the pushed locals or out of order, so
   -- the truncation below removes exactly `decls`.
-  let view ← (← s.live? "pop").popLocals decls
-  return { s with locals := s.locals.extract 0 (s.locals.size - decls.size),
-                  backend := .tc (← tcRef view) }
+  let keep := s.locals.size - decls.size
+  match s.backend with
+  | .tc r =>
+    let view ← (← tcLive r "pop").popLocals decls
+    return { s with locals := s.locals.extract 0 keep, backend := .tc (← tcRef view) }
+  | .ixc o =>
+    -- the same refusals as `popLocals`
+    if decls.size > s.locals.size - s.nOuter then throwBridge .popExceedsPushed
+    for (decl, i) in decls.zipIdx do
+      if (s.locals[keep + i]?.map (·.fvarName == decl.fvarName)) != some true then
+        throwBridge (.popNotLifo decl.fvarName)
+    match o.pop decls.size with
+    | .ok o' => return { s with locals := s.locals.extract 0 keep, backend := .ixc o' }
+    | .error e => throwBridge (.kernel (.ixc "pop") e)
+  | .both r o? =>
+    let view ← (← tcLive r "pop").popLocals decls
+    let o' ← ixcStep "pop" o? (·.pop decls.size)
+    return { s with locals := s.locals.extract 0 keep, backend := .both (← tcRef view) o' }
 
 /-- The sort level of a type in the scope (contract clause 3; fail closed). -/
 def getLevel (s : AuxScope) (ty : Expr) : KBridgeM Level := do
-  (← s.live? "getLevel").getLevel ty
+  match s.backend with
+  | .tc r => (← tcLive r "getLevel").getLevel ty
+  | .ixc o =>
+    bumpIxc fun st => { st with queries := st.queries + 1 }
+    match o.getLevel ty with
+    | .ok (l, fast, _) =>
+      bumpIxc fun st => { st with answered := st.answered + 1,
+                                  ixcFast := st.ixcFast + (if fast then 1 else 0) }
+      return l
+    | .error e =>
+      bumpIxc fun st => (st.sample s!"getLevel refused: {e}") |> fun st =>
+        { st with refused := st.refused + 1 }
+      throwBridge (.kernel (.ixc "getLevel") e)
+  | .both r o? =>
+    let view ← tcLive r "getLevel"
+    let tcFast := (← view.tryInferAppSortLevel ty).isSome
+    let t ← view.getLevel ty
+    bumpIxc fun st => { st with queries := st.queries + 1,
+                                tcFast := st.tcFast + (if tcFast then 1 else 0) }
+    let some o := o? | do
+      bumpIxc fun st => { st with refused := st.refused + 1 }
+      return t
+    match o.getLevel ty with
+    | .ok (l, fast, _) =>
+      let same := Ix.Compile.ExactKey.levelEq l t
+      bumpIxc fun st =>
+        let st := { st with answered := st.answered + 1,
+                            ixcFast := st.ixcFast + (if fast then 1 else 0),
+                            equal := st.equal + (if same then 1 else 0),
+                            differ := st.differ + (if same then 0 else 1) }
+        if same then st else
+          st.sample s!"differ (tcFast {tcFast}, ixcFast {fast}): Ix.Tc {levelText t}, \
+            IxC {levelText l}"
+      return if s.kernel.ixcMode? == some .fallback then l else t
+    | .error e =>
+      bumpIxc fun st => (st.sample s!"getLevel refused: {e}") |> fun st =>
+        { st with refused := st.refused + 1 }
+      return t
 
 /-- The weak head normal form in the scope; `none` when the kernel gives no
-    answer (clause 4). -/
+    answer (clause 4). An IxC-only scope gives none. -/
 def whnf? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
-  (← s.live? "whnf").whnf? e
+  match s.backend with
+  | .tc r | .both r _ => (← tcLive r "whnf").whnf? e
+  | .ixc _ => return none
 
 /-- Definitional equality in the scope; `none` when the kernel gives no
-    answer (clause 5). -/
+    answer (clause 5). An IxC-only scope gives none. -/
 def isDefEq? (s : AuxScope) (a b : Expr) : KBridgeM (Option Bool) := do
-  (← s.live? "isDefEq").isDefEq? a b
+  match s.backend with
+  | .tc r | .both r _ => (← tcLive r "isDefEq").isDefEq? a b
+  | .ixc _ => return none
 
 /-- The type of a term in the scope, for decisions only; `none` when the
-    kernel gives no answer (clause 6). -/
+    kernel gives no answer (clause 6). An IxC-only scope gives none. -/
 def inferType? (s : AuxScope) (e : Expr) : KBridgeM (Option Expr) := do
-  (← s.live? "inferType").inferLean e
+  match s.backend with
+  | .tc r | .both r _ => (← tcLive r "inferType").inferLean e
+  | .ixc _ => return none
 
 /-- D-12's fail-open default for `whnf?`, named at each call site: the
     input when the kernel gives no answer (kept for parity; M3 and M4
@@ -201,34 +385,55 @@ end AuxScope
 namespace AuxKernel
 
 /-- The elimination decision for a block's original classes, in an expanded
-    block of `nFlat` members (clause 8). -/
+    block of `nFlat` members (clause 8). `Ix.Tc`'s on both arms. -/
 def elimDecision (k : AuxKernel)
     (originals : Array (InductiveVal × Array ConstructorVal)) (nParams nFlat : Nat) :
     KBridgeM ElimDecision :=
-  match k with
-  | .tc maps => tcElimDecision originals nParams nFlat maps
+  tcElimDecision originals nParams nFlat k.maps
 
 /-- Admit the prelude constants the generators name (`PUnit`, `PProd`). -/
 def admitPrelude (k : AuxKernel) : KBridgeM Unit :=
-  match k with
-  | .tc maps => ensurePreludeInKenvOf maps
+  ensurePreludeInKenvOf k.maps
 
 /-- Admit source constants, in order. -/
 def admitSource (k : AuxKernel) (names : Array Name) (mode : AdmitMode := .full) :
-    KBridgeM Unit :=
-  match k with
-  | .tc maps =>
-    for name in names do
-      match mode with
-      | .full => ensureInKenvOf name maps
-      | .prewarm => ensureInKenvOfPrewarm name maps
+    KBridgeM Unit := do
+  let maps := k.maps
+  for name in names do
+    match mode with
+    | .full => ensureInKenvOf name maps
+    | .prewarm => ensureInKenvOfPrewarm name maps
 
 /-- Admit generated constants (canonical `.below` families), so later
-    queries naming them see the generated declarations (clause 9). -/
+    queries naming them see the generated declarations (clause 9). `Ix.Tc`'s
+    on both arms (IxC's inductive half is AuxGen M2b's). -/
 def admitGenerated (k : AuxKernel) (consts : Array BelowConstant) : KBridgeM Unit :=
+  tcAdmitBelow consts k.maps
+
+/-- **The block's own canonical flat block**, from its canonical classes
+    (restricted to Lean's `all`), Lean's `all` and its canonical recursors,
+    before `.below` asks (AuxGen M2a): `Ix.Tc` needs nothing; the IxC arm
+    installs it when the block's layout is not Lean's, and its scopes then
+    read terms through σ. A refusal is counted, and fails the block under
+    `failClosed`. -/
+def withFlatBlock (k : AuxKernel) (classes : Array (Array Name)) (originalAll : Array Name)
+    (canonicalRecs : Array (Name × RecursorVal)) : KBridgeM AuxKernel := do
   match k with
-  | .tc maps => tcAdmitBelow consts maps
+  | .tc _ => return k
+  | .ixc maps o =>
+    match o.withFlat classes originalAll canonicalRecs with
+    | .ok none => return k
+    | .ok (some o') =>
+      bumpIxc fun st => { st with flatInstalled := st.flatInstalled + 1 }
+      return .ixc maps o'
+    | .error e =>
+      bumpIxc fun st => (st.sample s!"flat block: {e}") |> fun st =>
+        { st with flatRefused := st.flatRefused + 1 }
+      if o.mode == .failClosed then throwBridge (.kernel (.ixc "flat block") e)
+      return k
 
 end AuxKernel
 
 end Ix.AuxGen
+
+end

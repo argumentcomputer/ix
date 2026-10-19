@@ -336,8 +336,13 @@ refusing to synthesize canonical-indexed _N names")
   -- `familyExported` (above) also counts a nested auxiliary's
   -- `<all0>.below_N`: a closure can hold one without any class's `.below`.
   if ← familyExported "below" none then
+    -- AuxGen M2a: a Type-level `.below` asks its kernel for levels; an IxC
+    -- oracle first installs the block's own canonical flat block
+    -- (`AuxKernel.withFlatBlock`; `Ix.Tc` needs nothing).
+    let belowKernel ← if isProp then pure kernel
+      else kernel.withFlatBlock sortedClasses originalAll canonicalRecs
     let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
-      isProp kernel (allAux := true)
+      isProp belowKernel (allAux := true)
     -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
     -- references from already-source-indexed rec names (see
     -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no

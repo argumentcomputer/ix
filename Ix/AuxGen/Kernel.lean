@@ -137,6 +137,56 @@ partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Except AuxKern
 
 /-! ## Bridge state -/
 
+/-- A level as text, for the IxC arm's samples (AuxGen M2a; display only). -/
+def levelText : Level → String
+  | .zero _ => "0"
+  | .succ u _ => s!"({levelText u})+1"
+  | .max a b _ => s!"max({levelText a}, {levelText b})"
+  | .imax a b _ => s!"imax({levelText a}, {levelText b})"
+  | .param n _ => n.pretty
+  | .mvar n _ => s!"?{n.pretty}"
+
+/-- **What AuxGen M2a's IxC arm saw in one aux tail** (`AuxKernel.ixc`):
+`.below`'s level questions on the scopes routed to IxC. -/
+structure IxcStats where
+  /-- `getLevel` on a scope routed to IxC -/
+  queries : Nat := 0
+  /-- of those, answered by `Ix.Tc`'s fast path, and by IxC's -/
+  tcFast : Nat := 0
+  ixcFast : Nat := 0
+  /-- answered by IxC -/
+  answered : Nat := 0
+  /-- answered by both kernels, spelled alike, and spelled differently -/
+  equal : Nat := 0
+  differ : Nat := 0
+  /-- refused by IxC: the query, or the scope it was asked in -/
+  refused : Nat := 0
+  /-- IxC scopes refused (`new`, `push`, `pop`) -/
+  scopesRefused : Nat := 0
+  /-- the block's own flat block installed, and refused -/
+  flatInstalled : Nat := 0
+  flatRefused : Nat := 0
+  /-- the first disagreements and refusals, as text -/
+  samples : Array String := #[]
+  deriving Inhabited
+
+namespace IxcStats
+
+/-- How many samples a tail keeps. -/
+def cap : Nat := 4
+
+def sample (st : IxcStats) (msg : String) : IxcStats :=
+  if st.samples.size < cap then { st with samples := st.samples.push msg } else st
+
+/-- The tail's one line (the measurement fold traces it per block). -/
+def line (key : Name) (st : IxcStats) : String :=
+  s!"[auxgen-ixc] {key.pretty}: queries {st.queries} tcFast {st.tcFast} ixcFast {st.ixcFast} \
+    answered {st.answered} equal {st.equal} differ {st.differ} refused {st.refused} \
+    scopesRefused {st.scopesRefused} flat {st.flatInstalled}/{st.flatRefused}\
+    {String.join (st.samples.toList.map fun s => s!"\n[auxgen-ixc]   {s.take 400}")}"
+
+end IxcStats
+
 /-- Rust `KernelCtx` + `KEnv.ingress_cache`. The cache key is
     `(expr contentHash, paramNamesHash)` — Rust ingress.rs:2216. -/
 structure AuxKernelCtx where
@@ -162,6 +212,9 @@ structure AuxKernelCtx where
       superseded even when the new context is again empty (AuxGen M0,
       `AuxScope.live?`). No `Ix.Tc` code reads it. -/
   scopeEpoch : Nat := 0
+  /-- AuxGen M2a: what the IxC arm saw (`AuxKernel.ixc`); empty on the
+      `Ix.Tc` arm. -/
+  ixcStats : IxcStats := {}
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations
