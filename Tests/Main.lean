@@ -67,6 +67,7 @@ import Tests.Ix.AuxGen.LevelEgressTests
 import Tests.Ix.AuxGen.ComponentsTests
 import Tests.Ix.AuxGen.FlatBlockSource
 import Tests.Ix.AuxGen.FlatBlockInitStd
+import Tests.Ix.AuxGen.BelowIxc
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -486,6 +487,10 @@ def registry : List Entry := [
   .runner "compile-schedule-identity" .landing Tests.Ix.Compile.ScheduleIdentity.run,
   -- AuxGen M1: the Source service environment and the flat blocks on Init+Std, measured
   .runner "auxgen-flat-initstd" (.manual "the AuxGen lane's Init+Std measurement of the drivers' Source service (about 2 min), in the compiler gate's suites") Tests.Ix.AuxGen.FlatBlockInitStd.run,
+  -- AuxGen M2a: `.below`'s levels from IxC (shadow agreement), and the measurement fold's
+  -- bytes in each mode, on the fixtures; the same on Init+Std, timed, with the service measured
+  .suite "auxgen-below-ixc" .landing Tests.Ix.AuxGen.BelowIxc.suite,
+  .suite "auxgen-below-initstd" (.manual "the AuxGen lane's M2a measurement on Init+Std (about 10 min): shadow agreement, the measurement fold in each mode, the Source service timed") Tests.Ix.AuxGen.BelowIxc.initStdSuite,
   -- Source evidence from the committed bundle unblocks the service's inductive blocks
   .runner "bundle-evidence-initstd" (.manual "AuxGen's Source service on Init+Std without the certificate module, at the input's evidence and at the committed bundle's (about 2 min)") Tests.Ix.Kernel.BundleEvidence.runInitStd,
   -- Pure-Lean kernel regression pins against a real .ixe, compiled on
