@@ -51,6 +51,15 @@ theorem throw' {e : ε} {x' : Except ε' α'} : SimE G m (throw e : Except ε α
 theorem error' {e : ε} {x' : Except ε' α'} : SimE G m (.error e : Except ε α) x' :=
   fun _ h => nomatch h
 
+/-- A run that never succeeds simulates anything. -/
+theorem of_fail {x : Except ε α} {x' : Except ε' α'} (h : ∀ a, x ≠ .ok a) : SimE G m x x' :=
+  fun a ha => absurd ha (h a)
+
+/-- A failure followed by anything. -/
+theorem throw_bind {β : Type} {e : ε} {k : β → Except ε α} {x' : Except ε' α'} :
+    SimE G m ((throw e : Except ε β) >>= k) x' :=
+  fun _ h => nomatch h
+
 /-- Peel one bind. -/
 theorem bind {G₂ : β → Prop} {m₂ : β → β'} {x : Except ε α} {x' : Except ε' α'}
     {k : α → Except ε β} {k' : α' → Except ε' β'} (hx : SimE G m x x')

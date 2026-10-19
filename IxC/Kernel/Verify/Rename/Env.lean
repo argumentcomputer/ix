@@ -112,6 +112,10 @@ namespace Expr
     Expr.sort u = e.mapKeys f ↔ e = .sort u := by
   rw [eq_comm]; exact mapKeys_eq_sort_iff
 
+/-- An application of renamed terms is the renamed application. -/
+theorem app_mapKeys_fold (x y : Expr md) :
+    Expr.app (x.mapKeys f) (y.mapKeys f) = (Expr.app x y).mapKeys f := rfl
+
 end Expr
 
 /-- Refute `h : t.mapKeys f = PAT'` against the fall-through hypothesis of
