@@ -35,8 +35,13 @@ pub(super) fn constants() -> &'static Constants {
 
 pub(super) fn range_limbs<const N: usize>(value: Scalar) -> [Scalar; N] {
   let words = value.canonical_limbs_le();
+  let bit = |index: usize| (words[index / 64] >> (index % 64)) & 1;
   std::array::from_fn(|i| {
-    Scalar::from_u64((words[i / 4] >> (16 * (i % 4))) & 0xffff)
+    let limb = (0..super::RANGE_BITS).fold(0u64, |acc, j| {
+      let index = super::RANGE_BITS * i + j;
+      acc | if index < 256 { bit(index) << j } else { 0 }
+    });
+    Scalar::from_u64(limb)
   })
 }
 

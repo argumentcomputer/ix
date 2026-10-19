@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 
 pub type Builder = CircuitBuilder<Scalar>;
 pub(super) const W: usize = 80;
+/// Width of the range-check lookup limbs; the table has `2^RANGE_BITS` rows.
+pub(super) const RANGE_BITS: usize = 20;
 const FIELD_BITS: usize = Fq::MODULUS_BIT_SIZE as usize;
 pub(super) const L: usize = FIELD_BITS.div_ceil(W);
 const TOP_LIMB_BITS: usize = FIELD_BITS - W * (L - 1);
@@ -72,15 +74,15 @@ impl FqGadget {
   pub fn new(b: &mut Builder) -> Self {
     Self {
       range: b.fixed_table(
-        "Fq u16",
-        (0..=u16::MAX).map(|v| vec![Scalar::from_u16(v)]).collect(),
+        "Fq range",
+        (0..1u64 << RANGE_BITS).map(|v| vec![Scalar::from_u64(v)]).collect(),
       ),
       #[cfg(test)]
       reference_advice: false,
     }
   }
   pub fn range(&self, b: &mut Builder, value: Value, bits: usize) {
-    match bits.div_ceil(16) {
+    match bits.div_ceil(RANGE_BITS) {
       1 => self.range_n::<1>(b, value, bits),
       2 => self.range_n::<2>(b, value, bits),
       3 => self.range_n::<3>(b, value, bits),
@@ -96,7 +98,7 @@ impl FqGadget {
     value: Value,
     bits: usize,
   ) {
-    assert!(bits > 0 && bits <= N * 16);
+    assert!(bits > 0 && bits <= N * RANGE_BITS);
     #[cfg(test)]
     let reference_advice = self.reference_advice;
     let limbs = b.hint_many_pure::<N>("bounded integer", &[value], move |v| {
@@ -109,14 +111,17 @@ impl FqGadget {
     for &limb in &limbs {
       b.lookup(self.range, &[limb]);
     }
-    if !bits.is_multiple_of(16) {
-      let top = b.scale(limbs[N - 1], Scalar::from_u64(1 << (16 - bits % 16)));
+    if !bits.is_multiple_of(RANGE_BITS) {
+      let top = b.scale(
+        limbs[N - 1],
+        Scalar::from_u64(1 << (RANGE_BITS - bits % RANGE_BITS)),
+      );
       b.lookup(self.range, &[top]);
     }
     let terms: Vec<_> = limbs
       .iter()
       .enumerate()
-      .map(|(i, &v)| (scalar(&(BigUint::from(1u8) << (16 * i))), v))
+      .map(|(i, &v)| (scalar(&(BigUint::from(1u8) << (RANGE_BITS * i))), v))
       .collect();
     let packed = b.linear_combination(&terms, Scalar::ZERO);
     b.assert_equal(packed, value);
