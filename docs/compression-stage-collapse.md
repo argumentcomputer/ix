@@ -32,7 +32,7 @@ otherwise (October 2026, one RTX PRO 6000 Blackwell, 48 logical CPUs).
   parameters; the warm recursive stage stays at about 41 s and verifies the
   patched proof. The warm Ignition pipeline from saved FRI proof to
   recursive packet is 134 s against the README's 181 s, and 121 s with the
-  lazy-nibble multi-stark patch measured below. The 40-query
+  lazy-nibble multi-stark change measured below. The 40-query
   configuration lowers the proven bound and is therefore excluded; its
   sizing results are diagnostic only. Fewer rows do not by themselves make
   the first proof wrappable: KZG commits per column, and the
@@ -521,12 +521,12 @@ after the opening reduction fix.
 
 ### Lazy byte nibbles in multi-stark
 
-`docs/patches/multi-stark-lazy-byte-nibbles.patch` (against multi-stark
-`8b6c3fbd`) makes `ByteValue`'s nibble decomposition optional: `select`
+multi-stark `ccfa4213` (branch `lazy-byte-nibbles`, on top of `8b6c3fbd`)
+makes `ByteValue`'s nibble decomposition optional: `select`
 produces a value-only byte, and the generic paths that read nibbles (XOR,
 word packing, comparisons) materialize them on demand with the same
 nibble-hint-and-lookup constraints they always had. Measured with the sizing
-example against the patched dependency:
+example against that revision:
 
 | First stage, 100 queries | Before | Lazy nibbles |
 | --- | ---: | ---: |
@@ -556,7 +556,7 @@ setup; the recursive packet is unchanged at 1,669 B. Warm first-stage spans:
 translate 16.6 s, lower 10.7 s, prepare 20.3 s, prove 24.1 s. The
 recursion still pads to `2^26`, so its time did not move; its merged table
 trace is now `2^21` rows because of the wider range table. All FRI,
-first-stage and recursive gadget tests pass against the patched dependency.
+first-stage and recursive gadget tests pass against that revision.
 
 
 ## Refreshed terminal PLONK proof and Solidity verification
