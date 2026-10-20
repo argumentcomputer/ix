@@ -102,10 +102,12 @@ specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A) (`ALPHA-COLLAPSE.md`
 §8.2) from 5883, by the entry's change (122 out: the compiler-trust roles and
 their checks, `IxC/Kernel/Audit/Roots.lean`); the `.indDecl` shape guard from 5761, by the
 entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's
-recursive fields from 5805, by the entry's change (9 more). -/
+recursive fields from 5805, by the entry's change (9 more); the rest-only hoist and the
+decided units check (S1) from 5814, by the entry's change (117 in,
+`IxC/Kernel/Audit/Roots.lean`). -/
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 5814 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ixon.Projection.checkBytes]: 5931 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

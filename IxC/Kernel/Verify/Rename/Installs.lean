@@ -24,11 +24,6 @@ variable {md : Mode}
 
 /-! ## Bases and growth -/
 
-/-- **The base of a key**: the key with its derivations stripped. -/
-def Key.base : Key md → Key md
-  | .aux k _ => k.base
-  | k => k
-
 @[simp] theorem Key.base_id (i : md.Id) : (Key.id i).base = .id i := rfl
 @[simp] theorem Key.base_role (r : Role) : (Key.role r : Key md).base = .role r := rfl
 @[simp] theorem Key.base_aux (k : Key md) (d : Derived) : (Key.aux k d).base = k.base := rfl

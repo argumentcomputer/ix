@@ -51,11 +51,12 @@ def admitStep (mode : CheckMode) (ev : Evidences md)
       | .ok () => .ok (q, s')
 
 /-- **The per-block fold**: `admitStep` over the declarations, from the
-empty index and memo state. -/
+empty index and memo state, then the units check (`checkUnits`), as the
+deferred fold ends. -/
 def checkDeclsPB (mode : CheckMode) (ev : Evidences md) (ds : Array (Declaration md)) :
     Except (CheckError md × Nat) (Env md) :=
   match (ds.toList.foldlM (admitStep mode ev) (0, mkFEnv Env.empty, #[])) {} with
-  | .ok (p, _) => .ok p.2.1.env
+  | .ok (p, _) => checkUnits ds >>= fun _ => .ok p.2.1.env
   | .error e => .error e
 
 /-! ## Records and their views -/
@@ -274,6 +275,7 @@ theorem checkDecls_ok_iff_PB {ds : Array (Declaration md)} {env : Env md} :
     checkDecls mode ev ds = .ok env ↔ checkDeclsPB mode ev ds = .ok env := by
   constructor
   · intro h
+    have hu := checkDecls_units mode h
     obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
     obtain ⟨n, s, r⟩ := fc.1.run
     have hchain := installRun_trace mode r (PushChain.refl Env.empty)
@@ -281,6 +283,8 @@ theorem checkDecls_ok_iff_PB {ds : Array (Declaration md)} {env : Env md} :
       fc.records
     unfold checkDeclsPB
     rw [hfold]
+    show (checkUnits ds >>= fun _ => Except.ok _) = _
+    rw [hu]
     rfl
   · intro h
     unfold checkDeclsPB at h
@@ -289,11 +293,17 @@ theorem checkDecls_ok_iff_PB {ds : Array (Declaration md)} {env : Env md} :
     | ok r =>
       obtain ⟨⟨n, fe, pend⟩, s⟩ := r
       rw [hf] at h
+      change (checkUnits ds >>= fun _ => Except.ok fe.env) = _ at h
+      have hu : checkUnits ds = .ok () := by
+        cases hu : checkUnits ds with
+        | error e => rw [hu] at h; exact nomatch h
+        | ok v => rfl
+      rw [hu] at h
       obtain rfl : fe.env = env := Except.ok.inj h
       obtain ⟨hrun, hB⟩ := admit_foldlM_inv ds.toList _ _ hf rfl List.nodup_nil
         (RecordsAt.nil _) (fun _ h => (List.not_mem_nil h).elim)
       let e : InstalledEnv mode ev ds.toList := ⟨fe, pend, n, s, hrun⟩
-      refine fullyChecked_checkDecls mode ⟨e, fun i => ?_⟩
+      refine fullyChecked_checkDecls mode ⟨e, fun i => ?_⟩ hu
       unfold GroupChecked
       cases hi : e.pend[i]? with
       | none => trivial

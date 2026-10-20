@@ -58,11 +58,13 @@ end Ixon.Authenticated.Audit
 -- `.indDecl` shape guard from 5917, by the generic entries' change (44 in: the guard,
 -- its memoized walk and their specialisations; one more csimp, ruled,
 -- `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's recursive
--- fields from 5961, likewise (9 more).
+-- fields from 5961, likewise (9 more); the rest-only hoist and the decided units
+-- check (S1) from 5970, by the generic entries' change (117 in,
+-- `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Ixon.Authenticated.checkBytesBlockOrder,
- Address.admissionHash]: 5970 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+ Address.admissionHash]: 6087 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -221,9 +223,10 @@ field test in the in-model generator from 5979, likewise (4 of `genNested`'s
 specialisations gone), and (A) (`ALPHA-COLLAPSE.md` §8.2) from 5975, likewise (122
 out: the compiler-trust roles and their checks), and the `.indDecl` shape guard from
 5853, likewise (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled),
-and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more). -/
+and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more),
+and the rest-only hoist and the decided units check (S1) from 5906, likewise (117 in). -/
 
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 5906 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6023 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

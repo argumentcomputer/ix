@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Cached.ParsedC
 public import IxC.Kernel.CheckerSplit
+public import IxC.Kernel.Units
 
 @[expose] public section
 
@@ -578,6 +579,7 @@ def checkDecls (mode : CheckMode) (ev : Evidences md)
     Except (CheckError md × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
   checkPendingTasks mode p.2.1 p.2.2
+  checkUnits ds
   pure p.2.1.env
 
 /-- An accepting run is an accepting `foldlM`. -/
@@ -658,13 +660,16 @@ theorem FullyChecked.records {ev : Evidences md} {ds : List (Declaration md)}
 the driver's loops assembled, `checkDecls` computes — the proof the
 driver returns beside its environment. -/
 theorem fullyChecked_checkDecls {ev : Evidences md} {ds : Array (Declaration md)}
-    (fc : FullyChecked mode ev ds.toList) :
+    (fc : FullyChecked mode ev ds.toList) (hu : checkUnits ds = .ok ()) :
     checkDecls mode ev ds = .ok fc.env := by
   obtain ⟨n, s, r⟩ := fc.1.run
   unfold checkDecls
   rw [← Array.foldlM_toList, r.foldlM]
-  show (checkPendingTasks mode fc.1.fe fc.1.pend >>= fun _ => pure fc.1.fe.env) = _
+  show (checkPendingTasks mode fc.1.fe fc.1.pend >>= fun _ =>
+    checkUnits ds >>= fun _ => pure fc.1.fe.env) = _
   rw [checkPendingTasks_eq, checkPendingList_ok mode fc.1.fe fc.1.pend.toList fc.records]
+  show (checkUnits ds >>= fun _ => pure fc.1.fe.env) = _
+  rw [hu]
   rfl
 
 /-- **Every accept of the fold is a fully checked environment.** -/
@@ -678,12 +683,19 @@ theorem checkDecls_fullyChecked {ev : Evidences md} {ds : Array (Declaration md)
   | ok r =>
     obtain ⟨⟨n, fe, pend⟩, s⟩ := r
     rw [hrun] at h
-    change (checkPendingTasks mode fe pend >>= fun _ => pure fe.env) = _ at h
+    change (checkPendingTasks mode fe pend >>= fun _ =>
+      checkUnits ds >>= fun _ => pure fe.env) = _ at h
     rw [checkPendingTasks_eq] at h
     cases hchk : checkPendingList mode fe pend.toList with
     | error e => rw [hchk] at h; exact nomatch h
     | ok u =>
       rw [hchk] at h
+      change (checkUnits ds >>= fun _ => pure fe.env) = _ at h
+      have hu : checkUnits ds = .ok () := by
+        cases hu : checkUnits ds with
+        | error e => rw [hu] at h; exact nomatch h
+        | ok v => rfl
+      rw [hu] at h
       obtain rfl : fe.env = env := Except.ok.inj h
       let e : InstalledEnv mode ev ds.toList :=
         ⟨fe, pend, n, s, InstallRun.of_foldlM mode ds.toList _ _ hrun⟩
@@ -694,5 +706,25 @@ theorem checkDecls_fullyChecked {ev : Evidences md} {ds : Array (Declaration md)
       | some pc =>
         exact checkPendingList_records mode fe pend.toList hchk pc
           (List.mem_iff_getElem?.mpr ⟨i, by rw [Array.getElem?_toList]; exact hi⟩)
+
+/-- **An accept of the fold passed the units check** (`checkUnits`). -/
+theorem checkDecls_units {ev : Evidences md} {ds : Array (Declaration md)} {env : Env md}
+    (h : checkDecls mode ev ds = .ok env) : checkUnits ds = .ok () := by
+  unfold checkDecls at h
+  cases hrun : (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {} with
+  | error e => rw [hrun] at h; exact nomatch h
+  | ok r =>
+    obtain ⟨⟨n, fe, pend⟩, s⟩ := r
+    rw [hrun] at h
+    change (checkPendingTasks mode fe pend >>= fun _ =>
+      checkUnits ds >>= fun _ => pure fe.env) = _ at h
+    cases hchk : checkPendingTasks mode fe pend with
+    | error e => rw [hchk] at h; exact nomatch h
+    | ok u =>
+      rw [hchk] at h
+      change (checkUnits ds >>= fun _ => pure fe.env) = _ at h
+      cases hu : checkUnits ds with
+      | error e => rw [hu] at h; exact nomatch h
+      | ok v => rfl
 
 end Ix.Kernel.Cached

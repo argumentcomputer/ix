@@ -79,7 +79,17 @@ code generator's specialisations of `List.all`, `List.findSome?` and
 `List.mapTR` at `minorIH?` and three closed terms of `classifyCtor`'s new
 messages in; three closed terms of `classifyCtor`'s and `memberApp?`'s out,
 and `genMutual`'s specialisations renumbered; no extern, `unsafe` constant,
-csimp, `partial` definition or ruling moved. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+csimp, `partial` definition or ruling moved. The rest-only hoist and the decided
+units check (S1, 2026-10-20: `Cached.checkDecls` ends with `checkUnits`, no
+unit holding a basis record or out of shape, none past the front declaring a
+prelude role, and no two units declaring a common base) moved the fold from 3377 and the entry and the
+tiered entries from 5792 and 5896, 119, 117 and 117 functions in: `checkUnits`,
+`checkUnitsGo`, `unitsOf`, `unitsGo`, `unitBases`, `Declaration.isGenerated`,
+`Declaration.isBasis`, `Key.isAux`, `Key.base`, `Key.isPreludeRole` over
+`preludeShape`, `preludeSize`, `unitSplit`, `genBases`, `closerBases`, `unitShapeOk`, `unitShapeMsg`, the hash map's operations at `Key` the check uses, the code
+generator's specialisations, lambdas and boxed forms of them, and the closed
+terms of the check's two messages; the reader is unchanged, and no extern,
+`unsafe` constant, csimp, `partial` definition or ruling moved. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
@@ -582,7 +592,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3377 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3496 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -594,7 +604,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5792 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5909 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -627,7 +637,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- docstring). The mutual modeller's reading of Lean's recursive fields moved it
 -- from 5887 by the entry's change (9 more; see the module docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5896 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6013 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

@@ -51,7 +51,7 @@ def topLevel : List (String × Part) := [
   ("LevelGeran", .checker), ("Name", .checker),
   ("PropRead", .checker), ("PropWhen", .checker), ("Roles", .checker),
   ("StdAxioms", .checker),
-  ("TypeChecker", .checker),
+  ("TypeChecker", .checker), ("Units", .checker),
   -- the checker: con-leche's cached checker and frontend, and Ix's typing
   -- tier (its data and its fold over the cached checker's functions)
   ("Cached", .checker), ("Frontend", .checker), ("Tier", .checker),

@@ -99,12 +99,15 @@ specialisations gone). (A) (`ALPHA-COLLAPSE.md` §8.2) moved it from 5858 by the
 entry's change (`IxC/Kernel/Audit/Roots.lean`, 122 out: the compiler-trust roles
 and their checks). The `.indDecl` shape guard moved it from 5736 by the entry's
 change (`IxC/Kernel/Audit/Roots.lean`, 44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled). The mutual modeller's reading of Lean's
-recursive fields moved it from 5780 by the entry's change (9 more). -/
+recursive fields moved it from 5780 by the entry's change (9 more). The rest-only
+hoist and the decided units check (S1) moved it from 5789 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`, 117 in: `checkUnits` at the fold's end, its
+units, their bases and shapes and the prelude-role test, and their specialisations). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5789 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5906 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

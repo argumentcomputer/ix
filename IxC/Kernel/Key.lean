@@ -434,6 +434,28 @@ def Key.map {md md' : Mode} (f : md.Id → md'.Id) : Key md → Key md'
   | .role r => .role r
   | .aux k d => .aux (k.map f) d
 
+/-- **The base of a key**: the key with its derivations stripped. -/
+def Key.base : Key md → Key md
+  | .aux k _ => k.base
+  | k => k
+
+/-- **The prelude's shape** (pinned): the role keys its twelve declarations
+name, in order (`Ix.Kernel.Reader.preludeFor` checks the prelude it reads
+against it): the basis blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False`, the
+quotient package's four records and `Quot.sound`, then `And` and `Bool`. -/
+def preludeShape : List (List Role) :=
+  [[.eq, .eqRefl, .eqRec], [.nat, .natZero, .natSucc, .natRec], [.punit, .punitUnit, .punitRec],
+   [.empty, .emptyRec], [.false, .falseRec], [.quot], [.quotMk], [.quotLift], [.quotInd],
+   [.quotSound], [.and, .andIntro, .andRec], [.bool, .boolFalse, .boolTrue, .boolRec]]
+
+/-- The number of the prelude's declarations, the fold input's front. -/
+def preludeSize : Nat := preludeShape.length
+
+/-- **A prelude role's key** (a base the front alone may declare). -/
+def Key.isPreludeRole : Key md → Bool
+  | .role r => preludeShape.any (·.contains r)
+  | _ => false
+
 /-! ## Rendering -/
 
 /-- **A key's spelling**: an input key's id as `Mode.idName` shows it,
