@@ -186,8 +186,17 @@ theorem checkedTableCount_value (table : String) (count : Nat)
 
 /-! ## References -/
 
+/-- An address that is not 32 bytes wide is refused, the state unchanged. -/
+theorem internRef_narrow (address : Address) (context : CompileEnv × BlockEnv) (state : BlockState)
+    (narrow : address.hash.size ≠ 32) :
+    ∃ e, rawRun (internRef address) context state = (.error e, state) := by
+  have ne : (address.hash.size != 32) = true := bne_iff_ne.2 narrow
+  unfold internRef
+  simp only [ne, ↓reduceIte, rawRun_bind]
+  exact ⟨_, rfl⟩
+
 theorem internRef_hit (address : Address) (context : CompileEnv × BlockEnv)
-    (state : BlockState) {index : UInt64}
+    (state : BlockState) {index : UInt64} (wide : address.hash.size = 32)
     (found : state.refsIndex.get? address = some index) :
     rawRun (internRef address) context state = (.ok index, state) := by
   have contains : state.refsIndex.contains address = true := by
@@ -196,6 +205,7 @@ theorem internRef_hit (address : Address) (context : CompileEnv × BlockEnv)
     rw [found]
     rfl
   unfold internRef
+  simp only [show (address.hash.size != 32) = false by simp [wide], Bool.false_eq_true, ↓reduceIte]
   simp only [rawRun_bind, rawRun_get]
   by_cases full : state.refs.size + 1 ≥ UInt64.size
   all_goals
@@ -203,7 +213,7 @@ theorem internRef_hit (address : Address) (context : CompileEnv × BlockEnv)
       Bool.false_eq_true, rawRun_modifyGet, BlockState.internRef, found]
 
 theorem internRef_miss (address : Address) (context : CompileEnv × BlockEnv)
-    (state : BlockState) (miss : state.refsIndex.get? address = none) :
+    (state : BlockState) (wide : address.hash.size = 32) (miss : state.refsIndex.get? address = none) :
     rawRun (internRef address) context state =
       if state.refs.size + 1 < UInt64.size then
         (.ok state.refs.size.toUInt64,
@@ -217,6 +227,7 @@ theorem internRef_miss (address : Address) (context : CompileEnv × BlockEnv)
     rw [miss]
     rfl
   unfold internRef
+  simp only [show (address.hash.size != 32) = false by simp [wide], Bool.false_eq_true, ↓reduceIte]
   simp only [rawRun_bind, rawRun_get]
   by_cases room : state.refs.size + 1 < UInt64.size
   · have full : ¬ state.refs.size + 1 ≥ UInt64.size := by omega
@@ -234,15 +245,20 @@ theorem internRef_correct (address : Address) (context : CompileEnv × BlockEnv)
     let result := rawRun (internRef address) context state
     RefIndexSound result.2 ∧ Retains state.refs result.2.refs ∧
       ∀ index, result.1 = .ok index → result.2.refs[index.toNat]? = some address := by
+  by_cases wide : address.hash.size = 32
+  case neg =>
+    obtain ⟨e, h⟩ := internRef_narrow address context state wide
+    simp only [h]
+    exact ⟨sound, .refl _, fun _ same => by cases same⟩
   cases found : state.refsIndex.get? address with
   | some index =>
-    rw [internRef_hit address context state found]
+    rw [internRef_hit address context state wide found]
     refine ⟨sound, .refl _, ?_⟩
     intro value same
     cases Except.ok.inj same
     exact sound address index found
   | none =>
-    rw [internRef_miss address context state found]
+    rw [internRef_miss address context state wide found]
     by_cases room : state.refs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
       have keeps := internRef_sound state address sound (by omega)
@@ -264,10 +280,15 @@ theorem internRef_correct (address : Address) (context : CompileEnv × BlockEnv)
 theorem internRef_tables (address : Address) (context : CompileEnv × BlockEnv) (state : BlockState) :
     let after := (rawRun (internRef address) context state).2
     after.univs = state.univs ∧ after.blockBlobs = state.blockBlobs ∧ after.exprCache = state.exprCache := by
+  by_cases wide : address.hash.size = 32
+  case neg =>
+    obtain ⟨e, h⟩ := internRef_narrow address context state wide
+    simp only [h]
+    exact ⟨trivial, trivial, trivial⟩
   cases found : state.refsIndex.get? address with
-  | some index => rw [internRef_hit address context state found]; exact ⟨rfl, rfl, rfl⟩
+  | some index => rw [internRef_hit address context state wide found]; exact ⟨rfl, rfl, rfl⟩
   | none =>
-    rw [internRef_miss address context state found]
+    rw [internRef_miss address context state wide found]
     split
     · exact ⟨rfl, rfl, rfl⟩
     · rw [checkedTableCount_state]; exact ⟨rfl, rfl, rfl⟩
@@ -283,10 +304,15 @@ theorem internRef_reading {md : Mode} (address : Address) (compileContext : Comp
         (rawRun (internRef address) compileContext state).2).ecx := by
   have tables := internRef_tables address compileContext state
   apply ExpressionRead.blockReader_growth_tables context param self
-  · cases found : state.refsIndex.get? address with
-    | some index => rw [internRef_hit address compileContext state found]; exact Retains.refl _
+  · by_cases wide : address.hash.size = 32
+    case neg =>
+      obtain ⟨e, h⟩ := internRef_narrow address compileContext state wide
+      rw [h]
+      exact Retains.refl _
+    cases found : state.refsIndex.get? address with
+    | some index => rw [internRef_hit address compileContext state wide found]; exact Retains.refl _
     | none =>
-      rw [internRef_miss address compileContext state found]
+      rw [internRef_miss address compileContext state wide found]
       split
       · exact Retains.push _ _
       · rw [checkedTableCount_state]; exact Retains.refl _

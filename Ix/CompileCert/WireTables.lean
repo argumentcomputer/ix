@@ -34,9 +34,9 @@ theorem internRef_preserves (context : CompileEnv × BlockEnv) (state : BlockSta
     (wire : BlockWireTablesWF state) (width : address.hash.size = 32) :
     BlockWireTablesWF (rawRun (internRef address) context state).2 := by
   cases found : state.refsIndex.get? address with
-  | some index => rw [internRef_hit address context state found]; exact wire
+  | some index => rw [internRef_hit address context state width found]; exact wire
   | none =>
-    rw [internRef_miss address context state found]
+    rw [internRef_miss address context state width found]
     by_cases room : state.refs.size + 1 < UInt64.size
     · simp only [room, ↓reduceIte]
       refine ⟨by simpa only [Array.size_push] using room, ?_, wire.univsCount, wire.univs⟩
@@ -74,9 +74,9 @@ theorem internMetaUniv_preserves (context : CompileEnv × BlockEnv) (state : Blo
   of_same wire tables.1 tables.2.1
 
 theorem internRef_count_failure (context : CompileEnv × BlockEnv) (state : BlockState) (address : Address)
-    (missing : state.refsIndex.get? address = none) (full : UInt64.size ≤ state.refs.size + 1) :
+    (wide : address.hash.size = 32) (missing : state.refsIndex.get? address = none) (full : UInt64.size ≤ state.refs.size + 1) :
     ∃ reason, rawRun (internRef address) context state = (.error (.resourceLimit reason), state) := by
-  rw [internRef_miss address context state missing]
+  rw [internRef_miss address context state wide missing]
   have noRoom : ¬state.refs.size + 1 < UInt64.size := by omega
   simp only [noRoom, ↓reduceIte, checkedTableCount]
   exact ⟨_, rfl⟩

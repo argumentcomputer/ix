@@ -203,10 +203,14 @@ def withoutRefTables (state : BlockState) : BlockState :=
 
 theorem internRef_frame (address : Address) : Preserves withoutRefTables (internRef address) := by
   intro context before
+  by_cases wide : address.hash.size = 32
+  case neg =>
+    obtain ⟨e, h⟩ := Interning.internRef_narrow address context before wide
+    rw [h]
   cases found : before.refsIndex.get? address with
-  | some index => rw [Interning.internRef_hit address context before found]
+  | some index => rw [Interning.internRef_hit address context before wide found]
   | none =>
-    rw [Interning.internRef_miss address context before found]
+    rw [Interning.internRef_miss address context before wide found]
     split
     · rfl
     · rw [Interning.checkedTableCount_state]

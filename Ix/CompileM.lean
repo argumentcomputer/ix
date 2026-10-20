@@ -554,9 +554,15 @@ def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
 /-! ## Reference Handling -/
 
 /-- Intern an address into the block's refs table, returning its index.
-    Read the capacity before the update without retaining the old state in
-    the update closure. -/
+    The wire stores a reference as 32 bytes, so an address of another width
+    is refused (it never arises: every address the compiler forms is an
+    admission hash; the refusal makes the refs table's width hold by
+    construction). Read the capacity before the update without retaining the
+    old state in the update closure. -/
 def internRef (addr : Address) : CompileM UInt64 := do
+  if addr.hash.size != 32 then
+    throw (.unsupportedExpr
+      s!"internRef: reference address {addr} has {addr.hash.size} bytes; the wire stores 32")
   if (← getBlockState).refs.size + 1 ≥ UInt64.size then
     if !(← getBlockState).refsIndex.contains addr then
       discard <| checkedTableCount "reference" ((← getBlockState).refs.size + 1)
