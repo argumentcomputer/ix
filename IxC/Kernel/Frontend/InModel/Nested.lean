@@ -210,9 +210,9 @@ theorem matchCarrier_args {fam : Family md} {o : Nat} {e : Expr md} {tag : Nat}
 
 One memoized DAG walk, keyed by the node and the binder offset `o`
 (which shifts under binders, so a node's answer is not a function of
-the node alone), and dropped after each call.  No spec lemma, as in
-`InModel.mentionsAnyGo`: the modeller is untrusted and what it emits
-is checked at install.  Without the memo the rebuild runs once per
+the node alone), and dropped after each call.  Its answer is the memo-free
+`specAllP`'s (`specAll_eq`, `Verify/Frontend/InModelMemo.lean`), which the
+generator's parametricity proof reads.  Without the memo the rebuild runs once per
 path — `tests/e2e/tower_nested.ndjson`.  Total: every recursive call is on
 a proper subterm (an occurrence's index argument, or a node's child). -/
 def specAllGo (fam : Family md) (memo : Std.HashMap (Expr md × Nat) (Expr md))

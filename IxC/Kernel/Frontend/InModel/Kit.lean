@@ -166,8 +166,8 @@ other arity is left alone (the caller's field classification rejects
 such blocks).
 
 One memoized DAG walk (keyed by the node — the rewrite reads no binder
-cursor), and, like `mentionsAnyGo`, with no spec lemma: the modeller
-is untrusted.  Without it the rebuild runs once per path, which is what
+cursor); its answer is the memo-free `specFamP`'s (`specFam_eq`,
+`Verify/Frontend/InModelMemo.lean`).  Without it the rebuild runs once per path, which is what
 `tests/e2e/tower_mutual.ndjson` exposes.  Total: every recursive call is on
 a proper subterm (the spine's head or one of its arguments). -/
 def specFamGo (T : Key md) (lps : List LevelParam) (nP : Nat)
@@ -262,8 +262,8 @@ def substParams (d n : Nat) (vals : List (Expr md)) (e : Expr md) : Expr md :=
   (go {} 0 e).1
 where
   /-- The memoized rebuild, keyed by the node and the binder cursor
-  `k` (which shifts under binders).  As everywhere in the modeller,
-  no spec lemma: it is untrusted, and what it emits is checked. -/
+  `k` (which shifts under binders); its answer is the memo-free
+  `substParamsP`'s (`substParams_eq`, `Verify/Frontend/InModelMemo.lean`). -/
   go (memo : Std.HashMap (Expr md × Nat) (Expr md)) (k : Nat) :
       (Expr md) → Expr md × Std.HashMap (Expr md × Nat) (Expr md)
     | .bvar i =>
@@ -310,10 +310,10 @@ answer at a node is a function of the node and `ns`, and `ns` is fixed
 for the walk, so the memo is keyed by the node alone and dropped after
 each call.
 
-**No spec lemma, and none is owed**: the modeller is untrusted (the
-`_model` family it emits is checked at install like any other
-declaration), so a memo here needs no `@[csimp]` twin — unlike
-`Expr.mentionsFvar` or `lowerBVars`, whose answers a proof consumes.
+Its answer is the memo-free `mentionsAnyP`'s (`mentionsAny_eq`,
+`Verify/Frontend/InModelMemo.lean`, read by the generator's parametricity
+proof); no `@[csimp]` twin is needed, since nothing executes the memo-free
+reading.
 `tests/e2e/tower_mutual.ndjson` is what walks it: `classifyCtor` asks
 this of every ordinary field domain, and a domain carrying a depth-60
 shared tower mentions no member, so nothing short-circuits. -/
@@ -562,9 +562,8 @@ def idxSort (tbl : ConstTable md) (ctx : List (Expr md)) (e : Expr md) :
 
 /-- The highest definitional height of a constant mentioned by `e`
 (`heights`: the height of every definition declared so far; `0` for
-anything else).  One memoized DAG walk, keyed by the node — and, like
-`mentionsAnyGo`, with no spec lemma, since the modeller is untrusted
-and the hint it computes is checked with the declaration it rides on.
+anything else).  One memoized DAG walk, keyed by the node; its answer is
+the memo-free `maxHeightP`'s (`maxHeight_eq`, `Verify/Frontend/InModelMemo.lean`).
 Every generated value embeds the block's constructor domains, so a
 tower in one of them is walked here once per path without it. -/
 def maxHeightGo (heights : Key md → Nat) (memo : Std.HashMap (Expr md) Nat) :
