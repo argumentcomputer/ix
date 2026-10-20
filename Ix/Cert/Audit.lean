@@ -16,6 +16,7 @@ import Ix.Cert.Quotient
 import Ix.Cert.LiteralOrder
 import Ix.Cert.Unchanged
 import Ix.Cert.ReaderUnits
+import Ix.Cert.PassHooks
 
 /-! # The certification statements, frozen
 
@@ -4414,3 +4415,22 @@ run_cmd do
       `Lowering.closed, `LoweringBy.map, `defOrder_lt, `convertInductive_keys, `convertDefinitions_keys,
       `convert_keys, `lower_lowering, `canonDecl_names, `lowerAll_lowerings, `scheduleOf_ok,
       `graph_converted_ok, `leanIngress_units, `GroupKeyOf.not_derived].map (`Ix.Cert.ReaderUnits ++ ·))
+
+/-! ## Route A, B9b piece 1: Pass 3's hooks on a block outside the changed set
+
+`Ix.Cert.PassHooks`: hook 2 (`prepareBlock`) returns the compile environment
+as it is when none of the block's condensation references is a head
+(`prepareBlock_unreferenced`); `withMetaRefs` changes no record; so the
+records `runBlockWithAux` returns are the block compile's, a lone constant's
+`compileConstantInfo` or `sortConsts` then `compileMutualBlock`, run from the
+empty block state (`runBlockWithAux_records`). Hook 1 and the aux tail run
+after the `BlockResult` and return it as it is. -/
+
+/-- info: [cert-audit] pass hooks: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "pass hooks"
+    (#[`prepareBlock_unreferenced, `withMetaRefs_records, `runBlockWithAux_unreferenced,
+      `findConst_preserves, `mkIndc_preserves, `forIn_set_state, `compileBlockWithAux_result,
+      `compileBlockWithAux_records, `runBlockWithAux_records].map (`Ix.Cert.PassHooks ++ ·))
