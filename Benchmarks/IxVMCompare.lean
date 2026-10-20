@@ -2,6 +2,7 @@
 import Ix.IxVM.Toplevel
 import Ix.IxVM.FunctionGroups
 import Ix.Aiur.Compiler
+import Ix.Aiur.Stages.Codegen
 import Lean
 
 open Aiur Lean
@@ -141,7 +142,10 @@ partial def constrainCalls (t : Source.Term) : Source.Term :=
   | .debug a b c => .debug a (b.map constrainCalls) (constrainCalls c)
 
 def main (args : List String) : IO Unit := do
-  let [outPrefix] := args | throw <| IO.userError "usage: IxVMCompare.lean OUTPUT_PREFIX"
+  let (outPrefix, codegen) ← match args with
+    | [pathPrefix] => pure (pathPrefix, false)
+    | [pathPrefix, "--codegen"] => pure (pathPrefix, true)
+    | _ => throw <| IO.userError "usage: IxVMCompare.lean OUTPUT_PREFIX [--codegen]"
   let full ← IO.ofExcept <| (do
     let source ← (← IxVM.ixVMFull).merge transitiveEntry
     (← source.merge auditEntries).merge ixvmPortCases).mapError toString
@@ -151,4 +155,9 @@ def main (args : List String) : IO Unit := do
     (← IO.ofExcept (full.prune [`verify_transitive, `verify_constant, `verify_serde, `check_port_cases]).compile) "validation"
   let source : Source.Toplevel := { source with functions := source.functions.map fun f =>
     { f with body := constrainCalls f.body } }
-  save (outPrefix ++ "-constrained.json") (← IO.ofExcept source.compile) "constrained-calls"
+  let compiled ← IO.ofExcept source.compile
+  save (outPrefix ++ "-constrained.json") compiled "constrained-calls"
+  if codegen then
+    let path := outPrefix ++ "-constrained.rs"
+    IO.FS.writeFile path (Aiur.Codegen.emit compiled.bytecode)
+    IO.println s!"Exported the same constrained program as native Rust to {path}"

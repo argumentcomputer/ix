@@ -1,4 +1,5 @@
-//! Interpret the Lean-exported ixvm bytecode. CPU witness generation only.
+//! Compare the Lean-exported IxVM bytecode and its generated Rust kernel.
+//! Both execution engines use the same CPU witness generation.
 use aiur::synthesis::{AiurProof, AiurSystem};
 use multi_stark::{
   p3_field::PrimeField64,
@@ -22,6 +23,35 @@ use tracing_subscriber::{
 mod input;
 mod profile;
 
+#[cfg(feature = "codegen")]
+include!(concat!(env!("OUT_DIR"), "/module.rs"));
+
+type Executor = fn(
+  &aiur::bytecode::Toplevel,
+  usize,
+  Vec<aiur::G>,
+  &mut aiur::execute::IOBuffer,
+) -> Result<
+  (aiur::execute::QueryRecord, Vec<aiur::G>),
+  aiur::execute::ExecError,
+>;
+
+#[cfg(feature = "codegen")]
+fn execute_generated(
+  top: &aiur::bytecode::Toplevel,
+  entry: usize,
+  args: Vec<aiur::G>,
+  io: &mut aiur::execute::IOBuffer,
+) -> Result<(aiur::execute::QueryRecord, Vec<aiur::G>), aiur::execute::ExecError>
+{
+  if !top.functions[entry].entry {
+    return Err(aiur::execute::ExecError::NotEntryFunction(entry));
+  }
+  let mut record = aiur::execute::QueryRecord::new(top);
+  let output = generated::execute_generated(entry, &args, &mut record, io)?;
+  Ok((record, output))
+}
+
 type Timings = Arc<Mutex<BTreeMap<String, (usize, f64)>>>;
 struct PhaseTimes(Timings);
 impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PhaseTimes {
@@ -42,12 +72,13 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PhaseTimes {
 fn run() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() != 5 {
-    return Err("usage: ix-ixvm-bench PACKAGE.json FIXTURE.json prove|execute|witness|functions SAMPLES".into());
+    return Err("usage: ix-ixvm-bench PACKAGE.json FIXTURE.json MODE SAMPLES (execute|witness|prove, optionally suffixed -codegen; parity-codegen; functions; validate)".into());
   }
-  let mode = &cli[3];
+  let native = cli[3].ends_with("-codegen");
+  let mode = cli[3].strip_suffix("-codegen").unwrap_or(&cli[3]);
   let samples: usize = cli[4].parse()?;
-  if !["prove", "execute", "witness", "validate", "functions"]
-    .contains(&mode.as_str())
+  if !["prove", "execute", "witness", "validate", "functions", "parity"]
+    .contains(&mode)
     || samples == 0
   {
     return Err("invalid mode or sample count".into());
@@ -77,6 +108,31 @@ fn run() -> Result<(), Box<dyn Error>> {
   let mut reader = serde_json::Deserializer::from_str(&wire);
   reader.disable_recursion_limit();
   let data = Value::deserialize(&mut reader)?;
+  let execute: Executor;
+  let engine = if native { "ix-codegen" } else { "ix-bytecode" };
+  if native {
+    #[cfg(not(feature = "codegen"))]
+    return Err("codegen modes require --features codegen".into());
+    #[cfg(feature = "codegen")]
+    {
+      if mode == "functions" || mode == "validate" {
+        return Err(
+          "this codegen export supports execute/witness/prove/parity".into(),
+        );
+      }
+      let mut embedded = serde_json::Deserializer::from_str(include_str!(
+        concat!(env!("OUT_DIR"), "/generated.json")
+      ));
+      embedded.disable_recursion_limit();
+      let embedded = Value::deserialize(&mut embedded)?;
+      if data != embedded {
+        return Err("input package differs from the package compiled into the native kernel".into());
+      }
+      execute = execute_generated;
+    }
+  } else {
+    execute = aiur::bytecode::Toplevel::execute;
+  }
   let fixture: Value = serde_json::from_slice(&std::fs::read(&cli[2])?)?;
   let program = input::program(&data);
   let entry = input::n(&data["entry"]);
@@ -98,6 +154,51 @@ fn run() -> Result<(), Box<dyn Error>> {
   );
   let setup_seconds = start.elapsed().as_secs_f64();
   let profiler = profile::Profiler::from_env()?;
+  if mode == "parity" {
+    if !native {
+      return Err(
+        "use parity-codegen to compare native execution with bytecode".into(),
+      );
+    }
+    let mut baseline_io = input::witness(&fixture);
+    let (baseline, expected) =
+      system.toplevel().execute(entry, args.clone(), &mut baseline_io)?;
+    let (record, output) =
+      execute(system.toplevel(), entry, args.clone(), &mut io)?;
+    assert_eq!(output, expected);
+    assert_eq!(
+      execution_fingerprint(&record),
+      execution_fingerprint(&baseline)
+    );
+    assert_eq!(io.data, baseline_io.data);
+    assert_eq!(io.map.len(), baseline_io.map.len());
+    for (key, value) in &io.map {
+      let other = &baseline_io.map[key];
+      assert_eq!((value.idx, value.len), (other.idx, other.len));
+    }
+    let make_witness = |record: &aiur::execute::QueryRecord,
+                        io: &aiur::execute::IOBuffer| {
+      let plan = system.single_shard_plan(record);
+      let index = system.row_index(record, &plan);
+      system.shard_witness(record, io, &plan, &index, 0)
+    };
+    let a = make_witness(&baseline, &baseline_io);
+    let b = make_witness(&record, &io);
+    assert_eq!(a.traces.len(), b.traces.len());
+    for (a, b) in a.traces.iter().zip(&b.traces) {
+      assert_eq!(a.width, b.width);
+      assert_eq!(a.values, b.values);
+    }
+    println!(
+      "{}",
+      json!({"engine": engine, "mode": mode,
+      "record_matches_bytecode": true, "io_matches_bytecode": true,
+      "all_trace_cells_match_bytecode": true,
+      "record_fingerprint": execution_fingerprint(&record),
+      "trace_cells": a.traces.iter().map(|t| t.values.len()).sum::<usize>()})
+    );
+    return Ok(());
+  }
   if mode == "validate" {
     let mut cases = vec![];
     for entry_name in [
@@ -233,7 +334,7 @@ fn run() -> Result<(), Box<dyn Error>> {
       };
       let start = Instant::now();
       let (record, output) =
-        system.toplevel().execute(entry, args.clone(), &mut io)?;
+        execute(system.toplevel(), entry, args.clone(), &mut io)?;
       let elapsed = start.elapsed().as_secs_f64();
       drop(guard);
       assert_eq!(output, expected);
@@ -244,13 +345,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
     println!(
       "{}",
-      json!({"engine": "ix-bytecode", "mode": mode, "seconds": seconds, "output": []})
+      json!({"engine": engine, "mode": mode, "seconds": seconds, "output": []})
     );
     return Ok(());
   }
   let start = Instant::now();
   let (record, output) =
-    system.toplevel().execute(entry, args.clone(), &mut io)?;
+    execute(system.toplevel(), entry, args.clone(), &mut io)?;
   let execution_seconds = start.elapsed().as_secs_f64();
   assert_eq!(output, expected);
   let mut checked_scope = std::collections::BTreeMap::new();
@@ -340,7 +441,7 @@ fn run() -> Result<(), Box<dyn Error>> {
   let verify_seconds = start.elapsed().as_secs_f64();
   println!(
     "{}",
-    json!({"engine": "ix-bytecode", "mode": mode, "args": fixture["address"], "output": output.iter().map(|x| x.as_canonical_u64()).collect::<Vec<_>>(),
+    json!({"engine": engine, "mode": mode, "args": fixture["address"], "output": output.iter().map(|x| x.as_canonical_u64()).collect::<Vec<_>>(),
         "prepare_seconds": prepare_seconds, "setup_seconds": setup_seconds, "execution_seconds": execution_seconds,
         "witness_seconds": witness_seconds, "seconds": seconds, "witness_and_prove_seconds": witness_and_prove_seconds,
         "prove_seconds": witness_and_prove_seconds - witness_seconds, "verify_seconds": verify_seconds,
@@ -349,7 +450,6 @@ fn run() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-#[cfg(feature = "function-profile")]
 // Compare all function/ROM keys, outputs and multiplicities. Gadget counters
 // are not part of this fingerprint; profiling never modifies their operations.
 fn execution_fingerprint(record: &aiur::execute::QueryRecord) -> u64 {

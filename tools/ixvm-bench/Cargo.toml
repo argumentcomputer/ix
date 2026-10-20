@@ -7,6 +7,7 @@ publish = false
 [workspace]
 
 [features]
+codegen = []
 function-profile = ["aiur/function-profile"]
 function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
 
