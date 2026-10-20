@@ -544,6 +544,19 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
       | recInfo cv' mI rP rules => exact SimC.throw_bind
       | projInfo _ => exact SimC.throw_bind
 
+/-- The `.indDecl` shape guard in the cached driver: it returns only when
+it holds, and leaves the state alone. -/
+theorem checkIndShapeC_ok {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} {s s' : CState md} {u : PUnit}
+    (h : checkIndShape (m := CheckCM md) find? block s = .ok (u, s')) :
+    indShapeOk find? block = true ∧ s' = s := by
+  unfold checkIndShape at h
+  split at h
+  · next hg =>
+    simp only [Pure.pure, StateT.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    exact ⟨hg, h.2.symm⟩
+  · exact nomatch h
+
 /-- One step of the converted-declaration fold: a successful run from any
 state is reproduced by the pure fueled checker on the same declaration,
 and leaves the residue.  The cached driver has no bracket and no
@@ -571,6 +584,13 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
     exact hF
   cases pd with
   | indDecl block nP =>
+    -- the declared shape: a pure guard on both sides, the cached one
+    -- reading the index (`mkFEnv_find?_fun`)
+    obtain ⟨u, s₂, hg, hd⟩ :=
+      bindC_ok (x := checkIndShape (m := CheckCM md) (mkFEnv env).find? block) h
+    obtain ⟨hshapeF, rfl⟩ := checkIndShapeC_ok hg
+    have hshape : indShapeOk env.find? block = true := by
+      rwa [mkFEnv_find?_fun] at hshapeF
     -- task #293: a block the fold recognises as one of the five pinned
     -- ones installs the pin, on both sides; the declared parameter
     -- count (task #228) below it is a guard whose `false` throws on
@@ -583,7 +603,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
               | some p => checkNativeS mode (mkFEnv env) p
               | none => checkIndDeclSF mode (mkFEnv env) block)
           else throw (CheckError.invalid "number of parameters mismatch"))
-        ({} : CState md) = .ok (fe', s') := h
+        ({} : CState md) = .ok (fe', s') := hd
     cases hpin : basisPinHit block with
     | some kind =>
       rw [hpin] at hd
@@ -591,7 +611,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
         (checkBasisDeclC_sim hcsok kind) fe' s' hd
       refine ⟨hs'.residue, hmk, F, ?_⟩
       show checkDecl mode (fueledOps mode F) ev env (.indDecl block nP) = _
-      simp only [checkDecl, hpin]
+      simp only [checkDecl, checkIndShape_pass hshape, hpin]
       rw [← checkBasisDecl_datF, henvEq]
       exact hF
     | none =>
@@ -599,7 +619,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       by_cases hok : indParamsOk nP block = true
       · rw [if_pos hok] at hd
         obtain ⟨hres', hfe, F, hF⟩ :=
-          checkModeledOrNativeSF_run hμ henv hpin hok CSOKF.empty hd
+          checkModeledOrNativeSF_run hμ henv hshape hpin hok CSOKF.empty hd
         exact ⟨hres', hfe, F, hF⟩
       · rw [if_neg hok] at hd
         exact nomatch hd

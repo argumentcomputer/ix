@@ -432,6 +432,93 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
 
 /-! ## The assembly -/
 
+/-- **Every accepted inductive block has its declared shape**
+(`indShapeOk`), whichever route installed it. -/
+theorem checkDecl_indShape {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {nP : Nat}
+    (h : checkDecl μ (fueledOps μ F) ev env (.indDecl block nP) = .ok env₂) :
+    indShapeOk env.find? block = true := by
+  simp only [checkDecl] at h
+  exact (checkIndShape_bind_ok h).1
+
+/-- A constant a resolving term mentions satisfies the lookup. -/
+theorem Expr.constsResolveBy_mentions {has : Key md → Bool} {c : Key md} :
+    ∀ {e : Expr md}, e.constsResolveBy has = true → e.mentionsConst c = true → has c = true
+  | .bvar _, _, hm | .sort _, _, hm | .lit _, _, hm => by simp [Expr.mentionsConst] at hm
+  | .const n _, hr, hm => by
+    simp only [Expr.mentionsConst, beq_iff_eq] at hm
+    subst hm
+    exact hr
+  | .fvar _ ty, hr, hm => by
+    simp only [Expr.constsResolveBy] at hr
+    simp only [Expr.mentionsConst] at hm
+    exact Expr.constsResolveBy_mentions hr hm
+  | .app f a, hr, hm => by
+    simp only [Expr.constsResolveBy, Bool.and_eq_true] at hr
+    simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+    rcases hm with hm | hm
+    · exact Expr.constsResolveBy_mentions hr.1 hm
+    · exact Expr.constsResolveBy_mentions hr.2 hm
+  | .lam ty b _, hr, hm | .forallE ty b _, hr, hm => by
+    simp only [Expr.constsResolveBy, Bool.and_eq_true] at hr
+    simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+    rcases hm with hm | hm
+    · exact Expr.constsResolveBy_mentions hr.1 hm
+    · exact Expr.constsResolveBy_mentions hr.2 hm
+  | .letE ty v b _, hr, hm => by
+    simp only [Expr.constsResolveBy, Bool.and_eq_true] at hr
+    simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+    rcases hm with (hm | hm) | hm
+    · exact Expr.constsResolveBy_mentions hr.1.1 hm
+    · exact Expr.constsResolveBy_mentions hr.1.2 hm
+    · exact Expr.constsResolveBy_mentions hr.2 hm
+  | .proj s _ e, hr, hm => by
+    simp only [Expr.constsResolveBy, Bool.and_eq_true] at hr
+    simp only [Expr.mentionsConst, Bool.or_eq_true, beq_iff_eq] at hm
+    rcases hm with hm | hm
+    · subst hm; exact hr.1
+    · exact Expr.constsResolveBy_mentions hr.2 hm
+
+/-- **No constructor of a block with its declared shape occurs in a
+declared type of the block** (a type former's or a constructor's). -/
+theorem indShapeOk_noCtor {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} (h : indShapeOk find? block = true)
+    {c : Key md} (hc : c ∈ indCtorNames block) {cv : ConstantVal md}
+    (hm : (∃ caps, ConstantInfo.indInfo cv caps ∈ block) ∨
+      (∃ nP nF, ConstantInfo.ctorInfo cv nP nF ∈ block)) :
+    cv.type.mentionsConst c = false := by
+  simp only [indShapeOk, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨⟨htypes, hnames⟩, -⟩ := h
+  have hres : cv.type.constsResolveBy (indShapeHas find? block) = true := by
+    rcases hm with ⟨caps, hm⟩ | ⟨nP, nF, hm⟩
+    · exact htypes _ hm
+    · exact htypes _ hm
+  have hfresh := hnames c hc
+  simp only [Bool.not_eq_true'] at hfresh
+  cases hmc : cv.type.mentionsConst c with
+  | false => rfl
+  | true =>
+    have hhas := Expr.constsResolveBy_mentions hres hmc
+    simp only [indShapeHas, Bool.or_eq_true] at hhas
+    rcases hhas with hs | hs
+    · cases hf : find? c with
+      | none => rw [hf] at hs; cases hs
+      | some _ => rw [hf] at hfresh; cases hfresh.1
+    · rw [hfresh.2] at hs; cases hs
+
+/-- **No constructor of an accepted inductive block occurs in a declared
+type of the block**, whichever route installed it (the statements lane's
+N4 (b): the shape guard runs before the pinned-block recognition and the
+route dispatch). -/
+theorem checkDecl_noCtor {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {nP : Nat}
+    (h : checkDecl μ (fueledOps μ F) ev env (.indDecl block nP) = .ok env₂)
+    {c : Key md} (hc : c ∈ indCtorNames block) {cv : ConstantVal md}
+    (hm : (∃ caps, ConstantInfo.indInfo cv caps ∈ block) ∨
+      (∃ nP nF, ConstantInfo.ctorInfo cv nP nF ∈ block)) :
+    cv.type.mentionsConst c = false :=
+  indShapeOk_noCtor (checkDecl_indShape h) hc hm
+
 /-- **The run dispatch — task #161 S11a's deliverable.**
 
 `checkDeclR_of`'s twin at `DeclRun`, with a decisive difference: five
@@ -479,6 +566,7 @@ theorem checkDeclRun_of {μ : CheckMode} {F : Nat}
       | none => Ind block nP env₂)
     have h' := h
     simp only [checkDecl] at h'
+    obtain ⟨-, h'⟩ := checkIndShape_bind_ok h'
     cases hpin : basisPinHit block with
     | some kind =>
       rw [hpin] at h'

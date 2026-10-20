@@ -42,11 +42,11 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3333 compiled functions with 67 inherited externs, with the
-computed-field overrides of `Level`, `Expr` and `Key` and 22 proved
+reaches 3377 compiled functions with 67 inherited externs, with the
+computed-field overrides of `Level`, `Expr` and `Key` and 23 proved
 csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2138, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5739 with
+TagN writer twin; the entry (the four `publicOperations`) reaches 5783 with
 113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
@@ -54,7 +54,23 @@ default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
 the typing tier) are frozen apart: the entry's closure and the tier's 79
 functions, with nothing new to rule; the closures above do not reach the
-tier. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+tier. The `.indDecl` shape guard (2026-10-20: every inductive block's
+declared former and constructor types resolve against the environment and
+the block's formers, and its constructor names are fresh, distinct from the
+formers and pairwise distinct, before the pinned-block recognition and the
+route dispatch, so the modeled route refuses what Lean's `add_inductive`
+refuses) moved the fold from 3333, the entry from 5739 and the tiered
+entries from 5843, 44 functions each: `checkIndShape` at the fold's two
+drivers' monads, `indShapeOk`, `indShapeHas`, `indFormerNames`,
+`indCtorNames`, `Expr.constsResolveBy` with its memoized walk
+(`constsResolveByGo`, `constsResolveByFast` and the proved `@[csimp]`
+substitution, one more csimp and one more ruled csimp: a tree walk does not
+finish on a DAG-shared field type), `indShapeError` (with `firstDupKey` and
+its message sites' closed terms) and the code generator's specialisations,
+lambdas and boxed forms of them (`List.all`, `List.filterMap`,
+`List.findSome?`, the `Nodup` decision); the reader is unchanged, and the
+externs, `implemented_by`, `unsafe` constants and `partial` definitions are
+unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
@@ -557,7 +573,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3333 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 4; ruled computed_field 17, csimp 22 -/
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3377 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -569,7 +585,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 5739 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstants]: 5783 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -597,9 +613,11 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- more closed terms, two lambdas with their boxed forms in for one out).
 -- CQX.8's field test in the in-model generator moved it from 5969 by the
 -- entry's change (4 out; see the module docstring). (A) moved it from 5965 by the
--- entry's change (122 out; see the module docstring).
+-- entry's change (122 out; see the module docstring). The `.indDecl` shape
+-- guard moved it from 5843 by the entry's change (44 in, one more csimp; see the module
+-- docstring).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 5843 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 5887 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

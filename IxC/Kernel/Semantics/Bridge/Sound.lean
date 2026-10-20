@@ -61,7 +61,10 @@ theorem checkDeclRun_ofEnvFactsE
     (fun {block nP} hpin hh => by
       -- task #293: the pinned-block recognition came first, and this
       -- block is not one of the five
-      simp only [checkDecl, hpin] at hh
+      simp only [checkDecl] at hh
+      -- the declared-shape guard came before it
+      obtain ⟨-, hh⟩ := checkIndShape_bind_ok hh
+      simp only [hpin] at hh
       rw [DeclIndRunDispatch]
       -- the declared parameter count (task #228): a run that reached
       -- the dispatch passed the guard

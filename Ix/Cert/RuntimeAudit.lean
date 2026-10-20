@@ -30,16 +30,17 @@ comparators adds nothing to it. The reference check (Route A, B4,
 
 **AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
 wave fold carries IxC's verified fold over the Source ingress of its input,
-so `compile` now reaches IxC's executable kernel, and with it 54 entries,
+so `compile` now reaches IxC's executable kernel, and with it 55 entries,
 each one of the replacements IxC's own runtime audit rules on
 (`Ix.Kernel.Audit.runtimeRulings`, `IxC/Kernel/Audit/Roots.lean`): the
 `@[computed_field]` overrides of the kernel's `Expr`, `Level`, `Name` and
 `Key` (21); the kernel's `@[csimp]` replacements (`Ix.Kernel.canonEqList`,
 `structProjGuards`, `BinderMeta.shareAlways`, `ConstantInfo.canonEq`,
-`ConstantVal.canonEq`, `ConstantVal.matchesPin`, `Msg.withTerms` and 16 of
-`Expr`'s operations; 23) and the Ixon codec's `getTagN` (`getTagN_eq_fast`,
-reading the committed prelude and evidence bundle; 1), each on the standard
-axioms; and the `partial` definitions of the in-model generator
+`ConstantVal.canonEq`, `ConstantVal.matchesPin`, `Msg.withTerms` and 17 of
+`Expr`'s operations; 24: the 17th, `Expr.constsResolveBy`, is the IxC lane's
+`.indDecl` shape guard's walk, 2026-10-20) and the Ixon codec's `getTagN`
+(`getTagN_eq_fast`, reading the committed prelude and evidence bundle; 1),
+each on the standard axioms; and the `partial` definitions of the in-model generator
 (`IxC/Kernel/Frontend/InModel*`, 9). Nothing the service computes reaches
 `compile`'s result.
 
@@ -131,6 +132,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.ConstantVal.matchesPin,
  Ix.Kernel.Expr.abstract1,
  Ix.Kernel.Expr.allLevelParamsDefined,
+ Ix.Kernel.Expr.constsResolveBy,
  Ix.Kernel.Expr.constsResolveF,
  Ix.Kernel.Expr.hasFvar,
  Ix.Kernel.Expr.hasLooseBVarB,

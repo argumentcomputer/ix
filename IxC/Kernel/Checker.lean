@@ -348,7 +348,15 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
       else
         throw (.notImplemented msg!"non-standard axiom ({cv.name})")
   | .basisDecl kind => checkBasisDecl env kind
-  | .indDecl block nP =>
+  | .indDecl block nP => do
+    -- **THE DECLARED SHAPE**, first and for every route (the pinned
+    -- blocks included): the formers' and constructors' declared types
+    -- resolve against the environment and the block's formers, and the
+    -- constructor names are fresh, distinct from the formers and pairwise
+    -- distinct (`indShapeOk`; Lean's `add_inductive` refuses whatever it
+    -- refuses).  So no constructor of an accepted block occurs in a
+    -- declared type of the block, whichever route installs it.
+    checkIndShape env.find? block
     -- **THE PINNED BASIS BLOCKS** (task #293).  A stream's `Nat` block
     -- arrives as an ordinary `indDecl` — the decoder emits the file's
     -- records and nothing else — and it is recognised HERE: a block

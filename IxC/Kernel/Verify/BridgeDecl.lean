@@ -1011,6 +1011,15 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
       simp only [FueledM.atF_throw]
   | indDecl block nP =>
     dsimp only
+    -- the declared-shape guard is pure: fuel-free on both sides
+    rw [FueledM.atF_bind]
+    have hg : (checkIndShape (m := FueledM md) env.find? block).val F =
+        checkIndShape env.find? block := by
+      unfold checkIndShape
+      simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+    rw [hg]
+    congr 1
+    funext u
     -- the pinned-block recognition (task #293) and the declared
     -- parameter count (task #228) are pure guards: the two sides take
     -- the same branch, and the guards' `throw` is fuel-free

@@ -672,6 +672,8 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
        · exact Yields.ofThrow)
   | indDecl block nP =>
     simp only []
+    -- the declared-shape guard installs nothing
+    refine Yields.bind' (checkIndShape_yields _ block) fun _ _ => ?_
     -- task #293: a block the fold recognises as a pinned one installs
     -- the pin
     split

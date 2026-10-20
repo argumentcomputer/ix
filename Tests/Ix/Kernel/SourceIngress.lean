@@ -446,7 +446,101 @@ def quotient : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, 3, 0, msg)) .done
 
+
+/-! ## The `.indDecl` shape guard
+
+`indShapeOk` on synthetic blocks (the guard is syntactic: a declared type
+here is any term, only its constants matter), then the fold on a lowered
+mutual block (`Tm`/`Args`, the modeled route) whose constructor `Args.cons`
+has a declared type naming the earlier constructor `Tm.var`: the modeled
+route checks a member against the environment and the earlier members, so
+before the guard that name resolved there; the guard refuses it first, with
+`checkConstantVal`'s own message. -/
+
+def skey (s : String) : Ix.Kernel.Key .source := .id (Ix.Kernel.Name.ofLeanName s.toName)
+
+def sconst (s : String) : Ix.Kernel.Expr .source := .const (skey s) []
+
+def scv (s : String) (t : Ix.Kernel.Expr .source) : Ix.Kernel.ConstantVal .source :=
+  { name := skey s, levelParams := [], type := t }
+
+def sind (s : String) (t : Ix.Kernel.Expr .source) : Ix.Kernel.ConstantInfo .source :=
+  .indInfo (scv s t) {}
+
+def sctor (s : String) (t : Ix.Kernel.Expr .source) : Ix.Kernel.ConstantInfo .source :=
+  .ctorInfo (scv s t) 0 0
+
+def sty : Ix.Kernel.Expr .source := .sort default
+
+/-- An environment holding `U` only. -/
+def withU : Ix.Kernel.Key .source → Option (Ix.Kernel.ConstantInfo .source) := fun n =>
+  if n == skey "U" then some (.axiomInfo (scv "U" sty)) else none
+
+def noneEnv : Ix.Kernel.Key .source → Option (Ix.Kernel.ConstantInfo .source) := fun _ => none
+
+def shapeUnits : TestSeq :=
+  test "a block naming only its formers passes"
+    (Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T"))]) $
+  test "a mutual block's constructor may name another former"
+    (Ix.Kernel.indShapeOk noneEnv [sind "A" sty, sind "B" sty, sctor "A.a" (.app (sconst "A") (sconst "B"))]) $
+  test "a constructor naming an earlier constructor is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.b" (.app (sconst "T") (sconst "T.a"))]) $
+  test "a constructor naming a later constructor is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (sconst "T.b")), sctor "T.b" (sconst "T")]) $
+  test "a former naming an unknown constant is refused, and passes once it is declared"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" (sconst "U")] && Ix.Kernel.indShapeOk withU [sind "T" (sconst "U")]) $
+  test "a constructor name already declared is refused"
+    (!Ix.Kernel.indShapeOk withU [sind "T" sty, sctor "U" (sconst "T")]) $
+  test "a constructor named as a former is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T" (sconst "T")]) $
+  test "a constructor name declared twice is refused"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (sconst "T"), sctor "T.a" (sconst "T")]) $
+  test "a literal needs its support"
+    (!Ix.Kernel.indShapeOk noneEnv [sind "T" sty, sctor "T.a" (.app (sconst "T") (.lit (.natVal 0)))])
+
+/-- The lowered declarations with `Args.cons`'s declared type naming `Tm.var`. -/
+def withCtorNamingCtor (ds : Array (Ix.Kernel.Declaration .source)) :
+    Array (Ix.Kernel.Declaration .source) :=
+  ds.map fun d => match d with
+    | .indDecl block nP => .indDecl (block.map fun ci => match ci with
+        | .ctorInfo cv nP' nF =>
+          if cv.name == kkey (defs "Args.cons") then
+            .ctorInfo { cv with type := .app (.const (kkey (defs "Tm.var")) []) cv.type } nP' nF
+          else ci
+        | ci => ci) nP
+    | d => d
+
+def evaluateShape : IO (Array String × Array String) := do
+  let leanEnv ← getCompileEnv #[defsModule]
+  let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
+  let env ← envOf leanEnv #[defs "Tm"]
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  match prepareSource pre env (condense env) with
+  | .error e => errors := errors.push s!"shape: ingress: {e}"
+  | .ok ds =>
+    match Ix.Kernel.Cached.checkDecls .verified (sourceEvidence ds) ds with
+    | .ok _ => lines := lines.push "shape: Tm/Args as lowered: accepted"
+    | .error (e, _) => errors := errors.push s!"shape: Tm/Args as lowered: {e}"
+    let ds' := withCtorNamingCtor ds
+    if ds' == ds then errors := errors.push "shape: Args.cons not found"
+    match Ix.Kernel.Cached.checkDecls .verified (sourceEvidence ds') ds' with
+    | .ok _ => errors := errors.push "shape: a constructor naming an earlier constructor was accepted"
+    | .error (e, _) =>
+      let msg := toString e
+      lines := lines.push s!"shape: Args.cons naming Tm.var: {msg}"
+      unless (msg.splitOn "unknown constant in type of").length > 1 do
+        errors := errors.push s!"shape: refused, but not by the shape guard: {msg}"
+  return (errors, lines)
+
+def shapeGuard : TestSeq :=
+  .individualIO "the shape guard refuses a modeled block's constructor naming an earlier one" none (do
+    let (errors, lines) ← evaluateShape
+    for l in lines do IO.println l
+    let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
+    return (errors.isEmpty, 2, 0, msg)) .done
+
 def suite : List TestSeq := [refusals, erasure, contractFrames, numbering, canonical, sharing, fixtures,
-  quotient]
+  quotient, shapeUnits, shapeGuard]
 
 end Tests.Ix.Kernel.SourceIngress

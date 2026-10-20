@@ -1232,6 +1232,16 @@ theorem checkBasisDeclC_skels {fe : FEnv md}
   yields
   all_goals exact hfold fe sk h
 
+/-- The `.indDecl` shape guard returns only when it holds. -/
+theorem checkIndShape_yields (find? : Key md → Option (ConstantInfo md))
+    (block : List (ConstantInfo md)) :
+    Yields (checkIndShape (m := CheckCM md) find? block)
+      (fun _ => indShapeOk find? block = true) := by
+  unfold checkIndShape
+  split
+  · next h => exact Yields.pure h
+  · exact Yields.ofThrow
+
 theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
     {sk : List (InstallSkel md)} (h : SkelIs fe sk) (pd : Declaration md) :
     Yields (checkDeclC mode ev fe pd)
@@ -1304,6 +1314,8 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
        · exact Yields.ofThrow)
   | indDecl block nP =>
     simp only []
+    -- the declared-shape guard installs nothing
+    refine Yields.bind' (checkIndShape_yields _ block) fun _ _ => ?_
     -- task #293: a block the fold recognises as a pinned one installs
     -- the pin; the declared parameter count (task #228) below it is a
     -- guard whose `throw` installs nothing

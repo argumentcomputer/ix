@@ -97,12 +97,13 @@ ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
 it from 5862 by the entry's change (`IxC/Kernel/Audit/Roots.lean`, 4 of `genNested`'s
 specialisations gone). (A) (`ALPHA-COLLAPSE.md` §8.2) moved it from 5858 by the
 entry's change (`IxC/Kernel/Audit/Roots.lean`, 122 out: the compiler-trust roles
-and their checks). -/
+and their checks). The `.indDecl` shape guard moved it from 5736 by the entry's
+change (`IxC/Kernel/Audit/Roots.lean`, 44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled). -/
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5736 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 6; ruled computed_field 21, csimp 25, partial 9 -/
+ Ix.Kernel.Admission.checkBytes]: 5780 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26, partial 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

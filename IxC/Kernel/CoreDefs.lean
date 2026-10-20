@@ -258,6 +258,208 @@ def Expr.constsResolve (env : Env md) : Expr md → Bool
     ty.constsResolve env && val.constsResolve env && body.constsResolve env
   | .proj s _ e => (env.find? s).isSome && e.constsResolve env
 
+/-- `Expr.constsResolve` with the lookup abstracted: do all constants
+referenced in `e` (a literal's implicit support included) satisfy `has`?
+`constsResolve env` is `constsResolveBy (fun n => (env.find? n).isSome)`;
+the `.indDecl` shape guard (`indShapeOk`) passes the environment's lookup
+extended by the block's type formers. -/
+def Expr.constsResolveBy (has : Key md → Bool) : Expr md → Bool
+  | .bvar _ | .sort _ => true
+  | .lit (.natVal _) => has natName && has natZeroName && has natSuccName
+  | .lit (.strVal _) =>
+    has natName && has natZeroName && has natSuccName && has stringName &&
+      has stringOfListName && has listName && has listNilName && has listConsName &&
+      has charName && has charOfNatName
+  | .const n _ => has n
+  | .fvar _ ty => ty.constsResolveBy has
+  | .app f a => f.constsResolveBy has && a.constsResolveBy has
+  | .lam ty body _ | .forallE ty body _ =>
+    ty.constsResolveBy has && body.constsResolveBy has
+  | .letE ty val body _ =>
+    ty.constsResolveBy has && val.constsResolveBy has && body.constsResolveBy has
+  | .proj s _ e => has s && e.constsResolveBy has
+
+/-! ### `constsResolveBy`, memoized
+
+The shape guard asks it of every declared former and constructor type; a
+tree walk does not finish on a DAG-shared field type (task #215's
+`tower_struct`).  Swapped in by `@[csimp]`, as `constsResolveF` is
+(`IxC/Kernel/DeclCheck.lean`): kernel-checked, no trust point, the pure
+walk stays the spec.  Keyed by the node, dropped after each call. -/
+
+/-- The memo's invariant: every recorded answer is the real one. -/
+def CRBMemoInv (has : Key md → Bool) (memo : Std.HashMap (Expr md) Bool) : Prop :=
+  ∀ (k : Expr md) (r : Bool), memo[k]? = some r → r = k.constsResolveBy has
+
+theorem CRBMemoInv.empty {has : Key md → Bool} : CRBMemoInv has {} := by
+  intro k r h; simp at h
+
+theorem CRBMemoInv.insert {has : Key md → Bool} {memo : Std.HashMap (Expr md) Bool}
+    (hm : CRBMemoInv has memo) {e : Expr md} {r : Bool} (heq : r = e.constsResolveBy has) :
+    CRBMemoInv has (memo.insert e r) := by
+  intro k r' hk
+  rw [Std.HashMap.getElem?_insert] at hk
+  split at hk
+  · rename_i hbeq
+    cases hk
+    rw [← eq_of_beq hbeq]
+    exact heq
+  · exact hm k r' hk
+
+/-- Memoized `constsResolveBy`. -/
+def Expr.constsResolveByGo (has : Key md → Bool) (memo : Std.HashMap (Expr md) Bool) :
+    (Expr md) → Bool × Std.HashMap (Expr md) Bool
+  | .bvar i => ((Expr.bvar i).constsResolveBy has, memo)
+  | .sort u => ((Expr.sort u).constsResolveBy has, memo)
+  | .lit l => ((Expr.lit l).constsResolveBy has, memo)
+  | .const n us => ((Expr.const n us).constsResolveBy has, memo)
+  | e =>
+    match memo[e]? with
+    | some r => (r, memo)
+    | none =>
+      let (r, memo) : Bool × Std.HashMap (Expr md) Bool :=
+        match e with
+        | .fvar _ ty => constsResolveByGo has memo ty
+        | .app f a =>
+          let (b₁, memo) := constsResolveByGo has memo f
+          let (b₂, memo) := constsResolveByGo has memo a
+          (b₁ && b₂, memo)
+        | .lam ty body _ =>
+          let (b₁, memo) := constsResolveByGo has memo ty
+          let (b₂, memo) := constsResolveByGo has memo body
+          (b₁ && b₂, memo)
+        | .forallE ty body _ =>
+          let (b₁, memo) := constsResolveByGo has memo ty
+          let (b₂, memo) := constsResolveByGo has memo body
+          (b₁ && b₂, memo)
+        | .letE ty val body _ =>
+          let (b₁, memo) := constsResolveByGo has memo ty
+          let (b₂, memo) := constsResolveByGo has memo val
+          let (b₃, memo) := constsResolveByGo has memo body
+          (b₁ && b₂ && b₃, memo)
+        | .proj s _ sub =>
+          let (b, memo) := constsResolveByGo has memo sub
+          (has s && b, memo)
+        | e => (e.constsResolveBy has, memo)
+      (r, memo.insert e r)
+
+/-- **The memoized walk is `constsResolveBy`.** -/
+theorem Expr.constsResolveByGo_spec {has : Key md → Bool} :
+    ∀ (e : Expr md) (memo : Std.HashMap (Expr md) Bool), CRBMemoInv has memo →
+      (constsResolveByGo has memo e).1 = e.constsResolveBy has ∧
+        CRBMemoInv has (constsResolveByGo has memo e).2 := by
+  intro e
+  induction e with
+  | bvar i => intro memo hm; exact ⟨rfl, hm⟩
+  | sort u => intro memo hm; exact ⟨rfl, hm⟩
+  | const n us => intro memo hm; exact ⟨rfl, hm⟩
+  | lit l => intro memo hm; exact ⟨rfl, hm⟩
+  | fvar i ty ih =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := ih memo hm
+      refine ⟨by simp [constsResolveBy, h1], ?_⟩
+      exact h2.insert (by simp [constsResolveBy, h1])
+  | app a b iha ihb =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iha memo hm
+      obtain ⟨h3, h4⟩ := ihb _ h2
+      refine ⟨by simp [constsResolveBy, h1, h3], ?_⟩
+      exact h4.insert (by simp [constsResolveBy, h1, h3])
+  | lam ty body bi iht ihb =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht memo hm
+      obtain ⟨h3, h4⟩ := ihb _ h2
+      refine ⟨by simp [constsResolveBy, h1, h3], ?_⟩
+      exact h4.insert (by simp [constsResolveBy, h1, h3])
+  | forallE ty body bi iht ihb =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht memo hm
+      obtain ⟨h3, h4⟩ := ihb _ h2
+      refine ⟨by simp [constsResolveBy, h1, h3], ?_⟩
+      exact h4.insert (by simp [constsResolveBy, h1, h3])
+  | letE ty val body _ iht ihv ihb =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := iht memo hm
+      obtain ⟨h3, h4⟩ := ihv _ h2
+      obtain ⟨h5, h6⟩ := ihb _ h4
+      refine ⟨by simp [constsResolveBy, h1, h3, h5], ?_⟩
+      exact h6.insert (by simp [constsResolveBy, h1, h3, h5])
+  | proj s i sub ih =>
+    intro memo hm
+    rw [constsResolveByGo]
+    split
+    · rename_i r hhit
+      exact ⟨(hm _ _ hhit).symm ▸ rfl, hm⟩
+    · obtain ⟨h1, h2⟩ := ih memo hm
+      refine ⟨by simp [constsResolveBy, h1], ?_⟩
+      exact h2.insert (by simp [constsResolveBy, h1])
+
+/-- The executed `constsResolveBy` (one memoized DAG walk). -/
+def Expr.constsResolveByFast (has : Key md → Bool) (e : Expr md) : Bool :=
+  (constsResolveByGo has {} e).1
+
+@[csimp] theorem Expr.constsResolveBy_eq_constsResolveByFast :
+    @Expr.constsResolveBy = @Expr.constsResolveByFast := by
+  funext md has e
+  exact (constsResolveByGo_spec e {} CRBMemoInv.empty).1.symm
+
+/-- The names of an inductive block's type formers. -/
+def indFormerNames (block : List (ConstantInfo md)) : List (Key md) :=
+  block.filterMap fun ci => match ci with
+    | .indInfo cv _ => some cv.name
+    | _ => none
+
+/-- The names of an inductive block's constructors. -/
+def indCtorNames (block : List (ConstantInfo md)) : List (Key md) :=
+  block.filterMap fun ci => match ci with
+    | .ctorInfo cv _ _ => some cv.name
+    | _ => none
+
+/-- A name an inductive block's declared types may mention: a constant of
+the environment (`find?`) or one of the block's type formers. -/
+def indShapeHas (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md))
+    (n : Key md) : Bool :=
+  (find? n).isSome || (indFormerNames block).contains n
+
+/-- **The declared shape of an inductive block**, route-independent: every
+type former's and constructor's DECLARED type (before annotation) resolves
+against the environment and the block's type formers, and the constructor
+names are fresh in the environment, distinct from the formers and pairwise
+distinct.  Lean's kernel refuses every block this refuses (`add_inductive`
+checks the formers' and constructors' types with only the formers added,
+and declares each constructor name once); `checkDecl` runs it on every
+`.indDecl`, before the pinned-block recognition and the route dispatch, so
+"no constructor of the block occurs in a declared type of the block" holds
+of every accepted block whatever its route. -/
+def indShapeOk (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md)) :
+    Bool :=
+  (block.all fun ci => match ci with
+    | .indInfo cv _ | .ctorInfo cv _ _ => cv.type.constsResolveBy (indShapeHas find? block)
+    | _ => true) &&
+  ((indCtorNames block).all fun c =>
+    (find? c).isNone && !(indFormerNames block).contains c) &&
+  decide (indCtorNames block).Nodup
+
 /-- Convert a `Nat`-literal major premise to constructor form, one
 layer; anything else passes through. -/
 def litToCtorIfNat (env : Env md) : Expr md → Expr md

@@ -90,7 +90,57 @@ def unresolvedConstsError (where_ : Msg md) (e : Expr md) : CheckError md :=
     .notImplemented msg!"use of the sorryAx axiom in {where_}"
   else .invalid msg!"unknown constant in {where_}"
 
+/-- The first name a list repeats. -/
+def firstDupKey : List (Key md) → Option (Key md)
+  | [] => none
+  | c :: cs => if cs.contains c then some c else firstDupKey cs
+
+/-- What `checkIndShape` throws: `checkConstantVal`'s own message for the
+first member the shape guard refuses (an unresolved declared type, or a
+constructor name declared twice), so a block both refuse keeps its text. -/
+def indShapeError (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md)) :
+    CheckError md :=
+  let unresolved := block.findSome? fun ci => match ci with
+    | .indInfo cv _ | .ctorInfo cv _ _ =>
+      if cv.type.constsResolveBy (indShapeHas find? block) then none
+      else some (unresolvedConstsError msg!"type of {cv.name}" cv.type)
+    | _ => none
+  match unresolved with
+  | some e => e
+  | none =>
+    let taken := (indCtorNames block).find? fun c =>
+      (find? c).isSome || (indFormerNames block).contains c
+    match taken.orElse fun _ => firstDupKey (indCtorNames block) with
+    | some c => .invalid msg!"duplicate declaration {c}"
+    | none => .invalid msg!"malformed inductive block"
+
 variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
+
+/-- **The `.indDecl` shape guard** (`indShapeOk`), run on every inductive
+block before the pinned-block recognition and the route dispatch. -/
+def checkIndShape (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md)) :
+    m Unit :=
+  unless indShapeOk find? block do throw (indShapeError find? block)
+
+/-- **The shape guard, inverted** (in `Except`): a run past it had the
+guard hold, and continues as the rest of the arm. -/
+theorem checkIndShape_bind_ok {α : Type} {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} {k : PUnit → Except (CheckError md) α} {v : α}
+    (h : (checkIndShape find? block >>= k) = .ok v) :
+    indShapeOk find? block = true ∧ k () = .ok v := by
+  unfold checkIndShape at h
+  split at h
+  · next hg => exact ⟨hg, h⟩
+  · exact nomatch h
+
+/-- The shape guard, passed (in `Except`). -/
+theorem checkIndShape_pass {α : Type} {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} {k : PUnit → Except (CheckError md) α}
+    (h : indShapeOk find? block = true) :
+    (checkIndShape find? block >>= k) = k () := by
+  unfold checkIndShape
+  simp only [h, ↓reduceIte]
+  rfl
 
 /-- Checks common to all declarations: fresh name, well-formed universe
 parameters, and a type that is a type and mentions only declared

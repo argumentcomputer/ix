@@ -720,7 +720,8 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
 block goes to `checkNativeS`, everything else to `checkIndDeclSF`,
 and either way the pure fueled `checkDecl` reproduces the run. -/
 theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
-    {block : List (ConstantInfo md)} {nP : Nat} (hpin : basisPinHit block = none)
+    {block : List (ConstantInfo md)} {nP : Nat}
+    (hshape : indShapeOk env.find? block = true) (hpin : basisPinHit block = none)
     (hok : indParamsOk nP block = true)
     {s₀ : CState md} (hwf : CSOKF s₀)
     {feOut : FEnv md} {s' : CState md}
@@ -731,10 +732,12 @@ theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env
     CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
     ∃ F, checkDecl mode (fueledOps mode F) ev env (.indDecl block nP) =
       .ok feOut.env := by
-  -- the declared parameter count (task #228) is a pure guard shared by
-  -- the two drivers: `hok` is the branch both take
+  -- the declared shape and the declared parameter count (task #228) are
+  -- pure guards shared by the two drivers: `hshape` and `hok` are the
+  -- branches both take
   show CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
-    ∃ F, (match basisPinHit block with
+    ∃ F, (checkIndShape (m := CheckM md) env.find? block >>= fun _ =>
+      match basisPinHit block with
       | some kind => checkBasisDecl (m := CheckM md) env kind
       | none =>
         if indParamsOk nP block = true then
@@ -742,6 +745,7 @@ theorem checkModeledOrNativeSF_run (hμ : mode.verifiedChecks = true) {env : Env
             | some p => checkNative (fueledOps mode F) env p
             | none => checkModeled mode (fueledOps mode F) env block)
         else throw (CheckError.invalid "number of parameters mismatch")) = .ok feOut.env
+  simp only [checkIndShape_pass hshape]
   -- task #293: this block is not one of the five pinned ones (the
   -- recognition happened before the dispatch, on both sides)
   simp only [hpin, if_pos hok]

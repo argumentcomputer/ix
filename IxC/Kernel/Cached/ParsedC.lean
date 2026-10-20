@@ -205,7 +205,9 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
       else
         throw (.notImplemented msg!"non-standard axiom ({cv.name})")
   | .basisDecl kind => checkBasisDeclC fe kind
-  | .indDecl block nP =>
+  | .indDecl block nP => do
+    -- the declared shape, first and for every route (`checkDecl`'s twin)
+    checkIndShape fe.find? block
     -- **THE PINNED BASIS BLOCKS** (`checkDecl`'s twin, task #293): the
     -- stream's own `Nat` block, recognised here and installed as the
     -- pin; a block under a pinned name that does not match falls
