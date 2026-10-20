@@ -67,7 +67,9 @@ pub struct Pass3State {
   /// Stable views: entered only once every original member of the block is
   /// compiled.
   pub views: DashMap<Name, Arc<BlockView>>,
-  /// Recursor images and their types, built from a stable view.
+  /// The image memo: recursor images and their types, built from a stable
+  /// view, and definitional heads' expansions rewritten from stable views
+  /// (`compile_image_block`; Lean `CompileEnv.p3ImageExps`).
   pub image_exps: DashMap<Name, (Expansion, Expr)>,
 }
 

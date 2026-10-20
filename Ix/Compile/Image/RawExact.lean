@@ -43,6 +43,34 @@ def exprDecEq (a b : Ix.Expr) : Decidable (a = b) := Ix.Compile.ExactKey.ptrDec 
 /-- `exprDecEq` as a Boolean. -/
 def exprEq (a b : Ix.Expr) : Bool := @decide (a = b) (exprDecEq a b)
 
+@[simp] theorem exprEq_eq_true (a b : Ix.Expr) : exprEq a b = true ↔ a = b :=
+  @decide_eq_true_iff _ (exprDecEq a b)
+
+/-- Exact expression equality decided at the root: the root's own fields
+compared in full, its expression children with `exprEq` (pointer equality
+first). When equal children are the same objects, as in a table of shared
+nodes, the decision does not descend; otherwise it is the full comparison. -/
+def nodeEq (a b : Ix.Expr) : Bool :=
+  match a, b with
+  | .app f x h, .app f' x' h' =>
+    decide (h = h') && exprEq f f' && exprEq x x'
+  | .lam n t x bi h, .lam n' t' x' bi' h' =>
+    decide (h = h') && exprEq t t' && exprEq x x' && nameEq n n' && decide (bi = bi')
+  | .forallE n t x bi h, .forallE n' t' x' bi' h' =>
+    decide (h = h') && exprEq t t' && exprEq x x' && nameEq n n' && decide (bi = bi')
+  | .letE n t v x nd h, .letE n' t' v' x' nd' h' =>
+    decide (h = h') && exprEq t t' && exprEq v v' && exprEq x x' && nameEq n n' &&
+      decide (nd = nd')
+  | .proj s i x h, .proj s' i' x' h' =>
+    decide (h = h') && exprEq x x' && nameEq s s' && decide (i = i')
+  | .mdata md x h, .mdata md' x' h' =>
+    decide (h = h') && exprEq x x' && decide (md = md')
+  | a, b => exprEq a b
+
+theorem nodeEq_eq {a b : Ix.Expr} (hq : nodeEq a b = true) : a = b := by
+  unfold nodeEq at hq
+  split at hq <;> simp_all
+
 end Ix.Compile.Image.RawExact
 
 end

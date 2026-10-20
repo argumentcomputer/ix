@@ -86,7 +86,8 @@ structure Published where
   canonRecs : Array (Name × RecursorVal) := #[]
   /-- New entries of the view memo (`CompileEnv.p3Views`). -/
   views : Array (Name × BlockView) := #[]
-  /-- New entries of the recursor image memo (`CompileEnv.p3ImageExps`). -/
+  /-- New entries of the image memo (`CompileEnv.p3ImageExps`): recursor images,
+  and definitional heads' rewritten expansions (`compileImageBlock`). -/
   imageExps : Array (Name × (Expansion × Expr)) := #[]
   deriving Inhabited
 
@@ -325,9 +326,10 @@ def viewsOf (cenv : CompileEnv) (heads : Array Name) :
         views := views.insert key (← viewOf cenv views key)
   return views
 
-/-- The expansion of `n` in a rewrite: `none` unless `n` is a head; a
-recursor's from the image memo when there; otherwise from its block's view
-(the views of `views`, else built). -/
+/-- The expansion of `n` in a rewrite: `none` unless `n` is a head; from the
+image memo when there (a recursor's image, or a definitional head's expansion
+already rewritten); otherwise from its block's view (the views of `views`,
+else built). -/
 def expansionLookup (cenv : CompileEnv) (views : Std.HashMap ExactName BlockView) :
     Name → Except String (Option Expansion) := fun n =>
   match cenv.p3Heads.get? n with
@@ -454,10 +456,22 @@ def compileImage (cenv : CompileEnv) (known : Std.HashMap ExactName Address)
   | .ok r => .ok r
   | .error e => .error s!"Pass 3: image constant {name.pretty}: {e}"
 
+/-- Every head the rewrite state `st` read (`RwState.exps`) is of a changed
+block whose view may enter the memo (`viewMemoable`): a value the rewrite
+computed from them (its expansions, read with the default `RwConfig`, which
+records nothing at no site) is then a function of memoable views and the
+input, the same in every later block. -/
+def readsMemoable (cenv : CompileEnv) (st : RwState) : Bool :=
+  st.exps.fold (init := true) fun ok n _ =>
+    ok && match cenv.p3Heads.get? n with
+      | some key => viewMemoable cenv key
+      | none => false
+
 /-- The images of an image block (`isImageBlock`), compiled in the members'
 order by pretty name, each once the images of the block it references are
-(rounds), with what the block publishes: the views it built and the
-recursor images it computed, when their blocks' views may enter the memo. -/
+(rounds), with what the block publishes: the views it built, the recursor
+images it computed and the definitional heads' rewritten expansions, when the
+views they read may enter the memo (`readsMemoable`). -/
 def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
     Except String (Array (Name × BlockResult × BlockState) × Published) := do
   let members := all.toArray.qsort fun a b => a.pretty < b.pretty
@@ -483,6 +497,10 @@ def compileImageBlock (cenv : CompileEnv) (all : Set Name) :
     st := {}  -- released, so the run updates the caches in place
     let (dv, st') ← imageDecl cenv views a x ty st0
     st := st'
+    -- a definitional head's rewritten expansion enters the image memo: a later
+    -- block's rewrite reads it instead of rewriting Lean's value again
+    if x.needsRewrite && viewMemoable cenv key && readsMemoable cenv st then
+      exps := exps.push (a, ({ x with value := dv.value, needsRewrite := false }, ty))
     decls := decls.push (a, imageInfo cenv dv)
   -- compile, each once the images it references are
   let mut pending := decls

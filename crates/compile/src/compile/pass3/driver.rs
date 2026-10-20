@@ -617,6 +617,11 @@ fn image_expansion(
   }
 }
 
+/// Every view a rewrite has read so far is a stable one (`stable_view`).
+fn all_stable(ctx: &Ctx<'_>, views: &FxHashMap<Name, Arc<BlockView>>) -> bool {
+  views.iter().all(|(key, view)| stable_view(ctx, key, view))
+}
+
 /// The expansion lookup over the views (`expansionLookup`), building a view
 /// on demand for a head of a block not yet viewed.
 fn expansion_lookup(
@@ -627,6 +632,14 @@ fn expansion_lookup(
   let Some(key) = ctx.stt.p3.heads.get(n).map(|r| r.clone()) else {
     return Ok(None);
   };
+  // the image memo, while this rewrite has read stable views only: a
+  // definitional head's entry was rewritten from stable views, which this
+  // rewrite would read too
+  if all_stable(ctx, views)
+    && let Some(image) = ctx.stt.p3.image_exps.get(n)
+  {
+    return Ok(Some(image.0.clone()));
+  }
   if !views.contains_key(&key) {
     let more = views_of(ctx, std::iter::once(n.clone()))?;
     views.extend(more);
@@ -821,6 +834,17 @@ fn compile_image_block(
         };
         let mut lookup = |n: &Name| expansion_lookup(ctx, &mut views, n);
         let (value, typ) = image_decl_with(&mut st, &mut lookup, a, &x, &ty)?;
+        // a definitional head's rewritten expansion enters the image memo when
+        // every view the block's rewrite read is stable (Lean `readsMemoable`):
+        // a later block's rewrite reads it instead of rewriting Lean's value
+        if x.needs_rewrite && all_stable(ctx, &views) {
+          let rewritten = Expansion {
+            value: value.clone(),
+            needs_rewrite: false,
+            ..x.clone()
+          };
+          stt.p3.image_exps.entry(a.clone()).or_insert((rewritten, ty.clone()));
+        }
         out.push((a.clone(), image_def(ctx.lean_env, a, &x, value, typ)));
       }
       Ok(out)

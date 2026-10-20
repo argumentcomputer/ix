@@ -38,6 +38,15 @@
   motives in its minor types (`substFVars`), so that the image is created
   already developed; a call-site rewrite uses `instantiate` to replace
   `img(a) args` by the image body at `args`.
+
+  Every node the development builds is shared (`DevState.nodes`,
+  `TotalMemo.share`): a node equal to one built before (decided at the root,
+  `RawExact.nodeEq`) is that node. The substitution of `f a₁ … aₙ` rebuilds
+  every node that mentions a remaining variable once per argument, and the
+  developments of a block meet the same terms again; shared, a term met again
+  is the same object, so the tables' exact confirmations stop at their
+  pointer test instead of comparing the terms in full. Sharing replaces a
+  term by an equal one: no result changes.
 -/
 module
 public import Ix.Environment
@@ -95,8 +104,30 @@ structure DevState where
   occurs : TotalMemo.OccursMemo := {}
   /-- `hinst`'s table, one entry per bucket (a later entry replaces it). -/
   insts : Std.HashMap UInt64 InstEntry := {}
+  /-- The shared nodes (`TotalMemo.share`): every node the development builds
+  and every argument it substitutes. A term built again is the node built
+  first, so the tables above confirm their hits by the pointer test of
+  `RawExact.exprDecEq` instead of a full comparison. -/
+  nodes : TotalMemo.Nodes := {}
 
 abbrev DevM := StateT DevState (Except String)
+
+/-- `e`, shared (`TotalMemo.share`). -/
+def share (e : Expr) : DevM Expr := fun st =>
+  let s := TotalMemo.share e st.nodes
+  .ok (s.value, { st with nodes := s.nodes })
+
+/-- `mkAppN f args`, every application node shared. -/
+def shareAppN (f : Expr) (args : Array Expr) : DevM Expr :=
+  args.foldlM (fun acc a => share (Expr.mkApp acc a)) f
+
+/-- `e`, or the table's node at `e`'s digest when it equals `e` (full
+comparison, pointer equality first): for the development's inputs. -/
+def shareInput (e : Expr) : DevM Expr := fun st =>
+  let b := hash e
+  match st.nodes.get? b with
+  | some n => .ok (if RawExact.exprEq n e then n else e, st)
+  | none => .ok (e, { st with nodes := st.nodes.insert b e })
 
 /-- The bucket of `hinst v k e`: a digest of the inputs, a selector only. -/
 def instBucket (v e : Expr) (k : Nat) : UInt64 :=
@@ -119,13 +150,15 @@ def looseRange (e : Expr) : DevM Nat := fun st =>
 
 /-- `liftLoose e n c`, with exact confirmed memo hits. -/
 def liftM (e : Expr) (n c : Nat) : DevM Expr := fun st =>
-  let r := TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted⟩
-  .ok (r.value, { st with range := r.state.range, lifted := r.state.values })
+  let r := TotalMemo.liftGo hash hash e n c ⟨st.range, st.lifted, st.nodes⟩
+  .ok (r.value, { st with range := r.state.range, lifted := r.state.values,
+                          nodes := r.state.nodes })
 
 /-- `lowerLoose e n c`, with exact confirmed memo hits. -/
 def lowerM (e : Expr) (n c : Nat) : DevM Expr := fun st =>
-  let r := TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered⟩
-  .ok (r.value, { st with range := r.state.range, lowered := r.state.values })
+  let r := TotalMemo.lowerGo hash hash e n c ⟨st.range, st.lowered, st.nodes⟩
+  .ok (r.value, { st with range := r.state.range, lowered := r.state.values,
+                          nodes := r.state.nodes })
 
 /-- `bvar k` occurs loose in `e`, with exact confirmed memo hits. -/
 def occursM (e : Expr) (k : Nat) : DevM Bool := fun st =>
@@ -151,7 +184,7 @@ def hinst : Nat → Expr → Nat → Expr → DevM (Expr × Created)
     let r ← match e with
       | .bvar i _ =>
         if i == k then do pure (← liftM v k 0, .direct)
-        else if i > k then pure (Expr.mkBVar (i - 1), .no)
+        else if i > k then pure (← share (Expr.mkBVar (i - 1)), .no)
         else pure (e, .no)
       | .app .. => do
         let (h, args) := getAppFnArgs e
@@ -160,37 +193,37 @@ def hinst : Nat → Expr → Nat → Expr → DevM (Expr × Created)
           args' := args'.push (← hinst fuel v k a).1
         let (h', c) ← hinst fuel v k h
         match c, h' with
-        | .no, _ => pure (mkAppN h' args', .no)
+        | .no, _ => pure (← shareAppN h' args', .no)
         | _, .lam .. => do pure ((← happ fuel h' args'.toList), .reduced)
-        | c, _ => pure (mkAppN h' args', c)
+        | c, _ => pure (← shareAppN h' args', c)
       | .proj s i x _ => do
         let (x', c) ← hinst fuel v k x
         match c with
-        | .no => pure (Expr.mkProj s i x', .no)
+        | .no => pure (← share (Expr.mkProj s i x'), .no)
         | _ =>
           match projCtor? s i x' with
           | some f => pure (f, .reduced)
-          | none => pure (Expr.mkProj s i x', .no)
+          | none => pure (← share (Expr.mkProj s i x'), .no)
       | .lam n t b bi _ => do
         let (t', _) ← hinst fuel v k t
         let (b', c) ← hinst fuel v (k + 1) b
         match c, b' with
         | .direct, .app f (.bvar 0 _) _ =>
           if !(← occursM f 0) then do pure (← lowerM f 1 0, .direct)
-          else pure (Expr.mkLam n t' b' bi, .no)
-        | _, _ => pure (Expr.mkLam n t' b' bi, .no)
+          else pure (← share (Expr.mkLam n t' b' bi), .no)
+        | _, _ => pure (← share (Expr.mkLam n t' b' bi), .no)
       | .forallE n t b bi _ => do
         let (t', _) ← hinst fuel v k t
         let (b', _) ← hinst fuel v (k + 1) b
-        pure (Expr.mkForallE n t' b' bi, .no)
+        pure (← share (Expr.mkForallE n t' b' bi), .no)
       | .letE n t x b nd _ => do
         let (t', _) ← hinst fuel v k t
         let (x', _) ← hinst fuel v k x
         let (b', _) ← hinst fuel v (k + 1) b
-        pure (Expr.mkLetE n t' x' b' nd, .no)
+        pure (← share (Expr.mkLetE n t' x' b' nd), .no)
       | .mdata md x _ => do
         let (x', c) ← hinst fuel v k x
-        pure (Expr.mkMData md x', c)
+        pure (← share (Expr.mkMData md x'), c)
       | _ => pure (e, .no)
     modify fun st => { st with insts := st.insts.insert (instBucket v e k) ⟨v, e, k, r⟩ }
     return r
@@ -201,7 +234,7 @@ def happ : Nat → Expr → List Expr → DevM Expr
   | fuel + 1, .lam _ _ b _ _, a :: rest => do
     let (b', _) ← hinst fuel a 0 b
     happ fuel b' rest
-  | _ + 1, f, args => pure (mkAppN f args.toArray)
+  | _ + 1, f, args => shareAppN f args.toArray
 end
 
 /-- The developed application `f args` (at a call site: `f` is the image
@@ -210,14 +243,18 @@ applied). -/
 def instantiate (f : Expr) (args : Array Expr) : Except String Expr :=
   (happ developFuel f args.toList).run' {}
 
-/-- `instantiate` with the fuel-free tables of an earlier development carried
-over (`range`, `lifted`, `lowered`, `occurs`: values of total functions of
-their keys, so a carried entry is the entry this call would compute) and
-`hinst`'s table fresh. Same result as `instantiate`; returns the tables for
-the next call. -/
+/-- `instantiate` with the tables of an earlier development carried over:
+`range`, `lifted`, `lowered`, `occurs` (values of total functions of their
+keys, so a carried entry is the entry this call would compute), `hinst`'s
+(its exact inputs retained; a successful result does not depend on the fuel
+that reached it) and the shared nodes (each equal to the term it stands for).
+The arguments are shared first (`shareInput`): an argument equal to an
+earlier one is that one, so the developments at equal arguments meet in
+`hinst`'s table by pointer. Same result as `instantiate`; returns the tables
+for the next call. -/
 def instantiateWith (st : DevState) (f : Expr) (args : Array Expr) :
     Except String (Expr × DevState) :=
-  (happ developFuel f args.toList).run { st with insts := {} }
+  (do happ developFuel f (← args.mapM shareInput).toList).run st
 
 /-- `e[xs := vs]` for free variables, developed. The values are locally
 closed and do not mention `xs`. -/

@@ -8,14 +8,19 @@
 //! body became `x a1 ... an y` with `x` directly substituted. Nothing else is
 //! reduced (never iota). Every traversal is memoised per node, as on the Lean
 //! side; the results are those of the plain recursions.
+//!
+//! Every node the development builds is shared (`DevState::share`, Lean
+//! `TotalMemo.share`): a node equal to one built before is that node, so a
+//! term met again is the same allocation and the tables confirm their hits
+//! at `same_raw`'s pointer test. The tables are carried across the
+//! developments of a rewrite (`instantiate_with`).
 
 use rustc_hash::FxHashMap;
 
 use ix_common::env::{Expr, ExprData, Name};
 
 use super::expr::{
-  ExactMemo, Hash, abstract_fvars, bvar, get_app_fn_args, key, mk_app_n,
-  nat_usize,
+  ExactMemo, Hash, abstract_fvars, bvar, get_app_fn_args, key, nat_usize,
 };
 use super::names::{n_and, n_and_intro, n_pprod, n_pprod_mk};
 
@@ -67,10 +72,6 @@ impl InstMemo {
   fn insert(&mut self, v: &Expr, e: &Expr, k: usize, r: (Expr, Created)) {
     self.map.insert((key(v), key(e), k), (v.clone(), e.clone(), r));
   }
-
-  fn clear(&mut self) {
-    self.map.clear();
-  }
 }
 
 /// The fuel-free tables (values of total functions of their keys) and the
@@ -82,9 +83,37 @@ pub struct DevState {
   lowered: ExactMemo<(usize, usize), Expr>,
   occurs: ExactMemo<usize, bool>,
   insts: InstMemo,
+  /// The development's nodes, one per digest (`share`; Lean `DevState.nodes`):
+  /// a node the development builds again is the node it built first, so the
+  /// tables above confirm their hits by pointer (`same_raw`'s first test).
+  nodes: FxHashMap<Hash, Expr>,
 }
 
 impl DevState {
+  /// `e`, or the table's node at `e`'s digest when it equals `e` (raw
+  /// equality). A free digest takes `e`; a digest holding a different term
+  /// keeps it.
+  fn share(&mut self, e: Expr) -> Expr {
+    match self.nodes.entry(*e.get_hash()) {
+      std::collections::hash_map::Entry::Occupied(o) => {
+        if o.get().same_raw(&e) { o.get().clone() } else { e }
+      },
+      std::collections::hash_map::Entry::Vacant(v) => {
+        v.insert(e.clone());
+        e
+      },
+    }
+  }
+
+  /// `mk_app_n(f, args)`, every application node shared.
+  fn share_app_n(&mut self, f: Expr, args: &[Expr]) -> Expr {
+    let mut acc = f;
+    for a in args {
+      acc = self.share(Expr::app(acc, a.clone()));
+    }
+    acc
+  }
+
   /// One more than the largest loose bound variable of `e`.
   fn loose_range(&mut self, e: &Expr) -> usize {
     if let Some(r) = self.range.get(e, ()) {
@@ -127,36 +156,36 @@ impl DevState {
     let r = match e.as_data() {
       ExprData::Bvar(i, _) => {
         let i = nat_usize(i);
-        if i >= c { bvar(i + n) } else { e.clone() }
+        if i >= c { self.share(bvar(i + n)) } else { e.clone() }
       },
       ExprData::App(f, a, _) => {
         let f2 = self.lift(f, n, c);
         let a2 = self.lift(a, n, c);
-        Expr::app(f2, a2)
+        self.share(Expr::app(f2, a2))
       },
       ExprData::Lam(nm, t, b, bi, _) => {
         let t2 = self.lift(t, n, c);
         let b2 = self.lift(b, n, c + 1);
-        Expr::lam(nm.clone(), t2, b2, bi.clone())
+        self.share(Expr::lam(nm.clone(), t2, b2, bi.clone()))
       },
       ExprData::ForallE(nm, t, b, bi, _) => {
         let t2 = self.lift(t, n, c);
         let b2 = self.lift(b, n, c + 1);
-        Expr::all(nm.clone(), t2, b2, bi.clone())
+        self.share(Expr::all(nm.clone(), t2, b2, bi.clone()))
       },
       ExprData::LetE(nm, t, v, b, nd, _) => {
         let t2 = self.lift(t, n, c);
         let v2 = self.lift(v, n, c);
         let b2 = self.lift(b, n, c + 1);
-        Expr::letE(nm.clone(), t2, v2, b2, *nd)
+        self.share(Expr::letE(nm.clone(), t2, v2, b2, *nd))
       },
       ExprData::Proj(nm, i, s, _) => {
         let s2 = self.lift(s, n, c);
-        Expr::proj(nm.clone(), i.clone(), s2)
+        self.share(Expr::proj(nm.clone(), i.clone(), s2))
       },
       ExprData::Mdata(md, x, _) => {
         let x2 = self.lift(x, n, c);
-        Expr::mdata(md.clone(), x2)
+        self.share(Expr::mdata(md.clone(), x2))
       },
       _ => e.clone(),
     };
@@ -174,36 +203,36 @@ impl DevState {
     let r = match e.as_data() {
       ExprData::Bvar(i, _) => {
         let i = nat_usize(i);
-        if i >= c + n { bvar(i - n) } else { e.clone() }
+        if i >= c + n { self.share(bvar(i - n)) } else { e.clone() }
       },
       ExprData::App(f, a, _) => {
         let f2 = self.lower(f, n, c);
         let a2 = self.lower(a, n, c);
-        Expr::app(f2, a2)
+        self.share(Expr::app(f2, a2))
       },
       ExprData::Lam(nm, t, b, bi, _) => {
         let t2 = self.lower(t, n, c);
         let b2 = self.lower(b, n, c + 1);
-        Expr::lam(nm.clone(), t2, b2, bi.clone())
+        self.share(Expr::lam(nm.clone(), t2, b2, bi.clone()))
       },
       ExprData::ForallE(nm, t, b, bi, _) => {
         let t2 = self.lower(t, n, c);
         let b2 = self.lower(b, n, c + 1);
-        Expr::all(nm.clone(), t2, b2, bi.clone())
+        self.share(Expr::all(nm.clone(), t2, b2, bi.clone()))
       },
       ExprData::LetE(nm, t, v, b, nd, _) => {
         let t2 = self.lower(t, n, c);
         let v2 = self.lower(v, n, c);
         let b2 = self.lower(b, n, c + 1);
-        Expr::letE(nm.clone(), t2, v2, b2, *nd)
+        self.share(Expr::letE(nm.clone(), t2, v2, b2, *nd))
       },
       ExprData::Proj(nm, i, s, _) => {
         let s2 = self.lower(s, n, c);
-        Expr::proj(nm.clone(), i.clone(), s2)
+        self.share(Expr::proj(nm.clone(), i.clone(), s2))
       },
       ExprData::Mdata(md, x, _) => {
         let x2 = self.lower(x, n, c);
-        Expr::mdata(md.clone(), x2)
+        self.share(Expr::mdata(md.clone(), x2))
       },
       _ => e.clone(),
     };
@@ -261,7 +290,7 @@ impl DevState {
         if i == k {
           (self.lift(v, k, 0), Created::Direct)
         } else if i > k {
-          (bvar(i - 1), Created::No)
+          (self.share(bvar(i - 1)), Created::No)
         } else {
           (e.clone(), Created::No)
         }
@@ -274,20 +303,24 @@ impl DevState {
         }
         let (h2, c) = self.hinst(fuel, v, k, &h)?;
         match (c, h2.as_data()) {
-          (Created::No, _) => (mk_app_n(h2, &args2), Created::No),
+          (Created::No, _) => (self.share_app_n(h2, &args2), Created::No),
           (_, ExprData::Lam(..)) => {
             (self.happ(fuel, &h2, &args2)?, Created::Reduced)
           },
-          (c, _) => (mk_app_n(h2, &args2), c),
+          (c, _) => (self.share_app_n(h2, &args2), c),
         }
       },
       ExprData::Proj(s, i, x, _) => {
         let (x2, c) = self.hinst(fuel, v, k, x)?;
         match c {
-          Created::No => (Expr::proj(s.clone(), i.clone(), x2), Created::No),
+          Created::No => {
+            (self.share(Expr::proj(s.clone(), i.clone(), x2)), Created::No)
+          },
           _ => match proj_ctor(s, nat_usize(i), &x2) {
             Some(f) => (f, Created::Reduced),
-            None => (Expr::proj(s.clone(), i.clone(), x2), Created::No),
+            None => {
+              (self.share(Expr::proj(s.clone(), i.clone(), x2)), Created::No)
+            },
           },
         }
       },
@@ -305,23 +338,25 @@ impl DevState {
         }
         match out {
           Some(o) => o,
-          None => (Expr::lam(n.clone(), t2, b2, bi.clone()), Created::No),
+          None => {
+            (self.share(Expr::lam(n.clone(), t2, b2, bi.clone())), Created::No)
+          },
         }
       },
       ExprData::ForallE(n, t, b, bi, _) => {
         let (t2, _) = self.hinst(fuel, v, k, t)?;
         let (b2, _) = self.hinst(fuel, v, k + 1, b)?;
-        (Expr::all(n.clone(), t2, b2, bi.clone()), Created::No)
+        (self.share(Expr::all(n.clone(), t2, b2, bi.clone())), Created::No)
       },
       ExprData::LetE(n, t, x, b, nd, _) => {
         let (t2, _) = self.hinst(fuel, v, k, t)?;
         let (x2, _) = self.hinst(fuel, v, k, x)?;
         let (b2, _) = self.hinst(fuel, v, k + 1, b)?;
-        (Expr::letE(n.clone(), t2, x2, b2, *nd), Created::No)
+        (self.share(Expr::letE(n.clone(), t2, x2, b2, *nd)), Created::No)
       },
       ExprData::Mdata(md, x, _) => {
         let (x2, c) = self.hinst(fuel, v, k, x)?;
-        (Expr::mdata(md.clone(), x2), c)
+        (self.share(Expr::mdata(md.clone(), x2)), c)
       },
       _ => (e.clone(), Created::No),
     };
@@ -346,14 +381,8 @@ impl DevState {
         let (b2, _) = self.hinst(fuel, a, 0, b)?;
         self.happ(fuel, &b2, rest)
       },
-      _ => Ok(mk_app_n(f.clone(), args)),
+      _ => Ok(self.share_app_n(f.clone(), args)),
     }
-  }
-
-  /// Clear the substitution table (its entries are computed under a fuel
-  /// bound), keeping the fuel-free tables (`instantiateWith`).
-  pub fn reset_insts(&mut self) {
-    self.insts.clear();
   }
 }
 
@@ -375,14 +404,14 @@ pub fn instantiate(f: &Expr, args: &[Expr]) -> Result<Expr, String> {
   DevState::default().happ(DEVELOP_FUEL, f, args)
 }
 
-/// `instantiate` with the fuel-free tables of an earlier development carried
-/// over and the substitution table fresh.
+/// `instantiate` with the tables of an earlier development carried over (Lean
+/// `instantiateWith`): each is keyed by its exact inputs, and a successful
+/// result does not depend on the fuel that reached it.
 pub fn instantiate_with(
   st: &mut DevState,
   f: &Expr,
   args: &[Expr],
 ) -> Result<Expr, String> {
-  st.reset_insts();
   st.happ(DEVELOP_FUEL, f, args)
 }
 

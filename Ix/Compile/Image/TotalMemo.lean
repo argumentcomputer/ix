@@ -8,6 +8,12 @@
   (`RawExact.exprDecEq`, pointer equality first). So every worker returns
   the specification's value, proved, whatever the table holds and whatever
   the digests are.
+
+  The shift workers share the nodes they build (`share`, `ShiftState.nodes`):
+  a built node equal to the table's node at its digest (`RawExact.nodeEq`)
+  is replaced by that node, with the proof of their equality, so an
+  expression built twice is one object and later confirmations of it stop at
+  the pointer test.
 -/
 module
 public import Ix.Compile.Image.TotalSpec
@@ -69,9 +75,30 @@ abbrev LiftMemo := Memo liftAt
 abbrev LowerMemo := Memo lowerAt
 abbrev OccursMemo := Memo occursAt
 
+/-- A table of shared nodes, one per bucket: a built node equal to the
+bucket's node is replaced by it, so equal terms built twice are one object
+and later exact comparisons of them stop at the pointer test. -/
+abbrev Nodes := Std.HashMap UInt64 Expr
+
+/-- `e`, or an equal node of the table, with the table. -/
+structure Shared (e : Expr) where
+  value : Expr
+  correct : value = e
+  nodes : Nodes
+
+/-- The table's node at `e`'s digest when it equals `e` (`RawExact.nodeEq`),
+else `e`; a free digest takes `e`, one holding a different term keeps it. -/
+def share (e : Expr) (nodes : Nodes) : Shared e :=
+  match nodes[hash e]? with
+  | some n =>
+    if h : RawExact.nodeEq n e then ⟨n, RawExact.nodeEq_eq h, nodes⟩ else ⟨e, rfl, nodes⟩
+  | none => ⟨e, rfl, nodes.insert (hash e) e⟩
+
 structure ShiftState (spec : ShiftKey → Expr) where
   range : RangeMemo := {}
   values : Memo spec := {}
+  /-- The development's shared nodes (`share`): each node built is shared. -/
+  nodes : Nodes := {}
 
 structure OccursState where
   range : RangeMemo := {}
@@ -180,32 +207,39 @@ def liftGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
         | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => e) (ShiftState liftAt) :=
           match e with
           | e@same:(.bvar i _) =>
-            ⟨if i ≥ c then Expr.mkBVar (i + n) else e,
-              congrArg (fun x => if i ≥ c then Expr.mkBVar (i + n) else x) same, st1⟩
+            if hi : i ≥ c then
+              let s := share (Expr.mkBVar (i + n)) st1.nodes
+              ⟨s.value, s.correct.trans (ite_eq_left hi).symm, { st1 with nodes := s.nodes }⟩
+            else ⟨e, same.trans (ite_eq_right hi).symm, st1⟩
           | .app f a _ =>
             let rf := liftGo rangeHint hint f n c st1
             let ra := liftGo rangeHint hint a n c rf.state
-            ⟨Expr.mkApp rf.value ra.value, by rw [rf.correct, ra.correct], ra.state⟩
+            let s := share (Expr.mkApp rf.value ra.value) ra.state.nodes
+            ⟨s.value, by rw [s.correct, rf.correct, ra.correct], { ra.state with nodes := s.nodes }⟩
           | .lam nm t b bi _ =>
             let rt := liftGo rangeHint hint t n c st1
             let rb := liftGo rangeHint hint b n (c + 1) rt.state
-            ⟨Expr.mkLam nm rt.value rb.value bi, by rw [rt.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkLam nm rt.value rb.value bi) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .forallE nm t b bi _ =>
             let rt := liftGo rangeHint hint t n c st1
             let rb := liftGo rangeHint hint b n (c + 1) rt.state
-            ⟨Expr.mkForallE nm rt.value rb.value bi, by rw [rt.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkForallE nm rt.value rb.value bi) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .letE nm t v b nd _ =>
             let rt := liftGo rangeHint hint t n c st1
             let rv := liftGo rangeHint hint v n c rt.state
             let rb := liftGo rangeHint hint b n (c + 1) rv.state
-            ⟨Expr.mkLetE nm rt.value rv.value rb.value nd, by
-              rw [rt.correct, rv.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkLetE nm rt.value rv.value rb.value nd) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rv.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .proj nm i x _ =>
             let rx := liftGo rangeHint hint x n c st1
-            ⟨Expr.mkProj nm i rx.value, by rw [rx.correct], rx.state⟩
+            let s := share (Expr.mkProj nm i rx.value) rx.state.nodes
+            ⟨s.value, by rw [s.correct, rx.correct], { rx.state with nodes := s.nodes }⟩
           | .mdata md x _ =>
             let rx := liftGo rangeHint hint x n c st1
-            ⟨Expr.mkMData md rx.value, by rw [rx.correct], rx.state⟩
+            let s := share (Expr.mkMData md rx.value) rx.state.nodes
+            ⟨s.value, by rw [s.correct, rx.correct], { rx.state with nodes := s.nodes }⟩
           | e@same:(.fvar ..) | e@same:(.mvar ..) | e@same:(.sort ..)
           | e@same:(.const ..) | e@same:(.lit ..) =>
             ⟨e, same, st1⟩
@@ -244,32 +278,39 @@ def lowerGo (rangeHint : Expr → UInt64) (hint : ShiftKey → UInt64)
         | .fvar .. | .mvar .. | .sort .. | .const .. | .lit .. => e) (ShiftState lowerAt) :=
           match e with
           | e@same:(.bvar i _) =>
-            ⟨if i ≥ c + n then Expr.mkBVar (i - n) else e,
-              congrArg (fun x => if i ≥ c + n then Expr.mkBVar (i - n) else x) same, st1⟩
+            if hi : i ≥ c + n then
+              let s := share (Expr.mkBVar (i - n)) st1.nodes
+              ⟨s.value, s.correct.trans (ite_eq_left hi).symm, { st1 with nodes := s.nodes }⟩
+            else ⟨e, same.trans (ite_eq_right hi).symm, st1⟩
           | .app f a _ =>
             let rf := lowerGo rangeHint hint f n c st1
             let ra := lowerGo rangeHint hint a n c rf.state
-            ⟨Expr.mkApp rf.value ra.value, by rw [rf.correct, ra.correct], ra.state⟩
+            let s := share (Expr.mkApp rf.value ra.value) ra.state.nodes
+            ⟨s.value, by rw [s.correct, rf.correct, ra.correct], { ra.state with nodes := s.nodes }⟩
           | .lam nm t b bi _ =>
             let rt := lowerGo rangeHint hint t n c st1
             let rb := lowerGo rangeHint hint b n (c + 1) rt.state
-            ⟨Expr.mkLam nm rt.value rb.value bi, by rw [rt.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkLam nm rt.value rb.value bi) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .forallE nm t b bi _ =>
             let rt := lowerGo rangeHint hint t n c st1
             let rb := lowerGo rangeHint hint b n (c + 1) rt.state
-            ⟨Expr.mkForallE nm rt.value rb.value bi, by rw [rt.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkForallE nm rt.value rb.value bi) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .letE nm t v b nd _ =>
             let rt := lowerGo rangeHint hint t n c st1
             let rv := lowerGo rangeHint hint v n c rt.state
             let rb := lowerGo rangeHint hint b n (c + 1) rv.state
-            ⟨Expr.mkLetE nm rt.value rv.value rb.value nd, by
-              rw [rt.correct, rv.correct, rb.correct], rb.state⟩
+            let s := share (Expr.mkLetE nm rt.value rv.value rb.value nd) rb.state.nodes
+            ⟨s.value, by rw [s.correct, rt.correct, rv.correct, rb.correct], { rb.state with nodes := s.nodes }⟩
           | .proj nm i x _ =>
             let rx := lowerGo rangeHint hint x n c st1
-            ⟨Expr.mkProj nm i rx.value, by rw [rx.correct], rx.state⟩
+            let s := share (Expr.mkProj nm i rx.value) rx.state.nodes
+            ⟨s.value, by rw [s.correct, rx.correct], { rx.state with nodes := s.nodes }⟩
           | .mdata md x _ =>
             let rx := lowerGo rangeHint hint x n c st1
-            ⟨Expr.mkMData md rx.value, by rw [rx.correct], rx.state⟩
+            let s := share (Expr.mkMData md rx.value) rx.state.nodes
+            ⟨s.value, by rw [s.correct, rx.correct], { rx.state with nodes := s.nodes }⟩
           | e@same:(.fvar ..) | e@same:(.mvar ..) | e@same:(.sort ..)
           | e@same:(.const ..) | e@same:(.lit ..) =>
             ⟨e, same, st1⟩

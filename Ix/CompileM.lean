@@ -140,10 +140,12 @@ structure CompileEnv where
       block and its compiled dependencies, so the first entry of a key is
       kept (`Ix.Compile.Pass.memoMerge`). Never changes a byte. -/
   p3Views : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Compile.Pass.BlockView := {}
-  /-- Pass 3: the recursor image memo, a Lean recursor of a changed block ↦
-      its image's expansion and type, entered by the image block that
-      compiles it (`Ix.Compile.Pass.compileImageBlock`). Never changes a
-      byte. -/
+  /-- Pass 3: the image memo, entered by the image block that compiles the
+      head (`Ix.Compile.Pass.compileImageBlock`): a Lean recursor of a
+      changed block ↦ its image's expansion and type, and a definitional
+      head ↦ its expansion with Lean's value already rewritten, when every
+      view that rewrite read may enter the view memo
+      (`Ix.Compile.Pass.readsMemoable`). Never changes a byte. -/
   p3ImageExps : Std.HashMap Ix.Compile.ExactKey.ExactName
     (Ix.Compile.Pass.Expansion × Expr) := {}
   /-- Pass 3: each block's key ↦ the names its members reference (the
