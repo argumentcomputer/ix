@@ -150,6 +150,36 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
     unless (e.splitOn "name check failed").length > 1 do
       errors := errors.push s!"{label}: the planted name-hash twin is refused, but not by the name check: {e}"
   | .ok () => pure ()
+  -- the Muts check (a `Muts` entry's classes are its block's, as its projections
+  -- publish them), timed alone on the compile's result, then refusing a planted
+  -- class the block does not publish by its own message
+  let m0 ← IO.monoMsNow
+  let mismatch? ← IO.lazyPure fun _ => Ix.Cert.mutsMismatch ixe
+  let m1 ← IO.monoMsNow
+  let entries := ixe.named.toList.filter fun (_, nd) => match nd.constMeta.info with
+    | .muts .. => true
+    | _ => false
+  match mismatch? with
+  | none => lines := lines.push s!"{label}: mutsMismatch finds every Muts entry's classes at their \
+      block's projections ({entries.length} entries, {m1 - m0} ms)"
+  | some (e, i, h) => errors := errors.push s!"{label}: mutsMismatch finds {e.pretty}'s class {i} \
+      lists {h}, not published at that member's projection, in the compile's result"
+  match entries.head? with
+  | none => lines := lines.push s!"{label}: no Muts entry to tamper with"
+  | some (entry, nd) =>
+    match nd.constMeta.info with
+    | .muts all layout =>
+      let planted : Ixon.Named := { nd with constMeta := { nd.constMeta with
+        info := .muts (all.push #[Address.blake3Pure "planted-muts-class".toUTF8]) layout } }
+      match Ix.Cert.checkReport env ({ ixe with named := ixe.named.insert entry planted }, failures) with
+      | .error e =>
+        if (e.splitOn "Muts check failed").length > 1 then
+          lines := lines.push s!"{label}: checkReport refuses a Muts entry with a planted class \
+            by the Muts check"
+        else
+          errors := errors.push s!"{label}: the planted Muts class is refused, but not by the Muts check: {e}"
+      | .ok () => errors := errors.push s!"{label}: checkReport accepts a Muts entry with a planted class"
+    | _ => pure ()
   -- the reference check (Route A, B4), timed alone on the compile's result,
   -- then on planted cycles: records rewritten to reference themselves or each
   -- other, which `referenceCycle` must each find

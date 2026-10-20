@@ -590,16 +590,16 @@ theorem compileReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
       exact ⟨rfl, hc⟩
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
-unauthentic, no stored record is on a reference cycle and no two different
-names share a name hash. -/
+unauthentic, no stored record is on a reference cycle, no two different
+names share a name hash and every `Muts` entry agrees with its block. -/
 theorem checkReport_ok {env : Ix.Environment} {out : Ixon.Env × Failures}
     (h : checkReport env out = .ok ()) :
     uncovered env out.1 out.2 = [] ∧ unauthentic out.1 = [] ∧ referenceCycle out.1 = none ∧
-      nameHashCollision env out.1 = none := by
+      nameHashCollision env out.1 = none ∧ mutsMismatch out.1 = none := by
   unfold checkReport at h
   revert h
   cases uncovered env out.1 out.2 <;> cases unauthentic out.1 <;> cases referenceCycle out.1 <;>
-    cases nameHashCollision env out.1 <;> simp
+    cases nameHashCollision env out.1 <;> cases mutsMismatch out.1 <;> simp
 
 /-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
 constant exactly when it does not report it as failed. -/
@@ -725,7 +725,39 @@ theorem nameHashes_distinct {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ a ∈ env.consts.keys ++ ixe.named.keys, ∀ b ∈ env.consts.keys ++ ixe.named.keys,
       a.getHash = b.getHash → a = b :=
-  nameHashCollision_none (checkReport_ok (compileReport_ok h).2).2.2.2
+  nameHashCollision_none (checkReport_ok (compileReport_ok h).2).2.2.2.1
+
+/-- What `mutsMismatch = none` says: each name hash a `Muts` entry lists in
+class `i` is published at member `i`'s projection of the entry's block. -/
+theorem mutsMismatch_none {ixe : Ixon.Env} (h : mutsMismatch ixe = none) :
+    ∀ entry named all layout, (entry, named) ∈ ixe.named.toList →
+      named.constMeta.info = .muts all layout → ∀ i cls, all[i]? = some cls → ∀ x ∈ cls,
+        publishedAtMember ixe (ixe.named.fold (init := {}) fun m n _ => m.insert n.getHash n)
+          named.addr i x = true := by
+  intro entry named all layout hn info i cls hcls x hx
+  unfold mutsMismatch at h
+  dsimp only at h
+  rw [List.findSome?_eq_none_iff] at h
+  have outer := h (entry, named) hn
+  dsimp only at outer
+  rw [info] at outer
+  dsimp only at outer
+  rw [List.findSome?_eq_none_iff] at outer
+  have inner := outer (cls, i) (List.mem_zipIdx_iff_getElem?.mpr (by simpa using hcls))
+  dsimp only at inner
+  rw [Option.map_eq_none_iff, List.find?_eq_none] at inner
+  have := inner x (Array.mem_toList_iff.mpr hx)
+  simpa using this
+
+/-- **The compile's `Muts` entries agree with its blocks**: `compileReport`
+checks it (`checkReport`'s fifth check). -/
+theorem mutsAgree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) :
+    ∀ entry named all layout, (entry, named) ∈ ixe.named.toList →
+      named.constMeta.info = .muts all layout → ∀ i cls, all[i]? = some cls → ∀ x ∈ cls,
+        publishedAtMember ixe (ixe.named.fold (init := {}) fun m n _ => m.insert n.getHash n)
+          named.addr i x = true :=
+  mutsMismatch_none (checkReport_ok (compileReport_ok h).2).2.2.2.2
 
 /-- **`CompileCorrect` on the report is `CompileCorrect` on the artifact**
 (proved): with coverage proved, the statement hypothesised on `NoFailure`

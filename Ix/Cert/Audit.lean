@@ -1109,7 +1109,17 @@ fun env out =>
     match Ix.Cert.referenceCycle out.fst with
     | none =>
       match Ix.Cert.nameHashCollision env out.fst with
-      | none => Except.ok ()
+      | none =>
+        match Ix.Cert.mutsMismatch out.fst with
+        | none => Except.ok ()
+        | some (entry, i, h) =>
+          Except.error
+            (toString "compileReport: Muts check failed: the entry " ++ toString entry.pretty ++
+                      toString " lists the name hash " ++
+                    toString h ++
+                  toString " in class " ++
+                toString i ++
+              toString ", which is not published at that member's projection of its block")
       | some (a, b) =>
         Except.error
           (toString "compileReport: name check failed: " ++ toString a.pretty ++ toString " and " ++
@@ -1261,7 +1271,8 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
   Ix.Cert.checkReport env out = Except.ok () →
     Ix.Cert.uncovered env out.fst out.snd = [] ∧
       Ix.Cert.unauthentic out.fst = [] ∧
-        Ix.Cert.referenceCycle out.fst = none ∧ Ix.Cert.nameHashCollision env out.fst = none -/
+        Ix.Cert.referenceCycle out.fst = none ∧
+          Ix.Cert.nameHashCollision env out.fst = none ∧ Ix.Cert.mutsMismatch out.fst = none -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.checkReport_ok
 
@@ -4333,3 +4344,47 @@ fun env ixe =>
       (∅, none) (env.consts.keys ++ ixe.named.keys)).snd -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.nameHashCollision
+
+/-! ## `Muts` entries agree with their blocks (B9c (c2); coordinator decision, 2026-10-20)
+
+The changed set reads a compiled component's classes off its `Muts` entry,
+which the aux tail registers before AuxGen's pipeline runs (`partial` code no
+proof can follow). `compileReport` now refuses a result in which a `Muts` entry
+lists, in class `i`, a name not published at member `i`'s projection of its
+block (`checkReport`'s fifth check, `mutsMismatch`); the projections are
+`buildMutualProjections`', proved code. So on its result the classes the
+changed set reads are the block's own (`mutsAgree`). Re-frozen with it:
+`checkReport`'s print (the fifth check) and `checkReport_ok` (a fifth
+conjunct). On a consistent run the result is unchanged. -/
+
+/-- info: [cert-audit] Muts entries: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] Muts entries: 3 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "Muts entries"
+    (#[`mutsMismatch_none, `mutsAgree].map (`Ix.Cert ++ ·))
+  checkRuntime (tag := "cert-audit") "Muts entries"
+    #[``Ix.Cert.memberProjection, ``Ix.Cert.publishedAtMember, ``Ix.Cert.mutsMismatch]
+
+/-- info: def Ix.Cert.mutsMismatch : Ixon.Env → Option (Ix.Name × Nat × Address) :=
+fun ixe =>
+  have byHash := Std.HashMap.fold (fun m n x => m.insert n.getHash n) ∅ ixe.named;
+  List.findSome?
+    (fun x =>
+      match x with
+      | (entry, named) =>
+        match named.constMeta.info with
+        | Ixon.ConstantMetaInfo.muts all auxLayout =>
+          List.findSome?
+            (fun x =>
+              match x with
+              | (cls, i) =>
+                Option.map (fun h => (entry, i, h))
+                  (List.find? (fun h => !Ix.Cert.publishedAtMember ixe byHash named.addr i h) cls.toList))
+            all.toList.zipIdx
+        | x => none)
+    ixe.named.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.mutsMismatch
