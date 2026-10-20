@@ -296,13 +296,12 @@ def blockRoots : Array Lean.Name :=
     `recursorInfo_codec, `familyFinish_ok, `inductiveData_ctors, `familyBlock_correct, `familyBlock_codec,
     `familyInfo_correct, `familyInfo_codec].map (`Ix.CompileCert.EmissionBlocks ++ ·)
 
-/-- Public constant dispatch without call-site plans: the plan-head audits
-are no-ops, dispatch is the kind's block compiler in the singleton context,
+/-- Public constant dispatch: dispatch is the kind's block compiler in the
+singleton context,
 every kind's block decodes exactly, and so does a mutual block (CT-15's
 `FamilyWire` and `PayloadArrays`). -/
 def dispatchRoots : Array Lean.Name :=
-  #[`free_parts, `audit_free, `auditRules_free, `auditConstantInfo_free, `auditConstructors_free,
-    `auditMutConst_free, `auditClass_free, `auditClasses_free, `compileDefinitionInfo_eq, `definition_run,
+  #[`compileDefinitionInfo_eq, `definition_run,
     `axiom_run, `quotient_run, `recursor_run, `inductive_run, `constructor_run, `find_state, `collect_state,
     `family_run, `inductive_codec, `constant_codec, `member_counts, `forIn_checks, `mutual_counts,
     `member_state, `mutual_state, `standalone_header, `build_mutual_codec, `finish_mutual_codec,
@@ -577,13 +576,10 @@ def blockRuntime : Array Lean.Name :=
     ``Ix.CompileM.compileInductiveFamilyBlock, ``Ix.CompileM.compileInductiveFamilyInfo,
     ``Ix.CompileM.finishInductiveFamilyBlock, ``Ix.CompileM.buildInductiveProjections]
 
-/-- The public dispatch, its plan-head audits, constructor resolution and
+/-- The public dispatch, constructor resolution and
 the mutual block's finisher, which the dispatch proofs unfold. -/
 def dispatchRuntime : Array Lean.Name :=
-  #[``Ix.CompileM.auditPlanHeadArities, ``Ix.CompileM.auditRecursorRulePlanHeads,
-    ``Ix.CompileM.auditConstantInfoPlanHeads, ``Ix.CompileM.auditMutualConstructorPlanHeads,
-    ``Ix.CompileM.auditMutConstPlanHeads, ``Ix.CompileM.auditMutConstClassPlanHeads,
-    ``Ix.CompileM.auditMutConstClassesPlanHeads, ``Ix.CompileM.compileConstantInfo,
+  #[``Ix.CompileM.compileConstantInfo,
     ``Ix.CompileM.compileConstantInfoCore, ``Ix.CompileM.compileDefinitionConstantInfo,
     ``Ix.CompileM.compileTheoremConstantInfo, ``Ix.CompileM.compileOpaqueConstantInfo,
     ``Ix.CompileM.compileQuotientConstantInfo, ``Ix.CompileM.compileRecursorConstantInfo,

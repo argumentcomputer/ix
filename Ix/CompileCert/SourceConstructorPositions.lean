@@ -652,7 +652,7 @@ theorem find_run (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : Bl
 environment without call-site plans, `collectInductiveConstructors` returns,
 after what it started with, the constructor the environment has under each
 name, in order. -/
-theorem collect_lookups (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true) :
+theorem collect_lookups (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true) :
     ∀ (names : List Ix.Name) (acc : Array Ix.ConstructorVal) (state : BlockState) (out : Array Ix.ConstructorVal),
       (rawRun (collectInductiveConstructors names acc) context state).1 = .ok out →
       ∃ cs, List.Forall₂ (fun n c => context.1.env.get? n = some (.ctorInfo c)) names cs ∧
@@ -674,7 +674,6 @@ theorem collect_lookups (context : CompileEnv × BlockEnv) (free : context.1.sur
       have looked := find_ok name context state found
       cases value with
       | ctorInfo cv =>
-        simp only [rawRun_bind, EmissionDispatch.audit_free context free] at ran
         obtain ⟨cs, holds, done⟩ := ih (acc.push cv) state out ran
         exact ⟨cv :: cs, .cons looked holds, by rw [done]; simp⟩
       | _ => cases ran

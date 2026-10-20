@@ -197,13 +197,13 @@ theorem mutual_class_capacity (sources : List (List MutConst))
   obtain ⟨_, bounded, _⟩ := finish_mutual_ok context sources compiled.1 compiled.2.2 last
   exact count ▸ bounded.1
 
-/-- A successful mutual block is entered through its plan-head audit, then
-the block's mutual context and preseed. -/
+/-- A successful mutual block is entered through the block's mutual context
+and preseed. -/
 theorem mutual_block (post : BlockResult → Prop) (sources : List (List MutConst))
     (payload : Emission.Yields (compileMutualPayload sources) post) :
     Emission.Yields (compileMutualBlock sources) post := by
   unfold compileMutualBlock withMutCtx
-  exact Emission.Yields.bindAny _ fun _ => Emission.Yields.withBlockEnv _
+  exact Emission.Yields.withBlockEnv _
     (Emission.Yields.bindAny (preseedExprTables (mutualPreseedExprs sources)) fun _ => payload)
 
 theorem mutual_block_capacity (sources : List (List MutConst))

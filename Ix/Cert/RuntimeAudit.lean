@@ -10,9 +10,8 @@ beyond `Init` and `Std`: the runtime audit
 modules admitted, each only when its theorem depends on the standard axioms
 alone, and nothing else. It reports every other replacement it reaches:
 * the Rust BLAKE3 primitives and `UInt64.toLEBytes` (`@[extern]`);
-* the `partial` definitions of the ground filter, AuxGen, the surgical
-  expression compiler, the name and expression printers and the
-  name-component walk.
+* the `partial` definitions of the ground filter, AuxGen, the name and
+  expression printers and the name-component walk.
 
 A proof about `compile` meets each of them as an opaque constant. Adding one,
 or removing one, changes the list below; the change that re-records it states
@@ -27,6 +26,11 @@ refinement (`Ix.Compile.Canon.sortClasses`) that replaced the compiler's
 comparators adds nothing to it. The reference check (Route A, B4,
 `Ix.Cert.referenceCycle`) reads the stored records with the Ixon codec's
 `getTagN` (`getTagN_eq_fast`, listed below for AuxGen M1) and adds no entry.
+The surgical expression compiler's seven `partial` definitions
+(`buildCallSite`, `compileAppSpine`, `compileBRecOnCallSite`,
+`compileBelowCallSite`, `compileExprSurgical`, `compileHeadRewriteCallSite`,
+`compileRecCallSite`) left it when the call-site surgery was deleted (CQ3.5,
+dead code since Pass 3: no compile registers a call-site plan).
 
 **AuxGen M1** (the drivers' Source service, `Ix.AuxGen.Source.Chain`): the
 wave fold carries IxC's verified fold over the Source ingress of its input,
@@ -108,13 +112,6 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.AuxGen.substLevel,
  Ix.AuxGen.substLevels,
  Ix.AuxGen.toKexprStatic,
- Ix.CompileM.buildCallSite,
- Ix.CompileM.compileAppSpine,
- Ix.CompileM.compileBRecOnCallSite,
- Ix.CompileM.compileBelowCallSite,
- Ix.CompileM.compileExprSurgical,
- Ix.CompileM.compileHeadRewriteCallSite,
- Ix.CompileM.compileRecCallSite,
  Ix.Kernel.canonEqList,
  Ix.Kernel.structProjGuards,
  Ix.Name.pretty,

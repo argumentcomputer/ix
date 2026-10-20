@@ -2,13 +2,11 @@ import Ix.CompileCert.EmissionBlocks
 
 /-! # Public constant dispatch: every block decodes exactly
 
-`Ix.CompileM.compileConstantInfo` audits the declaration's call-site plan
-heads, installs the singleton mutual context and runs the kind's preseeded
-block compiler. Without call-site plans (`CompileEnv.surgeryFree`) every
-plan-head audit is a no-op (`audit_free` and its folds), so dispatch is
-exactly the kind's block compiler in the singleton context (`*_run`), and
-the inductive kinds resolve their constructors without touching the state
-(`collect_state`). This module proves:
+`Ix.CompileM.compileConstantInfo` installs the singleton mutual context and
+runs the kind's preseeded block compiler, so dispatch is exactly the kind's
+block compiler in the singleton context (`*_run`), and the inductive kinds
+resolve their constructors without touching the state (`collect_state`).
+This module proves:
 
 * the dispatch equations, for every `ConstantInfo` kind;
 * `constant_codec`: for every kind, a successful compile from a state whose
@@ -18,83 +16,16 @@ the inductive kinds resolve their constructors without touching the state
   array counts the wire format needs) and `mutualBlock_codec` (CT-15's
   `FamilyWire.mutualBlock_codec`).
 
-Everything here holds under `surgeryFree`, until CQ3.5 deletes the audits'
-surgery cases with the surgery. -/
+The dispatch used to audit the declaration's call-site plan heads first,
+a no-op without plans (`surgeryFree`); the audits went with the call-site
+surgery (CQ3.5). Several statements keep their `surgeryFree` premise, now
+"no Pass 3 decompile records" (`p3Sources` empty); where a proof no longer
+reads it, it is bound as `_free`. -/
 
 namespace Ix.CompileCert.EmissionDispatch
 
 open Ix.CompileM Ix.CompileCert
 open Ix.Sharing.Verify (BlockWireTablesWF ConstantInfoHeaderWF MutConstHeaderWF BlockResultCodecWF)
-
-/-! ## Plan-head audits without plans -/
-
-theorem free_parts {environment : CompileEnv} (free : environment.surgeryFree = true) :
-    environment.callSitePlans.isEmpty = true ∧ environment.belowCallSitePlans.isEmpty = true ∧
-      environment.brecOnCallSitePlans.isEmpty = true := by
-  simp only [CompileEnv.surgeryFree, Bool.and_eq_true] at free
-  exact ⟨free.1.1.1, free.1.2, free.1.1.2⟩
-
-/-- **Without call-site plans the plan-head audit is a no-op.** -/
-theorem audit_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
-    (owner : Ix.Name) (top : Ix.Expr) (state : BlockState) :
-    rawRun (auditPlanHeadArities owner top) context state = (.ok (), state) := by
-  obtain ⟨calls, below, brecOn⟩ := free_parts free
-  unfold auditPlanHeadArities
-  simp only [rawRun_bind, rawRun_read, calls, below, brecOn, Bool.and_self, ↓reduceIte]
-  rfl
-
-theorem auditRules_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
-    (owner : Ix.Name) : ∀ (rules : List RecursorRule) (state : BlockState),
-      rawRun (auditRecursorRulePlanHeads owner rules) context state = (.ok (), state) := by
-  intro rules
-  induction rules with
-  | nil => intro state; rfl
-  | cons rule rest ih =>
-    intro state
-    simp only [auditRecursorRulePlanHeads, rawRun_bind, audit_free context free, ih]
-
-theorem auditConstantInfo_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
-    (info : ConstantInfo) (state : BlockState) :
-    rawRun (auditConstantInfoPlanHeads info) context state = (.ok (), state) := by
-  unfold auditConstantInfoPlanHeads
-  cases info <;> simp only [rawRun_bind, audit_free context free, auditRules_free context free] <;> rfl
-
-theorem auditConstructors_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true) :
-    ∀ (ctors : List ConstructorVal) (state : BlockState),
-      rawRun (auditMutualConstructorPlanHeads ctors) context state = (.ok (), state) := by
-  intro ctors
-  induction ctors with
-  | nil => intro state; rfl
-  | cons ctor rest ih =>
-    intro state
-    simp only [auditMutualConstructorPlanHeads, rawRun_bind, audit_free context free, ih]
-
-theorem auditMutConst_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
-    (member : MutConst) (state : BlockState) :
-    rawRun (auditMutConstPlanHeads member) context state = (.ok (), state) := by
-  unfold auditMutConstPlanHeads
-  cases member <;> simp only [rawRun_bind, audit_free context free, auditRules_free context free,
-    auditConstructors_free context free]
-
-theorem auditClass_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true) :
-    ∀ (members : List MutConst) (state : BlockState),
-      rawRun (auditMutConstClassPlanHeads members) context state = (.ok (), state) := by
-  intro members
-  induction members with
-  | nil => intro state; rfl
-  | cons member rest ih =>
-    intro state
-    simp only [auditMutConstClassPlanHeads, rawRun_bind, auditMutConst_free context free, ih]
-
-theorem auditClasses_free (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true) :
-    ∀ (classes : List (List MutConst)) (state : BlockState),
-      rawRun (auditMutConstClassesPlanHeads classes) context state = (.ok (), state) := by
-  intro classes
-  induction classes with
-  | nil => intro state; rfl
-  | cons members rest ih =>
-    intro state
-    simp only [auditMutConstClassesPlanHeads, rawRun_bind, auditClass_free context free, ih]
 
 /-! ## Dispatch -/
 
@@ -114,67 +45,67 @@ theorem compileDefinitionInfo_eq (source : DefinitionVal) :
 
 /-- **Definition-like dispatch** is the preseeded definition-like block in
 the singleton context. -/
-theorem definition_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definition_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (info : ConstantInfo) (source : Ix.Def) (view : sourceData info = some source) (state : BlockState) :
     rawRun (compileConstantInfo info) context state =
       rawRun (compileDefinitionDataInfo source) (singletonContext source.name context) state := by
   cases info <;> simp only [sourceData, reduceCtorEq, Option.some.injEq] at view
   all_goals subst view
   · show rawRun (compileDefinitionConstantInfo _) context state = _
-    simp only [compileDefinitionConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+    simp only [compileDefinitionConstantInfo, withMutCtx,
       rawRun_withBlockEnv, compileDefinitionInfo_eq]
     rfl
   · show rawRun (compileTheoremConstantInfo _) context state = _
-    simp only [compileTheoremConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+    simp only [compileTheoremConstantInfo, withMutCtx,
       rawRun_withBlockEnv, compileTheoremInfo]
     rfl
   · show rawRun (compileOpaqueConstantInfo _) context state = _
-    simp only [compileOpaqueConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+    simp only [compileOpaqueConstantInfo, withMutCtx,
       rawRun_withBlockEnv, compileOpaqueInfo]
     rfl
 
-theorem axiom_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiom_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (source : AxiomVal) (state : BlockState) :
     rawRun (compileConstantInfo (.axiomInfo source)) context state =
       rawRun (compileAxiomInfo source) (singletonContext source.cnst.name context) state := by
   show rawRun (compileConstantInfoCore (.axiomInfo source)) context state = _
-  simp only [compileConstantInfoCore, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+  simp only [compileConstantInfoCore, withMutCtx,
     rawRun_withBlockEnv]
   rfl
 
-theorem quotient_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotient_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (source : QuotVal) (state : BlockState) :
     rawRun (compileConstantInfo (.quotInfo source)) context state =
       rawRun (compileQuotientInfo source) (singletonContext source.cnst.name context) state := by
   show rawRun (compileQuotientConstantInfo source) context state = _
-  simp only [compileQuotientConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+  simp only [compileQuotientConstantInfo, withMutCtx,
     rawRun_withBlockEnv]
   rfl
 
-theorem recursor_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursor_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (source : RecursorVal) (state : BlockState) :
     rawRun (compileConstantInfo (.recInfo source)) context state =
       rawRun (compileRecursorInfo source) (singletonContext source.cnst.name context) state := by
   show rawRun (compileRecursorConstantInfo source) context state = _
-  simp only [compileRecursorConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+  simp only [compileRecursorConstantInfo, withMutCtx,
     rawRun_withBlockEnv]
   rfl
 
-theorem inductive_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (source : InductiveVal) (state : BlockState) :
     rawRun (compileConstantInfo (.inductInfo source)) context state =
       rawRun (compileInductiveInfo source) (singletonContext source.cnst.name context) state := by
   show rawRun (compileInductiveConstantInfo source) context state = _
-  simp only [compileInductiveConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+  simp only [compileInductiveConstantInfo, withMutCtx,
     rawRun_withBlockEnv]
   rfl
 
-theorem constructor_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constructor_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
     (source : ConstructorVal) (state : BlockState) :
     rawRun (compileConstantInfo (.ctorInfo source)) context state =
       rawRun (compileConstructorInfo source) (singletonContext source.cnst.name context) state := by
   show rawRun (compileConstructorConstantInfo source) context state = _
-  simp only [compileConstructorConstantInfo, withMutCtx, rawRun_bind, auditConstantInfo_free context free,
+  simp only [compileConstructorConstantInfo, withMutCtx,
     rawRun_withBlockEnv]
   rfl
 
@@ -185,9 +116,9 @@ theorem find_state (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : 
   simp only [findConst, rawRun_bind, rawRun_read]
   cases context.1.env.get? name <;> rfl
 
-/-- Without call-site plans, resolving a family's constructors changes no
+/-- Resolving a family's constructors changes no
 state. -/
-theorem collect_state (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true) :
+theorem collect_state (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true) :
     ∀ (names : List Ix.Name) (initial : Array ConstructorVal) (state : BlockState),
       (rawRun (collectInductiveConstructors names initial) context state).2 = state := by
   intro names
@@ -208,7 +139,7 @@ theorem collect_state (context : CompileEnv × BlockEnv) (free : context.1.surge
         cases value
         all_goals first
           | rfl
-          | (simp only [rawRun_bind, audit_free context free]; exact ih _ _)
+          | exact ih _ _
 
 /-- The family's own mutual context. -/
 def familyContext (source : InductiveVal) (constructors : Array ConstructorVal)
@@ -244,7 +175,7 @@ theorem inductive_codec (context : CompileEnv × BlockEnv) (free : context.1.sur
     wire compiled
 
 /-- **Every public dispatch kind's block decodes exactly**: a successful
-compile, under an environment without call-site plans, from a state whose
+compile, under `surgeryFree` (no Pass 3 records), from a state whose
 tables are on the wire, returns a wire-valid block whose stored bytes decode to
 it. No source semantics, projection correspondence or admission is
 claimed here. -/
@@ -422,8 +353,8 @@ theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List (
     cases Except.ok.inj values
     exact ⟨states.symm, build_mutual_codec _ classes members metadata middle bounds tables output built⟩
 
-/-- **A mutual block decodes exactly**: under an environment without
-call-site plans, a successful compile from a state whose tables are on the
+/-- **A mutual block decodes exactly**: under `surgeryFree` (no Pass 3
+records), a successful compile from a state whose tables are on the
 wire 
 returns a block that decodes exactly; the mutual guard supplies the nested
 array counts. -/
@@ -433,13 +364,10 @@ theorem mutualBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.s
     (ran : rawRun (compileMutualBlock classes) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileMutualBlock at ran
-  obtain ⟨_, audited, auditRan, rest⟩ := bind_ok ran
-  rw [auditClasses_free context free] at auditRan
-  cases auditRan
-  dsimp only at rest
-  unfold withMutCtx at rest
-  rw [rawRun_withBlockEnv] at rest
-  obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok rest
+  dsimp only at ran
+  unfold withMutCtx at ran
+  rw [rawRun_withBlockEnv] at ran
+  obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have valid := EmissionWire.seeded_valid _ (context.1, { context.2 with mutCtx := MutConst.ctx classes }) wire
     seeded
   unfold compileMutualPayload at compiled

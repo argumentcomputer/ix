@@ -143,13 +143,10 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv) (free : contex
         (d.type :: d.ctors.toList.map (·.cnst.type))
         (constantInfoRootExprs output.block.info).toList := by
   unfold compileMutualBlock at ran
-  obtain ⟨_, audited, auditRan, rest⟩ := bind_ok ran
-  rw [EmissionDispatch.auditClasses_free context free] at auditRan
-  cases auditRan
-  dsimp only at rest
-  unfold withMutCtx at rest
-  rw [rawRun_withBlockEnv] at rest
-  obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok rest
+  dsimp only at ran
+  unfold withMutCtx at ran
+  rw [rawRun_withBlockEnv] at ran
+  obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have kept := EmissionBlocks.preseed_then cx param self bindings
     (related := Emission.related param names σ
       (Emission.inner d.name d.levelParams.toList (mutContext [[.indc d]] context)))
