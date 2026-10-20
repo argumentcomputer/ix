@@ -772,6 +772,84 @@ theorem ixonAccepts_ref (V : Type w) [SetTheory V] {binding : Binding} {limits :
   exact ⟨closure, t, pre, ev, ds, admitted, prelude, prepared,
     Ix.Kernel.Cached.checkDecls_refines_ref V rfl checked⟩
 
+/-! ## Quotient Source and S4 (`ALPHA-COLLAPSE.md` §8; owner, 2026-10-20)
+
+The certified theory is Lean with α-collapse made explicit: Source runs on the
+artifact's alias fibers, every fiber renamed onto one representative and its
+duplicates dropped (`Ix.LeanIngress.collapseDecls` at `fiberAlias ixe`, at the
+artifact's per-fiber hints, at the pinned bundle evidence renamed onto the
+representatives, `Ix.LeanIngress.evidenceSubst`). `SourceAcceptsQ` is that
+acceptance at the reference level; the executed check gives it
+(`sourceAcceptsQ_of_check`).
+Nominal acceptance implies it only through S4 (`NominalQuotientAgree`), a
+named assumption that no theorem uses silently. -/
+
+/-- **Quotient Source acceptance, per root**: the closure `sub` of `roots` in
+`env`, grouped by `condense sub`, ingressed at the artifact `ixe`'s per-fiber
+hints and collapsed onto its alias fibers' representatives
+(`Ix.LeanIngress.prepareSourceCollapsed` at `fiberAlias ixe`), behind the
+committed prelude, is accepted by the pure fold at some fuel at the pinned
+bundle evidence renamed onto the representatives (`Ix.LeanIngress.evidenceSubst`
+at `fiberAlias ixe`), installing `envS`. -/
+def SourceAcceptsQ (condense : Ix.Environment → Ix.CondensedBlocks) (env : Ix.Environment)
+    (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (envS : Env .source) : Prop :=
+  IsClosure env roots sub ∧
+    ∃ pre ds, Ix.Kernel.Reader.builtinPrelude = .ok pre ∧
+      Ix.LeanIngress.prepareSourceCollapsed (Ix.LeanIngress.fiberAlias ixe)
+        ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub (condense sub) = .ok ds ∧
+      Ix.Kernel.Cached.AcceptsRef .verified
+        (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAlias ixe)
+          (Ix.RoleEvidence.bundleEvidence ())) ds.toList envS
+
+/-- An accept of quotient Source over any prelude source is a reference accept of
+what it prepared. -/
+theorem collapsedUsing_ref (V : Type w) [SetTheory V]
+    (prelude : Except String (Ix.Kernel.Reader.Prelude .source)) (ρ : Ix.LeanIngress.FiberMap)
+    (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) (env : Ix.Environment)
+    (blocks : Ix.CondensedBlocks) {envS : Env .source}
+    (h : Ix.LeanIngress.checkSourceCollapsedBundledUsing prelude ρ hints env blocks = .ok envS) :
+    ∃ pre ds, prelude = .ok pre ∧ Ix.LeanIngress.prepareSourceCollapsed ρ hints pre env blocks = .ok ds ∧
+      Ix.Kernel.Cached.AcceptsRef .verified
+        (Ix.LeanIngress.evidenceSubst ρ (Ix.RoleEvidence.bundleEvidence ())) ds.toList envS := by
+  unfold Ix.LeanIngress.checkSourceCollapsedBundledUsing at h
+  cases prelude with
+  | error e => simp [bind, Except.bind, Except.mapError] at h
+  | ok pre =>
+    simp only [bind, Except.bind, Except.mapError] at h
+    cases hds : Ix.LeanIngress.prepareSourceCollapsed ρ hints pre env blocks with
+    | error e => simp [hds] at h
+    | ok ds =>
+      simp only [hds] at h
+      cases hc : Ix.Kernel.Cached.checkDecls .verified
+          (Ix.LeanIngress.evidenceSubst ρ (Ix.RoleEvidence.bundleEvidence ())) ds with
+      | error e => simp [hc] at h
+      | ok env' =>
+        simp only [hc, Except.ok.injEq] at h
+        subst h
+        exact ⟨pre, ds, rfl, hds, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
+
+/-- **The executed quotient check gives `SourceAcceptsQ`**
+(`Ix.Kernel.Cached.checkDecls_refines_ref`; the set theory is a hypothesis of
+that walk, not of the statement's meaning). -/
+theorem sourceAcceptsQ_of_check (V : Type w) [SetTheory V] {condense : Ix.Environment → Ix.CondensedBlocks}
+    {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
+    {envS : Env .source} (closure : IsClosure env roots sub)
+    (h : Ix.LeanIngress.checkSourceCollapsedBundled ixe sub (condense sub) = .ok envS) :
+    SourceAcceptsQ condense env roots sub ixe envS :=
+  ⟨closure, collapsedUsing_ref V _ _ _ sub (condense sub) h⟩
+
+/-- **S4: nominal Source acceptance implies quotient Source acceptance** at the
+compiled artifact's alias fibers (`ALPHA-COLLAPSE.md` §5, §8.1). An assumption,
+not an axiom: unproved here, it is the documented follow-up (the non-injective
+renaming lemma: algorithmic 4–8k plus IxC changes, or semantic 10–25k). Its
+measured gap on Init+Std is 0: quotient Source's rows are nominal Source's. A
+corollary that uses it takes it as a hypothesis; no theorem depends on it
+silently. -/
+def NominalQuotientAgree : Prop :=
+  ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Env .source)
+    (ixe : Ixon.Env), SourceAccepts blocksOf env roots sub envS → compile env = .ok ixe →
+      ∃ envQ, SourceAcceptsQ blocksOf env roots sub ixe envQ
+
 /-! The Source theorems hold for every grouping function, which is stronger
 than for the compiler's. At the compiler's own grouping, `blocksOf` (the one
 `CompileCorrect` names), they stand on the three standard axioms as well:

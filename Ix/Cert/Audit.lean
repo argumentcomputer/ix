@@ -4032,3 +4032,47 @@ run_cmd do
       `checkSourceBundled_refines_ref, `checkSourceBundled_no_proof_of_False,
       `checkSourceBundled_converts].map (`Ix.LeanIngress ++ ·) ++
       #[``Ix.Cert.Admits.admits_of_checkSourceBundled])
+
+/-! ## Quotient Source and S4 (`ALPHA-COLLAPSE.md` §8; owner, 2026-10-20)
+
+`SourceAcceptsQ` is Source acceptance on the artifact's alias fibers, every fiber
+renamed onto one representative and its duplicates dropped, at the pinned bundle
+evidence renamed onto the representatives; the executed check gives it. S4,
+`NominalQuotientAgree`, is a named assumption, not an axiom: no theorem uses it,
+and a corollary that does will take it as a hypothesis. -/
+
+/-- info: def Ix.Cert.SourceAcceptsQ : (Ix.Environment → Ix.CondensedBlocks) →
+  Ix.Environment → List Ix.Name → Ix.Environment → Ixon.Env → Ix.Kernel.Env Ix.Kernel.Mode.source → Prop :=
+fun condense env roots sub ixe envS =>
+  Ix.Cert.IsClosure env roots sub ∧
+    ∃ pre ds,
+      Ix.Kernel.Reader.builtinPrelude = Except.ok pre ∧
+        Ix.LeanIngress.prepareSourceCollapsed (Ix.LeanIngress.fiberAlias ixe)
+              (fun x => (Ix.LeanIngress.fiberHintsMap ixe)[x]?) pre sub (condense sub) =
+            Except.ok ds ∧
+          Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified
+            (Ix.LeanIngress.evidenceSubst (Ix.LeanIngress.fiberAlias ixe) (Ix.RoleEvidence.bundleEvidence ())) ds.toList
+            envS -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.SourceAcceptsQ
+
+/-- info: def Ix.Cert.NominalQuotientAgree : Prop :=
+∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source)
+  (ixe : Ixon.Env),
+  Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
+    Ix.Cert.compile env = Except.ok ixe → ∃ envQ, Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe envQ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.NominalQuotientAgree
+
+/-- info: Ix.Cert.sourceAcceptsQ_of_check : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
+  {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+  {ixe : Ixon.Env} {envS : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IsClosure env roots sub →
+    Ix.LeanIngress.checkSourceCollapsedBundled ixe sub (condense sub) = Except.ok envS →
+      Ix.Cert.SourceAcceptsQ condense env roots sub ixe envS -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.sourceAcceptsQ_of_check
+
+/-- info: 'Ix.Cert.sourceAcceptsQ_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.sourceAcceptsQ_of_check
