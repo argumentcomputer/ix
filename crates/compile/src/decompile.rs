@@ -291,9 +291,11 @@ impl DecompileState {
 ///   analysis (`apply_sharing_to_*`). These indices start at 0 and are
 ///   block-wide.
 /// - `meta_sharing` holds the per-constant `ConstantMeta.meta_sharing`
-///   table — collapsed call-site argument expressions — and is the
-///   target of `CallSiteEntry::Collapsed.sharing_idx` lookups. These
-///   indices also start at 0 but live in a SEPARATE namespace from the
+///   table — the source occurrences of Pass 3's `_ix.inline` records
+///   (`inline_record`), or, in a file the call-site surgery wrote,
+///   collapsed call-site argument expressions — and is the target of the
+///   records' `s` and of `CallSiteEntry::Collapsed.sharing_idx` lookups.
+///   These indices also start at 0 but live in a SEPARATE namespace from the
 ///   block sharing: compile writes them as `surgery_sharing.len() +
 ///   collapsed_idx` where `surgery_sharing` is reset per constant (see
 ///   `crates/compile/src/compile.rs::compile_expr` BuildCallSite path).
@@ -313,11 +315,12 @@ pub struct BlockCache {
   /// the block body exprs. Initialized from
   /// `Constant.sharing`.
   pub sharing: Vec<Arc<Expr>>,
-  /// Per-constant surgery sharing table: target of
+  /// Per-constant metadata sharing table: the source occurrences of Pass
+  /// 3's decompile records (`inline_record`), or the target of
   /// `CallSiteEntry::Collapsed.sharing_idx` lookups inside `CallSite`
   /// metadata arena nodes. Populated by `load_meta_extensions` from
-  /// `ConstantMeta.meta_sharing`. Empty for constants without surgery
-  /// (non-aux_gen singleton defs and all `roundtrip_block` callers).
+  /// `ConstantMeta.meta_sharing`. Empty for constants without records or
+  /// surgery (non-aux_gen singleton defs and all `roundtrip_block` callers).
   /// `Share` nodes inside these expressions are read in the extended
   /// index space (`ShareScope::Meta`).
   pub meta_sharing: Vec<Arc<Expr>>,
@@ -362,9 +365,10 @@ impl BlockCache {
   ///   block sharing, see struct docs). Overwrites any previous
   ///   per-constant table so the cache can be reused across constants
   ///   within a projection-bearing block.
-  /// - `meta_refs` extends the primary refs table when present (never
-  ///   populated by the current compiler; kept for the documented
-  ///   virtual-address contract).
+  /// - `meta_refs` extends the primary refs table when present (the
+  ///   documented virtual-address contract; Pass 3 writes it for a
+  ///   decompile record whose source occurrence references an address
+  ///   outside the primary table).
   /// - `meta_univs` extends the primary univ table: the stage-2 compiler
   ///   stores original (non-canonical) level spellings here, referenced
   ///   by `univ_patches` in the virtual index space `univs ++
@@ -783,6 +787,25 @@ fn decompile_kvmap(
     .collect()
 }
 
+/// The decompile record of a call site that Pass 3 rewrote: a decompiled
+/// KVMap that is exactly `[(_ix.inline, s), (_ix.inline_meta, m)]`
+/// (`pass3::names::{inline_key, inline_meta_key}`, in this order, both
+/// `OfNat`). `s` indexes the compiled source occurrence in
+/// `ConstantMeta.meta_sharing`, `m` is its metadata-arena root. Any other
+/// KVMap, including one with a single `_ix.inline` key, is ordinary
+/// metadata. Mirrors Lean `Ix.DecompileM.inlineRecord?`.
+fn inline_record(data: &[(Name, LeanDataValue)]) -> Option<(Nat, Nat)> {
+  use crate::compile::pass3::names::{inline_key, inline_meta_key};
+  match data {
+    [(k1, LeanDataValue::OfNat(s)), (k2, LeanDataValue::OfNat(m))]
+      if *k1 == inline_key() && *k2 == inline_meta_key() =>
+    {
+      Some((s.clone(), m.clone()))
+    },
+    _ => None,
+  }
+}
+
 /// Wrap a LeanExpr in pre-decompiled mdata layers.
 ///
 /// The `lean_mdata` vec stores layers outermost-first.
@@ -981,7 +1004,8 @@ pub fn decompile_expr(
   }
 
   // The root is a primary expression; metadata scopes are entered only
-  // through call-site references into `meta_sharing`.
+  // through decompile records and call-site references into
+  // `meta_sharing`.
   let mut stack: Vec<Frame> =
     vec![Frame::Decompile(expr.clone(), arena_idx, ShareScope::Primary)];
   let mut results: Vec<LeanExpr> = Vec::new();
@@ -1005,9 +1029,12 @@ pub fn decompile_expr(
           continue;
         }
 
-        // Follow Mdata chain in arena, collecting mdata layers
+        // Follow Mdata chain in arena, collecting mdata layers. A Pass 3
+        // decompile record (`inline_record`) is not a layer: the first one
+        // on the chain is replayed below, a later one is dropped.
         let mut current_idx = idx;
         let mut mdata_layers: LeanMdata = Vec::new();
+        let mut record: Option<(Nat, Nat)> = None;
         while let ExprMetaData::Mdata { mdata, child } =
           arena_lookup(arena, current_idx, &cache.current_const)?
         {
@@ -1019,9 +1046,59 @@ pub fn decompile_expr(
                   .into(),
               });
             }
-            mdata_layers.push(data);
+            match inline_record(&data) {
+              Some(found) => {
+                if record.is_none() {
+                  record = Some(found);
+                }
+              },
+              None => mdata_layers.push(data),
+            }
           }
           current_idx = *child;
+        }
+
+        // Pass 3 replay: the decompiled term is the recorded source
+        // occurrence, `meta_sharing[s]` read in its own metadata scope at
+        // arena root `m`, under the chain's other layers. The compiled
+        // (rewritten) term is not read. Lean `Ix.DecompileM.decompileExprIn`
+        // replays the same, with the same two range checks.
+        if let Some((s, m)) = record {
+          let (entry, shared) = s
+            .to_u64()
+            .and_then(|s| usize::try_from(s).ok())
+            .and_then(|entry| {
+              cache.meta_sharing.get(entry).map(|e| (entry, e.clone()))
+            })
+            .ok_or_else(|| DecompileError::BadConstantFormat {
+              msg: format!(
+                "Pass 3 inline record {s} out of range ({} metadata \
+                 entries) in '{}'",
+                cache.meta_sharing.len(),
+                cache.current_const,
+              ),
+            })?;
+          let root = m
+            .to_u64()
+            .filter(|&root| {
+              usize::try_from(root).is_ok_and(|r| r < arena.nodes.len())
+            })
+            .ok_or_else(|| DecompileError::BadConstantFormat {
+              msg: format!(
+                "Pass 3 inline record arena root {m} out of range ({} \
+                 arena nodes) in '{}'",
+                arena.nodes.len(),
+                cache.current_const,
+              ),
+            })?;
+          stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx, scope));
+          stack.push(Frame::BuildTelescope { n_args: 0, mdata: mdata_layers });
+          stack.push(Frame::Decompile(
+            shared,
+            root,
+            ShareScope::Meta { entry },
+          ));
+          continue;
         }
 
         let node = arena_lookup(arena, current_idx, &cache.current_const)?;
@@ -4301,6 +4378,23 @@ struct MutsPlanIndex {
   /// Flat member name → indices into `entries`, so a block's plan
   /// lookup only inspects entries sharing at least one member.
   by_member: FxHashMap<Name, Vec<u32>>,
+  /// The environment was compiled by Pass 3 (`pass3_env`): no call site
+  /// was surgered, so `install_decompile_call_site_plans` installs no plan
+  /// and every verification recompile runs without surgery, as the
+  /// compiler's original-form compile did. Lean `Pass2Ctx.pass3`.
+  pass3: bool,
+}
+
+/// Was this environment compiled by Pass 3? A changed block's Ix
+/// auxiliaries carry reserved `_ix` display names (a source name with a
+/// reserved component is refused as compiler input), and no compile since
+/// Pass 3 registers a call-site plan; an environment without a changed
+/// block has no layout-changed block to plan for either. Lean
+/// `Ix.DecompileM.pass3Env`.
+fn pass3_env(stt: &CompileState) -> bool {
+  use crate::compile::pass3::names::has_reserved;
+  use rayon::prelude::*;
+  stt.env.named.par_iter().any(|entry| has_reserved(entry.key()))
 }
 
 fn build_muts_plan_index(stt: &CompileState) -> MutsPlanIndex {
@@ -4346,7 +4440,7 @@ fn build_muts_plan_index(stt: &CompileState) -> MutsPlanIndex {
         .push(u32::try_from(i).expect("muts index entry count exceeds u32"));
     }
   }
-  MutsPlanIndex { entries, by_member }
+  MutsPlanIndex { entries, by_member, pass3: pass3_env(stt) }
 }
 
 fn names_from_addrs(
@@ -4464,7 +4558,8 @@ fn install_decompile_call_site_plans(
 ) -> Result<(), DecompileError> {
   use crate::compile::{aux_gen, surgery};
 
-  if all_names.is_empty() {
+  // A Pass 3 environment carries no surgery: no plan is installed.
+  if all_names.is_empty() || muts_index.pass3 {
     return Ok(());
   }
 
@@ -6098,6 +6193,91 @@ pub fn decompile_env(
   Ok(dstt)
 }
 
+/// Select the original-source view of a decompiled environment, the one
+/// Lean import restores (`rs_decompile_env_consts`, `import_ixe`). Every
+/// name with a reserved `_ix*` component is compiler support (a source
+/// input with such a name is refused, `pass3::names::reserved_input`):
+/// it stays in the Ixon artifact for execution and checking but is not a
+/// source declaration to replay in Lean. `requested` empty selects every
+/// source name; otherwise the requested names, which must be source names
+/// present in `env`. The reference closure is checked for a full selection
+/// too, so filtering the support out cannot hide a broken source
+/// reconstruction: every reference must be a present source name. Sorted.
+pub fn materialized_source_names(
+  env: &DashMap<Name, LeanConstantInfo>,
+  requested: &[Name],
+) -> Result<Vec<Name>, String> {
+  use crate::compile::pass3::names::has_reserved;
+  use crate::graph::{NameSet, get_constant_info_references};
+
+  let roots: Vec<Name> = if requested.is_empty() {
+    env
+      .iter()
+      .filter(|entry| !has_reserved(entry.key()))
+      .map(|entry| entry.key().clone())
+      .collect()
+  } else {
+    requested.to_vec()
+  };
+  let mut seen = NameSet::default();
+  let mut worklist = Vec::new();
+  for root in roots {
+    if has_reserved(&root) {
+      return Err(format!(
+        "requested name '{}' is reserved for generated compiler support, \
+         not original source declarations",
+        root.pretty()
+      ));
+    }
+    if !env.contains_key(&root) {
+      return Err(format!(
+        "requested source constant '{}' not found",
+        root.pretty()
+      ));
+    }
+    if seen.insert(root.clone()) {
+      worklist.push(root);
+    }
+  }
+  while let Some(name) = worklist.pop() {
+    let references = {
+      let declaration = env.get(&name).ok_or_else(|| {
+        format!(
+          "source constant '{}' disappeared during selection",
+          name.pretty()
+        )
+      })?;
+      get_constant_info_references(declaration.value())
+    };
+    for reference in references {
+      if has_reserved(&reference) {
+        return Err(format!(
+          "source constant '{}' references generated compiler support '{}' \
+           after decompilation",
+          name.pretty(),
+          reference.pretty()
+        ));
+      }
+      if seen.contains(&reference) {
+        continue;
+      }
+      if !env.contains_key(&reference) {
+        return Err(format!(
+          "source constant '{}' references missing source constant '{}' — \
+           broken closure",
+          name.pretty(),
+          reference.pretty()
+        ));
+      }
+      seen.insert(reference.clone());
+      worklist.push(reference);
+    }
+  }
+  let mut selected: Vec<Name> = seen.into_iter().collect();
+  selected.sort_unstable();
+  Ok(selected)
+}
+
 /// Result of checking a decompiled environment against the original.
 #[derive(Debug)]
 pub struct CheckResult {
@@ -6107,6 +6287,11 @@ pub struct CheckResult {
   pub missing: usize,
   /// Names of constants in decompiled but not in original.
   pub extra_names: Vec<String>,
+  /// Constants in decompiled but not in original whose name has a reserved
+  /// `_ix*` component: compiler support that Pass 3 introduced (a source
+  /// name with such a component is refused as compiler input), counted here
+  /// and neither in `missing` nor in `extra_names`.
+  pub introduced: usize,
 }
 
 /// Check that decompiled environment matches the original.
@@ -6121,6 +6306,8 @@ pub fn check_decompile(
   let mismatches = AtomicUsize::new(0);
   let matches = AtomicUsize::new(0);
   let missing = AtomicUsize::new(0);
+  let introduced = AtomicUsize::new(0);
+  let reserved = crate::compile::pass3::names::has_reserved;
 
   if original.len() != dstt.env.len() {
     eprintln!(
@@ -6165,6 +6352,10 @@ pub fn check_decompile(
         }
         Ok(())
       },
+      None if reserved(name) => {
+        introduced.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+      },
       None => {
         missing.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -6195,7 +6386,9 @@ pub fn check_decompile(
   let mut extra_names: Vec<String> = dstt
     .env
     .iter()
-    .filter(|entry| !original.contains_key(entry.key()))
+    .filter(|entry| {
+      !original.contains_key(entry.key()) && !reserved(entry.key())
+    })
     .map(|entry| entry.key().pretty())
     .collect();
   extra_names.sort();
@@ -6214,10 +6407,12 @@ pub fn check_decompile(
     mismatches: mismatches.load(Ordering::Relaxed),
     missing: missing.load(Ordering::Relaxed),
     extra_names,
+    introduced: introduced.load(Ordering::Relaxed),
   };
   eprintln!(
-    "check_decompile: {} matches, {} mismatches, {} not in original",
-    result.matches, result.mismatches, result.missing
+    "check_decompile: {} matches, {} mismatches, {} not in original, {} \
+     introduced by Pass 3 (reserved names)",
+    result.matches, result.mismatches, result.missing, result.introduced
   );
 
   Ok(result)
@@ -6301,6 +6496,150 @@ mod tests {
       .collect();
     let order = pass2_block_order(&blocks, &|n| env.get(n).cloned());
     assert_eq!(order, vec![nm("D"), nm("C"), nm("B"), nm("A")]);
+  }
+
+  fn import_view_axiom(name: Name, typ: LeanExpr) -> LeanConstantInfo {
+    LeanConstantInfo::AxiomInfo(AxiomVal {
+      cnst: ConstantVal { name, level_params: vec![], typ },
+      is_unsafe: false,
+    })
+  }
+
+  /// A full selection keeps every source name, including names that only
+  /// contain `_ix` or start with another underscore, and leaves support
+  /// out; a scoped one is the requested source closure.
+  #[test]
+  fn source_import_keeps_public_names_and_scoped_dependencies() {
+    let env = DashMap::new();
+    let root = Name::str(Name::anon(), "ImportView".into());
+    let source = Name::str(root.clone(), "source".into());
+    let dependency = Name::str(root.clone(), "dependency".into());
+    let unrelated = Name::str(root.clone(), "unrelated_ix_name".into());
+    let source_private =
+      Name::str(Name::str(Name::anon(), "_private".into()), "original".into());
+    let support = Name::str(Name::str(root, "_ix".into()), "helper".into());
+    for name in [&dependency, &unrelated, &source_private, &support] {
+      env.insert(
+        name.clone(),
+        import_view_axiom(name.clone(), LeanExpr::sort(Level::zero())),
+      );
+    }
+    env.insert(
+      source.clone(),
+      import_view_axiom(
+        source.clone(),
+        LeanExpr::cnst(dependency.clone(), vec![]),
+      ),
+    );
+    let mut all =
+      vec![source.clone(), dependency.clone(), unrelated, source_private];
+    all.sort_unstable();
+    assert_eq!(materialized_source_names(&env, &[]).unwrap(), all);
+    let mut scoped = vec![source.clone(), dependency];
+    scoped.sort_unstable();
+    assert_eq!(materialized_source_names(&env, &[source]).unwrap(), scoped);
+    assert!(env.contains_key(&support), "selection does not remove support");
+  }
+
+  /// Requesting support is refused, and so is a source constant that
+  /// references support after decompilation, for a full selection too.
+  #[test]
+  fn source_import_rejects_private_roots_and_source_support_leaks() {
+    let env = DashMap::new();
+    let source = Name::str(Name::anon(), "Source".into());
+    let support =
+      Name::str(Name::str(source.clone(), "_ix_retyped".into()), "h".into());
+    env.insert(
+      support.clone(),
+      import_view_axiom(support.clone(), LeanExpr::sort(Level::zero())),
+    );
+    assert!(
+      materialized_source_names(&env, std::slice::from_ref(&support))
+        .unwrap_err()
+        .contains("generated compiler support")
+    );
+    env.insert(
+      source.clone(),
+      import_view_axiom(source.clone(), LeanExpr::cnst(support, vec![])),
+    );
+    for roots in [vec![], vec![source]] {
+      assert!(
+        materialized_source_names(&env, &roots)
+          .unwrap_err()
+          .contains("references generated compiler support")
+      );
+    }
+  }
+
+  /// A missing requested name and a dangling reference are refused, the
+  /// latter for a full selection too.
+  #[test]
+  fn source_import_rejects_missing_roots_and_dependencies() {
+    let env = DashMap::new();
+    let source = Name::str(Name::anon(), "Source".into());
+    let missing = Name::str(Name::anon(), "Missing".into());
+    assert!(
+      materialized_source_names(&env, std::slice::from_ref(&missing))
+        .unwrap_err()
+        .contains("not found")
+    );
+    env.insert(
+      source.clone(),
+      import_view_axiom(source.clone(), LeanExpr::cnst(missing, vec![])),
+    );
+    for roots in [vec![], vec![source]] {
+      assert!(
+        materialized_source_names(&env, &roots)
+          .unwrap_err()
+          .contains("broken closure")
+      );
+    }
+  }
+
+  /// A decompiled name with a reserved component that is not in the
+  /// original is introduced compiler support: neither `missing` nor in
+  /// `extra_names`. A plain extra name still is.
+  #[test]
+  fn check_decompile_counts_reserved_names_as_introduced() {
+    let source = Name::str(Name::anon(), "Source".into());
+    let support =
+      Name::str(Name::str(source.clone(), "_ix".into()), "helper".into());
+    let extra = Name::str(Name::anon(), "Extra".into());
+    let axiom =
+      |n: &Name| import_view_axiom(n.clone(), LeanExpr::sort(Level::zero()));
+    let mut original = LeanEnv::default();
+    original.insert(source.clone(), axiom(&source));
+    let dstt = DecompileState::default();
+    for n in [&source, &support] {
+      dstt.env.insert(n.clone(), axiom(n));
+    }
+    let stt = CompileState::default();
+    let r = check_decompile(&original, &stt, &dstt).unwrap();
+    assert_eq!((r.matches, r.missing, r.introduced), (1, 0, 1));
+    assert!(r.extra_names.is_empty(), "{:?}", r.extra_names);
+    dstt.env.insert(extra.clone(), axiom(&extra));
+    let r = check_decompile(&original, &stt, &dstt).unwrap();
+    assert_eq!((r.missing, r.introduced), (1, 1));
+    assert_eq!(r.extra_names, vec![extra.pretty()]);
+  }
+
+  /// `pass3_env` (no call-site plan installed) is the presence of a
+  /// reserved name in the named section.
+  #[test]
+  fn pass3_env_is_the_presence_of_a_reserved_name() {
+    let stt = CompileState::default();
+    let addr = Address::hash(b"pass3-env");
+    let plain = Name::str(Name::anon(), "Plain".into());
+    stt
+      .env
+      .register_name(plain, Named::new(addr.clone(), ConstantMeta::default()));
+    assert!(!pass3_env(&stt));
+    assert!(!build_muts_plan_index(&stt).pass3);
+    let support =
+      Name::str(Name::str(Name::anon(), "_ix".into()), "helper".into());
+    stt.env.register_name(support, Named::new(addr, ConstantMeta::default()));
+    assert!(pass3_env(&stt));
+    assert!(build_muts_plan_index(&stt).pass3);
   }
 
   #[test]
@@ -7251,5 +7590,295 @@ mod meta_share_tests {
       ),
       "{err}"
     );
+  }
+}
+
+// ===========================================================================
+// Pass 3 decompile records (`_ix.inline`): the replay rule
+// ===========================================================================
+//
+// A call site that Pass 3 rewrote carries the record
+// `[(_ix.inline, s), (_ix.inline_meta, m)]` on its metadata chain: the
+// decompiled term is the source occurrence `meta_sharing[s]` read at arena
+// root `m`, not the compiled (rewritten) term under the record. No compiler
+// writes a record before Pass 3 is wired, so these hand-built fixtures pin
+// the reader rule. They mirror the Lean `decompile-unit` "inline record"
+// tests in `Tests/Ix/Decompile.lean`.
+//
+// Every fixture: the compiled root `canon #2 #1` (`refs[0]`), one primary
+// sharing entry (`p = 1`), and the source occurrence `src #1 #2` as
+// `meta_sharing[1]`, whose head is the extension reference `meta_refs[0]`
+// (virtual index 1) and whose first argument is the metadata share
+// `Share(1) = meta_sharing[0] = #1`. Arena nodes 0-4 describe the compiled
+// term, 5-9 the source occurrence; record and layer nodes follow.
+// ===========================================================================
+
+#[cfg(test)]
+mod inline_record_tests {
+  use super::*;
+  use crate::compile::pass3::names::{inline_key, inline_meta_key};
+  use crate::compile::{compile_name, store_nat};
+
+  struct Fx {
+    stt: CompileState,
+    canon: Name,
+    canon_addr: Address,
+    src: Name,
+    src_addr: Address,
+    tag: Name,
+    tag_addr: Address,
+    key_addr: Address,
+    meta_key_addr: Address,
+  }
+
+  fn fx() -> Fx {
+    let stt = CompileState::default();
+    let canon = Name::str(Name::anon(), "IR.canon".to_string());
+    let src = Name::str(Name::anon(), "IR.src".to_string());
+    let tag = Name::str(Name::anon(), "IR.tag".to_string());
+    let canon_addr = compile_name(&canon, &stt).unwrap();
+    let src_addr = compile_name(&src, &stt).unwrap();
+    let tag_addr = compile_name(&tag, &stt).unwrap();
+    let key_addr = compile_name(&inline_key(), &stt).unwrap();
+    let meta_key_addr = compile_name(&inline_meta_key(), &stt).unwrap();
+    Fx {
+      stt,
+      canon,
+      canon_addr,
+      src,
+      src_addr,
+      tag,
+      tag_addr,
+      key_addr,
+      meta_key_addr,
+    }
+  }
+
+  fn nat_value(fx: &Fx, n: u64) -> DataValue {
+    DataValue::OfNat(store_nat(&Nat::from(n), &fx.stt).unwrap())
+  }
+
+  /// The decompile record `[(_ix.inline, s), (_ix.inline_meta, m)]`.
+  fn record(fx: &Fx, s: u64, m: u64) -> KVMap {
+    vec![
+      (fx.key_addr.clone(), nat_value(fx, s)),
+      (fx.meta_key_addr.clone(), nat_value(fx, m)),
+    ]
+  }
+
+  /// An ordinary metadata layer.
+  fn tag(fx: &Fx, b: bool) -> KVMap {
+    vec![(fx.tag_addr.clone(), DataValue::OfBool(b))]
+  }
+
+  fn mdata(mdata: Vec<KVMap>, child: u64) -> ExprMetaData {
+    ExprMetaData::Mdata { mdata, child }
+  }
+
+  /// The compiled (rewritten) root `canon #2 #1`.
+  fn root() -> Arc<Expr> {
+    Expr::app(Expr::app(Expr::reference(0, vec![]), Expr::var(2)), Expr::var(1))
+  }
+
+  /// `meta_sharing`: `#1`, and the source occurrence `src (Share(1)) #2`.
+  fn meta_sharing() -> Vec<Arc<Expr>> {
+    vec![
+      Expr::var(1),
+      Expr::app(
+        Expr::app(Expr::reference(1, vec![]), Expr::share(1)),
+        Expr::var(2),
+      ),
+    ]
+  }
+
+  /// The compiled term's nodes 0-4, the source occurrence's 5-9, then
+  /// `extra`.
+  fn arena(fx: &Fx, extra: Vec<ExprMetaData>) -> ExprMeta {
+    let mut a = ExprMeta::default();
+    for head in [&fx.canon_addr, &fx.src_addr] {
+      let h = a.alloc(ExprMetaData::Ref { name: head.clone() });
+      let x = a.alloc(ExprMetaData::Leaf);
+      let f = a.alloc(ExprMetaData::App { children: [h, x] });
+      let y = a.alloc(ExprMetaData::Leaf);
+      a.alloc(ExprMetaData::App { children: [f, y] });
+    }
+    for node in extra {
+      a.alloc(node);
+    }
+    a
+  }
+
+  fn run(
+    fx: &Fx,
+    arena: &ExprMeta,
+    root_idx: u64,
+  ) -> Result<LeanExpr, DecompileError> {
+    let mut cache = BlockCache {
+      sharing: vec![Expr::var(7)],
+      meta_sharing: meta_sharing(),
+      refs: vec![fx.canon_addr.clone(), fx.src_addr.clone()],
+      current_const: "inline_record".into(),
+      ..Default::default()
+    };
+    decompile_expr(
+      &root(),
+      arena,
+      root_idx,
+      &[],
+      &mut cache,
+      &fx.stt,
+      &DecompileState::default(),
+    )
+  }
+
+  fn bv(n: u64) -> LeanExpr {
+    LeanExpr::bvar(Nat::from(n))
+  }
+  fn lean_canon(fx: &Fx) -> LeanExpr {
+    LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.canon.clone(), vec![]), bv(2)),
+      bv(1),
+    )
+  }
+  fn lean_src(fx: &Fx) -> LeanExpr {
+    LeanExpr::app(
+      LeanExpr::app(LeanExpr::cnst(fx.src.clone(), vec![]), bv(1)),
+      bv(2),
+    )
+  }
+  fn lean_tag(fx: &Fx, b: bool, e: LeanExpr) -> LeanExpr {
+    LeanExpr::mdata(vec![(fx.tag.clone(), LeanDataValue::OfBool(b))], e)
+  }
+
+  /// The record (node 10) replays the source occurrence, with the record's
+  /// `s` a direct `meta_sharing` index read in its own scope.
+  #[test]
+  fn inline_record_replays_source() {
+    let fx = fx();
+    let a = arena(&fx, vec![mdata(vec![record(&fx, 1, 9)], 4)]);
+    assert_eq!(run(&fx, &a, 10).expect("replays"), lean_src(&fx));
+  }
+
+  /// Without the record the same root decodes to the compiled term.
+  #[test]
+  fn inline_record_absent_reads_compiled_term() {
+    let fx = fx();
+    let a = arena(&fx, vec![]);
+    assert_eq!(run(&fx, &a, 4).expect("decompiles"), lean_canon(&fx));
+  }
+
+  /// The chain's other layers wrap the replayed source, outermost first:
+  /// `[tag true]` (node 11) over `[record, tag false]` (node 10).
+  #[test]
+  fn inline_record_layers_wrap_source() {
+    let fx = fx();
+    let a = arena(
+      &fx,
+      vec![
+        mdata(vec![record(&fx, 1, 9), tag(&fx, false)], 4),
+        mdata(vec![tag(&fx, true)], 10),
+      ],
+    );
+    assert_eq!(
+      run(&fx, &a, 11).expect("replays"),
+      lean_tag(&fx, true, lean_tag(&fx, false, lean_src(&fx)))
+    );
+  }
+
+  /// The first record on the chain is replayed; a later one is dropped, not
+  /// kept as a layer (the inner record would give `#1`).
+  #[test]
+  fn inline_record_first_on_chain_wins() {
+    let fx = fx();
+    let a = arena(
+      &fx,
+      vec![
+        mdata(vec![record(&fx, 1, 9)], 11),
+        mdata(vec![record(&fx, 0, 3)], 4),
+      ],
+    );
+    assert_eq!(run(&fx, &a, 10).expect("replays"), lean_src(&fx));
+  }
+
+  /// A single `_ix.inline` key (the rewrite's placeholder shape) is not a
+  /// record: it stays an ordinary layer over the compiled term.
+  #[test]
+  fn inline_record_single_key_is_metadata() {
+    let fx = fx();
+    let placeholder = vec![(fx.key_addr.clone(), nat_value(&fx, 1))];
+    let a = arena(&fx, vec![mdata(vec![placeholder], 4)]);
+    assert_eq!(
+      run(&fx, &a, 10).expect("decompiles"),
+      LeanExpr::mdata(
+        vec![(inline_key(), LeanDataValue::OfNat(Nat::from(1u64)))],
+        lean_canon(&fx)
+      )
+    );
+  }
+
+  /// `s` outside `meta_sharing` is rejected.
+  #[test]
+  fn inline_record_index_out_of_range_rejected() {
+    let fx = fx();
+    let a = arena(&fx, vec![mdata(vec![record(&fx, 5, 9)], 4)]);
+    let msg = run(&fx, &a, 10).unwrap_err().to_string();
+    assert!(
+      msg.contains("Pass 3 inline record 5 out of range (2 metadata entries)"),
+      "{msg}"
+    );
+  }
+
+  /// `m` outside the arena is rejected.
+  #[test]
+  fn inline_record_root_out_of_range_rejected() {
+    let fx = fx();
+    let a = arena(&fx, vec![mdata(vec![record(&fx, 1, 99)], 4)]);
+    let msg = run(&fx, &a, 10).unwrap_err().to_string();
+    assert!(
+      msg.contains(
+        "Pass 3 inline record arena root 99 out of range (11 arena nodes)"
+      ),
+      "{msg}"
+    );
+  }
+
+  /// Whole-constant path (`decompile_env`): the extension tables come from
+  /// the constant's metadata (`load_meta_extensions`).
+  #[test]
+  fn inline_record_whole_constant_decompiles() {
+    let fx = fx();
+    let ax_name = Name::str(Name::anon(), "IR.ax".to_string());
+    let ax_name_addr = compile_name(&ax_name, &fx.stt).unwrap();
+    let ax = Constant {
+      info: ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: root(),
+      }),
+      sharing: vec![Expr::var(7)],
+      refs: vec![fx.canon_addr.clone()],
+      univs: vec![],
+    };
+    let mut bytes = Vec::new();
+    ax.put(&mut bytes);
+    let addr = Address::hash(&bytes);
+    fx.stt.env.store_const(addr.clone(), ax);
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Axio {
+      name: ax_name_addr,
+      lvls: vec![],
+      arena: arena(&fx, vec![mdata(vec![record(&fx, 1, 9)], 4)]),
+      type_root: 10,
+    });
+    meta.meta_sharing = meta_sharing();
+    meta.meta_refs = vec![fx.src_addr.clone()];
+    fx.stt.env.register_name(ax_name.clone(), Named::new(addr, meta));
+    let dstt = decompile_env(&fx.stt).expect("decompile_env succeeds");
+    let entry = dstt.env.get(&ax_name).expect("IR.ax decompiled");
+    match &*entry {
+      LeanConstantInfo::AxiomInfo(v) => assert_eq!(v.cnst.typ, lean_src(&fx)),
+      other => {
+        panic!("expected AxiomInfo, got {:?}", std::mem::discriminant(other))
+      },
+    }
   }
 }

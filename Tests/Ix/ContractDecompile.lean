@@ -15,7 +15,7 @@ def context : Ix.DecompileM.BlockCtx := {
 
 def roundtrip (expression : Ixon.Expr) : IO Unit := do
   let (source, _) ← get "decode" <|
-    Ix.DecompileM.DecompileM.run ⟨{}⟩ context {} (Ix.DecompileM.decompileExpr expression UInt64.MAX)
+    Ix.DecompileM.DecompileM.run { ixonEnv := {} } context {} (Ix.DecompileM.decompileExpr expression UInt64.MAX)
   let ((result, _), _) ← get "encode" <|
     Ix.CompileM.CompileM.run default Tests.ContractTransport.block {} (Ix.CompileM.compileExpr source)
   unless result == expression do throw <| IO.userError s!"contract decompile roundtrip differs: {repr expression}"
@@ -37,13 +37,13 @@ def run : IO Unit := do
   let arena : Ixon.ExprMetaArena := { nodes := #[.callSite default #[] #[] none] }
   let ctx := { context with sharing := #[nested], arena }
   let expression := Ixon.Expr.app (.var 0) (.share 0)
-  unless (Ix.DecompileM.DecompileM.run ⟨{}⟩ ctx {} (Ix.DecompileM.decompileExpr expression 0)).toOption.isNone do
+  unless (Ix.DecompileM.DecompileM.run { ixonEnv := {} } ctx {} (Ix.DecompileM.decompileExpr expression 0)).toOption.isNone do
     throw <| IO.userError "optional replay removed a contract behind sharing"
   let key := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "ix") "contract"
   let env : Ixon.Env := { names := ({} : Std.HashMap Address Ix.Name).insert key.getHash key }
   let arena : Ixon.ExprMetaArena := { nodes := #[.leaf, .mdata #[#[(key.getHash, .ofBool true)]] 0] }
   let ctx := { context with arena }
-  unless (Ix.DecompileM.DecompileM.run ⟨env⟩ ctx {} (Ix.DecompileM.decompileExpr (.var 0) 1)).toOption.isNone do
+  unless (Ix.DecompileM.DecompileM.run { ixonEnv := env } ctx {} (Ix.DecompileM.decompileExpr (.var 0) 1)).toOption.isNone do
     throw <| IO.userError "optional metadata injected a semantic contract"
   IO.println "Contract decompile: every binder, arrow, let, and borrow mode roundtrips; metadata attacks reject"
 

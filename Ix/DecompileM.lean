@@ -17,6 +17,7 @@ public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
 public import Ix.AuxGen.ExprUtils
+public import Ix.Compile.Pass.Names
 
 public section
 
@@ -88,6 +89,13 @@ instance : ToString DecompileError := ⟨DecompileError.toString⟩
 /-- Global decompilation environment (reader, immutable). -/
 structure DecompileEnv where
   ixonEnv : Ixon.Env
+  /-- Read the compiled term under a Pass 3 decompile record (`_ix.inline`,
+      `inlineRecord?`) instead of replaying the recorded source occurrence;
+      the record itself is then dropped. Off by default; the Rust
+      decompiler always replays. For a reader that needs the stored
+      (rewritten) value, such as a check of a transported clique member's
+      compiled value against Lean's. -/
+  compiledTerms : Bool := false
   deriving Inhabited
 
 /-- Per-block context for decompiling a single constant (reader, immutable per-block). -/
@@ -98,11 +106,13 @@ structure BlockCtx where
   mutCtx : Array Ix.Name       -- mutual context: index = Rec index
   univParams : Array Ix.Name   -- universe parameter names
   arena : ExprMetaArena
-  /-- `ConstantMeta.metaSharing` of the constant being decompiled:
-      collapsed call-site arguments (and rewritten original heads),
-      indexed by `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
-      distinct from the block's primary `sharing` table. A `share` inside
-      one of these expressions is read in the extended index space
+  /-- `ConstantMeta.metaSharing` of the constant being decompiled: the
+      source occurrences of its Pass 3 decompile records (`_ix.inline`),
+      or, in a file the call-site surgery wrote, its collapsed call-site
+      arguments (and rewritten original heads), indexed by
+      `CallSiteEntry.collapsed.sharingIdx` / `origHead` — distinct from
+      the block's primary `sharing` table. A `share` inside one of these
+      expressions is read in the extended index space
       (`ShareScope.metaEntry`). -/
   metaSharing : Array Ixon.Expr := #[]
   /-- Level-spelling patches of the constant being decompiled, keyed by
@@ -132,8 +142,9 @@ structure BlockCtx where
       expansion is well founded.
 
     Call-site references (`CallSiteEntry.collapsed sharingIdx`,
-    `origHead = some (sharingIdx, _)`) index `metaSharing` directly (no
-    offset by `p`) and read the entry in scope `metaEntry sharingIdx`.
+    `origHead = some (sharingIdx, _)`) and Pass 3 decompile records
+    (`inlineRecord?`'s `s`) index `metaSharing` directly (no offset by
+    `p`) and read the entry in scope `metaEntry sharingIdx` (`metaEntry s`).
     Mirrors Rust `decompile::ShareScope`. -/
 inductive ShareScope where
   | primary
@@ -384,6 +395,23 @@ def decompileKVMap (kvm : Ixon.KVMap) : DecompileM (Array (Ix.Name × Ix.DataVal
     result := result.push (keyName, val)
   pure result
 
+/-! ## Pass 3 decompile records -/
+
+/-- The decompile record of a call site that Pass 3 rewrote: a decompiled
+    KVMap that is exactly `[(_ix.inline, s), (_ix.inline_meta, m)]`
+    (`Ix.Compile.Pass.inlineKey`, `inlineMetaKey`, in this order, both
+    `ofNat`). `s` indexes the compiled source occurrence in
+    `ConstantMeta.metaSharing`, `m` is its metadata-arena root. Any other
+    KVMap, including one with a single `_ix.inline` key, is ordinary
+    metadata. Mirrors Rust `decompile::inline_record`. -/
+def inlineRecord? (data : Array (Ix.Name × Ix.DataValue)) : Option (Nat × Nat) :=
+  match data with
+  | #[(k₁, .ofNat s), (k₂, .ofNat m)] =>
+    if k₁ == Ix.Compile.Pass.inlineKey && k₂ == Ix.Compile.Pass.inlineMetaKey then
+      some (s, m)
+    else none
+  | _ => none
+
 /-! ## Mdata Application -/
 
 /-- Apply collected mdata layers to an Ix.Expr (outermost-first). -/
@@ -501,9 +529,12 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   let cacheKey := (e, arenaIdx, scope)
   if let some cached := (← get).exprCache.get? cacheKey then return cached
 
-  -- 2. Follow mdata chain
+  -- 2. Follow mdata chain. A Pass 3 decompile record (`inlineRecord?`) is
+  -- not a layer: the first one on the chain is replayed below, a later one
+  -- is dropped.
   let mut currentIdx := arenaIdx
   let mut mdataLayers : Array (Array (Ix.Name × Ix.DataValue)) := #[]
+  let mut inlineRecord : Option (Nat × Nat) := none
   let mut done := false
   while !done do
     match ← getArenaNode currentIdx with
@@ -512,9 +543,30 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
         let data ← decompileKVMap kvm
         if Ix.SemanticContract.hasMetadata data then
           throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
-        mdataLayers := mdataLayers.push data
+        match inlineRecord? data with
+        | some record => if inlineRecord.isNone then inlineRecord := some record
+        | none => mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
+
+  -- Pass 3 replay: the decompiled term is the recorded source occurrence,
+  -- `metaSharing[s]` read in its own metadata scope at arena root `m`,
+  -- under the chain's other layers. The compiled (rewritten) term is not
+  -- read, unless `compiledTerms`. Rust `decompile_expr` replays the same,
+  -- with the same two range checks.
+  if (← getEnv).compiledTerms then inlineRecord := none
+  if let some (s, m) := inlineRecord then
+    let ctx ← getCtx
+    let some shared := ctx.metaSharing[s]?
+      | throw (.badConstantFormat s!"Pass 3 inline record {s} out of range \
+          ({ctx.metaSharing.size} metadata entries)")
+    unless m < ctx.arena.nodes.size do
+      throw (.badConstantFormat s!"Pass 3 inline record arena root {m} out of range \
+        ({ctx.arena.nodes.size} arena nodes)")
+    let source ← decompileExprIn (.metaEntry s) shared m.toUInt64
+    let result := applyMdata source mdataLayers
+    modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
+    return result
 
   let node ← getArenaNode currentIdx
 
@@ -854,8 +906,9 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
     wrapper. `metaRefs`/`metaUnivs` extend the primary tables — the
     documented virtual-address contract (mirrors Rust
     `load_meta_extensions`); `metaSharing` rides its own dedicated field
-    for surgery replay, and `share` nodes inside it are read in the
-    extended index space (`ShareScope`), never appended to `sharing`. The
+    (Pass 3's decompile records; the call-site surgery replay), and
+    `share` nodes inside it are read in the extended index space
+    (`ShareScope`), never appended to `sharing`. The
     context is rebuilt per constant, so extensions never leak across
     sibling constants of a block. -/
 def mkBlockCtx (cnst : Constant) (mutCtx : Array Ix.Name)

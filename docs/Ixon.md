@@ -978,8 +978,10 @@ rung end, so v3's integer codes would write the same bytes for this table.
 ### Sharing in metadata expressions
 
 Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
-compiled call-site arguments that call-site surgery collapsed, and rewritten
-call-site heads. A `Share(i)` inside them is read in an extended index
+source occurrences of Pass 3's decompile records
+([Pass 3 decompile records](#pass-3-decompile-records)), and, in files the
+call-site surgery wrote, the compiled call-site arguments it collapsed and
+rewritten call-site heads. A `Share(i)` inside them is read in an extended index
 space. This is a reader rule; it adds no bytes. Let `p` be the size of the
 primary `sharing` table (for a projection, the table of its `Muts` block)
 and `q` the size of `metaSharing`.
@@ -997,9 +999,10 @@ and `q` the size of `metaSharing`.
 
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
-- **Call-site references.** `CallSiteEntry.collapsed sharingIdx` and
-  `origHead = some (sharingIdx, _)` index `metaSharing` directly, not offset
-  by `p`, and read that entry in its own scope.
+- **Call-site references and records.** `CallSiteEntry.collapsed sharingIdx`,
+  `origHead = some (sharingIdx, _)` and a decompile record's `_ix.inline`
+  index `metaSharing` directly, not offset by `p`, and read that entry in its
+  own scope.
 
 Both decompilers implement the rule: Lean `Ix.DecompileM` (`ShareScope`,
 `resolveShareIn`) and Rust `ix_compile::decompile` (`ShareScope`). When a
@@ -1114,7 +1117,8 @@ four extension vectors appended after it (the wrapper):
 ```rust
 pub struct ConstantMeta {
     pub info: ConstantMetaInfo,        // variant payload (below)
-    pub meta_sharing: Vec<Arc<Expr>>,  // collapsed call-site args (surgery)
+    pub meta_sharing: Vec<Arc<Expr>>,  // record sources (Pass 3); collapsed
+                                       // call-site args (surgery files)
     pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
     pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
     pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
@@ -1130,9 +1134,12 @@ pub struct UnivPatch {
 Each wrapper vector serializes as an `N0` count + entries and is
 empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
 restore source level spellings the §10.6 canonicalization displaced
-from content; `meta_sharing` holds call-site surgery's collapsed
-arguments, whose `Share` references use the extended index space of
-[Sharing in metadata expressions](#sharing-in-metadata-expressions). Each `ConstantMetaInfo` variant stores a name, universe
+from content; `meta_sharing` holds the source occurrences of Pass 3's
+decompile records (in files the call-site surgery wrote, its collapsed
+arguments), whose `Share` references use the extended index space of
+[Sharing in metadata expressions](#sharing-in-metadata-expressions), and
+`meta_refs` the references of those occurrences outside the primary table
+(virtual index `refs.len() + j`). Each `ConstantMetaInfo` variant stores a name, universe
 parameter names, an `ExprMeta` arena, and root indices pointing into
 the arena:
 
@@ -1184,6 +1191,48 @@ to an external head's generic recursor; call-site surgery keys
 head-rewrite plans off these flags alone). Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
+
+### Pass 3 decompile records
+
+Pass 3 rewrites a full application of a changed block's auxiliary (its
+recursors, `casesOn`, `recOn`, `below`, `brecOn` family) to that
+auxiliary's image. The caller's stored term is the rewritten one; its
+metadata keeps the source occurrence for decompilation, as one KVMap on an
+`Mdata` arena node whose child is the rewritten occurrence's node:
+
+| Key | Value |
+|-----|-------|
+| `_ix.inline` | `ofNat s`: the compiled source occurrence's index in the constant's `ConstantMeta.meta_sharing`, read directly (not offset by the primary `sharing` size) in that entry's scope |
+| `_ix.inline_meta` | `ofNat m`: the source occurrence's root in the same constant's metadata arena |
+
+- **Shape.** Exactly these two entries, in this order, both `ofNat` (nat
+  blobs). Any other KVMap, including a lone `_ix.inline` key, is ordinary
+  metadata.
+- **Writing** (both compilers, byte-identical). Before a constant's root
+  expression compiles, the source occurrence of each placeholder in it is
+  compiled once per constant, in the order a depth-first walk over distinct
+  subterms meets the placeholders, into `meta_sharing` and the constant's
+  arena. A reference outside the block's primary `refs` goes to
+  `meta_refs`, a universe outside `univs` to `meta_univs` (virtual
+  indices); the primary tables, and so the constant's bytes, are the
+  rewritten term's. The source compile reads the term's expression cache
+  but never writes it.
+- **Reading.** Both decompilers (Lean `Ix.DecompileM.inlineRecord?`, Rust
+  `decompile::inline_record`) replay `meta_sharing[s]` at arena root `m` in
+  place of the rewritten occurrence, under the chain's other metadata
+  layers. The first record on a chain is replayed and a later one dropped;
+  `s` or `m` out of range is an error. Lean's
+  `DecompileEnv.compiledTerms` reads the rewritten term instead. Kernel
+  ingress sees the record as ordinary metadata.
+- **Reserved names.** A source constant with an `_ix*` name component or
+  metadata key is refused as compiler input, so no record comes from
+  source. Compiler support under reserved names (`x._ix.rec`, …) stays in
+  the artifact: `import_ixe` restores only source declarations, the Lean
+  decompiler skips it, and Rust's `check_decompile` counts it as introduced
+  rather than as a source constant.
+
+None of these records is a proof of the transformation; checking the stored
+term is the certifier's.
 
 ### Indexed Serialization
 

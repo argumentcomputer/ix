@@ -520,6 +520,305 @@ private def msParity : TestSeq :=
 
 end MetaShare
 
+/-! ## Pass 3 decompile records (pure unit, and Lean/Rust parity)
+
+A call site that Pass 3 rewrote carries the decompile record
+`[(_ix.inline, s), (_ix.inline_meta, m)]` on its metadata chain: the
+decompiled term is the source occurrence `metaSharing[s]` read at arena root
+`m`, not the compiled (rewritten) term under the record. No compiler writes
+a record before Pass 3 is wired, so these hand-built fixtures pin the reader
+rule in both decompilers (Rust mirror: `inline_record_tests` in
+`crates/compile/src/decompile.rs`).
+
+Every fixture: the compiled root `canon #2 #1` (`refs[0]`), one primary
+sharing entry (`p = 1`), and the source occurrence `src #1 #2` as
+`metaSharing[1]`, whose head is the extension reference `metaRefs[0]`
+(virtual index 1) and whose first argument is the metadata share
+`share 1 = metaSharing[0] = #1`. Arena nodes `0`–`4` describe the compiled
+term, `5`–`9` the source occurrence; record and layer nodes follow. -/
+
+section InlineRecord
+
+open Ix.DecompileM Ixon
+
+private def nCanon : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "IR.canon"
+private def nSrc : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "IR.src"
+private def nIrAx : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "IR.ax"
+private def nTag : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "IR.tag"
+
+/-- `n` as a metadata nat blob (the compiler's encoding). -/
+private def natBlob (n : Nat) : ByteArray := ByteArray.mk (Nat.toBytesLE n)
+
+private def natAddr (n : Nat) : Address := Address.admissionHash (natBlob n)
+
+/-- The decompile record `[(_ix.inline, s), (_ix.inline_meta, m)]`. -/
+private def record (s m : Nat) : Ixon.KVMap :=
+  #[(Ix.Compile.Pass.inlineKey.getHash, .ofNat (natAddr s)),
+    (Ix.Compile.Pass.inlineMetaKey.getHash, .ofNat (natAddr m))]
+
+/-- An ordinary metadata layer. -/
+private def tag (b : Bool) : Ixon.KVMap := #[(nTag.getHash, .ofBool b)]
+
+/-- The names and nat blobs the fixtures read. -/
+private def irNames (env : Ixon.Env) : Ixon.Env := Id.run do
+  let mut env := { env with
+    names := [nCanon, nSrc, nIrAx, nTag, Ix.Compile.Pass.inlineKey,
+      Ix.Compile.Pass.inlineMetaKey].foldl (init := env.names)
+      Ixon.RawEnv.addNameComponents }
+  for n in [0, 1, 3, 5, 9, 99] do
+    env := (env.storeBlob (natBlob n)).1
+  return env
+
+private def irEnv : DecompileEnv := { ixonEnv := irNames {} }
+
+/-- The compiled (rewritten) root `canon #2 #1`. -/
+private def irRoot : Ixon.Expr := .app (.app (.ref 0 #[]) (.var 2)) (.var 1)
+
+/-- `metaSharing`: `#1`, and the source occurrence `src (share 1) #2`. -/
+private def irMetaSharing : Array Ixon.Expr :=
+  #[.var 1, .app (.app (.ref 1 #[]) (.share 1)) (.var 2)]
+
+private def irCanonAddr : Address := Address.blake3 "inline-record-canon".toUTF8
+private def irSrcAddr : Address := Address.blake3 "inline-record-src".toUTF8
+
+/-- The compiled term's nodes `0`–`4`, the source occurrence's `5`–`9`,
+    then `extra`. -/
+private def irArena (extra : Array ExprMetaData) : ExprMetaArena := ⟨#[
+  .ref nCanon.getHash, .leaf, .app 0 1, .leaf, .app 2 3,
+  .ref nSrc.getHash, .leaf, .app 5 6, .leaf, .app 7 8] ++ extra⟩
+
+private def irConst (refs : Array Address := #[irCanonAddr]) : Ixon.Constant :=
+  ⟨.axio ⟨false, 0, irRoot⟩, #[.var 7], refs, #[]⟩
+
+private def irMeta (arena : ExprMetaArena) (root : UInt64)
+    (metaSharing : Array Ixon.Expr := irMetaSharing)
+    (src : Address := irSrcAddr) : ConstantMeta :=
+  { info := .axio nIrAx.getHash #[] arena root, metaSharing, metaRefs := #[src] }
+
+private def irRun (arena : ExprMetaArena) (root : UInt64)
+    (metaSharing : Array Ixon.Expr := irMetaSharing)
+    (denv : DecompileEnv := irEnv) : Except DecompileError Ix.Expr :=
+  let ctx := mkBlockCtx (irConst) #[] #[] arena (irMeta arena root metaSharing)
+  (DecompileM.run denv ctx {} (decompileExpr irRoot root)).map (·.1)
+
+private def ixCanon : Ix.Expr :=
+  Ix.Expr.mkApp (Ix.Expr.mkApp (Ix.Expr.mkConst nCanon #[]) (Ix.Expr.mkBVar 2))
+    (Ix.Expr.mkBVar 1)
+
+private def ixSrc : Ix.Expr :=
+  Ix.Expr.mkApp (Ix.Expr.mkApp (Ix.Expr.mkConst nSrc #[]) (Ix.Expr.mkBVar 1))
+    (Ix.Expr.mkBVar 2)
+
+private def ixTag (b : Bool) (e : Ix.Expr) : Ix.Expr :=
+  Ix.Expr.mkMData #[(nTag, .ofBool b)] e
+
+private def errContains (r : Except DecompileError Ix.Expr) (msg : String) : Bool :=
+  match r with
+  | .error e => (toString e).contains msg
+  | .ok _ => false
+
+/-- The record (node 10) replays the source occurrence: `src #1 #2`, with
+    the record's `s` a direct `metaSharing` index read in its own scope. -/
+private def irReplays : Bool :=
+  okEq (irRun (irArena #[.mdata #[record 1 9] 4]) 10) ixSrc
+
+/-- Without the record the same root decodes to the compiled term. -/
+private def irCompiledWithoutRecord : Bool :=
+  okEq (irRun (irArena #[]) 4) ixCanon
+
+/-- The chain's other layers wrap the replayed source, outermost first:
+    `[tag true]` (node 11) over `[record, tag false]` (node 10). -/
+private def irLayersKept : Bool :=
+  okEq (irRun (irArena #[.mdata #[record 1 9, tag false] 4,
+      .mdata #[tag true] 10]) 11)
+    (ixTag true (ixTag false ixSrc))
+
+/-- The first record on the chain is replayed; a later one is dropped, not
+    kept as a layer (the inner record would give `#1`). -/
+private def irFirstRecordWins : Bool :=
+  okEq (irRun (irArena #[.mdata #[record 1 9] 11, .mdata #[record 0 3] 4]) 10) ixSrc
+
+/-- A single `_ix.inline` key (the rewrite's placeholder shape) is not a
+    record: it stays an ordinary layer over the compiled term. -/
+private def irSingleKeyIsMetadata : Bool :=
+  let placeholder : Ixon.KVMap :=
+    #[(Ix.Compile.Pass.inlineKey.getHash, .ofNat (natAddr 1))]
+  okEq (irRun (irArena #[.mdata #[placeholder] 4]) 10)
+    (Ix.Expr.mkMData #[(Ix.Compile.Pass.inlineKey, .ofNat 1)] ixCanon)
+
+/-- `s` outside `metaSharing` is rejected. -/
+private def irIndexOutOfRange : Bool :=
+  errContains (irRun (irArena #[.mdata #[record 5 9] 4]) 10)
+    "Pass 3 inline record 5 out of range (2 metadata entries)"
+
+/-- `m` outside the arena is rejected. -/
+private def irRootOutOfRange : Bool :=
+  errContains (irRun (irArena #[.mdata #[record 1 99] 4]) 10)
+    "Pass 3 inline record arena root 99 out of range (11 arena nodes)"
+
+/-- `compiledTerms` reads the compiled term and drops the record, keeping
+    the other layers. -/
+private def irCompiledTerms : Bool :=
+  okEq (irRun (irArena #[.mdata #[record 1 9, tag false] 4,
+      .mdata #[tag true] 10]) 11 (denv := { irEnv with compiledTerms := true }))
+    (ixTag true (ixTag false ixCanon))
+
+/-- Whole-constant path (`decompileAxiom` → `withFreshBlock`): the
+    extension tables come from the constant's metadata. -/
+private def irAxiom : Bool :=
+  let arena := irArena #[.mdata #[record 1 9] 4]
+  let r := DecompileM.run irEnv default {} (decompileAxiom ⟨false, 0, irRoot⟩
+    (irConst) (irMeta arena 10))
+  match r with
+  | .ok (.axiomInfo v, _) => v.cnst.type == ixSrc && v.cnst.name == nIrAx
+  | _ => false
+
+/-! ### Lean/Rust parity through the `.ixe` decompile FFI
+
+The same serialized env is decompiled by the Lean decompiler and by the
+Rust one (`rs_decompile_env_consts`): both replay a valid record to the
+same type, and both reject the out-of-range ones with the same message. -/
+
+/-- `IR.canon : Sort 1`, `IR.src : Sort 0`, and `IR.ax`, whose type is
+    the compiled `canon #2 #1` under the record `(s, m)` (node 10). -/
+private def irParityEnv (s m : Nat) : Ixon.Env := Id.run do
+  let canonC : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+  let srcC : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+  let canonAddr := Address.blake3 (Ixon.serConstant canonC)
+  let srcAddr := Address.blake3 (Ixon.serConstant srcC)
+  let axC := irConst #[canonAddr]
+  let axAddr := Address.blake3 (Ixon.serConstant axC)
+  let mut env := irNames {}
+  env := env.storeConst canonAddr canonC
+  env := env.storeConst srcAddr srcC
+  env := env.storeConst axAddr axC
+  env := env.registerName nCanon
+    { addr := canonAddr, constMeta := { info := .axio nCanon.getHash #[] ⟨#[.leaf]⟩ 0 } }
+  env := env.registerName nSrc
+    { addr := srcAddr, constMeta := { info := .axio nSrc.getHash #[] ⟨#[.leaf]⟩ 0 } }
+  env := env.registerName nIrAx
+    { addr := axAddr,
+      constMeta := irMeta (irArena #[.mdata #[record s m] 4]) 10 (src := srcAddr) }
+  return env
+
+/-- Lean side, from the serialized bytes: `IR.ax`'s decompiled type. -/
+private def irParityLean (bytes : ByteArray) :
+    Except String (Except DecompileError Ix.Expr) := do
+  let env ← Ixon.deEnv bytes
+  let some named := env.named.get? nIrAx | throw "IR.ax not in the decoded env"
+  let some cnst := env.getConst? named.addr | throw "IR.ax constant missing"
+  let .axio ax := cnst.info | throw "IR.ax is not an axiom"
+  return (DecompileM.run { ixonEnv := env } default {}
+    (decompileAxiom ax cnst named.constMeta)).map fun (ci, _) => ci.getCnst.type
+
+/-- `IR.ax`'s type as Rust materializes it: `IR.src #1 #2`. -/
+private def irParityLeanExpr : Lean.Expr :=
+  .app (.app (.const (Lean.Name.mkSimple "IR.src") []) (Lean.mkBVar 1)) (Lean.mkBVar 2)
+
+/-- Run both decompilers on `irParityEnv s m`. `expect` is `none` for the
+    replay, or a message both rejections contain. -/
+private def irParityCase (label : String) (s m : Nat) (expect : Option String) :
+    IO (Option String) := do
+  let bytes ← match Ixon.serEnv (irParityEnv s m) with
+    | .ok b => pure b
+    | .error e => return some s!"{label}: serEnv failed: {e}"
+  let dir ← IO.FS.createTempDir
+  let path := (dir / "inline-record.ixe").toString
+  try
+    IO.FS.writeBinFile path bytes
+    let lean ← match irParityLean bytes with
+      | .ok r => pure r
+      | .error e => return some s!"{label}: Lean env: {e}"
+    let rust : Except String (Array (Lean.Name × Lean.ConstantInfo)) ←
+      tryCatch (Except.ok <$> Ix.ImportIxe.materializeIxe path)
+        fun e => pure (Except.error (toString e))
+    match expect, lean, rust with
+    | none, .ok ty, .ok consts =>
+      let rustTy := consts.findSome? fun (n, ci) =>
+        if n == Lean.Name.mkSimple "IR.ax" then some ci.type else none
+      if ty != ixSrc then return some s!"{label}: Lean type differs"
+      if rustTy != some irParityLeanExpr then
+        return some s!"{label}: Rust type differs: {rustTy}"
+      return none
+    | some msg, .error le, .error re =>
+      if !(toString le).contains msg then
+        return some s!"{label}: Lean rejected with {le}"
+      if !re.contains msg then
+        return some s!"{label}: Rust rejected with {re}"
+      return none
+    | _, l, r =>
+      let ls := match l with | .ok _ => "accepted" | .error e => toString e
+      let rs := match r with | .ok _ => "accepted" | .error e => e
+      return some s!"{label}: Lean {ls}; Rust {rs}"
+  finally
+    IO.FS.removeDirAll dir
+
+private def irParity : TestSeq :=
+  .individualIO "inline record: Lean/Rust decompile parity" none (do
+    let cases : List (String × Nat × Nat × Option String) := [
+      ("replay", 1, 9, none),
+      ("index out of range", 5, 9,
+        some "Pass 3 inline record 5 out of range (2 metadata entries)"),
+      ("root out of range", 1, 99,
+        some "Pass 3 inline record arena root 99 out of range (11 arena nodes)") ]
+    let mut failures : Array String := #[]
+    for (label, s, m, expect) in cases do
+      if let some msg ← irParityCase label s m expect then
+        failures := failures.push msg
+    if failures.isEmpty then
+      return (true, 0, 0, none)
+    else
+      return (false, 0, 0, some ("; ".intercalate failures.toList))) .done
+
+end InlineRecord
+
+/-! ## Compiler support under reserved names (pure unit)
+
+The full driver's Pass 1 skips names with a reserved `_ix` component
+(compiler support, refused as compiler input, so never a source
+declaration), and `pass3Env` (no call-site plan installed) holds exactly
+when such a name is present. No compiler writes one before Pass 3 is
+wired, so a hand-built env holds `RS.src : Sort 0` and, with `support`,
+`RS._ix.helper : Sort 1`. -/
+
+section ReservedSupport
+
+open Ix.DecompileM Ixon
+
+private def rsAxiom (env : Ixon.Env) (n : Ix.Name) (univ : Ixon.Univ) : Ixon.Env :=
+  let c : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[univ]⟩
+  let addr := Address.blake3 (Ixon.serConstant c)
+  let env := { env with names := Ixon.RawEnv.addNameComponents env.names n }
+  (env.storeConst addr c).registerName n
+    { addr, constMeta := { info := .axio n.getHash #[] ⟨#[.leaf]⟩ 0 } }
+
+private def nRsSrc : Ix.Name := Ix.Name.fromLeanName `RS.src
+private def nRsHelper : Ix.Name := Ix.Name.fromLeanName `RS._ix.helper
+
+private def rsEnv (support : Bool) : Ixon.Env :=
+  let env := rsAxiom {} nRsSrc .zero
+  if support then rsAxiom env nRsHelper (.succ .zero) else env
+
+/-- `pass3Env` is the presence of a reserved name. -/
+private def rsPass3Env : Bool :=
+  pass3Env (rsEnv true) && !pass3Env (rsEnv false)
+
+/-- The full driver decompiles the source axiom and skips the support. The
+    input is read through a reference, so the driver (whose recompiles call
+    the FFI) runs when the test runs, not as a closed term when the suite is
+    built. -/
+private def rsSupportSkipped : TestSeq :=
+  .individualIO "reserved support: the full driver skips it" none (do
+    let support ← IO.mkRef true
+    let (decompiled, errors, _) := decompileEnvFull (rsEnv (← support.get)) {}
+    if errors.isEmpty && decompiled.contains nRsSrc && !decompiled.contains nRsHelper
+        && decompiled.size == 1 then
+      return (true, 0, 0, none)
+    return (false, 0, 0, some s!"decompiled {decompiled.size} constants, \
+      {errors.size} errors, support present: {decompiled.contains nRsHelper}")) .done
+
+end ReservedSupport
+
 public def unitSuite : List TestSeq := [
   test "extension append: virtual ref/univ indices resolve"
       extAppendResolves
@@ -546,7 +845,24 @@ public def unitSuite : List TestSeq := [
       msAxiomUnreadEntryRejected
     ++ test "metadata share: tables without shares unchanged" msNoShares
     ++ test "metadata share: shared subterms are checked once" msSharedChain,
-  msParity
+  msParity,
+  test "inline record: the source occurrence is replayed" irReplays
+    ++ test "inline record: without a record the compiled term is read"
+      irCompiledWithoutRecord
+    ++ test "inline record: other layers wrap the replayed source" irLayersKept
+    ++ test "inline record: the first record on the chain is replayed"
+      irFirstRecordWins
+    ++ test "inline record: a single _ix.inline key is ordinary metadata"
+      irSingleKeyIsMetadata
+    ++ test "inline record: metaSharing index out of range rejected"
+      irIndexOutOfRange
+    ++ test "inline record: arena root out of range rejected" irRootOutOfRange
+    ++ test "inline record: compiledTerms reads the compiled term"
+      irCompiledTerms
+    ++ test "inline record: whole constant decompiles" irAxiom,
+  test "reserved support: pass3Env is its presence" rsPass3Env,
+  rsSupportSkipped,
+  irParity
 ]
 
 /-! ## Test Suite -/
