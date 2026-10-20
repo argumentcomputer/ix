@@ -13,7 +13,13 @@ checks when it writes the default table (`Benchmarks/Kernel/PinGen.lean`);
 here it is a property of a compile's artifact. Stated over the compile's whole
 input, it is what the artifact's alias fibers need (`Ix.LeanIngress.fiberAlias`
 ranges over every published name), and every closure inherits it
-(`RolesBound.of_closure`). -/
+(`RolesBound.of_closure`).
+
+`RolesBound` looks the declared roles' names up by their stored hashes. On an
+artifact whose names' hashes need not be their own (the prover's), the form that
+gives the agreement is `Ix.Cert.PublishedRolesBound`: by ingress name, over every
+published name (`Ix.Cert.publishedAddress_role`, and the table rule's premise
+`Ix.Cert.tableBound_of`). -/
 
 namespace Ix.Cert.Roles
 

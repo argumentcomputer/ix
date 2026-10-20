@@ -13,6 +13,7 @@ import Ix.Cert.Admits
 import Ix.Cert.BlockStart
 import Ix.Cert.RoleClosure
 import Ix.Cert.NoCtor
+import Ix.Cert.Quotient
 
 /-! # The certification statements, frozen
 
@@ -4077,3 +4078,65 @@ fun condense env roots sub ixe envS =>
 /-- info: 'Ix.Cert.sourceAcceptsQ_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.sourceAcceptsQ_of_check
+
+/-! ## Quotient Source at the artifact's addresses (step 7.3 (iv), statements' side)
+
+IxC renames a quotient accept from fiber representatives to their published
+addresses (`Ix.LeanIngress.acceptsRef_addrOf`, and its table-rule form). The table
+rule's premise `TableBound` follows from an admitted role table and an artifact-wide
+check that every published role name sits at its role's address
+(`Ix.Cert.tableBound_of`). The same check gives B5a's agreement by ingress name: the
+statements' published address of a role's constant is the table's
+(`Ix.Cert.publishedAddress_role`). B5a's `RolesBound` looks the declared roles' names up
+by their stored hashes, so it gives neither on an artifact whose names' hashes are not
+their own. The statements' published address of an input name is the renamed one when
+every published name agrees with the address map (`Ix.Cert.publishedAddress_id`,
+`Ix.Cert.reading_id`). Both checks are decided and run on the fixtures, `Init` and
+Init+Std, with a planted failure of each. Value models pull back along the renaming's
+relation (`Ix.Cert.ValueModel.pullback`). -/
+
+/-- info: def Ix.Cert.PublishedRolesBound : Ix.Kernel.RoleTable → Ixon.Env → Prop :=
+fun t ixe =>
+  ∀ (m : Ix.Name) (d : Ixon.Named),
+    (m, d) ∈ ixe.named.toList →
+      ∀ (r : Ix.Kernel.Role), Ix.LeanIngress.ingressName m = r.leanName → t.addressOf? r = some d.addr -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.PublishedRolesBound
+
+/-- info: def Ix.Cert.PublishedAgree : Ixon.Env → Prop :=
+fun ixe =>
+  ∀ (m : Ix.Name) (d : Ixon.Named),
+    (m, d) ∈ ixe.named.toList → (Ix.LeanIngress.sourceAddrs ixe)[Ix.LeanIngress.ingressName m]? = some d.addr -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.PublishedAgree
+
+/-- info: @Ix.Cert.tableBound_of : ∀ {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env},
+  t.check = Except.ok () →
+    Ix.Cert.PublishedRolesBound t ixe → Ix.LeanIngress.TableBound ixe (Ix.LeanIngress.roleAtMap t) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.tableBound_of
+
+/-- info: @Ix.Cert.publishedAddress_role : ∀ {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env},
+  Ix.Cert.PublishedRolesBound t ixe →
+    ∀ {r : Ix.Kernel.Role} {a : Address},
+      Ix.Cert.publishedAddress ixe (Ix.Kernel.Key.role r) = some a → t.addressOf? r = some a -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.publishedAddress_role
+
+/-- info: @Ix.Cert.publishedAddress_id : ∀ {ixe : Ixon.Env},
+  Ix.Cert.PublishedAgree ixe →
+    ∀ {n : Ix.Kernel.Name},
+      Ix.LeanIngress.roleOf n = none →
+        ∀ {a : Address},
+          (Ix.LeanIngress.sourceAddrs ixe)[n]? = some a → Ix.Cert.publishedAddress ixe (Ix.Kernel.Key.id n) = some a -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.publishedAddress_id
+
+/-- info: [cert-audit] quotient addresses: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "quotient addresses"
+    (#[`ValueModel.pullback, `publishedRolesBound_iff, `byLeanName_foldl, `roleOf_leanName,
+      `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
+      `reading_id].map (`Ix.Cert ++ ·))

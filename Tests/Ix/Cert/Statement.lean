@@ -179,6 +179,54 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       decoder on {disagree.length} record(s); first: {a}"
   return (errors, lines)
 
+/-- The artifact-wide checks the quotient renaming takes (step 7.3 (iv)): every published
+role name sits at its role's address (`Ix.Cert.publishedRolesBound`, which gives
+`TableBound` through `Ix.Cert.tableBound_of`, and a role's published address through
+`Ix.Cert.publishedAddress_role`), and every published name agrees
+with the address map (`Ix.Cert.publishedAgree`, which gives `Ix.Cert.publishedAddress_id`).
+Neither is vacuous: a role's published name moved to another role's address fails the
+first, and a forged copy of a published name (same ingress name, another hash) at another
+address fails the second. -/
+def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
+    Array String × Array String := Id.run do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let roleNamed := ixe.named.toList.filterMap fun (m, d) =>
+    (Ix.LeanIngress.roleOf (Ix.LeanIngress.ingressName m)).map fun r => (m, d, r)
+  if Ix.Cert.publishedRolesBound t ixe then
+    lines := lines.push s!"{label}: publishedRolesBound holds: {roleNamed.length} published role \
+      names, each at its role's address"
+  else
+    errors := errors.push s!"{label}: publishedRolesBound fails"
+  if Ix.Cert.publishedAgree ixe then
+    lines := lines.push s!"{label}: publishedAgree holds on {ixe.named.size} published names"
+  else
+    errors := errors.push s!"{label}: publishedAgree fails"
+  match roleNamed with
+  | (m, d, r) :: _ =>
+    match t.bound.toList.find? fun (s, a) => s != r && a != d.addr with
+    | some (s, a) =>
+      let planted := { ixe with named := ixe.named.insert m { d with addr := a } }
+      if Ix.Cert.publishedRolesBound t planted then
+        errors := errors.push s!"{label}: publishedRolesBound misses {m} planted at {repr s}'s address"
+      else
+        lines := lines.push s!"{label}: publishedRolesBound catches {m} planted at {repr s}'s address"
+    | none => errors := errors.push s!"{label}: no other role's address to plant {m} at"
+  | [] => lines := lines.push s!"{label}: no published role name; the planted role case is skipped"
+  match ixe.named.toList.find? (fun (m, _) => m matches .str ..) with
+  | some (m@(.str p s _), d) =>
+    match ixe.named.toList.find? fun (_, e) => e.addr != d.addr with
+    | some (_, other) =>
+      let forged := Ix.Name.str p s (Address.blake3 "ix-cert forged name".toUTF8)
+      let planted := { ixe with named := ixe.named.insert forged { d with addr := other.addr } }
+      if Ix.Cert.publishedAgree planted then
+        errors := errors.push s!"{label}: publishedAgree misses a forged copy of {m}"
+      else
+        lines := lines.push s!"{label}: publishedAgree catches a forged copy of {m} at another address"
+    | none => lines := lines.push s!"{label}: one published address; the forged case is skipped"
+  | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
+  return (errors, lines)
+
 /-- The role table's bindings in a compile's result (Route A, B5a): every role whose
 Lean name the input declares is published at the default table's address for it
 (`Ix.Cert.Roles.rolesBound`). Also counted, not checked (B5c, on hold): the published
@@ -195,15 +243,16 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     match boundAt.get? named.addr with
     | some r => n != Ix.Cert.Roles.roleName r
     | none => false
+  let (published, publishedLines) := publishedCases label t ixe
   if Ix.Cert.Roles.rolesBound t ixe env then
-    return (#[], #[s!"{label}: rolesBound holds: {declared.length} of {roles.length} role names \
+    return (published, #[s!"{label}: rolesBound holds: {declared.length} of {roles.length} role names \
       declared, each published at the default table's address; {aliases.length} other published \
-      names at a role-bound address (B5c, counted)"])
+      names at a role-bound address (B5c, counted)"] ++ publishedLines)
   else
     let bad := declared.filter fun r =>
       (ixe.named.get? (Ix.Cert.Roles.roleName r)).map (·.addr) != t.addressOf? r
     return (#[s!"{label}: rolesBound fails: {bad.length} role(s) not at the table's address; \
-      first: {(bad.take 5).map Ix.Cert.Roles.roleName}"], #[])
+      first: {(bad.take 5).map Ix.Cert.Roles.roleName}"] ++ published, publishedLines)
 
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
