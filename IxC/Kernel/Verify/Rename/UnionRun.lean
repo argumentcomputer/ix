@@ -411,4 +411,68 @@ theorem split (h : UnitsOk front us) {xs ys : List (List (Declaration md))}
 
 end UnitsOk
 
+/-! ## Names decide the basis routes (S3) -/
+
+/-- A pinned constant's name has a prelude base. -/
+theorem pin_name_pre (k : BasisKind) {c : ConstantInfo md} (hc : c ∈ k.decls (md := md)) :
+    IsPre c.name.base := by
+  have hp := List.all_eq_true.mp (decls_pinIn (md := md) k) c hc
+  obtain ⟨r, hr, he⟩ := Key.pinIn_base (ConstantInfo.pinIn_name hp)
+  exact ⟨r, hr, he⟩
+
+/-- **A declaration naming no prelude base takes no basis route** (unless it is
+the fold's own `basisDecl`, which no frontend emits): a pinned block is
+recognised by its names, which are then the pin's, and a quotient record
+matching its pin carries the pin's name (`ConstantVal.canon` keeps names);
+both are prelude role keys. -/
+theorem Declaration.basisFree_of {d : Declaration md} (hnb : ∀ k, d ≠ .basisDecl k)
+    (hn : ∀ n ∈ d.names, ¬ IsPre n.base) : d.BasisFree := by
+  cases d with
+  | basisDecl k => exact hnb k rfl
+  | indDecl block nP =>
+    show basisPinHit block = none
+    cases hb : basisPinHit block with
+    | none => rfl
+    | some k =>
+      exfalso
+      unfold basisPinHit at hb
+      obtain ⟨hfind, -⟩ := Option.filter_eq_some_iff.mp hb
+      have hk : (k.decls (md := md)).map (·.name) = block.map (·.name) := by
+        have := List.find?_some hfind
+        simpa only [beq_iff_eq] using this
+      obtain ⟨c, cs, hcs⟩ : ∃ c cs, k.decls (md := md) = c :: cs := by
+        cases k <;> exact ⟨_, _, rfl⟩
+      have hcm : c ∈ k.decls (md := md) := by rw [hcs]; exact List.mem_cons_self
+      have hnm : c.name ∈ Declaration.names (.indDecl block nP) := by
+        show c.name ∈ block.map (·.name)
+        rw [← hk]; exact List.mem_map_of_mem hcm
+      exact hn _ hnm (pin_name_pre k hcm)
+  | quotDecl q cv =>
+    show ¬ (q = .type ∧ quotPinHit q cv = true)
+    rintro ⟨rfl, hq⟩
+    obtain ⟨c, cs, hcs⟩ : ∃ c cs, BasisKind.quotK.decls (md := md) = c :: cs := ⟨_, _, rfl⟩
+    have hcm : c ∈ BasisKind.quotK.decls (md := md) := by rw [hcs]; exact List.mem_cons_self
+    unfold quotPinHit at hq
+    rw [hcs] at hq
+    have hc : ConstantVal.canon cv = ConstantVal.canon c.toConstantVal := of_decide_eq_true hq
+    have hname : cv.name = c.name := by
+      have := congrArg ConstantVal.name hc
+      exact this
+    refine hn cv.name (by simp [Declaration.names]) ?_
+    rw [hname]
+    exact pin_name_pre .quotK hcm
+  | _ => trivial
+
+/-- **Units from their names**: a unit list whose bases are pairwise disjoint,
+disjoint from the front's and never a prelude role, and in which no
+declaration is the fold's own `basisDecl`, is well formed (its declarations
+basis-free by `Declaration.basisFree_of`). -/
+theorem UnitsOk.of_names {front : List (Declaration md)} {us : List (List (Declaration md))}
+    (disj : us.Pairwise fun u v => ∀ j ∈ basesOf u, j ∉ basesOf v)
+    (hfront : ∀ u ∈ us, ∀ j ∈ basesOf u, j ∉ basesOf front)
+    (hpre : ∀ u ∈ us, ∀ j ∈ basesOf u, ¬ IsPre j)
+    (hnb : ∀ u ∈ us, ∀ d ∈ u, ∀ k, d ≠ .basisDecl k) : UnitsOk front us :=
+  ⟨disj, hfront, hpre, fun u hu d hd => Declaration.basisFree_of (hnb u hu d hd)
+    fun n hn => hpre u hu n.base (mem_basesOf.mpr ⟨d, hd, n, hn, rfl⟩)⟩
+
 end Ix.Kernel
