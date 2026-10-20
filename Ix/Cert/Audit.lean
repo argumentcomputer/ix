@@ -3841,14 +3841,15 @@ role table's address for it (`Ix.Cert.Roles.RolesBound`, decided by
 
 /-- info: [cert-audit] evidence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] roles: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+info: [cert-audit] roles: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "evidence"
     (#[`natNames_disjoint, `checkDecl_covers, `foldlM_covers, `checkDeclsPure_covers,
       `acceptsRef_covers].map (`Ix.Cert.Evidence ++ ·))
-  checkRoots (tag := "cert-audit") "roles" #[``Ix.Cert.Roles.rolesBound_iff]
+  checkRoots (tag := "cert-audit") "roles"
+    #[``Ix.Cert.Roles.rolesBound_iff, ``Ix.Cert.Roles.RolesBound.of_closure]
 
 /-- info: structure Ix.Cert.Evidence.Covers {md : Ix.Kernel.Mode} (ops : Ix.Kernel.CheckerOps md (Ix.Kernel.CheckM md))
   (ev ev' : Ix.Kernel.Evidences md) : Prop

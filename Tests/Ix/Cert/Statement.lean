@@ -432,6 +432,28 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     lines := lines.push s!"no constant of the closure failed (NoFailure, decided)"
   else
     errors := errors.push "a constant of the closure failed (NoFailure is false)"
+  -- the role bindings over the whole input (B5a, whole-input form): a role-name collision
+  -- planted outside the closure is caught by the whole-input check, not by the closure's
+  match Ix.Kernel.Reader.defaultTable with
+  | .error e => errors := errors.push s!"the default role table does not read: {e}"
+  | .ok t =>
+    unless Ix.Cert.Roles.rolesBound t ixe env do
+      errors := errors.push "rolesBound fails on the whole input"
+    let outside := Ix.Kernel.Role.all.filter fun r =>
+      env.consts.contains (Ix.Cert.Roles.roleName r) && !sub.consts.contains (Ix.Cert.Roles.roleName r)
+    match outside, Ix.Kernel.Role.all.find? (fun s => outside.head? != some s && (t.addressOf? s).isSome) with
+    | r :: _, some s =>
+      let n := Ix.Cert.Roles.roleName r
+      let some named := ixe.named.get? n
+        | errors := errors.push s!"{n} is not published"
+      let some other := t.addressOf? s | errors := errors.push s!"{repr s} is not bound"
+      let planted := { ixe with named := ixe.named.insert n { named with addr := other } }
+      if Ix.Cert.Roles.rolesBound t planted sub && !Ix.Cert.Roles.rolesBound t planted env then
+        lines := lines.push s!"roles: {n} (outside the closure) planted at {repr s}'s address: the \
+          closure's check passes, the whole input's catches it"
+      else
+        errors := errors.push s!"roles: the planted collision at {n} is not caught by the whole-input check"
+    | _, _ => errors := errors.push "roles: no role name outside the closure to plant a collision at"
   let unpublished := sub.consts.toList.filter fun (n, _) => !ixe.named.contains n
   unless unpublished.isEmpty do
     errors := errors.push s!"{unpublished.length} constants of the closure are not published: \
