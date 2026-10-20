@@ -6,12 +6,14 @@ AuxGen on IxC, M1, on the compiler's own input: Init+Std, without the
 certificate module, canonicalized and condensed as `kernel-source-ingress`
 does it, compiled by the wave fold with its Source service
 (`Ix.CompileM.compileEnvFoldWithSource`, the IO pipeline's `4 * workers`
-tasks per wave). The fold asks the service for every block that holds an
-inductive, before the block's aux tail, at the committed bundle's evidence
+tasks per wave). The fold runs the service ahead of the waves and asks it for
+every block with a Type-level `.below` (AuxGen M2b's asks, lever P2), whose
+aux tail asks IxC, at the committed bundle's evidence
 (`Ix.RoleEvidence.bundleEvidence`). Then:
-1. **the service alone**: a service of its own asked for the same blocks in
-   dependency order (`Run.start`, `Run.ask`), timed: what the drivers' chain
-   costs on its own thread beside the compile; and again over a lookup view
+1. **the service alone**: a service of its own asked for every block that
+   holds an inductive in dependency order (`Run.start`, `Run.ask`), timed,
+   and for the drivers' `.below` asks (`Run.askWhere .below`); and the
+   `.below` asks again over a lookup view
    like the IO pipeline's, whose theorem and opaque bodies are canonicalized
    on demand (the share of canonicalization in the service's time);
 2. **the flat blocks**: each inductive block's canonical classes and
@@ -21,7 +23,7 @@ inductive, before the block's aux tail, at the committed bundle's evidence
    `auxgen-flat-source`).
 
 Printed: each phase's time, the drivers' report, the refusals. Asserted: the
-service started; every block that holds an inductive is asked for and
+service started; every block with a Type-level `.below` is asked for and
 accepted, and no group is refused or blocked; the service alone agrees, over
 both views; every flat block is accepted and σ fits `Key.map` on it. -/
 
@@ -53,6 +55,11 @@ def evaluate : IO (Array String × Array String) := do
   let ran ← IO.lazyPure fun _ => (Run.start input).ask asks
   let alone := ran.report
   let t3 ← IO.monoMsNow
+  -- 1'. the same, asked only for the blocks with a Type-level `.below`, as the
+  -- drivers ask since AuxGen M2b (lever P2)
+  let belowRan ← IO.lazyPure fun _ => (Run.start input).askWhere .below asks
+  let aloneBelow := belowRan.report
+  let t3e ← IO.monoMsNow
   -- 1a. the share of the conversions: every group it met, placed and
   -- converted again, one thread
   let met : Array Ix.Name := match ran.service with
@@ -74,7 +81,7 @@ def evaluate : IO (Array String × Array String) := do
     | other => other
   let t3a ← IO.monoMsNow
   let viewed ← IO.lazyPure fun _ =>
-    ((Run.start { get? := viewGet, blocks := blocks }).ask asks).report
+    ((Run.start { get? := viewGet, blocks := blocks }).askWhere .below asks).report
   let t3b ← IO.monoMsNow
   -- 2. the flat blocks
   let lookup := cenv.env.consts.get?
@@ -121,13 +128,15 @@ def evaluate : IO (Array String × Array String) := do
   lines := lines.push s!"compile with the drivers' service (fold, {4 * workers} tasks per wave): \
     {t2 - t1} ms"
   lines := lines.push s!"drivers' service: {report.summary}"
-  lines := lines.push s!"the service alone (dependency order, one thread): {t3 - t2} ms; \
-    {alone.summary}"
+  lines := lines.push s!"the service alone, every inductive block (dependency order, one thread): \
+    {t3 - t2} ms; {alone.summary}"
+  lines := lines.push s!"the service alone, the blocks with a Type-level .below (one thread): \
+    {t3e - t3} ms; {aloneBelow.summary}"
   lines := lines.push s!"its conversions alone: its {met.size} groups placed and converted \
     again (one thread): \
     {t3d - t3c} ms ({converted} converted)"
   lines := lines.push s!"the service alone over the IO pipeline's view (theorem and opaque bodies \
-    canonicalized on demand): {t3b - t3a} ms; {viewed.summary}"
+    canonicalized on demand), the .below asks: {t3b - t3a} ms; {viewed.summary}"
   lines := lines.push s!"flat blocks: needed {needed}, accepted {accepted}; aux generation \
     {auxNs / 1000000} ms, flat blocks and checks {t4 - t3b} ms in all"
   for (k, why) in report.notAccepted do
@@ -135,15 +144,19 @@ def evaluate : IO (Array String × Array String) := do
   for (g, why) in report.refused do
     lines := lines.push s!"  group refused: {g}: {why.take 160}"
   if let some e := report.error then errors := errors.push s!"no service: {e}"
-  unless report.blocks == ind.size do
-    errors := errors.push s!"{report.blocks} blocks asked for, {ind.size} hold an inductive"
+  let nBelow := (ind.filter fun (_, ms) => Ix.AuxGen.Source.holdsTypeBelow env.get? ms).size
+  unless report.blocks == nBelow do
+    errors := errors.push s!"{report.blocks} blocks asked for, {nBelow} hold an inductive and a \
+      Type-level .below"
+  unless alone.accepted == alone.blocks && alone.blocks == ind.size do
+    errors := errors.push s!"the service over every inductive block: {alone.summary}"
   unless report.accepted == report.blocks do
     errors := errors.push s!"{report.blocks - report.accepted} inductive blocks not accepted"
   unless report.groupsRefused == 0 && report.groupsBlocked == 0 do
     errors := errors.push s!"groups refused {report.groupsRefused}, blocked {report.groupsBlocked}"
-  unless alone.blocks == report.blocks && alone.accepted == report.accepted do
-    errors := errors.push s!"the service alone disagrees: {alone.summary}"
-  unless viewed == alone do
+  unless aloneBelow.blocks == report.blocks && aloneBelow.accepted == report.accepted do
+    errors := errors.push s!"the service alone disagrees: {aloneBelow.summary}"
+  unless viewed == aloneBelow do
     errors := errors.push s!"the service over the IO pipeline's view disagrees: {viewed.summary}"
   return (errors, lines)
 

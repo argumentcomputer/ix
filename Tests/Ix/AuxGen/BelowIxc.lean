@@ -3,15 +3,16 @@ import Ix.Meta
 import Ix.CompileDriver
 import Tests.Ix.AuxGen.FlatBlockSource
 
-/-! # `.below`'s levels from IxC Source mode (AuxGen M2a)
+/-! # `.below`'s levels from IxC Source mode (AuxGen M2a, M2b)
 
 `lake exe IxTests --ignored auxgen-below-ixc` (the fixtures) and
 `--ignored auxgen-below-initstd` (Init+Std, a measurement). The plan is
 `auxgen-m2.md`.
 
 AuxGen's `.below` asks its kernel the sort levels it emits into every
-Type-level `.below` value. AuxGen M2a answers them in IxC Source mode as well,
-over the Source service run ahead of the waves (`Ix.AuxGen.Source.RunAhead`,
+Type-level `.below` value. Since AuxGen M2b the compile driver answers them in
+IxC Source mode (`fallback`, safe blocks), over the Source service run ahead
+of the waves (`Ix.AuxGen.Source.RunAhead`,
 one snapshot per level of the schedule), with each block's own canonical flat
 block installed when its layout is not Lean's (`AuxKernel.withFlatBlock`).
 
@@ -22,17 +23,19 @@ block installed when its layout is not Lean's (`AuxKernel.withFlatBlock`).
    answer differs (the stop rule of `auxgen-m2.md` §3: a spelling change
    would move Lean's output without a Rust mirror). The counts are printed:
    queries, fast-path hits on each side, answered, refused, flat blocks.
-2. **The measurement fold's bytes.** `compileEnvFoldIxc` (the run-ahead, and
-   each tail's kernel the IxC arm) in each mode, against the production fold
-   (`compileEnvFold`), by their serialized environments. Asserted equal:
-   `shadow` (by construction), `fallback` (IxC's answers used: equal iff
-   every answer agrees), and `shadow` with the `.below`-only asks (lever P2).
-   Printed, not asserted: `failClosed` (IxC alone answers `.below`, so
-   `Ix.Tc` faults in less before `.brecOn` asks it; the M2b mode choice).
+2. **The fold's bytes in each mode.** `compileEnvFoldWithSource` under each
+   measurement setting (`AuxIxcOptions`), against production's
+   (`compileEnvFold`: `fallback`, the `.below` asks), by their serialized
+   environments. All asserted equal: `shadow` (`Ix.Tc`'s answers: production
+   gives the bytes `Ix.Tc` gives), `failClosed` (IxC alone: no refusal on
+   these corpora), and both again with every inductive block asked.
 3. **Init+Std only, timed**: the production fold and the measurement fold's
    compile phases, and the service's work alone
    (`Ix.AuxGen.Source.measure`: as it runs; lowering, then folding (lever
-   P1); the `.below`-only asks (lever P2)). -/
+   P1); the `.below`-only asks (lever P2)).
+
+Asserted besides: no IxC refusal on these corpora (`failClosed` would fail a
+block on one; production falls back to `Ix.Tc`). -/
 
 namespace Tests.Ix.AuxGen.BelowIxc
 
@@ -80,6 +83,12 @@ def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Nam
         if let .indc ind := c then return ind.all
       return #[]
     if originalAll.isEmpty then return none
+    -- an unsafe block's tail keeps `Ix.Tc`, as in the driver (`compileBlockWithAux`)
+    let unsafeBlock := cs.any fun
+      | .indc ind => ind.isUnsafe
+      | .recr rv => rv.isUnsafe
+      | .defn d => d.safety == .unsaf
+    if unsafeBlock then return none
     let inAll (n : Ix.Name) := originalAll.any (Ix.Compile.ExactKey.nameEq · n)
     let classes := (classNames.map (·.filter inAll)).filter (!·.isEmpty)
     if classes.isEmpty then return none
@@ -92,19 +101,19 @@ def tailStats (cenv : Ix.CompileM.CompileEnv) (lo : Ix.Name) (all : Array Ix.Nam
   | .error e => .error (toString e)
 
 /-- **Shadow agreement** over every block that holds an inductive, each over
-its level's snapshot of a run-ahead over the input: the counts summed, and
+its level's snapshot of a run-ahead over the input with production's asks: the counts summed, and
 the blocks whose tail failed. -/
 def shadow (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv : Ix.CompileM.CompileEnv) :
     IO (Ix.AuxGen.IxcStats × Array String) := do
   let levels := Ix.CompileM.scheduleLevels blocks (Ix.CompileM.FoldSchedule.of blocks)
-  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels .inductive
+  let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks levels ({} : Ix.CompileM.AuxIxcOptions).asks
   let mut total : Ix.AuxGen.IxcStats := {}
   let mut errors : Array String := #[]
   for (lo, members) in inductiveBlocks env blocks do
     let key := Ix.CompileM.blockKey lo ((blocks.blocks.get? lo).getD {})
     let some t := ra.runFor key
       | do errors := errors.push s!"{lo.pretty}: in no level of the schedule"; continue
-    let oracle := Ix.AuxGen.Ixc.oracleOfRun .shadow fun _ => t.get
+    let oracle := Ix.AuxGen.Ixc.oracleOfRun .shadow false (fun _ => t.get) (ra.membersFor key)
     match ← IO.lazyPure fun _ => tailStats cenv lo members oracle with
     | .error e => errors := errors.push s!"{lo.pretty}: aux generation: {e.take 200}"
     | .ok none => pure ()
@@ -121,7 +130,8 @@ def serialized (r : Except String (Ixon.Env × Nat × Ix.CompileM.CompileEnv)) :
 def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (expected : ByteArray) (width : Nat) : IO (Bool × String × Nat) := do
   let t0 ← IO.monoMsNow
-  let r ← IO.lazyPure fun _ => Ix.CompileM.compileEnvFoldIxc opts env blocks (width := width)
+  let r ← IO.lazyPure fun _ =>
+    Ix.CompileM.compileEnvFoldWithSource env blocks (width := width) (aux := opts)
   let t1 ← IO.monoMsNow
   match r with
   | .error e => return (false, s!"failed: {e.take 300}", t1 - t0)
@@ -133,9 +143,9 @@ def foldIxc (opts : Ix.CompileM.AuxIxcOptions) (env : Ix.Environment) (blocks : 
 /-- The modes the folds are compared in, with whether equality is asserted. -/
 def foldModes : Array (String × Ix.CompileM.AuxIxcOptions × Bool) :=
   #[("shadow", { mode := .shadow }, true),
-    ("fallback", { mode := .fallback }, true),
-    ("shadow, .below asks only", { mode := .shadow, asks := .below }, true),
-    ("failClosed", { mode := .failClosed }, false)]
+    ("failClosed", { mode := .failClosed }, true),
+    ("shadow, every inductive block asked", { mode := .shadow, asks := .inductive }, true),
+    ("failClosed, every inductive block asked", { mode := .failClosed, asks := .inductive }, true)]
 
 /-- Everything but the timing of the service alone, on one input. -/
 def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (width : Nat) :
@@ -151,7 +161,7 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
     production fold {t1 - t0} ms, {expected.size} bytes"
   for (name, opts, asserted) in foldModes do
     let (same, report, ms) ← foldIxc opts env blocks expected width
-    lines := lines.push s!"measurement fold, {name}: {ms} ms; \
+    lines := lines.push s!"fold, {name}: {ms} ms; \
       {if same then "bytes equal to production" else "bytes DIFFER from production"}; \
       run-ahead: {report}"
     if asserted && !same then errors := errors.push s!"{name}: the fold's bytes differ from production"
@@ -164,6 +174,9 @@ def evaluate (label : String) (env : Ix.Environment) (blocks : Ix.CondensedBlock
   if st.differ != 0 then
     errors := errors.push s!"{st.differ} IxC answers spelled differently from Ix.Tc's (stop rule)"
   if st.queries == 0 then errors := errors.push "no level question was asked"
+  if st.refused + st.scopesRefused + st.flatRefused != 0 then
+    errors := errors.push s!"IxC refused {st.refused} queries, {st.scopesRefused} scopes, \
+      {st.flatRefused} flat blocks (failClosed fails a block on one)"
   return (errors, lines)
 
 def report (errors lines : Array String) : IO (Bool × Nat × Nat × Option String) := do
