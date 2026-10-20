@@ -134,20 +134,26 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
     (aux := bstate.auxNameToAddr) (primary := bstate.blockNameToAddr)
-  -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0). AuxGen
-  -- M2a's measurement fold (`compileEnvFoldIxc`) gives the block an IxC
-  -- oracle for `.below` (`CompileEnv.auxOracle`, `none` in production), and
-  -- the tail's counts are traced.
+  -- The kernel AuxGen asks: `Ix.Tc` over the bridge (AuxGen M0), and for a
+  -- safe block's `.below` IxC Source mode through the fold's oracle (AuxGen
+  -- M2b, `CompileEnv.auxOracle`). An unsafe block is outside every statement
+  -- and Source mode declines unsafe inductives, so its tail keeps `Ix.Tc`.
+  -- Under a measurement mode (`IX_AUXGEN_IXC`) the tail's counts are traced.
+  let safe := cs.all fun
+    | .indc ind => !ind.isUnsafe
+    | .recr rv => !rv.isUnsafe
+    | .defn d => d.safety != .unsaf
   let kernel : Ix.AuxGen.AuxKernel :=
-    match cenv.auxOracle.bind (· lo) with
+    match if safe then cenv.auxOracle.bind (· lo) else none with
     | some oracle => .ixc maps oracle
     | none => .tc maps
   let ((auxLayout?, plans, brecPlans, belowPlans), kctx) ←
     (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
       maps kernel).run Ix.AuxGen.AuxKernelCtx.new
-  if kernel matches .ixc .. then
-    dbg_trace s!"{Ix.AuxGen.IxcStats.line lo kctx.ixcStats}"
-    pure ()
+  if let .ixc _ oracle := kernel then
+    if oracle.trace then
+      dbg_trace s!"{Ix.AuxGen.IxcStats.line lo kctx.ixcStats}"
+      pure ()
   return (blockResult, auxLayout?, plans, brecPlans, belowPlans)
 
 /-- Run `compileBlockWithAux` purely, returning the tail outputs and the
@@ -1181,16 +1187,17 @@ the byte legs and `compile-schedule-identity`'s reference schedule, which keeps
 the pre-pass). A failed seed block is now an ordinary block failure with its
 cascade, instead of an error of the whole compile.
 
-**The Source service** (AuxGen M1, AUXGEN-IXC §3.2): the fold carries IxC's
-Source-mode environment over its input (`Ix.AuxGen.Source.Chain`), read
-through the same lookups as the blocks (`get?`) and at the committed bundle's
-evidence. Each wave asks it for the wave's ready blocks, in key order, before
-their aux tails: a block that holds an inductive has its declaration groups
-folded, with everything they depend on, after everything asked before. The
-asks run on a task chain of their own, beside the waves' compiles; no outcome
-reads the service yet (the aux tails ask `Ix.Tc` until M2), so the compiled
-environment does not depend on it. `compileEnvFoldWithSource` waits for the
-chain at the end and returns what Source mode accepted
+**The Source service** (AuxGen M2b; AUXGEN-IXC §3.2, `auxgen-m2.md`): the fold
+runs IxC's Source-mode environment over its input **ahead of the waves**
+(`Ix.AuxGen.Source.RunAhead`), read through the same lookups as the blocks
+(`get?`) and at the committed bundle's evidence: from the start, level by
+level of the schedule (`scheduleLevels`), it folds the declaration groups of
+the blocks with a Type-level `.below`, with everything they depend on, and
+publishes the run after each level. Each such block's aux tail asks
+`.below`'s level questions of IxC over its level's run (`CompileEnv.auxOracle`,
+`AuxIxcOptions`: `fallback`, so IxC's answers are the compile's wherever IxC
+answers; a safe block only, an unsafe block's tail keeps `Ix.Tc`). `compileEnvFoldWithSource`
+waits for the run-ahead at the end and returns what Source mode accepted
 (`Ix.AuxGen.Source.Report`). -/
 
 /-- The aux-gen seeds the condensation holds. -/
@@ -1273,10 +1280,6 @@ structure FoldState where
   remaining : Nat := 0
   /-- Waves so far. -/
   waves : Nat := 0
-  /-- AuxGen M1: the Source service environment, asked for each wave's
-      blocks before their aux tails (`Ix.AuxGen.Source.Chain`). No outcome
-      reads it. -/
-  source : Ix.AuxGen.Source.Chain := default
 
 /-- The state before the first wave. -/
 def FoldState.init (cenv : CompileEnv) (blocks : Ix.CondensedBlocks)
@@ -1312,7 +1315,7 @@ def waveTasks (width : Nat) (snapshot : CompileEnv) (ready : Array (Name × Name
 /-- One wave. -/
 def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
     (dbg : Bool) (st : FoldState) : Except String FoldState := Id.run do
-  let { acc, settled, unmet, candidates, remaining, waves, source } := st
+  let { acc, settled, unmet, candidates, remaining, waves } := st
   let sourceOwned := blocks.lowLinks.contains
   -- 1. The ready blocks: the candidates the one readiness rule admits.
   let mut ready : Array (Name × Name × Set Name) := #[]
@@ -1334,9 +1337,6 @@ def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
     dbg_trace s!"  [Lean CompileAux] Wave {waves + 1}: {ready.size} blocks ready, \
 {remaining - ready.size} after it"
     pure ()
-  -- AuxGen M1: the Source service is asked for the ready blocks, in key
-  -- order, before their tails, on its own task chain; no outcome reads it.
-  let source := source.ask ready
   -- 2. The outcomes against the wave's snapshot, on tasks; 3. applied in key
   -- order, each chunk as soon as the chunks before it are done.
   let tasks := waveTasks width acc.cenv ready
@@ -1361,7 +1361,7 @@ def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
         | some k => unmet := unmet.insert w (k - 1)
         | none => pure ()
   return .ok { acc, settled, unmet, candidates := next,
-               remaining := remaining - ready.size, waves := waves + 1, source }
+               remaining := remaining - ready.size, waves := waves + 1 }
 
 /-- The waves, at most `fuel` of them (every wave compiles at least one block). -/
 def foldWaves (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)
@@ -1376,80 +1376,12 @@ blocks - circular dependency?"
       | .error e => .error e
       | .ok st' => foldWaves blocks sched width dbg fuel st'
 
-/-- **The driver.** Compile an environment's condensation with the full
-    production semantics (per-block aux tails with their call-site plans, the
-    promotion route with the original-form compile into `Named.original`, the
-    cross-SCC subsets, claims and fail-closed promotion), as a fold over waves
-    (see the section docstring). Per-block failures are recorded per member in
-    `ungrounded`, and dependents cascade into `MissingConstant` failures,
-    mirroring env.rs:727-737. The compile itself fails on a condensation
-    block without references, on an input inductive group with non-canonical
-    flags, on a mutual block of mixed safety, and on a schedule that cannot
-    finish.
-
-    The fold reads constants only through `Ix.Environment.get?`: it runs over
-    a lookup view of `env` whose map is empty, so a materialized environment
-    and a hybrid one with the same lookups (the IO pipeline's, whose theorem
-    and opaque bodies come from `fallback?`) compile alike. `unmaterialized`
-    counts the input constants `env.consts` does not hold; the view carries
-    `env.consts.size + unmaterialized`, so the source-claim walk's bound is
-    the same either way. The returned `CompileEnv` holds `env` and
-    `unmaterialized` again.
-
-    With the compiled environment it returns what the Source service said of
-    the inductive blocks (AuxGen M1, see the section docstring): the service
-    reads the input through the same view's `get?`, and nothing compiled
-    depends on it. -/
-def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (dbg : Bool := false)
-    (unmaterialized : Nat := 0)
-    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    (width : Nat := foldWaveTasks)
-    : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
-  if let some msg := missingBlockRefs? blocks then throw msg
-  validateInductiveFlags env
-  validateMutualSafety env blocks
-  let sched := FoldSchedule.of blocks
-  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
-  let st₀ := { FoldState.init cenv₀ blocks sched with
-    source := Ix.AuxGen.Source.Chain.start cenv₀.env.get? blocks }
-  let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) st₀
-  let (ixe, bytes, cenv) := assembleEnv st.acc
-  return ((ixe, bytes, { cenv with env, unmaterialized }), st.source.report)
-
-/-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
-def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (dbg : Bool := false)
-    (unmaterialized : Nat := 0)
-    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
-    (width : Nat := foldWaveTasks)
-    : Except String (Ixon.Env × Nat × CompileEnv) :=
-  Prod.fst <$> compileEnvFoldWithSource env blocks dbg unmaterialized sharingLimits width
-
-/-! ## AuxGen M2a: the measurement fold (never the default)
-
-`compileEnvFoldIxc` is `compileEnvFoldWithSource` with two changes, for
-AuxGen M2a's measurements (`auxgen-m2.md` §2, §6):
-* the Source service runs **ahead of the waves**, from the start, level by
-  level of the fold's schedule (`scheduleLevels`,
-  `Ix.AuxGen.Source.RunAhead`), and the M1 chain is not started;
-* each block's aux tail asks `.below`'s level questions of **IxC** over its
-  level's snapshot (`CompileEnv.auxOracle`, `Ix.AuxGen.Ixc.oracleOfRun`), in
-  `AuxIxcOptions.mode`, and traces its counts.
-
-Under `shadow` the compiled environment is `compileEnvFold`'s, by
-construction (`Ix.Tc` answers every question as in production). The IO
-pipeline runs it when `DriverOptions.auxIxc` is set (the CLI's
-`IX_AUXGEN_IXC`); nothing else does, and `Ix.Cert.compile` does not reach it. -/
-
 /-- The fold's schedule as levels: the blocks with no source-owned
 dependency, then the blocks whose source-owned dependencies are all in
 earlier levels, and so on (the waves of a fold in which every block is ready
 as soon as its dependencies settle); `(canonical key, representative,
 members)`, in key order within a level. A block in a dependency cycle is
-in no level. -/
+in no level. The Source service's run-ahead asks in this order. -/
 def scheduleLevels (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
     Array (Array (Name × Name × Set Name)) := Id.run do
   let mut unmet : Std.HashMap Name Nat := {}
@@ -1477,38 +1409,79 @@ def scheduleLevels (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) :
     current := next
   return out
 
-/-- AuxGen M2a's measurement mode (`DriverOptions.auxIxc`). -/
+/-- **How the fold's aux tails ask IxC** (AuxGen M2). The defaults are
+production's: `fallback` (IxC's answers to `.below`'s level questions are the
+compile's wherever IxC answers; `Ix.Tc` answers behind a refusal, which a
+selected closure without what Source mode needs can meet), no trace, and the
+Source service asks only for the blocks with a Type-level `.below`
+(`Asks.below`, lever P2). Other settings are AuxGen's measurement modes (the
+CLI's `IX_AUXGEN_IXC`, which also traces each tail's counts): `shadow`
+(`Ix.Tc`'s answers, compared), `failClosed`, the asks of every block that
+holds an inductive, and `measureOnly` (the service's work timed alone,
+`Ix.AuxGen.Source.measure`; the pipeline then compiles nothing). Whatever the
+setting, an unsafe block's tail asks `Ix.Tc` (`compileBlockWithAux`). -/
 structure AuxIxcOptions where
-  /-- how the tails use IxC's answers -/
-  mode : Ix.AuxGen.IxcMode := .shadow
-  /-- which blocks the run-ahead asks for (lever P2) -/
-  asks : Ix.AuxGen.Source.Asks := .inductive
-  /-- time the service's work alone instead of compiling (levers P1, P2;
-  `Ix.AuxGen.Source.measure`) -/
+  mode : Ix.AuxGen.IxcMode := .fallback
+  asks : Ix.AuxGen.Source.Asks := .below
+  trace : Bool := false
   measureOnly : Bool := false
   deriving Inhabited
 
-/-- **The measurement fold** (see the section docstring): the compiled
-environment, and the run-ahead's report. -/
-def compileEnvFoldIxc (opts : AuxIxcOptions) (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+/-- **The driver.** Compile an environment's condensation with the full
+    production semantics (per-block aux tails with their call-site plans, the
+    promotion route with the original-form compile into `Named.original`, the
+    cross-SCC subsets, claims and fail-closed promotion), as a fold over waves
+    (see the section docstring). Per-block failures are recorded per member in
+    `ungrounded`, and dependents cascade into `MissingConstant` failures,
+    mirroring env.rs:727-737. The compile itself fails on a condensation
+    block without references, on an input inductive group with non-canonical
+    flags, on a mutual block of mixed safety, and on a schedule that cannot
+    finish.
+
+    The fold reads constants only through `Ix.Environment.get?`: it runs over
+    a lookup view of `env` whose map is empty, so a materialized environment
+    and a hybrid one with the same lookups (the IO pipeline's, whose theorem
+    and opaque bodies come from `fallback?`) compile alike. `unmaterialized`
+    counts the input constants `env.consts` does not hold; the view carries
+    `env.consts.size + unmaterialized`, so the source-claim walk's bound is
+    the same either way. The returned `CompileEnv` holds `env` and
+    `unmaterialized` again.
+
+    With the compiled environment it returns what the Source service said of
+    the blocks it was asked for (AuxGen M2b, see the section docstring). The
+    service reads the input through the same view's `get?`. `aux` is the
+    production setting by default (`fallback`, the `.below` asks); other
+    settings are AuxGen's measurement modes (`IX_AUXGEN_IXC`). -/
+def compileEnvFoldWithSource (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (dbg : Bool := false)
     (unmaterialized : Nat := 0)
     (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
     (width : Nat := foldWaveTasks)
+    (aux : AuxIxcOptions := {})
     : Except String ((Ixon.Env × Nat × CompileEnv) × Ix.AuxGen.Source.Report) := do
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) opts.asks
+  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) aux.asks
   let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
-    (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun opts.mode fun _ => t.get
+    (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get)
+      (ra.membersFor key)
   let cenv₀ := { CompileEnv.new view with
     unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
   let st ← foldWaves blocks sched width dbg (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) := assembleEnv st.acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
+
+/-- **The driver**: `compileEnvFoldWithSource`'s compiled environment. -/
+def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (dbg : Bool := false)
+    (unmaterialized : Nat := 0)
+    (sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits)
+    (width : Nat := foldWaveTasks)
+    : Except String (Ixon.Env × Nat × CompileEnv) :=
+  Prod.fst <$> compileEnvFoldWithSource env blocks dbg unmaterialized sharingLimits width
 
 /-- The first name, in `Ix.nameCompare` order, whose published address
     differs from a reference's (the wave driver's fail-fast `rustRef` check,
@@ -1539,8 +1512,8 @@ structure DriverOptions where
       caller (the CLI reads the process's resident set size); `none` prints
       none. -/
   memory : Option (IO String) := none
-  /-- AuxGen M2a's measurement mode (`compileEnvFoldIxc`; the CLI's
-      `IX_AUXGEN_IXC`); `none`, the production fold, by default. -/
+  /-- AuxGen's measurement modes (`AuxIxcOptions`; the CLI's
+      `IX_AUXGEN_IXC`); `none`, production's setting, by default. -/
   auxIxc : Option AuxIxcOptions := none
 
 
@@ -1745,8 +1718,9 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     { consts := codeConsts, fallback? := some fallback }
   if dbg then
     IO.println s!"  [Lean CompileAux] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
-  -- AuxGen M2a's measurement mode (`opts.auxIxc`, never the default): the
-  -- service's work timed alone, or the measurement fold.
+  -- AuxGen's measurement modes (`opts.auxIxc`, the CLI's `IX_AUXGEN_IXC`;
+  -- `none` is production's setting): the service's work timed alone, or the
+  -- fold under another setting (`AuxIxcOptions`).
   if let some aux := opts.auxIxc then
     if aux.measureOnly then
       let view : Ix.Environment := { consts := {}, fallback? := some ixEnv.get? }
@@ -1754,15 +1728,10 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
       for line in ← Ix.AuxGen.Source.measure view.get? condensed levels do IO.println line
       return .error "AuxGen M2a: service measured (IX_AUXGEN_IXC=measure); nothing compiled"
   let folded ← IO.lazyPure fun _ =>
-    match opts.auxIxc with
-    | some aux =>
-      compileEnvFoldIxc aux ixEnv condensed (dbg := dbg)
-        (unmaterialized := leanByIx.size - codeConsts.size)
-        (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
-    | none =>
-      compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
-        (unmaterialized := leanByIx.size - codeConsts.size)
-        (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
+    compileEnvFoldWithSource ixEnv condensed (dbg := dbg)
+      (unmaterialized := leanByIx.size - codeConsts.size)
+      (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
+      (aux := opts.auxIxc.getD {})
   match folded with
   | .error e => return .error e
   | .ok ((ixonEnv, _, cenv), source) =>

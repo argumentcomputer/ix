@@ -178,7 +178,7 @@ def cap : Nat := 4
 def sample (st : IxcStats) (msg : String) : IxcStats :=
   if st.samples.size < cap then { st with samples := st.samples.push msg } else st
 
-/-- The tail's one line (the measurement fold traces it per block). -/
+/-- The tail's one line (traced per block under a measurement mode). -/
 def line (key : Name) (st : IxcStats) : String :=
   s!"[auxgen-ixc] {key.pretty}: queries {st.queries} tcFast {st.tcFast} ixcFast {st.ixcFast} \
     answered {st.answered} equal {st.equal} differ {st.differ} refused {st.refused} \

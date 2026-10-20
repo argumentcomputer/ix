@@ -11,8 +11,8 @@
   backend, `Ix.Tc` through the bridge (`Ix.AuxGen.Kernel`), constructed at
   `compileMutualAuxTail`'s caller and the decompile driver's `runK`. AuxGen
   M2a adds IxC's Source mode beside it for `.below`'s scopes (the `ixc` arm,
-  in the modes `shadow`, `fallback`, `failClosed`; below), which only the
-  measurement fold constructs.
+  in the modes `shadow`, `fallback`, `failClosed`; below); since M2b the
+  compile driver gives a safe block's tail the `ixc` arm in `fallback`.
 
   ## The contract
 
@@ -73,18 +73,19 @@
   only read state. So the switch is byte-identical, and the runtime closure
   of `Ix.Cert.compile` is unchanged (dispatch is ordinary code).
 
-  ## The IxC arm (AuxGen M2a, a measurement mode)
+  ## The IxC arm (AuxGen M2a; the compile driver's since M2b)
 
   `ixc maps oracle` is `Ix.Tc` over `maps` for every generator, except the
   scopes a generator opens with `route := .below` (`.below`'s two scopes),
   which ask IxC Source mode through `oracle` (`Ix.AuxGen.Oracle`), in the
   oracle's mode (`IxcMode`):
   * `shadow`: both kernels answer every question; `Ix.Tc`'s answer is used.
-  * `fallback`: both answer; IxC's answer is used where it answers.
+  * `fallback`: both answer; IxC's answer is used where it answers
+    (production's mode).
   * `failClosed`: IxC alone; a refusal fails the block.
 
-  The arm only calls the oracle's closures, so no production path reaches
-  IxC through it (`Ix.AuxGen.Oracle`'s docstring). Under `shadow` and
+  The arm only calls the oracle's closures (`Ix.AuxGen.Oracle`'s
+  docstring). Under `shadow` and
   `fallback` the `Ix.Tc` scope is opened, pushed, popped and asked exactly as
   on the `Ix.Tc` arm, so `Ix.Tc`'s environment evolves as in production. Each
   question is counted in `AuxKernelCtx.ixcStats`.
@@ -111,8 +112,8 @@ open Ix.CompileM (CompileM CompileError)
 inductive AuxKernel where
   /-- `Ix.Tc` over the bridge kenv; `maps` gives provisional addresses. -/
   | tc (maps : AddrMaps)
-  /-- AuxGen M2a's measurement mode: `Ix.Tc` over `maps`, and IxC Source mode
-      through `oracle` for the scopes routed to it (`AuxRoute.below`). -/
+  /-- AuxGen M2: `Ix.Tc` over `maps`, and IxC Source mode through `oracle`
+      for the scopes routed to it (`AuxRoute.below`). -/
   | ixc (maps : AddrMaps) (oracle : AuxOracle)
 
 /-- The addresses `Ix.Tc` resolves through. -/

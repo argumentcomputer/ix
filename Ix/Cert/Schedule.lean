@@ -36,10 +36,10 @@ here.
 
 The driver is restated with its apply step as a parameter
 (`foldWaveWith`), by `rfl` (`foldWave_eq_with`): an edit of `foldWave`
-breaks the build here until the restatement follows. The wave's ask of the
-Source service (AuxGen M1, `source.ask ready`) is restated verbatim; no
-outcome reads it, and `compileEnvFold` is `compileEnvFoldWithSource`'s first
-component (`compileEnvFoldSeq` likewise). -/
+breaks the build here until the restatement follows. `compileEnvFold` is
+`compileEnvFoldWithSource`'s first component (`compileEnvFoldSeq`
+likewise), whose Source service runs ahead of the waves and whose oracle the
+aux tails read (AuxGen M2b): restated verbatim. -/
 
 namespace Ix.Cert.Schedule
 
@@ -142,7 +142,7 @@ key order and the settling are `foldWave`'s, verbatim; the wave's outcomes
 are applied by `apply snapshot ready`. -/
 def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → DriverAcc → DriverAcc)
     (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState) : Except String FoldState := Id.run do
-  let { acc, settled, unmet, candidates, remaining, waves, source } := st
+  let { acc, settled, unmet, candidates, remaining, waves } := st
   let sourceOwned := blocks.lowLinks.contains
   let mut ready : Array (Name × Name × Set Name) := #[]
   let mut parked : Array Name := #[]
@@ -159,7 +159,6 @@ def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → Dr
   if ready.isEmpty then
     return .error s!"Circular dependency detected: {remaining} blocks remaining but none ready"
   ready := ready.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
-  let source := source.ask ready
   let acc := apply acc.cenv ready acc
   let mut settled := settled
   let mut unmet := unmet
@@ -177,7 +176,7 @@ def foldWaveWith (apply : CompileEnv → Array (Name × Name × Set Name) → Dr
         | some k => unmet := unmet.insert w (k - 1)
         | none => pure ()
   return .ok { acc, settled, unmet, candidates := next,
-               remaining := remaining - ready.size, waves := waves + 1, source }
+               remaining := remaining - ready.size, waves := waves + 1 }
 
 /-- `foldWave` is its restatement with the tasks' apply step, for either
 `dbg` (the trace is `dbgTrace`, whose value is its continuation's). -/
@@ -239,13 +238,16 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   validateMutualSafety env blocks
   let sched := FoldSchedule.of blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let aux : AuxIxcOptions := {}
+  let ra := Ix.AuxGen.Source.RunAhead.start view.get? blocks (scheduleLevels blocks sched) aux.asks
+  let oracle : Name → Option Ix.AuxGen.AuxOracle := fun key =>
+    (ra.runFor key).map fun t => Ix.AuxGen.Ixc.oracleOfRun aux.mode aux.trace (fun _ => t.get)
+      (ra.membersFor key)
   let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
-  let st₀ := { FoldState.init cenv₀ blocks sched with
-    source := Ix.AuxGen.Source.Chain.start cenv₀.env.get? blocks }
-  let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) st₀
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits, auxOracle := some oracle }
+  let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) := assembleEnv st.acc
-  return ((ixe, bytes, { cenv with env, unmaterialized }), st.source.report)
+  return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none }), ra.report)
 
 /-- **The driver, sequentially**: `compileEnvFold` with its waves
 sequential (`foldWavesSeq`). It has no `width` and no `dbg`. -/

@@ -245,13 +245,14 @@ def installOwnFlat (svc : Service) (classes : Array (Array Name)) (originalAll :
   | _ => throw "flat block not recorded"
 
 /-- **One block's oracle** over a service, given lazily (`svc ()` is asked at
-the first question; the drivers' snapshot is a task), in `mode`, with `fuel`
-flat-block installs left. -/
-def oracleOf (mode : IxcMode) : Nat → (Unit → Except String Service) → AuxOracle
+the first question; the drivers' snapshot is a task), in `mode` (tracing the
+tail's counts under `trace`), with `fuel` flat-block installs left. -/
+def oracleOf (mode : IxcMode) (trace : Bool) : Nat → (Unit → Except String Service) → AuxOracle
   | 0, _ =>
-    .mk mode (fun _ _ => .error "oracle fuel exhausted") (fun _ _ _ => .error "oracle fuel exhausted")
+    .mk mode trace (fun _ _ => .error "oracle fuel exhausted")
+      (fun _ _ _ => .error "oracle fuel exhausted")
   | n + 1, svc =>
-    .mk mode
+    .mk mode trace
       (fun lps locals => do
         let svc ← svc ()
         let s ← Scope.new svc.env lps
@@ -261,11 +262,16 @@ def oracleOf (mode : IxcMode) : Nat → (Unit → Except String Service) → Aux
         let svc ← svc ()
         match ← installOwnFlat svc classes originalAll canonicalRecs with
         | none => pure none
-        | some svc' => pure (some (oracleOf mode n fun _ => .ok svc')))
+        | some svc' => pure (some (oracleOf mode trace n fun _ => .ok svc')))
 
-/-- The oracle over the snapshot `run` (a run of the drivers' service). -/
-def oracleOfRun (mode : IxcMode) (run : Unit → Source.Run) : AuxOracle :=
-  oracleOf mode oracleFuel fun _ => (run ()).service
+/-- **One block's oracle over the snapshot `run`** (a run of the drivers'
+service), with the block's `members` folded first (`Service.ensureNames`): a
+no-op when the run asked for the block, and otherwise its groups and what they
+depend on, folded on this block's copy of the snapshot, so a block the asks
+did not select is still answered. `trace`: the tail traces its counts. -/
+def oracleOfRun (mode : IxcMode) (trace : Bool) (run : Unit → Source.Run) (members : Array Name) :
+    AuxOracle :=
+  oracleOf mode trace oracleFuel fun _ => (run ()).service.map (·.ensureNames members)
 
 end Ix.AuxGen.Ixc
 

@@ -13,7 +13,7 @@ flat blocks of the blocks whose canonical layout is not Lean's
 (`Ix.AuxGen.Flat`), read through their class map σ. Its checked half (the
 fold, the evidence, σ, terms in, installs) is `Ix.AuxGen.Source.SourceEnv`;
 this file builds it from the compiler's input, and carries it through the
-compile drivers (`Chain`, below).
+compile drivers (`RunAhead`, below).
 
 ## Shape
 
@@ -62,16 +62,18 @@ groups depend on, is about 7 % of Init+Std's groups).
 * **Generated definitions** (`Service.admitDefinition`): the groups they
   reference folded, then `SourceEnv.admitDefinition`.
 
-## In the compile drivers (AuxGen M1)
+## In the compile drivers (AuxGen M2b)
 
-The wave fold (`Ix.CompileM.compileEnvFold`) carries the service as a
-`Chain`: one task per wave, which asks for the wave's ready blocks in key
-order after the previous wave's asks, before the wave's aux tails, on a
-dedicated thread beside the wave's compile. A block is asked for when it
-holds an inductive (`holdsInductive`): its groups are folded, with what they
-depend on. No tail reads the service yet (the `AuxKernel` stays `Ix.Tc`'s
-until M2), so no compiled byte depends on it; the fold joins the chain at its
-end and reports what Source mode accepted (`Report`).
+The wave fold (`Ix.CompileM.compileEnvFoldWithSource`) runs the service
+**ahead of the waves** (`RunAhead`): from the start, on a dedicated thread,
+it asks level by level of the fold's schedule for the blocks with a
+Type-level `.below` (`Asks.below`, `holdsTypeBelow`: the blocks whose tails
+ask IxC), and publishes the run after each level. Each such block's aux tail
+asks `.below`'s level questions of IxC over its level's snapshot
+(`Ix.AuxGen.Oracle`, `Ix.AuxGen.Ixc`); the fold joins the run-ahead at its
+end and reports what Source mode accepted (`Report`). (AuxGen M1 asked for
+every block that holds an inductive, on a task chain driven by the waves,
+and no tail read it.)
 
 ## What it is not
 
@@ -783,32 +785,7 @@ def report (r : Run) : Report :=
 
 end Run
 
-/-- **The service as the wave fold threads it**: a task per wave, which asks
-for that wave's blocks after the previous wave's asks, on a dedicated thread
-beside the wave's compile. Its value is the asks' fold:
-`(Task.map f t).get = f t.get`, `(Task.spawn f).get = f ()`. -/
-structure Chain where
-  task : Task Run
-
-instance : Inhabited Chain := ⟨⟨.pure default⟩⟩
-
-namespace Chain
-
-/-- The service over the drivers' input (`get?`, the condensation). -/
-def start (get? : Ix.Name → Option Ix.ConstantInfo) (blocks : Ix.CondensedBlocks) : Chain :=
-  ⟨Task.spawn (prio := .dedicated) fun _ => Run.start { get? := get?, blocks := blocks }⟩
-
-/-- Ask for a wave's ready blocks (key, representative, members), in the
-order given, after everything asked before. -/
-def ask (c : Chain) (ready : Array (Ix.Name × Ix.Name × Ix.Set Ix.Name)) : Chain :=
-  ⟨c.task.map (prio := .dedicated) (·.ask ready)⟩
-
-/-- Wait for every ask; the report. -/
-def report (c : Chain) : Report := c.task.get.report
-
-end Chain
-
-/-! ## The run-ahead (AuxGen M2a, a measurement mode)
+/-! ## The run-ahead (AuxGen M2a; the drivers' since M2b)
 
 M2's aux tails read the service, so its asks cannot wait for the waves: a
 wave's tails would wait for that wave's asks, and the waves would run at the
@@ -854,41 +831,59 @@ def askWhere (asks : Asks) (r : Run) (ready : Array (Ix.Name × Ix.Name × Ix.Se
 
 end Run
 
+/-- The constants AuxGen's `.below` names besides a block's own: `PUnit` and
+`PProd`, which `Ix.Tc`'s bridge admits by hand (`ensurePreludeInKenvOf`). The
+run-ahead folds their groups first, so every snapshot holds them. -/
+def auxPreludeNames : Array Ix.Name :=
+  #[Ix.Name.mkStr .mkAnon "PUnit", Ix.Name.mkStr .mkAnon "PProd"]
+
+/-- The run with the groups claiming `names` folded, with their dependencies. -/
+def Run.ensureNames (r : Run) (names : Array Ix.Name) : Run :=
+  { r with service := r.service.map (·.ensureNames names) }
+
 /-- **The service run ahead of the waves**: the run before any ask, then the
 run after each level's asks. -/
 structure RunAhead where
   /-- `levels[0]` before any ask; `levels[i + 1]` after level `i`'s -/
   levels : Array (Task Run)
-  /-- each block's level, by canonical key -/
-  levelOf : Std.HashMap NameKey Nat
+  /-- each block's level and members, by canonical key -/
+  levelOf : Std.HashMap NameKey (Nat × Ix.Set Ix.Name)
 
 instance : Inhabited RunAhead := ⟨{ levels := #[], levelOf := {} }⟩
 
 namespace RunAhead
 
-/-- Start the service over the input (`get?`, the condensation) and ask, on a
-dedicated thread, level by level (`(canonical key, representative,
-members)`, key order within a level), the blocks `asks` selects. -/
+/-- Start the service over the input (`get?`, the condensation), fold
+`auxPreludeNames`, and ask, on a dedicated thread, level by level
+(`(canonical key, representative, members)`, key order within a level), the
+blocks `asks` selects. -/
 def start (get? : Ix.Name → Option Ix.ConstantInfo) (blocks : Ix.CondensedBlocks)
     (levels : Array (Array (Ix.Name × Ix.Name × Ix.Set Ix.Name))) (asks : Asks) : RunAhead :=
   Id.run do
     let t₀ : Task Run :=
-      Task.spawn (prio := .dedicated) fun _ => Run.start { get? := get?, blocks := blocks }
+      Task.spawn (prio := .dedicated) fun _ =>
+        (Run.start { get? := get?, blocks := blocks }).ensureNames auxPreludeNames
     let mut tasks : Array (Task Run) := #[t₀]
-    let mut levelOf : Std.HashMap NameKey Nat := {}
+    let mut levelOf : Std.HashMap NameKey (Nat × Ix.Set Ix.Name) := {}
     let mut t := t₀
     for (level, i) in levels.zipIdx do
       t := t.map (prio := .dedicated) (·.askWhere asks level)
       tasks := tasks.push t
-      for (key, _, _) in level do
-        levelOf := levelOf.insert ⟨key⟩ i
+      for (key, _, all) in level do
+        levelOf := levelOf.insert ⟨key⟩ (i, all)
     return { levels := tasks, levelOf }
 
 /-- The run a block's tail reads: the run after its level's asks, by the
 block's canonical key; `none` for a block the schedule does not place. -/
 def runFor (ra : RunAhead) (key : Ix.Name) : Option (Task Run) := do
-  let i ← ra.levelOf.get? ⟨key⟩
+  let (i, _) ← ra.levelOf.get? ⟨key⟩
   ra.levels[i + 1]?
+
+/-- A block's members (sorted by name), by its canonical key. -/
+def membersFor (ra : RunAhead) (key : Ix.Name) : Array Ix.Name :=
+  match ra.levelOf.get? ⟨key⟩ with
+  | some (_, all) => all.toArray.qsort (nameCmp · · == .lt)
+  | none => #[]
 
 /-- Wait for every ask; the report. -/
 def report (ra : RunAhead) : Report :=

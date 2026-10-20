@@ -118,9 +118,9 @@ structure CompileEnv where
       which the CLI parses from `IX_SHARING_LIMITS`). Limits decide only whether a block
       compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
-  /-- AuxGen M2a's measurement fold only (`compileEnvFoldIxc`; `none` in every
-      production run): the IxC oracle a block's aux tail asks `.below`'s
-      levels of, by the block's canonical key (`Ix.AuxGen.Oracle`). -/
+  /-- AuxGen M2: the IxC oracle a block's aux tail asks `.below`'s levels of,
+      by the block's canonical key (`Ix.AuxGen.Oracle`), set by the wave fold
+      (`compileEnvFoldWithSource`); `none` outside it. -/
   auxOracle : Option (Name → Option Ix.AuxGen.AuxOracle) := none
 
 /-- Initialize global state from canonicalization result. -/

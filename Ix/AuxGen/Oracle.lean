@@ -1,7 +1,7 @@
 /-
-  Ix.AuxGen.Oracle: the IxC oracle AuxGen's `.below` asks in AuxGen M2a's
-  measurement mode, as closures over Lean terms (AuxGen on IxC, M2a;
-  AUXGEN-IXC §3.2–§3.3; the plan is `auxgen-m2.md`).
+  Ix.AuxGen.Oracle: the IxC oracle AuxGen's `.below` asks, as closures over
+  Lean terms (AuxGen on IxC, M2a and M2b; AUXGEN-IXC §3.2–§3.3; the plan is
+  `auxgen-m2.md`).
 
   ## Why closures
 
@@ -10,18 +10,19 @@
   block's own canonical flat block installed. Its implementation
   (`Ix.AuxGen.Ixc`) runs IxC's cached checker. AuxGen asks it through this
   module's two object types, whose operations are closures over Lean terms
-  and levels only, for two reasons:
-  * **The compile environment holds it.** The measurement fold
-    (`Ix.CompileM.compileEnvFoldIxc`) gives each block's aux tail its oracle
-    through `CompileEnv.auxOracle`. `Ix.CompileM` cannot import IxC's kernel
+  and levels only:
+  * **The compile environment holds it.** The wave fold
+    (`Ix.CompileM.compileEnvFoldWithSource`) gives each block's aux tail its
+    oracle through `CompileEnv.auxOracle`. `Ix.CompileM` cannot import IxC's kernel
     or the Source ingress: the kernel would make every IxC edit rebuild the
     compiler, and `Ix.LeanIngress.Expr` would enter the compiled-code
     audit's scope (`IxSharingVerify/Audit/CompiledCode.lean`). This module
     imports only `Ix.Environment`.
-  * **No production path reaches IxC through it.** AuxGen's IxC arm
-    (`Ix.AuxGen.AuxKernel.ixc`) only calls these closures, and only the
-    measurement fold and the tests build them. So the runtime closure of
-    `Ix.Cert.compile` (`Ix/Cert/RuntimeAudit.lean`) reaches no oracle code.
+  * **AuxGen asks no more than these.** AuxGen's IxC arm
+    (`Ix.AuxGen.AuxKernel.ixc`) only calls the closures; the fold builds
+    them (`Ix.AuxGen.Ixc.oracleOfRun`), so `Ix.Cert.compile` reaches IxC's
+    checker through the fold (`Ix/Cert/RuntimeAudit.lean`), not through
+    AuxGen.
 
   ## The objects
 
@@ -55,10 +56,13 @@ inductive IxcMode where
   /-- Both kernels answer; IxC's answer is used where IxC answers, `Ix.Tc`'s
   where it refuses. `Ix.Tc` still answers every query, so its environment
   evolves as in production (`Ix.Tc`'s later answers depend on what it has
-  faulted in). -/
+  faulted in). Production's mode (AuxGen M2b), for safe blocks: IxC's answers
+  are the compile's wherever IxC answers, and a Source coverage gap (a
+  selected closure without what Source mode needs) still compiles. -/
   | fallback
   /-- IxC alone answers `.below`'s questions; a refusal fails the block.
-  `Ix.Tc` is not asked them. -/
+  `Ix.Tc` is not asked them. Not production's until Source mode covers every
+  input the compiler takes (closures included). -/
   | failClosed
   deriving BEq, Inhabited, Repr
 
@@ -109,8 +113,9 @@ end OracleScope
 
 /-- **One block's IxC oracle** (AuxGen M2a).
 
-`mk mode newScope withFlat`:
+`mk mode trace newScope withFlat`:
 * `mode`: how AuxGen uses the answers;
+* `trace`: whether the tail traces its counts (the measurement modes);
 * `newScope lps locals`: a context over the level parameters `lps` and the
   outer locals `(fvarName, domain)`, outermost first;
 * `withFlat classes originalAll canonicalRecs`: the block's own canonical
@@ -118,7 +123,7 @@ end OracleScope
   `all`), Lean's `all` and its canonical recursors: the oracle after it, or
   `none` when the block's layout is Lean's and nothing is installed. -/
 inductive AuxOracle where
-  | mk (mode : IxcMode)
+  | mk (mode : IxcMode) (trace : Bool)
       (newScope : Array Name → Array (Name × Expr) → Except String OracleScope)
       (withFlat : Array (Array Name) → Array Name → Array (Name × RecursorVal) →
         Except String (Option AuxOracle))
@@ -126,14 +131,17 @@ inductive AuxOracle where
 namespace AuxOracle
 
 def mode : AuxOracle → IxcMode
-  | .mk m _ _ => m
+  | .mk m _ _ _ => m
+
+def trace : AuxOracle → Bool
+  | .mk _ t _ _ => t
 
 def newScope : AuxOracle → Array Name → Array (Name × Expr) → Except String OracleScope
-  | .mk _ f _ => f
+  | .mk _ _ f _ => f
 
 def withFlat : AuxOracle → Array (Array Name) → Array Name → Array (Name × RecursorVal) →
     Except String (Option AuxOracle)
-  | .mk _ _ f => f
+  | .mk _ _ _ f => f
 
 end AuxOracle
 
