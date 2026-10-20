@@ -41,17 +41,39 @@ variable {md md' md'' : Mode}
 
 /-! ## Keys -/
 
+/-- **A key scope**: the input ids a run may meet (`id`, what the renaming
+is injective on) and the roles it may read (`role`). The renaming walk
+allows every role (`KeyScope.ofId`); the union of two lists allows, at each
+step, the roles the left run has installed. -/
+structure KeyScope (md : Mode) where
+  id : md.Id → Prop
+  role : Role → Prop
+
+instance : CoeFun (KeyScope md) (fun _ => md.Id → Prop) := ⟨KeyScope.id⟩
+
+/-- The scope of an id predicate: every role allowed. -/
+def KeyScope.ofId (P : md.Id → Prop) : KeyScope md := ⟨P, fun _ => True⟩
+
+/-- An id predicate is the scope allowing every role. -/
+instance : Coe (md.Id → Prop) (KeyScope md) := ⟨KeyScope.ofId⟩
+
+@[simp] theorem KeyScope.ofId_id (P : md.Id → Prop) (i : md.Id) : (KeyScope.ofId P) i ↔ P i :=
+  Iff.rfl
+@[simp] theorem KeyScope.ofId_role (P : md.Id → Prop) (r : Role) :
+    (KeyScope.ofId (md := md) P).role r :=
+  trivial
+
 /-- **A good key**: every input id it names satisfies `P`. A role key names
 no id; a derived key names its base's. -/
-def Key.Good (P : md.Id → Prop) : Key md → Prop
+def Key.Good (P : KeyScope md) : Key md → Prop
   | .id i => P i
-  | .role _ => True
+  | .role r => P.role r
   | .aux k _ => Key.Good P k
 
-@[simp] theorem Key.good_id {P : md.Id → Prop} {i : md.Id} : (Key.id i).Good P ↔ P i := Iff.rfl
-@[simp] theorem Key.good_role {P : md.Id → Prop} {r : Role} : (Key.role r : Key md).Good P :=
-  trivial
-@[simp] theorem Key.good_aux {P : md.Id → Prop} {k : Key md} {d : Derived} :
+@[simp] theorem Key.good_id {P : KeyScope md} {i : md.Id} : (Key.id i).Good P ↔ P i := Iff.rfl
+@[simp] theorem Key.good_role {P : KeyScope md} {r : Role} : (Key.role r : Key md).Good P ↔ P.role r :=
+  Iff.rfl
+@[simp] theorem Key.good_aux {P : KeyScope md} {k : Key md} {d : Derived} :
     (Key.aux k d).Good P ↔ k.Good P := Iff.rfl
 
 /-- **`f` is injective on the ids satisfying `P`.** -/
@@ -90,7 +112,7 @@ theorem Key.map_map (f : md.Id → md'.Id) (g : md'.Id → md''.Id) (k : Key md)
   | aux k d ih => simp [ih]
 
 /-- **Renaming reflects key equality on good keys.** -/
-theorem Key.map_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P) :
+theorem Key.map_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P) :
     ∀ {a b : Key md}, a.Good P → b.Good P → a.map f = b.map f → a = b := by
   intro a
   induction a with
@@ -115,7 +137,7 @@ theorem Key.map_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
       simp only [map_aux, Key.aux.injEq] at h
       rw [ih (b := k') ha hb h.1, h.2]
 
-theorem Key.map_eq_map_iff {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem Key.map_eq_map_iff {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : Key md} (ha : a.Good P) (hb : b.Good P) : a.map f = b.map f ↔ a = b :=
   ⟨Key.map_inj hf ha hb, fun h => h ▸ rfl⟩
 
@@ -155,11 +177,12 @@ and an input key stays an input key). -/
   | _ => rfl
 
 /-- Good keys at a larger predicate. -/
-theorem Key.Good.mono {P Q : md.Id → Prop} (hPQ : ∀ i, P i → Q i) :
+theorem Key.Good.mono {P Q : KeyScope md} (hPQ : ∀ i, P i → Q i)
+    (hR : ∀ r, P.role r → Q.role r) :
     ∀ {k : Key md}, k.Good P → k.Good Q
   | .id i, h => hPQ i h
-  | .role _, _ => trivial
-  | .aux k _, h => Key.Good.mono hPQ (k := k) h
+  | .role r, h => hR r h
+  | .aux k _, h => Key.Good.mono hPQ hR (k := k) h
 
 /-! ## Expressions -/
 
@@ -176,8 +199,50 @@ theorem Key.Good.mono {P Q : md.Id → Prop} (hPQ : ∀ i, P i → Q i) :
   | .lit l => .lit l
   | .proj s i e => .proj (s.map f) i (Expr.mapKeys f e)
 
+/-- **The string-support roles**: the seven declarations a string literal
+implicitly references besides the `Nat` trio (`Expr.constsResolve`'s
+`strVal` clause). -/
+def strRoles : List Role :=
+  [.string, .stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+
+/-- **The roles a literal mentions** beyond the prelude's: none for a `Nat`
+literal (its type's declarations are the prelude's), the string-support
+roles for a string literal. -/
+def Literal.roles : Literal → List Role
+  | .natVal _ => []
+  | .strVal _ => strRoles
+
+@[simp] theorem Literal.roles_natVal (n : Nat) : (Literal.natVal n).roles = [] := rfl
+@[simp] theorem Literal.roles_strVal (s : String) : (Literal.strVal s).roles = strRoles := rfl
+
+/-- **The prelude's roles**: those of its twelve declarations (`Eq`, `Nat`,
+`PUnit`, `Empty`, `False`, the quotient package, `And`, `Bool`;
+`IxC/Kernel/Ixon/Prelude.lean`). The walk reads them unprompted (literal
+support, the operations' guards, the pins), so a related pair of
+environments agrees on all of them (`EnvRelG.pre`). -/
+def preludeRoles : List Role :=
+  [.nat, .natZero, .natSucc, .natRec, .bool, .boolFalse, .boolTrue, .boolRec, .eq, .eqRefl,
+   .eqRec, .punit, .punitUnit, .punitRec, .empty, .emptyRec, .false, .falseRec, .and, .andIntro,
+   .andRec, .quot, .quotMk, .quotLift, .quotInd, .quotSound]
+
+/-- A scope that allows every prelude role. -/
+def KeyScope.Pre (P : KeyScope md) : Prop := ∀ r ∈ preludeRoles, P.role r
+
+/-- A scope that allows every string-support role. -/
+def KeyScope.Str (P : KeyScope md) : Prop := ∀ r ∈ strRoles, P.role r
+
+/-- A scope that allows every role (the renaming's, `KeyScope.ofId`). -/
+def KeyScope.All (P : KeyScope md) : Prop := ∀ r, P.role r
+
+@[simp] theorem KeyScope.ofId_pre (P : md.Id → Prop) : (KeyScope.ofId P).Pre := fun _ _ => trivial
+@[simp] theorem KeyScope.ofId_str (P : md.Id → Prop) : (KeyScope.ofId P).Str := fun _ _ => trivial
+@[simp] theorem KeyScope.ofId_all (P : md.Id → Prop) : (KeyScope.ofId P).All := fun _ => trivial
+theorem KeyScope.All.pre {P : KeyScope md} (h : P.All) : P.Pre := fun r _ => h r
+theorem KeyScope.All.str {P : KeyScope md} (h : P.All) : P.Str := fun r _ => h r
+
+
 /-- **A good expression**: every key it contains is good. -/
-@[simp] def Expr.Good (P : md.Id → Prop) : Expr md → Prop
+@[simp] def Expr.Good (P : KeyScope md) : Expr md → Prop
   | .bvar _ => True
   | .fvar _ t => Expr.Good P t
   | .sort _ => True
@@ -186,7 +251,8 @@ theorem Key.Good.mono {P Q : md.Id → Prop} (hPQ : ∀ i, P i → Q i) :
   | .lam t b _ => Expr.Good P t ∧ Expr.Good P b
   | .forallE t b _ => Expr.Good P t ∧ Expr.Good P b
   | .letE t v b _ => Expr.Good P t ∧ Expr.Good P v ∧ Expr.Good P b
-  | .lit _ => True
+  | .lit (.natVal _) => True
+  | .lit (.strVal _) => P.Str
   | .proj s _ e => s.Good P ∧ Expr.Good P e
 
 @[simp] theorem Expr.mapKeys_id (e : Expr md) : e.mapKeys (fun i => i) = e := by
@@ -196,13 +262,19 @@ theorem Expr.mapKeys_mapKeys (f : md.Id → md'.Id) (g : md'.Id → md''.Id) (e 
     (e.mapKeys f).mapKeys g = e.mapKeys (fun i => g (f i)) := by
   induction e <;> simp_all [Key.map_map]
 
-theorem Expr.Good.mono {P Q : md.Id → Prop} (hPQ : ∀ i, P i → Q i) :
+theorem Expr.Good.mono {P Q : KeyScope md} (hPQ : ∀ i, P i → Q i)
+    (hR : ∀ r, P.role r → Q.role r) :
     ∀ {e : Expr md}, e.Good P → e.Good Q := by
   intro e
-  induction e <;> simp_all [Key.Good.mono hPQ]
+  induction e with
+  | lit l =>
+    cases l with
+    | natVal => exact fun _ => trivial
+    | strVal => exact fun h r hr => hR r (h r hr)
+  | _ => simp_all [Key.Good.mono hPQ hR]
 
 /-- **Renaming reflects equality on good expressions.** -/
-theorem Expr.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P) :
+theorem Expr.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P) :
     ∀ {a b : Expr md}, a.Good P → b.Good P → a.mapKeys f = b.mapKeys f → a = b := by
   intro a
   induction a with
@@ -269,19 +341,19 @@ theorem Expr.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn
       rw [Key.map_inj hf ha.1 hb.1 h.1, h.2.1, ih ha.2 hb.2 h.2.2]
     | _ => simp at h
 
-theorem Expr.mapKeys_eq_iff {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem Expr.mapKeys_eq_iff {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) : a.mapKeys f = b.mapKeys f ↔ a = b :=
   ⟨Expr.mapKeys_inj hf ha hb, fun h => h ▸ rfl⟩
 
 /-- `==` on renamed good expressions is `==` on the expressions. -/
-theorem Expr.mapKeys_beq {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem Expr.mapKeys_beq {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : Expr md} (ha : a.Good P) (hb : b.Good P) :
     (a.mapKeys f == b.mapKeys f) = (a == b) := by
   rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
   exact Expr.mapKeys_eq_iff hf ha hb
 
 /-- `==` on renamed good keys is `==` on the keys. -/
-theorem Key.map_beq {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem Key.map_beq {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : Key md} (ha : a.Good P) (hb : b.Good P) :
     (a.map f == b.map f) = (a == b) := by
   rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
@@ -290,20 +362,20 @@ theorem Key.map_beq {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
 /-! ## Lists of expressions -/
 
 /-- A list of good expressions. -/
-def Expr.GoodList (P : md.Id → Prop) (es : List (Expr md)) : Prop := ∀ e ∈ es, e.Good P
+def Expr.GoodList (P : KeyScope md) (es : List (Expr md)) : Prop := ∀ e ∈ es, e.Good P
 
-@[simp] theorem Expr.goodList_nil {P : md.Id → Prop} : Expr.GoodList P ([] : List (Expr md)) :=
+@[simp] theorem Expr.goodList_nil {P : KeyScope md} : Expr.GoodList P ([] : List (Expr md)) :=
   fun _ h => nomatch h
 
-@[simp] theorem Expr.goodList_cons {P : md.Id → Prop} {e : Expr md} {es : List (Expr md)} :
+@[simp] theorem Expr.goodList_cons {P : KeyScope md} {e : Expr md} {es : List (Expr md)} :
     Expr.GoodList P (e :: es) ↔ e.Good P ∧ Expr.GoodList P es := by
   simp [Expr.GoodList]
 
-@[simp] theorem Expr.goodList_append {P : md.Id → Prop} {as bs : List (Expr md)} :
+@[simp] theorem Expr.goodList_append {P : KeyScope md} {as bs : List (Expr md)} :
     Expr.GoodList P (as ++ bs) ↔ Expr.GoodList P as ∧ Expr.GoodList P bs := by
   simp [Expr.GoodList, or_imp, forall_and]
 
-theorem Expr.mapKeys_list_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P) :
+theorem Expr.mapKeys_list_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P) :
     ∀ {as bs : List (Expr md)}, Expr.GoodList P as → Expr.GoodList P bs →
       as.map (Expr.mapKeys f) = bs.map (Expr.mapKeys f) → as = bs
   | [], [], _, _, _ => rfl
@@ -321,7 +393,7 @@ def ConstantVal.mapKeys (f : md.Id → md'.Id) (cv : ConstantVal md) : ConstantV
   { name := cv.name.map f, levelParams := cv.levelParams, type := cv.type.mapKeys f }
 
 /-- A good header: its name and type are good. -/
-abbrev ConstantVal.Good (P : md.Id → Prop) (cv : ConstantVal md) : Prop :=
+abbrev ConstantVal.Good (P : KeyScope md) (cv : ConstantVal md) : Prop :=
   cv.name.Good P ∧ cv.type.Good P
 
 @[simp] theorem ConstantVal.mapKeys_name (f : md.Id → md'.Id) (cv : ConstantVal md) :
@@ -331,7 +403,7 @@ abbrev ConstantVal.Good (P : md.Id → Prop) (cv : ConstantVal md) : Prop :=
 @[simp] theorem ConstantVal.mapKeys_type (f : md.Id → md'.Id) (cv : ConstantVal md) :
     (cv.mapKeys f).type = cv.type.mapKeys f := rfl
 
-theorem ConstantVal.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem ConstantVal.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : ConstantVal md} (ha : a.Good P) (hb : b.Good P) (h : a.mapKeys f = b.mapKeys f) :
     a = b := by
   obtain ⟨n, l, t⟩ := a
@@ -346,7 +418,7 @@ def RecRuleFire.mapKeys (f : md.Id → md'.Id) : RecRuleFire md → RecRuleFire 
   | .plain => .plain
   | .nested lvls pins => .nested lvls (pins.map (Expr.mapKeys f))
 
-def RecRuleFire.Good (P : md.Id → Prop) : RecRuleFire md → Prop
+def RecRuleFire.Good (P : KeyScope md) : RecRuleFire md → Prop
   | .inert => True
   | .plain => True
   | .nested _ pins => Expr.GoodList P pins
@@ -360,7 +432,7 @@ def RecRule.mapKeys (f : md.Id → md'.Id) (r : RecRule md) : RecRule md' :=
     fire := r.fire.mapKeys f, rhs := r.rhs.mapKeys f, k := r.k, eta := r.eta,
     paramsBlind := r.paramsBlind }
 
-abbrev RecRule.Good (P : md.Id → Prop) (r : RecRule md) : Prop :=
+abbrev RecRule.Good (P : KeyScope md) (r : RecRule md) : Prop :=
   r.ctor.Good P ∧ r.fire.Good P ∧ r.rhs.Good P
 
 /-- Rename an inductive's capabilities (only the η constructor is a key). -/
@@ -369,7 +441,7 @@ def IndCaps.mapKeys (f : md.Id → md'.Id) (c : IndCaps md) : IndCaps md' :=
     etaFields := c.etaFields, unitlike := c.unitlike, unitParams := c.unitParams,
     ruleK := c.ruleK, sortZ := c.sortZ }
 
-abbrev IndCaps.Good (P : md.Id → Prop) (c : IndCaps md) : Prop :=
+abbrev IndCaps.Good (P : KeyScope md) (c : IndCaps md) : Prop :=
   ∀ k ∈ c.etaCtor, k.Good P
 
 /-- Rename a projection table. -/
@@ -378,7 +450,7 @@ def ProjTable.mapKeys (f : md.Id → md'.Id) (t : ProjTable md) : ProjTable md' 
     ctor := t.ctor.map f, numFields := t.numFields, structSort := t.structSort,
     bodies := t.bodies.map (Expr.mapKeys f), guards := t.guards, off := t.off }
 
-abbrev ProjTable.Good (P : md.Id → Prop) (t : ProjTable md) : Prop :=
+abbrev ProjTable.Good (P : KeyScope md) (t : ProjTable md) : Prop :=
   t.structName.Good P ∧ t.ctor.Good P ∧ ∀ b ∈ t.bodies, b.Good P
 
 /-- Rename a projection-table entry. -/
@@ -388,7 +460,7 @@ def ProjEntry.mapKeys (f : md.Id → md'.Id) (e : ProjEntry md) : ProjEntry md' 
     body := e.body.mapKeys f, fieldSort := e.fieldSort, structSort := e.structSort,
     off := e.off }
 
-abbrev ProjEntry.Good (P : md.Id → Prop) (e : ProjEntry md) : Prop :=
+abbrev ProjEntry.Good (P : KeyScope md) (e : ProjEntry md) : Prop :=
   e.structName.Good P ∧ e.ctor.Good P ∧ e.body.Good P
 
 /-- A table's entry, renamed, is the renamed table's entry. -/
@@ -398,7 +470,7 @@ theorem ProjTable.mapKeys_entry (f : md.Id → md'.Id) (t : ProjTable md) (i : N
     Array.getElem?_map]
   cases t.bodies[i]? <;> rfl
 
-theorem ProjTable.good_entry {P : md.Id → Prop} {t : ProjTable md} (h : t.Good P) (i : Nat) :
+theorem ProjTable.good_entry {P : KeyScope md} {t : ProjTable md} (h : t.Good P) (i : Nat) :
     (t.entry i).Good P := by
   obtain ⟨hs, hc, hb⟩ := h
   refine ⟨hs, hc, ?_⟩
@@ -418,7 +490,7 @@ def ConstantInfo.mapKeys (f : md.Id → md'.Id) : ConstantInfo md → ConstantIn
   | .projInfo tbl => .projInfo (tbl.mapKeys f)
 
 /-- A good stored constant: every key it carries is good. -/
-def ConstantInfo.Good (P : md.Id → Prop) : ConstantInfo md → Prop
+def ConstantInfo.Good (P : KeyScope md) : ConstantInfo md → Prop
   | .axiomInfo v => v.Good P
   | .defnInfo v e _ => v.Good P ∧ e.Good P
   | .thmInfo v e => v.Good P ∧ e.Good P
@@ -444,7 +516,7 @@ attribute [simp] ConstantInfo.mapKeys.eq_1 ConstantInfo.mapKeys.eq_2 ConstantInf
     (c.mapKeys f).type = c.type.mapKeys f := by
   cases c <;> rfl
 
-theorem ConstantInfo.Good.toConstantVal {P : md.Id → Prop} :
+theorem ConstantInfo.Good.toConstantVal {P : KeyScope md} :
     ∀ {c : ConstantInfo md}, c.Good P → c.toConstantVal.Good P
   | .axiomInfo _, h => h
   | .defnInfo _ _ _, h => h.1
@@ -454,16 +526,16 @@ theorem ConstantInfo.Good.toConstantVal {P : md.Id → Prop} :
   | .recInfo _ _ _ _, h => h.1
   | .projInfo _, h => ⟨h.1, trivial⟩
 
-theorem ConstantInfo.Good.name {P : md.Id → Prop} {c : ConstantInfo md} (h : c.Good P) :
+theorem ConstantInfo.Good.name {P : KeyScope md} {c : ConstantInfo md} (h : c.Good P) :
     c.name.Good P :=
   h.toConstantVal.1
 
-theorem ConstantInfo.Good.type {P : md.Id → Prop} {c : ConstantInfo md} (h : c.Good P) :
+theorem ConstantInfo.Good.type {P : KeyScope md} {c : ConstantInfo md} (h : c.Good P) :
     c.type.Good P :=
   h.toConstantVal.2
 
 /-- Renaming the rules of a recursor reflects their equality. -/
-theorem RecRule.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem RecRule.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : RecRule md} (ha : a.Good P) (hb : b.Good P) (h : a.mapKeys f = b.mapKeys f) :
     a = b := by
   obtain ⟨c, nf, cp, fi, rhs, k, e, pb⟩ := a
@@ -484,7 +556,7 @@ theorem RecRule.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : In
   subst h2 h3 h6 h7 h8 hfi
   rw [Key.map_inj hf ha.1 hb.1 h1, Expr.mapKeys_inj hf ha.2.2 hb.2.2 h5]
 
-theorem RecRule.mapKeys_list_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P) :
+theorem RecRule.mapKeys_list_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P) :
     ∀ {as bs : List (RecRule md)}, (∀ r ∈ as, r.Good P) → (∀ r ∈ bs, r.Good P) →
       as.map (RecRule.mapKeys f) = bs.map (RecRule.mapKeys f) → as = bs
   | [], [], _, _, _ => rfl
@@ -495,7 +567,7 @@ theorem RecRule.mapKeys_list_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf
     simp only [List.mem_cons, forall_eq_or_imp] at ha hb
     rw [RecRule.mapKeys_inj hf ha.1 hb.1 h.1, RecRule.mapKeys_list_inj hf ha.2 hb.2 h.2]
 
-theorem IndCaps.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem IndCaps.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : IndCaps md} (ha : a.Good P) (hb : b.Good P) (h : a.mapKeys f = b.mapKeys f) :
     a = b := by
   obtain ⟨e, ec, ep, ef, u, up, rk, sz⟩ := a
@@ -515,7 +587,7 @@ theorem IndCaps.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : In
   subst h1 h3 h4 h5 h6 h7 h8 hec
   rfl
 
-theorem ProjTable.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem ProjTable.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : ProjTable md} (ha : a.Good P) (hb : b.Good P) (h : a.mapKeys f = b.mapKeys f) :
     a = b := by
   obtain ⟨s, lp, np, c, nf, ss, bs, gs, off⟩ := a
@@ -533,7 +605,7 @@ theorem ProjTable.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : 
   rw [Key.map_inj hf ha.1 hb.1 h1, Key.map_inj hf ha.2.1 hb.2.1 h4]
 
 /-- **Renaming reflects equality on good stored constants.** -/
-theorem ConstantInfo.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem ConstantInfo.mapKeys_inj {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : ConstantInfo md} (ha : a.Good P) (hb : b.Good P) (h : a.mapKeys f = b.mapKeys f) :
     a = b := by
   cases a <;> cases b <;> simp only [mapKeys, reduceCtorEq] at h <;> simp only [Good] at ha hb
@@ -552,7 +624,7 @@ theorem ConstantInfo.mapKeys_inj {f : md.Id → md'.Id} {P : md.Id → Prop} (hf
   · simp only [ConstantInfo.projInfo.injEq] at h
     rw [ProjTable.mapKeys_inj hf ha hb h]
 
-theorem ConstantInfo.mapKeys_eq_iff {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem ConstantInfo.mapKeys_eq_iff {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {a b : ConstantInfo md} (ha : a.Good P) (hb : b.Good P) :
     a.mapKeys f = b.mapKeys f ↔ a = b :=
   ⟨ConstantInfo.mapKeys_inj hf ha hb, fun h => h ▸ rfl⟩
@@ -570,7 +642,7 @@ def Declaration.mapKeys (f : md.Id → md'.Id) : Declaration md → Declaration 
   | .quotDecl k v => .quotDecl k (v.mapKeys f)
 
 /-- A good declaration: every key it carries is good. -/
-def Declaration.Good (P : md.Id → Prop) : Declaration md → Prop
+def Declaration.Good (P : KeyScope md) : Declaration md → Prop
   | .axiomDecl v => v.Good P
   | .defnDecl v e _ => v.Good P ∧ e.Good P
   | .thmDecl v e => v.Good P ∧ e.Good P
@@ -591,11 +663,11 @@ def Env.mapKeys (f : md.Id → md'.Id) (env : Env md) : Env md' :=
   ⟨env.consts.map (ConstantInfo.mapKeys f)⟩
 
 /-- A good environment: every stored constant is good. -/
-abbrev Env.Good (P : md.Id → Prop) (env : Env md) : Prop := ∀ c ∈ env.consts, c.Good P
+abbrev Env.Good (P : KeyScope md) (env : Env md) : Prop := ∀ c ∈ env.consts, c.Good P
 
 /-- **Lookup in a renamed environment** of a good key: the renamed lookup,
 when the environment is good and the renaming is injective on it. -/
-theorem Env.find?_mapKeys {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjOn f P)
+theorem Env.find?_mapKeys {f : md.Id → md'.Id} {P : KeyScope md} (hf : InjOn f P)
     {env : Env md} (henv : env.Good P) {k : Key md} (hk : k.Good P) :
     (env.mapKeys f).find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f) := by
   obtain ⟨cs⟩ := env
@@ -609,7 +681,7 @@ theorem Env.find?_mapKeys {f : md.Id → md'.Id} {P : md.Id → Prop} (hf : InjO
     cases (c.name == k) <;> simp [ih henv.2]
 
 /-- A lookup in a good environment finds a good constant. -/
-theorem Env.Good.find? {P : md.Id → Prop} {env : Env md} (henv : env.Good P) {k : Key md}
+theorem Env.Good.find? {P : KeyScope md} {env : Env md} (henv : env.Good P) {k : Key md}
     {c : ConstantInfo md} (h : env.find? k = some c) : c.Good P :=
   henv c (List.mem_of_find?_eq_some h)
 
@@ -621,7 +693,7 @@ def Evidence.mapKeys (f : md.Id → md'.Id) :
   | .defeq => .defeq
   | .proof (k, v) => .proof (k.map f, v.mapKeys f)
 
-def Evidence.Good (P : md.Id → Prop) : Evidence (Key md × Expr md) → Prop
+def Evidence.Good (P : KeyScope md) : Evidence (Key md × Expr md) → Prop
   | .defeq => True
   | .proof (k, v) => k.Good P ∧ v.Good P
 
@@ -632,7 +704,7 @@ def Evidences.mapKeys (f : md.Id → md'.Id) (ev : Evidences md) : Evidences md'
   ev.map fun (r, es) => (r, es.map (Evidence.mapKeys f))
 
 /-- Good evidence: every entry is good. -/
-abbrev Evidences.Good (P : md.Id → Prop) (ev : Evidences md) : Prop :=
+abbrev Evidences.Good (P : KeyScope md) (ev : Evidences md) : Prop :=
   ∀ p ∈ ev, ∀ e ∈ p.2, e.Good P
 
 /-- A role's evidence, renamed. -/
@@ -646,7 +718,7 @@ theorem Evidences.mapKeys_of (f : md.Id → md'.Id) (ev : Evidences md) (r : Rol
     simp only [List.map_cons, List.find?_cons]
     cases h : (r' == r) <;> simp_all
 
-theorem Evidences.Good.of {P : md.Id → Prop} {ev : Evidences md} (h : ev.Good P) (r : Role) :
+theorem Evidences.Good.of {P : KeyScope md} {ev : Evidences md} (h : ev.Good P) (r : Role) :
     ∀ e ∈ ev.of r, e.Good P := by
   simp only [Evidences.of]
   cases hf : ev.find? (·.1 == r) with

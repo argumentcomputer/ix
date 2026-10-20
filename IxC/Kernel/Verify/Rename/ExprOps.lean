@@ -23,7 +23,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel.Expr
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 /-! ## Shape -/
 

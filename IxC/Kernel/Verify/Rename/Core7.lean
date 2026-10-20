@@ -21,7 +21,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
@@ -75,8 +75,8 @@ theorem annotateBody_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (
       simp only [annotateBody, Expr.mapKeys, natLitSupported_ren hE]
       exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
     | strVal s =>
-      simp only [annotateBody, Expr.mapKeys, strLitSupported_ren hE]
-      exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
+      simp only [annotateBody, Expr.mapKeys, strLitSupported_ren hE he]
+      exact SimE.ite Iff.rfl (fun _ => SimE.pure' he rfl) (fun _ => SimE.throw')
   | app fn a =>
     simp only [annotateBody, Expr.mapKeys]
     refine SimE.bind (hr.annotate d fn he.1) (fun fn' hfn' => ?_)
@@ -158,7 +158,7 @@ theorem coreKnot_sim (mode : CheckMode) (hE : EnvRelG P f L env env') :
 /-- **Two operation records of the declaration checker, one the renaming of
 the other**: at related environments, every entry's success is the renamed
 entry's; `orElse` runs related attempts and fallbacks. -/
-structure OpsSim (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+structure OpsSim (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
     (ops : (CheckerOps md) (CheckM md))
     (ops' : (CheckerOps md') (CheckM md')) : Prop where
   annotate : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md), e.Good P →

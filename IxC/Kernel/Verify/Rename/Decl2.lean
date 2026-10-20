@@ -21,15 +21,22 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- The recurrence equations name role keys, fvars and the operation. -/
-theorem natOpEquations_good (d : Nat) (k : Key md) :
+theorem natOpEquations_good (hpre : P.Pre) (d : Nat) (k : Key md)
+    (hdeps : ∀ n ∈ natOpDeps k, n.Good P) :
     ∀ p ∈ natOpEquations d k, p.1.Good P ∧ p.2.Good P := by
+  have h1 := hpre .nat (by decide)
+  have h2 := hpre .natZero (by decide)
+  have h3 := hpre .natSucc (by decide)
+  have h4 := hpre .bool (by decide)
+  have h5 := hpre .boolTrue (by decide)
+  have h6 := hpre .boolFalse (by decide)
   unfold natOpEquations
   repeat' split
-  all_goals (try subst_vars); simp [Expr.Good, Key.Good]
+  all_goals (try subst_vars); simp [natOpDeps, Key.Good] at hdeps; simp_all [Expr.Good, Key.Good]
 
 section Vals
 
@@ -132,13 +139,14 @@ theorem checkBasisDecl_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L e
     SimR (EnvRelG P f L) (checkBasisDecl env kind : CheckM md (Env md))
       (checkBasisDecl env' kind : CheckM md' (Env md')) := by
   have hq : (env'.find? eqName = some eqA) ↔ (env.find? eqName = some eqA) := by
-    have h := find_eq_pin_ren hE (k := eqName) (pin := eqA) trivial rfl
+    have h := find_eq_pin_ren hE (k := eqName) (pin := eqA) (hE.pre .eq (by decide))
+      (ConstantInfo.good_of_pinIn hE.pre eqA_pinIn)
     simp only [decide_eq_decide] at h
     exact h
   have hd : ∀ c ∈ kind.declsA (md := md), c.Good P := by
-    have := declsA_noIds (md := md) kind
+    have := declsA_pinIn (md := md) kind
     simp only [List.all_eq_true] at this
-    exact fun c hc => ConstantInfo.good_of_noIds (this c hc)
+    exact fun c hc => ConstantInfo.good_of_pinIn hE.pre (this c hc)
   unfold checkBasisDecl
   rw [← declsA_mapKeys (f := f) kind]
   simp only []

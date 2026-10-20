@@ -23,7 +23,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 /-- **Success simulation**: every success of `x` satisfies `G` and is a
 success of `x'`, renamed by `m`. -/
@@ -81,6 +81,15 @@ theorem ite {c c' : Prop} [Decidable c] [Decidable c'] {t e : Except ε α} {t' 
   · rw [if_pos h, if_pos (hc.mp h)]; exact ht h
   · rw [if_neg h, if_neg (fun h' => h (hc.mpr h'))]; exact he h
 
+/-- **A guard**: a condition the original passes the renamed run passes,
+and the original's other branch fails. -/
+theorem ite_guard {c c' : Prop} [Decidable c] [Decidable c'] {t e : Except ε α}
+    {t' e' : Except ε' α'} (hc : c → c') (ht : c → SimE G m t t') (he : ∀ a, e ≠ .ok a) :
+    SimE G m (if c then t else e) (if c' then t' else e') := by
+  by_cases h : c
+  · rw [if_pos h, if_pos (hc h)]; exact ht h
+  · rw [if_neg h]; exact of_fail he
+
 /-- Rewrite the renamed run. -/
 theorem congr {x : Except ε α} {x'₁ x'₂ : Except ε' α'} (h : x'₁ = x'₂) (hs : SimE G m x x'₁) :
     SimE G m x x'₂ :=
@@ -115,7 +124,7 @@ theorem SimE.liftFueled {α : Type} (what : String) (o : Option α) :
 /-- **Two core records, one the renaming of the other**, on good
 arguments: every entry's success is the renamed entry's, with a good
 result. -/
-structure CoreSim (P : md.Id → Prop) (f : md.Id → md'.Id) (r : (CoreFns md) (CheckM md))
+structure CoreSim (P : KeyScope md) (f : md.Id → md'.Id) (r : (CoreFns md) (CheckM md))
     (r' : (CoreFns md') (CheckM md')) : Prop where
   whnfCore : ∀ d (e : Expr md), e.Good P →
     SimE (Expr.Good P) (Expr.mapKeys f) (r.whnfCore d e) (r'.whnfCore d (e.mapKeys f))

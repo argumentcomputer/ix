@@ -20,7 +20,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
@@ -109,7 +109,7 @@ theorem checkNativeRec_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' :
 /-! ## One pass over the former and the constructors -/
 
 /-- Two passes' records, one the renaming of the other. -/
-structure NativePassRel (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+structure NativePassRel (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
     (q : (NativePass md) (Env md))
     (q' : (NativePass md') (Env md')) : Prop where
   env : EnvRelG P f L q.env₁ q'.env₁

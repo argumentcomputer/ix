@@ -19,7 +19,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
@@ -82,10 +82,12 @@ theorem inferBody_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : Cor
     cases l with
     | natVal n =>
       simp only [inferBody, Expr.mapKeys, natLitSupported_ren hE]
-      exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
+      exact SimE.ite Iff.rfl (fun _ => SimE.pure' (hE.pre .nat (by decide)) rfl)
+        (fun _ => SimE.throw')
     | strVal s =>
-      simp only [inferBody, Expr.mapKeys, strLitSupported_ren hE]
-      exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
+      simp only [inferBody, Expr.mapKeys, strLitSupported_ren hE he]
+      exact SimE.ite Iff.rfl (fun _ => SimE.pure' (he .string (by decide)) rfl)
+        (fun _ => SimE.throw')
   | forallE ty body mb =>
     have hty : ty.Good P := he.1
     have hbody : body.Good P := he.2
@@ -181,10 +183,12 @@ theorem inferBodyIO_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : C
     cases l with
     | natVal n =>
       simp only [inferBodyIO, Expr.mapKeys, natLitSupported_ren hE]
-      exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
+      exact SimE.ite Iff.rfl (fun _ => SimE.pure' (hE.pre .nat (by decide)) rfl)
+        (fun _ => SimE.throw')
     | strVal s =>
-      simp only [inferBodyIO, Expr.mapKeys, strLitSupported_ren hE]
-      exact SimE.ite Iff.rfl (fun _ => SimE.pure' trivial rfl) (fun _ => SimE.throw')
+      simp only [inferBodyIO, Expr.mapKeys, strLitSupported_ren hE he]
+      exact SimE.ite Iff.rfl (fun _ => SimE.pure' (he .string (by decide)) rfl)
+        (fun _ => SimE.throw')
   | forallE ty body mb =>
     have hty : ty.Good P := he.1
     have hbody : body.Good P := he.2

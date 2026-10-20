@@ -17,7 +17,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 /-! ## The shape records -/
 
@@ -28,7 +28,7 @@ def InductiveShape.mapKeys (f : md.Id → md'.Id) (p : InductiveShape md) : Indu
     rhss := p.rhss.map (Expr.mapKeys f), large := p.large, isProp := p.isProp }
 
 /-- A good shape record. -/
-structure InductiveShape.Good (P : md.Id → Prop) (p : InductiveShape md) : Prop where
+structure InductiveShape.Good (P : KeyScope md) (p : InductiveShape md) : Prop where
   cvT : p.cvT.Good P
   ctors : ∀ c ∈ p.ctors, c.1.Good P
   cvR : p.cvR.Good P
@@ -38,7 +38,7 @@ structure InductiveShape.Good (P : md.Id → Prop) (p : InductiveShape md) : Pro
 def NativeParts.mapKeys (f : md.Id → md'.Id) (p : NativeParts md) : NativeParts md' :=
   ⟨p.toInductiveShape.mapKeys f, p.kinds, p.recPinned⟩
 
-abbrev NativeParts.Good (P : md.Id → Prop) (p : NativeParts md) : Prop :=
+abbrev NativeParts.Good (P : KeyScope md) (p : NativeParts md) : Prop :=
   p.toInductiveShape.Good P
 
 @[simp] theorem NativeParts.mapKeys_toInductiveShape (p : NativeParts md) :

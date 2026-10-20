@@ -19,7 +19,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- A lookup at a key given in its renamed spelling. -/
@@ -86,7 +86,7 @@ theorem checkEtaThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
       hT rfl,
     hE.find_of (k := auxKey T .model) (k' := auxKey (T.map f) .model) hT rfl,
     hE.find_of (k := auxKey C .model) (k' := auxKey (C.map f) .model) hC rfl,
-    hE.find_of (k := (eqName : Key md)) (k' := (eqName : Key md')) trivial rfl]
+    hE.find_of (k := (eqName : Key md)) (k' := (eqName : Key md')) (hE.pre .eq (by decide)) rfl]
   cases h1 : env.find? (auxKey (auxKey T .model) .eta) with
   | none => rfl
   | some c1 => ?_
@@ -110,13 +110,14 @@ theorem checkEtaThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
   cases h4 : env.find? eqName with
   | none => rfl
   | some eqStored => ?_
-  have hc4 := hE.good (eqName : Key md) eqStored trivial h4
+  have hc4 := hE.good (eqName : Key md) eqStored (hE.pre .eq (by decide)) h4
   simp only [Option.map_some]
   generalize hes : ConstantInfo.mapKeys f eqStored = eS'
   simp only [ConstantInfo.mapKeys, ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
     Expr.stripPis_mapKeys]
   subst hes
-  rw [← eqA_mapKeys (f := f), ConstantInfo.mapKeys_beq hf hc4 (ConstantInfo.good_of_noIds eqA_noIds)]
+  rw [← eqA_mapKeys (f := f), ConstantInfo.mapKeys_beq hf hc4
+    (ConstantInfo.good_of_pinIn hE.pre eqA_pinIn)]
   refine andC (andC rfl ?_) ?_
   · refine congrArg (List.all (List.range nF)) (funext fun j => ?_)
     rw [hE.find_of (k := projModelName T j) (k' := projModelName (T.map f) j) hT rfl]
@@ -182,7 +183,7 @@ theorem checkUnitThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
   rw [hE.find_of (k := auxKey (auxKey T .model) .unitlike)
       (k' := auxKey (auxKey (T.map f) .model) .unitlike) hT rfl,
     hE.find_of (k := auxKey T .model) (k' := auxKey (T.map f) .model) hT rfl,
-    hE.find_of (k := (eqName : Key md)) (k' := (eqName : Key md')) trivial rfl]
+    hE.find_of (k := (eqName : Key md)) (k' := (eqName : Key md')) (hE.pre .eq (by decide)) rfl]
   cases h1 : env.find? (auxKey (auxKey T .model) .unitlike) with
   | none => rfl
   | some c1 => ?_
@@ -200,13 +201,14 @@ theorem checkUnitThm_map (mode : CheckMode) {env : Env md} {env' : Env md'}
   cases h4 : env.find? eqName with
   | none => rfl
   | some eqStored => ?_
-  have hc4 := hE.good (eqName : Key md) eqStored trivial h4
+  have hc4 := hE.good (eqName : Key md) eqStored (hE.pre .eq (by decide)) h4
   simp only [Option.map_some]
   generalize hes : ConstantInfo.mapKeys f eqStored = eS'
   simp only [ConstantInfo.mapKeys, ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
     Expr.stripPis_mapKeys]
   subst hes
-  rw [← eqA_mapKeys (f := f), ConstantInfo.mapKeys_beq hf hc4 (ConstantInfo.good_of_noIds eqA_noIds)]
+  rw [← eqA_mapKeys (f := f), ConstantInfo.mapKeys_beq hf hc4
+    (ConstantInfo.good_of_pinIn hE.pre eqA_pinIn)]
   refine andC rfl ?_
   cases h5 : Expr.stripPis (nP + 2) tcv.type with
   | none => rfl

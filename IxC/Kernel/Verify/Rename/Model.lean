@@ -35,7 +35,8 @@ def pullCval (f : md.Id → md'.Id) (cval' : Key md' → (LevelParam → Nat) �
 theorem Denotes.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
     {cval' : Key md' → (LevelParam → Nat) → V} {φ : LevelParam → Nat} {ρ : BVarIdx → V}
     {e' : Expr md'} {v : V} (hd : Denotes cval' env' φ ρ e' v) :
-    ∀ {e : Expr md}, e' = e.mapKeys f → e.Good P → Denotes (pullCval f cval') env φ ρ e v := by
+    ∀ {e : Expr md}, e' = e.mapKeys f → e.Good (KeyScope.ofId P) →
+      Denotes (pullCval f cval') env φ ρ e v := by
   induction hd with
   | bvar =>
     intro e he _
@@ -52,7 +53,7 @@ theorem Denotes.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env
     cases e <;> simp [Expr.mapKeys] at he
     rename_i m us'
     obtain ⟨rfl, rfl⟩ := he
-    have hm : m.Good P := hg
+    have hm : m.Good (KeyScope.ofId P) := hg
     rw [h.find m hm] at hf
     obtain ⟨ci₀, hci₀, rfl⟩ := Option.map_eq_some_iff.mp hf
     have hlps : (ci₀.mapKeys f).toConstantVal.levelParams = ci₀.toConstantVal.levelParams := by
@@ -100,12 +101,12 @@ theorem Denotes.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env
     intro e he _
     cases e <;> simp [Expr.mapKeys] at he
     subst he
-    exact .natLit (ih (natLitToConstructor_mapKeys n).symm (natLitToConstructor_good n))
+    exact .natLit (ih (natLitToConstructor_mapKeys n).symm (natLitToConstructor_good (KeyScope.ofId_pre P) n))
   | @strLit ρ s X _ ih =>
     intro e he _
     cases e <;> simp [Expr.mapKeys] at he
     subst he
-    exact .strLit (ih (strLitToConstructor_mapKeys s).symm (strLitToConstructor_good s))
+    exact .strLit (ih (strLitToConstructor_mapKeys s).symm (strLitToConstructor_good (KeyScope.ofId_pre P) (KeyScope.ofId_str P) s))
 
 /-- A constant's denotation at the pulled-back values is its renaming's. -/
 theorem Denotes.const_push {env : Env md} {env' : Env md'} (h : EnvRel P f env env')

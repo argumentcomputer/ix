@@ -18,7 +18,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 /-- `List.any` at functions that agree on the list's members. -/
 theorem List.any_congr_mem' {α : Type} {l : List α} {p q : α → Bool} (h : ∀ a ∈ l, p a = q a) :

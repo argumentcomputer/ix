@@ -20,7 +20,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
@@ -260,20 +260,35 @@ theorem majorToCtor_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : C
 
 /-! ## Literal majors and the major's preparation -/
 
-theorem strLitToConstructor_good (s : String) : (strLitToConstructor s : Expr md).Good P := by
+theorem strLitToConstructor_good (hpre : P.Pre) (hs : P.Str) (s : String) :
+    (strLitToConstructor s : Expr md).Good P := by
+  have h1 := hs .string (by decide)
+  have h2 := hs .stringOfList (by decide)
+  have h3 := hs .list (by decide)
+  have h4 := hs .listNil (by decide)
+  have h5 := hs .listCons (by decide)
+  have h6 := hs .char (by decide)
+  have h7 := hs .charOfNat (by decide)
+  have h8 := hpre .nat (by decide)
   unfold strLitToConstructor
-  refine ⟨trivial, ?_⟩
+  refine ⟨by first | trivial | assumption, ?_⟩
   generalize s.toList = cs
   induction cs with
-  | nil => exact ⟨trivial, trivial⟩
-  | cons c cs ih => exact ⟨⟨⟨trivial, trivial⟩, trivial, trivial⟩, ih⟩
+  | nil => exact ⟨by first | trivial | assumption, by first | trivial | assumption⟩
+  | cons c cs ih =>
+    exact ⟨⟨⟨by first | trivial | assumption, by first | trivial | assumption⟩,
+      by first | trivial | assumption, by first | trivial | assumption⟩, ih⟩
 
-theorem natLitToConstructor_good (n : Nat) : (natLitToConstructor n : Expr md).Good P := by
-  cases n <;> simp [natLitToConstructor]
+theorem natLitToConstructor_good (hpre : P.Pre) (n : Nat) :
+    (natLitToConstructor n : Expr md).Good P := by
+  have h1 : P.role .natZero := hpre .natZero (by decide)
+  have h2 : P.role .natSucc := hpre .natSucc (by decide)
+  cases n <;> simp [natLitToConstructor, roleKey, natZeroName, natSuccName, h1, h2]
 
-theorem litToCtorIfNat_good {e : Expr md} (he : e.Good P) : (litToCtorIfNat env e).Good P := by
+theorem litToCtorIfNat_good (hpre : P.Pre) {e : Expr md} (he : e.Good P) :
+    (litToCtorIfNat env e).Good P := by
   rcases e with _ | _ | _ | _ | _ | _ | _ | _ | ⟨n | _⟩ | _ <;> simp only [litToCtorIfNat] <;>
-    first | exact he | (split <;> first | exact natLitToConstructor_good n | trivial)
+    first | exact he | (split <;> first | exact natLitToConstructor_good hpre n | trivial)
 
 theorem litMajorToCtor_of_ne {e : Expr md} (h : ∀ s, e ≠ .lit (.strVal s)) :
     litMajorToCtor r env d e = pure (litToCtorIfNat env e) := by
@@ -288,23 +303,23 @@ theorem litMajorToCtor_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r')
     SimX P f (litMajorToCtor r env d e) (litMajorToCtor r' env' d (e.mapKeys f)) := by
   by_cases hs : ∃ s, e = .lit (.strVal s)
   · obtain ⟨s, rfl⟩ := hs
-    simp only [Expr.mapKeys, litMajorToCtor, strLitSupported_ren hE]
-    refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.pure' trivial rfl)
-    exact SimE.congr (by simp) (hr.whnf d (strLitToConstructor s) (strLitToConstructor_good s))
+    simp only [Expr.mapKeys, litMajorToCtor, strLitSupported_ren hE he]
+    refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.pure' he rfl)
+    exact SimE.congr (by simp) (hr.whnf d (strLitToConstructor s) (strLitToConstructor_good hE.pre he s))
   · have h₁ : ∀ s, e ≠ .lit (.strVal s) := fun s h => hs ⟨s, h⟩
     have h₂ : ∀ s, e.mapKeys f ≠ .lit (.strVal s) :=
       fun s h => h₁ s (Expr.mapKeys_eq_lit_iff.mp h)
     rw [litMajorToCtor_of_ne h₁, litMajorToCtor_of_ne h₂]
-    exact SimE.pure' (litToCtorIfNat_good he) (litToCtorIfNat_ren hE e)
+    exact SimE.pure' (litToCtorIfNat_good hE.pre he) (litToCtorIfNat_ren hE e)
 
 theorem projLitToCtor_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d : Nat)
     {e : Expr md} (he : e.Good P) :
     SimX P f (projLitToCtor r env d e) (projLitToCtor r' env' d (e.mapKeys f)) := by
   by_cases hs : ∃ s, e = .lit (.strVal s)
   · obtain ⟨s, rfl⟩ := hs
-    simp only [Expr.mapKeys, projLitToCtor, strLitSupported_ren hE]
-    refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.pure' trivial rfl)
-    exact SimE.congr (by simp) (hr.whnf d (strLitToConstructor s) (strLitToConstructor_good s))
+    simp only [Expr.mapKeys, projLitToCtor, strLitSupported_ren hE he]
+    refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.pure' he rfl)
+    exact SimE.congr (by simp) (hr.whnf d (strLitToConstructor s) (strLitToConstructor_good hE.pre he s))
   · have h₁ : ∀ s, e ≠ .lit (.strVal s) := fun s h => hs ⟨s, h⟩
     have h₂ : ∀ s, e.mapKeys f ≠ .lit (.strVal s) :=
       fun s h => h₁ s (Expr.mapKeys_eq_lit_iff.mp h)

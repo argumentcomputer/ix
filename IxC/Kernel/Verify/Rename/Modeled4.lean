@@ -19,7 +19,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
@@ -195,7 +195,7 @@ def provMap (f : md.Id → md'.Id) (c : ConstantVal md × Nat × Nat × List (Re
     ConstantVal md' × Nat × Nat × List (RecRule md') :=
   (c.1.mapKeys f, c.2.1, c.2.2.1, c.2.2.2.map (RecRule.mapKeys f))
 
-def provGood (P : md.Id → Prop) (c : ConstantVal md × Nat × Nat × List (RecRule md)) : Prop :=
+def provGood (P : KeyScope md) (c : ConstantVal md × Nat × Nat × List (RecRule md)) : Prop :=
   c.1.Good P ∧ ∀ r ∈ c.2.2.2, r.Good P
 
 theorem provisionRecs_sim (hops : OpsSim P f L ops ops') {blockNames : List (Key md)}
@@ -242,7 +242,8 @@ theorem checkIndRecs_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
   unfold checkIndRecs
   simp only [List.isEmpty_map]
   refine SimR.ite Iff.rfl (fun _ => SimR.pure' hE₂) (fun _ => ?_)
-  have heq := find_eq_pin_ren hE₂ (k := eqName) trivial (pin := eqA) eqA_noIds
+  have heq := find_eq_pin_ren hE₂ (k := eqName) (hE₂.pre .eq (by decide)) (pin := eqA)
+    (ConstantInfo.good_of_pinIn hE₂.pre eqA_pinIn)
   simp only [eqA_mapKeys] at heq
   refine SimR.ite (decide_eq_decide.mp heq.symm) (fun _ => ?_) (fun _ => SimR.throw_bind)
   refine SimR.bind (provisionRecs_sim hops hb recs hrs hE₂) (fun r r' hr => ?_)

@@ -16,7 +16,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 theorem nativeParts?_map (hf : InjOn f P) (nPd : Nat) {block : List (ConstantInfo md)}
     (hb : ∀ c ∈ block, c.Good P) :
@@ -315,7 +315,7 @@ def ctors4Map (f : md.Id → md'.Id) (cs : List (Key md × Nat × Expr md × Lis
     List (Key md' × Nat × Expr md' × List Nat) :=
   cs.map fun c => (c.1.map f, c.2.1, c.2.2.1.mapKeys f, c.2.2.2)
 
-def ctors4Good (P : md.Id → Prop) (cs : List (Key md × Nat × Expr md × List Nat)) : Prop :=
+def ctors4Good (P : KeyScope md) (cs : List (Key md × Nat × Expr md × List Nat)) : Prop :=
   ∀ c ∈ cs, c.1.Good P ∧ c.2.2.1.Good P
 
 theorem structMinorsPisR_map (lps : List LevelParam) (nP : Nat) (pw : PropWhen) :

@@ -20,19 +20,28 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- **`constsResolveBy`, renamed**: over lookups that answer alike on good keys. -/
-theorem constsResolveBy_ren {has : Key md → Bool} {has' : Key md' → Bool}
+theorem constsResolveBy_ren (hpre : P.Pre) {has : Key md → Bool} {has' : Key md' → Bool}
     (hhas : ∀ k : Key md, k.Good P → has' (k.map f) = has k) :
     ∀ {e : Expr md}, e.Good P → (e.mapKeys f).constsResolveBy has' = e.constsResolveBy has := by
-  have hr : ∀ r : Role, has' (roleKey r) = has (roleKey r) := fun r => hhas (roleKey r) trivial
+  have hr : ∀ r : Role, P.role r → has' (roleKey r) = has (roleKey r) :=
+    fun r h => hhas (roleKey r) h
+  have hpre' : ∀ r ∈ preludeRoles, P.role r := hpre
   intro e he
   induction e with
   | lit l =>
-    cases l <;> simp only [Expr.mapKeys, Expr.constsResolveBy, natName, natZeroName, natSuccName,
-      stringName, stringOfListName, listName, listNilName, listConsName, charName, charOfNatName, hr]
+    cases l with
+    | natVal n =>
+      simp (disch := exact hpre' _ (by decide)) only [Expr.mapKeys, Expr.constsResolveBy, natName,
+        natZeroName, natSuccName, hr]
+    | strVal s =>
+      have hs : ∀ r ∈ strRoles, P.role r := he
+      simp (disch := first | exact hpre' _ (by decide) | exact hs _ (by decide)) only
+        [Expr.mapKeys, Expr.constsResolveBy, natName, natZeroName, natSuccName, stringName,
+        stringOfListName, listName, listNilName, listConsName, charName, charOfNatName, hr]
   | const n us =>
     simp only [Expr.mapKeys, Expr.constsResolveBy]
     exact hhas n he
@@ -144,10 +153,10 @@ theorem indShapeOk_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env e
       cases c with
       | indInfo cv caps =>
         simp only [Function.comp, ConstantInfo.mapKeys, ConstantVal.mapKeys_type]
-        exact constsResolveBy_ren hhas (hb _ hc).1.2
+        exact constsResolveBy_ren hE.pre hhas (hb _ hc).1.2
       | ctorInfo cv nP nF =>
         simp only [Function.comp, ConstantInfo.mapKeys, ConstantVal.mapKeys_type]
-        exact constsResolveBy_ren hhas (hb _ hc).2
+        exact constsResolveBy_ren hE.pre hhas (hb _ hc).2
       | _ => rfl
     · apply List.all_congr_mem'
       intro c hc

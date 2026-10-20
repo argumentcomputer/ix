@@ -20,7 +20,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Pinned shapes of a stored constant -/
@@ -127,12 +127,13 @@ variable {env : Env md} {env' : Env md'}
 
 theorem natLitSupported_ren (hE : EnvRelG P f L env env') :
     natLitSupported env' = natLitSupported env := by
-  simp only [natLitSupported, hE.find_role, natIndOk_map, natZeroOk_map, natSuccOk_map]
+  simp (disch := decide) only [natLitSupported, hE.find_pre, natIndOk_map, natZeroOk_map,
+    natSuccOk_map]
 
-theorem strLitSupported_ren (hE : EnvRelG P f L env env') :
+theorem strLitSupported_ren (hE : EnvRelG P f L env env') (hs : P.Str) :
     strLitSupported env' = strLitSupported env := by
-  simp only [strLitSupported, natLitSupported_ren hE, hE.find_role, stringTyOk_map,
-    stringOfListTyOk_map, listTyOk_map, listNilTyOk_map, listConsTyOk_map, charTyOk_map,
+  simp (disch := decide) only [strLitSupported, natLitSupported_ren hE, hE.find_str hs,
+    stringTyOk_map, stringOfListTyOk_map, listTyOk_map, listNilTyOk_map, listConsTyOk_map, charTyOk_map,
     charOfNatTyOk_map]
 
 theorem isCtorApp_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
@@ -242,8 +243,12 @@ theorem constsResolve_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Go
     (e.mapKeys f).constsResolve env' = e.constsResolve env := by
   induction e with
   | lit l =>
-    cases l <;> simp only [Expr.mapKeys, Expr.constsResolve, hE.find_role] <;>
-      simp only [Option.isSome_map]
+    cases l with
+    | natVal n =>
+      simp (disch := decide) only [Expr.mapKeys, Expr.constsResolve, hE.find_pre, Option.isSome_map]
+    | strVal s =>
+      simp (disch := decide) only [Expr.mapKeys, Expr.constsResolve, hE.find_pre, hE.find_str he,
+        Option.isSome_map]
   | const n us =>
     simp only [Expr.mapKeys, Expr.constsResolve]
     exact hE.find_isSome he
@@ -311,13 +316,20 @@ theorem _root_.List.all_congr_mem {α : Type} {l : List α} {p q : α → Bool}
   simp only [natOpDeps, Key.map_eq_role_iff, apply_ite (List.map (Key.map f)), List.map_cons,
     List.map_nil, Key.map_role]
 
-/-- The dependencies of an operation are role keys, so good. -/
-theorem natOpDeps_good (k : Key md) : ∀ n ∈ natOpDeps k, n.Good P := by
+/-- The dependencies of an operation are role keys. -/
+theorem natOpDeps_role (k : Key md) : ∀ n ∈ natOpDeps k, ∃ r, n = roleKey r := by
   intro n hn
   rcases k with i | r | ⟨b, d⟩
   · simp [natOpDeps] at hn
-  · cases r <;> simp [natOpDeps] at hn <;> (repeat' (rcases hn with rfl | hn)) <;> trivial
+  · cases r <;> simp [natOpDeps] at hn <;> (repeat' (rcases hn with rfl | hn)) <;> exact ⟨_, rfl⟩
   · simp [natOpDeps] at hn
+
+/-- A dependency of an operation that `env` stores is good. -/
+theorem natOpDeps_good (hE : EnvRelG P f L env env') {k n : Key md} (hn : n ∈ natOpDeps k)
+    {c : ConstantInfo md} (hc : env.find? n = some c) : n.Good P := by
+  obtain ⟨r, rfl⟩ := natOpDeps_role k n hn
+  exact hE.role_of_find hc
+
 
 @[simp] theorem natOpEquations_map (d : Nat) (k : Key md) :
     natOpEquations d (k.map f) =
@@ -330,7 +342,13 @@ theorem natOpDeps_good (k : Key md) : ∀ n ∈ natOpDeps k, n.Good P := by
   simp only [natOpResult, Key.map_eq_role_iff, apply_ite (Option.map (Expr.mapKeys f)),
     Option.map_some, Option.map_none, Expr.mapKeys, apply_ite (Key.map f), Key.map_role]
 
-theorem natOpGuard_ren (hE : EnvRelG P f L env env') (k : Key md) :
+theorem natOpDeps_good_all (hall : P.All) (k : Key md) : ∀ n ∈ natOpDeps k, n.Good P := by
+  intro n hn
+  obtain ⟨r, rfl⟩ := natOpDeps_role k n hn
+  exact hall r
+
+theorem natOpGuard_ren_of (hE : EnvRelG P f L env env') (k : Key md)
+    (hdeps : ∀ n ∈ natOpDeps k, n.Good P) :
     natOpGuard env' (k.map f) = natOpGuard env k := by
   unfold natOpGuard
   rw [natLitSupported_ren hE, natOpDeps_map, List.all_map]
@@ -339,14 +357,25 @@ theorem natOpGuard_ren (hE : EnvRelG P f L env env') (k : Key md) :
     apply List.all_congr_mem
     intro n hn
     simp only [Function.comp_apply]
-    rw [hE.find n (natOpDeps_good k n hn)]
+    rw [hE.find n (hdeps n hn)]
     cases env.find? n with
     | none => rfl
     | some ci => cases ci <;> rfl
-  · simp only [Key.map_eq_role_iff, natDivModNames_contains_map, hE.find_role]
+  · simp (disch := decide) only [Key.map_eq_role_iff, natDivModNames_contains_map, hE.find_pre]
     split
     · cases env.find? boolTrueName <;> cases env.find? boolFalseName <;> simp
     · rfl
+
+theorem natOpGuard_ren (hE : EnvRelG P f L env env') (k : Key md)
+    (hg : natOpGuard env k = true) :
+    natOpGuard env' (k.map f) = natOpGuard env k := by
+  refine natOpGuard_ren_of hE k fun n hn => ?_
+  unfold natOpGuard at hg
+  simp only [Bool.and_eq_true, List.all_eq_true] at hg
+  have h1 := hg.1.2 n hn
+  cases hc : env.find? n with
+  | none => rw [hc] at h1; exact absurd h1 (by simp)
+  | some c => exact natOpDeps_good hE hn hc
 
 @[simp] theorem natOpStored_ren (hE : EnvRelG P f L env env') {k : Key md} (hk : k.Good P) :
     natOpStored env' (k.map f) = natOpStored env k := by
@@ -359,7 +388,7 @@ theorem natOpGuard_ren (hE : EnvRelG P f L env env') (k : Key md) :
 theorem natOpCod_ren (hE : EnvRelG P f L env env') (k : Key md) (e : Expr md) :
     natOpCod env' (k.map f) (e.mapKeys f) = natOpCod env k e := by
   unfold natOpCod
-  simp only [Key.map_eq_role_iff, hE.find_role, Expr.mapKeys_beq_const_role]
+  simp (disch := decide) only [Key.map_eq_role_iff, hE.find_pre, Expr.mapKeys_beq_const_role]
   split
   · congr 1
     cases env.find? boolName with
@@ -542,13 +571,14 @@ theorem andRescueSlots_ren (hE : EnvRelG P f L env env') {ctor : Key md} (hc : c
   unfold andRescueSlots andRescueSlotsOf
   congr 1
   funext j
-  have h := hE.findProj? (T := andName) trivial j
+  have hand : (andName : Key md).Good P := hE.pre .and (by decide)
+  have h := hE.findProj? (T := andName) hand j
   simp only [Key.map_role] at h
   rw [h]
   cases he : env.findProj? andName j with
   | none => rfl
   | some e =>
-    have hg := hE.findProj?_good (T := andName) trivial he
+    have hg := hE.findProj?_good (T := andName) hand he
     simp only [Option.map_some, ProjEntry.mapKeys]
     rw [Key.map_beq hE.inj hg.2.1 hc]
     rfl

@@ -25,7 +25,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id}
 
 /-! ## Inverting a renamed term's shape -/
 
@@ -147,30 +147,36 @@ macro "shape_match" : tactic =>
 
 /-! ## Related environments -/
 
+section Literal
+
+variable {P : md.Id → Prop}
+
 /-- **The renamed run's environment**: the renaming of a good environment
 (`env' = env.mapKeys f`, every constant of `env` good), `f` injective on `P`.
 So it answers every lookup `env` answers, renamed (`EnvRel.find`,
 `EnvRel.find_some`), and holds the renaming of each of `env`'s constants
-(`EnvRel.mem`). -/
+(`EnvRel.mem`). Goodness here is at `KeyScope.ofId P`: every role allowed. -/
 structure EnvRel (P : md.Id → Prop) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') :
     Prop where
   inj : InjOn f P
-  all : env.Good P
+  all : env.Good (KeyScope.ofId P)
   eq : env' = env.mapKeys f
 
 /-- On good keys a related environment answers as `env` does, renamed. -/
 theorem EnvRel.find {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
-    (hk : k.Good P) : env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f) := by
+    (hk : k.Good (KeyScope.ofId P)) :
+    env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f) := by
   rw [h.eq]
   exact Env.find?_mapKeys h.inj h.all hk
 
 /-- `env`'s constants are good. -/
 theorem EnvRel.good {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
-    (c : ConstantInfo md) (_ : k.Good P) (hc : env.find? k = some c) : c.Good P :=
+    (c : ConstantInfo md) (_ : k.Good (KeyScope.ofId P)) (hc : env.find? k = some c) :
+    c.Good (KeyScope.ofId P) :=
   h.all.find? hc
 
 /-- A good environment and its renaming are related. -/
-theorem EnvRel.mapKeys {env : Env md} (hf : InjOn f P) (henv : env.Good P) :
+theorem EnvRel.mapKeys {env : Env md} (hf : InjOn f P) (henv : env.Good (KeyScope.ofId P)) :
     EnvRel P f env (env.mapKeys f) :=
   ⟨hf, henv, rfl⟩
 
@@ -185,7 +191,7 @@ key: an input, derived or role key). -/
 theorem EnvRel.find_some {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
     {c : ConstantInfo md} (hc : env.find? k = some c) :
     env'.find? (k.map f) = some (c.mapKeys f) := by
-  have hk : k.Good P := by
+  have hk : k.Good (KeyScope.ofId P) := by
     obtain ⟨cs⟩ := env
     simp only [Env.find?] at hc
     have hname := List.find?_some hc
@@ -196,32 +202,40 @@ theorem EnvRel.find_some {env : Env md} {env' : Env md'} (h : EnvRel P f env env
   rw [h.find k hk, hc]
   rfl
 
+end Literal
+
 /-! ### The relation the simulations carry
 
-The simulations of the renaming walk use four facts of the relation they
-thread: `f` is injective on `P`, lookups at good keys answer renamed, the
-constants at good keys are good, and a push of a good constant keeps the
-relation. So they are stated over `EnvRelG P f L`: those facts, plus a *link*
-`L` that pushes keep (`LinkPush`). At the literal link (`LitLink`: `env` good,
-`env' = env.mapKeys f`) it is `EnvRel` (`EnvRel.toG`, `EnvRelG.toLit`); at the
-trivial link it is the frame relation the locality corollaries use (`f = id`,
-`env'` answering as `env` does on good keys). -/
+The simulations of the renaming walk use five facts of the relation they
+thread: `f` is injective on `P`'s ids, lookups at good keys answer renamed,
+the constants at good keys are good, a role outside `P`'s roles is absent
+from `env` (so a read of it fails on the original side), and a push of a
+good constant keeps the relation. So they are stated over `EnvRelG P f L`:
+those facts, plus a *link* `L` that pushes keep (`LinkPush`). At the literal
+link (`LitLink`: `env` good, `env' = env.mapKeys f`) and every role allowed
+it is `EnvRel` (`EnvRel.toG`, `EnvRelG.toLit`); at the trivial link it is
+the frame relation the locality corollaries use (`f = id`, `env'` answering
+as `env` does on good keys). -/
+
+variable {P : KeyScope md}
 
 /-- **Related environments, with a link** (see above). -/
-structure EnvRelG (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+structure EnvRelG (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
     (env : Env md) (env' : Env md') : Prop where
   inj : InjOn f P
   find : ∀ k : Key md, k.Good P → env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f)
   good : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P
+  absent : ∀ r : Role, ¬ P.role r → env.find? (roleKey r) = none
+  pre : P.Pre
   link : L env env'
 
 /-- **A link a push of a good constant keeps.** -/
-class LinkPush (P : md.Id → Prop) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop) : Prop where
+class LinkPush (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop) : Prop where
   push : ∀ {env : Env md} {env' : Env md'} {c : ConstantInfo md}, L env env' → c.Good P →
     L ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩
 
 /-- **The literal link**: `env` good, `env'` its renaming. -/
-def LitLink (P : md.Id → Prop) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') : Prop :=
+def LitLink (P : KeyScope md) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') : Prop :=
   env.Good P ∧ env' = env.mapKeys f
 
 instance : LinkPush P f (LitLink P f) where
@@ -237,21 +251,50 @@ def TrueLink : Env md → Env md' → Prop := fun _ _ => True
 instance : LinkPush P f (TrueLink (md := md) (md' := md')) where
   push _ _ := trivial
 
-theorem EnvRel.toG {env : Env md} {env' : Env md'} (h : EnvRel P f env env') :
-    EnvRelG P f (LitLink P f) env env' :=
-  ⟨h.inj, h.find, h.good, h.all, h.eq⟩
+theorem EnvRel.toG {P : md.Id → Prop} {env : Env md} {env' : Env md'} (h : EnvRel P f env env') :
+    EnvRelG (KeyScope.ofId P) f (LitLink (KeyScope.ofId P) f) env env' :=
+  ⟨h.inj, h.find, h.good, fun _ hr => absurd trivial hr, fun _ _ => trivial, h.all, h.eq⟩
 
-theorem EnvRelG.toLit {env : Env md} {env' : Env md'} (h : EnvRelG P f (LitLink P f) env env') :
+theorem EnvRelG.toLit {P : md.Id → Prop} {env : Env md} {env' : Env md'}
+    (h : EnvRelG (KeyScope.ofId P) f (LitLink (KeyScope.ofId P) f) env env') :
     EnvRel P f env env' :=
   ⟨h.inj, h.link.1, h.link.2⟩
 
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
-/-- A role's lookup, renamed. -/
-theorem EnvRelG.find_role {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') (r : Role) :
+/-- A role's lookup, renamed, at a role the scope allows. -/
+theorem EnvRelG.find_role {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {r : Role}
+    (hr : P.role r) :
     env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
-  h.find (roleKey r) trivial
+  h.find (roleKey r) hr
 
+/-- A prelude role's lookup, renamed. -/
+theorem EnvRelG.find_pre {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {r : Role}
+    (hr : r ∈ preludeRoles) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.find_role (h.pre r hr)
+
+/-- A string-support role's lookup, renamed, under a scope that allows them. -/
+theorem EnvRelG.find_str {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    (hs : P.Str) {r : Role} (hr : r ∈ strRoles) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.find_role (hs r hr)
+
+/-- A role outside the scope is absent from `env`. -/
+theorem EnvRelG.find_role_absent {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} (hr : ¬ P.role r) : env.find? (roleKey r) = none :=
+  h.absent r hr
+
+/-- A role `env` stores is in the scope. -/
+theorem EnvRelG.role_of_find {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} {c : ConstantInfo md} (hc : env.find? (roleKey r) = some c) : P.role r :=
+  Classical.byContradiction fun hr => by rw [h.absent r hr] at hc; exact nomatch hc
+
+/-- A role's lookup, renamed, wherever `env` answers it. -/
+theorem EnvRelG.find_role_some {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} {c : ConstantInfo md} (hc : env.find? (roleKey r) = some c) :
+    env'.find? (roleKey r) = some (c.mapKeys f) := by
+  rw [h.find_role (h.role_of_find hc), hc]; rfl
 /-- The good constant at a good key. -/
 theorem EnvRelG.good_of {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
     (hk : k.Good P) {c : ConstantInfo md} (hc : env.find? k = some c) : c.Good P :=
@@ -302,20 +345,27 @@ theorem EnvRelG.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRelG P f 
     | _ => exact nomatch he
 
 
+section LiteralLookups
+
+variable {P : md.Id → Prop}
+
 /-- `EnvRelG.findProj?` at the literal relation. -/
 theorem EnvRel.findProj? {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
-    {T : Key md} (hT : T.Good P) (i : Nat) :
+    {T : Key md} (hT : T.Good (KeyScope.ofId P)) (i : Nat) :
     env'.findProj? (T.map f) i = (env.findProj? T i).map (ProjEntry.mapKeys f) :=
   h.toG.findProj? hT i
 
 /-- `EnvRelG.findProj?_good` at the literal relation. -/
 theorem EnvRel.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
-    {T : Key md} (hT : T.Good P) {i : Nat} {e : ProjEntry md}
-    (he : env.findProj? T i = some e) : e.Good P :=
+    {T : Key md} (hT : T.Good (KeyScope.ofId P)) {i : Nat} {e : ProjEntry md}
+    (he : env.findProj? T i = some e) : e.Good (KeyScope.ofId P) :=
   h.toG.findProj?_good hT he
 
 /-- `EnvRelG.find_role` at the literal relation. -/
 theorem EnvRel.find_role {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (r : Role) :
     env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
-  h.toG.find_role r
+  h.toG.find_role trivial
+
+end LiteralLookups
+
 end Ix.Kernel

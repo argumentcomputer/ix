@@ -20,13 +20,13 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## The sets of the walks -/
 
 /-- Two subterm sets, the second the renaming of the first on good terms. -/
-def SeenRel (P : md.Id → Prop) (f : md.Id → md'.Id) (s : Std.HashSet (Expr md))
+def SeenRel (P : KeyScope md) (f : md.Id → md'.Id) (s : Std.HashSet (Expr md))
     (s' : Std.HashSet (Expr md')) : Prop :=
   ∀ e : Expr md, e.Good P → s'.contains (e.mapKeys f) = s.contains e
 
@@ -40,7 +40,7 @@ theorem SeenRel.insert (hf : InjOn f P) {s : Std.HashSet (Expr md)} {s' : Std.Ha
   simp only [Std.HashSet.contains_insert, Expr.mapKeys_beq hf hx he, h e he]
 
 /-- Two key sets, the second the renaming of the first on good keys. -/
-def KeySetRel (P : md.Id → Prop) (f : md.Id → md'.Id) (s : Std.HashSet (Key md))
+def KeySetRel (P : KeyScope md) (f : md.Id → md'.Id) (s : Std.HashSet (Key md))
     (s' : Std.HashSet (Key md')) : Prop :=
   ∀ k : Key md, k.Good P → s'.contains (k.map f) = s.contains k
 
@@ -54,7 +54,7 @@ theorem KeySetRel.insert (hf : InjOn f P) {s : Std.HashSet (Key md)} {s' : Std.H
   simp only [Std.HashSet.contains_insert, Key.map_beq hf hx hk, h k hk]
 
 /-- Two key accumulators, the second the renaming of the first. -/
-structure AccRel (P : md.Id → Prop) (f : md.Id → md'.Id) (acc : KeysAcc md) (acc' : KeysAcc md') :
+structure AccRel (P : KeyScope md) (f : md.Id → md'.Id) (acc : KeysAcc md) (acc' : KeysAcc md') :
     Prop where
   set : KeySetRel P f acc.1 acc'.1
   list : acc'.2 = acc.2.map (Key.map f)
@@ -88,15 +88,23 @@ theorem AccRel.foldl (hf : InjOn f P) :
 theorem litNatKeys_map : (litNatKeys (md := md)).map (Key.map f) = litNatKeys := rfl
 theorem litStrKeys_map : (litStrKeys (md := md)).map (Key.map f) = litStrKeys := rfl
 
-theorem litNatKeys_good : ∀ k ∈ (litNatKeys (md := md)), k.Good P := by
-  simp [litNatKeys, Key.Good]
+theorem litNatKeys_good (hpre : P.Pre) : ∀ k ∈ (litNatKeys (md := md)), k.Good P := by
+  have h1 := hpre .nat (by decide)
+  have h2 := hpre .natZero (by decide)
+  have h3 := hpre .natSucc (by decide)
+  simp [litNatKeys, Key.Good, h1, h2, h3]
 
-theorem litStrKeys_good : ∀ k ∈ (litStrKeys (md := md)), k.Good P := by
-  simp [litStrKeys, litNatKeys, Key.Good]
+theorem litStrKeys_good (hpre : P.Pre) (hs : P.Str) : ∀ k ∈ (litStrKeys (md := md)), k.Good P := by
+  have h1 := hpre .nat (by decide)
+  have h2 := hpre .natZero (by decide)
+  have h3 := hpre .natSucc (by decide)
+  simp only [KeyScope.Str, strRoles, List.mem_cons, List.mem_nil_iff, or_false,
+    forall_eq_or_imp, forall_eq] at hs
+  simp [litStrKeys, litNatKeys, Key.Good, h1, h2, h3, hs]
 
 /-! ## The key walk -/
 
-theorem constKeysGo_ren (hf : InjOn f P) :
+theorem constKeysGo_ren (hf : InjOn f P) (hpre : P.Pre) :
     ∀ (n : Nat) (todo : List (Expr md)) {seen : Std.HashSet (Expr md)}
       {seen' : Std.HashSet (Expr md')} {acc : KeysAcc md} {acc' : KeysAcc md'},
       Expr.GoodList P todo → SeenRel P f seen seen' → AccRel P f acc acc' →
@@ -109,50 +117,50 @@ theorem constKeysGo_ren (hf : InjOn f P) :
     obtain ⟨he, ht⟩ := ht
     simp only [List.map_cons, constKeysGo, hs e he]
     split
-    · exact constKeysGo_ren hf n todo ht hs ha
+    · exact constKeysGo_ren hf hpre n todo ht hs ha
     · have hs₂ := hs.insert hf he
       cases e with
       | const k us =>
-        exact constKeysGo_ren hf n todo ht hs₂ (ha.add hf he)
+        exact constKeysGo_ren hf hpre n todo ht hs₂ (ha.add hf he)
       | proj s i x =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (x :: todo) (by simp [he.2, ht]) hs₂ (ha.add hf he.1)
+        exact constKeysGo_ren hf hpre n (x :: todo) (by simp [he.2, ht]) hs₂ (ha.add hf he.1)
       | fvar i t =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (t :: todo) (by simp [he, ht]) hs₂ ha
+        exact constKeysGo_ren hf hpre n (t :: todo) (by simp [he, ht]) hs₂ ha
       | app a b =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (a :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
+        exact constKeysGo_ren hf hpre n (a :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
       | lam t b m =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (t :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
+        exact constKeysGo_ren hf hpre n (t :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
       | forallE t b m =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (t :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
+        exact constKeysGo_ren hf hpre n (t :: b :: todo) (by simp [he.1, he.2, ht]) hs₂ ha
       | letE t v b l =>
         simp only [Expr.Good] at he
-        exact constKeysGo_ren hf n (t :: v :: b :: todo) (by simp [he.1, he.2.1, he.2.2, ht])
+        exact constKeysGo_ren hf hpre n (t :: v :: b :: todo) (by simp [he.1, he.2.1, he.2.2, ht])
           hs₂ ha
       | lit l =>
         cases l with
         | natVal _ =>
-          exact constKeysGo_ren hf n todo ht hs₂ (AccRel.foldl hf _ litNatKeys_good ha)
+          exact constKeysGo_ren hf hpre n todo ht hs₂ (AccRel.foldl hf _ (litNatKeys_good hpre) ha)
         | strVal _ =>
-          exact constKeysGo_ren hf n todo ht hs₂ (AccRel.foldl hf _ litStrKeys_good ha)
-      | bvar i => exact constKeysGo_ren hf n todo ht hs₂ ha
-      | sort u => exact constKeysGo_ren hf n todo ht hs₂ ha
+          exact constKeysGo_ren hf hpre n todo ht hs₂ (AccRel.foldl hf _ (litStrKeys_good hpre he) ha)
+      | bvar i => exact constKeysGo_ren hf hpre n todo ht hs₂ ha
+      | sort u => exact constKeysGo_ren hf hpre n todo ht hs₂ ha
 
-theorem constKeysOf_ren (hf : InjOn f P) {es : List (Expr md)} (hes : Expr.GoodList P es) :
+theorem constKeysOf_ren (hf : InjOn f P) (hpre : P.Pre) {es : List (Expr md)} (hes : Expr.GoodList P es) :
     constKeysOf (es.map (Expr.mapKeys f)) = (constKeysOf es).map (Key.map f) := by
   unfold constKeysOf
-  rw [(constKeysGo_ren hf walkFuel es hes SeenRel.empty AccRel.empty).list, List.map_reverse]
+  rw [(constKeysGo_ren hf hpre walkFuel es hes SeenRel.empty AccRel.empty).list, List.map_reverse]
 
-theorem constKeysOf_good {es : List (Expr md)} (hes : Expr.GoodList P es) :
+theorem constKeysOf_good (hpre : P.Pre) {es : List (Expr md)} (hes : Expr.GoodList P es) :
     ∀ k ∈ constKeysOf es, k.Good P := by
   intro k hk
   unfold constKeysOf at hk
   rw [List.mem_reverse] at hk
-  exact (constKeysGo_ren (f := id) (fun _ _ _ _ h => h) walkFuel es hes SeenRel.empty
+  exact (constKeysGo_ren (f := id) (fun _ _ _ _ h => h) hpre walkFuel es hes SeenRel.empty
     AccRel.empty).good k hk
 
 /-! ## The closure walk -/
@@ -262,14 +270,14 @@ theorem refClosureGo_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env
         have hg := hE.good k c hk hc
         simp only [Option.map_some]
         rw [ConstantInfo.refKeys_mapKeys, ConstantInfo.refExprs_mapKeys,
-          constKeysOf_ren hE.inj (ConstantInfo.refExprs_good hg), ← List.map_append,
+          constKeysOf_ren hE.inj hE.pre (ConstantInfo.refExprs_good hg), ← List.map_append,
           ← List.map_append]
         refine refClosureGo_ren hE n _ ?_ hs₂
         intro x hx
         simp only [List.mem_append] at hx
         rcases hx with (hx | hx) | hx
         · exact ConstantInfo.refKeys_good hg x hx
-        · exact constKeysOf_good (ConstantInfo.refExprs_good hg) x hx
+        · exact constKeysOf_good hE.pre (ConstantInfo.refExprs_good hg) x hx
         · exact ht x hx
 
 theorem evidenceDepKeys_map (c : Key md) :
@@ -280,7 +288,7 @@ theorem evidenceDepKeys_map (c : Key md) :
   | none => rfl
   | some r => simp only [List.map_map]; rfl
 
-theorem evidenceDepKeys_good (c : Key md) : ∀ k ∈ evidenceDepKeys c, k.Good P := by
+theorem evidenceDepKeys_good (hall : P.All) (c : Key md) : ∀ k ∈ evidenceDepKeys c, k.Good P := by
   unfold evidenceDepKeys
   cases opRole? c with
   | none => intro k hk; exact nomatch hk
@@ -288,11 +296,11 @@ theorem evidenceDepKeys_good (c : Key md) : ∀ k ∈ evidenceDepKeys c, k.Good 
     intro k hk
     simp only [List.mem_map] at hk
     obtain ⟨_, _, rfl⟩ := hk
-    trivial
+    exact hall _
 
 /-- **The evidence closure condition answers alike** at renamed inputs over
 related environments. -/
-theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
+theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') (hall : P.All)
     {c : Key md} (hc : c.Good P) {annVal : Expr md} (ha : annVal.Good P)
     {proofs : List (Expr md)} (hps : Expr.GoodList P proofs) :
     evidenceLocal env'.find? (c.map f) (annVal.mapKeys f) (proofs.map (Expr.mapKeys f)) =
@@ -302,13 +310,13 @@ theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L en
   simp only
   have hroots : constKeysOf [annVal.mapKeys f] ++ evidenceDepKeys (c.map f) =
       (constKeysOf [annVal] ++ evidenceDepKeys c).map (Key.map f) := by
-    rw [List.map_append, ← evidenceDepKeys_map, ← constKeysOf_ren hE.inj hal]; rfl
+    rw [List.map_append, ← evidenceDepKeys_map, ← constKeysOf_ren hE.inj hE.pre hal]; rfl
   have hrg : ∀ k ∈ constKeysOf [annVal] ++ evidenceDepKeys c, k.Good P := by
     intro k hk
     simp only [List.mem_append] at hk
     rcases hk with hk | hk
-    · exact constKeysOf_good hal k hk
-    · exact evidenceDepKeys_good c k hk
+    · exact constKeysOf_good hE.pre hal k hk
+    · exact evidenceDepKeys_good hall c k hk
   rw [hroots]
   have hcl := refClosureGo_ren hE walkFuel _ hrg KeySetRel.empty
   rw [List.all_map]
@@ -320,10 +328,10 @@ theorem evidenceLocal_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L en
   simp only [Function.comp_def, substConstAll_ren hE.inj hc annVal hpg]
   have hm : constKeysOf [(Expr.substConstAll c annVal p).mapKeys f] =
       (constKeysOf [Expr.substConstAll c annVal p]).map (Key.map f) :=
-    constKeysOf_ren hE.inj hsl
+    constKeysOf_ren hE.inj hE.pre hsl
   rw [hm, List.all_map]
   apply List.all_congr_mem
   intro k hk
-  exact hcl k (constKeysOf_good hsl k hk)
+  exact hcl k (constKeysOf_good hE.pre hsl k hk)
 
 end Ix.Kernel

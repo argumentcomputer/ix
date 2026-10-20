@@ -101,8 +101,8 @@ keys are representatives, renamed to their addresses, is accepted at the same
 fuel, installing an environment that answers every lookup at a renamed key
 with the renamed constant. -/
 theorem acceptsRef_addrOf (μ : Ix.Kernel.CheckMode) (hroles : FibersRoleFree ixe)
-    {ev : Ix.Kernel.Evidences .source} (hev : ev.Good (QRep ixe)) {ds : List (Ix.Kernel.Declaration .source)}
-    (hds : ∀ d ∈ ds, d.Good (QRep ixe)) {envS : Ix.Kernel.Env .source}
+    {ev : Ix.Kernel.Evidences .source} (hev : ev.Good (KeyScope.ofId (QRep ixe))) {ds : List (Ix.Kernel.Declaration .source)}
+    (hds : ∀ d ∈ ds, d.Good (KeyScope.ofId (QRep ixe))) {envS : Ix.Kernel.Env .source}
     (h : Ix.Kernel.Cached.AcceptsRef μ ev ds envS) :
     ∃ envA, Ix.Kernel.Cached.AcceptsRef μ (ev.mapKeys (addrOf ixe))
         (ds.map (Ix.Kernel.Declaration.mapKeys (addrOf ixe))) envA ∧
@@ -113,7 +113,7 @@ theorem acceptsRef_addrOf (μ : Ix.Kernel.CheckMode) (hroles : FibersRoleFree ix
 
 /-- **An input key renames onto representatives.** -/
 theorem Key.subst_good (hroles : FibersRoleFree ixe) :
-    ∀ {k : Ix.Kernel.Key .source}, k.Good (QIn ixe) → (Key.subst (fiberAlias ixe) k).Good (QRep ixe)
+    ∀ {k : Ix.Kernel.Key .source}, k.Good (KeyScope.ofId (QIn ixe)) → (Key.subst (fiberAlias ixe) k).Good (KeyScope.ofId (QRep ixe))
   | .id n, hk => by
     obtain ⟨hrn, han⟩ := hk
     obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp han
@@ -145,10 +145,10 @@ theorem Key.subst_good (hroles : FibersRoleFree ixe) :
 section Structural
 
 variable {ρ : FiberMap} {P Q : Ix.Kernel.Mode.Id .source → Prop}
-  (hK : ∀ k : Ix.Kernel.Key .source, k.Good P → (Key.subst ρ k).Good Q)
+  (hK : ∀ k : Ix.Kernel.Key .source, k.Good (KeyScope.ofId P) → (Key.subst ρ k).Good (KeyScope.ofId Q))
 include hK
 
-theorem Expr.substKeys_good : ∀ {e : Ix.Kernel.Expr .source}, e.Good P → (Expr.substKeys ρ e).Good Q
+theorem Expr.substKeys_good : ∀ {e : Ix.Kernel.Expr .source}, e.Good (KeyScope.ofId P) → (Expr.substKeys ρ e).Good (KeyScope.ofId Q)
   | .bvar _, _ => trivial
   | .fvar _ t, h => Expr.substKeys_good (e := t) h
   | .sort _, _ => trivial
@@ -158,22 +158,23 @@ theorem Expr.substKeys_good : ∀ {e : Ix.Kernel.Expr .source}, e.Good P → (Ex
   | .forallE t b _, h => ⟨Expr.substKeys_good (e := t) h.1, Expr.substKeys_good (e := b) h.2⟩
   | .letE t v b _, h => ⟨Expr.substKeys_good (e := t) h.1, Expr.substKeys_good (e := v) h.2.1,
       Expr.substKeys_good (e := b) h.2.2⟩
-  | .lit _, _ => trivial
+  | .lit (.natVal _), _ => trivial
+  | .lit (.strVal _), _ => fun _ _ => trivial
   | .proj s _ e, h => ⟨hK s h.1, Expr.substKeys_good (e := e) h.2⟩
 
-theorem Expr.GoodList.substKeys {es : List (Ix.Kernel.Expr .source)} (h : Expr.GoodList P es) :
-    Expr.GoodList Q (es.map (Expr.substKeys ρ)) := by
+theorem Expr.GoodList.substKeys {es : List (Ix.Kernel.Expr .source)} (h : Expr.GoodList (KeyScope.ofId P) es) :
+    Expr.GoodList (KeyScope.ofId Q) (es.map (Expr.substKeys ρ)) := by
   intro e he
   simp only [List.mem_map] at he
   obtain ⟨e₀, h₀, rfl⟩ := he
   exact Expr.substKeys_good hK (h e₀ h₀)
 
-theorem ConstantVal.substKeys_good {cv : Ix.Kernel.ConstantVal .source} (h : cv.Good P) :
-    (ConstantVal.substKeys ρ cv).Good Q :=
+theorem ConstantVal.substKeys_good {cv : Ix.Kernel.ConstantVal .source} (h : cv.Good (KeyScope.ofId P)) :
+    (ConstantVal.substKeys ρ cv).Good (KeyScope.ofId Q) :=
   ⟨hK _ h.1, Expr.substKeys_good hK h.2⟩
 
-theorem RecRule.substKeys_good {r : Ix.Kernel.RecRule .source} (h : r.Good P) :
-    (RecRule.substKeys ρ r).Good Q := by
+theorem RecRule.substKeys_good {r : Ix.Kernel.RecRule .source} (h : r.Good (KeyScope.ofId P)) :
+    (RecRule.substKeys ρ r).Good (KeyScope.ofId Q) := by
   refine ⟨hK _ h.1, ?_, Expr.substKeys_good hK h.2.2⟩
   have h2 := h.2.1
   unfold RecRule.substKeys RecRuleFire.substKeys
@@ -184,8 +185,8 @@ theorem RecRule.substKeys_good {r : Ix.Kernel.RecRule .source} (h : r.Good P) :
     rw [hf] at h2
     exact Expr.GoodList.substKeys hK h2
 
-theorem ConstantInfo.substKeys_good {c : Ix.Kernel.ConstantInfo .source} (h : c.Good P) :
-    (ConstantInfo.substKeys ρ c).Good Q := by
+theorem ConstantInfo.substKeys_good {c : Ix.Kernel.ConstantInfo .source} (h : c.Good (KeyScope.ofId P)) :
+    (ConstantInfo.substKeys ρ c).Good (KeyScope.ofId Q) := by
   cases c with
   | axiomInfo v => exact ConstantVal.substKeys_good hK h
   | defnInfo v e _ => exact ⟨ConstantVal.substKeys_good hK h.1, Expr.substKeys_good hK h.2⟩
@@ -211,8 +212,8 @@ theorem ConstantInfo.substKeys_good {c : Ix.Kernel.ConstantInfo .source} (h : c.
     obtain ⟨b₀, hb₀, rfl⟩ := hb
     exact Expr.substKeys_good hK (h.2.2 b₀ hb₀)
 
-theorem Declaration.substKeys_good {d : Ix.Kernel.Declaration .source} (h : d.Good P) :
-    (Declaration.substKeys ρ d).Good Q := by
+theorem Declaration.substKeys_good {d : Ix.Kernel.Declaration .source} (h : d.Good (KeyScope.ofId P)) :
+    (Declaration.substKeys ρ d).Good (KeyScope.ofId Q) := by
   cases d with
   | axiomDecl v => exact ConstantVal.substKeys_good hK h
   | defnDecl v e _ => exact ⟨ConstantVal.substKeys_good hK h.1, Expr.substKeys_good hK h.2⟩
@@ -226,8 +227,8 @@ theorem Declaration.substKeys_good {d : Ix.Kernel.Declaration .source} (h : d.Go
     exact ConstantInfo.substKeys_good hK (h c₀ hc₀)
   | quotDecl _ v => exact ConstantVal.substKeys_good hK h
 
-theorem evidenceSubst_good {ev : Ix.Kernel.Evidences .source} (h : ev.Good P) :
-    (evidenceSubst ρ ev).Good Q := by
+theorem evidenceSubst_good {ev : Ix.Kernel.Evidences .source} (h : ev.Good (KeyScope.ofId P)) :
+    (evidenceSubst ρ ev).Good (KeyScope.ofId Q) := by
   intro p hp e he
   simp only [evidenceSubst, List.mem_map] at hp
   obtain ⟨⟨r, es⟩, hp₀, rfl⟩ := hp
@@ -317,7 +318,7 @@ representatives**: declarations whose keys name input names (`QIn`) collapse
 to declarations whose keys are representatives (`QRep`). -/
 theorem collapseDecls_good (hroles : FibersRoleFree ixe) {ds : Array (Ix.Kernel.Declaration .source)}
     {c : Collapsed} (h : collapseDecls (fiberAlias ixe) ds = .ok c)
-    (hds : ∀ d ∈ ds, d.Good (QIn ixe)) : ∀ d ∈ c.decls, d.Good (QRep ixe) := by
+    (hds : ∀ d ∈ ds, d.Good (KeyScope.ofId (QIn ixe))) : ∀ d ∈ c.decls, d.Good (KeyScope.ofId (QRep ixe)) := by
   intro d' hd'
   obtain ⟨d, hd, rfl⟩ := collapseDecls_kept h d' hd'
   exact Declaration.substKeys_good (fun _ hk => Key.subst_good hroles hk) (hds d hd)
@@ -331,8 +332,8 @@ theorem prepareSourceCollapsed_good (hroles : FibersRoleFree ixe)
     {ds : Array (Ix.Kernel.Declaration .source)}
     (h : prepareSourceCollapsed (fiberAlias ixe) hints pre env blocks = .ok ds)
     (hin : ∀ decls, leanIngressHinted hints env blocks pre.state = .ok decls →
-      ∀ d ∈ decls, d.Good (QIn ixe))
-    (hpre : ∀ d ∈ pre.ix.decls, d.Good (QRep ixe)) : ∀ d ∈ ds, d.Good (QRep ixe) := by
+      ∀ d ∈ decls, d.Good (KeyScope.ofId (QIn ixe)))
+    (hpre : ∀ d ∈ pre.ix.decls, d.Good (KeyScope.ofId (QRep ixe))) : ∀ d ∈ ds, d.Good (KeyScope.ofId (QRep ixe)) := by
   unfold prepareSourceCollapsed at h
   cases hi : leanIngressHinted hints env blocks pre.state with
   | error e => simp [hi, bind, Except.bind, Except.mapError] at h
@@ -386,8 +387,8 @@ theorem addrOf_injOnAt (hb : TableBound ixe roles) :
 
 /-- **Reference acceptance at the artifact's addresses**, under the table rule. -/
 theorem acceptsRef_addrOfAt (μ : Ix.Kernel.CheckMode) (hb : TableBound ixe roles)
-    {ev : Ix.Kernel.Evidences .source} (hev : ev.Good (QRepAt ixe roles))
-    {ds : List (Ix.Kernel.Declaration .source)} (hds : ∀ d ∈ ds, d.Good (QRepAt ixe roles))
+    {ev : Ix.Kernel.Evidences .source} (hev : ev.Good (KeyScope.ofId (QRepAt ixe roles)))
+    {ds : List (Ix.Kernel.Declaration .source)} (hds : ∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe roles)))
     {envS : Ix.Kernel.Env .source} (h : Ix.Kernel.Cached.AcceptsRef μ ev ds envS) :
     ∃ envA, Ix.Kernel.Cached.AcceptsRef μ (ev.mapKeys (addrOf ixe))
         (ds.map (Ix.Kernel.Declaration.mapKeys (addrOf ixe))) envA ∧
@@ -396,8 +397,8 @@ theorem acceptsRef_addrOfAt (μ : Ix.Kernel.CheckMode) (hb : TableBound ixe role
 
 /-- **An input key renames onto representatives** under the table rule. -/
 theorem Key.subst_goodAt (hb : TableBound ixe roles) :
-    ∀ {k : Ix.Kernel.Key .source}, k.Good (QIn ixe) →
-      (Key.subst (fiberAliasAt ixe roles) k).Good (QRepAt ixe roles)
+    ∀ {k : Ix.Kernel.Key .source}, k.Good (KeyScope.ofId (QIn ixe)) →
+      (Key.subst (fiberAliasAt ixe roles) k).Good (KeyScope.ofId (QRepAt ixe roles))
   | .id n, hk => by
     obtain ⟨hrn, han⟩ := hk
     obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp han
@@ -432,7 +433,7 @@ representatives. -/
 theorem collapseDecls_goodAt (hb : TableBound ixe roles)
     {ds : Array (Ix.Kernel.Declaration .source)} {c : Collapsed}
     (h : collapseDecls (fiberAliasAt ixe roles) ds = .ok c)
-    (hds : ∀ d ∈ ds, d.Good (QIn ixe)) : ∀ d ∈ c.decls, d.Good (QRepAt ixe roles) := by
+    (hds : ∀ d ∈ ds, d.Good (KeyScope.ofId (QIn ixe))) : ∀ d ∈ c.decls, d.Good (KeyScope.ofId (QRepAt ixe roles)) := by
   intro d' hd'
   obtain ⟨d, hd, rfl⟩ := collapseDecls_kept h d' hd'
   exact Declaration.substKeys_good (fun _ hk => Key.subst_goodAt hb hk) (hds d hd)
@@ -445,9 +446,9 @@ theorem prepareSourceCollapsed_goodAt (hb : TableBound ixe roles)
     {ds : Array (Ix.Kernel.Declaration .source)}
     (h : prepareSourceCollapsed (fiberAliasAt ixe roles) hints pre env blocks = .ok ds)
     (hin : ∀ decls, leanIngressHinted hints env blocks pre.state = .ok decls →
-      ∀ d ∈ decls, d.Good (QIn ixe))
-    (hpre : ∀ d ∈ pre.ix.decls, d.Good (QRepAt ixe roles)) :
-    ∀ d ∈ ds, d.Good (QRepAt ixe roles) := by
+      ∀ d ∈ decls, d.Good (KeyScope.ofId (QIn ixe)))
+    (hpre : ∀ d ∈ pre.ix.decls, d.Good (KeyScope.ofId (QRepAt ixe roles))) :
+    ∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe roles)) := by
   unfold prepareSourceCollapsed at h
   cases hi : leanIngressHinted hints env blocks pre.state with
   | error e => simp [hi, bind, Except.bind, Except.mapError] at h
@@ -726,9 +727,9 @@ same fuel, with a related environment. -/
 theorem acceptsRef_evAddr (μ : Ix.Kernel.CheckMode) {roles : Std.HashMap Address Ix.Kernel.Role}
     (hb : TableBound ixe roles) (hd : bundleDisjointB ixe b = true)
     {ev : Ix.Kernel.Evidences .source}
-    (hev : ev.Good (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n))
+    (hev : ev.Good (KeyScope.ofId (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n)))
     {ds : List (Ix.Kernel.Declaration .source)}
-    (hds : ∀ d ∈ ds, d.Good (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n))
+    (hds : ∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => QRepAt ixe roles n ∨ BundleOnly ixe b n)))
     {envS : Ix.Kernel.Env .source} (h : Ix.Kernel.Cached.AcceptsRef μ ev ds envS) :
     ∃ envA, Ix.Kernel.Cached.AcceptsRef μ (ev.mapKeys (evAddr ixe b))
         (ds.map (Ix.Kernel.Declaration.mapKeys (evAddr ixe b))) envA ∧
@@ -744,21 +745,21 @@ section Decided
 variable {q : Ix.Kernel.Name → Bool}
 
 theorem Key.goodB_spec : ∀ {k : Ix.Kernel.Key .source}, Key.goodB q k = true →
-    k.Good (fun n => q n = true)
+    k.Good (KeyScope.ofId (fun n => q n = true))
   | .id _, h => h
   | .role _, _ => trivial
   | .aux k _, h => Key.goodB_spec (k := k) h
 
 /-- The memo's invariant: every recorded subterm is good. -/
 def GoodSeen (Q : Ix.Kernel.Name → Prop) (seen : Std.HashSet (Ix.Kernel.Expr .source)) : Prop :=
-  ∀ e, seen.contains e = true → e.Good Q
+  ∀ e, seen.contains e = true → e.Good (KeyScope.ofId Q)
 
 theorem GoodSeen.empty {Q : Ix.Kernel.Name → Prop} : GoodSeen Q {} := by
   intro e h
   simp at h
 
 theorem GoodSeen.insert {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Kernel.Expr .source)}
-    (h : GoodSeen Q seen) {e : Ix.Kernel.Expr .source} (he : e.Good Q) : GoodSeen Q (seen.insert e) := by
+    (h : GoodSeen Q seen) {e : Ix.Kernel.Expr .source} (he : e.Good (KeyScope.ofId Q)) : GoodSeen Q (seen.insert e) := by
   intro x hx
   rw [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
   rcases hx with hx | hx
@@ -767,9 +768,9 @@ theorem GoodSeen.insert {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Ke
   · exact h x hx
 
 theorem goodBGo_finish {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Kernel.Expr .source)}
-    {e : Ix.Kernel.Expr .source} {ok : Bool} (hs : GoodSeen Q seen) (he : ok = true → e.Good Q) :
+    {e : Ix.Kernel.Expr .source} {ok : Bool} (hs : GoodSeen Q seen) (he : ok = true → e.Good (KeyScope.ofId Q)) :
     GoodSeen Q (if ok = true then (true, seen.insert e) else (false, seen)).2 ∧
-      ((if ok = true then (true, seen.insert e) else (false, seen)).1 = true → e.Good Q) := by
+      ((if ok = true then (true, seen.insert e) else (false, seen)).1 = true → e.Good (KeyScope.ofId Q)) := by
   cases ok with
   | false => exact ⟨hs, by simp⟩
   | true => exact ⟨hs.insert (he rfl), fun _ => he rfl⟩
@@ -778,12 +779,12 @@ theorem goodBGo_finish {Q : Ix.Kernel.Name → Prop} {seen : Std.HashSet (Ix.Ker
 theorem Expr.goodBGo_spec : ∀ (e : Ix.Kernel.Expr .source) {seen : Std.HashSet (Ix.Kernel.Expr .source)},
     GoodSeen (fun n => q n = true) seen →
       GoodSeen (fun n => q n = true) (Expr.goodBGo q seen e).2 ∧
-        ((Expr.goodBGo q seen e).1 = true → e.Good (fun n => q n = true)) := by
+        ((Expr.goodBGo q seen e).1 = true → e.Good (KeyScope.ofId (fun n => q n = true))) := by
   intro e
   induction e with
   | bvar => intro seen hs; exact ⟨hs, fun _ => trivial⟩
   | sort => intro seen hs; exact ⟨hs, fun _ => trivial⟩
-  | lit => intro seen hs; exact ⟨hs, fun _ => trivial⟩
+  | lit l => intro seen hs; cases l <;> exact ⟨hs, fun _ => by first | trivial | exact fun _ _ => trivial⟩
   | const n us => intro seen hs; exact ⟨hs, fun h => Key.goodB_spec h⟩
   | fvar i ty ih =>
     intro seen hs
@@ -873,7 +874,7 @@ theorem Expr.goodBGo_spec : ∀ (e : Ix.Kernel.Expr .source) {seen : Std.HashSet
 theorem exprsGoodB_spec : ∀ (es : List (Ix.Kernel.Expr .source))
     {seen : Std.HashSet (Ix.Kernel.Expr .source)}, GoodSeen (fun n => q n = true) seen →
       GoodSeen (fun n => q n = true) (exprsGoodB q seen es).2 ∧
-        ((exprsGoodB q seen es).1 = true → ∀ e ∈ es, e.Good (fun n => q n = true))
+        ((exprsGoodB q seen es).1 = true → ∀ e ∈ es, e.Good (KeyScope.ofId (fun n => q n = true)))
   | [], _, hs => ⟨hs, fun _ _ he => nomatch he⟩
   | e :: es, seen, hs => by
     obtain ⟨h1, h2⟩ := Expr.goodBGo_spec e hs
@@ -893,8 +894,8 @@ theorem exprsGoodB_spec : ∀ (es : List (Ix.Kernel.Expr .source))
 
 /-- A constant whose parts are good is good. -/
 theorem ConstantInfo.good_of_parts {P : Ix.Kernel.Name → Prop} {c : Ix.Kernel.ConstantInfo .source}
-    (hk : ∀ k ∈ (ConstantInfo.parts c).1, k.Good P) (he : ∀ e ∈ (ConstantInfo.parts c).2, e.Good P) :
-    c.Good P := by
+    (hk : ∀ k ∈ (ConstantInfo.parts c).1, k.Good (KeyScope.ofId P)) (he : ∀ e ∈ (ConstantInfo.parts c).2, e.Good (KeyScope.ofId P)) :
+    c.Good (KeyScope.ofId P) := by
   cases c with
   | axiomInfo v => exact ⟨hk _ (by simp [ConstantInfo.parts]), he _ (by simp [ConstantInfo.parts])⟩
   | defnInfo v e _ =>
@@ -930,8 +931,8 @@ theorem ConstantInfo.good_of_parts {P : Ix.Kernel.Name → Prop} {c : Ix.Kernel.
 
 /-- A declaration whose parts are good is good. -/
 theorem Declaration.good_of_parts {P : Ix.Kernel.Name → Prop} {d : Ix.Kernel.Declaration .source}
-    (hk : ∀ k ∈ (Declaration.parts d).1, k.Good P) (he : ∀ e ∈ (Declaration.parts d).2, e.Good P) :
-    d.Good P := by
+    (hk : ∀ k ∈ (Declaration.parts d).1, k.Good (KeyScope.ofId P)) (he : ∀ e ∈ (Declaration.parts d).2, e.Good (KeyScope.ofId P)) :
+    d.Good (KeyScope.ofId P) := by
   cases d with
   | axiomDecl v => exact ⟨hk _ (by simp [Declaration.parts]), he _ (by simp [Declaration.parts])⟩
   | defnDecl v e _ =>
@@ -953,8 +954,8 @@ theorem Declaration.good_of_parts {P : Ix.Kernel.Name → Prop} {d : Ix.Kernel.D
 
 /-- **The decided goodness of a stream**: every declaration's parts pass `q`. -/
 theorem declsGoodB_spec {ds : Array (Ix.Kernel.Declaration .source)} (h : declsGoodB q ds = true) :
-    ∀ d ∈ ds, (∀ k ∈ (Declaration.parts d).1, k.Good (fun n => q n = true)) ∧
-      (∀ e ∈ (Declaration.parts d).2, e.Good (fun n => q n = true)) := by
+    ∀ d ∈ ds, (∀ k ∈ (Declaration.parts d).1, k.Good (KeyScope.ofId (fun n => q n = true))) ∧
+      (∀ e ∈ (Declaration.parts d).2, e.Good (KeyScope.ofId (fun n => q n = true))) := by
   unfold declsGoodB at h
   rw [← Array.foldl_toList] at h
   intro d hd
@@ -967,8 +968,8 @@ theorem declsGoodB_spec {ds : Array (Ix.Kernel.Declaration .source)} (h : declsG
           if (Declaration.parts d).1.all (Key.goodB q) then exprsGoodB q acc.2 (Declaration.parts d).2
           else (false, acc.2)
         else acc) acc).1 = true →
-      acc.1 = true ∧ ∀ d ∈ l, (∀ k ∈ (Declaration.parts d).1, k.Good (fun n => q n = true)) ∧
-        (∀ e ∈ (Declaration.parts d).2, e.Good (fun n => q n = true)) from
+      acc.1 = true ∧ ∀ d ∈ l, (∀ k ∈ (Declaration.parts d).1, k.Good (KeyScope.ofId (fun n => q n = true))) ∧
+        (∀ e ∈ (Declaration.parts d).2, e.Good (KeyScope.ofId (fun n => q n = true))) from
     (this l (true, {}) GoodSeen.empty h).2 d hd'
   intro l
   induction l with
@@ -994,12 +995,12 @@ theorem declsGoodB_spec {ds : Array (Ix.Kernel.Declaration .source)} (h : declsG
 
 /-- The decided goodness of a stream, read: every declaration is good. -/
 theorem declsGoodB_good {ds : Array (Ix.Kernel.Declaration .source)} (h : declsGoodB q ds = true) :
-    ∀ d ∈ ds, d.Good (fun n => q n = true) := fun d hd =>
+    ∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => q n = true)) := fun d hd =>
   Declaration.good_of_parts (declsGoodB_spec h d hd).1 (declsGoodB_spec h d hd).2
 
 /-- **The decided goodness of an evidence table.** -/
 theorem evidenceGoodB_good {ev : Ix.Kernel.Evidences .source} (h : evidenceGoodB q ev = true) :
-    ev.Good (fun n => q n = true) := by
+    ev.Good (KeyScope.ofId (fun n => q n = true)) := by
   unfold evidenceGoodB at h
   rw [Bool.and_eq_true] at h
   obtain ⟨hk, he⟩ := h
@@ -1052,8 +1053,8 @@ theorem qEvB_spec {roles : Std.HashMap Address Ix.Kernel.Role} {b : Ix.RoleEvide
 /-- **What the checks give**, at a bundle `b` and evidence `ev`. -/
 theorem collapsedChecksWith_spec {b : Ix.RoleEvidence.Bundle} {ev : Ix.Kernel.Evidences .source}
     {ds : Array (Ix.Kernel.Declaration .source)} (h : collapsedChecksWith ixe t b ev ds = none) :
-    (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
-      (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+    (∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t)))) ∧
+      (∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n))) ∧
       bundleDisjointB ixe b = true ∧
       (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev).Good
         (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) := by
@@ -1072,20 +1073,20 @@ theorem collapsedChecksWith_spec {b : Ix.RoleEvidence.Bundle} {ev : Ix.Kernel.Ev
   refine ⟨fun d hd => ?_, fun d hd => ?_, h2, ?_⟩
   · have hp := declsGoodB_spec h1 d hd
     exact Declaration.good_of_parts
-      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => qRepAtB_spec hn) (hp.1 k hk))
-      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => qRepAtB_spec hn) (hp.2 e he))
+      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => qRepAtB_spec hn) (fun _ _ => trivial) (hp.1 k hk))
+      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => qRepAtB_spec hn) (fun _ _ => trivial) (hp.2 e he))
   · have hp := declsGoodB_spec h1 d hd
     exact Declaration.good_of_parts
-      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (hp.1 k hk))
-      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (hp.2 e he))
+      (fun k hk => Ix.Kernel.Key.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (fun _ _ => trivial) (hp.1 k hk))
+      (fun e he => Ix.Kernel.Expr.Good.mono (fun _ hn => Or.inl (qRepAtB_spec hn)) (fun _ _ => trivial) (hp.2 e he))
   · intro p hp e he
     have := evidenceGoodB_good h3 p hp e he
     cases e with
     | defeq => trivial
     | proof kv =>
       obtain ⟨k, v⟩ := kv
-      exact ⟨Ix.Kernel.Key.Good.mono (fun _ hn => qEvB_spec hn) this.1,
-        Ix.Kernel.Expr.Good.mono (fun _ hn => qEvB_spec hn) this.2⟩
+      exact ⟨Ix.Kernel.Key.Good.mono (fun _ hn => qEvB_spec hn) (fun _ _ => trivial) this.1,
+        Ix.Kernel.Expr.Good.mono (fun _ hn => qEvB_spec hn) (fun _ _ => trivial) this.2⟩
 
 theorem collapsedChecksUsing_spec {bundle : Except String Ix.RoleEvidence.Bundle}
     {ev : Ix.Kernel.Evidences .source} {ds : Array (Ix.Kernel.Declaration .source)}
@@ -1111,8 +1112,8 @@ theorem prepareSourceCollapsedAtUsing_good {bundle : Except String Ix.RoleEviden
     (h : prepareSourceCollapsedAtUsing bundle ev ixe t hints pre env blocks = .ok ds) :
     prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks = .ok ds ∧
       ∃ b, bundle = .ok b ∧
-        (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
-        (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+        (∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t)))) ∧
+        (∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n))) ∧
         bundleDisjointB ixe b = true ∧
         (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) ev).Good
           (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) := by
@@ -1142,8 +1143,8 @@ theorem prepareSourceCollapsedAt_good
     (h : prepareSourceCollapsedAt ixe t hints pre env blocks = .ok ds) :
     prepareSourceCollapsed (fiberAliasAt ixe (roleAtMap t)) hints pre env blocks = .ok ds ∧
       ∃ b, Ix.RoleEvidence.committedBundle () = .ok b ∧
-        (∀ d ∈ ds, d.Good (QRepAt ixe (roleAtMap t))) ∧
-        (∀ d ∈ ds, d.Good (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n)) ∧
+        (∀ d ∈ ds, d.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t)))) ∧
+        (∀ d ∈ ds, d.Good (KeyScope.ofId (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n))) ∧
         bundleDisjointB ixe b = true ∧
         (evidenceSubst (fiberAliasAt ixe (roleAtMap t)) (Ix.RoleEvidence.bundleEvidence ())).Good
           (fun n => QRepAt ixe (roleAtMap t) n ∨ BundleOnly ixe b n) :=

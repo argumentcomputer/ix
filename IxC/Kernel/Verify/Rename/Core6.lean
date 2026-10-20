@@ -21,7 +21,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
@@ -166,16 +166,16 @@ theorem defeqStep_sim (mode : CheckMode) (hE : EnvRelG P f L env env') (hr : Cor
         simp only [Expr.mapKeys] <;>
         first
           | exact stuckIrrel_sim mode hE hr d ha' hb'
-          | exact SimE.ite (by simp [strLitSupported_ren hE])
-              (fun _ => SimE.congr (by simp) (hr.defeq d _ _ (strLitToConstructor_good s) hb'))
+          | exact SimE.ite (by simp [strLitSupported_ren hE ha'])
+              (fun _ => SimE.congr (by simp) (hr.defeq d _ _ (strLitToConstructor_good hE.pre ha' s) hb'))
               (fun _ => stuckIrrel_sim mode hE hr d ha' hb')
     case app.lit.strVal =>
       rcases fa with _ | _ | _ | ⟨c, us⟩ | _ | _ | _ | _ | _ | _ <;>
         simp only [Expr.mapKeys] <;>
         first
           | exact stuckIrrel_sim mode hE hr d ha' hb'
-          | exact SimE.ite (by simp [strLitSupported_ren hE])
-              (fun _ => SimE.congr (by simp) (hr.defeq d _ _ ha' (strLitToConstructor_good s')))
+          | exact SimE.ite (by simp [strLitSupported_ren hE hb'])
+              (fun _ => SimE.congr (by simp) (hr.defeq d _ _ ha' (strLitToConstructor_good hE.pre hb' s')))
               (fun _ => stuckIrrel_sim mode hE hr d ha' hb')
     case const.const =>
       have hca : ca.Good P := ha'

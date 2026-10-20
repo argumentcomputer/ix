@@ -20,7 +20,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {env : Env md} {env' : Env md'}
 variable {r : (CoreFns md) (CheckM md)} {r' : (CoreFns md') (CheckM md')}
@@ -30,12 +30,12 @@ abbrev SimV {α : Type} (x : CheckM md α) (x' : CheckM md' α) : Prop :=
   SimE (fun _ => True) id x x'
 
 /-- Simulation of a term result. -/
-abbrev SimX (P : md.Id → Prop) (f : md.Id → md'.Id) (x : CheckM md (Expr md))
+abbrev SimX (P : KeyScope md) (f : md.Id → md'.Id) (x : CheckM md (Expr md))
     (x' : CheckM md' (Expr md')) : Prop :=
   SimE (Expr.Good P) (Expr.mapKeys f) x x'
 
 /-- Simulation of an optional term result. -/
-abbrev SimO (P : md.Id → Prop) (f : md.Id → md'.Id) (x : CheckM md (Option (Expr md)))
+abbrev SimO (P : KeyScope md) (f : md.Id → md'.Id) (x : CheckM md (Option (Expr md)))
     (x' : CheckM md' (Option (Expr md'))) : Prop :=
   SimE (fun o => ∀ e ∈ o, Expr.Good P e) (Option.map (Expr.mapKeys f)) x x'
 
@@ -48,7 +48,7 @@ theorem isUnitLikeTy_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Goo
     isUnitLikeTy env' (e.mapKeys f) = isUnitLikeTy env e := by
   cases e with
   | const c us =>
-    simp only [Expr.mapKeys, isUnitLikeTy, Key.map_beq_role, hE.find_role]
+    simp (disch := decide) only [Expr.mapKeys, isUnitLikeTy, Key.map_beq_role, hE.find_pre]
     congr 1
     · congr 1
       cases env.find? punitName with
@@ -63,15 +63,18 @@ theorem isUnitLikeTy_ren (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Goo
         | _ => rfl
   | _ => rfl
 
-theorem natOpResult_good (c : Key md) (a b : Nat) : ∀ e ∈ natOpResult c a b, e.Good P := by
+theorem natOpResult_good (hpre : P.Pre) (c : Key md) (a b : Nat) :
+    ∀ e ∈ natOpResult c a b, e.Good P := by
   intro e he
+  have ht : (Expr.const (boolTrueName : Key md) []).Good P := hpre .boolTrue (by decide)
+  have hf : (Expr.const (boolFalseName : Key md) []).Good P := hpre .boolFalse (by decide)
   rcases c with i | r | ⟨k, d⟩
   · simp [natOpResult] at he
   · cases r <;> simp [natOpResult] at he <;>
       first
-        | (subst he; trivial)
-        | (obtain ⟨-, rfl⟩ := he; trivial)
-        | (subst he; split <;> trivial)
+        | (subst he; first | trivial | exact ht | exact hf)
+        | (obtain ⟨-, rfl⟩ := he; first | trivial | exact ht | exact hf)
+        | (subst he; split <;> first | trivial | exact ht | exact hf)
   · simp [natOpResult] at he
 
 @[simp] theorem mem_natOpWfNames_map (k : Key md) :
@@ -122,7 +125,7 @@ theorem reduceNat_sim (hE : EnvRelG P f L env env') (hr : CoreSim P f r r') (d :
         rw [rawNatLit?_mapKeys]
         cases rawNatLit? w₂ with
         | none => exact SimE.pure' (fun _ h => nomatch h) rfl
-        | some n₂ => exact SimE.pure' (natOpResult_good c n₁ n₂) (natOpResult_map c n₁ n₂)
+        | some n₂ => exact SimE.pure' (natOpResult_good hE.pre c n₁ n₂) (natOpResult_map c n₁ n₂)
     · refine SimE.ite (by simp [natLitSupported_ren hE]) (fun _ => ?_) (fun _ => ?_)
       · refine SimE.bind (hr.whnf d a ha) (fun w _ => ?_)
         rw [rawNatLit?_mapKeys]

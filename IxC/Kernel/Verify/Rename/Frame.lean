@@ -18,7 +18,7 @@ environments it installs again answer alike at `P`-good keys.
 
 namespace Ix.Kernel
 
-variable {md : Mode} {P : md.Id → Prop}
+variable {md : Mode} {P : KeyScope md}
 
 /-! ## The identity renaming -/
 
@@ -77,17 +77,20 @@ theorem Evidence.mapKeys_id_fun :
 
 /-- **The frame relation** at `P`: `env'` answers as `env` does at `P`-good
 keys, and `env`'s constants at `P`-good keys are `P`-good. -/
-abbrev EnvFrame (P : md.Id → Prop) (env env' : Env md) : Prop :=
+abbrev EnvFrame (P : KeyScope md) (env env' : Env md) : Prop :=
   EnvRelG P (fun i => i) TrueLink env env'
 
 theorem EnvFrame.mk {env env' : Env md} (hfind : ∀ k : Key md, k.Good P → env'.find? k = env.find? k)
-    (hgood : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P) :
+    (hgood : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P)
+    (habsent : ∀ r : Role, ¬ P.role r → env.find? (roleKey r) = none) (hpre : P.Pre) :
     EnvFrame P env env' where
   inj := fun _ _ _ _ h => h
   find k hk := by
     rw [Key.map_id, hfind k hk]
     cases env.find? k <;> simp
   good := hgood
+  absent := habsent
+  pre := hpre
   link := trivial
 
 /-- At a `P`-good key, the frame answers as `env` does. -/
@@ -100,29 +103,32 @@ theorem EnvFrame.find_eq {env env' : Env md} (h : EnvFrame P env env') {k : Key 
 
 /-- An environment frames itself. -/
 theorem EnvFrame.refl {env : Env md} (hgood : ∀ (k : Key md) (c : ConstantInfo md), k.Good P →
-    env.find? k = some c → c.Good P) : EnvFrame P env env :=
-  EnvFrame.mk (fun _ _ => rfl) hgood
+    env.find? k = some c → c.Good P)
+    (habsent : ∀ r : Role, ¬ P.role r → env.find? (roleKey r) = none) (hpre : P.Pre) :
+    EnvFrame P env env :=
+  EnvFrame.mk (fun _ _ => rfl) hgood habsent hpre
 
 /-! ## The frame step -/
 
 /-- **One declaration, framed**: a declaration naming `P`-good keys only, checked
 over `B`, is matched by its check over a framing `B'`. -/
 theorem checkDecl_frame (mode : CheckMode) (F : Nat) {ev : Evidences md} (hev : ev.Good P)
-    {B B' : Env md} (hE : EnvFrame P B B') {d : Declaration md} (hd : d.Good P) :
+    {B B' : Env md} (hE : EnvFrame P B B') {d : Declaration md} (hd : d.Good P)
+    (hop : d.NoOp ∨ P.All) :
     SimR (EnvFrame P) (checkDecl mode (fueledOps mode F) ev B d)
       (checkDecl mode (fueledOps mode F) ev B' d) := by
   have h := checkDecl_sim mode
-    (fueledOps_sim (P := P) (f := fun i => i) (L := TrueLink) mode F) hev hE hd
+    (fueledOps_sim (P := P) (f := fun i => i) (L := TrueLink) mode F) hev hE hd hop
   rwa [Declaration.mapKeys_id, Evidences.mapKeys_id] at h
 
 /-- **A list of declarations, framed.** -/
 theorem foldlM_checkDecl_frame (mode : CheckMode) (F : Nat) {ev : Evidences md} (hev : ev.Good P)
-    {ds : List (Declaration md)} (hds : ∀ d ∈ ds, d.Good P) {B B' : Env md}
-    (hE : EnvFrame P B B') :
+    {ds : List (Declaration md)} (hds : ∀ d ∈ ds, d.Good P) (hop : P.All ∨ ∀ d ∈ ds, d.NoOp)
+    {B B' : Env md} (hE : EnvFrame P B B') :
     SimR (EnvFrame P) (ds.foldlM (checkDecl mode (fueledOps mode F) ev) B)
       (ds.foldlM (checkDecl mode (fueledOps mode F) ev) B') := by
   have h := checkDeclsPure_simG mode
-    (fueledOps_sim (P := P) (f := fun i => i) (L := TrueLink) mode F) hev hds hE
+    (fueledOps_sim (P := P) (f := fun i => i) (L := TrueLink) mode F) hev hds hop hE
   have hmap : ds.map (Declaration.mapKeys fun i => i) = ds := by
     rw [show (Declaration.mapKeys (md := md) (md' := md) fun i => i) = id from
       funext Declaration.mapKeys_id, List.map_id]

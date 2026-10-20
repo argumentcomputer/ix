@@ -20,7 +20,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
@@ -133,7 +133,8 @@ theorem checkProjLookups_sim {env : Env md} {env' : Env md'} (hE : EnvRelG P f L
           refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
           rw [hE.find_isSome hT]
           refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
-          have heq := find_eq_pin_ren hE (k := eqName) trivial (pin := eqA) eqA_noIds
+          have heq := find_eq_pin_ren hE (k := eqName) (hE.pre .eq (by decide)) (pin := eqA)
+            (ConstantInfo.good_of_pinIn hE.pre eqA_pinIn)
           simp only [eqA_mapKeys] at heq
           refine SimE.ite (decide_eq_decide.mp heq.symm) (fun _ => ?_) (fun _ => SimE.throw_bind)
           exact SimE.pure' ⟨hc₁, hc₂.1⟩ rfl

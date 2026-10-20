@@ -27,7 +27,7 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-! ## Relational success simulation -/
@@ -87,6 +87,15 @@ theorem ite {c c' : Prop} [Decidable c] [Decidable c'] {t e : Except ε α} {t' 
   · rw [if_pos h, if_pos (hc.mp h)]; exact ht h
   · rw [if_neg h, if_neg (fun h' => h (hc.mpr h'))]; exact he h
 
+/-- **A guard**: a condition the original passes the renamed run passes,
+and the original's other branch fails. -/
+theorem ite_guard {c c' : Prop} [Decidable c] [Decidable c'] {t e : Except ε α}
+    {t' e' : Except ε' α'} (hc : c → c') (ht : c → SimR R t t') (he : ∀ a, e ≠ .ok a) :
+    SimR R (if c then t else e) (if c' then t' else e') := by
+  by_cases h : c
+  · rw [if_pos h, if_pos (hc h)]; exact ht h
+  · rw [if_neg h]; exact of_fail he
+
 theorem congr {x : Except ε α} {x'₁ x'₂ : Except ε' α'} (h : x'₁ = x'₂) (hs : SimR R x x'₁) :
     SimR R x x'₂ :=
   h ▸ hs
@@ -120,18 +129,28 @@ theorem EnvRelG.push {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env
     cases hck : (c.name == k)
     · rw [hck] at hd; exact hE.good k d hk hd
     · rw [hck] at hd; cases hd; exact hc
+  absent r hr := by
+    have hn : (c.name == roleKey r) = false := by
+      cases h : (c.name == roleKey r)
+      · rfl
+      · have hcn := hc.name
+        rw [beq_iff_eq.mp h] at hcn
+        exact absurd hcn hr
+    simp only [Env.find?, List.find?_cons, hn]
+    exact hE.absent r hr
+  pre := hE.pre
   link := LinkPush.push hE.link hc
 
 /-- `EnvRelG.push` at the literal relation. -/
-theorem EnvRel.push {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
-    {c : ConstantInfo md} (hc : c.Good P) :
+theorem EnvRel.push {P : md.Id → Prop} {env : Env md} {env' : Env md'} (hE : EnvRel P f env env')
+    {c : ConstantInfo md} (hc : c.Good (KeyScope.ofId P)) :
     EnvRel P f ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩ :=
   (hE.toG.push hc).toLit
 
 /-! ## Telescope views of good terms -/
 
 /-- A good binder list. -/
-def Expr.BindersGood (P : md.Id → Prop) (bs : List (Expr md × BinderMeta)) : Prop :=
+def Expr.BindersGood (P : KeyScope md) (bs : List (Expr md × BinderMeta)) : Prop :=
   ∀ b ∈ bs, b.1.Good P
 
 theorem Expr.stripPis_good : ∀ {k : Nat} {e : Expr md} {bs : List (Expr md × BinderMeta)}
@@ -379,6 +398,28 @@ theorem checkConstantVal_sim (hops : OpsSim P f L ops ops') {env : Env md} {env'
   refine SimE.bind (hops.inferType hE 0 type ht) (fun stype hst => ?_)
   refine SimE.bind (hops.ensureSort hE 0 stype hst) (fun _ _ => ?_)
   exact SimE.pure' ⟨hcv.1, ht⟩ rfl
+
+/-- `checkConstantVal_sim`, with the checked constant's name: the declared one. -/
+theorem checkConstantVal_sim_name (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {cv : ConstantVal md} (hcv : cv.Good P) :
+    SimE (fun a => a.Good P ∧ a.name = cv.name) (ConstantVal.mapKeys f) (checkConstantVal ops env cv)
+      (checkConstantVal ops' env' (cv.mapKeys f)) := by
+  unfold checkConstantVal
+  simp only [ConstantVal.mapKeys_name, ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
+    hE.find_isSome hcv.1, reservedBasisNames_contains_map, Key.map_isProjFnShape,
+    Expr.looseBVarsBounded_mapKeys, Expr.hasFvar_mapKeys, Expr.allLevelParamsDefined_mapKeys]
+  refine SimE.ite Iff.rfl (fun _ => SimE.throw_bind) (fun _ => ?_)
+  refine SimE.ite Iff.rfl (fun _ => SimE.throw_bind) (fun _ => ?_)
+  refine SimE.ite Iff.rfl (fun _ => SimE.throw_bind) (fun _ => ?_)
+  refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
+  refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
+  refine SimE.ite Iff.rfl (fun _ => SimE.throw_bind) (fun _ => ?_)
+  refine SimE.bind (hops.annotate hE 0 cv.type hcv.2) (fun type ht => ?_)
+  refine SimE.ite (by simp) (fun _ => ?_) (fun _ => SimE.throw_bind)
+  refine SimE.ite (by rw [constsResolve_ren hE ht]) (fun _ => ?_) (fun _ => SimE.throw_bind)
+  refine SimE.bind (hops.inferType hE 0 type ht) (fun stype hst => ?_)
+  refine SimE.bind (hops.ensureSort hE 0 stype hst) (fun _ _ => ?_)
+  exact SimE.pure' ⟨⟨hcv.1, ht⟩, rfl⟩ rfl
 
 theorem domsMatchAux_ren {g : Nat → Expr md → Expr md} {g' : Nat → Expr md' → Expr md'}
     (hg : ∀ i e, e.Good P → (g i e).mapKeys f = g' i (e.mapKeys f))

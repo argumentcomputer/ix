@@ -19,7 +19,7 @@ set_option linter.unusedSimpArgs false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 
 /-! ## Terms naming no key -/
 

@@ -19,15 +19,15 @@ set_option linter.unusedSectionVars false
 
 namespace Ix.Kernel
 
-variable {md md' : Mode} {f : md.Id → md'.Id} {P : md.Id → Prop}
+variable {md md' : Mode} {f : md.Id → md'.Id} {P : KeyScope md}
 variable {L : Env md → Env md' → Prop} [LinkPush P f L]
 
 /-- The certificate statements name role keys, fvars and the operation. -/
-theorem divModCertStmts_good {c : Key md} (hc : c.Good P) :
+theorem divModCertStmts_good (hall : P.All) {c : Key md} (hc : c.Good P) :
     ∀ p ∈ divModCertStmts c, Expr.GoodList P p.1 ∧ p.2.Good P := by
   unfold divModCertStmts
   repeat' split
-  all_goals (try subst_vars); simp [Expr.Good, Key.Good, Expr.GoodList, hc]
+  all_goals (try subst_vars); simp [Expr.Good, Key.Good, Expr.GoodList, hc, show ∀ r, P.role r from hall]
 
 theorem divModCertApplied_mapKeys (proofS : Expr md) (hyps : List (Expr md)) :
     divModCertApplied (proofS.mapKeys f) (hyps.map (Expr.mapKeys f)) =
@@ -35,11 +35,12 @@ theorem divModCertApplied_mapKeys (proofS : Expr md) (hyps : List (Expr md)) :
   unfold divModCertApplied
   rcases hyps with _ | ⟨h1, _ | ⟨h2, _ | _⟩⟩ <;> rfl
 
-theorem divModCertApplied_good {proofS : Expr md} {hyps : List (Expr md)} (hp : proofS.Good P)
+theorem divModCertApplied_good (hall : P.All) {proofS : Expr md} {hyps : List (Expr md)}
+    (hp : proofS.Good P)
     (hh : Expr.GoodList P hyps) : (divModCertApplied proofS hyps).Good P := by
   unfold divModCertApplied
   rcases hyps with _ | ⟨h1, _ | ⟨h2, _ | _⟩⟩ <;>
-    simp_all [Expr.Good, Key.Good, Expr.GoodList]
+    simp_all [Expr.Good, Key.Good, Expr.GoodList, show ∀ r, P.role r from hall]
 
 theorem Expr.GoodList.map_substConst0 {n : Key md} {r : Expr md} (hr : r.Good P)
     {es : List (Expr md)} (h : Expr.GoodList P es) :
@@ -79,7 +80,7 @@ theorem divModCertGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L 
   obtain ⟨x₀, h₀, rfl⟩ := hx
   exact constsResolve_ren hE (substConst0_good ha (hh x₀ h₀))
 
-theorem divModCertsGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
+theorem divModCertsGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') (hall : P.All)
     {c : Key md} (hc : c.Good P) {annVal : Expr md} (ha : annVal.Good P)
     {proofs : List (Expr md)} (hps : Expr.GoodList P proofs) :
     divModCertsGuard (proofs.map (Expr.mapKeys f)) env' (c.map f) (annVal.mapKeys f) =
@@ -89,7 +90,7 @@ theorem divModCertsGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L
   apply List.all_congr_mem
   intro p hp
   obtain ⟨⟨hyps, eqE⟩, proof⟩ := p
-  have hst := divModCertStmts_good hc _ (List.of_mem_zip hp).1
+  have hst := divModCertStmts_good hall hc _ (List.of_mem_zip hp).1
   have hpr : proof.Good P := hps proof (List.of_mem_zip hp).2
   exact divModCertGuard_ren hE hc ha hst.1 hst.2 hpr
 
@@ -98,7 +99,7 @@ section Ops
 variable {ops : (CheckerOps md) (CheckM md)} {ops' : (CheckerOps md') (CheckM md')}
 
 theorem checkDivModCerts_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' : Env md'}
-    (hE : EnvRelG P f L env env') {c : Key md} (hc : c.Good P) {annVal : Expr md}
+    (hE : EnvRelG P f L env env') (hall : P.All) {c : Key md} (hc : c.Good P) {annVal : Expr md}
     (ha : annVal.Good P) :
     ∀ (stmts : List (List (Expr md) × Expr md)) (proofs : List (Expr md)),
       (∀ p ∈ stmts, Expr.GoodList P p.1 ∧ p.2.Good P) → Expr.GoodList P proofs →
@@ -120,15 +121,15 @@ theorem checkDivModCerts_sim (hops : OpsSim P f L ops ops') {env : Env md} {env'
     have hhs := Expr.GoodList.map_substConst0 (n := c) ha hh
     rw [substConstAll_ren hE.inj hc annVal hp.1, map_substConst0_ren hE.inj hc annVal hh,
       divModCertApplied_mapKeys]
-    refine SimE.bind (hops.annotate hE 4 _ (divModCertApplied_good hsA hhs)) (fun aA haA => ?_)
+    refine SimE.bind (hops.annotate hE 4 _ (divModCertApplied_good hall hsA hhs)) (fun aA haA => ?_)
     refine SimE.bind (hops.inferType hE 4 aA haA) (fun tp htp => ?_)
     rw [substConst0_ren hE.inj hc annVal he]
     refine SimE.bind (hops.isDefEq hE 4 tp _ htp (substConst0_good ha he)) (fun b _ => ?_)
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
-    exact checkDivModCerts_sim hops hE hc ha srest prest hs hp.2
+    exact checkDivModCerts_sim hops hE hall hc ha srest prest hs hp.2
 
 theorem find_beq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env') {k : Key md}
-    (hk : k.Good P) {pin : ConstantInfo md} (hpin : pin.noIds = true) :
+    (hk : k.Good P) {pin : ConstantInfo md} (hpin : pin.Good P) :
     (env'.find? (k.map f) == some (pin.mapKeys f)) = (env.find? k == some pin) := by
   have h := find_eq_pin_ren hE hk hpin
   simp only [decide_eq_decide] at h
@@ -136,23 +137,24 @@ theorem find_beq_pin_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env
   exact h
 
 theorem divModEnvGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env')
-    (c : Key md) :
+    (hall : P.All) (c : Key md) :
     divModEnvGuard env' (c.map f) = divModEnvGuard env c := by
   unfold divModEnvGuard
   have hq : (env'.find? eqName == some eqA) = (env.find? eqName == some eqA) :=
-    find_beq_pin_ren hE (k := eqName) (pin := eqA) trivial rfl
-  rw [natOpGuard_ren hE c, natOpDeps_map, List.all_map, hq]
+    find_beq_pin_ren hE (k := eqName) (pin := eqA) (hall _)
+      (ConstantInfo.good_of_pinIn hE.pre eqA_pinIn)
+  rw [natOpGuard_ren_of hE c (natOpDeps_good_all hall c), natOpDeps_map, List.all_map, hq]
   refine andC (andC (andC (andC rfl ?_) rfl) ?_) ?_
   · apply List.all_congr_mem
     intro k hk
-    exact natOpStoredOk_ren hE (natOpDeps_good c k hk)
-  · rw [hE.find_role .boolTrue]
+    exact natOpStoredOk_ren hE (natOpDeps_good_all hall c k hk)
+  · rw [hE.find_role (hall .boolTrue)]
     cases env.find? (roleKey .boolTrue) with
     | none => rfl
     | some ci =>
       simp only [Option.map_some, ConstantInfo.mapKeys_toConstantVal, ConstantVal.mapKeys_type]
       exact Expr.mapKeys_beq_const_role
-  · rw [hE.find_role .boolFalse]
+  · rw [hE.find_role (hall .boolFalse)]
     cases env.find? (roleKey .boolFalse) with
     | none => rfl
     | some ci =>
@@ -161,11 +163,11 @@ theorem divModEnvGuard_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L e
 
 theorem checkDivModEvidence_sim (hops : OpsSim P f L ops ops') {env env₂ : Env md}
     {env' env₂' : Env md'} (hE : EnvRelG P f L env env') (hE₂ : EnvRelG P f L env₂ env₂')
-    {ev : Evidences md} (hev : ev.Good P) {c : Key md} (hc : c.Good P) :
+    (hall : P.All) {ev : Evidences md} (hev : ev.Good P) {c : Key md} (hc : c.Good P) :
     SimV (checkDivModEvidence ops ev env env₂ c)
       (checkDivModEvidence ops' (ev.mapKeys f) env' env₂' (c.map f)) := by
   unfold checkDivModEvidence
-  rw [divModEnvGuard_ren hE₂ c]
+  rw [divModEnvGuard_ren hE₂ hall c]
   refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw')
   rw [hE₂.find c hc]
   cases hfc : env₂.find? c with
@@ -182,11 +184,11 @@ theorem checkDivModEvidence_sim (hops : OpsSim P f L ops ops') {env env₂ : Env
     | some proofs =>
       have hps := evidenceProofs_good hev hpf
       simp only [Option.map_some]
-      rw [divModCertsGuard_ren hE hc hv hps, evidenceLocal_ren hE hc hv hps]
+      rw [divModCertsGuard_ren hE hall hc hv hps, evidenceLocal_ren hE hall hc hv hps]
       refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw')
       refine hops.orElse _ _ _ _ ?_ SimE.throw'
       rw [divModCertStmts_map]
-      exact checkDivModCerts_sim hops hE hc hv _ _ (divModCertStmts_good hc) hps
+      exact checkDivModCerts_sim hops hE hall hc hv _ _ (divModCertStmts_good hall hc) hps
   | _ => exact SimE.throw'
 
 end Ops
