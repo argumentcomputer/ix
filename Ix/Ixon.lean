@@ -98,20 +98,6 @@ inductive DataValue where
 /-- Key-value map for Lean.Expr.mdata -/
 abbrev KVMap := Array (Address × DataValue)
 
-/-- Entry in a `callSite` metadata node, representing one source-order
-    argument. Mirrors Rust `ixon::metadata::CallSiteEntry`. -/
-inductive CallSiteEntry where
-  /-- Argument exists in canonical form at App-spine position `canonIdx`.
-      `metaIdx` is the arena index for this argument's metadata subtree
-      (Rust field name: `meta` — a reserved keyword here). -/
-  | kept (canonIdx : UInt64) (metaIdx : UInt64)
-  /-- Argument was collapsed. Expression stored in
-      `ConstantMeta.metaSharing[sharingIdx]` (a direct index, not offset by
-      the primary sharing table's length). `metaIdx` is the arena index
-      for this argument's metadata subtree. -/
-  | collapsed (sharingIdx : UInt64) (metaIdx : UInt64)
-  deriving BEq, Repr, Inhabited
-
 /-- Arena node for per-expression metadata.
     Nodes are allocated bottom-up (children before parents) in the arena.
     Arena indices are UInt64 values pointing into `ExprMetaArena.nodes`. -/
@@ -125,23 +111,6 @@ inductive ExprMetaData where
   | ref (name : Address)
   | prj (structName : Address) (child : UInt64)
   | mdata (mdata : Array KVMap) (child : UInt64)
-  /-- Surgered call-site: replaces the entire App-spine metadata chain
-      (outermost App down to the Ref head) with a single node. `entries` are
-      in SOURCE order; `canonMeta` holds canonical-order metadata roots (one
-      per argument in the IXON App spine); `origHead` is
-      `some (sharingIdx, meta)` when the call-site head itself was rewritten
-      (evaporated-aux recursors). Mirrors Rust
-      `ixon::metadata::ExprMetaData::CallSite`. -/
-  | callSite (name : Address) (entries : Array CallSiteEntry)
-             (canonMeta : Array UInt64) (origHead : Option (UInt64 × UInt64))
-  /-- Eta adapter for a partial plan-bearing reference. The Ixon expression
-      is a synthesized lambda telescope with a canonical call-site body;
-      decompile discards `nSynth` binders and restores only `entries`, while
-      meta ingress follows `wrapperMeta` through the ordinary synthesized
-      Binder/CallSite metadata tree. -/
-  | etaCallSite (nSynth : UInt64) (name : Address)
-                (entries : Array CallSiteEntry) (canonMeta : Array UInt64)
-                (wrapperMeta : UInt64)
   deriving BEq, Repr, Inhabited
 
 /-- Arena for expression metadata within a single constant. -/
@@ -155,20 +124,19 @@ def ExprMetaArena.alloc (arena : ExprMetaArena) (node : ExprMetaData)
   ({ nodes := arena.nodes.push node }, idx)
 
 /-- Count ExprMetaData nodes by type:
-    (leaf, app, binder, letBinder, ref, prj, mdata, callSite) -/
+    (leaf, app, binder, letBinder, ref, prj, mdata) -/
 def ExprMetaArena.countByType (arena : ExprMetaArena)
-    : Nat × Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
-  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0, 0))
-    fun (le, ap, bi, lb, rf, pj, md, cs) node =>
+    : Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
+  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0))
+    fun (le, ap, bi, lb, rf, pj, md) node =>
     match node with
-    | .leaf => (le + 1, ap, bi, lb, rf, pj, md, cs)
-    | .app .. => (le, ap + 1, bi, lb, rf, pj, md, cs)
-    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md, cs)
-    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md, cs)
-    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md, cs)
-    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md, cs)
-    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1, cs)
-    | .callSite .. | .etaCallSite .. => (le, ap, bi, lb, rf, pj, md, cs + 1)
+    | .leaf => (le + 1, ap, bi, lb, rf, pj, md)
+    | .app .. => (le, ap + 1, bi, lb, rf, pj, md)
+    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md)
+    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md)
+    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md)
+    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md)
+    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1)
 
 /-- Count mdata items in an arena. -/
 def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
@@ -240,15 +208,15 @@ structure UnivPatch where
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) extend the
     index spaces of the primary `Constant` tables (for a projection, the
-    tables of its `muts` block), used by `callSite` nodes in the metadata
-    arena for call-site surgery roundtrip and by `univPatches` for original
-    level spellings (canonicity §10.6). Mirrors Rust
+    tables of its `muts` block), used by Pass 3's decompile records
+    (`_ix.inline`), and `univPatches` holds original level spellings
+    (canonicity §10.6). Mirrors Rust
     `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
-  /-- Compiled Ixon expressions for collapsed call-site arguments and
-      rewritten call-site heads, indexed DIRECTLY (no offset) by
-      `CallSiteEntry.collapsed sharingIdx` and `origHead = some (sharingIdx, _)`.
+  /-- Compiled Ixon expressions of Pass 3's decompile records (`_ix.inline`),
+      indexed DIRECTLY (no offset). (The retired call-site metadata indexed
+      its collapsed arguments here too.)
 
       Extended index space for `share` (a reader rule; the bytes are
       unchanged). Let the primary table `sharing` have `p` entries and this
@@ -337,7 +305,7 @@ def ConstantMetaInfo.exprMetaByType : ConstantMetaInfo → Nat × Nat × Nat × 
       | .recr _ _ _ _ _ a _ _ => a
       | .empty => {}
       | .muts _ _ => {}
-    let (_, _, bi, lb, rf, pj, md, _) := arena.countByType
+    let (_, _, bi, lb, rf, pj, md) := arena.countByType
     (bi, lb, rf, pj, md)
 
 /-- Wrapper delegator: count total arena nodes. -/
@@ -643,7 +611,8 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
 `arena := len node₀ … node_{len-1}`; node `i` is a tag byte
 `kind <<< 3 ||| mask` followed by its fields in declaration order. Kinds:
 0 leaf, 1 app, 2–5 binder (2 + binder info), 6 letBinder, 7 ref, 8 prj,
-9 mdata, 10 callSite, 11 etaCallSite. Child references are never absolute:
+9 mdata; kinds 10 and 11 (the retired callSite and etaCallSite, CQ3.6) are
+refused. Child references are never absolute:
 
 * The *structural* slots (app fun/arg, binder type/body, let
   type/value/body, prj child, mdata child) may be **implicit**: bit `s` of
@@ -654,8 +623,8 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
   index of node `i`'s contiguous post-order block; `lo[i] = i` for a node
   without structural slots). A tree allocated bottom-up in post-order writes
   no child references at all.
-* Every other reference (a structural slot whose bit is clear, and every
-  call-site reference) is **explicit**: TagN (`f = 0`) of the backward
+* Every other reference (a structural slot whose bit is clear) is
+  **explicit**: TagN (`f = 0`) of the backward
   delta `(i - 1 - c) mod 2^64`. Forward references are representable
   (wrapping), so every arena of `UInt64` indices has an encoding.
 
@@ -667,7 +636,7 @@ with `top = 0`, so each arena has exactly one encoding. Mirrors Rust
 /-- Number of structural (possibly implicit) child slots of a node kind;
 `none` for an unknown kind. -/
 def exprMetaSlotCount : Nat → Option Nat
-  | 0 | 7 | 10 | 11 => some 0
+  | 0 | 7 => some 0
   | 1 | 2 | 3 | 4 | 5 => some 2
   | 6 => some 3
   | 8 | 9 => some 1
@@ -705,49 +674,6 @@ def getExprMetaRef (i : Nat) : GetM UInt64 := do
   let d := (← getTagN 0).value
   pure (i.toUInt64 - 1 - d)
 
-/-- Call-site entries: count, then per entry a tag byte, the canonical or
-sharing index, and an explicit reference. -/
-def putExprMetaEntries (i : Nat) (entries : Array CallSiteEntry) : PutM Unit := do
-  putTagN 0 0 entries.size.toUInt64
-  for entry in entries do
-    match entry with
-    | .kept canonIdx metaIdx =>
-      putU8 0
-      putTagN 0 0 canonIdx
-      putExprMetaRef i metaIdx
-    | .collapsed sharingIdx metaIdx =>
-      putU8 1
-      putTagN 0 0 sharingIdx
-      putExprMetaRef i metaIdx
-
-def getExprMetaEntries (i : Nat) : GetM (Array CallSiteEntry) := do
-  let numEntries := (← getTagN 0).value.toNat
-  let mut entries : Array CallSiteEntry := #[]
-  for _ in [0:numEntries] do
-    let entry ← match ← getU8 with
-      | 0 =>
-        let canonIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (CallSiteEntry.kept canonIdx metaIdx)
-      | 1 =>
-        let sharingIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (CallSiteEntry.collapsed sharingIdx metaIdx)
-      | x => throw s!"invalid CallSiteEntry tag {x}"
-    entries := entries.push entry
-  pure entries
-
-/-- A count followed by explicit references. -/
-def putExprMetaRefs (i : Nat) (refs : Array UInt64) : PutM Unit := do
-  putTagN 0 0 refs.size.toUInt64
-  for c in refs do putExprMetaRef i c
-
-def getExprMetaRefs (i : Nat) : GetM (Array UInt64) := do
-  let n := (← getTagN 0).value.toNat
-  let mut refs : Array UInt64 := #[]
-  for _ in [0:n] do
-    refs := refs.push (← getExprMetaRef i)
-  pure refs
 
 /-- Node tag byte: `kind <<< 3 ||| mask`. -/
 def exprMetaTag (kind mask : UInt8) : UInt8 := (kind <<< 3) ||| mask
@@ -787,24 +713,6 @@ def putExprMetaNode (em : ExprMetaData) (i : Nat) (mask : UInt8) (idx : NameInde
     putU8 (exprMetaTag 9 mask)
     putMdataStackIndexed mdata idx
     slot 0 child
-  | .callSite name entries canonMeta origHead =>
-    putU8 (exprMetaTag 10 0)
-    putIdx name idx
-    putExprMetaEntries i entries
-    putExprMetaRefs i canonMeta
-    match origHead with
-    | none => putU8 0
-    | some (sharingIdx, metaIdx) =>
-      putU8 1
-      putTagN 0 0 sharingIdx
-      putExprMetaRef i metaIdx
-  | .etaCallSite nSynth name entries canonMeta wrapperMeta =>
-    putU8 (exprMetaTag 11 0)
-    putTagN 0 0 nSynth
-    putIdx name idx
-    putExprMetaEntries i entries
-    putExprMetaRefs i canonMeta
-    putExprMetaRef i wrapperMeta
 
 /-- Resolve the implicit slots of node `i` (explicit ones are already read)
 and return them with `lo[i]`; rejects an implicit slot with no preceding
@@ -873,25 +781,7 @@ def getExprMetaNode (rev : NameReverseIndex) (i : Nat) (lo : Array Nat) :
     let c ← slot 0
     let (cs, top) ← resolveExprMetaSlots #[c] mask i lo
     pure (.mdata mdata cs[0]!, top)
-  | 10 =>
-    let name ← getIdx rev
-    let entries ← getExprMetaEntries i
-    let canonMeta ← getExprMetaRefs i
-    let origHead ← match ← getU8 with
-      | 0 => pure none
-      | 1 =>
-        let sharingIdx := (← getTagN 0).value
-        let metaIdx ← getExprMetaRef i
-        pure (some (sharingIdx, metaIdx))
-      | x => throw s!"invalid CallSite origHead tag {x}"
-    pure (.callSite name entries canonMeta origHead, i)
-  | _ =>
-    let nSynth := (← getTagN 0).value
-    let name ← getIdx rev
-    let entries ← getExprMetaEntries i
-    let canonMeta ← getExprMetaRefs i
-    let wrapperMeta ← getExprMetaRef i
-    pure (.etaCallSite nSynth name entries canonMeta wrapperMeta, i)
+  | k => throw s!"invalid ExprMetaData tag: kind {k}"
 
 /-- Serialize ExprMetaArena (length-prefixed array of nodes; see the arena
 wire format above). -/
@@ -2504,7 +2394,7 @@ def rsDeEnv (bytes : ByteArray) : Except String Env :=
 /-! ### Lazy/anon deserialization (zero-copy `.ixe` load for the check path)
 
 The Rust side (`rs_de_env_lazy`) parses the env once — reusing the proven
-parser, so every metadata variant (e.g. `CallSite`) is handled — and returns:
+parser, so every metadata variant (e.g. `mdata`) is handled — and returns:
 constants as `(addr, offset, len)` windows into the buffer we pass in,
 `name → addr`, per-`Defn` reducibility hints, and copied blobs. We then
 reconstruct an `Env` whose constants are byte-window `LazyConstant`s over that

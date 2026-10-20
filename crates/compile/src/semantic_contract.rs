@@ -527,6 +527,10 @@ mod tests {
       .unwrap();
       assert_eq!(result, term);
     }
+
+    // A Pass 3 decompile record is optional metadata: its replay may not
+    // drop a contract the compiled term carries, also behind sharing
+    // (before CQ3.6 this was pinned through the call-site replay).
     let nested = Expr::lam_contract(
       BinderContract {
         uses: ixon::expr::Uses::Affine,
@@ -535,28 +539,42 @@ mod tests {
       Expr::sort(0),
       Expr::var(0),
     );
-    let mut cache =
-      DecompileCache { sharing: vec![nested], ..Default::default() };
-    let mut arena = ExprMeta::default();
-    let root = arena.alloc(ExprMetaData::CallSite {
-      name: ix_common::address::Address::hash(b"unused"),
-      entries: vec![],
-      canon_meta: vec![],
-      orig_head: None,
-    });
-    assert!(
+    let nat = |n: u64| {
+      DataValue::OfNat(crate::compile::store_nat(&Nat::from(n), &stt).unwrap())
+    };
+    let key_addr = |n: &Name| crate::compile::compile_name(n, &stt).unwrap();
+    let record = vec![
+      (key_addr(&crate::compile::pass3::names::inline_key()), nat(0)),
+      (key_addr(&crate::compile::pass3::names::inline_meta_key()), nat(0)),
+    ];
+    let mut rec_arena = ExprMeta::default();
+    let rec_leaf = rec_arena.alloc(ExprMetaData::Leaf);
+    let rec_root = rec_arena
+      .alloc(ExprMetaData::Mdata { mdata: vec![record], child: rec_leaf });
+    let replay = |compiled: Arc<Expr>| {
+      let mut cache = DecompileCache {
+        sharing: vec![nested.clone()],
+        meta_sharing: vec![Expr::var(3)],
+        ..Default::default()
+      };
       decompile_expr(
-        &Expr::app(Expr::var(0), Expr::share(0)),
-        &arena,
-        root,
+        &compiled,
+        &rec_arena,
+        rec_root,
         &[],
         &mut cache,
         &stt,
-        &DecompileState::default()
+        &DecompileState::default(),
       )
-      .is_err()
+    };
+    let err = replay(Expr::app(Expr::var(0), Expr::share(0))).unwrap_err();
+    assert!(err.to_string().contains("semantic contract"), "{err}");
+    assert_eq!(
+      replay(Expr::app(Expr::var(0), Expr::var(1))).unwrap(),
+      Source::bvar(Nat::from(3u64))
     );
 
+    let mut arena = ExprMeta::default();
     let key =
       Name::str(Name::str(Name::anon(), "ix".into()), "contract".into());
     let addr = ix_common::address::Address::from_blake3_hash(*key.get_hash());

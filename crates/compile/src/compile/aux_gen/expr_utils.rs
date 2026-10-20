@@ -639,24 +639,6 @@ pub(super) fn instantiate_spec_with_fvars(
 // BVar shifting
 // =========================================================================
 
-/// Lower loose BVars by `amount` for an expression known to have been
-/// lifted by `amount` (the inverse of a lift), leaving variables bound inside
-/// the expression untouched.
-pub(crate) fn lower_vars(
-  expr: &LeanExpr,
-  amount: usize,
-  cutoff: usize,
-) -> LeanExpr {
-  super::checked_expr::shift_vars(
-    expr,
-    amount,
-    cutoff,
-    true,
-    &Default::default(),
-  )
-  .expect("disabled cancellation checkpoint")
-}
-
 // =========================================================================
 // Universe substitution
 // =========================================================================
@@ -3568,23 +3550,6 @@ mod tests {
     assert_eq!(f.get_hash(), a.get_hash());
     assert_eq!(args.len(), 1);
     assert_eq!(args[0].get_hash(), b.get_hash());
-  }
-
-  #[test]
-  fn lower_vars_inverts_lift_for_loose_bvars_under_binders() {
-    // The lambda binds BVar(0); BVar(2) in its body is loose at index 1.
-    let expr =
-      LeanExpr::lam(mk_name_for("x"), sort0(), bvar_at(2), BinderInfo::Default);
-    let lifted = super::super::checked_expr::shift_vars(
-      &expr,
-      3,
-      0,
-      false,
-      &Default::default(),
-    )
-    .unwrap();
-    let lowered = lower_vars(&lifted, 3, 0);
-    assert_eq!(lowered.get_hash(), expr.get_hash());
   }
 
   // ---- subst_fvar ----

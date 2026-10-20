@@ -30,9 +30,6 @@ on 2 GB stacks). Key differences, all from `ingress.rs`:
 - `ref`/`prj` arena mismatch is a HARD error (no other name source);
   `lam`/`all`/`letE` mismatch soft-falls-back to a synthetic name and the
   frozen arena index; `app` mismatch propagates the frozen index.
-- A `callSite` arena node at an `app` re-flattens the canonical App
-  telescope and distributes `canonMeta[i]` as per-arg arena roots; the
-  head (`ref`/`recur`) is built inline from the call-site's `name`.
 - Constant names, level params, `leanAll`, rule ctor names, and ctor ids
   resolve through `ConstantMetaInfo` name-hash addresses. `all`/`ctx`/
   `ctors` round-trip name-hash → Lean name → `named[name].addr` (the
@@ -464,67 +461,6 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           (.mkStr val blobAddr (Mode.field mdata))))
       | .app f a =>
         match node with
-        | .callSite csName entries canonMeta origHead =>
-          -- Surgered call site: re-flatten the canonical App telescope
-          -- and distribute canonMeta[i] as per-arg arena roots. The
-          -- source-order `entries` and `origHead` are decompile-only.
-          let _ := entries
-          let _ := origHead
-          let mut canonicalArgs : Array Ixon.Expr := #[]
-          let mut cur := e
-          let mut looping := true
-          while looping do
-            match cur with
-            | .app f2 a2 =>
-              canonicalArgs := canonicalArgs.push a2
-              let (f2', _) ←
-                liftM (IngressMetaM.liftExcept (expandShares ctx f2))
-              cur := f2'
-            | _ => looping := false
-          canonicalArgs := canonicalArgs.reverse
-          let headIxon := cur
-          let nArgs := canonicalArgs.size
-          if canonMeta.size != nArgs then
-            let headName := resolveName ixonEnv csName
-            throw s!"CallSite for '{headName}' has {canonMeta.size} \
-                     canonical metadata entries but canonical telescope \
-                     has {nArgs} args"
-          -- Build the head KExpr inline from the call-site name.
-          -- Patch lookup key is the callSite node's arena index: the
-          -- compiler clones the head's patch onto it (the head's own
-          -- Ref root is unreachable from here).
-          let headK : KExpr .«meta» ← match headIxon with
-            | .ref refIdx univIdxs => do
-              let some addr := ctx.refs[refIdx.toNat]?
-                | throw s!"CallSite head: invalid Ref index {refIdx}"
-              let name := resolveName ixonEnv csName
-              let univs ← ingressUnivArgsMeta ctx univIdxs
-              let decor ← univArgsDecorAt ctx currentIdx univIdxs
-              liftM (IngressMetaM.internE
-                (.mkConst ⟨addr, name⟩ univs (Mode.field #[])
-                  (Mode.field decor)))
-            | .recur recIdx univIdxs => do
-              let some mid := ctx.mutCtx[recIdx.toNat]?
-                | throw s!"CallSite head: invalid Rec index {recIdx}"
-              let univs ← ingressUnivArgsMeta ctx univIdxs
-              let decor ← univArgsDecorAt ctx currentIdx univIdxs
-              liftM (IngressMetaM.internE
-                (.mkConst mid univs (Mode.field #[]) (Mode.field decor)))
-            | _ =>
-              throw s!"CallSite head is not Ref/Rec: {reprStr headIxon}"
-          if nArgs == 0 then
-            values := values.push headK
-          else
-            -- LIFO: outermost AppDone carries the mdata; inner AppDones
-            -- are bare (the Ixon Mdata wrapper sits outside the spine).
-            stack := stack.push (.appDone mdata)
-            stack := stack.push
-              (.process canonicalArgs[nArgs - 1]! canonMeta[nArgs - 1]!)
-            for i in [0:nArgs - 1] do
-              let j := nArgs - 2 - i
-              stack := stack.push (.appDone #[])
-              stack := stack.push (.process canonicalArgs[j]! canonMeta[j]!)
-            values := values.push headK
         | .app fArena aArena =>
           stack := stack.push (.appDone mdata)
             |>.push (.process a aArena) |>.push (.process f fArena)
@@ -532,23 +468,17 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           stack := stack.push (.appDone mdata)
             |>.push (.process a currentIdx) |>.push (.process f currentIdx)
       | .lam _ ty body =>
-        match node with
-        | .etaCallSite _ _ _ _ wrapperMeta =>
-          -- Decompile consumes the eta tag; kernel ingress follows the
-          -- ordinary synthesized Binder/CallSite metadata tree.
-          stack := stack.push (.process e wrapperMeta)
-        | _ =>
-          let (name, bi, tyArena, bodyArena) ← match node with
-            | .binder nameAddr info tyChild bodyChild =>
-              pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)
-            | _ => do
-              let n ← synthName
-              pure (n, Lean.BinderInfo.default, currentIdx, currentIdx)
-          stack := stack.push (.lamDone name bi mdata)
-            |>.push .binderPop
-            |>.push (.process body bodyArena)
-            |>.push (.binderPush name)
-            |>.push (.process ty tyArena)
+        let (name, bi, tyArena, bodyArena) ← match node with
+          | .binder nameAddr info tyChild bodyChild =>
+            pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)
+          | _ => do
+            let n ← synthName
+            pure (n, Lean.BinderInfo.default, currentIdx, currentIdx)
+        stack := stack.push (.lamDone name bi mdata)
+          |>.push .binderPop
+          |>.push (.process body bodyArena)
+          |>.push (.binderPush name)
+          |>.push (.process ty tyArena)
       | .all _ _ ty body =>
         let (name, bi, tyArena, bodyArena) ← match node with
           | .binder nameAddr info tyChild bodyChild =>

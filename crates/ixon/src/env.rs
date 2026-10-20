@@ -338,7 +338,7 @@ pub struct LazyConstSlice {
 
 /// One named entry in a [`LazyIndex`]: just the `name → addr` mapping.
 /// The heavy `ExprMetaArena` is parsed (to advance the cursor and
-/// handle every metadata variant, e.g. `CallSite`) but discarded;
+/// handle every metadata variant, e.g. `Mdata`) but discarded;
 /// hints live on [`LazyIndex::hints`].
 #[derive(Debug, Clone)]
 pub struct LazyNamed {

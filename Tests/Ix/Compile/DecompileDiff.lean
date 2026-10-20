@@ -10,11 +10,10 @@
   `get_hash` comparison at full fidelity).
 
   Failures are classified into buckets, each with its own gate (all
-  gates must be ZERO now that call-site replay and Pass-2 original
-  recovery are ported):
+  gates must be ZERO now that Pass-2 original recovery is ported; the
+  `callsite` error bucket went with the call-site metadata, CQ3.6, and a
+  failed Pass 3 record replay lands in the buckets below):
 
-    - `callsite` errors — bodies with surgered call-site metadata the
-      pure-Lean decompiler failed to replay;
     - `aux` names (`isAuxGenSuffix`) — decompiled from the REGENERATED
       canonical constants and restored to the source's Lean-native
       originals by Pass-2 recovery;
@@ -76,13 +75,10 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[decompile-diff]   {decompiled.size} constants, {errors.size} errors in {(← IO.monoMsNow) - t0}ms"
 
   -- Error classification.
-  let mut callSiteErrs : Array Ix.Name := #[]
   let mut auxErrs : Array Ix.Name := #[]
   let mut otherErrs : Array (Ix.Name × String) := #[]
   for (n, e) in errors do
-    if (e.splitOn "call-site surgery").length > 1 then
-      callSiteErrs := callSiteErrs.push n
-    else if isAuxLineage n then
+    if isAuxLineage n then
       auxErrs := auxErrs.push n
     else
       otherErrs := otherErrs.push (n, e)
@@ -131,9 +127,6 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[decompile-diff]   aux-family: {auxMatch} matched, {auxMismatch.size} mismatched  (aux-fidelity gate — must be 0)"
   if !auxMismatch.isEmpty then
     IO.println s!"[decompile-diff]     mismatch e.g. {sample auxMismatch}"
-  IO.println s!"[decompile-diff]   callsite errors: {callSiteErrs.size}  (callsite-replay gate — must be 0)"
-  if !callSiteErrs.isEmpty then
-    IO.println s!"[decompile-diff]     e.g. {sample callSiteErrs}"
   IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (aux-fidelity gate — must be 0)"
   if !auxErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample auxErrs}"
@@ -151,9 +144,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
 
   let gateOk := plainMismatch.isEmpty && otherErrs.isEmpty
     && notInSource.isEmpty && missingPlain.isEmpty
-    && callSiteErrs.isEmpty
   IO.println ""
-  IO.println s!"[decompile-diff] plain fidelity + callsite replay gate: {if gateOk then "PASS" else "FAIL"}"
+  IO.println s!"[decompile-diff] plain fidelity gate: {if gateOk then "PASS" else "FAIL"}"
 
   -- Aux-fidelity gate: aux-family fidelity must be total.
   let d3Ok := auxMismatch.isEmpty && auxErrs.isEmpty && missingAux.isEmpty

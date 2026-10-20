@@ -306,22 +306,19 @@ def exprMetaArenaUnits : TestSeq :=
   -- Shared nodes: explicit backward deltas next to implicit slots.
   let dag : ExprMetaArena := { nodes := #[
     .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
-  -- Call-site references are explicit; a forward reference wraps.
-  let calls : ExprMetaArena := { nodes := #[
-    .leaf,
-    .callSite a #[.kept 0 0, .collapsed 1 0] #[0] (some (2, 0)),
-    .etaCallSite 1 b #[.kept 0 1] #[1] 1,
-    .prj a 7] }
+  -- A forward reference wraps.
+  let forward : ExprMetaArena := { nodes := #[.leaf, .leaf, .leaf, .prj a 7] }
   test "arena: a post-order tree writes no references"
     (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]) ++
   test "arena: shared nodes are explicit backward deltas"
     (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
       0x01, 0x01, 0x49, 0x00]) ++
-  test "arena: call-site references are explicit; a forward reference wraps"
-    (arenaVector calls #[0x04, 0x00,
-      0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00,
-      0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+  test "arena: a forward reference wraps"
+    (arenaVector forward #[0x04, 0x00, 0x00, 0x00,
       0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
+  test "arena: rejects the retired call-site kinds 10 and 11 (CQ3.6)"
+    (arenaRejects #[0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00] &&
+      arenaRejects #[0x01, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00]) ++
   test "arena: rejects an explicit slot at the implicit position"
     (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00]) ++
   test "arena: rejects an implicit slot with no preceding node"
@@ -524,26 +521,25 @@ def envSerializationUnitTests : TestSeq :=
     anonHints := #[(bundleConstAddr, .abbrev)]
   }
   -- Test 7: Metadata-bearing named entries — the directed cross-language
-  -- byte vector for the FULL metadata wire grammar: arena with a
-  -- call-site surgery node (indexed names, kept/collapsed entries,
-  -- canonMeta, origHead), surgery extension tables (sharing exprs, raw
-  -- refs, univs), and a muts entry with the nested-aux `auxLayout`
-  -- sidecar. Every indexed name address is a registered name component.
+  -- byte vector for the FULL metadata wire grammar: an arena over the
+  -- kinds 0-9 (indexed names, binder info, an app, a ref, mdata), the
+  -- extension tables (sharing exprs, raw refs, univs, univ patches), and
+  -- a muts entry with the nested-aux `auxLayout` sidecar. Every indexed
+  -- name address is a registered name component. (Before CQ3.6 the arena
+  -- also carried a call-site surgery node, kinds 10/11, now retired.)
   let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
   let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"
   let anonAddr := Ix.Name.mkAnon.getHash
   let surgArena : ExprMetaArena := { nodes := #[
     .leaf,
     .binder anonAddr .implicit 0 0,
-    .callSite surgName.getHash
-      #[.kept 0 1, .collapsed 0 0, .kept 2 1]
-      #[1, 0]
-      (some (1, 0)),
-    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 2
+    .ref surgName.getHash,
+    .app 2 1,
+    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 3
   ] }
   let surgMeta : ConstantMeta := {
     info := .defn surgName.getHash #[anonAddr] #[surgName.getHash] #[]
-      surgArena 0 3,
+      surgArena 0 4,
     metaSharing := #[.app (.share 1) (.var 2), .sort 0],
     metaRefs := #[bundleConstAddr],
     metaUnivs := #[.succ (.var 0), .max .zero (.var 1)],
@@ -574,8 +570,8 @@ def envSerializationUnitTests : TestSeq :=
   test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
   test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw) ++
   test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw) ++
-  test "Surgery metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
-  test "Surgery metadata env pure serde" (envSerde metaRaw)
+  test "Metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
+  test "Metadata env pure serde" (envSerde metaRaw)
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 
@@ -673,7 +669,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
   checkIO "Env serialization Lean==Rust" (∀ raw : RawEnv, envSerializationMatches raw),
   -- Strict byte equality between the two writers over generated envs —
-  -- generated named entries carry full metadata (call-site surgery,
+  -- generated named entries carry full metadata (arena nodes,
   -- extension tables, auxLayout), so this is the generator-driven gate
   -- that the metadata wire format stays in sync.
   checkIO "Env bytes Lean==Rust" (∀ raw : RawEnv, envBytesMatchRust raw),

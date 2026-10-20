@@ -108,16 +108,13 @@ structure BlockCtx where
   arena : ExprMetaArena
   /-- `ConstantMeta.metaSharing` of the constant being decompiled: the
       source occurrences of its Pass 3 decompile records (`_ix.inline`),
-      or, in a file the call-site surgery wrote, its collapsed call-site
-      arguments (and rewritten original heads), indexed by
-      `CallSiteEntry.collapsed.sharingIdx` / `origHead` — distinct from
-      the block's primary `sharing` table. A `share` inside one of these
+      distinct from the block's primary `sharing` table. A `share` inside one of these
       expressions is read in the extended index space
       (`ShareScope.metaEntry`). -/
   metaSharing : Array Ixon.Expr := #[]
   /-- Level-spelling patches of the constant being decompiled, keyed by
       metadata-arena index (canonicity §10.6): a patched `sort`/`ref`/
-      `recur` occurrence (or surgered call-site head) resolves the
+      `recur` occurrence resolves the
       patch's univ indices — written in the VIRTUAL space
       `univs ++ metaUnivs`, i.e. this ctx's already-extended `univs` —
       instead of the node's own canonical indices. Absent patch → the
@@ -141,10 +138,8 @@ structure BlockCtx where
       strictly decreases along metadata-to-metadata resolution, so
       expansion is well founded.
 
-    Call-site references (`CallSiteEntry.collapsed sharingIdx`,
-    `origHead = some (sharingIdx, _)`) and Pass 3 decompile records
-    (`inlineRecord?`'s `s`) index `metaSharing` directly (no offset by
-    `p`) and read the entry in scope `metaEntry sharingIdx` (`metaEntry s`).
+    Pass 3 decompile records (`inlineRecord?`'s `s`) index `metaSharing`
+    directly (no offset by `p`) and read the entry in scope `metaEntry s`.
     Mirrors Rust `decompile::ShareScope`. -/
 inductive ShareScope where
   | primary
@@ -490,30 +485,6 @@ def validateMetaSharing (p : Nat) (metaSharing : Array Ixon.Expr)
       | .prj _ _ v => stack := stack.push v
       | .sort _ | .var _ | .ref .. | .recur .. | .str _ | .nat _ => pure ()
 
-/-- Collect an Ixon App telescope for call-site replay, transparently
-    expanding `.share` nodes along the SPINE (Rust
-    `collect_ixon_telescope_expanding_shares`). `scope` is the share scope
-    of `e`. Arguments are returned in application order, each with the
-    scope it is read in (a spine `share` can lead from a metadata
-    expression into a primary entry), and are NOT share-expanded — each is
-    decompiled individually, where `.share` handling applies as usual. -/
-def collectIxonTelescopeExpandingShares (scope : ShareScope) (e : Ixon.Expr)
-    : DecompileM (Ixon.Expr × Array (Ixon.Expr × ShareScope)) := do
-  let mut args : Array (Ixon.Expr × ShareScope) := #[]
-  let mut cur := e
-  let mut curScope := scope
-  repeat
-    match cur with
-    | .share idx =>
-      let (s, sScope) ← resolveShare curScope idx "callSite telescope"
-      cur := s
-      curScope := sScope
-    | .app f a =>
-      args := args.push (a, curScope)
-      cur := f
-    | _ => break
-  return (cur, args.reverse)
-
 /-- Decompile an expression read in share scope `scope` to Ix.Expr with
     arena-based metadata. -/
 partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UInt64) :
@@ -552,8 +523,11 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   -- Pass 3 replay: the decompiled term is the recorded source occurrence,
   -- `metaSharing[s]` read in its own metadata scope at arena root `m`,
   -- under the chain's other layers. The compiled (rewritten) term is not
-  -- read, unless `compiledTerms`. Rust `decompile_expr` replays the same,
-  -- with the same two range checks.
+  -- read, unless `compiledTerms`. The replay is optional metadata, so it
+  -- may not drop a semantic contract: a compiled term that carries one,
+  -- also behind sharing, is refused (the guard the retired call-site
+  -- replay had, CQ3.6). Rust `decompile_expr` replays the same, with the
+  -- same two range checks and the same guard.
   if (← getEnv).compiledTerms then inlineRecord := none
   if let some (s, m) := inlineRecord then
     let ctx ← getCtx
@@ -563,6 +537,12 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
     unless m < ctx.arena.nodes.size do
       throw (.badConstantFormat s!"Pass 3 inline record arena root {m} out of range \
         ({ctx.arena.nodes.size} arena nodes)")
+    let annotated ← match Ix.SemanticContract.containsIxon
+        (fun s idx => resolveShareIn ctx s idx "semantic scan") scope e with
+      | .ok annotated => pure annotated
+      | .error error => throw error
+    if annotated then
+      throw (.badConstantFormat "Pass 3 inline record replay would drop a semantic contract")
     let source ← decompileExprIn (.metaEntry s) shared m.toUInt64
     let result := applyMdata source mdataLayers
     modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
@@ -570,143 +550,11 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
 
   let node ← getArenaNode currentIdx
 
-  match node with
-  | .callSite .. | .etaCallSite .. =>
-    let ctx ← getCtx
-    let annotated ← match Ix.SemanticContract.containsIxon
-        (fun s idx => resolveShareIn ctx s idx "semantic scan") scope e with
-      | .ok annotated => pure annotated
-      | .error error => throw error
-    if annotated then
-      throw (.badConstantFormat "optional call-site replay would rewrite a semantic contract")
-  | _ => pure ()
   if let some contract := Ix.SemanticContract.ofIxon? e then
     mdataLayers := mdataLayers.push contract.ixMetadata
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
-  -- Eta adapter replay: strip the synthesized lambda telescope, read the
-  -- canonical body spine, and rebuild only the source prefix that was
-  -- originally present. Existing source arguments were lifted under the
-  -- wrapper, so lower their loose BVars after decompilation.
-  | .etaCallSite nSynth nameAddr entries canonMeta _wrapperMeta, _ => do
-    let ctx ← getCtx
-    let mut body := e
-    let mut bodyScope := scope
-    for _ in [0:nSynth.toNat] do
-      repeat
-        match body with
-        | .share idx =>
-          let (shared, sharedScope) ← resolveShare bodyScope idx
-            "etaCallSite wrapper"
-          body := shared
-          bodyScope := sharedScope
-        | _ => break
-      match body with
-      | .lam _ _ b => body := b
-      | _ => throw (.badConstantFormat s!"EtaCallSite: expected \
-{nSynth} synthesized lambdas")
-    let (headIxon, canonicalArgs) ←
-      collectIxonTelescopeExpandingShares bodyScope body
-    if canonMeta.size != canonicalArgs.size then
-      throw (.badConstantFormat s!"EtaCallSite: {canonMeta.size} canonical \
-metadata entries but body telescope has {canonicalArgs.size} args")
-    let headName ← lookupNameAddr nameAddr
-    let headPatch := ctx.univPatches.get? currentIdx
-    let levels ← match headPatch, headIxon with
-      | some idxs, .ref .. => decompileUnivIndices idxs
-      | some idxs, .recur .. => decompileUnivIndices idxs
-      | none, .ref _ univIndices => decompileUnivIndices univIndices
-      | none, .recur _ univIndices => decompileUnivIndices univIndices
-      | _, _ => pure #[]
-    let mut spine := Ix.Expr.mkConst headName levels
-    for entry in entries do
-      let arg ← match entry with
-        | .kept canonIdx metaIdx =>
-          match canonicalArgs[canonIdx.toNat]? with
-          | some (argIxon, argScope) => decompileExprIn argScope argIxon metaIdx
-          | none => throw (.badConstantFormat s!"EtaCallSite: Kept \
-canonIdx {canonIdx} out of bounds (body telescope has \
-{canonicalArgs.size} args)")
-        | .collapsed sharingIdx metaIdx =>
-          -- Direct `metaSharing` index (no offset by the primary length);
-          -- the entry's own shares are read in its metadata scope.
-          match ctx.metaSharing[sharingIdx.toNat]? with
-          | some shared => decompileExprIn (.metaEntry sharingIdx.toNat) shared metaIdx
-          | none => throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-              "etaCallSite collapsed")
-      spine := Ix.Expr.mkApp spine
-        (Ix.AuxGen.lowerVars arg nSynth.toNat 0)
-    pure (applyMdata spine mdataLayers)
-
-  -- Call-site surgery replay: reconstruct the SOURCE-order application
-  -- spine from the canonical Ixon spine plus the metadata extension
-  -- tables (Rust `decompile_expr`, CallSite arm). Entries walk in source
-  -- order: Kept entries index the canonical telescope by `canonIdx`;
-  -- Collapsed entries index `ConstantMeta.metaSharing` directly (NOT the
-  -- block's primary sharing table, no offset by its length) and are read
-  -- in that entry's metadata scope. `origHead` restores the pre-rewrite
-  -- head of evaporated-aux sites; otherwise the head is rebuilt from the
-  -- CallSite name plus the canonical head's level args. Mdata wraps the
-  -- WHOLE reassembled spine, matching how the compiler produced the
-  -- node.
-  | .callSite nameAddr entries _canonMeta origHead, _ => do
-    let ctx ← getCtx
-    let (headIxon, canonicalArgs) ← collectIxonTelescopeExpandingShares scope e
-    -- Most CallSites have one Kept entry per canonical arg; split-SCC
-    -- minor adaptation stores a synthesized wrapper canonically with the
-    -- source arg Collapsed, so canonical args may OUTNUMBER Kept
-    -- entries — but every Kept entry must point at an existing slot.
-    let keptCount := entries.foldl (init := 0) fun n entry =>
-      match entry with
-      | .kept .. => n + 1
-      | _ => n
-    if keptCount > canonicalArgs.size then
-      throw (.badConstantFormat s!"CallSite: {keptCount} Kept entries \
-but canonical telescope has only {canonicalArgs.size} args")
-    let head ← match origHead with
-      | some (sharingIdx, headMetaIdx) =>
-        -- Head-rewritten site: the ORIGINAL head expression (source
-        -- name + source level args) lives in metaSharing.
-        match ctx.metaSharing[sharingIdx.toNat]? with
-        | some shared => decompileExprIn (.metaEntry sharingIdx.toNat) shared headMetaIdx
-        | none =>
-          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-            "callSite origHead")
-      | none =>
-        let headName ← lookupNameAddr nameAddr
-        -- Level-spelling patch replay (canonicity §10.6): the compiler
-        -- clones the head's patch onto the callSite root (the head's
-        -- own arena root is unreachable from here), so look it up by
-        -- the CURRENT arena index.
-        let headPatch := ctx.univPatches.get? currentIdx
-        let levels ← match headPatch, headIxon with
-          | some idxs, .ref .. => decompileUnivIndices idxs
-          | some idxs, .recur .. => decompileUnivIndices idxs
-          | none, .ref _ univIndices => decompileUnivIndices univIndices
-          | none, .recur _ univIndices => decompileUnivIndices univIndices
-          | _, _ => pure #[]
-        pure (Ix.Expr.mkConst headName levels)
-    let mut spine := head
-    for entry in entries do
-      match entry with
-      | .kept canonIdx metaIdx =>
-        match canonicalArgs[canonIdx.toNat]? with
-        | some (argIxon, argScope) =>
-          spine := Ix.Expr.mkApp spine (← decompileExprIn argScope argIxon metaIdx)
-        | none =>
-          throw (.badConstantFormat s!"CallSite: Kept canonIdx \
-{canonIdx} out of bounds (canonical telescope has \
-{canonicalArgs.size} args)")
-      | .collapsed sharingIdx metaIdx =>
-        match ctx.metaSharing[sharingIdx.toNat]? with
-        | some shared =>
-          spine := Ix.Expr.mkApp spine
-            (← decompileExprIn (.metaEntry sharingIdx.toNat) shared metaIdx)
-        | none =>
-          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
-            "callSite collapsed")
-    pure (applyMdata spine mdataLayers)
   | _, .var idx =>
     pure (applyMdata (Ix.Expr.mkBVar idx.toNat) mdataLayers)
 

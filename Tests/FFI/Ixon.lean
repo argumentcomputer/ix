@@ -163,13 +163,7 @@ def exprMetaDataTests : TestSeq :=
   test "ExprMetaData.binder default" (roundtripIxonExprMetaData (.binder testAddr .default 0 1) == .binder testAddr .default 0 1) ++
   test "ExprMetaData.binder implicit" (roundtripIxonExprMetaData (.binder testAddr .implicit 2 3) == .binder testAddr .implicit 2 3) ++
   test "ExprMetaData.binder strictImplicit" (roundtripIxonExprMetaData (.binder testAddr .strictImplicit 0 0) == .binder testAddr .strictImplicit 0 0) ++
-  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0) ++
-  test "ExprMetaData.callSite" (roundtripIxonExprMetaData
-    (.callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ==
-      .callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ++
-  test "ExprMetaData.etaCallSite" (roundtripIxonExprMetaData
-    (.etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8) ==
-      .etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8)
+  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0)
 
 def exprMetaArenaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
@@ -178,8 +172,7 @@ def exprMetaArenaTests : TestSeq :=
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
   let mixedArena : ExprMetaArena := { nodes := #[
     .leaf, .ref testAddr, .app 0 0, .binder testAddr .default 0 1,
-    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0,
-    .etaCallSite 2 testAddr #[.kept 0 0] #[0, 1] 3
+    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0
   ] }
   checkIO "ExprMetaArena empty" (roundtripIxonExprMetaArena emptyArena == emptyArena) ++
   checkIO "ExprMetaArena single leaf" (roundtripIxonExprMetaArena singleLeaf == singleLeaf) ++
@@ -190,12 +183,11 @@ def constantMetaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
-  -- Arena containing a call-site surgery node (the FFI used to silently
-  -- downgrade these to Leaf — this pins the faithful marshalling).
-  let callSiteArena : ExprMetaArena := { nodes := #[
-    .leaf,
-    .callSite testAddr #[.kept 0 0, .collapsed 1 0] #[0, 0] (some (2, 0)),
-    .etaCallSite 3 testAddr #[.kept 0 0, .collapsed 1 0] #[0, 1] 1
+  -- An arena with an mdata node over a reference (the shape of a Pass 3
+  -- decompile record's metadata).
+  let recordArena : ExprMetaArena := { nodes := #[
+    .ref testAddr,
+    .mdata #[#[(testAddr, .ofBool true)]] 0
   ] }
   let rt (cm : ConstantMeta) : Bool := roundtripIxonConstantMeta cm == cm
   checkIO "ConstantMeta.empty" (rt .empty) ++
@@ -215,10 +207,10 @@ def constantMetaTests : TestSeq :=
     (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩)))) ++
   checkIO "ConstantMeta.muts auxLayout evaporated" (rt (.new
     (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩)))) ++
-  checkIO "ConstantMeta callSite arena" (rt (.new
-    (.defn testAddr #[] #[] #[] callSiteArena 0 1))) ++
+  checkIO "ConstantMeta mdata arena" (rt (.new
+    (.defn testAddr #[] #[] #[] recordArena 0 1))) ++
   checkIO "ConstantMeta extension tables" (rt
-    { info := .defn testAddr #[] #[] #[] callSiteArena 0 1,
+    { info := .defn testAddr #[] #[] #[] recordArena 0 1,
       metaSharing := #[.app (.share 0) (.var 3), .sort 1],
       metaRefs := #[testAddr],
       metaUnivs := #[.succ (.var 0), .zero],

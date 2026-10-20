@@ -14,7 +14,7 @@ shared core behind the `tc-roundtrip` test suite and `ix validate-lean`.
 Three gates over a Rust-compiled `.ixe` byte image:
 
 1. `serdeGate` — the pure parser/writer close the loop: `Ixon.deEnv`
-   parses every section (call-site surgery, extension tables, aux
+   parses every section (Pass 3 decompile records, extension tables, aux
    layouts, originals included) and `Ixon.serEnv` reproduces the input
    bytes EXACTLY.
 2. `anonRoundtripEnv` — structural kernel roundtrip: every constant
@@ -28,8 +28,8 @@ Three gates over a Rust-compiled `.ixe` byte image:
    hash for defn/thm/opaque, per-rule RHS for recursors. LEON hashes are
    name/info/mdata-sensitive, so this certifies metadata fidelity.
    Skipped with counts: aux-rewritten entries (`original.isSome` —
-   decompile regenerates those) and altering-surgery entries
-   (`metaHasAlteringSurgery` — only decompile's surgery replay can
+   decompile regenerates those) and altering entries (Pass 3 records:
+   `metaHasAlteringSurgery` — only the decompilers' replay can
    restore their source form); ixon names absent from the Lean env count
    as informational `notFound`, as in Rust.
 -/
@@ -124,18 +124,12 @@ inductive MetaVerdict where
   | skippedSurgery
   | error (name : Ix.Name) (msg : String)
 
-/-- Whether a metadata arena carries ALTERING call-site surgery: collapsed
-    arguments, a rewritten head, or a non-identity kept permutation. Such
-    constants' canonical expressions genuinely differ from the Lean source
-    (compile rewrote them, recording how to restore the source in the
-    surgery metadata) — only decompile's surgery REPLAY can undo that, so
-    the kernel-direct comparison skips them with a count. Identity-kept
-    call sites (every source arg kept in place, head unchanged) are NOT
-    altering and stay in the comparison. Their anon-structural fidelity is
-    covered by the anon roundtrip either way. A Pass 3 decompile record
-    (an `mdata` node with the key `_ix.inline`) is altering too: the stored
-    term is the rewritten call site, and its source occurrence lives in
-    `metaSharing`, read only by the decompilers' replay. -/
+/-- Whether a metadata arena carries an ALTERING rewrite: a Pass 3 decompile
+    record (an `mdata` node with the key `_ix.inline`). The stored term is
+    the rewritten call site, and its source occurrence lives in
+    `metaSharing`, read only by the decompilers' replay, so the
+    kernel-direct comparison skips such constants with a count. (The
+    retired call-site surgery metadata, CQ3.6, was altering too.) -/
 def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
   let arena := match cm.info with
     | .defn _ _ _ _ a _ _ => a
@@ -146,12 +140,6 @@ def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
     | .recr _ _ _ _ _ a _ _ => a
     | .empty | .muts _ _ => {}
   arena.nodes.any fun node => match node with
-    | .callSite _ entries canonMeta origHead =>
-      origHead.isSome || entries.size != canonMeta.size ||
-      (entries.zipIdx.any fun (e, i) => match e with
-        | .collapsed .. => true
-        | .kept canonIdx _ => canonIdx.toNat != i)
-    | .etaCallSite .. => true
     | .mdata kvmaps _ => kvmaps.any fun kv => kv.any fun (k, _) =>
       k == Ix.Compile.Pass.inlineKey.getHash
     | _ => false

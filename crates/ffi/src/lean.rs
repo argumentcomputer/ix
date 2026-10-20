@@ -110,15 +110,6 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 4: ref
     { num_obj: 1, num_64: 1 },                // tag 5: prj
     { num_obj: 1, num_64: 1 },                // tag 6: mdata
-    // name, entries, canonMeta, origHead
-    { num_obj: 4 },                           // tag 7: callSite
-    // nSynth, name, entries, canonMeta, wrapperMeta
-    { num_obj: 3, num_64: 2 },                // tag 8: etaCallSite
-  ];
-
-  LeanIxonCallSiteEntry [
-    { num_64: 2 },                            // tag 0: kept
-    { num_64: 2 },                            // tag 1: collapsed
   ];
 
   // perm, sourceCtorCounts, evaporated (all Array UInt64; evaporated is 0/1)

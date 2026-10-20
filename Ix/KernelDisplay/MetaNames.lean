@@ -22,10 +22,7 @@ instantiation, as in Lean, and a failure can print a reduced term with them.
   rule order).
 * **The walk** (`nameGo`) follows a term and its arena node together, after
   the node's `mdata` chain: a `binder` node names a `lam`/`forallE`, a
-  `letBinder` node a `letE`; `app` and `prj` nodes are followed, a call site
-  (`callSite`) gives the canonical spine's arguments their roots
-  (`canonMeta`) and leaves the head as it is, and an η call site
-  (`etaCallSite`) is followed to its `wrapperMeta`, as
+  `letBinder` node a `letE`; `app` and `prj` nodes are followed, as
   `Ix.Tc.ingressExprMeta` reads them.
 * **Missing or inconsistent metadata adds nothing and is never an error.** A
   key without metadata (the modeller's generated records, the prelude's) is
@@ -95,30 +92,21 @@ def resolveName (cx : ArenaCx) (a : Address) : NameM Ix.Kernel.Name := do
   modify fun s => { s with names := s.names.insert a n }
   return n
 
-/-- The node at `i` after its `mdata` chain, and, at a `λ` (`atLam`), after
-its η call sites' wrappers; `none` outside the arena or after as many steps as
-it has nodes. -/
-def nodeAt (cx : ArenaCx) (i : UInt64) (atLam : Bool) : Option Ixon.ExprMetaData := Id.run do
+/-- The node at `i` after its `mdata` chain; `none` outside the arena or after
+as many steps as it has nodes. -/
+def nodeAt (cx : ArenaCx) (i : UInt64) : Option Ixon.ExprMetaData := Id.run do
   let mut i := i
   for _ in [0:cx.arena.nodes.size] do
     match cx.arena.nodes[i.toNat]? with
     | some (.mdata _ child) => i := child
-    | some (.etaCallSite _ _ _ _ w) => if atLam then i := w else return some (.leaf)
     | some n => return some n
     | none => return none
   return none
 
-/-- The number of arguments of an application spine. -/
-def spineArgs : Ix.Kernel.Expr md → Nat
-  | .app f _ => spineArgs f + 1
-  | _ => 0
-
-/-- Where the walk is: at an arena node, inside a call site's canonical spine
-(`j` arguments above the head left, their roots in `canon`), or where the
-metadata does not fit (`none`: binders are counted, nothing is named). -/
+/-- Where the walk is: at an arena node, or where the metadata does not fit
+(`none`: binders are counted, nothing is named). -/
 inductive Pos where
   | node (i : UInt64)
-  | spine (canon : Array UInt64) (j : Nat)
   | none
 
 /-- Count one binder or let; `named` if the metadata names it. -/
@@ -132,13 +120,12 @@ def binderDisplay (cx : ArenaCx) (n : Address) (bi : Lean.BinderInfo) :
   count (name != .anonymous)
   return ⟨name, Ix.LeanIngress.ingressBinderInfo bi⟩
 
-/-- The memo's key of a position and a term (`none` for a spine position). -/
+/-- The memo's key of a position and a term. -/
 def memoKey (p : Pos) (k : Ix.Kernel.Expr .meta) : Option (UInt64 × UInt64) :=
   match p, k with
   | _, .bvar _ | _, .sort _ | _, .const .. | _, .lit _ => .none
   | .node i, _ => some (i, hash k)
   | .none, _ => some (UInt64.ofNat (2 ^ 64 - 1), hash k)
-  | .spine .., _ => .none
 
 /-- **The names the arena gives the term `k` at the position `p`** (module
 docstring), with the proof that the result is `k`. -/
@@ -148,13 +135,9 @@ def nameGo (cx : ArenaCx) (p : Pos) (k : Ix.Kernel.Expr .meta) : NameM { v : Ix.
     if let some ⟨k', v, h⟩ := (← get).memo[key]? then
       if hk : k' == k then return ⟨v, h.trans (eq_of_beq hk)⟩
   let node : Option Ixon.ExprMetaData := match p with
-    | .node i => nodeAt cx i (k matches .lam ..)
+    | .node i => nodeAt cx i
     | _ => .none
   let r : { v : Ix.Kernel.Expr .meta // v = k } ← match hk : k, p, node with
-    | .app f a, .spine canon (j + 1), _ => do
-      let f' ← nameGo cx (.spine canon j) f
-      let a' ← nameGo cx (match canon[j]? with | some i => .node i | none => .none) a
-      pure ⟨.app f'.1 a'.1, by rw [hk, f'.2, a'.2]⟩
     | .lam t b m, _, some (.binder n bi ti bj) => do
       let d ← binderDisplay cx n bi
       let t' ← nameGo cx (.node ti) t
@@ -179,18 +162,6 @@ def nameGo (cx : ArenaCx) (p : Pos) (k : Ix.Kernel.Expr .meta) : NameM { v : Ix.
       let f' ← nameGo cx (.node fi) f
       let a' ← nameGo cx (.node ai) a
       pure ⟨.app f'.1 a'.1, by rw [hk, f'.2, a'.2]⟩
-    | .app f a, _, some (.callSite _ _ canon _) => do
-      -- the canonical spine: argument `n - 1` (the outermost) under
-      -- `canon[n - 1]`, the head as it is
-      let n := spineArgs f + 1
-      if n == canon.size then
-        let f' ← nameGo cx (.spine canon (n - 1)) f
-        let a' ← nameGo cx (match canon[n - 1]? with | some i => .node i | none => .none) a
-        pure ⟨.app f'.1 a'.1, by rw [hk, f'.2, a'.2]⟩
-      else
-        let f' ← nameGo cx .none f
-        let a' ← nameGo cx .none a
-        pure ⟨.app f'.1 a'.1, by rw [hk, f'.2, a'.2]⟩
     | .proj s j e, _, some (.prj _ c) => do
       let e' ← nameGo cx (.node c) e
       pure ⟨.proj s j e'.1, by rw [hk, e'.2]⟩

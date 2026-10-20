@@ -132,8 +132,6 @@ struct ConvertStats {
   share_expansions: u64,
   mdata_nodes: u64,
   mdata_kv_maps: u64,
-  callsites: u64,
-  callsite_args: u64,
   univ_roots: u64,
   univ_cache_hits: u64,
   univ_cache_misses: u64,
@@ -231,8 +229,6 @@ impl ConvertStats {
     self.share_expansions += other.share_expansions;
     self.mdata_nodes += other.mdata_nodes;
     self.mdata_kv_maps += other.mdata_kv_maps;
-    self.callsites += other.callsites;
-    self.callsite_args += other.callsite_args;
     self.univ_roots += other.univ_roots;
     self.univ_cache_hits += other.univ_cache_hits;
     self.univ_cache_misses += other.univ_cache_misses;
@@ -995,246 +991,21 @@ fn ingress_expr<M: KernelMode>(
 
           IxonExpr::App(f, a) => {
             bump_convert_stat!(stats, app_nodes);
-            // CallSite at the outermost App of a surgery spine. The
-            // arena replaces the spine's N+1 App/Ref nodes with one
-            // flat node whose `canon_meta` carries per-canonical-arg
-            // arena indices and whose `name` holds the head's Ref name.
-            // Walk the IXON App telescope here and distribute each
-            // canonical arg's arena index from `canon_meta`; a plain App
-            // descent (`_` arm below) would propagate the CallSite arena
-            // down every child, losing per-arg binder names and failing
-            // the head's Ref metadata lookup (see
-            // `ingress_expr` Ref arm — no `CallSite` matching branch).
-            //
-            // The head is `IxonExpr::Ref | IxonExpr::Rec`. We build its
-            // KExpr here using `cs_name` so the normal Ref arm's
-            // `(_, Expr::Ref) => Err(...)` fallback never fires. The
-            // compile side's `BuildCallSite` drops the head's own
-            // arena root on the floor (the comment there reads
-            // "head's Ref metadata is subsumed by CallSite.name"), so
-            // there is no other source of truth for the head name.
-            if let ExprMetaData::CallSite {
-              name: cs_name,
-              entries: _,
-              canon_meta,
-              orig_head: _,
-            } = node
-            {
-              // Flatten the canonical App telescope. `a_i` is the arg
-              // applied at spine position `i` (0 = innermost, N-1 =
-              // outermost); `head` is the innermost function.
-              let mut canonical_args: Vec<Arc<IxonExpr>> = Vec::new();
-              let mut cur = expr.clone();
-              loop {
-                while let IxonExpr::Share(share_idx) = cur.as_ref() {
-                  cur = ctx
-                    .sharing
-                    .get(usize::try_from(*share_idx).map_err(|_e| {
-                      format!("Share index {share_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| format!("invalid Share index {share_idx}"))?
-                    .clone();
-                }
-                match cur.as_ref() {
-                  IxonExpr::App(f2, a2) => {
-                    canonical_args.push(a2.clone());
-                    cur = f2.clone();
-                  },
-                  _ => break,
-                }
-              }
-              canonical_args.reverse();
-              let mut head_ixon = cur;
-              while let IxonExpr::Share(share_idx) = head_ixon.as_ref() {
-                head_ixon = ctx
-                  .sharing
-                  .get(usize::try_from(*share_idx).map_err(|_e| {
-                    format!("Share index {share_idx} exceeds usize")
-                  })?)
-                  .ok_or_else(|| format!("invalid Share index {share_idx}"))?
-                  .clone();
-              }
-              let n_args = canonical_args.len();
-              bump_convert_stat!(stats, callsites);
-              bump_convert_stat!(stats, callsite_args, n_args);
-
-              if canon_meta.len() != n_args {
-                let head_name = resolve_name(cs_name, ctx.names);
-                return Err(format!(
-                  "CallSite for '{}' has {} canonical metadata entries but \
-                   canonical telescope has {} args",
-                  head_name.pretty(),
-                  canon_meta.len(),
-                  n_args
-                ));
-              }
-              let arg_arenas = canon_meta.clone();
-
-              // Build the head KExpr inline. `cs_name` is the name
-              // address stored in the CallSite (e.g. the address of
-              // `Code.rec`'s Lean name); resolving it gives the same
-              // `Name` the normal Ref arm would produce.
-              let head_kexpr: KExpr<M> = match head_ixon.as_ref() {
-                IxonExpr::Ref(ref_idx, univ_idxs) => {
-                  let addr = ctx
-                    .refs
-                    .get(usize::try_from(*ref_idx).map_err(|_e| {
-                      format!("Ref index {ref_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| {
-                      format!("CallSite head: invalid Ref index {ref_idx}")
-                    })?
-                    .clone();
-                  let name = resolve_name(cs_name, ctx.names);
-                  let univs = ingress_univ_args(
-                    univ_idxs, ctx, intern, univ_cache, stats,
-                  )?;
-                  let id = KId::new(addr, M::meta_field(name));
-                  let mdata_field: M::MField<Vec<MData>> =
-                    M::meta_field(vec![]);
-                  // Patch lookup key is the CallSite node's arena index:
-                  // the compile side re-keys the head's patch onto it
-                  // (the head's own Ref root is unreachable from here).
-                  let decor: M::MField<Option<UnivDecor>> =
-                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
-                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
-                    })?;
-                  let key = super::env::ExprKey::Const(
-                    id.addr.clone(),
-                    univs.iter().map(|u| *u.addr()).collect(),
-                    M::meta_get(&decor).cloned().flatten(),
-                  );
-                  timed_intern_or_build(
-                    intern,
-                    &key,
-                    || KExpr::cnst_full(id, univs, mdata_field, decor),
-                    stats,
-                  )
-                },
-                IxonExpr::Rec(rec_idx, univ_idxs) => {
-                  // Rec heads refer to the enclosing mutual block; the
-                  // KId already carries the member's name from
-                  // `mut_ctx`, so `cs_name` is redundant here. Kept
-                  // the shape parallel to the Ref arm for symmetry.
-                  let mid = ctx
-                    .mut_ctx
-                    .get(usize::try_from(*rec_idx).map_err(|_e| {
-                      format!("Rec index {rec_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| {
-                      format!("CallSite head: invalid Rec index {rec_idx}")
-                    })?
-                    .clone();
-                  if let Some(refs) = ctx.local_refs {
-                    refs.borrow_mut().insert(mid.addr.clone());
-                  }
-                  let univs = ingress_univ_args(
-                    univ_idxs, ctx, intern, univ_cache, stats,
-                  )?;
-                  let mdata_field: M::MField<Vec<MData>> =
-                    M::meta_field(vec![]);
-                  // Same CallSite-root patch key as the Ref head arm.
-                  let decor: M::MField<Option<UnivDecor>> =
-                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
-                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
-                    })?;
-                  let key = super::env::ExprKey::Const(
-                    mid.addr.clone(),
-                    univs.iter().map(|u| *u.addr()).collect(),
-                    M::meta_get(&decor).cloned().flatten(),
-                  );
-                  timed_intern_or_build(
-                    intern,
-                    &key,
-                    || KExpr::cnst_full(mid, univs, mdata_field, decor),
-                    stats,
-                  )
-                },
-                _ => {
-                  return Err(format!(
-                    "CallSite head is not Ref/Rec: {:?}",
-                    head_ixon
-                  ));
-                },
-              };
-
-              // Emit the canonical App spine via AppArg/AppDone pairs.
-              // Push order — LIFO, so last pushed is first processed:
-              //
-              //   push AppDone_outer (carries `mdata`)
-              //   push AppArg(a_{N-1})
-              //   push AppDone for each middle/inner App (no mdata)
-              //   push AppArg(a_i) for i from N-2 down to 0
-              //   push head_kexpr onto `values` (processed "first")
-              //
-              // Execution then pops AppArg(a_0), Process(a_0), runs
-              // the innermost AppDone to wrap (head, a_0), pops
-              // AppArg(a_1), runs the next AppDone, …, ending with
-              // AppDone_outer applying `mdata` to the full spine.
-              // Inner AppDones use an empty mdata because the IXON
-              // Mdata variant lives outside the App chain — only the
-              // outermost App carries the wrapper.
-              let no_mdata_inner: M::MField<Vec<MData>> = M::meta_field(vec![]);
-
-              if n_args == 0 {
-                // Defensive: we only arrive here from IxonExpr::App,
-                // so n_args >= 1. Fall through safely anyway.
-                values.push(head_kexpr);
-              } else {
-                // Outermost AppDone (with mdata) + AppArg for the
-                // outermost arg.
-                stack.push(ExprFrame::AppDone { mdata });
-                stack.push(ExprFrame::AppArg {
-                  arg: canonical_args[n_args - 1].clone(),
-                  arg_arena: arg_arenas[n_args - 1],
-                });
-                // Middle + inner AppDones (no mdata) + AppArgs for
-                // args n_args-2 down to 0. Iterating in reverse keeps
-                // each (AppDone, AppArg) pair in the correct LIFO
-                // position.
-                for i in (0..n_args - 1).rev() {
-                  stack
-                    .push(ExprFrame::AppDone { mdata: no_mdata_inner.clone() });
-                  stack.push(ExprFrame::AppArg {
-                    arg: canonical_args[i].clone(),
-                    arg_arena: arg_arenas[i],
-                  });
-                }
-                // Seed `values` with the head so the first AppDone
-                // popped sees (head, a_0) and produces App(head, a_0).
-                values.push(head_kexpr);
-              }
-            } else {
-              let (f_arena, a_arena) = match node {
-                ExprMetaData::App { children } => (children[0], children[1]),
-                _ => (current_idx, current_idx),
-              };
-              stack.push(ExprFrame::AppDone { mdata });
-              stack
-                .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
-              stack.push(ExprFrame::Process {
-                expr: f.clone(),
-                arena_idx: f_arena,
-              });
-            }
+            let (f_arena, a_arena) = match node {
+              ExprMetaData::App { children } => (children[0], children[1]),
+              _ => (current_idx, current_idx),
+            };
+            stack.push(ExprFrame::AppDone { mdata });
+            stack
+              .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
+            stack
+              .push(ExprFrame::Process { expr: f.clone(), arena_idx: f_arena });
           },
 
           // Kernel ingress checks erased Lean types. Resource claims additionally
           // require the addressed validator in `crate::resource`.
           IxonExpr::Lam(_, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
-            if let ExprMetaData::EtaCallSite { wrapper_meta, .. } = node {
-              // The eta root is decompile-facing. Kernel ingress follows the
-              // ordinary synthesized Binder/CallSite tree so every binder
-              // type and canonical body argument keeps its normal metadata.
-              // Source mdata belongs to the discarded partial expression;
-              // it has no semantic effect on the synthesized wrapper.
-              stack.push(ExprFrame::Process {
-                expr: expr.clone(),
-                arena_idx: *wrapper_meta,
-              });
-              continue;
-            }
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
                 resolve_name(addr, ctx.names),
@@ -4342,7 +4113,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       cs.share_expansions
     );
     log::info!(
-      "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {} callsites {} args {}",
+      "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {}",
       cs.sort_nodes,
       cs.var_nodes,
       cs.ref_nodes,
@@ -4353,9 +4124,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       cs.let_nodes,
       cs.prj_nodes,
       cs.str_nodes,
-      cs.nat_nodes,
-      cs.callsites,
-      cs.callsite_args
+      cs.nat_nodes
     );
     log::info!(
       "[ixon_ingress]   convert metadata/univ: mdata_nodes {} mdata_kv_maps {} univ_roots {} univ_cache_hits {} univ_cache_misses {} univ_hit {:.1}% univ_cache_peak {} univ_process {} univ_interns {}",
@@ -5019,7 +4788,6 @@ mod tests {
   use crate::expr::ExprData;
   use crate::level::UnivData;
   use ix_common::env::{self, BinderInfo};
-  use ixon::metadata::CallSiteEntry;
 
   fn mk_name(s: &str) -> Name {
     let mut n = Name::anon();
@@ -5876,87 +5644,6 @@ mod tests {
       lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None).unwrap();
     // Cache hit → same interned result.
     assert!(k1.ptr_eq(&k2));
-  }
-
-  #[test]
-  fn callsite_ingress_uses_canon_meta_for_collapsed_canonical_arg() {
-    let head_name = mk_name("Head.rec");
-    let arg_name = mk_name("GoodArg");
-    let bad_name = mk_name("BadArg");
-    let head_name_addr = lean_name_to_addr(&head_name);
-    let arg_name_addr = lean_name_to_addr(&arg_name);
-    let bad_name_addr = lean_name_to_addr(&bad_name);
-    let head_ref_addr = Address::hash(b"head-content");
-    let arg_ref_addr = Address::hash(b"arg-content");
-
-    let mut names = FxHashMap::default();
-    names.insert(head_name_addr.clone(), head_name.clone());
-    names.insert(arg_name_addr.clone(), arg_name.clone());
-    names.insert(bad_name_addr.clone(), bad_name);
-
-    let mut arena = ExprMeta::default();
-    let bad_entry_meta = arena.alloc(ExprMetaData::Ref { name: bad_name_addr });
-    let arg_canon_meta = arena.alloc(ExprMetaData::Ref { name: arg_name_addr });
-    let root = arena.alloc(ExprMetaData::CallSite {
-      name: head_name_addr,
-      entries: vec![CallSiteEntry::Collapsed {
-        sharing_idx: 0,
-        meta: bad_entry_meta,
-      }],
-      canon_meta: vec![arg_canon_meta],
-      orig_head: None,
-    });
-
-    let ixon = IxonExpr::app(
-      IxonExpr::reference(0, vec![]),
-      IxonExpr::reference(1, vec![]),
-    );
-    let sharing: Vec<Arc<IxonExpr>> = vec![];
-    let refs = vec![head_ref_addr.clone(), arg_ref_addr.clone()];
-    let univs: Vec<Arc<IxonUniv>> = vec![];
-    let mut intern = InternTable::<Meta>::new();
-    let ctx = Ctx {
-      sharing: &sharing,
-      refs: &refs,
-      univs: &univs,
-      mut_ctx: vec![],
-      arena: &arena,
-      names: &names,
-      lvls: vec![],
-      univ_patches: FxHashMap::default(),
-      meta_univs: &[],
-      local_refs: None,
-      synth_counter: Cell::new(0),
-    };
-    let ixon_env = IxonEnv::new();
-    let mut cache = ExprCache::<Meta>::default();
-    let mut univ_cache = UnivCache::<Meta>::default();
-
-    let mut stats = ConvertStats::default();
-    let k = ingress_expr(
-      &ixon,
-      root,
-      &ctx,
-      &mut intern,
-      &ixon_env,
-      &mut cache,
-      &mut univ_cache,
-      &mut stats,
-    )
-    .unwrap();
-    let ExprData::App(f, a, _) = k.data() else {
-      panic!("expected App, got {:?}", k.data());
-    };
-    let ExprData::Const(head_id, _, _) = f.data() else {
-      panic!("expected CallSite head Const, got {:?}", f.data());
-    };
-    let ExprData::Const(arg_id, _, _) = a.data() else {
-      panic!("expected canonical arg Const, got {:?}", a.data());
-    };
-    assert_eq!(head_id.addr, head_ref_addr);
-    assert_eq!(head_id.name, head_name);
-    assert_eq!(arg_id.addr, arg_ref_addr);
-    assert_eq!(arg_id.name, arg_name);
   }
 
   /// Canonicity §10.6 stage 2: a `univ_patches` entry keyed by the

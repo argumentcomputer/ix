@@ -33,12 +33,27 @@ def run : IO Unit := do
       roundtrip (.letE ⟨nonDep, .value, binder⟩ (.sort 0) (.var 0) (.var 0))
       if binder.value == .localShared then
         roundtrip (.letE ⟨nonDep, .borrowShared, binder⟩ (.sort 0) (.var 0) (.var 0))
+  -- A Pass 3 decompile record `[(_ix.inline, 0), (_ix.inline_meta, 0)]` is
+  -- optional metadata: its replay of `metaSharing[0]` may not drop a
+  -- contract the compiled term carries behind sharing. (Before CQ3.6 this
+  -- was pinned through the call-site replay.)
   let nested := Ixon.Expr.lam ⟨.affine, .localUnique⟩ (.sort 0) (.var 0)
-  let arena : Ixon.ExprMetaArena := { nodes := #[.callSite default #[] #[] none] }
-  let ctx := { context with sharing := #[nested], arena }
-  let expression := Ixon.Expr.app (.var 0) (.share 0)
-  unless (Ix.DecompileM.DecompileM.run { ixonEnv := {} } ctx {} (Ix.DecompileM.decompileExpr expression 0)).toOption.isNone do
+  let zero := ByteArray.mk (Nat.toBytesLE 0)
+  let recordNames := [Ix.Compile.Pass.inlineKey, Ix.Compile.Pass.inlineMetaKey].foldl
+    (init := {}) Ixon.RawEnv.addNameComponents
+  let recordEnv : Ixon.Env := (({ names := recordNames } : Ixon.Env).storeBlob zero).1
+  let record : Ixon.KVMap :=
+    #[(Ix.Compile.Pass.inlineKey.getHash, .ofNat (Address.admissionHash zero)),
+      (Ix.Compile.Pass.inlineMetaKey.getHash, .ofNat (Address.admissionHash zero))]
+  let arena : Ixon.ExprMetaArena := { nodes := #[.leaf, .mdata #[record] 0] }
+  let ctx := { context with sharing := #[nested], metaSharing := #[.var 3], arena }
+  let replay (expression : Ixon.Expr) :=
+    (Ix.DecompileM.DecompileM.run { ixonEnv := recordEnv } ctx {}
+      (Ix.DecompileM.decompileExpr expression 1)).toOption.map (·.1)
+  unless (replay (.app (.var 0) (.share 0))).isNone do
     throw <| IO.userError "optional replay removed a contract behind sharing"
+  unless replay (.app (.var 0) (.var 1)) == some (Ix.Expr.mkBVar 3) do
+    throw <| IO.userError "a record over a contract-free term no longer replays"
   let key := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "ix") "contract"
   let env : Ixon.Env := { names := ({} : Std.HashMap Address Ix.Name).insert key.getHash key }
   let arena : Ixon.ExprMetaArena := { nodes := #[.leaf, .mdata #[#[(key.getHash, .ofBool true)]] 0] }

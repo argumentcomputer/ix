@@ -29,7 +29,8 @@
         inductive component the set's predicate is the plan predicate;
      c. every constant whose metadata carries an `_ix.inline` decompile
         record is a `caller` entry of the set (the same names on both
-        artifacts), and no constant carries surgered call-site metadata;
+        artifacts); surgered call-site metadata (kinds 10/11) no longer
+        decodes at all (CQ3.6);
      d. pinned fixtures with their causes (`pinned`);
      e. the definition components that collapse inside are exactly
         `pinnedDefinitions`, each `collapsed`.
@@ -164,14 +165,6 @@ def arenaOf (cm : Ixon.ConstantMeta) : Option Ixon.ExprMetaArena :=
   | .defn _ _ _ _ a _ _ | .axio _ _ a _ | .quot _ _ a _ | .indc _ _ _ _ _ a _
   | .ctor _ _ _ a _ | .recr _ _ _ _ _ a _ _ => some a
   | _ => none
-
-/-- Whether a constant's metadata records a surgered call site. -/
-def hasCallSite (cm : Ixon.ConstantMeta) : Bool :=
-  match arenaOf cm with
-  | some a => a.nodes.any fun
-    | .callSite .. | .etaCallSite .. => true
-    | _ => false
-  | none => false
 
 /-- Whether a constant's metadata carries a Pass 3 decompile record: a KV map
 with the key `_ix.inline` (`Ix.Compile.Pass.inlineKey`). -/
@@ -370,7 +363,7 @@ edited) in {leanAlls.size} Lean blocks (Rust: {rustDone.size} in {rustAlls.size}
     if componentChanged all classes layout? != ch then
       ps := ps.push s!"inductive component {showComponent all classes}: componentChanged differs \
 from isChanged"
-  -- c. decompile records only on callers; no surgered call site
+  -- c. decompile records only on callers
   let callers := entriesWith leanSet .caller
   let leanCarriers := recordCarriers leanEnv
   let rustCarriers := recordCarriers rustEnv
@@ -381,10 +374,6 @@ from isChanged"
   if rustCarriers.map (·.pretty) != leanCarriers.map (·.pretty) then
     ps := ps.push s!"the Rust and the Lean artifacts carry records on different constants \
 ({rustCarriers.size}/{leanCarriers.size})"
-  for (what, ixe) in [("Lean", leanEnv), ("Rust", rustEnv)] do
-    for (n, named) in ixe.named do
-      if hasCallSite named.constMeta then
-        ps := ps.push s!"{n.pretty} carries surgered call-site metadata ({what})"
   say s!"decompile records on {leanCarriers.size} constants (Rust {rustCarriers.size}), of \
 {callers.size} caller entries"
   -- regenerated auxiliaries outside the changed blocks' members and heads

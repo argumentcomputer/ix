@@ -96,9 +96,6 @@ No reader defect is known. Every difference on the fixture closure and on all of
     regenerated the constant in canonical form (the recursors, `recOn`,
     `below`, `brecOn` of a mutual block, whose members it orders
     canonically), so its record is not Lean's term;
-  - *call-site surgery*: a call of such an auxiliary was permuted to the
-    canonical order (`Ix.Tc.metaHasAlteringSurgery`); no compile registers a
-    call-site plan since Pass 3 is wired, so it no longer occurs;
   - *Pass 3 call-site records*: a call of an image-kind auxiliary of a
     changed block was rewritten through its image, and the source occurrence
     is kept as an `_ix.inline` decompile record (`hasInlineRecord`).
@@ -708,8 +705,6 @@ def judge (cx : Cx) (st : State .anon) (n : Lean.Name) (actual : Entry) (expecte
             if regenerated then some "auxiliary regenerated"
             else if (nd.map (hasInlineRecord ·.constMeta)).getD false then
               some "Pass 3 call-site records"
-            else if (nd.map (_root_.Ix.Tc.metaHasAlteringSurgery ·.constMeta)).getD false then
-              some "call-site surgery"
             else none
           match actual, expected, canon? with
           | .defn acv _ _, .recr ecv _ _ _, some _ =>

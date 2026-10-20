@@ -28,27 +28,6 @@ fn rename_node(
     ExprMetaData::Prj { struct_name, child } => {
       ExprMetaData::Prj { struct_name: r(struct_name), child: *child }
     },
-    ExprMetaData::CallSite { name, entries, canon_meta, orig_head } => {
-      ExprMetaData::CallSite {
-        name: r(name),
-        entries: entries.clone(),
-        canon_meta: canon_meta.clone(),
-        orig_head: *orig_head,
-      }
-    },
-    ExprMetaData::EtaCallSite {
-      n_synth,
-      name,
-      entries,
-      canon_meta,
-      wrapper_meta,
-    } => ExprMetaData::EtaCallSite {
-      n_synth: *n_synth,
-      name: r(name),
-      entries: entries.clone(),
-      canon_meta: canon_meta.clone(),
-      wrapper_meta: *wrapper_meta,
-    },
     other => other.clone(),
   }
 }

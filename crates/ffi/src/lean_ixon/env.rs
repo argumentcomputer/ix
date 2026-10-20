@@ -677,7 +677,7 @@ pub extern "C" fn rs_de_env_anon(
 // =============================================================================
 // rs_de_env_lazy: zero-copy, metadata-light deserialization for the Aiur
 // check path. Parses the env once in Rust (reusing the proven section parsers,
-// so every metadata variant — e.g. CallSite — is handled) and hands Lean only:
+// so every metadata variant — e.g. Mdata — is handled) and hands Lean only:
 //   - per-const (addr, offset, len) windows into the *same* buffer Lean passed
 //     in (no constant bytes copied across the boundary),
 //   - name -> addr,

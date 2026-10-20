@@ -327,34 +327,6 @@ pub(super) fn subst_fvar(
   })
 }
 
-pub(super) fn shift_vars(
-  e: &LeanExpr,
-  amount: usize,
-  cutoff: usize,
-  lower: bool,
-  c: &Checkpoint,
-) -> Result<LeanExpr> {
-  c.visit()?;
-  if amount == 0 {
-    return Ok(e.clone());
-  }
-  rewrite(e, cutoff as u64, c, &mut FxHashMap::default(), &mut |e, depth| {
-    Ok(match e.as_data() {
-      ExprData::Bvar(i, _)
-        if nat_to_u64(i) >= depth + if lower { amount as u64 } else { 0 } =>
-      {
-        let i = nat_to_u64(i);
-        Some(LeanExpr::bvar(Nat::from(if lower {
-          i - amount as u64
-        } else {
-          i + amount as u64
-        })))
-      },
-      _ => None,
-    })
-  })
-}
-
 pub(super) fn subst_levels(
   e: &LeanExpr,
   params: &[Name],
@@ -843,19 +815,6 @@ mod tests {
         main::instantiate_rev(e, &[b(1), fv.clone()]),
         old::instantiate_rev(e, &[b(1), fv.clone()])
       );
-      for amount in 0..3 {
-        for cutoff in 0..3 {
-          assert_eq!(
-            shift_vars(e, amount, cutoff, false, &Checkpoint::default())
-              .unwrap(),
-            old::shift_vars(e, amount, cutoff)
-          );
-          assert_eq!(
-            main::lower_vars(e, amount, cutoff),
-            old::lower_vars(e, amount, cutoff)
-          );
-        }
-      }
       assert_eq!(main::subst_fvar(e, &f, &b(2)), old::subst_fvar(e, &f, &b(2)));
       assert_eq!(
         main::subst_levels(e, std::slice::from_ref(&u), &[Level::zero()]),
@@ -891,9 +850,6 @@ mod tests {
     let abstracted = main::batch_abstract(&instantiated, &vars, 1, 0);
     assert_eq!(abstracted.get_hash(), e.get_hash());
     assert_eq!(unique_nodes(&abstracted), 41);
-    let shifted = shift_vars(&e, 2, 0, false, &Checkpoint::default()).unwrap();
-    assert_eq!(shifted.get_hash(), diamond(b(2)).get_hash());
-    assert_eq!(unique_nodes(&shifted), 41);
     let replaced = main::subst_fvar(&instantiated, &name("f"), &b(1));
     assert_eq!(replaced.get_hash(), diamond(b(1)).get_hash());
     assert_eq!(unique_nodes(&replaced), 41);

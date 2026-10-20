@@ -45,8 +45,6 @@ def renameNode (m : Std.HashMap Address Address) (n : Ixon.ExprMetaData) : Ixon.
   match n with
   | .ref a => .ref (r a)
   | .prj a c => .prj (r a) c
-  | .callSite a es cm oh => .callSite (r a) es cm oh
-  | .etaCallSite k a es cm w => .etaCallSite k (r a) es cm w
   | n => n
 
 /-- Rename name-hash addresses throughout a constant's metadata. -/

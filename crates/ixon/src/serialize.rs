@@ -2465,7 +2465,7 @@ impl Env {
   /// Parse an `.ixe` buffer into a metadata-light, **zero-copy** index for the
   /// anon/lazy check path (see [`LazyIndex`]). Mirrors [`Env::get`]'s section
   /// walk and reuses the same battle-tested parsers (so every metadata variant
-  /// — e.g. `CallSite` — is handled), but:
+  /// — e.g. `Mdata` — is handled), but:
   ///
   /// - constants are recorded as `(addr, offset, len)` windows into `data`
   ///   rather than copied/stored, and their bodies are never parsed here;
@@ -2562,7 +2562,7 @@ impl Env {
     index.name_reverse_index = name_reverse_index;
 
     // Section 5: Named — keep `name → addr`; the full ConstantMeta
-    // (arena, CallSite, ...) is parsed then discarded. The section
+    // (arena, Mdata, ...) is parsed then discarded. The section
     // offset is recorded so a [`NamedMetaCursor`] can re-walk it
     // without re-parsing the earlier sections.
     index.named_section_offset = data.len() - buf.len();

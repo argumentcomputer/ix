@@ -210,22 +210,39 @@ hand-built fixtures are the only thing pinning the reader rule (Rust
 mirror: `meta_share_*` tests in `crates/compile/src/decompile.rs`).
 
 Every fixture has one primary entry (`p = 1`), `prim0 = (#1 #2)`, and a
-primary root `head #99` whose `callSite` metadata reads one collapsed
-argument from `metaSharing` before the kept `#99`. -/
+primary root `head #99`, the compiled occurrence under a Pass 3 decompile
+record `[(_ix.inline, k), (_ix.inline_meta, 0)]` (`msArena k`): the
+occurrence decompiles as `metaSharing[k]`, read in that entry's scope at
+the leaf arena node `0`. (Before CQ3.6 the fixtures reached the rule
+through the retired call-site metadata.) -/
 
 section MetaShare
 
 open Ix.DecompileM Ixon
 
 private def nHead : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "MS.head"
-private def nHead2 : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "MS.head2"
 private def nAx : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "MS.ax"
 
-private def msEnv : DecompileEnv := Id.run do
-  let base : Ixon.Env := {}
-  let names := [nHead, nHead2, nAx].foldl (init := base.names)
-    Ixon.RawEnv.addNameComponents
-  return { ixonEnv := { base with names } }
+/-- `n` as a metadata nat blob (the compiler's encoding). -/
+private def msNatBlob (n : Nat) : ByteArray := ByteArray.mk (Nat.toBytesLE n)
+
+/-- The decompile record `[(_ix.inline, s), (_ix.inline_meta, m)]`. -/
+private def msRecord (s m : Nat) : Ixon.KVMap :=
+  #[(Ix.Compile.Pass.inlineKey.getHash, .ofNat (Address.admissionHash (msNatBlob s))),
+    (Ix.Compile.Pass.inlineMetaKey.getHash,
+      .ofNat (Address.admissionHash (msNatBlob m)))]
+
+/-- The names and nat blobs the records read. -/
+private def msNames (env : Ixon.Env) : Ixon.Env := Id.run do
+  let mut env := { env with
+    names := [nHead, nAx, Ix.Compile.Pass.inlineKey,
+      Ix.Compile.Pass.inlineMetaKey].foldl (init := env.names)
+      Ixon.RawEnv.addNameComponents }
+  for n in [0, 1, 2] do
+    env := (env.storeBlob (msNatBlob n)).1
+  return env
+
+private def msEnv : DecompileEnv := { ixonEnv := msNames {} }
 
 /-- Primary entry 0. -/
 private def prim0 : Ixon.Expr := .app (.var 1) (.var 2)
@@ -242,15 +259,13 @@ private def ixPrim0 : Ix.Expr := Ix.Expr.mkApp (Ix.Expr.mkBVar 1) (Ix.Expr.mkBVa
 private def ixM0 : Ix.Expr := Ix.Expr.mkApp ixPrim0 (Ix.Expr.mkBVar 3)
 private def ixM1 : Ix.Expr := Ix.Expr.mkApp ixM0 ixPrim0
 
-/-- The primary root: `head #99` (the callSite head is named by metadata). -/
+/-- The primary root `head #99`, the compiled occurrence a record replaces. -/
 private def msRoot : Ixon.Expr := .app (.ref 0 #[]) (.var 99)
 
-/-- Arena: `0` leaf (the kept argument), `1` the call site, whose source
-    spine is `head <metaSharing[k]> #99`. -/
-private def msArena (k : UInt64) (origHead : Option (UInt64 × UInt64) := none) :
-    ExprMetaArena := ⟨#[
-  .leaf,
-  .callSite nHead.getHash #[.collapsed k UInt64.MAX, .kept 0 0] #[0] origHead ]⟩
+/-- Arena: `0` a leaf (the source occurrence's metadata root), `1` the
+    decompile record over it: the occurrence decompiles as
+    `metaSharing[k]`. -/
+private def msArena (k : Nat) : ExprMetaArena := ⟨#[.leaf, .mdata #[msRecord k 0] 0]⟩
 
 private def msCtx (metaSharing : Array Ixon.Expr) (arena : ExprMetaArena)
     (root : Ixon.Expr := msRoot) : BlockCtx :=
@@ -260,10 +275,6 @@ private def msCtx (metaSharing : Array Ixon.Expr) (arena : ExprMetaArena)
 private def msRun (ctx : BlockCtx) (root : Ixon.Expr := msRoot) (rootIdx : UInt64 := 1) :
     Except DecompileError Ix.Expr :=
   (DecompileM.run msEnv ctx {} (decompileExpr root rootIdx)).map (·.1)
-
-/-- `head x #99`. -/
-private def spine (x : Ix.Expr) : Ix.Expr :=
-  Ix.Expr.mkApp (Ix.Expr.mkApp (Ix.Expr.mkConst nHead #[]) x) (Ix.Expr.mkBVar 99)
 
 private def isMetaShareErr {α : Type} (idx entry p q : Nat) : Except DecompileError α → Bool
   | .error (.invalidMetaShareIndex i j p' q' _) =>
@@ -277,12 +288,12 @@ private def okEq (r : Except DecompileError Ix.Expr) (expected : Ix.Expr) : Bool
 
 /-- `share i`, `i < p`: the primary entry. -/
 private def msPrimary : Bool :=
-  okEq (msRun (msCtx #[sharedM0] (msArena 0))) (spine ixM0)
+  okEq (msRun (msCtx #[sharedM0] (msArena 0))) ixM0
 
 /-- `p ≤ i < p + j`: an earlier metadata entry, and through it a primary
     entry. -/
 private def msEarlierMeta : Bool :=
-  okEq (msRun (msCtx #[sharedM0, sharedM1] (msArena 1))) (spine ixM1)
+  okEq (msRun (msCtx #[sharedM0, sharedM1] (msArena 1))) ixM1
 
 /-- Round trip: the shared table decompiles exactly like the unshared
     original. -/
@@ -290,14 +301,8 @@ private def msRoundTrip : Bool :=
   let shared := msRun (msCtx #[sharedM0, sharedM1] (msArena 1))
   let plain := msRun (msCtx #[plainM0, plainM1] (msArena 1))
   match shared, plain with
-  | .ok s, .ok u => s == u && s == spine ixM1
+  | .ok s, .ok u => s == u && s == ixM1
   | _, _ => false
-
-/-- `origHead` reads its entry in that entry's metadata scope too:
-    source spine `<metaSharing[1]> <metaSharing[0]> #99`. -/
-private def msOrigHead : Bool :=
-  okEq (msRun (msCtx #[sharedM0, sharedM1] (msArena 0 (some (1, UInt64.MAX)))))
-    (Ix.Expr.mkApp (Ix.Expr.mkApp ixM1 ixM0) (Ix.Expr.mkBVar 99))
 
 /-- Forward reference (`metaSharing[0]` → `metaSharing[1]`): rejected, both
     lazily and by the table check. -/
@@ -323,62 +328,42 @@ private def msOutOfRange : Bool :=
         | .ok _ => false)
 
 /-- A primary `share i` with `i ≥ p` stays invalid although `metaSharing`
-    has entries: metadata never changes how primary bytes decode. -/
+    has entries: metadata never changes how primary bytes decode. The root
+    `<record> (share 1)` reads its function through the record and its
+    argument in the primary scope. -/
 private def msPrimaryUnchanged : Bool :=
-  let root : Ixon.Expr := .app (.ref 0 #[]) (.share 1)
-  match msRun (msCtx #[sharedM0] (msArena 0) root) root with
+  let root : Ixon.Expr := .app msRoot (.share 1)
+  let arena : ExprMetaArena := ⟨(msArena 0).nodes.push (.app 1 0)⟩
+  match msRun (msCtx #[sharedM0] arena root) root (rootIdx := 2) with
   | .error (.invalidShareIndex 1 1 _) => true
   | _ => false
 
 /-- The expression cache is keyed by scope: `sub = (share 1) #7` is valid in
-    `metaSharing[1]` (decoded first, as the collapsed argument of the call
-    site in function position) and must still be rejected when the primary
-    root applies the call site to the same `sub` at the same arena index
-    (no call-site scan covers that occurrence). -/
+    `metaSharing[1]` (decoded first, as the source occurrence of the record
+    in function position, at arena node 0) and must still be rejected when
+    the primary root applies the record to the same `sub` (same arena node
+    0, primary scope). -/
 private def msCacheScope : Bool :=
   let sub : Ixon.Expr := .app (.share 1) (.var 7)
   let root : Ixon.Expr := .app msRoot sub
-  let arena : ExprMetaArena := ⟨#[
-    .leaf,
-    .callSite nHead.getHash #[.collapsed 1 UInt64.MAX, .kept 0 0] #[0] none,
-    .app 1 UInt64.MAX ]⟩
+  let arena : ExprMetaArena := ⟨(msArena 1).nodes.push (.app 1 0)⟩
   match msRun (msCtx #[sharedM0, sub] arena root) root (rootIdx := 2) with
   | .error (.invalidShareIndex 1 1 _) => true
   | _ => false
 
-/-- A call site nested in a metadata expression: its canonical spine runs
-    through a metadata share into `metaSharing[0]` and an argument there is
-    a primary share. Source: `head (head2 (#1 #2) #9) #99`. -/
-private def msNestedCallSite : Bool :=
-  let m0 : Ixon.Expr := .app (.ref 0 #[]) (.share 0)
-  let m1 : Ixon.Expr := .app (.share 1) (.var 9)
+/-- A record nested in a metadata entry crosses scopes: the root record
+    (node 3) replays `metaSharing[1] = #5 (share 0)` at node 2, whose
+    function part (the compiled `#5`) carries a record (node 1) replaying
+    `metaSharing[0]` in its own scope, and whose argument `share 0` is the
+    primary entry. Source: `(#1 #2 #3) (#1 #2)`. -/
+private def msNestedRecord : Bool :=
+  let m1 : Ixon.Expr := .app (.var 5) (.share 0)
   let arena : ExprMetaArena := ⟨#[
-    .leaf,
-    .callSite nHead2.getHash #[.kept 0 UInt64.MAX, .kept 1 UInt64.MAX]
-      #[UInt64.MAX, UInt64.MAX] none,
-    .callSite nHead.getHash #[.collapsed 1 1, .kept 0 0] #[0] none ]⟩
-  let inner := Ix.Expr.mkApp
-    (Ix.Expr.mkApp (Ix.Expr.mkConst nHead2 #[]) ixPrim0) (Ix.Expr.mkBVar 9)
-  okEq (msRun (msCtx #[m0, m1] arena) (rootIdx := 2)) (spine inner)
-
-/-- An eta call site in a metadata expression: the synthesized wrapper is
-    stripped across a metadata share (`metaSharing[1] = λ. share 1`, the
-    inner lambda being `metaSharing[0]`). Source: `head (head2 #1) #99`
-    (the kept `#3` is lowered by the two synthesized binders). -/
-private def msEtaCallSite : Bool :=
-  let m0 : Ixon.Expr := .lam .many (.var 5)
-    (.app (.app (.ref 0 #[]) (.var 3)) (.var 0))
-  let m1 : Ixon.Expr := .lam .many (.var 6) (.share 1)
-  let arena : ExprMetaArena := ⟨#[
-    .leaf,
-    .etaCallSite 2 nHead2.getHash #[.kept 0 UInt64.MAX]
-      #[UInt64.MAX, UInt64.MAX] UInt64.MAX,
-    .callSite nHead.getHash #[.collapsed 1 1, .kept 0 0] #[0] none ]⟩
-  let inner := Ix.Expr.mkApp (Ix.Expr.mkConst nHead2 #[]) (Ix.Expr.mkBVar 1)
-  okEq (msRun (msCtx #[m0, m1] arena) (rootIdx := 2)) (spine inner)
+    .leaf, .mdata #[msRecord 0 0] 0, .app 1 0, .mdata #[msRecord 1 2] 0 ]⟩
+  okEq (msRun (msCtx #[sharedM0, m1] arena) (rootIdx := 3)) ixM1
 
 /-- Whole-constant path (`decompileAxiom` → `withFreshBlock`): the table
-    check rejects a malformed entry that no call site reads, and a valid
+    check rejects a malformed entry that no record reads, and a valid
     shared table decompiles to the unshared original. -/
 private def msAxiom (metaSharing : Array Ixon.Expr) :
     Except DecompileError Ix.ConstantInfo :=
@@ -390,11 +375,11 @@ private def msAxiom (metaSharing : Array Ixon.Expr) :
 
 private def msAxiomOk : Bool :=
   match msAxiom #[sharedM0, sharedM1] with
-  | .ok (.axiomInfo v) => v.cnst.type == spine ixM1 && v.cnst.name == nAx
+  | .ok (.axiomInfo v) => v.cnst.type == ixM1 && v.cnst.name == nAx
   | _ => false
 
 private def msAxiomUnreadEntryRejected : Bool :=
-  -- Entry 2 is never read (the call site reads entry 1) but references
+  -- Entry 2 is never read (the record reads entry 1) but references
   -- itself (`share 3 = p + 2`). The error names the constant.
   let r := msAxiom #[sharedM0, sharedM1, .app (.share 3) (.var 0)]
   isMetaShareErr 3 2 1 3 r && match r with
@@ -403,7 +388,7 @@ private def msAxiomUnreadEntryRejected : Bool :=
 
 /-- Regression: metadata without shares behaves as before. -/
 private def msNoShares : Bool :=
-  okEq (msRun (msCtx #[plainM0] (msArena 0))) (spine ixM0)
+  okEq (msRun (msCtx #[plainM0] (msArena 0))) ixM0
     && (validateMetaSharing 0 #[plainM0, plainM1] matches .ok ())
 
 /-- The table check visits each shared node once: the chain
@@ -423,19 +408,17 @@ materialization): both must accept a valid shared table with the same
 result, and both must reject the malformed ones with the same
 `invalidMetaShareIndex` fields. -/
 
-/-- `MS.head : Sort 0` and `MS.ax : head <metaSharing[1]> #99`, the latter
-    carrying `metaSharing`. -/
+/-- `MS.head : Sort 0` and `MS.ax`, whose type is the compiled `head #99`
+    under the record for `metaSharing[1]`, carrying `metaSharing`. -/
 private def msParityEnv (metaSharing : Array Ixon.Expr) : Ixon.Env := Id.run do
   let headC : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
   let headAddr := Address.blake3 (Ixon.serConstant headC)
   let axC : Ixon.Constant :=
     ⟨.axio ⟨false, 0, msRoot⟩, #[prim0], #[headAddr], #[]⟩
   let axAddr := Address.blake3 (Ixon.serConstant axC)
-  let mut env : Ixon.Env := {}
+  let mut env : Ixon.Env := msNames {}
   env := env.storeConst headAddr headC
   env := env.storeConst axAddr axC
-  env := { env with
-    names := [nHead, nAx].foldl (init := env.names) Ixon.RawEnv.addNameComponents }
   env := env.registerName nHead
     { addr := headAddr, constMeta := { info := .axio nHead.getHash #[] ⟨#[.leaf]⟩ 0 } }
   env := env.registerName nAx
@@ -454,12 +437,11 @@ private def msParityLean (bytes : ByteArray) :
   return (DecompileM.run { ixonEnv := env } default {}
     (decompileAxiom ax cnst named.constMeta)).map fun (ci, _) => ci.getCnst.type
 
-/-- `MS.ax`'s type as Rust materializes it: `MS.head ((#1 #2 #3) (#1 #2)) #99`. -/
+/-- `MS.ax`'s type as Rust materializes it: `(#1 #2 #3) (#1 #2)`. -/
 private def msParityLeanExpr : Lean.Expr :=
   let b := Lean.mkBVar
   let prim := Lean.mkApp (b 1) (b 2)
-  .app (.app (.const (Lean.Name.mkSimple "MS.head") [])
-    (.app (.app prim (b 3)) prim)) (b 99)
+  .app (.app prim (b 3)) prim
 
 /-- Run both decompilers on `msParityEnv metaSharing`. `expect` is `none`
     for acceptance, or the `(idx, entry, p, q)` of the expected rejection. -/
@@ -482,7 +464,7 @@ private def msParityCase (label : String) (metaSharing : Array Ixon.Expr)
     | none, .ok ty, .ok consts =>
       let rustTy := consts.findSome? fun (n, ci) =>
         if n == Lean.Name.mkSimple "MS.ax" then some ci.type else none
-      if ty != spine ixM1 then return some s!"{label}: Lean type differs"
+      if ty != ixM1 then return some s!"{label}: Lean type differs"
       if rustTy != some msParityLeanExpr then
         return some s!"{label}: Rust type differs: {rustTy}"
       return none
@@ -824,17 +806,14 @@ public def unitSuite : List TestSeq := [
       msEarlierMeta
     ++ test "metadata share: round trip equals the unshared original"
       msRoundTrip
-    ++ test "metadata share: origHead reads its entry's scope" msOrigHead
     ++ test "metadata share: forward reference rejected" msForward
     ++ test "metadata share: self reference rejected" msSelf
     ++ test "metadata share: i ≥ p + q rejected" msOutOfRange
     ++ test "metadata share: primary share ≥ p still rejected"
       msPrimaryUnchanged
     ++ test "metadata share: expression cache keyed by scope" msCacheScope
-    ++ test "metadata share: nested call site crosses scopes"
-      msNestedCallSite
-    ++ test "metadata share: eta wrapper stripped across a metadata share"
-      msEtaCallSite
+    ++ test "metadata share: a record nested in an entry crosses scopes"
+      msNestedRecord
     ++ test "metadata share: whole constant decompiles" msAxiomOk
     ++ test "metadata share: unread malformed entry rejected"
       msAxiomUnreadEntryRejected
