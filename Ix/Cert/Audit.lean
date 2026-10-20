@@ -10,6 +10,7 @@ import Ix.Cert.Order
 import Ix.Cert.Evidence
 import Ix.Cert.Roles
 import Ix.Cert.Admits
+import Ix.Cert.BlockStart
 
 /-! # The certification statements, frozen
 
@@ -3854,3 +3855,15 @@ reader's parameter map is the constant's level parameters; roots in
                 (fun level level' => Ix.LeanIngress.canonLevelIn (List.map σ params) level = level') converted target -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.CanonLevelReading.related_ingress_canon
+
+/-! ## N-READS, N3 (a): the state every block starts from
+
+The driver compiles every block from the empty `BlockState`; it is clean, its
+wire tables are well formed, and its lookups' widths are the environment's. -/
+
+/-- info: [cert-audit] block start: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "block start"
+    (#[`clean_empty, `wire_empty, `lookupWidths_empty].map (`Ix.Cert.BlockStart ++ ·))
