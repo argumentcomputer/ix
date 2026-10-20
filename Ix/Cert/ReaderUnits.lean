@@ -143,4 +143,28 @@ theorem lowerInductive_decls {st : State md} {rb : BlockRead md} {r : Read md}
         subst h
         exact ⟨[], _, rfl, rfl, names _ rfl⟩
 
+
+/-- A failing reader step accepts nothing. -/
+theorem fail_bind {α β : Type} {e : ReadError} {f : α → ReadM β} {r : β}
+    (h : ((throw e : ReadM α) >>= f) = .ok r) : False := by
+  simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+
+/-- **A reader loop that only pushes `P`-elements** (onto the part of its state
+`get` reads) ends with only `P`-elements there, from a start that has only
+`P`-elements. -/
+theorem forIn_pushes {α σ β : Type} (get : σ → Array β) (P : β → Prop) (xs : Array α)
+    (f : α → σ → ReadM (ForInStep σ))
+    (step : ∀ x ∈ xs.toList, ∀ s r, f x s = .ok r → ∃ s', r = .yield s' ∧ ∀ e ∈ get s', e ∈ get s ∨ P e)
+    {s res : σ} (start : ∀ e ∈ get s, P e) (ran : forIn xs s f = .ok res) : ∀ e ∈ get res, P e :=
+  Ix.CompileCert.Loop.forIn_inv_array (fun _ s => ∀ e ∈ get s, P e) f xs
+    (fun pre x post s r split hI hf => by
+      have hx : x ∈ xs.toList := by rw [← split]; simp
+      obtain ⟨s', rfl, pushed⟩ := step x hx s r hf
+      exact ⟨s', rfl, fun e he => (pushed e he).elim (hI e) id⟩)
+    start ran
+
+/-- A member-key element: its name is the reader's key of a reference `R` allows. -/
+def KeyedBy (cx : Ctx md) (R : ConstRef Address → Prop) {β : Type} (name : β → CName md) (e : β) : Prop :=
+  ∃ ref, R ref ∧ cx.memberKey ref = .ok (name e)
+
 end Ix.Cert.ReaderUnits
