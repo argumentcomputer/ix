@@ -179,6 +179,36 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       decoder on {disagree.length} record(s); first: {a}"
   return (errors, lines)
 
+/-- The records a record needs (`Ix.Cert.RecordEdge`): its block, for a
+projection, and the records of its reference table. -/
+def edges (ixe : Ixon.Env) (a : Address) : Array Address :=
+  match Ix.Cert.recordAt ixe a with
+  | none => #[]
+  | some c =>
+    let o := Ix.Cert.ownerOf a c
+    (if o != a then #[o] else #[]) ++ c.refs.filter (ixe.consts.contains ·)
+
+/-- The compiled closure of `seeds`, dependencies first: a depth-first
+postorder over `edges`. -/
+def closureOrder (ixe : Ixon.Env) (seeds : Array Address) : Array Address := Id.run do
+  let mut done : Std.HashSet Address := {}
+  let mut out : Array Address := #[]
+  for root in seeds do
+    unless ixe.consts.contains root do continue
+    let mut stack : Array (Address × Bool) := #[(root, false)]
+    while h : stack.size > 0 do
+      let (node, expanded) := stack[stack.size - 1]
+      stack := stack.pop
+      if expanded then
+        unless done.contains node do
+          done := done.insert node
+          out := out.push node
+      else unless done.contains node do
+        stack := stack.push (node, true)
+        for d in edges ixe node do
+          unless done.contains d do stack := stack.push (d, false)
+  return out
+
 /-- The artifact-wide checks the quotient renaming takes (step 7.3 (iv)): every published
 role name sits at its role's address (`Ix.Cert.publishedRolesBound`, which gives
 `TableBound` through `Ix.Cert.tableBound_of`, and a role's published address through
@@ -227,6 +257,42 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
   | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
   return (errors, lines)
 
+/-- S1's certificate-side `Closed` for string literals (`Ix.Cert.LiteralOrder`): in the
+closure order of every published record (`closureOrder`, the order a certificate is read
+in), every record with a string literal comes after the stream records of the string
+roles (`stringSupportOrdered`). Not vacuous: a string role's record moved right after
+the first record with a string literal fails it. -/
+def stringOrderCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
+    Array String × Array String := Id.run do
+  let mut errors : Array String := #[]
+  let mut lines : Array String := #[]
+  let seeds : Array Address := ixe.named.fold (fun acc _ d => acc.push d.addr) #[]
+  let order := (closureOrder ixe seeds).toList
+  let withStr := order.filter (Ix.Cert.LiteralOrder.strAt ixe)
+  let owners := Ix.Cert.LiteralOrder.stringRoles.filterMap (Ix.Cert.LiteralOrder.supportOwner ixe t)
+  if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order then
+    lines := lines.push s!"{label}: stringSupportOrdered holds on the closure order of \
+      {order.length} records: {withStr.length} with a string literal, after the \
+      {owners.length} string roles' records"
+  else
+    errors := errors.push s!"{label}: stringSupportOrdered fails on the closure order \
+      ({withStr.length} records with a string literal, {owners.length} of \
+      {Ix.Cert.LiteralOrder.stringRoles.length} string roles with a stream record)"
+  match withStr.head? with
+  | some a =>
+    match owners.find? (· != a) with
+    | some b =>
+      let planted := (order.filter (· != b)).flatMap fun x => if x == a then [a, b] else [x]
+      if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t planted then
+        errors := errors.push s!"{label}: stringSupportOrdered misses {b} moved after {a}"
+      else
+        lines := lines.push s!"{label}: stringSupportOrdered catches a string role's record \
+          moved after the first record with a string literal"
+    | none => errors := errors.push s!"{label}: no string role's record to move"
+  | none => lines := lines.push s!"{label}: no record with a string literal; the planted case \
+      is skipped"
+  return (errors, lines)
+
 /-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
 name over every published name (`publishedCases`: `Ix.Cert.publishedRolesBound`). Also
 counted, not checked: the roles whose Lean name the input declares, and (B5c, on hold)
@@ -246,8 +312,10 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     | some r => Ix.LeanIngress.ingressName n != r.leanName
     | none => false
   let (errors, lines) := publishedCases label t ixe
-  return (errors, #[s!"{label}: {declared.length} of {roles.length} role names declared by the \
-    input; {aliases.length} other published names at a role-bound address (B5c, counted)"] ++ lines)
+  let (strErrors, strLines) := stringOrderCases label t ixe
+  return (errors ++ strErrors, #[s!"{label}: {declared.length} of {roles.length} role names declared \
+    by the input; {aliases.length} other published names at a role-bound address (B5c, counted)"] ++
+    lines ++ strLines)
 
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
@@ -369,36 +437,6 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
 
 /-! ## The Ixon side of one closure -/
 
-/-- The records a record needs (`Ix.Cert.RecordEdge`): its block, for a
-projection, and the records of its reference table. -/
-def edges (ixe : Ixon.Env) (a : Address) : Array Address :=
-  match Ix.Cert.recordAt ixe a with
-  | none => #[]
-  | some c =>
-    let o := Ix.Cert.ownerOf a c
-    (if o != a then #[o] else #[]) ++ c.refs.filter (ixe.consts.contains ·)
-
-/-- The compiled closure of `seeds`, dependencies first: a depth-first
-postorder over `edges`. -/
-def closureOrder (ixe : Ixon.Env) (seeds : Array Address) : Array Address := Id.run do
-  let mut done : Std.HashSet Address := {}
-  let mut out : Array Address := #[]
-  for root in seeds do
-    unless ixe.consts.contains root do continue
-    let mut stack : Array (Address × Bool) := #[(root, false)]
-    while h : stack.size > 0 do
-      let (node, expanded) := stack[stack.size - 1]
-      stack := stack.pop
-      if expanded then
-        unless done.contains node do
-          done := done.insert node
-          out := out.push node
-      else unless done.contains node do
-        stack := stack.push (node, true)
-        for d in edges ixe node do
-          unless done.contains d do stack := stack.push (d, false)
-  return out
-
 /-- The compiled closure of `seeds` as a set, by a separate worklist. -/
 def reach (ixe : Ixon.Env) (seeds : Array Address) : Std.HashSet Address := Id.run do
   let mut seen : Std.HashSet Address := {}
@@ -516,6 +554,17 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let order := closureOrder ixe seeds
   for p in (closureOrderProblems ixe seeds order).toList.take 5 do
     errors := errors.push s!"ClosureOrder: {p}"
+  -- S1's certificate-side `Closed` for string literals, on the order the closure is read in
+  match Ix.Kernel.Reader.defaultTable with
+  | .error e => errors := errors.push s!"the default role table does not read: {e}"
+  | .ok t =>
+    let withStr := order.toList.filter (Ix.Cert.LiteralOrder.strAt ixe)
+    if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order.toList then
+      lines := lines.push s!"stringSupportOrdered holds on the closure's order \
+        ({withStr.length} records with a string literal)"
+    else
+      errors := errors.push s!"stringSupportOrdered fails on the closure's order \
+        ({withStr.length} records with a string literal)"
   let records := Ix.Cert.recordsOf ixe order.toList
   let blobs := Ix.Cert.blobsOf ixe order.toList
   lines := lines.push s!"compiled closure: {seeds.size} published addresses \

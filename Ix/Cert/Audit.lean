@@ -13,6 +13,7 @@ import Ix.Cert.BlockStart
 import Ix.Cert.RoleClosure
 import Ix.Cert.NoCtor
 import Ix.Cert.Quotient
+import Ix.Cert.LiteralOrder
 
 /-! # The certification statements, frozen
 
@@ -4163,3 +4164,43 @@ run_cmd do
     (#[`ValueModel.pullback, `publishedRolesBound_iff, `byLeanName_foldl, `roleOf_leanName,
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
       `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))
+
+/-! ## S1's certificate-side `Closed`: string literals after their support
+
+S1's `Closed` (IxC, 2026-10-20) counts a literal's support roles as mentions. A
+record's reference table does not show them, so B4's `ClosureOrder` does not order
+them; the decided `Ix.Cert.LiteralOrder.stringSupportOrdered` does: every record of
+the order with a string literal (in itself or its owner block) comes after the stream
+records of the string roles (`stringRoles`, `Ix.Kernel.strLitSupported`'s). A `Nat`
+literal's support is the prelude's, at the front. `cert-statement`,
+`cert-compile-parity-init` and `cert-roles-initstd` decide it on the closure orders of
+the fixtures, `Init` and Init+Std, with a planted failure each. -/
+
+/-- info: def Ix.Cert.LiteralOrder.StringSupportOrdered : Ixon.Env → Ix.Kernel.RoleTable → List Address → Prop :=
+fun ixe t order =>
+  ∀ (pre : List Address) (a : Address) (post : List Address),
+    order = pre ++ a :: post →
+      Ix.Cert.LiteralOrder.strAt ixe a = true →
+        ∀ (r : Ix.Kernel.Role),
+          r ∈ Ix.Cert.LiteralOrder.stringRoles →
+            ∃ b, Ix.Cert.LiteralOrder.supportOwner ixe t r = some b ∧ (b = a ∨ b ∈ pre) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.LiteralOrder.StringSupportOrdered
+
+/-- info: def Ix.Cert.LiteralOrder.stringRoles : List Ix.Kernel.Role :=
+[Ix.Kernel.Role.string, Ix.Kernel.Role.stringOfList, Ix.Kernel.Role.list, Ix.Kernel.Role.listNil,
+  Ix.Kernel.Role.listCons, Ix.Kernel.Role.char, Ix.Kernel.Role.charOfNat] -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.LiteralOrder.stringRoles
+
+/-- info: Ix.Cert.LiteralOrder.stringSupportOrdered_iff : ∀ (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (order : List Address),
+  Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order = true ↔ Ix.Cert.LiteralOrder.StringSupportOrdered ixe t order -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.LiteralOrder.stringSupportOrdered_iff
+
+/-- info: [cert-audit] string literal order: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "string literal order"
+    (#[`recordOk_iff, `orderedFrom_iff, `stringSupportOrdered_iff].map (`Ix.Cert.LiteralOrder ++ ·))
