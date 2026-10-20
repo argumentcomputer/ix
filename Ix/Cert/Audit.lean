@@ -4050,6 +4050,23 @@ run_cmd do
       `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSourceWith,
       `inductive_reads_sourceAccepts].map (`Ix.Cert.NoCtor ++ ·))
 
+/-! ## N-READS, N5 b (stage A): one inductive through the driver's mutual path
+
+The driver compiles a block of one inductive as `compileMutualBlock [[m]]`
+over the member `MutConst.mkIndc` builds, after its class sort and
+recursor-family order (which keep the one class), not through
+`compileConstantInfo`. Over that path the block reads back as its source, its
+projections are the class's (`MutualArtifact.mutual_correct`), and its Source
+premises come from Source acceptance as in N4 (b)
+(`Ix.Cert.NoCtor.inductive_reads_driver_sourceAccepts`; the reading-chain half
+is `Ix.CompileCert.MutualInductiveReading`, audited by the reading audit). -/
+
+/-- info: [cert-audit] driver inductive: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "driver inductive" #[`Ix.Cert.NoCtor.inductive_reads_driver_sourceAccepts]
+
 /-! ## Source mode at the pinned bundle evidence (owner, 2026-10-20)
 
 `SourceAccepts` runs `Ix.LeanIngress.checkSourceBundled`: the committed prelude

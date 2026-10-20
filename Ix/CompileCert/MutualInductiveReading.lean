@@ -1,6 +1,7 @@
 import Ix.CompileCert.EmissionBlocks
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.InductiveReading
+import Ix.CompileCert.SourceConstructorPositions
 
 /-! # Inductives through the driver's mutual path (N-READS, N5 b)
 
@@ -9,7 +10,8 @@ singletons included, through `compileMutualBlock` over `MutConst.mkIndc`
 members, not through `compileConstantInfo (.inductInfo …)` (the
 `compileInductiveFamilyBlock` emitter, which `InductiveReading.inductive_reads`
 covers; only `compileConstNoAuxPure` takes it). This module carries the family
-reading over to the mutual path.
+reading over to the mutual path, for a block of one inductive (stage A; a
+family of several, R10b proper, is stage B).
 
 **A one-member inductive class** (`singletonBlock_correct`): `compileMutualBlock
 [[.indc d]]` runs the same member emitter as the family path
@@ -19,7 +21,27 @@ family's `sourceData`, `Emission.compileInductive_eq`), the same sharing
 builder over `.muts #[.indc ind]` (`ProjectionLayout.finish_mutual_ok`), and
 only the projections differ (`buildMutualProjections`). So the emitted record
 keeps the payload's skeleton and reads its roots as terms related to the
-source's, as `EmissionBlocks.familyBlock_correct` states for the family path. -/
+source's, as `EmissionBlocks.familyBlock_correct` states for the family path.
+
+**The class's mutual context is the family's** (`mutCtx_singleton`): the
+inductive at slot 0, its constructors after it. So the family path's self
+references (`InductiveReading.scope_of_noCtor`: no constructor of the family
+occurs, and the family's name is related to its key) serve the mutual path
+unchanged.
+
+**The reading** (`inductive_reads_mutual`): `InductiveReading.inductive_reads`'
+reading, for `compileMutualBlock [[.indc (sourceData source constructors)]]`.
+
+**The driver's classes** (`driver_singleton`): the driver sorts its members
+(`sortConsts`) and orders a recursor family (`orderRecursorFamily`) before
+`compileMutualBlock`; on one member both return the one class `[[m]]`.
+
+**The driver's block** (`inductive_reads_driver`): the codec, the mutual
+projections' rows (`MutualArtifact.mutual_correct`) and the reading, for the
+driver's steps on the member `MutConst.mkIndc` builds.
+`inductive_reads_driver_source` discharges the safety, position and telescope
+premises by Source admission of the block (R12); `MutConst.mkIndc`'s
+constructors are the compile environment's (`mkIndc_constructors`). -/
 
 namespace Ix.CompileCert.MutualInductiveReading
 
@@ -60,6 +82,35 @@ theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before a
   rw [rawRun_pure] at wrapRan
   cases wrapRan
   exact ⟨_, outRan, rfl, rfl⟩
+
+/-- **A one-inductive class's mutual context is the family's**: the inductive
+at slot 0 and its constructors after it, as `buildInductiveMutCtx` lays
+them out. -/
+theorem mutCtx_singleton (source : InductiveVal) (constructors : Array ConstructorVal) :
+    MutConst.ctx [[.indc (Emission.sourceData source constructors)]] = buildInductiveMutCtx source constructors := by
+  have unfolded : buildInductiveMutCtx source constructors =
+      constructors.zipIdx.foldl (fun ctx entry => ctx.insert entry.1.cnst.name (entry.2 + 1))
+        ((Std.TreeMap.empty : Ix.MutCtx).insert source.cnst.name 0) := by
+    simp [buildInductiveMutCtx]
+  rw [Canon.ctx_fold, unfolded, ← Array.foldl_toList, Array.toList_zipIdx]
+  simp only [Canon.ctxPairs, Canon.pairsOf, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+    List.foldl_cons, List.foldl_map, List.length_singleton, MutConst.name, MutConst.ctors, Emission.sourceData]
+  have same : (fun (acc : Ix.MutCtx) (entry : ConstructorVal × Nat) => Canon.insP acc (entry.1.cnst.name, 1 + entry.2)) =
+      fun acc entry => acc.insert entry.1.cnst.name (entry.2 + 1) := by
+    funext acc entry
+    simp only [Canon.insP, Nat.add_comm]
+  rw [same]
+  rfl
+
+/-- **The class's block environment is the family's**: `compileMutualBlock
+[[.indc (sourceData source constructors)]]` runs its member in the block
+environment the family compile installs. -/
+theorem mutBlock_family (source : InductiveVal) (constructors : Array ConstructorVal)
+    (context : CompileEnv × BlockEnv) :
+    (mutContext [[.indc (Emission.sourceData source constructors)]] context).2 =
+      InductiveReading.familyBlock source constructors context := by
+  unfold mutContext InductiveReading.familyBlock EmissionDispatch.familyContext EmissionDispatch.singletonContext
+  rw [mutCtx_singleton]
 
 /-! ## A one-member inductive class -/
 
@@ -166,6 +217,48 @@ theorem singleton_headers (d : Ix.Ind) :
     simpa using congrArg List.length ctors
   exact ⟨lvls ▸ headerLvls, params ▸ headerParams, indices ▸ headerIndices, sizes ▸ headerCtors⟩
 
+/-! ## The driver's classes for one member -/
+
+/-- **Pass 1's class sort of one member is its one class**, whatever the
+rules and the external addresses. -/
+theorem sortClasses_singleton (rules : Ix.Compile.Canon.Rules) (addresses : Ix.Name → Option Address)
+    (m : MutConst) : ∃ stats, Ix.Compile.Canon.sortClasses rules addresses [m] = .ok ([[m]], stats) := by
+  obtain ⟨seed⟩ := rules
+  cases seed <;> exact ⟨_, rfl⟩
+
+/-- **The recursor-family order keeps one class.** -/
+theorem orderRecursorFamily_singleton (members : List MutConst) :
+    orderRecursorFamily [members] = [members] :=
+  List.perm_singleton.mp (MutualArtifact.orderRecursorFamily_perm [members])
+
+/-- **The driver's steps on one member compile its one class**: the class
+sort (`sortConsts`) returns `[[m]]` without changing the state, the
+recursor-family order keeps it, so the run is `compileMutualBlock [[m]]`'s. -/
+theorem driver_singleton (m : MutConst) {context : CompileEnv × BlockEnv} {before after : BlockState}
+    {output : BlockResult}
+    (ran : rawRun (sortConsts [m] >>= fun sorted => compileMutualBlock (orderRecursorFamily sorted)) context before =
+      (.ok output, after)) :
+    rawRun (compileMutualBlock [[m]]) context before = (.ok output, after) := by
+  obtain ⟨sorted, middle, sortRan, compiled⟩ := bind_ok ran
+  obtain ⟨rfl, addresses, stats, sortedRun⟩ := ProjectionLayout.sort_run [m] sortRan
+  obtain ⟨_, single⟩ := sortClasses_singleton Ix.Compile.Canon.Rules.compiler addresses m
+  rw [single] at sortedRun
+  cases sortedRun
+  rwa [orderRecursorFamily_singleton] at compiled
+
+/-- **`MutConst.mkIndc`'s constructors are the compile environment's**: an
+inductive member it builds over `constructors` has, under each of the
+source's constructor names, the constructor the environment has there, in
+order. -/
+theorem mkIndc_constructors (context : CompileEnv × BlockEnv) (source : InductiveVal)
+    (constructors : Array ConstructorVal) {made : BlockState}
+    (found : (rawRun (MutConst.mkIndc source) context made).1 = .ok (.indc (Emission.sourceData source constructors))) :
+    List.Forall₂ (fun n c => context.1.env.get? n = some (.ctorInfo c)) source.ctors.toList constructors.toList := by
+  obtain ⟨cs, looked, same⟩ := SourceConstructorPositions.mkIndc_lookups context source made found
+  have ctors : constructors = cs.toArray := congrArg MutConst.ctors same
+  rw [ctors, List.toList_toArray]
+  exact looked
+
 /-! ## The reading -/
 
 section Reading
@@ -180,8 +273,10 @@ variable {md : Mode} (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ :
 back as its source**: `InductiveReading.inductive_reads` for
 `compileMutualBlock [[.indc (sourceData source constructors)]]`, the block the
 driver compiles a one-inductive block as (`MutConst.mkIndc` of the source over
-its constructors). The self references are given in the class's mutual context
-(`scope`, `ctorScope`). -/
+its constructors). The premises are `inductive_reads`': the self references
+(the family's own name related to its key, `selfKey`, R13's half, and no
+constructor of the family in its types, `NoCtorIn`) serve the class's mutual
+context, which is the family's (`mutBlock_family`). -/
 theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
@@ -190,11 +285,9 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : contex
     (order : shape.order = #[0]) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
     (ctorKey : Nat → CName md)
     (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
-    (scope : ConstsSatisfy (SelfName (mutContext [[.indc (Emission.sourceData source constructors)]] context).2
-      (InductiveReading.inductiveSelf cx output.blockAddr) names) source.cnst.type)
-    (ctorScope : ∀ ctor ∈ constructors.toList,
-      ConstsSatisfy (SelfName (mutContext [[.indc (Emission.sourceData source constructors)]] context).2
-        (InductiveReading.inductiveSelf cx output.blockAddr) names) ctor.cnst.type)
+    (selfKey : names source.cnst.name key)
+    (typeNoCtor : InductiveReading.NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, InductiveReading.NoCtorIn constructors ctor.cnst.type)
     (safe : source.isUnsafe = false) (ctorSafe : ∀ ctor ∈ constructors.toList, ctor.isUnsafe = false)
     (positions : ∀ j (inside : j < constructors.size), constructors[j].cidx = j)
     (arity : ∀ ctor ∈ constructors.toList, ∃ types body,
@@ -211,8 +304,15 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : contex
               (List.range source.cnst.levelParams.size) shape.recs >>= fun recs =>
             lowerInductive state (InductiveReading.sourceBlock key ctorKey type ctorTypes source constructors recs) := by
   have codec := EmissionDispatch.mutualBlock_codec context free _ wire ran
+  have scope : ∀ {e : Ix.Expr}, InductiveReading.NoCtorIn constructors e →
+      ConstsSatisfy (SelfName (mutContext [[.indc (Emission.sourceData source constructors)]] context).2
+        (InductiveReading.inductiveSelf cx output.blockAddr) names) e := by
+    intro e noCtor
+    rw [mutBlock_family]
+    exact InductiveReading.scope_of_noCtor cx names source constructors context output.blockAddr keyed selfKey noCtor
   obtain ⟨_, _, _, erased, roots⟩ := singletonBlock_correct cx id (InductiveReading.inductiveSelf cx output.blockAddr)
-    names σ bindings context free aligned external (Emission.sourceData source constructors) scope ctorScope clean ran
+    names σ bindings context free aligned external (Emission.sourceData source constructors) (scope typeNoCtor)
+    (fun ctor present => scope (ctorNoCtor ctor present)) clean ran
   obtain ⟨target, info, indHeader, ctorHeaders⟩ :=
     singleton_headers (Emission.sourceData source constructors) _ before output after ran
   obtain ⟨target', info', unsafeEq, ctorUnsafe⟩ := InductiveReading.erase_family erased
@@ -251,6 +351,114 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv) (free : contex
   rw [read, lvls, params, indices, InductiveReading.ctorReads_source ctorKey 0 ctorTypes ctorHeaders]
   unfold InductiveReading.sourceBlock
   rfl
+
+open Ix.Kernel.Reader (Store) in
+/-- **A one-inductive block compiled by the driver is a correct artifact read
+back as its source**: the driver's steps (`sortConsts`, `orderRecursorFamily`,
+`compileMutualBlock`) on the member `.indc (sourceData source constructors)`
+return a block that decodes exactly, projections that decode exactly, rows
+that read, in any store holding the block, as the class's source-indexed
+references (`MutualArtifact.mutual_correct`), and a block that `readRecord`
+reads as `lowerInductive` of the `BlockRead` the source describes
+(`inductive_reads_mutual`). The premises are `inductive_reads`'. -/
+theorem inductive_reads_driver (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
+    (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
+    (constructors : Array ConstructorVal) {before after : BlockState} {output : BlockResult}
+    (state : State md) {shape : BlockShape} (indexed : cx.index.blocks[output.blockAddr]? = some shape)
+    (order : shape.order = #[0]) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
+    (ctorKey : Nat → CName md)
+    (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
+    (selfKey : names source.cnst.name key)
+    (typeNoCtor : InductiveReading.NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, InductiveReading.NoCtorIn constructors ctor.cnst.type)
+    (safe : source.isUnsafe = false) (ctorSafe : ∀ ctor ∈ constructors.toList, ctor.isUnsafe = false)
+    (positions : ∀ j (inside : j < constructors.size), constructors[j].cidx = j)
+    (arity : ∀ ctor ∈ constructors.toList, ∃ types body,
+      ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields) ctor.cnst.type = some (types, body) ∧
+        ReaderSourceSpines.SourceNonForall body)
+    (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
+    (ran : rawRun (sortConsts [.indc (Emission.sourceData source constructors)] >>= fun sorted =>
+      compileMutualBlock (orderRecursorFamily sorted)) context before = (.ok output, after)) :
+    BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
+      (∀ store : Store, store output.blockAddr = some output.block →
+        MutualProjections.readRows store (MutualProjections.logicalRows output.projections) =
+          MutualProjections.expectedReferences output.blockAddr [[.indc (Emission.sourceData source constructors)]]) ∧
+      ∃ type ctorTypes, InductiveReading.related names σ source source.cnst.type type ∧
+        List.Forall₂ (InductiveReading.related names σ source) (constructors.toList.map (·.cnst.type)) ctorTypes ∧
+        readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
+          InductiveReading.readRecursors (ExpressionRead.withBlockBlobs cx after)
+              (List.range source.cnst.levelParams.size) shape.recs >>= fun recs =>
+            lowerInductive state (InductiveReading.sourceBlock key ctorKey type ctorTypes source constructors recs) := by
+  have compiled := driver_singleton _ ran
+  have nonempty : ∀ members ∈ [[MutConst.indc (Emission.sourceData source constructors)]], members ≠ [] := by
+    simp
+  have agree : MutualProjections.ClassesAgree [[MutConst.indc (Emission.sourceData source constructors)]] := by
+    intro members present left leftIn right rightIn
+    simp only [List.mem_singleton] at present
+    subst present
+    simp only [List.mem_singleton] at leftIn rightIn
+    rw [leftIn, rightIn]
+  have declared : ∀ member ∈ [[MutConst.indc (Emission.sourceData source constructors)]].flatten,
+      MutualProjections.ConstructorPositions member := by
+    intro member present
+    simp only [List.flatten_cons, List.flatten_nil, List.append_nil, List.mem_singleton] at present
+    subst present
+    exact positions
+  obtain ⟨_, projections, rows⟩ :=
+    MutualArtifact.mutual_correct context free _ wire nonempty agree declared compiled
+  obtain ⟨codec, reads⟩ := inductive_reads_mutual cx names σ bindings context free aligned external source
+    constructors state indexed order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions
+    arity clean wire compiled
+  exact ⟨codec, projections, rows, reads⟩
+
+open Ix.Kernel.Reader (Store) in
+/-- **A one-inductive block of a Source-admitted block, compiled by the
+driver, is read back as its source** (`inductive_reads_driver` with its
+safety, position and telescope premises discharged): the inductive is a
+member of a block Source mode admits (`SourceConstructorPositions.Admits`),
+the compile environment resolves its constructor names as Source's input
+does, and the driver's member is what `MutConst.mkIndc` builds in that
+environment. The self references stay premises, as in
+`SourceConstructorPositions.inductive_reads_source`. -/
+theorem inductive_reads_driver_source (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
+    (external : BindingsCorrect context.1 bindings cx names)
+    {env : Ix.Environment} {first : InductiveVal} (admits : SourceConstructorPositions.Admits env first)
+    (source : InductiveVal) (member : source.cnst.name ∈ first.all.toList)
+    (sourceFound : env.consts.get? source.cnst.name = some (.inductInfo source))
+    (agree : ∀ n ∈ source.ctors.toList, context.1.env.get? n = env.consts.get? n)
+    (constructors : Array ConstructorVal) {made : BlockState}
+    (found : (rawRun (MutConst.mkIndc source) context made).1 = .ok (.indc (Emission.sourceData source constructors)))
+    {before after : BlockState} {output : BlockResult}
+    (state : State md) {shape : BlockShape} (indexed : cx.index.blocks[output.blockAddr]? = some shape)
+    (order : shape.order = #[0]) {key : CName md} (keyed : cx.memberKey (.member output.blockAddr 0) = .ok key)
+    (ctorKey : Nat → CName md)
+    (ctorKeyed : ∀ j, j < constructors.size → cx.memberKey (.ctor output.blockAddr 0 j) = .ok (ctorKey j))
+    (selfKey : names source.cnst.name key)
+    (typeNoCtor : InductiveReading.NoCtorIn constructors source.cnst.type)
+    (ctorNoCtor : ∀ ctor ∈ constructors.toList, InductiveReading.NoCtorIn constructors ctor.cnst.type)
+    (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
+    (ran : rawRun (sortConsts [.indc (Emission.sourceData source constructors)] >>= fun sorted =>
+      compileMutualBlock (orderRecursorFamily sorted)) context before = (.ok output, after)) :
+    BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
+      (∀ store : Store, store output.blockAddr = some output.block →
+        MutualProjections.readRows store (MutualProjections.logicalRows output.projections) =
+          MutualProjections.expectedReferences output.blockAddr [[.indc (Emission.sourceData source constructors)]]) ∧
+      ∃ type ctorTypes, InductiveReading.related names σ source source.cnst.type type ∧
+        List.Forall₂ (InductiveReading.related names σ source) (constructors.toList.map (·.cnst.type)) ctorTypes ∧
+        readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
+          InductiveReading.readRecursors (ExpressionRead.withBlockBlobs cx after)
+              (List.range source.cnst.levelParams.size) shape.recs >>= fun recs =>
+            lowerInductive state (InductiveReading.sourceBlock key ctorKey type ctorTypes source constructors recs) := by
+  have looked : List.Forall₂ (fun n c => env.consts.get? n = some (.ctorInfo c)) source.ctors.toList
+      constructors.toList :=
+    SourceConstructorPositions.forall₂_mono_mem (mkIndc_constructors context source constructors found)
+      fun n inside c resolved => (agree n inside).symm.trans resolved
+  obtain ⟨safe, facts⟩ := SourceConstructorPositions.admitted_member admits member sourceFound
+  obtain ⟨positions, ctorSafe, arity⟩ := facts constructors looked
+  exact inductive_reads_driver cx names σ bindings context free aligned external source constructors state indexed
+    order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
 end Reading
 

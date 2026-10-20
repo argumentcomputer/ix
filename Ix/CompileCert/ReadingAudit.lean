@@ -21,6 +21,7 @@ import Ix.CompileCert.MutualArtifact
 import Ix.CompileCert.ReaderIndexDiscovery
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
+import Ix.CompileCert.MutualInductiveReading
 import Ix.CompileCert.Canon.EqSound
 import Ix.CompileCert.CanonLevelReading
 
@@ -52,7 +53,8 @@ syntactic walks through sharing and along the source
 (`Ix.CompileCert.ProjectionLayout`) and its projections (`Ix.CompileCert.MutualProjections`,
 `MutualArtifact`), and the reader's recursor index (`Ix.CompileCert.ReaderIndex`,
 `ReaderIndexDiscovery`), and the reading of compiled standalone inductives
-(`Ix.CompileCert.InductiveReading`), and what Source mode admits of an
+(`Ix.CompileCert.InductiveReading`, and through the driver's mutual path:
+`MutualInductiveReading`), and what Source mode admits of an
 inductive block (`Ix.CompileCert.SourceConstructorPositions`), and the shared
 loop lemmas (`Ix.CompileCert.Loop`), and Pass 1's comparator as a total preorder
 (`Ix.CompileCert.Canon.Basic` … `Rel`) and its classes, the coarsest consistent
@@ -713,3 +715,33 @@ def Ix.CompileCert.ReadingAudit.levelCanonRoots : Array Lean.Name :=
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd checkRoots (tag := "reading-audit") "levels canonically" Ix.CompileCert.ReadingAudit.levelCanonRoots
+
+/-! ## N-READS, N5 b: inductives through the driver's mutual path
+
+The driver compiles every inductive block, singletons included, through
+`compileMutualBlock` over `MutConst.mkIndc` members
+(`Ix.CompileCert.MutualInductiveReading`). For a block of one inductive: the
+member emitter is the family path's, the class's mutual context is the
+family's, the driver's sort and recursor-family order keep the one class, and
+the block reads back as its source (`inductive_reads_driver`), with its Source
+premises from Source admission (`inductive_reads_driver_source`). -/
+
+def Ix.CompileCert.ReadingAudit.driverInductiveRoots : Array Lean.Name :=
+  #[`mutConsts_indc, `mutCtx_singleton, `mutBlock_family, `singletonBlock_correct, `singleton_headers,
+    `sortClasses_singleton, `orderRecursorFamily_singleton, `driver_singleton, `mkIndc_constructors,
+    `inductive_reads_mutual, `inductive_reads_driver,
+    `inductive_reads_driver_source].map (`Ix.CompileCert.MutualInductiveReading ++ ·)
+
+/-- The driver's recursor-family order and the family's mutual context, which
+the driver-path proofs unfold. -/
+def Ix.CompileCert.ReadingAudit.driverInductiveRuntime : Array Lean.Name :=
+  #[``Ix.CompileM.orderRecursorFamily, ``Ix.CompileM.buildInductiveMutCtx]
+
+/-- info: [reading-audit] driver inductives: 12 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [reading-audit] driver inductives: 2 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRoots
+  checkRuntime (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRuntime
